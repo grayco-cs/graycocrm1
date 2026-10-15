@@ -22,6 +22,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
+| 14 | **Fill the blanks on the customer handouts** | They can't be printed until these are right | Warranty length for residential, insurance/restoration, commercial and roofing (your documents disagree: 1 yr / 5 yr / 1 yr vs "2-year workmanship"); years in business; insurance carrier; Instagram/Nextdoor (or none); which Google review link is the real one |
 ---
 
 ## Claude — building now
@@ -31,7 +32,6 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
   - **CompanyCam:** fixed and tested
   - **New Accounting:** sections 2–7; cash today for admins only
 - **Duplicate-free clean data file** from your Oct 15 backup
-- **Branded customer handouts:** roofing, insurance claims, commercial build-outs, residential; a customer scorecard with Google review QR; job-site "checks and balances" leave-behind
 - **Field app and Office checks:** field app speed and instant sharing with desktop; Brittany's To-Do and Office tabs
 
 ## Your answers (recorded 2026-10-15)
@@ -70,6 +70,8 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 5. Marketing: Facebook / Google posts and ads, lead-source report
 
 ## Done (most recent first)
+
+- Draft branded handouts (12): four brochures, customer scorecard, closeout scorecard, checks & balances sheet, door hanger, three "what to expect" pages. Waiting on item 14.
 
 - 33.143 on GitHub: all fixes, security, fresh start, small file storage, pop-up windows always close
 - Clean data reviewed with you: bogus jobs removed, lost invoices recovered, your decisions on each disputed invoice
