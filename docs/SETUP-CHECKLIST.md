@@ -57,6 +57,8 @@ Check each of these exists. If one is missing, add it: type the **Key** exactly,
 - [ ] `ANTHROPIC_API_KEY` = the AI key. **Make a new one** at console.anthropic.com → API Keys, then delete the old one.
 - [ ] `RESEND_API_KEY` = the email key. **Make a new one** at resend.com → API Keys, then delete the old one.
 
+- [ ] **Resend:** at resend.com → **Domains**, `grayco-cs.com` must say **Verified**. If not, add the DNS lines Resend shows (or send Claude a screenshot). Without it, automatic emails to customers won't arrive.
+
 - [ ] Then: left menu **Deploys** → **Trigger deploy** → **Deploy site**. Netlify only reads new settings on a fresh deploy.
 
 ---
@@ -149,7 +151,7 @@ Claude will tell you when. Because Netlify is linked to GitHub, it goes live by 
 
 ## PART J — Later (when you're ready)
 
-- [ ] **J1.** **Texting (A2P 10DLC):** register with the texting provider using your EIN, legal name, address and website. Until then the CRM can't send texts.
+- [ ] **J1.** **Texting:** (a) open a texting account (Twilio is the usual choice, a few cents per text); (b) register **A2P 10DLC** through it with your EIN, legal business name, address and website (approval takes a few days to two weeks); (c) tell Claude, who switches texting on. Until then everything that would be a text goes by email.
 - [ ] **J2.** **Bank and credit cards** in Accounting (admins only): decide through QuickBooks, Plaid or Teller.
 - [ ] **J3.** **Google Ads:** account ID and API developer token, when we get to Marketing.
 - [ ] **J4.** **Customer portal:** tell Claude which pieces you want and how you take card payments.

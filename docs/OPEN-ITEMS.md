@@ -22,7 +22,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
-| 14 | **Handouts: confirm two lines** | Claude added them; remove if wrong | Service area includes **Arkansas**? (Roof warranty answered: **all roofs 5 years**.) |
+| 14 | **Handouts: confirm two lines** | Claude added them; remove if wrong | Answered: MS and AR are right; all roofs 5 years. |
 | 15 | **Link Netlify to GitHub** (Setup checklist Part A1) | Then every update goes live by itself, no dragging. After each update, the GitHub **Live check** shows a green ✓ when the live site has it, or a red ✗ if it didn't go live. | github.com/grayco-cs/graycocrm1 → **Actions** tab |
 
 ---
