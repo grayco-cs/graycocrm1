@@ -18,7 +18,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 8 | **Glenn's pay type** | So his pay screens are right | Admin → Employees → Glenn → "PM (overhead split)" (overhead/split blank); Payroll → 1099, weekly, $19,968/yr |
 | 9 | **Bank and cards in Accounting** (admins only) | Live balances for Wesley and Nick | Decide later: through QuickBooks (free), or Plaid / Teller |
 | 10 | **Google Ads access** | So the CRM can see which ads bring jobs | Google Ads account ID + a manager (MCC) account + API developer token request. Claude gives the clicks when ready. |
-| 11 | **Answer the open questions** | Claude can't build these without your answers | Still open: customer portal (which pieces, how you take card payments, photos automatic or PM-picked) · daily/Friday report: which numbers |
+| 11 | **Answer the open questions** | Claude can't build these without your answers | Still open: customer portal: photos automatic or PM-picked, and what you'd change in the mockup · daily/Friday report: which numbers |
 | 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
@@ -37,6 +37,12 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 ## Your answers (recorded 2026-10-15)
 
 - **QuickBooks:** CSV downloads only, no API. Banking later.
+- **Customer portal:**
+  - very easy to open and use; no password to remember
+  - always shows the job's **CompanyCam link** and all their information
+  - proposals made in **Google Docs or the CRM** appear there automatically
+  - payments by **check or cash to the PM** for now; no card payments yet
+  - mockup: https://claude.ai/artifact/Gc7K5MmeVEn48Z3LjpUc7t
 - **CompanyCam:** projects created **before 2026 never come into the CRM**. From 2026 on, new CompanyCam projects **automatically become pipeline jobs as Bidding**.
 - **The master step-by-step list is `docs/SETUP-CHECKLIST.md`.**
 
