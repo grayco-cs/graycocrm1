@@ -34,7 +34,7 @@ You have been dragging zip files into Netlify. That is why nobody can tell which
 
 ### A2. Check which version is live
 - [ ] On any computer, open **https://graycocrm1.netlify.app/version.txt**
-- [ ] It should say **33.143-2026-10-15-v1800**, or newer once Claude ships updates.
+- [ ] It should say **33.144-2026-10-15-v2300**, or newer once Claude ships updates.
 
 **From now on, this page is the only answer to "what version is live?"**
 
@@ -69,7 +69,10 @@ Supabase → your project → left menu **SQL Editor** → **New query**. For ea
 
 - [ ] **C1.** `docs/security-prepare.sql`. Ends with `prepared | 5`.
 - [ ] **C2.** `docs/storage-setup.sql`. Every line says **OK**. *This uploads the ~50 files waiting on Brittany's computer, including your PM Operations Manual. Until it runs, don't clear her browser data.*
-- [ ] **C3.** Logins. Left menu **Authentication**:
+- [ ] **C3.** `docs/admin-data.sql` (33.144). Every line says **OK**. Moves the bank and cash numbers into a place only Wesley and Nick can read.
+  - Later, once Wesley's Cash Flow / Bank screens show the right numbers, run the one `delete` line at the bottom of that file by itself.
+- [ ] **C4.** `docs/portal-setup.sql` (33.144). Every line says **OK**. Turns on the customer portal.
+- [ ] **C5.** Logins. Left menu **Authentication**:
   - [ ] **Sign In / Providers**: turn **"Allow new users to sign up" OFF** → Save.
   - [ ] **Users**: check that **wjohnson@grayco-cs.com** and **nthomas@grayco-cs.com** exist. If not: **Add user → Create new user** → email, a strong new password, tick **Auto Confirm User**.
 
@@ -82,7 +85,7 @@ Supabase → your project → left menu **SQL Editor** → **New query**. For ea
   - [ ] `sbiffle@grayco-cs.com` (Steven)
   - [ ] `gmiller@grayco-cs.com` (Glenn)
   - [ ] `office@grayco-cs.com` (Brittany, or her own email if she has one)
-  - [ ] Nick, if not added in C3
+  - [ ] Nick, if not added in C5
 
   Each Add shows a **temporary password once**. Give it to the person by phone or in person.
 - [ ] **D3.** Each person signs in on **every computer and phone** they use, then 💎 → **Change my password**.
@@ -112,9 +115,9 @@ Supabase → your project → left menu **SQL Editor** → **New query**. For ea
 
 ---
 
-## PART G — After the next update (33.144) goes live
+## PART G — After 33.144 is live
 
-Claude will tell you when. Because Netlify is linked to GitHub, it goes live by itself.
+Because Netlify is linked to GitHub, it goes live by itself. The GitHub **Actions → Live check** shows a green ✓ when it has.
 
 - [ ] **G1.** Admin → **CompanyCam** card should be **green**. If it's red, the token in Part B is wrong.
   - 2026+ CompanyCam projects then appear as **Bidding** jobs on their own. Projects from before 2026 never come in.
