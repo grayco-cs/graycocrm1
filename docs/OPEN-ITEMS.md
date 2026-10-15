@@ -22,7 +22,9 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
-| 14 | **Handouts: insurance carrier name** | The last blank on the handouts | Tell Claude your insurance carrier (or leave it as "Fully insured — certificate on request"). Everything else is answered. |
+| 14 | **Handouts: confirm two lines** | Claude added them; remove if wrong | Service area includes **Arkansas**? Roofing brochure says **"Insurance-claim roofs: 5 years"**? |
+| 15 | **Link Netlify to GitHub** (Setup checklist Part A1) | Then every update goes live by itself, no dragging. After each update, the GitHub **Live check** shows a green ✓ when the live site has it, or a red ✗ if it didn't go live. | github.com/grayco-cs/graycocrm1 → **Actions** tab |
+
 ---
 
 ## Claude — building now
@@ -33,6 +35,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
   - **New Accounting:** sections 2–7; cash today for admins only
 - **Duplicate-free clean data file** from your Oct 15 backup
 - **Field app and Office checks:** field app speed and instant sharing with desktop; Brittany's To-Do and Office tabs
+- **Customer portal (the real one):** link per job, PM posts from the phone, all CompanyCam photos, Google Docs / proposals, final invoice emailed and posted, 15-day reminders. One new Supabase script (`portal-setup.sql`) when it ships.
 
 ## Your answers (recorded 2026-10-15)
 
@@ -57,6 +60,12 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
   - proposals made in **Google Docs or the CRM** appear there automatically
   - payments by **check or cash to the PM** for now; no card payments yet
   - mockup: https://claude.ai/artifact/Gc7K5MmeVEn48Z3LjpUc7t
+  - every job gets its portal link automatically when it is created
+  - PMs post updates and photos to the portal from the field view on their phone, and see what the customer sees
+  - customers see **all** CompanyCam photos for their job
+  - Google Docs proposals and documents show in the portal
+  - payments show on the **final invoice**; final invoices are emailed and posted in the portal, with a friendly reminder every 15 days until paid
+  - **never show the insurance carrier name** (handouts say "Fully insured — certificate on request")
 - **CompanyCam:** projects created **before 2026 never come into the CRM**. From 2026 on, new CompanyCam projects **automatically become pipeline jobs as Bidding**.
 - **The master step-by-step list is `docs/SETUP-CHECKLIST.md`.**
 
