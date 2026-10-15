@@ -22,7 +22,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
-| 14 | **Handouts: confirm two lines** | Claude added them; remove if wrong | Service area includes **Arkansas**? Roofing brochure says **"Insurance-claim roofs: 5 years"**? |
+| 14 | **Handouts: confirm two lines** | Claude added them; remove if wrong | Service area includes **Arkansas**? (Roof warranty answered: **all roofs 5 years**.) |
 | 15 | **Link Netlify to GitHub** (Setup checklist Part A1) | Then every update goes live by itself, no dragging. After each update, the GitHub **Live check** shows a green ✓ when the live site has it, or a red ✗ if it didn't go live. | github.com/grayco-cs/graycocrm1 → **Actions** tab |
 
 ---
@@ -42,7 +42,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 - **QuickBooks:** CSV downloads only, no API. Banking later.
 - **Handouts:**
   - MS license **#27769**
-  - warranty **1 year on everything except insurance/restoration (5 years)**
+  - warranty: **all roofs 5 years**; insurance/restoration 5 years; everything else 1 year
   - **8 years in business** (through two previous companies, now one)
   - Facebook: facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320
   - Google review link: share.google/quDuhdlL0ckxPLLY3
@@ -65,6 +65,9 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
   - customers see **all** CompanyCam photos for their job
   - Google Docs proposals and documents show in the portal
   - payments show on the **final invoice**; final invoices are emailed and posted in the portal, with a friendly reminder every 15 days until paid
+  - the link is **sent automatically** (email now, text after 10DLC) as soon as the CompanyCam project becomes a job
+  - every document the customer needs is there automatically; PMs can also upload PDF and Word files
+  - Google Docs, PDFs and estimates the PM sends into the CRM go into the portal automatically
   - **never show the insurance carrier name** (handouts say "Fully insured — certificate on request")
 - **CompanyCam:** projects created **before 2026 never come into the CRM**. From 2026 on, new CompanyCam projects **automatically become pipeline jobs as Bidding**.
 - **The master step-by-step list is `docs/SETUP-CHECKLIST.md`.**
