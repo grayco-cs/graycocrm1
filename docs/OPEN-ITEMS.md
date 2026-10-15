@@ -22,7 +22,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
-| 14 | **Fill the blanks on the customer handouts** | They can't be printed until these are right | Warranty length for residential, insurance/restoration, commercial and roofing (your documents disagree: 1 yr / 5 yr / 1 yr vs "2-year workmanship"); years in business; insurance carrier; Instagram/Nextdoor (or none); which Google review link is the real one |
+| 14 | **Handouts: insurance carrier name** | The last blank on the handouts | Tell Claude your insurance carrier (or leave it as "Fully insured — certificate on request"). Everything else is answered. |
 ---
 
 ## Claude — building now
@@ -37,6 +37,20 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 ## Your answers (recorded 2026-10-15)
 
 - **QuickBooks:** CSV downloads only, no API. Banking later.
+- **Handouts:**
+  - MS license **#27769**
+  - warranty **1 year on everything except insurance/restoration (5 years)**
+  - **8 years in business** (through two previous companies, now one)
+  - Facebook: facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320
+  - Google review link: share.google/quDuhdlL0ckxPLLY3
+  - no Instagram or Nextdoor
+  - wants a **send-online version** of each handout
+- **Accounting answers:**
+  - QuickBooks invoices are real; review invoices get confirmed by the QuickBooks CSV import
+  - A001 stays in review
+  - K&R $13,100 is one payment
+  - Jon Rodriguez $250 stays in review
+  - overhead placeholder costs are company overhead, not job costs
 - **Customer portal:**
   - very easy to open and use; no password to remember
   - always shows the job's **CompanyCam link** and all their information
