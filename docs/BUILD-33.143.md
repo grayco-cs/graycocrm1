@@ -1,6 +1,12 @@
-# GrayCo CRM 33.142 — what changed (built on 33.139)
+# GrayCo CRM 33.143 — what changed (built on 33.139)
 
-33.142 replaces 33.140 and 33.141. Neither was deployed. **Follow `docs/GO-LIVE-33.142.md` step by step.**
+33.143 replaces 33.140, 33.141 and 33.142. None of them was deployed. **Follow `docs/GO-LIVE-33.143.md` step by step.**
+
+## New in 33.143
+- **Pop-up windows always close.** 33 windows (Payroll history and others) could get stuck when opened twice; "won't let me exit" was reproduced and fixed.
+- Opening a window again replaces it.
+- Close and ✕ always work.
+- Esc, or a click outside, closes a window — except a form you have typed into. The company sign-in can never be dismissed.
 
 ## New in 33.142
 - **Fresh start.** One Supabase script (`fresh-start.sql`) puts all old data away and the CRM starts empty. Then you load your clean backup.
@@ -16,12 +22,12 @@
 - **Fixed:** a background schedule clean-up in 33.141 treated every item as its own duplicate and could delete the company schedule from the cloud.
 - **Fixed:** the import now leaves out records your backup itself had marked deleted. It also brings back job sources, approvals, commission-paid marks and Cordova data.
 
-Stamp: **33.142-2026-10-15-v1200** — build comment, console line, `BUILD_ID` and `version.txt` all say this.
-After deploying, open `…/version.txt` on the live site to confirm 33.142 is really live before judging any fix.
+Stamp: **33.143-2026-10-15-v1800** — build comment, console line, `BUILD_ID` and `version.txt` all say this.
+After deploying, open `…/version.txt` on the live site to confirm 33.143 is really live before judging any fix.
 
 **Deploy the whole folder** (index.html, netlify/functions, netlify.toml, _headers, docs). There are two new functions:
 `staff-admin.js` (Team access) and `gc-backup.js` (nightly backup).
-**Follow `docs/GO-LIVE-33.142.md` step by step.**
+**Follow `docs/GO-LIVE-33.143.md` step by step.**
 
 Every fix below was reproduced on 33.139 first, then shown fixed by an automated test that clicks through the real app.
 The tests ran offline, so nothing touched the real data.

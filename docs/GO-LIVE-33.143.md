@@ -1,10 +1,11 @@
-# GrayCo CRM 33.142 — go-live checklist (do these in order)
+# GrayCo CRM 33.143 — go-live checklist (do these in order)
 
 This is the only list you need. Each step says where to click. The other guides have the detail if something looks different:
 `SECURITY-SETUP.md`, `FRESH-START.md` and `FILE-STORAGE.md`.
 
 **Have ready:**
-- `GrayCo_CLEAN_START_backup_small.json`, your clean data (3.1 MB). Keep a second copy on a USB stick or in Google Drive.
+- Optional: also add `COMPANYCAM_TOKEN` (your new CompanyCam key) in step 1. The next update uses it.
+- `GrayCo_CLEAN_START_2026-10-15.json`, your clean data from today. Keep a second copy on a USB stick or in Google Drive.
 - About 45 minutes.
 - Everyone else **out of the CRM**.
 
@@ -40,7 +41,7 @@ On the same page, check that `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are alrea
 - Build command: **empty**. Publish directory: **`.`**
 - Click **Deploy**.
 
-**6. Check it is live.** Open `https://graycocrm1.netlify.app/version.txt`. It must say **33.142-2026-10-15-v1200**. If it shows anything else, stop and ask.
+**6. Check it is live.** Open `https://graycocrm1.netlify.app/version.txt`. It must say **33.143-2026-10-15-v1800**. If it shows anything else, stop and ask.
 
 **7. Sign in once** as Wesley to check the new sign-in screen works. Then **close the CRM everywhere**: every tab, every computer, phones too.
 
@@ -51,14 +52,16 @@ It first makes two permanent copies of everything, then empties the CRM data.
 
 **9. On YOUR computer:** open the CRM and sign in. It empties itself once and re-opens.
 
-**10. Load your clean data.** **Admin** → **💾 Storage** → **📤 Import Backup** → choose `GrayCo_CLEAN_START_backup_small.json` → **OK**.
+**10. Load your clean data.** **Admin** → **💾 Storage** → **📤 Import Backup** → choose `GrayCo_CLEAN_START_2026-10-15.json` → **OK**.
 
 **11. Check the counts.** You should see about:
-- **65 projects**
-- **53 invoices** (7 of them show with no job, so attach those to the right job)
-- **81 customers**
-- an **empty schedule**
-- **18 leads**, including Daniel Chamberlin, who moved here from projects
+- **73 jobs**
+- **80 invoices**
+- **115 customers**
+- **about 19 leads**
+- a schedule with only automatic Start/Finish markers for active jobs
+- **no 211 pipeline**
+
 
 ## Part 4 — Everyone else, then lock the door
 

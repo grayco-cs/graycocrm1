@@ -2028,7 +2028,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.142-2026-10-15-v1200 -->
+<!-- GrayCo CRM Build: 33.143-2026-10-15-v1800 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -2649,7 +2649,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.142-2026-10-15-v1200");
+  console.log("[GC] Build 33.143-2026-10-15-v1800");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -2697,7 +2697,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.142-2026-10-15-v1200"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.143-2026-10-15-v1800"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -87525,8 +87525,8 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
       +'<div style="text-align:right;margin-top:12px"><button id="_ph_close" style="background:#0f2440;color:#fff;border:none;border-radius:7px;padding:9px 18px;font-weight:700;cursor:pointer">Close</button></div>'
       +'</div>';
     document.body.appendChild(ov);
-    document.getElementById('_ph_close').onclick=function(){ ov.remove(); };
-    document.getElementById('_ph_new').onclick=function(){ ov.remove(); window._gcEnterPastPayRun(); };
+    ov.querySelector('#_ph_close').onclick=function(){ ov.remove(); };
+    ov.querySelector('#_ph_new').onclick=function(){ ov.remove(); window._gcEnterPastPayRun(); };
     ov.querySelectorAll('._ph_edit').forEach(function(b){
       b.onclick=function(){
         ov.remove();
@@ -112459,6 +112459,69 @@ nST(function start(){
     (function again(){ nST(function(){ sweep().then(again, again); }, 30 * 60e3); })();
   }, function(){ nST(start, 5 * 60e3); });
 }, 20000);
+})();
+
+</script>
+<script>
+/* 33.143: POP-UP WINDOWS ALWAYS CLOSE. 33 of the CRM's pop-up windows find their own buttons by a
+   fixed id (document.getElementById('_xxClose')). When one is opened twice, two windows share that
+   id, the newest window's buttons are wired to the older copy, and its Close does nothing — "it won't
+   let me exit" (Payroll history, reproduced). Three rules, for every full-screen pop-up:
+   1. Opening a window whose id is already on screen replaces the old copy first, so the new
+      window's buttons are the ones that get wired.
+   2. Close / ✕ / Cancel always closes the window it is in (if its own handler did not).
+   3. Esc or a click on the dark backdrop closes the top window — never when words have been
+      typed into it and not saved (owner rule: typed words hold the screen). */
+(function(){
+  'use strict';
+  // Never touched: the company sign-in, the fresh-start screens/banners, and anything marked data-gc-keep.
+  var PROTECT=/^gc-(auth|fresh|epoch)|^_gcHold|^gc-hold/i;
+  function protectedEl(el){ return !!(el && ((el.id && PROTECT.test(el.id)) || (el.getAttribute && el.getAttribute('data-gc-keep')!=null) || (el.querySelector && el.querySelector('[id^="gc-auth"],[id^="gc-fresh"],[id^="gc-epoch"]')))); }
+  function isOverlay(el){
+    if(!el || el.nodeType!==1 || !el.style) return false;
+    if(protectedEl(el)) return false;
+    var s=el.style; if(s.position!=='fixed') return false;
+    var full=(s.inset==='0px'||s.inset==='0') || ((s.top==='0px'||s.top==='0')&&(s.left==='0px'||s.left==='0')&&(s.right==='0px'||s.right==='0'||s.width==='100%'||s.width==='100vw'));
+    return full && (parseInt(s.zIndex,10)||0) >= 1000;
+  }
+  // 1. duplicate ids: the newest copy wins (synchronously, before its buttons are wired)
+  var _append = Node.prototype.appendChild;
+  Node.prototype.appendChild = function(child){
+    try{
+      if(this===document.body && isOverlay(child)){
+        if(child.id){ var old=document.getElementById(child.id); if(old && old!==child && old.parentNode) old.parentNode.removeChild(old); }
+        var ids=child.querySelectorAll ? child.querySelectorAll('[id]') : [];
+        for(var i=0;i<ids.length;i++){
+          var o=document.getElementById(ids[i].id);
+          if(o && o!==ids[i]){ var top=o; while(top.parentNode && top.parentNode!==document.body) top=top.parentNode; if(top!==child && top.parentNode===document.body && isOverlay(top)) top.parentNode.removeChild(top); }
+        }
+      }
+    }catch(e){}
+    return _append.call(this, child);
+  };
+  function overlayOf(el){ while(el && el.parentNode && el.parentNode!==document.body) el=el.parentNode; return (el && el.parentNode===document.body && isOverlay(el)) ? el : null; }
+  function topOverlay(){ var a=Array.prototype.filter.call(document.body.children, isOverlay); a.sort(function(x,y){ return (parseInt(y.style.zIndex,10)||0)-(parseInt(x.style.zIndex,10)||0); }); return a[0]||null; }
+  function typedIn(ov){ return !!(ov && ov.__gcTyped); }
+  document.addEventListener('input', function(ev){ var ov=overlayOf(ev.target); if(ov) ov.__gcTyped=true; }, true);
+  // 2. a Close/✕/Cancel button always closes its own window
+  document.addEventListener('click', function(ev){
+    if(!ev.isTrusted) return;
+    var b=ev.target && ev.target.closest ? ev.target.closest('button') : null; if(!b) return;
+    var t=(b.textContent||'').trim(), id=b.id||'';
+    if(!/^(close|✕|×|x|cancel|done)$/i.test(t) && !/close$|_close$|cancel$/i.test(id)) return;
+    var ov=overlayOf(b); if(!ov) return;
+    setTimeout(function(){ if(ov.parentNode && document.contains(b)) ov.parentNode.removeChild(ov); }, 250);
+  }, false);
+  // 3. Esc / backdrop click close the top window unless something was typed into it
+  document.addEventListener('keydown', function(ev){
+    if(ev.key!=='Escape') return; var ov=topOverlay(); if(!ov || typedIn(ov)) return;
+    ov.parentNode.removeChild(ov);
+  }, true);
+  document.addEventListener('mousedown', function(ev){
+    if(!ev.isTrusted) return; var ov=ev.target; if(!isOverlay(ov) || ov.parentNode!==document.body) return;
+    var start=ov; var up=function(e2){ document.removeEventListener('mouseup', up, true); if(e2.target===start && !typedIn(start) && start.parentNode) start.parentNode.removeChild(start); };
+    document.addEventListener('mouseup', up, true);
+  }, true);
 })();
 
 </script>
