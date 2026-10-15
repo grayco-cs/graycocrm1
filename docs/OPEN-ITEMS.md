@@ -8,7 +8,7 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 
 | # | What | Why it matters | How |
 |---|---|---|---|
-| 1 | **Make 33.143 live.** Steps 1–7 of `docs/GO-LIVE-33.143.md` | Ends the lag, the 211 ↔ 12 jumping, typed words being wiped, stuck windows and the security holes. Nothing new is live until this is done. | Netlify settings → Supabase scripts → your login and Nick's → link Netlify to GitHub → check `version.txt` |
+| 1 | **Confirm what is live, then update to 33.143.** Your Oct-15 backup shows **33.142 is already live on at least one computer**. Tell Claude: what `graycocrm1.netlify.app/version.txt` says; whether Netlify is linked to GitHub; which steps of the go-live checklist are done (Netlify settings, prepare SQL, **storage-setup SQL**, logins). | Claude can only fix the right thing if we know exactly which build each computer runs. 33.143 adds the stuck-window fix. | Netlify settings → Supabase scripts → your login and Nick's → link Netlify to GitHub → check `version.txt` |
 | 2 | **Fresh start and load your clean data** (steps 8–11) | Removes the 377 bogus jobs from the cloud for good | Wait for Claude's **duplicate-free** clean file, then follow the steps |
 | 3 | **New CompanyCam key in Netlify** (`COMPANYCAM_TOKEN`) | CompanyCam is switched off until then. The key pasted in chat should be replaced with a fresh one. | CompanyCam → Settings → Integrations → API / Access Tokens → new token → Netlify → Environment variables |
 | 4 | **QuickBooks production keys** | The old connection pointed at QuickBooks' *test sandbox*, never your real company | developer.intuit.com → your app → **Production** keys → Netlify `QB_CLIENT_ID`, `QB_CLIENT_SECRET` → CRM: Connect QuickBooks |
@@ -18,7 +18,8 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 | 8 | **Glenn's pay type** | So his pay screens are right | Admin → Employees → Glenn → "PM (overhead split)" (overhead/split blank); Payroll → 1099, weekly, $19,968/yr |
 | 9 | **Bank and cards in Accounting** (admins only) | Live balances for Wesley and Nick | Decide later: through QuickBooks (free), or Plaid / Teller |
 | 10 | **Google Ads access** | So the CRM can see which ads bring jobs | Google Ads account ID + a manager (MCC) account + API developer token request. Claude gives the clicks when ready. |
-| 11 | **Answer the open questions** | Claude can't build these without your answers | Job stages · top 5 PM scorecard items · daily/Friday report numbers · any SOPs/checklists you already have · CompanyCam: auto-job (a) or review list (b) · customer portal decisions |
+| 11 | **Answer the open questions** | Claude can't build these without your answers | Still open: CompanyCam auto-job (a) or review list (b) · customer portal (which pieces, how you take card payments, photos automatic or PM-picked) · daily/Friday report: which numbers |
+| 13 | **Run `docs/storage-setup.sql` in Supabase if not done** | 33.142+ stores files in private storage. Until this runs, files wait **only on the computer that uploaded them** (Brittany's has about 50, including your PM Operations Manual). **Don't clear browser data there.** | Supabase → SQL Editor → paste `docs/storage-setup.sql` → Run → every line OK |
 | 12 | **Two-step login (optional)** | Extra protection for admin accounts | You said "not yet". Revisit once everyone is signed in. |
 
 ---
@@ -32,6 +33,33 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 - **Duplicate-free clean data file** from your Oct 15 backup
 - **Branded customer handouts:** roofing, insurance claims, commercial build-outs, residential; a customer scorecard with Google review QR; job-site "checks and balances" leave-behind
 - **Field app and Office checks:** field app speed and instant sharing with desktop; Brittany's To-Do and Office tabs
+
+## Your answers (recorded 2026-10-15)
+
+- **Job stages:**
+  1. Lead
+  2. Contacted (text / call / email, auto or manual)
+  3. Appointment booked (goes into that PM's own schedule; **every appointment a PM makes flows into the CRM automatically**)
+  4. Estimate sent
+  5. Contract signed + job scheduled
+  6. In progress (documents, keeping the customer aware, CompanyCam)
+  7. Punch list
+  8. Final invoice
+  9. Closed (thank-you letter, closeout checklists, completion documents, warranty)
+- **PM scorecard:** use all the suggested measures. Margin vs goal, on schedule, daily logs, photos at each stage, change orders billed, customer review score, invoices on time and checklist completion.
+- **Daily and Friday reports:** must contain real information from the CRM, not placeholders.
+- **Existing SOPs and checklists** (in your CRM's document templates):
+  - PM Operations Manual
+  - Software Tutorial Guide
+  - Change Order
+  - Residential and Insurance questionnaires
+  - Sub Scope of Work
+  - Warranties: Residential 1 yr, Insurance 5 yr, Commercial 1 yr
+  - Conditional waiver
+  - Forms library: contract, Arkansas notice, insurance work authorization, welcome & FAQ packet, final inspection sign-off, completion certificates, invoice
+  - Closeout and walkthrough checklists
+
+  Claude builds from these.
 
 ## Planned next (after the above)
 
