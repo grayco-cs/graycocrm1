@@ -625,6 +625,1353 @@ console.log('[GC] Company sign-in active' + (S ? ' (' + S.email + ')' : ' — wa
 
 </script>
 <script>
+/* ════════════════════════════════════════════════════════════════════════════
+   GrayCo — FRESH START (patch F).   __GC_PATCH_F__
+   "start the CRM clean … it should contain ONLY what I load from my backups"
+
+   docs/fresh-start.sql empties the company data in the cloud (after keeping a
+   permanent copy) and writes one row, gc_kv "gc_epoch" = {epoch, by}. This block
+   runs right after the company sign-in, before anything else in the page, and
+   makes sure no computer can bring the old data back:
+
+   1. NOTHING IS WRITTEN TO THE DATABASE until this computer has asked the cloud
+      for gc_epoch and the answer matches the fresh start this computer is on
+      (localStorage gc_epoch_local, read when the page opened). Asked again
+      before a write if the last answer is over a minute old, and always after
+      the computer wakes or comes back online. Cloud unreachable: nothing is
+      deleted here, writes wait — so an old laptop opened offline cannot push
+      its old data later.
+   2. The cloud says a NEWER fresh start happened: this computer empties itself.
+      Not over unsaved typing — a banner waits until the words are saved or
+      closed. The page re-opens; before the CRM starts, every CRM record on this
+      computer (IndexedDB and localStorage, delete-lists, Cordova, caches, sync
+      bookmarks) is COPIED into the IndexedDB database grayco_crm_archive_<epoch>
+      (the CRM never reads it) and then cleared. The company sign-in, the
+      connection settings, integration keys, per-computer screen settings and
+      one-time markers stay. Then the CRM opens empty and fills from the cloud.
+   3. A computer already on the current fresh start behaves exactly as before
+      (each gc_kv row it writes also carries the epoch, which the database checks).
+
+   Console:  _gcEpochStatus()             what this computer knows
+             _gcArchiveList()             the archives kept on this computer
+             _gcArchiveExport(epoch)      download one as a backup file
+                                          (💾 Import reads it, adds only what is new)
+   ════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_EPOCH__) return;
+var SB = 'https://ieeonhpfahmwwecizdut.supabase.co', SBH = 'ieeonhpfahmwwecizdut.supabase.co';
+var LOCAL = 'gc_epoch_local', PEND = 'gc_epoch_wipe', ARCH_LIST = 'gc_epoch_archives', ARCH = 'grayco_crm_archive_';
+var nST = window.setTimeout.bind(window);
+var rawReload = location.reload.bind(location);
+var CHECK_MS = 60e3, HOLD_MS = 12e3;
+
+/* ── what is kept on a computer when it empties itself ─────────────────────
+   Config the cloud also keeps (fresh-start.sql "KEEP" list — the same names): */
+var CLOUD_KEEP = ['gc_epoch',
+  'gc_team_google_users','gc_gdoc_imported','gc_cc_token','gc_cc_token_backup','gc_cc_key_mirror','gc_cc_creator_map','gc_cc_dismissed','gc_ccam_synced_ids',
+  'gc_ach_details','gc_commission_structures','commissionSchedules','payrollSettings','gc_checkrun_settings','gc_contract_template','gc_contract_template_name',
+  'docTemplates','docTemplatesIndex','gc_company_docs','gc_overhead_manual','gc_cash_anchor',
+  'laborRates','priceSheets','customProducts','priceEdits','__est__gc_rates_v3','gc_invoice_learn','gc_material_leadtimes',
+  'navOrders','gc_btn_pos','gc_explain_mode','_qb_import_done'];
+var CLOUD_KEEP_PREFIX = ['gcal_token_','doctpl:'];
+/* this computer only: the sign-in, connection, keys, screen settings, door bookmarks, one-time markers */
+var DEVICE_KEEP = ['gc_auth_v1','gc_auth_last_active','gc_auth_last_email','gc_idle_hours',LOCAL,ARCH_LIST,
+  'grayco_sb_url','grayco_sb_key','gc_sb_url','gc_sb_key',
+  'grayco_user','grayco_currentUser','grayco_current_user_id','grayco_role','currentUser','gc_user','user',
+  'grayco_theme','gc_light_mode','grayco_view','gc_diamond_order','gc_office_cat_order','gc_inv_filter','gc_job_year_filter','gc_proj_subtab',
+  'gc_tour_done','gc_help_welcomed','_helpShown','gc_onboarding','gc_gconnect_dismiss','_alertPrefs','gc_autoscan_toggles','gc_build_id','gc_cc_device',
+  'grayco_ccam_key','gc_cc_key_saved_at','gc_cc_ok','gc_qb_tokens','grayco_ri_drain_token','gc_google_connected','gc_gdrive_connected','gc_prefer_gmail',
+  'grayco_gmail_accounts','gc_google_review_url','gc_ach_default',
+  'gc_cc_seen_ids','gc_ccam_pulled_ids','gc_cc_first_poll_done','gc_ri_imported','gc_money_inbox','gc_leadgen_lastscan','lg_watchkeys',
+  'gc_acct_scan_day','gc_last_acct_scan','_gc_last_weekly_backup','gc_last_dl_backup','gc_digest_shown','_lastDigest',
+  '_qb3','gc_cc_lifted_v1','gc_hub_reset_v935','gc_lostjob_swept_v1','gc_overhead_seeded_v1','gc_overhead_steven_seeded','gc_register_deduped_v1',
+  'gc_steven_pay_auto_v1','_qb_seeded_v2'];
+var DEVICE_KEEP_PREFIX = ['gc_taborg_v2_','gc_user_tabs_'];
+/* IndexedDB grayco_crm / kv: the signed-in CRM person, plus the config above */
+var IDB_KEEP = ['user','navOrders','_migrated'];
+var KEEP = {}; CLOUD_KEEP.concat(DEVICE_KEEP, IDB_KEEP).forEach(function(k){ KEEP[k] = 1; });
+var KEEP_PREFIX = CLOUD_KEEP_PREFIX.concat(DEVICE_KEEP_PREFIX);
+function kept(k){
+  k = String(k);
+  if (KEEP[k]) return true;
+  for (var i = 0; i < KEEP_PREFIX.length; i++) if (k.indexOf(KEEP_PREFIX[i]) === 0) return true;
+  return false;
+}
+function lsKept(k){ return kept(k); }
+function idbKept(db, store, key){ return db === 'grayco_crm' && store === 'kv' && typeof key === 'string' && kept(key); }
+window._gcFreshStartPolicy = { cloudKeep: CLOUD_KEEP.slice(), cloudKeepPrefix: CLOUD_KEEP_PREFIX.slice(), deviceKeep: DEVICE_KEEP.slice(),
+  deviceKeepPrefix: DEVICE_KEEP_PREFIX.slice(), idbKeep: IDB_KEEP.slice(), kept: kept };
+
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function lsDel(k){ try { localStorage.removeItem(k); } catch (e) {} }
+function safeName(ep){ return String(ep || 'x').replace(/[^0-9A-Za-z]/g, '').slice(0, 40); }
+
+/* ── IndexedDB: the page's own writes stop once this window is known to be out of date ─ */
+var blockIdb = false;
+var P = window.IDBObjectStore && IDBObjectStore.prototype, C = window.IDBCursor && IDBCursor.prototype;
+var ORIG = {};
+function dbNameOf(store){ try { return store.transaction.db.name; } catch (e) { return ''; } }
+/* A write from an out-of-date window is dropped QUIETLY: nothing is written, nothing is thrown
+   into the CRM's code (no crash, no error on screen, no retry loop). The request it gets back
+   reports success a moment later, as a store that had nothing to do would. */
+function quietRequest(store, key){
+  var rq = { result: key === undefined ? null : key, error: null, readyState: 'done', source: store, transaction: null,
+             onsuccess: null, onerror: null, addEventListener: function(t, f){ if (t === 'success') this._l.push(f); }, removeEventListener: function(){}, _l: [] };
+  try { rq.transaction = store.transaction; } catch (e) {}
+  nST(function(){ var ev = { type: 'success', target: rq, currentTarget: rq };
+    try { if (typeof rq.onsuccess === 'function') rq.onsuccess(ev); } catch (e) {}
+    rq._l.forEach(function(f){ try { f(ev); } catch (e) {} }); }, 0);
+  dropped++;
+  return rq;
+}
+var dropped = 0;
+function blocked(name){ return blockIdb && String(name || '').indexOf(ARCH) !== 0; }
+try {
+  ['put', 'add', 'delete', 'clear'].forEach(function(m){
+    var o = P[m]; ORIG[m] = o;
+    P[m] = function(a, b){ if (blocked(dbNameOf(this))) return quietRequest(this, m === 'put' || m === 'add' ? b : a); return o.apply(this, arguments); };
+  });
+  ['update', 'delete'].forEach(function(m){
+    var o = C[m]; ORIG['c_' + m] = o;
+    C[m] = function(){ var n = ''; try { n = (this.source && this.source.transaction ? this.source.transaction.db.name : (this.source.objectStore.transaction.db.name)); } catch (e) {}
+      if (blocked(n)) return quietRequest(this.source, this.primaryKey); return o.apply(this, arguments); };
+  });
+} catch (e) {}
+/* the same for the CRM's own localStorage records: an out-of-date window cannot put them back */
+try {
+  var SP_ = Storage.prototype, oSet = SP_.setItem;
+  ORIG.lsSet = oSet;
+  SP_.setItem = function(k, v){
+    if (blockIdb && this === window.localStorage && k !== PEND && !kept(k)) { dropped++; return; }
+    return oSet.apply(this, arguments);
+  };
+} catch (e) {}
+
+/* ── small IndexedDB helpers (used only by the emptying page and the console tools) ── */
+function req(r){ return new Promise(function(res, rej){ r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); }; }); }
+function txDone(tx){ return new Promise(function(res, rej){ tx.oncomplete = function(){ res(); }; tx.onerror = function(){ rej(tx.error); }; tx.onabort = function(){ rej(tx.error || new Error('aborted')); }; }); }
+function openExisting(name){
+  return new Promise(function(res){
+    var created = false, q;
+    try { q = indexedDB.open(name); } catch (e) { return res(null); }
+    q.onupgradeneeded = function(){ created = true; try { q.transaction.abort(); } catch (e) {} };
+    q.onsuccess = function(){ if (created) { try { q.result.close(); } catch (e) {} return res(null); } res(q.result); };
+    q.onerror = function(){ res(null); };
+    q.onblocked = function(){};
+  });
+}
+function openArchive(name){
+  return new Promise(function(res, rej){
+    var q = indexedDB.open(name, 1);
+    q.onupgradeneeded = function(){
+      var d = q.result;
+      if (!d.objectStoreNames.contains('idb')) d.createObjectStore('idb', { autoIncrement: true });
+      if (!d.objectStoreNames.contains('ls')) d.createObjectStore('ls', { keyPath: 'key' });
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
+    };
+    q.onsuccess = function(){ res(q.result); };
+    q.onerror = function(){ rej(q.error); };
+  });
+}
+async function crmDbNames(){
+  var names = ['grayco_crm', 'grayco_master', 'grayco_crm_db'];
+  try { if (indexedDB.databases) (await indexedDB.databases()).forEach(function(d){ if (d && d.name && names.indexOf(d.name) < 0) names.push(d.name); }); } catch (e) {}
+  return names.filter(function(n){ return n.indexOf(ARCH) !== 0 && n !== 'grayco_files'; });   /* patch G: files waiting to upload stay */
+}
+
+/* ── 2b. THE EMPTYING PAGE: the CRM never starts on this load ──────────────── */
+var screenEl = null;
+function show(html){
+  try {
+    if (!screenEl) {
+      screenEl = document.createElement('div');
+      screenEl.id = 'gc-fresh-start-screen'; screenEl.setAttribute('data-gc-keep', '1');
+      screenEl.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#0f2440;color:#fff;display:flex;align-items:center;justify-content:center;'
+        + 'padding:16px;box-sizing:border-box;font:15px/1.5 Inter,-apple-system,Segoe UI,sans-serif;text-align:center';
+      (document.body || document.documentElement).appendChild(screenEl);
+    }
+    screenEl.innerHTML = '<div style="max-width:520px">' + html + '</div>';
+  } catch (e) {}
+}
+async function emptyThisComputer(pend){
+  var t0 = Date.now(), counts = { records: 0, lsKeys: 0, dbs: {} };
+  var aName = ARCH + safeName(pend.epoch);
+  show('<div style="font-size:22px;font-weight:800;margin-bottom:8px">GrayCo — fresh start</div>'
+    + 'This computer is putting its old CRM data aside (a copy stays on this computer) so it can start clean.<br>One moment…');
+  var adb = await openArchive(aName);
+  var dbs = await crmDbNames();
+  for (var i = 0; i < dbs.length; i++) {
+    var d = await openExisting(dbs[i]);
+    if (!d) continue;
+    try {
+      var stores = Array.prototype.slice.call(d.objectStoreNames);
+      for (var s = 0; s < stores.length; s++) {
+        var st = stores[s];
+        var rtx = d.transaction(st, 'readonly'), os = rtx.objectStore(st);
+        var keys = await req(os.getAllKeys()), vals = await req(os.getAll());
+        if (keys.length) {
+          var atx = adb.transaction('idb', 'readwrite'), aos = atx.objectStore('idb');
+          for (var k = 0; k < keys.length; k++) ORIG.put.call(aos, { db: dbs[i], store: st, key: keys[k], value: vals[k] });
+          await txDone(atx);
+        }
+        counts.records += keys.length; counts.dbs[dbs[i] + '/' + st] = keys.length;
+        /* the copy is safe: now clear what the CRM reads (keeping the kept keys) */
+        var wtx = d.transaction(st, 'readwrite'), wos = wtx.objectStore(st);
+        var drop = keys.filter(function(key){ return !idbKept(dbs[i], st, key); });
+        if (drop.length === keys.length) ORIG.clear.call(wos);
+        else drop.forEach(function(key){ ORIG['delete'].call(wos, key); });
+        await txDone(wtx);
+      }
+    } finally { try { d.close(); } catch (e) {} }
+  }
+  /* localStorage: copy every key, then remove what is not kept */
+  var all = [];
+  try { for (var j = 0; j < localStorage.length; j++) all.push(localStorage.key(j)); } catch (e) {}
+  var ltx = adb.transaction('ls', 'readwrite'), los = ltx.objectStore('ls');
+  all.forEach(function(k){ if (k !== PEND) ORIG.put.call(los, { key: k, value: lsGet(k) }); });
+  await txDone(ltx);
+  counts.lsKeys = all.length;
+  var mtx = adb.transaction('meta', 'readwrite');
+  ORIG.put.call(mtx.objectStore('meta'), { id: 'meta', epoch: pend.epoch, previousEpoch: pend.from || '', archivedAt: new Date().toISOString(),
+    device: lsGet('gc_cc_device') || '', signedIn: (function(){ try { return JSON.parse(lsGet('gc_auth_v1') || '{}').email || ''; } catch (e) { return ''; } })(),
+    records: counts.records, lsKeys: counts.lsKeys, stores: counts.dbs, build: (window.BUILD_ID || '') });
+  await txDone(mtx);
+  try { adb.close(); } catch (e) {}
+  all.forEach(function(k){ if (k !== PEND && !lsKept(k)) lsDel(k); });
+  try { for (var x = sessionStorage.length - 1; x >= 0; x--) { var sk = sessionStorage.key(x); if (sk !== 'gc_auth_reloaded') sessionStorage.removeItem(sk); } } catch (e) {}
+  var list = []; try { list = JSON.parse(lsGet(ARCH_LIST) || '[]') || []; } catch (e) {}
+  if (list.indexOf(aName) < 0) list.push(aName);
+  lsSet(ARCH_LIST, JSON.stringify(list));
+  lsSet(LOCAL, pend.epoch);
+  lsDel(PEND);
+  console.log('[GC] Fresh start: ' + counts.records + ' stored item(s) and ' + counts.lsKeys + ' setting(s) copied to ' + aName + ', then cleared (' + (Date.now() - t0) + ' ms).');
+  return counts;
+}
+
+var pend = null; try { pend = JSON.parse(lsGet(PEND) || 'null'); } catch (e) {}
+if (pend && pend.epoch) {
+  window.__GC_EPOCH__ = { state: 'emptying' };
+  /* stop the rest of the page: the CRM must not open the old data while it is put aside */
+  try { window.stop(); } catch (e) {}
+  var me = Math.random().toString(36).slice(2);
+  var go = function(){
+    var p2 = null; try { p2 = JSON.parse(lsGet(PEND) || 'null'); } catch (e) {}
+    if (!p2) { window.__GC_USER_WANTS_RELOAD__ = true; rawReload(); return; }          /* another window finished it */
+    if (p2.owner && p2.owner !== me && Date.now() - (p2.ownedAt || 0) < 120e3) {          /* another window is doing it */
+      show('<div style="font-size:20px;font-weight:800;margin-bottom:8px">GrayCo — fresh start</div>Another CRM window on this computer is emptying it. This one re-opens when it is done.');
+      nST(go, 1000); return;
+    }
+    p2.owner = me; p2.ownedAt = Date.now(); p2.tries = (p2.tries || 0) + 1; lsSet(PEND, JSON.stringify(p2));
+    emptyThisComputer(p2).then(function(){
+      show('<div style="font-size:20px;font-weight:800;margin-bottom:8px">Done</div>Opening the CRM…');
+      nST(function(){ window.__GC_USER_WANTS_RELOAD__ = true; rawReload(); }, 400);
+    }, function(err){
+      try { var p3 = JSON.parse(lsGet(PEND) || 'null'); if (p3) { p3.owner = ''; lsSet(PEND, JSON.stringify(p3)); } } catch (e) {}
+      console.error('[GC] Fresh start: could not empty this computer', err);
+      show('<div style="font-size:20px;font-weight:800;margin-bottom:8px">This computer could not finish its fresh start</div>'
+        + 'Nothing was lost. Close every other GrayCo CRM window and tab on this computer, then press Try again.<br><br>'
+        + '<button id="gc-fresh-retry" style="padding:10px 18px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">Try again</button>'
+        + '<div style="font-size:12px;opacity:.7;margin-top:10px">' + String(err && err.message || err).replace(/[<>&]/g, '') + '</div>');
+      try { document.getElementById('gc-fresh-retry').onclick = function(){ window.__GC_USER_WANTS_RELOAD__ = true; rawReload(); }; } catch (e) {}
+    });
+  };
+  go();
+  window._gcArchiveList = archiveList; window._gcArchiveExport = archiveExport;
+  return;
+}
+
+/* ── 1. the epoch check and the write guard ─────────────────────────────── */
+var bootLocal = lsGet(LOCAL) || '';
+var state = 'unknown';            /* unknown | ok | stale */
+var cloudEpoch = null, checkedAt = 0, lastTry = 0, lastErr = '', inflight = null, checks = 0, refused = 0;
+
+function isDbWrite(input, init){
+  try {
+    var u = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input && input.url) || '');
+    var x = new URL(u, location.href);
+    if (x.host !== SBH || x.pathname.indexOf('/rest/v1/') !== 0) return false;
+    var m = String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
+    return m !== 'GET' && m !== 'HEAD';
+  } catch (e) { return false; }
+}
+function holdsScreen(){
+  try {
+    if (typeof window.__GC_UNSAVED_TYPING__ === 'function' && window.__GC_UNSAVED_TYPING__()) return true;
+    if (window.__GC_FORM_OPEN__ === true) return true;
+  } catch (e) {}
+  return false;
+}
+var retryT = null, retryMs = 15e3;
+function retryLater(){
+  /* the cloud did not answer: ask again on our own (15 s, doubling to 2 min) — a computer that
+     comes back online learns about a fresh start even if it has nothing to write */
+  if (retryT || state === 'stale') return;
+  retryT = nST(function(){ retryT = null; check(true); }, retryMs);
+  retryMs = Math.min(retryMs * 2, 120e3);
+}
+function check(force){
+  if (inflight) {
+    if (!force) return inflight;
+    /* the answer in flight was asked before now (the cloud may have changed since): ask again after it */
+    return inflight.then(function(){ return check(false); }, function(){ return check(false); });
+  }
+  lastTry = Date.now(); checks++;
+  inflight = (async function(){
+    try {
+      var r = await window.fetch(SB + '/rest/v1/gc_kv?key=eq.gc_epoch&select=value', { cache: 'no-store' });
+      if (!r || !r.ok) { lastErr = 'HTTP ' + (r && r.status); retryLater(); return state; }
+      var rows = await r.json();
+      if (!Array.isArray(rows)) { lastErr = 'not a list'; retryLater(); return state; }
+      retryMs = 15e3;
+      var v = rows[0] ? rows[0].value : null;
+      if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = { epoch: v }; } }
+      cloudEpoch = v && v.epoch ? String(v.epoch) : '';
+      lastErr = '';
+      if (state === 'stale') return state;                      /* once out of date, out of date until reloaded */
+      if (!cloudEpoch || cloudEpoch === bootLocal) { state = 'ok'; checkedAt = Date.now(); }
+      else { state = 'stale'; outOfDate('cloud', cloudEpoch, v); }
+      return state;
+    } catch (e) { lastErr = String(e && e.message || e); retryLater(); return state; }
+    finally { inflight = null; }
+  })();
+  return inflight;
+}
+function fresh(){ return state === 'ok' && Date.now() - checkedAt < CHECK_MS; }
+function confirmed(){
+  if (state === 'stale') return Promise.resolve(false);
+  if (fresh()) return Promise.resolve(true);
+  if (lastErr && !inflight && Date.now() - lastTry < 15e3) return Promise.resolve(false);   /* the cloud just did not answer: no question per write */
+  return new Promise(function(res){
+    var done = false;
+    nST(function(){ if (!done) { done = true; res(false); } }, HOLD_MS);
+    check().then(function(s){ if (!done) { done = true; res(s === 'ok' && fresh()); } }, function(){ if (!done) { done = true; res(false); } });
+  });
+}
+/* every gc_kv row written carries the fresh start it was written on; after fresh-start.sql the
+   database refuses a row from any other (trigger gc_kv_epoch_guard) — so even a tab still
+   running an older build cannot put old data back */
+function stamp(input, init){
+  try {
+    if (!cloudEpoch || !init || typeof init.body !== 'string') return init;
+    var u = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input && input.url) || '');
+    if (new URL(u, location.href).pathname !== '/rest/v1/gc_kv') return init;
+    var b = JSON.parse(init.body);
+    var rows = Array.isArray(b) ? b : [b];
+    rows.forEach(function(r){ if (r && typeof r === 'object' && !Array.isArray(r)) r.epoch = cloudEpoch; });
+    return Object.assign({}, init, { body: JSON.stringify(b) });
+  } catch (e) { return init; }
+}
+var below = window.fetch;
+var guard = function(input, init){
+  if (isDbWrite(input, init)) {
+    var self = this;
+    if (fresh()) return below.call(self, input, stamp(input, init));
+    return confirmed().then(function(ok){
+      if (ok) return below.call(self, input, stamp(input, init));
+      refused++;
+      throw new TypeError('Failed to fetch (GrayCo: not sent — ' + (state === 'stale' ? 'this computer is out of date after the fresh start' : 'waiting to confirm the fresh start with the cloud') + ')');
+    });
+  }
+  return below.apply(this, arguments);
+};
+guard.__gcEpoch = true;
+window.fetch = guard;
+
+/* a wake-up, a reconnect, a return to the tab: ask again before the next write */
+function stale(){ checkedAt = 0; }
+window.addEventListener('online', function(){ stale(); if (retryT) { clearTimeout(retryT); retryT = null; } retryMs = 15e3; check(true); });
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) stale(); });
+window.addEventListener('focus', stale);
+
+/* ── 2a. out of date: empty this computer, never over unsaved typing ─────── */
+var bannerEl = null, waiting = false;
+function banner(msg){
+  try {
+    if (!bannerEl) {
+      bannerEl = document.createElement('div'); bannerEl.id = 'gc-fresh-start-banner'; bannerEl.setAttribute('data-gc-keep', '1');
+      bannerEl.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483645;background:#92400e;color:#fff;padding:10px 16px;font:600 13px/1.45 Inter,sans-serif;'
+        + 'box-shadow:0 3px 12px rgba(0,0,0,.35);display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+    }
+    bannerEl.innerHTML = '<span style="flex:1;min-width:220px">' + msg + '</span>'
+      + '<button id="gc-fresh-now" style="background:#fff;color:#92400e;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">Empty and re-open now</button>';
+    if (document.body && bannerEl.parentNode !== document.body) document.body.appendChild(bannerEl);
+    var b = document.getElementById('gc-fresh-now');
+    if (b) b.onclick = function(ev){ if (ev && ev.isTrusted === false) return; reopen(true); };
+  } catch (e) {}
+}
+var target = null;
+function reopen(force){
+  if (!force && holdsScreen()) return false;
+  if (target) {
+    var cur = null; try { cur = JSON.parse(lsGet(PEND) || 'null'); } catch (e) {}
+    if (!cur) lsSet(PEND, JSON.stringify({ epoch: target, from: bootLocal, at: new Date().toISOString() }));
+  }
+  blockIdb = true;
+  window.__GC_USER_WANTS_RELOAD__ = true;
+  rawReload();
+  return true;
+}
+function outOfDate(why, epoch){
+  if (why === 'cloud') target = epoch;
+  if (waiting) return;
+  waiting = true;
+  console.warn('[GC] Fresh start: the company data was started clean on ' + (epoch || '?') + '. This computer (' + (bootLocal || 'never started clean') + ') empties itself and re-opens; nothing it holds is sent.');
+  (function loop(){
+    if (reopen(false)) return;
+    banner('The company data was given a fresh start. This computer will put its old data aside and re-open as soon as you finish what you are typing. '
+      + 'Nothing typed in this window can reach the company data.');
+    nST(loop, 3000);
+  })();
+}
+/* another window on this computer started or finished the fresh start: this one is out of date too */
+window.addEventListener('storage', function(e){
+  try {
+    if ((e.key === PEND && e.newValue) || (e.key === LOCAL && e.newValue !== bootLocal)) {
+      state = 'stale'; blockIdb = true;   /* its memory holds the old data: nothing more is written from here */
+      outOfDate('window', '');
+    }
+  } catch (x) {}
+});
+
+/* ── console tools ───────────────────────────────────────────────────────── */
+async function archiveList(){
+  var names = [];
+  try { if (indexedDB.databases) (await indexedDB.databases()).forEach(function(d){ if (d && d.name && d.name.indexOf(ARCH) === 0) names.push(d.name); }); } catch (e) {}
+  try { (JSON.parse(lsGet(ARCH_LIST) || '[]') || []).forEach(function(n){ if (names.indexOf(n) < 0) names.push(n); }); } catch (e) {}
+  var out = [];
+  for (var i = 0; i < names.length; i++) {
+    var d = await openExisting(names[i]); if (!d) continue;
+    try { var m = await req(d.transaction('meta', 'readonly').objectStore('meta').get('meta')) || {};
+          out.push({ name: names[i], epoch: m.epoch || '', archivedAt: m.archivedAt || '', records: m.records || 0, settings: m.lsKeys || 0, signedIn: m.signedIn || '' }); }
+    catch (e) {} finally { try { d.close(); } catch (e) {} }
+  }
+  try { console.table(out); } catch (e) {}
+  return out;
+}
+async function archiveExport(which, opts){
+  opts = opts || {};
+  var list = await archiveList();
+  var a = list.filter(function(x){ return !which || x.name === which || x.epoch === which || x.name === ARCH + safeName(which); })[0];
+  if (!a) { console.warn('[GC] No archive ' + (which || '') + ' on this computer. _gcArchiveList() shows them.'); return null; }
+  var d = await openExisting(a.name); if (!d) return null;
+  var file = { app: 'GrayCo CRM', kind: 'fresh-start-archive', version: 3, exported: new Date().toISOString(), archive: a.name, epoch: a.epoch,
+               archivedAt: a.archivedAt, idb: {}, ls: {}, other: {} };
+  try {
+    var recs = await req(d.transaction('idb', 'readonly').objectStore('idb').getAll());
+    recs.forEach(function(r){
+      if (r.db === 'grayco_crm' && r.store === 'kv' && typeof r.key === 'string') file.idb[r.key] = r.value;
+      else (file.other[r.db + '/' + r.store] = file.other[r.db + '/' + r.store] || []).push({ key: r.key, value: r.value });
+    });
+    var ls = await req(d.transaction('ls', 'readonly').objectStore('ls').getAll());
+    ls.forEach(function(r){ if (!/^(gc_auth_v1|gc_auth_last_active|grayco_sb_key|gc_qb_tokens|grayco_ri_drain_token|grayco_ccam_key|gc_cc_token|gc_cc_token_backup|gc_cc_key_mirror)$/.test(r.key)) file.ls[r.key] = r.value; });
+  } finally { try { d.close(); } catch (e) {} }
+  if (opts.noDownload) return file;
+  var text = JSON.stringify(file);
+  var url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  var el = document.createElement('a'); el.href = url; el.download = 'GrayCo_CRM_' + a.name + '.json';
+  document.body.appendChild(el); el.click();
+  nST(function(){ try { URL.revokeObjectURL(url); el.remove(); } catch (e) {} }, 2000);
+  console.log('[GC] Saved ' + a.name + ' (' + Math.round(text.length / 1024) + ' KB) to Downloads. 💾 Import reads it and adds only what is new.');
+  return file;
+}
+window._gcArchiveList = archiveList;
+window._gcArchiveExport = archiveExport;
+window._gcEpochStatus = function(){
+  return { state: state, cloudEpoch: cloudEpoch, thisComputer: bootLocal, nowStored: lsGet(LOCAL), checkedAgoMs: checkedAt ? Date.now() - checkedAt : null,
+           checks: checks, writesRefused: refused, lastError: lastErr, idbWritesBlocked: blockIdb, writesDropped: dropped };
+};
+window.__GC_EPOCH__ = { status: window._gcEpochStatus, check: function(){ return check(true); } };
+
+/* the first question goes out now (it waits for the company sign-in if there is none yet) */
+check();
+})();
+
+</script>
+<script>
+/* ════════════════════════════════════════════════════════════════════════════
+   GrayCo — FILES LIVE IN FILE STORAGE; RECORDS KEEP A SMALL REFERENCE (patch G)
+   __GC_PATCH_G__
+   Owner rule: "Anything put into the CRM for storage must always be the smallest
+   it can be."
+
+   Until now every attached file (job documents, receipts, invoice PDFs, photos,
+   sub W-9 / COI, profile photos, Cordova statements, imports …) was kept as
+   base64 text INSIDE the record: a third bigger than the file, copied again for
+   every record that held it, photos at full camera size, and the document list
+   too big to reach the other computers at all.
+
+   Now every file goes through ONE pipeline, window._gcStoreFile:
+     1. photos are turned upright, shrunk so the long side is at most 1600 px
+        (profile photos 256 px) and saved as JPEG quality 0.72 with no camera
+        metadata — unless that would come out bigger than what was given;
+     2. the file's SHA-256 fingerprint is its name, so the same file stored twice,
+        on any computer, is ONE file;
+     3. the bytes go to the company's private file storage (Supabase Storage,
+        bucket "crm-files"), sent with the signed-in person's token;
+     4. the record keeps only a reference:
+          {ref:'sb:crm-files/<sha256>.<ext>', name, type, size, hash, uploadedAt, by}
+        No base64 in records, on this computer, in the cloud rows or in backups.
+   Offline / storage not set up yet: the (small) file waits in this computer's
+   IndexedDB "grayco_files" and is sent later; the record still holds only the
+   reference. Opening a file goes through window._gcFileUrl(ref); when the file
+   cannot be reached it says so ("available when online").
+
+   This block sits right after the company sign-in, so it is the LAST thing every
+   upload to the database passes through: whatever any older part of the CRM
+   sends, base64 never leaves this computer.
+   Console:  _gcFilesStatus()   what is waiting to upload, what was saved
+   ════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_FILES__) return;
+
+var SB = 'https://ieeonhpfahmwwecizdut.supabase.co', SBH = 'ieeonhpfahmwwecizdut.supabase.co';
+var BUCKET = 'crm-files';
+var REF_RE = /^sb:([a-z0-9][a-z0-9_-]{1,62})\/([0-9a-f]{64})\.([a-z0-9]{1,8})$/;
+var MIN_LEN = 6000;                    /* a data URL shorter than this (about 4 KB) is left where it is */
+var SKIP_FIELD = /^(sig|signature|signatureData|signatureImg|logo|logoData|logoUrl|icon|favicon|initials|stamp)$/i;
+var MAX_SIDE = 1600, PROFILE_SIDE = 256, QUALITY = 0.72, SHRINK_ON_READ = 150 * 1024;
+var MAX_UPLOAD = 25 * 1024 * 1024;
+var DOCS_ROW_LIMIT = 68000;            /* base64 chars ≈ 50 KB: a projectDocs row still holding that much is not sent */
+
+var nST = window.setTimeout.bind(window), nCT = window.clearTimeout.bind(window);
+var nOpen = window.open;
+var NativeMO = window.MutationObserver;
+var nCOU = URL.createObjectURL.bind(URL);
+var nRead = FileReader.prototype.readAsDataURL;
+var nAClick = HTMLAnchorElement.prototype.click;
+/* the IndexedDB / localStorage writes as they are before the CRM's write filters wrap them: the move
+   below rewrites a record with the SAME records (only the file text changes), which the "skip a write
+   that changes nothing" filter would otherwise take for a no-op and drop */
+var rawPut = IDBObjectStore.prototype.put, rawSet = Storage.prototype.setItem;
+var below = window.fetch;              /* the company sign-in (and fresh-start) fetch: adds the person's token */
+
+/* patch F: once this window is known to be out of date after a fresh start, it writes nothing —
+   the file pipeline then does nothing either (no queueing, no uploads, no conversions) */
+function stale(){ try { var s = typeof window._gcEpochStatus === 'function' ? window._gcEpochStatus() : null; return !!(s && (s.state === 'stale' || s.idbWritesBlocked)); } catch (e) { return false; } }
+function low(v){ return String(v == null ? '' : v).toLowerCase(); }
+function isObj(v){ return !!v && Object.prototype.toString.call(v) === '[object Object]'; }
+function isRef(s){ return typeof s === 'string' && s.charCodeAt(0) === 115 && s.slice(0, 3) === 'sb:' && REF_RE.test(s); }
+function parseRef(s){ var m = REF_RE.exec(String(s || '')); return m ? { bucket: m[1], hash: m[2], ext: m[3], path: m[2] + '.' + m[3], ref: s } : null; }
+function err(kind, msg){ var e = new Error(msg || kind); e.kind = kind; return e; }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+/* ── types ──────────────────────────────────────────────────────────────── */
+var EXT = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/pjpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/bmp': 'bmp',
+  'image/x-ms-bmp': 'bmp', 'image/heic': 'heic', 'image/heif': 'heif', 'image/tiff': 'tif', 'image/svg+xml': 'svg',
+  'application/pdf': 'pdf', 'text/html': 'html', 'text/plain': 'txt', 'text/csv': 'csv', 'application/json': 'json', 'application/rtf': 'rtf', 'text/rtf': 'rtf',
+  'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt', 'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/zip': 'zip', 'application/x-zip-compressed': 'zip', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+  'message/rfc822': 'eml', 'application/vnd.ms-outlook': 'msg', 'application/octet-stream': 'bin' };
+var MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', heic: 'image/heic', heif: 'image/heif',
+  tif: 'image/tiff', tiff: 'image/tiff', svg: 'image/svg+xml', pdf: 'application/pdf', html: 'text/html', htm: 'text/html', txt: 'text/plain', csv: 'text/csv',
+  json: 'application/json', rtf: 'application/rtf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', zip: 'application/zip', mp4: 'video/mp4', mov: 'video/quicktime',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', eml: 'message/rfc822', msg: 'application/vnd.ms-outlook', bin: 'application/octet-stream' };
+function nameExt(name){ var m = /\.([a-z0-9]{1,5})$/i.exec(String(name || '')); return m ? m[1].toLowerCase() : ''; }
+function sniff(b){
+  if (!b || b.length < 4) return '';
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'application/pdf';
+  if (b[0] === 0xFF && b[1] === 0xD8) return 'image/jpeg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b.length > 11 && b[8] === 0x57 && b[9] === 0x45) return 'image/webp';
+  return '';
+}
+function normType(type, name, head){
+  var t = low(type).split(';')[0].trim();
+  if (t === 'image/jpg' || t === 'image/pjpeg') t = 'image/jpeg';
+  if (t && EXT[t] && t !== 'application/octet-stream') return t;
+  var s = sniff(head); if (s) return s;
+  var e = nameExt(name); if (e && MIME[e]) return MIME[e];
+  return t && /^[a-z]+\/[a-z0-9.+-]+$/.test(t) ? t : 'application/octet-stream';
+}
+function extOf(type, name){ var e = EXT[type]; if (e && e !== 'bin') return e; var n = nameExt(name); if (n && MIME[n]) return n === 'jpeg' ? 'jpg' : (n === 'htm' ? 'html' : (n === 'tiff' ? 'tif' : n)); return e || 'bin'; }
+
+/* ── SHA-256 ────────────────────────────────────────────────────────────── */
+function hex(buf){ var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i++) s += (a[i] < 16 ? '0' : '') + a[i].toString(16); return s; }
+function jsSha256(bytes){   /* only for a browser without crypto.subtle (plain http) */
+  var K = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  var H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  var l = bytes.length, n = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(n); m.set(bytes); m[l] = 0x80;
+  var bits = l * 8; for (var i = 0; i < 8; i++) m[n - 1 - i] = (i < 4) ? (bits >>> (8 * i)) & 255 : Math.floor(bits / Math.pow(2, 8 * i)) & 255;
+  var w = new Array(64);
+  for (var o = 0; o < n; o += 64) {
+    for (var t = 0; t < 16; t++) w[t] = (m[o + 4 * t] << 24) | (m[o + 4 * t + 1] << 16) | (m[o + 4 * t + 2] << 8) | m[o + 4 * t + 3];
+    for (t = 16; t < 64; t++) { var a0 = w[t - 15], a1 = w[t - 2];
+      var s0 = ((a0 >>> 7) | (a0 << 25)) ^ ((a0 >>> 18) | (a0 << 14)) ^ (a0 >>> 3), s1 = ((a1 >>> 17) | (a1 << 15)) ^ ((a1 >>> 19) | (a1 << 13)) ^ (a1 >>> 10);
+      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0; }
+    var a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (t = 0; t < 64; t++) {
+      var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7)), ch = (e & f) ^ (~e & g), t1 = (h + S1 + ch + K[t] + w[t]) | 0;
+      var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10)), mj = (a & b) ^ (a & c) ^ (b & c), t2 = (S0 + mj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0; H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  return H.map(function(x){ return ('00000000' + (x >>> 0).toString(16)).slice(-8); }).join('');
+}
+function sha256(buf){
+  try { if (window.crypto && crypto.subtle && crypto.subtle.digest) return crypto.subtle.digest('SHA-256', buf).then(hex); } catch (e) {}
+  return Promise.resolve(jsSha256(new Uint8Array(buf)));
+}
+
+/* ── this computer's file store: IndexedDB "grayco_files" ───────────────────
+   pending: files not yet in the cloud storage (kept until they are)
+   done:    fingerprints already in the cloud storage
+   src:     "this original photo became that reference" (no second shrink)   */
+var dbP = null;
+function fdb(){
+  if (dbP) return dbP;
+  dbP = new Promise(function(res, rej){
+    var q;
+    try { q = indexedDB.open('grayco_files', 1); } catch (e) { dbP = null; return rej(e); }
+    q.onupgradeneeded = function(){
+      var d = q.result;
+      if (!d.objectStoreNames.contains('pending')) d.createObjectStore('pending', { keyPath: 'hash' });
+      if (!d.objectStoreNames.contains('done')) d.createObjectStore('done', { keyPath: 'hash' });
+      if (!d.objectStoreNames.contains('src')) d.createObjectStore('src', { keyPath: 'k' });
+    };
+    q.onsuccess = function(){ var d = q.result; d.onversionchange = function(){ try { d.close(); } catch (e) {} dbP = null; }; res(d); };
+    q.onerror = function(){ dbP = null; rej(q.error); };
+    q.onblocked = function(){ dbP = null; rej(new Error('grayco_files blocked')); };
+  });
+  return dbP;
+}
+function fop(store, mode, fn){
+  return fdb().then(function(d){
+    return new Promise(function(res, rej){
+      var t = d.transaction(store, mode), s = t.objectStore(store), out;
+      try { out = fn(s); } catch (e) { return rej(e); }
+      t.oncomplete = function(){ res(out && 'result' in out ? out.result : out); };
+      t.onerror = function(){ rej(t.error); }; t.onabort = function(){ rej(t.error || new Error('aborted')); };
+    });
+  });
+}
+function fget(store, key){ return fop(store, 'readonly', function(s){ return s.get(key); }); }
+function fput(store, val){ return fop(store, 'readwrite', function(s){ return s.put(val); }); }
+function fdel(store, key){ return fop(store, 'readwrite', function(s){ return s['delete'](key); }); }
+function fall(store){ return fop(store, 'readonly', function(s){ return s.getAll(); }); }
+
+/* ── bytes ──────────────────────────────────────────────────────────────── */
+var blobReg = new Map();               /* blob: URLs made for a File the person picked */
+function regBlob(u, f){ blobReg.set(u, f); if (blobReg.size > 80) blobReg['delete'](blobReg.keys().next().value); }
+function dataUrlToBlob(s){
+  var c = s.indexOf(','), headr = s.slice(5, c), b64 = /;base64/i.test(headr), type = headr.split(';')[0] || 'application/octet-stream';
+  var body = s.slice(c + 1);
+  if (!b64) { var txt; try { txt = decodeURIComponent(body); } catch (e) { txt = body; } return new Blob([txt], { type: type }); }
+  body = body.replace(/[\r\n\s]/g, '');
+  var parts = [], CH = 1 << 20;            /* 1 MB of base64 at a time */
+  for (var i = 0; i < body.length; i += CH) {
+    var bin = atob(body.slice(i, i + CH)), arr = new Uint8Array(bin.length);
+    for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+    parts.push(arr);
+  }
+  return new Blob(parts, { type: type });
+}
+function toBlob(input, o){
+  if (input instanceof Blob) return Promise.resolve(input);
+  var s = String(input || '');
+  if (s.slice(0, 5) === 'data:') return Promise.resolve(dataUrlToBlob(s));
+  if (s.slice(0, 5) === 'blob:') {
+    if (blobReg.has(s)) return Promise.resolve(blobReg.get(s));
+    return below.call(window, s).then(function(r){ if (!r.ok) throw err('missing', 'that file is no longer open on this computer'); return r.blob(); });
+  }
+  if (o && o.type && /^[A-Za-z0-9+/=\r\n]+$/.test(s.slice(0, 200))) return Promise.resolve(dataUrlToBlob('data:' + o.type + ';base64,' + s));
+  return Promise.reject(err('bad', 'not a file'));
+}
+function readDataUrl(blob){
+  return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); }; nRead.call(r, blob); });
+}
+
+/* ── photos: upright, ≤1600 px (profile ≤256), JPEG 0.72, no metadata ──── */
+function jpegInfo(b){
+  var out = { orientation: 1, ours: false };
+  if (!(b[0] === 0xFF && b[1] === 0xD8)) return null;
+  var i = 2, n = Math.min(b.length, 1 << 20);
+  while (i + 4 < n && b[i] === 0xFF) {
+    var mk = b[i + 1], len = (b[i + 2] << 8) | b[i + 3];
+    if (mk === 0xDA || mk === 0xD9) break;
+    if (mk === 0xFE && len === 6 && b[i + 4] === 0x47 && b[i + 5] === 0x43 && b[i + 6] === 0x76 && b[i + 7] === 0x31) out.ours = true;
+    if (mk === 0xE1 && b[i + 4] === 0x45 && b[i + 5] === 0x78 && b[i + 6] === 0x69 && b[i + 7] === 0x66) {   /* Exif */
+      var t = i + 10, le = b[t] === 0x49, rd16 = function(p){ return le ? b[p] | (b[p + 1] << 8) : (b[p] << 8) | b[p + 1]; };
+      var rd32 = function(p){ return le ? (b[p] | (b[p + 1] << 8) | (b[p + 2] << 16) | (b[p + 3] << 24)) >>> 0 : ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0; };
+      try { var ifd = t + rd32(t + 4), cnt = rd16(ifd);
+        for (var k = 0; k < cnt; k++) { var e = ifd + 2 + k * 12; if (rd16(e) === 0x0112) { out.orientation = rd16(e + 8); break; } } } catch (x) {}
+    }
+    i += 2 + len;
+  }
+  return out;
+}
+function stripJpeg(b){
+  /* the same picture without camera data (APP1..APP15, comments): nothing re-encoded */
+  if (!(b[0] === 0xFF && b[1] === 0xD8)) return null;
+  var keep = [b.subarray(0, 2)], i = 2;
+  while (i + 4 <= b.length && b[i] === 0xFF) {
+    var mk = b[i + 1];
+    if (mk === 0xDA) { keep.push(b.subarray(i)); return new Blob(keep, { type: 'image/jpeg' }); }
+    var len = (b[i + 2] << 8) | b[i + 3];
+    if (!((mk >= 0xE1 && mk <= 0xEF) || mk === 0xFE)) keep.push(b.subarray(i, i + 2 + len));
+    i += 2 + len;
+  }
+  return null;
+}
+function markJpeg(blob){
+  /* a 8-byte comment "GCv1" right after the JFIF header: this file is already ours */
+  return blob.arrayBuffer().then(function(ab){
+    var b = new Uint8Array(ab); if (!(b[0] === 0xFF && b[1] === 0xD8)) return blob;
+    var at = 2; if (b[2] === 0xFF && b[3] === 0xE0) at = 4 + ((b[4] << 8) | b[5]);
+    var mark = new Uint8Array([0xFF, 0xFE, 0x00, 0x06, 0x47, 0x43, 0x76, 0x31]);
+    return new Blob([b.subarray(0, at), mark, b.subarray(at)], { type: 'image/jpeg' });
+  });
+}
+function decodeImage(blob){
+  var viaImg = function(){
+    return new Promise(function(res){
+      var u = nCOU(blob), im = new Image();
+      im.onload = function(){ res({ img: im, w: im.naturalWidth, h: im.naturalHeight, done: function(){ try { URL.revokeObjectURL(u); } catch (e) {} } }); };
+      im.onerror = function(){ try { URL.revokeObjectURL(u); } catch (e) {} res(null); };
+      im.src = u;
+    });
+  };
+  if (window.createImageBitmap) {
+    return createImageBitmap(blob, { imageOrientation: 'from-image' }).then(function(bm){
+      return { img: bm, w: bm.width, h: bm.height, done: function(){ try { bm.close(); } catch (e) {} } };
+    }, viaImg);
+  }
+  return viaImg();
+}
+function canvasOf(w, h){ var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function hasAlpha(img, w, h){
+  try {
+    var s = Math.min(1, 96 / Math.max(w, h)), cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+    var c = canvasOf(cw, ch), x = c.getContext('2d'); x.drawImage(img, 0, 0, cw, ch);
+    var d = x.getImageData(0, 0, cw, ch).data;
+    for (var i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+  } catch (e) {}
+  return false;
+}
+function drawScaled(img, w, h, cw, ch, white){
+  /* halve step by step: a 4000 px receipt drawn straight to 1600 px loses thin strokes */
+  var src = img, sw = w, sh = h;
+  while (sw / 2 >= cw * 1.05 && sh / 2 >= ch * 1.05) {
+    var nw = Math.round(sw / 2), nh = Math.round(sh / 2), t = canvasOf(nw, nh), tx = t.getContext('2d');
+    tx.imageSmoothingEnabled = true; tx.imageSmoothingQuality = 'high'; tx.drawImage(src, 0, 0, sw, sh, 0, 0, nw, nh);
+    src = t; sw = nw; sh = nh;
+  }
+  var c = canvasOf(cw, ch), x = c.getContext('2d');
+  if (white) { x.fillStyle = '#ffffff'; x.fillRect(0, 0, cw, ch); }
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.drawImage(src, 0, 0, sw, sh, 0, 0, cw, ch);
+  return c;
+}
+function canvasBlob(c, type, q){ return new Promise(function(res){ try { c.toBlob(function(b){ res(b); }, type, q); } catch (e) { res(null); } }); }
+function useWebp(){ try { return localStorage.getItem('gc_files_webp') === '1'; } catch (e) { return false; } }
+
+function shrinkImage(blob, kind){
+  var type = low(blob.type);
+  if (!/^image\/(jpeg|png|webp|bmp|x-ms-bmp)$/.test(type)) return Promise.resolve({ blob: blob, kept: 'type' });   /* gif, svg, heic, tiff: kept as given */
+  var limit = kind === 'profile' ? PROFILE_SIDE : MAX_SIDE;
+  return blob.arrayBuffer().then(function(ab){
+    var b = new Uint8Array(ab), info = type === 'image/jpeg' ? jpegInfo(b) : null;
+    return decodeImage(blob).then(function(dec){
+      if (!dec) return { blob: blob, kept: 'undecodable' };
+      try {
+        var w = dec.w, h = dec.h, s = Math.min(1, limit / Math.max(w, h));
+        if (info && info.ours && s === 1) return { blob: blob, kept: 'ours', w: w, h: h };
+        var cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+        var alpha = type !== 'image/jpeg' && hasAlpha(dec.img, w, h);
+        var c = drawScaled(dec.img, w, h, cw, ch, !alpha);
+        var outType = alpha ? 'image/png' : 'image/jpeg';
+        return canvasBlob(c, outType, QUALITY).then(function(out){
+          if (!out) return { blob: blob, kept: 'encode-failed' };
+          var next = outType === 'image/jpeg' ? markJpeg(out) : Promise.resolve(out);
+          return next.then(function(enc){
+            var tryWebp = (!alpha && useWebp()) ? canvasBlob(c, 'image/webp', QUALITY) : Promise.resolve(null);
+            return tryWebp.then(function(wb){
+              var best = enc;
+              if (wb && wb.type === 'image/webp' && wb.size < best.size) best = wb;
+              if (s === 1) {
+                /* not resized: never keep a bigger result than what was given */
+                var orig = blob;
+                if (type === 'image/jpeg' && (!info || info.orientation <= 1)) orig = stripJpeg(b) || blob;
+                var origOk = type !== 'image/jpeg' || !info || info.orientation <= 1;
+                if (origOk && orig.size <= best.size) return { blob: orig, kept: 'original-smaller', w: cw, h: ch };
+              } else if (best.size > blob.size && (!info || info.orientation <= 1)) {
+                return { blob: type === 'image/jpeg' ? (stripJpeg(b) || blob) : blob, kept: 'original-smaller', w: w, h: h };
+              }
+              return { blob: best, w: cw, h: ch, from: { w: w, h: h, size: blob.size } };
+            });
+          });
+        });
+      } finally { try { dec.done(); } catch (e) {} }
+    });
+  });
+}
+
+/* ── the pipeline ───────────────────────────────────────────────────────── */
+var memo = new Map();          /* the exact text given (data URL / blob: URL) -> its reference */
+function memoSet(k, v){ memo.set(k, v); if (memo.size > 300) memo['delete'](memo.keys().next().value); }
+var sessionBlob = new Map();   /* reference -> bytes, this page only */
+function keepBlob(ref, b){ sessionBlob.set(ref, b); if (sessionBlob.size > 60) sessionBlob['delete'](sessionBlob.keys().next().value); }
+var stats = { stored: 0, reused: 0, shrunk: 0, bytesIn: 0, bytesOut: 0, uploaded: 0, uploadFailed: 0, lastError: '', bucket: 'unknown', blockedRows: 0 };
+
+function who(){
+  try { var u = window._crm && (window._crm.currentUser || window._crm.user); if (u && u.name) return u.name; } catch (e) {}
+  try { var n = localStorage.getItem('grayco_user'); if (n) return n; } catch (e) {}
+  try { if (window.__GC_AUTH__) return window.__GC_AUTH__.email(); } catch (e) {}
+  return '';
+}
+
+function storeFile(input, opts){
+  opts = opts || {};
+  if (stale()) return Promise.reject(err('stale', 'this window is out of date after the fresh start'));
+  var key = typeof input === 'string' ? input : null;
+  if (key && memo.has(key)) { stats.reused++; return Promise.resolve(Object.assign({}, memo.get(key))); }
+  var name = opts.name || (input && input.name) || '';
+  return toBlob(input, opts).then(function(blob){
+    var inSize = blob.size;
+    return blob.slice(0, 16).arrayBuffer().then(function(h16){
+      var type = normType(blob.type || opts.type, name, new Uint8Array(h16));
+      if (type !== blob.type) blob = new Blob([blob], { type: type });
+      var srcKey = null;
+      var step = Promise.resolve(blob);
+      if (/^image\//.test(type)) {
+        step = blob.arrayBuffer().then(sha256).then(function(sh){
+          srcKey = sh + ':' + (opts.kind === 'profile' ? 'p' : 'd');
+          return fget('src', srcKey).catch(function(){ return null; }).then(function(hit){
+            if (hit && hit.ref) {
+              var p = parseRef(hit.ref);
+              return fget('pending', p.hash).catch(function(){ return null; }).then(function(pd){
+                if (pd && pd.blob) return pd.blob;
+                return fget('done', p.hash).catch(function(){ return null; }).then(function(dn){ if (dn) return { __ref: hit }; return null; });
+              });
+            }
+            return null;
+          }).then(function(prev){
+            if (prev && prev.__ref) return prev;
+            if (prev instanceof Blob) return prev;
+            return shrinkImage(blob, opts.kind).then(function(r){ if (r.blob !== blob) stats.shrunk++; return r.blob; });
+          });
+        });
+      }
+      return step.then(function(fin){
+        if (fin && fin.__ref) {
+          var h = fin.__ref;
+          var meta0 = { ref: h.ref, name: name, type: h.type, size: h.size, hash: parseRef(h.ref).hash,
+                        uploadedAt: opts.uploadedAt || new Date().toISOString(), by: opts.by || who() };
+          if (key) memoSet(key, meta0);
+          stats.reused++;
+          return meta0;
+        }
+        return fin.arrayBuffer().then(function(ab){
+          return sha256(ab).then(function(hash){
+            var ftype = fin.type || type, ext = extOf(ftype, name), path = hash + '.' + ext, ref = 'sb:' + BUCKET + '/' + path;
+            keepBlob(ref, fin);
+            var meta = { ref: ref, name: name, type: ftype, size: fin.size, hash: hash,
+                         uploadedAt: opts.uploadedAt || new Date().toISOString(), by: opts.by || who() };
+            stats.stored++; stats.bytesIn += inSize; stats.bytesOut += fin.size;
+            var q = fget('done', hash).catch(function(){ return null; }).then(function(dn){
+              if (dn) return;
+              return fget('pending', hash).catch(function(){ return null; }).then(function(pd){
+                if (pd) return;
+                return fput('pending', { hash: hash, path: path, type: ftype, blob: fin, name: name, at: Date.now(), tries: 0,
+                                         tooBig: fin.size > MAX_UPLOAD });
+              });
+            });
+            return q.then(function(){
+              if (srcKey) return fput('src', { k: srcKey, ref: ref, type: ftype, size: fin.size }).catch(function(){});
+            }).then(function(){
+              if (key) memoSet(key, meta);
+              kick(800);
+              return Object.assign({}, meta);
+            });
+          });
+        });
+      });
+    });
+  });
+}
+window._gcStoreFile = storeFile;
+
+/* ── upload queue (to the private bucket) ─────────────────────────────────── */
+var draining = false, retryT = null;
+function later(ms){ if (retryT) nCT(retryT); retryT = nST(function(){ retryT = null; drain(); }, ms); }
+function kick(ms){ if (retryT) nCT(retryT); retryT = nST(function(){ retryT = null; drain(); }, ms || 0); }
+function uploadOne(it){
+  return below.call(window, SB + '/storage/v1/object/' + BUCKET + '/' + it.path, {
+    method: 'POST', body: it.blob,
+    headers: { 'Content-Type': it.type || 'application/octet-stream', 'x-upsert': 'false', 'cache-control': 'max-age=31536000' }
+  }).then(function(r){
+    if (r.ok) return 'ok';
+    return r.text().then(function(t){ return t; }, function(){ return ''; }).then(function(t){
+      if (r.status === 409 || /Duplicate|already exists/i.test(t)) return 'exists';
+      if (/Bucket not found/i.test(t)) return 'nobucket';
+      if (r.status === 413 || /too large|exceeded the maximum/i.test(t)) return 'toobig';
+      if (r.status === 415 || /mime type/i.test(t)) return 'badtype';
+      if (r.status === 401 || r.status === 403 || /row-level security|Unauthorized|jwt/i.test(t)) return 'auth';
+      stats.lastError = 'HTTP ' + r.status + ' ' + t.slice(0, 120);
+      return 'error';
+    });
+  }, function(e){ stats.lastError = String(e && e.message || e); return 'offline'; });
+}
+function drain(){
+  if (draining) return Promise.resolve();
+  if (stale()) return Promise.resolve();
+  draining = true;
+  return fall('pending').catch(function(){ return []; }).then(function(list){
+    var i = 0;
+    function next(){
+      while (i < list.length && (list[i].tooBig || list[i].badType)) i++;
+      if (i >= list.length) return null;
+      var it = list[i++];
+      return uploadOne(it).then(function(r){
+        if (r === 'ok' || r === 'exists') {
+          stats.uploaded++; stats.bucket = 'ok';
+          return fput('done', { hash: it.hash, path: it.path, at: Date.now() }).then(function(){ return fdel('pending', it.hash); }).then(next);
+        }
+        stats.uploadFailed++;
+        if (r === 'toobig' || r === 'badtype') {
+          it[r === 'toobig' ? 'tooBig' : 'badType'] = true;
+          return fput('pending', it).then(next);
+        }
+        if (r === 'nobucket') { stats.bucket = 'missing'; later(30 * 60e3); return null; }
+        later(r === 'error' ? 10 * 60e3 : 5 * 60e3);   /* offline / not signed in yet / cloud trouble */
+        return null;
+      });
+    }
+    return next();
+  }).then(function(){ draining = false; }, function(){ draining = false; });
+}
+window.addEventListener('online', function(){ kick(2000); retryShown(); });
+nST(function(){ drain(); }, 30000);
+
+window._gcFilesStatus = function(){
+  return fall('pending').catch(function(){ return []; }).then(function(p){
+    var out = Object.assign({}, stats, {
+      waitingToUpload: p.filter(function(x){ return !x.tooBig && !x.badType; }).length,
+      tooBigForStorage: p.filter(function(x){ return x.tooBig; }).map(function(x){ return x.name || x.path; }),
+      refusedType: p.filter(function(x){ return x.badType; }).map(function(x){ return x.name || x.path; }),
+      waitingBytes: p.reduce(function(a, x){ return a + (x.blob ? x.blob.size : 0); }, 0)
+    });
+    try { console.table(out); } catch (e) {}
+    return out;
+  });
+};
+window._gcFilesUploadNow = function(){ return drain(); };
+
+/* ── reading a file back ────────────────────────────────────────────────── */
+var urlCache = new Map(), urlNow = new Map();
+function fileBlob(ref){
+  var p = parseRef(ref);
+  if (!p) return Promise.reject(err('bad', 'not a file reference'));
+  if (sessionBlob.has(ref)) return Promise.resolve(sessionBlob.get(ref));
+  return fget('pending', p.hash).catch(function(){ return null; }).then(function(pd){
+    if (pd && pd.blob) { keepBlob(ref, pd.blob); return pd.blob; }
+    return below.call(window, SB + '/storage/v1/object/authenticated/' + p.bucket + '/' + p.path, { cache: 'no-store' }).then(function(r){
+      if (r.ok) return r.blob();
+      if (r.status === 400 || r.status === 404) throw err('missing', 'not in the file storage yet');
+      throw err('offline', 'HTTP ' + r.status);
+    }, function(){ throw err('offline', 'file storage not reachable'); }).then(function(b){
+      var type = MIME[p.ext] || b.type || 'application/octet-stream';
+      return b.arrayBuffer().then(function(ab){
+        return sha256(ab).then(function(h){
+          if (h !== p.hash) throw err('missing', 'the stored file does not match its fingerprint');
+          var out = new Blob([ab], { type: type }); keepBlob(ref, out); return out;
+        });
+      });
+    });
+  });
+}
+function fileUrl(ref){
+  if (urlCache.has(ref)) return urlCache.get(ref);
+  var pr = fileBlob(ref).then(function(b){ var u = nCOU(b); urlNow.set(ref, u); return u; });
+  urlCache.set(ref, pr);
+  pr.catch(function(){ urlCache['delete'](ref); });
+  return pr;
+}
+window._gcIsRef = isRef;
+window._gcFileBlob = fileBlob;
+window._gcFileUrl = fileUrl;
+window._gcFileDataUrl = function(ref){ return isRef(ref) ? fileBlob(ref).then(readDataUrl) : Promise.resolve(ref); };
+window._gcFileB64 = function(ref){ return window._gcFileDataUrl(ref).then(function(d){ var s = String(d || ''); var i = s.indexOf(','); return i >= 0 ? s.slice(i + 1) : s; }); };
+
+/* ── what the person sees when a file cannot be reached ─────────────────── */
+function why(e){
+  if (e && e.kind === 'missing') return 'This file is still on the computer that added it and has not reached the company file storage yet. It opens here once that computer is online.';
+  return 'This file is available when online.';
+}
+var noteEl = null, noteT = null;
+function notice(msg){
+  try {
+    if (!noteEl) { noteEl = document.createElement('div'); noteEl.id = 'gc-file-note'; noteEl.setAttribute('data-gc-keep', '1');
+      noteEl.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483000;background:#0f2440;color:#fff;padding:10px 16px;border-radius:10px;font:14px/1.4 Inter,Segoe UI,sans-serif;max-width:min(560px,calc(100vw - 32px));box-shadow:0 6px 24px rgba(0,0,0,.3)'; }
+    noteEl.textContent = msg;
+    if (!noteEl.parentNode) document.body.appendChild(noteEl);
+    if (noteT) nCT(noteT); noteT = nST(function(){ try { noteEl.remove(); } catch (e) {} }, 6000);
+  } catch (e) {}
+}
+function placeholderSvg(e){
+  var t = e && e.kind === 'missing' ? 'still uploading from another computer' : 'available when online';
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" viewBox="0 0 240 80"><rect width="240" height="80" rx="8" fill="#eef2f7"/><text x="120" y="36" font-family="Arial" font-size="13" fill="#475569" text-anchor="middle">File</text><text x="120" y="56" font-family="Arial" font-size="12" fill="#64748b" text-anchor="middle">' + t + '</text></svg>');
+}
+function fixName(name, ext){
+  var n = String(name || '').trim() || ('file.' + ext);
+  var e = nameExt(n);
+  if (/^(jpg|webp|png)$/.test(ext) && e && e !== ext && /^(png|jpe?g|heic|heif|bmp|webp|tiff?)$/.test(e)) n = n.replace(/\.[a-z0-9]+$/i, '.' + ext);
+  else if (!e) n += '.' + ext;
+  return n;
+}
+function downloadRef(ref, name){
+  var p = parseRef(ref);
+  return fileUrl(ref).then(function(u){
+    var a = document.createElement('a'); a.href = u; a.download = fixName(name, p.ext); a.style.display = 'none';
+    (document.body || document.documentElement).appendChild(a); nAClick.call(a);
+    nST(function(){ try { a.remove(); } catch (e) {} }, 1500);
+    return true;
+  }, function(e){ notice(why(e)); return false; });
+}
+var VIEW = { pdf: 1, jpg: 1, png: 1, gif: 1, webp: 1, svg: 1, txt: 1, csv: 1, html: 1, bmp: 1 };
+function navRef(w, ref, name){
+  var p = parseRef(ref);
+  return fileUrl(ref).then(function(u){
+    if (!w || w.closed) { if (VIEW[p.ext]) { var w2 = nOpen.call(window, u, '_blank'); if (!w2) return downloadRef(ref, name); return w2; } return downloadRef(ref, name); }
+    if (!VIEW[p.ext]) { try { w.close(); } catch (e) {} return downloadRef(ref, name); }
+    if (p.ext === 'html') {
+      /* an HTML document opens in a sandbox: its scripts never run as the CRM */
+      w.document.open();
+      w.document.write('<!doctype html><meta charset="utf-8"><title>' + esc(name || 'Document') + '</title><style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>'
+        + '<iframe sandbox="allow-scripts allow-popups allow-modals allow-downloads" src="' + esc(u) + '"></iframe>');
+      w.document.close();
+      return w;
+    }
+    w.location.replace(u);
+    return w;
+  }, function(e){
+    try { if (w && !w.closed) { w.document.title = name || 'File'; w.document.body.innerHTML = '<p style="font:15px/1.5 Arial,sans-serif;color:#334155;padding:24px;max-width:560px">' + esc(why(e)) + '</p>'; return w; } } catch (x) {}
+    notice(why(e)); return null;
+  });
+}
+function openRef(ref, o){
+  o = o || {};
+  var p = parseRef(ref); if (!p) return null;
+  if (o.download || !VIEW[p.ext]) { downloadRef(ref, o.name); return null; }
+  var w = null;
+  try { w = nOpen.call(window, '', o.target || '_blank'); } catch (e) {}
+  if (w) { try { w.document.title = o.name || 'Opening…'; if (w.document.body) w.document.body.innerHTML = '<p style="font:14px Arial,sans-serif;color:#64748b;padding:20px">Opening ' + esc(o.name || 'file') + '…</p>'; } catch (e) {} }
+  else { downloadRef(ref, o.name); return null; }
+  navRef(w, ref, o.name);
+  return w;
+}
+window._gcOpenRef = function(ref, name, o){ o = Object.assign({}, o || {}); o.name = name || o.name; return openRef(ref, o); };
+window._gcDownloadRef = downloadRef;
+window._gcNavRef = function(w, ref, name){ if (isRef(ref)) return navRef(w, ref, name); try { w.location = ref; } catch (e) {} return w; };
+
+/* every way the CRM shows a file reaches it through _gcFileUrl:
+   · a link (React or HTML) whose href is a reference: the click opens / downloads it
+   · a link made in code and clicked without being on the page                     */
+window.addEventListener('click', function(e){
+  try {
+    if (e.button !== 0) return;
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var h = a.getAttribute('href'); if (!isRef(h)) return;
+    e.preventDefault();
+    openRef(h, { name: a.getAttribute('download') || a.getAttribute('data-name') || (a.textContent || '').replace(/^[^\w]+/, '').trim(), download: a.hasAttribute('download') });
+  } catch (x) {}
+}, true);
+HTMLAnchorElement.prototype.click = function(){
+  try {
+    var h = this.getAttribute('href');
+    if (isRef(h) && !this.isConnected) { openRef(h, { name: this.getAttribute('download') || '', download: this.hasAttribute('download') }); return; }
+  } catch (e) {}
+  return nAClick.apply(this, arguments);
+};
+/* · a picture / frame / embedded document whose source is a reference */
+var PIX = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+var failedEls = new Set();
+function attrOf(el){ return el.tagName === 'OBJECT' ? 'data' : (el.tagName === 'A' ? 'href' : 'src'); }
+function fixEl(el){
+  var at = attrOf(el), ref = el.getAttribute(at);
+  if (!isRef(ref)) return;
+  el.setAttribute('data-gc-ref', ref);
+  if (el.tagName === 'A') { var nu = urlNow.get(ref); if (nu && el.ownerDocument !== document) el.setAttribute('href', nu); else if (el.ownerDocument !== document) fileUrl(ref).then(function(u){ el.setAttribute('href', u); }, function(){}); return; }
+  var now = urlNow.get(ref);
+  if (now) { el.setAttribute(at, now); return; }
+  el.setAttribute(at, el.tagName === 'IMG' ? PIX : 'about:blank');
+  fileUrl(ref).then(function(u){
+    var cur = el.getAttribute(at);
+    if (cur === PIX || cur === 'about:blank' || cur === ref) {
+      el.setAttribute(at, u);
+      if (el.style && el.style.display === 'none' && el.hasAttribute('onerror')) el.style.display = '';
+    }
+    failedEls['delete'](el);
+  }, function(e){
+    failedEls.add(el);
+    if (el.tagName === 'IMG') { el.setAttribute(at, placeholderSvg(e)); el.title = why(e); }
+    else if (el.tagName === 'IFRAME') { try { el.removeAttribute('src'); el.srcdoc = '<p style="font:14px Arial;color:#475569;padding:16px">' + esc(why(e)) + '</p>'; } catch (x) {} }
+  });
+}
+function retryShown(){
+  failedEls.forEach(function(el){ try { var r = el.getAttribute('data-gc-ref'); if (r && el.isConnected) { if (el.tagName === 'IFRAME') el.removeAttribute('srcdoc'); el.setAttribute(attrOf(el), r); fixEl(el); } } catch (e) {} });
+}
+var SEL = 'img[src^="sb:"],iframe[src^="sb:"],embed[src^="sb:"],object[data^="sb:"],source[src^="sb:"],video[src^="sb:"],audio[src^="sb:"]';
+function scanNode(n){
+  if (!n || n.nodeType !== 1) return;
+  if (n.matches && n.matches(SEL)) fixEl(n);
+  if (n.querySelectorAll && n.firstElementChild) { var l = n.querySelectorAll(SEL); for (var i = 0; i < l.length; i++) fixEl(l[i]); }
+}
+try {
+  new NativeMO(function(recs){
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i];
+      if (r.type === 'attributes') { if (r.target && r.target.nodeType === 1 && isRef(r.target.getAttribute(r.attributeName))) fixEl(r.target); }
+      else for (var j = 0; j < r.addedNodes.length; j++) scanNode(r.addedNodes[j]);
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'data'] });
+} catch (e) {}
+window.addEventListener('error', function(e){ try { var t = e.target; if (t && t.nodeType === 1 && isRef(t.getAttribute(attrOf(t)))) fixEl(t); } catch (x) {} }, true);
+
+/* · a window opened for a file, or a window the CRM writes a file into */
+function fixDoc(w){
+  try {
+    var l = w.document.querySelectorAll('[src^="sb:"],[href^="sb:"],[data^="sb:"]');
+    for (var i = 0; i < l.length; i++) (function(el){
+      var at = el.hasAttribute('src') && isRef(el.getAttribute('src')) ? 'src' : (el.hasAttribute('href') ? 'href' : 'data');
+      var ref = el.getAttribute(at); if (!isRef(ref)) return;
+      el.setAttribute(at, el.tagName === 'IMG' ? PIX : (el.tagName === 'A' ? '#' : 'about:blank'));
+      fileUrl(ref).then(function(u){ el.setAttribute(at, u); }, function(e){
+        if (el.tagName === 'IFRAME') { try { el.removeAttribute('src'); el.srcdoc = '<p style="font:14px Arial;color:#475569;padding:16px">' + esc(why(e)) + '</p>'; } catch (x) {} }
+        else if (el.tagName === 'IMG') el.setAttribute(at, placeholderSvg(e));
+      });
+    })(l[i]);
+  } catch (e) {}
+}
+function watchPopup(w){
+  try {
+    var d = w.document, ow = d.write, owl = d.writeln;
+    if (ow && !ow.__gcFiles) { d.write = function(){ var r = ow.apply(d, arguments); nST(function(){ fixDoc(w); }, 0); return r; }; d.write.__gcFiles = 1; }
+    if (owl && !owl.__gcFiles) { d.writeln = function(){ var r = owl.apply(d, arguments); nST(function(){ fixDoc(w); }, 0); return r; }; d.writeln.__gcFiles = 1; }
+  } catch (e) {}
+  var n = 0;
+  (function poll(){ try { if (w.closed) return; fixDoc(w); } catch (e) { return; } if (++n < 30) nST(poll, 200); })();
+}
+var gOpen = function(url, target, features){
+  if (typeof url === 'string' && isRef(url)) return openRef(url, { target: target });
+  var w = nOpen.apply(window, arguments);
+  try { if (w && (url == null || url === '' || url === 'about:blank')) watchPopup(w); } catch (e) {}
+  return w;
+};
+window.open = gOpen;
+
+/* ── a photo picked from the camera is shrunk as it is read ───────────────
+   Every upload in the CRM reads the picked file with FileReader.readAsDataURL.
+   A big photo is now made small first (≤1600 px, JPEG 0.72) so even what sits
+   on screen before saving is small. Everything else is read as it was.        */
+FileReader.prototype.readAsDataURL = function(blob){
+  var self = this;
+  try {
+    if (blob instanceof Blob && blob.size >= SHRINK_ON_READ && /^image\/(jpeg|jpg|png|webp|bmp)$/i.test(blob.type || '') && !self.__gcRaw) {
+      shrinkImage(blob, 'doc').then(function(r){
+        var out = r && r.blob && r.blob.size < blob.size ? r.blob : blob;
+        if (out !== blob) { try { out = new File([out], fixName(blob.name || 'photo', extOf(out.type, '')), { type: out.type }); } catch (e) {} }
+        nRead.call(self, out);
+      }, function(){ nRead.call(self, blob); });
+      return;
+    }
+  } catch (e) {}
+  return nRead.apply(this, arguments);
+};
+URL.createObjectURL = function(o){
+  var u = nCOU(o);
+  try { if (typeof File !== 'undefined' && o instanceof File) regBlob(u, o); } catch (e) {}
+  return u;
+};
+
+/* ── finding files inside records, and replacing them with references ───── */
+var FILE_FIELDS = { data: 1, url: 1, dataUrl: 1, dataURL: 1, src: 1, content: 1, file: 1, fileUrl: 1, blob: 1, base64: 1 };
+var B64_HEAD = /^[A-Za-z0-9+/\r\n]+={0,2}$/;
+function candidate(s, key, parent){
+  if (typeof s !== 'string') return null;
+  var c0 = s.charCodeAt(0);
+  if (c0 === 98 && s.slice(0, 5) === 'blob:') { var f = blobReg.get(s); return f ? { type: f.type || '' } : null; }
+  if (s.length < MIN_LEN) return null;
+  if (key != null && SKIP_FIELD.test(String(key))) return null;
+  if (c0 === 100 && s.slice(0, 5) === 'data:') {
+    var c = s.indexOf(','); if (c < 0 || c > 200) return null;
+    return { type: s.slice(5, c).split(';')[0] || 'application/octet-stream' };
+  }
+  if (key === 'data' && isObj(parent) && typeof parent.type === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(parent.type)
+      && B64_HEAD.test(s.slice(0, 400)) && B64_HEAD.test(s.slice(-120)) && !/[^A-Za-z0-9+/=\r\n]/.test(s)) return { type: parent.type, raw: true };
+  return null;
+}
+function jsonish(s){ return typeof s === 'string' && s.length >= MIN_LEN && (s.charCodeAt(0) === 123 || s.charCodeAt(0) === 91) && (s.indexOf(';base64,') > 0 || s.indexOf('"blob:') > 0); }
+function kindFor(key, parent){
+  if (/^(avatar|profilePhoto|profilePic|headshot)$/i.test(String(key))) return 'profile';
+  if (key === 'photo' && isObj(parent) && (parent.email || parent.role) && !parent.caption && !parent.pid) return 'profile';
+  return 'doc';
+}
+function collect(v, out, key, parent, depth){
+  if (depth > 16) return;
+  if (typeof v === 'string') {
+    var c = candidate(v, key, parent);
+    if (c) out.push({ s: v, key: key, parent: parent, c: c });
+    else if (jsonish(v)) { try { collect(JSON.parse(v), out, null, null, depth + 1); } catch (e) {} }
+    return;
+  }
+  if (!v || typeof v !== 'object') return;
+  if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) collect(v[i], out, i, v, depth + 1); return; }
+  if (!isObj(v)) return;
+  for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) collect(v[k], out, k, v, depth + 1);
+}
+function hasCandidate(v, key, parent, depth){
+  depth = depth || 0;
+  if (depth > 16) return false;
+  if (typeof v === 'string') return !!candidate(v, key, parent) || jsonish(v);
+  if (!v || typeof v !== 'object') return false;
+  if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) if (hasCandidate(v[i], i, v, depth + 1)) return true; return false; }
+  if (!isObj(v)) return false;
+  for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k) && hasCandidate(v[k], k, v, depth + 1)) return true;
+  return false;
+}
+function addMeta(o, k, m){
+  if (!isObj(o)) return;
+  if (FILE_FIELDS[k]) {
+    o.ref = m.ref; o.hash = m.hash; o.size = m.size;
+    if (!o.type || String(o.type).indexOf('/') < 0 || /^image\//.test(o.type)) o.type = m.type;
+    if (!o.uploadedAt) o.uploadedAt = m.uploadedAt;
+    if (!o.by && m.by) o.by = m.by;
+    if (!o.name && m.name) o.name = m.name;
+  } else {
+    var f = Object.assign({}, isObj(o._files) ? o._files : {});
+    f[k] = { ref: m.ref, name: m.name || o.fileName || o[k + 'Name'] || o.name || '', type: m.type, size: m.size, hash: m.hash, uploadedAt: m.uploadedAt, by: m.by };
+    o._files = f;
+  }
+}
+/* copy-on-write: only the objects on the path to a file are new; the rest is shared */
+function rewrite(v, map, depth){
+  depth = depth || 0;
+  if (!v || typeof v !== 'object' || depth > 16) return v;
+  var arr = Array.isArray(v);
+  if (!arr && !isObj(v)) return v;
+  var keys = arr ? null : Object.keys(v), n = arr ? v.length : keys.length, out = null;
+  for (var i = 0; i < n; i++) {
+    var k = arr ? i : keys[i], x = v[k], nx = x, m = null;
+    if (typeof x === 'string') {
+      m = map.get(x);
+      if (m) nx = m.ref;
+      else if (jsonish(x)) { try { var pj = JSON.parse(x), rj = rewrite(pj, map, depth + 1); if (rj !== pj) nx = JSON.stringify(rj); } catch (e) {} }
+    } else if (x && typeof x === 'object') nx = rewrite(x, map, depth + 1);
+    if (nx !== x) {
+      if (!out) out = arr ? v.slice() : Object.assign({}, v);
+      out[k] = nx;
+      if (m) addMeta(out, k, m);
+    }
+  }
+  return out || v;
+}
+function nameFor(key, parent){
+  if (!isObj(parent)) return '';
+  return parent.name || parent.fileName || parent.filename || parent[key + 'Name'] || parent.title || '';
+}
+/* the main entry: any value (a record, a list, a whole backup) → the same value with references */
+function convertValue(value, ctx){
+  var found = [];
+  collect(value, found, null, null, 0);
+  if (!found.length) return Promise.resolve({ value: value, changed: false, files: 0 });
+  var map = new Map(), seen = new Set(), files = 0, failed = 0, i = 0;
+  function next(){
+    while (i < found.length && seen.has(found[i].s)) i++;
+    if (i >= found.length) return Promise.resolve();
+    var f = found[i++]; seen.add(f.s);
+    var P = f.parent;
+    return storeFile(f.s, { type: f.c.type, name: nameFor(f.key, P), kind: kindFor(f.key, P),
+        by: isObj(P) ? (P.by || P.uploadedBy || '') : '', uploadedAt: isObj(P) ? (P.uploadedAt || P.uploaded || P.date || P.added || '') : '' })
+      .then(function(m){
+        if (m && isObj(P) && P.uploaded && !/T/.test(String(m.uploadedAt))) m.uploadedAt = String(P.uploaded);
+        map.set(f.s, m); files++;
+      }, function(e){ failed++; stats.lastError = 'file: ' + (e && e.message || e); })
+      .then(function(){ return (ctx && ctx.onFile) ? ctx.onFile(files, found.length) : null; })
+      .then(next);
+  }
+  return next().then(function(){
+    var nv = map.size ? rewrite(value, map, 0) : value;
+    return { value: nv, changed: nv !== value, files: files, failed: failed, map: map };
+  });
+}
+window._gcFilesConvert = convertValue;
+window._gcFilesRewrite = function(v){ return rewrite(v, memo, 0); };
+window._gcFilesHasData = function(v){ return hasCandidate(v, null, null, 0); };
+window._gcFilesMemo = memo;
+
+/* ── the last door before the database: no base64 leaves this computer ──── */
+function urlOf(input){ try { return typeof input === 'string' ? input : (input instanceof URL ? input.href : ((input && input.url) || String(input))); } catch (e) { return ''; } }
+function methodOf(input, init){ return String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase(); }
+function sbRest(u){ try { var x = new URL(u, location.href); return x.host === SBH && x.pathname.indexOf('/rest/v1/') === 0 ? x.pathname : null; } catch (e) { return null; } }
+var RAW_IN_BODY = /"data"\s*:\s*"[A-Za-z0-9+/]{6000}/;
+function bodyNeeds(s){
+  if (typeof s !== 'string' || s.length < MIN_LEN) return blobReg.size > 0 && typeof s === 'string' && s.indexOf('"blob:') >= 0;
+  return s.indexOf(';base64,') >= 0 || s.indexOf('"data:') >= 0 || (blobReg.size > 0 && s.indexOf('"blob:') >= 0) || RAW_IN_BODY.test(s);
+}
+var BIG_LEFT = new RegExp('"data:[^"]{0,120}?,[A-Za-z0-9+/=]{' + DOCS_ROW_LIMIT + '}');
+function okEmpty(){ return Promise.resolve(new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })); }
+function convertText(txt){
+  var v; try { v = JSON.parse(txt); } catch (e) { return Promise.resolve(txt); }
+  return convertValue(v).then(function(r){ return r.changed ? JSON.stringify(r.value) : txt; }, function(){ return txt; });
+}
+var gFetch = function(input, init){
+  var u = urlOf(input);
+  if (u.charCodeAt(0) === 115 && isRef(u)) {
+    return fileBlob(u).then(function(b){ return new Response(b, { status: 200, headers: { 'Content-Type': b.type || 'application/octet-stream' } }); },
+      function(e){ return Promise.reject(new TypeError('Failed to fetch (GrayCo file: ' + (e && e.message || e) + ')')); });
+  }
+  var path = sbRest(u);
+  if (path) {
+    var m = methodOf(input, init), self = this;
+    if (m !== 'GET' && m !== 'HEAD' && init && typeof init.body === 'string' && !stale() && bodyNeeds(init.body)) {
+      return convertText(init.body).then(function(nb){
+        if (path === '/rest/v1/gc_kv' && /"key"\s*:\s*"projectDocs/.test(nb.slice(0, 400)) && BIG_LEFT.test(nb)) {
+          stats.blockedRows++;            /* the 33.115 rule, kept for a row that still holds a big file */
+          return okEmpty();
+        }
+        return below.call(self, input, Object.assign({}, init, { body: nb }));
+      });
+    }
+    if (m === 'GET' && path === '/rest/v1/gc_kv' && !stale()) {
+      return below.apply(this, arguments).then(function(r){
+        if (!r || !r.ok || r.status === 204) return r;
+        var ct = ''; try { ct = r.headers.get('content-type') || ''; } catch (e) {}
+        if (ct && ct.indexOf('json') < 0) return r;
+        return r.text().then(function(t){
+          var mk = function(body){ return new Response(body, { status: r.status, statusText: r.statusText, headers: r.headers }); };
+          if (!bodyNeeds(t)) return mk(t);
+          return convertText(t).then(mk, function(){ return mk(t); });
+        });
+      });
+    }
+  }
+  return below.apply(this, arguments);
+};
+gFetch.__gcFiles = true;
+try { Object.keys(below).forEach(function(k){ if (!(k in gFetch)) gFetch[k] = below[k]; }); } catch (e) {}
+window.fetch = gFetch;
+
+window.__GC_FILES__ = { version: 1, bucket: BUCKET, minLen: MIN_LEN, maxSide: MAX_SIDE, quality: QUALITY,
+  shrink: shrinkImage, isRef: isRef, parseRef: parseRef, drain: drain, stats: stats, rewrite: rewrite, collect: collect,
+  hasCandidate: hasCandidate, convert: convertValue, stale: stale, rawPut: rawPut, rawSet: rawSet, notice: notice, why: why, openRef: openRef, fixDoc: fixDoc, below: function(){ return below; } };
+console.log('[GC] Files go to the company file storage; records keep a small reference. _gcFilesStatus()');
+})();
+
+</script>
+<script>
 /* 33.137: A SCREEN IS NOT THROWN AWAY BECAUSE THE APP REDREW.
    Every screen in this CRM (Projects, Subs, Invoices, Accounting and its P&L, the Purchase form...) is a
    component written INSIDE the app's render function, so every redraw of the app hands React a brand-new
@@ -681,7 +2028,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.141-2026-10-14-v1800 -->
+<!-- GrayCo CRM Build: 33.142-2026-10-15-v1200 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -1302,7 +2649,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.141-2026-10-14-v1800");
+  console.log("[GC] Build 33.142-2026-10-15-v1200");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -1350,7 +2697,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.141-2026-10-14-v1800"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.142-2026-10-15-v1200"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -45380,7 +46727,7 @@ async function pullAll(force){
     // exhausted the database's Disk IO budget and took it unhealthy.
     /* patch D: never name projectDocs (blocked: base64 files) or a per-computer key, so the doc
        blocker no longer swallows the whole pull */
-    var _keyList = SYNC_KEYS.filter(function(k){ return k!=='projectDocs' && !(window._gcPullSkip && window._gcPullSkip(k)); }).map(function(k){return '"'+k+'"';}).join(',');
+    var _keyList = SYNC_KEYS.filter(function(k){ return (k!=='projectDocs' || window.__GC_FILES__) && !(window._gcPullSkip && window._gcPullSkip(k)); }).map(function(k){return '"'+k+'"';}).join(',');
     var rows = [];
     var _hr = await fetch(
       SB_URL+'/rest/v1/gc_kv?key=in.('+_keyList+')&select=key,updated_at',
@@ -60555,6 +61902,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
   // Read a base64 data-URL PDF -> full text.
   function pdfDataUrlToText(dataUrl, cb){
+    if(window._gcIsRef && window._gcIsRef(dataUrl)){ window._gcFileDataUrl(dataUrl).then(function(du){ pdfDataUrlToText(du, cb); }, function(e){ cb('', e); }); return; }   /* patch G */
     ensurePdfJs(function(err){
       if(err){ cb('', err); return; }
       try{
@@ -60579,7 +61927,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       if(window.__GC_IS_TYPING__) return;
       var invs=((window._crm&&window._crm.invoices)||[]).filter(Boolean);
       var targets=invs.filter(function(iv){
-        return iv && iv.type==='sub' && iv.fileData && String(iv.fileData).indexOf('application/pdf')>-1
+        return iv && iv.type==='sub' && iv.fileData && (String(iv.fileData).indexOf('application/pdf')>-1 || /^sb:[^ ]*\.pdf$/.test(String(iv.fileData)))
           && (!iv.amt || num(iv.amt)===0) && !_scanned[iv.id];
       });
       targets.forEach(function(iv){
@@ -69397,7 +70745,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     Array.prototype.forEach.call(body.querySelectorAll('._dhView'),function(b){
       b.onclick=function(){
         var id=b.getAttribute('data-id'); var d=docs.find(function(x){return x&&String(x.id)===id;});
-        if(d && d.data){ var w=window.open(); if(w){ if(/image/.test(d.type||'')){ w.document.write('<img src="'+d.data+'" style="max-width:100%">'); } else { w.location=d.data; } } }
+        if(d && d.data){ var w=window.open(); if(w){ if(/image/.test(d.type||'')){ w.document.write('<img src="'+d.data+'" style="max-width:100%">'); } else { (window._gcNavRef?window._gcNavRef(w,d.data,d.name):(w.location=d.data)); } } }
         else if(d && d.url){ window.open(d.url,'_blank'); }
       };
     });
@@ -69492,7 +70840,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       Array.prototype.forEach.call(results.querySelectorAll('._usJob'),function(b){ b.onclick=function(){ ov.remove(); if(window._gcOpenJobProfile) window._gcOpenJobProfile(b.getAttribute('data-id')); }; });
       Array.prototype.forEach.call(results.querySelectorAll('._usCust'),function(b){ b.onclick=function(){ ov.remove(); if(window._gcOpenCustomerProfile) window._gcOpenCustomerProfile(b.getAttribute('data-id')); }; });
       Array.prototype.forEach.call(results.querySelectorAll('._usSub'),function(b){ b.onclick=function(){ ov.remove(); if(window._gcOpenSubSearch) window._gcOpenSubSearch(b.getAttribute('data-id')); }; });
-      Array.prototype.forEach.call(results.querySelectorAll('._usDoc'),function(b){ b.onclick=function(){ var d=(crm.projectDocs||[]).find(function(x){return x&&String(x.id)===b.getAttribute('data-id');}); if(d&&d.data){ var w=window.open(); if(w){ if(/image/.test(d.type||'')) w.document.write('<img src="'+d.data+'" style="max-width:100%">'); else w.location=d.data; } } else if(d&&d.url){ window.open(d.url,'_blank'); } }; });
+      Array.prototype.forEach.call(results.querySelectorAll('._usDoc'),function(b){ b.onclick=function(){ var d=(crm.projectDocs||[]).find(function(x){return x&&String(x.id)===b.getAttribute('data-id');}); if(d&&d.data){ var w=window.open(); if(w){ if(/image/.test(d.type||'')) w.document.write('<img src="'+d.data+'" style="max-width:100%">'); else (window._gcNavRef?window._gcNavRef(w,d.data,d.name):(w.location=d.data)); } } else if(d&&d.url){ window.open(d.url,'_blank'); } }; });
     }
     document.getElementById('_usInput').addEventListener('input',function(){ render(this.value); });
     render('');
@@ -69890,7 +71238,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     else { docs.forEach(function(d){ var icon=/image|photo|jpg|png/i.test((d.type||'')+(d.cat||''))?'\uD83D\uDDBC\uFE0F':'\uD83D\uDCC4'; html+='<button class="_jdlDoc" data-id="'+(d.id||'')+'" style="display:flex;align-items:center;gap:12px;width:100%;background:#0f2440;border:1px solid #1e3a5f;border-radius:12px;padding:13px;margin-bottom:8px;text-align:left;cursor:pointer;"><span style="font-size:22px;">'+icon+'</span><span style="color:#fff;font-size:14px;font-weight:600;">'+(d.fileName||d.name||'Document')+'</span></button>'; }); }
     body.innerHTML=html;
     document.getElementById('_jdlCreate').onclick=function(){ ov.remove(); window._gcJobCreateDoc(job); };
-    Array.prototype.forEach.call(body.querySelectorAll('._jdlDoc'),function(b){ b.onclick=function(){ var d=docs.find(function(x){return String(x.id)===b.getAttribute('data-id');}); if(d&&d.data){ var w=window.open(); if(w){ if(/image/.test(d.type||'')) w.document.write('<img src="'+d.data+'" style="max-width:100%">'); else w.location=d.data; } } }; });
+    Array.prototype.forEach.call(body.querySelectorAll('._jdlDoc'),function(b){ b.onclick=function(){ var d=docs.find(function(x){return String(x.id)===b.getAttribute('data-id');}); if(d&&d.data){ var w=window.open(); if(w){ if(/image/.test(d.type||'')) w.document.write('<img src="'+d.data+'" style="max-width:100%">'); else (window._gcNavRef?window._gcNavRef(w,d.data,d.name):(w.location=d.data)); } } }; });
   };
 
   // Create any document type for THIS job
@@ -77976,7 +79324,7 @@ window._gcSchedCollapse = function(list){
     if(!(k in seen)){ seen[k] = out.length; out.push(r); continue; }
     var at = seen[k], cur = out[at];
     var win = pickWinner(cur, r), lose = (win===cur) ? r : cur;
-    if(lose && lose.id) dropped.push(lose.id);
+    if(lose && lose.id && String(lose.id) !== String(win.id)) dropped.push(lose.id);   /* F: the same row seen twice is not a duplicate of itself */
     out[at] = absorb(win, lose);
   }
   return { out: out, dropped: dropped };
@@ -78094,7 +79442,7 @@ window._gcSchedSweep = async function(opts){
     // On a huge first cleanup we skip this — thousands of ids would blow the
     // browser's storage limit, and the collapse above already holds the line on
     // every device, in both directions, forever.
-    if(res.dropped.length <= 2000){
+    if(loud && res.dropped.length <= 2000){   /* F: only a person's sweep (the 💎 button) records deletions — no automatic job writes a tombstone */
       try{ window._gcTombstoneMany(SK, res.dropped); }catch(e){}
       try{ legacyDead(res.dropped); }catch(e){}
     } else {
@@ -82951,6 +84299,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   window._gcViewSubDoc = function(subId, kind){
     var d=(loadDocs()[subId]||{})[kind];
     if(!d || !d.data){ alert('No '+(kind||'document').toUpperCase()+' on file for this sub yet.'); return; }
+    if(window._gcIsRef && window._gcIsRef(d.data)){ window._gcOpenRef(d.data, d.name||((kind||'document').toUpperCase()+'.pdf')); return; }   /* patch G */
     try{
       var parts=String(d.data).split(',');
       var bin=atob(parts[1]||'');
@@ -84853,6 +86202,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   window._gcOpenCompanyDoc = function(key){
     var d=load()[key];
     if(!d) return;
+    if(d.stored && d.stored.data && window._gcIsRef && window._gcIsRef(d.stored.data)){ window._gcOpenRef(d.stored.data, d.stored.name||(key+'.pdf')); return; }   /* patch G */
     if(d.stored && d.stored.data){
       try{
         var parts=String(d.stored.data).split(',');
@@ -107012,6 +108362,9 @@ function isDocKey(u){
   try{
     var s = String(u||'');
     if(s.indexOf('/rest/v1/gc_kv') < 0) return false;
+    /* patch G: files live in the file storage now, so a projectDocs row is a short list of references
+       and syncs like any list. Only the old split rows (projectDocs__chunkN / __manifest) stay unasked-for. */
+    if(window.__GC_FILES__) return /projectDocs__/i.test(s);
     return /projectDocs/i.test(s);
   }catch(e){ return false; }
 }
@@ -107021,6 +108374,7 @@ function bodyMentionsDocs(init){
     if(typeof b !== 'string') return false;
     if(b.length < 40) return false;
     /* only look at the front — these bodies are megabytes */
+    if(window.__GC_FILES__) return /"key"\s*:\s*"projectDocs__/i.test(b.slice(0, 400));   /* patch G: the file door converts the rest and refuses a row still holding a big file */
     return /"key"\s*:\s*"projectDocs/i.test(b.slice(0, 400));
   }catch(e){ return false; }
 }
@@ -107543,7 +108897,8 @@ function isWholeTableRead(u, init){
    So the pull asks for the live lists, and nothing else. Roughly twenty-five
    keys. The backups stay where they are, untouched and still restorable; they
    simply are not dragged across the wire every few minutes. */
-var SKIP = /^(gc_dailybackup_|doc:|_probe_|projectDocs)/i;
+var SKIP = window.__GC_FILES__ ? /^(gc_dailybackup_|doc:|_probe_|projectDocs__)/i   /* patch G: projectDocs is small again */
+                              : /^(gc_dailybackup_|doc:|_probe_|projectDocs)/i;
 function wanted(k){
   try{
     if(SKIP.test(k)) return false;
@@ -110280,7 +111635,8 @@ window._ccSyncLift = function(){
    Keys the app keeps in localStorage are merged there (that is what the screens
    read), and are mirrored into IndexedDB before each push so _gcPushAll sends them.
    Every push of these keys to gc_kv is a union with the cloud copy. */
-var PULL_SKIP = { projectDocs:1, navOrders:1, '__est__gc_builder_slots':1, gc_ccam_synced_ids:1 };
+var PULL_SKIP = { navOrders:1, '__est__gc_builder_slots':1, gc_ccam_synced_ids:1 };
+if(!window.__GC_FILES__) PULL_SKIP.projectDocs = 1;   /* patch G: references only now — projectDocs merges by id like every list */
 var PULL_PASS = { projects:1, estimates:1, schedule:1, cos:1, expenses:1, subs:1, vendors:1, customers:1, leads:1, scopes:1,
   projectPayments:1, invs:1, users:1, gc_tombstones:1, gc_deleted_projects:1,
   '__est__gc_rates_v3':1, '__est__gc_matlog_v2':1, '__est__gc_ests_v2':1 };
@@ -110481,4 +111837,628 @@ try{
   (document.head||document.documentElement).appendChild(st);
 }catch(e){}
 })();
+</script>
+
+<script>
+/* ============================================================================
+   GrayCo — patch F: the import that fills a fresh start.   __GC_PATCH_F_IMPORT__
+   Every 💾 Import / Load Backup button calls window._gcMergeImport (patch D).
+   This version keeps D's rule — it only ADDS what the CRM does not have, never
+   removes, never writes a deletion — and after a fresh start brings back
+   EVERYTHING in the file:
+     · every list of records (as before);
+     · the maps and settings lists the file holds (commission paid, approvals,
+       job sources, Cordova Club, …): filled in where this computer has nothing,
+       merged entry by entry where it has some (this computer's entry wins a tie);
+     · records the BACKUP ITSELF had deleted (its gc_tombstones and gc_deleted_*
+       lists) are left out — counted as "deleted in the backup, left out" — and
+       are not written as deletions here;
+     · records deleted in this CRM stay deleted (as before);
+     · users: the same email is the same person. A file's user whose email the
+       CRM already knows (on disk, on screen or a built-in default) becomes ONE
+       record — the file's details under the CRM's id — never a second copy, so
+       the company sign-in (which finds people by email) keeps working.
+   Then it goes to the cloud through the normal union push.
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_F_IMPORT__) return; window.__GC_PATCH_F_IMPORT__ = true;
+
+var pol = window._gcFreshStartPolicy || { kept: function(){ return false; } };
+var SYNC = window._gcSyncPolicy || { localStorage: {}, skip: {} };
+var LS_BACKED = SYNC.localStorage || {};
+/* never taken from a file: delete-lists, backups and snapshots, caches, sync
+   bookmarks, guards' counters, this computer's sign-in and settings */
+var SKIP = /^(gc_dailybackup_|gc_safenet_|projects_before_restore_|_probe_|gc_backup_meta|gc_tombstones|gc_deleted_|gc_bak_|gc_snap_|__est__gc_builder_slots|gc_lastgood|gc_doc_seen|gc_doc_snap|gc_lastPullTs|gc_restore_|gc_projects_backup|gc_sched_backup|gc_ests_backup|gc_est_recovery|gc_est_openbackup|gc_safety_snap|gc_epoch|gc_auth|gc_merge_log|gc_kept_log|gc_hw$|gc_pending_ccdupes|grayco_dirty|_gc_pure_probe|gc_last_test|gc_big_docs|gc_cc_hub_touched|gc_cc_projects_cache|gc_cc_projects_at|sf_deleted|_migrated$|user$|navOrders$|__healthcheck__|doc:)/;
+var DEV = {}; (pol.deviceKeep || []).concat(pol.idbKeep || [], ['gc_cc_token','gc_cc_token_backup','gc_cc_key_mirror','gc_team_google_users','gc_gdoc_imported']).forEach(function(k){ DEV[k] = 1; });
+var DEV_PREFIX = (pol.deviceKeepPrefix || []).concat(['gcal_token_']);
+function deviceKey(k){ if (DEV[k]) return true; for (var i = 0; i < DEV_PREFIX.length; i++) if (k.indexOf(DEV_PREFIX[i]) === 0) return true; return false; }
+/* config the cloud keeps (rate books, templates, settings) may still be filled in from a file — add-only, like everything else */
+function skipKey(k){ k = String(k); if (k.charAt(0) === '_' && !/^__est__gc_(rates_v3|matlog_v2|ests_v2)$/.test(k)) return true; return SKIP.test(k) || deviceKey(k); }
+function isObj(v){ return v && typeof v === 'object' && !Array.isArray(v); }
+function isRecList(v){ return Array.isArray(v) && v.length > 0 && v.every(function(r){ return isObj(r); }); }
+function parse(v){ if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch (e) { return v; } }
+function alias(k){ return k === 'invoices' ? 'invs' : k; }
+
+/* ── read any backup the CRM ever wrote ─────────────────────────────────── */
+function readFile(b){
+  var f = { src: {}, loc: {}, tomb: {}, del: {} };
+  if (!b || typeof b !== 'object') return f;
+  if (Array.isArray(b)) { f.src.estimates = b; return f; }
+  if (isObj(b.data)) { f.src = b.data; f.loc = b.local || b.ls || {}; if (isObj(b.tombstones)) Object.assign(f.tomb, b.tombstones); }
+  else if (isObj(b.idb)) { f.src = b.idb; f.loc = b.local || b.ls || {}; if (isObj(b.tombstones)) Object.assign(f.tomb, b.tombstones); }
+  else { Object.keys(b).forEach(function(k){ if (k.charAt(0) !== '_' && !/^(app|kind|version|format|exported|exportedAt|savedAt|counts|totalRecords|tombstoneCount)$/.test(k)) f.src[k] = b[k]; }); }
+  /* the file's own delete-lists, wherever it kept them */
+  [f.src, f.loc].forEach(function(o){
+    Object.keys(o || {}).forEach(function(k){
+      var v = parse(o[k]);
+      if (k === 'gc_tombstones' && isObj(v)) Object.keys(v).forEach(function(t){ if (!(t in f.tomb)) f.tomb[t] = v[t]; });
+      var m = /^gc_deleted_(.+)$/.exec(k);
+      if (m && Array.isArray(v)) { var L = alias(m[1]); f.del[L] = (f.del[L] || []).concat(v.map(String)); }
+    });
+  });
+  return f;
+}
+function fileDead(f, list){
+  var d = {};
+  Object.keys(f.tomb).forEach(function(t){ var i = t.indexOf(':'); if (i > 0 && alias(t.slice(0, i)) === list) d[t.slice(i + 1)] = 1; });
+  (f.del[list] || []).forEach(function(id){ d[id] = 1; });
+  return d;
+}
+function crmDead(list){
+  var d = {};
+  try { var t = (window._gcTombstones && window._gcTombstones()) || JSON.parse(localStorage.getItem('gc_tombstones') || '{}');
+        Object.keys(t || {}).forEach(function(k){ var i = k.indexOf(':'); if (i > 0 && alias(k.slice(0, i)) === list) d[k.slice(i + 1)] = 1; }); } catch (e) {}
+  try { (JSON.parse(localStorage.getItem('gc_deleted_' + list) || '[]') || []).forEach(function(id){ d[id] = 1; }); } catch (e) {}
+  if (list === 'invs') try { (JSON.parse(localStorage.getItem('gc_deleted_invoices') || '[]') || []).forEach(function(id){ d[id] = 1; }); } catch (e) {}
+  return d;
+}
+function stampOf(r){ var t = r && (r.updatedAt || r.updated_at || r.modifiedAt || r.modified || r.lastModified); return t ? String(t) : ''; }
+function low(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
+async function readIdb(k){
+  try { if (k === 'projects' && window._gcProjectsRaw) return await window._gcProjectsRaw(); } catch (e) {}
+  try { if (window.idbGet) return await window.idbGet(k); } catch (e) {}
+  return null;
+}
+function lsRead(k){ var raw = null; try { raw = localStorage.getItem(k); } catch (e) {} if (raw == null) return undefined; return parse(raw); }
+
+window._gcMergeImportPlan = async function(data){
+  var f = readFile(data);
+  var plan = { lists: [], others: [], adds: 0, updates: 0, keptDeleted: 0, backupDeleted: 0, filled: 0 };
+  /* 1. lists of records (+ grayco_<list> copies in the file's localStorage when it has no list of that name) */
+  var lists = {};
+  Object.keys(f.src).forEach(function(k){ if (!skipKey(k)) { var v = parse(f.src[k]); if (isRecList(v)) lists[alias(k)] = (lists[alias(k)] || []).concat(v); } });
+  Object.keys(f.loc).forEach(function(k){
+    var m = /^grayco_(.+)$/.exec(k); if (!m || lists[alias(m[1])] || skipKey(k)) return;
+    var v = parse(f.loc[k]); if (isRecList(v)) lists[alias(m[1])] = v;
+  });
+  var keys = Object.keys(lists);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var cur = await readIdb(k); if (!Array.isArray(cur)) cur = [];
+    var inc = JSON.parse(JSON.stringify(lists[k]));
+    try { if (window._gcEnsureRecordIds) window._gcEnsureRecordIds(inc); } catch (e) {}
+    var have = {}; cur.forEach(function(r, ix){ if (r && r.id != null) have[String(r.id)] = ix; });
+    /* users: everyone this CRM knows by email — on disk, on screen, the built-in defaults */
+    var byEmail = {};
+    if (k === 'users') {
+      var known = cur.slice();
+      try { if (window._crm && Array.isArray(window._crm.users)) known = known.concat(window._crm.users); } catch (e) {}
+      try { if (Array.isArray(window._uDef)) known = known.concat(window._uDef); } catch (e) {}
+      known.forEach(function(r){ if (r && r.email && r.id != null && !(low(r.email) in byEmail)) byEmail[low(r.email)] = r; });
+    }
+    var dead = crmDead(k), fdead = fileDead(f, k), add = [], upd = {}, seen = {}, kd = 0, bd = 0;
+    inc.forEach(function(r){
+      if (!r || r.id == null) return;
+      var id = String(r.id); if (seen[id]) return; seen[id] = 1;
+      if (fdead[id]) { bd++; return; }
+      if (dead[id]) { kd++; return; }
+      if (!(id in have)) {
+        var same = (k === 'users' && r.email) ? byEmail[low(r.email)] : null;
+        if (same && String(same.id) !== id) {
+          /* the same person under another id: ONE record. Only a built-in default (the blank one a fresh
+             start begins with) takes the file's details, under its own id, so the company sign-in (by
+             email), the signed-in person and every computer's copy stay one; a real record stays as is */
+          var isDef = false; try { isDef = (window._uDef || []).some(function(u){ return u && String(u.id) === String(same.id); }); } catch (e) {}
+          var mine = (String(same.id) in have) ? cur[have[String(same.id)]] : same;
+          if (!isDef || (mine && mine.importedIds)) return;                 /* a person this CRM already has as a real record stays as it is */
+          var one = Object.assign({}, same, r, { id: same.id });
+          one.importedIds = (Array.isArray(same.importedIds) ? same.importedIds : []).concat(String(r.id)).filter(function(x, i, a){ return a.indexOf(x) === i; });
+          if (String(same.id) in have) upd[String(same.id)] = one; else add.push(one);
+          return;
+        }
+        add.push(r); return;
+      }
+      var a = stampOf(r), b = stampOf(cur[have[id]]);
+      if (a && b && a > b) upd[id] = r;
+    });
+    var nu = Object.keys(upd).length;
+    if (add.length || nu || kd || bd) plan.lists.push({ list: k, add: add, upd: upd, cur: cur, adds: add.length, updates: nu, keptDeleted: kd, backupDeleted: bd });
+    plan.adds += add.length; plan.updates += nu; plan.keptDeleted += kd; plan.backupDeleted += bd;
+  }
+  /* 2. maps, settings lists and other values (IndexedDB keys, then the file's localStorage) */
+  var mergeVal = window._gcMergeValue;
+  var done = {};
+  async function other(k, v, fromLs){
+    if (done[k] || skipKey(k) || lists[alias(k)] || /^grayco_/.test(k)) return;
+    v = parse(v);
+    if (v == null || v === '' || (!fromLs && isRecList(v)) || (Array.isArray(v) && !v.length) || (isObj(v) && !Object.keys(v).length)) return;
+    done[k] = 1;
+    var inLs = !!LS_BACKED[k] || fromLs || lsRead(k) !== undefined;
+    var local = inLs ? lsRead(k) : await readIdb(k);
+    var merged = mergeVal ? mergeVal(k, local, v) : ((local === undefined || local === null) ? v : local);
+    var a = null, b = null; try { a = JSON.stringify(local); b = JSON.stringify(merged); } catch (e) {}
+    if (a === b) return;
+    plan.others.push({ key: k, value: merged, ls: inLs, idb: !fromLs || !!LS_BACKED[k], wasEmpty: local === undefined || local === null });
+    plan.filled++;
+  }
+  var sk = Object.keys(f.src);
+  for (var j = 0; j < sk.length; j++) await other(sk[j], f.src[sk[j]], false);
+  var lk = Object.keys(f.loc);
+  for (var q = 0; q < lk.length; q++) await other(lk[q], f.loc[lk[q]], true);
+  return plan;
+};
+
+function pickJson(){
+  return new Promise(function(res){
+    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+    inp.onchange = function(){ var fl = inp.files && inp.files[0]; if (!fl) { res(null); return; } var r = new FileReader(); r.onload = function(){ try { res(JSON.parse(r.result)); } catch (e) { alert('That is not a readable backup file.'); res(null); } }; r.readAsText(fl); };
+    inp.click();
+  });
+}
+window._gcMergeImport = async function(data, opts){
+  opts = opts || {};
+  if (!data) { data = await pickJson(); if (!data) return null; }
+  var plan = await window._gcMergeImportPlan(data);
+  var notes = (plan.keptDeleted ? plan.keptDeleted + ' record(s) in the file were deleted here and stay deleted.\n' : '')
+    + (plan.backupDeleted ? plan.backupDeleted + ' record(s) were deleted in the backup itself — left out.\n' : '');
+  if (!plan.adds && !plan.updates && !plan.filled) {
+    alert('Nothing new in that file. The CRM already has every record in it.' + (notes ? '\n\n' + notes : '') + '\nNothing was changed.');
+    return { added: 0, updated: 0, filled: 0, plan: plan };
+  }
+  var lines = plan.lists.filter(function(l){ return l.adds || l.updates; }).map(function(l){
+    return '• adds ' + l.adds + ' ' + l.list + (l.updates ? (', updates ' + l.updates + ' newer') : '');
+  });
+  if (plan.filled) lines.push('• fills in ' + plan.filled + ' setting(s) / list(s) of marks (approvals, job sources, Cordova Club …)');
+  var msg = 'Add from this backup:\n\n' + lines.join('\n') + '\n\n' + notes
+    + 'Changes nothing else: nothing is removed, nothing is deleted.\n\nOK = add these.   Cancel = change nothing.';
+  if (!opts.yes && !confirm(msg)) return { cancelled: true, plan: plan };
+  try { if (window._gcManualNow) window._gcManualNow('import new records'); } catch (e) {}
+  var up = window._supaUpsertNow || window._supaUpsert, pushes = [];
+  for (var i = 0; i < plan.lists.length; i++) {
+    var L = plan.lists[i]; if (!L.adds && !L.updates) continue;
+    var out = L.cur.map(function(r){
+      if (!r || r.id == null) return r;
+      var id = String(r.id);
+      return L.upd[id] || r;
+    }).concat(L.add);
+    try { if (window.idbSet) await window.idbSet(L.list, out); } catch (e) {}
+    try { if (up) pushes.push(Promise.resolve(up(L.list, out)).catch(function(){})); } catch (e) {}
+  }
+  for (var j = 0; j < plan.others.length; j++) {
+    var o = plan.others[j];
+    if (o.ls) { try { localStorage.setItem(o.key, typeof o.value === 'string' ? o.value : JSON.stringify(o.value)); } catch (e) {} }
+    if (o.idb) { try { if (window.idbSet) await window.idbSet(o.key, o.value); } catch (e) {} }
+  }
+  try { await Promise.race([Promise.all(pushes), new Promise(function(r){ setTimeout(r, 8000); })]); } catch (e) {}
+  console.log('[GC] Import added ' + plan.adds + ' record(s), updated ' + plan.updates + ', filled ' + plan.filled + ' setting(s); left out '
+    + plan.backupDeleted + ' deleted in the backup and ' + plan.keptDeleted + ' deleted here; nothing removed.');
+  if (!opts.noReload) setTimeout(function(){ try { window.__GC_USER_WANTS_RELOAD__ = true; if (window._gcReloadNow) window._gcReloadNow(); else location.reload(); } catch (e) {} }, 1200);
+  return { added: plan.adds, updated: plan.updates, filled: plan.filled, backupDeleted: plan.backupDeleted, keptDeleted: plan.keptDeleted };
+};
+})();
+
+</script>
+<script>
+/* ════════════════════════════════════════════════════════════════════════════
+   GrayCo — FILES (patch G), part 2: the files already in the CRM.
+   __GC_PATCH_G_TAIL__
+
+   1. ONE-TIME MOVE, ON EACH COMPUTER. After the company sign-in (and, with the
+      fresh start, after this computer's fresh start is confirmed), every record
+      on this computer that still holds a file as base64 — in IndexedDB and in
+      localStorage — goes through the same pipeline (photos are shrunk), and the
+      file inside it is replaced by its small reference. One record at a time,
+      a pause between each, never while words are being typed. It writes with
+      a plain save: nothing is removed, no record is deleted or tombstoned.
+      It can stop at any point (closing the page, going offline) and simply goes
+      on from where it is next time — a record already moved has nothing left in
+      it to move.  _gcFilesMigration() shows what it did (MB before → after).
+   2. Anything that still writes a file into a record later (an older screen, a
+      restore, a pull from another computer) is noticed and moved the same way a
+      few seconds after it is saved.
+   3. 💾 Import: the files inside a backup become references before it is read.
+      Backups made from now on hold references, not file bytes.
+   4. The CRM's older viewers that expect the file itself (Preview, Download,
+      the invoice reader, the sub W-9 / COI viewer …) are handed the file
+      through _gcFileUrl / _gcFileDataUrl.
+   ════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_FILES_TAIL__) return; window.__GC_FILES_TAIL__ = true;
+var G = window.__GC_FILES__; if (!G) return;
+var nST = (window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout).bind(window);
+var MIN_LEN = G.minLen;
+var MIG = 'gc_files_migration_v1';
+function isObj(v){ return !!v && Object.prototype.toString.call(v) === '[object Object]'; }
+function sizeOf(v){ try { return typeof v === 'string' ? v.length : JSON.stringify(v).length; } catch (e) { return 0; } }
+function busy(){
+  /* something is open on screen (the screen-hold): what is on screen is not touched */
+  try {
+    if (typeof window.__GC_BUSY__ === 'function' && window.__GC_BUSY__()) return true;
+    if (typeof window.__GC_UNSAVED_TYPING__ === 'function' && window.__GC_UNSAVED_TYPING__()) return true;
+    if (window.__GC_FORM_OPEN__ === true) return true;
+  } catch (e) {}
+  return false;
+}
+function typing(){
+  /* words being typed (or typed and not saved): the background work waits — it never competes with the keyboard */
+  try {
+    if (typeof window.__GC_UNSAVED_TYPING__ === 'function' && window.__GC_UNSAVED_TYPING__()) return true;
+    if (Date.now() - lastKey < 8000) return true;
+  } catch (e) {}
+  return false;
+}
+var lastKey = 0;
+function textBox(el){ return el && (el.tagName === 'TEXTAREA' || el.isContentEditable || (el.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset|file|range|color|hidden)$/i.test(el.type || 'text'))); }
+['keydown', 'input', 'paste'].forEach(function(t){ document.addEventListener(t, function(e){ try { if (e.isTrusted !== false && textBox(e.target)) lastKey = Date.now(); } catch (x) {} }, true); });
+function signedIn(){
+  try { var A = window.__GC_AUTH__; if (!A) return true; return !!A.email() && A.mode() !== 'none'; } catch (e) { return false; }
+}
+function epochOk(){
+  try { if (G.stale()) return false; if (typeof window._gcEpochStatus !== 'function') return true; var s = window._gcEpochStatus(); return s && s.state === 'ok'; } catch (e) { return false; }
+}
+function ready(){ return signedIn() && epochOk() && !typing(); }
+function migState(){ try { return JSON.parse(localStorage.getItem(MIG) || 'null') || {}; } catch (e) { return {}; } }
+var nSet = Storage.prototype.setItem, rawSet = G.rawSet || nSet;
+function saveMig(s){ try { nSet.call(localStorage, MIG, JSON.stringify(s)); } catch (e) {} }
+
+/* ── IndexedDB ─────────────────────────────────────────────────────────── */
+function openDb(name){
+  return new Promise(function(res){
+    var q; try { q = indexedDB.open(name); } catch (e) { return res(null); }
+    var created = false;
+    q.onupgradeneeded = function(){ created = true; try { q.transaction.abort(); } catch (e) {} };   /* never create a database that is not there */
+    q.onsuccess = function(){ if (created) { try { q.result.close(); } catch (e) {} return res(null); } res(q.result); };
+    q.onerror = function(e){ try { e.preventDefault(); } catch (x) {} res(null); };
+    q.onblocked = function(){ res(null); };
+  });
+}
+function dbNames(){
+  var base = ['grayco_crm', 'grayco_master', 'grayco_crm_db'];
+  var p = indexedDB.databases ? indexedDB.databases().then(function(l){ (l || []).forEach(function(d){ if (d && d.name && base.indexOf(d.name) < 0) base.push(d.name); }); return base; }, function(){ return base; }) : Promise.resolve(base);
+  return p.then(function(n){ return n.filter(function(x){ return x !== 'grayco_files' && x.indexOf('grayco_crm_archive_') !== 0 && /^(grayco|gc_|crm)/i.test(x); }); });
+}
+function findKeys(db, store){
+  return new Promise(function(res){
+    var out = [];
+    try {
+      var t = db.transaction(store, 'readonly'), c = t.objectStore(store).openCursor();
+      c.onsuccess = function(){ var cur = c.result; if (!cur) return; try { if (G.hasCandidate(cur.value, null, null, 0)) out.push(cur.primaryKey); } catch (e) {} cur['continue'](); };
+      t.oncomplete = function(){ res(out); }; t.onerror = function(){ res(out); }; t.onabort = function(){ res(out); };
+    } catch (e) { res(out); }
+  });
+}
+function getVal(db, store, key){
+  return new Promise(function(res){
+    try { var t = db.transaction(store, 'readonly'), g = t.objectStore(store).get(key); g.onsuccess = function(){ res(g.result); }; g.onerror = function(){ res(undefined); }; }
+    catch (e) { res(undefined); }
+  });
+}
+var STATE = { users: 1, projects: 1, estimates: 1, expenses: 1, schedule: 1, candidates: 1, vendors: 1, leads: 1, cos: 1, logs: 1, punch: 1, invs: 1, warrs: 1,
+  tmpls: 1, inspections: 1, photos: 1, laborRates: 1, priceSheets: 1, ccTrans: 1, ccCards: 1, projectDocs: 1, bidLists: 1, scopes: 1, customers: 1 };
+var screenQueue = {}, screenT = null;
+function applyToScreen(key){
+  /* what is on screen gets the same references (a pure replacement of the file text; nothing else changes) */
+  if (!STATE[key] || typeof window._gcApplySyncRaw !== 'function' || G.stale()) return;   /* an out-of-date window never redraws (a redraw would make the CRM save) */
+  if (busy()) { screenQueue[key] = 1; if (!screenT) screenT = nST(function(){ screenT = null; flushScreen(); }, 20000); return; }
+  try {
+    window._gcApplySyncRaw(key, function(prev){ return (Array.isArray(prev) || isObj(prev)) ? G.rewrite(prev, window._gcFilesMemo, 0) : prev; });
+  } catch (e) {}
+}
+function flushScreen(){
+  if (G.stale()) { screenQueue = {}; return; }
+  if (!Object.keys(screenQueue).length) return;
+  if (busy()) { if (!screenT) screenT = nST(function(){ screenT = null; flushScreen(); }, 20000); return; }
+  Object.keys(screenQueue).forEach(function(k){ delete screenQueue[k]; applyToScreen(k); });
+}
+
+var selfWrite = 0;
+function convertRecord(dbName, db, store, key, tally){
+  return getVal(db, store, key).then(function(v){
+    if (v === undefined) return null;
+    var before = sizeOf(v);
+    return G.convert(v).then(function(r){
+      if (!r.map || !r.map.size) { tally.failed += r.failed || 0; return null; }
+      return new Promise(function(res){
+        var after = null;
+        try {
+          /* compare-and-swap: rewrite what is there NOW (the CRM may have saved since), with the same file → reference list */
+          var t = db.transaction(store, 'readwrite'), s = t.objectStore(store), g = s.get(key);
+          g.onsuccess = function(){
+            var cur = g.result; if (cur === undefined) return;
+            var nv = G.rewrite(cur, r.map, 0);
+            if (nv !== cur && epochOk()) { selfWrite++; try { if (s.keyPath == null) G.rawPut.call(s, nv, key); else G.rawPut.call(s, nv); after = sizeOf(nv); } catch (e) { after = null; } finally { selfWrite--; } }   /* a window that just went out of date (fresh start) writes nothing */
+          };
+          t.oncomplete = function(){ res(after); }; t.onerror = function(){ res(null); }; t.onabort = function(){ res(null); };
+        } catch (e) { res(null); }
+      }).then(function(after){
+        if (after == null) return null;
+        tally.files += r.files; tally.failed += r.failed || 0; tally.records++;
+        tally.before += before; tally.after += after;
+        var id = dbName + '/' + store + '/' + String(key);
+        tally.keys[id] = { before: before, after: after, files: r.files };
+        if (dbName === 'grayco_crm' && store === 'kv' && typeof key === 'string') applyToScreen(key);
+        /* the per-document rows (gc_kv "doc:<id>") still hold the old base64 in the cloud: forget what was
+           sent, so the next document push re-sends each one — now as a small reference */
+        if (dbName === 'grayco_crm' && store === 'kv' && key === 'projectDocs') { try { localStorage.removeItem('gc_doc_snap'); } catch (e) {} }
+        return after;
+      });
+    });
+  });
+}
+function convertLS(k, tally){
+  var raw = null; try { raw = localStorage.getItem(k); } catch (e) {}
+  if (!raw || raw.length < MIN_LEN) return Promise.resolve(null);
+  var json = true, v; try { v = JSON.parse(raw); } catch (e) { v = raw; json = false; }
+  return G.convert(v).then(function(r){
+    if (!r.map || !r.map.size) { tally.failed += r.failed || 0; return null; }
+    var now = null; try { now = localStorage.getItem(k); } catch (e) {}
+    if (now == null) return null;
+    var cur; if (json) { try { cur = JSON.parse(now); } catch (e) { return null; } } else cur = now;
+    var nv = typeof cur === 'string' ? (r.map.get(cur) ? r.map.get(cur).ref : cur) : G.rewrite(cur, r.map, 0);
+    if (nv === cur) return null;
+    var out = typeof nv === 'string' && !json ? nv : JSON.stringify(nv);
+    if (!epochOk()) return null;
+    try { rawSet.call(localStorage, k, out); } catch (e) { return null; }
+    tally.files += r.files; tally.failed += r.failed || 0; tally.records++;
+    tally.before += raw.length; tally.after += out.length;
+    tally.keys['localStorage/' + k] = { before: raw.length, after: out.length, files: r.files };
+    return out.length;
+  });
+}
+var LS_SKIP = /^(gc_auth_v1|gc_auth_last_active|gc_files_migration_v1|grayco_sb_key|gc_qb_tokens|gc_cc_token.*|grayco_ccam_key)$/;
+function lsCandidates(){
+  var out = [];
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (!k || LS_SKIP.test(k)) continue;
+    var v = localStorage.getItem(k); if (v && v.length >= MIN_LEN && (v.indexOf(';base64,') >= 0 || v.indexOf('"blob:') >= 0 || /^data:/.test(v))) out.push(k); } } catch (e) {}
+  return out;
+}
+function pause(ms){ return new Promise(function(r){ nST(r, ms); }); }
+function whenReady(){
+  return new Promise(function(res){ (function chk(){ if (ready()) res(); else nST(chk, 15000); })(); });
+}
+
+/* ── the sweep: every database, every record, one at a time ─────────────── */
+var running = null;
+function sweep(opts){
+  opts = opts || {};
+  if (running) return running;
+  var st = migState(), tally = { files: 0, failed: 0, records: 0, before: 0, after: 0, keys: {} };
+  var gap = opts.fast ? 0 : 1500;
+  running = (async function(){
+    if (!opts.now) await whenReady();
+    if (!st.startedAt) { st.startedAt = new Date().toISOString(); saveMig(st); }
+    var names = await dbNames();
+    for (var i = 0; i < names.length; i++) {
+      var db = await openDb(names[i]); if (!db) continue;
+      try {
+        var stores = Array.prototype.slice.call(db.objectStoreNames);
+        for (var s = 0; s < stores.length; s++) {
+          var keys = await findKeys(db, stores[s]);
+          for (var k = 0; k < keys.length; k++) {
+            if (!opts.now) await whenReady();
+            try { await convertRecord(names[i], db, stores[s], keys[k], tally); } catch (e) { tally.failed++; }
+            if (gap) await pause(gap);
+          }
+        }
+      } finally { try { db.close(); } catch (e) {} }
+    }
+    var lk = lsCandidates();
+    for (var j = 0; j < lk.length; j++) {
+      if (!opts.now) await whenReady();
+      try { await convertLS(lk[j], tally); } catch (e) { tally.failed++; }
+      if (gap) await pause(gap);
+    }
+    st = migState();
+    st.passes = (st.passes || 0) + 1;
+    st.files = (st.files || 0) + tally.files; st.records = (st.records || 0) + tally.records;
+    st.bytesBefore = (st.bytesBefore || 0) + tally.before; st.bytesAfter = (st.bytesAfter || 0) + tally.after;
+    st.keys = Object.assign(st.keys || {}, tally.keys);
+    st.lastPassAt = new Date().toISOString();
+    if (!tally.failed) { if (!st.doneAt) st.doneAt = st.lastPassAt; } else st.lastFailures = tally.failed;
+    saveMig(st);
+    if (tally.files) console.log('[GC] Files moved to the company file storage: ' + tally.files + ' in ' + tally.records + ' record(s), '
+      + (tally.before / 1048576).toFixed(2) + ' MB → ' + (tally.after / 1048576).toFixed(2) + ' MB.');
+    flushScreen();
+    return tally;
+  })();
+  var p = running;
+  p.then(function(){ running = null; }, function(){ running = null; });
+  return p;
+}
+window._gcFilesSweep = function(opts){ return sweep(opts); };
+window._gcFilesMigration = function(){
+  var s = migState();
+  var out = { started: s.startedAt || '(not yet)', finished: s.doneAt || '(not yet)', files: s.files || 0, records: s.records || 0,
+              'MB before': ((s.bytesBefore || 0) / 1048576).toFixed(2), 'MB after': ((s.bytesAfter || 0) / 1048576).toFixed(2) };
+  try { console.table(out); } catch (e) {}
+  return Object.assign({}, s, { summary: out });
+};
+
+/* ── later writes that still carry a file ───────────────────────────────── */
+var dirty = [], dirtyT = null;
+function note(item){
+  if (G.stale()) return;
+  dirty.push(item);
+  if (dirtyT) return;
+  dirtyT = nST(function run(){
+    dirtyT = null;
+    if (!ready()) { dirtyT = nST(run, 20000); return; }
+    var items = dirty.splice(0), tally = { files: 0, failed: 0, records: 0, before: 0, after: 0, keys: {} };
+    var seen = {};
+    (async function(){
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i], id = it.ls != null ? 'ls:' + it.ls : it.db + '|' + it.store + '|' + String(it.key);
+        if (seen[id]) continue; seen[id] = 1;
+        try {
+          if (it.ls != null) await convertLS(it.ls, tally);
+          else { var db = await openDb(it.db); if (db) { try { await convertRecord(it.db, db, it.store, it.key, tally); } finally { try { db.close(); } catch (e) {} } } }
+        } catch (e) {}
+      }
+      if (tally.records) {
+        var st = migState(); st.later = (st.later || 0) + tally.files; st.keys = Object.assign(st.keys || {}, tally.keys); saveMig(st);
+      }
+      flushScreen();
+    })();
+  }, 6000);
+}
+(function(){
+  function hook(name){
+    var orig = IDBObjectStore.prototype[name];
+    if (!orig || orig.__gcFiles) return;
+    var w = function(value, key){
+      var r = orig.apply(this, arguments);
+      try {
+        if (!selfWrite && value && typeof value === 'object' && G.hasCandidate(value, null, null, 0)) {
+          var dbn = this.transaction.db.name;
+          if (dbn !== 'grayco_files' && dbn.indexOf('grayco_crm_archive_') !== 0) {
+            var k = key !== undefined ? key : (typeof this.keyPath === 'string' ? value[this.keyPath] : undefined);
+            if (k !== undefined) note({ db: dbn, store: this.name, key: k });
+          }
+        }
+      } catch (e) {}
+      return r;
+    };
+    w.__gcFiles = true;
+    IDBObjectStore.prototype[name] = w;
+  }
+  hook('put'); hook('add');
+  Storage.prototype.setItem = function(k, v){
+    var r = nSet.apply(this, arguments);
+    try {
+      if (this === window.localStorage && typeof v === 'string' && v.length >= MIN_LEN && !/^gc_files_/.test(k)
+          && (v.indexOf(';base64,') >= 0 || v.indexOf('"blob:') >= 0)) note({ ls: String(k) });
+      else if (this === window.localStorage && typeof v === 'string' && v.indexOf('"blob:') >= 0) note({ ls: String(k) });
+    } catch (e) {}
+    return r;
+  };
+})();
+
+/* ── 💾 Import: a backup's files become references first ─────────────────── */
+function pickJson(){
+  return new Promise(function(res){
+    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+    inp.onchange = function(){ var fl = inp.files && inp.files[0]; if (!fl) { res(null); return; } var r = new FileReader(); r.onload = function(){ try { res(JSON.parse(r.result)); } catch (e) { alert('That is not a readable backup file.'); res(null); } }; r.readAsText(fl); };
+    inp.click();
+  });
+}
+function wrapImport(){
+  var orig = window._gcMergeImport;
+  if (typeof orig !== 'function' || orig.__gcFiles) return;
+  var w = async function(data, opts){
+    if (!data) { data = await pickJson(); if (!data) return null; }
+    try {
+      if (G.hasCandidate(data, null, null, 0)) {
+        G.notice('Preparing the files in this backup: making them small and putting them in the company file storage…');
+        var r = await G.convert(data, { onFile: function(n, of){ if (n % 5 === 0) G.notice('Preparing the files in this backup… ' + n + ' of about ' + of); } });
+        if (r.changed) data = r.value;
+        console.log('[GC] Import: ' + r.files + ' file(s) in the backup are now references (' + (r.failed || 0) + ' could not be read).');
+      }
+    } catch (e) { try { console.warn('[GC] Import: files could not be prepared', e); } catch (x) {} }
+    return orig.call(this, data, opts);
+  };
+  w.__gcFiles = true;
+  window._gcMergeImport = w;
+}
+
+/* ── a backup made now holds references, never file bytes ─────────────────── */
+function wrapBackup(){
+  var orig = window._gcBackupNow;
+  if (typeof orig !== 'function' || orig.__gcFiles) return;
+  var w = function(){
+    var self = this, args = arguments;
+    var left = false; try { left = !migState().doneAt; } catch (e) {}
+    if (!left) return orig.apply(self, args);
+    G.notice('Making the files small before the backup…');
+    return Promise.race([sweep({ now: true, fast: true }), pause(90000)]).then(function(){ return orig.apply(self, args); }, function(){ return orig.apply(self, args); });
+  };
+  w.__gcFiles = true;
+  window._gcBackupNow = w;
+}
+
+/* ── the older viewers that want the file itself ─────────────────────────── */
+function wrapArg(name, idx, field, quiet){
+  var f = window[name];
+  if (typeof f !== 'function' || f.__gcFiles) return;
+  var w = function(){
+    var args = Array.prototype.slice.call(arguments), self = this;
+    var v = field ? (args[idx] && args[idx][field]) : args[idx];
+    if (!G.isRef(v)) return f.apply(self, args);
+    return window._gcFileDataUrl(v).then(function(du){
+      if (field) { args[idx] = Object.assign({}, args[idx]); args[idx][field] = du; } else args[idx] = du;
+      return f.apply(self, args);
+    }, function(e){ if (!quiet) G.notice(G.why(e)); return field ? false : (quiet ? '' : null); });
+  };
+  w.__gcFiles = true;
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  window[name] = w;
+}
+function wrapAll(){
+  wrapImport(); wrapBackup();
+  wrapArg('_viewFile', 0);                       /* 👁 Preview */
+  wrapArg('_dlDoc', 2);                          /* job-hub ⬇ Download */
+  wrapArg('_gcOpenInvDoc', 0, 'fileData');       /* invoice / COI viewer */
+  wrapArg('_gcDocText', 0, null, true);          /* the invoice reader (background) */
+  wrapArg('_gcAskServerToRead', 0, null, true);
+}
+wrapAll();
+window.addEventListener('load', function(){ nST(wrapAll, 3000); nST(wrapAll, 15000); });
+window.addEventListener('focus', function(){ nST(flushScreen, 1500); });
+
+/* ── the cloud's per-document rows (gc_kv "doc:<id>", one per file under 3 MB) ──
+   Older builds wrote each document's base64 into its own row. Once per computer,
+   after the move: each such row is read on its own (never the whole table), its
+   file goes to the file storage, and the SAME row — as the cloud had it, only the
+   file replaced by its reference — is written back through the normal door (so
+   it carries the sign-in token and the fresh-start epoch). Nothing is deleted. */
+var DOCROWS = 'gc_files_docrows_v1';
+var SBU = 'https://ieeonhpfahmwwecizdut.supabase.co';
+async function docRows(){
+  try { if (localStorage.getItem(DOCROWS)) return; } catch (e) { return; }
+  var raw = G.below();
+  var r = await raw.call(window, SBU + '/rest/v1/gc_kv?key=like.doc:*&select=key,updated_at', { cache: 'no-store' });
+  if (!r || !r.ok) return;
+  var rows = await r.json(); if (!Array.isArray(rows)) return;
+  var fixed = 0, failed = 0;
+  for (var i = 0; i < rows.length; i++) {
+    await whenReady(); await pause(1500);
+    try {
+      var k = rows[i].key;
+      var g = await raw.call(window, SBU + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(k) + '&select=value', { cache: 'no-store' });
+      if (!g || !g.ok) { failed++; continue; }
+      var txt = await g.text();
+      if (txt.indexOf(';base64,') < 0 && !/"data"\s*:\s*"[A-Za-z0-9+/]{6000}/.test(txt)) continue;
+      var got = JSON.parse(txt); var v = got && got[0] && got[0].value; if (!v) continue;
+      var c = await G.convert(v); if (!c.changed) { failed++; continue; }
+      var w = await window.fetch(SBU + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ key: k, value: c.value, updated_at: new Date().toISOString() }) });
+      if (w && w.ok) fixed++; else failed++;
+    } catch (e) { failed++; }
+  }
+  if (!failed) { try { nSet.call(localStorage, DOCROWS, JSON.stringify({ at: new Date().toISOString(), rows: rows.length, fixed: fixed })); } catch (e) {} }
+  if (fixed) console.log('[GC] ' + fixed + ' per-document cloud row(s) now hold a reference instead of the file.');
+}
+window._gcFilesDocRows = docRows;
+
+/* ── start: after the sign-in and the fresh-start check, when nobody is typing ─ */
+nST(function start(){
+  sweep().then(function(){
+    docRows().catch(function(){});
+    (function again(){ nST(function(){ sweep().then(again, again); }, 30 * 60e3); })();
+  }, function(){ nST(start, 5 * 60e3); });
+}, 20000);
+})();
+
 </script>

@@ -2,7 +2,7 @@
 // GrayCo — nightly protected backup. Scheduled in netlify.toml ([functions."gc-backup"]).
 // Copies every row of the CRM's cloud tables into the private table gc_backups
 // (one row per table per night: a jsonb snapshot + time). Keeps the newest 30
-// per table. gc_backups has Row Level Security on and NO policies, so the public
+// per table. Never deletes a kept snapshot (keep = true: the fresh-start copy). gc_backups has Row Level Security on and NO policies, so the public
 // key and every signed-in browser get nothing — only this function (service key)
 // can read or write it. A bad sync or a stolen password cannot erase history.
 //
@@ -105,9 +105,15 @@ async function readAll(table){
   return out;
 }
 
+// Only this table's own nightly rows are ever let go: source is exactly the table
+// name, and a row marked keep (the fresh-start snapshot, docs/fresh-start.sql —
+// its source is 'fresh-start/<table>' anyway) is never selected. The database
+// also refuses to delete a keep row (trigger gc_backups_keep_guard).
 async function prune(table){
-  const r = await fetch(sbUrl() + '/rest/v1/gc_backups?select=id&source=eq.' + encodeURIComponent(table) +
-    '&order=taken_at.desc&offset=' + KEEP + '&limit=500', { headers: H() });
+  const q = sbUrl() + '/rest/v1/gc_backups?select=id&source=eq.' + encodeURIComponent(table) +
+    '&order=taken_at.desc&offset=' + KEEP + '&limit=500';
+  let r = await fetch(q + '&keep=not.is.true', { headers: H() });
+  if (r.status === 400) r = await fetch(q, { headers: H() });   // before fresh-start.sql there is no keep column (and no kept rows)
   if (!r.ok) return 0;
   const old = await r.json();
   if (!Array.isArray(old) || !old.length) return 0;

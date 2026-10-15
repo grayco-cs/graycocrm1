@@ -1,13 +1,27 @@
-# GrayCo CRM 33.141 — what changed (built on 33.139)
+# GrayCo CRM 33.142 — what changed (built on 33.139)
 
-33.141 replaces 33.140. 33.140 was never deployed; deploy this one instead.
+33.142 replaces 33.140 and 33.141. Neither was deployed. **Follow `docs/GO-LIVE-33.142.md` step by step.**
 
-Stamp: **33.141-2026-10-14-v1800** — build comment, console line, `BUILD_ID` and `version.txt` all say this.
-After deploying, open `…/version.txt` on the live site to confirm 33.141 is really live before judging any fix.
+## New in 33.142
+- **Fresh start.** One Supabase script (`fresh-start.sql`) puts all old data away and the CRM starts empty. Then you load your clean backup.
+  - **Nothing is destroyed.** The old data is kept twice, permanently, in the cloud. Each computer also keeps its own old copy. There is an UNDO.
+  - **An old or offline computer cannot push old data back.** It checks the fresh-start date before it saves anything. The database refuses old data too.
+  - Your sign-in and per-computer settings survive.
+- **Files are as small as possible.**
+  - Photos and receipts are shrunk on upload but stay readable. Example: 3.8 MB → about 100 KB.
+  - The same file is stored once.
+  - Files go to private file storage, and records keep only a short reference. Documents now show on every computer.
+  - Existing files convert automatically on each computer.
+  - On the Aug-28 data, the stored data went from 32 MB to 0.4 MB.
+- **Fixed:** a background schedule clean-up in 33.141 treated every item as its own duplicate and could delete the company schedule from the cloud.
+- **Fixed:** the import now leaves out records your backup itself had marked deleted. It also brings back job sources, approvals, commission-paid marks and Cordova data.
+
+Stamp: **33.142-2026-10-15-v1200** — build comment, console line, `BUILD_ID` and `version.txt` all say this.
+After deploying, open `…/version.txt` on the live site to confirm 33.142 is really live before judging any fix.
 
 **Deploy the whole folder** (index.html, netlify/functions, netlify.toml, _headers, docs). There are two new functions:
 `staff-admin.js` (Team access) and `gc-backup.js` (nightly backup).
-**Follow `docs/SECURITY-SETUP.md` step by step.** The order matters: settings → prepare SQL → create two sign-ins → deploy → everyone signs in → lockdown SQL.
+**Follow `docs/GO-LIVE-33.142.md` step by step.**
 
 Every fix below was reproduced on 33.139 first, then shown fixed by an automated test that clicks through the real app.
 The tests ran offline, so nothing touched the real data.
