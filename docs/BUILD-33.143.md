@@ -8,7 +8,7 @@
 - Close and ✕ always work.
 - Esc, or a click outside, closes a window — except a form you have typed into. The company sign-in can never be dismissed.
 
-## New in 33.142
+## Also new (from 33.142)
 - **Fresh start.** One Supabase script (`fresh-start.sql`) puts all old data away and the CRM starts empty. Then you load your clean backup.
   - **Nothing is destroyed.** The old data is kept twice, permanently, in the cloud. Each computer also keeps its own old copy. There is an UNDO.
   - **An old or offline computer cannot push old data back.** It checks the fresh-start date before it saves anything. The database refuses old data too.

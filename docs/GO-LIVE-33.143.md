@@ -33,7 +33,7 @@ On the same page, check that `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are alrea
   - `wjohnson@grayco-cs.com`, a new strong password, tick **Auto Confirm User**.
   - Do the same for `nthomas@grayco-cs.com`.
 
-## Part 2 — Make 33.142 live
+## Part 2 — Make 33.143 live
 
 **5. Connect Netlify to GitHub (one time).** Netlify → **Project configuration** → **Build & deploy** → **Continuous deployment** → **Link repository**.
 - Choose **GitHub**, then **grayco-cs/graycocrm1**.
