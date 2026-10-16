@@ -4,7 +4,7 @@
 name: Live check
 on:
   push:
-    branches: [claude/peaceful-dijkstra-goqgjq]
+    branches: [main, claude/peaceful-dijkstra-goqgjq]
   workflow_dispatch:
 jobs:
   live:

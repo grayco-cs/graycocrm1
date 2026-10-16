@@ -24,7 +24,7 @@ You have been dragging zip files into Netlify. That is why nobody can tell which
 - [ ] Click **Link repository** (it may say "Link site to Git").
 - [ ] Choose **GitHub**. If GitHub asks you to sign in or "Authorize Netlify", say yes.
 - [ ] Pick the repository **grayco-cs/graycocrm1**. If it isn't listed, click "Configure the Netlify app on GitHub", give it access to that repository, then come back.
-- [ ] **Branch to deploy:** `claude/peaceful-dijkstra-goqgjq`
+- [ ] **Branch to deploy:** `main` (Claude puts every release on main)
 - [ ] **Build command:** leave it **empty**.
 - [ ] **Publish directory:** type a single dot: `.`
 - [ ] **Functions directory:** `netlify/functions`. It may fill in by itself.
@@ -57,7 +57,9 @@ Check each of these exists. If one is missing, add it: type the **Key** exactly,
 - [ ] `ANTHROPIC_API_KEY` = the AI key. **Make a new one** at console.anthropic.com → API Keys, then delete the old one.
 - [ ] `RESEND_API_KEY` = the email key. **Make a new one** at resend.com → API Keys, then delete the old one.
 
-- [ ] **Resend:** at resend.com → **Domains**, `grayco-cs.com` must say **Verified**. If not, add the DNS lines Resend shows (or send Claude a screenshot). Without it, automatic emails to customers won't arrive.
+- [x] **DNS for email (done 10/16):** the Resend records, Google's SPF and DKIM, and the fixed GOOGLE spelling are in Netlify → DNS → grayco-cs.com. Your domain's DNS lives in **Netlify**, not Squarespace.
+- [ ] **Resend:** at resend.com → **Domains**, click **Restart** on grayco-cs.com. It must say **Verified**. Without it, automatic emails to customers won't arrive.
+- [ ] **Netlify variable names must match exactly** (capital letters): `SUPABASE_ANON_KEY` (not `supabase_anon_key`), `STAFF_EMAILS`, `SUPABASE_URL`, `ANTHROPIC_API_KEY`.
 
 - [ ] Then: left menu **Deploys** → **Trigger deploy** → **Deploy site**. Netlify only reads new settings on a fresh deploy.
 
@@ -72,7 +74,8 @@ Supabase → your project → left menu **SQL Editor** → **New query**. For ea
 - [ ] **C3.** `docs/admin-data.sql` (33.144). Every line says **OK**. Moves the bank and cash numbers into a place only Wesley and Nick can read.
   - Later, once Wesley's Cash Flow / Bank screens show the right numbers, run the one `delete` line at the bottom of that file by itself.
 - [ ] **C4.** `docs/portal-setup.sql` (33.144). Every line says **OK**. Turns on the customer portal.
-- [ ] **C5.** Logins. Left menu **Authentication**:
+- [ ] **C5.** `docs/realtime-setup.sql` (33.144). Every line says **OK**. Turns on instant sharing between phones and desktops. Until it runs, the CRM still works but shares on a timer instead of instantly.
+- [ ] **C6.** Logins. Left menu **Authentication**:
   - [ ] **Sign In / Providers**: turn **"Allow new users to sign up" OFF** → Save.
   - [ ] **Users**: check that **wjohnson@grayco-cs.com** and **nthomas@grayco-cs.com** exist. If not: **Add user → Create new user** → email, a strong new password, tick **Auto Confirm User**.
 
@@ -85,7 +88,7 @@ Supabase → your project → left menu **SQL Editor** → **New query**. For ea
   - [ ] `sbiffle@grayco-cs.com` (Steven)
   - [ ] `gmiller@grayco-cs.com` (Glenn)
   - [ ] `office@grayco-cs.com` (Brittany, or her own email if she has one)
-  - [ ] Nick, if not added in C5
+  - [ ] Nick, if not added in C6
 
   Each Add shows a **temporary password once**. Give it to the person by phone or in person.
 - [ ] **D3.** Each person signs in on **every computer and phone** they use, then 💎 → **Change my password**.

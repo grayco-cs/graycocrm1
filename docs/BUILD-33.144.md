@@ -20,6 +20,9 @@
   - See `docs/QUICKBOOKS-CSV.md`.
 - **CompanyCam:** 2026+ projects become **Bidding** jobs automatically. Pre-2026 projects never come in. This needs `COMPANYCAM_TOKEN` in Netlify.
 
+- **Field app and instant sharing:** the field app opens instantly. Phone and desktop changes reach each other in 1–2.5 seconds (needs `docs/realtime-setup.sql`). Brittany's To-Do and Office tabs work: ticks stay, the list updates, and the owner's tasks reach her and show done on the owner's phone.
+- **Emails come from the right address:** portal emails from portal@grayco-cs.com, final invoices and reminders from billing@grayco-cs.com, everything else from office@. Replies go to office@.
+
 ## Fixed
 - **Data loss:** a background job could put back an older list and erase something you had just saved. Examples: a second sub bill vanishing, or a contract amount filled from an approved estimate going blank again. Every list now merges instead of overwriting.
 - Everything from the v1930 quick fix:
@@ -28,9 +31,9 @@
   - phone taps are fast.
 
 ## Setup for this update
-In Supabase → SQL Editor, run `docs/admin-data.sql` and `docs/portal-setup.sql`; each line should say OK. Both are safe to run again. See `SETUP-CHECKLIST.md` Part C.
+In Supabase → SQL Editor, run `docs/admin-data.sql`, `docs/portal-setup.sql` and `docs/realtime-setup.sql`; each line should say OK. Both are safe to run again. See `SETUP-CHECKLIST.md` Part C.
 
 ## Coming next
-- Field-app instant sharing and Brittany's To-Do / Office tab fixes.
+- PM Performance (admins only).
 - Paperwork autopilot: stage slider, documents made and sent per stage, customer checklist, field notes.
 - GrayCo Photos.
