@@ -121,3 +121,13 @@ The old data is kept in three places:
 - The schedule sweep used to delete (tombstone) every schedule row that was on both a computer and the cloud, 9 seconds after each load. That would have wiped an imported schedule, so it is fixed in this build:
   - the same row is no longer treated as its own duplicate;
   - the automatic sweep never writes a deletion.
+
+## Owners-only data (gc_admin_kv) — not touched by a fresh start
+
+Since patch K the cash / bank-balance records (`gc_cash_anchor`, `gc_accounts_cfg`,
+`gc_accounts_ledger`) live in the table **gc_admin_kv** (docs/admin-data.sql), which only Wesley
+and Nick can read. `fresh-start.sql` works on `gc_kv` only, so **gc_admin_kv is left exactly as it
+is** — the starting cash and account balances survive a fresh start. (`gc_cash_anchor` is still on
+the fresh-start KEEP list for the old gc_kv copy, until the one-line delete in admin-data.sql step 5
+is run; a non-admin computer never keeps a copy of it either way.) The nightly cloud backup
+(gc-backup) now also copies gc_admin_kv into the private gc_backups table.

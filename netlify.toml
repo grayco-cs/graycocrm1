@@ -37,3 +37,8 @@
 # its URL in production; the function also refuses anyone but a signed-in admin.
 [functions."gc-backup"]
   schedule = "15 7 * * *"
+
+# Customer portal (docs/PORTAL.md): every hour — new-document e-mails still waiting, the final-invoice
+# e-mail and the friendly reminder every 15 days while a final invoice is unpaid. Never sends twice.
+[functions."portal-reminders"]
+  schedule = "7 * * * *"

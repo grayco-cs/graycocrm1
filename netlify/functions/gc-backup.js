@@ -82,14 +82,16 @@ async function gcStaffAuth(event){
 
 
 const KEEP = 30;
-const TABLES = ['gc_kv', 'app_data', 'projects', 'project_estimates', 'project_scope',
+// patch K: gc_admin_kv (the owners-only cash / bank records, docs/admin-data.sql) is backed up too —
+// into gc_backups, which has no web access at all.
+const TABLES = ['gc_kv', 'gc_admin_kv', 'app_data', 'projects', 'project_estimates', 'project_scope',
                 'project_materials', 'estimate_line_items', 'products'];
 
 function sbUrl(){ return (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, ''); }
 function svcKey(){ return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''; }
 function H(extra){ const k = svcKey(); return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {}); }
 
-const ORDER = { gc_kv: 'key', app_data: 'key' };   // others are small; no guessed column names
+const ORDER = { gc_kv: 'key', gc_admin_kv: 'key', app_data: 'key' };   // others are small; no guessed column names
 async function readAll(table){
   const out = [];
   const ord = ORDER[table] ? '&order=' + ORDER[table] + '.asc' : '';
