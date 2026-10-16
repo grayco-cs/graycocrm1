@@ -102,15 +102,88 @@ async function drainPendingLeads(){
   }catch(e){ return []; }
 }
 
+/* ── The CompanyCam key lives on the server (33.144) ───────────────────────────
+   COMPANYCAM_TOKEN (Netlify → Site configuration → Environment variables) is the
+   ONE key every CompanyCam call uses. A key a browser sends in x-cc-token is used
+   only while that variable is not set (the old way, kept as a fallback). No answer
+   from this function ever contains the key. */
+function ccTokenFor(event){
+  const env = String(process.env.COMPANYCAM_TOKEN || '').trim();
+  if (env) return { token: env, source: 'env' };
+  const sent = gcHeader(event, 'x-cc-token').trim();
+  if (sent) return { token: sent, source: 'browser' };
+  return { token: '', source: 'none' };
+}
+const CC_API = 'https://api.companycam.com/v2';
+function ccHeaders(token){ return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Accept': 'application/json' }; }
+function ccAddr(a){
+  a = a || {};
+  return [a.street_address_1, a.street_address_2, a.city, a.state, a.postal_code].map(function(x){ return String(x || '').trim(); }).filter(Boolean).join(', ');
+}
+function ccWhen(v){
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return v > 1e12 ? Math.floor(v / 1000) : v;
+  const n = Number(v); if (isFinite(n) && String(v).trim() !== '') return n > 1e12 ? Math.floor(n / 1000) : n;
+  const d = Date.parse(v); return isNaN(d) ? 0 : Math.floor(d / 1000);
+}
+/* the small, safe shape of a project the review list needs */
+function ccCompact(p){
+  const a = p.address || {};
+  const c = p.primary_contact || p.contact || (Array.isArray(p.contacts) && p.contacts[0]) || null;
+  const cr = p.creator || {};
+  return {
+    id: String(p.id || ''),
+    name: String(p.name || '').trim(),
+    address: ccAddr(a),
+    street: String(a.street_address_1 || '').trim(),
+    city: String(a.city || '').trim(), state: String(a.state || '').trim(), zip: String(a.postal_code || '').trim(),
+    created_at: ccWhen(p.created_at), updated_at: ccWhen(p.updated_at || p.created_at),
+    creator: String(cr.name || [cr.first_name, cr.last_name].filter(Boolean).join(' ') || p.creator_name || p.created_by_name || '').trim(),
+    photo_count: (p.photo_count != null ? Number(p.photo_count) : null),
+    status: String(p.status || ''),
+    url: String(p.project_url || p.url || ('https://app.companycam.com/projects/' + (p.id || ''))),
+    contact: c ? { name: String(c.name || c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''),
+                   phone: String(c.phone_number || c.phone || ''), email: String(c.email || c.email_address || '') } : null
+  };
+}
+
+async function listPendingLeads(){
+  if(!SUPABASE_URL || !SUPABASE_KEY){
+    const p = global._ccPendingLeads || [];
+    return p.map(function(l, i){ if(!l.__rowId) l.__rowId = 'm' + Date.now().toString(36) + i; return Object.assign({ rowId: l.__rowId }, l); });
+  }
+  try{
+    const r = await sb('cc_pending_leads?select=id,lead,created_at&order=created_at.asc&limit=500', { method:'GET' });
+    if(!r.ok) return [];
+    const rows = await r.json();
+    return (Array.isArray(rows) ? rows : []).map(function(x){ return Object.assign({ rowId: String(x.id), arrivedAt: x.created_at || '' }, x.lead || {}); });
+  }catch(e){ return []; }
+}
+async function ackPendingLeads(ids){
+  if(!ids.length) return 0;
+  if(!SUPABASE_URL || !SUPABASE_KEY){
+    const before = (global._ccPendingLeads || []).length;
+    global._ccPendingLeads = (global._ccPendingLeads || []).filter(function(l){ return ids.indexOf(String(l.__rowId)) < 0; });
+    return before - global._ccPendingLeads.length;
+  }
+  try{
+    const r = await sb('cc_pending_leads?id=in.(' + ids.join(',') + ')', { method:'DELETE', headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Prefer':'return=minimal' } });
+    return r.ok ? ids.length : 0;
+  }catch(e){ return 0; }
+}
+
 // Netlify function — CompanyCam integration:
 // 1. GET  ?proxy=api&endpoint=... : proxy CompanyCam READ calls (avoids CORS)
 // 2. GET  ?proxy=find&name=..&address=.. : search existing CompanyCam projects for a match
 // 3. POST ?proxy=create : create a CompanyCam project from the CRM (enter-once sync)
 // 4. POST (webhook body): receive CompanyCam webhook events (project.created, photo.created)
-// 5. GET  (no proxy): poll for pending webhook leads
+// 5. GET  (no proxy): poll for pending webhook leads (drains them — kept for old pages)
+// 6. GET  ?proxy=status : is the CompanyCam key working? {ok, reason, source} — never the key
+// 7. GET  ?proxy=recent&days=N|since=<unix> : every active project changed since then (all pages), small shape
+// 8. GET  ?proxy=pending : the webhook's waiting projects WITHOUT removing them; POST ?proxy=ack {ids} removes them
 
 exports.handler = async function(event, context) {
-  const headers = Object.assign(gcCors(event, 'POST, GET, OPTIONS', 'x-companycam-secret, x-cc-token'),
+  const headers = Object.assign(gcCors(event, 'POST, GET, OPTIONS', 'x-companycam-secret, x-cc-token, x-gc-cc'),
     { 'Content-Type': 'application/json' });
 
   if(event.httpMethod === 'OPTIONS'){
@@ -127,9 +200,73 @@ exports.handler = async function(event, context) {
     if(!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ error: who.error }) };
   }
 
+  // GET ?proxy=status — one cheap question to CompanyCam: does the key work?
+  if(event.httpMethod === 'GET' && qs.proxy === 'status'){
+    const k = ccTokenFor(event);
+    const out = { ok: false, reason: '', source: k.source, checkedAt: new Date().toISOString() };
+    if(!k.token){
+      out.reason = 'no_key';
+      out.message = 'No CompanyCam key is set. Add COMPANYCAM_TOKEN on Netlify (Environment variables) and deploy again.';
+      return { statusCode: 200, headers, body: JSON.stringify(out) };
+    }
+    try{
+      const r = await fetch(CC_API + '/projects?per_page=1', { headers: ccHeaders(k.token) });
+      out.status = r.status;
+      if(r.ok){ out.ok = true; out.reason = 'ok'; out.message = 'CompanyCam answered — the key works.'; }
+      else if(r.status === 401 || r.status === 403){ out.reason = 'refused'; out.message = 'CompanyCam refused the key (' + r.status + '). It needs replacing.'; }
+      else { out.reason = 'companycam_' + r.status; out.message = 'CompanyCam answered ' + r.status + '. Try again later.'; }
+    }catch(err){ out.reason = 'unreachable'; out.message = 'Could not reach CompanyCam from the server.'; }
+    return { statusCode: 200, headers, body: JSON.stringify(out) };
+  }
+
+  // GET ?proxy=recent&days=N — every ACTIVE project changed in the last N days, all pages, small shape
+  if(event.httpMethod === 'GET' && qs.proxy === 'recent'){
+    const token = ccTokenFor(event).token;
+    if(!token){ return { statusCode: 401, headers, body: JSON.stringify({error:'No token'}) }; }
+    let days = parseInt(qs.days, 10); if(!(days > 0)) days = 90; if(days > 3650) days = 3650;
+    let since = Math.floor(Date.now() / 1000) - days * 86400;
+    const sinceQ = parseInt(qs.since, 10); if(sinceQ > 0 && sinceQ < Math.floor(Date.now() / 1000)) since = sinceQ;   // ?since=<unix> wins
+    const out = []; let pages = 0, truncated = false;
+    try{
+      for(let page = 1; page <= 40; page++){
+        const r = await fetch(CC_API + '/projects?per_page=50&page=' + page + '&status=active&modified_since=' + since, { headers: ccHeaders(token) });
+        if(!r.ok){
+          if(page === 1) return { statusCode: r.status, headers, body: JSON.stringify({ error: 'CompanyCam ' + r.status }) };
+          truncated = true; break;
+        }
+        const chunk = await r.json();
+        pages = page;
+        if(!Array.isArray(chunk) || !chunk.length) break;
+        chunk.forEach(function(p){
+          if(!p || p.id == null) return;
+          const c = ccCompact(p);
+          if(c.status && c.status !== 'active') return;
+          if(Math.max(c.created_at, c.updated_at) && Math.max(c.created_at, c.updated_at) < since) return;
+          out.push(c);
+        });
+        if(chunk.length < 50) break;
+        if(page === 40) truncated = true;
+      }
+    }catch(err){ return { statusCode: 502, headers, body: JSON.stringify({ error: 'Could not reach CompanyCam.' }) }; }
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, days: days, pages: pages, truncated: truncated, projects: out }) };
+  }
+
+  // GET ?proxy=pending — what the webhook left waiting, NOT removed (the CRM files it, then acks)
+  if(event.httpMethod === 'GET' && qs.proxy === 'pending'){
+    const rows = await listPendingLeads();
+    return { statusCode: 200, headers, body: JSON.stringify({ leads: rows }) };
+  }
+  // POST ?proxy=ack {ids:[...]} — the CRM has filed these on its review list; remove them here
+  if(event.httpMethod === 'POST' && qs.proxy === 'ack'){
+    let b = {}; try{ b = JSON.parse(event.body || '{}'); }catch(e){ return { statusCode: 400, headers, body: JSON.stringify({error:'Bad JSON'}) }; }
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map(function(x){ return String(x); }).filter(function(x){ return /^[A-Za-z0-9_-]{1,64}$/.test(x); });
+    const n = await ackPendingLeads(ids);
+    return { statusCode: 200, headers, body: JSON.stringify({ removed: n }) };
+  }
+
   // GET ?proxy=api — proxy CompanyCam read calls from the browser
   if(event.httpMethod === 'GET' && qs.proxy === 'api'){
-    const token = event.headers['x-cc-token'] || event.headers['X-CC-Token'];
+    const token = ccTokenFor(event).token;
     if(!token){
       return { statusCode: 401, headers, body: JSON.stringify({error:'No token provided'}) };
     }
@@ -172,7 +309,7 @@ exports.handler = async function(event, context) {
 
   // GET ?proxy=find — search existing CompanyCam projects for a name/address match
   if(event.httpMethod === 'GET' && qs.proxy === 'find'){
-    const token = event.headers['x-cc-token'] || event.headers['X-CC-Token'];
+    const token = ccTokenFor(event).token;
     if(!token){ return { statusCode: 401, headers, body: JSON.stringify({error:'No token'}) }; }
     const wantName = String(qs.name||'').toLowerCase().trim();
     const wantAddr = String(qs.address||'').toLowerCase().trim().slice(0,14);
@@ -209,7 +346,7 @@ exports.handler = async function(event, context) {
 
   // POST ?proxy=create — create a CompanyCam project from the CRM
   if(event.httpMethod === 'POST' && qs.proxy === 'create'){
-    const token = event.headers['x-cc-token'] || event.headers['X-CC-Token'];
+    const token = ccTokenFor(event).token;
     if(!token){ return { statusCode:401, headers, body: JSON.stringify({error:'No token'}) }; }
     let bodyIn;
     try{ bodyIn = JSON.parse(event.body||'{}'); }catch(e){ return { statusCode:400, headers, body: JSON.stringify({error:'Bad JSON'}) }; }
@@ -249,7 +386,7 @@ exports.handler = async function(event, context) {
   // Used to register the webhook so CompanyCam pushes new work to us instead of the
   // CRM asking over and over. Additive: nothing else on this file changes behaviour.
   if(event.httpMethod === 'POST' && qs.proxy === 'post'){
-    const token = event.headers['x-cc-token'] || event.headers['X-CC-Token'];
+    const token = ccTokenFor(event).token;
     if(!token){ return { statusCode:401, headers, body: JSON.stringify({error:'No token'}) }; }
     const endpoint = String(qs.endpoint||'').replace(/^\/+/, '');
     if(!endpoint){ return { statusCode:400, headers, body: JSON.stringify({error:'No endpoint'}) }; }
@@ -293,7 +430,7 @@ exports.handler = async function(event, context) {
       name: proj.name || addr || 'New CompanyCam Project',
       address: addr,
       url: proj.url || ('https://app.companycam.com/projects/' + (proj.id||'')),
-      createdAt: proj.created_at || new Date().toISOString(),
+      createdAt: proj.created_at || proj.updated_at || '',   // no date → the CRM treats it as made before 2026 (never imported)
       creator: (proj.creator && (proj.creator.name || (proj.creator.first_name ? (proj.creator.first_name + ' ' + (proj.creator.last_name||'')) : ''))) || proj.created_by_name || proj.user_name || '',
       source: 'companycam'
     });
