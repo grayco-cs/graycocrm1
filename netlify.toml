@@ -1,0 +1,39 @@
+# GrayCo CRM — Netlify build configuration
+#
+# publish = "."  : the site is flat; index.html sits at the root.
+# functions      : the server-side functions the CRM depends on, including
+#                  companycam-webhook, staff-admin (Team access) and gc-backup. If this directory is missing from a
+#                  deploy, every integration that relies on it returns 404.
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[build.environment]
+  # The CompanyCam proxy function calls fetch(). fetch is only a global from
+  # Node 18 onward — on an older runtime the function throws before it ever
+  # reaches CompanyCam, and the CRM reports it as "token not accepted", which
+  # sends you hunting for a token problem that does not exist. Pin the runtime.
+  NODE_VERSION = "20"
+
+  # Netlify's secrets scanner flags SUPABASE_URL because the project URL also
+  # appears in index.html. That is expected and safe: the Supabase project URL
+  # and the "anon" key are designed to be shipped in client-side code — access
+  # is controlled by Row Level Security on the database, not by hiding them.
+  # Verified: no service_role key, and no Anthropic or Resend key, appears in
+  # any deployed file. Only the public URL is omitted from the scan; every
+  # genuinely secret variable is still scanned.
+  # SUPABASE_ANON_KEY is the same public key that is in index.html (it opens
+  # nothing by itself once docs/security-lockdown.sql is run); SITE_ORIGIN and
+  # STAFF_EMAILS are addresses, not secrets.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Nightly protected backup (docs/SECURITY-SETUP.md). 07:15 UTC = 2:15 am Central
+# (1:15 am in winter). Copies the CRM's cloud tables into the private gc_backups
+# table and keeps the newest 30 nights. A scheduled function cannot be called by
+# its URL in production; the function also refuses anyone but a signed-in admin.
+[functions."gc-backup"]
+  schedule = "15 7 * * *"

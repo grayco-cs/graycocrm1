@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thank You from GrayCo</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#0d0b2b;font-family:Arial,Helvetica,sans-serif;overflow:hidden;}
+  #fw{position:fixed;inset:0;width:100%;height:100%;}
+  .wrap{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;pointer-events:none;}
+  .logo{font-size:44px;font-weight:800;letter-spacing:5px;color:#fff;line-height:1;}
+  .logosub{font-size:13px;letter-spacing:6px;color:#b9c7e8;margin-top:4px;margin-bottom:28px;}
+  .thanks{font-size:clamp(28px,7vw,52px);font-weight:800;color:#f0c451;text-shadow:0 3px 20px rgba(240,196,81,0.45);}
+  .msg{font-size:clamp(15px,3.5vw,19px);color:#e8ecf7;margin-top:16px;max-width:460px;line-height:1.6;}
+  .btn{pointer-events:auto;margin-top:26px;background:#f0c451;color:#1e1b52;font-weight:700;font-size:15px;padding:12px 28px;border:none;border-radius:9px;cursor:pointer;}
+  .foot{position:fixed;bottom:16px;left:0;right:0;text-align:center;color:#8598a8;font-size:12px;}
+  .foot a{color:#b9c7e8;}
+</style>
+</head>
+<body>
+<canvas id="fw"></canvas>
+<div class="wrap">
+  <div class="logo">GRAYCO</div>
+  <div class="logosub">CONSTRUCTION SERVICES</div>
+  <div class="thanks" id="thanks">Thank you!</div>
+  <div class="msg" id="msg">Your project is complete. From our whole crew to your home — thank you for trusting GrayCo.</div>
+  <button class="btn" id="replay">Replay fireworks</button>
+</div>
+<div class="foot">GrayCo Construction Services LLC · (901) 585-0944 · <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a> · TN Lic #85034 BCB</div>
+<script>
+(function(){
+  var p=new URLSearchParams(location.search);
+  var name=(p.get('name')||'').trim(), addr=(p.get('addr')||'').trim();
+  if(name) document.getElementById('thanks').textContent='Thank you, '+name+'!';
+  if(addr) document.getElementById('msg').textContent='Your project at '+addr+' is complete. From our whole crew to your home — thank you for trusting GrayCo.';
+  var canvas=document.getElementById('fw'), ctx=canvas.getContext('2d');
+  function size(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+  size(); window.addEventListener('resize',size);
+  var colors=['#f0c451','#ffffff','#4a6fc4','#f5a623','#6c8ce0','#ffd97a'];
+  var particles=[],rockets=[];
+  function launch(){var tx=canvas.width*(0.15+Math.random()*0.7);var ty=canvas.height*(0.12+Math.random()*0.35);rockets.push({x:tx,y:canvas.height,ty:ty,vy:-(7+Math.random()*2.5)});}
+  function burst(x,y){var c=colors[Math.floor(Math.random()*colors.length)];var n=60+Math.floor(Math.random()*30);for(var i=0;i<n;i++){var a=(Math.PI*2*i)/n,sp=2+Math.random()*4.5;particles.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,color:c});}}
+  function tick(){
+    ctx.fillStyle='rgba(13,11,43,0.20)';ctx.fillRect(0,0,canvas.width,canvas.height);
+    for(var r=rockets.length-1;r>=0;r--){var rk=rockets[r];rk.y+=rk.vy;rk.vy+=0.04;ctx.fillStyle='#ffd97a';ctx.beginPath();ctx.arc(rk.x,rk.y,2.5,0,Math.PI*2);ctx.fill();if(rk.y<=rk.ty||rk.vy>=0){burst(rk.x,rk.y);rockets.splice(r,1);}}
+    for(var i=particles.length-1;i>=0;i--){var pt=particles[i];pt.x+=pt.vx;pt.y+=pt.vy;pt.vy+=0.05;pt.vx*=0.99;pt.life-=0.011;if(pt.life<=0){particles.splice(i,1);continue;}ctx.globalAlpha=Math.max(pt.life,0);ctx.fillStyle=pt.color;ctx.beginPath();ctx.arc(pt.x,pt.y,2.6,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
+    requestAnimationFrame(tick);
+  }
+  function show(){particles=[];rockets=[];var count=0,iv=setInterval(function(){launch();if(++count>=8)clearInterval(iv);},420);}
+  tick(); setTimeout(show,300);
+  document.getElementById('replay').addEventListener('click',show);
+})();
+</script>
+</body>
+</html>

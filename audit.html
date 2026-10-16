@@ -1,0 +1,388 @@
+<title>GrayCo CRM Wiring Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --paper:#F2F5F8;
+  --card:#FFFFFF;
+  --ink:#16202B;
+  --ink-2:#4A5A6B;
+  --ink-3:#7C8B9B;
+  --rule:#D6DEE7;
+  --blue:#1B4D7E;
+  --blue-soft:#E7EEF6;
+  --good:#136B4F;
+  --good-soft:#E1F0EA;
+  --warn:#9A5B08;
+  --warn-soft:#FBEEDC;
+  --bad:#93231F;
+  --bad-soft:#F9E4E2;
+  --shadow:0 1px 2px rgba(22,32,43,.06),0 8px 24px rgba(22,32,43,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E141A;
+    --card:#161E27;
+    --ink:#E6ECF3;
+    --ink-2:#A6B4C2;
+    --ink-3:#75838F;
+    --rule:#26313D;
+    --blue:#7FB2E5;
+    --blue-soft:#152634;
+    --good:#5FCBA4;
+    --good-soft:#12271F;
+    --warn:#E3AB63;
+    --warn-soft:#2A2015;
+    --bad:#EC8B84;
+    --bad-soft:#2C1918;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0E141A;
+  --card:#161E27;
+  --ink:#E6ECF3;
+  --ink-2:#A6B4C2;
+  --ink-3:#75838F;
+  --rule:#26313D;
+  --blue:#7FB2E5;
+  --blue-soft:#152634;
+  --good:#5FCBA4;
+  --good-soft:#12271F;
+  --warn:#E3AB63;
+  --warn-soft:#2A2015;
+  --bad:#EC8B84;
+  --bad-soft:#2C1918;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px 96px}
+
+/* ---- title block, like the corner of a drawing ---- */
+header{
+  border-bottom:3px solid var(--ink);
+  padding:56px 0 20px;
+  margin-bottom:40px;
+}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;
+  font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 14px;
+}
+h1{
+  font-family:"Barlow Condensed",Impact,sans-serif;
+  font-weight:700;font-size:clamp(40px,7vw,68px);
+  line-height:.95;letter-spacing:-.01em;margin:0 0 16px;
+  text-wrap:balance;text-transform:uppercase;
+}
+.standfirst{font-size:18px;color:var(--ink-2);max-width:62ch;margin:0}
+
+/* ---- summary strip ---- */
+.strip{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);
+  margin:36px 0 8px;border-radius:3px;overflow:hidden;
+}
+.stat{background:var(--card);padding:18px 20px}
+.stat .n{
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  font-size:38px;line-height:1;font-variant-numeric:tabular-nums;
+  display:block;margin-bottom:4px;
+}
+.stat .l{font-size:12.5px;color:var(--ink-2);line-height:1.35;display:block}
+.n.ok{color:var(--good)} .n.warn{color:var(--warn)} .n.bad{color:var(--bad)}
+
+h2{
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;text-transform:uppercase;
+  font-size:26px;letter-spacing:.03em;margin:56px 0 6px;
+  padding-bottom:8px;border-bottom:1px solid var(--rule);
+}
+h2 .num{color:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-size:14px;margin-right:10px}
+.lede{color:var(--ink-2);margin:0 0 24px;max-width:66ch;font-size:15.5px}
+
+/* ---- the chain ---- */
+.chain{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.link{background:var(--card);display:grid;
+  grid-template-columns:34px 1fr auto auto;gap:14px;align-items:center;padding:11px 16px}
+.step{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums}
+.what{font-size:15px;line-height:1.35}
+.what small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.pill{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
+  letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:2px;
+  white-space:nowrap;border:1px solid transparent;
+}
+.p-auto{background:var(--good-soft);color:var(--good);border-color:var(--good)}
+.p-click{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.p-gone{background:var(--bad-soft);color:var(--bad);border-color:var(--bad)}
+.link.broken{box-shadow:inset 4px 0 0 var(--bad)}
+.link.manual{box-shadow:inset 4px 0 0 var(--warn)}
+.link.auto{box-shadow:inset 4px 0 0 var(--good)}
+
+/* ---- cards ---- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:8px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:3px;
+  padding:20px;box-shadow:var(--shadow)}
+.card h3{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;
+  font-size:18px;letter-spacing:.04em;margin:0 0 4px;font-weight:600}
+.card .sub{font-size:12.5px;color:var(--ink-3);margin:0 0 12px;
+  font-family:"IBM Plex Mono",monospace}
+.card ul{margin:0;padding-left:18px;font-size:14.5px;line-height:1.65}
+.card li{margin-bottom:5px}
+.card li code{font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  background:var(--blue-soft);color:var(--blue);padding:1px 5px;border-radius:2px}
+
+.callout{
+  border-left:4px solid var(--bad);background:var(--bad-soft);
+  padding:18px 22px;border-radius:0 3px 3px 0;margin:24px 0;
+}
+.callout.amber{border-left-color:var(--warn);background:var(--warn-soft)}
+.callout h3{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;
+  letter-spacing:.04em;font-size:19px;margin:0 0 8px;font-weight:600}
+.callout p{margin:0 0 8px;font-size:15px}
+.callout p:last-child{margin-bottom:0}
+
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+.scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--card)}
+th{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);text-align:left;font-weight:600;
+  padding:11px 16px;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:11px 16px;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.mono{font-family:"IBM Plex Mono",monospace;font-size:13px}
+
+ol.plan{counter-reset:s;list-style:none;padding:0;margin:16px 0 0;
+  display:flex;flex-direction:column;gap:14px}
+ol.plan li{counter-increment:s;background:var(--card);border:1px solid var(--rule);
+  border-radius:3px;padding:18px 20px 18px 60px;position:relative;box-shadow:var(--shadow)}
+ol.plan li::before{content:counter(s);position:absolute;left:18px;top:16px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:26px;
+  color:var(--blue);line-height:1}
+ol.plan h3{font-family:"Barlow Condensed",sans-serif;text-transform:uppercase;
+  font-size:19px;letter-spacing:.03em;margin:0 0 5px;font-weight:600}
+ol.plan p{margin:0;font-size:14.5px;color:var(--ink-2)}
+ol.plan .tag{font-family:"IBM Plex Mono",monospace;font-size:11px;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);display:block;margin-top:7px}
+
+footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--rule);
+  font-size:13px;color:var(--ink-3);font-family:"IBM Plex Mono",monospace}
+@media (max-width:640px){
+  .link{grid-template-columns:28px 1fr;row-gap:8px}
+  .link .pill{grid-column:2}
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">GrayCo Construction · Build 33.61 · 27 August 2026</p>
+  <h1>What's wired,<br>what's half-wired</h1>
+  <p class="standfirst">An audit of the CRM against the job it's meant to do — replace QuickBooks and run the money automatically. Read from the code itself, not from memory. Nothing was changed to produce this.</p>
+</header>
+
+<div class="strip">
+  <div class="stat"><span class="n">844</span><span class="l">functions in the app</span></div>
+  <div class="stat"><span class="n ok">38</span><span class="l">jobs already running on their own</span></div>
+  <div class="stat"><span class="n warn">137</span><span class="l">functions with no way to reach them</span></div>
+  <div class="stat"><span class="n bad">3</span><span class="l">places the permission rule is applied</span></div>
+  <div class="stat"><span class="n bad">5</span><span class="l">accounting pieces missing outright</span></div>
+</div>
+
+<h2><span class="num">01</span>The money chain</h2>
+<p class="lede">Every step from winning the work to knowing what it earned. Green runs by itself. Amber works but waits for somebody to click. Red isn't there.</p>
+
+<ol class="chain">
+  <li class="link broken"><span class="step">01</span><span class="what">Estimate accepted → job created<small>Nothing converts a won estimate into a job. It's re-typed.</small></span><span class="pill p-gone">missing</span></li>
+  <li class="link manual"><span class="step">02</span><span class="what">Job → invoice to the customer</span><span class="pill p-click">needs a click</span></li>
+  <li class="link auto"><span class="step">03</span><span class="what">Invoice gets its due date<small>30 days after it's sent, not written</small></span><span class="pill p-auto">automatic</span></li>
+  <li class="link manual"><span class="step">04</span><span class="what">Customer payment recorded</span><span class="pill p-click">needs a click</span></li>
+  <li class="link auto"><span class="step">05</span><span class="what">Job spotted as paid in full</span><span class="pill p-auto">automatic</span></li>
+  <li class="link auto"><span class="step">06</span><span class="what">Commission worked out<small>MS tax, overhead, split, $350k threshold</small></span><span class="pill p-auto">automatic</span></li>
+  <li class="link auto"><span class="step">07</span><span class="what">Commission into the next pay run</span><span class="pill p-auto">automatic</span></li>
+  <li class="link auto"><span class="step">08</span><span class="what">Sub invoice matched to job by PO</span><span class="pill p-auto">automatic</span></li>
+  <li class="link manual"><span class="step">09</span><span class="what">Sub invoice approved</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">10</span><span class="what">Approved bill onto the pay list</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">11</span><span class="what">Supplier bill onto the pay list</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">12</span><span class="what">Cheque written</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">13</span><span class="what">Cheque posted to the books</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">14</span><span class="what">Payroll withholding recorded</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">15</span><span class="what">Payroll approved for the week</span><span class="pill p-click">needs a click</span></li>
+  <li class="link broken"><span class="step">16</span><span class="what">Profit and loss per job<small>The one number that tells you if a job made money</small></span><span class="pill p-gone">missing</span></li>
+  <li class="link manual"><span class="step">17</span><span class="what">Company profit and loss</span><span class="pill p-click">needs a click</span></li>
+  <li class="link manual"><span class="step">18</span><span class="what">Accounts reconciled</span><span class="pill p-click">needs a click</span></li>
+</ol>
+
+<div class="callout">
+  <h3>The one that worries me most</h3>
+  <p><strong>The permission rule is applied in three places in the whole app.</strong> There's a proper rule that decides whether someone may open a job — <code>_gcCanSeeProject</code> — and almost nothing consults it. That's why the overdue bar was showing Glenn the company's $347,020 balance.</p>
+  <p>Blocking one screen at a time is how this keeps happening. It needs to be applied once, at the point where data is handed to the screen, so every page inherits it.</p>
+</div>
+
+<h2><span class="num">02</span>Built, but with no way in</h2>
+<p class="lede">137 functions can't be reached from anywhere. Most are internal helpers and harmless. These are the ones that are real features sitting behind no button — including several I wrote and never finished wiring up.</p>
+
+<div class="cards">
+  <div class="card">
+    <h3>Money &amp; commission</h3>
+    <p class="sub">no entry point</p>
+    <ul>
+      <li><code>_gcCommissionsOwed</code> — what each PM is owed right now</li>
+      <li><code>_gcCommissionsDueThisRun</code> — what goes in this pay run</li>
+      <li><code>_gcOpenChecksToWrite</code> — a cheques-to-write screen</li>
+      <li><code>_gcOverdueList</code> — overdue scoped to who's looking</li>
+      <li><code>_gcCustomerYearTotals</code> — what a customer spent this year</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Approvals</h3>
+    <p class="sub">screens that exist, unreachable</p>
+    <ul>
+      <li><code>_gcOpenProjectApprovals</code> — PM asking to see a job</li>
+      <li><code>_gcOpenNoteApproval</code></li>
+      <li><code>_gcOfficeEscalateApprove</code> — office escalation</li>
+      <li><code>_gcOpenOfficeHome</code> — the office manager's home screen</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Mine, unfinished</h3>
+    <p class="sub">built in the last two days</p>
+    <ul>
+      <li><code>_gcSetSubTerms</code> — set a sub to Friday or Net 30</li>
+      <li><code>_gcSetInsuranceJob</code> — tag a job as insurance by hand</li>
+      <li><code>_gcUnapprovePayrollWeek</code> — undo a payroll approval</li>
+      <li><code>_gcSubTermsOptions</code></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Automation that never fires</h3>
+    <p class="sub">written, never triggered</p>
+    <ul>
+      <li><code>_gcEmailInvoiceToClient</code> — send the invoice</li>
+      <li><code>_gcSendThankYouEmail</code> — after final payment</li>
+      <li><code>_gcCompanyCamSyncNew</code>, <code>_gcCompanyCamPollNow</code></li>
+      <li><code>_gcClockInNow</code> — time tracking</li>
+      <li><code>_gcPromoteTentativeSchedule</code></li>
+    </ul>
+  </div>
+</div>
+
+<h2><span class="num">03</span>Against QuickBooks</h2>
+<p class="lede">What the CRM would need to actually stand in for it, and what's there today.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Accounting piece</th><th>State</th><th>What it means for you</th></tr></thead>
+  <tbody>
+    <tr><td>General ledger / register</td><td class="mono" style="color:var(--good)">present</td><td>Every cheque and payment lands here already</td></tr>
+    <tr><td>Bank reconciliation</td><td class="mono" style="color:var(--good)">present</td><td>Wired, run by hand</td></tr>
+    <tr><td>Money owed to us, aged</td><td class="mono" style="color:var(--good)">present</td><td>Overdue tracking works</td></tr>
+    <tr><td>1099s for subs</td><td class="mono" style="color:var(--good)">present</td><td>Sub payment totals are tracked</td></tr>
+    <tr><td>Payroll tax &amp; withholding</td><td class="mono" style="color:var(--good)">present</td><td>The strongest part of the system</td></tr>
+    <tr><td>Job costing</td><td class="mono" style="color:var(--good)">present</td><td>Materials, labour, subs per job</td></tr>
+    <tr><td>MS contractor's tax</td><td class="mono" style="color:var(--good)">present</td><td>3.5% off the top before splits</td></tr>
+    <tr><td><strong>Profit &amp; loss per job</strong></td><td class="mono" style="color:var(--bad)">missing</td><td>You can't see which jobs made money</td></tr>
+    <tr><td><strong>Money we owe, aged</strong></td><td class="mono" style="color:var(--bad)">missing</td><td>No view of what's due to subs and suppliers over time</td></tr>
+    <tr><td><strong>Chart of accounts</strong></td><td class="mono" style="color:var(--bad)">missing</td><td>Expenses aren't sorted into accounting categories</td></tr>
+    <tr><td><strong>Balance sheet</strong></td><td class="mono" style="color:var(--bad)">missing</td><td>No statement of what the company is worth</td></tr>
+    <tr><td><strong>Budget vs actual</strong></td><td class="mono" style="color:var(--bad)">missing</td><td>No estimate-against-real comparison per job</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">04</span>What already runs on its own</h2>
+<p class="lede">38 jobs run without anyone touching them. The foundation is more solid than it feels when things are breaking.</p>
+
+<div class="cards">
+  <div class="card">
+    <h3>Money</h3>
+    <p class="sub">unattended</p>
+    <ul>
+      <li>Invoice due dates and overdue state</li>
+      <li>Commission when a job is collected in full</li>
+      <li>Sub invoices matched to jobs by PO</li>
+      <li>Sub pay terms stamped on each invoice</li>
+      <li>Friday cheque list into the office to-do</li>
+      <li>Supplier bills due, into the to-do</li>
+      <li>Accounts reconciled</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Data safety</h3>
+    <p class="sub">unattended</p>
+    <ul>
+      <li>No sync can empty a list — 50 tombstone checks</li>
+      <li>Deleted stays deleted across the company</li>
+      <li>Daily backups, 21 days, local and cloud</li>
+      <li>Estimates healed and de-duplicated</li>
+      <li>PO numbers assigned to every job</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Intake</h3>
+    <p class="sub">unattended</p>
+    <ul>
+      <li>Sub invoices read from email</li>
+      <li>Sub invoices routed to the right PM</li>
+      <li>CompanyCam jobs pulled in every 2 minutes</li>
+      <li>Expenses scanned and categorised</li>
+      <li>Job-complete chain when a job closes</li>
+    </ul>
+  </div>
+</div>
+
+<h2><span class="num">05</span>What I'd do, in this order</h2>
+<p class="lede">Ordered by what protects you first and what earns the most. Each step is small enough to verify before the next one starts.</p>
+
+<ol class="plan">
+  <li>
+    <h3>Apply the permission rule once, everywhere</h3>
+    <p>Filter data where it's handed to the screen rather than page by page, so every PM sees only their jobs and only office and admin see company money. This is the one with real exposure — Glenn is currently seeing figures he shouldn't.</p>
+    <span class="tag">protects you · touches one layer · testable</span>
+  </li>
+  <li>
+    <h3>Profit and loss per job</h3>
+    <p>Contract, minus MS tax, minus overhead, minus materials, labour, subs and supplier bills — the pieces all already exist and are already being added up for commission. This assembles them into one number per job and a total for the company.</p>
+    <span class="tag">the biggest gap against QuickBooks · reuses working code</span>
+  </li>
+  <li>
+    <h3>Wire up what's already built</h3>
+    <p>The commission screens, the cheques-to-write screen, the office manager's home, sub pay terms and the insurance tag all exist and work — they just have no button. This is the cheapest value in the whole list.</p>
+    <span class="tag">low risk · no new logic</span>
+  </li>
+  <li>
+    <h3>Close the automatic gaps in the chain</h3>
+    <p>Won estimate becomes a job. Approved bill moves onto the pay list by itself. Cheque posts to the books when it's written. Each one removes a click you currently have to remember.</p>
+    <span class="tag">one link at a time, verified between each</span>
+  </li>
+  <li>
+    <h3>Money we owe, aged — and a chart of accounts</h3>
+    <p>Once P&amp;L is in, these are the remaining pieces an accountant would ask for at year end.</p>
+    <span class="tag">last · needed for tax time, not for Friday</span>
+  </li>
+</ol>
+
+<div class="callout amber">
+  <h3>How this gets done without breaking things</h3>
+  <p>One change at a time. Tests around that area first, then the change, then the full suite of 27, then the packaged file booted in a real browser and checked — it doesn't get sent unless that passes. That check already exists and already caught a fault nobody knew about: React was being loaded from an outside server with no backup, which would have made the whole CRM a blank page if that server ever went down.</p>
+  <p>The 45 older feature blocks stay untouched. They work, and nothing tests them yet.</p>
+</div>
+
+<footer>
+  Read from index.html at build 33.61 · 844 functions · 478 script blocks · 15 server functions · no code changed to produce this report
+</footer>
+
+</div>

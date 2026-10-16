@@ -1,0 +1,26 @@
+# After every push, checks that graycocrm1.netlify.app is serving the version
+# in version.txt. A red X on the commit means Netlify did NOT go live with it
+# (not linked to GitHub, deploy failed, or wrong branch). It changes nothing.
+name: Live check
+on:
+  push:
+    branches: [claude/peaceful-dijkstra-goqgjq]
+  workflow_dispatch:
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Netlify to serve this version
+        run: |
+          want="$(tr -d '[:space:]' < version.txt)"
+          echo "Expecting live version: $want"
+          for i in $(seq 1 40); do
+            got="$(curl -fsS -m 20 "https://graycocrm1.netlify.app/version.txt?nocache=$RANDOM" | tr -d '[:space:]' || true)"
+            echo "Try $i: live says '$got'"
+            if [ "$got" = "$want" ]; then echo "LIVE: $want"; exit 0; fi
+            sleep 20
+          done
+          echo "::error::The live site is not on $want after ~13 minutes. Check Netlify > Deploys."
+          exit 1
