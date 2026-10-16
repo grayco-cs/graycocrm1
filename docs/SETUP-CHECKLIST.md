@@ -97,7 +97,10 @@ Supabase → your project → left menu **SQL Editor** → **New query**. For ea
 
 ## PART E — Start clean with the right data
 
-**Wait for Claude's message "the duplicate-free file is ready".** Then:
+**First, export today's data so nothing entered since Oct 15 is lost:**
+- [ ] **E0.** On your computer: CRM → **Admin** → **💾 Storage** → **Export Backup**. Send that file to Claude in chat. Claude removes the bogus jobs and duplicates from it and sends back the clean file. Don't use an older clean file.
+
+**Then, once Claude sends the clean file:**
 
 - [ ] **E1.** Close the CRM on every computer and phone.
 - [ ] **E2.** Supabase → SQL Editor → run `docs/fresh-start.sql`. Every line says **OK**.
