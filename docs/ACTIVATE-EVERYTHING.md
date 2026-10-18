@@ -9,7 +9,7 @@ This is the one list of everything still to set up, in order. Each item says whe
 
 ## 1. Email addresses (Google Workspace, about 5 minutes)
 
-You have three names: **office@**, **billing@** and **portal@**. Later you can add more, such as **claims@** for insurance or **estimates@**.
+Your company addresses: **office@**, **billing@**, **portal@**, **news@** and **claims@**.
 
 **What each one does:**
 
@@ -28,7 +28,30 @@ You have three names: **office@**, **billing@** and **portal@**. Later you can a
 - [ ] Type `billing`, then **Add** again and type `portal`. Click **Save**.
 - [ ] Test it: from your phone, send an email to billing@grayco-cs.com. It should arrive in Brittany's inbox within a minute or two. New aliases can take up to an hour to start working.
 
-Optional for later, done the same way: `claims` (insurance claims) and `estimates`.
+**Also add `claims` and `news`:**
+- [ ] **news@grayco-cs.com:** add it as an alias on office@, the same way as above. The CRM already sends newsletters and marketing emails from news@, so replies to those land with Brittany.
+- [ ] **claims@grayco-cs.com** (insurance: adjusters, carriers, claim programs). Make it a **Google Group** so more than one person gets every claim email:
+  - admin.google.com → **Directory → Groups → Create group**.
+  - Name: **Claims**. Email: `claims`.
+  - Members: you, Brittany (office@) and whoever handles insurance jobs.
+  - Access settings: set **"Who can post"** to **Anyone on the web**. Without that, adjusters outside GrayCo can't email it.
+  - Click **Create**.
+
+**That's the full set of addresses you need right now:**
+
+| Address | Used for | How to make it |
+|---|---|---|
+| office@ | everyday mail; Brittany's mailbox | ✅ exists |
+| billing@ | final invoices and reminders go out from it; supplier bills come in to it | alias on office@ |
+| portal@ | customer portal emails | alias on office@ |
+| news@ | newsletters and marketing | alias on office@ |
+| claims@ | insurance adjusters and carriers | Google Group: you + office + the insurance PM |
+
+**Optional, add later if you want them:**
+- **info@** for the website or the public. Use an alias on office@.
+- **estimates@** if customers send plans or photos for bids. Use a Google Group of the estimators.
+
+Each person's own address (wjohnson@, nthomas@, sbiffle@, gmiller@) already exists.
 
 ---
 
