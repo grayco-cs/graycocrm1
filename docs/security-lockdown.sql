@@ -2,6 +2,7 @@
 -- GrayCo CRM — SECURITY, PART 2 of 2: LOCK DOWN
 -- Run ONLY after (see docs/SECURITY-SETUP.md): the sign-in build is deployed, the
 -- staff have sign-ins, and each of them has signed in once. Safe to run again.
+-- Then run docs/security-data.sql (owner-only data inside gc_kv) — again after every run of this file.
 -- Supabase → SQL Editor → New query → paste ALL of this → Run.
 --
 -- After this, the public page + the public "anon" key read and write NOTHING.
@@ -63,6 +64,8 @@ begin
            where schemaname = 'public' and policyname not in ('gc_staff_all', 'gc_staff_read')
              -- audit C: the owners-only rules of gc_admin_kv (docs/admin-data.sql) are not "old rules"
              and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'))
+             -- SEC2: the owner-only rules inside gc_kv (docs/security-data.sql) are not "old rules" either
+             and not (tablename in ('gc_kv', 'app_data') and policyname in ('gc_sec2_read', 'gc_sec2_insert', 'gc_sec2_update', 'gc_sec2_delete'))
   loop
     execute format('drop policy if exists %I on %I.%I', p.policyname, p.schemaname, p.tablename);
     raise notice 'dropped old rule "%" on %', p.policyname, p.tablename;
@@ -153,7 +156,8 @@ insert into gc_verify
 select 'no rules other than GrayCo staff rules',
        coalesce('PROBLEM: ' || string_agg(tablename || '.' || policyname, ', '), 'OK')
 from pg_policies where schemaname = 'public' and policyname not in ('gc_staff_all', 'gc_staff_read')
-  and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'));
+  and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'))
+  and not (tablename in ('gc_kv', 'app_data') and policyname in ('gc_sec2_read', 'gc_sec2_insert', 'gc_sec2_update', 'gc_sec2_delete'));
 
 insert into gc_verify
 select 'anon has no table rights',

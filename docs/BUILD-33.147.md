@@ -72,3 +72,7 @@ Sends a PM starts with a tap (Post, Email it) still go out. `PORTAL_AUTO_EMAIL=1
 - **qb-callback:** no longer writes the address text into the page (an XSS hole), and sends QuickBooks tokens only to the CRM's own sites.
 - **Internal files:** `/docs/*`, `/netlify/*`, README, RECOVER.js, audit.html and package.json now answer 404. The W-9 moved to an unguessable address and the CRM's links point there.
 - **`security-lockdown.sql`** keeps the owners-only rules on gc_admin_kv.
+
+## 33.150 (same day): profiles line up, owner-only data protected by the database
+- **Who is signed in works for older screens** (owners were blocked from Cash Position, Team Status and PM Commission, and Cash Flow opened for anyone). A role or name change reaches that person's computer. The office login opens as Brittany. My Projects survives a rename. A view guard keeps PMs out of screens they don't have. PM phones show other people's changes. (audit B: `tail_views.js`)
+- **SEC2:** pay, bank, SSN, payroll, commission and cash data are readable only by admins (payroll also by people flagged in gc_staff.payroll, the office by default). Admin status comes from gc_staff, not the editable people list. New `docs/security-data.sql`; updated `security-lockdown.sql` and `fresh-start.sql`.

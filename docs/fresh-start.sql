@@ -142,7 +142,7 @@ language sql immutable as $$
     -- ── DELETE: business records ──
     when k = any (array[
       'projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'expenses', 'schedule', 'subs', 'vendors', 'customers',
-      'leads', 'gcAcctRegister', 'projectPayments', 'projectDocs', 'bidOpps', 'bidLists', 'users', 'candidates', 'inspections',
+      'leads', 'gcAcctRegister', 'projectPayments', 'projectDocs', 'bidOpps', 'bidLists', 'users', 'users_private', 'candidates', 'inspections',
       'scopes', 'punch', 'warrs', 'tmpls', 'logs', 'ccTrans', 'ccCards', 'photos', 'checklists', 'maintenance', 'warrClaims', 'todoDone',
       'timesheets', 'payrollW4', 'payrollProfiles', 'payrollRuns', 'payrollTaxPayments', 'gc_payroll_approvals',
       'gc_job_source', 'gc_sub_approvals', 'gc_check_queue', 'gc_employee_payments', 'gc_commission_paid', 'gc_expense_approvals',
