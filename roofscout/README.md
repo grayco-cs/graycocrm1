@@ -8,9 +8,11 @@ Commercial roof lead finder for GrayCo Construction Services. Start with [PROJEC
 
 The satellite map needs internet.
 
-## What's real today and what's demo
-- **Demo:** the scan (sites, roof sizes, conditions, owners). Demo phones are in the fictional 555-01xx range, demo emails are @example.com, and every demo lead is tagged DEMO.
-- **Real:** leads you add with "+ Add lead", estimates, the call list, pipeline, leaderboard, flyers and proposals, team sign-in and the shared database.
+## Finding real leads
+- **On the Map tab:** search an address (or pan the satellite map), click **📐 Trace a roof**, click the roof's corners, then click the first corner again. RoofScout measures the roof (with a pitch setting for sloped roofs), fills in the street address, and opens a new lead with the estimate ready.
+- **📐 Measure on map** in any lead re-traces its roof.
+- Or add a lead by hand with "+ Add lead".
+- The **demo scan** (made-up sample sites tagged DEMO, fictional 555-01xx phones, @example.com emails) exists only in local demo mode, never on the website.
 
 ## Estimates
 Each lead gets one **approximate estimate**:

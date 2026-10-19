@@ -72,6 +72,28 @@ Open **Settings** and fill in or confirm the following, then click **Save settin
 
 Each person then opens **Settings → My profile** and enters their title and direct phone. These go on the flyers and proposals they send.
 
+## 4. Satellite map key (admin, free)
+
+The satellite pictures come from Esri. For business use, Esri asks for an API key:
+
+1. Go to **developers.arcgis.com** and create a free **ArcGIS Location Platform** account.
+2. Create an **API key**. Under its privileges, allow **Basemaps** only. Under its allowed referrers, add your site addresses:
+   - `https://graycocrm1.netlify.app`
+   - `https://crm.grayco-cs.com`
+   - `https://roofscout.grayco-cs.com`
+3. In RoofScout, go to **Settings → Satellite map**, paste the key, and click **Save settings**.
+
+Esri's free tier covers normal office use. The ArcGIS site shows your usage.
+
+## Finding leads
+
+- **Map tab:** search an address or pan to a roof, click **📐 Trace a roof**, click each corner, then click the first corner again.
+  - RoofScout measures the roof and fills in the street address.
+  - Pick a **pitch** for sloped roofs (flat / low-slope for most commercial).
+  - The lead opens with the estimate ready. Name it, set the condition, and save.
+- **📐 Measure on map** inside a lead re-measures it.
+- **Address search** uses OpenStreetMap's free Nominatim service. Its [usage policy](https://operations.osmfoundation.org/policies/nominatim/) allows searches a person clicks for, at moderate volume (about one a second for the whole team), and forbids bulk or automatic lookups. RoofScout only looks up when someone clicks **Go** or saves a traced roof. If the team ever outgrows it, switch to a paid geocoder.
+
 ## Everyday
 
 - **Add or remove a person:** do it in the CRM (💎 → Team access). RoofScout follows that list automatically.

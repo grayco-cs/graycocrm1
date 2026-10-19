@@ -240,7 +240,7 @@
     $('#logout').textContent = isCloud() ? 'Sign out' : 'Exit demo';
     $('#mode-bar').className = 'demo-bar' + (isCloud() ? ' live' : '');
     $('#mode-bar').innerHTML = isCloud()
-      ? 'Shared team database: everyone with a GrayCo CRM sign-in sees the same leads. Scan results are still <b>DEMO data</b> until the real scan is connected.'
+      ? 'Shared team leads: everyone with a GrayCo CRM sign-in sees the same list. Find a roof on the map, trace it to measure, and save it as a lead.'
       : '<b>DEMO MODE</b>: practice only, saved in this browser, not shared. Scan results are made-up sample data.';
     go(tab);
   }
@@ -254,6 +254,7 @@
     tab = t;
     $$('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); });
     if (map) { map.remove(); map = null; }
+    if (t !== 'map') measure = null;
     var y = window.scrollY;
     var v = $('#view');
     v.className = 'view view-' + t;
@@ -282,7 +283,7 @@
 
   function busy() {
     var a = document.activeElement;
-    return !$('#modal').hidden || (a && a.closest && a.closest('#view form'));
+    return !$('#modal').hidden || !!measure || (a && a.closest && a.closest('#view form'));
   }
 
   function applyState(ns) {
@@ -315,40 +316,72 @@
   });
 
   // ---- Map ----------------------------------------------------------------
+  //
+  // Finding real leads: look at the satellite map, trace a roof's outline to
+  // measure it, and save it as a lead. The demo scan exists only in demo mode.
+
+  var measure = null;   // { points: [[lat,lng]…], pitch, leadId|null, layer }
+  var mapView = null;   // last center/zoom, so a refresh doesn't jump the map
+  var draftExtras = null; // outline etc. carried into the "Add lead" form after tracing
 
   function viewMap() {
+    var demo = !isCloud();
     var scoped = scopedLeads();
     var flagged = scoped.filter(function (l) { return l.condition < 70 && isOpen(l); })
       .sort(function (a, b) { return a.condition - b.condition; });
     return '<div class="map-layout">' +
       '<aside class="panel scan-panel">' +
-        '<h2>Scan</h2>' +
+        '<h2>Find roofs</h2>' +
         '<div class="seg" role="group" aria-label="Property type">' +
           ['commercial', 'residential', 'all'].map(function (s) {
             return '<button data-act="scope" data-v="' + s + '" class="' + (prefs.scope === s ? 'on' : '') + '">' +
               (s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)) + '</button>';
           }).join('') +
         '</div>' +
-        (prefs.scope !== 'commercial' ? '<p class="note">Residential roofs are harder to grade from satellite (smaller roofs, trees, steep pitch), so their grades carry lower confidence.</p>' : '') +
-        '<label>Center <select id="scan-place">' + Store.PLACES.map(function (p) {
+        (prefs.scope !== 'commercial' ? '<p class="note">Residential roofs are harder to judge from satellite (smaller roofs, trees, steep pitch).</p>' : '') +
+        '<form id="geo-form" class="geo-form"><input type="search" id="geo-q" placeholder="Go to an address or place…" aria-label="Address"><button class="btn ghost" type="submit">Go</button></form>' +
+        '<div id="geo-results"></div>' +
+        '<label>Area <select id="scan-place">' + Store.PLACES.map(function (p) {
           return '<option value="' + p.id + '"' + (p.id === prefs.place ? ' selected' : '') + '>' + esc(p.label) + '</option>';
         }).join('') + '</select></label>' +
-        '<label>Radius (miles)' +
-          '<div class="radius-row"><input type="range" id="radius-range" min="1" max="100" value="' + Math.min(prefs.radius, 100) + '">' +
-          '<input type="number" id="radius-num" min="0.5" max="500" step="0.5" value="' + prefs.radius + '"></div></label>' +
-        '<div class="presets">' + [2, 5, 10, 25, 50].map(function (r) {
-          return '<button class="btn ghost sm" data-act="radius" data-v="' + r + '">' + r + ' mi</button>';
-        }).join('') + '</div>' +
-        '<button class="btn primary block" data-act="scan">Run scan (demo)</button>' +
-        '<p class="fine">The demo scan makes sample sites so you can try the workflow' + (isCloud() ? ' (the whole team sees them, tagged DEMO)' : '') + '. A real scan needs licensed imagery (Build tab, step 4).</p>' +
+        '<div id="measure-box">' + measureBox() + '</div>' +
+        (demo ? '<details class="demo-scan"><summary>Demo scan (practice data)</summary>' +
+          '<label>Radius (miles)' +
+            '<div class="radius-row"><input type="range" id="radius-range" min="1" max="100" value="' + Math.min(prefs.radius, 100) + '">' +
+            '<input type="number" id="radius-num" min="0.5" max="500" step="0.5" value="' + prefs.radius + '"></div></label>' +
+          '<div class="presets">' + [2, 5, 10, 25, 50].map(function (r) {
+            return '<button class="btn ghost sm" data-act="radius" data-v="' + r + '">' + r + ' mi</button>';
+          }).join('') + '</div>' +
+          '<button class="btn ghost block" data-act="scan">Run demo scan</button></details>' : '') +
         '<div class="legend"><span><i class="dot poor"></i>Poor</span><span><i class="dot fair"></i>Fair</span><span><i class="dot good"></i>Good</span><span><i class="dot won"></i>Won</span></div>' +
-        '<h3>Worst roofs in view (' + flagged.length + ')</h3>' +
+        '<h3>Worst roofs (' + flagged.length + ')</h3>' +
         '<ul class="mini-list">' + (flagged.slice(0, 8).map(function (l) {
           return '<li><button data-act="open" data-id="' + esc(l.id) + '">' + gradeChip(l) + ' <span>' + esc(l.name) + '</span><b>' + moneyShort(valueOf(l)) + '</b></button></li>';
-        }).join('') || '<li class="muted">Run a scan or add a lead.</li>') + '</ul>' +
+        }).join('') || '<li class="muted">No leads yet. Trace a roof to add the first one.</li>') + '</ul>' +
+        '<p class="fine">Address search © OpenStreetMap contributors (Nominatim), used only when you click Go or add a lead.</p>' +
       '</aside>' +
-      '<div class="map-wrap"><div id="map" class="map"></div></div>' +
+      '<div class="map-wrap"><div id="map" class="map' + (measure ? ' measuring' : '') + '"></div></div>' +
     '</div>';
+  }
+
+  function measureBox() {
+    if (!measure) {
+      return '<button class="btn primary block" data-act="trace">📐 Trace a roof → new lead</button>' +
+        '<p class="fine">Zoom in close on a roof, click each corner of the roof, then click the first corner again (or Finish).</p>';
+    }
+    var lead = measure.leadId ? leadById(measure.leadId) : null;
+    var n = measure.points.length;
+    var area = n >= 3 ? Geo.roofSqft(measure.points, measure.pitch) : 0;
+    return '<div class="measure">' +
+      '<div class="measure-head">Tracing ' + (lead ? '<b>' + esc(lead.name) + '</b>' : 'a new roof') + '</div>' +
+      '<div class="measure-area">' + (n >= 3 ? num(area) + ' ft²' : n + ' corner' + (n === 1 ? '' : 's') + ' so far') + '</div>' +
+      '<label>Roof pitch <select id="measure-pitch">' + Geo.PITCHES.map(function (p) {
+        return '<option value="' + p.id + '"' + (p.id === measure.pitch ? ' selected' : '') + '>' + esc(p.label) + '</option>';
+      }).join('') + '</select></label>' +
+      '<p class="fine">Flat / low-slope for most commercial roofs. Steeper roofs have more surface than you see from above, so the pitch adds to the area.</p>' +
+      '<div class="btn-row"><button class="btn primary" data-act="trace-done"' + (n < 3 ? ' disabled' : '') + '>Finish</button>' +
+      '<button class="btn ghost" data-act="trace-undo"' + (n ? '' : ' disabled') + '>Undo corner</button>' +
+      '<button class="btn ghost" data-act="trace-cancel">Cancel</button></div></div>';
   }
 
   function scopedLeads() {
@@ -360,6 +393,10 @@
     return Store.PLACES.filter(function (p) { return p.id === prefs.place; })[0] || Store.PLACES[0];
   }
 
+  function leadColor(l) {
+    return l.stage === 'Won' ? '#3b82f6' : l.stage === 'Lost' ? '#9ca3af' : { poor: '#ef4444', fair: '#f59e0b', good: '#22c55e' }[U.grade(l.condition).cls];
+  }
+
   function initMap() {
     var el = $('#map');
     if (!window.L) {
@@ -367,31 +404,180 @@
       return;
     }
     var c = centerPlace();
-    map = L.map(el, { zoomControl: true }).setView([c.lat, c.lng], 11);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics'
+    map = L.map(el, { zoomControl: true, maxZoom: 21, doubleClickZoom: !measure });
+    // Place the map before adding anything to it.
+    if (mapView) map.setView(mapView.center, mapView.zoom);
+    else if (!isCloud()) map.fitBounds(L.latLng(c.lat, c.lng).toBounds(prefs.radius * 1609.34 * 2), { padding: [10, 10] });
+    else map.setView([c.lat, c.lng], 12);
+    // With the company's Esri key the imagery is used under that account (licensed for business);
+    // without it, Esri's public tiles are shown.
+    var key = (state.settings.map && state.settings.map.esriKey) || '';
+    var base = key ? 'https://ibasemaps-api.arcgis.com/arcgis/rest/services/' : 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+    var tok = key ? '?token=' + encodeURIComponent(key) : '';
+    L.tileLayer(base + 'World_Imagery/MapServer/tile/{z}/{y}/{x}' + tok, {
+      maxZoom: 21, maxNativeZoom: 19, attribution: 'Powered by Esri · Imagery © Esri, Maxar, Earthstar Geographics'
     }).addTo(map);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19
+    L.tileLayer(base + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}' + tok, {
+      maxZoom: 21, maxNativeZoom: 19
     }).addTo(map);
-    var circle = L.circle([c.lat, c.lng], { radius: prefs.radius * 1609.34, color: '#f5a524', weight: 2, fillOpacity: 0.05 }).addTo(map);
-    L.circleMarker([c.lat, c.lng], { radius: 6, color: '#fff', weight: 2, fillColor: '#13294b', fillOpacity: 1 })
-      .bindTooltip(esc(c.label)).addTo(map);
+
+    if (!isCloud()) {
+      L.circle([c.lat, c.lng], { radius: prefs.radius * 1609.34, color: '#f5a524', weight: 2, fillOpacity: 0.05, interactive: false }).addTo(map);
+    }
 
     scopedLeads().forEach(function (l) {
+      var color = leadColor(l);
+      var tip = esc(l.name) + '<br>' + U.grade(l.condition).label + ' · ' + moneyShort(valueOf(l)) + (l.areaSqft ? ' · ' + num(l.areaSqft) + ' ft²' : '');
+      if (Array.isArray(l.outline) && l.outline.length >= 3) {
+        L.polygon(l.outline, { color: color, weight: 2, fillOpacity: 0.25 })
+          .bindTooltip(tip).on('click', function (e) { if (measure) return; L.DomEvent.stop(e); openLead(l.id); }).addTo(map);
+      }
       if (typeof l.lat !== 'number' || typeof l.lng !== 'number') return;
-      var color = l.stage === 'Won' ? '#3b82f6' : l.stage === 'Lost' ? '#9ca3af' : { poor: '#ef4444', fair: '#f59e0b', good: '#22c55e' }[U.grade(l.condition).cls];
       L.circleMarker([l.lat, l.lng], { radius: l.kind === 'commercial' ? 8 : 5, color: '#fff', weight: 1.5, fillColor: color, fillOpacity: 0.95 })
-        .bindTooltip(esc(l.name) + '<br>' + U.grade(l.condition).label + ' · ' + moneyShort(valueOf(l)))
-        .on('click', function () { openLead(l.id); })
+        .bindTooltip(tip)
+        .on('click', function (e) { if (measure) return; L.DomEvent.stop(e); openLead(l.id); })
         .addTo(map);
     });
-    map.fitBounds(circle.getBounds(), { padding: [10, 10] });
+
+    map.on('moveend', function () { mapView = { center: map.getCenter(), zoom: map.getZoom() }; });
+    map.on('click', function (e) { if (measure) addCorner(e.latlng); });
+    if (measure) drawMeasure();
+  }
+
+  // ---- Tracing a roof -------------------------------------------------------
+
+  function startTrace(leadId) {
+    var lead = leadId ? leadById(leadId) : null;
+    measure = { points: [], pitch: lead && lead.pitch ? lead.pitch : (prefs.scope === 'residential' ? '6' : 'flat'), leadId: leadId || null, layer: null };
+    if (lead && typeof lead.lat === 'number') mapView = { center: L.latLng(lead.lat, lead.lng), zoom: 19 };
+    if (tab !== 'map') go('map'); else refresh();
+    if (map && map.getZoom() < 17) toast('Zoom in close on the roof first, then click its corners.');
+  }
+
+  function addCorner(latlng) {
+    var pts = measure.points;
+    // Clicking the first corner again closes the outline.
+    if (pts.length >= 3) {
+      var first = map.latLngToContainerPoint(pts[0]), here = map.latLngToContainerPoint(latlng);
+      if (first.distanceTo(here) < 12) { finishTrace(); return; }
+    }
+    pts.push([latlng.lat, latlng.lng]);
+    drawMeasure();
+  }
+
+  function drawMeasure() {
+    if (!map || !measure) return;
+    if (measure.layer) measure.layer.remove();
+    var g = L.layerGroup();
+    var pts = measure.points;
+    if (pts.length >= 2) L.polyline(pts.length >= 3 ? pts.concat([pts[0]]) : pts, { color: '#f5a524', weight: 3, dashArray: pts.length >= 3 ? null : '6 6', interactive: false }).addTo(g);
+    if (pts.length >= 3) L.polygon(pts, { color: '#f5a524', weight: 0, fillOpacity: 0.25, interactive: false }).addTo(g);
+    pts.forEach(function (p, i) {
+      L.circleMarker(p, { radius: i === 0 ? 7 : 5, color: '#13294b', weight: 2, fillColor: i === 0 ? '#f5a524' : '#fff', fillOpacity: 1, interactive: false }).addTo(g);
+    });
+    measure.layer = g.addTo(map);
+    var box = $('#measure-box');
+    if (box) box.innerHTML = measureBox();
+  }
+
+  function cancelTrace() {
+    measure = null;
+    refresh();
+  }
+
+  function finishTrace() {
+    if (!measure || measure.points.length < 3) return;
+    var pts = measure.points.map(function (p) { return [Math.round(p[0] * 1e7) / 1e7, Math.round(p[1] * 1e7) / 1e7]; });
+    var area = Geo.roofSqft(pts, measure.pitch);
+    var mid = Geo.centroid(pts);
+    var pitch = measure.pitch, leadId = measure.leadId;
+    measure = null;
+
+    if (leadId) {
+      var l = leadById(leadId);
+      if (!l) { refresh(); return; }
+      commitLead(l, function (x) {
+        x.outline = pts; x.pitch = pitch; x.areaSqft = area;
+        if (typeof x.lat !== 'number') { x.lat = mid[0]; x.lng = mid[1]; }
+      }).then(function () {
+        log('edit', l, 'measured ' + num(area) + ' ft²');
+        refresh();
+        toast('Measured ' + num(area) + ' ft²');
+        leadForm(l);
+      }, function () { refresh(); });
+      return;
+    }
+
+    refresh();
+    var kind = prefs.scope === 'residential' ? 'residential' : 'commercial';
+    var types = state.settings.roofTypes;
+    var rt = (types.filter(function (t) { return t.id === (kind === 'residential' ? 'shingle' : 'tpo'); })[0] || types[0]).id;
+    draftExtras = { outline: pts, pitch: pitch };
+    var draft = {
+      id: '', name: '', address: '', kind: kind, roofType: rt, areaSqft: area,
+      condition: 50, confidence: null, issues: [], owner: { name: '', company: '', phone: '', email: '' },
+      stage: 'New', assignedTo: me.id, notes: '', dnc: false, source: 'map', demo: false, lat: mid[0], lng: mid[1]
+    };
+    leadForm(draft);
+    // Fill in the street address for that spot (one lookup, because the user asked for this lead).
+    reverseGeocode(mid).then(function (addr) {
+      var f = $('#lead-form');
+      if (!addr || !f || f.dataset.id || f.elements.address.value) return;
+      f.elements.address.value = addr.address;
+      if (!f.elements.name.value && addr.name) f.elements.name.value = addr.name;
+    });
+  }
+
+  // ---- Address search (OpenStreetMap Nominatim: only when a person asks) ------
+
+  var NOMINATIM = 'https://nominatim.openstreetmap.org';
+  var lastGeo = 0;
+
+  function nominatim(path) {
+    // Their usage policy: at most one request a second, and say who is asking (the site's address).
+    var wait = Math.max(0, lastGeo + 1100 - Date.now());
+    lastGeo = Date.now() + wait;
+    return new Promise(function (res) { setTimeout(res, wait); }).then(function () {
+      return fetch(NOMINATIM + path, { referrerPolicy: 'strict-origin-when-cross-origin', headers: { Accept: 'application/json' } });
+    }).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; });
+  }
+
+  function geocode(q) {
+    var c = centerPlace();
+    // Prefer results around the Memphis area, but don't exclude anything.
+    var box = [c.lng - 1.5, c.lat + 1.2, c.lng + 1.5, c.lat - 1.2].join(',');
+    return nominatim('/search?format=jsonv2&limit=5&countrycodes=us&viewbox=' + box + '&q=' + encodeURIComponent(q));
+  }
+
+  function reverseGeocode(p) {
+    return nominatim('/reverse?format=jsonv2&zoom=18&lat=' + p[0] + '&lon=' + p[1]).then(function (j) {
+      if (!j || !j.address) return null;
+      var a = j.address;
+      var street = [a.house_number, a.road].filter(Boolean).join(' ');
+      var city = a.city || a.town || a.village || a.hamlet || a.suburb || '';
+      return { address: [street, city, [a.state_code || a.state, a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', '), name: j.name || '' };
+    });
+  }
+
+  function showGeoResults(list) {
+    var box = $('#geo-results');
+    if (!box) return;
+    if (!list || !list.length) { box.innerHTML = '<p class="fine">No match. Try adding the city, e.g. "4014 Broadway Rd, Bartlett TN".</p>'; return; }
+    box.innerHTML = '<ul class="mini-list">' + list.map(function (r, i) {
+      return '<li><button data-act="geo-go" data-i="' + i + '"><span>' + esc(r.display_name) + '</span></button></li>';
+    }).join('') + '</ul>';
+    box._results = list;
+  }
+
+  function goTo(lat, lng, zoom) {
+    mapView = { center: L.latLng(lat, lng), zoom: zoom || 19 };
+    if (map) map.setView(mapView.center, mapView.zoom);
   }
 
   function setPref(k, v) {
     prefs[k] = v;
     Store.savePrefs(prefs);
+    if (k === 'place' || k === 'radius') mapView = null;
     refresh();
   }
 
@@ -697,6 +883,11 @@
         field('MS license #', 'co-licms', co.licMS, 'Fill in the real number') +
       '</div><p class="fine">Every flyer and proposal lists Tennessee, Arkansas and Mississippi, with the numbers once they are filled in.</p></section>' +
 
+      '<section class="panel"><h2>Satellite map</h2>' +
+        '<p class="muted sm">For business use, Esri (the imagery provider) asks for a key from a free ArcGIS Location Platform account. Without a key the map still shows Esri\'s public imagery.</p>' +
+        '<div class="row2">' + field('Esri API key', 'esri-key', (s.map && s.map.esriKey) || '', 'Paste the key from developers.arcgis.com') + '</div>' +
+        '<p class="fine">It is a browser key (everyone signed in can see it). In ArcGIS, limit it to basemaps and to your site addresses.</p></section>' +
+
       '<section class="panel"><h2>Proposal terms</h2><p class="muted sm">One per line. These print on every proposal; confirm them before sending.</p>' +
         '<textarea name="terms" rows="5">' + esc(s.terms) + '</textarea></section>' +
 
@@ -796,7 +987,8 @@
       coating: { low: nums('c-low') || 0, high: nums('c-high') || 0, galPrice: nums('c-gal') || 0, galCoverage: cov },
       company: { name: g('co-name'), phone: g('co-phone'), email: g('co-email'), website: g('co-website'), address: g('co-address'), insurance: g('co-ins'), licTN: g('co-lictn'), licAR: g('co-licar'), licMS: g('co-licms') },
       terms: form.elements.terms.value,
-      commission: g('commission')
+      commission: g('commission'),
+      map: { esriKey: g('esri-key') }
     });
   }
 
@@ -825,13 +1017,14 @@
   function viewBuild() {
     return '<div class="build">' +
       '<div class="section-head"><h1>The plan: from prototype to real leads</h1>' +
-      '<p class="muted">The scan, measurements and owner data are still DEMO. Leads you add yourself, pricing, the call list, pipeline, leaderboard and documents all work for real. Each step below swaps one demo piece for real data.</p></div>' +
+      '<p class="muted">Everything here works with real leads. The steps below add automatic owner lookup, automatic measuring and, last, an automatic scan for bad roofs.</p></div>' +
       '<ol class="steps">' +
-        step('done', 'Lead program', 'Scan workflow, leads, call list, pipeline, leaderboard, estimates, flyers and proposals.') +
+        step('done', 'Lead program', 'Leads, call list, pipeline, leaderboard, estimates, flyers and proposals.') +
+        step('done', 'Real leads from the map', 'Find a roof on the satellite map (or search its address), trace its outline to measure it, and save it as a lead. Free.') +
         step(isCloud() ? 'done' : '', '1. Shared database + team sign-in', 'Runs on the GrayCo CRM\'s Supabase project. Everyone with a CRM sign-in gets in with the same email and password and works one shared lead pool from any device. ' +
           (isCloud() ? '<b>On.</b>' : 'Turns on when an admin runs <code>docs/roofscout-setup.sql</code> once in Supabase.')) +
         step('', '2. Owner data + skip trace', 'Regrid parcel/owner data (~$15–50/mo) plus skip tracing ($0.02–$0.15 per record) for real phones and emails. Check numbers against the Do-Not-Call list before they reach the call list.') +
-        step('', '3. Real measurements', 'Google Solar API (low cost) for roof area and pitch; EagleView ($25–$75/report) when you need a bid-grade report.') +
+        step('', '3. Automatic measurements', 'Google Solar API (low cost) for roof area and pitch from just an address; EagleView ($25–$75/report) when you need a bid-grade report. Until then, trace roofs on the map.') +
         step('', '4. Real scan: imagery + condition', 'Licensed aerial imagery (Nearmap / EagleView) with condition scoring, or a custom AI model later at volume. The largest cost, which scales with the area scanned. Pilot one zip code first.') +
         step('', '5. Move into the GrayCo CRM', 'RoofScout becomes a section of the CRM. Its data is already in the CRM\'s database, so nothing needs copying.') +
       '</ol>' +
@@ -862,6 +1055,7 @@
   }
 
   function closeModal() {
+    draftExtras = null;
     $('#modal').hidden = true;
     $('#modal-body').innerHTML = '';
     document.body.classList.remove('modal-open');
@@ -878,6 +1072,7 @@
   }
 
   function newLead() {
+    draftExtras = null;
     leadForm({
       id: '', name: '', address: '', kind: 'commercial', roofType: state.settings.roofTypes[0].id, areaSqft: 10000,
       condition: 50, confidence: null, issues: [], owner: { name: '', company: '', phone: '', email: '' },
@@ -906,11 +1101,12 @@
           '<label class="span2">Address <input name="address" value="' + esc(l.address) + '"></label>' +
           '<label>Type ' + sel('kind', [['commercial', 'Commercial'], ['residential', 'Residential']], l.kind) + '</label>' +
           '<label>Roof type ' + sel('roofType', state.settings.roofTypes.map(function (t) { return [t.id, t.name]; }), l.roofType) + '</label>' +
-          '<label>Roof area (ft²) <input type="number" name="areaSqft" min="0" step="100" required value="' + l.areaSqft + '"></label>' +
+          '<label>Roof area (ft²) <input type="number" name="areaSqft" min="0" step="10" required value="' + l.areaSqft + '"></label>' +
           '<label>Condition (0 bad – 100 good) <input type="number" name="condition" min="0" max="100" required value="' + l.condition + '"></label>' +
           '<label class="span2">Issues seen (comma separated) <input name="issues" value="' + esc((l.issues || []).join(', ')) + '"></label>' +
           '<label>Latitude <input type="number" name="lat" step="any" value="' + (typeof l.lat === 'number' ? l.lat.toFixed(6) : '') + '" placeholder="optional, for the map"></label>' +
           '<label>Longitude <input type="number" name="lng" step="any" value="' + (typeof l.lng === 'number' ? l.lng.toFixed(6) : '') + '" placeholder="optional"></label>' +
+          (l.outline || (isNew && draftExtras) ? '<p class="fine span2">Area traced on the satellite map' + ((l.pitch || (draftExtras && draftExtras.pitch)) && (l.pitch || draftExtras.pitch) !== 'flat' ? ', ' + (l.pitch || draftExtras.pitch) + '/12 pitch' : ', flat / low-slope') + '. Verify on site.</p>' : '') +
           (l.confidence ? '<p class="fine span2">Grading confidence from imagery: ' + l.confidence + '%</p>' : '') +
         '</div></fieldset>' +
         '<fieldset><legend>Owner / manager contact</legend><div class="row2">' +
@@ -935,7 +1131,8 @@
       '</aside></div>' +
       '<div class="btn-row modal-foot">' +
         '<button class="btn primary" type="submit">' + (isNew ? 'Add lead' : 'Save') + '</button>' +
-        (isNew ? '' : '<button type="button" class="btn ghost" data-act="flyer">Print flyer</button><button type="button" class="btn ghost" data-act="proposal">Print proposal</button>' +
+        (isNew ? '' : '<button type="button" class="btn ghost" data-act="measure-lead">📐 ' + (l.outline ? 'Re-measure' : 'Measure') + ' on map</button>' +
+          '<button type="button" class="btn ghost" data-act="flyer">Print flyer</button><button type="button" class="btn ghost" data-act="proposal">Print proposal</button>' +
           (l.assignedTo === me.id ? '' : '<button type="button" class="btn ghost" data-act="claim">Assign to me</button>')) +
         '<span class="grow"></span>' +
         (!isNew && isAdmin() ? '<button type="button" class="btn danger" data-act="del-lead">Delete</button>' : '') +
@@ -991,6 +1188,7 @@
     var id = form.dataset.id;
     if (!id) {
       var l = { id: Store.newId('L'), source: 'manual', demo: false, touched: true };
+      if (draftExtras) { l.source = 'map'; l.outline = draftExtras.outline; l.pitch = draftExtras.pitch; }
       readLeadForm(form, l);
       return createLead(l).then(function () { log('create', l); return l; });
     }
@@ -1059,6 +1257,20 @@
       case 'scope': setPref('scope', b.dataset.v); break;
       case 'radius': setPref('radius', Number(b.dataset.v)); break;
       case 'scan': runScan(b); break;
+      case 'trace': startTrace(null); break;
+      case 'trace-done': finishTrace(); break;
+      case 'trace-undo': if (measure) { measure.points.pop(); drawMeasure(); } break;
+      case 'trace-cancel': cancelTrace(); break;
+      case 'measure-lead':
+        var ml = $('#lead-form') && leadById($('#lead-form').dataset.id);
+        if (!ml) return;
+        closeModal();
+        startTrace(ml.id);
+        break;
+      case 'geo-go':
+        var hit = ($('#geo-results')._results || [])[Number(b.dataset.i)];
+        if (hit) goTo(Number(hit.lat), Number(hit.lon), 19);
+        break;
       case 'csv': exportCsv(); break;
       case 'call': logCall(id, b.dataset.v); break;
 
@@ -1143,6 +1355,16 @@
   document.addEventListener('submit', function (e) {
     var form = e.target;
     var btn = $('button[type=submit]', form);
+    if (form.id === 'geo-form') {
+      e.preventDefault();
+      var q = $('#geo-q').value.trim();
+      if (!q) return;
+      withBusy(btn, geocode(q)).then(function (list) {
+        if (list && list.length === 1) { goTo(Number(list[0].lat), Number(list[0].lon), 19); $('#geo-results').innerHTML = ''; }
+        else showGeoResults(list);
+      });
+      return;
+    }
     if (form.id === 'lead-form') {
       e.preventDefault();
       var wasNew = !form.dataset.id;
@@ -1221,6 +1443,7 @@
     if (t.id === 'lead-stage') { ui.leads.stage = t.value; renderLeadTable(); }
     if (t.id === 'lead-cond') { ui.leads.cond = t.value; renderLeadTable(); }
     if (t.id === 'scan-place') setPref('place', t.value);
+    if (t.id === 'measure-pitch' && measure) { measure.pitch = t.value; drawMeasure(); }
     if (t.id === 'radius-range' || t.id === 'radius-num') setPref('radius', Math.max(0.5, Math.min(500, Number(t.value) || 10)));
     if (t.id === 'restore') restore(t.files[0]);
   });

@@ -53,6 +53,8 @@
       margin: 35,
       coating: { low: 165, high: 250, galPrice: 197, galCoverage: 320 },
       commission: '15 / 60 / 40',
+      // Esri API key for the satellite map (business use). Empty = Esri's public tiles.
+      map: { esriKey: '' },
       // Proposal terms, one per line. Placeholders: admin should confirm these.
       terms: 'Pricing is an approximate estimate, valid for 30 days from the proposal date. Final price is confirmed after an on-site inspection.\n' +
         'Payment terms: to be confirmed at signing.\n' +

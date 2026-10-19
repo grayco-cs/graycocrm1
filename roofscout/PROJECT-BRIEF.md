@@ -15,8 +15,10 @@ A lead-generation tool for GrayCo Construction Services (commercial roofing, Mem
 - **Phase 1 backend is built** on the CRM's own Supabase project (`docs/roofscout-setup.sql`, owner's guide `docs/ROOFSCOUT-SETUP.md`). It turns on when an admin runs that script once.
 - **Team access:** everyone with a CRM sign-in gets in with the same email and password. There is one sign-in for both apps, one shared lead pool, and people are added and removed in the CRM (💎 → Team access). Admin = admin on the CRM's staff list.
 - **Login protected, company only:** on the website the GrayCo sign-in is the only way in (client requirement 2026-10-19). Demo mode exists only when the files are opened locally for testing.
-- The **scan is still DEMO**: synthetic sites, sizes, conditions and owners, all tagged DEMO, with fictional 555-01xx phones and @example.com emails. It does NOT look up real properties, roofs, owners or phone numbers.
-- **Works for real today:** hand-added leads, estimates, call list (with Do-Not-Call flag), pipeline + weighted forecast, PM leaderboard, flyers and proposals, shared data, edit-clash protection, and the nightly backup.
+- **No demo data on the website** (2026-10-19). Real leads come from the Map tab: search an address or pan the satellite map, **trace the roof's outline to measure it** (pitch factor for sloped roofs), and save it as a lead. The street address is filled in from the spot (OpenStreetMap Nominatim, only on user action). The old synthetic scan remains only in local demo mode.
+- Still not automatic: owner names / phones / emails (Phase 2: Regrid + Tracerfy), measuring from an address alone (Google Solar API), and spotting bad roofs automatically (licensed imagery + condition AI).
+- **Works for real today:** leads traced on the map or added by hand, estimates, call list (with Do-Not-Call flag), pipeline + weighted forecast, PM leaderboard, flyers and proposals, shared data, edit-clash protection, and the nightly backup.
+- **Satellite imagery licensing:** Esri asks for an API key (free ArcGIS Location Platform account) for business use. An admin enters it in Settings → Satellite map; until then Esri's public tiles are shown.
 - Hard rule honored throughout: never fabricate or guess real contact info. Real leads require the real data pipeline or contact info a teammate has verified.
 
 ## Company facts (used on all documents)

@@ -39,7 +39,9 @@
   }
 
   function measuredFrom(lead) {
-    return lead.source === 'scan' ? 'aerial imagery' : 'preliminary measurements';
+    if (lead.source === 'scan') return 'aerial imagery';
+    if (lead.outline) return 'a roof outline traced on satellite imagery';
+    return 'preliminary measurements';
   }
 
   function demoStamp(lead) {
@@ -129,7 +131,7 @@
       '<table class="prop-table"><tr><th>Roof type</th><td>' + esc(rt.name) + '</td><th>Approx. area</th><td>' + num(l.areaSqft) + ' ft²</td></tr>' +
         '<tr><th>Condition</th><td>' + g.label + ' (' + l.condition + '/100)</td><th>Property type</th><td>' + (l.kind === 'residential' ? 'Residential' : 'Commercial') + '</td></tr></table>' +
       '<h3>Observations</h3>' + issues +
-      '<p class="muted">' + (l.source === 'scan' ? 'Roof size is measured from aerial imagery' : 'Roof size is a preliminary measurement') + ' and will be verified on site before work begins.</p>' +
+      '<p class="muted">' + (l.source === 'scan' || l.outline ? 'Roof size is measured from aerial imagery' : 'Roof size is a preliminary measurement') + ' and will be verified on site before work begins.</p>' +
       '<h2>2. Scope of Work</h2><ul>' + scopeFor(rt).map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') +
         '<li>Full cleanup, debris haul-off and final walk-through with you</li></ul>' +
       '<h2>3. Approximate Estimate</h2>' +

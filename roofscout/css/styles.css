@@ -154,6 +154,17 @@ legend { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-sp
 .map { position: absolute; inset: 0; background: #1b2433; }
 .map-off { color: #c9d4e6; display: grid; place-items: center; height: 100%; padding: 24px; text-align: center; }
 
+.geo-form { display: flex; gap: 6px; margin-top: 12px; }
+.geo-form input { margin: 0; }
+#geo-results .mini-list span { white-space: normal; font-size: 12px; }
+#measure-box { margin-top: 14px; }
+.measure { border: 2px solid var(--accent); border-radius: 10px; padding: 10px 12px; background: #fffaf0; }
+.measure-head { font-size: 13px; }
+.measure-area { font-size: 22px; font-weight: 800; color: var(--navy); margin: 2px 0 6px; }
+.map.measuring, .map.measuring .leaflet-interactive { cursor: crosshair; }
+.demo-scan { margin-top: 12px; font-size: 13px; }
+.demo-scan summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+
 /* Tables */
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .toolbar input[type=search] { max-width: 280px; }
