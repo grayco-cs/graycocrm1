@@ -60,3 +60,7 @@ Sends a PM starts with a tap (Post, Email it) still go out. `PORTAL_AUTO_EMAIL=1
 | Phone sign-in | 16/16 |
 | Portal functions and approvals | 125/125, approval 10/10, portal CRM 47/47 |
 | Delete test | 28–29/29, the same as live 33.145 (27–29/29) |
+
+## 33.148 (same day)
+- **The Photos tab and a job's "Sync from CompanyCam"** no longer ask for a CompanyCam API key. They used an old server address that no longer existed. They now use the company key stored on Netlify (COMPANYCAM_TOKEN), the same as Admin → CompanyCam. Patch CCX: `tail_CCX.js`. `companycam-webhook` passes on name searches and pages.
+- **Tests:** CCX 7/7, H 7/7, CompanyCam 10/10 and 12/12.

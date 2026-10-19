@@ -291,7 +291,10 @@ exports.handler = async function(event, context) {
       }
       // Clean sub-path fetch (e.g. projects/ID/notes, projects/ID/todos) — no status param.
       if(qs.raw === '1'){
-        const rr = await fetch(`https://api.companycam.com/v2/${endpoint}?per_page=100`, {
+        // pass on only these CompanyCam list parameters (the Photos tab searches by name and pages through photos)
+        const pq = new URLSearchParams({ per_page: String(Math.min(parseInt(qs.per_page, 10) || 100, 100)) });
+        ['query', 'page', 'status'].forEach(function(k){ if (qs[k] != null && String(qs[k]).length < 200) pq.set(k, String(qs[k])); });
+        const rr = await fetch(`https://api.companycam.com/v2/${String(endpoint).replace(/^\/+/, '')}?${pq.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
         });
         const rd = await rr.json();

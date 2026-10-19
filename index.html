@@ -2532,7 +2532,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.147-2026-10-19-v1 -->
+<!-- GrayCo CRM Build: 33.148-2026-10-19-v1 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -3153,7 +3153,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.147-2026-10-19-v1");
+  console.log("[GC] Build 33.148-2026-10-19-v1");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -3201,7 +3201,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.147-2026-10-19-v1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.148-2026-10-19-v1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -119752,6 +119752,55 @@ var T0 = Date.now(), seen = '', seenAt = 0;
   if (seen ? Date.now() - seenAt < 90000 : Date.now() - T0 < 1800000) setTimeout(loop, 1500);
 })();
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) { try { markOverlays(appLoginShown()); } catch (e) {} check(); } });
+})();
+
+</script>
+<script id="gc-patch-ccx">
+/* ===== GrayCo — CompanyCam photo sync uses the company key on the server (patch CCX, 33.148) =====
+   The Photos tab ("CompanyCam Photo Sync") and a job's "Sync from CompanyCam" button still asked for a
+   CompanyCam API key in this browser and called /.netlify/functions/ccam-proxy, which no longer exists.
+   They now go through companycam-webhook with the key stored on Netlify (COMPANYCAM_TOKEN). */
+(function(){
+  'use strict';
+  if (window.__GC_PATCH_CCX__) return; window.__GC_PATCH_CCX__ = true;
+  var FN = '/.netlify/functions/companycam-webhook';
+  function parse(path){
+    var p = String(path || '').replace(/^\/+/, ''), i = p.indexOf('?'), params = {};
+    if (i >= 0) {
+      p.slice(i + 1).split('&').forEach(function(kv){
+        if (!kv) return; var j = kv.indexOf('=');
+        params[decodeURIComponent(j < 0 ? kv : kv.slice(0, j))] = decodeURIComponent(j < 0 ? '' : kv.slice(j + 1));
+      });
+      p = p.slice(0, i);
+    }
+    return { endpoint: p, params: params };
+  }
+  async function call(path, method, body){
+    var x = parse(path), r;
+    if (!method || method === 'GET') {
+      var q = '?proxy=api&raw=1&endpoint=' + encodeURIComponent(x.endpoint);
+      Object.keys(x.params).forEach(function(k){ q += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(x.params[k]); });
+      r = await fetch(FN + q, { headers: { 'x-gc-cc': '1' } });
+    } else {
+      r = await fetch(FN + '?proxy=post&endpoint=' + encodeURIComponent(x.endpoint),
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gc-cc': '1' }, body: JSON.stringify(body || {}) });
+    }
+    if (!r.ok) {
+      var t = ''; try { t = await r.text(); } catch (e) {}
+      if (r.status === 401 && /token/i.test(t)) throw new Error('CompanyCam is not connected on the server. Add COMPANYCAM_TOKEN on Netlify (Admin → CompanyCam shows the status).');
+      throw new Error('CompanyCam error ' + r.status);
+    }
+    return r.json();
+  }
+  function install(){
+    if (!window._ccam || window._ccam.__ccx) return !!(window._ccam && window._ccam.__ccx);
+    window._ccam.getKey = function(){ return 'server'; };   /* the key lives on Netlify, never in the browser */
+    window._ccam.setKey = function(){};
+    window._ccam.api = call;
+    window._ccam.__ccx = true;
+    return true;
+  }
+  if (!install()) { var n = 0, t = setInterval(function(){ if (install() || ++n > 40) clearInterval(t); }, 500); }
 })();
 
 </script>
