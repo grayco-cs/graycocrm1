@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GrayCo Leads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="gate" id="gate" hidden>
+  <form class="gate-card" id="loginForm">
+    <h1>GrayCo lead list</h1>
+    <p class="hint" id="gateMsg">Sign in with your GrayCo CRM email and password.</p>
+    <div id="loginFields">
+      <label class="f">Email<input type="email" id="loginEmail" autocomplete="username" required></label>
+      <label class="f">Password<input type="password" id="loginPass" autocomplete="current-password" required></label>
+      <p class="err" id="loginErr" role="alert" hidden></p>
+      <button class="btn primary" type="submit" id="loginBtn">Sign in</button>
+      <p class="hint">Forgot your password? Ask Wesley or Nick (CRM: 💎 → Team access → Reset password). For GrayCo staff only.</p>
+    </div>
+    <div id="gateActions" class="pill-row" hidden><button type="button" class="btn primary" id="retryBtn">Try again</button><button type="button" class="btn" id="gateOut">Sign out</button></div>
+    <div class="local-only"><button type="button" class="btn" id="localBtn">Try it on this computer (not shared)</button></div>
+  </form>
+</div>
+<div id="app" hidden>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><h1>GrayCo lead list</h1><span class="sync"><span id="sync">Loading…</span> · <button class="linkbtn" id="signOut">Sign out</button></span></div>
+    <div class="count"><span class="big" id="bigNum">0</span><span class="of" id="bigOf"></span></div>
+    <div class="tape"><span id="tape"></span></div>
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-tab="1">1 Register<span class="n" id="n1"></span></button>
+      <button role="tab" data-tab="2">2 Reach out<span class="n" id="n2"></span></button>
+      <button role="tab" data-tab="fu">Follow-ups<span class="n" id="nfu"></span></button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="tools">
+    <input type="search" id="q" placeholder="Search name, contact, city, tab…" aria-label="Search">
+    <select id="fStatus" aria-label="Status filter">
+      <option value="open">Still to do</option><option value="all">All</option><option value="prog">In progress</option><option value="done">Done</option>
+    </select>
+    <select id="fZone" aria-label="Distance filter"><option value="all">Any distance</option><option value="in">Within 100 mi</option><option value="out">Outside 100 mi</option></select>
+    <select id="fSrc" aria-label="Spreadsheet tab"><option value="">Every tab</option></select>
+  </div>
+  <div class="actions-row">
+    <button class="btn mark" id="addBtn">Add a company</button>
+    <label class="btn" for="fileIn">Update from spreadsheet</label>
+    <input type="file" id="fileIn" accept=".xlsx,.xls" hidden>
+    <button class="btn" id="exportBtn">Export progress (.xlsx)</button>
+    <label class="btn" for="progIn">Bring in saved progress (.json)</label>
+    <input type="file" id="progIn" accept=".json,application/json" hidden>
+  </div>
+  <p class="hint" id="listHint"></p>
+  <div id="list"></div>
+</main>
+</div>
+
+<section class="sheet" id="sheet" aria-modal="true" role="dialog" aria-label="Company profile">
+  <div class="bar"><div class="wrap"><button class="btn" id="closeP">Back to list</button><span class="sp" id="saveState" style="text-align:center;font-size:13px;color:var(--muted)"></span><button class="btn" id="prevP" aria-label="Previous">Prev</button><button class="btn" id="nextP" aria-label="Next">Next</button></div></div>
+  <div class="wrap prof" id="prof"></div>
+</section>
+
+<dialog id="addDlg">
+  <form method="dialog" id="addForm">
+    <h3 style="margin-top:0">Add a company</h3>
+    <div class="grid2">
+      <label class="f">Company name<input name="title" required></label>
+      <label class="f">List<select name="phase"><option value="2">Reach out (lead)</option><option value="1">Register (portal / sign-up)</option></select></label>
+      <label class="f">Type<input name="type" placeholder="Developer, GC, landlord…"></label>
+      <label class="f">Priority<select name="pri"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <label class="f">Contact person<input name="name"></label>
+      <label class="f">Title<input name="ctitle"></label>
+      <label class="f">Email<input name="email" type="email"></label>
+      <label class="f">Phone<input name="phone" type="tel"></label>
+      <label class="f">Website<input name="web" placeholder="example.com"></label>
+      <label class="f">Bid portal<input name="portal" placeholder="Link to their bid portal"></label>
+      <label class="f">City / address<input name="addr"></label>
+      <label class="f">Within 100 miles of Bartlett?<select name="inz"><option value="1">Yes</option><option value="0">No</option></select></label>
+    </div>
+    <label class="f" style="margin-top:10px">Why they matter / project<textarea name="what" rows="2"></textarea></label>
+    <div class="pill-row" style="margin-top:14px;justify-content:flex-end"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn primary" value="ok">Add company</button></div>
+  </form>
+</dialog>
+
+<dialog id="impDlg"><div id="impBody"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/parse.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

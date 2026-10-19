@@ -43,6 +43,16 @@
 [functions."portal-reminders"]
   schedule = "7 * * * *"
 
+# Lead list (leads/, docs/LEADS-SETUP.md): its company list and source spreadsheet are
+# for signed-in staff only. They are read through the leads-seed function, never served
+# as plain files, so /leads/data/* answers 404 on every host.
+
+[[redirects]]
+  from = "/leads/data/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.

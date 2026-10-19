@@ -87,13 +87,15 @@ const KEEP = 30;
 const TABLES = ['gc_kv', 'gc_admin_kv', 'app_data', 'projects', 'project_estimates', 'project_scope',
                 'project_materials', 'estimate_line_items', 'products',
                 // RoofScout (docs/roofscout-setup.sql); skipped until those tables exist
-                'rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles'];
+                'rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles',
+                // Lead list (docs/leads-setup.sql); skipped until those tables exist
+                'll_progress', 'll_custom', 'll_leadlist'];
 
 function sbUrl(){ return (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, ''); }
 function svcKey(){ return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''; }
 function H(extra){ const k = svcKey(); return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {}); }
 
-const ORDER = { gc_kv: 'key', gc_admin_kv: 'key', app_data: 'key', rs_leads: 'id', rs_activity: 'id' };   // others are small; no guessed column names
+const ORDER = { gc_kv: 'key', gc_admin_kv: 'key', app_data: 'key', rs_leads: 'id', rs_activity: 'id', ll_progress: 'id' };   // others are small; no guessed column names
 async function readAll(table){
   const out = [];
   const ord = ORDER[table] ? '&order=' + ORDER[table] + '.asc' : '';
