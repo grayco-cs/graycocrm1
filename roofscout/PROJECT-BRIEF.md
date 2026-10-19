@@ -11,6 +11,7 @@ A lead-generation tool for GrayCo Construction Services (commercial roofing, Mem
 
 ## Current status — READ THIS
 - **Standalone lead program** in `roofscout/` (see `README.md` there), split into small files. It will be moved into the GrayCo CRM once it is finished.
+- **Addresses:** CRM at **https://crm.grayco-cs.com**, RoofScout at **https://roofscout.grayco-cs.com** (same Netlify site; a host rule in `netlify.toml` maps the subdomain to `roofscout/`). Connecting the subdomain is a one-time Netlify + DNS step in `docs/ROOFSCOUT-SETUP.md`.
 - **Phase 1 backend is built** on the CRM's own Supabase project (`docs/roofscout-setup.sql`, owner's guide `docs/ROOFSCOUT-SETUP.md`). It turns on when an admin runs that script once.
 - **Team access:** everyone with a CRM sign-in gets in with the same email and password. There is one sign-in for both apps, one shared lead pool, and people are added and removed in the CRM (💎 → Team access). Admin = admin on the CRM's staff list.
 - **Login protected, company only:** on the website the GrayCo sign-in is the only way in (client requirement 2026-10-19). Demo mode exists only when the files are opened locally for testing.
@@ -88,6 +89,6 @@ Why costs exist: you pay to look at every rooftop (licensed imagery + compute), 
 
 ## Immediate next step
 1. Admin runs `docs/roofscout-setup.sql` in Supabase (owner's guide: `docs/ROOFSCOUT-SETUP.md`). Every check line must say OK.
-2. Deploy, open `/roofscout/` on the CRM site, and sign in with a CRM account.
+2. Connect https://roofscout.grayco-cs.com (Netlify domain + DNS, see the guide), open it, and sign in with a CRM account.
 3. In Settings: fill in the TN / AR / MS license numbers, confirm the per-square prices and $/ft² costs, and set the proposal terms. Each person fills in My profile.
 4. Then Phase 2 (owner data + skip trace), or finish the screens and move RoofScout into the CRM.

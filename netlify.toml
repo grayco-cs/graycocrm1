@@ -42,3 +42,20 @@
 # e-mail and the friendly reminder every 15 days while a final invoice is unpaid. Never sends twice.
 [functions."portal-reminders"]
   schedule = "7 * * * *"
+
+# RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
+# roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
+# Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
+# (/.netlify/functions/* is never redirected by Netlify, so functions keep working there.)
+
+[[redirects]]
+  from = "https://roofscout.grayco-cs.com/roofscout/*"
+  to = "https://roofscout.grayco-cs.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://roofscout.grayco-cs.com/*"
+  to = "/roofscout/:splat"
+  status = 200
+  force = true

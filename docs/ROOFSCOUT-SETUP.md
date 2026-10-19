@@ -36,9 +36,24 @@ It also works with the CRM's lockdown script. `docs/security-lockdown.sql` remov
 
 ## 2. Open RoofScout
 
-Once this branch is deployed, RoofScout is at **`/roofscout/`** on the CRM's site (for example `https://graycocrm1.netlify.app/roofscout/`). Sign in with your CRM email and password. If you are already signed in to the CRM in that browser, RoofScout opens straight away.
+RoofScout has its own address: **https://roofscout.grayco-cs.com**. The CRM stays at **https://crm.grayco-cs.com**. Both are the same Netlify site; a rule in `netlify.toml` makes the roofscout address show only RoofScout.
 
-Signing out of RoofScout also signs you out of the CRM in that browser, because it is one sign-in.
+**One-time setup for the address:**
+
+1. **Netlify:** open site **graycocrm1**, then **Domain management**, then **Add a domain**. Type `roofscout.grayco-cs.com` and confirm.
+2. **DNS** (only if grayco-cs.com's DNS is *not* managed by Netlify): at the company that manages grayco-cs.com's DNS (where `crm` was set up), add a record:
+
+   | Type | Name | Value |
+   |---|---|---|
+   | CNAME | `roofscout` | `graycocrm1.netlify.app` |
+
+   If the DNS *is* managed by Netlify, step 1 does this automatically.
+3. Wait for Netlify to show the certificate (the lock icon) for `roofscout.grayco-cs.com`. This is usually within an hour.
+4. **Netlify → Site configuration → Environment variables → `SITE_ORIGIN`:** add `,https://roofscout.grayco-cs.com` to the end of the value. Then go to **Deploys** and click **Trigger deploy**.
+
+**Signing in:** use your CRM email and password. The two addresses keep separate sign-ins, so you sign in once on each. Signing out of one does not sign you out of the other.
+
+RoofScout also still opens at `crm.grayco-cs.com/roofscout/` and `graycocrm1.netlify.app/roofscout/`, which is handy before the new address is ready.
 
 ## 3. First things to set (admin)
 
