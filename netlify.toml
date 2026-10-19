@@ -48,6 +48,48 @@
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
 # (/.netlify/functions/* is never redirected by Netlify, so functions keep working there.)
 
+# ── audit C: internal files are not public ───────────────────────────────────
+# publish = "." serves every file in the repository. The setup notes and SQL in docs/ (staff e-mails, the
+# Supabase project, how the security works) and the company W-9 (the EIN) were open to anyone at
+# https://graycocrm1.netlify.app/docs/… . These rules answer 404 for them on every host. The W-9 the CRM
+# sends to customers now lives at an unguessable address (w9/GrayCo-W-9-4ad8a7807c2d45df.pdf; the CRM's four links
+# point there). Put these rules ABOVE the RoofScout rules. /.netlify/functions/* is never redirected.
+[[redirects]]
+  from = "/docs/*"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/README.md"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/RECOVER.js"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/audit.html"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package.json"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
 [[redirects]]
   from = "https://roofscout.grayco-cs.com/roofscout/*"
   to = "https://roofscout.grayco-cs.com/:splat"

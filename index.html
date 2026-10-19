@@ -2532,7 +2532,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.148-2026-10-19-v1 -->
+<!-- GrayCo CRM Build: 33.149-2026-10-19-v1 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -3153,7 +3153,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.148-2026-10-19-v1");
+  console.log("[GC] Build 33.149-2026-10-19-v1");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -3201,7 +3201,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.148-2026-10-19-v1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.149-2026-10-19-v1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -86634,7 +86634,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   (async function seed(){
     var d=load();
     if(d.w9 && !d.w9.companyCopy){
-      d.w9.companyCopy='/docs/W-9.pdf';
+      d.w9.companyCopy='/w9/GrayCo-W-9-4ad8a7807c2d45df.pdf';
       d.w9.companyCopyRev='Rev. March 2024';
       await save(d);
     }
@@ -86645,7 +86645,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
         instructionsUrl:IRS_W9_INSTR,
         // The real form now ships with the CRM, so nobody has to go and fetch
         // it. Served as a file rather than embedded, to keep the app small.
-        companyCopy:'/docs/W-9.pdf',
+        companyCopy:'/w9/GrayCo-W-9-4ad8a7807c2d45df.pdf',
         companyCopyRev:'Rev. March 2024',
         note:'Blank form to send to subcontractors before their first payment.',
         stored:null,
@@ -86711,7 +86711,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     var body='Hi'+(subName?(' '+subName):'')+',\n\n'
       +'Before we can issue your first payment we need a completed IRS Form W-9 on file.\n\n'
       +'You can download the form here:\n'
-      +(location.origin||'https://graycocrm1.netlify.app')+'/docs/W-9.pdf\n\n'
+      +(location.origin||'https://graycocrm1.netlify.app')+'/w9/GrayCo-W-9-4ad8a7807c2d45df.pdf\n\n'
       +'Please complete it, sign it, and send it back to us.\n\n'
       +'Thanks,\nGrayCo Construction';
     if(window._gcDraftMessage){
@@ -86741,8 +86741,8 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
           +'✅ <b>The blank W-9 is here and ready to send</b> ('+(w9.companyCopyRev||'Rev. March 2024')+')'
           +(w9.stored?(' · plus your own upload: <b>'+String(w9.stored.name)+'</b>'):'')+'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-          +'<a href="/docs/W-9.pdf" target="_blank" rel="noreferrer" style="background:#166534;color:#fff;text-decoration:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800">📄 Open our W-9 ↗</a>'
-          +'<a href="/docs/W-9.pdf" download="IRS-Form-W-9.pdf" style="background:#0f2440;color:#fff;text-decoration:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800">⬇ Download to send</a>'
+          +'<a href="/w9/GrayCo-W-9-4ad8a7807c2d45df.pdf" target="_blank" rel="noreferrer" style="background:#166534;color:#fff;text-decoration:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800">📄 Open our W-9 ↗</a>'
+          +'<a href="/w9/GrayCo-W-9-4ad8a7807c2d45df.pdf" download="IRS-Form-W-9.pdf" style="background:#0f2440;color:#fff;text-decoration:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800">⬇ Download to send</a>'
           +'<a href="'+IRS_W9+'" target="_blank" rel="noreferrer" style="background:#334;color:#fff;text-decoration:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800">Check irs.gov for a newer revision ↗</a>'
           +'<button id="_cdW9Up" style="background:#166534;color:#fff;border:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800;cursor:pointer">⬆ Store a copy in the CRM</button>'
           +(w9.stored?'<button id="_cdW9View" style="background:#334;color:#fff;border:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800;cursor:pointer">View stored copy</button>':'')
@@ -119801,6 +119801,448 @@ document.addEventListener('visibilitychange', function(){ if (!document.hidden) 
     return true;
   }
   if (!install()) { var n = 0, t = setInterval(function(){ if (install() || ++n > 40) clearInterval(t); }, 500); }
+})();
+
+</script>
+<script>
+/* ============================================================================
+   GrayCo CRM — CLOUD CLEANUP (audit C)                      __GC_CLOUD_CLEANUP__
+
+   Owner: "make sure the cloud is correct and doesn't store stuff we don't want".
+
+   1. WRITE GUARD (always on, every computer). No gc_kv write from this page carries:
+        · a sign-in session, QuickBooks tokens, the CompanyCam key, the RI drain token or a
+          Google token (rows with those names are not sent at all);
+        · inside a daily backup (gc_dailybackup_<date>): those same keys in its copy of this
+          browser's storage ("local"), the per-computer safety copies (gc_bak_*, gc_snap_*,
+          gc_safenet_* …) and the old password hashes (users[].pwHash).
+      It sits in window.__gcxOutHook, under every sync engine's own saved copy of fetch.
+   2. EXPORT GUARD: 💾 Export Backup leaves the same secrets out of the file.
+   3. CLOUD CLEANUP (admins only — 💎 → 🧹 Cloud cleanup, or _gcCloudCleanup() in the console).
+      Always a DRY RUN first: "would remove X rows / Y MB, would scrub Z". Nothing changes until
+      an admin clicks Apply and confirms; Apply first downloads a backup file of every row it is
+      about to change or remove, and stops if that file could not be made.
+        · removes: CompanyCam / QuickBooks / sign-in copies, in-cloud daily backups older than
+          30 days (the server keeps its own 30 nights in gc_backups, admin-only), test rows,
+          old restore copies, per-computer safety copies, stale pieces of split-up lists;
+        · scrubs: the secrets out of the daily backups that stay;
+        · ticked by the admin only (unticked by default): the old password hashes in "users",
+          and keys the CRM does not know (shown by name and size);
+        · never: a business list (jobs, invoices, expenses, schedule …) — those are REPORTED
+          (duplicates, orphans, Quickbooks rows on the job list, delete-list growth) for review.
+      Rows only the server should hold (gcal_token_*, the cash/bank keys) are named and left to
+      docs/cleanup.sql (audit C), because the browser cannot reach where they belong.
+   Console: _gcCloudCleanup()  _gcCloudCleanupDry() → plan   _gcCloudGuardStats()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_CLOUD_CLEANUP__) return; window.__GC_CLOUD_CLEANUP__ = true;
+
+var SB = 'https://ieeonhpfahmwwecizdut.supabase.co';
+var KEEP_DAYS = 30;
+
+/* ── names ─────────────────────────────────────────────────────────────── */
+var SECRET_ROWS = ['grayco_ccam_key','gc_cc_token','gc_cc_token_backup','gc_cc_key_mirror','gc_cc_key_saved_at',
+  'gc_qb_tokens','gc_auth_v1','gc_auth_last_active','grayco_ri_drain_token','grayco_sb_key','gc_sb_key'];
+var IS_SECRET_ROW = {}; SECRET_ROWS.forEach(function(k){ IS_SECRET_ROW[k] = 1; });
+function secretRow(k){ return !!IS_SECRET_ROW[k] || /^gcal_token_/.test(k); }
+/* keys taken out of a daily backup's copy of this browser's storage */
+var LOCAL_DROP = /^(gc_auth_v1|gc_auth_last_active|gc_auth_last_email|gc_qb_tokens|grayco_ri_drain_token|grayco_sb_key|gc_sb_key|grayco_ccam_key|gc_cc_token.*|gc_cc_key_mirror|gc_cc_key_saved_at|gc_ach_details|gc_cash_anchor|gc_accounts_cfg|gc_accounts_ledger|grayco_users|grayco_user|grayco_gmail_accounts|gc_bak_.*|gc_snap_.*|gc_safenet_.*|gc_projects_backup|gc_sched_backup|gc_dupes_removed|gc_kept_log|gc_restore_loop_counts.*|gc_floor_log|gc_doc_snap|gc_doc_seen)$/;
+var LOCAL_SECRETISH = /token|secret|passw|_key$|apikey/i;
+var EXPORT_DROP = /^(gc_auth_v1|gc_auth_last_active|gc_qb_tokens|grayco_ri_drain_token|grayco_sb_key|gc_sb_key|grayco_ccam_key|gc_cc_token|gc_cc_token_backup|gc_cc_key_mirror|gc_cc_key_saved_at)$/;
+var DAILY = /^gc_dailybackup_(\d{4}-\d{2}-\d{2})(__(.+))?$/;
+var DEAD_EXACT = ['user','__healthcheck__','__gc_synctest__','gc_verify_probe','gc_backup_meta','gc_projects_backup','gc_sched_backup',
+  'gc_ests_backup','gc_est_openbackup','gc_est_recovery','gc_dupes_removed','gc_kept_log','gc_restore_loop_counts',
+  'gc_restore_loop_counts_v2','gc_floor_log','gc_lastgood_counts','gc_doc_snap','gc_doc_seen','gc_turnin_seen',
+  'gc_pm_notif_snapshot','gc_pm_assign_snapshot'];
+var DEAD_RE = /^(projects_before_restore_|_probe_|gc_safenet_|gc_bak_|gc_snap_|gc_lastgood_count_|gc_draft_|gc_pos_)/;
+/* every key a current build reads from or writes to gc_kv (SYNC_KEYS, fresh-start KEEP + business lists, the
+   other synced stores). Anything else is "not known" and only removed when an admin ticks it. */
+var KNOWN = ('gc_epoch gc_job_source gc_sub_approvals gc_check_queue timesheets payrollW4 payrollProfiles payrollRuns commissionSchedules '
+ + 'gc_payroll_approvals payrollSettings payrollTaxPayments gc_invoice_learn gc_checkrun_settings projects gc_deleted_projects invs invoices '
+ + 'gc_folded cos estimates expenses schedule subs vendors customers leads gcAcctRegister projectPayments bidOpps gc_est_notes_v1 '
+ + 'gc_master_hubs users changeOrders bidLists ccTrans ccCards candidates inspections scopes punch warrs tmpls priceSheets '
+ + 'customProducts laborRates navOrders logs priceEdits gc_employee_payments gc_commission_paid gc_expense_approvals '
+ + 'gc_invoice_approvals gc_project_approvals gc_outbound_approvals gc_contract_approvals gc_override_requests gc_material_ordered '
+ + 'gc_material_leadtimes projectDocs gc_custom_docs gc_unfiled_docs gc_contract_template gc_contract_template_name gc_deleted_invs '
+ + 'gc_deleted_gcAcctRegister gc_deleted_schedule gc_deleted_expenses gc_deleted_estimates gc_deleted_customers gc_deleted_users '
+ + 'gc_master_leads gc_active_no_deposit gc_sub_compliance gc_owner_notifications __est__gc_rates_v3 __est__gc_matlog_v2 '
+ + '__est__gc_ests_v2 __est__gc_builder_slots gc_contract_reviews gc_ccam_synced_ids gc_compliance_dates gc_job_inspections '
+ + 'gc_sub_extra gc_tombstones gc_tombstones_cleared gc_trust_cloud gc_team_google_users gc_gdoc_imported gc_cc_creator_map '
+ + 'gc_cc_dismissed gc_cc_inbox gc_cc_review_handled gc_cc_out_done gc_ach_details gc_commission_structures docTemplates '
+ + 'docTemplatesIndex gc_company_docs gc_overhead_manual gc_btn_pos gc_explain_mode _qb_import_done photos checklists '
+ + 'maintenance warrClaims todoDone gc_office_tasks gc_pm_broadcasts gc_pm_assignments gc_project_access_requests '
+ + 'gc_approval_notes gc_sub_pdfs gc_what_happened gc_departed gc_margin_goals gc_job_messages gc_admin_tasks').split(/\s+/);
+var IS_KNOWN = {}; KNOWN.forEach(function(k){ IS_KNOWN[k] = 1; });
+function knownKey(k){ return !!IS_KNOWN[k] || /^(doc:|doctpl:|ccw_|cc_)/.test(k); }
+
+/* ── 1. the write guard ─────────────────────────────────────────────────── */
+var guard = { rowsDropped:0, backupsScrubbed:0, localKeys:0, pwHashes:0 };
+window._gcCloudGuardStats = function(){ return Object.assign({}, guard); };
+function isObj(v){ return v && typeof v === 'object' && !Array.isArray(v); }
+function stripUsers(list){
+  if (!Array.isArray(list)) return list;
+  var any = false, out = list.map(function(u){ if (isObj(u) && u.pwHash) { any = true; guard.pwHashes++; var c = Object.assign({}, u); delete c.pwHash; return c; } return u; });
+  return any ? out : list;
+}
+function scrubLocal(loc){
+  if (!isObj(loc)) return loc;
+  var out = null;
+  Object.keys(loc).forEach(function(k){
+    if (LOCAL_DROP.test(k) || LOCAL_SECRETISH.test(k)) { if (!out) out = Object.assign({}, loc); delete out[k]; guard.localKeys++; }
+  });
+  return out || loc;
+}
+/* one row as it goes up: null = do not send it; the same object = unchanged */
+function scrubRow(row){
+  if (!isObj(row) || typeof row.key !== 'string') return row;
+  var k = row.key;
+  if (secretRow(k)) { guard.rowsDropped++; return null; }
+  if (k === 'users' || /^users__chunk\d+$/.test(k) || k === 'user') {
+    var uv = row.value, uText = false;
+    if (typeof uv === 'string' && /^\s*[\[{]/.test(uv)) { try { uv = JSON.parse(uv); uText = true; } catch (e) { return row; } }
+    var un = Array.isArray(uv) ? stripUsers(uv) : (isObj(uv) && uv.pwHash ? stripUsers([uv])[0] : uv);
+    if (un === uv) return row;
+    return Object.assign({}, row, { value: uText ? JSON.stringify(un) : un });
+  }
+  var m = DAILY.exec(k); if (!m) return row;
+  var v = row.value, asText = false;
+  if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { v = JSON.parse(v); asText = true; } catch (e) { return row; } }
+  var nv = v;
+  if (m[3]) { if (m[3] === 'users') nv = stripUsers(v); }
+  else if (isObj(v)) {
+    var loc = scrubLocal(v.local), lists = v.lists, users = isObj(lists) ? stripUsers(lists.users) : undefined;
+    if (loc !== v.local || (isObj(lists) && users !== lists.users)) {
+      nv = Object.assign({}, v);
+      if (loc !== v.local) nv.local = loc;
+      if (isObj(lists) && users !== lists.users) nv.lists = Object.assign({}, lists, { users: users });
+    }
+  }
+  if (nv === v) return row;
+  guard.backupsScrubbed++;
+  return Object.assign({}, row, { value: asText ? JSON.stringify(nv) : nv });
+}
+var TRIGGER = /"key":"(gc_dailybackup_|gcal_token_|users"|users__chunk|user"|gc_auth_v1|gc_qb_tokens|grayco_ccam_key|gc_cc_token|gc_cc_key|grayco_ri_drain_token|grayco_sb_key|gc_sb_key|gc_auth_last_active)/;
+function scrubInit(input, init){
+  try {
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (!/\/rest\/v1\/gc_kv/.test(url)) return null;
+    var m = String((init && init.method) || 'GET').toUpperCase();
+    if (!(m === 'POST' || m === 'PATCH' || m === 'PUT') || !init || typeof init.body !== 'string') return null;
+    if (!TRIGGER.test(init.body) && !/[?&]key=eq\.(gc_dailybackup_|gcal_token_|users|user$|user&)/.test(url)) return null;
+    var body = JSON.parse(init.body), rows = Array.isArray(body) ? body : [body], changed = false, out = [];
+    var km = /[?&]key=eq\.([^&]+)/.exec(url), urlKey = km ? decodeURIComponent(km[1]) : '';
+    rows.forEach(function(r){
+      var rr = r;
+      if (isObj(r) && !r.key && urlKey) { var tmp = scrubRow(Object.assign({ key: urlKey }, r)); rr = tmp ? Object.assign({}, r, { value: tmp.value }) : null; if (tmp && !('value' in r)) rr = r; }
+      else rr = scrubRow(r);
+      if (rr !== r) changed = true;
+      if (rr) out.push(rr);
+    });
+    if (!changed) return null;
+    if (!out.length) return { drop: true };
+    return Object.assign({}, init, { body: JSON.stringify(Array.isArray(body) ? out : out[0]) });
+  } catch (e) { return null; }
+}
+(function installGuard(){
+  var tries = 0;
+  function put(){
+    var prev = window.__gcxOutHook;
+    if (prev && prev.__gcClean) return;
+    if (!prev && ++tries < 40) { setTimeout(put, 250); return; }   /* the delete-list hook arrives with the page; wait for it */
+    var held = function(){ return Promise.resolve(new Response('[]', { status: 201, headers: { 'Content-Type': 'application/json' } })); };
+    var hook = function(input, init, nf, self){
+      var i2 = scrubInit(input, init);
+      if (i2 && i2.drop) return held();
+      var use = i2 || init;
+      /* the delete-list hook may put rows back the way the cloud has them ("only a person's edit changes a
+         record"): what it finally sends passes the same scrub, so the scrub is the last word on the wire */
+      var nf2 = function(inp, ini){ var i3 = scrubInit(inp, ini); if (i3 && i3.drop) return held(); return nf.call(this, inp, i3 || ini); };
+      var r = prev ? prev(input, use, nf2, self) : null;
+      if (r) return r;
+      return i2 ? nf.call(self, input, use) : null;
+    };
+    hook.__gcClean = true;
+    window.__gcxOutHook = hook;
+  }
+  put();
+})();
+
+/* ── 2. the export guard ────────────────────────────────────────────────
+   Every backup download (💾 Export Backup, Download Full Backup, the safety-net export …) is made
+   from a JSON string handed to Blob. A JSON text that names a sign-in, token or key slot has those
+   entries taken out (any depth up to 4) before the file is made. Everything else is untouched. */
+(function wrapBlob(){
+  var OB = window.Blob; if (typeof OB !== 'function' || OB.__gcClean) return;
+  var NAMES = /"(gc_auth_v1|gc_auth_last_active|gc_qb_tokens|grayco_ri_drain_token|grayco_sb_key|gc_sb_key|grayco_ccam_key|gc_cc_token|gc_cc_token_backup|gc_cc_key_mirror|gc_cc_key_saved_at)"\s*:/;
+  function walk(o, d){
+    if (!o || typeof o !== 'object' || d > 4) return 0;
+    var n = 0;
+    if (Array.isArray(o)) { for (var i = 0; i < o.length && i < 50; i++) n += walk(o[i], d + 1); return n; }
+    Object.keys(o).forEach(function(k){ if (EXPORT_DROP.test(k)) { delete o[k]; n++; } else if (o[k] && typeof o[k] === 'object') n += walk(o[k], d + 1); });
+    return n;
+  }
+  var NB = function Blob(parts, opts){
+    try {
+      if (Array.isArray(parts) && parts.length === 1 && typeof parts[0] === 'string' && parts[0].length > 20 && /^\s*[\[{]/.test(parts[0]) && NAMES.test(parts[0])) {
+        var s = parts[0], o = JSON.parse(s);
+        if (walk(o, 0)) { var pretty = /^\s*[\[{]\s*\n/.test(s); parts = [pretty ? JSON.stringify(o, null, 2) : JSON.stringify(o)]; guard.exportsCleaned = (guard.exportsCleaned || 0) + 1; }
+      }
+    } catch (e) {}
+    return arguments.length > 1 ? new OB(parts, opts) : new OB(parts);
+  };
+  NB.prototype = OB.prototype; NB.__gcClean = true;
+  try { Object.defineProperty(NB, Symbol.hasInstance, { value: function(x){ return x instanceof OB; } }); } catch (e) {}
+  try { window.Blob = NB; } catch (e) {}
+})();
+
+/* ── 3. the cleanup ─────────────────────────────────────────────────────── */
+function isAdmin(){
+  try { if (typeof window._gcCashVaultAdmin === 'function') return !!window._gcCashVaultAdmin(); } catch (e) {}
+  try { return !!(window.__gcAuthIsAdmin && window.__gcAuthIsAdmin()); } catch (e) { return false; }
+}
+function kv(path, opts){ return window.fetch(SB + '/rest/v1/gc_kv' + path, Object.assign({ cache: 'no-store' }, opts || {})); }
+async function listKeys(){
+  var r = await kv('?select=key,updated_at&order=key.asc');
+  if (!r || !r.ok) throw new Error('could not list the cloud keys (HTTP ' + (r && r.status) + ')');
+  var rows = await r.json(); if (!Array.isArray(rows)) throw new Error('unexpected answer');
+  return rows;
+}
+async function getRow(key){
+  var r = await kv('?key=eq.' + encodeURIComponent(key) + '&select=key,value,updated_at');
+  if (!r || !r.ok) throw new Error('could not read ' + key + ' (HTTP ' + (r && r.status) + ')');
+  var txt = await r.text(), rows = JSON.parse(txt);
+  return rows && rows[0] ? { key: rows[0].key, value: rows[0].value, updated_at: rows[0].updated_at, bytes: txt.length } : null;
+}
+function daysAgo(dateStr){ var t = Date.parse(dateStr + 'T12:00:00Z'); return isFinite(t) ? (Date.now() - t) / 864e5 : 0; }
+function mb(n){ return (n / 1048576).toFixed(n >= 104858 ? 1 : 2) + ' MB'; }
+function norm(s){ return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function num(v){ var x = parseFloat(String(v == null ? '' : v).replace(/[$,]/g, '')); return isFinite(x) ? Math.round(x * 100) / 100 : 0; }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v : []; }
+
+/* the business review: listed, never changed here */
+function review(L){
+  var out = [], pr = arr(L.projects), invs = arr(L.invs), ex = arr(L.expenses), tb = L.gc_tombstones;
+  if (typeof tb === 'string') { try { tb = JSON.parse(tb); } catch (e) { tb = {}; } }
+  tb = isObj(tb) ? tb : {};
+  var qb = pr.filter(function(p){ return p && (/^QB_/.test(String(p.id || '')) || String(p.source || '').toLowerCase() === 'quickbooks' || p.qbClient); });
+  if (qb.length) out.push(qb.length + ' QuickBooks customer row(s) live in the job list (' + qb.filter(function(p){ return /^active$/i.test(p.status); }).length + ' say "Active"). The job board hides them; they should be customers, not jobs.');
+  function variants(list, f, label){
+    var g = {}; list.forEach(function(r){ if (!r || r[f] == null) return; var v = String(r[f]); (g[v.toLowerCase()] = g[v.toLowerCase()] || {})[v] = 1; });
+    var bad = Object.keys(g).filter(function(k){ return Object.keys(g[k]).length > 1; }).map(function(k){ return Object.keys(g[k]).join(' / '); });
+    if (bad.length) out.push(label + ' status spelled more than one way: ' + bad.join('; '));
+  }
+  variants(pr, 'status', 'Jobs'); variants(arr(L.leads), 'status', 'Leads'); variants(arr(L.estimates), 'status', 'Estimates');
+  var ids = {}; pr.forEach(function(p){ if (p && p.id != null) ids[String(p.id)] = 1; });
+  var missing = function(list){ return list.filter(function(r){ return r && typeof r === 'object' && (r.id == null || r.id === ''); }).length; };
+  var mi = missing(pr) + missing(invs) + missing(ex); if (mi) out.push(mi + ' job / invoice / expense record(s) without an id.');
+  var oi = invs.filter(function(r){ return r && r.pid && !ids[String(r.pid)]; }).length, oe = ex.filter(function(r){ return r && r.pid && !ids[String(r.pid)]; }).length;
+  if (oi || oe) out.push('Pointing at a job that is not in the job list: ' + oi + ' invoice(s), ' + oe + ' expense(s).');
+  function groups(list, keyf){ var g = {}; list.forEach(function(r){ var k = r && keyf(r); if (k) (g[k] = g[k] || []).push(r); }); return Object.keys(g).map(function(k){ return g[k]; }).filter(function(v){ return v.length > 1; }); }
+  var dj = groups(pr.filter(function(p){ return qb.indexOf(p) < 0; }), function(p){ return norm(p.name); });
+  if (dj.length) out.push(dj.length + ' job name(s) used by more than one job: ' + dj.sort(function(a, b){ return b.length - a.length; }).slice(0, 12).map(function(v){ return String(v[0].name).slice(0, 40) + ' ×' + v.length; }).join(', ') + (dj.length > 12 ? ' …' : ''));
+  var di = groups(invs, function(r){ var n = r.invNum || r.po; return n ? norm(n) + '|' + num(r.amt || r.amount) : ''; });
+  if (di.length) out.push(di.length + ' invoice number(s) with the same amount twice: ' + di.map(function(v){ return '#' + (v[0].invNum || v[0].po) + ' $' + num(v[0].amt || v[0].amount); }).join(', '));
+  var de = groups(ex, function(r){ var a = num(r.amt || r.amount); return a ? String(r.date || '').slice(0, 10) + '|' + a + '|' + norm(r.vendor || r.desc).slice(0, 20) : ''; });
+  if (de.length) out.push(de.length + ' expense group(s) with the same date, amount and payee: ' + de.slice(0, 12).map(function(v){ return String(v[0].date || '').slice(0, 10) + ' $' + num(v[0].amt || v[0].amount); }).join(', ') + (de.length > 12 ? ' …' : ''));
+  var tk = Object.keys(tb), old = tk.filter(function(k){ var v = tb[k], t = typeof v === 'number' ? v : Date.parse(v); return isFinite(t) && Date.now() - t > 90 * 864e5; }).length;
+  if (tk.length) out.push('Delete list (gc_tombstones): ' + tk.length + ' entries, ' + old + ' older than 90 days. It only grows; after the fresh start it is emptied by fresh-start.sql.');
+  return out;
+}
+
+var lastPlan = null;
+async function dryRun(progress){
+  progress = progress || function(){};
+  var plan = { at: new Date().toISOString(), remove: [], scrub: [], optional: [], serverOnly: [], review: [], keys: 0, errors: [] };
+  progress('Listing the cloud keys…');
+  var rows = await listKeys(); plan.keys = rows.length;
+  var have = {}; rows.forEach(function(r){ have[r.key] = r; });
+  var cand = [];
+  rows.forEach(function(r){
+    var k = r.key, m = DAILY.exec(k), why = '';
+    if (IS_SECRET_ROW[k]) why = 'secret copy (key/token) — belongs only in Netlify settings or on the one computer';
+    else if (k === 'user') why = 'one computer\'s signed-in person (with its password hash) — never shared data';
+    else if (/^gcal_token_/.test(k)) { plan.serverOnly.push({ key: k, why: 'Google sign-in (refresh token) for one person — move to the server-only table with docs/cleanup.sql' }); return; }
+    else if (m && daysAgo(m[1]) > KEEP_DAYS) why = 'in-cloud daily backup older than ' + KEEP_DAYS + ' days (the server keeps its own 30 nights)';
+    else if (m && !m[3]) { cand.push({ key: k, kind: 'scrub' }); return; }
+    else if (m) return;
+    else if (DEAD_EXACT.indexOf(k) >= 0 || DEAD_RE.test(k)) why = 'test row, old restore copy or per-computer copy — not shared data';
+    else {
+      var c = /^(.+)__chunk(\d+)$/.exec(k);
+      if (c) {
+        if (!have[c[1] + '__manifest']) { cand.push({ key: k, kind: 'optional', why: 'piece of a split-up list with no manifest' }); return; }
+        cand.push({ key: k, kind: 'chunk', base: c[1], idx: +c[2] }); return;
+      }
+      if (/__manifest$/.test(k) || knownKey(k)) return;
+      cand.push({ key: k, kind: 'optional', why: 'not a key this CRM uses' }); return;
+    }
+    cand.push({ key: k, kind: 'remove', why: why });
+  });
+  if (have.users) cand.push({ key: 'users', kind: 'users' });
+  var manifests = {};
+  for (var i = 0; i < cand.length; i++) {
+    var c2 = cand[i];
+    progress('Reading ' + (i + 1) + ' of ' + cand.length + ': ' + c2.key);
+    try {
+      if (c2.kind === 'chunk') {
+        if (!(c2.base in manifests)) { var mr = await getRow(c2.base + '__manifest'); manifests[c2.base] = mr && mr.value; }
+        var mf = manifests[c2.base]; if (typeof mf === 'string') { try { mf = JSON.parse(mf); } catch (e) {} }
+        if (!(mf && mf.count != null && c2.idx >= +mf.count)) continue;
+        c2.kind = 'remove'; c2.why = 'stale piece of a split-up list (the list now has ' + mf.count + ' piece(s))';
+      }
+      var row = await getRow(c2.key); if (!row) continue;
+      if (c2.kind === 'remove') plan.remove.push({ key: c2.key, why: c2.why, bytes: row.bytes, row: row });
+      else if (c2.kind === 'optional') plan.optional.push({ key: c2.key, why: c2.why, bytes: row.bytes, row: row, tick: false });
+      else if (c2.kind === 'scrub') {
+        var fixed = scrubRow({ key: row.key, value: row.value });
+        if (fixed && fixed.value !== row.value) {
+          var before = row.bytes, after = JSON.stringify(fixed.value).length, what = [];
+          var loc = isObj(row.value) && isObj(row.value.local) ? Object.keys(row.value.local).filter(function(x){ return LOCAL_DROP.test(x) || LOCAL_SECRETISH.test(x); }) : [];
+          if (loc.length) what.push(loc.length + ' stored item(s) incl. ' + loc.filter(function(x){ return EXPORT_DROP.test(x); }).join(', '));
+          if (isObj(row.value) && isObj(row.value.lists) && Array.isArray(row.value.lists.users) && row.value.lists.users.some(function(u){ return u && u.pwHash; })) what.push('old password hashes');
+          plan.scrub.push({ key: c2.key, why: 'daily backup that stays: take out ' + what.join(' and '), bytes: Math.max(0, before - after), row: row, value: fixed.value });
+        }
+      } else if (c2.kind === 'users') {
+        var us = arr(row.value), n = us.filter(function(u){ return u && u.pwHash; }).length;
+        if (n) plan.optional.push({ key: 'users', why: n + ' old password hash(es) (unsalted SHA-256; sign-in is Supabase now) — the person records stay, only pwHash goes', bytes: 0, row: row, tick: false, scrubUsers: true });
+      }
+    } catch (e) { plan.errors.push(c2.key + ': ' + e.message); }
+  }
+  progress('Reading the business lists for the review…');
+  var L = {};
+  for (var j = 0, ks = ['projects', 'invs', 'expenses', 'leads', 'estimates', 'gc_tombstones']; j < ks.length; j++) {
+    if (!have[ks[j]]) continue;
+    try { var rr = await getRow(ks[j]); L[ks[j]] = rr && rr.value; } catch (e) { plan.errors.push(ks[j] + ': ' + e.message); }
+  }
+  plan.review = review(L);
+  plan.removeBytes = plan.remove.reduce(function(s, x){ return s + x.bytes; }, 0);
+  plan.scrubBytes = plan.scrub.reduce(function(s, x){ return s + x.bytes; }, 0);
+  lastPlan = plan;
+  return plan;
+}
+window._gcCloudCleanupDry = function(){
+  if (!isAdmin()) return Promise.reject(new Error('admins only'));
+  return dryRun().then(function(p){
+    return { keys: p.keys, wouldRemove: p.remove.map(function(x){ return x.key; }), removeMB: +(p.removeBytes / 1048576).toFixed(2),
+      wouldScrub: p.scrub.map(function(x){ return x.key; }), optional: p.optional.map(function(x){ return x.key; }),
+      serverOnly: p.serverOnly.map(function(x){ return x.key; }), review: p.review, errors: p.errors };
+  });
+};
+
+function downloadBackup(plan, chosen){
+  var file = { app: 'GrayCo CRM', kind: 'cloud-cleanup-backup', version: 1, made: new Date().toISOString(), note: 'Every gc_kv row the cloud cleanup changed or removed, exactly as it was. To put one back: Supabase → Table editor → gc_kv → insert the row.', rows: [] };
+  plan.remove.concat(plan.scrub, chosen).forEach(function(x){ file.rows.push({ key: x.row.key, value: x.row.value, updated_at: x.row.updated_at }); });
+  var text = JSON.stringify(file);
+  var url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  var a = document.createElement('a'); a.href = url; a.download = 'GrayCo_cloud_cleanup_backup_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ try { URL.revokeObjectURL(url); a.remove(); } catch (e) {} }, 4000);
+  return file.rows.length;
+}
+async function apply(plan, chosen, progress){
+  progress = progress || function(){};
+  var done = { removed: 0, scrubbed: 0, failed: [] };
+  var steps = [];
+  plan.scrub.forEach(function(x){ steps.push({ op: 'put', key: x.key, value: x.value }); });
+  chosen.forEach(function(x){
+    if (x.scrubUsers) steps.push({ op: 'put', key: 'users', value: arr(x.row.value).map(function(u){ if (isObj(u) && u.pwHash) { var c = Object.assign({}, u); delete c.pwHash; return c; } return u; }) });
+    else steps.push({ op: 'del', key: x.key });
+  });
+  plan.remove.forEach(function(x){ steps.push({ op: 'del', key: x.key }); });
+  for (var i = 0; i < steps.length; i++) {
+    var s = steps[i]; progress((s.op === 'del' ? 'Removing ' : 'Cleaning ') + (i + 1) + ' of ' + steps.length + ': ' + s.key);
+    try {
+      var r = s.op === 'del'
+        ? await kv('?key=eq.' + encodeURIComponent(s.key), { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+        : await kv('?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: s.key, value: s.value, updated_at: new Date().toISOString() }) });
+      if (r && r.ok) { if (s.op === 'del') done.removed++; else done.scrubbed++; } else done.failed.push(s.key + ' (HTTP ' + (r && r.status) + ')');
+    } catch (e) { done.failed.push(s.key + ': ' + e.message); }
+  }
+  try { console.log('%c[GC] cloud cleanup: removed ' + done.removed + ', cleaned ' + done.scrubbed + (done.failed.length ? ', FAILED ' + done.failed.join('; ') : ''), 'background:#14532d;color:#fff;padding:2px 6px'); } catch (e) {}
+  return done;
+}
+
+/* ── the window ─────────────────────────────────────────────────────────── */
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+window._gcCloudCleanup = function(){
+  if (!isAdmin()) { alert('Cloud cleanup is for admins (Wesley, Nick).'); return; }
+  var old = document.getElementById('gc-cloud-clean'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'gc-cloud-clean';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100200;background:rgba(6,12,20,.86);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;font-family:Inter,-apple-system,Segoe UI,sans-serif';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;color:#0f172a;border-radius:14px;max-width:760px;width:100%;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-size:13px;line-height:1.45';
+  box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="font-size:18px;font-weight:800">🧹 Cloud cleanup</div>'
+    + '<button id="gcccX" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:700">Close</button></div>'
+    + '<div style="color:#475569;margin:4px 0 12px">A dry run first — nothing changes until you click <b>Apply</b>. Apply downloads a backup file of every row it touches before it changes anything. Jobs, invoices, expenses and the other business lists are never changed here; they are listed under <i>For review</i>.</div>'
+    + '<div style="display:flex;gap:10px;margin:0 0 12px;flex-wrap:wrap"><button id="gcccRe" style="padding:10px 14px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer">Check again</button>'
+    + '<button id="gcccGo" disabled style="padding:10px 16px;border-radius:9px;border:none;background:#94a3b8;color:#fff;font-weight:800;cursor:pointer">Apply…</button></div>'
+    + '<div id="gcccBody" style="min-height:60px">Checking the cloud…</div>';
+  ov.appendChild(box); document.body.appendChild(ov);
+  var body = box.querySelector('#gcccBody'), go = box.querySelector('#gcccGo'), busy = false, plan = null;
+  box.querySelector('#gcccX').onclick = function(){ if (!busy) ov.remove(); };
+  function list(title, items, colour, ticks){
+    if (!items.length) return '';
+    return '<div style="margin-top:12px"><div style="font-weight:800;color:' + colour + '">' + title + '</div><div style="border:1px solid #e2e8f0;border-radius:9px;margin-top:4px;max-height:220px;overflow:auto">'
+      + items.map(function(x, i){ return '<div style="display:flex;gap:8px;padding:6px 9px;border-bottom:1px solid #f1f5f9">' + (ticks ? '<input type="checkbox" data-opt="' + i + '"' + (x.tick ? ' checked' : '') + '>' : '')
+        + '<div style="flex:1"><code style="font-size:12px">' + esc(x.key) + '</code>' + (x.bytes ? ' <span style="color:#64748b">· ' + esc(mb(x.bytes)) + '</span>' : '') + '<div style="color:#64748b;font-size:12px">' + esc(x.why) + '</div></div></div>'; }).join('')
+      + '</div></div>';
+  }
+  function draw(){
+    var p = plan;
+    var head = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px"><b>' + p.keys + '</b> rows in the cloud. Would remove <b data-t="n-remove">' + p.remove.length + '</b> row(s) / <b>' + esc(mb(p.removeBytes)) + '</b>'
+      + ', would clean <b data-t="n-scrub">' + p.scrub.length + '</b> daily backup(s) (−' + esc(mb(p.scrubBytes)) + ').'
+      + (p.optional.length ? ' <b>' + p.optional.length + '</b> more only if you tick them.' : '') + '</div>';
+    body.innerHTML = head
+      + list('Would remove', p.remove, '#b91c1c')
+      + list('Would clean (the row stays)', p.scrub, '#b45309')
+      + list('Only if you tick it', p.optional, '#1d4ed8', true)
+      + list('Server-only — done by docs/cleanup.sql (not from the browser)', p.serverOnly, '#7c3aed')
+      + (p.review.length ? '<div style="margin-top:12px"><div style="font-weight:800;color:#0f766e">For review (nothing here is changed)</div><ul style="margin:4px 0 0 18px;padding:0">' + p.review.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul></div>' : '')
+      + (p.errors.length ? '<div style="margin-top:10px;color:#b91c1c">Could not read: ' + esc(p.errors.join('; ')) + '</div>' : '');
+    Array.prototype.forEach.call(body.querySelectorAll('[data-opt]'), function(cb){ cb.onchange = function(){ p.optional[+cb.getAttribute('data-opt')].tick = cb.checked; }; });
+    var any = p.remove.length || p.scrub.length || p.optional.length;
+    go.disabled = !any; go.style.background = any ? '#b91c1c' : '#94a3b8';
+  }
+  function run(){
+    if (busy) return; busy = true; go.disabled = true; go.style.background = '#94a3b8'; body.textContent = 'Checking the cloud…';
+    dryRun(function(t){ body.textContent = t; }).then(function(p){ plan = p; busy = false; draw(); }, function(e){ busy = false; body.innerHTML = '<span style="color:#b91c1c">The check failed: ' + esc(e.message) + '</span>'; });
+  }
+  box.querySelector('#gcccRe').onclick = run;
+  go.onclick = function(){
+    if (busy || !plan || !isAdmin()) return;
+    var chosen = plan.optional.filter(function(x){ return x.tick; });
+    var n = plan.remove.length + chosen.filter(function(x){ return !x.scrubUsers; }).length;
+    if (!confirm('Apply the cloud cleanup?\n\nRemove ' + n + ' row(s), clean ' + (plan.scrub.length + chosen.filter(function(x){ return x.scrubUsers; }).length) + ' row(s).\n\nA backup file of every one of them is downloaded first. Business lists are not changed.')) return;
+    var saved = 0;
+    try { saved = downloadBackup(plan, chosen); } catch (e) { alert('The backup file could not be made (' + e.message + '). Nothing was changed.'); return; }
+    if (!saved) { alert('Nothing to back up — nothing was changed.'); return; }
+    busy = true;
+    apply(plan, chosen, function(t){ body.textContent = t; }).then(function(d){
+      busy = false;
+      body.innerHTML = '<div style="background:' + (d.failed.length ? '#fef2f2' : '#f0fdf4') + ';border-radius:10px;padding:12px" data-t="done">Done: removed <b>' + d.removed + '</b>, cleaned <b>' + d.scrubbed + '</b>.'
+        + (d.failed.length ? '<div style="color:#b91c1c;margin-top:6px">Not done: ' + esc(d.failed.join('; ')) + '</div>' : '') + '<div style="color:#475569;margin-top:6px">The backup file is in your Downloads. Click <b>Check again</b> to see what is left.</div></div>';
+      plan = null; go.disabled = true; go.style.background = '#94a3b8';
+    });
+  };
+  run();
+};
+
+/* 💎 menu entry, admins only (same style as Team access) */
+document.addEventListener('click', function(){
+  setTimeout(function(){
+    try {
+      if (!isAdmin()) return;
+      var all = document.querySelectorAll('.gc-hub-panel'), panel = null;
+      for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { panel = all[i]; break; }
+      if (!panel || panel.querySelector('#gc-hub-cloudclean')) return;
+      var it = document.createElement('div'); it.id = 'gc-hub-cloudclean'; it.className = 'gc-hub-item';
+      it.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9';
+      it.innerHTML = '<span style="font-size:18px">🧹</span><span>Cloud cleanup</span>';
+      it.onclick = function(){ window._gcCloudCleanup(); };
+      panel.appendChild(it);
+    } catch (e) {}
+  }, 200);
+}, true);
 })();
 
 </script>

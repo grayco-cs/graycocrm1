@@ -5,6 +5,10 @@ const QBO_BASE = 'https://sandbox-quickbooks.api.intuit.com'; // change to https
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const REDIRECT_URI = process.env.QB_REDIRECT_URI || 'https://graycocrm1.netlify.app/.netlify/functions/qb-callback';
 
+// audit C: nothing from the address or from Intuit is written into the page unescaped
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const SITE = (process.env.SITE_ORIGIN || 'https://graycocrm1.netlify.app').split(',')[0].trim().replace(/\/$/, '');
+const SITES = (process.env.SITE_ORIGIN || 'https://graycocrm1.netlify.app,https://crm.grayco-cs.com').split(',').map(function(x){ return x.trim().replace(/\/$/, ''); }).filter(Boolean);   // only the CRM's own sites receive the tokens
 exports.handler = async function(event) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -14,7 +18,7 @@ exports.handler = async function(event) {
   const { code, realmId, error, state } = event.queryStringParameters || {};
 
   if(error){
-    return { statusCode: 400, headers, body: '<h2>QuickBooks auth error: '+error+'</h2><p><a href="/">Back to CRM</a></p>' };
+    return { statusCode: 400, headers, body: '<h2>QuickBooks auth error: '+esc(String(error).slice(0, 80))+'</h2><p><a href="/">Back to CRM</a></p>' };
   }
 
   if(!code || !realmId){
@@ -39,11 +43,12 @@ exports.handler = async function(event) {
 
     const tokens = await resp.json();
     if(tokens.error){
-      return { statusCode: 400, headers, body: '<h2>Token exchange failed: '+tokens.error+'</h2>' };
+      return { statusCode: 400, headers, body: '<h2>Token exchange failed: '+esc(String(tokens.error).slice(0, 80))+'</h2>' };
     }
 
     // Return tokens to the CRM via postMessage (window.opener)
-    const payload = JSON.stringify({
+    const payload = JSON.stringify({   // audit C: </script> can never close the page's script
+
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
       realmId: realmId,
@@ -51,7 +56,7 @@ exports.handler = async function(event) {
       x_refresh_token_expires_in: tokens.x_refresh_token_expires_in,
       token_type: tokens.token_type,
       connectedAt: new Date().toISOString()
-    });
+    }).replace(/</g, '\\u003c');
 
     return {
       statusCode: 200,
@@ -66,7 +71,7 @@ exports.handler = async function(event) {
             if(window.opener && window.opener.gcQB) {
               window.opener.gcQB._receiveTokens(${payload});
             } else if(window.opener) {
-              window.opener.postMessage({type:'qb_tokens',payload:${payload}},'*');
+              ${JSON.stringify(SITES)}.forEach(function(o){ try { window.opener.postMessage({type:'qb_tokens',payload:${payload}},o); } catch(e){} });
             }
           } catch(e){}
           setTimeout(function(){ window.close(); }, 1500);
@@ -74,6 +79,6 @@ exports.handler = async function(event) {
       </body></html>`
     };
   } catch(err) {
-    return { statusCode: 500, headers, body: '<h2>Server error: '+err.message+'</h2>' };
+    return { statusCode: 500, headers, body: '<h2>Server error.</h2>' };
   }
 };

@@ -61,6 +61,8 @@ declare p record;
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where schemaname = 'public' and policyname not in ('gc_staff_all', 'gc_staff_read')
+             -- audit C: the owners-only rules of gc_admin_kv (docs/admin-data.sql) are not "old rules"
+             and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'))
   loop
     execute format('drop policy if exists %I on %I.%I', p.policyname, p.schemaname, p.tablename);
     raise notice 'dropped old rule "%" on %', p.policyname, p.tablename;
@@ -119,7 +121,7 @@ begin
   end loop;
 end $$;
 
--- 5. File storage (the CRM does not use it today): no public buckets, no anon rules
+-- 5. File storage (crm-files, docs/storage-setup.sql): no public buckets, no anon rules (the staff rules stay)
 do $$
 declare p record;
 begin
@@ -150,7 +152,8 @@ where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity;
 insert into gc_verify
 select 'no rules other than GrayCo staff rules',
        coalesce('PROBLEM: ' || string_agg(tablename || '.' || policyname, ', '), 'OK')
-from pg_policies where schemaname = 'public' and policyname not in ('gc_staff_all', 'gc_staff_read');
+from pg_policies where schemaname = 'public' and policyname not in ('gc_staff_all', 'gc_staff_read')
+  and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'));
 
 insert into gc_verify
 select 'anon has no table rights',

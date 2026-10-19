@@ -64,3 +64,11 @@ Sends a PM starts with a tap (Post, Email it) still go out. `PORTAL_AUTO_EMAIL=1
 ## 33.148 (same day)
 - **The Photos tab and a job's "Sync from CompanyCam"** no longer ask for a CompanyCam API key. They used an old server address that no longer existed. They now use the company key stored on Netlify (COMPANYCAM_TOKEN), the same as Admin → CompanyCam. Patch CCX: `tail_CCX.js`. `companycam-webhook` passes on name searches and pages.
 - **Tests:** CCX 7/7, H 7/7, CompanyCam 10/10 and 12/12.
+
+## 33.149 (same day): security fixes from the cloud audit
+- **Cloud write guard:** sign-in sessions, QuickBooks/CompanyCam keys and safety copies are no longer uploaded inside daily backups. Old password hashes are kept out of "users".
+- **Export guard:** backup files leave out tokens and keys.
+- **💎 → 🧹 Cloud cleanup (admins):** dry run first, then removes old secret copies and test rows. A backup file is downloaded before any change.
+- **qb-callback:** no longer writes the address text into the page (an XSS hole), and sends QuickBooks tokens only to the CRM's own sites.
+- **Internal files:** `/docs/*`, `/netlify/*`, README, RECOVER.js, audit.html and package.json now answer 404. The W-9 moved to an unguessable address and the CRM's links point there.
+- **`security-lockdown.sql`** keeps the owners-only rules on gc_admin_kv.
