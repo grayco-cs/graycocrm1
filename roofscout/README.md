@@ -11,6 +11,7 @@ The satellite map needs internet.
 ## Finding real leads
 - **On the Map tab:** search an address (or pan the satellite map), click **📐 Trace a roof**, click the roof's corners, then click the first corner again. RoofScout measures the roof (with a pitch setting for sloped roofs), fills in the street address, and opens a new lead with the estimate ready.
 - **📐 Measure on map** in any lead re-traces its roof.
+- **📡 Measure from address** in any lead asks Google's Solar API for the roof area and pitch (server-side key, monthly limit, figures kept 30 days; setup in `docs/ROOFSCOUT-SETUP.md` step 5).
 - Or add a lead by hand with "+ Add lead".
 - The **demo scan** (made-up sample sites tagged DEMO, fictional 555-01xx phones, @example.com emails) exists only in local demo mode, never on the website.
 

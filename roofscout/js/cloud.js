@@ -140,6 +140,25 @@
     });
   }
 
+  // Call one of the site's server functions (/.netlify/functions/<name>) as the signed-in person.
+  function fn(name, method, body, query) {
+    return token().then(function (s) {
+      return fetch('/.netlify/functions/' + name + (query ? '?' + query : ''), {
+        method: method || 'GET',
+        headers: { Authorization: 'Bearer ' + s.access_token, 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      }).then(null, function () { throw CloudError('Could not reach the GrayCo server. Check the internet connection.', 'offline'); })
+        .then(function (r) {
+          return r.text().then(function (t) {
+            var j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) { /* not JSON */ }
+            if (r.ok) return j;
+            if (r.status === 404 && !j.error) throw CloudError('This feature is not on the website yet (deploy needed).', 'missing', 404);
+            throw CloudError(j.error || ('Server error ' + r.status), j.code || 'error', r.status);
+          });
+        });
+    });
+  }
+
   // Keep the CRM's idle timer from signing someone out while they work in RoofScout.
   var lastTouch = 0;
   function touch() {
@@ -155,6 +174,7 @@
     signOut: signOut,
     rest: rest,
     setPassword: setPassword,
+    fn: fn,
     touch: touch
   };
 })(this);

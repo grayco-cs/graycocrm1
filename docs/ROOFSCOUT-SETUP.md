@@ -85,6 +85,34 @@ The satellite pictures come from Esri. For business use, Esri asks for an API ke
 
 Esri's free tier covers normal office use. The ArcGIS site shows your usage.
 
+## 5. Google Solar: measure a roof from its address (admin)
+
+**Cost:** Google gives 10,000 lookups a month free, then about 1¢ each. RoofScout also stops at a monthly limit you set (500 to start).
+
+1. **Google Cloud project.** Go to **console.cloud.google.com**, open the project picker, click **New project**, and name it `GrayCo RoofScout`.
+2. **Billing.** Go to **Billing** and link a billing account with a card.
+3. **Turn on the Solar API.** Go to **APIs & Services → Library**, search **Solar API**, and click **Enable**.
+4. **Make a key.**
+   - Go to **APIs & Services → Credentials → Create credentials → API key**.
+   - Open the key. Under **API restrictions**, choose **Restrict key** and tick **Solar API** only. Click **Save**.
+5. **Spending alert (recommended).** Go to **Billing → Budgets & alerts** and create a budget of about $20/month with an email alert.
+6. **Put the key in Netlify.**
+   - Open site **graycocrm1 → Site configuration → Environment variables → Add a variable**.
+   - Key: `GOOGLE_SOLAR_API_KEY`. Value: the key.
+   - Then go to **Deploys → Trigger deploy**.
+7. **Run `docs/roofscout-setup.sql` again in Supabase.** This adds the monthly usage counter. Running it again is safe, and every line should say OK.
+
+**Check it's working:** RoofScout **Settings → Google Solar** should say "Connected to Google".
+
+**Using it:** in any lead, click **📡 Measure from address**. Google's roof area, main pitch and photo date appear beside the estimate. **Use this size** puts Google's area into the lead.
+
+**Google's rules:**
+- Google limits how long its results may be kept. RoofScout keeps Google's figures on a lead for 30 days, then removes them; the area a person chose stays.
+- Its pages say "Roof data © Google".
+- Google also requires apps using the Solar API to have a public Terms of Use and Privacy Policy. Make sure grayco-cs.com links them.
+
+**Coverage:** not every building has Google roof data, especially large or new commercial buildings. When it says "no roof data", trace the roof on the map instead (free).
+
 ## Finding leads
 
 - **Map tab:** search an address or pan to a roof, click **📐 Trace a roof**, click each corner, then click the first corner again.
