@@ -19,7 +19,8 @@
       <div id="login-err" class="err" role="alert" hidden></div>
       <button class="btn primary" type="submit">Sign in</button>
       <p class="fine">Forgot your password? Ask Wesley or Nick (CRM: 💎 → Team access → Reset password).</p>
-      <div class="login-alt"><button type="button" id="demo-btn" class="btn ghost">Practice in demo mode</button>
+      <p class="fine">For GrayCo staff only.</p>
+      <div class="login-alt demo-only"><button type="button" id="demo-btn" class="btn ghost">Practice in demo mode</button>
         <p class="fine">Demo mode needs no sign-in. It saves only in this browser and is not shared.</p></div>
     </form>
   </div>
@@ -31,7 +32,7 @@
       <p id="loading-msg" role="status">Loading…</p>
       <div id="loading-actions" class="btn-row" hidden>
         <button type="button" id="retry-btn" class="btn primary">Try again</button>
-        <button type="button" id="loading-demo-btn" class="btn ghost">Demo mode</button>
+        <button type="button" id="loading-demo-btn" class="btn ghost demo-only">Demo mode</button>
         <button type="button" id="loading-signout-btn" class="btn ghost">Sign out</button>
       </div>
     </div>

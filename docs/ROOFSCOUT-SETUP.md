@@ -7,7 +7,7 @@ RoofScout now runs on the **GrayCo CRM's own Supabase project**:
 - **One shared lead pool.** A lead added or changed on one computer or phone shows up on everyone else's within about a minute.
 - **Nightly backup.** RoofScout's tables are included in the CRM's nightly backup.
 
-Until step 1 below is done, the RoofScout sign-in screen says the database is not set up yet and offers **demo mode**. Demo mode is practice only: it saves in that browser and is not shared.
+Until step 1 below is done, signing in to RoofScout says the database is not set up yet. Nobody can get in without a GrayCo sign-in: there is no demo or guest mode on the website.
 
 ## 1. Supabase: run the setup script (once)
 

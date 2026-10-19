@@ -129,8 +129,16 @@
 
   // ---- Sign in ------------------------------------------------------------
 
+  // On the website, the GrayCo sign-in is the only way in. Demo mode (no sign-in,
+  // nothing shared) exists only when the files are opened on a computer for testing.
+  var DEMO_ALLOWED = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  $$('.demo-only').forEach(function (el) { if (!DEMO_ALLOWED) el.remove(); });
+
   function start() {
-    if (Store.getMode() === 'demo') return startDemo();
+    if (Store.getMode() === 'demo') {
+      if (DEMO_ALLOWED) return startDemo();
+      Store.setMode(null);
+    }
     var s = Cloud.session();
     if (s) return startCloud(s.email);
     showLogin();
@@ -171,12 +179,13 @@
       startPolling();
     }, function (e) {
       if (e.code === 'signed-out' || e.code === 'bad-login') return showLogin(e.code === 'signed-out' ? 'Please sign in again.' : e.message);
-      if (e.code === 'no-tables') return loadFailed('RoofScout\'s shared database is not set up yet. An admin runs docs/roofscout-setup.sql once in Supabase (SQL Editor). Until then you can practice in demo mode.');
+      if (e.code === 'no-tables') return loadFailed('RoofScout\'s database is not set up yet. An admin runs docs/roofscout-setup.sql once in Supabase (SQL Editor), then clicks Try again.');
       loadFailed(e.message || 'Could not load RoofScout.');
     });
   }
 
   function startDemo() {
+    if (!DEMO_ALLOWED) return showLogin();
     Store.setMode('demo');
     B = Data.demo();
     B.load().then(function (s) {
@@ -204,9 +213,8 @@
     });
   });
 
-  $('#demo-btn').addEventListener('click', startDemo);
+  $$('#demo-btn, #loading-demo-btn').forEach(function (b) { b.addEventListener('click', startDemo); });
   $('#retry-btn').addEventListener('click', start);
-  $('#loading-demo-btn').addEventListener('click', startDemo);
   $('#loading-signout-btn').addEventListener('click', function () { Cloud.signOut(); showLogin(); });
 
   $('#logout').addEventListener('click', function () {
