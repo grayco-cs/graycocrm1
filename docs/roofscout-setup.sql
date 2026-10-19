@@ -8,7 +8,9 @@
 -- pricing and branding; everyone on the staff list works the shared lead pool.
 --
 -- What it does — and it changes NOTHING in the CRM's own tables:
---   1. creates rs_leads, rs_activity, rs_settings, rs_profiles, rs_usage
+--   1. creates rs_leads, rs_activity, rs_settings, rs_profiles, rs_usage,
+--      and the area scan's server-only cache and limits (rs_scan_cache, rs_scan_rate),
+--      and the one-lookup-per-lead record for Tracerfy owner contact lookups (rs_skiptrace)
 --   2. rules: only signed-in GrayCo staff can use them; only admins change settings;
 --      the activity log can be added to but never edited or erased through the web;
 --      the public (anon) key gets nothing
@@ -179,6 +181,111 @@ insert into public.rs_profiles (email, name)
 select email, name from public.gc_staff
 on conflict (email) do nothing;
 
+-- 3b. Area scan (Map → Scan an area) -------------------------------------------
+-- Server-only, like rs_usage: the Netlify function roofscout-scan (service key) reads
+-- and writes these; the web gets nothing. Added 2026-10; safe to run again.
+
+-- Cached answers from the free public services (OpenStreetMap buildings per map tile,
+-- county parcels, Memphis permits, NOAA hail days), so a rescan does not ask them again.
+create table if not exists public.rs_scan_cache (
+  key         text primary key check (char_length(key) <= 200),
+  data        jsonb not null,
+  fetched_at  timestamptz not null default now(),
+  expires_at  timestamptz not null
+);
+create index if not exists rs_scan_cache_expires on public.rs_scan_cache (expires_at);
+
+-- Request counts per hour (per person, and team-wide for OpenStreetMap downloads).
+create table if not exists public.rs_scan_rate (
+  bucket  text not null check (char_length(bucket) <= 200),
+  hour    timestamptz not null,
+  count   integer not null default 0,
+  primary key (bucket, hour)
+);
+
+-- Counts one request and says whether it was allowed (false = over the hourly or 24-hour limit).
+create or replace function public.rs_scan_take(p_bucket text, p_hour_limit integer, p_day_limit integer)
+returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  h timestamptz := date_trunc('hour', now());
+  n_hour integer;
+  n_day integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('rs_scan_take:' || p_bucket));
+  select coalesce(sum(count) filter (where hour = h), 0), coalesce(sum(count), 0)
+    into n_hour, n_day
+    from public.rs_scan_rate
+   where bucket = p_bucket and hour > now() - interval '24 hours';
+  if n_hour >= p_hour_limit or n_day >= p_day_limit then
+    return false;
+  end if;
+  insert into public.rs_scan_rate (bucket, hour, count) values (p_bucket, h, 1)
+  on conflict (bucket, hour) do update set count = public.rs_scan_rate.count + 1;
+  if random() < 0.02 then
+    delete from public.rs_scan_rate where hour < now() - interval '3 days';
+  end if;
+  return true;
+end $$;
+revoke all on function public.rs_scan_take(text, integer, integer) from public, anon, authenticated;
+
+alter table public.rs_scan_cache enable row level security;   -- no rules: server only
+alter table public.rs_scan_rate  enable row level security;   -- no rules: server only
+revoke all on public.rs_scan_cache, public.rs_scan_rate from public, anon, authenticated;
+
+-- 3c. Owner contact lookups (Tracerfy skip tracing) -----------------------------
+-- Server-only. One row per lead: the paid lookup's answer, so a second click (or two
+-- clicks at once) never pays twice. The monthly count is in rs_usage (kind 'tracerfy').
+create table if not exists public.rs_skiptrace (
+  lead_id     text primary key check (lead_id ~ '^[A-Za-z0-9_-]{1,40}$'),
+  status      text not null check (status in ('pending', 'done')),
+  result      jsonb,
+  started_at  timestamptz not null default now(),
+  fetched_at  timestamptz,
+  by_email    text not null default ''
+);
+
+-- Claim the lookup for a lead. Returns {claimed:true}, or {claimed:false, busy:true} while
+-- another lookup for it is running (under 2 minutes old), or {claimed:false, result} when it
+-- was already looked up and p_again is false.
+create or replace function public.rs_skiptrace_claim(p_lead text, p_by text, p_again boolean)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare r public.rs_skiptrace;
+begin
+  perform pg_advisory_xact_lock(hashtext('rs_skiptrace:' || p_lead));
+  select * into r from public.rs_skiptrace where lead_id = p_lead;
+  if not found then
+    insert into public.rs_skiptrace (lead_id, status, started_at, by_email) values (p_lead, 'pending', now(), coalesce(p_by, ''));
+    return jsonb_build_object('claimed', true);
+  end if;
+  if r.status = 'pending' and r.started_at > now() - interval '2 minutes' then
+    return jsonb_build_object('claimed', false, 'busy', true);
+  end if;
+  if r.status = 'done' and not coalesce(p_again, false) then
+    return jsonb_build_object('claimed', false, 'result', r.result);
+  end if;
+  update public.rs_skiptrace set status = 'pending', started_at = now(), by_email = coalesce(p_by, '') where lead_id = p_lead;
+  return jsonb_build_object('claimed', true);
+end $$;
+
+create or replace function public.rs_skiptrace_finish(p_lead text, p_result jsonb)
+returns void language sql security definer set search_path = public, pg_temp as $$
+  update public.rs_skiptrace set status = 'done', result = p_result, fetched_at = now() where lead_id = p_lead;
+$$;
+
+-- The lookup failed: go back to the earlier answer, or forget the claim if there was none.
+create or replace function public.rs_skiptrace_release(p_lead text)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update public.rs_skiptrace set status = 'done' where lead_id = p_lead and status = 'pending' and result is not null;
+  delete from public.rs_skiptrace where lead_id = p_lead and status = 'pending' and result is null;
+end $$;
+
+revoke all on function public.rs_skiptrace_claim(text, text, boolean) from public, anon, authenticated;
+revoke all on function public.rs_skiptrace_finish(text, jsonb) from public, anon, authenticated;
+revoke all on function public.rs_skiptrace_release(text) from public, anon, authenticated;
+alter table public.rs_skiptrace enable row level security;   -- no rules: server only
+revoke all on public.rs_skiptrace from public, anon, authenticated;
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 4. VERIFY — every line must say OK.
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -193,7 +300,7 @@ where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_sett
 insert into rs_verify
 select 'RLS on every RoofScout table', coalesce('PROBLEM: RLS off on ' || string_agg(c.relname, ', '), 'OK')
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles', 'rs_usage') and not c.relrowsecurity;
+where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles', 'rs_usage', 'rs_scan_cache', 'rs_scan_rate', 'rs_skiptrace') and not c.relrowsecurity;
 
 insert into rs_verify
 select 'only GrayCo staff rules', coalesce('PROBLEM: ' || string_agg(tablename || '.' || policyname, ', '), 'OK')
@@ -202,6 +309,24 @@ from pg_policies where schemaname = 'public' and tablename like 'rs\_%' and poli
 insert into rs_verify
 select 'anon has no RoofScout rights', coalesce('PROBLEM: ' || string_agg(distinct table_name || ':' || privilege_type, ', '), 'OK')
 from information_schema.role_table_grants where table_schema = 'public' and grantee = 'anon' and table_name like 'rs\_%';
+
+insert into rs_verify
+select 'area scan tables exist', case when count(*) = 2 then 'OK' else 'PROBLEM: only ' || count(*) || ' of 2' end
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relname in ('rs_scan_cache', 'rs_scan_rate');
+
+insert into rs_verify
+select 'area scan limit function', case when to_regprocedure('public.rs_scan_take(text, integer, integer)') is not null
+  and not has_function_privilege('authenticated', 'public.rs_scan_take(text, integer, integer)', 'execute')
+  and not has_function_privilege('anon', 'public.rs_scan_take(text, integer, integer)', 'execute')
+  then 'OK' else 'PROBLEM: missing or callable from the web' end;
+
+insert into rs_verify
+select 'owner lookup table + functions', case when to_regclass('public.rs_skiptrace') is not null
+  and to_regprocedure('public.rs_skiptrace_claim(text, text, boolean)') is not null
+  and not has_function_privilege('authenticated', 'public.rs_skiptrace_claim(text, text, boolean)', 'execute')
+  and not has_table_privilege('authenticated', 'public.rs_skiptrace', 'select')
+  then 'OK' else 'PROBLEM: missing or open to the web' end;
 
 insert into rs_verify
 select 'staff profiles', count(*)::text || ' profiles'
@@ -244,6 +369,16 @@ begin
 
   begin
     set local role authenticated;
+    execute 'select count(*) from public.rs_scan_cache' into n;
+    reset role;
+    insert into rs_verify values ('scan cache hidden from the web', 'PROBLEM: readable');
+  exception when insufficient_privilege then
+    reset role;
+    insert into rs_verify values ('scan cache hidden from the web', 'OK (permission denied)');
+  end;
+
+  begin
+    set local role authenticated;
     execute 'delete from public.rs_activity';
     reset role;
     insert into rs_verify values ('activity log cannot be erased', 'PROBLEM: delete allowed');
@@ -256,6 +391,8 @@ end $$;
 select * from rs_verify;
 
 -- UNDO (removes RoofScout's tables and everything in them — the CRM is not touched):
--- drop table if exists public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles, public.rs_usage;
+-- drop table if exists public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles, public.rs_usage, public.rs_scan_cache, public.rs_scan_rate, public.rs_skiptrace;
+-- drop function if exists public.rs_scan_take(text, integer, integer);
+-- drop function if exists public.rs_skiptrace_claim(text, text, boolean), public.rs_skiptrace_finish(text, jsonb), public.rs_skiptrace_release(text);
 -- drop function if exists public.rs_stamp();
 -- drop function if exists public.rs_bump_usage(text, text);

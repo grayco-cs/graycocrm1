@@ -1,0 +1,309 @@
+{
+ "version": 0.6,
+ "generator": "Overpass API 0.7.62.1 084b4234",
+ "osm3s": {
+  "timestamp_osm_base": "2026-10-19T15:00:00Z",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+ },
+ "elements": [
+  {
+   "type": "way",
+   "id": 1001,
+   "geometry": [
+    {
+     "lat": 35.205,
+     "lon": -89.845
+    },
+    {
+     "lat": 35.205,
+     "lon": -89.8439936
+    },
+    {
+     "lat": 35.2053838,
+     "lon": -89.8439936
+    },
+    {
+     "lat": 35.2053838,
+     "lon": -89.845
+    },
+    {
+     "lat": 35.205,
+     "lon": -89.845
+    }
+   ],
+   "tags": {
+    "building": "warehouse",
+    "name": "Example Distribution Center"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1002,
+   "geometry": [
+    {
+     "lat": 35.205,
+     "lon": -89.8436581
+    },
+    {
+     "lat": 35.205,
+     "lon": -89.8429872
+    },
+    {
+     "lat": 35.2052741,
+     "lon": -89.8429872
+    },
+    {
+     "lat": 35.2052741,
+     "lon": -89.8433226
+    },
+    {
+     "lat": 35.2054386,
+     "lon": -89.8433226
+    },
+    {
+     "lat": 35.2054386,
+     "lon": -89.8436581
+    },
+    {
+     "lat": 35.205,
+     "lon": -89.8436581
+    }
+   ],
+   "tags": {
+    "building": "retail",
+    "name": "Example Plaza",
+    "addr:housenumber": "6000",
+    "addr:street": "Stage Road",
+    "addr:city": "Bartlett",
+    "addr:state": "TN",
+    "addr:postcode": "38134"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1003,
+   "geometry": [
+    {
+     "lat": 35.2058223,
+     "lon": -89.845
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8445974
+    },
+    {
+     "lat": 35.2060965,
+     "lon": -89.8445974
+    },
+    {
+     "lat": 35.2060965,
+     "lon": -89.845
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.845
+    }
+   ],
+   "tags": {
+    "building": "church",
+    "amenity": "place_of_worship",
+    "religion": "christian",
+    "name": "Example Community Church"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1004,
+   "geometry": [
+    {
+     "lat": 35.2058223,
+     "lon": -89.8443291
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8441613
+    },
+    {
+     "lat": 35.205932,
+     "lon": -89.8441613
+    },
+    {
+     "lat": 35.205932,
+     "lon": -89.8443291
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8443291
+    }
+   ],
+   "tags": {
+    "building": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1005,
+   "geometry": [
+    {
+     "lat": 35.2058223,
+     "lon": -89.8436581
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8431549
+    },
+    {
+     "lat": 35.2060416,
+     "lon": -89.8431549
+    },
+    {
+     "lat": 35.2060416,
+     "lon": -89.8436581
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8436581
+    }
+   ],
+   "tags": {
+    "building": "yes"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1006,
+   "geometry": [
+    {
+     "lat": 35.2058223,
+     "lon": -89.8426517
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8422827
+    },
+    {
+     "lat": 35.206069,
+     "lon": -89.8422827
+    },
+    {
+     "lat": 35.206069,
+     "lon": -89.8426517
+    },
+    {
+     "lat": 35.2058223,
+     "lon": -89.8426517
+    }
+   ],
+   "tags": {
+    "building": "office"
+   }
+  },
+  {
+   "type": "way",
+   "id": 1007,
+   "geometry": [
+    {
+     "lat": 35.2063706,
+     "lon": -89.845
+    },
+    {
+     "lat": 35.2063706,
+     "lon": -89.8443961
+    },
+    {
+     "lat": 35.2065624,
+     "lon": -89.8443961
+    },
+    {
+     "lat": 35.2065624,
+     "lon": -89.845
+    },
+    {
+     "lat": 35.2063706,
+     "lon": -89.845
+    }
+   ],
+   "tags": {
+    "building": "apartments",
+    "building:levels": "3"
+   }
+  },
+  {
+   "type": "relation",
+   "id": 2001,
+   "tags": {
+    "type": "multipolygon",
+    "building": "school",
+    "amenity": "school",
+    "name": "Example Middle School"
+   },
+   "members": [
+    {
+     "type": "way",
+     "ref": 3001,
+     "role": "outer",
+     "geometry": [
+      {
+       "lat": 35.2063706,
+       "lon": -89.8436581
+      },
+      {
+       "lat": 35.2063706,
+       "lon": -89.8427859
+      },
+      {
+       "lat": 35.2069188,
+       "lon": -89.8427859
+      }
+     ]
+    },
+    {
+     "type": "way",
+     "ref": 3002,
+     "role": "outer",
+     "geometry": [
+      {
+       "lat": 35.2069188,
+       "lon": -89.8427859
+      },
+      {
+       "lat": 35.2069188,
+       "lon": -89.8436581
+      },
+      {
+       "lat": 35.2063706,
+       "lon": -89.8436581
+      }
+     ]
+    },
+    {
+     "type": "way",
+     "ref": 3003,
+     "role": "inner",
+     "geometry": [
+      {
+       "lat": 35.2065624,
+       "lon": -89.8433226
+      },
+      {
+       "lat": 35.2065624,
+       "lon": -89.8431214
+      },
+      {
+       "lat": 35.2066995,
+       "lon": -89.8431214
+      },
+      {
+       "lat": 35.2066995,
+       "lon": -89.8433226
+      },
+      {
+       "lat": 35.2065624,
+       "lon": -89.8433226
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

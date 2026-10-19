@@ -1,0 +1,71 @@
+{
+ "displayFieldName": "ownername",
+ "geometryType": "esriGeometryPolygon",
+ "spatialReference": {
+  "wkid": 4326
+ },
+ "fields": [
+  {
+   "name": "objectid",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "countyid",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "parcelid",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "ownername",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "adrlabel",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "parceltype",
+   "type": "esriFieldTypeString"
+  }
+ ],
+ "features": [
+  {
+   "attributes": {
+    "objectid": 1,
+    "countyid": "18",
+    "parcelid": "001-01234-000",
+    "ownername": "EXAMPLE FREIGHT INC",
+    "adrlabel": "100 EXAMPLE DR",
+    "parceltype": "COMMERCIAL"
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -90.2,
+       35.15
+      ],
+      [
+       -90.198,
+       35.15
+      ],
+      [
+       -90.198,
+       35.1515
+      ],
+      [
+       -90.2,
+       35.1515
+      ],
+      [
+       -90.2,
+       35.15
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}

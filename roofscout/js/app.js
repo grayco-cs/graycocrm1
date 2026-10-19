@@ -15,7 +15,8 @@
   var waitingState = null;  // newer data from the database, held while someone is typing
   // Per-visit view settings (filters, sort): not saved.
   var ui = {
-    leads: { q: '', kind: 'commercial', stage: '', cond: '', sort: 'priority', dir: -1 }
+    leads: { q: '', kind: 'commercial', stage: '', cond: '', sort: 'priority', dir: -1 },
+    scan: { sort: 'score', dir: -1, hideLeads: false, opts: null }
   };
 
   // ---- Helpers ------------------------------------------------------------
@@ -181,6 +182,7 @@
       showApp();
       startPolling();
       expireSolar();
+      loadSkipStatus();
     }, function (e) {
       if (e.code === 'signed-out' || e.code === 'bad-login') return showLogin(e.code === 'signed-out' ? 'Please sign in again.' : e.message);
       if (e.code === 'no-tables') return loadFailed('RoofScout\'s database is not set up yet. An admin runs docs/roofscout-setup.sql once in Supabase (SQL Editor), then clicks Try again.');
@@ -241,7 +243,7 @@
     $('#logout').textContent = isCloud() ? 'Sign out' : 'Exit demo';
     $('#mode-bar').className = 'demo-bar' + (isCloud() ? ' live' : '');
     $('#mode-bar').innerHTML = isCloud()
-      ? 'Shared team leads: everyone with a GrayCo CRM sign-in sees the same list. Find a roof on the map, trace it to measure, and save it as a lead.'
+      ? 'Shared team leads: everyone with a GrayCo CRM sign-in sees the same list. Scan an area for large commercial roofs, or trace a roof on the map, and save it as a lead.'
       : '<b>DEMO MODE</b>: practice only, saved in this browser, not shared. Scan results are made-up sample data.';
     go(tab);
   }
@@ -255,18 +257,26 @@
     tab = t;
     $$('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); });
     if (map) { map.remove(); map = null; }
-    if (t !== 'map') measure = null;
+    if (t !== 'map') { measure = null; scanDraw = null; }
     var y = window.scrollY;
     var v = $('#view');
     v.className = 'view view-' + t;
     v.innerHTML = VIEWS[t]();
-    if (t === 'map') initMap();
+    if (t === 'map') { initMap(); renderScanResults(); }
     if (t === 'leads') renderLeadTable();
     if (t === 'settings' && isCloud()) {
       Cloud.fn('solar-lookup', 'GET', undefined, 'action=usage').then(function (u) {
         var el = $('#solar-usage');
         if (el) el.textContent = (u.connected ? 'Connected to Google. ' : 'Not connected yet: add GOOGLE_SOLAR_API_KEY in Netlify. ') + 'Used this month: ' + u.usedThisMonth + ' of ' + u.limit + '.';
       }, function (e) { var el = $('#solar-usage'); if (el) el.textContent = e.message; });
+      loadSkipStatus().then(function () { var el = $('#skip-status'); if (el) el.textContent = skipStatusText(); });
+      Cloud.fn(SCAN_FN, 'GET', undefined, 'action=status').then(function (u) {
+        var el = $('#scan-status');
+        if (!el) return;
+        var names = { shelby: 'Shelby', desoto: 'DeSoto', crittenden: 'Crittenden', permits: 'Memphis permits' };
+        el.textContent = 'Scan server ready. Fresh OpenStreetMap downloads in the last 24 hours: ' + u.overpassToday + ' of ' + u.limits.overpassDay + ' (team fair-use limit). ' +
+          Object.keys(names).map(function (k) { return names[k] + ': ' + ({ on: 'on', off: 'off', 'no-url': 'on, but needs its address' }[u.sources[k]] || u.sources[k]); }).join(' · ') + '.';
+      }, function (e) { var el = $('#scan-status'); if (el) el.textContent = e.code === 'no-tables' ? 'Run docs/roofscout-setup.sql again in Supabase to turn on the area scan.' : e.message; });
     }
     window.scrollTo(0, keepScroll ? y : 0);
     showPending();
@@ -290,7 +300,7 @@
 
   function busy() {
     var a = document.activeElement;
-    return !$('#modal').hidden || !!measure || (a && a.closest && a.closest('#view form'));
+    return !$('#modal').hidden || !!measure || !!scanDraw || (a && a.closest && a.closest('#view form'));
   }
 
   function applyState(ns) {
@@ -324,8 +334,9 @@
 
   // ---- Map ----------------------------------------------------------------
   //
-  // Finding real leads: look at the satellite map, trace a roof's outline to
-  // measure it, and save it as a lead. The demo scan exists only in demo mode.
+  // Finding real leads: scan an area (public data, below), or look at the satellite
+  // map, trace a roof's outline to measure it, and save it as a lead. The made-up
+  // demo scan exists only in local demo mode (file:// or localhost), never on the website.
 
   var measure = null;   // { points: [[lat,lng]…], pitch, leadId|null, layer }
   var mapView = null;   // last center/zoom, so a refresh doesn't jump the map
@@ -348,10 +359,12 @@
         (prefs.scope !== 'commercial' ? '<p class="note">Residential roofs are harder to judge from satellite (smaller roofs, trees, steep pitch).</p>' : '') +
         '<form id="geo-form" class="geo-form"><input type="search" id="geo-q" placeholder="Go to an address or place…" aria-label="Address"><button class="btn ghost" type="submit">Go</button></form>' +
         '<div id="geo-results"></div>' +
-        '<label>Area <select id="scan-place">' + Store.PLACES.map(function (p) {
+        (demo ? '' : areaScanPanel()) +
+        '<label>' + (demo ? 'Area' : 'Map area') + ' <select id="scan-place">' + Store.PLACES.map(function (p) {
           return '<option value="' + p.id + '"' + (p.id === prefs.place ? ' selected' : '') + '>' + esc(p.label) + '</option>';
         }).join('') + '</select></label>' +
         '<div id="measure-box">' + measureBox() + '</div>' +
+        // Made-up practice sites: only in local demo mode (file:// or localhost), never on the website.
         (demo ? '<details class="demo-scan"><summary>Demo scan (practice data)</summary>' +
           '<label>Radius (miles)' +
             '<div class="radius-row"><input type="range" id="radius-range" min="1" max="100" value="' + Math.min(prefs.radius, 100) + '">' +
@@ -365,10 +378,11 @@
         '<ul class="mini-list">' + (flagged.slice(0, 8).map(function (l) {
           return '<li><button data-act="open" data-id="' + esc(l.id) + '">' + gradeChip(l) + ' <span>' + esc(l.name) + '</span><b>' + moneyShort(valueOf(l)) + '</b></button></li>';
         }).join('') || '<li class="muted">No leads yet. Trace a roof to add the first one.</li>') + '</ul>' +
-        '<p class="fine">Address search © OpenStreetMap contributors (Nominatim), used only when you click Go or add a lead.</p>' +
+        '<p class="fine">Address search © OpenStreetMap contributors (Nominatim), used only when you click Go, look up a ZIP or city, or add a lead.</p>' +
       '</aside>' +
-      '<div class="map-wrap"><div id="map" class="map' + (measure ? ' measuring' : '') + '"></div></div>' +
-    '</div>';
+      '<div class="map-col"><div class="map-wrap"><div id="map" class="map' + (measure || scanDraw ? ' measuring' : '') + '"></div></div>' +
+      (demo ? '' : '<section id="scan-results" class="scan-results" aria-label="Scan results" hidden></section>') +
+    '</div></div>';
   }
 
   function measureBox() {
@@ -447,8 +461,14 @@
     });
 
     map.on('moveend', function () { mapView = { center: map.getCenter(), zoom: map.getZoom() }; });
-    map.on('click', function (e) { if (measure) addCorner(e.latlng); });
+    map.on('click', function (e) { if (measure) addCorner(e.latlng); else if (scanDraw) scanDrawClick(e.latlng); });
+    map.on('mousemove', function (e) { if (scanDraw && scanDraw.first && scanDraw.layer) scanDraw.layer.setBounds([scanDraw.first, e.latlng]); });
     if (measure) drawMeasure();
+    if (isCloud()) {
+      map.attributionControl.addAttribution('Buildings © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>');
+      if (scanDraw) { scanDraw.first = null; scanDraw.layer = null; map.doubleClickZoom.disable(); }
+      drawScanLayer();
+    }
   }
 
   // ---- Tracing a roof -------------------------------------------------------
@@ -562,7 +582,8 @@
       var a = j.address;
       var street = [a.house_number, a.road].filter(Boolean).join(' ');
       var city = a.city || a.town || a.village || a.hamlet || a.suburb || '';
-      return { address: [street, city, [a.state_code || a.state, a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', '), name: j.name || '' };
+      var st = a.state_code || String(a['ISO3166-2-lvl4'] || '').replace(/^US-/, '') || a.state || '';
+      return { address: [street, city, [st, a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', '), name: j.name || '', street: street, city: city, state: st, postcode: a.postcode || '' };
     });
   }
 
@@ -621,6 +642,458 @@
     }, function (e) { report(e); refresh(); });
   }
 
+  // ---- Scan an area (real data) -----------------------------------------------
+  //
+  // Finds large commercial buildings in an area from public data, through the
+  // roofscout-scan server function: OpenStreetMap footprints, county parcels (owner,
+  // mailing address, land use, year built), Memphis roof permits and NOAA hail reports.
+  // Scored in the browser (js/scan.js) so changing the weights needs no new download.
+  // Google Solar is only called per site, when someone clicks 📡 Measure.
+
+  var scanArea = null;     // { bbox: { s, w, n, e }, label }
+  var scanDraw = null;     // drawing a rectangle on the map: { first: L.LatLng | null, layer }
+  var scanRes = null;      // the latest scan: { sites, running, done, total, errors, skipped, sources, label, bbox, at }
+  var scanLayer = null;
+  var scanSel = null;      // site id highlighted in the list
+  var SCAN_FN = 'roofscout-scan';
+
+  function scanCfg() { return state.settings.areaScan || Store.defaultSettings().areaScan; }
+  function scanOpts() {
+    if (!ui.scan.opts) {
+      var c = scanCfg();
+      ui.scan.opts = { min: c.minSqft || 10000, types: Scan.TYPES.map(function (t) { return t.id; }), hailDays: Number(c.hailDays) || 0, mode: 'draw' };
+    }
+    return ui.scan.opts;
+  }
+
+  // Default area: a box about 2 miles across around the admin's default place.
+  function defaultScanArea() {
+    var p = Store.PLACES.filter(function (x) { return x.id === scanCfg().defaultArea; })[0] || Store.PLACES[1];
+    var dLat = 1 / 69, dLng = 1 / (69 * Math.cos(p.lat * Math.PI / 180));
+    return { bbox: { s: p.lat - dLat, w: p.lng - dLng, n: p.lat + dLat, e: p.lng + dLng }, label: 'around ' + p.label };
+  }
+  function currentArea() { return scanArea || defaultScanArea(); }
+
+  function areaLine() {
+    var a = currentArea(), b = a.bbox;
+    var tiles = Scan.tilesForBbox(b).length;
+    var w = Scan.distanceMi([(b.s + b.n) / 2, b.w], [(b.s + b.n) / 2, b.e]), h = Scan.distanceMi([b.s, b.w], [b.n, b.w]);
+    return '<b>' + esc(a.label) + '</b> · ' + w.toFixed(1) + ' × ' + h.toFixed(1) + ' mi' +
+      (tiles > Scan.MAX_TILES ? ' <span class="err">too big for one scan</span>' : '');
+  }
+
+  function areaScanPanel() {
+    var o = scanOpts(), running = scanRes && scanRes.running;
+    function modeBtn(m, label) { return '<button type="button" data-act="scan-mode" data-v="' + m + '" class="' + (o.mode === m ? 'on' : '') + '">' + label + '</button>'; }
+    return '<section class="area-scan" id="area-scan"><h3>Scan an area</h3>' +
+      '<div class="seg" role="group" aria-label="Choose the area">' + modeBtn('draw', 'Draw') + modeBtn('zip', 'ZIP') + modeBtn('city', 'City') + '</div>' +
+      (o.mode === 'draw'
+        ? '<button type="button" class="btn ghost block sm-block" data-act="scan-draw">' + (scanDraw ? 'Click two opposite corners on the map… (Cancel)' : '▭ Draw the area on the map') + '</button>'
+        : '<form id="scan-where" class="geo-form"><input type="search" id="scan-where-q" placeholder="' + (o.mode === 'zip' ? 'ZIP code, e.g. 38133' : 'City, e.g. Bartlett TN') + '" aria-label="' + (o.mode === 'zip' ? 'ZIP code' : 'City') + '"' + (o.mode === 'zip' ? ' inputmode="numeric" pattern="\\d{5}"' : '') + '><button class="btn ghost" type="submit">Use</button></form>') +
+      '<p class="fine" id="scan-area-line">Area: ' + areaLine() + '</p>' +
+      '<div class="row2"><label>Min roof ft² <input type="number" id="scan-min" min="3000" step="1000" value="' + o.min + '"></label>' +
+      '<label>Hail-hit in last <select id="scan-hail">' + [0, 7, 14, 30, 60, 90].map(function (d) {
+        return '<option value="' + d + '"' + (d === o.hailDays ? ' selected' : '') + '>' + (d ? d + ' days' : 'off') + '</option>';
+      }).join('') + '</select></label></div>' +
+      '<div class="type-checks" role="group" aria-label="Building types">' + Scan.TYPES.map(function (t) {
+        return '<label class="check"><input type="checkbox" name="scan-type" value="' + t.id + '"' + (o.types.indexOf(t.id) > -1 ? ' checked' : '') + '> ' + esc(t.label) + '</label>';
+      }).join('') + '</div>' +
+      '<button type="button" class="btn primary block" data-act="scan-run"' + (running ? ' disabled' : '') + '>' + (running ? 'Scanning…' : '🔎 Scan this area') + '</button>' +
+      '<p class="fine" id="scan-progress" role="status">' + scanProgressText() + '</p>' +
+      '<p class="fine">Buildings © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) · owners: county public records · permits: City of Memphis · hail: NOAA SPC.</p>' +
+      '</section>';
+  }
+
+  function scanProgressText() {
+    if (!scanRes) return '';
+    var r = scanRes, s = r.skipped || {};
+    var t = r.running ? 'Scanning ' + r.done + ' of ' + r.total + ' map squares… ' : '';
+    t += r.sites.length + ' building' + (r.sites.length === 1 ? '' : 's') + ' found';
+    var sk = [];
+    if (s.residential) sk.push(s.residential + ' single-family');
+    if (s.dnc) sk.push(s.dnc + ' do-not-contact');
+    if (s.type) sk.push(s.type + ' other types');
+    if (s.outside) sk.push(s.outside + ' outside the area');
+    if (sk.length) t += ' · skipped ' + sk.join(', ');
+    if (r.errors && r.errors.length) t += ' · ' + r.errors.length + ' map square' + (r.errors.length === 1 ? '' : 's') + ' failed: ' + r.errors[r.errors.length - 1];
+    return esc(t) + '.';
+  }
+
+  function updateScanPanel() {
+    var p = $('#scan-progress');
+    if (p) p.innerHTML = scanProgressText();
+    var line = $('#scan-area-line');
+    if (line) line.innerHTML = 'Area: ' + areaLine();
+    var btn = $('[data-act=scan-run]');
+    if (btn) { btn.disabled = !!(scanRes && scanRes.running); btn.textContent = scanRes && scanRes.running ? 'Scanning…' : '🔎 Scan this area'; }
+  }
+
+  function setScanArea(bbox, label) {
+    scanArea = { bbox: bbox, label: label };
+    updateScanPanel();
+    drawScanLayer();
+    if (map) map.fitBounds([[bbox.s, bbox.w], [bbox.n, bbox.e]], { padding: [20, 20] });
+  }
+
+  // ZIP / city → its bounding box (one Nominatim lookup, because the person asked).
+  function findScanArea(q) {
+    var zip = scanOpts().mode === 'zip';
+    if (zip && !/^\d{5}$/.test(q)) return Promise.reject(new Error('Enter a 5-digit ZIP code.'));
+    var path = zip ? '/search?format=jsonv2&limit=1&countrycodes=us&postalcode=' + encodeURIComponent(q)
+      : '/search?format=jsonv2&limit=1&countrycodes=us&q=' + encodeURIComponent(q) + (/,|\b(TN|MS|AR)\b/i.test(q) ? '' : '&viewbox=-90.7,35.6,-89.5,34.6');
+    return nominatim(path).then(function (list) {
+      var hit = list && list[0];
+      if (!hit || !hit.boundingbox) throw new Error('Could not find ' + (zip ? 'that ZIP code' : 'that city') + '. Try drawing the area instead.');
+      var bb = hit.boundingbox.map(Number);   // [south, north, west, east]
+      setScanArea({ s: bb[0], n: bb[1], w: bb[2], e: bb[3] }, zip ? 'ZIP ' + q : (hit.name || q));
+    });
+  }
+
+  function startScanDraw() {
+    if (scanDraw) { cancelScanDraw(); return; }
+    if (measure) cancelTrace();
+    scanDraw = { first: null, layer: null };
+    if (map) { $('#map').classList.add('measuring'); map.doubleClickZoom.disable(); }
+    var b = $('[data-act=scan-draw]');
+    if (b) b.textContent = 'Click two opposite corners on the map… (Cancel)';
+  }
+  function cancelScanDraw() {
+    if (scanDraw && scanDraw.layer) scanDraw.layer.remove();
+    scanDraw = null;
+    if (map) { $('#map').classList.remove('measuring'); map.doubleClickZoom.enable(); }
+    var b = $('[data-act=scan-draw]');
+    if (b) b.textContent = '▭ Draw the area on the map';
+  }
+  function scanDrawClick(ll) {
+    if (!scanDraw.first) {
+      scanDraw.first = ll;
+      scanDraw.layer = L.rectangle([ll, ll], { color: '#7c3aed', weight: 2, dashArray: '6 6', fillOpacity: 0.05, interactive: false }).addTo(map);
+      return;
+    }
+    var a = scanDraw.first;
+    var bbox = { s: Math.min(a.lat, ll.lat), n: Math.max(a.lat, ll.lat), w: Math.min(a.lng, ll.lng), e: Math.max(a.lng, ll.lng) };
+    cancelScanDraw();
+    if (bbox.n - bbox.s < 0.0005 || bbox.e - bbox.w < 0.0005) { toast('That area is too small. Click two corners farther apart.', true); return; }
+    setScanArea(bbox, 'Drawn area');
+  }
+
+  function scoreSite(s) {
+    var c = scanCfg();
+    var r = Scan.score(s, { weights: c.weights, permitsSince: c.sources && c.sources.permits && c.sources.permits.since, home: Scan.HOME });
+    s.score = r.score;
+    s.reasons = r.reasons;
+    return s;
+  }
+
+  function scanColor(score) { return score >= 70 ? '#7c3aed' : score >= 50 ? '#a855f7' : '#c4b5fd'; }
+
+  function drawScanLayer() {
+    if (!map) return;
+    if (scanLayer) scanLayer.remove();
+    var g = L.layerGroup();
+    var a = currentArea().bbox;
+    L.rectangle([[a.s, a.w], [a.n, a.e]], { color: '#7c3aed', weight: 2, fillOpacity: 0.03, interactive: false }).addTo(g);
+    (scanRes ? visibleScanSites() : []).forEach(function (s) {
+      var lead = Scan.findExisting(s, state.leads);
+      var tip = '<b>' + s.score + '</b> · ' + esc(siteTitle(s)) + '<br>' + esc(s.reasons.join(' · ')) + (lead ? '<br><i>Already a lead</i>' : '');
+      L.polygon(s.outline, { color: lead ? '#2563eb' : scanColor(s.score), weight: s.id === scanSel ? 4 : 2, fillOpacity: 0.3 })
+        .bindTooltip(tip).on('click', function (e) { if (measure || scanDraw) return; L.DomEvent.stop(e); selectScanSite(s.id, true); }).addTo(g);
+    });
+    scanLayer = g.addTo(map);
+  }
+
+  function siteTitle(s) {
+    var p = s.parcel || {};
+    return s.name || (p.situs ? titleCase(p.situs) : '') || s.address || ((Scan.TYPES.filter(function (t) { return t.id === s.type; })[0] || {}).label || 'Building') + ' (' + num(s.areaSqft) + ' ft²)';
+  }
+  function titleCase(v) { return String(v || '').toLowerCase().replace(/\b([a-z])/g, function (m) { return m.toUpperCase(); }); }
+
+  function visibleScanSites() {
+    var o = scanOpts();
+    return scanRes.sites.filter(function (s) { return s.areaSqft >= o.min && o.types.indexOf(s.type) > -1; });
+  }
+
+  var SCAN_COLS = [
+    { k: 'score', label: 'Score', num: true },
+    { k: 'name', label: 'Building · owner' },
+    { k: 'type', label: 'Type' },
+    { k: 'area', label: 'Roof ft²', num: true },
+    { k: 'built', label: 'Built', num: true },
+    { k: 'permit', label: 'Roof permit', num: true },
+    { k: 'hail', label: 'Hail', num: true },
+    { k: 'dist', label: 'Miles', num: true },
+    { k: 'act', label: '' }
+  ];
+
+  function scanSortVal(s, k) {
+    switch (k) {
+      case 'name': return siteTitle(s).toLowerCase();
+      case 'type': return s.type;
+      case 'area': return s.areaSqft;
+      case 'built': return (s.parcel && s.parcel.yearBuilt) || 0;
+      case 'permit': return s.permit ? s.permit.date : '';
+      case 'hail': return s.hail ? s.hail.sizeIn : 0;
+      case 'dist': return s.distMi;
+      default: return s.score;
+    }
+  }
+
+  function renderScanResults() {
+    var box = $('#scan-results');
+    if (!box) return;
+    if (!scanRes) { box.hidden = true; return; }
+    box.hidden = false;
+    var f = ui.scan;
+    var rows = visibleScanSites().map(function (s) { s._lead = Scan.findExisting(s, state.leads); return s; })
+      .filter(function (s) { return !f.hideLeads || !s._lead; })
+      .sort(function (a, b) { var x = scanSortVal(a, f.sort), y = scanSortVal(b, f.sort); return (x < y ? -1 : x > y ? 1 : 0) * f.dir; });
+    var src = scanRes.sources || {};
+    var notes = [];
+    if (src.shelby === 'off') notes.push('Shelby County owners are off (Settings → Area scan) — look up owners on the assessor\'s site');
+    Object.keys(src).forEach(function (k) { if (/^error/.test(src[k])) notes.push((k === 'permits' ? 'Memphis permits' : (Scan.COUNTIES[k] || {}).label || k) + ' did not answer: ' + src[k].slice(7)); });
+    box.innerHTML = '<div class="scan-head"><h2>Scan results <span class="muted">' + rows.length + ' · ' + esc(scanRes.label) + '</span></h2>' +
+      '<label class="check"><input type="checkbox" id="scan-hide-leads"' + (f.hideLeads ? ' checked' : '') + '> Hide buildings that are already leads</label>' +
+      '<span class="grow"></span><button type="button" class="btn ghost sm" data-act="scan-clear">Clear</button></div>' +
+      (notes.length ? '<p class="note sm">' + notes.map(esc).join('<br>') + '</p>' : '') +
+      '<div class="table-wrap"><table class="grid scan-grid"><thead><tr>' + SCAN_COLS.map(function (c) {
+        var on = f.sort === c.k;
+        return '<th class="' + (c.num ? 'r ' : '') + (c.k === 'act' ? '' : 'sortable') + (on ? ' on' : '') + '"' + (c.k === 'act' ? '' : ' data-ssort="' + c.k + '"') + '>' + c.label + (on ? (f.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>';
+      }).join('') + '</tr></thead><tbody>' +
+      (rows.map(scanRow).join('') || '<tr><td colspan="' + SCAN_COLS.length + '" class="empty">' + (scanRes.running ? 'Scanning…' : 'No buildings match. Try a smaller minimum size or more building types.') + '</td></tr>') +
+      '</tbody></table></div>' +
+      '<p class="fine">Score 0–100 from roof size, roof age signals, hail, building type and distance from Bartlett (weights in Settings → Area scan). ' +
+      'Building outlines © OpenStreetMap contributors. Owner names and mailing addresses are public records: use them only for business outreach about the building, and add anyone who asks not to be contacted to the do-not-contact list.</p>';
+  }
+
+  function scanRow(s) {
+    var p = s.parcel, lead = s._lead;
+    var county = Scan.COUNTIES[(p && p.county) || Scan.countyOf(s.lat, s.lng)];
+    var owner = p && p.owner
+      ? '<div class="sm"><b>' + esc(p.owner) + '</b>' + (p.mail ? ' · <span class="muted">' + esc(p.mail) + '</span>' : '') + '</div>'
+      : '<div class="sm muted">Owner unknown — ' + (county ? '<a href="' + esc(county.assessor) + '" target="_blank" rel="noopener">look up (' + esc(county.assessorName) + ')</a>' : 'look up') + '</div>';
+    var solar = s.solar ? '<div class="sm muted">' + (s.solar.found ? 'Google: ' + num(s.solar.areaSqft) + ' ft² · ' + (s.solar.pitch ? s.solar.pitch + '/12' : 'flat') : 'Google: no roof data') + '</div>' : '';
+    return '<tr data-sid="' + esc(s.id) + '" class="' + (s.id === scanSel ? 'sel' : '') + '">' +
+      '<td class="r"><span class="score" style="background:' + scanColor(s.score) + '">' + s.score + '</span></td>' +
+      '<td><div class="cell-name"><button class="link" data-act="scan-zoom" data-id="' + esc(s.id) + '">' + esc(siteTitle(s)) + '</button></div>' + owner +
+        '<div class="sm muted">' + esc(s.reasons.join(' · ')) + '</div>' + solar + '</td>' +
+      '<td>' + esc(((Scan.TYPES.filter(function (t) { return t.id === s.type; })[0]) || {}).label || s.type) + (p && p.landUse ? '<div class="sm muted">' + esc(p.landUse) + '</div>' : '') + '</td>' +
+      '<td class="r">' + num(s.areaSqft) + '</td>' +
+      '<td class="r">' + ((p && p.yearBuilt) || '<span class="muted">?</span>') + '</td>' +
+      '<td class="r">' + (s.permit ? esc(s.permit.date) : s.permitsChecked ? '<span class="muted">none</span>' : '<span class="muted">—</span>') + '</td>' +
+      '<td class="r">' + (s.hail ? esc(String(Number(s.hail.sizeIn.toFixed(2)))) + '"<div class="sm muted">' + U.when(s.hail.ts).split(' ').slice(0, 2).join(' ') + '</div>' : '<span class="muted">—</span>') + '</td>' +
+      '<td class="r">' + s.distMi.toFixed(1) + '</td>' +
+      '<td><div class="scan-acts">' + (lead
+        ? '<button class="btn ghost sm" data-act="open" data-id="' + esc(lead.id) + '">Already a lead</button>' +
+          (skipOn() && !lead.doNotContact ? (lead.contact
+            ? ' <button class="btn ghost sm" data-act="open" data-id="' + esc(lead.id) + '">📞 ' + ((lead.contact.phones || []).length) + ' phone' + ((lead.contact.phones || []).length === 1 ? '' : 's') + '</button>'
+            : ' <button class="btn ghost sm" data-act="contact-find" data-id="' + esc(lead.id) + '">📞 Find owner contact</button>') : '')
+        : '<button class="btn primary sm" data-act="scan-add" data-id="' + esc(s.id) + '">Add as lead</button>') +
+        ' <button class="btn ghost sm" data-act="scan-measure" data-id="' + esc(s.id) + '" title="Google Solar roof measurement (counts toward the monthly limit)">📡 Measure</button></div></td>' +
+    '</tr>';
+  }
+
+  function selectScanSite(id, scroll) {
+    scanSel = id;
+    drawScanLayer();
+    renderScanResults();
+    var tr = $('#scan-results tr[data-sid="' + id + '"]');
+    if (tr && scroll) tr.scrollIntoView({ block: 'nearest' });
+  }
+
+  function scanSite(id) { return scanRes && scanRes.sites.filter(function (s) { return s.id === id; })[0]; }
+
+  function readScanOpts() {
+    var o = scanOpts();
+    var m = $('#scan-min');
+    if (m) o.min = Math.max(3000, Number(m.value) || 10000);
+    var h = $('#scan-hail');
+    if (h) o.hailDays = Number(h.value) || 0;
+    var boxes = $$('input[name=scan-type]');
+    if (boxes.length) o.types = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+    return o;
+  }
+
+  function runAreaScan() {
+    var o = readScanOpts();
+    if (!o.types.length) { toast('Pick at least one building type.', true); return; }
+    var area = currentArea();
+    var tiles = Scan.tilesForBbox(area.bbox);
+    if (tiles.length > Scan.MAX_TILES) {
+      toast('That area is too big for one scan (' + tiles.length + ' map squares, the most is ' + Scan.MAX_TILES + '). Draw a smaller area.', true);
+      return;
+    }
+    // Middle of the area first, so the first results are the ones the person is looking at.
+    var mid = [(area.bbox.s + area.bbox.n) / 2, (area.bbox.w + area.bbox.e) / 2];
+    tiles.sort(function (a, b) {
+      var ta = Scan.tileBbox(a), tb = Scan.tileBbox(b);
+      return Scan.distanceMi(mid, [(ta.s + ta.n) / 2, (ta.w + ta.e) / 2]) - Scan.distanceMi(mid, [(tb.s + tb.n) / 2, (tb.w + tb.e) / 2]);
+    });
+    var res = scanRes = { sites: [], running: true, done: 0, total: tiles.length, errors: [], skipped: { residential: 0, dnc: 0, type: 0, outside: 0 }, sources: {}, label: area.label, bbox: area.bbox, at: Date.now(), hail: [] };
+    scanSel = null;
+    updateScanPanel();
+    renderScanResults();
+    drawScanLayer();
+
+    var stop = false;
+    function call(body) { return Cloud.fn(SCAN_FN, 'POST', body); }
+
+    var hailStep = Promise.resolve();
+    if (o.hailDays) {
+      var tries = 0, lastMissing = Infinity;
+      var more = function () {
+        return call({ action: 'hail', days: o.hailDays }).then(function (r) {
+          res.hail = r.reports || [];
+          tries++;
+          if (r.more && tries < 8 && r.missingDays < lastMissing) { lastMissing = r.missingDays; return more(); }
+          if (r.missingDays) res.errors.push('NOAA hail reports missing for ' + r.missingDays + ' day(s)');
+        });
+      };
+      hailStep = more().then(null, function (e) { res.errors.push('hail: ' + e.message); });
+    }
+
+    function oneTile(t) {
+      if (stop || res !== scanRes) return Promise.resolve();
+      return call({ action: 'tile', tile: t, minSqft: o.min }).then(function (r) {
+        var inArea = (r.sites || []).filter(function (s) {
+          var ok = Scan.inBbox([s.lat, s.lng], area.bbox);
+          if (!ok) res.skipped.outside++;
+          return ok;
+        });
+        var chain = Promise.resolve();
+        for (var i = 0; i < inArea.length; i += 60) {
+          (function (part) {
+            chain = chain.then(function () {
+              if (stop || res !== scanRes) return;
+              return call({ action: 'enrich', tile: t, ids: part.map(function (s) { return s.id; }) }).then(function (er) {
+                Object.keys(er.sources || {}).forEach(function (k) { if (!res.sources[k] || res.sources[k] === 'ok') res.sources[k] = er.sources[k]; });
+                var by = {};
+                (er.sites || []).forEach(function (x) { by[x.id] = x; });
+                part.forEach(function (s) {
+                  var x = by[s.id] || {};
+                  if (x.excluded === 'residential') { res.skipped.residential++; return; }
+                  if (x.excluded === 'do-not-contact') { res.skipped.dnc++; return; }
+                  s.parcel = x.parcel || null;
+                  s.permit = x.permit || null;
+                  s.permitsChecked = !!x.permitsChecked;
+                  s.type = x.type || s.type;
+                  s.tile = t;
+                  addScanSite(res, s, o);
+                });
+              });
+            });
+          })(inArea.slice(i, i + 60));
+        }
+        return chain;
+      }).then(function () {
+        res.done++;
+      }, function (e) {
+        res.done++;
+        res.errors.push(e.message || String(e));
+        if (e.code === 'overpass-limit' || e.code === 'user-limit' || e.code === 'signed-out' || e.code === 'no-tables' || e.status === 401 || e.status === 403) stop = true;
+        if (e.code === 'signed-out') report(e);
+      }).then(function () {
+        if (res !== scanRes) return;
+        updateScanPanel();
+        renderScanResults();
+        drawScanLayer();
+      });
+    }
+
+    hailStep.then(function () {
+      return tiles.reduce(function (p, t) { return p.then(function () { return oneTile(t); }); }, Promise.resolve());
+    }).then(function () {
+      if (res !== scanRes) return;
+      res.running = false;
+      updateScanPanel();
+      renderScanResults();
+      drawScanLayer();
+      log('scan', null, res.sites.length + ' buildings ≥ ' + num(o.min) + ' ft², ' + area.label);
+      if (res.errors.length && !res.sites.length) toast(res.errors[res.errors.length - 1], true);
+      else toast('Scan done: ' + res.sites.length + ' buildings');
+    });
+  }
+
+  function addScanSite(res, s, o) {
+    if (res.sites.some(function (x) { return x.id === s.id; })) return;   // a building on two map squares
+    if (o.types.indexOf(s.type) < 0) { res.skipped.type++; return; }
+    s.distMi = Scan.distanceMi([Scan.HOME.lat, Scan.HOME.lng], [s.lat, s.lng]);
+    s.hail = o.hailDays ? Scan.hailNear([s.lat, s.lng], res.hail, o.hailDays, Date.now(), 2) : null;
+    res.sites.push(scoreSite(s));
+  }
+
+  // "Add as lead": the real address, owner and mailing address, footprint area, score and reasons.
+  function addScanLead(id, btn) {
+    var s = scanSite(id);
+    if (!s) return;
+    var dupe = Scan.findExisting(s, state.leads);
+    if (dupe) { openLead(dupe.id); return; }
+    var p = s.parcel || {};
+    var types = state.settings.roofTypes;
+    var rt = (types.filter(function (t) { return t.id === 'tpo'; })[0] || types[0]).id;
+    var county = Scan.COUNTIES[p.county || Scan.countyOf(s.lat, s.lng)];
+    var stateOf = { shelby: 'TN', desoto: 'MS', crittenden: 'AR' }[p.county || Scan.countyOf(s.lat, s.lng)] || '';
+    // The street from the county (or OpenStreetMap); city / state / ZIP from one address lookup, because the person asked.
+    var where = s.address && /,.*\d{5}/.test(s.address) ? Promise.resolve(s.address) : reverseGeocode([s.lat, s.lng]).then(function (a) {
+      if (!a) return p.situs ? titleCase(p.situs) + (stateOf ? ', ' + stateOf : '') : s.address || '';
+      if (!p.situs) return a.address;
+      return [titleCase(p.situs), a.city, [a.state || stateOf, a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    }, function () { return p.situs ? titleCase(p.situs) + (stateOf ? ', ' + stateOf : '') : s.address || ''; });
+    if (btn) btn.disabled = true;
+    where.then(function (address) {
+      var l = {
+        id: Store.newId('L'),
+        name: siteTitle(s),
+        address: address || '',
+        kind: 'commercial',
+        roofType: rt,
+        areaSqft: Math.round(s.areaSqft / 10) * 10,
+        condition: 50,
+        confidence: null,
+        issues: [],
+        owner: { name: '', company: p.owner || '', phone: '', email: '' },
+        ownerMail: p.mail || '',
+        parcel: p.id ? { id: p.id, county: p.county, landUse: p.landUse, yearBuilt: p.yearBuilt, bldgSqft: p.bldgSqft, situs: p.situs } : null,
+        scanId: s.id,
+        scan: { score: s.score, reasons: s.reasons, type: s.type, permit: s.permit, hail: s.hail, at: Date.now() },
+        outline: s.outline,
+        pitch: 'flat',
+        lat: s.lat,
+        lng: s.lng,
+        stage: 'New',
+        assignedTo: '',
+        notes: 'From area scan (score ' + s.score + '): ' + s.reasons.join(' · '),
+        dnc: false,
+        source: 'scan',
+        sourceNote: 'Area scan. Building outline © OpenStreetMap contributors' + (p.owner ? '; owner of record from ' + (county ? county.label : 'county') + ' public records' : ''),
+        demo: false,
+        touched: true
+      };
+      if (s.solar && s.solar.at) l.solar = s.solar;
+      return createLead(l).then(function () {
+        log('create', l, 'from area scan · score ' + s.score);
+        toast('Lead added: ' + l.name);
+        renderScanResults();
+        drawScanLayer();
+      });
+    }).then(null, function () { /* already reported */ }).then(function () { if (btn) btn.disabled = false; });
+  }
+
+  // 📡 Measure: the existing Google Solar function and its monthly limit, one site at a time.
+  function measureScanSite(id, btn) {
+    var s = scanSite(id);
+    if (!s) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Measuring…'; }
+    Cloud.fn('solar-lookup', 'POST', { lat: s.lat, lng: s.lng }).then(function (r) {
+      s.solar = r.found ? { found: true, areaSqft: r.areaSqft, pitch: r.pitch, segments: r.segments, imageryDate: r.imageryDate, imageryQuality: r.imageryQuality, at: Date.now() } : { found: false, at: Date.now() };
+      log('solar', null, (r.found ? num(r.areaSqft) + ' ft²' : 'no roof data') + ' (scan result)');
+      toast(r.found ? 'Google: ' + num(r.areaSqft) + ' ft². Lookups this month: ' + r.usedThisMonth + ' of ' + r.limit + '.' : 'Google has no roof data for this building.');
+      renderScanResults();
+    }, function (e) {
+      report(e);
+      if (btn) { btn.disabled = false; btn.textContent = '📡 Measure'; }
+    });
+  }
+
   // ---- Leads ----------------------------------------------------------------
 
   function viewLeads() {
@@ -672,7 +1145,7 @@
       if (f.cond && U.grade(l.condition).cls !== f.cond) return false;
       if (q) {
         var o = l.owner || {};
-        var hay = [l.name, l.address, o.name, o.company, o.email, o.phone, l.notes].join(' ').toLowerCase();
+        var hay = [l.name, l.address, o.name, o.company, o.email, o.phone, l.notes, l.ownerMail, l.parcel && l.parcel.id].join(' ').toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
       return true;
@@ -701,7 +1174,7 @@
           '<td class="r"><b>' + money(valueOf(l)) + '</b></td>' +
           '<td><span class="stage s-' + l.stage.toLowerCase() + '">' + l.stage + '</span></td>' +
           '<td>' + (esc(userName(l.assignedTo)) || '<span class="muted">Unassigned</span>') + '</td>' +
-          '<td>' + (o.name || o.company ? esc(o.name || o.company) : '<span class="muted">Needs lookup</span>') + (l.dnc ? ' <span class="chip poor">DNC</span>' : '') + '</td>' +
+          '<td>' + (o.name || o.company ? esc(o.name || o.company) : '<span class="muted">Needs lookup</span>') + (l.dnc ? ' <span class="chip poor">DNC</span>' : '') + (l.doNotContact ? ' <span class="chip poor">Do not contact</span>' : '') + '</td>' +
           '<td class="r muted sm">' + U.when(l.updatedAt) + '</td>' +
         '</tr>';
       }).join('') || '<tr><td colspan="' + LEAD_COLS.length + '" class="empty">No leads match. Run a scan on the Map tab, or click “+ Add lead”.</td></tr>') +
@@ -710,14 +1183,15 @@
   }
 
   function exportCsv() {
-    var head = ['ID', 'Property', 'Address', 'Type', 'Roof', 'Area ft2', 'Squares', 'Condition', 'Grade', 'Confidence', 'Cost', 'Estimate', 'Priced by', 'Margin %', 'Stage', 'Assigned', 'Owner', 'Company', 'Phone', 'Email', 'DNC', 'Source', 'Demo', 'Commission split', 'Notes', 'Updated'];
+    var head = ['ID', 'Property', 'Address', 'Type', 'Roof', 'Area ft2', 'Squares', 'Condition', 'Grade', 'Confidence', 'Cost', 'Estimate', 'Priced by', 'Margin %', 'Stage', 'Assigned', 'Owner', 'Company', 'Phone', 'Email', 'DNC', 'Source', 'Demo', 'Commission split', 'Notes', 'Updated', 'Owner mailing address', 'Parcel', 'Scan score', 'Do not contact', 'Phones found (Tracerfy)'];
     var lines = [head];
     state.leads.forEach(function (l) {
       var e = estOf(l), o = l.owner || {};
       lines.push([l.id, l.name, l.address, l.kind, rtOf(l).name, l.areaSqft, Math.round(e.squares * 10) / 10, l.condition, U.grade(l.condition).label, l.confidence || '',
         Math.round(e.cost), Math.round(e.price), e.basis === 'square' ? '$' + e.perSquare + '/square' : state.settings.margin + '% margin', Math.round(e.margin),
         l.stage, userName(l.assignedTo), o.name, o.company, o.phone, o.email, l.dnc ? 'yes' : '', l.source, l.demo ? 'yes' : '', state.settings.commission, l.notes,
-        l.updatedAt ? new Date(l.updatedAt).toISOString() : '']);
+        l.updatedAt ? new Date(l.updatedAt).toISOString() : '', l.ownerMail || '', l.parcel ? l.parcel.id : '', l.scan ? l.scan.score : '', l.doNotContact ? 'yes' : '',
+        l.contact && l.contact.phones ? l.contact.phones.map(function (p) { return p.number + (p.dnc ? ' (DNC)' : '') + (p.litigator ? ' (litigator)' : ''); }).join('; ') : '']);
     });
     var csv = lines.map(function (r) {
       return r.map(function (v) {
@@ -739,7 +1213,8 @@
       'Call only between 8 am and 9 pm local time, and never call a number marked Do-Not-Call (TCPA / DNC rules).</p></div>' +
       '<ol class="calls">' + (list.slice(0, 50).map(function (l, i) {
         var o = l.owner || {};
-        var phone = l.dnc
+        var phone = l.doNotContact ? '<span class="chip poor">Do not contact</span>'
+          : l.dnc
           ? '<span class="chip poor">Do-Not-Call: do not dial</span>'
           : o.phone ? '<a class="phone" href="tel:' + esc(o.phone.replace(/[^\d+]/g, '')) + '">' + esc(o.phone) + '</a>'
           : '<span class="muted">No phone on file (needs owner lookup / skip trace)</span>';
@@ -750,7 +1225,7 @@
             '<div class="muted sm">' + esc(rtOf(l).name) + ' · ' + num(l.areaSqft) + ' ft² · <span class="stage s-' + l.stage.toLowerCase() + '">' + l.stage + '</span></div>' +
             '<div>' + esc([o.name, o.company].filter(Boolean).join(', ')) + ' ' + phone + '</div>' + last + '</div>' +
           '<div class="call-side">' + gradeChip(l) + '<div class="call-val">' + moneyShort(valueOf(l)) + '</div></div>' +
-          '<div class="call-acts">' + (l.dnc ? '' :
+          '<div class="call-acts">' + (l.dnc || l.doNotContact ? '' :
             ['No answer', 'Left voicemail', 'Talked', 'Not interested'].map(function (o2) {
               return '<button class="btn ghost sm" data-act="call" data-id="' + esc(l.id) + '" data-v="' + o2 + '">' + o2 + '</button>';
             }).join('')) +
@@ -763,6 +1238,7 @@
     var l = leadById(id);
     if (!l) return;
     if (l.dnc) { toast('This number is marked Do-Not-Call.', true); return; }
+    if (l.doNotContact) { toast('This owner asked not to be contacted.', true); return; }
     var detail = outcome;
     commitLead(l, function (x) {
       x.lastCall = { ts: Date.now(), outcome: outcome, user: me.id };
@@ -817,7 +1293,7 @@
 
   // ---- Activity -------------------------------------------------------------
 
-  var ACTION_LABEL = { open: 'opened', edit: 'edited', stage: 'moved', call: 'called', create: 'added', flyer: 'printed flyer for', proposal: 'printed proposal for', scan: 'ran a scan:', 'delete': 'deleted', claim: 'claimed', solar: 'measured with Google' };
+  var ACTION_LABEL = { trace: 'looked up the owner of', open: 'opened', edit: 'edited', stage: 'moved', call: 'called', create: 'added', flyer: 'printed flyer for', proposal: 'printed proposal for', scan: 'ran a scan:', 'delete': 'deleted', claim: 'claimed', solar: 'measured with Google' };
 
   function viewActivity() {
     var rows = state.users.map(function (u) {
@@ -895,6 +1371,13 @@
         '<div class="row3"><label>Monthly limit <input type="number" name="solar-limit" min="0" step="1" value="' + ((s.solar && s.solar.monthlyLimit) != null ? s.solar.monthlyLimit : 500) + '"></label></div>' +
         '<p class="fine" id="solar-usage">' + (isCloud() ? 'Checking this month\'s use…' : 'Shown when signed in on the website.') + '</p></section>' +
 
+      '<section class="panel"><h2>Owner contact lookup (Tracerfy)</h2>' +
+        '<p class="muted sm">"📞 Find owner contact" on a lead asks Tracerfy (paid skip tracing) for the owner\'s phones and emails. Each lead is looked up once; "Trace again" asks first. RoofScout stops at this many lookups a month.</p>' +
+        '<div class="row3"><label>Monthly limit <input type="number" name="st-limit" min="0" step="1" value="' + ((s.skiptrace && s.skiptrace.monthlyLimit) != null ? s.skiptrace.monthlyLimit : 200) + '"></label></div>' +
+        '<p class="fine" id="skip-status">' + (isCloud() ? skipStatusText() : 'Shown when signed in on the website.') + '</p></section>' +
+
+      scanSettings() +
+
       '<section class="panel"><h2>Satellite map</h2>' +
         '<p class="muted sm">For business use, Esri (the imagery provider) asks for a key from a free ArcGIS Location Platform account. Without a key the map still shows Esri\'s public imagery.</p>' +
         '<div class="row2">' + field('Esri API key', 'esri-key', (s.map && s.map.esriKey) || '', 'Paste the key from developers.arcgis.com') + '</div>' +
@@ -926,6 +1409,61 @@
         (!isCloud() ? '<label class="btn ghost file-btn">Restore backup<input type="file" id="restore" accept="application/json,.json" hidden></label>' +
           '<button class="btn danger" data-act="reset">Reset demo</button>' : '') +
       '</div></section>';
+  }
+
+  function scanSettings() {
+    var c = scanCfg(), w = Object.assign({}, Scan.DEFAULT_WEIGHTS, c.weights || {}), src = c.sources || {};
+    function srcRow(k, label, note) {
+      var v = src[k] || {};
+      return '<tr><td><label class="check"><input type="checkbox" name="as-' + k + '-on"' + (v.on ? ' checked' : '') + '> ' + label + '</label></td>' +
+        '<td><input name="as-' + k + '-url" value="' + esc(v.url || '') + '" placeholder="' + (k === 'desoto' || k === 'permits' ? 'https://…/MapServer/0' : 'Built-in address') + '"></td><td class="sm muted">' + note + '</td></tr>';
+    }
+    return '<section class="panel" id="scan-settings"><h2>Area scan</h2>' +
+      '<p class="muted sm">Map → Scan an area finds large buildings from public data (OpenStreetMap buildings, county parcels, Memphis permits, NOAA hail). Settings apply to the whole team.</p>' +
+      '<div class="row3"><label>Minimum roof ft² <input type="number" name="as-min" min="3000" step="1000" value="' + (c.minSqft || 10000) + '"></label>' +
+      '<label>Default area <select name="as-area">' + Store.PLACES.map(function (p) { return '<option value="' + p.id + '"' + (p.id === c.defaultArea ? ' selected' : '') + '>' + esc(p.label) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Hail lookback, days (0 = off) <input type="number" name="as-hail" min="0" max="90" step="1" value="' + (Number(c.hailDays) || 0) + '"></label></div>' +
+      '<h3>Score weights</h3><div class="row5">' +
+        [['size', 'Roof size'], ['age', 'Roof age'], ['hail', 'Hail'], ['type', 'Building type'], ['distance', 'Close to Bartlett']].map(function (x) {
+          return '<label>' + x[1] + ' <input type="number" name="as-w-' + x[0] + '" min="0" max="100" step="1" value="' + w[x[0]] + '"></label>';
+        }).join('') + '</div><p class="fine">Relative weights (they need not add up to 100). A roof permit in the last 7 years always lowers the score.</p>' +
+      '<h3>Do not contact</h3><textarea name="as-dnc" rows="4" placeholder="One owner name or parcel ID per line">' + esc(c.doNotContact || '') + '</textarea>' +
+      '<p class="fine">Buildings whose owner of record or parcel matches a line are left out of every scan. Add anyone who asks not to be contacted.</p>' +
+      '<h3>Data sources</h3><div class="table-wrap"><table class="grid edit"><tbody>' +
+        srcRow('shelby', 'Shelby County parcels', 'Shelby County ReGIS. Its terms reserve this data for ReGIS participants and their agents: get an OK from ReGIS@shelbycountytn.gov before turning it on. Until then, results say "owner unknown — look up".') +
+        srcRow('desoto', 'DeSoto County parcels', 'Paste the parcel layer address from DeSoto County GIS, (662) 469-8019.') +
+        srcRow('crittenden', 'Crittenden County parcels', 'Arkansas GIS Office statewide parcels (public open data).') +
+        srcRow('permits', 'Memphis roof permits', 'City of Memphis "DPD Building Permits" on data.memphistn.gov: I want to use this → View API resources → copy the GeoService address (ends in /FeatureServer/0).') +
+      '</tbody></table></div>' +
+      '<div class="row3"><label>Permit records start <input type="date" name="as-permits-since" value="' + esc((src.permits && src.permits.since) || '2021-01-01') + '"></label></div>' +
+      '<details class="mt-sm"><summary class="sm">Advanced</summary><label>Single-family land use (pattern, leave empty for the built-in one) <input name="as-res" value="' + esc(c.residentialPattern || '') + '" placeholder="' + esc(Scan.DEFAULT_RESIDENTIAL) + '"></label></details>' +
+      '<p class="fine" id="scan-status">' + (isCloud() ? 'Checking the scan server…' : 'Shown when signed in on the website.') + '</p></section>';
+  }
+
+  function readScanSettings(form) {
+    var g = function (n) { return form.elements[n] ? form.elements[n].value.trim() : ''; };
+    var on = function (n) { return !!(form.elements[n] && form.elements[n].checked); };
+    var sources = {};
+    ['shelby', 'desoto', 'crittenden', 'permits'].forEach(function (k) {
+      var url = g('as-' + k + '-url');
+      if (url && !/^https:\/\/[^\s?#]+\/(MapServer|FeatureServer)\/\d+$/i.test(url)) throw new Error('Area scan: the address for ' + k + ' must be an https ArcGIS layer address ending in /MapServer/<number> or /FeatureServer/<number>.');
+      sources[k] = { on: on('as-' + k + '-on'), url: url };
+    });
+    sources.permits.since = g('as-permits-since') || '2021-01-01';
+    var pat = g('as-res');
+    if (pat) { try { new RegExp(pat, 'i'); } catch (e) { throw new Error('Area scan: the single-family pattern is not valid.'); } }
+    var weights = {};
+    Object.keys(Scan.DEFAULT_WEIGHTS).forEach(function (k) { weights[k] = Math.max(0, Math.min(100, Number(g('as-w-' + k)) || 0)); });
+    if (!Object.keys(weights).some(function (k) { return weights[k] > 0; })) throw new Error('Area scan: at least one score weight must be more than 0.');
+    return {
+      minSqft: Math.max(3000, Math.round(Number(g('as-min')) || 10000)),
+      defaultArea: g('as-area') || 'bartlett',
+      hailDays: Math.max(0, Math.min(90, Math.round(Number(g('as-hail')) || 0))),
+      weights: weights,
+      doNotContact: form.elements['as-dnc'] ? form.elements['as-dnc'].value : '',
+      residentialPattern: pat,
+      sources: sources
+    };
   }
 
   function field(label, name, val, ph) {
@@ -1001,7 +1539,9 @@
       terms: form.elements.terms.value,
       commission: g('commission'),
       map: { esriKey: g('esri-key') },
-      solar: { monthlyLimit: Math.max(0, Math.round(nums('solar-limit') || 0)) }
+      solar: { monthlyLimit: Math.max(0, Math.round(nums('solar-limit') || 0)) },
+      skiptrace: { monthlyLimit: Math.max(0, Math.round(nums('st-limit') || 0)) },
+      areaScan: readScanSettings(form)
     });
   }
 
@@ -1034,11 +1574,13 @@
       '<ol class="steps">' +
         step('done', 'Lead program', 'Leads, call list, pipeline, leaderboard, estimates, flyers and proposals.') +
         step('done', 'Real leads from the map', 'Find a roof on the satellite map (or search its address), trace its outline to measure it, and save it as a lead. Free.') +
+        step(isCloud() ? 'done' : '', 'Scan an area (public data)', 'Map → Scan an area: draw an area, or pick a ZIP or city, and RoofScout lists the large commercial and industrial buildings in it, scored by roof size, age signals, hail and distance. ' +
+          'Buildings from OpenStreetMap, owners and mailing addresses from county parcel records, roof permits from the City of Memphis, hail from NOAA. Free; Google Solar is used only when you click 📡 Measure.') +
         step(isCloud() ? 'done' : '', '1. Shared database + team sign-in', 'Runs on the GrayCo CRM\'s Supabase project. Everyone with a CRM sign-in gets in with the same email and password and works one shared lead pool from any device. ' +
           (isCloud() ? '<b>On.</b>' : 'Turns on when an admin runs <code>docs/roofscout-setup.sql</code> once in Supabase.')) +
-        step('', '2. Owner data + skip trace', 'Regrid parcel/owner data (~$15–50/mo) plus skip tracing ($0.02–$0.15 per record) for real phones and emails. Check numbers against the Do-Not-Call list before they reach the call list.') +
+        step('', '2. Phones and emails (skip trace)', 'Owner names and mailing addresses now come free from county records in the area scan. Phones and emails still need skip tracing ($0.02–$0.15 per record). Check numbers against the Do-Not-Call list before they reach the call list.') +
         step('', '3. Automatic measurements', 'Google Solar API (low cost) for roof area and pitch from just an address; EagleView ($25–$75/report) when you need a bid-grade report. Until then, trace roofs on the map.') +
-        step('', '4. Real scan: imagery + condition', 'Licensed aerial imagery (Nearmap / EagleView) with condition scoring, or a custom AI model later at volume. The largest cost, which scales with the area scanned. Pilot one zip code first.') +
+        step('', '4. Roof condition from imagery', 'The area scan finds and ranks big roofs but cannot see their condition. Licensed aerial imagery (Nearmap / EagleView) with condition scoring, or a custom AI model later at volume. The largest cost, which scales with the area scanned. Pilot one zip code first.') +
         step('', '5. Move into the GrayCo CRM', 'RoofScout becomes a section of the CRM. Its data is already in the CRM\'s database, so nothing needs copying.') +
       '</ol>' +
       '<div class="panel"><h2>Costs at a glance</h2><ul>' +
@@ -1128,8 +1670,10 @@
           '<label>Company <input name="o-company" value="' + esc(o.company) + '"></label>' +
           '<label>Phone <input type="tel" name="o-phone" value="' + esc(o.phone) + '"></label>' +
           '<label>Email <input type="email" name="o-email" value="' + esc(o.email) + '"></label>' +
+          '<label class="span2">Owner mailing address <input name="o-mail" value="' + esc(l.ownerMail || '') + '"></label>' +
           '<label class="check span2"><input type="checkbox" name="dnc"' + (l.dnc ? ' checked' : '') + '> On the Do-Not-Call list / asked not to be called</label>' +
-          '<p class="fine span2">Only enter contact info you\'ve verified (from the owner, county records or a paid lookup). Never guess.</p>' +
+          '<label class="check span2"><input type="checkbox" name="no-contact"' + (l.doNotContact ? ' checked' : '') + '> Do not contact: the owner asked not to be contacted at all (no calls, texts, mail or email)</label>' +
+          '<p class="fine span2">Only enter contact info you\'ve verified (from the owner, county records or a paid lookup). Never guess.' + (l.source === 'scan' ? ' The company above is the owner of record from county tax records.' : '') + '</p>' +
         '</div></fieldset>' +
         '<fieldset><legend>Pipeline</legend><div class="row2">' +
           '<label>Stage ' + sel('stage', Store.STAGES.map(function (s) { return [s, s]; }), l.stage) + '</label>' +
@@ -1139,6 +1683,11 @@
       '</div><aside>' +
         '<div class="panel est" id="est"></div>' +
         '<div class="panel solar" id="solar-box"></div>' +
+        '<div class="panel contact-box" id="contact-box"></div>' +
+        (l.scan || l.parcel ? '<div class="panel"><h3>From the area scan</h3>' +
+          (l.scan ? '<div class="est-row"><span>Score</span><b>' + esc(l.scan.score) + '</b></div><p class="fine">' + esc((l.scan.reasons || []).join(' · ')) + '</p>' : '') +
+          (l.parcel ? '<p class="fine">Parcel ' + esc(l.parcel.id) + (l.parcel.landUse ? ' · ' + esc(l.parcel.landUse) : '') + (l.parcel.yearBuilt ? ' · built ' + esc(l.parcel.yearBuilt) : '') + (l.parcel.bldgSqft ? ' · ' + num(l.parcel.bldgSqft) + ' ft² building (county)' : '') + '</p>' : '') +
+          (l.sourceNote ? '<p class="fine">' + esc(l.sourceNote) + '</p>' : '') + '</div>' : '') +
         (!isNew && l.updatedBy ? '<p class="fine">Last saved by ' + esc(userName(l.updatedBy)) + ' · ' + U.when(l.updatedAt) + '</p>' : '') +
         (hist.length ? '<div class="panel"><h3>History</h3><ul class="feed sm">' + hist.map(function (a) {
           return '<li><span class="muted">' + U.when(a.ts) + '</span> ' + esc(userName(a.user)) + ' ' + (ACTION_LABEL[a.action] || esc(a.action)) + (a.detail ? ' <span class="muted">' + esc(a.detail) + '</span>' : '') + '</li>';
@@ -1155,7 +1704,102 @@
       '</div></form>');
     solarDraft = l.solar && solarFresh(l.solar) ? Object.assign({}, l.solar) : null;
     renderSolar();
+    renderContact(l);
     updateEstimate();
+  }
+
+  // ---- Owner contact (Tracerfy skip tracing) ---------------------------------
+  //
+  // Paid per lookup, so: only when someone clicks, once per lead (the server keeps the
+  // answer; "Trace again" asks first), within the admin's monthly limit. Phones are shown
+  // with Tracerfy's Do-Not-Call / litigator flags; RoofScout never dials or texts by itself.
+
+  var skipStatus = null;          // { connected, usedThisMonth, limit, balance } from the server
+  var skipBusy = {};              // lead id → lookup running (no double clicks)
+  var SKIP_FN = 'roofscout-skiptrace';
+
+  function skipOn() { return isCloud() && skipStatus && skipStatus.connected; }
+
+  function loadSkipStatus() {
+    if (!isCloud()) return Promise.resolve();
+    return Cloud.fn(SKIP_FN, 'GET', undefined, 'action=status').then(function (s) { skipStatus = s; }, function (e) { skipStatus = { connected: false, error: e.message }; });
+  }
+
+  function skipLeft() { return skipStatus ? Math.max(0, skipStatus.limit - skipStatus.usedThisMonth) : 0; }
+
+  function skipStatusText() {
+    if (!skipStatus) return 'Checking Tracerfy…';
+    if (skipStatus.error) return skipStatus.error;
+    if (!skipStatus.connected) return 'Not connected: add TRACERFY_API_KEY in Netlify (Site configuration → Environment variables), then Trigger deploy. Until then the 📞 Find owner contact button is hidden.';
+    return 'Connected to Tracerfy. Used this month: ' + skipStatus.usedThisMonth + ' of ' + skipStatus.limit + '.' +
+      (skipStatus.balance != null ? ' Tracerfy credit balance: ' + num(skipStatus.balance) + '.' : '');
+  }
+
+  function phoneFlags(p) {
+    var out = [];
+    if (p.dnc === true) out.push('<span class="chip poor">On Do Not Call list</span>');
+    if (p.litigator === true) out.push('<span class="chip poor">TCPA litigator: do not call</span>');
+    if (p.dnc === false && p.litigator !== true) out.push('<span class="chip good">Not on DNC (Tracerfy)</span>');
+    if (p.dnc == null) out.push('<span class="chip demo">not checked against Do Not Call</span>');
+    return out.join(' ');
+  }
+
+  function renderContact(l) {
+    var box = $('#contact-box');
+    if (!box) return;
+    var c = l.contact, html = '<h3>Owner contact</h3>';
+    if (l.doNotContact) html += '<p class="note sm">Do not contact: this owner asked not to be contacted.</p>';
+    if (c) {
+      if (!c.hit) html += '<p class="sm">Tracerfy found no contact for this address.</p>';
+      (c.names || []).forEach(function (n) {
+        html += '<div class="sm"><b>' + esc(n.name) + '</b>' + (n.owner ? ' · property owner' : '') + (n.deceased ? ' · <span class="err">deceased</span>' : '') + (n.litigator ? ' <span class="chip poor">TCPA litigator</span>' : '') + '</div>';
+      });
+      if ((c.phones || []).length) {
+        html += '<ul class="contact-list">' + c.phones.map(function (p) {
+          var bad = p.dnc === true || p.litigator === true;
+          return '<li><span class="phone-num' + (bad ? ' struck' : '') + '">' + esc(p.number) + '</span> <span class="muted sm">' + esc(p.type || '') + '</span><div>' + phoneFlags(p) +
+            (!bad && !l.doNotContact ? ' <button type="button" class="btn ghost sm" data-act="contact-use" data-v="' + esc(p.number) + '">Use</button>' : '') + '</div></li>';
+        }).join('') + '</ul>';
+      }
+      if ((c.emails || []).length) html += '<div class="sm">' + c.emails.map(esc).join('<br>') + '</div>';
+      html += '<p class="fine"><b>Check the National Do Not Call list before cold calls or texts.</b> RoofScout never dials or texts automatically.</p>';
+      html += '<p class="fine">Source: ' + esc(c.source || 'Tracerfy') + ' · ' + esc(String(c.fetchedAt || '').slice(0, 10)) + (c.by ? ' · ' + esc(userName(c.by)) : '') + '</p>';
+    }
+    if (skipOn() && l.id && !l.doNotContact) {
+      html += c
+        ? '<button type="button" class="btn ghost sm" data-act="contact-again"' + (skipBusy[l.id] ? ' disabled' : '') + '>Trace again</button>'
+        : '<p class="fine">Uses 1 Tracerfy lookup — ' + skipLeft() + ' left this month (credits are charged only when Tracerfy finds someone).</p>' +
+          '<button type="button" class="btn ghost block" data-act="contact-find"' + (skipBusy[l.id] ? ' disabled' : '') + '>' + (skipBusy[l.id] ? 'Looking up…' : '📞 Find owner contact') + '</button>';
+    } else if (!c && !l.doNotContact) {
+      html += '<p class="fine">' + (!l.id ? 'Save the lead first.' : isCloud() ? 'Owner phone lookup is not set up (see Settings).' : 'Available when signed in on the website.') + '</p>';
+    }
+    box.innerHTML = html;
+  }
+
+  function findContact(leadId, again, btn) {
+    var l = leadById(leadId);
+    if (!l || !skipOn() || skipBusy[leadId]) return;
+    if (l.doNotContact) { toast('This owner asked not to be contacted.', true); return; }
+    if (skipLeft() <= 0) { toast('This month\'s Tracerfy limit (' + skipStatus.limit + ' lookups) is used up. An admin can raise it in Settings.', true); return; }
+    var msg = (again ? 'Trace again: this asks Tracerfy again and uses another lookup' : 'Find owner contact uses 1 Tracerfy lookup') +
+      ' (credits are charged only when Tracerfy finds someone). ' + skipLeft() + ' of ' + skipStatus.limit + ' lookups left this month' +
+      (skipStatus.balance != null ? '; credit balance ' + num(skipStatus.balance) : '') + '.\n\nOnly for business outreach to the building\'s owner. Continue?';
+    if (!confirm(msg)) return;
+    skipBusy[leadId] = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Looking up…'; }
+    var o = l.owner || {};
+    Cloud.fn(SKIP_FN, 'POST', { leadId: l.id, owner: o.company || o.name || '', address: l.address || '', mail: l.ownerMail || '', again: !!again }).then(function (r) {
+      if (r.limit != null) { skipStatus.usedThisMonth = r.usedThisMonth; skipStatus.limit = r.limit; }
+      return commitLead(l, function (x) { x.contact = r.contact; }).then(function () {
+        if (!r.cached) log('trace', l, r.contact.hit ? (r.contact.phones || []).length + ' phones, ' + (r.contact.emails || []).length + ' emails' : 'no match');
+        toast(r.cached ? 'Already looked up: showing the saved result (no charge).' : r.contact.hit ? 'Found ' + (r.contact.phones || []).length + ' phones and ' + (r.contact.emails || []).length + ' emails.' : 'Tracerfy found no contact (no charge).');
+      });
+    }, function (e) { report(e); }).then(null, function () { /* commitLead already reported it */ }).then(function () {
+      delete skipBusy[leadId];
+      var f = $('#lead-form');
+      if (f && f.dataset.id === leadId) renderContact(leadById(leadId) || l);
+      if (tab === 'map') renderScanResults();
+    });
   }
 
   // ---- Google Solar: measure from address -----------------------------------
@@ -1280,7 +1924,11 @@
     l.lat = isFinite(lat) ? lat : undefined;
     l.lng = isFinite(lng) ? lng : undefined;
     l.owner = { name: e['o-name'].value.trim(), company: e['o-company'].value.trim(), phone: e['o-phone'].value.trim(), email: e['o-email'].value.trim() };
+    l.ownerMail = e['o-mail'].value.trim();
+    if (!l.ownerMail) delete l.ownerMail;
     l.dnc = e.dnc.checked;
+    l.doNotContact = e['no-contact'].checked;
+    if (!l.doNotContact) delete l.doNotContact;
     l.stage = e.stage.value;
     l.assignedTo = e.assignedTo.value;
     l.notes = e.notes.value;
@@ -1341,6 +1989,15 @@
     if ($('#app').hidden) return;
     var b = e.target.closest('[data-act]');
     if (b) { handleAct(b); return; }
+    var sth = e.target.closest('th[data-ssort]');
+    if (sth) {
+      var sf = ui.scan;
+      if (sf.sort === sth.dataset.ssort) sf.dir = -sf.dir; else { sf.sort = sth.dataset.ssort; sf.dir = sth.classList.contains('r') ? -1 : 1; }
+      renderScanResults();
+      return;
+    }
+    var str = e.target.closest('#scan-results tr[data-sid]');
+    if (str) { if (!e.target.closest('a')) selectScanSite(str.dataset.sid, false); return; }
     var th = e.target.closest('th[data-sort]');
     if (th) {
       var f = ui.leads;
@@ -1365,8 +2022,32 @@
       case 'new': newLead(); break;
       case 'scope': setPref('scope', b.dataset.v); break;
       case 'radius': setPref('radius', Number(b.dataset.v)); break;
-      case 'scan': runScan(b); break;
-      case 'trace': startTrace(null); break;
+      case 'scan': if (!isCloud()) runScan(b); break;   // made-up demo sites: local demo mode only
+      case 'trace': if (scanDraw) cancelScanDraw(); startTrace(null); break;
+      case 'scan-mode':
+        readScanOpts();
+        scanOpts().mode = b.dataset.v;
+        if (scanDraw) cancelScanDraw();
+        $('#area-scan').outerHTML = areaScanPanel();
+        break;
+      case 'scan-draw': startScanDraw(); break;
+      case 'scan-run': runAreaScan(); break;
+      case 'scan-clear':
+        scanRes = null; scanSel = null;
+        renderScanResults(); drawScanLayer(); updateScanPanel();
+        break;
+      case 'scan-zoom':
+        var zs = scanSite(id);
+        if (zs) { goTo(zs.lat, zs.lng, 18); selectScanSite(zs.id, false); }
+        break;
+      case 'scan-add': addScanLead(id, b); break;
+      case 'contact-find': findContact(id || ($('#lead-form') && $('#lead-form').dataset.id), false, b); break;
+      case 'contact-again': findContact($('#lead-form') && $('#lead-form').dataset.id, true, b); break;
+      case 'contact-use':
+        var pf = $('#lead-form');
+        if (pf && pf.elements['o-phone']) { pf.elements['o-phone'].value = b.dataset.v; toast('Phone filled in. Save to keep it.'); }
+        break;
+      case 'scan-measure': measureScanSite(id, b); break;
       case 'trace-done': finishTrace(); break;
       case 'trace-undo': if (measure) { measure.points.pop(); drawMeasure(); } break;
       case 'trace-cancel': cancelTrace(); break;
@@ -1392,6 +2073,7 @@
         withBusy(b, saveLeadForm(form)).then(function (lead) {
           refresh();
           if (lead.demo && !confirm('This is a DEMO site with made-up data. Print anyway (practice only)?')) return;
+          if (lead.doNotContact && !confirm('This owner asked not to be contacted. Print anyway (not for sending)?')) return;
           printDoc(act, lead);
         }, function () { /* already reported */ });
         break;
@@ -1476,6 +2158,13 @@
       });
       return;
     }
+    if (form.id === 'scan-where') {
+      e.preventDefault();
+      var wq = $('#scan-where-q').value.trim();
+      if (!wq) return;
+      withBusy(btn, findScanArea(wq)).then(null, function (err) { toast(err.message, true); });
+      return;
+    }
     if (form.id === 'lead-form') {
       e.preventDefault();
       var wasNew = !form.dataset.id;
@@ -1554,6 +2243,11 @@
     if (t.id === 'lead-stage') { ui.leads.stage = t.value; renderLeadTable(); }
     if (t.id === 'lead-cond') { ui.leads.cond = t.value; renderLeadTable(); }
     if (t.id === 'scan-place') setPref('place', t.value);
+    if (t.id === 'scan-hide-leads') { ui.scan.hideLeads = t.checked; renderScanResults(); }
+    if (t.id === 'scan-min' || t.id === 'scan-hail' || t.name === 'scan-type') {
+      readScanOpts();
+      if (scanRes && !scanRes.running) { renderScanResults(); drawScanLayer(); }
+    }
     if (t.id === 'measure-pitch' && measure) { measure.pitch = t.value; drawMeasure(); }
     if (t.id === 'radius-range' || t.id === 'radius-num') setPref('radius', Math.max(0.5, Math.min(500, Number(t.value) || 10)));
     if (t.id === 'restore') restore(t.files[0]);

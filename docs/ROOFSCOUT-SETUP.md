@@ -24,10 +24,15 @@ The results grid at the bottom must say **OK** on every line:
 | RLS on every RoofScout table | OK |
 | only GrayCo staff rules | OK |
 | anon has no RoofScout rights | OK |
+| area scan tables exist | OK |
+| area scan limit function | OK |
+| owner lookup table + functions | OK |
 | staff profiles | *N* profiles (one per person on the staff list) |
 | anon reading rs_leads | OK (permission denied) |
 | signed-in non-staff reading settings | OK (0 rows) |
 | signed-in staff (Wesley) reading settings | OK (1 row) |
+| usage counter hidden from the web | OK (permission denied) |
+| scan cache hidden from the web | OK (permission denied) |
 | activity log cannot be erased | OK (permission denied) |
 
 The script can be run again at any time and gives the same result. It does not touch any CRM table.
@@ -113,8 +118,57 @@ Esri's free tier covers normal office use. The ArcGIS site shows your usage.
 
 **Coverage:** not every building has Google roof data, especially large or new commercial buildings. When it says "no roof data", trace the roof on the map instead (free).
 
+## 6. Scan an area: find big commercial roofs (admin, free)
+
+**Map → Scan an area** lists the large commercial, industrial, church, school and apartment buildings in an area, ranked 0–100 by roof size, roof-age signals, recent hail and distance from Bartlett, each with the reasons ("42,000 ft² · built 1988 · last roof permit 2003 · 1.25" hail 9 days ago"). It uses free public data:
+
+- **Buildings:** OpenStreetMap (through the Overpass service). RoofScout identifies itself, keeps each downloaded map square for 30 days, and stops at a team fair-use limit of 100 fresh map squares a day. Already-scanned areas never count.
+- **Owners and mailing addresses:** the county's parcel records (public records). Use them only for business outreach about the building.
+- **Roof permits:** City of Memphis building permits (records start in 2021).
+- **Hail:** NOAA Storm Prediction Center reports.
+
+Google Solar is **not** used by the scan. Each result has **📡 Measure**, which uses the same monthly limit as step 5.
+
+**Turn it on — checklist (tick each):**
+
+- [ ] **Run `docs/roofscout-setup.sql` again in Supabase** (SQL Editor → paste all → Run). Every line must say OK, including the new ones: *area scan tables exist*, *area scan limit function*, *owner lookup table + functions*, *scan cache hidden from the web*. Safe to repeat.
+- [ ] **Deploy.** The scan is the new Netlify function `roofscout-scan`; it ships with the next deploy (no new environment variable is needed). Then open RoofScout → **Settings → Area scan**: it should say "Scan server ready".
+- [ ] **Shelby County owners (needs an OK first).** Shelby County's parcel service says its data is "for the sole use of ReGIS, its participants and their authorized agents". Email the ReGIS Administrator (ReGIS@shelbycountytn.gov, 160 N Main St, Suite 1000, Memphis TN 38103), say GrayCo staff look up individual commercial parcels for roofing outreach (no resale, no bulk download), and ask for written OK. When they say yes: **Settings → Area scan → Shelby County parcels → tick, Save settings.** Until then, Shelby results say "Owner unknown — look up" with a link to the Assessor's site.
+- [ ] **DeSoto County owners (optional).** Call DeSoto County GIS, (662) 469-8019, ask for the public ArcGIS address of the parcel layer (it ends in `/MapServer/<number>`) and whether business outreach use is fine. Paste it in **Settings → Area scan → DeSoto County parcels**, tick, Save.
+- [ ] **Crittenden County owners:** already on (Arkansas GIS Office open data). Nothing to do.
+- [ ] **Memphis roof permits (optional).** On **data.memphistn.gov** open **DPD Building Permits** → **I want to use this** → **View API resources** → copy the **GeoService** address (ends in `/FeatureServer/0`). Paste it in **Settings → Area scan → Memphis roof permits**, tick, Save.
+- [ ] **Do-not-contact list.** In **Settings → Area scan → Do not contact**, add any owner name or parcel ID that asked not to be contacted (one per line). They are left out of every scan and owner lookup.
+- [ ] **Optional:** change the minimum roof size (10,000 ft²), the default area and the score weights in the same section.
+
+**Using it:** Map tab → **Scan an area** → **Draw** (click two corners on the map), or type a **ZIP** or **City** → set the minimum size, the building types and, if you want, "Hail-hit in last N days" → **🔎 Scan this area**. Results appear on the map and in a sortable list below it. **Add as lead** creates a lead with the address, owner of record, mailing address, measured footprint, score and reasons. Buildings that are already leads (same parcel, address or roof) say **Already a lead**. The largest scan is 30 map squares (about 55 square miles); draw smaller areas for big cities.
+
+**Attribution:** building outlines are © OpenStreetMap contributors (shown on the map, under the results and on each lead's source note).
+
+## 7. Owner phones and emails: Tracerfy (admin)
+
+**📞 Find owner contact** on a lead (and on a scan result once it is a lead) asks **Tracerfy** for the owner's phones and emails. It is paid per lookup, so RoofScout:
+
+- looks a lead up only when someone clicks, and asks first ("uses 1 Tracerfy lookup — N left this month");
+- looks each lead up **once**. Clicking again shows the saved answer for free. **Trace again** asks first, then uses another lookup;
+- stops at a monthly limit you set (**Settings → Owner contact lookup**, 200 to start), counting only lookups that found someone (Tracerfy charges nothing for a miss);
+- refuses leads marked **Do not contact** and owners on the do-not-contact list;
+- shows each phone's **Do Not Call** and **TCPA litigator** flags from Tracerfy, or "not checked against Do Not Call" when Tracerfy didn't say;
+- never dials or texts by itself.
+
+**Turn it on — checklist:**
+
+- [ ] **Netlify → Site configuration → Environment variables:** `TRACERFY_API_KEY` = the key from your Tracerfy account (already added). Then **Deploys → Trigger deploy**.
+- [ ] **Run `docs/roofscout-setup.sql` again** (same as step 6; it adds the one-lookup-per-lead table).
+- [ ] **RoofScout Settings → Owner contact lookup** should say "Connected to Tracerfy" and show the credit balance. Set the monthly limit.
+- [ ] **Recommended:** test once against Tracerfy's free sandbox first: add `TRACERFY_API_URL` = `https://mock.tracerfy.com/v1/api`, deploy, try one lead, then delete the variable and deploy again.
+
+Without the key, the button is hidden and Settings says how to connect it.
+
+**Before calling or texting:** check the National Do Not Call Registry (and Tennessee's list) for any number Tracerfy did not mark, call only 8 am–9 pm, and never use an auto-dialer or send texts to cell phones without consent (TCPA).
+
 ## Finding leads
 
+- **Map tab → Scan an area:** see step 6.
 - **Map tab:** search an address or pan to a roof, click **📐 Trace a roof**, click each corner, then click the first corner again.
   - RoofScout measures the roof and fills in the street address.
   - Pick a **pitch** for sloped roofs (flat / low-slope for most commercial).
@@ -127,7 +181,7 @@ Esri's free tier covers normal office use. The ArcGIS site shows your usage.
 - **Add or remove a person:** do it in the CRM (💎 → Team access). RoofScout follows that list automatically.
 - **Two people edit the same lead at once:** nothing is overwritten. The second person to save is told who changed it, and their editor reloads with the newer version so they can make their change again.
 - **Internet drops:** a change saved while offline is kept on that computer. The header shows "1 change waiting to send", and the change is sent when the connection is back. Don't sign out until it is gone.
-- **Demo leads:** the scan is still a demo (Build tab). Its sites are tagged DEMO and are shared with the team. An admin can clear them all with Settings → Data → **Remove demo leads**.
+- **Demo leads:** the website has no demo data. The made-up practice scan exists only in local demo mode (files opened on a computer). If old DEMO leads are still in the shared list, an admin can clear them all with Settings → Data → **Remove demo leads**.
 
 ## Undo
 

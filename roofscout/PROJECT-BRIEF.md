@@ -2,7 +2,7 @@
 
 The single source of truth for this project. Read this first. It captures every decision made so far so any session or developer can continue without re-reading chat history.
 
-_Last updated: 2026-10-19 (Phase 1 backend; single approximate estimate; MS license)_
+_Last updated: 2026-10-19 (real area scan from public data; Tracerfy owner contact; Phase 1 backend)_
 
 > **Where this lives:** RoofScout sits in its own `roofscout/` folder inside the GrayCo CRM repo. The root `index.html` is the **live GrayCo CRM** (deployed by Netlify from `main`). Never put the RoofScout prototype at the repo root, because that would replace the CRM.
 
@@ -17,7 +17,9 @@ A lead-generation tool for GrayCo Construction Services (commercial roofing, Mem
 - **Login protected, company only:** on the website the GrayCo sign-in is the only way in (client requirement 2026-10-19). Demo mode exists only when the files are opened locally for testing.
 - **No demo data on the website** (2026-10-19). Real leads come from the Map tab: search an address or pan the satellite map, **trace the roof's outline to measure it** (pitch factor for sloped roofs), and save it as a lead. The street address is filled in from the spot (OpenStreetMap Nominatim, only on user action). The old synthetic scan remains only in local demo mode.
 - **Google Solar API built (2026-10-19):** "📡 Measure from address" in each lead. Netlify function `solar-lookup` holds the key (`GOOGLE_SOLAR_API_KEY`), allows signed-in staff only, enforces an admin monthly limit (default 500) counted in `rs_usage`, and keeps Google's figures on a lead for at most 30 days (Google's storage rule). It turns on when the key is added.
-- Still not automatic: owner names / phones / emails (Phase 2: Regrid + Tracerfy) and spotting bad roofs automatically (licensed imagery + condition AI).
+- **Real area scan built (2026-10-19):** Map → **Scan an area** (draw / ZIP / city, minimum roof size, building types, optional hail-hit in the last N days) finds large non-residential buildings from free public data: OpenStreetMap footprints (Overpass, cached 30 days, team fair-use cap), county parcels (owner, mailing address, land use, year built; Shelby off until ReGIS agrees, Crittenden via the Arkansas GIS Office, DeSoto when its layer address is added), City of Memphis roof permits (records from 2021), NOAA SPC hail. Each site gets a 0–100 score with reasons; "Add as lead" saves address, owner of record, mailing address, footprint and score; dedupe by parcel / address / roof. Server function `roofscout-scan`; logic in `js/scan.js`; sources and terms in `docs/ROOFSCOUT-DATA-SOURCES.md`. The made-up demo scan is gone from the website (local demo mode only).
+- **Owner phones / emails built (2026-10-19):** "📞 Find owner contact" uses **Tracerfy** (`TRACERFY_API_KEY`, server function `roofscout-skiptrace`): only on a click, once per lead (re-trace asks first), monthly limit (default 200), DNC / TCPA-litigator flags per phone, per-lead "Do not contact" flag + the do-not-contact list, never auto-dials.
+- Still not automatic: spotting bad roofs (licensed imagery + condition AI).
 - **Works for real today:** leads traced on the map or added by hand, estimates, call list (with Do-Not-Call flag), pipeline + weighted forecast, PM leaderboard, flyers and proposals, shared data, edit-clash protection, and the nightly backup.
 - **Satellite imagery licensing:** Esri asks for an API key (free ArcGIS Location Platform account) for business use. An admin enters it in Settings → Satellite map; until then Esri's public tiles are shown.
 - Hard rule honored throughout: never fabricate or guess real contact info. Real leads require the real data pipeline or contact info a teammate has verified.
@@ -77,7 +79,7 @@ Two paths: (A) License imagery/detection/measurement: recommended to start, live
 
 Build order:
 1. **Backend + logins**: **BUILT 2026-10-19** on the CRM's existing Supabase project and staff sign-in (no new cost). Turn on with `docs/roofscout-setup.sql`.
-2. **Owner data + skip trace** (Regrid ~$15–50/mo; skip trace $0.02–$0.15/record): real owners + phones/emails.
+2. **Owner data + skip trace**: **BUILT 2026-10-19.** Owners and mailing addresses free from county parcel records (area scan); phones/emails from Tracerfy (pay per hit).
 3. **Measurement** (Google Solar API cheap; EagleView $25–$75/report): real roof size & estimates.
 4. **Imagery + condition detection** ("the scan"): Nearmap/EagleView or a custom AI model. The big, pricier phase; cost scales with area.
 

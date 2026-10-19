@@ -1,4 +1,6 @@
 // RoofScout data: defaults, demo-mode saving in this browser, and the DEMO scan.
+// (The real "Scan an area" is js/scan.js + the roofscout-scan server function; the demo
+// scan below runs only in local demo mode, which the website never offers.)
 //
 // Everything the demo scan produces is synthetic and labeled DEMO. Demo phone
 // numbers use the reserved fictional range (555-0100 to 555-0199) and demo
@@ -57,6 +59,24 @@
       map: { esriKey: '' },
       // Google Solar "measure from address": most lookups allowed per month (Google: ~1¢ each after 10,000 free).
       solar: { monthlyLimit: 500 },
+      // Tracerfy "📞 Find owner contact" (paid skip tracing): most lookups allowed per month.
+      skiptrace: { monthlyLimit: 200 },
+      // Map → Scan an area (public data: OpenStreetMap buildings, county parcels, Memphis permits, NOAA hail).
+      // Source URLs left empty use the built-in ones (see netlify/functions/roofscout-scan.js).
+      areaScan: {
+        minSqft: 10000,
+        defaultArea: 'bartlett',
+        hailDays: 0,
+        weights: { size: 30, age: 30, hail: 20, type: 10, distance: 10 },
+        doNotContact: '',
+        residentialPattern: '',
+        sources: {
+          shelby: { on: false, url: '' },        // Shelby County ReGIS: turn on once ReGIS agrees to the use
+          desoto: { on: false, url: '' },        // DeSoto County: paste the parcel layer URL from county GIS
+          crittenden: { on: true, url: '' },     // Arkansas GIS Office statewide parcels (open data)
+          permits: { on: false, url: '', since: '2021-01-01' }   // Memphis DPD Building Permits layer URL
+        }
+      },
       // Proposal terms, one per line. Placeholders: admin should confirm these.
       terms: 'Pricing is an approximate estimate, valid for 30 days from the proposal date. Final price is confirmed after an on-site inspection.\n' +
         'Payment terms: to be confirmed at signing.\n' +

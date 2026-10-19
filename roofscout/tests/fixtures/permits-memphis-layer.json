@@ -1,0 +1,42 @@
+{
+ "currentVersion": 11.3,
+ "id": 0,
+ "name": "DPD_Building_Permits",
+ "type": "Feature Layer",
+ "geometryType": "esriGeometryPoint",
+ "fields": [
+  {
+   "name": "OBJECTID",
+   "type": "esriFieldTypeOID"
+  },
+  {
+   "name": "Permit_Number",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "Issued_Date",
+   "type": "esriFieldTypeDate"
+  },
+  {
+   "name": "Permit_Type",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "Work_Description",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "Address",
+   "type": "esriFieldTypeString"
+  },
+  {
+   "name": "Valuation",
+   "type": "esriFieldTypeDouble"
+  },
+  {
+   "name": "Zip",
+   "type": "esriFieldTypeString"
+  }
+ ],
+ "maxRecordCount": 2000
+}

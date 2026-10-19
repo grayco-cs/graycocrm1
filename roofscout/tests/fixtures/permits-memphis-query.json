@@ -1,0 +1,45 @@
+{
+ "objectIdFieldName": "OBJECTID",
+ "geometryType": "esriGeometryPoint",
+ "spatialReference": {
+  "wkid": 4326
+ },
+ "features": [
+  {
+   "attributes": {
+    "Permit_Number": "BLDC-2023-01234",
+    "Issued_Date": 1681171200000,
+    "Permit_Type": "COM-ALT",
+    "Work_Description": "REROOF - TEAR OFF AND INSTALL 60 MIL TPO",
+    "Address": "6000 STAGE RD"
+   },
+   "geometry": {
+    "x": -89.8434904,
+    "y": 35.2051371
+   }
+  },
+  {
+   "attributes": {
+    "Permit_Number": "BLDC-2022-04567",
+    "Issued_Date": 1661990400000,
+    "Permit_Type": "COM-ALT",
+    "Work_Description": "ROOF REPAIR AT GYM",
+    "Address": "5900 Example Avenue"
+   },
+   "geometry": null
+  },
+  {
+   "attributes": {
+    "Permit_Number": "BLDC-2024-09999",
+    "Issued_Date": 1706832000000,
+    "Permit_Type": "COM-ALT",
+    "Work_Description": "REROOF",
+    "Address": "1 ELSEWHERE ST"
+   },
+   "geometry": {
+    "x": -89.83,
+    "y": 35.219
+   }
+  }
+ ]
+}

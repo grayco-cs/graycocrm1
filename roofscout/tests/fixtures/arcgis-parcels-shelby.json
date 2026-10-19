@@ -1,0 +1,338 @@
+{
+ "displayFieldName": "PARCELID",
+ "fieldAliases": {
+  "OBJECTID": "OBJECTID",
+  "PARCELID": "PARCELID",
+  "OWNER": "OWNER",
+  "OWNADDR": "OWNADDR",
+  "OWNCITY": "OWNCITY",
+  "OWNSTATE": "OWNSTATE",
+  "OWNZIP": "OWNZIP",
+  "PAR_ADR": "PAR_ADR",
+  "LUC": "LUC",
+  "LUC_DESC": "LUC_DESC",
+  "YRBLT": "YRBLT",
+  "SFLA": "SFLA"
+ },
+ "geometryType": "esriGeometryPolygon",
+ "spatialReference": {
+  "wkid": 4326,
+  "latestWkid": 4326
+ },
+ "fields": [
+  {
+   "name": "OBJECTID",
+   "type": "esriFieldTypeOID",
+   "alias": "OBJECTID"
+  },
+  {
+   "name": "PARCELID",
+   "type": "esriFieldTypeString",
+   "alias": "PARCELID"
+  },
+  {
+   "name": "OWNER",
+   "type": "esriFieldTypeString",
+   "alias": "OWNER"
+  },
+  {
+   "name": "OWNADDR",
+   "type": "esriFieldTypeString",
+   "alias": "OWNADDR"
+  },
+  {
+   "name": "OWNCITY",
+   "type": "esriFieldTypeString",
+   "alias": "OWNCITY"
+  },
+  {
+   "name": "OWNSTATE",
+   "type": "esriFieldTypeString",
+   "alias": "OWNSTATE"
+  },
+  {
+   "name": "OWNZIP",
+   "type": "esriFieldTypeString",
+   "alias": "OWNZIP"
+  },
+  {
+   "name": "PAR_ADR",
+   "type": "esriFieldTypeString",
+   "alias": "PAR_ADR"
+  },
+  {
+   "name": "LUC",
+   "type": "esriFieldTypeString",
+   "alias": "LUC"
+  },
+  {
+   "name": "LUC_DESC",
+   "type": "esriFieldTypeString",
+   "alias": "LUC_DESC"
+  },
+  {
+   "name": "YRBLT",
+   "type": "esriFieldTypeInteger",
+   "alias": "YRBLT"
+  },
+  {
+   "name": "SFLA",
+   "type": "esriFieldTypeInteger",
+   "alias": "SFLA"
+  }
+ ],
+ "features": [
+  {
+   "attributes": {
+    "OBJECTID": 808463,
+    "PARCELID": "B0158 00A001",
+    "OWNER": "EXAMPLE LOGISTICS LLC",
+    "OWNADDR": "100 SAMPLE ST STE 200",
+    "OWNCITY": "MEMPHIS",
+    "OWNSTATE": "TN",
+    "OWNZIP": "38103",
+    "PAR_ADR": "6100 EXAMPLE RD",
+    "LUC": "063",
+    "LUC_DESC": "WAREHOUSE",
+    "YRBLT": 1988,
+    "SFLA": 41800
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -89.8451342,
+       35.2048904
+      ],
+      [
+       -89.8438594,
+       35.2048904
+      ],
+      [
+       -89.8438594,
+       35.2054934
+      ],
+      [
+       -89.8451342,
+       35.2054934
+      ],
+      [
+       -89.8451342,
+       35.2048904
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 268591,
+    "PARCELID": "B0158 00A002",
+    "OWNER": "EXAMPLE PLAZA PARTNERS LP",
+    "OWNADDR": "PO BOX 1234",
+    "OWNCITY": "NASHVILLE",
+    "OWNSTATE": "TN",
+    "OWNZIP": "37201",
+    "PAR_ADR": "6000 STAGE RD",
+    "LUC": "052",
+    "LUC_DESC": "SHOPPING CENTER",
+    "YRBLT": 2015,
+    "SFLA": 25500
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -89.8437923,
+       35.2048904
+      ],
+      [
+       -89.842853,
+       35.2048904
+      ],
+      [
+       -89.842853,
+       35.2055482
+      ],
+      [
+       -89.8437923,
+       35.2055482
+      ],
+      [
+       -89.8437923,
+       35.2048904
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 89870,
+    "PARCELID": "B0158 00A003",
+    "OWNER": "EXAMPLE COMMUNITY CHURCH INC",
+    "OWNADDR": "6050 EXAMPLE RD",
+    "OWNCITY": "BARTLETT",
+    "OWNSTATE": "TN",
+    "OWNZIP": "38134",
+    "PAR_ADR": "6050 EXAMPLE RD",
+    "LUC": "081",
+    "LUC_DESC": "CHURCH",
+    "YRBLT": 1975,
+    "SFLA": 11900
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -89.8451342,
+       35.2057127
+      ],
+      [
+       -89.8444632,
+       35.2057127
+      ],
+      [
+       -89.8444632,
+       35.2062061
+      ],
+      [
+       -89.8451342,
+       35.2062061
+      ],
+      [
+       -89.8451342,
+       35.2057127
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 118787,
+    "PARCELID": "B0158 00A005",
+    "OWNER": "DOE JANE",
+    "OWNADDR": "6070 EXAMPLE RD",
+    "OWNCITY": "BARTLETT",
+    "OWNSTATE": "TN",
+    "OWNZIP": "38134",
+    "PAR_ADR": "6070 EXAMPLE RD",
+    "LUC": "062",
+    "LUC_DESC": "SINGLE FAMILY",
+    "YRBLT": 1996,
+    "SFLA": 2400
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -89.8437923,
+       35.2057127
+      ],
+      [
+       -89.8430207,
+       35.2057127
+      ],
+      [
+       -89.8430207,
+       35.2061512
+      ],
+      [
+       -89.8437923,
+       35.2061512
+      ],
+      [
+       -89.8437923,
+       35.2057127
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 416725,
+    "PARCELID": "B0158 00A007",
+    "OWNER": "EXAMPLE APARTMENTS LLC",
+    "OWNADDR": "9 SAMPLE AVE",
+    "OWNCITY": "MEMPHIS",
+    "OWNSTATE": "TN",
+    "OWNZIP": "38117",
+    "PAR_ADR": "5950 EXAMPLE AVE",
+    "LUC": "012",
+    "LUC_DESC": "APARTMENTS",
+    "YRBLT": 2008,
+    "SFLA": 37000
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -89.8451342,
+       35.206261
+      ],
+      [
+       -89.8442619,
+       35.206261
+      ],
+      [
+       -89.8442619,
+       35.206672
+      ],
+      [
+       -89.8451342,
+       35.206672
+      ],
+      [
+       -89.8451342,
+       35.206261
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "attributes": {
+    "OBJECTID": 766130,
+    "PARCELID": "B0158 00A008",
+    "OWNER": "EXAMPLE SCHOOL DISTRICT",
+    "OWNADDR": "160 SAMPLE PLZ",
+    "OWNCITY": "MEMPHIS",
+    "OWNSTATE": "TN",
+    "OWNZIP": "38103",
+    "PAR_ADR": "5900 EXAMPLE AVE",
+    "LUC": "090",
+    "LUC_DESC": "SCHOOL",
+    "YRBLT": 1999,
+    "SFLA": 48000
+   },
+   "geometry": {
+    "rings": [
+     [
+      [
+       -89.8437923,
+       35.206261
+      ],
+      [
+       -89.8426517,
+       35.206261
+      ],
+      [
+       -89.8426517,
+       35.2070284
+      ],
+      [
+       -89.8437923,
+       35.2070284
+      ],
+      [
+       -89.8437923,
+       35.206261
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}
