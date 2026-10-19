@@ -3,7 +3,7 @@
 Commercial roof lead finder for GrayCo Construction Services. Start with [PROJECT-BRIEF.md](PROJECT-BRIEF.md): it holds every decision made so far.
 
 ## Run it
-- **Shared (real use):** `/roofscout/` on the CRM's site. Sign in with your GrayCo CRM email and password. First, an admin turns on the database once: see [docs/ROOFSCOUT-SETUP.md](../docs/ROOFSCOUT-SETUP.md).
+- **Shared (real use):** **https://roofscout.grayco-cs.com** (also `/roofscout/` on the CRM's site). Sign in with your GrayCo CRM email and password. First, an admin turns on the database once and connects the address: see [docs/ROOFSCOUT-SETUP.md](../docs/ROOFSCOUT-SETUP.md).
 - **Demo mode (testing only):** available only when the files are opened on a computer (file:// or localhost), never on the website. It saves only in that browser and is not shared.
 
 The satellite map needs internet.

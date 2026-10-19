@@ -1,8 +1,9 @@
 // GrayCo sign-in + the shared database (the CRM's Supabase project).
 //
 // One sign-in for the CRM and RoofScout: the session is kept under the same
-// browser key the CRM uses (gc_auth_v1), in the same shape, so on the CRM's
-// own site someone signed in to one is signed in to the other. Who may get in
+// browser key the CRM uses (gc_auth_v1), in the same shape, so at
+// crm.grayco-cs.com/roofscout/ someone signed in to one is signed in to the other.
+// (At roofscout.grayco-cs.com the browser keeps a separate sign-in.) Who may get in
 // is the CRM's staff list (gc_staff); people are added and removed in the CRM
 // (💎 → Team access). The anon key below is public by design: on its own it
 // opens nothing, because every table is locked to signed-in staff.
