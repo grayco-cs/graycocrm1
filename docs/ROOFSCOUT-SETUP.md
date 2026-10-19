@@ -53,7 +53,9 @@ RoofScout has its own address: **https://roofscout.grayco-cs.com**. The CRM stay
 
 **Signing in:** use your CRM email and password. The two addresses keep separate sign-ins, so you sign in once on each. Signing out of one does not sign you out of the other.
 
-RoofScout also still opens at `crm.grayco-cs.com/roofscout/` and `graycocrm1.netlify.app/roofscout/`, which is handy before the new address is ready.
+**Inside the CRM:** RoofScout is also a tab in the CRM menu (🏠 RoofScout, under Leads), already signed in. This needs no setup.
+
+RoofScout also still opens at `crm.grayco-cs.com/roofscout/` and `graycocrm1.netlify.app/roofscout/`.
 
 ## 3. First things to set (admin)
 
