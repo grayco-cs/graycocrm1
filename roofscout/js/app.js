@@ -180,6 +180,7 @@
       me = userById(String(email).toLowerCase());
       showApp();
       startPolling();
+      expireSolar();
     }, function (e) {
       if (e.code === 'signed-out' || e.code === 'bad-login') return showLogin(e.code === 'signed-out' ? 'Please sign in again.' : e.message);
       if (e.code === 'no-tables') return loadFailed('RoofScout\'s database is not set up yet. An admin runs docs/roofscout-setup.sql once in Supabase (SQL Editor), then clicks Try again.');
@@ -261,6 +262,12 @@
     v.innerHTML = VIEWS[t]();
     if (t === 'map') initMap();
     if (t === 'leads') renderLeadTable();
+    if (t === 'settings' && isCloud()) {
+      Cloud.fn('solar-lookup', 'GET', undefined, 'action=usage').then(function (u) {
+        var el = $('#solar-usage');
+        if (el) el.textContent = (u.connected ? 'Connected to Google. ' : 'Not connected yet: add GOOGLE_SOLAR_API_KEY in Netlify. ') + 'Used this month: ' + u.usedThisMonth + ' of ' + u.limit + '.';
+      }, function (e) { var el = $('#solar-usage'); if (el) el.textContent = e.message; });
+    }
     window.scrollTo(0, keepScroll ? y : 0);
     showPending();
   }
@@ -810,7 +817,7 @@
 
   // ---- Activity -------------------------------------------------------------
 
-  var ACTION_LABEL = { open: 'opened', edit: 'edited', stage: 'moved', call: 'called', create: 'added', flyer: 'printed flyer for', proposal: 'printed proposal for', scan: 'ran a scan:', 'delete': 'deleted', claim: 'claimed' };
+  var ACTION_LABEL = { open: 'opened', edit: 'edited', stage: 'moved', call: 'called', create: 'added', flyer: 'printed flyer for', proposal: 'printed proposal for', scan: 'ran a scan:', 'delete': 'deleted', claim: 'claimed', solar: 'measured with Google' };
 
   function viewActivity() {
     var rows = state.users.map(function (u) {
@@ -883,6 +890,11 @@
         field('MS license #', 'co-licms', co.licMS, 'Fill in the real number') +
       '</div><p class="fine">Every flyer and proposal lists Tennessee, Arkansas and Mississippi, with the numbers once they are filled in.</p></section>' +
 
+      '<section class="panel"><h2>Google Solar (measure from address)</h2>' +
+        '<p class="muted sm">The first 10,000 lookups a month are free from Google, then about 1¢ each. RoofScout stops at this many a month.</p>' +
+        '<div class="row3"><label>Monthly limit <input type="number" name="solar-limit" min="0" step="1" value="' + ((s.solar && s.solar.monthlyLimit) != null ? s.solar.monthlyLimit : 500) + '"></label></div>' +
+        '<p class="fine" id="solar-usage">' + (isCloud() ? 'Checking this month\'s use…' : 'Shown when signed in on the website.') + '</p></section>' +
+
       '<section class="panel"><h2>Satellite map</h2>' +
         '<p class="muted sm">For business use, Esri (the imagery provider) asks for a key from a free ArcGIS Location Platform account. Without a key the map still shows Esri\'s public imagery.</p>' +
         '<div class="row2">' + field('Esri API key', 'esri-key', (s.map && s.map.esriKey) || '', 'Paste the key from developers.arcgis.com') + '</div>' +
@@ -925,7 +937,7 @@
     var e = Pricing.estimate(100, t, state.settings.margin);
     return '<tr data-rt="' + esc(t.id) + '">' +
       '<td><input name="rt-name" value="' + esc(t.name) + '" required></td>' +
-      '<td class="r"><input type="number" name="rt-sq" min="0" step="5" value="' + (t.perSquare || 0) + '"></td>' +
+      '<td class="r"><input type="number" name="rt-sq" min="0" step="1" value="' + (t.perSquare || 0) + '"></td>' +
       '<td class="r"><input type="number" name="rt-mat" min="0" step="0.05" value="' + t.mat + '"></td>' +
       '<td class="r"><input type="number" name="rt-labor" min="0" step="0.05" value="' + t.labor + '"></td>' +
       '<td class="r rt-cost">$' + Pricing.costPerSqft(t).toFixed(2) + '</td>' +
@@ -988,7 +1000,8 @@
       company: { name: g('co-name'), phone: g('co-phone'), email: g('co-email'), website: g('co-website'), address: g('co-address'), insurance: g('co-ins'), licTN: g('co-lictn'), licAR: g('co-licar'), licMS: g('co-licms') },
       terms: form.elements.terms.value,
       commission: g('commission'),
-      map: { esriKey: g('esri-key') }
+      map: { esriKey: g('esri-key') },
+      solar: { monthlyLimit: Math.max(0, Math.round(nums('solar-limit') || 0)) }
     });
   }
 
@@ -1106,7 +1119,8 @@
           '<label class="span2">Issues seen (comma separated) <input name="issues" value="' + esc((l.issues || []).join(', ')) + '"></label>' +
           '<label>Latitude <input type="number" name="lat" step="any" value="' + (typeof l.lat === 'number' ? l.lat.toFixed(6) : '') + '" placeholder="optional, for the map"></label>' +
           '<label>Longitude <input type="number" name="lng" step="any" value="' + (typeof l.lng === 'number' ? l.lng.toFixed(6) : '') + '" placeholder="optional"></label>' +
-          (l.outline || (isNew && draftExtras) ? '<p class="fine span2">Area traced on the satellite map' + ((l.pitch || (draftExtras && draftExtras.pitch)) && (l.pitch || draftExtras.pitch) !== 'flat' ? ', ' + (l.pitch || draftExtras.pitch) + '/12 pitch' : ', flat / low-slope') + '. Verify on site.</p>' : '') +
+          (l.areaSource === 'google' ? '<p class="fine span2">Area from Google roof data (Solar API). Verify on site.</p>' : '') +
+          (l.areaSource !== 'google' && (l.outline || (isNew && draftExtras)) ? '<p class="fine span2">Area traced on the satellite map' + ((l.pitch || (draftExtras && draftExtras.pitch)) && (l.pitch || draftExtras.pitch) !== 'flat' ? ', ' + (l.pitch || draftExtras.pitch) + '/12 pitch' : ', flat / low-slope') + '. Verify on site.</p>' : '') +
           (l.confidence ? '<p class="fine span2">Grading confidence from imagery: ' + l.confidence + '%</p>' : '') +
         '</div></fieldset>' +
         '<fieldset><legend>Owner / manager contact</legend><div class="row2">' +
@@ -1124,6 +1138,7 @@
         '</div></fieldset>' +
       '</div><aside>' +
         '<div class="panel est" id="est"></div>' +
+        '<div class="panel solar" id="solar-box"></div>' +
         (!isNew && l.updatedBy ? '<p class="fine">Last saved by ' + esc(userName(l.updatedBy)) + ' · ' + U.when(l.updatedAt) + '</p>' : '') +
         (hist.length ? '<div class="panel"><h3>History</h3><ul class="feed sm">' + hist.map(function (a) {
           return '<li><span class="muted">' + U.when(a.ts) + '</span> ' + esc(userName(a.user)) + ' ' + (ACTION_LABEL[a.action] || esc(a.action)) + (a.detail ? ' <span class="muted">' + esc(a.detail) + '</span>' : '') + '</li>';
@@ -1138,7 +1153,95 @@
         (!isNew && isAdmin() ? '<button type="button" class="btn danger" data-act="del-lead">Delete</button>' : '') +
         '<button type="button" class="btn ghost" data-act="close">Close</button>' +
       '</div></form>');
+    solarDraft = l.solar && solarFresh(l.solar) ? Object.assign({}, l.solar) : null;
+    renderSolar();
     updateEstimate();
+  }
+
+  // ---- Google Solar: measure from address -----------------------------------
+  //
+  // Google's terms limit keeping Solar API results: a lead keeps Google's figures
+  // for 30 days at most (then they are re-fetched or removed). Areas a person
+  // traced or typed stay for good.
+
+  var SOLAR_DAYS = 30;
+  var solarDraft = null;   // Google's result for the lead open in the editor
+
+  function solarFresh(sol) { return sol && sol.at && Date.now() - sol.at < SOLAR_DAYS * 864e5; }
+
+  function renderSolar(msg, busyNow) {
+    var box = $('#solar-box');
+    if (!box) return;
+    var head = '<h3>Google roof measurement</h3>';
+    if (!isCloud()) { box.innerHTML = head + '<p class="fine">Available when signed in on the website.</p>'; return; }
+    var s = solarDraft;
+    var html = head;
+    if (s && s.found) {
+      html += '<div class="est-big">' + num(s.areaSqft) + ' ft²</div>' +
+        '<div class="est-row"><span>Main pitch</span><b>' + (s.pitch == null ? '—' : s.pitch === 0 ? 'flat' : s.pitch + '/12') + '</b></div>' +
+        '<div class="est-row"><span>Roof sections</span><b>' + s.segments + '</b></div>' +
+        '<div class="est-row"><span>Photo date · quality</span><b>' + esc(s.imageryDate || '?') + ' · ' + esc(String(s.imageryQuality || '?').toLowerCase()) + '</b></div>' +
+        '<div class="btn-row mt-sm"><button type="button" class="btn primary sm" data-act="solar-use">Use this size</button>' +
+        '<button type="button" class="btn ghost sm" data-act="solar"' + (busyNow ? ' disabled' : '') + '>Look up again</button></div>';
+    } else if (s && !s.found) {
+      html += '<p class="sm">Google has no roof data for this spot. Trace the roof on the map instead (free).</p>' +
+        '<button type="button" class="btn ghost sm" data-act="solar"' + (busyNow ? ' disabled' : '') + '>Try again</button>';
+    } else {
+      html += '<p class="fine">One click measures the roof from the address or map spot (Google Solar API, about 1¢ a lookup after the free amount).</p>' +
+        '<button type="button" class="btn ghost block" data-act="solar"' + (busyNow ? ' disabled' : '') + '>' + (busyNow ? 'Measuring…' : '📡 Measure from address') + '</button>';
+    }
+    if (msg) html += '<p class="fine">' + esc(msg) + '</p>';
+    html += '<p class="fine">Roof data © Google. Kept for ' + SOLAR_DAYS + ' days, then refreshed.</p>';
+    box.innerHTML = html;
+  }
+
+  function solarLookup() {
+    var form = $('#lead-form');
+    if (!form) return;
+    var e = form.elements;
+    var lat = Number(e.lat.value), lng = Number(e.lng.value);
+    var where = (e.lat.value !== '' && e.lng.value !== '') ? Promise.resolve([lat, lng]) :
+      (e.address.value.trim() ? geocode(e.address.value.trim()).then(function (list) {
+        if (!list || !list.length) throw new Error('Could not find that address. Add the city, or trace the roof on the map.');
+        e.lat.value = Number(list[0].lat).toFixed(6);
+        e.lng.value = Number(list[0].lon).toFixed(6);
+        return [Number(list[0].lat), Number(list[0].lon)];
+      }) : Promise.reject(new Error('Enter the address (or trace the roof on the map) first.')));
+    renderSolar('', true);
+    where.then(function (p) {
+      return Cloud.fn('solar-lookup', 'POST', { lat: p[0], lng: p[1] });
+    }).then(function (r) {
+      if (!$('#lead-form')) return;
+      solarDraft = r.found ? {
+        found: true, areaSqft: r.areaSqft, pitch: r.pitch, segments: r.segments,
+        imageryDate: r.imageryDate, imageryQuality: r.imageryQuality, at: Date.now()
+      } : { found: false, at: Date.now() };
+      renderSolar(r.limit ? 'Lookups this month: ' + r.usedThisMonth + ' of ' + r.limit + '.' : '');
+      var id = $('#lead-form').dataset.id;
+      log('solar', id ? leadById(id) : null, r.found ? num(r.areaSqft) + ' ft²' : 'no roof data');
+    }, function (err) {
+      renderSolar(err.message || String(err));
+    });
+  }
+
+  function useSolarSize() {
+    var form = $('#lead-form');
+    if (!form || !solarDraft || !solarDraft.found) return;
+    form.elements.areaSqft.value = solarDraft.areaSqft;
+    solarDraft.used = true;
+    updateEstimate();
+    toast('Using Google\'s size: ' + num(solarDraft.areaSqft) + ' ft². Save to keep it.');
+  }
+
+  // Google's figures older than 30 days come off every lead (the area a person chose stays).
+  function expireSolar() {
+    if (!isCloud()) return;
+    state.leads.forEach(function (l) {
+      if (!l.solar || solarFresh(l.solar)) return;
+      var keep = l.solar;
+      delete l.solar;
+      B.saveLead(l).then(null, function () { l.solar = keep; });
+    });
   }
 
   // Live estimate in the lead editor, from what's typed right now.
@@ -1181,6 +1284,12 @@
     l.stage = e.stage.value;
     l.assignedTo = e.assignedTo.value;
     l.notes = e.notes.value;
+    if (solarDraft && solarDraft.at) {
+      l.solar = { found: solarDraft.found, areaSqft: solarDraft.areaSqft, pitch: solarDraft.pitch, segments: solarDraft.segments,
+        imageryDate: solarDraft.imageryDate, imageryQuality: solarDraft.imageryQuality, at: solarDraft.at };
+      if (solarDraft.used && l.areaSqft === solarDraft.areaSqft) l.areaSource = 'google';
+    } else delete l.solar;
+    if (l.areaSource === 'google' && (!l.solar || l.areaSqft !== l.solar.areaSqft)) delete l.areaSource;
   }
 
   // Save what's in the lead editor. Resolves with the saved lead.
@@ -1267,6 +1376,8 @@
         closeModal();
         startTrace(ml.id);
         break;
+      case 'solar': solarLookup(); break;
+      case 'solar-use': useSolarSize(); break;
       case 'geo-go':
         var hit = ($('#geo-results')._results || [])[Number(b.dataset.i)];
         if (hit) goTo(Number(hit.lat), Number(hit.lon), 19);

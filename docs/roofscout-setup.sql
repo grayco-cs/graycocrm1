@@ -8,7 +8,7 @@
 -- pricing and branding; everyone on the staff list works the shared lead pool.
 --
 -- What it does — and it changes NOTHING in the CRM's own tables:
---   1. creates rs_leads, rs_activity, rs_settings, rs_profiles
+--   1. creates rs_leads, rs_activity, rs_settings, rs_profiles, rs_usage
 --   2. rules: only signed-in GrayCo staff can use them; only admins change settings;
 --      the activity log can be added to but never edited or erased through the web;
 --      the public (anon) key gets nothing
@@ -87,6 +87,22 @@ create table if not exists public.rs_profiles (
   updated_by  text not null default ''
 );
 
+-- Paid-service lookups per month (Google Solar …), so the admin's monthly limit holds.
+-- Only the server (Netlify function, service key) reads or writes it.
+create table if not exists public.rs_usage (
+  kind   text not null,
+  month  text not null check (month ~ '^\d{4}-\d{2}$'),
+  count  integer not null default 0,
+  primary key (kind, month)
+);
+create or replace function public.rs_bump_usage(p_kind text, p_month text)
+returns integer language sql security definer set search_path = public, pg_temp as $$
+  insert into public.rs_usage (kind, month, count) values (p_kind, p_month, 1)
+  on conflict (kind, month) do update set count = public.rs_usage.count + 1
+  returning count;
+$$;
+revoke all on function public.rs_bump_usage(text, text) from public, anon, authenticated;
+
 -- The database, not the browser, says who made a change and when.
 create or replace function public.rs_stamp()
 returns trigger language plpgsql set search_path = public, pg_temp as $$
@@ -125,8 +141,9 @@ alter table public.rs_leads    enable row level security;
 alter table public.rs_activity enable row level security;
 alter table public.rs_settings enable row level security;
 alter table public.rs_profiles enable row level security;
+alter table public.rs_usage    enable row level security;   -- no rules: server only
 
-revoke all on public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles from public, anon, authenticated;
+revoke all on public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles, public.rs_usage from public, anon, authenticated;
 
 -- Leads: every signed-in staff member, one shared pool.
 drop policy if exists gc_staff_all on public.rs_leads;
@@ -169,14 +186,14 @@ create temporary table if not exists rs_verify (check_name text, result text);
 truncate rs_verify;
 
 insert into rs_verify
-select 'RoofScout tables exist', case when count(*) = 4 then 'OK' else 'PROBLEM: only ' || count(*) || ' of 4' end
+select 'RoofScout tables exist', case when count(*) = 5 then 'OK' else 'PROBLEM: only ' || count(*) || ' of 5' end
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles');
+where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles', 'rs_usage');
 
 insert into rs_verify
 select 'RLS on every RoofScout table', coalesce('PROBLEM: RLS off on ' || string_agg(c.relname, ', '), 'OK')
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles') and not c.relrowsecurity;
+where n.nspname = 'public' and c.relname in ('rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles', 'rs_usage') and not c.relrowsecurity;
 
 insert into rs_verify
 select 'only GrayCo staff rules', coalesce('PROBLEM: ' || string_agg(tablename || '.' || policyname, ', '), 'OK')
@@ -217,6 +234,16 @@ begin
 
   begin
     set local role authenticated;
+    execute 'select count(*) from public.rs_usage' into n;
+    reset role;
+    insert into rs_verify values ('usage counter hidden from the web', 'PROBLEM: readable');
+  exception when insufficient_privilege then
+    reset role;
+    insert into rs_verify values ('usage counter hidden from the web', 'OK (permission denied)');
+  end;
+
+  begin
+    set local role authenticated;
     execute 'delete from public.rs_activity';
     reset role;
     insert into rs_verify values ('activity log cannot be erased', 'PROBLEM: delete allowed');
@@ -229,5 +256,6 @@ end $$;
 select * from rs_verify;
 
 -- UNDO (removes RoofScout's tables and everything in them — the CRM is not touched):
--- drop table if exists public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles;
+-- drop table if exists public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles, public.rs_usage;
 -- drop function if exists public.rs_stamp();
+-- drop function if exists public.rs_bump_usage(text, text);

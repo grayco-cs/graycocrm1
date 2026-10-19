@@ -55,6 +55,8 @@
       commission: '15 / 60 / 40',
       // Esri API key for the satellite map (business use). Empty = Esri's public tiles.
       map: { esriKey: '' },
+      // Google Solar "measure from address": most lookups allowed per month (Google: ~1¢ each after 10,000 free).
+      solar: { monthlyLimit: 500 },
       // Proposal terms, one per line. Placeholders: admin should confirm these.
       terms: 'Pricing is an approximate estimate, valid for 30 days from the proposal date. Final price is confirmed after an on-site inspection.\n' +
         'Payment terms: to be confirmed at signing.\n' +
