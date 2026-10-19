@@ -75,7 +75,7 @@ async function gcStaffAuth(event){
   if (svc) {
     try {
       const r = await fetch(url + '/rest/v1/gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(email),
-        { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+        { headers: keyHeaders(svc) });
       if (r.ok) {
         listed = true;
         const rows = await r.json();
@@ -130,7 +130,20 @@ function arr(v){
 }
 function sbUrl(){ return (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, ''); }
 function svcKey(){ return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''; }
-function H(extra){ const k = svcKey(); return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {}); }
+/* Supabase keys: the classic service_role key is a JWT (sent as apikey AND Bearer). The newer
+   "sb_secret_…" keys are NOT JWTs: Supabase refuses them in the Authorization header, so they go
+   in apikey only (the gateway does the rest). Sending one as Bearer is what fails as "not accepted". */
+function isJwt(k){ return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(String(k || '')); }
+function keyHeaders(k){ return isJwt(k) ? { apikey: k, Authorization: 'Bearer ' + k } : { apikey: k }; }
+function keyKind(k){
+  k = String(k || '').trim();
+  if (!k) return 'missing';
+  if (/^sb_secret_/.test(k)) return 'secret key (sb_secret_…) — ok';
+  if (/^sb_publishable_/.test(k)) return 'WRONG: this is the publishable key — use the secret / service_role key';
+  if (isJwt(k)) { try { const role = JSON.parse(Buffer.from(k.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')).role; return role === 'service_role' ? 'service_role key — ok' : 'WRONG: this key is the "' + role + '" key — use the service_role key'; } catch (e) { return 'a JWT that could not be read'; } }
+  return 'not a Supabase key format';
+}
+function H(extra){ return Object.assign(keyHeaders(svcKey()), { 'Content-Type': 'application/json' }, extra || {}); }
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
 /* ── the CRM's records (gc_kv), read with the service key ─────────────────────
@@ -501,10 +514,21 @@ async function tokenRow(token){
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   return row;
 }
+/* what went wrong, in plain words (shown on the job card) */
+function dbError(status, what){
+  const e = new Error(what || 'db');
+  if (status === 0) e.plain = 'The server cannot reach Supabase — check SUPABASE_URL on Netlify.';
+  else if (status === 401 || status === 403) e.plain = 'Server setting wrong: Supabase does not accept SUPABASE_SERVICE_KEY (it must be the service_role key).';
+  else if (status === 404 || status === 400) { e.setup = true; e.plain = 'Portal not set up: run docs/portal-setup.sql in Supabase.'; }
+  else e.plain = 'The database answered ' + status + ' — try again in a minute.';
+  return e;
+}
+async function sbFetch(url, init){
+  try { return await fetch(url, init); } catch (e) { throw dbError(0); }
+}
 async function activeFor(pid){
-  const r = await fetch(sbUrl() + '/rest/v1/gc_portal?select=token,created_at,last_viewed_at&revoked=eq.false&project_id=eq.' + encodeURIComponent(pid) + '&order=created_at.desc&limit=1', { headers: H() });
-  if (r.status === 404 || r.status === 400) { const e = new Error('setup'); e.setup = true; throw e; }
-  if (!r.ok) throw new Error('gc_portal read ' + r.status);
+  const r = await sbFetch(sbUrl() + '/rest/v1/gc_portal?select=token,created_at,last_viewed_at&revoked=eq.false&project_id=eq.' + encodeURIComponent(pid) + '&order=created_at.desc&limit=1', { headers: H() });
+  if (!r.ok) throw dbError(r.status, 'gc_portal read');
   const rows = await r.json();
   return (Array.isArray(rows) && rows[0]) || null;
 }
@@ -512,19 +536,18 @@ async function createFor(pid, by){
   const have = await activeFor(pid);
   if (have) return have.token;
   const token = newToken();
-  const r = await fetch(sbUrl() + '/rest/v1/gc_portal', { method: 'POST', headers: H({ Prefer: 'return=minimal' }),
+  const r = await sbFetch(sbUrl() + '/rest/v1/gc_portal', { method: 'POST', headers: H({ Prefer: 'return=minimal' }),
     body: JSON.stringify({ token: token, project_id: pid, created_by: clip(by, 120), revoked: false }) });
   if (!r.ok) {
     const again = await activeFor(pid);     /* someone else made it this instant (one active link per job) */
     if (again) return again.token;
-    if (r.status === 404) { const e = new Error('setup'); e.setup = true; throw e; }
-    throw new Error('gc_portal write ' + r.status);
+    throw dbError(r.status, 'gc_portal write');
   }
   return token;
 }
 async function revokeFor(pid){
-  const r = await fetch(sbUrl() + '/rest/v1/gc_portal?revoked=eq.false&project_id=eq.' + encodeURIComponent(pid), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ revoked: true }) });
-  if (!r.ok) throw new Error('gc_portal update ' + r.status);
+  const r = await sbFetch(sbUrl() + '/rest/v1/gc_portal?revoked=eq.false&project_id=eq.' + encodeURIComponent(pid), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ revoked: true }) });
+  if (!r.ok) throw dbError(r.status, 'gc_portal update');
 }
 function baseUrl(event){
   const env = s(process.env.PORTAL_BASE_URL).replace(/\/$/, '');
@@ -553,6 +576,10 @@ function noteBad(ip){ const h = hits.get(ip); if (h) h.bad++; }
 /* ── final invoice e-mail + the 15-day reminder (shared with portal-reminders.js) ── */
 const DAY = 86400e3, REMIND_EVERY = 15 * DAY;
 function mailOff(){ return process.env.PORTAL_MAIL_OFF === '1' || process.env.PORTAL_MAIL_OFF === 'true'; }
+/* Owner rule (19 Oct 2026): no automatic e-mail goes to a customer without a person approving it.
+   Until the approval list ships, every automatic send (new-job link, new-paper notice, final invoice and
+   its reminders) becomes an Office to-do instead. PORTAL_AUTO_EMAIL=1 on Netlify turns automatic sending back on. */
+function needsApproval(){ return process.env.PORTAL_AUTO_EMAIL !== '1'; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function usd(n){ return '$' + money(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function mailHtml(kind, v, link){
@@ -645,13 +672,14 @@ async function runReminders(opts){
       const view = await buildView(data, p);
       const to = s(view.customer.email);
       const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
-      if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff()) {
+      if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || needsApproval()) {
         if (!prev || !prev.todo_at) {
           if (!(await claim(invId, pid, prev, nowIso))) { report.skipped++; continue; }
-          const why = !okEmail ? 'There is no good customer e-mail on file.' : 'E-mail is not set up on Netlify (RESEND_API_KEY).';
-          await officeTodo('portal_final_' + invId, 'Send the final invoice by hand — ' + (p.name || 'job'),
-            why + ' The invoice is in the customer portal. Text or call the customer with the portal link (job → Customer portal → Copy link).');
-          await patchMail(invId, { todo_at: nowIso, last_result: !okEmail ? 'no-email' : 'no-mail-key' });
+          const appr = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
+          const why = appr ? 'Waiting for approval — nothing was e-mailed to the customer.' : (!okEmail ? 'There is no good customer e-mail on file.' : 'E-mail is not set up on Netlify (RESEND_API_KEY).');
+          await officeTodo('portal_final_' + invId, (appr ? 'Approve & send the final invoice — ' : 'Send the final invoice by hand — ') + (p.name || 'job'),
+            why + ' The invoice is in the customer portal. Send it yourself: job → Customer portal → Email it or Text it (or call the customer).');
+          await patchMail(invId, { todo_at: nowIso, last_result: appr ? 'approval' : (!okEmail ? 'no-email' : 'no-mail-key') });
           report.todos++;
         } else report.skipped++;   /* already on the to-do list: no second to-do (an e-mail added later is used on the next run) */
         continue;
@@ -735,15 +763,16 @@ async function sendLink(pid, event, who){
   const link = linkFor(event, token);
   const to = s(view.customer.email);
   const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
-  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff()) {
-    if (row.link_todo_at) return { ok: true, todo: true, already: true };
+  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || needsApproval()) {
+    if (row.link_todo_at) return { ok: true, todo: true, approval: needsApproval(), already: true };
     const c = await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token) + '&link_todo_at=is.null', { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ link_todo_at: new Date(now).toISOString() }) });
     const got = c.ok ? await c.json().catch(function(){ return []; }) : [];
     if (!Array.isArray(got) || got.length !== 1) return { ok: true, todo: true, already: true };
     const name = view.customer.name || p.client || 'the customer';
-    await officeTodo('portal_link_' + pid, 'Send portal link to ' + name,
-      (!okEmail ? 'No customer e-mail on file' : 'E-mail is not set up on Netlify (RESEND_API_KEY)') + ' for ' + (p.name || 'the job') + '. Open the job → Customer portal → Text it or Copy link.');
-    return { ok: true, todo: true };
+    const apprL = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
+    await officeTodo('portal_link_' + pid, (apprL ? 'Approve & send portal link to ' : 'Send portal link to ') + name,
+      (apprL ? 'Waiting for approval — nothing was e-mailed' : (!okEmail ? 'No customer e-mail on file' : 'E-mail is not set up on Netlify (RESEND_API_KEY)')) + ' for ' + (p.name || 'the job') + '. Open the job → Customer portal → Email it, Text it or Copy link.');
+    return { ok: true, todo: true, approval: apprL };
   }
   const nowIso = new Date(now).toISOString();
   const c = await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token) + '&sent_at=is.null', { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ sent_at: nowIso, sent_via: 'email' }) });
@@ -835,11 +864,12 @@ async function notifyDocs(pid, event, opts){
   const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
   const done = mine.map(function(x){ return String(x.doc_key).split('|').slice(1).join('|'); });
   async function mark(result){ await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + batch, { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: result }) }); }
-  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff()) {
-    await officeTodo('portal_docs_' + pid, 'Tell ' + (view.customer.name || p.client || 'the customer') + ' about new papers in their portal',
-      (!okEmail ? 'No customer e-mail on file' : 'E-mail is not set up on Netlify (RESEND_API_KEY)') + ' for ' + (p.name || 'the job') + ': ' + mine.map(function(x){ return x.title; }).join(', ') + '. Open the job → Customer portal → Text it.');
-    await mark('todo');
-    return { ok: true, todo: true, keys: done };
+  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || needsApproval()) {
+    const apprD = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
+    await officeTodo('portal_docs_' + pid, (apprD ? 'Approve & tell ' : 'Tell ') + (view.customer.name || p.client || 'the customer') + ' about new papers in their portal',
+      (apprD ? 'Waiting for approval — nothing was e-mailed' : (!okEmail ? 'No customer e-mail on file' : 'E-mail is not set up on Netlify (RESEND_API_KEY)')) + ' for ' + (p.name || 'the job') + ': ' + mine.map(function(x){ return x.title; }).join(', ') + '. Open the job → Customer portal → Email it or Text it.');
+    await mark(apprD ? 'approval' : 'todo');
+    return { ok: true, todo: true, approval: apprD, keys: done };
   }
   let token;
   try { token = await createFor(pid, 'auto: new document'); } catch (e) { await revert(); return { ok: false, retry: true, error: 'no link' }; }
@@ -882,6 +912,28 @@ async function notifyAll(opts){
   return out;
 }
 
+/* ── health check: GET /.netlify/functions/portal?ping=1 — which settings are present (yes/no only,
+   never a value) and whether each portal table answers ── */
+async function ping(){
+  const has = function(k){ return !!s(process.env[k]); };
+  const out = { ok: true, portal: 'GrayCo customer portal', env: {
+    SUPABASE_URL: has('SUPABASE_URL'), SUPABASE_SERVICE_KEY: has('SUPABASE_SERVICE_KEY') || has('SUPABASE_SERVICE_ROLE_KEY'),
+    SUPABASE_ANON_KEY: has('SUPABASE_ANON_KEY'), STAFF_EMAILS: has('STAFF_EMAILS'), SITE_ORIGIN: has('SITE_ORIGIN'),
+    SUPABASE_SERVICE_KEY_kind: keyKind(svcKey()),
+    SUPABASE_URL_looks_right: /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(s(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL)),
+    COMPANYCAM_TOKEN: has('COMPANYCAM_TOKEN'), RESEND_API_KEY: has('RESEND_API_KEY'), PORTAL_MAIL_OFF: has('PORTAL_MAIL_OFF') }, tables: {} };
+  const lower = Object.keys(process.env).filter(function(k){ return /^supabase_|^staff_emails$|^resend_api_key$|^companycam_token$/.test(k); });
+  if (lower.length) out.lowercaseNames = lower;   /* names only — a lowercase name is not read */
+  if (!svcKey()) { out.ok = false; out.problem = 'Server setting missing: SUPABASE_SERVICE_KEY'; return out; }
+  for (const t of ['gc_portal', 'gc_portal_mail', 'gc_portal_notice', 'gc_kv']) {
+    let st;
+    try { const r = await fetch(sbUrl() + '/rest/v1/' + t + '?select=*&limit=0', { headers: H() }); st = r.status; } catch (e) { st = 0; }
+    out.tables[t] = st >= 200 && st < 300 ? 'ok' : (st === 0 ? 'cannot reach Supabase (SUPABASE_URL)' : (st === 401 || st === 403 ? 'key not accepted (SUPABASE_SERVICE_KEY)' : (st === 404 || st === 400 ? 'missing — run docs/portal-setup.sql' : 'answered ' + st)));
+    if (out.tables[t] !== 'ok') { out.ok = false; if (!out.problem) out.problem = t + ': ' + out.tables[t]; }
+  }
+  return out;
+}
+
 /* ── the door ──────────────────────────────────────────────────────────────── */
 function reply(statusCode, headers, obj){ return { statusCode: statusCode, headers: headers, body: JSON.stringify(obj) }; }
 async function notActive(headers, t0){
@@ -896,6 +948,12 @@ exports.handler = async function (event) {
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS', 'x-portal-token'), {
     'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
+  const qsp = event.queryStringParameters || {};
+  if (event.httpMethod === 'GET' && (qsp.ping === '1' || qsp.ping === 'true')) {
+    const ip0 = ipOf(event);
+    if (limited(ip0)) return reply(429, headers, { ok: false, error: 'Too many tries.' });
+    return reply(200, headers, await ping());
+  }
   if (event.httpMethod !== 'POST') return reply(405, headers, { ok: false, error: 'Method not allowed' });
   let body = {};
   try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
@@ -904,8 +962,9 @@ exports.handler = async function (event) {
   /* STAFF */
   if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
+    if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
-    if (!svcKey()) return reply(500, headers, { ok: false, error: 'SUPABASE_SERVICE_KEY not set on Netlify.' });
+    if (!svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (Netlify → Environment variables).' });
     if (action === 'settings') {
       try {
         if (body.set && typeof body.set === 'object') return reply(200, headers, Object.assign({ ok: true }, await settingsSet(body.set, who.email)));
@@ -913,7 +972,8 @@ exports.handler = async function (event) {
       } catch (e) { return reply(502, headers, { ok: false, error: 'Could not save the setting. Try again.' }); }
     }
     const pid = s(body.projectId);
-    if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return reply(400, headers, { ok: false, error: 'Which job? (projectId)' });
+    if (!pid) return reply(400, headers, { ok: false, error: 'Open a job first.' });
+    if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return reply(400, headers, { ok: false, error: 'That job id is not one the portal can use (' + clip(pid, 30) + ').' });
     try {
       if (action === 'status') {
         const row = await activeFor(pid);
@@ -930,8 +990,9 @@ exports.handler = async function (event) {
       const token = await createFor(pid, who.email);
       return reply(200, headers, { ok: true, active: true, url: linkFor(event, token) });
     } catch (e) {
-      if (e && e.setup) return reply(503, headers, { ok: false, setup: true, error: 'The customer portal is not set up yet — run docs/portal-setup.sql in Supabase.' });
-      return reply(502, headers, { ok: false, error: 'Could not reach the database. Try again.' });
+      if (e && e.setup) return reply(503, headers, { ok: false, setup: true, error: 'Portal not set up: run docs/portal-setup.sql in Supabase.' });
+      if (e && e.plain) return reply(502, headers, { ok: false, error: e.plain });
+      return reply(500, headers, { ok: false, error: 'The portal server hit a problem: ' + clip(e && e.message || e, 120) });
     }
   }
 

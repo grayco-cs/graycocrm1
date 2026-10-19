@@ -39,7 +39,7 @@ async function isAdmin(event){
     const u = await r.json();
     const email = String((u && u.email) || '').trim().toLowerCase();
     if (!email || !svc) return false;
-    const s = await fetch(url + '/rest/v1/gc_staff?select=role,active&email=eq.' + encodeURIComponent(email), { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+    const s = await fetch(url + '/rest/v1/gc_staff?select=role,active&email=eq.' + encodeURIComponent(email), { headers: /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(svc) ? { apikey: svc, Authorization: 'Bearer ' + svc } : { apikey: svc } });
     if (!s.ok) return false;
     const rows = await s.json();
     return !!(rows && rows[0] && rows[0].active !== false && String(rows[0].role || '').toLowerCase() === 'admin');

@@ -162,7 +162,7 @@ function firstEmail(lead) {
     who + ' handles our estimates' + (tel ? (' and you can reach him directly at ' + tel) : '') + '. ' +
     'He will be reaching out to you as soon as possible.\n\n' +
     'If you reply to this email with a good time to reach you, he will work around it.\n\n' +
-    'GrayCo Construction Services\nTN License #85034 BCB · AR License #0486990627\noffice@grayco-cs.com';
+    'GrayCo Construction Services\nTN License #85034 BCB · AR License #0486990627 · MS License #27769\noffice@grayco-cs.com';
 
   const html =
     '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.55;max-width:560px">'
@@ -172,7 +172,7 @@ function firstEmail(lead) {
     + '<p>' + line + ' He will be reaching out to you as soon as possible.</p>'
     + '<p><b>If you reply to this email with a good time to reach you, he will work around it.</b></p>'
     + '<p style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#666">'
-    + 'GrayCo Construction Services<br>TN License #85034 BCB · AR License #0486990627<br>'
+    + 'GrayCo Construction Services<br>TN License #85034 BCB · AR License #0486990627 · MS License #27769<br>'
     + 'office@grayco-cs.com</p></div>';
 
   return {
