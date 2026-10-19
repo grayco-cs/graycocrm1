@@ -1,7 +1,10 @@
 // RoofScout pricing engine. Pure functions, no DOM, so they can be tested in Node.
 //
-// Quotes use TRUE gross margin, not markup:  sale price = cost ÷ (1 − margin)
-// e.g. $190,000 cost at 35% margin = 190,000 ÷ 0.65 = $292,308.
+// Each lead gets ONE approximate estimate:
+//   • If the roof type has a price per square (100 ft²), estimate = squares × that price.
+//     A TPO re-roof is quoted at $1,000 per square.
+//   • Otherwise, estimate = cost ÷ (1 − margin)  (TRUE gross margin, not markup):
+//     $190,000 cost at 35% margin = 190,000 ÷ 0.65 = $292,308.
 (function (root) {
   'use strict';
 
@@ -20,15 +23,26 @@
     return cost / (1 - m);
   }
 
-  // Low / Middle / High quote. Middle is the "Est. value" shown everywhere.
-  function quote(areaSqft, roofType, margins) {
-    var cost = jobCost(areaSqft, roofType);
+  function estimate(areaSqft, roofType, marginPct) {
+    var area = Number(areaSqft) || 0;
+    var cost = jobCost(area, roofType);
+    var squares = area / 100;
+    var perSquare = Number(roofType.perSquare) || 0;
+    var price = perSquare > 0 ? squares * perSquare : priceAtMargin(cost, marginPct);
     return {
       cost: cost,
-      low: priceAtMargin(cost, margins.low),
-      mid: priceAtMargin(cost, margins.mid),
-      high: priceAtMargin(cost, margins.high)
+      squares: squares,
+      price: price,
+      basis: perSquare > 0 ? 'square' : 'margin',
+      perSquare: perSquare,
+      // What the estimate actually earns, whichever way it was priced.
+      margin: price > 0 ? (price - cost) / price * 100 : 0
     };
+  }
+
+  // Customer-facing figure: "approximately", rounded to the nearest $100.
+  function approx(n) {
+    return Math.round((Number(n) || 0) / 100) * 100;
   }
 
   // Metal roof coating, priced by the square (100 ft²). Material cost is
@@ -45,7 +59,7 @@
     };
   }
 
-  // Weighted forecast: each open lead's middle value × its stage's close probability.
+  // Weighted forecast: each open lead's estimate × its stage's close probability.
   var STAGE_PROB = { New: 0.10, Contacted: 0.30, Quoted: 0.60, Won: 1, Lost: 0 };
 
   function weighted(value, stage) {
@@ -56,7 +70,8 @@
     costPerSqft: costPerSqft,
     jobCost: jobCost,
     priceAtMargin: priceAtMargin,
-    quote: quote,
+    estimate: estimate,
+    approx: approx,
     coating: coating,
     weighted: weighted,
     STAGE_PROB: STAGE_PROB

@@ -2,7 +2,7 @@
 
 The single source of truth for this project. Read this first. It captures every decision made so far so any session or developer can continue without re-reading chat history.
 
-_Last updated: 2026-10-19_
+_Last updated: 2026-10-19 (Phase 1 backend; single approximate estimate; MS license)_
 
 > **Where this lives:** RoofScout sits in its own `roofscout/` folder inside the GrayCo CRM repo. The root `index.html` is the **live GrayCo CRM** (deployed by Netlify from `main`). Never put the RoofScout prototype at the repo root, because that would replace the CRM.
 
@@ -10,11 +10,12 @@ _Last updated: 2026-10-19_
 A lead-generation tool for GrayCo Construction Services (commercial roofing, Memphis & Bartlett, TN). Goal: scan commercial roofs from satellite imagery, flag the ones in bad shape, measure them, find the owner/manager contacts, track outreach, and generate branded flyers & proposals to win the job.
 
 ## Current status — READ THIS
-- **2026-10-19: rebuilt from this brief** as a standalone lead program in `roofscout/` (see `README.md` there). It's split into small files (`index.html`, `css/styles.css`, `js/*.js`) instead of one giant HTML file.
+- **Standalone lead program** in `roofscout/` (see `README.md` there), split into small files. It will be moved into the GrayCo CRM once it is finished.
+- **Phase 1 backend is built** on the CRM's own Supabase project (`docs/roofscout-setup.sql`, owner's guide `docs/ROOFSCOUT-SETUP.md`). It turns on when an admin runs that script once.
+- **Team access:** everyone with a CRM sign-in gets in with the same email and password. There is one sign-in for both apps, one shared lead pool, and people are added and removed in the CRM (💎 → Team access). Admin = admin on the CRM's staff list.
+- **Demo mode** (no sign-in, this browser only) remains for practice.
 - The **scan is still DEMO**: synthetic sites, sizes, conditions and owners, all tagged DEMO, with fictional 555-01xx phones and @example.com emails. It does NOT look up real properties, roofs, owners or phone numbers.
-- **Works for real today:** leads a teammate adds by hand, the pricing engine, call list (with Do-Not-Call flag), pipeline + weighted forecast, PM leaderboard, flyers and proposals.
-- **Data now survives a refresh** (saved in the browser), with CSV export and backup/restore. It is still per-browser: shared team data needs the backend (Phase 1).
-- Plan agreed 2026-10-19: perfect the lead program standalone first, then connect it to the GrayCo CRM (same repo; the CRM already runs on Supabase).
+- **Works for real today:** hand-added leads, estimates, call list (with Do-Not-Call flag), pipeline + weighted forecast, PM leaderboard, flyers and proposals, shared data, edit-clash protection, and the nightly backup.
 - Hard rule honored throughout: never fabricate or guess real contact info. Real leads require the real data pipeline or contact info a teammate has verified.
 
 ## Company facts (used on all documents)
@@ -23,7 +24,7 @@ A lead-generation tool for GrayCo Construction Services (commercial roofing, Mem
 - Email: wjohnson@grayco-cs.com
 - Website: www.grayco-cs.com
 - Address: 4014 Broadway Road, Bartlett, TN 38135
-- Licensed in Tennessee and Arkansas (license # fields are placeholders; fill in real numbers)
+- Licensed in **Tennessee, Arkansas and Mississippi** (license # fields are placeholders: fill in the real numbers in Settings). Every flyer and proposal lists all three.
 - Insurance line: "Licensed · Bonded · Fully Insured"
 - Logo: navy "GRAYCO CONSTRUCTION SERVICES" (the uploaded JPG). App embeds a white version for dark/colored headers and a navy version for white backgrounds, both transparent (no white box).
 
@@ -34,29 +35,33 @@ A lead-generation tool for GrayCo Construction Services (commercial roofing, Mem
 - Home base Memphis; scan radius is any size (slider + type-in box + presets 2/5/10/25/50 mi).
 
 ## Pricing engine
-- Per roof type, admin sets material $/ft² and labor $/ft². material + labor = cost/ft²; × roof area = cost.
-- Quotes use **TRUE gross margin, NOT markup**: `sale price = cost ÷ (1 − margin%)`.
-  - Example confirmed with client: $190K cost at 35% margin = $190K ÷ 0.65 = $292K.
-  - Default tiers: Low 25%, Middle 35%, High 45%. The Middle tier is the "Est. value" shown everywhere.
-- Metal roof coating option (cheaper alternative to replacement): priced by the square, $165/square (cheap) to $250/square (premium). Material cost shown separately: $197/gallon @ 320 ft²/gallon.
+- **One approximate estimate per lead.** There are no Good / Better / Best tiers (removed 2026-10-19 at the client's request).
+- Each roof type can have an **estimate per square** (1 square = 100 ft²): estimate = squares × that price. Defaults set by the client:
+  - **TPO re-roof: $1,000 / square**
+  - **Metal: $1,400 / square**
+  - **Asphalt shingle (residential): $375 / square**
+- Roof types with no per-square price use **true gross margin**: `estimate = cost ÷ (1 − margin%)`, with a default margin of 35%. Example confirmed with the client: $190K cost at 35% = $292K.
+- Per roof type, the admin also sets material $/ft² and labor $/ft² (material + labor = cost/ft²). These drive the internal "margin on this estimate" each PM sees.
+- Customer documents show "About $X" (rounded to $100) plus how it was worked out, e.g. "About 200 squares at $1,000 per square for a full TPO re-roof".
+- Metal roof coating option (cheaper alternative to replacement): priced by the square, $165/square (cheap) to $250/square (premium). Material cost is shown separately: $197/gallon @ 320 ft²/gallon.
 
 ## Leads, attribution & commission
 - Every RoofScout lead is a GrayCo lead (company-sourced via the scan).
 - Commission split: 15 / 60 / 40. The actual payout is calculated in GrayCo's existing CRM, not in this tool. RoofScout only shows the split as a label on each lead and on the PM leaderboard.
-- Activity tracking: every open/edit is stamped with the signed-in user; a PM leaderboard aggregates jobs touched, GrayCo leads, opens, edits, pipeline value.
+- Activity tracking: every open/edit/call/print is stamped with the signed-in user. In shared mode the database does the stamping, so it can't be faked, and the log can't be edited or erased from the web. A PM leaderboard aggregates jobs touched, GrayCo leads, opens, edits, calls and pipeline value.
 
 ## Team & logins
-- Email + password logins. Demo accounts: wjohnson@grayco-cs.com/admin, mreed@…/pm, dcole@…/sales.
-- Admin (W. Johnson) adds/edits/removes teammates in Settings → Team & Profiles (name, title, phone, email, password, role).
-- One shared lead pool everyone works from; each person's name & direct number go on the flyers THEY send.
-- (Prototype simulates this in one browser; real shared logins need the backend, which is Phase 1.)
+- **The GrayCo CRM sign-in** (Supabase Auth): email + password, the same account as the CRM. Who may get in is the CRM's staff list (`gc_staff`); add and remove people in the CRM (💎 → Team access).
+- Roles: **admin** comes from the CRM staff list (Wesley, Nick) and is the only role that can change pricing and branding. Everyone else is labeled PM or Sales (a RoofScout label, set by an admin in Settings → Team).
+- One shared lead pool everyone works from; each person's name and direct number (Settings → My profile) go on the flyers THEY send.
+- Changing your password in RoofScout changes your GrayCo sign-in for the CRM too.
 
 ## Documents (print to PDF to email or mail)
-- **Friendly flyer**: flashy gradient header, logo, warm/positive tone, snapshot cards, estimate range, the sending PM's contact card, trust badges (Licensed TN & AR, Bonded & Insured, Local Bartlett, 5-Star), license footer.
-- **Full proposal**: branded, multi-section: roof assessment, scope of work (by roof type), Good / Better / Best = Low / Middle / High pricing, terms & warranty, signature block, TN+AR license footer.
+- **Friendly flyer**: flashy gradient header, logo, warm/positive tone, snapshot cards, the approximate estimate, the sending PM's contact card, trust badges (Licensed TN, AR & MS; Bonded & Insured; Local Bartlett; 5-Star), license footer.
+- **Full proposal**: branded, multi-section: roof assessment, scope of work (by roof type), **one approximate estimate** (plus the coating alternative on metal roofs), terms & warranty, signature block, TN + AR + MS license footer.
 
 ## App sections
-Map (real satellite via Leaflet + Esri World Imagery, markers + radius circle; needs internet) · Leads (sortable table) · Calls (priority-ranked call list) · Pipeline (summary KPIs + weighted forecast + detailed cards) · Activity (PM leaderboard + feed) · Settings (pricing, margins, coating, branding, team/logins, commission split) · Build (the plan).
+Map (real satellite via Leaflet + Esri World Imagery, markers + radius circle; needs internet) · Leads (sortable table) · Calls (priority-ranked call list) · Pipeline (summary KPIs + weighted forecast + detailed cards) · Activity (PM leaderboard + feed) · Settings (per-square pricing, margin, coating, company & licenses, team, my profile, commission split) · Build (the plan).
 
 ## Pipeline stages
 New → Contacted → Quoted → Won / Lost. Weighted forecast uses close probabilities (New 10% / Contacted 30% / Quoted 60% / Won 100%).
@@ -67,7 +72,7 @@ The Build tab in the app shows this plan. (The older `GO-LIVE-PLAN.html` from an
 Two paths: (A) License imagery/detection/measurement: recommended to start, live in weeks, pay per roof. (B) Build your own AI: later, at volume. For a non-technical owner: Path A.
 
 Build order:
-1. **Backend + logins** (Supabase ~$25/mo): shared database + real accounts. Delivers the "shared data, everyone has a profile" requirement. Do first. (The GrayCo CRM already runs on Supabase, so RoofScout can likely share that project and its staff logins.)
+1. **Backend + logins**: **BUILT 2026-10-19** on the CRM's existing Supabase project and staff sign-in (no new cost). Turn on with `docs/roofscout-setup.sql`.
 2. **Owner data + skip trace** (Regrid ~$15–50/mo; skip trace $0.02–$0.15/record): real owners + phones/emails.
 3. **Measurement** (Google Solar API cheap; EagleView $25–$75/report): real roof size & estimates.
 4. **Imagery + condition detection** ("the scan"): Nearmap/EagleView or a custom AI model. The big, pricier phase; cost scales with area.
@@ -79,8 +84,10 @@ Why costs exist: you pay to look at every rooftop (licensed imagery + compute), 
 ## Why we moved to Claude Code / how to not break it
 - The prototype grew into one large single HTML file; editing it by string-replace got fragile.
 - In this repo, git tracks every change so any edit can be rolled back (`git log`, `git revert`). That's the safety net.
-- Done: the app is split into small files (see `roofscout/README.md`). Next: Phase 1 (backend) per the plan.
+- Done: the app is split into small files (see `roofscout/README.md`), and Phase 1 (backend) is built.
 
 ## Immediate next step
-1. Try the rebuilt app (`roofscout/index.html`), then change the demo passwords and fill in the real TN/AR license numbers, $/ft² pricing and proposal terms in Settings.
-2. Give feedback on the screens, then start Phase 1 (backend + shared logins), most likely on the CRM's existing Supabase project.
+1. Admin runs `docs/roofscout-setup.sql` in Supabase (owner's guide: `docs/ROOFSCOUT-SETUP.md`). Every check line must say OK.
+2. Deploy, open `/roofscout/` on the CRM site, and sign in with a CRM account.
+3. In Settings: fill in the TN / AR / MS license numbers, confirm the per-square prices and $/ft² costs, and set the proposal terms. Each person fills in My profile.
+4. Then Phase 2 (owner data + skip trace), or finish the screens and move RoofScout into the CRM.

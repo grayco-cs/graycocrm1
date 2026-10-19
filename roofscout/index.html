@@ -8,18 +8,33 @@
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <!-- Sign in -->
+  <!-- Sign in: the same GrayCo sign-in as the CRM -->
   <div id="login" class="login" hidden>
     <form id="login-form" class="login-card">
       <div class="login-head"><div class="logo logo-white" role="img" aria-label="GrayCo Construction Services"></div></div>
       <h1>RoofScout</h1>
-      <p class="muted">Commercial roof lead finder</p>
+      <p class="muted">Sign in with your GrayCo CRM email and password.</p>
       <label>Email <input type="email" id="login-email" autocomplete="username" required></label>
       <label>Password <input type="password" id="login-pass" autocomplete="current-password" required></label>
-      <div id="login-err" class="err" hidden></div>
+      <div id="login-err" class="err" role="alert" hidden></div>
       <button class="btn primary" type="submit">Sign in</button>
-      <p class="fine">Prototype: data is saved in this browser only. Shared team logins arrive with the backend (Phase 1).</p>
+      <p class="fine">Forgot your password? Ask Wesley or Nick (CRM: 💎 → Team access → Reset password).</p>
+      <div class="login-alt"><button type="button" id="demo-btn" class="btn ghost">Practice in demo mode</button>
+        <p class="fine">Demo mode needs no sign-in. It saves only in this browser and is not shared.</p></div>
     </form>
+  </div>
+
+  <!-- Loading / can't load -->
+  <div id="loading" class="login" hidden>
+    <div class="login-card loading-card">
+      <div class="login-head"><div class="logo logo-white" role="img" aria-label="GrayCo Construction Services"></div></div>
+      <p id="loading-msg" role="status">Loading…</p>
+      <div id="loading-actions" class="btn-row" hidden>
+        <button type="button" id="retry-btn" class="btn primary">Try again</button>
+        <button type="button" id="loading-demo-btn" class="btn ghost">Demo mode</button>
+        <button type="button" id="loading-signout-btn" class="btn ghost">Sign out</button>
+      </div>
+    </div>
   </div>
 
   <!-- App -->
@@ -36,9 +51,9 @@
         <button data-tab="settings">Settings</button>
         <button data-tab="build">Build</button>
       </nav>
-      <div class="me"><span id="me-name"></span><button id="logout" class="btn ghost sm">Sign out</button></div>
+      <div class="me"><span id="pending" class="pending" hidden></span><span id="me-name"></span><button id="logout" class="btn ghost sm">Sign out</button></div>
     </header>
-    <div class="demo-bar">Prototype: scan results are <b>DEMO data</b>, not real properties or owners. Leads you add yourself are real, and are saved in this browser only.</div>
+    <div id="mode-bar" class="demo-bar"></div>
     <main id="view"></main>
   </div>
 
@@ -56,6 +71,8 @@
   <script src="js/util.js"></script>
   <script src="js/pricing.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/data.js"></script>
   <script src="js/docs.js"></script>
   <script src="js/app.js"></script>
 </body>

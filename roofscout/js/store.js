@@ -1,4 +1,4 @@
-// RoofScout data: defaults, saving to this browser, and the DEMO scan.
+// RoofScout data: defaults, demo-mode saving in this browser, and the DEMO scan.
 //
 // Everything the demo scan produces is synthetic and labeled DEMO. Demo phone
 // numbers use the reserved fictional range (555-0100 to 555-0199) and demo
@@ -8,8 +8,10 @@
 (function (root) {
   'use strict';
 
-  var KEY = 'roofscout.v1';
+  var KEY = 'roofscout.v1';           // demo mode: everything in this browser
   var SESSION_KEY = 'roofscout.session';
+  var MODE_KEY = 'roofscout.mode';      // 'demo' while practicing in demo mode
+  var PREFS_KEY = 'roofscout.prefs';    // per-computer view settings (scan center, radius, type)
 
   var STAGES = ['New', 'Contacted', 'Quoted', 'Won', 'Lost'];
 
@@ -21,50 +23,79 @@
     { id: 'collierville', label: 'Collierville, TN', lat: 35.0420, lng: -89.6645 },
     { id: 'millington', label: 'Millington, TN', lat: 35.3415, lng: -89.8973 },
     { id: 'southaven', label: 'Southaven, MS', lat: 34.9889, lng: -90.0126 },
+    { id: 'olivebranch', label: 'Olive Branch, MS', lat: 34.9618, lng: -89.8295 },
     { id: 'westmemphis', label: 'West Memphis, AR', lat: 35.1465, lng: -90.1845 }
   ];
+
+  function defaultSettings() {
+    return {
+      company: {
+        name: 'GrayCo Construction Services',
+        phone: '(901) 585-0944',
+        email: 'wjohnson@grayco-cs.com',
+        website: 'www.grayco-cs.com',
+        address: '4014 Broadway Road, Bartlett, TN 38135',
+        licTN: '',
+        licAR: '',
+        licMS: '',
+        insurance: 'Licensed · Bonded · Fully Insured'
+      },
+      // $/ft² cost placeholders: admin sets the real numbers in Settings.
+      // perSquare = the customer estimate per square (100 ft²); 0 = use the margin instead.
+      roofTypes: [
+        { id: 'tpo', name: 'TPO (single-ply)', mat: 3.50, labor: 3.00, perSquare: 1000, lowSlope: true },
+        { id: 'roll', name: 'Roll roofing / Mod-bit', mat: 2.25, labor: 2.25, perSquare: 0, lowSlope: true },
+        { id: 'metal', name: 'Metal', mat: 5.00, labor: 3.50, perSquare: 1400, lowSlope: true },
+        { id: 'epdm', name: 'EPDM (rubber)', mat: 3.00, labor: 2.75, perSquare: 0, lowSlope: true },
+        { id: 'bur', name: 'Built-up (BUR)', mat: 3.50, labor: 3.50, perSquare: 0, lowSlope: true },
+        { id: 'shingle', name: 'Asphalt shingle', mat: 2.25, labor: 2.25, perSquare: 375, lowSlope: false }
+      ],
+      margin: 35,
+      coating: { low: 165, high: 250, galPrice: 197, galCoverage: 320 },
+      commission: '15 / 60 / 40',
+      // Proposal terms, one per line. Placeholders: admin should confirm these.
+      terms: 'Pricing is an approximate estimate, valid for 30 days from the proposal date. Final price is confirmed after an on-site inspection.\n' +
+        'Payment terms: to be confirmed at signing.\n' +
+        'Hidden deck damage found during tear-off is repaired at a unit price agreed in writing before work proceeds.\n' +
+        'Warranty terms as stated in the final contract; manufacturer warranties per manufacturer terms.'
+    };
+  }
+
+  // Stored settings over the defaults, so anything added in a later version shows up.
+  function mergeSettings(saved) {
+    var d = defaultSettings();
+    var s = saved && typeof saved === 'object' ? JSON.parse(JSON.stringify(saved)) : {};
+    // Older versions had Low / Middle / High margins; the middle one is the margin now.
+    if (s.margin === undefined && s.margins && s.margins.mid !== undefined) s.margin = s.margins.mid;
+    delete s.margins;
+    delete s.scan;
+    Object.keys(d).forEach(function (k) {
+      if (s[k] === undefined) s[k] = d[k];
+      else if (d[k] && typeof d[k] === 'object' && !Array.isArray(d[k])) {
+        Object.keys(d[k]).forEach(function (kk) { if (s[k][kk] === undefined) s[k][kk] = d[k][kk]; });
+      }
+    });
+    s.roofTypes.forEach(function (t) {
+      if (t.perSquare === undefined) {
+        var def = d.roofTypes.filter(function (x) { return x.id === t.id; })[0];
+        t.perSquare = def ? def.perSquare : 0;
+      }
+    });
+    return s;
+  }
 
   function defaults() {
     return {
       v: 1,
-      settings: {
-        company: {
-          name: 'GrayCo Construction Services',
-          phone: '(901) 585-0944',
-          email: 'wjohnson@grayco-cs.com',
-          website: 'www.grayco-cs.com',
-          address: '4014 Broadway Road, Bartlett, TN 38135',
-          licTN: '',
-          licAR: '',
-          insurance: 'Licensed · Bonded · Fully Insured'
-        },
-        // $/ft² placeholders: admin sets the real numbers in Settings.
-        roofTypes: [
-          { id: 'tpo', name: 'TPO (single-ply)', mat: 3.50, labor: 3.00, lowSlope: true },
-          { id: 'roll', name: 'Roll roofing / Mod-bit', mat: 2.25, labor: 2.25, lowSlope: true },
-          { id: 'metal', name: 'Metal', mat: 5.00, labor: 3.50, lowSlope: true },
-          { id: 'epdm', name: 'EPDM (rubber)', mat: 3.00, labor: 2.75, lowSlope: true },
-          { id: 'bur', name: 'Built-up (BUR)', mat: 3.50, labor: 3.50, lowSlope: true },
-          { id: 'shingle', name: 'Asphalt shingle', mat: 2.25, labor: 2.25, lowSlope: false }
-        ],
-        margins: { low: 25, mid: 35, high: 45 },
-        coating: { low: 165, high: 250, galPrice: 197, galCoverage: 320 },
-        commission: '15 / 60 / 40',
-        // Proposal terms, one per line. Placeholders: admin should confirm these.
-        terms: 'Pricing valid for 30 days from the proposal date.\n' +
-          'Payment terms: to be confirmed at signing.\n' +
-          'Hidden deck damage found during tear-off is repaired at a unit price agreed in writing before work proceeds.\n' +
-          'Warranty terms per the option selected; manufacturer warranties per manufacturer terms.',
-        scan: { place: 'memphis', radius: 10, scope: 'commercial' }
-      },
+      settings: defaultSettings(),
+      // Demo mode only. Real teammates come from the CRM's staff list.
       users: [
-        { id: 'u_wjohnson', name: 'W. Johnson', title: 'Owner', phone: '(901) 585-0944', email: 'wjohnson@grayco-cs.com', password: 'admin', role: 'admin' },
-        { id: 'u_mreed', name: 'M. Reed', title: 'Project Manager', phone: '', email: 'mreed@grayco-cs.com', password: 'pm', role: 'pm' },
-        { id: 'u_dcole', name: 'D. Cole', title: 'Sales', phone: '', email: 'dcole@grayco-cs.com', password: 'sales', role: 'sales' }
+        { id: 'u_wjohnson', name: 'W. Johnson', title: 'Owner', phone: '(901) 585-0944', email: 'wjohnson@grayco-cs.com', role: 'admin' },
+        { id: 'u_mreed', name: 'M. Reed (demo)', title: 'Project Manager', phone: '', email: 'mreed@example.com', role: 'pm' },
+        { id: 'u_dcole', name: 'D. Cole (demo)', title: 'Sales', phone: '', email: 'dcole@example.com', role: 'sales' }
       ],
       leads: [],
-      activity: [],
-      seq: 1
+      activity: []
     };
   }
 
@@ -73,43 +104,57 @@
       var raw = localStorage.getItem(KEY);
       if (raw) {
         var s = JSON.parse(raw);
-        if (s && s.v === 1) return mergeDefaults(s);
+        if (s && s.v === 1) return normalize(s);
       }
     } catch (e) { /* private window or blocked storage: run in memory */ }
     return defaults();
   }
 
-  // Fill in any settings added after this browser's data was first saved.
-  function mergeDefaults(s) {
+  function normalize(s) {
     var d = defaults();
-    s.settings = s.settings || {};
-    Object.keys(d.settings).forEach(function (k) {
-      if (s.settings[k] === undefined) s.settings[k] = d.settings[k];
-      else if (d.settings[k] && typeof d.settings[k] === 'object' && !Array.isArray(d.settings[k])) {
-        Object.keys(d.settings[k]).forEach(function (kk) {
-          if (s.settings[k][kk] === undefined) s.settings[k][kk] = d.settings[k][kk];
-        });
-      }
-    });
+    s.settings = mergeSettings(s.settings);
     ['users', 'leads', 'activity'].forEach(function (k) { if (!Array.isArray(s[k])) s[k] = d[k]; });
-    if (!s.seq) s.seq = 1;
+    s.users.forEach(function (u) { delete u.password; });
+    delete s.seq;
     return s;
   }
 
-  var saveFailed = false;
   function save(state) {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); saveFailed = false; return true; }
-    catch (e) { saveFailed = true; return false; }
+    try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+    catch (e) { return false; }
   }
 
-  function getSession() { try { return localStorage.getItem(SESSION_KEY); } catch (e) { return null; } }
-  function setSession(id) {
-    try { if (id) localStorage.setItem(SESSION_KEY, id); else localStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ }
+  function get(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function put(key, v) {
+    try { if (v == null) localStorage.removeItem(key); else localStorage.setItem(key, v); } catch (e) { /* ignore */ }
   }
 
-  function nextId(state, prefix) {
-    var n = state.seq++;
-    return prefix + String(n).padStart(4, '0');
+  function prefs() {
+    var p = {};
+    try { p = JSON.parse(get(PREFS_KEY) || '{}') || {}; } catch (e) { /* ignore */ }
+    return { place: p.place || 'memphis', radius: Number(p.radius) || 10, scope: p.scope || 'commercial' };
+  }
+  function savePrefs(p) { put(PREFS_KEY, JSON.stringify(p)); }
+
+  // Unique across everyone's computers (time + randomness), safe as a database key.
+  function newId(prefix) {
+    var rnd = '';
+    try {
+      var a = new Uint8Array(5);
+      crypto.getRandomValues(a);
+      rnd = Array.prototype.map.call(a, function (b) { return (b % 36).toString(36); }).join('');
+    } catch (e) { rnd = Math.random().toString(36).slice(2, 7); }
+    return (prefix || 'L') + Date.now().toString(36) + rnd;
+  }
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var a = new Uint8Array(16);
+    crypto.getRandomValues(a);
+    a[6] = (a[6] & 0x0f) | 0x40;
+    a[8] = (a[8] & 0x3f) | 0x80;
+    var h = Array.prototype.map.call(a, function (b) { return (b + 0x100).toString(16).slice(1); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   }
 
   // ---- Demo scan --------------------------------------------------------
@@ -196,17 +241,22 @@
   }
 
   root.Store = {
-    KEY: KEY,
     STAGES: STAGES,
     PLACES: PLACES,
     defaults: defaults,
+    defaultSettings: defaultSettings,
+    mergeSettings: mergeSettings,
     load: load,
-    normalize: mergeDefaults,
+    normalize: normalize,
     save: save,
-    saveFailed: function () { return saveFailed; },
-    getSession: getSession,
-    setSession: setSession,
-    nextId: nextId,
+    getSession: function () { return get(SESSION_KEY); },
+    setSession: function (id) { put(SESSION_KEY, id); },
+    getMode: function () { return get(MODE_KEY); },
+    setMode: function (m) { put(MODE_KEY, m); },
+    prefs: prefs,
+    savePrefs: savePrefs,
+    newId: newId,
+    uuid: uuid,
     demoScan: demoScan
   };
 })(this);
