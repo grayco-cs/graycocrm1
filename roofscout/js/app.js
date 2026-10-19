@@ -132,6 +132,9 @@
   // On the website, the GrayCo sign-in is the only way in. Demo mode (no sign-in,
   // nothing shared) exists only when the files are opened on a computer for testing.
   var DEMO_ALLOWED = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  // Opened as the RoofScout tab inside the CRM: the CRM already shows the logo and handles sign-out.
+  var EMBEDDED = (function () { try { return window.self !== window.top; } catch (e) { return true; } })();
+  if (EMBEDDED) document.body.classList.add('embedded');
   $$('.demo-only').forEach(function (el) { if (!DEMO_ALLOWED) el.remove(); });
 
   function start() {
