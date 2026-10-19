@@ -10,11 +10,12 @@ _Last updated: 2026-10-19_
 A lead-generation tool for GrayCo Construction Services (commercial roofing, Memphis & Bartlett, TN). Goal: scan commercial roofs from satellite imagery, flag the ones in bad shape, measure them, find the owner/manager contacts, track outreach, and generate branded flyers & proposals to win the job.
 
 ## Current status — READ THIS
-- What exists today is a front-end **PROTOTYPE** (single `index.html`), styled and fully clickable.
-- All data is synthetic/demo. It does **NOT** actually scan, measure, or look up real properties, roofs, owners, or phone numbers.
-- There is no backend yet. Logins and data reset on refresh.
-- Making it real = the Go-Live Plan below (backend + paid data services + a developer).
-- Hard rule honored throughout: never fabricate or guess real contact info. Real leads require the real data pipeline.
+- **2026-10-19: rebuilt from this brief** as a standalone lead program in `roofscout/` (see `README.md` there). It's split into small files (`index.html`, `css/styles.css`, `js/*.js`) instead of one giant HTML file.
+- The **scan is still DEMO**: synthetic sites, sizes, conditions and owners, all tagged DEMO, with fictional 555-01xx phones and @example.com emails. It does NOT look up real properties, roofs, owners or phone numbers.
+- **Works for real today:** leads a teammate adds by hand, the pricing engine, call list (with Do-Not-Call flag), pipeline + weighted forecast, PM leaderboard, flyers and proposals.
+- **Data now survives a refresh** (saved in the browser), with CSV export and backup/restore. It is still per-browser: shared team data needs the backend (Phase 1).
+- Plan agreed 2026-10-19: perfect the lead program standalone first, then connect it to the GrayCo CRM (same repo; the CRM already runs on Supabase).
+- Hard rule honored throughout: never fabricate or guess real contact info. Real leads require the real data pipeline or contact info a teammate has verified.
 
 ## Company facts (used on all documents)
 - Name: GrayCo Construction Services
@@ -61,7 +62,7 @@ Map (real satellite via Leaflet + Esri World Imagery, markers + radius circle; n
 New → Contacted → Quoted → Won / Lost. Weighted forecast uses close probabilities (New 10% / Contacted 30% / Quoted 60% / Won 100%).
 
 ## Go-Live Plan (turning the prototype into a real product)
-See `roofscout/docs/GO-LIVE-PLAN.html` for the full version with current vendor pricing (not yet in the repo; it was made in an earlier session). Summary:
+The Build tab in the app shows this plan. (The older `GO-LIVE-PLAN.html` from an earlier session was not recovered.) Summary:
 
 Two paths: (A) License imagery/detection/measurement: recommended to start, live in weeks, pay per roof. (B) Build your own AI: later, at volume. For a non-technical owner: Path A.
 
@@ -78,7 +79,8 @@ Why costs exist: you pay to look at every rooftop (licensed imagery + compute), 
 ## Why we moved to Claude Code / how to not break it
 - The prototype grew into one large single HTML file; editing it by string-replace got fragile.
 - In this repo, git tracks every change so any edit can be rolled back (`git log`, `git revert`). That's the safety net.
-- Next structural step (recommended): split the prototype into `roofscout/index.html` + `roofscout/css/styles.css` + `roofscout/js/app.js` so each part is small and safe to edit, then begin Phase 1 (backend) per the plan.
+- Done: the app is split into small files (see `roofscout/README.md`). Next: Phase 1 (backend) per the plan.
 
 ## Immediate next step
-The latest RoofScout `index.html` (the working prototype) needs to be added to this repo. It was built in a previous session and did not carry into this workspace (checked 2026-10-19: not in this repo's history or in Google Drive). Upload it (and `GO-LIVE-PLAN.html` if you have it), save it as `roofscout/index.html`, commit, split it, and continue.
+1. Try the rebuilt app (`roofscout/index.html`), then change the demo passwords and fill in the real TN/AR license numbers, $/ft² pricing and proposal terms in Settings.
+2. Give feedback on the screens, then start Phase 1 (backend + shared logins), most likely on the CRM's existing Supabase project.
