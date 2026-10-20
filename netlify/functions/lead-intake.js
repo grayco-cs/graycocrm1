@@ -138,6 +138,7 @@ function readLead(b) {
     jobType: pick(b, ['job_type', 'jobtype', 'service', 'service_type', 'type', 'trade', 'category']),
     notes: pick(b, ['notes', 'note', 'description', 'details', 'message', 'comments']),
     consent: pick(b, ['consent', 'tcpa', 'tcpa_consent', 'opt_in', 'optin']),
+    assignedTo: pick(b, LEAD_ASSIGN_FIELDS),
     raw: b
   };
 }
@@ -181,7 +182,26 @@ function firstEmail(lead) {
   };
 }
 
+/* Owner rule (20 Oct 2026): no automatic e-mail or text goes to a customer without approval. The first
+   e-mail to a new lead waits on the shared approvals list (gc_approval_queue, the CRM's "✅ Approvals"):
+   the person the lead is assigned to approves it (the lead source's assigned_to / rep field, or
+   LEAD_ASSIGN_TO on Netlify); a lead nobody is assigned to goes to the admins (Wesley, Nick).
+   PORTAL_AUTO_EMAIL=1 turns automatic sending back on, as for the portal's e-mails. */
+const LEAD_ASSIGN_FIELDS = ['assigned_to', 'assignedto', 'assignee', 'assigned', 'rep', 'sales_rep', 'salesrep', 'salesperson', 'project_manager', 'pm', 'estimator'];
+async function queueFirstEmail(lead) {
+  if (!looksLikeEmail(lead.email)) return { sent: false, why: 'no usable email address on the lead' };
+  const msg = firstEmail(lead);
+  try {
+    const core = require('./portal.js')._core;
+    const who = s(lead.assignedTo) || s(process.env.LEAD_ASSIGN_TO);
+    const pm = who ? await core.pmByName(who) : null;
+    const ok = await core.queueApproval({ id: 'appr_lead_' + lead.id, kind: 'lead_first_contact', pid: lead.id, jobName: 'New lead — ' + lead.name + (lead.leadSource ? ' (' + lead.leadSource + ')' : ''),
+      pm: pm, to: lead.email, subject: msg.subject, html: msg.html, attachments: [], meta: { leadId: lead.id, leadSource: lead.leadSource || '', phone: lead.phone || '', address: lead.address || '' } });
+    return ok ? { sent: false, queued: true, why: 'waiting for approval (' + (pm ? pm.name : 'admins') + ')' } : { sent: false, why: 'could not put it on the approvals list' };
+  } catch (e) { return { sent: false, why: 'could not put it on the approvals list' }; }
+}
 async function sendEmail(lead) {
+  if (process.env.PORTAL_AUTO_EMAIL !== '1') return queueFirstEmail(lead);
   const key = process.env.RESEND_API_KEY;
   if (!key) return { sent: false, why: 'RESEND_API_KEY is not set on Netlify' };
   if (!looksLikeEmail(lead.email)) return { sent: false, why: 'no usable email address on the lead' };
@@ -210,6 +230,7 @@ async function sendEmail(lead) {
    business texting needs carrier registration first. The step exists so that
    turning it on later is credentials and one function, not a redesign. */
 async function sendText(lead) {
+  /* when texting is built it must queue for approval like the e-mail (owner rule), never send by itself */
   if (!process.env.SMS_PROVIDER) {
     return { sent: false, why: 'no SMS provider configured yet — email only' };
   }
@@ -338,6 +359,7 @@ exports.handler = async function (event) {
     jobType: lead.jobType,
     notes: lead.notes,
     consent: lead.consent,
+    assignedTo: lead.assignedTo,
     leadSource: source.name,
     isInsurance: isInsuranceSource(source.name),
     receivedAt: new Date().toISOString(),
@@ -380,6 +402,7 @@ exports.handler = async function (event) {
     leadId: record.id,
     customerContacted: record.contacted,
     contactedBy: record.contacted ? ['email'] : [],
+    firstEmail: record.outreach.email.queued ? 'waiting for GrayCo to approve it' : (record.contacted ? 'sent' : 'not sent'),
     warnings,
     note: stored
       ? 'Lead received and filed. GrayCo will follow up.'

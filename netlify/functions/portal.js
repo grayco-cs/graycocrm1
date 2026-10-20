@@ -960,7 +960,7 @@ async function officeTodo(id, label, note){
 const AQ_KEY = 'gc_approval_queue';
 const LINK_PH = '{{PORTAL_LINK}}';
 const AQ_RANK = { waiting: 0, sending: 1, approved: 2, rejected: 3, sent: 4 };
-const MONEY_KIND = /final|invoice|lien|waiver|contract/;
+const MONEY_KIND = /final|invoice|lien|waiver|contract|thank_you/;   /* PM, then an admin (owner: the thank-you e-mail too) */
 const AUTO_OK = { signed_copy: 1, receipt: 1 };   /* the exceptions: these still go out by themselves */
 function approvalNeeded(kind){ return needsApproval() && !AUTO_OK[kind]; }
 function aqDone(st){ return st === 'sent' || st === 'rejected'; }
@@ -1018,7 +1018,8 @@ async function aqSend(item, now){
     try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
-  const from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>';
+  const from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
+    : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
@@ -1043,6 +1044,20 @@ async function approvalAction(body, who){
   const cur = await kvListRead(AQ_KEY);
   if (!cur) return { status: 502, out: { ok: false, error: 'Could not read the approvals list.' } };
   if (op === 'list') return { status: 200, out: { ok: true, items: cur.list } };
+  if (op === 'queue') {
+    /* the CRM's automatic thank-you e-mail (job complete + paid): it waits here for the PM, then an admin.
+       The recipient is the job's own customer e-mail (never one the page sends). */
+    if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you e-mail is queued from the CRM.' } };
+    const pid = s(body.projectId);
+    const data = await crmData(true); const p = pid && findProject(data, pid);
+    if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
+    const to = s(p.clientEmail || p.customerEmail || p.email);
+    if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No customer e-mail on this job.' } };
+    const qid = 'appr_thanks_' + pid;
+    const q = await queueApproval({ id: qid, kind: 'thank_you', pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
+      subject: clip(body.subject || 'Thank you from GrayCo Construction!', 200), html: String(body.html || '').slice(0, 100000), attachments: [], meta: { by: who.email } });
+    return { status: q ? 200 : 502, out: { ok: !!q, id: qid, queued: !!q } };
+  }
   const it0 = cur.list.find(function(x){ return s(x.id) === id; });
   if (!it0) return { status: 404, out: { ok: false, error: 'That approval is not on the list any more.' } };
   if (!myName) { try { const d = await crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); myName = s(u && u.name); } catch (e) {} }
@@ -1506,7 +1521,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

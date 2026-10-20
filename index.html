@@ -69055,16 +69055,8 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var _ty = gets && (job.clientEmail||job.customerEmail);
       if(_ty){
         try{
-          var _q=[]; try{ _q=JSON.parse(localStorage.getItem('gc_outbound_approvals')||'[]'); }catch(e){}
-          if(!_q.some(function(x){return x && x.jobId===job.id && x.kind==='thank_you';})){
-            _q.unshift({ id:'TY_'+job.id, kind:'thank_you', jobId:job.id, projName:job.name||'',
-              to:(job.clientEmail||job.customerEmail), createdAt:Date.now(), status:'pending',
-              summary:'Thank-you email to '+(job.name||'customer')+' (job fully paid)' });
-            localStorage.setItem('gc_outbound_approvals', JSON.stringify(_q.slice(0,200)));
-            try{ if(window._gcApplySync) window._gcApplySync('gc_outbound_approvals', _q.slice(0,200)); }catch(e){}
-            try{ if(window._supaUpsert) window._supaUpsert('gc_outbound_approvals', _q.slice(0,200)); }catch(e){}
-            try{ if(window.__GC_ALERT_BAR__ && window.__GC_ALERT_BAR__.addAlert) window.__GC_ALERT_BAR__.addAlert(); }catch(e){}
-          }
+          /* APPR2: it waits on ✅ Approvals (gc_approval_queue): the job's PM, then an admin */
+          if(window._gcQueueCustomerEmail) window._gcQueueCustomerEmail({ kind:'thank_you', projectId:job.id });
         }catch(e){ console.warn('thank-you queue:',e); }
       }
       // Do NOT auto-send. The email is drafted and waits for owner approval.
@@ -124010,7 +124002,7 @@ function markInvoiceSent(invId){
 window._gcApprovalAct = act;
 
 /* ── the list screen ── */
-var KIND = { portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract' };
+var KIND = { portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
 function kindOf(x){ return KIND[x.kind] || s(x.kind).replace(/_/g, ' '); }
 function preview(x){ return esc(s(x.text)).split(esc(PH)).join('<span style="color:#2563eb;text-decoration:underline">[portal link]</span>'); }
 function stepLabel(x){
@@ -124139,6 +124131,87 @@ RI.call(window, function(){ if(!document.hidden && myEmail()) load(); }, 20000);
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) load(); });
 ST.call(window, load, 2500); ST.call(window, load, 8000);
 try{ console.log('[GC] Customer e-mail approvals: _gcOpenApprovals() (patch APPR).'); }catch(e){}
+})();
+
+</script>
+<script id="gc-patch-appr2">
+/* ==========================================================================
+   patch APPR2 — the thank-you e-mail joins the one approvals list.
+   Owner rule: no automatic customer e-mail without approval (exceptions: the
+   copy of a signed paper, payment receipts). The thank-you e-mail (job complete
+   and paid) used to wait on the owners' "Outbound message" list
+   (gc_outbound_approvals). It now goes to gc_approval_queue through the portal
+   function (op "queue"): the job's PM approves, then an admin; "✅ Approvals".
+   * _gcQueueCustomerEmail({ kind:'thank_you', projectId, subject, html }):
+     asks the function; until it answers, the request waits in this computer's
+     send buffer (gc_appr_outbox, retried every 5 s) — a buffer, not a list
+     anyone approves from.
+   * Pending thank-you items still on the old list are moved over once and
+     marked "moved" there, so nothing waits in two places.
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_APPR2__) return; window.__GC_PATCH_APPR2__ = true;
+var FN = '/.netlify/functions/portal', BUF = 'gc_appr_outbox', OLD = 'gc_outbound_approvals';
+var RI = window.__GC_NATIVE_SETINTERVAL__ || setInterval, ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+function jget(k, d){ try{ var v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; }catch(e){ return d; } }
+function jset(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function signedIn(){ try{ return !!(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(e){ return false; } }
+function proj(pid){ return (((window._crm||{}).projects)||[]).filter(function(p){ return p && String(p.id) === String(pid); })[0] || null; }
+function build(o){
+  var p = proj(o.projectId);
+  if(o.kind === 'thank_you' && p && !o.html){
+    o.subject = o.subject || '🎉 Thank You from GrayCo Construction!';
+    try{ o.html = window._gcBuildThankYou ? window._gcBuildThankYou(p) : ''; }catch(e){ o.html = ''; }
+  }
+  return o;
+}
+var busy = false;
+function flush(){
+  if(busy || !signedIn()) return Promise.resolve();
+  var buf = jget(BUF, []); if(!Array.isArray(buf) || !buf.length) return Promise.resolve();
+  busy = true;
+  var o = build(buf[0]);
+  if(!o.html){ busy = false; return Promise.resolve(); }   /* the job is not loaded yet: next time */
+  return window.fetch(FN, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ action:'approval', op:'queue', kind:o.kind, projectId:o.projectId, subject:o.subject, html:o.html }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__s = r.status; return j; }); }, function(){ return { __s:0 }; })
+    .then(function(j){
+      busy = false;
+      if(j.ok || j.noEmail || j.__s === 400){                /* queued (or nothing to send): out of the buffer */
+        var b2 = jget(BUF, []).filter(function(x){ return !(x.kind === o.kind && String(x.projectId) === String(o.projectId)); }); jset(BUF, b2);
+        try{ if(window._gcApprovalsRefresh) window._gcApprovalsRefresh(); }catch(e){}
+        if(b2.length) ST.call(window, flush, 300);
+      }
+      return j;
+    });
+}
+window._gcQueueCustomerEmail = function(o){
+  if(!o || !o.kind || !o.projectId) return Promise.resolve({ ok:false });
+  var buf = jget(BUF, []); if(!Array.isArray(buf)) buf = [];
+  if(!buf.some(function(x){ return x.kind === o.kind && String(x.projectId) === String(o.projectId); })) buf.push({ kind:o.kind, projectId:String(o.projectId), subject:o.subject || '', html:o.html || '', at:new Date().toISOString() });
+  jset(BUF, buf);
+  return flush();
+};
+window._gcApprOutbox = function(){ return jget(BUF, []); };
+/* the old owners' list: pending thank-yous move over once, and are marked moved there */
+function migrate(){
+  if(!signedIn()) return;
+  var q = jget(OLD, []); if(!Array.isArray(q)) return;
+  var ch = false, now = new Date().toISOString();
+  q.forEach(function(x){
+    if(!x || x.kind !== 'thank_you' || (x.status && x.status !== 'pending')) return;
+    window._gcQueueCustomerEmail({ kind:'thank_you', projectId:x.jobId });
+    x.status = 'moved'; x.decidedBy = 'moved to ✅ Approvals'; x.updatedAt = now; x.decidedAt = now; ch = true;
+  });
+  if(ch){
+    jset(OLD, q);
+    try{ if(window._gcApplySync) window._gcApplySync(OLD, q); }catch(e){}
+    try{ if(window._supaUpsert) window._supaUpsert(OLD, q); }catch(e){}
+  }
+}
+ST.call(window, migrate, 9000); RI.call(window, migrate, 120000);
+RI.call(window, function(){ if(!document.hidden && (jget(BUF, []) || []).length) flush(); }, 5000); ST.call(window, flush, 6000);   /* a waiting request is retried every 5 s */
+try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).'); }catch(e){}
 })();
 
 </script><!-- /INSP -->
