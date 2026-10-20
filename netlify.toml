@@ -59,3 +59,33 @@
   to = "/roofscout/:splat"
   status = 200
   force = true
+
+# Subcontractor portal's own address (docs/SUBPORTAL-SETUP.md): portal.grayco-cs.com shows the
+# subportal/ folder (built from subportal-app/), so https://portal.grayco-cs.com/ opens the sub portal
+# and none of the CRM. The customer page (portal.html) keeps working at that address too, in case a
+# customer link ever uses it. Only that host is matched; crm.grayco-cs.com is unaffected.
+# (/.netlify/functions/* is never redirected by Netlify, so the portal's server function works there.)
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal.html"
+  to = "/portal.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-logo.png"
+  to = "/portal-logo.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/subportal/*"
+  to = "https://portal.grayco-cs.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/*"
+  to = "/subportal/:splat"
+  status = 200
+  force = true
