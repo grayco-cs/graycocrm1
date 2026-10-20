@@ -59903,7 +59903,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       +'<div id="_ohManual" style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:8px">'+(manualRows()||'<div style="color:#64748b;font-size:12px">None added.</div>')+'</div>'
       +'<div style="display:flex;gap:8px">'
         +'<input id="_ohLabel" placeholder="e.g. Rent" style="flex:2;padding:8px;border-radius:6px">'
-        +'<input id="_ohAmt" type="number" placeholder="$/mo" style="flex:1;padding:8px;border-radius:6px">'
+        +'<input id="_ohAmt" inputmode="decimal" placeholder="$/mo" style="flex:1;padding:8px;border-radius:6px">'
         +'<button id="_ohAdd" style="padding:8px 14px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Add</button>'
       +'</div>'
       +'</div>';
@@ -59911,8 +59911,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     ov.querySelector('#_ohX').onclick=function(){ ov.remove(); };
     ov.querySelector('#_ohAdd').onclick=function(){
       var label=(ov.querySelector('#_ohLabel').value||'').trim();
-      var amt=num(ov.querySelector('#_ohAmt').value,0);
-      if(!label||!amt) return;
+      var _raw=String(ov.querySelector('#_ohAmt').value||'').replace(/[$,\s]/g,'');
+      var amt=num(_raw,0);
+      if(!label){ alert('Type what the cost is (e.g. Rent).'); return; }
+      if(!(amt>0)){ alert('Type the monthly amount as a number, e.g. 1900.'); return; }
       var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
       manual.push({label:label, amt:amt});
       try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
