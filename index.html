@@ -59921,6 +59921,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
       ov.remove(); window._gcOpenOverhead();
     };
+    ['#_ohLabel','#_ohAmt'].forEach(function(sel){ var el=ov.querySelector(sel); if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); ov.querySelector('#_ohAdd').click(); } }); });
     ov.querySelectorAll('[data-mdel]').forEach(function(btn){
       btn.onclick=function(){
         var i=parseInt(btn.getAttribute('data-mdel'),10);
