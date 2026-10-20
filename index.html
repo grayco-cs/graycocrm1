@@ -10856,8 +10856,10 @@ function doSearch(){
 (function(){
   // Back/Forward navigation
   window.addEventListener("popstate",function(){
+    if(window._gcNavOwnsBack&&window._gcNavOwnsBack())return; /* NAV: a screen is open — patch NAV closes it */
     var h=window._crmHistory;
     if(!h||h.stack.length===0)return;
+    window.__gcNav040=Date.now();
     h.ignoring=true;
     h.future.push(h.current);
     var prev=h.stack.pop();
@@ -10889,6 +10891,7 @@ function doSearch(){
   });
   
   function goBack(){
+    if(window._gcNavOwnsBack&&window._gcNavOwnsBack()){ window._gcNavBack(); return; } /* NAV */
     var h=window._crmHistory;
     if(!h||h.stack.length===0)return;
     h.ignoring=true;
@@ -71199,6 +71202,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     });
     document.body.appendChild(bar);
   }
+  window._gcFieldBuildTabs=function(){ injectCSS(); buildTabs(); }; /* NAV */
   function tapTab(id){
     Array.prototype.forEach.call(document.querySelectorAll('._gcAppTab'),function(b){ b.classList.toggle('_on', b.getAttribute('data-tab')===id); });
     if(id==='home'){ if(window._gcJobPicker) window._gcJobPicker(); else window._gcFieldHome(); }
@@ -92786,7 +92790,7 @@ var timed = new WeakSet();
 function holdToTwoSeconds(el){
   if(timed.has(el)) return;
   timed.add(el);
-  setTimeout(function(){ try{ if(el && el.parentNode) el.parentNode.removeChild(el); }catch(e){} }, MAX_NOTICE_MS);
+  setTimeout(function(){ try{ if(el && el.parentNode && el.getAttribute('data-gc-keep')!=='1') el.parentNode.removeChild(el); }catch(e){} }, MAX_NOTICE_MS); /* NAV: kept is kept */
 }
 
 function sweep(){
@@ -92808,7 +92812,8 @@ function sweep(){
            && !/Ov$|Overlay|Modal|Dialog/.test(el.id||'')
            && el.getAttribute('data-gc-keep')!=='1'
            && (el.textContent||'').length < 300
-           && !el.querySelector('input,select,textarea')){
+           && !el.querySelector('input,select,textarea')
+           && !/(^|\s)_gcSheetOv(\s|$)/.test(typeof el.className==='string'?el.className:'') && el.querySelectorAll('button').length < 2 /* NAV: a menu is not a notice */){
           holdToTwoSeconds(el);
         }
       }catch(e){}
@@ -122057,6 +122062,395 @@ window._gcxOpenUndone = async function(){
 })();
 
 try{ console.log('[GC] SYNC-A: a person\'s job edit is never undone by sync (_gcxSyncAStats(), _gcxFieldEdits(id), Admin → Find edits that were undone).'); }catch(e){}
+})();
+
+</script>
+<script id="gc-patch-nav">
+/* ============================================================================
+   GrayCo — A WAY BACK FROM EVERY SCREEN (patch NAV).
+
+   Owner, on his phone in field view: "there were times today I couldn't go back
+   to other pages, the back buttons weren't there or didn't work."
+
+   What was wrong:
+   · The phone's Back did nothing in field view. Field screens are overlays the
+     app draws on top of the page; none of them is in the browser history. The
+     only history the app keeps is the desk tab list, and in field view that is
+     empty — so Back was swallowed (nothing visible happened) until the page's
+     own entries ran out, and then Back LEFT THE CRM (blank page / app closed).
+   · Some full-screen screens have no back control at all (Job info / Post update
+     job profile, My Approvals' only "Close" is at the very bottom), others have
+     theirs hidden: the field "GrayCo" header bar is drawn ON TOP of the job
+     screen's own "‹ Jobs" button, the Desk View pill sits on sheets' corners,
+     and on an iPhone (viewport-fit=cover) headers that start at top:0 put their
+     ✕ under the notch / status bar, where a tap does not land.
+
+   What this does (one rule for every screen, field and desk):
+   · window._gcNavBack() — closes the top-most full-screen layer the way its own
+     ‹ / ✕ / Close / Done does (or removes it), and puts back the screen it was
+     opened from (the job screen, or the field job list). In field view with
+     nothing open it returns to the field job list.
+   · The phone / browser Back runs exactly that. One "guard" history entry stays
+     on top while you work, so Back never blanks the page or exits the CRM by
+     surprise. On the first screen, Back says "Press Back again to leave GrayCo";
+     a second Back within 3 s really leaves — the user is never trapped.
+   · A sticky "‹ Back" button (below the notch: env(safe-area-inset-top)) is
+     shown on any open full-screen layer that has no tappable back control of its
+     own. The field header bar and the Desk View pill step aside while a layer is
+     open, so the screen's own back button is never covered.
+   Console: _gcNavBack()  _gcNavLayers()  _gcNavOwnsBack()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_NAV__) return; window.__GC_PATCH_NAV__ = true;
+var W = window, D = document;
+/* the browser's own timers: the CRM's governors pause the others while a field has the focus, and a
+   Back button that only appears after you stop typing is no Back button */
+var _st = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout, _si = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function RT(f, ms){ return _st.call(W, f, ms); }
+function RI(f, ms){ return _si.call(W, f, ms); }
+
+/* things that float but are not screens */
+var NOT_A_SCREEN = /^(root|_gcAppTabs|_gcAppHead|_gcDeskBtn|_gcFieldHubBtn|_fmToggle|gc-hub-btn|gc-mobile-bottom-nav|_gcApprovalsBtn|_gcJobMsgFab|_gcAlertsBtn|_gcPmBell|_masterSearch|gc-br-settings|_gcHelpBtn|_gcQAFab|_voiceBtn|gc-est-notes-panel|_gcNavBk|_gcNavToast|_gcFieldBar|gc-alert-bar|gc-alertbar|_gcAlertBanner)$/;
+/* "‹ Jobs", "← Back", "← All jobs", "Back" */
+var BACK_TXT = /^(‹|←|❮)\s*[A-Za-z][A-Za-z ]{0,13}$|^(‹|←|❮)$|^back$/i;
+/* a plain ✕ / Close anywhere; "Done" / "Cancel" only in the screen header (a "Done" further down can tick a to-do) —
+   and never "✕ Deny", "✕ Reject" and the like */
+var CLOSE_TXT = /^(✕|✖|×|⨯|x)(\s*close)?$|^close$/i;
+var HEAD_TXT = /^(done|cancel)$/i;
+
+function inField(){ return D.documentElement.classList.contains('_fieldmode'); }
+function zOf(e){ var z = parseInt(getComputedStyle(e).zIndex, 10); return isFinite(z) ? z : 0; }
+function safeTop(){
+  var p = D.getElementById('_gcNavSafe');
+  if (!p) { p = D.createElement('div'); p.id = '_gcNavSafe'; p.setAttribute('aria-hidden', 'true'); p.setAttribute('data-gc-keep', '1'); p.style.cssText = 'position:fixed;left:0;top:env(safe-area-inset-top,0px);width:0;height:0;pointer-events:none;visibility:hidden'; D.body.appendChild(p); }
+  return p.getBoundingClientRect().top || 0;
+}
+function isScreen(e){
+  if (!e || e.nodeType !== 1 || /^(SCRIPT|STYLE|LINK|NOSCRIPT|TEMPLATE)$/.test(e.tagName)) return false;
+  if (e.id && NOT_A_SCREEN.test(e.id)) return false;
+  if (e.hasAttribute && e.hasAttribute('data-gcnav-ignore')) return false;
+  if (e.id && /^gc-auth|gate$|splash|^_gcLock/i.test(e.id)) return false;      /* the sign-in screen and locks are not "screens" to back out of */
+  var cs = getComputedStyle(e);
+  if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05 || cs.pointerEvents === 'none') return false;
+  var r = e.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  var w = Math.min(r.right, vw) - Math.max(r.left, 0), h = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+  if (w <= 0 || h <= 0) return false;
+  /* a screen: covers most of the phone, or (desk) a big dimmed modal backdrop */
+  return (w * h) >= 0.55 * vw * vh;
+}
+function layers(){
+  var out = [];
+  Array.prototype.forEach.call(D.body.children, function(e, i){ if (isScreen(e)) out.push({ e: e, z: zOf(e), i: i }); });
+  /* React desk modals live inside #root */
+  Array.prototype.forEach.call(D.querySelectorAll('#root .fixed.inset-0, #root [style*="position: fixed"][style*="inset: 0"]'), function(e){ if (isScreen(e)) out.push({ e: e, z: zOf(e), i: 1e6 }); });
+  out = out.filter(function(x){ return !x.e.querySelector('#gc-auth-email,#gc-auth-password'); });
+  out.sort(function(a, b){ return a.z - b.z || a.i - b.i; });
+  return out.map(function(x){ return x.e; });
+}
+function topLayer(){ var l = layers(); return l.length ? l[l.length - 1] : null; }
+/* the field job list is the field HOME — it is the bottom, not something to close */
+function isHome(e){ return !!e && e.id === '_gcJobPick' && inField(); }
+function desc(e){
+  if (!e) return null;
+  if (e.id === '_gcJobDash') { var j = W._gcCurrentJob; return { k: 'dash', pid: j && j.id }; }
+  if (e.id === '_gcJobPick') return { k: 'pick' };
+  return { k: 'layer', e: e };
+}
+
+/* a control the user can actually tap: on screen, below the notch, not covered */
+function tappable(b, st){
+  var r = b.getBoundingClientRect(); if (r.width < 10 || r.height < 10) return false;
+  var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  if (cx < 0 || cx > innerWidth || cy < (st || 0) + 4 || cy > innerHeight - 4) return false;
+  var hit = D.elementFromPoint(cx, cy);
+  return !!hit && (hit === b || b.contains(hit) || hit.contains(b) && hit !== D.body);
+}
+function kindOf(b, headY){
+  var t = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim(), al = (b.getAttribute('aria-label') || b.getAttribute('title') || '').trim(), da = b.getAttribute('data-a') || '';
+  if (BACK_TXT.test(t) || /^back$/i.test(al) || da === 'back') return 'back';
+  if (CLOSE_TXT.test(t) || /^close$/i.test(al) || da === 'close') return 'close';
+  if (HEAD_TXT.test(t) && b.getBoundingClientRect().top < headY) return 'close';
+  return '';
+}
+function backControls(layer){
+  var out = [], lt = Math.max(0, layer.getBoundingClientRect().top), headY = lt + 150 + safeTop();
+  Array.prototype.forEach.call(layer.querySelectorAll('button,a,[role=button],[data-a=back],[data-a=close]'), function(b){
+    if (b.id === '_gcNavBk') return;
+    var k = kindOf(b, headY); if (k) { b.__gcNavKind = k; out.push(b); }
+  });
+  return out;
+}
+function hasOwnBack(layer){
+  /* GrayCo Photos (patch U) draws its own ‹ in every screen (below the notch) and its own sheets' buttons, hides
+     everything else on the page while it is open, and must not be padded: it is left alone */
+  if (layer.id === 'gcuOv') return true;
+  var st = safeTop();
+  return backControls(layer).some(function(b){ return tappable(b, st); });
+}
+
+/* close ONE layer the way its own button does */
+function closeLayer(layer){
+  var par = layer.__gcNavFrom || null;
+  /* GrayCo Photos opened from a CRM job: Back from that job goes back to the CRM job */
+  if (layer.id === 'gcuOv' && W._gcPhotos) {
+    var S = W._gcPhotos.state || {};
+    /* a sheet inside it, or a screen it went to from where it was opened: its own ‹ (one level). On the screen it
+       was opened on from a CRM job (the job, or straight into the camera): close it — back to that CRM job */
+    var onOpen = S.screen === layer.__gcNavOpenScreen || S.screen === 'job';
+    if (layer.querySelector('#gcu-layer') || !par || !onOpen) {
+      var pb = layer.querySelector('[data-a=back]'); if (pb) { pb.click(); return finish(layer, par, true); }
+    }
+    try { W._gcPhotos.close(); } catch (e) {}
+    return finish(layer, par);
+  }
+  var bs = backControls(layer);
+  var bk = bs.filter(function(b){ return b.__gcNavKind === 'back'; })[0], cl = bs.filter(function(b){ return b.__gcNavKind === 'close'; })[0];
+  /* when we know where it was opened from, ✕ / Done (close, then put that screen back) beats a "‹ Back" that may
+     lead somewhere else (the Documents sheet's ‹ Back always opens the job, even when it was opened from the job list) */
+  var pick = (par && par.k !== 'layer' && cl) ? cl : (bk || cl || null);
+  if (pick) { try { pick.click(); } catch (e) {} }
+  if (layer.isConnected && !pick) { try { layer.remove(); } catch (e) {} }
+  return finish(layer, par, !!pick);
+}
+function finish(layer, par, soft){
+  /* after its own button ran: if it is still there, take it off; then put back where it came from */
+  RT(function(){
+    if (layer.isConnected && soft && layer.id !== 'gcuOv' && isScreen(layer) && topLayer() === layer) { try { layer.remove(); } catch (e) {} }
+    restore(par);
+    sync();
+  }, 120);
+  return true;
+}
+function restore(par){
+  if (!par) { if (inField() && !topLayer() && W._gcJobPicker) W._gcJobPicker(); return; }
+  var t = topLayer();
+  if (par.k === 'dash' && par.pid && !D.getElementById('_gcJobDash') && (!t || isHome(t)) && W._gcJobDashboard) { W._gcJobDashboard(par.pid); return; }
+  if (par.k === 'pick' && inField() && !D.getElementById('_gcJobPick') && !t && W._gcJobPicker) { W._gcJobPicker(); return; }
+  if (inField() && !topLayer() && W._gcJobPicker) W._gcJobPicker();
+}
+
+/* does Back belong to a screen (true), or to the desk tab history / leaving (false)? */
+function ownsBack(){
+  var t = topLayer();
+  if (t && !isHome(t)) return true;
+  if (inField() && !t) return true;              /* field view showing a desk page: Back = the field job list */
+  return false;
+}
+function goBack(){
+  var t = topLayer();
+  if (t && isHome(t)) return false;
+  if (t) {
+    if (t.id === '_gcJobDash') { if (W._gcJobPicker) W._gcJobPicker(); sync(); return true; }
+    return closeLayer(t);
+  }
+  if (inField() && W._gcJobPicker) {
+    var f = W.__gcNavDeskFrom; W.__gcNavDeskFrom = null;
+    if (f && f.k === 'dash' && f.pid && W._gcJobDashboard) W._gcJobDashboard(f.pid); else W._gcJobPicker();
+    sync(); return true;
+  }
+  return false;
+}
+/* field buttons that open a DESK page (Schedule, Scopes, Customers, Forms…) changed the page UNDER the field
+   job list / job screen, so nothing seemed to happen. Now the field screens step aside, and Back returns to them. */
+function wrapSetView(){
+  var f = W._setView; if (typeof f !== 'function' || f.__gcNav) return;
+  var w = function(v){
+    try {
+      if (inField()) {
+        var t = topLayer();
+        if (t && (t.id === '_gcJobPick' || t.id === '_gcJobDash' || /_gcSheetOv/.test(t.className || ''))) {
+          W.__gcNavDeskFrom = D.getElementById('_gcJobDash') ? desc(D.getElementById('_gcJobDash')) : { k: 'pick' };
+          Array.prototype.forEach.call(D.querySelectorAll('#_gcJobPick,#_gcJobDash,._gcSheetOv'), function(o){ o.remove(); });
+          try { D.documentElement.scrollTop = 0; } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    return f.apply(this, arguments);
+  };
+  w.__gcNav = true; W._setView = w;
+}
+
+/* ── remember where each screen was opened from ── */
+var lastTop = null;
+function sync(){
+  wrapSetView();
+  var t = topLayer(), html = D.documentElement;
+  var l = layers();
+  l.forEach(function(e){
+    if (!e.__gcNavSeen) {
+      e.__gcNavSeen = true;
+      try { if (e.id === 'gcuOv' && W._gcPhotos && W._gcPhotos.state) e.__gcNavOpenScreen = W._gcPhotos.state.screen; } catch (x) {}
+      var prev = lastTop && lastTop.e !== e ? lastTop : null;
+      /* the screen under it — or the one that was on top just before it replaced it */
+      var under = l[l.indexOf(e) - 1];
+      e.__gcNavFrom = under ? desc(under) : (prev ? prev.d : (inField() ? { k: 'pick' } : null));
+      if (e.__gcNavFrom && e.__gcNavFrom.k === 'layer' && !e.__gcNavFrom.e.isConnected) e.__gcNavFrom = prev && prev.d && prev.d.k !== 'layer' ? prev.d : null;
+    }
+  });
+  if (t) lastTop = { e: t, d: desc(t) };
+  var tabs = D.getElementById('_gcAppTabs');
+  html.classList.toggle('_gcNavTabs', !!(tabs && inField() && getComputedStyle(tabs).display !== 'none'));
+  var open = !!t && !isHome(t);
+  html.classList.toggle('_gcNavLayer', open);
+  html.classList.toggle('_gcNavSheet', open && t.id !== '_gcJobDash');
+  /* field view showing a desk page (Schedule, Scopes…): the field header bar's ‹ is the way back — if it is not
+     there (yet), the sticky Back stands in */
+  var deskInField = !t && inField() && !D.getElementById('_gcJobPick');
+  if (deskInField) { var hb = D.getElementById('_gcAppBack'); paintButton(hb && tappable(hb, safeTop()) ? null : D.body, true); }
+  else paintButton(open ? t : null);
+}
+
+/* ── the sticky ‹ Back button ── */
+function paintButton(t, page){
+  var b = D.getElementById('_gcNavBk');
+  var need = !!t && (page || !hasOwnBack(t));
+  if (!need) { if (b) b.style.display = 'none'; D.querySelectorAll('[data-gcnav-pad]').forEach(function(e){ if (e !== t) e.removeAttribute('data-gcnav-pad'); }); return; }
+  if (!b) {
+    b = D.createElement('button'); b.id = '_gcNavBk'; b.type = 'button'; b.setAttribute('aria-label', 'Back');
+    b.innerHTML = '<span style="font-size:24px;line-height:1;margin-top:-2px">‹</span><span>Back</span>';
+    b.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); W._gcNavBack(); });
+    D.body.appendChild(b);
+  }
+  b.style.display = 'flex';
+  b.style.zIndex = String(Math.max(2147483000, zOf(t) + 1));
+  if (!page && !t.hasAttribute('data-gcnav-pad')) t.setAttribute('data-gcnav-pad', '1');
+}
+
+var css = D.createElement('style'); css.id = '_gcNavCSS';
+css.textContent =
+  '#_gcNavBk{position:fixed;left:10px;top:calc(8px + env(safe-area-inset-top,0px));height:44px;min-width:88px;padding:0 16px 0 12px;border-radius:22px;border:1px solid rgba(255,255,255,.25);background:#0f2440;color:#fff;font:800 15px Inter,-apple-system,sans-serif;display:none;align-items:center;gap:6px;box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer;-webkit-tap-highlight-color:transparent}' +
+  '[data-gcnav-pad]{padding-top:calc(60px + env(safe-area-inset-top,0px))!important}' +
+  /* while a screen is open, the field header bar and the Desk View pill step aside (they covered "‹ Jobs" and sheets\' ✕) */
+  'html._gcNavLayer #_gcAppHead{display:none!important}' +
+  'html._gcNavSheet #_gcDeskBtn{display:none!important}' +
+  '#_gcNavToast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483001;background:#0f172a;color:#fff;padding:12px 18px;border-radius:14px;font:700 14px Inter,-apple-system,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.45);pointer-events:none}';
+(D.head || D.documentElement).appendChild(css);
+
+W._gcNavLayers = layers; W._gcNavSync = sync;
+/* the desk tab history stands down while a screen is open — and all the time in field view (it used to change the
+   hidden desk tab under the field job list and swallow the Back) */
+W._gcNavOwnsBack = function(){ return ownsBack() || inField(); };
+W._gcNavBack = function(){ var r = goBack(); RT(sync, 200); return r; };
+
+/* ── the phone / browser Back ── */
+var leaving = false, armedAt = 0;
+function guard(){
+  if (leaving) return;
+  try { if (!(history.state && history.state.gcNav)) history.pushState(Object.assign({}, history.state || {}, { gcNav: 1 }), '', location.href); } catch (e) {}
+}
+function toast(msg){
+  var t = D.getElementById('_gcNavToast'); if (t) t.remove();
+  t = D.createElement('div'); t.id = '_gcNavToast'; t.textContent = msg; D.body.appendChild(t);
+  RT(function(){ if (t.isConnected) t.remove(); }, 2600);
+}
+W.addEventListener('popstate', function(ev){
+  if (leaving) { try { history.back(); } catch (e) {} return; }
+  if (ownsBack()) {                                       /* a screen is open: Back closes it */
+    goBack(); RT(sync, 200); guard(); return;
+  }
+  if (W.__gcNav040 && Date.now() - W.__gcNav040 < 400) { guard(); return; }   /* the desk tab history went back one tab */
+  /* the very first screen */
+  if (Date.now() - armedAt < 3000) {
+    leaving = true; RT(function(){ leaving = false; }, 8000);
+    /* straight out, past all of this page's own entries (Navigation API where there is one; else one by one) */
+    try { var nv = W.navigation, ce = nv && nv.currentEntry; if (ce && typeof ce.index === 'number' && ce.index >= 0) { history.go(-(ce.index + 1)); RT(function(){ if (leaving) try { history.back(); } catch (e) {} }, 700); return; } } catch (e) {}
+    try { history.back(); } catch (e) {}
+    return;
+  }
+  armedAt = Date.now(); toast('Press Back again to leave GrayCo'); guard();
+});
+/* the guard goes in on a real tap (Chrome skips history entries made without one) */
+D.addEventListener('pointerdown', guard, true);
+
+/* ── floating buttons never sit on a button you need ──
+   The 💎 hub (fixed bottom:152 right:18) sat on the Employees "EDIT" links and other right-column actions; the green
+   APPROVE button sat on the field "Create Document" tile. When a floating button covers something tappable it slides
+   (CSS translate, so their own saved/dragged position is untouched) to the nearest clear spot above or below; if there is
+   none it tucks mostly off the right edge, still tappable. */
+var DODGE = ['gc-hub-btn', '_gcApprovalsBtn', '_gcFieldHubBtn', '_gcQAFab', '_gcJobMsgFab', 'gc-br-settings', '_voiceBtn', 'data-io-toggle', '_alertBell'];
+var TAPPABLE = 'a[href],button,input,select,textarea,[role=button],[onclick],label';
+function coversAt(b, dx, dy){
+  var r = b.getBoundingClientRect(), ox = (b.__gcDodge || [0, 0]);
+  var L = r.left - ox[0] + dx, T = r.top - ox[1] + dy, W = r.width, H = r.height;
+  if (T < safeTop() + 4 || T + H > innerHeight - 4 || L < 0 || L + W > innerWidth) return true;
+  for (var i = 0; i < 5; i++) for (var j = 0; j < 5; j++) {
+    var x = L + 1 + (W - 2) * i / 4, y = T + 1 + (H - 2) * j / 4;
+    var st = D.elementsFromPoint(x, y) || [];
+    for (var k = 0; k < st.length; k++) {
+      var e = st[k]; if (e === b || b.contains(e) || e === D.body || e === D.documentElement) continue;
+      var hit = e.closest ? e.closest(TAPPABLE) : null;
+      if (hit && !b.contains(hit) && hit.offsetWidth > 0) return true;
+      if (getComputedStyle(e).cursor === 'pointer' && !b.contains(e)) return true;   /* React click handlers leave no attribute */
+    }
+  }
+  return false;
+}
+function dodgeOne(b){
+  if (!b || !b.isConnected || b.__gcDragging) return;
+  var cs = getComputedStyle(b); if (cs.display === 'none' || cs.visibility === 'hidden' || cs.position !== 'fixed') return;
+  var cur = b.__gcDodge || [0, 0];
+  if (!coversAt(b, cur[0], cur[1])) { if (cur[0] || cur[1]) { /* go home when home is clear */ if (!coversAt(b, 0, 0)) set(b, 0, 0); } return; }
+  var steps = [0, -64, 64, -128, 128, -192, 192, -256, -320];
+  for (var i = 0; i < steps.length; i++) if (!coversAt(b, 0, steps[i])) { set(b, 0, steps[i]); return; }
+  set(b, Math.round(b.offsetWidth * 0.62), 0);
+}
+function set(b, dx, dy){
+  b.__gcDodge = [dx, dy];
+  b.style.setProperty('translate', (dx || dy) ? dx + 'px ' + dy + 'px' : 'none', 'important');
+  b.style.setProperty('opacity', dx ? '0.75' : '', '');
+  b.setAttribute('data-gcnav-dodged', (dx || dy) ? '1' : '0');
+}
+function dodgeAll(){ DODGE.forEach(function(id){ try { dodgeOne(D.getElementById(id)); } catch (e) {} }); }
+/* a drag starts from where the button really is */
+['mousedown', 'touchstart'].forEach(function(ev){ D.addEventListener(ev, function(e){
+  var b = e.target && e.target.closest ? e.target.closest('#' + DODGE.join(',#')) : null; if (!b) return;
+  b.__gcDragging = true; if (b.__gcDodge && (b.__gcDodge[0] || b.__gcDodge[1])) set(b, 0, 0);
+  var up = function(){ b.__gcDragging = false; D.removeEventListener('mouseup', up, true); D.removeEventListener('touchend', up, true); RT(dodgeAll, 300); };
+  D.addEventListener('mouseup', up, true); D.addEventListener('touchend', up, true);
+}, true); });
+var dq = false;
+function dodgeSoon(){ if (dq) return; dq = true; RT(function(){ dq = false; dodgeAll(); }, 150); }
+W.addEventListener('scroll', dodgeSoon, true);
+W._gcNavDodge = dodgeAll;
+
+/* ── action buttons pushed out of sight: a table wider than its box hides its last column (Employees: "EDIT"
+      sat past the right edge on every row that also had "View App"). Its no-wrap action cells may wrap instead. ── */
+function unclipActions(){
+  Array.prototype.forEach.call(D.querySelectorAll('main table'), function(tb){
+    var box = tb.parentElement; if (!box) return;
+    if (tb.scrollWidth <= box.clientWidth + 2) return;
+    Array.prototype.forEach.call(tb.querySelectorAll('td'), function(td){
+      if (td.querySelectorAll('button,a').length >= 2 && getComputedStyle(td).whiteSpace === 'nowrap') { td.style.whiteSpace = 'normal'; td.style.minWidth = '150px'; }
+    });
+  });
+}
+
+/* ── the field app's sheets scroll (More: "Customers" and "Switch to Desk View" were below the screen at 390 px)
+      and clear the bottom tab bar ── */
+css.textContent +=
+  'html._fieldmode ._gcSheet{overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;max-height:calc(100% - 8px - env(safe-area-inset-top,0px))!important;padding-bottom:20px!important;box-sizing:border-box}' +
+  /* the sheet ends above the bottom tab bar, so its last row is never under it */
+  'html._fieldmode._gcNavTabs ._gcSheetOv{bottom:calc(66px + env(safe-area-inset-bottom,0px))!important;overflow:hidden}';
+
+/* ── the field bottom tab bar is always there in field view ──
+   It was only built from a governed 1.2 s timer, which the CRM pauses while it thinks someone is working
+   (__GC_IS_ACTIVE__); when that flag stuck, the bar never came. Built here from the browser's own timer too. */
+function ensureTabs(){
+  if (!inField() || D.getElementById('_gcAppTabs')) return;
+  if (W._gcPhotos && W._gcPhotos.state && W._gcPhotos.state.open) return;
+  try { if (typeof W._gcFieldBuildTabs === 'function') W._gcFieldBuildTabs(); } catch (e) {}
+}
+
+/* keep the button and the "opened from" notes current */
+var q = false;
+function soon(){ if (q) return; q = true; RT(function(){ q = false; try { sync(); } catch (e) {} }, 60); }
+try { new MutationObserver(soon).observe(D.body, { childList: true }); } catch (e) {}
+try { new MutationObserver(soon).observe(D.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+RI(function(){ try { sync(); } catch (e) {} try { ensureTabs(); } catch (e) {} try { unclipActions(); } catch (e) {} try { dodgeAll(); } catch (e) {} }, 700);
+W.addEventListener('resize', soon);
+RT(sync, 300);
+try { console.log('[GC] Back from every screen (patch NAV): _gcNavBack()'); } catch (e) {}
 })();
 
 </script>
