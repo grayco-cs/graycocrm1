@@ -25,8 +25,11 @@
   # genuinely secret variable is still scanned.
   # SUPABASE_ANON_KEY is the same public key that is in index.html (it opens
   # nothing by itself once docs/security-lockdown.sql is run); SITE_ORIGIN and
-  # STAFF_EMAILS are addresses, not secrets.
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS"
+  # STAFF_EMAILS are addresses, not secrets. OWNER_EMAILS (an e-mail list) and
+  # PORTAL_BASE_URL (https://crm.grayco-cs.com) are public too: the scanner
+  # failed 33.149 on the CRM address in solar-lookup.js, staff-admin.js and
+  # roofscout/PROJECT-BRIEF.md, and on the contact e-mail in roofscout-scan.js.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL"
 
 [functions]
   node_bundler = "esbuild"
