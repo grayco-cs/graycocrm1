@@ -41681,6 +41681,12 @@ setInterval(async function(){
 
 </script>
 <script>
+/* ═══ patch NOQB (__GC_NOQB__) — owner 2026-10-20: QuickBooks was imported ONCE at the fresh start;
+   the CRM is the money record now. No automatic QuickBooks pulls, no "Connect QuickBooks". ═══ */
+window.__GC_NOQB__ = true;
+try { if (localStorage.getItem('gc_qb_tokens')) { localStorage.removeItem('gc_qb_tokens'); console.log('[GC] NOQB: the old QuickBooks sign-in on this computer was removed (QuickBooks is not synced any more).'); } } catch (e) {}
+</script>
+<script>
 // ════════════════════════════════════════════════════════════════════════════
 // GrayCo CRM — QuickBooks Live Sync
 // OAuth 2.0 connection to QBO. Syncs customers, jobs (projects), invoices,
@@ -41800,6 +41806,7 @@ window.gcQB._receiveTokens = function(tokens){
 // Also handle postMessage
 window.addEventListener('message', function(e){
   if(e.data && e.data.type === 'qb_tokens'){
+    if(window.__GC_NOQB__){ clearTokens(); return; }
     window.gcQB._receiveTokens(e.data.payload);
   }
 });
@@ -42151,7 +42158,7 @@ function injectQBToSettings(){
   row.id = 'gc-qb-settings-row';
   row.innerHTML = [
     '<div><div class="gc-set-label">QuickBooks</div>',
-    '<div class="gc-set-sub">Live sync — customers, invoices, expenses</div></div>',
+    '<div class="gc-set-sub">Off — imported once at the fresh start; the CRM is the money record</div></div>',
     '<button class="gc-set-btn gc-set-btn-s" onclick="window.gcQB.open()">Open ↗</button>',
   ].join('');
   parentCard.insertBefore(row, intRow.closest('.gc-set-row'));
@@ -42159,6 +42166,24 @@ function injectQBToSettings(){
 
 var _qbObs = new MutationObserver(injectQBToSettings);
 setTimeout(function(){ _qbObs.observe(document.body,{childList:true,subtree:false}); }, 2000);
+
+/* patch NOQB: the window says QuickBooks sync is off; Connect / Sync Now / Apply do nothing */
+(function(){
+  var NOTE = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+    + '<div style="font-size:16px;font-weight:800;color:#fff;"><span style="color:#2ca01c;font-size:20px;">QB</span> QuickBooks</div>'
+    + '<button onclick="window.gcQB.close()" style="background:none;border:none;color:#666;font-size:20px;cursor:pointer;">✕</button></div>'
+    + '<div class="gc-qb-card" style="font-size:13px;color:#ddd;line-height:1.6">'
+    + '<b style="color:#fff">QuickBooks sync is off.</b> QuickBooks was imported once at the fresh start (20 Oct 2026). '
+    + 'Since then the CRM is the money record: invoices, payments and costs are entered here, not pulled from QuickBooks.'
+    + '<div style="margin-top:10px;color:#aaa">Still available, by hand: <b style="color:#fff">💎 → Import from QuickBooks (CSV)</b> (shows what it found; nothing is written until you press OK) '
+    + 'and Admin → 💾 Storage → 📥 Export Backup.</div></div>';
+  function off(){ var box = document.getElementById('gc-qb-box'); if (box) box.innerHTML = NOTE; overlay.classList.add('visible'); }
+  window.gcQB.open = off;
+  window.gcQB.connect = off;
+  window.gcQB.startSync = async function(){ off(); };
+  window.gcQB.applySync = async function(){ off(); };
+  window.gcQB._receiveTokens = function(){ clearTokens(); off(); };
+})();
 
 })();
 
@@ -110639,7 +110664,7 @@ function token(){ try{ return s(localStorage.getItem(TOKEN_KEY)); }catch(e){ ret
 function setToken(t){ try{ localStorage.setItem(TOKEN_KEY, s(t)); }catch(e){} }
 function projects(){ var p=window._crm&&window._crm.projects; return Array.isArray(p)?p:[]; }
 function subs(){ var p=window._crm&&window._crm.subs; return Array.isArray(p)?p:[]; }
-async function inbox(){ try{ var v=await window.idbGet(INBOX); return Array.isArray(v)?v:[]; }catch(e){ return []; } }
+async function inbox(){ try{ var v=await window.idbGet(INBOX); v=Array.isArray(v)?v:[]; if(window.__GC_NOQB__){ var n0=v.length; v=v.filter(function(x){ return !(x && x.status==='pending' && (x.qb || /quickbooks/i.test(s(x.source)))); }); if(v.length!==n0){ try{ await window.idbSet(INBOX, v); console.log('[GC] NOQB: '+(n0-v.length)+' waiting QuickBooks record(s) removed from the Money Inbox'); }catch(e){} } } return v; }catch(e){ return []; } }   /* patch NOQB: a QuickBooks row still waiting from before is dropped */
 async function saveInbox(list){
   try{ await window.idbSet(INBOX, list); }catch(e){}
   try{ if(window._supaUpsert) window._supaUpsert(INBOX, list); }catch(e){}
@@ -110649,6 +110674,7 @@ function me(){ try{ return (window._gcMeUserJSON?window._gcMeUserJSON('{}'):JSON
 /* ── the QuickBooks connection this CRM already has (⚙ → Integrations) ─────── */
 function qbTokens(){ try{ return JSON.parse(localStorage.getItem(QB_STORE)||'null'); }catch(e){ return null; } }
 async function qbGet(path){
+  if(window.__GC_NOQB__) return null;   /* patch NOQB */
   var t=qbTokens(); if(!t||!t.access_token||!t.realmId) return null;
   try{
     if(t.expires_in && t.connectedAt && (Date.now()-new Date(t.connectedAt).getTime()) > (t.expires_in-120)*1000 && t.refresh_token){
@@ -110726,6 +110752,7 @@ window._gcMoneyCheck = async function(loud){
     var added=[];
     for(var i=0;i<recs.length;i++){
       var rec=recs[i]; if(!rec||typeof rec!=='object') continue;
+      if(window.__GC_NOQB__ && (rec.qb || /quickbooks/i.test(s(rec.source)))) continue;   /* patch NOQB */
       if(rec.qb) rec=await fillFromQuickBooks(rec);
       var fp=low(rec.source)+'|'+(rec.ref?('ref:'+low(rec.ref)):('shape:'+rec.type+':'+num(rec.amount).toFixed(2)+':'+s(rec.date)+':'+low(rec.job||rec.po||rec.address||rec.customer)));
       if(seen[fp]) continue; seen[fp]=1;
@@ -110917,7 +110944,7 @@ window._gcMoneyAPIs = function(){
       +'<div style="font-size:12.5px;opacity:.85;margin-top:3px">Everything arrives in the Money Inbox for you to accept or deny. Nothing writes itself onto a job.</div></div>'
     +'<div style="padding:18px 20px;max-height:74vh;overflow:auto">'
       +'<div style="font-size:14px;font-weight:800;margin-bottom:6px">1. QuickBooks — automatic, by webhook</div>'
-      +'<div style="'+box+';margin-bottom:8px">'+(qbOn?'🟢 QuickBooks is connected on this computer.':'⚪ QuickBooks is not connected on this computer yet — ⚙ → Integrations → QuickBooks → Connect. The webhook still queues changes; details are fetched once a connected computer collects them.')
+      +'<div style="'+box+';margin-bottom:8px">'+(window.__GC_NOQB__?'⚪ QuickBooks sync is off (fresh start 20 Oct 2026): QuickBooks records sent here are ignored. In Intuit\'s developer site you can remove this webhook.':(qbOn?'🟢 QuickBooks is connected on this computer.':'⚪ QuickBooks is not connected on this computer yet — ⚙ → Integrations → QuickBooks → Connect. The webhook still queues changes; details are fetched once a connected computer collects them.'))
         +'<ol style="margin:8px 0 0 18px;padding:0"><li>developer.intuit.com → your app → <b>Webhooks</b> → Endpoint URL:<div style="'+mono+';margin:4px 0">'+esc(url)+'?qb=1</div></li>'
         +'<li>Tick Invoice, Payment, Bill, BillPayment, Purchase, SalesReceipt, CreditMemo, RefundReceipt, Deposit.</li>'
         +'<li>Copy the <b>Verifier Token</b> Intuit shows and set it on Netlify as <b>QB_WEBHOOK_VERIFIER</b>.</li></ol>'
