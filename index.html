@@ -1650,7 +1650,7 @@ var DEVICE_KEEP = ['gc_auth_v1','gc_auth_last_active','gc_auth_last_email','gc_i
   'grayco_gmail_accounts','gc_google_review_url','gc_ach_default',
   'gc_cc_seen_ids','gc_ccam_pulled_ids','gc_cc_first_poll_done','gc_ri_imported','gc_money_inbox','gc_leadgen_lastscan','lg_watchkeys',
   'gc_acct_scan_day','gc_last_acct_scan','_gc_last_weekly_backup','gc_last_dl_backup','gc_digest_shown','_lastDigest',
-  '_qb3','gc_cc_lifted_v1','gc_hub_reset_v935','gc_lostjob_swept_v1','gc_overhead_seeded_v1','gc_overhead_steven_seeded','gc_register_deduped_v1',
+  '_qb3','gc_cc_lifted_v1','gc_hub_reset_v935','gc_lostjob_swept_v1','gc_overhead_seeded_v1','gc_overhead_steven_seeded','gc_overhead_ins_seeded_v1','gc_register_deduped_v1',
   'gc_steven_pay_auto_v1','_qb_seeded_v2'];
 var DEVICE_KEEP_PREFIX = ['gc_taborg_v2_','gc_user_tabs_'];
 /* IndexedDB grayco_crm / kv: the signed-in CRM person, plus the config above */
@@ -31117,6 +31117,7 @@ window.gcExpCenter = {
     if(isDup){ exp._dupFlag = true; exp._dupNote = 'Same amount and date as existing entry — verify not a duplicate'; }
     rows.unshift(exp);
     await _gcAcW(EXP_KEY, rows);
+    try{ if(_isOverhead){ window._gcOverheadTouched&&window._gcOverheadTouched(); } }catch(e){}
     // ── Sync into the React 'expenses' store so Dashboard + P&L update ──
     (function(){
       // Draws/payments received are INCOME, not spend — never mirror them as an expense.
@@ -31129,6 +31130,7 @@ window.gcExpCenter = {
         type: 'purchase',
         subType: method,
         cat: exp.category||'Other',
+        overhead: _isOverhead,
         desc: desc,
         amt: Math.abs(parseFloat(amt)||0),
         date: date,
@@ -31532,7 +31534,7 @@ window.gcExpCenter = {
       document.getElementById('gc-exc-imp-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#555;padding:20px;">No transactions found.</td></tr>';
       return;
     }
-    var opts = '<option value="">— Unmatched —</option>' + _excProjs.map(function(p){
+    var opts = '<option value="">— Unmatched —</option><option value="__overhead__">📦 Overhead</option>' + _excProjs.map(function(p){
       return '<option value="'+p.id+'">'+(p.autoPO?'['+p.autoPO+'] ':'')+p.name+'</option>';
     }).join('');
     document.getElementById('gc-exc-imp-tbody').innerHTML = _excImportRows.map(function(r,i){
@@ -31543,13 +31545,16 @@ window.gcExpCenter = {
         '<td style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+r.desc+_dupBadge+'</td>'+
         '<td style="font-weight:700;color:#e74c3c;">'+_gcAcFmt$(r.amount)+'</td>'+
         '<td style="font-size:11px;">'+r.category+'</td>'+
-        '<td><select onchange="gcExpCenter.assignRow('+i+',this.value)" style="background:#222;border:1px solid #444;color:#fff;border-radius:4px;padding:4px;font-size:11px;max-width:160px;">'+opts.replace('value="'+r.pid+'"','value="'+r.pid+'" selected')+'</select></td></tr>';
+        '<td><select onchange="gcExpCenter.assignRow('+i+',this.value)" style="background:#222;border:1px solid #444;color:#fff;border-radius:4px;padding:4px;font-size:11px;max-width:160px;">'+opts.replace('value="'+(r.overhead===true&&!r.pid?'__overhead__':r.pid)+'"','value="'+(r.overhead===true&&!r.pid?'__overhead__':r.pid)+'" selected')+'</select></td></tr>';
     }).join('');
   },
   toggleRow: function(i,v){ if(_excImportRows[i]) _excImportRows[i].selected = v; },
   toggleAll: function(v){ _excImportRows.forEach(function(r){r.selected=v;}); this.renderImport(); },
   assignRow: function(i,pid){
     if(!_excImportRows[i]) return;
+    /* 33.151: 📦 Overhead is overhead — no job, flagged, so the Monthly Overhead count sees it */
+    var _oh = pid==='__overhead__'; if(_oh) pid='';
+    _excImportRows[i].overhead = _oh;
     _excImportRows[i].pid = pid;
     var p = _excProjs.find(function(x){return x.id===pid;});
     _excImportRows[i].projName = p?p.name:'';
@@ -31570,6 +31575,7 @@ window.gcExpCenter = {
     });
     var merged = existing.concat(newRows);
     await _gcAcW(EXP_KEY, merged);
+    try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
     this.clearImport();
     this.tab('register');
     this.renderStats();
@@ -31603,7 +31609,8 @@ window.gcExpCenter = {
       return '<option value="'+p.id+'">'+lbl+'</option>';
     }).join('');
     tb.innerHTML = shown.map(function(r){
-      var thisJobOpts = jobOpts.replace('value="'+r.pid+'"', 'value="'+r.pid+'" selected');
+      var _selPid = (window._gcIsOverheadExpense && window._gcIsOverheadExpense(r)) ? '__overhead__' : r.pid;
+      var thisJobOpts = jobOpts.replace('value="'+_selPid+'"', 'value="'+_selPid+'" selected');
       var jobLabel = r.pid ? ((r.projPO?'['+r.projPO+'] ':'')+( r.projAddr||r.projName||'')) : '— Overhead —';
       var methIcons={cc:'💳',cash:'💵',check:'🏦',venmo:'📱',zelle:'⚡',cashapp:'💰',wire:'🔌',ach:'🏛',other:'📋'};
       var methTip = r.source==='cc'?'💳 Card':r.source==='check'?'🏦 Check'+(r.checkNum?' #'+r.checkNum:''):((methIcons[r.method]||'✏️')+' '+(r.methodLabel||r.method||'Manual'));
@@ -31617,11 +31624,13 @@ window.gcExpCenter = {
   },
   reassignJob: async function(id, pid){
     var rows = await _gcAc(EXP_KEY) || [];
+    var _oh = pid==='__overhead__'; if(_oh) pid='';   /* 33.151: overhead = no job + flagged */
     var p = pid ? _excProjs.find(function(x){return x.id===pid;}) : null;
     rows = rows.map(function(r){
-      return r._id===id ? Object.assign({},r,{pid:pid,projName:p?p.name:'',projPO:p?p.autoPO:'',projAddr:p?p.address:''}) : r;
+      return r._id===id ? Object.assign({},r,{pid:pid,overhead:_oh,projName:p?p.name:(_oh?'Overhead':''),projPO:p?p.autoPO:'',projAddr:p?p.address:''}) : r;
     });
     await _gcAcW(EXP_KEY, rows);
+    try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
     this.renderStats();
     this.renderRegister();
   },
@@ -31682,11 +31691,13 @@ window.gcExpCenter = {
   },
   assignUnmatched: async function(id, pid){
     var rows = await _gcAc(EXP_KEY) || [];
+    var _oh = pid==='__overhead__'; if(_oh) pid='';   /* 33.151: overhead = no job + flagged */
     var p = _excProjs.find(function(x){return x.id===pid;});
     rows = rows.map(function(r){
-      return r._id===id ? Object.assign({},r,{pid:pid,projName:p?p.name:'',projPO:p?p.autoPO:'',source:'manual'}) : r;
+      return r._id===id ? Object.assign({},r,{pid:pid,overhead:_oh,projName:p?p.name:(_oh?'Overhead':''),projPO:p?p.autoPO:'',source:'manual'}) : r;
     });
     await _gcAcW(EXP_KEY, rows);
+    try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
     this.renderUnmatched();
     this.renderStats();
   },
@@ -31787,6 +31798,7 @@ window.gcExpCenter = {
     if(eid){ rows = rows.map(function(r){return r._id===eid?exp:r;}); }
     else { rows.unshift(exp); }
     await _gcAcW(EXP_KEY, rows);
+    try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
     try{
       if(!eid && !_isOverhead){
         var _aq=[]; try{ _aq=JSON.parse(localStorage.getItem('gc_expense_approvals')||'[]'); }catch(e){}
@@ -32124,13 +32136,14 @@ window.gcCheckImport = {
     document.getElementById('gc-chk-preview').style.display = _ckRows.length ? 'block' : 'none';
 
     var catOpts = CHECK_CATEGORIES.map(function(c){return '<option>'+c+'</option>';}).join('');
-    var jobOpts = '<option value="">— Unmatched —</option>' + _ckProjs.map(function(p){
+    var jobOpts = '<option value="">— Unmatched —</option><option value="__overhead__">📦 Overhead</option>' + _ckProjs.map(function(p){
       return '<option value="'+p.id+'">'+(p.autoPO?'['+p.autoPO+'] ':'')+p.name+'</option>';
     }).join('');
 
     document.getElementById('gc-chk-tbody').innerHTML = _ckRows.map(function(r,i){
       var catSel = catOpts.replace('<option>'+r.category+'</option>', '<option selected>'+r.category+'</option>');
-      var jobSel = jobOpts.replace('value="'+r.pid+'"', 'value="'+r.pid+'" selected');
+      var _jp = (r.overhead===true && !r.pid) ? '__overhead__' : r.pid;
+      var jobSel = jobOpts.replace('value="'+_jp+'"', 'value="'+_jp+'" selected');
       return '<tr>'+
         '<td><input type="checkbox"'+(r.selected?' checked':'')+' onchange="gcCheckImport.toggleRow('+i+',this.checked)"></td>'+
         '<td style="font-size:11px;color:#3498db;font-weight:600;">'+(r.checkNum||'—')+'</td>'+
@@ -32147,6 +32160,8 @@ window.gcCheckImport = {
   assignCat: function(i,cat){ if(_ckRows[i]) _ckRows[i].category = cat; },
   assignJob: function(i,pid){
     if(!_ckRows[i]) return;
+    var _oh = pid==='__overhead__'; if(_oh) pid='';   /* 33.151 */
+    _ckRows[i].overhead = _oh;
     _ckRows[i].pid = pid;
     var p = _ckProjs.find(function(x){return x.id===pid;});
     _ckRows[i].projName = p ? p.name : '';
@@ -32175,6 +32190,7 @@ window.gcCheckImport = {
         desc: 'Check #'+(r.checkNum||'—')+' — '+r.payee+(r.memo?' ('+r.memo+')':''),
         category: r.category,
         pid: r.pid,
+        overhead: r.overhead===true,
         projName: r.projName,
         projPO: r.projPO,
         source: 'check',
@@ -32185,6 +32201,7 @@ window.gcCheckImport = {
 
     var merged = existing.concat(newRows);
     await _gcCkW(EXP_KEY, merged);
+    try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
 
     this.clear();
     var st = document.getElementById('gc-chk-status');
@@ -33837,7 +33854,7 @@ async function checkAlerts(){
   if(_noIns.length && isAdmin) alerts.push({ office:true, icon:'⛔', msg:_noIns.length+' sub'+(_noIns.length>1?'s':'')+' missing insurance', tab:'projsubs' });
 
   // ── UNASSIGNED EXPENSES (no job) — need a job before P&L is right ──
-  var _unassigned = _expForDup.filter(function(e){ return e && !e.pid && e.type!=='payment' && e.status!=='denied' && !(e.overhead===true||/^overhead$/i.test(e.category||'')); });
+  var _unassigned = _expForDup.filter(function(e){ return e && !e.pid && e.type!=='payment' && e.status!=='denied' && !(window._gcIsOverheadExpense ? window._gcIsOverheadExpense(e) : (e.overhead===true||/^overhead$/i.test(e.category||''))); });
   if(_unassigned.length && isAdmin) alerts.push({ icon:'🏷', msg:_unassigned.length+' expense'+(_unassigned.length>1?'s':'')+' with no job assigned', tab:'accounting' });
 
   // ── EXPENSE ON A JOB WITH NO SIGNED CONTRACT — alert Nick, Wesley & the PM ──
@@ -34931,7 +34948,7 @@ function buildTodoItems(){
     // 3) Credit-card charges not assigned to a job.
     try{
       var reg=JSON.parse(localStorage.getItem('gcAcctRegister')||'[]');
-      reg.filter(function(r){return r&&(r.source||'')==='creditcard'&&!r.pid&&!(r.overhead===true||/^overhead$/i.test(r.category||''));}).forEach(function(r){
+      reg.filter(function(r){return r&&(r.source||'')==='creditcard'&&!r.pid&&!(window._gcIsOverheadExpense ? window._gcIsOverheadExpense(r) : (r.overhead===true||/^overhead$/i.test(r.category||'')));}).forEach(function(r){
         items.push({ priority:'med', icon:'\uD83D\uDCB3', text:'Assign a job to card charge: '+fmt$(r.amount!=null?r.amount:r.amt)+' '+((r.payee||r.desc||'')),
           sub:'Credit-card charge needs a job', tag:'Credit Cards', action:'if(window._gcOpenCCManager)window._gcOpenCCManager()' });
       });
@@ -53182,7 +53199,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
       if(!inRange(ex.date, from, to)) return;
       var cat=String(ex.category||'').toLowerCase();
       var isJob = !!ex.pid || cat.indexOf('material')>-1 || cat.indexOf('subcontractor')>-1 || cat.indexOf('change order')>-1 || cat.indexOf('equipment')>-1;
-      var isOverheadCat = ex.overhead===true || cat==='overhead' || cat.indexOf('loan')>-1 || cat.indexOf('office')>-1 || cat.indexOf('insurance')>-1 || cat.indexOf('rent')>-1 || cat.indexOf('utilit')>-1 || cat.indexOf('software')>-1;
+      var isOverheadCat = (window._gcIsOverheadExpense ? window._gcIsOverheadExpense(ex) : ex.overhead===true) || cat==='overhead' || cat.indexOf('loan')>-1 || cat.indexOf('office')>-1 || cat.indexOf('insurance')>-1 || cat.indexOf('rent')>-1 || cat.indexOf('utilit')>-1 || cat.indexOf('software')>-1;
       if(isJob && !isOverheadCat){
         if(cat.indexOf('material')>-1) matCosts+=amt; else otherJobCosts+=amt;
         cogs+=amt;
@@ -55542,11 +55559,20 @@ async function poll(silent){
     if(window._gcIsIncome && window._gcIsIncome(e)) return false;
     if(e.isIncome===true || e.direction==='in') return false;
     var hasJob = !!pidOf(e);
-    var isOH = (e.overhead===true) || (low(e.category)==='overhead');
+    var isOH = isOverhead(e);
     if(!hasJob && !isOH) return false;                                    /* "up in the air" doesn't count */
     return true;
   }
-  function isOverhead(e){ return (e.overhead===true) || (low(e.category)==='overhead') || (e && e.pid==='__overhead__'); }
+  /* 33.151 owner: ONE answer to "is this overhead?" for every screen. However a cost was moved to
+     overhead — 📦 Overhead in the Expense Center, the __overhead__ job choice, a card charge matched
+     to Overhead, or the category set to Overhead — it is overhead, unless it sits on a real job. */
+  function isOverhead(e){
+    if(!e || typeof e!=='object') return false;
+    if(e.pid==='__overhead__') return true;
+    if(pidOf(e)) return false;
+    return e.overhead===true || low(e.category)==='overhead' || low(e.cat)==='overhead' || e._pidWas==='__overhead__';
+  }
+  window._gcIsOverheadExpense = isOverhead;
   /* the accounting screen counts every cost, assigned to a job or not */
   function isSpendAny(e){
     if(!e) return false;
@@ -59789,173 +59815,351 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function money(n){ return '$'+(Math.round((+n||0)*100)/100).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}); }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
-  // Overhead = business operating costs NOT tied to a specific job. These categories are "keep the lights on".
-  var OVERHEAD_CATS = ['Rent/Lease','Utilities','Insurance','Truck/Vehicle','Fuel','Phone/Internet',
-    'Software/Subscriptions','Office Supplies','Tools/Equipment','Loan Payment','Taxes','Accounting/Legal',
-    'Marketing','Storage','Uniforms','Safety/PPE','Licensing/Permits','Office/Admin','Payroll','Salaries','Overhead'];
+  function low(v){ return String(v==null?'':v).toLowerCase(); }
+  function monthKey(d){ try{ return String(d).slice(0,7); }catch(e){ return ''; } }
+  function nowMonth(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+  /* "$1,900" / "1900" / " 1,900.50 " -> number; NaN when it is not a number */
+  function parseAmt(v){ var s=String(v==null?'':v).replace(/[$,\s]/g,''); if(s==='') return NaN; var n=Number(s); return isFinite(n)?n:NaN; }
+  function r2(n){ return Math.round((+n||0)*100)/100; }
+
+  /* 33.151 owner: overhead is whatever Accounting moved to overhead — ONE rule (window._gcIsOverheadExpense),
+     the same one the P&L uses. The old "any job-less row in a lights-on category" guess is gone. */
   function isOverhead(x){
-    if(!x) return false;
-    if(x.pid) return false;                       // tied to a job = job cost, NOT overhead
-    if(x.overhead===true) return true;
-    var cat=String(x.cat||x.category||'');
-    return OVERHEAD_CATS.some(function(c){ return cat.toLowerCase().indexOf(c.toLowerCase())>=0; });
+    if(window._gcIsOverheadExpense) return !!window._gcIsOverheadExpense(x);
+    if(!x) return false; if(x.pid==='__overhead__') return true; if(x.pid) return false;
+    return x.overhead===true || low(x.category||x.cat)==='overhead';
+  }
+  function amtOf(x){ return Math.abs(num(String(x.amt!=null?x.amt:x.amount).replace(/[$,\s]/g,''),0)); }
+  function idOf(x){ return String((x&&(x.id||x._id))||''); }
+  function dateOf(x){ return String(x.date||x.paidDate||x.created||''); }
+  function catOf(x){ return String(x.category||x.cat||''); }
+  function whatOf(x){ return String(x.vendor||x.payee||x.desc||'(no description)'); }
+  function whoText(x){ return low((x.vendor||'')+' '+(x.payee||'')+' '+(x.desc||'')+' '+(x.paidBy||'')+' '+(x.employee||'')); }
+  function getManual(){ var m=[]; try{ m=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){} return Array.isArray(m)?m:[]; }
+  function lineAmt(m){ var n=parseAmt(m&&m.amt); return isNaN(n)?0:n; }
+
+  /* Steven's gas is an ESTIMATE every month; his actual gas/vehicle receipts are never added on top */
+  function isStevenLine(m){ return !!m && (m.person==='Steven Biffle' || /steven|biffle/i.test(m.label||'')); }
+  function isStevenGasLine(m){ return isStevenLine(m) && /\bgas\b|\bfuel\b/i.test(m.label||''); }
+  function isStevenGasReceipt(x){ var w=whoText(x), c=low(catOf(x))+' '+low(x.desc); return (w.indexOf('steven')>=0||w.indexOf('biffle')>=0) && /gas|fuel|vehicle/.test(c); }
+  function lineIsEst(m){ return !!(m && (m.est || isStevenGasLine(m))); }
+
+  /* every cost once (expenses + the accounting register, folded) — the rows behind the P&L */
+  function spendRows(){
+    var rows=null;
+    try{ if(window._gcSpendRows) rows=window._gcSpendRows({includeUnassigned:true}); }catch(e){ rows=null; }
+    if(!rows || !rows.length) rows=(crm().expenses||[]);
+    return rows;
+  }
+  function ohExpenses(){
+    return spendRows().filter(function(x){
+      if(!x || typeof x!=='object') return false;
+      var st=low(x.status); if(st==='denied'||st==='rejected'||st==='void'||st==='voided') return false;
+      if(x.type==='payment'||x.type==='income'||x.isIncome===true||x.direction==='in') return false;
+      return isOverhead(x);
+    });
   }
 
-  function monthKey(d){ try{ return String(d).slice(0,7); }catch(e){ return ''; } }
+  /* does a real overhead bill look like one of the monthly lines? (workers' comp, liability, rent...) */
+  var STOP={insurance:1,monthly:1,steven:1,biffle:1,biffles:1,the:1,and:1,for:1,tbd:1,bill:1,payment:1,policy:1,month:1};
+  function words(s){ return low(s).replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(function(w){ return w.length>=3 && !STOP[w]; }); }
+  var WC=/workers?'?s?\s*comp|work\s*comp|\bwc\b/, GL=/liabil|\bgl\b/;
+  function scoreLine(m, x){
+    if(!m || isStevenGasLine(m)) return 0;
+    var lab=low(m.label), t=whoText(x)+' '+low(catOf(x)), tw={};
+    words(t).forEach(function(w){ tw[w]=1; });
+    var wcL=WC.test(lab), glL=GL.test(lab), wcT=WC.test(t)||!!tw.comp, glT=GL.test(t);
+    if(wcL && glT && !wcT) return 0;
+    if(glL && wcT && !glT) return 0;
+    var sc=0;
+    if(wcL && wcT) sc+=3;
+    if(glL && glT) sc+=3;
+    words(m.label).forEach(function(w){ if(tw[w]) sc+=2; });
+    var mc=low(m.cat); if(mc && (low(catOf(x))===mc || (mc==='insurance' && /insur/.test(t)))) sc+=1;
+    return sc;
+  }
+  function suggestLine(manual, x){
+    var best=-1, bs=0, tie=false;
+    manual.forEach(function(m,i){ if(!m) return; var s=scoreLine(m,x); if(s>bs){ bs=s; best=i; tie=false; } else if(s===bs && s>0){ tie=true; } });
+    if(best<0 || tie || bs<1) return -1;
+    return best;
+  }
 
-  // Gather overhead expenses grouped by month, plus recurring monthly commitments.
-  window._gcOverheadData = function(){
-    var exps = (crm().expenses||[]).filter(function(x){ return x && x.status!=='denied' && isOverhead(x); });
-    var byMonth={}, byCat={};
+  /* THE monthly overhead number — the modal, the P&L / Accounting card and Cash Position all read this.
+     total = fixed lines + estimate lines (or, for a line a real bill was linked to this month, that real bill)
+             + this month's overhead expenses that are not linked to a line.            */
+  var _memo=null;
+  function compute(){
+    var ls=''; try{ ls=localStorage.getItem('gc_overhead_manual')||''; }catch(e){}
+    var ex=crm().expenses, now=Date.now();
+    if(_memo && _memo.ls===ls && _memo.ex===ex && _memo.n===(ex?ex.length:0) && now-_memo.at<4000) return _memo.v;
+    var mk=nowMonth(), manual=getManual(), exps=ohExpenses();
+    var hasGasLine=manual.some(isStevenGasLine);
+    var lineByExp={};
+    manual.forEach(function(m,i){ if(!m || isStevenGasLine(m)) return; var L=m.links&&m.links[mk]; if(Array.isArray(L)) L.forEach(function(id){ if(lineByExp[id]==null) lineByExp[id]=i; }); });
+    var byMonth={}, byCat={}, steven={amt:0, rows:[]}, thisRows=[], recur={};
     exps.forEach(function(x){
-      var mk=monthKey(x.date||x.paidDate||x.created||'');
-      if(!mk) return;
-      var amt=Math.abs(num(x.amt,0));
-      byMonth[mk]=(byMonth[mk]||0)+amt;
-      var cat=x.cat||x.category||'Other';
-      byCat[cat]=(byCat[cat]||0)+amt;
+      var mkx=monthKey(dateOf(x)); if(!mkx) return;
+      if(hasGasLine && isStevenGasReceipt(x)){ if(mkx===mk){ steven.amt+=amtOf(x); steven.rows.push(x); } return; }
+      var a=amtOf(x);
+      byMonth[mkx]=(byMonth[mkx]||0)+a;
+      var c=catOf(x)||'Other'; byCat[c]=(byCat[c]||0)+a;
+      if(mkx===mk) thisRows.push(x);
+      if(x.recurring && (!x.freq || x.freq==='monthly')){ var k=low(x.vendor||x.payee||x.desc); if(!recur[k] || dateOf(x)>recur[k].d) recur[k]={d:dateOf(x), a:a, x:x}; }
     });
-    // recurring monthly commitments (flagged recurring + monthly) — these represent the baseline
-    var recurring = exps.filter(function(x){ return x.recurring && (x.freq==='monthly'||!x.freq); });
-    var recurringMonthly = recurring.reduce(function(s,x){ return s+Math.abs(num(x.amt,0)); }, 0);
-    // manual baseline additions the admin sets (for costs not yet in the system)
-    var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
-    var manualMonthly = manual.reduce(function(s,m){ return s+num(m.amt,0); }, 0);
-
+    var fixed=0, est=0, real=0, plan=0, fixedPlan=0;
+    var lines=manual.map(function(m,i){
+      if(!m || typeof m!=='object') return null;
+      var a=lineAmt(m), e=lineIsEst(m);
+      plan+=a; if(!e) fixedPlan+=a;
+      var linked=thisRows.filter(function(x){ return lineByExp[idOf(x)]===i; });
+      var la=linked.reduce(function(s,x){ return s+amtOf(x); },0);
+      if(!linked.length){ if(e) est+=a; else fixed+=a; }
+      return { i:i, label:String(m.label||''), amt:a, est:e, person:m.person||'', cat:m.cat||'', linked:linked, linkedAmt:r2(la), steven:isStevenLine(m), stevenGas:isStevenGasLine(m) };
+    });
+    var rows=thisRows.map(function(x){
+      var li=lineByExp[idOf(x)]; real+=amtOf(x);
+      return { x:x, id:idOf(x), amt:amtOf(x), date:dateOf(x).slice(0,10), what:whatOf(x), cat:catOf(x), line:(li==null?-1:li), suggest:(li==null?suggestLine(manual,x):-1) };
+    }).sort(function(a,b){ return b.date.localeCompare(a.date); });
+    var recurring=Object.keys(recur).map(function(k){ return recur[k].x; });
+    var recurringExp=Object.keys(recur).reduce(function(s,k){ return s+(lineByExp[idOf(recur[k].x)]!=null?0:recur[k].a); },0);
     var months=Object.keys(byMonth).sort();
-    var last3=months.slice(-3);
-    var avg3 = last3.length ? last3.reduce(function(s,m){return s+byMonth[m];},0)/last3.length : 0;
-    var thisMonth = monthKey(new Date().toISOString());
-    return {
+    var past=months.filter(function(m){ return m<mk; }).slice(-3);
+    var avg3=past.length ? past.reduce(function(s,m){ return s+byMonth[m]; },0)/past.length : 0;
+    var total=r2(fixed+est+real);
+    var v={
+      month:mk, lines:lines, rows:rows, steven:{amt:r2(steven.amt), rows:steven.rows},
+      fixed:r2(fixed), est:r2(est), real:r2(real), total:total,
       byMonth:byMonth, byCat:byCat, months:months,
-      thisMonthActual: byMonth[thisMonth]||0,
-      avg3:avg3,
-      recurringMonthly:recurringMonthly, recurring:recurring,
-      manual:manual, manualMonthly:manualMonthly,
-      // best estimate of monthly overhead = recurring baseline + manual baseline, or the 3-mo average if higher
-      estimatedMonthly: Math.max(recurringMonthly+manualMonthly, avg3)
+      thisMonthActual:r2(real), avg3:avg3,
+      recurringMonthly:r2(fixedPlan+recurringExp), recurring:recurring,
+      manual:manual, manualMonthly:r2(plan), planMonthly:r2(plan),
+      estimatedMonthly:total
     };
+    _memo={ ls:ls, ex:ex, n:(ex?ex.length:0), at:now, v:v };
+    return v;
+  }
+  window._gcOverheadMonthly = compute;
+  window._gcOverheadData = compute;
+  function fire(){ try{ window.dispatchEvent(new Event('gc-overhead-changed')); }catch(e){} }
+  /* any screen that moves money to/from overhead calls this, so every overhead number updates at once */
+  window._gcOverheadTouched = function(){
+    _memo=null; fire();
+    function again(){ try{ var r=window._gcRefreshSpend && window._gcRefreshSpend(); Promise.resolve(r).then(function(){ _memo=null; fire(); }); }catch(e){} }
+    again(); setTimeout(again, 1500);   /* a second read for saves that reach storage a moment later */
   };
 
+  var NOT_KEPT='That change was not kept. Overhead can be changed only when signed in as Wesley or Nick (check 💎 at the bottom right).';
+  var _gen=0;
+  function saveManual(list, keptFn, msg){
+    var js=JSON.stringify(list), g=++_gen;
+    try{ localStorage.setItem('gc_overhead_manual', js); }catch(e){}
+    try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', js); }catch(e){}
+    _memo=null; fire();
+    /* only the latest change is checked: a newer change on purpose replaces the earlier one */
+    if(keptFn) setTimeout(function(){ if(g!==_gen) return; var ok=false; try{ ok=!!keptFn(getManual()); }catch(e){} if(!ok) alert(msg||NOT_KEPT); }, 3000);
+  }
+
   window._gcOpenOverhead = function(){
-    var d=window._gcOverheadData();
+    var old=document.getElementById('_ohOv'); var keepScroll=old?old.scrollTop:0; if(old) old.remove();
+    var d=compute();
+    var mk=d.month;
+    function row(l, r, extra){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:3px 0'+(extra||'')+'"><span>'+l+'</span><span style="white-space:nowrap">'+r+'</span></div>'; }
     function catRows(){
       var keys=Object.keys(d.byCat).sort(function(a,b){return d.byCat[b]-d.byCat[a];});
-      if(!keys.length) return '<div style="color:#9fb3c8;font-size:12px">No overhead expenses categorized yet.</div>';
-      return keys.map(function(k){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>'+esc(k)+'</span><span>'+money(d.byCat[k])+'</span></div>'; }).join('');
+      if(!keys.length) return '<div style="color:#9fb3c8;font-size:12px">No overhead expenses yet. Anything moved to 📦 Overhead in Accounting shows here.</div>';
+      return keys.map(function(k){ return row(esc(k), money(d.byCat[k])); }).join('');
     }
     function monthRows(){
       var ms=d.months.slice(-6);
       if(!ms.length) return '<div style="color:#9fb3c8;font-size:12px">No monthly data yet.</div>';
-      return ms.map(function(m){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>'+esc(m)+'</span><span>'+money(d.byMonth[m])+'</span></div>'; }).join('');
+      return ms.slice().reverse().map(function(m){ return row(esc(m)+(m===mk?' (this month)':''), money(d.byMonth[m])); }).join('');
+    }
+    function lineOpts(sel){
+      return '<option value="">extra cost (not one of the lines)</option>'+d.lines.map(function(L){
+        if(!L || L.stevenGas) return '';
+        return '<option value="'+L.i+'"'+(sel===L.i?' selected':'')+'>counts as: '+esc(L.label)+'</option>';
+      }).join('');
+    }
+    function realRows(){
+      if(!d.rows.length) return '<div style="color:#9fb3c8;font-size:12px">No overhead expenses this month yet.</div>';
+      return d.rows.map(function(r){
+        var L=r.line>=0?d.lines[r.line]:null;
+        var head='<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px"><span>'+esc(r.date)+' · '+esc(r.what)+(r.cat?' <span style="color:#9fb3c8;font-size:10px">'+esc(r.cat)+'</span>':'')+'</span><span style="font-weight:700">'+money(r.amt)+'</span></div>';
+        var tail;
+        if(L) tail='<div style="font-size:11px;color:#86efac;margin-top:2px">counts as: '+esc(L.label)+' <button data-ounlink="'+esc(r.id)+'" style="margin-left:6px;font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid #475569;background:none;color:#cbd5e1;cursor:pointer">unlink</button></div>';
+        else tail='<div style="display:flex;gap:6px;align-items:center;margin-top:3px">'
+          +(r.suggest>=0&&d.lines[r.suggest]?'<button data-osug="'+esc(r.id)+'" data-line="'+r.suggest+'" style="font-size:11px;padding:3px 8px;border-radius:6px;border:none;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">✓ Counts as '+esc(d.lines[r.suggest].label)+'?</button>':'')
+          +'<select data-olink="'+esc(r.id)+'" style="flex:1;font-size:11px;padding:3px;border-radius:5px;max-width:240px">'+lineOpts(-1)+'</select></div>';
+        return '<div style="padding:5px 0;border-bottom:1px solid #1e3a5f">'+head+tail+'</div>';
+      }).join('');
     }
     function manualRows(){
-      if(!d.manual.length) return '';
-      var _fx=0,_es=0; d.manual.forEach(function(m){ var a=parseFloat(m&&m.amt)||0; if(m&&m.est) _es+=a; else _fx+=a; });
-      return d.manual.map(function(m,i){ return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0"><span>'+esc(m.label)+(m.person?(' <span style="color:#7dd3fc;font-size:10px">['+esc(m.person)+']</span>'):'')+'</span><span>'+'<button data-mest="'+i+'" title="Tap to switch between a fixed cost and a monthly estimate" style="margin-right:8px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;border:none;cursor:pointer;'+(m.est?'background:#fde68a;color:#78350f':'background:#bbf7d0;color:#14532d')+'">'+(m.est?'EST.':'FIXED')+'</button>'+(m.est?'~':'')+money(m.amt)+' <button data-mdel="'+i+'" style="background:none;border:none;color:#f87171;cursor:pointer">\u00d7</button></span></div>'; }).join('')
-        +'<div style="display:flex;justify-content:space-between;font-size:11px;color:#9fb3c8;border-top:1px solid #1e3a5f;margin-top:6px;padding-top:6px"><span>Fixed '+money(_fx)+' \u00b7 Estimated ~'+money(_es)+'</span><span style="font-weight:700;color:#fff">'+money(_fx+_es)+'/mo</span></div>';
+      var any=d.lines.some(function(L){ return !!L; });
+      if(!any) return '';
+      return d.lines.map(function(L){
+        if(!L) return '';
+        var tag = L.stevenGas
+          ? '<span title="Steven’s gas stays an estimate every month" style="margin-right:8px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;background:#fde68a;color:#78350f">EST.</span>'
+          : '<button data-mest="'+L.i+'" title="Tap to switch between a fixed cost and a monthly estimate" style="margin-right:8px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;border:none;cursor:pointer;'+(L.est?'background:#fde68a;color:#78350f':'background:#bbf7d0;color:#14532d')+'">'+(L.est?'EST.':'FIXED')+'</button>';
+        var amt='<button data-mamt="'+L.i+'" title="Tap to change the amount" style="background:none;border:none;border-bottom:1px dashed #64748b;color:#fff;font-size:12px;cursor:pointer;padding:0">'+(L.est?'~':'')+money(L.amt)+'</button>';
+        var real=L.linked.length?'<div style="font-size:10px;color:#86efac;text-align:right">this month: real '+money(L.linkedAmt)+' (used instead)</div>':'';
+        return '<div style="padding:3px 0">'+row(esc(L.label)+(L.person?(' <span style="color:#7dd3fc;font-size:10px">['+esc(L.person)+']</span>'):''), tag+amt+' <button data-mdel="'+L.i+'" style="background:none;border:none;color:#f87171;cursor:pointer">×</button>')+real+'</div>';
+      }).join('')
+        +'<div style="display:flex;justify-content:space-between;font-size:11px;color:#9fb3c8;border-top:1px solid #1e3a5f;margin-top:6px;padding-top:6px"><span>Fixed '+money(d.fixed)+' · Estimated ~'+money(d.est)+' · Real this month '+money(d.real)+'</span><span style="font-weight:700;color:#fff">'+money(d.total)+'/mo</span></div>';
     }
-    // "Cost of Adding Steven" - his tagged fixed items + his actual vehicle/gas expenses this month.
+    // "Cost of Adding Steven": his lines. His actual gas/vehicle receipts are shown, never counted (the gas line is the estimate).
     function _stevenCostBlock(){
       try{
-        var fixed=0, rows=[];
-        (d.manual||[]).forEach(function(m){
-          if(m && m.person==='Steven Biffle'){ var a=(parseFloat(m.amt)||0); fixed+=a; rows.push({label:m.label, amt:a}); }
-        });
-        // actual gas/vehicle expenses recorded against Steven (vendor or note contains steven, vehicle/gas category)
-        var gas=0;
-        var exps=(window._crm&&window._crm.expenses)||[];
-        var nowM=new Date().toISOString().slice(0,7);
-        exps.forEach(function(x){
-          if(!x || x.status==='denied') return;
-          var who=((x.vendor||'')+' '+(x.desc||'')+' '+(x.paidBy||'')+' '+(x.employee||'')).toLowerCase();
-          var cat=(x.category||x.cat||'').toLowerCase();
-          var isSteven = who.indexOf('steven')>=0 || who.indexOf('biffle')>=0;
-          var isGasVeh = cat.indexOf('gas')>=0 || cat.indexOf('fuel')>=0 || cat.indexOf('vehicle')>=0;
-          var when=(x.date||'').slice(0,7);
-          if(isSteven && isGasVeh && when===nowM){ gas+=Math.abs(parseFloat(x.amt)||0); }
-        });
-        var total=fixed+gas;
-        if(total<=0 && !rows.length) return '';
-        var body=rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;font-size:11px;color:#cbd5e1;padding:2px 0"><span>'+esc(r.label)+'</span><span>'+money(r.amt)+'</span></div>'; }).join('');
-        if(gas>0) body+='<div style="display:flex;justify-content:space-between;font-size:11px;color:#cbd5e1;padding:2px 0"><span>Actual gas/vehicle (this month)</span><span>'+money(gas)+'</span></div>';
+        var rows=d.lines.filter(function(L){ return L && L.steven; });
+        if(!rows.length && !(d.steven.amt>0)) return '';
+        var tot=0;
+        var body=rows.map(function(L){ var a=L.linked.length?L.linkedAmt:L.amt; tot+=a; return '<div style="display:flex;justify-content:space-between;font-size:11px;color:#cbd5e1;padding:2px 0"><span>'+esc(L.label)+(L.est?' (estimate)':'')+'</span><span>'+(L.est&&!L.linked.length?'~':'')+money(a)+'</span></div>'; }).join('');
+        if(d.steven.amt>0) body+='<div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:2px 0;font-style:italic"><span>Gas/vehicle receipts this month: '+money(d.steven.amt)+' — not counted (gas stays an estimate)</span></div>';
         return '<div style="background:#12325a;border:1px solid #2563eb55;border-radius:8px;padding:12px;margin-bottom:10px">'
-          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:800;color:#7dd3fc">\uD83D\uDE9A Cost of Adding Steven</span><span style="font-size:16px;font-weight:800;color:#fff">'+money(total)+'/mo</span></div>'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:800;color:#7dd3fc">🚚 Cost of Adding Steven</span><span style="font-size:16px;font-weight:800;color:#fff">'+money(tot)+'/mo</span></div>'
           +body
-          +'<div style="font-size:10px;color:#64748b;margin-top:6px">Truck, gas & insurance tracked separately from general overhead. Included in total overhead above.</div>'
+          +'<div style="font-size:10px;color:#64748b;margin-top:6px">These lines are part of the monthly overhead total above (counted once).</div>'
           +'</div>';
       }catch(e){ return ''; }
     }
-    var ov=document.createElement('div');
+    var sugN=d.rows.filter(function(r){ return r.line<0 && r.suggest>=0; }).length;
+    var ov=document.createElement('div'); ov.id='_ohOv';
     ov.style.cssText='position:fixed;inset:0;z-index:100298;background:rgba(6,12,20,.94);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:Arial';
     ov.innerHTML='<div style="background:#0f2440;color:#fff;border-radius:14px;max-width:520px;width:100%;padding:20px;margin:auto">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:18px;font-weight:800">\uD83D\uDCA1 Monthly Overhead</div><button id="_ohX" style="padding:6px 12px;border:none;border-radius:6px;background:#334155;color:#fff;cursor:pointer">Close</button></div>'
-      +'<div style="font-size:12px;color:#9fb3c8;margin:4px 0 12px">What it costs to keep the lights on each month. Pulled automatically from accounting (non-job expenses). It will grow more accurate as more data goes in.</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:18px;font-weight:800">💡 Monthly Overhead</div><button id="_ohX" style="padding:6px 12px;border:none;border-radius:6px;background:#334155;color:#fff;cursor:pointer">Close</button></div>'
+      +'<div style="font-size:12px;color:#9fb3c8;margin:4px 0 12px">What it costs to keep the lights on each month: your fixed lines, your estimates, and the real overhead bills moved to 📦 Overhead in Accounting (a real bill linked to a line replaces that line’s estimate — never both).</div>'
       +'<div style="background:#12325a;border-radius:10px;padding:14px;margin-bottom:12px;text-align:center">'
-        +'<div style="font-size:11px;color:#9fb3c8">ESTIMATED MONTHLY OVERHEAD</div>'
-        +'<div style="font-size:30px;font-weight:800;color:#fbbf24">'+money(d.estimatedMonthly)+'</div>'
-        +'<div style="font-size:11px;color:#9fb3c8">recurring baseline '+money(d.recurringMonthly+d.manualMonthly)+' \u00b7 3-mo avg actual '+money(d.avg3)+'</div>'
+        +'<div style="font-size:11px;color:#9fb3c8">MONTHLY OVERHEAD — '+esc(mk)+'</div>'
+        +'<div id="_ohTotal" style="font-size:30px;font-weight:800;color:#fbbf24">'+money(d.total)+'</div>'
+        +'<div id="_ohSplit" style="font-size:11px;color:#9fb3c8">Fixed '+money(d.fixed)+' · Estimated ~'+money(d.est)+' · Real this month '+money(d.real)+'</div>'
+        +'<div style="font-size:10px;color:#64748b;margin-top:2px">3-mo avg of real overhead bills '+money(d.avg3)+'</div>'
       +'</div>'
       +'<div style="display:flex;gap:10px;margin-bottom:12px">'
-        +'<div style="flex:1;background:#12325a;border-radius:8px;padding:10px"><div style="font-size:11px;color:#9fb3c8">This month so far</div><div style="font-size:18px;font-weight:700">'+money(d.thisMonthActual)+'</div></div>'
-        +'<div style="flex:1;background:#12325a;border-radius:8px;padding:10px"><div style="font-size:11px;color:#9fb3c8">Recurring / mo</div><div style="font-size:18px;font-weight:700">'+money(d.recurringMonthly)+'</div></div>'
+        +'<div style="flex:1;background:#12325a;border-radius:8px;padding:10px"><div style="font-size:11px;color:#9fb3c8">Real this month</div><div id="_ohReal$" style="font-size:18px;font-weight:700">'+money(d.real)+'</div></div>'
+        +'<div style="flex:1;background:#12325a;border-radius:8px;padding:10px"><div style="font-size:11px;color:#9fb3c8">Fixed + recurring / mo</div><div style="font-size:18px;font-weight:700">'+money(d.recurringMonthly)+'</div></div>'
       +'</div>'
-      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">By category</div><div style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:12px">'+catRows()+'</div>'
-      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">Recent months</div><div style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:12px">'+monthRows()+'</div>'
-      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">Add a monthly cost not in the system yet</div>'
-      +'<div style="font-size:11px;color:#9fb3c8;margin-bottom:6px">Interactive \u2014 add fixed costs you know about but haven\u2019t entered as expenses yet.</div>'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">Real overhead this month'+(sugN?' <span style="font-size:11px;color:#86efac">— '+sugN+' match'+(sugN>1?'es':'')+' to confirm</span>':'')+'</div>'
+      +'<div id="_ohReal" style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:12px">'+realRows()+'</div>'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">By category</div><div id="_ohCats" style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:12px">'+catRows()+'</div>'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">Recent months</div><div id="_ohMonths" style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:12px">'+monthRows()+'</div>'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">Monthly lines — add a cost not in the system yet</div>'
+      +'<div style="font-size:11px;color:#9fb3c8;margin-bottom:6px">Fixed = the same every month. Estimate = a guess (gas, utilities). Tap an amount to change it.</div>'
       +_stevenCostBlock()
       +'<div id="_ohManual" style="background:#12325a;border-radius:8px;padding:10px;margin-bottom:8px">'+(manualRows()||'<div style="color:#64748b;font-size:12px">None added.</div>')+'</div>'
       +'<div style="display:flex;gap:8px">'
-        +'<input id="_ohLabel" placeholder="e.g. Rent" style="flex:2;padding:8px;border-radius:6px">'
-        +'<input id="_ohAmt" inputmode="decimal" placeholder="$/mo" style="flex:1;padding:8px;border-radius:6px">'
-        +'<select id="_ohKind" title="Fixed = same every month. Estimate = changes month to month (gas, utilities)." style="flex:1;padding:8px;border-radius:6px"><option value="fixed">Fixed</option><option value="est">Estimate</option></select>'
+        +'<input id="_ohLabel" placeholder="e.g. Rent" style="flex:2;min-width:0;padding:8px;border-radius:6px">'
+        +'<input id="_ohAmt" inputmode="decimal" placeholder="$/mo" style="flex:1;min-width:0;padding:8px;border-radius:6px">'
+        +'<select id="_ohKind" title="Fixed = same every month. Estimate = changes month to month (gas, utilities)." style="flex:1;min-width:0;padding:8px;border-radius:6px"><option value="fixed">Fixed</option><option value="est">Estimate</option></select>'
         +'<button id="_ohAdd" style="padding:8px 14px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Add</button>'
       +'</div>'
       +'</div>';
     document.body.appendChild(ov);
+    try{ ov.scrollTop=keepScroll; }catch(e){}
+    function reopen(){ window._gcOpenOverhead(); }
     ov.querySelector('#_ohX').onclick=function(){ ov.remove(); };
     ov.querySelector('#_ohAdd').onclick=function(){
       var label=(ov.querySelector('#_ohLabel').value||'').trim();
-      var _raw=String(ov.querySelector('#_ohAmt').value||'').replace(/[$,\s]/g,'');
-      var amt=num(_raw,0);
+      var amt=parseAmt(ov.querySelector('#_ohAmt').value);
       if(!label){ alert('Type what the cost is (e.g. Rent).'); return; }
       if(!(amt>0)){ alert('Type the monthly amount as a number, e.g. 1900.'); return; }
-      var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
+      amt=r2(amt);
+      var manual=getManual();
       var _k=ov.querySelector('#_ohKind'); manual.push(_k&&_k.value==='est'?{label:label, amt:amt, est:true}:{label:label, amt:amt});
-      try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
-      try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
-      ov.remove(); window._gcOpenOverhead();
-      setTimeout(function(){ try{ var now=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); if(!now.some(function(m){ return m&&m.label===label&&+m.amt===amt; })) alert('That cost was not kept. Overhead can be changed only when signed in as Wesley or Nick (check \uD83D\uDC8E at the bottom right).'); }catch(e){} }, 3000);
+      saveManual(manual, function(now){ return now.some(function(m){ return m&&m.label===label&&+m.amt===amt; }); }, 'That cost was not kept. Overhead can be changed only when signed in as Wesley or Nick (check 💎 at the bottom right).');
+      reopen();
     };
+    ['#_ohLabel','#_ohAmt','#_ohKind'].forEach(function(sel){ var el=ov.querySelector(sel); if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); ov.querySelector('#_ohAdd').click(); } }); });
     ov.querySelectorAll('[data-mest]').forEach(function(btn){
       btn.onclick=function(){
         var i=parseInt(btn.getAttribute('data-mest'),10);
-        var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
-        if(!manual[i]) return; if(manual[i].est) delete manual[i].est; else manual[i].est=true;
-        try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
-        try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
-        ov.remove(); window._gcOpenOverhead();
+        var manual=getManual();
+        if(!manual[i] || isStevenGasLine(manual[i])) return;
+        var want=!manual[i].est;
+        if(manual[i].est) delete manual[i].est; else manual[i].est=true;
+        var label=manual[i].label;
+        saveManual(manual, function(now){ return now[i] && now[i].label===label && !!now[i].est===want; });
+        reopen();
       };
     });
-    ['#_ohLabel','#_ohAmt'].forEach(function(sel){ var el=ov.querySelector(sel); if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); ov.querySelector('#_ohAdd').click(); } }); });
+    ov.querySelectorAll('[data-mamt]').forEach(function(btn){
+      btn.onclick=function(){
+        var i=parseInt(btn.getAttribute('data-mamt'),10);
+        var manual=getManual(), m=manual[i]; if(!m) return;
+        var v=prompt('Monthly amount for "'+(m.label||'')+'" (e.g. 1900):', String(lineAmt(m)));
+        if(v===null) return;
+        var n=parseAmt(v);
+        if(isNaN(n) || n<0){ alert('Type the amount as a number, e.g. 1900.'); return; }
+        n=r2(n);
+        m.amt=n;
+        if(m.est && !isStevenGasLine(m) && n>0){
+          if(confirm('Is this the real amount? (OK = make it Fixed, Cancel = keep as estimate)')) delete m.est;
+        }
+        var label=m.label;
+        saveManual(manual, function(now){ return now[i] && now[i].label===label && +now[i].amt===n; });
+        reopen();
+      };
+    });
     ov.querySelectorAll('[data-mdel]').forEach(function(btn){
       btn.onclick=function(){
         var i=parseInt(btn.getAttribute('data-mdel'),10);
-        var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
+        var manual=getManual(); if(!manual[i]) return;
+        var label=manual[i].label, before=manual.length;
         manual.splice(i,1);
-        try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
-        try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
-        ov.remove(); window._gcOpenOverhead();
+        saveManual(manual, function(now){ return now.length<before || !now.some(function(m){ return m&&m.label===label; }); });
+        reopen();
       };
     });
+    /* link a real bill of this month to a line: that month's total uses the real bill instead of the line */
+    function setLink(expId, lineIdx){
+      var manual=getManual();
+      manual.forEach(function(m){ if(m && m.links && Array.isArray(m.links[mk])){ m.links[mk]=m.links[mk].filter(function(id){ return id!==expId; }); if(!m.links[mk].length) delete m.links[mk]; } });
+      var m=manual[lineIdx];
+      if(m){
+        m.links=m.links||{};
+        Object.keys(m.links).forEach(function(k){ if(k<prevYear(mk)) delete m.links[k]; });
+        (m.links[mk]=m.links[mk]||[]).push(expId);
+        /* a line that was "$0 until known" learns its amount from the first real bill (it stays an estimate) */
+        if(!(lineAmt(m)>0)){ var r=d.rows.filter(function(x){ return x.id===expId; })[0]; if(r) m.amt=r2(r.amt); }
+        if(m.links && !Object.keys(m.links).length) delete m.links;
+      }
+      saveManual(manual, function(now){
+        if(lineIdx<0) return !now.some(function(x){ return x&&x.links&&Array.isArray(x.links[mk])&&x.links[mk].indexOf(expId)>=0; });
+        return now[lineIdx] && now[lineIdx].links && (now[lineIdx].links[mk]||[]).indexOf(expId)>=0;
+      });
+      reopen();
+    }
+    function prevYear(m){ var y=parseInt(m.slice(0,4),10)-1; return y+m.slice(4); }
+    ov.querySelectorAll('[data-osug]').forEach(function(btn){
+      btn.onclick=function(){ setLink(btn.getAttribute('data-osug'), parseInt(btn.getAttribute('data-line'),10)); };
+    });
+    ov.querySelectorAll('[data-olink]').forEach(function(sel){
+      sel.onchange=function(){ if(sel.value==='') return; setLink(sel.getAttribute('data-olink'), parseInt(sel.value,10)); };
+    });
+    ov.querySelectorAll('[data-ounlink]').forEach(function(btn){
+      btn.onclick=function(){ setLink(btn.getAttribute('data-ounlink'), -1); };
+    });
+    /* the register is read from storage in the background — when it arrives, show its overhead rows too */
+    try{
+      var sig=JSON.stringify([d.total,d.rows.length,Object.keys(d.byMonth).length]);
+      var rr=window._gcRefreshSpend && window._gcRefreshSpend();
+      Promise.resolve(rr).then(function(){
+        _memo=null;
+        if(!document.body.contains(ov)) return;
+        var a=document.activeElement; if(a && ov.contains(a) && /INPUT|SELECT/.test(a.tagName)) return;
+        if(ov.querySelector('#_ohLabel').value || ov.querySelector('#_ohAmt').value) return;
+        var d2=compute(); if(JSON.stringify([d2.total,d2.rows.length,Object.keys(d2.byMonth).length])!==sig){ reopen(); fire(); }
+      });
+    }catch(e){}
   };
   console.log('[GC] Monthly overhead tracker ready: _gcOpenOverhead()');
 })();
 </script>
 
 <script>
-/* Show a Monthly Overhead card on the P&L / Accounting pages (auto-updating) */
+/* Show a Monthly Overhead card on the P&L / Accounting pages (auto-updating).
+   33.151: the card shows the SAME number as the Monthly Overhead window (window._gcOverheadMonthly),
+   and updates the moment a line or an overhead expense changes. */
 (function(){
   'use strict';
   function money(n){ return '$'+(Math.round((+n||0)*100)/100).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}); }
@@ -59970,25 +60174,29 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       var head=onFinancePage();
       if(!head){ var ex=document.getElementById('_gcOhCard'); if(ex) ex.remove(); return; }
       if(document.getElementById('_gcOhCard')) { updateCard(); return; }
-      if(!window._gcOverheadData) return;
+      if(!window._gcOverheadMonthly) return;
       var card=document.createElement('div');
       card.id='_gcOhCard';
       card.style.cssText='margin:10px 0;padding:14px 16px;border-radius:12px;background:linear-gradient(135deg,#1e293b,#0f2440);color:#fff;font-family:Arial;cursor:pointer;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.2)';
       card.onclick=function(){ if(window._gcOpenOverhead) window._gcOpenOverhead(); };
-      card.innerHTML='<div><div style="font-size:11px;color:#9fb3c8">\uD83D\uDCA1 MONTHLY OVERHEAD (keep the lights on)</div><div id="_gcOhVal" style="font-size:24px;font-weight:800;color:#fbbf24">\u2014</div></div><div style="font-size:11px;color:#93c5fd;text-align:right">tap for detail<br><span id="_gcOhSub" style="color:#9fb3c8"></span></div>';
+      card.innerHTML='<div><div style="font-size:11px;color:#9fb3c8">💡 MONTHLY OVERHEAD (keep the lights on)</div><div id="_gcOhVal" style="font-size:24px;font-weight:800;color:#fbbf24">—</div></div><div style="font-size:11px;color:#93c5fd;text-align:right">tap for detail<br><span id="_gcOhSub" style="color:#9fb3c8"></span></div>';
       head.parentNode.insertBefore(card, head.nextSibling);
       updateCard();
     }catch(e){}
   }
   function updateCard(){
     try{
-      var d=window._gcOverheadData();
-      var v=document.getElementById('_gcOhVal'); if(v) v.textContent=money(d.estimatedMonthly);
-      var s=document.getElementById('_gcOhSub'); if(s) s.textContent='this mo '+money(d.thisMonthActual);
+      if(!document.getElementById('_gcOhCard') || !window._gcOverheadMonthly) return;
+      var d=window._gcOverheadMonthly();
+      var v=document.getElementById('_gcOhVal'); var t=money(d.total); if(v && v.textContent!==t) v.textContent=t;
+      var s=document.getElementById('_gcOhSub'); var u='Fixed '+money(d.fixed)+' · Est. ~'+money(d.est)+' · Real this mo '+money(d.real); if(s && s.textContent!==u) s.textContent=u;
     }catch(e){}
   }
-  setInterval(inject, 1500);
+  (window.__GC_RAW_SETINTERVAL__ || setInterval).call(window, inject, 1500);
+  window.addEventListener('gc-overhead-changed', function(){ updateCard(); });
+  window.addEventListener('storage', function(e){ if(!e || e.key==='gc_overhead_manual') updateCard(); });
   window._gcOhInject = inject;   /* patch X */
+  window._gcOhCardUpdate = updateCard;
 })();
 </script>
 <script>
@@ -61517,8 +61725,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       var stevenItems=[
         // Truck: $20,000 over 5 years (60 months) = $333.33/mo
         { label:'Steven - truck ($20k/5yr)', amt:333.33, cat:'Vehicle', person:'Steven Biffle' },
-        // Gas - variable; baseline placeholder to fill in (also tracked from real expenses tagged to Steven)
-        { label:'Steven - gas', amt:0, cat:'Vehicle', person:'Steven Biffle' },
+        // Gas - variable; an ESTIMATE every month (his actual receipts are shown, never added on top)
+        { label:'Steven - gas', amt:0, est:true, cat:'Vehicle', person:'Steven Biffle' },
         // Car insurance - TBD, fill in when known
         { label:'Steven - car insurance (TBD)', amt:0, cat:'Insurance', person:'Steven Biffle' }
       ];
@@ -61530,6 +61738,39 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }catch(e){ console.warn('[GC] steven overhead seed failed', e); }
   }
   setTimeout(seedStevenCosts, 5000);
+})();
+</script><script>
+/* ===== 33.151 SEED THE TWO INSURANCE LINES (workers' comp + general liability) - one time =====
+   Both are estimates at $0 until the real policy amounts are known; when the owner enters them (or links
+   the real policy bill), they count in overhead like any other line. Only an admin's computer seeds (the
+   list is admin-write), and only once the list has arrived from the cloud, so a new computer can never
+   write a short list over the office's. */
+(function(){
+  'use strict';
+  var tries=0;
+  function isAdmin(){ try{ var a=window.__GC_SEC2 && window.__GC_SEC2.access && window.__GC_SEC2.access(); return !!(a && a.known && a.admin); }catch(e){ return false; } }
+  function seedIns(){
+    try{
+      if(localStorage.getItem('gc_overhead_ins_seeded_v1')==='1') return;
+      var raw=localStorage.getItem('gc_overhead_manual');
+      if(!isAdmin() || raw==null){ if(++tries<24) setTimeout(seedIns, 5000); return; }
+      var manual=[]; try{ manual=JSON.parse(raw||'[]'); }catch(e){ return; }
+      if(!Array.isArray(manual)) return;
+      var hasWC=manual.some(function(m){ return m && /workers?'?s?\s*comp|work\s*comp/i.test(m.label||''); });
+      var hasGL=manual.some(function(m){ return m && /general\s*liab|liability/i.test(m.label||'') && !/steven|biffle|truck|car/i.test(m.label||''); });
+      var add=[];
+      if(!hasWC) add.push({ label:"Workers' comp insurance", amt:0, est:true, cat:'Insurance' });
+      if(!hasGL) add.push({ label:'General liability insurance', amt:0, est:true, cat:'Insurance' });
+      localStorage.setItem('gc_overhead_ins_seeded_v1','1');
+      if(!add.length) return;
+      manual=manual.concat(add);
+      localStorage.setItem('gc_overhead_manual', JSON.stringify(manual));
+      try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
+      try{ if(window._gcOverheadTouched) window._gcOverheadTouched(); }catch(e){}
+      console.log('[GC] Insurance overhead lines seeded (workers\' comp, general liability).');
+    }catch(e){ console.warn('[GC] insurance overhead seed failed', e); }
+  }
+  setTimeout(seedIns, 9000);
 })();
 </script><script>
 /* ===== OFFICE: Jobs to Invoice — list every job with a contract but no client invoice ===== */
@@ -74580,7 +74821,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     // ASSIGNMENT RULE: an expense only counts as spent once it has a home —
     // a job (pid set) OR overhead. "Up in the air" (no job, not overhead) does NOT count.
     var _hasJob = !!(e.pid && String(e.pid).trim() && e.pid!=='__overhead__');
-    var _isOH = (e.overhead===true) || (String(e.category||'').toLowerCase()==='overhead') || e.pid==='__overhead__';
+    var _isOH = window._gcIsOverheadExpense ? window._gcIsOverheadExpense(e) : ((e.overhead===true) || (String(e.category||'').toLowerCase()==='overhead') || e.pid==='__overhead__');
     if(!_hasJob && !_isOH) return false;
     return true;
   }
@@ -77127,7 +77368,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     function projOptions(){ return '<option value="">— pick a job —</option>'+projects().map(function(p){ return '<option value="'+esc(p.id)+'">'+esc(p.name||'Job')+'</option>'; }).join(''); }
 
     function render(){
-      var cardCharges = reg().filter(function(r){ return r && (r.source||'')==='creditcard' && !r.pid; });
+      var cardCharges = reg().filter(function(r){ return r && (r.source||'')==='creditcard' && !r.pid && !(window._gcIsOverheadExpense && window._gcIsOverheadExpense(r)); });
       var looseDocs = docs().filter(function(d){ return d && !d.pid; });
 
       card.innerHTML =
@@ -77141,7 +77382,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
             return '<div style="background:#0a1628;border:1px solid #1e3a5f;border-radius:10px;padding:10px;margin-bottom:8px;">'
               +'<div style="display:flex;justify-content:space-between;"><span style="color:#fff;font-weight:700;">'+money(r.amount!=null?r.amount:r.amt)+'</span><span style="color:#8fa8c4;font-size:12px;">'+esc(r.date||'')+'</span></div>'
               +'<div style="color:#cbd5e1;font-size:13px;margin:2px 0 8px;">'+esc(r.payee||r.desc||'(no vendor)')+'</div>'
-              +'<div style="display:flex;gap:6px;"><select data-id="'+esc(r._id||r.id)+'" class="_mtCard" style="flex:1;padding:8px;border-radius:8px;background:#0f2440;color:#e2e8f0;border:1px solid #2563eb;font-size:13px;">'+projOptions()+'</select>'
+              +'<div style="display:flex;gap:6px;"><select data-id="'+esc(r._id||r.id)+'" class="_mtCard" style="flex:1;padding:8px;border-radius:8px;background:#0f2440;color:#e2e8f0;border:1px solid #2563eb;font-size:13px;">'+projOptions().replace('</option>','</option><option value="__overhead__">\uD83D\uDCE6 Overhead</option>')+'</select>'
               +'<button data-id="'+esc(r._id||r.id)+'" class="_mtCardGo" style="padding:8px 12px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12px;cursor:pointer;">Assign</button></div>'
             +'</div>';
           }).join('') : '<div style="color:#86efac;font-size:12.5px;margin-bottom:14px;">\u2705 All card charges are assigned.</div>')
@@ -77161,9 +77402,11 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
         btn.onclick=async function(){
           var id=btn.getAttribute('data-id');
           var sel=card.querySelector('._mtCard[data-id="'+id+'"]'); var pid=sel?sel.value:'';
-          if(!pid){ alert('Pick a job first.'); return; }
-          var r=reg().slice().map(function(x){ if(x&&(x._id||x.id)===id){ var p=projects().find(function(pp){return pp.id===pid;}); return Object.assign({},x,{pid:pid, projName:p?p.name:'', projPO:p?(p.autoPO||''):''}); } return x; });
+          if(!pid){ alert('Pick a job (or \uD83D\uDCE6 Overhead) first.'); return; }
+          var _oh = pid==='__overhead__'; if(_oh) pid='';   /* 33.151: matched to Overhead */
+          var r=reg().slice().map(function(x){ if(x&&(x._id||x.id)===id){ var p=projects().find(function(pp){return pp.id===pid;}); return Object.assign({},x,{pid:pid, overhead:_oh, projName:p?p.name:(_oh?'Overhead':''), projPO:p?(p.autoPO||''):''}); } return x; });
           await saveReg(r); try{ if(window._crm) window._crm.gcAcctRegister=r; }catch(e){}
+          try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
           setTimeout(render,150);
         };
       });
@@ -100439,6 +100682,7 @@ window._gcAddCardCharge = async function(ch){
             amount:amt,
             category:ch.category||'',
             pid:ch.pid||'',
+            overhead:(ch.overhead===true && !ch.pid),
             note:ch.note||'',
             enteredAt:new Date().toISOString() };
 
@@ -100454,6 +100698,7 @@ window._gcAddCardCharge = async function(ch){
     /* keep the better of the two rather than making a second row */
     var merged=Object.assign({}, dup, {
       pid: rec.pid || dup.pid,
+      overhead: (rec.pid || dup.pid) ? false : (rec.overhead===true || dup.overhead===true),
       vendor: dup.vendor || rec.vendor,
       desc: dup.desc || rec.desc,
       category: (dup.category && dup.category!=='Card Charge') ? dup.category : rec.category,
@@ -100478,7 +100723,9 @@ async function syncOne(rec){
   var exp=listOf('expenses');
   if(!exp.length){ var db=await get('expenses'); if(Array.isArray(db)) exp=db; }
   exp=exp.slice();
-  var row={ id:key, pid:rec.pid||'', date:rec.date,
+  /* 33.151: a charge put on "Overhead — not a job" is overhead everywhere (Monthly Overhead, P&L) */
+  var _oh = !rec.pid && rec.overhead===true;
+  var row={ id:key, pid:rec.pid||'', overhead:_oh, date:rec.date,
             category:rec.category, vendor:rec.vendor, payee:rec.vendor,
             desc:rec.desc, amt:rec.amount, amount:rec.amount,
             status:'paid', method:'Credit Card', source:'creditcard',
@@ -100494,13 +100741,14 @@ async function syncOne(rec){
   /* and the accounting register, keyed the same way so it cannot double */
   try{
     if(window._gcAddToRegister){
-      await window._gcAddToRegister({ srcInvId:key, pid:rec.pid||'', type:'expense',
+      await window._gcAddToRegister({ srcInvId:key, pid:rec.pid||'', overhead:_oh, type:'expense',
         category:rec.category, vendor:rec.vendor, payee:rec.vendor,
         desc:rec.desc+(rec.card?(' · '+rec.card):''), amt:rec.amount, amount:rec.amount,
         date:rec.date, paidDate:rec.date, source:'creditcard', method:'Credit Card',
         direction:'out', isIncome:false, status:'paid' });
     }
   }catch(e){}
+  try{ window._gcOverheadTouched&&window._gcOverheadTouched(); }catch(e){}
 }
 window._gcSyncCardCharge=syncOne;
 
@@ -100722,6 +100970,7 @@ window._gcOpenCards = async function(){
       vendor:ov.querySelector('#_cgVendor').value.trim(),
       cardId:ov.querySelector('#_cgCard').value,
       pid:ov.querySelector('#_cgPid').value,
+      overhead:!ov.querySelector('#_cgPid').value,   /* the blank choice reads "Overhead — not a job" */
       amount:amt
     });
     if(res && res.ok) reopen();
@@ -100735,6 +100984,7 @@ window._gcOpenCards = async function(){
       var hit=list.filter(function(x){ return x&&x.id===id; })[0];
       if(!hit) return;
       hit.pid=pid;
+      hit.overhead=!pid;   /* 33.151: chose "Overhead — not a job" */
       await put('gc_card_charges', list);
       await syncOne(hit);
       this.style.background='#dcfce7';
@@ -115712,7 +115962,7 @@ var RULES = {
   /* every cost once (the engine behind Dashboard Job Costs and Accounting Total Spend) */
   costRows: function(){ try{ return (window._gcSpendRows && window._gcSpendRows({includeUnassigned:true})) || []; }catch(e){ return []; } },
   costAmount: function(e){ var a=amtOf(e); if(a<0 && e.__reg && !/refund|credit|return|rebate/i.test(String(e.category||'')+' '+String(e.desc||''))) a=-a; return a; },
-  isOverhead: function(e){ return e && (e.overhead===true || low(e.category)==='overhead'); },
+  isOverhead: function(e){ if(window._gcIsOverheadExpense) return !!window._gcIsOverheadExpense(e); return e && (e.overhead===true || low(e.category)==='overhead'); },
   costDate: function(e){ return String(e.date||e.recvDate||'').slice(0,10); },
   /* patch J's helpers are read by name at the point of use (_gcInvIdKey, _gcIsFolded, _gcDupCheck,
      _gcJOfficeTasks, _gcOpenReviewOne): before J they are absent and the 33.143 rules above apply. */
@@ -115911,11 +116161,14 @@ function computeWeeks(){
   var out=computeOut();
   out.all.forEach(function(x){ var w=wk(x.pay); if(!w) return; var k=x.kind==='sub'?'subs':x.kind==='card'?'cards':'payroll'; w[k]+=x.amount; w.items.push({dir:'out', what:(x.kind==='sub'?'Sub bill · ':x.kind==='card'?'Card payment · ':'')+x.who, amount:x.amount, date:x.pay, kind:x.kind, id:x.id}); });
   payrollEstimate(mon, W).forEach(function(x){ var w=wk(x.date); if(!w) return; w.payrollEst+=x.amount; w.items.push({dir:'out', what:'Payroll estimate · '+x.who, amount:x.amount, date:x.date, kind:'est'}); });
-  var oh=lsGet('gc_overhead_manual', []); var ohMonthly=(Array.isArray(oh)?oh:[]).reduce(function(s,m){ return s+n2(m&&m.amt); },0);
+  /* 33.151: the same monthly overhead number as the Monthly Overhead window and the Accounting card */
+  var ohMonthly=0, _ohD=null; try{ if(window._gcOverheadMonthly) _ohD=window._gcOverheadMonthly(); }catch(e){ _ohD=null; }
+  if(_ohD) ohMonthly=n2(_ohD.total);
+  else { var oh=lsGet('gc_overhead_manual', []); ohMonthly=(Array.isArray(oh)?oh:[]).reduce(function(s,m){ return s+n2(m&&m.amt); },0); }
   var ohWeek=r2(ohMonthly*12/52);
   var run=0;
   weeks.forEach(function(w){
-    if(ohWeek>0){ w.overhead=ohWeek; w.items.push({dir:'out', what:'Monthly overhead list (budget ÷ weeks)', amount:ohWeek, date:w.from, kind:'est'}); }
+    if(ohWeek>0){ w.overhead=ohWeek; w.items.push({dir:'out', what:'Monthly overhead (fixed + estimates + real bills) ÷ weeks', amount:ohWeek, date:w.from, kind:'est'}); }
     w.in=r2(w.inv+w.draws); w.out=r2(w.subs+w.cards+w.payroll+w.payrollEst+w.overhead);
     w.net=r2(w.in-w.out); run=r2(run+w.net); w.running=run;
     ['inv','draws','subs','cards','payroll','payrollEst','overhead'].forEach(function(k){ w[k]=r2(w[k]); });
