@@ -106291,6 +106291,7 @@ window._gcOpenEstimates = async function(){
       last=Date.now();
       var v=''; try{ v=localStorage.getItem('grayco_view')||''; }catch(e){}
       if(!/estimate/i.test(v)) return;
+      return; /* owner 10/20: no floating "One line per job" button on Estimates */
       if(document.getElementById('_gcEstGroupBtn')) return;
       var b=document.createElement('button');
       b.id='_gcEstGroupBtn';
