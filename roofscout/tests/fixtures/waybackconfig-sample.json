@@ -1,0 +1,98 @@
+{
+  "10": {
+    "itemID": "903f0abe9c3b452dafe1ca5b8dd858b9",
+    "itemTitle": "World Imagery (Wayback 2014-02-20)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/10/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2014_r01/MapServer",
+    "metadataLayerItemID": "78e801fab4d24ab9a6053c7a461479be",
+    "layerIdentifier": "WB_2014_R01"
+  },
+  "645": {
+    "itemID": "8472cf781fe14c96926ebe86081ac0e9",
+    "itemTitle": "World Imagery (Wayback 2019-06-26)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/645/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2019_r08/MapServer",
+    "metadataLayerItemID": "ef41000442ce45959e77ba11ce6c383d",
+    "layerIdentifier": "WB_2019_R08"
+  },
+  "13968": {
+    "itemID": "5683a2a7bb954412ab5598bc467b58b7",
+    "itemTitle": "World Imagery (Wayback 2024-03-28)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/13968/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2024_r03/MapServer",
+    "metadataLayerItemID": "da0048a19c964b08b821d7c2c80c4d0a",
+    "layerIdentifier": "WB_2024_R03"
+  },
+  "25982": {
+    "itemID": "c9ad5e63635a454cbb724140f4c7697c",
+    "itemTitle": "World Imagery (Wayback 2023-06-13)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/25982/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2023_r05/MapServer",
+    "metadataLayerItemID": "c9ad5e63635a454cbb724140f4c7697c",
+    "layerIdentifier": "WB_2023_R05"
+  },
+  "26334": {
+    "itemID": "106760699ba242daab4885c9b062a133",
+    "itemTitle": "World Imagery (Wayback 2026-08-05)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/26334/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2026_r07/MapServer",
+    "metadataLayerItemID": "b90fd4a2f39046bca2d6c04d884439e4",
+    "layerIdentifier": "WB_2026_R07"
+  },
+  "34007": {
+    "itemID": "e055a00965c8476ab7acd907f88aa1a8",
+    "itemTitle": "World Imagery (Wayback 2025-02-27)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/34007/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2025_r02/MapServer",
+    "metadataLayerItemID": "7f38c1ef121d4d908f1300d3b11ecce5",
+    "layerIdentifier": "WB_2025_R02"
+  },
+  "36557": {
+    "itemID": "a13ae0015412426bb6d1c24e7654727d",
+    "itemTitle": "World Imagery (Wayback 2025-01-30)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/36557/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2025_r01/MapServer",
+    "metadataLayerItemID": "b5f6acb05b394980a45d2c6eaaf38beb",
+    "layerIdentifier": "WB_2025_R01"
+  },
+  "37965": {
+    "itemID": "756d1fec29c346d7bb338a3cc067f355",
+    "itemTitle": "World Imagery (Wayback 2024-02-08)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/37965/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2024_r01/MapServer",
+    "metadataLayerItemID": "d60e074cba2a43738ba398452deb81b9",
+    "layerIdentifier": "WB_2024_R01"
+  },
+  "41468": {
+    "itemID": "562ebfd108aa47c787a795f2948e760f",
+    "itemTitle": "World Imagery (Wayback 2024-01-18)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/41468/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2024_r00/MapServer",
+    "metadataLayerItemID": "ff405e652c8d432e8ad2392edc58ef68",
+    "layerIdentifier": "WB_2024_R00"
+  },
+  "47963": {
+    "itemID": "992178c4e2cb416384dfb6339de5ac7a",
+    "itemTitle": "World Imagery (Wayback 2023-06-29)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/47963/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2023_r06/MapServer",
+    "metadataLayerItemID": "8503715b6b8c4c7cbffa84b16918f36c",
+    "layerIdentifier": "WB_2023_R06"
+  },
+  "60013": {
+    "itemID": "cb9b6e8a1d8a4d39813ff394e4e6bd0e",
+    "itemTitle": "World Imagery (Wayback 2024-03-07)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/60013/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2024_r02/MapServer",
+    "metadataLayerItemID": "6a67e3058b6740b494c2db7a70ba7200",
+    "layerIdentifier": "WB_2024_R02"
+  },
+  "63116": {
+    "itemID": "ab83ada1bd3145978eecfb115aaa10c3",
+    "itemTitle": "World Imagery (Wayback 2026-09-24)",
+    "itemURL": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/63116/{level}/{row}/{col}",
+    "metadataLayerUrl": "https://metadata.maptiles.arcgis.com/arcgis/rest/services/World_Imagery_Metadata_2026_r09/MapServer",
+    "metadataLayerItemID": "f2696faf5a3643fe9f9ee097b09caa55",
+    "layerIdentifier": "WB_2026_R09"
+  }
+}

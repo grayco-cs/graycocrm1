@@ -104,6 +104,15 @@ returns integer language sql security definer set search_path = public, pg_temp 
   returning count;
 $$;
 revoke all on function public.rs_bump_usage(text, text) from public, anon, authenticated;
+-- Adds several at once (Google satellite tiles are counted in batches, not one database call per tile).
+-- Added 2026-10 for the imagery switcher; safe to run again.
+create or replace function public.rs_add_usage(p_kind text, p_month text, p_n integer)
+returns integer language sql security definer set search_path = public, pg_temp as $$
+  insert into public.rs_usage (kind, month, count) values (p_kind, p_month, greatest(p_n, 0))
+  on conflict (kind, month) do update set count = public.rs_usage.count + greatest(p_n, 0)
+  returning count;
+$$;
+revoke all on function public.rs_add_usage(text, text, integer) from public, anon, authenticated;
 
 -- The database, not the browser, says who made a change and when.
 create or replace function public.rs_stamp()
@@ -320,6 +329,12 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relname in ('rs_scan_cache', 'rs_scan_rate');
 
 insert into rs_verify
+select 'map tiles usage function', case when to_regprocedure('public.rs_add_usage(text, text, integer)') is not null
+  and not has_function_privilege('authenticated', 'public.rs_add_usage(text, text, integer)', 'execute')
+  and not has_function_privilege('anon', 'public.rs_add_usage(text, text, integer)', 'execute')
+  then 'OK' else 'PROBLEM: missing or callable from the web' end;
+
+insert into rs_verify
 select 'area scan limit function', case when to_regprocedure('public.rs_scan_take(text, integer, integer)') is not null
   and not has_function_privilege('authenticated', 'public.rs_scan_take(text, integer, integer)', 'execute')
   and not has_function_privilege('anon', 'public.rs_scan_take(text, integer, integer)', 'execute')
@@ -400,3 +415,4 @@ select * from rs_verify;
 -- drop function if exists public.rs_skiptrace_claim(text, text, boolean), public.rs_skiptrace_finish(text, jsonb), public.rs_skiptrace_release(text);
 -- drop function if exists public.rs_stamp();
 -- drop function if exists public.rs_bump_usage(text, text);
+-- drop function if exists public.rs_add_usage(text, text, integer);

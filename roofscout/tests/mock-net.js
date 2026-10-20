@@ -71,6 +71,12 @@ function create() {
       db.usage[k2] = (db.usage[k2] || 0) + 1;
       return json(200, db.usage[k2]);
     }
+    if (p === '/rest/v1/rpc/rs_add_usage') {
+      if (db.noAddUsage) return json(404, { code: 'PGRST202' });
+      var k3 = body.p_kind + '|' + body.p_month;
+      db.usage[k3] = (db.usage[k3] || 0) + body.p_n;
+      return json(200, db.usage[k3]);
+    }
     if (p === '/rest/v1/rs_leads') {
       var id = String(q.get('id') || '').replace(/^eq\./, '');
       return json(200, db.leads[id] ? [{ id: id, data: db.leads[id] }] : []);

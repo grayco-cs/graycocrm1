@@ -18,3 +18,9 @@ tests can check the area math. Owner names and addresses are fictional ("EXAMPLE
 Expected footprint areas (ft²): warehouse w1001 42,000 · retail L w1002 26,000 · church w1003 12,000 ·
 house w1004 2,000 · barn on single-family lot w1005 12,000 · office w1006 9,900 · apartments w1007 12,600 ·
 school r2001 52,000 − 3,000 courtyard = 49,000.
+
+## Imagery switcher
+
+| File | Format |
+|---|---|
+| `waybackconfig-sample.json` | DOWNLOADED (2026-10-20) and trimmed to 12 releases: Esri's World Imagery Wayback release list, `https://s3-us-west-2.amazonaws.com/config.maptiles.arcgis.com/waybackconfig.json` (keyed by release number: `itemTitle`, `itemURL` tile template, `metadataLayerUrl`). The tile map and metadata answers in `imagery.test.js` follow the format used by Esri's `wayback-core` library (`{ data, select, valid, location, size }`; metadata `features[].attributes.SRC_DATE2`). |

@@ -410,6 +410,10 @@
         if (el) el.textContent = (u.connected ? 'Connected to Google. ' : 'Not connected yet: add GOOGLE_SOLAR_API_KEY in Netlify. ') + 'Used this month: ' + u.usedThisMonth + ' of ' + u.limit + '.';
       }, function (e) { var el = $('#solar-usage'); if (el) el.textContent = e.message; });
       loadSkipStatus().then(function () { var el = $('#skip-status'); if (el) el.textContent = skipStatusText(); });
+      Cloud.fn(TILES_FN, 'GET', undefined, 'action=usage').then(function (u) {
+        var el = $('#gtiles-usage');
+        if (el) el.textContent = (u.connected ? 'Google key found. ' : 'Not connected yet: add GOOGLE_MAPS_TILES_KEY (or GOOGLE_SOLAR_API_KEY) in Netlify. ') + 'Google tiles this month: ' + num(u.usedThisMonth) + ' of ' + num(u.limit) + '.';
+      }, function (e) { var el = $('#gtiles-usage'); if (el) el.textContent = e.code === 'missing' ? 'The Google satellite server function is not on the website yet (deploy needed).' : e.message; });
       Cloud.fn(SCAN_FN, 'GET', undefined, 'action=status').then(function (u) {
         var el = $('#scan-status');
         if (!el) return;
@@ -542,6 +546,7 @@
         return '<option value="' + p.id + '"' + (p.id === measure.pitch ? ' selected' : '') + '>' + esc(p.label) + '</option>';
       }).join('') + '</select></label>' +
       '<p class="fine">Flat / low-slope for most commercial roofs. Steeper roofs have more surface than you see from above, so the pitch adds to the area.</p>' +
+      '<p class="fine">Trees hiding the edges? Switch the imagery (top right of the map) to "Older / leaf-off", or save the lead and use 📡 Measure from address: it measures from Google\'s elevation data, so trees don\'t fool it.</p>' +
       '<div class="btn-row"><button class="btn primary" data-act="trace-done"' + (n < 3 ? ' disabled' : '') + '>Finish</button>' +
       '<button class="btn ghost" data-act="trace-undo"' + (n ? '' : ' disabled') + '>Undo corner</button>' +
       '<button class="btn ghost" data-act="trace-cancel">Cancel</button></div></div>';
@@ -567,21 +572,20 @@
       return;
     }
     var c = centerPlace();
-    map = L.map(el, { zoomControl: true, maxZoom: 21, doubleClickZoom: !measure });
+    map = L.map(el, { zoomControl: true, maxZoom: Imagery.MAP_MAX, doubleClickZoom: !measure });
     // Place the map before adding anything to it.
     if (mapView) map.setView(mapView.center, mapView.zoom);
     else if (!isCloud()) map.fitBounds(L.latLng(c.lat, c.lng).toBounds(prefs.radius * 1609.34 * 2), { padding: [10, 10] });
     else map.setView([c.lat, c.lng], 12);
-    // With the company's Esri key the imagery is used under that account (licensed for business);
-    // without it, Esri's public tiles are shown.
+    // The satellite picture comes from the source picked in the imagery switcher (top right).
+    // With the company's Esri key the standard Esri imagery and the place names are used under
+    // that account (licensed for business); without it, Esri's public tiles are shown.
     var key = (state.settings.map && state.settings.map.esriKey) || '';
     var base = key ? 'https://ibasemaps-api.arcgis.com/arcgis/rest/services/' : 'https://server.arcgisonline.com/ArcGIS/rest/services/';
     var tok = key ? '?token=' + encodeURIComponent(key) : '';
-    L.tileLayer(base + 'World_Imagery/MapServer/tile/{z}/{y}/{x}' + tok, {
-      maxZoom: 21, maxNativeZoom: 19, attribution: 'Powered by Esri · Imagery © Esri, Maxar, Earthstar Geographics'
-    }).addTo(map);
+    addImagery();
     L.tileLayer(base + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}' + tok, {
-      maxZoom: 21, maxNativeZoom: 19
+      maxZoom: Imagery.MAP_MAX, maxNativeZoom: 19, zIndex: 5
     }).addTo(map);
 
     if (!isCloud()) {
@@ -602,7 +606,8 @@
         .addTo(map);
     });
 
-    map.on('moveend', function () { mapView = { center: map.getCenter(), zoom: map.getZoom() }; });
+    map.on('moveend', function () { mapView = { center: map.getCenter(), zoom: map.getZoom() }; imageryMoved(); });
+    map.on('zoomend', showDetailHint);
     map.on('click', function (e) { if (measure) addCorner(e.latlng); else if (scanDraw) scanDrawClick(e.latlng); });
     map.on('mousemove', function (e) { if (scanDraw && scanDraw.first && scanDraw.layer) scanDraw.layer.setBounds([scanDraw.first, e.latlng]); });
     if (measure) drawMeasure();
@@ -611,6 +616,265 @@
       if (scanDraw) { scanDraw.first = null; scanDraw.layer = null; map.doubleClickZoom.disable(); }
       drawScanLayer();
     }
+  }
+
+  // ---- Satellite imagery: the switcher ---------------------------------------
+  //
+  // Sources (js/imagery.js): Esri (standard), Esri Clarity (beta, often sharper), Google
+  // satellite (Map Tiles API through the roofscout-tiles function: the Google key stays on the
+  // server; signed-in website only) and "Older / leaf-off" (Esri World Imagery Wayback: every
+  // release since 2014; "Dates with new imagery here" lists only the pictures that differ at
+  // the spot, with their capture dates, winter ones marked 🍂). Each person's pick is
+  // remembered in this browser. Past a source's sharpest zoom the picture is only enlarged,
+  // and the map says so ("Max detail reached").
+
+  var TILES_FN = 'roofscout-tiles';
+  var img = {
+    pick: null, user: null,   // { source, release } for this person
+    id: 'esri',               // the source on the map now
+    map: null, layer: null, mark: null, ctl: null,   // what is on the current map
+    items: null, itemsBusy: false, itemsErr: '',   // Wayback releases (newest first)
+    local: null, localBusy: false,                  // { at, list: [{ release, date, capture, leafOff }] }
+    native: {},               // "source:release:tile" → deepest zoom there
+    g: null, gBusy: false, gErr: '', gTimer: null, gErrors: [],   // Google ticket { ticket, exp }
+    copyright: {}, moveTimer: null
+  };
+
+  function imgStore() {
+    try { if (window.localStorage) return window.localStorage; } catch (e) { /* blocked */ }
+    return { getItem: function () { return null; }, setItem: function () {} };
+  }
+  function imgUser() { return me ? (me.email || me.id || 'local') : 'local'; }
+  function imgPick() {
+    if (!img.pick || img.user !== imgUser()) { img.user = imgUser(); img.pick = Imagery.loadPick(imgStore(), img.user); }
+    return img.pick;
+  }
+  function waybackItem() {
+    if (!img.items || !img.items.length) return null;
+    return Imagery.byRelease(img.items, imgPick().release) || img.items[0];
+  }
+  // Where the native zoom was checked: one entry per source/release and zoom-14 tile.
+  function nativeKey(id) {
+    if (!map) return id;
+    var c = map.getCenter(), t = Imagery.tileXY(c.lat, c.lng, 14);
+    return id + ':' + (id === 'wayback' && waybackItem() ? waybackItem().release : '') + ':' + t.x + '/' + t.y;
+  }
+  function nativeFor(id) { var n = img.native[nativeKey(id)]; return n || Imagery.source(id).native; }
+
+  function pickImagery(id, release) {
+    var p = imgPick();
+    p.source = Imagery.SOURCES[id] ? id : 'esri';
+    if (release) p.release = release;
+    Imagery.savePick(imgStore(), imgUser(), p);
+    if (p.source === 'google' && !isCloud()) toast('Google satellite needs the website sign-in (it is not available in demo mode).', true);
+    setImagery();
+  }
+
+  function setImagery() {
+    if (!map) return;
+    if (img.layer) { img.layer.remove(); img.layer = null; }
+    if (img.mark) { img.mark.remove(); img.mark = null; }
+    addImagery();
+  }
+
+  function addImagery() {
+    if (img.map !== map) { img.map = map; img.layer = img.mark = img.ctl = null; }   // a new map (tab switch)
+    var p = imgPick();
+    var id = p.source === 'google' && !isCloud() ? 'esri' : p.source;
+    var key = (state.settings.map && state.settings.map.esriKey) || '';
+    var url = '';
+    if (id === 'wayback') {
+      if (!img.items) loadWayback();
+      url = Imagery.tileUrl('wayback', { release: waybackItem() });
+    } else if (id === 'google') {
+      if (!img.g || img.g.exp * 1000 < Date.now() + 60e3) loadGoogleTicket();
+      else url = Imagery.tileUrl('google', { ticket: img.g.ticket });
+    } else url = Imagery.tileUrl(id, { esriKey: key });
+    // While the release list or the Google ticket loads, the standard Esri picture is shown.
+    var shown = url ? id : 'esri';
+    if (!url) url = Imagery.tileUrl('esri', { esriKey: key });
+    img.id = shown;
+    var o = Imagery.layerOptions(shown, nativeFor(shown), !!(L.Browser && L.Browser.retina));
+    var item = shown === 'wayback' ? waybackItem() : null;
+    o.attribution = Imagery.attribution(shown, { date: item && item.date, copyright: img.copyright[nativeKey('google')] });
+    o.zIndex = 1;
+    img.layer = L.tileLayer(url, o).addTo(map);
+    img.layer.on('tileerror', function () { if (img.id === 'google') googleTileError(); });
+    if (shown === 'google') {
+      // Google Maps branding on the map (Map Tiles API policies), beside Google's attribution text.
+      img.mark = L.control({ position: 'bottomleft' });
+      img.mark.onAdd = function () { var d = L.DomUtil.create('div', 'g-mark'); d.textContent = 'Google Maps'; d.title = 'Satellite imagery from Google'; return d; };
+      img.mark.addTo(map);
+    }
+    if (!img.ctl) {
+      img.ctl = L.control({ position: 'topright' });
+      img.ctl.onAdd = function () {
+        var d = L.DomUtil.create('div', 'imagery-ctl');
+        d.id = 'imagery-ctl';
+        L.DomEvent.disableClickPropagation(d);
+        L.DomEvent.disableScrollPropagation(d);
+        return d;
+      };
+      img.ctl.addTo(map);
+    }
+    renderImageryCtl();
+    showDetailHint();
+    imageryMoved();
+  }
+
+  function renderImageryCtl() {
+    var box = $('#imagery-ctl');
+    if (!box) return;
+    var p = imgPick();
+    var html = '<label class="imagery-row">Imagery <select id="imagery-src" aria-label="Satellite imagery source">' +
+      Imagery.ORDER.map(function (k) {
+        var s = Imagery.SOURCES[k];
+        var off = s.cloudOnly && !isCloud();
+        return '<option value="' + k + '"' + (p.source === k ? ' selected' : '') + (off ? ' disabled' : '') + '>' + esc(s.label) + (off ? ' (website sign-in)' : '') + '</option>';
+      }).join('') + '</select></label>';
+    if (p.source === 'wayback') {
+      if (img.items && img.items.length) {
+        var cur = waybackItem();
+        var loc = img.local && img.local.at === nativeKey('wayback').replace(/^wayback:\d*:/, '') ? img.local.list : null;
+        var opts = loc && loc.length
+          ? loc.map(function (x) { return [x.release, (x.capture ? 'Taken ' + x.capture : 'Release ' + x.date) + (x.leafOff ? ' 🍂 leaf-off' : '')]; })
+          : img.items.map(function (x) { return [x.release, 'Release ' + x.date]; });
+        if (cur && !opts.some(function (o) { return o[0] === cur.release; })) opts.unshift([cur.release, 'Release ' + cur.date]);
+        html += '<label class="imagery-row">Date <select id="imagery-date" aria-label="Imagery date">' + opts.map(function (o) {
+          return '<option value="' + o[0] + '"' + (cur && o[0] === cur.release ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+        }).join('') + '</select></label>' +
+          '<button type="button" class="btn ghost sm block" data-act="imagery-leafoff"' + (img.localBusy ? ' disabled' : '') + '>' +
+          (img.localBusy ? 'Looking…' : '🍂 Dates with new imagery here') + '</button>' +
+          (loc ? '<div class="fine">' + (loc.length ? loc.length + ' different pictures of this spot' + (loc.some(function (x) { return x.leafOff; }) ? '; 🍂 = taken in winter (leaf-off)' : '; none taken in winter') : 'No older pictures of this spot') + '.</div>' : '');
+      } else html += '<div class="fine">' + (img.itemsErr ? esc(img.itemsErr) : 'Loading the list of older pictures…') + '</div>';
+    }
+    if (p.source === 'google' && img.id !== 'google') html += '<div class="fine">' + (img.gErr ? esc(img.gErr) : (isCloud() ? 'Connecting to Google…' : 'Sign in on the website to use Google.')) + '</div>';
+    html += '<div class="imagery-max" id="imagery-max" hidden>Max detail reached: zooming further only enlarges this picture.</div>' +
+      '<div class="imagery-tip">Trees in the way? Try \'Older / leaf-off\' imagery or use 📡 Measure from address.</div>';
+    box.innerHTML = html;
+    showDetailHint();
+  }
+
+  function showDetailHint() {
+    var el = $('#imagery-max');
+    if (!el || !map) return;
+    el.hidden = !Imagery.overZoom(map.getZoom(), nativeFor(img.id));
+  }
+
+  // After the map moves: check how deep the current source really goes here (once per spot).
+  function imageryMoved() {
+    clearTimeout(img.moveTimer);
+    img.moveTimer = setTimeout(function () {
+      if (!map || map.getZoom() < 16) return;
+      var id = img.id, k = nativeKey(id);
+      if (img.native[k] !== undefined) { showDetailHint(); return; }
+      img.native[k] = Imagery.source(id).native;   // asked once
+      var c = map.getCenter();
+      var done = function (n, copyright) {
+        var changed = n && n !== Imagery.source(id).native;
+        if (n) img.native[k] = n;
+        if (copyright && img.copyright[k] !== copyright) { img.copyright[k] = copyright; changed = true; }
+        if (!map || img.id !== id || nativeKey(id) !== k) return;
+        if (changed) setImagery(); else showDetailHint();
+      };
+      if (id === 'google') {
+        if (!img.g) return;
+        var b = map.getBounds();
+        fetch('/.netlify/functions/' + TILES_FN + '?action=viewport&t=' + encodeURIComponent(img.g.ticket) + '&zoom=' + Math.min(22, Math.round(map.getZoom())) +
+          '&north=' + b.getNorth().toFixed(6) + '&south=' + b.getSouth().toFixed(6) + '&east=' + b.getEast().toFixed(6) + '&west=' + b.getWest().toFixed(6))
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) { if (j) { var v = Imagery.parseViewport(j, c.lat, c.lng); done(v.maxZoom, v.copyright); } }, function () { /* keep the default */ });
+        return;
+      }
+      var key = (state.settings.map && state.settings.map.esriKey) || '';
+      Imagery.detectNative(function (u) { return fetch(u); }, id, c.lat, c.lng, { esriKey: key, release: waybackItem() }).then(function (n) { done(n); });
+    }, 500);
+  }
+
+  function loadWayback() {
+    if (img.itemsBusy || img.items) return;
+    img.itemsBusy = true;
+    fetch(Imagery.WAYBACK_CONFIG).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (j) {
+      img.items = Imagery.parseWaybackConfig(j);
+      img.itemsBusy = false;
+      if (!img.items.length) { img.items = null; throw new Error(); }
+      if (imgPick().source === 'wayback') setImagery();
+    }).then(null, function () {
+      img.itemsBusy = false;
+      img.itemsErr = 'Could not load the list of older Esri pictures. Check the internet connection, then pick it again.';
+      renderImageryCtl();
+    });
+  }
+
+  // 🍂 Dates with new imagery here: the releases whose picture differs at the map center, each
+  // with the date the picture was taken (Wayback metadata), newest first.
+  function findLeafOff() {
+    if (!map || !img.items || img.localBusy) return;
+    var c = map.getCenter(), z = map.getZoom();
+    var at = nativeKey('wayback').replace(/^wayback:\d*:/, '');
+    img.localBusy = true;
+    renderImageryCtl();
+    var f = function (u) { return fetch(u); };
+    Imagery.localChanges(f, img.items, c.lat, c.lng, Math.max(z, 17), 20).then(function (rels) {
+      return Promise.all(rels.map(function (rel) {
+        var it = Imagery.byRelease(img.items, rel);
+        var u = Imagery.metadataQueryUrl(it, c.lat, c.lng, Math.min(19, Math.round(Math.max(z, 17))));
+        var row = { release: rel, date: it.date, capture: null, leafOff: false };
+        if (!u) return row;
+        return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+          var md = Imagery.parseMetadata(j);
+          if (md && md.date) { row.capture = md.date; row.leafOff = Imagery.isLeafOff(md.date, c.lat); }
+          return row;
+        }, function () { return row; });
+      }));
+    }).then(function (list) {
+      img.localBusy = false;
+      img.local = { at: at, list: list };
+      var winter = list.filter(function (x) { return x.leafOff; })[0];
+      if (winter) {
+        toast('Showing the newest winter picture of this spot (taken ' + winter.capture + ').');
+        pickImagery('wayback', winter.release);
+      } else {
+        if (list.length) toast(list.length + ' different pictures of this spot; none taken in winter.');
+        renderImageryCtl();
+      }
+    }, function () { img.localBusy = false; renderImageryCtl(); toast('Could not reach Esri Wayback. Try again.', true); });
+  }
+
+  function loadGoogleTicket() {
+    if (img.gBusy || !isCloud()) return;
+    img.gBusy = true;
+    Cloud.fn(TILES_FN, 'GET', undefined, 'action=ticket').then(function (r) {
+      img.gBusy = false;
+      img.gErr = '';
+      img.g = { ticket: r.ticket, exp: r.exp };
+      // A new ticket shortly before this one runs out; tiles already shown stay.
+      clearTimeout(img.gTimer);
+      img.gTimer = setTimeout(function () {
+        img.g = null;
+        if (map && img.id === 'google') loadGoogleTicket();
+      }, Math.max(60e3, r.exp * 1000 - Date.now() - 20 * 60e3));
+      if (!map || imgPick().source !== 'google') return;
+      if (img.id === 'google' && img.layer) img.layer.setUrl(Imagery.tileUrl('google', { ticket: r.ticket }), true);
+      else setImagery();
+    }, function (e) {
+      img.gBusy = false;
+      img.gErr = e.code === 'missing' ? 'Google satellite is not on the website yet (deploy needed).' : (e.message || String(e));
+      if (e.code === 'signed-out') { report(e); return; }
+      toast(img.gErr + ' Showing Esri imagery.', true);
+      renderImageryCtl();
+    });
+  }
+
+  // Many failed Google tiles in a short time: the ticket may be out of date or the monthly
+  // limit reached. Ask again once (the answer explains it).
+  function googleTileError() {
+    var n = Date.now();
+    img.gErrors = img.gErrors.filter(function (t) { return n - t < 15e3; }).concat([n]);
+    if (img.gErrors.length < 6 || img.gBusy) return;
+    img.gErrors = [];
+    img.g = null;
+    loadGoogleTicket();
   }
 
   // ---- Tracing a roof -------------------------------------------------------
@@ -1013,7 +1277,9 @@
     var owner = p && p.owner
       ? '<div class="sm"><b>' + esc(p.owner) + '</b>' + (p.mail ? ' · <span class="muted">' + esc(p.mail) + '</span>' : '') + '</div>'
       : '<div class="sm muted">Owner unknown — ' + (county ? '<a href="' + esc(county.assessor) + '" target="_blank" rel="noopener">look up (' + esc(county.assessorName) + ')</a>' : 'look up') + '</div>';
-    var solar = s.solar ? '<div class="sm muted">' + (s.solar.found ? 'Google: ' + num(s.solar.areaSqft) + ' ft² · ' + (s.solar.pitch ? s.solar.pitch + '/12' : 'flat') : 'Google: no roof data') + '</div>' : '';
+    var solar = s.solar ? (s.solar.found
+      ? '<div class="sm measure-src" title="Measured from Google\'s elevation data: not fooled by trees or blurry imagery">📡 Google Solar: <b>' + num(s.solar.areaSqft) + ' ft²</b> · ' + (s.solar.pitch ? s.solar.pitch + '/12' : 'flat') + '</div>'
+      : '<div class="sm muted">📡 Google Solar: no roof data</div>') : '';
     return '<tr data-sid="' + esc(s.id) + '" class="' + (s.id === scanSel ? 'sel' : '') + '">' +
       '<td class="r"><span class="score" style="background:' + scanColor(s.score) + '">' + s.score + '</span></td>' +
       '<td><div class="cell-name"><button class="link" data-act="scan-zoom" data-id="' + esc(s.id) + '">' + esc(siteTitle(s)) + '</button></div>' + owner +
@@ -1523,7 +1789,11 @@
       '<section class="panel"><h2>Satellite map</h2>' +
         '<p class="muted sm">For business use, Esri (the imagery provider) asks for a key from a free ArcGIS Location Platform account. Without a key the map still shows Esri\'s public imagery.</p>' +
         '<div class="row2">' + field('Esri API key', 'esri-key', (s.map && s.map.esriKey) || '', 'Paste the key from developers.arcgis.com') + '</div>' +
-        '<p class="fine">It is a browser key (everyone signed in can see it). In ArcGIS, limit it to basemaps and to your site addresses.</p></section>' +
+        '<p class="fine">It is a browser key (everyone signed in can see it). In ArcGIS, limit it to basemaps and to your site addresses.</p>' +
+        '<h3>Google satellite (imagery switcher)</h3>' +
+        '<p class="muted sm">Google\'s satellite tiles come through the GrayCo server (the Google key never reaches the browser). Google gives 100,000 tiles a month free, then about $0.60 per 1,000. One close-up look at a roof is roughly 20–40 tiles. RoofScout stops Google tiles at this many a month; Esri imagery keeps working.</p>' +
+        '<div class="row3"><label>Monthly tile limit <input type="number" name="gtiles-limit" min="0" step="1000" value="' + ((s.mapTiles && s.mapTiles.monthlyLimit) != null ? s.mapTiles.monthlyLimit : 90000) + '"></label></div>' +
+        '<p class="fine" id="gtiles-usage">' + (isCloud() ? 'Checking this month\'s use…' : 'Shown when signed in on the website.') + '</p></section>' +
 
       '<section class="panel"><h2>Proposal terms</h2><p class="muted sm">One per line. These print on every proposal; confirm them before sending.</p>' +
         '<textarea name="terms" rows="5">' + esc(s.terms) + '</textarea></section>' +
@@ -1682,6 +1952,7 @@
       commission: g('commission'),
       map: { esriKey: g('esri-key') },
       solar: { monthlyLimit: Math.max(0, Math.round(nums('solar-limit') || 0)) },
+      mapTiles: { monthlyLimit: Math.max(0, Math.round(nums('gtiles-limit') || 0)) },
       skiptrace: { monthlyLimit: Math.max(0, Math.round(nums('st-limit') || 0)) },
       areaScan: readScanSettings(form)
     });
@@ -1803,8 +2074,8 @@
           '<label class="span2">Issues seen (comma separated) <input name="issues" value="' + esc((l.issues || []).join(', ')) + '"></label>' +
           '<label>Latitude <input type="number" name="lat" step="any" value="' + (typeof l.lat === 'number' ? l.lat.toFixed(6) : '') + '" placeholder="optional, for the map"></label>' +
           '<label>Longitude <input type="number" name="lng" step="any" value="' + (typeof l.lng === 'number' ? l.lng.toFixed(6) : '') + '" placeholder="optional"></label>' +
-          (l.areaSource === 'google' ? '<p class="fine span2">Area from Google roof data (Solar API). Verify on site.</p>' : '') +
-          (l.areaSource !== 'google' && (l.outline || (isNew && draftExtras)) ? '<p class="fine span2">Area traced on the satellite map' + ((l.pitch || (draftExtras && draftExtras.pitch)) && (l.pitch || draftExtras.pitch) !== 'flat' ? ', ' + (l.pitch || draftExtras.pitch) + '/12 pitch' : ', flat / low-slope') + '. Verify on site.</p>' : '') +
+          (l.areaSource === 'google' ? '<p class="measure-src span2" id="area-source">Measurement source: <b>📡 Google Solar roof data</b> (elevation data: trees and blurry imagery don\'t affect it). Verify on site.</p>' : '') +
+          (l.areaSource !== 'google' && (l.outline || (isNew && draftExtras)) ? '<p class="fine span2" id="area-source">Measurement source: 📐 traced on the satellite map' + ((l.pitch || (draftExtras && draftExtras.pitch)) && (l.pitch || draftExtras.pitch) !== 'flat' ? ', ' + (l.pitch || draftExtras.pitch) + '/12 pitch' : ', flat / low-slope') + '. Trees can hide roof edges: check it with 📡 Measure from address. Verify on site.</p>' : '') +
           (l.confidence ? '<p class="fine span2">Grading confidence from imagery: ' + l.confidence + '%</p>' : '') +
         '</div></fieldset>' +
         '<fieldset><legend>Owner / manager contact</legend><div class="row2">' +
@@ -1823,8 +2094,8 @@
           '<label class="span2">Notes <textarea name="notes" rows="3">' + esc(l.notes) + '</textarea></label>' +
         '</div></fieldset>' +
       '</div><aside>' +
-        '<div class="panel est" id="est"></div>' +
         '<div class="panel solar" id="solar-box"></div>' +
+        '<div class="panel est" id="est"></div>' +
         '<div class="panel contact-box" id="contact-box"></div>' +
         (isNew ? '' : '<div id="crm-job-box">' + crmJobBox(l) + '</div>') +
         (l.scan || l.parcel ? '<div class="panel"><h3>From the area scan</h3>' +
@@ -1988,12 +2259,13 @@
   function renderSolar(msg, busyNow) {
     var box = $('#solar-box');
     if (!box) return;
-    var head = '<h3>Google roof measurement</h3>';
+    var head = '<h3>📡 Roof measurement (Google Solar)</h3>';
     if (!isCloud()) { box.innerHTML = head + '<p class="fine">Available when signed in on the website.</p>'; return; }
     var s = solarDraft;
     var html = head;
     if (s && s.found) {
-      html += '<div class="est-big">' + num(s.areaSqft) + ' ft²</div>' +
+      html += '<div class="measure-src">Measurement source: <b>Google Solar roof data</b>. Measured from elevation data, so trees over the roof and blurry imagery don\'t affect it.</div>' +
+        '<div class="est-big">' + num(s.areaSqft) + ' ft²</div>' +
         '<div class="est-row"><span>Main pitch</span><b>' + (s.pitch == null ? '—' : s.pitch === 0 ? 'flat' : s.pitch + '/12') + '</b></div>' +
         '<div class="est-row"><span>Roof sections</span><b>' + s.segments + '</b></div>' +
         '<div class="est-row"><span>Photo date · quality</span><b>' + esc(s.imageryDate || '?') + ' · ' + esc(String(s.imageryQuality || '?').toLowerCase()) + '</b></div>' +
@@ -2003,8 +2275,8 @@
       html += '<p class="sm">Google has no roof data for this spot. Trace the roof on the map instead (free).</p>' +
         '<button type="button" class="btn ghost sm" data-act="solar"' + (busyNow ? ' disabled' : '') + '>Try again</button>';
     } else {
-      html += '<p class="fine">One click measures the roof from the address or map spot (Google Solar API, about 1¢ a lookup after the free amount).</p>' +
-        '<button type="button" class="btn ghost block" data-act="solar"' + (busyNow ? ' disabled' : '') + '>' + (busyNow ? 'Measuring…' : '📡 Measure from address') + '</button>';
+      html += '<p class="fine">The most reliable size: one click measures the roof from Google\'s elevation data for the address or map spot, so trees and blurry imagery don\'t matter (Google Solar API, about 1¢ a lookup after the free amount).</p>' +
+        '<button type="button" class="btn primary block" data-act="solar"' + (busyNow ? ' disabled' : '') + '>' + (busyNow ? 'Measuring…' : '📡 Measure from address') + '</button>';
     }
     if (msg) html += '<p class="fine">' + esc(msg) + '</p>';
     html += '<p class="fine">Roof data © Google. Kept for ' + SOLAR_DAYS + ' days, then refreshed.</p>';
@@ -2211,6 +2483,7 @@
         $('#area-scan').outerHTML = areaScanPanel();
         break;
       case 'scan-draw': startScanDraw(); break;
+      case 'imagery-leafoff': findLeafOff(); break;
       case 'scan-run': runAreaScan(); break;
       case 'scan-clear':
         scanRes = null; scanSel = null;
@@ -2461,6 +2734,8 @@
       if (scanRes && !scanRes.running) { renderScanResults(); drawScanLayer(); }
     }
     if (t.id === 'measure-pitch' && measure) { measure.pitch = t.value; drawMeasure(); }
+    if (t.id === 'imagery-src') pickImagery(t.value, null);
+    if (t.id === 'imagery-date') pickImagery('wayback', Number(t.value));
     if (t.id === 'radius-range' || t.id === 'radius-num') setPref('radius', Math.max(0.5, Math.min(500, Number(t.value) || 10)));
     if (t.id === 'restore') restore(t.files[0]);
   });

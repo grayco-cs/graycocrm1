@@ -1,10 +1,12 @@
-// Playwright smoke test of Map → Scan an area, signed in (shared-database mode), offline.
+// Playwright smoke test of Map → Scan an area and the imagery switcher, signed in (shared-database mode), offline.
 //
 //   NODE_PATH=<dir with playwright (and optionally leaflet)> node roofscout/tests/scan-ui.smoke.js [screenshot.png]
 //
 // The page is served from roofscout/ on 127.0.0.1. Supabase, Nominatim, Google Solar and the map
 // tiles are answered by page.route; the two RoofScout server functions run in this process (the
 // real handlers) with Overpass / county / Tracerfy mocked from tests/fixtures (see mock-net.js).
+// The imagery switcher's sources are mocked too: Esri / Clarity / Wayback tiles, tile maps and
+// metadata (page.route), and Google's Map Tiles API behind the real roofscout-tiles handler.
 // Leaflet is served from node_modules when installed, otherwise the map is skipped.
 'use strict';
 var assert = require('assert');
@@ -21,8 +23,12 @@ try { leafletDir = path.dirname(require.resolve('leaflet/dist/leaflet.js')); } c
 process.env.SUPABASE_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 process.env.SUPABASE_SERVICE_KEY = 'svc';
 process.env.TRACERFY_API_KEY = 'tf-test';
+process.env.GOOGLE_SOLAR_API_KEY = 'solar-test-key';
 var scanFn = require('../../netlify/functions/roofscout-scan.js');
 var skipFn = require('../../netlify/functions/roofscout-skiptrace.js');
+var tilesFn = require('../../netlify/functions/roofscout-tiles.js');
+// A 1×1 PNG stands in for every satellite tile.
+var PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
 var ROOT = path.join(__dirname, '..');
 var SB = 'https://ieeonhpfahmwwecizdut.supabase.co';
@@ -40,6 +46,20 @@ net.route('tracerfy.com/v1/api/trace/lookup/', function () {
     emails: [{ email: 'pat@example.com' }] }] });
 });
 net.db.settings = { areaScan: { sources: { shelby: { on: true, url: '' } } } };
+// Google Map Tiles API (createSession, 2D satellite tiles, viewport).
+var google = { sessions: 0, tiles: 0, viewports: 0 };
+net.route('tile.googleapis.com/v1/createSession', function () { google.sessions++; return M.json(200, { session: 'sess-smoke', expiry: String(Math.floor(Date.now() / 1000) + 14 * 86400), tileWidth: 256, tileHeight: 256, imageFormat: 'png' }); });
+net.route('tile.googleapis.com/v1/2dtiles/', function () {
+  google.tiles++;
+  return { ok: true, status: 200, headers: { get: function (h) { return { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' }[h.toLowerCase()] || null; } },
+    arrayBuffer: function () { return Promise.resolve(PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.length)); } };
+});
+net.route('tile.googleapis.com/tile/v1/viewport', function () { google.viewports++; return M.json(200, { copyright: 'Imagery ©2026 Google, Smoke Test Imagery', maxZoomRects: [{ maxZoom: 21, north: 36, south: 35, east: -89, west: -90 }] }); });
+// Esri Wayback at the test spot: the picture changed in the 2025-01-30, 2024-02-08 and 2019-06-26
+// releases; the 2024-02-08 one was taken in January (leaf-off).
+var WB_CHAIN = { 63116: 36557, 26334: 36557, 34007: 36557, 36557: 36557, 13968: 37965, 60013: 37965, 37965: 37965, 41468: 645, 47963: 645, 25982: 645, 645: 645 };
+var WB_TAKEN = { World_Imagery_Metadata_2025_r01: Date.UTC(2024, 9, 2), World_Imagery_Metadata_2024_r01: Date.UTC(2024, 0, 14), World_Imagery_Metadata_2019_r08: Date.UTC(2019, 4, 20) };
+
 // A hand-traced lead already sits on the church roof.
 var ADMIN = 'wjohnson@grayco-cs.com';
 var now = new Date().toISOString();
@@ -73,6 +93,7 @@ async function main() {
   var dialogs = [];
   page.on('dialog', function (d) { dialogs.push(d.message()); d.accept(); });
   var posted = [];
+  var imgSeen = [];   // satellite tile / tile function URLs the page asked for
 
   await page.addInitScript(function () {
     localStorage.setItem('gc_auth_v1', JSON.stringify({ access_token: 'tok-admin', refresh_token: 'r', expires_at: Math.floor(Date.now() / 1000) + 36000, email: 'wjohnson@grayco-cs.com', uid: 'u1', role: 'admin', roleKnown: true }));
@@ -85,15 +106,28 @@ async function main() {
       if (!leafletDir) return route.abort();
       return route.fulfill({ path: path.join(leafletDir, file), contentType: /\.css$/.test(file) ? 'text/css' : 'text/javascript' });
     }
-    if (/arcgisonline|arcgis\.com\/arcgis\/rest\/services\/(World_Imagery|Reference)/.test(url)) return route.fulfill({ status: 404, body: '' });
+    if (url === 'https://s3-us-west-2.amazonaws.com/config.maptiles.arcgis.com/waybackconfig.json') return route.fulfill({ status: 200, contentType: 'application/json', body: M.fixture('waybackconfig-sample.json') });
+    if (/wayback\.maptiles\.arcgis\.com\/arcgis\/rest\/services\/World_Imagery\/MapServer\/tilemap\/(\d+)\//.test(url)) {
+      var sel = WB_CHAIN[RegExp.$1];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sel ? { data: [1], select: [sel], valid: true, size: [100] } : { data: [0], valid: true }) });
+    }
+    if (/metadata\.maptiles\.arcgis\.com\/arcgis\/rest\/services\/(World_Imagery_Metadata_\w+)\/MapServer\/\d+\/query/.test(url)) {
+      var when = WB_TAKEN[RegExp.$1];
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ features: when ? [{ attributes: { SRC_DATE2: when, NICE_DESC: 'Maxar', SAMP_RES: 0.3 } }] : [] }) });
+    }
+    if (/\/tilemap\//.test(url)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [0], valid: true }) });
+    if (/maptiles\.arcgis\.com\/.*\/tile\//.test(url)) { imgSeen.push(url); return route.fulfill({ status: 200, contentType: 'image/png', body: PNG }); }
+    if (/arcgisonline|arcgis\.com\/arcgis\/rest\/services\/(World_Imagery|Reference)/.test(url)) { imgSeen.push(url); return route.fulfill({ status: 404, body: '' }); }
     if (url.indexOf('/.netlify/functions/') > -1) {
       var name = /functions\/([a-z-]+)/.exec(url)[1];
       var u = new URL(url);
       var ev = { httpMethod: method, headers: req.headers(), queryStringParameters: Object.fromEntries(u.searchParams), body: req.postData() || undefined };
       if (name === 'solar-lookup') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(method === 'GET' ? { connected: true, usedThisMonth: 3, limit: 500 } : { found: true, areaSqft: 41200, pitch: 0, segments: 2, imageryDate: '2024-05-01', imageryQuality: 'HIGH', usedThisMonth: 4, limit: 500 }) });
-      var h = name === 'roofscout-scan' ? scanFn : name === 'roofscout-skiptrace' ? skipFn : null;
+      var h = name === 'roofscout-scan' ? scanFn : name === 'roofscout-skiptrace' ? skipFn : name === 'roofscout-tiles' ? tilesFn : null;
       if (!h) return route.fulfill({ status: 404, body: '' });
+      if (name === 'roofscout-tiles') imgSeen.push(url);
       var r = await h.handler(ev);
+      if (r.isBase64Encoded) return route.fulfill({ status: r.statusCode, headers: r.headers, body: Buffer.from(r.body, 'base64') });
       return route.fulfill({ status: r.statusCode, contentType: 'application/json', body: r.body });
     }
     if (url.indexOf('nominatim.openstreetmap.org') > -1) {
@@ -168,7 +202,7 @@ async function main() {
 
   // 📡 Measure (Google Solar, per site).
   await page.click('#scan-results tr[data-sid=w1002] [data-act=scan-measure]');
-  await page.waitForFunction(function () { return /Google: 41,200 ft²/.test(document.querySelector('#scan-results tr[data-sid=w1002]').innerText); });
+  await page.waitForFunction(function () { return /📡 Google Solar: 41,200 ft²/.test(document.querySelector('#scan-results tr[data-sid=w1002]').innerText); });
 
   // Add as lead.
   await page.click('#scan-results tr[data-sid=w1001] [data-act=scan-add]');
@@ -213,11 +247,65 @@ async function main() {
     assert.ok(/OpenStreetMap contributors/.test(await page.locator('.leaflet-control-attribution').innerText()), 'OSM attribution on the map');
   }
 
+  // Imagery switcher: on the map, remembered per person, Google through the server function.
+  if (leafletDir) {
+    var ctl = page.locator('#imagery-ctl');
+    await ctl.waitFor();
+    assert.deepStrictEqual(await page.$$eval('#imagery-src option', function (o) { return o.map(function (x) { return x.value; }); }), ['esri', 'clarity', 'google', 'wayback']);
+    assert.strictEqual(await page.inputValue('#imagery-src'), 'esri', 'Esri by default');
+    assert.ok(/Trees in the way\? Try 'Older \/ leaf-off' imagery or use 📡 Measure from address\./.test(await ctl.innerText()), 'tree hint on the map');
+    assert.ok(imgSeen.some(function (u) { return /server\.arcgisonline\.com\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\//.test(u); }), 'Esri tiles');
+
+    await page.selectOption('#imagery-src', 'clarity');
+    await page.waitForFunction(function () { return Array.prototype.some.call(document.querySelectorAll('#map img.leaflet-tile'), function (i) { return /clarity\.maptiles\.arcgis\.com\/arcgis\/rest\/services\/World_Imagery\/MapServer\/tile\//.test(i.src); }); });
+    assert.ok(/World Imagery Clarity/.test(await page.locator('.leaflet-control-attribution').innerText()));
+
+    await page.selectOption('#imagery-src', 'google');
+    await page.waitForFunction(function () { return Array.prototype.some.call(document.querySelectorAll('#map img.leaflet-tile'), function (i) { return /\/\.netlify\/functions\/roofscout-tiles\?z=\d+&x=\d+&y=\d+&t=/.test(i.src) && i.complete && i.naturalWidth === 1; }); }, null, { timeout: 10000 });
+    assert.ok(await page.locator('#map .g-mark').isVisible(), 'Google Maps mark on the map');
+    assert.ok(google.tiles > 0 && google.sessions === 1, 'tiles proxied, one session');
+    var srcs = await page.$$eval('#map img.leaflet-tile', function (a) { return a.map(function (i) { return i.src; }); });
+    assert.ok(srcs.every(function (u) { return u.indexOf('googleapis') < 0 && u.indexOf('solar-test-key') < 0 && u.indexOf('sess-smoke') < 0; }), 'no Google key or session in the page');
+    // Zoom in all the way: Google's viewport answer gives the attribution and the deepest zoom (21) → hint at 22.
+    while (!(await page.locator('.leaflet-control-zoom-in').getAttribute('class')).includes('leaflet-disabled')) { await page.click('.leaflet-control-zoom-in'); await page.waitForTimeout(350); }
+    await page.waitForFunction(function () { return /Imagery ©2026 Google, Smoke Test Imagery/.test(document.querySelector('.leaflet-control-attribution').textContent); }, null, { timeout: 10000 });
+    await page.waitForSelector('#imagery-max:not([hidden])');
+    assert.ok(/Max detail reached/.test(await page.locator('#imagery-max').innerText()));
+    assert.ok(google.viewports >= 1);
+    var picked = await page.evaluate(function () { return localStorage.getItem('roofscout.imagery.wjohnson@grayco-cs.com'); });
+    assert.strictEqual(JSON.parse(picked).source, 'google', 'remembered for this person');
+    for (var zo = 0; zo < 4; zo++) { await page.click('.leaflet-control-zoom-out'); await page.waitForTimeout(350); }
+    await page.waitForSelector('#imagery-max', { state: 'hidden' });
+
+    // Older / leaf-off: release list from Wayback's config, then the pictures that differ here.
+    await page.selectOption('#imagery-src', 'wayback');
+    await page.waitForFunction(function () { return document.querySelectorAll('#imagery-date option').length === 12; });
+    assert.ok(/Release 2026-09-24/.test(await page.locator('#imagery-date option').first().innerText()));
+    await page.click('[data-act=imagery-leafoff]');
+    await page.waitForFunction(function () { return /newest winter picture of this spot \(taken 2024-01-14\)/.test(document.querySelector('#toast').textContent); }, null, { timeout: 10000 });
+    var dates = await page.$$eval('#imagery-date option', function (o) { return o.map(function (x) { return x.textContent; }); });
+    assert.deepStrictEqual(dates, ['Taken 2024-10-02', 'Taken 2024-01-14 🍂 leaf-off', 'Taken 2019-05-20'], dates.join(' | '));
+    assert.strictEqual(await page.inputValue('#imagery-date'), '37965');
+    await page.waitForFunction(function () { return Array.prototype.some.call(document.querySelectorAll('#map img.leaflet-tile'), function (i) { return /wayback\.maptiles\.arcgis\.com\/.*\/MapServer\/tile\/37965\//.test(i.src); }); });
+    assert.ok(/World Imagery Wayback \(release 2024-02-08\)/.test(await page.locator('.leaflet-control-attribution').innerText()));
+
+    // Remembered (this browser, this person) and back after leaving the map.
+    assert.deepStrictEqual(JSON.parse(await page.evaluate(function () { return localStorage.getItem('roofscout.imagery.wjohnson@grayco-cs.com'); })), { source: 'wayback', release: 37965 });
+    await page.click('#tabs [data-tab=leads]');
+    await page.click('#tabs [data-tab=map]');
+    await page.waitForSelector('#imagery-ctl #imagery-date');
+    assert.strictEqual(await page.inputValue('#imagery-src'), 'wayback');
+    assert.strictEqual(await page.inputValue('#imagery-date'), '37965');
+    await page.selectOption('#imagery-src', 'esri');
+  }
+
   // Settings: area scan section and the Tracerfy status.
   await page.click('#tabs [data-tab=settings]');
   await page.waitForFunction(function () { var e = document.querySelector('#skip-status'); return e && /Connected to Tracerfy/.test(e.textContent); });
   assert.ok(/Area scan/.test(await page.locator('#scan-settings').innerText()));
   await page.waitForFunction(function () { return /Scan server ready/.test(document.querySelector('#scan-status').textContent); });
+  await page.waitForFunction(function () { return /Google key found\. Google tiles this month: [\d,]+ of 90,000\./.test(document.querySelector('#gtiles-usage').textContent); });
+  assert.strictEqual(await page.inputValue('#settings-form [name=gtiles-limit]'), '90000');
   if (shot) {
     await page.click('#tabs [data-tab=map]');
     await page.waitForSelector('#scan-results:not([hidden])');

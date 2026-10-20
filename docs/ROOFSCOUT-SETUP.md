@@ -166,6 +166,40 @@ Without the key, the button is hidden and Settings says how to connect it.
 
 **Before calling or texting:** check the National Do Not Call Registry (and Tennessee's list) for any number Tracerfy did not mark, call only 8 am–9 pm, and never use an auto-dialer or send texts to cell phones without consent (TCPA).
 
+## 8. Sharper satellite imagery: the imagery switcher (admin)
+
+A PM reported blurry imagery and trees hiding roofs. The map now has an **Imagery** box (top right) with four sources. Each person's choice is remembered in their browser:
+
+| Source | What it is | Cost / setup |
+|---|---|---|
+| **Esri (standard)** | The imagery the map has always used. | Free (step 4 key optional). |
+| **Esri Clarity (beta)** | Esri's `World_Imagery` on `clarity.maptiles.arcgis.com`. Often sharper (and sometimes older) than the standard picture. | Free, nothing to set up. Esri calls it beta, so it may change. |
+| **Google satellite** | Google's Map Tiles API, 2D satellite tiles. Usually the sharpest in cities (down to zoom 21–22). | Needs the steps below. |
+| **Older / leaf-off (Esri Wayback)** | Every past release of Esri's imagery since 2014. Pick a date, or click **🍂 Dates with new imagery here**: RoofScout lists only the pictures that actually differ at that spot, with the date each was **taken**, and marks winter ones 🍂 (Nov–Mar, trees bare). It jumps to the newest winter picture. | Free, nothing to set up. |
+
+When you zoom past the sharpest level a source has at that spot, the map says **"Max detail reached"**. Zooming further only enlarges the picture. RoofScout checks each source's real depth at the spot (Esri: its tile map; Google: its viewport answer), so it no longer assumes zoom 19 everywhere. On high-density (retina) screens, Esri tiles are drawn at double resolution.
+
+**Measurements don't depend on imagery.** **📡 Measure from address** (step 5) measures from Google's elevation data, so trees and blurry pictures don't fool it. The lead editor shows it first, labelled **Measurement source: Google Solar roof data**.
+
+### Turning on Google satellite — checklist
+
+- [ ] **Google Cloud** (the same project as step 5, **GrayCo RoofScout**): **APIs & Services → Library**, search **Map Tiles API**, click **Enable**. Billing is already linked.
+- [ ] **Key: pick one of these.**
+  - **Recommended:** go to **Credentials → Create credentials → API key**. Under **API restrictions**, tick **Map Tiles API** only. Then in **Netlify → Environment variables**, add **`GOOGLE_MAPS_TILES_KEY`** = that key. This keeps the Solar key limited to Solar.
+  - **Or** reuse the Solar key: open it under **Credentials** and add **Map Tiles API** to its API restrictions. Without `GOOGLE_MAPS_TILES_KEY`, RoofScout uses `GOOGLE_SOLAR_API_KEY`.
+  - Either way the key is **server-only**. Do not add a website (referrer) restriction, because the requests come from Netlify's server, not from browsers.
+- [ ] **Hard cap (recommended):** go to **APIs & Services → Map Tiles API → Quotas** and set the 2D tiles requests per day to about **3,000**. That is about 90,000 a month, under the free 100,000. The step 5 budget alert covers this too.
+- [ ] **Run `docs/roofscout-setup.sql` again in Supabase.** It adds the `rs_add_usage` counter. Running it again is safe, and every line should say OK.
+- [ ] **Deploys → Trigger deploy.** Then **RoofScout Settings → Satellite map** should say "Google key found. Google tiles this month: … of 90,000". Set the **Monthly tile limit** there.
+
+If Google says the API is not enabled, or that satellite tiles are not available to the project, RoofScout explains this and shows Esri instead. Google limits satellite tiles to "imagery visualization" use cases and does not offer them to projects billed in the EEA. If Google refuses the project, use Clarity and Wayback.
+
+**Cost and limits (Google's price list, October 2026):** each tile, and each viewport request, is one billable "Map Tiles API: 2D Map Tiles" request. The first **100,000 a month are free**, then about **$0.60 per 1,000** (less above 1 million). One close-up look at a roof is about 20–40 tiles. RoofScout's own limit (default **90,000/month**) stops Google tiles before the free amount runs out, and Esri keeps working. The count is written in batches, so it can trail by a few dozen tiles. The Google Cloud quota above is the hard stop.
+
+**How the key stays safe:** the browser never gets the key or Google's session token. A signed-in person gets a short-lived **tile ticket** from `/.netlify/functions/roofscout-tiles`. The function checks the GrayCo sign-in and the monthly limit before issuing it. Each tile request carries the ticket, and the function fetches the tile from Google. It does not check the sign-in again for every tile, because that would mean two database calls per tile. A ticket lasts at most 6 hours, so someone removed from the staff list loses Google tiles within 6 hours (they lose everything else at once). A referrer-restricted browser key would avoid the function, but anyone could copy that key from the page and use it from a page that fakes the referrer. That would spend GrayCo's money, so it was not used.
+
+**Google's rules:** the map shows Google's attribution text and the **Google Maps** mark while Google imagery is on. Tiles are never stored by RoofScout. They are passed through with Google's own cache time, private to that browser (at most one day). Don't screenshot Google imagery into flyers or proposals.
+
 ## Finding leads
 
 - **Map tab → Scan an area:** see step 6.

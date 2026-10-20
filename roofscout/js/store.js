@@ -59,6 +59,8 @@
       map: { esriKey: '' },
       // Google Solar "measure from address": most lookups allowed per month (Google: ~1¢ each after 10,000 free).
       solar: { monthlyLimit: 500 },
+      // Google satellite on the map (Map Tiles API, 2D tiles): most tiles allowed per month (Google: 100,000 free, then ~$0.60 per 1,000).
+      mapTiles: { monthlyLimit: 90000 },
       // Tracerfy "📞 Find owner contact" (paid skip tracing): most lookups allowed per month.
       skiptrace: { monthlyLimit: 200 },
       // Map → Scan an area (public data: OpenStreetMap buildings, county parcels, Memphis permits, NOAA hail).
