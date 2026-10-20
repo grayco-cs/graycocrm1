@@ -1115,7 +1115,14 @@ function usersIn(next){
       SELF_PRIVATE.forEach(function(f){ if (!(f in c) && own[f] !== undefined) put(f, own[f]); });
       /* the role is the company's, not this computer's */
       var cp = S.cloudPeople && S.cloudPeople[id];
-      if (cp) ['role', 'payType', 'name', 'email', 'active'].forEach(function(f){ if (cp[f] !== undefined && J(c[f]) !== J(cp[f])) put(f, cp[f]); });
+      if (cp) {
+        /* this list says something else about me than the company's copy last read here: an admin may have changed
+           my name or role (Estimator → Project Manager) since — read the company's copy again (the server keeps a
+           non-admin's own edits to these fields out, so what it has is what an admin set); until then, the last one */
+        var diff = ['role', 'payType', 'name', 'email', 'active'].filter(function(f){ return cp[f] !== undefined && J(c[f]) !== J(cp[f]); });
+        if (diff.length && typeof S.peopleStale === 'function') { try { S.peopleStale(id + ':' + diff.map(function(f){ return J(c[f]); }).join('|')); } catch (e) {} }
+        diff.forEach(function(f){ put(f, cp[f]); });
+      }
       if (c.role === 'Admin') put('role', cp && cp.role && cp.role !== 'Admin' ? cp.role : cloudFallbackRole(a));
       if (low(c.payType) === 'owner') put('payType', cp && low(cp.payType) !== 'owner' ? cp.payType : '');
     }
@@ -120735,7 +120742,7 @@ document.addEventListener('click', function(){
    ========================================================================== */
 (function(){
 'use strict';
-if (window.__GC_AUD_B__) return; window.__GC_AUD_B__ = true;
+if (window.__GC_AUD_B__) return; window.__GC_AUD_B__ = true; /* __GC_REC1__ */
 
 function low(s){ return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
 function users(){ try { var u = window._crm && window._crm.users; return Array.isArray(u) ? u : []; } catch (e) { return []; } }
@@ -120794,31 +120801,64 @@ window._gcSamePM = function(pm, u, job){
 
 /* 4. Admin → Employees → Edit → Save with a new name: the jobs follow */
 window._gcOnUserRenamed = function(old, ne){
+  /* every Admin → Employees → Save (a new name, a new role): the record is stamped as changed now, by a person.
+     Without the stamp the edit kept the record's older updatedAt, so a copy of the list pulled while the form was
+     open (or held for "the screen you are on") could win newest-wins and be melded back over it: measured, the
+     cloud got "Steven Biffle " back with the new record's aka, ~1 s after "Steve Biffle" went up. */
+  try {
+    if (old && ne && typeof ne === 'object') {
+      var st = new Date().toISOString();
+      ne.updatedAt = st; ne.savedAt = st;
+      window.__GC_MANUAL_SAVE__ = true; window.__GC_MANUAL_AT__ = Date.now();
+      setTimeout(function(){ window.__GC_MANUAL_SAVE__ = false; }, 1500);
+    }
+  } catch (e) {}
   try {
     if (!old || !ne || !ne.name || !old.name || low(old.name) === low(ne.name)) return;
     var aka = (Array.isArray(old.aka) ? old.aka : []).concat([String(old.name).trim()])
       .filter(function(a, i, arr){ return a && low(a) !== low(ne.name) && arr.map(low).indexOf(low(a)) === i; });
     ne.aka = aka;
-    var from = low(old.name), to = String(ne.name);
+    var from = low(old.name), to = String(ne.name), was = String(old.name).trim();
     var ts = new Date().toISOString();
-    setTimeout(function(){
+    /* the move is made on the list as it is when it applies (a functional update), and checked again every 3 s for
+       90 s with a fresh stamp: an incoming sync, a held "someone is typing" copy, or another computer's newer save
+       of one of the jobs (made before it had the move) could otherwise put the old name back (measured: 0 or 5 of
+       Steven's 6 jobs moved in some runs) */
+    function moveP(P){
+      var n = 0, out = (Array.isArray(P) ? P : []).map(function(p){ if (p && low(p.pm) === from) { n++; return Object.assign({}, p, { pm: to, pmWas: was, updatedAt: ts, savedAt: ts }); } return p; });
+      return { n: n, list: out };
+    }
+    function moveS(S){
+      var n = 0, out = (Array.isArray(S) ? S : []).map(function(it){
+        if (!it) return it; var ch = {};
+        ['assignee', 'person', 'schedFor'].forEach(function(k){ if (it[k] && low(it[k]) === from) ch[k] = to; });
+        if (Object.keys(ch).length) { n++; return Object.assign({}, it, ch, { updatedAt: ts, savedAt: ts }); } return it;
+      });
+      return { n: n, list: out };
+    }
+    function apply(key, setter, mover){
+      var crm = window._crm || {}, r = mover(crm[key]);
+      if (!r.n) return 0;
+      var set = window[setter];
+      if (typeof set === 'function') set(function(prev){ var x = mover(prev); return x.n ? x.list : prev; });
+      else if (window._gcApplySync) window._gcApplySync(key, r.list);
+      return r.n;
+    }
+    var tries = 0;
+    function run(){
       try {
-        window.__GC_MANUAL_SAVE__ = true; window.__GC_MANUAL_AT__ = Date.now();
         var crm = window._crm || {};
-        var P = Array.isArray(crm.projects) ? crm.projects : [], nP = 0;
-        var nextP = P.map(function(p){ if (p && low(p.pm) === from) { nP++; return Object.assign({}, p, { pm: to, pmWas: String(old.name).trim(), updatedAt: ts, savedAt: ts }); } return p; });
-        if (nP && window._gcApplySync) window._gcApplySync('projects', nextP);
-        var S = Array.isArray(crm.schedule) ? crm.schedule : [], nS = 0;
-        var nextS = S.map(function(it){
-          if (!it) return it; var ch = {};
-          ['assignee', 'person', 'schedFor'].forEach(function(k){ if (it[k] && low(it[k]) === from) ch[k] = to; });
-          if (Object.keys(ch).length) { nS++; return Object.assign({}, it, ch, { updatedAt: ts, savedAt: ts }); } return it;
-        });
-        if (nS && window._gcApplySync) window._gcApplySync('schedule', nextS);
-        console.log('[GC] ' + old.name + ' is now ' + to + ': ' + nP + ' job(s) and ' + nS + ' schedule item(s) moved to the new name.');
-        setTimeout(function(){ window.__GC_MANUAL_SAVE__ = false; }, 1500);
+        if (moveP(crm.projects).n || moveS(crm.schedule).n) {
+          ts = new Date().toISOString();
+          window.__GC_MANUAL_SAVE__ = true; window.__GC_MANUAL_AT__ = Date.now();
+          var nP = apply('projects', '_setProjects', moveP), nS = apply('schedule', '_setSchedule', moveS);
+          console.log('[GC] ' + was + ' is now ' + to + ': ' + nP + ' job(s) and ' + nS + ' schedule item(s) moved to the new name.');
+          setTimeout(function(){ window.__GC_MANUAL_SAVE__ = false; }, 1500);
+        }
       } catch (e) {}
-    }, 0);
+      if (++tries < 30) setTimeout(run, 3000);
+    }
+    setTimeout(run, 0);
   } catch (e) {}
 };
 
@@ -121067,6 +121107,25 @@ function loadPeople(){
     return true;
   }, function(){ return false; });
 }
+/* the people list here says something new about the signed-in person (a sync brought an admin's change): ask the
+   company's copy now instead of at the next 15-minute check — once per new value, at most every 3 seconds */
+var staleSig = null, staleAt = 0, staleT = null;
+S.peopleStale = function(sig){
+  var a = S.access(); if (!a.known || a.admin) return;
+  if (sig === staleSig && Date.now() - staleAt < 60000) return;
+  staleSig = sig; staleAt = Date.now();
+  if (staleT) return;
+  var tries = 0;
+  (function ask(){
+    staleT = ST.call(window, function(){
+      loadPeople().then(function(ok){
+        staleT = null;
+        if (!ok && ++tries < 5) ask();                               /* offline / refused: try again shortly */
+        else if (!ok) staleSig = null;
+      }, function(){ staleT = null; staleSig = null; });
+    }, tries ? 5000 : 3000);
+  })();
+};
 function reapplyPeople(){
   setUsers(function(prev){ return prev; });                         /* the screen's list passes the check again */
   try {
