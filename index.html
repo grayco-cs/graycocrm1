@@ -13932,7 +13932,7 @@ window._maintCenter._reheader=function(){
 };
 
 window._pmList=function(An){var have=(An||[]).filter(function(u){return u&&u.active;});var core=[{id:"U2",name:"Wesley Johnson"},{id:"U1",name:"Nick Thomas"}];var coreNames=core.map(function(c){return c.name;});var nonOffice=have.filter(function(u){return !/^office$/i.test((u.name||"").trim());});if(nonOffice.length>=1)return have;return core.concat(have.filter(function(u){return coreNames.indexOf(u.name)<0;}));};
-window._healUsers=function(loaded,defs){loaded=Array.isArray(loaded)?loaded.slice():[];defs=Array.isArray(defs)?defs:[];var _GC_DEF_HASH="";/* S: no shared password is put back */var byId={},byEmail={};loaded.forEach(function(u){if(u){if(u.id)byId[u.id]=u;if(u.email)byEmail[(u.email||"").toLowerCase().trim()]=u;}});defs.map(function(d){return d&&d.id;}).filter(Boolean).forEach(function(id){var d=defs.find(function(x){return x&&x.id===id;});if(!d)return;var existing=byId[id]||byEmail[(d.email||"").toLowerCase().trim()];var _firedList={};try{_firedList=JSON.parse(localStorage.getItem("gc_fired_users")||"{}");}catch(_fe){}var _isFired=_firedList[(d.name||"").toLowerCase().trim()]||_firedList[(d.email||"").toLowerCase().trim()];if(_isFired){return;}if(!existing){loaded.push(Object.assign({},d));}else{if(existing.active===false&&!_isFired)existing.active=!0;if(!existing.pwHash||typeof existing.pwHash!=="string"||existing.pwHash.length!==64){/* S: no shared password is put back */}if(!existing.email)existing.email=d.email;if(!existing.role)existing.role=d.role;}});
+window._healUsers=function(loaded,defs){loaded=Array.isArray(loaded)?loaded.slice():[];defs=Array.isArray(defs)?defs:[];var _GC_DEF_HASH="";/* S: no shared password is put back */var byId={},byEmail={};loaded.forEach(function(u){if(u){if(u.id)byId[u.id]=u;if(u.email)byEmail[(u.email||"").toLowerCase().trim()]=u;}});defs.map(function(d){return d&&d.id;}).filter(Boolean).forEach(function(id){var d=defs.find(function(x){return x&&x.id===id;});if(!d)return;var existing=byId[id]||byEmail[(d.email||"").toLowerCase().trim()];var _firedList={};try{_firedList=JSON.parse(localStorage.getItem("gc_fired_users")||"{}");}catch(_fe){}var _isFired=_firedList[(d.name||"").toLowerCase().trim()]||_firedList[(d.email||"").toLowerCase().trim()];if(_isFired){return;}if(!existing){loaded.push(Object.assign({},d));}else{if(existing.active===false&&!_isFired&&!existing.updatedAt&&!existing.disabledAt)existing.active=!0;if(!existing.pwHash||typeof existing.pwHash!=="string"||existing.pwHash.length!==64){/* S: no shared password is put back */}if(!existing.email)existing.email=d.email;if(!existing.role)existing.role=d.role;}});
   // GrayCo: ensure the office account exists with 'Office' role — she has
   // wide visibility but doesn't get into the owner-locked Admin screen.
   var officeIdx=-1;
@@ -39275,8 +39275,8 @@ window._gcMergeProjectLists = function(a, b){
   var byId = {}, byFp = {}, order = [], out = [];
   function fp(p){ return (String(p.name||'').toLowerCase().trim()+'|'+String(p.address||'').toLowerCase().trim()); }
   function newer(x, prev){
-    var ax=String(x.updatedAt||x.date||x.savedAt||x.lastSeen||'');
-    var bx=String(prev.updatedAt||prev.date||prev.savedAt||prev.lastSeen||'');
+    var ax=String(x.updatedAt||x.updated_at||x.savedAt||x.modified||'');   /* SYNC-A: real save stamps only */
+    var bx=String(prev.updatedAt||prev.updated_at||prev.savedAt||prev.modified||'');
     return ax>=bx;
   }
   [a, b].forEach(function(list){
@@ -39300,6 +39300,7 @@ window._gcMergeProjectLists = function(a, b){
     else if(o.t==='fp') out.push(byFp[o.k]);
     else if(o.t==='raw') out.push(o.v);
   });
+  try{ if(window._gcxFieldMerge) out = window._gcxFieldMerge('projects', out, a, b); }catch(e){}
   return out;
 };
 window._gcMergeInvoices = function(list){
@@ -63943,8 +63944,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     return dead;
   }
   function newer(x, prev){
-    var ax=String(x.updatedAt||x.date||x.savedAt||x.lastSeen||x.modified||'');
-    var bx=String(prev.updatedAt||prev.date||prev.savedAt||prev.lastSeen||prev.modified||'');
+    /* SYNC-A: only real save stamps; no stamp = the oldest (the business date never decides) */
+    var ax=String(x.updatedAt||x.updated_at||x.savedAt||x.modified||'');
+    var bx=String(prev.updatedAt||prev.updated_at||prev.savedAt||prev.modified||'');
     return ax>=bx;   // ties keep the incoming (idempotent)
   }
 
@@ -63968,7 +63970,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); }
       });
     });
-    return order.map(function(id){ return byId[id]; });
+    var __out = order.map(function(id){ return byId[id]; });
+    try{ if(window._gcxFieldMerge) __out = window._gcxFieldMerge(key, __out, a, b); }catch(e){}
+    return __out;
   };
 
   console.log('[GC] Never-lose-data invariant loaded (union-minus-manual-delete).');
@@ -116736,7 +116740,7 @@ function learn(k, v){
     if(v === undefined || v === null) return;
     if(isRecList(v)){
       var m = seenRec[k] || (seenRec[k] = {});
-      v.forEach(function(r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 6) delete s[ks[0]]; });
+      v.forEach(function(r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; });
     } else {
       var sv = seenVal[k] || (seenVal[k] = {}); sv[rsig(v)] = 1; var kk = Object.keys(sv); if(kk.length > 12) delete sv[kk[0]];
     }
@@ -118911,7 +118915,7 @@ function learnVersions(base, arr){
   var rows = {};
   if(!VERSIONED[base]){ arr.forEach(function(r){ var id = idOf(r); if(id) rows[id] = r; }); return rows; }
   var m = cloudVer[base] || (cloudVer[base] = {}), now = Date.now();
-  arr.forEach(function(r){ var id = idOf(r); if(!id) return; rows[id] = r; var g = hsig(r); if(!m[id] || m[id].sig !== g){ m[id] = { sig:g, at:now }; var h = histOf(base, id); if(h.indexOf(g) < 0){ h.push(g); if(h.length > 6) h.shift(); seenDirty = true; } } });
+  arr.forEach(function(r){ var id = idOf(r); if(!id) return; rows[id] = r; var g = hsig(r); if(!m[id] || m[id].sig !== g){ m[id] = { sig:g, at:now }; var h = histOf(base, id); if(h.indexOf(g) < 0){ h.push(g); if(h.length > 40) h.shift(); seenDirty = true; } } });
   return rows;
 }
 function oldCloudCopy(type, id, mine, theirs){
@@ -121389,6 +121393,623 @@ console.log('[GC] SEC2: owner-only data is enforced by the database; this comput
     document.addEventListener('keydown', onKey, true);
   };
   window._gcClosePlaybookSheet = closeSheet;
+})();
+
+</script>
+<script>
+/* ============================================================================
+   GrayCo — A PERSON'S EDIT IS NEVER UNDONE BY SYNC.   SYNC-A (wAUD_A)   __GC_SYNC_A__
+
+   "I changed some jobs from Active to Completed last night in my profile. Now on the Office profile they show
+    as Active again."  (Brad Potts- reroof, Jennifer Hattley- deck, EAN Holdings- 600 W. church St.)
+
+   Measured on 33.148 (test_sync_profiles.mjs, four edit screens, three computers):
+   · "Mark completed" (the closeout panel) called window._ehSb, which does not exist: the job was never marked.
+     Its cloud read-modify-write (_setJobStatus) also never stamped the job, so even when it ran the union push
+     (cloud copy wins a tie) threw the change away.
+   · A phone/computer opened with yesterday's copy has every job re-stamped "updated now" by its start-up sweeps;
+     its old copy (old status / PM / contract) then looks newer than the owner's edit and goes up over it
+     (the 6-copy memory that recognises an old copy only works when the record has not changed in other ways).
+   · newer() decided between copies on `date` (the job's business date) when a copy had no save stamp.
+
+   Here: every job field people edit (status, %, PM, contract, name, client, address, type, dates, PO) carries
+   its own record of the last PERSON edit, inside the job:  _fe: { status: { v, at, by, was:[older values] } }.
+   A sweep that re-stamps the job does not touch it. Wherever two copies meet — the merges, the disk, the
+   screen, every write to the cloud (any sync engine, any legacy whole-list writer) — the newest person edit of
+   each field wins, and a copy that still shows a value that edit replaced is an old copy, not a new change.
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_SYNC_A__) return; window.__GC_SYNC_A__ = true;
+var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var RI = window.__GC_NATIVE_SETINTERVAL__ || window.__GC_RAW_SETINTERVAL__ || setInterval;
+var KEY = 'projects';
+var PF = ['status','pct','pm','contract','name','client','address','type','startDate','endDate','completionDate','autoPO'];
+var PFS = {}; PF.forEach(function(f){ PFS[f] = 1; });
+var LSK = 'gc_field_edits';
+
+function nowISO(){ return new Date().toISOString(); }
+function ts(v){ if(!v) return 0; if(typeof v === 'number') return v; var d = Date.parse(v); return isFinite(d) ? d : 0; }
+function idOf(r){ return (r && typeof r === 'object' && r.id != null && r.id !== '') ? String(r.id) : ''; }
+function norm(v){ return v == null ? '' : String(v).trim().toLowerCase(); }
+function same(a, b){ return norm(a) === norm(b); }
+function jparse(s, d){ try{ var v = JSON.parse(s); return v == null ? d : v; }catch(e){ return d; } }
+var lsSet = Storage.prototype.setItem, lsGet = Storage.prototype.getItem;
+function me(){ try{ return (window.__GC_AUTH__ && window.__GC_AUTH__.email()) || lsGet.call(localStorage, 'grayco_user') || ''; }catch(e){ return ''; } }
+
+/* ── the ledger: id -> field -> newest person edit seen anywhere (this computer's and the ones in the data) ── */
+var FE = jparse(lsGet.call(localStorage, LSK), {}) || {};
+var feDirty = false, feN = 0;
+function saveFE(){ feDirty = true; }
+RI.call(window, function(){
+  if(!feDirty) return; feDirty = false;
+  try{
+    var cut = Date.now() - 400 * 86400e3;
+    Object.keys(FE).forEach(function(id){ Object.keys(FE[id]).forEach(function(f){ if(ts(FE[id][f].at) < cut) delete FE[id][f]; }); if(!Object.keys(FE[id]).length) delete FE[id]; });
+    lsSet.call(localStorage, LSK, JSON.stringify(FE));
+  }catch(e){}
+}, 2000);
+function okE(e){ return e && typeof e === 'object' && e.at && ('v' in e); }
+function learnRec(r){
+  var id = idOf(r); if(!id || !r._fe || typeof r._fe !== 'object') return false;
+  var ch = false;
+  Object.keys(r._fe).forEach(function(f){
+    var e = r._fe[f]; if(!PFS[f] || !okE(e)) return;
+    var cur = FE[id] && FE[id][f];
+    if(!cur || ts(e.at) > ts(cur.at)){ (FE[id] = FE[id] || {})[f] = { v:e.v, at:e.at, by:e.by || '', was:Array.isArray(e.was) ? e.was.slice(0, 8) : [] }; ch = true; }
+  });
+  if(ch){ saveFE(); feN++; }
+  return ch;
+}
+function learnAll(list){ if(!Array.isArray(list)) return; for(var i = 0; i < list.length; i++){ var r = list[i]; if(r && r._fe) learnRec(r); } }
+
+/* a copy of one job, corrected to the newest person edit of every field (null when nothing to do) */
+function fixRec(r){
+  var id = idOf(r); if(!id) return null;
+  var L = FE[id]; if(!L) return null;
+  var o = null;
+  Object.keys(L).forEach(function(f){
+    var E = L[f], cur = r[f], own = r._fe && r._fe[f];
+    if(own && okE(own) && ts(own.at) > ts(E.at)) return;                  /* this copy carries a newer person edit */
+    if(same(cur, E.v)){
+      if(!own || ts(own.at) < ts(E.at)){ o = o || Object.assign({}, r); o._fe = Object.assign({}, r._fe || {}); o._fe[f] = E; }
+      return;
+    }
+    /* a different value: an OLD copy when it is a value this edit replaced (or an older person edit's value, or
+       nothing at all); anything else is a later change made some other way, and stays */
+    var was = (E.was || []).some(function(w){ return same(w, cur); });
+    var olderEdit = own && okE(own) && ts(own.at) < ts(E.at) && same(own.v, cur);
+    if(!(was || olderEdit || cur === undefined || cur === null || cur === '')) return;
+    o = o || Object.assign({}, r); o._fe = Object.assign({}, r._fe || {});
+    o[f] = E.v; o._fe[f] = E; o.__gcxFixed = 1;
+  });
+  if(!o) return null;
+  /* the corrected copy is at least as new as the edit it carries */
+  var top = 0; Object.keys(o._fe).forEach(function(f){ var t = ts(o._fe[f] && o._fe[f].at); if(t > top) top = t; });
+  if(top && ts(o.updatedAt) < top) o.updatedAt = new Date(top).toISOString();
+  if(o.__gcxFixed){ delete o.__gcxFixed; stats.restored++; }
+  return o;
+}
+var stats = { restored:0, stamped:0, wire:0, merges:0, disk:0, screen:0 };
+function guard(list){
+  if(!Array.isArray(list) || !list.length) return list;
+  var out = null;
+  for(var i = 0; i < list.length; i++){
+    var r = list[i]; if(!r || typeof r !== 'object' || !FE[idOf(r)]) continue;
+    var f = fixRec(r); if(f){ out = out || list.slice(); out[i] = f; }
+  }
+  return out || list;
+}
+window._gcxFieldEdits = function(id){ return id ? FE[id] : FE; };
+window._gcxSyncAStats = function(){ return Object.assign({ jobsWithEdits:Object.keys(FE).length }, stats); };
+
+/* every merge (union merge, job-list merge) ends here: learn what both sides carry, then the newest person edit wins */
+window._gcxFieldMerge = function(key, out, a, b){
+  if(String(key) !== KEY && String(key) !== 'projects') return out;
+  learnAll(a); learnAll(b);
+  var g = guard(out); if(g !== out) stats.merges++;
+  return g;
+};
+
+/* ── a person's edit: stamped where every edit lands, the disk ─────────────────────────────────────────── */
+var inputs = [], lastManual = 0, lastInput = 0;
+['pointerdown','keydown','change','input','click','touchstart'].forEach(function(ev){
+  document.addEventListener(ev, function(e){ if(e.isTrusted){ var n = Date.now(); lastInput = n; if(!inputs.length || n - inputs[inputs.length - 1] > 400){ inputs.push(n); if(inputs.length > 80) inputs.shift(); } } }, true);
+});
+(function wrapManual(){
+  var t = 0, iv = RI.call(window, function(){
+    var f = window._gcManualNow;
+    if(typeof f !== 'function'){ if(t++ > 200) clearInterval(iv); return; }
+    if(f.__gcSyncA) return;
+    var w = function(what){ if(!/^delete /.test(String(what || ''))) lastManual = Date.now(); return f.apply(this, arguments); };
+    w.__gcSyncA = true; try{ Object.keys(f).forEach(function(p){ if(!(p in w)) w[p] = f[p]; }); }catch(e){}
+    try{ window._gcManualNow = w; }catch(e){}
+  }, 700);
+})();
+var forced = null;   /* { ids, until }: an edit the CRM's own code makes for a person (closeout, intake, restore) */
+function personWindow(){
+  var n = Date.now();
+  if(n - lastManual < 15000) return true;
+  var l = inputs[inputs.length - 1]; return !!(l && n - l < 60000);
+}
+var lastRows = null;   /* id -> { f: value, u: updatedAt } as last written to the disk */
+function snap(list){ var m = {}; (list || []).forEach(function(r){ var id = idOf(r); if(!id) return; var s = { u:String(r.updatedAt || '') }; PF.forEach(function(f){ s[f] = r[f]; }); m[id] = s; }); return m; }
+function stampEdits(list){
+  if(!Array.isArray(list)) return;
+  var prev = lastRows; if(!prev) return;
+  var n = Date.now(), fw = forced && forced.until > n ? forced : null;
+  if(!fw && !personWindow()) return;
+  var cand = [];
+  for(var i = 0; i < list.length; i++){
+    var r = list[i], id = idOf(r); if(!id || !r || typeof r !== 'object') continue;
+    var p = prev[id]; if(!p) continue;                                   /* a new job is new everywhere: nothing to defend */
+    if(fw && !fw.ids[id]) continue;
+    var fs = [];
+    PF.forEach(function(f){ if(!same(r[f], p[f])) fs.push(f); });
+    if(!fs.length) continue;
+    /* a copy that arrived from elsewhere carries its own stamp (older than a minute) — that is not an edit made here */
+    var u = String(r.updatedAt || '');
+    if(!fw && u && u !== p.u && n - ts(u) > 60000) continue;
+    cand.push({ r:r, id:id, p:p, fs:fs });
+  }
+  if(!cand.length || (!fw && cand.length > 40)) return;                 /* a sweep over the whole list is no person */
+  var at = nowISO(), by = me();
+  cand.forEach(function(c){
+    var r = c.r, fe = Object.assign({}, r._fe || {}), any = false;
+    c.fs.forEach(function(f){
+      var own = r._fe && r._fe[f];
+      if(own && okE(own) && same(own.v, r[f]) && n - ts(own.at) < 120000) return;      /* already stamped by whoever made it */
+      var L = FE[c.id] && FE[c.id][f];
+      if(L && same(L.v, r[f])) return;                                  /* the edit we already know of (arriving here) */
+      /* a value an earlier edit REPLACED coming back is only a person's when they changed it a moment ago (a pull of
+         an old copy can land while somebody is clicking elsewhere) */
+      if(!fw && L && (L.was || []).some(function(w){ return same(w, r[f]); }) && !(lastInput > ts(L.at) + 300 && n - lastInput < 30000)) return;
+      var was = [c.p[f]].concat((own && own.was) || [], (L && L.was) || [], L ? [L.v] : []).filter(function(x, i, arr){ return x !== undefined && !same(x, r[f]) && arr.findIndex(function(y){ return same(y, x); }) === i; }).slice(0, 8);
+      fe[f] = { v:r[f], at:at, by:by, was:was }; any = true;
+      (FE[c.id] = FE[c.id] || {})[f] = fe[f];
+    });
+    if(!any) return;
+    try{ r._fe = fe; r.updatedAt = at; r.updatedBy = by; }catch(e){}
+    stats.stamped++; saveFE();
+    try{ console.log('%c[GC] person edit kept: ' + (r.name || c.id) + ' — ' + c.fs.join(', '), 'background:#1e3a8a;color:#fff;padding:2px 6px'); }catch(e){}
+  });
+}
+/* ── … and where it shows first, the screen: an edit made right after the CRM opens may never reach the disk —
+   the start-up sweeps (duplicate sweep, keep-everything guard, pulls) rewrite the list from the disk in the first
+   ~30 s and the screen with it. The edit is recorded the moment it is on the screen, so every later write (disk,
+   screen, cloud) is corrected back to it. ── */
+var scrRef = null, scrSnap = null;
+function captureScreen(){
+  try{
+    var L = window._crm && window._crm.projects;
+    if(!Array.isArray(L) || L === scrRef) return;
+    var prev = scrSnap; scrRef = L; scrSnap = snap(L);
+    if(!prev) return;
+    var n = Date.now();
+    if(!(lastInput && n - lastInput < 6000) && !(n - lastManual < 6000)) return;      /* only right after a click / key */
+    var ch = [];
+    for(var i = 0; i < L.length && ch.length <= 5; i++){
+      var r = L[i], id = idOf(r); if(!id || !prev[id]) continue;
+      var p = prev[id], fs = PF.filter(function(f){ return !same(r[f], p[f]); });
+      if(!fs.length) continue;
+      var u = String(r.updatedAt || ''); if(u && u !== p.u && n - ts(u) > 60000) continue;   /* a copy from elsewhere */
+      ch.push({ r:r, id:id, p:p, fs:fs });
+    }
+    if(!ch.length || ch.length > 5) return;                                                /* a sweep, not a person */
+    var at = nowISO(), by = me(), any = false;
+    ch.forEach(function(c){
+      c.fs.forEach(function(f){
+        var v = c.r[f], own = c.r._fe && c.r._fe[f], Lf = FE[c.id] && FE[c.id][f];
+        if(own && okE(own) && same(own.v, v)) return;
+        if(Lf && same(Lf.v, v)) return;
+        /* the screen going BACK to a value an edit replaced, with no click after that edit, is a sweep redrawing an old copy */
+        if(Lf && (Lf.was || []).some(function(w){ return same(w, v); }) && !(lastInput > ts(Lf.at) + 300)) return;
+        var was = [c.p[f]].concat((Lf && Lf.was) || [], Lf ? [Lf.v] : []).filter(function(x, i, arr){ return x !== undefined && !same(x, v) && arr.findIndex(function(y){ return same(y, x); }) === i; }).slice(0, 8);
+        (FE[c.id] = FE[c.id] || {})[f] = { v:v, at:at, by:by, was:was }; any = true;
+      });
+    });
+    if(any){ saveFE(); stats.screenEdits = (stats.screenEdits || 0) + 1; ST.call(window, fixDisk, 1200); ST.call(window, fixDisk, 47000 - Math.min(45000, Date.now() - T0S)); }
+  }catch(e){}
+}
+RI.call(window, captureScreen, 300);
+document.addEventListener('change', function(){ ST.call(window, captureScreen, 0); ST.call(window, captureScreen, 120); }, true);
+
+(function hookIDB(){
+  var P = IDBObjectStore.prototype, orig = P.put;
+  if(orig.__gcSyncA) return;
+  var w = function(value, key){
+    try{
+      if(key === KEY && Array.isArray(value) && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
+        learnAll(value);
+        stampEdits(value);
+        var g = guard(value);
+        if(g !== value){ arguments[0] = value = g; stats.disk++; }
+        lastRows = snap(value);
+      }
+    }catch(e){}
+    return orig.apply(this, arguments);
+  };
+  w.__gcSyncA = true; P.put = w;
+})();
+(function prime(){
+  var t = 0, iv = RI.call(window, function(){
+    if(!window.idbGet){ if(t++ > 200) clearInterval(iv); return; }
+    clearInterval(iv);
+    Promise.resolve(window.idbGet(KEY)).then(function(v){ if(Array.isArray(v)){ learnAll(v); if(!lastRows) lastRows = snap(v); } }).catch(function(){});
+  }, 250);
+})();
+
+/* ── every write to the cloud, by any engine: the newest person edit of each field goes up ─────────────────── */
+function fixBody(body){
+  var rows = Array.isArray(body) ? body : [body], ch = false;
+  rows.forEach(function(row){
+    if(!row || typeof row !== 'object') return;
+    var k = String(row.key || '').replace(/__chunk\d+$/, ''); if(k !== KEY) return;
+    var v = row.value, asText = false;
+    if(typeof v === 'string' && /^\s*\[/.test(v)){ v = jparse(v, null); asText = true; }
+    if(!Array.isArray(v)) return;
+    learnAll(v);
+    var g = guard(v);
+    if(g !== v){ row.value = asText ? JSON.stringify(g) : g; ch = true; stats.wire++; }
+  });
+  return ch;
+}
+function learnText(txt){
+  try{
+    if(!txt || txt.indexOf('"_fe"') < 0) return;
+    var rows = JSON.parse(txt); if(!Array.isArray(rows)) return;
+    rows.forEach(function(row){ if(!row) return; var k = String(row.key || 'projects'); if(k.replace(/__chunk\d+$/, '') !== KEY) return; var v = row.value; if(typeof v === 'string') v = jparse(v, null); learnAll(v); });
+  }catch(e){}
+}
+function wantGet(url){
+  var u = decodeURIComponent(String(url));
+  if(!/\/rest\/v1\/gc_kv/.test(u)) return false;
+  if(/[?&]key=eq\.projects(__chunk\d+)?(&|$)/.test(u)) return true;
+  if(/[?&]key=in\./.test(u)) return /[(,"]projects[,)"]/.test(u);
+  return /select=[^&]*value/.test(u) && !/[?&]key=/.test(u);
+}
+function freshCloud(nf, self, url){
+  var base = String(url).split('/rest/v1/')[0], k = '';
+  try{ k = lsGet.call(localStorage, 'grayco_sb_key') || ''; }catch(e){}
+  return Promise.race([
+    nf.call(self, base + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value', { headers:{ apikey:k, Authorization:'Bearer ' + k }, cache:'no-store' })
+      .then(function(r){ return r && r.ok ? r.json() : null; })
+      .then(function(rows){ var v = rows && rows[0] && rows[0].value; if(typeof v === 'string') v = jparse(v, null); return Array.isArray(v) ? v : null; }),
+    new Promise(function(res){ ST.call(window, function(){ res(null); }, 4000); })
+  ]);
+}
+function keepCloudOnly(body, cloud){
+  if(!Array.isArray(cloud) || !cloud.length) return;
+  learnAll(cloud);
+  var dead = {}; try{ if(window._gcxDeadIds) dead = window._gcxDeadIds('projects') || {}; }catch(e){}
+  var aside = {}; try{ aside = (jparse(lsGet.call(localStorage, 'gc_trust_aside'), {}) || {}).projects || {}; }catch(e){}
+  (Array.isArray(body) ? body : [body]).forEach(function(row){
+    if(!row || row.key !== KEY) return;
+    var v = row.value, asText = false; if(typeof v === 'string'){ v = jparse(v, null); asText = true; }
+    if(!Array.isArray(v)) return;
+    var have = {}; v.forEach(function(r){ var id = idOf(r); if(id) have[id] = 1; });
+    var add = cloud.filter(function(r){ var id = idOf(r); return id && !have[id] && !dead[id] && !aside[id]; });
+    if(!add.length) return;
+    v = v.concat(add); stats.keptCloud = (stats.keptCloud || 0) + add.length;
+    row.value = asText ? JSON.stringify(v) : v;
+  });
+}
+(function hookWire(){
+  var t = 0;
+  function install(){
+    var h = window.__gcxOutHook;
+    if(typeof h !== 'function' || h.__gcSyncA) return !!(h && h.__gcSyncA);
+    var w = function(input, init, nf, self){
+      try{
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if(!/\/rest\/v1\/gc_kv/.test(url)) return h.apply(this, arguments);
+        var m = String((init && init.method) || 'GET').toUpperCase();
+        if(m === 'GET'){
+          if(!wantGet(url)) return h.apply(this, arguments);
+          var r0 = h.apply(this, arguments);
+          var pr = r0 || nf.call(self, input, init);
+          return Promise.resolve(pr).then(function(resp){ try{ if(resp && resp.ok) resp.clone().text().then(learnText, function(){}); }catch(e){} return resp; });
+        }
+        if(m === 'POST' || m === 'PATCH' || m === 'PUT'){
+          /* after the delete list and the old-copy rules (the hook below), on the way out */
+          var nf2 = function(inp, ini){
+            var self2 = this;
+            try{
+              if(ini && typeof ini.body === 'string' && ini.body.indexOf('"projects') >= 0 && ini.body.length < 12000000){
+                var b = JSON.parse(ini.body);
+                var whole = (Array.isArray(b) ? b : [b]).some(function(r){ return r && r.key === KEY && (Array.isArray(r.value) || typeof r.value === 'string'); });
+                if(!whole){ if(fixBody(b)) ini = Object.assign({}, ini, { body: JSON.stringify(b) }); return nf.call(self2, inp, ini); }
+                /* the whole job list replaces the cloud's row: what the cloud gained since this computer read it (a job
+                   another computer added a moment ago) is read again right before the write and kept */
+                return freshCloud(nf, self2, url).then(function(cloud){
+                  try{ keepCloudOnly(b, cloud); fixBody(b); ini = Object.assign({}, ini, { body: JSON.stringify(b) }); }catch(e){}
+                  return nf.call(self2, inp, ini);
+                }, function(){ try{ if(fixBody(b)) ini = Object.assign({}, ini, { body: JSON.stringify(b) }); }catch(e){} return nf.call(self2, inp, ini); });
+              }
+            }catch(e){}
+            return nf.call(this, inp, ini);
+          };
+          var r1 = h.call(this, input, init, nf2, self);
+          return r1 || nf2.call(self, input, init);
+        }
+      }catch(e){}
+      return h.apply(this, arguments);
+    };
+    w.__gcSyncA = true; window.__gcxOutHook = w; return true;
+  }
+  if(!install()){ var iv = RI.call(window, function(){ if(install() || t++ > 200) clearInterval(iv); }, 100); }
+})();
+
+/* ── the screen and the disk catch up when an old copy got there first ───────────────────────────────────── */
+function fixScreen(){
+  try{
+    if(window.__GC_IS_TYPING__){ var ae = document.activeElement; if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return; }
+    var crm = window._crm, L = crm && crm.projects; if(!Array.isArray(L) || !Object.keys(FE).length) return;
+    var g = guard(L); if(g === L) return;
+    var fix = {}; for(var i = 0; i < L.length; i++){ if(g[i] !== L[i]) fix[idOf(g[i])] = g[i]; }
+    stats.screen++;
+    if(typeof window._setProjects === 'function') window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(r){ var id = idOf(r); return (id && fix[id]) ? Object.assign({}, r, fix[id]) : r; }) : prev; });
+    try{ crm.projects = g; }catch(e){}
+  }catch(e){}
+}
+RI.call(window, fixScreen, 2500);
+/* the disk copy, when nothing else has written it since an old copy landed there. It is never read, changed and
+   written back here (a job added in between would be lost): the screen's own list — the app's source of truth — is
+   handed back to it corrected, and the app saves it the way it saves every edit (corrected again on the way to the
+   disk, above). Not in the first 45 s: the start-up jobs rewrite the lists then. */
+var T0S = Date.now();
+async function fixDisk(){
+  try{
+    if(Date.now() - T0S < 45000) return;
+    if(!window.idbGet || !Object.keys(FE).length || typeof window._setProjects !== 'function') return;
+    var v = await window.idbGet(KEY); if(!Array.isArray(v)) return;
+    learnAll(v);
+    if(guard(v) === v) return;
+    stats.disk++;
+    window._setProjects(function(prev){ return Array.isArray(prev) ? guard(prev).slice() : prev; });
+  }catch(e){}
+}
+ST.call(window, fixDisk, 46000);
+RI.call(window, function(){ if(!document.hidden) fixDisk(); }, 20000);
+
+/* ── back online / back to the screen: catch up at once ──────────────────────────────────────────────────────
+   Measured: a computer that was offline while another one changed jobs showed the old values for up to 4+ minutes
+   after it was back (only the timed safety-net pull brought them; the live feed does not replay what it missed).
+   That is the window in which the Office profile showed "Active" — and in which a person working there could act
+   on the old copy. Coming back online (or back to a tab hidden for over a minute) now pulls what changed. */
+var hiddenAt = 0;
+function catchUp(why){
+  try{
+    var f = window._gcPullNow; if(typeof f !== 'function') return;
+    /* everything again, not only "what changed since the last pull" — that bookkeeping is what went stale offline */
+    ST.call(window, function(){ try{ Promise.resolve(f(true)).then(function(){ fixDisk(); fixScreen(); }, function(){}); }catch(e){} }, 1500);
+    ST.call(window, function(){ try{ Promise.resolve(f()).then(function(){ fixDisk(); fixScreen(); }, function(){}); }catch(e){} }, 9000);
+    stats.catchUps = (stats.catchUps || 0) + 1;
+  }catch(e){}
+}
+window.addEventListener('online', function(){ catchUp('online'); });
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden){ hiddenAt = Date.now(); return; }
+  if(hiddenAt && Date.now() - hiddenAt > 60000) catchUp('visible');
+  hiddenAt = 0;
+});
+
+/* ── the CRM's own "a person did this" job writers ────────────────────────────────────────────────────────── */
+async function rawJobs(){ try{ if(window._gcProjectsRaw){ var r = await window._gcProjectsRaw(); if(Array.isArray(r)) return r; } }catch(e){} var v = await window.idbGet(KEY); return Array.isArray(v) ? v : []; }
+window._gcxPatchJob = async function(pid, patch, why){
+  if(!pid || !patch || typeof patch !== 'object') return false;
+  var list = await rawJobs(), hit = false, at = nowISO(), by = me();
+  var next = list.map(function(p){
+    if(!p || p.id !== pid) return p;
+    hit = true;
+    var o = Object.assign({}, p, patch), fe = Object.assign({}, p._fe || {});
+    Object.keys(patch).forEach(function(f){
+      if(!PFS[f] || same(p[f], patch[f])) return;
+      var L = FE[pid] && FE[pid][f];
+      var was = [p[f]].concat((L && L.was) || []).filter(function(x, i, arr){ return x !== undefined && !same(x, patch[f]) && arr.findIndex(function(y){ return same(y, x); }) === i; }).slice(0, 8);
+      fe[f] = { v:patch[f], at:at, by:by, was:was }; (FE[pid] = FE[pid] || {})[f] = fe[f];
+    });
+    o._fe = fe; o.updatedAt = at; o.updatedBy = by; if(why) o._lastEdit = String(why).slice(0, 60);
+    return o;
+  });
+  if(!hit) return false;
+  saveFE(); stats.stamped++;
+  forced = { ids:{}, until:Date.now() + 4000 }; forced.ids[pid] = 1;
+  try{ window.__GC_MANUAL_SAVE__ = true; }catch(e){}
+  try{ await window.idbSet(KEY, next); }catch(e){}
+  var rec = next.filter(function(p){ return p && p.id === pid; })[0];
+  try{ if(window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && p.id === pid ? Object.assign({}, p, rec) : p; }) : prev; }); }catch(e){}
+  try{ if(window._crm && Array.isArray(window._crm.projects)) window._crm.projects = window._crm.projects.map(function(p){ return p && p.id === pid ? Object.assign({}, p, rec) : p; }); }catch(e){}
+  try{ if(window._gcLivePush) window._gcLivePush(KEY); }catch(e){}
+  ST.call(window, function(){ try{ window.__GC_MANUAL_SAVE__ = false; }catch(e){} }, 2500);
+  return true;
+};
+/* the closeout's job writer read the cloud, changed one job and pushed the whole list back unstamped (the union
+   push then kept the cloud's copy) — and it called window._ehSb, which does not exist, so "Mark completed" did
+   nothing. It now changes the job like any person's edit: this computer's copy, stamped, then synced. */
+if(typeof window._ehSb !== 'function'){
+  window._ehSb = function(key){
+    var u = (lsGet.call(localStorage, 'grayco_sb_url') || '').replace(/\/$/, ''), k = lsGet.call(localStorage, 'grayco_sb_key') || '';
+    return fetch(u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers:{ apikey:k, Authorization:'Bearer ' + k } }).then(function(r){ return r.json(); }).then(function(rows){ var v = rows && rows[0] && rows[0].value; if(typeof v === 'string') v = jparse(v, v); return v || []; });
+  };
+}
+(function wrapWriters(){
+  var t = 0, iv = RI.call(window, function(){
+    var done = 0;
+    var sj = window._setJobStatus;
+    if(typeof sj === 'function' && !sj.__gcSyncA){
+      var w = function(pid, patch, cb){
+        window._gcxPatchJob(pid, patch, 'job status').then(function(ok){
+          try{ if(cb) cb(); }catch(e){}
+          if(ok && patch && (patch.status === 'completed' || patch.status === 'complete')){ try{ if(window._autoCloseout) window._autoCloseout(pid); }catch(e){} }
+        });
+      };
+      w.__gcSyncA = true; w.__orig = sj; window._setJobStatus = w;
+    }
+    if(window._setJobStatus && window._setJobStatus.__gcSyncA) done++;
+    var fl = window._intakeFlag;
+    if(typeof fl === 'function' && !fl.__gcSyncA){
+      var w2 = function(pid, flag, val){
+        var r = fl.apply(this, arguments);
+        try{
+          var p = {}; p[flag] = val;
+          if(flag === 'intakeReceived' && val) p.intakeReceivedDate = new Date().toISOString().slice(0, 10);
+          if(flag === 'intakeSent' && val) p.intakeSentDate = new Date().toISOString().slice(0, 10);
+          ST.call(window, function(){ window._gcxPatchJob(pid, p, 'intake'); }, 1500);   /* after its own cloud write: ours is the stamped one */
+        }catch(e){}
+        return r;
+      };
+      w2.__gcSyncA = true; window._intakeFlag = w2;
+    }
+    if(window._intakeFlag && window._intakeFlag.__gcSyncA) done++;
+    if(done >= 2 || t++ > 120) clearInterval(iv);
+  }, 500);
+})();
+
+/* ── "Find edits that were undone" (Admin, admins only) ───────────────────────────────────────────────────── */
+function isAdmin(){ try{ return !!(window.__GC_AUTH__ && window.__GC_AUTH__.isAdmin && window.__GC_AUTH__.isAdmin()); }catch(e){ return false; } }
+var RANK = { lead:0, bidding:1, estimating:2, approved:3, active:4, on_hold:4, completed:6, closed:6, lost:6 };
+function rank(s){ var k = norm(s).replace(/\s+/g, '_'); return k in RANK ? RANK[k] : -1; }
+async function idbKeys(){
+  return new Promise(function(res){
+    try{ var q = indexedDB.open('grayco_crm'); q.onsuccess = function(){ try{ var d = q.result, tx = d.transaction('kv', 'readonly'), r = tx.objectStore('kv').getAllKeys(); r.onsuccess = function(){ res((r.result || []).map(String)); }; r.onerror = function(){ res([]); }; }catch(e){ res([]); } }; q.onerror = function(){ res([]); }; }catch(e){ res([]); }
+  });
+}
+async function cloudVal(k){
+  try{
+    var u = (lsGet.call(localStorage, 'grayco_sb_url') || '').replace(/\/$/, ''), key = lsGet.call(localStorage, 'grayco_sb_key') || '';
+    if(!u || !key) return undefined;
+    var r = await fetch(u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(k) + '&select=value', { headers:{ apikey:key, Authorization:'Bearer ' + key } });
+    if(!r.ok) return undefined; var rows = await r.json(); var v = rows && rows[0] && rows[0].value; if(typeof v === 'string') v = jparse(v, v); return v;
+  }catch(e){ return undefined; }
+}
+/* every copy of the job list kept from before: this computer's daily backups, the cloud's daily backups, the
+   protected nightly backups (server, admins only) and the person-edit record */
+window._gcxCollectJobHistory = async function(opts){
+  opts = opts || {};
+  var snaps = [], days = opts.days || 21;
+  var keys = await idbKeys();
+  for(var i = 0; i < keys.length; i++){
+    var k = keys[i]; if(k.indexOf('gc_dailybackup_') !== 0) continue;
+    try{ var s = await window.idbGet(k); var pj = s && s.lists && s.lists.projects; if(Array.isArray(pj)) snaps.push({ at:s.savedAt || (k.slice(15) + 'T23:59:59.000Z'), source:'daily backup on this computer (' + k.slice(15) + ')', projects:pj }); }catch(e){}
+  }
+  if(opts.cloud !== false){
+    var dl = []; for(var d = 0; d < days; d++) dl.push(new Date(Date.now() - d * 86400e3).toISOString().slice(0, 10));
+    await Promise.all(dl.map(async function(dt){
+      var v = await cloudVal('gc_dailybackup_' + dt), pj2 = v && v.lists && v.lists.projects;
+      if(!Array.isArray(pj2) && v && !v.lists) pj2 = await cloudVal('gc_dailybackup_' + dt + '__projects');
+      if(Array.isArray(pj2)) snaps.push({ at:(v && v.savedAt) || (dt + 'T23:59:59.000Z'), source:'daily backup in the cloud (' + dt + ')', projects:pj2 });
+    }));
+  }
+  if(opts.server !== false){
+    try{
+      var r = await fetch('/.netlify/functions/gc-backup', { method:'POST', headers:{ 'Content-Type':'application/json' }, body:JSON.stringify({ action:'history', nights:opts.nights || 10 }) });
+      var j = r.ok ? await r.json() : null;
+      (j && j.snapshots || []).forEach(function(s){ if(Array.isArray(s.projects)) snaps.push({ at:s.at, source:'nightly protected backup (' + String(s.at).slice(0, 16).replace('T', ' ') + ')', projects:s.projects }); });
+    }catch(e){}
+  }
+  /* the person-edit record (this computer + every copy seen): each one is a snapshot of that field at that time */
+  var fe = [];
+  Object.keys(FE).forEach(function(id){ Object.keys(FE[id]).forEach(function(f){ var e = FE[id][f]; fe.push({ id:id, f:f, v:e.v, at:e.at, by:e.by }); }); });
+  snaps.sort(function(a, b){ return ts(a.at) - ts(b.at); });
+  return { snaps:snaps, edits:fe };
+};
+/* compare: a field whose LATEST kept value differs from now, and now shows a value it had BEFORE (in an older
+   backup) — or a status that went backwards (Completed -> Active), or a % that went down */
+window._gcxFindUndone = async function(opts){
+  opts = opts || {};
+  var H = opts.history || await window._gcxCollectJobHistory(opts);
+  var cur = opts.current || (await cloudVal(KEY));
+  if(!Array.isArray(cur)) cur = await rawJobs();
+  var dead = window._gcxDeadIds ? window._gcxDeadIds('projects') : {};
+  var byId = {}; cur.forEach(function(p){ var id = idOf(p); if(id && !dead[id]) byId[id] = p; });
+  var hist = {};   /* id -> f -> [{v, at, source}] oldest first */
+  function add(id, f, v, at, src){ if(v === undefined) return; var h = (hist[id] = hist[id] || {}); (h[f] = h[f] || []).push({ v:v, at:at, source:src }); }
+  H.snaps.forEach(function(s){ (s.projects || []).forEach(function(p){ var id = idOf(p); if(!id || !byId[id]) return; PF.forEach(function(f){ add(id, f, p[f], s.at, s.source); }); }); });
+  H.edits.forEach(function(e){ if(byId[e.id]) add(e.id, e.f, e.v, e.at, 'person edit by ' + (e.by || '?')); });
+  var out = [];
+  Object.keys(hist).forEach(function(id){
+    var p = byId[id];
+    Object.keys(hist[id]).forEach(function(f){
+      if(f === 'name' || f === 'autoPO') return;
+      var h = hist[id][f].slice().sort(function(a, b){ return ts(a.at) - ts(b.at); });
+      var own = p._fe && p._fe[f];
+      /* the newest kept value V that differs from now, where now is a value the job had BEFORE V (X -> V -> X: it came
+         back), or a status that went backwards / a % that went down since V. A person's own edit of this field that is
+         newer than V is the truth and is left alone. */
+      var hit = null;
+      for(var i = h.length - 1; i >= 0 && !hit; i--){
+        var x = h[i]; if(same(x.v, p[f])) continue;
+        var xt = ts(x.at);
+        if(own && okE(own) && ts(own.at) > xt) break;
+        var before = h.some(function(y){ return ts(y.at) < xt && same(y.v, p[f]); });
+        var back = f === 'status' ? (/^(completed|closed)$/.test(norm(x.v)) && rank(p[f]) >= 0 && rank(p[f]) < rank(x.v) && !/^lost$/.test(norm(p[f]))) : (f === 'pct' ? (parseFloat(x.v) || 0) > (parseFloat(p[f]) || 0) : false);
+        if(before || back) hit = { x:x, why:before ? 'now shows the value it had before' : (f === 'status' ? 'was Completed, now ' + p[f] : '% went down') };
+      }
+      if(!hit) return;
+      var last = hit.x;
+      out.push({ id:id, job:p.name || id, po:p.autoPO || '', field:f, now:p[f], was:last.v, when:last.at, source:last.source, why:hit.why });
+    });
+  });
+  out.sort(function(a, b){ return String(a.job).localeCompare(String(b.job)) || a.field.localeCompare(b.field); });
+  return { found:out, snapshots:H.snaps.map(function(s){ return { at:s.at, source:s.source, jobs:(s.projects || []).length }; }), checked:Object.keys(byId).length };
+};
+/* restore what the owner ticked: each one is written as HIS edit now (stamped, synced, kept) */
+window._gcxRestoreUndone = async function(items){
+  if(!isAdmin()){ try{ alert('Only an admin can do this.'); }catch(e){} return 0; }
+  var n = 0, by = {};
+  (items || []).forEach(function(it){ if(!it || !it.id || !PFS[it.field]) return; (by[it.id] = by[it.id] || {})[it.field] = it.was; });
+  for(var id in by){ if(await window._gcxPatchJob(id, by[id], 'restored (edit that was undone)')) n++; }
+  return n;
+};
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+window._gcxOpenUndone = async function(){
+  if(!isAdmin()){ try{ alert('Only an admin can do this.'); }catch(e){} return; }
+  var ov = document.createElement('div'); ov.id = 'gcx-undone'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arial,sans-serif';
+  ov.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:12px;width:min(860px,96vw);max-height:88vh;overflow:auto;padding:18px;box-sizing:border-box">'
+    + '<div style="display:flex;align-items:center;gap:8px"><b style="font-size:16px;flex:1">Find edits that were undone</b><button data-a="x" style="border:none;background:#e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700">Close</button></div>'
+    + '<div id="gcx-undone-body" style="font-size:13px;margin-top:10px">Comparing the jobs with every backup kept (this computer, the cloud, the nightly protected backups)…</div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if(e.target === ov || (e.target.getAttribute && e.target.getAttribute('data-a') === 'x')) ov.remove(); });
+  var body = ov.querySelector('#gcx-undone-body'), res;
+  try{ res = await window._gcxFindUndone(); }catch(e){ body.textContent = 'Could not compare: ' + e.message; return; }
+  window.__gcxUndoneLast = res;
+  if(!res.found.length){ body.innerHTML = '✓ Nothing found: every job matches its latest backup (or a newer edit). Compared ' + res.checked + ' jobs with ' + res.snapshots.length + ' backup(s).'; return; }
+  var rows = res.found.map(function(f, i){
+    return '<tr><td style="padding:4px"><input type="checkbox" data-i="' + i + '" checked></td><td style="padding:4px"><b>' + esc(f.job) + '</b> <span style="color:#2563eb;font-family:monospace">' + esc(f.po) + '</span></td>'
+      + '<td style="padding:4px">' + esc(f.field) + '</td><td style="padding:4px;color:#b91c1c">' + esc(f.now) + '</td><td style="padding:4px;color:#166534;font-weight:700">' + esc(f.was) + '</td>'
+      + '<td style="padding:4px;font-size:11px;color:#475569">' + esc(f.source) + '<br>' + esc(f.why) + '</td></tr>';
+  }).join('');
+  body.innerHTML = '<div style="margin-bottom:8px">' + res.found.length + ' change(s) found that a later sync seems to have undone. Tick the ones to put back, then <b>Restore these</b>. Each restore is saved as your edit now and syncs to every computer.</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="text-align:left;background:#f1f5f9"><th></th><th style="padding:4px">Job</th><th style="padding:4px">Field</th><th style="padding:4px">Now</th><th style="padding:4px">Was (restore to)</th><th style="padding:4px">From</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="gcx-undone-go" style="background:#0f2440;color:#fff;border:none;border-radius:7px;padding:9px 16px;font-weight:800;cursor:pointer">Restore these</button></div><div id="gcx-undone-msg" style="margin-top:8px;color:#166534"></div>';
+  body.querySelector('#gcx-undone-go').onclick = async function(){
+    var pickd = Array.prototype.filter.call(body.querySelectorAll('input[data-i]'), function(c){ return c.checked; }).map(function(c){ return res.found[+c.getAttribute('data-i')]; });
+    if(!pickd.length) return;
+    if(!confirm('Put back ' + pickd.length + ' value(s)? They are saved as your edit now and sync to every computer.')) return;
+    this.disabled = true;
+    var n = await window._gcxRestoreUndone(pickd);
+    body.querySelector('#gcx-undone-msg').textContent = '✓ Restored on ' + n + ' job(s). They sync to the other computers now.';
+  };
+};
+(function adminCard(){
+  RI.call(window, function(){
+    try{
+      if(lsGet.call(localStorage, 'grayco_view') !== 'admin' || !isAdmin()) return;
+      if(document.getElementById('gcx-undone-card')) return;
+      var after = document.getElementById('gcx-trust-card'); if(!after || !after.parentNode) return;
+      var d = document.createElement('div'); d.id = 'gcx-undone-card'; d.setAttribute('data-gc-keep', '1');
+      d.style.cssText = 'margin:0 0 12px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;font-size:12.5px;display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+      d.innerHTML = '<span style="flex:1;min-width:220px"><b>A change came undone?</b> Compare every job with the backups kept and put back what a sync undid (you choose).</span>'
+        + '<button id="gcx-undone-btn" style="background:#0f2440;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px">Find edits that were undone</button>';
+      after.parentNode.insertBefore(d, after.nextSibling);
+      d.querySelector('#gcx-undone-btn').onclick = function(){ window._gcxOpenUndone(); };
+    }catch(e){}
+  }, 1500);
+})();
+
+try{ console.log('[GC] SYNC-A: a person\'s job edit is never undone by sync (_gcxSyncAStats(), _gcxFieldEdits(id), Admin → Find edits that were undone).'); }catch(e){}
 })();
 
 </script>

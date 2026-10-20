@@ -140,6 +140,33 @@ exports.handler = async function (event) {
     if (who.role !== 'admin') return { statusCode: 403, headers, body: JSON.stringify({ error: 'Admins only.' }) };
   }
   if (!svcKey()) return { statusCode: 500, headers, body: JSON.stringify({ error: 'SUPABASE_SERVICE_KEY not set.' }) };
+  /* SYNC-A history: POST {"action":"history","nights":10} from a signed-in ADMIN (checked above) returns the job
+     list of each kept nightly snapshot — only the fields people edit — for "Find edits that were undone". Read-only. */
+  if (!isScheduled(event)) {
+    let req = {}; try { req = JSON.parse(event.body || '{}'); } catch (e) {}
+    if (req && req.action === 'history') {
+      const nights = Math.max(1, Math.min(30, parseInt(req.nights, 10) || 10));
+      const F = ['id', 'name', 'autoPO', 'status', 'pct', 'pm', 'contract', 'client', 'address', 'type', 'startDate', 'endDate', 'completionDate', 'updatedAt', '_fe'];
+      const out = [];
+      try {
+        const lr = await fetch(sbUrl() + '/rest/v1/gc_backups?select=id,taken_at&source=eq.gc_kv&order=taken_at.desc&limit=' + nights, { headers: H() });
+        const list = lr.ok ? await lr.json() : [];
+        for (const b of (Array.isArray(list) ? list : [])) {
+          const r = await fetch(sbUrl() + '/rest/v1/gc_backups?select=snapshot&id=eq.' + Number(b.id), { headers: H() });
+          if (!r.ok) continue;
+          const rows = await r.json();
+          const snap = rows && rows[0] && rows[0].snapshot;
+          const row = Array.isArray(snap) ? snap.find(function(x){ return x && x.key === 'projects'; }) : null;
+          let v = row && row.value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+          if (!Array.isArray(v)) continue;
+          out.push({ at: b.taken_at, source: 'nightly cloud backup', projects: v.filter(Boolean).map(function(p){ const o = {}; F.forEach(function(f){ if (p[f] !== undefined) o[f] = p[f]; }); return o; }) });
+        }
+      } catch (e) {
+        return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, snapshots: out }) };
+    }
+  }
 
   const report = [];
   for (const t of TABLES) {
