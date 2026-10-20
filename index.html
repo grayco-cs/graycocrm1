@@ -124214,6 +124214,995 @@ RI.call(window, function(){ if(!document.hidden && (jget(BUF, []) || []).length)
 try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).'); }catch(e){}
 })();
 
+</script>
+<script id="gc-patch-ld2">
+/* __GC_PATCH_LD2__ ════════════════════════════════════════════════════════════
+   GrayCo — 📥 LEAD INBOX, connected to the bid portal (patch LD2: LD re-anchored on the current CRM).
+
+   Owner (10/20): "Can my bid portal scrub websites like other plan rooms (BuildingConnected, PlanHub,
+   aandbplanroom.com, etc.), and every time a new job is added it goes to our bid portal and our leads in
+   the CRM, so we never miss anything? Also alert admins about new bid opportunities."
+
+   Where the leads come from (all on the server, on its own schedule — this page never polls):
+     · bids@grayco-cs.com → bid-inbox.js: BuildingConnected / PlanHub / A&B / RKA planroom / GC / public-bid
+       e-mails, read by Claude, plans and addenda kept in crm-files (login sites are never scraped);
+     · bid-watch.js, weekdays 5 times a day: Shelby County, City of Memphis, MSCS, MSCAA, DeSoto County (RSS),
+       TN STREAM / CPO and Arkansas OSP public bid listings (robots.txt obeyed; keywords editable here, ⚙);
+     · BuildingConnected's API when its keys are set.
+     · RoofScout leads are NOT collected here: patch RSL already makes them CRM leads (LEAD_RS_<id>); the
+       inbox only shows them (source "RoofScout"), so nothing is added twice.
+   Every new opportunity, on the server: one inbox item (duplicates across boards merged), a DRAFT bid job in
+   the bid portal (never shown to subs; "Publish to bid portal" here is the only way out), and the admins'
+   alert (e-mail now when due soon, else an hourly digest; phone push when patch TD's push is set up).
+   This block collects the items when someone opens the CRM, comes back to it, opens Leads or presses ↻ and
+   makes each new one a lead on the Lead Pipeline through the CRM's own synced setter (window._setLeads),
+   with real save stamps (updatedAt / savedAt, SYNC-A), so it reaches every computer and phone.
+
+   At the top of Leads: the 📥 Lead Inbox — new leads with their source, type, bid-due countdown, plans and
+   documents, and their bid-portal state; Assign PM, Publish to bid portal, Not interested (with a reason;
+   never re-imported), Merge with… (admins), Create bid job (a Bidding job with the plans in its Plans &
+   Bidding tab). Admins (gc_staff only, SEC2) get a toast for new opportunities and a number badge on the
+   Leads menu (and on To-Do when patch TD, which has its own, is not there). Nothing is added to a menu label.
+
+   For the To-Do tab (patch TD) and anyone else:
+     window._gcLeadInbox.list({unassigned:true}) → [{id, title, type, source, bidDue, suggestPm, reason, priority, …}]
+     window._gcLeadInbox.assignList()            → the admins' "assign to PM" list (commercial and insurance first)
+     window._gcLeadInbox.assign(id, pmName)      → Promise   (admins; calls window._gcNotify when present)
+     window._gcLeadInbox.publish(id)             → Promise   (admins: the draft goes live on the bid portal)
+     window._gcLeadInbox.reminders({pm})          → AUTO to-dos 3 days and 1 day before a bid is due
+     window event "gc:leads-changed"              → {detail:{count, why}}
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_LEAD_INBOX__) return; window.__GC_LEAD_INBOX__ = true; window.__GC_PATCH_LD2__ = true;
+
+var FN = '/.netlify/functions/bid-inbox';
+var NAVY = '#241968', GOLD = '#d4a017';
+var later = function(f, ms){ return (window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout).call(window, f, ms || 0); };
+var K_CACHE = 'gc_ldi_cache_v2', K_OUT = 'gc_ldi_outbox_v1', K_UI = 'gc_ldi_ui_v1', K_SEEN = 'gc_ldi_alert_seen_v1';
+
+/* ── small helpers ─────────────────────────────────────────────────────────── */
+function s(v){ return (v == null ? '' : String(v)).trim(); }
+function warn(e){ try { console.warn('[GC Lead Inbox]', e && e.message || e); } catch (x) {} }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function rid(p){ return p + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase(); }
+function lsGet(k, d){ try { var v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function me(){ try { if (typeof window._gcMeUser === 'function') { var u = window._gcMeUser(); if (u && u.name) return u; } } catch (e) {} return lsGet('grayco_user', {}) || {}; }
+function myName(){ var u = me(); return s(u.name) || s(window.__GC_AUTH__ && window.__GC_AUTH__.email && window.__GC_AUTH__.email()) || 'GrayCo'; }
+/* SEC2: an admin is an admin on gc_staff — the sign-in's answer, or the server's (bid-inbox.js reads gc_staff).
+   Never the editable people list. */
+function isAdmin(){
+  try { if (window.__GC_AUTH__ && window.__GC_AUTH__.isAdmin && window.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+  return !!(S && S.me && S.me.admin && S.me.email && window.__GC_AUTH__ && low(window.__GC_AUTH__.email && window.__GC_AUTH__.email()) === low(S.me.email));
+}
+function users(){ try { return arr(window._crm && window._crm.users); } catch (e) { return []; } }
+function pmNames(){ var seen = {}; return users().filter(function(u){ return u && u.name && u.active !== false && !seen[u.name] && (seen[u.name] = 1); }).map(function(u){ return u.name; }).sort(); }
+function projects(){ try { return arr(window._crm && window._crm.projects); } catch (e) { return []; } }
+function emit(why){ try { window.dispatchEvent(new CustomEvent('gc:leads-changed', { detail: { count: newCount(), why: why || '' } })); } catch (e) {} }
+function tomb(key, id){ try { return typeof window._gcIsTombstoned === 'function' && window._gcIsTombstoned(key, id); } catch (e) { return false; } }
+var toastLog = [];
+function toast(msg, bad, act){
+  toastLog.push(msg); if (toastLog.length > 20) toastLog.shift();
+  var t = document.createElement('div'); t.className = 'gc-ldi-toast'; t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg; if (bad) t.style.background = '#991b1b';
+  if (act) { var b = document.createElement('button'); b.type = 'button'; b.textContent = act.label; b.onclick = function(){ try { t.remove(); } catch (e) {} act.run(); }; t.appendChild(b); }
+  document.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, act ? 9000 : 4200);
+}
+
+/* ── the CRM's own lists, read and written through its synced setters ──────────
+   A setter given an updater that returns what it was handed changes nothing (no render, nothing saved);
+   React runs it straight away when it can, else on its next render — either way we learn the real list. */
+var lastSeen = { _setLeads: null, _setProjectDocs: null }, seenAt = { _setLeads: 0, _setProjectDocs: 0 };
+/* (window._crm.leads is never written here: other blocks read it as "the whole list") */
+function remember(name, list){ if (Array.isArray(list)) { lastSeen[name] = list; seenAt[name] = Date.now(); } }
+function readList(name){
+  return new Promise(function(res){
+    var S = window[name], done = false;
+    var fin = function(v){ if (done) return; done = true; remember(name, v); res(arr(v || lastSeen[name])); };
+    if (typeof S !== 'function') return fin(null);
+    try { S(function(prev){ fin(prev); return prev; }); } catch (e) { fin(null); }
+    later(function(){ fin(null); }, 800);
+  });
+}
+function peek(name){ return lastSeen[name] || (name === '_setLeads' ? arr(window._crm && window._crm.leads) : arr(window._gcProjectDocs)); }
+function leads(){ return arr(peek('_setLeads')); }
+function setList(name, mut){
+  return new Promise(function(res){
+    var S = window[name]; if (typeof S !== 'function') return res(false);
+    var done = false;
+    try {
+      S(function(prev){
+        var a = Array.isArray(prev) ? prev : [];
+        var n = mut(a.slice());
+        if (!Array.isArray(n)) { remember(name, a); if (!done) { done = true; res(false); } return prev; }
+        remember(name, n);
+        if (!done) { done = true; later(function(){ persist(name, n); res(true); }, 0); }
+        return n;
+      });
+    } catch (e) { if (!done) { done = true; res(false); } }
+    /* React did not run it (the screen is busy): make the same change on this computer's copy and send it up;
+       the screen catches up from there. The updater above is then a no-op if it runs later (same ids). */
+    later(function(){
+      if (done) return; done = true;
+      var key = KEYS[name];
+      if (!key || typeof window.idbGet !== 'function') return res(false);
+      Promise.resolve(window.idbGet(key)).then(function(cur){
+        var n = mut(arr(cur).slice());
+        if (!Array.isArray(n)) return res(false);
+        remember(name, n); persist(name, n);
+        try { S(n.slice()); } catch (e) {}
+        res(true);
+      }, function(){ res(false); });
+    }, 2500);
+  });
+}
+/* the screen's list is also written to this computer's copy and sent up at once — the way the CRM's other
+   importers do it — so a start-up sweep that re-reads this computer's copy, or a sync, never loses it */
+var KEYS = { _setLeads: 'leads', _setProjects: 'projects', _setProjectDocs: 'projectDocs' };
+function persist(name, list){
+  var key = KEYS[name]; if (!key) return;
+  try { window.__GC_MANUAL_SAVE__ = true; if (typeof window._gcManualNow === 'function') window._gcManualNow('lead inbox'); } catch (e) {}
+  try { if (typeof window.idbSet === 'function') window.idbSet(key, list); } catch (e) {}
+  try { if (typeof window._supaUpsert === 'function') window._supaUpsert(key, list); } catch (e) {}
+  if (key === 'projects') { try { if (window._crm) window._crm.projects = list; } catch (e) {} }
+  later(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+}
+function setLeads(mut){ return setList('_setLeads', mut); }
+/* nothing is imported until the CRM has its own lead list from this computer / the cloud (a list written
+   into an empty, not-yet-loaded screen would be overwritten by the load a moment later) */
+var hydratedP = null, T0 = Date.now();
+function hydrated(){
+  if (hydratedP) return hydratedP;
+  /* the CRM's start-up (its copy, the cloud pull, its duplicate sweep) rewrites the lead list several times in the
+     first half-minute: wait until the list is loaded and has stopped changing for 6 seconds (at most 90 s) */
+  hydratedP = new Promise(function(res){
+    var last = -1, since = Date.now();
+    (function look(){
+      var ep = true; try { if (typeof window._gcEpochStatus === 'function') { var st = window._gcEpochStatus(); ep = !!st && st.state === 'ok'; } } catch (e) {}
+      readList('_setLeads').then(function(l){
+        if (l.length !== last) { last = l.length; since = Date.now(); }
+        if ((ep && l.length && Date.now() - since >= 6000) || Date.now() - T0 > 90000) return res(true);
+        later(look, 1500);
+      });
+    })();
+  });
+  return hydratedP;
+}
+/* after an import: look again a little later; a lead a start-up sync dropped is put back (never one a person deleted) */
+function heal(ids, n){
+  if (!ids.length || n > 3) return;
+  later(function(){
+    readList('_setLeads').then(function(list){
+      var have = {}; list.forEach(function(l){ if (l && l.id) have[l.id] = 1; });
+      var gone = ids.filter(function(id){ return !have[id] && !tomb('leads', id); });
+      if (gone.length) { warn('put back ' + gone.length + ' lead(s) a sync dropped'); importItems(true).then(function(){ heal(gone, n + 1); }); }
+    });
+  }, n === 0 ? 8000 : 20000);
+}
+/* SYNC-A: a person's (or this importer's) change carries a real save stamp */
+function stamp(r){ r.updatedAt = r.savedAt = nowIso(); return r; }
+
+/* ── talking to bid-inbox.js (the sign-in token is added by the CRM's sign-in block) ── */
+function api(method, qs, body){
+  return window.fetch(FN + '?' + qs, { method: method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t || '{}'); } catch (e) {} if (!r.ok) { var err = new Error(j.error || ('the lead inbox answered ' + r.status)); err.status = r.status; throw err; } return j; }); });
+}
+/* what a person did, told to the server; kept on this device until it has gone (offline, a hiccup) */
+function act(body){
+  var q = lsGet(K_OUT, []); q.push(Object.assign({ at: nowIso() }, body)); lsSet(K_OUT, q.slice(-200));
+  return flushOut();
+}
+var flushing = false;
+function flushOut(){
+  if (flushing) return Promise.resolve();
+  var q = lsGet(K_OUT, []); if (!q.length || navigator.onLine === false) return Promise.resolve();
+  flushing = true;
+  var keep = [];
+  return q.reduce(function(p, b){ return p.then(function(){ return api('POST', 'act=1', b).catch(function(e){ if (!e.status || e.status >= 500) keep.push(b); }); }); }, Promise.resolve())
+    .then(function(){ var cur = lsGet(K_OUT, []); var rest = cur.slice(q.length); lsSet(K_OUT, keep.concat(rest)); flushing = false; if (rest.length) return flushOut(); }, function(){ flushing = false; });
+}
+
+/* ── state ─────────────────────────────────────────────────────────────────── */
+var S = lsGet(K_CACHE, null) || { items: [], watch: null, settings: null, notices: [], portal: null, alerts: null, at: '', me: {} };
+var UI = Object.assign({ src: '', type: '', due: '', show: 'new', open: true }, lsGet(K_UI, {}));
+var busy = false, lastPull = 0, lastErr = '';
+
+/* a lead's kind and how the Lead Pipeline names it */
+var KIND = { commercial: 'Commercial', insurance: 'Insurance', residential: 'Residential', government: 'Government' };
+var PIPE_TYPE = { commercial: 'Commercial Reno', insurance: 'Insurance Claim', residential: 'Residential Reno', government: 'Commercial Reno' };
+function kindOf(l){ return KIND[low(l.leadKind)] || KIND[low(l.type)] || (/insur/i.test(l.type) ? 'Insurance' : /resid|home|kitchen|bath/i.test(l.type) ? 'Residential' : 'Commercial'); }
+function leadIdOf(it){ return 'LEADIN-' + s(it.id).replace(/^LI-/, ''); }
+function isRs(l){ return !!(l && (l.rsLeadId || /^LEAD_RS_/.test(s(l.id)))); }
+function srcOf(l){ return isRs(l) ? 'RoofScout' : (s(l && l.source) || 'Lead Inbox'); }
+function itemOf(l){ var id = l && l.inboxId; if (!id) return null; return S.items.find(function(x){ return x && x.id === id; }) || null; }
+function fullAddr(it){ var cs = [s(it.city), [s(it.state), s(it.zip)].filter(Boolean).join(' ')].filter(Boolean).join(', '); return [s(it.address), cs].filter(Boolean).join(', '); }
+function notesOf(it){
+  var out = [];
+  if (it.scope) out.push(it.scope);
+  if (arr(it.trades).length) out.push('Trades: ' + it.trades.join(', '));
+  if (it.gc) out.push('GC: ' + it.gc);
+  if (it.owner) out.push('Owner: ' + it.owner);
+  if (it.bidNumber) out.push('Bid #: ' + it.bidNumber);
+  if (it.preBid) out.push('Pre-bid: ' + fmtWhen(it.preBid) + (it.preBidLocation ? ' at ' + it.preBidLocation : '') + (it.preBidMandatory ? ' (MANDATORY)' : ''));
+  arr(it.notes).forEach(function(n){ out.push(n); });
+  return out.join('\n');
+}
+function fromItem(it, prev){
+  var l = Object.assign({}, prev || {});
+  var fresh = !prev;
+  l.id = prev ? prev.id : leadIdOf(it);
+  if (fresh) {
+    l.name = s(it.title); l.stage = 'New Lead'; l.pm = ''; l.date = today(); l.createdAt = nowIso(); l.createdBy = 'Lead Inbox';
+    l.phone = s(it.contact && it.contact.phone); l.email = s(it.contact && it.contact.email); l.contactName = s(it.contact && it.contact.name);
+    l.type = PIPE_TYPE[low(it.type)] || 'Commercial Reno'; l.estVal = it.estValue || ''; l.address = fullAddr(it); l.inboxState = 'new';
+    l.notes = notesOf(it);
+  } else {
+    if (!l.phone && it.contact && it.contact.phone) l.phone = it.contact.phone;
+    if (!l.email && it.contact && it.contact.email) l.email = it.contact.email;
+    if (!l.address) l.address = fullAddr(it);
+    if (it.flag && it.flag !== prev.inboxFlag) l.inboxFlagNew = true;
+  }
+  l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
+  l.inboxId = it.id; l.inboxRev = it.rev || 1; l.bidDue = s(it.bidDue); l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
+  l.gc = s(it.gc); l.owner = s(it.owner); l.city = s(it.city); l.state = s(it.state); l.trades = arr(it.trades).slice(0, 12); l.scope = s(it.scope);
+  l.plansLinks = arr(it.plansLinks).map(function(x){ return { url: x.url, label: x.label, board: x.board }; }).slice(0, 25);
+  var mineDocs = arr(prev && prev.docs).filter(function(d){ return d && d.addedBy; });   /* files a person dropped on the lead stay */
+  l.docs = arr(it.files).filter(function(f){ return f && f.ref; }).map(function(f){ return { ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: f.addendum }; }).concat(mineDocs);
+  l.rawEmailRef = s(it.rawRef); l.emails = arr(it.emails).map(function(e){ return { subject: e.subject, from: e.from, date: e.date, rawRef: e.rawRef }; }).slice(-10);
+  l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
+  l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin);
+  if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
+  return stamp(l);
+}
+/* ── collect: the server's list → leads on the Lead Pipeline ─────────────────── */
+function pull(force){
+  if (busy) return Promise.resolve(false);
+  if (!force && Date.now() - lastPull < 45000) return Promise.resolve(false);
+  if (navigator.onLine === false) return Promise.resolve(false);
+  try { var A = window.__GC_AUTH__; if (A && (!A.email() || A.mode() === 'none')) return Promise.resolve(false); } catch (e) {}
+  busy = true; lastPull = Date.now(); render();
+  return flushOut().then(function(){ return api('GET', 'list=1'); }).then(function(j){
+    S = { items: arr(j.items), watch: j.watch || null, settings: j.settings || null, notices: arr(j.notices), portal: j.portal || null, alerts: j.alerts || null, at: j.at || nowIso(), me: j.me || {} };
+    /* (the cache keeps the open items' bid-portal state too, so the cards show it before the next check) */
+    lsSet(K_CACHE, { items: S.items.filter(function(x){ return x.status === 'new' || x.status === 'imported'; }).slice(-120).map(function(x){ return { id: x.id, status: x.status, title: x.title, bidDue: x.bidDue, type: x.type, source: x.source, portal: x.portal, receivedAt: x.receivedAt, rev: x.rev }; }),
+      watch: S.watch, settings: S.settings, notices: [], portal: S.portal, alerts: null, at: S.at, me: S.me });
+    lastErr = '';
+    return hydrated().then(importItems).then(function(){ return readList('_setLeads'); });
+  }).catch(function(e){ lastErr = s(e && e.message) || 'could not reach the lead inbox'; }).then(function(){ busy = false; render(); badge(); alertNew(); return true; });
+}
+/* every decision is made inside the setter's updater, on the list as it really is right now
+   (another computer may have assigned a PM a second ago: that lead is updated, never replaced) */
+function importItems(healing){
+  var added = [], updated = [], tell = [];
+  var items = S.items.filter(function(it){ return it && !it.stub && it.status !== 'dismissed' && it.status !== 'merged'; });
+  if (!items.length) return Promise.resolve();
+  return setLeads(function(list){
+    added = []; updated = []; tell = [];
+    var at = {}; list.forEach(function(l, i){ if (l && l.id) at[l.id] = i; if (l && l.inboxId) at['in:' + l.inboxId] = i; });
+    /* the same project already on the Lead Pipeline without an inbox link (typed in by hand, an older import):
+       that lead gets the inbox's details instead of a second lead (same name, same city or no city on it) */
+    var byName = {}; list.forEach(function(l, i){ if (l && !l.inboxId && !isRs(l) && l.name) { var k = normName(l.name); if (k.length >= 6 && byName[k] == null) byName[k] = i; } });
+    var changed = false;
+    items.forEach(function(it){
+      var lid = leadIdOf(it), i = at[lid] != null ? at[lid] : at['in:' + it.id];
+      if (tomb('leads', lid)) return;
+      if (i == null && byName[normName(it.title)] != null) {
+        var j = byName[normName(it.title)], ex = list[j], ec = low(ex.city || ex.address), ic = low(it.city);
+        if (!ic || !ec || ec.indexOf(ic) >= 0) { list[j] = fromItem(it, ex); list[j].inboxState = ex.pm ? 'assigned' : 'new'; at['in:' + it.id] = j; delete byName[normName(it.title)]; changed = true; tell.push({ id: it.id, op: 'imported', leadId: ex.id }); updated.push(list[j]); return; }
+      }
+      if (i == null) {
+        var l = fromItem(it);
+        if (it.status !== 'new') {   /* imported before (here or on another computer) but not on this list: put it back as it was */
+          if (it.pm) { l.pm = it.pm; l.inboxState = 'assigned'; }
+          if (it.pid) { l.pid = it.pid; l.inboxState = 'job'; }
+          l.updatedAt = l.createdAt = s(it.importedAt || it.receivedAt) || l.updatedAt;   /* older than any real edit: an edit elsewhere wins */
+        } else { added.push(l); tell.push({ id: it.id, op: 'imported', leadId: l.id }); }
+        list.unshift(l); changed = true; at[lid] = -1; return;
+      }
+      if (i < 0) return;
+      var cur = list[i];
+      if ((it.rev || 1) > (cur.inboxRev || 0)) { list[i] = fromItem(it, cur); updated.push(list[i]); changed = true; }
+      if (it.status === 'new') tell.push({ id: it.id, op: 'imported', leadId: cur.id });
+    });
+    return changed ? list : null;
+  }).then(function(){
+    tell.forEach(act);
+    if (!healing && added.length) heal(added.map(function(l){ return l.id; }), 0);
+    /* an addendum for a lead that already has a job: its new files go to the job's Plans & Bidding too */
+    updated.forEach(function(l){ if (l.pid) addPlansToJob(l.pid, l.docs, l.id); });
+    if (added.length && !isAdmin()) toast('📥 ' + added.length + ' new lead' + (added.length === 1 ? '' : 's') + ' in the Lead Inbox');   /* admins: alertNew() */
+    if (added.length || updated.length) emit('imported');
+  });
+}
+
+/* ── what the inbox shows ──────────────────────────────────────────────────── */
+function normName(t){ return low(t).replace(/\b(re-?roof(ing)?|roof(ing)? replacement)\b/g, 'reroof').replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(the|project|bid|invite|invitation|itb|rfp|rfq)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+/* the inbox: its own leads, plus the RoofScout leads patch RSL brought in (shown, never collected here) */
+function rsShown(l){ return isRs(l) && !l.converted && !l.rsRemoved && !l.doNotContact && l.status !== 'converted'; }
+function inboxLeads(){ return leads().filter(function(l){ return l && (l.inboxId || rsShown(l)) && l.stage !== 'Won' && l.stage !== 'Lost'; }); }
+function isNew(l){
+  if (isRs(l)) return !l.pm && !l.pid && !l.jobId && (!l.stage || l.stage === 'New Lead') && Date.now() - Date.parse(l.createdAt || 0) < 14 * 86400000;
+  return (l.inboxState === 'new' || !l.inboxState) && !l.pm && !l.pid;
+}
+function newCount(){ return inboxLeads().filter(isNew).length; }
+function dueMs(d){ if (!d) return NaN; var t = Date.parse(d.length === 10 ? d + 'T23:59:00' : d); return t; }
+function daysLeft(d){ var t = dueMs(d); if (!isFinite(t)) return null; return (t - Date.now()) / 86400000; }
+function fmtWhen(d){
+  if (!d) return ''; var t = new Date(d.length === 10 ? d + 'T12:00:00' : d); if (isNaN(t)) return d;
+  return t.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + (d.length > 10 ? ' ' + t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '');
+}
+function countdown(d){
+  var n = daysLeft(d); if (n == null) return { txt: 'No bid date yet', cls: 'none' };
+  if (n < 0) return { txt: 'Bid was due ' + fmtWhen(d), cls: 'past' };
+  var h = n * 24;
+  var txt = h < 24 ? 'Due in ' + Math.max(1, Math.round(h)) + ' h' : 'Due in ' + Math.floor(n) + ' day' + (Math.floor(n) === 1 ? '' : 's');
+  return { txt: txt + ' · ' + fmtWhen(d), cls: n <= 1 ? 'hot' : n <= 3 ? 'warm' : 'ok' };
+}
+/* a suggestion only (an admin always picks): the project manager / estimator who has run the most jobs of this kind */
+function suggestPm(l){
+  var kind = kindOf(l), score = {}, open = {};
+  var role = {}; users().forEach(function(u){ if (u && u.name) role[u.name] = s(u.role); });
+  projects().forEach(function(p){
+    if (!p || !p.pm) return;
+    var pk = p.isInsurance || /insur|claim/i.test(p.type) ? 'Insurance' : /resid|home|kitchen|bath/i.test(p.type) ? 'Residential' : 'Commercial';
+    if (pk === kind || (kind === 'Government' && pk === 'Commercial')) score[p.pm] = (score[p.pm] || 0) + 1;
+    if (p.status === 'bidding') open[p.pm] = (open[p.pm] || 0) + 1;
+  });
+  var isPm = function(n){ return /project manager|\bpm\b|estimat|superintendent/i.test(role[n] || ''); };
+  var names = pmNames().filter(function(n){ return score[n] && !/^office/i.test(role[n] || ''); })
+    .sort(function(a, b){ return (isPm(b) - isPm(a)) || (score[b] - score[a]) || ((open[a] || 0) - (open[b] || 0)); });
+  if (!names.length) return { name: '', why: '' };
+  var n = names[0];
+  return { name: n, why: s(n) + ' has run ' + score[n] + ' ' + kind.toLowerCase() + ' job' + (score[n] === 1 ? '' : 's') + (open[n] ? ' (' + open[n] + ' bid' + (open[n] === 1 ? '' : 's') + ' open now)' : '') };
+}
+function reasonOf(l){
+  var c = countdown(l.bidDue), bits = [kindOf(l), 'from ' + srcOf(l)];
+  if (l.bidDue) bits.push(c.txt.replace(/ · .*$/, '').toLowerCase());
+  if (l.inboxFlag) bits.push(l.inboxFlag);
+  if (arr(l.alsoOn).length) bits.push('also on ' + l.alsoOn.join(', '));
+  return bits.join(' · ');
+}
+function filtered(){
+  var list = inboxLeads();
+  if (UI.show === 'new') list = list.filter(isNew);
+  else if (UI.show === 'assigned') list = list.filter(function(l){ return !isNew(l); });
+  var all = list;
+  if (UI.src) all = all.filter(function(l){ return UI.src === 'Government' ? (l.leadKind === 'Government' && !/^(BuildingConnected|PlanHub|A&B Planroom|RKA Planroom|GC direct|RoofScout)$/.test(srcOf(l))) : srcOf(l) === UI.src; });
+  if (UI.type) all = all.filter(function(l){ return kindOf(l) === UI.type; });
+  if (UI.due) all = all.filter(function(l){ var n = daysLeft(l.bidDue); if (UI.due === 'none') return n == null; if (UI.due === 'past') return n != null && n < 0; return n != null && n >= 0 && n <= +UI.due; });
+  all.sort(function(a, b){ var x = dueMs(a.bidDue), y = dueMs(b.bidDue); x = isFinite(x) && x >= Date.now() - 86400000 ? x : 9e15; y = isFinite(y) && y >= Date.now() - 86400000 ? y : 9e15; return x - y || s(b.createdAt).localeCompare(s(a.createdAt)); });
+  return all;
+}
+
+/* ── bid-due reminders: AUTO to-dos for the assigned PM ─────────────────────── */
+function reminders(o){
+  o = o || {}; var out = [], t0 = today();
+  var add = function(src, title, pm, due, lid, pid){
+    if (!pm || !due) return;
+    var d = due.slice(0, 10), n = daysLeft(due); if (n == null || n < -0.01) return;
+    [3, 1].forEach(function(k){
+      var on = new Date(Date.parse(d + 'T12:00:00') - k * 86400000), onD = on.getFullYear() + '-' + ('0' + (on.getMonth() + 1)).slice(-2) + '-' + ('0' + on.getDate()).slice(-2);
+      if (t0 < onD || t0 > d) return;
+      if (k === 3 && n <= 1.5) return;   /* inside the last day only the 1-day one shows */
+      out.push({ id: 'LDREM-' + (lid || pid) + '-' + k, kind: 'auto', auto: true, source: 'Lead Inbox', who: pm, pm: pm, due: onD, bidDue: due, leadId: lid || '', pid: pid || '',
+        title: (k === 1 ? 'Bid due tomorrow: ' : 'Bid due in 3 days: ') + title, text: title + ' — bid due ' + fmtWhen(due) + (src ? ' (' + src + ')' : '') });
+    });
+  };
+  var withJob = {};
+  projects().forEach(function(p){ if (p && p.status === 'bidding' && p.bidDue) { withJob[p.leadId || ''] = 1; add(p.leadSource, p.name, p.pm, p.bidDue, p.leadId, p.id); } });
+  inboxLeads().forEach(function(l){ if (!withJob[l.id] && !l.pid) add(srcOf(l), l.name, l.pm, l.bidDue, l.id, ''); });
+  return out.filter(function(x){ return !o.pm || x.pm === o.pm; });
+}
+
+/* ── actions ───────────────────────────────────────────────────────────────── */
+function findLead(id){
+  id = s(id); if (!id) return null;
+  return leads().find(function(l){ return l && (l.id === id || l.inboxId === id || (l.rsLeadId && 'RS:' + l.rsLeadId === id)); }) || null;
+}
+function patchLead(id, fn){
+  var out = null;
+  return setLeads(function(list){ return list.map(function(l){ if (l && l.id === id) { out = Object.assign({}, l); fn(out); return stamp(out); } return l; }); }).then(function(){ return out; });
+}
+function assign(id, pm){
+  /* the name exactly as on the team list (some have a trailing space), so the PM's own screens match it */
+  var u = users().find(function(x){ return x && s(x.name) === s(pm); }); pm = u ? u.name : s(pm);
+  if (!isAdmin()) return Promise.reject(new Error('Only an owner or admin assigns leads.'));
+  if (!s(pm)) return Promise.reject(new Error('Pick a PM.'));
+  var l = findLead(id); if (!l) return Promise.reject(new Error('Lead not found.'));
+  return Promise.resolve(l).then(function(lead){
+    return patchLead(lead.id, function(x){ x.pm = pm; x.inboxState = x.pid ? 'job' : 'assigned'; x.assignedAt = nowIso(); x.assignedBy = myName(); x.inboxFlagNew = false; });
+  }).then(function(lead){
+    if (lead.inboxId) act({ id: lead.inboxId, op: 'assigned', pm: pm, leadId: lead.id });
+    if (lead.pid) setList('_setProjects', function(list){ return list.map(function(p){ return p && p.id === lead.pid && !p.pm ? stamp(Object.assign({}, p, { pm: pm })) : p; }); });
+    try {
+      if (typeof window._gcNotify === 'function') window._gcNotify(pm, { kind: 'lead', link: '#leads', title: '📥 New lead assigned to you: ' + lead.name + (lead.bidDue ? ' — bid due ' + fmtWhen(lead.bidDue) : ''),
+        body: [kindOf(lead) + ' · ' + srcOf(lead), lead.address, lead.gc ? 'GC: ' + lead.gc : ''].filter(Boolean).join('\n') });
+    } catch (e) {}
+    emit('assigned'); render(); badge();
+    return { ok: true, lead: lead };
+  });
+}
+function dismiss(id, reason){
+  if (!isAdmin()) return Promise.reject(new Error('Only an owner or admin marks a lead Not interested.'));
+  reason = s(reason) || 'Not interested';
+  var l = findLead(id); if (!l) return Promise.reject(new Error('Lead not found.'));
+  try { if (typeof window._gcTombstone === 'function') window._gcTombstone('leads', l.id); } catch (e) {}
+  try { if (typeof window._gcxDel === 'function') window._gcxDel('leads', l.id); } catch (e) {}
+  return setLeads(function(list){ return list.filter(function(x){ return !(x && x.id === l.id); }); }).then(function(){
+    if (l.inboxId) act({ id: l.inboxId, op: 'dismissed', reason: reason });   /* (a RoofScout lead: deleted in the CRM stays deleted — patch RSL) */
+    S.items.forEach(function(x){ if (x && x.id === l.inboxId) x.status = 'dismissed'; });
+    emit('dismissed'); render(); badge(); return { ok: true };
+  });
+}
+function merge(id, intoId){
+  if (!isAdmin()) return Promise.reject(new Error('Only an owner or admin merges leads.'));
+  var a = findLead(id), b = findLead(intoId);
+  if (!a || !b || a === b) return Promise.reject(new Error('Pick two leads to merge.'));
+  var uniq = function(list, key){ var seen = {}; return list.filter(function(x){ var k = key(x); if (!k || seen[k]) return false; seen[k] = 1; return true; }); };
+  return patchLead(b.id, function(x){
+    x.docs = uniq(arr(x.docs).concat(arr(a.docs)), function(d){ return d.hash || d.ref; });
+    x.plansLinks = uniq(arr(x.plansLinks).concat(arr(a.plansLinks)), function(d){ return low(d.url); });
+    x.sources = uniq(arr(x.sources).concat(arr(a.sources), [a.source]), low);
+    x.alsoOn = x.sources.filter(function(n){ return n !== x.source; });
+    ['phone', 'email', 'address', 'bidDue', 'gc', 'owner', 'bidNumber', 'contactName'].forEach(function(f){ if (!x[f] && a[f]) x[f] = a[f]; });
+    x.notes = [s(x.notes), a.notes ? '— merged from "' + a.name + '" (' + (a.source || 'lead') + '):\n' + a.notes : ''].filter(Boolean).join('\n');
+    x.mergedFrom = arr(x.mergedFrom).concat([a.id]);
+  }).then(function(){
+    try { if (typeof window._gcTombstone === 'function') window._gcTombstone('leads', a.id); } catch (e) {}
+    try { if (typeof window._gcxDel === 'function') window._gcxDel('leads', a.id); } catch (e) {}
+    return setLeads(function(list){ return list.filter(function(x){ return !(x && x.id === a.id); }); });
+  }).then(function(){
+    if (a.inboxId && b.inboxId) act({ id: a.inboxId, op: 'merged', into: b.inboxId });
+    else if (a.inboxId) act({ id: a.inboxId, op: 'dismissed', reason: 'merged into the lead "' + b.name + '"' });
+    emit('merged'); render(); badge(); return { ok: true };
+  });
+}
+function autoPO(){ var L = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', used = {}; projects().forEach(function(p){ if (p && p.autoPO) used[p.autoPO] = 1; }); var x, n = 0; do { x = L[Math.floor(Math.random() * 26)] + String(Math.floor(100 + Math.random() * 900)); } while (used[x] && n++ < 500); return x; }
+function planDoc(pid, d, leadId){ return { id: rid('DOC'), pid: pid, cat: 'Plans/Drawings', name: d.name || 'plan.pdf', size: d.size || 0, type: d.type || 'application/pdf', data: d.ref, ref: d.ref, hash: d.hash || '', uploaded: today(), by: myName(), fromLead: leadId || '', kind: d.kind || '', updatedAt: nowIso() }; }
+function addPlansToJob(pid, docs, leadId){
+  var want = arr(docs).filter(function(d){ return d && d.ref && d.kind !== 'email'; });
+  if (!want.length) return Promise.resolve(0);
+  var added = 0;
+  return setList('_setProjectDocs', function(list){
+    added = 0; var have = {}; list.forEach(function(x){ if (x && x.pid === pid) have[x.hash || x.ref || x.data] = 1; });
+    want.forEach(function(d){ if (!have[d.hash || d.ref]) { list.push(planDoc(pid, d, leadId)); have[d.hash || d.ref] = 1; added++; } });
+    return list;
+  }).then(function(){ return added; });
+}
+function createJob(id){
+  var l = findLead(id); if (!l) return Promise.reject(new Error('Lead not found.'));
+  if (isRs(l)) return Promise.reject(new Error('A RoofScout lead becomes a job from RoofScout ("Bring to CRM as a job").'));
+  return Promise.resolve(l).then(function(lead){
+    if (lead.pid && projects().some(function(p){ return p && p.id === lead.pid; })) return { ok: true, pid: lead.pid, existed: true, lead: lead };
+    var kind = kindOf(lead), pid = rid('PRJ');
+    var p = stamp({ id: pid, name: lead.name, client: lead.gc || lead.owner || lead.contactName || lead.name, clientPhone: lead.phone || '', clientEmail: lead.email || '', address: lead.address || '',
+      type: kind === 'Insurance' ? 'Insurance Claim' : kind === 'Residential' ? (lead.type || 'Roofing') : 'Commercial Reno', status: 'bidding', pm: lead.pm || '', contract: 0, estId: '',
+      startDate: '', endDate: '', scope: lead.scope || '', autoPO: autoPO(), subs: [], created: today(), createdAt: nowIso(), isInsurance: kind === 'Insurance',
+      leadId: lead.id, leadSource: srcOf(lead), bidDue: lead.bidDue || '', preBid: lead.preBid || '', bidNumber: lead.bidNumber || '', plansLinks: arr(lead.plansLinks),
+      notes: 'Bid job from the Lead Inbox (' + (lead.source || 'lead') + ').' + (lead.bidDue ? ' Bid due ' + fmtWhen(lead.bidDue) + '.' : '') + (lead.notes ? '\n' + lead.notes : '') });
+    return setList('_setProjects', function(list){ if (list.some(function(x){ return x && x.id === pid; })) return null; list.push(p); return list; })
+      .then(function(){ return addPlansToJob(pid, lead.docs, lead.id); })
+      .then(function(n){ return patchLead(lead.id, function(x){ x.pid = pid; x.inboxState = 'job'; }).then(function(){ return n; }); })
+      .then(function(n){ if (lead.inboxId) act({ id: lead.inboxId, op: 'job', pid: pid }); emit('job'); render(); badge(); return { ok: true, pid: pid, plans: n, lead: lead }; });
+  });
+}
+function openJob(pid){
+  try { if (typeof window._gcGoToTaskJob === 'function') window._gcGoToTaskJob(pid, ''); else if (window._setView) window._setView('projects'); } catch (e) {}
+  later(function(){ try { if (typeof window._gcOpenJobTab === 'function') window._gcOpenJobTab(pid, 'Plans & Bidding'); } catch (e) {} }, 900);
+}
+
+/* ── the bid portal: every inbox item is a DRAFT there (server side); an admin publishes it ──
+   state: published / draft / queued (the portal is not set up yet) / removed (deleted in the portal) / '' */
+function portalOf(l){ var it = itemOf(l); return (it && it.portal) || null; }
+function publish(id){
+  if (!isAdmin()) return Promise.reject(new Error('Only an owner or admin publishes to the bid portal.'));
+  var l = findLead(id); if (!l || !l.inboxId) return Promise.reject(new Error('Only a lead from the Lead Inbox can go to the bid portal.'));
+  return api('POST', 'act=1', { id: l.inboxId, op: 'publish' }).then(function(r){
+    S.items.forEach(function(x){ if (x && x.id === l.inboxId) { x.portal = Object.assign({}, x.portal || {}, { jobId: r.jobId, state: 'published', publishedAt: nowIso() }); if (r.item && r.item.rev) x.rev = r.item.rev; } });
+    patchLead(l.id, function(x){ x.bidPortalJob = r.jobId; x.bidPortalPublishedAt = nowIso(); x.bidPortalPublishedBy = myName(); });
+    emit('published'); render();
+    return r;
+  });
+}
+/* admins: a toast for every new bid opportunity this computer has not shown yet (one per check, never repeated) */
+var alertLog = [];
+function alertNew(){
+  if (!isAdmin()) { alertLog.push({ at: nowIso(), skipped: 'not an admin' }); return; }
+  /* every admin computer shows it once (not only the first one to import): recent items this computer has not shown */
+  var seen = lsGet(K_SEEN, null), win = (seen ? 7 : 1) * 86400000;
+  var fresh = S.items.filter(function(x){ return x && !x.stub && (x.status === 'new' || x.status === 'imported') && Date.now() - Date.parse(x.receivedAt || 0) < win && !tomb('leads', leadIdOf(x)); });
+  if (!seen) seen = { ids: [] };
+  var known = {}; arr(seen.ids).forEach(function(id){ known[id] = 1; });
+  var add = fresh.filter(function(x){ return !known[x.id]; });
+  lsSet(K_SEEN, { at: nowIso(), ids: arr(seen.ids).concat(add.map(function(x){ return x.id; })).slice(-400) });
+  alertLog.push({ at: nowIso(), fresh: fresh.length, shown: add.length });
+  if (!add.length) return;
+  var soon = add.filter(function(x){ var n = daysLeft(x.bidDue); return n != null && n >= 0 && n <= 3; }).length;
+  var needPm = add.filter(function(x){ return /commercial|insurance/i.test(x.type); }).length;
+  var msg = '📥 ' + add.length + ' new bid opportunit' + (add.length === 1 ? 'y' : 'ies') + (soon ? ' · ' + soon + ' due within 3 days' : '') + (needPm ? ' · ' + needPm + ' commercial/insurance to assign' : '');
+  alertLog[alertLog.length - 1].text = msg;
+  toast(msg, false,
+    { label: 'Open', run: function(){ try { if (window._setView) window._setView('leads'); } catch (e) {} } });
+  emit('alert');
+}
+
+/* ── files: open, drop, and "open in takeoff" (Estimate Builder) ─────────────── */
+function isPlanFile(d){ return /pdf|image\//i.test(s(d.type)) || /\.(pdf|png|jpe?g)$/i.test(s(d.name)); }
+function fileOf(ref, name, type){
+  if (typeof window._gcFileBlob !== 'function') return Promise.reject(new Error('file storage is not on this page'));
+  return Promise.resolve(window._gcFileBlob(ref)).then(function(b){ return new File([b], name || 'plan.pdf', { type: type || b.type || 'application/pdf' }); });
+}
+function waitFor(test, ms){ return new Promise(function(res){ var t0 = Date.now(); (function go(){ var v = null; try { v = test(); } catch (e) {} if (v) return res(v); if (Date.now() - t0 > ms) return res(null); later(go, 150); })(); }); }
+function openTakeoff(ref, name, type){
+  var f = { ref: ref, name: name, type: type };
+  if (typeof window._gcEBOpenPlan === 'function') { try { window._gcEBOpenPlan(f); return Promise.resolve(true); } catch (e) {} }
+  /* the Estimate Builder's plan takeoff (patch EB) is not on this build: hand the file over by download */
+  if (!window.__GC_PATCH_EB__ && !(window._gcEBCalc && window._gcEBCalc.open)) {
+    try { if (typeof window._gcDownloadRef === 'function') window._gcDownloadRef(ref, name); } catch (e) {}
+    toast('The plan was downloaded. In Estimates → 📊 Estimate Builder → Calculators → Takeoff from plans, press "Open plan" and pick it.');
+    return Promise.resolve(false);
+  }
+  toast('📐 Opening the plan in the Estimate Builder takeoff…');
+  return fileOf(ref, name, type).then(function(file){
+    try { if (window._setView) window._setView('estimates'); } catch (e) {}
+    return waitFor(function(){ return window.gcEstSubtabs && window.gcEstSubtabs.show; }, 6000).then(function(ok){
+      if (ok) { try { window.gcEstSubtabs.show('builder'); } catch (e) {} }
+      return waitFor(function(){ return typeof window.sw === 'function' && document.querySelector('#gc-est-wrap #tab-calcs'); }, 8000);
+    }).then(function(ok){
+      if (ok) { try { var tabs = document.querySelectorAll('#gc-est-wrap .tab'); var t = Array.prototype.find.call(tabs, function(x){ return /calc/i.test(x.textContent || ''); }) || tabs[2]; window.sw('calcs', t); } catch (e) {} }
+      return waitFor(function(){ return window._gcEBCalc && window._gcEBCalc.open; }, 8000);
+    }).then(function(ok){
+      if (!ok) throw new Error('no takeoff');
+      return new Promise(function(res){
+        window._gcEBCalc.open('to', function(box){
+          try { var inp = box.querySelector('#to-file') || document.getElementById('to-file'); var dt = new DataTransfer(); dt.items.add(file); inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true })); res(true); }
+          catch (e) { res(false); }
+        });
+      });
+    });
+  }).catch(function(err){
+    warn('takeoff: ' + (err && err.message || err));
+    try { if (typeof window._gcDownloadRef === 'function') window._gcDownloadRef(ref, name); } catch (e) {}
+    toast('The plan was downloaded. In Estimates → 📊 Estimate Builder → Calculators → Takeoff from plans, press "Open plan" and pick it.');
+    return false;
+  });
+}
+function storeDropped(files){
+  if (typeof window._gcStoreFile !== 'function') return Promise.reject(new Error('file storage is not on this page'));
+  var out = [];
+  return Array.prototype.reduce.call(files, function(p, f){ return p.then(function(){ return window._gcStoreFile(f, { kind: 'doc', name: f.name }).then(function(r){ if (r && r.ref) out.push({ ref: r.ref, name: r.name || f.name, type: r.type || f.type, size: r.size || f.size, hash: r.hash || '', kind: /addend/i.test(f.name) ? 'addendum' : 'plans', addedBy: myName(), addedAt: nowIso() }); }); }); }, Promise.resolve())
+    .then(function(){ return out; });
+}
+function dropOnLead(id, files){
+  return storeDropped(files).then(function(docs){
+    if (!docs.length) return 0;
+    return patchLead(id, function(x){ x.docs = arr(x.docs).concat(docs); }).then(function(l){ if (l && l.pid) return addPlansToJob(l.pid, docs, l.id); }).then(function(){ toast('📎 ' + docs.length + ' file' + (docs.length === 1 ? '' : 's') + ' saved on the lead'); render(); return docs.length; });
+  });
+}
+function dropOnJob(pid, files){
+  return storeDropped(files).then(function(docs){ return addPlansToJob(pid, docs, ''); }).then(function(n){ toast('📎 ' + n + ' plan file' + (n === 1 ? '' : 's') + ' added to Plans & Bidding'); later(mountPlans, 300); return n; });
+}
+
+/* ── look ─────────────────────────────────────────────────────────────────── */
+var CSS = '#gc-ldi,#gc-ldi *,#gc-ldi-pb,#gc-ldi-pb *{box-sizing:border-box}#gc-ldi .ttl,#gc-ldi .sub,#gc-ldi .note,#gc-ldi .rem,#gc-ldi .due{overflow-wrap:anywhere}'
+  + '#gc-ldi{max-width:100%;min-width:0;margin:0 0 14px;border:1px solid #d9d4ee;border-radius:12px;background:#fbfaff;color:#1b1640;font-family:inherit;overflow:hidden}'
+  + '#gc-ldi .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:' + NAVY + ';color:#fff}'
+  + '#gc-ldi .hd b{font-size:15px;letter-spacing:.2px}#gc-ldi .hd small{min-width:0;overflow-wrap:anywhere}#gc-ldi .cnt{background:' + GOLD + ';color:#1b1640;border-radius:999px;padding:1px 9px;font-weight:800;font-size:12px}'
+  + '#gc-ldi .hd .sp{flex:1}#gc-ldi .hd small{opacity:.8;font-size:11px}'
+  + '#gc-ldi button{font-family:inherit;cursor:pointer}'
+  + '#gc-ldi .hb{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:5px 10px;font-size:12px;font-weight:700;min-height:32px}'
+  + '#gc-ldi .fl{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid #e7e3f5;background:#f3f1fb}'
+  + '#gc-ldi .fl select{min-width:0;flex:1 1 120px;border:1px solid #cfc8ea;border-radius:7px;padding:5px 6px;font-size:12px;background:#fff;color:#1b1640;min-height:32px;max-width:100%}'
+  + '#gc-ldi .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:10px;padding:10px 12px}'
+  + '#gc-ldi .card{background:#fff;border:1px solid #e2ddf3;border-left:4px solid ' + NAVY + ';border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:6px;min-width:0}'
+  + '#gc-ldi .card.hot{border-left-color:#dc2626}#gc-ldi .card.warm{border-left-color:' + GOLD + '}'
+  + '#gc-ldi .tags{display:flex;gap:4px;flex-wrap:wrap;align-items:center}'
+  + '#gc-ldi .tg{font-size:10.5px;font-weight:800;border-radius:5px;padding:2px 6px;max-width:100%;overflow-wrap:anywhere}'
+  + '#gc-ldi .t-src{background:#ece9fb;color:' + NAVY + '}#gc-ldi .t-Commercial{background:#e0f2fe;color:#075985}#gc-ldi .t-Insurance{background:#fee2e2;color:#991b1b}'
+  + '#gc-ldi .t-Residential{background:#dcfce7;color:#166534}#gc-ldi .t-Government{background:#f3e8ff;color:#6b21a8}#gc-ldi .t-flag{background:' + GOLD + ';color:#1b1640}#gc-ldi .t-also{background:#f1f5f9;color:#334155}'
+  + '#gc-ldi .ttl{font-weight:800;font-size:14px;line-height:1.25;word-break:break-word}#gc-ldi .sub{font-size:12px;color:#4b4670;word-break:break-word}'
+  + '#gc-ldi .due{font-size:12.5px;font-weight:800}#gc-ldi .due.hot{color:#b91c1c}#gc-ldi .due.warm{color:#a16207}#gc-ldi .due.ok{color:#166534}#gc-ldi .due.past,#gc-ldi .due.none{color:#6b7280}'
+  + '#gc-ldi .docs{display:flex;flex-wrap:wrap;gap:4px}#gc-ldi .docs a,#gc-ldi .docs button{font-size:11.5px;border:1px solid #d9d4ee;background:#f8f7fd;color:' + NAVY + ';border-radius:6px;padding:3px 7px;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+  + '#gc-ldi .note{font-size:11.5px;color:#57527a;background:#faf8ef;border-radius:6px;padding:4px 7px;white-space:pre-wrap;word-break:break-word}'
+  + '#gc-ldi .rem{font-size:11.5px;color:#7c2d12;background:#fff7ed;border-radius:6px;padding:4px 7px}'
+  + '#gc-ldi .acts{display:flex;gap:5px;flex-wrap:wrap;margin-top:2px}'
+  + '#gc-ldi .b{border:1px solid #cfc8ea;background:#fff;color:' + NAVY + ';border-radius:7px;padding:6px 9px;font-size:12px;font-weight:700;min-height:34px}'
+  + '#gc-ldi .b.pri{background:' + NAVY + ';color:#fff;border-color:' + NAVY + '}#gc-ldi .b.gold{background:' + GOLD + ';color:#1b1640;border-color:' + GOLD + '}#gc-ldi .b.no{color:#991b1b}'
+  + '#gc-ldi .drop{border:1.5px dashed #c9c1ea;border-radius:7px;padding:5px 7px;font-size:11px;color:#6b6591;text-align:center}#gc-ldi .drop.on{background:#efeafe;border-color:' + NAVY + '}'
+  + '#gc-ldi .empty{padding:16px 12px;font-size:13px;color:#4b4670}#gc-ldi .err{padding:6px 12px;font-size:12px;color:#991b1b;background:#fef2f2}'
+  + '#gc-ldi .info{padding:6px 12px;font-size:12px;color:#7c2d12;background:#fff7ed;overflow-wrap:anywhere}'
+  + '#gc-ldi .t-bp{background:#fff7ed;color:#9a3412}#gc-ldi .t-bp.on{background:#dcfce7;color:#166534}#gc-ldi .b.bp{background:#166534;color:#fff;border-color:#166534}'
+  + '.gc-ldi-badge{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:' + GOLD + ';color:#1b1640;font-size:11px;font-weight:800;text-align:center;padding:0 5px;margin-left:6px;vertical-align:middle}'
+  + '.gc-ldi-toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:' + NAVY + ';color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;z-index:2147483600;box-shadow:0 8px 30px rgba(0,0,0,.3);max-width:92vw;display:flex;gap:10px;align-items:center}'
+  + '.gc-ldi-toast button{background:' + GOLD + ';color:#1b1640;border:0;border-radius:7px;padding:6px 12px;font-weight:800;font-size:12px;min-height:32px;cursor:pointer;font-family:inherit}'
+  + '.gc-ldi-dlg .dh{display:flex;align-items:center;gap:8px}.gc-ldi-dlg .dh span{flex:1;min-width:0;overflow-wrap:anywhere}.gc-ldi-dlg .dh button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:7px;min-width:36px;min-height:36px;font-size:16px;cursor:pointer}'
+  + '.gc-ldi-ov{position:fixed;inset:0;background:rgba(10,8,30,.55);z-index:2147483500;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto;font-family:inherit}'
+  + '.gc-ldi-dlg{background:#fff;color:#1b1640;border-radius:12px;width:min(560px,100%);box-shadow:0 20px 60px rgba(0,0,0,.4);overflow:hidden}'
+  + '.gc-ldi-dlg .dh{background:' + NAVY + ';color:#fff;padding:12px 14px;font-weight:800;font-size:15px}.gc-ldi-dlg .db{padding:12px 14px;display:flex;flex-direction:column;gap:9px;font-size:13px}'
+  + '.gc-ldi-dlg label{font-size:12px;font-weight:700;color:#4b4670;display:flex;flex-direction:column;gap:4px}.gc-ldi-dlg select,.gc-ldi-dlg input,.gc-ldi-dlg textarea{border:1px solid #cfc8ea;border-radius:7px;padding:8px;font-size:14px;font-family:inherit;color:#1b1640;background:#fff;width:100%;box-sizing:border-box}'
+  + '.gc-ldi-dlg .df{display:flex;gap:8px;justify-content:flex-end;padding:10px 14px;border-top:1px solid #eee;flex-wrap:wrap}.gc-ldi-dlg .df button{border-radius:8px;padding:9px 14px;font-weight:800;font-size:13px;border:1px solid #cfc8ea;background:#fff;color:' + NAVY + ';cursor:pointer;min-height:40px}'
+  + '.gc-ldi-dlg .df .pri{background:' + NAVY + ';color:#fff;border-color:' + NAVY + '}.gc-ldi-dlg .mini{font-size:11.5px;color:#57527a}.gc-ldi-dlg .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+  + '.gc-ldi-dlg .src{border:1px solid #e7e3f5;border-radius:8px;padding:7px 9px;font-size:12px}'
+  + '#gc-ldi-pb{border:1px solid #d9d4ee;border-radius:10px;background:#fbfaff;color:#1b1640;padding:10px 12px;margin:0 0 12px;font-size:12.5px}#gc-ldi-pb b{color:' + NAVY + '}'
+  + '#gc-ldi-pb .r{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eeeaf8;flex-wrap:wrap}#gc-ldi-pb .r span{word-break:break-word;min-width:0}'
+  + '#gc-ldi-pb button,#gc-ldi-pb a.bt{border:1px solid #cfc8ea;background:#fff;color:' + NAVY + ';border-radius:7px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;min-height:32px;display:inline-flex;align-items:center}'
+  + '#gc-ldi-pb .drop{border:1.5px dashed #c9c1ea;border-radius:8px;padding:10px;text-align:center;margin-top:8px;color:#6b6591;cursor:pointer}#gc-ldi-pb .drop.on{background:#efeafe;border-color:' + NAVY + '}'
+  + '@media (max-width:480px){#gc-ldi .grid{grid-template-columns:1fr;padding:8px}#gc-ldi .fl select{flex:1 1 45%}#gc-ldi .hd small{flex-basis:100%}}';
+function ensureCss(){ if (document.getElementById('gc-ldi-css')) return; var st = document.createElement('style'); st.id = 'gc-ldi-css'; st.textContent = CSS; document.head.appendChild(st); }
+
+var SRC_LIST = ['BuildingConnected', 'PlanHub', 'A&B Planroom', 'RKA Planroom', 'GC direct', 'Government', 'RoofScout', 'Other'];
+function opt(v, l, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; }
+function docLinks(l){
+  var h = '';
+  arr(l.plansLinks).slice(0, 6).forEach(function(x){
+    var label = x.board === 'BuildingConnected' ? 'Open on BuildingConnected ↗' : x.board === 'PlanHub' ? 'Open on PlanHub ↗' : /Planroom/.test(x.board) ? 'Open on ' + x.board + ' ↗' : x.board === 'RoofScout' ? 'Open in RoofScout ↗' : (x.label || x.board || 'Link') + ' ↗';
+    h += '<a href="' + esc(x.url) + '" target="_blank" rel="noopener" title="' + esc(x.url) + '">' + esc(label) + '</a>';
+  });
+  arr(l.docs).slice(0, 8).forEach(function(d){
+    h += '<a href="' + esc(d.ref) + '" data-name="' + esc(d.name) + '" title="' + esc(d.name) + '">📄 ' + esc((d.addendum ? 'Add. ' : '') + d.name) + '</a>';
+    if (isPlanFile(d)) h += '<button data-a="takeoff" data-ref="' + esc(d.ref) + '" data-name="' + esc(d.name) + '" data-type="' + esc(d.type) + '" title="Open in the Estimate Builder\'s plan takeoff">📐 Takeoff</button>';
+  });
+  if (l.rawEmailRef) h += '<a href="' + esc(l.rawEmailRef) + '" data-name="bid e-mail.txt">✉ E-mail</a>';
+  return h;
+}
+function boardOnly(l){ return !arr(l.docs).length && arr(l.plansLinks).some(function(x){ return /BuildingConnected|PlanHub|Planroom/.test(x.board || ''); }); }
+function portalTag(l){
+  var p = portalOf(l), st = S.portal || {};
+  if (!l.inboxId) return '';
+  if (p && p.state === 'published') return '<span class="tg t-bp on">✓ On the bid portal</span>';
+  if (p && p.state === 'removed') return '<span class="tg t-bp">Bid-portal draft deleted</span>';
+  if ((p && p.state === 'queued') || st.ready === false) return '<span class="tg t-bp" title="' + esc(st.why || (p && p.why) || '') + '">Bid-portal draft waiting (portal not set up)</span>';
+  if (p && p.jobId) return '<span class="tg t-bp">Draft in the bid portal</span>';
+  return '';
+}
+function rsCard(l){
+  var admin = isAdmin();
+  return '<div class="card" data-id="' + esc(l.id) + '"><div class="tags"><span class="tg t-src">🏠 RoofScout</span><span class="tg t-' + kindOf(l) + '">' + kindOf(l) + '</span></div>'
+    + '<div class="ttl">' + esc(l.name) + '</div><div class="sub">' + esc(l.address || '') + '</div>'
+    + '<div class="sub">' + esc([l.roofType, l.areaSqft && Math.round(l.areaSqft).toLocaleString() + ' ft²', l.condition != null && l.condition !== '' && 'condition ' + l.condition + '/100', l.rsStage].filter(Boolean).join(' · ')) + '</div>'
+    + ((l.contact || l.company || l.phone) ? '<div class="sub">👤 ' + esc([l.contact, l.company, l.phone].filter(Boolean).join(' · ')) + '</div>' : '')
+    + (l.pm ? '<div class="sub">PM: <b>' + esc(l.pm) + '</b></div>' : '')
+    + '<div class="docs"><a href="' + esc(l.rsUrl || ('/roofscout/#lead=' + encodeURIComponent(l.rsLeadId || ''))) + '" target="_blank" rel="noopener">Open in RoofScout ↗</a></div>'
+    + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (l.pm ? 'Change PM' : 'Assign PM') + '</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
+}
+function card(l){
+  var admin = isAdmin();
+  if (isRs(l)) return rsCard(l);
+  var c = countdown(l.bidDue), k = kindOf(l), sg = suggestPm(l), rem = reminders().filter(function(x){ return x.leadId === l.id; })[0];
+  var where = [l.gc && 'GC: ' + l.gc, l.owner && l.owner !== l.gc && 'Owner: ' + l.owner, l.address || [l.city, l.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+  return '<div class="card ' + (c.cls === 'hot' ? 'hot' : c.cls === 'warm' ? 'warm' : '') + '" data-id="' + esc(l.id) + '">'
+    + '<div class="tags"><span class="tg t-src">' + esc(srcOf(l)) + '</span><span class="tg t-' + k + '">' + k + '</span>' + portalTag(l)
+    + (l.inboxFlag ? '<span class="tg t-flag">' + esc(l.inboxFlag) + '</span>' : '') + (arr(l.alsoOn).length ? '<span class="tg t-also">also on ' + esc(l.alsoOn.join(', ')) + '</span>' : '')
+    + (l.needsReview ? '<span class="tg t-flag">needs a look</span>' : '') + '</div>'
+    + '<div class="ttl">' + esc(l.name) + '</div>' + (where ? '<div class="sub">' + esc(where) + '</div>' : '')
+    + '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + '</div>'
+    + (l.preBid ? '<div class="sub">Pre-bid: ' + esc(fmtWhen(l.preBid)) + '</div>' : '')
+    + (arr(l.trades).length || l.bidNumber ? '<div class="sub">' + esc([arr(l.trades).join(', '), l.bidNumber && 'Bid # ' + l.bidNumber].filter(Boolean).join(' · ')) + '</div>' : '')
+    + (l.contactName || l.phone || l.email ? '<div class="sub">👤 ' + esc([l.contactName, l.phone, l.email].filter(Boolean).join(' · ')) + '</div>' : '')
+    + '<div class="docs">' + docLinks(l) + '</div>'
+    + (boardOnly(l) ? '<div class="note">Plans are behind the board\'s sign-in, so they can\'t be fetched automatically. Open the board and download them, then drop them below — or forward the plans e-mail to bids@grayco-cs.com.</div>' : '')
+    + (arr(l.matchNotes).length ? '<div class="note">' + esc(arr(l.matchNotes).join('\n')) + '</div>' : '')
+    + (l.pm ? '<div class="sub">PM: <b>' + esc(l.pm) + '</b>' + (l.pid ? ' · bid job created' : '') + '</div>' : (sg.name ? '<div class="sub">Suggested PM: ' + esc(sg.why) + '</div>' : ''))
+    + (rem ? '<div class="rem">⏰ To-do for ' + esc(rem.pm) + ': ' + esc(rem.title) + '</div>' : '')
+    + '<div class="drop" data-drop="lead">Drop plan files here</div>'
+    + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (l.pm ? 'Change PM' : 'Assign PM') + '</button>' : '')
+    + (l.pid ? '<button class="b pri" data-a="openjob">Open bid job</button>' : '<button class="b pri" data-a="job">Create bid job</button>')
+    + (admin && l.inboxId && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
+    + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
+}
+function render(){
+  var root = document.getElementById('gc-ldi'); if (!root || !root.isConnected) return;
+  var list = filtered(), n = newCount(), w = S.watch && S.watch.lastRun;
+  var h = '<div class="hd"><b>📥 Lead Inbox</b>' + (n ? '<span class="cnt">' + n + ' new</span>' : '') + '<span class="sp"></span>'
+    + '<small>' + (busy ? 'Checking…' : S.at ? 'Checked ' + new Date(S.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Not checked yet') + (w ? ' · public bids looked at ' + new Date(w.at).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '') + '</small>'
+    + '<button class="hb" data-a="refresh">↻ Check now</button>' + (isAdmin() ? '<button class="hb" data-a="settings" title="Bid sources and keywords">⚙</button>' : '')
+    + '<button class="hb" data-a="fold">' + (UI.open ? '▴' : '▾') + '</button></div>';
+  if (lastErr) h += '<div class="err">' + esc(lastErr) + '</div>';
+  if (isAdmin() && S.portal && S.portal.ready === false) h += '<div class="info">Bid portal: ' + esc(S.portal.why || 'not set up yet') + (S.portal.queued ? ' — ' + S.portal.queued + ' draft' + (S.portal.queued === 1 ? '' : 's') + ' waiting; they are created there within the hour once it is set up.' : '') + '</div>';
+  if (UI.open) {
+    h += '<div class="fl"><select data-f="show">' + opt('new', 'New', UI.show) + opt('open', 'All open', UI.show) + opt('assigned', 'Assigned', UI.show) + '</select>'
+      + '<select data-f="src">' + opt('', 'All sources', UI.src) + SRC_LIST.map(function(x){ return opt(x, x, UI.src); }).join('') + '</select>'
+      + '<select data-f="type">' + opt('', 'All types', UI.type) + ['Commercial', 'Insurance', 'Residential', 'Government'].map(function(x){ return opt(x, x, UI.type); }).join('') + '</select>'
+      + '<select data-f="due">' + opt('', 'Any due date', UI.due) + opt('3', 'Due in 3 days', UI.due) + opt('7', 'Due in 7 days', UI.due) + opt('14', 'Due in 14 days', UI.due) + opt('past', 'Past due', UI.due) + opt('none', 'No date', UI.due) + '</select></div>';
+    h += list.length ? '<div class="grid">' + list.map(card).join('') + '</div>'
+      : '<div class="empty">' + (UI.show === 'new' ? 'No new leads right now. New ones arrive from bids@grayco-cs.com, the public bid sites and RoofScout — they show up here when the CRM is opened, and admins get an e-mail.' : 'Nothing matches these filters.') + '</div>';
+  }
+  root.innerHTML = h;
+}
+var navEls = { leads: [], todo: [] };
+function findNav(re){
+  var cand = document.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button');
+  var hits = [];
+  for (var i = 0; i < cand.length; i++) {
+    var el = cand[i];
+    if (el.closest('#gc-ldi')) continue;
+    var t = s(el.textContent).replace(/\s*\d+\+?$/, '').replace(/^[^A-Za-z]+/, '');
+    if (re.test(t)) hits.push(el);
+  }
+  return hits;
+}
+function paint(list, n, title){
+  list.forEach(function(el){
+    var b = el.querySelector('.gc-ldi-badge');
+    if (!n) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('span'); b.className = 'gc-ldi-badge'; el.appendChild(b); }
+    var v = n > 99 ? '99+' : String(n);
+    if (b.textContent !== v) b.textContent = v;
+    b.title = title;
+  });
+}
+function badge(){
+  var n = newCount();
+  if (!navEls.leads.length || navEls.leads.some(function(el){ return !el.isConnected; })) navEls.leads = findNav(/^Leads$/);
+  paint(navEls.leads, n, n + ' new lead' + (n === 1 ? '' : 's') + ' in the Lead Inbox');
+  /* To-Do: patch TD counts the Lead Inbox in its own badge; without it, the admins' unassigned leads show here */
+  if (window.__GC_PATCH_TD__) return;
+  if (!navEls.todo.length || navEls.todo.some(function(el){ return !el.isConnected; })) navEls.todo = findNav(/^To-?Do\b/i);
+  var m = isAdmin() ? assignList().length : 0;
+  paint(navEls.todo, m, m + ' lead' + (m === 1 ? '' : 's') + ' waiting for a PM (Lead Inbox)');
+}
+
+/* ── dialogs ──────────────────────────────────────────────────────────────── */
+function dialog(title, body, buttons){
+  var ov = document.createElement('div'); ov.className = 'gc-ldi-ov';
+  /* NAV's back rule: a close control in the header, on screen (the phone Back / ‹ Back closes it too) */
+  ov.innerHTML = '<div class="gc-ldi-dlg" role="dialog" aria-label="' + esc(title) + '"><div class="dh"><span>' + esc(title) + '</span><button type="button" data-x aria-label="Close">✕</button></div><div class="db">' + body + '</div><div class="df"></div></div>';
+  var df = ov.querySelector('.df'), close = function(){ try { ov.remove(); } catch (e) {} window.__GC_FORM_OPEN__ = false; document.removeEventListener('keydown', onKey, true); };
+  var onKey = function(e){ if (e.key === 'Escape' && ov.isConnected) { e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  ov.querySelector('[data-x]').onclick = close;
+  (buttons || []).concat([{ label: 'Cancel' }]).forEach(function(b){
+    var el = document.createElement('button'); el.textContent = b.label; if (b.pri) el.className = 'pri';
+    el.onclick = function(){ if (!b.run) return close(); var r = b.run(ov); if (r === false) return; Promise.resolve(r).then(close, function(e){ toast(s(e && e.message) || 'Could not do that.', true); }); };
+    df.appendChild(el);
+  });
+  ov.addEventListener('click', function(e){ if (e.target === ov) close(); });
+  document.body.appendChild(ov); window.__GC_FORM_OPEN__ = true;
+  return ov;
+}
+function dlgAssign(id){
+  var l = findLead(id); if (!l) return;
+  var sg = suggestPm(l);
+  dialog('Assign a PM — ' + l.name,
+    '<label>Project manager<select id="ldi-pm">' + opt('', 'Pick…', '') + pmNames().map(function(n){ return opt(n, n, sg.name === n && !l.pm ? n : l.pm); }).join('') + '</select></label>'
+    + (sg.why ? '<div class="mini">Suggested: ' + esc(sg.why) + '. You choose — nothing is assigned automatically.</div>' : '<div class="mini">You choose — nothing is assigned automatically.</div>')
+    + '<div class="mini">The PM gets a to-do 3 days and 1 day before the bid is due.</div>',
+    [{ label: 'Assign', pri: true, run: function(ov){ var pm = ov.querySelector('#ldi-pm').value; if (!pm) { toast('Pick a PM first.', true); return false; } return assign(id, pm).then(function(){ toast('Assigned to ' + pm); }); } }]);
+}
+var REASONS = ['Too far away', 'Not our trade / scope', 'Too small', 'Too big / bonding', 'Bid date too soon', 'Already bidding it through another GC', 'Other'];
+function dlgDismiss(id){
+  var l = findLead(id); if (!l) return;
+  dialog('Not interested — ' + l.name,
+    '<label>Why?<select id="ldi-why">' + REASONS.map(function(r){ return opt(r, r, ''); }).join('') + '</select></label><label>Note (optional)<input id="ldi-note" maxlength="200" placeholder="e.g. owner only wants union shops"></label>'
+    + '<div class="mini">It leaves the inbox and the Lead Pipeline, and the same project is never brought back in — not from another board, an addendum or the public bid watcher.</div>',
+    [{ label: 'Not interested', pri: true, run: function(ov){ var r = ov.querySelector('#ldi-why').value + (s(ov.querySelector('#ldi-note').value) ? ': ' + s(ov.querySelector('#ldi-note').value) : ''); return dismiss(id, r).then(function(){ toast('Marked Not interested'); }); } }]);
+}
+function dlgMerge(id){
+  var l = findLead(id); if (!l) return;
+  var others = leads().filter(function(x){ return x && x.id !== l.id && x.stage !== 'Won' && x.stage !== 'Lost'; }).slice(0, 400);
+  dialog('Merge "' + l.name + '" with…',
+    '<label>Search<input id="ldi-q" placeholder="name, GC, city…"></label><label>Keep this lead<select id="ldi-into" size="8" style="min-height:180px"></select></label>'
+    + '<div class="mini">"' + esc(l.name) + '" goes into the lead you pick: its plans, links, sources and notes move over, and it is removed.</div>',
+    [{ label: 'Merge', pri: true, run: function(ov){ var into = ov.querySelector('#ldi-into').value; if (!into) { toast('Pick the lead to keep.', true); return false; } return merge(id, into).then(function(){ toast('Merged'); }); } }]);
+  var fill = function(){
+    var q = low(document.getElementById('ldi-q').value), sel = document.getElementById('ldi-into');
+    var tl = low(l.name).split(/\W+/).filter(function(w){ return w.length > 3; });
+    var sc = function(x){ var t = low(x.name + ' ' + (x.gc || '') + ' ' + (x.address || '')); return tl.filter(function(w){ return t.indexOf(w) >= 0; }).length; };
+    sel.innerHTML = others.filter(function(x){ return !q || low([x.name, x.gc, x.owner, x.address, x.source].join(' ')).indexOf(q) >= 0; })
+      .sort(function(a, b){ return sc(b) - sc(a); }).slice(0, 80).map(function(x){ return opt(x.id, x.name + ' — ' + (x.source || 'lead') + (x.bidDue ? ' · due ' + x.bidDue.slice(0, 10) : ''), ''); }).join('');
+  };
+  fill(); document.getElementById('ldi-q').oninput = fill;
+}
+function dlgJob(id){
+  var l = findLead(id); if (!l) return;
+  if (l.pid) return openJob(l.pid);
+  var n = arr(l.docs).length;
+  dialog('Create a bid job — ' + l.name,
+    '<div>Makes a job at <b>Bidding</b> on the Projects board' + (l.pm ? ' for <b>' + esc(l.pm) + '</b>' : '') + '.</div>'
+    + '<div>' + (n ? '<b>' + n + '</b> saved plan/spec file' + (n === 1 ? '' : 's') + ' go to the job\'s <b>Plans &amp; Bidding</b> tab, ready for the takeoff.' : 'No plan files are saved on this lead yet — you can drop them on the job\'s Plans &amp; Bidding tab later.') + '</div>'
+    + (arr(l.plansLinks).length ? '<div class="mini">The board links (' + esc(arr(l.plansLinks).map(function(x){ return x.board || x.label; }).filter(Boolean).slice(0, 3).join(', ')) + ') go on the job too.</div>' : ''),
+    [{ label: 'Create bid job', pri: true, run: function(){ return createJob(id).then(function(r){ toast('Bid job created' + (r.plans ? ' with ' + r.plans + ' plan file' + (r.plans === 1 ? '' : 's') : '') + '.'); later(function(){ openJob(r.pid); }, 300); }); } }]);
+}
+function dlgPublish(id){
+  var l = findLead(id); if (!l) return;
+  var p = portalOf(l), n = arr(l.docs).filter(function(d){ return d && d.kind !== 'email'; }).length;
+  dialog('Publish to the bid portal — ' + l.name,
+    '<div>The draft bid job goes live on <b>bids.grayco-cs.com</b>: approved subcontractors see it and can bid.</div>'
+    + '<div class="mini">' + esc([l.address || [l.city, l.state].filter(Boolean).join(', '), l.bidDue ? 'bid due ' + fmtWhen(l.bidDue) : 'no bid date yet (the portal needs one)', n ? n + ' plan/spec file' + (n === 1 ? '' : 's') : 'no plan files', arr(l.plansLinks).length ? 'source link kept' : ''].filter(Boolean).join(' · ')) + '</div>'
+    + (p && p.state === 'queued' ? '<div class="mini">The bid portal is not set up yet: the draft is waiting there, so publishing will not work until it is.</div>' : '')
+    + '<div class="mini">To change the title, scope or plans first, open the job in the bid portal (Sub Portal tab) — it is there as a draft.</div>',
+    [{ label: 'Publish to bid portal', pri: true, run: function(){ return publish(id).then(function(r){ toast(r && r.already ? 'Already on the bid portal.' : 'Published to the bid portal.'); }); } }]);
+}
+function dlgSettings(){
+  if (!isAdmin()) return;
+  var st = S.settings || {}, wsrc = (S.watch && S.watch.sources) || {};
+  var ov = dialog('Lead Inbox — sources and keywords', '<div class="mini">Loading…</div>', [
+    { label: 'Check public bids now', run: function(){ return api('POST', 'watch=1', {}).then(function(r){ toast(r && r.started ? 'The public bid watcher is running — new bids show here in a few minutes (press ↻).' : 'Public bids checked: ' + ((r && r.added) || 0) + ' new.'); later(function(){ pull(true); }, 4000); }); } },
+    { label: 'Save', pri: true, run: function(ov){
+      var words = function(sel){ return s(ov.querySelector(sel).value).split(/[,\n]+/).map(function(x){ return low(x); }).filter(Boolean); };
+      var src = {}; Array.prototype.forEach.call(ov.querySelectorAll('[data-src]'), function(b){ var id = b.getAttribute('data-src'); src[id] = { on: b.checked, url: s((ov.querySelector('[data-url="' + id + '"]') || {}).value) }; });
+      return api('POST', 'settings=1', { keywords: words('#ldi-kw'), exclude: words('#ldi-ex'), sources: src }).then(function(r){ S.settings = r.settings; toast('Saved'); });
+    } }]);
+  var body = ov.querySelector('.db');
+  api('GET', 'ping=1').catch(function(){ return {}; }).then(function(p){
+    var srcs = window.__GC_LDI_SOURCES__ || [];
+    var line = function(id){ var w = wsrc[id]; if (!w) return '<span class="mini">not looked at yet</span>'; return '<span class="mini">' + esc(new Date(w.at).toLocaleString()) + ' · ' + (w.why ? esc(w.why) : (w.parsed + ' bids read · ' + w.matched + ' matched · ' + (w.added || 0) + ' new')) + '</span>'; };
+    var al = S.alerts || {};
+    body.innerHTML = '<div class="src"><b>Set-up</b><br>' + [['E-mail signature', p.signed], ['Resend API', p.resendApi], ['Claude', p.ai], ['Database', p.database], ['Bid portal', p.bidPortal], ['Admin e-mail alerts', p.adminAlerts], ['Phone push', p.phonePush], ['BuildingConnected API', p.buildingConnectedApi]].map(function(x){ return (x[1] ? '✅ ' : '⬜ ') + x[0]; }).join(' · ')
+      + '<div class="mini">Forward bid e-mails to <b>bids@grayco-cs.com</b>. Steps: docs/LEAD-INBOX.md.</div>'
+      + '<div class="mini">Admin alerts: bids due within ' + esc(al.soonHours || 72) + ' h are e-mailed at once, the rest in one e-mail an hour' + (al.pending ? ' (' + al.pending + ' waiting)' : '') + (al.last ? '. Last: ' + esc(new Date(al.last.at).toLocaleString()) + ' — ' + (al.last.ok ? al.last.n + ' sent to ' + al.last.to + ' admin' + (al.last.to === 1 ? '' : 's') : esc(al.last.why || 'not sent')) : '') + '.</div></div>'
+      + '<label>Keywords (a public bid must mention one)<textarea id="ldi-kw" rows="3">' + esc(arr(st.keywords).join(', ')) + '</textarea></label>'
+      + '<label>Leave out bids that mention<textarea id="ldi-ex" rows="2">' + esc(arr(st.exclude).join(', ')) + '</textarea></label>'
+      + '<div><b>Public bid sites read automatically</b> (weekdays, every 3 hours)</div>'
+      + srcs.filter(function(x){ return x.auto; }).map(function(x){ var cfg = (st.sources || {})[x.id] || {}; return '<div class="src"><div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-src="' + esc(x.id) + '"' + (cfg.on === false ? '' : ' checked') + ' style="width:auto"> ' + esc(x.name) + '</label></div>'
+        + '<input data-url="' + esc(x.id) + '" value="' + esc(cfg.url || '') + '" placeholder="' + esc(x.url) + '" style="font-size:12px;margin-top:4px">' + line(x.id) + '</div>'; }).join('')
+      + '<div><b>Sign up for e-mail alerts to bids@grayco-cs.com</b> (these sites need a login or ask not to be read by robots)</div>'
+      + srcs.filter(function(x){ return !x.auto; }).map(function(x){ return '<div class="src"><b>' + esc(x.name) + '</b><div class="mini">' + esc(x.how) + '</div></div>'; }).join('')
+      + (arr(S.notices).length ? '<div><b>Messages from Google to bids@</b></div>' + S.notices.slice(-5).map(function(n){ return '<div class="src"><b>' + esc(n.subject) + '</b><div class="mini" style="white-space:pre-wrap">' + esc(s(n.text).slice(0, 600)) + '</div></div>'; }).join('') : '');
+  });
+}
+
+/* the public sources (names + how to sign up), the same list bid-watch.js uses */
+window.__GC_LDI_SOURCES__ = [
+  { id: 'shelby-county', auto: true, name: 'Shelby County Government — bid postings', url: 'https://bids.shelbycountytn.gov/' },
+  { id: 'city-of-memphis', auto: true, name: 'City of Memphis — RFPs & RFQs', url: 'https://www.memphistn.gov/business/rfps-rfqs/' },
+  { id: 'mscs', auto: true, name: 'Memphis-Shelby County Schools — bids', url: 'https://www.scsk12.org/procurement/bids' },
+  { id: 'mscaa', auto: true, name: 'Memphis-Shelby County Airport Authority — RFPs/RFQs', url: 'https://flymemphis.com/rfps-rfqs/' },
+  { id: 'desoto-county', auto: true, name: 'DeSoto County MS — bid postings (RSS)', url: 'https://www.desotocountyms.gov/RSSFeed.aspx?ModID=76&CID=All-bids.xml' },
+  { id: 'tn-stream', auto: true, name: 'State of Tennessee — STREAM construction bid list', url: 'https://www.tn.gov/generalservices/real-estate-/redirect-stream/contractors/construction-bid-list.html' },
+  { id: 'tn-cpo', auto: true, name: 'State of Tennessee — CPO invitations to bid', url: 'https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/invitations-to-bid--itb-.html' },
+  { id: 'arkansas-osp', auto: true, name: 'State of Arkansas — current solicitations', url: 'https://www.arkansas.gov/dfa/procurement/bids/index.php' },
+  { id: 'bc', auto: false, name: 'BuildingConnected', how: 'Profile → Notifications: invitations and addenda by e-mail to bids@grayco-cs.com (or add bids@ as a team member e-mail). Optional API: see docs/LEAD-INBOX.md.' },
+  { id: 'ph', auto: false, name: 'PlanHub', how: 'Profile → notification settings: project invitations / new projects in your trades and area by e-mail to bids@grayco-cs.com.' },
+  { id: 'ab', auto: false, name: 'A&B Planroom (aandbplanroom.com)', how: 'Sign in → your profile / notification settings: new-project and addendum e-mails to bids@grayco-cs.com.' },
+  { id: 'rka', auto: false, name: 'RKA Planroom (rkaplanroom.com)', how: 'Sign in → your profile / notification settings: new-project and addendum e-mails to bids@grayco-cs.com.' },
+  { id: 'mlgw', auto: false, name: 'MLGW', how: 'Register in MLGW\'s Bid Notification System (services) and the iSupplier Portal (materials) with bids@grayco-cs.com.' },
+  { id: 'central', auto: false, name: 'Southaven / Olive Branch / DeSoto County (Central Bidding)', how: 'Free Central Bidding vendor account; follow those agencies; notification e-mail bids@grayco-cs.com.' },
+  { id: 'mscs-iw', auto: false, name: 'MSCS e-bids (Ion Wave)', how: 'Register free at mscsprocurementservices.ionwave.net with the construction / roofing categories and bids@grayco-cs.com.' },
+  { id: 'memphis-sp', auto: false, name: 'City of Memphis supplier portal', how: 'Become a Supplier → commodity codes for construction / roofing; e-mail bids@grayco-cs.com.' },
+  { id: 'mscaa-og', auto: false, name: 'MSCAA on OpenGov', how: 'Follow the Memphis-Shelby County Airport Authority on OpenGov Procurement; e-mail bids@grayco-cs.com.' },
+  { id: 'tn-edison', auto: false, name: 'Tennessee Edison', how: 'Register and pick the UNSPSC codes for roofing / building repair; alerts to bids@grayco-cs.com.' },
+  { id: 'arbuy', auto: false, name: 'Arkansas ARBuy', how: 'Register free with the NIGP codes for roofing / construction; e-mail bids@grayco-cs.com.' },
+  { id: 'magic', auto: false, name: 'Mississippi MAGIC', how: 'Register free as a supplier with the construction / roofing codes; e-mail bids@grayco-cs.com.' }
+];
+
+/* ── events (one listener on the inbox; nothing per card) ─────────────────── */
+function onClick(e){
+  var b = e.target.closest('[data-a]'); if (!b) return;
+  var a = b.getAttribute('data-a'), cardEl = b.closest('.card'), id = cardEl && cardEl.getAttribute('data-id');
+  e.preventDefault(); e.stopPropagation();
+  if (a === 'refresh') return pull(true);
+  if (a === 'fold') { UI.open = !UI.open; lsSet(K_UI, UI); return render(); }
+  if (a === 'settings') return dlgSettings();
+  if (a === 'takeoff') return openTakeoff(b.getAttribute('data-ref'), b.getAttribute('data-name'), b.getAttribute('data-type'));
+  if (a === 'assign') return dlgAssign(id);
+  if (a === 'dismiss') return dlgDismiss(id);
+  if (a === 'merge') return dlgMerge(id);
+  if (a === 'job') return dlgJob(id);
+  if (a === 'openjob') { var l = findLead(id); if (l && l.pid) openJob(l.pid); return; }
+  if (a === 'publish') return dlgPublish(id);
+}
+function onChange(e){ var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (!f) return; UI[f] = e.target.value; lsSet(K_UI, UI); render(); }
+function dropHandlers(root, onFiles){
+  root.addEventListener('dragover', function(e){ var d = e.target.closest && e.target.closest('.drop'); if (!d) return; e.preventDefault(); d.classList.add('on'); });
+  root.addEventListener('dragleave', function(e){ var d = e.target.closest && e.target.closest('.drop'); if (d) d.classList.remove('on'); });
+  root.addEventListener('drop', function(e){ var d = e.target.closest && e.target.closest('.drop'); if (!d) return; e.preventDefault(); d.classList.remove('on'); var fl = e.dataTransfer && e.dataTransfer.files; if (fl && fl.length) onFiles(d, fl); });
+}
+
+/* ── mounting: at the top of the Leads tab, and in a job's Plans & Bidding ───── */
+function leadsBar(){
+  var bs = document.querySelectorAll('button');
+  for (var i = 0; i < bs.length; i++) { if (s(bs[i].textContent) === 'Lead Pipeline') { var bar = bs[i].parentElement; if (bar && /Bid Board/.test(bar.textContent)) return bar; } }
+  return null;
+}
+var lastMountPull = 0;
+function mountInbox(){
+  var bar = leadsBar(), cur = document.getElementById('gc-ldi');
+  if (!bar) { if (cur && !cur.isConnected) cur = null; return; }
+  if (cur && cur.nextElementSibling === bar) return;
+  ensureCss();
+  if (!cur) {
+    cur = document.createElement('div'); cur.id = 'gc-ldi';
+    cur.addEventListener('click', onClick); cur.addEventListener('change', onChange);
+    dropHandlers(cur, function(d, fl){ var c = d.closest('.card'); var id = c && c.getAttribute('data-id'); if (!id) return; dropOnLead(id, fl).catch(function(e){ toast(s(e.message), true); }); });
+  }
+  bar.parentElement.insertBefore(cur, bar);
+  render(); readList('_setLeads').then(function(){ render(); badge(); });
+  if (Date.now() - lastMountPull > 60000) { lastMountPull = Date.now(); pull(false); }
+}
+function openProjectId(){ try { var p = window._gcOpenProject; return p && p.id ? p.id : ''; } catch (e) { return ''; } }
+function mountPlans(){
+  var heads = document.querySelectorAll('b'), head = null;
+  for (var i = 0; i < heads.length; i++) if (s(heads[i].textContent) === 'Plans & Bid Distribution') { head = heads[i]; break; }
+  var cur = document.getElementById('gc-ldi-pb');
+  if (!head) return;
+  var pid = openProjectId(); if (!pid) return;
+  var row = head.parentElement;
+  if (!cur) { ensureCss(); cur = document.createElement('div'); cur.id = 'gc-ldi-pb';
+    cur.addEventListener('click', function(e){ var b = e.target.closest('[data-a]'); if (!b) return; e.preventDefault();
+      if (b.getAttribute('data-a') === 'takeoff') openTakeoff(b.getAttribute('data-ref'), b.getAttribute('data-name'), b.getAttribute('data-type'));
+      if (b.getAttribute('data-a') === 'pick') { var inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = '.pdf,.png,.jpg,.jpeg,.tif,.tiff,.dwg,.dxf,.zip,.doc,.docx,.xls,.xlsx'; inp.onchange = function(){ if (inp.files.length) dropOnJob(cur.getAttribute('data-pid'), inp.files).catch(function(er){ toast(s(er.message), true); }); }; inp.click(); } });
+    dropHandlers(cur, function(d, fl){ dropOnJob(cur.getAttribute('data-pid'), fl).catch(function(er){ toast(s(er.message), true); }); });
+  }
+  if (Date.now() - seenAt._setProjectDocs > 4000) readList('_setProjectDocs').then(function(){ later(mountPlans, 0); });
+  var docs = arr(peek('_setProjectDocs')).filter(function(d){ return d && d.pid === pid && d.cat === 'Plans/Drawings'; });
+  var p = projects().find(function(x){ return x && x.id === pid; }) || {};
+  var lead = leads().find(function(l){ return l && (l.pid === pid || l.id === p.leadId); });
+  var links = arr(p.plansLinks).length ? p.plansLinks : arr(lead && lead.plansLinks);
+  var sig = pid + '|' + docs.map(function(d){ return d.id; }).join(',') + '|' + links.length;
+  if (cur.getAttribute('data-sig') === sig && cur.parentElement === row.parentElement) return;
+  cur.setAttribute('data-sig', sig); cur.setAttribute('data-pid', pid);
+  var h = '<b>📐 Plans for this bid</b>' + (p.bidDue ? ' · <span>' + esc(countdown(p.bidDue).txt) + '</span>' : '');
+  docs.forEach(function(d){ var ref = d.ref || d.data; if (typeof ref !== 'string' || ref.length > 400) ref = '';
+    h += '<div class="r"><span>' + (/pdf/i.test(d.type || d.name) ? '📄 ' : '📐 ') + esc(d.name) + '</span><span>' + (ref && isPlanFile(d) ? '<button data-a="takeoff" data-ref="' + esc(ref) + '" data-name="' + esc(d.name) + '" data-type="' + esc(d.type) + '">📐 Open in takeoff</button>' : '') + '</span></div>'; });
+  if (!docs.length) h += '<div class="r"><span class="mini">No plan files on this job yet.</span></div>';
+  links.slice(0, 8).forEach(function(x){ h += '<div class="r"><span>' + esc(x.board || x.label || 'Link') + '</span><a class="bt" href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.board === 'PlanHub' ? 'Open on PlanHub ↗' : x.board === 'BuildingConnected' ? 'Open on BuildingConnected ↗' : /Planroom/.test(x.board || '') ? 'Open on ' + x.board + ' ↗' : 'Open ↗') + '</a></div>'; });
+  if (links.some(function(x){ return /BuildingConnected|PlanHub|Planroom/.test(x.board || ''); })) h += '<div class="r"><span>Plans behind a board\'s sign-in can\'t be fetched automatically: open the board, download them and drop them here — or forward the plans e-mail to <b>bids@grayco-cs.com</b> and they land on the lead and this job.</span></div>';
+  h += '<div class="drop" data-a="pick">Drop plan files here (PDF, images, DWG) — or tap to choose</div>';
+  cur.innerHTML = h;
+  row.parentElement.insertBefore(cur, row.nextSibling);
+}
+var mt = null;
+/* after DOM activity, look a few more times (1, 3, 7 s) — a view drawn late without further changes is still caught */
+var follow = 0, followReset = null;
+function tick(){
+  mt = null; mtAt = 0; tickNow();
+  if (follow < 3) {
+    later(function(){ if (!mt) tickNow(); }, [1000, 3000, 7000][follow++]);
+    if (!followReset) followReset = later(function(){ follow = 0; followReset = null; }, 15000);
+  }
+}
+function tickNow(){ try { mountInbox(); } catch (e) { warn(e); } try { mountPlans(); } catch (e) { warn(e); } try { badge(); } catch (e) { warn(e); } }
+var mo = null, moBody = null;
+function observe(){
+  if (moBody === document.body && mo) return;
+  try { if (mo) mo.disconnect(); mo = new MutationObserver(function(){ schedule(); }); mo.observe(document.body, { childList: true, subtree: true }); moBody = document.body; } catch (e) {}
+}
+var mtAt = 0;
+/* (a timer some other block cancels must not leave the inbox unmounted: a stale one is simply replaced) */
+function schedule(){ if (mt && Date.now() - mtAt < 2000) return; mtAt = Date.now(); mt = later(function(){ observe(); tick(); }, 250); }
+function start(){
+  if (!document.body) return later(start, 200);
+  observe();
+  /* a click (a menu, a tab) or a view change also checks where the inbox belongs — in case the page swapped its body */
+  document.addEventListener('click', function(){ later(schedule, 300); }, true);
+  window.addEventListener('popstate', schedule);
+  schedule();
+  later(function(){ pull(false); }, 7000);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden && Date.now() - lastPull > 180000) pull(false); });
+  window.addEventListener('online', function(){ later(function(){ pull(true); }, 2000); });
+}
+
+/* ── the public face ──────────────────────────────────────────────────────── */
+function listOut(o){
+  o = o || {};
+  var out = inboxLeads().filter(function(l){ return !o.unassigned || isNew(l); }).map(function(l){
+    var sg = suggestPm(l), k = kindOf(l), p = portalOf(l);
+    return { id: l.id, title: l.name, type: k, source: srcOf(l), bidDue: l.bidDue || '', suggestPm: sg.name, suggestWhy: sg.why, reason: reasonOf(l), pm: l.pm || '', flag: l.inboxFlag || '',
+      leadId: l.id, kind: isRs(l) ? 'roofscout' : 'lead', priority: /^(Commercial|Insurance)$/.test(k) ? 1 : 0, bidPortal: p ? p.state : '', at: l.createdAt || '' };
+  });
+  if (o.type) out = out.filter(function(x){ return low(x.type) === low(o.type); });
+  return out;
+}
+/* the admins' "assign to PM" list: every unassigned lead (the owner assigns them all), commercial and insurance first */
+function assignList(){
+  return listOut({ unassigned: true }).sort(function(a, b){ return (b.priority - a.priority) || ((dueMs(a.bidDue) || 9e15) - (dueMs(b.bidDue) || 9e15)); });
+}
+window._gcLeadInbox = {
+  list: listOut, assignList: assignList,
+  assign: assign, dismiss: dismiss, merge: merge, createJob: createJob, openTakeoff: openTakeoff, publish: publish,
+  reminders: reminders, count: newCount, refresh: function(){ return pull(true); },
+  open: function(){ try { if (window._setView) window._setView('leads'); } catch (e) {} },
+  status: function(){ return { at: S.at, items: S.items.length, newCount: newCount(), portal: S.portal, alerts: S.alerts, outbox: lsGet(K_OUT, []).length, error: lastErr, busy: busy, admin: isAdmin(), alerts: alertLog.slice(-10), toasts: toastLog.slice() }; },
+  _test: { dbg: function(){ return { mt: !!mt, mtAge: mtAt ? Date.now() - mtAt : 0, observed: moBody === document.body, bar: !!leadsBar(), el: !!document.getElementById('gc-ldi') }; }, tick: tick, fromItem: fromItem, importItems: importItems, state: function(){ return S; }, peek: peek, render: render, mountPlans: mountPlans, filtered: filtered, alertNew: alertNew }
+};
+start();
+try { console.log('[GC] Lead Inbox (patch LD2) ready — window._gcLeadInbox'); } catch (e) {}
+})();
 </script><!-- /INSP -->
 
 

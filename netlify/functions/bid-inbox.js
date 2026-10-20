@@ -1,0 +1,842 @@
+/* ============================================================================
+   GrayCo — THE BID INBOX.   netlify/functions/bid-inbox.js        (patch LD, re-anchored as LD2)
+
+   "how can i make the lead tab get all my potential leads, plans, bids etc.
+    We get emails but also BuildingConnected, PlanHub and other bid boards …
+    I want the lead tab to be constantly getting leads in"
+
+   bids@grayco-cs.com is a Google Group. Its member bids@in.grayco-cs.com is a
+   Resend "receiving" address on the same subdomain and webhook as the bill
+   inbox (patch AA) and the claim inbox (patch BB). BuildingConnected, PlanHub,
+   the planrooms, GCs and the public bid sites all send their notices to bids@.
+
+   For every e-mail this function:
+     1. checks Resend's signature (Svix, RESEND_INBOUND_SECRET), or ?token=BID_INBOX_TOKEN;
+     2. ignores mail that is not for bids@ (it shares the webhook with bills@ and
+        claims@), mail the CRM sent itself, auto-replies and bounces;
+     3. answers Resend at once and does the slow part in bid-inbox-background;
+     4. keeps the attachments (plans, specs, addenda) in the private crm-files
+        bucket (SHA-256 names, one copy per file), and the e-mail itself as a
+        text file, so nothing depends on the mailbox later;
+     5. asks Claude (server side, ANTHROPIC_API_KEY) what the e-mail is: the
+        board, project, owner/GC, address, bid due, pre-bid, trades, type
+        (commercial / insurance / residential / government), plan links, contact;
+     6. merges it into gc_kv "gc_lead_inbox": the same project from several
+        boards, a reminder or an addendum lands on ONE lead ("also on PlanHub",
+        "Addendum #2 received"); a lead someone marked Not interested stays
+        dismissed and is never brought back.
+   The CRM (tail_LD2.js) collects the list when someone opens it and turns new
+   items into leads on the Leads tab (through the CRM's own synced setters).
+
+   LD2 (owner 10/20: "every time a new job is added it goes to our bid portal and our leads in the
+   CRM, so we never miss anything … alert admins about new bid opportunities"):
+     7. every NEW opportunity also becomes a DRAFT bid job in the bid portal (_lib/bid-portal.js:
+        sp_rows / subportal-files, never shown to subs; queued while the portal is not set up), and
+        an addendum updates that draft. Only an admin's "Publish to bid portal" makes it public.
+     8. the admins are told (_lib/bid-alerts.js): an e-mail at once when the bid is due soon, else
+        one digest an hour (bid-alerts.js), and a phone push when patch TD's push piece is there.
+   RoofScout is NOT read here any more: RoofScout leads reach the CRM as LEAD_RS_<id> (patch RSL);
+   the inbox page only shows them.
+
+   It never answers the sender. The only e-mail it sends is the admins' alert.
+
+   DOORS
+     POST /.netlify/functions/bid-inbox            Resend webhook (signed)
+     GET  ?ping=1                                  alive check, says nothing secret
+     GET  ?list=1                                  the inbox for the CRM (staff sign-in), with the bid
+                                                   portal's state and the alert queue
+     POST ?act=1   {id, op, …}                     the CRM records what a person did
+                                                   (imported / assigned / job / dismissed / merged / restore /
+                                                    publish — the admin's "Publish to bid portal")
+     POST ?settings=1 {keywords, exclude, sources} the public-bid watcher's settings (admins)
+     POST ?watch=1                                 run the public-bid watcher now (admins)
+
+   ENV (Netlify → Site configuration → Environment variables)
+     BID_INBOUND_SECRET      the bids@ webhook's signing secret (whsec_…); or RESEND_INBOUND_SECRET when
+                             one secret is shared with the bill / claim inbox webhooks
+     RESEND_API_KEY          to fetch the e-mail body and attachments from Resend
+     ANTHROPIC_API_KEY       Claude reads the e-mail
+     SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)
+     optional: BID_INBOX_TO (default bids@in.grayco-cs.com,bids@grayco-cs.com),
+               BID_INBOX_TOKEN, BID_AI_MODEL (default claude-opus-5-5),
+               BID_AI_TIMEOUT_MS, BID_INBOX_INLINE=1, LEAD_ADMINS (extra e-mails
+               allowed to dismiss/merge; admins on the staff list always can),
+               BID_PORTAL_DRAFTS=0 (no bid-portal drafts), OWNER_EMAILS / BID_ALERT_TO /
+               BID_ALERT_SOON_HOURS (72) / BID_ALERTS_OFF=1 / BID_ALERT_FROM (the admins' alerts)
+   ========================================================================== */
+'use strict';
+
+const crypto = require('crypto');
+
+const KV = 'gc_lead_inbox', KV_SET = 'gc_lead_inbox_settings', KV_NOTE = 'gc_lead_inbox_notices';
+const KEEP_ACTIVE = 600, KEEP_DISMISSED = 3000;
+const MAX_BYTES = 25 * 1024 * 1024, MAX_FILES = 15, AI_MAX_BYTES = 20 * 1024 * 1024;
+const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
+const GC_DEFAULT_ORIGINS = 'https://graycocrm1.netlify.app,https://crm.grayco-cs.com';
+const OK_TYPES = {
+  'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/heic': 'heic', 'image/tiff': 'tif',
+  'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/zip': 'zip', 'application/x-zip-compressed': 'zip', 'text/csv': 'csv', 'application/rtf': 'rtf', 'text/plain': 'txt'
+};
+const EXT_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', tif: 'image/tiff', tiff: 'image/tiff',
+  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', zip: 'application/zip', csv: 'text/csv', rtf: 'application/rtf',
+  dwg: 'application/octet-stream', dxf: 'application/octet-stream' };
+const AI_TYPES = { 'application/pdf': 'document', 'image/jpeg': 'image', 'image/png': 'image', 'image/gif': 'image', 'image/webp': 'image' };
+const SOURCES = ['BuildingConnected', 'PlanHub', 'A&B Planroom', 'RKA Planroom', 'GC direct', 'Government', 'Other'];
+const TYPES = ['commercial', 'insurance', 'residential', 'government'];
+
+/* ── env, read at call time (tests change it) ───────────────────────────────── */
+function env(k){ return String(process.env[k] == null ? '' : process.env[k]).trim(); }
+function sbUrl(){ return (env('SUPABASE_URL') || GC_SB_DEFAULT_URL).replace(/\/$/, ''); }
+function sbKey(){ return env('SUPABASE_SERVICE_ROLE_KEY') || env('SUPABASE_SERVICE_KEY'); }
+function dbReady(){ return !!(sbUrl() && sbKey()); }
+
+/* ── small helpers ─────────────────────────────────────────────────────────── */
+function s(v){ return (v == null ? '' : String(v)).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function nowIso(){ return new Date().toISOString(); }
+function sha256(buf){ return crypto.createHash('sha256').update(buf).digest('hex'); }
+function same(a, b){ a = Buffer.from(s(a)); b = Buffer.from(s(b)); if (!a.length || a.length !== b.length) return false; try { return crypto.timingSafeEqual(a, b); } catch (e) { return false; } }
+function hdrs(event){ const h = {}; Object.keys((event && event.headers) || {}).forEach(k => { h[low(k)] = event.headers[k]; }); return h; }
+function rawBody(event){ return event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : (event.body || ''); }
+function J(code, body, extra){ return { statusCode: code, headers: Object.assign({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, extra || {}), body: JSON.stringify(body) }; }
+function cors(event){
+  const allowed = (env('SITE_ORIGIN') || GC_DEFAULT_ORIGINS).split(',').map(x => x.trim().replace(/\/$/, '')).filter(Boolean);
+  const origin = s(hdrs(event).origin).replace(/\/$/, '');
+  return { 'Access-Control-Allow-Origin': allowed.indexOf(origin) > -1 ? origin : allowed[0], Vary: 'Origin',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
+}
+function addr(v){
+  let t = v; if (Array.isArray(t)) t = t[0]; if (t && typeof t === 'object') t = t.email || t.address || t.value || '';
+  t = s(t); const m = t.match(/<([^>]+)>/); const email = low(m ? m[1] : t).replace(/^mailto:/, '');
+  const name = s(m ? t.slice(0, t.indexOf('<')) : '').replace(/^"|"$/g, '');
+  return { name, email, domain: email.indexOf('@') > 0 ? email.split('@').pop() : '' };
+}
+function list(v){ return (Array.isArray(v) ? v : (v ? String(v).split(',') : [])).map(addr).filter(x => x.email); }
+function decodeEntities(t){ return String(t || '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&#039;|&apos;/g, "'").replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)); }
+function htmlToText(h){ return s(decodeEntities(String(h || '').replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' ')).replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n')); }
+function headerMap(h){ const o = {}; if (Array.isArray(h)) h.forEach(x => { if (x && x.name) o[low(x.name)] = s(x.value); }); else if (h && typeof h === 'object') Object.keys(h).forEach(k => { o[low(k)] = Array.isArray(h[k]) ? h[k].map(s).join(', ') : s(h[k]); }); return o; }
+
+/* ── dates: "Bid due Oct 30, 2026 2:00 PM CDT" → "2026-10-30" + "14:00" ─────── */
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+function pad(n){ return ('0' + n).slice(-2); }
+function isoDay(v){
+  const t = s(v); if (!t) return '';
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = t.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/); if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; if (+m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31) return y + '-' + pad(m[1]) + '-' + pad(m[2]); }
+  m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/i); if (m) return m[3] + '-' + pad(MONTHS[low(m[1]).slice(0, 4)] || MONTHS[low(m[1]).slice(0, 3)]) + '-' + pad(m[2]);
+  m = t.match(/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})\b/i); if (m) return m[3] + '-' + pad(MONTHS[low(m[2]).slice(0, 3)]) + '-' + pad(m[1]);
+  return '';
+}
+function hhmm(v){
+  const t = s(v); if (!t) return '';
+  let m = t.match(/\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\b/i);
+  if (m) { let h = +m[1] % 12; if (/p/i.test(m[3])) h += 12; return pad(h) + ':' + (m[2] || '00'); }
+  if (/\bnoon\b/i.test(t)) return '12:00';
+  m = t.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/); if (m) return pad(m[1]) + ':' + m[2];
+  return '';
+}
+function dueOf(day, time){ const d = isoDay(day); if (!d) return ''; const t = hhmm(time) || hhmm(day); return t ? d + 'T' + t : d; }
+
+/* ── 1. is this really Resend? (Svix signature, or a secret path token) ────── */
+function svixOk(raw, h, secret){
+  secret = s(secret); if (!secret) return false;
+  const id = s(h['svix-id'] || h['webhook-id']), ts = s(h['svix-timestamp'] || h['webhook-timestamp']), sigs = s(h['svix-signature'] || h['webhook-signature']);
+  if (!id || !ts || !sigs) return false;
+  const t = parseInt(ts, 10); if (!isFinite(t) || Math.abs(Date.now() / 1000 - t) > 300) return false;
+  let key; try { key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64'); } catch (e) { return false; }
+  if (!key.length) return false;
+  const want = crypto.createHmac('sha256', key).update(id + '.' + ts + '.' + raw, 'utf8').digest('base64');
+  return sigs.split(/\s+/).some(p => { const i = p.indexOf(','); return i > 0 && p.slice(0, i) === 'v1' && same(p.slice(i + 1), want); });
+}
+function verified(event, raw){
+  /* each Resend webhook has its own signing secret: BID_INBOUND_SECRET for the bids@ webhook, else the shared one */
+  const h = hdrs(event), qs = event.queryStringParameters || {}, tok = env('BID_INBOX_TOKEN');
+  const secrets = [env('BID_INBOUND_SECRET'), env('RESEND_INBOUND_SECRET')].filter(Boolean);
+  if (!secrets.length && !tok) return { ok: false, code: 503, why: 'The bid inbox is not set up yet (BID_INBOUND_SECRET or RESEND_INBOUND_SECRET on Netlify).' };
+  if (secrets.some(sec => svixOk(raw, h, sec))) return { ok: true, how: 'svix' };
+  if (tok && same(qs.token, tok)) return { ok: true, how: 'token' };
+  return { ok: false, code: 401, why: 'Not signed by Resend.' };
+}
+
+/* ── hand-off to the background function, signed with the same secret ────── */
+function handoffKey(){ return env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET') || env('BID_INBOX_TOKEN'); }
+function handoffSig(ts, body){ return crypto.createHmac('sha256', 'bid-handoff:' + handoffKey()).update(ts + '.' + body, 'utf8').digest('hex'); }
+function handoffOk(event, raw){
+  const h = hdrs(event), ts = s(h['x-bid-ts']);
+  if (!handoffKey() || !ts || Math.abs(Date.now() - parseInt(ts, 10)) > 120000) return false;
+  return same(h['x-bid-handoff'], handoffSig(ts, raw));
+}
+async function handOff(raw){
+  const base = (env('URL') || env('DEPLOY_PRIME_URL')).replace(/\/$/, '');
+  if (!base || env('BID_INBOX_INLINE') === '1' || raw.length > 400000 || !handoffKey()) return false;
+  const ts = String(Date.now());
+  try {
+    const r = await fetch(base + '/.netlify/functions/bid-inbox-background', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-bid-ts': ts, 'x-bid-handoff': handoffSig(ts, raw) }, body: raw });
+    return r.status === 202 || r.ok;
+  } catch (e) { return false; }
+}
+
+/* ── the database and the file store (service key, server side only) ───────── */
+function svcH(extra){ return Object.assign({ apikey: sbKey(), Authorization: 'Bearer ' + sbKey() }, extra || {}); }
+function sb(path, opts){
+  opts = opts || {};
+  return fetch(sbUrl() + '/rest/v1/' + path, { method: opts.method || 'GET',
+    headers: svcH(Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {})), body: opts.body });
+}
+function parseVal(v){ if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { return JSON.parse(v); } catch (e) {} } return v; }
+/* the inbox's own table (docs/lead-inbox.sql: service key only, never synced to a browser);
+   gc_kv until that SQL has run, so a deploy before the SQL still works */
+let KVT = null, KVT_AT = 0;
+async function kvTable(){
+  if (KVT && Date.now() - KVT_AT < 300000) return KVT;
+  const r = await sb('gc_lead_inbox_kv?select=key&limit=1');
+  if (r.ok) KVT = 'gc_lead_inbox_kv';
+  else {
+    const t = await r.text().catch(() => '');
+    if (r.status === 404 || /PGRST20[0-9]|does not exist|schema cache/i.test(t)) KVT = 'gc_kv';
+    else throw new Error('database unavailable (' + r.status + ')');   /* never guess the store on a hiccup */
+  }
+  KVT_AT = Date.now(); return KVT;
+}
+async function kvRead(key){
+  const T = await kvTable();
+  const r = await sb(T + '?select=value,updated_at&key=eq.' + encodeURIComponent(key));
+  if (!r.ok) throw new Error('database read failed (' + r.status + ')');
+  const rows = await r.json();
+  if (!Array.isArray(rows) || !rows.length) return { exists: false, v: null, at: '' };
+  return { exists: true, v: parseVal(rows[0].value), at: s(rows[0].updated_at) };
+}
+async function kvGet(key){ try { return (await kvRead(key)).v; } catch (e) { return null; } }
+/* read → change → write only if nobody wrote in between (compare-and-set on updated_at); retried */
+async function kvCas(key, change, tries){
+  tries = tries || 6;
+  const T = await kvTable();
+  for (let i = 0; i < tries; i++) {
+    const cur = await kvRead(key);
+    const next = change(cur.v == null ? null : JSON.parse(JSON.stringify(cur.v)));
+    if (next === undefined) return { ok: true, unchanged: true, value: cur.v };
+    const at = nowIso();
+    let r;
+    if (cur.exists) {
+      r = await sb(T + '?key=eq.' + encodeURIComponent(key) + '&updated_at=eq.' + encodeURIComponent(cur.at), { method: 'PATCH',
+        headers: { Prefer: 'return=representation' }, body: JSON.stringify({ value: next, updated_at: at }) });
+      if (r.ok) { const rows = await r.json().catch(() => []); if (Array.isArray(rows) && rows.length) return { ok: true, value: next }; }
+      else if (r.status >= 500) throw new Error('database write failed (' + r.status + ')');
+    } else {
+      r = await sb(T, { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ key, value: next, updated_at: at }) });
+      if (r.ok) return { ok: true, value: next };
+      if (r.status >= 500) throw new Error('database write failed (' + r.status + ')');
+    }
+    await new Promise(res => setTimeout(res, 120 + Math.floor(Math.random() * 400)));
+  }
+  throw new Error('the lead inbox was busy — try again');
+}
+async function kvPut(key, value){
+  const r = await sb((await kvTable()) + '?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key, value, updated_at: nowIso() }) });
+  return r.ok;
+}
+/* same name the CRM gives a stored file: sb:crm-files/<sha256>.<ext> */
+async function storeFile(buf, type, name){
+  const extName = low(s(name).split('.').pop());
+  const ext = OK_TYPES[type] || (EXT_TYPES[extName] ? extName : 'bin'), hash = sha256(buf), path = hash + '.' + ext, ref = 'sb:crm-files/' + path;
+  try {
+    const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { method: 'POST',
+      headers: svcH({ 'Content-Type': type || 'application/octet-stream', 'x-upsert': 'false', 'cache-control': '3600' }), body: buf });
+    if (r.ok || r.status === 409) return { ref, hash, stored: true };
+    const t = await r.text().catch(() => '');
+    if (r.status === 400 && /exist|duplicate/i.test(t)) return { ref, hash, stored: true };
+    return { ref: '', hash, stored: false, why: 'storage ' + r.status };
+  } catch (e) { return { ref: '', hash, stored: false, why: 'storage unreachable' }; }
+}
+
+/* ── 2. the e-mail itself, from Resend (the webhook carries metadata only) ─── */
+async function resendGet(path){
+  const key = env('RESEND_API_KEY'); if (!key) return null;
+  try { const r = await fetch('https://api.resend.com' + path, { headers: { Authorization: 'Bearer ' + key } }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+function typeOf(a){
+  let t = low(a.content_type || a.contentType || a.type || a.mime_type || a.mimeType).split(';')[0];
+  const ext = low(s(a.filename || a.name).split('.').pop());
+  if ((!t || /octet-stream/.test(t)) && EXT_TYPES[ext]) t = EXT_TYPES[ext];
+  if (t === 'image/jpg') t = 'image/jpeg';
+  if (/octet-stream/.test(t) && /^(dwg|dxf)$/.test(ext)) t = 'application/octet-stream';
+  return t;
+}
+function keepType(type, name){ return !!OK_TYPES[type] || (type === 'application/octet-stream' && /\.(dwg|dxf)$/i.test(name)); }
+async function readMail(data){
+  const d = data || {};
+  const id = s(d.email_id || d.emailId || d.id);
+  let full = id ? await resendGet('/emails/receiving/' + encodeURIComponent(id)) : null;
+  if (full && full.data && !full.subject && !full.text) full = full.data;
+  const m = Object.assign({}, d, full || {});
+  let atts = arr(d.attachments).slice();
+  if (id) {   /* always ask: the webhook does not always list the attachments */
+    const al = await resendGet('/emails/receiving/' + encodeURIComponent(id) + '/attachments');
+    const a2 = al && (Array.isArray(al.data) ? al.data : (Array.isArray(al) ? al : null));
+    if (a2 && a2.length) { const by = {}; atts.forEach(a => { if (a && a.id) by[a.id] = a; }); atts = a2.map(a => Object.assign({}, by[a.id] || {}, a)); }
+  } else if (full && arr(full.attachments).length) atts = full.attachments;
+  const files = [], skipped = [];
+  for (const a of atts) {
+    if (!a || typeof a !== 'object') continue;
+    const name = s(a.filename || a.name) || 'attachment', type = typeOf(a);
+    if (!keepType(type, name)) { skipped.push({ name, why: 'file type not kept' }); continue; }
+    if (a.size != null && +a.size > MAX_BYTES) { skipped.push({ name, why: 'over 25 MB — use the plan link instead' }); continue; }
+    if (files.length >= MAX_FILES) { skipped.push({ name, why: 'more than ' + MAX_FILES + ' files in one e-mail' }); continue; }
+    let buf = null;
+    if (a.content) { try { buf = Buffer.from(String(a.content), 'base64'); } catch (e) {} }
+    else if (a.download_url || a.downloadUrl || a.url) { try { const r = await fetch(a.download_url || a.downloadUrl || a.url); if (r.ok) buf = Buffer.from(await r.arrayBuffer()); } catch (e) {} }
+    if (!buf || !buf.length) { skipped.push({ name, why: 'could not be downloaded' }); continue; }
+    if (buf.length > MAX_BYTES) { skipped.push({ name, why: 'over 25 MB — use the plan link instead' }); continue; }
+    if (type === 'application/pdf' && buf.slice(0, 5).toString('latin1') !== '%PDF-') { skipped.push({ name, why: 'not a real PDF' }); continue; }
+    files.push({ name, type, size: buf.length, buf });
+  }
+  const html = s(m.html);
+  return { id, from: addr(m.from || d.from), to: list(m.to || d.to), cc: list(m.cc || d.cc), subject: s(m.subject || d.subject),
+    text: (s(m.text) || htmlToText(html)).slice(0, 40000), html: html.slice(0, 400000), date: s(m.created_at || d.created_at),
+    files, skipped, headers: headerMap(m.headers || d.headers), messageId: s(m.message_id || (headerMap(m.headers || d.headers)['message-id'])) };
+}
+
+/* ── 3. routing: only bids@ mail; never our own; never auto-replies ─────────── */
+function inboxAddrs(){ return (env('BID_INBOX_TO') || 'bids@in.grayco-cs.com,bids@grayco-cs.com').split(',').map(low).filter(Boolean); }
+function recipients(mail, data){
+  const H = mail.headers || {};
+  return list((data || {}).to).concat(list((data || {}).cc), mail.to, mail.cc).map(x => x.email)
+    .concat([H['x-forwarded-to'], H['delivered-to'], H['x-original-to'], H['x-google-original-to'], H['envelope-to']].join(',').split(',').map(x => addr(x).email)).filter(Boolean);
+}
+function forBids(mail, data){
+  const want = inboxAddrs(), H = mail.headers || {};
+  if (recipients(mail, data).some(x => want.indexOf(x) >= 0)) return true;
+  /* a Google Group keeps its own address in List-Id: <bids.grayco-cs.com> */
+  const lid = low(H['list-id']);
+  return want.some(w => { const p = w.split('@'); return p.length === 2 && lid.indexOf(p[0] + '.' + p[1]) >= 0; });
+}
+/* the webhook names the bill / claim inbox and not ours: theirs (checked again on the full e-mail) */
+function otherInbox(data){
+  const d = data || {}, want = inboxAddrs();
+  const others = (env('BID_OTHER_INBOXES') || 'bills@in.grayco-cs.com,claims@in.grayco-cs.com,billing@grayco-cs.com,claims@grayco-cs.com').split(',').map(low).filter(Boolean);
+  const to = list(d.to).concat(list(d.cc)).map(x => x.email);
+  return to.length > 0 && !to.some(x => want.indexOf(x) >= 0) && to.some(x => others.indexOf(x) >= 0);
+}
+function ownOrAuto(mail){
+  const H = mail.headers || {};
+  const mine = (env('BID_IGNORE_FROM') || 'bids@grayco-cs.com,noreply@grayco-cs.com,portal@grayco-cs.com,billing@grayco-cs.com,claims@grayco-cs.com').split(',').map(low);
+  if (mine.indexOf(mail.from.email) >= 0) return 'sent by the CRM';
+  if (H['x-grayco-crm'] || H['x-grayco-item']) return 'sent by the CRM (header)';
+  const a = low(H['auto-submitted']); if (a && a !== 'no' && !/auto-generated/.test(a)) return 'automatic reply';
+  if (/^(out of office|automatic reply|auto(matic)?[- ]?reply|undeliverable|delivery status notification|mail delivery)/i.test(mail.subject)) return 'automatic reply';
+  if (/^(mailer-daemon|postmaster)@/.test(mail.from.email)) return 'bounce';
+  return '';
+}
+
+/* ── 4. links and the board each one belongs to ───────────────────────────── */
+const BOARDS = [
+  [/(^|\.)buildingconnected\.com$/, 'BuildingConnected'], [/(^|\.)planhub\.com$/, 'PlanHub'],
+  [/(^|\.)aandbplanroom\.com$/, 'A&B Planroom'], [/(^|\.)rkaplanroom\.com$/, 'RKA Planroom'],
+  [/(^|\.)(isqft|constructconnect|bidclerk|cmdgroup|dodge|construction)\.com$/, 'ConstructConnect/Dodge'],
+  [/(^|\.)(procore|smartbidnet|pipelinesuite|bidmail|bidplanroom|e-builder|textura|plangrid|bluebeam|planswift)\.(com|net)$/, 'Bid platform'],
+  [/(^|\.)(ionwave\.net|bidnetdirect\.com|centralbidding\.com|demandstar\.com|bonfirehub\.com|opengov\.com|periscopeholdings\.com|bidsync\.com|questcdn\.com|arbuy\.arkansas\.gov|ms\.gov|tn\.gov|arkansas\.gov)$/, 'Government'],
+  [/(^|\.)(memphistn|shelbycountytn|shelbycountybids|scsk12|mlgw|flymemphis|desotocountyms|southaven|olivebranchms|cityofsouthaven|hernandoms)\.(gov|org|com)$/, 'Government']
+];
+function boardOf(host){ host = low(host); for (const b of BOARDS) if (b[0].test(host)) return b[1]; if (/\.gov$|\.k12\.|\.us$/.test(host)) return 'Government'; return ''; }
+const FILE_HOSTS = /(^|\.)(dropbox\.com|box\.com|drive\.google\.com|docs\.google\.com|sharefile\.com|egnyte\.com|onedrive\.live\.com|1drv\.ms|sharepoint\.com|wetransfer\.com|we\.tl|hightail\.com)$/;
+const JUNK_LINK = /unsubscribe|optout|opt-out|preferences|privacy|terms|facebook\.com|twitter\.com|x\.com\/|linkedin\.com|instagram\.com|youtube\.com|apple\.com\/app|play\.google\.com|mailto:|tel:|\.(png|jpg|gif)(\?|$)|tracking|\/o\/[A-Za-z0-9]{20,}|list-manage|sendgrid\.net\/wf\/open|google\.com\/maps/i;
+function linksOf(mail){
+  const out = [], seen = {};
+  const add = (url, label) => {
+    url = decodeEntities(s(url)).replace(/[)>\].,;'"]+$/, '');
+    if (!/^https?:\/\//i.test(url) || JUNK_LINK.test(url) || url.length > 1200) return;
+    let host = ''; try { host = new URL(url).hostname; } catch (e) { return; }
+    const key = url.replace(/[#?].*$/, '').toLowerCase(); if (seen[key]) return; seen[key] = 1;
+    const board = boardOf(host), files = FILE_HOSTS.test(host);
+    if (!board && !files && !/plan|bid|spec|drawing|document|project|addend|invite|rfp|rfq|download|file/i.test(url + ' ' + label)) return;
+    out.push({ url, label: s(label).replace(/\s+/g, ' ').slice(0, 80) || (board || host), board: board || (files ? 'File share' : ''), host });
+  };
+  String(mail.html || '').replace(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (m, href, inner) => { add(href, htmlToText(inner)); return m; });
+  String(mail.text || '').replace(/https?:\/\/[^\s<>"')\]]+/g, (u) => { add(u, ''); return u; });
+  return out.slice(0, 25);
+}
+/* the board that sent it: the sender's domain, a forwarded "From:" line, or the links */
+function sourceHint(mail, links){
+  const doms = [mail.from.domain];
+  const fwd = String(mail.text || '').match(/(?:^|\n)\s*(?:from|de)\s*:\s*[^\n<]*<?([a-z0-9._%+-]+@[a-z0-9.-]+)>?/gi) || [];
+  fwd.forEach(l => { const m = l.match(/@([a-z0-9.-]+)/i); if (m) doms.push(low(m[1])); });
+  for (const d of doms) { const b = boardOf(d); if (b && b !== 'Bid platform' && b !== 'ConstructConnect/Dodge') return b; }
+  const counts = {}; links.forEach(l => { if (l.board && SOURCES.indexOf(l.board) >= 0) counts[l.board] = (counts[l.board] || 0) + 1; });
+  const best = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+  return best || '';
+}
+
+/* ── 5. Claude reads the e-mail ────────────────────────────────────────────── */
+const LEAD_TOOL = {
+  name: 'record_bid_leads',
+  description: 'Record what this e-mail is and every construction project / bid opportunity it announces for GrayCo Construction Services.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      kind: { type: 'string', enum: ['invitation', 'addendum', 'planroom_notice', 'public_bid', 'gc_direct', 'reminder_or_update', 'not_a_lead'],
+        description: 'invitation = invited to bid by a GC or a board; addendum = an addendum / revised documents / bid date change for a project; planroom_notice = a planroom or bid board telling of new projects; public_bid = a government solicitation notice; gc_direct = a GC or owner writing directly about a project; reminder_or_update = a reminder or update on a project already announced; not_a_lead = anything else (advertising, newsletters, invoices, spam, account notices)' },
+      leads: { type: 'array', items: { type: 'object', properties: {
+        source_board: { type: 'string', enum: SOURCES, description: 'where the opportunity came from' },
+        project_name: { type: 'string' }, owner: { type: 'string', description: 'the building owner / public agency' },
+        gc_name: { type: 'string', description: 'the general contractor inviting bids, if any (not GrayCo)' },
+        address: { type: 'string' }, city: { type: 'string' }, state: { type: 'string', description: '2-letter' }, zip: { type: 'string' },
+        bid_due_date: { type: 'string', description: 'YYYY-MM-DD or empty' }, bid_due_time: { type: 'string', description: 'HH:MM 24-hour local time or empty' },
+        prebid_date: { type: 'string', description: 'YYYY-MM-DD or empty' }, prebid_time: { type: 'string' }, prebid_location: { type: 'string' }, prebid_mandatory: { type: 'boolean' },
+        trades: { type: 'array', items: { type: 'string' }, description: 'trades / bid packages asked for, e.g. roofing, drywall, general' },
+        scope_summary: { type: 'string', description: 'one or two sentences' },
+        lead_type: { type: 'string', enum: TYPES, description: 'insurance = storm/fire/water claim work for an insured owner; government = a public agency is the owner; residential = a home; else commercial' },
+        bid_number: { type: 'string', description: 'solicitation / bid / project number as printed' },
+        addendum_number: { type: ['integer', 'null'] },
+        plans_links: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, label: { type: 'string' } } } },
+        contact_name: { type: 'string' }, contact_email: { type: 'string' }, contact_phone: { type: 'string' },
+        bond_required: { type: 'boolean' }, prevailing_wage: { type: 'boolean' }, estimated_value: { type: ['number', 'null'] },
+        attachment_indexes: { type: 'array', items: { type: 'integer' }, description: '0-based attachments that belong to this project' },
+        notes: { type: 'string' }, confidence: { type: 'number' }
+      }, required: ['project_name'] } }
+    },
+    required: ['kind', 'leads']
+  }
+};
+function aiPrompt(mail, links, hint){
+  return 'You sort incoming bid e-mail for GrayCo Construction Services, a roofing, insurance restoration, residential and commercial contractor in Bartlett, TN '
+    + '(Memphis metro, North Mississippi, Arkansas). The e-mail below reached bids@grayco-cs.com. It may be a BuildingConnected or PlanHub invitation, a planroom '
+    + 'notice, a public bid notice, a GC writing directly, an addendum, a reminder, or not a lead at all.\n'
+    + 'Call the record_bid_leads tool exactly once with what you find. One entry per project (a digest listing three projects gives three entries). '
+    + 'Use only what is written in the e-mail and its attachments: leave a field empty rather than guess. GrayCo is never the GC or the owner. '
+    + 'Dates as YYYY-MM-DD, times as 24-hour HH:MM local time. For an addendum, set addendum_number. For something that is not a bid opportunity, use kind "not_a_lead" and an empty leads list.\n\n'
+    + 'From: ' + (mail.from.name ? mail.from.name + ' ' : '') + '<' + mail.from.email + '>' + (hint ? ' (looks like: ' + hint + ')' : '') + '\nSubject: ' + mail.subject + '\n'
+    + 'Attachments: ' + (mail.files.length ? mail.files.map((f, i) => i + ': ' + f.name + ' (' + f.type + ')').join(', ') : 'none') + '\n'
+    + 'Links found: ' + (links.length ? links.slice(0, 15).map(l => l.url + (l.label ? ' [' + l.label + ']' : '')).join('\n  ') : 'none') + '\n\n'
+    + 'E-mail text:\n' + (mail.text || '(empty)').slice(0, 15000);
+}
+function parseLoose(text){
+  const t = s(text).replace(/^```(?:json)?/i, '').replace(/```$/, '');
+  try { return JSON.parse(t); } catch (e) {}
+  const i = t.indexOf('{'), j = t.lastIndexOf('}');
+  if (i >= 0 && j > i) { try { return JSON.parse(t.slice(i, j + 1)); } catch (e) {} }
+  return null;
+}
+async function callClaude(body, ms){
+  const key = env('ANTHROPIC_API_KEY');
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const headers = { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' };
+    if (body.fallbacks) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', signal: ctl.signal, headers, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => null);
+    return { status: r.status, ok: r.ok, j };
+  } finally { clearTimeout(timer); }
+}
+async function extract(mail, links, hint, maxMs){
+  if (!env('ANTHROPIC_API_KEY')) return { ok: false, why: 'ANTHROPIC_API_KEY is not set', kind: '', leads: [] };
+  const content = []; let bytes = 0; const sent = [];
+  mail.files.forEach((f, i) => {
+    const kind = AI_TYPES[f.type]; if (!kind || bytes + f.size > AI_MAX_BYTES) return;
+    bytes += f.size; sent.push(i);
+    content.push({ type: kind, source: { type: 'base64', media_type: f.type, data: f.buf.toString('base64') } });
+  });
+  content.push({ type: 'text', text: aiPrompt(mail, links, hint) });
+  /* tool_choice "auto" + an instruction: the current models refuse a forced tool choice */
+  const body = { model: env('BID_AI_MODEL') || 'claude-opus-5-5', max_tokens: 8000, tools: [LEAD_TOOL], tool_choice: { type: 'auto' },
+    output_config: { effort: env('BID_AI_EFFORT') || 'low' }, fallbacks: 'default', messages: [{ role: 'user', content }] };
+  let ms = parseInt(env('BID_AI_TIMEOUT_MS') || '150000', 10); if (maxMs && maxMs < ms) ms = maxMs;
+  try {
+    let r = await callClaude(body, ms);
+    if (r.status === 400 && /fallback/i.test(JSON.stringify(r.j || ''))) { delete body.fallbacks; r = await callClaude(body, ms); }
+    if (!r.ok || !r.j) return { ok: false, why: 'AI answered ' + r.status, kind: '', leads: [], sent };
+    if (r.j.stop_reason === 'refusal') return { ok: false, why: 'AI declined to read it', kind: '', leads: [], sent };
+    const blocks = arr(r.j.content);
+    const tool = blocks.find(b => b && b.type === 'tool_use' && b.name === LEAD_TOOL.name);
+    let out = tool && tool.input;
+    if (!out) out = parseLoose(blocks.filter(b => b && b.type === 'text').map(b => b.text).join('\n'));
+    if (!out || typeof out !== 'object') return { ok: false, why: 'AI gave no answer', kind: '', leads: [], sent };
+    return { ok: true, kind: s(out.kind), leads: arr(out.leads).filter(x => x && typeof x === 'object').slice(0, 12), sent, model: body.model };
+  } catch (e) {
+    return { ok: false, why: e && e.name === 'AbortError' ? 'AI timed out' : 'AI unreachable', kind: '', leads: [], sent };
+  }
+}
+
+/* ── 6. one lead per project: normalise, match, merge ─────────────────────── */
+const STOP = { the: 1, a: 1, an: 1, of: 1, for: 1, and: 1, at: 1, to: 1, in: 1, on: 1, project: 1, bid: 1, bids: 1, invite: 1, invitation: 1, request: 1, proposal: 1, proposals: 1, rfp: 1, rfq: 1, itb: 1, ifb: 1, new: 1, rebid: 1, re: 1, fw: 1, fwd: 1,
+  /* a GC inviting per trade package: "X – Roofing" and "X – Drywall" are one project */
+  roofing: 1, drywall: 1, framing: 1, package: 1, packages: 1, trade: 1, trades: 1, scope: 1, bp: 1 };
+const ABBR = { bldg: 'building', blds: 'buildings', ctr: 'center', cntr: 'center', centre: 'center', hs: 'high school', ms: 'middle school', es: 'elementary school', elem: 'elementary', sch: 'school',
+  hosp: 'hospital', med: 'medical', ofc: 'office', univ: 'university', dept: 'department', fac: 'facility', reno: 'renovation', renovations: 'renovation', repairs: 'repair', roofs: 'roof',
+  reroofing: 'reroof', 're-roof': 'reroof', st: 'saint', mt: 'mount', ft: 'fort', no: 'number', ph: 'phase', bldgs: 'buildings' };
+function normTitle(t){
+  return low(t).replace(/\bre-roof/g, 'reroof').replace(/\b(roof(ing)? replacement|replace(ment of)? (the )?roof(ing)?|roof(ing)? replace)\b/g, 'reroof').replace(/^((re|fw|fwd)\s*:\s*)+/g, '').replace(/\b(bid invite|invitation to bid|request for (bid|budgeting|proposal|quote)s?)\s*(from [^:]+)?:/g, ' ')
+    .replace(/\baddend(um|a)\s*(no\.?|number|#)?\s*\d+\b/g, ' ').replace(/\bre-?bid\b/g, ' ').replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/).map(w => ABBR[w] || w).join(' ').split(/\s+/).filter(w => w && !STOP[w]).join(' ').trim();
+}
+function normCity(c){ return low(c).replace(/,.*$/, '').replace(/\b(tn|ms|ar|tennessee|mississippi|arkansas|city of)\b/g, '').replace(/[^a-z ]+/g, '').replace(/\s+/g, ' ').trim(); }
+function normNum(n){ const v = low(n).replace(/[^a-z0-9]+/g, ''); return v.length >= 4 ? v : ''; }
+function tokens(t){ return normTitle(t).split(' ').filter(Boolean); }
+function jaccard(a, b){ const A = {}, B = {}; a.forEach(x => A[x] = 1); b.forEach(x => B[x] = 1); const all = Object.keys(Object.assign({}, A, B)); if (!all.length) return 0; return all.filter(x => A[x] && B[x]).length / all.length; }
+function dayOf(due){ return s(due).slice(0, 10); }
+function dueGap(a, b){ if (!a || !b) return 0; return Math.abs(Date.parse(dayOf(a)) - Date.parse(dayOf(b))) / 86400000; }
+function liveTarget(items, it){ let x = it, n = 0; while (x && x.status === 'merged' && x.mergedInto && n++ < 10) x = items.find(y => y.id === x.mergedInto) || null; return x || it; }
+/* the existing item this record belongs to, or null */
+function findMatch(items, rec){
+  const num = normNum(rec.bidNumber), nt = normTitle(rec.title), tk = tokens(rec.title), city = normCity(rec.city);
+  let best = null, bestScore = 0;
+  for (const it of items) {
+    if (!it || it.id === rec.id) continue;
+    if (rec.watchKey && arr(it.watchKeys).indexOf(rec.watchKey) >= 0) return it;
+    if (rec.emailId && arr(it.emailIds).indexOf(rec.emailId) >= 0 && normTitle(it.title) === nt) return it;
+    const ic = normCity(it.city), cityOk = !city || !ic || ic === city;
+    const farApart = !rec.addendum && dueGap(rec.bidDue, it.bidDue) > 30;
+    if (!cityOk || farApart) continue;
+    let sc = 0;
+    if (num && normNum(it.bidNumber) === num) sc = 1;
+    else if (nt && normTitle(it.title) === nt) sc = 0.95;
+    else {
+      const j = jaccard(tk, tokens(it.title));
+      const sameDay = rec.bidDue && it.bidDue && dayOf(rec.bidDue) === dayOf(it.bidDue);
+      if (j >= 0.67 && city && ic && (sameDay || !rec.bidDue || !it.bidDue || rec.addendum)) sc = j;
+      else if (j >= 0.8 && sameDay) sc = j;
+    }
+    if (sc > bestScore) { bestScore = sc; best = it; }
+  }
+  return best;
+}
+function uniqBy(list, key){ const seen = {}, out = []; list.forEach(x => { const k = key(x); if (!k || seen[k]) return; seen[k] = 1; out.push(x); }); return out; }
+function fill(dst, src, fields){ fields.forEach(f => { if ((dst[f] == null || dst[f] === '' || (Array.isArray(dst[f]) && !dst[f].length)) && src[f] != null && src[f] !== '') dst[f] = src[f]; }); }
+/* put one record into the list; returns { items, action, id } */
+function upsert(items, rec){
+  items = arr(items).filter(x => x && x.id);
+  const t = nowIso();
+  let hit = items.find(x => x.id === rec.id) || findMatch(items, rec);   /* the very same e-mail again, or the same project */
+  if (hit) hit = liveTarget(items, hit);
+  if (!hit) {
+    const it = Object.assign({}, rec, { status: 'new', rev: 1, receivedAt: t, updatedAt: t, sources: rec.sources || [{ name: rec.source, at: t, ref: rec.sourceRef || '' }] });
+    delete it.addendum; delete it.sourceRef;
+    if (rec.addendum) { it.addenda = [{ n: rec.addendum, at: t, subject: rec.sourceRef || '' }]; it.addendumCount = rec.addendum; it.flag = 'Addendum #' + rec.addendum + ' received'; }
+    items.push(it);
+    return { items: trim(items), action: 'added', id: it.id };
+  }
+  if (hit.status === 'dismissed') {
+    hit.repeats = (hit.repeats || 0) + 1; hit.lastSeenAt = t;
+    return { items: trim(items), action: 'dismissed-repeat', id: hit.id };
+  }
+  const before = JSON.stringify(hit);
+  const srcs = arr(hit.sources);
+  if (!srcs.some(x => low(x.name) === low(rec.source))) srcs.push({ name: rec.source, at: t, ref: rec.sourceRef || '' });
+  hit.sources = srcs;
+  hit.alsoOn = uniqBy(srcs.map(x => x.name).filter(n => n && low(n) !== low(hit.source)), x => low(x));
+  hit.plansLinks = uniqBy(arr(hit.plansLinks).concat(arr(rec.plansLinks)), l => low(l.url).replace(/[#?].*$/, '')).slice(0, 30);
+  hit.files = uniqBy(arr(hit.files).concat(arr(rec.files)), f => f.hash || f.ref).slice(0, 80);
+  hit.emails = uniqBy(arr(hit.emails).concat(arr(rec.emails)), e => e.id || e.subject + e.date).slice(-30);
+  hit.emailIds = uniqBy(arr(hit.emailIds).concat(arr(rec.emailIds)), x => x).slice(-60);
+  hit.watchKeys = uniqBy(arr(hit.watchKeys).concat(arr(rec.watchKeys)), x => x);
+  hit.trades = uniqBy(arr(hit.trades).concat(arr(rec.trades)), x => low(x)).slice(0, 20);
+  if (rec.addendum) {
+    hit.addenda = arr(hit.addenda); if (!hit.addenda.some(a => a.n === rec.addendum)) hit.addenda.push({ n: rec.addendum, at: t, subject: rec.sourceRef || '' });
+    hit.addendumCount = Math.max(hit.addendumCount || 0, rec.addendum);
+    hit.flag = 'Addendum #' + hit.addendumCount + ' received';
+    if (rec.bidDue && rec.bidDue !== hit.bidDue) { hit.bidDueWas = hit.bidDue; hit.bidDue = rec.bidDue; hit.flag += ' — bid date changed'; }
+  } else if (rec.bidDue && !hit.bidDue) hit.bidDue = rec.bidDue;
+  fill(hit, rec, ['owner', 'gc', 'address', 'city', 'state', 'zip', 'preBid', 'preBidLocation', 'scope', 'bidNumber', 'contact', 'estValue', 'rawRef']);
+  if (rec.contact && hit.contact && !s(hit.contact.email) && s(rec.contact.email)) hit.contact = rec.contact;
+  hit.notes = uniqBy(arr(hit.notes).concat(arr(rec.notes)), x => x).slice(-20);
+  if (JSON.stringify(hit) === before) return { items: trim(items), action: 'same', id: hit.id };
+  hit.rev = (hit.rev || 1) + 1; hit.updatedAt = t;
+  return { items: trim(items), action: rec.addendum ? 'addendum' : 'merged', id: hit.id };
+}
+/* keep the list small: oldest finished items go first; dismissed ones shrink to a stub (enough to never re-import) */
+function stub(it){ return { id: it.id, status: it.status, title: it.title, city: it.city, bidDue: it.bidDue, bidNumber: it.bidNumber, source: it.source, watchKeys: it.watchKeys, portal: it.portal, emailIds: arr(it.emailIds).slice(-5), reason: it.reason, by: it.by, mergedInto: it.mergedInto, updatedAt: it.updatedAt, stub: true }; }
+function trim(items){
+  const active = items.filter(x => x.status !== 'dismissed' && x.status !== 'merged');
+  const done = items.filter(x => x.status === 'dismissed' || x.status === 'merged').map(x => x.stub ? x : (Date.now() - Date.parse(x.updatedAt || 0) > 30 * 86400000 ? stub(x) : x));
+  active.sort((a, b) => s(a.receivedAt) < s(b.receivedAt) ? -1 : 1);
+  return done.slice(-KEEP_DISMISSED).concat(active.slice(-KEEP_ACTIVE));
+}
+function itemId(seed){ return 'LI-' + sha256(seed).slice(0, 16); }
+
+/* the AI's answer (or a plain-text guess) → records to upsert */
+const TYPE_WORDS = { insurance: /\b(insurance|claim|adjuster|carrier|storm damage|hail|wind damage|fire damage|water damage|mitigation|xactimate)\b/i, government: /\b(county|city of|state of|school|authority|department|municipal|public works|federal|invitation for bid|ifb|itb)\b/i, residential: /\b(residence|residential|home ?owner|house|single[- ]family)\b/i };
+function guessType(text, source){
+  if (source === 'Government') return 'government';
+  if (TYPE_WORDS.insurance.test(text)) return 'insurance';
+  if (TYPE_WORDS.government.test(text)) return 'government';
+  if (TYPE_WORDS.residential.test(text)) return 'residential';
+  return 'commercial';
+}
+function cleanSource(v, hint){ const x = SOURCES.find(z => low(z) === low(v)); if (hint && hint !== 'Bid platform' && SOURCES.indexOf(hint) >= 0 && (!x || x === 'Other' || x === 'GC direct')) return hint; return x || hint || 'Other'; }
+function phone(v){ const d = s(v).replace(/[^\d]/g, ''); if (d.length === 11 && d[0] === '1') return '(' + d.slice(1, 4) + ') ' + d.slice(4, 7) + '-' + d.slice(7); if (d.length === 10) return '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6); return s(v); }
+function recordsFrom(mail, ai, links, hint, stored, rawRef){
+  const leads = ai.ok ? ai.leads : [];
+  const subj = mail.subject.replace(/^((re|fw|fwd)\s*:\s*)+/i, '').trim();
+  const base = leads.length ? leads : [{ project_name: subj || '(no subject)', _unread: true }];
+  const emailRow = { id: mail.id, from: mail.from.email, fromName: mail.from.name, subject: mail.subject, date: mail.date || nowIso(), rawRef, snippet: s(mail.text).slice(0, 1200) };
+  return base.map((L, i) => {
+    const source = cleanSource(L.source_board, hint);
+    const title = s(L.project_name) || subj || 'Untitled project';
+    const idx = arr(L.attachment_indexes).filter(n => Number.isInteger(n) && n >= 0 && n < stored.length);
+    const files = (base.length === 1 ? stored : idx.map(n => stored[n])).filter(f => f && f.ref);
+    const aiLinks = arr(L.plans_links).map(l => ({ url: s(l && l.url), label: s(l && l.label) })).filter(l => /^https?:\/\//.test(l.url)).map(l => { let h = ''; try { h = new URL(l.url).hostname; } catch (e) {} return Object.assign(l, { board: boardOf(h) || (FILE_HOSTS.test(h) ? 'File share' : ''), host: h }); });
+    const plansLinks = uniqBy(aiLinks.concat(base.length === 1 ? links : []), l => low(l.url).replace(/[#?].*$/, '')).slice(0, 25);
+    const addN = (L.addendum_number != null && isFinite(L.addendum_number)) ? parseInt(L.addendum_number, 10) : (/(addend(um|a))\s*(no\.?|#|number)?\s*(\d+)/i.exec(mail.subject) || [])[4];
+    const isAdd = ai.kind === 'addendum' || !!addN;
+    const text = [title, L.scope_summary, L.owner, mail.subject, mail.text.slice(0, 3000)].join(' ');
+    const type = TYPES.indexOf(low(L.lead_type)) >= 0 ? low(L.lead_type) : guessType(text, source);
+    const notes = [];
+    if (!ai.ok) notes.push('Not read by the AI (' + ai.why + ') — open the e-mail and fill in the details.');
+    if (L.prebid_mandatory) notes.push('Pre-bid meeting is MANDATORY.');
+    if (L.bond_required) notes.push('Bid bond required.');
+    if (L.prevailing_wage) notes.push('Prevailing wage.');
+    if (s(L.notes)) notes.push(s(L.notes).slice(0, 400));
+    if (mail.skipped.length) notes.push('Not kept: ' + mail.skipped.map(x => x.name + ' (' + x.why + ')').join(', '));
+    const rec = {
+      id: itemId((mail.id || mail.messageId || mail.subject + mail.date) + '|' + i + '|' + normTitle(title)),
+      title: title.slice(0, 200), source, sourceKind: ai.kind || (ai.ok ? '' : 'unread'), sourceRef: mail.subject.slice(0, 200),
+      type, owner: s(L.owner), gc: s(L.gc_name), address: s(L.address), city: s(L.city), state: s(L.state).toUpperCase().slice(0, 2), zip: s(L.zip),
+      bidDue: dueOf(L.bid_due_date, L.bid_due_time), preBid: dueOf(L.prebid_date, L.prebid_time), preBidLocation: s(L.prebid_location), preBidMandatory: !!L.prebid_mandatory,
+      trades: arr(L.trades).map(s).filter(Boolean).slice(0, 12), scope: s(L.scope_summary).slice(0, 600), bidNumber: s(L.bid_number),
+      contact: { name: s(L.contact_name), email: low(L.contact_email), phone: phone(L.contact_phone) },
+      estValue: L.estimated_value != null && isFinite(L.estimated_value) ? +L.estimated_value : null,
+      plansLinks, files: files.map(f => ({ ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: isAdd ? (parseInt(addN, 10) || true) : undefined })),
+      emails: [emailRow], emailIds: mail.id ? [mail.id] : [], rawRef, notes, addendum: isAdd ? (parseInt(addN, 10) || 1) : 0,
+      needsReview: !ai.ok, aiConfidence: L.confidence != null ? +L.confidence : null, origin: 'email'
+    };
+    if (!rec.contact.email && mail.from.domain && !/grayco-cs\.com$/.test(mail.from.domain) && !boardOf(mail.from.domain)) rec.contact = { name: rec.contact.name || mail.from.name, email: mail.from.email, phone: rec.contact.phone };
+    return rec;
+  });
+}
+function fileKind(name){ const n = low(name); if (/addend/.test(n)) return 'addendum'; if (/spec|manual|project ?book/.test(n)) return 'specs'; if (/plan|drawing|dwg|sheet|arch|a\d{1,3}\b|s\d{1,3}\b/.test(n)) return 'plans'; if (/itb|ifb|rfp|rfq|invitation|bid form|proposal form/.test(n)) return 'bid docs'; return 'other'; }
+function rawText(mail){
+  return 'From: ' + (mail.from.name ? mail.from.name + ' ' : '') + '<' + mail.from.email + '>\nTo: ' + mail.to.map(x => x.email).join(', ') + (mail.cc.length ? '\nCc: ' + mail.cc.map(x => x.email).join(', ') : '')
+    + '\nDate: ' + (mail.date || '') + '\nSubject: ' + mail.subject + '\nAttachments: ' + (mail.files.map(f => f.name).concat(mail.skipped.map(x => x.name + ' (not kept: ' + x.why + ')')).join(', ') || 'none')
+    + '\n\n' + mail.text;
+}
+const BID_WORDS = /\b(bid|bids|bidding|rfp|rfq|itb|ifb|invitation|addend(um|a)|plans?|specs?|specifications|proposal|pre-?bid|solicitation|tender|scope of work)\b/i;
+
+/* ── the whole job for one e-mail ──────────────────────────────────────────── */
+async function processEvent(evt, opts){
+  opts = opts || {};
+  const type = s(evt && evt.type);
+  if (type && type !== 'email.received') return { status: 200, body: { ok: true, ignored: 'event ' + type } };
+  const data = (evt && (evt.data || evt)) || {};
+  /* mail plainly for the bill or claim inbox (same webhook) is not even downloaded */
+  if (otherInbox(data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
+  const mail = await readMail(data);
+  if (!forBids(mail, data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
+  const own = ownOrAuto(mail); if (own) return { status: 200, body: { ok: true, ignored: own } };
+  if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+  /* Google's forwarding / group set-up messages: kept for the owner, never a lead */
+  if (/^(forwarding-noreply|groups-noreply|noreply-.*groups)@google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email)) {
+    await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== mail.id).concat([{ id: mail.id || itemId(mail.subject + mail.date), at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20));
+    return { status: 200, body: { ok: true, notice: true } };
+  }
+  if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
+  const links = linksOf(mail), hint = sourceHint(mail, links);
+  const ai = await extract(mail, links, hint, opts.inline ? 18000 : 0);
+  const pdfs = mail.files.filter(f => f.type === 'application/pdf').length;
+  if (ai.ok && (low(ai.kind) === 'not_a_lead' || !ai.leads.length) && !pdfs) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity' } };
+  if (!ai.ok && !pdfs && !hint && !BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 2000))) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity (not read by the AI)' } };
+  /* the files, then the e-mail itself as a text document */
+  const stored = [];
+  for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); stored.push({ ref: st.ref, hash: st.hash, name: f.name, type: f.type, size: f.size, stored: st.stored, kind: fileKind(f.name) }); }
+  const raw = await storeFile(Buffer.from(rawText(mail), 'utf8'), 'text/plain', 'email.txt');
+  const recs = recordsFrom(mail, ai, links, hint, stored, raw.ref);
+  const results = []; let stored2 = [];
+  try {
+    await kvCas(KV, v => { let items = arr(v); results.length = 0; recs.forEach(r => { const o = upsert(items, r); items = o.items; results.push({ action: o.action, id: o.id, title: r.title }); }); stored2 = items; return items; });
+  } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this yet (' + (e && e.message) + ') — retry.' } }; }
+  const after = await afterStore(results, stored2);
+  return { status: 200, body: { ok: true, leads: results, read: ai.ok, files: stored.length, skipped: mail.skipped, portal: after.portal, alerts: after.alerts } };
+}
+
+/* ── after the inbox changed: the bid portal draft and the admins' alert (LD2) ─
+   results: [{action, id}] from upsert(); items: the list as stored. Never throws: the e-mail or the
+   watcher run is already safe in the inbox; a draft that fails is queued, an alert that fails waits. */
+function portalApi(){ return require('./_lib/bid-portal.js').make({ env, s, low, arr, nowIso, sbUrl, svcH, kvCas, kvGet }); }
+function alertsApi(){ return require('./_lib/bid-alerts.js').make({ env, s, low, arr, nowIso, sb, kvCas, kvGet, webPush: exports._webPush }); }
+async function afterStore(results, items){
+  const out = { portal: [], alerts: null };
+  const byId = {}; arr(items).forEach(x => { if (x && x.id) byId[x.id] = x; });
+  const touched = []; const seen = {};
+  arr(results).forEach(r => { if (r && /^(added|merged|addendum)$/.test(r.action) && byId[r.id] && !seen[r.id]) { seen[r.id] = 1; touched.push({ it: byId[r.id], action: r.action }); } });
+  if (!touched.length) return out;
+  const BP = portalApi();
+  const marks = {};
+  for (const t of touched) {
+    try {
+      const r = await BP.draft(t.it);
+      out.portal.push({ id: t.it.id, state: r.state, jobId: r.jobId });
+      if (r.state && r.state !== 'skipped' && r.state !== 'off') marks[t.it.id] = { jobId: r.jobId, state: r.state === 'updated' || r.state === 'unchanged' ? ((t.it.portal && t.it.portal.state) || 'draft') : r.state, at: nowIso(), why: s(r.why).slice(0, 200) };
+    } catch (e) { out.portal.push({ id: t.it.id, state: 'error', why: s(e && e.message) }); }
+  }
+  if (Object.keys(marks).length) {
+    try { await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? list : undefined; }); } catch (e) {}
+  }
+  try { out.alerts = await alertsApi().enqueue(touched.filter(t => t.action === 'added').map(t => t.it)); } catch (e) { out.alerts = { error: s(e && e.message) }; }
+  return out;
+}
+/* drafts that waited for the portal (it was not set up yet): created as soon as it is */
+async function flushPortal(){
+  try {
+    const r = await portalApi().flush(async ids => { const items = arr(await kvGet(KV)); const o = {}; items.forEach(x => { if (x && ids.indexOf(x.id) >= 0) o[x.id] = x; }); return o; });
+    if (r.results && r.results.length) {
+      const m = {}; r.results.forEach(x => { m[x.id] = { jobId: x.jobId, state: x.state === 'updated' || x.state === 'unchanged' ? 'draft' : x.state, at: nowIso() }; });
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && m[x.id]) { x.portal = Object.assign({}, x.portal || {}, m[x.id]); ch = true; } }); return ch ? list : undefined; });
+    }
+    return r;
+  } catch (e) { return { created: 0, error: s(e && e.message) }; }
+}
+
+/* ── staff sign-in (same check as every CRM function) ──────────────────────── */
+async function staffAuth(event){
+  const m = /^Bearer\s+(\S+)$/i.exec(s(hdrs(event).authorization));
+  if (!m) return { ok: false, code: 401, error: 'Sign in to the GrayCo CRM first.' };
+  const anon = env('SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
+  let user = null;
+  try { const r = await fetch(sbUrl() + '/auth/v1/user', { headers: { apikey: anon, Authorization: 'Bearer ' + m[1] } }); if (r.ok) user = await r.json(); }
+  catch (e) { return { ok: false, code: 503, error: 'Could not reach the sign-in service.' }; }
+  const email = low(user && user.email);
+  if (!email) return { ok: false, code: 401, error: 'Your sign-in has expired. Sign in again.' };
+  let role = null, name = '', listed = false;
+  if (sbKey()) {
+    try { const r = await sb('gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(email)); if (r.ok) { listed = true; const rows = await r.json(); const row = Array.isArray(rows) && rows[0]; if (row && row.active !== false) { role = low(row.role || 'staff'); name = s(row.name); } } } catch (e) {}
+  }
+  if (!listed && env('STAFF_EMAILS').split(',').map(low).indexOf(email) > -1) role = 'staff';
+  if (!role) return { ok: false, code: 403, error: 'Not on the GrayCo staff list.' };
+  const admins = env('LEAD_ADMINS').split(',').map(low).filter(Boolean);
+  return { ok: true, email, name, role, admin: role === 'admin' || admins.indexOf(email) > -1 };
+}
+
+/* ── what a person did in the CRM ──────────────────────────────────────────── */
+const OPS = { imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', restore: 'admin', publish: 'admin' };
+function applyAct(items, b, who){
+  items = arr(items);
+  const t = nowIso(), op = s(b.op), id = s(b.id);
+  let it = items.find(x => x && x.id === id);
+  if (!it) return { err: 'no such lead in the inbox' };
+  if (op === 'imported') { if (it.status === 'new') it.status = 'imported'; it.leadId = s(b.leadId) || it.leadId; it.importedAt = it.importedAt || t; it.importedRev = it.rev; }
+  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; }
+  else if (op === 'job') { it.pid = s(b.pid); it.jobAt = t; if (it.status === 'new') it.status = 'imported'; }
+  else if (op === 'dismissed') { it.status = 'dismissed'; it.reason = s(b.reason).slice(0, 300) || 'Not interested'; it.by = who.email; it.dismissedAt = t; }
+  else if (op === 'merged') {
+    const into = items.find(x => x && x.id === s(b.into)); if (!into || into.id === it.id) return { err: 'merge target not found' };
+    const tgt = items.find(x => x.id === into.id);
+    tgt.sources = uniqBy(arr(tgt.sources).concat(arr(it.sources)), x => low(x.name));
+    tgt.alsoOn = uniqBy(tgt.sources.map(x => x.name).filter(n => low(n) !== low(tgt.source)), x => low(x));
+    tgt.plansLinks = uniqBy(arr(tgt.plansLinks).concat(arr(it.plansLinks)), l => low(l.url).replace(/[#?].*$/, ''));
+    tgt.files = uniqBy(arr(tgt.files).concat(arr(it.files)), f => f.hash || f.ref);
+    tgt.emails = uniqBy(arr(tgt.emails).concat(arr(it.emails)), e => e.id || e.subject);
+    tgt.emailIds = uniqBy(arr(tgt.emailIds).concat(arr(it.emailIds)), x => x);
+    tgt.watchKeys = uniqBy(arr(tgt.watchKeys).concat(arr(it.watchKeys)), x => x);
+    fill(tgt, it, ['owner', 'gc', 'address', 'city', 'state', 'bidDue', 'preBid', 'bidNumber', 'scope']);
+    tgt.rev = (tgt.rev || 1) + 1; tgt.updatedAt = t;
+    it.status = 'merged'; it.mergedInto = tgt.id; it.by = who.email;
+  }
+  else if (op === 'restore') { it.status = it.leadId ? 'imported' : 'new'; it.reason = ''; }
+  else return { err: 'unknown action' };
+  it.updatedAt = t; it.rev = (it.rev || 1) + 1;
+  return { items: trim(items), item: it };
+}
+const DEFAULT_SETTINGS = {
+  keywords: ['roof', 'roofing', 'reroof', 're-roof', 'building', 'renovation', 'remodel', 'construction', 'drywall', 'interior', 'restoration', 'repair', 'tpo', 'metal roof',
+    'gutter', 'demolition', 'ceiling', 'flooring', 'painting', 'carpentry', 'siding', 'waterproofing', 'envelope', 'canopy', 'storm damage', 'fire damage', 'water damage',
+    'facility improvements', 'improvements', 'abatement', 'doors', 'windows', 'masonry', 'facility'],
+  exclude: ['vehicle', 'truck', 'software', 'janitorial', 'uniform', 'food', 'fuel', 'lobbying', 'audit', 'consultant', 'insurance broker', 'printing services', 'mowing'],
+  sources: {}
+};
+function cleanSettings(b, cur){
+  const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 120);
+  const out = Object.assign({}, DEFAULT_SETTINGS, cur || {});
+  if (b.keywords) out.keywords = words(b.keywords);
+  if (b.exclude) out.exclude = words(b.exclude);
+  if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 40).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }
+  out.updatedAt = nowIso();
+  return out;
+}
+
+/* ── handlers ──────────────────────────────────────────────────────────────── */
+exports.handler = async function(event){
+  const qs = event.queryStringParameters || {};
+  const C = cors(event);
+  if (event.httpMethod === 'OPTIONS') return J(200, {}, C);
+  if (event.httpMethod === 'GET' && qs.ping)
+    return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(),
+      buildingConnectedApi: !!(env('BC_CLIENT_ID') && env('BC_CLIENT_SECRET') && env('BC_REFRESH_TOKEN')),
+      bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
+      phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')) }, C);
+
+  /* the CRM: the inbox list (+ the watcher's last run, the bid portal's state, the alert queue) */
+  if (event.httpMethod === 'GET' && qs.list) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    try {
+      const [items, settings, notices, watch] = [await kvGet(KV), await kvGet(KV_SET), await kvGet(KV_NOTE), await kvGet('gc_bid_watch_status')];
+      const out = { items: arr(items), settings: Object.assign({}, DEFAULT_SETTINGS, settings || {}), notices: who.admin ? arr(notices) : [], watch: watch || null, me: { email: who.email, admin: who.admin }, at: nowIso() };
+      try { const st = await portalApi().status(); out.portal = { ready: !!st.ready, why: st.why || '', queued: arr(await kvGet(require('./_lib/bid-portal.js').KQ)).length }; } catch (e) { out.portal = { ready: false, why: 'unknown' }; }
+      if (who.admin) { try { out.alerts = await alertsApi().state(); } catch (e) {} }
+      return J(200, out, C);
+    } catch (e) { return J(502, { error: 'Could not read the lead inbox.' }, C); }
+  }
+  if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' }, C);
+
+  if (qs.act || qs.settings || qs.watch) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    if (qs.settings) {
+      if (!who.admin) return J(403, { error: 'Only an admin changes the bid watcher.' }, C);
+      try { const r = await kvCas(KV_SET, v => cleanSettings(b, v)); return J(200, { ok: true, settings: r.value }, C); } catch (e) { return J(503, { error: s(e.message) }, C); }
+    }
+    if (qs.watch) {
+      if (!who.admin) return J(403, { error: 'Only an admin runs the bid watcher by hand.' }, C);
+      const body = JSON.stringify({ type: 'watch.run', by: who.email, source: s(b.source) });
+      if (await handOff(body)) return J(202, { ok: true, started: true }, C);
+      try { const out = await require('./bid-watch.js').runAll({ only: s(b.source), budgetMs: 20000 }); return J(200, out, C); } catch (e) { return J(502, { error: 'The watcher could not run: ' + s(e.message) }, C); }
+    }
+    const need = OPS[s(b.op)]; if (!need) return J(400, { error: 'Unknown action.' }, C);
+    if (need === 'admin' && !who.admin) return J(403, { error: 'Only an admin can do that.' }, C);
+    if (s(b.op) === 'publish') {   /* "Publish to bid portal": the ONLY way a draft reaches the subs */
+      const items = arr(await kvGet(KV)); let it = items.find(x => x && x.id === s(b.id)); if (it) it = liveTarget(items, it);
+      if (!it || it.status === 'dismissed') return J(404, { error: 'No such lead in the inbox.' }, C);
+      let pr; try { pr = await portalApi().publish(it, who); } catch (e) { return J(502, { error: 'The bid portal could not be reached: ' + s(e && e.message) }, C); }
+      if (!pr.ok) return J(pr.code || 502, { error: pr.error }, C);
+      let item = null;
+      try { await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === it.id); if (!x) return undefined; x.portal = Object.assign({}, x.portal || {}, { jobId: pr.jobId, state: 'published', publishedAt: nowIso(), publishedBy: who.email }); x.rev = (x.rev || 1) + 1; x.updatedAt = nowIso(); item = x; return list; }); } catch (e) {}
+      return J(200, { ok: true, state: 'published', jobId: pr.jobId, already: !!pr.already, item }, C);
+    }
+    let res = null;
+    try { await kvCas(KV, v => { const r = applyAct(v, b, who); res = r; return r.err ? undefined : r.items; }); }
+    catch (e) { return J(503, { error: s(e.message) }, C); }
+    if (res && res.err) return J(404, { error: res.err }, C);
+    return J(200, { ok: true, item: res && res.item }, C);
+  }
+
+  /* Resend → us */
+  const raw = rawBody(event);
+  const v = verified(event, raw);
+  if (!v.ok) return J(v.code, { error: v.why });
+  let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
+  if (s(evt.type) && s(evt.type) !== 'email.received') return J(200, { ok: true, ignored: 'event ' + evt.type });
+  /* cheap routing before the hand-off: mail plainly for bills@ / claims@ is not touched */
+  if (otherInbox(evt.data || evt)) return J(200, { ok: true, ignored: 'not addressed to the bid inbox' });
+  if (await handOff(raw)) return J(200, { ok: true, accepted: true, how: v.how });
+  const r = await processEvent(evt, { inline: true });
+  return J(r.status, r.body);
+};
+
+/* bid-inbox-background.js calls this: same work, after the hand-off signature is checked */
+exports.backgroundHandler = async function(event){
+  const raw = rawBody(event);
+  if (!handoffOk(event, raw)) return J(401, { error: 'Not from the bid inbox.' });
+  let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
+  if (evt && evt.type === 'watch.run') { try { const out = await require('./bid-watch.js').runAll({ only: s(evt.source), by: s(evt.by) }); return J(200, out); } catch (e) { console.error('[bid-inbox] watcher failed: ' + (e && e.message)); return J(500, { error: 'watcher failed' }); } }
+  const r = await processEvent(evt);
+  if (r.status >= 500) console.error('[bid-inbox] could not store: ' + JSON.stringify(r.body));
+  return J(r.status, r.body);
+};
+
+/* shared with bid-watch.js, and the test harness */
+exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
+  decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey };
+exports._test = { svixOk, verified, forBids, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };

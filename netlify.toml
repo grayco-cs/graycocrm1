@@ -46,6 +46,17 @@
 [functions."portal-reminders"]
   schedule = "7 * * * *"
 
+# Lead Inbox (docs/LEAD-INBOX.md): the public bid watcher — weekdays at 7, 10, 1, 4 and 6 o'clock Central
+# (12:17, 15:17, 18:17, 21:17, 23:17 UTC). One polite look at each public bid listing; new ones go to the
+# Lead Inbox, become CRM leads and draft bid-portal jobs, and are in the admins' alert.
+[functions."bid-watch"]
+  schedule = "17 12,15,18,21,23 * * 1-5"
+
+# Lead Inbox: the admins' hourly digest of new bid opportunities (bids due soon go out at once), and the
+# bid-portal drafts that waited for the portal to be set up.
+[functions."bid-alerts"]
+  schedule = "11 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
