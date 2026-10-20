@@ -93,6 +93,20 @@
   status = 404
   force = true
 
+# Customer portal's own address: portal.grayco-cs.com opens the portal page, never the CRM.
+# Customer links look like https://portal.grayco-cs.com/portal.html#t=... (PORTAL_BASE_URL).
+[[redirects]]
+  from = "https://portal.grayco-cs.com/"
+  to = "/portal.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/index.html"
+  to = "/portal.html"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://roofscout.grayco-cs.com/roofscout/*"
   to = "https://roofscout.grayco-cs.com/:splat"
