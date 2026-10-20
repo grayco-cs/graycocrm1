@@ -87,3 +87,10 @@ Sends a PM starts with a tap (Post, Email it) still go out. `PORTAL_AUTO_EMAIL=1
 ## 33.150 (same day): profiles line up, owner-only data protected by the database
 - **Who is signed in works for older screens** (owners were blocked from Cash Position, Team Status and PM Commission, and Cash Flow opened for anyone). A role or name change reaches that person's computer. The office login opens as Brittany. My Projects survives a rename. A view guard keeps PMs out of screens they don't have. PM phones show other people's changes. (audit B: `tail_views.js`)
 - **SEC2:** pay, bank, SSN, payroll, commission and cash data are readable only by admins (payroll also by people flagged in gc_staff.payroll, the office by default). Admin status comes from gc_staff, not the editable people list. New `docs/security-data.sql`; updated `security-lockdown.sql` and `fresh-start.sql`.
+
+### 33.150 released 2026-10-20 (v1) — also includes
+- **Edits stick (SYNC-A):** a person's change to a job (status, %, PM, contract, dates…) can't be undone by an old computer or phone; "Mark completed" works; reconnect catch-up. Admin → **Find edits that were undone** (repair tool).
+- **People changes reach everyone** without a reload (REC).
+- **QuickBooks is no longer synced** (NOQB): one-time import at the fresh start; Connect QuickBooks / Sync Now hidden.
+- **Help tip** no longer covers field-view buttons.
+- **Tests (sequential):** fresh-start rehearsal 30/30, edits 48/48, security 54/54, people 10/10, field view 8/8 and 18/18, playbook 77/77, sign-in 16/16, H 7/7, counts 4/4.
