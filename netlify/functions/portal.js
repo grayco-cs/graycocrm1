@@ -898,17 +898,196 @@ async function claim(invId, pid, prev, now){
 async function patchMail(invId, fields){
   await fetch(sbUrl() + '/rest/v1/gc_portal_mail?invoice_id=eq.' + encodeURIComponent(invId), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify(fields) });
 }
+/* The office to-do list (gc_kv "gc_office_tasks") is the CRM's: it keeps it as JSON TEXT (a string), and its sync
+   reads it that way. An array written here was dropped by the CRM and then written over, so the to-do never showed.
+   Read either shape, add the to-do once (stable id), write it back as the CRM writes it (a string), and look again
+   just before writing and right after, so a save from the CRM in between never loses either side's to-dos. */
+function taskListOf(v){
+  if (v == null || v === '') return [];
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } }
+  return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : null;
+}
+async function kvListRead(key){
+  const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value,updated_at&key=eq.' + encodeURIComponent(key), { headers: H() });
+  if (!r.ok) return null;
+  const rows = await r.json().catch(function(){ return null; });
+  if (!Array.isArray(rows)) return null;
+  const list = taskListOf(rows[0] && rows[0].value);
+  return list ? { list: list, at: s(rows[0] && rows[0].updated_at) } : null;   /* unreadable: never write over it */
+}
+/* change a shared list in gc_kv without losing anybody's save: read, change, read again just before writing
+   (changed meanwhile: start over), write it as JSON text (the CRM's format), read back (a save that landed at
+   the same moment took ours out: start over). mutate(list) returns null (nothing to write) or { list, check, result }. */
+async function kvListUpdate(key, mutate){
+  for (let tries = 0; tries < 5; tries++) {
+    const cur = await kvListRead(key);
+    if (!cur) return { ok: false, error: 'unreadable' };
+    const m = mutate(JSON.parse(JSON.stringify(cur.list)));
+    if (!m || !m.list) return { ok: true, result: m && m.result, list: cur.list, unchanged: true };
+    const again = await kvListRead(key);                        /* re-read just before writing */
+    if (!again) return { ok: false, error: 'unreadable' };
+    if (again.at !== cur.at || JSON.stringify(again.list) !== JSON.stringify(cur.list)) { await sleep(150 + 200 * tries); continue; }
+    const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ key: key, value: JSON.stringify(m.list), updated_at: new Date().toISOString() }) });
+    if (!w.ok) return { ok: false, error: 'write ' + w.status };
+    const after = await kvListRead(key);
+    if (!after || !m.check || m.check(after.list)) return { ok: true, result: m.result, list: after ? after.list : m.list };
+    await sleep(150 + 200 * tries);
+  }
+  return { ok: false, error: 'busy' };
+}
 async function officeTodo(id, label, note){
   try {
-    const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value&key=eq.gc_office_tasks', { headers: H() });
-    let list = []; if (r.ok) { const rows = await r.json(); list = arr(rows && rows[0] && rows[0].value); }
-    if (list.some(function(t){ return t.id === id; })) return true;
+    id = s(id);
     const now = new Date().toISOString();
-    list.push({ id: id, label: label, note: note, addedBy: 'Customer portal', addedAt: now, updatedAt: now, done: false });
-    const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
-      body: JSON.stringify({ key: 'gc_office_tasks', value: list, updated_at: now }) });
-    return w.ok;
+    const item = { id: id, label: label, note: note, addedBy: 'Customer portal', addedAt: now, updatedAt: now, done: false };
+    const has = function(l){ return l.some(function(t){ return s(t.id) === id; }); };
+    const r = await kvListUpdate('gc_office_tasks', function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
+    return r.ok;
   } catch (e) { return false; }
+}
+
+/* ── customer e-mail / text approvals (owner rule, 20 Oct 2026) ─────────────────────────────────────────
+   Every automatic e-mail or text to a customer waits in ONE shared list, gc_kv "gc_approval_queue" (JSON
+   text, changed only through kvListUpdate here; the CRM reads it and merges by id). The job's PM approves;
+   money / legal papers (final invoice and its reminders, lien waivers, contracts) then also need an admin
+   (Wesley or Nick). An admin may approve anything at any step. No PM on the job: the admins approve.
+   Still automatic (never queued): the customer's copy of a paper they just signed, and payment receipts.
+   "Approve & send" sends it here (Resend), records "sent", and the CRM marks the invoice Sent.
+   An item: { id, kind, jobId, jobName, pm, pmEmail, channel, to, subject, html, text, attachments, steps,
+   step, approvals:[{step,by,email,role,at}], status: waiting|sending|sent|rejected, createdAt, updatedAt,
+   sentAt, sentBy, rejectedBy, rejectedAt, reason, editedBy, lastError, meta } */
+const AQ_KEY = 'gc_approval_queue';
+const LINK_PH = '{{PORTAL_LINK}}';
+const AQ_RANK = { waiting: 0, sending: 1, approved: 2, rejected: 3, sent: 4 };
+const MONEY_KIND = /final|invoice|lien|waiver|contract/;
+const AUTO_OK = { signed_copy: 1, receipt: 1 };   /* the exceptions: these still go out by themselves */
+function approvalNeeded(kind){ return needsApproval() && !AUTO_OK[kind]; }
+function aqDone(st){ return st === 'sent' || st === 'rejected'; }
+function aqPick(a, b){
+  if (aqDone(a.status) !== aqDone(b.status)) return aqDone(a.status) ? a : b;
+  const x = s(a.updatedAt || a.createdAt), y = s(b.updatedAt || b.createdAt);
+  if (x !== y) return x > y ? a : b;
+  return (AQ_RANK[b.status] || 0) > (AQ_RANK[a.status] || 0) ? b : a;
+}
+/* the same merge the CRM uses: by id, nothing dropped; a finished item beats an open one, then the newer one */
+function aqMerge(a, b){
+  const out = [], at = {};
+  (a || []).concat(b || []).forEach(function(x){
+    const id = s(x && x.id); if (!id) return;
+    if (!(id in at)) { at[id] = out.length; out.push(x); return; }
+    out[at[id]] = aqPick(out[at[id]], x);
+  });
+  return out;
+}
+function pmOf(data, p){
+  const name = s(p.pm || p.projectManager || p.pmName);
+  if (!name) return null;
+  const u = arr(data.users).find(function(x){ return low(x.name) === low(name); });
+  return { name: name, email: low((u && u.email) || p.pmEmail || '') };
+}
+function stepsFor(kind, pm){ return !pm ? ['admin'] : (MONEY_KIND.test(kind) ? ['pm', 'admin'] : ['pm']); }
+function htmlText(html){
+  return s(String(html || '').replace(/<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '$2: $1').replace(/<(br|\/p|\/div|\/li|\/h\d)[^>]*>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n'));
+}
+function textHtml(text){
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E;font-size:15px;line-height:1.5;white-space:pre-wrap">' +
+    esc(text).split(esc(LINK_PH)).join('<a href="' + LINK_PH + '" style="color:#0F1D2F;font-weight:bold">Open my project page</a>') + '</div>';
+}
+async function queueApproval(o){
+  const now = new Date().toISOString();
+  const steps = stepsFor(o.kind, o.pm);
+  const item = { id: s(o.id), kind: o.kind, jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
+    to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
+    status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
+  const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
+  const r = await kvListUpdate(AQ_KEY, function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
+  return r.ok;
+}
+async function aqOpenFor(test){
+  const cur = await kvListRead(AQ_KEY);
+  return !!(cur && cur.list.some(function(x){ return (x.status === 'waiting' || x.status === 'sending') && test(x); }));
+}
+async function aqSend(item, now){
+  if (item.channel === 'sms') { const t = await sendText(item.to, item.text); return t.ok ? { ok: true } : { ok: false, error: 'Texting is not set up yet (' + (t.skipped || 'no provider') + ').' }; }
+  if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
+  if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
+  let html = s(item.html), token = '';
+  if (html.indexOf(LINK_PH) >= 0) {
+    try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
+    html = html.split(LINK_PH).join(esc(linkFor(null, token)));
+  }
+  const from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>';
+  let res;
+  try {
+    const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: from, reply_to: 'office@grayco-cs.com', to: [item.to], subject: item.subject, html: html }) });
+    res = { ok: r.ok, status: r.status };
+  } catch (e) { res = { ok: false }; }
+  if (!res.ok) return { ok: false, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
+  const m = item.meta || {};
+  try {
+    if (item.kind === 'portal_link' && token) await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ sent_at: now, sent_via: 'email' }) });
+    if (item.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'emailed' }) });
+    if (item.kind === 'final_invoice' && m.invoiceId) await patchMail(m.invoiceId, { first_sent_at: now, last_reminder_at: now, last_result: 'sent' });
+    if (item.kind === 'final_reminder' && m.invoiceId) await patchMail(m.invoiceId, { reminders: num(m.reminders) || 1, last_reminder_at: now, last_result: 'reminded' });
+  } catch (e) {}
+  return { ok: true };
+}
+/* approve / reject / edit-then-approve, from the CRM. who = the signed-in person (gcStaffAuth). */
+async function approvalAction(body, who){
+  const op = s(body.op), id = s(body.id);
+  const admin = low(who.role) === 'admin';
+  let myName = s(who.name);
+  const cur = await kvListRead(AQ_KEY);
+  if (!cur) return { status: 502, out: { ok: false, error: 'Could not read the approvals list.' } };
+  if (op === 'list') return { status: 200, out: { ok: true, items: cur.list } };
+  const it0 = cur.list.find(function(x){ return s(x.id) === id; });
+  if (!it0) return { status: 404, out: { ok: false, error: 'That approval is not on the list any more.' } };
+  if (!myName) { try { const d = await crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); myName = s(u && u.name); } catch (e) {} }
+  const isPm = (it0.pmEmail && low(it0.pmEmail) === low(who.email)) || (it0.pm && myName && low(it0.pm) === low(myName));
+  const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
+  if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
+  if (!admin && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now.' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : 'pm', at: now };
+  const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
+  if (op === 'reject') {
+    const r = await upd(function(x){ if (x.status !== 'waiting' && !stale) return false; x.status = 'rejected'; x.rejectedBy = me.by; x.rejectedEmail = me.email; x.rejectedAt = now; x.reason = clip(body.reason, 500); }, function(z){ return z.status === 'rejected'; });
+    if (!r.ok || !r.result || r.result.status !== 'rejected') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
+    const m = it0.meta || {};
+    try {
+      if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
+      if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
+    } catch (e) {}
+    return { status: 200, out: { ok: true, item: r.result } };
+  }
+  if (op !== 'approve') return { status: 400, out: { ok: false, error: 'Bad request' } };
+  const edit = body.edit && typeof body.edit === 'object' ? body.edit : null;
+  const last = admin || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
+  const claim = 'c' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+  let r = await upd(function(x){
+    if (x.status !== 'waiting' && !(x.status === 'sending' && stale)) return false;
+    if (edit) {
+      if (s(edit.subject)) x.subject = clip(edit.subject, 200);
+      if (s(edit.text)) { let tx = String(edit.text).slice(0, 8000); if (x.html.indexOf(LINK_PH) >= 0 && tx.indexOf(LINK_PH) < 0) tx += '\n\n' + LINK_PH; x.text = tx; x.html = textHtml(tx); }
+      x.editedBy = me.by; x.editedAt = now;
+    }
+    x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step }, me)]);
+    if (last) { x.status = 'sending'; x.claim = claim; }
+    else x.step = x.steps[x.steps.indexOf(x.step) + 1];
+  }, function(z){ return last ? z.claim === claim : z.step !== it0.step; });
+  if (!r.ok || !r.result || (last && r.result.claim !== claim)) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: r.result } };
+  if (!last) return { status: 200, out: { ok: true, item: r.result, next: r.result.step } };
+  const sent = await aqSend(r.result, now);
+  r = await upd(function(x){
+    if (x.claim !== claim) return false;
+    if (sent.ok) { x.status = 'sent'; x.sentAt = new Date().toISOString(); x.sentBy = me.by; x.lastError = ''; }
+    else { x.status = 'waiting'; x.lastError = sent.error; }
+  }, function(z){ return z.status === (sent.ok ? 'sent' : 'waiting'); });
+  const item = r.result || it0;
+  if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
+  return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
 }
 /* one pass over every job (or just one): first e-mail, then every 15 days while unpaid */
 async function runReminders(opts){
@@ -936,12 +1115,27 @@ async function runReminders(opts){
       const view = await buildView(data, p);
       const to = s(view.customer.email);
       const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
+      if (okEmail && s(process.env.RESEND_API_KEY) && !mailOff() && approvalNeeded(first ? 'final_invoice' : 'final_reminder')) {
+        /* owner rule: the PM approves, then an admin; it waits on the approvals list (gc_approval_queue) */
+        if (prev && /rejected/.test(s(prev.last_result)) && prev.last_reminder_at && now - new Date(prev.last_reminder_at) < REMIND_EVERY) { report.skipped++; continue; }
+        if (await aqOpenFor(function(x){ return s((x.meta || {}).invoiceId) === invId; })) { report.skipped++; continue; }   /* already waiting */
+        if (!(await claim(invId, pid, prev, nowIso))) { report.skipped++; continue; }
+        const n = first ? 0 : num(prev.reminders) + 1;
+        const fi = view.money.finalInvoice || {};
+        await queueApproval({ id: 'appr_final_' + invId + '_' + n + '_' + nowIso.slice(0, 10), kind: first ? 'final_invoice' : 'final_reminder', pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
+          subject: first ? 'Your final invoice from GrayCo — ' + (view.job.name || 'your job') : 'Friendly reminder: your GrayCo invoice — ' + (view.job.name || 'your job'),
+          html: mailHtml(first ? 'first' : 'reminder', view, LINK_PH), attachments: [{ name: 'Final invoice' + (fi.number ? ' ' + fi.number : '') + ' (in the customer portal)', kind: 'portal' }],
+          meta: { invoiceId: invId, invoiceNumber: s(fi.number), amount: money(view.money.due), reminders: n } });
+        await patchMail(invId, { todo_at: nowIso, last_result: 'approval' });
+        report.approvals = (report.approvals || 0) + 1;
+        continue;
+      }
       if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || needsApproval()) {
         if (!prev || !prev.todo_at) {
           if (!(await claim(invId, pid, prev, nowIso))) { report.skipped++; continue; }
-          const appr = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
-          const why = appr ? 'Waiting for approval — nothing was e-mailed to the customer.' : (!okEmail ? 'There is no good customer e-mail on file.' : 'E-mail is not set up on Netlify (RESEND_API_KEY).');
-          await officeTodo('portal_final_' + invId, (appr ? 'Approve & send the final invoice — ' : 'Send the final invoice by hand — ') + (p.name || 'job'),
+          const appr = false;   /* an approval goes to the approvals list above, never to the office */
+          const why = !okEmail ? 'There is no good customer e-mail on file.' : (mailOff() ? 'E-mail is switched off (PORTAL_MAIL_OFF).' : 'E-mail is not set up on Netlify (RESEND_API_KEY).');
+          await officeTodo('portal_final_' + invId, 'Send the final invoice by hand — ' + (p.name || 'job'),
             why + ' The invoice is in the customer portal. Send it yourself: job → Customer portal → Email it or Text it (or call the customer).');
           await patchMail(invId, { todo_at: nowIso, last_result: appr ? 'approval' : (!okEmail ? 'no-email' : 'no-mail-key') });
           report.todos++;
@@ -1030,13 +1224,18 @@ async function sendLink(pid, event, who){
   const link = linkFor(event, token);
   const to = s(view.customer.email);
   const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
-  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || needsApproval()) {
+  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || approvalNeeded('portal_link')) {
     if (row.link_todo_at) return { ok: true, todo: true, approval: needsApproval(), already: true };
     const c = await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token) + '&link_todo_at=is.null', { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ link_todo_at: new Date(now).toISOString() }) });
     const got = c.ok ? await c.json().catch(function(){ return []; }) : [];
     if (!Array.isArray(got) || got.length !== 1) return { ok: true, todo: true, already: true };
     const name = view.customer.name || p.client || 'the customer';
     const apprL = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
+    if (apprL) {
+      const q = await queueApproval({ id: 'appr_link_' + pid, kind: 'portal_link', pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
+        subject: 'Your GrayCo project page — ' + (view.job.name || 'your job'), html: linkMailHtml(view, LINK_PH), attachments: [], meta: {} });
+      return { ok: true, todo: true, approval: true, queued: !!q };
+    }
     await officeTodo('portal_link_' + pid, (apprL ? 'Approve & send portal link to ' : 'Send portal link to ') + name,
       (apprL ? 'Waiting for approval — nothing was e-mailed' : (!okEmail ? 'No customer e-mail on file' : 'E-mail is not set up on Netlify (RESEND_API_KEY)')) + ' for ' + (p.name || 'the job') + '. Open the job → Customer portal → Email it, Text it or Copy link.');
     return { ok: true, todo: true, approval: apprL };
@@ -1133,8 +1332,16 @@ async function notifyDocs(pid, event, opts){
   const okEmail = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to);
   const done = mine.map(function(x){ return String(x.doc_key).split('|').slice(1).join('|'); });
   async function mark(result){ await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + batch, { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: result }) }); }
-  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || needsApproval()) {
+  if (!okEmail || !s(process.env.RESEND_API_KEY) || mailOff() || approvalNeeded('portal_docs')) {
     const apprD = okEmail && s(process.env.RESEND_API_KEY) && !mailOff();
+    if (apprD) {
+      const titlesA = mine.map(function(x){ return s(x.title) || 'Document'; });
+      await queueApproval({ id: 'appr_docs_' + pid + '_' + batch, kind: 'portal_docs', pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
+        subject: titlesA.length === 1 ? 'New in your GrayCo portal: ' + titlesA[0] : titlesA.length + ' new papers in your GrayCo portal — ' + (view.job.name || 'your job'),
+        html: docsMailHtml(view, titlesA, LINK_PH), attachments: titlesA.map(function(x){ return { name: x, kind: 'portal' }; }), meta: { batch: batch, keys: done } });
+      await mark('approval');
+      return { ok: true, todo: true, approval: true, queued: true, keys: done };
+    }
     await officeTodo('portal_docs_' + pid, (apprD ? 'Approve & tell ' : 'Tell ') + (view.customer.name || p.client || 'the customer') + ' about new papers in their portal',
       (apprD ? 'Waiting for approval — nothing was e-mailed' : (!okEmail ? 'No customer e-mail on file' : 'E-mail is not set up on Netlify (RESEND_API_KEY)')) + ' for ' + (p.name || 'the job') + ': ' + mine.map(function(x){ return x.title; }).join(', ') + '. Open the job → Customer portal → Email it or Text it.');
     await mark(apprD ? 'approval' : 'todo');
@@ -1146,16 +1353,7 @@ async function notifyDocs(pid, event, opts){
   const link = linkFor(event, token);
   const titles = mine.map(function(x){ return s(x.title) || 'Document'; });
   const subject = titles.length === 1 ? 'New in your GrayCo portal: ' + titles[0] : titles.length + ' new papers in your GrayCo portal — ' + (view.job.name || 'your job');
-  const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
-    '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
-    '<div style="font-size:18px;font-weight:bold">' + esc(view.job.name) + '</div></div>' +
-    '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
-    '<p style="font-size:15px">Hi ' + esc(view.customer.firstName || 'there') + ',</p>' +
-    '<p style="font-size:15px;line-height:1.5">' + esc(view.pm.name || 'Your Project Manager') + ' just put ' + (titles.length === 1 ? 'something new' : 'a few new things') + ' in your GrayCo Portal:</p>' +
-    '<ul style="font-size:15px;line-height:1.6">' + titles.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">View it in my portal</a></p>' +
-    '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(view.pm.name || 'us') + (view.pm.phone ? ' at ' + esc(view.pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '.</p></div></div>';
+  const html = docsMailHtml(view, titles, link);
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
@@ -1165,6 +1363,18 @@ async function notifyDocs(pid, event, opts){
   if (!res.ok) { await revert(); return { ok: false, retry: true, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' }; }
   await mark('emailed');
   return { ok: true, sent: 'email', sentAt: nowIso, keys: done, count: done.length };
+}
+function docsMailHtml(view, titles, link){
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
+    '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
+    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<div style="font-size:18px;font-weight:bold">' + esc(view.job.name) + '</div></div>' +
+    '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
+    '<p style="font-size:15px">Hi ' + esc(view.customer.firstName || 'there') + ',</p>' +
+    '<p style="font-size:15px;line-height:1.5">' + esc(view.pm.name || 'Your Project Manager') + ' just put ' + (titles.length === 1 ? 'something new' : 'a few new things') + ' in your GrayCo Portal:</p>' +
+    '<ul style="font-size:15px;line-height:1.6">' + titles.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">View it in my portal</a></p>' +
+    '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(view.pm.name || 'us') + (view.pm.phone ? ' at ' + esc(view.pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '.</p></div></div>';
 }
 /* the hourly run: every job with something waiting */
 async function notifyAll(opts){
@@ -1229,7 +1439,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -1239,6 +1449,10 @@ exports.handler = async function (event) {
         if (body.set && typeof body.set === 'object') return reply(200, headers, Object.assign({ ok: true }, await settingsSet(body.set, who.email)));
         return reply(200, headers, Object.assign({ ok: true }, await settingsGet()));
       } catch (e) { return reply(502, headers, { ok: false, error: 'Could not save the setting. Try again.' }); }
+    }
+    if (action === 'approval') {
+      try { const a = await approvalAction(body, who); return reply(a.status, headers, a.out); }
+      catch (e) { return reply(500, headers, { ok: false, error: 'The approval hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     const pid = s(body.projectId);
     if (!pid) return reply(400, headers, { ok: false, error: 'Open a job first.' });
@@ -1292,7 +1506,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

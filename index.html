@@ -58000,6 +58000,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
             if(!(Array.isArray(rows)&&rows.length&&rows[0].value!=null)) return;
             var local=localStorage.getItem(k);
             var cloud=rows[0].value;
+            if(typeof cloud!=='string'){ try{ cloud=JSON.stringify(cloud); }catch(e){ return; } } /* TODO: the cloud copy may be a list */
             if(local===cloud) return;
             // The category-order key is a plain list of names, not records —
             // only take the cloud copy if we have nothing locally, so a local
@@ -123687,6 +123688,457 @@ window._gcInsPortal = {
   isInsurance: function(pid){ return isIns(proj(pid)); }, shown: shownIns, internal: internalDoc, group: groupOf, preview: preview
 };
 try { console.log('[GC] Insurance portal panel ready (patch INSP).'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-todo">
+/* ==========================================================================
+   patch TODO — the office to-do list (gc_office_tasks) keeps every to-do,
+   whatever shape the cloud copy is in.
+
+   The customer portal (Netlify) adds "Approve & send ..." to-dos straight to
+   the cloud copy. It used to write that copy as a JSON array; the CRM keeps it
+   as JSON text. The office to-do sync parsed the array as text, failed, took
+   the cloud list as empty and wrote this computer's list over it: the portal's
+   to-dos never showed and were lost. And any push of the list (a tick, a new
+   task, the daily auto tasks) replaced the cloud copy, so a to-do the portal
+   had added a moment before was lost the same way.
+
+   Now:
+   * every reader takes the cloud copy as text OR as a list (_gcOfficeTasksNorm);
+   * a push of the list is a merge with the cloud copy, read just before the
+     write: by id, the newer stamp wins (a tie: a done to-do wins, then this
+     computer). A to-do only the cloud has is kept and also put on this
+     computer, unless this computer has had it before and took it away (the
+     daily auto tasks replace yesterday's; a deactivated person's to-dos).
+     The portal's own to-dos (id portal_...) are always kept. The value goes up
+     as JSON text, the CRM's format.
+   * the union merge and the pull merge read a text copy as the list it is.
+   _gcOfficeTasksStats() says what it did.
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_TODO__) return; window.__GC_PATCH_TODO__ = true;
+var K = 'gc_office_tasks', KNOWN = 'gc_office_tasks_known';
+var RI = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+var stats = { pushes:0, kept:0, readFail:0, unionNorm:0, pullNorm:0 };
+window._gcOfficeTasksStats = function(){ return Object.assign({}, stats); };
+
+function norm(v){
+  if(v == null || v === '') return [];
+  if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ return null; } }
+  return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : null;
+}
+window._gcOfficeTasksNorm = norm;
+function idOf(t){ return (t && t.id != null && t.id !== '') ? String(t.id) : null; }
+function stamp(t){ return String((t && (t.updatedAt || t.doneAt || t.decidedAt || t.addedAt || t.at)) || ''); }
+function decided(t){ return !!(t && (t.done || t.decidedBy || t.resolvedBy)); }
+function portalOwn(t){ var id = idOf(t); return !!(id && /^portal_/.test(id)); }
+
+/* ids this computer has had in its list: one of those missing here was taken away here */
+function knownGet(){ try{ var o = JSON.parse(localStorage.getItem(KNOWN) || '{}'); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; }catch(e){ return {}; } }
+function knownAdd(list){
+  try{
+    var o = knownGet(), n = 0, ch = false;
+    (list || []).forEach(function(t){ var id = idOf(t); if(id && !o[id]){ o[id] = Date.now(); ch = true; } });
+    if(!ch) return;
+    var ks = Object.keys(o); n = ks.length;
+    if(n > 3000){ ks.sort(function(a, b){ return o[a] - o[b]; }).slice(0, n - 3000).forEach(function(k){ delete o[k]; }); }
+    localStorage.setItem(KNOWN, JSON.stringify(o));
+  }catch(e){}
+}
+function lsList(){ var l = null; try{ l = norm(localStorage.getItem(K)); }catch(e){} return l || []; }
+/* this computer's list with the cloud's laid in: returns { out, added } (added = cloud-only to-dos kept) */
+function merge(local, cloud){
+  var known = knownGet(), out = local.slice(), at = {}, added = [];
+  out.forEach(function(t, i){ var id = idOf(t); if(id != null) at[id] = i; });
+  cloud.forEach(function(c){
+    var id = idOf(c); if(id == null) return;
+    if(!(id in at)){
+      if(known[id] && !portalOwn(c)) return;                    /* taken away here */
+      at[id] = out.length; out.push(c); added.push(c); return;
+    }
+    var l = out[at[id]], a = stamp(c), b = stamp(l);
+    if(a > b || (a === b && decided(c) && !decided(l))) out[at[id]] = c;
+  });
+  return { out: out, added: added };
+}
+window._gcOfficeTasksMerge = function(local, cloud){ return merge(norm(local) || [], norm(cloud) || []).out; };
+
+/* put the cloud-only to-dos on this computer too (read again now: a save made while we waited stays) */
+function keepHere(added){
+  if(!added.length) return;
+  try{
+    var cur = lsList(), have = {};
+    cur.forEach(function(t){ var id = idOf(t); if(id) have[id] = 1; });
+    var add = added.filter(function(t){ return !have[idOf(t)]; });
+    if(!add.length) return;
+    var l = cur.concat(add);
+    localStorage.setItem(K, JSON.stringify(l));
+    stats.kept += add.length;
+    try{ if(window._gcRefreshAlerts) window._gcRefreshAlerts(); }catch(e){}
+  }catch(e){}
+}
+
+/* ── the push: a merge with the cloud copy read just before it goes up ── */
+var prevFetch = window.fetch;
+function hdrs(h){
+  var o = {};
+  try{ if(h && typeof h.forEach === 'function' && !Array.isArray(h)) h.forEach(function(v, k){ o[k] = v; }); else Object.keys(h || {}).forEach(function(k){ o[k] = h[k]; }); }catch(e){}
+  var out = {}; Object.keys(o).forEach(function(k){ if(/^(apikey|authorization)$/i.test(k)) out[k] = o[k]; });
+  return out;
+}
+async function mergedPost(url, opts){
+  var body; try{ body = JSON.parse(opts.body); }catch(e){ return prevFetch.call(window, url, opts); }
+  var rows = Array.isArray(body) ? body : [body], touched = false;
+  for(var i = 0; i < rows.length; i++){
+    var b = rows[i]; if(!b || b.key !== K) continue;
+    var mine = norm(b.value); if(!mine) continue;               /* not a list: leave it alone */
+    try{
+      var base = String(url).split('/rest/v1/')[0];
+      var r = await prevFetch.call(window, base + '/rest/v1/gc_kv?key=eq.' + K + '&select=value', { headers: hdrs(opts.headers), cache: 'no-store' });
+      if(!r || !r.ok){ stats.readFail++; continue; }
+      var got = await r.json();
+      var cloud = norm(Array.isArray(got) && got[0] ? got[0].value : null);
+      if(!cloud){ stats.readFail++; continue; }
+      knownAdd(lsList()); knownAdd(mine);
+      var m = merge(mine, cloud);
+      b.value = JSON.stringify(m.out);                          /* the CRM's format: JSON text */
+      touched = true; stats.pushes++;
+      if(m.added.length){ keepHere(m.added); knownAdd(m.added); }
+    }catch(e){}
+  }
+  if(touched) opts = Object.assign({}, opts, { body: JSON.stringify(Array.isArray(body) ? rows : rows[0]) });
+  return prevFetch.call(window, url, opts);
+}
+window.fetch = function(url, opts){
+  try{
+    if(opts && /^post$/i.test(String(opts.method || '')) && /\/rest\/v1\/gc_kv/.test(String(url)) && typeof opts.body === 'string'
+       && opts.body.indexOf('"' + K + '"') >= 0){
+      var m = opts.body.match(/"key"\s*:\s*"([^"]+)"/g) || [];
+      if(m.some(function(x){ return x.indexOf('"' + K + '"') >= 0; })) return mergedPost(url, opts);
+    }
+  }catch(e){}
+  return prevFetch.apply(this, arguments);
+};
+try{ Object.keys(prevFetch).forEach(function(p){ if(!(p in window.fetch)) window.fetch[p] = prevFetch[p]; }); window.fetch.__gcTodoMerge = true; }catch(e){}
+
+/* ── the merges that run on a pull: a text copy is the list it holds ── */
+function wrapUnion(){
+  var f = window._gcUnionMerge;
+  if(typeof f !== 'function') return false;
+  if(f.__gcTodo) return true;
+  var w = function(key, a, b){
+    if(key === K && (typeof a === 'string' || typeof b === 'string')){
+      stats.unionNorm++;
+      var args = Array.prototype.slice.call(arguments);
+      args[1] = norm(a) || []; args[2] = norm(b) || [];
+      return f.apply(this, args);
+    }
+    return f.apply(this, arguments);
+  };
+  try{ Object.keys(f).forEach(function(p){ w[p] = f[p]; }); }catch(e){}
+  w.__gcTodo = true; window._gcUnionMerge = w; return true;
+}
+function wrapPull(){
+  var f = window._gcPullMerge;
+  if(typeof f !== 'function') return false;
+  if(f.__gcTodo) return true;
+  var w = function(key, inc, idbLocal){
+    if(key === K){
+      var args = Array.prototype.slice.call(arguments);
+      if(typeof inc === 'string'){ var n = norm(inc); if(n){ args[1] = n; stats.pullNorm++; } }
+      if(typeof idbLocal === 'string'){ var n2 = norm(idbLocal); if(n2) args[2] = n2; }
+      return f.apply(this, args);
+    }
+    return f.apply(this, arguments);
+  };
+  try{ Object.keys(f).forEach(function(p){ w[p] = f[p]; }); }catch(e){}
+  w.__gcTodo = true; window._gcPullMerge = w; return true;
+}
+/* other scripts wrap these too (some later): every wrapper calls the one inside it, so ours stays in the chain */
+wrapUnion(); wrapPull();
+var n = 0, iv = RI.call(window, function(){ var a = wrapUnion(), b = wrapPull(); if((a && b && n > 20) || ++n > 60) clearInterval(iv); }, 1000);
+
+/* what this computer has now is known to it */
+try{ knownAdd(lsList()); }catch(e){}
+try{ console.log('[GC] Office to-do: the cloud copy is read as text or list, and a push merges with it (patch TODO).'); }catch(e){}
+})();
+
+</script>
+<script id="gc-patch-appr">
+/* ==========================================================================
+   patch APPR — customer e-mail / text approvals (owner rule, 20 Oct 2026).
+
+   Every automatic e-mail or text to a customer waits on ONE shared list,
+   gc_kv "gc_approval_queue" (JSON text). The portal function puts items on
+   it and does every change to it (approve, reject, edit, the send itself),
+   reading the list again just before each write. This page reads it (text or
+   list), merges it by id with what it last saw (a finished item beats an open
+   one, then the newer one), and never writes it except through the function;
+   any other push of the key from this page is merged with the cloud copy first.
+
+   Who: the job's PM; money / legal papers (final invoice and reminders, lien
+   waivers, contracts) then an admin (Wesley, Nick). Admins can approve
+   anything. No PM on the job: admins.
+
+   Buttons: field view "✅ Approvals (N)" at the top of the job list / field
+   home; desk view "✅ Approvals (N)" in the top bar and in the left menu.
+   N = items waiting on the person signed in. The list: waiting on me first,
+   then (admins) the rest. It closes with ‹ Back / ✕ (patch NAV's back rule).
+   Console: _gcCustApprovals(), _gcOpenApprovals(), _gcApprovalsRefresh().
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_APPR__) return; window.__GC_PATCH_APPR__ = true;
+var K = 'gc_approval_queue', FN = '/.netlify/functions/portal', OV = '_gcApprOv', PH = '{{PORTAL_LINK}}';
+var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout, RI = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+var list = [], loadedAt = 0, loading = null, busy = {}, notes = {};
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function norm(v){
+  if(v == null || v === '') return [];
+  if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ return null; } }
+  return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object' && x.id != null; }) : null;
+}
+var RANK = { waiting:0, sending:1, approved:2, rejected:3, sent:4 };
+function done(st){ return st === 'sent' || st === 'rejected'; }
+function pick(a, b){
+  if(done(a.status) !== done(b.status)) return done(a.status) ? a : b;
+  var x = s(a.updatedAt || a.createdAt), y = s(b.updatedAt || b.createdAt);
+  if(x !== y) return x > y ? a : b;
+  return (RANK[b.status]||0) > (RANK[a.status]||0) ? b : a;
+}
+function merge(a, b){
+  var out = [], at = {};
+  (a || []).concat(b || []).forEach(function(x){ var id = s(x && x.id); if(!id) return; if(!(id in at)){ at[id] = out.length; out.push(x); return; } out[at[id]] = pick(out[at[id]], x); });
+  return out;
+}
+window._gcApprovalsMerge = merge;
+function creds(){ try{ return { u:(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k:localStorage.getItem('grayco_sb_key')||'' }; }catch(e){ return { u:'', k:'' }; } }
+
+/* ── who is looking ── */
+function myEmail(){ try{ return low(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(e){ return ''; } }
+function isAdmin(){ try{ return !!(window.__GC_AUTH__ && window.__GC_AUTH__.isAdmin && window.__GC_AUTH__.isAdmin()); }catch(e){ return false; } }
+function myUser(){ var e = myEmail(); var us = ((window._crm||{}).users)||[]; return us.filter(function(u){ return u && low(u.email) === e; })[0] || null; }
+function myName(){ var u = myUser(); return s(u && u.name); }
+function pmIsMe(x){ var e = myEmail(), n = low(myName()); return !!((x.pmEmail && low(x.pmEmail) === e) || (x.pm && n && low(x.pm) === n)); }
+function waitingOnMe(x){
+  if(x.status !== 'waiting') return false;
+  if(isAdmin()) return x.step === 'admin' || pmIsMe(x);
+  return x.step === 'pm' && pmIsMe(x);
+}
+function canAct(x){ return x.status === 'waiting' && (isAdmin() || (x.step === 'pm' && pmIsMe(x))); }
+function visible(x){ return isAdmin() || pmIsMe(x); }
+function isPmPerson(){
+  var u = myUser(); if(u && /project\s*manager|\bpm\b/i.test(s(u.role))) return true;
+  var n = low(myName()); if(!n) return false;
+  return (((window._crm||{}).projects)||[]).some(function(p){ return p && low(p.pm || p.projectManager) === n; });
+}
+function showButton(){ if(!myEmail()) return false; return isAdmin() || isPmPerson() || list.some(pmIsMe); }
+function mine(){ return list.filter(waitingOnMe); }
+window._gcCustApprovals = function(){ return { all: list.slice(), mine: mine(), count: mine().length, admin: isAdmin(), name: myName(), loadedAt: loadedAt }; };
+
+/* ── read the list (text or list), merged with what this page saw ── */
+function load(){
+  if(loading) return loading;
+  var c = creds(); if(!c.u || !c.k) return Promise.resolve(list);
+  loading = window.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + K + '&select=value,updated_at', { headers:{ apikey:c.k, Authorization:'Bearer ' + c.k }, cache:'no-store' })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(rows){ if(Array.isArray(rows)){ var v = norm(rows[0] ? rows[0].value : null); if(v){ list = merge(list, v); loadedAt = Date.now(); } } paint(); return list; })
+    .catch(function(){ return list; })
+    .then(function(v){ loading = null; return v; });
+  return loading;
+}
+window._gcApprovalsRefresh = load;
+function take(item){ if(item && item.id){ list = merge(list, [item]); paint(); } }
+
+/* any push of the key from this page (a generic sync) is merged with the cloud copy first: nothing is overwritten */
+var prevFetch = window.fetch;
+window.fetch = function(url, opts){
+  try{
+    if(opts && /^post$/i.test(String(opts.method||'')) && /\/rest\/v1\/gc_kv/.test(String(url)) && typeof opts.body === 'string' && opts.body.indexOf('"' + K + '"') >= 0){
+      return (async function(){
+        var body; try{ body = JSON.parse(opts.body); }catch(e){ return prevFetch.call(window, url, opts); }
+        var rows = Array.isArray(body) ? body : [body], touched = false;
+        for(var i = 0; i < rows.length; i++){
+          var b = rows[i]; if(!b || b.key !== K) continue;
+          var mineL = norm(b.value); if(!mineL) continue;
+          try{
+            var base = String(url).split('/rest/v1/')[0];
+            var r = await prevFetch.call(window, base + '/rest/v1/gc_kv?key=eq.' + K + '&select=value', { headers: { apikey: (opts.headers && (opts.headers.apikey || opts.headers.Apikey)) || creds().k, Authorization: (opts.headers && opts.headers.Authorization) || ('Bearer ' + creds().k) }, cache:'no-store' });
+            if(!r || !r.ok) continue; var got = await r.json(); var cl = norm(Array.isArray(got) && got[0] ? got[0].value : null); if(!cl) continue;
+            b.value = JSON.stringify(merge(cl, mineL)); touched = true;
+          }catch(e){}
+        }
+        if(touched) opts = Object.assign({}, opts, { body: JSON.stringify(Array.isArray(body) ? rows : rows[0]) });
+        return prevFetch.call(window, url, opts);
+      })();
+    }
+  }catch(e){}
+  return prevFetch.apply(this, arguments);
+};
+try{ Object.keys(prevFetch).forEach(function(p){ if(!(p in window.fetch)) window.fetch[p] = prevFetch[p]; }); window.fetch.__gcApprMerge = true; }catch(e){}
+
+/* ── act: everything goes through the portal function ── */
+function act(id, op, extra){
+  if(busy[id]) return Promise.resolve(null);
+  busy[id] = op; notes[id] = op === 'reject' ? 'Rejecting…' : 'Working…'; paint();
+  return window.fetch(FN, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(Object.assign({ action:'approval', op: op, id: id }, extra || {})) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try{ j = JSON.parse(t); }catch(e){ j = { error: t.slice(0, 200) }; } j.__status = r.status; return j; }); }, function(e){ return { error:'No internet (' + e.message + ')', __status:0 }; })
+    .then(function(j){
+      delete busy[id];
+      if(j.item) take(j.item);
+      if(j.ok){
+        notes[id] = j.sent ? '✅ Sent to ' + s(j.item && j.item.to) : (op === 'reject' ? 'Rejected.' : (j.next === 'admin' ? 'Approved — now waiting on Wesley or Nick.' : 'Done.'));
+        if(j.sent && j.invoiceId) markInvoiceSent(j.invoiceId);
+      } else notes[id] = '⚠ ' + (j.error || ('The server answered ' + j.__status));
+      paint(); load();
+      return j;
+    });
+}
+/* the invoice the e-mail carried is now Sent (a status that already says more — paid, overdue — stays) */
+function markInvoiceSent(invId){
+  try{
+    var now = new Date().toISOString();
+    var fix = function(r){ if(!r || String(r.id) !== String(invId)) return r; var st = low(r.status); return Object.assign({}, r, { status: (!st || /^(draft|ready|unsent|pending|new|created|open)$/.test(st)) ? 'sent' : r.status, sentAt: r.sentAt || now, emailedAt: now, updatedAt: now }); };
+    if(typeof window._setInvoices === 'function') window._setInvoices(function(prev){ return (prev || []).map(fix); });
+  }catch(e){}
+}
+window._gcApprovalAct = act;
+
+/* ── the list screen ── */
+var KIND = { portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract' };
+function kindOf(x){ return KIND[x.kind] || s(x.kind).replace(/_/g, ' '); }
+function preview(x){ return esc(s(x.text)).split(esc(PH)).join('<span style="color:#2563eb;text-decoration:underline">[portal link]</span>'); }
+function stepLabel(x){
+  if(x.status === 'sent') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-weight:700">Sent ' + esc(s(x.sentAt).slice(0, 16).replace('T', ' ')) + '</span>';
+  if(x.status === 'rejected') return '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-weight:700">Rejected by ' + esc(x.rejectedBy) + (x.reason ? ' — ' + esc(x.reason) : '') + '</span>';
+  if(x.status === 'sending') return '<span style="background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:10px;font-weight:700">Sending…</span>';
+  var who = x.step === 'admin' ? 'Admin (Wesley or Nick)' : 'PM — ' + esc(x.pm || '?');
+  return '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:700">Needs: ' + who + '</span>' + (x.steps && x.steps.length > 1 ? ' <span style="color:#64748b;font-size:12px">(' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') + ')</span>' : '');
+}
+function card(x){
+  var id = esc(x.id), act1 = canAct(x), lastStep = isAdmin() || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1;
+  var h = '<div class="_apCard" data-id="' + id + '" style="background:#fff;color:#0f172a;border-radius:14px;padding:14px;margin-bottom:12px;border:1px solid #e2e8f0">' +
+    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">' + esc(kindOf(x)) + ' — ' + esc(x.jobName || x.jobId) + '</div>' +
+    '<div style="font-size:12px;color:#64748b">' + (x.channel === 'sms' ? '💬 Text' : '✉️ E-mail') + '</div></div>' +
+    '<div style="margin:6px 0;font-size:13px">' + stepLabel(x) + '</div>' +
+    '<div style="font-size:13px;color:#334155"><b>To:</b> ' + esc(x.to) + '</div>' +
+    '<div style="font-size:13px;color:#334155"><b>Subject:</b> ' + esc(x.subject) + '</div>' +
+    ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
+    '<div class="_apBody" style="white-space:pre-wrap;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-top:8px;max-height:220px;overflow:auto">' + preview(x) + '</div>' +
+    ((x.approvals || []).length ? '<div style="font-size:12px;color:#475569;margin-top:6px">' + x.approvals.map(function(a){ return '✔ ' + esc(a.by) + ' (' + (a.step === 'admin' || a.role === 'admin' ? 'admin' : 'PM') + ') ' + esc(s(a.at).slice(0, 16).replace('T', ' ')); }).join(' · ') + '</div>' : '') +
+    (x.editedBy ? '<div style="font-size:12px;color:#475569">✏️ text edited by ' + esc(x.editedBy) + '</div>' : '') +
+    (x.lastError && x.status === 'waiting' ? '<div style="font-size:12px;color:#b91c1c">Last try: ' + esc(x.lastError) + '</div>' : '') +
+    (notes[x.id] ? '<div class="_apNote" style="font-size:13px;font-weight:700;margin-top:6px;color:#0f766e">' + esc(notes[x.id]) + '</div>' : '');
+  if(act1){
+    h += '<div class="_apEdit" style="display:none;margin-top:8px"><input class="_apSubj" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:14px" value="' + esc(x.subject) + '">' +
+      '<textarea class="_apText" rows="8" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">' + esc(x.text) + '</textarea>' +
+      '<div style="font-size:11px;color:#64748b">' + esc(PH) + ' is where the portal link goes.</div>' +
+      '<button class="_apEditGo" style="margin-top:6px;width:100%;padding:12px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:15px">✅ Save text and ' + (lastStep ? 'approve & send' : 'approve') + '</button></div>' +
+      '<div class="_apRej" style="display:none;margin-top:8px"><input class="_apReason" placeholder="Why? (optional)" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">' +
+      '<button class="_apRejGo" style="margin-top:6px;width:100%;padding:12px;border:none;border-radius:10px;background:#dc2626;color:#fff;font-weight:800;font-size:15px">Reject — do not send</button></div>' +
+      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+      '<button class="_apApprove" ' + (busy[x.id] ? 'disabled ' : '') + 'style="flex:2;min-width:150px;padding:13px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:15px">' + (lastStep ? '✅ Approve & send' : '✅ Approve → admin') + '</button>' +
+      '<button class="_apEditBtn" style="flex:1;min-width:110px;padding:13px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#0f172a;font-weight:700;font-size:14px">✏️ Edit text then approve</button>' +
+      '<button class="_apRejBtn" style="flex:1;min-width:80px;padding:13px;border:1px solid #fecaca;border-radius:10px;background:#fff;color:#dc2626;font-weight:700;font-size:14px">✖ Reject</button></div>';
+  }
+  return h + '</div>';
+}
+function section(title, items, empty){
+  return '<div style="color:#cbd5e1;font-weight:800;font-size:14px;margin:14px 0 8px;text-transform:uppercase;letter-spacing:.04em">' + esc(title) + ' (' + items.length + ')</div>' +
+    (items.length ? items.map(card).join('') : '<div style="color:#8fa8c4;font-size:14px;padding:6px 2px 10px">' + esc(empty) + '</div>');
+}
+function render(ov){
+  var body = ov.querySelector('._apList'); if(!body) return;
+  var sig = ''; try{ sig = JSON.stringify([list.filter(visible), notes, busy, isAdmin(), myName()]); }catch(e){}
+  if(sig && ov.__sig === sig) return;          /* nothing new: leave the screen (and anything being typed) alone */
+  ov.__sig = sig;
+  var keep = {}; body.querySelectorAll('._apCard').forEach(function(c){ var e = c.querySelector('._apEdit'), r = c.querySelector('._apRej'); keep[c.getAttribute('data-id')] = { e: e && e.style.display !== 'none' ? { s: c.querySelector('._apSubj').value, t: c.querySelector('._apText').value } : null, r: r && r.style.display !== 'none' ? c.querySelector('._apReason').value : null }; });
+  var vis = list.filter(visible).sort(function(a, b){ return s(b.createdAt).localeCompare(s(a.createdAt)); });
+  var me = vis.filter(waitingOnMe), rest = vis.filter(function(x){ return !waitingOnMe(x) && (x.status === 'waiting' || x.status === 'sending'); }), fin = vis.filter(function(x){ return done(x.status); }).slice(0, 30);
+  var h = section('Waiting on you', me, 'Nothing is waiting on you.');
+  if(isAdmin()) h += section('Waiting on the PM', rest, 'Nothing else is waiting.');
+  else if(rest.length) h += section('Waiting on someone else', rest, '');
+  h += section('Done lately', fin, 'Nothing yet.');
+  body.innerHTML = h;
+  var c0 = ov.querySelector('._apCount'); if(c0) c0.textContent = me.length ? me.length + ' waiting on you' : 'nothing waiting on you';
+  body.querySelectorAll('._apCard').forEach(function(c){
+    var id = c.getAttribute('data-id'), k = keep[id];
+    var q = function(sel){ return c.querySelector(sel); };
+    if(k && k.e && q('._apEdit')){ q('._apEdit').style.display = 'block'; q('._apSubj').value = k.e.s; q('._apText').value = k.e.t; }
+    if(k && k.r != null && q('._apRej')){ q('._apRej').style.display = 'block'; q('._apReason').value = k.r; }
+    if(q('._apApprove')) q('._apApprove').onclick = function(){ act(id, 'approve'); };
+    if(q('._apEditBtn')) q('._apEditBtn').onclick = function(){ var e = q('._apEdit'); e.style.display = e.style.display === 'none' ? 'block' : 'none'; };
+    if(q('._apEditGo')) q('._apEditGo').onclick = function(){ act(id, 'approve', { edit: { subject: q('._apSubj').value, text: q('._apText').value } }); };
+    if(q('._apRejBtn')) q('._apRejBtn').onclick = function(){ var e = q('._apRej'); e.style.display = e.style.display === 'none' ? 'block' : 'none'; };
+    if(q('._apRejGo')) q('._apRejGo').onclick = function(){ act(id, 'reject', { reason: q('._apReason').value }); };
+  });
+}
+function close(){ var ov = document.getElementById(OV); if(ov) ov.remove(); }
+window._gcOpenApprovals = function(){
+  close();
+  var ov = document.createElement('div'); ov.id = OV; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100060;background:linear-gradient(180deg,#0a1628,#0f2440);display:flex;flex-direction:column;font-family:Inter,-apple-system,sans-serif;';
+  ov.innerHTML = '<div style="padding:calc(12px + env(safe-area-inset-top,0px)) 14px 10px;background:#0f2440;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px">' +
+    '<button id="_apBack" style="background:transparent;border:none;color:#3b82f6;font-size:16px;font-weight:700;cursor:pointer;padding:6px 4px">‹ Back</button>' +
+    '<div style="flex:1;min-width:0"><div style="color:#fff;font-size:20px;font-weight:800">✅ Approvals</div><div class="_apCount" style="color:#8fa8c4;font-size:12px"></div></div>' +
+    '<button id="_apClose" aria-label="Close" style="background:#1e3a5f;border:none;color:#fff;font-size:16px;font-weight:800;border-radius:10px;padding:8px 12px;cursor:pointer">✕</button></div>' +
+    '<div class="_apList" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 14px calc(90px + env(safe-area-inset-bottom,0px));max-width:860px;width:100%;box-sizing:border-box;margin:0 auto"><div style="color:#8fa8c4;padding:20px">Loading…</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#_apBack').onclick = close; ov.querySelector('#_apClose').onclick = close;
+  render(ov); load();
+  return ov;
+};
+
+/* ── the buttons ── */
+function label(){ var n = mine().length; return '✅ Approvals (' + n + ')'; }
+function paint(){
+  try{
+    var show = showButton(), n = mine().length, txt = label();
+    /* field: front and center at the top of the job list / field home */
+    ['_gcJobPick', '_gcFieldHomeOv'].forEach(function(hid){
+      var host = document.getElementById(hid); if(!host) return;
+      var b = host.querySelector('._gcApprFieldBtn');
+      if(!show){ if(b) b.remove(); return; }
+      if(!b){
+        b = document.createElement('button'); b.className = '_gcApprFieldBtn'; b.type = 'button';
+        b.onclick = function(e){ e.stopPropagation(); window._gcOpenApprovals(); };
+        var head = host.firstElementChild;
+        if(head && head.firstElementChild && hid === '_gcJobPick') head.insertBefore(b, head.firstElementChild.nextSibling); else host.insertBefore(b, host.firstChild);
+      }
+      b.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:8px 0 10px;padding:16px;border-radius:14px;border:none;font-size:19px;font-weight:800;cursor:pointer;text-align:center;' + (n ? 'background:#16a34a;color:#fff;box-shadow:0 4px 14px rgba(22,163,74,.45);' : 'background:#1e3a5f;color:#cbd5e1;');
+      if(b.textContent !== txt) b.textContent = txt;
+    });
+    /* desk: the top bar */
+    var field = document.documentElement.classList.contains('_fieldmode');
+    var ms = document.getElementById('_masterSearch'), tb = document.getElementById('_gcApprTopBtn');
+    if(!show || !ms || field){ if(tb) tb.remove(); }
+    else {
+      if(!tb){ tb = document.createElement('button'); tb.id = '_gcApprTopBtn'; tb.type = 'button'; tb.onclick = function(){ window._gcOpenApprovals(); }; ms.appendChild(tb); var inp = ms.querySelector('input'); if(inp) inp.style.paddingRight = '170px'; }
+      tb.style.cssText = 'position:absolute;right:22px;top:9px;z-index:5;padding:5px 12px;border-radius:8px;border:none;font-weight:800;font-size:13px;cursor:pointer;' + (n ? 'background:#16a34a;color:#fff;' : 'background:#1e3a5f;color:#cbd5e1;');
+      if(tb.textContent !== txt) tb.textContent = txt;
+    }
+    /* desk: the left menu */
+    var nav = document.querySelector('aside nav'), lm = document.getElementById('_gcApprMenu');
+    if(!show || !nav){ if(lm) lm.remove(); }
+    else {
+      if(!lm || lm.parentNode !== nav){ if(lm) lm.remove(); lm = document.createElement('button'); lm.id = '_gcApprMenu'; lm.type = 'button'; lm.onclick = function(){ window._gcOpenApprovals(); }; nav.insertBefore(lm, nav.firstChild); }
+      lm.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%;padding:6px 8px;border-radius:3px;border:none;cursor:pointer;margin-bottom:2px;font-family:inherit;font-size:12px;font-weight:800;justify-content:flex-start;white-space:nowrap;' + (n ? 'background:#14532d;color:#bbf7d0;' : 'background:transparent;color:#7a95b5;');
+      if(lm.textContent !== txt) lm.textContent = txt;
+    }
+    var ov = document.getElementById(OV); if(ov) render(ov);
+  }catch(e){}
+}
+window._gcApprovalsPaint = paint;
+RI.call(window, function(){ try{ paint(); }catch(e){} }, 900);
+RI.call(window, function(){ if(!document.hidden && myEmail()) load(); }, 20000);
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) load(); });
+ST.call(window, load, 2500); ST.call(window, load, 8000);
+try{ console.log('[GC] Customer e-mail approvals: _gcOpenApprovals() (patch APPR).'); }catch(e){}
 })();
 
 </script><!-- /INSP -->
