@@ -66606,6 +66606,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   setTimeout(function(){
     addToggle();
     // Always load in Desk view (never auto-enter field mode) so the desktop, schedule, and toggle are always available.
+    /*FVH2*/ if(document.getElementById('_gcJobPick')||document.getElementById('_gcJobDash')||document.getElementById('_gcFieldHomeOv')) return; // field app already on screen: keep it consistent
     try{ localStorage.setItem(FM_KEY,'0'); }catch(e){}
     document.documentElement.classList.remove('_fieldmode','_fmAppOpen');
   }, 1200);
@@ -71211,7 +71212,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   function appHeader(){
     if(!isField()){ var h=document.getElementById('_gcAppHead'); if(h) h.remove(); return; }
     // don't show header over the Home overlay or sheets
-    if(document.getElementById('_gcFieldHomeOv')){ var h2=document.getElementById('_gcAppHead'); if(h2) h2.remove(); return; }
+    if(document.getElementById('_gcFieldHomeOv')/*FVH3*/||document.getElementById('_gcJobPick')||document.getElementById('_gcJobDash')){ var h2=document.getElementById('_gcAppHead'); if(h2) h2.remove(); return; }
     var view=''; try{ view=localStorage.getItem('grayco_view')||''; }catch(e){}
     var titles={projects:'Jobs',schedule:'Schedule',documents:'Documents',subs:'Subcontractors',scopes:'Scopes'};
     var title=titles[view]||'GrayCo';
@@ -72024,7 +72025,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     window._gcCurrentJob = null;
     var crm=window._crm||{};
     var admin=isAdmin(), name=myName();
-    var jobs=(crm.projects||[]).filter(function(p){ return p&&p.name && !/(lost)/i.test(p.status||'') && (admin || p.pm===name); });
+    /*FVH*/var _fvhT0=Date.now(); function _fvhJobs(){ var c=window._crm||{}; var a=isAdmin(), nm=myName(), mu=myUser(); var all=(c.projects||[]).filter(function(p){ return p&&p.name && !/(lost)/i.test(p.status||''); }); return { ready: all.length>0 && (c.users||[]).length>0, list: all.filter(function(p){ return a || !mu || p.pm===nm; }) }; } var jobs=_fvhJobs().list;
 
     var ov=document.createElement('div'); ov.id='_gcJobPick';
     ov.style.cssText='position:fixed;inset:0;z-index:99980;background:linear-gradient(180deg,#0a1628,#0f2440);display:flex;flex-direction:column;font-family:Inter,-apple-system,sans-serif;';
@@ -72042,11 +72043,11 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var _jf=document.getElementById('_jpFindSub'); if(_jf) _jf.onclick=function(){ if(window._gcOpenSubSearch) window._gcOpenSubSearch(); };
 
     function draw(q){
-      q=norm(q);
+      q=norm(q); jobs=_fvhJobs().list;
       var f=jobs.filter(function(p){ return !q || norm(p.name).indexOf(q)>-1 || norm(p.po).indexOf(q)>-1 || norm(p.address).indexOf(q)>-1 || norm(p.client).indexOf(q)>-1; });
       // active first
       f.sort(function(a,b){ var ac=/complete|closed/i.test(a.status||'')?1:0, bc=/complete|closed/i.test(b.status||'')?1:0; return ac-bc; });
-      if(!f.length){ list.innerHTML='<div style="color:#64748b;text-align:center;padding:40px 20px;">No jobs found.</div>'; return; }
+      if(!f.length){ var _fvhRd=_fvhJobs().ready, _fvhW=!_fvhRd && Date.now()-_fvhT0<90000; list.innerHTML=_fvhW?'<div style="color:#8fa8c4;text-align:center;padding:40px 20px;">Loading your jobs\u2026</div>':'<div style="color:#64748b;text-align:center;padding:40px 20px;">No jobs found.</div>'; if(!_fvhRd){ clearTimeout(ov._fvhTm); ov._fvhTm=setTimeout(function(){ if(ov.isConnected){ var _s=document.getElementById('_jpSearch'); draw(_s?_s.value:''); } },_fvhW?1000:3000); } return; }
       list.innerHTML=f.map(function(p){
         var status=p.status||'Active';
         var alerts=window._gcJobAlertCount?window._gcJobAlertCount(p):0;
@@ -121251,5 +121252,12 @@ window._gcSec2AskAccess = askAccess;
 console.log('[GC] SEC2: owner-only data is enforced by the database; this computer asks only for what its person may have.');
 })();
 </script>
+<script>
+/* FVH: keep the Connect Google bar out of field view; on phones it sits low, not over the header */
+(function(){ try{ var st=document.createElement('style'); st.id='_gcFVHcss';
+  st.textContent='body:has(#_gcJobPick) #_gcDeskBtn{display:none!important}body:has(#_gcJobPick) #_gConnBar,body:has(#_gcJobDash) #_gConnBar{display:none!important}html._fieldmode #_gConnBar{display:none!important}@media (max-width:820px){#_gConnBar{top:auto!important;bottom:calc(72px + env(safe-area-inset-bottom,0px))!important;flex-wrap:wrap;font-size:12px!important}}';
+  (document.head||document.documentElement).appendChild(st); }catch(e){} })();
+</script>
+
 
 
