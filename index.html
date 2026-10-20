@@ -2993,7 +2993,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.150-2026-10-20-v2 -->
+<!-- GrayCo CRM Build: 33.150-2026-10-20-v3 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -3614,7 +3614,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.150-2026-10-20-v2");
+  console.log("[GC] Build 33.150-2026-10-20-v3");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -3662,7 +3662,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.150-2026-10-20-v2"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.150-2026-10-20-v3"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -59848,7 +59848,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }
     function manualRows(){
       if(!d.manual.length) return '';
-      return d.manual.map(function(m,i){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>'+esc(m.label)+(m.person?(' <span style="color:#7dd3fc;font-size:10px">['+esc(m.person)+']</span>'):'')+'</span><span>'+money(m.amt)+' <button data-mdel="'+i+'" style="background:none;border:none;color:#f87171;cursor:pointer">\u00d7</button></span></div>'; }).join('');
+      var _fx=0,_es=0; d.manual.forEach(function(m){ var a=parseFloat(m&&m.amt)||0; if(m&&m.est) _es+=a; else _fx+=a; });
+      return d.manual.map(function(m,i){ return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0"><span>'+esc(m.label)+(m.person?(' <span style="color:#7dd3fc;font-size:10px">['+esc(m.person)+']</span>'):'')+'</span><span>'+'<button data-mest="'+i+'" title="Tap to switch between a fixed cost and a monthly estimate" style="margin-right:8px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;border:none;cursor:pointer;'+(m.est?'background:#fde68a;color:#78350f':'background:#bbf7d0;color:#14532d')+'">'+(m.est?'EST.':'FIXED')+'</button>'+(m.est?'~':'')+money(m.amt)+' <button data-mdel="'+i+'" style="background:none;border:none;color:#f87171;cursor:pointer">\u00d7</button></span></div>'; }).join('')
+        +'<div style="display:flex;justify-content:space-between;font-size:11px;color:#9fb3c8;border-top:1px solid #1e3a5f;margin-top:6px;padding-top:6px"><span>Fixed '+money(_fx)+' \u00b7 Estimated ~'+money(_es)+'</span><span style="font-weight:700;color:#fff">'+money(_fx+_es)+'/mo</span></div>';
     }
     // "Cost of Adding Steven" - his tagged fixed items + his actual vehicle/gas expenses this month.
     function _stevenCostBlock(){
@@ -59904,6 +59906,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       +'<div style="display:flex;gap:8px">'
         +'<input id="_ohLabel" placeholder="e.g. Rent" style="flex:2;padding:8px;border-radius:6px">'
         +'<input id="_ohAmt" inputmode="decimal" placeholder="$/mo" style="flex:1;padding:8px;border-radius:6px">'
+        +'<select id="_ohKind" title="Fixed = same every month. Estimate = changes month to month (gas, utilities)." style="flex:1;padding:8px;border-radius:6px"><option value="fixed">Fixed</option><option value="est">Estimate</option></select>'
         +'<button id="_ohAdd" style="padding:8px 14px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Add</button>'
       +'</div>'
       +'</div>';
@@ -59916,12 +59919,22 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       if(!label){ alert('Type what the cost is (e.g. Rent).'); return; }
       if(!(amt>0)){ alert('Type the monthly amount as a number, e.g. 1900.'); return; }
       var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
-      manual.push({label:label, amt:amt});
+      var _k=ov.querySelector('#_ohKind'); manual.push(_k&&_k.value==='est'?{label:label, amt:amt, est:true}:{label:label, amt:amt});
       try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
       try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
       ov.remove(); window._gcOpenOverhead();
       setTimeout(function(){ try{ var now=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); if(!now.some(function(m){ return m&&m.label===label&&+m.amt===amt; })) alert('That cost was not kept. Overhead can be changed only when signed in as Wesley or Nick (check \uD83D\uDC8E at the bottom right).'); }catch(e){} }, 3000);
     };
+    ov.querySelectorAll('[data-mest]').forEach(function(btn){
+      btn.onclick=function(){
+        var i=parseInt(btn.getAttribute('data-mest'),10);
+        var manual=[]; try{ manual=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); }catch(e){}
+        if(!manual[i]) return; if(manual[i].est) delete manual[i].est; else manual[i].est=true;
+        try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
+        try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
+        ov.remove(); window._gcOpenOverhead();
+      };
+    });
     ['#_ohLabel','#_ohAmt'].forEach(function(sel){ var el=ov.querySelector(sel); if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); ov.querySelector('#_ohAdd').click(); } }); });
     ov.querySelectorAll('[data-mdel]').forEach(function(btn){
       btn.onclick=function(){
