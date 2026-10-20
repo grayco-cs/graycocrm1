@@ -243,6 +243,8 @@ exports.handler = async function (event) {
   if (!lrows[0]) return out(404, { error: 'Save the lead first, then look up the owner.', code: 'no-lead' });
   const lead = lrows[0].data || {};
   if (lead.doNotContact) return out(403, { error: 'This lead is marked "Do not contact".', code: 'do-not-contact' });
+  // Made-up DEMO sites (early test phase) have no real owner: never spend a lookup on one.
+  if (lead.demo === true || /^DEMO\s/.test(String(lead.name || ''))) return out(400, { error: 'This is a made-up DEMO site: there is no real owner to look up.', code: 'demo' });
   const ownerNames = [lead.owner && lead.owner.company, lead.owner && lead.owner.name, body.owner].filter(Boolean);
   const norm = function(v){ return String(v || '').toUpperCase().replace(/&/g, ' AND ').replace(/[^A-Z0-9 ]/g, ' ').replace(/\b(LLC|INC|CORP|CO|LP|LLP|LTD|THE)\b/g, ' ').replace(/\s+/g, ' ').trim(); };
   const pid = lead.parcel && String(lead.parcel.id || '').toUpperCase().replace(/[^A-Z0-9]/g, '');

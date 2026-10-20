@@ -182,10 +182,10 @@
       showApp();
       startPolling();
       expireSolar();
-      loadSkipStatus();
+      loadSkipStatus().then(renderModeBar);
     }, function (e) {
       if (e.code === 'signed-out' || e.code === 'bad-login') return showLogin(e.code === 'signed-out' ? 'Please sign in again.' : e.message);
-      if (e.code === 'no-tables') return loadFailed('RoofScout\'s database is not set up yet. An admin runs docs/roofscout-setup.sql once in Supabase (SQL Editor), then clicks Try again.');
+      if (e.code === 'no-tables') return loadFailed('RoofScout\'s database is not set up yet. An admin opens docs/roofscout-setup.sql, copies ALL of its text (not just the file name) into Supabase → SQL Editor → New query, clicks Run (every check line must say OK), then clicks Try again.');
       loadFailed(e.message || 'Could not load RoofScout.');
     });
   }
@@ -241,11 +241,27 @@
     $('#app').hidden = false;
     $('#me-name').textContent = me.name + ' · ' + me.role.toUpperCase();
     $('#logout').textContent = isCloud() ? 'Sign out' : 'Exit demo';
-    $('#mode-bar').className = 'demo-bar' + (isCloud() ? ' live' : '');
-    $('#mode-bar').innerHTML = isCloud()
-      ? 'Shared team leads: everyone with a GrayCo CRM sign-in sees the same list. Scan an area for large commercial roofs, or trace a roof on the map, and save it as a lead.'
-      : '<b>DEMO MODE</b>: practice only, saved in this browser, not shared. Scan results are made-up sample data.';
+    renderModeBar();
     go(tab);
+  }
+
+  // The strip under the tabs. On the website it also says when something needs an admin:
+  // made-up DEMO rows left in the shared list (hidden), or a part of the setup that is missing.
+  function renderModeBar() {
+    var bar = $('#mode-bar');
+    if (!isCloud()) {
+      bar.className = 'demo-bar';
+      bar.innerHTML = '<b>DEMO MODE</b>: practice only, saved in this browser, not shared. Scan results are made-up sample data.';
+      return;
+    }
+    var warn = [];
+    var nDemo = (state.demoIds || []).length;
+    if (nDemo) warn.push(nDemo + ' made-up DEMO lead' + (nDemo === 1 ? ' is' : 's are') + ' still in the shared list from the early test (hidden here). ' +
+      (me && me.role === 'admin' ? '<button class="btn ghost sm" data-act="clear-demo">Remove them</button>' : 'An admin can remove them in Settings.'));
+    if (skipStatus && skipStatus.error) warn.push('Owner contact lookup: ' + esc(skipStatus.error) + ' <button class="btn ghost sm" data-act="contact-recheck">Check again</button>');
+    bar.className = 'demo-bar' + (warn.length ? '' : ' live');
+    bar.innerHTML = warn.length ? '<b>Needs attention:</b> ' + warn.join(' · ')
+      : 'Shared team leads: everyone with a GrayCo CRM sign-in sees the same list. Scan an area for large commercial roofs, or trace a roof on the map, and save it as a lead.';
   }
 
   $('#tabs').addEventListener('click', function (e) {
@@ -295,7 +311,7 @@
 
   function signature(s) {
     return s.leads.map(function (l) { return l.id + '@' + (l._ver || l.updatedAt); }).sort().join('|') +
-      '#' + s.activity.length + '#' + JSON.stringify(s.settings) + '#' + JSON.stringify(s.users);
+      '#' + s.activity.length + '#' + JSON.stringify(s.settings) + '#' + JSON.stringify(s.users) + '#' + (s.demoIds || []).length;
   }
 
   function busy() {
@@ -310,6 +326,7 @@
     var changed = signature(ns) !== signature(state);
     state = ns;
     me = userById(me.id) || me;
+    renderModeBar();
     $('#me-name').textContent = me.name + ' · ' + me.role.toUpperCase();
     if (changed) refresh(); else showPending();
   }
@@ -1705,6 +1722,14 @@
     solarDraft = l.solar && solarFresh(l.solar) ? Object.assign({}, l.solar) : null;
     renderSolar();
     renderContact(l);
+    // The Tracerfy check at start may have failed (setup run later, deploy in progress): ask again.
+    if (isCloud() && (!skipStatus || !skipStatus.connected)) {
+      loadSkipStatus().then(function () {
+        renderModeBar();
+        var f = $('#lead-form');
+        if (f && f.dataset.id === (l.id || '')) renderContact(leadById(l.id) || l);
+      });
+    }
     updateEstimate();
   }
 
@@ -1722,7 +1747,14 @@
 
   function loadSkipStatus() {
     if (!isCloud()) return Promise.resolve();
-    return Cloud.fn(SKIP_FN, 'GET', undefined, 'action=status').then(function (s) { skipStatus = s; }, function (e) { skipStatus = { connected: false, error: e.message }; });
+    return Cloud.fn(SKIP_FN, 'GET', undefined, 'action=status').then(function (s) { skipStatus = s; }, function (e) {
+      if (e.code === 'signed-out') { skipStatus = null; return; }
+      var msg = e.code === 'no-tables'
+        ? 'RoofScout\'s database is missing the owner-lookup tables. An admin pastes ALL of docs/roofscout-setup.sql into Supabase → SQL Editor and clicks Run, then reloads RoofScout.'
+        : e.message || 'Could not check the Tracerfy connection.';
+      skipStatus = { connected: false, error: msg, code: e.code || 'error' };
+      if (window.console) console.warn('RoofScout owner lookup status:', e.status || '', e.code || '', e.message);
+    });
   }
 
   function skipLeft() { return skipStatus ? Math.max(0, skipStatus.limit - skipStatus.usedThisMonth) : 0; }
@@ -1765,26 +1797,37 @@
       html += '<p class="fine"><b>Check the National Do Not Call list before cold calls or texts.</b> RoofScout never dials or texts automatically.</p>';
       html += '<p class="fine">Source: ' + esc(c.source || 'Tracerfy') + ' · ' + esc(String(c.fetchedAt || '').slice(0, 10)) + (c.by ? ' · ' + esc(userName(c.by)) : '') + '</p>';
     }
-    if (skipOn() && l.id && !l.doNotContact) {
+    if (l.demo) {
+      html += '<p class="fine">DEMO site: owner lookup is not available for made-up data.</p>';
+    } else if (skipOn() && !l.id && !l.doNotContact) {
+      html += '<p class="fine">Uses 1 Tracerfy lookup — ' + skipLeft() + ' left this month (credits are charged only when Tracerfy finds someone).</p>' +
+        '<button type="button" class="btn ghost block" data-act="contact-save-find">📞 Save lead &amp; find owner contact</button>';
+    } else if (skipOn() && l.id && !l.doNotContact) {
       html += c
         ? '<button type="button" class="btn ghost sm" data-act="contact-again"' + (skipBusy[l.id] ? ' disabled' : '') + '>Trace again</button>'
         : '<p class="fine">Uses 1 Tracerfy lookup — ' + skipLeft() + ' left this month (credits are charged only when Tracerfy finds someone).</p>' +
           '<button type="button" class="btn ghost block" data-act="contact-find"' + (skipBusy[l.id] ? ' disabled' : '') + '>' + (skipBusy[l.id] ? 'Looking up…' : '📞 Find owner contact') + '</button>';
     } else if (!c && !l.doNotContact) {
-      html += '<p class="fine">' + (!l.id ? 'Save the lead first.' : isCloud() ? 'Owner phone lookup is not set up (see Settings).' : 'Available when signed in on the website.') + '</p>';
+      if (!isCloud()) html += '<p class="fine">Available when signed in on the website.</p>';
+      else if (!skipStatus) html += '<p class="fine">Checking the Tracerfy connection…</p>';
+      else html += '<p class="note sm">Owner phone lookup is not available: ' + esc(skipStatus.error || 'Tracerfy is not connected (TRACERFY_API_KEY is not set in Netlify, or the site was not redeployed after adding it).') + '</p>' +
+        '<button type="button" class="btn ghost sm" data-act="contact-recheck">Check again</button>';
     }
     box.innerHTML = html;
   }
 
   function findContact(leadId, again, btn) {
     var l = leadById(leadId);
-    if (!l || !skipOn() || skipBusy[leadId]) return;
+    if (!l) { toast(leadId ? 'This lead is no longer in the list. Reload RoofScout and try again.' : 'Save the lead first, then find the owner contact.', true); return; }
+    if (l.demo) { toast('This is a made-up DEMO site: there is no real owner to look up.', true); return; }
+    if (skipBusy[leadId]) { toast('Already looking up this owner…'); return; }
+    if (!skipOn()) { toast('Owner lookup is not available: ' + ((skipStatus && skipStatus.error) || 'Tracerfy is not connected (see Settings).'), true); return; }
     if (l.doNotContact) { toast('This owner asked not to be contacted.', true); return; }
     if (skipLeft() <= 0) { toast('This month\'s Tracerfy limit (' + skipStatus.limit + ' lookups) is used up. An admin can raise it in Settings.', true); return; }
     var msg = (again ? 'Trace again: this asks Tracerfy again and uses another lookup' : 'Find owner contact uses 1 Tracerfy lookup') +
       ' (credits are charged only when Tracerfy finds someone). ' + skipLeft() + ' of ' + skipStatus.limit + ' lookups left this month' +
       (skipStatus.balance != null ? '; credit balance ' + num(skipStatus.balance) : '') + '.\n\nOnly for business outreach to the building\'s owner. Continue?';
-    if (!confirm(msg)) return;
+    if (!confirm(msg)) { toast('Owner lookup cancelled (nothing was charged).'); return; }
     skipBusy[leadId] = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Looking up…'; }
     var o = l.owner || {};
@@ -1794,7 +1837,10 @@
         if (!r.cached) log('trace', l, r.contact.hit ? (r.contact.phones || []).length + ' phones, ' + (r.contact.emails || []).length + ' emails' : 'no match');
         toast(r.cached ? 'Already looked up: showing the saved result (no charge).' : r.contact.hit ? 'Found ' + (r.contact.phones || []).length + ' phones and ' + (r.contact.emails || []).length + ' emails.' : 'Tracerfy found no contact (no charge).');
       });
-    }, function (e) { report(e); }).then(null, function () { /* commitLead already reported it */ }).then(function () {
+    }, function (e) {
+      if (window.console) console.warn('RoofScout owner lookup failed:', e.status || '', e.code || '', e.message);
+      report(e);
+    }).then(null, function () { /* commitLead already reported it */ }).then(function () {
       delete skipBusy[leadId];
       var f = $('#lead-form');
       if (f && f.dataset.id === leadId) renderContact(leadById(leadId) || l);
@@ -1966,6 +2012,14 @@
     });
   }
 
+  // A new lead must show up where people look: the Leads list opens on Commercial and the
+  // map on the current type, so a traced house otherwise seemed to vanish after saving.
+  function showSavedLead(l) {
+    if (!l) return;
+    if (ui.leads.kind && l.kind !== ui.leads.kind) ui.leads.kind = '';
+    if (prefs.scope !== 'all' && l.kind && l.kind !== prefs.scope) setPref('scope', l.kind);
+  }
+
   function withBusy(btn, p) {
     if (btn) btn.disabled = true;
     return p.then(function (v) { if (btn) btn.disabled = false; return v; }, function (e) { if (btn) btn.disabled = false; throw e; });
@@ -2042,6 +2096,29 @@
         break;
       case 'scan-add': addScanLead(id, b); break;
       case 'contact-find': findContact(id || ($('#lead-form') && $('#lead-form').dataset.id), false, b); break;
+      case 'contact-save-find':
+        form = $('#lead-form');
+        if (!form) return;
+        if (!form.elements.name.value.trim() && form.elements.address.value.trim()) form.elements.name.value = form.elements.address.value.trim();
+        if (!form.reportValidity()) { toast('Fill in the highlighted field first, then try again.', true); return; }
+        withBusy(b, saveLeadForm(form)).then(function (nl) {
+          showSavedLead(nl);
+          leadForm(nl);
+          findContact(nl.id, false, null);
+        }, function () { /* already reported */ });
+        break;
+      case 'contact-recheck':
+        skipStatus = null;
+        b.disabled = true;
+        loadSkipStatus().then(function () {
+          renderModeBar();
+          var lf = $('#lead-form');
+          if (lf) renderContact(leadById(lf.dataset.id) || { id: '' });
+          var el = $('#skip-status');
+          if (el) el.textContent = skipStatusText();
+          toast(skipOn() ? 'Tracerfy is connected.' : 'Owner lookup: ' + ((skipStatus && skipStatus.error) || 'not connected.'), !skipOn());
+        });
+        break;
       case 'contact-again': findContact($('#lead-form') && $('#lead-form').dataset.id, true, b); break;
       case 'contact-use':
         var pf = $('#lead-form');
@@ -2125,11 +2202,13 @@
           JSON.stringify(Object.assign({ exportedFrom: isCloud() ? 'shared database' : 'demo mode', exportedAt: new Date().toISOString() }, state), null, 1), 'application/json');
         break;
       case 'clear-demo':
-        var demoIds = state.leads.filter(function (l) { return l.demo; }).map(function (l) { return l.id; });
+        var demoIds = isCloud() ? (state.demoIds || []).slice() : state.leads.filter(function (l) { return l.demo; }).map(function (l) { return l.id; });
         if (!demoIds.length) { toast('No demo leads to remove.'); return; }
         if (!confirm('Remove all ' + demoIds.length + ' demo leads' + (isCloud() ? ' for the whole team' : '') + ' (including any that were worked)? Real leads stay.')) return;
         removeLeads(demoIds).then(function () {
           toast('Removed ' + demoIds.length + ' demo leads');
+          state.demoIds = [];
+          renderModeBar();
           refresh();
         }, function () { /* already reported */ });
         break;
@@ -2168,8 +2247,9 @@
     if (form.id === 'lead-form') {
       e.preventDefault();
       var wasNew = !form.dataset.id;
-      withBusy(btn, saveLeadForm(form)).then(function () {
-        toast(wasNew ? 'Lead added' : 'Saved');
+      withBusy(btn, saveLeadForm(form)).then(function (saved) {
+        if (wasNew) showSavedLead(saved);
+        toast(wasNew ? 'Lead added: ' + (saved.name || saved.address || 'new lead') : 'Saved');
         closeModal();
         refresh();
       }, function () { /* already reported */ });

@@ -233,6 +233,10 @@ async function main() {
 
   // Without a Tracerfy key the button is hidden.
   delete process.env.TRACERFY_API_KEY;
+  var demoDeletes = 0;
+  var demoRow = { id: 'Ldemo', created_at: now, updated_at: now, created_by: ADMIN, updated_by: ADMIN,
+    data: { name: 'DEMO Warehouse #001', address: 'Demo site 001', kind: 'commercial', roofType: 'tpo', areaSqft: 20000, condition: 30, stage: 'New', demo: true,
+      owner: { name: 'Demo Contact 001', phone: '(901) 555-0112', email: 'demo001@example.com' } } };
   var page2 = await browser.newPage();
   await page2.addInitScript(function () {
     localStorage.setItem('gc_auth_v1', JSON.stringify({ access_token: 'tok-admin', refresh_token: 'r', expires_at: Math.floor(Date.now() / 1000) + 36000, email: 'wjohnson@grayco-cs.com', uid: 'u1' }));
@@ -243,7 +247,10 @@ async function main() {
       var r = await skipFn.handler({ httpMethod: 'GET', headers: route.request().headers(), queryStringParameters: { action: 'status' } });
       return route.fulfill({ status: r.statusCode, contentType: 'application/json', body: r.body });
     }
-    if (url.indexOf(SB + '/rest/v1/rs_leads') === 0) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(Object.keys(rows).map(function (k) { return rows[k]; })) });
+    if (url.indexOf(SB + '/rest/v1/rs_leads') === 0) {
+      if (route.request().method() === 'DELETE') { if (/Ldemo/.test(url)) demoDeletes++; return route.fulfill({ status: 204, body: '' }); }
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(Object.keys(rows).map(function (k) { return rows[k]; }).concat([demoRow])) });
+    }
     if (url.indexOf(SB + '/rest/v1/gc_staff') === 0) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ email: ADMIN, name: 'Wesley', role: 'admin', active: true }]) });
     if (url.indexOf(SB + '/rest/v1/') === 0) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     if (url.indexOf(base) === 0) return route.continue();
@@ -256,7 +263,17 @@ async function main() {
   await page2.waitForSelector('#contact-box');
   await page2.waitForTimeout(300);
   assert.strictEqual(await page2.locator('[data-act=contact-find]').count(), 0, 'no Find owner contact without a key');
-  assert.ok(/not set up \(see Settings\)/.test(await page2.locator('#contact-box').innerText()));
+  assert.ok(/Owner phone lookup is not available: Tracerfy is not connected/.test(await page2.locator('#contact-box').innerText()), 'says why, not a silent no-op');
+  assert.strictEqual(await page2.locator('#contact-box [data-act=contact-recheck]').count(), 1, 'Check again button');
+  // A made-up DEMO row left in the shared table from the early test is hidden, and the admin is told.
+  assert.strictEqual(await page2.locator('#lead-table tr[data-id=Ldemo]').count(), 0, 'DEMO lead hidden on the website');
+  assert.ok(/1 made-up DEMO lead is still in the shared list/.test(await page2.locator('#mode-bar').innerText()), 'mode bar warns about DEMO rows');
+  await page2.click('#lead-form [data-act=close]');
+  page2.on('dialog', function (d) { d.accept(); });
+  await page2.click('#mode-bar [data-act=clear-demo]');
+  await page2.waitForFunction(function () { return /Removed 1 demo leads/.test(document.querySelector('#toast').textContent); });
+  assert.strictEqual(demoDeletes, 1, 'DELETE sent for the DEMO row');
+  assert.ok(!/DEMO/.test(await page2.locator('#mode-bar').innerText()), 'warning gone');
 
   // Local demo mode (localhost only) keeps its made-up practice scan, and has no real scan.
   var page3 = await browser.newPage();

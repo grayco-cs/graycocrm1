@@ -56,6 +56,11 @@
     l.createdBy = row.created_by || l.createdBy;
   }
 
+  // A made-up demo site (Store.demoScan): flagged demo, or named "DEMO …".
+  function isDemoLead(l) {
+    return !!l && (l.demo === true || /^DEMO\s/.test(String(l.name || '')));
+  }
+
   function clash(message, lead) {
     var e = new Error(message);
     e.code = 'conflict';
@@ -108,7 +113,11 @@
             role: s.role === 'admin' ? 'admin' : (p.rs_role || 'pm')
           };
         }).sort(function (a, b) { return a.name.localeCompare(b.name); });
-        var leads = r[3].map(rowToLead);
+        // Made-up DEMO sites from the early test phase (when the demo scan saved into the shared
+        // list) are never shown on the website: they are counted so an admin can remove them.
+        var all = r[3].map(rowToLead);
+        var demoIds = all.filter(isDemoLead).map(function (l) { return l.id; });
+        var leads = all.filter(function (l) { return !isDemoLead(l); });
         // Changes made while offline win over what the database had, until they are sent.
         Object.keys(pendingLeads).forEach(function (id) {
           leads = leads.filter(function (l) { return l.id !== id; });
@@ -122,6 +131,7 @@
           settings: Store.mergeSettings(r[2] && r[2][0] ? r[2][0].data : null),
           users: users,
           leads: leads,
+          demoIds: demoIds,
           activity: activity
         };
       });
@@ -226,5 +236,5 @@
     };
   }
 
-  root.Data = { demo: demo, cloud: cloud };
+  root.Data = { demo: demo, cloud: cloud, isDemoLead: isDemoLead };
 })(this);
