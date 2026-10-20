@@ -55,7 +55,7 @@
     change(lead);
     lead.touched = true;
     if (!isCloud()) lead.updatedAt = Date.now();
-    return B.saveLead(lead).then(function () { return lead; }, function (e) {
+    return B.saveLead(lead).then(function () { crmSync([lead]); return lead; }, function (e) {
       if (e.queued) { toast('No connection: saved on this computer. It will be sent when the connection is back.', true); return lead; }
       Object.keys(lead).forEach(function (k) { delete lead[k]; });
       Object.assign(lead, JSON.parse(before));
@@ -74,7 +74,7 @@
   function createLead(lead) {
     lead.createdAt = lead.updatedAt = Date.now();
     state.leads.push(lead);
-    return B.saveLead(lead).then(function () { return lead; }, function (e) {
+    return B.saveLead(lead).then(function () { crmSync([lead]); return lead; }, function (e) {
       if (e.queued) { toast('No connection: saved on this computer. It will be sent when the connection is back.', true); return lead; }
       state.leads = state.leads.filter(function (l) { return l !== lead; });
       report(e);
@@ -85,7 +85,99 @@
   function removeLeads(ids) {
     var keep = state.leads;
     state.leads = state.leads.filter(function (l) { return ids.indexOf(l.id) < 0; });
-    return B.deleteLeads(ids).then(null, function (e) { state.leads = keep; report(e); throw e; });
+    return B.deleteLeads(ids).then(function () { crmGone(ids); }, function (e) { state.leads = keep; report(e); throw e; });
+  }
+
+  // ---- The GrayCo CRM (owner 10/20) -------------------------------------------
+  // Every real lead is also a GrayCo lead in the CRM's Leads tab (source GrayCo · RoofScout), kept up to
+  // date from here; a lead is a JOB in the CRM only when someone clicks "📤 Bring to CRM as a job".
+  // As the CRM's 🏠 RoofScout tab, RoofScout hands each saved lead to the CRM page around it
+  // (window.parent._gcRoofScout). Opened on its own, nothing is sent from here: the CRM reads the
+  // shared list the next time it opens, so no lead is missed either way. The CRM decides what goes
+  // across (no DEMO, no do-not-contact leads; admin and PM computers only) and never makes a second copy.
+  function crmApi() {
+    try {
+      if (window.self === window.top) return null;
+      var g = window.parent && window.parent._gcRoofScout;
+      return g && typeof g.upsertLeads === 'function' ? g : null;
+    } catch (e) { return null; }
+  }
+  function crmPricing(l) {
+    var rt = rtOf(l), e = estOf(l);
+    return { roofTypeName: rt.name, price: e.price, cost: e.cost, squares: e.squares, basis: e.basis, perSquare: e.perSquare,
+      margin: Number(state.settings.margin) || 0, costPerSqft: Pricing.costPerSqft(rt), approx: Pricing.approx(e.price) };
+  }
+  function crmCopy(l) {
+    var c = JSON.parse(JSON.stringify(l));
+    c._pricing = crmPricing(l);
+    var u = userById(l.assignedTo);
+    c._assignedName = u ? u.name : '';
+    return c;
+  }
+  // complete: `leads` is the whole shared list (so one missing from it was deleted here).
+  function crmSync(leads, complete) {
+    if (!isCloud()) return;
+    var g = crmApi();
+    if (!g) return;
+    try { g.upsertLeads(leads.filter(function (l) { return l && l.id; }).map(crmCopy), { complete: !!complete, by: me && me.id }); }
+    catch (e) { if (window.console) console.warn('RoofScout → CRM:', e && e.message); }
+  }
+  function crmGone(ids) {
+    if (!isCloud()) return;
+    var g = crmApi();
+    if (!g || typeof g.removedLeads !== 'function') return;
+    try { g.removedLeads(ids.slice()); } catch (e) { /* the CRM catches up when it next loads */ }
+  }
+  // The CRM job made from this lead: saved on the lead, or (inside the CRM) found there.
+  function crmJobOf(l) {
+    if (!l) return null;
+    var g = crmApi(), j = null;
+    if (g && typeof g.jobOf === 'function') { try { j = g.jobOf(l.id); } catch (e) { j = null; } }
+    return j || l.crmJob || null;
+  }
+  function crmJobLink(j) {
+    var base = location.hostname === 'roofscout.grayco-cs.com' ? 'https://crm.grayco-cs.com/' : '/';
+    return base + '#rsjob=' + encodeURIComponent(j.projectId || '');
+  }
+  function crmJobBox(l) {
+    if (!isCloud() || !l || !l.id || l.demo) return '';
+    var j = crmJobOf(l);
+    if (j) {
+      return '<div class="panel crm-job"><h3>GrayCo CRM</h3><p class="sm">In CRM as job <b>PO ' + esc(j.po || '?') + '</b>' +
+        (j.at ? ' <span class="muted">· ' + esc(U.when(j.at)) + '</span>' : '') + '</p>' +
+        '<a class="btn ghost sm" data-act="crm-open-job" data-v="' + esc(j.projectId || '') + '" href="' + esc(crmJobLink(j)) + '" target="_top">Open job PO ' + esc(j.po || '') + ' in the CRM</a></div>';
+    }
+    if (l.doNotContact) return '';
+    return '<div class="panel crm-job"><h3>GrayCo CRM</h3><p class="fine">This lead is in the CRM\'s Leads tab as a GrayCo lead. When you are ready, make it a job there (bidding, with a draft estimate; no contract).</p>' +
+      '<button type="button" class="btn ghost block" data-act="crm-job">📤 Bring to CRM as a job</button></div>';
+  }
+  var crmBusy = {};
+  function bringToCrm(id, btn) {
+    var l = leadById(id);
+    if (!l) { toast('Save the lead first.', true); return; }
+    if (crmJobOf(l)) { toast('Already in the CRM as job PO ' + (crmJobOf(l).po || '') + '.'); return; }
+    if (crmBusy[id]) return;
+    var g = crmApi();
+    if (!g || typeof g.bringJob !== 'function') {
+      toast('Open RoofScout inside the CRM (🏠 RoofScout tab) to bring a lead in as a job.', true);
+      return;
+    }
+    var p = crmPricing(l);
+    if (!confirm('Bring "' + l.name + '" into the GrayCo CRM as a job?\n\nIt creates a job (status: bidding, no contract) with a DRAFT estimate of about ' +
+      money(p.approx) + ' (' + (p.basis === 'square' ? num(p.squares) + ' squares × ' + money(p.perSquare) + '/square' : 'cost + ' + p.margin + '% margin') + ').')) return;
+    crmBusy[id] = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating the job…'; }
+    Promise.resolve().then(function () { return g.bringJob(crmCopy(l), { confirmed: true, by: me && me.id }); }).then(function (r) {
+      if (!r || !r.ok) throw new Error((r && r.message) || 'The CRM did not create the job.');
+      var job = { projectId: r.projectId, po: r.po, estimateId: r.estimateId || '', at: Date.now(), by: me.id };
+      toast(r.existed ? 'Already in the CRM as job PO ' + r.po + '.' : 'In the CRM as job PO ' + r.po + ' (bidding, draft estimate).');
+      if (!r.existed) log('crm-job', l, 'PO ' + r.po);
+      return commitLead(l, function (x) { x.crmJob = job; }).then(null, function () { /* the CRM has it; shown from there */ });
+    }).then(null, function (e) { report(e); }).then(function () {
+      delete crmBusy[id];
+      var f = $('#lead-form');
+      if (f && f.dataset.id === id) { var box = $('#crm-job-box'); if (box) box.innerHTML = crmJobBox(leadById(id) || l); }
+    });
   }
 
   // Call-list priority: worse roofs and bigger jobs first, further-along deals
@@ -200,6 +292,8 @@
       state = s;
       me = userById(String(email).toLowerCase());
       showApp();
+      crmSync(state.leads, true);
+      openFromLink();
       startPolling();
       expireSolar();
       loadSkipStatus().then(renderModeBar);
@@ -254,6 +348,16 @@
     me = null;
     showLogin(msg || 'Please sign in again.');
   }
+
+  // roofscout/#lead=<id> (the CRM's link back to a lead) opens that lead.
+  function openFromLink() {
+    var m = /[#&]lead=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    var id = decodeURIComponent(m[1]);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+    if (leadById(id)) openLead(id); else toast('That lead is no longer in RoofScout.', true);
+  }
+  window.addEventListener('hashchange', function () { if (me && state) openFromLink(); });
 
   function showApp() {
     $('#login').hidden = true;
@@ -345,6 +449,7 @@
     waitingState = null;
     var changed = signature(ns) !== signature(state);
     state = ns;
+    if (changed) crmSync(state.leads, true);
     me = userById(me.id) || me;
     renderModeBar();
     $('#me-name').textContent = me.name + ' · ' + me.role.toUpperCase();
@@ -1330,7 +1435,7 @@
 
   // ---- Activity -------------------------------------------------------------
 
-  var ACTION_LABEL = { trace: 'looked up the owner of', open: 'opened', edit: 'edited', stage: 'moved', call: 'called', create: 'added', flyer: 'printed flyer for', proposal: 'printed proposal for', scan: 'ran a scan:', 'delete': 'deleted', claim: 'claimed', solar: 'measured with Google' };
+  var ACTION_LABEL = { trace: 'looked up the owner of', open: 'opened', edit: 'edited', stage: 'moved', call: 'called', create: 'added', flyer: 'printed flyer for', proposal: 'printed proposal for', scan: 'ran a scan:', 'delete': 'deleted', claim: 'claimed', solar: 'measured with Google', 'crm-job': 'brought into the CRM as a job:' };
 
   function viewActivity() {
     var rows = state.users.map(function (u) {
@@ -1721,6 +1826,7 @@
         '<div class="panel est" id="est"></div>' +
         '<div class="panel solar" id="solar-box"></div>' +
         '<div class="panel contact-box" id="contact-box"></div>' +
+        (isNew ? '' : '<div id="crm-job-box">' + crmJobBox(l) + '</div>') +
         (l.scan || l.parcel ? '<div class="panel"><h3>From the area scan</h3>' +
           (l.scan ? '<div class="est-row"><span>Score</span><b>' + esc(l.scan.score) + '</b></div><p class="fine">' + esc((l.scan.reasons || []).join(' · ')) + '</p>' : '') +
           (l.parcel ? '<p class="fine">Parcel ' + esc(l.parcel.id) + (l.parcel.landUse ? ' · ' + esc(l.parcel.landUse) : '') + (l.parcel.yearBuilt ? ' · built ' + esc(l.parcel.yearBuilt) : '') + (l.parcel.bldgSqft ? ' · ' + num(l.parcel.bldgSqft) + ' ft² building (county)' : '') + '</p>' : '') +
@@ -2062,7 +2168,7 @@
   document.addEventListener('click', function (e) {
     if ($('#app').hidden) return;
     var b = e.target.closest('[data-act]');
-    if (b) { handleAct(b); return; }
+    if (b) { if (b.tagName === 'A' && b.dataset.act === 'crm-open-job') e.preventDefault(); handleAct(b); return; }
     var sth = e.target.closest('th[data-ssort]');
     if (sth) {
       var sf = ui.scan;
@@ -2115,6 +2221,12 @@
         if (zs) { goTo(zs.lat, zs.lng, 18); selectScanSite(zs.id, false); }
         break;
       case 'scan-add': addScanLead(id, b); break;
+      case 'crm-job': bringToCrm($('#lead-form') && $('#lead-form').dataset.id, b); break;
+      case 'crm-open-job':
+        var cg = crmApi();
+        if (cg && typeof cg.openJob === 'function') { closeModal(); cg.openJob(b.dataset.v); }
+        else window.open(b.getAttribute('href'), '_top');
+        break;
       case 'contact-find': findContact(id || ($('#lead-form') && $('#lead-form').dataset.id), false, b); break;
       case 'contact-save-find':
         form = $('#lead-form');

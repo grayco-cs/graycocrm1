@@ -122727,6 +122727,542 @@ try { console.log('[GC] Back from every screen (patch NAV): _gcNavBack()'); } ca
 })();
 
 </script>
+<script id="gc-patch-rsl">
+/* ============================================================================
+   GrayCo — ROOFSCOUT LEADS ARE GRAYCO LEADS IN THE CRM.   (patch RSL)   __GC_PATCH_RSL__
+
+   Owner (10/20): "keep these in RoofScout until I choose to bring to CRM as a job; all jobs from
+   RoofScout that aren't in CRM already go into CRM as a GrayCo lead."
+
+   1. AUTOMATIC. Every real RoofScout lead (rs_leads) is a lead in Leads → Lead Pipeline:
+        source "GrayCo", sub-source "RoofScout" (type Roofing). It carries the property, address,
+        owner of record, the phone / email (typed, or found by Tracerfy), roof type, area and
+        squares, the rough estimate, condition, the scan score and reasons, and a link back
+        (/roofscout/#lead=<id>).
+      · One CRM lead per RoofScout lead, ever: its id is LEAD_RS_<RoofScout id> (rsLeadId on it),
+        so two computers adding it at once make the same record, and a sync folds them together.
+      · Not when the place is already in the CRM: the same street address (normalised) or parcel
+        on a lead or a job.
+      · Never: DEMO leads (demo flag / "DEMO …" names) and leads marked do-not-contact or
+        Do-Not-Call in RoofScout.
+      · A change in RoofScout (stage, owner contact, estimate…) updates the CRM lead. A field
+        someone changed in the CRM since is left as they made it.
+      · Deleted in RoofScout: the CRM lead stays, marked "removed in RoofScout".
+      · Deleted in the CRM: it stays deleted (never put back by this).
+      · When: as RoofScout saves (the 🏠 RoofScout tab hands each save to this page), and a
+        catch-up when the CRM opens (it reads rs_leads with the CRM sign-in, so leads made in
+        RoofScout opened on its own arrive too) and every 10 minutes. Admin and PM computers only.
+   2. MANUAL. "📤 Bring to CRM as a job" on a RoofScout lead (asks first) makes ONE job:
+        status bidding, contract empty ("No contract yet"), source "GrayCo · RoofScout", the
+        address, client, contact, roof and measurements, notes and rsLeadId — and ONE draft
+        estimate (Estimates page, status draft) with one line priced the RoofScout way (squares ×
+        $/square, or cost + margin). The bid is shown as the job's estimate. The CRM lead is marked
+        converted; RoofScout shows "In CRM as job PO X". A second click makes nothing.
+
+   API:  _gcRoofScout.importLeads()   catch-up now (reads rs_leads)
+         _gcRoofScout.bringJob(rsLead) the job + draft estimate (asks first)
+         _gcRoofScout.jobOf(rsId)      { projectId, po } once it is a job
+         _gcRoofScout.status()         what the link did on this computer
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_RSL__) return; window.__GC_PATCH_RSL__ = true;
+var W = window;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms); }
+function every(f, ms){ return RI.call(W, f, ms); }
+var SB = 'https://ieeonhpfahmwwecizdut.supabase.co';
+var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
+var LEAD_P = 'LEAD_RS_', PRJ_P = 'PRJ_RS_', EST_P = 'EST_RS_';
+var SRC = 'GrayCo', SUB = 'RoofScout', JOB_SRC = 'GrayCo · RoofScout';
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function num(v){ var x = parseFloat(String(v == null ? '' : v).replace(/[$,]/g, '')); return isFinite(x) ? x : 0; }
+function nowISO(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function money(n){ return '$' + Math.round(num(n)).toLocaleString('en-US'); }
+function crm(){ return W._crm || {}; }
+function list(k){ if (k === 'leads') return LEADS || []; var v = crm()[k]; return Array.isArray(v) ? v : []; }
+/* the lead list is not on window._crm: read it from the screen's own state (a no-op update hands it over) */
+var LEADS = null;
+function peekLeads(){ try { if (typeof W._setLeads === 'function') W._setLeads(function(prev){ if (Array.isArray(prev)) LEADS = prev; return prev; }); } catch (e) {} }
+/* (read when needed — at the catch-up, a RoofScout save, a delete in the Leads tab — not on a timer) */
+function clone(o){ try { return JSON.parse(JSON.stringify(o)); } catch (e) { return null; } }
+function dead(type, id){ try { return !!(W._gcxDead && W._gcxDead(type, id)); } catch (e) { return false; } }
+var stats = { runs: 0, lastRun: '', lastError: '', added: 0, updated: 0, removed: 0, skippedDemo: 0, skippedNoContact: 0, skippedInCrm: 0, jobs: 0, sends: 0, role: '' };
+
+/* ── who may run it: admin and PM computers ───────────────────────────────── */
+function who(){
+  var email = '';
+  try { email = low(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) {}
+  var a = null; try { a = W.__GC_SEC2 && W.__GC_SEC2.access && W.__GC_SEC2.access(); } catch (e) {}
+  var u = null;
+  list('users').forEach(function(x){ if (!u && x && email && low(x.email) === email) u = x; });
+  if (!u) { var cu = crm().currentUser; if (cu && typeof cu === 'object' && (!email || !cu.email || low(cu.email) === email)) u = cu; }
+  u = u || {};
+  var admin = !!(a && a.known && a.admin); try { if (!admin && W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) admin = true; } catch (e) {}
+  var role = s(u.role);
+  var pm = /project\s*manager|^pm$/i.test(role);
+  if (!admin && a && !a.known && /^admin$/i.test(role)) admin = true;      /* before the server answered */
+  return { email: email, name: s(u.name) || email.split('@')[0], admin: admin, pm: pm, ok: !!email && (admin || pm), role: admin ? 'admin' : (pm ? 'pm' : (role || 'other')) };
+}
+
+/* ── RoofScout pricing (same as roofscout/js/pricing.js), for leads read straight from rs_leads ── */
+var DEF_TYPES = [
+  { id: 'tpo', name: 'TPO (single-ply)', mat: 3.50, labor: 3.00, perSquare: 1000 },
+  { id: 'roll', name: 'Roll roofing / Mod-bit', mat: 2.25, labor: 2.25, perSquare: 0 },
+  { id: 'metal', name: 'Metal', mat: 5.00, labor: 3.50, perSquare: 1400 },
+  { id: 'epdm', name: 'EPDM (rubber)', mat: 3.00, labor: 2.75, perSquare: 0 },
+  { id: 'bur', name: 'Built-up (BUR)', mat: 3.50, labor: 3.50, perSquare: 0 },
+  { id: 'shingle', name: 'Asphalt shingle', mat: 2.25, labor: 2.25, perSquare: 375 }];
+function pricingOf(r, settings){
+  if (r && r._pricing && typeof r._pricing === 'object') return r._pricing;     /* RoofScout worked it out itself */
+  var st = settings || {}, types = Array.isArray(st.roofTypes) && st.roofTypes.length ? st.roofTypes : DEF_TYPES;
+  var rt = types.filter(function(t){ return t && t.id === r.roofType; })[0];
+  if (rt && rt.perSquare === undefined) { var d = DEF_TYPES.filter(function(t){ return t.id === rt.id; })[0]; rt = Object.assign({}, rt, { perSquare: d ? d.perSquare : 0 }); }
+  rt = rt || types[0] || { name: 'Unknown', mat: 0, labor: 0, perSquare: 0 };
+  var margin = st.margin != null ? num(st.margin) : 35;
+  var area = num(r.areaSqft), cps = num(rt.mat) + num(rt.labor), cost = area * cps, squares = area / 100, per = num(rt.perSquare);
+  var m = margin / 100, price = per > 0 ? squares * per : (m >= 0 && m < 1 ? cost / (1 - m) : cost);
+  return { roofTypeName: s(rt.name), price: price, cost: cost, squares: squares, basis: per > 0 ? 'square' : 'margin', perSquare: per, margin: margin, costPerSqft: cps, approx: Math.round(price / 100) * 100 };
+}
+function pricingText(p){
+  return p.basis === 'square'
+    ? (Math.round(p.squares * 10) / 10).toLocaleString('en-US') + ' squares × ' + money(p.perSquare) + '/square'
+    : 'cost ' + money(p.cost) + ' (' + '$' + num(p.costPerSqft).toFixed(2) + '/ft²) + ' + p.margin + '% margin';
+}
+
+/* ── what RoofScout leads go across ───────────────────────────────────────── */
+function isDemo(r){ return !!r && (r.demo === true || /^DEMO\s/.test(s(r.name))); }
+function noContact(r){ return !!r && (r.doNotContact === true || r.dnc === true); }
+
+/* ── "already in the CRM": the same street address (normalised) or parcel ─── */
+var ABBR = { street: 'st', str: 'st', avenue: 'ave', av: 'ave', road: 'rd', drive: 'dr', boulevard: 'blvd', lane: 'ln', parkway: 'pkwy',
+  highway: 'hwy', court: 'ct', place: 'pl', circle: 'cir', cove: 'cv', terrace: 'ter', trail: 'trl', square: 'sq', expressway: 'expy',
+  freeway: 'fwy', plaza: 'plz', center: 'ctr', centre: 'ctr', north: 'n', south: 's', east: 'e', west: 'w', northeast: 'ne', northwest: 'nw',
+  southeast: 'se', southwest: 'sw', suite: 'ste', mount: 'mt', saint: 'st', first: '1st', second: '2nd', third: '3rd' };
+var SUFFIX = { st: 1, ave: 1, rd: 1, dr: 1, blvd: 1, ln: 1, pkwy: 1, hwy: 1, ct: 1, pl: 1, cir: 1, cv: 1, ter: 1, trl: 1, sq: 1, expy: 1, fwy: 1, plz: 1, way: 1, loop: 1, pike: 1, run: 1, row: 1, xing: 1 };
+function addrKey(a){
+  var t = low(a).replace(/[^a-z0-9, ]+/g, ' ');
+  var first = t.split(',')[0];
+  var w = t.replace(/,/g, ' ').split(/\s+/).filter(Boolean).map(function(x){ return ABBR[x] || x; });
+  var i = 0; while (i < w.length && !/^\d+[a-z]?$/.test(w[i])) i++;
+  if (i >= w.length) return '';
+  var out = [w[i]], j = i + 1, firstN = first.split(/\s+/).filter(Boolean).length;
+  for (; j < w.length && out.length < 7; j++) {
+    if (/^(ste|apt|unit|bldg|#)$/.test(w[j])) break;
+    out.push(w[j]);
+    if (SUFFIX[w[j]] && out.length >= 3) break;
+    if (j - i + 1 >= firstN && first.indexOf(',') < 0 && t.indexOf(',') >= 0) break;
+  }
+  var k = out.join(' ');
+  return out.length >= 2 && k.length >= 6 ? k : '';
+}
+function parcelKey(x){ return low((x && x.parcel && x.parcel.id) || (x && (x.parcelId || x.rsParcelId)) || ''); }
+function crmIndex(){
+  var A = {}, P = {};
+  function add(r, kind){
+    if (!r || typeof r !== 'object' || r.rsLeadId) return;          /* our own rows are matched by id */
+    if (s(r.id).indexOf(LEAD_P) === 0 || s(r.id).indexOf(PRJ_P) === 0) return;
+    var k = addrKey(r.address); if (k && !A[k]) A[k] = { kind: kind, id: r.id, name: s(r.name || r.company || r.client) };
+    var p = parcelKey(r); if (p && !P[p]) P[p] = { kind: kind, id: r.id };
+  }
+  list('leads').forEach(function(r){ add(r, 'lead'); });
+  list('projects').forEach(function(r){ add(r, 'job'); });
+  return { addr: A, parcel: P };
+}
+function inCrm(r, ix){
+  var p = parcelKey(r); if (p && ix.parcel[p]) return ix.parcel[p];
+  var k = addrKey(r.address); if (k && ix.addr[k]) return ix.addr[k];
+  return null;
+}
+
+/* ── one RoofScout lead → the CRM lead's fields ───────────────────────────── */
+var STAGE = { New: 'New Lead', Contacted: 'Contacted', Quoted: 'Estimate Sent', Won: 'Won', Lost: 'Lost' };
+var SYNCED = ['name', 'company', 'contact', 'phone', 'email', 'address', 'stage', 'pm', 'estVal', 'notes'];   /* a CRM edit to these stays */
+function goodPhone(c){
+  var ph = (c && Array.isArray(c.phones) ? c.phones : []).filter(function(p){ return p && p.number && p.dnc !== true && p.litigator !== true; })[0];
+  return ph ? s(ph.number) : '';
+}
+function crmUserName(id){
+  if (!id) return '';
+  var e = low(id), hit = '';
+  list('users').forEach(function(u){ if (!hit && u && (low(u.email) === e || low(u.id) === e)) hit = s(u.name); });
+  return hit;
+}
+function rsLink(id){ return '/roofscout/#lead=' + encodeURIComponent(id); }
+function fields(r, settings){
+  var o = r.owner || {}, c = r.contact || {}, p = pricingOf(r, settings);
+  var area = Math.round(num(r.areaSqft)), sq = Math.round(p.squares * 10) / 10;
+  var owner = s(o.company) || s(((c.names || []).filter(function(n){ return n && n.owner; })[0] || {}).name);
+  var phone = s(o.phone) || goodPhone(c), email = s(o.email) || s((c.emails || [])[0]);
+  var sc = r.scan || null, reasons = sc && Array.isArray(sc.reasons) ? sc.reasons.map(s).filter(Boolean) : [];
+  var notes = ['From RoofScout (GrayCo lead).',
+    owner ? 'Owner of record: ' + owner + (r.ownerMail ? ' (mail: ' + s(r.ownerMail) + ')' : '') + '.' : '',
+    'Roof: ' + p.roofTypeName + ', ' + area.toLocaleString('en-US') + ' ft² (' + sq + ' squares), condition ' + num(r.condition) + '/100' + (Array.isArray(r.issues) && r.issues.length ? ' — ' + r.issues.join(', ') : '') + '.',
+    'Rough estimate: about ' + money(p.approx) + ' (' + pricingText(p) + ').',
+    sc ? 'Scan score ' + s(sc.score) + (reasons.length ? ': ' + reasons.join(' · ') : '') + '.' : '',
+    s(r.notes) ? 'RoofScout notes: ' + s(r.notes) : '',
+    'RoofScout: ' + rsLink(r.id)].filter(Boolean).join('\n');
+  return {
+    name: s(r.name) || s(r.address) || 'RoofScout lead', company: owner, contact: s(o.name), phone: phone, email: email,
+    address: s(r.address), stage: STAGE[r.stage] || 'New Lead', pm: s(r._assignedName) || crmUserName(r.assignedTo),
+    estVal: Math.round(p.price), notes: notes,
+    /* RoofScout's own (always from RoofScout) */
+    rsStage: s(r.stage), ownerOfRecord: owner, ownerMail: s(r.ownerMail), estValue: Math.round(p.price),
+    roofType: p.roofTypeName, roofTypeId: s(r.roofType), areaSqft: area, squares: sq, condition: num(r.condition),
+    confidence: r.confidence == null ? null : num(r.confidence), issues: Array.isArray(r.issues) ? r.issues.slice(0, 20) : [],
+    scanScore: sc ? num(sc.score) : null, scanReasons: reasons, parcelId: parcelKey(r), lat: typeof r.lat === 'number' ? r.lat : null, lng: typeof r.lng === 'number' ? r.lng : null,
+    rsEstimate: { price: Math.round(p.price * 100) / 100, approx: p.approx, cost: Math.round(p.cost * 100) / 100, squares: sq, basis: p.basis, perSquare: p.perSquare, margin: p.margin, costPerSqft: p.costPerSqft, text: pricingText(p) },
+    tracerfy: c && (c.phones || c.emails) ? { phones: (c.phones || []).length, emails: (c.emails || []).length, at: s(c.fetchedAt) } : null,
+    rsUrl: rsLink(r.id), rsUpdatedAt: s(r._ver) || (r.updatedAt ? new Date(r.updatedAt).toISOString() : '')
+  };
+}
+function same(a, b){ return JSON.stringify(a == null ? '' : a) === JSON.stringify(b == null ? '' : b); }
+function newLead(r, f, by){
+  var l = { id: LEAD_P + r.id, rsLeadId: r.id, source: SRC, subSource: SUB, sourceDetail: JOB_SRC, leadSource: SRC, commissionSource: 'company',
+    type: 'Roofing', projectType: 'Roofing', status: 'new', priority: 'Medium', date: today(), created: today(), createdAt: nowISO(), by: 'RoofScout', addedBy: by || 'RoofScout' };
+  Object.keys(f).forEach(function(k){ l[k] = f[k]; });
+  l._rs = {}; SYNCED.forEach(function(k){ l._rs[k] = f[k]; });
+  l.updatedAt = l.savedAt = nowISO();
+  return l;
+}
+/* the CRM copy brought up to date; null when nothing changed */
+function updated(cur, f){
+  var o = null, prev = cur._rs || {};
+  function put(k, v){ if (!same(cur[k], v)) { o = o || Object.assign({}, cur); o[k] = v; } }
+  SYNCED.forEach(function(k){
+    var v = cur[k];
+    if (v == null || v === '' || same(v, prev[k])) put(k, f[k]);           /* the CRM has not changed it since */
+  });
+  Object.keys(f).forEach(function(k){ if (SYNCED.indexOf(k) < 0) put(k, f[k]); });
+  if (cur.rsRemoved) { o = o || Object.assign({}, cur); delete o.rsRemoved; delete o.rsRemovedAt; o.rsStatus = ''; }
+  if (!o) return null;
+  var nr = {}; SYNCED.forEach(function(k){ nr[k] = (o[k] === f[k]) ? f[k] : prev[k]; }); o._rs = nr;
+  o.updatedAt = o.savedAt = nowISO();
+  return o;
+}
+
+/* ── writing the lists (the screen's setters → disk → cloud) ─────────────── */
+function push(key){ later(function(){ try { if (W._gcLivePush) W._gcLivePush(key); } catch (e) {} }, 400); }
+/* complete: the time a full fresh read of rs_leads started — a linked lead missing from it was deleted in RoofScout
+   (only leads linked before that read: one added meanwhile is simply newer than the list) */
+function ts(v){ if (!v) return 0; if (typeof v === 'number') return v; var d = Date.parse(v); return isFinite(d) ? d : 0; }
+function applyLeadChanges(rows, removedIds, complete, settings){
+  if (!Array.isArray(rows)) rows = [];
+  var me = who(); stats.role = me.role;
+  if (!me.ok) return { skipped: 'not an admin or PM computer' };
+  var ix = crmIndex(), out = { added: 0, updated: 0, removed: 0, skipped: 0, demo: 0, noContact: 0, inCrm: 0 };
+  var byRs = {}; rows.forEach(function(r){ if (r && r.id) byRs[r.id] = r; });
+  var gone = {}; (removedIds || []).forEach(function(id){ gone[id] = 1; });
+  if (typeof W._setLeads !== 'function') return out;
+  W._setLeads(function(prev){
+    var a = Array.isArray(prev) ? prev : [], next = null, have = {};
+    Object.keys(out).forEach(function(k){ out[k] = 0; });          /* the screen may run this more than once: count the last run */
+    a.forEach(function(l, i){
+      if (!l || !l.rsLeadId) return;
+      have[l.rsLeadId] = 1;
+      var r = byRs[l.rsLeadId], nl = null;
+      if (r && !isDemo(r)) {
+        if (noContact(r)) {
+          if (!l.doNotContact || l.rsStatus !== 'do not contact (RoofScout)') { nl = Object.assign({}, l, { doNotContact: true, rsStatus: 'do not contact (RoofScout)', updatedAt: nowISO() }); }
+        } else if (ts(l.rsUpdatedAt) <= ts(r._ver || r.updatedAt) || !l.rsUpdatedAt) nl = updated(l, fields(r, settings));   /* never an older copy over a newer one */
+        if (nl) out.updated++;
+      } else if ((gone[l.rsLeadId] || (complete && !r && ts(l.createdAt) && ts(l.createdAt) < complete)) && !l.rsRemoved) {
+        nl = Object.assign({}, l, { rsRemoved: true, rsRemovedAt: nowISO(), rsStatus: 'removed in RoofScout', updatedAt: nowISO() });
+        if (!/removed in RoofScout/.test(s(nl.name))) nl.name = s(l.name) + ' (removed in RoofScout)';
+        nl.notes = '⚠ Removed in RoofScout on ' + today() + '.\n' + s(l.notes);
+        out.removed++;
+      }
+      if (nl) { next = next || a.slice(); next[i] = nl; }
+    });
+    rows.forEach(function(r){
+      if (!r || !r.id || have[r.id]) return;
+      if (isDemo(r)) { out.demo++; out.skipped++; return; }
+      if (noContact(r)) { out.noContact++; out.skipped++; return; }
+      if (dead('leads', LEAD_P + r.id) || deletedHere[LEAD_P + r.id]) { out.skipped++; return; }
+      if (inCrm(r, ix)) { out.inCrm++; out.skipped++; return; }
+      next = next || a.slice();
+      next.push(newLead(r, fields(r, settings), me.name));
+      have[r.id] = 1; out.added++;
+    });
+    /* a GrayCo lead from RoofScout deleted in the CRM (on any computer) stays out of the list here too */
+    var src = next || a, kept = src.filter(function(l){ return !(l && l.rsLeadId && (dead('leads', l.id) || deletedHere[l.id])); });
+    if (kept.length !== src.length) next = kept;
+    if (next) LEADS = next;
+    return next || prev;
+  });
+  return out;
+}
+function after(out){
+  if (!out || out.skipped === 'not an admin or PM computer') return out;
+  later(function(){
+    try {
+      stats.added += out.added; stats.updated += out.updated; stats.removed += out.removed;
+      stats.skippedDemo += out.demo; stats.skippedNoContact += out.noContact; stats.skippedInCrm += out.inCrm;
+      if (out.added || out.updated || out.removed) { push('leads'); try { console.log('[GC] RoofScout → CRM leads: ' + out.added + ' added, ' + out.updated + ' updated, ' + out.removed + ' marked removed.'); } catch (e) {} }
+    } catch (e) {}
+  }, 300);
+  return out;
+}
+
+/* a person who deletes a RoofScout lead in the CRM's Leads tab deletes it for good (never put back) */
+var deletedHere = {}, lastDelOk = 0, seenRs = null;
+(function wrapConfirm(){
+  function install(){
+    var oc = W.confirm; if (typeof oc !== 'function' || oc.__gcRSL) return;
+    var w = function(msg){
+      var r = oc.apply(this, arguments);
+      try { if (r && /delet|remov/i.test(String(msg || '')) && LEADS) { lastDelOk = Date.now(); seenRs = {}; LEADS.forEach(function(l){ if (l && l.rsLeadId) seenRs[l.id] = 1; }); } } catch (e) {}
+      return r;
+    };
+    w.__gcRSL = true; Object.keys(oc).forEach(function(k){ if (!(k in w)) w[k] = oc[k]; }); W.confirm = w;
+  }
+  install(); every(install, 5000);
+})();
+every(function(){
+  try {
+    if (!seenRs || Date.now() - lastDelOk > 8000) return;
+    peekLeads();
+    var now = {}; list('leads').forEach(function(l){ if (l && l.rsLeadId) now[l.id] = 1; });
+    Object.keys(seenRs).forEach(function(id){
+      if (now[id] || deletedHere[id]) return;
+      deletedHere[id] = 1;
+      try { if (W._gcxDel) W._gcxDel('leads', id); } catch (e) {}
+    });
+  } catch (e) {}
+}, 1500);
+
+/* ── reading RoofScout's list with the CRM sign-in ───────────────────────── */
+function token(){
+  var A = W.__GC_AUTH__;
+  if (!A || typeof A.fresh !== 'function') return Promise.reject(new Error('not signed in'));
+  return Promise.resolve(A.fresh()).then(function(x){ if (!x || !x.access_token) throw new Error('not signed in'); return x.access_token; });
+}
+function rest(path){
+  return token().then(function(t){
+    return fetch(SB + '/rest/v1/' + path, { headers: { apikey: ANON, Authorization: 'Bearer ' + t } }).then(function(r){
+      if (r.status === 401 && W.__GC_AUTH__ && W.__GC_AUTH__.renew) {
+        return Promise.resolve(W.__GC_AUTH__.renew()).then(function(x){ return fetch(SB + '/rest/v1/' + path, { headers: { apikey: ANON, Authorization: 'Bearer ' + (x && x.access_token) } }); });
+      }
+      return r;
+    }).then(function(r){
+      if (!r.ok) throw new Error('RoofScout list: database said ' + r.status);
+      return r.json();
+    });
+  });
+}
+function rowToLead(r){ var l = Object.assign({}, r.data || {}); l.id = r.id; l._ver = r.updated_at; l.updatedAt = Date.parse(r.updated_at) || 0; return l; }
+var running = null;
+function importLeads(){
+  if (running) return running;
+  peekLeads();
+  var me = who(); stats.role = me.role;
+  if (!me.ok) return Promise.resolve({ skipped: 'not an admin or PM computer' });
+  if (typeof W._setLeads !== 'function' || !Array.isArray(LEADS)) { peekLeads(); return Promise.resolve({ skipped: 'the CRM is still loading' }); }
+  stats.runs++; stats.lastRun = nowISO();
+  var rows = [];
+  function page(from){
+    return rest('rs_leads?select=id,data,created_at,updated_at&order=updated_at.desc&limit=1000&offset=' + from).then(function(p){
+      p = Array.isArray(p) ? p : []; rows = rows.concat(p);
+      return p.length === 1000 && from < 50000 ? page(from + 1000) : rows;
+    });
+  }
+  var t0 = Date.now() - 2000;
+  running = Promise.all([page(0), rest('rs_settings?id=eq.main&select=data').then(null, function(){ return []; })]).then(function(r){
+    var leads = r[0].map(rowToLead), settings = r[1] && r[1][0] ? r[1][0].data : null;
+    /* "removed in RoofScout" only from a list that is really there (an empty answer can be a missing permission) */
+    var out = applyLeadChanges(leads, null, leads.length > 0 ? t0 : 0, settings);
+    running = null; stats.lastError = '';
+    return after(out);
+  }, function(e){ running = null; stats.lastError = String(e && e.message || e); return { error: stats.lastError }; });
+  return running;
+}
+
+/* ── a job from a RoofScout lead ─────────────────────────────────────────── */
+function jobOf(rsId){
+  if (!rsId) return null;
+  var p = null;
+  list('projects').forEach(function(x){ if (!p && x && (x.rsLeadId === rsId || x.id === PRJ_P + rsId)) p = x; });
+  if (p) return { projectId: p.id, po: s(p.autoPO), estimateId: s(p.estId), at: p.createdAt || '' };
+  var l = null; list('leads').forEach(function(x){ if (!l && x && x.rsLeadId === rsId && x.jobId) l = x; });
+  return l ? { projectId: l.jobId, po: s(l.jobPO), estimateId: s(l.estimateId), at: l.convertedAt || '' } : null;
+}
+function nextPO(){
+  var used = {};
+  list('projects').forEach(function(p){ if (p && (p.autoPO || p.po)) used[String(p.autoPO || p.po).toUpperCase()] = 1; });
+  list('leads').forEach(function(l){ if (l && (l.autoPO || l.jobPO)) used[String(l.autoPO || l.jobPO).toUpperCase()] = 1; });
+  var A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', po = '', n = 0;
+  do { po = A[Math.floor(Math.random() * 26)] + String(Math.floor(100 + Math.random() * 900)); } while (used[po] && ++n < 5000);
+  return po;
+}
+var bringing = {};
+function bringJob(rsLead, opts){
+  opts = opts || {};
+  var r = clone(rsLead);
+  if (!r || !r.id) return Promise.resolve({ ok: false, message: 'No RoofScout lead.' });
+  var have = jobOf(r.id);
+  if (have) return Promise.resolve(Object.assign({ ok: true, existed: true }, have));
+  if (bringing[r.id]) return bringing[r.id];
+  if (isDemo(r)) return Promise.resolve({ ok: false, message: 'A made-up DEMO lead cannot become a job.' });
+  var me = who();
+  if (!me.ok) return Promise.resolve({ ok: false, message: 'Only an admin or a PM can bring a lead into the CRM as a job.' });
+  if (typeof W._setProjects !== 'function' || typeof W._gcSetEstimates !== 'function') return Promise.resolve({ ok: false, message: 'The CRM is still loading. Try again in a moment.' });
+  var pid = PRJ_P + r.id, eid = EST_P + r.id;
+  if (dead('projects', pid)) return Promise.resolve({ ok: false, message: 'The job made from this lead was deleted in the CRM.' });
+  var f = fields(r, opts.settings), p = r._pricing || pricingOf(r, opts.settings);
+  var ix = crmIndex(), twin = inCrm(r, ix);
+  if (!opts.confirmed) {
+    if (!W.confirm('Bring "' + f.name + '" into the CRM as a job (bidding, no contract) with a draft estimate of about ' + money(p.approx) + '?')) return Promise.resolve({ ok: false, cancelled: true, message: 'Cancelled.' });
+  }
+  if (twin && twin.kind === 'job' && !W.confirm('The CRM already has a job at this address (' + (twin.name || twin.id) + '). Make another job for this RoofScout lead anyway?')) {
+    return Promise.resolve({ ok: false, cancelled: true, message: 'Not created: the CRM already has a job at this address.' });
+  }
+  var po = nextPO(), at = nowISO(), by = me.name, price = Math.round(p.price * 100) / 100;
+  var sq = Math.round(p.squares * 10) / 10;
+  var pm = me.pm ? me.name : f.pm;
+  var measure = p.roofTypeName + ' · ' + Math.round(num(r.areaSqft)).toLocaleString('en-US') + ' ft² · ' + sq + ' squares' + (r.pitch && r.pitch !== 'flat' ? ' · ' + r.pitch + '/12 pitch' : '') +
+    (r.areaSource === 'google' ? ' (Google roof data)' : r.outline ? ' (traced on the satellite map)' : '') + ' · condition ' + num(r.condition) + '/100';
+  var client = f.company || f.contact || f.name;
+  function fe(v){ return { v: v, at: at, by: me.email || by, was: [] }; }
+  var proj = {
+    id: pid, name: f.name, client: client, contact: f.contact, clientPhone: f.phone, clientEmail: f.email, address: f.address,
+    type: 'Roofing', status: 'bidding', contract: 0, pm: pm, autoPO: po, created: today(), createdAt: at, startDate: '', endDate: '',
+    source: JOB_SRC, subSource: SUB, leadSource: SRC, commissionSource: 'company', graycoOrigin: true, keepAsJob: true,
+    rsLeadId: r.id, fromLeadId: LEAD_P + r.id, rsUrl: rsLink(r.id), estId: eid,
+    bidAmount: price, estValue: price, estimateTotal: price,
+    roofType: p.roofTypeName, areaSqft: Math.round(num(r.areaSqft)), squares: sq, condition: num(r.condition), parcelId: f.parcelId,
+    scope: 'Re-roof — ' + measure + '.',
+    notes: f.notes + '\nMeasurements: ' + measure + '.\nBid (draft estimate ' + eid + '): about ' + money(p.approx) + ' — ' + pricingText(p) + '. No contract yet.',
+    customerNotes: '', followUps: [], subs: [], addedBy: by, createdBy: by, launchedFrom: 'RoofScout',
+    updatedAt: at, savedAt: at,
+    _fe: { status: fe('bidding'), contract: fe(0), name: fe(f.name), client: fe(client), address: fe(f.address), pm: fe(pm), autoPO: fe(po), type: fe('Roofing') }
+  };
+  var line = p.basis === 'square'
+    ? { id: 'RSL1', name: p.roofTypeName + ' re-roof — ' + sq + ' squares × ' + money(p.perSquare) + '/square (RoofScout)', qty: sq, uc: num(p.perSquare), unit: 'sq', cat: 'Roofing' }
+    : { id: 'RSL1', name: p.roofTypeName + ' re-roof — ' + Math.round(num(r.areaSqft)).toLocaleString('en-US') + ' ft² at $' + num(p.costPerSqft).toFixed(2) + '/ft² cost + ' + p.margin + '% margin (RoofScout)', qty: Math.round(num(r.areaSqft)), uc: num(p.costPerSqft), unit: 'sf', cat: 'Roofing' };
+  line.desc = line.name;
+  var est = {
+    id: eid, name: f.name + ' — RoofScout estimate', client: client, pid: pid, autoPO: po, projPO: po, projName: f.name, address: f.address,
+    description: 'Re-roof — ' + measure + '.', scopeNotes: 'Measurements: ' + measure + '.\nPriced the RoofScout way: ' + pricingText(p) + ' = ' + money(price) + ' (about ' + money(p.approx) + ').\nFrom RoofScout lead ' + r.id + ' — verify on site before sending.',
+    priceType: 'fixed', priceVal: price, total: price, totalCharge: price, status: 'draft', date: today(), created: today(), createdAt: at,
+    mats: [line], labor: [], by: by, pm: pm, source: 'roofscout', rsLeadId: r.id, updatedAt: at, savedAt: at
+  };
+  var made = false;
+  W._setProjects(function(prev){
+    var a = Array.isArray(prev) ? prev : [];
+    if (a.some(function(x){ return x && (x.id === pid || x.rsLeadId === r.id); })) return prev;
+    made = true; return a.concat([proj]);
+  });
+  W._gcSetEstimates(function(prev){
+    var a = Array.isArray(prev) ? prev : [];
+    if (a.some(function(x){ return x && (x.id === eid); })) return prev;
+    return a.concat([est]);
+  });
+  try { if (W._gcSetJobSource) W._gcSetJobSource(pid, 'company'); } catch (e) {}
+  try { if (W._gcManualNow) W._gcManualNow('RoofScout lead brought in as a job'); } catch (e) {}
+  /* the GrayCo lead: converted (made here first when it was not across yet) */
+  W._setLeads(function(prev){
+    var a = Array.isArray(prev) ? prev : [], i = -1;
+    a.forEach(function(x, k){ if (i < 0 && x && x.rsLeadId === r.id) i = k; });
+    var conv = { converted: true, convertedAt: at, convertedBy: by, status: 'converted', jobId: pid, jobPO: po, estimateId: eid, rsStatus: 'job PO ' + po, updatedAt: at, savedAt: at };
+    if (i >= 0) { var n = a.slice(); n[i] = Object.assign({}, a[i], conv); LEADS = n; return n; }
+    if (dead('leads', LEAD_P + r.id) || noContact(r)) return prev;
+    LEADS = a.concat([Object.assign(newLead(r, f, by), conv)]); return LEADS;
+  });
+  stats.jobs++;
+  var res = { ok: true, existed: false, projectId: pid, po: po, estimateId: eid };
+  bringing[r.id] = new Promise(function(done){
+    later(function(){
+      delete bringing[r.id];
+      ['projects', 'estimates', 'leads'].forEach(push);
+      var j = jobOf(r.id);
+      done(j && j.po && j.po !== po ? Object.assign({ ok: true, existed: true }, j) : res);
+    }, 300);
+  });
+  try { console.log('[GC] RoofScout lead ' + r.id + ' → job PO ' + po + ' (' + pid + ') + draft estimate ' + eid + (made ? '' : ' (job was already there)')); } catch (e) {}
+  return bringing[r.id];
+}
+function openJob(pid){
+  var p = list('projects').filter(function(x){ return x && x.id === pid; })[0];
+  if (!p) return false;
+  try { if (W._setView) W._setView('projects'); } catch (e) {}
+  later(function(){ try { if (W._openJobDetail) W._openJobDetail(p); } catch (e) {} }, 250);
+  return true;
+}
+/* crm.grayco-cs.com/#rsjob=<job id> (RoofScout opened on its own links here) */
+function openFromHash(){
+  var m = /[#&]rsjob=([^&]+)/.exec(location.hash || ''); if (!m) return;
+  var pid = decodeURIComponent(m[1]), n = 0;
+  var t = every(function(){
+    if (++n > 60) { clearInterval(t); return; }
+    if (!Array.isArray(crm().projects) || !crm().projects.length) return;
+    clearInterval(t);
+    try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {}
+    openJob(pid);
+  }, 1000);
+}
+
+W._gcRoofScout = {
+  importLeads: importLeads,
+  upsertLeads: function(rows, o){
+    o = o || {}; stats.sends++; peekLeads();
+    var c = clone(rows) || [];
+    return after(applyLeadChanges(c, null, 0, o.settings || null));   /* deletes come one by one (removedLeads) or from the catch-up */
+  },
+  removedLeads: function(ids){ return after(applyLeadChanges([], clone(ids) || [], false, null)); },
+  bringJob: bringJob,
+  jobOf: jobOf,
+  leads: function(){ peekLeads(); return list('leads'); },
+  openJob: openJob,
+  addrKey: addrKey,
+  status: function(){ return Object.assign({ who: who(), linked: list('leads').filter(function(l){ return l && l.rsLeadId; }).length, jobs: list('projects').filter(function(p){ return p && p.rsLeadId; }).length }, stats); }
+};
+
+/* catch-up: once the CRM is signed in and its lists are on the screen, then every 10 minutes */
+var bootN = 0, booted = false;
+var bt = every(function(){
+  bootN++;
+  if (!LEADS) peekLeads();
+  var ready = Array.isArray(LEADS) && Array.isArray(crm().projects) && typeof W._setLeads === 'function' && W.__GC_AUTH__ && W.__GC_AUTH__.email() && !document.getElementById('gc-auth-gate');
+  if (!ready) { if (bootN > 600) clearInterval(bt); return; }
+  clearInterval(bt);
+  later(function(){ importLeads(); later(importLeads, 60000); every(importLeads, 600000); }, 8000);
+}, 1000);
+openFromHash();
+W.addEventListener('hashchange', openFromHash);
+
+/* the open job made from RoofScout: "No contract yet" where the contract shows $0.00, and the bid as its estimate
+   (only for the job's PM and admins — SEC2). Drawn with attributes + CSS: the screen's own nodes are not touched. */
+(function(){
+  var css = document.createElement('style');
+  css.textContent = '[data-gc-rsl]{font-size:0!important;line-height:1.2}[data-gc-rsl]::before{content:attr(data-gc-rsl);font-size:15px;color:#b45309}' +
+    '[data-gc-rsl-est]::after{content:attr(data-gc-rsl-est);display:block;font-size:11px;font-weight:600;color:#15803d;margin-top:2px}';
+  (document.head || document.documentElement).appendChild(css);
+  function clear(){ Array.prototype.forEach.call(document.querySelectorAll('[data-gc-rsl]'), function(e){ e.removeAttribute('data-gc-rsl'); e.removeAttribute('data-gc-rsl-est'); }); }
+  every(function(){
+    try {
+      var op = W._gcOpenProject, v = ''; try { v = localStorage.getItem('grayco_view') || ''; } catch (e) {}
+      var p = op && op.id ? list('projects').filter(function(x){ return x && x.id === op.id; })[0] : null;
+      if (!p || !p.rsLeadId || num(p.contract) > 0 || v !== 'projects') { if (document.querySelector('[data-gc-rsl]')) clear(); return; }
+      var me = who(), mine = me.admin || (s(p.pm) && low(p.pm) === low(me.name));
+      var est = num(p.bidAmount || p.estimateTotal);
+      var main = document.querySelector('main') || document.body;
+      Array.prototype.forEach.call(main.querySelectorAll('div,span,td,th,label'), function(el){
+        if (el.children.length || low(el.textContent) !== 'contract') return;
+        var val = el.nextElementSibling;
+        if (!val || !/^\$\s*0(\.00)?$/.test(s(val.textContent))) return;
+        if (val.getAttribute('data-gc-rsl') !== 'No contract yet') val.setAttribute('data-gc-rsl', 'No contract yet');
+        var t = mine && est ? 'Estimate ' + money(est) + ' (draft)' : '';
+        if (t && val.getAttribute('data-gc-rsl-est') !== t) val.setAttribute('data-gc-rsl-est', t);
+      });
+    } catch (e) {}
+  }, 1000);
+})();
+})();
+</script>
 
 
 
