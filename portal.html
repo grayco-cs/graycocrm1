@@ -314,7 +314,7 @@ function draw(){
 }
 Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function(b){ b.addEventListener('click', function(){ go(b.getAttribute('data-tab')); }); });
 
-if (!token) { notActive(); return; }
+if (!token) { notActive('Welcome to your GrayCo Portal. Open it with the personal link we sent you by text and e-mail. Can\u2019t find it? Call GrayCo ' + OFFICE + '.'); return; }
 api('view').then(function(r){
   if (!r.data || !r.data.ok) { notActive(r.data && r.data.error); return; }
   V = r.data;

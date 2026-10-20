@@ -342,6 +342,8 @@ td .measure-src { display: inline-block; padding: 2px 6px; margin: 2px 0 0; }
 .flyer-est .sm { margin: 4px 0; }
 .flyer-range { font-size: 24px; font-weight: 800; color: var(--navy); }
 .flyer-coat { margin: 14px 0 0; padding: 10px 14px; border-radius: 10px; background: #eef6ff; border: 1px solid #c9defc; }
+.doc-portal { margin: 14px 0 0; padding: 9px 14px; border: 1px solid #d9b44a; border-left: 4px solid #d4a017; border-radius: 10px; background: #fffbeb; font-size: 11.5px; line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
+.doc-portal b:first-child { color: var(--navy); }
 .flyer-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; align-items: center; }
 .doc-contact { border: 2px solid var(--navy); border-radius: 12px; padding: 12px 14px; }
 .doc-contact-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 800; }

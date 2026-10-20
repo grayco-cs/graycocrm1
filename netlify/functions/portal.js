@@ -597,7 +597,7 @@ function mailHtml(kind, v, link){
     '<p style="font-size:15px;line-height:1.5">' + lead + '</p>' +
     '<p style="font-size:15px;line-height:1.5"><b>Amount due: ' + usd(v.money.due) + '</b>' + (inv.number ? ' (invoice ' + esc(inv.number) + ')' : '') + '</p>' +
     '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> — hand it to ' + esc(pmName) + '. Every payment shows on your final invoice.</p>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoice and job</a></p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoice in my GrayCo Portal</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call us at ' + OFFICE_PHONE + (v.pm.phone ? ' or ' + esc(pmName) + ' at ' + esc(v.pm.phone) : '') + '.</p>' +
     '</div></div>';
 }
@@ -735,6 +735,9 @@ function isNewJob(p, now){
   const t = Date.parse(s(p.createdAt) || s(p.created)); if (!isFinite(t)) return false;
   return now - t <= (p._ccAuto === true || /^PRJcc_/.test(s(p.id)) ? 30 : 14) * DAY;
 }
+/* the portal's name and address as every GrayCo document prints it (owner 10/20: "all info for documents will be in
+   your portal"). The link itself comes from PORTAL_BASE_URL (https://portal.grayco-cs.com once that address is live). */
+const PORTAL_HOST = 'portal.grayco-cs.com';
 function linkMailHtml(v, link){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
@@ -742,9 +745,9 @@ function linkMailHtml(v, link){
     '<div style="font-size:18px;font-weight:bold">' + esc(v.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
-    '<p style="font-size:15px;line-height:1.5">Thank you for choosing GrayCo! This is your own project page. Open it any time — no password needed. You will see updates from ' + esc(v.pm.name || 'your Project Manager') + ', every job photo, your proposal and documents, and your invoices.</p>' +
-    '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Open my project page</a></p>' +
-    '<p style="font-size:13px;color:#55626F">Keep this e-mail — the button always opens your page. Questions? Call us at ' + OFFICE_PHONE + '.</p></div></div>';
+    '<p style="font-size:15px;line-height:1.5">Thank you for choosing GrayCo! This is your <b>GrayCo Portal</b>, your own private project page. See your project\u2019s progress and updates from ' + esc(v.pm.name || 'your Project Manager') + ', job photos, every document (proposal, contract, change orders, invoices, warranty) and your payments, all in one place, on your phone or computer. No app or password needed.</p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Open my GrayCo Portal</a></p>' +
+    '<p style="font-size:13px;color:#55626F">Keep this e-mail — the button is your personal link and always opens your portal (' + PORTAL_HOST + '). Questions? Call us at ' + OFFICE_PHONE + '.</p></div></div>';
 }
 async function sendLink(pid, event, who){
   const st = await settingsGet();
@@ -781,7 +784,7 @@ async function sendLink(pid, event, who){
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: 'Your GrayCo project page — ' + (view.job.name || 'your job'), html: linkMailHtml(view, link) }) });
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: 'Your GrayCo Portal — ' + (view.job.name || 'your job'), html: linkMailHtml(view, link) }) });
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) {
@@ -789,7 +792,7 @@ async function sendLink(pid, event, who){
     return { ok: false, retry: true, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
   }
   let via = 'email';
-  if (st.text) { const tx = await sendText(view.customer.phone, 'GrayCo: your project page ' + link); if (tx.ok) via = 'email+text'; }
+  if (st.text) { const tx = await sendText(view.customer.phone, 'GrayCo: your GrayCo Portal (progress, photos, documents, payments; no app or password) ' + link); if (tx.ok) via = 'email+text'; }
   return { ok: true, sent: via, sentAt: nowIso };
 }
 
@@ -883,7 +886,7 @@ async function notifyDocs(pid, event, opts){
     '<div style="font-size:18px;font-weight:bold">' + esc(view.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(view.customer.firstName || 'there') + ',</p>' +
-    '<p style="font-size:15px;line-height:1.5">' + esc(view.pm.name || 'Your Project Manager') + ' just put ' + (titles.length === 1 ? 'something new' : 'a few new things') + ' in your project page:</p>' +
+    '<p style="font-size:15px;line-height:1.5">' + esc(view.pm.name || 'Your Project Manager') + ' just put ' + (titles.length === 1 ? 'something new' : 'a few new things') + ' in your GrayCo Portal:</p>' +
     '<ul style="font-size:15px;line-height:1.6">' + titles.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">View it in my portal</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(view.pm.name || 'us') + (view.pm.phone ? ' at ' + esc(view.pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '.</p></div></div>';

@@ -58,8 +58,9 @@
     <div class="opts">
       <label class="opt"><input type="checkbox" id="optFree"/> Add &ldquo;Free Estimates&rdquo;</label>
       <label class="opt"><input type="checkbox" id="optLic"/> Add license numbers</label>
+      <label class="opt"><input type="checkbox" id="optPortal" checked/> Add &ldquo;Your GrayCo Portal&rdquo;</label>
     </div>
-    <div class="hint" style="margin-bottom:12px">Set your info once &mdash; every ad updates. Toggles are off by default, so most posts stay clean. Tap <b>Copy</b> and paste into Facebook, Google, Nextdoor, etc.</div>
+    <div class="hint" style="margin-bottom:12px">Set your info once &mdash; every ad updates. Toggles are off by default (except the customer portal line), so most posts stay clean. Tap <b>Copy</b> and paste into Facebook, Google, Nextdoor, etc.</div>
     <div class="filters" id="svcFilters"></div>
     <div style="height:8px"></div>
     <div class="filters" id="platFilters"></div>
@@ -72,6 +73,12 @@
 </div>
 <script>
 var ADS=[
+  // ---------- CUSTOMER PORTAL (owner 10/20) ----------
+  {cat:"Customer Portal",plat:"fb",text:"Always know where your project stands. \ud83d\udcf1\n\nEvery GrayCo customer gets a private online portal at {PORTAL}. See your project's progress and updates from your project manager, job photos, every document (proposal, contract, change orders, invoices, warranty) and your payments, all in one place, on your phone or computer.\n\nYour personal link comes by text and e-mail when your project starts. No app or password needed.\n\nMessage us for a free estimate."},
+  {cat:"Customer Portal",plat:"google",text:"Contractor With a Customer Portal | GrayCo\nTrack progress, photos, documents & payments online at {PORTAL}. Licensed, bonded & insured. {AREA}. {PHONE}."},
+  {cat:"Customer Portal",plat:"local",text:"Neighbors \u2014 tired of chasing your contractor for updates? Every GrayCo customer gets a private online portal at {PORTAL}: progress and updates from your project manager, job photos, every document and your payments, all in one place. No app or password needed. {PHONE}."},
+  {cat:"Customer Portal",plat:"flyer",text:"YOUR PROJECT, ON YOUR PHONE\nProgress \u2022 Updates \u2022 Photos \u2022 Documents \u2022 Payments\nEvery GrayCo customer gets a private portal at {PORTAL}\nNo app or password needed\nGrayCo Construction \u2022 {PHONE}"},
+
   // ---------- DRYWALL & FINISHING ----------
   {cat:"Drywall",plat:"fb",text:"Cracked, water-stained, or just tired drywall?\n\nGrayCo Construction does clean, professional drywall hang & finish \u2014 smooth walls, crisp corners, zero mess left behind. Patch jobs to whole-house, residential & commercial.\n\n\u2705 Licensed general contractor\n\u2705 Bonded & insured\n\u2705 {AREA}\n\n\ud83d\udcde Call {PHONE}\n\n#drywall #homeremodel #memphiscontractor #midsouth"},
   {cat:"Drywall",plat:"fb",text:"Bad drywall makes a whole room feel unfinished. \ud83d\udee0\n\nWe fix nail pops, cracks, water damage, and bad tape jobs \u2014 or hang and finish a whole new space until it's glass-smooth and paint-ready.\n\nGrayCo Construction \u2014 licensed general contractor, bonded & insured. Serving {AREA}.\n\ud83d\udcde {PHONE}\n\n#drywallrepair #homeimprovement #midsouth"},
@@ -212,18 +219,22 @@ var PLAT={fb:"Facebook / IG",google:"Google Ad",local:"Nextdoor / Local",flyer:"
 var BADGE={fb:"b-fb",google:"b-google",local:"b-local",flyer:"b-flyer"};
 var svcSel="All", platSel="All";
 var LIC="\ud83d\udd16 TN License #85034 BCB · AR License #0486990627 · MS License #27769";
+var PORTAL_HOST="portal.grayco-cs.com";
+var PORTAL_LINE="\ud83d\udcf1 Every customer gets a private GrayCo Portal ("+PORTAL_HOST+"): progress, updates, photos, documents & payments in one place.";
 
 function val(id,def){var el=document.getElementById(id);return (el&&el.value)||def;}
 function fill(t){
   return t.replace(/\{PHONE\}/g,val("phone","(901) 585-0944"))
           .replace(/\{AREA\}/g,val("area","Memphis & the Mid-South"))
           .replace(/\{DIRECT\}/g,val("direct","(901) 634-4354 / (901) 692-7255"))
-          .replace(/\{EMAIL\}/g,val("email","office@grayco-cs.com"));
+          .replace(/\{EMAIL\}/g,val("email","office@grayco-cs.com"))
+          .replace(/\{PORTAL\}/g,PORTAL_HOST);
 }
 function adText(a){
   var out=fill(a.text);
   if(document.getElementById("optFree").checked) out+="\n\n\u2705 Free estimates";
   out+="\n\n\ud83d\udcf1 Direct: "+val("direct","(901) 634-4354 / (901) 692-7255")+"\n\ud83d\udce7 "+val("email","office@grayco-cs.com");
+  if(document.getElementById("optPortal").checked && a.cat!=="Customer Portal") out+="\n"+PORTAL_LINE;
   if(document.getElementById("optLic").checked) out+="\n"+LIC;
   return out;
 }
@@ -256,7 +267,7 @@ function renderGrid(){
 }
 function fallback(txt){var ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();try{document.execCommand("copy");}catch(e){}ta.remove();}
 
-["phone","direct","email","area","optFree","optLic"].forEach(function(id){
+["phone","direct","email","area","optFree","optLic","optPortal"].forEach(function(id){
   var el=document.getElementById(id);
   el.addEventListener(el.type==="checkbox"?"change":"input",renderGrid);
 });

@@ -45,6 +45,17 @@
     return 'preliminary measurements';
   }
 
+  // The GrayCo customer portal (owner 10/20): the same words as every CRM document.
+  var PORTAL_HOST = 'portal.grayco-cs.com';
+  function portalBox(co, sign) {
+    var host = esc((co && co.portalHost) || PORTAL_HOST);
+    return '<div class="doc-portal"><b>\uD83D\uDCF1 Your GrayCo Portal.</b> Every GrayCo customer gets a private online portal at <b>' + host + '</b>. ' +
+      'See your project\u2019s progress and updates from your project manager, job photos, every document (proposal, contract, change orders, invoices, warranty) ' +
+      'and your payments, all in one place, on your phone or computer. Your personal link comes by text and e-mail when your project starts. No app or password needed.' +
+      (sign ? ' <b>Once you sign, all of your project documents and updates will be in your portal.</b>' : '') +
+    '</div>';
+  }
+
   function demoStamp(lead) {
     return lead.demo ? '<div class="doc-demo">DEMO DATA — sample only, not a real property</div>' : '';
   }
@@ -79,7 +90,7 @@
           '<p class="sm">' + basisLine(est, rt) + '</p>' +
           '<p class="muted">Estimated from ' + measuredFrom(l) + '. Your free on-site inspection gives you an exact number, with no pressure and no obligation.</p>' +
         '</div>' +
-      '</section>' + coat +
+      '</section>' + coat + portalBox(co, false) +
       '<section class="flyer-foot">' +
         contactCard(ctx.sender, co) +
         '<div class="badges">' +
@@ -145,7 +156,7 @@
         String(ctx.settings.terms || '').split('\n').filter(function (t) { return t.trim(); })
           .map(function (t) { return '<li>' + esc(t.trim()) + '</li>'; }).join('') +
         '<li>' + esc(co.insurance) + '. Certificates of insurance available on request.</li>' +
-      '</ul>' +
+      '</ul>' + portalBox(co, true) +
       '<h2>5. Acceptance</h2>' +
       '<p>To move forward, sign below and we will schedule your on-site inspection and confirm the final price.' +
         (ctx.coating ? ' &nbsp; ☐ Re-roof &nbsp; ☐ Coating' : '') + '</p>' +
