@@ -54785,8 +54785,11 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     try{
       if(localStorage.getItem('gc_help_welcomed')==='1') return;
       if(!window._crm) { return; }
+      /*FIX150-welcome*/ var _hb=document.getElementById('_gcHelpBtn'); function _hbOn(){ var x=document.getElementById('_gcHelpBtn'); return !!(x && x.getClientRects().length && getComputedStyle(x).visibility!=='hidden'); }
+      if(isField() || !_hb || !_hbOn()) return;
       localStorage.setItem('gc_help_welcomed','1');
-      var t=document.createElement('div');
+      var t=document.createElement('div'); t.id='_gcHelpWelcome';
+      var _tw=setInterval(function(){ if(!t.parentNode){ clearInterval(_tw); return; } if(isField() || !_hbOn()){ clearInterval(_tw); t.remove(); } }, 400);
       t.style.cssText='position:fixed;bottom:150px;right:20px;z-index:1000160;max-width:270px;background:#0f2440;border:1px solid #d4a017;border-radius:14px;padding:16px;color:#e8eefb;font-family:Inter,-apple-system,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.4);';
       t.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:6px;">\uD83D\uDC4B New here?</div>'+
         '<div style="font-size:13px;color:#a9b8d4;line-height:1.5;margin-bottom:12px;">Tap the \u2753 Help button anytime for a guided tour and quick answers.</div>'+
