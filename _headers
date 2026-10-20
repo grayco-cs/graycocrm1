@@ -7,5 +7,5 @@
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex, nofollow
   Strict-Transport-Security: max-age=31536000; includeSubDomains
-  Permissions-Policy: camera=(self), microphone=(self), geolocation=(), payment=(), usb=()
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self), payment=(), usb=()
   Content-Security-Policy: frame-ancestors 'self'; object-src 'none'; base-uri 'self'

@@ -7,7 +7,9 @@
 // PUBLIC (no sign-in, only the link code):
 //   POST {action:'view'}    → a small, CLEANED view of that ONE job (a strict whitelist:
 //                             see buildView). Nothing else ever leaves this function.
-//   POST {action:'photos'}  → every CompanyCam photo of that job (server key, paged, cached).
+//   POST {action:'photos'}  → that ONE job's photos the customer may see (patch U2): GrayCo Photos marked
+//                             "Customer sees it" (gc_kv gc_photos) + its CompanyCam photos (server key) unless
+//                             a person hid one — signed links that expire. Never a CompanyCam link.
 //   A link code that is unknown or turned off gets the SAME answer every time:
 //   "This link is not active — call GrayCo 901-585-0944". Per-address rate limit.
 //
@@ -240,7 +242,7 @@ async function ccPhotos(ccId){
       const full = by.web || by.original || by.large || '';
       const thumb = by.thumbnail || by.web || full;
       if (!full || !thumb) return;
-      out.push({ t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at) });
+      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam' });
     });
     if (chunk.length < 100) break;
   }
@@ -268,6 +270,34 @@ async function signRefs(refs){
   } catch (e) {}
   return out;
 }
+
+/* ── GrayCo Photos (patch U2): the photos of the job the customer may see ─────────────────────
+   Records live in gc_kv "gc_photos" (never in the projects row). Shown: not deleted, this job, not a flag record,
+   "Customer sees it" (shared true, or not set and not a Damage photo). A CompanyCam photo is hidden when its flag
+   record ccf_<id> says shared:false. One per picture (the same fingerprint twice is one photo). The marked-up copy
+   is shown when there is one. Notes and who took it are NOT sent — only the picture, its tag and its date. */
+function gcSharedOf(r, f){ if (f && f.deleted !== true && f.shared != null) return f.shared === true; return r.shared === true || (r.shared == null && s(r.tag) !== 'Damage'); }
+async function grayCoRecords(){ try { return arr((await kvRead(['gc_photos'])).gc_photos); } catch (e) { return null; } }
+async function grayCoPhotos(pid, recs){
+  const list = recs || await grayCoRecords() || [];
+  const seen = {}, pick = [];
+  list.forEach(function(r){
+    if (r.deleted === true || r.source === 'ccflag' || s(r.jobId) !== String(pid)) return;
+    if (!gcSharedOf(r)) return;
+    const full = refPath(r.annotatedRef) ? r.annotatedRef : r.ref;
+    if (!refPath(full)) return;
+    const k = s(r.hash) || full; if (seen[k]) return; seen[k] = 1;
+    pick.push({ id: s(r.id), full: full, thumb: refPath(r.thumbRef) ? r.thumbRef : full, at: s(r.at), tag: s(r.tag) });
+  });
+  pick.sort(function(a, b){ return a.at < b.at ? 1 : -1; });
+  const top = pick.slice(0, 300), signed = {};
+  for (let i = 0; i < top.length; i += 50) {
+    const refs = []; top.slice(i, i + 50).forEach(function(x){ refs.push(x.full, x.thumb); });
+    Object.assign(signed, await signRefs(refs));
+  }
+  return top.map(function(x){ const f = signed[x.full], t = signed[x.thumb] || f; return f ? { id: clip(x.id, 60), t: t, f: f, at: ymd(x.at), src: 'grayco', tag: clip(x.tag, 20) } : null; }).filter(Boolean);
+}
+function ccHidden(recs){ const out = {}; arr(recs).forEach(function(r){ if (r.source === 'ccflag' && s(r.ccId) && !gcSharedOf({ shared: true }, r)) out[s(r.ccId)] = 1; }); return out; }
 
 /* ── Google Docs: a docs.google.com / drive.google.com link and its preview ── */
 function gdocInfo(u){
@@ -480,7 +510,7 @@ async function buildView(data, p, opts){
     posts: posts.map(function(x){ return { id: clip(x.id, 40), at: s(x.at).slice(0, 25), by: firstName(x.by), text: clip(x.text, 2000),
       photos: arr(x.files).map(function(f){ return signed[f.ref] || ''; }).filter(Boolean).slice(0, 12) }; }),
     docs: docs.slice(0, 60),
-    companyCam: { url: ccLinkOf(p), linked: !!ccId },
+    companyCam: { url: '', linked: !!ccId },          /* patch U2: the portal never links to CompanyCam */
     warranty: warrantyOf(p, stage),
     showReview: stage >= 7,
     review: stage >= 7 ? { google: REVIEW_URL, facebook: FACEBOOK_URL } : null
@@ -1508,8 +1538,12 @@ exports.handler = async function (event) {
   if (!p) return notActive(headers, t0);
   if (action === 'photos') {
     const ccId = ccIdOf(p);
-    const list = ccId ? await ccPhotos(ccId) : [];
-    return reply(200, headers, { ok: true, photos: list, url: ccLinkOf(p) });
+    const recs = await grayCoRecords();
+    const hide = ccHidden(recs);
+    const cc = (ccId ? await ccPhotos(ccId) : []).filter(function(x){ return !hide[String(x.id).replace(/^cc_/, '')]; });
+    const gc = await grayCoPhotos(p.id, recs || []);
+    const list = gc.concat(cc).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+    return reply(200, headers, { ok: true, photos: list, expiresIn: SIGN_SECS });
   }
   const view = await buildView(data, p);
   /* when was it last opened (at most once every 10 minutes per link) */
@@ -1522,6 +1556,6 @@ exports.handler = async function (event) {
 
 /* for portal-reminders.js and the tests */
 exports._core = { pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
+  newToken: newToken, grayCoPhotos: grayCoPhotos, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

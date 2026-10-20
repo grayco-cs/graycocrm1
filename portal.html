@@ -199,11 +199,10 @@ function home(){
       h('div', { class: 'muted', text: 'Your Project Manager' }), h('div', { style: 'font-size:15px;font-weight:700', text: pm.name || 'GrayCo office' })])]),
     h('div', { class: 'btns' }, [h('a', { class: 'btn gold', href: tel(phone), text: 'Call' }), h('a', { class: 'btn', href: 'sms:' + String(phone).replace(/[^0-9+]/g, ''), text: 'Text' })])
   ]));
-  out.push(h('button', { type: 'button', class: 'cc', on: { click: function(){ go('photos'); } } }, [
-    h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:22px', text: '📷' }),
-    h('span', { style: 'flex:1 1 auto;display:flex;flex-direction:column;gap:2px' }, [h('span', { class: 't', text: 'See your job photos' }), h('span', { class: 's', text: 'Every photo from your CompanyCam project' })]),
+  out.push(h('button', { type: 'button', class: 'cc', id: 'gp-open', on: { click: function(){ go('photos'); } } }, [
+    h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:22px', text: '📸' }),
+    h('span', { style: 'flex:1 1 auto;display:flex;flex-direction:column;gap:2px' }, [h('span', { class: 't', text: 'See your job photos' }), h('span', { class: 's', text: 'GrayCo Photos of your job' })]),
     h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:20px', text: '›' })]));
-  if (V.companyCam && V.companyCam.url) out.push(h('a', { class: 'btn', href: V.companyCam.url, target: '_blank', rel: 'noopener', text: 'Open in CompanyCam' }));
   if (V.showReview && V.review) out.push(card('Thank you for choosing GrayCo!', [
     h('p', { class: 'muted', style: 'margin:0', text: 'If you were happy with our work, a quick review helps a lot.' }),
     h('a', { class: 'btn gold', href: V.review.google, target: '_blank', rel: 'noopener', text: '★ Leave a Google review' }),
@@ -216,12 +215,11 @@ function home(){
   return out;
 }
 
-/* ── PHOTOS (all CompanyCam photos, lazy) ─────────────────────────────── */
+/* ── PHOTOS: GrayCo Photos of THIS job only (read-only; signed links that expire; lazy) ── */
 function photos(){
-  var box = h('section', { class: 'card' }, [h('h2', { text: 'Job photos' })]);
-  if (V.companyCam && V.companyCam.url) box.appendChild(h('a', { class: 'btn', href: V.companyCam.url, target: '_blank', rel: 'noopener', text: 'Open in CompanyCam' }));
+  var box = h('section', { class: 'card', id: 'gp-gallery' }, [h('h2', { text: 'GrayCo Photos of your job' })]);
   if (!PHOTOS) { box.appendChild(h('div', { class: 'empty', text: 'Loading photos…' })); loadPhotos(); return [box]; }
-  if (!PHOTOS.length) { box.appendChild(h('div', { class: 'empty', text: V.companyCam && V.companyCam.linked ? 'No photos yet — they show up here as soon as the crew takes them.' : 'Photos show up here once your job has its CompanyCam project.' })); return [box]; }
+  if (!PHOTOS.length) { box.appendChild(h('div', { class: 'empty', text: 'No photos yet — they show up here as soon as your GrayCo team takes them.' })); return [box]; }
   box.appendChild(h('div', { class: 'muted', text: PHOTOS.length + ' photo' + (PHOTOS.length === 1 ? '' : 's') + ' · newest first · tap one to see it big' }));
   var grid = h('div', { class: 'pics', id: 'grid' }), shown = 0, sentinel = h('div', { style: 'height:1px' });
   function more(){
@@ -237,11 +235,13 @@ function photos(){
   if ('IntersectionObserver' in window) { var io = new IntersectionObserver(function(es){ if (es.some(function(e){ return e.isIntersecting; })) more(); }, { rootMargin: '600px' }); io.observe(sentinel); }
   return [box];
 }
-var photosLoading = false;
+var photosLoading = false, photosAt = 0;
 function loadPhotos(){
   if (photosLoading || PHOTOS) return; photosLoading = true;
   api('photos').then(function(r){ PHOTOS = (r.data && r.data.ok && Array.isArray(r.data.photos)) ? r.data.photos : []; }, function(){ PHOTOS = []; })
-    .then(function(){ photosLoading = false; if (TAB === 'photos') draw(); });
+    .then(function(){ photosLoading = false; photosAt = Date.now(); if (TAB === 'photos') draw(); });
+  /* the links expire after an hour: a page left open asks again before then */
+  setTimeout(function(){ if (photosAt && Date.now() - photosAt > 50 * 60e3) { PHOTOS = null; if (TAB === 'photos') draw(); } }, 51 * 60e3);
 }
 function lightbox(list, i){
   var img = h('img', { alt: 'Job photo' }), count = h('span');
