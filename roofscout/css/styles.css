@@ -249,7 +249,7 @@ legend { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-sp
 .toast.bad { background: var(--poor); }
 
 /* Inside the CRM's RoofScout tab */
-.embedded .brand, .embedded #logout { display: none; }
+.embedded .brand, .embedded #logout, .embedded #loading-signout-btn { display: none; }
 .embedded .topbar { padding: 6px 12px; }
 .embedded .map-layout { height: calc(100vh - 80px); }
 

@@ -3,7 +3,11 @@
 // One sign-in for the CRM and RoofScout: the session is kept under the same
 // browser key the CRM uses (gc_auth_v1), in the same shape, so at
 // crm.grayco-cs.com/roofscout/ someone signed in to one is signed in to the other.
-// (At roofscout.grayco-cs.com the browser keeps a separate sign-in.) Who may get in
+// (At roofscout.grayco-cs.com the browser keeps a separate sign-in.)
+// As the 🏠 RoofScout tab INSIDE the CRM (a same-site frame), RoofScout does not keep a
+// sign-in of its own at all: it asks the CRM page for the sign-in the CRM is using
+// (window.parent.__GC_AUTH__), and the CRM renews it. So it never shows its own sign-in
+// card while the CRM is signed in, and it can never sign the CRM out. Who may get in
 // is the CRM's staff list (gc_staff); people are added and removed in the CRM
 // (💎 → Team access). The anon key below is public by design: on its own it
 // opens nothing, because every table is locked to signed-in staff.
@@ -17,16 +21,37 @@
 
   function low(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
 
-  function load() {
+  // The CRM page around us, when RoofScout is its tab (same site, so it can be asked directly).
+  function crm() {
+    try {
+      if (root.self === root.top) return null;
+      var a = root.parent && root.parent.__GC_AUTH__;
+      return a && typeof a.session === 'function' && typeof a.fresh === 'function' ? a : null;
+    } catch (e) { return null; }   // another site framed us: no CRM to ask
+  }
+  function good(j) { return !!(j && j.access_token && j.refresh_token && j.email); }
+
+  // Kept here too, in case the browser refuses to save it (storage full or blocked).
+  var mem = null;
+  function disk() {
     try {
       var j = JSON.parse(localStorage.getItem(KEY) || 'null');
-      if (j && j.access_token && j.refresh_token && j.email) return j;
+      if (good(j)) return j;
     } catch (e) { /* storage blocked */ }
     return null;
   }
+  function load() {
+    var c = crm();
+    if (c) { try { var s = c.session(); return good(s) ? s : null; } catch (e) { return null; } }
+    var d = disk();
+    if (d) return d;
+    return mem && good(mem) ? mem : null;
+  }
   function store(s) {
+    mem = s || null;
     try { if (s) localStorage.setItem(KEY, JSON.stringify(s)); else localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
   }
+  function signedOutError() { return CloudError('Signed out.', 'signed-out'); }
 
   // Same shape the CRM writes, so either app can pick up the other's session.
   function fromAuth(j, prev) {
@@ -64,13 +89,19 @@
 
   function signIn(email, password) {
     return authPost('token?grant_type=password', { email: low(email), password: password }).then(function (r) {
-      if (r.ok && r.json.access_token) { store(fromAuth(r.json, null)); return load(); }
+      if (r.ok && r.json.access_token) {
+        var s = fromAuth(r.json, null);
+        store(s);            // inside the CRM, the CRM picks this up from storage and signs in too
+        return s;            // never null: a refused storage write must not end in "nothing happens"
+      }
       if (r.net) throw CloudError('Could not reach the GrayCo sign-in service. Check the internet connection.', 'offline');
       throw CloudError('Email or password is not right.', 'bad-login', r.status);
     });
   }
 
   function signOut() {
+    var c = crm();
+    if (c) { try { if (c.email()) { c.signOut(); return; } } catch (e) { /* fall through */ } }
     var s = load();
     store(null);
     if (s) authPost('logout?scope=local', {}, s.access_token);
@@ -79,14 +110,22 @@
   var refreshing = null;
   function refresh() {
     if (refreshing) return refreshing;
+    var c = crm();
+    if (c) {
+      // The CRM renews its own sign-in; RoofScout never uses (or uses up) the refresh token itself.
+      refreshing = Promise.resolve().then(function () { return typeof c.renew === 'function' ? c.renew() : c.fresh(); })
+        .then(function (s) { refreshing = null; if (!good(s)) throw signedOutError(); return s; },
+          function (e) { refreshing = null; throw e && e.code ? e : signedOutError(); });
+      return refreshing;
+    }
     refreshing = (function () {
       var s = load();
       if (!s) return Promise.reject(CloudError('Signed out.', 'signed-out'));
       return authPost('token?grant_type=refresh_token', { refresh_token: s.refresh_token }).then(function (r) {
         if (r.ok && r.json.access_token) { var n = fromAuth(r.json, s); store(n); return n; }
         // The CRM (or another tab) may have refreshed first, which uses up the old token.
-        var disk = load();
-        if (disk && disk.refresh_token !== s.refresh_token && disk.expires_at * 1000 > Date.now() + 60e3) return disk;
+        var d = disk();
+        if (d && d.refresh_token !== s.refresh_token && d.expires_at * 1000 > Date.now() + 60e3) return d;
         if (r.net || r.status >= 500 || r.status === 429) throw CloudError('Could not reach the GrayCo database. Check the internet connection.', 'offline');
         store(null);
         throw CloudError('Your sign-in has ended. Please sign in again.', 'signed-out', r.status);
@@ -96,8 +135,15 @@
   }
 
   function token() {
+    var c = crm();
+    if (c) {
+      return Promise.resolve().then(function () { return c.fresh(); }).then(function (s) {
+        if (!good(s)) throw signedOutError();
+        return s;
+      }, function () { throw signedOutError(); });
+    }
     var s = load();
-    if (!s) return Promise.reject(CloudError('Signed out.', 'signed-out'));
+    if (!s) return Promise.reject(signedOutError());
     // Another tab may have refreshed already; otherwise refresh a little before it runs out.
     if (s.expires_at * 1000 - Date.now() > 90e3) return Promise.resolve(s);
     return refresh();
@@ -166,10 +212,13 @@
     if (n - lastTouch < 60e3) return;
     lastTouch = n;
     try { localStorage.setItem(ACT, String(n)); } catch (e) { /* ignore */ }
+    var c = crm();
+    if (c && typeof c.touch === 'function') { try { c.touch(); } catch (e) { /* ignore */ } }
   }
 
   root.Cloud = {
     session: load,
+    embedded: function () { return !!crm(); },
     signIn: signIn,
     signOut: signOut,
     rest: rest,

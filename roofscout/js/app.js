@@ -151,13 +151,33 @@
   function showLogin(msg) {
     stopPolling();
     closeModal();
+    var wasShown = !$('#login').hidden;
     $('#app').hidden = true;
     $('#loading').hidden = true;
     $('#login').hidden = false;
     $('#login-err').textContent = msg || '';
     $('#login-err').hidden = !msg;
-    $('#login-email').focus();
+    // Only on the way in: never pull the cursor out of a box someone is typing in.
+    if (!wasShown) $('#login-email').focus();
+    watchSignIn();
   }
+
+  // While the sign-in card shows, a sign-in made elsewhere (the CRM around this tab, or
+  // another tab) opens RoofScout by itself: nobody has to sign in twice.
+  var signInWatch = null;
+  function watchSignIn() {
+    if (signInWatch) return;
+    signInWatch = setInterval(function () {
+      if ($('#login').hidden) { clearInterval(signInWatch); signInWatch = null; return; }
+      var s = Cloud.session();
+      if (s) { clearInterval(signInWatch); signInWatch = null; Store.setMode(null); startCloud(s.email); }
+    }, EMBEDDED ? 1000 : 3000);
+  }
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'gc_auth_v1' || $('#login').hidden) return;
+    var s = Cloud.session();
+    if (s) { Store.setMode(null); startCloud(s.email); }
+  });
 
   function showLoading(msg) {
     $('#login').hidden = true;
@@ -212,9 +232,9 @@
       $('#login-pass').value = '';
       Store.setMode(null);
       startCloud(s.email);
-    }, function (err) {
+    }).then(null, function (err) {
       btn.disabled = false;
-      $('#login-err').textContent = err.message;
+      $('#login-err').textContent = (err && err.message) || 'Could not sign in.';
       $('#login-err').hidden = false;
     });
   });

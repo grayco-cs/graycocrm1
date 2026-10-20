@@ -432,6 +432,8 @@ function holdsScreen(){
 }
 nSI(function(){
   if (!S) return;
+  /* work in the RoofScout tab (its own page in a frame) is use too: it records it under the same key */
+  try { var la2 = parseInt(localStorage.getItem(ACT), 10); if (la2 > lastActive && la2 <= now()) lastActive = la2; } catch (e) {}
   if (now() - lastActive > idleMs() && !holdsScreen()) lock('Signed out after ' + Math.round(idleMs() / 3600e3 * 10) / 10 + ' hours without use. Sign in to carry on — nothing was lost.');
 }, 60e3);
 
@@ -459,11 +461,25 @@ function isAdmin(){
   return false;   /* SEC2: admin comes from gc_staff only — never from the editable people list */
 }
 window.__gcAuthIsAdmin = isAdmin;
+function copyS(){ return S ? JSON.parse(JSON.stringify(S)) : null; }
 window.__GC_AUTH__ = {
   email: function(){ return S ? S.email : ''; },
   mode: function(){ return mode; },
   isAdmin: isAdmin,
-  signOut: function(){ lock('Signed out.'); }
+  signOut: function(){ lock('Signed out.'); },
+  /* RoofScout runs as the 🏠 RoofScout tab (same site, in a frame). It uses THIS sign-in — the one the CRM
+     is using right now — instead of reading its own copy from browser storage, which can be missing or out
+     of date (a write the browser refused when storage was full, a cleared key, a refresh only this page
+     knows about). session(): the current sign-in or null. fresh(): the same, renewed first when it is about
+     to run out. renew(): renewed now (the database refused the token). touch(): RoofScout is being used. */
+  session: function(){
+    if (!S) return null;
+    try { if (!load()) store(S); } catch (e) {}          /* put the copy back for anything that reads storage */
+    return copyS();
+  },
+  fresh: function(){ return ensureFresh().then(copyS, copyS); },
+  renew: function(){ return (S ? refresh() : Promise.resolve(false)).then(copyS, copyS); },
+  touch: function(){ touch(false); }
 };
 
 /* ── 💎 menu: Team access (admins), Change my password, Sign out ────────── */
