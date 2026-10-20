@@ -71526,6 +71526,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       row('\uD83D\uDCDD','Scopes','scopes')+
       row('\uD83D\uDCB0','My Financials','myfin')+
       row('\uD83D\uDCB5','My Pay','mypay')+
+      row('\uD83C\uDFA8','Product Library','prodlib')+ /* CH */
       row('\uD83D\uDC64','Customers','customers')+
       row('\uD83D\uDCBB','Switch to Desk View','desk');
     ov.appendChild(sh); document.body.appendChild(ov);
@@ -71537,6 +71538,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       else if(a==='myfin'){ if(window._gcMyFinancials) window._gcMyFinancials(); }
       else if(a==='mypay'){ if(window._gcOpenMyPayRecord) window._gcOpenMyPayRecord(); }
       else if(a==='playbook'){ if(window._gcOpenPlaybook) window._gcOpenPlaybook(); }
+      else if(a==='prodlib'){ if(window._gcProductLibrary) window._gcProductLibrary(); } /* CH */
       else fieldGo(a);
     }; });
   }
@@ -127579,6 +127581,691 @@ window._gcEST = {
 console.log('[GC] Estimates: every save sticks (stamped updatedAt, merged by save time), the page count is folded where it is set, the disk never loses a record, saved drafts promoted. _gcEST.status()');
 })();
 
+</script>
+<script id="gc-patch-ch">
+/* ============================================================================
+   GrayCo — 🎨 CUSTOMER CHOICES + 📚 PRODUCT LIBRARY (shared).   patch CH   __GC_PATCH_CH__
+
+   Owner 10/20: "for customer selections on products I want to be able to manually add products, and any
+   products I add keep and save so I can build a database. First will be roofs and Biffle will use that."
+
+   • 📚 Product library (gc_kv "selectionLibrary"): category → brand → product line → colors / options,
+     with an optional price per unit and a note. Any PM adds; every addition goes to the cloud at once and
+     is there for everyone. One record per name (case and spaces don't matter). Each save is a UNION with
+     the cloud's copy, so no computer (stale, offline, another PM) can take an entry out by saving an older
+     list. Only admins (company sign-in role, SEC2) rename or remove; a removal is for good (removed flag,
+     sticky in every merge). Starts with a roofing-first starter list, marked "starter list — verify with
+     supplier" (public brand / line / color names only, no prices).
+     Desk: Products tab → "🎨 Product library" sub-tab · a job's Customer portal card → 📚 Product library.
+     Phone (field view): More → 🎨 Product Library · the job screen's Customer portal card.
+   • 🎨 Customer choices on a job (job page + field job screen, under the Customer portal card): the PM
+     offers choices from the library pull-downs (with "➕ Add new…" that saves to the library), records the
+     customer's pick, and prints / shares a one-page "Your selections" sheet or posts it to the customer's
+     portal page (project.portalPosts). Kept in gc_kv "selectionChoices" (union-merged, so a stale computer
+     can't drop them) and mirrored on the job (project.portalChoices) for the portal.
+   Console: _gcCH.library()  _gcCH.status()  _gcProductLibrary()  _gcCustomerChoices(pid)
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_CH__) return; window.__GC_PATCH_CH__ = true;
+var nST = window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout.bind(window);
+var nSI = window.__GC_NATIVE_SETINTERVAL__ || window.setInterval;
+var GOLD = '#D4A017', NAVY = '#0F1D2F', LIBKEY = 'selectionLibrary', CHKEY = 'selectionChoices';
+var SEED_NOTE = 'starter list — verify with supplier', SEED_AT = '2026-10-20T00:00:00.000Z';
+var CATS = ['Shingles', 'Metal roofing', 'Underlayment', 'Drip edge / flashing', 'Ridge vent', 'Gutters', 'Skylights',
+            'Siding', 'Trim', 'Paint', 'Windows', 'Doors', 'Flooring', 'Countertops', 'Other'];
+var UNITS = ['sq', 'bundle', 'ea', 'lf', 'sf', 'roll', 'piece', 'box', 'gal'];
+
+/* ── the starter list: roofs first. Public brand / line / color names only; no prices. ────────────── */
+var METAL = ['Galvalume (unpainted)', 'Bright White', 'Light Stone', 'Ash Gray', 'Charcoal Gray', 'Burnished Slate', 'Matte Black', 'Dark Bronze', 'Barn Red', 'Hunter Green'];
+var DRIP = ['White', 'Black', 'Brown', 'Dark Bronze', 'Charcoal', 'Almond', 'Mill finish / galvanized'];
+var GUT = ['White', 'Almond', 'Clay', 'Musket Brown', 'Royal Brown', 'Dark Bronze', 'Black', 'Wicker', 'Terratone', 'Pebble Gray'];
+var SEED = [
+  ['Shingles', 'GAF', 'Timberline HDZ', ['Charcoal', 'Weathered Wood', 'Pewter Gray', 'Barkwood', 'Hickory', 'Shakewood', 'Slate', 'Oyster Gray', 'Mission Brown', 'Hunter Green', 'Fox Hollow Gray']],
+  ['Shingles', 'GAF', 'Timberline UHDZ', ['Charcoal', 'Weathered Wood', 'Pewter Gray', 'Barkwood', 'Hickory', 'Shakewood', 'Slate', 'Mission Brown']],
+  ['Shingles', 'GAF', 'Seal-A-Ridge (hip & ridge)', []],
+  ['Shingles', 'Owens Corning', 'Duration', ['Onyx Black', 'Estate Gray', 'Driftwood', 'Brownwood', 'Teak', 'Desert Tan', 'Sierra Gray', 'Quarry Gray', 'Colonial Slate', 'Harbor Blue', 'Chateau Green', 'Amber', 'Williamsburg Gray', 'Peppercorn', 'Shasta White', 'Summer Harvest']],
+  ['Shingles', 'Owens Corning', 'DecoRidge (hip & ridge)', []],
+  ['Shingles', 'CertainTeed', 'Landmark', ['Moire Black', 'Charcoal Black', 'Weathered Wood', 'Driftwood', 'Heather Blend', 'Burnt Sienna', 'Colonial Slate', 'Georgetown Gray', 'Pewter', 'Resawn Shake', 'Silver Birch']],
+  ['Shingles', 'CertainTeed', 'Landmark Pro', ['Max Def Moire Black', 'Max Def Weathered Wood', 'Max Def Georgetown Gray', 'Max Def Driftwood', 'Max Def Heather Blend', 'Max Def Burnt Sienna', 'Max Def Colonial Slate', 'Max Def Pewter', 'Max Def Resawn Shake', 'Max Def Silver Birch']],
+  ['Shingles', 'CertainTeed', 'Shadow Ridge (hip & ridge)', []],
+  ['Shingles', 'Atlas', 'Pinnacle Pristine', ['Black Shadow', 'Weathered Wood', 'Driftwood', 'Hickory', 'Coastal Granite']],
+  ['Shingles', 'IKO', 'Dynasty', ['Granite Black', 'Dual Black', 'Dual Brown', 'Driftwood', 'Weatherwood', 'Harvard Slate', 'Cornerstone', 'Glacier', 'Frostone Grey', 'Emerald Green', 'Atlantic Blue']],
+  ['Shingles', 'Tamko', 'Heritage', ['Rustic Black', 'Weathered Wood', 'Rustic Slate', 'Natural Timber', 'Oxford Grey', 'Thunderstorm Grey', 'Rustic Cedar', 'Rustic Hickory', 'Desert Sand', 'Olde English Pewter', 'Virginia Slate', 'Mountain Slate', 'Black Walnut', 'Glacier White']],
+  ['Metal roofing', 'Standing seam — snap lock', '24 gauge', METAL],
+  ['Metal roofing', 'Standing seam — snap lock', '26 gauge', METAL],
+  ['Metal roofing', 'Standing seam — mechanical lock', '24 gauge', METAL],
+  ['Metal roofing', 'Exposed fastener — R-panel / PBR', '26 gauge', METAL],
+  ['Metal roofing', 'Exposed fastener — R-panel / PBR', '29 gauge', METAL],
+  ['Metal roofing', '5V crimp', '26 gauge', METAL],
+  ['Metal roofing', 'Corrugated', '26 gauge', METAL],
+  ['Metal roofing', 'Corrugated', '29 gauge', METAL],
+  ['Underlayment', 'GAF', 'FeltBuster (synthetic)', []],
+  ['Underlayment', 'GAF', 'Tiger Paw (synthetic)', []],
+  ['Underlayment', 'GAF', 'WeatherWatch (ice & water)', []],
+  ['Underlayment', 'GAF', 'StormGuard (ice & water)', []],
+  ['Underlayment', 'Owens Corning', 'ProArmor (synthetic)', []],
+  ['Underlayment', 'Owens Corning', 'WeatherLock G (ice & water)', []],
+  ['Underlayment', 'CertainTeed', 'RoofRunner (synthetic)', []],
+  ['Underlayment', 'CertainTeed', 'WinterGuard (ice & water)', []],
+  ['Underlayment', 'Grace', 'Ice & Water Shield HT (high temp, metal roofs)', []],
+  ['Underlayment', 'Felt', '#15 felt', []],
+  ['Underlayment', 'Felt', '#30 felt', []],
+  ['Drip edge / flashing', 'Drip edge (aluminum)', 'Style D', DRIP],
+  ['Drip edge / flashing', 'Drip edge (aluminum)', 'Style C', DRIP],
+  ['Drip edge / flashing', 'Drip edge (aluminum)', 'Gutter apron', DRIP],
+  ['Drip edge / flashing', 'Flashing', 'Step flashing', []],
+  ['Drip edge / flashing', 'Flashing', 'W valley metal', []],
+  ['Drip edge / flashing', 'Flashing', 'Counter flashing', []],
+  ['Drip edge / flashing', 'Flashing', 'Pipe boot / collar', []],
+  ['Ridge vent', 'GAF', 'Cobra Rigid Vent 3', []],
+  ['Ridge vent', 'GAF', 'Cobra Snow Country Advanced', []],
+  ['Ridge vent', 'Owens Corning', 'VentSure Rigid Roll', []],
+  ['Ridge vent', 'Owens Corning', 'VentSure 4-ft Strip', []],
+  ['Ridge vent', 'Air Vent', 'ShingleVent II', []],
+  ['Ridge vent', 'Lomanco', 'OmniRidge', []],
+  ['Gutters', 'Seamless aluminum', '5" K-style', GUT],
+  ['Gutters', 'Seamless aluminum', '6" K-style', GUT],
+  ['Gutters', 'Downspouts', '2x3"', []],
+  ['Gutters', 'Downspouts', '3x4"', []],
+  ['Gutters', 'Gutter guards', 'Screen / mesh guard', []],
+  ['Skylights', 'Velux', 'Fixed deck-mount (FS)', []],
+  ['Skylights', 'Velux', 'Manual fresh-air deck-mount (VS)', []],
+  ['Skylights', 'Velux', 'Solar-powered fresh-air (VSS)', []],
+  ['Skylights', 'Velux', 'Sun Tunnel (TGR rigid)', []],
+  ['Skylights', 'Velux', 'Sun Tunnel (TLR flexible)', []],
+  ['Skylights', 'Velux', 'Blinds (add-on)', ['Light filtering', 'Blackout']],
+  ['Siding', 'James Hardie', 'HardiePlank (ColorPlus)', ['Arctic White', 'Aged Pewter', 'Iron Gray', 'Evening Blue', 'Boothbay Blue', 'Light Mist', 'Monterey Taupe', 'Navajo Beige', 'Khaki Brown', 'Timber Bark', 'Mountain Sage', 'Cobble Stone', 'Pearl Gray', 'Gray Slate', 'Night Gray', 'Countrylane Red', 'Deep Ocean']]
+];
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function norm(v){ return low(v).replace(/\s+/g, ' '); }
+function clean(v){ return s(v).replace(/\s+/g, ' '); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function crm(){ return window._crm || {}; }
+function me(){ try { var n = localStorage.getItem('grayco_user'); if (n) return n; } catch (e) {} try { if (window.__GC_AUTH__) return window.__GC_AUTH__.email(); } catch (e) {} return ''; }
+function isAdmin(){
+  try { var a = window.__GC_SEC2 && window.__GC_SEC2.access && window.__GC_SEC2.access(); if (a && a.known) return !!a.admin; } catch (e) {}
+  try { var A = window.__GC_AUTH__; if (A && typeof A.isAdmin === 'function') return !!A.isAdmin(); } catch (e) {}
+  return false;
+}
+function signedIn(){ try { var A = window.__GC_AUTH__; if (!A) return true; return !!A.email() && A.mode() !== 'none'; } catch (e) { return false; } }
+function isField(){ return document.documentElement.classList.contains('_fieldmode'); }
+function hash(t){ var h1 = 0x811c9dc5, h2 = 0; for (var i = 0; i < t.length; i++) { h1 ^= t.charCodeAt(i); h1 = Math.imul(h1, 16777619) >>> 0; h2 = (h2 * 31 + t.charCodeAt(i)) >>> 0; } return h1.toString(36) + h2.toString(36); }
+function libId(cat, brand, line, color){ return 'sl_' + hash([norm(cat), norm(brand), norm(line), norm(color)].join('|')); }
+function proj(pid){ return (crm().projects || []).find(function(p){ return p && String(p.id) === String(pid); }) || null; }
+function money(n){ n = Number(n); return isFinite(n) ? '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''; }
+function priceTxt(r){ var p = r && r.price !== '' && r.price != null ? Number(r.price) : NaN; return isFinite(p) ? money(p) + (s(r.unit) ? ' / ' + esc(r.unit) : '') : ''; }
+function toast(msg, bg){ try { var t = document.createElement('div'); t.className = 'gcch-toast'; t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:' + (bg || '#14532d') + ';color:#fff;padding:12px 18px;border-radius:12px;font:600 14px Inter,-apple-system,sans-serif;z-index:2147482000;max-width:92vw;box-shadow:0 6px 24px rgba(0,0,0,.3);pointer-events:none'; document.body.appendChild(t); nST(function(){ t.remove(); }, 4500); } catch (e) {} }
+function creds(){ try { return { u: (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k: localStorage.getItem('grayco_sb_key') || '' }; } catch (e) { return { u: '', k: '' }; } }
+function val(v){ if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } } return v; }
+/* a cloud call that hangs (offline: the sign-in layer parks reads until it can send them) gives up after 20 s, so the save queue never stalls */
+var DEAD = [];   /* deadlines, checked from the frame tick too (the CRM queues and skips timers while people work) */
+function limit(p, v){ return new Promise(function(res){ var done = false; var t = function(x){ if (!done) { done = true; res(x); } }; DEAD.push({ at: Date.now() + 20000, fire: function(){ t(v); } }); nST(function(){ t(v); }, 20000); p.then(t, function(){ t(v); }); }); }
+function deadlines(){ if (!DEAD.length) return; var now = Date.now(); DEAD = DEAD.filter(function(d){ if (d.at <= now) { try { d.fire(); } catch (e) {} return false; } return true; }); }
+/* one gc_kv row: the list, or null when the cloud could not be asked (offline / no sign-in) — never "empty" by mistake */
+/* a person's own save (or a sheet they just opened) is a MANUAL call: the CRM's sync breaker (backoff after errors,
+   8 pm–8 am quiet hours) answers background cloud calls with a fake 503, but lets manual saves through. The flag is
+   held until the call settles, because the sign-in layer may send it a moment later. */
+var manualN = 0;
+function asManual(on, mk){
+  if (!on) return mk();
+  manualN++; var was = window.__GC_MANUAL_SAVE__; try { window.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+  var done = function(){ manualN--; if (manualN === 0 && !was) { try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} } };
+  var p; try { p = mk(); } catch (e) { done(); throw e; }
+  p.then(done, done); return p;
+}
+function kvRead(key, manual){
+  var c = creds(); if (!c.u || !c.k) return Promise.resolve(null);
+  return asManual(manual, function(){ return limit(window.fetch(c.u + '/rest/v1/gc_kv?select=value,updated_at&key=eq.' + encodeURIComponent(key), { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; })
+    .then(function(rows){ if (!Array.isArray(rows)) return null; var v = rows[0] ? val(rows[0].value) : []; return Array.isArray(v) ? v : []; }), null); });
+}
+function kvWrite(key, list){
+  var c = creds(); if (!c.u || !c.k) return Promise.resolve(false);
+  return asManual(true, function(){ return limit(window.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: list, updated_at: new Date().toISOString() }) }).then(function(r){ return !!(r && r.ok); }, function(){ return false; }), false); });
+}
+function idbG(k){ try { return Promise.resolve(window.idbGet ? window.idbGet(k) : null).catch(function(){ return null; }); } catch (e) { return Promise.resolve(null); } }
+function idbS(k, v){ try { return Promise.resolve(window.idbSet ? window.idbSet(k, v) : null).catch(function(){}); } catch (e) { return Promise.resolve(); } }
+
+/* ── a union-merged shared list (the library and the job choices use the same rules) ─────────────
+   one record per id; the newer save stamp wins; a removal is for good (removed stays true). */
+function merge(a, b){
+  var by = {};
+  (a || []).concat(b || []).forEach(function(r){
+    if (!r || typeof r !== 'object' || !r.id) return; var o = by[r.id];
+    if (!o) { by[r.id] = r; return; }
+    var newer = s(r.updatedAt) > s(o.updatedAt) ? r : o, older = newer === r ? o : r;
+    var m = Object.assign({}, older, newer);
+    if (r.removed || o.removed) { m.removed = true; m.removedBy = m.removedBy || older.removedBy || ''; } else delete m.removed;
+    by[r.id] = m;
+  });
+  return Object.keys(by).map(function(k){ return by[k]; });
+}
+function sameList(a, b){
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  var m = {}; b.forEach(function(r){ m[r.id] = s(r.updatedAt) + (r.removed ? 'x' : ''); });
+  return a.every(function(r){ return m[r.id] === s(r.updatedAt) + (r.removed ? 'x' : ''); });
+}
+function Store(key, seeder){
+  var S = { key: key, list: [], at: 0, pending: false, chain: Promise.resolve() };
+  var PEND = 'gc_ch_pending_' + key;
+  try { S.pending = localStorage.getItem(PEND) === '1'; } catch (e) {}
+  function setPending(v){ S.pending = v; try { if (v) localStorage.setItem(PEND, '1'); else localStorage.removeItem(PEND); } catch (e) {} }
+  /* read: this computer's copy ∪ the cloud's; anything only here (added offline, or the starter list) goes up */
+  S.pull = function(manual){ var f = function(){ return doPull(manual); }; S.chain = S.chain.then(f, f); return S.chain; };
+  async function doPull(manual){
+    var local = await idbG(key), cloud = await kvRead(key, !!manual);
+    var next = merge(merge(S.list, Array.isArray(local) ? local : []), Array.isArray(cloud) ? cloud : []);
+    if (seeder) next = seeder(next);
+    S.list = next; await idbS(key, next);
+    if (cloud !== null) { S.at = Date.now(); if (!sameList(next, cloud) || S.pending) await doPush(); }
+    return S.list;
+  }
+  /* write: always a union with what the cloud has right now */
+  S.push = function(){ S.chain = S.chain.then(doPush, doPush); return S.chain; };
+  async function doPush(){
+    var cloud = await kvRead(key, true);
+    if (cloud === null) { setPending(true); await idbS(key, S.list); return false; }
+    S.list = merge(S.list, cloud); await idbS(key, S.list);
+    var ok = await kvWrite(key, S.list);
+    setPending(!ok); return ok;
+  }
+  S.local = async function(){ if (!S.list.length) { var l = await idbG(key); if (Array.isArray(l)) S.list = merge(S.list, l); if (seeder) S.list = seeder(S.list); } return S.list; };
+  S.put = function(rec){ S.list = merge(S.list, [rec]); idbS(key, S.list); return S.push(); };
+  return S;
+}
+
+/* ── 📚 the library ─────────────────────────────────────────────────────────── */
+var SEEDS = null;
+function seedRecs(){
+  if (SEEDS) return SEEDS; SEEDS = [];
+  SEED.forEach(function(x){
+    var add = function(color){ SEEDS.push({ id: libId(x[0], x[1], x[2], color), cat: x[0], brand: x[1], line: x[2], color: color, seed: true, note: SEED_NOTE, by: 'GrayCo', at: SEED_AT, updatedAt: SEED_AT }); };
+    if (!x[3].length) add(''); else x[3].forEach(add);
+  });
+  return SEEDS;
+}
+/* a starter entry that is missing is added (a removed one is still in the list, flagged: it stays removed) */
+function seeder(list){ var have = {}; list.forEach(function(r){ have[r.id] = 1; }); var add = seedRecs().filter(function(r){ return !have[r.id]; }); return add.length ? list.concat(add) : list; }
+var LIB = Store(LIBKEY, seeder);
+function live(){ return LIB.list.filter(function(r){ return r && !r.removed; }); }
+function sig(list){ var m = ''; list.forEach(function(r){ var u = s(r.updatedAt) + (r.removed ? 'x' : ''); if (u > m) m = u; }); return list.length + '|' + m; }
+function uniq(list, f){ var m = {}; list.forEach(function(r){ var k = norm(r[f]); if (!k) return; if (!m[k] || (m[k].seed && !r.seed)) m[k] = r; }); return Object.keys(m).map(function(k){ return m[k]; }); }
+function cats(){ var m = {}; CATS.forEach(function(c){ m[norm(c)] = c; }); live().forEach(function(r){ if (s(r.cat) && !m[norm(r.cat)]) m[norm(r.cat)] = r.cat; }); return Object.keys(m).map(function(k){ return m[k]; }); }
+function inCat(cat){ return live().filter(function(r){ return norm(r.cat) === norm(cat); }); }
+function inBrand(cat, brand){ return inCat(cat).filter(function(r){ return norm(r.brand) === norm(brand); }); }
+function inLine(cat, brand, line){ return inBrand(cat, brand).filter(function(r){ return norm(r.line) === norm(line); }); }
+function brands(cat){ return uniq(inCat(cat), 'brand').map(function(r){ return r.brand; }).sort(function(a, b){ return low(a) < low(b) ? -1 : 1; }); }
+function lines(cat, brand){ return uniq(inBrand(cat, brand), 'line').map(function(r){ return r.line; }).sort(function(a, b){ return low(a) < low(b) ? -1 : 1; }); }
+function colors(cat, brand, line){ return uniq(inLine(cat, brand, line), 'color').sort(function(a, b){ return low(a.color) < low(b.color) ? -1 : 1; }); }
+function lineRec(cat, brand, line){ return inLine(cat, brand, line).filter(function(r){ return !s(r.color); }).sort(function(a, b){ return s(a.updatedAt) < s(b.updatedAt) ? 1 : -1; })[0] || null; }
+function findLive(cat, brand, line, color){ return live().find(function(r){ return norm(r.cat) === norm(cat) && norm(r.brand) === norm(brand) && norm(r.line) === norm(line) && norm(r.color) === norm(color); }) || null; }
+/* add one entry for everyone (the same name, any case / spacing: the one entry there is) */
+async function addLib(cat, brand, line, color, extra){
+  cat = clean(cat); brand = clean(brand); line = clean(line); color = clean(color); extra = extra || {};
+  var have = findLive(cat, brand, line, color);
+  if (have) { if (extra.price != null && extra.price !== '' || s(extra.note)) await setLib(have.id, extra); return { rec: have, existed: true }; }
+  var id = libId(cat, brand, line, color);
+  if (LIB.list.some(function(r){ return r.id === id; })) id = id + '_' + Date.now().toString(36);   /* an admin removed this name once: a new entry */
+  var now = new Date().toISOString();
+  var rec = { id: id, cat: cat, brand: brand, line: line, color: color, by: me(), at: now, updatedAt: now };
+  if (extra.price != null && extra.price !== '' && isFinite(Number(extra.price))) rec.price = Math.round(Number(extra.price) * 100) / 100;
+  if (s(extra.unit)) rec.unit = s(extra.unit);
+  if (s(extra.note)) rec.note = s(extra.note).slice(0, 300);
+  if (s(extra.swatch)) rec.swatch = s(extra.swatch);
+  var ok = await LIB.put(rec);
+  return { rec: rec, ok: ok };
+}
+async function setLib(id, f){
+  var r = LIB.list.find(function(x){ return x.id === id; }); if (!r) return false;
+  var o = Object.assign({}, r, { updatedAt: new Date().toISOString(), editedBy: me() });
+  if ('price' in f) { if (f.price === '' || f.price == null || !isFinite(Number(f.price))) delete o.price; else o.price = Math.round(Number(f.price) * 100) / 100; }
+  if ('unit' in f) { if (s(f.unit)) o.unit = s(f.unit); else delete o.unit; }
+  if ('note' in f) { if (s(f.note)) o.note = s(f.note).slice(0, 300); else delete o.note; if (o.seed && s(f.note) !== SEED_NOTE) o.verified = true; }
+  return LIB.put(o);
+}
+/* admins: rename / remove a whole node (category, brand, line) or one color, for everyone */
+function nodeRecs(n){ return live().filter(function(r){ return norm(r.cat) === norm(n.cat) && (n.brand == null || norm(r.brand) === norm(n.brand)) && (n.line == null || norm(r.line) === norm(n.line)) && (n.color == null || norm(r.color) === norm(n.color)); }); }
+function nodeField(n){ return n.color != null ? 'color' : n.line != null ? 'line' : n.brand != null ? 'brand' : 'cat'; }
+async function renameNode(n, nv){
+  if (!isAdmin()) { toast('Only an admin can rename.', '#991b1b'); return false; }
+  nv = clean(nv); if (!nv) return false;
+  var f = nodeField(n), now = new Date().toISOString(), ids = {};
+  nodeRecs(n).forEach(function(r){ ids[r.id] = 1; });
+  LIB.list = LIB.list.map(function(r){ if (!ids[r.id]) return r; var o = Object.assign({}, r, { updatedAt: now, renamedBy: me() }); o[f] = nv; return o; });
+  await idbS(LIBKEY, LIB.list); return LIB.push();
+}
+async function removeNode(n){
+  if (!isAdmin()) { toast('Only an admin can remove.', '#991b1b'); return false; }
+  var now = new Date().toISOString(), ids = {};
+  nodeRecs(n).forEach(function(r){ ids[r.id] = 1; });
+  LIB.list = LIB.list.map(function(r){ return ids[r.id] ? Object.assign({}, r, { removed: true, removedBy: me(), updatedAt: now }) : r; });
+  await idbS(LIBKEY, LIB.list); return LIB.push();
+}
+
+/* ── 🎨 the job choices ─────────────────────────────────────────────────────── */
+var CH = Store(CHKEY, null);
+function jobChoices(pid, all){
+  var p = proj(pid) || {}, mine = CH.list.filter(function(c){ return c && String(c.pid) === String(pid); });
+  var onJob = (Array.isArray(p.portalChoices) ? p.portalChoices : []).filter(function(c){ return c && c.id; }).map(function(c){ return Object.assign({ pid: String(pid) }, c); });
+  var l = merge(mine, onJob).sort(function(a, b){ return s(a.at) < s(b.at) ? -1 : 1; });
+  return all ? l : l.filter(function(c){ return !c.removed; });
+}
+async function putChoice(pid, c){
+  c = Object.assign({}, c, { pid: String(pid), updatedAt: new Date().toISOString() });
+  var ok = await CH.put(c);
+  await mirror(pid);
+  return ok;
+}
+/* the job keeps its own copy (project.portalChoices) for the portal; the shared key is the safe one */
+var saving = Promise.resolve();
+function mirror(pid){ saving = saving.then(function(){ return doMirror(pid); }, function(){ return doMirror(pid); }); return saving; }
+async function doMirror(pid){
+  var list = jobChoices(pid, true).map(function(c){ var o = Object.assign({}, c); delete o.pid; return o; });
+  var now = new Date().toISOString();
+  function put(p){ var q = Object.assign({}, p); q.portalChoices = list; q.updatedAt = now; q.savedAt = now; return q; }
+  var all = null; try { all = window._gcProjectsRaw ? await window._gcProjectsRaw() : await window.idbGet('projects'); } catch (e) {}
+  try { window.__GC_MANUAL_SAVE__ = true; if (window._gcManualNow) window._gcManualNow('customer choices'); } catch (e) {}
+  var hit = false, next = null;
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; return put(p); } return p; });
+  if (hit) { try { await window.idbSet('projects', next); } catch (e) {} }
+  try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && String(p.id) === String(pid) ? put(p) : p; }) : prev; }); } catch (e) {}
+  if (hit) { try { if (window._supaUpsert) window._supaUpsert('projects', next); } catch (e) {} }
+  nST(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+}
+async function postToPortal(pid, text){
+  var post = { id: 'pp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: new Date().toISOString(), by: me(), text: text.slice(0, 2000), files: [], source: 'selections' };
+  var now = new Date().toISOString();
+  function put(p){ var q = Object.assign({}, p); var l = Array.isArray(q.portalPosts) ? q.portalPosts.slice() : []; if (!l.some(function(x){ return x && x.id === post.id; })) l.push(post); q.portalPosts = l; q.updatedAt = now; q.savedAt = now; return q; }
+  var all = null; try { all = window._gcProjectsRaw ? await window._gcProjectsRaw() : await window.idbGet('projects'); } catch (e) {}
+  try { window.__GC_MANUAL_SAVE__ = true; if (window._gcManualNow) window._gcManualNow('customer selections'); } catch (e) {}
+  var hit = false, next = null;
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; return put(p); } return p; });
+  if (hit) { try { await window.idbSet('projects', next); } catch (e) {} }
+  try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && String(p.id) === String(pid) ? put(p) : p; }) : prev; }); } catch (e) {}
+  if (hit) { try { if (window._supaUpsert) window._supaUpsert('projects', next); } catch (e) {} }
+  nST(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  return post;
+}
+
+/* ── the sheet: a full-screen layer with its own ‹ Back and ✕ (patch NAV's phone Back closes it) ── */
+var BTN = 'min-height:44px;border-radius:10px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F;font-weight:700;font-size:14px;cursor:pointer;padding:0 12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;box-sizing:border-box';
+var BTNG = BTN + ';background:' + GOLD + ';border-color:' + GOLD + ';color:' + NAVY;
+var SEL = 'width:100%;min-height:46px;border:1px solid #C9C2B2;border-radius:10px;padding:0 10px;font-size:16px;font-family:inherit;background:#fff;color:#14202E;box-sizing:border-box';
+var LAB = 'display:block;font-weight:800;font-size:12px;color:#8A5A00;margin:12px 0 4px;letter-spacing:.03em';
+var ROW = 'display:flex;align-items:center;gap:8px;border-top:1px solid #EFEAE0;padding:10px 2px';
+function sheet(id, title){
+  var old = document.getElementById(id); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = id; ov.className = 'gcch-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', title);
+  var box = document.createElement('div'); box.className = 'gcch-box';
+  box.innerHTML = '<div class="gcch-head"><button type="button" data-a="back" class="gcch-back" aria-label="Back">‹ Back</button><div class="gcch-title">' + esc(title) + '</div><button type="button" data-a="close" class="gcch-x" aria-label="Close">✕</button></div><div class="gcch-body"></div>';
+  ov.appendChild(box); document.body.appendChild(ov);
+  var close = function(){ ov.remove(); };
+  box.querySelector('.gcch-back').onclick = close; box.querySelector('.gcch-x').onclick = close;
+  return { ov: ov, box: box, body: box.querySelector('.gcch-body'), close: close };
+}
+(function css(){
+  if (document.getElementById('gcch-css')) return;
+  var st = document.createElement('style'); st.id = 'gcch-css';
+  st.textContent = [
+    '.gcch-ov{position:fixed;inset:0;z-index:100070;background:rgba(6,12,20,.72);display:flex;align-items:flex-end;justify-content:center;font-family:Inter,-apple-system,sans-serif;padding-top:env(safe-area-inset-top,0px);box-sizing:border-box}',
+    '@media(min-width:760px){.gcch-ov{align-items:center}.gcch-box{border-radius:18px!important}}',
+    '.gcch-box{background:#fff;color:#14202E;width:100%;max-width:640px;max-height:calc(100% - 10px);overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:18px 18px 0 0;padding:0 16px calc(18px + env(safe-area-inset-bottom,0px));box-sizing:border-box}',
+    '.gcch-head{position:sticky;top:0;z-index:2;background:#fff;display:flex;align-items:center;gap:8px;padding:12px 0 8px;border-bottom:1px solid #EFEAE0;margin-bottom:6px}',
+    '.gcch-title{flex:1;min-width:0;font-size:17px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.gcch-back{min-height:44px;padding:0 12px;border-radius:22px;border:1px solid #1A3A5F;background:#0f2440;color:#fff;font:800 15px Inter,-apple-system,sans-serif;cursor:pointer}',
+    '.gcch-x{min-width:44px;min-height:44px;border-radius:22px;border:0;background:#EEF1F6;font-size:18px;cursor:pointer}',
+    '.gcch-ov input,.gcch-ov select,.gcch-ov textarea{font-size:16px}',
+    '.gcch-crumb{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:8px 0;font-size:13px}',
+    '.gcch-crumb button{border:0;background:#F3EFE6;border-radius:999px;padding:6px 10px;font:700 13px Inter,-apple-system,sans-serif;color:#1A3A5F;cursor:pointer;min-height:32px}',
+    '.gcch-item{flex:1;min-width:0;text-align:left;border:0;background:none;padding:4px 0;cursor:pointer;font:600 15px Inter,-apple-system,sans-serif;color:#14202E;overflow-wrap:anywhere}',
+    '.gcch-sm{min-height:34px!important;font-size:12px!important;padding:0 8px!important}',
+    '.gcch-tag{font-size:11px;color:#8a8f98;font-weight:600}',
+    '.gcch-strip{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}',
+    '.gcch-chip{min-height:36px;border-radius:999px;border:1px solid #E2DCCD;background:#fff;color:#14202E;font:700 13px Inter,-apple-system,sans-serif;padding:0 12px;cursor:pointer;white-space:nowrap}',
+    '#gcch-prodbar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px;font-family:Inter,-apple-system,sans-serif}',
+    '#gcch-prodbar button{min-height:40px;border-radius:10px;padding:0 14px;font:700 14px Inter,-apple-system,sans-serif;cursor:pointer;border:1px solid #1e3a5f}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+})();
+function onEnter(input, fn){ input.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); fn(); } }); }
+function unitSel(id, v){ return '<select id="' + id + '" style="' + SEL + ';width:auto;min-width:92px"><option value="">unit</option>' + UNITS.map(function(u){ return '<option' + (u === v ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select>'; }
+/* name + price per unit + note: the "add" form used everywhere */
+function addForm(prefix, label, placeholder, withPrice){
+  return '<div class="gcch-add" style="border:1px dashed #C9C2B2;border-radius:12px;padding:10px;margin-top:12px">' +
+    '<div style="font-weight:800;font-size:14px;margin-bottom:6px">➕ ' + esc(label) + '</div>' +
+    '<input id="' + prefix + '-name" type="text" maxlength="120" placeholder="' + esc(placeholder) + '" style="' + SEL + '">' +
+    (withPrice ? '<div style="display:flex;gap:6px;margin-top:6px"><input id="' + prefix + '-price" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Price per unit (optional)" style="' + SEL + ';flex:1">' + unitSel(prefix + '-unit', '') + '</div>' : '') +
+    '<input id="' + prefix + '-note" type="text" maxlength="300" placeholder="Note (optional)" style="' + SEL + ';margin-top:6px">' +
+    '<button type="button" id="' + prefix + '-go" style="' + BTN + ';width:100%;margin-top:8px;background:' + NAVY + ';color:#fff">Save for everyone</button></div>';
+}
+function readForm(root, prefix){
+  var g = function(x){ var e = root.querySelector('#' + prefix + '-' + x); return e ? e.value : ''; };
+  return { name: clean(g('name')), price: s(g('price')), unit: s(g('unit')), note: s(g('note')) };
+}
+
+/* ── 📚 the Product library manager ────────────────────────────────────────── */
+async function openLibrary(start){
+  var sh = sheet('gcch-lib', '📚 Product library');
+  var st = Object.assign({ cat: null, brand: null, line: null, q: '' }, start || {});
+  if (st.cat != null && st.brand == null) st.line = null;
+  sh.body.innerHTML = '<div style="color:#55626F;font-size:13px;margin:4px 0 8px">Everything here is shared: what you add is saved for every PM at once. Entries marked “starter” are a ' + SEED_NOTE + '.</div>' +
+    '<input id="gcch-q" type="search" placeholder="🔎 Search brands, lines, colors…" autocomplete="off" style="' + SEL + '">' +
+    '<div id="gcch-view"><div style="color:#55626F;font-size:14px;padding:12px 0">Loading…</div></div>';
+  var q = sh.body.querySelector('#gcch-q'), view = sh.body.querySelector('#gcch-view');
+  q.oninput = function(){ if (q.value !== st.q) paint(); };   /* only a real change (the CRM's form watcher re-fires input events) */   /* a few hundred records: filtering on every key is instant (the CRM's timers are throttled while people type) */
+  await LIB.local(); paint();
+  var dirty = false; view.addEventListener('input', function(){ dirty = true; }, true);
+  var s0 = sig(LIB.list); LIB.pull(true).then(function(){ if (document.body.contains(sh.ov) && !dirty && sig(LIB.list) !== s0) paint(); });
+  function crumbs(){
+    var c = '<div class="gcch-crumb"><button type="button" data-go="root">All</button>';
+    if (st.cat != null) c += '›<button type="button" data-go="cat">' + esc(st.cat) + '</button>';
+    if (st.brand != null) c += '›<button type="button" data-go="brand">' + esc(st.brand) + '</button>';
+    if (st.line != null) c += '›<button type="button" data-go="line">' + esc(st.line) + '</button>';
+    return c + '</div>';
+  }
+  function adminBtns(){ return isAdmin() ? '<button type="button" data-ren="1" style="' + BTN + '" class="gcch-sm">Rename</button><button type="button" data-del="1" style="' + BTN + ';border-color:#b91c1c;color:#b91c1c" class="gcch-sm">Remove</button>' : ''; }
+  function row(label, sub, attrs, extra){
+    return '<div style="' + ROW + '" ' + attrs + '><button type="button" class="gcch-item" data-open="1">' + label + (sub ? '<div style="font-size:12px;color:#55626F;font-weight:500">' + sub + '</div>' : '') + '</button>' + (extra || '') + adminBtns() + '</div>';
+  }
+  function paint(){
+    paints++; var h = ''; st.q = q.value;
+    if (s(st.q)) {
+      var words = norm(st.q).split(' ');
+      var hits = live().filter(function(r){ var t = norm([r.cat, r.brand, r.line, r.color, r.note].join(' ')); return words.every(function(w){ return t.indexOf(w) >= 0; }); })
+        .sort(function(a, b){ return low(a.cat + a.brand + a.line + a.color) < low(b.cat + b.brand + b.line + b.color) ? -1 : 1; });
+      h += '<div style="font-size:13px;color:#55626F;margin:10px 0 4px">' + hits.length + ' found' + (hits.length > 80 ? ' (first 80)' : '') + '</div>';
+      h += hits.slice(0, 80).map(function(r){
+        return '<div style="' + ROW + '"><button type="button" class="gcch-item" data-jump="' + esc(r.id) + '">' + esc([r.brand, r.line, r.color].filter(Boolean).join(' · ') || r.cat) +
+          '<div style="font-size:12px;color:#55626F;font-weight:500">' + esc(r.cat) + (priceTxt(r) ? ' · ' + priceTxt(r) : '') + (r.note && !r.seed ? ' · ' + esc(r.note) : '') + (r.seed ? ' · <span class="gcch-tag">starter</span>' : '') + '</div></button></div>';
+      }).join('') || '<div style="color:#55626F;font-size:14px;padding:8px 0">Nothing found. Open a category below and add it — it is saved for everyone.</div>';
+    } else if (st.cat == null) {
+      h += crumbs() + cats().map(function(c){ var n = inCat(c).length; return row(esc(c), n ? n + ' entr' + (n === 1 ? 'y' : 'ies') : 'empty', 'data-k="cat" data-v="' + esc(c) + '"'); }).join('') +
+        addForm('gcch-ac', 'Add a category', 'e.g. Fencing', false);
+    } else if (st.brand == null) {
+      h += crumbs() + brands(st.cat).map(function(b){ var n = lines(st.cat, b).length; return row(esc(b), n + ' line' + (n === 1 ? '' : 's'), 'data-k="brand" data-v="' + esc(b) + '"'); }).join('') +
+        (brands(st.cat).length ? '' : '<div style="color:#55626F;font-size:14px;padding:8px 0">No brands yet.</div>') +
+        addForm('gcch-ab', 'Add a brand to ' + st.cat, 'Brand (e.g. Atlas)', false);
+    } else if (st.line == null) {
+      h += crumbs() + lines(st.cat, st.brand).map(function(l){ var n = colors(st.cat, st.brand, l).length, lr = lineRec(st.cat, st.brand, l);
+          return row(esc(l), [n ? n + ' color' + (n === 1 ? '' : 's') + ' / options' : '', lr && priceTxt(lr), lr && lr.note && !lr.seed ? esc(lr.note) : '', lr && lr.seed ? '<span class="gcch-tag">starter</span>' : ''].filter(Boolean).join(' · '), 'data-k="line" data-v="' + esc(l) + '"'); }).join('') +
+        (lines(st.cat, st.brand).length ? '' : '<div style="color:#55626F;font-size:14px;padding:8px 0">No product lines yet.</div>') +
+        addForm('gcch-al', 'Add a product line to ' + st.brand, 'Product line (e.g. Timberline HDZ)', true);
+    } else {
+      var lr = lineRec(st.cat, st.brand, st.line);
+      h += crumbs() + '<div style="background:#FAF7F0;border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:6px">' +
+        '<b>' + esc(st.brand + ' ' + st.line) + '</b>' + (lr && priceTxt(lr) ? ' · ' + priceTxt(lr) : '') + (lr && lr.note ? '<div style="color:#55626F">' + esc(lr.note) + '</div>' : '') +
+        '<div style="margin-top:6px"><button type="button" id="gcch-editline" style="' + BTN + '" class="gcch-sm">✎ Price / note for this line</button></div><div id="gcch-editline-f"></div></div>';
+      var cs = colors(st.cat, st.brand, st.line);
+      h += cs.map(function(r){
+        return '<div style="' + ROW + '" data-k="color" data-v="' + esc(r.color) + '" data-id="' + esc(r.id) + '"><div style="flex:1;min-width:0;font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(r.color) +
+          '<div style="font-size:12px;color:#55626F;font-weight:500">' + [priceTxt(r), r.note && !r.seed ? esc(r.note) : '', r.seed ? '<span class="gcch-tag">starter</span>' : (r.by ? 'added by ' + esc(r.by) : '')].filter(Boolean).join(' · ') + '</div></div>' +
+          '<button type="button" data-edit="1" style="' + BTN + '" class="gcch-sm" aria-label="Edit price or note">✎</button>' + adminBtns() + '</div><div data-editf="' + esc(r.id) + '"></div>';
+      }).join('') + (cs.length ? '' : '<div style="color:#55626F;font-size:14px;padding:8px 0">No colors / options yet.</div>') +
+        addForm('gcch-ao', 'Add a color / option to ' + st.line, 'Color or option (e.g. Golden Amber)', true);
+    }
+    view.innerHTML = h; dirty = false; wire();
+  }
+  function editForm(where, rec, onSave){
+    where.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"><input data-f="price" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Price per unit" value="' + esc(rec && rec.price != null ? rec.price : '') + '" style="' + SEL + ';flex:1;min-width:120px">' +
+      unitSel('gcch-eu-' + Math.random().toString(36).slice(2, 7), rec && rec.unit || '') + '<input data-f="note" type="text" maxlength="300" placeholder="Note" value="' + esc(rec && rec.note && !rec.seed ? rec.note : '') + '" style="' + SEL + '"><button type="button" data-f="save" style="' + BTNG + ';width:100%">Save for everyone</button></div>';
+    where.querySelector('[data-f=save]').onclick = async function(){ this.disabled = true; await onSave({ price: s(where.querySelector('[data-f=price]').value), unit: s(where.querySelector('select').value), note: s(where.querySelector('[data-f=note]').value) }); };
+  }
+  function node(el){
+    var k = el.getAttribute('data-k'), v = el.getAttribute('data-v'), n = { cat: st.cat };
+    if (k === 'cat') n.cat = v; if (k === 'brand') n.brand = v; if (k === 'line') { n.brand = st.brand; n.line = v; } if (k === 'color') { n.brand = st.brand; n.line = st.line; n.color = v; }
+    return n;
+  }
+  function wire(){
+    Array.prototype.forEach.call(view.querySelectorAll('[data-go]'), function(b){ b.onclick = function(){ var g = b.getAttribute('data-go'); if (g === 'root') st.cat = null; if (g === 'root' || g === 'cat') st.brand = null; if (g !== 'line') st.line = null; paint(); }; });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-open]'), function(b){ b.onclick = function(){ var el = b.parentNode, k = el.getAttribute('data-k'), v = el.getAttribute('data-v'); if (k === 'cat') { st.cat = v; st.brand = null; st.line = null; } if (k === 'brand') { st.brand = v; st.line = null; } if (k === 'line') st.line = v; paint(); try { sh.box.scrollTop = 0; } catch (e) {} }; });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-jump]'), function(b){ b.onclick = function(){ var r = LIB.list.find(function(x){ return x.id === b.getAttribute('data-jump'); }); if (!r) return; q.value = ''; st.cat = r.cat; st.brand = r.brand ? r.brand : null; st.line = r.brand && r.line ? r.line : null; paint(); }; });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-ren]'), function(b){ b.onclick = async function(){ var n = node(b.parentNode), f = nodeField(n), nv = ''; try { nv = prompt('New name for “' + n[f] + '” (for everyone):', n[f]) || ''; } catch (e) {} if (!clean(nv) || norm(nv) === norm(n[f])) return; await renameNode(n, nv); if (f === 'cat' && st.cat != null) st.cat = clean(nv); toast('Renamed for everyone.'); paint(); }; });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-del]'), function(b){ b.onclick = async function(){ var n = node(b.parentNode), f = nodeField(n), cnt = nodeRecs(n).length, sure = true; try { sure = confirm('Remove “' + n[f] + '”' + (cnt > 1 ? ' and everything under it (' + cnt + ' entries)' : '') + ' for everyone? It will not come back.'); } catch (e) {} if (!sure) return; await removeNode(n); toast('Removed for everyone.'); paint(); }; });
+    Array.prototype.forEach.call(view.querySelectorAll('[data-edit]'), function(b){ b.onclick = function(){ var id = b.parentNode.getAttribute('data-id'), r = LIB.list.find(function(x){ return x.id === id; }), w = view.querySelector('[data-editf="' + id + '"]'); if (!r || !w) return; editForm(w, r, async function(f){ await setLib(id, f); toast('Saved for everyone.'); paint(); }); }; });
+    var el = view.querySelector('#gcch-editline'); if (el) el.onclick = function(){ var lr = lineRec(st.cat, st.brand, st.line); editForm(view.querySelector('#gcch-editline-f'), lr, async function(f){ if (lr) await setLib(lr.id, f); else await addLib(st.cat, st.brand, st.line, '', f); toast('Saved for everyone.'); paint(); }); };
+    [['gcch-ac', function(f){ return addLib(f.name, '', '', '', f).then(function(r){ st.cat = r.rec.cat; return r; }); }],
+     ['gcch-ab', function(f){ return addLib(st.cat, f.name, '', '', f).then(function(r){ st.brand = r.rec.brand; return r; }); }],
+     ['gcch-al', function(f){ return addLib(st.cat, st.brand, f.name, '', f).then(function(r){ st.line = r.rec.line; return r; }); }],
+     ['gcch-ao', function(f){ return addLib(st.cat, st.brand, st.line, f.name, f); }]].forEach(function(x){
+      var go = view.querySelector('#' + x[0] + '-go'); if (!go) return;
+      var run = async function(){ var f = readForm(view, x[0]); if (!f.name) { view.querySelector('#' + x[0] + '-name').focus(); return; } go.disabled = true; go.textContent = 'Saving…';
+        var r = await x[1](f); toast(r.existed ? '“' + f.name + '” was already in the library — kept one entry.' : r.ok === false ? '“' + f.name + '” saved on this device — it goes to everyone as soon as you are online.' : '“' + f.name + '” saved — every PM sees it now.', r.ok === false ? '#92400e' : null); paint(); };
+      go.onclick = run; onEnter(view.querySelector('#' + x[0] + '-name'), run);
+    });
+  }
+  return sh;
+}
+
+/* ── 🎨 Customer choices on a job ─────────────────────────────────────────────── */
+async function openChoices(pid){
+  var p = proj(pid); if (!p) { toast('Open a job first.', '#991b1b'); return; }
+  var sh = sheet('gcch-choices', '🎨 Customer choices — ' + (s(p.client).split(/\s+/)[0] || s(p.name) || 'customer'));
+  sh.body.innerHTML = '<div style="color:#55626F;font-size:13px">Loading…</div>';
+  await Promise.all([LIB.local(), CH.local()]); paintChoices(sh, pid);
+  var s0 = sig(LIB.list) + sig(CH.list);
+  Promise.all([LIB.pull(true), CH.pull(true)]).then(function(){ if (!document.body.contains(sh.ov) || sig(LIB.list) + sig(CH.list) === s0) return; if (sh.dirty) refreshList(sh, pid); else paintChoices(sh, pid); });
+}
+function optLabel(o){ return o.color + (Number(o.priceDiff) ? ' (' + (o.priceDiff > 0 ? '+' : '−') + money(Math.abs(o.priceDiff)) + ')' : ''); }
+function choiceRows(pid){
+  var list = jobChoices(pid);
+  if (!list.length) return '<div style="color:#55626F;font-size:14px;padding:6px 0">No choices yet. Add one below.</div>';
+  return list.map(function(c){
+    var opts = (c.anyInLine ? ['any color in this line'] : []).concat((c.options || []).map(optLabel)).join(', ');
+    var pk = c.pick && !c.pick.reopened ? c.pick : null;
+    var pickSel = '<select data-pick="1" style="' + SEL + ';min-height:38px;font-size:14px;flex:1"><option value="">Record the customer’s pick…</option>' + (c.options || []).map(function(o){ return '<option value="' + esc(o.id) + '">' + esc(optLabel(o)) + '</option>'; }).join('') +
+      (c.anyInLine ? colors(c.cat, c.brand, c.line).filter(function(r){ return !(c.options || []).some(function(o){ return norm(o.color) === norm(r.color); }); }).map(function(r){ return '<option value="lib:' + esc(r.color) + '">' + esc(r.color) + '</option>'; }).join('') : '') + '</select>';
+    return '<div class="gcch-ch" data-id="' + esc(c.id) + '" style="border-top:1px solid #EFEAE0;padding:10px 0;display:flex;flex-direction:column;gap:6px">' +
+      '<div style="font-weight:800;font-size:15px">' + esc(c.cat) + ' — ' + esc([c.brand, c.line].filter(Boolean).join(' · ')) + '</div>' +
+      '<div style="font-size:13px;color:#55626F;overflow-wrap:anywhere">' + esc(opts) + (c.dueBy ? ' · pick by ' + esc(c.dueBy) : '') + (c.note ? ' · ' + esc(c.note) : '') + '</div>' +
+      (pk ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:14px;font-weight:700;color:#1D5E2C">✓ Picked: ' + esc(pk.label) + '</span><span style="font-size:12px;color:#55626F">' + esc(pk.by || '') + (pk.at ? ', ' + esc(new Date(pk.at).toLocaleDateString()) : '') + '</span><button type="button" data-q="unpick" style="' + BTN + '" class="gcch-sm">Change</button></div>'
+          : '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;font-weight:700;color:#8A5A00;background:#FCF0CF;border-radius:999px;padding:3px 8px">Waiting for the customer</span>' + pickSel + '</div>') +
+      '<div><button type="button" data-q="remove" style="' + BTN + ';border-color:#b91c1c;color:#b91c1c" class="gcch-sm">Remove this choice</button></div></div>';
+  }).join('');
+}
+function catOptions(v){ return '<option value="">Choose…</option>' + cats().map(function(c){ return '<option' + (norm(c) === norm(v) ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join(''); }
+function optionsHtml(list, v, newLabel){ return '<option value="">Choose…</option>' + list.map(function(x){ return '<option' + (norm(x) === norm(v) ? ' selected' : '') + ' value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('') + '<option value="__new">➕ ' + esc(newLabel) + '</option>'; }
+function refreshList(sh, pid){ var l = sh.body.querySelector('#gcch-list'); if (!l) return; l.innerHTML = choiceRows(pid); wireList(sh, pid); }
+function wireList(sh, pid){
+  Array.prototype.forEach.call(sh.body.querySelectorAll('#gcch-list [data-q]'), function(b){
+    b.onclick = async function(){
+      var id = b.closest('.gcch-ch').getAttribute('data-id'), q = b.getAttribute('data-q'), c = jobChoices(pid).find(function(x){ return x.id === id; }); if (!c) return;
+      if (q === 'remove') { var sure = true; try { sure = confirm('Remove this choice from the job?'); } catch (e) {} if (!sure) return; await putChoice(pid, Object.assign({}, c, { removed: true, removedBy: me() })); if (sh.dirty) refreshList(sh, pid); else paintChoices(sh, pid); return; }
+      if (q === 'unpick') { await putChoice(pid, Object.assign({}, c, { pick: { reopened: true, at: new Date().toISOString(), by: me() } })); if (sh.dirty) refreshList(sh, pid); else paintChoices(sh, pid); }
+    };
+  });
+  Array.prototype.forEach.call(sh.body.querySelectorAll('#gcch-list [data-pick]'), function(sel){
+    sel.onchange = async function(ev){
+      if (ev) ev.stopPropagation();
+      var v = sel.value; if (!v) return; var id = sel.closest('.gcch-ch').getAttribute('data-id'), c = jobChoices(pid).find(function(x){ return x.id === id; }); if (!c) return;
+      var o = (c.options || []).find(function(x){ return x.id === v; }), label = o ? optLabel(o) : v.replace(/^lib:/, '');
+      sel.disabled = true;
+      await putChoice(pid, Object.assign({}, c, { pick: { optionId: o ? o.id : '', label: label, priceDiff: o ? o.priceDiff || 0 : 0, by: me(), at: new Date().toISOString(), how: 'recorded by PM' } }));
+      toast('Recorded: ' + label); refreshList(sh, pid);
+    };
+  });
+}
+function paintChoices(sh, pid){
+  var st = { cat: '', brand: '', line: '', picked: {}, price: {}, any: false };
+  sh.dirty = false;
+  sh.body.innerHTML = '<div id="gcch-list">' + choiceRows(pid) + '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><button type="button" id="gcch-print" style="' + BTN + '">🖨 “Your selections” sheet</button><button type="button" id="gcch-post" style="' + BTN + '">📣 Post to customer portal</button></div>' +
+    '<div style="font-weight:800;font-size:15px;margin:16px 0 0;border-top:2px solid #EFEAE0;padding-top:12px">➕ Add a choice for the customer</div>' +
+    '<label style="' + LAB + '">CATEGORY</label><select id="gcch-cat" style="' + SEL + '">' + catOptions('') + '</select>' +
+    '<label style="' + LAB + '">BRAND</label><select id="gcch-brand" style="' + SEL + '" disabled></select><div id="gcch-brand-new"></div>' +
+    '<label style="' + LAB + '">PRODUCT LINE</label><select id="gcch-line" style="' + SEL + '" disabled></select><div id="gcch-line-new"></div>' +
+    '<label style="' + LAB + '">COLORS / OPTIONS THE CUSTOMER CAN PICK</label><label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:6px"><input type="checkbox" id="gcch-any" style="width:22px;height:22px;accent-color:' + GOLD + '"> Any color in this line</label><div id="gcch-colors" style="display:flex;flex-direction:column;gap:6px"></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="' + LAB + '">PICK BY (OPTIONAL)</label><input id="gcch-due" type="date" style="' + SEL + '"></div><div><label style="' + LAB + '">NOTE (OPTIONAL)</label><input id="gcch-note" maxlength="300" placeholder="Shown to the customer" style="' + SEL + '"></div></div>' +
+    '<div id="gcch-msg" style="font-size:13px;color:#b91c1c;min-height:18px;margin:8px 0"></div>' +
+    '<button type="button" id="gcch-save" style="' + BTNG + ';width:100%;min-height:50px;font-size:16px">Save this choice on the job</button>' +
+    '<button type="button" id="gcch-lib" style="' + BTN + ';width:100%;margin-top:10px">📚 Product library (browse / add / search)</button>' +
+    '<div style="color:#55626F;font-size:12px;margin-top:8px">New brands, lines and colors are saved to the shared library for everyone. Starter names are a ' + SEED_NOTE + '.</div>';
+  var $ = function(id){ return sh.body.querySelector('#' + id); };
+  function newBox(where, label, onAdd, withPrice){
+    var w = $(where); w.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px"><input type="text" data-n="1" maxlength="120" placeholder="' + esc(label) + '" style="' + SEL + '">' +
+      (withPrice ? '<div style="display:flex;gap:6px"><input type="number" data-p="1" step="0.01" min="0" inputmode="decimal" placeholder="Price per unit (optional)" style="' + SEL + ';flex:1">' + unitSel(where + '-u', '') + '</div>' : '') +
+      '<input type="text" data-o="1" maxlength="300" placeholder="Note (optional)" style="' + SEL + '"><button type="button" style="' + BTN + ';background:' + NAVY + ';color:#fff">Save for everyone</button></div>';
+    var i = w.querySelector('[data-n]'), b = w.querySelector('button'); try { i.focus(); } catch (e) {}
+    var run = async function(){ var v = clean(i.value); if (!v) return; b.disabled = true; b.textContent = 'Saving…';
+      await onAdd(v, { price: s((w.querySelector('[data-p]') || {}).value), unit: s((w.querySelector('select') || {}).value), note: s(w.querySelector('[data-o]').value) }); w.innerHTML = ''; };
+    b.onclick = run; onEnter(i, run);
+  }
+  function paintBrand(){ var b = $('gcch-brand'); b.disabled = !st.cat; b.innerHTML = st.cat ? optionsHtml(brands(st.cat), st.brand, 'Add new brand…') : ''; paintLine(); }
+  function paintLine(){ var l = $('gcch-line'); l.disabled = !st.brand; l.innerHTML = st.brand ? optionsHtml(lines(st.cat, st.brand), st.line, 'Add new product line…') : ''; paintColors(); }
+  function paintColors(){
+    var box = $('gcch-colors');
+    if (!st.line) { box.innerHTML = '<div style="color:#55626F;font-size:13px">Pick the brand and product line first.</div>'; return; }
+    var cs = colors(st.cat, st.brand, st.line);
+    box.innerHTML = cs.map(function(r){ var on = !!st.picked[r.id];
+      return '<div style="display:flex;align-items:center;gap:8px;border:1px solid #E2DCCD;border-radius:10px;padding:6px 8px"><label style="flex:1;display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;min-width:0">' +
+        '<input type="checkbox" class="gcch-c" data-id="' + esc(r.id) + '"' + (on ? ' checked' : '') + ' style="width:22px;height:22px;accent-color:' + GOLD + '">' +
+        '<span style="overflow-wrap:anywhere">' + esc(r.color) + (priceTxt(r) ? ' <span class="gcch-tag">' + priceTxt(r) + '</span>' : '') + (r.seed ? ' <span class="gcch-tag">(starter)</span>' : '') + '</span></label>' +
+        '<input type="number" step="0.01" class="gcch-p" data-id="' + esc(r.id) + '" placeholder="± $" value="' + esc(st.price[r.id] || '') + '" title="Price difference for the customer" style="width:86px;min-height:38px;border:1px solid #C9C2B2;border-radius:8px;padding:0 6px;font-size:15px"></div>'; }).join('') +
+      '<button type="button" id="gcch-addcolor" style="' + BTN + ';min-height:40px">➕ Add new color / option…</button><div id="gcch-color-new"></div>';
+    Array.prototype.forEach.call(box.querySelectorAll('.gcch-c'), function(c){ c.onchange = function(){ st.picked[c.getAttribute('data-id')] = c.checked; }; });
+    Array.prototype.forEach.call(box.querySelectorAll('.gcch-p'), function(c){ c.oninput = function(){ var id = c.getAttribute('data-id'); st.price[id] = c.value; if (c.value) { st.picked[id] = true; var cb = box.querySelector('.gcch-c[data-id="' + id + '"]'); if (cb) cb.checked = true; } }; });
+    $('gcch-addcolor').onclick = function(){
+      newBox('gcch-color-new', 'Color / option name (e.g. Golden Amber)', async function(name, x){ var r = await addLib(st.cat, st.brand, st.line, name, x); st.picked[r.rec.id] = true; toast(r.existed ? '“' + r.rec.color + '” was already in the library — ticked.' : '“' + r.rec.color + '” saved to the library — every PM sees it now.'); paintColors(); }, true);
+    };
+  }
+  $('gcch-cat').onchange = function(){ st.cat = this.value; st.brand = ''; st.line = ''; st.picked = {}; paintBrand(); };
+  $('gcch-brand').onchange = function(){ var v = this.value; if (v === '__new') { this.value = ''; newBox('gcch-brand-new', 'New brand (e.g. Atlas)', async function(name, x){ var r = await addLib(st.cat, name, '', '', x); st.brand = r.rec.brand; st.line = ''; paintBrand(); toast('Brand “' + r.rec.brand + '” saved for everyone.'); }, false); return; } st.brand = v; st.line = ''; st.picked = {}; paintLine(); };
+  $('gcch-line').onchange = function(){ var v = this.value; if (v === '__new') { this.value = ''; newBox('gcch-line-new', 'New product line', async function(name, x){ var r = await addLib(st.cat, st.brand, name, '', x); st.line = r.rec.line; paintLine(); toast('Line “' + r.rec.line + '” saved for everyone.'); }, true); return; } st.line = v; st.picked = {}; paintColors(); };
+  $('gcch-any').onchange = function(){ st.any = this.checked; };
+  paintBrand();
+  $('gcch-save').onclick = async function(){
+    var msg = $('gcch-msg'); msg.textContent = '';
+    if (!st.cat || !st.brand) { msg.textContent = 'Pick a category and a brand.'; return; }
+    var opts = colors(st.cat, st.brand, st.line).filter(function(r){ return st.picked[r.id]; }).map(function(r){ var o = { id: 'op_' + r.id.slice(3), color: r.color, priceDiff: Math.round((parseFloat(st.price[r.id]) || 0) * 100) / 100 }; if (r.price != null) { o.price = r.price; if (r.unit) o.unit = r.unit; } return o; });
+    if (!opts.length && !st.any && st.line && colors(st.cat, st.brand, st.line).length) { msg.textContent = 'Tick the colors the customer can pick, or "Any color in this line".'; return; }
+    if (st.any && !st.line) { msg.textContent = '"Any color in this line" needs a product line.'; return; }
+    var now = new Date().toISOString();
+    var c = { id: 'ch_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), cat: st.cat, brand: st.brand, line: st.line, anyInLine: st.any, options: opts,
+      dueBy: s($('gcch-due').value), note: s($('gcch-note').value).slice(0, 300), at: now, by: me() };
+    if (!opts.length && !st.any) { var lr = lineRec(st.cat, st.brand, st.line); c.options = [{ id: 'op_' + (lr ? lr.id.slice(3) : libId(st.cat, st.brand, st.line, '').slice(3)), color: st.line || st.brand, priceDiff: 0 }]; }
+    this.disabled = true; this.textContent = 'Saving…';
+    var ok = await putChoice(pid, c);
+    toast(ok ? 'Saved on the job ✓' : 'Saved on this device — it goes up as soon as you are online.', ok ? null : '#92400e');
+    paintChoices(sh, pid);
+  };
+  wireList(sh, pid);
+  /* once the form is touched, a late sync refreshes only the list above it */
+  ['gcch-cat', 'gcch-brand', 'gcch-line', 'gcch-colors', 'gcch-any', 'gcch-due', 'gcch-note', 'gcch-brand-new', 'gcch-line-new'].forEach(function(id){ var e = $(id); if (e) { e.addEventListener('change', function(){ sh.dirty = true; }, true); e.addEventListener('input', function(){ sh.dirty = true; }, true); } });
+  $('gcch-lib').onclick = function(){ openLibrary(st.cat ? { cat: st.cat, brand: st.brand || null, line: st.brand && st.line ? st.line : null } : null); };
+  $('gcch-print').onclick = function(){ openSheetPreview(pid); };
+  $('gcch-post').onclick = async function(){
+    var list = jobChoices(pid); if (!list.length) { toast('Add a choice first.', '#92400e'); return; }
+    var sure = true; try { sure = confirm('Post your selections to ' + ((s((proj(pid) || {}).client).split(/\s+/)[0]) || 'the customer') + '’s portal page?'); } catch (e) {} if (!sure) return;
+    this.disabled = true; await postToPortal(pid, selectionsText(pid)); this.disabled = false;
+    toast('Posted ✓ — the customer sees it on their portal page.');
+  };
+}
+
+/* ── the one-page "Your selections" sheet (print / share / post) ─────────────── */
+function pmOf(p){ var nm = s(p.pm || p.projectManager), u = ((crm().users || []).find(function(x){ return x && nm && low(x.name) === low(nm); }) || {}); return { name: nm, phone: s(u.phone || u.cell || u.mobile), email: s(u.email) }; }
+function selectionsText(pid){
+  var p = proj(pid) || {}, pm = pmOf(p), list = jobChoices(pid);
+  var t = '🎨 Your selections — ' + s(p.name) + '\n\n' + list.map(function(c){
+    var head = c.cat + ': ' + [c.brand, c.line].filter(Boolean).join(' ');
+    var body = c.pick && !c.pick.reopened ? '✓ Your pick: ' + c.pick.label : 'Choose from: ' + (c.anyInLine ? 'any color in this line' + ((c.options || []).length ? ', incl. ' : '') : '') + (c.options || []).map(optLabel).join(', ');
+    return '• ' + head + '\n  ' + body + (c.dueBy && !(c.pick && !c.pick.reopened) ? '\n  Please pick by ' + c.dueBy : '') + (c.note ? '\n  ' + c.note : '');
+  }).join('\n\n') + '\n\nTo pick or change a selection, reply to ' + (pm.name || 'your Project Manager') + (pm.phone ? ' (' + pm.phone + ')' : '') + ' or call GrayCo at 901-585-0944.';
+  return t;
+}
+function selectionsHtml(pid){
+  var p = proj(pid) || {}, pm = pmOf(p), list = jobChoices(pid), today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  var rows = list.map(function(c){
+    var picked = c.pick && !c.pick.reopened;
+    var opts = (c.anyInLine ? ['Any color in this line'] : []).concat((c.options || []).map(optLabel));
+    return '<tr><td><b>' + esc(c.cat) + '</b><br>' + esc([c.brand, c.line].filter(Boolean).join(' ')) + '</td><td>' + (picked ? '<b>✓ ' + esc(c.pick.label) + '</b>' : opts.map(function(o){ return '☐ ' + esc(o); }).join('<br>')) +
+      (c.note ? '<div class="n">' + esc(c.note) + '</div>' : '') + '</td><td>' + (picked ? 'Picked' + (c.pick.at ? ' ' + esc(new Date(c.pick.at).toLocaleDateString()) : '') : (c.dueBy ? 'Pick by ' + esc(c.dueBy) : 'Open')) + '</td></tr>';
+  }).join('');
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your selections — ' + esc(p.name) + '</title><style>' +
+    'body{font:14px/1.45 -apple-system,Segoe UI,Arial,sans-serif;color:#14202E;margin:24px;background:#fff}h1{font-size:22px;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #D4A017;padding-bottom:10px;margin-bottom:14px;gap:12px}' +
+    '.co{font-weight:800;font-size:18px;color:#0F1D2F}.m{color:#55626F;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border:1px solid #D9D2C3;padding:8px;text-align:left;vertical-align:top}th{background:#F6F1E4;font-size:12px;text-transform:uppercase;letter-spacing:.04em}' +
+    '.n{color:#55626F;font-size:12px;margin-top:4px}.sig{margin-top:28px;display:grid;grid-template-columns:2fr 1fr;gap:24px}.sig div{border-top:1px solid #14202E;padding-top:4px;font-size:12px;color:#55626F}@media print{body{margin:12mm}}</style></head><body>' +
+    '<div class="top"><div><div class="co">GrayCo Construction Services</div><div class="m">901-585-0944</div></div><div style="text-align:right"><h1>Your selections</h1><div class="m">' + esc(today) + '</div></div></div>' +
+    '<div><b>' + esc(p.name) + '</b></div><div class="m">' + esc([p.client, p.address].filter(Boolean).join(' · ')) + '</div>' +
+    '<table><thead><tr><th style="width:32%">Item</th><th>Options / your pick</th><th style="width:18%">Status</th></tr></thead><tbody>' + (rows || '<tr><td colspan="3">No selections yet.</td></tr>') + '</tbody></table>' +
+    '<p class="m" style="margin-top:12px">Colors on screens and samples can vary — please confirm with a physical sample. Price differences shown are added to (+) or taken off (−) your contract when you pick that option. To pick or change a selection, contact ' + esc(pm.name || 'your Project Manager') + (pm.phone ? ' at ' + esc(pm.phone) : '') + (pm.email ? ' (' + esc(pm.email) + ')' : '') + ' or call GrayCo at 901-585-0944.</p>' +
+    '<div class="sig"><div>Customer signature</div><div>Date</div></div></body></html>';
+}
+function openSheetPreview(pid){
+  var p = proj(pid) || {};
+  var sh = sheet('gcch-print', '🖨 Your selections — ' + (s(p.name) || 'job'));
+  sh.body.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:6px 0 10px"><button type="button" id="gcch-pr" style="' + BTNG + '">🖨 Print</button><button type="button" id="gcch-sh" style="' + BTN + '">📤 Share</button><button type="button" id="gcch-dl" style="' + BTN + '">⬇ Save</button></div>' +
+    '<iframe id="gcch-frame" title="Your selections" style="width:100%;height:62vh;border:1px solid #E2DCCD;border-radius:10px;background:#fff"></iframe>';
+  var html = selectionsHtml(pid), f = sh.body.querySelector('#gcch-frame'); f.srcdoc = html;
+  var fname = 'Your selections - ' + s(p.name).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 60) + '.html';
+  sh.body.querySelector('#gcch-pr').onclick = function(){ try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Printing is not available here — use Save or Share.', '#92400e'); } };
+  sh.body.querySelector('#gcch-dl').onclick = function(){ try { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = fname; document.body.appendChild(a); a.click(); nST(function(){ a.remove(); }, 1000); } catch (e) {} };
+  sh.body.querySelector('#gcch-sh').onclick = async function(){
+    var text = selectionsText(pid);
+    try { var file = new File([html], fname, { type: 'text/html' }); if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ title: 'Your selections', text: text, files: [file] }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { if (navigator.share) { await navigator.share({ title: 'Your selections', text: text }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text); toast('Copied — paste it into a text or e-mail.'); } catch (e) { toast('Could not share here — use Save or Print.', '#92400e'); }
+  };
+  return sh;
+}
+
+/* ── where people find it ─────────────────────────────────────────────────────
+   1. the Customer portal card (patch Q) on the desk job page and the field job screen
+   2. desk Products tab: a sub-tab bar   3. field More → 🎨 Product Library (count-asserted edit in patch_CH.py) */
+function stripHtml(pid){
+  var n = jobChoices(pid).length, done = jobChoices(pid).filter(function(c){ return c.pick && !c.pick.reopened; }).length;
+  return '<button type="button" class="gcch-chip" data-gcch="choices">🎨 Customer choices' + (n ? ' (' + done + '/' + n + ' picked)' : '') + '</button><button type="button" class="gcch-chip" data-gcch="lib">📚 Product library</button>';
+}
+function strips(){
+  Array.prototype.forEach.call(document.querySelectorAll('.gcq-card'), function(card){
+    var pid = card.getAttribute('data-pid'); if (!pid) return;
+    var have = card.querySelector(':scope > .gcch-strip'), html = stripHtml(pid);
+    if (have && have.__h === html && have.getAttribute('data-pid') === pid) return;
+    if (!have) { have = document.createElement('div'); have.className = 'gcch-strip'; card.appendChild(have); }
+    have.setAttribute('data-pid', pid); have.innerHTML = html; have.__h = html;
+    have.onclick = function(ev){ var b = ev.target.closest && ev.target.closest('[data-gcch]'); if (!b) return; ev.stopPropagation(); if (b.getAttribute('data-gcch') === 'choices') openChoices(pid); else openLibrary(); };
+  });
+}
+function prodBar(){
+  var bar = document.getElementById('gcch-prodbar');
+  var v = ''; try { v = localStorage.getItem('grayco_view') || ''; } catch (e) {}
+  var main = document.querySelector('main');
+  if (v !== 'products' || isField() || !main) { if (bar) bar.remove(); return; }
+  if (bar && main.contains(bar)) return;
+  if (bar) bar.remove();
+  bar = document.createElement('div'); bar.id = 'gcch-prodbar';
+  bar.innerHTML = '<button type="button" data-t="mat" style="background:#1a3a5f;color:#d4a017">▦ Materials &amp; prices</button><button type="button" data-t="lib" style="background:#fff;color:#1a3a5f">🎨 Product library (customer selections)</button>';
+  bar.querySelector('[data-t=lib]').onclick = function(){ openLibrary(); };
+  bar.querySelector('[data-t=mat]').onclick = function(){ var l = document.getElementById('gcch-lib'); if (l) l.remove(); };
+  var host = main.firstElementChild && main.firstElementChild.tagName !== 'SCRIPT' ? main.firstElementChild : main;
+  host.insertBefore(bar, host.firstChild);
+}
+window._gcProductLibrary = function(start){ return openLibrary(start); };
+window._gcCustomerChoices = function(pid){ return openChoices(pid || (window._gcOpenProject && window._gcOpenProject.id) || (window._gcCurrentJob && window._gcCurrentJob.id)); };
+
+/* ── start ─────────────────────────────────────────────────────────────────── */
+var ticks = 0, tickErr = '', paints = 0;
+var lastRetry = 0;
+function tick(){ ticks++; deadlines();
+  if ((LIB.pending || CH.pending) && navigator.onLine !== false && Date.now() - lastRetry > 15000 && signedIn()) { lastRetry = Date.now(); try { retry(); } catch (e) {} }
+  if (document.hidden) return; try { strips(); } catch (e) { tickErr = String(e); } try { prodBar(); } catch (e) { tickErr = String(e); } }
+nSI.call(window, tick, 1000);
+/* the CRM's timer governors skip slow ticks while people work; a frame-driven check (every 600 ms, nothing when the tab is hidden) keeps the chips and the Products sub-tab prompt */
+var lastF = 0; function frame(t){ if (t - lastF > 600) { lastF = t; tick(); } try { window.requestAnimationFrame(frame); } catch (e) {} }
+try { window.requestAnimationFrame(frame); } catch (e) {}
+CH.local().then(function(){ try { strips(); } catch (e) {} });
+var lastPull = 0;
+function bg(){ if (!signedIn() || document.hidden) return; if (Date.now() - lastPull < 110000 && !LIB.pending && !CH.pending) return; lastPull = Date.now(); LIB.pull().catch(function(){}); CH.pull().catch(function(){}); }
+nST(function(){ bg(); nSI.call(window, bg, 30000); }, 20000);
+function retry(){ if (LIB.pending) LIB.push(); if (CH.pending) CH.push(); }
+window.addEventListener('online', function(){ nST(retry, 1500); try { window.requestAnimationFrame(function(){ nST(retry, 4000); }); } catch (e) {} });
+window._gcCH = { library: function(){ return live(); }, all: function(){ return LIB.list; }, choices: function(pid){ return jobChoices(pid); }, pull: function(){ return Promise.all([LIB.pull(true), CH.pull(true)]); },
+  kvRead: kvRead, add: addLib, open: openLibrary, openChoices: openChoices, sheetHtml: selectionsHtml, sheetText: selectionsText, isAdmin: isAdmin,
+  tick: tick, status: function(){ return { ticks: ticks, tickErr: tickErr, paints: paints, library: live().length, all: LIB.list.length, choices: CH.list.length, pendingLib: LIB.pending, pendingChoices: CH.pending, at: LIB.at }; } };
+try { console.log('[GC] Customer choices + shared Product library ready (patch CH).'); } catch (e) {}
+})();
 </script><!-- /INSP -->
 
 
