@@ -12,3 +12,6 @@ create table if not exists public.gc_pending_money (
 );
 alter table public.gc_pending_money enable row level security;
 -- no policies: only the service-role key (used by the Netlify function) can read or write.
+-- Supabase (from 2026-10-30): new tables need explicit grants for the API roles.
+revoke all on public.gc_pending_money from anon, authenticated;
+grant all on public.gc_pending_money to service_role;

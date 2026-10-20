@@ -56,6 +56,7 @@ create policy gc_admin_update on public.gc_admin_kv for update to authenticated 
 -- no delete policy and no delete grant: a record is never removed through the web
 revoke all on public.gc_admin_kv from public, anon, authenticated;
 grant select, insert, update on public.gc_admin_kv to authenticated;
+grant all on public.gc_admin_kv to service_role;
 
 -- 3. Copy the existing values over (gc_kv is left as it is) -----------------------
 do $$

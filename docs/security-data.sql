@@ -56,6 +56,9 @@ create table if not exists public.gc_staff (
   added_by  text not null default '',
   added_at  timestamptz not null default now()
 );
+-- Supabase (from 2026-10-30): new tables need explicit grants for the API roles.
+grant select on public.gc_staff to authenticated;
+grant all on public.gc_staff to service_role;
 
 create or replace function public.gc_is_staff()
 returns boolean language sql stable security definer set search_path = public, pg_temp as $$

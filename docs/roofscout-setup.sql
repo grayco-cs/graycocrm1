@@ -146,6 +146,8 @@ alter table public.rs_profiles enable row level security;
 alter table public.rs_usage    enable row level security;   -- no rules: server only
 
 revoke all on public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles, public.rs_usage from public, anon, authenticated;
+-- Supabase (from 2026-10-30): new tables need explicit grants for the API roles.
+grant all on public.rs_leads, public.rs_activity, public.rs_settings, public.rs_profiles, public.rs_usage to service_role;
 
 -- Leads: every signed-in staff member, one shared pool.
 drop policy if exists gc_staff_all on public.rs_leads;
@@ -231,6 +233,7 @@ revoke all on function public.rs_scan_take(text, integer, integer) from public, 
 alter table public.rs_scan_cache enable row level security;   -- no rules: server only
 alter table public.rs_scan_rate  enable row level security;   -- no rules: server only
 revoke all on public.rs_scan_cache, public.rs_scan_rate from public, anon, authenticated;
+grant all on public.rs_scan_cache, public.rs_scan_rate to service_role;
 
 -- 3c. Owner contact lookups (Tracerfy skip tracing) -----------------------------
 -- Server-only. One row per lead: the paid lookup's answer, so a second click (or two
@@ -285,6 +288,7 @@ revoke all on function public.rs_skiptrace_finish(text, jsonb) from public, anon
 revoke all on function public.rs_skiptrace_release(text) from public, anon, authenticated;
 alter table public.rs_skiptrace enable row level security;   -- no rules: server only
 revoke all on public.rs_skiptrace from public, anon, authenticated;
+grant all on public.rs_skiptrace to service_role;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 4. VERIFY — every line must say OK.

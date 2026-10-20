@@ -65,6 +65,8 @@ create index if not exists gc_backups_source_taken on public.gc_backups (source,
 alter table public.gc_backups enable row level security;   -- and NO policies: no web access at all
 revoke all on public.gc_backups from anon, authenticated;
 revoke all on sequence public.gc_backups_id_seq from anon, authenticated;
+grant all on public.gc_staff, public.gc_backups to service_role;
+grant usage, select on sequence public.gc_backups_id_seq to service_role;
 
 -- 3. "Signed-in staff may use this table" on every table the CRM uses ----------
 do $$

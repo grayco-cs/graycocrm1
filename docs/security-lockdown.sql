@@ -100,6 +100,8 @@ grant select on public.gc_staff to authenticated;
 -- RLS on + no rules = no web access. Their Netlify functions use the service key.
 revoke all on public.gc_backups from anon, authenticated;
 revoke all on sequence public.gc_backups_id_seq from anon, authenticated;
+grant all on public.gc_staff, public.gc_backups to service_role;
+grant usage, select on sequence public.gc_backups_id_seq to service_role;
 
 -- 4. The public key gets NOTHING in the public schema, now or for tables added later
 revoke all on all tables in schema public from anon;

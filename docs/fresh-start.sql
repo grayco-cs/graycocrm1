@@ -39,6 +39,9 @@ alter table public.gc_backups add column if not exists keep boolean not null def
 alter table public.gc_backups enable row level security;          -- no rules: no web access
 revoke all on public.gc_backups from anon, authenticated;
 revoke all on sequence public.gc_backups_id_seq from anon, authenticated;
+-- Supabase (from 2026-10-30): new tables need explicit grants for the API roles.
+grant all on public.gc_backups to service_role;
+grant usage, select on sequence public.gc_backups_id_seq to service_role;
 
 -- a kept snapshot is never deleted (the nightly pruning skips it; any other delete is ignored)
 create or replace function public.gc_backups_keep_guard() returns trigger
@@ -66,6 +69,8 @@ create index if not exists gc_archive_fresh_start_label on public.gc_archive_fre
 alter table public.gc_archive_fresh_start enable row level security;   -- no rules: no web access
 revoke all on public.gc_archive_fresh_start from anon, authenticated;
 revoke all on sequence public.gc_archive_fresh_start_id_seq from anon, authenticated;
+grant all on public.gc_archive_fresh_start to service_role;
+grant usage, select on sequence public.gc_archive_fresh_start_id_seq to service_role;
 
 create or replace function public.gc_archive_permanent() returns trigger
 language plpgsql as $$
