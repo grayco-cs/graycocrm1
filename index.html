@@ -2993,7 +2993,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.150-2026-10-20-v1 -->
+<!-- GrayCo CRM Build: 33.150-2026-10-20-v2 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -3614,7 +3614,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.150-2026-10-20-v1");
+  console.log("[GC] Build 33.150-2026-10-20-v2");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -3662,7 +3662,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.150-2026-10-20-v1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.150-2026-10-20-v2"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -59920,6 +59920,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       try{ localStorage.setItem('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
       try{ if(window._supaUpsertNow) window._supaUpsertNow('gc_overhead_manual', JSON.stringify(manual)); }catch(e){}
       ov.remove(); window._gcOpenOverhead();
+      setTimeout(function(){ try{ var now=JSON.parse(localStorage.getItem('gc_overhead_manual')||'[]'); if(!now.some(function(m){ return m&&m.label===label&&+m.amt===amt; })) alert('That cost was not kept. Overhead can be changed only when signed in as Wesley or Nick (check \uD83D\uDC8E at the bottom right).'); }catch(e){} }, 3000);
     };
     ['#_ohLabel','#_ohAmt'].forEach(function(sel){ var el=ov.querySelector(sel); if(el) el.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); ov.querySelector('#_ohAdd').click(); } }); });
     ov.querySelectorAll('[data-mdel]').forEach(function(btn){
