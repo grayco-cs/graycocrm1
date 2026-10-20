@@ -102,7 +102,7 @@ const STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Con
 const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
 const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320/';
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
-                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects'];
+                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims'];
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -344,7 +344,7 @@ function carrierWords(p){
 }
 function scrub(obj, words){
   if (!words.length) return obj;
-  const res = words.map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); });
+  const res = words.map(function(w){ return w instanceof RegExp ? w : new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); });
   (function walk(o){
     Object.keys(o).forEach(function(k){
       const v = o[k];
@@ -393,7 +393,8 @@ async function buildView(data, p, opts){
   const cos = listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; });
   const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
-  const pdocs = arr(data.projectDocs).filter(function(d){ return docShown(d, pid, shownEst); });
+  const ins = isInsJob(p);   /* patch INSP */
+  const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); });
   const openPunch = arr(data.punch).some(function(x){ return pidOf(x) === pid && !/complete|done|closed/.test(low(x.status)); });
   const lead = arr(data.leads).find(function(l){ return s(l.fromProjectId) === pid || pidOf(l) === pid; }) || null;
 
@@ -484,7 +485,270 @@ async function buildView(data, p, opts){
     showReview: stage >= 7,
     review: stage >= 7 ? { google: REVIEW_URL, facebook: FACEBOOK_URL } : null
   };
+  if (ins) {   /* patch INSP: the insurance-claim view */
+    insTagDocs(view.docs, pdocs, signed);
+    view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,
+      payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
+    return scrub(view, insWords(data, p));
+  }
   return scrub(view, carrierWords(p));
+}
+
+/* ── INSURANCE JOBS (patch INSP) ────────────────────────────────────────────────
+   "insurance jobs are also going to be in the portal … claim numbers, PDF estimates, etc. When a job is
+    marked as insurance, some different things will show for them than for a regular or commercial job."
+   A job MARKED insurance (isInsurance true, or type "Insurance Claim") gets view.insurance: the claim box,
+   the claim timeline (instead of the 9 job steps), its papers grouped by kind, and the money the insurance
+   way. Regular and commercial jobs get exactly what they got before (no view.insurance at all).
+   Owner rules kept here:
+   • the carrier's name never reaches the customer ("your insurance company") unless the PM turns on
+     "Show carrier name to customer" for that job (project.portalShowCarrier — default OFF);
+   • the adjuster's name and phone only when the PM allows it (project.portalShowAdjuster — default OFF);
+   • internal papers (GrayCo-vs-carrier compare, margins / O&P / costs, sub scopes, anything marked internal)
+     are NEVER shown, even if someone ticked them;
+   • never GrayCo's costs, margins, O&P or the compare — only the customer's own numbers.
+   Data: the job's own fields (claimNumber, deductible, rcv, acv, recoverableDep … as the CRM writes them),
+   plus the claim record of patch BB (gc_kv "gc_claims") when that ships — read, never required. */
+const INS_STEPS = ['Inspection', 'Claim filed', 'Adjuster meeting', 'Estimate approved by insurance', 'Supplements',
+                   'Work scheduled', 'In progress', 'Complete', 'Depreciation released', 'Closed'];
+const BB_PHASE_STEP = { 'new loss': 0, 'inspection': 0, 'estimate written': 1, 'submitted to carrier': 2, 'approved': 3, 'supplement': 4,
+                        'work': 6, 'final invoice': 7, 'depreciation released': 8, 'closed': 9 };
+const INS_GROUPS = [   /* [key, title the customer sees, what it matches (name / category / kind)] — first match wins */
+  ['carrier', 'Your insurance company’s estimate', /\b(insurance|carrier|adjuster'?s?|xactimate|claim|insurer)\b.{0,30}\b(estimate|scope|report|summary|approval|letter)|statement of loss|loss (report|summary)|carrier (letter|approval)|\bcarrier\b/i],
+  ['supplement', 'Supplements', /supplement/i],
+  ['auth', 'Signed work authorization / assignment', /work.?auth|authori[sz]ation|assignment|\baob\b|direction to pay|contract/i],
+  ['coc', 'Certificate of completion', /certificate of (substantial )?completion|completion (certificate|cert)|\bcoc\b|satisfaction|completion/i],
+  ['invoice', 'Final invoice', /final invoice|\bfinal\b.{0,20}\binvoice/i],
+  ['mortgage', 'Mortgage company endorsement', /mortgage|endorse/i],
+  ['mitigation', 'Mitigation reports & moisture readings', /mitigation|moisture|drying|dry.?log|readings|psychrometric|dry.?out/i],
+  ['photos', 'Damage photos', /damage photo|photo report|photos?\b/i],
+  ['grayco', 'GrayCo’s estimate / scope', /estimate|scope|proposal|quote/i]
+];
+const INS_GROUP_ORDER = ['carrier', 'grayco', 'supplement', 'auth', 'coc', 'invoice', 'mortgage', 'mitigation', 'photos'];   /* how the customer sees them */
+const INS_GROUP_TITLE = {}; INS_GROUPS.forEach(function(g){ INS_GROUP_TITLE[g[0]] = g[1]; });
+const BB_KIND_GROUP = { workauth: 'auth', aob: 'auth', dtp: 'auth', photos: 'photos', moisture: 'mitigation', dryreport: 'mitigation',
+                        coc: 'coc', invoice: 'invoice', letter: 'carrier', check: 'mortgage', estimate: 'grayco', supplement: 'supplement' };
+/* never to a customer: the compare, money internals, subs' papers, anything marked internal */
+const INS_INTERNAL = /compar|\bvs\.?\b|versus|\bdiff\b|margin|profit|\bo\s*&\s*p\b|o-and-p|overhead|\bcosts?\b|budget|\bsub(contract(or)?)?\b|subcontract|sub.?scope|sub.?bid|commission|payroll|vendor|supplier|takeoff|purchase order|job sheet|internal|\bw-?9\b|\bcoi\b|certificate of insurance/i;
+const COMMON_CARRIERS = /\b(state\s*farm|allstate|usaa|liberty\s*mutual|nationwide|travelers|progressive|american\s*family|erie\s*insurance|chubb|the\s*hartford|auto[\s-]*owners|safeco|geico|homesite|metlife|amica|tennessee\s*farmers|farmers\s*insurance|farm\s*bureau|shelter\s*insurance|cincinnati\s*insurance|universal\s*property|citizens\s*property|kemper|hippo\s*insurance|foremost|assurant|american\s*strategic|asi\s*insurance|stillwater)\b/gi;
+
+function isInsJob(p){
+  if (!p) return false;
+  if (p.isInsurance === true) return true;
+  if (p.isInsurance === false) return false;   /* ruled out by hand — final, as in the CRM */
+  return /insurance\s*claim/i.test(s(p.type) + ' ' + s(p.jobType));
+}
+function insClaim(data, pid){ return arr(data && data.gc_claims).find(function(c){ return c && c.deleted !== true && s(c.projectId) === s(pid); }) || null; }
+function insWords(data, p){
+  /* what is replaced by "your insurance company": the carrier (unless the PM shows it), the TPA / program, the adjusting company */
+  const c = insClaim(data, p.id) || {}, out = [];
+  const showCarrier = p.portalShowCarrier === true;
+  if (!showCarrier) { carrierWords(p).forEach(function(w){ out.push(w); }); if (s(c.carrier).length >= 3) out.push(s(c.carrier)); out.push(COMMON_CARRIERS); }
+  [p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
+    .forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
+  return out;
+}
+function insInternal(d){
+  if (!d) return true;
+  if (d.internal === true || d.portalNever === true) return true;
+  return INS_INTERNAL.test([d.cat, d.name, d.kind, d.insKind, d.title].filter(function(v){ return typeof v === 'string'; }).join(' | '));
+}
+function insGroupOf(d){
+  const k = low(d.portalGroup || d.insKind);
+  if (INS_GROUP_TITLE[k]) return k;
+  if (BB_KIND_GROUP[low(d.kind)]) return BB_KIND_GROUP[low(d.kind)];
+  const t = [d.cat, d.name, d.kind, d.title].filter(function(v){ return typeof v === 'string'; }).join(' | ');
+  if (/grayco.{0,40}(estimate|scope)|(estimate|scope).{0,40}grayco/i.test(t) && !/supplement/i.test(t)) return 'grayco';   /* GrayCo writes Xactimate estimates too */
+  for (const g of INS_GROUPS) if (g[2].test(t)) return g[0];
+  return '';
+}
+/* insurance job: the claim papers show by themselves (each can be turned off); internal ones never */
+function insDocShown(d, pid, shownEst){
+  if (!d || pidOf(d) !== pid || d.needsReview === true || d.deleted === true) return false;
+  if (insInternal(d)) return false;
+  if (d.portalShare === true) return true;
+  if (d.portalShare === false) return false;
+  if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
+  if (insGroupOf(d)) return true;
+  return docShown(d, pid, shownEst);
+}
+/* each paper in view.docs gets its group (the customer page shows them under these headings) */
+function insTagDocs(docs, pdocs, signed){
+  const byUrl = {};
+  pdocs.forEach(function(d){ const u = signed[d.ref] || (d.ref ? '' : httpsUrl(d.url)); if (u) byUrl[u] = d; });
+  docs.forEach(function(x){
+    if (x.kind === 'proposal') { x.group = 'grayco'; return; }
+    x.group = insGroupOf(byUrl[x.url] || { name: x.title }) || (x.kind === 'gdoc' ? 'grayco' : 'other');
+  });
+}
+function insLossType(p, c){
+  const t = s(p.lossType || p.typeOfLoss || p.causeOfLoss || c.causeOfLoss);
+  if (t) return clip(t, 40);
+  const h = low([p.type, p.jobType, p.name, p.scope].filter(function(v){ return typeof v === 'string'; }).join(' '));
+  if (/water|flood|leak|pipe/.test(h)) return 'Water';
+  if (/fire|smoke/.test(h)) return 'Fire / smoke';
+  if (/hail|wind|storm|tornado/.test(h)) return 'Wind / hail';
+  if (/tree/.test(h)) return 'Tree';
+  if (/mold/.test(h)) return 'Mold';
+  return '';
+}
+function insIsPay(x){
+  if (x.fromInsurance === true || x.insurance === true) return true;
+  const t = low([x.from, x.payer, x.source, x.kind, x.type, x.note, x.memo, x.method, x.desc].filter(function(v){ return typeof v === 'string'; }).join(' '));
+  return /insur|carrier|mortgage|claim check|\bacv\b|deprec|supplement/.test(t);
+}
+function insCheckKind(x){
+  const t = low([x.kind, x.type, x.note, x.memo, x.desc, x.label].filter(function(v){ return typeof v === 'string'; }).join(' '));
+  if (/deprec|recover/.test(t)) return 'Depreciation';
+  if (/supplement/.test(t)) return 'Supplement';
+  if (/\bacv\b|first|initial/.test(t)) return 'First check (ACV)';
+  return 'Insurance check';
+}
+function insToEndorse(x){
+  if (x.endorsedAt || /deposit|cleared|received|endorsed|cashed/.test(low(x.status)) && !/to endorse|not endorsed/.test(low(x.status))) return false;
+  return x.endorse === true || /endorse|held|pending|to sign|needs signature|mortgage|waiting/.test(low(x.status));
+}
+function insMoney(p, c, ctx){
+  const today = new Date().toISOString().slice(0, 10);
+  const deductible = money(num(p.deductible) || num(c.deductible));
+  /* what the customer pays on top of the deductible: upgrades / items the insurance does not cover.
+     An approved change order counts unless it is a supplement (the insurance pays those). */
+  const upgrades = [];
+  ctx.cos.forEach(function(co){
+    const t = [co.desc, co.description, co.title, co.name, co.type, co.payer].filter(function(v){ return typeof v === 'string'; }).join(' ');
+    if (co.supplement === true || /supplement|insurance pays|carrier/i.test(t) || /insur|carrier/i.test(s(co.payer))) return;
+    const a = money(num(co.amt != null ? co.amt : (co.amount != null ? co.amount : co.total)));
+    if (a > 0) upgrades.push({ title: clip(co.desc || co.description || co.title || co.name || 'Upgrade', 120), amount: a });
+  });
+  arr(p.nonCovered).concat(arr(p.upgrades)).forEach(function(x){
+    if (x.deleted === true) return;
+    const a = money(num(x.amt != null ? x.amt : x.amount)); if (a > 0) upgrades.push({ title: clip(x.title || x.desc || x.name || 'Upgrade', 120), amount: a });
+  });
+  const extras = num(p.ownerExtras) || num(c.ownerExtras);
+  if (!upgrades.length && extras > 0) upgrades.push({ title: 'Upgrades / items your insurance does not cover', amount: money(extras) });
+  const upgradesTotal = money(upgrades.reduce(function(t, x){ return t + x.amount; }, 0));
+
+  /* every payment, split into the customer's own and the insurance checks */
+  const yours = [], checks = [], seen = {};
+  function addPay(x, forceIns){
+    const a = money(num(x.amt != null ? x.amt : x.amount)); if (!(a > 0) || x.deleted === true || /void/i.test(s(x.status))) return;
+    const date = ymd(x.date || x.at || x.receivedAt), ins = forceIns || insIsPay(x);
+    const k = date + '|' + a; if (seen[k]) return; seen[k] = 1;
+    if (ins) checks.push({ date: date, amount: a, kind: insCheckKind(x), endorse: insToEndorse(x) });
+    else yours.push({ date: date, amount: a, method: methodOf(x) });
+  }
+  arr(p.insChecks).forEach(function(x){ addPay(x, true); });
+  arr(c.payments).forEach(function(x){ if (/carrier|mortgage|insur/i.test(s(x.from))) addPay(x, true); else if (/owner|home|customer/i.test(s(x.from))) addPay(x, false); });
+  ctx.payments.forEach(function(x){ addPay(x, false); });
+  if (!yours.length && !checks.length) ctx.invoices.forEach(function(r){ if (invPaid(r)) addPay({ date: r.paidDate || r.payDate || r.date, amount: num(r.amt != null ? r.amt : r.amount), method: r.method, note: r.payer }, false); });
+  yours.sort(function(a, b){ return a.date < b.date ? -1 : 1; }); checks.sort(function(a, b){ return a.date < b.date ? -1 : 1; });
+  const paidByYou = money(yours.reduce(function(t, x){ return t + x.amount; }, 0));
+  const youOwe = money(deductible + upgradesTotal);
+
+  /* recoverable depreciation: held back by the insurance company until the work is done */
+  const rcv = money(num(p.rcv) || num(p.totalRCV)), acv = money(num(p.acv) || num(p.totalACV));
+  let recDep = money(num(p.recoverableDep) || num(p.recoverableDepreciation) || num(p.depreciation) || num(p.totalDepreciation) || (rcv > acv && acv > 0 ? rcv - acv : 0));
+  const depChecks = checks.filter(function(x){ return x.kind === 'Depreciation' && !x.endorse; });
+  const released = money(depChecks.reduce(function(t, x){ return t + x.amount; }, 0) || num(p.depReleasedAmount));
+  const ds = low(p.depStatus);
+  let status = '';
+  if (/released|paid|received/.test(ds) || p.depReleased === true || (recDep > 0 && released >= recDep - 0.5)) status = 'released';
+  else if (/request|asked|sent/.test(ds) || p.depRequestedAt) status = 'requested';
+  else if (/none|n\/a|no dep/.test(ds)) status = 'none';
+  else if (recDep > 0 || released > 0 || /held/.test(ds)) status = ctx.complete ? 'requested' : 'held';
+  const depText = {
+    held: 'Your insurance company holds this back until the work is done. When we finish, we send them the completion papers and they release it.',
+    requested: 'The work is done — we have asked your insurance company to release it. It usually takes 2–4 weeks.',
+    released: 'Released by your insurance company.',
+    none: 'No depreciation was held back on this claim.'
+  }[status] || '';
+  return {
+    deductible: deductible, upgrades: upgrades, upgradesTotal: upgradesTotal, youOwe: youOwe, paidByYou: paidByYou,
+    balance: money(Math.max(0, youOwe - paidByYou)),
+    claimTotal: rcv > 0 ? rcv : null,
+    checksReceived: checks.filter(function(x){ return !x.endorse; }).map(function(x){ return { date: x.date, amount: x.amount, kind: x.kind }; }),
+    checksToEndorse: checks.filter(function(x){ return x.endorse; }).map(function(x){ return { date: x.date, amount: x.amount, kind: x.kind }; }),
+    depreciation: status ? { amount: recDep > 0 ? recDep : null, released: released > 0 ? released : null, status: status, text: depText } : null,
+    payments: yours.map(function(x){ return { date: x.date, amount: x.amount, from: 'You', method: x.method }; })
+      .concat(checks.filter(function(x){ return !x.endorse; }).map(function(x){ return { date: x.date, amount: x.amount, from: 'Insurance check', method: x.kind }; }))
+      .sort(function(a, b){ return a.date < b.date ? -1 : 1; }),
+    today: today
+  };
+}
+function insTimeline(p, c, stage, f, m, groups, cos, invoices){
+  /* the step the claim is IN = the furthest step reached; everything before it is done */
+  const today = new Date().toISOString().slice(0, 10);
+  const st = low(p.status);
+  const complete = stage >= 7 || !!ymd(p.completionDate || p.completedAt);
+  const supps = arr(p.supplements).concat(arr(c.supplements)).filter(function(x){ return x.deleted !== true; });
+  const suppPending = /pending|sent|submitted|waiting|requested/.test(low(p.supplementStatus)) ||
+    supps.some(function(x){ return !/approv|paid|denied|declin|closed|done/.test(low(x.status)); });
+  const suppAny = suppPending || supps.length > 0 || !!groups.supplement || cos.some(function(co){ return /supplement/i.test(s(co.desc) + s(co.title)) || co.supplement === true; });
+  const depReleased = !!m.depreciation && m.depreciation.status === 'released';
+  const depNone = !m.depreciation || m.depreciation.status === 'none';
+  const reached = [
+    true,
+    !!f.claimNumber || !!p.claimFiledAt,
+    !!f.adjusterMeeting || !!p.adjusterMetAt,
+    p.insApproved === true || !!p.insApprovedAt || num(p.rcv) > 0 || num(p.totalRCV) > 0 || !!groups.carrier,
+    suppPending,
+    stage >= 5 || (stage === 4 && (!!ymd(p.startDate) || /schedul|contract/.test(st))),
+    stage >= 5,
+    complete,
+    complete && depReleased,
+    /closed/.test(st) || ((p.paidInFull === true || /\bpaid\b/.test(st) || (invoices.some(invFinal) && !invoices.some(function(r){ return invFinal(r) && invBalance(r) > 0; }))) && (depReleased || depNone))
+  ];
+  let now = 0;
+  for (let i = reached.length - 1; i >= 0; i--) if (reached[i]) { now = i; break; }
+  const ph = BB_PHASE_STEP[low(c.phase)]; if (ph != null && ph > now) now = ph;   /* the claim record (patch BB) */
+  const o = p.portalInsStage;
+  if (o != null && o !== '' && o !== 'auto') {
+    const i = typeof o === 'number' ? o : INS_STEPS.map(low).indexOf(low(o));
+    if (i >= 0 && i < INS_STEPS.length) now = i;
+  }
+  const steps = INS_STEPS.map(function(n, i){
+    let state = i < now ? 'done' : (i === now ? 'now' : 'todo'), note = '';
+    if (i === 4 && i !== now) { if (i < now && !suppAny) { state = 'skipped'; note = 'none needed'; } else if (i > now) note = 'only if needed'; }
+    if (i === 8 && i < now && depNone && !depReleased) { state = 'skipped'; note = 'none held back'; }
+    if (i === 2 && f.adjusterMeeting) note = (f.adjusterMeeting > today ? 'set for ' : '') + f.adjusterMeeting;
+    if (i === 5 && ymd(p.startDate) && now <= 5) note = 'start ' + ymd(p.startDate);
+    return { name: n, state: state, note: note };
+  });
+  return { steps: steps, now: now, nowName: INS_STEPS[now] };
+}
+function insuranceView(data, p, ctx){
+  const c = insClaim(data, p.id) || {};
+  const adj = (c.adjuster && typeof c.adjuster === 'object') ? c.adjuster : {};
+  const pa = (p.adjuster && typeof p.adjuster === 'object') ? p.adjuster : {};
+  const f = {
+    claimNumber: clip(p.claimNumber || p.claimNo || c.claimNumber, 40),
+    dateOfLoss: ymd(p.dateOfLoss || p.lossDate || c.dateOfLoss),
+    lossType: insLossType(p, c),
+    deductible: money(num(p.deductible) || num(c.deductible)),
+    carrier: s(carrierWords(p)[0] || c.carrier),
+    adjusterName: clip(p.adjusterName || (typeof p.adjuster === 'string' ? p.adjuster : pa.name) || adj.name, 60),
+    adjusterPhone: clip(p.adjusterPhone || pa.phone || adj.phone, 40),
+    adjusterMeeting: ymd(p.adjusterMeetingAt || p.adjusterMeeting || p.adjusterVisit || c.adjusterMeetingAt),
+    mortgageCo: clip(p.mortgageCo || p.mortgageCompany || c.mortgageCo, 80)
+  };
+  const groups = {}; ctx.docs.forEach(function(d){ if (d.group) groups[d.group] = (groups[d.group] || 0) + 1; });
+  ctx.complete = ctx.stage >= 7 || !!ymd(p.completionDate || p.completedAt);
+  const m = insMoney(p, c, ctx);
+  const tl = insTimeline(p, c, ctx.stage, f, m, groups, ctx.cos, ctx.invoices);
+  const showCarrier = p.portalShowCarrier === true && !!f.carrier;
+  const showAdj = p.portalShowAdjuster === true && !!(f.adjusterName || f.adjusterPhone);
+  delete m.today;
+  return {
+    claim: {
+      number: f.claimNumber, dateOfLoss: f.dateOfLoss, lossType: f.lossType, deductible: f.deductible > 0 ? f.deductible : null,
+      company: showCarrier ? clip(f.carrier, 60) : 'your insurance company', companyShown: showCarrier,
+      adjuster: showAdj ? { name: f.adjusterName, phone: f.adjusterPhone } : null,
+      adjusterMeeting: f.adjusterMeeting, mortgage: f.mortgageCo
+    },
+    timeline: tl.steps, now: tl.now, nowName: tl.nowName,
+    groups: INS_GROUP_ORDER.map(function(k){ return { key: k, title: INS_GROUP_TITLE[k] }; }),
+    money: m
+  };
 }
 
 /* ── warranty (owner rule): ALL roofs 5 years (residential, commercial, insurance); insurance /
@@ -814,16 +1078,18 @@ function noticeItems(data, p){
   const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
   ests.forEach(function(e){ out.push({ key: 'est:' + s(e.id), title: s(e.name) || 'Your proposal', kind: 'proposal', at: ymd(e.sentDate || e.finalizedDate || e.date || e.updatedAt) }); });
-  arr(data.projectDocs).filter(function(d){ return docShown(d, pid, shownEst); }).forEach(function(d){
+  const insJ = isInsJob(p);   /* patch INSP */
+  arr(data.projectDocs).filter(function(d){ return insJ ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){
     if (d.estimateId && shownEst[s(d.estimateId)]) return;               /* the estimate already counts */
     if (/final invoice|\binvoice/i.test(s(d.name) + ' ' + s(d.cat)) && !/proposal/i.test(s(d.cat))) return;
-    if (!(d.portalShare === true && /customer portal/i.test(s(d.cat))) && !NOTIFY_DOC.test(s(d.cat) + ' ' + s(d.name))) return;
+    if (!(d.portalShare === true && /customer portal/i.test(s(d.cat))) && !NOTIFY_DOC.test(s(d.cat) + ' ' + s(d.name)) && !(insJ && insGroupOf(d))) return;
     out.push({ key: 'doc:' + s(d.id), title: s(d.name) || 'Document', kind: 'doc', at: ymd(d.uploadedAt || d.uploaded || d.savedAt) });
   });
   arr(p.portalLinks).forEach(function(l){ if (l.hidden !== true && httpsUrl(l.url)) out.push({ key: 'link:' + s(l.id), title: s(l.title) || 'Document', kind: 'doc', at: ymd(l.at) }); });
   if (gdocInfo(p.gdocUrl)) out.push({ key: 'pgdoc:' + s(p.gdocUrl).slice(-40), title: 'Your proposal', kind: 'proposal', at: ymd(p.updatedAt) });
   listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; })
     .forEach(function(c){ out.push({ key: 'co:' + s(c.id), title: 'Change order — ' + clip(c.desc || c.title || '', 60), kind: 'co', at: ymd(c.approvedDate || c.date || c.savedAt) }); });
+  if (insJ) { const w = insWords(data, p); out.forEach(function(x){ x.title = scrub({ t: s(x.title) }, w).t; }); }   /* patch INSP */
   return out.filter(function(x){ return x.key.length > 4; });
 }
 async function notifyDocs(pid, event, opts){
@@ -1019,7 +1285,7 @@ exports.handler = async function (event) {
   const view = await buildView(data, p);
   /* when was it last opened (at most once every 10 minutes per link) */
   const last = row.last_viewed_at ? Date.parse(row.last_viewed_at) : 0;
-  if (!last || Date.now() - last > 10 * 60e3) {
+  if (body.preview !== true && (!last || Date.now() - last > 10 * 60e3)) {   /* patch INSP: a staff preview is not a visit */
     try { await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ last_viewed_at: new Date().toISOString() }) }); } catch (e) {}
   }
   return reply(200, headers, view);
@@ -1028,3 +1294,5 @@ exports.handler = async function (event) {
 /* for portal-reminders.js and the tests */
 exports._core = { notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
+/* patch INSP */
+Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

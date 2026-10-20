@@ -123361,6 +123361,335 @@ window.gcPortalPdf = function(doc, y, o){
 try { console.log('[GC] Customer portal box on customer documents (patch DOCP): ' + HOST); } catch (e) {}
 })();
 </script>
+<script data-gc-patch="INSP">
+/* ============================================================================
+   GrayCo — CUSTOMER PORTAL: THE INSURANCE PANEL (CRM side).   patch INSP   __GC_PATCH_INSP__
+
+   "insurance jobs are also going to be in the portal … claim numbers, PDF estimates, etc. When a job
+    is marked as insurance, some different things will show for them than for a regular or commercial job."
+
+   On a job MARKED insurance (isInsurance true, or type "Insurance Claim"), right under the job's
+   "🏠 Portal" card (desk job page and the field job screen): a "🛡 Insurance portal" panel —
+     • which claim fields the customer sees (and filling in the ones that are missing),
+     • "Show carrier name to customer" (default OFF — owner rule: the customer sees "your insurance company"),
+     • "Show adjuster name & phone" (default OFF — only when the PM allows it),
+     • the claim step the customer sees (automatic, or set by hand),
+     • insurance checks (received / the customer must endorse) and the depreciation status,
+     • every paper on the job with "Show in customer portal" (claim papers ON by default; internal ones —
+       GrayCo-vs-carrier compare, margins / O&P / costs, sub scopes — are never shown and have no switch),
+     • 👁 Preview as customer (does not count as the customer opening the link).
+   No e-mail is sent from here. Turning a paper on asks the portal server, which puts any e-mail to the
+   customer on the Office to-do list for approval (needsApproval) — never straight out.
+   Stored on the job (synced like everything else): portalShowCarrier, portalShowAdjuster, portalInsStage,
+   dateOfLoss, lossType, adjusterName, adjusterPhone, adjusterMeetingAt, mortgageCo, depStatus, insChecks;
+   on a paper: portalShare. Hooks in by itself next to the patch-Q card (a cheap 1.5 s check) — no change
+   inside the app's code. Console: _gcInsPortal.open(pid)
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_INSP__) return; window.__GC_PATCH_INSP__ = true;
+
+var nST = window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout.bind(window);
+var NAVY = '#0F1D2F', NAVY2 = '#1A3A5F', GOLD = '#D4A017';
+var STEPS = ['Inspection', 'Claim filed', 'Adjuster meeting', 'Estimate approved by insurance', 'Supplements', 'Work scheduled', 'In progress', 'Complete', 'Depreciation released', 'Closed'];
+var LOSS = ['Water', 'Fire / smoke', 'Wind / hail', 'Storm', 'Tree', 'Mold', 'Vehicle', 'Theft / vandalism', 'Other'];
+/* kept in step with netlify/functions/portal.js (INS_GROUPS / INS_INTERNAL / CUSTOMER_DOC) */
+var GROUPS = [
+  ['carrier', 'Insurance company estimate', /\b(insurance|carrier|adjuster'?s?|xactimate|claim|insurer)\b.{0,30}\b(estimate|scope|report|summary|approval|letter)|statement of loss|loss (report|summary)|carrier (letter|approval)|\bcarrier\b/i],
+  ['supplement', 'Supplement', /supplement/i],
+  ['auth', 'Work authorization', /work.?auth|authori[sz]ation|assignment|\baob\b|direction to pay|contract/i],
+  ['coc', 'Certificate of completion', /certificate of (substantial )?completion|completion (certificate|cert)|\bcoc\b|satisfaction|completion/i],
+  ['invoice', 'Final invoice', /final invoice|\bfinal\b.{0,20}\binvoice/i],
+  ['mortgage', 'Mortgage endorsement', /mortgage|endorse/i],
+  ['mitigation', 'Mitigation / moisture', /mitigation|moisture|drying|dry.?log|readings|psychrometric|dry.?out/i],
+  ['photos', 'Damage photos', /damage photo|photo report|photos?\b/i],
+  ['grayco', 'GrayCo estimate / scope', /estimate|scope|proposal|quote/i]
+];
+var GTITLE = {}; GROUPS.forEach(function(g){ GTITLE[g[0]] = g[1]; });
+var BB_KIND = { workauth: 'auth', aob: 'auth', dtp: 'auth', photos: 'photos', moisture: 'mitigation', dryreport: 'mitigation', coc: 'coc', invoice: 'invoice', letter: 'carrier', check: 'mortgage', estimate: 'grayco', supplement: 'supplement' };
+var INTERNAL = /compar|\bvs\.?\b|versus|\bdiff\b|margin|profit|\bo\s*&\s*p\b|o-and-p|overhead|\bcosts?\b|budget|\bsub(contract(or)?)?\b|subcontract|sub.?scope|sub.?bid|commission|payroll|vendor|supplier|takeoff|purchase order|job sheet|internal|\bw-?9\b|\bcoi\b|certificate of insurance/i;
+var CUSTOMER_DOC = /proposal|contract|change.?order|\binvoice|warrant|welcome|faq|completion|certificate of (substantial )?completion|final inspection|sign.?off|lien|waiver|work auth|customer portal|closeout|receipt/i;
+var INTERNAL_DOC = /\bsub(contract(or)?)?\b|subcontract|sub.?agreement|job sheet|w-?9|\bcoi\b|certificate of insurance|onboarding|\bbid|vendor|supplier|\bcost|budget|payroll|commission|internal|operations manual|takeoff|purchase order|timesheet|tax return/i;
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function num(v){ if (typeof v === 'number') return isFinite(v) ? v : 0; var n = parseFloat(s(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function usd(n){ return '$' + (Math.round(num(n) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function crm(){ return window._crm || {}; }
+var recent = {};
+function proj(pid){
+  var p = (crm().projects || []).find(function(x){ return x && String(x.id) === String(pid); }) || null;
+  var r = recent[pid]; if (r && (!p || s(r.updatedAt) > s(p.updatedAt))) return r;
+  return p;
+}
+function me(){ try { var n = localStorage.getItem('grayco_user'); if (n) return n; } catch (e) {} try { if (window.__GC_AUTH__) return window.__GC_AUTH__.email(); } catch (e) {} return ''; }
+function isIns(p){ if (!p) return false; if (p.isInsurance === true) return true; if (p.isInsurance === false) return false; return /insurance\s*claim/i.test(s(p.type) + ' ' + s(p.jobType)); }
+function carrierOf(p){ var k = ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany', 'insuranceCo', 'carrierName']; for (var i = 0; i < k.length; i++) if (s(p[k[i]])) return s(p[k[i]]); return ''; }
+function docText(d){ return [d.cat, d.name, d.kind, d.insKind, d.title].filter(function(v){ return typeof v === 'string'; }).join(' | '); }
+function internalDoc(d){ return d.internal === true || d.portalNever === true || INTERNAL.test(docText(d)); }
+function groupOf(d){
+  var k = low(d.portalGroup || d.insKind); if (GTITLE[k]) return k;
+  if (BB_KIND[low(d.kind)]) return BB_KIND[low(d.kind)];
+  var t = [d.cat, d.name, d.kind, d.title].filter(function(v){ return typeof v === 'string'; }).join(' | ');
+  if (/grayco.{0,40}(estimate|scope)|(estimate|scope).{0,40}grayco/i.test(t) && !/supplement/i.test(t)) return 'grayco';
+  for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i][2].test(t)) return GROUPS[i][0];
+  return '';
+}
+/* the same rule the portal server uses for an insurance job */
+function shownIns(d){
+  if (internalDoc(d)) return false;
+  if (d.portalShare === true) return true; if (d.portalShare === false) return false;
+  if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
+  if (groupOf(d)) return true;
+  var t = s(d.cat) + ' | ' + s(d.name) + ' | ' + s(d.kind);
+  return !INTERNAL_DOC.test(t) && CUSTOMER_DOC.test(t);
+}
+function linkOf(p){ return p && !p.portalOff && /^https:\/\/[^\s]+\/portal\.html#t=[A-Za-z0-9_-]{43}$/.test(s(p.portalUrl)) ? s(p.portalUrl) : ''; }
+
+/* ── saving (the same way patch Q and the rest of the CRM save a job / a paper) ── */
+var saving = Promise.resolve();
+function saveProject(pid, change){ saving = saving.then(function(){ return doSave(pid, change); }, function(){ return doSave(pid, change); }); return saving; }
+async function doSave(pid, change){
+  var now = new Date().toISOString();
+  function put(p){ var q = Object.assign({}, p); change(q); q.updatedAt = now; q.savedAt = now; return q; }
+  var all = null; try { all = window._gcProjectsRaw ? await window._gcProjectsRaw() : await window.idbGet('projects'); } catch (e) {}
+  try { window.__GC_MANUAL_SAVE__ = true; if (window._gcManualNow) window._gcManualNow('insurance portal'); } catch (e) {}
+  var hit = false, next = null, saved = null;
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; saved = put(recent[pid] && s(recent[pid].updatedAt) > s(p.updatedAt) ? recent[pid] : p); return saved; } return p; });
+  if (hit) { try { await window.idbSet('projects', next); } catch (e) {} }
+  try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (!saved) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
+  if (!hit) { var cur = proj(pid); if (cur && !saved) saved = put(cur); }
+  if (saved) recent[pid] = saved;
+  if (hit) { try { if (window._supaUpsert) window._supaUpsert('projects', next); } catch (e) {} }
+  else if (saved) nST(function(){ try { if (window._supaUpsert) window._supaUpsert('projects', crm().projects || []); } catch (e) {} }, 400);
+  nST(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  return saved;
+}
+async function allDocs(){ var all = null; try { all = await window.idbGet('projectDocs'); } catch (e) {} if (!Array.isArray(all)) all = (crm().projectDocs || window._gcProjectDocs || []).slice(); return all; }
+async function jobDocs(pid){ return (await allDocs()).filter(function(d){ return d && String(d.pid || d.projectId) === String(pid) && d.deleted !== true; }); }
+async function saveDoc(id, change){
+  var all = await allDocs(), now = new Date().toISOString(), hit = false;
+  var next = all.map(function(d){ if (d && String(d.id) === String(id)) { hit = true; var q = Object.assign({}, d); change(q); q.updatedAt = now; q.savedAt = now; return q; } return d; });
+  if (!hit) return false;
+  try { await window.idbSet('projectDocs', next); } catch (e) {}
+  try { if (window._setProjectDocs) window._setProjectDocs(function(prev){ return Array.isArray(prev) ? prev.map(function(d){ var n = next.find(function(x){ return x && d && x.id === d.id; }); return n || d; }) : next; }); } catch (e) {}
+  try { if (window._crm) window._crm.projectDocs = next; } catch (e) {}
+  try { if (window._supaUpsert) window._supaUpsert('projectDocs', next); } catch (e) {}
+  return true;
+}
+function toast(msg, color){
+  var t = document.createElement('div'); t.setAttribute('data-gc-keep', '');
+  t.style.cssText = 'position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483000;background:' + (color || '#14532d') + ';color:#fff;padding:12px 16px;border-radius:12px;font:600 14px/1.35 Inter,-apple-system,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);max-width:90vw;text-align:center;pointer-events:none';
+  t.textContent = msg; document.body.appendChild(t); nST(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
+}
+
+/* ── preview: the customer's page with the preview flag (not counted as the customer opening it) ── */
+async function preview(pid){
+  var p = proj(pid); if (!p) return;
+  var url = linkOf(p);
+  if (!url && window._gcPortal && window._gcPortal.link) { toast('Making the portal link…', '#1e3a5f'); url = await window._gcPortal.link(pid); }
+  if (!url) { toast('No portal link yet — open ⋯ on the Portal card and make one.', '#92400e'); return; }
+  window.open(url + '&p=1', '_blank', 'noopener');
+}
+
+/* ── the panel ──────────────────────────────────────────────────────────────── */
+var BTN = 'min-height:40px;border-radius:10px;border:1px solid ' + NAVY2 + ';background:#fff;color:' + NAVY2 + ';font-weight:700;font-size:14px;cursor:pointer;padding:0 12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;box-sizing:border-box;white-space:nowrap';
+var INP = 'min-height:38px;border:1px solid #C9C2B2;border-radius:8px;padding:0 8px;font-size:15px;font-family:inherit;box-sizing:border-box;width:100%;min-width:0';
+var LAB = 'display:flex;flex-direction:column;gap:3px;font-size:12px;color:#55626F;min-width:0';
+var H4 = 'font-size:12px;font-weight:800;color:#8A5A00;letter-spacing:.03em;margin:4px 0 0';
+var docCache = {}, lastDocs = null, docsN = 0;
+function docsVer(){ var d = crm().projectDocs || window._gcProjectDocs || null; if (d !== lastDocs) { lastDocs = d; docsN++; } return docsN; }
+function fieldRows(p){
+  var showC = p.portalShowCarrier === true, showA = p.portalShowAdjuster === true, carrier = carrierOf(p);
+  var rcv = num(p.rcv || p.totalRCV), acv = num(p.acv || p.totalACV);
+  var dep = num(p.recoverableDep || p.recoverableDepreciation || p.depreciation || p.totalDepreciation) || (rcv > acv && acv > 0 ? rcv - acv : 0);
+  var adjN = s(p.adjusterName || (typeof p.adjuster === 'string' ? p.adjuster : (p.adjuster && p.adjuster.name)));
+  var adjP = s(p.adjusterPhone || (p.adjuster && p.adjuster.phone));
+  function row(label, value, shows, why){
+    return '<tr><td style="padding:5px 8px 5px 0;color:#55626F;white-space:nowrap">' + esc(label) + '</td><td style="padding:5px 8px 5px 0;font-weight:600;overflow-wrap:anywhere">' + (value ? esc(value) : '<span style="color:#8A939C;font-weight:400">— not set</span>') + '</td>' +
+      '<td style="padding:5px 0;white-space:nowrap;font-size:12px;color:' + (shows ? '#1D5E2C' : '#8A939C') + '">' + (shows ? '✓ shows' : esc(why || 'hidden')) + '</td></tr>';
+  }
+  return '<table data-i="fields" style="border-collapse:collapse;width:100%;font-size:13px">' +
+    row('Claim number', s(p.claimNumber || p.claimNo), !!s(p.claimNumber || p.claimNo), 'not set') +
+    row('Date of loss', s(p.dateOfLoss), !!s(p.dateOfLoss), 'not set') +
+    row('Type of loss', s(p.lossType), !!s(p.lossType), 'guessed from the job') +
+    row('Policy deductible', num(p.deductible) ? usd(p.deductible) : '', num(p.deductible) > 0, 'not set') +
+    row('Insurance company', showC ? (carrier || '') : 'your insurance company', true, '') +
+    row('Adjuster', [adjN, adjP].filter(Boolean).join(' · '), showA && !!(adjN || adjP), showA ? 'not set' : 'hidden (PM has not allowed)') +
+    row('Adjuster visit', s(p.adjusterMeetingAt), !!s(p.adjusterMeetingAt), 'not set') +
+    row('Mortgage company', s(p.mortgageCo || p.mortgageCompany), !!s(p.mortgageCo || p.mortgageCompany), 'not set') +
+    row('Depreciation held back', dep ? usd(dep) : '', dep > 0, 'not set') +
+    '</table>' +
+    '<div style="font-size:12px;color:#55626F">Never shown: GrayCo’s costs, margins, O&amp;P, the carrier-vs-GrayCo compare, internal notes.</div>' +
+    (carrier ? '' : '<div style="font-size:12px;color:#8A939C">No carrier on this job.</div>');
+}
+function panelHtml(p, docs, open){
+  var ck = function(q, on, label, sub){ return '<label style="display:flex;align-items:flex-start;gap:8px;font-size:14px;cursor:pointer"><input type="checkbox" data-i="' + q + '"' + (on ? ' checked' : '') + ' style="width:22px;height:22px;flex:0 0 22px;margin:0"><span><b>' + label + '</b>' + (sub ? '<br><span style="font-size:12px;color:#55626F">' + sub + '</span>' : '') + '</span></label>'; };
+  var stage = p.portalInsStage == null || p.portalInsStage === '' ? 'auto' : String(p.portalInsStage);
+  var h = '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:40px">' +
+    '<div style="display:flex;flex-direction:column;min-width:0;flex:1 1 160px"><b style="font-size:14px;white-space:nowrap">🛡 Insurance portal</b>' +
+    '<span style="font-size:12px;color:#55626F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Claim view' + (s(p.claimNumber || p.claimNo) ? ' · #' + esc(p.claimNumber || p.claimNo) : '') + ' · carrier ' + (p.portalShowCarrier === true ? 'SHOWN' : 'hidden') + '</span></div>' +
+    '<button type="button" data-i="preview" style="' + BTN + ';background:' + GOLD + ';border-color:' + GOLD + ';color:' + NAVY + ';font-weight:800">👁 Preview as customer</button>' +
+    '<button type="button" data-i="toggle" aria-expanded="' + (open ? 'true' : 'false') + '" style="' + BTN + '">' + (open ? 'Close ▴' : 'Settings ▾') + '</button></div>';
+  h += '<div data-i="body"' + (open ? '' : ' hidden') + ' style="border-top:1px solid #EFEAE0;margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:10px">';
+  h += '<div style="' + H4 + '">WHAT THE CUSTOMER SEES</div>' + fieldRows(p);
+  h += ck('carrier', p.portalShowCarrier === true, 'Show carrier name to customer', 'Off (owner rule): the customer sees “your insurance company” everywhere.') +
+       ck('adjuster', p.portalShowAdjuster === true, 'Show adjuster name &amp; phone', 'Only when you are OK with the customer calling the adjuster from the portal.');
+  h += '<label style="' + LAB + '">Claim step the customer sees<select data-i="stage" style="' + INP + '"><option value="auto"' + (stage === 'auto' ? ' selected' : '') + '>Automatic (from the job status and the claim fields)</option>' +
+       STEPS.map(function(n, i){ return '<option value="' + i + '"' + (stage === String(i) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></label>';
+  /* fill in the claim fields */
+  var f = function(k, label, v, type, ph){ return '<label style="' + LAB + '">' + label + '<input data-f="' + k + '" type="' + (type || 'text') + '" value="' + esc(v) + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + ' style="' + INP + '"></label>'; };
+  h += '<details data-i="fill"><summary style="cursor:pointer;font-weight:700;font-size:14px;min-height:32px">✎ Fill in claim fields</summary><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px">' +
+    f('claimNumber', 'Claim number', p.claimNumber || p.claimNo) + f('dateOfLoss', 'Date of loss', p.dateOfLoss, 'date') +
+    '<label style="' + LAB + '">Type of loss<select data-f="lossType" style="' + INP + '"><option value="">(guess from the job)</option>' + LOSS.map(function(x){ return '<option' + (s(p.lossType) === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></label>' +
+    f('deductible', 'Policy deductible', num(p.deductible) ? String(num(p.deductible)) : '', 'text', '$') +
+    f('adjusterName', 'Adjuster name', p.adjusterName) + f('adjusterPhone', 'Adjuster phone', p.adjusterPhone, 'tel') + f('adjusterMeetingAt', 'Adjuster visit', p.adjusterMeetingAt, 'date') +
+    f('mortgageCo', 'Mortgage company', p.mortgageCo) + f('recoverableDep', 'Recoverable depreciation', num(p.recoverableDep) ? String(num(p.recoverableDep)) : '', 'text', '$ (RCV − ACV)') +
+    '<label style="' + LAB + '">Depreciation<select data-f="depStatus" style="' + INP + '">' + [['', 'Automatic'], ['held', 'Held until done'], ['requested', 'Requested from insurance'], ['released', 'Released'], ['none', 'None held back']].map(function(o){ return '<option value="' + o[0] + '"' + (low(p.depStatus) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+    '</div><button type="button" data-i="savef" style="' + BTN + ';margin-top:8px;width:100%;background:' + NAVY + ';color:#fff;border-color:' + NAVY + '">Save claim fields</button></details>';
+  /* insurance checks */
+  var checks = (Array.isArray(p.insChecks) ? p.insChecks : []).filter(function(x){ return x && x.deleted !== true; });
+  h += '<div style="' + H4 + '">INSURANCE CHECKS</div>' + (checks.length ? checks.map(function(x){
+      var end = /endorse|held|pending|to sign/.test(low(x.status)) && !x.endorsedAt;
+      return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;border-top:1px solid #EFEAE0;padding-top:6px"><span style="flex:1;min-width:0">' + esc(x.kind || 'Insurance check') + ' · ' + esc(x.date || '') + ' · <b>' + usd(x.amount) + '</b> · ' +
+        (end ? '<span style="color:#8A5A00;font-weight:700">customer must endorse</span>' : 'received') + '</span>' +
+        (end ? '<button type="button" data-i="endorsed" data-id="' + esc(x.id) + '" style="' + BTN + ';min-height:34px">✓ Endorsed</button>' : '') +
+        '<button type="button" data-i="delcheck" data-id="' + esc(x.id) + '" aria-label="Remove" style="' + BTN + ';min-height:34px;border-color:#b91c1c;color:#b91c1c">✕</button></div>';
+    }).join('') : '<div style="font-size:13px;color:#8A939C">None yet.</div>') +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;align-items:end">' +
+    '<label style="' + LAB + '">Amount<input data-c="amount" inputmode="decimal" placeholder="$" style="' + INP + '"></label>' +
+    '<label style="' + LAB + '">Date<input data-c="date" type="date" style="' + INP + '"></label>' +
+    '<label style="' + LAB + '">Kind<select data-c="kind" style="' + INP + '"><option>First check (ACV)</option><option>Supplement</option><option>Depreciation</option><option>Insurance check</option></select></label>' +
+    '<label style="' + LAB + ';flex-direction:row;align-items:center;gap:6px"><input data-c="endorse" type="checkbox" style="width:20px;height:20px">Customer must endorse</label>' +
+    '<button type="button" data-i="addcheck" style="' + BTN + '">+ Add check</button></div>';
+  /* papers */
+  h += '<div style="' + H4 + '">PAPERS ON THIS JOB (' + docs.length + ')</div>';
+  if (!docs.length) h += '<div style="font-size:13px;color:#8A939C">No files on this job yet. Add claim papers in Files &amp; Docs or with 📄 on the Portal card.</div>';
+  h += docs.map(function(d){
+    var intl = internalDoc(d), g = groupOf(d), on = !intl && shownIns(d);
+    return '<div style="display:flex;align-items:center;gap:8px;border-top:1px solid #EFEAE0;padding-top:6px" data-doc="' + esc(d.id) + '"><span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:600;overflow-wrap:anywhere">' + esc(d.name || 'File') + '</span>' +
+      '<span style="font-size:12px;color:#55626F">' + esc(intl ? 'Internal' : (GTITLE[g] || s(d.cat) || 'Other')) + '</span></span>' +
+      (intl ? '<span style="font-size:12px;color:#b91c1c;font-weight:700;white-space:nowrap">Internal — never shown</span>'
+            : '<label style="display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer"><input type="checkbox" data-i="share" data-id="' + esc(d.id) + '"' + (on ? ' checked' : '') + ' style="width:22px;height:22px;accent-color:#1D5E2C">Show in customer portal</label>') + '</div>';
+  }).join('');
+  h += '<div style="font-size:12px;color:#55626F">Claim papers (insurance estimate, GrayCo estimate, supplements, work authorization, completion certificate, final invoice, mortgage, mitigation / moisture, damage photos) show by themselves. Any e-mail to the customer about new papers waits for approval on the Office to-do list.</div>';
+  h += '</div>';
+  return h;
+}
+function sig(p, docs){ return JSON.stringify([p.updatedAt, p.portalUrl, p.portalShowCarrier, p.portalShowAdjuster, p.portalInsStage, p.insChecks, docs.map(function(d){ return d.id + ':' + d.portalShare + ':' + d.updatedAt; })]); }
+async function render(el, pid, force){
+  var p = proj(pid); if (!p) return;
+  if (!force && el.contains(document.activeElement) && /SELECT|INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  var key = s(p.updatedAt) + '|' + s(p.savedAt) + '|' + docsVer();          /* cheap: nothing is read unless the job or the paper list changed */
+  if (!force && el.__key === key) return;
+  el.__key = key;
+  var docs = await jobDocs(pid); docCache[pid] = docs;
+  var sg = sig(p, docs); if (!force && el.__sig === sg) return;
+  var open = !!el.__open, fill = el.querySelector('details[data-i=fill]'); var fillOpen = fill && fill.open;
+  el.innerHTML = panelHtml(p, docs, open); el.__sig = sg;
+  if (fillOpen) { var f2 = el.querySelector('details[data-i=fill]'); if (f2) f2.open = true; }
+}
+function wire(el, pid){
+  el.addEventListener('click', async function(ev){
+    var t = ev.target && ev.target.closest ? ev.target.closest('[data-i]') : null; if (!t || t.tagName === 'SELECT' || t.type === 'checkbox' || t.tagName === 'DETAILS') return;
+    var q = t.getAttribute('data-i');
+    if (q === 'preview') return preview(pid);
+    if (q === 'toggle') { el.__open = !el.__open; render(el, pid, true); return; }
+    if (q === 'savef') {
+      var vals = {}; Array.prototype.forEach.call(el.querySelectorAll('[data-f]'), function(x){ vals[x.getAttribute('data-f')] = s(x.value); });
+      await saveProject(pid, function(x){
+        ['claimNumber', 'dateOfLoss', 'lossType', 'adjusterName', 'adjusterPhone', 'adjusterMeetingAt', 'mortgageCo', 'depStatus'].forEach(function(k){ x[k] = vals[k]; });
+        x.deductible = num(vals.deductible); x.recoverableDep = num(vals.recoverableDep);
+      });
+      toast('Claim fields saved — the customer’s claim box is up to date.'); render(el, pid, true); return;
+    }
+    if (q === 'addcheck') {
+      var g = function(k){ var x = el.querySelector('[data-c=' + k + ']'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : ''; };
+      var amt = num(g('amount')); if (!(amt > 0)) { toast('Type the check amount first.', '#92400e'); return; }
+      var rec = { id: 'ick_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), amount: Math.round(amt * 100) / 100, date: g('date') || new Date().toISOString().slice(0, 10), kind: g('kind') || 'Insurance check', status: g('endorse') ? 'to endorse' : 'received', by: me(), at: new Date().toISOString() };
+      await saveProject(pid, function(x){ var l = Array.isArray(x.insChecks) ? x.insChecks.slice() : []; l.push(rec); x.insChecks = l; });
+      toast(rec.status === 'to endorse' ? 'Added — the customer sees "please sign and bring us this check".' : 'Check added to the customer’s payments.'); render(el, pid, true); return;
+    }
+    if (q === 'endorsed' || q === 'delcheck') {
+      var id = t.getAttribute('data-id');
+      await saveProject(pid, function(x){ x.insChecks = (Array.isArray(x.insChecks) ? x.insChecks : []).map(function(c){ if (!c || c.id !== id) return c; return q === 'endorsed' ? Object.assign({}, c, { status: 'received', endorsedAt: new Date().toISOString() }) : Object.assign({}, c, { deleted: true }); }); });
+      render(el, pid, true); return;
+    }
+  });
+  el.addEventListener('change', async function(ev){
+    var t = ev.target, q = t && t.getAttribute && t.getAttribute('data-i'); if (!q) return;
+    if (q === 'carrier') { await saveProject(pid, function(x){ x.portalShowCarrier = !!t.checked; }); toast(t.checked ? 'The customer now sees the carrier’s name.' : 'Carrier name hidden — the customer sees "your insurance company".', t.checked ? '#92400e' : null); render(el, pid, true); }
+    if (q === 'adjuster') { await saveProject(pid, function(x){ x.portalShowAdjuster = !!t.checked; }); toast(t.checked ? 'Adjuster name and phone show in the portal.' : 'Adjuster hidden from the customer.'); render(el, pid, true); }
+    if (q === 'stage') { await saveProject(pid, function(x){ x.portalInsStage = t.value === 'auto' ? '' : Number(t.value); }); toast('The customer now sees: ' + (t.value === 'auto' ? 'automatic claim step' : STEPS[+t.value])); render(el, pid, true); }
+    if (q === 'share') {
+      var id = t.getAttribute('data-id'), on = !!t.checked, d = (docCache[pid] || []).find(function(x){ return String(x.id) === id; });
+      if (d && internalDoc(d)) { t.checked = false; return; }
+      if (on && d && !d.ref && /^data:/.test(s(d.data)) && typeof window._gcStoreFile === 'function') { try { var meta = await window._gcStoreFile(d.data, { kind: 'doc', pid: pid, name: d.name }); if (meta && meta.ref) d.ref = meta.ref; } catch (e) {} }
+      await saveDoc(id, function(x){ x.portalShare = on; if (d && d.ref && !x.ref) x.ref = d.ref; });
+      toast(on ? 'The customer can see “' + (d && d.name || 'the paper') + '”.' : 'Hidden from the customer.');
+      /* the portal server decides about telling the customer — and it waits for approval (Office to-do) */
+      if (on) { try { if (window._gcPortal && window._gcPortal.notify) window._gcPortal.notify(pid); } catch (e) {} }
+      render(el, pid, true);
+    }
+  });
+}
+function buildPanel(pid, compact){
+  var el = document.createElement('div');
+  el.className = 'gcinsp-panel'; el.setAttribute('data-pid', pid); el.setAttribute('data-gc-keep', '');
+  el.style.cssText = 'background:#fff;color:#14202E;border:1px solid #E2DCCD;border-left:4px solid ' + NAVY2 + ';border-radius:12px;padding:8px 10px;margin:' + (compact ? '-6px 0 12px' : '-4px 0 10px') + ';font-family:Inter,-apple-system,sans-serif;box-sizing:border-box;display:block';
+  wire(el, pid); render(el, pid, true);
+  return el;
+}
+
+/* ── put the panel right under every portal card of an insurance job; fix patch Q's paper list for it ── */
+function tick(){
+  if (document.hidden) return;
+  var cards = document.querySelectorAll('.gcq-card');
+  Array.prototype.forEach.call(cards, function(c){
+    var pid = c.getAttribute('data-pid'), p = proj(pid), nx = c.nextElementSibling;
+    var mine = nx && nx.classList && nx.classList.contains('gcinsp-panel') ? nx : null;
+    if (!isIns(p)) { if (mine) mine.remove(); return; }
+    if (mine && mine.getAttribute('data-pid') !== String(pid)) { mine.remove(); mine = null; }
+    if (!mine) { c.parentNode.insertBefore(buildPanel(String(pid), c.hasAttribute('data-field')), c.nextSibling); return; }
+    render(mine, String(pid), false);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.gcinsp-panel'), function(el){
+    var pv = el.previousElementSibling;
+    if (!pv || !pv.classList.contains('gcq-card') || pv.getAttribute('data-pid') !== el.getAttribute('data-pid')) el.remove();
+  });
+  fixDocsSheet();
+}
+/* patch Q's "📄 What the customer sees" list uses the regular rule; on an insurance job show the insurance rule */
+function fixDocsSheet(){
+  var sh = document.getElementById('gcq-docs'); if (!sh || sh.getAttribute('data-insp')) return;
+  var boxes = sh.querySelectorAll('.gcq-share'); if (!boxes.length) { sh.setAttribute('data-insp', '0'); return; }
+  var docs = crm().projectDocs || window._gcProjectDocs || [];
+  var d0 = docs.find(function(d){ return d && String(d.id) === boxes[0].getAttribute('data-id'); });
+  sh.setAttribute('data-insp', '1');
+  if (!d0 || !isIns(proj(d0.pid || d0.projectId))) return;
+  Array.prototype.forEach.call(boxes, function(cb){
+    var d = docs.find(function(x){ return x && String(x.id) === cb.getAttribute('data-id'); }); if (!d) return;
+    var lab = cb.nextSibling;
+    if (internalDoc(d)) { cb.checked = false; cb.disabled = true; if (lab) lab.textContent = 'Internal — never'; return; }
+    cb.checked = shownIns(d); if (lab) lab.textContent = cb.checked ? 'Customer sees it' : 'Hidden';
+  });
+}
+
+(function css(){
+  var st = document.createElement('style'); st.setAttribute('data-gcinsp', '');
+  st.textContent = '.gcinsp-panel{display:block!important}.gcinsp-panel [hidden]{display:none!important}.gcinsp-panel button,.gcinsp-panel label{margin:0!important}.gcinsp-panel input,.gcinsp-panel select{max-width:100%}';
+  (document.head || document.documentElement).appendChild(st);
+})();
+(window.__GC_NATIVE_SETINTERVAL__ || window.setInterval).call(window, tick, 1500);
+window._gcInsPortal = {
+  open: function(pid){ var el = document.querySelector('.gcinsp-panel[data-pid="' + pid + '"]'); if (el) { el.__open = true; render(el, String(pid), true); el.scrollIntoView({ block: 'nearest' }); } return !!el; },
+  isInsurance: function(pid){ return isIns(proj(pid)); }, shown: shownIns, internal: internalDoc, group: groupOf, preview: preview
+};
+try { console.log('[GC] Insurance portal panel ready (patch INSP).'); } catch (e) {}
+})();
+
+</script><!-- /INSP -->
 
 
 

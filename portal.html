@@ -85,6 +85,18 @@ nav.tabs button[aria-selected="true"]{color:var(--navy);font-weight:700;box-shad
 .lb .nav button{min-width:96px;min-height:44px;border-radius:10px;border:0;background:#1A3A5F;color:#fff;font-weight:700;font-size:15px;cursor:pointer}
 .off{padding:40px 20px;text-align:center;display:flex;flex-direction:column;gap:16px;align-items:center}
 .off p{font-size:17px;line-height:1.45;margin:0}
+/* patch INSP: the insurance-claim view */
+.pill.ins{color:#fff;background:var(--navy2)}.pill.skip{color:var(--mute);background:var(--rule)}
+li.skipped{color:#8A939C}li.skipped .dot{border-style:dashed}
+ol.steps li .note{margin-left:auto;font-weight:400;font-size:12px;white-space:nowrap}
+.grp{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--rule);padding-top:10px}
+.grp h3{margin:0;font-size:13px;font-weight:700;color:var(--goldDk);text-transform:uppercase;letter-spacing:.03em}
+.grp .doc:first-of-type{border-top:0;padding-top:0}
+.box.endorse{border-color:var(--gold);background:var(--goldBg)}
+.line.total{font-weight:700}
+ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.45}
+.nextp{margin:0;font-size:15px;line-height:1.5}
+.pvbar{background:var(--goldBg);color:var(--goldDk);font-size:13px;font-weight:600;text-align:center;padding:8px 12px}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -117,6 +129,7 @@ nav.tabs button[aria-selected="true"]{color:var(--navy);font-weight:700;box-shad
 var FN = '/.netlify/functions/portal';
 var OFFICE = '901-585-0944';
 var V = null, PHOTOS = null, TAB = 'home', token = '';
+var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');   /* patch INSP: "Preview as customer" from the CRM */
 
 /* the link code lives after the # — it never reaches a server log or another site */
 try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
@@ -143,7 +156,7 @@ function tel(p){ return 'tel:' + String(p || '').replace(/[^0-9+]/g, ''); }
 function card(title, kids, extra){ return h('section', { class: 'card' }, [title ? h('h2', { text: title }) : null].concat(kids || [])); }
 
 function api(action){
-  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify({ action: action }), cache: 'no-store', credentials: 'omit' })
+  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(PREVIEW ? { action: action, preview: true } : { action: action }), cache: 'no-store', credentials: 'omit' })
     .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j }; }); });
 }
 
@@ -176,7 +189,7 @@ function postEl(p){
   return h('div', { class: 'post' }, kids);
 }
 function home(){
-  var out = [tracker()];
+  var out = V.insurance ? insHome() : [tracker()];   /* patch INSP */
   var posts = V.posts || [];
   out.push(card('Updates from your team', posts.length ? posts.slice(0, 10).map(postEl) : [h('div', { class: 'empty', text: 'Your Project Manager posts updates and photos here.' })]));
   var pm = V.pm || {}, phone = pm.phone || OFFICE;
@@ -249,6 +262,7 @@ function lightbox(list, i){
 
 /* ── DOCUMENTS & PROPOSALS ────────────────────────────────────────────── */
 function docs(){
+  if (V.insurance) return insDocs();   /* patch INSP */
   var list = V.docs || [];
   var box = h('section', { class: 'card' }, [h('h2', { text: 'Documents & proposals' }),
     h('div', { class: 'muted', text: 'Proposals made in Google Docs or in our system show up here by themselves.' })]);
@@ -275,6 +289,7 @@ function docs(){
 
 /* ── INVOICES & PAYMENTS ──────────────────────────────────────────────── */
 function pay(){
+  if (V.insurance) return insPay();   /* patch INSP */
   var m = V.money || {}, out = [];
   var top = h('section', { class: 'card' }, [h('h2', { text: 'Invoices & payments' }),
     h('div', { class: 'money' }, [
@@ -304,6 +319,119 @@ function pay(){
   return out;
 }
 
+/* ── INSURANCE CLAIM VIEW (patch INSP) — only when the job is marked insurance (V.insurance) ── */
+var INS_NEXT = [
+  'We look at the damage, take photos and measurements, and write down everything that was damaged. If you have not called your insurance company yet, call them to open a claim — we can help.',
+  'Your claim is open. Your insurance company gives it to an adjuster, who will call you to set up a visit. Tell us the date so we can be there too.',
+  'The adjuster comes to see the damage. It takes about an hour. Show them everything that was damaged, inside and outside — we try to be there so nothing is missed.',
+  'Your insurance company sent its estimate. We check it against ours and ask for anything that was missed. Their first check is usually the estimate minus depreciation and minus your deductible.',
+  'We asked your insurance company to add items that were missed (a "supplement"). This often takes 1 to 3 weeks. You do not need to do anything unless they call you.',
+  'Your start date is set. Please clear the work area and tell us about pets, parking and anything we should know.',
+  'The crew is working. Your Project Manager posts updates and photos here.',
+  'The work is done. We send the completion papers to your insurance company so they release the depreciation they held back. Please sign the certificate of completion if you have not yet.',
+  'Your insurance company released the depreciation. If a check came to you, sign the back and give it to us. Then we send your final invoice.',
+  'Your claim is closed. Thank you for choosing GrayCo! Your warranty is under Documents.'
+];
+function insHome(){
+  var I = V.insurance, c = I.claim || {}, rows = [];
+  function row(k, v){ if (v) { rows.push(h('dt', { text: k })); rows.push(h('dd', { text: v })); } }
+  row('Claim number', c.number);
+  row('Date of loss', dt(c.dateOfLoss));
+  row('Type of loss', c.lossType);
+  row('Policy deductible', c.deductible != null ? usd(c.deductible) : '');
+  row('Insurance', c.companyShown ? c.company : 'Your insurance company');
+  if (c.adjuster) row('Adjuster', [c.adjuster.name, c.adjuster.phone].filter(Boolean).join(' · '));
+  if (c.adjusterMeeting) row('Adjuster visit', dt(c.adjusterMeeting));
+  if (c.mortgage) row('Mortgage company', c.mortgage);
+  var box = h('section', { class: 'card', id: 'claim' }, [
+    h('div', { class: 'row' }, [h('h2', { text: 'Your insurance claim' }), h('span', { class: 'pill ins', text: 'Insurance claim' })]),
+    rows.length ? h('dl', { class: 'info' }, rows) : h('div', { class: 'muted', text: 'Your claim details show here as soon as we have them.' }),
+    c.adjuster && c.adjuster.phone ? h('a', { class: 'btn', href: tel(c.adjuster.phone), text: 'Call the adjuster' }) : null]);
+  var list = h('ol', { class: 'steps' });
+  (I.timeline || []).forEach(function(st){
+    list.appendChild(h('li', { class: st.state }, [h('span', { class: 'dot', 'aria-hidden': 'true' }),
+      h('span', { text: st.name + (st.state === 'now' ? ' — now' : '') }), st.note ? h('span', { class: 'muted note', text: String(st.note).replace(/\d{4}-\d{2}-\d{2}/, function(x){ return dt(x); }) }) : null]));
+  });
+  var track = h('section', { class: 'card', id: 'insTrack' }, [
+    h('div', { class: 'row' }, [h('h2', { text: 'Where your claim is' }), h('span', { class: 'pill now', text: I.nowName || '' })]), list]);
+  var m = I.money || {}, tips = [];
+  tips.push(h('li', { text: 'Your part is your deductible' + (m.upgradesTotal ? ' plus any upgrades or items your insurance does not cover' : '') + '. It is paid to GrayCo, not to your insurance company.' }));
+  tips.push(h('li', { text: 'Insurance checks are often made out to you AND GrayCo. Sign the back and give it to your Project Manager, or mail it to our office (call ' + OFFICE + ' for the address).' }));
+  if (c.mortgage || (m.checksToEndorse || []).length) tips.push(h('li', { text: 'If you have a mortgage, your mortgage company' + (c.mortgage ? ' (' + c.mortgage + ')' : '') + ' may be on the check too. They must sign it before it can be cashed. Call their "loss draft" or "insurance claims" department early — they may ask for an inspection or papers from us, and we help with that.' }));
+  tips.push(h('li', { text: 'Depreciation is money your insurance company holds back until the work is done. We send them the papers to release it.' }));
+  var help = card('What happens next', [h('p', { class: 'nextp', text: INS_NEXT[I.now] || '' }), h('h3', { text: 'Good to know' }), h('ul', { class: 'tips' }, tips),
+    h('div', { class: 'muted' }, ['Questions about your claim? ', h('a', { href: 'tel:9015850944', text: 'Call us — ' + OFFICE }), '.'])]);
+  help.id = 'insNext';
+  return [box, track, help];
+}
+function insDocRow(d){
+  var note = [d.kind === 'proposal' ? (d.status === 'Signed' ? 'Signed' : 'Estimate') : (d.kind === 'gdoc' ? 'Google Doc' : (d.type === 'pdf' ? 'PDF' : (d.type === 'word' ? 'Word file' : (d.type === 'image' ? 'Picture' : 'File')))), dt(d.date)].filter(Boolean).join(' · ');
+  var act = h('div', { class: 'act' });
+  if (d.url) act.appendChild(h('a', { class: 'btn', href: d.url, target: '_blank', rel: 'noopener', text: d.type === 'word' ? 'Download' : 'Open' }));
+  return h('div', { class: 'doc' }, [h('span', { 'aria-hidden': 'true', style: 'font-size:20px', text: d.type === 'image' ? '🖼' : '📄' }), h('div', { class: 'grow' }, [h('span', { class: 'n', text: d.title || 'Document' }), h('span', { class: 'muted', text: note })]), act]);
+}
+function insDocs(){
+  var I = V.insurance, list = V.docs || [], by = {};
+  list.forEach(function(d){ var g = d.group || 'other'; (by[g] = by[g] || []).push(d); });
+  var box = h('section', { class: 'card', id: 'insDocs' }, [h('h2', { text: 'Your insurance papers' }),
+    h('div', { class: 'muted', text: 'Estimates, supplements, signed papers and reports for your claim. New papers show up here by themselves.' })]);
+  var any = false;
+  (I.groups || []).concat([{ key: 'other', title: 'Other papers' }]).forEach(function(g){
+    var items = by[g.key] || [];
+    if (!items.length && g.key !== 'photos') return;
+    var sec = h('div', { class: 'grp', 'data-group': g.key }, [h('h3', { text: g.title })]);
+    items.forEach(function(d){ any = true; sec.appendChild(insDocRow(d)); });
+    if (g.key === 'photos') sec.appendChild(h('button', { type: 'button', class: 'btn', on: { click: function(){ go('photos'); } }, text: 'See the damage photos' }));
+    box.appendChild(sec);
+  });
+  if (!any) box.insertBefore(h('div', { class: 'empty', text: 'Nothing here yet — your estimates and claim papers will appear here.' }), box.querySelector('.grp'));
+  var wr = V.warranty, wcard = wr ? card('Your warranty', [h('div', { style: 'font-size:15px;font-weight:700', text: wr.title }),
+    h('div', { class: 'muted', text: wr.start ? 'From ' + dt(wr.start) + ' to ' + dt(wr.end) + '.' : 'Starts the day your job is complete.' })]) : null;
+  return [box, wcard];
+}
+function insPay(){
+  var I = V.insurance, m = I.money || {}, out = [];
+  var owe = h('section', { class: 'card', id: 'insOwe' }, [h('h2', { text: 'What you owe' }),
+    h('div', { class: 'money' }, [
+      h('div', null, [h('span', { class: 'muted', text: 'Your deductible' }), h('b', { text: usd(m.deductible) })]),
+      h('div', null, [h('span', { class: 'muted', text: 'Upgrades / not covered' }), h('b', { text: usd(m.upgradesTotal) })]),
+      h('div', null, [h('span', { class: 'muted', text: 'Paid by you' }), h('b', { text: usd(m.paidByYou) })]),
+      h('div', null, [h('span', { class: 'muted', text: 'Your balance' }), h('b', { text: usd(m.balance) })])])]);
+  (m.upgrades || []).forEach(function(u){ owe.appendChild(h('div', { class: 'line' }, [h('span', { text: u.title }), h('span', { text: usd(u.amount) })])); });
+  owe.appendChild(h('div', { class: 'line total' }, [h('span', { text: 'Your part (deductible + upgrades)' }), h('span', { text: usd(m.youOwe) })]));
+  owe.appendChild(h('div', { class: 'how' }, [h('b', { text: 'How to pay your part' }),
+    h('span', null, ['A ', h('b', { text: 'check' }), ' made out to GrayCo Construction Services, or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '.'])]));
+  out.push(owe);
+  var chk = h('section', { class: 'card', id: 'insChecks' }, [h('h2', { text: 'Insurance checks' })]);
+  if (m.claimTotal) chk.appendChild(h('div', { class: 'line' }, [h('span', { text: 'Approved by your insurance company' }), h('span', { text: usd(m.claimTotal) })]));
+  var te = m.checksToEndorse || [];
+  if (te.length) {
+    var eb = h('div', { class: 'box endorse' }, [h('b', { text: 'Please sign and bring or send us ' + (te.length === 1 ? 'this check' : 'these checks') }),
+      h('span', { class: 'muted', text: 'Sign the back (and get your mortgage company to sign if they are on it), then hand it to your Project Manager or mail it to our office. Call ' + OFFICE + ' with questions.' })]);
+    te.forEach(function(x){ eb.appendChild(h('div', { class: 'line' }, [h('span', { text: x.kind + (x.date ? ' · ' + dt(x.date) : '') }), h('span', { text: usd(x.amount) })])); });
+    chk.appendChild(eb);
+  }
+  var rc = m.checksReceived || [];
+  rc.forEach(function(x){ chk.appendChild(h('div', { class: 'line' }, [h('span', { text: x.kind + (x.date ? ' · received ' + dt(x.date) : '') }), h('span', { text: usd(x.amount) })])); });
+  if (!te.length && !rc.length) chk.appendChild(h('div', { class: 'empty', text: 'No insurance checks yet.' }));
+  out.push(chk);
+  var d = m.depreciation;
+  if (d) out.push(h('section', { class: 'card', id: 'insDep' }, [
+    h('div', { class: 'row' }, [h('h2', { text: 'Depreciation recovery' }), h('span', { class: 'pill ' + (d.status === 'released' ? 'ok' : (d.status === 'none' ? 'skip' : 'now')), text: { held: 'Held until the work is done', requested: 'Requested', released: 'Released', none: 'None' }[d.status] || '' })]),
+    d.amount ? h('div', { class: 'line' }, [h('span', { text: 'Held back by your insurance company' }), h('span', { text: usd(d.amount) })]) : null,
+    d.released ? h('div', { class: 'line' }, [h('span', { text: 'Released so far' }), h('span', { text: usd(d.released) })]) : null,
+    h('div', { class: 'muted', text: d.text })]));
+  var ps = m.payments || [];
+  out.push(card('Payments made', ps.length ? ps.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dt(x.date) + ' · ' + x.from + (x.method && x.method !== 'Payment' ? ' · ' + x.method : '') }), h('span', { text: usd(x.amount) })]); })
+    : [h('div', { class: 'empty', text: 'No payments yet.' })]));
+  var inv = (V.money && V.money.invoices) || [];
+  if (inv.length) out.push(card('Invoices', inv.map(function(x){
+    return h('div', { class: 'line', style: 'align-items:center' }, [h('span', null, [h('span', { text: (x.isFinal ? 'Final invoice' : 'Invoice') + (x.number ? ' ' + x.number : '') }), h('br'), h('span', { class: 'muted', text: dt(x.date) + ' · ' + usd(x.amount) })]),
+      h('span', { class: 'pill ' + (x.balance > 0 ? 'now' : 'ok'), text: x.balance > 0 ? 'Open ' + usd(x.balance) : 'Paid' })]);
+  })));
+  return out;
+}
+
 /* ── frame ─────────────────────────────────────────────────────────────── */
 function go(t){ TAB = t; draw(); window.scrollTo(0, 0); }
 function draw(){
@@ -323,6 +451,7 @@ api('view').then(function(r){
   $('jobName').textContent = j.name || 'Your project';
   $('jobSub').textContent = [j.address, j.po ? 'Job ' + j.po : ''].filter(Boolean).join(' · ');
   $('hello').hidden = false; $('tabs').hidden = false;
+  if (PREVIEW) document.querySelector('.wrap').insertBefore(h('div', { class: 'pvbar', text: 'Preview — exactly what the customer sees. Opening it here does not count as the customer opening it.' }), $('main'));   /* patch INSP */
   document.title = (j.name ? j.name + ' — ' : '') + 'GrayCo';
   draw();
   setTimeout(loadPhotos, 1500);   /* ready before they tap Photos */
