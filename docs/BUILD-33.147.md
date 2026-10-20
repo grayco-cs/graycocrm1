@@ -79,6 +79,11 @@ Sends a PM starts with a tap (Post, Email it) still go out. `PORTAL_AUTO_EMAIL=1
 - **Left menu:** at most one emoji per tab (Photos, Gmail, Payments, RoofScout, Launch Job, Business Brain, Cordova Club, Review Queue, To-Do and others showed two).
 - **Tests:** field view 8/8 and 18/18 (live 33.149: 2/8 and 15/18), H 7/7, sign-in 16/16, counts 4/4, people 10/10, trash can 31/31, CompanyCam 7/7.
 
+## 33.149 v2 (2026-10-20): PM Playbook inside the CRM
+- **📘 PM Playbook** tab for everyone (desk left menu, phone More, field view More). Shown inside the CRM, never as a public file.
+- Text updated: QuickBooks is a one-time import at the fresh start, then the CRM is the money record; no customer e-mail without approval (except signed copies and payment receipts); invoice statuses; margins (residential 30%, all large commercial 20%, small commercial 25–30%); every change order is signed; check/cash only; PMs don't see other PMs' jobs.
+- Tests: playbook 75/75, H 7/7, sign-in 16/16.
+
 ## 33.150 (same day): profiles line up, owner-only data protected by the database
 - **Who is signed in works for older screens** (owners were blocked from Cash Position, Team Status and PM Commission, and Cash Flow opened for anyone). A role or name change reaches that person's computer. The office login opens as Brittany. My Projects survives a rename. A view guard keeps PMs out of screens they don't have. PM phones show other people's changes. (audit B: `tail_views.js`)
 - **SEC2:** pay, bank, SSN, payroll, commission and cash data are readable only by admins (payroll also by people flagged in gc_staff.payroll, the office by default). Admin status comes from gc_staff, not the editable people list. New `docs/security-data.sql`; updated `security-lockdown.sql` and `fresh-start.sql`.
