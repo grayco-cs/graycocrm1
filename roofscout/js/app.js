@@ -2563,7 +2563,7 @@
   // ---- Printing -------------------------------------------------------------
 
   function printDoc(kind, lead) {
-    var ctx = { lead: lead, settings: state.settings, sender: me, roofType: rtOf(lead), estimate: estOf(lead), coating: coatingOf(lead) };
+    var ctx = { lead: lead, settings: state.settings, sender: (lead.assignedTo && userById(lead.assignedTo)) || me, roofType: rtOf(lead), estimate: estOf(lead), coating: coatingOf(lead) };
     $('#print-root').innerHTML = kind === 'flyer' ? Docs.flyer(ctx) : Docs.proposal(ctx);
     log(kind, lead);
     // Let the browser lay the document out before opening the print dialog.

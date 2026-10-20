@@ -74,7 +74,7 @@
 
     return '<article class="doc flyer">' + demoStamp(l) +
       '<header class="flyer-head">' +
-        '<div class="logo logo-white" role="img" aria-label="' + esc(co.name) + '"></div>' +
+        '<img class="doc-logo doc-logo-white" src="img/logo-white.png" alt="' + esc(co.name) + '">' +
         '<h1>Hi there, neighbor!</h1>' +
         '<p>We took a friendly look at the roof at <b>' + esc(l.name) + '</b> and put together a quick snapshot for you.</p>' +
       '</header>' +
@@ -130,14 +130,14 @@
 
     return '<article class="doc proposal">' + demoStamp(l) +
       '<header class="prop-head">' +
-        '<div class="logo logo-navy" role="img" aria-label="' + esc(co.name) + '"></div>' +
+        '<img class="doc-logo doc-logo-navy" src="img/logo-navy.png" alt="' + esc(co.name) + '">' +
         '<div class="prop-meta"><div class="prop-title">Roofing Proposal</div>' +
           '<div>Proposal ' + esc(pid) + '</div><div>' + U.today() + '</div></div>' +
       '</header>' +
       '<section class="prop-parties">' +
         '<div><div class="k">Prepared for</div>' + to + '<br>' + esc(l.name) + '<br>' + esc(l.address) + '</div>' +
-        '<div><div class="k">Prepared by</div>' + [ctx.sender.name, ctx.sender.title].filter(Boolean).map(esc).join(', ') + '<br>' +
-          esc(ctx.sender.phone || co.phone) + '<br>' + esc(ctx.sender.email) + '</div>' +
+        '<div><div class="k">Your project manager</div><b>' + esc(ctx.sender.name || co.name) + '</b>' + (ctx.sender.title ? ', ' + esc(ctx.sender.title) : '') + '<br>' +
+          'Call or text: <b>' + esc(ctx.sender.phone || co.phone) + '</b><br>' + esc(ctx.sender.email || co.email || '') + '</div>' +
       '</section>' +
       '<h2>1. Roof Assessment</h2>' +
       '<table class="prop-table"><tr><th>Roof type</th><td>' + esc(rt.name) + '</td><th>Approx. area</th><td>' + num(l.areaSqft) + ' ft²</td></tr>' +

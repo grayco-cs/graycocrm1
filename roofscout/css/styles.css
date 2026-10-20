@@ -375,3 +375,9 @@ td .measure-src { display: inline-block; padding: 2px 6px; margin: 2px 0 0; }
   .proposal h2 { break-after: avoid; }
   .prop-est, .sign, .prop-table { break-inside: avoid; }
 }
+
+/* Printed documents: real logo images (masks and backgrounds don't print) */
+.doc-logo{display:block;height:auto;max-width:100%}
+.doc-logo-navy{width:230px}
+.doc-logo-white{width:200px;margin:0 auto 10px}
+@media print{.doc-logo{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
