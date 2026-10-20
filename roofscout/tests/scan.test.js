@@ -38,6 +38,48 @@ assert.deepStrictEqual(tb, { s: 35.2, w: -89.85, n: 35.22, e: -89.825 });
 assert.strictEqual(S.tileBbox('nope'), null);
 assert.ok(S.bboxAreaMi2(tb) > 1.5 && S.bboxAreaMi2(tb) < 2.2, 'a tile is about 2 mi²');
 assert.ok(/way\["building"\]/.test(S.overpassQuery(tb)) && /out tags geom/.test(S.overpassQuery(tb)), 'overpass query');
+// Lighter query: ways shorter than the smallest outline a floor-size building can have are skipped.
+var pMin = S.minPerimeterM(3000);
+assert.ok(pMin >= 55 && pMin <= 59, 'a 3,000 ft² circle has a 59 m outline: ' + pMin);
+assert.strictEqual(S.overpassQuery(tb, { floorSqft: 3000, timeout: 9 }).indexOf('[out:json][timeout:9];'), 0, 'server timeout in the query');
+assert.ok(S.overpassQuery(tb, { floorSqft: 3000 }).indexOf('(if:length()>' + pMin + ')') > -1, 'size filter on ways');
+assert.ok(S.overpassQuery(tb).indexOf('length()') < 0, 'no filter without a floor');
+(function () {
+  // Every fixture building ≥ 3,000 ft² has an outline longer than the filter (nothing lost).
+  JSON.parse(M.fixture('overpass-bartlett.json')).elements.filter(function (e) { return e.type === 'way'; }).forEach(function (e) {
+    var g = e.geometry, len = 0;
+    for (var i = 1; i < g.length; i++) len += S.haversineM([g[i - 1].lat, g[i - 1].lon], [g[i].lat, g[i].lon]);
+    var sq = S.parseOverpass({ elements: [e] }, 0)[0];
+    if (sq && sq.areaSqft >= 3000) assert.ok(len > pMin, 'w' + e.id + ' outline ' + Math.round(len) + ' m');
+  });
+})();
+var q4 = S.quarterBbox(tb);
+assert.strictEqual(q4.length, 4);
+assert.deepStrictEqual(q4[0], { s: 35.2, w: -89.85, n: 35.21, e: -89.8375 });
+assert.deepStrictEqual(q4[3], { s: 35.21, w: -89.8375, n: 35.22, e: -89.825 });
+assert.ok(S.OVERPASS_ENDPOINTS.length === 4 && S.OVERPASS_ENDPOINTS.every(function (u) { return /^https:\/\//.test(u); }));
+assert.ok(S.overpassOk({ elements: [] }));
+assert.ok(!S.overpassOk({ elements: [{}], remark: 'runtime error: Query timed out in "query" at line 1 after 9 seconds.' }), 'partial answer refused');
+assert.ok(!S.overpassOk({}) && !S.overpassOk(null));
+
+// Elements posted by a browser: only well-formed buildings near the square survive.
+(function () {
+  var raw = JSON.parse(M.fixture('overpass-bartlett.json')).elements;
+  var c = S.cleanElements(raw.concat([
+    { type: 'node', id: 5, lat: 35.21, lon: -89.84 },
+    { type: 'way', id: 'w1; drop', tags: { building: 'yes' }, geometry: raw[0].geometry },
+    { type: 'way', id: 77, tags: { highway: 'service' }, geometry: raw[0].geometry },
+    { type: 'way', id: 78, tags: { building: 'yes' }, geometry: [{ lat: 'x', lon: 1 }, { lat: 1, lon: 1 }, { lat: 2, lon: 2 }] },
+    { type: 'way', id: 79, tags: { building: 'yes' }, geometry: [{ lat: 40, lon: -74 }, { lat: 40.001, lon: -74 }, { lat: 40.001, lon: -74.001 }] },
+    { type: 'way', id: 1001, tags: { building: 'yes' }, geometry: raw[0].geometry }
+  ]), tb);
+  assert.strictEqual(c.elements.length, raw.filter(function (e) { return e.tags && e.tags.building; }).length, 'fixture buildings kept');
+  assert.strictEqual(c.dropped, 6, 'node, bad id, not a building, bad point, far away, duplicate');
+  var again = S.parseOverpass({ elements: c.elements }, 3000).map(function (f) { return f.id + ':' + f.areaSqft; });
+  assert.deepStrictEqual(again, S.parseOverpass(JSON.parse(M.fixture('overpass-bartlett.json')), 3000).map(function (f) { return f.id + ':' + f.areaSqft; }), 'same footprints after cleaning');
+  assert.strictEqual(S.cleanElements('nope', tb), null);
+  assert.strictEqual(S.cleanElements(new Array(S.EL_MAX + 1).fill({}), tb), null);
+})();
 
 // ---- Overpass fixture → footprints ----------------------------------------------------
 var fps = S.parseOverpass(JSON.parse(M.fixture('overpass-bartlett.json')), 3000);

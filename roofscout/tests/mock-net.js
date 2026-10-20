@@ -12,6 +12,19 @@ function json(status, obj) {
 }
 function text(status, t) { return { ok: status >= 200 && status < 300, status: status, text: function () { return Promise.resolve(t); }, json: function () { return Promise.resolve(JSON.parse(t)); } }; }
 
+// A reply that arrives after `ms` (a slow server). Use: net.route(host, function () { return M.later(4000, M.json(200, …)); })
+function later(ms, reply) { return new Promise(function (res) { setTimeout(function () { res(typeof reply === 'function' ? reply() : reply); }, ms); }); }
+// Like real fetch: an AbortSignal rejects a reply that has not arrived yet.
+function abortable(p, signal) {
+  if (!signal) return p;
+  return new Promise(function (res, rej) {
+    var gone = function () { var e = new Error('The operation was aborted.'); e.name = 'AbortError'; rej(e); };
+    if (signal.aborted) return gone();
+    signal.addEventListener('abort', gone, { once: true });
+    p.then(function (v) { signal.removeEventListener('abort', gone); res(v); }, rej);
+  });
+}
+
 function create() {
   var db = {
     tokens: { 'tok-staff': 'pm@grayco-cs.com', 'tok-admin': 'wjohnson@grayco-cs.com', 'tok-stranger': 'someone@example.com' },
@@ -104,7 +117,7 @@ function create() {
     calls.push({ url: url, opts: opts || {} });
     if (url.indexOf('supabase.co') > -1 || url.indexOf('sb.test') > -1) return Promise.resolve(supabase(url, opts));
     for (var i = 0; i < routes.length; i++) {
-      if (routes[i].test(url, opts || {})) return Promise.resolve(routes[i].reply(url, opts || {}));
+      if (routes[i].test(url, opts || {})) return abortable(Promise.resolve(routes[i].reply(url, opts || {})), opts && opts.signal);
     }
     return Promise.reject(new Error('mock: network blocked for ' + url));
   }
@@ -129,4 +142,4 @@ function event(method, opts) {
   };
 }
 
-module.exports = { create: create, event: event, json: json, text: text, fixture: fixture };
+module.exports = { create: create, event: event, json: json, text: text, fixture: fixture, later: later };

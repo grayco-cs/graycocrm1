@@ -1,7 +1,9 @@
 // netlify/functions/roofscout-scan.js
 // RoofScout "Scan an area": finds large commercial / industrial roofs from public data.
 //
-//   footprints  OpenStreetMap buildings via the Overpass API (one grid tile per call)
+//   footprints  OpenStreetMap buildings via the Overpass API (one grid tile per call). Several
+//               public instances are raced (primary first, a mirror if it is slow); when none
+//               answers in time the browser asks Overpass itself and posts the raw elements here.
 //   parcels     county ArcGIS REST parcel layers (owner, mailing address, land use, year built)
 //   permits     City of Memphis building permits (ArcGIS layer): last roofing permit
 //   hail        NOAA SPC daily hail reports
@@ -10,11 +12,14 @@
 // has a "📡 Measure" button that uses solar-lookup and its monthly limit.
 //
 // Env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY (already set).
-//   Optional: OVERPASS_URL (another Overpass instance), OVERPASS_HOURLY_LIMIT (40),
+//   Optional: OVERPASS_URL (tried first), OVERPASS_URLS (comma list: replaces the built-in
+//             instances), OVERPASS_HEDGE_MS (3000), OVERPASS_BUDGET_MS (8200), OVERPASS_HOURLY_LIMIT (40),
 //             OVERPASS_DAILY_LIMIT (100), SCAN_USER_HOURLY_LIMIT (400), SCAN_USER_DAILY_LIMIT (2000).
 //
 //   GET  ?action=status                       → limits, today's Overpass use, which sources are on
-//   POST { action:'tile', tile, minSqft }      → { sites: [...footprints ≥ minSqft], fromCache }
+//   POST { action:'tile', tile, minSqft }      → { sites: [...footprints ≥ minSqft], fromCache, via }
+//   POST { action:'elements', tile, minSqft, elements:[…] }
+//                                              → same as 'tile', from Overpass elements the browser fetched
 //   POST { action:'enrich', tile, ids:[≤60] }  → { sites: [{ id, parcel, permit, type, excluded }], sources }
 //   POST { action:'hail', days }               → { reports: [...], more }
 //
@@ -92,7 +97,9 @@ async function gcStaffAuth(event){
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
 const USER_AGENT = 'GrayCoRoofScout/1.0 (+https://roofscout.grayco-cs.com; wjohnson@grayco-cs.com)';
-const OVERPASS_DEFAULT = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_HEDGE_MS = 3000;                // primary not answered by then: race the next instance
+const OVERPASS_BUDGET_MS = 8200;               // all Overpass work in one call (the function has ~10 s)
+const ELEMENTS_MAX_BYTES = 5.5e6;              // browser-posted elements (Netlify's request limit is 6 MB)
 const SPC_BASE = 'https://www.spc.noaa.gov/climo/reports/';
 const FLOOR_SQFT = 3000;                       // footprints kept in the cache (a scan's minimum is ≥ this)
 const DAY = 864e5;
@@ -195,33 +202,132 @@ async function settings() {
 
 // ---- 1. Footprints (Overpass) -----------------------------------------------------
 
-async function footprints(tile, who) {
+// Instances in the order to try: OVERPASS_URL first, then the list; one that failed in the last
+// two minutes (this warm function instance) goes to the back, the last one that answered to the front.
+const opState = { good: '', bad: {} };
+function overpassEndpoints() {
+  const list = (process.env.OVERPASS_URLS ? process.env.OVERPASS_URLS.split(',') : Scan.OVERPASS_ENDPOINTS.slice())
+    .map(function(s){ return s.trim(); }).filter(function(s){ return /^https:\/\/[^\s]+$/.test(s); });
+  if (process.env.OVERPASS_URL) list.unshift(process.env.OVERPASS_URL.trim());
+  const uniq = list.filter(function(u, i){ return list.indexOf(u) === i; });
+  const now = Date.now();
+  const rank = function(u){ return (opState.bad[u] > now ? 2 : 0) + (u === opState.good ? -1 : 0); };
+  return uniq.map(function(u, i){ return { u: u, i: i }; })
+    .sort(function(a, b){ return rank(a.u) - rank(b.u) || a.i - b.i; }).map(function(x){ return x.u; });
+}
+
+// One Overpass request; resolves { j, url } or rejects with { kind: 'timeout' | 'busy' | 'error' }.
+async function overpassOne(url, query, ac) {
+  let r;
+  try {
+    r = await fetch(url, {
+      method: 'POST', signal: ac.signal,
+      headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: 'data=' + encodeURIComponent(query)
+    });
+  } catch (e) { throw { kind: 'timeout', url: url }; }
+  if (r.status === 429 || r.status === 503 || r.status === 504) throw { kind: 'busy', url: url, status: r.status };
+  if (!r.ok) throw { kind: 'error', url: url, status: r.status };
+  const j = await r.json().catch(function(){ return null; });
+  if (!Scan.overpassOk(j)) throw { kind: j && j.remark ? 'busy' : 'error', url: url, status: r.status };
+  return { j: j, url: url };
+}
+
+// Primary at once; another instance after OVERPASS_HEDGE_MS without an answer, or at once when one
+// fails. The first good answer wins and the others are cancelled. Never past `ms`.
+function overpassRace(query, ms) {
+  const urls = overpassEndpoints();
+  const hedge = num(process.env.OVERPASS_HEDGE_MS, OVERPASS_HEDGE_MS);
+  const start = Date.now();
+  return new Promise(function(resolve, reject){
+    const live = [];
+    const fails = [];
+    let next = 0, done = false, timer = null;
+    const finish = function(){ done = true; clearTimeout(timer); clearTimeout(stop); live.forEach(function(ac){ ac.abort(); }); };
+    const stop = setTimeout(function(){
+      if (done) return;
+      finish();
+      urls.slice(0, next).forEach(function(u){ if (!fails.some(function(f){ return f.url === u; })) fails.push({ kind: 'timeout', url: u }); });
+      reject(fails);
+    }, ms);
+    const launch = function(){
+      clearTimeout(timer);
+      if (done) return;
+      if (next >= urls.length || Date.now() - start > ms - 1500) {
+        if (!live.length) { finish(); reject(fails); }
+        return;
+      }
+      const url = urls[next++];
+      const ac = new AbortController();
+      live.push(ac);
+      overpassOne(url, query, ac).then(function(res){
+        if (done) return;
+        finish();
+        opState.good = url;
+        delete opState.bad[url];
+        resolve(res);
+      }, function(err){
+        live.splice(live.indexOf(ac), 1);
+        if (done) return;
+        fails.push(err);
+        opState.bad[url] = Date.now() + 120e3;
+        launch();                                   // a fast failure: the next instance now
+      });
+      timer = setTimeout(launch, hedge);            // slow: race the next one too
+    };
+    launch();
+  });
+}
+
+function overpassFailure(fails) {
+  const list = Array.isArray(fails) ? fails : [];
+  const host = function(u){ try { return new URL(u).host; } catch (e) { return u; } };
+  const tried = list.map(function(f){ return host(f.url) + ' ' + (f.status || f.kind); }).join(', ');
+  const busy = list.length && list.every(function(f){ return f.kind === 'busy'; });
+  const timeout = list.some(function(f){ return f.kind === 'timeout'; });
+  return Object.assign(new Error(busy ? 'OpenStreetMap (Overpass) is busy right now.' : timeout ? 'OpenStreetMap (Overpass) did not answer in time.' : 'OpenStreetMap (Overpass) sent an error.'),
+    { status: busy ? 503 : timeout ? 504 : 502, code: busy ? 'overpass-busy' : timeout ? 'overpass-timeout' : 'overpass-error', tried: tried, fallback: true });
+}
+
+async function footprints(tile, who, deadline) {
   const key = 'osm:v1:' + tile;
   const hit = (await cacheGet([key]))[key];
-  if (hit) return { fps: hit.fps, at: hit.at, fromCache: true };
+  if (hit) return { fps: hit.fps, at: hit.at, fromCache: true, via: 'cache' };
   const L = limits();
   if (!(await take('overpass', L.overpassHour, L.overpassDay))) {
     throw Object.assign(new Error('The team has reached today\'s limit of fresh map downloads from OpenStreetMap (a fair-use limit). Areas already scanned still work; try new areas later.'), { status: 429, code: 'overpass-limit' });
   }
   const b = Scan.tileBbox(tile);
-  let r;
+  const ms = Math.max(2000, Math.min(num(process.env.OVERPASS_BUDGET_MS, OVERPASS_BUDGET_MS), (deadline || Date.now() + OVERPASS_BUDGET_MS) - Date.now()));
+  let got;
   try {
-    r = await fetchT(process.env.OVERPASS_URL || OVERPASS_DEFAULT, {
-      method: 'POST',
-      headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-      body: 'data=' + encodeURIComponent(Scan.overpassQuery(b))
-    }, 8500);
-  } catch (e) {
-    throw Object.assign(new Error('OpenStreetMap (Overpass) did not answer in time. Try again in a minute.'), { status: 504, code: 'overpass-timeout' });
-  }
-  if (r.status === 429 || r.status === 504) throw Object.assign(new Error('OpenStreetMap (Overpass) is busy right now. Try again in a few minutes.'), { status: 503, code: 'overpass-busy' });
-  if (!r.ok) throw Object.assign(new Error('OpenStreetMap (Overpass) error ' + r.status + '.'), { status: 502, code: 'overpass-error' });
-  const j = await r.json().catch(function(){ return null; });
-  if (!j || !Array.isArray(j.elements)) throw Object.assign(new Error('OpenStreetMap (Overpass) sent an unreadable answer.'), { status: 502, code: 'overpass-error' });
-  const fps = Scan.parseOverpass(j, FLOOR_SQFT);
+    got = await overpassRace(Scan.overpassQuery(b, { timeout: Math.ceil(ms / 1000), floorSqft: FLOOR_SQFT }), ms);
+  } catch (fails) { throw overpassFailure(fails); }
+  const fps = Scan.parseOverpass(got.j, FLOOR_SQFT);
   const at = new Date().toISOString();
-  await cachePut([{ key: key, data: { fps: fps, at: at, by: who }, ttl: TTL.osm }]);
-  return { fps: fps, at: at, fromCache: false };
+  const via = new URL(got.url).host;
+  await cachePut([{ key: key, data: { fps: fps, at: at, by: who, via: via }, ttl: TTL.osm }]);
+  return { fps: fps, at: at, fromCache: false, via: via };
+}
+
+// Elements the browser fetched from Overpass itself (the server could not): same parsing, same
+// floor and cache. A square already in the cache is served from the cache, not replaced.
+async function footprintsFromBrowser(tile, who, raw, source) {
+  const key = 'osm:v1:' + tile;
+  const hit = (await cacheGet([key]))[key];
+  if (hit) return { fps: hit.fps, at: hit.at, fromCache: true, via: 'cache' };
+  const b = Scan.tileBbox(tile);
+  const clean = Scan.cleanElements(raw, b);
+  if (!clean) throw Object.assign(new Error('Map data not accepted (at most ' + Scan.EL_MAX + ' elements).'), { status: 400, code: 'bad-elements' });
+  const margin = 0.0005;
+  const fps = Scan.parseOverpass({ elements: clean.elements }, FLOOR_SQFT).filter(function(f){
+    return Scan.inBbox([f.lat, f.lng], { s: b.s - margin, w: b.w - margin, n: b.n + margin, e: b.e + margin }) ||
+      f.rings[0].some(function(p){ return Scan.inBbox(p, b); });
+  });
+  const at = new Date().toISOString();
+  const via = 'browser' + (source ? ':' + source : '');
+  await cachePut([{ key: key, data: { fps: fps, at: at, by: who, via: via }, ttl: TTL.osm }]);
+  return { fps: fps, at: at, fromCache: false, via: via };
 }
 
 function siteOut(f) {
@@ -444,6 +550,7 @@ async function hail(days) {
 
 exports.handler = async function (event) {
   event = event || {};
+  const deadline = Date.now() + 8800;      // leaves time for the cache write inside ~10 s
   const headers = Object.assign(gcCors(event, 'GET, POST, OPTIONS'), { 'Content-Type': 'application/json' });
   const out = function(code, obj){ return { statusCode: code, headers, body: JSON.stringify(obj) }; };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
@@ -466,6 +573,7 @@ exports.handler = async function (event) {
     }
     if (event.httpMethod !== 'POST') return out(405, { error: 'POST { action: tile | enrich | hail }' });
 
+    if (String(event.body || '').length > ELEMENTS_MAX_BYTES) return out(413, { error: 'Too much map data in one request.', code: 'too-big' });
     let body = {};
     try { body = JSON.parse(event.body || '{}'); } catch (e) {}
     if (!(await take('u:' + who.email, L.userHour, L.userDay))) {
@@ -482,11 +590,12 @@ exports.handler = async function (event) {
     if (!b) return out(400, { error: 'tile is required.' });
     if (!Scan.inBbox([b.s, b.w], ALLOWED) || !Scan.inBbox([b.n, b.e], ALLOWED)) return out(400, { error: 'RoofScout scans Tennessee, Mississippi and Arkansas only.', code: 'outside' });
 
-    if (body.action === 'tile') {
+    if (body.action === 'tile' || body.action === 'elements') {
       const min = Math.max(FLOOR_SQFT, num(body.minSqft, 10000));
-      const fp = await footprints(tile, who.email);
+      const fp = body.action === 'tile' ? await footprints(tile, who.email, deadline)
+        : await footprintsFromBrowser(tile, who.email, body.elements, String(body.source || '').replace(/[^a-z0-9.-]/gi, '').slice(0, 60));
       return out(200, {
-        tile: tile, fromCache: fp.fromCache, fetchedAt: fp.at,
+        tile: tile, fromCache: fp.fromCache, fetchedAt: fp.at, via: fp.via,
         sites: fp.fps.filter(function(f){ return f.areaSqft >= min; }).map(siteOut),
         attribution: '© OpenStreetMap contributors (ODbL)'
       });
@@ -498,10 +607,15 @@ exports.handler = async function (event) {
     }
     return out(400, { error: 'Unknown action.' });
   } catch (e) {
-    return out(e.status || 500, { error: e.message || String(e), code: e.code || 'error' });
+    const o = { error: e.message || String(e), code: e.code || 'error' };
+    if (e.tried) o.tried = e.tried;
+    if (e.fallback) o.fallback = true;     // the browser may ask Overpass itself
+    return out(e.status || 500, o);
   }
 };
 
 // for tests
 exports._matchPermit = matchPermit;
 exports._limits = limits;
+exports._overpassEndpoints = overpassEndpoints;
+exports._resetOverpass = function(){ opState.good = ''; opState.bad = {}; };

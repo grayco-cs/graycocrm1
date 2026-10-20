@@ -1106,6 +1106,7 @@
       }).join('') + '</div>' +
       '<button type="button" class="btn primary block" data-act="scan-run"' + (running ? ' disabled' : '') + '>' + (running ? 'Scanning…' : '🔎 Scan this area') + '</button>' +
       '<p class="fine" id="scan-progress" role="status">' + scanProgressText() + '</p>' +
+      '<div id="scan-failed">' + scanFailedHtml() + '</div>' +
       '<p class="fine">Buildings © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) · owners: county public records · permits: City of Memphis · hail: NOAA SPC.</p>' +
       '</section>';
   }
@@ -1113,7 +1114,7 @@
   function scanProgressText() {
     if (!scanRes) return '';
     var r = scanRes, s = r.skipped || {};
-    var t = r.running ? 'Scanning ' + r.done + ' of ' + r.total + ' map squares… ' : '';
+    var t = r.running ? 'Scanning square ' + Math.max(1, Math.min(r.started || 0, r.total)) + ' of ' + r.total + '… ' : '';
     t += r.sites.length + ' building' + (r.sites.length === 1 ? '' : 's') + ' found';
     var sk = [];
     if (s.residential) sk.push(s.residential + ' single-family');
@@ -1121,13 +1122,29 @@
     if (s.type) sk.push(s.type + ' other types');
     if (s.outside) sk.push(s.outside + ' outside the area');
     if (sk.length) t += ' · skipped ' + sk.join(', ');
-    if (r.errors && r.errors.length) t += ' · ' + r.errors.length + ' map square' + (r.errors.length === 1 ? '' : 's') + ' failed: ' + r.errors[r.errors.length - 1];
+    var nf = r.failed ? Object.keys(r.failed).length : 0;
+    if (nf) t += ' · ' + nf + ' map square' + (nf === 1 ? '' : 's') + ' failed';
+    if (r.errors && r.errors.length) t += ' · ' + r.errors[r.errors.length - 1];
     return esc(t) + '.';
+  }
+
+  // Squares that still failed after both tries, with a button to ask for just those again.
+  function scanFailedHtml() {
+    var r = scanRes;
+    var ids = r && r.failed ? Object.keys(r.failed) : [];
+    if (!ids.length || r.running) return '';
+    return '<div class="note sm" id="scan-failed-list"><b>' + ids.length + ' map square' + (ids.length === 1 ? '' : 's') + ' could not be downloaded:</b><ul>' +
+      ids.map(function (t) {
+        var b = Scan.tileBbox(t);
+        return '<li data-tile="' + esc(t) + '">Square ' + (r.order[t] || '?') + ' (' + ((b.s + b.n) / 2).toFixed(3) + ', ' + ((b.w + b.e) / 2).toFixed(3) + '): ' + esc(r.failed[t]) + '</li>';
+      }).join('') + '</ul><button type="button" class="btn ghost sm" data-act="scan-retry">↻ Retry failed squares</button></div>';
   }
 
   function updateScanPanel() {
     var p = $('#scan-progress');
     if (p) p.innerHTML = scanProgressText();
+    var fl = $('#scan-failed');
+    if (fl) fl.innerHTML = scanFailedHtml();
     var line = $('#scan-area-line');
     if (line) line.innerHTML = 'Area: ' + areaLine();
     var btn = $('[data-act=scan-run]');
@@ -1199,6 +1216,10 @@
     var g = L.layerGroup();
     var a = currentArea().bbox;
     L.rectangle([[a.s, a.w], [a.n, a.e]], { color: '#7c3aed', weight: 2, fillOpacity: 0.03, interactive: false }).addTo(g);
+    if (scanRes && scanRes.failed) Object.keys(scanRes.failed).forEach(function (t) {
+      var tb = Scan.tileBbox(t);
+      L.rectangle([[Math.max(tb.s, a.s), Math.max(tb.w, a.w)], [Math.min(tb.n, a.n), Math.min(tb.e, a.e)]], { color: '#dc2626', weight: 1, dashArray: '4 4', fillOpacity: 0.06, interactive: false }).addTo(g);
+    });
     (scanRes ? visibleScanSites() : []).forEach(function (s) {
       var lead = Scan.findExisting(s, state.leads);
       var tip = '<b>' + s.score + '</b> · ' + esc(siteTitle(s)) + '<br>' + esc(s.reasons.join(' · ')) + (lead ? '<br><i>Already a lead</i>' : '');
@@ -1336,7 +1357,8 @@
       var ta = Scan.tileBbox(a), tb = Scan.tileBbox(b);
       return Scan.distanceMi(mid, [(ta.s + ta.n) / 2, (ta.w + ta.e) / 2]) - Scan.distanceMi(mid, [(tb.s + tb.n) / 2, (tb.w + tb.e) / 2]);
     });
-    var res = scanRes = { sites: [], running: true, done: 0, total: tiles.length, errors: [], skipped: { residential: 0, dnc: 0, type: 0, outside: 0 }, sources: {}, label: area.label, bbox: area.bbox, at: Date.now(), hail: [] };
+    var res = scanRes = { sites: [], running: true, done: 0, started: 0, total: tiles.length, errors: [], failed: {}, order: {}, skipped: { residential: 0, dnc: 0, type: 0, outside: 0 }, sources: {}, label: area.label, bbox: area.bbox, at: Date.now(), hail: [] };
+    tiles.forEach(function (t, i) { res.order[t] = i + 1; });
     scanSel = null;
     updateScanPanel();
     renderScanResults();
@@ -1344,6 +1366,12 @@
 
     var stop = false;
     function call(body) { return Cloud.fn(SCAN_FN, 'POST', body); }
+    function refresh() {
+      if (res !== scanRes) return;
+      updateScanPanel();
+      renderScanResults();
+      drawScanLayer();
+    }
 
     var hailStep = Promise.resolve();
     if (o.hailDays) {
@@ -1359,65 +1387,174 @@
       hailStep = more().then(null, function (e) { res.errors.push('hail: ' + e.message); });
     }
 
-    function oneTile(t) {
-      if (stop || res !== scanRes) return Promise.resolve();
-      return call({ action: 'tile', tile: t, minSqft: o.min }).then(function (r) {
-        var inArea = (r.sites || []).filter(function (s) {
-          var ok = Scan.inBbox([s.lat, s.lng], area.bbox);
-          if (!ok) res.skipped.outside++;
-          return ok;
+    // Footprints for one square: the server first; when it cannot reach Overpass in time, this
+    // browser asks Overpass itself (the person's own connection) and the server parses and caches it.
+    function footprintsFor(t, attempt) {
+      return call({ action: 'tile', tile: t, minSqft: o.min }).then(null, function (e) {
+        if (!scanCanFallback(e)) throw e;
+        return browserOverpass(Scan.tileBbox(t), attempt > 1).then(function (g) {
+          return call({ action: 'elements', tile: t, minSqft: o.min, elements: g.elements, source: g.source });
+        }, function (be) {
+          throw Object.assign(new Error((e.message || 'Server could not reach OpenStreetMap') + ' This browser could not either (' + be.message + ').'), { code: 'overpass-timeout', retry: true });
         });
-        var chain = Promise.resolve();
-        for (var i = 0; i < inArea.length; i += 60) {
-          (function (part) {
-            chain = chain.then(function () {
-              if (stop || res !== scanRes) return;
-              return call({ action: 'enrich', tile: t, ids: part.map(function (s) { return s.id; }) }).then(function (er) {
-                Object.keys(er.sources || {}).forEach(function (k) { if (!res.sources[k] || res.sources[k] === 'ok') res.sources[k] = er.sources[k]; });
-                var by = {};
-                (er.sites || []).forEach(function (x) { by[x.id] = x; });
-                part.forEach(function (s) {
-                  var x = by[s.id] || {};
-                  if (x.excluded === 'residential') { res.skipped.residential++; return; }
-                  if (x.excluded === 'do-not-contact') { res.skipped.dnc++; return; }
-                  s.parcel = x.parcel || null;
-                  s.permit = x.permit || null;
-                  s.permitsChecked = !!x.permitsChecked;
-                  s.type = x.type || s.type;
-                  s.tile = t;
-                  addScanSite(res, s, o);
-                });
-              });
-            });
-          })(inArea.slice(i, i + 60));
-        }
-        return chain;
-      }).then(function () {
-        res.done++;
-      }, function (e) {
-        res.done++;
-        res.errors.push(e.message || String(e));
-        if (e.code === 'overpass-limit' || e.code === 'user-limit' || e.code === 'signed-out' || e.code === 'no-tables' || e.status === 401 || e.status === 403) stop = true;
-        if (e.code === 'signed-out') report(e);
-      }).then(function () {
-        if (res !== scanRes) return;
-        updateScanPanel();
-        renderScanResults();
-        drawScanLayer();
       });
     }
 
-    hailStep.then(function () {
-      return tiles.reduce(function (p, t) { return p.then(function () { return oneTile(t); }); }, Promise.resolve());
-    }).then(function () {
+    function enrichTile(t, r) {
+      var inArea = (r.sites || []).filter(function (s) {
+        var ok = Scan.inBbox([s.lat, s.lng], area.bbox);
+        if (!ok) res.skipped.outside++;
+        return ok;
+      });
+      var chain = Promise.resolve();
+      for (var i = 0; i < inArea.length; i += 60) {
+        (function (part) {
+          chain = chain.then(function () {
+            if (stop || res !== scanRes) return;
+            return call({ action: 'enrich', tile: t, ids: part.map(function (s) { return s.id; }) }).then(function (er) {
+              Object.keys(er.sources || {}).forEach(function (k) { if (!res.sources[k] || res.sources[k] === 'ok') res.sources[k] = er.sources[k]; });
+              var by = {};
+              (er.sites || []).forEach(function (x) { by[x.id] = x; });
+              part.forEach(function (s) {
+                var x = by[s.id] || {};
+                if (x.excluded === 'residential') { res.skipped.residential++; return; }
+                if (x.excluded === 'do-not-contact') { res.skipped.dnc++; return; }
+                s.parcel = x.parcel || null;
+                s.permit = x.permit || null;
+                s.permitsChecked = !!x.permitsChecked;
+                s.type = x.type || s.type;
+                s.tile = t;
+                addScanSite(res, s, o);
+              });
+              refresh();   // partial results as each batch arrives
+            });
+          });
+        })(inArea.slice(i, i + 60));
+      }
+      return chain;
+    }
+
+    // Two tries per square, with a pause between; the second browser try asks in quarters.
+    function oneTile(t) {
+      if (stop || res !== scanRes) return Promise.resolve();
+      res.started++;
+      refresh();
+      var attempt = function (n) {
+        return footprintsFor(t, n).then(function (r) { return enrichTile(t, r); }, function (e) {
+          if (n < 2 && !scanStopCode(e) && !stop && res === scanRes) {
+            return scanWait(SCAN_BACKOFF_MS * n + Math.random() * 1000).then(function () { return attempt(n + 1); });
+          }
+          throw e;
+        });
+      };
+      return attempt(1).then(function () {
+        delete res.failed[t];
+      }, function (e) {
+        res.failed[t] = e.message || String(e);
+        if (scanStopCode(e)) stop = true;
+        if (e.code === 'signed-out') report(e);
+      }).then(function () {
+        res.done++;
+        refresh();
+      });
+    }
+
+    // At most SCAN_PARALLEL squares at a time (the free Overpass servers allow ~2 per user).
+    function runTiles(list) {
+      return new Promise(function (resolve) {
+        var queue = list.slice(), active = 0;
+        (function pump() {
+          if (stop || res !== scanRes) queue.length = 0;
+          if (!queue.length && !active) { resolve(); return; }
+          while (active < SCAN_PARALLEL && queue.length) {
+            active++;
+            oneTile(queue.shift()).then(function () { active--; pump(); });
+          }
+        })();
+      });
+    }
+
+    function finish() {
       if (res !== scanRes) return;
       res.running = false;
-      updateScanPanel();
-      renderScanResults();
-      drawScanLayer();
-      log('scan', null, res.sites.length + ' buildings ≥ ' + num(o.min) + ' ft², ' + area.label);
-      if (res.errors.length && !res.sites.length) toast(res.errors[res.errors.length - 1], true);
-      else toast('Scan done: ' + res.sites.length + ' buildings');
+      refresh();
+      var nf = Object.keys(res.failed).length;
+      log('scan', null, res.sites.length + ' buildings ≥ ' + num(o.min) + ' ft², ' + area.label + (nf ? ' (' + nf + ' squares failed)' : ''));
+      if (nf && !res.sites.length) toast(res.failed[Object.keys(res.failed)[nf - 1]], true);
+      else if (res.errors.length && !res.sites.length) toast(res.errors[res.errors.length - 1], true);
+      else toast('Scan done: ' + res.sites.length + ' buildings' + (nf ? ' · ' + nf + ' map square' + (nf === 1 ? '' : 's') + ' failed' : ''), !!nf);
+    }
+
+    res.retry = function () {
+      if (res !== scanRes || res.running) return;
+      var list = Object.keys(res.failed);
+      if (!list.length) return;
+      stop = false;
+      res.running = true;
+      res.done = 0; res.started = 0; res.total = list.length;
+      res.errors = res.errors.filter(function (m) { return /hail/i.test(m); });
+      refresh();
+      runTiles(list).then(finish);
+    };
+
+    hailStep.then(function () { return runTiles(tiles); }).then(finish);
+  }
+
+  var SCAN_PARALLEL = 2;
+  var SCAN_BACKOFF_MS = 2000;
+  function scanWait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function scanStopCode(e) {
+    return e.code === 'overpass-limit' || e.code === 'user-limit' || e.code === 'signed-out' || e.code === 'no-tables' || e.code === 'outside' || e.status === 401 || e.status === 403;
+  }
+  // Server could not get the square from Overpass (or ran out of time): the browser may try.
+  function scanCanFallback(e) {
+    return e.code === 'overpass-timeout' || e.code === 'overpass-busy' || e.code === 'overpass-error' ||
+      (!scanStopCode(e) && (e.status === 502 || e.status === 503 || e.status === 504));
+  }
+
+  // The square's Overpass query, straight from this browser (Overpass sends CORS headers; a form
+  // POST needs no preflight). Each instance in turn; in quarters when `split` (dense squares).
+  var OVERPASS_BROWSER_MS = 25000;
+  function browserOverpass(bbox, split) {
+    var parts = split ? Scan.quarterBbox(bbox) : [bbox];
+    var seen = {}, all = [], source = '';
+    return parts.reduce(function (p, b) {
+      return p.then(function () {
+        return overpassFromBrowser(Scan.overpassQuery(b, { timeout: 25, floorSqft: 3000 })).then(function (g) {
+          source = source || g.source;
+          g.elements.forEach(function (el) { var k = el.type + el.id; if (!seen[k]) { seen[k] = 1; all.push(el); } });
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      if (JSON.stringify(all).length > 5.4e6) throw new Error('too much map data in this square');
+      return { elements: all, source: source };
+    });
+  }
+  function overpassFromBrowser(query) {
+    var urls = Scan.OVERPASS_ENDPOINTS, last = null;
+    return urls.reduce(function (p, url) {
+      return p.then(function (done) {
+        if (done) return done;
+        var ac = typeof AbortController === 'function' ? new AbortController() : null;
+        var timer = setTimeout(function () { if (ac) ac.abort(); }, OVERPASS_BROWSER_MS);
+        return fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(query), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ac ? ac.signal : undefined })
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status === 429 ? 'busy' : 'error ' + r.status);
+            return r.json();
+          })
+          .then(function (j) {
+            clearTimeout(timer);
+            if (!Scan.overpassOk(j)) throw new Error('incomplete answer');
+            return { elements: j.elements, source: new URL(url).host };
+          }, function (e) {
+            clearTimeout(timer);
+            last = new URL(url).host + ': ' + (e && e.name === 'AbortError' ? 'no answer in time' : (e && e.message) || 'failed');
+            return null;
+          });
+      });
+    }, Promise.resolve(null)).then(function (g) {
+      if (!g) throw new Error(last || 'no Overpass server answered');
+      return g;
     });
   }
 
@@ -2485,6 +2622,7 @@
       case 'scan-draw': startScanDraw(); break;
       case 'imagery-leafoff': findLeafOff(); break;
       case 'scan-run': runAreaScan(); break;
+      case 'scan-retry': if (scanRes && scanRes.retry) scanRes.retry(); break;
       case 'scan-clear':
         scanRes = null; scanSel = null;
         renderScanResults(); drawScanLayer(); updateScanPanel();

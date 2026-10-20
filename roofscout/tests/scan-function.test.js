@@ -8,6 +8,9 @@ var M = require('./mock-net.js');
 process.env.SUPABASE_URL = 'https://x.sb.test';
 process.env.SUPABASE_SERVICE_KEY = 'svc';
 delete process.env.OVERPASS_URL;
+delete process.env.OVERPASS_URLS;
+process.env.OVERPASS_HEDGE_MS = '300';     // the real default is 3000; shorter keeps the tests quick
+process.env.OVERPASS_BUDGET_MS = '2000';
 var fn = require('../../netlify/functions/roofscout-scan.js');
 var S = require('../js/scan.js');
 
@@ -15,9 +18,15 @@ var TILE = '-3594_1760';
 var SHELBY = 'https://gis.shelbycountytn.gov/arcgis/rest/services/Parcel/CERT_Parcel/MapServer/0';
 var PERMITS = 'https://services.example-arcgis.test/arcgis/rest/services/DPD_Building_Permits/FeatureServer/0';
 
+var MIRRORS = ['overpass-api.de', 'overpass.private.coffee', 'overpass.kumi.systems', 'maps.mail.ru'];
+function fixtureJson() { return M.json(200, JSON.parse(M.fixture('overpass-bartlett.json'))); }
+function hang() { return new Promise(function () {}); }   // never answers (aborted by the caller)
+
 function setup() {
   var net = M.create();
   net.install();
+  fn._resetOverpass();
+  MIRRORS.slice(1).forEach(function (h) { net.route(h, function () { throw new Error('mirror ' + h + ' should not be asked'); }); });
   net.route('overpass-api.de', function () { return M.json(200, JSON.parse(M.fixture('overpass-bartlett.json'))); });
   net.route(SHELBY + '/query', function () { return M.json(200, JSON.parse(M.fixture('arcgis-parcels-shelby.json'))); });
   net.route(PERMITS + '?f=json', function () { return M.json(200, JSON.parse(M.fixture('permits-memphis-layer.json'))); });
@@ -66,6 +75,9 @@ test('tile: Overpass once (User-Agent, small query), then the cache', async func
   assert.strictEqual(oc.length, 1);
   assert.ok(/^GrayCoRoofScout\/1\.0 \(\+https:\/\/roofscout\.grayco-cs\.com/.test(oc[0].opts.headers['User-Agent']), 'User-Agent');
   assert.ok(decodeURIComponent(oc[0].opts.body).indexOf('(35.2,-89.85,35.22,-89.825)') > -1, 'one tile bbox');
+  assert.ok(/\(if:length\(\)>5\d\)/.test(decodeURIComponent(oc[0].opts.body)), 'lighter query: small outlines skipped by Overpass');
+  assert.ok(/\[timeout:[5-9]\]/.test(decodeURIComponent(oc[0].opts.body)), 'Overpass told to give up within the budget');
+  assert.strictEqual(r.json.via, 'overpass-api.de');
   assert.ok(net.db.cache['osm:v1:' + TILE], 'cached');
   assert.strictEqual(net.db.rate.overpass, 1, 'counted against the team Overpass limit');
   var r2 = await post({ action: 'tile', tile: TILE, minSqft: 5000 });
@@ -179,6 +191,108 @@ test('hail: SPC days fetched once, parsed, cached', async function () {
     assert.strictEqual(r2.json.reports.length, 3);
     assert.strictEqual(net.count('www.spc.noaa.gov'), first, 'cached');
   } finally { Date.now = realNow; }
+});
+
+test('overpass: slow primary → a mirror is raced and wins; the slow one is cancelled', async function () {
+  var net = setup();
+  var aborted = 0;
+  net.route('overpass-api.de', function (u, o) { o.signal.addEventListener('abort', function () { aborted++; }); return M.later(1500, fixtureJson); });
+  net.route('overpass.private.coffee', function () { return M.later(100, fixtureJson); });
+  var t0 = Date.now();
+  var r = await post({ action: 'tile', tile: TILE, minSqft: 10000 });
+  var took = Date.now() - t0;
+  assert.strictEqual(r.statusCode, 200, r.body);
+  assert.strictEqual(r.json.via, 'overpass.private.coffee');
+  assert.strictEqual(r.json.sites.length, 6);
+  assert.ok(took >= 300 && took < 1200, 'hedged after 300 ms, answered by the mirror: ' + took + ' ms');
+  assert.strictEqual(net.count('overpass-api.de'), 1);
+  assert.strictEqual(net.count('overpass.private.coffee'), 1);
+  assert.strictEqual(net.count('overpass.kumi.systems'), 0, 'only as many as needed');
+  assert.strictEqual(aborted, 1, 'slow primary cancelled');
+  var mirrorCall = net.calls.filter(function (c) { return c.url.indexOf('private.coffee') > -1; })[0];
+  assert.ok(/^GrayCoRoofScout\/1\.0 .*@grayco-cs\.com/.test(mirrorCall.opts.headers['User-Agent']), 'contact in the User-Agent for mirrors too');
+  assert.strictEqual(net.db.cache['osm:v1:' + TILE].data.via, 'overpass.private.coffee', 'cached, with where it came from');
+  assert.strictEqual(net.db.rate.overpass, 1, 'one square = one count, however many instances were asked');
+});
+
+test('overpass: a fast refusal moves on at once and the next call starts with the instance that worked', async function () {
+  var net = setup();
+  net.route('overpass-api.de', function () { return M.json(429, { remark: 'rate_limited' }); });
+  net.route('overpass.private.coffee', function () { return M.json(504, 'Gateway Timeout'); });
+  net.route('overpass.kumi.systems', function () { return fixtureJson(); });
+  var t0 = Date.now();
+  var r = await post({ action: 'tile', tile: TILE });
+  assert.strictEqual(r.statusCode, 200, r.body);
+  assert.ok(Date.now() - t0 < 250, 'no waiting for the hedge timer after a refusal');
+  assert.strictEqual(r.json.via, 'overpass.kumi.systems');
+  var order = fn._overpassEndpoints().map(function (u) { return new URL(u).host; });
+  assert.deepStrictEqual(order, ['overpass.kumi.systems', 'maps.mail.ru', 'overpass-api.de', 'overpass.private.coffee'], 'recent failures go last');
+});
+
+test('overpass: a "timed out" remark (partial answer) is not used or cached', async function () {
+  var net = setup();
+  net.route('overpass-api.de', function () { var j = JSON.parse(M.fixture('overpass-bartlett.json')); j.elements = j.elements.slice(0, 1); j.remark = 'runtime error: Query timed out in "query" at line 1 after 2 seconds.'; return M.json(200, j); });
+  net.route('overpass.private.coffee', function () { return fixtureJson(); });
+  var r = await post({ action: 'tile', tile: TILE, minSqft: 10000 });
+  assert.strictEqual(r.json.via, 'overpass.private.coffee');
+  assert.strictEqual(r.json.sites.length, 6, 'the complete answer');
+});
+
+test('overpass: nobody answers → 504 within the budget, browser may fall back, nothing cached', async function () {
+  var net = setup();
+  MIRRORS.forEach(function (h) { net.route(h, hang); });
+  var t0 = Date.now();
+  var r = await post({ action: 'tile', tile: TILE });
+  var took = Date.now() - t0;
+  assert.strictEqual(r.statusCode, 504, r.body);
+  assert.strictEqual(r.json.code, 'overpass-timeout');
+  assert.strictEqual(r.json.fallback, true);
+  assert.ok(/overpass-api\.de timeout/.test(r.json.tried), r.json.tried);
+  assert.ok(took >= 1900 && took < 2600, 'stays within the function time limit: ' + took + ' ms');
+  assert.ok(net.count('maps.mail.ru') === 0 || net.count('overpass.kumi.systems') === 1, 'hedged, but no new request in the last 1.5 s');
+  assert.ok(!net.db.cache['osm:v1:' + TILE]);
+  // All busy → 503 overpass-busy.
+  net.clearRoutes();
+  MIRRORS.forEach(function (h) { net.route(h, function () { return M.json(429, {}); }); });
+  fn._resetOverpass();
+  r = await post({ action: 'tile', tile: TILE });
+  assert.strictEqual(r.statusCode, 503);
+  assert.strictEqual(r.json.code, 'overpass-busy');
+  assert.strictEqual(net.count('maps.mail.ru'), 1, 'every instance tried once');
+});
+
+test('elements: the browser\'s own Overpass answer is parsed, filtered, cached like a server download', async function () {
+  var net = setup();
+  MIRRORS.forEach(function (h) { net.route(h, function () { throw new Error('the server must not ask Overpass here'); }); });
+  var els = JSON.parse(M.fixture('overpass-bartlett.json')).elements;
+  var junk = [{ type: 'way', id: 99, tags: { building: 'yes', name: '<script>' }, geometry: [{ lat: 36.5, lon: -88 }, { lat: 36.501, lon: -88 }, { lat: 36.501, lon: -88.002 }] }, { type: 'node', id: 1 }];
+  var r = await post({ action: 'elements', tile: TILE, minSqft: 10000, elements: els.concat(junk), source: 'overpass-api.de' });
+  assert.strictEqual(r.statusCode, 200, r.body);
+  assert.strictEqual(r.json.fromCache, false);
+  assert.strictEqual(r.json.via, 'browser:overpass-api.de');
+  assert.deepStrictEqual(r.json.sites.map(function (s) { return s.id; }).sort(), ['r2001', 'w1001', 'w1002', 'w1003', 'w1005', 'w1007'], 'same as the server path; far-away building dropped');
+  assert.strictEqual(net.db.cache['osm:v1:' + TILE].data.via, 'browser:overpass-api.de');
+  assert.strictEqual(net.db.rate.overpass, undefined, 'the server sent nothing to Overpass');
+  // Enrichment then works from the cache as usual.
+  var e = await post({ action: 'enrich', tile: TILE, ids: ['w1001'] });
+  assert.strictEqual(e.statusCode, 200);
+  // Already cached: served from the cache, never replaced by a later post.
+  r = await post({ action: 'elements', tile: TILE, minSqft: 10000, elements: [] });
+  assert.strictEqual(r.json.fromCache, true);
+  assert.strictEqual(r.json.sites.length, 6);
+});
+
+test('elements: validation and size limits', async function () {
+  setup();
+  assert.strictEqual((await post({ action: 'elements', tile: TILE, elements: 'x' })).json.code, 'bad-elements');
+  assert.strictEqual((await post({ action: 'elements', tile: TILE })).statusCode, 400, 'elements required');
+  assert.strictEqual((await post({ action: 'elements', tile: TILE, elements: new Array(S.EL_MAX + 1).fill(0) })).statusCode, 400, 'too many');
+  var big = new Array(9000).fill({ type: 'way', id: 1, tags: { building: 'yes', note: 'x'.repeat(600) } });
+  var r = await post({ action: 'elements', tile: TILE, elements: big });
+  assert.strictEqual(r.statusCode, 413);
+  var far = S.tilesForBbox({ s: 40.7, w: -74.0, n: 40.71, e: -73.99 })[0];
+  assert.strictEqual((await post({ action: 'elements', tile: far, elements: [] })).json.code, 'outside');
+  assert.strictEqual((await post({ action: 'elements', tile: TILE, elements: [] }, 'tok-stranger')).statusCode, 403);
 });
 
 (async function () {

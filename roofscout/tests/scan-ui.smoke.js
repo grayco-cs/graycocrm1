@@ -33,6 +33,13 @@ var PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42
 var ROOT = path.join(__dirname, '..');
 var SB = 'https://ieeonhpfahmwwecizdut.supabase.co';
 var shot = process.argv[2] || '';
+process.env.OVERPASS_HEDGE_MS = '300';     // keep the "server cannot reach Overpass" part quick
+process.env.OVERPASS_BUDGET_MS = '2000';
+var MIRRORS = ['overpass-api.de', 'overpass.private.coffee', 'overpass.kumi.systems', 'maps.mail.ru'];
+// What the page itself gets from Overpass (browser fallback). failTile: a bbox string that fails.
+var browserOp = { calls: 0, inFlight: 0, maxInFlight: 0, failBox: '', bodies: [] };
+var fnFlight = { now: 0, max: 0 };
+var zipBox = ['35.2035', '35.2085', '-89.8462', '-89.8405'];
 
 // In-process "server": Supabase state shared by the page routes and the functions.
 var net = M.create();
@@ -115,6 +122,16 @@ async function main() {
       var when = WB_TAKEN[RegExp.$1];
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ features: when ? [{ attributes: { SRC_DATE2: when, NICE_DESC: 'Maxar', SAMP_RES: 0.3 } }] : [] }) });
     }
+    if (MIRRORS.some(function (h) { return url.indexOf('https://' + h + '/') === 0; })) {
+      browserOp.calls++;
+      var q = decodeURIComponent((req.postData() || '').replace(/^data=/, '').replace(/\+/g, ' '));
+      browserOp.bodies.push(q);
+      if (browserOp.failBox && q.indexOf(browserOp.failBox) > -1) return route.abort('connectionrefused');
+      browserOp.inFlight++; browserOp.maxInFlight = Math.max(browserOp.maxInFlight, browserOp.inFlight);
+      await new Promise(function (r) { setTimeout(r, 150); });
+      browserOp.inFlight--;
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: M.fixture('overpass-bartlett.json') });
+    }
     if (/\/tilemap\//.test(url)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [0], valid: true }) });
     if (/maptiles\.arcgis\.com\/.*\/tile\//.test(url)) { imgSeen.push(url); return route.fulfill({ status: 200, contentType: 'image/png', body: PNG }); }
     if (/arcgisonline|arcgis\.com\/arcgis\/rest\/services\/(World_Imagery|Reference)/.test(url)) { imgSeen.push(url); return route.fulfill({ status: 404, body: '' }); }
@@ -126,13 +143,16 @@ async function main() {
       var h = name === 'roofscout-scan' ? scanFn : name === 'roofscout-skiptrace' ? skipFn : name === 'roofscout-tiles' ? tilesFn : null;
       if (!h) return route.fulfill({ status: 404, body: '' });
       if (name === 'roofscout-tiles') imgSeen.push(url);
-      var r = await h.handler(ev);
+      var scanTile = name === 'roofscout-scan' && /"action":"(tile|elements)"/.test(ev.body || '');
+      if (scanTile) { fnFlight.now++; fnFlight.max = Math.max(fnFlight.max, fnFlight.now); }
+      var r;
+      try { r = await h.handler(ev); } finally { if (scanTile) fnFlight.now--; }
       if (r.isBase64Encoded) return route.fulfill({ status: r.statusCode, headers: r.headers, body: Buffer.from(r.body, 'base64') });
       return route.fulfill({ status: r.statusCode, contentType: 'application/json', body: r.body });
     }
     if (url.indexOf('nominatim.openstreetmap.org') > -1) {
       if (url.indexOf('/reverse') > -1) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ name: '', address: { house_number: '6100', road: 'Example Road', city: 'Bartlett', 'ISO3166-2-lvl4': 'US-TN', postcode: '38134' } }) });
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ display_name: '38134, Bartlett, TN', lat: '35.206', lon: '-89.8435', boundingbox: ['35.2035', '35.2085', '-89.8462', '-89.8405'] }]) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ display_name: '38134, Bartlett, TN', lat: '35.206', lon: '-89.8435', boundingbox: zipBox }]) });
     }
     if (url.indexOf(SB + '/rest/v1/') === 0) {
       var p = new URL(url).pathname.replace('/rest/v1/', '');
@@ -234,6 +254,47 @@ async function main() {
   assert.strictEqual(await page.locator('#contact-box a[href^="tel:"]').count(), 0, 'no click-to-dial');
   assert.ok(/EXAMPLE LOGISTICS LLC/.test(await page.inputValue('#lead-form [name=o-company]')));
   await page.click('#lead-form [data-act=close]');
+
+  // The server cannot reach any Overpass instance (all hang): the page asks Overpass itself, two
+  // squares at a time; one square fails twice, is listed, and "Retry failed squares" gets it.
+  MIRRORS.forEach(function (h) { net.route(h, function () { return new Promise(function () {}); }); });
+  zipBox = ['35.195', '35.21', '-89.86', '-89.84'];      // 4 squares; -3594_1760 is cached already
+  browserOp.failBox = '35.18,-89.875';                     // square -3595_1759 (and its quarters)
+  await page.fill('#scan-where-q', '38133');
+  await page.click('#scan-where button[type=submit]');
+  await page.waitForFunction(function () { return /ZIP 38133/.test(document.querySelector('#scan-area-line').textContent); });
+  await page.evaluate(function () {
+    window.__prog = [];
+    new MutationObserver(function () {
+      var running = document.querySelector('[data-act=scan-run]').disabled;
+      window.__prog.push({ t: document.querySelector('#scan-progress').textContent, rows: document.querySelectorAll('#scan-results tr[data-sid]').length, running: running });
+    }).observe(document.querySelector('#area-scan'), { subtree: true, childList: true, characterData: true });
+  });
+  await page.click('[data-act=scan-run]');
+  await page.waitForSelector('[data-act=scan-retry]', { timeout: 40000 });
+  var prog = await page.evaluate(function () { return window.__prog; });
+  assert.ok(prog.some(function (p) { return /Scanning square [1-4] of 4…/.test(p.t); }), 'progress per square: ' + prog.map(function (p) { return p.t; }).slice(0, 4).join(' | '));
+  assert.ok(prog.some(function (p) { return p.running && p.rows > 0; }), 'results shown while the scan is still running');
+  var failedTxt = await page.locator('#scan-failed-list').innerText();
+  assert.ok(/1 map square could not be downloaded/.test(failedTxt) && /Square \d \(35\.190, -89\.86\d\)/.test(failedTxt), failedTxt);
+  assert.ok(/1 map square failed/.test(await page.locator('#scan-progress').innerText()));
+  assert.ok(fnFlight.max <= 2, 'at most 2 squares at a time on the server: ' + fnFlight.max);
+  assert.ok(browserOp.maxInFlight <= 2, 'at most 2 Overpass requests at a time from the browser: ' + browserOp.maxInFlight);
+  assert.ok(browserOp.bodies.some(function (q) { return q.indexOf('(35.18,-89.875,35.19,-89.8625)') > -1; }), 'second try asked in quarters');
+  assert.ok(browserOp.bodies.every(function (q) { return /\(if:length\(\)>5\d\)/.test(q); }), 'lighter query from the browser too');
+  assert.ok(net.db.cache['osm:v1:-3594_1759'] && /^browser:overpass-api\.de$/.test(net.db.cache['osm:v1:-3594_1759'].data.via), 'browser answer cached by the server');
+  assert.ok(!net.db.cache['osm:v1:-3595_1759'], 'failed square not cached');
+  var ids2 = await page.$$eval('#scan-results tr[data-sid]', function (trs) { return trs.map(function (t) { return t.dataset.sid; }).sort(); });
+  assert.ok(ids2.indexOf('w1001') > -1, 'results from the other squares kept: ' + ids2);
+  // Overpass answers again: retry only the failed square.
+  browserOp.failBox = '';
+  var before = browserOp.calls;
+  await page.click('[data-act=scan-retry]');
+  await page.waitForFunction(function () { return !document.querySelector('#scan-failed-list') && !document.querySelector('[data-act=scan-run]').disabled; }, null, { timeout: 30000 });
+  assert.ok(net.db.cache['osm:v1:-3595_1759'], 'retried square cached');
+  assert.strictEqual(browserOp.calls - before, 1, 'only the failed square asked again');
+  assert.ok(!/failed/.test(await page.locator('#scan-progress').innerText()));
+  net.route('overpass-api.de', function () { return M.json(200, JSON.parse(M.fixture('overpass-bartlett.json'))); });
 
   // Draw an area on the map.
   if (leafletDir) {

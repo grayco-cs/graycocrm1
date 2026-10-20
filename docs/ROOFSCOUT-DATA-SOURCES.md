@@ -34,17 +34,31 @@ the documented formats (not downloaded); see its `README.md`.
 ## 1. Building footprints
 
 ### OpenStreetMap via Overpass API (primary, on demand)
-- Endpoint: `https://overpass-api.de/api/interpreter` (POST `data=<query>`). Other public
-  instances exist (e.g. `overpass.kumi.systems`, `overpass.private.coffee`); an env var
-  `OVERPASS_URL` switches without a code change.
+- Endpoints (POST `data=<query>`), tried in this order: `overpass-api.de`,
+  `overpass.private.coffee`, `overpass.kumi.systems`, `maps.mail.ru/osm/tools/overpass`
+  (`Scan.OVERPASS_ENDPOINTS`). The server fires the first; if it has not answered in 3 s
+  (`OVERPASS_HEDGE_MS`), or fails, the next is raced; the first complete answer wins, the
+  rest are cancelled, all within ~8 s (`OVERPASS_BUDGET_MS`, the function has ~10 s).
+  An instance that just failed goes to the back for 2 minutes. `OVERPASS_URL` (tried first)
+  and `OVERPASS_URLS` (comma list) change the list without a code change.
+- Browser fallback: when the server still gets no answer (datacenter IPs are often refused
+  or queued), the page sends the same query from the person's own connection (Overpass
+  sends `Access-Control-Allow-Origin: *`; a form POST needs no preflight) and posts the raw
+  elements to `roofscout-scan` (`action: 'elements'`), which checks them
+  (`Scan.cleanElements`: ≤ 20,000 buildings, ≤ 5.5 MB, inside the square), parses, scores
+  and caches them exactly like a server download. Owners, permits and hail stay server-side.
+- Pacing in the page: 2 squares at a time, 2 tries per square (pause 2–3 s; the second
+  browser try asks in four quarters), failed squares listed with "Retry failed squares".
 - Usage policy (Overpass manual, "commons" page): stay under about **10,000 requests and
   1 GB per day**. The OSM wiki adds: for anything that runs **regularly**, divide those by
   **100**, all of an app's users count together, the main instance is often overloaded,
   and heavy commercial use should run its own instance or a paid one.
 - What RoofScout does to comply:
   - sends `User-Agent: GrayCoRoofScout/1.0 (+https://roofscout.grayco-cs.com; wjohnson@grayco-cs.com)`;
-  - asks for one ~2 km × 2.2 km grid tile per request (`[timeout:20]`), only `building`
-    ways/relations, `out geom;` (no recursion);
+  - asks for one ~2 km × 2.2 km grid tile per request (`[timeout:N]` within the time
+    budget), only `building` ways/relations, `out geom;` (no recursion), and skips ways
+    whose outline is shorter than the smallest a 3,000 ft² building can have
+    (`(if:length()>57)`, a circle's perimeter), so dense house areas cost little;
   - **caches each tile 30 days** in Supabase (`rs_scan_cache`); a rescan of the same area,
     by anyone, does not touch Overpass;
   - team-wide cap on live Overpass requests: **40 / hour, 100 / day** by default (≈ 1/100 of

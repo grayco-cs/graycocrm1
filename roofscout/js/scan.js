@@ -142,10 +142,100 @@
   // Small houses and sheds never make the cut; asking Overpass to skip them keeps replies small.
   var SKIP_BUILDINGS = 'house|detached|semidetached_house|terrace|bungalow|cabin|garage|garages|shed|carport|hut|static_caravan|houseboat|roof|ruins|construction|hangar_small';
 
-  function overpassQuery(b) {
+  // Public Overpass instances, in the order they are tried. All run the standard Overpass
+  // software (CORS: Access-Control-Allow-Origin *), so the browser can ask them directly when the
+  // server cannot. Usage policies: overpass-api.de asks for < 10,000 queries / 1 GB a day per
+  // user and a User-Agent with a contact; the others are run as free public mirrors.
+  var OVERPASS_ENDPOINTS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+  ];
+
+  // Smallest perimeter (m) a footprint of floorSqft can have (a circle: P = 2·√(π·A)). Any
+  // building with a shorter outline is smaller than the floor, so Overpass can drop it before
+  // sending its geometry: dense neighbourhoods of building=yes houses then cost almost nothing.
+  function minPerimeterM(floorSqft) {
+    var a = (Number(floorSqft) || 0) / SQFT_PER_M2;
+    return a > 0 ? Math.floor(2 * Math.sqrt(Math.PI * a) * 0.97) : 0;
+  }
+
+  // opts: { timeout: s (20), floorSqft: ft² (0 = no size filter) }
+  function overpassQuery(b, opts) {
+    opts = opts || {};
     var box = [b.s, b.w, b.n, b.e].join(',');
     var f = '["building"]["building"!~"^(' + SKIP_BUILDINGS + ')$"]';
-    return '[out:json][timeout:20];(way' + f + '(' + box + ');relation' + f + '["type"="multipolygon"](' + box + '););out tags geom qt;';
+    var p = minPerimeterM(opts.floorSqft);
+    var size = p ? '(if:length()>' + p + ')' : '';
+    var t = Math.max(5, Math.min(60, Math.round(Number(opts.timeout) || 20)));
+    return '[out:json][timeout:' + t + '];(way' + f + size + '(' + box + ');relation' + f + '["type"="multipolygon"](' + box + '););out tags geom qt;';
+  }
+
+  // The four quarters of a bbox (a dense map square asked for in smaller pieces).
+  function quarterBbox(b) {
+    var ms = round6((b.s + b.n) / 2), mw = round6((b.w + b.e) / 2);
+    return [{ s: b.s, w: b.w, n: ms, e: mw }, { s: b.s, w: mw, n: ms, e: b.e }, { s: ms, w: b.w, n: b.n, e: mw }, { s: ms, w: mw, n: b.n, e: b.e }];
+  }
+
+  // An Overpass answer that is usable: elements present and no runtime error in "remark"
+  // (a timed-out query comes back 200 with partial elements; never keep those).
+  function overpassOk(j) {
+    return !!(j && Array.isArray(j.elements) && !(j.remark && /error|timed out|out of memory|abort/i.test(String(j.remark))));
+  }
+
+  // Raw Overpass elements sent by a browser → only what parseOverpass reads, checked and capped.
+  // Returns { elements, dropped } or null when the list itself is not acceptable.
+  var EL_MAX = 20000, NODES_MAX = 4000, MEMBERS_MAX = 400;
+  function cleanElements(list, bbox) {
+    if (!Array.isArray(list) || list.length > EL_MAX) return null;
+    var margin = 0.01;
+    var box = bbox ? { s: bbox.s - margin, w: bbox.w - margin, n: bbox.n + margin, e: bbox.e + margin } : null;
+    function pt(q) {
+      if (!q || typeof q !== 'object') return null;
+      var lat = q.lat, lon = q.lon;
+      if (typeof lat !== 'number' || typeof lon !== 'number' || !isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      return { lat: lat, lon: lon };
+    }
+    function geom(g) {
+      if (!Array.isArray(g) || g.length < 3 || g.length > NODES_MAX) return null;
+      var out = [];
+      for (var i = 0; i < g.length; i++) { var q = pt(g[i]); if (!q) return null; out.push(q); }
+      if (box && !out.some(function (q) { return inBbox([q.lat, q.lon], box); })) return null;
+      return out;
+    }
+    function tags(t) {
+      var o = {};
+      if (!t || typeof t !== 'object' || Array.isArray(t)) return o;
+      Object.keys(t).slice(0, 200).forEach(function (k) { if (typeof t[k] === 'string' || typeof t[k] === 'number') o[String(k).slice(0, 60)] = String(t[k]).slice(0, 200); });
+      return o;
+    }
+    var out = [], dropped = 0, seen = {};
+    list.forEach(function (el) {
+      if (!el || (el.type !== 'way' && el.type !== 'relation')) { dropped++; return; }
+      var id = Number(el.id);
+      if (!(id > 0 && id < 1e15 && Math.floor(id) === id) || seen[el.type + id]) { dropped++; return; }
+      var t = tags(el.tags);
+      if (!t.building) { dropped++; return; }
+      if (el.type === 'way') {
+        var g = geom(el.geometry);
+        if (!g) { dropped++; return; }
+        out.push({ type: 'way', id: id, tags: t, geometry: g });
+      } else {
+        if (!Array.isArray(el.members) || el.members.length > MEMBERS_MAX) { dropped++; return; }
+        var ms = [];
+        el.members.forEach(function (m) {
+          if (!m || m.type !== 'way') return;
+          var mg = Array.isArray(m.geometry) && m.geometry.length >= 2 && m.geometry.length <= NODES_MAX ? m.geometry.map(pt) : null;
+          if (!mg || mg.some(function (q) { return !q; })) return;
+          ms.push({ type: 'way', role: m.role === 'inner' ? 'inner' : 'outer', geometry: mg });
+        });
+        if (!ms.length || (box && !ms.some(function (m) { return m.geometry.some(function (q) { return inBbox([q.lat, q.lon], box); }); }))) { dropped++; return; }
+        out.push({ type: 'relation', id: id, tags: t, members: ms });
+      }
+      seen[el.type + id] = 1;
+    });
+    return { elements: out, dropped: dropped };
   }
 
   var KEEP_TAGS = /^(name|building|amenity|shop|office|craft|industrial|healthcare|religion|denomination|landuse|operator|brand|building:levels|building:use|start_date|roof:material|roof:shape|addr:housenumber|addr:street|addr:city|addr:postcode|addr:state)$/;
@@ -529,6 +619,7 @@
     pointInRing: pointInRing, pointInRings: pointInRings, ringCentroid: ringCentroid, pointOnSurface: pointOnSurface,
     tileId: tileId, parseTile: parseTile, tileBbox: tileBbox, tilesForBbox: tilesForBbox, bboxAreaMi2: bboxAreaMi2,
     inBbox: inBbox, bboxesTouch: bboxesTouch, validBbox: validBbox,
+    OVERPASS_ENDPOINTS: OVERPASS_ENDPOINTS, EL_MAX: EL_MAX, minPerimeterM: minPerimeterM, quarterBbox: quarterBbox, overpassOk: overpassOk, cleanElements: cleanElements,
     overpassQuery: overpassQuery, parseOverpass: parseOverpass, joinWays: joinWays, osmAddress: osmAddress,
     classify: classify, isSingleFamily: isSingleFamily,
     pickField: pickField, parcelFromAttrs: parcelFromAttrs, esriRings: esriRings, countyOf: countyOf,
