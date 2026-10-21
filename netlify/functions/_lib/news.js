@@ -21,7 +21,7 @@
 const crypto = require('crypto');
 const NEWS_FROM = 'GrayCo Construction Services <news@grayco-cs.com>';
 const REPLY_TO = 'office@grayco-cs.com';
-const ADDRESS = '4007 Broadway Rd, Bartlett, TN 38135';
+const ADDRESS = '4014 Broadway Rd, Bartlett, TN 38135';
 const PHONE = '(901) 585-0944';
 const TABLE = 'gc_news_suppress';
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';

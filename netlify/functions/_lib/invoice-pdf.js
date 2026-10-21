@@ -7,7 +7,7 @@
    ──────────────────────────────────────────────────────────────────────────── */
 'use strict';
 const COMPANY = 'GrayCo Construction Services';
-const ADDRESS = '4007 Broadway Rd, Bartlett, TN 38135';
+const ADDRESS = '4014 Broadway Rd, Bartlett, TN 38135';
 const PHONE = '(901) 585-0944';
 const EMAIL = 'office@grayco-cs.com';
 
