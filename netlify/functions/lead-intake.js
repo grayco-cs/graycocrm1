@@ -35,6 +35,8 @@
 //   RESEND_API_KEY       already set — the email goes out through it.
 //   SUPABASE_URL / SUPABASE_SERVICE_KEY   already set — where leads wait.
 //   GRAYCO_CONTACT_NAME  / GRAYCO_CONTACT_PHONE   who the email introduces.
+//   LEAD_INTAKE_ALERTS=0 no "New lead" e-mail to the admins (patch LA; on by default —
+//                        the same alert as the bid inbox, _lib/bid-alerts.js)
 //
 // ENDPOINTS
 //   POST /.netlify/functions/lead-intake         header x-api-key: <key>
@@ -268,6 +270,17 @@ function isInsuranceSource(name) {
   return list.indexOf(low(name)) >= 0;
 }
 
+/* ── patch LA: the admins' "new lead" alert (netlify/functions/_lib/bid-alerts.js) ── */
+async function alertAdmins(record){
+  if (process.env.LEAD_INTAKE_ALERTS === '0') return { off: true };
+  const L = require('./bid-inbox.js')._lib;
+  if (!L.dbReady()) return { why: 'database not configured' };
+  const ad = String(record.address || ''), where = record.city && ad.toLowerCase().indexOf(String(record.city).toLowerCase()) >= 0 ? ad : [ad, record.city, record.state].filter(Boolean).join(', ');
+  return L.alertsApi().notifyNew([{ id: 'intake:' + record.id, key: record.id, title: record.name + (where ? ' — ' + where : ''), source: record.leadSource,
+    type: record.isInsurance ? 'insurance' : (record.jobType || 'residential'), city: record.city, state: record.state, bidDue: '',
+    detail: [record.phone, record.email, record.jobType, record.contacted ? 'first e-mail sent to the customer' : ''].filter(Boolean).join(' · ') }], { source: record.leadSource });
+}
+
 /* ── the handler ─────────────────────────────────────────────────────────── */
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return J(200, {});
@@ -394,6 +407,10 @@ exports.handler = async function (event) {
   } else {
     storeWhy = 'Supabase is not configured';
   }
+
+  /* patch LA: the admins hear about it now — one e-mail (+ phone push), with "Bid due date: NOT FOUND — add it"
+     until someone puts the date on the lead. Never holds up or fails the reply to the lead source. */
+  try { await alertAdmins(record); } catch (e) {}
 
   return J(stored ? 200 : 202, {
     ok: true,

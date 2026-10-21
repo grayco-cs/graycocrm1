@@ -48,14 +48,16 @@
 
 # Lead Inbox (docs/LEAD-INBOX.md): the public bid watcher — weekdays at 7, 10, 1, 4 and 6 o'clock Central
 # (12:17, 15:17, 18:17, 21:17, 23:17 UTC). One polite look at each public bid listing; new ones go to the
-# Lead Inbox, become CRM leads and draft bid-portal jobs, and are in the admins' alert.
+# Lead Inbox, become CRM leads and draft bid-portal jobs, and each new one is e-mailed to the admins at once.
 [functions."bid-watch"]
   schedule = "17 12,15,18,21,23 * * 1-5"
 
-# Lead Inbox: the admins' hourly digest of new bid opportunities (bids due soon go out at once), and the
-# bid-portal drafts that waited for the portal to be set up.
+# Leads (patch LA): every 10 minutes — "⏰ Bid due in 1 hour" (and "Bid due TODAY" at 8 AM Central when only
+# the date is known), new RoofScout leads, a new-lead e-mail that failed, and the bid-portal drafts that waited
+# for the portal. New leads from bids@, the bid watchers and the website are e-mailed the moment they arrive.
+# There is no hourly digest any more.
 [functions."bid-alerts"]
-  schedule = "11 * * * *"
+  schedule = "*/10 * * * *"
 
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.

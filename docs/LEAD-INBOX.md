@@ -37,9 +37,14 @@ GrayCo never signs in to someone else's site with a robot. Every source is reach
 
    It is saved with status **draft** and visibility **private**, and nobody is invited, so subcontractors never see it. An addendum updates the same draft.
 4. **The admins are told** (every active `admin` on `gc_staff`, plus `OWNER_EMAILS`, by default Wesley and Nick):
-   - **E-mail.** A bid due within 72 hours is e-mailed at once. Everything else goes out in **one e-mail an hour**, with commercial and insurance leads first under "Needs a PM".
-   - **Phone push**, once the To-Do tab's push (patch TD) is set up.
-   - **In the CRM:** a toast ("📥 3 new bid opportunities · 1 due within 3 days"), and a number on the **Leads** menu. **To-Do** gets the number too, unless patch TD's own count is there.
+   - **One e-mail per new lead, the moment it arrives** (patch LA). The subject has the title and **"Bid due Tue Oct 28 2:00 PM"**, or **"Bid due date: NOT FOUND — add it"**. One e-mail that brings several bids (a planroom digest) gives **one** message listing them all. The same goes for the public bid watchers (one per new bid), RoofScout → GrayCo leads (every 10 minutes; a scan that saved more than 3 at once is one message) and website / lead-source leads (`lead-intake.js`). Leads typed into the CRM by hand are not e-mailed. **There is no hourly digest.**
+   - **"⏰ Bid due in 1 hour: …"** — one e-mail when the bid is 50–70 minutes away (`bid-alerts.js`, every 10 minutes, America/Chicago). A lead with a date and no time gets **"⏰ Bid due TODAY: …"** at 8:00 AM Central that day. Never twice for the same due date. Not for leads that are won, lost, deleted, converted, marked not bidding, or dismissed in the inbox. The due date typed on the lead in the CRM is the one used.
+   - **Phone push** with each of these, once the To-Do tab's push (patch TD) is set up.
+   - **In the CRM** (patch LA): a red number on the **Leads** menu — the new leads this person has not seen yet (kept per person); opening Leads clears it, and the new rows say **NEW** until then. A toast "New lead: …" when the sync brings one in. Every lead shows a **Bid due** chip (red within 24 h, amber within 3 days, "Add due date" when missing) that edits the date and time on the spot; the list is sorted by the soonest bid due.
+   - **Who it is due to** (patch LA): every lead records the GC / company / agency the bid goes to, the contact, e-mail, phone and how to submit (e-mail, portal, sealed bid) — from the AI and the e-mail text ("submit via BuildingConnected", "e-mail bids to …", "sealed bids … at City Hall"). Every alert says when **and to whom**. In the CRM the "+ Add" / ✏️ lead form and the Bid due chip require the date/time and the "due to" company, unless **Unknown yet** is chosen (amber "Missing due info" chip; the assigned person gets "⚠️ Missing due info" every morning).
+   - **The assigned estimator / PM** gets the new-lead e-mail, "Assigned to you" (`bid-inbox ?notify=1` from the CRM, and the 10-minute sweep), "⏰ Bid due tomorrow" at 8 AM the day before, and the 1-hour / due-today reminders, by e-mail + push; in the CRM a toast and the red Leads badge. **Commercial, government and bid-board leads go to the default estimator** — Leads ⚙ "Commercial bids go to: Glenn Miller" (`gmiller@grayco-cs.com`; admins change it, `bid-inbox ?settings=1` `{estimator:{name,email}}`; found on `gc_staff` by e-mail, and routed to the e-mail even when he is not there) — unless an admin assigns someone else. Admins can enter a bid by hand (+ Add) and assign it; it is on the estimator's list at once.
+   - **Estimator dashboard**: Glenn (role Estimator, or anyone with bids assigned) sees "📐 What I'm estimating" on his Dashboard — open bids by due date with countdowns, who each is due to, a status (Reviewing / Estimating / Submitted / Won / Lost / No bid), Open lead · Plans · Estimate · Submitted — and his stats (bids this month / year, on time vs late, win rate in count and $, $ bid, $ won, average days received → submitted, due this week). Admins pick any estimator there. The Estimator role gets the Leads tab; Payroll / Admin stay off its list.
+   - **The bid due date is always looked for**: the AI's answer, then the e-mail text itself (`_lib/bid-due.js`: "Bids due", "Due Date", "Bid Date", "Bid Opening", "Proposals due", "Submission Deadline", "Closing Date", "sealed bids will be received until …", BuildingConnected / PlanHub / ConstructConnect formats, with times and time zones — stored as Central time). Pre-bid and questions deadlines are never taken for it.
 
 Nothing goes to subs on its own. **Publish to bid portal** (admins) on the lead's card is the only thing that makes the job public, so approved subs can see it and bid.
 
@@ -58,7 +63,7 @@ Nothing goes to subs on its own. **Publish to bid portal** (admins) on the lead'
 
 ## Before the bid portal is set up
 
-The functions check whether the portal's table (`sp_rows`) is there. Until it is, each draft **waits in a queue**. Within the hour after `docs/subportal-setup.sql` has run, the queued drafts are created (the hourly `bid-alerts` run also empties the queue). Dismissed or merged leads are left out. Publish answers "not set up yet" until then.
+The functions check whether the portal's table (`sp_rows`) is there. Until it is, each draft **waits in a queue**. Within the hour after `docs/subportal-setup.sql` has run, the queued drafts are created (the 10-minute `bid-alerts` run also empties the queue). Dismissed or merged leads are left out. Publish answers "not set up yet" until then.
 
 ---
 
@@ -70,9 +75,10 @@ The functions check whether the portal's table (`sp_rows`) is there. Until it is
 |---|---|
 | `bid-inbox.js` (+ `bid-inbox-background.js`) | The Resend inbound webhook. It checks the Svix signature (`BID_INBOUND_SECRET` or `RESEND_INBOUND_SECRET`) and the CRM doors: `GET ?list=1`, `POST ?act=1` (imported / assigned / job / dismissed / merged / restore / **publish**), `?settings=1`, `?watch=1`, `?ping=1`. `afterStore()` makes the bid-portal draft and queues the alert for every item that is added, merged or has an addendum. |
 | `bid-watch.js` | The public bid watcher. Schedule: `17 12,15,18,21,23 * * 1-5` UTC. Optional BuildingConnected API adapter. |
-| `bid-alerts.js` | Runs every hour at :11. Sends the admins' digest and creates the drafts waiting in the queue. |
+| `bid-alerts.js` | Runs every 10 minutes. The 1-hour / due-today reminders, new RoofScout leads, a new-lead e-mail that failed, and the drafts waiting in the queue. |
 | `_lib/bid-portal.js` | The adapter to the bid portal: `status()`, `draft(item)`, `publish(item, who)`, `flush()`, `jobIdFor(item)`. The job id is `j_ld<sha256(inbox id)>`, the same every time. The draft is written as `jobs/<id>` and `plans/<id>` rows in `sp_rows`, with files copied from crm-files to subportal-files under `staff/lead-inbox/…`. `_lib/` is bundled into the functions and is not a function itself. |
-| `_lib/bid-alerts.js` | Recipients, the due-soon e-mail, the hourly digest and the phone push. |
+| `_lib/bid-alerts.js` | Recipients, the new-lead e-mail, the bid-due reminders and the phone push (patch LA). |
+| `_lib/bid-due.js` | Reads the bid due date (time, time zone) from e-mail and listing text; Central-time helpers (patch LA). |
 
 ### Storage
 
@@ -94,7 +100,7 @@ The functions check whether the portal's table (`sp_rows`) is there. Until it is
 | `RESEND_API_KEY` | Full access. Reads the received mail and sends the admins' alert. |
 | `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Already set. |
 | `OWNER_EMAILS` | Admins who always get the alert. Default: `wjohnson@grayco-cs.com,nthomas@grayco-cs.com`. |
-| `BID_ALERT_TO`, `BID_ALERT_SOON_HOURS` (72), `BID_ALERTS_OFF=1`, `BID_ALERT_FROM` | Optional. |
+| `BID_ALERT_TO`, `BID_ALERTS_OFF=1`, `BID_ALERT_FROM`, `CRM_URL`, `LEAD_INTAKE_ALERTS=0` | Optional. |
 | `BID_PORTAL_DRAFTS=0` | Optional: no bid-portal drafts. |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (+ `web-push` in `netlify/functions/package.json`) | Phone push (patch TD). Optional. |
 | `BC_CLIENT_ID`, `BC_CLIENT_SECRET`, `BC_REFRESH_TOKEN` | BuildingConnected API. Optional. |

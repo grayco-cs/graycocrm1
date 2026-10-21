@@ -33,8 +33,13 @@
      7. every NEW opportunity also becomes a DRAFT bid job in the bid portal (_lib/bid-portal.js:
         sp_rows / subportal-files, never shown to subs; queued while the portal is not set up), and
         an addendum updates that draft. Only an admin's "Publish to bid portal" makes it public.
-     8. the admins are told (_lib/bid-alerts.js): an e-mail at once when the bid is due soon, else
-        one digest an hour (bid-alerts.js), and a phone push when patch TD's push piece is there.
+     8. the admins are told (_lib/bid-alerts.js, patch LA): ONE e-mail (+ phone push when patch TD's
+        push piece is there) the moment an e-mail brings new leads — several bids in one e-mail are one
+        message listing them all — with "Bid due Tue Oct 28 2:00 PM" or "Bid due date: NOT FOUND — add it"
+        in the subject; then one "⏰ Bid due in 1 hour" (bid-alerts.js, every 10 minutes). No hourly digest.
+     9. the bid due date is read from the e-mail text too (_lib/bid-due.js: "Bids due", "Due Date",
+        "Bid Date", "Proposals due", "Submission Deadline", BuildingConnected / PlanHub, times and time
+        zones, stored as Central time) when the AI left it out or gave the day without the time.
    RoofScout is NOT read here any more: RoofScout leads reach the CRM as LEAD_RS_<id> (patch RSL);
    the inbox page only shows them.
 
@@ -47,7 +52,8 @@
                                                    portal's state and the alert queue
      POST ?act=1   {id, op, …}                     the CRM records what a person did
                                                    (imported / assigned / job / dismissed / merged / restore /
-                                                    publish — the admin's "Publish to bid portal")
+                                                    publish — the admin's "Publish to bid portal" /
+                                                    due {bidDue} — the bid due date typed on the lead, LA)
      POST ?settings=1 {keywords, exclude, sources} the public-bid watcher's settings (admins)
      POST ?watch=1                                 run the public-bid watcher now (admins)
 
@@ -62,11 +68,12 @@
                BID_AI_TIMEOUT_MS, BID_INBOX_INLINE=1, LEAD_ADMINS (extra e-mails
                allowed to dismiss/merge; admins on the staff list always can),
                BID_PORTAL_DRAFTS=0 (no bid-portal drafts), OWNER_EMAILS / BID_ALERT_TO /
-               BID_ALERT_SOON_HOURS (72) / BID_ALERTS_OFF=1 / BID_ALERT_FROM (the admins' alerts)
+               BID_ALERTS_OFF=1 / BID_ALERT_FROM / CRM_URL (the admins' alerts)
    ========================================================================== */
 'use strict';
 
 const crypto = require('crypto');
+const BD = require('./_lib/bid-due.js');
 
 const KV = 'gc_lead_inbox', KV_SET = 'gc_lead_inbox_settings', KV_NOTE = 'gc_lead_inbox_notices';
 const KEEP_ACTIVE = 600, KEEP_DISMISSED = 3000;
@@ -394,6 +401,10 @@ const LEAD_TOOL = {
         addendum_number: { type: ['integer', 'null'] },
         plans_links: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, label: { type: 'string' } } } },
         contact_name: { type: 'string' }, contact_email: { type: 'string' }, contact_phone: { type: 'string' },
+        submit_to_company: { type: 'string', description: 'who the bid is due TO: the GC / company / agency that receives it' },
+        submit_to_contact: { type: 'string', description: 'the person the bid goes to' }, submit_to_email: { type: 'string' }, submit_to_phone: { type: 'string' },
+        submit_method: { type: 'string', enum: ['email', 'portal', 'sealed', 'in_person', 'other', ''], description: 'how the bid is submitted: e-mail, an online portal / bid board, a sealed bid delivered, in person' },
+        submit_where: { type: 'string', description: 'the e-mail address, the portal name / link, or the delivery address' },
         bond_required: { type: 'boolean' }, prevailing_wage: { type: 'boolean' }, estimated_value: { type: ['number', 'null'] },
         attachment_indexes: { type: 'array', items: { type: 'integer' }, description: '0-based attachments that belong to this project' },
         notes: { type: 'string' }, confidence: { type: 'number' }
@@ -408,7 +419,7 @@ function aiPrompt(mail, links, hint){
     + 'notice, a public bid notice, a GC writing directly, an addendum, a reminder, or not a lead at all.\n'
     + 'Call the record_bid_leads tool exactly once with what you find. One entry per project (a digest listing three projects gives three entries). '
     + 'Use only what is written in the e-mail and its attachments: leave a field empty rather than guess. GrayCo is never the GC or the owner. '
-    + 'Dates as YYYY-MM-DD, times as 24-hour HH:MM local time. For an addendum, set addendum_number. For something that is not a bid opportunity, use kind "not_a_lead" and an empty leads list.\n\n'
+    + 'Dates as YYYY-MM-DD, times as 24-hour HH:MM local time. Always give the bid due date and who the bid is due to (submit_to_*) and how it is submitted when written. For an addendum, set addendum_number. For something that is not a bid opportunity, use kind "not_a_lead" and an empty leads list.\n\n'
     + 'From: ' + (mail.from.name ? mail.from.name + ' ' : '') + '<' + mail.from.email + '>' + (hint ? ' (looks like: ' + hint + ')' : '') + '\nSubject: ' + mail.subject + '\n'
     + 'Attachments: ' + (mail.files.length ? mail.files.map((f, i) => i + ': ' + f.name + ' (' + f.type + ')').join(', ') : 'none') + '\n'
     + 'Links found: ' + (links.length ? links.slice(0, 15).map(l => l.url + (l.label ? ' [' + l.label + ']' : '')).join('\n  ') : 'none') + '\n\n'
@@ -539,8 +550,9 @@ function upsert(items, rec){
     hit.addendumCount = Math.max(hit.addendumCount || 0, rec.addendum);
     hit.flag = 'Addendum #' + hit.addendumCount + ' received';
     if (rec.bidDue && rec.bidDue !== hit.bidDue) { hit.bidDueWas = hit.bidDue; hit.bidDue = rec.bidDue; hit.flag += ' — bid date changed'; }
-  } else if (rec.bidDue && !hit.bidDue) hit.bidDue = rec.bidDue;
-  fill(hit, rec, ['owner', 'gc', 'address', 'city', 'state', 'zip', 'preBid', 'preBidLocation', 'scope', 'bidNumber', 'contact', 'estValue', 'rawRef']);
+  } else if (rec.bidDue && (!hit.bidDue || (s(hit.bidDue).length === 10 && rec.bidDue.length > 10 && rec.bidDue.slice(0, 10) === hit.bidDue && !hit.bidDueManual))) hit.bidDue = rec.bidDue;   /* LA: a later notice gives the time */
+  fill(hit, rec, ['owner', 'gc', 'address', 'city', 'state', 'zip', 'preBid', 'preBidLocation', 'scope', 'bidNumber', 'contact', 'estValue', 'rawRef',
+    'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere']);
   if (rec.contact && hit.contact && !s(hit.contact.email) && s(rec.contact.email)) hit.contact = rec.contact;
   hit.notes = uniqBy(arr(hit.notes).concat(arr(rec.notes)), x => x).slice(-20);
   if (JSON.stringify(hit) === before) return { items: trim(items), action: 'same', id: hit.id };
@@ -573,6 +585,9 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
   const subj = mail.subject.replace(/^((re|fw|fwd)\s*:\s*)+/i, '').trim();
   const base = leads.length ? leads : [{ project_name: subj || '(no subject)', _unread: true }];
   const emailRow = { id: mail.id, from: mail.from.email, fromName: mail.from.name, subject: mail.subject, date: mail.date || nowIso(), rawRef, snippet: s(mail.text).slice(0, 1200) };
+  /* LA: the bid due date written in the e-mail (with its time and time zone), for what the AI left out */
+  const allText = mail.subject + '\n' + mail.text, ref = mail.date || nowIso();
+  const txDue = BD.findDue(allText, { ref });
   return base.map((L, i) => {
     const source = cleanSource(L.source_board, hint);
     const title = s(L.project_name) || subj || 'Untitled project';
@@ -585,6 +600,17 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
     const text = [title, L.scope_summary, L.owner, mail.subject, mail.text.slice(0, 3000)].join(' ');
     const type = TYPES.indexOf(low(L.lead_type)) >= 0 ? low(L.lead_type) : guessType(text, source);
     const notes = [];
+    const aiDue = dueOf(L.bid_due_date, L.bid_due_time);
+    const tx = base.length > 1 ? BD.findDueFor(allText, s(L.project_name) || title, { ref }) : txDue;
+    const bidDue = BD.merge(aiDue, tx);
+    /* LA: who the bid is due to, and how it is submitted */
+    const sub = BD.findSubmit(allText), board = SOURCES.indexOf(source) >= 0 && /BuildingConnected|PlanHub|Planroom/.test(source) ? source : '';
+    const dueTo = { company: s(L.submit_to_company) || s(L.gc_name) || s(L.owner), contact: s(L.submit_to_contact) || s(L.contact_name), email: low(L.submit_to_email) || sub.email || low(L.contact_email),
+      phone: phone(s(L.submit_to_phone) || s(L.contact_phone)), method: /^(email|portal|sealed|in_person|other)$/.test(s(L.submit_method)) ? s(L.submit_method) : (sub.method || (board ? 'portal' : '')),
+      where: s(L.submit_where) || sub.where || board };
+    if (!dueTo.company) notes.push('Bid due TO: NOT FOUND in the e-mail — add the GC / company on the lead.');
+    if (bidDue && bidDue !== aiDue) notes.push('Bid due read from the e-mail text: "' + s(tx.label) + ' ' + s(tx.written) + '".');
+    if (!bidDue) notes.push('Bid due date: NOT FOUND in the e-mail — add it on the lead (Leads → Bid due).');
     if (!ai.ok) notes.push('Not read by the AI (' + ai.why + ') — open the e-mail and fill in the details.');
     if (L.prebid_mandatory) notes.push('Pre-bid meeting is MANDATORY.');
     if (L.bond_required) notes.push('Bid bond required.');
@@ -595,7 +621,8 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
       id: itemId((mail.id || mail.messageId || mail.subject + mail.date) + '|' + i + '|' + normTitle(title)),
       title: title.slice(0, 200), source, sourceKind: ai.kind || (ai.ok ? '' : 'unread'), sourceRef: mail.subject.slice(0, 200),
       type, owner: s(L.owner), gc: s(L.gc_name), address: s(L.address), city: s(L.city), state: s(L.state).toUpperCase().slice(0, 2), zip: s(L.zip),
-      bidDue: dueOf(L.bid_due_date, L.bid_due_time), preBid: dueOf(L.prebid_date, L.prebid_time), preBidLocation: s(L.prebid_location), preBidMandatory: !!L.prebid_mandatory,
+      bidDue, dueToCompany: dueTo.company, dueToContact: dueTo.contact, dueToEmail: dueTo.email, dueToPhone: dueTo.phone, submitMethod: dueTo.method, submitWhere: dueTo.where,
+      preBid: dueOf(L.prebid_date, L.prebid_time), preBidLocation: s(L.prebid_location), preBidMandatory: !!L.prebid_mandatory,
       trades: arr(L.trades).map(s).filter(Boolean).slice(0, 12), scope: s(L.scope_summary).slice(0, 600), bidNumber: s(L.bid_number),
       contact: { name: s(L.contact_name), email: low(L.contact_email), phone: phone(L.contact_phone) },
       estValue: L.estimated_value != null && isFinite(L.estimated_value) ? +L.estimated_value : null,
@@ -647,16 +674,17 @@ async function processEvent(evt, opts){
   try {
     await kvCas(KV, v => { let items = arr(v); results.length = 0; recs.forEach(r => { const o = upsert(items, r); items = o.items; results.push({ action: o.action, id: o.id, title: r.title }); }); stored2 = items; return items; });
   } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this yet (' + (e && e.message) + ') — retry.' } }; }
-  const after = await afterStore(results, stored2);
+  const after = await afterStore(results, stored2, { group: true });   /* one e-mail → one alert, listing every new lead it brought */
   return { status: 200, body: { ok: true, leads: results, read: ai.ok, files: stored.length, skipped: mail.skipped, portal: after.portal, alerts: after.alerts } };
 }
 
-/* ── after the inbox changed: the bid portal draft and the admins' alert (LD2) ─
-   results: [{action, id}] from upsert(); items: the list as stored. Never throws: the e-mail or the
-   watcher run is already safe in the inbox; a draft that fails is queued, an alert that fails waits. */
+/* ── after the inbox changed: the bid portal draft and the admins' alert (LD2, LA) ─
+   results: [{action, id}] from upsert(); items: the list as stored; opt.group: the new ones came in one
+   e-mail (one message lists them all; else one message per new lead). Never throws: the e-mail or the
+   watcher run is already safe in the inbox; a draft that fails is queued, an alert that fails is retried. */
 function portalApi(){ return require('./_lib/bid-portal.js').make({ env, s, low, arr, nowIso, sbUrl, svcH, kvCas, kvGet }); }
-function alertsApi(){ return require('./_lib/bid-alerts.js').make({ env, s, low, arr, nowIso, sb, kvCas, kvGet, webPush: exports._webPush }); }
-async function afterStore(results, items){
+function alertsApi(){ return require('./_lib/bid-alerts.js').make({ env, s, low, arr, nowIso, sb, kvCas, kvGet, webPush: exports._webPush, now: exports._now }); }
+async function afterStore(results, items, opt){
   const out = { portal: [], alerts: null };
   const byId = {}; arr(items).forEach(x => { if (x && x.id) byId[x.id] = x; });
   const touched = []; const seen = {};
@@ -674,8 +702,33 @@ async function afterStore(results, items){
   if (Object.keys(marks).length) {
     try { await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? list : undefined; }); } catch (e) {}
   }
-  try { out.alerts = await alertsApi().enqueue(touched.filter(t => t.action === 'added').map(t => t.it)); } catch (e) { out.alerts = { error: s(e && e.message) }; }
+  /* LA: commercial / government / bid-board bids go to the default estimator (Leads ⚙, Glenn Miller), unless assigned */
+  const added = touched.filter(t => t.action === 'added').map(t => t.it);
+  try {
+    const est = await estimatorOf();
+    const mine = added.filter(it => !it.pm && !it.estimator && est.email && isCommercial(it));
+    if (mine.length) {
+      const ids = {}; mine.forEach(it => { ids[it.id] = 1; it.estimator = est.name; it.estimatorEmail = est.email; });
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { x.estimator = est.name; x.estimatorEmail = est.email; ch = true; } }); return ch ? list : undefined; });
+      out.estimator = { name: est.name, email: est.email, n: mine.length };
+    }
+  } catch (e) { out.estimator = { error: s(e && e.message) }; }
+  try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
   return out;
+}
+/* LA: what counts as a commercial bid (default estimator): commercial (large and small), government, and anything
+   from a bid board / planroom (BuildingConnected, PlanHub, A&B, RKA, ConstructConnect, the public bid sites) */
+function isCommercial(it){
+  return /^(commercial|government)$/.test(low(it && it.type)) || /buildingconnected|planhub|planroom|constructconnect|dodge|government|county|city of|mscs|mscaa|stream|osp/i.test(s(it && it.source)) || s(it && it.origin) === 'watch';
+}
+/* the default estimator: the Leads ⚙ setting (default Glenn Miller); the name from gc_staff when he is there,
+   else the setting's own name and e-mail (it still routes) */
+async function estimatorOf(settings){
+  const st = Object.assign({}, DEFAULT_SETTINGS, settings || (await kvGet(KV_SET)) || {});
+  const e = Object.assign({}, DEFAULT_SETTINGS.estimator, st.estimator || {}); e.email = low(e.email); e.name = s(e.name);
+  if (!e.email) return { name: e.name, email: '', found: false };
+  try { const r = await sb('gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(e.email)); if (r.ok) { const row = arr(await r.json())[0]; if (row && row.active !== false) return { name: s(row.name) || e.name, email: e.email, found: true, role: s(row.role) }; } } catch (x) {}
+  return { name: e.name || e.email, email: e.email, found: false };
 }
 /* drafts that waited for the portal (it was not set up yet): created as soon as it is */
 async function flushPortal(){
@@ -710,7 +763,7 @@ async function staffAuth(event){
 }
 
 /* ── what a person did in the CRM ──────────────────────────────────────────── */
-const OPS = { imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', restore: 'admin', publish: 'admin' };
+const OPS = { imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', restore: 'admin', publish: 'admin', due: 'staff' };
 function applyAct(items, b, who){
   items = arr(items);
   const t = nowIso(), op = s(b.op), id = s(b.id);
@@ -735,6 +788,13 @@ function applyAct(items, b, who){
     it.status = 'merged'; it.mergedInto = tgt.id; it.by = who.email;
   }
   else if (op === 'restore') { it.status = it.leadId ? 'imported' : 'new'; it.reason = ''; }
+  else if (op === 'due') {   /* LA: the bid due date typed on the lead in the CRM ('' clears it) */
+    const v = s(b.bidDue);
+    if (v && !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(v)) return { err: 'bid due must be YYYY-MM-DD or YYYY-MM-DDTHH:MM' };
+    ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(k => { if (b[k] != null) it[k] = s(b[k]).slice(0, 200); });
+    if (b.dueUnknown != null) it.dueUnknown = !!b.dueUnknown;
+    if (v !== s(it.bidDue)) { it.bidDueWas = s(it.bidDue); it.bidDue = v; it.bidDueBy = who.email; it.bidDueAt = t; it.bidDueManual = true; }
+  }
   else return { err: 'unknown action' };
   it.updatedAt = t; it.rev = (it.rev || 1) + 1;
   return { items: trim(items), item: it };
@@ -744,13 +804,20 @@ const DEFAULT_SETTINGS = {
     'gutter', 'demolition', 'ceiling', 'flooring', 'painting', 'carpentry', 'siding', 'waterproofing', 'envelope', 'canopy', 'storm damage', 'fire damage', 'water damage',
     'facility improvements', 'improvements', 'abatement', 'doors', 'windows', 'masonry', 'facility'],
   exclude: ['vehicle', 'truck', 'software', 'janitorial', 'uniform', 'food', 'fuel', 'lobbying', 'audit', 'consultant', 'insurance broker', 'printing services', 'mowing'],
-  sources: {}
+  sources: {},
+  /* LA: "Commercial bids go to:" (Leads ⚙) */
+  estimator: { name: 'Glenn Miller', email: 'gmiller@grayco-cs.com' }
 };
 function cleanSettings(b, cur){
   const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 120);
   const out = Object.assign({}, DEFAULT_SETTINGS, cur || {});
   if (b.keywords) out.keywords = words(b.keywords);
   if (b.exclude) out.exclude = words(b.exclude);
+  if (b.estimator && typeof b.estimator === 'object') {
+    const em = low(b.estimator.email);
+    if (em && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(em)) throw new Error('The estimator e-mail does not look right.');
+    out.estimator = { name: s(b.estimator.name).slice(0, 80), email: em };
+  }
   if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 40).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }
   out.updatedAt = nowIso();
   return out;
@@ -776,17 +843,25 @@ exports.handler = async function(event){
       const out = { items: arr(items), settings: Object.assign({}, DEFAULT_SETTINGS, settings || {}), notices: who.admin ? arr(notices) : [], watch: watch || null, me: { email: who.email, admin: who.admin }, at: nowIso() };
       try { const st = await portalApi().status(); out.portal = { ready: !!st.ready, why: st.why || '', queued: arr(await kvGet(require('./_lib/bid-portal.js').KQ)).length }; } catch (e) { out.portal = { ready: false, why: 'unknown' }; }
       if (who.admin) { try { out.alerts = await alertsApi().state(); } catch (e) {} }
+      try { out.estimator = await estimatorOf(out.settings); } catch (e) {}
       return J(200, out, C);
     } catch (e) { return J(502, { error: 'Could not read the lead inbox.' }, C); }
   }
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' }, C);
 
+  /* LA: a lead assigned to someone in the CRM (or entered by hand for them): tell that person now (once) */
+  if (qs.notify) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    const lead = b && b.lead; if (!lead || !s(lead.id)) return J(400, { error: 'No lead.' }, C);
+    try { const r = await alertsApi().notifyAssigned(lead, { by: who.email, byName: who.name }); return J(200, Object.assign({ ok: true }, r), C); } catch (e) { return J(503, { error: s(e && e.message) }, C); }
+  }
   if (qs.act || qs.settings || qs.watch) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
     let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
     if (qs.settings) {
       if (!who.admin) return J(403, { error: 'Only an admin changes the bid watcher.' }, C);
-      try { const r = await kvCas(KV_SET, v => cleanSettings(b, v)); return J(200, { ok: true, settings: r.value }, C); } catch (e) { return J(503, { error: s(e.message) }, C); }
+      try { const r = await kvCas(KV_SET, v => cleanSettings(b, v)); return J(200, { ok: true, settings: r.value, estimator: await estimatorOf(r.value) }, C); } catch (e) { return J(/look right/.test(s(e.message)) ? 400 : 503, { error: s(e.message) }, C); }
     }
     if (qs.watch) {
       if (!who.admin) return J(403, { error: 'Only an admin runs the bid watcher by hand.' }, C);
@@ -838,5 +913,5 @@ exports.backgroundHandler = async function(event){
 
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
-  decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey };
-exports._test = { svixOk, verified, forBids, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+  decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
+exports._test = { isCommercial, estimatorOf, svixOk, verified, forBids, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };

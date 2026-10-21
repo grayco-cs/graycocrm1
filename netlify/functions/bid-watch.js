@@ -18,7 +18,8 @@
        number, the due date and the link to the documents. The same project
        arriving later by e-mail joins the same lead.
    LD2: each NEW one also becomes a draft bid job in the bid portal (never published by itself) and
-   is in the admins' alert (bid-inbox.js afterStore → _lib/bid-portal.js, _lib/bid-alerts.js); every
+   is in the admins' alert — one e-mail per new bid, at once (patch LA: bid-inbox.js afterStore →
+   _lib/bid-portal.js, _lib/bid-alerts.js); the bid date is read with _lib/bid-due.js; every
    run also creates the drafts that waited for the portal to be set up.
    Every id seen is remembered ("gc_bid_watch_seen"), so nothing is added
    twice. A source that needs a login, or whose terms forbid automated reading,
@@ -35,6 +36,7 @@
 
 const crypto = require('crypto');
 const L = require('./bid-inbox.js')._lib;
+const BD = require('./_lib/bid-due.js');
 const { env, s, low, arr, nowIso, sha256, sb, kvGet, kvCas, kvPut, upsert, itemId, isoDay, decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET } = L;
 
 const UA = 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; bids@grayco-cs.com; GrayCo Construction Services, Bartlett TN)';
@@ -121,6 +123,8 @@ const CLOSED_RE = /\b(closed|awarded|cancel+ed|rescinded|bid results?|tabulation
 function absUrl(href, base){ try { return new URL(decodeEntities(href), base).href; } catch (e) { return ''; } }
 function firstDue(ctx){
   const t = s(ctx); if (!t) return '';
+  /* LA: a labelled bid date ("Bid Opening: …", "Closes …", "Proposals due …"), with its time and time zone */
+  const bd = BD.findDue(t); if (bd.due) return bd.due;
   const m = /(due|clos\w*|deadline|opening|open date|submi\w*|receiv\w*|response)[^0-9a-z]{0,30}/i.exec(t);
   const at = (txt, d) => { const iso = isoDay(d); const k = txt.indexOf(d) + d.length; const tm = L.hhmm(txt.slice(k, k + 20)); return iso ? (tm ? iso + 'T' + tm : iso) : ''; };
   if (m) { const rest = t.slice(m.index); const d = rest.match(DATE_RE); DATE_RE.lastIndex = 0; if (d) { const v = at(rest, d[0]); if (v) return v; } }

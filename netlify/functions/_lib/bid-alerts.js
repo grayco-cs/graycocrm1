@@ -1,71 +1,135 @@
 /* ============================================================================
-   GrayCo — ADMIN ALERTS FOR NEW BID OPPORTUNITIES.   netlify/functions/_lib/bid-alerts.js   (patch LD2)
+   GrayCo — ADMIN ALERTS FOR NEW LEADS AND BIDS DUE.   netlify/functions/_lib/bid-alerts.js
+   (patch LD2, changed by patch LA)
 
-   Owner (10/20): "alert admins about new bid opportunities."
+   Owner (10/21): "When new bids get to our bid email or on our lead list we need a notification …
+   I don't want 1 e-mail every hour from this. I just want one when I get a new lead, and 1 hour before
+   a lead/bid is due if possible. Always mark down when the bid is due on these leads."
 
    Who: every ACTIVE admin on gc_staff (role 'admin' — the same list the CRM's sign-in uses, SEC2),
         plus OWNER_EMAILS (default Wesley and Nick), plus BID_ALERT_TO (optional extra addresses).
-   What, for every new opportunity the Lead Inbox stores (e-mail, public bid watcher, BuildingConnected API):
-     · E-MAIL. Due soon (bid due within BID_ALERT_SOON_HOURS, default 72 h): one e-mail at once.
-       Everything else waits in the queue and goes out as ONE digest an hour (bid-alerts.js, scheduled).
-       Each opportunity is e-mailed once. Commercial and insurance ones are listed first under
-       "Needs a PM" (the owner assigns every lead).
-     · PHONE PUSH, when the To-Do tab's push piece (patch TD: notify-push.js, the VAPID keys and the
-       web-push module) is present: the same subscriptions it keeps (gc_kv "gc_push_subs__<email>").
-       Without it nothing is pushed and nothing fails.
-     · IN THE CRM: bid-inbox.js ?list=1 carries the queue's state; the page shows the toast and badges.
+   What (an e-mail, and a phone push when patch TD's push piece is set up):
+     1. NEW LEAD — one message per new lead, the moment it arrives (notifyNew):
+          · the bids@ inbox (bid-inbox.js): one message per e-mail — an e-mail that brings several bids
+            gives ONE message listing them all;
+          · the public bid watchers / BuildingConnected API (bid-watch.js): one per new bid;
+          · RoofScout → GrayCo lead (bid-alerts.js, every 10 minutes, sweepRoofScout);
+          · website / lead-source leads (lead-intake.js).
+        (Leads typed into the CRM by hand are not e-mailed: the person adding one already knows.)
+        Subject: the title and "Bid due Tue Oct 28 2:00 PM", or "Bid due date: NOT FOUND — add it".
+        Each lead is e-mailed once; a send that failed is tried again on the next 10-minute run (24 h).
+     2. ONE HOUR BEFORE THE BID IS DUE (remind, bid-alerts.js every 10 minutes): "⏰ Bid due in 1 hour: …"
+        for every lead whose bid is due 50–70 minutes from now; a lead with a date and no time gets
+        "⏰ Bid due TODAY: …" at 8:00 AM Central that day. Never twice for the same due date (a date
+        edited in the CRM is a new due date). Not for leads that are won, lost, deleted, converted or
+        marked not bidding (or dismissed in the Lead Inbox). Time zone: America/Chicago.
+   There is NO hourly digest any more.
+     3. WHO IT IS DUE TO, AND WHO DOES IT (owner, later on 10/21): every message says when the bid is due AND who it
+        is due to (the GC / company / agency, contact, how to submit). The lead's assigned estimator / PM (pm, or the
+        default estimator for commercial bids — Leads ⚙, Glenn Miller) gets the new-lead message, the 1-hour /
+        "today" reminder, "⏰ Bid due tomorrow" at 8 AM the day before, "Assigned to you" when a lead is given to
+        them (notifyAssigned: the CRM's ?notify=1, and the 10-minute sweep), and once a day "⚠️ Missing due info"
+        for bids assigned to them marked "Unknown yet".
    Nothing here ever writes to a customer or a sub. It sends only to GrayCo admins.
    ========================================================================== */
 'use strict';
 
+const BD = require('./bid-due.js');
 const KA = 'gc_lead_inbox_alerts';
+const RETRY_H = 24, REMIND_EARLY = 50, REMIND_LATE = 70, TODAY_AT = '08:00';
 
 function make(d){
   const { env, s, low, arr, nowIso, sb, kvCas, kvGet } = d;
-  const soonH = () => { const n = parseFloat(env('BID_ALERT_SOON_HOURS') || '72'); return isFinite(n) && n > 0 ? n : 72; };
+  const now = () => (typeof d.now === 'function' ? d.now() : Date.now());
   const off = () => env('BID_ALERTS_OFF') === '1';
   const site = () => (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
   function esc(v){ return s(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-  function hoursLeft(due){ if (!due) return null; const t = Date.parse(due.length === 10 ? due + 'T23:59:00' : due); return isFinite(t) ? (t - Date.now()) / 3600000 : null; }
-  function isSoon(due){ const h = hoursLeft(due); return h != null && h >= -12 && h <= soonH(); }
-  function fmtDue(due){
-    if (!due) return 'no bid date yet';
-    const t = new Date(due.length === 10 ? due + 'T12:00:00' : due); if (isNaN(t)) return due;
-    return t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + (due.length > 10 ? ' ' + t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
+  const fmtDue = due => BD.fmtDue(due);
+  const dueTxt = due => due ? 'Bid due ' + fmtDue(due) : 'Bid due date: NOT FOUND — add it';
+  /* "Bid due Thu Nov 5 2:00 PM to Montgomery Martin Contractors" (LA: when it is due AND who it is due to) */
+  const dueLine = x => dueTxt(x.bidDue) + (x.bidDue && x.dueToCompany ? ' to ' + x.dueToCompany : '');
+  const METHOD = { email: 'by e-mail', portal: 'on the portal', sealed: 'sealed bid, delivered', in_person: 'in person', other: '' };
+  function cap(t){ t = s(t); return t ? t[0].toUpperCase() + t.slice(1) : ''; }
+  /* one lead as the alerts see it */
+  function entry(it, o){
+    o = o || {};
+    const id = s(it.id), key = s(it.key || it.leadId) || (/^LI-/.test(id) ? 'LEADIN-' + id.slice(3) : id);
+    const assignee = s(it.pm) || s(it.estimator), assigneeEmail = low(s(it.pm) && s(it.pm) !== s(it.estimator) ? it.pmEmail : (it.pmEmail || it.estimatorEmail));
+    return { id, key, title: s(it.title || it.name).slice(0, 200) || 'New lead', source: s(it.source || o.source), type: s(it.type || it.leadKind),
+      bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc), detail: s(it.detail).slice(0, 300),
+      dueToCompany: s(it.dueToCompany), dueToContact: s(it.dueToContact), dueToEmail: s(it.dueToEmail), dueToPhone: s(it.dueToPhone), submitMethod: s(it.submitMethod), submitWhere: s(it.submitWhere),
+      dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: assigneeEmail || emailOf(assignee), assignedBy: s(it.assignedBy),
+      link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length };
   }
-  function entry(it){
-    return { id: it.id, title: s(it.title).slice(0, 200), source: s(it.source), type: s(it.type), bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc),
-      link: (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length, at: nowIso(), soon: isSoon(it.bidDue) };
+  /* the people: name → e-mail (the CRM's people list in gc_kv "users", and gc_staff) */
+  const PEOPLE = {};
+  function emailOf(name){ return PEOPLE[low(name)] || ''; }
+  async function loadPeople(users){
+    if (users == null) {   /* the CRM's people list, when the caller did not bring it */
+      try { const r = await sb('gc_kv?select=value&key=eq.users'); if (r.ok) { let v = (arr(await r.json())[0] || {}).value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } if (v && !Array.isArray(v) && Array.isArray(v.v)) v = v.v; users = arr(v); } } catch (e) {}
+    }
+    arr(users).forEach(u => { if (u && u.name && u.email && u.active !== false) PEOPLE[low(u.name)] = low(u.email); });
+    try { const r = await sb('gc_staff?select=email,name,active'); if (r.ok) arr(await r.json()).forEach(x => { if (x && x.name && x.email && x.active !== false && !PEOPLE[low(x.name)]) PEOPLE[low(x.name)] = low(x.email); }); } catch (e) {}
+    return PEOPLE;
+  }
+  function loadState(v){
+    const st = Object.assign({ sent: [], retry: [], reminded: {} }, v || {});
+    /* the hourly digest's queue (LD2) is gone: what waited in it is not sent now as a late batch */
+    if (Array.isArray(st.pending)) { st.sent = arr(st.sent).concat(st.pending.filter(x => x && x.id).map(x => ({ id: x.id, at: nowIso(), how: 'digest-retired' }))); delete st.pending; delete st.lastDigestAt; }
+    st.sent = arr(st.sent); st.retry = arr(st.retry); st.reminded = st.reminded && typeof st.reminded === 'object' ? st.reminded : {};
+    return st;
   }
 
-  async function recipients(){
+  async function recipients(extra){
     const out = [];
     try {
       const r = await sb('gc_staff?select=email,name,role,active&role=eq.admin');
       if (r.ok) arr(await r.json()).forEach(x => { if (x && x.active !== false && low(x.role) === 'admin' && x.email) out.push(low(x.email)); });
     } catch (e) {}
     (env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').concat(env('BID_ALERT_TO').split(','))
-      .map(low).filter(x => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x)).forEach(x => out.push(x));
+      .concat(arr(extra)).map(low).filter(x => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x)).forEach(x => out.push(x));
     return Array.from(new Set(out));
   }
 
-  function mail(list, kind){
-    const needPm = list.filter(x => /commercial|insurance/.test(low(x.type))), rest = list.filter(x => needPm.indexOf(x) < 0);
-    const row = x => '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b><br><span style="color:#555;font-size:13px">'
-      + esc([x.type && x.type[0].toUpperCase() + x.type.slice(1), 'from ' + (x.source || 'the Lead Inbox'), [x.city, x.state].filter(Boolean).join(', '), x.gc && 'GC ' + x.gc].filter(Boolean).join(' · ')) + '</span></td>'
-      + '<td style="padding:8px 10px;border-bottom:1px solid #eee;white-space:nowrap;color:' + (x.soon ? '#b91c1c' : '#333') + ';font-weight:700">' + esc(fmtDue(x.bidDue)) + '</td></tr>';
-    const table = (title, xs) => xs.length ? '<h3 style="margin:18px 0 6px;font:700 15px Arial;color:#241968">' + esc(title) + '</h3><table style="width:100%;border-collapse:collapse;font:14px Arial">' + xs.map(row).join('') + '</table>' : '';
-    const n = list.length;
-    const subject = kind === 'soon'
-      ? 'Bid due soon: ' + list[0].title + (n > 1 ? ' (+' + (n - 1) + ' more)' : '') + ' — ' + fmtDue(list[0].bidDue)
-      : n + ' new bid opportunit' + (n === 1 ? 'y' : 'ies') + ' in the Lead Inbox';
-    const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">GrayCo Lead Inbox</div><div style="padding:6px 18px 18px">'
-      + '<p>' + (kind === 'soon' ? 'A new bid opportunity is due soon.' : 'New bid opportunities came in.') + ' Each one is a lead in the CRM and a <b>draft</b> in the bid portal; nothing is shown to subs until an admin presses <b>Publish to bid portal</b>.</p>'
-      + table('Needs a PM — commercial and insurance', needPm) + table(needPm.length ? 'Other opportunities' : 'Opportunities', rest)
-      + '<p style="margin-top:18px"><a href="' + esc(site()) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open the Lead Inbox</a></p>'
-      + '<p style="color:#777;font-size:12px">Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS). Bids due within ' + soonH() + ' hours are sent at once; the rest come as one e-mail an hour.</p></div></div>';
-    const text = subject + '\n\n' + list.map(x => '- ' + x.title + ' (' + [x.type, x.source, [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(', ') + ') due ' + fmtDue(x.bidDue)).join('\n') + '\n\nOpen the Lead Inbox: ' + site() + '/#leads';
-    return { subject, html, text };
+  /* ── the messages ─────────────────────────────────────────────────────────── */
+  function rowHtml(x){
+    const late = x.bidDue && BD.wallToEpoch(x.bidDue.length === 10 ? x.bidDue + 'T23:59' : x.bidDue) - now() < 72 * 3600000;
+    return '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b><br><span style="color:#555;font-size:13px">'
+      + esc([cap(x.type), 'from ' + (x.source || 'the Lead Inbox'), [x.city, x.state].filter(Boolean).join(', '), x.gc && 'GC ' + x.gc].filter(Boolean).join(' · ')) + '</span>'
+      + (x.detail ? '<br><span style="color:#555;font-size:13px">' + esc(x.detail) + '</span>' : '')
+      + '<br><span style="font-size:13px;color:' + (x.dueToCompany ? '#1b1640' : '#b45309') + '"><b>Due to:</b> ' + (x.dueToCompany ? esc([x.dueToCompany, x.dueToContact, x.dueToEmail, x.dueToPhone].filter(Boolean).join(' · ')) + (x.submitMethod ? ' — ' + esc([METHOD[x.submitMethod] || x.submitMethod, x.submitWhere].filter(Boolean).join(': ')) : '') : 'NOT FOUND — add it') + '</span>'
+      + (x.assignee ? '<br><span style="font-size:13px;color:#555"><b>Assigned to:</b> ' + esc(x.assignee) + '</span>' : '')
+      + (x.link ? '<br><a href="' + esc(x.link) + '" style="font-size:13px;color:#241968">Plans / details</a>' : '') + '</td>'
+      + '<td style="padding:8px 10px;border-bottom:1px solid #eee;white-space:nowrap;font-weight:700;color:' + (!x.bidDue ? '#b45309' : late ? '#b91c1c' : '#333') + '">'
+      + (x.bidDue ? 'Bid due<br>' + esc(fmtDue(x.bidDue)) : 'Bid due date:<br>NOT FOUND — add it') + '</td></tr>';
+  }
+  function frame(head, intro, rows, foot){
+    return '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(head) + '</div><div style="padding:6px 18px 18px">'
+      + '<p>' + intro + '</p><table style="width:100%;border-collapse:collapse;font:14px Arial">' + rows + '</table>'
+      + '<p style="margin-top:18px"><a href="' + esc(site()) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Leads in the CRM</a></p>'
+      + '<p style="color:#777;font-size:12px">' + foot + '</p></div></div>';
+  }
+  const FOOT = 'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
+  function soonest(list){ return list.filter(x => x.bidDue).sort((a, b) => BD.wallToEpoch(a.bidDue) - BD.wallToEpoch(b.bidDue))[0]; }
+  function mailNew(list){
+    const n = list.length, first = soonest(list);
+    const subject = (n === 1 ? 'New lead: ' + list[0].title + ' — ' + dueLine(list[0])
+      : n + ' new leads: ' + list.map(x => x.title).join(' · ').slice(0, 140) + ' — ' + (first ? dueLine(first) + (list.some(x => !x.bidDue) ? ' (some: NOT FOUND — add it)' : '') : dueTxt(''))).slice(0, 250);
+    const src = Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ');
+    const html = frame('GrayCo — new lead' + (n === 1 ? '' : 's'), (n === 1 ? 'A new lead came in' : n + ' new leads came in together') + (src ? ' (' + esc(src) + ')' : '') + '. It is on the Leads tab in the CRM.'
+      + (list.some(x => !x.bidDue) ? ' <b>No bid due date was found' + (n === 1 ? '' : ' for some') + ' — add it on the lead so the 1-hour reminder can go out.</b>' : ''), list.map(rowHtml).join(''), FOOT);
+    const text = subject + '\n\n' + list.map(x => '- ' + x.title + ' (' + [x.type, x.source, [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(', ') + ') — ' + dueLine(x) + (x.assignee ? ' — assigned to ' + x.assignee : '') + (x.link ? '\n  ' + x.link : '')).join('\n') + '\n\nOpen Leads: ' + site() + '/#leads';
+    const push = { title: (n === 1 ? 'New lead: ' + list[0].title : n + ' new leads: ' + list[0].title + ' + ' + (n - 1) + ' more').slice(0, 100),
+      body: list.slice(0, 3).map(x => x.title.slice(0, 60) + ' — ' + dueLine(x)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id };
+    return { subject, html, text, push };
+  }
+  function mailRemind(x, kind){
+    const clock = fmtDue(x.bidDue).replace(/^\w+ \w+ \d+ /, ''), to = x.dueToCompany ? ' to ' + x.dueToCompany : '';
+    const when = kind === 'today' ? 'today (' + fmtDue(x.bidDue) + ', no time given)' : kind === 'eve' ? 'tomorrow, ' + fmtDue(x.bidDue) + (x.bidDue.length > 10 ? ' Central' : '') : 'at ' + clock + ' Central (' + fmtDue(x.bidDue) + ')';
+    const subject = (kind === 'today' ? '⏰ Bid due TODAY: ' + x.title + to : kind === 'eve' ? '⏰ Bid due tomorrow: ' + x.title + ' — ' + fmtDue(x.bidDue) + to : '⏰ Bid due in 1 hour: ' + x.title + ' — ' + clock + to).slice(0, 250);
+    const html = frame('GrayCo — bid due ' + (kind === 'today' ? 'today' : kind === 'eve' ? 'tomorrow' : 'in 1 hour'), 'The bid for this lead is due <b>' + esc(when) + '</b>' + (to ? ' <b>' + esc(to) + '</b>' : '') + '.', rowHtml(x), FOOT);
+    const text = subject + '\n\n' + x.title + ' — bid due ' + when + (x.source ? '\nFrom ' + x.source : '') + (x.link ? '\n' + x.link : '') + '\n\nOpen Leads: ' + site() + '/#leads';
+    return { subject, html, text, push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueTxt(x.bidDue)).slice(0, 180), tag: 'lead-due-' + x.key } };
   }
 
   async function sendMail(to, m){
@@ -73,20 +137,18 @@ function make(d){
     if (!to.length) return { ok: false, why: 'no admin e-mail addresses' };
     try {
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Lead Inbox <noreply@grayco-cs.com>', to, subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-inbox-alert' } }) });
+        body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }) });
       return r.ok ? { ok: true } : { ok: false, why: 'Resend answered ' + r.status };
     } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
   }
-
   /* patch TD's push piece: present when its keys are set and web-push is installed */
   function loadWebPush(){ try { return require('web-push'); } catch (e) { return null; } }
-  async function push(to, list, kind){
+  async function push(to, p){
     const pub = env('VAPID_PUBLIC_KEY'), priv = env('VAPID_PRIVATE_KEY');
     if (!pub || !priv) return { sent: 0, why: 'phone push is not set up (patch TD)' };
     const wp = d.webPush || loadWebPush(); if (!wp) return { sent: 0, why: 'web-push is not installed' };
     try { wp.setVapidDetails(env('VAPID_SUBJECT') || 'mailto:office@grayco-cs.com', pub, priv); } catch (e) { return { sent: 0, why: 'bad VAPID keys' }; }
-    const payload = JSON.stringify({ title: kind === 'soon' ? 'Bid due soon: ' + list[0].title.slice(0, 80) : list.length + ' new bid opportunit' + (list.length === 1 ? 'y' : 'ies'),
-      body: list.slice(0, 3).map(x => x.title.slice(0, 60) + ' — ' + fmtDue(x.bidDue)).join('\n').slice(0, 180), link: site() + '/#leads', tag: 'lead-inbox' });
+    const payload = JSON.stringify({ title: p.title, body: p.body, link: site() + '/#leads', tag: p.tag });
     let sent = 0;
     for (const email of to) {
       let subs = [];
@@ -95,58 +157,250 @@ function make(d){
     }
     return { sent };
   }
-
-  async function deliver(list, kind){
-    const to = await recipients();
-    const m = await sendMail(to, mail(list, kind));
-    const p = m.ok ? await push(to, list, kind) : { sent: 0 };
-    return { ok: m.ok, why: m.why, to, pushed: p.sent, pushWhy: p.why };
+  /* extra: the assigned estimator / PM; only: just these people (not the admins) */
+  async function deliver(m, extra, only){
+    const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : await recipients(extra);
+    const r = await sendMail(to, m);
+    const p = await push(to, m.push);   /* the push goes out even when the e-mail could not */
+    return { ok: r.ok, why: r.why, to, pushed: p.sent, pushWhy: p.why };
   }
+  async function note(last){ try { await kvCas(KA, v => { const st = loadState(v); st.last = last; return st; }); } catch (e) {} }
 
-  /* new items: queued; the due-soon ones are sent right away */
-  async function enqueue(items){
-    if (off()) return { queued: 0, off: true };
-    const fresh = arr(items).filter(it => it && it.id).map(entry);
-    if (!fresh.length) return { queued: 0 };
-    let added = [];
+  /* ── 1. new leads ──────────────────────────────────────────────────────────── */
+  /* items: leads just stored. o.group: one message for all of them (one e-mail that brought several bids);
+     otherwise one message per lead. Each lead id is alerted once, ever. */
+  async function notifyNew(items, o){
+    o = o || {};
+    if (off()) return { sent: 0, off: true };
+    const fresh = arr(items).filter(it => it && it.id).map(it => entry(it, o));
+    if (!fresh.length) return { sent: 0 };
+    let mine = [];
+    /* claim them first (two runs at once never both send) */
     await kvCas(KA, v => {
-      const st = Object.assign({ pending: [], sent: [] }, v || {});
-      const known = {}; st.pending.concat(st.sent).forEach(x => { if (x && x.id) known[x.id] = 1; });
-      added = fresh.filter(x => !known[x.id]);
-      if (!added.length) return undefined;
-      st.pending = st.pending.concat(added).slice(-300);
+      const st = loadState(v);
+      const known = {}; st.sent.forEach(x => { if (x && x.id) known[x.id] = 1; }); st.retry.forEach(g => arr(g.list).forEach(x => { known[x.id] = 1; }));
+      mine = fresh.filter(x => { if (known[x.id]) return false; known[x.id] = 1; return true; });
+      if (!mine.length) return undefined;
+      st.sent = st.sent.concat(mine.map(x => ({ id: x.id, at: nowIso(), how: 'claimed' }))).slice(-1500);
       return st;
     });
-    const soon = added.filter(x => x.soon);
-    let now = null;
-    if (soon.length) now = await sendList(soon.map(x => x.id), 'soon');
-    return { queued: added.length, soonSent: now };
+    if (!mine.length) return { sent: 0, already: fresh.length };
+    const groups = o.group ? [mine] : mine.map(x => [x]);
+    const out = { sent: 0, messages: 0, failed: 0, to: [] };
+    for (const g of groups) {
+      const r = await deliver(mailNew(g), g.map(x => x.assigneeEmail));
+      out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;
+      if (r.ok) out.sent += g.length; else { out.failed += g.length; out.why = r.why; }
+      const at = nowIso();
+      await kvCas(KA, v => {
+        const st = loadState(v);
+        const ids = {}; g.forEach(x => { ids[x.id] = 1; });
+        st.sent.forEach(x => { if (x && ids[x.id]) { x.how = r.ok ? 'new' : 'failed'; x.at = at; } });
+        st.assigned = st.assigned || {}; g.forEach(x => { if (x.assigneeEmail) st.assigned[x.key + '|' + x.assigneeEmail] = at; });
+        if (!r.ok) st.retry = st.retry.filter(x => !arr(x.list).some(y => ids[y.id])).concat([{ at, list: g, tries: 1, why: r.why || '' }]).slice(-100);
+        st.last = { at, kind: 'new', n: g.length, ok: r.ok, why: r.why || '', to: r.to.length, pushed: r.pushed || 0, pushWhy: r.pushWhy || '' };
+        return st;
+      }).catch(() => {});
+    }
+    return out;
+  }
+  /* a new-lead message that could not be sent: tried again on each 10-minute run, for 24 hours */
+  async function retry(){
+    if (off()) return { sent: 0, off: true };
+    const raw = (await kvGet(KA)) || {}, st = loadState(raw);
+    const due = st.retry.filter(g => g && now() - Date.parse(g.at || 0) < RETRY_H * 3600000);
+    let sent = 0;
+    for (const g of due) {
+      const r = await deliver(mailNew(arr(g.list)), arr(g.list).map(x => x.assigneeEmail));
+      await kvCas(KA, v => {
+        const cur = loadState(v);
+        const i = cur.retry.findIndex(x => x && x.at === g.at && arr(x.list).length && arr(g.list).length && x.list[0].id === g.list[0].id);
+        if (r.ok) { if (i >= 0) cur.retry.splice(i, 1); const ids = {}; g.list.forEach(x => { ids[x.id] = 1; }); cur.sent.forEach(x => { if (x && ids[x.id]) x.how = 'new (retried)'; }); }
+        else if (i >= 0) { cur.retry[i].tries = (cur.retry[i].tries || 1) + 1; cur.retry[i].why = r.why || ''; }
+        cur.last = { at: nowIso(), kind: 'retry', n: g.list.length, ok: r.ok, why: r.why || '', to: r.to.length };
+        return cur;
+      }).catch(() => {});
+      if (r.ok) sent += g.list.length;
+    }
+    /* older than a day: given up (still on the Leads tab) */
+    if (st.retry.length !== due.length || Array.isArray(raw.pending)) await kvCas(KA, v => { const cur = loadState(v); cur.retry = cur.retry.filter(g => g && now() - Date.parse(g.at || 0) < RETRY_H * 3600000); return cur; }).catch(() => {});
+    return { sent, waiting: due.length };
   }
 
-  /* send these pending ids (or all pending: the hourly digest), then mark them sent */
-  async function sendList(ids, kind){
-    const st = Object.assign({ pending: [], sent: [] }, (await kvGet(KA)) || {});
-    const list = st.pending.filter(x => !ids || ids.indexOf(x.id) >= 0);
-    if (!list.length) return { sent: 0 };
-    list.forEach(x => { x.soon = isSoon(x.bidDue); });
-    const r = await deliver(list, kind || 'digest');
-    const at = nowIso();
-    await kvCas(KA, v => {
-      const cur = Object.assign({ pending: [], sent: [] }, v || {});
-      if (r.ok) {
-        const done = {}; list.forEach(x => { done[x.id] = 1; });
-        cur.pending = cur.pending.filter(x => !done[x.id]);
-        cur.sent = cur.sent.concat(list.map(x => ({ id: x.id, at, how: kind || 'digest' }))).slice(-600);
-      }
-      cur.last = { at, kind: kind || 'digest', n: list.length, ok: r.ok, why: r.why || '', to: r.to.length, pushed: r.pushed || 0, pushWhy: r.pushWhy || '' };
-      if ((kind || 'digest') === 'digest') cur.lastDigestAt = at;
-      return cur;
+  /* ── 2. before the bid is due: the day before (8 AM), 1 hour before, "today" (8 AM) ── */
+  const CLOSED = /^(won|lost|dead|deleted|converted|declined|not\s*bidding|no\s*bid|pass(ed)?|archived|cancell?ed|closed|dismissed|merged|submitted)$/i;
+  function closed(l){
+    if (!l) return true;
+    if (l.deleted || l._deleted || l.converted || l.notBidding || l.noBid) return true;
+    return [l.stage, l.status, l.inboxState, l.bidStatus].some(v => CLOSED.test(s(v)));
+  }
+  function addDays(day, n){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day); const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n)); return d.toISOString().slice(0, 10); }
+  /* which reminders are due now for this bid due date: '1h' (50–70 minutes before), 'today' (a date alone, from
+     8 AM Central that day), 'eve' (the day before, from 8 AM Central — for the assigned estimator / PM) */
+  function reminderKinds(due, t){
+    due = s(due); const out = [], w = BD.epochToWall(t), day = w.slice(0, 10), after8 = w.slice(11) >= TODAY_AT;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(due)) {
+      const mins = (BD.wallToEpoch(due) - t) / 60000;
+      if (mins >= REMIND_EARLY && mins <= REMIND_LATE) out.push('1h');
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(due) && day === due && after8) out.push('today');
+    if (/^\d{4}-\d{2}-\d{2}/.test(due) && after8 && day === addDays(due.slice(0, 10), -1) && BD.wallToEpoch(due.length > 10 ? due : due + 'T23:59') > t) out.push('eve');
+    return out;
+  }
+  function reminderKind(due, t){ return reminderKinds(due, t).filter(k => k !== 'eve')[0] || ''; }
+  /* leads: the CRM's lead list (gc_kv "leads": edits made in the CRM, the due date someone typed);
+     items: the Lead Inbox (a bid no CRM has collected yet still gets its reminder) */
+  function candidates(leads, items, tombs){
+    const out = [], have = {}, haveInbox = {};
+    arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
+    arr(leads).forEach(l => {
+      if (!l || !l.id || !s(l.bidDue) || closed(l)) return;
+      out.push(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })));
     });
-    return { sent: r.ok ? list.length : 0, ok: r.ok, why: r.why, to: r.to, pushed: r.pushed };
+    arr(items).forEach(it => {
+      if (!it || it.stub || !s(it.bidDue) || haveInbox[it.id]) return;
+      const lid = 'LEADIN-' + s(it.id).replace(/^LI-/, '');
+      if (have[lid] || (tombs && tombs['leads:' + lid]) || closed(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
+      out.push(entry(Object.assign({}, it, { key: lid })));
+    });
+    return out;
   }
-  async function digest(){ if (off()) return { sent: 0, off: true }; return sendList(null, 'digest'); }
-  async function state(){ const st = (await kvGet(KA)) || {}; return { pending: arr(st.pending).length, last: st.last || null, lastDigestAt: st.lastDigestAt || '', soonHours: soonH() }; }
+  async function remind(src){
+    if (off()) return { sent: 0, off: true };
+    src = src || {};
+    const t = now();
+    await loadPeople(src.users);
+    const want = [];
+    candidates(src.leads, src.items, src.tombs).forEach(x => reminderKinds(x.bidDue, t).forEach(k => {
+      if (k === 'eve' && !x.assigneeEmail) return;   /* the day-before reminder is the assigned person's */
+      want.push(Object.assign({}, x, { kind: k }));
+    }));
+    let mine = [];
+    if (want.length) await kvCas(KA, v => {
+      const st = loadState(v);
+      mine = want.filter(x => { const k = x.key + '|' + x.bidDue + '|' + x.kind; if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; });
+      /* forget reminders older than 45 days */
+      const cut = new Date(t - 45 * 86400000).toISOString(); Object.keys(st.reminded).forEach(k => { if (s(st.reminded[k]) < cut) delete st.reminded[k]; });
+      return mine.length ? st : undefined;
+    });
+    const out = { sent: 0, failed: 0, list: [] };
+    for (const x of mine) {
+      /* 1 hour / today: the admins and the assigned person; the day before: the assigned person */
+      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, [x.assigneeEmail]) : await deliver(mailRemind(x, x.kind), [x.assigneeEmail]);
+      out.list.push({ key: x.key, kind: x.kind, ok: r.ok, why: r.why || '', to: r.to });
+      if (r.ok) out.sent++; else out.failed++;
+      await kvCas(KA, v => {
+        const st = loadState(v);
+        const k = x.key + '|' + x.bidDue + '|' + x.kind;
+        if (!r.ok) delete st.reminded[k];   /* the next run (10 minutes) tries again while it is still in the window */
+        st.last = { at: nowIso(), kind: x.kind === 'today' ? 'due-today' : x.kind === 'eve' ? 'due-tomorrow' : 'due-1h', n: 1, ok: r.ok, why: r.why || '', to: r.to.length, pushed: r.pushed || 0 };
+        return st;
+      }).catch(() => {});
+    }
+    try { out.nag = await nag(src, t); } catch (e) { out.nag = { error: s(e && e.message) }; }
+    try { out.assigned = await sweepAssigned(src, t); } catch (e) { out.assigned = { error: s(e && e.message) }; }
+    return out;
+  }
 
-  return { enqueue, digest, sendList, recipients, state, isSoon, _mail: mail, KA };
+  /* ── "Missing due info": the assigned person, once a day from 8 AM Central, for each open bid marked
+     "Unknown yet" (or a bid with no due date / no "due to" company) ─────────────────────────────────── */
+  function missingDue(l){ return !s(l.bidDue) || !s(l.dueToCompany); }
+  function isBid(l){ return !!(l.inboxId || l.estimator || l.bidStatus || l.dueUnknown || /commercial|government/i.test(s(l.leadKind || l.type))); }
+  async function nag(src, t){
+    const w = BD.epochToWall(t); if (w.slice(11) < TODAY_AT) return { sent: 0 };
+    const by = {};
+    arr(src.leads).forEach(l => {
+      if (!l || !l.id || closed(l)) return;
+      if (!(l.dueUnknown || (isBid(l) && missingDue(l)))) return;
+      const x = entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type }));
+      if (!x.assigneeEmail) return;
+      (by[x.assigneeEmail] = by[x.assigneeEmail] || []).push(x);
+    });
+    const people = Object.keys(by); if (!people.length) return { sent: 0 };
+    let mine = [];
+    await kvCas(KA, v => { const st = loadState(v); mine = people.filter(e => { const k = 'nag|' + e + '|' + w.slice(0, 10); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); return mine.length ? st : undefined; });
+    let sent = 0;
+    for (const e of mine) {
+      const list = by[e], n = list.length;
+      const subject = '⚠️ Missing due info: ' + (n === 1 ? list[0].title : n + ' bids assigned to you') + ' — add the bid due date and who it is due to';
+      const html = frame('GrayCo — missing bid due info', 'These bids are assigned to you and still have no bid due date and/or no "due to" company (marked <b>Unknown yet</b>). Add them on the lead (Leads → the amber <b>Missing due info</b> chip) so the reminders can go out.', list.map(rowHtml).join(''), FOOT);
+      const r = await deliver({ subject, html, text: subject + '\n\n' + list.map(x => '- ' + x.title + ' — ' + dueLine(x) + (x.dueToCompany ? '' : ' — due to: NOT FOUND')).join('\n') + '\n\n' + site() + '/#leads',
+        push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title).join('\n').slice(0, 180), tag: 'lead-nag-' + e } }, null, [e]);
+      if (r.ok) sent++; else await kvCas(KA, v => { const st = loadState(v); delete st.reminded['nag|' + e + '|' + w.slice(0, 10)]; return st; }).catch(() => {});
+    }
+    return { sent, people: people.length };
+  }
+
+  /* ── "Assigned to you": a lead given to an estimator / PM (in the CRM, or entered by hand for them) ── */
+  function mailAssigned(x){
+    const subject = ('Assigned to you: ' + x.title + ' — ' + dueLine(x)).slice(0, 250);
+    const html = frame('GrayCo — a lead assigned to you', 'This lead is assigned to you' + (x.assignedBy ? ' by ' + esc(x.assignedBy) : '') + '. ' + (x.bidDue ? 'The bid is due <b>' + esc(fmtDue(x.bidDue)) + '</b>' + (x.dueToCompany ? ' to <b>' + esc(x.dueToCompany) + '</b>' : '') + '.' : '<b>No bid due date yet — add it on the lead.</b>'), rowHtml(x), FOOT);
+    return { subject, html, text: subject + '\n\n' + x.title + ' — ' + dueLine(x) + '\n' + site() + '/#leads', push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueLine(x)).slice(0, 180), tag: 'lead-asg-' + x.key } };
+  }
+  async function notifyAssigned(lead, o){
+    o = o || {};
+    if (off()) return { sent: 0, off: true };
+    if (!Object.keys(PEOPLE).length) await loadPeople(o.users);
+    const x = entry(Object.assign({}, lead, { key: s(lead.id), title: lead.name || lead.title, type: lead.leadKind || lead.type }));
+    if (!x.assignee) return { sent: 0, why: 'not assigned' };
+    if (!x.assigneeEmail) return { sent: 0, why: 'no e-mail for ' + x.assignee };
+    if (o.by && low(o.by) === x.assigneeEmail) return { sent: 0, why: 'assigned to themselves' };
+    if (closed(lead)) return { sent: 0, why: 'closed' };
+    const k = x.key + '|' + x.assigneeEmail; let claim = false;
+    await kvCas(KA, v => { const st = loadState(v); st.assigned = st.assigned || {}; if (st.assigned[k]) return undefined; st.assigned[k] = nowIso(); claim = true; return st; });
+    if (!claim) return { sent: 0, already: true };
+    const r = await deliver(mailAssigned(x), null, [x.assigneeEmail]);
+    if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
+    return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '' };
+  }
+  /* every 10 minutes: an assignment nobody's page reported (a phone offline, …). The first run only takes note. */
+  async function sweepAssigned(src, t){
+    const st0 = loadState(await kvGet(KA));
+    const open = arr(src.leads).filter(l => l && l.id && !closed(l)).map(l => ({ l, x: entry(Object.assign({}, l, { key: l.id, title: l.name || l.title })) })).filter(o => o.x.assignee && o.x.assigneeEmail);
+    if (!st0.assignedBoot) {
+      await kvCas(KA, v => { const st = loadState(v); st.assigned = st.assigned || {}; open.forEach(o => { const k = o.x.key + '|' + o.x.assigneeEmail; if (!st.assigned[k]) st.assigned[k] = 'boot'; }); st.assignedBoot = nowIso(); return st; });
+      return { first: true, sent: 0 };
+    }
+    const asg = st0.assigned || {}; let sent = 0;
+    for (const o of open) {
+      if (asg[o.x.key + '|' + o.x.assigneeEmail]) continue;
+      const when = Date.parse(o.l.assignedAt || o.l.updatedAt || o.l.createdAt || 0);
+      if (!isFinite(when) || t - when > 3 * 86400000) continue;
+      if (o.x.assignedBy && low(o.x.assignedBy) === low(o.x.assignee)) continue;
+      const r = await notifyAssigned(o.l, {}); sent += r.sent || 0;
+    }
+    return { sent };
+  }
+
+  /* ── RoofScout → GrayCo lead: new rs_leads rows since the last look ───────── */
+  async function sweepRoofScout(){
+    if (off()) return { sent: 0, off: true };
+    const st = loadState(await kvGet(KA));
+    if (!st.rsSince) { await kvCas(KA, v => { const c = loadState(v); if (!c.rsSince) c.rsSince = nowIso(); return c; }); return { first: true, sent: 0 }; }
+    let rows = [];
+    try {
+      const r = await sb('rs_leads?select=id,data,created_at&created_at=gt.' + encodeURIComponent(st.rsSince) + '&order=created_at.asc&limit=200');
+      if (!r.ok) return { sent: 0, why: 'rs_leads answered ' + r.status };
+      rows = arr(await r.json());
+    } catch (e) { return { sent: 0, why: 'rs_leads unreachable' }; }
+    if (!rows.length) return { sent: 0 };
+    const last = rows.map(x => s(x.created_at)).sort().pop();
+    const list = rows.filter(x => { const dd = (x && x.data) || {}; return x && x.id && !(dd.demo === true || /^DEMO\s/.test(s(dd.name)) || dd.doNotContact === true || dd.dnc === true); })
+      .map(x => { const dd = x.data || {}; const cs = /,\s*([^,]+),\s*([A-Z]{2})\b/.exec(s(dd.address)) || [];
+        return { id: 'rs:' + x.id, key: 'LEAD_RS_' + x.id, title: s(dd.name) || s(dd.address) || 'RoofScout lead', source: 'RoofScout', type: s(dd.kind) || 'roofing', bidDue: s(dd.bidDue),
+          city: s(cs[1]), state: s(cs[2]), detail: [s(dd.address), dd.areaSqft ? Math.round(+dd.areaSqft).toLocaleString('en-US') + ' ft² roof' : '', dd.owner && dd.owner.company ? 'Owner ' + s(dd.owner.company) : ''].filter(Boolean).join(' · '),
+          link: site() + '/roofscout/#lead=' + encodeURIComponent(x.id) }; });
+    await kvCas(KA, v => { const c = loadState(v); if (!c.rsSince || last > c.rsSince) c.rsSince = last; return c; });
+    /* a scan that saved many at once is one message, not a flood */
+    return notifyNew(list, { source: 'RoofScout', group: list.length > 3 });
+  }
+
+  async function state(){
+    const st = loadState(await kvGet(KA));
+    return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
+  }
+
+  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+    /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
+    enqueue: (items, o) => notifyNew(items, o) };
 }
 module.exports = { make, KA };
