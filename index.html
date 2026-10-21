@@ -33568,8 +33568,6 @@ var RETURN_MAP = {
   crewboard: { label: 'Schedule', target: 'schedule' },
   dailylogs: { label: 'Schedule', target: 'schedule' },
   templates: { label: 'Estimates', target: 'estimates' },
-  payments: { label: 'Invoices', target: 'invoices' },
-  launchjob: { label: 'Leads', target: 'leads' },
   changeorders: { label: 'Estimates', target: 'estimates' }
 };
 
@@ -33602,8 +33600,10 @@ function checkView(){
   }
 }
 
-setInterval(checkView,15000);
+/*__GC_PATCH_BK__*/setInterval(checkView,400);
 setTimeout(checkView, 1000);
+document.addEventListener('click',function(){ setTimeout(checkView,60); setTimeout(checkView,300); },true);
+window.addEventListener('popstate',function(){ setTimeout(checkView,60); });
 
 })();
 
