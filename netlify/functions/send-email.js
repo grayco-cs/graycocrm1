@@ -293,7 +293,7 @@ exports.handler = async function (event) {
   const payload = {
     from: from,
     to: Array.isArray(to) ? to : [to],
-    subject: subject,
+    subject: require('./_lib/mailtag.js').tag(subject, Array.isArray(to) ? to : [to], body.kind || body.template || ''),   /* owner 10/21: internal CRM mail says what it is about */
     html: await shellOut(html, who, body)
   };
   if (body.replyTo) payload.reply_to = body.replyTo;

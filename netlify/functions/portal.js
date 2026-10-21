@@ -1228,7 +1228,9 @@ function withJob(subject, p){
   subject = s(subject); if (!p) return clip(subject, 240);
   const po = s(p.autoPO || p.po);
   if (po && subject.indexOf('PO ' + po) >= 0) return clip(subject, 240);
-  const name = s(p.name), addr = s(p.address || p.jobAddress), has = function(x){ return x && low(subject).indexOf(low(x)) >= 0; };
+  const words = p.portalShowCarrier === true ? [] : carrierWords(p).map(function(w){ return new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); }).concat([COMMON_CARRIERS]);
+  const clean = function(x){ x = s(x); words.forEach(function(re){ re.lastIndex = 0; x = x.replace(re, ''); }); return x.replace(/\s*[\u2014\-\u2013]\s*(claim)?\s*$/i, '').replace(/\s{2,}/g, ' ').trim(); };   /* owner rule: never the carrier in a customer subject */
+  const name = clean(p.name), addr = clean(p.address || p.jobAddress), has = function(x){ return x && low(subject).indexOf(low(x)) >= 0; };
   const t = [po ? 'PO ' + po : '', has(name) ? '' : name, addr && !has(addr) && low(addr) !== low(name) ? addr : ''].filter(Boolean).join(' \u00b7 ');
   return clip(t ? subject + ' \u2014 ' + t : subject, 240);
 }

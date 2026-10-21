@@ -151,7 +151,7 @@ function make(d){
     if (!to.length) return { ok: false, why: 'no admin e-mail addresses' };
     try {
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }) });
+        body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject: require('./mailtag.js').tag(m.subject, to, 'bid lead'), html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }) });
       return r.ok ? { ok: true } : { ok: false, why: 'Resend answered ' + r.status };
     } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
   }

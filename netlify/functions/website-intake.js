@@ -345,7 +345,7 @@ async function alertApplication(app){
       + lines.map(x => '<tr><td style="padding:3px 10px 3px 0;color:#555;vertical-align:top">' + esc(x[0]) + '</td><td>' + esc(x[1]) + '</td></tr>').join('') + '</table>'
       + '<p style="margin-top:18px"><a href="' + esc(site) + '/#payroll" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Hiring in the CRM</a></p></div></div>';
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject, html, text: subject + '\n\n' + lines.map(x => x[0] + ': ' + x[1]).join('\n') + '\n\n' + site + '/#payroll' }) });
+      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'hiring'), html, text: subject + '\n\n' + lines.map(x => x[0] + ': ' + x[1]).join('\n') + '\n\n' + site + '/#payroll' }) });
     return { ok: r.ok, to: to.length };
   } catch (e) { return { why: s(e && e.message) }; }
 }

@@ -89,7 +89,7 @@ async function sendEmail(to, subject, html){
     body: JSON.stringify({
       from: GC.name+' <'+GC.email+'>',
       to: Array.isArray(to) ? to : [to],
-      subject, html
+      subject: require('./_lib/mailtag.js').tag(subject, Array.isArray(to) ? to : [to], 'report'), html
     })
   });
   return resp.json();
