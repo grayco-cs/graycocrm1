@@ -131654,6 +131654,143 @@ RI.call(W, function(){ tick(); fieldButton(); }, 1500);
 try { console.log('[GC] patch CC2: jobs and leads a person makes are theirs (Self-generated) — _gcSelfStatus()'); } catch (e) {}
 })();
 
+</script>
+<script id="gc-patch-ap4">
+/* ==========================================================================
+   patch AP4 — "If Nick and Wesley do not approve by 24 hours, then it goes
+   to the office to approve." (owner, 21 Oct 2026)
+
+   * An approval item at the ADMIN step for 24 hours (money / legal after the
+     PM, or a job with no PM) is escalated by the server (portal.js
+     escalateDue, every 15 minutes, and whenever this page shows a list).
+   * The office (a CRM user whose role says Office) then sees it in To-Do and
+     on the green APPROVE button, labelled "⏫ Escalated — admins didn't
+     answer in 24h", and can approve, edit or not approve it. The admins still
+     can; whoever acts first wins (the server records who, as what, and when).
+   * PM-step items are never escalated.
+   * The CRM notices the server leaves (gc_kv "gc_appr_notices": the office,
+     and the admins "sent to the office after 24h") show once per person.
+   Console: _gcAp4Due(), _gcAp4Check().
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_AP4__) return; window.__GC_PATCH_AP4__ = true;
+var RI = window.__GC_NATIVE_SETINTERVAL__ || setInterval, ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var FN = '/.netlify/functions/portal', ESC_MS = 24 * 3600e3;
+var LABEL = '⏫ Escalated — admins didn\'t answer in 24h';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function myEmail(){ try{ return low(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(e){ return ''; } }
+function isAdmin(){ try{ return !!(window.__GC_AUTH__ && window.__GC_AUTH__.isAdmin && window.__GC_AUTH__.isAdmin()); }catch(e){ return false; } }
+function myUser(){ var e = myEmail(); return ((((window._crm || {}).users) || []).filter(function(u){ return u && low(u.email) === e; })[0]) || null; }
+function isOffice(){ var u = myUser(); return !isAdmin() && !!(u && u.active !== false && /office/i.test(s(u.role))); }
+window._gcAp4IsOffice = isOffice;
+function adminSinceMs(x){
+  if(x.adminSince) return Date.parse(x.adminSince);
+  var ap = (x.approvals || []).filter(function(a){ return a && a.step === 'pm'; }).slice(-1)[0];
+  return Date.parse((ap && ap.at) || x.createdAt || 0);
+}
+function due(x){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || Date.now() - adminSinceMs(x) >= ESC_MS)); }
+window._gcAp4Due = due;
+
+/* the office's list: patch APPR's "waiting on me" + what the admins left for 24 h */
+function wrapList(){
+  var f = window._gcCustApprovals;
+  if(typeof f !== 'function' || f.__ap4) return;
+  var w = function(){
+    var r = f.apply(this, arguments);
+    try{
+      if(r && isOffice()){
+        var have = {}; (r.mine || []).forEach(function(x){ have[x.id] = 1; });
+        var add = (r.all || []).filter(function(x){ return due(x) && !have[x.id]; });
+        if(add.length){ r.mine = (r.mine || []).concat(add); r.count = r.mine.length; }
+        r.office = true;
+      }
+    }catch(e){}
+    return r;
+  };
+  w.__ap4 = true; window._gcCustApprovals = w;
+}
+function itemOf(id){ try{ var c = window._gcCustApprovals(); return ((c && c.all) || []).filter(function(x){ return x.id === id; })[0] || null; }catch(e){ return null; } }
+/* the label, wherever an item shows */
+function labels(){
+  document.querySelectorAll('._ap2Card[data-id],._apCard[data-id]').forEach(function(cd){
+    var x = itemOf(cd.getAttribute('data-id')), has = cd.querySelector('._gcEscNote');
+    if(!x || !due(x)){ if(has) has.remove(); return; }
+    if(has) return;
+    var n = document.createElement('div'); n.className = '_gcEscNote'; n.textContent = LABEL;
+    n.style.cssText = 'display:inline-block;margin-top:5px;padding:3px 9px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:800';
+    var head = cd.firstElementChild; if(head && head.nextSibling) cd.insertBefore(n, head.nextSibling); else cd.appendChild(n);
+  });
+  var pv = document.getElementById('_gcAp2Prev');
+  if(pv && pv.__id && !pv.querySelector('._gcEscNote')){
+    var x = itemOf(pv.__id);
+    if(x && due(x)){
+      var n2 = document.createElement('div'); n2.className = '_gcEscNote'; n2.textContent = LABEL + (isOffice() ? ' — you can approve, edit or not approve it.' : ' — the office can approve it too.');
+      n2.style.cssText = 'margin:6px 0;padding:6px 10px;border-radius:8px;background:#fee2e2;color:#991b1b;font-size:13px;font-weight:800';
+      var box = pv.firstElementChild; if(box && box.children[2]) box.insertBefore(n2, box.children[2]);
+    }
+  }
+}
+/* the page's own check: when a list is on screen and something is past 24 h, the server escalates it now */
+var lastCheck = 0;
+function check(force){
+  try{
+    var c = window._gcCustApprovals && window._gcCustApprovals(); if(!c) return Promise.resolve(null);
+    var pending = (c.all || []).some(function(x){ return due(x) && !x.escalated; });
+    if(!pending || (!force && Date.now() - lastCheck < 120000) || !myEmail()) return Promise.resolve(null);
+    lastCheck = Date.now();
+    return window.fetch(FN, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ action:'approval', op:'escalate' }) })
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(j){ if(window._gcApprovalsRefresh) return window._gcApprovalsRefresh().then(function(){ if(window._gcAp2Refresh) window._gcAp2Refresh(); return j; }); return j; }, function(){ return null; });
+  }catch(e){ return Promise.resolve(null); }
+}
+window._gcAp4Check = function(){ return check(true); };
+function listShown(){ return !!(document.getElementById('_todoMount') || document.getElementById('_gcOfficeToDoOv') || document.querySelector('[data-gc-ap2]') || document.getElementById('_gcApprOv')); }
+
+/* the CRM notices (once per person) */
+var SEEN = 'gc_appr_notices_seen', noticeBusy = false;
+function seenGet(){ try{ return JSON.parse(localStorage.getItem(SEEN) || '{}') || {}; }catch(e){ return {}; } }
+function seenSet(o){ try{ localStorage.setItem(SEEN, JSON.stringify(o)); }catch(e){} }
+function notices(){
+  if(noticeBusy || !myEmail() || document.hidden) return;
+  var who = isAdmin() ? 'admins' : (isOffice() ? 'office' : ''); if(!who) return;
+  var u = '', k = ''; try{ u = (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; }catch(e){}
+  if(!u || !k) return;
+  noticeBusy = true;
+  window.fetch(u + '/rest/v1/gc_kv?key=eq.gc_appr_notices&select=value', { headers:{ apikey:k, Authorization:'Bearer ' + k }, cache:'no-store' })
+    .then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){
+      noticeBusy = false;
+      var v = rows && rows[0] ? rows[0].value : []; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = []; } }
+      var seen = seenGet(), now = Date.now();
+      var mine = (Array.isArray(v) ? v : []).filter(function(n){ return n && n.to === who && !seen[n.id] && now - Date.parse(n.at || 0) < 3 * 86400e3; });
+      if(!mine.length) return;
+      mine.forEach(function(n){ seen[n.id] = now; }); seenSet(seen);
+      toast(mine);
+    }, function(){ noticeBusy = false; });
+}
+function toast(list){
+  var old = document.getElementById('_gcAp4Toast'); if(old) old.remove();
+  var t = document.createElement('div'); t.id = '_gcAp4Toast'; t.setAttribute('data-gc-keep', '1');
+  t.style.cssText = 'position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:100245;background:#7f1d1d;color:#fff;border-radius:14px;padding:14px 16px;max-width:440px;width:calc(100% - 32px);box-sizing:border-box;font-family:Inter,Arial,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.5)';
+  t.innerHTML = list.slice(0, 4).map(function(n){ return '<div class="_ap4Line" style="font-size:14px;font-weight:700;margin-bottom:6px"></div>'; }).join('') +
+    (list.length > 4 ? '<div style="font-size:12px;opacity:.8">+ ' + (list.length - 4) + ' more</div>' : '') +
+    '<div style="display:flex;gap:8px;margin-top:6px"><button type="button" class="_ap4Open" style="flex:1;padding:10px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Open approvals</button><button type="button" class="_ap4X" style="padding:10px 14px;border:none;border-radius:10px;background:rgba(255,255,255,.18);color:#fff;font-weight:800;cursor:pointer">✕</button></div>';
+  t.querySelectorAll('._ap4Line').forEach(function(d, i){ d.textContent = list[i].text; });
+  t.querySelector('._ap4Open').onclick = function(){ t.remove(); if(window._gcOpenPmApprovals) window._gcOpenPmApprovals(); };
+  t.querySelector('._ap4X').onclick = function(){ t.remove(); };
+  document.body.appendChild(t);
+  ST.call(window, function(){ if(t.parentNode) t.remove(); }, 30000);
+}
+window._gcAp4Notices = notices;
+
+function tick(){ wrapList(); try{ labels(); }catch(e){} if(listShown()) check(false); }
+tick();
+RI.call(window, tick, 800);
+RI.call(window, notices, 60000); ST.call(window, notices, 9000);
+try{ console.log('[GC] Approvals: 24 hours at the admins, then the office too (patch AP4).'); }catch(e){}
+})();
+
 </script><!-- /INSP -->
 
 

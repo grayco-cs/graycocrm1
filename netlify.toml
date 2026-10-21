@@ -46,6 +46,11 @@
 [functions."portal-reminders"]
   schedule = "7 * * * *"
 
+# Approvals (patch AP4): an item Wesley and Nick have not answered 24 hours after it reached them goes to the
+# office too. Checked every 15 minutes; the admins and the office are told once.
+[functions."approval-escalate"]
+  schedule = "*/15 * * * *"
+
 # Lead Inbox (docs/LEAD-INBOX.md): the public bid watcher — weekdays at 7, 10, 1, 4 and 6 o'clock Central
 # (12:17, 15:17, 18:17, 21:17, 23:17 UTC). One polite look at each public bid listing; new ones go to the
 # Lead Inbox, become CRM leads and draft bid-portal jobs, and each new one is e-mailed to the admins at once.

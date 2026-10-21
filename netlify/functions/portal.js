@@ -1154,6 +1154,7 @@ async function queueApproval(o){
   const item = { id: s(o.id), kind: o.kind, title: s(o.title), jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
     to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
     status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
+  if (item.step === 'admin') item.adminSince = now;   /* patch AP4: when it reached the admin step */
   const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
   const r = await kvListUpdate(AQ_KEY, function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
   return r.ok;
@@ -1247,6 +1248,7 @@ async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
   const admin = low(who.role) === 'admin';
   let myName = s(who.name);
+  if (op === 'escalate') { const e = await escalateDue({}); return { status: e.ok ? 200 : 502, out: e }; }   /* patch AP4: the page asks when a list is shown */
   const cur = await kvListRead(AQ_KEY);
   if (!cur) return { status: 502, out: { ok: false, error: 'Could not read the approvals list.' } };
   if (op === 'list') return { status: 200, out: { ok: true, items: cur.list } };
@@ -1271,8 +1273,11 @@ async function approvalAction(body, who){
   const isPm = (it0.pmEmail && low(it0.pmEmail) === low(who.email)) || (it0.pm && myName && low(it0.pm) === low(myName));
   const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
   if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
-  if (!admin && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now.' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
-  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : 'pm', at: now };
+  /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
+  const office = !admin && it0.step === 'admin' && escalatedOrDue(it0, Date.now()) && await isOffice(who);
+  if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : (office ? 'office' : 'pm'), at: now };
+  if (office && !it0.escalated) { try { await escalateDue({ only: id }); } catch (e) {} }
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
     const r = await upd(function(x){ if (x.status !== 'waiting' && !stale) return false; x.status = 'rejected'; x.rejectedBy = me.by; x.rejectedEmail = me.email; x.rejectedAt = now; x.reason = clip(body.reason, 500); }, function(z){ return z.status === 'rejected'; });
@@ -1296,14 +1301,14 @@ async function approvalAction(body, who){
     return { status: 200, out: { ok: true, saved: true, item: re.result } };
   }
   if (op !== 'approve') return { status: 400, out: { ok: false, error: 'Bad request' } };
-  const last = admin || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
+  const last = admin || office || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
   const claim = 'c' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   let r = await upd(function(x){
     if (x.status !== 'waiting' && !(x.status === 'sending' && stale)) return false;
     if (edit) applyEdit(x, edit, me);
     x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step }, me)]);
     if (last) { x.status = 'sending'; x.claim = claim; }
-    else x.step = x.steps[x.steps.indexOf(x.step) + 1];
+    else { x.step = x.steps[x.steps.indexOf(x.step) + 1]; if (x.step === 'admin') x.adminSince = now; }   /* patch AP4: the 24 hours start */
   }, function(z){ return last ? z.claim === claim : z.step !== it0.step; });
   if (!r.ok || !r.result || (last && r.result.claim !== claim)) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: r.result } };
   if (!last) return { status: 200, out: { ok: true, item: r.result, next: r.result.step } };
@@ -1316,6 +1321,76 @@ async function approvalAction(body, who){
   const item = r.result || it0;
   if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
   return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
+}
+/* ── patch AP4 (owner, 21 Oct 2026): "If Nick and Wesley do not approve by 24 hours, then it goes to the office to
+   approve." An item at the ADMIN step (money / legal after the PM, or a job with no PM) that nobody approved or
+   rejected within 24 hours of reaching that step is escalated: the office (gc_staff role office, or a CRM user whose
+   role says Office) may then approve, edit or not approve it; the admins still can too — whoever acts first wins,
+   and the approval records who, with which role, and when. PM-step items are never escalated. Run every 15 minutes
+   (approval-escalate.js) and whenever the CRM shows a list (op "escalate"). On escalation: once, an office to-do,
+   a CRM notice for the office and for the admins (gc_kv "gc_appr_notices"), and a phone push to both. ── */
+const ESC_MS = 24 * 3600e3;
+function adminSinceMs(x){
+  if (x.adminSince) return Date.parse(x.adminSince);
+  const ap = (x.approvals || []).filter(function(a){ return a && a.step === 'pm'; }).slice(-1)[0];   /* older items: when the PM approved */
+  return Date.parse((ap && ap.at) || x.createdAt || 0);
+}
+function escalatedOrDue(x, nowMs){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || nowMs - adminSinceMs(x) >= ESC_MS)); }
+async function isOffice(who){
+  if (/office/.test(low(who.role))) return true;
+  try { const d = await crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); return !!(u && u.active !== false && /office/i.test(s(u.role))); } catch (e) { return false; }
+}
+function peopleOf(data, test){ return arr(data.users).filter(function(u){ return u && u.active !== false && /@/.test(s(u.email)) && test(u); }).map(function(u){ return low(u.email); }).filter(function(e, i, a){ return a.indexOf(e) === i; }); }
+function officeEmails(data){ return peopleOf(data, function(u){ return /office/i.test(s(u.role)) && !/^admin$/i.test(s(u.role)); }); }
+function adminEmails(data){ return peopleOf(data, function(u){ return /^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'; }); }
+let webPushLib;
+async function pushTo(emails, p){
+  const pub = s(process.env.VAPID_PUBLIC_KEY), priv = s(process.env.VAPID_PRIVATE_KEY);
+  const wp = exports._core && exports._core._webPush || (webPushLib !== undefined ? webPushLib : (webPushLib = (function(){ try { return require('web-push'); } catch (e) { return null; } })()));
+  if (!wp || ((!pub || !priv) && !(exports._core && exports._core._webPush))) return { sent: 0, why: 'phone push is not set up' };
+  try { if (pub && priv) wp.setVapidDetails(s(process.env.VAPID_SUBJECT) || 'mailto:office@grayco-cs.com', pub, priv); } catch (e) { return { sent: 0, why: 'bad VAPID keys' }; }
+  const payload = JSON.stringify({ title: p.title, body: p.body, link: baseUrl({}) + '/#todo', tag: p.tag });
+  let sent = 0;
+  for (const email of emails) {
+    let subs = []; try { subs = arr((await kvRead(['gc_push_subs__' + email]))['gc_push_subs__' + email]).filter(function(x){ return x && x.endpoint && x.keys; }); } catch (e) {}
+    for (const sub of subs) { try { await wp.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload, { TTL: 86400 }); sent++; } catch (e) {} }
+  }
+  return { sent: sent };
+}
+async function escalateDue(opts){
+  opts = opts || {};
+  const nowMs = opts.now ? +new Date(opts.now) : Date.now(), at = new Date(nowMs).toISOString();
+  let fresh = [];
+  const r = await kvListUpdate(AQ_KEY, function(l){
+    fresh = [];
+    l.forEach(function(x){
+      if (!x || x.escalated || (opts.only && s(x.id) !== s(opts.only))) return;
+      if (!escalatedOrDue(x, nowMs)) return;
+      x.escalated = { at: at, why: 'Wesley and Nick did not answer in 24 hours' }; x.updatedAt = at; fresh.push(x);
+    });
+    if (!fresh.length) return null;
+    const ids = fresh.map(function(x){ return s(x.id); });
+    return { list: l, check: function(l2){ return ids.every(function(id){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && z.escalated); }); }, result: ids };
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  if (!fresh.length) return { ok: true, escalated: 0 };
+  /* tell them, once (only this run marked these) */
+  let data = {}; try { data = await crmData(true); } catch (e) {}
+  const office = officeEmails(data), admins = adminEmails(data), notices = [];
+  for (const x of fresh) {
+    const title = s(x.title) || ((x.kind || '').replace(/_/g, ' ') + ' — ' + s(x.jobName));
+    await officeTodo('appr_esc_' + s(x.id), '⏫ Approve: ' + clip(title, 120), 'Wesley and Nick did not answer in 24 hours. You can approve, edit or not approve it now: ✅ Approvals in To-Do, or the green APPROVE button.');
+    notices.push({ id: 'esc_office_' + s(x.id), to: 'office', itemId: s(x.id), at: at, text: '⏫ For you to approve: ' + clip(title, 120) + ' — Wesley and Nick did not answer in 24 hours.' });
+    notices.push({ id: 'esc_admins_' + s(x.id), to: 'admins', itemId: s(x.id), at: at, text: '⏫ Sent to the office after 24h: ' + clip(title, 120) + '. You can still approve it.' });
+    await pushTo(office, { title: '⏫ Approval for the office', body: clip(title, 120) + ' — admins didn\'t answer in 24h', tag: 'appr-esc-' + s(x.id) });
+    await pushTo(admins, { title: 'Sent to the office after 24h', body: clip(title, 120), tag: 'appr-esc-admin-' + s(x.id) });
+  }
+  await kvListUpdate('gc_appr_notices', function(l){
+    const have = {}; l.forEach(function(n){ have[s(n && n.id)] = 1; });
+    const add = notices.filter(function(n){ return !have[n.id]; }); if (!add.length) return null;
+    return { list: l.concat(add).slice(-300), check: function(l2){ return add.every(function(n){ return l2.some(function(m){ return m && m.id === n.id; }); }); } };
+  });
+  return { ok: true, escalated: fresh.length, ids: fresh.map(function(x){ return s(x.id); }), office: office, admins: admins };
 }
 /* patch AP3: the approved first reminder of an invoice (the newest one sent), the template for the later ones */
 async function approvedReminder(invId){
@@ -1805,7 +1880,7 @@ exports.handler = async function (event) {
 
 /* for portal-reminders.js and the tests */
 exports._core = { pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, grayCoPhotos: grayCoPhotos, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
+  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
