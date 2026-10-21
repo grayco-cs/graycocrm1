@@ -420,6 +420,16 @@ function carrierWords(p){
   });
   return out;
 }
+/* patch BB2: every claim on the job (gc_kv gc_claims, also a deleted one) — its carrier, program / TPA and the
+   adjusting companies are scrubbed from everything the customer gets, like the job's own carrier field */
+function claimWords(data, pid, keepCarrier){
+  const out = [];
+  arr(data && data.gc_claims).forEach(function(c){
+    if (!c || s(c.projectId) !== s(pid)) return;
+    [keepCarrier ? '' : c.carrier, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program].forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
+  });
+  return out;
+}
 function scrub(obj, words){
   if (!words.length) return obj;
   const res = words.map(function(w){ return w instanceof RegExp ? w : new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); });
@@ -471,7 +481,7 @@ async function buildView(data, p, opts){
   const cos = listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; });
   const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
-  const ins = isInsJob(p);   /* patch INSP */
+  const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));   /* patch INSP; patch BB2: a job with a claim (gc_claims) is an insurance job */
   const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); });
   const openPunch = arr(data.punch).some(function(x){ return pidOf(x) === pid && !/complete|done|closed/.test(low(x.status)); });
   const lead = arr(data.leads).find(function(l){ return s(l.fromProjectId) === pid || pidOf(l) === pid; }) || null;
@@ -562,7 +572,7 @@ async function buildView(data, p, opts){
       photos: arr(x.files).map(function(f){ return signed[f.ref] || ''; }).filter(Boolean).slice(0, 12) }; }),
     docs: docs.slice(0, 60),
     companyCam: { url: '', linked: !!ccId },          /* patch U2: the portal never links to CompanyCam */
-    warranty: warrantyOf(p, stage),
+    warranty: warrantyOf(insClaim(data, pid) ? Object.assign({}, p, { isInsurance: true }) : p, stage),   /* patch BB2: claim jobs = insurance / restoration, 5 years */
     showReview: stage >= 7,
     review: stage >= 7 && jaAllows(data, p, 'reviewRequest') ? { google: REVIEW_URL, facebook: FACEBOOK_URL } : null
   };
@@ -572,7 +582,8 @@ async function buildView(data, p, opts){
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
     return scrub(view, insWords(data, p));
   }
-  return scrub(view, jaAllows(data, p, 'showCarrier') && p.portalShowCarrier !== false ? [] : carrierWords(p));
+  const showC = jaAllows(data, p, 'showCarrier') && p.portalShowCarrier !== false;   /* patch BB2: the claim's TPA / adjusting companies are always scrubbed, its carrier unless shown */
+  return scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC)));
 }
 
 /* ── INSURANCE JOBS (patch INSP) ────────────────────────────────────────────────
@@ -625,6 +636,7 @@ function insWords(data, p){
   const c = insClaim(data, p.id) || {}, out = [];
   const showCarrier = p.portalShowCarrier === true || (p.portalShowCarrier !== false && JA.effective(p, jaAdmin(data)).showCarrier === true);   /* patch JA */
   if (!showCarrier) { carrierWords(p).forEach(function(w){ out.push(w); }); if (s(c.carrier).length >= 3) out.push(s(c.carrier)); out.push(COMMON_CARRIERS); }
+  claimWords(data, p.id).forEach(function(w){ if (w !== s(c.carrier) || !showCarrier) out.push(w); });   /* patch BB2: TPA / adjusting company always; the carrier unless shown */
   [p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
     .forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
   return out;
@@ -663,7 +675,7 @@ function insTagDocs(docs, pdocs, signed){
   });
 }
 function insLossType(p, c){
-  const t = s(p.lossType || p.typeOfLoss || p.causeOfLoss || c.causeOfLoss);
+  const t = s(c.causeOfLoss || p.lossType || p.typeOfLoss || p.causeOfLoss);   /* patch BB2: the claim first */
   if (t) return clip(t, 40);
   const h = low([p.type, p.jobType, p.name, p.scope].filter(function(v){ return typeof v === 'string'; }).join(' '));
   if (/water|flood|leak|pipe/.test(h)) return 'Water';
@@ -689,9 +701,17 @@ function insToEndorse(x){
   if (x.endorsedAt || /deposit|cleared|received|endorsed|cashed/.test(low(x.status)) && !/to endorse|not endorsed/.test(low(x.status))) return false;
   return x.endorse === true || /endorse|held|pending|to sign|needs signature|mortgage|waiting/.test(low(x.status));
 }
+/* patch BB2: the claim's carrier estimate (patch BB versions): the latest approved one, else the latest carrier one */
+function claimTotals(c){
+  const l = arr(c && c.estimates).filter(function(e){ return e && e.deleted !== true && e.totals && !/grayco/i.test(s(e.side)); });
+  const ok = l.filter(function(e){ return /approved/i.test(s(e.status)); });
+  const e = (ok.length ? ok : l).slice(-1)[0];
+  return e ? { rcv: num(e.totals.rcv), acv: num(e.totals.acv), recDep: num(e.totals.recDep) } : { rcv: 0, acv: 0, recDep: 0 };
+}
+function claimRecDep(c){ return claimTotals(c).recDep; }
 function insMoney(p, c, ctx){
   const today = new Date().toISOString().slice(0, 10);
-  const deductible = money(num(p.deductible) || num(c.deductible));
+  const deductible = money(num(c.deductible) || num(p.deductible));   /* patch BB2: the claim first */
   /* what the customer pays on top of the deductible: upgrades / items the insurance does not cover.
      An approved change order counts unless it is a supplement (the insurance pays those). */
   const upgrades = [];
@@ -727,11 +747,12 @@ function insMoney(p, c, ctx){
   const youOwe = money(deductible + upgradesTotal);
 
   /* recoverable depreciation: held back by the insurance company until the work is done */
-  const rcv = money(num(p.rcv) || num(p.totalRCV)), acv = money(num(p.acv) || num(p.totalACV));
-  let recDep = money(num(p.recoverableDep) || num(p.recoverableDepreciation) || num(p.depreciation) || num(p.totalDepreciation) || (rcv > acv && acv > 0 ? rcv - acv : 0));
+  const ct = claimTotals(c);   /* patch BB2: the carrier's approved estimate on the claim */
+  const rcv = money(num(p.rcv) || num(p.totalRCV) || ct.rcv), acv = money(num(p.acv) || num(p.totalACV) || ct.acv);
+  let recDep = money(num(c.recoverableDep) || claimRecDep(c) || num(p.recoverableDep) || num(p.recoverableDepreciation) || num(p.depreciation) || num(p.totalDepreciation) || (rcv > acv && acv > 0 ? rcv - acv : 0));
   const depChecks = checks.filter(function(x){ return x.kind === 'Depreciation' && !x.endorse; });
   const released = money(depChecks.reduce(function(t, x){ return t + x.amount; }, 0) || num(p.depReleasedAmount));
-  const ds = low(p.depStatus);
+  const ds = low(c.depStatus || p.depStatus);
   let status = '';
   if (/released|paid|received/.test(ds) || p.depReleased === true || (recDep > 0 && released >= recDep - 0.5)) status = 'released';
   else if (/request|asked|sent/.test(ds) || p.depRequestedAt) status = 'requested';
@@ -802,15 +823,17 @@ function insuranceView(data, p, ctx){
   const adj = (c.adjuster && typeof c.adjuster === 'object') ? c.adjuster : {};
   const pa = (p.adjuster && typeof p.adjuster === 'object') ? p.adjuster : {};
   const f = {
-    claimNumber: clip(p.claimNumber || p.claimNo || c.claimNumber, 40),
-    dateOfLoss: ymd(p.dateOfLoss || p.lossDate || c.dateOfLoss),
+    /* patch BB2: one set of claim data — once the job has a claim (gc_claims) the claim holds these; the job's own
+       fields (patch INSP, before the claim was opened) are the fallback */
+    claimNumber: clip(c.claimNumber || p.claimNumber || p.claimNo, 40),
+    dateOfLoss: ymd(c.dateOfLoss || p.dateOfLoss || p.lossDate),
     lossType: insLossType(p, c),
-    deductible: money(num(p.deductible) || num(c.deductible)),
-    carrier: s(carrierWords(p)[0] || c.carrier),
-    adjusterName: clip(p.adjusterName || (typeof p.adjuster === 'string' ? p.adjuster : pa.name) || adj.name, 60),
-    adjusterPhone: clip(p.adjusterPhone || pa.phone || adj.phone, 40),
-    adjusterMeeting: ymd(p.adjusterMeetingAt || p.adjusterMeeting || p.adjusterVisit || c.adjusterMeetingAt),
-    mortgageCo: clip(p.mortgageCo || p.mortgageCompany || c.mortgageCo, 80)
+    deductible: money(num(c.deductible) || num(p.deductible)),
+    carrier: s(c.carrier || carrierWords(p)[0]),
+    adjusterName: clip(adj.name || p.adjusterName || (typeof p.adjuster === 'string' ? p.adjuster : pa.name), 60),
+    adjusterPhone: clip(adj.phone || p.adjusterPhone || pa.phone, 40),
+    adjusterMeeting: ymd(c.adjusterMeetingAt || p.adjusterMeetingAt || p.adjusterMeeting || p.adjusterVisit),
+    mortgageCo: clip(c.mortgageCo || p.mortgageCo || p.mortgageCompany, 80)
   };
   const groups = {}; ctx.docs.forEach(function(d){ if (d.group) groups[d.group] = (groups[d.group] || 0) + 1; });
   ctx.complete = ctx.stage >= 7 || !!ymd(p.completionDate || p.completedAt);

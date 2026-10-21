@@ -7,9 +7,12 @@
 //
 //   GET  ?action=me                         → { email, role, name }
 //   GET  ?action=list                       → { staff: [ {email,name,role,active,added_by,added_at} ] }
-//   POST { action:'add',    email, name, role:'staff'|'admin' }
+//   POST { action:'add',    email, name, role:'staff'|'admin', profile? }
 //        → creates the sign-in (with a temporary password shown ONCE) and puts the
 //          person on gc_staff. Re-adding a removed person lets them back in.
+//   POST { action:'profile', email, profile } → the person's job profile (patch RP): '' (from their role in
+//          Admin → Employees) | estimator | insurance | mitigation | super | pm | office | field. The CRM shows that
+//          profile's menu, home dashboard and field view. Needs docs/role-profiles.sql (gc_staff.profile).
 //   POST { action:'remove', email }         → off gc_staff (blocked at once) + sign-in banned
 //   POST { action:'reset',  email }         → new temporary password, shown ONCE
 //
@@ -103,10 +106,25 @@ function tempPassword(){
 function cleanEmail(e){ return String(e || '').trim().toLowerCase(); }
 function okEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
+/* patch RP: the job profile on gc_staff (docs/role-profiles.sql). Only these; '' = from the role in Admin → Employees. */
+const PROFILES = ['', 'estimator', 'insurance', 'mitigation', 'super', 'pm', 'office', 'field'];
+function cleanProfile(p){ const v = String(p == null ? '' : p).trim().toLowerCase(); return PROFILES.indexOf(v) > -1 ? v : null; }
 async function listStaff(){
-  const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=email,name,role,active,added_by,added_at&order=email.asc', { headers: svcHeaders() });
+  /* select=* so the list works before and after docs/role-profiles.sql (the profile column) */
+  const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=*&order=email.asc', { headers: svcHeaders() });
   if (!r.ok) throw new Error('Could not read gc_staff (' + r.status + '). Has docs/security-lockdown.sql been run?');
-  return r.json();
+  const rows = await r.json();
+  return (Array.isArray(rows) ? rows : []).map(function(x){ return { email: x.email, name: x.name, role: x.role, active: x.active, added_by: x.added_by, added_at: x.added_at, profile: x.profile || '' }; });
+}
+async function setProfile(email, profile){
+  const r = await fetch(sbUrl() + '/rest/v1/gc_staff?email=eq.' + encodeURIComponent(email), {
+    method: 'PATCH', headers: svcHeaders({ Prefer: 'return=representation' }), body: JSON.stringify({ profile: profile || null })
+  });
+  const txt = await r.text();
+  if (!r.ok) return { ok: false, status: r.status, error: /profile/.test(txt) ? 'Run docs/role-profiles.sql in Supabase first (it adds the Profile column).' : 'Could not save the profile (' + r.status + '): ' + txt.slice(0, 200) };
+  let rows = []; try { rows = JSON.parse(txt); } catch (e) {}
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, status: 404, error: email + ' is not on the staff list.' };
+  return { ok: true };
 }
 async function signIns(){
   const staff = await listStaff(), want = {}, out = [];
@@ -154,7 +172,9 @@ exports.handler = async function (event) {
 
   const q = event.queryStringParameters || {};
   if (event.httpMethod === 'GET' && (q.action || 'me') === 'me') {
-    return J(200, { email: who.email, role: who.role, name: who.name || '' });
+    let profile = '';
+    try { const pr = await fetch(sbUrl() + '/rest/v1/gc_staff?select=*&email=eq.' + encodeURIComponent(who.email), { headers: svcHeaders() }); if (pr.ok) { const rows = await pr.json(); profile = (rows && rows[0] && rows[0].profile) || ''; } } catch (e) {}
+    return J(200, { email: who.email, role: who.role, name: who.name || '', profile: profile });
   }
   if (who.role !== 'admin') return J(403, { error: 'Only an admin can change who has access.' });
 
@@ -173,8 +193,17 @@ exports.handler = async function (event) {
     const email = cleanEmail(body.email);
     if (!okEmail(email)) return J(400, { error: 'A valid email address is required.' });
 
+    if (action === 'profile') {
+      const profile = cleanProfile(body.profile);
+      if (profile === null) return J(400, { error: 'Unknown profile. Use one of: ' + PROFILES.filter(Boolean).join(', ') + ' (or empty).' });
+      const r = await setProfile(email, profile);
+      if (!r.ok) return J(r.status === 404 ? 404 : 502, { error: r.error });
+      return J(200, { ok: true, email: email, profile: profile });
+    }
+
     if (action === 'add') {
       const role = String(body.role || 'staff').toLowerCase() === 'admin' ? 'admin' : 'staff';
+      const profile = cleanProfile(body.profile);
       const name = String(body.name || '').trim().slice(0, 80);
       // 1. on the list (this is what RLS and the functions check)
       const up = await fetch(sbUrl() + '/rest/v1/gc_staff?on_conflict=email', {
@@ -189,7 +218,10 @@ exports.handler = async function (event) {
         method: 'POST', headers: svcHeaders(),
         body: JSON.stringify({ email: email, password: pw, email_confirm: true, user_metadata: { name: name } })
       });
-      if (cr.ok) return J(200, { ok: true, email: email, role: role, created: true, tempPassword: pw });
+      /* patch RP: the profile (if one was picked; an older database without the column just skips it) */
+      let profileNote = '';
+      if (profile) { const pr = await setProfile(email, profile); if (!pr.ok) profileNote = ' Profile not saved: ' + pr.error; }
+      if (cr.ok) return J(200, { ok: true, email: email, role: role, profile: profile || '', created: true, tempPassword: pw, note: profileNote || undefined });
       // already has a sign-in (e.g. was removed before): lift any ban, keep their password
       const existing = await findAuthUser(email);
       if (existing) {
