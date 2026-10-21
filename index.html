@@ -47702,7 +47702,7 @@ try{ window._gcFlushPendingSync = _flushPendingSync; }catch(e){}
 async function sbWriteChunked(key, arr){
   try{
     if(!Array.isArray(arr)) return sbWrite(key, arr);
-    try{ if(window._gcChunkUnion){ var _cu = await window._gcChunkUnion(key, arr); if(Array.isArray(_cu)) arr = _cu; } }catch(_cue){}   /* patch EST: union with the cloud */
+    try{ if(window._gcChunkUnion){ var _cu = await window._gcChunkUnion(key, arr); if(Array.isArray(_cu)) arr = _cu; } }catch(_cue){ if(_cue && _cue.__gcBusy){ console.warn('[GC Sync] "'+key+'" waits: the cloud could not be read first'); return false; } }   /* patch PJX */   /* patch EST: union with the cloud */
     var TARGET = 1200000;
     var chunks = [], cur = [], curLen = 2;
     for(var i=0;i<arr.length;i++){
@@ -47712,8 +47712,10 @@ async function sbWriteChunked(key, arr){
     }
     if(cur.length) chunks.push(cur);
     if(chunks.length<=1){ return sbWrite(key, arr); }
-    for(var ci=0; ci<chunks.length; ci++){ await sbWrite(key+'__chunk'+ci, chunks[ci]); }
-    await sbWrite(key+'__manifest', { chunked:true, count:chunks.length, total:arr.length, at:new Date().toISOString() });
+    var _oldN = 0; try{ _oldN = window._gcChunkCount ? await window._gcChunkCount(key) : 0; }catch(_on){}   /* patch PJX */
+    for(var ci=0; ci<chunks.length; ci++){ if(!(await sbWrite(key+'__chunk'+ci, chunks[ci]))){ console.warn('[GC Sync] "'+key+'" chunk '+ci+' did not go up — the manifest is not written, the cloud keeps its last complete set'); return false; } }
+    await sbWrite(key+'__manifest', { chunked:true, count:chunks.length, total:arr.length, at:new Date().toISOString(), gen:(Date.now().toString(36)+Math.random().toString(36).slice(2,7)), sig:(window._gcChunkSig ? chunks.map(window._gcChunkSig) : undefined) });   /* patch PJX: the manifest names its chunks */
+    for(var _lc=chunks.length; _lc<_oldN; _lc++){ await sbWrite(key+'__chunk'+_lc, []); }   /* patch PJX: an older, longer generation's leftovers are emptied */
     console.log('[GC Sync] "'+key+'" synced in '+chunks.length+' chunks ('+arr.length+' records).');
     return true;
   }catch(e){ console.warn('[GC Sync] chunked write failed for '+key, e); return false; }
@@ -47722,6 +47724,7 @@ async function sbReadChunked(key){
   try{
     var r = await fetch(SB_URL+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key+'__manifest')+'&select=value',
       {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    if(!r || !r.ok) return null;   /* patch PJX: a failed read is not "no chunks" */
     var rows = await r.json();
     if(!Array.isArray(rows) || !rows.length || !rows[0].value || !rows[0].value.chunked) return null;
     var n = rows[0].value.count||0, out=[];
@@ -47729,12 +47732,37 @@ async function sbReadChunked(key){
       var rr = await fetch(SB_URL+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key+'__chunk'+ci)+'&select=value',
         {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
       var rrows = await rr.json();
-      if(Array.isArray(rrows) && rrows.length && Array.isArray(rrows[0].value)){ out = out.concat(rrows[0].value); }
+      if(rr && rr.ok && Array.isArray(rrows) && rrows.length && Array.isArray(rrows[0].value)){ out = out.concat(rrows[0].value); } else { return null; }   /* patch PJX: one missing chunk = the whole read failed (it was handed on as the list: jobs vanished, came back) */
     }
     return out;
   }catch(e){ return null; }
 }
 window._gcSbWriteChunked = sbWriteChunked;
+window._gcSbReadChunked = sbReadChunked;
+/* patch PJX: the reader accepts only one complete generation */
+sbReadChunked = async function(key){
+  var H = {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY};
+  async function one(k){ var r = await fetch(SB_URL+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(k)+'&select=value', {headers:H, cache:'no-store'}); if(!r || !r.ok) throw new Error('read '+k); var rows = await r.json(); if(!Array.isArray(rows)) throw new Error('read '+k); if(!rows.length) return undefined; var v = rows[0].value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(_p){} } return v; }
+  for(var att=0; att<3; att++){
+    try{
+      var m = await one(key+'__manifest');
+      if(!m || !m.chunked) return null;
+      var n = m.count||0, out = [], ok = true;
+      for(var ci=0; ci<n && ok; ci++){
+        var c = await one(key+'__chunk'+ci);
+        if(!Array.isArray(c)){ ok = false; break; }
+        if(Array.isArray(m.sig) && window._gcChunkSig && m.sig[ci] !== window._gcChunkSig(c)){ ok = false; break; }
+        out = out.concat(c);
+      }
+      if(ok && typeof m.total === 'number' && out.length !== m.total) ok = false;
+      if(ok && !Array.isArray(m.sig)){ var m2 = await one(key+'__manifest'); if(!m2 || m2.at !== m.at || m2.count !== m.count) ok = false; }
+      if(ok){ try{ if(window.__gcChunkTorn) delete window.__gcChunkTorn[key]; }catch(_d){} return window._gcDedupeIds ? window._gcDedupeIds(out) : out; }
+    }catch(e){}
+    await new Promise(function(res){ setTimeout(res, 1500*(att+1)); });
+  }
+  try{ (window.__gcChunkTorn = window.__gcChunkTorn || {})[key] = Date.now(); console.warn('[GC Sync] "'+key+'": the cloud\'s chunks are not one complete set (a save is under way, or one failed) — this computer keeps its own copy'); }catch(_w){}
+  return null;
+};
 window._gcSbReadChunked = sbReadChunked;
 
 async function pullAll(force){
@@ -103540,7 +103568,7 @@ function sameJob(a, b){
          address is good enough for the CompanyCam importer, which can see the
          whole list and check nothing else at that address looks the same; it is
          not good enough for a background sweep quietly deleting a job. */
-      if(v.same && !/CompanyCam|PO number|the same record/.test(v.why||'')){
+      if(v.same && !/CompanyCam|the same record/.test(v.why||'')){   /* patch PJX: a shared PO alone is a question, not a merge */
         try{ window._gcAskAboutJob &&
              window._gcAskAboutJob((b&&(b.name||b.address||b.id))||'a job',
                'looks like the same job ('+v.why+') — left alone, merge it yourself if it is', [a,b]); }catch(e){}
@@ -103687,7 +103715,7 @@ function collapse(rows, L){
       continue;
     }
     /* the fuller of the two survives, and takes what the other knew */
-    if(fullness(r) > fullness(keepers[hit])){
+    if(L.careful ? (String(r.id) < String(keepers[hit].id)) : (fullness(r) > fullness(keepers[hit]))){   /* patch PJX: the same survivor on every computer */
       absorbAll(r, keepers[hit]); dropped.push(keepers[hit]); keepers[hit]=r;
     }else{
       absorbAll(keepers[hit], r); dropped.push(r);
@@ -148598,5 +148626,471 @@ try { console.log('[GC] Role profiles (patch RP): _gcRP.status()'); } catch (e) 
   var NS = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
   NS(function(){ try { badge(); decorate(); chipSync(current()); } catch (e) {} }, 1000);
   try { badge(); } catch (e) {}
+})();
+</script>
+<script>
+/* ============================================================================
+   GrayCo — JOBS STAY PUT: ONE COUNT ON EVERY COMPUTER, EVEN WHEN THE CLOUD IS BUSY.
+   patch PJX (__GC_PATCH_PJX__)
+
+   "the Projects counts flip from 7-4 to 9-3 and back, and my new test job got
+    deleted by itself (and came back a minute later)"
+
+   What did it (measured with four computers on the fresh-start data):
+   1. When the database is overloaded it answers 503 / 522 / 500. Most of the
+      CRM's readers took that answer as data: a chunk that failed to load was
+      skipped and the other chunks were handed on as "the" list, an error object
+      became an empty list. A list read from a busy cloud is SHORTER than the
+      real one — jobs vanish, and the next good read brings them back.
+   2. Every push of the job list REPLACES the cloud's copy. A computer that could
+      not read the cloud first (busy cloud, phone on a weak signal: the check
+      gave up after 4 s and pushed anyway) sent its own, older list over the
+      newer one. Other computers pushed theirs back: the flip-flop.
+   3. Errors were retried at once, from every tab, which keeps a busy database
+      busy.
+   4. A job changed by code (not a click within the last minute) kept its old
+      updatedAt, so it tied with the old copy in the cloud and lost: the status
+      went back.
+   5. The duplicate sweep merged two different jobs that happened to get the same
+      random PO number and dropped one with no delete mark; the other computers
+      sent it back, the sweep took it out again.
+
+   Now:
+   · A read that fails (5xx, 429, an error object, a body that is not JSON, a
+     missing chunk) is a FAILED read: it changes nothing, as if offline.
+   · 5xx / 429: the computer backs off (30 s, doubling to 5 min, with jitter)
+     before it asks the database again. Nothing is lost: the data is on disk and
+     goes up with the next push.
+   · A job-list push goes up as the union (newest copy of each job wins, deletes
+     stay deleted) with the cloud's current list. If the cloud cannot be read,
+     the push WAITS — a full list is never pushed on top of a failed read.
+   · A job change that carries its stamp is kept, field by field, over any older
+     copy (a start-up sweep writing an older disk copy back cannot undo it).
+   · The sweep merges two jobs only on the same CompanyCam project (a shared
+     random PO is a question, not a merge), keeping the same survivor on every
+     computer. Chunked lists are read as one complete generation or not at all;
+     one id is one record (newest copy) in every merge.
+   Console: _gcPJX.status()
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_PJX__) return; window.__GC_PATCH_PJX__ = true;
+var SBH = 'ieeonhpfahmwwecizdut.supabase.co';
+var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var S = { kept:0, restored:0, cached:0, reads:0, writes:0, failedReads:0, heldWrites:0, backoffs:0, blocked:0, unioned:0, addedFromCloud:0, restamped:0, since:Date.now() };
+var BO = { until:0, n:0 };
+function iso(){ return new Date().toISOString(); }
+function s(v){ return v == null ? '' : String(v); }
+function jparse(t, d){ try{ var v = JSON.parse(t); return v == null ? d : v; }catch(e){ return d; } }
+function busyErr(why){ var e = new TypeError('Failed to fetch (GrayCo: ' + why + ')'); e.__gcBusy = true; return e; }
+window.addEventListener('online', function(){ BO.until = 0; BO.n = 0; });   /* back online: ask again at once */
+function backoff(status){
+  BO.n = Math.min(BO.n + 1, 6);
+  var ms = Math.min(300000, 30000 * Math.pow(2, BO.n - 1));
+  ms = Math.round(ms * (0.8 + Math.random() * 0.4));
+  BO.until = Date.now() + ms; S.backoffs++;
+  try{ console.warn('[GC] the cloud answered ' + status + ' — this computer waits ' + Math.round(ms / 1000) + ' s before asking again (nothing is lost: it is all on this computer)'); }catch(e){}
+}
+function urlOf(input){ return typeof input === 'string' ? input : (input && input.url) || s(input); }
+function methodOf(input, init){ return String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase(); }
+function hdr(init, name){
+  try{
+    var h = init && init.headers; if(!h) return '';
+    if(typeof h.get === 'function') return h.get(name) || '';
+    if(Array.isArray(h)){ for(var i = 0; i < h.length; i++) if(String(h[i][0]).toLowerCase() === name.toLowerCase()) return h[i][1]; return ''; }
+    for(var k in h) if(k.toLowerCase() === name.toLowerCase()) return h[k];
+  }catch(e){}
+  return '';
+}
+
+/* ═══════════ 4. a job changed here is stamped (cloud copies seen are remembered, so a pull is not an "edit") ═══════════ */
+var VOL = { updatedAt:1, updated_at:1, updatedBy:1, savedAt:1, _fe:1 };
+function canonRec(v){
+  if(v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if(Array.isArray(v)) return '[' + v.map(canonRec).join(',') + ']';
+  return '{' + Object.keys(v).filter(function(k){ return v[k] !== undefined && !VOL[k] && k.indexOf('__') !== 0; }).sort().map(function(k){ return JSON.stringify(k) + ':' + canonRec(v[k]); }).join(',') + '}';
+}
+function h32(x){ var h = 2166136261; for(var i = 0; i < x.length; i++){ h ^= x.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+function stampOf(r){ if(!r) return ''; var a = s(r.updatedAt || r.updated_at), b = s(r.savedAt); return a > b ? a : b; }
+/* every version of a job this computer has seen (cloud, screen, disk): a version seen before is never "an edit made
+   here" — a sweep that writes an older disk copy back must not get it stamped "now" (that is how a stale copy wins) */
+var SEEN = {};           /* id -> { hash: 1 } */
+function seen(id, h){ var m = SEEN[id] || (SEEN[id] = {}); if(!m[h]){ m[h] = 1; m.__n = (m.__n || 0) + 1; if(m.__n > 40){ SEEN[id] = {}; SEEN[id][h] = 1; } } }
+function wasSeen(id, h){ return !!(SEEN[id] && SEEN[id][h]); }
+function learnCloud(list){
+  if(!Array.isArray(list)) return;
+  for(var i = 0; i < list.length; i++){ var r = list[i]; if(!r || r.id == null) continue; seen(s(r.id), h32(canonRec(r))); }
+}
+function seenList(list){ (list || []).forEach(function(r){ if(r && r.id != null) seen(s(r.id), h32(canonRec(r))); }); }
+/* the FIELDS changed here, per job (10 minutes; by then every merge decides on the stamp). Only those fields are ever
+   put back, and only over a copy that is older than the edit or still shows a value the edit replaced — another
+   computer's later edit of any field stands. */
+var EDITS = {};      /* id -> { at, t, f: { field: { v, was:[canon] } } } */
+function cv(v){ return canonRec(v === undefined ? null : v); }
+function changedFields(a, b){ var out = [], k, seenK = {}; for(k in a){ seenK[k] = 1; if(!VOL[k] && k.indexOf('__') !== 0 && cv(a[k]) !== cv(b ? b[k] : undefined)) out.push(k); } if(b) for(k in b){ if(!seenK[k] && !VOL[k] && k.indexOf('__') !== 0 && cv(b[k]) !== cv(a[k])) out.push(k); } return out; }
+function editOf(id){ var e = EDITS[id]; if(e && Date.now() - e.t > 600000){ delete EDITS[id]; return null; } return e || null; }
+function addEdit(id, rec, prev, at){
+  var fs = changedFields(rec, prev); if(!fs.length) return;
+  var e = editOf(id) || { at:at, t:Date.now(), f:{} };
+  fs.forEach(function(f){ var o = e.f[f]; var was = (o ? o.was : []).concat(prev ? [cv(prev[f])] : []).filter(function(x){ return x !== cv(rec[f]); }).slice(-8); e.f[f] = { v:rec[f], was:was }; });
+  if(at > e.at) e.at = at; e.t = Date.now(); EDITS[id] = e;
+}
+/* a copy put right: the fields edited here, where the copy is older */
+function repair(r){
+  if(!r || r.id == null) return r;
+  var id = s(r.id), e = editOf(id); if(!e) return r;
+  var o = null, st = stampOf(r);
+  Object.keys(e.f).forEach(function(f){
+    var E = e.f[f], cur = cv(r[f]);
+    if(cur === cv(E.v)) return;
+    var pe = r._fe && r._fe[f]; if(pe && pe.at && String(pe.at) > e.at){ delete e.f[f]; return; }      /* a newer person edit of this field */
+    if(st < e.at || E.was.indexOf(cur) >= 0){ o = o || Object.assign({}, r); if(E.v === undefined) delete o[f]; else o[f] = E.v; return; }
+    delete e.f[f];                                                                                       /* changed again elsewhere, later */
+  });
+  if(!Object.keys(e.f).length) delete EDITS[id];
+  if(o){ if(stampOf(o) < e.at) o.updatedAt = e.at; S.kept++; return o; }
+  return r;
+}
+var LAST = null;         /* id -> { h, st, r } as last written to this computer's disk */
+function snapDisk(list){ var m = {}; (list || []).forEach(function(r){ if(r && r.id != null) m[s(r.id)] = { h:h32(canonRec(r)), st:stampOf(r), r:r }; }); return m; }
+/* the disk: an older copy of a field edited here is put right; a change nobody stamped (and never seen before) is stamped */
+function diskJobs(list){
+  if(!Array.isArray(list)) return list;
+  var out = null, cand = [], now = iso();
+  for(var i = 0; i < list.length; i++){
+    var r0 = list[i]; if(!r0 || typeof r0 !== 'object' || r0.id == null) continue;
+    var r = repair(r0); if(r !== r0){ out = out || list.slice(); out[i] = r; }
+    if(!LAST) continue;
+    var id = s(r.id), p = LAST[id], h = h32(canonRec(r));
+    if(!p) continue;                                                     /* a job new on the disk: nothing to defend yet */
+    if(h === p.h || stampOf(r) > p.st || wasSeen(id, h)) continue;
+    cand.push(i);
+  }
+  /* an unattributed change is NOT stamped "now" here: a sweep's change stamped now outranked other computers' real edits */
+  out = out || list;
+  seenList(out);
+  return out;
+}
+/* the screen: an edit made here (a click, or the CRM's own code) is stamped the moment it is on the screen — a start-up
+   sweep that rewrites the list from an older disk copy cannot take it away, and an older copy is put right */
+var scrRef = null, scrSnap = null;
+function screenPoll(){
+  try{
+    var L = window._crm && window._crm.projects;
+    if(!Array.isArray(L)) return;
+    /* the list can be the same array with a record replaced in it: compare the records, not the array */
+    var same = (L === scrRef && scrSnap);
+    if(same){ for(var q = 0; q < L.length; q++){ var rq = L[q]; if(rq && rq.id != null && (!scrSnap[s(rq.id)] || scrSnap[s(rq.id)].r !== rq || scrSnap[s(rq.id)].st !== stampOf(rq))){ same = false; break; } } }
+    if(same && !(document.__gcPJXchg)) return;
+    document.__gcPJXchg = false;
+    var prev = scrSnap; scrRef = L; scrSnap = {};
+    var hs = [];
+    for(var i = 0; i < L.length; i++){ var r = L[i]; if(!r || r.id == null) { hs.push(null); continue; } var p0 = prev && prev[s(r.id)]; var h = (p0 && p0.r === r && p0.st === stampOf(r) && !document.__gcPJXdeep) ? p0.h : h32(canonRec(r)); hs.push(h); scrSnap[s(r.id)] = { h:h, st:stampOf(r), r:r }; }
+    if(!prev){ seenList(L); return; }
+    var cand = [], fix = 0, now = iso();
+    for(var j = 0; j < L.length; j++){
+      var x = L[j]; if(!x || x.id == null) continue;
+      var id = s(x.id), p = prev[id], h2 = hs[j], st = stampOf(x);
+      if(!p){ seen(id, h2); continue; }                                   /* a job new on the screen: nothing to defend yet */
+      if(p.h === h2) continue;
+      if(editOf(id) && repair(x) !== x){ fix++; continue; }               /* an older copy than an edit made here */
+      if(wasSeen(id, h2)) continue;                                       /* a version known from the cloud / disk: not an edit */
+      if(st > p.st){ addEdit(id, x, p.r, st); seen(id, h2); continue; }   /* stamped by whoever made it: kept at ITS stamp (never "now") */
+      cand.push(j);
+    }
+    cand.forEach(function(j){ seen(s(L[j].id), hs[j]); });              /* not stamped "now" (see the disk) */
+    if(fix && typeof window._setProjects === 'function'){
+      S.restored += fix;
+      try{ console.log('[GC] jobs: an older copy of ' + fix + ' job(s) reached the screen — the change made here is kept'); }catch(e){}
+      ST.call(window, function(){ try{ window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(repair) : prev; }); }catch(e){} }, 0);
+    }
+  }catch(e){}
+}
+(window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, screenPoll, 300);
+document.addEventListener('change', function(){ document.__gcPJXchg = true; document.__gcPJXdeep = true; ST.call(window, function(){ screenPoll(); document.__gcPJXdeep = false; }, 150); }, true);
+/* realtime: the copies that arrive this way are cloud copies too */
+try{
+  var WS0 = window.WebSocket;
+  if(WS0 && !WS0.__gcPJX){
+    var WSW = function(u, pr){
+      var ws = pr === undefined ? new WS0(u) : new WS0(u, pr);
+      try{ if(String(u).indexOf(SBH) >= 0) ws.addEventListener('message', function(ev){ try{ var d = ev.data; if(typeof d === 'string' && d.indexOf('postgres_changes') >= 0) CACHE = {};   /* the cloud changed: the next read goes to the cloud */
+        if(typeof d !== 'string' || d.indexOf('"projects') < 0) return; var j = JSON.parse(d), rec = j && j.payload && j.payload.data && j.payload.data.record; if(rec && String(rec.key || '').replace(/__chunk\d+$/, '') === 'projects'){ var v = rec.value; if(typeof v === 'string') v = jparse(v, null); learnCloud(v); } }catch(e){} }); }catch(e){}
+      return ws;
+    };
+    WSW.prototype = WS0.prototype; ['CONNECTING','OPEN','CLOSING','CLOSED'].forEach(function(k){ try{ WSW[k] = WS0[k]; }catch(e){} });
+    WSW.__gcPJX = true; window.WebSocket = WSW;
+  }
+}catch(e){}
+try{
+  var P = IDBObjectStore.prototype, innerPut = P.put;
+  if(!innerPut.__gcPJX){
+    var wPut = function(value, key){
+      try{
+        if(key === 'projects' && this.name === 'kv' && Array.isArray(value) && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
+          value = diskJobs(value); arguments[0] = value; LAST = snapDisk(value);
+        }
+      }catch(e){}
+      return innerPut.apply(this, arguments);
+    };
+    wPut.__gcPJX = true; P.put = wPut;
+  }
+}catch(e){}
+(function prime(){ var t = 0; (function go(){ if(!window.idbGet){ if(t++ < 200) ST.call(window, go, 250); return; } Promise.resolve(window.idbGet('projects')).then(function(v){ if(!LAST){ LAST = snapDisk(Array.isArray(v) ? v : []); seenList(v); } }).catch(function(){ if(!LAST) LAST = {}; }); })(); })();
+
+/* ═══════════ 1–3. every request to the database ═══════════ */
+function creds(init){
+  var k = hdr(init, 'apikey'), a = hdr(init, 'Authorization');
+  try{ if(!k) k = localStorage.getItem('grayco_sb_key') || ''; }catch(e){}
+  return { apikey:k, auth:a || ('Bearer ' + k) };
+}
+function asideIds(){ try{ return (jparse(localStorage.getItem('gc_trust_aside'), {}) || {}).projects || {}; }catch(e){ return {}; } }
+function deadIds(){ var d = {}; try{ if(window._gcxDeadIds){ var m = window._gcxDeadIds('projects') || {}; for(var k in m) d[k] = 1; } }catch(e){} try{ var t = JSON.parse(localStorage.getItem('gc_tombstones') || '{}') || {}; for(var k2 in t) if(k2.indexOf('projects:') === 0) d[k2.slice(9)] = 1; }catch(e){} try{ (JSON.parse(localStorage.getItem('gc_deleted_projects') || '[]') || []).forEach(function(id){ d[s(id)] = 1; }); }catch(e){} return d; }
+/* the union a job-list push carries: the cloud's jobs and this computer's, the newest copy of each, deletes stay deleted */
+function unionJobs(local, cloud){
+  learnCloud(cloud);
+  var have = {}; local.forEach(function(r){ if(r && r.id != null) have[s(r.id)] = 1; });
+  var aside = asideIds(), dead = deadIds();
+  /* only a delete (tombstone) keeps a cloud job out; "set aside here" is about records the cloud did NOT have */
+  var c2 = cloud.filter(function(r){ if(!r || r.id == null) return false; var id = s(r.id); return have[id] || !dead[id]; });
+  var m = null;
+  try{ if(typeof window._gcUnionMerge === 'function') m = window._gcUnionMerge('projects', c2, local); }catch(e){ m = null; }
+  if(!Array.isArray(m)){
+    var by = {}, order = [];
+    c2.concat(local).forEach(function(r){ var id = s(r && r.id); if(!id) return; if(!(id in by)){ by[id] = r; order.push(id); } else if(stampOf(r) >= stampOf(by[id])) by[id] = r; });
+    m = order.map(function(id){ return by[id]; });
+  }
+  /* a push never drops a cloud job that is not deleted (a filtered list — the job-board rule — is not a delete) */
+  var inM = {}; m.forEach(function(r){ if(r && r.id != null) inM[s(r.id)] = 1; });
+  var lost = c2.filter(function(r){ return !inM[s(r.id)]; });
+  if(lost.length){ m = m.concat(lost); S.keptCloud = (S.keptCloud || 0) + lost.length; }
+  var added = 0; m.forEach(function(r){ if(r && r.id != null && !have[s(r.id)]) added++; });
+  S.addedFromCloud += added; S.unioned++; S.lastUnion = { local:local.length, cloud:cloud.length, kept:c2.length, out:m.length, dead:Object.keys(dead).length };
+  return m;
+}
+async function readCloudJobs(nf, self, base, init){
+  var c = creds(init);
+  var r = await nf.call(self, base + '/rest/v1/gc_kv?key=eq.projects&select=value', { headers:{ apikey:c.apikey, Authorization:c.auth }, cache:'no-store' });
+  if(!r || !r.ok){ if(r && (r.status >= 500 || r.status === 429) && r.type !== 'default') backoff(r.status); throw busyErr('the cloud\'s job list could not be read (' + (r ? r.status : 'no answer') + ') — the push waits'); }
+  var rows = await r.json();
+  if(!Array.isArray(rows)) throw busyErr('the cloud answered with no job list — the push waits');
+  if(!rows.length) return [];
+  var v = rows[0].value; if(typeof v === 'string') v = jparse(v, null);
+  if(!Array.isArray(v)) throw busyErr('the cloud\'s job list is not a list — the push waits');
+  return v;
+}
+var CACHE = {};
+function ttlOf(url){ var u = decodeURIComponent(url); if(/key=like\.\*__manifest/.test(u)) return 120000; if(/key=like\.doc:/.test(u)) return 30000; return 4000; }
+function mkRes(e){ return new Response((e.status === 204 || e.status === 304) ? null : e.body, { status:e.status, statusText:e.statusText || '', headers:e.headers }); }
+var nf0 = window.fetch;
+if(nf0 && !nf0.__gcPJX){
+  var wf = function(input, init){
+    var url = urlOf(input), self = this, args = arguments;
+    var host = ''; try{ host = new URL(url, location.href).host; }catch(e){}
+    if(host !== SBH || url.indexOf('/rest/v1/') < 0) return nf0.apply(this, arguments);
+    var m = methodOf(input, init), isKv = /\/rest\/v1\/gc_kv(\?|$)/.test(url);
+    var isEpoch = isKv && /[?&]key=eq\.gc_epoch(&|$)/.test(decodeURIComponent(url));     /* the fresh-start check is never held back */
+    if(Date.now() < BO.until && !isEpoch){ S.blocked++; return Promise.reject(busyErr('the cloud is busy — waiting ' + Math.round((BO.until - Date.now()) / 1000) + ' s')); }
+    /* the same read asked again within seconds (every tab and engine asks for the same rows) is answered once */
+    var ck = (isKv && (m === 'GET' || m === 'HEAD') && !(init && init.cache === 'no-store')) ? m + ' ' + url : '';
+    if(ck){
+      var hit0 = CACHE[ck];
+      if(hit0 && (hit0.p || Date.now() - hit0.at < ttlOf(url))){ S.cached++; return (hit0.p || Promise.resolve(hit0)).then(mkRes); }
+    }
+    if(isKv && m !== 'GET' && m !== 'HEAD') CACHE = {};                 /* this computer wrote: its next reads go to the cloud */
+    var go = function(){
+      if(m === 'GET') S.reads++; else if(m !== 'HEAD') S.writes++;
+      if(ck){
+        var ent = { at:0, p:null };
+        ent.p = goNet().then(function(res){
+          return res.clone().text().then(function(txt){ var h = {}; try{ res.headers.forEach(function(v, k){ h[k] = v; }); }catch(e){} ent.at = Date.now(); ent.status = res.status; ent.statusText = res.statusText; ent.headers = h; ent.body = txt; ent.p = null; return ent; });
+        }, function(e){ if(CACHE[ck] === ent) delete CACHE[ck]; throw e; });
+        CACHE[ck] = ent;
+        return ent.p.then(mkRes);
+      }
+      return goNet();
+    };
+    var goNet = function(){
+      return nf0.apply(self, args).then(function(res){
+        if(res.status >= 500 || res.status === 429){
+          S.last5xx = res.status + ' ' + m + ' ' + decodeURIComponent(url).replace(/^https?:\/\/[^/]+/, '').slice(0, 120) + (res.type === 'default' ? ' (made on this computer: offline)' : '');
+          if(res.type !== 'default') backoff(res.status);      /* only a real answer from the database means "busy"; an offline stand-in does not */
+          if(isKv){ if(m === 'GET') S.failedReads++; else S.heldWrites++; throw busyErr('the cloud answered ' + res.status); }
+          return res;
+        }
+        if(res.ok) BO.n = Math.max(0, BO.n - 1);
+        if(isKv && m === 'GET' && res.ok){
+          return res.clone().text().then(function(t){
+            var j; try{ j = JSON.parse(t); }catch(e){ S.failedReads++; throw busyErr('the cloud\'s answer could not be read'); }
+            if(!Array.isArray(j) && (j == null || typeof j !== 'object' || 'error' in j || ('message' in j && ('code' in j || 'hint' in j || 'details' in j)))){ S.failedReads++; throw busyErr('the cloud answered with an error, not data'); }
+            if(!Array.isArray(j)) return res;
+            try{ var uk = (/[?&]key=eq\.([^&]+)/.exec(decodeURIComponent(url)) || [])[1] || '';
+              j.forEach(function(row){ var k = String((row && row.key) || uk).replace(/__chunk\d+$/, ''); if(row && k === 'projects'){ var v = row.value; if(typeof v === 'string') v = jparse(v, null); learnCloud(v); } }); }catch(e){}
+            return res;
+          });
+        }
+        if(isKv && m === 'GET' && !res.ok){ S.failedReads++; throw busyErr('the cloud answered ' + res.status); }
+        return res;
+      });
+    };
+    /* a job-list push: the union with the cloud's current list, or it waits */
+    if(isKv && (m === 'POST' || m === 'PATCH') && init && typeof init.body === 'string' && init.body.indexOf('"projects"') >= 0){
+      var body = jparse(init.body, null), rows = body == null ? [] : (Array.isArray(body) ? body : [body]);
+      var hit = rows.filter(function(r){ return r && r.key === 'projects' && (Array.isArray(r.value) || (typeof r.value === 'string' && /^\s*\[/.test(r.value))); });
+      if(hit.length){
+        var base = url.split('/rest/v1/')[0];
+        return readCloudJobs(nf0, self, base, init).then(function(cloud){
+          hit.forEach(function(r){ var asText = typeof r.value === 'string'; var v = asText ? jparse(r.value, []) : r.value; var u = unionJobs(v, cloud); r.value = asText ? JSON.stringify(u) : u; });
+          var init2 = Object.assign({}, init, { body: JSON.stringify(body) });
+          args = [input, init2];
+          return go();
+        }, function(e){ S.heldWrites++; throw e; });
+      }
+    }
+    return go();
+  };
+  try{ Object.keys(nf0).forEach(function(k){ wf[k] = nf0[k]; }); }catch(e){}
+  wf.__gcPJX = true; wf.__gcxBase = nf0.__gcxBase; window.fetch = wf;
+}
+
+/* ═══════════ chunked lists: one generation at a time; one copy per id ═══════════ */
+window._gcChunkSig = function(chunk){ try{ return h32((chunk || []).map(function(r){ return (r && typeof r === 'object') ? s(r.id) + '@' + stampOf(r) : cv(r); }).join('|') + '#' + (chunk || []).length); }catch(e){ return ''; } };
+window._gcChunkCount = async function(key){
+  var c = creds(null), base = '';
+  try{ base = (localStorage.getItem('grayco_sb_url') || ('https://' + SBH)).replace(/\/$/, ''); }catch(e){ base = 'https://' + SBH; }
+  var r = await (nf0 || window.fetch).call(window, base + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key + '__manifest') + '&select=value', { headers:{ apikey:c.apikey, Authorization:c.auth }, cache:'no-store' });
+  if(!r || !r.ok) return 0; var rows = await r.json(); var v = Array.isArray(rows) && rows[0] && rows[0].value; if(typeof v === 'string') v = jparse(v, null);
+  return (v && v.count) || 0;
+};
+/* one record per id in a list: the newest copy (a torn or doubled list is never "two records") */
+function identity(r){ return s(r && (r.name || r.title || r.desc || r.description || r.num || r.customer || '')).trim().toLowerCase(); }
+window._gcDedupeIds = function(list){
+  if(!Array.isArray(list)) return list;
+  var at = {}, out = [], n = 0;
+  for(var i = 0; i < list.length; i++){
+    var r = list[i];
+    if(!r || typeof r !== 'object' || r.id == null || r.id === ''){ out.push(r); continue; }
+    var id = s(r.id);
+    if(id in at){ var p = out[at[id]]; if(identity(p) === identity(r)){ if(stampOf(r) > stampOf(p)) out[at[id]] = r; n++; continue; } }
+    else at[id] = out.length;
+    out.push(r);
+  }
+  if(n) S.dupesFolded = (S.dupesFolded || 0) + n;
+  return n ? out : list;
+};
+function wrapUnionPJX(){
+  var f = window._gcUnionMerge;
+  if(typeof f !== 'function') return false;
+  if(f.__gcPJX) return true;
+  var w = function(key, a, b){
+    try{
+      var args = Array.prototype.slice.call(arguments);
+      if(Array.isArray(a)) args[1] = window._gcDedupeIds(a.slice());
+      if(Array.isArray(b)) args[2] = window._gcDedupeIds(b.slice());
+      return f.apply(this, args);
+    }catch(e){}
+    return f.apply(this, arguments);
+  };
+  try{ Object.keys(f).forEach(function(k){ w[k] = f[k]; }); }catch(e){}
+  w.__gcPJX = true; window._gcUnionMerge = w; return true;
+}
+wrapUnionPJX(); (function(){ var n = 0, iv = (window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){ wrapUnionPJX(); if(++n > 90) clearInterval(iv); }, 1000); })();
+
+/* a chunked job list goes up as the union too, and waits when the cloud cannot be read */
+(function(){
+  var f0 = window._gcChunkUnion;
+  window._gcChunkUnion = async function(key, arr){
+    if(key === 'projects' && Array.isArray(arr)){
+      var c = creds(null), base = '';
+      try{ base = (localStorage.getItem('grayco_sb_url') || ('https://' + SBH)).replace(/\/$/, ''); }catch(e){ base = 'https://' + SBH; }
+      var cloud = await readCloudJobs(nf0 || window.fetch, window, base, { headers:{ apikey:c.apikey, Authorization:c.auth } });
+      var ch = window._gcSbReadChunked ? await window._gcSbReadChunked(key) : [];
+      if(ch === null) throw busyErr('a chunk of the cloud\'s job list could not be read — the push waits');
+      return unionJobs(arr, cloud.concat(ch || []));
+    }
+    /* any other chunked list: a torn read of the cloud's chunks during the union means the push waits */
+    var t0 = Date.now(), r = f0 ? await f0.apply(this, arguments) : arr;
+    if(window.__gcChunkTorn && window.__gcChunkTorn[key] >= t0) throw busyErr('the cloud\'s chunks of ' + key + ' are not one complete set — the push waits');
+    return r;
+  };
+})();
+
+/* a job that reached this computer's disk (another computer, the CompanyCam server job) but not the open page is drawn
+   now — not at the next view change. Each job is tried once; the job-board rule still decides what is on the board. */
+var TRIED = {};
+/* only what the job board shows: a job kept as a job, or one no importer made (an untouched import is kept off the board) */
+function boardOK(r){ if(r.keepAsJob === true || r.countsAnyway === true || r.promoted === true) return true; var src = s(r.source).toLowerCase(); return !(r._ccImported === true || r.ccamId || r.ccProjectId || r.qbId || r.qbCustomerId || src === 'companycam' || src === 'quickbooks'); }
+(window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){
+  try{
+    if(!window.idbGet || typeof window._setProjects !== 'function' || window.__GC_FORM_OPEN__) return;
+    if(Date.now() - (window.__GC_LAST_INPUT__ || 0) < 5000) return;
+    try{ if(document.visibilityState === 'hidden') return; }catch(e){}
+    var scr = window._crm && window._crm.projects; if(!Array.isArray(scr) || !scr.length) return;
+    Promise.resolve(window.idbGet('projects')).then(function(d){
+      if(!Array.isArray(d)) return;
+      var on = {}; scr.forEach(function(r){ if(r && r.id != null) on[s(r.id)] = 1; });
+      var dead = deadIds(), aside = asideIds(), cut = new Date(Date.now() - 3 * 3600e3).toISOString();
+      var add = d.filter(function(r){ if(!r || r.id == null) return false; var id = s(r.id); return !on[id] && !TRIED[id] && !dead[id] && !aside[id] && stampOf(r) > cut && boardOK(r); });
+      if(!add.length) return;
+      add.forEach(function(r){ TRIED[s(r.id)] = 1; });
+      S.drawn = (S.drawn || 0) + add.length;
+      window._setProjects(function(prev){ if(!Array.isArray(prev)) return prev; var have = {}; prev.forEach(function(r){ if(r && r.id != null) have[s(r.id)] = 1; }); var more = add.filter(function(r){ return !have[s(r.id)]; }); return more.length ? prev.concat(more) : prev; });
+    }).catch(function(){});
+  }catch(e){}
+}, 5000);
+/* the fresh-start check is asked every 2 minutes, not only before a write: a computer left open that has nothing to send
+   (its lists no longer flip-flop) still finds a fresh start and puts its old data aside — one tiny read */
+(window.__GC_NATIVE_SETINTERVAL__ || setInterval).call(window, function(){ try{ if(window.__GC_EPOCH__ && typeof window.__GC_EPOCH__.check === 'function') window.__GC_EPOCH__.check(); }catch(e){} }, 120000);
+document.addEventListener('visibilitychange', function(){ try{ if(!document.hidden && window.__GC_EPOCH__ && window.__GC_EPOCH__.check) ST.call(window, function(){ window.__GC_EPOCH__.check(); }, 1500); }catch(e){} });
+/* a read or write the guard turned down is an ordinary "offline" failure: a caller that does not catch it is not an error on screen */
+window.addEventListener('unhandledrejection', function(ev){ try{ if(ev && ev.reason && ev.reason.__gcBusy) ev.preventDefault(); }catch(e){} });
+window._gcPJX = {
+  status: function(){ var min = Math.max(1, (Date.now() - S.since) / 60000); return Object.assign({ readsPerMin: +(S.reads / min).toFixed(1), writesPerMin: +(S.writes / min).toFixed(1), backoffSecondsLeft: Math.max(0, Math.round((BO.until - Date.now()) / 1000)) }, S); },
+  backoff: BO
+};
+console.log('[GC] Jobs stay put: a failed cloud read changes nothing, 5xx backs off, a job-list push is the union with the cloud (or waits), job edits are stamped. _gcPJX.status()');
+})();
+
+</script>
+<script id="gc-fix-subdedupe">
+/* GATE fix_7 — one sub-invoice approval per invoice */
+(function(){
+  'use strict';
+  if (window.__GC_SUBDEDUPE__) return; window.__GC_SUBDEDUPE__ = true;
+  var KEY = 'gc_sub_approvals';
+  function rank(a){
+    var st = String(a && a.status || '').toLowerCase();
+    if (a && (a.pmDecidedAt || /approved|denied|paid|rejected|void/.test(st))) return 3;
+    if (st === 'pending_pm') return 2;
+    if (st === 'needs_office_match') return 1;
+    return 0;
+  }
+  function when(a){ return +(a && (a.pmDecidedAt || a.matchedAt || a.updatedAt || a.createdAt)) || 0; }
+  function dedupe(){
+    var q; try { q = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return 0; }
+    if (!Array.isArray(q) || q.length < 2) return 0;
+    var best = {}, order = [];
+    q.forEach(function(a, i){
+      var k = a && a.invId != null ? 'i:' + a.invId : 'x:' + i;
+      if (!(k in best)) { best[k] = a; order.push(k); return; }
+      var b = best[k];
+      if (rank(a) > rank(b) || (rank(a) === rank(b) && when(a) > when(b))) best[k] = a;
+    });
+    if (order.length === q.length) return 0;
+    var out = order.map(function(k){ return best[k]; });
+    try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) { return 0; }
+    try { if (window.idbSet) window.idbSet(KEY, out); } catch (e) {}
+    try { if (window._supaUpsert) window._supaUpsert(KEY, out); } catch (e) {}
+    return q.length - out.length;
+  }
+  window._gcDedupeSubApprovals = dedupe;
+  function wrap(){
+    var f = window._gcQueueSubApprovals; if (typeof f !== 'function' || f.__gcDedupe) return;
+    var w = function(){ dedupe(); var r = f.apply(this, arguments); dedupe(); return r; };
+    w.__gcDedupe = true; window._gcQueueSubApprovals = w;
+  }
+  var NS = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+  wrap(); dedupe();
+  NS(function(){ try { wrap(); dedupe(); } catch (e) {} }, 5000);
 })();
 </script>
