@@ -98,6 +98,22 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 .nextp{margin:0;font-size:15px;line-height:1.5}
 .pvbar{background:var(--goldBg);color:var(--goldDk);font-size:13px;font-weight:600;text-align:center;padding:8px 12px}
 [hidden]{display:none!important}
+/* patch SEL: Your selections */
+.sel .sel-sec{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--rule);padding-top:10px}
+.sel h3{margin:0;font-size:15px}
+.sel-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.sel-opt{display:flex;flex-direction:column;align-items:stretch;gap:4px;border:2px solid var(--edge);background:#fff;border-radius:12px;padding:6px;font-family:inherit;text-align:left;cursor:pointer;min-height:44px;color:var(--ink)}
+.sel-opt.on{border-color:var(--gold);background:var(--goldBg)}
+.sel-opt img,.sel-opt .sel-ph{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;background:#E9E4D8;display:flex;align-items:center;justify-content:center;font-size:28px}
+.sel-l{font-size:14px;font-weight:700;overflow-wrap:anywhere}.sel-p{font-size:12px;color:var(--mute)}.sel-ck{font-size:12px;font-weight:700;color:var(--goldDk)}
+.sel-row{display:flex;gap:10px;align-items:center;border-top:1px solid var(--rule);padding-top:8px}.sel-row:first-of-type{border-top:0}
+.sel-row img,.sel-row .sel-ph{width:56px;height:56px;border-radius:8px;object-fit:cover;background:#E9E4D8;flex:0 0 56px;display:flex;align-items:center;justify-content:center;font-size:24px}
+.sel-row .grow{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sel-st{font-size:12px;font-weight:700}.sel-st.now{color:#8a1c1c}.sel-st.ok{color:var(--green)}
+.sel-name{width:100%;min-height:46px;border:1px solid #C9C2B2;border-radius:10px;padding:0 12px;font-size:16px;font-family:inherit}
+.sel-pad{width:100%;aspect-ratio:3/1;border:1px dashed #9AA5B1;border-radius:10px;background:#fff;touch-action:none;display:block}
+.sel-agree{display:flex;align-items:flex-start;gap:6px;font-size:14px}.sel-agree input{width:22px;height:22px;flex:0 0 22px}
+.sel-clear{min-height:36px;font-size:13px}.sel-msg{font-size:14px;font-weight:600;color:var(--goldDk);min-height:18px}
 </style>
 </head>
 <body>
@@ -457,6 +473,174 @@ api('view').then(function(r){
   setTimeout(loadPhotos, 1500);   /* ready before they tap Photos */
 }, function(){ notActive('We could not load your job just now. Check your signal and try again, or call GrayCo ' + OFFICE + '.'); });
 })();
+</script>
+<script id="gc-portal-sel">
+/* patch SEL — "Your selections" on the customer's Home page.
+   The customer picks from what the PM offered (photo, name, price) and confirms with their typed name: that is
+   their choice and their signature. What the PM picked for them shows as "Please review and sign": typed name +
+   a drawn signature (or tap Sign to accept with the typed name). Everything goes through
+   /.netlify/functions/selections with the same link code; the server checks every input and records the name,
+   the time and the address. The card sits on top of Home and survives the page redrawing (it is kept here). */
+(function(){
+'use strict';
+if (window.__GC_PSEL__) return; window.__GC_PSEL__ = true;
+var FN = '/.netlify/functions/selections', OFFICE = '901-585-0944';
+var token = '';
+try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
+var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
+var D = null, card = null, chosen = {}, note = { pick: '', sign: '' }, busy = false, pad = null, started = false;
+var keep = { pick: '', sign: '', pickOk: false, signOk: false };   /* what was typed / ticked survives a repaint */
+function kept(el, k, ck){ if (ck) { el.checked = keep[k]; el.addEventListener('change', function(){ keep[k] = el.checked; }); } else { el.value = keep[k]; el.addEventListener('input', function(){ keep[k] = el.value; }); } return el; }
+
+function h(tag, attrs, kids){
+  var el = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){
+    var v = attrs[k]; if (v == null || v === false) return;
+    if (k === 'text') el.textContent = v;
+    else if (k === 'on') Object.keys(v).forEach(function(e){ el.addEventListener(e, v[e]); });
+    else if ((k === 'href' || k === 'src') && !/^https:\/\//i.test(String(v))) return;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  });
+  (kids || []).forEach(function(c){ if (c == null || c === false) return; el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return el;
+}
+function usd(n){ n = Number(n) || 0; return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function dt(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function priceTxt(o){ var t = o.price != null ? usd(o.price) + (o.unit ? ' / ' + o.unit : '') : ''; if (o.priceDiff) t += (t ? ' · ' : '') + (o.priceDiff > 0 ? '+' : '−') + usd(Math.abs(o.priceDiff)) + ' on your contract'; return t; }
+function api(body){
+  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(PREVIEW ? Object.assign({ preview: true }, body) : body), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); }, function(){ return { status: 0, data: { error: 'No connection — check your signal and try again.' } }; });
+}
+function load(){ return api({ action: 'view' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; paint(); } }); }
+
+/* a signature pad: points on a 600 × 200 pad (numbers only) */
+function makePad(){
+  var cv = h('canvas', { class: 'sel-pad', width: '600', height: '200', 'aria-label': 'Draw your signature here' });
+  var ctx = cv.getContext('2d'), strokes = [], cur = null;
+  function pt(e){ var r = cv.getBoundingClientRect(); return [Math.max(0, Math.min(600, (e.clientX - r.left) * 600 / r.width)), Math.max(0, Math.min(200, (e.clientY - r.top) * 200 / r.height))]; }
+  function redraw(){ ctx.clearRect(0, 0, 600, 200); ctx.strokeStyle = '#0F1D2F'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    strokes.forEach(function(st){ ctx.beginPath(); st.forEach(function(p, i){ if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); if (st.length === 1) ctx.lineTo(st[0][0] + 1, st[0][1]); ctx.stroke(); }); }
+  cv.addEventListener('pointerdown', function(e){ if (strokes.length >= 38) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} cur = [pt(e)]; strokes.push(cur); redraw(); });
+  cv.addEventListener('pointermove', function(e){ if (!cur || cur.length >= 590) return; e.preventDefault(); var p = pt(e), l = cur[cur.length - 1]; if (Math.abs(p[0] - l[0]) + Math.abs(p[1] - l[1]) < 2) return; cur.push(p); redraw(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(n){ cv.addEventListener(n, function(){ cur = null; }); });
+  return { el: cv, strokes: function(){ return strokes.map(function(st){ return st.map(function(p){ return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]; }); }); }, clear: function(){ strokes = []; cur = null; redraw(); } };
+}
+
+function paint(){
+  var items = (D && D.items) || [];
+  if (!items.length && !(D && D.docs && D.docs.length)) { if (card && card.parentNode) card.parentNode.removeChild(card); card = null; return; }
+  var open = items.filter(function(x){ return x.status === 'open'; }), sign = items.filter(function(x){ return x.status === 'needs-sign'; }), done = items.filter(function(x){ return x.status === 'chosen' || x.status === 'signed'; });
+  var todo = open.length + sign.length;
+  var c = card || h('section', { class: 'card sel', id: 'gcsel' }); c.innerHTML = '';
+  c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🎨 Your selections' }), h('span', { class: 'pill ' + (todo ? 'now' : 'ok'), text: todo ? todo + ' to do' : 'All set' })]));
+  if (PREVIEW) c.appendChild(h('div', { class: 'muted', text: 'Preview — only the customer can pick or sign.' }));
+  if (sign.length) {
+    var sb = h('div', { class: 'sel-sec', id: 'gcsel-sign' }, [h('h3', { text: '✍️ Please review and sign' }), h('div', { class: 'muted', text: 'Your Project Manager picked these for you. Please look them over and sign.' })]);
+    sign.forEach(function(x){ sb.appendChild(pickRow(x)); });
+    if (!pad) pad = makePad();
+    var nm = kept(h('input', { type: 'text', class: 'sel-name', id: 'gcsel-signname', maxlength: '80', autocomplete: 'name', placeholder: 'Type your full name' }), 'sign');
+    var ag = kept(h('input', { type: 'checkbox', id: 'gcsel-signagree' }), 'signOk', true);
+    var go = h('button', { type: 'button', class: 'btn gold', id: 'gcsel-signbtn', text: 'Sign' });
+    sb.appendChild(h('label', { class: 'muted', for: 'gcsel-signname', text: 'Your full name' })); sb.appendChild(nm);
+    sb.appendChild(h('div', { class: 'muted', text: 'Draw your signature (or leave it blank and tap Sign to accept with your typed name):' }));
+    sb.appendChild(pad.el);
+    sb.appendChild(h('button', { type: 'button', class: 'btn sel-clear', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
+    sb.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: ' I reviewed these selections and I approve them.' })]));
+    sb.appendChild(go);
+    var sm = h('div', { class: 'sel-msg', id: 'gcsel-signmsg', role: 'status', text: note.sign });
+    sb.appendChild(sm);
+    go.disabled = PREVIEW;
+    go.addEventListener('click', function(){
+      if (busy) return; if (!nm.value.trim()) { sm.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { sm.textContent = 'Please tick the box to approve.'; return; }
+      busy = true; go.disabled = true; sm.textContent = 'Signing…';
+      api({ action: 'sign', choiceIds: sign.map(function(x){ return x.id; }), name: nm.value, agree: true, strokes: pad.strokes() }).then(function(r){
+        busy = false;
+        if (r.data && r.data.ok) { keep.signOk = false; note.sign = '✓ Thank you — signed. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); pad.clear(); return load(); }
+        note.sign = ''; sm.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; go.disabled = false;
+      });
+    });
+    c.appendChild(sb);
+  }
+  if (open.length) {
+    var ob = h('div', { class: 'sel-sec', id: 'gcsel-pick' }, [h('h3', { text: '👉 Your choice' }), h('div', { class: 'muted', text: 'Tap the one you want for each item, then confirm with your name.' })]);
+    open.forEach(function(x){
+      ob.appendChild(h('div', { class: 'sel-item' }, [h('b', { text: x.title }), x.note ? h('div', { class: 'muted', text: x.note }) : null, x.dueBy ? h('div', { class: 'muted', text: 'Please pick by ' + dt(x.dueBy + 'T12:00:00') }) : null]));
+      var g = h('div', { class: 'sel-opts' });
+      x.options.forEach(function(o){
+        var on = chosen[x.id] === o.id;
+        g.appendChild(h('button', { type: 'button', class: 'sel-opt' + (on ? ' on' : ''), 'aria-pressed': on ? 'true' : 'false', 'data-c': x.id, 'data-o': o.id, on: { click: function(){ chosen[x.id] = o.id; paint(); } } }, [
+          o.photo ? h('img', { src: o.photo, alt: '', loading: 'lazy' }) : h('span', { class: 'sel-ph', 'aria-hidden': 'true', text: '🎨' }),
+          h('span', { class: 'sel-l', text: o.label }), priceTxt(o) ? h('span', { class: 'sel-p', text: priceTxt(o) }) : null, on ? h('span', { class: 'sel-ck', text: '✓ Your pick' }) : null]));
+      });
+      ob.appendChild(g);
+    });
+    var picked = open.filter(function(x){ return chosen[x.id]; });
+    var pn = kept(h('input', { type: 'text', class: 'sel-name', id: 'gcsel-pickname', maxlength: '80', autocomplete: 'name', placeholder: 'Type your full name' }), 'pick');
+    var pa = kept(h('input', { type: 'checkbox', id: 'gcsel-pickagree' }), 'pickOk', true);
+    var pb = h('button', { type: 'button', class: 'btn gold', id: 'gcsel-pickbtn', text: picked.length ? 'Confirm my choice' + (picked.length > 1 ? 's (' + picked.length + ')' : '') : 'Tap an option above' });
+    var pm = h('div', { class: 'sel-msg', id: 'gcsel-pickmsg', role: 'status', text: note.pick });
+    pb.disabled = !picked.length || PREVIEW;
+    ob.appendChild(h('label', { class: 'muted', for: 'gcsel-pickname', text: 'Your full name' })); ob.appendChild(pn);
+    ob.appendChild(h('label', { class: 'sel-agree' }, [pa, h('span', { text: ' These are my choices. My name here is my signature.' })]));
+    ob.appendChild(pb); ob.appendChild(pm);
+    pb.addEventListener('click', function(){
+      if (busy) return; if (!pn.value.trim()) { pm.textContent = 'Please type your full name.'; pn.focus(); return; } if (!pa.checked) { pm.textContent = 'Please tick the box to confirm.'; return; }
+      busy = true; pb.disabled = true; pm.textContent = 'Saving…';
+      api({ action: 'pick', picks: picked.map(function(x){ return { choiceId: x.id, optionId: chosen[x.id] }; }), name: pn.value, agree: true }).then(function(r){
+        busy = false;
+        if (r.data && r.data.ok) { picked.forEach(function(x){ delete chosen[x.id]; }); keep.pickOk = false; note.pick = '✓ Thank you — your choice is saved. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); return load(); }
+        note.pick = ''; pm.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; pb.disabled = false;
+      });
+    });
+    c.appendChild(ob);
+  }
+  if (done.length) {
+    var db = h('div', { class: 'sel-sec', id: 'gcsel-done' }, [h('h3', { text: '✓ Done' })]);
+    done.forEach(function(x){ db.appendChild(pickRow(x)); });
+    c.appendChild(db);
+  }
+  if (!sign.length && note.sign) c.appendChild(h('div', { class: 'sel-msg', text: note.sign }));
+  if (!open.length && note.pick) c.appendChild(h('div', { class: 'sel-msg', text: note.pick }));
+  if (D.docs && D.docs.length) {
+    var dc = h('div', { class: 'sel-sec', id: 'gcsel-docs' }, [h('h3', { text: '📄 Your signed copies' })]);
+    D.docs.forEach(function(d){ dc.appendChild(h('div', { class: 'doc' }, [h('div', { class: 'grow' }, [h('span', { class: 'n', text: d.title }), h('span', { class: 'muted', text: dt(d.at) })]), h('div', { class: 'act' }, [h('a', { class: 'btn', href: d.url, target: '_blank', rel: 'noopener', text: 'Open' })])])); });
+    c.appendChild(dc);
+  }
+  c.appendChild(h('div', { class: 'muted', text: 'Colors on screens can vary — ask your Project Manager for a sample. Want to change something? Call ' + OFFICE + '.' }));
+  card = c; place();
+}
+function pickRow(x){
+  var p = x.pick || {}, st = x.status;
+  var line = st === 'signed' ? '✓ Signed by ' + ((x.done && x.done.name) || 'you') + (x.done ? ' on ' + dt(x.done.at) : '')
+    : st === 'chosen' ? '✓ Your choice' + (x.done ? ' — confirmed by ' + x.done.name + ' on ' + dt(x.done.at) : '') : 'Picked by your Project Manager';
+  return h('div', { class: 'sel-row', 'data-id': x.id, 'data-status': st }, [
+    p.photo ? h('img', { src: p.photo, alt: '', loading: 'lazy' }) : h('span', { class: 'sel-ph', 'aria-hidden': 'true', text: '🎨' }),
+    h('div', { class: 'grow' }, [h('span', { class: 'muted', text: x.title }), h('b', { text: p.label || '' }), priceTxt(p) ? h('span', { class: 'muted', text: priceTxt(p) }) : null,
+      h('span', { class: 'sel-st ' + (st === 'needs-sign' ? 'now' : 'ok'), text: st === 'needs-sign' ? '⚠️ Waiting for your signature' : line })])]);
+}
+/* keep the card on top of Home, whatever redraws the page */
+function homeShown(){ var t = document.getElementById('tabs'); if (!t || t.hidden) return false; var b = document.querySelector('nav.tabs button[data-tab="home"]'); return !b || b.getAttribute('aria-selected') === 'true'; }
+function place(){
+  var main = document.getElementById('main'); if (!main) return;
+  if (!card || !homeShown()) { if (card && card.parentNode) card.parentNode.removeChild(card); return; }
+  var host = main.querySelector('.col-r') || main;
+  if (card.parentNode === host) return;
+  var first = host.firstElementChild; while (first && first.classList && first.classList.contains('jobbar')) first = first.nextElementSibling;
+  host.insertBefore(card, first || null);
+}
+function start(){
+  if (started || !token) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
+  started = true; load();
+}
+try {
+  new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: false });
+  var tb = document.getElementById('tabs'); if (tb) new MutationObserver(function(){ start(); place(); }).observe(tb, { attributes: true, subtree: true, attributeFilter: ['hidden', 'aria-selected'] });
+} catch (e) {}
+start();
+window._gcPortalSel = { reload: load, data: function(){ return D; } };
+})();
+
 </script>
 </body>
 </html>

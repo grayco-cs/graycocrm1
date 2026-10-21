@@ -127648,8 +127648,9 @@ var nST = window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout.bind(window);
 var nSI = window.__GC_NATIVE_SETINTERVAL__ || window.setInterval;
 var GOLD = '#D4A017', NAVY = '#0F1D2F', LIBKEY = 'selectionLibrary', CHKEY = 'selectionChoices';
 var SEED_NOTE = 'starter list — verify with supplier', SEED_AT = '2026-10-20T00:00:00.000Z';
-var CATS = ['Shingles', 'Metal roofing', 'Underlayment', 'Drip edge / flashing', 'Ridge vent', 'Gutters', 'Skylights',
-            'Siding', 'Trim', 'Paint', 'Windows', 'Doors', 'Flooring', 'Countertops', 'Other'];
+var CATS = ['Shingles', 'Metal roofing', 'Underlayment', 'Drip edge / flashing', 'Ridge vent', 'Siding', 'Gutters', 'Windows',
+            'Paint', 'Flooring', 'Skylights', 'Trim', 'Doors', 'Countertops', 'Other'];   /* patch SEL: roofs first (owner order) */
+var HOOKS = {};   /* patch SEL fills these */
 var UNITS = ['sq', 'bundle', 'ea', 'lf', 'sf', 'roll', 'piece', 'box', 'gal'];
 
 /* ── the starter list: roofs first. Public brand / line / color names only; no prices. ────────────── */
@@ -127768,6 +127769,17 @@ function idbS(k, v){ try { return Promise.resolve(window.idbSet ? window.idbSet(
 
 /* ── a union-merged shared list (the library and the job choices use the same rules) ─────────────
    one record per id; the newer save stamp wins; a removal is for good (removed stays true). */
+/* patch SEL: the price carries its own stamp (priceAt). Whatever else a computer saves later from an older copy,
+   the newest PRICE wins, and every price it replaced is kept in priceHistory (who / when). */
+function pstamp(r){ return s(r && r.priceAt) || (r && r.price != null ? s(r.at) : ''); }
+function histMerge(r, o, pw){
+  var all = [].concat(Array.isArray(r.priceHistory) ? r.priceHistory : [], Array.isArray(o.priceHistory) ? o.priceHistory : []);
+  var lose = pw === r ? o : r;
+  if (lose.price != null && pstamp(lose) && !(Number(lose.price) === Number(pw.price) && pstamp(lose) === pstamp(pw))) all.push({ price: lose.price, unit: s(lose.unit), by: s(lose.priceBy || lose.editedBy || lose.by), at: pstamp(lose) });
+  var seen = {}, out = [];
+  all.forEach(function(h){ if (!h || h.price == null) return; var k = s(h.at) + '|' + Number(h.price); if (seen[k] || (s(h.at) === pstamp(pw) && Number(h.price) === Number(pw.price))) return; seen[k] = 1; out.push(h); });
+  return out.sort(function(x, y){ return s(x.at) < s(y.at) ? 1 : -1; }).slice(0, 50);
+}
 function merge(a, b){
   var by = {};
   (a || []).concat(b || []).forEach(function(r){
@@ -127776,6 +127788,11 @@ function merge(a, b){
     var newer = s(r.updatedAt) > s(o.updatedAt) ? r : o, older = newer === r ? o : r;
     var m = Object.assign({}, older, newer);
     if (r.removed || o.removed) { m.removed = true; m.removedBy = m.removedBy || older.removedBy || ''; } else delete m.removed;
+    if (r.price != null || o.price != null || r.priceAt || o.priceAt || r.priceHistory || o.priceHistory) {
+      var pr = pstamp(r), po = pstamp(o), pw = pr > po ? r : po > pr ? o : newer;
+      ['price', 'unit', 'priceAt', 'priceBy'].forEach(function(f){ if (pw[f] != null && pw[f] !== '') m[f] = pw[f]; else delete m[f]; });
+      var hm = histMerge(r, o, pw); if (hm.length) m.priceHistory = hm; else delete m.priceHistory;
+    }
     by[r.id] = m;
   });
   return Object.keys(by).map(function(k){ return by[k]; });
@@ -127838,29 +127855,45 @@ function brands(cat){ return uniq(inCat(cat), 'brand').map(function(r){ return r
 function lines(cat, brand){ return uniq(inBrand(cat, brand), 'line').map(function(r){ return r.line; }).sort(function(a, b){ return low(a) < low(b) ? -1 : 1; }); }
 function colors(cat, brand, line){ return uniq(inLine(cat, brand, line), 'color').sort(function(a, b){ return low(a.color) < low(b.color) ? -1 : 1; }); }
 function lineRec(cat, brand, line){ return inLine(cat, brand, line).filter(function(r){ return !s(r.color); }).sort(function(a, b){ return s(a.updatedAt) < s(b.updatedAt) ? 1 : -1; })[0] || null; }
+function findDup(brand, line, color){ if (!s(brand) || !(s(line) || s(color))) return null; return live().find(function(r){ return norm(r.brand) === norm(brand) && norm(r.line) === norm(line) && norm(r.color) === norm(color); }) || null; }
 function findLive(cat, brand, line, color){ return live().find(function(r){ return norm(r.cat) === norm(cat) && norm(r.brand) === norm(brand) && norm(r.line) === norm(line) && norm(r.color) === norm(color); }) || null; }
 /* add one entry for everyone (the same name, any case / spacing: the one entry there is) */
 async function addLib(cat, brand, line, color, extra){
   cat = clean(cat); brand = clean(brand); line = clean(line); color = clean(color); extra = extra || {};
-  var have = findLive(cat, brand, line, color);
-  if (have) { if (extra.price != null && extra.price !== '' || s(extra.note)) await setLib(have.id, extra); return { rec: have, existed: true }; }
+  var have = findLive(cat, brand, line, color) || (s(color) ? findDup(brand, line, color) : null);   /* patch SEL: brand + line + color is one product */
+  if (have) { var ch0 = {}; if (extra.price != null && extra.price !== '' && Number(extra.price) !== Number(have.price)) { ch0.price = extra.price; if (s(extra.unit)) ch0.unit = extra.unit; } if (s(extra.note)) ch0.note = extra.note; if (refOk(extra.photo)) ch0.photo = extra.photo; if (Object.keys(ch0).length) await setLib(have.id, ch0); return { rec: have, existed: true, otherCat: norm(have.cat) !== norm(cat) }; }
   var id = libId(cat, brand, line, color);
   if (LIB.list.some(function(r){ return r.id === id; })) id = id + '_' + Date.now().toString(36);   /* an admin removed this name once: a new entry */
   var now = new Date().toISOString();
   var rec = { id: id, cat: cat, brand: brand, line: line, color: color, by: me(), at: now, updatedAt: now };
-  if (extra.price != null && extra.price !== '' && isFinite(Number(extra.price))) rec.price = Math.round(Number(extra.price) * 100) / 100;
+  if (extra.price != null && extra.price !== '' && isFinite(Number(extra.price))) { rec.price = Math.round(Number(extra.price) * 100) / 100; rec.priceAt = now; rec.priceBy = me(); }
   if (s(extra.unit)) rec.unit = s(extra.unit);
   if (s(extra.note)) rec.note = s(extra.note).slice(0, 300);
   if (s(extra.swatch)) rec.swatch = s(extra.swatch);
+  if (refOk(extra.photo)) rec.photo = s(extra.photo);
   var ok = await LIB.put(rec);
   return { rec: rec, ok: ok };
 }
+function refOk(v){ return /^sb:crm-files\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(s(v)); }
 async function setLib(id, f){
   var r = LIB.list.find(function(x){ return x.id === id; }); if (!r) return false;
-  var o = Object.assign({}, r, { updatedAt: new Date().toISOString(), editedBy: me() });
-  if ('price' in f) { if (f.price === '' || f.price == null || !isFinite(Number(f.price))) delete o.price; else o.price = Math.round(Number(f.price) * 100) / 100; }
-  if ('unit' in f) { if (s(f.unit)) o.unit = s(f.unit); else delete o.unit; }
+  var now = new Date().toISOString();
+  var o = Object.assign({}, r, { updatedAt: now, editedBy: me() });
+  if ('price' in f || 'unit' in f) {   /* patch SEL: the newest price wins everywhere; the old one goes to the history */
+    var np = 'price' in f ? (f.price === '' || f.price == null || !isFinite(Number(f.price)) ? null : Math.round(Number(f.price) * 100) / 100) : (r.price != null ? Number(r.price) : null);
+    var nu = 'unit' in f ? s(f.unit) : s(r.unit);
+    var was = r.price != null ? Number(r.price) : null;
+    if (np !== was || nu !== s(r.unit)) {
+      var hist = Array.isArray(r.priceHistory) ? r.priceHistory.slice() : [];
+      if (was != null) hist.unshift({ price: was, unit: s(r.unit), by: s(r.priceBy || r.editedBy || r.by), at: pstamp(r) || s(r.updatedAt) });
+      if (hist.length) o.priceHistory = hist.slice(0, 50);
+      if (np == null) delete o.price; else o.price = np;
+      if (nu) o.unit = nu; else delete o.unit;
+      o.priceAt = now; o.priceBy = me();
+    }
+  }
   if ('note' in f) { if (s(f.note)) o.note = s(f.note).slice(0, 300); else delete o.note; if (o.seed && s(f.note) !== SEED_NOTE) o.verified = true; }
+  if ('photo' in f) { if (refOk(f.photo)) o.photo = s(f.photo); else delete o.photo; }
   return LIB.put(o);
 }
 /* admins: rename / remove a whole node (category, brand, line) or one color, for everyone */
@@ -127989,10 +128022,14 @@ async function openLibrary(start){
   var st = Object.assign({ cat: null, brand: null, line: null, q: '' }, start || {});
   if (st.cat != null && st.brand == null) st.line = null;
   sh.body.innerHTML = '<div style="color:#55626F;font-size:13px;margin:4px 0 8px">Everything here is shared: what you add is saved for every PM at once. Entries marked “starter” are a ' + SEED_NOTE + '.</div>' +
-    '<input id="gcch-q" type="search" placeholder="🔎 Search brands, lines, colors…" autocomplete="off" style="' + SEL + '">' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="gcch-q" type="search" placeholder="🔎 Search brands, lines, colors…" autocomplete="off" style="' + SEL + ';flex:1;min-width:180px">' +
+    '<select id="gcch-fcat" aria-label="Category filter" style="' + SEL + ';width:auto;min-width:140px"><option value="">All categories</option>' + cats().map(function(c){ return '<option>' + esc(c) + '</option>'; }).join('') + '</select></div>' +
+    '<button type="button" id="gcch-addp" style="' + BTNG + ';width:100%;margin-top:8px">➕ Add a product (brand, line, color, price, photo)</button>' +
     '<div id="gcch-view"><div style="color:#55626F;font-size:14px;padding:12px 0">Loading…</div></div>';
   var q = sh.body.querySelector('#gcch-q'), view = sh.body.querySelector('#gcch-view');
-  q.oninput = function(){ if (q.value !== st.q) paint(); };   /* only a real change (the CRM's form watcher re-fires input events) */   /* a few hundred records: filtering on every key is instant (the CRM's timers are throttled while people type) */
+  q.oninput = function(){ if (q.value !== st.q) paint(); };
+  var fcat = sh.body.querySelector('#gcch-fcat'); fcat.onchange = function(){ st.fcat = fcat.value; if (!s(q.value) && st.fcat) { st.cat = st.fcat; st.brand = null; st.line = null; } paint(); };
+  sh.body.querySelector('#gcch-addp').onclick = function(){ if (HOOKS.addProduct) HOOKS.addProduct({ cat: st.cat || st.fcat || '', brand: st.brand || '', line: st.line || '', done: function(){ paint(); } }); };   /* only a real change (the CRM's form watcher re-fires input events) */   /* a few hundred records: filtering on every key is instant (the CRM's timers are throttled while people type) */
   await LIB.local(); paint();
   var dirty = false; view.addEventListener('input', function(){ dirty = true; }, true);
   var s0 = sig(LIB.list); LIB.pull(true).then(function(){ if (document.body.contains(sh.ov) && !dirty && sig(LIB.list) !== s0) paint(); });
@@ -128011,11 +128048,11 @@ async function openLibrary(start){
     paints++; var h = ''; st.q = q.value;
     if (s(st.q)) {
       var words = norm(st.q).split(' ');
-      var hits = live().filter(function(r){ var t = norm([r.cat, r.brand, r.line, r.color, r.note].join(' ')); return words.every(function(w){ return t.indexOf(w) >= 0; }); })
+      var hits = live().filter(function(r){ var t = norm([r.cat, r.brand, r.line, r.color, r.note].join(' ')); return (!st.fcat || norm(r.cat) === norm(st.fcat)) && words.every(function(w){ return t.indexOf(w) >= 0; }); })
         .sort(function(a, b){ return low(a.cat + a.brand + a.line + a.color) < low(b.cat + b.brand + b.line + b.color) ? -1 : 1; });
       h += '<div style="font-size:13px;color:#55626F;margin:10px 0 4px">' + hits.length + ' found' + (hits.length > 80 ? ' (first 80)' : '') + '</div>';
       h += hits.slice(0, 80).map(function(r){
-        return '<div style="' + ROW + '"><button type="button" class="gcch-item" data-jump="' + esc(r.id) + '">' + esc([r.brand, r.line, r.color].filter(Boolean).join(' · ') || r.cat) +
+        return '<div style="' + ROW + '">' + (HOOKS.thumb ? HOOKS.thumb(r.photo, 36) : '') + '<button type="button" class="gcch-item" data-jump="' + esc(r.id) + '">' + esc([r.brand, r.line, r.color].filter(Boolean).join(' · ') || r.cat) +
           '<div style="font-size:12px;color:#55626F;font-weight:500">' + esc(r.cat) + (priceTxt(r) ? ' · ' + priceTxt(r) : '') + (r.note && !r.seed ? ' · ' + esc(r.note) : '') + (r.seed ? ' · <span class="gcch-tag">starter</span>' : '') + '</div></button></div>';
       }).join('') || '<div style="color:#55626F;font-size:14px;padding:8px 0">Nothing found. Open a category below and add it — it is saved for everyone.</div>';
     } else if (st.cat == null) {
@@ -128037,18 +128074,24 @@ async function openLibrary(start){
         '<div style="margin-top:6px"><button type="button" id="gcch-editline" style="' + BTN + '" class="gcch-sm">✎ Price / note for this line</button></div><div id="gcch-editline-f"></div></div>';
       var cs = colors(st.cat, st.brand, st.line);
       h += cs.map(function(r){
-        return '<div style="' + ROW + '" data-k="color" data-v="' + esc(r.color) + '" data-id="' + esc(r.id) + '"><div style="flex:1;min-width:0;font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(r.color) +
-          '<div style="font-size:12px;color:#55626F;font-weight:500">' + [priceTxt(r), r.note && !r.seed ? esc(r.note) : '', r.seed ? '<span class="gcch-tag">starter</span>' : (r.by ? 'added by ' + esc(r.by) : '')].filter(Boolean).join(' · ') + '</div></div>' +
+        return '<div style="' + ROW + '" data-k="color" data-v="' + esc(r.color) + '" data-id="' + esc(r.id) + '">' + (HOOKS.thumb ? HOOKS.thumb(r.photo, 40) : '') + '<div style="flex:1;min-width:0;font-size:15px;font-weight:600;overflow-wrap:anywhere">' + esc(r.color) +
+          '<div style="font-size:12px;color:#55626F;font-weight:500">' + [priceTxt(r), (r.priceHistory || []).length ? 'was ' + money(r.priceHistory[0].price) : '', r.note && !r.seed ? esc(r.note) : '', r.seed ? '<span class="gcch-tag">starter</span>' : (r.by ? 'added by ' + esc(r.by) : '')].filter(Boolean).join(' · ') + '</div></div>' +
           '<button type="button" data-edit="1" style="' + BTN + '" class="gcch-sm" aria-label="Edit price or note">✎</button>' + adminBtns() + '</div><div data-editf="' + esc(r.id) + '"></div>';
       }).join('') + (cs.length ? '' : '<div style="color:#55626F;font-size:14px;padding:8px 0">No colors / options yet.</div>') +
         addForm('gcch-ao', 'Add a color / option to ' + st.line, 'Color or option (e.g. Golden Amber)', true);
     }
-    view.innerHTML = h; dirty = false; wire();
+    view.innerHTML = h; dirty = false; wire(); if (HOOKS.hydrate) HOOKS.hydrate(view);
   }
-  function editForm(where, rec, onSave){
+  function editForm(where, rec, onSave){   /* patch SEL: price (the newest wins, the old one goes to the history), unit, note, photo */
+    var photo = rec && rec.photo || '';
+    var hist = (rec && rec.priceHistory || []).slice(0, 6).map(function(x){ return '<div>' + money(x.price) + (x.unit ? ' / ' + esc(x.unit) : '') + ' — ' + esc(x.by || '?') + ', ' + esc(x.at ? new Date(x.at).toLocaleDateString() : '') + '</div>'; }).join('');
     where.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0"><input data-f="price" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Price per unit" value="' + esc(rec && rec.price != null ? rec.price : '') + '" style="' + SEL + ';flex:1;min-width:120px">' +
-      unitSel('gcch-eu-' + Math.random().toString(36).slice(2, 7), rec && rec.unit || '') + '<input data-f="note" type="text" maxlength="300" placeholder="Note" value="' + esc(rec && rec.note && !rec.seed ? rec.note : '') + '" style="' + SEL + '"><button type="button" data-f="save" style="' + BTNG + ';width:100%">Save for everyone</button></div>';
-    where.querySelector('[data-f=save]').onclick = async function(){ this.disabled = true; await onSave({ price: s(where.querySelector('[data-f=price]').value), unit: s(where.querySelector('select').value), note: s(where.querySelector('[data-f=note]').value) }); };
+      unitSel('gcch-eu-' + Math.random().toString(36).slice(2, 7), rec && rec.unit || '') + '<input data-f="note" type="text" maxlength="300" placeholder="Note" value="' + esc(rec && rec.note && !rec.seed ? rec.note : '') + '" style="' + SEL + '">' +
+      '<label style="font-size:13px;display:flex;align-items:center;gap:6px;width:100%">📷 Photo <input data-f="photo" type="file" accept="image/*" style="font-size:13px"><span data-f="phmsg" style="color:#55626F">' + (photo ? '(has a photo)' : '') + '</span></label>' +
+      (hist ? '<div class="gcsel-hist" style="width:100%;font-size:12px;color:#55626F;background:#FAF7F0;border-radius:8px;padding:6px 8px"><b>Price history</b>' + (rec.priceAt ? '<div>now ' + money(rec.price) + ' — ' + esc(rec.priceBy || '') + ', ' + esc(new Date(rec.priceAt).toLocaleDateString()) + '</div>' : '') + hist + '</div>' : '') +
+      '<button type="button" data-f="save" style="' + BTNG + ';width:100%">Save for everyone</button></div>';
+    where.querySelector('[data-f=photo]').onchange = async function(){ var f = this.files && this.files[0], m = where.querySelector('[data-f=phmsg]'); if (!f) return; m.textContent = 'saving…'; try { var meta = await window._gcStoreFile(f, { kind: 'photo', name: f.name }); if (meta && meta.ref) { photo = meta.ref; m.textContent = '✓ new photo'; } else m.textContent = 'could not save it'; } catch (e) { m.textContent = 'could not save it'; } };
+    where.querySelector('[data-f=save]').onclick = async function(){ this.disabled = true; var out = { price: s(where.querySelector('[data-f=price]').value), unit: s(where.querySelector('select').value), note: s(where.querySelector('[data-f=note]').value) }; if (photo && photo !== (rec && rec.photo)) out.photo = photo; await onSave(out); };
   }
   function node(el){
     var k = el.getAttribute('data-k'), v = el.getAttribute('data-v'), n = { cat: st.cat };
@@ -128082,11 +128125,13 @@ async function openChoices(pid){
   var sh = sheet('gcch-choices', '🎨 Customer choices — ' + (s(p.client).split(/\s+/)[0] || s(p.name) || 'customer'));
   sh.body.innerHTML = '<div style="color:#55626F;font-size:13px">Loading…</div>';
   await Promise.all([LIB.local(), CH.local()]); paintChoices(sh, pid);
+  if (HOOKS.opened) HOOKS.opened(pid, sh);   /* patch SEL: the customers' picks / signatures */
   var s0 = sig(LIB.list) + sig(CH.list);
   Promise.all([LIB.pull(true), CH.pull(true)]).then(function(){ if (!document.body.contains(sh.ov) || sig(LIB.list) + sig(CH.list) === s0) return; if (sh.dirty) refreshList(sh, pid); else paintChoices(sh, pid); });
 }
 function optLabel(o){ return o.color + (Number(o.priceDiff) ? ' (' + (o.priceDiff > 0 ? '+' : '−') + money(Math.abs(o.priceDiff)) + ')' : ''); }
 function choiceRows(pid){
+  if (HOOKS.rows) return HOOKS.rows(pid);   /* patch SEL */
   var list = jobChoices(pid);
   if (!list.length) return '<div style="color:#55626F;font-size:14px;padding:6px 0">No choices yet. Add one below.</div>';
   return list.map(function(c){
@@ -128106,6 +128151,7 @@ function catOptions(v){ return '<option value="">Choose…</option>' + cats().ma
 function optionsHtml(list, v, newLabel){ return '<option value="">Choose…</option>' + list.map(function(x){ return '<option' + (norm(x) === norm(v) ? ' selected' : '') + ' value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('') + '<option value="__new">➕ ' + esc(newLabel) + '</option>'; }
 function refreshList(sh, pid){ var l = sh.body.querySelector('#gcch-list'); if (!l) return; l.innerHTML = choiceRows(pid); wireList(sh, pid); }
 function wireList(sh, pid){
+  if (HOOKS.wire) return HOOKS.wire(sh, pid);   /* patch SEL */
   Array.prototype.forEach.call(sh.body.querySelectorAll('#gcch-list [data-q]'), function(b){
     b.onclick = async function(){
       var id = b.closest('.gcch-ch').getAttribute('data-id'), q = b.getAttribute('data-q'), c = jobChoices(pid).find(function(x){ return x.id === id; }); if (!c) return;
@@ -128175,13 +128221,13 @@ function paintChoices(sh, pid){
   $('gcch-save').onclick = async function(){
     var msg = $('gcch-msg'); msg.textContent = '';
     if (!st.cat || !st.brand) { msg.textContent = 'Pick a category and a brand.'; return; }
-    var opts = colors(st.cat, st.brand, st.line).filter(function(r){ return st.picked[r.id]; }).map(function(r){ var o = { id: 'op_' + r.id.slice(3), color: r.color, priceDiff: Math.round((parseFloat(st.price[r.id]) || 0) * 100) / 100 }; if (r.price != null) { o.price = r.price; if (r.unit) o.unit = r.unit; } return o; });
+    var opts = colors(st.cat, st.brand, st.line).filter(function(r){ return st.picked[r.id]; }).map(function(r){ var o = { id: 'op_' + r.id.slice(3), productId: r.id, color: r.color, priceDiff: Math.round((parseFloat(st.price[r.id]) || 0) * 100) / 100 }; if (r.price != null) { o.price = r.price; if (r.unit) o.unit = r.unit; } if (r.photo) o.photo = r.photo; return o; });
     if (!opts.length && !st.any && st.line && colors(st.cat, st.brand, st.line).length) { msg.textContent = 'Tick the colors the customer can pick, or "Any color in this line".'; return; }
     if (st.any && !st.line) { msg.textContent = '"Any color in this line" needs a product line.'; return; }
     var now = new Date().toISOString();
     var c = { id: 'ch_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), cat: st.cat, brand: st.brand, line: st.line, anyInLine: st.any, options: opts,
-      dueBy: s($('gcch-due').value), note: s($('gcch-note').value).slice(0, 300), at: now, by: me() };
-    if (!opts.length && !st.any) { var lr = lineRec(st.cat, st.brand, st.line); c.options = [{ id: 'op_' + (lr ? lr.id.slice(3) : libId(st.cat, st.brand, st.line, '').slice(3)), color: st.line || st.brand, priceDiff: 0 }]; }
+      dueBy: s($('gcch-due').value), note: s($('gcch-note').value).slice(0, 300), at: now, by: me(), offerAt: now, portal: true };
+    if (!opts.length && !st.any) { var lr = lineRec(st.cat, st.brand, st.line); var o1 = { id: 'op_' + (lr ? lr.id.slice(3) : libId(st.cat, st.brand, st.line, '').slice(3)), color: st.line || st.brand, priceDiff: 0 }; if (lr) { o1.productId = lr.id; if (lr.price != null) { o1.price = lr.price; if (lr.unit) o1.unit = lr.unit; } if (lr.photo) o1.photo = lr.photo; } c.options = [o1]; }
     this.disabled = true; this.textContent = 'Saving…';
     var ok = await putChoice(pid, c);
     toast(ok ? 'Saved on the job ✓' : 'Saved on this device — it goes up as soon as you are online.', ok ? null : '#92400e');
@@ -128251,6 +128297,7 @@ function openSheetPreview(pid){
    1. the Customer portal card (patch Q) on the desk job page and the field job screen
    2. desk Products tab: a sub-tab bar   3. field More → 🎨 Product Library (count-asserted edit in patch_CH.py) */
 function stripHtml(pid){
+  if (HOOKS.chips) return HOOKS.chips(pid);   /* patch SEL */
   var n = jobChoices(pid).length, done = jobChoices(pid).filter(function(c){ return c.pick && !c.pick.reopened; }).length;
   return '<button type="button" class="gcch-chip" data-gcch="choices">🎨 Customer choices' + (n ? ' (' + done + '/' + n + ' picked)' : '') + '</button><button type="button" class="gcch-chip" data-gcch="lib">📚 Product library</button>';
 }
@@ -128300,8 +128347,282 @@ window.addEventListener('online', function(){ nST(retry, 1500); try { window.req
 window._gcCH = { library: function(){ return live(); }, all: function(){ return LIB.list; }, choices: function(pid){ return jobChoices(pid); }, pull: function(){ return Promise.all([LIB.pull(true), CH.pull(true)]); },
   kvRead: kvRead, add: addLib, open: openLibrary, openChoices: openChoices, sheetHtml: selectionsHtml, sheetText: selectionsText, isAdmin: isAdmin,
   tick: tick, status: function(){ return { ticks: ticks, tickErr: tickErr, paints: paints, library: live().length, all: LIB.list.length, choices: CH.list.length, pendingLib: LIB.pending, pendingChoices: CH.pending, at: LIB.at }; } };
+window._gcCH._i = { hooks: HOOKS, LIB: LIB, CH: CH, merge: merge, live: live, cats: cats, colors: colors, jobChoices: jobChoices, putChoice: putChoice, addLib: addLib, setLib: setLib, findDup: findDup, sheet: sheet, refreshList: refreshList,
+  s: s, esc: esc, norm: norm, clean: clean, me: me, isAdmin: isAdmin, toast: toast, money: money, priceTxt: priceTxt, proj: proj, kvRead: kvRead, UNITS: UNITS, BTN: BTN, BTNG: BTNG, SEL: SEL, LAB: LAB };   /* patch SEL */
 try { console.log('[GC] Customer choices + shared Product library ready (patch CH).'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-sel">
+/* ============================================================================
+   GrayCo — 🎨 SELECTIONS v2: the customer picks in the portal, the PM's picks need the customer's signature.
+   patch SEL   __GC_PATCH_SEL__   (builds on patch CH: the shared Product library + Customer choices)
+
+   Owner 10/21: "I want everyone in the company able to add products to that database, prices too, and always keep
+   the most updated price. I do want customers picking inside the portal if possible, but the PM can pick too, and
+   always require customer signature for PM-selected materials. If the customer picks in the portal, that is their choice."
+
+   • 📚 Product library (patch CH, upgraded here): every staff sign-in adds and edits (owner, admin, office, PM,
+     estimator); a price change keeps the newest price and the old ones with who / when (price history); the price
+     carries its own stamp (priceAt), so a computer saving an older copy never puts an old price back; one product per
+     brand + line + color (a second one is caught, and its price is updated instead); a product photo; search + a
+     category filter; ➕ Add a product. Removing stays admin-only (a removal sticks for everyone).
+   • 🎨 A job's selections: the PM offers options from the library. They show in the customer's portal ("Your
+     selections", photos, names, prices). The customer taps one and confirms with their typed name: that is their
+     choice and their signature (name, time and address recorded by the portal function). It comes back here (the
+     job's choice shows "✓ Customer chose …", the PM is told) and a signed copy (PDF) goes to the job's documents.
+   • The PM can pick for the customer: it is marked ⚠️ "Waiting on customer signature", shows in the portal as
+     "Please review and sign" (typed name + drawn signature, or tap to accept with the typed name), and the e-mail
+     asking them to sign waits on ✅ Approvals (gc_approval_queue, kind selection_sign — the job's PM approves it).
+     The signed copy lands in the job's documents; the customer gets their copy by e-mail at once.
+   • Locked once signed: changing a signed (or customer-chosen) selection needs a new signature.
+   What customers do is in gc_kv "selectionResponses" (written only by /.netlify/functions/selections); this page
+   reads it and never writes it.
+   Console: _gcSEL.status()  _gcSEL.state(pid)  _gcSEL.pull()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SEL__) return; window.__GC_PATCH_SEL__ = true;
+var CHX = window._gcCH, I = CHX && CHX._i;
+if (!I) { try { console.warn('[GC] patch SEL: patch CH is missing — selections v2 off.'); } catch (e) {} return; }
+var nST = window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout.bind(window), nSI = window.__GC_NATIVE_SETINTERVAL__ || window.setInterval;
+var s = I.s, esc = I.esc, norm = I.norm, toast = I.toast, money = I.money;
+var RKEY = 'selectionResponses', FN = '/.netlify/functions/selections', SEEN = 'gc_sel_seen', REQ = 'gc_sel_reqsign';
+var RESP = [], respAt = 0, stats = { pulls: 0, applied: 0, docs: 0, told: 0, req: 0, reqErr: '' };
+
+/* ── the one rule (the portal function has the same one) ───────────────────── */
+function offerOf(c){ return s(c.offerAt || c.at); }
+function stateOf(c, resps){
+  resps = resps || RESP;
+  var mine = resps.filter(function(r){ return s(r.choiceId) === s(c.id); }).sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });
+  var pk = c.pick && !c.pick.reopened && (s(c.pick.label) || s(c.pick.optionId)) ? c.pick : null;
+  var reopenAt = c.pick && c.pick.reopened ? s(c.pick.at) : '';
+  if (pk && pk.how !== 'customer') {
+    var sg = mine.find(function(r){ return r.kind === 'sign' && s(r.pickAt) === s(pk.at); });
+    return sg ? { status: 'signed', pick: pk, resp: sg } : { status: 'needs-sign', pick: pk };
+  }
+  if (pk) return { status: 'chosen', pick: pk, resp: mine.find(function(r){ return r.kind === 'pick' && s(r.at) === s(pk.at); }) || null };
+  var cp = mine.find(function(r){ return r.kind === 'pick' && s(r.offerAt) === offerOf(c) && s(r.at) > reopenAt; });
+  if (cp) return { status: 'chosen', pick: { optionId: cp.optionId, label: cp.label, price: cp.price, unit: cp.unit, photo: cp.photo, priceDiff: cp.priceDiff, how: 'customer', by: cp.name, at: cp.at, responseId: cp.id }, resp: cp };
+  return { status: 'open' };
+}
+function jobState(pid){ var l = I.jobChoices(pid); var o = { total: l.length, open: 0, chosen: 0, signed: 0, needsSign: 0 }; l.forEach(function(c){ var st = stateOf(c).status; if (st === 'open') o.open++; else if (st === 'chosen') o.chosen++; else if (st === 'signed') o.signed++; else o.needsSign++; }); return o; }
+
+/* ── what the customers did (read only) ──────────────────────────────────── */
+function listOf(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object' && x.id; }) : null; }
+var pulling = null;
+function pull(manual){
+  if (pulling) return pulling;
+  pulling = (async function(){
+    stats.pulls++;
+    if (!RESP.length) { try { var l0 = listOf(await (window.idbGet ? window.idbGet(RKEY) : null)); if (l0) RESP = l0; } catch (e) {} }
+    var v = await I.kvRead(RKEY, !!manual);
+    if (Array.isArray(v)) { var by = {}; RESP.concat(v).forEach(function(r){ if (r && r.id) by[r.id] = r; }); RESP = Object.keys(by).map(function(k){ return by[k]; }); respAt = Date.now(); try { if (window.idbSet) await window.idbSet(RKEY, RESP); } catch (e) {} }
+    await I.CH.local();
+    await apply();
+    return RESP;
+  })().then(function(x){ pulling = null; return x; }, function(e){ pulling = null; throw e; });
+  return pulling;
+}
+/* a customer's pick / signature goes onto the job's choice (so the job and its printed sheet show it), the signed
+   copy into the job's documents, and the PM (or an admin) gets told once per computer */
+async function apply(){
+  var pids = {}; RESP.forEach(function(r){ if (r.pid) pids[s(r.pid)] = 1; });
+  for (var pid in pids) {
+    if (!I.proj(pid) && !I.CH.list.some(function(c){ return String(c.pid) === pid; })) continue;
+    var list = I.jobChoices(pid);
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i], st = stateOf(c);
+      if (st.status === 'chosen' && (!c.pick || c.pick.reopened || !c.pick.how) && st.resp && st.resp.kind === 'pick') {
+        await I.putChoice(pid, Object.assign({}, c, { pick: st.pick })); stats.applied++;
+      } else if (st.status === 'signed' && (!c.signed || s(c.signed.pickAt) !== s(st.pick.at))) {
+        await I.putChoice(pid, Object.assign({}, c, { signed: { name: st.resp.name, at: st.resp.at, pickAt: s(st.pick.at), responseId: st.resp.id, docRef: s(st.resp.docRef) } })); stats.applied++;
+      }
+    }
+    await docsFor(pid);
+  }
+  tell();
+}
+function docsNow(){ var d = (window._crm && window._crm.projectDocs) || window._gcProjectDocs; return Array.isArray(d) ? d : []; }
+async function docsFor(pid){
+  var bySig = {};
+  RESP.forEach(function(r){ if (s(r.pid) === pid && /^sb:crm-files\/[0-9a-f]{64}\.pdf$/.test(s(r.docRef)) && r.sigId) bySig[r.sigId] = r; });
+  var want = Object.keys(bySig).map(function(k){ return bySig[k]; }); if (!want.length) return;
+  var all = null; try { all = await window.idbGet('projectDocs'); } catch (e) {}
+  if (!Array.isArray(all)) all = docsNow().slice();
+  var have = {}; all.concat(docsNow()).forEach(function(d){ if (d && d.id) have[d.id] = 1; });
+  var add = want.filter(function(r){ return !have['seldoc_' + r.sigId]; }).map(function(r){
+    var t = new Date().toISOString();
+    return { id: 'seldoc_' + r.sigId, pid: pid, name: s(r.docName) || 'Signed selections.pdf', cat: 'Customer portal', type: 'application/pdf', ref: r.docRef, hash: s(r.docRef).slice(13, 77),
+      uploaded: s(r.at).slice(0, 10), uploadedAt: s(r.at), by: s(r.name) + ' (customer portal)', portalShare: true, source: 'customer-selections', signedBy: s(r.name), signedAt: s(r.at), savedAt: t, updatedAt: t };
+  });
+  if (!add.length) return;
+  var next = all.concat(add);
+  try { await window.idbSet('projectDocs', next); } catch (e) {}
+  try { if (window._setProjectDocs) window._setProjectDocs(function(prev){ if (!Array.isArray(prev)) return next; var ids = {}; prev.forEach(function(d){ if (d && d.id) ids[d.id] = 1; }); return prev.concat(add.filter(function(d){ return !ids[d.id]; })); }); } catch (e) {}
+  try { if (window._crm) window._crm.projectDocs = next; } catch (e) {}
+  try { window.__GC_MANUAL_SAVE__ = true; if (window._supaUpsert) window._supaUpsert('projectDocs', next); } catch (e) {}
+  nST(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  /* the CRM pushes its lists on a tab change (or every 3 minutes): ask for one now, so the copy is in the cloud for everyone */
+  try { if (window._gcManualNow) window._gcManualNow('signed selections'); if (window._gcTabChangeSync) window._gcTabChangeSync('signed selections copy'); } catch (e) {}
+  stats.docs += add.length;
+}
+function myName(){ try { var e = s(window.__GC_AUTH__ && window.__GC_AUTH__.email()).toLowerCase(); var u = ((window._crm || {}).users || []).find(function(x){ return x && s(x.email).toLowerCase() === e; }); if (u && u.name) return s(u.name); } catch (e) {} return s(I.me()); }
+function seen(){ try { return JSON.parse(localStorage.getItem(SEEN) || '{}') || {}; } catch (e) { return {}; } }
+function tell(){
+  var m = seen(), changed = false, now = Date.now(), me = norm(myName()), admin = I.isAdmin();
+  var bySig = {};
+  RESP.forEach(function(r){ if (!r.sigId || m[r.sigId]) return; (bySig[r.sigId] = bySig[r.sigId] || []).push(r); });
+  Object.keys(bySig).forEach(function(k){
+    var rs = bySig[k], r = rs[0]; m[k] = 1; changed = true;
+    if (now - Date.parse(r.at || 0) > 3 * 86400e3) return;
+    var p = I.proj(r.pid); if (!p) return;
+    var pm = norm(p.pm || p.projectManager || p.pmName);
+    if (!(admin || (pm && pm === me))) return;
+    stats.told++;
+    toast((r.kind === 'sign' ? '✍️ ' + r.name + ' signed ' : '🎨 ' + r.name + ' picked ') + rs.map(function(x){ return x.label; }).join(', ') + ' — ' + s(p.name));
+  });
+  if (changed) { try { var keys = Object.keys(m); if (keys.length > 800) keys.slice(0, keys.length - 800).forEach(function(k){ delete m[k]; }); localStorage.setItem(SEEN, JSON.stringify(m)); } catch (e) {} }
+}
+
+/* ── ask the customer to sign: the e-mail waits on ✅ Approvals (the function queues it) ── */
+function reqs(){ try { return JSON.parse(localStorage.getItem(REQ) || '{}') || {}; } catch (e) { return {}; } }
+function setReq(pid, on){ var m = reqs(); if (on) m[pid] = Date.now(); else delete m[pid]; try { localStorage.setItem(REQ, JSON.stringify(m)); } catch (e) {} }
+async function requestSign(pid, quiet){
+  setReq(pid, true);
+  var j = null;
+  try { var r = await window.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'request-sign', projectId: String(pid) }) }); j = await r.json().catch(function(){ return null; }); j = j || {}; j.__s = r.status; }
+  catch (e) { stats.reqErr = 'offline'; return { ok: false, offline: true }; }
+  if (j.ok) { setReq(pid, false); stats.req++; try { if (window._gcApprovalsRefresh) window._gcApprovalsRefresh(); } catch (e) {}
+    if (!quiet) toast(j.queued ? '✉️ The e-mail asking the customer to sign is waiting on ✅ Approvals.' : j.noEmail ? 'No customer e-mail on file — an office to-do was made to get the signature.' : 'Nothing is waiting for a signature.', j.queued ? null : '#92400e'); }
+  else { stats.reqErr = s(j.error) || ('HTTP ' + j.__s); if (j.__s && j.__s < 500 && j.__s !== 404) setReq(pid, false); }
+  return j;
+}
+
+/* ── the job's choice rows (replaces patch CH's list) ───────────────────── */
+var BTN = I.BTN, SEL = I.SEL;
+var PILL = 'font-size:12px;font-weight:700;border-radius:999px;padding:3px 8px;display:inline-block';
+function optText(o){ return s(o.color || o.label) + (o.price != null && o.price !== '' ? ' · ' + money(o.price) + (o.unit ? ' / ' + esc(o.unit) : '') : '') + (Number(o.priceDiff) ? ' (' + (o.priceDiff > 0 ? '+' : '−') + money(Math.abs(o.priceDiff)) + ')' : ''); }
+function thumb(ref, size){ return /^sb:crm-files\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(s(ref)) ? '<img class="gcsel-th" data-ref="' + esc(ref) + '" alt="" style="width:' + (size || 40) + 'px;height:' + (size || 40) + 'px;border-radius:8px;object-fit:cover;background:#EEE9DD;flex:0 0 auto">' : ''; }
+function hydrate(root){ Array.prototype.forEach.call((root || document).querySelectorAll('img.gcsel-th[data-ref]:not([src])'), function(img){ var ref = img.getAttribute('data-ref'); try { window._gcFileUrl(ref).then(function(u){ img.src = u; }, function(){ img.style.visibility = 'hidden'; }); } catch (e) {} }); }
+function rows(pid){
+  var list = I.jobChoices(pid);
+  if (!list.length) return '<div style="color:#55626F;font-size:14px;padding:6px 0">No selections yet. Add one below — the customer picks it in their portal.</div>';
+  return list.map(function(c){
+    var st = stateOf(c), pk = st.pick, opts = c.options || [];
+    var badge = st.status === 'open' ? '<span style="' + PILL + ';color:#8A5A00;background:#FCF0CF">🕑 Customer picks in the portal</span>'
+      : st.status === 'chosen' ? '<span style="' + PILL + ';color:#1D5E2C;background:#E3F1E6">✓ Customer chose: ' + esc(pk.label) + '</span>'
+      : st.status === 'signed' ? '<span style="' + PILL + ';color:#1D5E2C;background:#E3F1E6">✓ Signed by ' + esc(st.resp.name) + '</span>'
+      : '<span class="gcsel-wait" style="' + PILL + ';color:#991b1b;background:#FDE2E2">⚠️ Waiting on customer signature</span>';
+    var who = st.resp ? '<span style="font-size:12px;color:#55626F">' + esc(st.resp.name) + ', ' + esc(new Date(st.resp.at).toLocaleString()) + (st.resp.ip ? ' · ' + esc(st.resp.ip) : '') + '</span>' : (pk ? '<span style="font-size:12px;color:#55626F">PM pick: ' + esc(pk.label) + ' (' + esc(pk.by || '') + ')</span>' : '');
+    var pickSel = '<select data-sel="pick" style="' + SEL + ';min-height:38px;font-size:14px;flex:1;min-width:180px"><option value="">' + (pk ? 'Change the pick (needs a new customer signature)…' : 'PM picks for the customer (needs their signature)…') + '</option>' +
+      opts.map(function(o){ return '<option value="' + esc(o.id) + '">' + esc(optText(o)) + '</option>'; }).join('') + '</select>';
+    return '<div class="gcch-ch gcsel-row" data-id="' + esc(c.id) + '" data-status="' + st.status + '" style="border-top:1px solid #EFEAE0;padding:10px 0;display:flex;flex-direction:column;gap:6px">' +
+      '<div style="font-weight:800;font-size:15px">' + esc(c.cat) + ' — ' + esc([c.brand, c.line].filter(Boolean).join(' · ')) + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px">' + opts.map(function(o){ var on = pk && (s(pk.optionId) === s(o.id) || norm(pk.label) === norm(o.color || o.label)); return '<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid ' + (on ? '#1D5E2C' : '#E2DCCD') + ';border-radius:10px;padding:4px 8px;font-size:13px;background:' + (on ? '#E3F1E6' : '#fff') + '">' + thumb(o.photo, 28) + esc(optText(o)) + '</span>'; }).join('') + (c.anyInLine ? '<span style="font-size:13px;color:#55626F">+ any color in this line</span>' : '') + '</div>' +
+      (c.note || c.dueBy ? '<div style="font-size:13px;color:#55626F">' + (c.dueBy ? 'pick by ' + esc(c.dueBy) : '') + (c.note ? (c.dueBy ? ' · ' : '') + esc(c.note) : '') + '</div>' : '') +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + badge + who + '</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + pickSel +
+      (pk || st.status === 'chosen' ? '<button type="button" data-sel="reopen" style="' + BTN + '" class="gcch-sm">↺ Let the customer pick again</button>' : '') +
+      (st.status === 'needs-sign' ? '<button type="button" data-sel="ask" style="' + BTN + '" class="gcch-sm">✉️ Ask them to sign</button>' : '') +
+      '<button type="button" data-sel="remove" style="' + BTN + ';border-color:#b91c1c;color:#b91c1c" class="gcch-sm">Remove</button></div></div>';
+  }).join('') + '<div style="font-size:12px;color:#55626F;margin-top:6px">The customer sees these in their portal (Home → Your selections). Their own pick counts as their signature; a PM pick waits for their signature.</div>';
+}
+function lockOk(c, st){
+  if (st.status !== 'signed' && st.status !== 'chosen') return true;
+  var sure = true; try { sure = confirm((st.status === 'signed' ? 'This was signed by ' : 'The customer chose this: ') + s(st.resp ? st.resp.name : (st.pick && st.pick.by)) + '. Changing it needs a new customer signature. Change it?'); } catch (e) {}
+  return sure;
+}
+function wire(sh, pid){
+  var again = function(){ I.refreshList(sh, pid); hydrate(sh.body); };
+  Array.prototype.forEach.call(sh.body.querySelectorAll('#gcch-list [data-sel]'), function(el){
+    var row = el.closest('.gcsel-row'), id = row && row.getAttribute('data-id'), q = el.getAttribute('data-sel');
+    var get = function(){ return I.jobChoices(pid).find(function(x){ return x.id === id; }); };
+    if (q === 'pick') el.onchange = async function(ev){
+      if (ev) ev.stopPropagation(); var v = el.value; if (!v) return; var c = get(); if (!c) return; var st = stateOf(c);
+      if (!lockOk(c, st)) { el.value = ''; return; }
+      var o = (c.options || []).find(function(x){ return x.id === v; }); if (!o) return;
+      el.disabled = true;
+      var pick = { optionId: o.id, label: s(o.color || o.label), price: o.price, unit: o.unit, photo: o.photo, priceDiff: o.priceDiff || 0, how: 'pm', by: myName(), at: new Date().toISOString() };
+      var pr = I.putChoice(pid, Object.assign({}, c, { pick: pick })); again();   /* the list shows it at once; the cloud save follows */
+      var ok = await pr;
+      toast('⚠️ Picked ' + pick.label + ' — waiting on the customer’s signature.' + (ok ? '' : ' (Saved on this device — it goes up when you are online.)'), '#92400e');
+      again();
+      if (ok) requestSign(pid, false); else setReq(pid, true);
+    };
+    else el.onclick = async function(ev){
+      if (ev) ev.stopPropagation(); var c = get(); if (!c) return; var st = stateOf(c);
+      if (q === 'ask') { el.disabled = true; await requestSign(pid, false); el.disabled = false; return; }
+      if (q === 'reopen') { if (!lockOk(c, st)) return; var p2 = I.putChoice(pid, Object.assign({}, c, { pick: { reopened: true, at: new Date().toISOString(), by: myName() } })); again(); await p2; toast('Open again — the customer picks in their portal.'); return; }
+      if (q === 'remove') { var sure = true; try { sure = confirm('Remove this selection from the job (and from the customer’s portal)?'); } catch (e) {} if (!sure) return; var p3 = I.putChoice(pid, Object.assign({}, c, { removed: true, removedBy: myName() })); again(); await p3; }
+    };
+  });
+  hydrate(sh.body);
+}
+function chips(pid){
+  var j = jobState(pid), n = j.total, done = j.chosen + j.signed;
+  return '<button type="button" class="gcch-chip" data-gcch="choices">🎨 Customer selections' + (n ? ' (' + done + '/' + n + ' done)' : '') + '</button>' +
+    (j.needsSign ? '<button type="button" class="gcch-chip gcsel-waitchip" data-gcch="choices" style="border-color:#b91c1c;color:#991b1b;background:#FDE2E2">⚠️ Waiting on customer signature (' + j.needsSign + ')</button>' : '') +
+    '<button type="button" class="gcch-chip" data-gcch="lib">📚 Product library</button>';
+}
+
+/* ── 📚 ➕ Add a product (every field, duplicate check on brand + line + color) ── */
+function catsList(){ return I.cats(); }
+function openAddProduct(pre){
+  pre = pre || {};
+  var sh = I.sheet('gcsel-addp', '➕ Add a product'), photo = '';
+  var L = function(t){ return '<label style="' + I.LAB + '">' + t + '</label>'; };
+  sh.body.innerHTML = '<div style="color:#55626F;font-size:13px">Saved for everyone at once. One product per brand + line + color.</div>' +
+    L('CATEGORY') + '<select id="gcsel-ap-cat" style="' + SEL + '">' + catsList().map(function(c){ return '<option' + (norm(c) === norm(pre.cat) ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>' +
+    L('BRAND') + '<input id="gcsel-ap-brand" maxlength="120" value="' + esc(pre.brand || '') + '" placeholder="e.g. GAF" style="' + SEL + '">' +
+    L('PRODUCT LINE') + '<input id="gcsel-ap-line" maxlength="120" value="' + esc(pre.line || '') + '" placeholder="e.g. Timberline HDZ" style="' + SEL + '">' +
+    L('COLOR / NAME') + '<input id="gcsel-ap-color" maxlength="120" placeholder="e.g. Charcoal" style="' + SEL + '">' +
+    '<div style="display:flex;gap:6px">' + '<div style="flex:1">' + L('PRICE') + '<input id="gcsel-ap-price" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Price per unit" style="' + SEL + '"></div>' +
+    '<div>' + L('UNIT') + '<select id="gcsel-ap-unit" style="' + SEL + ';width:auto;min-width:92px"><option value="">unit</option>' + I.UNITS.map(function(u){ return '<option>' + u + '</option>'; }).join('') + '</select></div></div>' +
+    L('NOTES') + '<input id="gcsel-ap-note" maxlength="300" placeholder="Optional" style="' + SEL + '">' +
+    L('PHOTO (OPTIONAL)') + '<input id="gcsel-ap-photo" type="file" accept="image/*" style="font-size:14px"><div id="gcsel-ap-ph" style="font-size:12px;color:#55626F"></div>' +
+    '<div id="gcsel-ap-msg" style="font-size:13px;color:#b91c1c;min-height:18px;margin:8px 0"></div>' +
+    '<button type="button" id="gcsel-ap-save" style="' + I.BTNG + ';width:100%;min-height:50px;font-size:16px">Save for everyone</button>';
+  var $ = function(id){ return sh.body.querySelector('#' + id); };
+  $('gcsel-ap-photo').onchange = async function(){ var f = this.files && this.files[0]; if (!f) return; $('gcsel-ap-ph').textContent = 'Saving the photo…';
+    try { var meta = await window._gcStoreFile(f, { kind: 'photo', name: f.name }); photo = meta && meta.ref || ''; $('gcsel-ap-ph').textContent = photo ? '✓ Photo ready' : 'The photo could not be saved.'; } catch (e) { $('gcsel-ap-ph').textContent = 'The photo could not be saved.'; } };
+  $('gcsel-ap-save').onclick = async function(){
+    var msg = $('gcsel-ap-msg'), f = { cat: $('gcsel-ap-cat').value, brand: I.clean($('gcsel-ap-brand').value), line: I.clean($('gcsel-ap-line').value), color: I.clean($('gcsel-ap-color').value),
+      price: s($('gcsel-ap-price').value), unit: s($('gcsel-ap-unit').value), note: s($('gcsel-ap-note').value) };
+    msg.textContent = '';
+    if (!f.brand || !(f.line || f.color)) { msg.textContent = 'Brand and a product line or color / name are needed.'; return; }
+    var dup = I.findDup(f.brand, f.line, f.color);
+    if (dup) {
+      var up = f.price !== '' && Number(dup.price) !== Number(f.price);
+      var sure = true; try { sure = confirm('Already in the library: ' + [dup.cat, dup.brand, dup.line, dup.color].filter(Boolean).join(' › ') + (dup.price != null ? ' (' + money(dup.price) + (dup.unit ? ' / ' + dup.unit : '') + ')' : '') + '.\n\n' + (up ? 'Update its price to ' + money(f.price) + '? The old price is kept in its history.' : 'Keep the one entry?')); } catch (e) {}
+      if (!sure) { msg.textContent = 'Not saved — it is already in the library.'; return; }
+      var ch = {}; if (up) { ch.price = f.price; if (f.unit) ch.unit = f.unit; } if (photo) ch.photo = photo; if (f.note) ch.note = f.note;
+      if (Object.keys(ch).length) await I.setLib(dup.id, ch);
+      toast(up ? 'Price updated for everyone — the old one is in its history.' : 'Kept the one entry.'); sh.close(); return;
+    }
+    this.disabled = true; this.textContent = 'Saving…';
+    var r = await I.addLib(f.cat, f.brand, f.line, f.color, { price: f.price, unit: f.unit, note: f.note, photo: photo });
+    toast(r.ok === false ? 'Saved on this device — it goes to everyone as soon as you are online.' : '“' + [f.brand, f.line, f.color].filter(Boolean).join(' ') + '” saved — everyone sees it now.', r.ok === false ? '#92400e' : null);
+    sh.close(); try { if (typeof pre.done === 'function') pre.done(r); } catch (e) {}
+  };
+  return sh;
+}
+
+/* ── start ── */
+var lastPull = 0;
+function bg(){
+  if (document.hidden) return;
+  if (Date.now() - lastPull > 60000) { lastPull = Date.now(); pull(false).catch(function(){}); }
+  var m = reqs(); Object.keys(m).forEach(function(pid){ if (Date.now() - m[pid] > 45000) requestSign(pid, true); });
+}
+nST(function(){ bg(); nSI.call(window, bg, 20000); }, 15000);
+I.hooks.rows = rows; I.hooks.wire = wire; I.hooks.chips = chips; I.hooks.addProduct = openAddProduct; I.hooks.opened = function(pid, sh){ var s0 = RESP.length; pull(true).then(function(){ if (sh && document.body.contains(sh.ov) && (RESP.length !== s0 || stats.applied)) I.refreshList(sh, pid); else if (sh) hydrate(sh.body); }).catch(function(){}); };
+I.hooks.hydrate = hydrate; I.hooks.thumb = thumb;
+window._gcSEL = { state: function(pid){ return I.jobChoices(pid).map(function(c){ var st = stateOf(c); return { id: c.id, status: st.status, pick: st.pick ? st.pick.label : '', by: st.resp ? st.resp.name : '' }; }); }, jobState: jobState, stateOf: stateOf,
+  pull: function(){ return pull(true); }, responses: function(){ return RESP.slice(); }, requestSign: requestSign, addProduct: openAddProduct,
+  status: function(){ return Object.assign({ responses: RESP.length, at: respAt, pendingRequests: Object.keys(reqs()) }, stats); } };
+try { console.log('[GC] Selections v2 ready (patch SEL): customer picks in the portal, PM picks need a signature. _gcSEL.status()'); } catch (e) {}
+})();
+
 </script>
 <script id="gc-patch-sweep">
 /* ============================================================================
