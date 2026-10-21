@@ -60,8 +60,8 @@ The link looks like `portal.grayco-cs.com/#t=…` — one per sub company. The f
 
 ## What the PM does in the Sub hub
 
-- **🧾 Create scope** — lines (area, work, measurement, qty, unit), included / not included, material GrayCo provides / the sub provides, notes, dates, plans / drawings / photos, and ONE total. **No line prices, ever.** Lines can be copied from a patch-SC sub scope (estimate / Xactimate) when one is on the job. **Send for approval** → the job's PM (or an owner) taps **✅ Approve & publish** → the sub sees it (and gets one e-mail) → the sub taps **Accept** or **Ask a question**. Accepted shows on the job's sub row ("Scope accepted").
-- **➕ Change order** — the same, shown to the sub as its own line with its amount.
+- **🧾 Create scope** — lines (area, work, measurement, qty, unit), included / not included, material GrayCo provides / the sub provides, notes, dates, plans / drawings / photos, and ONE total. **No line prices, ever.** Lines can be copied from a patch-SC sub scope (estimate / Xactimate) when one is on the job. **Send for approval** → the job's PM (or an owner) taps **✅ Approve & publish** → the sub sees it (and gets one e-mail) → the sub taps **✍️ Review & sign** (typed full name + "I agree" + an optional drawn signature; the time, IP and version are kept) or **Ask a question**. The scope is the **sub agreement** (what they are paid on the job): the job's sub row shows Draft → Sent → **Signed ✓**, and the sub pay check uses the SIGNED amount (patch AUTO6, docs/AUTOMATIONS-AUTO6.md).
+- **➕ Change order** — the same, shown to the sub as its own line with its amount, and signed the same way.
 - **☑ Punch item** — goes on the CRM punch list, assigned to the sub; they mark it done with a photo.
 - **💬 Messages** — one thread per job and sub (photos / PDFs, read receipts, unread badges on desk and field).
 - **📍 Site notes** — gate code, parking, hours, dumpster, power, water — the sub sees them on the job.

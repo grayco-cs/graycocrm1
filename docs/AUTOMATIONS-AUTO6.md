@@ -44,23 +44,56 @@ The same steps are under Admin → the "📞 Missed-call text-back is waiting on
    - **Option B:** make the Twilio number the published number and set `TWILIO_RING_TO` to the office line. Twilio rings the office first for `TWILIO_RING_SECONDS` (default 20) and texts only when nobody picks up.
 8. Test: call from a cell phone and don't answer. You should get the text, and Leads → 📥 Lead Inbox should show "Missed call".
 
-## 2. Sub pay check — `index.html` (`gc-patch-auto6`)
+## 2. Signed sub agreements and the sub pay check
+
+### The sub agreement is signed in the sub's portal
+
+Owner, 10/21: "Sub agreement is agreement for pay in the job? If so, be in their portal and have them sign it."
+
+The sub agreement is the scope a PM writes for a sub (job → 👷 Subs & portal → 🧾 Scope): the work, plus the amount the sub is paid on that job. It reuses the sub portal's existing scope flow (`portal-access.js`, `gc_sub_scope`):
+
+1. **Draft:** the PM saves the scope.
+2. **Waiting for PM approval:** "Send for approval".
+3. **Sent:** the job's PM (or an admin) approves it.
+   - The sub gets one e-mail from `portal@grayco-cs.com`.
+   - Subject: "Sub agreement to sign — <title> — PO · job · address" (no insurance carrier).
+   - The e-mail has the sub's portal link.
+4. **Signed:** in the portal, the sub taps **✍️ Review & sign**, types their full name, ticks "I agree to do this scope of work for $X as written (version N)", and can draw a signature.
+   - The server keeps all of this on the scope (`data.signature`): name, the drawing (points), time, IP, device and the version and amount signed.
+   - An accept without a typed name and the tick is refused.
+
+How the signature is handled:
+
+- **Change orders** to the sub's scope are signed the same way. Their e-mail subject is "Change order to sign — …".
+- **A changed scope** becomes a new version, sent again for a new signature. The signed version stays in the scope's history.
+- **On the job's sub line:** the CRM files the "signed" event there (`agreementAmt`, `agreementSignedAt`, `agreementSignedBy`, `signedCOs`).
+- **Status shown:** the job's Subs & portal sheet shows "Sub agreement: Draft / Sent — waiting for the sub to sign / Signed ✓ by …" and "Change orders: n signed / m".
+- **Customers never see any of this.**
+
+### The sub pay check — `index.html` (`gc-patch-auto6`)
 
 **When it runs.** Before a sub invoice is approved (`_gcPmDecideSub`), and before its check is marked written, which counts as paid (`_gcMarkCheckWritten`).
 
-**What it checks.**
+**What stops it** (owner decision "B", 10/21):
 
-- The sub is on the Subs list with a **COI that has not expired**.
-- The sub has a **W-9** on file.
-- **This invoice plus the sub's invoices already approved or paid on the job** is no more than **the sub's agreement(s) on the job** (Sub Agreements) **plus signed change orders** for that sub.
+- No COI, or an expired COI.
+- No W-9.
+- This invoice plus the sub's invoices already approved or paid on the job adds up to more than **the SIGNED sub agreement plus the change orders the sub signed**.
 
-**When something fails.**
+**What only warns** (never blocks):
 
-- The approval or payment is stopped, and the reasons are shown.
-- The invoice stays on the approvals list flagged **⚠ Pay check** (`payCheck` on the gc_sub_approvals row). The flag shows on the sub-invoice cards and in Admin's warnings.
-- Only an **admin** can override, and must give a note. The note (who, when, why) is kept on the row and the invoice (`payOverride`). A PM cannot override.
+- "⚠ Sub agreement not signed yet ($X)": there is an agreement amount, but the sub has not signed it. This covers a CRM sub-agreement PDF, a scope that was sent or accepted without a signature, or the bid amount.
+- "⚠ No sub agreement amount": there is no agreement amount at all.
 
-`window._gcSubPayCheck(invId)` returns the check result.
+When either warning applies, the approval goes through with a notice. The warning stays on the row (`payWarn`) and appears in Admin's warnings as "N sub invoices waiting without a signed sub agreement".
+
+**When something stops it.**
+
+- The reasons are shown.
+- The invoice stays on the approvals list flagged **⚠ Pay check** (`payCheck`). The flag shows on the sub-invoice cards and in Admin's warnings.
+- Only an **admin** can override, and must give a note (who, when, why: `payOverride`). A PM cannot override.
+
+`window._gcSubPayCheck(invId)` returns `{ ok, problems, warnings, signed, contract, changeOrders, billed, … }`.
 
 ## 3. Lost-lead win-back
 

@@ -284,14 +284,16 @@ const MAIL = {
   en: {
     codeSubj: 'Your GrayCo Portal code', codeHead: 'Your sign-in code', codeBody: 'Enter this code on the GrayCo Portal. It works for 10 minutes. If you did not ask for it, ignore this e-mail.',
     linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail.',
-    linkBtn: 'Open my GrayCo Portal', scopeSubj: 'New scope from GrayCo — ', scopeBody: 'GrayCo sent you a scope. Open your portal to see it, accept it or ask a question.', scopeBtn: 'See the scope',
+    linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question.', scopeBtn: 'Review and sign',
+    coSignSubj: 'Change order to sign — ', coSignBody: 'GrayCo sent you a change order to your scope on this job. Open your portal to review it and sign it, or ask a question.',
     approvedSubj: 'You can now sign in at bids.grayco-cs.com', approvedBody: 'GrayCo approved your company for the GrayCo bid site. Sign in with the e-mail and password you chose.', approvedBtn: 'Open the bid site',
     foot: 'Questions? Call GrayCo at ' + OFFICE_PHONE + '.'
   },
   es: {
     codeSubj: 'Su código del Portal GrayCo', codeHead: 'Su código para entrar', codeBody: 'Escriba este código en el Portal GrayCo. Sirve por 10 minutos. Si usted no lo pidió, ignore este correo.',
     linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo.',
-    linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Nuevo alcance de GrayCo — ', scopeBody: 'GrayCo le envió un alcance de trabajo. Abra su portal para verlo, aceptarlo o hacer una pregunta.', scopeBtn: 'Ver el alcance',
+    linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta.', scopeBtn: 'Revisar y firmar',
+    coSignSubj: 'Orden de cambio para firmar — ', coSignBody: 'GrayCo le envió una orden de cambio a su alcance en este trabajo. Abra su portal para revisarla y firmarla, o hacer una pregunta.',
     approvedSubj: 'Ya puede entrar en bids.grayco-cs.com', approvedBody: 'GrayCo aprobó a su compañía para el sitio de licitaciones de GrayCo. Entre con el correo y la contraseña que escogió.', approvedBtn: 'Abrir el sitio de licitaciones',
     foot: '¿Preguntas? Llame a GrayCo al ' + OFFICE_PHONE + '.'
   }
@@ -733,7 +735,8 @@ function scopeOut(x, signed){
     included: clip(d.included, 4000), excluded: clip(d.excluded, 4000), matGc: clip(d.matGc, 2000), matSub: clip(d.matSub, 2000), notes: clip(d.notes, 4000),
     start: ymd(d.start), end: ymd(d.end), total: money(x.total), files: files, photos: photos,
     status: x.status === 'accepted' && Number(x.accepted_version) === Number(x.version) ? 'accepted' : (x.status === 'question' ? 'question' : 'new'),
-    acceptedAt: x.status === 'accepted' ? ymd(x.accepted_at) : '', question: x.status === 'question' ? clip(x.question, 2000) : '' };
+    acceptedAt: x.status === 'accepted' ? ymd(x.accepted_at) : '', question: x.status === 'question' ? clip(x.question, 2000) : '',
+    signedName: x.status === 'accepted' && d.signature && Number(d.signature.version) === Number(x.version) ? clip(d.signature.name, 80) : '' };
 }
 function papersOf(sub, events){
   const exp = ymd(sub.insExp || sub.insuranceExp || sub.coiExpiration);
@@ -877,10 +880,27 @@ async function uploadsOf(sub, ids, pid){
   const rows = await dbGet('gc_sub_event', 'select=id,project_id,data&kind=eq.upload&sub_id=' + eq(sub.id) + '&id=' + inq(ids));
   return rows.filter(function(r){ return !pid || !r.project_id || s(r.project_id) === s(pid); }).map(function(r){ const d = r.data || {}; return { ref: d.ref, name: d.name, type: d.type, size: d.size, hash: d.hash }; });
 }
+/* patch AUTO6: a drawn signature — at most 40 strokes of 600 points, numbers on the 600 × 200 pad */
+function cleanStrokes(v){
+  return (Array.isArray(v) ? v : []).slice(0, 40).map(function(st){
+    return (Array.isArray(st) ? st : []).slice(0, 600).map(function(p){
+      const x = Number(Array.isArray(p) ? p[0] : NaN), y = Number(Array.isArray(p) ? p[1] : NaN);
+      return isFinite(x) && isFinite(y) ? [Math.round(Math.max(0, Math.min(600, x)) * 10) / 10, Math.round(Math.max(0, Math.min(200, y)) * 10) / 10] : null;
+    }).filter(Boolean);
+  }).filter(function(st){ return st.length; });
+}
 async function addEvent(kind, sub, pid, data){
   const id = newId('E');
   await dbPost('gc_sub_event', { id: id, kind: kind, project_id: pid || null, sub_id: s(sub.id), data: Object.assign({ subName: s(sub.name || sub.company) }, data) });
   return id;
+}
+/* patch AUTO6: "PO · job · address" for a sub's e-mail subject (never the insurance carrier) */
+function jobTagOf(data, pid){
+  const p = arr(data && data.projects).find(function(j){ return j && s(j.id) === s(pid); });
+  if (!p) return '';
+  const own = ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany'].map(function(k){ return s(p[k]); }).filter(function(w){ return w.length >= 3; });
+  const strip = function(v){ own.forEach(function(w){ v = s(v).split(w).join(''); }); return s(v).replace(/\b(state\s*farm|allstate|usaa|liberty\s*mutual|nationwide|travelers|progressive|farmers|geico|chubb|safeco|erie|auto[\s-]*owners|homesite|metlife|amica|kemper|foremost|assurant|stillwater)\b[^·—-]*/gi, '').replace(/\s*[—-]\s*(claim)?\s*$/i, '').trim(); };
+  return [s(p.autoPO || p.po) ? 'PO ' + s(p.autoPO || p.po) : '', strip(p.name), strip(p.address || p.jobAddress)].filter(Boolean).join(' \u00b7 ').slice(0, 160);
 }
 function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(pid); }); if (!p) throw Fail(404, 'That job is not one of yours.'); return p; }
 async function partnerAction(action, body, ctx){
@@ -902,11 +922,20 @@ async function partnerAction(action, body, ctx){
     const x = rows[0];
     if (!x || ['published', 'accepted', 'question'].indexOf(x.status) < 0) throw Fail(404, 'That scope is not available.');
     const now = new Date().toISOString();
-    if (body.op === 'accept') {
-      if (Number(body.version) && Number(body.version) !== Number(x.version)) throw Fail(409, 'GrayCo changed this scope a moment ago. Look it over again, then accept.');
-      await dbPatch('gc_sub_scope', 'id=' + eq(x.id) + '&version=eq.' + Number(x.version), { status: 'accepted', accepted_at: now, accepted_version: x.version, updated_at: now });
-      await addEvent('scope', sub, x.project_id, { scopeId: x.id, kind: x.kind, op: 'accepted', version: x.version, title: x.title, total: money(x.total) });
-      return { ok: true, status: 'accepted' };
+    if (body.op === 'accept' || body.op === 'sign') {
+      /* patch AUTO6 (owner 10/21): the sub agreement / change order is SIGNED — typed full name + the drawn signature
+         (points on a 600 × 200 pad, like the customer portal), with the time, the IP and the version signed */
+      if (Number(body.version) && Number(body.version) !== Number(x.version)) throw Fail(409, 'GrayCo changed this a moment ago. Look it over again, then sign.');
+      const signName = clip(String(body.signName == null ? '' : body.signName).replace(/\s+/g, ' '), 80);
+      if (signName.length < 3 || !/[A-Za-z\u00C0-\u024F]{2}/.test(signName)) throw Fail(400, 'Type your full name to sign.');
+      if (body.agree !== true) throw Fail(400, 'Tick the box to agree, then sign.');
+      const strokes = cleanStrokes(body.strokes);
+      const sig = { name: signName, strokes: strokes, at: now, ip: clip(ctx.ip || 'unknown', 60), ua: clip(ctx.ua || '', 200), version: Number(x.version), total: money(x.total), title: clip(x.title, 160), by: s(sub.id) };
+      const d = Object.assign({}, x.data || {}, { signature: sig });
+      const done = await dbPatch('gc_sub_scope', 'id=' + eq(x.id) + '&version=eq.' + Number(x.version), { status: 'accepted', accepted_at: now, accepted_version: x.version, data: d, updated_at: now }, true);
+      if (Array.isArray(done) && !done.length) throw Fail(409, 'GrayCo changed this a moment ago. Look it over again, then sign.');
+      await addEvent('scope', sub, x.project_id, { scopeId: x.id, kind: x.kind, op: 'accepted', signed: true, signedName: signName, signedAt: now, version: x.version, title: x.title, total: money(x.total) });
+      return { ok: true, status: 'accepted', signed: true, signedName: signName, signedAt: now };
     }
     if (body.op === 'question') {
       const q = clip(body.text, 2000); if (!q) throw Fail(400, 'Type your question.');
@@ -1164,7 +1193,9 @@ async function staffAction(action, body, who){
     if (okEmail(sub.email)) {
       const link = await subLinkCreate(sub.id, sub.name, me);
       const L = MAIL[lang(sub.lang)];
-      mailed = (await sendMail(sub.email, L.scopeSubj + clip(x.title, 80), mailHtml(L.scopeSubj + clip(x.title, 80), L.scopeBody, '', { href: linkFor(link.token), label: L.scopeBtn }))).ok;
+      const co = x.kind === 'co', tag = jobTagOf(data, x.project_id);   /* patch AUTO6: sign it in the portal; the job in the subject */
+      const subj = (co ? L.coSignSubj : L.scopeSubj) + clip(x.title, 80) + (tag ? ' — ' + tag : '');
+      mailed = (await sendMail(sub.email, subj, mailHtml(subj, co ? L.coSignBody : L.scopeBody, '', { href: linkFor(link.token), label: L.scopeBtn }))).ok;
     }
     return { ok: true, status: 'published', mailed: mailed };
   }
@@ -1321,7 +1352,7 @@ exports.handler = async function (event) {
     if (/^p-/.test(action)) {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
       if (!sess || sess.kind !== 'partner') { noteBad(ip, 'app'); return notActive(headers, t0); }
-      return reply(200, await partnerAction(action, body, await partnerCtx(sess)));
+      { const ctx = await partnerCtx(sess); ctx.ip = ipOf(event); ctx.ua = clip(gcHeader(event, 'user-agent'), 200); return reply(200, await partnerAction(action, body, ctx)); }
     }
     return reply(400, { ok: false, error: 'Bad request' });
   } catch (e) {

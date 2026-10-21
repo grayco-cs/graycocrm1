@@ -12,12 +12,14 @@ var L = {
     needs: 'Needs you', nothingNeeded: 'Nothing waiting on you. Thank you!', week: 'This week', noWeek: 'Nothing on the schedule this week.',
     money: 'Money', submitted: 'Submitted', approvedM: 'Approved', paidMonth: 'Paid this month', yourJobs: 'Your jobs', noJobs: 'No jobs with GrayCo yet. Your Project Manager adds you to a job, and it shows up here.',
     newScope: 'New scope', unread: 'new message', unreads: 'new messages', starts: 'starts', ends: 'ends', done: 'done',
-    nScope: 'Scope to accept', nCo: 'Change order to accept', nPunch: 'Punch item', nMsg: 'Messages from GrayCo', nCoiExp: 'Insurance certificate has run out — upload a new one', nCoiSoon: 'Insurance certificate runs out in {d} days — upload a new one', nW9: 'GrayCo needs your W-9',
+    nScope: 'Sub agreement to sign', nCo: 'Change order to sign', nPunch: 'Punch item', nMsg: 'Messages from GrayCo', nCoiExp: 'Insurance certificate has run out — upload a new one', nCoiSoon: 'Insurance certificate runs out in {d} days — upload a new one', nW9: 'GrayCo needs your W-9',
     overview: 'Overview', scope: 'Scope', cos: 'Change orders', photos: 'Photos', progress: 'Progress', punch: 'Punch list', invoices: 'Invoices', messages: 'Messages',
     address: 'Address', maps: 'Open in Maps', po: 'PO#', dates: 'Dates', schedule: 'Your days on the schedule', site: 'Site notes', gate: 'Gate code', parking: 'Parking', hours: 'Work hours', dumpster: 'Dumpster', power: 'Power', water: 'Water', notes: 'Notes', none: '—',
     pm: 'Your Project Manager', call: 'Call', text: 'Text', email: 'E-mail', office: 'GrayCo office', customer: 'Customer',
     version: 'Version', date: 'Date', area: 'Area', desc: 'Work', qty: 'Qty', unit: 'Unit', meas: 'Measurement', included: 'Included', excluded: 'Not included', matGc: 'Material GrayCo provides', matSub: 'Material you provide',
-    files: 'Plans, drawings and specs', open: 'Open', yourTotal: 'Your total for this scope', coTotal: 'Amount of this change order', accept: 'Accept', acceptScope: 'Accept scope', ask: 'Ask a question', accepted: 'Accepted', asked: 'Question sent — your PM will answer in Messages',
+    files: 'Plans, drawings and specs', open: 'Open', yourTotal: 'Your total for this scope', coTotal: 'Amount of this change order', accept: '✍️ Review & sign', acceptScope: '✍️ Review & sign', ask: 'Ask a question', accepted: 'Signed',
+    signTitle: 'Sign', signAgreeScope: 'I agree to do this scope of work for {amt} as written above (sub agreement with GrayCo Construction Services, version {v}).', signAgreeCo: 'I agree to this change order for {amt} as written above (version {v}).',
+    signName: 'Your full name', signDraw: 'Draw your signature (or leave it blank and sign with your typed name):', signClear: 'Clear signature', signBtn: 'Sign', signNeedName: 'Please type your full name.', signNeedAgree: 'Please tick the box to agree.', signedBy: 'Signed by {n}', signing: 'Signing…', asked: 'Question sent — your PM will answer in Messages',
     typeQ: 'Type your question', send: 'Send', cancel: 'Cancel', noScope: 'GrayCo has not sent a scope for this job yet.', noCo: 'No change orders.', confirmAccept: 'Accept this scope for {t}?',
     addPhotos: '📷 Add photos', photoNote: 'Note (optional)', noPhotos: 'No photos yet.', you: 'You', grayco: 'GrayCo',
     pct: '% done', postProgress: 'Post progress', progressNote: 'What got done today', noProgress: 'No progress posted yet.',
@@ -37,12 +39,14 @@ var L = {
     needs: 'Pendiente para usted', nothingNeeded: 'Nada pendiente. ¡Gracias!', week: 'Esta semana', noWeek: 'Nada en el calendario esta semana.',
     money: 'Dinero', submitted: 'Enviado', approvedM: 'Aprobado', paidMonth: 'Pagado este mes', yourJobs: 'Sus trabajos', noJobs: 'Todavía no tiene trabajos con GrayCo. Su Gerente de Proyecto lo agrega a un trabajo y aparece aquí.',
     newScope: 'Alcance nuevo', unread: 'mensaje nuevo', unreads: 'mensajes nuevos', starts: 'empieza', ends: 'termina', done: 'hecho',
-    nScope: 'Alcance para aceptar', nCo: 'Orden de cambio para aceptar', nPunch: 'Pendiente de la lista final', nMsg: 'Mensajes de GrayCo', nCoiExp: 'El certificado de seguro venció — suba uno nuevo', nCoiSoon: 'El certificado de seguro vence en {d} días — suba uno nuevo', nW9: 'GrayCo necesita su W-9',
+    nScope: 'Acuerdo de subcontrato para firmar', nCo: 'Orden de cambio para firmar', nPunch: 'Pendiente de la lista final', nMsg: 'Mensajes de GrayCo', nCoiExp: 'El certificado de seguro venció — suba uno nuevo', nCoiSoon: 'El certificado de seguro vence en {d} días — suba uno nuevo', nW9: 'GrayCo necesita su W-9',
     overview: 'Resumen', scope: 'Alcance', cos: 'Órdenes de cambio', photos: 'Fotos', progress: 'Avance', punch: 'Lista final', invoices: 'Facturas', messages: 'Mensajes',
     address: 'Dirección', maps: 'Abrir en Mapas', po: 'PO#', dates: 'Fechas', schedule: 'Sus días en el calendario', site: 'Notas del sitio', gate: 'Código del portón', parking: 'Estacionamiento', hours: 'Horario de trabajo', dumpster: 'Contenedor de basura', power: 'Electricidad', water: 'Agua', notes: 'Notas', none: '—',
     pm: 'Su Gerente de Proyecto', call: 'Llamar', text: 'Mensaje de texto', email: 'Correo', office: 'Oficina de GrayCo', customer: 'Cliente',
     version: 'Versión', date: 'Fecha', area: 'Área', desc: 'Trabajo', qty: 'Cant.', unit: 'Unidad', meas: 'Medida', included: 'Incluido', excluded: 'No incluido', matGc: 'Material que pone GrayCo', matSub: 'Material que pone usted',
-    files: 'Planos, dibujos y especificaciones', open: 'Abrir', yourTotal: 'Su total por este alcance', coTotal: 'Monto de esta orden de cambio', accept: 'Aceptar', acceptScope: 'Aceptar alcance', ask: 'Hacer una pregunta', accepted: 'Aceptado', asked: 'Pregunta enviada — su gerente contestará en Mensajes',
+    files: 'Planos, dibujos y especificaciones', open: 'Abrir', yourTotal: 'Su total por este alcance', coTotal: 'Monto de esta orden de cambio', accept: '✍️ Revisar y firmar', acceptScope: '✍️ Revisar y firmar', ask: 'Hacer una pregunta', accepted: 'Firmado',
+    signTitle: 'Firmar', signAgreeScope: 'Acepto hacer este alcance de trabajo por {amt} como está escrito arriba (acuerdo de subcontrato con GrayCo Construction Services, versión {v}).', signAgreeCo: 'Acepto esta orden de cambio por {amt} como está escrita arriba (versión {v}).',
+    signName: 'Su nombre completo', signDraw: 'Dibuje su firma (o déjela en blanco y firme con su nombre escrito):', signClear: 'Borrar firma', signBtn: 'Firmar', signNeedName: 'Por favor escriba su nombre completo.', signNeedAgree: 'Por favor marque la casilla para aceptar.', signedBy: 'Firmado por {n}', signing: 'Firmando…', asked: 'Pregunta enviada — su gerente contestará en Mensajes',
     typeQ: 'Escriba su pregunta', send: 'Enviar', cancel: 'Cancelar', noScope: 'GrayCo todavía no ha enviado un alcance para este trabajo.', noCo: 'No hay órdenes de cambio.', confirmAccept: '¿Acepta este alcance para {t}?',
     addPhotos: '📷 Agregar fotos', photoNote: 'Nota (opcional)', noPhotos: 'Todavía no hay fotos.', you: 'Usted', grayco: 'GrayCo',
     pct: '% hecho', postProgress: 'Publicar avance', progressNote: 'Lo que se hizo hoy', noProgress: 'Todavía no hay avance publicado.',
@@ -369,19 +373,50 @@ function scopeCard(x){
   kids.push(h('div', { class: 'row total' }, [h('span', { class: 'muted', text: x.kind === 'co' ? t('coTotal') : t('yourTotal') }), h('b', { text: usd(x.total) })]));
   if (x.status !== 'accepted') {
     var acc = h('button', { type: 'button', class: 'btn gold', 'data-accept': x.id, text: x.kind === 'co' ? t('accept') : t('acceptScope') });
-    acc.addEventListener('click', function(){
-      if (!window.confirm(t('confirmAccept', { t: x.title || '' }))) return;
-      busy(acc, true); api('p-scope', { id: x.id, op: 'accept', version: x.version }).then(function(){ toast(t('accepted')); openJob(JOB.job.id, JTAB); reloadHome(); }, function(e){ busy(acc, false); toast(e.message, true); });
-    });
+    acc.addEventListener('click', function(){ signSheet(x); });   /* patch AUTO6: signed, not just accepted */
     var askB = h('button', { type: 'button', class: 'btn', 'data-ask': x.id, text: t('ask'), on: { click: function(){
       var q = h('textarea', { class: 'inp', rows: '4', id: 'qText' }), go = h('button', { type: 'button', class: 'btn gold', id: 'qSend', text: t('send') });
       var sh = sheet(t('ask'), [field(t('typeQ'), q), go]);
       go.addEventListener('click', function(){ busy(go, true); api('p-scope', { id: x.id, op: 'question', text: q.value }).then(function(){ sh.close(); toast(t('asked')); openJob(JOB.job.id, 'messages'); }, function(e){ busy(go, false); toast(e.message, true); }); });
     } } });
     kids.push(h('div', { class: 'btns' }, [acc, askB]));
-  } else kids.push(h('div', { class: 'muted', text: t('accepted') + ' ' + dt(x.acceptedAt) }));
+  } else kids.push(h('div', { class: 'muted', text: (x.signedName ? '✍️ ' + t('signedBy', { n: x.signedName }) : t('accepted')) + ' · ' + dt(x.acceptedAt) }));
   if (x.question) kids.push(h('div', { class: 'how', text: t('asked') }));
   return card(null, kids, 'scope');
+}
+/* ── patch AUTO6: sign a sub agreement / change order (typed name + drawn signature; the time, IP and version are
+   recorded by the server). The pad is the customer portal's: points on a 600 × 200 pad. ── */
+function makePad(){
+  var cv = h('canvas', { class: 'sign-pad', width: '600', height: '200', 'aria-label': t('signDraw') });
+  cv.style.cssText = 'width:100%;aspect-ratio:3/1;border:1px dashed #9AA5B1;border-radius:10px;background:#fff;touch-action:none;display:block';
+  var ctx = cv.getContext('2d'), strokes = [], cur = null;
+  function pt(e){ var r = cv.getBoundingClientRect(); return [Math.max(0, Math.min(600, (e.clientX - r.left) * 600 / r.width)), Math.max(0, Math.min(200, (e.clientY - r.top) * 200 / r.height))]; }
+  function redraw(){ ctx.clearRect(0, 0, 600, 200); ctx.strokeStyle = '#0F1D2F'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    strokes.forEach(function(st){ ctx.beginPath(); st.forEach(function(p, i){ if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); if (st.length === 1) ctx.lineTo(st[0][0] + 1, st[0][1]); ctx.stroke(); }); }
+  cv.addEventListener('pointerdown', function(e){ if (strokes.length >= 38) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} cur = [pt(e)]; strokes.push(cur); redraw(); });
+  cv.addEventListener('pointermove', function(e){ if (!cur || cur.length >= 590) return; e.preventDefault(); var p = pt(e), l = cur[cur.length - 1]; if (Math.abs(p[0] - l[0]) + Math.abs(p[1] - l[1]) < 2) return; cur.push(p); redraw(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(n){ cv.addEventListener(n, function(){ cur = null; }); });
+  return { el: cv, strokes: function(){ return strokes.map(function(st){ return st.map(function(p){ return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]; }); }); }, clear: function(){ strokes = []; cur = null; redraw(); } };
+}
+function signSheet(x){
+  var pad = makePad();
+  var nm = h('input', { type: 'text', class: 'inp', id: 'signName', maxlength: '80', autocomplete: 'name' });
+  var ag = h('input', { type: 'checkbox', id: 'signAgree' });
+  var msg = h('div', { class: 'muted', id: 'signMsg', role: 'status' });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'signGo', text: t('signBtn') });
+  var agreeTxt = t(x.kind === 'co' ? 'signAgreeCo' : 'signAgreeScope', { amt: usd(x.total), v: x.version });
+  var sh = sheet(t('signTitle') + ' — ' + (x.title || t(x.kind === 'co' ? 'cos' : 'scope')), [
+    h('div', { class: 'row total' }, [h('span', { class: 'muted', text: x.kind === 'co' ? t('coTotal') : t('yourTotal') }), h('b', { text: usd(x.total) })]),
+    field(t('signName'), nm), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
+    h('button', { type: 'button', class: 'btn', text: t('signClear'), on: { click: function(){ pad.clear(); } } }),
+    h('label', { class: 'fld', style: 'display:flex;gap:8px;align-items:flex-start' }, [ag, h('span', { text: agreeTxt })]), go, msg]);
+  go.addEventListener('click', function(){
+    if (nm.value.trim().length < 3) { msg.textContent = t('signNeedName'); nm.focus(); return; }
+    if (!ag.checked) { msg.textContent = t('signNeedAgree'); return; }
+    busy(go, true); msg.textContent = t('signing');
+    api('p-scope', { id: x.id, op: 'sign', version: x.version, signName: nm.value, agree: true, strokes: pad.strokes() }).then(function(){ sh.close(); toast('✍️ ' + t('accepted')); openJob(JOB.job.id, JTAB); reloadHome(); }, function(e){ busy(go, false); msg.textContent = e.message; toast(e.message, true); });
+  });
+  return sh;
 }
 function photosPane(){
   var box = card(t('photos'), [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(); } } }), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);
