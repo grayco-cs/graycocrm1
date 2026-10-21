@@ -808,12 +808,13 @@ function insuranceView(data, p, ctx){
   };
 }
 
-/* ── warranty (owner rule): ALL roofs 5 years (residential, commercial, insurance); insurance /
-   restoration 5 years; everything else 1 year. Starts at completion. ── */
+/* ── warranty (owner rule, final 10/21 — patch WAR): 5 years on ALL roof jobs (insurance or not) and on insurance
+   jobs (restoration, water, fire, rebuild-only, mitigation-only); 1 year on everything else. Manufacturer warranties
+   on materials are separate. Starts at completion. ── */
 function warrantyOf(p, stage){
   const t = low([p.type, p.name, p.scope, p.scopeOfWork, p.jobType].filter(function(x){ return typeof x === 'string'; }).join(' '));
   const roof = /roof|shingle|re-?roof/.test(t);
-  const ins = p.isInsurance === true || /insurance|restoration|fire damage|water damage|storm|claim/.test(t);
+  const ins = p.isInsurance === true || /insurance|restoration|fire damage|water damage|storm|claim|mitigation|rebuild/.test(t);
   const years = roof || ins ? 5 : 1;
   const kind = roof ? 'Roof' : (ins ? 'Insurance / restoration' : 'Workmanship');
   const start = ymd(p.completionDate || p.completedAt) || (stage >= 8 ? ymd(p.endDate) : '');
