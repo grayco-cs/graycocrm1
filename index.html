@@ -69843,7 +69843,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       n+=inv.filter(function(iv){ if(!iv||iv.type!=='client') return false; var st=(iv.status||'').toLowerCase(); if(st!=='draft'&&st!=='pending'&&st!=='pm_review') return false; var j=proj.find(function(p){return p.id===iv.pid;}); return j&&(adm||j.pm===mn); }).length;
     }catch(e){}
     // progress updates due
-    try{ if(window._gcCheckProgressStale) n+=window._gcCheckProgressStale().length; }catch(e){}
+    /* gate fix_3: progress updates due are not approvals — they are in To-Do (Jobs) */
     return n;
   };
 
@@ -69863,7 +69863,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       // gather
       var subs=[]; try{ subs=JSON.parse(localStorage.getItem('gc_sub_approvals')||'[]').filter(function(a){return a.status==='pending_pm'&&(adm||a.pmName===mn);}); }catch(e){}
       var toSign=invoices.filter(function(iv){ if(!iv||iv.type!=='client') return false; var st=(iv.status||'').toLowerCase(); if(st!=='draft'&&st!=='pending'&&st!=='pm_review') return false; var j=projects.find(function(p){return p.id===iv.pid;}); return j&&(adm||j.pm===mn); });
-      var stale=[]; try{ if(window._gcCheckProgressStale) stale=window._gcCheckProgressStale(); }catch(e){}
+      var stale=[]; /* gate fix_3: progress updates due moved to To-Do (Jobs) */
 
       var _emCt=0; try{ var _eqA=JSON.parse(localStorage.getItem('gc_email_queue')||'[]'); var _mj={}; projects.forEach(function(p){ if(p&&(adm||p.pm===mn)) _mj[p.id]=true; }); _emCt=_eqA.filter(function(e){ return e&&e.status==='pending'&&(adm||(e.pid&&_mj[e.pid])); }).length; }catch(e){}
       var total=subs.length+toSign.length+stale.length+_emCt;
@@ -74423,7 +74423,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var badge=document.getElementById('_gcAlertsBadge');
     if(badge){
       if(n>0){
-        badge.textContent=n>99?'99+':String(n);
+        badge.textContent=n>999?'999+':String(n);
         badge.style.cssText='position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;';
         b.style.borderColor='#dc2626';
       } else {
@@ -74469,7 +74469,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var badge=document.getElementById('_gcApprBadge');
     if(badge){
       if(n>0){
-        badge.textContent=n>99?'99+':String(n);
+        badge.textContent=n>999?'999+':String(n);
         badge.style.cssText='position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;';
       } else {
         badge.textContent=''; badge.style.cssText='display:none;';
@@ -130034,7 +130034,7 @@ function green(){
   var want = n > 0 ? 'flex' : 'none';
   if(b.style.display !== want) b.style.display = want;
   var badge = document.getElementById('_gcApprBadge'); if(!badge) return;
-  var t = n > 0 ? (n > 99 ? '99+' : String(n)) : '';
+  var t = n > 0 ? (n > 999 ? '999+' : String(n)) : '';
   if(badge.textContent !== t){
     badge.textContent = t;
     badge.style.cssText = n > 0 ? 'position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;' : 'display:none;';
@@ -135799,6 +135799,15 @@ function srcWaiting(out){
   });
 }
 
+function srcProgGate(out){   /* gate fix_3 */
+  if (isCompany() || typeof W._gcCheckProgressStale !== 'function') return;
+  arr(W._gcCheckProgressStale()).forEach(function(j){
+    if (!j || !j.id) return;
+    var pct = Math.round(j.pct || j.ccProgressPct || 0);
+    out.push(item({ key: 'prog:' + j.id, src: 'prog', thing: 'prog|' + j.id, cat: 'jobs', pid: j.id, title: 'Update progress — ' + s(j.name || 'job') + ' (' + pct + '%)', sub: 'No progress update in a week', who: [myName()], vis: 'who', prio: 'med',
+      act: { l: 'Update %', f: function(){ if (!call('_gcJobDashboard', j.id)) call('_navToJob', j.id); } } }));
+  });
+}
 /* ═══ BUILD: read, auto-complete, de-duplicate, roll up, file ═════════════════════════════════════ */
 var dirty = true, ST8 = null, lastBuild = 0, seenMap = null, autoLog = [], lastAuto = 0;
 function memberDone(r){
@@ -135861,7 +135870,7 @@ function prioMax(a, b){ var r = { high: 0, med: 1, low: 2 }; return (r[a] || 1) 
 function build(){
   PJ = {}; PK = {};
   var raw = [], t1 = Date.now(), timing = {};
-  [['tab', srcTab], ['otd', srcOtd], ['om', srcOm], ['st', srcStored], ['lead', srcLeads], ['rt', srcRoutines], ['wait', srcWaiting]].forEach(function(x){
+  [['tab', srcTab], ['otd', srcOtd], ['om', srcOm], ['st', srcStored], ['lead', srcLeads], ['rt', srcRoutines], ['wait', srcWaiting], ['prog', srcProgGate]].forEach(function(x){
     var t = Date.now(); try { x[1](raw); } catch (e) { warn(e); } timing[x[0]] = Date.now() - t;
   });
   var gen = {}; raw.forEach(function(r){ if (r.src !== 'st') gen[r.thing + '#gen'] = 1; });
@@ -135965,14 +135974,15 @@ function build(){
   return st;
 }
 function counts(st){
-  var c = { appr: st.ap2, over: 0, today: 0, week: 0, wait: 0, total: 0, mine: 0 };
+  var c = { appr: st.ap2, over: 0, today: 0, week: 0, wait: 0, total: 0, mine: 0 }, apprRows = 0;
   st.items.forEach(function(g){
     if (g.waiting) { c.wait++; return; }
     c.total++;
-    if (g.cat === 'appr') c.appr++;
+    if (g.cat === 'appr') { c.appr++; apprRows++; }
     if (g.dueCls === 'over') c.over++; else if (g.dueCls === 'today') c.today++; else if (g.dueCls === 'week') c.week++;
     if (g.mine) c.mine++;
   });
+  try { var _set = W._gcApprovalSet ? W._gcApprovalSet(st) : null; if (_set) { c.appr = _set.total; c.apprSet = _set; } } catch (e) {}
   c.now = c.appr + c.over + c.today;
   return c;
 }
@@ -136083,6 +136093,8 @@ function bodyHtml(st, host){
   if (f) {
     var sel = f === 'wait' ? st.items.filter(function(x){ return x.waiting; }) : live.filter(function(x){ return f === 'appr' ? x.cat === 'appr' : x.dueCls === f; });
     var name = { appr: 'Needs approval', over: 'Overdue', today: 'Due today', week: 'This week', wait: 'Waiting on others' }[f];
+    var _ab = ''; try { var _as = st.counts && st.counts.apprSet; if (f === 'appr' && _as) _ab = '<div class="td2-empty sm" data-gc-appr-banner="1"><b>' + _as.total + ' to approve</b>' + (_as.tip ? ' — ' + esc(_as.tip) : '') + ' <button type="button" class="td2-moreRows" onclick="window._gcOpenPmApprovals&&window._gcOpenPmApprovals()">Open the APPROVE list ›</button></div>'; } catch (e) {}
+    if (_ab) return _ab + (sel.length ? grouped(sel, v === 'everything' ? UI.groupBy : 'category', 'f:') : '');
     if (!sel.length) return f === 'appr' && st.ap2 ? '<div class="td2-empty">The customer e-mails waiting on you are in the green box above.</div>' : '<div class="td2-empty">Nothing ' + esc(name.toLowerCase()) + ' — 🎉</div>';
     return grouped(sel, v === 'everything' ? UI.groupBy : 'category', 'f:');
   }
@@ -136113,7 +136125,7 @@ function teamHtml(st){
 }
 function stripHtml(st){
   var c = st.counts, f = UI.filter;
-  function chip(k, label, n, cls){ return '<button type="button" class="td2-chip ' + cls + (f === k ? ' on' : '') + (n ? '' : ' zero') + '" data-td2="chip" data-f="' + k + '"><b>' + n + '</b><span>' + label + '</span></button>'; }
+  function chip(k, label, n, cls){ return '<button type="button" class="td2-chip ' + cls + (f === k ? ' on' : '') + (n ? '' : ' zero') + '" data-td2="chip" data-f="' + k + '"' + (k === 'appr' && c.apprSet ? ' title="' + esc(c.apprSet.tip) + '"' : '') + '><b>' + n + '</b><span>' + label + '</span></button>'; }
   return chip('appr', 'Needs approval', c.appr, 'g') + chip('over', 'Overdue', c.over, 'r') + chip('today', 'Due today', c.today, 'a') + chip('week', 'This week', c.week, 'b') + chip('wait', 'Waiting on others', c.wait, 'n');
 }
 function headHtml(host, st){
@@ -148489,5 +148501,102 @@ W._gcRP = {
   status: function(){ return { role: effRole(), base: baseRole(me()), staffProfile: staffProf, viewAs: viewAs(), admin: realAdmin(), view: view() }; }
 };
 try { console.log('[GC] Role profiles (patch RP): _gcRP.status()'); } catch (e) {}
+})();
+</script>
+<script id="gc-fix-apprset">
+/* GATE fix_3 — one approval set: To-Do chip = APPROVE badge = APPROVE panel. */
+(function(){
+  'use strict';
+  if (window.__GC_APPRSET__) return; window.__GC_APPRSET__ = true;
+  function arr(v){ return Array.isArray(v) ? v : []; }
+  function s(v){ return v == null ? '' : String(v).trim(); }
+  function meU(){ try { var me = localStorage.getItem('grayco_user') || ''; var u = (window._crm && window._crm.users) || []; return u.find(function(x){ return x && (x.email === me || x.name === me); }) || null; } catch (e) { return null; } }
+  function myName(){ var u = meU(); return (u && u.name) || (localStorage.getItem('grayco_user') || ''); }
+  function adminLike(){ var u = meU(); return !!(u && (String(u.payType || '').toLowerCase() === 'owner' || u.role === 'Admin' || /office/i.test(u.role || ''))); }
+  var COVERED = /sub invoices? to approve|expenses? to approve|sign.?off|e-?mails? to approve|customer e-?mail/i;
+  function plural(n, a, b){ return n + ' ' + (n === 1 ? a : b); }
+  /* st: the To-Do state when called from To-Do itself (no recursion); otherwise read from To-Do's cache */
+  window._gcApprovalSet = function(st){
+    var mn = myName(), adm = adminLike(), projects = arr(window._crm && window._crm.projects), invoices = arr(window._crm && window._crm.invoices);
+    var g = { email: [], subinv: [], invsign: [], expense: [], other: [] };
+    try { arr(window._gcAp2Items && window._gcAp2Items()).forEach(function(x){ g.email.push({ id: 'ap2:' + x.id, title: s(x.title || x.subject || x.kind) }); }); } catch (e) {}
+    try {
+      var mine = {}; projects.forEach(function(p){ if (p && (adm || p.pm === mn)) mine[p.id] = true; });
+      arr(JSON.parse(localStorage.getItem('gc_email_queue') || '[]')).forEach(function(e){ if (e && e.status === 'pending' && (adm || (e.pid && mine[e.pid]))) g.email.push({ id: 'eq:' + (e.id || ''), title: s(e.subject) }); });
+    } catch (e) {}
+    try { arr(JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]')).forEach(function(a){ if (a && a.status === 'pending_pm' && (adm || a.pmName === mn)) g.subinv.push({ id: 'sub:' + (a.id || ''), title: s(a.subName || a.vendor || a.sub) }); }); } catch (e) {}
+    try {
+      invoices.forEach(function(iv){
+        if (!iv || iv.type !== 'client') return; var stt = (iv.status || '').toLowerCase(); if (stt !== 'draft' && stt !== 'pending' && stt !== 'pm_review') return;
+        var j = projects.find(function(p){ return p.id === iv.pid; }); if (j && (adm || j.pm === mn)) g.invsign.push({ id: 'inv:' + iv.id, title: s(j.name) });
+      });
+    } catch (e) {}
+    try { arr(window._gcExpenseApprovalsFor && window._gcExpenseApprovalsFor()).forEach(function(a){ g.expense.push({ id: 'exp:' + (a.id || a.expId || ''), title: s(a.vendor || a.desc) }); }); } catch (e) {}
+    try {
+      var items = st ? st.items : (window._gcTD2 && window._gcTD2.__lastItems) || [];
+      arr(items).forEach(function(x){
+        if (!x || x.cat !== 'appr' || x.waiting || x.roll === 'subappr' || x.covers === 'subappr' || COVERED.test(x.title)) return;
+        g.other.push({ id: 'td:' + x.key, title: s(x.title), sub: s(x.sub), act: x.act || null });
+      });
+      if (st && window._gcTD2) window._gcTD2.__lastItems = st.items;
+    } catch (e) {}
+    var parts = [], L = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
+    var total = 0; Object.keys(g).forEach(function(k){ total += g[k].length; if (g[k].length) parts.push(plural(g[k].length, L[k][0], L[k][1])); });
+    return { total: total, groups: g, tip: parts.join(' · '), at: Date.now() };
+  };
+  /* always the live set (To-Do's own approval rows are taken from its last build), so the chip, the badge and
+     the panel are painted from the same numbers in the same second */
+  var memo = null;
+  function current(){ if (memo && Date.now() - memo.at < 800) return memo; memo = window._gcApprovalSet(); return memo; }
+  function chipSync(set){
+    Array.prototype.forEach.call(document.querySelectorAll('.td2-chip[data-f="appr"]'), function(ch){
+      var b = ch.querySelector('b'); if (b && b.textContent !== String(set.total)) b.textContent = String(set.total);
+      ch.classList.toggle('zero', !set.total);
+      if (ch.getAttribute('title') !== set.tip) ch.setAttribute('title', set.tip);
+    });
+  }
+  window._gcApprovalCount = function(){ return current().total; };
+  /* the green APPROVE badge counts the same set (keeps the AP2 flags so nothing re-wraps it) */
+  function wrapCount(){
+    var f = window._gcPmActionCount; if (typeof f !== 'function' || f.__gcSet) return;
+    var w = function(){ try { return current().total; } catch (e) { try { return f.apply(this, arguments); } catch (_) { return 0; } } };
+    w.__gcSet = true; w.__ap2 = true; w.__orig = f.__orig || f; w.__prev = f; window._gcPmActionCount = w;
+  }
+  function badge(){
+    wrapCount();
+    var b = document.getElementById('_gcApprovalsBtn'); if (!b) return;
+    var set; try { set = current(); } catch (e) { return; }
+    var n = set.total, t = n > 0 ? (n > 999 ? '999+' : String(n)) : '';
+    var want = n > 0 ? 'flex' : 'none'; if (b.style.display !== want) b.style.display = want;
+    var bd = document.getElementById('_gcApprBadge');
+    if (bd && bd.textContent !== t) { bd.textContent = t; if (n > 0 && !/position/.test(bd.style.cssText)) bd.style.cssText = 'position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;'; if (!n) bd.style.cssText = 'display:none;'; }
+    var tip = n ? 'Approvals: ' + set.tip : 'Nothing to approve';
+    if (b.title !== tip) { b.title = tip; b.setAttribute('aria-label', 'Approvals (' + n + ')'); }
+  }
+  /* the APPROVE panel: a header with the same number + the To-Do approvals it did not list */
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function decorate(){
+    var cards = Array.prototype.filter.call(document.querySelectorAll('body > div'), function(ov){ return ov.style && ov.style.position === 'fixed' && /My Approvals/.test((ov.firstElementChild && ov.firstElementChild.textContent || '').slice(0, 200)); });
+    cards.forEach(function(ov){
+      var card = ov.firstElementChild; if (!card) return;
+      var set = current();
+      var head = card.querySelector('[data-gc-appr-total]');
+      var htxt = set.total + ' to approve' + (set.tip ? ' — ' + set.tip : '');
+      if (!head) { head = document.createElement('div'); head.setAttribute('data-gc-appr-total', ''); head.style.cssText = 'background:#12291a;border:1px solid #166534;color:#86efac;border-radius:10px;padding:9px 12px;margin:0 0 12px;font-size:13px;font-weight:700;'; var t = card.children[1]; card.insertBefore(head, t ? t.nextSibling : card.firstChild); }
+      if (head.getAttribute('data-gc-appr-total') !== String(set.total) || head.textContent !== htxt) { head.setAttribute('data-gc-appr-total', String(set.total)); head.textContent = htxt; }
+      var other = set.groups.other, box = card.querySelector('[data-gc-appr-other-box]');
+      var sig = other.map(function(x){ return x.id; }).join('|');
+      if (!other.length) { if (box) box.remove(); return; }
+      if (box && box.__sig === sig) return;
+      if (!box) { box = document.createElement('div'); box.setAttribute('data-gc-appr-other-box', ''); var cl = Array.prototype.filter.call(card.children, function(x){ return x.tagName === 'BUTTON' && /^Close$/.test(x.textContent.trim()); })[0]; card.insertBefore(box, cl || null); }
+      box.__sig = sig;
+      box.innerHTML = '<div style="color:#f59e0b;font-weight:800;font-size:14px;margin:12px 0 8px;">✅ Other approvals (' + other.length + ')</div>'
+        + other.map(function(x, i){ return '<div data-gc-appr-other="' + esc(x.id) + '" style="background:#0a1628;border:1px solid #1e3a5f;border-radius:12px;padding:12px;margin-bottom:9px;display:flex;gap:10px;align-items:center;"><div style="flex:1;min-width:0"><div style="color:#fff;font-weight:700;font-size:13.5px;">' + esc(x.title) + '</div>' + (x.sub ? '<div style="color:#8fa8c4;font-size:12px;">' + esc(x.sub) + '</div>' : '') + '</div>' + (x.act && x.act.f ? '<button type="button" data-i="' + i + '" style="padding:9px 13px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;">' + esc(x.act.l || 'Open') + '</button>' : '') + '</div>'; }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('button[data-i]'), function(bt){ bt.onclick = function(){ var x = other[+bt.getAttribute('data-i')]; try { ov.remove(); } catch (e) {} try { x.act.f(); } catch (e) {} }; });
+    });
+  }
+  var NS = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+  NS(function(){ try { badge(); decorate(); chipSync(current()); } catch (e) {} }, 1000);
+  try { badge(); } catch (e) {}
 })();
 </script>
