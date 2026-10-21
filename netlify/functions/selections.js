@@ -369,8 +369,10 @@ function mailShell(title, body){
 }
 
 /* ── the customer's view of THEIR job's selections (a strict whitelist) ── */
+const JA = require('./_lib/job-auto.js');   /* patch JA */
+function jaPick(J){ return JA.allows(J.p, 'portalSelections', JA.parseAdmin(J.data && J.data[JA.KV_KEY])); }
 async function loadJob(pid){
-  const data = await kvRead(['projects', 'gc_deleted_projects', 'users', CH_KEY, RESP_KEY]);
+  const data = await kvRead(['projects', 'gc_deleted_projects', 'users', CH_KEY, RESP_KEY, JA.KV_KEY]);
   const p = findProject(data, pid);
   return p ? { data: data, p: p, choices: choicesOf(data, p), resps: arr(data[RESP_KEY]).filter(function(r){ return s(r.pid) === s(pid); }) } : null;
 }
@@ -387,10 +389,11 @@ async function view(J){
   J.resps.forEach(function(r){ if (refPath(r.docRef)) refs.push(r.docRef); });
   const signed = await signRefs(refs);
   const T = function(v){ return scrubText(v, words); };
-  const out = { ok: true, job: { name: T(J.p.name) }, items: items.map(function(x){
+  const canPick = jaPick(J);   /* patch JA: "customer can pick selections in the portal" (off: the PM picks, the customer signs) */
+  const out = { ok: true, pickOff: !canPick, job: { name: T(J.p.name) }, items: items.map(function(x){
     const c = x.c, st = x.st, pk = st.pick;
     const it = { id: s(c.id), title: T(titleOf(c)), note: T(clip(c.note, 300)), dueBy: s(c.dueBy).slice(0, 10), status: st.status,
-      options: st.status === 'open' ? x.opts.slice(0, 80).map(function(o){ return { id: s(o.id), label: T(optLabel(c, o)), price: o.price != null && o.price !== '' ? money(o.price) : null, unit: clip(o.unit, 12), priceDiff: num(o.priceDiff) ? money(o.priceDiff) : 0, photo: signed[o.photo] || '' }; }) : [] };
+      options: st.status === 'open' && canPick ? x.opts.slice(0, 80).map(function(o){ return { id: s(o.id), label: T(optLabel(c, o)), price: o.price != null && o.price !== '' ? money(o.price) : null, unit: clip(o.unit, 12), priceDiff: num(o.priceDiff) ? money(o.priceDiff) : 0, photo: signed[o.photo] || '' }; }) : [] };
     if (pk) it.pick = { label: T(clip(pk.label || '', 160)), price: pk.price != null && pk.price !== '' ? money(pk.price) : null, unit: clip(pk.unit, 12), priceDiff: num(pk.priceDiff) ? money(pk.priceDiff) : 0, photo: signed[pk.photo] || '', by: pk.how === 'customer' ? 'you' : 'your Project Manager', at: s(pk.at) };
     if (st.resp) it.done = { name: clip(st.resp.name, 80), at: s(st.resp.at) };
     return it;
@@ -402,6 +405,7 @@ async function view(J){
 
 /* ── the customer picks / signs ── */
 async function record(event, row, body, J, kind){
+  if (kind === 'pick' && !jaPick(J)) return { status: 403, out: { ok: false, pickOff: true, error: 'Your Project Manager picks the selections with you for this job — call ' + OFFICE_PHONE + '.' } };   /* patch JA */
   const ip = ipOf(event), at = new Date().toISOString(), sigId = 'sg_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   const name = cleanName(body.name);
   if (!name) return { status: 400, out: { ok: false, error: 'Please type your full name (letters only) to sign.' } };

@@ -99,6 +99,7 @@ async function gcStaffAuth(event){
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
 const crypto = require('crypto');
+const JA = require('./_lib/job-auto.js');   /* patch JA: the job's automations (project.auto) */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */
 
 const OFFICE_PHONE = '901-585-0944';
@@ -108,7 +109,7 @@ const STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Con
 const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
 const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320/';
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
-                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims'];
+                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults'];
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -198,6 +199,9 @@ function listOf(data, keys){
   keys.forEach(function(k){ arr(data[k]).forEach(function(r){ const id = s(r.id); if (id && seen[id]) return; if (id) seen[id] = 1; out.push(r); }); });
   return out;
 }
+/* patch JA: what this job's automations say (its own choices, else the company defaults for its type) */
+function jaAdmin(data){ return JA.parseAdmin(data && data.jobAutoDefaults); }
+function jaAllows(data, p, key){ return JA.allows(p, key, jaAdmin(data)); }
 function findProject(data, pid){
   const delList = Array.isArray(data.gc_deleted_projects) ? data.gc_deleted_projects : [];
   if (delList.map(String).indexOf(String(pid)) >= 0) return null;
@@ -541,7 +545,7 @@ async function buildView(data, p, opts){
     companyCam: { url: '', linked: !!ccId },          /* patch U2: the portal never links to CompanyCam */
     warranty: warrantyOf(p, stage),
     showReview: stage >= 7,
-    review: stage >= 7 ? { google: REVIEW_URL, facebook: FACEBOOK_URL } : null
+    review: stage >= 7 && jaAllows(data, p, 'reviewRequest') ? { google: REVIEW_URL, facebook: FACEBOOK_URL } : null
   };
   if (ins) {   /* patch INSP: the insurance-claim view */
     insTagDocs(view.docs, pdocs, signed);
@@ -549,7 +553,7 @@ async function buildView(data, p, opts){
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
     return scrub(view, insWords(data, p));
   }
-  return scrub(view, carrierWords(p));
+  return scrub(view, jaAllows(data, p, 'showCarrier') && p.portalShowCarrier !== false ? [] : carrierWords(p));
 }
 
 /* ── INSURANCE JOBS (patch INSP) ────────────────────────────────────────────────
@@ -600,7 +604,7 @@ function insClaim(data, pid){ return arr(data && data.gc_claims).find(function(c
 function insWords(data, p){
   /* what is replaced by "your insurance company": the carrier (unless the PM shows it), the TPA / program, the adjusting company */
   const c = insClaim(data, p.id) || {}, out = [];
-  const showCarrier = p.portalShowCarrier === true;
+  const showCarrier = p.portalShowCarrier === true || (p.portalShowCarrier !== false && JA.effective(p, jaAdmin(data)).showCarrier === true);   /* patch JA */
   if (!showCarrier) { carrierWords(p).forEach(function(w){ out.push(w); }); if (s(c.carrier).length >= 3) out.push(s(c.carrier)); out.push(COMMON_CARRIERS); }
   [p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
     .forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
@@ -1084,6 +1088,7 @@ async function queueInvoiceMail(invId, who, opts){
   const ij = invoiceAndJob(data, invId);
   if (!ij) return { status: 404, out: { ok: false, retry: true, error: 'The invoice (or its job) is not in the cloud yet.' } };
   const r = ij.r, p = ij.p;
+  if (!jaAllows(data, p, 'invoiceEmail')) return { status: 200, out: { ok: true, off: 'invoiceEmail', queued: false, error: 'Invoice e-mails are turned off for this job (⚙ Automations).' } };   /* patch JA */
   if (!isCustomerInvoice(r)) return { status: 400, out: { ok: false, notReady: true, error: 'A draft (or an invoice still in review) is not e-mailed.' } };
   const qid = 'appr_inv_' + s(r.id);
   const cur = await kvListRead(AQ_KEY);
@@ -1172,6 +1177,12 @@ function textHtml(text){
     esc(text).split(esc(LINK_PH)).join('<a href="' + LINK_PH + '" style="color:#0F1D2F;font-weight:bold">Open my project page</a>') + '</div>';
 }
 async function queueApproval(o){
+  if (o && o.pid && JA.KIND_KEY[s(o.kind)]) {   /* patch JA: the job's automations, checked once more here */
+    let d = null; try { d = await crmData(false); } catch (e) {}
+    const jp = d && findProject(d, o.pid);
+    const off = jp ? JA.blockedKind(jp, o.kind, jaAdmin(d)) : '';
+    if (off) { try { console.log('[portal] not queued, ' + off + ' is off for job ' + s(o.pid) + ': ' + s(o.kind)); } catch (e) {} return true; }
+  }
   const now = new Date().toISOString();
   const steps = stepsFor(o.kind, o.pm);
   const item = { id: s(o.id), kind: o.kind, title: s(o.title), jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
@@ -1187,6 +1198,11 @@ async function aqOpenFor(test){
   return !!(cur && cur.list.some(function(x){ return (x.status === 'waiting' || x.status === 'sending') && test(x); }));
 }
 async function aqSend(item, now){
+  if (item && item.jobId && JA.KIND_KEY[s(item.kind)]) {   /* patch JA: approved after the job turned it off: it does not go out */
+    let d = null; try { d = await crmData(false); } catch (e) {}
+    const jp = d && findProject(d, item.jobId), k = jp ? JA.blockedKind(jp, item.kind, jaAdmin(d)) : '';
+    if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
+  }
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
   if (item.channel === 'sms') { const t = await sendText(item.to, item.text); return t.ok ? { ok: true } : { ok: false, error: 'Texting is not set up yet (' + (t.skipped || 'no provider') + ').' }; }
   if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
@@ -1287,6 +1303,7 @@ async function approvalAction(body, who){
     const pid = s(body.projectId);
     const data = await crmData(true); const p = pid && findProject(data, pid);
     if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
+    if (!jaAllows(data, p, 'thankYou')) return { status: 200, out: { ok: true, off: 'thankYou', queued: false, error: 'The thank-you e-mail is turned off for this job (⚙ Automations).' } };   /* patch JA */
     const to = s(p.clientEmail || p.customerEmail || p.email);
     if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No customer e-mail on this job.' } };
     const qid = 'appr_thanks_' + pid;
@@ -1458,6 +1475,7 @@ async function runReminders(opts){
     const finals = invs.filter(function(r){ return pidOf(r) === pid && isCustomerInvoice(r) && invFinal(r) && invBalance(r) > 0; });
     if (!finals.length) continue;
     if (p.portalRemindersPaused === true) { report.paused++; continue; }
+    if (!jaAllows(data, p, 'finalReminders')) { report.off = (report.off || 0) + 1; continue; }   /* patch JA: off for this job */
     for (const inv of finals) {
       const invId = s(inv.id); if (!invId) continue;
       const prev = rows[invId] || null;
@@ -1585,6 +1603,8 @@ async function sendLink(pid, event, who){
   const p = findProject(data, pid);
   if (!p) return { ok: false, retry: true, error: 'The job is not in the cloud yet.' };
   if (/lost|dead|cancel/.test(low(p.status))) return { ok: true, skipped: 'lost job' };
+  if (!jaAllows(data, p, 'portalLink')) return { ok: true, skipped: 'the portal link is turned off for this job', off: 'portalLink' };   /* patch JA */
+  if (!jaAllows(data, p, 'portalInvite')) return { ok: true, skipped: 'the portal invite is turned off for this job', off: 'portalInvite' };
   if (!isNewJob(p, now)) return { ok: true, skipped: 'not a new job' };
   const token = await createFor(pid, who || 'auto: new job');
   const rr = await fetch(sbUrl() + '/rest/v1/gc_portal?select=sent_at,sent_via,link_todo_at&token=eq.' + encodeURIComponent(token), { headers: H() });
@@ -1668,7 +1688,15 @@ async function notifyDocs(pid, event, opts){
   const p = findProject(data, pid);
   if (!p) return { ok: false, retry: true, error: 'The job is not in the cloud yet.' };
   if (/lost|dead|cancel/.test(low(p.status))) return { ok: true, skipped: 'lost job' };
-  const items = noticeItems(data, p);
+  if (!jaAllows(data, p, 'docsNotice')) return { ok: true, skipped: 'the new-papers notice is turned off for this job', off: 'docsNotice' };   /* patch JA */
+  const items = noticeItems(data, p).filter(function(x){   /* patch JA: a paper the job does not send by itself is not announced */
+    const t = low(x.title);
+    if (x.kind === 'co' && !jaAllows(data, p, 'coSign')) return false;
+    if (/warrant/.test(t) && !jaAllows(data, p, 'warrantyCert')) return false;
+    if (/contract/.test(t) && x.kind !== 'co' && !jaAllows(data, p, 'contractSign')) return false;
+    if (/faq|your grayco portal/.test(t) && !jaAllows(data, p, 'faqPacket')) return false;
+    return true;
+  });
   if (!items.length) return { ok: true, nothing: true };
   const r0 = await fetch(sbUrl() + '/rest/v1/gc_portal_notice?select=doc_key,first_seen_at,sent_at,result&project_id=eq.' + encodeURIComponent(pid), { headers: H() });
   if (!r0.ok) return { ok: false, error: 'Run docs/portal-setup.sql (gc_portal_notice).' };
@@ -1925,7 +1953,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */

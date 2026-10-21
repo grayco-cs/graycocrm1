@@ -128,7 +128,17 @@ function roleOf(who, data){
 
 /* ── the audience, with the unsubscribed taken out (throws when the list cannot be read) ── */
 async function audienceFor(rec, data){
-  const list = C.audience(data, rec.aud || { type: 'all' }, nowIso());
+  /* patch JA: a job with "Add to the newsletter list" off keeps its customer out of every campaign (unless another of their jobs has it on) */
+  let jaOff = {};
+  try {
+    const JA = require('./job-auto.js');
+    let adm = data && data.jobAutoDefaults;
+    if (adm === undefined) { try { adm = (await crmData(['jobAutoDefaults'])).jobAutoDefaults; } catch (e) { adm = null; } }
+    adm = JA.parseAdmin(adm); const on = {};
+    arr(data && data.projects).forEach(function(p){ if (!p || p.deleted === true) return; const e = String(p.clientEmail || p.customerEmail || p.email || '').trim().toLowerCase(); if (!e) return; if (JA.allows(p, 'newsletter', adm)) on[e] = 1; else jaOff[e] = 1; });
+    Object.keys(on).forEach(function(e){ delete jaOff[e]; });
+  } catch (e) { jaOff = {}; }
+  const list = C.audience(data, rec.aud || { type: 'all' }, nowIso()).filter(function(c){ return !jaOff[String(c.email || '').toLowerCase()]; });
   const off = await news().suppressed(list.map(function(c){ return c.email; }));
   return { send: list.filter(function(c){ return !off.has(c.email); }), skipped: list.filter(function(c){ return off.has(c.email); }).map(function(c){ return c.email; }) };
 }

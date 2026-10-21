@@ -29,8 +29,8 @@ function s(v){ return v == null ? '' : String(v).trim(); }
 function clip(v, n){ return s(v).slice(0, n); }
 function handles(kind){ return Object.prototype.hasOwnProperty.call(KINDS, s(kind)); }
 const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i;
-function switchOff(p, key){
-  try { const ja = require('./job-auto.js'); if (ja && typeof ja.allows === 'function') return ja.allows(p, key) === false; } catch (e) {}   /* patch JA, when present */
+function switchOff(p, key, data){
+  try { const ja = require('./job-auto.js'); if (ja && typeof ja.allows === 'function') return ja.allows(p, key, ja.parseAdmin(data && data.jobAutoDefaults)) === false; } catch (e) {}   /* patch JA: + the Admin defaults */   /* patch JA, when present */
   return !!(p && p.auto && p.auto[key] === false);
 }
 async function queue(body, who, I){
@@ -38,7 +38,7 @@ async function queue(body, who, I){
   const pid = s(body.projectId);
   const data = await I.crmData(true); const p = pid && I.findProject(data, pid);
   if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
-  if (switchOff(p, K.key)) return { status: 200, out: { ok: false, off: K.key, error: 'Turned off for this job.' } };
+  if (switchOff(p, K.key, data)) return { status: 200, out: { ok: false, off: K.key, error: 'Turned off for this job.' } };
   const sms = s(body.channel) === 'sms';
   const to = sms ? s(p.clientPhone || p.phone) : s(p.clientEmail || p.customerEmail || p.email);
   if (sms ? !/^\+?[0-9 ()-]{7,20}$/.test(to) : !EMAIL_RE.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: sms ? 'No customer phone on this job.' : 'No customer e-mail on this job.' } };

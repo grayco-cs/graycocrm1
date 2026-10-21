@@ -973,6 +973,7 @@ function paint(){
   var items = (D && D.items) || [];
   if (!items.length && !(D && D.docs && D.docs.length)) { if (card && card.parentNode) card.parentNode.removeChild(card); card = null; return; }
   var open = items.filter(function(x){ return x.status === 'open'; }), sign = items.filter(function(x){ return x.status === 'needs-sign'; }), done = items.filter(function(x){ return x.status === 'chosen' || x.status === 'signed'; });
+  var withPm = D && D.pickOff ? open : []; if (withPm.length) open = [];   /* patch JA: the PM picks with the customer on this job */
   var todo = open.length + sign.length;
   var c = card || h('section', { class: 'card sel', id: 'gcsel' }); c.innerHTML = '';
   c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🎨 Your selections' }), h('span', { class: 'pill ' + (todo ? 'now' : 'ok'), text: todo ? todo + ' to do' : 'All set' })]));
@@ -1004,6 +1005,7 @@ function paint(){
     });
     c.appendChild(sb);
   }
+  if (withPm.length) c.appendChild(h('div', { class: 'sel-sec', id: 'gcsel-withpm' }, [h('h3', { text: '🗣 With your Project Manager' }), h('div', { class: 'muted', text: 'Your Project Manager will go over these with you: ' + withPm.map(function(x){ return x.title; }).join(', ') + '.' })]));
   if (open.length) {
     var ob = h('div', { class: 'sel-sec', id: 'gcsel-pick' }, [h('h3', { text: '👉 Your choice' }), h('div', { class: 'muted', text: 'Tap the one you want for each item, then confirm with your name.' })]);
     open.forEach(function(x){
