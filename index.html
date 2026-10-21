@@ -67523,7 +67523,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var _meU=_users.find(function(x){ return x && (_norm(x.name)===_norm(_meName) || (_meEmail&&_norm(x.email)===_norm(_meEmail)) || _norm(x.email)===_norm(_meName)); });
     // Last resort: if we still didn't find them but _gcMeUser knows, use that.
     if(!_meU){ try{ if(typeof window._gcMeUser==='function'){ var _mm=window._gcMeUser()||{}; if(_mm && (_mm.name||_mm.email)) _meU=_users.find(function(x){return x&&(_norm(x.name)===_norm(_mm.name)||_norm(x.email)===_norm(_mm.email));})||_mm; } }catch(_me2){} }
-    me = _meName || me; var _iAmAdmin=!!(_meU && (isOwner(_meU) || _meU.role==='Admin' || isOffice(_meU) || /office/i.test(_meU.role||'')));
+    me = _meName || me; var _iAmAdmin=!!(_meU && (/*fix5*/((typeof isOwner==='function')?isOwner(_meU):/^(owner|admin)$/i.test(_meU.role||'')) || _meU.role==='Admin' || ((typeof isOffice==='function')?isOffice(_meU):false) || /office/i.test(_meU.role||'')));
     var projs=(window._crm&&window._crm.projects)||[];
 
     var ov=document.createElement('div');
