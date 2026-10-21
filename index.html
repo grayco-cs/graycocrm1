@@ -5283,7 +5283,7 @@ alter publication supabase_realtime add table app_data;`}),"3. Settings → API 
   var _hidden=(window._gcNavHidden&&n&&window._gcNavHidden[n.id])||[];
   if(!_hidden.length) return _ordered;
   return _ordered.filter(function(g){return _hidden.indexOf(g.id)===-1;});
-})(),gu=g=>{if(!n)return;var _ids=[],_seen=new Set;g.forEach(function(H){if(!_seen.has(H.id)){_seen.add(H.id);_ids.push(H.id)}});Ct(te=>({...te,[n.id]:_ids}))},$f=g=>{if(_t===null||_t===g)return;const te=[...xl],[H]=te.splice(_t,1);te.splice(g,0,H),gu(te),En(null)},vu=()=>{const g=vo,te=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||"")),H=!!yi,[_,Q]=ce.useState(te?"company":(H?"mine":"company")),[_yr,_setYr]=ce.useState(new Date().getFullYear()),y=te&&!H&&_==="company",_paidYr=(N)=>{if(!N)return null;var _ci=Ba.filter(function(_i){return _i&&_i.pid===N.id&&_i.type==="client"&&_i.status==="paid"&&_i.paidDate;});if(_ci.length){var _dd=_ci.map(function(_i){return _i.paidDate;}).sort();return new Date(_dd[_dd.length-1]+"T12:00:00").getFullYear();}var _cd=N.completionDate||N.endDate||"";if(_cd)return new Date(_cd+"T12:00:00").getFullYear();var _sd=N.startDate||N.created||"";if(_sd)return new Date(_sd+"T12:00:00").getFullYear();return null;},_inYr=(N)=>{var _y=_paidYr(N);return _y===null?true:_y===_yr;},T=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))).filter(_inYr),_allMyJobs=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))),L=y?rr:rr.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name));y||fa.filter(N=>T.some(Ee=>Ee.id===N.pid)||N.by===g.name);const Y=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold"),_Yactive=T.filter(N=>{var _s=String(N.status||"").toLowerCase().trim();return !(_s==="completed"||_s==="complete"||_s==="done"||_s==="closed"||_s==="finished"||_s==="lost"||_s==="cancelled"||_s==="canceled"||_s==="declined"||_s==="dead"||_s==="archived"||_s==="void");}),_contracted=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold").reduce((N,Ee)=>N+(parseFloat(Ee.contract)||0),0),We=(function(){/* 33.129 (audit): Revenue is what has been BILLED to clients this year, not the contract values of open jobs */var _s=0,_seen={};(Ba||[]).forEach(function(N){if(!N||N.type!=="client")return;var _st=String(N.status||"").toLowerCase();if(_st==="draft"||_st==="void"||_st==="denied"||_st==="cancelled"||_st==="canceled")return;var _d=String(N.recvDate||N.date||"");if(_d&&parseInt(_d.slice(0,4),10)!==_yr)return;if(!y&&!(N.pid&&_allMyJobs.some(function(Ee){return Ee.id===N.pid})))return;if(window._gcIsTombstoned&&(window._gcIsTombstoned("invs",N.id)||window._gcIsTombstoned("invoices",N.id)))return;var _a=parseFloat(N.amt!=null?N.amt:N.amount)||0;if(!_a)return;var _k=N.id;if(_k&&_seen[_k])return;if(_k)_seen[_k]=1;/* 33.131: the same invoice under two ids (a copy a sync or a merge left behind) is one invoice */if(N.needsReview===true)return;if(window._gcIsFolded&&window._gcIsFolded("invs",N.id))return;var _ck=window._gcInvIdKey?window._gcInvIdKey(N):(String(N.pid||"")+"|"+_a.toFixed(2)+"|"+_d.slice(0,10));if(_seen["c:"+_ck])return;_seen["c:"+_ck]=1;_s+=_a;});return _s;})(),B=Ea.filter(N=>N.status!=="denied"&&(N.date?new Date(N.date+"T12:00:00").getFullYear()===_yr:true)&&(y||(N.pid&&_allMyJobs.some(Ee=>Ee.id===N.pid)))),U=(window._gcStableSpent?window._gcStableSpent({year:_yr,jobsOnly:true,pidSet:(y?null:(function(){var _m={};(_allMyJobs||[]).forEach(function(_j){if(_j&&_j.id)_m[_j.id]=1;});return _m;})())}):(B||[]).reduce(function(N,Ee){return N+Math.abs(Ee.amt||0);},0)),Z=T.map(N=>({...N,a:qs(N.id)})).filter(N=>N.a),w=kn.filter(N=>{const Ee=oa(N.insExp);return N.insExp&&Ee<=30}),q=new Date().getDay(),ke=Ba.filter(N=>N.type==="sub"&&["received","approved"].includes(N.status)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),z=ke.reduce((N,Ee)=>N+(parseFloat(Ee.amt)||0),0),De=Ba.filter(N=>N.status==="received"&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),Ve=Ba.filter(N=>N.type==="sub"&&N.status!=="paid"&&N.recvDate&&(window._gcSubLate?window._gcSubLate(N):[0,4,5,6].indexOf(new Date(N.recvDate+"T12:00:00").getDay())>=0)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),xt=q>=0&&q<=3,M=Ea.filter(N=>N.status==="pending");return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:H?g.name+"'s Dashboard":y?"Company Dashboard":"My Dashboard"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:H?g.title||g.role:"Welcome, "+g.name+" · "+(y?"Company-wide view":"Your projects & leads")})]}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:8},children:[e.jsx("select",{value:_yr,onChange:N=>_setYr(parseInt(N.target.value)),style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"inherit",background:"#fff",color:u.tx,cursor:"pointer"},children:(function(){var _yrs=[],_cur=new Date().getFullYear();for(var _i=_cur+1;_i>=2023;_i--)_yrs.push(_i);return _yrs.map(_y=>e.jsx("option",{value:_y,children:_y},_y));})()}),te&&!H&&e.jsxs("div",{style:{display:"flex",border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:[e.jsx("button",{onClick:()=>Q("company"),style:{padding:"5px 12px",border:"none",background:_==="company"?u.acc:"#fff",color:_==="company"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"🏢 Company"}),e.jsx("button",{onClick:()=>Q("mine"),style:{padding:"5px 12px",border:"none",background:_==="mine"?u.acc:"#fff",color:_==="mine"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"👤 My Jobs"})]}),te&&e.jsxs("select",{value:s||"",onChange:function(ev){l(ev.target.value||"");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx,background:"#fff",cursor:"pointer",fontFamily:"inherit"},children:[e.jsx("option",{value:"",children:"\uD83D\uDC65 View a person\u2026"}),An.filter(function(_u){return _u&&_u.active&&!_u.tombstoned&&!(window._gcIsGonePerson&&window._gcIsGonePerson(_u))&&!/^office/i.test(_u.role||"");}).map(function(_u){return e.jsx("option",{value:_u.id,children:_u.name+(String(_u.payType||"").toLowerCase()==="owner"?" (Owner)":"")},_u.id);})]}),(s?e.jsx("button",{onClick:function(){l("");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx2,background:"#fff",cursor:"pointer"},children:"\u2715 Back to company"}):null),e.jsx("a",{href:"https://grayco-cs.com",target:"_blank",rel:"noreferrer",style:{fontSize:11,color:u.acc2,textDecoration:"none",fontWeight:600},children:"grayco-cs.com →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14},children:[{l:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?("Active "+b.active+" · Pipeline "+b.pipeline):"Active / Pipeline";})(),v:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?(b.active+b.pipeline):_Yactive.length;})()},{l:"Revenue (billed)",v:ue(We)},{l:"Contracted",v:ue(_contracted)},{l:"Job Costs",v:ue(U)},{l:"Gross Profit",v:ue(We-U),c:We-U>=0?u.grn:u.red},{l:"Gross Margin",v:(We>0?(Math.round((We-U)/We*1000)/10)+"%":"—"),c:We-U>=0?u.grn:u.red},{l:"Pending Pay",v:ue(z),c:z>0?u.yel:u.tx}].map(N=>e.jsxs("div",{style:{...Ke,padding:"10px 12px"},children:[e.jsx("div",{style:{fontSize:10,color:u.tx2,fontWeight:600,textTransform:"uppercase",marginBottom:3},children:N.l}),e.jsx("div",{style:{fontSize:17,fontWeight:700,color:N.c||u.tx},children:N.v})]},N.l))}),(xt&&ke.length>0||Ve.length>0)&&e.jsx("div",{style:{...Ke,borderLeft:`3px solid ${Ve.length?u.red:u.yel}`,padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:Ve.length?u.red:u.yel,fontSize:12},children:"📋 Invoice Deadline"}),xt&&e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Sub invoices received ",e.jsx("b",{children:"by Wednesday"})," are paid the following Friday — ",ke.length," pending (",ue(z),")"]}),Ve.length>0&&e.jsxs("div",{style:{fontSize:12,marginTop:2,color:u.red,fontWeight:600},children:[Ve.length," late invoice",Ve.length>1?"s":""," missed the Wednesday cut-off (received Thu–Sun) — paid the Friday after next"]}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginTop:2},children:"Payment every Friday · PO# required on all invoices"})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("invoices"),children:"View Invoices →"})]})}),De.length>0&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #f59e0b",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsxs("b",{style:{color:"#f59e0b",fontSize:12},children:["📧 ",De.length," Invoice",De.length>1?"s":""," Need Review"]}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:[De.filter(N=>N.source==="gmail").length>0&&`${De.filter(N=>N.source==="gmail").length} from Gmail · `,De.filter(N=>N.source==="upload").length>0&&`${De.filter(N=>N.source==="upload").length} uploaded · `,"Assign project, verify amount, then approve"]})]}),e.jsx("button",{style:{...ht,padding:"5px 12px",fontSize:11,background:"#f59e0b",color:"#fff"},onClick:()=>Xi("invoices"),children:"Review Now →"})]})}),!1&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #dc2626",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:"#dc2626",fontSize:12},children:"🔄 Price Sync Overdue"}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Product prices haven't been updated in ",Eo===999?"—":""+Eo+"d",". Weekly sync checks all ",kn.length," vendors."]})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("products"),children:"Go to Products →"})]})}),(Z.length>0||w.length>0)&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14},children:[Z.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.red}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.red,fontSize:12},children:"Budget Alerts"}),Z.map(N=>e.jsxs("div",{onClick:function(){Pe(N);D("projects")},style:{fontSize:12,padding:"5px 8px",cursor:"pointer",borderRadius:4,marginBottom:2,display:"flex",justifyContent:"space-between",alignItems:"center",background:N.a.lbl==="OVER"?"#ef444410":"transparent",borderLeft:"3px solid "+(N.a.c||u.red)},children:[e.jsxs("span",{children:[e.jsx("b",{style:{color:u.acc2},children:N.name}),N.autoPO?e.jsx("span",{style:{fontFamily:"monospace",fontSize:10,color:u.tx2,marginLeft:6},children:"["+N.autoPO+"]"}):null]}),e.jsxs("span",{style:{color:N.a.c,fontWeight:700,fontSize:11},children:[N.a.pct,"% ",N.a.lbl==="OVER"?"⚠️ OVER":"used"," →"]})]},N.id))]}),w.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.yel}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.yel,fontSize:12},children:"Insurance Expiring (30 days)"}),w.map(N=>e.jsxs("div",{style:{fontSize:12,padding:"3px 0"},children:[e.jsx("b",{children:N.name})," — exp ",Ut(N.insExp)]},N.id))]})]}),T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length>0&&e.jsxs("div",{style:{...Ke,marginBottom:14},children:[e.jsxs("b",{style:{fontSize:13},children:[y?"Active & completed jobs":"My active & completed jobs"," (",T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length,")"]}),e.jsx("div",{style:{marginTop:8},children:T.filter(N=>["active","approved","completed","complete"].includes(N.status)).map(N=>{const Ee=ji(N.id);return e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsxs("div",{children:[e.jsx("b",{style:{cursor:"pointer",color:u.acc2},onClick:()=>{D("projects"),Ae(null),Pe(N)},children:N.name}),e.jsxs("span",{style:{color:u.tx2,marginLeft:6},children:[N.client," · PM: ",N.pm||"—"]})]}),e.jsxs("div",{style:{display:"flex",gap:12,alignItems:"center"},children:[e.jsx("span",{children:ue(N.contract)}),(sr.role==="Admin"||N.pm===sr.name)&&e.jsxs("span",{style:{color:Ee.profit>=0?u.grn:u.red,fontWeight:600},children:[Ee.margin,"%"]}),e.jsx(Wa,{s:N.status})]})]},N.id)})})]}),(()=>{const N=new Date,Ee=N.getDay(),Je=new Date(N);Je.setDate(N.getDate()-(Ee===0?6:Ee-1)),Je.setHours(0,0,0,0);const W=[],F=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];for(let de=0;de<7;de++){const Oe=new Date(Je);Oe.setDate(Je.getDate()+de);const Re=Oe.getFullYear(),K=String(Oe.getMonth()+1).padStart(2,"0"),$e=String(Oe.getDate()).padStart(2,"0");W.push({date:`${Re}-${K}-${$e}`,label:F[de],dayNum:$e,month:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Oe.getMonth()],isToday:`${Re}-${K}-${$e}`===Lt()})}const xe=la.filter(de=>de.date&&de.scope!=="personal"&&W.some(Oe=>Oe.date===de.date)&&(y||de.assignee===g.name||de.by===g.name||T.some(Oe=>Oe.id===de.pid))).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||"")),X=la.filter(de=>de.date&&de.scope==="personal"&&de.by===g.name&&W.some(Oe=>Oe.date===de.date)).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||""));return e.jsxs("div",{style:{...Ke,marginBottom:14,borderLeft:`3px solid ${u.acc}`},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:[e.jsxs("b",{style:{fontSize:13},children:["📅 ",H?g.name.split(" ")[0]+"'s":"My"," Week — ",W[0].month," ",W[0].dayNum," – ",W[6].month," ",W[6].dayNum]}),e.jsxs("div",{style:{display:"flex",gap:4,alignItems:"center"},children:[e.jsxs("span",{style:{fontSize:10,color:u.tx2},children:[xe.length," company",X.length>0?` · ${X.length} personal`:""]}),e.jsx("button",{style:{...ot,padding:"3px 10px",fontSize:10},onClick:()=>Xi("schedule"),children:"View Full →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4},children:W.map(de=>{const Oe=xe.filter($e=>$e.date===de.date),Re=X.filter($e=>$e.date===de.date),K=[...Oe,...Re].sort(($e,ze)=>($e.time||"").localeCompare(ze.time||""));return e.jsxs("div",{style:{borderRadius:6,border:`1px solid ${de.isToday?u.acc:u.bdr}`,background:de.isToday?u.acc+"08":"transparent",minHeight:90,padding:6},children:[e.jsxs("div",{style:{textAlign:"center",marginBottom:4},children:[e.jsx("div",{style:{fontSize:9,fontWeight:700,color:de.isToday?u.acc:u.tx2,textTransform:"uppercase"},children:de.label}),e.jsx("div",{style:{fontSize:14,fontWeight:de.isToday?800:600,color:de.isToday?u.acc:u.tx,lineHeight:1},children:de.dayNum})]}),K.length===0?e.jsx("div",{style:{fontSize:9,color:u.tx3,textAlign:"center",padding:"4px 0"},children:"—"}):K.map($e=>{var ve;const ze=vl($e.pid),et=$e.scope==="personal";return e.jsxs("div",{style:{fontSize:9,padding:"3px 4px",marginBottom:2,borderRadius:4,background:et?"#7c3aed15":ze+"18",borderLeft:`2px solid ${et?"#7c3aed":ze}`,lineHeight:1.3,overflow:"hidden"},children:[e.jsxs("div",{style:{fontWeight:700,color:et?"#7c3aed":u.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[$e.time?$e.time+" ":"",$e.title,et?" 🔒":""]}),$e.assignee&&!et&&e.jsx("div",{style:{color:u.tx2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:$e.assignee}),$e.pid&&e.jsxs("div",{style:{color:ze,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[((ve=Wt.find(ye=>ye.id===$e.pid))==null?void 0:ve.name)||""," ",e.jsx(__gcStable("or",or),{pid:$e.pid})]})]},$e.id)})]},de.date)})})]})})(),(function(){var _now=new Date();var _isAdm=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||""))&&!yi;var _myP=_isAdm?null:new Set(Wt.filter(function(p){return (window._gcSamePM?window._gcSamePM(p.pm,vo,p):p.pm===vo.name)}).map(function(p){return p.id}));var _days=[];for(var _i=0;_i<14;_i++){var _d=new Date(_now);_d.setDate(_now.getDate()+_i);_days.push(_d.toISOString().slice(0,10))}var _dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];var _sc=la.filter(function(s){if(!s.date||!_days.includes(s.date))return false;if(_isAdm)return true;return s.by===vo.name||s.assignee===vo.name||(s.pid&&_myP.has(s.pid))});var _bd={};_days.forEach(function(d){_bd[d]=_sc.filter(function(s){return s.date===d})});return e.jsxs("div",{style:{...Ke,marginBottom:10},children:[e.jsx("b",{style:{fontSize:14},children:_isAdm?"📅 Company Schedule":"📅 My Schedule"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginTop:8},children:_days.map(function(day){var _dt=new Date(day+"T12:00:00");var _isT=day===_now.toISOString().slice(0,10);var _ev=_bd[day]||[];return e.jsxs("div",{key:day,style:{background:_isT?"#d4a01722":(u.card||"#1a2e45"),border:"1px solid "+(_isT?"#d4a017":(u.bdr||"#1e3a5f")),borderRadius:5,padding:"6px 5px",minHeight:65,fontSize:10},children:[e.jsx("div",{style:{fontWeight:700,color:_isT?"#d4a017":(u.tx2||"#64748b"),fontSize:9},children:_dn[_dt.getDay()]+" "+(_dt.getMonth()+1)+"/"+_dt.getDate()}),_ev.length===0?e.jsx("div",{style:{color:"#475569",fontSize:9},children:"—"}):_ev.slice(0,3).map(function(ev,ei){return e.jsx("div",{key:ei,style:{background:"#d4a01711",borderLeft:"2px solid #d4a017",borderRadius:2,padding:"2px 4px",marginBottom:2,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},children:ev.title||"—"})})]})})}),e.jsx("button",{onClick:function(){D("schedule")},style:{marginTop:6,background:"none",border:"1px solid "+(u.bdr||"#1e3a5f"),color:"#d4a017",borderRadius:4,padding:"4px 12px",cursor:"pointer",fontSize:10,fontWeight:600,width:"100%"},children:"Open Full Schedule →"})]})})(),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},children:[e.jsx("div",{}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Recent Activity"}),e.jsxs("div",{style:{marginTop:8,fontSize:12,color:u.tx2},children:[B.slice(-5).reverse().map(N=>e.jsxs("div",{style:{padding:"3px 0",borderBottom:`1px solid ${u.bdr}`},children:[N.desc," — ",e.jsx("b",{children:ue(N.amt)})]},N.id)),B.length===0&&e.jsx("p",{style:{color:u.tx3},children:"No expenses yet"})]})]})]})]})},To=({title:g,desc:te,items:H,setItems:_,fid:Q,fields:y,cols:T,onAdd:L,sortKey:Y,sortDir:We,allowDelete:B,allowEdit:U})=>{const[Z,w]=ce.useState(!1),[E,q]=ce.useState(null),[_dragIdx,_setDragIdx]=ce.useState(null),ke={};y.forEach(Ee=>{ke[Ee.k]=Ee.def||""});const[z,De]=ce.useState(ke),Ve=(Ee,Je)=>De(W=>({...W,[Ee]:Je})),xt=[...H];Y&&xt.sort((Ee,Je)=>{const W=Ee[Y]||"",F=Je[Y]||"";if(Y==="date"||Y.toLowerCase().includes("date")){const xe=W?new Date(W+"T00:00:00"):new Date(0),X=F?new Date(F+"T00:00:00"):new Date(0);return We==="desc"?X-xe:xe-X}return We==="desc"?String(F).localeCompare(String(W)):String(W).localeCompare(String(F))});const M=xt.filter(Ee=>!rt||JSON.stringify(Ee).toLowerCase().includes(rt.toLowerCase())),N=Ee=>{const Je={};y.forEach(W=>{Je[W.k]=Ee[W.k]||W.def||""}),De(Je),q(Ee),w(!0)};return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:g}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:te})]}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("input",{style:{...R,width:140},placeholder:"Search...",value:rt,onChange:Ee=>Et(Ee.target.value),autoComplete:"off",name:"gc-projsearch",type:"search"}),e.jsx("button",{style:ht,onClick:()=>{q(null),De(ke),w(!Z)},children:"+ Add"})]})]}),Z&&e.jsxs("div",{style:{...Ke,marginBottom:12},children:[e.jsx("b",{style:{fontSize:13,marginBottom:6,display:"block"},children:E?"Edit Item":"Add New"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:`repeat(${Math.min(y.length,3)},1fr)`,gap:8},children:y.map(Ee=>e.jsx(re,{l:Ee.l,s:Ee.span,children:Ee.type==="select"?e.jsx("select",{style:R,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),children:Ee.opts.map(Je=>typeof Je=="string"?e.jsx("option",{children:Je},Je):e.jsx("option",{value:Je.v,children:Je.l},Je.v))}):Ee.type==="textarea"?e.jsx("textarea",{style:{...R,minHeight:80},value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value)}):Ee.type==="vendor"?e.jsxs(e.Fragment,{children:[e.jsx("input",{style:R,list:"vl_"+Ee.k,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:"Type or select..."}),e.jsx("datalist",{id:"vl_"+Ee.k,children:kn.map(Je=>e.jsx("option",{value:Je.name},Je.id))})]}):e.jsx("input",{style:R,type:Ee.type||"text",step:Ee.step,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:Ee.ph})},Ee.k))}),e.jsxs("div",{style:{display:"flex",gap:6,marginTop:8},children:[e.jsx("button",{style:ht,onClick:()=>{if(y.some(Ee=>Ee.req&&!z[Ee.k])){se("Required fields missing");return}if(E){const Ee={...E,...z};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),_(L?Je=>Je.map(W=>W.id===E.id?Ee:W):Je=>Je.map(W=>W.id===E.id?Ee:W)),q(null),De(ke),w(!1),se("Updated")}else{const Ee={...z,id:$t(Q),date:z.date||Lt(),by:n.name};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),L?L(Ee):_(Je=>[...Je,Ee]),De(ke),w(!1),se("Added")}},children:E?"Update":"Save"}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:6},children:[e.jsx("button",{type:"button",style:{padding:"6px 14px",background:"#2563eb",color:"#fff",border:"none",borderRadius:4,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},onClick:function(ev){ev.preventDefault();var inp2=document.createElement("input");inp2.type="file";inp2.multiple=true;inp2.accept=".pdf,.doc,.docx,.jpg,.png,.xls,.xlsx";inp2.onchange=function(){var files=Array.from(inp2.files);var nf=[];var done=0;files.forEach(function(fl){var fr=new FileReader();fr.onload=function(e2){nf.push({name:fl.name,data:e2.target.result,type:fl.type,size:fl.size});done++;if(done===files.length){Ve("files",[...(z.files||[]),...nf]);se(nf.length+" file(s) attached")}};fr.readAsDataURL(fl)});};inp2.click()},children:"📎 Attach Files"}),(z.files||[]).length>0&&e.jsx("span",{style:{fontSize:10,color:"#22c55e"},children:(z.files||[]).length+" file(s) attached"})]}),e.jsx("button",{style:ot,onClick:()=>{w(!1),q(null)},children:"Cancel"}),E&&e.jsx("button",{style:{...ot,fontSize:13,padding:"6px 14px",fontWeight:600,color:u.red},onClick:()=>{confirm("Delete this item?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",E.id),_(Ee=>Ee.filter(Je=>Je.id!==E.id)),q(null),w(!1),se("Deleted"))},children:"Delete"})]})]}),H.length===0?e.jsx(Zn,{t:`No ${g.toLowerCase()}`,d:"Click + Add to get started.",onA:()=>w(!0),al:"+ Add"}):e.jsx("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:e.jsx("div",{style:{overflowX:"auto"},children:e.jsxs("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12},children:[e.jsx("thead",{children:e.jsxs("tr",{style:{background:"#f3f5f9"},children:[T.map(Ee=>e.jsx("th",{style:{padding:"7px 10px",textAlign:"left",fontWeight:600,fontSize:10,color:u.tx2,textTransform:"uppercase",borderBottom:`1px solid ${u.bdr}`,whiteSpace:"nowrap"},children:Ee.l},Ee.k)),e.jsx("th",{style:{padding:"7px 10px",width:60,borderBottom:`1px solid ${u.bdr}`}})]})}),e.jsx("tbody",{children:M.map((Ee,Je)=>e.jsxs("tr",{draggable:true,onDragStart:function(){_setDragIdx(Je)},onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="2px solid #d4a017"},onDragLeave:function(ev){ev.currentTarget.style.borderTop="none"},onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="none";if(_dragIdx!==null&&_dragIdx!==Je){var _ia=M[_dragIdx],_ib=M[Je],_dn=_dragIdx<Je;if(_ia&&_ib){_(function(full){var arr=(Array.isArray(full)?full:H).slice(),_f=function(x){var i=arr.indexOf(x);return i<0&&x&&x.id!=null?arr.findIndex(function(y){return y&&y.id===x.id}):i},i=_f(_ia);if(i<0)return full;arr.splice(i,1);var j=_f(_ib);if(j<0)return full;arr.splice(_dn?j+1:j,0,_ia);return arr})}}_setDragIdx(null)},onDragEnd:function(){_setDragIdx(null)},style:{borderBottom:`1px solid ${u.bdr}`,cursor:"grab",opacity:_dragIdx===Je?0.4:1},children:[T.map(W=>e.jsx("td",{style:{padding:"6px 10px"},children:W.r?W.r(Ee):Ee[W.k]||"—"},W.k)),e.jsxs("td",{style:{padding:"6px 10px",whiteSpace:"nowrap"},children:[e.jsx("button",{onClick:()=>N(Ee),style:{background:"none",border:"none",color:u.acc2,cursor:"pointer",fontSize:11,marginRight:4},title:"Edit",children:"✏️"}),e.jsx("button",{onClick:()=>{confirm("Delete?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",Ee.id),_(W=>W.filter(F=>F.id!==Ee.id)),se("Deleted"))},style:{background:"none",border:"none",color:u.red,cursor:"pointer",fontSize:11},title:"Delete",children:"🗑"})]})]},Ee.id||Je))})]})})})]})},id=()=>{var Ne;const[g,te]=ce.useState(!1),[H,_]=ce.useState(function(){try{return sessionStorage.getItem("grayco_subtab")||"overview"}catch(e){return"overview"}}),[_tabOrd,_setTabOrd]=ce.useState(null),Q={name:"",client:"",type:"Residential Reno",address:"",contract:"",status:"bidding",pm:"",soldBy:"",scope:""},[y,T]=ce.useState(Q),[L,Y]=ce.useState({date:"",type:"Rough-In",inspector:"",notes:""}),[We,B]=ce.useState(!1),[U,Z]=ce.useState(""),[w,E]=ce.useState(!1),[q,ke]=ce.useState(!1),[z,De]=ce.useState({}),[Ve,xt]=ce.useState(String(new Date().getFullYear())),[M,N]=ce.useState((sr.role==="Admin"||/office/i.test(sr.role||"")||((sr.email||"").toLowerCase()==="office@grayco-cs.com"))?"all":"mine"),[Ee,_JeRaw]=ce.useState((function(){try{return localStorage.getItem("gc_proj_subtab")||"pipeline";}catch(e){return "pipeline";}})()),Je=function(_v){try{if(typeof _v==="string")localStorage.setItem("gc_proj_subtab",_v);}catch(e){}return _JeRaw(_v);},[W,F]=ce.useState(null),[xe,X]=ce.useState({k:"startDate",d:"desc"}),[_qt,_Dt]=ce.useState(!1),[_ut,_Xt]=ce.useState(null),[_Bt,_gn]=ce.useState(null);if(be&&((Ne=be.id)!=null&&(Ne.startsWith("PRJ")||Ne.charAt(0)==="P"&&Wt.some(G=>G.id===Ne)))){try{sessionStorage.setItem("grayco_subtab",H)}catch(_x){}const j=Wt.find(G=>G.id===be.id)||be,kt=ji(j.id),qe=qs(j.id),Pt=fa.filter(G=>G.pid===j.id),jt=Ea.filter(G=>G.pid===j.id&&G.type!=="mpo"&&G.status!=="denied"),at=hr.filter(G=>G.pid===j.id),Tt=Gi.filter(G=>G.pid===j.id),le=Er.filter(G=>G.pid===j.id),Mt=Ba.filter(G=>G.pid===j.id),ln=Ts.filter(G=>G.pid===j.id),ra=[...la.filter(G=>G.pid===j.id)].sort((G,St)=>(G.date||"").localeCompare(St.date||"")),ea=$s.filter(G=>G.pid===j.id),_pest=(fa||[]).filter(G=>G&&(G.pid===j.id||(G.client&&j.client&&G.client.toLowerCase()===(j.client||"").toLowerCase()))),Ln=Gs.filter(G=>G.pid===j.id),ja=Pt.flatMap(G=>G.mats||[]),wa=gt.filter(G=>G.pid===j.id),ii=st.filter(G=>G.pid===j.id&&G.projectName!==void 0&&G.title===void 0),ui=wa.filter(G=>G.cat==="Plans/Drawings"),va=j.subs||[],Ar=[
+})(),gu=g=>{if(!n)return;var _ids=[],_seen=new Set;g.forEach(function(H){if(!_seen.has(H.id)){_seen.add(H.id);_ids.push(H.id)}});Ct(te=>({...te,[n.id]:_ids}))},$f=g=>{if(_t===null||_t===g)return;const te=[...xl],[H]=te.splice(_t,1);te.splice(g,0,H),gu(te),En(null)},vu=()=>{const g=vo,te=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||"")),H=!!yi,[_,Q]=ce.useState(te?"company":(H?"mine":"company")),[_yr,_setYr]=ce.useState(new Date().getFullYear()),y=te&&!H&&_==="company",_paidYr=(N)=>{if(!N)return null;var _ci=Ba.filter(function(_i){return _i&&_i.pid===N.id&&_i.type==="client"&&_i.status==="paid"&&_i.paidDate;});if(_ci.length){var _dd=_ci.map(function(_i){return _i.paidDate;}).sort();return new Date(_dd[_dd.length-1]+"T12:00:00").getFullYear();}var _cd=N.completionDate||N.endDate||"";if(_cd)return new Date(_cd+"T12:00:00").getFullYear();var _sd=N.startDate||N.created||"";if(_sd)return new Date(_sd+"T12:00:00").getFullYear();return null;},_inYr=(N)=>{var _y=_paidYr(N);return _y===null?true:_y===_yr;},T=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))).filter(_inYr),_allMyJobs=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))),L=y?rr:rr.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name));y||fa.filter(N=>T.some(Ee=>Ee.id===N.pid)||N.by===g.name);const Y=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold"),_Yactive=T.filter(N=>{var _s=String(N.status||"").toLowerCase().trim();return !(_s==="completed"||_s==="complete"||_s==="done"||_s==="closed"||_s==="finished"||_s==="lost"||_s==="cancelled"||_s==="canceled"||_s==="declined"||_s==="dead"||_s==="archived"||_s==="void");}),_contracted=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold").reduce((N,Ee)=>N+(parseFloat(Ee.contract)||0),0),We=(function(){/* 33.129 (audit): Revenue is what has been BILLED to clients this year, not the contract values of open jobs */var _s=0,_seen={};(Ba||[]).forEach(function(N){if(!N||N.type!=="client")return;var _st=String(N.status||"").toLowerCase();if(_st==="draft"||_st==="void"||_st==="denied"||_st==="cancelled"||_st==="canceled")return;var _d=String(N.recvDate||N.date||"");if(_d&&parseInt(_d.slice(0,4),10)!==_yr)return;if(!y&&!(N.pid&&_allMyJobs.some(function(Ee){return Ee.id===N.pid})))return;if(window._gcIsTombstoned&&(window._gcIsTombstoned("invs",N.id)||window._gcIsTombstoned("invoices",N.id)))return;var _a=parseFloat(N.amt!=null?N.amt:N.amount)||0;if(!_a)return;var _k=N.id;if(_k&&_seen[_k])return;if(_k)_seen[_k]=1;/* 33.131: the same invoice under two ids (a copy a sync or a merge left behind) is one invoice */if(N.needsReview===true)return;if(window._gcIsFolded&&window._gcIsFolded("invs",N.id))return;var _ck=window._gcInvIdKey?window._gcInvIdKey(N):(String(N.pid||"")+"|"+_a.toFixed(2)+"|"+_d.slice(0,10));if(_seen["c:"+_ck])return;_seen["c:"+_ck]=1;_s+=_a;});return _s;})(),B=Ea.filter(N=>N.status!=="denied"&&(N.date?new Date(N.date+"T12:00:00").getFullYear()===_yr:true)&&(y||(N.pid&&_allMyJobs.some(Ee=>Ee.id===N.pid)))),U=(window._gcStableSpent?window._gcStableSpent({year:_yr,jobsOnly:true,pidSet:(y?null:(function(){var _m={};(_allMyJobs||[]).forEach(function(_j){if(_j&&_j.id)_m[_j.id]=1;});return _m;})())}):(B||[]).reduce(function(N,Ee){return N+Math.abs(Ee.amt||0);},0)),Z=T.map(N=>({...N,a:qs(N.id)})).filter(N=>N.a),w=kn.filter(N=>{const Ee=oa(N.insExp);return N.insExp&&Ee<=30}),q=new Date().getDay(),ke=Ba.filter(N=>N.type==="sub"&&["received","approved"].includes(N.status)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),z=ke.reduce((N,Ee)=>N+(parseFloat(Ee.amt)||0),0),De=Ba.filter(N=>N.status==="received"&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),Ve=Ba.filter(N=>N.type==="sub"&&N.status!=="paid"&&N.recvDate&&(window._gcSubLate?window._gcSubLate(N):[0,4,5,6].indexOf(new Date(N.recvDate+"T12:00:00").getDay())>=0)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),xt=q>=0&&q<=3,M=Ea.filter(N=>N.status==="pending");return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:H?g.name+"'s Dashboard":y?"Company Dashboard":"My Dashboard"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:H?g.title||g.role:"Welcome, "+g.name+" · "+(y?"Company-wide view":"Your projects & leads")})]}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:8},children:[e.jsx("select",{value:_yr,onChange:N=>_setYr(parseInt(N.target.value)),style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"inherit",background:"#fff",color:u.tx,cursor:"pointer"},children:(function(){var _yrs=[],_cur=new Date().getFullYear();for(var _i=_cur+1;_i>=2023;_i--)_yrs.push(_i);return _yrs.map(_y=>e.jsx("option",{value:_y,children:_y},_y));})()}),te&&!H&&e.jsxs("div",{style:{display:"flex",border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:[e.jsx("button",{onClick:()=>Q("company"),style:{padding:"5px 12px",border:"none",background:_==="company"?u.acc:"#fff",color:_==="company"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"🏢 Company"}),e.jsx("button",{onClick:()=>Q("mine"),style:{padding:"5px 12px",border:"none",background:_==="mine"?u.acc:"#fff",color:_==="mine"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"👤 My Jobs"})]}),te&&e.jsxs("select",{value:s||"",onChange:function(ev){l(ev.target.value||"");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx,background:"#fff",cursor:"pointer",fontFamily:"inherit"},children:[e.jsx("option",{value:"",children:"\uD83D\uDC65 View a person\u2026"}),An.filter(function(_u){return _u&&_u.active&&!_u.tombstoned&&!(window._gcIsGonePerson&&window._gcIsGonePerson(_u))&&!/^office/i.test(_u.role||"");}).map(function(_u){return e.jsx("option",{value:_u.id,children:_u.name+(String(_u.payType||"").toLowerCase()==="owner"?" (Owner)":"")},_u.id);})]}),(s?e.jsx("button",{onClick:function(){l("");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx2,background:"#fff",cursor:"pointer"},children:"\u2715 Back to company"}):null),e.jsx("a",{href:"https://grayco-cs.com",target:"_blank",rel:"noreferrer",style:{fontSize:11,color:u.acc2,textDecoration:"none",fontWeight:600},children:"grayco-cs.com →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14},children:[{l:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?("Active "+b.active+" · Pipeline "+b.pipeline):"Active / Pipeline";})(),v:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?(b.active+b.pipeline):_Yactive.length;})()},{l:"Revenue (billed)",v:ue(We)},{l:"Contracted",v:ue(_contracted)},{l:"Job Costs",v:ue(U)},{l:"Gross Profit",v:ue(We-U),c:We-U>=0?u.grn:u.red},{l:"Gross Margin",v:(We>0?(Math.round((We-U)/We*1000)/10)+"%":"—"),c:We-U>=0?u.grn:u.red},{l:"Pending Pay",v:ue(z),c:z>0?u.yel:u.tx}].map(N=>e.jsxs("div",{style:{...Ke,padding:"10px 12px"},children:[e.jsx("div",{style:{fontSize:10,color:u.tx2,fontWeight:600,textTransform:"uppercase",marginBottom:3},children:N.l}),e.jsx("div",{style:{fontSize:17,fontWeight:700,color:N.c||u.tx},children:N.v})]},N.l))}),(xt&&ke.length>0||Ve.length>0)&&e.jsx("div",{style:{...Ke,borderLeft:`3px solid ${Ve.length?u.red:u.yel}`,padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:Ve.length?u.red:u.yel,fontSize:12},children:"📋 Invoice Deadline"}),xt&&e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Sub invoices received ",e.jsx("b",{children:"by Wednesday"})," are paid the following Friday — ",ke.length," pending (",ue(z),")"]}),Ve.length>0&&e.jsxs("div",{style:{fontSize:12,marginTop:2,color:u.red,fontWeight:600},children:[Ve.length," late invoice",Ve.length>1?"s":""," missed the Wednesday cut-off (received Thu–Sun) — paid the Friday after next"]}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginTop:2},children:"Payment every Friday · PO# required on all invoices"})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("invoices"),children:"View Invoices →"})]})}),De.length>0&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #f59e0b",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsxs("b",{style:{color:"#f59e0b",fontSize:12},children:["📧 ",De.length," Invoice",De.length>1?"s":""," Need Review"]}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:[De.filter(N=>N.source==="gmail").length>0&&`${De.filter(N=>N.source==="gmail").length} from Gmail · `,De.filter(N=>N.source==="upload").length>0&&`${De.filter(N=>N.source==="upload").length} uploaded · `,"Assign project, verify amount, then approve"]})]}),e.jsx("button",{style:{...ht,padding:"5px 12px",fontSize:11,background:"#f59e0b",color:"#fff"},onClick:()=>Xi("invoices"),children:"Review Now →"})]})}),!1&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #dc2626",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:"#dc2626",fontSize:12},children:"🔄 Price Sync Overdue"}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Product prices haven't been updated in ",Eo===999?"—":""+Eo+"d",". Weekly sync checks all ",kn.length," vendors."]})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("products"),children:"Go to Products →"})]})}),(Z.length>0||w.length>0)&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14},children:[Z.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.red}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.red,fontSize:12},children:"Budget Alerts"}),Z.map(N=>e.jsxs("div",{onClick:function(){Pe(N);D("projects")},style:{fontSize:12,padding:"5px 8px",cursor:"pointer",borderRadius:4,marginBottom:2,display:"flex",justifyContent:"space-between",alignItems:"center",background:N.a.lbl==="OVER"?"#ef444410":"transparent",borderLeft:"3px solid "+(N.a.c||u.red)},children:[e.jsxs("span",{children:[e.jsx("b",{style:{color:u.acc2},children:N.name}),N.autoPO?e.jsx("span",{style:{fontFamily:"monospace",fontSize:10,color:u.tx2,marginLeft:6},children:"["+N.autoPO+"]"}):null]}),e.jsxs("span",{style:{color:N.a.c,fontWeight:700,fontSize:11},children:[N.a.pct,"% ",N.a.lbl==="OVER"?"⚠️ OVER":"used"," →"]})]},N.id))]}),w.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.yel}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.yel,fontSize:12},children:"Insurance Expiring (30 days)"}),w.map(N=>e.jsxs("div",{style:{fontSize:12,padding:"3px 0"},children:[e.jsx("b",{children:N.name})," — exp ",Ut(N.insExp)]},N.id))]})]}),T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length>0&&e.jsxs("div",{style:{...Ke,marginBottom:14},children:[e.jsxs("b",{style:{fontSize:13},children:[y?"Active & completed jobs":"My active & completed jobs"," (",T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length,")"]}),e.jsx("div",{style:{marginTop:8},children:T.filter(N=>["active","approved","completed","complete"].includes(N.status)).map(N=>{const Ee=ji(N.id);return e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsxs("div",{children:[e.jsx("b",{style:{cursor:"pointer",color:u.acc2},onClick:()=>{D("projects"),Ae(null),Pe(N)},children:N.name}),e.jsxs("span",{style:{color:u.tx2,marginLeft:6},children:[N.client," · PM: ",N.pm||"—"]})]}),e.jsxs("div",{style:{display:"flex",gap:12,alignItems:"center"},children:[e.jsx("span",{children:ue(N.contract)}),(sr.role==="Admin"||N.pm===sr.name)&&e.jsxs("span",{style:{color:Ee.profit>=0?u.grn:u.red,fontWeight:600},children:[Ee.margin,"%"]}),e.jsx(Wa,{s:N.status})]})]},N.id)})})]}),(()=>{const N=new Date,Ee=N.getDay(),Je=new Date(N);Je.setDate(N.getDate()-(Ee===0?6:Ee-1)),Je.setHours(0,0,0,0);const W=[],F=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];for(let de=0;de<7;de++){const Oe=new Date(Je);Oe.setDate(Je.getDate()+de);const Re=Oe.getFullYear(),K=String(Oe.getMonth()+1).padStart(2,"0"),$e=String(Oe.getDate()).padStart(2,"0");W.push({date:`${Re}-${K}-${$e}`,label:F[de],dayNum:$e,month:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Oe.getMonth()],isToday:`${Re}-${K}-${$e}`===Lt()})}const xe=la.filter(de=>de.date&&de.scope!=="personal"&&W.some(Oe=>Oe.date===de.date)&&(y||de.assignee===g.name||de.by===g.name||T.some(Oe=>Oe.id===de.pid))).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||"")),X=la.filter(de=>de.date&&de.scope==="personal"&&de.by===g.name&&W.some(Oe=>Oe.date===de.date)).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||""));return e.jsxs("div",{style:{...Ke,marginBottom:14,borderLeft:`3px solid ${u.acc}`},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:[e.jsxs("b",{style:{fontSize:13},children:["📅 ",H?g.name.split(" ")[0]+"'s":"My"," Week — ",W[0].month," ",W[0].dayNum," – ",W[6].month," ",W[6].dayNum]}),e.jsxs("div",{style:{display:"flex",gap:4,alignItems:"center"},children:[e.jsxs("span",{style:{fontSize:10,color:u.tx2},children:[xe.length," company",X.length>0?` · ${X.length} personal`:""]}),e.jsx("button",{style:{...ot,padding:"3px 10px",fontSize:10},onClick:()=>Xi("schedule"),children:"View Full →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4},children:W.map(de=>{const Oe=xe.filter($e=>$e.date===de.date),Re=X.filter($e=>$e.date===de.date),K=[...Oe,...Re].sort(($e,ze)=>($e.time||"").localeCompare(ze.time||""));return e.jsxs("div",{style:{borderRadius:6,border:`1px solid ${de.isToday?u.acc:u.bdr}`,background:de.isToday?u.acc+"08":"transparent",minHeight:90,padding:6},children:[e.jsxs("div",{style:{textAlign:"center",marginBottom:4},children:[e.jsx("div",{style:{fontSize:9,fontWeight:700,color:de.isToday?u.acc:u.tx2,textTransform:"uppercase"},children:de.label}),e.jsx("div",{style:{fontSize:14,fontWeight:de.isToday?800:600,color:de.isToday?u.acc:u.tx,lineHeight:1},children:de.dayNum})]}),K.length===0?e.jsx("div",{style:{fontSize:9,color:u.tx3,textAlign:"center",padding:"4px 0"},children:"—"}):K.map($e=>{var ve;const ze=vl($e.pid),et=$e.scope==="personal";return e.jsxs("div",{style:{fontSize:9,padding:"3px 4px",marginBottom:2,borderRadius:4,background:et?"#7c3aed15":ze+"18",borderLeft:`2px solid ${et?"#7c3aed":ze}`,lineHeight:1.3,overflow:"hidden"},children:[e.jsxs("div",{style:{fontWeight:700,color:et?"#7c3aed":u.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[$e.time?$e.time+" ":"",$e.title,et?" 🔒":""]}),$e.assignee&&!et&&e.jsx("div",{style:{color:u.tx2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:$e.assignee}),$e.pid&&e.jsxs("div",{style:{color:ze,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[((ve=Wt.find(ye=>ye.id===$e.pid))==null?void 0:ve.name)||""," ",e.jsx(__gcStable("or",or),{pid:$e.pid})]})]},$e.id)})]},de.date)})})]})})(),(function(){var _now=new Date();var _isAdm=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||""))&&!yi;var _myP=_isAdm?null:new Set(Wt.filter(function(p){return (window._gcSamePM?window._gcSamePM(p.pm,vo,p):p.pm===vo.name)}).map(function(p){return p.id}));var _days=[];for(var _i=0;_i<14;_i++){var _d=new Date(_now);_d.setDate(_now.getDate()+_i);_days.push(_d.toISOString().slice(0,10))}var _dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];var _sc=la.filter(function(s){if(!s.date||!_days.includes(s.date))return false;if(_isAdm)return true;return s.by===vo.name||s.assignee===vo.name||(s.pid&&_myP.has(s.pid))});var _bd={};_days.forEach(function(d){_bd[d]=_sc.filter(function(s){return s.date===d})});return e.jsxs("div",{style:{...Ke,marginBottom:10},children:[e.jsx("b",{style:{fontSize:14},children:_isAdm?"📅 Company Schedule":"📅 My Schedule"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginTop:8},children:_days.map(function(day){var _dt=new Date(day+"T12:00:00");var _isT=day===_now.toISOString().slice(0,10);var _ev=_bd[day]||[];return e.jsxs("div",{key:day,style:{background:_isT?"#d4a01722":(u.card||"#1a2e45"),border:"1px solid "+(_isT?"#d4a017":(u.bdr||"#1e3a5f")),borderRadius:5,padding:"6px 5px",minHeight:65,fontSize:10},children:[e.jsx("div",{style:{fontWeight:700,color:_isT?"#d4a017":(u.tx2||"#64748b"),fontSize:9},children:_dn[_dt.getDay()]+" "+(_dt.getMonth()+1)+"/"+_dt.getDate()}),_ev.length===0?e.jsx("div",{style:{color:"#475569",fontSize:9},children:"—"}):_ev.slice(0,3).map(function(ev,ei){return e.jsx("div",{key:ei,style:{background:"#d4a01711",borderLeft:"2px solid #d4a017",borderRadius:2,padding:"2px 4px",marginBottom:2,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},children:ev.title||"—"})})]})})}),e.jsx("button",{onClick:function(){D("schedule")},style:{marginTop:6,background:"none",border:"1px solid "+(u.bdr||"#1e3a5f"),color:"#d4a017",borderRadius:4,padding:"4px 12px",cursor:"pointer",fontSize:10,fontWeight:600,width:"100%"},children:"Open Full Schedule →"})]})})(),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},children:[e.jsx("div",{}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Recent Activity"}),e.jsxs("div",{style:{marginTop:8,fontSize:12,color:u.tx2},children:[B.slice(-5).reverse().map(N=>e.jsxs("div",{style:{padding:"3px 0",borderBottom:`1px solid ${u.bdr}`},children:[N.desc," — ",e.jsx("b",{children:ue(N.amt)})]},N.id)),B.length===0&&e.jsx("p",{style:{color:u.tx3},children:"No expenses yet"})]})]})]})]})},To=({title:g,desc:te,items:H,setItems:_,fid:Q,fields:y,cols:T,onAdd:L,sortKey:Y,sortDir:We,allowDelete:B,allowEdit:U})=>{const[Z,w]=ce.useState(!1),[E,q]=ce.useState(null),[_dragIdx,_setDragIdx]=ce.useState(null),ke={};y.forEach(Ee=>{ke[Ee.k]=Ee.def||""});const[z,De]=ce.useState(ke),Ve=(Ee,Je)=>De(W=>({...W,[Ee]:Je})),xt=[...H];Y&&xt.sort((Ee,Je)=>{const W=Ee[Y]||"",F=Je[Y]||"";if(Y==="date"||Y.toLowerCase().includes("date")){const xe=W?new Date(W+"T00:00:00"):new Date(0),X=F?new Date(F+"T00:00:00"):new Date(0);return We==="desc"?X-xe:xe-X}return We==="desc"?String(F).localeCompare(String(W)):String(W).localeCompare(String(F))});const M=xt.filter(Ee=>!rt||JSON.stringify(Ee).toLowerCase().includes(rt.toLowerCase())),N=Ee=>{const Je={};y.forEach(W=>{Je[W.k]=Ee[W.k]||W.def||""}),De(Je),q(Ee),w(!0)};return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:g}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:te})]}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("input",{style:{...R,width:140},placeholder:"Search...",value:rt,onChange:Ee=>Et(Ee.target.value),autoComplete:"off",name:"gc-projsearch",type:"search"}),e.jsx("button",{style:ht,onClick:()=>{q(null),De(ke),w(!Z)},children:"+ Add"})]})]}),Z&&e.jsxs("div",{style:{...Ke,marginBottom:12},children:[e.jsx("b",{style:{fontSize:13,marginBottom:6,display:"block"},children:E?"Edit Item":"Add New"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:`repeat(${Math.min(y.length,3)},1fr)`,gap:8},children:y.map(Ee=>e.jsx(re,{l:Ee.l,s:Ee.span,children:Ee.type==="select"?e.jsx("select",{style:R,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),children:Ee.opts.map(Je=>typeof Je=="string"?e.jsx("option",{children:Je},Je):e.jsx("option",{value:Je.v,children:Je.l},Je.v))}):Ee.type==="textarea"?e.jsx("textarea",{style:{...R,minHeight:80},value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value)}):Ee.type==="vendor"?e.jsxs(e.Fragment,{children:[e.jsx("input",{style:R,list:"vl_"+Ee.k,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:"Type or select..."}),e.jsx("datalist",{id:"vl_"+Ee.k,children:kn.map(Je=>e.jsx("option",{value:Je.name},Je.id))})]}):e.jsx("input",{style:R,type:Ee.type||"text",step:Ee.step,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:Ee.ph})},Ee.k))}),e.jsxs("div",{style:{display:"flex",gap:6,marginTop:8},children:[e.jsx("button",{style:ht,onClick:()=>{if(y.some(Ee=>Ee.req&&!z[Ee.k])){se("Required fields missing");return}if(E){const Ee={...E,...z};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),_(L?Je=>Je.map(W=>W.id===E.id?Ee:W):Je=>Je.map(W=>W.id===E.id?Ee:W)),q(null),De(ke),w(!1),se("Updated")}else{const Ee={...z,id:$t(Q),date:z.date||Lt(),by:n.name};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),L?L(Ee):_(Je=>[...Je,Ee]),De(ke),w(!1),se("Added")}},children:E?"Update":"Save"}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:6},children:[e.jsx("button",{type:"button",style:{padding:"6px 14px",background:"#2563eb",color:"#fff",border:"none",borderRadius:4,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},onClick:function(ev){ev.preventDefault();var inp2=document.createElement("input");inp2.type="file";inp2.multiple=true;inp2.accept=".pdf,.doc,.docx,.jpg,.png,.xls,.xlsx";inp2.onchange=function(){var files=Array.from(inp2.files);var nf=[];var done=0;files.forEach(function(fl){var fr=new FileReader();fr.onload=function(e2){nf.push({name:fl.name,data:e2.target.result,type:fl.type,size:fl.size});done++;if(done===files.length){Ve("files",[...(z.files||[]),...nf]);se(nf.length+" file(s) attached")}};fr.readAsDataURL(fl)});};inp2.click()},children:"📎 Attach Files"}),(z.files||[]).length>0&&e.jsx("span",{style:{fontSize:10,color:"#22c55e"},children:(z.files||[]).length+" file(s) attached"})]}),e.jsx("button",{style:ot,onClick:()=>{w(!1),q(null)},children:"Cancel"}),E&&e.jsx("button",{style:{...ot,fontSize:13,padding:"6px 14px",fontWeight:600,color:u.red},onClick:()=>{if(Q==="LEAD"&&window._gcLDEL){var _gid=E.id;q(null),w(!1);window._gcLDEL.ask([_gid]);return}confirm("Delete this item?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",E.id),_(Ee=>Ee.filter(Je=>Je.id!==E.id)),q(null),w(!1),se("Deleted"))},children:"Delete"})]})]}),H.length===0?e.jsx(Zn,{t:`No ${g.toLowerCase()}`,d:"Click + Add to get started.",onA:()=>w(!0),al:"+ Add"}):e.jsx("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:e.jsx("div",{style:{overflowX:"auto"},children:e.jsxs("table",{"data-gc-fid":Q,style:{width:"100%",borderCollapse:"collapse",fontSize:12},children:[e.jsx("thead",{children:e.jsxs("tr",{style:{background:"#f3f5f9"},children:[Q==="LEAD"&&e.jsx("th",{style:{padding:"7px 6px",width:28,borderBottom:`1px solid ${u.bdr}`},children:e.jsx("input",{type:"checkbox",className:"gcx-ldel-all",title:"Select all shown","aria-label":"Select all shown"})},"_gcsel"),T.map(Ee=>e.jsx("th",{style:{padding:"7px 10px",textAlign:"left",fontWeight:600,fontSize:10,color:u.tx2,textTransform:"uppercase",borderBottom:`1px solid ${u.bdr}`,whiteSpace:"nowrap"},children:Ee.l},Ee.k)),e.jsx("th",{style:{padding:"7px 10px",width:60,borderBottom:`1px solid ${u.bdr}`}})]})}),e.jsx("tbody",{children:M.map((Ee,Je)=>e.jsxs("tr",{draggable:true,onDragStart:function(){_setDragIdx(Je)},onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="2px solid #d4a017"},onDragLeave:function(ev){ev.currentTarget.style.borderTop="none"},onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="none";if(_dragIdx!==null&&_dragIdx!==Je){var _ia=M[_dragIdx],_ib=M[Je],_dn=_dragIdx<Je;if(_ia&&_ib){_(function(full){var arr=(Array.isArray(full)?full:H).slice(),_f=function(x){var i=arr.indexOf(x);return i<0&&x&&x.id!=null?arr.findIndex(function(y){return y&&y.id===x.id}):i},i=_f(_ia);if(i<0)return full;arr.splice(i,1);var j=_f(_ib);if(j<0)return full;arr.splice(_dn?j+1:j,0,_ia);return arr})}}_setDragIdx(null)},onDragEnd:function(){_setDragIdx(null)},"data-gc-id":Q==="LEAD"?Ee.id:void 0,style:{borderBottom:`1px solid ${u.bdr}`,cursor:"grab",opacity:_dragIdx===Je?0.4:1},children:[Q==="LEAD"&&e.jsx("td",{style:{padding:"6px 6px",width:28},children:e.jsx("input",{type:"checkbox",className:"gcx-ldel-chk","data-id":Ee.id,"aria-label":"Select this lead"})},"_gcsel"),T.map(W=>e.jsx("td",{style:{padding:"6px 10px"},children:W.r?W.r(Ee):Ee[W.k]||"—"},W.k)),e.jsxs("td",{style:{padding:"6px 10px",whiteSpace:"nowrap"},children:[e.jsx("button",{onClick:()=>N(Ee),style:{background:"none",border:"none",color:u.acc2,cursor:"pointer",fontSize:11,marginRight:4},title:"Edit",children:"✏️"}),Q==="LEAD"&&window._gcLDEL?e.jsxs(e.Fragment,{children:[e.jsx("button",{type:"button",className:"gcx-ldel-bin","data-gc-ldel":Ee.id,style:{background:"none",cursor:"pointer",fontSize:12},title:"Delete this lead…","aria-label":"Delete this lead",children:"🗑"}),e.jsx("button",{type:"button",className:"gcx-ldel-more",title:"More","aria-label":"More",children:"⋯"})]}):e.jsx("button",{onClick:()=>{confirm("Delete?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",Ee.id),_(W=>W.filter(F=>F.id!==Ee.id)),se("Deleted"))},style:{background:"none",border:"none",color:u.red,cursor:"pointer",fontSize:11},title:"Delete",children:"🗑"})]})]},Ee.id||Je))})]})})})]})},id=()=>{var Ne;const[g,te]=ce.useState(!1),[H,_]=ce.useState(function(){try{return sessionStorage.getItem("grayco_subtab")||"overview"}catch(e){return"overview"}}),[_tabOrd,_setTabOrd]=ce.useState(null),Q={name:"",client:"",type:"Residential Reno",address:"",contract:"",status:"bidding",pm:"",soldBy:"",scope:""},[y,T]=ce.useState(Q),[L,Y]=ce.useState({date:"",type:"Rough-In",inspector:"",notes:""}),[We,B]=ce.useState(!1),[U,Z]=ce.useState(""),[w,E]=ce.useState(!1),[q,ke]=ce.useState(!1),[z,De]=ce.useState({}),[Ve,xt]=ce.useState(String(new Date().getFullYear())),[M,N]=ce.useState((sr.role==="Admin"||/office/i.test(sr.role||"")||((sr.email||"").toLowerCase()==="office@grayco-cs.com"))?"all":"mine"),[Ee,_JeRaw]=ce.useState((function(){try{return localStorage.getItem("gc_proj_subtab")||"pipeline";}catch(e){return "pipeline";}})()),Je=function(_v){try{if(typeof _v==="string")localStorage.setItem("gc_proj_subtab",_v);}catch(e){}return _JeRaw(_v);},[W,F]=ce.useState(null),[xe,X]=ce.useState({k:"startDate",d:"desc"}),[_qt,_Dt]=ce.useState(!1),[_ut,_Xt]=ce.useState(null),[_Bt,_gn]=ce.useState(null);if(be&&((Ne=be.id)!=null&&(Ne.startsWith("PRJ")||Ne.charAt(0)==="P"&&Wt.some(G=>G.id===Ne)))){try{sessionStorage.setItem("grayco_subtab",H)}catch(_x){}const j=Wt.find(G=>G.id===be.id)||be,kt=ji(j.id),qe=qs(j.id),Pt=fa.filter(G=>G.pid===j.id),jt=Ea.filter(G=>G.pid===j.id&&G.type!=="mpo"&&G.status!=="denied"),at=hr.filter(G=>G.pid===j.id),Tt=Gi.filter(G=>G.pid===j.id),le=Er.filter(G=>G.pid===j.id),Mt=Ba.filter(G=>G.pid===j.id),ln=Ts.filter(G=>G.pid===j.id),ra=[...la.filter(G=>G.pid===j.id)].sort((G,St)=>(G.date||"").localeCompare(St.date||"")),ea=$s.filter(G=>G.pid===j.id),_pest=(fa||[]).filter(G=>G&&(G.pid===j.id||(G.client&&j.client&&G.client.toLowerCase()===(j.client||"").toLowerCase()))),Ln=Gs.filter(G=>G.pid===j.id),ja=Pt.flatMap(G=>G.mats||[]),wa=gt.filter(G=>G.pid===j.id),ii=st.filter(G=>G.pid===j.id&&G.projectName!==void 0&&G.title===void 0),ui=wa.filter(G=>G.cat==="Plans/Drawings"),va=j.subs||[],Ar=[
   {id:"overview",         l:"Overview"},
   {id:"schedule",         l:"Schedule ("+ra.length+")"},
   {id:"scope",            l:"Scope"},
@@ -52219,6 +52219,8 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
       var raw = localStorage.getItem(TK) || '{}';
       if(raw !== _lsRaw){ _lsRaw = raw; absorb(JSON.parse(raw)); }
     }catch(e){}
+    /* LDEL: a mark lifted on purpose (and not set again since) is not a delete, wherever it is read back from */
+    try{ var _ck = window._gcxClearedKeys && window._gcxClearedKeys(); if(_ck && _ck.length){ for(var _i=0;_i<_ck.length;_i++){ if(_ck[_i] in MEM) delete MEM[_ck[_i]]; } } }catch(e){}
     return MEM;
   }
 
@@ -80416,6 +80418,12 @@ var _tmap = null, _tdirty = false, _ttimer = null;
 var IDB_TK = 'gc_tombstones_all';
 
 function tload(){
+  var _r = tload0();
+  /* LDEL: a mark lifted on purpose (and not set again since) is not a delete */
+  try{ var _ck = window._gcxClearedKeys && window._gcxClearedKeys(); if(_ck && _ck.length){ for(var _i=0;_i<_ck.length;_i++){ if(_ck[_i] in _r) delete _r[_ck[_i]]; } } }catch(e){}
+  return _r;
+}
+function tload0(){
   if(_tmap) return _tmap;
   try{ _tmap = JSON.parse(localStorage.getItem(TK)||'{}') || {}; }catch(e){ _tmap = {}; }
   return _tmap;
@@ -112582,7 +112590,8 @@ async function cloudAll(){
 /* union incoming deletions into this computer's list; returns the keys that were new here */
 function absorb(map){
   var have = localAll(), fresh = [];
-  Object.keys(map||{}).forEach(function(k){ if(!(k in have)) fresh.push(k); });
+  var _ck = {}; try{ ((window._gcxClearedKeys && window._gcxClearedKeys()) || []).forEach(function(k){ _ck[k] = 1; }); }catch(e){}   /* LDEL: lifted on purpose */
+  Object.keys(map||{}).forEach(function(k){ if(!(k in have) && !_ck[k]) fresh.push(k); });
   if(!fresh.length) return fresh;
   try{ var ls = asMap(localStorage.getItem(KEY)); fresh.forEach(function(k){ ls[k]=map[k]; }); localStorage.setItem(KEY, JSON.stringify(ls)); }catch(e){}
   var byType = {};
@@ -118500,6 +118509,9 @@ function deadIds(type){
 function effective(){ if(effCacheV === mver && effCache) return effCache; var o = {}; for(var k in M){ var i = k.indexOf(':'); if(dead(k.slice(0,i), k.slice(i+1))) o[k] = M[k]; } effCache = o; effCacheV = mver; return o; }
 window._gcxDead = dead;
 window._gcxDeadIds = deadIds;
+/* LDEL: the marks a person lifted on purpose (Restore, a backup import) and nobody set again since */
+var clearedCache = null, clearedV = -1;
+window._gcxClearedKeys = function(){ if(clearedV === mver && clearedCache) return clearedCache; var o = []; for(var k in CL){ var i = k.indexOf(':'); if(i > 0 && (k in M) && !dead(k.slice(0,i), k.slice(i+1))) o.push(k); } clearedCache = o; clearedV = mver; return o; };
 window._gcxTombstones = function(){ return { marked:Object.keys(M).length, live:Object.keys(effective()).length, broughtBack:Object.keys(CL).length }; };
 
 var lsRaw = {};
@@ -119255,6 +119267,21 @@ function notePersonEdits(key, list){
   }catch(e){}
 }
 window._gcxPersonEdits = function(){ return personEdit; };
+/* LDEL: records a person brought back (Restore / Undo). mine: restored here — a person's edit now. Every computer:
+   no longer "put aside" (they are not an old copy) */
+window._gcxRestored = function(type, ids, mine){
+  try{
+    type = typeOf(type); var ak = ASIDE[type], ch = false, now = Date.now();
+    (ids || []).forEach(function(id){
+      id = String(id);
+      if(ak && ak[id]){ delete ak[id]; ch = true; }
+      var h = held[type] || held[type === 'invs' ? 'invoices' : type]; if(h) delete h[id];
+      if(mine){ var m = personEdit[type] || (personEdit[type] = {}); m[id] = now; peDirty = true; }
+    });
+    if(ch) lsWrite('gc_trust_aside', JSON.stringify(ASIDE));
+    bump();
+  }catch(e){}
+};
 var cloudVer = {};      /* key -> id -> { sig, at } when this computer first saw the cloud's current copy */
 /* every copy of a record the cloud has had (a short hash of its content, the last 6), kept across reloads: a record
    on this computer that is EXACTLY an older cloud copy is an old copy, not anybody's edit */
@@ -122818,6 +122845,7 @@ function peekLeads(){ try { if (typeof W._setLeads === 'function') W._setLeads(f
 /* (read when needed — at the catch-up, a RoofScout save, a delete in the Leads tab — not on a timer) */
 function clone(o){ try { return JSON.parse(JSON.stringify(o)); } catch (e) { return null; } }
 function dead(type, id){ try { return !!(W._gcxDead && W._gcxDead(type, id)); } catch (e) { return false; } }
+function crmDeleted(rsId){ try { return !!(W._gcLDEL && W._gcLDEL.rsDeleted(rsId)); } catch (e) { return false; } }   /* LDEL: deleted in the CRM */
 var stats = { runs: 0, lastRun: '', lastError: '', added: 0, updated: 0, removed: 0, skippedDemo: 0, skippedNoContact: 0, skippedInCrm: 0, jobs: 0, sends: 0, role: '' };
 
 /* ── who may run it: admin and PM computers ───────────────────────────────── */
@@ -123009,14 +123037,14 @@ function applyLeadChanges(rows, removedIds, complete, settings){
       if (!r || !r.id || have[r.id]) return;
       if (isDemo(r)) { out.demo++; out.skipped++; return; }
       if (noContact(r)) { out.noContact++; out.skipped++; return; }
-      if (dead('leads', LEAD_P + r.id) || deletedHere[LEAD_P + r.id]) { out.skipped++; return; }
+      if (dead('leads', LEAD_P + r.id) || deletedHere[LEAD_P + r.id] || crmDeleted(r.id)) { out.skipped++; return; }
       if (inCrm(r, ix)) { out.inCrm++; out.skipped++; return; }
       next = next || a.slice();
       next.push(newLead(r, fields(r, settings), me.name));
       have[r.id] = 1; out.added++;
     });
     /* a GrayCo lead from RoofScout deleted in the CRM (on any computer) stays out of the list here too */
-    var src = next || a, kept = src.filter(function(l){ return !(l && l.rsLeadId && (dead('leads', l.id) || deletedHere[l.id])); });
+    var src = next || a, kept = src.filter(function(l){ return !(l && l.rsLeadId && (dead('leads', l.id) || deletedHere[l.id] || crmDeleted(l.rsLeadId))); });
     if (kept.length !== src.length) next = kept;
     if (next) LEADS = next;
     return next || prev;
@@ -123196,7 +123224,7 @@ function bringJob(rsLead, opts){
     a.forEach(function(x, k){ if (i < 0 && x && x.rsLeadId === r.id) i = k; });
     var conv = { converted: true, convertedAt: at, convertedBy: by, status: 'converted', jobId: pid, jobPO: po, estimateId: eid, rsStatus: 'job PO ' + po, updatedAt: at, savedAt: at };
     if (i >= 0) { var n = a.slice(); n[i] = Object.assign({}, a[i], conv); LEADS = n; return n; }
-    if (dead('leads', LEAD_P + r.id) || noContact(r)) return prev;
+    if (dead('leads', LEAD_P + r.id) || crmDeleted(r.id) || noContact(r)) return prev;
     LEADS = a.concat([Object.assign(newLead(r, f, by), conv)]); return LEADS;
   });
   stats.jobs++;
@@ -128464,6 +128492,665 @@ setInterval(function(){
 
 window._gcSweep = { version: 1 };
 console.log('[GC] SWEEP: floating buttons keep off the page, duplicate check said plainly.');
+})();
+
+</script>
+<script id="gc-patch-ldel">
+/* ============================================================================
+   GrayCo — DELETE LEADS, ONE OR MANY, FOR GOOD.   (patch LDEL)   __GC_LDEL__
+
+   Owner (10/20): "I need a delete button on the leads page so I can delete a lot of those old
+   leads I don't want to see anymore."
+
+   Leads → Lead Pipeline:
+   · every row: a 🗑 at the end (on a computer it shows when the pointer is over the row; on a
+     phone the row's "⋯" shows it) and a tick box at the start;
+   · "Select all shown" ticks what the list shows now (the search and the quick filters below);
+   · quick filters: Older than 90 days · No activity in 60 days · Lost / dead · Source;
+   · a bar "N selected · 🗑 Delete selected · Cancel" stays at the bottom while leads are ticked;
+   · the delete asks in its own box (never the browser's confirm), naming how many leads;
+     Cancel is the default and Enter / Esc cancel;
+   · after a delete, "Undo" for 10 seconds;
+   · "Recently deleted (30 days)" lists what was deleted, with Restore.
+
+   A delete is for good on every computer (the CRM's own delete list, _gcxDel → gc_tombstones):
+   sync, another computer, a backup, RoofScout's catch-up or an importer cannot bring it back.
+   Each deleted lead is stamped (deletedAt / updatedAt), written as a person's edit
+   (_gcManualNow / __GC_MANUAL_AT__), and a RoofScout lead (rsLeadId / LEAD_RS_*) is also written
+   down as "deleted in the CRM" (gc_rs_deleted_in_crm), which the RoofScout link reads before it
+   adds a lead. A copy of each deleted lead is kept 30 days in gc_leads_deleted (shared by all
+   computers) for Restore. A Restore is a person's edit too: the delete mark is lifted the CRM's
+   way (_gcClearTombstone, a dated "brought back" note that syncs), the lead goes back on the list.
+
+   Who: admins and the office delete any lead (one or many); a PM only the leads that are his
+   (assigned PM, or added by him); everybody else sees no 🗑.
+
+   API: _gcLDEL.ask(ids) · _gcLDEL.remove(ids) · _gcLDEL.restore(ids) · _gcLDEL.trash()
+        _gcLDEL.rsDeleted(rsId) · _gcLDEL.blocked(lead) · _gcLDEL.can(lead) · _gcLDEL.status()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_LDEL__) return; window.__GC_LDEL__ = true;
+var W = window;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms); }
+function every(f, ms){ return RI.call(W, f, ms); }
+var TK = 'gc_leads_deleted', RK = 'gc_rs_deleted_in_crm', LP = 'LEAD_RS_';
+var KEEP_MS = 30 * 86400e3, UNDO_MS = 10000;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function nowISO(){ return new Date().toISOString(); }
+function ts(v){ if (!v) return 0; if (typeof v === 'number') return v; var d = Date.parse(v); return isFinite(d) ? d : 0; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"]/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]; }); }
+function lsGet(k){ try { return Storage.prototype.getItem.call(W.localStorage, k); } catch (e) { return null; } }
+function lsSet(k, v){ try { Storage.prototype.setItem.call(W.localStorage, k, v); } catch (e) {} }
+function jparse(v, d){ try { var x = typeof v === 'string' ? JSON.parse(v) : v; return x == null ? d : x; } catch (e) { return d; } }
+function crm(){ return W._crm || {}; }
+function view(){ return low(lsGet('grayco_view')); }
+
+/* ── the lead list (it is not on window._crm: the screen's own state hands it over) ── */
+var LEADS = null;
+function peek(){ try { if (typeof W._setLeads === 'function') W._setLeads(function(prev){ if (Array.isArray(prev)) LEADS = prev; return prev; }); } catch (e) {} if (!LEADS && Array.isArray(crm().leads)) LEADS = crm().leads; return LEADS || []; }
+function byId(){ var m = {}; (LEADS || []).forEach(function(l){ if (l && l.id != null) m[String(l.id)] = l; }); return m; }
+
+/* ── who may delete ─────────────────────────────────────────────────────── */
+function who(){
+  var email = ''; try { email = low(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) {}
+  var a = null; try { a = W.__GC_SEC2 && W.__GC_SEC2.access && W.__GC_SEC2.access(); } catch (e) {}
+  var u = null; (Array.isArray(crm().users) ? crm().users : []).forEach(function(x){ if (!u && x && email && low(x.email) === email) u = x; });
+  if (!u) { var cu = crm().currentUser; if (cu && typeof cu === 'object' && (!cu.email || low(cu.email) === email)) u = cu; }
+  u = u || {};
+  var admin = !!(a && a.known && a.admin); try { if (!admin && W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) admin = true; } catch (e) {}
+  var role = s(u.role);
+  if (!admin && !(a && a.known) && /^admin$/i.test(role)) admin = true;
+  var office = !admin && (/^office@/.test(email) || /office/i.test(role) || low(u.payType) === 'owner');   /* the office does what admins do (SEC2 says nothing else for leads) */
+  var pm = !admin && !office && /project\s*manager|^pm$/i.test(role);
+  return { email: email, name: s(u.name), admin: admin, office: office, pm: pm, all: admin || office };
+}
+function mine(l, me){
+  if (!l || !me) return false;
+  var n = low(me.name), e = me.email;
+  return ['pm', 'assignedTo', 'by', 'createdBy', 'addedBy', 'owner'].some(function(f){ var v = low(l[f]); return v && (v === n || v === e); });
+}
+function can(l, me){ me = me || who(); if (!me.email) return false; if (me.all) return true; return me.pm && mine(l, me); }
+
+/* ── the shared record of deletes: { leads: { id: {rec, deletedAt, by, restoredAt} }, rs: { rsId: {at, leadId, restoredAt} } } ── */
+function blank(){ return { v: 1, leads: {}, rs: {} }; }
+var T = jparse(lsGet('gcLDEL_cache'), null) || blank(); T.leads = T.leads || {}; T.rs = T.rs || {};
+var RSD = jparse(lsGet('gcLDEL_rs_cache'), null) || {};
+function mergeEntry(a, b){
+  if (!a) return b; if (!b) return a;
+  var o = Object.assign({}, a, b);
+  o.deletedAt = ts(a.deletedAt) >= ts(b.deletedAt) ? a.deletedAt : b.deletedAt;
+  o.restoredAt = ts(a.restoredAt) >= ts(b.restoredAt) ? a.restoredAt : b.restoredAt;
+  o.rec = (ts(a.deletedAt) >= ts(b.deletedAt) ? a.rec || b.rec : b.rec || a.rec);
+  o.by = ts(a.deletedAt) >= ts(b.deletedAt) ? a.by : b.by;
+  if (!o.restoredAt) delete o.restoredAt;
+  return o;
+}
+function mergeMap(into, from){
+  var n = 0; if (!from || typeof from !== 'object') return 0;
+  Object.keys(from).forEach(function(k){ var x = mergeEntry(into[k], from[k]); if (JSON.stringify(x) !== JSON.stringify(into[k])) { into[k] = x; n++; } });
+  return n;
+}
+function prune(){
+  var cut = Date.now() - KEEP_MS;
+  Object.keys(T.leads).forEach(function(id){ var e = T.leads[id]; if (Math.max(ts(e.deletedAt), ts(e.restoredAt)) < cut) delete T.leads[id]; });
+}
+function isDel(e){ return !!e && ts(e.deletedAt) > ts(e.restoredAt); }
+function saveLocal(){ lsSet('gcLDEL_cache', JSON.stringify(T)); lsSet('gcLDEL_rs_cache', JSON.stringify(RSD)); }
+
+function creds(){ return { u: (lsGet('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k: lsGet('grayco_sb_key') || '' }; }
+function hdr(){ var c = creds(), h = { apikey: c.k, 'Content-Type': 'application/json' }; if (c.k) h.Authorization = 'Bearer ' + c.k; return h; }
+async function cloudRow(k){
+  var c = creds(); if (!c.k) return undefined;
+  var r = await W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(k) + '&select=value', { headers: hdr(), cache: 'no-store' });
+  if (!r.ok) throw new Error('read ' + r.status);
+  var rows = await r.json(); var v = Array.isArray(rows) && rows.length ? rows[0].value : undefined;
+  return jparse(v, v);
+}
+function postRow(k, v){
+  var c = creds(); if (!c.k) return Promise.resolve();
+  var h = hdr(); h.Prefer = 'resolution=merge-duplicates,return=minimal';
+  return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: h, body: JSON.stringify({ key: k, value: v, updated_at: nowISO() }) });
+}
+var pulling = null, lastPull = 0;
+function pull(force){
+  if (pulling) return pulling;
+  if (!force && Date.now() - lastPull < 20000) return Promise.resolve();
+  pulling = (async function(){
+    try {
+      var a = await cloudRow(TK), b = await cloudRow(RK), n = 0;
+      if (a && typeof a === 'object') { n += mergeMap(T.leads, a.leads); }
+      if (b && typeof b === 'object') { n += mergeMap(RSD, b); }
+      lastPull = Date.now();
+      if (n) { lastChange++; saveLocal(); redraw(); }
+      await bringBack();
+    } catch (e) {}
+  })().then(function(){ pulling = null; }, function(){ pulling = null; });
+  return pulling;
+}
+var pushing = false, pushAgain = false;
+async function push(){
+  if (pushing) { pushAgain = true; return; }
+  pushing = true;
+  try {
+    var a = null, b = null; try { a = await cloudRow(TK); } catch (e) {} try { b = await cloudRow(RK); } catch (e) {}
+    if (a && typeof a === 'object') mergeMap(T.leads, a.leads);
+    if (b && typeof b === 'object') mergeMap(RSD, b);
+    prune(); saveLocal();
+    await postRow(TK, { v: 1, leads: T.leads, at: nowISO() });
+    await postRow(RK, RSD);                                          /* never pruned: a RoofScout lead deleted here stays deleted */
+    lastPull = Date.now();
+  } catch (e) { later(push, 5000); }
+  finally { pushing = false; if (pushAgain) { pushAgain = false; later(push, 300); } }
+}
+
+function dead(id){ try { return !!(W._gcxDead && W._gcxDead('leads', id)); } catch (e) { return false; } }
+function rsDeleted(rsId){ rsId = s(rsId); if (!rsId) return false; return isDel(RSD[rsId]) || dead(LP + rsId); }
+/* the same lead brought in again by an importer under another id (RoofScout id, CompanyCam / QuickBooks id, a
+   source message id): blocked while its delete stands */
+var FP = ['rsLeadId', 'ccamId', 'qbId', 'fromProjectId', 'inboxId', 'messageId', 'msgId', 'sourceId', 'externalId', 'gmailId'];
+var fpIndex = null, fpVer = '';
+function fps(l){ var o = []; FP.forEach(function(f){ var v = s(l && l[f]); if (v) o.push(f + ':' + v); }); return o; }
+function fpMap(){
+  var sig = Object.keys(T.leads).length + ':' + Object.keys(RSD).length + ':' + lastChange;
+  if (fpIndex && fpVer === sig) return fpIndex;
+  var m = {};
+  Object.keys(T.leads).forEach(function(id){ var e = T.leads[id]; if (!isDel(e) || !e.rec) return; fps(e.rec).forEach(function(f){ m[f] = id; }); });
+  Object.keys(RSD).forEach(function(r){ if (isDel(RSD[r])) m['rsLeadId:' + r] = RSD[r].leadId || LP + r; });
+  fpIndex = m; fpVer = sig; return m;
+}
+var lastChange = 0;
+function blocked(l){
+  if (!l || typeof l !== 'object') return false;
+  var id = s(l.id);
+  if (id && dead(id)) return true;                                   /* the CRM's delete list decides for the record itself (a Restore lifts it) */
+  if (l.rsLeadId && rsDeleted(l.rsLeadId)) return true;
+  if (id.indexOf(LP) === 0 && rsDeleted(id.slice(LP.length))) return true;
+  var m = fpMap(), f = fps(l);
+  for (var i = 0; i < f.length; i++) { var hit = m[f[i]]; if (hit && hit !== id) return true; }
+  return false;
+}
+/* the setter: a lead deleted here never goes back on the screen through it, whoever calls it */
+function guardList(arr){
+  if (!Array.isArray(arr)) return arr;
+  var any = false, out = arr.filter(function(l){ var b = blocked(l); if (b) any = true; return !b; });
+  return any ? out : arr;
+}
+function wrapSetter(){
+  var f = W._setLeads; if (typeof f !== 'function' || f.__gcLDEL) return;
+  var w = function(arg){
+    try {
+      if (Array.isArray(arg)) arguments[0] = guardList(arg);
+      else if (typeof arg === 'function' && hasDeletes()) { var fn = arg, g = function(prev){ var r = fn(prev); return Array.isArray(r) && r !== prev ? guardList(r) : r; }; try { Object.keys(fn).forEach(function(p){ g[p] = fn[p]; }); } catch (e) {} arguments[0] = g; }
+    } catch (e) {}
+    return f.apply(this, arguments);
+  };
+  w.__gcLDEL = true; try { Object.keys(f).forEach(function(p){ if (!(p in w)) w[p] = f[p]; }); } catch (e) {}
+  W._setLeads = w;
+}
+function hasDeletes(){ for (var k in T.leads) if (isDel(T.leads[k])) return true; for (var r in RSD) if (isDel(RSD[r])) return true; return false; }
+every(wrapSetter, 1500); wrapSetter();
+
+/* ── delete ─────────────────────────────────────────────────────────────── */
+async function remove(ids, opts){
+  opts = opts || {};
+  peek();
+  var me = who(), m = byId(), list = [];
+  if ((ids || []).some(function(id){ return !m[s(id)]; })) { try { var dl0 = await W.idbGet('leads'); (Array.isArray(dl0) ? dl0 : []).forEach(function(l){ if (l && l.id != null && !m[String(l.id)]) m[String(l.id)] = l; }); } catch (e) {} }
+  (ids || []).forEach(function(id){ id = s(id); var l = m[id]; if (l && can(l, me)) list.push(l); });
+  if (!list.length) return { ok: false, deleted: 0 };
+  var at = nowISO(), by = me.email || me.name, gone = {};
+  try { if (W._gcxMarkDelete) W._gcxMarkDelete(true, 'deleted ' + list.length + ' lead(s)'); } catch (e) {}
+  try { W.__GC_MANUAL_SAVE__ = true; W.__GC_EXPLICIT_DELETE__ = true; W.__GC_DELETING_AT__ = Date.now(); } catch (e) {}
+  try { if (W._gcManualNow) W._gcManualNow('delete leads'); else W.__GC_MANUAL_AT__ = Date.now(); } catch (e) {}
+  list.forEach(function(l){
+    var id = s(l.id); gone[id] = 1;
+    var rec = Object.assign({}, l, { deletedAt: at, deletedBy: by, updatedAt: at, savedAt: at });
+    T.leads[id] = mergeEntry(T.leads[id], { rec: rec, deletedAt: at, by: by });
+    var rs = s(l.rsLeadId) || (id.indexOf(LP) === 0 ? id.slice(LP.length) : '');
+    if (rs) RSD[rs] = mergeEntry(RSD[rs], { deletedAt: at, at: at, by: by, leadId: id, name: s(l.name) });   /* "deleted in the CRM" */
+    try { if (W._gcxDel) W._gcxDel('leads', id); else if (W._gcTombstone) W._gcTombstone('leads', id); } catch (e) {}
+  });
+  lastChange++; saveLocal();
+  try { W._setLeads(function(prev){ var a = Array.isArray(prev) ? prev : []; var n = a.filter(function(l){ return !(l && gone[s(l.id)]); }); LEADS = n; return n.length === a.length ? prev : n; }); } catch (e) {}
+  try { if (Array.isArray(crm().leads)) crm().leads = crm().leads.filter(function(l){ return !(l && gone[s(l.id)]); }); } catch (e) {}
+  var left = null;
+  try { var dl = await W.idbGet('leads'); if (Array.isArray(dl)) { left = dl.filter(function(l){ return !(l && gone[s(l.id)]); }); if (left.length !== dl.length) await W.idbSet('leads', left); } } catch (e) {}
+  try { if (left && W._supaUpsert) W._supaUpsert('leads', left); } catch (e) {}
+  later(function(){ try { if (W._gcLivePush) W._gcLivePush('leads'); } catch (e) {} }, 600);
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; W.__GC_EXPLICIT_DELETE__ = false; } catch (e) {} }, 2500);
+  Object.keys(gone).forEach(function(id){ delete SEL[id]; });
+  push(); redraw();
+  try { console.log('%c[GC] ' + list.length + ' lead(s) deleted for good: ' + Object.keys(gone).slice(0, 8).join(', '), 'background:#7f1d1d;color:#fff;padding:2px 6px'); } catch (e) {}
+  if (!opts.silent) toast(list.length, Object.keys(gone));
+  return { ok: true, deleted: list.length, ids: Object.keys(gone) };
+}
+
+/* ── restore (and Undo) ─────────────────────────────────────────────────── */
+async function restore(ids){
+  var me = who(), at = nowISO(), back = [];
+  (ids || []).forEach(function(id){
+    id = s(id); var e = T.leads[id];
+    if (!e || !isDel(e) || !e.rec) return;
+    if (!(me.all || (me.pm && mine(e.rec, me)))) return;
+    back.push(e);
+  });
+  if (!back.length) return { ok: false, restored: 0 };
+  /* a restore is not a delete: the "a person is deleting" window the delete opened is closed first (a list change
+     inside it is read by the older guards as more deletes) */
+  try { W.__GC_MANUAL_SAVE__ = true; W.__GC_EXPLICIT_DELETE__ = false; W.__GC_DELETING_AT__ = 0; } catch (e) {}
+  try { if (W._gcManualNow) W._gcManualNow('restore leads'); else W.__GC_MANUAL_AT__ = Date.now(); } catch (e) {}
+  var recs = [], want = {};
+  back.forEach(function(e){
+    var r = Object.assign({}, e.rec); var id = s(r.id);
+    delete r.deletedAt; delete r.deletedBy;
+    r.updatedAt = r.savedAt = at; r.restoredAt = at; r.restoredBy = me.email;
+    recs.push(r); want[id] = r;
+    e.restoredAt = at; e.back = r; e.restoredBy = me.email;
+    var rs = s(r.rsLeadId) || (id.indexOf(LP) === 0 ? id.slice(LP.length) : '');
+    if (rs && RSD[rs]) RSD[rs] = Object.assign({}, RSD[rs], { restoredAt: at });
+    try { if (W._gcClearTombstone) W._gcClearTombstone('leads', id); } catch (x) {}
+  });
+  lastChange++; saveLocal();
+  try { if (W._gcManualNow) W._gcManualNow('restore leads'); } catch (e) {}
+  /* the disk first: that write is what tells the sync this computer's person changed these leads (a list sent up
+     before it would look like an old copy putting back what the cloud no longer has, and be held back) */
+  var rids = recs.map(function(r){ return s(r.id); });
+  try { if (W._gcxRestored) W._gcxRestored('leads', rids, true); } catch (e) {}   /* a person's edit here, and not "put aside" */
+  var next = await localAdd(recs);
+  try { if (next && W._supaUpsert) W._supaUpsert('leads', next); } catch (e) {}
+  heal(recs);
+  later(function(){ try { if (W._gcLivePush) W._gcLivePush('leads'); } catch (e) {} }, 600);
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 2500);
+  push(); redraw();
+  try { console.log('[GC] ' + recs.length + ' lead(s) restored.'); } catch (e) {}
+  return { ok: true, restored: recs.length, ids: recs.map(function(r){ return r.id; }) };
+}
+async function localAdd(recs){
+  var next = null;
+  try { var dl = await W.idbGet('leads'); dl = Array.isArray(dl) ? dl : []; var hd = {}; dl.forEach(function(l){ if (l) hd[s(l.id)] = 1; }); var add = recs.filter(function(r){ return !hd[s(r.id)]; }); next = add.length ? dl.concat(add) : dl; if (add.length) await W.idbSet('leads', next); } catch (e) {}
+  try { W._setLeads(function(prev){ var a = Array.isArray(prev) ? prev : [], have = {}; a.forEach(function(l){ if (l) have[s(l.id)] = 1; }); var add = recs.filter(function(r){ return !have[s(r.id)]; }); var n = add.length ? a.concat(add) : a; LEADS = n; return n; }); } catch (e) {}
+  try { if (Array.isArray(crm().leads)) { var hv = {}; crm().leads.forEach(function(l){ if (l) hv[s(l.id)] = 1; }); crm().leads = crm().leads.concat(recs.filter(function(r){ return !hv[s(r.id)]; })); } } catch (e) {}
+  return next;
+}
+/* a Restore made on another computer: once its "brought back" note is here, the leads are taken from the cloud's list
+   (as that computer sent them) onto this one's disk and screen — the live feed had dropped them while they were
+   still marked deleted here */
+var bringing = false, seenBack = {}, retries = 0;
+async function bringBack(){
+  if (bringing) return; bringing = true;
+  try {
+    var fresh = [];
+    Object.keys(T.leads).forEach(function(id){ var e = T.leads[id]; if (e && e.restoredAt && !isDel(e) && seenBack[id] !== e.restoredAt) { seenBack[id] = e.restoredAt; fresh.push(id); } });
+    if (fresh.length) {
+      retries = 0;
+      /* learnt here first: the delete list's "brought back" notes, so this computer's sync stops treating them as deleted */
+      try { if (W._gcxRestored) W._gcxRestored('leads', fresh, false); } catch (e) {}
+      try { if (W._gcxRefreshTombs) await W._gcxRefreshTombs(); } catch (e) {}
+    }
+    peek(); var have = byId();
+    var ids = Object.keys(T.leads).filter(function(id){ var e = T.leads[id]; return e && e.restoredAt && !isDel(e) && !have[id] && Date.now() - ts(e.restoredAt) < KEEP_MS; });
+    if (!ids.length) return;
+    if (ids.some(dead) && W._gcxRefreshTombs) { try { await W._gcxRefreshTombs(); } catch (e) {} }
+    var waiting = ids.filter(dead);
+    if (waiting.length && retries++ < 40) later(bringBack, 3000);     /* the "brought back" note is not in the cloud yet: look again */
+    ids = ids.filter(function(id){ return !dead(id); }); if (!ids.length) return;
+    /* missing from the SCREEN: the copy the cloud has, else the one still on this computer's disk (a sync guard here
+       may have kept it there while it was marked deleted) */
+    var want = {}; ids.forEach(function(id){ want[id] = 1; });
+    var src = {}, cl = null, dl = null;
+    try { cl = await cloudRow('leads'); } catch (e) {}
+    (Array.isArray(cl) ? cl : []).forEach(function(l){ if (l && want[s(l.id)]) src[s(l.id)] = l; });
+    if (Object.keys(src).length < ids.length) { try { dl = await W.idbGet('leads'); } catch (e) {} (Array.isArray(dl) ? dl : []).forEach(function(l){ if (l && want[s(l.id)] && !src[s(l.id)]) src[s(l.id)] = l; }); }
+    /* else the record as the restoring computer wrote it down with its Restore */
+    ids.forEach(function(id){ var e = T.leads[id]; if (!src[id] && e && e.back) src[id] = e.back; });
+    var recs = Object.keys(src).map(function(k){ return src[k]; });
+    if (recs.length < ids.length && retries++ < 40) later(bringBack, 3000);
+    if (!recs.length) return;
+    /* the Restore is taken in here as that person's edit: this computer's next list sent up carries them too (not held
+       back as "an old copy the cloud no longer has") */
+    try { if (W._gcxRestored) W._gcxRestored('leads', recs.map(function(r){ return s(r.id); }), true); } catch (e) {}
+    await localAdd(recs); redraw();
+    try { console.log('[GC] ' + recs.length + ' lead(s) restored on another computer are back here.'); } catch (e) {}
+  } catch (e) {} finally { bringing = false; }
+}
+/* the computer that restored makes sure the cloud has them: for 3 minutes, a restored lead missing from the cloud's list
+   (another computer that had not heard of the Restore yet sent its list without it) is sent again, as this person's edit */
+var HEAL = {}, healT = null;
+function heal(recs){
+  var until = Date.now() + 180000;
+  recs.forEach(function(r){ HEAL[s(r.id)] = { rec: r, until: until }; });
+  if (!healT) healT = every(healRun, 8000);
+}
+var healing = false;
+async function healRun(){
+  if (healing) return; healing = true;
+  try {
+    var now = Date.now(), ids = Object.keys(HEAL).filter(function(id){ var h = HEAL[id]; if (h.until < now || isDel(T.leads[id]) || dead(id)) { delete HEAL[id]; return false; } return true; });
+    if (!ids.length) { clearInterval(healT); healT = null; return; }
+    var cl = await cloudRow('leads'); if (!Array.isArray(cl)) return;
+    var inCloud = {}; cl.forEach(function(l){ if (l) inCloud[s(l.id)] = 1; });
+    var miss = ids.filter(function(id){ return !inCloud[id]; });
+    if (!miss.length) return;
+    try { if (W._gcManualNow) W._gcManualNow('restore leads'); } catch (e) {}
+    try { if (W._gcxRestored) W._gcxRestored('leads', miss, true); } catch (e) {}
+    var next = await localAdd(miss.map(function(id){ return HEAL[id].rec; }));
+    try { if (next && W._supaUpsert) W._supaUpsert('leads', next); } catch (e) {}
+    later(function(){ try { if (W._gcLivePush) W._gcLivePush('leads'); } catch (e) {} }, 300);
+    try { console.log('[GC] ' + miss.length + ' restored lead(s) were missing from the cloud — sent again.'); } catch (e) {}
+  } catch (e) {} finally { healing = false; }
+}
+/* a lead deleted on another computer leaves this screen within seconds (the CRM's own screen sweep reads
+   window._crm.leads, which the Leads page does not have) */
+every(function(){
+  try {
+    if (!LEADS || !hasAny()) return;
+    if (!LEADS.some(blocked)) return;
+    W._setLeads(function(prev){ var n = guardList(prev); if (n !== prev) LEADS = n; return n; });
+    schedule();
+  } catch (e) {}
+}, 2500);
+/* ... and off this computer's disk (the CRM's own disk sweep runs once a minute, and a sync guard that counts the
+   screen's list — the Leads page has none on window._crm — refused the shorter list) */
+var diskBusy = false;
+every(async function(){
+  if (diskBusy || !hasAny() || !W.idbGet || !W.idbSet) return;
+  diskBusy = true;
+  try {
+    var dl = await W.idbGet('leads');
+    if (Array.isArray(dl)) { var f = guardList(dl); if (f !== dl) {
+      /* every record taken out carries a delete mark a person made: the floor's "a sync tried to cut the list" is told
+         so for this one write */
+      var was = W.__GC_MANUAL_SAVE__; try { W.__GC_MANUAL_SAVE__ = true; W.__GC_DELETING_AT__ = Date.now(); } catch (e) {}
+      try { await W.idbSet('leads', f); } finally { try { W.__GC_MANUAL_SAVE__ = was; } catch (e) {} }
+    } }
+  } catch (e) {}
+  diskBusy = false;
+}, 10000);
+function hasAny(){ try { return hasDeletes() || Object.keys((W._gcxDeadIds && W._gcxDeadIds('leads')) || {}).length > 0; } catch (e) { return true; } }
+function trash(){
+  var cut = Date.now() - KEEP_MS, me = who();
+  return Object.keys(T.leads).map(function(id){ return T.leads[id]; }).filter(function(e){ return isDel(e) && e.rec && ts(e.deletedAt) >= cut && (me.all || (me.pm && mine(e.rec, me))); })
+    .sort(function(a, b){ return ts(b.deletedAt) - ts(a.deletedAt); });
+}
+
+/* ── the page: rows, tick boxes, filters, the bar, the boxes ────────────── */
+var css = document.createElement('style'); css.id = 'gcx-ldel-css';
+css.textContent = ''
+  + ' .gcx-ldel-bin{opacity:0;transition:opacity .12s;border:1px solid transparent!important;border-radius:5px;width:24px;height:22px;padding:0!important;color:#94a3b8!important}'
+  + ' tr:hover .gcx-ldel-bin, .gcx-ldel-bin:focus, tr.gcx-open .gcx-ldel-bin{opacity:1}'
+  + ' .gcx-ldel-bin:hover{color:#b91c1c!important;border-color:#fecaca!important;background:#fff!important}'
+  + ' .gcx-ldel-more{display:none;border:0;background:transparent;color:#475569;font-weight:800;cursor:pointer;width:24px;height:22px;padding:0}'
+  + ' @media (hover:none){ .gcx-ldel-more{display:inline-block} tr:not(.gcx-open) .gcx-ldel-bin{display:none} }'
+  + ' tr[data-gc-hide]{display:none!important}'
+  + ' tr[data-gc-nodel] .gcx-ldel-bin, tr[data-gc-nodel] .gcx-ldel-more, tr[data-gc-nodel] .gcx-ldel-chk{visibility:hidden}'
+  + ' tr.gcx-sel{background:#fef9c3!important}'
+  + ' .gcx-ldel-chk,.gcx-ldel-all{width:16px;height:16px;cursor:pointer;vertical-align:middle;margin:0}'
+  + ' #gcx-ldel-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;font:12px Arial,sans-serif}'
+  + ' #gcx-ldel-bar button,#gcx-ldel-bar select{border:1px solid #cbd5e1;background:#fff;color:#0f2440;border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}'
+  + ' #gcx-ldel-bar button[aria-pressed=true]{background:#0f2440;color:#fff;border-color:#0f2440}'
+  + ' #gcx-ldel-bar .gcx-n{color:#475569;margin-left:4px}'
+  + ' #gcx-ldel-sel{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483000;display:none;gap:10px;align-items:center;background:#0f2440;color:#fff;border-radius:10px;padding:9px 14px;box-shadow:0 8px 26px rgba(0,0,0,.35);font:600 13px Arial,sans-serif;max-width:calc(100vw - 32px);flex-wrap:wrap}'
+  + ' #gcx-ldel-sel button{border:0;border-radius:7px;padding:7px 12px;font-weight:700;cursor:pointer;font-size:13px}'
+  + ' #gcx-ldel-toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483300;display:flex;gap:12px;align-items:center;background:#111827;color:#fff;border-radius:10px;padding:10px 14px;box-shadow:0 8px 26px rgba(0,0,0,.35);font:600 13px Arial,sans-serif;max-width:calc(100vw - 32px)}'
+  + ' #gcx-ldel-toast button{background:#facc15;color:#111827;border:0;border-radius:7px;padding:6px 12px;font-weight:800;cursor:pointer}';
+(document.head || document.documentElement).appendChild(css);
+
+var SEL = {}, F = { old: false, idle: false, lost: false, src: '' }, table = null, obs = null, pend = false, openId = '';
+try { var fs0 = jparse(sessionStorage.getItem('gcLDEL_f'), null); if (fs0) F = Object.assign(F, fs0); } catch (e) {}
+function saveF(){ try { sessionStorage.setItem('gcLDEL_f', JSON.stringify(F)); } catch (e) {} }
+function dayMs(v){ if (!v) return 0; var x = ts(/^\d{4}-\d\d-\d\d$/.test(s(v)) ? s(v) + 'T12:00:00' : v); return x; }
+function created(l){ return dayMs(l.createdAt) || dayMs(l.created) || dayMs(l.date) || 0; }
+/* activity: what people did with the lead (contact, comments, follow-ups, a stage change, an edit made by a person on
+   this computer). Not updatedAt/savedAt: the CRM's start-up sweeps re-stamp every record with "now". */
+function lastAct(l){
+  var best = created(l);
+  ['lastContact', 'lastContacted', 'lastContactAt', 'lastActivity', 'lastActivityAt', 'contactedAt', 'stageChangedAt', 'followUpDone', 'restoredAt', 'convertedAt'].forEach(function(f){ var x = dayMs(l[f]); if (x > best) best = x; });
+  ['comments', 'activity', 'activities', 'log', 'followUps', 'history', 'calls'].forEach(function(f){ var a = l[f]; if (Array.isArray(a)) a.forEach(function(c){ if (!c) return; var x = dayMs(c.date || c.at || c.when || c.createdAt || c.ts); if (x > best) best = x; }); });
+  try { var pe = W._gcxPersonEdits && W._gcxPersonEdits(); var x2 = pe && pe.leads && pe.leads[l.id]; if (x2 > best) best = x2; } catch (e) {}
+  return best;
+}
+function isLost(l){ return /\b(lost|dead|declin|cancel|closed|junk|no.?go)/i.test(s(l.stage) + ' ' + s(l.status)); }
+function srcOf(l){ var a = s(l.source || l.leadSource) || '(none)', b = s(l.subSource); return b && low(b) !== low(a) ? a + ' · ' + b : a; }
+function passes(l){
+  if (!l) return true;
+  var now = Date.now();
+  if (F.old) { var c = created(l); if (!c || now - c < 90 * 86400e3) return false; }
+  if (F.idle) { var a = lastAct(l); if (a && now - a < 60 * 86400e3) return false; }
+  if (F.lost && !isLost(l)) return false;
+  if (F.src && srcOf(l) !== F.src) return false;
+  return true;
+}
+function anyFilter(){ return F.old || F.idle || F.lost || !!F.src; }
+
+function findTable(){
+  if (view() !== 'leads') return null;
+  var t = document.querySelector('#root table[data-gc-fid="LEAD"]');
+  return t && t.isConnected ? t : null;
+}
+function rows(){ return table && table.tBodies[0] ? Array.prototype.slice.call(table.tBodies[0].rows) : []; }
+function shown(){ return rows().filter(function(tr){ return tr.getAttribute('data-gc-id') && !tr.hasAttribute('data-gc-hide') && !tr.hasAttribute('data-gc-nodel'); }); }
+function decorate(){
+  pend = false;
+  try {
+    if (!table || !table.isConnected) return;
+    var m = byId(), me = who(), nShow = 0, nAll = 0;
+    rows().forEach(function(tr){
+      var id = tr.getAttribute('data-gc-id'); if (!id) return;
+      var l = m[id]; nAll++;
+      var hide = l ? !passes(l) : false;
+      if (hide !== tr.hasAttribute('data-gc-hide')) { if (hide) tr.setAttribute('data-gc-hide', '1'); else tr.removeAttribute('data-gc-hide'); }
+      if (!hide) nShow++;
+      var no = l ? !can(l, me) : !me.all;
+      if (no !== tr.hasAttribute('data-gc-nodel')) { if (no) tr.setAttribute('data-gc-nodel', '1'); else tr.removeAttribute('data-gc-nodel'); }
+      var on = !!SEL[id] && !no && !hide;
+      var cb = tr.querySelector('.gcx-ldel-chk'); if (cb && cb.checked !== on) cb.checked = on;
+      if (tr.classList.contains('gcx-sel') !== on) tr.classList.toggle('gcx-sel', on);
+      var op = id === openId; if (tr.classList.contains('gcx-open') !== op) tr.classList.toggle('gcx-open', op);
+    });
+    /* a ticked lead that the filters now hide is not selected any more (Delete selected = what you can see ticked) */
+    Object.keys(SEL).forEach(function(id){ var tr = table.querySelector('tr[data-gc-id="' + cssq(id) + '"]'); if (!tr || tr.hasAttribute('data-gc-hide') || tr.hasAttribute('data-gc-nodel')) delete SEL[id]; });
+    var all = table.querySelector('.gcx-ldel-all'), sh = shown();
+    if (all) { var nSel = sh.filter(function(tr){ return SEL[tr.getAttribute('data-gc-id')]; }).length; all.checked = sh.length > 0 && nSel === sh.length; all.indeterminate = nSel > 0 && nSel < sh.length; }
+    bar(nShow, nAll);
+    selBar();
+  } catch (e) {}
+}
+function cssq(v){ return String(v).replace(/["\\]/g, '\\$&'); }
+function schedule(){ if (pend) return; pend = true; (W.requestAnimationFrame || function(f){ return later(f, 16); })(decorate); }
+function redraw(){ peek(); schedule(); }
+
+function bar(nShow, nAll){
+  var b = document.getElementById('gcx-ldel-bar');
+  var wrap = table && table.parentElement && table.parentElement.parentElement;   /* the bordered box around the table */
+  if (!wrap || !wrap.parentNode) return;
+  if (!b) {
+    b = document.createElement('div'); b.id = 'gcx-ldel-bar'; b.setAttribute('data-gc-keep', '1');
+    b.addEventListener('click', onBar); b.addEventListener('change', onBar);
+  }
+  if (b.nextSibling !== wrap) wrap.parentNode.insertBefore(b, wrap);
+  var srcs = {}; (LEADS || []).forEach(function(l){ if (l) srcs[srcOf(l)] = (srcs[srcOf(l)] || 0) + 1; });
+  var me = who(), nTrash = trash().length;
+  var sig = JSON.stringify([F, nShow, nAll, srcs, me.all, me.pm, nTrash]);
+  if (b.getAttribute('data-sig') === sig) return;
+  b.setAttribute('data-sig', sig);
+  var opts = '<option value="">Source: all</option>' + Object.keys(srcs).sort().map(function(k){ return '<option value="' + esc(k) + '"' + (F.src === k ? ' selected' : '') + '>' + esc(k) + ' (' + srcs[k] + ')</option>'; }).join('');
+  var del = me.all || me.pm;
+  b.innerHTML = (del ? '<button type="button" data-a="all">☑ Select all shown</button>' : '')
+    + '<button type="button" data-f="old" aria-pressed="' + F.old + '">Older than 90 days</button>'
+    + '<button type="button" data-f="idle" aria-pressed="' + F.idle + '">No activity in 60 days</button>'
+    + '<button type="button" data-f="lost" aria-pressed="' + F.lost + '">Lost / dead</button>'
+    + '<select data-f="src" aria-label="Source">' + opts + '</select>'
+    + (anyFilter() ? '<button type="button" data-a="clear">✕ Clear filters</button>' : '')
+    + '<span class="gcx-n">' + (anyFilter() ? nShow + ' of ' + nAll + ' shown' : nAll + ' leads') + '</span>'
+    + (del ? '<button type="button" data-a="trash" style="margin-left:auto">🗑 Recently deleted (' + nTrash + ')</button>' : '');
+}
+function onBar(e){
+  var t = e.target; if (!t || !t.closest) return;
+  var sel = t.closest('select[data-f]');
+  if (sel) { if (e.type === 'change') { F.src = sel.value; saveF(); schedule(); } return; }
+  if (e.type !== 'click') return;
+  var b = t.closest('button'); if (!b) return;
+  var f = b.getAttribute('data-f'), a = b.getAttribute('data-a');
+  if (f) { F[f] = !F[f]; saveF(); schedule(); return; }
+  if (a === 'clear') { F = { old: false, idle: false, lost: false, src: '' }; saveF(); schedule(); return; }
+  if (a === 'all') { selectAllShown(); return; }
+  if (a === 'trash') { openTrash(); return; }
+}
+function selectAllShown(){ shown().forEach(function(tr){ SEL[tr.getAttribute('data-gc-id')] = 1; }); schedule(); }
+function selIds(){ return Object.keys(SEL); }
+function selBar(){
+  var n = selIds().length, el = document.getElementById('gcx-ldel-sel');
+  if (!n || !table) { if (el) el.style.display = 'none'; return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'gcx-ldel-sel'; el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Selected leads');
+    el.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('button'); if (!b) return; var a = b.getAttribute('data-a'); if (a === 'del') ask(selIds()); if (a === 'cancel') { SEL = {}; schedule(); } });
+    document.body.appendChild(el);
+  }
+  var tx = n + ' selected';
+  if (el.getAttribute('data-n') !== tx) {
+    el.setAttribute('data-n', tx);
+    el.innerHTML = '<span data-n>' + tx + '</span><span style="opacity:.5">·</span><button type="button" data-a="del" style="background:#dc2626;color:#fff">🗑 Delete selected</button><span style="opacity:.5">·</span><button type="button" data-a="cancel" style="background:#334155;color:#fff">Cancel</button>';
+  }
+  el.style.display = 'flex';
+}
+
+/* the question, in its own box: how many, which, Cancel is the default */
+function ask(ids){
+  peek();
+  var m = byId(), me = who();
+  var list = (ids || []).map(function(id){ return m[s(id)]; }).filter(function(l){ return l && can(l, me); });
+  if (!list.length) return Promise.resolve(false);
+  var old = document.getElementById('gcx-delleads'); if (old) old.remove();
+  return new Promise(function(res){
+    var n = list.length, one = n === 1;
+    var names = list.slice(0, 6).map(function(l){ return '<li>' + esc(l.name || l.company || l.contact || l.id) + '<span style="color:#64748b"> ' + esc([srcOf(l), s(l.stage || l.status)].filter(Boolean).join(' · ')) + '</span></li>'; }).join('') + (n > 6 ? '<li style="color:#64748b">and ' + (n - 6) + ' more</li>' : '');
+    var rs = list.filter(function(l){ return l.rsLeadId || s(l.id).indexOf(LP) === 0; }).length;
+    var ov = document.createElement('div'); ov.id = 'gcx-delleads';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;padding:16px';
+    ov.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fff;color:#111;border-radius:12px;width:min(460px,94vw);max-height:90vh;overflow:auto;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.35)">'
+      + '<div data-q style="font-size:16px;font-weight:800;margin-bottom:6px">Delete ' + (one ? 'this lead' : n + ' leads') + '?</div>'
+      + '<ul style="margin:4px 0 10px 18px;padding:0;font-size:13px;line-height:1.5">' + names + '</ul>'
+      + '<div style="font-size:12px;color:#7f1d1d;margin-bottom:4px">' + (one ? 'It is' : 'They are') + ' removed on every computer and never come back by sync' + (rs ? ' or from RoofScout' : '') + '.</div>'
+      + '<div style="font-size:12px;color:#475569;margin-bottom:14px">You can restore ' + (one ? 'it' : 'them') + ' for 30 days from “Recently deleted”.</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
+      + '<button data-a="cancel" style="background:#0f2440;color:#fff;border:none;border-radius:7px;padding:9px 18px;font-weight:700;cursor:pointer">Cancel</button>'
+      + '<button data-a="delete" style="background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:7px;padding:9px 14px;font-weight:700;cursor:pointer">Delete ' + (one ? 'lead' : n + ' leads') + '</button></div></div>';
+    function done(v){ try { document.removeEventListener('keydown', key, true); ov.remove(); } catch (e) {} if (v) remove(list.map(function(l){ return l.id; })).then(res, function(){ res(false); }); else res(false); }
+    function key(e){ if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') { if (e.key === ' ' && document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute('data-a') === 'delete') return; e.preventDefault(); e.stopPropagation(); done(false); } }
+    ov.addEventListener('click', function(e){ var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (e.target === ov || a === 'cancel') done(false); else if (a === 'delete') done(true); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(ov);
+    try { ov.querySelector('[data-a=cancel]').focus(); } catch (e) {}
+  });
+}
+
+var toastT = null;
+function toast(n, ids){
+  var old = document.getElementById('gcx-ldel-toast'); if (old) old.remove(); if (toastT) clearInterval(toastT);
+  var el = document.createElement('div'); el.id = 'gcx-ldel-toast'; el.setAttribute('role', 'status');
+  var end = Date.now() + UNDO_MS;
+  el.innerHTML = '<span>' + (n === 1 ? '1 lead deleted' : n + ' leads deleted') + '</span><button type="button" data-a="undo">Undo <span data-s>10</span></button>';
+  el.querySelector('[data-a=undo]').onclick = function(){ el.remove(); clearInterval(toastT); toastT = null; restore(ids); };
+  document.body.appendChild(el);
+  var sel = document.getElementById('gcx-ldel-sel'); if (sel) sel.style.display = 'none';
+  toastT = RI.call(W, function(){ var left = Math.ceil((end - Date.now()) / 1000); if (left <= 0) { clearInterval(toastT); toastT = null; el.remove(); selBar(); return; } var sp = el.querySelector('[data-s]'); if (sp) sp.textContent = left; }, 250);
+}
+
+function openTrash(){
+  var old = document.getElementById('gcx-ldel-trash'); if (old) old.remove();
+  pull(true).then(draw); draw();
+  var ov;
+  function draw(){
+    var items = trash();
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'gcx-ldel-trash';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:2147483500;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;padding:16px';
+      ov.addEventListener('click', function(e){
+        var t = e.target, a = t && t.getAttribute && t.getAttribute('data-a');
+        if (t === ov || a === 'close') { ov.remove(); document.removeEventListener('keydown', key, true); return; }
+        if (a === 'one') { t.disabled = true; restore([t.getAttribute('data-id')]).then(draw); }
+        if (a === 'sel') { var ids = Array.prototype.map.call(ov.querySelectorAll('input[data-id]:checked'), function(c){ return c.getAttribute('data-id'); }); if (ids.length) restore(ids).then(draw); }
+        if (a === 'tickall') { Array.prototype.forEach.call(ov.querySelectorAll('input[data-id]'), function(c){ c.checked = true; }); }
+      });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(ov);
+    }
+    if (!ov.isConnected) return;
+    var rowsH = items.map(function(e){ var l = e.rec || {}; var d = new Date(ts(e.deletedAt));
+      return '<tr><td style="padding:5px 6px"><input type="checkbox" data-id="' + esc(l.id) + '"></td><td style="padding:5px 6px"><b>' + esc(l.name || l.company || l.id) + '</b><div style="color:#64748b;font-size:11px">' + esc([srcOf(l), s(l.stage || l.status), s(l.address)].filter(Boolean).join(' · ')) + '</div></td>'
+        + '<td style="padding:5px 6px;white-space:nowrap;font-size:11px;color:#475569">' + esc(d.toLocaleDateString()) + '<div>' + esc(e.by || '') + '</div></td>'
+        + '<td style="padding:5px 6px"><button data-a="one" data-id="' + esc(l.id) + '" style="background:#16a34a;color:#fff;border:0;border-radius:6px;padding:5px 10px;font-weight:700;cursor:pointer">Restore</button></td></tr>'; }).join('');
+    ov.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fff;color:#111;border-radius:12px;width:min(640px,96vw);max-height:90vh;overflow:auto;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.35)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-size:16px;font-weight:800">Recently deleted leads (30 days)</div><button data-a="close" style="background:#334155;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer">Close</button></div>'
+      + '<div style="font-size:12px;color:#475569;margin:4px 0 10px">Restore puts a lead back on every computer. After 30 days a deleted lead is gone for good.</div>'
+      + (items.length ? '<table style="width:100%;border-collapse:collapse;font-size:13px">' + rowsH + '</table>'
+        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button data-a="tickall" style="background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:7px 12px;cursor:pointer">Tick all</button><button data-a="sel" style="background:#16a34a;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-weight:700;cursor:pointer">Restore ticked</button></div>'
+        : '<div data-empty style="padding:14px 0;color:#64748b">Nothing deleted in the last 30 days.</div>')
+      + '</div>';
+  }
+  function key(e){ if (e.key === 'Escape') { e.preventDefault(); if (ov) ov.remove(); document.removeEventListener('keydown', key, true); } }
+}
+
+/* clicks: the row's 🗑 / ⋯ / tick box, and the header's "select all shown" */
+document.addEventListener('click', function(e){
+  var t = e.target; if (!t || !t.closest) return;
+  var bin = t.closest('.gcx-ldel-bin');
+  if (bin) { e.preventDefault(); e.stopPropagation(); var id = bin.getAttribute('data-gc-ldel'); if (id) ask([id]); return; }
+  var more = t.closest('.gcx-ldel-more');
+  if (more) { e.preventDefault(); e.stopPropagation(); var tr = more.closest('tr'), mid = tr && tr.getAttribute('data-gc-id'); openId = openId === mid ? '' : (mid || ''); schedule(); return; }
+  var cb = t.closest('.gcx-ldel-chk');
+  if (cb) { var cid = cb.getAttribute('data-id'); if (cb.checked) SEL[cid] = 1; else delete SEL[cid]; schedule(); return; }
+  var all = t.closest('.gcx-ldel-all');
+  if (all) { var sh = shown(); var on = all.checked; sh.forEach(function(r){ var i = r.getAttribute('data-gc-id'); if (on) SEL[i] = 1; else delete SEL[i]; }); schedule(); return; }
+}, true);
+
+function attach(){
+  try {
+    var t = findTable();
+    if (!t) {
+      if (table) { if (obs) obs.disconnect(); obs = null; table = null; }
+      var b = document.getElementById('gcx-ldel-bar'); if (b && (view() !== 'leads' || !document.querySelector('#root table[data-gc-fid="LEAD"]'))) b.remove();
+      var sb = document.getElementById('gcx-ldel-sel'); if (sb) sb.style.display = 'none';
+      return;
+    }
+    if (t === table) return;
+    if (obs) obs.disconnect();
+    table = t; peek();
+    obs = new MutationObserver(function(ms){ for (var i = 0; i < ms.length; i++) { var a = ms[i]; if (a.type === 'attributes' && /^data-gc-|^class$/.test(a.attributeName || '')) continue; schedule(); return; } });
+    obs.observe(t, { childList: true, subtree: true, characterData: true });
+    schedule();
+  } catch (e) {}
+}
+every(attach, 700);
+every(function(){ if (table && table.isConnected) { peek(); schedule(); } }, 4000);
+/* the shared delete record from the cloud: at start, then when it changes */
+later(function(){ pull(true); }, 5000);
+/* every 5 s a look at WHEN the two records last changed (a few bytes); the records themselves only when they did */
+var stamps = '';
+async function peekStamps(){
+  var c = creds(); if (!c.k) return;
+  try {
+    var r = await W.fetch(c.u + '/rest/v1/gc_kv?key=in.(' + TK + ',' + RK + ')&select=key,updated_at', { headers: hdr(), cache: 'no-store' });
+    if (!r.ok) return;
+    var rows = await r.json(); if (!Array.isArray(rows)) return;
+    var sg = rows.map(function(x){ return x.key + '@' + x.updated_at; }).sort().join('|');
+    if (sg !== stamps) { stamps = sg; await pull(true); }
+  } catch (e) {}
+}
+every(function(){ if (document.hidden) return; if (Date.now() - lastPull > 120000) pull(true); else peekStamps(); }, 5000);
+
+W._gcLDEL = {
+  ask: ask, remove: remove, restore: restore, trash: trash, rsDeleted: rsDeleted, blocked: blocked,
+  can: function(l, me){ return can(l, me); }, who: who, select: function(ids){ (ids || []).forEach(function(i){ SEL[s(i)] = 1; }); schedule(); }, selected: selIds,
+  selectAllShown: selectAllShown, filters: function(f){ if (f) { F = Object.assign(F, f); saveF(); schedule(); } return Object.assign({}, F); },
+  pull: function(){ return pull(true); }, push: push,
+  status: function(){ return { leadsOnScreen: (LEADS || []).length, deleted: Object.keys(T.leads).filter(function(k){ return isDel(T.leads[k]); }).length, rsDeleted: Object.keys(RSD).filter(function(k){ return isDel(RSD[k]); }).length, selected: selIds().length, filters: F, table: !!table }; }
+};
+try { console.log('[GC] Lead delete (one or many, Undo, Recently deleted): _gcLDEL.'); } catch (e) {}
 })();
 
 </script><!-- /INSP -->
