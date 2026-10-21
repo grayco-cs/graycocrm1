@@ -114271,12 +114271,30 @@ function deadJobs(){
   return d;
 }
 function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } }
+/* patch CC: the PM — the CompanyCam creator: gc_cc_creator_map, then a person with that name, ccUserId or e-mail */
+function ccPmName(p){
+  try {
+    var users = ((window._crm && window._crm.users) || []).filter(function(u){ return u && s(u.name) && u.active !== false && !u.fired && !u.deleted; });
+    var nm = function(v){ return low(v).replace(/[^a-z0-9]/g, ''); };
+    var by = function(n){ var k = nm(n); return k ? users.filter(function(u){ return nm(u.name) === k; })[0] : null; };
+    var map = jGet('gc_cc_creator_map', {}) || {}, mapped = null;
+    Object.keys(map).forEach(function(k){ if (!mapped && nm(k) && nm(k) === nm(p.creator)) mapped = s(map[k]); });
+    if (mapped) { var m = by(mapped); return m ? String(m.name) : mapped; }
+    var cid = s(p.creatorId || p.creator_id);
+    var u = (cid && users.filter(function(x){ return [x.ccUserId, x.companyCamId, x.companycamUserId].map(s).indexOf(cid) >= 0; })[0]) || by(p.creator)
+      || (s(p.creatorEmail) && users.filter(function(x){ return low(x.email) === low(p.creatorEmail); })[0]);
+    return u ? String(u.name) : '';
+  } catch (e) { return ''; }
+}
 function jobFor(p){
   var c = p.contact || {}, sec = createdSec(p), iso = new Date(sec * 1000).toISOString();
-  return { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
+  var j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
     address: p.address || '', type: 'Residential Reno', status: 'bidding', contract: 0, source: 'companycam',
     ccamId: String(p.id), ccProjectId: String(p.id), ccamUrl: p.url, companyCamUrl: p.url, ccCreator: p.creator || '',
     created: ymd(sec), createdAt: iso, keepAsJob: true, _ccAuto: true, savedAt: iso, updatedAt: iso };
+  var pm = ccPmName(p);
+  if (pm) { j.pm = pm; j.leadSource = pm; j.broughtInBy = pm; j.commissionSource = 'self'; j.pmSourced = true; }
+  return j;
 }
 async function makeJobs(items, byHand){
   try { if (window._gcxRefreshTombs) await window._gcxRefreshTombs(); } catch (e) {}

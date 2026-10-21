@@ -59,6 +59,12 @@
 [functions."bid-alerts"]
   schedule = "*/10 * * * *"
 
+# CompanyCam (patch CC, docs/COMPANYCAM.md): every 15 minutes, on the server — every CompanyCam project changed
+# since the last look; a new 2026+ one becomes a Bidding job with the PM who made it in CompanyCam. Nobody has
+# to have the CRM open. Needs COMPANYCAM_TOKEN and SUPABASE_SERVICE_KEY.
+[functions."companycam-sync"]
+  schedule = "*/15 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
