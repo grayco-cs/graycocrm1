@@ -149124,3 +149124,47 @@ console.log('[GC] Jobs stay put: a failed cloud read changes nothing, 5xx backs 
   }, 2000);
 })();
 </script>
+<script id="gc-fix-apprdedupe">
+/* GATE fix_11 — count after de-duplicating, draw the APPROVE panel after de-duplicating */
+(function(){
+  'use strict';
+  if (window.__GC_APPRDEDUPE__) return; window.__GC_APPRDEDUPE__ = true;
+  function dd(){ try { if (typeof window._gcDedupeSubApprovals === 'function') window._gcDedupeSubApprovals(); } catch (e) {} }
+  function wrap(){
+    var f = window._gcApprovalSet;
+    if (typeof f === 'function' && !f.__gcDD) {
+      var w = function(){
+        dd();
+        var r = f.apply(this, arguments);
+        try {
+          var seen = {}, g = r && r.groups && r.groups.subinv;
+          if (Array.isArray(g)) {
+            var u = g.filter(function(x){ var k = x && x.id; if (!k || k === 'sub:') return true; if (seen[k]) return false; seen[k] = 1; return true; });
+            if (u.length !== g.length) { r.total -= (g.length - u.length); r.groups.subinv = u; r.tip = String(r.tip || '').replace(/\d+ sub invoices?/, u.length + (u.length === 1 ? ' sub invoice' : ' sub invoices')); }
+          }
+        } catch (e) {}
+        return r;
+      };
+      w.__gcDD = true; window._gcApprovalSet = w;
+    }
+    var o = window._gcOpenPmApprovals;
+    if (typeof o === 'function' && !o.__gcDD) {
+      var w2 = function(){ dd(); return o.apply(this, arguments); };
+      try { Object.keys(o).forEach(function(k){ w2[k] = o[k]; }); } catch (e) {}
+      w2.__gcDD = true; window._gcOpenPmApprovals = w2;
+    }
+  }
+  /* To-Do's own counts() answer with the same live number the chip shows */
+  function wrapTD(){
+    var T = window._gcTD2; if (!T || typeof T.counts !== 'function' || T.counts.__gcDD) return;
+    var c0 = T.counts;
+    var w3 = function(){
+      var c = c0.apply(this, arguments);
+      try { if (c && typeof window._gcApprovalSet === 'function') { var set = window._gcApprovalSet(); var d = set.total - (c.appr || 0); c.appr = set.total; c.apprSet = set; if (typeof c.now === 'number') c.now += d; } } catch (e) {}
+      return c;
+    };
+    w3.__gcDD = true; T.counts = w3;
+  }
+  wrap(); wrapTD(); (window.__GC_NATIVE_SETINTERVAL__ || setInterval)(function(){ wrap(); wrapTD(); }, 1500);
+})();
+</script>
