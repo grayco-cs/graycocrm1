@@ -94,3 +94,8 @@ Sends a PM starts with a tap (Post, Email it) still go out. `PORTAL_AUTO_EMAIL=1
 - **QuickBooks is no longer synced** (NOQB): one-time import at the fresh start; Connect QuickBooks / Sync Now hidden.
 - **Help tip** no longer covers field-view buttons.
 - **Tests (sequential):** fresh-start rehearsal 30/30, edits 48/48, security 54/54, people 10/10, field view 8/8 and 18/18, playbook 77/77, sign-in 16/16, H 7/7, counts 4/4.
+
+## 33.150 v4 (2026-10-21): estimates stay put; Estimate Builder opens fast
+- **Estimates:** the count no longer jumps (42 ↔ 22). Every computer keeps the same list: no estimate is dropped by the page's grouping, the storage dedupe or the background sweep; Builder saves are stamped so the newest wins; split cloud copies are merged, not replaced; saved Builder drafts become shared estimates.
+- **Estimate Builder:** opening it no longer re-saves and redraws the 658-item rate book 658 times (13 million screen elements, 26 s frozen). It opens in about 2 s.
+- **Tests:** 3-computer estimate sync 8/8 (v3: 6/8), H 7/7, people 10/10, counts 4/4, edits 48/48, data sync 28/29 (known flaky check, not estimates).
