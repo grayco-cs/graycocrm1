@@ -362,11 +362,26 @@ function invBalance(r){
   return money(Math.max(0, amt - paid));
 }
 function invFinal(r){ return r.isFinal === true || r.final === true || /^final/i.test(s(r.drawType)) || /^final/i.test(s(r.draw)); }
+/* patch AUT3: the job's real stage (the CRM moves it: status, the progress slider, schedule milestones) and the
+   schedule-template steps the customer may see (p.schedPlan.steps with portal: true) */
+const AUT_STAGE = { signed: 4, materials: 4, in_progress: 5, inspection: 5, substantial: 6, complete: 7 };
+function portalSteps(p){
+  const pl = p && p.schedPlan; if (!pl || !Array.isArray(pl.steps)) return [];
+  const t = new Date().toISOString().slice(0, 10);
+  const l = pl.steps.filter(function(x){ return x && x.portal === true && s(x.name); }).slice(0, 40).map(function(x){ const e = ymd(x.end) || ymd(x.date); return { name: clip(x.name, 90), date: ymd(x.date), end: ymd(x.end), done: !!x.done || (!!e && e < t) }; });
+  const i = l.findIndex(function(x){ return !x.done; }); if (i >= 0) l[i].now = true;
+  return l;
+}
 function stageOf(p, ctx){
   const o = p.portalStage;
   if (o != null && o !== '' && o !== 'auto') {
     const i = typeof o === 'number' ? o : STAGES.map(low).indexOf(low(o));
     if (i >= 0 && i < STAGES.length) return i;
+  }
+  if (AUT_STAGE[s(p.jobStage)] != null && !/lost|dead|cancel|complete|closed|done|paid/.test(low(p.status))) {   /* patch AUT3 */
+    const a = AUT_STAGE[s(p.jobStage)];
+    if (a === 7) { const f = ctx.invoices.filter(invFinal); return f.length && !f.some(function(r){ return invBalance(r) > 0; }) ? 8 : 7; }
+    return Math.max(a, ctx.openPunch ? 6 : 0);
   }
   const st = low(p.status);
   const finals = ctx.invoices.filter(invFinal);
@@ -534,7 +549,7 @@ async function buildView(data, p, opts){
       address: clip(p.address || p.jobAddress || cust.address, 160),
       phone: clip(p.clientPhone || p.customerPhone || p.phone || cust.phone, 40),
       email: clip(p.clientEmail || p.customerEmail || p.email || cust.email, 120) },
-    job: { name: clip(p.name, 90), address: clip(p.address || p.jobAddress, 160), po: clip(p.autoPO || p.po, 20), stage: stage, stageName: STAGES[stage], stages: STAGES },
+    job: { name: clip(p.name, 90), address: clip(p.address || p.jobAddress, 160), po: clip(p.autoPO || p.po, 20), stage: stage, stageName: STAGES[stage], stages: STAGES, steps: portalSteps(p) },
     pm: { name: clip(pmName, 60), phone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40), email: clip(pmUser.email || '', 120) },
     money: { contract: contract, changeOrders: cos.map(function(c){ return { title: clip(c.desc || c.description || c.title || c.name || 'Change order', 120), amount: money(num(c.amt != null ? c.amt : (c.amount != null ? c.amount : c.total))), date: ymd(c.date || c.approvedDate || c.savedAt) }; }),
       invoices: invOut, payments: payments, paid: paid, due: due,

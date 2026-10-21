@@ -508,8 +508,16 @@ function tracker(){
     var cls = i < j.stage ? 'done' : (i === j.stage ? 'now' : 'todo');
     list.appendChild(h('li', { class: cls }, [h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: n + (i === j.stage ? ' — now' : '') })]));
   });
-  return h('section', { class: 'card', id: 'track' }, [
-    h('div', { class: 'row' }, [h('h2', { text: 'Where your job is' }), h('span', { class: 'pill now', text: j.stageName || '' })]), list]);
+  var kids = [h('div', { class: 'row' }, [h('h2', { text: 'Where your job is' }), h('span', { class: 'pill now', text: j.stageName || '' })]), list];
+  if (j.steps && j.steps.length) {   /* patch AUT3: the job's schedule, step by step (dates move when the schedule does) */
+    var sl = h('ol', { class: 'steps', id: 'schedSteps' });
+    j.steps.forEach(function(x){
+      var d = x.date ? new Date(x.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + (x.end && x.end !== x.date ? ' – ' + new Date(x.end + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') : '';
+      sl.appendChild(h('li', { class: x.done ? 'done' : (x.now ? 'now' : 'todo') }, [h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: x.name + (d ? ' · ' + d : '') + (x.now ? (typeof LANG !== 'undefined' && LANG === 'es' ? ' — siguiente' : ' — next') : '') })]));
+    });
+    kids.push(h('h3', { text: (typeof LANG !== 'undefined' && LANG === 'es' ? 'Su calendario' : 'Your schedule'), style: 'margin:14px 0 6px;font-size:15px' }), sl);
+  }
+  return h('section', { class: 'card', id: 'track' }, kids);
 }
 function postEl(p){
   var kids = [h('div', { class: 'row' }, [h('b', { style: 'font-size:13px', text: (p.by ? p.by + ' · ' : '') + tr('yourTeam') }), h('span', { class: 'muted', text: when(p.at) })])];

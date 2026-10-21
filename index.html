@@ -132751,7 +132751,23 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function nowIso(){ return new Date().toISOString(); }
 function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function crm(){ return W._crm || {}; }
-function projects(){ return arr(crm().projects); }
+/* the jobs as they are NOW: _crm.projects follows the CRM's state a few seconds late, so the FIELDS this page just
+   saved (RECENT: {rec, keys, at}) are laid over it — at most 2 minutes, and only until the CRM's copy shows them.
+   Everything else on the job (anyone's other edits) is the CRM's copy. */
+function sameV(a, b){ return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); }
+function overlay(p){
+  var R = p && RECENT[p.id]; if (!R) return p;
+  if (Date.now() - R.at > 120e3) { delete RECENT[p.id]; return p; }
+  /* a field is laid over only while the CRM's copy still shows what it was BEFORE this page saved it (it has not
+     caught up); once it shows this page's value — or anyone's newer value — the CRM's copy is the truth */
+  var live = R.keys.filter(function(k){ return sameV(p[k], R.prev[k]) && !sameV(p[k], R.rec[k]); });
+  if (!live.length) { delete RECENT[p.id]; return p; }
+  var o = Object.assign({}, p); live.forEach(function(k){ o[k] = R.rec[k]; }); return o;
+}
+function projects(){
+  var l = arr(crm().projects); if (!Object.keys(RECENT).length) return l;
+  return l.map(overlay);
+}
 function typing(){ return !!W.__GC_IS_TYPING__; }
 function normName(v){ return low(v).replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|the)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
 function digits(v){ return s(v).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); }
@@ -132759,28 +132775,33 @@ function me(){ try { var u = W.meUser && W.meUser(); if (u && u.name) return u.n
 var LOG = [];
 function log(what, o){ LOG.push(Object.assign({ at: nowIso(), what: what }, o || {})); if (LOG.length > 200) LOG.shift(); }
 
-/* ── jobs: read and save (the same safe save patch Q uses: device store, screen, cloud, newest wins) ── */
 var RECENT = {};
+/* ── jobs: read and save ── */
 function proj(pid){
   if (pid && typeof pid === 'object') pid = pid.id;
   var p = projects().filter(function(x){ return x && String(x.id) === String(pid); })[0] || null;
-  var r = RECENT[pid]; if (r && (!p || s(r.updatedAt) > s(p.updatedAt))) return r;
+  var R = RECENT[pid]; if (!p && R && Date.now() - R.at < 120e3) return R.rec;   /* a job the CRM's copy does not show yet */
   return p;
 }
 var saving = Promise.resolve();
 function saveProject(pid, change){ saving = saving.then(function(){ return doSave(pid, change); }, function(){ return doSave(pid, change); }); return saving; }
+/* ONE writer: the CRM's own synced setter (window._setProjects — the CRM saves its state to this device and the cloud
+   with real save stamps, SYNC-A). Writing the device store / cloud from here as well raced the CRM's own save and
+   its cloud echo (lost updates seen in testing). _crm.projects follows the setter a few seconds late, so the newest
+   copy of each job this page wrote is kept in RECENT and read first (proj()). */
 async function doSave(pid, change){
-  var now = nowIso(), changed = false;
-  function put(p){ var q = Object.assign({}, p); if (change(q) === false) return p; changed = true; q.updatedAt = now; q.savedAt = now; return q; }
-  var all = null; try { all = W._gcProjectsRaw ? await W._gcProjectsRaw() : await W.idbGet('projects'); } catch (e) {}
-  var hit = false, next = null, saved = null;
-  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; var scr = projects().filter(function(x){ return x && String(x.id) === String(pid); })[0];
-    var base = scr && s(scr.updatedAt) >= s(p.updatedAt) ? scr : p; if (RECENT[pid] && s(RECENT[pid].updatedAt) > s(base.updatedAt)) base = RECENT[pid]; var q = put(base); if (q !== base) saved = q; return q; } return p; });
-  if (hit && saved) { try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('automations'); } catch (e) {} try { await W.idbSet('projects', next); } catch (e) {} }
-  /* the screen copy gets the change applied to ITSELF (never the stored copy laid over newer screen data) */
-  try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (q !== p) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
-  if (!saved && !hit) { var cur0 = proj(pid); if (cur0) { var q0 = put(cur0); if (q0 !== cur0) saved = q0; } }   /* a job not in the device store yet: the screen copy updates later */
-  if (saved) { RECENT[pid] = saved; if (hit) { try { if (W._supaUpsert) ST(function(){ try { W._supaUpsert('projects', next); } catch (e) {} }, 300); } catch (e) {} } }   /* not in the store yet: the CRM saves its screen copy itself */
+  var now = nowIso(), saved = null;
+  function put(p){ var q = Object.assign({}, p); if (change(q) === false) return p; q.updatedAt = now; q.savedAt = now; return q; }
+  var cur = proj(pid);
+  if (cur) { var q0 = put(cur); if (q0 !== cur) saved = q0; }
+  if (!saved) return null;
+  var keys = Object.keys(saved).filter(function(k){ return !sameV(saved[k], cur[k]); });
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('automations'); } catch (e) {}
+  try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && String(p.id) === String(pid) ? put(p) : p; }) : prev; }); } catch (e) {}
+  var R0 = RECENT[pid], all = keys.slice(), prev = {};
+  keys.forEach(function(k){ prev[k] = cur[k]; });
+  if (R0 && Date.now() - R0.at < 120e3) R0.keys.forEach(function(k){ if (all.indexOf(k) < 0) { all.push(k); prev[k] = R0.prev[k]; } else if (k in R0.prev) prev[k] = R0.prev[k]; });
+  RECENT[pid] = { rec: saved, keys: all, prev: prev, at: Date.now() };
   ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
   return saved;
 }
@@ -132791,27 +132812,35 @@ function jobNote(q, text){ var l = arr(q.autoLog).slice(-49); l.push({ at: nowIs
 var CUST = [];   /* the customer list lives in the device store until the Customers tab is opened */
 /* read the CRM's own customer list through its setter (an identity update: nothing re-renders); the device store
    only when the CRM has not loaded it */
+/* newest copy of each customer wins (this page's own saves are newer than the CRM's lagging copies) */
+function mergeCust(fresh){
+  if (!Array.isArray(fresh)) return CUST;
+  var mine = {}; CUST.forEach(function(c){ if (c && c.id) mine[c.id] = c; });
+  return fresh.map(function(c){ var m = c && mine[c.id]; return m && s(m.updatedAt) > s(c.updatedAt) ? m : c; });
+}
 function loadCustomers(){
   return new Promise(function(res){
     var got = false;
-    try { if (typeof W._setCustomers === 'function') W._setCustomers(function(prev){ if (Array.isArray(prev) && prev.length) { CUST = prev; got = true; } return prev; }); } catch (e) {}
+    try { if (typeof W._setCustomers === 'function') W._setCustomers(function(prev){ if (Array.isArray(prev) && prev.length) { CUST = mergeCust(prev); got = true; } return prev; }); } catch (e) {}
     ST(function(){
       if (got) return res(CUST);
-      try { if (W.idbGet) return Promise.resolve(W.idbGet('customers')).then(function(v){ if (Array.isArray(v) && !got) CUST = v; res(CUST); }, function(){ res(CUST); }); } catch (e) {}
+      try { if (W.idbGet) return Promise.resolve(W.idbGet('customers')).then(function(v){ if (Array.isArray(v) && v.length && !got) CUST = mergeCust(v); res(CUST); }, function(){ res(CUST); }); } catch (e) {}
       res(CUST);
     }, 60);
   });
 }
-function customers(){ var c = W._graycoCustomers; if (!Array.isArray(c) || !c.length) c = crm().customers; if (!Array.isArray(c) || !c.length) c = CUST; return arr(c); }
+function customers(){
+  var c = W._graycoCustomers; if (!Array.isArray(c) || !c.length) c = crm().customers; if (!Array.isArray(c) || !c.length) return arr(CUST);
+  return mergeCust(c);   /* this page's newer saves win over a copy the CRM has not refreshed yet */
+}
 function saveCustomer(id, change){
   var now = nowIso(), out = null;
   var put = function(c){ var q = Object.assign({}, c); if (change(q) === false) return c; q.updatedAt = now; q.savedAt = now; out = q; return q; };
   var list = customers().map(function(c){ return c && String(c.id) === String(id) ? put(c) : c; });
   if (!out) return null;
-  try { if (W._setCustomers) W._setCustomers(function(prev){ return Array.isArray(prev) ? prev.map(function(c){ return c && String(c.id) === String(id) ? Object.assign({}, c, out) : c; }) : list; }); } catch (e) {}
   CUST = list;
-  try { if (W.idbSet) W.idbSet('customers', list); } catch (e) {}
-  try { if (W._supaUpsert) ST(function(){ W._supaUpsert('customers', list); }, 300); } catch (e) {}
+  if (typeof W._setCustomers === 'function') { try { W._setCustomers(function(prev){ return Array.isArray(prev) && prev.length ? prev.map(function(c){ return c && String(c.id) === String(id) ? Object.assign({}, c, out) : c; }) : list; }); } catch (e) {} }   /* the CRM saves its own state */
+  else { try { if (W.idbSet) W.idbSet('customers', list); } catch (e) {} try { if (W._supaUpsert) ST(function(){ W._supaUpsert('customers', list); }, 300); } catch (e) {} }
   return out;
 }
 function customerFor(p){
@@ -132826,9 +132855,12 @@ function customerFor(p){
 
 /* ── the job's own switches (patch JA): on unless turned off ── */
 function jobAuto(p, key){
-  try { if (typeof W._gcJobAuto === 'function') return W._gcJobAuto(p, key) !== false; } catch (e) {}
-  try { if (W._gcJA && typeof W._gcJA.allows === 'function') return W._gcJA.allows(p, key) !== false; } catch (e) {}
-  try { var a = p && (typeof p === 'object' ? p : proj(p)); if (a && a.auto && a.auto[key] === false) return false; } catch (e) {}
+  /* patch JA's own options go through JA (its defaults by job type, its locks); any other switch: the job's p.auto */
+  var ja = W._gcJA, jaKey = !ja || !Array.isArray(ja.KEYS) || ja.KEYS.indexOf(key) >= 0;
+  try { if (jaKey && typeof W._gcJobAuto === 'function') return W._gcJobAuto(p, key) !== false; } catch (e) {}
+  try { if (jaKey && ja && typeof ja.allows === 'function') return ja.allows(p, key) !== false; } catch (e) {}
+  /* switches JA does not own live in p.autoX (JA rewrites p.auto with its own keys); p.auto is honoured too */
+  try { var a = p && (typeof p === 'object' ? p : proj(p)); if (a && ((a.autoX && a.autoX[key] === false) || (a.auto && a.auto[key] === false))) return false; } catch (e) {}
   return true;
 }
 
@@ -132875,13 +132907,19 @@ function tick(force){
   var old = jget(SEEN, null), cur = snap();
   jset(SEEN, cur);
   if (!old || old.v !== 1) { log('bus seeded', { jobs: Object.keys(cur.p).length }); return; }
-  var ev = [];
+  var ev = [], byId = {};
+  projects().forEach(function(p){ if (p && p.id) byId[p.id] = p; });
   Object.keys(cur.p).forEach(function(pid){
     var a = old.p[pid], b = cur.p[pid];
     if (!a) {
       ev.push(['gc:job-created', { pid: pid }]);
-      if (ACTIVE.test(b.st)) ev.push(['gc:job-activated', { pid: pid, via: 'new job' }]);
-      if (DONE.test(b.st)) ev.push(['gc:job-complete', { pid: pid }]);
+      /* a job seen for the first time is only "activated" / "complete" when it was MADE in the last 3 days — the
+         first look can come before the cloud has loaded every job, and older jobs arriving then are not new */
+      var pj = byId[pid], made = pj ? Date.parse(s(pj.createdAt) || s(pj.created)) : NaN;
+      if (isFinite(made) && Date.now() - made < 3 * 864e5) {
+        if (ACTIVE.test(b.st)) ev.push(['gc:job-activated', { pid: pid, via: 'new job' }]);
+        if (DONE.test(b.st)) ev.push(['gc:job-complete', { pid: pid }]);
+      }
       return;
     }
     if (a.st !== b.st) {
@@ -141936,4 +141974,1161 @@ ST(pullAdmin, 4000); SI(function(){ if (!D.hidden) pullAdmin(); }, 5 * 60e3);
 W.addEventListener('focus', function(){ pullAdmin(); });
 try { console.log('[GC] patch JA: automations per job — _gcJA.state(), _gcJobAutoDefaults.open()'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-aut3">
+/* __GC_PATCH_AUT3__ ══════════════════════════════════════════════════════════
+   GrayCo — AUTOMATIONS, PHASE 3 (patch AUT3): the job moves itself along.
+
+   Owner: "dragging job progression is really important for all steps to be auto for the PM; show job progression in
+   the customer portal also."
+
+   1. SCHEDULE TEMPLATES per job type — window._gcSchedTemplates (gc_kv "schedTemplates", merged safely: per template,
+      the newest save wins; nothing is ever dropped). ⚙ Admin → "🗓 Schedule templates" edits them. Each task: name,
+      day offset, days, who (crew / PM / office / super / mitigation tech / sub trade / carrier), what it waits on,
+      shown in the customer portal or internal, the stage it starts, the progress % when it is done, "tell the
+      customer" (appointment confirmation), SLA hours (program / TPA jobs: first contact 1 h, on site 4 h, estimate
+      48 h — patch BB's milestones). A signed job gets a draft schedule from its type's template; the PM only moves
+      dates — moving a task moves every task that waits on it.
+   2. STAGES: lead → signed → materials ordered / scheduled → in progress → inspection → substantially complete →
+      complete. The stage follows the job's status, its progress % (the slider), and the schedule milestones (a task's
+      start date reached / its end passed). Each stage, once, live (never for old jobs on the first look):
+        signed        → kickoff pack: default draw schedule, deposit invoice DRAFT (approval), welcome e-mail with the
+                        portal link (approval), contract draft (PM + admin approve the e-mail; the contract appears in
+                        the portal when it is sent), insurance work authorization, permit & inspection checklist,
+                        the draft schedule;
+        materials     → "what happens next" e-mail (approval);
+        in progress   → the weekly progress updates switch on for the job;
+        inspection    → the permit checklist is checked; undated inspections become to-dos;
+        substantially complete → the punch list is started (template items + final walkthrough);
+        complete      → final invoice DRAFT (approval), Certificate of Completion → job + portal; on the final
+                        payment the Warranty certificate → job + portal; the thank-you + review request (the
+                        completion chain, approval); the one-year checkup is booked (queued for approval when due).
+      Every step asks the job's switch (window._gcJobAuto / patch JA) and every customer message waits for approval.
+   3. DRAW INVOICES WHEN MILESTONES HIT: when the progress % reaches a draw milestone by ANY path (slider, schedule
+      milestone, status), the draw invoice is drafted (the same consolidated rule as the slider: billing up to the
+      milestone minus what is billed) and goes to the invoice approvals — never twice (dollar check + fixed id).
+   4. PERMITS & INSPECTIONS per job (audit #9): permit rows on the job (p.permits, status Needed) and inspections in the
+      CRM's inspections list (gc_job_inspections), from a table by job kind, with the permit office for the job's
+      jurisdiction (patch AUT1). A dated inspection becomes a schedule item. window._gcPermits(pid) → the checklist
+      (the superintendent profile reads it).
+   5. CLOSEOUT PAPERS filled in (not blank forms): Certificate of Completion, Warranty (5 years roof / insurance,
+      1 year workmanship — the portal's rule), Contract, Work Authorization; window._gcHeadlessDoc(job, kind).
+   Console: _gcAut3.state(pid), _gcSchedTemplates.list(), _gcPermits(pid)
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUT3__) return; window.__GC_PATCH_AUT3__ = true;
+var W = window, D = document, A = W._gcAut;
+if (!A || !A.queue) { try { console.warn('[GC] patch AUT3 needs AUT1 + AUT2'); } catch (e) {} return; }
+var U = A.util, s = U.s, low = U.low, arr = U.arr, num = U.num, esc = U.esc, ST = U.ST, SI = U.SI, jget = U.jget, jset = U.jset, nowIso = U.nowIso;
+function crm(){ return W._crm || {}; }
+function ymd(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function today(){ return ymd(new Date()); }
+function addDays(iso, n){ var d = new Date(s(iso).slice(0, 10) + 'T12:00:00'); if (isNaN(d)) d = new Date(); d.setDate(d.getDate() + n); return ymd(d); }
+function dayDiff(a, b){ return Math.round((new Date(s(b).slice(0, 10) + 'T12:00:00') - new Date(s(a).slice(0, 10) + 'T12:00:00')) / 864e5); }
+function slug(t){ return low(t).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30); }
+
+/* ═══ 1. SCHEDULE TEMPLATES ══════════════════════════════════════════════════
+   task: [name, day, days, who, opts] — opts: { id, dep:[ids]|'prev'(default)|[], portal (default true), stage, pct,
+   notify, internal, sla:{key, hours}, optional } */
+var SEED = {
+  res_roof: { name: 'Residential roof replacement', draws: '0/100', match: 'roof', punch: ['Magnet sweep: yard, driveway, beds', 'Flashing, vents and pipe boots checked', 'Gutters and downspouts clear', 'Final photos (all slopes)'], tasks: [
+    ['Order materials', 0, 1, 'office', { stage: 'materials' }],
+    ['Material delivery', 2, 2, 'supplier', { notify: true }],
+    ['Roof install — tear-off, dry-in, shingles, flashing, vents (1 day)', 3, 1, 'sub:Roofing', { id: 'install', stage: 'in_progress', pct: 80, notify: true }],
+    ['Gutters (if any) — install day or the next', 3, 2, 'sub:Gutters', { dep: ['install'], optional: true }],
+    ['Cleanup + magnet sweep (same evening or next morning)', 3, 2, 'crew', { id: 'cleanup', dep: ['install'], pct: 90 }],
+    ['Final pictures + punch list (with the cleanup)', 4, 1, 'PM', { dep: ['cleanup'], stage: 'substantial', pct: 95 }],
+    ['Final walkthrough + final invoice', 5, 1, 'PM', { stage: 'substantial', notify: true }]
+  ] },
+  ins_roof: { name: 'Insurance roof', draws: '', match: 'insurance roof', punch: ['Magnet sweep: yard, driveway, beds', 'Flashing, vents and pipe boots checked', 'Final photos for the carrier (all slopes, before / after)'], tasks: [
+    ['Roof inspection + photos', 0, 1, 'PM', { notify: true }],
+    ['Claim filed', 1, 1, 'office', { internal: true }],
+    ['Adjuster meeting', 7, 1, 'PM', { internal: true }],
+    ['Carrier approval / supplement', 8, 7, 'office', { internal: true }],
+    ['Order materials', 15, 1, 'office', { stage: 'materials' }],
+    ['Material delivery', 17, 1, 'supplier', { notify: true }],
+    ['Roof install — tear-off, dry-in, shingles, flashing, vents (1 day)', 18, 1, 'sub:Roofing', { id: 'install', stage: 'in_progress', pct: 80, notify: true }],
+    ['Cleanup + magnet sweep (same evening or next morning)', 18, 2, 'crew', { id: 'cleanup', dep: ['install'], pct: 90 }],
+    ['Final pictures + punch list', 19, 1, 'PM', { dep: ['cleanup'], stage: 'substantial', pct: 95 }],
+    ['Final walkthrough + final invoice', 20, 1, 'PM', { notify: true }],
+    ['Depreciation release', 21, 7, 'office', { internal: true }],
+    ['Closeout', 28, 1, 'office', {}]
+  ] },
+  water_mit_rebuild: { name: 'Water mitigation + rebuild', draws: '', match: 'water', punch: ['Moisture readings at dry standard', 'Paint touch-ups', 'Flooring transitions', 'Final clean'], tasks: [
+    ['Emergency extraction', 0, 1, 'mit tech', { stage: 'in_progress', sla: { key: 'onsite', hours: 4 } }],
+    ['Set drying equipment', 0, 1, 'mit tech', {}],
+    ['Daily moisture readings', 1, 4, 'mit tech', {}],
+    ['Dry standard met', 5, 1, 'mit tech', { pct: 25 }],
+    ['Demo', 5, 2, 'crew', {}],
+    ['Rebuild scope approval', 7, 3, 'office', { internal: true }],
+    ['Drywall, paint, flooring', 10, 10, 'crew', { pct: 85 }],
+    ['Final clean', 20, 1, 'crew', { stage: 'substantial', pct: 95 }],
+    ['Certificate of Completion', 21, 1, 'PM', {}]
+  ] },
+  kitchen_bath: { name: 'Kitchen / bath renovation', draws: '30/40/30', match: 'kitchen bath reno', punch: ['Caulk and grout lines', 'Cabinet doors and drawers adjusted', 'Fixtures tested (no leaks)', 'Paint touch-ups', 'Final clean'], tasks: [
+    ['Design + selections', 0, 5, 'PM', { notify: true }],
+    ['Permits', 3, 7, 'office', { dep: [] }],
+    ['Demo', 10, 2, 'crew', { stage: 'in_progress', pct: 10, notify: true }],
+    ['Rough plumbing / electrical', 12, 3, 'sub:Plumbing / Electrical', { pct: 30 }],
+    ['Rough inspection', 15, 1, 'inspector', { stage: 'inspection' }],
+    ['Drywall', 16, 3, 'crew', { pct: 45 }],
+    ['Cabinets / tile', 19, 5, 'crew', { pct: 70 }],
+    ['Finish plumbing / electrical', 24, 2, 'sub:Plumbing / Electrical', { pct: 85 }],
+    ['Final inspection', 26, 1, 'inspector', { stage: 'inspection' }],
+    ['Punch list', 27, 1, 'PM', { stage: 'substantial', pct: 95 }],
+    ['Final walkthrough', 28, 1, 'PM', { notify: true }]
+  ] },
+  small_com: { name: 'Small commercial / TI', draws: '', match: 'commercial ti', punch: ['Ceiling tiles / grid', 'Paint touch-ups', 'Doors and hardware', 'Life-safety devices', 'Final clean'], tasks: [
+    ['Submittals', 0, 5, 'PM', {}],
+    ['Permit', 3, 10, 'office', { dep: [] }],
+    ['Demo', 14, 3, 'crew', { stage: 'in_progress', pct: 10 }],
+    ['Framing', 17, 5, 'sub:Framing', { pct: 25 }],
+    ['MEP rough', 22, 5, 'sub:MEP', { pct: 40 }],
+    ['Rough inspections', 27, 1, 'inspector', { stage: 'inspection' }],
+    ['Drywall', 28, 5, 'sub:Drywall', { pct: 60 }],
+    ['Finishes', 33, 7, 'crew', { pct: 85 }],
+    ['Final inspection / CO', 40, 1, 'inspector', { stage: 'inspection' }],
+    ['Punch list', 41, 3, 'PM', { stage: 'substantial', pct: 95 }],
+    ['Closeout documents', 44, 1, 'office', {}]
+  ] },
+  large_com: { name: 'Large commercial', draws: '', match: 'commercial large new construction', punch: ['Ceiling tiles / grid', 'Paint touch-ups', 'Doors and hardware', 'Life-safety devices', 'O&M manuals and attic stock', 'Final clean'], tasks: [
+    ['Pre-construction meeting', 0, 1, 'PM', { notify: true }],
+    ['Submittals', 1, 10, 'PM', {}],
+    ['Long-lead procurement', 1, 30, 'office', { dep: [], stage: 'materials' }],
+    ['Permit', 3, 15, 'office', { dep: [] }],
+    ['Weekly OAC meetings', 7, 90, 'PM', { dep: [], recurring: 7 }],
+    ['Pay applications (monthly)', 30, 90, 'office', { dep: [], recurring: 30, internal: true }],
+    ['Demo', 20, 5, 'crew', { stage: 'in_progress', pct: 5 }],
+    ['Framing', 25, 10, 'sub:Framing', { pct: 20 }],
+    ['MEP rough', 35, 10, 'sub:MEP', { pct: 35 }],
+    ['Rough inspections', 45, 2, 'inspector', { stage: 'inspection' }],
+    ['Drywall', 47, 10, 'sub:Drywall', { pct: 55 }],
+    ['Finishes', 57, 15, 'crew', { pct: 85 }],
+    ['Final inspection / CO', 72, 1, 'inspector', { stage: 'inspection' }],
+    ['Punch list', 73, 5, 'PM', { stage: 'substantial', pct: 95 }],
+    ['Closeout documents', 78, 2, 'office', {}],
+    ['Retainage release', 108, 1, 'office', { internal: true }]
+  ] },
+  large_loss_water: { name: 'Large loss — water damage', draws: '', match: 'large loss water', punch: ['Moisture readings at dry standard', 'Trim and paint touch-ups', 'Cabinet doors adjusted', 'Final clean'], tasks: [
+    ['FNOL / first contact', 0, 1, 'office', { sla: { key: 'contact', hours: 1 } }],
+    ['Emergency response on site (within 4 hours)', 0, 1, 'mit tech', { stage: 'in_progress', sla: { key: 'onsite', hours: 4 }, notify: true }],
+    ['Extraction', 0, 1, 'mit tech', {}],
+    ['Containment', 0, 1, 'mit tech', {}],
+    ['Moisture map', 0, 1, 'mit tech', {}],
+    ['Equipment set (dehus, air movers, scrubbers)', 0, 1, 'mit tech', {}],
+    ['Daily monitoring / readings', 1, 5, 'mit tech', {}],
+    ['Adjuster site meeting', 2, 1, 'PM', { internal: true, dep: [] }],
+    ['Mitigation estimate submitted', 3, 1, 'office', { internal: true, sla: { key: 'estimate', hours: 48 } }],
+    ['Dry standard met', 6, 1, 'mit tech', { pct: 15 }],
+    ['Equipment pulled', 6, 1, 'mit tech', {}],
+    ['Demo / tear-out', 7, 2, 'crew', { pct: 20 }],
+    ['Mitigation invoice', 8, 1, 'office', { internal: true }],
+    ['Rebuild scope + estimate (Xactimate)', 9, 3, 'PM', { internal: true }],
+    ['Carrier approval / supplement', 12, 7, 'office', { internal: true }],
+    ['Selections', 14, 5, 'PM', { dep: [], notify: true }],
+    ['Permits', 16, 7, 'office', { dep: [] }],
+    ['Rebuild: framing / insulation / drywall / paint / flooring / cabinets / trim', 23, 20, 'crew', { pct: 85 }],
+    ['Final inspection', 43, 1, 'inspector', { stage: 'inspection' }],
+    ['Punch list', 44, 1, 'PM', { stage: 'substantial', pct: 95 }],
+    ['Certificate of Completion', 45, 1, 'PM', {}],
+    ['Final invoice', 45, 1, 'office', { internal: true }],
+    ['Depreciation release', 52, 7, 'office', { internal: true }]
+  ] },
+  large_loss_fire: { name: 'Large loss — fire damage', draws: '', match: 'fire', punch: ['Odor check (every room)', 'Paint touch-ups', 'Electrical devices tested', 'Contents back in place', 'Final clean'], tasks: [
+    ['FNOL / first contact', 0, 1, 'office', { sla: { key: 'contact', hours: 1 } }],
+    ['Board-up / tarp / secure', 0, 1, 'crew', { stage: 'in_progress', sla: { key: 'onsite', hours: 4 }, notify: true }],
+    ['Fire department report obtained', 1, 2, 'office', { internal: true, dep: [] }],
+    ['Contents pack-out + inventory', 1, 3, 'crew', { notify: true }],
+    ['Soot / smoke cleaning', 3, 5, 'crew', {}],
+    ['Odor control (ozone / hydroxyl)', 5, 3, 'crew', {}],
+    ['Structural assessment / engineer (if needed)', 4, 2, 'PM', { optional: true, dep: [] }],
+    ['Adjuster meeting', 3, 1, 'PM', { internal: true, dep: [] }],
+    ['Demo', 8, 3, 'crew', { pct: 15 }],
+    ['Scope + Xactimate estimate', 10, 3, 'PM', { internal: true }],
+    ['Carrier approval / supplements', 12, 10, 'office', { internal: true }],
+    ['Permits', 20, 7, 'office', {}],
+    ['Rebuild rough: framing / electrical / plumbing / HVAC', 27, 10, 'sub:Framing / MEP', { pct: 40 }],
+    ['Rough inspections', 37, 1, 'inspector', { stage: 'inspection' }],
+    ['Insulation', 38, 2, 'crew', {}],
+    ['Drywall', 40, 5, 'sub:Drywall', { pct: 60 }],
+    ['Finishes', 45, 10, 'crew', { pct: 85 }],
+    ['Contents pack-back', 55, 1, 'crew', { notify: true }],
+    ['Final inspection', 56, 1, 'inspector', { stage: 'inspection' }],
+    ['Punch list', 57, 1, 'PM', { stage: 'substantial', pct: 95 }],
+    ['Certificate of Completion', 58, 1, 'PM', {}],
+    ['Final invoice', 58, 1, 'office', { internal: true }],
+    ['Depreciation', 65, 7, 'office', { internal: true }]
+  ] },
+  ins_rebuild: { name: 'Insurance claim — rebuild only', draws: '', match: 'insurance rebuild', punch: ['Paint touch-ups', 'Trim and doors', 'Final clean'], tasks: [
+    ['Mitigation company’s dry certificate / moisture logs received', 0, 1, 'office', { internal: true }],
+    ['Inspection + photos', 1, 1, 'PM', { notify: true }],
+    ['Rebuild estimate (Xactimate) submitted', 3, 1, 'PM', { internal: true }],
+    ['Adjuster review / approval / supplement', 5, 7, 'office', { internal: true }],
+    ['Work authorization + deductible collected', 12, 1, 'PM', { notify: true }],
+    ['Selections', 13, 5, 'PM', { notify: true }],
+    ['Permits', 15, 7, 'office', { dep: [] }],
+    ['Rebuild trades in sequence', 22, 20, 'crew', { stage: 'in_progress', pct: 85 }],
+    ['Inspections', 42, 1, 'inspector', { stage: 'inspection' }],
+    ['Punch list', 43, 1, 'PM', { stage: 'substantial', pct: 95 }],
+    ['Certificate of Completion', 44, 1, 'PM', {}],
+    ['Final invoice', 44, 1, 'office', { internal: true }],
+    ['Depreciation release', 50, 7, 'office', { internal: true }]
+  ] },
+  water_mit_only: { name: 'Insurance claim — water mitigation only', draws: '', match: 'mitigation program', punch: ['Moisture readings at dry standard', 'Equipment out, area clean'], tasks: [
+    ['FNOL / first contact', 0, 1, 'office', { sla: { key: 'contact', hours: 1 } }],
+    ['Emergency response', 0, 1, 'mit tech', { stage: 'in_progress', sla: { key: 'onsite', hours: 4 }, notify: true }],
+    ['Work authorization signed', 0, 1, 'mit tech', {}],
+    ['Extraction', 0, 1, 'mit tech', {}],
+    ['Moisture map', 0, 1, 'mit tech', {}],
+    ['Equipment set', 0, 1, 'mit tech', {}],
+    ['Daily readings', 1, 4, 'mit tech', { pct: 50 }],
+    ['Dry standard met', 5, 1, 'mit tech', { stage: 'substantial', pct: 90 }],
+    ['Equipment pulled', 5, 1, 'mit tech', {}],
+    ['Mitigation estimate / invoice to carrier (Xactimate)', 6, 1, 'office', { internal: true, sla: { key: 'estimate', hours: 48 } }],
+    ['Drying certificate', 6, 1, 'PM', {}],
+    ['Hand-off to the rebuild contractor or a GrayCo rebuild lead', 7, 1, 'PM', {}],
+    ['Payment / collection', 30, 1, 'office', { internal: true }]
+  ] }
+};
+/* a paper made by the automations: never an unhandled error (e.g. the PDF library cannot load offline) */
+function hdoc(job, kind, opts){ try { return Promise.resolve(A.headlessDoc(job, kind, opts)).catch(function(e){ try { console.warn('[GC] automations: could not make ' + kind, e && e.type || e); } catch (_) {} return null; }); } catch (e) { return Promise.resolve(null); } }
+var STAGE_KEYS = ['lead', 'signed', 'materials', 'in_progress', 'inspection', 'substantial', 'complete'];
+var STAGE_NAME = { lead: 'Lead', signed: 'Signed', materials: 'Materials ordered / scheduled', in_progress: 'In progress', inspection: 'Inspection', substantial: 'Substantially complete', complete: 'Complete' };
+function rank(k){ var i = STAGE_KEYS.indexOf(k); return i < 0 ? 0 : i; }
+function expandTpl(id, t){
+  var out = { id: id, name: t.name, draws: t.draws || '', match: t.match || '', punch: arr(t.punch).slice(), tasks: [], builtin: true, updatedAt: t.updatedAt || '', by: t.by || '' };
+  var prev = null, ids = {};
+  arr(t.tasks).forEach(function(x){
+    var o = Array.isArray(x) ? Object.assign({ name: x[0], day: x[1], days: x[2], who: x[3] }, x[4] || {}) : Object.assign({}, x);
+    var tid = o.id || slug(o.name) || ('t' + out.tasks.length); while (ids[tid]) tid += '_2'; ids[tid] = 1;
+    var dep = o.dep === undefined ? (prev ? [prev] : []) : arr(o.dep);
+    out.tasks.push({ id: tid, name: s(o.name), day: Math.max(0, num(o.day)), days: Math.max(1, num(o.days) || 1), who: s(o.who) || 'crew', dep: dep,
+      portal: o.internal ? false : (o.portal !== false), internal: !!o.internal, stage: o.stage || '', pct: o.pct != null ? num(o.pct) : null, notify: !!o.notify,
+      sla: o.sla || null, optional: !!o.optional, recurring: o.recurring || 0 });
+    prev = tid;
+  });
+  return out;
+}
+var TKEY = 'schedTemplates', TLS = 'gc_schedTemplates';
+var TSTORE = jget(TLS, null);   /* { templates: {id: tpl}, permits: {...}, updatedAt } — only what admins changed */
+function builtins(){ var o = {}; Object.keys(SEED).forEach(function(k){ o[k] = expandTpl(k, SEED[k]); }); return o; }
+function allTemplates(){
+  var o = builtins(), own = (TSTORE && TSTORE.templates) || {};
+  Object.keys(own).forEach(function(k){ var t = own[k]; if (!t || typeof t !== 'object') return; if (t.deleted) { delete o[k]; return; } o[k] = Object.assign({}, t, { id: k, builtin: !!SEED[k] }); });
+  return o;
+}
+function sbUrl(){ var u = ''; try { u = Storage.prototype.getItem.call(localStorage, 'grayco_sb_url') || ''; } catch (e) {} return (s(u) || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvGet(key){
+  return fetch(sbUrl() + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
+    .then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v; });
+}
+function kvPut(key, value){
+  return fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ return r.ok; }, function(){ return false; });
+}
+/* safe merge: per template (and the permit table) the newest updatedAt wins; nothing is dropped */
+function mergeStore(a, b){
+  a = a || {}; b = b || {};
+  var out = { templates: {}, permits: null, updatedAt: '' };
+  var ta = a.templates || {}, tb = b.templates || {};
+  Object.keys(ta).concat(Object.keys(tb)).forEach(function(k){ var x = ta[k], y = tb[k]; out.templates[k] = !x ? y : (!y ? x : (s(y.updatedAt) > s(x.updatedAt) ? y : x)); });
+  var pa = a.permits, pb = b.permits; out.permits = !pa ? (pb || null) : (!pb ? pa : (s(pb.updatedAt) > s(pa.updatedAt) ? pb : pa));
+  out.updatedAt = s(a.updatedAt) > s(b.updatedAt) ? s(a.updatedAt) : s(b.updatedAt);
+  return out;
+}
+function pullTemplates(){ return kvGet(TKEY).then(function(v){ if (v && typeof v === 'object') { TSTORE = mergeStore(TSTORE, v); jset(TLS, TSTORE); } return TSTORE; }, function(){ return TSTORE; }); }
+function saveTemplate(id, tpl){
+  id = slug(id) || ('tpl_' + Date.now().toString(36));
+  var rec = tpl === null ? { deleted: true } : JSON.parse(JSON.stringify(tpl));
+  rec.updatedAt = nowIso(); rec.by = U.me(); delete rec.builtin; delete rec.id;
+  return kvGet(TKEY).then(function(v){ return v; }, function(){ return null; }).then(function(cloud){
+    var mine = { templates: {}, updatedAt: rec.updatedAt }; mine.templates[id] = rec;
+    TSTORE = mergeStore(mergeStore(TSTORE, cloud), mine); jset(TLS, TSTORE);
+    return kvPut(TKEY, TSTORE).then(function(ok){ return { ok: ok, id: id }; });
+  });
+}
+function resetTemplate(id){
+  if (!SEED[id]) return saveTemplate(id, null);
+  var t = expandTpl(id, SEED[id]); return saveTemplate(id, t);
+}
+function groupText(p){ return low([p.type, p.jobType, p.name, p.scope, p.scopeOfWork].filter(function(x){ return typeof x === 'string'; }).join(' ')); }
+function pickTemplate(p){
+  if (!p) return null;
+  var all = allTemplates();
+  if (p.schedTemplate && all[p.schedTemplate]) return all[p.schedTemplate];
+  var t = groupText(p), type = low(p.type), big = num(p.contract);
+  var ins = p.isInsurance === true || /insurance|claim|restoration|fire damage|water damage/.test(t);
+  var pick = '';
+  if (/program/.test(type) || /\btpa\b|program work/.test(t)) pick = 'water_mit_only';
+  else if (/fire/.test(type) || /fire damage|smoke/.test(t)) pick = 'large_loss_fire';
+  else if (/water/.test(type) || /water damage|flood|mitigation/.test(t)) pick = /rebuild only/.test(t) ? 'ins_rebuild' : (/mitigation only/.test(t) ? 'water_mit_only' : (big >= 50000 || /large loss/.test(t) ? 'large_loss_water' : 'water_mit_rebuild'));
+  else if (/roof|shingle/.test(t) && !/commercial/.test(type)) pick = ins ? 'ins_roof' : 'res_roof';
+  else if (/insurance claim/.test(type)) pick = 'ins_rebuild';
+  else if (/new construction/.test(type) || (/commercial/.test(type) && big >= 250000)) pick = 'large_com';
+  else if (/commercial|\bti\b|tenant/.test(t)) pick = 'small_com';
+  else if (/kitchen|bath|reno|remodel|whole.?home|addition/.test(t)) pick = 'kitchen_bath';
+  return pick && all[pick] ? all[pick] : null;
+}
+function rowType(task){
+  if (task.notify) return 'appointment';
+  if (/^sub:/i.test(task.who)) return 'sub_work';
+  if (/inspector/i.test(task.who) || /inspection/i.test(task.name)) return 'inspection';
+  if (/supplier/i.test(task.who)) return 'delivery';
+  if (/office|carrier/i.test(task.who) || task.internal) return 'reminder';
+  if (/meeting|OAC/i.test(task.name)) return 'meeting';
+  return 'work';
+}
+function program(p){ return /program/i.test(s(p.type)) || /\btpa\b/i.test(groupText(p)); }
+function planFor(p, tpl, start){
+  var made = Date.parse(s(p.createdAt) || s(p.created)) || Date.now();
+  return tpl.tasks.map(function(t){
+    var date = addDays(start, t.day), end = addDays(date, t.days - 1);
+    var row = { id: 'SCH_T_' + p.id + '_' + t.id, title: s(p.name) + ' — ' + t.name, pid: p.id, date: date, endDate: end, days: t.days, time: t.notify ? '09:00' : '08:00', endTime: t.notify ? '11:00' : '17:00',
+      type: rowType(t), assignee: /^(PM|super)$/i.test(t.who) ? s(p.pm) : '', vendor: /^sub:/i.test(t.who) ? t.who.slice(4) : '', who: t.who, address: s(p.address),
+      notes: 'From the “' + tpl.name + '” template' + (t.optional ? ' (if needed)' : ''), tpl: tpl.id, tplTask: t.id, tplName: t.name, dep: t.dep.slice(), portal: !!t.portal, customerVisible: !!t.portal, internal: !!t.internal,
+      notify: !!t.notify, stage: t.stage || '', pct: t.pct, recurring: t.recurring || 0, draft: true, by: 'Automations', createdAt: nowIso() };
+    if (t.sla && program(p)) row.slaDue = new Date(made + num(t.sla.hours) * 3600e3).toISOString(), row.sla = t.sla;
+    return row;
+  });
+}
+/* the schedule as it is NOW: the CRM's _crm.schedule follows its state a few seconds late, so rows written here in
+   the last 2 minutes are laid over it until the CRM shows them */
+var PEND = {};
+function schedRows(){
+  var base = arr(crm().schedule), ids = Object.keys(PEND); if (!ids.length) return base;
+  var now = Date.now(), at = {}, out;
+  base.forEach(function(r, i){ if (r && r.id) at[r.id] = i; });
+  out = base.slice();
+  ids.forEach(function(id){
+    var x = PEND[id];
+    if (now - x.t > 120e3) { delete PEND[id]; return; }
+    var i = at[id];
+    if (i == null) out.push(x.r);
+    else if (s(base[i].date) === s(x.r.date) && s(base[i].endDate) === s(x.r.endDate)) delete PEND[id];   /* the CRM caught up */
+    else out[i] = x.r;
+  });
+  return out;
+}
+/* the CRM saves its schedule itself (device store + cloud) when its state changes; _crm.schedule follows a few seconds
+   later, so nothing here ever writes that (possibly older) copy back */
+function setRows(fn){
+  /* what this change does to the rows as known now (for the overlay), then the CRM's own state */
+  try { var before = schedRows(), after = fn(before.slice()), was = {}; before.forEach(function(r){ if (r && r.id) was[r.id] = r; }); after.forEach(function(r){ if (r && r.id && was[r.id] !== r) PEND[r.id] = { r: r, t: Date.now() }; }); } catch (e) {}
+  try { if (W._setSchedule) W._setSchedule(function(prev){ var l = Array.isArray(prev) ? prev : []; return fn(l); }); } catch (e) {}
+}
+function draftSchedule(pid, opts){
+  opts = opts || {};
+  var p = A.proj(pid); if (!p) return null;
+  if (!A.jobAuto(p, 'draftSchedule')) return null;
+  var tpl = opts.template ? allTemplates()[opts.template] : pickTemplate(p); if (!tpl) return null;
+  if (!opts.force && schedRows().some(function(r){ return r && String(r.pid) === String(pid) && r.tpl; })) return null;
+  var start = /^\d{4}-\d{2}-\d{2}/.test(s(p.startDate)) && s(p.startDate) >= today() ? s(p.startDate).slice(0, 10) : today();
+  var rows = planFor(p, tpl, start);
+  setRows(function(l){ var have = {}; l.forEach(function(r){ if (r && r.id) have[r.id] = 1; }); return l.concat(rows.filter(function(r){ return !have[r.id]; })); });
+  var dates = jget(TDATES, {}); rows.forEach(function(r){ dates[r.id] = r.date; }); jset(TDATES, dates);
+  A.saveProject(pid, function(q){ q.schedTemplate = q.schedTemplate || tpl.id; q.schedPlan = planOf(rows, tpl); A.jobNote(q, 'Draft schedule from the “' + tpl.name + '” template (' + rows.length + ' tasks) — move any date; the tasks after it follow.'); });
+  return rows;
+}
+function planOf(rows, tpl){ return { tpl: tpl.id, name: tpl.name, at: nowIso(), steps: rows.map(function(r){ return { id: r.tplTask, name: s(r.tplName) || r.title.replace(/^.*? — /, ''), date: r.date, end: r.endDate, portal: !!r.portal, stage: r.stage || '', done: !!r.done }; }) }; }
+/* moving a task moves the tasks that wait on it (the PM only adjusts dates) */
+var TDATES = 'gc_tpl_dates';
+function depTick(){
+  var dates = jget(TDATES, {}), rows = schedRows().filter(function(r){ return r && r.tpl && r.pid; }); if (!rows.length) return;
+  var byPid = {}; rows.forEach(function(r){ (byPid[r.pid] = byPid[r.pid] || []).push(r); });
+  var shifts = {}, touched = {};
+  Object.keys(byPid).forEach(function(pid){
+    var list = byPid[pid], byTask = {}; list.forEach(function(r){ byTask[r.tplTask] = r; });
+    list.forEach(function(r){
+      var was = dates[r.id]; if (!was || was === s(r.date) || shifts[r.id] != null) return;
+      var delta = dayDiff(was, r.date); if (!delta) return;
+      touched[pid] = 1;
+      /* everything that (transitively) waits on this task moves by the same days */
+      var queue = [r.tplTask], seen = {};
+      while (queue.length) { var t = queue.shift(); list.forEach(function(x){ if (!seen[x.id] && x.id !== r.id && arr(x.dep).indexOf(t) >= 0 && !x.locked && dates[x.id] === s(x.date)) { seen[x.id] = 1; shifts[x.id] = delta; queue.push(x.tplTask); } }); }
+    });
+  });
+  var ids = Object.keys(shifts);
+  /* remember the dates as they are now / will be (the CRM's schedule copy follows a few seconds later) */
+  rows.forEach(function(r){ dates[r.id] = shifts[r.id] != null ? addDays(r.date, shifts[r.id]) : s(r.date); });
+  jset(TDATES, dates);
+  if (ids.length) {
+    setRows(function(l){ return l.map(function(r){ if (!r || shifts[r.id] == null) return r; var d = shifts[r.id]; return Object.assign({}, r, { date: addDays(r.date, d), endDate: r.endDate ? addDays(r.endDate, d) : r.endDate, updatedAt: nowIso(), movedBy: 'follows ' + (r.dep || []).join(', ') }); }); });
+    A.emit('gc:schedule-shifted', { rows: ids.length });
+  }
+  Object.keys(touched).forEach(function(pid){
+    var l = byPid[pid].map(function(r){ return shifts[r.id] == null ? r : Object.assign({}, r, { date: addDays(r.date, shifts[r.id]), endDate: r.endDate ? addDays(r.endDate, shifts[r.id]) : r.endDate }); });
+    var tpl = allTemplates()[l[0] && l[0].tpl] || { id: l[0] && l[0].tpl, name: '' };
+    A.saveProject(pid, function(q){ q.schedPlan = planOf(l, tpl); });
+  });
+}
+
+/* ═══ 2. STAGES ══════════════════════════════════════════════════════════════ */
+function invs(pid){ return arr(crm().invoices).filter(function(r){ return r && String(r.pid) === String(pid) && (r.type === 'client' || !r.type); }); }
+function derive(p){
+  var st = low(p.status), pct = num(p.pct), r = 0;
+  if (/lost|dead|cancel/.test(st)) return null;
+  if (/^(active|approved|in.?progress|scheduled|contract|signed|on_hold)$/.test(st)) r = Math.max(r, rank('signed'));
+  var t = today();
+  schedRows().forEach(function(x){
+    if (!x || String(x.pid) !== String(p.id) || !x.tpl || !x.stage) return;
+    if (s(x.date) && s(x.date) <= t) r = Math.max(r, Math.min(rank(x.stage), rank('substantial')));
+  });
+  if (pct > 0) r = Math.max(r, rank('in_progress'));
+  if (pct >= 90) r = Math.max(r, rank('substantial'));
+  if (pct >= 100 || /^(complete|completed|closed|done)$/.test(st)) r = rank('complete');
+  return STAGE_KEYS[r];
+}
+var LIVE = {};   /* jobs the bus saw change in this session: only these run stage automations */
+function markLive(pid){ if (pid) LIVE[pid] = Date.now(); }
+var running = {};
+function evaluate(pid, prev){   /* prev: the stage just before this change (from the bus event), for jobs with no stage yet */
+  var p = A.proj(pid); if (!p || running[pid]) return;
+  var d = derive(p); if (!d) return;
+  var cur = p.jobStage && STAGE_KEYS.indexOf(p.jobStage) >= 0 ? p.jobStage : '';
+  var live = LIVE[pid] && Date.now() - LIVE[pid] < 30 * 60e3;
+  if (!cur) {
+    if (!live) { A.saveProject(pid, function(q){ if (q.jobStage) return false; q.jobStage = d; q.jobStageAt = Object.assign({}, q.jobStageAt || {}); q.jobStageAt[d] = nowIso(); q.jobStageLearned = true; }); return; }   /* first look at an old job: learn, do nothing */
+    cur = prev && STAGE_KEYS.indexOf(prev) >= 0 ? prev : 'lead';   /* an old job: only what this change crossed */
+  }
+  if (rank(d) <= rank(cur)) return;
+  if (!live && !p.schedPlan) {   /* moved while nobody watched (another computer ran it, or an import): just record */
+    A.saveProject(pid, function(q){ if (rank(q.jobStage) >= rank(d)) return false; q.jobStage = d; q.jobStageAt = Object.assign({}, q.jobStageAt || {}); q.jobStageAt[d] = nowIso(); }); return;
+  }
+  var fired = Object.assign({}, p.autoRan || {});
+  var todo = STAGE_KEYS.slice(rank(cur) + 1, rank(d) + 1).filter(function(k){ return !fired[k]; });
+  running[pid] = true;
+  var applied = false;   /* saveProject may answer null for a job not in the device store yet (the screen copy updates later) */
+  A.saveProject(pid, function(q){
+    if (rank(q.jobStage) >= rank(d) && todo.every(function(k){ return (q.autoRan || {})[k]; })) return false;
+    applied = true;
+    q.jobStage = d; q.jobStageAt = Object.assign({}, q.jobStageAt || {}); q.jobStageAt[d] = nowIso();
+    q.autoRan = Object.assign({}, q.autoRan || {}); todo.forEach(function(k){ q.autoRan[k] = nowIso(); });
+    A.jobNote(q, 'Stage: ' + STAGE_NAME[cur] + ' → ' + STAGE_NAME[d]);
+  }).then(function(saved){
+    running[pid] = false;
+    if (!saved && !applied) return;
+    A.emit('gc:job-stage', { pid: pid, from: cur, to: d });
+    todo.reduce(function(pr, k){ return pr.then(function(){ return runStage(k, pid); }); }, Promise.resolve());
+  }, function(){ running[pid] = false; });
+}
+var STAGE_RUN = {};
+function runStage(k, pid){
+  var f = STAGE_RUN[k]; if (!f) return Promise.resolve();
+  A.emit('gc:stage-' + k, { pid: pid });
+  try { return Promise.resolve(f(pid)).catch(function(e){ try { console.warn('[GC] stage ' + k, e); } catch (_) {} }); } catch (e) { return Promise.resolve(); }
+}
+
+/* ── draws: drafted when the progress reaches a milestone (any path) ── */
+var DRAFTED = {};
+function ensureDraws(pid){
+  var p = A.proj(pid); if (!p || !A.jobAuto(p, 'invoiceEmail') && !A.jobAuto(p, 'drawInvoices')) return null;
+  if (typeof W._gcDrawMilestones !== 'function' || typeof W._gcClientInvoiced !== 'function') return null;
+  var contract = num(p.contract), pct = num(p.pct); if (!contract || !pct) return null;
+  var ms = W._gcDrawMilestones(p), sur = ms.filter(function(m){ return pct >= m.at; });
+  if (!sur.length) return null;
+  var top = sur[sur.length - 1], target = Math.round(contract * top.at) / 100, billed = W._gcClientInvoiced(p.id) || 0;
+  var amt = Math.round((target - billed) * 100) / 100;
+  if (amt <= 0.01) return null;
+  var id = 'INV_AUTO_' + p.id + '_' + top.at;
+  if (DRAFTED[id] || arr(crm().invoices).some(function(r){ return r && r.id === id; })) return null;
+  DRAFTED[id] = Date.now();   /* this session: never twice, even before the CRM's copy shows it */
+  var label = top.at >= 100 ? (billed > 0 ? 'Final' : 'Final (100%)') : ('Draw to ' + top.at + '%'), d = today();
+  var inv = { id: id, pid: p.id, type: 'client', drawType: label, client: s(p.client), customer: s(p.client), po: s(p.autoPO || p.po), autoPO: s(p.autoPO || p.po), project: s(p.name),
+    desc: label + ' at ' + pct + '% complete — ' + s(p.name), amt: amt, date: d, due: addDays(d, 30), status: 'draft', createdBy: 'auto-draw (milestone)', isFinal: top.at >= 100, created: d, createdAt: nowIso() };
+  try { if (W._setInvoices) W._setInvoices(function(l){ l = l || []; return l.some(function(r){ return r && r.id === id; }) ? l : l.concat([inv]); }); } catch (e) {}
+  ST(function(){ try { if (W._gcQueueInvoiceApproval) W._gcQueueInvoiceApproval(inv); } catch (e) {} }, 400);
+  A.saveProject(p.id, function(q){ A.jobNote(q, 'Draw invoice drafted for approval: ' + label + ' — $' + amt.toLocaleString()); });
+  A.emit('gc:draw-drafted', { pid: p.id, invId: id, amt: amt, at: top.at });
+  return inv;
+}
+
+/* ── signed: the kickoff pack ── */
+var DRAW_DEFAULTS = { res_roof: '0/100', kitchen_bath: '30/40/30' };
+function portalTasks(pid){ return schedRows().filter(function(r){ return r && String(r.pid) === String(pid) && r.tpl && r.portal; }).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; }); }
+function nice(iso){ var d = new Date(s(iso) + 'T12:00:00'); return isNaN(d) ? s(iso) : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+function welcomeHtml(p){
+  var pm = A.pmOf(p), steps = portalTasks(p.id).slice(0, 4);
+  return '<p>Hi ' + esc(s(p.client).split(/[\s,&]+/)[0] || 'there') + ',</p><p>Thank you for choosing GrayCo — your project <b>' + esc(p.name) + '</b> is officially on our schedule. Here is how it works from here.</p>' +
+    '<p><b>Your project page</b> — progress, photos, papers and payments, any time:</p><p><a href="{{PORTAL_LINK}}" style="display:inline-block;background:#0F1D2F;color:#fff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">Open my GrayCo project page</a></p>' +
+    (steps.length ? '<p><b>What happens next</b></p><ul>' + steps.map(function(r){ return '<li>' + esc(s(r.tplName) || r.title.replace(/^.*? — /, '')) + ' — ' + esc(nice(r.date)) + '</li>'; }).join('') + '</ul>' : '') +
+    '<p>Your project manager is <b>' + esc(pm.name) + '</b> — call or text ' + esc(pm.phone) + ' with anything at all.</p>';
+}
+function nextStepsHtml(p){
+  var steps = portalTasks(p.id).filter(function(r){ return s(r.date) >= today(); }).slice(0, 4), pm = A.pmOf(p);
+  return '<p>Hi ' + esc(s(p.client).split(/[\s,&]+/)[0] || 'there') + ',</p><p>Good news — your materials are ordered and <b>' + esc(p.name) + '</b> is scheduled.</p>' +
+    (steps.length ? '<p><b>What happens next</b></p><ul>' + steps.map(function(r){ return '<li>' + esc(s(r.tplName) || r.title.replace(/^.*? — /, '')) + ' — ' + esc(nice(r.date)) + '</li>'; }).join('') + '</ul>' : '') +
+    '<p>You can follow every step on your project page: <a href="{{PORTAL_LINK}}">open it here</a>. Questions? ' + esc(pm.name) + ', ' + esc(pm.phone) + '.</p>';
+}
+function contractHtml(p){
+  return '<p>Hi ' + esc(s(p.client).split(/[\s,&]+/)[0] || 'there') + ',</p><p>Your contract for <b>' + esc(p.name) + '</b> is ready. It is on your GrayCo project page under Documents: <a href="{{PORTAL_LINK}}">open it here</a>.</p>' +
+    '<p>Please look it over. Your project manager will go through it with you and collect your signature — or reply to this e-mail with any questions.</p>';
+}
+STAGE_RUN.signed = function(pid){
+  var p = A.proj(pid); if (!p) return;
+  var steps = [];
+  /* draft schedule from the template (first, so the welcome lists the next steps) */
+  draftSchedule(pid);
+  var tpl = pickTemplate(p);
+  /* draw schedule default */
+  if (!s(p.drawSchedule) && tpl && (DRAW_DEFAULTS[tpl.id] || tpl.draws)) {
+    var ds = tpl.draws || DRAW_DEFAULTS[tpl.id];
+    steps.push(A.saveProject(pid, function(q){ if (s(q.drawSchedule)) return false; q.drawSchedule = ds; q.drawScheduleBy = 'template ' + tpl.id; A.jobNote(q, 'Draw schedule set to ' + ds + ' (the “' + tpl.name + '” default — change it any time).'); }));
+  }
+  return Promise.all(steps).then(function(){
+    p = A.proj(pid) || p;
+    /* deposit invoice draft (first draw, when it comes before 100%) */
+    try {
+      if (A.jobAuto(p, 'invoiceEmail') && num(p.contract) > 0 && W._gcDrawMilestones && W._gcValidDraws && W._gcValidDraws(p.drawSchedule).ok) {
+        var m = W._gcDrawMilestones(p)[0];
+        if (m && m.at < 100 && !DRAFTED['INV_DEP_' + pid] && !(W._gcDrawInvoiced && W._gcDrawInvoiced(pid, 1)) && !(W._gcClientInvoiced(pid) > 0)) {
+          DRAFTED['INV_DEP_' + pid] = Date.now();
+          var amt = Math.round(num(p.contract) * m.pctOfContract * 100) / 100, d = today(), id = 'INV_DEP_' + pid;
+          var inv = { id: id, pid: pid, type: 'client', drawType: 'Draw 1 (' + m.share + '%)', desc: 'Deposit — Draw 1 (' + m.share + '%) — ' + s(p.name), amt: amt, date: d, due: addDays(d, 7), status: 'draft',
+            po: s(p.autoPO), client: s(p.client), created: d, createdAt: nowIso(), createdBy: 'kickoff' };
+          if (W._setInvoices) W._setInvoices(function(l){ l = l || []; return l.some(function(r){ return r && r.id === id; }) ? l : l.concat([inv]); });
+          A.saveProject(pid, function(q){ var b = arr(q.billedDraws).slice(); if (b.indexOf(1) < 0) b.push(1); q.billedDraws = b; A.jobNote(q, 'Deposit invoice drafted for approval: $' + amt.toLocaleString()); });
+          ST(function(){ try { if (W._gcQueueInvoiceApproval) W._gcQueueInvoiceApproval(inv); } catch (e) {} }, 400);
+          A.emit('gc:deposit-drafted', { pid: pid, invId: id, amt: amt });
+        }
+      }
+    } catch (e) {}
+    /* welcome e-mail with the portal link → approvals */
+    A.queue({ kind: 'welcome', projectId: pid, title: '👋 Welcome — ' + s(p.name), subject: 'Welcome to GrayCo — ' + s(p.name), html: welcomeHtml(p) });
+    /* contract: a filled draft on the job (internal until the e-mail is approved and sent) */
+    if (!s(p.contractUrl) && !p.contractSigned && !(p.autoDocs || {}).contract && A.jobAuto(p, 'contractSign')) {
+      hdoc(p, 'contract', { id: 'aut_contract_' + pid, portal: false }).then(function(rec){
+        if (!rec) return;
+        A.saveProject(pid, function(q){ q.autoDocs = Object.assign({}, q.autoDocs || {}, { contract: { id: rec.id, at: nowIso() } }); });
+        A.queue({ kind: 'contract', projectId: pid, title: '✍️ Contract — ' + s(p.name), subject: 'Your GrayCo contract — ' + s(p.name), html: contractHtml(p) });
+      });
+    }
+    /* insurance: the work authorization */
+    if (/insurance|claim|fire|water|restoration/i.test(groupText(p)) || p.isInsurance === true) {
+      if (!(p.autoDocs || {}).work_auth) hdoc(p, 'work_auth', { id: 'aut_workauth_' + pid }).then(function(rec){ if (rec) A.saveProject(pid, function(q){ q.autoDocs = Object.assign({}, q.autoDocs || {}, { work_auth: { id: rec.id, at: nowIso() } }); }); });
+    }
+    /* permits + inspections checklist */
+    seedPermits(pid);
+  });
+};
+STAGE_RUN.materials = function(pid){
+  var p = A.proj(pid); if (!p) return;
+  return A.queue({ kind: 'next_steps', projectId: pid, title: '🗓 What happens next — ' + s(p.name), subject: 'Your GrayCo project is scheduled — ' + s(p.name), html: nextStepsHtml(p) });
+};
+STAGE_RUN.in_progress = function(pid){
+  var p = A.proj(pid); if (!p || !A.jobAuto(p, 'progressPosts')) return;
+  return A.saveProject(pid, function(q){ if (q.weeklyUpdates === true) return false; q.weeklyUpdates = true; q.weeklyUpdatesAt = nowIso(); A.jobNote(q, 'Work started — weekly progress updates are on for this job.'); });
+};
+STAGE_RUN.inspection = function(pid){
+  seedPermits(pid);
+  var ck = permitsOf(pid); if (!ck) return;
+  ck.inspections.filter(function(i){ return !i.done && !i.date; }).slice(0, 3).forEach(function(i){
+    A.officeTodo('insp_' + pid + '_' + i.id, '📋 Book the ' + i.label + ' — ' + s(ck.job), 'The job reached inspection. ' + (ck.office ? 'Permit office: ' + ck.office.name + (ck.office.phone ? ' (' + ck.office.phone + ')' : '') + '.' : '') + ' Put the date in Inspections and it goes on the schedule.');
+  });
+};
+STAGE_RUN.substantial = function(pid){
+  var p = A.proj(pid); if (!p || !A.jobAuto(p, 'punchList')) return;
+  var tpl = pickTemplate(p), items = ['Final walkthrough with the customer'].concat(tpl ? tpl.punch : ['Paint touch-ups', 'Final clean']);
+  return Promise.resolve(W.idbGet ? W.idbGet('punch') : null).then(function(cur){
+    var list = Array.isArray(cur) ? cur.slice() : arr(crm().punch).slice(), have = {}, n = 0;
+    list.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
+    items.forEach(function(t, i){ var id = 'PUN_T_' + pid + '_' + i; if (have[id]) return; n++; list.push({ id: id, pid: pid, item: t, assignee: s(p.pm), status: 'open', by: 'Automations', date: today(), source: 'stage: substantially complete', createdAt: nowIso() }); });
+    if (!n) return;
+    /* the CRM keeps the punch list in its own state and saves that (device store + cloud): give it the new list */
+    /* (the CRM does not save a list it was handed this way — it takes it for a sync — so it is saved here too) */
+    try { if (W._gcApplySync) W._gcApplySync('punch', list); } catch (e) {}
+    try { if (W.idbSet) W.idbSet('punch', list); } catch (e) {}
+    try { if (W._supaUpsert) W._supaUpsert('punch', list); } catch (e) {}
+    A.saveProject(pid, function(q){ A.jobNote(q, 'Punch list started (' + n + ' items).'); });
+    A.emit('gc:punch-seeded', { pid: pid, n: n });
+  });
+};
+STAGE_RUN.complete = function(pid){
+  var p = A.proj(pid); if (!p) return;
+  ensureDraws(pid);   /* the final invoice (draft → approval) */
+  closeoutCoc(pid).then(function(){ if (fullyPaid(pid)) closeoutWarranty(pid); });
+  return A.saveProject(pid, function(q){ if (q.checkupDue) return false; var d = addDays(today(), 365); q.checkupDue = d; A.jobNote(q, 'One-year checkup booked for ' + d + ' (the e-mail waits for approval then).'); });
+};
+function closeoutCoc(pid){
+  var p = A.proj(pid); if (!p || (p._closeoutDocs || {}).coc || !A.jobAuto(p, 'warrantyCert')) return Promise.resolve(null);
+  return hdoc(p, 'cert_completion', { id: 'aut_coc_' + pid }).then(function(rec){
+    if (rec) A.saveProject(pid, function(q){ q._closeoutDocs = Object.assign({}, q._closeoutDocs || {}, { coc: today() }); A.jobNote(q, 'Certificate of Completion made and put in the customer portal.'); });
+    return rec;
+  });
+}
+function closeoutWarranty(pid){
+  var p = A.proj(pid); if (!p || (p._closeoutDocs || {}).warranty || !A.jobAuto(p, 'warrantyCert')) return Promise.resolve(null);
+  return hdoc(p, 'warranty', { id: 'aut_warranty_' + pid }).then(function(rec){
+    if (rec) A.saveProject(pid, function(q){ q._closeoutDocs = Object.assign({}, q._closeoutDocs || {}, { warranty: today() }); A.jobNote(q, 'Warranty certificate made and put in the customer portal.'); });
+    return rec;
+  });
+}
+function fullyPaid(pid){ var l = invs(pid); return l.length > 0 && l.every(function(r){ return A.invPaid(r); }); }
+function checkupTick(){
+  var t = today();
+  A.projects().forEach(function(p){
+    if (!p || !p.checkupDue || s(p.checkupDue) > t || (p.autoRan || {}).checkup) return;
+    A.queue({ kind: 'checkup', projectId: p.id, ref: s(p.checkupDue).slice(0, 4), title: '🔧 One-year checkup — ' + s(p.name), subject: 'A year already — time for your free GrayCo checkup',
+      html: '<p>Hi ' + esc(s(p.client).split(/[\s,&]+/)[0] || 'there') + ',</p><p>It has been a year since we finished <b>' + esc(p.name) + '</b>. We would like to stop by for a free checkup to make sure everything is holding up the way it should.</p><p>Reply with a day that works, or call ' + esc(A.pmOf(p).phone) + '.</p>' });
+    A.saveProject(p.id, function(q){ q.autoRan = Object.assign({}, q.autoRan || {}, { checkup: nowIso() }); });
+  });
+}
+
+/* ═══ 4. PERMITS & INSPECTIONS ════════════════════════════════════════════════ */
+var PERMIT_TABLE = {
+  roof: { permits: ['Building / reroof permit'], inspections: ['Final inspection'] },
+  reno: { permits: ['Building permit', 'Electrical permit', 'Plumbing permit', 'Mechanical permit'], inspections: ['Framing inspection', 'Rough-in inspection (electrical / plumbing / mechanical)', 'Insulation inspection', 'Final inspection'] },
+  commercial: { permits: ['Building permit', 'Fire marshal review'], inspections: ['Rough inspections', 'Fire marshal inspection', 'Final inspection / Certificate of Occupancy'] },
+  restoration: { permits: ['Building permit (rebuild)', 'Electrical permit (if rewiring)'], inspections: ['Rough-in inspection', 'Final inspection'] },
+  mitigation: { permits: [], inspections: [] }
+};
+var PERMIT_OFFICES = {
+  'bartlett': { name: 'City of Bartlett — Code Enforcement', url: 'https://www.cityofbartlett.org', phone: '(901) 385-5500' },
+  'memphis': { name: 'Memphis & Shelby County Construction Code Enforcement', url: 'https://www.shelbycountytn.gov', phone: '(901) 222-8300' },
+  'shelby county': { name: 'Memphis & Shelby County Construction Code Enforcement', url: 'https://www.shelbycountytn.gov', phone: '(901) 222-8300' },
+  'germantown': { name: 'City of Germantown — Building Inspections', url: 'https://www.germantown-tn.gov', phone: '' },
+  'collierville': { name: 'Town of Collierville — Development / Building', url: 'https://www.collierville.com', phone: '' },
+  'lakeland': { name: 'City of Lakeland — Codes', url: 'https://www.lakelandtn.gov', phone: '' },
+  'arlington': { name: 'Town of Arlington — Building', url: 'https://www.townofarlington.org', phone: '' },
+  'millington': { name: 'City of Millington — Codes', url: 'https://www.millingtontn.gov', phone: '' },
+  'desoto county': { name: 'DeSoto County Building & Code Enforcement (MS)', url: 'https://www.desotocountyms.gov', phone: '' },
+  'southaven': { name: 'City of Southaven — Building (MS)', url: 'https://www.southaven.org', phone: '' },
+  'olive branch': { name: 'City of Olive Branch — Building (MS)', url: 'https://www.obms.us', phone: '' },
+  'crittenden county': { name: 'Crittenden County (AR) — Permits', url: 'https://www.crittendencountyar.gov', phone: '' },
+  'west memphis': { name: 'City of West Memphis (AR) — Code Enforcement', url: 'https://www.westmemphisar.gov', phone: '' }
+};
+function permitTable(){ var o = TSTORE && TSTORE.permits; return { kinds: (o && o.kinds) || PERMIT_TABLE, offices: (o && o.offices) || PERMIT_OFFICES }; }
+function permitKind(p){
+  var t = groupText(p), type = low(p.type);
+  if (/program/.test(type) || /mitigation only/.test(t)) return 'mitigation';
+  if (/roof|shingle/.test(t) && !/commercial/.test(type)) return 'roof';
+  if (/commercial|\bti\b|new construction|tenant/.test(t)) return 'commercial';
+  if (/fire|water|insurance|restoration|claim/.test(t)) return 'restoration';
+  return 'reno';
+}
+function officeFor(p){
+  var j = W._gcJurisdiction ? W._gcJurisdiction(p) : null, T = permitTable().offices;
+  if (j && j.city && T[low(j.city)]) return T[low(j.city)];
+  if (j && j.county && T[low(j.county).replace(/\s+county$/, '') + ' county']) return T[low(j.county).replace(/\s+county$/, '') + ' county'];
+  if (j && j.county && T[low(j.county)]) return T[low(j.county)];
+  var a = low(p.address); var k = Object.keys(T).filter(function(x){ return a.indexOf(x) >= 0; })[0];
+  return k ? T[k] : null;
+}
+var IKEY = 'gc_job_inspections';
+function insLoad(){ var v = jget(IKEY, {}); if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = {}; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function insSave(v){ jset(IKEY, v); try { if (W._gcApplySync) W._gcApplySync(IKEY, v); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert(IKEY, v); } catch (e) {} }
+function seedPermits(pid){
+  var p = A.proj(pid); if (!p || !A.jobAuto(p, 'permits')) return null;
+  if ((p.autoRan || {}).permits) return null;
+  var k = permitKind(p), row = permitTable().kinds[k] || { permits: [], inspections: [] };
+  var office = officeFor(p);
+  A.saveProject(pid, function(q){
+    var have = {}; arr(q.permits).forEach(function(x){ have[low(x.type)] = 1; });
+    var add = arr(row.permits).filter(function(t){ return !have[low(t)]; }).map(function(t, i){ return { id: 'PERM_T_' + pid + '_' + slug(t), type: t, number: '', issued: '', expires: '', status: 'Needed', office: office ? office.name : '', officeUrl: office ? office.url : '', by: 'Automations' }; });
+    q.permits = arr(q.permits).concat(add);
+    q.autoRan = Object.assign({}, q.autoRan || {}, { permits: nowIso() });
+    if (add.length) q.permitSeed = { at: nowIso(), rows: add };
+    if (add.length) A.jobNote(q, 'Permit checklist: ' + add.map(function(x){ return x.type; }).join(', ') + (office ? ' — ' + office.name : ''));
+  });
+  var data = insLoad(), list = arr(data[pid]).slice(), haveI = {};
+  list.forEach(function(i){ haveI[low(i.label)] = 1; });
+  var addI = arr(row.inspections).filter(function(l){ return !haveI[low(l)]; }).map(function(l){ return { id: 'INS_T_' + pid + '_' + slug(l), label: l, date: '', done: false, by: 'Automations' }; });
+  if (addI.length) { data[pid] = list.concat(addI); insSave(data); }
+  A.emit('gc:permits-seeded', { pid: pid, permits: arr(row.permits).length, inspections: addI.length });
+  return permitsOf(pid);
+}
+function permitsOf(pid){
+  var p = A.proj(pid); if (!p) return null;
+  var ins = arr(insLoad()[pid]).slice().sort(function(a, b){ return s(a.date || '9999') < s(b.date || '9999') ? -1 : 1; });
+  var j = W._gcJurisdiction ? W._gcJurisdiction(p) : null;
+  var next = ins.filter(function(i){ return !i.done; })[0] || null;
+  return { pid: p.id, job: s(p.name), kind: permitKind(p), jurisdiction: j, office: officeFor(p), permits: arr(p.permits).map(function(x){ return Object.assign({}, x); }),
+    inspections: ins.map(function(i){ return Object.assign({}, i); }), next: next ? Object.assign({}, next) : null,
+    open: arr(p.permits).filter(function(x){ return !/issued|active|closed|final/i.test(s(x.status)); }).length + ins.filter(function(i){ return !i.done; }).length };
+}
+/* right after the kickoff a sync from another copy of the job can drop the new permit rows: for 10 minutes, if every
+   seeded row is gone, put them back once (later, a person removing them is respected) */
+function permitHeal(){
+  var now = Date.now();
+  A.projects().forEach(function(p){
+    var sd = p && p.permitSeed; if (!sd || sd.healed || now - Date.parse(sd.at) > 10 * 60e3 || !arr(sd.rows).length) return;
+    var have = {}; arr(p.permits).forEach(function(x){ have[s(x && x.id)] = 1; });
+    if (arr(sd.rows).some(function(x){ return have[x.id]; })) return;
+    A.saveProject(p.id, function(q){ var h2 = {}; arr(q.permits).forEach(function(x){ h2[s(x && x.id)] = 1; }); if (arr(sd.rows).some(function(x){ return h2[x.id]; })) return false; q.permits = arr(q.permits).concat(sd.rows); q.permitSeed = Object.assign({}, sd, { healed: nowIso() }); });
+  });
+}
+/* a dated inspection becomes a schedule item (and a customer confirmation, through AUT2) */
+function insTick(){
+  var data = insLoad(), rows = schedRows(), have = {}; rows.forEach(function(r){ if (r && r.id) have[r.id] = r; });
+  var add = [], move = {};
+  Object.keys(data).forEach(function(pid){
+    var p = A.proj(pid); if (!p) return;
+    arr(data[pid]).forEach(function(i){
+      if (!i || !i.id || !/^\d{4}-\d{2}-\d{2}/.test(s(i.date)) || i.done) return;
+      var id = 'SCH_INS_' + i.id, r = have[id];
+      if (!r) add.push({ id: id, title: s(p.name) + ' — ' + s(i.label), pid: pid, date: s(i.date).slice(0, 10), time: '09:00', endTime: '12:00', type: 'inspection', assignee: s(p.pm), address: s(p.address), notes: 'From the inspections list', insId: i.id, by: 'Automations', createdAt: nowIso() });
+      else if (s(r.date) !== s(i.date).slice(0, 10)) move[id] = s(i.date).slice(0, 10);
+    });
+  });
+  if (add.length || Object.keys(move).length) setRows(function(l){ return l.map(function(r){ return r && move[r.id] ? Object.assign({}, r, { date: move[r.id], updatedAt: nowIso() }) : r; }).concat(add.filter(function(r){ return !l.some(function(x){ return x && x.id === r.id; }); })); });
+}
+/* SLA timers on program / TPA jobs: an overdue first-contact / on-site / estimate step → office to-do, once */
+function slaTick(){
+  var now = Date.now();
+  schedRows().forEach(function(r){
+    if (!r || !r.slaDue || r.done || Date.parse(r.slaDue) > now) return;
+    A.officeTodo('sla_' + r.id, '⏱ SLA missed: ' + s(r.title), 'Due ' + new Date(r.slaDue).toLocaleString() + ' (' + s(r.sla && r.sla.key) + ', ' + s(r.sla && r.sla.hours) + ' h). Mark it done on the schedule when it happens.');
+  });
+}
+
+/* ═══ 5. FILLED-IN PAPERS ════════════════════════════════════════════════════ */
+function warrantyOf(p){
+  var t = groupText(p), roof = /roof|shingle|re-?roof/.test(t), ins = p.isInsurance === true || /insurance|restoration|fire damage|water damage|storm|claim/.test(t);
+  var years = roof || ins ? 5 : 1;
+  return { years: years, kind: roof ? 'Roof' : (ins ? 'Insurance / restoration' : 'Workmanship') };
+}
+function pdfDoc(title, job, body){
+  return A.loadJsPdf().then(function(){
+    var J = (W.jspdf.jsPDF.__orig || W.jspdf.jsPDF);
+    var doc = new J({ unit: 'pt', format: 'letter' }), PW = doc.internal.pageSize.getWidth(), m = 48;
+    var y = W.GC_pdfHeader ? W.GC_pdfHeader(doc, { m: m }) : 60;
+    function txt(t, sz, bold, color){ doc.setFontSize(sz || 10.5); doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setTextColor.apply(doc, color || [30, 30, 30]); doc.splitTextToSize(s(t), PW - 2 * m).forEach(function(ln){ if (y > 720) { if (W.GC_pdfFooter) W.GC_pdfFooter(doc); doc.addPage(); y = 60; } doc.text(ln, m, y); y += (sz || 10.5) * 1.35; }); y += 4; }
+    function gap(h){ y += h || 8; }
+    function sigs(a, b){ y += 34; if (y > 700) { doc.addPage(); y = 80; } doc.setDrawColor(120, 120, 120); doc.line(m, y, m + 220, y); doc.line(PW - m - 220, y, PW - m, y); y += 12; doc.setFontSize(9); doc.setTextColor(80, 80, 80); doc.text(a, m, y); doc.text(b, PW - m - 220, y); y += 16; }
+    doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 36, 64); doc.text(title, m, y); y += 24;
+    txt('Project: ' + s(job.name) + (job.autoPO ? '    PO: ' + job.autoPO : ''), 10.5, true);
+    txt('Address: ' + s(job.address)); txt('Owner / customer: ' + s(job.client));
+    gap(4);
+    body({ txt: txt, gap: gap, sigs: sigs, doc: doc });
+    if (W.GC_pdfFooter) W.GC_pdfFooter(doc);
+    return doc.output('blob');
+  });
+}
+function fileMade(job, kind, title, cat, blob, opts){
+  var name = title.replace(/[^A-Za-z]+/g, '_').replace(/^_|_$/g, '') + '_' + s(job.name).replace(/[^a-z0-9]+/gi, '_').slice(0, 40) + '.pdf';
+  return A.fileDoc(job.id, blob, name, cat, { id: opts.id, kind: kind, portal: opts.portal !== false, source: 'automations' });
+}
+var DM = A.docMakers;
+DM.cert_completion = function(job, opts){
+  var d = s(job.completedAt || job.completionDate || job._completedAt).slice(0, 10) || today(), pm = A.pmOf(job), w = warrantyOf(job);
+  return pdfDoc('CERTIFICATE OF SUBSTANTIAL COMPLETION', job, function(P){
+    P.txt('Date of Substantial Completion: ' + nice(d) + ', ' + d.slice(0, 4), 11, true);
+    P.txt('This certifies that the work at the address above has reached Substantial Completion: it is complete enough that the Owner can use it for its intended purpose. The ' + w.kind.toLowerCase() + ' warranty (' + w.years + ' year' + (w.years > 1 ? 's' : '') + ') begins on this date. Remaining punch-list items, if any, do not prevent use and will be completed by GrayCo.');
+    P.txt('Contractor: ' + (W.GC_BRAND ? W.GC_BRAND.legalName : 'GrayCo Construction Services, LLC') + '. Project manager: ' + pm.name + (pm.phone ? ' · ' + pm.phone : '') + '.');
+    P.sigs('Owner / date', 'GrayCo — ' + pm.name + ' / date');
+  }).then(function(b){ return fileMade(job, 'cert_completion', 'Certificate of Completion', 'Certificate of Completion', b, opts); });
+};
+DM.warranty = function(job, opts){
+  var w = warrantyOf(job), start = s(job.completedAt || job.completionDate || job._completedAt).slice(0, 10) || today();
+  var end = (function(){ var d = new Date(start + 'T12:00:00'); d.setFullYear(d.getFullYear() + w.years); return ymd(d); })();
+  return pdfDoc('WARRANTY CERTIFICATE — ' + w.kind.toUpperCase(), job, function(P){
+    P.txt('Warranty term: ' + w.years + ' year' + (w.years > 1 ? 's' : '') + ' — from ' + start + ' to ' + end + '.', 11, true);
+    P.txt('WHAT IS COVERED', 10.5, true, [22, 101, 52]);
+    P.txt('Defects in workmanship performed by GrayCo or its subcontractors, and improper installation of materials furnished by GrayCo, during the warranty term. Manufacturer warranties on materials pass through to the Owner.');
+    P.txt('WHAT IS NOT COVERED', 10.5, true, [180, 20, 20]);
+    P.txt('Manufacturer defects in owner-supplied materials; damage by the owner, tenants or others after completion; normal wear and tear; misuse; storms, fire, flood and other acts of God.');
+    P.txt('To make a claim: call ' + (W.GC_BRAND ? W.GC_BRAND.phone : '(901) 585-0944') + ' or e-mail ' + (W.GC_BRAND ? W.GC_BRAND.email : 'office@grayco-cs.com') + ', or use your GrayCo project page.');
+    P.sigs('Owner / date', 'GrayCo representative / date');
+  }).then(function(b){ return fileMade(job, 'warranty', 'Warranty Certificate', 'Warranty', b, opts); });
+};
+DM.contract = function(job, opts){
+  var est = A.estFor(job) || {}, pm = A.pmOf(job), draws = s(job.drawSchedule);
+  var scope = s(est.scopeNotes || est.description || est.scope || job.scope || job.scopeOfWork);
+  if (!scope && arr(est.mats).length) scope = arr(est.mats).slice(0, 25).map(function(x){ return '• ' + s(x.name); }).join('\n');
+  return pdfDoc('CONSTRUCTION CONTRACT — DRAFT FOR REVIEW', job, function(P){
+    P.txt('Contractor: ' + (W.GC_BRAND ? W.GC_BRAND.legalName + ', ' + W.GC_BRAND.address : 'GrayCo Construction Services, LLC') + '. Owner: ' + s(job.client) + '.');
+    P.txt('1. SCOPE OF WORK', 11, true); P.txt(scope || 'As described in the accepted GrayCo proposal for this project.');
+    P.txt('2. CONTRACT PRICE', 11, true); P.txt('$' + num(job.contract).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (est.num ? ' (proposal ' + est.num + ')' : '') + '.');
+    P.txt('3. PAYMENT SCHEDULE', 11, true); P.txt(draws ? 'Draws: ' + draws + ' (percent of the contract price, invoiced as the work reaches each milestone).' : 'As invoiced per the accepted proposal.');
+    P.txt('4. SCHEDULE', 11, true); P.txt('Estimated start: ' + (s(job.startDate) || 'to be scheduled') + (s(job.endDate) ? '; estimated completion: ' + s(job.endDate) : '') + '. Your project page shows the current schedule.');
+    P.txt('5. CHANGES', 11, true); P.txt('Any change to the scope or price is made by a written change order signed by the Owner before the changed work is done.');
+    P.txt('6. WARRANTY', 11, true); P.txt(warrantyOf(job).kind + ' warranty: ' + warrantyOf(job).years + ' year(s) from substantial completion, as stated on the warranty certificate.');
+    P.txt('Project manager: ' + pm.name + (pm.phone ? ' · ' + pm.phone : ''));
+    P.sigs('Owner signature / date', 'GrayCo representative / date');
+  }).then(function(b){ return fileMade(job, 'contract', 'Contract', 'Contracts', b, opts); });
+};
+DM.work_auth = function(job, opts){
+  var pm = A.pmOf(job);
+  return pdfDoc('WORK AUTHORIZATION', job, function(P){
+    P.txt('Insurance company: ' + (s(job.insCarrier || job.carrier) || '________________') + '     Claim #: ' + (s(job.claimNumber || job.claimNo) || '____________'));
+    P.txt('The Owner authorizes ' + (W.GC_BRAND ? W.GC_BRAND.legalName : 'GrayCo Construction Services, LLC') + ' to perform the labor and materials needed to complete the work described in the accompanying scope, and (for an insurance claim) to talk with the carrier about the covered scope and to receive proceeds for it. The Owner remains responsible for the deductible and for any work the carrier does not cover that the Owner approves in writing.');
+    P.txt('Project manager: ' + pm.name + (pm.phone ? ' · ' + pm.phone : ''));
+    P.sigs('Owner / date', 'GrayCo representative / date');
+  }).then(function(b){ return fileMade(job, 'work_auth', 'Work Authorization', 'Work Authorization', b, opts); });
+};
+/* the contract shows in the portal once its e-mail was approved and sent */
+function contractTick(){
+  var ap = W._gcCustApprovals ? W._gcCustApprovals() : null; if (!ap || !Array.isArray(ap.all)) return;
+  ap.all.forEach(function(x){
+    if (!x || x.kind !== 'contract' || x.status !== 'sent') return;
+    var pid = s(x.jobId), id = 'aut_contract_' + pid;
+    Promise.resolve(W.idbGet ? W.idbGet('projectDocs') : null).then(function(all){
+      if (!Array.isArray(all)) return;
+      var d = all.filter(function(y){ return y && y.id === id; })[0]; if (!d || d.portalShare === true) return;
+      var now = nowIso(), next = all.map(function(y){ return y && y.id === id ? Object.assign({}, y, { portalShare: true, updatedAt: now, savedAt: now }) : y; });
+      try { W.idbSet('projectDocs', next); } catch (e) {}
+      try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? prev.map(function(y){ return y && y.id === id ? Object.assign({}, y, { portalShare: true, updatedAt: now }) : y; }) : next; }); } catch (e) {}
+      try { if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+    });
+  });
+}
+
+/* ═══ ⚙ ADMIN: the template editor ═══════════════════════════════════════════ */
+function css(){
+  if (D.getElementById('gc-aut3-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-aut3-css';
+  st.textContent = '.gcst-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#0f2440;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;margin:8px 0;color:#cbd5e1;font:13px/1.4 Inter,-apple-system,Arial,sans-serif}' +
+    '.gcst-bar b{color:#fff}.gcst-bar button,.gcst-ov button{background:#d4a017;color:#0a1628;border:0;border-radius:8px;padding:7px 14px;font-weight:800;cursor:pointer}' +
+    '.gcst-ov{position:fixed;inset:0;z-index:100060;background:rgba(6,12,20,.7);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;font:13px/1.4 Inter,-apple-system,Arial,sans-serif}' +
+    '.gcst-card{background:#fff;color:#0f172a;border-radius:14px;max-width:1100px;width:100%;padding:18px}.gcst-card h2{margin:0 0 4px;font-size:18px}.gcst-card select,.gcst-card input{padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}' +
+    '.gcst-card table{border-collapse:collapse;width:100%;margin-top:10px}.gcst-card td,.gcst-card th{border-bottom:1px solid #e2e8f0;padding:4px;text-align:left;vertical-align:middle;font-size:12px}.gcst-card th{color:#64748b;font-weight:700}' +
+    '.gcst-card .gcst-x{background:#fee2e2;color:#991b1b}.gcst-card .gcst-sec{background:#e2e8f0;color:#0f172a}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function openEditor(selId){
+  css();
+  var all = allTemplates(), ids = Object.keys(all), cur = selId && all[selId] ? selId : ids[0];
+  var old = D.getElementById('gc-aut3-ed'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-aut3-ed'; ov.className = 'gcst-ov';
+  var t = JSON.parse(JSON.stringify(all[cur]));
+  function row(x, i){
+    return '<tr data-i="' + i + '"><td><input data-f="name" value="' + esc(x.name) + '" style="width:260px"></td><td><input data-f="day" type="number" min="0" value="' + x.day + '" style="width:54px"></td><td><input data-f="days" type="number" min="1" value="' + x.days + '" style="width:54px"></td>' +
+      '<td><input data-f="who" value="' + esc(x.who) + '" style="width:120px" list="gcst-who"></td><td><input data-f="dep" value="' + esc(arr(x.dep).join(', ')) + '" style="width:110px" title="task ids this one waits on"></td>' +
+      '<td><select data-f="stage"><option value=""></option>' + STAGE_KEYS.slice(1).map(function(k){ return '<option value="' + k + '"' + (x.stage === k ? ' selected' : '') + '>' + STAGE_NAME[k] + '</option>'; }).join('') + '</select></td>' +
+      '<td><input data-f="pct" type="number" min="0" max="100" value="' + (x.pct == null ? '' : x.pct) + '" style="width:50px"></td>' +
+      '<td><input data-f="portal" type="checkbox"' + (x.portal ? ' checked' : '') + '></td><td><input data-f="notify" type="checkbox"' + (x.notify ? ' checked' : '') + '></td>' +
+      '<td><input data-f="sla" value="' + (x.sla ? esc(x.sla.key + ':' + x.sla.hours) : '') + '" placeholder="onsite:4" style="width:70px"></td><td><code style="font-size:10px;color:#64748b">' + esc(x.id) + '</code></td><td><button type="button" class="gcst-x" data-del="' + i + '">✕</button></td></tr>';
+  }
+  function paint(){
+    ov.innerHTML = '<div class="gcst-card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><h2>🗓 Schedule templates</h2><div style="color:#64748b">A signed job gets a draft schedule from its type’s template. The PM only moves dates — the tasks after a moved task follow. “Portal”: the customer sees the step. “Tell customer”: an appointment confirmation (through approvals). SLA: program / TPA timers (contact:1, onsite:4, estimate:48).</div></div>' +
+      '<div><select id="gcst-pick">' + ids.map(function(k){ return '<option value="' + k + '"' + (k === cur ? ' selected' : '') + '>' + esc(all[k].name) + '</option>'; }).join('') + '</select> <button type="button" class="gcst-sec" id="gcst-close">Close</button></div></div>' +
+      '<div style="margin-top:10px"><label>Name <input id="gcst-name" value="' + esc(t.name) + '" style="width:280px"></label> <label>Default draws <input id="gcst-draws" value="' + esc(t.draws || '') + '" placeholder="30/40/30" style="width:90px"></label> <label>Punch list items <input id="gcst-punch" value="' + esc(arr(t.punch).join('; ')) + '" style="width:360px"></label></div>' +
+      '<table><thead><tr><th>Task</th><th>Day</th><th>Days</th><th>Who</th><th>Waits on</th><th>Starts stage</th><th>% when done</th><th>Portal</th><th>Tell customer</th><th>SLA</th><th>id</th><th></th></tr></thead><tbody>' + t.tasks.map(row).join('') + '</tbody></table>' +
+      '<datalist id="gcst-who"><option>crew</option><option>PM</option><option>super</option><option>office</option><option>mit tech</option><option>inspector</option><option>supplier</option><option>sub:Roofing</option><option>sub:Plumbing</option><option>sub:Electrical</option><option>sub:Drywall</option><option>sub:Framing</option><option>carrier</option></datalist>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button type="button" class="gcst-sec" id="gcst-add">＋ Task</button><button type="button" id="gcst-save">Save template</button>' + (SEED[cur] ? '<button type="button" class="gcst-sec" id="gcst-reset">Back to the original</button>' : '') + '<button type="button" class="gcst-sec" id="gcst-new">＋ New template</button><span id="gcst-msg" style="color:#166534;font-weight:700;align-self:center"></span></div></div>';
+  }
+  function read(){
+    t.name = s(ov.querySelector('#gcst-name').value) || t.name; t.draws = s(ov.querySelector('#gcst-draws').value);
+    t.punch = s(ov.querySelector('#gcst-punch').value).split(/\s*;\s*/).filter(Boolean);
+    ov.querySelectorAll('tbody tr').forEach(function(tr){
+      var x = t.tasks[+tr.getAttribute('data-i')]; if (!x) return;
+      tr.querySelectorAll('[data-f]').forEach(function(el){
+        var f = el.getAttribute('data-f');
+        if (f === 'portal' || f === 'notify') x[f] = el.checked;
+        else if (f === 'day') x.day = Math.max(0, num(el.value)); else if (f === 'days') x.days = Math.max(1, num(el.value) || 1);
+        else if (f === 'pct') x.pct = s(el.value) === '' ? null : Math.min(100, num(el.value));
+        else if (f === 'dep') x.dep = s(el.value).split(/[\s,]+/).filter(Boolean);
+        else if (f === 'sla') { var m = /^([a-z]+)\s*:\s*(\d+(?:\.\d+)?)$/i.exec(s(el.value)); x.sla = m ? { key: low(m[1]), hours: +m[2] } : null; }
+        else x[f] = s(el.value);
+      });
+      x.internal = !x.portal;
+    });
+  }
+  paint(); D.body.appendChild(ov);
+  ov.addEventListener('change', function(e){ if (e.target.id === 'gcst-pick') { read(); openEditor(e.target.value); } });
+  ov.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'gcst-close') { ov.remove(); return; }
+    if (b.getAttribute('data-del') != null) { read(); var gone = t.tasks.splice(+b.getAttribute('data-del'), 1)[0]; t.tasks.forEach(function(x){ x.dep = arr(x.dep).filter(function(d){ return d !== gone.id; }); }); paint(); return; }
+    if (b.id === 'gcst-add') { read(); var last = t.tasks[t.tasks.length - 1]; t.tasks.push({ id: 't' + Date.now().toString(36), name: 'New task', day: last ? last.day + last.days : 0, days: 1, who: 'crew', dep: last ? [last.id] : [], portal: true, internal: false, stage: '', pct: null, notify: false, sla: null }); paint(); return; }
+    if (b.id === 'gcst-save') { read(); ov.querySelector('#gcst-msg').textContent = 'Saving…'; saveTemplate(cur, t).then(function(r){ ov.querySelector('#gcst-msg').textContent = r.ok ? 'Saved ✓ — new jobs use it.' : 'Saved here; the cloud did not answer (it will retry).'; }); return; }
+    if (b.id === 'gcst-reset') { resetTemplate(cur).then(function(){ openEditor(cur); }); return; }
+    if (b.id === 'gcst-new') { read(); var nm = 'Custom ' + (ids.length + 1), nid = 'custom_' + Date.now().toString(36); saveTemplate(nid, { name: nm, draws: '', match: '', punch: [], tasks: [{ id: 'start', name: 'Start', day: 0, days: 1, who: 'crew', dep: [], portal: true, stage: 'in_progress', pct: null, notify: true }] }).then(function(r){ openEditor(r.id); }); }
+  });
+  return ov;
+}
+function adminBar(){
+  var main = D.querySelector('main'); if (!main) return;
+  var h1 = null, hs = main.querySelectorAll('h1');
+  for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'Admin') { h1 = hs[i]; break; }
+  var have = D.getElementById('gc-aut3-admin');
+  if (!h1) { if (have) have.remove(); return; }
+  if (have && have.isConnected) return;
+  css();
+  var c = D.createElement('div'); c.id = 'gc-aut3-admin'; c.className = 'gcst-bar';
+  c.innerHTML = '<span><b>🗓 Schedule templates</b> · the draft schedule each job type gets when it is signed (tasks, days, who, what waits on what, what the customer sees)</span><button type="button">Open</button>';
+  c.querySelector('button').onclick = function(){ openEditor(); };
+  var anchor = D.getElementById('gc-ja-admin') || D.getElementById('gc-adm-top');
+  if (!anchor || anchor.parentNode !== h1.parentNode) anchor = h1;
+  anchor.parentNode.insertBefore(c, anchor.nextSibling);
+}
+
+/* ═══ wiring ═════════════════════════════════════════════════════════════════ */
+/* the stage just before a change: the job as it was (status / % from the bus event) */
+function prevStage(n, d){
+  var p = A.proj(d.pid); if (!p) return 'lead';
+  if (n === 'gc:job-activated:ready') return 'lead';
+  var was = Object.assign({}, p);
+  if (n === 'gc:job-pct') was.pct = d.from;
+  if (n === 'gc:job-status') was.status = d.from;
+  if (n === 'gc:job-complete') { was.status = 'active'; if (num(was.pct) >= 100) was.pct = 95; }
+  return derive(was) || 'lead';
+}
+['gc:job-status', 'gc:job-pct', 'gc:job-complete', 'gc:job-activated:ready'].forEach(function(n){
+  A.on(n, function(d){ markLive(d.pid); evaluate(d.pid, prevStage(n, d)); });
+});
+A.on('gc:job-pct', function(d){ if (num(d.to) > num(d.from)) ST(function(){ ensureDraws(d.pid); }, 1500); });
+A.on('gc:invoice-paid', function(d){
+  var p = A.proj(d.pid); if (!p) return;
+  if (d.final || (rank(p.jobStage) >= rank('complete') && fullyPaid(d.pid))) closeoutWarranty(d.pid);
+});
+function stageTick(){
+  if (D.hidden || W.__GC_IS_TYPING__) return;
+  depTick(); insTick(); slaTick(); contractTick(); permitHeal();
+  /* schedule-driven: jobs on a template are checked every time (dates passing move them) */
+  var seen = {};
+  schedRows().forEach(function(r){ if (r && r.tpl && r.pid && !seen[r.pid]) { seen[r.pid] = 1; markAuto(r.pid); } });
+  /* a template task finished → its progress % (never 100 by itself; job switch autoProgress) */
+  Object.keys(seen).forEach(function(pid){ evaluate(pid); });
+}
+function markAuto(pid){
+  var p = A.proj(pid); if (!p || !p.schedPlan || !A.jobAuto(p, 'autoProgress')) return;
+  var t = today(), best = 0;
+  schedRows().forEach(function(r){ if (r && String(r.pid) === String(pid) && r.tpl && r.pct != null && (r.done || s(r.endDate || r.date) < t)) best = Math.max(best, Math.min(95, num(r.pct))); });
+  if (best > num(p.pct)) {
+    markLive(pid);
+    var moved = false;
+    A.saveProject(pid, function(q){ if (num(q.pct) >= best) return false; moved = true; A.jobNote(q, 'Progress ' + num(q.pct) + '% → ' + best + '% (schedule milestone reached).'); q.pct = best; q._pctUpdatedAt = nowIso(); q._pctBy = 'schedule'; })
+      .then(function(saved){ if (saved || moved) { A.nudge(); ST(function(){ ensureDraws(pid); }, 800); } });
+  }
+}
+
+W._gcSchedTemplates = {
+  list: function(){ var a = allTemplates(); return Object.keys(a).map(function(k){ return { id: k, name: a[k].name, tasks: a[k].tasks.length, builtin: !!SEED[k], updatedAt: a[k].updatedAt || '' }; }); },
+  get: function(id){ var a = allTemplates(); return a[id] ? JSON.parse(JSON.stringify(a[id])) : null; },
+  all: allTemplates, pick: function(p){ var t = pickTemplate(A.proj(p) || p); return t ? t.id : null; }, plan: function(pid, start){ var p = A.proj(pid), t = pickTemplate(p); return p && t ? planFor(p, t, start || today()) : null; },
+  apply: function(pid, opts){ return draftSchedule(pid, opts); }, save: saveTemplate, reset: resetTemplate, open: openEditor, refresh: pullTemplates, merge: mergeStore, key: TKEY, seed: SEED, stages: STAGE_KEYS.slice(), stageNames: STAGE_NAME
+};
+W._gcPermits = function(pid){ return permitsOf(pid); };
+W._gcPermits.seed = seedPermits; W._gcPermits.table = permitTable; W._gcPermits.officeFor = function(p){ return officeFor(A.proj(p) || p); };
+W._gcAut3 = { evaluate: evaluate, derive: function(pid){ return derive(A.proj(pid)); }, runStage: runStage, ensureDraws: ensureDraws, closeoutCoc: closeoutCoc, closeoutWarranty: closeoutWarranty, markLive: markLive,
+  stageTick: stageTick, depTick: depTick, insTick: insTick, checkupTick: checkupTick, contractTick: contractTick, warrantyOf: warrantyOf,
+  state: function(pid){ var p = A.proj(pid); return p ? { stage: p.jobStage, derived: derive(p), ran: p.autoRan || {}, plan: p.schedPlan || null, permits: permitsOf(pid) } : null; } };
+
+ST(pullTemplates, 5000); SI(function(){ if (!D.hidden) pullTemplates(); }, 10 * 60e3);
+SI(function(){ try { adminBar(); } catch (e) {} }, 1200);
+ST(function(){ try { stageTick(); } catch (e) {} }, 20000); SI(function(){ try { stageTick(); } catch (e) {} }, 60000);
+ST(checkupTick, 30000); SI(function(){ if (!D.hidden) checkupTick(); }, 6 * 3600e3);
+try { console.log('[GC] patch AUT3: stages drive the job (kickoff, next steps, punch, closeout), schedule templates, draws at milestones, permits — _gcAut3.state(pid)'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-aut4">
+/* __GC_PATCH_AUT4__ ══════════════════════════════════════════════════════════
+   GrayCo — AUTOMATIONS, PHASE 4 (patch AUT4): the sub agreement fills itself (audit #8).
+
+   Pick a sub (field: Create document → Subcontractor Agreement; desk: the sub agreement / scope e-mail) and the
+   empty boxes fill from what the CRM already knows:
+     · scope      — the sub's awarded bid scope on the job, then the job's estimate lines for the sub's trade
+                    (no prices), else the job scope;
+     · price      — the sub's awarded (or only) bid on the job;
+     · start/end  — the job's schedule items for that sub or that trade (patch AUT3's template rows carry the trade);
+     · inclusions, exclusions, draw, terms — per-trade defaults (gc_kv "subAgreementDefaults", admins can change
+                    them: window._gcSubFill.defaults / setDefaults); retainage by job type (commercial 10 %).
+   A job with exactly one awarded sub opens with that sub picked. Nothing a person typed is overwritten; picking a
+   different sub replaces only what was filled in by itself. Job switch: subAgreementFill.
+   window._gcSubFill.prefill(job, subName) → the values (for any other form).
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUT4__) return; window.__GC_PATCH_AUT4__ = true;
+var W = window, D = document, A = W._gcAut;
+if (!A) { try { console.warn('[GC] patch AUT4 needs AUT1'); } catch (e) {} return; }
+var U = A.util, s = U.s, low = U.low, arr = U.arr, num = U.num, ST = U.ST, SI = U.SI, jget = U.jget, jset = U.jset, nowIso = U.nowIso;
+function crm(){ return W._crm || {}; }
+function norm(v){ return U.normName(v); }
+
+var TRADES = {
+  roofing: /roof|shingle|flashing|underlay|drip edge|ridge|starter|ice ?(and|&) ?water|decking|felt/,
+  gutters: /gutter|downspout/,
+  plumbing: /plumb|pipe|faucet|toilet|water heater|drain|sewer|shower valve|pex/,
+  electrical: /electric|wire|wiring|outlet|switch|panel|breaker|light|fixture|circuit/,
+  hvac: /hvac|duct|furnace|condenser|air handler|mechanical|mini.?split|thermostat/,
+  drywall: /drywall|sheetrock|gypsum|tape|mud|texture/,
+  framing: /fram|stud|joist|truss|header|lumber|sheathing|blocking/,
+  painting: /paint|primer|stain|caulk/,
+  flooring: /floor|tile|lvp|lvt|carpet|hardwood|laminate|grout/,
+  cabinets: /cabinet|countertop|vanity|millwork/,
+  concrete: /concrete|slab|footing|flatwork|rebar/,
+  demolition: /demo|tear.?out|dumpster|haul/,
+  insulation: /insulat|batt|spray foam|blown/,
+  siding: /siding|soffit|fascia|trim board/,
+  windows: /window|door install|glazing/,
+  mitigation: /extract|dehu|air mover|moisture|drying|mitigat/
+};
+function tradeKey(t){ t = low(t); var k = Object.keys(TRADES).filter(function(x){ return t.indexOf(x.replace(/s$/, '')) >= 0 || TRADES[x].test(t); })[0]; return k || ''; }
+var DEFAULTS0 = {
+  _all: { inc: 'All labor, tools, equipment, fasteners and daily cleanup for the scope above; haul-off of the sub’s own debris.', exc: 'Materials furnished by GrayCo unless listed above; permits (pulled by GrayCo); work not listed in the scope.', draw: 'Paid in full on completion and GrayCo’s approval of the work.', terms: 'Paid on the Friday pay run after completion and approval; current W-9 and certificate of insurance on file with GrayCo.' },
+  roofing: { inc: 'Tear-off and disposal, underlayment, ice & water at eaves / valleys, drip edge, flashing, pipe boots and vents, shingles to the manufacturer’s specification, dry-in the same day, magnet sweep and full cleanup.', exc: 'Decking replacement (billed per sheet when approved), gutters, permits (by GrayCo).' },
+  gutters: { inc: 'Gutters, downspouts, hangers and end caps as listed; haul-off of old gutters.', exc: 'Fascia repair unless listed.' },
+  plumbing: { inc: 'Rough and finish plumbing as listed, fixture setting, pressure test.', exc: 'Fixtures and trim (supplied by GrayCo / owner unless listed), drywall patching, permits (by GrayCo).', draw: '50% at passed rough-in inspection, 50% on completion.' },
+  electrical: { inc: 'Rough and finish electrical as listed, devices and connections, panel work as listed.', exc: 'Fixtures supplied by the owner, drywall patching, utility fees, permits (by GrayCo).', draw: '50% at passed rough-in inspection, 50% on completion.' },
+  hvac: { inc: 'Equipment set, ductwork, connections, startup and test as listed.', exc: 'Electrical service upgrades, drywall patching, permits (by GrayCo).', draw: '50% at rough-in, 50% at startup and approval.' },
+  drywall: { inc: 'Hang, tape, finish to the level listed, sanding, cleanup.', exc: 'Paint, insulation, framing repairs.' },
+  framing: { inc: 'Framing, blocking, sheathing as listed; nails and fasteners.', exc: 'Lumber (supplied by GrayCo unless listed), engineering.' },
+  painting: { inc: 'Surface prep, caulk, primer and two finish coats as listed; protection of floors and fixtures.', exc: 'Drywall repairs beyond minor patching; paint unless listed.' },
+  flooring: { inc: 'Floor prep as listed, install, transitions, cleanup.', exc: 'Subfloor repair unless listed; furniture moving; flooring material unless listed.' },
+  mitigation: { inc: 'Extraction, equipment set and daily monitoring as listed; moisture logs to GrayCo daily.', exc: 'Demo beyond what is listed; contents.' }
+};
+var DKEY = 'subAgreementDefaults', DLS = 'gc_subAgreementDefaults', DEF = jget(DLS, null);
+function sbUrl(){ var u = ''; try { u = Storage.prototype.getItem.call(localStorage, 'grayco_sb_url') || ''; } catch (e) {} return (s(u) || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function pullDefaults(){
+  return fetch(sbUrl() + '/rest/v1/gc_kv?key=eq.' + DKEY + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
+    var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+    if (v && typeof v === 'object' && (!DEF || s(v.updatedAt) > s(DEF.updatedAt))) { DEF = v; jset(DLS, v); }
+  }, function(){});
+}
+function defaults(trade){
+  var k = tradeKey(trade), base = Object.assign({}, DEFAULTS0._all, DEFAULTS0[k] || {}), own = DEF && DEF.trades || {};
+  return Object.assign(base, own._all || {}, own[k] || {});
+}
+function setDefaults(trade, vals){
+  var next = Object.assign({ trades: {} }, DEF || {}); next.trades = Object.assign({}, next.trades || {});
+  next.trades[tradeKey(trade) || '_all'] = Object.assign({}, next.trades[tradeKey(trade) || '_all'] || {}, vals); next.updatedAt = nowIso(); next.by = U.me();
+  DEF = next; jset(DLS, next);
+  return fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: DKEY, value: next, updated_at: nowIso() }) }).then(function(r){ return r.ok; }, function(){ return false; });
+}
+
+/* the sub list: the CRM's copy, else the device store (the CRM loads it a little later on a busy computer) */
+var SUBS = [];
+function loadSubs(){ try { if (W.idbGet) Promise.resolve(W.idbGet('subs')).then(function(v){ if (Array.isArray(v)) SUBS = v; }, function(){}); } catch (e) {} }
+function subRec(name){
+  var n = norm(name); if (!n) return null;
+  var f = function(l){ return arr(l).filter(function(x){ return x && (norm(x.name) === n || norm(x.company) === n); })[0] || null; };
+  return f(crm().subs) || f(SUBS);
+}
+function bids(p){ return arr(p && p.subs).filter(function(b){ return b && s(b.name); }); }
+function awarded(b){ return /award|accept|won|select|hired|approved/i.test(s(b.status)) || b.selected === true || b.awarded === true; }
+function bidFor(p, name){
+  var n = norm(name), l = bids(p).filter(function(b){ return norm(b.name) === n || (b.subId && subRec(name) && b.subId === subRec(name).id); });
+  return l.filter(awarded)[0] || (l.length === 1 ? l[0] : null);
+}
+function estLines(p){
+  var e = A.estFor(p) || {}, out = [];
+  arr(e.lines).forEach(function(l){ out.push({ cat: s(l.cat || l.category), text: s(l.desc || l.name), qty: l.qty, unit: s(l.unit) }); });
+  if (!out.length) arr(e.mats).forEach(function(l){ out.push({ cat: s(l.cat), text: s(l.name || l.desc), qty: l.qty, unit: s(l.unit) }); });
+  return out;
+}
+function scopeFor(p, trade, bid){
+  var parts = [];
+  if (bid && s(bid.scope)) parts.push(s(bid.scope));
+  var k = tradeKey(trade);
+  if (k) {
+    var lines = estLines(p).filter(function(l){ return tradeKey(l.cat) === k || TRADES[k].test(low(l.text)); });
+    if (lines.length) parts.push(lines.slice(0, 40).map(function(l){ var q = num(l.qty); return '• ' + l.text.replace(/\s*--\s*/g, ' — ') + (q && q !== 1 ? ' [' + q + (l.unit ? ' ' + l.unit : '') + ']' : ''); }).join('\n'));
+  }
+  if (!parts.length && s(p.scope || p.scopeOfWork)) parts.push(s(p.scope || p.scopeOfWork));
+  return parts.join('\n\n');
+}
+function datesFor(p, name, trade){
+  var n = norm(name), k = tradeKey(trade);
+  var l = arr(crm().schedule).filter(function(r){
+    if (!r || String(r.pid) !== String(p.id)) return false;
+    var who = norm(r.vendor) + ' ' + norm(r.assignee) + ' ' + norm(r.title);
+    return (n && who.indexOf(n) >= 0) || (k && (tradeKey(r.vendor) === k || tradeKey(r.who) === k));
+  });
+  if (!l.length) return null;
+  var st = l.map(function(r){ return s(r.date).slice(0, 10); }).filter(Boolean).sort()[0];
+  var en = l.map(function(r){ return s(r.endDate || r.date).slice(0, 10); }).filter(Boolean).sort().slice(-1)[0];
+  return { start: st, end: en };
+}
+function retainageFor(p){ return /commercial|\bti\b|new construction|tenant/i.test(s(p.type) + ' ' + s(p.name)) ? 10 : 0; }
+function prefill(job, name){
+  var p = A.proj(job) || job; if (!p || !s(name)) return null;
+  var sub = subRec(name) || {}, bid = bidFor(p, name) || {};
+  var trade = s(bid.trade) || s(sub.trade) || s(sub.cat);
+  var df = defaults(trade), dt = datesFor(p, name, trade) || {};
+  return { name: s(name), trade: trade, contact: s(sub.phone || bid.phone) || s(sub.email || bid.email), email: s(sub.email || bid.email), price: num(bid.bidAmt || bid.amount || bid.price) || '',
+    scope: scopeFor(p, trade, bid), start: dt.start || '', end: dt.end || '', inc: df.inc, exc: df.exc, draw: df.draw, terms: df.terms, retainage: retainageFor(p), bidStatus: s(bid.status) };
+}
+
+/* fill a form: only empty boxes, or boxes this patch filled before (a new sub picked) */
+var nIn = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'), nTa = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value'), nSe = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+function put(el, v, force){
+  if (!el || v == null || v === '') return false;
+  var cur = s(el.value), mine = el.getAttribute('data-gc-subfill');
+  if (!force && cur && !(mine != null && mine === cur)) return false;
+  v = String(v);
+  try { (el.tagName === 'TEXTAREA' ? nTa : el.tagName === 'SELECT' ? nSe : nIn).set.call(el, v); } catch (e) { el.value = v; }
+  el.setAttribute('data-gc-subfill', s(el.value));
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+  return true;
+}
+function byId(id){ return D.getElementById(id); }
+var LAST = null;
+function fillField(job){
+  var nm = byId('_saName'); if (!nm) return 0;
+  var v = prefill(job, nm.value); if (!v) return 0; LAST = v;
+  var n = 0;
+  [['_saSubContact', v.contact], ['_saScope', v.scope], ['_saPrice', v.price], ['_saInc', v.inc], ['_saExc', v.exc], ['_saDraw', v.draw + (v.retainage ? ' ' + v.retainage + '% retainage held until final completion.' : '')], ['_saTerms', v.terms]]
+    .forEach(function(x){ if (put(byId(x[0]), x[1])) n++; });
+  if (n) A.emit('gc:subfill', { pid: (A.proj(job) || job).id, sub: v.name, n: n, form: 'field' });
+  return n;
+}
+function wrapField(){
+  var f = W._gcOpenSubAgreement; if (typeof f !== 'function' || f.__gcAut4) return;
+  var w = function(job){
+    var r = f.apply(this, arguments);
+    try {
+      var p = A.proj(job) || job;
+      if (p && A.jobAuto(p, 'subAgreementFill')) {
+        var nm = byId('_saName');
+        if (nm && !nm.__gcAut4) {
+          nm.__gcAut4 = true;
+          var go = function(){ ST(function(){ fillField(p); }, 30); };
+          nm.addEventListener('change', go); nm.addEventListener('input', function(){ clearTimeout(nm.__t); nm.__t = ST(go, 400); });
+          var aw = bids(p).filter(awarded);
+          if (!s(nm.value) && aw.length === 1) { put(nm, aw[0].name.trim()); go(); }
+        }
+      }
+    } catch (e) {}
+    return r;
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcAut4 = true; W._gcOpenSubAgreement = w;
+}
+/* the desk sub agreement / scope e-mail (gcSubEmail.open) */
+function jobFor(projName, po){
+  var n = norm(projName);
+  return A.projects().filter(function(p){ return p && ((po && s(p.autoPO) === s(po)) || (n && norm(p.name) === n)); })[0] || null;
+}
+function fillDesk(job){
+  var nm = byId('gc-se-subname'); if (!nm) return 0;
+  var v = prefill(job, nm.value); if (!v) return 0; LAST = v;
+  var n = 0;
+  [['gc-se-subemail', v.email], ['gc-se-price', v.price], ['gc-se-start', v.start], ['gc-se-end', v.end],
+   ['gc-se-scope', [v.scope, v.inc ? 'INCLUDES: ' + v.inc : '', v.exc ? 'EXCLUDES: ' + v.exc : ''].filter(Boolean).join('\n\n')], ['gc-se-notes', [v.draw, v.terms].filter(Boolean).join(' ')]]
+    .forEach(function(x){ if (put(byId(x[0]), x[1])) n++; });
+  var ret = byId('gc-se-ret');
+  if (ret && v.retainage && s(ret.value) === '0' && !ret.__gcTouched && [].some.call(ret.options, function(o){ return o.value === String(v.retainage); })) { put(ret, String(v.retainage), true); n++; }
+  if (n) A.emit('gc:subfill', { pid: (A.proj(job) || job).id, sub: v.name, n: n, form: 'desk' });
+  return n;
+}
+function wrapDesk(){
+  var o = W.gcSubEmail; if (!o || typeof o.open !== 'function' || o.open.__gcAut4) return;
+  var f = o.open;
+  var w = function(subName, subEmail, projName, projAddr, po){
+    var r = f.apply(this, arguments);
+    try {
+      var p = jobFor(projName, po);
+      if (p && A.jobAuto(p, 'subAgreementFill')) ST(function(){
+        var nm = byId('gc-se-subname'), ret = byId('gc-se-ret');
+        if (ret) ret.addEventListener('change', function(){ ret.__gcTouched = true; });
+        if (nm && !nm.__gcAut4) { nm.__gcAut4 = true; nm.addEventListener('change', function(){ fillDesk(p); }); nm.addEventListener('input', function(){ clearTimeout(nm.__t); nm.__t = ST(function(){ fillDesk(p); }, 400); }); }
+        fillDesk(p);
+      }, 60);
+    } catch (e) {}
+    return r;
+  };
+  w.__gcAut4 = true; o.open = w;
+}
+
+W._gcSubFill = { prefill: prefill, defaults: defaults, setDefaults: setDefaults, tradeKey: tradeKey, fillField: fillField, fillDesk: fillDesk, last: function(){ return LAST; }, refresh: pullDefaults };
+wrapField(); wrapDesk(); loadSubs(); ST(loadSubs, 8000); SI(function(){ if (!D.hidden) loadSubs(); }, 120000);
+SI(function(){ try { wrapField(); wrapDesk(); } catch (e) {} }, 1500);
+ST(pullDefaults, 7000); SI(function(){ if (!D.hidden) pullDefaults(); }, 15 * 60e3);
+try { console.log('[GC] patch AUT4: sub agreements fill from the awarded bid, the estimate and the schedule — _gcSubFill.prefill(job, sub)'); } catch (e) {}
+})();
+
 </script>

@@ -51,7 +51,7 @@ async function queue(body, who, I){
   /* appointment rule: auto after the first approved one (or the job's apptAuto switch) */
   let auto = false;
   if (K.appt) {
-    if (p.auto && p.auto.apptAuto === true) auto = 'job switch';
+    if ((p.autoX && p.autoX.apptAuto === true) || (p.auto && p.auto.apptAuto === true)) auto = 'job switch';   /* p.autoX: switches patch JA does not own */
     else {
       const cur = await I.kvListRead(I.AQ_KEY);
       const prior = cur && cur.list.find(function(x){ return x && KINDS[x.kind] && KINDS[x.kind].appt && s(x.jobId) === pid && x.status === 'sent' && (x.approvals || []).some(function(a){ return a && !a.auto; }); });
