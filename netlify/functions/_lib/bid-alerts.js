@@ -59,8 +59,11 @@ function make(d){
       bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc), detail: s(it.detail).slice(0, 300),
       dueToCompany: s(it.dueToCompany), dueToContact: s(it.dueToContact), dueToEmail: s(it.dueToEmail), dueToPhone: s(it.dueToPhone), submitMethod: s(it.submitMethod), submitWhere: s(it.submitWhere),
       dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: assigneeEmail || emailOf(assignee), assignedBy: s(it.assignedBy),
-      link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length };
+      link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
+      /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
+      website: isWebsite(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
   }
+  function isWebsite(l){ return !!(l && (s(l.origin) === 'website' || l.websiteLead || (l.leadExtra && l.leadExtra.websiteLead) || /^website\b/i.test(s(l.source)))); }
   /* the people: name → e-mail (the CRM's people list in gc_kv "users", and gc_staff) */
   const PEOPLE = {};
   function emailOf(name){ return PEOPLE[low(name)] || ''; }
@@ -93,6 +96,7 @@ function make(d){
 
   /* ── the messages ─────────────────────────────────────────────────────────── */
   function rowHtml(x){
+    if (x.website) return webRowHtml(x);   /* patch WEB */
     const late = x.bidDue && BD.wallToEpoch(x.bidDue.length === 10 ? x.bidDue + 'T23:59' : x.bidDue) - now() < 72 * 3600000;
     return '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b><br><span style="color:#555;font-size:13px">'
       + esc([cap(x.type), 'from ' + (x.source || 'the Lead Inbox'), [x.city, x.state].filter(Boolean).join(', '), x.gc && 'GC ' + x.gc].filter(Boolean).join(' · ')) + '</span>'
@@ -103,6 +107,15 @@ function make(d){
       + '<td style="padding:8px 10px;border-bottom:1px solid #eee;white-space:nowrap;font-weight:700;color:' + (!x.bidDue ? '#b45309' : late ? '#b91c1c' : '#333') + '">'
       + (x.bidDue ? 'Bid due<br>' + esc(fmtDue(x.bidDue)) : 'Bid due date:<br>NOT FOUND — add it') + '</td></tr>';
   }
+  /* patch WEB: a website lead — who, how to reach them, what they asked for; no bid-due column */
+  function webRowHtml(x){
+    const c = x.contact || {};
+    return '<tr><td colspan="2" style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b><br><span style="color:#555;font-size:13px">'
+      + esc([x.form || cap(x.type), 'from ' + (x.source || 'the website'), [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')) + '</span>'
+      + ((c.name || c.phone || c.email) ? '<br><span style="font-size:13px"><b>Contact:</b> ' + esc([c.name, c.phone, c.email].filter(Boolean).join(' · ')) + '</span>' : '')
+      + (x.detail ? '<br><span style="color:#555;font-size:13px">' + esc(x.detail) + '</span>' : '')
+      + '<br><span style="font-size:13px;color:#b45309"><b>Not assigned yet</b> — an admin assigns it to a PM on Leads → 📥 Lead Inbox (Assign PM).</span></td></tr>';
+  }
   function frame(head, intro, rows, foot){
     return '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(head) + '</div><div style="padding:6px 18px 18px">'
       + '<p>' + intro + '</p><table style="width:100%;border-collapse:collapse;font:14px Arial">' + rows + '</table>'
@@ -112,6 +125,7 @@ function make(d){
   const FOOT = 'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
   function soonest(list){ return list.filter(x => x.bidDue).sort((a, b) => BD.wallToEpoch(a.bidDue) - BD.wallToEpoch(b.bidDue))[0]; }
   function mailNew(list){
+    if (list.length && list.every(x => x.website)) return mailWeb(list);   /* patch WEB */
     const n = list.length, first = soonest(list);
     const subject = (n === 1 ? 'New lead: ' + list[0].title + ' — ' + dueLine(list[0])
       : n + ' new leads: ' + list.map(x => x.title).join(' · ').slice(0, 140) + ' — ' + (first ? dueLine(first) + (list.some(x => !x.bidDue) ? ' (some: NOT FOUND — add it)' : '') : dueTxt(''))).slice(0, 250);
@@ -156,6 +170,15 @@ function make(d){
       for (const sub of subs) { try { await wp.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, payload, { TTL: 86400 }); sent++; } catch (e) {} }
     }
     return { sent };
+  }
+  /* patch WEB: the new-lead message for website leads (no "Bid due date: NOT FOUND") */
+  function mailWeb(list){
+    const n = list.length;
+    const subject = (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · ')).slice(0, 250);
+    const html = frame('GrayCo — new website lead' + (n === 1 ? '' : 's'), (n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
+      'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every website lead.');
+    const text = subject + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
+    return { subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
   /* extra: the assigned estimator / PM; only: just these people (not the admins) */
   async function deliver(m, extra, only){
@@ -304,7 +327,8 @@ function make(d){
   /* ── "Missing due info": the assigned person, once a day from 8 AM Central, for each open bid marked
      "Unknown yet" (or a bid with no due date / no "due to" company) ─────────────────────────────────── */
   function missingDue(l){ return !s(l.bidDue) || !s(l.dueToCompany); }
-  function isBid(l){ return !!(l.inboxId || l.estimator || l.bidStatus || l.dueUnknown || /commercial|government/i.test(s(l.leadKind || l.type))); }
+  function isBid(l){ if (isWebsite(l)) return false;   /* patch WEB: a website lead is not a bid (no "Missing due info") */
+    return !!(l.inboxId || l.estimator || l.bidStatus || l.dueUnknown || /commercial|government/i.test(s(l.leadKind || l.type))); }
   async function nag(src, t){
     const w = BD.epochToWall(t); if (w.slice(11) < TODAY_AT) return { sent: 0 };
     const by = {};

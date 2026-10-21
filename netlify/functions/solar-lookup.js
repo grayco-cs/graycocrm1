@@ -159,19 +159,41 @@ exports.handler = async function (event) {
   try { body = JSON.parse(event.body || '{}'); } catch (e) {}
   const lat = Number(body.lat), lng = Number(body.lng);
   if (!(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) || (!lat && !lng)) return out(400, { error: 'lat and lng are required.' });
-  if (lu.used >= lu.limit) return out(429, { error: 'This month\'s Google Solar limit (' + lu.limit + ' lookups) is used up. An admin can raise it in RoofScout Settings.', code: 'limit', usedThisMonth: lu.used, limit: lu.limit });
+  const m = await lookup(lat, lng, key, lu);
+  return out(m.status, m.body);
+};
 
+/* one Google Solar lookup, inside the admin's monthly limit (counted in rs_usage; "nothing there" is not counted) */
+async function lookup(lat, lng, key, lu){
+  if (lu.used >= lu.limit) return { status: 429, body: { error: 'This month\'s Google Solar limit (' + lu.limit + ' lookups) is used up. An admin can raise it in RoofScout Settings.', code: 'limit', usedThisMonth: lu.used, limit: lu.limit } };
   const url = SOLAR_URL + '?location.latitude=' + lat.toFixed(7) + '&location.longitude=' + lng.toFixed(7) + '&requiredQuality=LOW&key=' + encodeURIComponent(key);
   let r;
-  try { r = await fetch(url); } catch (e) { return out(502, { error: 'Could not reach Google Solar. Try again.' }); }
-  if (r.status === 404) return out(200, { found: false, usedThisMonth: lu.used, limit: lu.limit });   // not billed by Google
+  try { r = await fetch(url); } catch (e) { return { status: 502, body: { error: 'Could not reach Google Solar. Try again.' } }; }
+  if (r.status === 404) return { status: 200, body: { found: false, usedThisMonth: lu.used, limit: lu.limit } };   // not billed by Google
   const j = await r.json().catch(function(){ return {}; });
   if (!r.ok) {
     const msg = (j.error && j.error.message) || ('Google Solar error ' + r.status);
-    return out(502, { error: 'Google Solar: ' + msg });
+    return { status: 502, body: { error: 'Google Solar: ' + msg } };
   }
   const used = await bump();
-  return out(200, Object.assign(summarize(j), { usedThisMonth: used == null ? lu.used + 1 : used, limit: lu.limit }));
-};
+  return { status: 200, body: Object.assign(summarize(j), { usedThisMonth: used == null ? lu.used + 1 : used, limit: lu.limit }) };
+}
+/* patch WEB: the website's instant roof price (website-intake.js) measures through here — same key, same monthly
+   limit, same counting as RoofScout's "📡 Measure from address". Never throws.
+   → { ok:true, found, areaSqft, pitch, … } | { ok:false, code:'not-connected'|'limit'|'error', error } */
+async function measure(lat, lng){
+  const key = process.env.GOOGLE_SOLAR_API_KEY || '';
+  if (!key) return { ok: false, code: 'not-connected', error: 'GOOGLE_SOLAR_API_KEY is not set.' };
+  if (!svcKey()) return { ok: false, code: 'error', error: 'SUPABASE_SERVICE_KEY not set.' };
+  lat = Number(lat); lng = Number(lng);
+  if (!(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) || (!lat && !lng)) return { ok: false, code: 'error', error: 'no location' };
+  try {
+    const lu = await limitAndUsage();
+    const m = await lookup(lat, lng, key, lu);
+    if (m.status !== 200) return { ok: false, code: m.body.code || 'error', error: m.body.error || 'lookup failed' };
+    return Object.assign({ ok: true }, m.body);
+  } catch (e) { return { ok: false, code: 'error', error: String(e && e.message || e) }; }
+}
 
 exports._summarize = summarize;   // for tests
+exports._measure = measure;     // patch WEB

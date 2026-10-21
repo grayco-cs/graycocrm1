@@ -1926,3 +1926,5 @@ exports._core = { pmByName: async function(name){ const n = s(name); if (!n) ret
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
+/* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
+Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });

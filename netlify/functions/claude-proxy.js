@@ -104,7 +104,8 @@ exports.handler = async function(event, context) {
   }
 
   // Only the models the CRM actually asks for (CLAUDE_MODELS on Netlify can replace the list).
-  const allowed = (process.env.CLAUDE_MODELS || 'claude-sonnet-4-6,claude-haiku-4-5-20251001,claude-sonnet-4-20250514')
+  // patch WEB: the current models are allowed; the deprecated Claude Sonnet 4 (May 2025) id, asked for by nothing, is gone.
+  const allowed = (process.env.CLAUDE_MODELS || 'claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5,claude-sonnet-4-6,claude-haiku-4-5-20251001,claude-haiku-4-5')
     .split(',').map(function(m){ return m.trim(); }).filter(Boolean);
   if(allowed.indexOf(String(body.model || '')) < 0){
     return { statusCode: 400, headers, body: JSON.stringify({error:{type:'invalid_request_error', message:'Model not allowed: ' + String(body.model || '(none)')}}) };

@@ -124499,6 +124499,7 @@ function fromItem(it, prev){
   l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
   l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin);
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
+  if (fresh && it.leadExtra && typeof it.leadExtra === 'object') Object.keys(it.leadExtra).forEach(function(k){ if (/^[a-zA-Z][a-zA-Z0-9]{0,40}$/.test(k)) l[k] = it.leadExtra[k]; });   /* patch WEB: a new website / Brain lead's own fields (owner GrayCo, commission source…), set once */
   return stamp(l);
 }
 /* ── collect: the server's list → leads on the Lead Pipeline ─────────────────── */
@@ -124878,7 +124879,7 @@ var CSS = '#gc-ldi,#gc-ldi *,#gc-ldi-pb,#gc-ldi-pb *{box-sizing:border-box}#gc-l
   + '@media (max-width:480px){#gc-ldi .grid{grid-template-columns:1fr;padding:8px}#gc-ldi .fl select{flex:1 1 45%}#gc-ldi .hd small{flex-basis:100%}}';
 function ensureCss(){ if (document.getElementById('gc-ldi-css')) return; var st = document.createElement('style'); st.id = 'gc-ldi-css'; st.textContent = CSS; document.head.appendChild(st); }
 
-var SRC_LIST = ['BuildingConnected', 'PlanHub', 'A&B Planroom', 'RKA Planroom', 'GC direct', 'Government', 'RoofScout', 'Other'];
+var SRC_LIST = ['BuildingConnected', 'PlanHub', 'A&B Planroom', 'RKA Planroom', 'GC direct', 'Government', 'RoofScout', 'Website (grayco-cs.com)', 'Business Brain', 'Other'];   /* patch WEB */
 function opt(v, l, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; }
 function docLinks(l){
   var h = '';
@@ -124923,7 +124924,7 @@ function card(l){
     + (l.inboxFlag ? '<span class="tg t-flag">' + esc(l.inboxFlag) + '</span>' : '') + (arr(l.alsoOn).length ? '<span class="tg t-also">also on ' + esc(l.alsoOn.join(', ')) + '</span>' : '')
     + (l.needsReview ? '<span class="tg t-flag">needs a look</span>' : '') + '</div>'
     + '<div class="ttl">' + esc(l.name) + '</div>' + (where ? '<div class="sub">' + esc(where) + '</div>' : '')
-    + '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + '</div>'
+    + (l.websiteLead && typeof window._gcWebCardLine === 'function' ? window._gcWebCardLine(l) : '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + '</div>')   /* patch WEB */
     + (l.preBid ? '<div class="sub">Pre-bid: ' + esc(fmtWhen(l.preBid)) + '</div>' : '')
     + (arr(l.trades).length || l.bidNumber ? '<div class="sub">' + esc([arr(l.trades).join(', '), l.bidNumber && 'Bid # ' + l.bidNumber].filter(Boolean).join(' · ')) + '</div>' : '')
     + (l.contactName || l.phone || l.email ? '<div class="sub">👤 ' + esc([l.contactName, l.phone, l.email].filter(Boolean).join(' · ')) + '</div>' : '')
@@ -124935,7 +124936,7 @@ function card(l){
     + '<div class="drop" data-drop="lead">Drop plan files here</div>'
     + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (l.pm ? 'Change PM' : 'Assign PM') + '</button>' : '')
     + (l.pid ? '<button class="b pri" data-a="openjob">Open bid job</button>' : '<button class="b pri" data-a="job">Create bid job</button>')
-    + (admin && l.inboxId && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
+    + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
     + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
 }
 function render(){
@@ -130695,7 +130696,8 @@ function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_A
 function myRole(){ try { var me = W._gcMeNow || {}; return s(typeof W._gcRoleOf === 'function' ? W._gcRoleOf(me) : me.role); } catch (e) { return ''; } }
 /* who has it: the PM / estimator picked on the lead, else the default estimator the server gave a bid */
 function assigneeOf(l){ return s(l && (l.pm || l.estimator)); }
-function isBid(l){ return !!(l && (l.inboxId || l.estimator || l.bidStatus || validDue(l.bidDue) || l.dueUnknown || s(l.dueToCompany))); }
+function isBid(l){ if (l && l.websiteLead) return false;   /* patch WEB: a website lead is not a bid */
+  return !!(l && (l.inboxId || l.estimator || l.bidStatus || validDue(l.bidDue) || l.dueUnknown || s(l.dueToCompany))); }
 var STATUSES = ['Reviewing', 'Estimating', 'Submitted', 'Won', 'Lost', 'No bid'];
 function statusOf(l){
   if (l.notBidding) return 'No bid';
@@ -130995,18 +130997,19 @@ function edit(id, anchor){
 function formOk(z, prev, say){
   try {
     if (!z || typeof z !== 'object') return true;
-    var unknown = z.dueUnknown === '1' || z.dueUnknown === true || z.dueUnknown === 'true';
+    var webLead = !!(z.websiteLead || (prev && prev.websiteLead));   /* patch WEB: a website lead needs no bid due date */
+    var unknown = webLead || z.dueUnknown === '1' || z.dueUnknown === true || z.dueUnknown === 'true';
     var due = s(z.bidDue).slice(0, 16);
     if (due && !validDue(due)) due = '';
     var err = dueProblem(due, z.dueToCompany, unknown);
     if (err) { try { (say || note)('⚠️ ' + err); } catch (e) {} log.push({ at: nowIso(), formRefused: err }); return false; }
     z.bidDue = due;
     if (unknown && !dueProblem(due, z.dueToCompany, false)) unknown = false;   /* everything is there after all */
-    z.dueUnknown = unknown ? '1' : '';
+    z.dueUnknown = unknown && !webLead ? '1' : '';
     if (z.dueToEmail) z.dueToEmail = low(z.dueToEmail);
     var at = nowIso(), who = myName() || myEmail() || 'GrayCo';
     if (due !== s(prev && prev.bidDue)) { if (prev && prev.inboxId && !prev.bidDueManual) z.bidDueInboxWas = s(prev.bidDue); z.bidDueManual = true; z.bidDueBy = who; z.bidDueAt = at; }
-    if (!s(z.pm) && !s(prev && prev.pm) && isCommercialLead(z) && !(typeof W._gcSelfOwns === 'function' && W._gcSelfOwns())) {   /* patch CC2: theirs when a PM enters it */ var est = estimator(); if (est.name || est.email) { z.pm = est.name || est.email; z.pmEmail = est.email; z.estimator = est.name; z.estimatorEmail = est.email; } }
+    if (!s(z.pm) && !s(prev && prev.pm) && !webLead && isCommercialLead(z) && !(typeof W._gcSelfOwns === 'function' && W._gcSelfOwns())) {   /* patch CC2: theirs when a PM enters it */ var est = estimator(); if (est.name || est.email) { z.pm = est.name || est.email; z.pmEmail = est.email; z.estimator = est.name; z.estimatorEmail = est.email; } }
     if (s(z.pm) && s(z.pm) !== s(prev && prev.pm)) { z.assignedBy = who; z.assignedAt = at; z.pmEmail = z.pmEmail || emailOfName(z.pm) || (low(z.pm) === low(estimator().name) ? estimator().email : ''); }
     if (!prev && isBid(z) && !z.bidStatus) z.bidStatus = 'Reviewing';
     if (!prev && !z.createdAt) z.createdAt = at;
@@ -134857,6 +134860,462 @@ SI(function(){ try { brandGlobals(); wrapOpen(); } catch (e) {} }, 2000);
 SI(function(){ if (!D.hidden && jget(OUT, []).length) flush(); }, 30000); ST(flush, 8000);
 ST(function(){ apptTick(false); }, 12000); SI(function(){ try { apptTick(false); } catch (e) {} }, 60000);
 try { console.log('[GC] patch AUT2: GC_BRAND, one license line + address on every paper, automations → approvals, appointment confirmations / reminders'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-web">
+/* ==========================================================================
+   patch WEB — the website → the CRM, and a Business Brain that works.                       __GC_PATCH_WEB__
+
+   A. 🌐 WEBSITE (owner 10/21: "website leads, inquiries, job applications and everything else land in the CRM as
+      GrayCo leads, unassigned; the admin assigns them to a PM" + an instant roof price from the address).
+      The forms on grayco-cs.com (website-form.js, pasted into a Squarespace Code Block) post to website-intake.js.
+      · Leads arrive through the 📥 Lead Inbox (patch LD2) with source "Website (grayco-cs.com)", NO PM, owner GrayCo,
+        commission source "grayco"; the card says which form, and the existing customer / roof measurement.
+        No bid-due chip and no "Missing due info" for them (patch LA), no "Publish to bid portal".
+      · An existing customer's inquiry (same e-mail or phone): the lead names the job, and a note goes on that job.
+      · Job applications → the Hiring board (Admin → Hiring / Payroll → Hiring) (candidates, stage Applied, résumé attached) — filed by an admin's CRM.
+      · Admins: "🌐 Website" under the Lead Inbox — the embed code, the roof price ranges (gc_kv roofPriceRanges;
+        "[PRICE]" until set, and the widget shows no price until then), applications waiting.
+   B. 🧠 BUSINESS BRAIN — the "Business Brain" tab (view claude) and, in field view, a 🧠 button.
+      Questions are answered from the LIVE CRM records on the server (brain.js + _lib/brain-tools.js), narrowed to
+      what this person may see (SEC2: PMs only their jobs, payroll only admins). It drafts e-mails / change orders /
+      proposals / reports, and it can PROPOSE a to-do, an e-mail for ✅ Approvals, a lead or an appointment: a
+      preview card, done only when the person taps "Do it". "What can the Brain do?" with 10 GrayCo questions.
+      🎤 uses window._gcVoice when the voice patch (AUT2) is there; else the phone's speech recognition; else the
+      keyboard's own dictation.
+   Console: _gcWEB.state(), _gcWEB.importApps(), _gcWEB.attach(), _gcWEB.brain(el)
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_WEB__) return; window.__GC_PATCH_WEB__ = true;
+var W = window, D = document;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+var FN_WEB = '/.netlify/functions/website-intake', FN_BRAIN = '/.netlify/functions/brain';
+var SOURCE = 'Website (grayco-cs.com)';
+var NAVY = '#241968', GOLD = '#d4a017';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function money(n){ return '$' + Math.round(+n || 0).toLocaleString('en-US'); }
+function crm(){ return W._crm || {}; }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function signedIn(){ try { var A = W.__GC_AUTH__; return !!(A && A.email && A.email() && (!A.mode || A.mode() !== 'none')); } catch (e) { return false; } }
+function isField(){ return D.documentElement.classList.contains('_fieldmode'); }
+function ssGet(k){ try { return JSON.parse(sessionStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function ssSet(k, v){ try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { try { sessionStorage.removeItem(k); } catch (x) {} } }
+function call(url, opt){
+  opt = opt || {};
+  return W.fetch(url, { method: opt.body ? 'POST' : 'GET', headers: opt.body ? { 'Content-Type': 'application/json' } : {}, body: opt.body ? JSON.stringify(opt.body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t || '{}'); } catch (e) { j = { error: 'The server answered ' + r.status + '.' }; } j._status = r.status; j._ok = r.ok; return j; }); },
+      function(){ return { _ok: false, _status: 0, error: 'Could not reach the server — check the internet connection.' }; });
+}
+function persist(key, list){
+  try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcManualNow === 'function') W._gcManualNow('website ' + key); } catch (e) {}
+  try { if (typeof W.idbSet === 'function') W.idbSet(key, list); } catch (e) {}
+  try { if (typeof W._supaUpsert === 'function') W._supaUpsert(key, list); } catch (e) {}
+  ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+}
+var LOG = [];
+function log(x){ LOG.push(Object.assign({ at: nowIso() }, x)); if (LOG.length > 60) LOG.shift(); }
+
+/* the CRM's own lists as they really are: a setter given an updater that returns what it was handed changes nothing
+   (window._crm.leads is not kept by the CRM — patch LD2 reads the lead list the same way) */
+var LAST = {};
+function readList(name){
+  return new Promise(function(res){
+    var S = W[name], done = false;
+    var fin = function(v){ if (done) return; done = true; if (Array.isArray(v)) LAST[name] = v; res(Array.isArray(v) ? v : (LAST[name] || [])); };
+    if (typeof S !== 'function') return fin(null);
+    try { S(function(prev){ fin(prev); return prev; }); } catch (e) { fin(null); }
+    ST(function(){ fin(null); }, 800);
+  });
+}
+function leadsNow(){ return LAST._setLeads || arr(crm().leads); }
+
+/* ═══ A. WEBSITE ═════════════════════════════════════════════════════════════ */
+function isWeb(l){ return !!(l && (l.websiteLead || low(l.source) === low(SOURCE))); }
+/* the line on a Lead Inbox card (patch LD2 calls it instead of the bid-due countdown) */
+W._gcWebCardLine = function(l){
+  var bits = ['🌐 ' + esc(l.websiteForm || 'Website form')];
+  if (l.receivedAt) bits.push(esc(new Date(l.receivedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+  var h = '<div class="due ok">' + bits.join(' · ') + (l.pm ? '' : ' · <b>not assigned</b>') + '</div>';
+  if (l.existingCustomer) h += '<div class="sub">⭐ Existing customer' + (l.customerJob ? ': ' + esc(l.customerJob) : l.customerName ? ': ' + esc(l.customerName) : '') + ' (same ' + esc(l.customerMatch || 'contact') + ')</div>';
+  var q = l.roofQuote;
+  if (q) h += '<div class="sub">🏠 ' + (q.measured ? 'Roof ' + Number(q.areaSqft).toLocaleString() + ' sq ft · ' + esc(q.squares) + ' sq' + (q.pitch != null ? ' · ' + esc(q.pitch) + '/12' : '') + (q.priced ? ' · shown ' + money(q.low) + ' – ' + money(q.high) : ' · no price shown') : 'Roof not measured (' + esc(q.why) + ')') + '</div>';
+  return h;
+};
+
+/* an existing customer's inquiry → a note on that customer's job (once; the id makes it once on every computer) */
+var attaching = false;
+function attach(){
+  if (attaching || !signedIn()) return Promise.resolve(0);
+  return Promise.all([readList('_setLeads'), readList('_setProjects')]).then(function(r){ return attachWith(r[0], r[1]); });
+}
+function attachWith(leads, jobs){
+  if (attaching) return Promise.resolve(0);
+  /* every time: a start-up sync can put back an older copy of the job, so "noted" is checked on the job itself */
+  var noted = function(l){ var p = jobs.filter(function(x){ return x && x.id === l.customerPid; })[0]; return !p || arr(p.updates).some(function(u){ return u.id === 'WEBN_' + l.id; }); };
+  var todo = leads.filter(function(l){ return isWeb(l) && l.customerPid && jobs.some(function(p){ return p && p.id === l.customerPid; }) && !noted(l)
+    && (!l.customerNoted || Date.now() - Date.parse(l.customerNotedAt || 0) < 15 * 60000); });   /* (a note someone deleted later is not put back) */
+  if (!todo.length || typeof W._setProjects !== 'function') return Promise.resolve(0);
+  attaching = true;
+  var byPid = {}; todo.forEach(function(l){ (byPid[l.customerPid] = byPid[l.customerPid] || []).push(l); });
+  var done = [];
+  try {
+    W._setProjects(function(list){
+      var out = (list || []).map(function(p){
+        var ls = p && byPid[p.id]; if (!ls) return p;
+        var ups = Array.isArray(p.updates) ? p.updates.slice() : [], ch = false;
+        ls.forEach(function(l){
+          var id = 'WEBN_' + l.id; done.push(l.id);
+          if (ups.some(function(u){ return u && u.id === id; })) return;
+          ups.unshift({ id: id, at: l.receivedAt || nowIso(), by: SOURCE, source: 'website',
+            text: '🌐 ' + (l.websiteForm || 'Website form') + ' from ' + (l.contactName || 'the customer') + [l.phone, l.email].filter(Boolean).map(function(x){ return ' · ' + x; }).join('') + (l.scope ? '\n' + l.scope : '') + '\n(Lead: ' + (l.name || '') + ' — on Leads → 📥 Lead Inbox)' });
+          ch = true;
+        });
+        return ch ? Object.assign({}, p, { updates: ups, updatedAt: nowIso() }) : p;
+      });
+      ST(function(){ persist('projects', out); try { if (W._crm) W._crm.projects = out; } catch (e) {} }, 0);
+      return out;
+    });
+  } catch (e) { attaching = false; return Promise.resolve(0); }
+  return new Promise(function(res){
+    ST(function(){
+      done = done.filter(function(id){ return !leads.some(function(l){ return l.id === id && l.customerNoted; }); });   /* (the lead's flag once) */
+      if (!done.length || typeof W._setLeads !== 'function') { attaching = false; return res(0); }
+      W._setLeads(function(list){
+        var out = (list || []).map(function(l){ return l && done.indexOf(l.id) >= 0 && !l.customerNoted ? Object.assign({}, l, { customerNoted: true, customerNotedAt: nowIso(), updatedAt: nowIso(), savedAt: nowIso() }) : l; });
+        ST(function(){ persist('leads', out); }, 0);
+        return out;
+      });
+      log({ attach: done.length }); attaching = false; res(done.length);
+    }, 300);
+  });
+}
+
+/* job applications → the Hiring board (Admin → Hiring / Payroll → Hiring) (admins' CRM; candidates is admin-only under SEC2) */
+var MADE = [];
+function putCandidates(add){
+  var cur = candidates(), have = {}; cur.forEach(function(c){ if (c.websiteAppId) have[c.websiteAppId] = 1; });
+  var miss = add.filter(function(c){ return !have[c.websiteAppId]; }); if (!miss.length) return 0;
+  var list = cur.concat(miss);
+  try { if (typeof W._gcApplySyncRaw === 'function') W._gcApplySyncRaw('candidates', list); } catch (e) {}
+  try { if (W._crm) W._crm.candidates = list; } catch (e) {}
+  persist('candidates', list);
+  return miss.length;
+}
+/* the CRM's start-up load can put back the list it read a moment earlier: look again, and put them back */
+function healCandidates(n){ if (n > 4) return; ST(function(){ var k = putCandidates(MADE); if (k) log({ healedApps: k });
+  /* and send the list up again: a save of the older list that was still on its way must not be the last word */
+  else if (n < 3 && MADE.length) persist('candidates', candidates());
+  healCandidates(n + 1); }, n ? 15000 : 6000); }
+var importing = false, lastImport = 0, appsWaiting = 0;
+function candidates(){ return arr(crm().candidates); }
+function importApps(force){
+  if (importing || !signedIn() || !isAdmin() || (!force && D.hidden)) return Promise.resolve({ skipped: true });
+  if (!force && Date.now() - lastImport < 110000) return Promise.resolve({ skipped: true });
+  importing = true; lastImport = Date.now();
+  return call(FN_WEB + '?list=1').then(function(j){
+    var apps = arr(j && j.apps); appsWaiting = apps.length; paintStrip();
+    if (!j._ok || !apps.length) { importing = false; return { added: 0 }; }
+    var have = {}; candidates().forEach(function(c){ if (c.websiteAppId) have[c.websiteAppId] = c.id; });
+    var fresh = apps.filter(function(a){ return !have[a.id]; });
+    return fresh.reduce(function(p, a){
+      return p.then(function(made){
+        var resumeP = a.resume && a.resume.stored ? call(FN_WEB + '?file=' + encodeURIComponent(a.id)) : Promise.resolve(null);
+        return resumeP.then(function(f){
+          made.push({ id: 'CAND' + a.id.replace(/^WAPP/, '').toLowerCase(), websiteAppId: a.id, name: a.name, email: a.email, phone: a.phone, position: a.position || '', stage: 'Applied', source: SOURCE,
+            resume: f && f.dataUrl ? f.dataUrl : '', resumeName: a.resume ? a.resume.name + (a.resume.stored ? '' : ' (not received: ' + (a.resume.why || 'not kept') + ')') : '',
+            notes: [a.message, a.availability ? 'Can start: ' + a.availability : '', a.address ? 'Lives in: ' + a.address : '', 'Applied on grayco-cs.com ' + s(a.at).slice(0, 10)].filter(Boolean).join('\n'),
+            rating: 0, appliedDate: s(a.at).slice(0, 10) || today(), interviewDate: '', offerAmt: '', experience: a.experience || '', skills: '', portfolio: '', referral: '', createdAt: a.at, updatedAt: nowIso() });
+          return made;
+        });
+      });
+    }, Promise.resolve([])).then(function(made){
+      if (made.length) { MADE = MADE.concat(made); putCandidates(made); healCandidates(0); }
+      var map = {}; made.forEach(function(c){ map[c.websiteAppId] = c.id; }); Object.keys(have).forEach(function(k){ map[k] = have[k]; });
+      var ids = apps.map(function(a){ return a.id; });
+      return call(FN_WEB + '?act=imported', { body: { ids: ids, candidates: map } }).then(function(){ importing = false; appsWaiting = 0; paintStrip(); log({ apps: made.length }); return { added: made.length }; });
+    });
+  }).catch(function(e){ importing = false; return { error: s(e && e.message) }; });
+}
+
+/* ── the admins' 🌐 Website strip under the Lead Inbox ── */
+var CSS_WEB = '#gc-web{margin:0 0 12px;border:1px solid #c7c2e6;border-radius:12px;background:#f7f6fd;color:#1b1640;padding:10px 14px;font-size:13px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}'
+  + '#gc-web b{color:' + NAVY + '}#gc-web .sp{flex:1}#gc-web button{border:1px solid #c7c2e6;background:#fff;color:' + NAVY + ';border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer;font-size:12px}'
+  + '.gc-web-ov{position:fixed;inset:0;background:rgba(10,10,30,.55);z-index:100080;display:flex;align-items:center;justify-content:center;padding:16px}'
+  + '.gc-web-box{background:#fff;color:#1b1640;border-radius:14px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:18px 20px;font-size:14px;box-shadow:0 20px 60px rgba(0,0,0,.35)}'
+  + '.gc-web-box h3{margin:0 0 10px;color:' + NAVY + '}.gc-web-box pre{background:#f3f1fb;border:1px solid #ddd8f3;border-radius:8px;padding:10px;white-space:pre-wrap;word-break:break-all;font-size:12px}'
+  + '.gc-web-box input{width:110px;padding:6px 8px;border:1px solid #c7c2e6;border-radius:6px}.gc-web-box table{border-collapse:collapse;width:100%}.gc-web-box td{padding:6px 4px;border-bottom:1px solid #eee}'
+  + '.gc-web-box .ft{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}.gc-web-box .ft button{padding:9px 14px;border-radius:8px;border:1px solid #c7c2e6;background:#fff;font-weight:700;cursor:pointer}.gc-web-box .ft .pri{background:' + GOLD + ';border-color:' + GOLD + ';color:' + NAVY + '}';
+function css(id, txt){ if (D.getElementById(id)) return; var st = D.createElement('style'); st.id = id; st.textContent = txt; D.head.appendChild(st); }
+function webLeads7(){ var since = Date.now() - 7 * 86400000; return arr(leadsNow()).filter(function(l){ return isWeb(l) && Date.parse(l.receivedAt || l.createdAt || 0) >= since; }); }
+function paintStrip(){
+  var el = D.getElementById('gc-web'); if (!el) return;
+  var w = webLeads7(), un = w.filter(function(l){ return !l.pm; }).length;
+  var h = '<b>🌐 Website</b><span>' + w.length + ' website lead' + (w.length === 1 ? '' : 's') + ' this week' + (un ? ' · <b>' + un + ' not assigned</b>' : '') + (appsWaiting ? ' · ' + appsWaiting + ' application' + (appsWaiting === 1 ? '' : 's') + ' going to Hiring' : '') + '</span><span class="sp"></span>'
+    + '<button type="button" data-w="embed">Embed code</button><button type="button" data-w="prices">Roof prices</button><button type="button" data-w="apps">Check applications</button>';
+  if (el.__h !== h) { el.__h = h; el.innerHTML = h; }
+}
+function mountStrip(){
+  var ldi = D.getElementById('gc-ldi'), cur = D.getElementById('gc-web');
+  if (!ldi || !isAdmin()) { if (cur && !ldi) cur.remove(); return; }
+  if (cur && cur.previousElementSibling === ldi) return;
+  css('gc-web-css', CSS_WEB);
+  if (!cur) { cur = D.createElement('div'); cur.id = 'gc-web'; cur.addEventListener('click', function(e){ var b = e.target.closest('[data-w]'); if (!b) return; var a = b.getAttribute('data-w'); if (a === 'embed') embedBox(); else if (a === 'prices') pricesBox(); else if (a === 'apps') { b.textContent = 'Checking…'; importApps(true).then(function(r){ b.textContent = r && r.added ? '✓ ' + r.added + ' added to Hiring' : '✓ Nothing new'; }); } }); }
+  ldi.parentElement.insertBefore(cur, ldi.nextSibling);
+  paintStrip();
+}
+function overlay(html){
+  var ov = D.createElement('div'); ov.className = 'gc-web-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="gc-web-box" role="dialog" aria-modal="true">' + html + '</div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov || e.target.closest('[data-x]')) ov.remove(); });
+  D.body.appendChild(ov); return ov;
+}
+var SNIPPET_BASE = 'https://crm.grayco-cs.com';
+function snippet(kind){ return '<div data-grayco-form="' + kind + '"></div>\n<script src="' + SNIPPET_BASE + '/website-form.js" defer><\/script>'; }
+function embedBox(){
+  overlay('<h3>🌐 Put a GrayCo form on grayco-cs.com</h3><p>In Squarespace: <b>Pages</b> → open the page → <b>Edit</b> → click <b>+</b> (Add block) → <b>Code</b> → paste one of these → <b>Apply</b> → <b>Save</b>. Full steps: docs/WEBSITE-TO-CRM.md.</p>'
+    + '<p><b>All forms</b> (the visitor picks: estimate, storm, commercial, maintenance, problem, careers):</p><pre>' + esc(snippet('all')) + '</pre>'
+    + '<p><b>Instant roof price</b> (name, phone and e-mail before the price):</p><pre>' + esc(snippet('roof-price')) + '</pre>'
+    + '<p><b>One form only</b> — change the word: estimate · storm · commercial · maintenance · problem · careers</p><pre>' + esc(snippet('careers')) + '</pre>'
+    + '<div class="ft"><button data-x>Close</button></div>');
+}
+function pricesBox(){
+  var ov = overlay('<h3>🏠 Instant roof price — price per square</h3><div data-body>Loading…</div>');
+  call(FN_WEB + '?settings=1').then(function(j){
+    var c = j.roofPriceRanges || { tiers: [] }, b = ov.querySelector('[data-body]');
+    var v = function(x){ return typeof x === 'number' ? x : ''; };
+    b.innerHTML = '<p>A "square" is 100 sq ft of roof. The widget multiplies the measured roof (plus waste) by these ranges. <b>Until every box has a price, the website shows no price</b> — the visitor is told an estimator will call.</p>'
+      + '<table>' + c.tiers.map(function(t, i){ return '<tr data-i="' + i + '"><td>' + esc(t.label) + '<br><small>up to ' + esc(t.maxRise) + '/12</small></td><td>$ <input data-f="min" inputmode="decimal" placeholder="[PRICE]" value="' + v(t.min) + '"> to $ <input data-f="max" inputmode="decimal" placeholder="[PRICE]" value="' + v(t.max) + '"> per square</td></tr>'; }).join('') + '</table>'
+      + '<p>Waste added: <input data-f="waste" inputmode="decimal" value="' + esc(c.wastePct) + '"> %</p><p><small>' + esc(c.note) + '</small></p><div class="err" style="color:#b91c1c"></div>'
+      + '<div class="ft"><button data-x>Cancel</button><button class="pri" data-save>Save prices</button></div>';
+    b.querySelector('[data-save]').onclick = function(){
+      var tiers = c.tiers.map(function(t, i){ var r = b.querySelector('tr[data-i="' + i + '"]'); return Object.assign({}, t, { min: r.querySelector('[data-f=min]').value.trim() || '[PRICE]', max: r.querySelector('[data-f=max]').value.trim() || '[PRICE]' }); });
+      call(FN_WEB + '?settings=1', { body: { roofPriceRanges: Object.assign({}, c, { tiers: tiers, wastePct: b.querySelector('[data-f=waste]').value }) } }).then(function(r){
+        if (!r._ok) { b.querySelector('.err').textContent = r.error || 'Could not save.'; return; }
+        ov.remove(); toast(r.priced ? '✅ Roof prices saved — the website now shows a price range.' : 'Saved. Some prices are still blank, so the website shows no price yet.');
+      });
+    };
+  });
+}
+function toast(msg){ var t = D.createElement('div'); t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:' + NAVY + ';color:#fff;padding:10px 16px;border-radius:10px;z-index:100090;font-size:14px;max-width:90vw'; D.body.appendChild(t); ST(function(){ t.remove(); }, 4500); }
+
+/* ═══ B. THE BUSINESS BRAIN ══════════════════════════════════════════════════ */
+var EXAMPLES = [
+  'Who owes us money? Show overdue invoices, oldest first.',
+  'How much did we invoice and collect each month this year?',
+  'Which jobs are behind schedule, and by how much?',
+  'What bids are due in the next 2 weeks, and who has each one?',
+  'Estimate vs actual on our active jobs — which ones are over budget?',
+  'What is our gross margin by job type this year?',
+  'How many leads came from each lead source this quarter, and how many did we win?',
+  'Show each PM\'s workload: active jobs, value, bids due, open to-dos.',
+  'Write this week\'s owner report: cash, jobs, bids and problems.',
+  'Draft a friendly payment reminder e-mail for the oldest overdue invoice.'
+];
+var CSS_BRAIN = '.gcb{display:flex;flex-direction:column;height:100%;min-height:420px;background:#0d1b2a;color:#e8eef5;border:1px solid #1e3a5f;border-radius:10px;overflow:hidden;font-family:inherit}'
+  + '.gcb-hd{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1a3a5f;border-bottom:1px solid #2563eb44}.gcb-hd b{font-size:15px}.gcb-hd small{display:block;color:#8aabbf;font-size:11px}.gcb-hd .sp{flex:1}'
+  + '.gcb-hd button,.gcb-x{background:#0d1b2a;border:1px solid #2563eb66;color:#cfe0f5;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}'
+  + '.gcb-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}'
+  + '.gcb-m{max-width:88%;padding:10px 13px;border-radius:12px;font-size:14px;line-height:1.55;word-break:break-word}.gcb-m.me{align-self:flex-end;background:#2563eb;color:#fff;border-bottom-right-radius:3px;white-space:pre-wrap}'
+  + '.gcb-m.ai{align-self:flex-start;background:#132a44;border:1px solid #1e3a5f;border-bottom-left-radius:3px}.gcb-m.err{background:#4a1d1d;border-color:#7f1d1d}'
+  + '.gcb-m table{border-collapse:collapse;margin:6px 0;font-size:12.5px}.gcb-m td,.gcb-m th{border:1px solid #2a4a6a;padding:3px 7px;text-align:left}.gcb-m ul{margin:4px 0;padding-left:20px}.gcb-m p{margin:0 0 6px}'
+  + '.gcb-card{background:#0f2238;border:1px solid ' + GOLD + ';border-radius:12px;padding:12px;margin-top:6px}.gcb-card h4{margin:0 0 6px;color:' + GOLD + ';font-size:13px}.gcb-card pre{white-space:pre-wrap;font:inherit;font-size:13px;margin:4px 0;color:#dbe6f3}'
+  + '.gcb-card .acts{display:flex;gap:8px;margin-top:8px}.gcb-card button{border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer;border:1px solid #2a4a6a;background:#132a44;color:#cfe0f5}.gcb-card button.do{background:#16a34a;border-color:#16a34a;color:#fff}'
+  + '.gcb-help{background:#10233a;border:1px solid #2563eb55;border-radius:12px;padding:14px;margin-bottom:4px}.gcb-help h3{margin:0 0 4px;font-size:15px;color:#fff}.gcb-help p{margin:0 0 10px;font-size:12.5px;color:#9fb6cc;line-height:1.5}'
+  + '.gcb-help .qs{display:flex;flex-wrap:wrap;gap:6px}.gcb-help .qs button{background:#1a3a5f;border:1px solid #2563eb55;color:#dbe6f3;border-radius:14px;padding:6px 11px;font-size:12.5px;cursor:pointer;text-align:left}'
+  + '.gcb-in{display:flex;gap:8px;padding:10px;border-top:1px solid #1e3a5f;background:#0b1726;align-items:flex-end}.gcb-in textarea{flex:1;min-height:44px;max-height:140px;resize:vertical;background:#0d1b2a;border:1px solid #2a4a6a;border-radius:10px;color:#e8eef5;padding:10px;font:inherit;font-size:15px}'
+  + '.gcb-in button{height:44px;min-width:44px;border-radius:10px;border:0;font-size:18px;cursor:pointer}.gcb-send{background:' + GOLD + ';color:' + NAVY + ';font-weight:900;font-size:14px!important;padding:0 14px}.gcb-mic{background:#1a3a5f;color:#fff}.gcb-mic.on{background:#b91c1c}'
+  + '.gcb-hint{font-size:11.5px;color:#8aabbf;padding:0 12px 8px;background:#0b1726}.gcb-dots{display:inline-block;animation:gcbp 1s infinite}@keyframes gcbp{50%{opacity:.3}}'
+  + '#gcb-fieldbtn{position:fixed;left:14px;bottom:calc(150px + env(safe-area-inset-bottom));width:52px;height:52px;border-radius:50%;border:2px solid ' + GOLD + ';background:' + NAVY + ';color:#fff;font-size:24px;z-index:99990;box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:pointer;display:none}'
+  + 'html._fieldmode #gcb-fieldbtn{display:block}#gcb-ov{position:fixed;inset:0;z-index:2147483100;background:#0d1b2a;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}#gcb-ov .gcb{border-radius:0;border:0;flex:1;min-height:0}'
+  + '.gcb-hd button{white-space:nowrap}@media (max-width:560px){.gcb-hd{padding:8px 10px;gap:6px}.gcb-hd small{font-size:10px}.gcb-hd button{padding:6px 8px;font-size:11px}.gcb-m{max-width:94%}}';
+function md(t){
+  var lines = esc(t).split('\n'), out = [], list = false, table = [];
+  function flushT(){ if (!table.length) return; var rows = table;
+    out.push('<table>' + rows.map(function(r, i){ var cells = r.replace(/^\||\|$/g, '').split('|'); return '<tr>' + cells.map(function(c){ return (i ? '<td>' : '<th>') + c.trim() + (i ? '</td>' : '</th>'); }).join('') + '</tr>'; }).join('') + '</table>'); table = []; }
+  lines.forEach(function(l){
+    if (/^\s*\|.*\|\s*$/.test(l)) { if (/^\s*\|[\s:|-]+\|\s*$/.test(l)) return; table.push(l.trim()); return; } else flushT();
+    var b = /^\s*[-•*]\s+(.*)$/.exec(l) || /^\s*\d+\.\s+(.*)$/.exec(l);
+    if (b) { if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + b[1] + '</li>'); return; }
+    if (list) { out.push('</ul>'); list = false; }
+    var h = /^#{1,4}\s+(.*)$/.exec(l); if (h) { out.push('<p><b>' + h[1] + '</b></p>'); return; }
+    out.push(l.trim() ? '<p>' + l + '</p>' : '');
+  });
+  flushT(); if (list) out.push('</ul>');
+  return out.join('').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+var KIND = { todo: '✅ To-do', approval_email: '✉️ Customer e-mail → ✅ Approvals', lead: '🔥 New lead', appointment: '📅 Appointment' };
+function previewOf(p){
+  var f = p.fields || {}, rows = [];
+  if (p.job) rows.push('Job: ' + p.job.name);
+  if (p.type === 'todo') rows.push('To do: ' + f.label, 'For: ' + (f.assignee || 'me'), f.due ? 'Due: ' + f.due : '', f.note ? 'Note: ' + f.note : '');
+  if (p.type === 'approval_email') rows.push('To: ' + f.to, 'Subject: ' + f.subject, '', f.body, '', '(Goes on ✅ Approvals — sent only after it is approved.)');
+  if (p.type === 'lead') rows.push('Name: ' + f.name, f.phone ? 'Phone: ' + f.phone : '', f.email ? 'E-mail: ' + f.email : '', f.address ? 'Address: ' + f.address : '', 'Type: ' + f.lead_type, f.note ? 'Note: ' + f.note : '');
+  if (p.type === 'appointment') rows.push('What: ' + f.title, 'When: ' + f.date + ' ' + f.time, 'Who: ' + f.assignee, f.address ? 'Where: ' + f.address : '', f.note ? 'Note: ' + f.note : '');
+  return rows.filter(function(x, i){ return x !== '' || p.type === 'approval_email'; }).join('\n');
+}
+/* an appointment the person tapped: onto the schedule through the CRM's own setter (as the CRM's own forms do) */
+function addAppointment(rec){
+  return new Promise(function(res){
+    if (typeof W._setSchedule !== 'function') return res(false);
+    try {
+      W._setSchedule(function(prev){
+        var live = Array.isArray(prev) ? prev : [];
+        if (live.some(function(e){ return e && e.id === rec.id; })) { res(true); return live; }
+        var out = live.concat([rec]);
+        ST(function(){ persist('schedule', out); res(true); }, 0);
+        return out;
+      });
+    } catch (e) { res(false); }
+    ST(function(){ res(false); }, 3000);
+  });
+}
+
+function mountBrain(host, opts){
+  opts = opts || {};
+  css('gcb-css', CSS_BRAIN);
+  var KEY = 'gc_brain_v2:' + (myEmail() || 'me');
+  var st = ssGet(KEY) || { history: [], view: [], helpOpen: true };
+  var busy = false, rec = null, status = null;
+  host.innerHTML = '<div class="gcb"><div class="gcb-hd"><span style="font-size:22px">🧠</span><div><b>Business Brain</b><small data-status>Live CRM data · checking…</small></div><span class="sp"></span>'
+    + '<button type="button" data-a="help" title="What can the Brain do?">❓ Help</button><button type="button" data-a="new">New chat</button>' + (opts.close ? '<button type="button" data-a="close" aria-label="Close">✕</button>' : '') + '</div>'
+    + '<div class="gcb-msgs" data-msgs></div><div class="gcb-in"><button type="button" class="gcb-mic" data-a="mic" title="Talk" aria-label="Talk">🎤</button><textarea data-in rows="1" placeholder="Ask about money, jobs, bids, leads… or ask me to draft something"></textarea><button type="button" class="gcb-send" data-a="send">Send</button></div>'
+    + '<div class="gcb-hint" data-hint></div></div>';
+  var msgsEl = host.querySelector('[data-msgs]'), inEl = host.querySelector('[data-in]'), hintEl = host.querySelector('[data-hint]');
+  function save(){ var t = JSON.stringify(st); if (t.length > 900000) { st.history = []; st.view = st.view.slice(-20); } ssSet(KEY, st); }
+  function helpHtml(){
+    var who = status && status.viewer ? (status.viewer.seesAll ? 'You see all of GrayCo' + (status.viewer.payroll ? ', including payroll.' : ' (no payroll).') : 'You see your own jobs and leads (that is how the CRM\'s permissions work).') : '';
+    return '<div class="gcb-help"><h3>What can the Brain do?</h3><p>It reads the <b>live CRM</b> — jobs, invoices, costs, change orders, estimates, leads, bids, the schedule and to-dos — and answers in plain English. ' + esc(who)
+      + ' It drafts customer e-mails, change-order text, proposals from estimates, job summaries, weekly owner reports and scope write-ups. It can also <b>set things up for you</b> — a to-do, a customer e-mail for ✅ Approvals, a new lead, an appointment — and shows you a preview; <b>nothing happens until you tap "Do it"</b>. Tap a question to try it:</p>'
+      + '<div class="qs">' + EXAMPLES.map(function(q, i){ return '<button type="button" data-q="' + i + '">' + esc(q) + '</button>'; }).join('') + '</div></div>';
+  }
+  function draw(){
+    var h = (st.helpOpen || !st.view.length) ? helpHtml() : '';
+    st.view.forEach(function(m, i){
+      if (m.who === 'me') { h += '<div class="gcb-m me">' + esc(m.text) + '</div>'; return; }
+      h += '<div class="gcb-m ai' + (m.err ? ' err' : '') + '">' + md(m.text || '') + (m.cont ? '<div class="acts" style="margin-top:6px"><button type="button" class="gcb-x" data-a="cont">Continue</button></div>' : '')
+        + (m.proposals || []).map(function(p, j){ return '<div class="gcb-card"><h4>' + esc(KIND[p.type] || p.type) + ' — ' + esc(p.summary) + '</h4><pre>' + esc(previewOf(p)) + '</pre>'
+          + (p.state === 'done' ? '<div style="color:#86efac;font-weight:700">' + esc(p.result || 'Done') + '</div>' : p.state === 'no' ? '<div style="color:#9fb6cc">Not done.</div>' : p.state === 'err' ? '<div style="color:#fca5a5">' + esc(p.result) + '</div>' : '')
+          + (!p.state || p.state === 'err' ? '<div class="acts"><button type="button" class="do" data-do="' + i + ':' + j + '">✅ Do it</button><button type="button" data-no="' + i + ':' + j + '">Not now</button></div>' : '') + '</div>'; }).join('') + '</div>';
+    });
+    if (busy) h += '<div class="gcb-m ai"><span class="gcb-dots">🧠 Looking at the CRM…</span></div>';
+    msgsEl.innerHTML = h; msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+  function paintStatus(){
+    var el = host.querySelector('[data-status]'); if (!el) return;
+    if (!status) { el.textContent = 'Live CRM data · checking…'; return; }
+    if (!status._ok) { el.textContent = status.error || 'Could not reach the Brain.'; return; }
+    el.textContent = (status.ai ? 'Live CRM data · ' : 'AI key missing on the server · ') + (status.viewer ? (status.viewer.seesAll ? 'all of GrayCo' : 'your jobs') + ' · ' + status.viewer.name : '') + ' · ' + s(status.model);
+  }
+  function ask(text, isContinue){
+    text = s(text); if ((!text && !isContinue) || busy) return;
+    if (!isContinue) { st.view.push({ who: 'me', text: text }); st.history.push({ role: 'user', content: text }); }
+    else st.history.push({ role: 'user', content: 'Continue.' });
+    st.helpOpen = false; busy = true; draw(); save();
+    call(FN_BRAIN, { body: { messages: st.history } }).then(function(j){
+      busy = false;
+      if (!j._ok) { st.view.push({ who: 'ai', err: true, text: '⚠️ ' + (j.error || 'The Brain could not answer.') }); st.history.pop(); draw(); save(); return; }
+      st.history = Array.isArray(j.history) ? j.history : st.history;
+      st.view.push({ who: 'ai', text: j.reply || (j.proposals && j.proposals.length ? 'Here is what I can set up — tap "Do it" to go ahead.' : '(no answer)'), proposals: (j.proposals || []).map(function(p){ return Object.assign({}, p); }), cont: !!j.partial });
+      draw(); save();
+    });
+  }
+  function doIt(key, yes){
+    var ij = key.split(':'), m = st.view[+ij[0]], p = m && m.proposals && m.proposals[+ij[1]]; if (!p) return;
+    if (!yes) { p.state = 'no'; st.history.push({ role: 'user', content: '(I chose not to do: ' + p.summary + ')' }); draw(); save(); return; }
+    p.state = 'working'; draw();
+    var clean = { id: p.id, type: p.type, summary: p.summary, job: p.job, fields: p.fields };
+    call(FN_BRAIN, { body: { execute: clean } }).then(function(j){
+      if (!j._ok) { p.state = 'err'; p.result = '⚠️ ' + (j.error || 'Could not do it.'); draw(); save(); return; }
+      var fin = function(ok){ p.state = ok ? 'done' : 'err'; p.result = ok ? j.done : '⚠️ Could not add it to the schedule on this screen — open the Schedule and add it there.'; st.history.push({ role: 'user', content: '(Done in the CRM: ' + p.result + ')' }); draw(); save(); };
+      if (j.clientAction && j.clientAction.type === 'appointment') addAppointment(j.clientAction.record).then(fin); else fin(true);
+    });
+  }
+  /* 🎤 — the voice patch when it is there, else the phone's speech recognition, else the keyboard's dictation */
+  function mic(btn){
+    if (rec) { try { rec.stop(); } catch (e) {} return; }
+    var put = function(t, fin){ inEl.value = t; if (fin) { btn.classList.remove('on'); rec = null; hintEl.textContent = ''; } };
+    var V = W._gcVoice;
+    if (V && (typeof V.dictate === 'function' || typeof V.listen === 'function' || typeof V === 'function')) {
+      btn.classList.add('on'); rec = { stop: function(){ try { if (V.stop) V.stop(); } catch (e) {} btn.classList.remove('on'); rec = null; } };
+      var cb = function(t, fin){ put(s(t), fin !== false); };
+      hintEl.textContent = '🎤 Listening (voice)… tap 🎤 again to stop.';
+      try { (typeof V.dictate === 'function' ? V.dictate : typeof V.listen === 'function' ? V.listen : V).call(V, { onText: cb, onEnd: function(){ btn.classList.remove('on'); rec = null; }, target: inEl, context: 'brain' }); } catch (e) { rec = null; btn.classList.remove('on'); }
+      return;
+    }
+    var SR = W.SpeechRecognition || W.webkitSpeechRecognition;
+    if (!SR) { inEl.focus(); hintEl.textContent = 'Tap the 🎤 on your keyboard to talk — the words go into the box.'; return; }
+    var r = new SR(); r.lang = 'en-US'; r.interimResults = true; r.continuous = false;
+    var base = s(inEl.value) ? s(inEl.value) + ' ' : '';
+    r.onresult = function(ev){ var t = ''; for (var i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; inEl.value = base + t; };
+    r.onend = function(){ btn.classList.remove('on'); rec = null; hintEl.textContent = ''; };
+    r.onerror = r.onend;
+    rec = r; btn.classList.add('on'); hintEl.textContent = '🎤 Listening… tap again to stop.';
+    try { r.start(); } catch (e) { rec = null; btn.classList.remove('on'); }
+  }
+  host.addEventListener('click', function(e){
+    var q = e.target.closest('[data-q]'); if (q) { ask(EXAMPLES[+q.getAttribute('data-q')]); return; }
+    var d1 = e.target.closest('[data-do]'); if (d1) { doIt(d1.getAttribute('data-do'), true); return; }
+    var d0 = e.target.closest('[data-no]'); if (d0) { doIt(d0.getAttribute('data-no'), false); return; }
+    var b = e.target.closest('[data-a]'); if (!b) return;
+    var a = b.getAttribute('data-a');
+    if (a === 'send') { var t = inEl.value; inEl.value = ''; ask(t); }
+    else if (a === 'help') { st.helpOpen = !st.helpOpen; draw(); save(); }
+    else if (a === 'new') { st = { history: [], view: [], helpOpen: true }; save(); draw(); }
+    else if (a === 'mic') mic(b);
+    else if (a === 'cont') ask('', true);
+    else if (a === 'close' && opts.close) opts.close();
+  });
+  inEl.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var t = inEl.value; inEl.value = ''; ask(t); } });
+  draw();
+  call(FN_BRAIN + '?status=1').then(function(j){ status = j; paintStatus(); if (st.helpOpen || !st.view.length) draw(); });
+  var api = { ask: ask, state: function(){ return st; }, unmount: function(){ try { if (rec) rec.stop(); } catch (e) {} host.innerHTML = ''; } };
+  host.__gcBrain = api;
+  return api;
+}
+
+/* the "Business Brain" tab renders window.GrayCoBrain — now this */
+function BrainView(){
+  var R = W.React, ref = R.useRef(null);
+  R.useEffect(function(){ var app = mountBrain(ref.current); return function(){ app.unmount(); }; }, []);
+  return R.createElement('div', { ref: ref, style: { height: '100%', minHeight: 'calc(100vh - 90px)', display: 'flex', flexDirection: 'column' }, 'data-gc-brain': '1' });
+}
+W.GrayCoBrain = BrainView;
+
+/* field view: a 🧠 button → the Brain full screen */
+function openBrainSheet(){
+  if (D.getElementById('gcb-ov')) return;
+  var ov = D.createElement('div'); ov.id = 'gcb-ov'; ov.setAttribute('data-gc-keep', '1'); D.body.appendChild(ov);
+  mountBrain(ov, { close: function(){ ov.remove(); } });
+}
+W._gcOpenBrain = openBrainSheet;
+function fieldButton(){
+  css('gcb-css', CSS_BRAIN);
+  if (D.getElementById('gcb-fieldbtn') || !D.body) return;
+  var b = D.createElement('button'); b.id = 'gcb-fieldbtn'; b.type = 'button'; b.title = 'Business Brain'; b.setAttribute('aria-label', 'Business Brain'); b.textContent = '🧠'; b.setAttribute('data-gc-keep', '1');
+  b.onclick = openBrainSheet; D.body.appendChild(b);
+}
+
+/* ── running ── */
+var lastPaint = 0;
+function tick(){
+  try { mountStrip(); if (Date.now() - lastPaint > 5000) { lastPaint = Date.now(); readList('_setLeads').then(paintStrip); } } catch (e) {}
+  try { if (signedIn()) fieldButton(); } catch (e) {}
+}
+SI(tick, 1500); ST(tick, 800);
+ST(function(){ attach(); importApps(true); }, 30000);
+SI(function(){ if (!D.hidden) { attach(); importApps(false); } }, 30000);
+W.addEventListener('gc:leads-changed', function(){ ST(function(){ attach(); readList('_setLeads').then(paintStrip); }, 1500); ST(attach, 8000); });
+
+W._gcWEB = { leads: function(){ return readList('_setLeads'); }, state: function(){ return { log: LOG.slice(), appsWaiting: appsWaiting, webLeads: webLeads7().length, admin: isAdmin() }; }, importApps: function(){ return importApps(true); }, attach: attach, brain: mountBrain, openBrain: openBrainSheet, md: md, EXAMPLES: EXAMPLES };
 })();
 
 </script><!-- /INSP -->

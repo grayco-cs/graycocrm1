@@ -493,10 +493,13 @@ function dueGap(a, b){ if (!a || !b) return 0; return Math.abs(Date.parse(dayOf(
 function liveTarget(items, it){ let x = it, n = 0; while (x && x.status === 'merged' && x.mergedInto && n++ < 10) x = items.find(y => y.id === x.mergedInto) || null; return x || it; }
 /* the existing item this record belongs to, or null */
 function findMatch(items, rec){
+  /* patch WEB: a website / Business Brain lead is one person's request — matched only by its own id, and never a bid's match */
+  if (rec.origin === 'website' || rec.origin === 'brain') return items.find(x => x && x.id === rec.id) || null;
   const num = normNum(rec.bidNumber), nt = normTitle(rec.title), tk = tokens(rec.title), city = normCity(rec.city);
   let best = null, bestScore = 0;
   for (const it of items) {
     if (!it || it.id === rec.id) continue;
+    if (it.origin === 'website' || it.origin === 'brain') continue;   /* patch WEB */
     if (rec.watchKey && arr(it.watchKeys).indexOf(rec.watchKey) >= 0) return it;
     if (rec.emailId && arr(it.emailIds).indexOf(rec.emailId) >= 0 && normTitle(it.title) === nt) return it;
     const ic = normCity(it.city), cityOk = !city || !ic || ic === city;
@@ -915,3 +918,5 @@ exports.backgroundHandler = async function(event){
 exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
 exports._test = { isCommercial, estimatorOf, svixOk, verified, forBids, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+/* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
+exports._lib.storeFile = storeFile;
