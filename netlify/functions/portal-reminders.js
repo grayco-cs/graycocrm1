@@ -14,6 +14,8 @@
 // Every send is recorded first in gc_portal_mail (last_reminder_at) and only goes out if this run
 // was the one that recorded it, so two runs can never send the same reminder twice.
 // PORTAL_MAIL_OFF=1 on Netlify stops every e-mail (to-dos still appear).
+// Patch AP2: first, every client invoice made in the CRM (not a draft) gets an "Invoice #… $… to <customer>"
+// item on the approvals list: approved, it is e-mailed with the invoice PDF attached.
 //
 // Netlify does not let anyone call a scheduled function by its URL in production. As a second
 // lock, any call that is not the scheduler must come from a signed-in admin.
@@ -55,7 +57,12 @@ exports.handler = async function (event) {
   if (!isScheduled(event) && !(await isAdmin(event))) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   try {
+    /* patch AP2: every new client invoice gets its PDF e-mail on the approvals list first (a final one then
+       counts as the final-invoice e-mail, and the 15-day reminders follow it) */
+    let invoiceMail = null;
+    try { invoiceMail = await portal._core.queueNewInvoices({}); } catch (e) { invoiceMail = { error: String(e && e.message || e) }; }
     const rep = await portal._core.runReminders({});
+    rep.invoiceMail = invoiceMail;
     try { rep.notices = await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
     try { console.log('[portal-reminders]', JSON.stringify({ sent: rep.sent, reminded: rep.reminded, todos: rep.todos, skipped: rep.skipped, paused: rep.paused })); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(rep) };

@@ -82,6 +82,22 @@ async function gcStaffAuth(event){
 //     replyTo:   "..."                 (optional),
 //     cc:        [...]                 (optional)
 //   }
+//
+// Patch AP2 — GrayCo News: anything sent from news@ is news. It goes to ONE customer per e-mail, an
+// unsubscribed address is skipped (answer { ok:true, skipped:'unsubscribed' }), and it gets the footer
+// ("You're receiving GrayCo news because you're a GrayCo customer. Unsubscribe from our newsletters",
+// the street address and phone) and the List-Unsubscribe / List-Unsubscribe-Post (one-click) headers.
+// See _lib/news.js. Invoices, portal links, signed papers and receipts (office@ / billing@) are not news.
+//
+// Patch AP2 — "send from your own e-mail with one click":
+//   { mode:'personal', to, cc?, subject, html, attachments?, pid?, customer?, kind? }
+//   From = "<your name> <your @grayco-cs.com address>" — ALWAYS the signed-in person's own address (the sign-in
+//   token decides, never the request), Reply-To = the same, and a BCC to you so it is in your own mailbox.
+//   Person-to-person mail needs no approval. Each one is logged (gc_kv "gc_email_log") for the job / customer.
+//   attachments: [{ filename, content: <base64> } | { filename, ref: "sb:crm-files/<sha256>.<ext>" }] —
+//   pdf / png / jpg only, at most 5, 10 MB in all; a ref is read from OUR crm-files bucket only.
+// And on every path: a personal @grayco-cs.com sender must be the signed-in person (only the shared
+// mailboxes office@ / billing@ / news@ / portal@ may be used by any staff member). Nobody can send as someone else.
 
 const RESEND_URL = 'https://api.resend.com/emails';
 
@@ -108,6 +124,113 @@ function resolveFrom(input, displayName){
   return name + ' <' + addr + '>';
 }
 
+/* ── patch AP2: who may send as whom ── */
+const SHARED_BOXES = ['office@grayco-cs.com', 'billing@grayco-cs.com', 'news@grayco-cs.com', 'portal@grayco-cs.com'];
+function addrOf(from){ const m = String(from || '').match(/<([^>]+)>/); return String(m ? m[1] : from || '').trim().toLowerCase(); }
+function cleanName(n){ return String(n || '').replace(/[<>"\r\n\\,;:@]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60); }
+const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i;
+function emails(v){ return (Array.isArray(v) ? v : String(v == null ? '' : v).split(/[,;\s]+/)).map(function(x){ return String(x || '').trim().toLowerCase(); }).filter(Boolean); }
+
+/* ── attachments: our files only, small, pdf / png / jpg (same rules as patch SC) ── */
+const ATT_MAX_BYTES = 10 * 1024 * 1024, ATT_MAX_FILES = 5;
+const ATT_TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+function attKind(buf){
+  if (buf.length >= 5 && buf.slice(0, 5).toString('latin1') === '%PDF-') return 'pdf';
+  if (buf.length >= 8 && buf[0] === 0x89 && buf.slice(1, 4).toString('latin1') === 'PNG') return 'png';
+  if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'jpg';
+  return '';
+}
+async function readAttachments(list){
+  if (list == null) return { ok: true, files: [] };
+  if (!Array.isArray(list)) return { ok: false, error: 'attachments must be a list' };
+  if (list.length > ATT_MAX_FILES) return { ok: false, error: 'At most ' + ATT_MAX_FILES + ' attachments.' };
+  const out = []; let total = 0;
+  for (const a of list) {
+    if (!a || typeof a !== 'object') return { ok: false, error: 'Bad attachment.' };
+    const name = String(a.filename || '').replace(/[\\/\r\n\0]/g, '').trim().slice(0, 150);
+    const ext = (name.match(/\.([A-Za-z0-9]+)$/) || [])[1];
+    if (!name || !ext || !ATT_TYPES[ext.toLowerCase()]) return { ok: false, error: 'Only PDF, PNG or JPG attachments (' + (name || 'no name') + ').' };
+    let buf;
+    if (a.ref != null) {
+      const m = /^sb:crm-files\/([0-9a-f]{64}\.(pdf|png|jpe?g))$/i.exec(String(a.ref));
+      if (!m) return { ok: false, error: 'An attachment reference must be one of our job files.' };
+      const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+      if (!svc) return { ok: false, error: 'SUPABASE_SERVICE_KEY is not set on Netlify (needed to attach a job file).' };
+      const base = (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+      const r = await fetch(base + '/storage/v1/object/crm-files/' + m[1], { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      if (!r.ok) return { ok: false, error: 'The job file could not be read (HTTP ' + r.status + ').' };
+      buf = Buffer.from(await r.arrayBuffer());
+    } else if (typeof a.content === 'string') {
+      const b64 = a.content.replace(/^data:[^,]*,/, '').replace(/\s+/g, '');
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) return { ok: false, error: 'Attachment content must be base64.' };
+      if (b64.length > Math.ceil(ATT_MAX_BYTES / 3) * 4 + 4) return { ok: false, error: 'Attachments are limited to 10 MB in all.' };
+      buf = Buffer.from(b64, 'base64');
+    } else return { ok: false, error: 'An attachment needs content (base64) or a job-file ref.' };
+    total += buf.length;
+    if (total > ATT_MAX_BYTES) return { ok: false, error: 'Attachments are limited to 10 MB in all.' };
+    const kind = attKind(buf), want = ext.toLowerCase() === 'jpeg' ? 'jpg' : ext.toLowerCase();
+    if (!kind || kind !== want) return { ok: false, error: name + ' is not a real ' + want.toUpperCase() + ' file.' };
+    out.push({ filename: name, content: buf.toString('base64'), content_type: ATT_TYPES[want] });
+  }
+  return { ok: true, files: out };
+}
+
+/* ── the sent-mail log (gc_kv "gc_email_log", JSON text, newest 3000) — read again just before writing ── */
+async function logSent(entry){
+  const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!svc) return false;
+  const base = (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+  const H = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(svc) ? { apikey: svc, Authorization: 'Bearer ' + svc } : { apikey: svc };
+  const read = async function(){
+    const r = await fetch(base + '/rest/v1/gc_kv?select=value,updated_at&key=eq.gc_email_log', { headers: H });
+    if (!r.ok) return null;
+    const rows = await r.json(); let v = rows && rows[0] ? rows[0].value : [];
+    if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return null; } }
+    return { list: Array.isArray(v) ? v : [], at: rows && rows[0] ? String(rows[0].updated_at || '') : '' };
+  };
+  for (let i = 0; i < 4; i++) {
+    const cur = await read(); if (!cur) return false;
+    const again = await read(); if (!again || again.at !== cur.at) continue;
+    const list = cur.list.filter(function(x){ return x && x.id !== entry.id; }).concat([entry]).slice(-3000);
+    const w = await fetch(base + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, H),
+      body: JSON.stringify({ key: 'gc_email_log', value: JSON.stringify(list), updated_at: new Date().toISOString() }) });
+    if (!w.ok) return false;
+    const after = await read();
+    if (after && after.list.some(function(x){ return x && x.id === entry.id; })) return true;
+  }
+  return false;
+}
+
+/* one click, from your own address (patch AP2) */
+async function sendPersonal(body, who, key, headers){
+  const me = String(who.email || '').toLowerCase();
+  if (!/@grayco-cs\.com$/.test(me)) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Your sign-in (' + me + ') is not a @grayco-cs.com address, so it cannot send as you.' }) };
+  if (body.from != null && body.from !== '' && addrOf(body.from) !== me) return { statusCode: 403, headers, body: JSON.stringify({ error: 'You can only send from your own address (' + me + ').' }) };
+  const to = emails(body.to), cc = emails(body.cc);
+  if (!to.length || to.length > 10 || to.some(function(e){ return !EMAIL_RE.test(e); })) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Check the "To" address.' }) };
+  if (cc.length > 10 || cc.some(function(e){ return !EMAIL_RE.test(e); })) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Check the CC addresses.' }) };
+  const subject = String(body.subject || '').trim().slice(0, 250), html = String(body.html || '');
+  if (!subject || !html.trim()) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Add a subject and a message.' }) };
+  const att = await readAttachments(body.attachments);
+  if (!att.ok) return { statusCode: 400, headers, body: JSON.stringify({ error: att.error }) };
+  const name = cleanName(who.name) || cleanName(body.fromName) || me.split('@')[0];
+  const payload = { from: name + ' <' + me + '>', reply_to: me, to: to, subject: subject, html: html, bcc: [me] };
+  if (cc.length) payload.cc = cc;
+  if (att.files.length) payload.attachments = att.files;
+  let data = {}, resp;
+  try {
+    resp = await fetch(RESEND_URL, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    data = await resp.json().catch(function(){ return {}; });
+  } catch (e) { return { statusCode: 502, headers, body: JSON.stringify({ error: 'The e-mail service did not answer.' }) }; }
+  if (!resp.ok) return { statusCode: resp.status, headers, body: JSON.stringify({ error: (data && data.message) || 'Send failed' }) };
+  const entry = { id: 'em_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: new Date().toISOString(), kind: 'personal',
+    by: name, from: me, to: to, cc: cc, subject: subject, text: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+    pid: String(body.pid || '').slice(0, 80), customer: String(body.customer || '').slice(0, 120), about: String(body.about || '').slice(0, 40),
+    attachments: att.files.map(function(f){ return f.filename; }), resendId: data && data.id || '' };
+  let logged = false; try { logged = await logSent(entry); } catch (e) {}
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, logged: logged, entry: entry }) };
+}
+
 exports.handler = async function (event) {
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS'), { 'Content-Type': 'application/json' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
@@ -124,6 +247,8 @@ exports.handler = async function (event) {
   try { body = JSON.parse(event.body); }
   catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
+  if (body.mode === 'personal') return sendPersonal(body, who, key, headers);   /* patch AP2 */
+
   const to = body.to;
   const subject = body.subject;
   const html = body.html;
@@ -136,6 +261,22 @@ exports.handler = async function (event) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Sender must be an @grayco-cs.com address (the verified domain).' }) };
   }
 
+  /* patch AP2: nobody sends as another person — a personal address must be the signed-in one's own */
+  if (SHARED_BOXES.indexOf(addrOf(from)) < 0 && addrOf(from) !== String(who.email || '').toLowerCase())
+    return { statusCode: 403, headers, body: JSON.stringify({ error: 'You can only send from your own address (' + who.email + ') or office@ / billing@.' }) };
+  if (body.replyTo && SHARED_BOXES.indexOf(addrOf(body.replyTo)) < 0 && addrOf(body.replyTo) !== String(who.email || '').toLowerCase() && /@grayco-cs\.com$/i.test(addrOf(body.replyTo)))
+    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Reply-To must be your own address or a shared mailbox.' }) };
+
+  /* patch AP2: news@ mail goes through the one news path (unsubscribed skipped, footer + one-click headers) */
+  if (/<news@grayco-cs\.com>$/i.test(from)) {
+    const list = Array.isArray(to) ? to : [to];
+    if (list.length !== 1 || body.cc) return { statusCode: 400, headers, body: JSON.stringify({ error: 'GrayCo News goes to one customer per e-mail (each gets their own unsubscribe link).' }) };
+    const res = await require('./_lib/news.js').sendNews({ to: list[0], subject: subject, html: html, text: body.text });
+    if (res.skipped) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: res.skipped }) };
+    if (!res.ok) return { statusCode: res.status || 502, headers, body: JSON.stringify({ error: res.error || 'Send failed' }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+  }
+
   const payload = {
     from: from,
     to: Array.isArray(to) ? to : [to],
@@ -144,6 +285,9 @@ exports.handler = async function (event) {
   };
   if (body.replyTo) payload.reply_to = body.replyTo;
   if (body.cc) payload.cc = Array.isArray(body.cc) ? body.cc : [body.cc];
+  const att = await readAttachments(body.attachments);
+  if (!att.ok) return { statusCode: 400, headers, body: JSON.stringify({ error: att.error }) };
+  if (att.files.length) payload.attachments = att.files;
 
   try {
     const resp = await fetch(RESEND_URL, {

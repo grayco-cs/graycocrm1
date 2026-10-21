@@ -316,9 +316,33 @@ function isCustomerInvoice(r){
   if (/sub|vendor|bill|expense|cost/.test(ty)) return false;
   if (ty && !/client|customer|draw|progress|final|invoice/.test(ty)) return false;
   if (!ty && (r.sub || r.subId || r.vendor)) return false;
-  if (/draft|void|deleted|declined|denied|cancel/.test(low(r.status))) return false;
+  if (/draft|pm_review|void|deleted|declined|denied|cancel/.test(low(r.status))) return false;
   if (r._pmDenied === true || r.deleted === true) return false;
   return true;
+}
+/* patch AP2 — every client invoice made in the CRM is in the customer's portal, with its PDF.
+   The number the CRM prints (invoice number, else INV-<PO>, else INV-<last 6 of the id>); what the customer
+   sees as its state: Approved / Sent / Due / Overdue / Paid (a draft or one in PM review is not shown). */
+function invNumber(r){
+  const n = s(r.invNum || r.num || r.number || r.docNumber || r.qbNum);
+  if (n) return clip(n, 30);
+  return s(r.po) ? clip('INV-' + s(r.po), 30) : 'INV-' + s(r.id).slice(-6);
+}
+function invAmount(r){ return money(num(r.amt != null ? r.amt : (r.amount != null ? r.amount : r.total))); }
+function invCustStatus(r, bal, today){
+  const st = low(r.status);
+  if (bal <= 0 && (invPaid(r) || invAmount(r) > 0)) return 'Paid';
+  const due = ymd(r.dueDate || r.due);
+  if (/overdue|late|past/.test(st) || (due && due < (today || new Date().toISOString().slice(0, 10)))) return 'Overdue';
+  if (/sent|emailed|mailed/.test(st) || r.emailedAt || r.firstSentDate) return 'Sent';
+  if (/approv/.test(st) || r.approved === true || r._approvedAt) return 'Approved';
+  return 'Due';
+}
+function invOfProject(r, p){
+  const pid = pidOf(r);
+  if (pid) return pid === s(p.id);
+  const nm = low(r.projectName || r.project || r.jobName);
+  return !!(nm && nm === low(p.name));
 }
 function invPaid(r){ return /paid/.test(low(r.status)) && !/unpaid|partial/.test(low(r.status)) || r.paidInFull === true; }
 function invBalance(r){
@@ -419,7 +443,7 @@ async function buildView(data, p, opts){
   opts = opts || {};
   const pid = s(p.id);
   const users = arr(data.users), customers = arr(data.customers);
-  const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return pidOf(r) === pid && isCustomerInvoice(r); });
+  const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return invOfProject(r, p) && isCustomerInvoice(r); });
   const cos = listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; });
   const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
@@ -476,11 +500,11 @@ async function buildView(data, p, opts){
   /* money */
   const contract = money(num(p.contractAmount) || num(p.contract) || num(p.contractAmt));
   const invOut = invoices.map(function(r){
-    const amount = money(num(r.amt != null ? r.amt : (r.amount != null ? r.amount : r.total)));
+    const amount = invAmount(r);
     const bal = invBalance(r);
-    return { number: clip(r.invNum || r.num || r.number || r.docNumber || '', 30), date: ymd(r.date || r.sentDate || r.created || r.savedAt),
-      due: ymd(r.dueDate || r.due), amount: amount, balance: bal, status: bal <= 0 ? 'Paid' : (/overdue|late/.test(low(r.status)) ? 'Past due' : 'Open'),
-      isFinal: invFinal(r) };
+    return { id: clip(r.id, 80), number: invNumber(r), date: ymd(r.date || r.sentDate || r.created || r.savedAt),
+      due: ymd(r.dueDate || r.due), amount: amount, balance: bal, status: invCustStatus(r, bal),
+      isFinal: invFinal(r), title: clip(r.drawType || r.desc || '', 90) };   /* the PDF: action 'invoice' with this id */
   }).sort(function(a, b){ return a.date < b.date ? -1 : 1; });
   let payments = [];
   arr(p.drawPayments).concat(arr(p.payments)).forEach(function(x){ const a = money(num(x.amt != null ? x.amt : x.amount)); if (a > 0) payments.push({ date: ymd(x.date || x.at), amount: a, method: methodOf(x) }); });
@@ -977,6 +1001,105 @@ async function officeTodo(id, label, note){
   } catch (e) { return false; }
 }
 
+/* ── patch AP2: the invoice PDF (portal + e-mail attachment), the invoice e-mail approval, GrayCo News ── */
+function invPdfLib(){ return require('./_lib/invoice-pdf.js'); }
+function newsLib(){ return require('./_lib/news.js'); }
+function invoiceDoc(data, p, r){
+  const users = arr(data.users), customers = arr(data.customers);
+  const clientName = s(p.client || p.customer || p.clientName || r.client || r.customer);
+  const cust = customers.find(function(c){ return clientName && low(c.name || c.company) === low(clientName); }) || {};
+  const pmName = s(p.pm || p.projectManager);
+  const pmUser = users.find(function(u){ return pmName && low(u.name) === low(pmName); }) || {};
+  const total = invAmount(r), bal = invBalance(r);
+  let lines = arr(r.lines).map(function(l){ return { desc: s(l.desc || l.description || l.name || l.item), amt: l.amt != null ? num(l.amt) : (l.amount != null ? num(l.amount) : (l.total != null ? num(l.total) : null)) }; })
+    .filter(function(l){ return l.desc || l.amt; });
+  if (!lines.length) lines = [{ desc: s(r.desc || r.description || r.drawType || 'Invoice'), amt: total }];
+  return { number: invNumber(r), date: ymd(r.date || r.sentDate || r.created || r.savedAt), due: ymd(r.dueDate || r.due), terms: s(r.terms),
+    status: invCustStatus(r, bal), client: clip(clientName || cust.name, 80), address: clip(p.address || p.jobAddress || cust.address, 160),
+    email: clip(p.clientEmail || p.customerEmail || p.email || cust.email, 120), job: clip(p.name, 90), jobAddress: clip(p.address || p.jobAddress, 160),
+    po: clip(p.autoPO || r.po || p.po, 20), lines: lines, total: total, paid: money(Math.max(0, total - bal)), balance: bal, isFinal: invFinal(r),
+    pm: clip(pmName, 60), pmPhone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40) };
+}
+function invoicePdf(data, p, r){
+  const doc = invoiceDoc(data, p, r);
+  return { doc: doc, filename: 'GrayCo Invoice ' + doc.number.replace(/[^A-Za-z0-9 _.-]/g, '') + '.pdf', pdf: invPdfLib().build(doc) };
+}
+/* the invoice and its job, for a staff preview or the send (null: not one the customer may see) */
+function invoiceAndJob(data, invId){
+  const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(invId); });
+  if (!r) return null;
+  let p = pidOf(r) ? findProject(data, pidOf(r)) : null;
+  if (!p) { const nm = low(r.projectName || r.project || r.jobName); p = nm ? arr(data.projects).find(function(x){ return low(x.name) === nm; }) || null : null; }
+  return p ? { r: r, p: p } : null;
+}
+function invoiceMailHtml(doc, pmPhone){
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
+    '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
+    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<div style="font-size:18px;font-weight:bold">' + esc(doc.job) + '</div></div>' +
+    '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
+    '<p style="font-size:15px">Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
+    '<p style="font-size:15px;line-height:1.5">Your ' + (doc.isFinal ? 'final ' : '') + 'invoice from GrayCo is attached as a PDF.</p>' +
+    '<p style="font-size:15px;line-height:1.5"><b>Invoice #' + esc(doc.number) + ' \u2014 ' + usd(doc.total) + '</b>' + (doc.balance !== doc.total ? ' (balance due ' + usd(doc.balance) + ')' : '') + (doc.due ? '<br>Due ' + esc(doc.due) : '') + '</p>' +
+    '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> \u2014 hand it to ' + esc(doc.pm || 'your Project Manager') + '.</p>' +
+    '<p style="text-align:center;margin:22px 0"><a href="' + LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoices in my GrayCo Portal</a></p>' +
+    '<p style="font-size:13px;color:#55626F">Questions? Call us at ' + OFFICE_PHONE + (pmPhone ? ' or ' + esc(doc.pm) + ' at ' + esc(pmPhone) : '') + '.</p>' +
+    '</div></div>';
+}
+/* a client invoice made in the CRM (not a draft, not paid, not a QuickBooks copy, made since AP2 went in) */
+const INV_MAIL_SINCE = '2026-10-21';
+function invMailWanted(r){
+  if (!isCustomerInvoice(r) || invPaid(r) || invBalance(r) <= 0) return false;
+  if (/pending|ready_for_review/.test(low(r.status)) || r._autoDrafted === true && /draft/.test(low(r.status))) return false;
+  if (/quickbooks|^qb/i.test(s(r.source)) || r.qbId || r.qbKey) return false;
+  const made = s(r.createdAt || r.created || r.savedAt || r.date).slice(0, 10);
+  return !!made && made >= INV_MAIL_SINCE;
+}
+async function queueInvoiceMail(invId, who, opts){
+  opts = opts || {};
+  const data = opts.data || await crmData(true);
+  const ij = invoiceAndJob(data, invId);
+  if (!ij) return { status: 404, out: { ok: false, retry: true, error: 'The invoice (or its job) is not in the cloud yet.' } };
+  const r = ij.r, p = ij.p;
+  if (!isCustomerInvoice(r)) return { status: 400, out: { ok: false, notReady: true, error: 'A draft (or an invoice still in review) is not e-mailed.' } };
+  const qid = 'appr_inv_' + s(r.id);
+  const cur = await kvListRead(AQ_KEY);
+  if (cur && cur.list.some(function(x){ return s(x.id) === qid || (x.status !== 'rejected' && s((x.meta || {}).invoiceId) === s(r.id)); }))
+    return { status: 200, out: { ok: true, id: qid, already: true } };
+  const view = await buildView(data, p);
+  const to = s(view.customer.email);
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No customer e-mail on this job.' } };
+  const doc = invoiceDoc(data, p, r);
+  const title = 'Invoice #' + doc.number + ' ' + usd(doc.total) + ' to ' + (doc.client || to);
+  const q = await queueApproval({ id: qid, kind: 'invoice', pid: s(p.id), jobName: p.name, pm: pmOf(data, p), to: to, title: title,
+    subject: 'Invoice #' + doc.number + ' from GrayCo Construction Services \u2014 ' + usd(doc.balance || doc.total),
+    html: invoiceMailHtml(doc, doc.pmPhone), attachments: [{ name: 'GrayCo Invoice ' + doc.number + '.pdf', kind: 'pdf', invoiceId: s(r.id) }],
+    meta: { invoiceId: s(r.id), invoiceNumber: doc.number, amount: doc.total, balance: doc.balance, isFinal: doc.isFinal, by: who && who.email || 'server' } });
+  return { status: q ? 200 : 502, out: { ok: !!q, id: qid, queued: !!q, title: title } };
+}
+/* every new client invoice gets its e-mail approval (portal-reminders runs this every hour; the CRM asks at once) */
+async function queueNewInvoices(opts){
+  opts = opts || {};
+  if (!approvalNeeded('invoice')) return { ok: true, off: true };
+  const data = await crmData(true);
+  const cur = await kvListRead(AQ_KEY);
+  if (!cur) return { ok: false, error: 'approvals list unreadable' };
+  const have = {}; cur.list.forEach(function(x){ have[s(x.id)] = 1; if ((x.meta || {}).invoiceId && x.status !== 'rejected') have['inv:' + s(x.meta.invoiceId)] = 1; });
+  const out = { ok: true, queued: 0, skipped: 0 };
+  for (const r of listOf(data, ['invs', 'invoices'])) {
+    if (!invMailWanted(r) || have['appr_inv_' + s(r.id)] || have['inv:' + s(r.id)]) continue;
+    const q = await queueInvoiceMail(s(r.id), null, { data: data });
+    if (q.out && q.out.queued) out.queued++; else out.skipped++;
+  }
+  return out;
+}
+/* the thank-you's newsletter part (only for someone still on GrayCo News) */
+function thankYouNewsBlock(){
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:14px auto 0;padding:16px 18px;background:#F5F1E8;border-radius:12px;color:#14202E;font-size:14px;line-height:1.55">' +
+    '<b>\uD83D\uDCF0 GrayCo News</b><br>A few times a year we send seasonal home-care tips, storm-season reminders and news from GrayCo to our customers. ' +
+    'Nothing to do \u2014 it just shows up in your inbox.</div>';
+}
+
 /* ── customer e-mail / text approvals (owner rule, 20 Oct 2026) ─────────────────────────────────────────
    Every automatic e-mail or text to a customer waits in ONE shared list, gc_kv "gc_approval_queue" (JSON
    text, changed only through kvListUpdate here; the CRM reads it and merges by id). The job's PM approves;
@@ -990,7 +1113,7 @@ async function officeTodo(id, label, note){
 const AQ_KEY = 'gc_approval_queue';
 const LINK_PH = '{{PORTAL_LINK}}';
 const AQ_RANK = { waiting: 0, sending: 1, approved: 2, rejected: 3, sent: 4 };
-const MONEY_KIND = /final|invoice|lien|waiver|contract|thank_you/;   /* PM, then an admin (owner: the thank-you e-mail too) */
+const MONEY_KIND = /final|invoice|lien|waiver|contract|thank_you/;   /* patch AP2: 'invoice' = the invoice PDF e-mail */   /* PM, then an admin (owner: the thank-you e-mail too) */
 const AUTO_OK = { signed_copy: 1, receipt: 1 };   /* the exceptions: these still go out by themselves */
 function approvalNeeded(kind){ return needsApproval() && !AUTO_OK[kind]; }
 function aqDone(st){ return st === 'sent' || st === 'rejected'; }
@@ -1028,7 +1151,7 @@ function textHtml(text){
 async function queueApproval(o){
   const now = new Date().toISOString();
   const steps = stepsFor(o.kind, o.pm);
-  const item = { id: s(o.id), kind: o.kind, jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
+  const item = { id: s(o.id), kind: o.kind, title: s(o.title), jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
     to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
     status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
   const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
@@ -1048,16 +1171,46 @@ async function aqSend(item, now){
     try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
-  const from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
+  let from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
     : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
+  const payload = { from: from, reply_to: 'office@grayco-cs.com', to: [item.to], subject: item.subject, html: html };
+  if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
+  /* patch AP2: the invoice PDF, made fresh from the CRM's record, goes with the e-mail */
+  const pdfs = (item.attachments || []).filter(function(a){ return a && a.kind === 'pdf' && a.invoiceId; });
+  if (pdfs.length) {
+    try {
+      const data = await crmData(true);
+      payload.attachments = pdfs.map(function(a){
+        const ij = invoiceAndJob(data, a.invoiceId); if (!ij) throw new Error('invoice ' + a.invoiceId + ' not found');
+        const f = invoicePdf(data, ij.p, ij.r);
+        return { filename: f.filename, content: f.pdf.toString('base64') };
+      });
+    } catch (e) { return { ok: false, error: 'Could not make the invoice PDF (' + clip(e && e.message || e, 80) + ').' }; }
+  }
+  /* patch AP2: the thank-you comes from news@ with the newsletter part, the unsubscribe footer and the
+     List-Unsubscribe headers — unless the customer unsubscribed (or the list cannot be read): then it is a
+     plain thank-you from office@ with no newsletter part */
+  if (item.kind === 'thank_you') {
+    const N = newsLib();
+    let off = true; try { off = await N.isUnsubscribed(item.to); } catch (e) { off = true; }
+    if (!off) {
+      payload.from = N.NEWS_FROM; payload.reply_to = N.REPLY_TO;
+      payload.html = html + thankYouNewsBlock() + N.footerHtml(item.to);
+      payload.headers = N.listHeaders(item.to);
+    }
+  }
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: from, reply_to: 'office@grayco-cs.com', to: [item.to], subject: item.subject, html: html }) });
+      body: JSON.stringify(payload) });
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) return { ok: false, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
   const m = item.meta || {};
+  try {   /* patch AP2: a FINAL invoice e-mailed this way is the first final-invoice e-mail: the 15-day reminders follow */
+    if (item.kind === 'invoice' && m.isFinal && m.invoiceId) await fetch(sbUrl() + '/rest/v1/gc_portal_mail?on_conflict=invoice_id', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ invoice_id: s(m.invoiceId), project_id: s(item.jobId), first_sent_at: now, last_reminder_at: now, last_result: 'sent' }) });
+  } catch (e) {}
   try {
     if (item.kind === 'portal_link' && token) await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ sent_at: now, sent_via: 'email' }) });
     if (item.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'emailed' }) });
@@ -1065,6 +1218,29 @@ async function aqSend(item, now){
     if (item.kind === 'final_reminder' && m.invoiceId) await patchMail(m.invoiceId, { reminders: num(m.reminders) || 1, last_reminder_at: now, last_result: 'reminded' });
   } catch (e) {}
   return { ok: true };
+}
+/* patch AP2: an approver's edits (To, CC, subject, body / text message), recorded with who and when */
+const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i;
+function ccList(v){ return (Array.isArray(v) ? v : s(v).split(/[,;\s]+/)).map(function(x){ return low(x); }).filter(Boolean); }
+function editProblem(edit){
+  if (!edit) return '';
+  if (edit.to != null && s(edit.to) && !EMAIL_RE.test(s(edit.to)) && !/^\+?[0-9 ()-]{7,20}$/.test(s(edit.to))) return 'The "To" address does not look right.';
+  if (edit.cc != null) { const bad = ccList(edit.cc).filter(function(e){ return !EMAIL_RE.test(e); }); if (bad.length) return 'CC: ' + bad[0] + ' does not look right.'; if (ccList(edit.cc).length > 5) return 'At most 5 CC addresses.'; }
+  return '';
+}
+function applyEdit(x, edit, me){
+  const ch = [];
+  if (edit.to != null && s(edit.to) && low(edit.to) !== low(x.to)) { x.to = clip(edit.to, 200); ch.push('to'); }
+  if (edit.cc != null) { const cc = ccList(edit.cc); if (JSON.stringify(cc) !== JSON.stringify(x.cc || [])) { x.cc = cc; ch.push('cc'); } }
+  if (s(edit.subject) && s(edit.subject) !== s(x.subject)) { x.subject = clip(edit.subject, 200); ch.push('subject'); }
+  if (s(edit.text) && String(edit.text) !== String(x.text)) {
+    let tx = String(edit.text).slice(0, 8000);
+    if (x.channel !== 'sms' && String(x.html || '').indexOf(LINK_PH) >= 0 && tx.indexOf(LINK_PH) < 0) tx += '\n\n' + LINK_PH;
+    x.text = tx; if (x.channel !== 'sms') x.html = textHtml(tx); ch.push(x.channel === 'sms' ? 'message' : 'body');
+  }
+  x.editedBy = me.by; x.editedEmail = me.email; x.editedAt = me.at;
+  x.edits = (x.edits || []).concat([{ by: me.by, email: me.email, at: me.at, step: x.step, fields: ch }]).slice(-20);
+  return ch;
 }
 /* approve / reject / edit-then-approve, from the CRM. who = the signed-in person (gcStaffAuth). */
 async function approvalAction(body, who){
@@ -1077,7 +1253,8 @@ async function approvalAction(body, who){
   if (op === 'queue') {
     /* the CRM's automatic thank-you e-mail (job complete + paid): it waits here for the PM, then an admin.
        The recipient is the job's own customer e-mail (never one the page sends). */
-    if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you e-mail is queued from the CRM.' } };
+    if (s(body.kind) === 'invoice') return queueInvoiceMail(s(body.invoiceId), who);   /* patch AP2 */
+    if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you and invoice e-mails are queued from the CRM.' } };
     const pid = s(body.projectId);
     const data = await crmData(true); const p = pid && findProject(data, pid);
     if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
@@ -1107,17 +1284,23 @@ async function approvalAction(body, who){
     } catch (e) {}
     return { status: 200, out: { ok: true, item: r.result } };
   }
-  if (op !== 'approve') return { status: 400, out: { ok: false, error: 'Bad request' } };
   const edit = body.edit && typeof body.edit === 'object' ? body.edit : null;
+  /* patch AP2: whoever must act now can open it, change To / CC / subject / body (a text: the message) and save it
+     without approving; the next approver sees the edited e-mail and "edited by X" */
+  const bad = editProblem(edit);
+  if (bad) return { status: 400, out: { ok: false, error: bad } };
+  if (op === 'edit') {
+    if (!edit) return { status: 400, out: { ok: false, error: 'Nothing to save.' } };
+    const re = await upd(function(x){ if (x.status !== 'waiting') return false; applyEdit(x, edit, me); }, function(z){ return z.editedAt === now; });
+    if (!re.ok || !re.result || re.result.editedAt !== now) return { status: 409, out: { ok: false, error: 'Could not save it — look again.', item: re.result } };
+    return { status: 200, out: { ok: true, saved: true, item: re.result } };
+  }
+  if (op !== 'approve') return { status: 400, out: { ok: false, error: 'Bad request' } };
   const last = admin || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
   const claim = 'c' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   let r = await upd(function(x){
     if (x.status !== 'waiting' && !(x.status === 'sending' && stale)) return false;
-    if (edit) {
-      if (s(edit.subject)) x.subject = clip(edit.subject, 200);
-      if (s(edit.text)) { let tx = String(edit.text).slice(0, 8000); if (x.html.indexOf(LINK_PH) >= 0 && tx.indexOf(LINK_PH) < 0) tx += '\n\n' + LINK_PH; x.text = tx; x.html = textHtml(tx); }
-      x.editedBy = me.by; x.editedAt = now;
-    }
+    if (edit) applyEdit(x, edit, me);
     x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step }, me)]);
     if (last) { x.status = 'sending'; x.claim = claim; }
     else x.step = x.steps[x.steps.indexOf(x.step) + 1];
@@ -1484,7 +1667,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -1498,6 +1681,29 @@ exports.handler = async function (event) {
     if (action === 'approval') {
       try { const a = await approvalAction(body, who); return reply(a.status, headers, a.out); }
       catch (e) { return reply(500, headers, { ok: false, error: 'The approval hit a problem: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'invoice-pdf') {   /* patch AP2: the PDF the customer gets, for the approval preview */
+      try {
+        const data = await crmData(true); const ij = invoiceAndJob(data, s(body.invoiceId));
+        if (!ij) return reply(404, headers, { ok: false, error: 'That invoice (or its job) is not in the cloud yet.' });
+        const f = invoicePdf(data, ij.p, ij.r);
+        return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64'), number: f.doc.number });
+      } catch (e) { return reply(500, headers, { ok: false, error: 'Could not make the PDF: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'news') {          /* patch AP2: "News: subscribed / unsubscribed (date)" and an admin's re-subscribe */
+      const N = newsLib(), op = s(body.op), admin = low(who.role) === 'admin';
+      try {
+        if (op === 'status') return reply(200, headers, { ok: true, status: await N.status((Array.isArray(body.emails) ? body.emails : []).filter(function(e){ return typeof e === 'string'; }).slice(0, 500)) });
+        if (!admin) return reply(403, headers, { ok: false, error: 'Only Wesley or Nick can change who gets GrayCo News.' });
+        if (op === 'resubscribe') {
+          if (body.customerAsked !== true) return reply(400, headers, { ok: false, error: 'Re-subscribe only when the customer asked for it.' });
+          const okR = await N.resubscribe(s(body.email), 'admin ' + who.email + ' (customer asked)');
+          return reply(okR ? 200 : 502, headers, { ok: okR, status: okR ? await N.status([s(body.email)]) : null });
+        }
+        if (op === 'unsubscribe') { const okU = await N.unsubscribe(s(body.email), 'admin ' + who.email); return reply(okU ? 200 : 502, headers, { ok: okU }); }
+        if (op === 'subscribers') { const list = await N.subscribers(await crmData(true)); return reply(200, headers, { ok: true, count: list.length, subscribers: list }); }
+        return reply(400, headers, { ok: false, error: 'Bad request' });
+      } catch (e) { return reply(503, headers, { ok: false, setup: true, error: 'GrayCo News list is not set up: run docs/news-unsubscribe.sql in Supabase.' }); }
     }
     const pid = s(body.projectId);
     if (!pid) return reply(400, headers, { ok: false, error: 'Open a job first.' });
@@ -1525,7 +1731,7 @@ exports.handler = async function (event) {
   }
 
   /* PUBLIC */
-  if (action !== 'view' && action !== 'photos') return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (action !== 'view' && action !== 'photos' && action !== 'invoice') return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
@@ -1545,6 +1751,12 @@ exports.handler = async function (event) {
     const list = gc.concat(cc).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
     return reply(200, headers, { ok: true, photos: list, expiresIn: SIGN_SECS });
   }
+  if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
+    const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
+    if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
+    const f = invoicePdf(data, p, r);
+    return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64') });
+  }
   const view = await buildView(data, p);
   /* when was it last opened (at most once every 10 minutes per link) */
   const last = row.last_viewed_at ? Date.parse(row.last_viewed_at) : 0;
@@ -1556,6 +1768,7 @@ exports.handler = async function (event) {
 
 /* for portal-reminders.js and the tests */
 exports._core = { pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, grayCoPhotos: grayCoPhotos, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
+  newToken: newToken, grayCoPhotos: grayCoPhotos, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
+  queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

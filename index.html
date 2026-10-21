@@ -12515,7 +12515,7 @@ window._todoEmailSub=function(key){
   var subj="GrayCo Construction \u2014 "+need+" needed for our files";
   var body="Hi "+(name||"there")+",\n\nWe're updating our subcontractor compliance files at GrayCo Construction Services. To keep your account active and avoid any delay in payment, please send us your current "+need+" at your earliest convenience. If your W-9, Certificate of Insurance, or Workers' Comp is also out of date, please include those as well.\n\nYou can reply directly to this email with the documents attached, or send them to office@grayco-cs.com.\n\nThank you,\nGrayCo Construction Services\noffice@grayco-cs.com";
   if(!email){alert("No email on file for "+(name||"this sub")+". Add their email on the Vendors tab, or copy this request:\n\n"+body);return;}
-  window.location.href="mailto:"+encodeURIComponent(email)+"?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(body);
+  window._gcMailNav("mailto:"+encodeURIComponent(email)+"?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(body)); /* AP2: Gmail / CRM compose, never Outlook */
 };
 function _todoMeta(it){var m=it.sub;if(it.pm)m+=" \u00B7 PM: "+String(it.pm).split(" ")[0];if(it.src)m+=" \u00B7 <span style=\"color:#c4a469;font-weight:600\">auto \u2022 "+it.src+"</span>";return m;}
 function _todoCompute(){
@@ -12781,7 +12781,7 @@ window._sendSubForm=function(_target){
     var subj="GrayCo Construction \u2014 New Subcontractor Onboarding";
     var body="Hello,\n\nThank you for working with GrayCo Construction Services. The Subcontractor Onboarding & Compliance Form just downloaded to this device \u2014 please ATTACH it to this email before sending.\n\nPlease complete the form and return it along with:\n\n  \u2022 A current W-9\n  \u2022 Your Certificate of Insurance (COI) listing GrayCo as certificate holder\n\nReply with the completed form attached, or send everything to office@grayco-cs.com.\n\nThank you,\nGrayCo Construction Services\noffice@grayco-cs.com";
     var href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(body);
-    setTimeout(function(){ window.location.href=href; }, 400);
+    setTimeout(function(){ window._gcMailNav(href); }, 400); /* AP2: Gmail / CRM compose, never Outlook */
 
     var t=document.createElement('div');
     t.textContent='\u2705 Form downloaded \u2014 attach it to the email that opens';
@@ -70347,7 +70347,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var emailBtn=document.getElementById('_jpEmail');
     if(emailBtn) emailBtn.onclick=function(){
       var subj='GrayCo \u2014 '+name; var body='Hi'+(client?(' '+client.split(' ')[0]):'')+',\n\n';
-      window.location.href='mailto:'+cemail+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+      window._gcMailNav('mailto:'+cemail+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body)); /* AP2: Gmail / CRM compose */
     };
 
     // Quick Job Update (typed notes stored on the job) \u2014 CRM preferred
@@ -116873,7 +116873,7 @@ function remind(id){
     +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="gck-btn p" id="gck-rm-send">✉ Send from office@ (asks first)</button><button class="gck-btn" id="gck-rm-mail">Open in my email app</button></div></div>';
   var ov=overlay('Payment reminder · '+r.customer, inner);
   function vals(){ return { to:ov.querySelector('#gck-rm-to').value.trim(), subj:ov.querySelector('#gck-rm-subj').value, body:ov.querySelector('#gck-rm-body').value }; }
-  ov.querySelector('#gck-rm-mail').onclick=function(){ var x=vals(); var a=document.createElement('a'); a.href='mailto:'+encodeURIComponent(x.to)+'?subject='+encodeURIComponent(x.subj)+'&body='+encodeURIComponent(x.body); a.click(); };
+  ov.querySelector('#gck-rm-mail').onclick=function(){ var x=vals(); window._gcMailNav('mailto:'+encodeURIComponent(x.to)+'?subject='+encodeURIComponent(x.subj)+'&body='+encodeURIComponent(x.body)); /* AP2: Gmail, never Outlook */ };
   ov.querySelector('#gck-rm-send').onclick=function(){
     var x=vals(); if(!x.to){ alert('Add the client’s email address first.'); return; }
     var html='<div style="font-family:Arial,sans-serif;font-size:14px;color:#222;white-space:pre-wrap">'+esc(x.body)+'</div>';
@@ -123917,8 +123917,9 @@ try{ console.log('[GC] Office to-do: the cloud copy is read as text or list, and
    waivers, contracts) then an admin (Wesley, Nick). Admins can approve
    anything. No PM on the job: admins.
 
-   Buttons: field view "✅ Approvals (N)" at the top of the job list / field
-   home; desk view "✅ Approvals (N)" in the top bar and in the left menu.
+   Where: patch AP2 shows these items in To-Do (To-Do tab, Office To-Do,
+   Office Status) and on the green "📋 APPROVE" button; the separate
+   top-bar / left-menu / field "✅ Approvals (N)" buttons are gone.
    N = items waiting on the person signed in. The list: waiting on me first,
    then (admins) the rest. It closes with ‹ Back / ✕ (patch NAV's back rule).
    Console: _gcCustApprovals(), _gcOpenApprovals(), _gcApprovalsRefresh().
@@ -124045,7 +124046,7 @@ function markInvoiceSent(invId){
 window._gcApprovalAct = act;
 
 /* ── the list screen ── */
-var KIND = { portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
+var KIND = { invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
 function kindOf(x){ return KIND[x.kind] || s(x.kind).replace(/_/g, ' '); }
 function preview(x){ return esc(s(x.text)).split(esc(PH)).join('<span style="color:#2563eb;text-decoration:underline">[portal link]</span>'); }
 function stepLabel(x){
@@ -124058,7 +124059,7 @@ function stepLabel(x){
 function card(x){
   var id = esc(x.id), act1 = canAct(x), lastStep = isAdmin() || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1;
   var h = '<div class="_apCard" data-id="' + id + '" style="background:#fff;color:#0f172a;border-radius:14px;padding:14px;margin-bottom:12px;border:1px solid #e2e8f0">' +
-    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">' + esc(kindOf(x)) + ' — ' + esc(x.jobName || x.jobId) + '</div>' +
+    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">' + (x.title ? esc(x.title) : esc(kindOf(x)) + ' — ' + esc(x.jobName || x.jobId)) + '</div>' +
     '<div style="font-size:12px;color:#64748b">' + (x.channel === 'sms' ? '💬 Text' : '✉️ E-mail') + '</div></div>' +
     '<div style="margin:6px 0;font-size:13px">' + stepLabel(x) + '</div>' +
     '<div style="font-size:13px;color:#334155"><b>To:</b> ' + esc(x.to) + '</div>' +
@@ -124134,37 +124135,10 @@ function label(){ var n = mine().length; return '✅ Approvals (' + n + ')'; }
 function paint(){
   try{
     var show = showButton(), n = mine().length, txt = label();
-    /* field: front and center at the top of the job list / field home */
-    ['_gcJobPick', '_gcFieldHomeOv'].forEach(function(hid){
-      var host = document.getElementById(hid); if(!host) return;
-      var b = host.querySelector('._gcApprFieldBtn');
-      if(!show){ if(b) b.remove(); return; }
-      if(!b){
-        b = document.createElement('button'); b.className = '_gcApprFieldBtn'; b.type = 'button';
-        b.onclick = function(e){ e.stopPropagation(); window._gcOpenApprovals(); };
-        var head = host.firstElementChild;
-        if(head && head.firstElementChild && hid === '_gcJobPick') head.insertBefore(b, head.firstElementChild.nextSibling); else host.insertBefore(b, host.firstChild);
-      }
-      b.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:8px 0 10px;padding:16px;border-radius:14px;border:none;font-size:19px;font-weight:800;cursor:pointer;text-align:center;' + (n ? 'background:#16a34a;color:#fff;box-shadow:0 4px 14px rgba(22,163,74,.45);' : 'background:#1e3a5f;color:#cbd5e1;');
-      if(b.textContent !== txt) b.textContent = txt;
-    });
-    /* desk: the top bar */
-    var field = document.documentElement.classList.contains('_fieldmode');
-    var ms = document.getElementById('_masterSearch'), tb = document.getElementById('_gcApprTopBtn');
-    if(!show || !ms || field){ if(tb) tb.remove(); }
-    else {
-      if(!tb){ tb = document.createElement('button'); tb.id = '_gcApprTopBtn'; tb.type = 'button'; tb.onclick = function(){ window._gcOpenApprovals(); }; ms.appendChild(tb); var inp = ms.querySelector('input'); if(inp) inp.style.paddingRight = '170px'; }
-      tb.style.cssText = 'position:absolute;right:22px;top:9px;z-index:5;padding:5px 12px;border-radius:8px;border:none;font-weight:800;font-size:13px;cursor:pointer;' + (n ? 'background:#16a34a;color:#fff;' : 'background:#1e3a5f;color:#cbd5e1;');
-      if(tb.textContent !== txt) tb.textContent = txt;
-    }
-    /* desk: the left menu */
-    var nav = document.querySelector('aside nav'), lm = document.getElementById('_gcApprMenu');
-    if(!show || !nav){ if(lm) lm.remove(); }
-    else {
-      if(!lm || lm.parentNode !== nav){ if(lm) lm.remove(); lm = document.createElement('button'); lm.id = '_gcApprMenu'; lm.type = 'button'; lm.onclick = function(){ window._gcOpenApprovals(); }; nav.insertBefore(lm, nav.firstChild); }
-      lm.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%;padding:6px 8px;border-radius:3px;border:none;cursor:pointer;margin-bottom:2px;font-family:inherit;font-size:12px;font-weight:800;justify-content:flex-start;white-space:nowrap;' + (n ? 'background:#14532d;color:#bbf7d0;' : 'background:transparent;color:#7a95b5;');
-      if(lm.textContent !== txt) lm.textContent = txt;
-    }
+    /* patch AP2: no separate Approvals buttons — the items are in To-Do and on the green APPROVE button */
+    ['_gcApprTopBtn', '_gcApprMenu'].forEach(function(id){ var e = document.getElementById(id); if(e) e.remove(); });
+    document.querySelectorAll('._gcApprFieldBtn').forEach(function(e){ e.remove(); });
+    var ms0 = document.getElementById('_masterSearch'), in0 = ms0 && ms0.querySelector('input'); if(in0 && in0.style.paddingRight === '170px') in0.style.paddingRight = '';
     var ov = document.getElementById(OV); if(ov) render(ov);
   }catch(e){}
 }
@@ -129857,6 +129831,718 @@ SI.call(window, function(){
 
 window._gcEST2 = { dbg: function(){ return { lastInput: lastInput, ago: Date.now() - lastInput, known: known }; }, cols: window._gcEstCols, why: function(pid){ var p = ((window._crm && window._crm.projects) || []).find(function(x){ return x && x.id === pid; }); return p ? { status: p.status, contract: p.contract, contractWas: p._contractWas, note: p.contractNote, setFrom: p.contractSetFrom, bid: window._gcJobBid(p) } : null; }, cleared: function(){ return CLEARED.slice(); } };
 console.log('[GC] Estimates part 2: columns add up, 📄 PDF on every row, no contract until a job is signed. _gcEST2.why(jobId)');
+})();
+
+</script>
+<script id="gc-patch-ap2">
+/* ==========================================================================
+   patch AP2 — approvals live in To-Do and on the green APPROVE button; every
+   CRM invoice goes to the customer's portal and its PDF e-mail waits for
+   approval; GrayCo News (opt-out) with a one-click unsubscribe.
+
+   Owner, 21 Oct 2026: "where does the PM or admin get the approval for the
+   portal etc, what does the button on the top bar mean. I just want the
+   approvals that need quick approve or do not approve in To-Do and the green
+   approval button. Make sure all the invoices made in the CRM go to the
+   customer's portal, and the approval for the PDF e-mail. The thank-you e-mail
+   can be from news@ … 'click to unsubscribe from our newsletters'."
+
+   * One list (gc_approval_queue, patch APPR) shown in four places, the same
+     cards everywhere: the To-Do tab ("My To-Do List"), the Office To-Do list,
+     the Office Status screen the morning greeting opens ("See today's to-do
+     list"), and the green "📋 APPROVE (N)" button (desk and field). Each card:
+     ✅ Approve and ✖ Don't approve (big), plus a small "Preview / Edit" (the
+     e-mail as the customer sees it, the invoice PDF, edit-then-approve).
+     A card shows to whoever must act now: the job's PM; money / legal papers
+     (invoice, final invoice, reminders, thank-you) then an admin; no PM → the
+     admins; an admin may approve any of them. Approve in one place and every
+     place updates (one list, redrawn from it).
+   * The green button's count (red badge) = what it had + these.
+   * The separate top-bar / left-menu / field "✅ Approvals (N)" buttons are
+     gone (patch_AP2.py takes them out of patch APPR).
+   * Invoices: a client invoice made in the CRM (not a draft) asks the portal
+     function to put "Invoice #… $… to <customer>" on the list (the function
+     also sweeps every hour). Approved, it is e-mailed with the PDF attached,
+     and the invoice is marked Sent here (patch APPR's markInvoiceSent).
+   * News: window._gcNews.subscribers() / status() / resubscribe(); the
+     customer record shows "📰 News: subscribed / unsubscribed (date)", and an
+     admin can re-subscribe only when the customer asked.
+   * Open, edit, then approve: tapping an item opens exactly what goes out —
+     To / CC, subject, body (a text: the message), the attachments with the
+     PDF shown — all editable, with ✅ Approve & send / 💾 Save edits /
+     ✖ Don't approve. Saved edits stay on the item ("edited by X") for the
+     next approver.
+   * ✉️ Send from your own e-mail (person to person, no approval):
+     window._gcCompose({ to, cc, subject, body, pid }) — From is your own
+     @grayco-cs.com address (the server takes it from your sign-in), Reply-To
+     and BCC you; job files attach; logged on the job / customer.
+   * Gmail, never Outlook: no mailto: is followed; window._gcGmail(o) /
+     _gcGmailUrl(o) (desk: Gmail web with authuser; iPhone: googlegmail://;
+     Android: the Gmail intent; web fallback).
+   * The green button tucked at the screen edge opens on a tap again.
+   Console: _gcAp2Items(), _gcAp2Refresh().
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_AP2__) return; window.__GC_PATCH_AP2__ = true;
+var FN = '/.netlify/functions/portal', PH = '{{PORTAL_LINK}}', SEC = '_gcAp2Sec', PREV = '_gcAp2Prev';
+var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout, RI = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+var INV_SINCE = '2026-10-21';
+var busy = {}, notes = {};
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function C(){ try{ return window._gcCustApprovals ? window._gcCustApprovals() : null; }catch(e){ return null; } }
+function items(){ var c = C(); return c ? (c.mine || []) : []; }
+function isAdmin(){ var c = C(); return !!(c && c.admin); }
+function signedIn(){ try{ return !!(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(e){ return false; } }
+function post(body){
+  return window.fetch(FN, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try{ j = JSON.parse(t); }catch(e){ j = { error: t.slice(0, 200) }; } j.__status = r.status; return j; }); },
+          function(e){ return { error: 'No internet (' + e.message + ')', __status: 0 }; });
+}
+window._gcAp2Items = function(){ return items().slice(); };
+
+/* ── the cards ── */
+var KIND = { portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign' };
+var ICON = { invoice:'🧾', final_invoice:'🧾', final_reminder:'⏰', thank_you:'🎉', portal_link:'🔗', portal_docs:'📄', lien_waiver:'📜', contract:'✍️', selection_sign:'🎨' };
+function titleOf(x){
+  if(x.title) return x.title;
+  return (KIND[x.kind] || s(x.kind).replace(/_/g, ' ')) + ' — ' + (x.jobName || x.jobId || '') + (x.to ? ' to ' + x.to : '');
+}
+function lastStep(x){ return isAdmin() || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1; }
+function card(x){
+  var id = esc(x.id), b = busy[x.id], last = lastStep(x);
+  var who = x.step === 'admin' ? 'Needs an admin (Wesley or Nick)' : 'Needs the PM' + (x.pm ? ' — ' + esc(x.pm) : '');
+  var chain = (x.steps || []).length > 1 ? ' · ' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') : '';
+  return '<div class="_ap2Card" data-id="' + id + '" style="background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-left:5px solid #16a34a;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;font-family:Inter,-apple-system,Arial,sans-serif">' +
+    '<div style="font-weight:800;font-size:15px;line-height:1.3">' + (ICON[x.kind] || '✉️') + ' ' + esc(titleOf(x)) + '</div>' +
+    '<div style="font-size:12px;color:#475569;margin-top:3px">' + esc(KIND[x.kind] || x.kind) + (x.jobName ? ' · ' + esc(x.jobName) : '') + ' · ' + (x.channel === 'sms' ? '💬 text' : '✉️ ' + esc(x.to)) + '</div>' +
+    '<div style="font-size:12px;color:#92400e;margin-top:2px">' + who + esc(chain) + '</div>' +
+    ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
+    (x.lastError ? '<div style="font-size:12px;color:#b91c1c;margin-top:2px">Last try: ' + esc(x.lastError) + '</div>' : '') +
+    (x.editedBy ? '<div style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:2px">' + esc(editedLine(x)) + '</div>' : '') +
+    (notes[x.id] ? '<div class="_ap2Note" style="font-size:13px;font-weight:700;margin-top:6px;color:#0f766e">' + esc(notes[x.id]) + '</div>' : '') +
+    '<div style="display:flex;gap:8px;margin-top:10px">' +
+      '<button type="button" class="_ap2Yes" ' + (b ? 'disabled ' : '') + 'style="flex:1;min-height:48px;padding:12px 8px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:16px;cursor:pointer">✅ Approve</button>' +
+      '<button type="button" class="_ap2No" ' + (b ? 'disabled ' : '') + 'style="flex:1;min-height:48px;padding:12px 8px;border:2px solid #dc2626;border-radius:10px;background:#fff;color:#dc2626;font-weight:800;font-size:16px;cursor:pointer">✖ Don\'t approve</button>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px">' +
+      '<button type="button" class="_ap2Prev" style="background:none;border:none;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;padding:4px 0;text-decoration:underline">Preview / Edit</button>' +
+      '<span style="font-size:11px;color:#64748b">' + (last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +
+    '</div></div>';
+}
+function act(id, op, extra){
+  if(busy[id] || !window._gcApprovalAct) return Promise.resolve(null);
+  busy[id] = 1; kept[id] = Date.now(); notes[id] = op === 'reject' ? 'Not sending it…' : 'Working…'; paintAll(true);
+  return Promise.resolve(window._gcApprovalAct(id, op, extra)).then(function(j){
+    delete busy[id]; kept[id] = Date.now();
+    j = j || {};
+    if(j.ok) notes[id] = j.sent ? '✅ Sent to ' + s(j.item && j.item.to) : (op === 'reject' ? '✖ Not approved — it will not be sent.' : (j.next === 'admin' ? '✅ Approved — now waiting on Wesley or Nick.' : '✅ Done.'));
+    else notes[id] = '⚠ ' + (j.error || 'Try again.');
+    paintAll(true);
+    try{ if(window._gcApprovalsRefresh) window._gcApprovalsRefresh().then(function(){ paintAll(true); }); }catch(e){}
+    return j;
+  }, function(){ delete busy[id]; notes[id] = '⚠ Try again.'; paintAll(true); });
+}
+/* a card just acted on stays (with its note) for 20 s, so the person sees what happened */
+var kept = {};
+function shown(){
+  var list = items().slice(), have = {}, c = C(), all = (c && c.all) || [], now = Date.now();
+  list.forEach(function(x){ have[x.id] = 1; });
+  Object.keys(kept).forEach(function(id){
+    if(now - kept[id] > 20000){ delete kept[id]; return; }
+    if(have[id]) return;
+    var x = all.filter(function(y){ return y.id === id; })[0]; if(x) list.push(x);
+  });
+  return list;
+}
+function sectionHtml(dark){
+  var list = shown(), n = items().length;
+  if(!list.length) return '';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 8px;gap:8px">' +
+      '<div style="font-size:14px;font-weight:800;letter-spacing:.02em;color:' + (dark ? '#86efac' : '#14532d') + '">✅ Approvals waiting on you (' + n + ')</div>' +
+      '<button type="button" class="_ap2All" style="background:none;border:none;color:' + (dark ? '#93c5fd' : '#2563eb') + ';font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline">History</button></div>' +
+    list.map(card).join('');
+}
+function wire(root){
+  root.querySelectorAll('._ap2Card').forEach(function(c){
+    var id = c.getAttribute('data-id');
+    var y = c.querySelector('._ap2Yes'), n = c.querySelector('._ap2No'), p = c.querySelector('._ap2Prev');
+    if(y) y.onclick = function(e){ e.stopPropagation(); act(id, 'approve'); };
+    if(n) n.onclick = function(e){ e.stopPropagation(); act(id, 'reject', { reason: '' }); };
+    if(p) p.onclick = function(e){ e.stopPropagation(); openPreview(id); };
+    c.style.cursor = 'pointer';
+    c.onclick = function(e){ if(e.target.closest('button')) return; e.stopPropagation(); openPreview(id); };   /* tap the item: open it */
+  });
+  var a = root.querySelector('._ap2All'); if(a) a.onclick = function(e){ e.stopPropagation(); if(window._gcOpenApprovals) window._gcOpenApprovals(); };
+}
+/* put (or refresh) the section inside host, before ref (or first) */
+function place(host, ref, dark, key){
+  if(!host) return;
+  var sec = host.querySelector(':scope > .' + SEC);
+  var h = sectionHtml(dark);
+  if(!h){ if(sec) sec.remove(); return; }
+  if(!sec){
+    sec = document.createElement('div'); sec.className = SEC; sec.setAttribute('data-where', key);
+    sec.style.cssText = 'margin:0 0 14px;padding:10px;border-radius:12px;' + (dark ? 'background:rgba(22,163,74,.10);border:1px solid rgba(22,163,74,.45);' : 'background:#f0fdf4;border:1px solid #86efac;');
+    if(ref && ref.parentNode === host) host.insertBefore(sec, ref); else host.insertBefore(sec, host.firstChild);
+  }
+  if(sec.__h !== h){ sec.__h = h; sec.innerHTML = h; wire(sec); }
+}
+
+/* ── the four places ── */
+function hostTodoTab(){
+  var m = document.getElementById('_todoMount'); if(!m || !m.firstElementChild) return;
+  var wrap = m.firstElementChild;                                   /* the max-width box: title row, buttons, then the lists */
+  place(wrap, wrap.children[2] || null, false, 'todo');
+}
+function hostOfficeTodo(){
+  var ov = document.getElementById('_gcOfficeToDoOv'); if(!ov || !ov.firstElementChild) return;
+  var card = ov.firstElementChild;
+  place(card, card.children[2] || null, false, 'office');
+}
+function tagged(attr){ return document.querySelector('[data-gc-ap2="' + attr + '"]'); }
+function cardOf(ov){ return ov && ov.firstElementChild; }
+function hostOfficeStatus(){
+  var ov = tagged('status'); if(!ov || !ov.parentNode) return;
+  var c = cardOf(ov); if(!c) return;
+  place(c, c.children[2] || null, true, 'status');
+}
+function hostGreen(){
+  var ov = tagged('green'); if(!ov || !ov.parentNode) return;
+  var c = cardOf(ov); if(!c) return;
+  place(c, c.children[2] || null, true, 'green');
+  /* "You're all caught up!" is not true while customer e-mails wait */
+  var n = items().length;
+  c.querySelectorAll(':scope > div').forEach(function(d){ if(/^\s*✓ You're all caught up!?\s*$/.test(d.textContent || '')) d.style.display = n ? 'none' : ''; });
+}
+/* the overlay a function just opened: the newest fixed body child that matches */
+function newest(test){
+  var kids = document.body.children;
+  for(var i = kids.length - 1; i >= 0 && i >= kids.length - 8; i--){ var k = kids[i]; try{ if(getComputedStyle(k).position === 'fixed' && test(k)) return k; }catch(e){} }
+  return null;
+}
+function wrapOpen(name, tag, test){
+  var f = window[name];
+  if(typeof f !== 'function' || f.__ap2) return typeof f === 'function';
+  var w = function(){
+    var out = f.apply(this, arguments);
+    try{ var ov = newest(test); if(ov){ ov.setAttribute('data-gc-ap2', tag); paintAll(true); } }catch(e){}
+    return out;
+  };
+  try{ Object.keys(f).forEach(function(p){ w[p] = f[p]; }); }catch(e){}
+  w.__ap2 = true; window[name] = w; return true;
+}
+function wrapCount(){
+  var f = window._gcPmActionCount;
+  if(typeof f !== 'function' || f.__ap2) return;
+  var w = function(){ var n = 0; try{ n = f.apply(this, arguments) || 0; }catch(e){} return n + items().length; };
+  w.__ap2 = true; w.__orig = f; window._gcPmActionCount = w;
+}
+/* the green APPROVE button: same count, at once (its own refresh is every 15 s) */
+function green(){
+  var b = document.getElementById('_gcApprovalsBtn'); if(!b) return;
+  var n = 0; try{ n = window._gcPmActionCount ? window._gcPmActionCount() : items().length; }catch(e){ n = items().length; }
+  var want = n > 0 ? 'flex' : 'none';
+  if(b.style.display !== want) b.style.display = want;
+  var badge = document.getElementById('_gcApprBadge'); if(!badge) return;
+  var t = n > 0 ? (n > 99 ? '99+' : String(n)) : '';
+  if(badge.textContent !== t){
+    badge.textContent = t;
+    badge.style.cssText = n > 0 ? 'position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;' : 'display:none;';
+  }
+  b.setAttribute('aria-label', 'Approvals (' + n + ')');
+}
+var lastSig = '';
+function paintAll(force){
+  try{
+    var sig = ''; try{ sig = JSON.stringify([shown().map(function(x){ return [x.id, x.status, x.step, x.updatedAt]; }), notes, busy, isAdmin()]); }catch(e){}
+    if(force || sig !== lastSig){ lastSig = sig; document.querySelectorAll('.' + SEC).forEach(function(x){ x.__h = ''; }); }
+    hostTodoTab(); hostOfficeTodo(); hostOfficeStatus(); hostGreen(); green();
+    var pv = document.getElementById(PREV); if(pv && pv.__id && !items().some(function(x){ return x.id === pv.__id; }) && !busy[pv.__id]) { var nt = pv.querySelector('._ap2PvNote'); if(nt && notes[pv.__id]) nt.textContent = notes[pv.__id]; pv.querySelectorAll('._ap2PvAct').forEach(function(b){ b.disabled = true; }); }
+  }catch(e){}
+}
+window._gcAp2Refresh = function(){ return (window._gcApprovalsRefresh ? window._gcApprovalsRefresh() : Promise.resolve()).then(function(){ paintAll(true); }); };
+
+/* ── Preview / Edit ── */
+function b64Blob(b64, type){ var bin = atob(b64), n = bin.length, u = new Uint8Array(n); for(var i = 0; i < n; i++) u[i] = bin.charCodeAt(i); return new Blob([u], { type: type }); }
+function niceWhen(iso){ try{ return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }catch(e){ return s(iso).slice(0, 16); } }
+function editedLine(x){ return x.editedBy ? '✏️ edited by ' + x.editedBy + (x.editedAt ? ' (' + niceWhen(x.editedAt) + ')' : '') : ''; }
+function pdfOf(x){
+  var a = (x.attachments || []).filter(function(a){ return a && a.kind === 'pdf' && a.invoiceId; })[0];
+  if(a) return { invoiceId: a.invoiceId, name: a.name };
+  var m = x.meta || {};
+  if(m.invoiceId) return { invoiceId: m.invoiceId, name: 'Invoice ' + (m.invoiceNumber || '') + '.pdf' };
+  return null;
+}
+/* Open, edit, then approve: exactly what goes out — To / CC, subject, body (a text: the message), the attachments
+   with the PDF shown — all editable; ✅ Approve & send, 💾 Save edits, ✖ Don't approve. */
+function openPreview(id){
+  var c = C(); var x = ((c && c.all) || []).filter(function(y){ return y.id === id; })[0]; if(!x) return;
+  var old = document.getElementById(PREV); if(old) old.remove();
+  var can = items().some(function(y){ return y.id === id; });
+  var sms = x.channel === 'sms', last = lastStep(x);
+  var ov = document.createElement('div'); ov.id = PREV; ov.__id = id; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100230;background:rgba(6,12,20,.92);display:flex;flex-direction:column;align-items:center;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:Inter,-apple-system,Arial,sans-serif;padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(20px + env(safe-area-inset-bottom,0px))';
+  var html = String(x.html || '').split(PH).join('#portal-link');
+  var pdf = pdfOf(x);
+  var IN = 'width:100%;box-sizing:border-box;padding:9px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;background:#fff;color:#0f172a';
+  var LB = 'display:block;font-size:12px;font-weight:700;color:#475569;margin:8px 0 3px';
+  var ro = can ? '' : ' readonly';
+  ov.innerHTML = '<div style="background:#f1f5f9;border-radius:14px;max-width:760px;width:100%;padding:14px;box-sizing:border-box">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><button type="button" class="_ap2PvBack" style="background:none;border:none;color:#2563eb;font-size:16px;font-weight:700;cursor:pointer">‹ Back</button>' +
+    '<div style="flex:1;font-weight:800;color:#0f172a;font-size:16px">' + esc(titleOf(x)) + '</div><button type="button" class="_ap2PvX" aria-label="Close" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer">✕</button></div>' +
+    '<div style="font-size:12px;color:#92400e">' + esc(KIND[x.kind] || x.kind) + (x.jobName ? ' · ' + esc(x.jobName) : '') + ' · ' + (sms ? '💬 text message' : '✉️ e-mail') + '</div>' +
+    '<div class="_ap2PvEdited" style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:2px">' + esc(editedLine(x)) + '</div>' +
+    '<label style="' + LB + '">To</label><input class="_ap2PvTo" style="' + IN + '" value="' + esc(x.to) + '"' + ro + '>' +
+    (sms ? '' : '<label style="' + LB + '">CC</label><input class="_ap2PvCc" placeholder="(none)" style="' + IN + '" value="' + esc((x.cc || []).join(', ')) + '"' + ro + '>' +
+      '<label style="' + LB + '">Subject</label><input class="_ap2PvSubj" style="' + IN + '" value="' + esc(x.subject) + '"' + ro + '>') +
+    '<label style="' + LB + '">' + (sms ? 'Message' : 'Body') + '</label>' +
+    (sms ? '' : '<iframe class="_ap2PvMail" sandbox="" title="E-mail as the customer sees it" style="width:100%;height:300px;border:1px solid #cbd5e1;border-radius:8px;background:#fff"></iframe>' +
+      (can ? '<div style="font-size:12px;color:#475569;margin:6px 0 3px">Change the words here (' + esc(PH) + ' is where the portal link goes):</div>' : '')) +
+    (can || sms ? '<textarea class="_ap2PvText" rows="' + (sms ? 5 : 8) + '" style="' + IN + '"' + ro + '>' + esc(x.text) + '</textarea>' : '') +
+    ((x.attachments || []).length || pdf ? '<div style="margin-top:10px;font-size:13px;color:#334155"><b>Attachments:</b> ' + ((x.attachments || []).map(function(a){ return '📎 ' + esc(a.name || a); }).join(' · ') || '📎 ' + esc(pdf.name)) + '</div>' : '') +
+    (pdf ? '<div style="margin-top:6px"><a class="_ap2PvDl" style="display:none;font-weight:700;color:#2563eb;margin-right:10px">Download the PDF</a><span class="_ap2PvPdfMsg" style="font-size:12px;color:#64748b">Loading the PDF…</span>' +
+      '<div class="_ap2PvPdfBox" style="margin-top:6px"></div></div>' : '') +
+    (x.kind === 'thank_you' ? '<div style="font-size:12px;color:#475569;margin-top:6px">Goes from news@grayco-cs.com with the GrayCo News footer and “Unsubscribe from our newsletters” (from office@ with no newsletter part if the customer unsubscribed).</div>' : '') +
+    ((x.edits || []).length ? '<div style="font-size:12px;color:#64748b;margin-top:6px">' + x.edits.map(function(e){ return '✏️ ' + esc(e.by) + ' ' + esc(niceWhen(e.at)) + (e.fields && e.fields.length ? ' — ' + esc(e.fields.join(', ')) : ''); }).join('<br>') + '</div>' : '') +
+    ((x.approvals || []).length ? '<div style="font-size:12px;color:#166534;margin-top:4px">' + x.approvals.map(function(a){ return '✔ ' + esc(a.by) + ' (' + (a.role === 'admin' ? 'admin' : 'PM') + ') ' + esc(niceWhen(a.at)); }).join(' · ') + '</div>' : '') +
+    '<div class="_ap2PvNote" style="font-size:13px;font-weight:700;color:#0f766e;margin-top:8px">' + esc(notes[id] || '') + '</div>' +
+    (can ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+      '<button type="button" class="_ap2PvAct _ap2PvYes" style="flex:2;min-width:150px;min-height:48px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:16px;cursor:pointer">' + (last ? '✅ Approve &amp; send' : '✅ Approve → admin') + '</button>' +
+      '<button type="button" class="_ap2PvAct _ap2PvSave" style="flex:1;min-width:110px;min-height:48px;border:1px solid #94a3b8;border-radius:10px;background:#fff;color:#0f172a;font-weight:800;font-size:15px;cursor:pointer">💾 Save edits</button>' +
+      '<button type="button" class="_ap2PvAct _ap2PvNo" style="flex:1;min-width:120px;min-height:48px;border:2px solid #dc2626;border-radius:10px;background:#fff;color:#dc2626;font-weight:800;font-size:15px;cursor:pointer">✖ Don\'t approve</button></div>'
+      : '<div style="font-size:13px;color:#64748b;margin-top:10px">' + (x.status === 'waiting' ? 'Waiting on ' + (x.step === 'admin' ? 'Wesley or Nick' : 'the PM (' + esc(x.pm || '?') + ')') + '.' : 'This one is ' + esc(x.status) + '.') + '</div>') +
+    '</div>';
+  document.body.appendChild(ov);
+  var fr = ov.querySelector('._ap2PvMail'); if(fr) try{ fr.srcdoc = html; }catch(e){}
+  var close = function(){ ov.remove(); };
+  ov.querySelector('._ap2PvBack').onclick = close; ov.querySelector('._ap2PvX').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target === ov) close(); });
+  var q = function(sel){ return ov.querySelector(sel); };
+  var setNote = function(){ var nt = q('._ap2PvNote'); if(nt) nt.textContent = notes[id] || ''; };
+  /* only what changed goes up */
+  var edits = function(){
+    var e = {}, n = 0;
+    var to = q('._ap2PvTo'), cc = q('._ap2PvCc'), sj = q('._ap2PvSubj'), tx = q('._ap2PvText');
+    if(to && s(to.value) !== s(x.to)){ e.to = s(to.value); n++; }
+    if(cc && s(cc.value) !== (x.cc || []).join(', ')){ e.cc = s(cc.value); n++; }
+    if(sj && s(sj.value) !== s(x.subject)){ e.subject = s(sj.value); n++; }
+    if(tx && String(tx.value) !== String(x.text || '')){ e.text = String(tx.value); n++; }
+    return n ? e : null;
+  };
+  var done = function(){ ST.call(window, function(){ if(ov.parentNode && !busy[id]) close(); }, 1600); };
+  var y = q('._ap2PvYes'), sv = q('._ap2PvSave'), n = q('._ap2PvNo');
+  if(y) y.onclick = function(){ var e = edits(); act(id, 'approve', e ? { edit: e } : null).then(function(j){ setNote(); if(j && j.ok) done(); }); setNote(); };
+  if(n) n.onclick = function(){ act(id, 'reject', { reason: '' }).then(function(j){ setNote(); if(j && j.ok) done(); }); setNote(); };
+  if(sv) sv.onclick = function(){
+    var e = edits(); if(!e){ notes[id] = 'Nothing changed.'; setNote(); return; }
+    act(id, 'edit', { edit: e }).then(function(j){
+      if(j && j.ok){ notes[id] = '💾 Saved — the next approver sees your edits.'; var it = j.item || {}; x = Object.assign({}, x, it); var ed = q('._ap2PvEdited'); if(ed) ed.textContent = editedLine(x); if(fr && it.html) try{ fr.srcdoc = String(it.html).split(PH).join('#portal-link'); }catch(er){} }
+      setNote(); paintAll(true);
+    }); setNote();
+  };
+  if(pdf){
+    post({ action:'invoice-pdf', invoiceId: pdf.invoiceId }).then(function(j){
+      var box = q('._ap2PvPdfBox'), msg = q('._ap2PvPdfMsg'); if(!box) return;
+      if(!j.ok || !j.pdf){ msg.textContent = '⚠ ' + (j.error || 'Could not make the PDF.'); return; }
+      var url = URL.createObjectURL(b64Blob(j.pdf, 'application/pdf'));
+      msg.textContent = j.filename || '';
+      var dl = q('._ap2PvDl'); dl.href = url; dl.download = j.filename || 'Invoice.pdf'; dl.style.display = 'inline';
+      box.innerHTML = '<iframe class="_ap2PvPdfFrame" title="Invoice PDF" style="width:100%;height:520px;border:1px solid #cbd5e1;border-radius:8px;background:#fff"></iframe>';
+      box.firstChild.src = url; ov.__pdfBytes = j.pdf.length;
+    });
+  }
+  return ov;
+}
+window._gcAp2Preview = openPreview;
+
+/* ── invoices: a new client invoice (not a draft) asks for its PDF e-mail approval ── */
+var ASKED = 'gc_ap2_inv_asked';
+function askedGet(){ try{ var o = JSON.parse(localStorage.getItem(ASKED) || '{}'); return o && typeof o === 'object' ? o : {}; }catch(e){ return {}; } }
+function askedSet(o){ try{ localStorage.setItem(ASKED, JSON.stringify(o)); }catch(e){} }
+function invWanted(r){
+  if(!r || r.type !== 'client' || r.deleted === true || r._pmDenied === true || r.needsReview === true) return false;
+  var st = low(r.status);
+  if(/draft|pm_review|pending|void|deleted|declined|denied|cancel|paid/.test(st) && !/unpaid/.test(st)) return false;
+  if(r.paid === true || r.paidInFull === true) return false;
+  if(/quickbooks|^qb/i.test(s(r.source)) || r.qbId || r.qbKey) return false;
+  if(!(r.pid || r.projectId)) return false;
+  var made = s(r.createdAt || r.created || r.savedAt || r.date).slice(0, 10);
+  return !!made && made >= INV_SINCE;
+}
+var invBusy = false;
+function invSweep(){
+  if(invBusy || !signedIn() || document.hidden) return;
+  var invs = ((window._crm || {}).invoices) || []; if(!invs.length) return;
+  var c = C(); var all = (c && c.all) || [];
+  var inQ = {}; all.forEach(function(x){ var m = x.meta || {}; if(m.invoiceId && x.status !== 'rejected') inQ[s(m.invoiceId)] = 1; if(/^appr_inv_/.test(x.id)) inQ[x.id.slice(9)] = 1; });
+  var asked = askedGet(), now = Date.now();
+  var todo = invs.filter(function(r){ var a = asked[r.id]; return invWanted(r) && !inQ[s(r.id)] && !(a && (a.done || (now - a.at < 120000) || a.n >= 12)); }).slice(0, 4);
+  if(!todo.length) return;
+  invBusy = true;
+  (function next(i){
+    if(i >= todo.length){ invBusy = false; if(window._gcApprovalsRefresh) window._gcApprovalsRefresh().then(function(){ paintAll(true); }); return; }
+    var r = todo[i];
+    post({ action:'approval', op:'queue', kind:'invoice', invoiceId: r.id }).then(function(j){
+      var o = askedGet(), a = o[r.id] || { n: 0 };
+      a.at = Date.now(); a.n = (a.n || 0) + 1;
+      if(j.ok || j.noEmail || j.notReady || j.__status === 400 || j.__status === 403) a.done = true;   /* on the list, or nothing to e-mail */
+      o[r.id] = a; askedSet(o);
+      next(i + 1);
+    });
+  })(0);
+}
+window._gcAp2InvSweep = invSweep;
+
+/* ── GrayCo News ── */
+var newsCache = {};
+window._gcNews = {
+  /* everyone on GrayCo News (customers with an e-mail, unsubscribed left out) — for a newsletter sender */
+  subscribers: function(){ return post({ action:'news', op:'subscribers' }).then(function(j){ return j.ok ? j.subscribers : Promise.reject(new Error(j.error || 'not available')); }); },
+  status: function(emails){
+    emails = (Array.isArray(emails) ? emails : [emails]).map(low).filter(Boolean);
+    return post({ action:'news', op:'status', emails: emails }).then(function(j){ if(j.ok){ Object.keys(j.status || {}).forEach(function(e){ newsCache[e] = { at: Date.now(), v: j.status[e] }; }); } return j.ok ? j.status : Promise.reject(new Error(j.error || 'not available')); });
+  },
+  resubscribe: function(email){ return post({ action:'news', op:'resubscribe', email: low(email), customerAsked: true }).then(function(j){ delete newsCache[low(email)]; return j; }); },
+  unsubscribe: function(email){ return post({ action:'news', op:'unsubscribe', email: low(email) }).then(function(j){ delete newsCache[low(email)]; return j; }); }
+};
+function niceDate(iso){ try{ return new Date(iso).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }); }catch(e){ return s(iso).slice(0, 10); } }
+function newsLine(email, dark){
+  var e = low(email); if(!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e)) return null;
+  var d = document.createElement('div'); d.className = '_gcAp2News'; d.setAttribute('data-email', e);
+  d.style.cssText = 'margin:8px 0;font-size:13px;' + (dark ? 'color:#e2e8f0' : 'color:#0f172a');
+  d.textContent = '📰 News: …';
+  var draw = function(v){
+    if(!v){ d.textContent = '📰 News: (not available — run docs/news-unsubscribe.sql)'; return; }
+    if(v.subscribed){ d.innerHTML = '📰 News: <b style="color:' + (dark ? '#86efac' : '#15803d') + '">subscribed</b>'; return; }
+    d.innerHTML = '📰 News: <b style="color:' + (dark ? '#fca5a5' : '#b91c1c') + '">unsubscribed</b>' + (v.unsubscribedAt ? ' (' + esc(niceDate(v.unsubscribedAt)) + ')' : '') +
+      (isAdmin() ? ' <button type="button" class="_gcAp2Resub" style="margin-left:6px;padding:3px 8px;border-radius:6px;border:1px solid #94a3b8;background:transparent;color:inherit;font-size:12px;cursor:pointer">Re-subscribe</button>' : '');
+    var rb = d.querySelector('._gcAp2Resub');
+    if(rb) rb.onclick = function(ev){
+      ev.stopPropagation();
+      if(!window.confirm('Re-subscribe ' + e + ' to GrayCo News?\n\nOnly do this if the customer asked to get the newsletter again.')) return;
+      rb.disabled = true; rb.textContent = 'Saving…';
+      window._gcNews.resubscribe(e).then(function(j){ if(j && j.ok){ var st = (j.status || {})[e] || { subscribed: true }; newsCache[e] = { at: Date.now(), v: st }; draw(st); } else { rb.disabled = false; rb.textContent = 'Re-subscribe'; alert('Not saved: ' + ((j && j.error) || 'try again')); } });
+    };
+  };
+  var c = newsCache[e];
+  if(c) draw(c.v);                                   /* what we knew, then a fresh look */
+  window._gcNews.status([e]).then(function(m){ draw(m[e]); }, function(){ if(!c) draw(null); });
+  return d;
+}
+window._gcAp2NewsLine = newsLine;
+/* the customer profile (field / search) and the desk Edit Customer form */
+function wrapProfile(){
+  var f = window._gcOpenCustomerProfile;
+  if(typeof f !== 'function' || f.__ap2) return;
+  var w = function(idOrName){
+    var out = f.apply(this, arguments);
+    try{
+      var ov = newest(function(k){ return /_gcSheetOv/.test(k.className || ''); });
+      var crm = window._crm || {}, custs = crm.customers || [];
+      var cust = custs.filter(function(c){ return c && (String(c.id) === String(idOrName) || (c.name || c.company) === idOrName); })[0] || {};
+      var email = cust.email;
+      if(!email){ var nm = low(cust.name || cust.company || idOrName); var p = (crm.projects || []).filter(function(x){ return x && low(x.client) === nm && (x.clientEmail || x.customerEmail); })[0]; email = p && (p.clientEmail || p.customerEmail); }
+      var box = ov && ov.children[1] && ov.children[1].querySelector('div[style*="border-radius:14px"]');
+      var ln = email && newsLine(email, true);
+      if(ln && (box || (ov && ov.children[1]))) (box || ov.children[1]).appendChild(ln);
+      if(ov && ov.children[1]){
+        var cname = cust.name || cust.company || idOrName;
+        if(email){ var mb = mailBtn('✉️ E-mail ' + s(cname).split(/\s+/)[0]); mb.onclick = function(ev){ ev.stopPropagation(); window._gcCompose({ to: email, customer: cname, about: 'customer' }); }; (box || ov.children[1]).appendChild(mb); }
+        var lb = logBox(email ? { email: email } : { pid: '__none__' }, true); lb.setAttribute('data-theme', 'Dark'); ov.children[1].appendChild(lb);
+      }
+    }catch(e){}
+    return out;
+  };
+  w.__ap2 = true; window._gcOpenCustomerProfile = w;
+}
+function deskCustomerForm(){
+  var h = null;
+  document.querySelectorAll('h3').forEach(function(x){ if(!h && x.textContent === 'Edit Customer' && x.offsetParent) h = x; });
+  if(!h) return;
+  var box = h.parentNode && h.parentNode.parentNode; if(!box) return;
+  var em = null; box.querySelectorAll('input').forEach(function(i){ if(!em && /client@email\.com/.test(i.placeholder || '')) em = i; });
+  var e = em ? low(em.value) : '';
+  var have = box.querySelector(':scope > ._gcAp2News');
+  if(have && have.getAttribute('data-email') === e) return;
+  if(have) have.remove();
+  var ln = newsLine(e, false); if(!ln) return;
+  var grid = h.parentNode.nextSibling;
+  box.insertBefore(ln, grid ? grid.nextSibling : null);
+}
+
+/* ── ✉️ Send from your own e-mail, one click (person to person: no approval) ──
+   window._gcCompose({ to, cc, subject, body, pid, customer, about }) opens a compose box in the CRM. It goes
+   through send-email.js (mode "personal"): From = "<your name> <your @grayco-cs.com address>" — the server takes
+   the address from your sign-in, never from the page — Reply-To you, BCC you. Job files (PDF / photos) can be
+   attached. Each sent e-mail is logged (gc_kv "gc_email_log") and shows on the job and the customer. Any
+   mailto: link and any e-mail address shown on a card opens it; the field job screen and the customer profile
+   have a ✉️ button. */
+var CMP = '_gcComposeOv';
+function meNow(){ var e = ''; try{ e = low(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(x){} var u = (((window._crm || {}).users) || []).filter(function(v){ return v && low(v.email) === e; })[0]; return { email: e, name: s(u && u.name) || e.split('@')[0] }; }
+function jobFiles(pid, docs){
+  docs = docs || ((window._crm || {}).projectDocs) || [];
+  return docs.filter(function(d){ return d && String(d.pid) === String(pid) && /^sb:crm-files\/[0-9a-f]{64}\.(pdf|png|jpe?g)$/i.test(s(d.ref)); })
+    .map(function(d){ var ext = (s(d.ref).match(/\.([a-z]+)$/i) || [])[1] || 'pdf'; var nm = s(d.name || d.title || 'file').replace(/[\\/\r\n]/g, ' '); if(!new RegExp('\\.' + ext + '$', 'i').test(nm)) nm += '.' + ext; return { ref: d.ref, filename: nm.slice(0, 140) }; }).slice(0, 40);
+}
+function projectByEmail(email){ var e = low(email); return (((window._crm || {}).projects) || []).filter(function(p){ return p && (low(p.clientEmail) === e || low(p.customerEmail) === e); })[0] || null; }
+window._gcCompose = function(o){
+  o = o || {};
+  var me = meNow();
+  if(!/@grayco-cs\.com$/.test(me.email)){ alert('Sign in with your @grayco-cs.com account to send e-mail from your own address.'); return null; }
+  var old = document.getElementById(CMP); if(old) old.remove();
+  var job = o.pid ? ((((window._crm || {}).projects) || []).filter(function(p){ return p && String(p.id) === String(o.pid); })[0] || null) : projectByEmail(o.to);
+  var files = job ? jobFiles(job.id) : [];
+  var fileBox = function(){ return files.length ? files.map(function(f, i){ return '<label style="display:flex;gap:8px;align-items:center;font-size:14px;padding:4px 0;color:#0f172a"><input type="checkbox" class="_cmFile" data-i="' + i + '"> 📎 ' + esc(f.filename) + '</label>'; }).join('') : '<div style="font-size:13px;color:#64748b">No PDF or photo files on this job.</div>'; };
+  var ov = document.createElement('div'); ov.id = CMP; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100240;background:rgba(6,12,20,.92);display:flex;flex-direction:column;align-items:center;overflow-y:auto;-webkit-overflow-scrolling:touch;font-family:Inter,-apple-system,Arial,sans-serif;padding:calc(10px + env(safe-area-inset-top,0px)) 10px calc(20px + env(safe-area-inset-bottom,0px))';
+  var IN = 'width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;background:#fff;color:#0f172a';
+  var LB = 'display:block;font-size:12px;font-weight:700;color:#475569;margin:8px 0 3px';
+  ov.innerHTML = '<div style="background:#f1f5f9;border-radius:14px;max-width:640px;width:100%;padding:14px;box-sizing:border-box">' +
+    '<div style="display:flex;align-items:center;gap:8px"><button type="button" class="_cmBack" style="background:none;border:none;color:#2563eb;font-size:16px;font-weight:700;cursor:pointer">‹ Back</button><div style="flex:1;font-weight:800;font-size:17px;color:#0f172a">✉️ New e-mail</div><button type="button" class="_cmX" aria-label="Close" style="background:#334155;color:#fff;border:none;border-radius:8px;padding:6px 12px;cursor:pointer">✕</button></div>' +
+    '<div style="font-size:12px;color:#475569;margin-top:4px">From <b>' + esc(me.name) + ' &lt;' + esc(me.email) + '&gt;</b> — replies come to you, and a copy lands in your mailbox.' + (job ? ' Logged on <b>' + esc(job.name) + '</b>.' : '') + '</div>' +
+    '<label style="' + LB + '">To</label><input class="_cmTo" type="email" style="' + IN + '" value="' + esc(o.to || '') + '">' +
+    '<label style="' + LB + '">CC</label><input class="_cmCc" style="' + IN + '" placeholder="(optional)" value="' + esc(o.cc || '') + '">' +
+    '<label style="' + LB + '">Subject</label><input class="_cmSubj" style="' + IN + '" value="' + esc(o.subject || (job ? job.name : '')) + '">' +
+    '<label style="' + LB + '">Message</label><textarea class="_cmBody" rows="9" style="' + IN + '">' + esc(o.body || '') + '</textarea>' +
+    (job ? '<label style="' + LB + '">Attach job files</label><div class="_cmFiles" style="max-height:160px;overflow:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px">' + fileBox() + '</div>' : '') +
+    '<label style="' + LB + '">Attach from this device (PDF / photo)</label><input class="_cmUp" type="file" accept="application/pdf,image/png,image/jpeg" multiple style="font-size:14px">' +
+    '<div class="_cmNote" style="font-size:13px;font-weight:700;margin-top:8px;color:#0f766e"></div>' +
+    '<div style="text-align:center;margin-top:8px"><a href="#" class="_cmGmail" style="color:#2563eb;font-weight:700;font-size:14px">Open in Gmail instead</a></div>' +
+    '<button type="button" class="_cmSend" style="margin-top:10px;width:100%;min-height:50px;border:none;border-radius:10px;background:#2563eb;color:#fff;font-weight:800;font-size:16px;cursor:pointer">✉️ Send from ' + esc(me.email) + '</button></div>';
+  document.body.appendChild(ov);
+  var q = function(sel){ return ov.querySelector(sel); };
+  var close = function(){ ov.remove(); };
+  /* the job's files live in this computer's store (IndexedDB), not always in memory */
+  if(job && !files.length && window.idbGet){ Promise.resolve(window.idbGet('projectDocs')).then(function(d){ var f2 = jobFiles(job.id, Array.isArray(d) ? d : []); if(f2.length && q('._cmFiles')){ files = f2; q('._cmFiles').innerHTML = fileBox(); } }, function(){}); }
+  q('._cmBack').onclick = close; q('._cmX').onclick = close;
+  q('._cmGmail').onclick = function(e){ e.preventDefault(); e.stopPropagation(); window._gcGmail({ to: s(q('._cmTo').value), cc: s(q('._cmCc').value), subject: s(q('._cmSubj').value), body: String(q('._cmBody').value || '') }); close(); };
+  var note = function(t, bad){ var n = q('._cmNote'); n.textContent = t; n.style.color = bad ? '#b91c1c' : '#0f766e'; };
+  var readUp = function(){
+    var fs = Array.prototype.slice.call((q('._cmUp') || {}).files || []);
+    return Promise.all(fs.slice(0, 5).map(function(f){ return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res({ filename: f.name, content: String(r.result).replace(/^data:[^,]*,/, '') }); }; r.onerror = rej; r.readAsDataURL(f); }); }));
+  };
+  q('._cmSend').onclick = function(){
+    var to = s(q('._cmTo').value), subj = s(q('._cmSubj').value), body = String(q('._cmBody').value || '');
+    if(!/^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(to.split(/[,;\s]+/)[0] || '')){ note('Check the "To" address.', true); return; }
+    if(!subj || !body.trim()){ note('Add a subject and a message.', true); return; }
+    var btn = q('._cmSend'); btn.disabled = true; note('Sending…');
+    var picked = Array.prototype.slice.call(ov.querySelectorAll('._cmFile:checked')).map(function(c){ var f = files[+c.getAttribute('data-i')]; return { filename: f.filename, ref: f.ref }; });
+    readUp().then(function(up){
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#14202E;white-space:pre-wrap">' + esc(body) + '</div>' +
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#55626F;margin-top:14px">' + esc(me.name) + '<br>GrayCo Construction Services · (901) 585-0944</div>';
+      return window.fetch('/.netlify/functions/send-email', { method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ mode:'personal', to: to, cc: s(q('._cmCc').value), subject: subj, html: html, fromName: me.name, attachments: picked.concat(up),
+          pid: job ? job.id : (o.pid || ''), customer: o.customer || (job ? job.client : ''), about: o.about || '' }) })
+        .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__s = r.status; return j; }); });
+    }).then(function(j){
+      if(j && j.ok){ note('✅ Sent from ' + me.email + '. A copy is in your mailbox.'); emailLogCache = null; if(j.entry) logAdd(j.entry); ST.call(window, close, 1500); try{ refreshLogs(); }catch(e){} }
+      else { btn.disabled = false; note('⚠ Not sent: ' + ((j && j.error) || 'try again'), true); }
+    }, function(e){ btn.disabled = false; note('⚠ Not sent: ' + e.message, true); });
+  };
+  ST.call(window, function(){ var f = o.to ? q('._cmBody') : q('._cmTo'); try{ f.focus(); }catch(e){} }, 50);
+  return ov;
+};
+/* ── Gmail, never Outlook (owner, 21 Oct 2026: "Everything should come from our Gmail account") ──
+   No mailto: is ever followed (a mailto: opens Outlook on the office computers).
+   * window._gcGmailUrl(o)   the Gmail web compose URL (authuser = the signed-in person, so the right account)
+   * window._gcGmail(o)      desk: that URL in a new tab; iPhone / iPad: the Gmail app (googlegmail://co?…), and the
+                             web URL if the page is still showing after 1.2 s; Android: an intent for com.google.android.gm
+                             with the web URL as its fallback. o = { to, cc, bcc, subject, body }.
+   * every rendered <a href="mailto:…"> is turned into the Gmail URL (the original kept in data-gc-mailto); a tap
+     on one opens the CRM compose box (send from your own address, with "Open in Gmail instead"), or Gmail
+     straight away when the message has a BCC list or nobody is signed in with an @grayco-cs.com address;
+   * window.open('mailto:…') and the old _gcGmailCompose go to _gcGmail; window._gcMailNav(href) is used where
+     the CRM used to set location.href to a mailto: (patch_AP2.py rewrites those few lines). */
+var EM_RE = /^\s*([^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,})\s*$/i;
+function enc(v){ return encodeURIComponent(v == null ? '' : String(v)); }
+function parseMailto(href){
+  var o = { to:'', cc:'', bcc:'', subject:'', body:'' };
+  var m = /^mailto:([^?]*)(?:\?(.*))?$/i.exec(String(href || '').trim()); if(!m) return o;
+  try{ o.to = decodeURIComponent(m[1].replace(/\+/g, '%2B')).replace(/\\x40/g, '@'); }catch(e){ o.to = m[1]; }
+  (m[2] || '').split('&').forEach(function(kv){
+    var i = kv.indexOf('='); if(i < 0) return;
+    var k = kv.slice(0, i).toLowerCase(), v = kv.slice(i + 1);
+    try{ v = decodeURIComponent(v.replace(/\+/g, ' ')); }catch(e){}
+    if(k === 'subject' || k === 'su') o.subject = v; else if(k === 'body') o.body = v; else if(k === 'cc') o.cc = v; else if(k === 'bcc') o.bcc = v; else if(k === 'to') o.to = o.to ? o.to + ',' + v : v;
+  });
+  return o;
+}
+window._gcParseMailto = parseMailto;
+function signedEmail(){ try{ return low(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(e){ return ''; } }
+window._gcGmailUrl = function(o){
+  o = o || {}; var me = signedEmail();
+  var u = 'https://mail.google.com/mail/?view=cm&fs=1' + (me ? '&authuser=' + enc(me) : '');
+  if(o.to) u += '&to=' + enc(o.to); if(o.cc) u += '&cc=' + enc(o.cc); if(o.bcc) u += '&bcc=' + enc(o.bcc);
+  if(o.subject) u += '&su=' + enc(o.subject); if(o.body) u += '&body=' + enc(o.body);
+  return u;
+};
+window._gcGmailAppUrl = function(o){
+  o = o || {}; var q = [];
+  if(o.to) q.push('to=' + enc(o.to)); if(o.cc) q.push('cc=' + enc(o.cc)); if(o.bcc) q.push('bcc=' + enc(o.bcc));
+  if(o.subject) q.push('subject=' + enc(o.subject)); if(o.body) q.push('body=' + enc(o.body));
+  return 'googlegmail://co' + (q.length ? '?' + q.join('&') : '');
+};
+window._gcGmailAndroidUrl = function(o){
+  var app = window._gcGmailAppUrl(o).replace(/^googlegmail:\/\//, '');
+  return 'intent://' + app + '#Intent;scheme=googlegmail;package=com.google.android.gm;S.browser_fallback_url=' + enc(window._gcGmailUrl(o)) + ';end';
+};
+function platform(){
+  var ua = navigator.userAgent || '';
+  if(/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1)) return 'ios';
+  if(/Android/i.test(ua)) return 'android';
+  return 'desk';
+}
+window._gcPlatform = platform;
+var rawOpen = window.open;
+function openWeb(u){
+  var w = null; try{ w = rawOpen.call(window, u, '_blank'); }catch(e){}
+  if(w){ try{ w.opener = null; }catch(e){} return w; }
+  /* pop-ups blocked: a link to tap (never a mailto:, and the CRM stays open) */
+  var old = document.getElementById('_gcGmailTap'); if(old) old.remove();
+  var t = document.createElement('div'); t.id = '_gcGmailTap'; t.setAttribute('data-gc-keep', '1');
+  t.style.cssText = 'position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:100250;background:#0f2440;border:1px solid #2f5580;border-radius:12px;padding:12px 16px;font-family:Inter,Arial,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.4)';
+  t.innerHTML = '<a target="_blank" rel="noopener" style="color:#fff;font-weight:800;font-size:15px;text-decoration:none">✉️ Open Gmail</a> <button type="button" style="margin-left:10px;background:#1e3a5f;color:#cbd5e1;border:none;border-radius:8px;padding:4px 10px;cursor:pointer">✕</button>';
+  t.querySelector('a').href = u; t.querySelector('a').onclick = function(){ ST.call(window, function(){ t.remove(); }, 300); }; t.querySelector('button').onclick = function(){ t.remove(); };
+  document.body.appendChild(t); ST.call(window, function(){ if(t.parentNode) t.remove(); }, 20000);
+  return null;
+}
+window._gcGmail = function(o){
+  o = o || {};
+  var web = window._gcGmailUrl(o), pf = platform();
+  window.__gcLastGmail = { platform: pf, web: web, at: Date.now() };
+  if(pf === 'desk'){ openWeb(web); return web; }
+  var app = pf === 'ios' ? window._gcGmailAppUrl(o) : window._gcGmailAndroidUrl(o);
+  window.__gcLastGmail.app = app;
+  try{ window.location.href = app; }catch(e){}
+  ST.call(window, function(){ if(!document.hidden) openWeb(web); }, 1200);   /* no Gmail app: the web */
+  return app;
+};
+window._gcGmailCompose = function(to, subject, body){ return window._gcGmail({ to: to, subject: subject, body: body }); };
+/* one way for every "e-mail this person" action */
+function routeMail(o){
+  var me = signedEmail();
+  if(o.bcc || !/@grayco-cs\.com$/.test(me) || !window._gcCompose) return window._gcGmail(o);
+  var job = projectByEmail(o.to);
+  return window._gcCompose({ to: o.to, cc: o.cc, subject: o.subject, body: o.body, pid: job && job.id, customer: job && job.client });
+}
+window._gcMailNav = function(href){ var h = String(href || ''); try{ if(window._gcReaddress) h = window._gcReaddress(h) || h; }catch(e){} return routeMail(parseMailto(h)); };
+window.open = function(url){
+  if(/^\s*mailto:/i.test(String(url || ''))){ var h = String(url); try{ if(window._gcReaddress) h = window._gcReaddress(h) || h; }catch(e){} window._gcGmail(parseMailto(h)); return { closed: false, close: function(){}, focus: function(){}, document: null }; }
+  return rawOpen.apply(window, arguments);
+};
+try{ Object.keys(rawOpen).forEach(function(k){ window.open[k] = rawOpen[k]; }); }catch(e){}
+/* no rendered mailto: — each becomes the Gmail URL (the original kept for the tap) */
+function noMailto(){
+  var as = document.querySelectorAll('a[href^="mailto:"],a[href^="MAILTO:"],a[href^="Mailto:"]');
+  for(var i = 0; i < as.length; i++){
+    var a = as[i], h = a.getAttribute('href');
+    a.setAttribute('data-gc-mailto', h);
+    a.setAttribute('href', window._gcGmailUrl(parseMailto(h)));
+    a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener');
+  }
+}
+window._gcNoMailto = noMailto;
+/* a tap on an e-mail link, an ✉️ e-mail button, or an e-mail address shown on a card */
+window.addEventListener('click', function(e){
+  try{
+    if(e.defaultPrevented || e.button) return;
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#' + CMP + ',#' + PREV + ',input,textarea,select,[contenteditable="true"]')) return;
+    var a = t.closest('a[data-gc-mailto],a[href^="mailto:"],a[href^="MAILTO:"]'), href = '';
+    if(a) href = a.getAttribute('data-gc-mailto') || a.getAttribute('href');
+    else {
+      var el = t.closest('span,div,td,b,strong,small,p,button');
+      if(el && el.children.length === 0){ var m = EM_RE.exec(el.textContent || ''); if(m && signedIn()) href = 'mailto:' + m[1]; }
+    }
+    if(!href) return;
+    e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    window._gcMailNav(href);
+  }catch(x){}
+}, true);
+
+/* the sent-mail log, on the job and the customer */
+var emailLogCache = null, emailLogAt = 0;
+function logLoad(){
+  if(emailLogCache && Date.now() - emailLogAt < 30000) return Promise.resolve(emailLogCache);
+  var u = '', k = ''; try{ u = (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''); k = localStorage.getItem('grayco_sb_key') || ''; }catch(e){}
+  if(!u || !k) return Promise.resolve(emailLogCache || []);
+  return window.fetch(u + '/rest/v1/gc_kv?key=eq.gc_email_log&select=value', { headers:{ apikey:k, Authorization:'Bearer ' + k }, cache:'no-store' })
+    .then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : []; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = []; } } emailLogCache = Array.isArray(v) ? v : []; emailLogAt = Date.now(); return emailLogCache; }, function(){ return emailLogCache || []; });
+}
+function logAdd(en){ emailLogCache = (emailLogCache || []).filter(function(x){ return x.id !== en.id; }).concat([en]); emailLogAt = Date.now(); }
+window._gcEmailLog = function(f){ return logLoad().then(function(l){ return l.filter(function(x){ return !f || (f.pid && String(x.pid) === String(f.pid)) || (f.email && (x.to || []).concat(x.cc || []).map(low).indexOf(low(f.email)) >= 0); }); }); };
+function logBox(f, dark){
+  var d = document.createElement('div'); d.className = '_gcEmailLogBox'; d.setAttribute('data-k', JSON.stringify(f));
+  d.style.cssText = 'margin:10px 0;font-size:13px;' + (dark ? 'color:#e2e8f0' : 'color:#0f172a');
+  window._gcEmailLog(f).then(function(l){
+    l = l.slice(-8).reverse();
+    d.innerHTML = '<div style="font-weight:800;font-size:12px;letter-spacing:.04em;color:' + (dark ? '#f0c451' : '#1e3a5f') + ';margin-bottom:4px">✉️ E-MAILS SENT (' + l.length + ')</div>' +
+      (l.length ? l.map(function(x){ return '<div style="padding:6px 0;border-bottom:1px solid ' + (dark ? '#1e3a5f' : '#e2e8f0') + '"><b>' + esc(x.subject) + '</b><br><span style="opacity:.75">' + esc(niceWhen(x.at)) + ' · ' + esc(x.by || x.from) + ' → ' + esc((x.to || []).join(', ')) + (x.attachments && x.attachments.length ? ' · 📎 ' + x.attachments.length : '') + '</span></div>'; }).join('') : '<div style="opacity:.7">None yet.</div>');
+  });
+  return d;
+}
+function refreshLogs(){ document.querySelectorAll('._gcEmailLogBox').forEach(function(b){ try{ var f = JSON.parse(b.getAttribute('data-k')); b.replaceWith(logBox(f, /Dark/.test(b.getAttribute('data-theme') || '') )); }catch(e){} }); }
+function mailBtn(label, dark){ var b = document.createElement('button'); b.type = 'button'; b.className = '_gcMailBtn'; b.textContent = label; b.style.cssText = 'margin-top:8px;padding:9px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font-weight:800;font-size:14px;cursor:pointer'; return b; }
+/* field job screen: ✉️ E-mail the customer + the log */
+function jobScreen(){
+  var ov = document.getElementById('_gcJobDash'); if(!ov || ov.querySelector('._gcMailBtn')) return;
+  var job = window._gcCurrentJob; if(!job) return;
+  var head = ov.firstElementChild; if(!head) return;
+  var to = job.clientEmail || job.customerEmail || '';
+  var b = mailBtn('✉️ E-mail ' + (job.client ? s(job.client).split(/\s+/)[0] : 'the customer'));
+  b.onclick = function(e){ e.stopPropagation(); window._gcCompose({ to: to, pid: job.id, customer: job.client, about: 'job' }); };
+  head.appendChild(b);
+  var body = ov.children[1]; if(body){ var lb = logBox({ pid: job.id }, true); lb.setAttribute('data-theme', 'Dark'); lb.style.padding = '0 14px'; body.insertBefore(lb, body.firstChild); }
+}
+
+/* the green APPROVE button tucked at the screen edge (patch NAV) slides out from under the finger on touch-down, so the
+   tap then landed on whatever was behind it and nothing opened (field view: the button never worked when tucked).
+   A tap that started on the button and did not move opens it. */
+var gDown = null;
+['pointerdown', 'touchstart', 'mousedown'].forEach(function(ev){
+  window.addEventListener(ev, function(e){
+    try{ var b = e.target && e.target.closest && e.target.closest('#_gcApprovalsBtn'); if(!b) return;
+      var pt = e.touches ? e.touches[0] : e; gDown = { t: Date.now(), x: pt.clientX, y: pt.clientY }; }catch(x){}
+  }, true);
+});
+window.addEventListener('click', function(e){
+  try{
+    if(!gDown || Date.now() - gDown.t > 1500) return;
+    var d = gDown; gDown = null;
+    var b = document.getElementById('_gcApprovalsBtn'); if(!b) return;
+    if(e.target && e.target.closest && e.target.closest('#_gcApprovalsBtn')) return;          /* it landed on the button: normal */
+    if(Math.abs(e.clientX - d.x) > 12 || Math.abs(e.clientY - d.y) > 12) return;               /* a drag, not a tap */
+    e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    if(window._gcOpenPmApprovals) window._gcOpenPmApprovals();
+  }catch(x){}
+}, true);
+
+/* ── start ── */
+function tick(){
+  wrapCount();
+  wrapOpen('_gcOpenPmApprovals', 'green', function(k){ return /My Approvals/.test(k.textContent || ''); });
+  wrapOpen('_gcRunTheOffice', 'status', function(k){ return /Office Status/.test(k.textContent || ''); });
+  wrapProfile();
+  paintAll(false);
+  try{ deskCustomerForm(); }catch(e){}
+  try{ jobScreen(); }catch(e){}
+  try{ noMailto(); }catch(e){}
+}
+tick();
+RI.call(window, tick, 700);
+RI.call(window, invSweep, 30000); ST.call(window, invSweep, 12000);
+/* a fresh look at the list when a To-Do place opens */
+var lastOpen = 0;
+RI.call(window, function(){
+  var open = !!(document.getElementById('_todoMount') || document.getElementById('_gcOfficeToDoOv') || tagged('status') || tagged('green'));
+  if(open && Date.now() - lastOpen > 15000 && window._gcApprovalsRefresh){ lastOpen = Date.now(); window._gcApprovalsRefresh().then(function(){ paintAll(true); }); }
+  if(!open) lastOpen = 0;
+}, 1500);
+try{ console.log('[GC] Approvals in To-Do + the green APPROVE button; invoice PDF e-mails; GrayCo News (patch AP2).'); }catch(e){}
 })();
 
 </script><!-- /INSP -->

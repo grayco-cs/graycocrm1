@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0F1D2F">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; frame-src https://docs.google.com https://drive.google.com; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; frame-src https://docs.google.com https://drive.google.com blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Your GrayCo project</title>
 <style>
 :root{--navy:#0F1D2F;--navy2:#1A3A5F;--line:#22344D;--gold:#D4A017;--goldDk:#8A5A00;--goldBg:#FCF0CF;--bg:#F6F3EC;--ink:#14202E;--mute:#55626F;--soft:#C9D3DF;--card:#FFFFFF;--rule:#EFEAE0;--edge:#E2DCCD;--green:#1D5E2C;--greenBg:#E3F1E6}
@@ -31,6 +31,9 @@ main{flex:1 1 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom,0px)
 .pill.now{color:var(--goldDk);background:var(--goldBg)}
 .pill.ok{color:var(--green);background:var(--greenBg)}
 .pill.due{color:#8a1c1c;background:#fbe3e3}
+.inv{padding:10px 0;border-bottom:1px solid var(--rule)}.inv:last-child{border-bottom:none}
+.inv .act{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.inv .act .btn,.inv .act a{min-height:40px;font-size:14px;padding:0 12px}
+.inv iframe.pdf{width:100%;height:70vh;max-height:640px;border:1px solid var(--rule);border-radius:10px;margin-top:8px;background:#fff}
 ol.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
 ol.steps li{display:flex;align-items:center;gap:10px;font-size:14px}
 .dot{width:14px;height:14px;border-radius:7px;flex:0 0 14px;border:2px solid #B8B1A2;background:#fff}
@@ -304,6 +307,46 @@ function docs(){
 }
 
 /* ── INVOICES & PAYMENTS ──────────────────────────────────────────────── */
+/* patch AP2: every invoice from the CRM, its state (Approved / Sent / Due / Overdue / Paid) and its PDF */
+function invPdf(id){
+  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify({ action: 'invoice', id: id }), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return null; }); }).then(function(j){
+      if (!j || !j.ok || !j.pdf) throw new Error((j && j.error) || 'not available');
+      var bin = atob(j.pdf), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return { url: URL.createObjectURL(new Blob([u], { type: 'application/pdf' })), name: j.filename || 'GrayCo Invoice.pdf' };
+    });
+}
+var INV_PILL = { Paid: 'ok', Overdue: 'due', Sent: 'now', Approved: 'now', Due: 'now' };
+function invRow(x){
+  var st = x.status || (x.balance > 0 ? 'Due' : 'Paid');
+  var label = st === 'Paid' ? 'Paid' : st + (x.balance > 0 ? ' ' + usd(x.balance) : '');
+  var box = h('div', { class: 'inv' });
+  var head = h('div', { class: 'line', style: 'align-items:center;border:none;padding:0' }, [h('span', null, [h('b', { text: (x.isFinal ? 'Final invoice' : 'Invoice') + (x.number ? ' #' + x.number : '') }), h('br'), h('span', { class: 'muted', text: dt(x.date) + ' · ' + usd(x.amount) + (x.due && st !== 'Paid' ? ' · due ' + dt(x.due) : '') })]),
+    h('span', { class: 'pill ' + (INV_PILL[st] || 'now'), text: label })]);
+  box.appendChild(head);
+  if (x.id) {
+    var act = h('div', { class: 'act' }), got = null, frame = null;
+    var msg = h('span', { class: 'muted', style: 'align-self:center' });
+    var load = function(){ return got ? Promise.resolve(got) : invPdf(x.id).then(function(f){ got = f; return f; }); };
+    var view = h('button', { type: 'button', class: 'btn', text: 'View PDF', on: { click: function(){
+      view.disabled = true; msg.textContent = 'Opening…';
+      load().then(function(f){
+        msg.textContent = '';
+        if (!frame) { frame = h('iframe', { class: 'pdf', title: 'Invoice ' + (x.number || '') }); frame.src = f.url; box.appendChild(frame); }
+        var open = h('a', { class: 'btn', target: '_blank', rel: 'noopener', text: 'Open in a new tab' }); open.href = f.url;
+        if (!act.querySelector('a[target]')) act.insertBefore(open, msg);
+        view.textContent = 'PDF below';
+      }, function(){ view.disabled = false; msg.textContent = 'Could not open it — call GrayCo ' + OFFICE + '.'; });
+    } } });
+    var dl = h('button', { type: 'button', class: 'btn', text: 'Download', on: { click: function(){
+      msg.textContent = 'Getting it…';
+      load().then(function(f){ msg.textContent = ''; var a = document.createElement('a'); a.href = f.url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }, function(){ msg.textContent = 'Could not get it — call GrayCo ' + OFFICE + '.'; });
+    } } });
+    act.appendChild(view); act.appendChild(dl); act.appendChild(msg);
+    box.appendChild(act);
+  }
+  return box;
+}
 function pay(){
   if (V.insurance) return insPay();   /* patch INSP */
   var m = V.money || {}, out = [];
@@ -325,10 +368,7 @@ function pay(){
   var cos = m.changeOrders || [];
   if (cos.length) out.push(card('Approved change orders', cos.map(function(c){ return h('div', { class: 'line' }, [h('span', { text: c.title + (c.date ? ' · ' + dt(c.date) : '') }), h('span', { text: usd(c.amount) })]); })));
   var inv = m.invoices || [];
-  out.push(card('Invoices', inv.length ? inv.map(function(x){
-    return h('div', { class: 'line', style: 'align-items:center' }, [h('span', null, [h('span', { text: (x.isFinal ? 'Final invoice' : 'Invoice') + (x.number ? ' ' + x.number : '') }), h('br'), h('span', { class: 'muted', text: dt(x.date) + ' · ' + usd(x.amount) })]),
-      h('span', { class: 'pill ' + (x.balance > 0 ? (x.status === 'Past due' ? 'due' : 'now') : 'ok'), text: x.balance > 0 ? (x.status === 'Past due' ? 'Past due ' : 'Open ') + usd(x.balance) : 'Paid' })]);
-  }) : [h('div', { class: 'empty', text: 'No invoices yet.' })]));
+  out.push(card('Invoices', inv.length ? inv.map(invRow) : [h('div', { class: 'empty', text: 'No invoices yet.' })]));
   var ps = m.payments || [];
   out.push(card('Payment history', ps.length ? ps.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dt(x.date) + (x.method && x.method !== 'Payment' ? ' · ' + x.method : '') }), h('span', { text: usd(x.amount) })]); })
     : [h('div', { class: 'empty', text: 'No payments yet.' })]));
@@ -441,10 +481,7 @@ function insPay(){
   out.push(card('Payments made', ps.length ? ps.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dt(x.date) + ' · ' + x.from + (x.method && x.method !== 'Payment' ? ' · ' + x.method : '') }), h('span', { text: usd(x.amount) })]); })
     : [h('div', { class: 'empty', text: 'No payments yet.' })]));
   var inv = (V.money && V.money.invoices) || [];
-  if (inv.length) out.push(card('Invoices', inv.map(function(x){
-    return h('div', { class: 'line', style: 'align-items:center' }, [h('span', null, [h('span', { text: (x.isFinal ? 'Final invoice' : 'Invoice') + (x.number ? ' ' + x.number : '') }), h('br'), h('span', { class: 'muted', text: dt(x.date) + ' · ' + usd(x.amount) })]),
-      h('span', { class: 'pill ' + (x.balance > 0 ? 'now' : 'ok'), text: x.balance > 0 ? 'Open ' + usd(x.balance) : 'Paid' })]);
-  })));
+  if (inv.length) out.push(card('Invoices', inv.map(invRow)));
   return out;
 }
 
