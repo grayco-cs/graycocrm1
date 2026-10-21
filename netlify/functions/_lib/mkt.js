@@ -336,6 +336,7 @@ async function autopilot(o){
     const evs = recs(doc, 'events').filter(function(e){ const d = s(e.date); if (!d) return false; const ms = Date.parse(d + 'T12:00:00Z'); return ms > nowMs - 7 * 864e5 && ms < nowMs + 14 * 864e5 && !e.postedBefore; });
     if (rv) plan.push({ kind: 'review', reviewId: rv.id, caption: C.reviewCaption(rv) });
     else if (evs[0]) plan.push({ kind: 'event', eventId: evs[0].id, caption: C.eventCaption(evs[0], Date.parse(evs[0].date + 'T23:00:00Z') < nowMs), photoRef: s((arr(evs[0].photos)[0] || {}).ref) });
+    if (plan.length < A.postsPerWeek) { try { const ra = await require('./referral.js').adForAutopilot(mo, usedTips); if (ra) plan.push({ kind: 'tip', tipId: ra.id, caption: ra.text + '\n\n' + C.BRAND.hashtags }); } catch (e) {} }   /* patch REF: one referral-program post a month (Marketing → 🎁 Referral program → ad copy) */
     while (plan.length < A.postsPerWeek) { const t2 = C.tipFor(month, usedTips.concat(plan.map(function(x){ return x.tipId; }).filter(Boolean))); plan.push({ kind: 'tip', tipId: t2.id, caption: t2.t + '\n\n' + C.BRAND.hashtags }); }
     plan.slice(0, A.postsPerWeek).forEach(function(x, i){
       const nets = A.networks.filter(function(n){ return n !== 'gbp' && (n !== 'instagram' || x.photoRef); });

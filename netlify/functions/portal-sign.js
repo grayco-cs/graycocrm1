@@ -423,6 +423,7 @@ async function refer(event, pid, body){
     r = await require('./website-intake.js').fromReferral({ name: name, email: email, phone: phone, address: cleanText(body.address, 200), note: cleanText(body.note, 1000),
       referrer: referrer, referrerPid: pid, referrerJob: s(p.name), referrerEmail: custEmail(p), pm: pm });
   } catch (e) { return { status: 503, out: { ok: false, error: 'We could not send it just now. Please call ' + (pm && pm.phone ? pm.name + ' at ' + pm.phone : 'GrayCo at ' + OFFICE_PHONE) + '.' } }; }
+  try { await require('./_lib/referral.js').fromPortalReferral(p, { name: name, email: email, phone: phone, address: cleanText(body.address, 200), note: cleanText(body.note, 1000) }, r && r.id); } catch (e) {}   /* patch REF: the referrer earns credit when the friend pays */
   /* the PM: a new lead for them, and a thank-you to the customer who referred them */
   const leadLine = name + (phone ? ' · ' + phone : '') + (email ? ' · ' + email : '') + (s(body.address) ? ' · ' + cleanText(body.address, 200) : '');
   const to = pm && okEmail(pm.email) ? pm.email : '';

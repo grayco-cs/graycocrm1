@@ -1487,5 +1487,141 @@ window._gcPortalWt = { reload: load, data: function(){ return D; } };
 =======
 <script src="/portal-plus.js" defer></script>
 >>>>>>> f1024ca (E-mail & chat history on every job, maintenance plans, "How did you hear about us?", carrier speed report)
+<script id="gc-portal-ref">
+/* patch REF — the "🎁 Referral program" card at the bottom of Home (not front and center).
+   Every friend the customer refers earns them $100–$500 in GrayCo credit; credits STACK on one balance and NEVER EXPIRE.
+   Join with one tap (name / e-mail / phone from the job), share your link, refer a friend (→ a GrayCo lead "Referred by
+   you"), see your balance and its history, turn some or all of it into a one-time gift code for family (shown once and
+   e-mailed to you), ask the office to put credit on this job, and use a GrayCo gift code someone gave you (once).
+   Everything goes through /.netlify/functions/portal (action "referral") with the same link code or session; the server
+   keeps the balances. Never in the sub portal. */
+(function(){
+'use strict';
+if (window.__GC_PREF__) return; window.__GC_PREF__ = true;
+var FN = '/.netlify/functions/portal', OFFICE = '901-585-0944';
+var token = '';
+try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
+var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
+function sess(){ try { return token ? '' : (localStorage.getItem('gc_portal_s') || ''); } catch (e) { return ''; } }
+function pid(){ try { return String(window.PID || ''); } catch (e) { return ''; } }
+var D = null, card = null, busy = false, msg = { text: '', bad: false }, started = false, lastPid = '', open = '', fresh = null, nonce = '';
+var keep = { name: '', phone: '', email: '', note: '', code: '', gift: '', use: '' };
+function h(tag, attrs, kids){
+  var el = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){
+    var v = attrs[k]; if (v == null || v === false) return;
+    if (k === 'text') el.textContent = v;
+    else if (k === 'on') Object.keys(v).forEach(function(e){ el.addEventListener(e, v[e]); });
+    else if ((k === 'href' || k === 'src') && !/^(https:\/\/|tel:)/i.test(String(v))) return;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  });
+  (kids || []).forEach(function(c){ if (c == null || c === false) return; el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return el;
+}
+function usd(n){ n = Math.round((Number(n) || 0) * 100) / 100; return '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
+function dt(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function api(body){
+  return fetch(FN, { method: 'POST', headers: sess() ? { 'Content-Type': 'application/json', 'x-portal-session': sess() } : { 'Content-Type': 'application/json', 'x-portal-token': token },
+    body: JSON.stringify(Object.assign({ action: 'referral' }, PREVIEW ? { preview: true } : {}, sess() ? { projectId: pid() || undefined } : {}, body)), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); }, function(){ return { status: 0, data: { error: 'No connection — check your signal and try again.' } }; });
+}
+function load(){ return api({ op: 'state' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; paint(); } }); }
+function act(body, after){
+  if (busy) return; busy = true; msg = { text: '', bad: false }; paint();
+  api(body).then(function(r){
+    busy = false;
+    if (r.data && r.data.ok) { if (r.data.program) D = r.data; msg = { text: r.data.done || r.data.message || 'Done.', bad: false }; if (after) after(r.data); }
+    else msg = { text: (r.data && r.data.error) || 'That did not work — please try again, or call GrayCo ' + OFFICE + '.', bad: true };
+    paint();
+  });
+}
+var INP = 'min-height:44px;border:1px solid #C9C2B2;border-radius:10px;padding:0 12px;font:15px inherit;font-family:inherit;width:100%;box-sizing:border-box';
+function inp(k, label, type){ var el = h('input', { type: type || 'text', 'aria-label': label, placeholder: label, autocomplete: 'off', style: INP }); el.value = keep[k]; el.addEventListener('input', function(){ keep[k] = el.value; }); return el; }
+function copy(t, btn, label){
+  var done = function(){ btn.textContent = 'Copied ✓'; setTimeout(function(){ btn.textContent = label; }, 2500); };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done, function(){}); return; } } catch (e) {}
+  try { var ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done(); } catch (e) {}
+}
+function toggle(k){ return function(){ open = open === k ? '' : k; paint(); }; }
+function paint(){
+  if (!D) return;
+  var mem = D.member;
+  var c = h('section', { class: 'card', id: 'gcRefCard', 'data-gc-referral-program': '1' }, [
+    h('div', { class: 'row' }, [h('h2', { text: '🎁 Referral program' }), mem ? h('span', { class: 'pill ok', text: 'You are a member' }) : null]),
+    h('div', { class: 'muted', text: 'Need a new kitchen or bathroom? Every friend you refer earns you $100–$500 in GrayCo credit when they hire us. Credits stack and never expire — put them toward your kitchen, bathroom, floors, roof, maintenance or remodel, or turn them into a gift code for family.' })]);
+  if (!mem) {
+    c.appendChild(h('button', { type: 'button', class: 'btn gold', disabled: busy || undefined, text: busy ? 'One moment…' : 'Join the referral program', on: { click: function(){ act({ op: 'join' }); } } }));
+  } else {
+    c.appendChild(h('div', { class: 'row', style: 'align-items:baseline' }, [h('span', { class: 'muted', text: 'Your GrayCo credit' }), h('b', { id: 'gcRefBal', style: 'font-size:26px;color:#1D5E2C', text: usd(D.balance) })]));
+    if (fresh) {
+      var fb = h('button', { type: 'button', class: 'btn', text: 'Copy the code' }); fb.addEventListener('click', function(){ copy(fresh.code, fb, 'Copy the code'); });
+      c.appendChild(h('div', { style: 'border:2px dashed #D4A017;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;text-align:center' }, [
+        h('span', { class: 'muted', text: 'Your ' + usd(fresh.amount) + ' gift code — one-time use, no expiration, good for anyone. Write it down or forward the e-mail; it is not shown here again.' }),
+        h('b', { class: 'sel', style: 'font:700 20px Consolas,Menlo,monospace;letter-spacing:2px', text: fresh.code }), h('div', { class: 'btns' }, [fb, h('button', { type: 'button', class: 'btn', text: 'Done — I saved it', on: { click: function(){ fresh = null; paint(); } } })])]));
+    }
+    c.appendChild(h('div', { class: 'grow' }, [h('span', { class: 'muted', text: 'Your referral link — anyone who contacts us through it counts as your referral:' }), h('span', { class: 'sel', style: 'font-weight:600', text: mem.link })]));
+    var cb = h('button', { type: 'button', class: 'btn', text: 'Copy my link' }); cb.addEventListener('click', function(){ copy(mem.link, cb, 'Copy my link'); });
+    var other = document.getElementById('gcrefer');   /* patch AUTO5's "Refer a friend" card: its referrals count here too */
+    c.appendChild(other ? h('div', { class: 'btns' }, [cb, h('button', { type: 'button', class: 'btn gold', text: 'Refer a friend ↓', on: { click: function(){ try { other.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} } } })])
+      : h('div', { class: 'btns' }, [cb, h('button', { type: 'button', class: 'btn gold', text: open === 'refer' ? 'Close' : 'Refer a friend', on: { click: toggle('refer') } })]));
+    if (open === 'refer') c.appendChild(h('div', { style: 'display:flex;flex-direction:column;gap:8px' }, [inp('name', 'Their name'), inp('phone', 'Their phone', 'tel'), inp('email', 'Their e-mail (optional)', 'email'), inp('note', 'What do they need? (optional)'),
+      h('button', { type: 'button', class: 'btn navy', disabled: busy || undefined, text: busy ? 'Sending…' : 'Send to GrayCo', on: { click: function(){ act({ op: 'refer', referred: { name: keep.name, phone: keep.phone, email: keep.email, note: keep.note } }, function(){ keep.name = keep.phone = keep.email = keep.note = ''; open = ''; }); } } })]));
+    if (D.balance > 0) {
+      c.appendChild(h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn', text: open === 'use' ? 'Close' : 'Use credit on this job', on: { click: toggle('use') } }), h('button', { type: 'button', class: 'btn', text: open === 'gift' ? 'Close' : 'Make a gift code', on: { click: toggle('gift') } })]));
+      if (open === 'use') c.appendChild(h('div', { style: 'display:flex;flex-direction:column;gap:8px' }, [h('div', { class: 'muted', text: 'How much of your ' + usd(D.balance) + ' should go toward this job? The GrayCo office puts it on your invoice.' }), inp('use', 'Amount (blank = all of it)', 'number'),
+        h('button', { type: 'button', class: 'btn navy', disabled: busy || undefined, text: busy ? 'Sending…' : 'Ask to use my credit', on: { click: function(){ act({ op: 'use', amount: keep.use }, function(){ keep.use = ''; open = ''; }); } } })]));
+      if (open === 'gift') c.appendChild(h('div', { style: 'display:flex;flex-direction:column;gap:8px' }, [h('div', { class: 'muted', text: 'Turn some or all of your ' + usd(D.balance) + ' into a one-time code for family or friends (at least ' + usd(D.program.giftMin || 10) + '). The rest stays in your account.' }), inp('gift', 'Gift code amount', 'number'),
+        h('button', { type: 'button', class: 'btn navy', disabled: busy || undefined, text: busy ? 'Making it…' : 'Make my gift code', on: { click: function(){ if (!nonce) nonce = Date.now().toString(36) + Math.random().toString(36).slice(2, 8); act({ op: 'gift', amount: keep.gift, nonce: nonce }, function(d){ fresh = d.gift || null; keep.gift = ''; open = ''; nonce = ''; }); } } })]));
+    }
+    var hs = D.history || [];
+    if (hs.length) {
+      c.appendChild(h('h3', { text: 'Your credit history' }));
+      hs.slice(0, 12).forEach(function(x){ c.appendChild(h('div', { class: 'row', style: 'font-size:14px' }, [h('span', { text: x.text + ' · ' + dt(x.at) }), h('b', { style: 'color:' + (x.amount >= 0 ? '#1D5E2C' : '#8A5A00'), text: (x.amount >= 0 ? '+' : '−') + usd(Math.abs(x.amount)) })])); });
+    }
+    var rs = D.referrals || [];
+    if (rs.length) {
+      c.appendChild(h('h3', { text: 'Your referrals' }));
+      rs.forEach(function(r){ c.appendChild(h('div', { class: 'row', style: 'font-size:14px' }, [h('span', { text: r.name + (r.at ? ' · ' + dt(r.at) : '') }), h('span', { class: 'pill ' + (/earned|hired/i.test(r.status) ? 'ok' : 'now'), text: r.status })])); });
+    }
+    var cs = D.codes || [];
+    if (cs.length) {
+      c.appendChild(h('h3', { text: 'Your gift codes' }));
+      cs.forEach(function(x){ c.appendChild(h('div', { class: 'row', style: 'font-size:14px' }, [h('span', { text: usd(x.amount) + ' · code ending …' + x.last4 }),
+        h('span', { class: 'pill ' + (x.status === 'issued' ? 'ok' : 'now'), text: x.status === 'issued' ? 'Not used yet' : x.status === 'redeemed' ? 'Used ' + dt(x.usedAt) : x.status === 'void' ? 'Cancelled' : x.status })])); });
+    }
+  }
+  c.appendChild(h('button', { type: 'button', class: 'btn', text: open === 'code' ? 'Close' : 'Have a GrayCo gift code? Use it on this job', on: { click: toggle('code') } }));
+  if (open === 'code') c.appendChild(h('div', { style: 'display:flex;flex-direction:column;gap:8px' }, [inp('code', 'GC-XXXX-XXXX-XXXX'),
+    h('div', { class: 'muted', text: 'One-time use: the full value goes toward this job and the code stops working.' }),
+    h('button', { type: 'button', class: 'btn navy', disabled: busy || undefined, text: busy ? 'Checking…' : 'Use gift code', on: { click: function(){ act({ op: 'redeem', code: keep.code }, function(){ keep.code = ''; open = ''; }); } } })]));
+  if (msg.text) c.appendChild(h('div', { role: 'status', style: 'font-size:14px;font-weight:600;color:' + (msg.bad ? '#8a1c1c' : '#1D5E2C'), text: msg.text }));
+  if (card && card.parentNode) card.parentNode.replaceChild(c, card);
+  card = c; place();
+}
+function homeShown(){ var t = document.getElementById('tabs'); if (!t || t.hidden) return false; var b = document.querySelector('nav.tabs button[data-tab="home"]'); return !b || b.getAttribute('aria-selected') === 'true'; }
+function place(){
+  var main = document.getElementById('main'); if (!main) return;
+  if (!card || !homeShown()) { if (card && card.parentNode) card.parentNode.removeChild(card); return; }
+  var host = main.querySelector('.col-r') || main;
+  /* next to the "🎁 Refer a friend" card (patch AUTO5) when there is one, else at the bottom of Home */
+  var ref = host.querySelector('#gcrefer, [data-gc-referral]:not([data-gc-referral-program])');
+  if (ref) { if (card.nextElementSibling !== ref || card.parentNode !== ref.parentNode) ref.parentNode.insertBefore(card, ref); return; }   /* just above it: that card stays the last one (its own placing keeps it there) */
+  if (card.parentNode !== host || host.lastElementChild !== card) host.appendChild(card);
+}
+function start(){
+  if (window.GCPartner) return;   /* the sub portal has no referral program */
+  if (started && sess() && pid() !== lastPid) { lastPid = pid(); D = null; fresh = null; if (card && card.parentNode) card.parentNode.removeChild(card); card = null; load(); return; }
+  if (started || !(token || sess())) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
+  started = true; lastPid = pid(); load();
+}
+try {
+  new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: true });
+  var tb = document.getElementById('tabs'); if (tb) new MutationObserver(function(){ start(); place(); }).observe(tb, { attributes: true, subtree: true, attributeFilter: ['hidden', 'aria-selected'] });
+} catch (e) {}
+start();
+window._gcPortalRef = { reload: load, data: function(){ return D; } };
+})();
+</script>
 </body>
 </html>

@@ -231,3 +231,9 @@
   to = "/roofscout/:splat"
   status = 200
   force = true
+
+# Referral program (patch REF, netlify/functions/_lib/referral.js): every hour at :37 — a referral whose job took its
+# first payment gets $100–$500 of GrayCo credit PROPOSED on the approvals list for the member (credits stack and never
+# expire). Nothing is added or sent until an admin approves it.
+[functions."referral"]
+  schedule = "37 * * * *"

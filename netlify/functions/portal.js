@@ -1271,6 +1271,7 @@ async function aqSend(item, now){
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
+  if (item.kind === 'refcredit' || item.kind === 'refgift') return require('./_lib/referral.js').onApproved(item, now);   /* patch REF: approved → credit on the member's balance / a one-time gift code (only its hash kept) */
   if (item.kind === 'winback') return require('./_lib/winback.js').onApproved(item, now);   /* patch AUTO6: lost-lead check-ins, one e-mail each from news@ */   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
   if (item.kind === 'maint_invoice') return require('./portal-plus.js').maintInvoiceSend(item, now);   /* patch X9: the yearly maintenance-plan invoice, with its PDF */
   /* patch AUTAI: a weekly update / a voice note's portal post goes on the customer's portal page when approved
@@ -2106,7 +2107,7 @@ exports.handler = async function (event) {
   }
 
   /* PUBLIC */
-  if (action !== 'view' && action !== 'photos' && action !== 'invoice') return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral') return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
@@ -2132,6 +2133,11 @@ exports.handler = async function (event) {
     const gc = await grayCoPhotos(p.id, recs || []);
     const list = gc.concat(cc).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
     return reply(200, headers, { ok: true, photos: list, expiresIn: SIGN_SECS });
+  }
+  if (action === 'referral') {   /* patch REF: the referral program card — join, refer a friend, the member's gift cards, use a gift card on this job */
+    if (body.preview === true && s(body.op) && s(body.op) !== 'state') return reply(200, headers, { ok: false, error: 'Preview — nothing is saved.' });
+    const rr = await require('./_lib/referral.js').portal(data, p, body, { ip: ip });
+    return reply(rr.code || 200, headers, rr.body);
   }
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });

@@ -60,7 +60,8 @@ const TYPES = {
   maintenance: { label: 'Maintenance plan sign-up', kind: 'residential', short: 'Maintenance plan' },
   problem:     { label: 'Report a problem (existing customer)', kind: 'residential', short: 'Problem report' },
   careers:     { label: 'Job application (careers)', kind: 'careers', short: 'Job application' },
-  roofprice:   { label: 'Instant roof price', kind: 'residential', short: 'Instant roof price' }
+  roofprice:   { label: 'Instant roof price', kind: 'residential', short: 'Instant roof price' },
+  referral:    { label: 'Referral program', kind: 'residential', short: 'Referral program' }   /* patch REF: join (and refer a friend) */
 };
 const POSITIONS = ['Project Manager', 'Superintendent', 'Estimator', 'Carpenter', 'Roofer', 'Laborer', 'Office / Admin', 'Other'];
 
@@ -91,6 +92,7 @@ function same(a, b){ a = Buffer.from(s(a)); b = Buffer.from(s(b)); if (!a.length
 function money(n){ return '$' + Math.round(n).toLocaleString('en-US'); }
 function L(){ return require('./bid-inbox.js')._lib; }
 function core(){ return require('./portal.js')._core; }
+function REF(){ return require('./_lib/referral.js'); }   /* patch REF */
 function ipOf(event){ const h = hdrs(event); return s(h['x-nf-client-connection-ip'] || s(h['x-forwarded-for']).split(',')[0] || h['client-ip']) || 'unknown'; }
 
 /* ── CORS: the website (and the CRM, for the admin doors) ─────────────────── */
@@ -172,6 +174,7 @@ function pick(b, names){
 function typeOf(v, b){
   const t = low(v);
   if (TYPES[t]) return t;
+  if (/referr|refer a friend|gift card/.test(t)) return 'referral';   /* patch REF */
   if (/career|job|employ|apply|application|hiring/.test(t)) return 'careers';
   if (/storm|insur|hail|wind|claim/.test(t)) return 'storm';
   if (/commercial|bid|gc|general contractor/.test(t)) return 'commercial';
@@ -207,7 +210,11 @@ function readForm(b){
     hp: s(b.website) || s(b.company_url) || s(b.hp_field), token: s(b.token || b._t), turnstile: s(b.turnstile || b['cf-turnstile-response']),
     resume: b.resume && typeof b.resume === 'object' ? b.resume : null,
     via: s(b.via) || '', page: clip(b.page, 300),
-    howHeard: pick(b, ['howheard', 'how_heard', 'how_did_you_hear', 'how_did_you_hear_about_us', 'heard_about', 'hear_about_us', 'referral_source'])   /* patch X9 */
+    howHeard: pick(b, ['howheard', 'how_heard', 'how_did_you_hear', 'how_did_you_hear_about_us', 'heard_about', 'hear_about_us', 'referral_source']),   /* patch X9 */
+    /* patch REF: a member's referral code (their link ?ref=R-XXXXXX), how they know us, and the friend they refer */
+    ref: pick(b, ['ref', 'referral_code', 'member_code', 'refcode']).slice(0, 20), howKnow: clip(pick(b, ['how_know', 'howknow', 'relationship', 'how_do_you_know_us']), 120),
+    referred: { name: clip(pick(b, ['referred_name', 'friend_name', 'referral_name']), 80), email: low(pick(b, ['referred_email', 'friend_email'])), phone: pick(b, ['referred_phone', 'friend_phone']),
+      address: clip(pick(b, ['referred_address', 'friend_address']), 200), note: clip(pick(b, ['referred_note', 'friend_note', 'referral_note']), 600) }
   };
   if (!f.address && (f.city || f.zip)) f.address = '';
   ['name', 'company', 'project', 'service', 'property', 'position', 'carrier'].forEach(k => { f[k] = clip(f[k], 120); });
@@ -449,7 +456,7 @@ exports.handler = async function(event){
   }
   if (m === 'GET' && qs.form === '1') {
     let priced = false; try { priced = pricesSet(await priceSettings()); } catch (e) {}
-    return J(event, 200, { ok: true, token: newToken(), turnstileSiteKey: env('TURNSTILE_SECRET') ? env('TURNSTILE_SITE_KEY') : '', types: Object.keys(TYPES).filter(k => k !== 'roofprice').map(k => ({ id: k, label: TYPES[k].label })), positions: POSITIONS, priced });
+    return J(event, 200, { ok: true, token: newToken(), turnstileSiteKey: env('TURNSTILE_SECRET') ? env('TURNSTILE_SITE_KEY') : '', types: Object.keys(TYPES).filter(k => k !== 'roofprice' && k !== 'referral').map(k => ({ id: k, label: TYPES[k].label })), positions: POSITIONS, priced });
   }
 
   /* ── admin doors ── */
@@ -522,6 +529,16 @@ exports.handler = async function(event){
   if (!L().dbReady()) return J(event, 503, { ok: false, error: 'We could not take this right now — please call us at 901-585-0944.' });
 
   try {
+    if (f.type === 'referral') {   /* patch REF: "Join our referral program" (and, optionally, the friend they refer) */
+      if (f.referred.email && !isEmail(f.referred.email)) return J(event, 400, { ok: false, error: 'Your friend’s e-mail address does not look right.', field: 'referred_email' });
+      if (s(f.referred.name) && !isEmail(f.referred.email) && phone10(f.referred.phone).length !== 10) return J(event, 400, { ok: false, error: 'Add your friend’s phone number or e-mail so we can reach them.', field: 'referred_phone' });
+      const j = await REF().join({ name: f.name, email: f.email, phone: f.phone, how: f.howKnow, source: 'website', referred: f.referred });
+      return J(event, 200, { ok: true, received: true, kind: 'referral', member: { code: j.member.code, link: j.member.link, name: j.member.name }, referred: !!j.referral,
+        message: 'Thank you — you are in the GrayCo referral program!' + (j.referral ? ' We will reach out to ' + s(f.referred.name).split(/\s+/)[0] + ' soon.' : '') + ' Share your link: ' + j.member.link });
+    }
+    const refM = f.ref ? await REF().memberByCode(f.ref).catch(() => null) : null;   /* patch REF: came in through a member's link */
+    const refExtra = refM ? { leadExtra: { referredBy: refM.name, referredByMember: refM.id, referredByCode: refM.code, referralProgram: true }, notes: ['Came in through ' + refM.name + '’s referral link (' + refM.code + ').'] } : {};
+    const refNote = async function(lead){ if (refM && lead && lead.action === 'added') { try { await REF().addReferral({ member: refM, name: f.name, email: f.email, phone: f.phone, address: fullAddr(f), leadId: lead.id, via: 'link', note: 'Came in through the referral link.' }); } catch (e) {} } };
     if (f.type === 'careers') {
       const app = await fileApplication(f);
       const [al, rep] = await Promise.all([alertApplication(app), autoReply(f, app.id)]);
@@ -534,7 +551,8 @@ exports.handler = async function(event){
       const priceText = rq.priced ? money(rq.low) + ' – ' + money(rq.high) : '';
       const notes = [rq.measured ? ('Roof measured from satellite (Google Solar' + (rq.imageryDate ? ', imagery ' + rq.imageryDate : '') + '): ' + rq.areaSqft.toLocaleString('en-US') + ' sq ft, main pitch ' + (rq.pitch == null ? '?' : rq.pitch + '/12') + ', ' + rq.squares + ' squares with waste' + (rq.tier ? ' — ' + rq.tier : '') + '.') : ('Roof NOT measured automatically (' + rq.why + ') — measure it.'),
         rq.priced ? 'Range shown to the customer: ' + priceText + '.' : 'No price was shown to the customer' + (rq.measured ? ' (roof prices are not set yet: Leads → 🌐 Website → Roof prices)' : '') + ' — call with a price.'];
-      const lead = await fileLead(f, { roofQuote: rq, notes });
+      const lead = await fileLead(f, Object.assign({}, refExtra, { roofQuote: rq, notes: notes.concat(refExtra.notes || []) }));
+      await refNote(lead);
       await Promise.all([alertLead(lead.rec), autoReply(f, lead.id, { priceText })]);
       return J(event, 200, { ok: true, received: true, kind: 'roofprice', leadId: lead.id, measured: rq.measured, priced: rq.priced,
         low: rq.priced ? rq.low : null, high: rq.priced ? rq.high : null, range: priceText, areaSqft: rq.measured ? rq.areaSqft : null, squares: rq.measured ? rq.squares : null, pitch: rq.measured ? rq.pitch : null,
@@ -542,7 +560,8 @@ exports.handler = async function(event){
           : rq.measured ? 'Thanks — we measured your roof (' + rq.areaSqft.toLocaleString('en-US') + ' sq ft). A GrayCo estimator will call you with your price shortly.'
           : 'Thanks — we have your address. A GrayCo estimator will measure your roof and call you with a price shortly.' });
     }
-    const lead = await fileLead(f);
+    const lead = await fileLead(f, refExtra);
+    await refNote(lead);
     if (lead.action === 'added') await Promise.all([alertLead(lead.rec), autoReply(f, lead.id)]);
     return J(event, 200, { ok: true, received: true, kind: 'lead', leadId: lead.id, existingCustomer: !!lead.customer, duplicate: lead.action !== 'added',
       message: f.type === 'problem' ? 'Thank you — we received your message and will contact you as soon as possible. If water is coming in right now, call 901-585-0944.' : 'Thank you — we received your request and will contact you shortly.' });
