@@ -1317,6 +1317,27 @@ async function approvalAction(body, who){
   if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
   return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
 }
+/* patch AP3: the approved first reminder of an invoice (the newest one sent), the template for the later ones */
+async function approvedReminder(invId){
+  const cur = await kvListRead(AQ_KEY); if (!cur) return null;
+  const l = cur.list.filter(function(x){ return x && x.kind === 'final_reminder' && x.status === 'sent' && s((x.meta || {}).invoiceId) === s(invId) && (x.approvals || []).length; })
+    .sort(function(a, b){ return s(b.sentAt) < s(a.sentAt) ? -1 : 1; });
+  return l[0] || null;
+}
+async function sendApprovedReminder(tpl, pid){
+  if (!s(process.env.RESEND_API_KEY) || mailOff()) return { ok: false, error: 'mail off' };
+  let html = s(tpl.html);
+  if (html.indexOf(LINK_PH) >= 0) {
+    let token; try { token = await createFor(pid, 'auto: approved reminder'); } catch (e) { return { ok: false, error: 'no link' }; }
+    html = html.split(LINK_PH).join(esc(linkFor(null, token)));
+  }
+  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [tpl.to], subject: tpl.subject, html: html };
+  if (Array.isArray(tpl.cc) && tpl.cc.length) payload.cc = tpl.cc.slice(0, 5);
+  try {
+    const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    return { ok: r.ok, error: r.ok ? '' : String(r.status) };
+  } catch (e) { return { ok: false, error: 'no answer' }; }
+}
 /* one pass over every job (or just one): first e-mail, then every 15 days while unpaid */
 async function runReminders(opts){
   opts = opts || {};
@@ -1347,6 +1368,22 @@ async function runReminders(opts){
         /* owner rule: the PM approves, then an admin; it waits on the approvals list (gc_approval_queue) */
         if (prev && /rejected/.test(s(prev.last_result)) && prev.last_reminder_at && now - new Date(prev.last_reminder_at) < REMIND_EVERY) { report.skipped++; continue; }
         if (await aqOpenFor(function(x){ return s((x.meta || {}).invoiceId) === invId; })) { report.skipped++; continue; }   /* already waiting */
+        /* patch AP3 (owner, 21 Oct 2026): only the FIRST 15-day reminder needs approval (PM, then admin). Every later
+           reminder for the same invoice goes out by itself with the approved text (subject, body, To / CC as approved),
+           unless the invoice is paid (it is no longer on this list) or reminders are paused on the job (above). */
+        if (!first && num(prev.reminders) >= 1) {
+          const tpl = await approvedReminder(invId);
+          if (tpl) {
+            if (!(await claim(invId, pid, prev, nowIso))) { report.skipped++; continue; }
+            const sent = await sendApprovedReminder(tpl, pid);
+            if (sent.ok) {
+              await patchMail(invId, { reminders: num(prev.reminders) + 1, last_result: 'reminded (auto, approved text)' });
+              report.reminded++; report.autoReminders = (report.autoReminders || 0) + 1;
+              report.details.push({ project: pid, invoice: invId, kind: 'reminder', auto: true, template: tpl.id });
+            } else await patchMail(invId, { last_reminder_at: prev.last_reminder_at || null, last_result: 'failed ' + (sent.error || '') });
+            continue;
+          }
+        }
         if (!(await claim(invId, pid, prev, nowIso))) { report.skipped++; continue; }
         const n = first ? 0 : num(prev.reminders) + 1;
         const fi = view.money.finalInvoice || {};
@@ -1768,7 +1805,7 @@ exports.handler = async function (event) {
 
 /* for portal-reminders.js and the tests */
 exports._core = { pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, grayCoPhotos: grayCoPhotos, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
+  newToken: newToken, grayCoPhotos: grayCoPhotos, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

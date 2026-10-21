@@ -131239,6 +131239,140 @@ W._gcLA = {
 start();
 try { console.log('[GC] Leads notice + bid due (patch LA) ready — window._gcLA'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-ap3">
+/* ==========================================================================
+   patch AP3 — a ✉️ compose button wherever there is someone to e-mail.
+   * next to every e-mail address shown on a card or in a table (customers,
+     subs, vendors, leads — desk and field): ✉️ opens the CRM compose box
+     (send from your own address, patch AP2) or Gmail;
+   * the desk job header: "✉️ E-mail <customer>";
+   * the field job list: a ✉️ on each job card that has a customer e-mail.
+   * the first 15-day final-invoice reminder says that approving it approves
+     the later ones (they then go out by themselves, portal.js).
+   Never a mailto: (owner: Gmail, not Outlook). Console: _gcAp3Scan().
+   ========================================================================== */
+(function(){
+'use strict';
+if(window.__GC_PATCH_AP3__) return; window.__GC_PATCH_AP3__ = true;
+var RI = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+var EM = /^\s*([^@\s,;<>"'()]+@[^@\s,;<>"'()]+\.[a-z]{2,})\s*$/i;
+var SKIP = '#_gcComposeOv,#_gcAp2Prev,._gcAp2Sec,a[href]:not([data-gc-mailto]),button,textarea,input,select,[contenteditable="true"],script,style,option';
+function low(v){ return String(v == null ? '' : v).trim().toLowerCase(); }
+function me(){ try{ return low(window.__GC_AUTH__ && window.__GC_AUTH__.email()); }catch(e){ return ''; } }
+function projects(){ return ((window._crm || {}).projects) || []; }
+function jobOf(email){ var e = low(email); return projects().filter(function(p){ return p && (low(p.clientEmail) === e || low(p.customerEmail) === e); })[0] || null; }
+function compose(o){
+  if(window._gcCompose && /@grayco-cs\.com$/.test(me())) return window._gcCompose(o);
+  if(window._gcGmail) return window._gcGmail(o);
+}
+window._gcAp3Compose = compose;
+function ico(to, extra, css){
+  var b = document.createElement('span');
+  b.className = '_gcMailIco'; b.setAttribute('role', 'button'); b.setAttribute('tabindex', '0');
+  b.setAttribute('title', 'E-mail ' + to + ' from your own address'); b.setAttribute('aria-label', 'E-mail ' + to);
+  b.setAttribute('data-to', to); b.textContent = '✉️';
+  b.style.cssText = css || 'display:inline-block;margin-left:6px;padding:0 4px;cursor:pointer;font-size:14px;line-height:1;border-radius:6px;vertical-align:middle;user-select:none';
+  var go = function(e){ e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation(); compose(Object.assign({ to: to }, extra || {})); };
+  b.addEventListener('click', go);
+  b.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' ') go(e); });
+  return b;
+}
+/* the people with an e-mail on file whose card may show only their name: subs, vendors, leads, customers */
+var people = null, peopleAt = 0, idbLeads = [], idbAt = 0;
+/* the leads are not always in window._crm: read this computer's store too (every 30 s) */
+function leadsList(){
+  var c = window._crm || {};
+  if(Array.isArray(c.leads) && c.leads.length) return c.leads;
+  if(Date.now() - idbAt > 30000 && window.idbGet){ idbAt = Date.now(); try{ Promise.resolve(window.idbGet('leads')).then(function(v){ if(Array.isArray(v)){ idbLeads = v; people = null; } }, function(){}); }catch(e){} }
+  return idbLeads;
+}
+function peopleByName(){
+  if(people && Date.now() - peopleAt < 10000) return people;
+  var c = window._crm || {}, by = {};
+  function add(name, email, kind){ var n = low(name), e = low(email); if(n.length < 3 || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e) || by[n]) return; by[n] = { email: e, kind: kind }; }
+  (c.subs || []).forEach(function(x){ if(x) add(x.name || x.company, x.email || x.contactEmail, 'sub'); });
+  (c.vendors || []).forEach(function(x){ if(x) add(x.name || x.company, x.email || x.contactEmail, 'vendor'); });
+  (leadsList() || []).forEach(function(x){ if(x) add(x.name || x.client || x.title, x.email || x.contactEmail || x.clientEmail, 'lead'); });
+  (c.customers || []).forEach(function(x){ if(x) add(x.name || x.company, x.email, 'customer'); });
+  people = by; peopleAt = Date.now(); return by;
+}
+/* 1. every e-mail address shown as text, and every sub / vendor / lead / customer name shown on a card */
+function scanText(){
+  var by = peopleByName(), root = document.getElementById('root') || document.body;
+  var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){ var v = n.nodeValue; return v && v.length < 140 && (v.indexOf('@') > 0 || (by[low(v)] && root.contains(n))) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT; } });
+  var hits = [], n;
+  while((n = w.nextNode())) hits.push(n);
+  hits.forEach(function(t){
+    var el = t.parentElement; if(!el || el.querySelector('._gcMailIco')) return;
+    var m = EM.exec(el.textContent || '');
+    if(!m){
+      var pr = by[low(el.textContent)]; if(!pr || el.children.length || el.closest(SKIP) || !el.offsetParent) return;
+      el.appendChild(ico(pr.email, { about: pr.kind })); return;
+    }
+    if(el.children.length) return;                                   /* only a plain text holder */
+    if(el.closest(SKIP) || !el.offsetParent) return;
+    var j = jobOf(m[1]);
+    el.appendChild(ico(m[1], j ? { pid: j.id, customer: j.client } : null));
+  });
+}
+/* 2. the desk job header */
+function deskJob(){
+  var c = window._crm || {}, op = c.openProject, pid = op && (op.id || op);
+  if(!pid){ try{ pid = sessionStorage.getItem('grayco_openpid') || localStorage.getItem('grayco_openpid'); }catch(e){} }
+  var job = pid ? projects().filter(function(p){ return p && String(p.id) === String(pid); })[0] : null;
+  var hs = document.querySelectorAll('#root h1');
+  for(var i = 0; i < hs.length; i++){
+    var h = hs[i], par = h.parentElement; if(!par || !h.offsetParent) continue;
+    var have = par.querySelector(':scope > ._gcJobMailBtn');
+    if(!job || h.textContent.trim() !== String(job.name || '').trim()){ if(have && have.getAttribute('data-pid') !== String(job && job.id)) have.remove(); continue; }
+    var to = job.clientEmail || job.customerEmail || '';
+    if(have && have.getAttribute('data-pid') === String(job.id)) continue;
+    if(have) have.remove();
+    var b = document.createElement('button'); b.type = 'button'; b.className = '_gcJobMailBtn'; b.setAttribute('data-pid', String(job.id));
+    b.textContent = '✉️ E-mail ' + (job.client ? String(job.client).split(/\s+/)[0] : 'the customer');
+    b.style.cssText = 'margin:6px 0;padding:6px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit';
+    (function(job, to){ b.onclick = function(e){ e.stopPropagation(); compose({ to: to, pid: job.id, customer: job.client, about: 'job' }); }; })(job, to);
+    par.appendChild(b);
+  }
+}
+/* 3. the field job list cards */
+function fieldCards(){
+  var items = document.querySelectorAll('#_gcJobPick ._jpItem');
+  for(var i = 0; i < items.length; i++){
+    var it = items[i]; if(it.querySelector('._gcMailIco')) continue;
+    var id = it.getAttribute('data-id'), job = projects().filter(function(p){ return p && String(p.id) === String(id); })[0];
+    var to = job && (job.clientEmail || job.customerEmail); if(!to) continue;
+    if(getComputedStyle(it).position === 'static') it.style.position = 'relative';
+    it.appendChild(ico(to, { pid: job.id, customer: job.client, about: 'job' }, 'position:absolute;right:14px;bottom:10px;font-size:20px;line-height:1;padding:6px;border-radius:10px;background:rgba(37,99,235,.18);cursor:pointer'));
+  }
+}
+/* 4. the first 15-day reminder: approving it approves the later ones (owner, 21 Oct 2026) */
+var REM_NOTE = '🔁 Approving this first reminder also approves the later ones: every 15 days the same text goes out by itself until the invoice is paid or reminders are paused on the job.';
+function firstReminder(id){
+  try{ var c = window._gcCustApprovals && window._gcCustApprovals(); var x = c && (c.all || []).filter(function(y){ return y.id === id; })[0];
+    return !!(x && x.kind === 'final_reminder' && Number((x.meta || {}).reminders) === 1); }catch(e){ return false; }
+}
+function reminderNotes(){
+  document.querySelectorAll('._ap2Card[data-id^="appr_final_"]').forEach(function(cd){
+    if(cd.querySelector('._gcRemNote') || !firstReminder(cd.getAttribute('data-id'))) return;
+    var n = document.createElement('div'); n.className = '_gcRemNote'; n.textContent = REM_NOTE;
+    n.style.cssText = 'font-size:12px;color:#1d4ed8;font-weight:700;margin-top:4px';
+    var row = cd.querySelector('._ap2Yes'); row = row && row.parentElement; cd.insertBefore(n, row || null);
+  });
+  var pv = document.getElementById('_gcAp2Prev');
+  if(pv && pv.__id && !pv.querySelector('._gcRemNote') && firstReminder(pv.__id)){
+    var n2 = document.createElement('div'); n2.className = '_gcRemNote'; n2.textContent = REM_NOTE;
+    n2.style.cssText = 'font-size:13px;color:#1d4ed8;font-weight:700;margin-top:8px';
+    var note = pv.querySelector('._ap2PvNote'); if(note) note.parentElement.insertBefore(n2, note);
+  }
+}
+function scan(){ try{ reminderNotes(); }catch(e){} if(window.__GC_IS_TYPING__) return; try{ scanText(); }catch(e){} try{ deskJob(); }catch(e){} try{ fieldCards(); }catch(e){} }
+window._gcAp3Scan = scan;
+RI.call(window, scan, 1500); scan();
+try{ console.log('[GC] ✉️ compose buttons on jobs, customers, subs and leads (patch AP3).'); }catch(e){}
+})();
+
 </script><!-- /INSP -->
 
 
