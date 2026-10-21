@@ -133521,16 +133521,19 @@ function adminTab(label){
   if (b) b.click(); return !!b;
 }
 function editRow(u){
-  var run = function(){
-    adminTab('Employees');
-    ST(function(){
+  var run = function(){ /* gate-fix-1: editRow keeps looking */
+    var tabbed = adminTab('Employees');
+    var look = function(n){
       var rows = Array.prototype.slice.call(D.querySelectorAll('main table tbody tr'));
       var row = rows.filter(function(tr){ var t = tr.textContent || ''; return t.indexOf(s(u.name)) >= 0 && (!u.email || t.toLowerCase().indexOf(low(u.email)) >= 0); })[0]
              || rows.filter(function(tr){ return (tr.textContent || '').indexOf(s(u.name)) >= 0; })[0];
       var btn = row && Array.prototype.filter.call(row.querySelectorAll('button'), function(x){ return s(x.textContent) === 'EDIT'; })[0];
-      if (btn) { btn.click(); ST(function(){ var m = D.querySelector('main'); if (m) m.scrollTop = 0; try { W.scrollTo(0, 0); } catch (e) {} }, 60); }
+      if (btn) { btn.click(); ST(function(){ var m = D.querySelector('main'); if (m) m.scrollTop = 0; try { W.scrollTo(0, 0); } catch (e) {} }, 60); return; }
+      if (!tabbed) tabbed = adminTab('Employees');
+      if (n < 30) ST(function(){ look(n + 1); }, 150);
       else toast('Open Admin → Employees and press EDIT on ' + s(u.name) + '.');
-    }, 120);
+    };
+    ST(function(){ look(0); }, 120);
   };
   if (view() !== 'admin') { go('admin'); ST(run, 700); } else run();
 }
