@@ -26,7 +26,7 @@ var L = {
     payRule: 'Invoices in by Wednesday are paid the following Friday.', stSubmitted: 'Submitted', stApproved: 'Approved', stScheduled: 'Scheduled for Friday pay', stPaid: 'Paid', stDeclined: 'Not approved — call the office', noInvoices: 'No invoices yet.', payOn: 'pay date', paidOn: 'paid',
     lien: 'A signed lien waiver is required for this job. Upload it under Papers.',
     msgPh: 'Write a message', noMsgs: 'No messages yet. Write to your Project Manager here.', read: 'Read', sentM: 'Sent', attach: '📎 Photo / file',
-    w9: 'W-9', coi: 'Insurance certificate (COI)', agreement: 'Agreement with GrayCo', lienW: 'Lien waivers', onFile: 'On file', missing: 'Not on file', sentFile: 'Sent — GrayCo is filing it', expires: 'Expires', expired: 'Expired', upload: 'Upload', uploadNew: 'Upload new', expDate: 'Date it runs out', language: 'Language',
+    w9: 'W-9', coi: 'Insurance certificate (COI)', agreement: 'Agreement with GrayCo', lienW: 'Lien waivers', onFile: 'On file', missing: 'Not on file', sentFile: 'Sent — GrayCo is filing it', expires: 'Expires', expired: 'Expired', upload: 'Upload', uploadNew: 'Upload new', expDate: 'Date it runs out', language: 'Language', score: 'Your GrayCo scorecard', scoreShow: 'Show my scorecard', scoreHide: 'Hide', scoreTips: 'How to raise it', scoreNote: 'From your on-time work, punch items, callbacks, paperwork and your PM\u2019s rating. Only you and GrayCo see it.',
     bidsTitle: 'GrayCo bids', bidsInvite: "You're invited to bid on GrayCo jobs at bids.grayco-cs.com.", bidsAccept: 'Accept invite', bidsPw: 'Choose a password for the bid site (8 or more characters)', bidsWaiting: 'Waiting for GrayCo approval. You get an e-mail when you can sign in.', bidsApproved: 'Approved — sign in with your e-mail and password.', bidsOpen: 'Open bids.grayco-cs.com', bidsOff: 'Bid site access is turned off. Call the office.', bidsNoEmail: 'GrayCo needs your e-mail on file first. Call the office.',
     signout: 'Sign out', saved: 'Sent to GrayCo', failed: 'That did not go through. Try again.', sending: 'Sending…', tooBig: 'That file is too big (4 MB at most).', pickFile: 'Pick a file first.',
     dlicense: 'GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769', jobsTo: 'Jobs to bid', loadFail: 'Could not load. Check your signal and try again.',
@@ -51,7 +51,7 @@ var L = {
     payRule: 'Las facturas recibidas antes del miércoles se pagan el viernes de la semana siguiente.', stSubmitted: 'Enviada', stApproved: 'Aprobada', stScheduled: 'Programada para el pago del viernes', stPaid: 'Pagada', stDeclined: 'No aprobada — llame a la oficina', noInvoices: 'Todavía no hay facturas.', payOn: 'fecha de pago', paidOn: 'pagada',
     lien: 'Este trabajo requiere una renuncia de gravamen (lien waiver) firmada. Súbala en Papeles.',
     msgPh: 'Escriba un mensaje', noMsgs: 'Todavía no hay mensajes. Escríbale a su Gerente de Proyecto aquí.', read: 'Leído', sentM: 'Enviado', attach: '📎 Foto / archivo',
-    w9: 'W-9', coi: 'Certificado de seguro (COI)', agreement: 'Acuerdo con GrayCo', lienW: 'Renuncias de gravamen', onFile: 'En archivo', missing: 'No está en archivo', sentFile: 'Enviado — GrayCo lo está archivando', expires: 'Vence', expired: 'Vencido', upload: 'Subir', uploadNew: 'Subir nuevo', expDate: 'Fecha en que vence', language: 'Idioma',
+    w9: 'W-9', coi: 'Certificado de seguro (COI)', agreement: 'Acuerdo con GrayCo', lienW: 'Renuncias de gravamen', onFile: 'En archivo', missing: 'No está en archivo', sentFile: 'Enviado — GrayCo lo está archivando', expires: 'Vence', expired: 'Vencido', upload: 'Subir', uploadNew: 'Subir nuevo', expDate: 'Fecha en que vence', language: 'Idioma', score: 'Su calificación con GrayCo', scoreShow: 'Ver mi calificación', scoreHide: 'Ocultar', scoreTips: 'Cómo subirla', scoreNote: 'Según trabajos a tiempo, pendientes, llamadas de garantía, papeles y la calificación de su gerente. Solo usted y GrayCo la ven.',
     bidsTitle: 'Licitaciones GrayCo', bidsInvite: 'Está invitado a licitar trabajos de GrayCo en bids.grayco-cs.com.', bidsAccept: 'Aceptar invitación', bidsPw: 'Escoja una contraseña para el sitio de licitaciones (8 caracteres o más)', bidsWaiting: 'Esperando la aprobación de GrayCo. Recibirá un correo cuando pueda entrar.', bidsApproved: 'Aprobado — entre con su correo y su contraseña.', bidsOpen: 'Abrir bids.grayco-cs.com', bidsOff: 'El acceso al sitio de licitaciones está apagado. Llame a la oficina.', bidsNoEmail: 'GrayCo necesita su correo en archivo primero. Llame a la oficina.',
     signout: 'Salir', saved: 'Enviado a GrayCo', failed: 'No se pudo enviar. Intente otra vez.', sending: 'Enviando…', tooBig: 'El archivo es muy grande (4 MB como máximo).', pickFile: 'Escoja un archivo primero.',
     dlicense: 'GrayCo Construction Services · TN #85034 BCB · AR #0486990627 · MS #27769', jobsTo: 'Trabajos para licitar', loadFail: 'No se pudo cargar. Revise su señal e intente otra vez.',
@@ -263,7 +263,26 @@ function papersTab(){
   var p = HOME.papers || {};
   var langBox = h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn' + (LANG === 'en' ? ' navy' : ''), 'aria-pressed': LANG === 'en' ? 'true' : 'false', disabled: LANG === 'en', text: 'English', on: { click: function(){ setLang('en', true); } } }), h('button', { type: 'button', class: 'btn' + (LANG === 'es' ? ' navy' : ''), 'aria-pressed': LANG === 'es' ? 'true' : 'false', disabled: LANG === 'es', text: 'Español', on: { click: function(){ setLang('es', true); } } })]);
   return [card(t('papers'), [paperRow('w9', t('w9'), p.w9 || {}), paperRow('coi', t('coi'), p.coi || {}, true), paperRow('agreement', t('agreement'), p.agreement || {}), paperRow('lien', t('lienW'), { onFile: false, sent: (p.lien || {}).sent })]),
-    card(t('language'), [langBox])];
+    card(t('language'), [langBox]), scoreCard()];
+}
+
+/* patch AUTO7: the scorecard — in Papers (the settings page), closed until they open it; only their own numbers */
+var SCORE = null, scoreOpen = false;
+function scoreCard(){
+  var box = h('div', { class: 'gc-score' });
+  function paint(){
+    box.innerHTML = '';
+    if (!scoreOpen) { box.appendChild(h('button', { type: 'button', class: 'btn', text: t('scoreShow'), on: { click: function(){ scoreOpen = true; if (!SCORE) api('p-score').then(function(j){ SCORE = j.score || null; paint(); }, function(){ SCORE = { err: true }; paint(); }); paint(); } } })); return; }
+    if (!SCORE) { box.appendChild(h('div', { class: 'muted', text: '…' })); return; }
+    if (SCORE.err) { box.appendChild(h('div', { class: 'muted', text: t('loadFail') })); return; }
+    box.appendChild(h('div', { style: 'display:flex;align-items:baseline;gap:10px' }, [h('b', { style: 'font-size:34px', text: String(SCORE.score) }), h('span', { style: 'font-size:22px;font-weight:700', text: SCORE.letter })]));
+    box.appendChild(h('div', { class: 'muted', text: t('scoreNote') }));
+    (SCORE.parts || []).forEach(function(x){ box.appendChild(h('div', { style: 'margin-top:6px' }, [h('b', { text: x.l + ' — ' + x.pct + '%' }), h('div', { class: 'muted', text: x.detail })])); });
+    if ((SCORE.tips || []).length) { box.appendChild(h('div', { style: 'margin-top:8px;font-weight:700', text: t('scoreTips') })); SCORE.tips.forEach(function(x){ box.appendChild(h('div', { text: '• ' + x })); }); }
+    box.appendChild(h('button', { type: 'button', class: 'btn', style: 'margin-top:8px', text: t('scoreHide'), on: { click: function(){ scoreOpen = false; paint(); } } }));
+  }
+  paint();
+  return card(t('score'), [box]);
 }
 
 /* ── ONE JOB ── */

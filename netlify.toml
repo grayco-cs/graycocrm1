@@ -97,6 +97,12 @@
 [functions."mkt-scheduled"]
   schedule = "*/15 * * * *"
 
+# Field & insurance automations (patch AUTO7, docs/FIELD-AUTOMATIONS.md): every 15 minutes — the 7 AM dispatch to the
+# superintendents (workdays), insurance closeout follow-ups to the adjuster every 7 days and stuck mortgage checks (9 AM),
+# warranty tickets nobody answered in 48 hours (to the admins), the one-year note (10 AM, news@). Each once.
+[functions."field-auto"]
+  schedule = "*/15 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.

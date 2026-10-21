@@ -1276,6 +1276,11 @@ async function aqSend(item, now){
      (then its e-mail, if it has one); a staff announcement goes to the company messages */
   if (AUTAI_POST[item.kind]) { const pr = await autaiPost(item, now); if (!pr.ok) return pr; if (item.channel === 'portal') { await autaiText(item); return { ok: true, posted: true }; } }
   if (item.kind === 'announcement') return autaiAnnounce(item, now);
+  if (item.kind === 'anniversary') {   /* patch AUTO7: the one-year note goes from news@ with the unsubscribe footer */
+    let h = s(item.html); try { h = await require('./_lib/brand.js').shellFor(h, { email: item.pmEmail, name: item.pm }); } catch (e) {}
+    const nr = await newsLib().sendNews({ to: item.to, subject: item.subject, html: h });
+    return nr.ok ? (nr.skipped ? { ok: true, skipped: nr.skipped } : { ok: true }) : { ok: false, error: nr.error || 'The e-mail did not go out (' + (nr.status || 'no answer') + ').' };
+  }
   if (item.channel === 'sms') { const t = await sendText(item.to, item.text); return t.ok ? { ok: true } : { ok: false, error: 'Texting is not set up yet (' + (t.skipped || 'no provider') + ').' }; }
   if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
@@ -2137,3 +2142,7 @@ Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: acti
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
+/* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */
+Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,
+  ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
+  pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });

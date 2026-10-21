@@ -51,6 +51,12 @@
    lead (source "Website / leads@ e-mail"), the admins' 🌐 new-lead alert, then the speed-to-lead reminders
    (_lib/bid-alerts.js). Mail for bids@ is handled exactly as before.
 
+   orders@ (patch AUTO7): supplier order confirmations. Google Workspace routing ALSO delivers supplier mail sent to
+   office@ to orders@in.grayco-cs.com (docs/ORDERS-SETUP.md). Mail for orders@ — or mail to this receiving domain that
+   is for none of bids@ / leads@ and is plainly a supplier's order confirmation — goes to _lib/fa-orders.js: a gc_orders
+   record matched to the job (PO, address, name), the Site Book delivery, the job schedule, the portal's "Materials
+   arriving". Mail for bids@ and leads@ is handled exactly as before.
+
    DOORS
      POST /.netlify/functions/bid-inbox            Resend webhook (signed)
      GET  ?ping=1                                  alive check, says nothing secret
@@ -71,6 +77,7 @@
      SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)
      optional: BID_INBOX_TO (default bids@in.grayco-cs.com,bids@grayco-cs.com),
                LEAD_INBOX_TO (default leads@in.grayco-cs.com,leads@grayco-cs.com),
+               ORDER_INBOX_TO (default orders@in.grayco-cs.com,orders@grayco-cs.com — patch AUTO7, supplier orders),
                BID_INBOX_TOKEN, BID_AI_MODEL (default claude-opus-5-5),
                BID_AI_TIMEOUT_MS, BID_INBOX_INLINE=1, LEAD_ADMINS (extra e-mails
                allowed to dismiss/merge; admins on the staff list always can),
@@ -324,6 +331,9 @@ function recipients(mail, data){
 }
 function leadAddrs(){ return (env('LEAD_INBOX_TO') || 'leads@in.grayco-cs.com,leads@grayco-cs.com').split(',').map(low).filter(Boolean); }
 function forLeads(mail, data){ return forBids(mail, data, leadAddrs()); }
+/* patch AUTO7: orders@ — supplier order confirmations (Google routing copies them from office@) */
+function orderAddrs(){ return (env('ORDER_INBOX_TO') || 'orders@in.grayco-cs.com,orders@grayco-cs.com').split(',').map(low).filter(Boolean); }
+function forOrders(mail, data){ return forBids(mail, data, orderAddrs()); }
 function forBids(mail, data, addrs){
   const want = addrs || inboxAddrs(), H = mail.headers || {};
   if (recipients(mail, data).some(x => want.indexOf(x) >= 0)) return true;
@@ -664,7 +674,9 @@ async function processEvent(evt, opts){
   if (otherInbox(data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const mail = await readMail(data);
   const leadMail = !forBids(mail, data) && forLeads(mail, data);   /* patch STL: leads@ — never when it is for bids@ too */
-  if (!leadMail && !forBids(mail, data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
+  /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
+  const orderMail = !leadMail && !forBids(mail, data) && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));
+  if (!leadMail && !orderMail && !forBids(mail, data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const own = ownOrAuto(mail); if (own) return { status: 200, body: { ok: true, ignored: own } };
   if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
   /* Google's forwarding / group set-up messages: kept for the owner, never a lead */
@@ -673,6 +685,10 @@ async function processEvent(evt, opts){
     return { status: 200, body: { ok: true, notice: true } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
+  if (orderMail) {   /* patch AUTO7 */
+    try { const r = await require('./_lib/fa-orders.js').fromEmail(mail); return { status: 200, body: Object.assign({ inbox: 'orders' }, r) }; }
+    catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this order yet (' + (e && e.message) + ') — retry.' } }; }
+  }
   if (leadMail) {
     try { const r = await require('./website-intake.js').fromEmail(mail); return { status: 200, body: Object.assign({ inbox: 'leads' }, r) }; }
     catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this lead yet (' + (e && e.message) + ') — retry.' } }; }
@@ -846,7 +862,7 @@ exports.handler = async function(event){
   const C = cors(event);
   if (event.httpMethod === 'OPTIONS') return J(200, {}, C);
   if (event.httpMethod === 'GET' && qs.ping)
-    return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(), leadsTo: leadAddrs(),
+    return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(), leadsTo: leadAddrs(), ordersTo: orderAddrs(),
       buildingConnectedApi: !!(env('BC_CLIENT_ID') && env('BC_CLIENT_SECRET') && env('BC_REFRESH_TOKEN')),
       bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
       phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')) }, C);
@@ -931,6 +947,6 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { isCommercial, estimatorOf, svixOk, verified, forBids, forLeads, leadAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { isCommercial, estimatorOf, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;

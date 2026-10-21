@@ -1096,5 +1096,103 @@ window._gcPortalSel = { reload: load, data: function(){ return D; } };
 })();
 
 </script>
+<script id="gc-portal-auto7">
+/* patch AUTO7 — on Home: "Materials arriving <day>" (supplier orders matched to the job — never prices), your warranty
+   (5 years on all roofing and on insurance work, 1 year on everything else) and "Report an issue": a few words and up
+   to 4 photos → a ticket for your Project Manager, who answers within 2 business days. Your tickets and their status
+   show here. Everything goes through /.netlify/functions/portal-extra with the same link code (or sign-in). */
+(function(){
+'use strict';
+if (window.__GC_PAUTO7__) return; window.__GC_PAUTO7__ = true;
+var FN = '/.netlify/functions/portal-extra', OFFICE = '901-585-0944';
+var token = '';
+try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
+var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
+function sess(){ try { return token ? '' : (localStorage.getItem('gc_portal_s') || ''); } catch (e) { return ''; } }
+function pid(){ try { return String(window.PID || ''); } catch (e) { return ''; } }
+var D = null, card = null, started = false, lastPid = '', open = false, busy = false, msg = '', photos = [], text = '';
+function h(tag, attrs, kids){
+  var el = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){ var v = attrs[k]; if (v == null || v === false) return; if (k === 'text') el.textContent = v; else if (k === 'on') Object.keys(v).forEach(function(e){ el.addEventListener(e, v[e]); }); else if ((k === 'href' || k === 'src') && !/^(https:\/\/|tel:|data:image\/)/i.test(String(v))) return; else el.setAttribute(k, v === true ? '' : String(v)); });
+  (kids || []).forEach(function(c){ if (c == null || c === false) return; el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return el;
+}
+function day(d){ var x = new Date(d + 'T12:00:00'); return isNaN(x) ? d : x.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }); }
+function dt(d){ var x = new Date(String(d).length === 10 ? d + 'T12:00:00' : d); return isNaN(x) ? '' : x.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function api(body){
+  var hd = { 'Content-Type': 'application/json' }; if (sess()) hd['x-portal-session'] = sess(); else hd['x-portal-token'] = token;
+  return fetch(FN, { method: 'POST', headers: hd, body: JSON.stringify(Object.assign(PREVIEW ? { preview: true } : {}, sess() ? { projectId: pid() || undefined } : {}, body)), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { status: r.status, data: j || {} }; }); });
+}
+function small(file){
+  return new Promise(function(res){
+    if (!file || !/^image\//.test(file.type)) return res(null);
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){ var k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.82)); };
+    img.onerror = function(){ URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  });
+}
+function load(){ api({ action: 'info' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; draw(); } }); }
+function draw(){
+  var c = h('section', { class: 'card', id: 'gcAuto7' });
+  var mats = (D.materials || [])[0];
+  if (mats) c.appendChild(h('div', { class: 'gc7-mat', style: 'background:#FFF6DC;border-radius:10px;padding:10px 12px;font-weight:700' }, ['🚚 Materials arriving ' + day(mats.day)]));
+  var w = D.warranty || {};
+  c.appendChild(h('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:' + (mats ? '10px' : '0') }, [
+    h('div', { style: 'flex:1;min-width:180px' }, [h('b', { text: w.label || 'Your warranty' }), h('div', { class: 'muted', text: w.start ? (w.inWarranty ? 'Covered until ' + dt(w.end) + '.' : 'Ended ' + dt(w.end) + ' — we are still glad to help.') : 'Starts the day your job is complete.' })]),
+    h('button', { type: 'button', class: 'btn gold', id: 'gc7Report', 'aria-expanded': open ? 'true' : 'false', text: open ? 'Close' : '🛠 Report an issue', on: { click: function(){ open = !open; msg = ''; draw(); } } })
+  ]));
+  if (open) {
+    var ta = h('textarea', { rows: '4', id: 'gc7Text', style: 'width:100%;box-sizing:border-box;margin-top:10px;font:inherit;padding:8px;border-radius:8px;border:1px solid #ccc', placeholder: 'What is wrong, and where? (for example: a leak at the back bedroom ceiling)', 'aria-label': 'What is wrong' });
+    ta.value = text; ta.addEventListener('input', function(){ text = ta.value; });
+    var pick = h('input', { type: 'file', id: 'gc7File', accept: 'image/*', multiple: true, style: 'display:none' });
+    pick.addEventListener('change', function(){ var fs = Array.prototype.slice.call(pick.files || [], 0, 4 - photos.length); Promise.all(fs.map(small)).then(function(l){ photos = photos.concat(l.filter(Boolean)).slice(0, 4); draw(); }); });
+    var thumbs = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px' }, photos.map(function(u, i){ return h('button', { type: 'button', title: 'Remove', style: 'border:0;padding:0;background:none', on: { click: function(){ photos.splice(i, 1); draw(); } } }, [h('img', { src: u, alt: 'photo ' + (i + 1), style: 'width:64px;height:64px;object-fit:cover;border-radius:8px' })]); }));
+    c.appendChild(ta); c.appendChild(thumbs); c.appendChild(pick);
+    c.appendChild(h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px' }, [
+      photos.length < 4 ? h('button', { type: 'button', class: 'btn', text: '📷 Add photos (' + photos.length + '/4)', on: { click: function(){ pick.click(); } } }) : null,
+      h('button', { type: 'button', class: 'btn gold', id: 'gc7Send', disabled: busy ? true : null, text: busy ? 'Sending…' : 'Send to my Project Manager', on: { click: send } })
+    ]));
+    if (msg) c.appendChild(h('div', { role: 'status', style: 'margin-top:6px;font-weight:700', text: msg }));
+    c.appendChild(h('div', { class: 'muted', style: 'margin-top:6px', text: 'Water coming in right now or anything unsafe? Call ' + OFFICE + '.' }));
+  } else if (msg) c.appendChild(h('div', { role: 'status', style: 'margin-top:6px;font-weight:700', text: msg }));
+  (D.tickets || []).slice(0, 5).forEach(function(t){
+    c.appendChild(h('div', { class: 'gc7-t', style: 'border-top:1px solid #eee;margin-top:8px;padding-top:8px' }, [h('b', { text: (t.open ? '🛠 ' : '✅ ') + t.statusText }), h('div', { class: 'muted', text: dt(t.at) + ' — ' + t.text }), t.reply ? h('div', { text: 'Your PM: ' + t.reply }) : null, t.visit ? h('div', { text: 'Visit: ' + day(t.visit) }) : null]));
+  });
+  card = c; place();
+}
+function send(){
+  if (busy) return; if (String(text).trim().length < 5) { msg = 'Tell us what is wrong (a few words is fine).'; draw(); return; }
+  busy = true; draw();
+  api({ action: 'issue', text: text, photos: photos }).then(function(r){
+    busy = false;
+    if (r.data && r.data.ok) { open = false; text = ''; photos = []; msg = '✓ Sent. Your Project Manager will reach out within 2 business days.'; load(); }
+    else { msg = (r.data && r.data.error) || 'That did not go through — try again, or call ' + OFFICE + '.'; draw(); }
+  }, function(){ busy = false; msg = 'No connection — try again, or call ' + OFFICE + '.'; draw(); });
+}
+function homeShown(){ var t = document.getElementById('tabs'); if (!t || t.hidden) return false; var b = document.querySelector('nav.tabs button[data-tab="home"]'); return !b || b.getAttribute('aria-selected') === 'true'; }
+function place(){
+  var main = document.getElementById('main'); if (!main) return;
+  if (!card || !homeShown()) { if (card && card.parentNode) card.parentNode.removeChild(card); return; }
+  var host = main.querySelector('.col-r') || main;
+  if (card.parentNode === host) return;
+  host.appendChild(card);
+}
+function start(){
+  if (window.GCPartner) return;   /* the sub portal has no warranty card */
+  if (started && sess() && pid() !== lastPid) { lastPid = pid(); D = null; if (card && card.parentNode) card.parentNode.removeChild(card); card = null; load(); return; }
+  if (started || !(token || sess())) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
+  started = true; lastPid = pid(); load();
+}
+try {
+  new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: false });
+  var tb = document.getElementById('tabs'); if (tb) new MutationObserver(function(){ start(); place(); }).observe(tb, { attributes: true, subtree: true, attributeFilter: ['hidden', 'aria-selected'] });
+} catch (e) {}
+start();
+window._gcPortalAuto7 = { reload: load, data: function(){ return D; } };
+})();
+</script>
 </body>
 </html>

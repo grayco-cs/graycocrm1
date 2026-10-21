@@ -789,6 +789,13 @@ async function pHome(ctx){
     payRule: 'wed-fri'
   };
 }
+/* patch AUTO7: the sub scorecard — only this sub's own numbers, never anyone else's */
+async function pScore(ctx){
+  const more = await kvRead(['schedule', 'punch', 'gc_warranty_tickets', 'gc_sub_ratings']);
+  const FA = require('./_lib/fa-core.js');
+  const sc = FA.subScore(ctx.sub, { schedule: arr(ctx.data.schedule).length ? ctx.data.schedule : more.schedule, punch: arr(ctx.data.punch).length ? ctx.data.punch : more.punch, tickets: more.gc_warranty_tickets, ratings: more.gc_sub_ratings });
+  return { ok: true, score: sc };
+}
 function punchIsSub(x, sub){ return s(x.subId) ? s(x.subId) === s(sub.id) : rowIsSub({ name: x.assignee || x.sub }, sub); }
 function schedFor(data, jobs, sub){
   const pids = new Set(jobs.map(function(p){ return s(p.id); })), nm = jobs.reduce(function(m, p){ m[s(p.id)] = s(p.name); return m; }, {});
@@ -850,6 +857,7 @@ function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) ==
 async function partnerAction(action, body, ctx){
   const sub = ctx.sub;
   if (action === 'p-home') return pHome(ctx);
+  if (action === 'p-score') return pScore(ctx);   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
   if (action === 'p-job') return pJob(ctx, body.projectId);
   if (action === 'p-upload') {
     if (body.projectId) jobOf(ctx, body.projectId);

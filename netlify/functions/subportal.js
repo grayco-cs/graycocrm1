@@ -1075,9 +1075,13 @@ function crmSubList(data){
 }
 async function crmSubs(){
   const data = await crmData();
+  /* patch AUTO7: each sub's scorecard (0–100 + a letter) — the best first when picking who gets the bid package */
+  let more = {}; try { more = await kvRead(['schedule', 'punch', 'gc_warranty_tickets', 'gc_sub_ratings']); } catch (e) {}
+  const FA = require('./_lib/fa-core.js');
   return crmSubList(data).filter(function(r){ return s(r.id); }).map(function(r){
-    return { id: s(r.id), name: s(r.name || r.company), company: s(r.company), email: low(r.email), phone: s(r.phone), trade: s(r.trade || r.cat) };
-  }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+    let sc = null; try { sc = FA.subScore(r, { schedule: more.schedule, punch: more.punch, tickets: more.gc_warranty_tickets, ratings: more.gc_sub_ratings }); } catch (e) {}
+    return { id: s(r.id), name: s(r.name || r.company), company: s(r.company), email: low(r.email), phone: s(r.phone), trade: s(r.trade || r.cat), score: sc ? sc.score : null, grade: sc ? sc.letter : '' };
+  }).sort(function(a, b){ return (b.score == null ? -1 : b.score) - (a.score == null ? -1 : a.score) || a.name.localeCompare(b.name); });
 }
 function ymd(v){
   if (!v) return '';
