@@ -76716,7 +76716,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       ov.innerHTML = header(isNew?'Add to Schedule':'Edit Schedule')
         + '<div style="padding:16px 16px 40px;">'
           +'<label style="'+lbl+'">Date</label><input id="_fsDate" type="date" value="'+esc(editing.date||'')+'" style="'+inp+'">'
-          +'<label style="'+lbl+'">Job</label><select id="_fsJob" style="'+inp+'">'+projOpts+'</select>'
+          +'<label style="'+lbl+'">Job</label><select id="_fsJob" style="'+inp+'">'+projOpts+'</select>'+'<div id="_fsNewCust" style="margin-top:8px;padding:10px 12px;border:1px dashed #2563eb;border-radius:10px"><div style="color:#93c5fd;font-weight:700;font-size:13px">\u2026or an appointment with a new customer (it becomes your lead)</div>'+'<input id="_fsCust" placeholder="Customer name" value="'+esc(editing.customer||'')+'" style="'+inp+';margin-top:8px;">'+'<input id="_fsPhone" type="tel" placeholder="Phone" value="'+esc(editing.phone||'')+'" style="'+inp+';margin-top:8px;">'+'<input id="_fsAddr" placeholder="Address" value="'+esc(editing.address||'')+'" style="'+inp+';margin-top:8px;"></div>'
           +'<label style="'+lbl+'">Who\u2019s on it (sub / crew)</label><select id="_fsSub" style="'+inp+'">'+subOpts+'</select>'
           +'<input id="_fsSubType" placeholder="\u2026or type a name" value="'+esc((subs().some(function(s){return (s.name||s.company)===(editing.vendor||editing.assignee);})?'':(editing.vendor||editing.assignee||'')))+'" style="'+inp+';margin-top:8px;">'
           +'<label style="'+lbl+'">What / task</label><input id="_fsTitle" value="'+esc(editing.title||editing.task||'')+'" placeholder="e.g. Hang drywall, punch list\u2026" style="'+inp+'">'
@@ -76735,6 +76735,10 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
         editing.title=ov.querySelector('#_fsTitle').value.trim()||'Work';
         editing.time=ov.querySelector('#_fsTime').value.trim();
         if(!editing.date){ alert('Pick a date.'); return; }
+        try{ var _nc=ov.querySelector('#_fsCust'), _na=ov.querySelector('#_fsAddr'), _np=ov.querySelector('#_fsPhone');   /* patch CC2: a new customer's appointment is their lead */
+          if(_na && !editing.pid && (_na.value.trim() || (_nc && _nc.value.trim()))){ editing.customer=_nc?_nc.value.trim():''; editing.phone=_np?_np.value.trim():''; editing.address=_na.value.trim(); editing.type=editing.type||'appointment';
+            if(editing.title==='Work' && editing.customer) editing.title='Appointment: '+editing.customer;
+            if(window._gcSelfApptLink && editing.address) editing=await window._gcSelfApptLink(editing); } }catch(_cc2){}
         var list=schedule().slice();
         var ix=list.findIndex(function(x){return x&&x.id===editing.id;});
         if(ix>=0) list[ix]=editing; else list.push(editing);
@@ -114293,7 +114297,7 @@ function jobFor(p){
     ccamId: String(p.id), ccProjectId: String(p.id), ccamUrl: p.url, companyCamUrl: p.url, ccCreator: p.creator || '',
     created: ymd(sec), createdAt: iso, keepAsJob: true, _ccAuto: true, savedAt: iso, updatedAt: iso };
   var pm = ccPmName(p);
-  if (pm) { j.pm = pm; j.leadSource = pm; j.broughtInBy = pm; j.commissionSource = 'self'; j.pmSourced = true; }
+  if (pm) { j.pm = pm; j.leadSource = 'Self-generated (' + pm + ')'; j.broughtInBy = pm; j.commissionSource = 'self'; j.pmSourced = true; j.selfGenerated = true; j.owner = pm; j.createdBy = pm; }   /* patch CC2 */
   return j;
 }
 async function makeJobs(items, byHand){
@@ -126233,7 +126237,7 @@ function headHtml(){
     if (S.screen === 'projects') {
       var cnt = { All: 0, Leads: 0, Bidding: 0, Active: 0, Completed: 0 };
       items().forEach(function(it){ cnt.All++; cnt[it.section]++; });
-      h += '<input id="gcu-q" class="gcu-search" type="text" inputmode="search" placeholder="Find a project, address or person" aria-label="Find a project, address or person" value="' + esc(S.q) + '" autocomplete="off">' +
+      h += '<button type="button" data-a="newproj" style="width:100%;height:40px;margin:0 0 8px;border:0;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:15px;cursor:pointer">＋ New project</button>' + '<input id="gcu-q" class="gcu-search" type="text" inputmode="search" placeholder="Find a project, address or person" aria-label="Find a project, address or person" value="' + esc(S.q) + '" autocomplete="off">' +
         '<div class="gcu-sx" role="tablist">' + SECTIONS.map(function(x){ return '<button class="gcu-sec' + (S.section === x ? ' on' : '') + '" data-a="sec" data-v="' + x + '" role="tab" aria-selected="' + (S.section === x) + '"><i style="background:' + (SEC_COLOR[x] || '#fff') + '"></i>' + x + ' <em>' + cnt[x] + '</em></button>'; }).join('') + '</div>';
     }
     return h;
@@ -126942,6 +126946,7 @@ function onClick(ev){
     case 'back': return back();
     case 'closelayer': return closeLayer();
     case 'tab': S.more = 30; return go(v);
+    case 'newproj': if (window._gcSelfNewJob) window._gcSelfNewJob({ via: 'GrayCo Photos', done: function(j){ itemsMemo = null; setTimeout(function(){ itemsMemo = null; go('job', { jobId: j.id, jobTab: 'photos', filter: 'All', sel: null }); }, 700); } }); return;   /* patch CC2 */
     case 'sec': S.section = v; S.more = 30; setHTML(root.querySelector('.gcu-hd'), headHtml()); bindHead(); return renderMain();
     case 'more': S.more += 30; return renderMain();
     case 'job': closeLayer(); return go('job', { jobId: id, jobTab: b.getAttribute('data-tab') || 'photos', filter: 'All', sel: null });
@@ -130999,7 +131004,7 @@ function formOk(z, prev, say){
     if (z.dueToEmail) z.dueToEmail = low(z.dueToEmail);
     var at = nowIso(), who = myName() || myEmail() || 'GrayCo';
     if (due !== s(prev && prev.bidDue)) { if (prev && prev.inboxId && !prev.bidDueManual) z.bidDueInboxWas = s(prev.bidDue); z.bidDueManual = true; z.bidDueBy = who; z.bidDueAt = at; }
-    if (!s(z.pm) && !s(prev && prev.pm) && isCommercialLead(z)) { var est = estimator(); if (est.name || est.email) { z.pm = est.name || est.email; z.pmEmail = est.email; z.estimator = est.name; z.estimatorEmail = est.email; } }
+    if (!s(z.pm) && !s(prev && prev.pm) && isCommercialLead(z) && !(typeof W._gcSelfOwns === 'function' && W._gcSelfOwns())) {   /* patch CC2: theirs when a PM enters it */ var est = estimator(); if (est.name || est.email) { z.pm = est.name || est.email; z.pmEmail = est.email; z.estimator = est.name; z.estimatorEmail = est.email; } }
     if (s(z.pm) && s(z.pm) !== s(prev && prev.pm)) { z.assignedBy = who; z.assignedAt = at; z.pmEmail = z.pmEmail || emailOfName(z.pm) || (low(z.pm) === low(estimator().name) ? estimator().email : ''); }
     if (!prev && isBid(z) && !z.bidStatus) z.bidStatus = 'Reviewing';
     if (!prev && !z.createdAt) z.createdAt = at;
@@ -131389,6 +131394,264 @@ function scan(){ try{ reminderNotes(); }catch(e){} if(window.__GC_IS_TYPING__) r
 window._gcAp3Scan = scan;
 RI.call(window, scan, 1500); scan();
 try{ console.log('[GC] ✉️ compose buttons on jobs, customers, subs and leads (patch AP3).'); }catch(e){}
+})();
+
+</script>
+<script>
+/* ═══ patch CC2 (__GC_PATCH_CC2__) — what a person makes themselves is THEIR lead ═══════════════════════
+   Owner, 10/21: "When Steven adds jobs into GrayCo Photos, or adds a project from field view when he gets an
+   appointment and sets his time in his schedule — when he adds jobs to the CRM or Photos himself, which then
+   creates a project — those are his leads."
+
+   A job or lead a signed-in person makes on this computer — desk forms, the Lead Pipeline "+ Add", field view
+   "＋ New project", GrayCo Photos "＋", an appointment on the schedule for a new customer/address — is stamped:
+     createdBy / createdByEmail / createdAt (every new job and lead);
+     PM = them when nobody was picked (an admin's own pick is kept), lead owner, leadSource / source
+     "Self-generated (<name>)", broughtInBy, commissionSource 'self', pmSourced — so it is in their Leads, their
+     Pipeline, their dashboard. Admins reassign as before (a PM set later is never overwritten).
+   Not stamped: imports and bids (CompanyCam, QuickBooks, Lead Inbox / bid watchers, RoofScout, the website, a
+   job converted from a lead keeps the lead's people); records that arrive from another computer; anything old.
+   A commercial / bid lead an admin or the office enters with nobody assigned still goes to the default
+   estimator (Glenn); one a PM or estimator enters is theirs.
+   Schedule: an appointment with no job but an address → the job at that address (an unowned one becomes
+   theirs), else that address's lead (unowned → theirs), else a new Bidding job of theirs, linked to the entry.
+   Console: _gcSelfStatus()   _gcSelfNewJob({via})   _gcSelfStamp(record, 'job'|'lead', via)
+   ════════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_CC2__) return; window.__GC_PATCH_CC2__ = true;
+var W = window;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+var LOG = [], stats = { jobs: 0, leads: 0, appts: 0, made: 0 };
+
+/* ── who is making it ── */
+function me(){
+  var u = null;
+  try { if (typeof W._gcMeUser === 'function') u = W._gcMeUser(); } catch (e) {}
+  if (!u || !u.name) { try { u = W._gcMeNow; } catch (e) {} }
+  var email = ''; try { email = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
+  var users = arr(W._crm && W._crm.users), byEmail = email && users.filter(function(x){ return x && low(x.email) === email; })[0];
+  if (byEmail && byEmail.name) u = byEmail;
+  var name = s(u && u.name) || (function(){ try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } })();
+  var admin = false; try { admin = !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) {}
+  if (!admin) admin = /^admin$/i.test(s(u && u.role)) || low(u && u.payType) === 'owner';
+  var office = !admin && (/^office@/.test(email) || /office/i.test(s(u && u.role)));
+  return { name: name, email: email || low(u && u.email), admin: admin, office: office };
+}
+W._gcSelfOwns = function(){ var m = me(); return !!m.name && !m.admin && !m.office; };   /* a PM / estimator / staff: a commercial lead they enter is theirs */
+
+/* ── a person is doing this (trusted input in the last 90 s) ── */
+var lastInput = 0;
+['pointerdown', 'keydown', 'click', 'touchstart', 'change'].forEach(function(t){ document.addEventListener(t, function(e){ if (e.isTrusted) lastInput = Date.now(); }, true); });
+function personNow(){ return Date.now() - lastInput < 90000; }
+
+/* ── the stamp ── */
+var IMPORT_ID = /^(PRJcc_|PRJqb|QB_|LCCR_|intake:|appr_|RI[A-Za-z0-9]|LI_|BIDW_|RS_)/;
+function imported(r){
+  if (!r) return true;
+  if (IMPORT_ID.test(s(r.id))) return true;
+  if (r.inboxId || r.rsLeadId || r.launchedFrom || r.intakeId || r._ccAuto || r._ccServer || r._ccImported || r.qbId || r.qbCustomerId || r.bidPortal || r.bidOppId || r.fromBid || r.fromLeadId || r.importedAt) return true;
+  return /quickbooks|companycam|buildingconnected|planhub|planroom|bid ?watch|lead inbox|website|roofscout|gmail scanner|ai scanner/i.test(s(r.source) + ' ' + s(r.leadSource) + ' ' + s(r.createdBy));
+}
+function idMs(id){ var m = /^[A-Z]{2,4}([0-9a-z]{8,9})/.exec(s(id)); if (!m) return 0; var t = parseInt(m[1], 36); return t > 1.6e12 && t < 4e12 ? t : 0; }
+function fresh(r){
+  var t = Date.parse(r.createdAt || '') || (typeof r.createdAt === 'number' ? r.createdAt : 0) || idMs(r.id);
+  if (!t && /^\d{4}-\d{2}-\d{2}$/.test(s(r.created).slice(0, 10)) && s(r.created).slice(0, 10) === today()) return true;
+  if (!t) { var c = Date.parse(r.created || ''); if (c) t = c; }
+  return !!t && Math.abs(Date.now() - t) < 30 * 60000;
+}
+function isCommercial(l){ return /commercial|government/i.test(s(l.type) + ' ' + s(l.leadKind) + ' ' + s(l.projectType)) || /buildingconnected|planhub|planroom/i.test(s(l.source)); }
+/* fills only what is empty; returns a NEW object */
+function stamp(r, kind, via, m){
+  m = m || me(); if (!m.name) return r;
+  var o = Object.assign({}, r), at = nowIso();
+  o.createdBy = o.createdBy || m.name; o.createdByEmail = o.createdByEmail || m.email; o.createdAt = o.createdAt || at; o.createdVia = o.createdVia || via || '';
+  var keepRouting = kind === 'lead' && isCommercial(o) && (m.admin || m.office);   /* the office entering a bid: the default estimator routing stays */
+  if (!s(o.pm) && !keepRouting) o.pm = m.name;
+  if (low(o.pm) === low(m.name)) {
+    var label = 'Self-generated (' + m.name + ')';
+    o.selfGenerated = true; o.leadSource = label; o.broughtInBy = o.broughtInBy || m.name; o.commissionSource = 'self'; o.pmSourced = true; o.owner = o.owner || m.name;
+    if (kind === 'lead') { o.addedBy = o.addedBy || m.name; o.source = s(o.source) || label; o.assignedTo = o.assignedTo || m.name; o.pmEmail = o.pmEmail || m.email; o.assignedBy = o.assignedBy || m.name; o.assignedAt = o.assignedAt || at; }
+  } else if (kind === 'lead') o.addedBy = o.addedBy || m.name;
+  o.updatedAt = o.savedAt = at;
+  return o;
+}
+W._gcSelfStamp = function(r, kind, via){ return stamp(r, kind || 'job', via); };
+function manual(what){ try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow(what); } catch (e) {} ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500); }
+
+/* ── new jobs, leads and schedule entries on this computer ── */
+var base = { projects: null, leads: null, schedule: null }, lastLen = {}, stableAt = {};
+function learn(key, list){
+  if (!Array.isArray(list)) return null;
+  if (!base[key]) {
+    var n = list.length;
+    if (lastLen[key] !== n) { lastLen[key] = n; stableAt[key] = Date.now(); return null; }
+    if (Date.now() - stableAt[key] < 6000) return null;               /* the first load has settled */
+    base[key] = {}; list.forEach(function(r){ if (r && r.id) base[key][r.id] = 1; });
+    return null;
+  }
+  var fresh_ = [];
+  list.forEach(function(r){ if (r && r.id && !base[key][r.id]) { base[key][r.id] = 1; fresh_.push(r); } });
+  return fresh_;
+}
+function want(r){ return r && !s(r.createdBy) && personNow() && !imported(r) && fresh(r); }
+function applyTo(setter, ids, fn){
+  var S = W[setter]; if (typeof S !== 'function' || !Object.keys(ids).length) return;
+  manual('self-generated');
+  try { S(function(prev){ if (!Array.isArray(prev)) return prev; var ch = false, out = prev.map(function(r){ if (r && ids[r.id]) { var x = fn(r); if (x !== r) ch = true; return x; } return r; }); return ch ? out : prev; }); } catch (e) {}
+}
+function tick(){
+  try {
+    var m = me(); if (!m.name) return;
+    /* jobs (the screen's list) */
+    var nj = learn('projects', W._crm && W._crm.projects);
+    if (nj && nj.length) {
+      var ids = {}; nj.forEach(function(r){ if (want(r)) ids[r.id] = 1; });
+      if (Object.keys(ids).length) { applyTo('_setProjects', ids, function(r){ return r.createdBy ? r : stamp(r, 'job', 'desk', m); }); stats.jobs += Object.keys(ids).length; LOG.push({ at: nowIso(), jobs: Object.keys(ids) }); }
+    }
+    /* leads (looked at through the setter, like the lead alerts do) */
+    if (typeof W._setLeads === 'function') {
+      W._setLeads(function(prev){
+        var nl = learn('leads', prev);
+        if (!nl || !nl.length) return prev;
+        var ids2 = {}; nl.forEach(function(r){ if (want(r)) ids2[r.id] = 1; });
+        if (!Object.keys(ids2).length) return prev;
+        stats.leads += Object.keys(ids2).length; LOG.push({ at: nowIso(), leads: Object.keys(ids2) }); manual('self-generated lead');
+        return prev.map(function(r){ return r && ids2[r.id] && !r.createdBy ? stamp(r, 'lead', 'desk', m) : r; });
+      });
+    }
+    /* schedule: an appointment for a new customer / address */
+    if (typeof W._setSchedule === 'function') W._setSchedule(function(prev){
+      var ns = learn('schedule', prev);
+      if (ns && ns.length && personNow()) ns.forEach(function(e){ if (e && !s(e.pid) && !s(e.leadId) && s(e.address) && !e._apptLinked) ST.call(W, function(){ apptLink(e, m, true); }, 0); });
+      return prev;
+    });
+  } catch (e) { try { console.warn('[GC CC2]', e); } catch (x) {} }
+}
+
+/* ── an appointment → its job or lead ── */
+var SUF = { street: 'st', road: 'rd', avenue: 'ave', av: 'ave', drive: 'dr', lane: 'ln', court: 'ct', boulevard: 'blvd', highway: 'hwy', place: 'pl', circle: 'cir', parkway: 'pkwy', cove: 'cv', terrace: 'ter', trail: 'trl', north: 'n', south: 's', east: 'e', west: 'w' };
+function normAddr(a){ var l = low(a).split(',')[0].replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); if (!/\d/.test(l)) return ''; return l.split(' ').map(function(w){ return SUF[w] || w; }).join(''); }
+function owned(l){ return ['pm', 'estimator', 'owner', 'assignedTo', 'addedBy', 'createdBy', 'by'].some(function(f){ return !!s(l[f]); }); }
+var leadsNow = [];
+function readLeads(){ return new Promise(function(res){ var done = false; try { W._setLeads(function(prev){ if (!done) { done = true; leadsNow = arr(prev); res(leadsNow); } return prev; }); } catch (e) {} ST.call(W, function(){ if (!done) { done = true; Promise.resolve(W.idbGet ? W.idbGet('leads') : []).then(function(v){ res(arr(v)); }, function(){ res([]); }); } }, 400); }); }
+function newJob(o, m, via){
+  var j = { id: 'PRJ' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), name: s(o.name) || s(o.client) || s(o.address) || 'New job', client: s(o.client), clientPhone: s(o.phone), clientEmail: s(o.email),
+    address: s(o.address), type: s(o.type) || 'Residential Reno', status: o.kind === 'active' ? 'active' : 'bidding', contract: 0, scope: '', notes: s(o.notes), keepAsJob: true, created: today() };
+  return stamp(j, 'job', via, m);
+}
+function addJob(j){
+  base.projects = base.projects || {}; base.projects[j.id] = 1;
+  manual('self-generated job');
+  try { if (typeof W._setProjects === 'function') W._setProjects(function(prev){ prev = arr(prev); return prev.some(function(x){ return x && x.id === j.id; }) ? prev : prev.concat([j]); }); } catch (e) {}
+  stats.made++; LOG.push({ at: nowIso(), made: j.id, via: j.createdVia });
+  return j;
+}
+function addLead(l){
+  base.leads = base.leads || {}; base.leads[l.id] = 1;
+  manual('self-generated lead');
+  try { if (typeof W._setLeads === 'function') W._setLeads(function(prev){ prev = arr(prev); return prev.some(function(x){ return x && x.id === l.id; }) ? prev : prev.concat([l]); }); } catch (e) {}
+  stats.made++; LOG.push({ at: nowIso(), madeLead: l.id, via: l.createdVia });
+  return l;
+}
+/* returns the entry linked: { pid } to a job, or { leadId } to a lead; writes the job / lead (and, when asked, the entry) */
+function apptLink(e, m, writeEntry){
+  m = m || me(); var a = normAddr(e.address), out = { _apptLinked: true, by: e.by || m.name, createdBy: e.createdBy || m.name };
+  var jobs = arr(W._crm && W._crm.projects);
+  var job = a && jobs.filter(function(p){ return p && normAddr(p.address) === a && !/^(lost|cancell?ed|dead|declined)$/i.test(s(p.status)); })[0];
+  var finish = function(){
+    if (writeEntry) { stats.appts++; try { W._setSchedule(function(prev){ return arr(prev).map(function(x){ return x && x.id === e.id ? Object.assign({}, x, out) : x; }); }); } catch (er) {} }
+    return Object.assign({}, e, out);
+  };
+  if (job) {
+    out.pid = job.id;
+    if (!s(job.pm)) { var ids = {}; ids[job.id] = 1; applyTo('_setProjects', ids, function(r){ return s(r.pm) ? r : stamp(r, 'job', 'schedule', m); }); }
+    return Promise.resolve(finish());
+  }
+  return readLeads().then(function(leads){
+    var lead = a && leads.filter(function(l){ return l && !l.converted && normAddr(l.address || l.jobAddress) === a; })[0];
+    if (lead) {
+      out.leadId = lead.id;
+      if (!owned(lead)) { try { manual('self-generated lead'); W._setLeads(function(prev){ return arr(prev).map(function(l){ return l && l.id === lead.id && !owned(l) ? stamp(l, 'lead', 'schedule', m) : l; }); }); } catch (er) {} LOG.push({ at: nowIso(), leadOwned: lead.id }); }
+      return finish();
+    }
+    var j = addJob(newJob({ name: s(e.customer) || s(e.client) || s(e.title !== 'Work' ? e.title : '') || s(e.address), client: s(e.customer) || s(e.client), phone: s(e.phone), address: s(e.address), notes: 'Appointment ' + s(e.date) + (e.time ? ' ' + s(e.time) : '') }, m, 'schedule'));
+    out.pid = j.id;
+    return finish();
+  });
+}
+/* the field schedule saves its whole list at once: anything that redraws the schedule a moment later from an older copy
+   could drop the new entry — it is put back (once it is gone from the screen, never twice) */
+function ensureEntry(e){
+  [2500, 6000, 12000, 20000, 30000, 45000].forEach(function(ms){ ST.call(W, function(){
+    try { if (!e || !e.id || typeof W._setSchedule !== 'function') return;
+      if (typeof W._gcIsTombstoned === 'function' && W._gcIsTombstoned('schedule', e.id)) return;
+      /* the page's own copy (window._crm.schedule) is only refreshed when the job list changes; older code redraws the
+         schedule from it — so the entry goes there too */
+      try { var cs = W._crm && W._crm.schedule; if (Array.isArray(cs) && !cs.some(function(x){ return x && x.id === e.id; })) W._crm.schedule = cs.concat([e]); } catch (x) {}
+      W._setSchedule(function(prev){ prev = arr(prev); if (prev.some(function(x){ return x && x.id === e.id; })) return prev;
+        var next = prev.concat([e]); manual('appointment'); LOG.push({ at: nowIso(), entryBack: e.id });
+        ST.call(W, function(){ try { if (W._supaUpsert) W._supaUpsert('schedule', next); } catch (x) {} }, 800);
+        return next; });
+    } catch (x) {}
+  }, ms); });
+}
+W._gcSelfApptLink = function(e){ return apptLink(e, me(), false).then(function(x){ ensureEntry(x); return x; }); };
+
+/* ── "＋ New project" (field view, GrayCo Photos) ── */
+W._gcSelfNewJob = function(opts){
+  opts = opts || {};
+  var m = me(); if (!m.name) { alert('Sign in first.'); return; }
+  var old = document.getElementById('gc-cc2-new'); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = 'gc-cc2-new'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(6,12,20,.72);display:flex;align-items:flex-end;justify-content:center;font-family:Inter,-apple-system,sans-serif';
+  var inp = 'width:100%;box-sizing:border-box;padding:13px;border-radius:10px;border:1px solid #2563eb;background:#0f2440;color:#e2e8f0;font-size:16px;margin-top:4px';
+  var lbl = 'display:block;color:#93c5fd;font-weight:700;font-size:13px;margin-top:12px';
+  ov.innerHTML = '<div role="dialog" aria-label="New project" style="background:#0a1628;width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom,0px));max-height:92vh;overflow:auto">'
+    + '<div style="color:#fff;font-size:20px;font-weight:800">＋ New project</div>'
+    + '<div style="color:#8fa8c4;font-size:13px;margin-top:4px">It is your lead: you are its PM (' + esc(m.name) + '). It goes in your Pipeline as Bidding.</div>'
+    + '<label style="' + lbl + '">Customer / job name<input id="gc-cc2-name" style="' + inp + '" autocomplete="off"></label>'
+    + '<label style="' + lbl + '">Address<input id="gc-cc2-addr" style="' + inp + '" autocomplete="off"></label>'
+    + '<label style="' + lbl + '">Phone<input id="gc-cc2-phone" type="tel" style="' + inp + '" autocomplete="off"></label>'
+    + '<label style="' + lbl + '">Kind of work<select id="gc-cc2-type" style="' + inp + '"><option>Residential Reno</option><option>Roofing</option><option>Commercial Reno</option><option>New Construction</option><option>Repair</option></select></label>'
+    + '<div id="gc-cc2-err" role="alert" style="color:#fca5a5;font-size:13px;margin-top:8px"></div>'
+    + '<button id="gc-cc2-save" type="button" style="width:100%;margin-top:14px;padding:15px;border:none;border-radius:12px;background:#16a34a;color:#fff;font-weight:800;font-size:16px;cursor:pointer">Create project</button>'
+    + '<button id="gc-cc2-x" type="button" style="width:100%;margin-top:8px;padding:12px;border:1px solid #334155;border-radius:12px;background:transparent;color:#cbd5e1;font-weight:700;font-size:15px;cursor:pointer">Cancel</button></div>';
+  document.body.appendChild(ov);
+  var q = function(id){ return ov.querySelector('#' + id); };
+  ST.call(W, function(){ try { q('gc-cc2-name').focus(); } catch (e) {} }, 30);
+  q('gc-cc2-x').onclick = function(){ ov.remove(); };
+  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+  q('gc-cc2-save').onclick = function(){
+    var name = s(q('gc-cc2-name').value), addr = s(q('gc-cc2-addr').value);
+    if (!name && !addr) { q('gc-cc2-err').textContent = 'Add a customer name or an address.'; return; }
+    var j = addJob(newJob({ name: name, client: name, address: addr, phone: s(q('gc-cc2-phone').value), type: q('gc-cc2-type').value }, m, opts.via || 'field'));
+    ov.remove();
+    try { if (typeof opts.done === 'function') opts.done(j); } catch (e) {}
+  };
+  return ov;
+};
+
+/* field view: "＋ New project" in the job picker header */
+function fieldButton(){
+  var pick = document.getElementById('_gcJobPick'); if (!pick || document.getElementById('gc-cc2-fieldnew')) return;
+  var srch = document.getElementById('_jpSearch'); if (!srch || !srch.parentNode) return;
+  var b = document.createElement('button'); b.id = 'gc-cc2-fieldnew'; b.type = 'button'; b.textContent = '＋ New project';
+  b.style.cssText = 'width:100%;margin-top:10px;padding:13px;border:none;border-radius:14px;background:#16a34a;color:#fff;font-weight:800;font-size:15px;cursor:pointer';
+  b.onclick = function(){ W._gcSelfNewJob({ via: 'field', done: function(j){ ST.call(W, function(){ try { if (W._gcJobPicker) { var o = document.getElementById('_gcJobPick'); if (o) o.remove(); W._gcJobPicker(); } } catch (e) {} }, 600); } }); };
+  srch.parentNode.insertBefore(b, srch.nextSibling);
+}
+
+W._gcSelfStatus = function(){ return { me: me(), stats: stats, log: LOG.slice(-20), watching: { projects: !!base.projects, leads: !!base.leads, schedule: !!base.schedule } }; };
+RI.call(W, function(){ tick(); fieldButton(); }, 1500);
+try { console.log('[GC] patch CC2: jobs and leads a person makes are theirs (Self-generated) — _gcSelfStatus()'); } catch (e) {}
 })();
 
 </script><!-- /INSP -->

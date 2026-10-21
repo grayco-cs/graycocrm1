@@ -181,13 +181,15 @@ function decide(idx, p){
   return { kind: 'ask', why: 'same name/address as the finished job "' + jobs[0].name + '"' };
 }
 function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } }
+/* patch CC2: a project its creator made is their lead */
+function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm }; }
 function jobFor(p, pm, note, nowIso){
   const c = p.contact || {}, iso = new Date(p.created_at * 1000).toISOString();
   const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
     address: p.address || '', type: 'Residential Reno', status: 'bidding', contract: 0, source: 'companycam',
     ccamId: p.id, ccProjectId: p.id, ccamUrl: p.url, companyCamUrl: p.url, ccCreator: p.creator || '', ccCreatorId: p.creatorId || '',
     created: ymd(p.created_at), createdAt: iso, keepAsJob: true, _ccAuto: true, _ccServer: true, savedAt: nowIso, updatedAt: nowIso };
-  if (pm) Object.assign(j, { pm: pm, leadSource: pm, broughtInBy: pm, commissionSource: 'self', pmSourced: true });
+  if (pm) Object.assign(j, selfFields(pm)); else j.createdBy = 'CompanyCam' + (p.creator ? ' (' + p.creator + ')' : '');
   if (note) j.notes = 'Made in CompanyCam' + (p.creator ? ' by ' + p.creator : '') + ' — ' + note + '.';
   return j;
 }
@@ -251,7 +253,7 @@ async function run(opts){
     const ccId = ccIdFromAny(r.id), p = ccById[ccId] || { id: ccId, creator: s(r.ccCreator), creatorId: s(r.ccCreatorId) };
     if (!p.creator && !p.creatorId) continue;
     const pm = await pmOf(p); if (!pm) continue;
-    fixes[r.id] = { pm: pm, leadSource: s(r.leadSource) && r.leadSource !== 'CompanyCam' ? r.leadSource : pm, broughtInBy: s(r.broughtInBy) || pm, commissionSource: 'self', pmSourced: true, updatedAt: nowIso, savedAt: nowIso };
+    fixes[r.id] = Object.assign(selfFields(pm), { leadSource: s(r.leadSource) && r.leadSource !== 'CompanyCam' && low(r.leadSource) !== low(pm) ? r.leadSource : 'Self-generated (' + pm + ')', broughtInBy: s(r.broughtInBy) || pm, owner: s(r.owner) || pm, createdBy: s(r.createdBy) || pm, updatedAt: nowIso, savedAt: nowIso });
     R.pmFixed.push({ job: r.id, pm: pm });
   }
   const back = Object.keys(st.made).filter(cid => { const id = st.made[cid].id; return !have[id] && !dead[id] && !jobs.some(j => j.id === id) && ccById[cid]; });
@@ -262,7 +264,7 @@ async function run(opts){
     const P2 = await readProjects();
     const has2 = {}; P2.list.forEach(r => { if (r && r.id) has2[r.id] = 1; });
     const add = jobs.filter(j => !has2[j.id]);
-    for (const j of add) if (!j.pm) { const pm = await pmOf(ccById[j.ccProjectId] || { creator: j.ccCreator, creatorId: j.ccCreatorId }); if (pm) Object.assign(j, { pm, leadSource: pm, broughtInBy: pm, commissionSource: 'self', pmSourced: true }); }
+    for (const j of add) if (!j.pm) { const pm = await pmOf(ccById[j.ccProjectId] || { creator: j.ccCreator, creatorId: j.ccCreatorId }); if (pm) Object.assign(j, selfFields(pm)); }
     const fix = r => (r && fixes[r.id] && !s(r.pm)) ? Object.assign({}, r, fixes[r.id]) : r;
     if (P2.chunked) {
       const chunks = P2.chunks.map(c => c.map(fix));
