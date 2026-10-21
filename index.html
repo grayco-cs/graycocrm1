@@ -988,7 +988,7 @@ if (window.__GC_SEC2__) return; window.__GC_SEC2__ = true;
 var SB_HOST = 'ieeonhpfahmwwecizdut.supabase.co';
 /* ── the classes (the same lists as public.gc_kv_class in docs/security-data.sql) ─────────── */
 var ADMIN = ['users_private', 'user', 'candidates', 'gc_commission_structures', 'gc_margin_goals',
-             'gc_cash_anchor', 'gc_accounts_cfg', 'gc_accounts_ledger'];
+             'gc_cash_anchor', 'gc_accounts_cfg', 'gc_accounts_ledger', 'gc_tax_ids'];
 var PAYROLL = ['payrollRuns', 'payrollProfiles', 'payrollW4', 'payrollTaxPayments', 'payrollSettings', 'timesheets',
                'gc_payroll_approvals', 'gc_employee_payments', 'gc_commission_paid', 'commissionSchedules'];
 var ADMINWRITE = ['gc_ach_details', 'gc_overhead_manual', 'gc_checkrun_settings'];
@@ -143129,6 +143129,912 @@ wrapField(); wrapDesk(); loadSubs(); ST(loadSubs, 8000); SI(function(){ if (!D.h
 SI(function(){ try { wrapField(); wrapDesk(); } catch (e) {} }, 1500);
 ST(pullDefaults, 7000); SI(function(){ if (!D.hidden) pullDefaults(); }, 15 * 60e3);
 try { console.log('[GC] patch AUT4: sub agreements fill from the awarded bid, the estimate and the schedule — _gcSubFill.prefill(job, sub)'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-autai">
+/* ==========================================================================
+   patch AUTAI — AI-assisted automations (audit items 10, 11, 15 + owner's phase 2)          __GC_PATCH_AUTAI__
+
+   1. 🎤 ONE MICROPHONE (owner 10/21: "on field view click the microphone and update whatever I want, choose what
+      job … or where I can put the message — a job board or to the company — and it should put it where I need it").
+      Field view: a big 🎤 (bottom-left, clear of the green APPROVE button); desk: a small one. It opens a sheet:
+        Job (pull-down: the job you are in, else your nearest / most recent; "No job" allowed) ·
+        Send to: Job notes · Job message board · Customer portal post (→ approvals) · To-do (me / someone) ·
+        Company announcement (admins; others → approvals) · Message a person · Change-order draft · Daily log ·
+        a big RECORD button: the phone's speech recognition where it works (live text); otherwise the box is focused
+        so the keyboard's own 🎤 dictation works; a recording sent for transcription only when the server has a key.
+        A Plaud / any transcript can be pasted, or loaded from a file, or e-mailed to notes@ (📥 E-mailed notes).
+        ✨ Smart route: Claude (voice-intake.js) finds the job and splits the note into actions with the right
+        places pre-picked. Every action is shown; NOTHING is posted until the person taps Post. Each lands where it
+        belongs, stamped who / when / "🎤 voice". The old hidden 🎤 (#_voiceBtn) stays gone: one mic.
+   2. 📰 Weekly customer update (weekly-update.js drafts it Friday 2 PM; the PM approves with one tap on the
+      approvals list): once approved, the post is copied onto the job's own portal posts so the CRM shows it too.
+   3. 📄 COI / W-9 → the sub record: "📄 Drop COI / W-9" by the sub form's Insurance & Compliance heading, and any
+      COI / W-9 filed on a sub's documents (CRM or sub portal) is read (sub-doc-read.js). The values are shown for a
+      person to confirm; then the sub is filled (and the open form), the COI expiry set (coiExp — the 30-day alert),
+      and the file kept on the sub. The EIN / SSN: only the masked number is on the sub; the full number is kept by
+      the server in the admin-only key gc_tax_ids — admins see it with "🔒 Show full tax ID".
+   4. 🧾 Receipts read themselves: Log Expense reads a photo / PDF as soon as it is attached (vendor, amount, date,
+      tax), picks the job (the one you are in → your active job that vendor was used on → the nearest → your only
+      active job) and the cost category, and shows ONE "✅ Confirm" tap. Nothing is saved before that tap.
+   5. 💵 Payments match themselves: money-in lines of the cash register (bank / QuickBooks CSV import, checks,
+      deposits) are matched to open client invoices by amount, customer name, invoice # and PO. "💵 Payment
+      matches" (admins + office) — Confirm marks the invoice paid, links the register line, and the customer's
+      payment receipt goes out by itself (portal.js payment-receipt). No lien waivers (owner).
+   Console: _gcAUTAI.mic(pid), _gcAUTAI.state(), _gcAUTAI.payMatches(), _gcAUTAI.subDocs(), _gcAUTAI.route(text)
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTAI__) return; window.__GC_PATCH_AUTAI__ = true;
+var W = window, D = document;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function money(n){ return '$' + (Math.round(num(n) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function lsGet(k){ try { return Storage.prototype.getItem.call(localStorage, k); } catch (e) { return null; } }
+function lsSet(k, v){ try { Storage.prototype.setItem.call(localStorage, k, v); } catch (e) {} }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects); }
+function users(){ return arr(crm().users); }
+function proj(pid){ return projects().filter(function(p){ return String(p.id) === String(pid); })[0] || null; }
+function isField(){ return D.documentElement.classList.contains('_fieldmode'); }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function meUser(){ var e = myEmail(); var u = users().filter(function(x){ return low(x.email) === e; })[0]; if (u) return u; try { return (W.meUser && W.meUser()) || {}; } catch (e2) { return {}; } }
+function myName(){ return s(meUser().name) || s(lsGet('grayco_user')) || myEmail() || 'someone'; }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function isOffice(){ return /office|admin/i.test(s(meUser().role)) || isAdmin(); }
+function samePm(p, n){ try { if (W._gcSamePM) return !!W._gcSamePM(p.pm, { name: n }, p); } catch (e) {} return low(p.pm) === low(n); }
+function activeJob(p){ return p && p.deleted !== true && !/complete|closed|cancel|lost|bidding/i.test(s(p.status)); }
+function creds(){ return { u: (s(lsGet('grayco_sb_url')) || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''), k: s(lsGet('grayco_sb_key')) }; }
+function sbHeaders(extra){ var c = creds(); var h = { 'Content-Type': 'application/json' }; if (c.k) { h.apikey = c.k; h.Authorization = 'Bearer ' + c.k; } return Object.assign(h, extra || {}); }
+var LOG = [];
+function log(x){ LOG.push(Object.assign({ at: nowIso() }, x)); if (LOG.length > 80) LOG.shift(); }
+
+function fn(path, body, method){
+  return W.fetch('/.netlify/functions/' + path, method === 'GET' ? { method: 'GET', cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: t.slice(0, 200) }; } j.__status = r.status; return j; }); },
+      function(e){ return { ok: false, error: 'No internet (' + e.message + ')', __status: 0 }; });
+}
+function kvGet(key){
+  var c = creds();
+  return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: sbHeaders(), cache: 'no-store' })
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
+    .then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; });
+}
+/* add records to a shared JSON-text list (gc_job_messages, gc_pm_broadcasts, gc_adm_msgs, logs …) without losing
+   anyone's: read the cloud copy, union by id with this computer's copy and the new ones, write it back as text */
+function kvAdd(key, items, opts){
+  opts = opts || {};
+  var local = arr(lsGet(key));
+  return kvGet(key).then(function(v){ return arr(v); }, function(){ return null; }).then(function(remote){
+    var by = {}, order = [];
+    (remote || []).concat(local, items).forEach(function(m){ if (!m || m.id == null) return; var k = String(m.id); if (!(k in by)) order.push(k); by[k] = m; });
+    var merged = order.map(function(k){ return by[k]; });
+    if (opts.newestFirst) merged.sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; });
+    else merged.sort(function(a, b){ return s(a.at || a.addedAt).localeCompare(s(b.at || b.addedAt)); });
+    lsSet(key, JSON.stringify(merged));
+    if (remote === null && !opts.force) return { ok: false, local: true };
+    var c = creds();
+    return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: sbHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ key: key, value: JSON.stringify(merged), updated_at: nowIso() }) }).then(function(r){ return { ok: r.ok }; }, function(){ return { ok: false }; });
+  });
+}
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.className = 'gcautai-toast'; t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:' + (bad ? '#b91c1c' : '#16a34a') + ';color:#fff;padding:11px 18px;border-radius:10px;z-index:2147483200;font:700 14px Inter,Arial,sans-serif;max-width:90vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.35)';
+    D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 3600); } catch (e) {}
+}
+function setProjects(fnp){ if (typeof W._setProjects === 'function') { W._setProjects(fnp); return true; } return false; }
+function patchProject(pid, mut){ return setProjects(function(list){ return (list || []).map(function(p){ if (!p || String(p.id) !== String(pid)) return p; var q = Object.assign({}, p); mut(q); q.updatedAt = nowIso(); return q; }); }); }
+
+/* ── styles ── */
+(function(){
+  if (D.getElementById('gcautai-css')) return;
+  var st = D.createElement('style'); st.id = 'gcautai-css';
+  st.textContent = '#_voiceBtn{display:none!important}' +
+    '#_gcMicBtn{position:fixed;z-index:99994;border:none;border-radius:50%;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;cursor:pointer;box-shadow:0 6px 18px rgba(185,28,28,.45);display:flex;align-items:center;justify-content:center;font-family:Inter,Arial,sans-serif;-webkit-tap-highlight-color:transparent}' +
+    '#_gcMicBtn.desk{right:150px;bottom:24px;width:44px;height:44px;font-size:20px}' +
+    '#_gcMicBtn.field{left:16px;bottom:calc(96px + env(safe-area-inset-bottom,0px));width:64px;height:64px;font-size:30px}' +
+    '.gcautai-ov{position:fixed;inset:0;z-index:100090;background:rgba(6,12,20,.86);display:flex;align-items:flex-end;justify-content:center;font-family:Inter,-apple-system,Segoe UI,sans-serif}' +
+    '.gcautai-sheet{background:#0f2440;color:#e2e8f0;width:100%;max-width:640px;max-height:94vh;overflow:auto;-webkit-overflow-scrolling:touch;border-radius:18px 18px 0 0;padding:14px 14px calc(18px + env(safe-area-inset-bottom,0px));box-sizing:border-box}' +
+    '@media(min-width:700px){.gcautai-ov{align-items:center}.gcautai-sheet{border-radius:16px}}' +
+    '.gcautai-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}.gcautai-h b{flex:1;font-size:19px}' +
+    '.gcautai-x{background:#1e3a5f;border:none;color:#fff;font-size:16px;font-weight:800;border-radius:10px;padding:8px 12px;cursor:pointer}' +
+    '.gcautai-l{font-size:12px;color:#9fb3c8;margin:8px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}' +
+    '.gcautai-sel,.gcautai-in,.gcautai-ta{width:100%;box-sizing:border-box;padding:11px;border-radius:10px;border:1px solid #2a4a7f;background:#0a1628;color:#e2e8f0;font-size:16px}' +
+    '.gcautai-ta{min-height:120px;resize:vertical;line-height:1.4}' +
+    '.gcautai-chips{display:flex;flex-wrap:wrap;gap:6px}.gcautai-chip{border:1px solid #2a4a7f;background:#0a1628;color:#cbd5e1;border-radius:999px;padding:8px 12px;font-size:14px;font-weight:700;cursor:pointer}' +
+    '.gcautai-chip.on{background:#2563eb;border-color:#2563eb;color:#fff}' +
+    '.gcautai-rec{width:100%;margin:12px 0 6px;padding:18px;border:none;border-radius:14px;background:#dc2626;color:#fff;font-size:20px;font-weight:800;cursor:pointer}' +
+    '.gcautai-rec.on{background:#7f1d1d;animation:gcautaip 1.2s infinite}@keyframes gcautaip{50%{box-shadow:0 0 0 10px rgba(220,38,38,.25)}}' +
+    '.gcautai-hint{font-size:13px;color:#fbbf24;margin:4px 0}' +
+    '.gcautai-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.gcautai-btn{flex:1;min-width:130px;padding:13px;border:none;border-radius:11px;font-weight:800;font-size:15px;cursor:pointer;background:#1e3a5f;color:#fff}' +
+    '.gcautai-btn.go{background:#16a34a}.gcautai-btn.ai{background:#7c3aed}.gcautai-btn:disabled{opacity:.55}' +
+    '.gcautai-act{background:#0a1628;border:1px solid #1e3a5f;border-radius:12px;padding:10px;margin-top:8px}.gcautai-act .t{display:flex;gap:8px;align-items:center;font-weight:800}' +
+    '.gcautai-act .gcautai-ta{min-height:60px;margin-top:6px}.gcautai-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}' +
+    '.gcautai-msg{font-size:14px;margin-top:8px;font-weight:700}.gcautai-ok{color:#4ade80}.gcautai-bad{color:#f87171}' +
+    '.gcautai-pill{position:fixed;z-index:99993;right:206px;bottom:28px;background:#0f766e;color:#fff;border:none;border-radius:999px;padding:9px 14px;font:800 13px Inter,Arial,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)}' +
+    'html._fieldmode .gcautai-pill{right:auto;left:92px;bottom:calc(104px + env(safe-area-inset-bottom,0px))}' +
+    '.gcautai-card{background:#fff;color:#0f172a;border-radius:12px;padding:12px;margin-top:8px}.gcautai-card table{width:100%;font-size:13px;border-collapse:collapse}.gcautai-card td{padding:3px 4px;border-bottom:1px solid #e2e8f0;vertical-align:top}';
+  (D.head || D.documentElement).appendChild(st);
+})();
+
+/* ════════════════════════════ 1. THE MICROPHONE ════════════════════════════ */
+var DEST = [
+  ['note', '📝 Job notes'], ['board', '💬 Job message board'], ['portal', '📣 Customer portal post'], ['todo', '✅ To-do'],
+  ['announce', '📢 Company announcement'], ['message', '✉️ Message a person'], ['co', '± Change-order draft'], ['log', '📋 Daily log']
+];
+var DNAME = {}; DEST.forEach(function(d){ DNAME[d[0]] = d[1]; });
+var AI2DEST = { note: 'note', board: 'board', todo: 'todo', change_order: 'co', schedule: 'schedule', customer_update: 'portal', daily_log: 'log', message: 'message', announcement: 'announce' };
+var CAPS = null;
+function caps(){ if (CAPS) return Promise.resolve(CAPS); return fn('voice-intake?caps=1', null, 'GET').then(function(j){ CAPS = { ai: !!j.ai, transcribe: !!j.transcribe }; return CAPS; }, function(){ return { ai: false, transcribe: false }; }); }
+function speechCtor(){ return W.SpeechRecognition || W.webkitSpeechRecognition || null; }
+function standalone(){ try { return !!(W.navigator.standalone || (W.matchMedia && W.matchMedia('(display-mode: standalone)').matches)); } catch (e) { return false; } }
+/* Web Speech on iPhone works in Safari (iOS 14.5+) but not in a home-screen app; there the keyboard's dictation is used */
+function speechUsable(){ var C = speechCtor(); if (!C) return false; if (/iPhone|iPad|iPod/.test(navigator.userAgent) && standalone()) return false; return true; }
+
+function currentPid(){
+  var cj = W._gcCurrentJob; if (cj && cj.id) return String(cj.id);
+  try { var p = sessionStorage.getItem('grayco_openpid') || lsGet('grayco_openpid'); if (p && proj(p)) return String(p); } catch (e) {}
+  return '';
+}
+function myJobs(){
+  var n = myName();
+  var mine = projects().filter(function(p){ return activeJob(p) && samePm(p, n); });
+  var others = projects().filter(function(p){ return activeJob(p) && mine.indexOf(p) < 0; });
+  var byRecent = function(a, b){ return s(b.updatedAt || b.savedAt) < s(a.updatedAt || a.savedAt) ? -1 : 1; };
+  return mine.sort(byRecent).concat(isAdmin() || isOffice() ? others.sort(byRecent) : []);
+}
+var LASTPOS = null;
+function nearestPid(){
+  if (!LASTPOS) return '';
+  var best = '', bd = 1e9;
+  projects().forEach(function(p){ var la = num(p.lat), lo = num(p.lng || p.lon); if (!activeJob(p) || !la || !lo) return; var d = Math.pow(la - LASTPOS.lat, 2) + Math.pow(lo - LASTPOS.lng, 2); if (d < bd) { bd = d; best = String(p.id); } });
+  return bd < 0.0004 ? best : '';    /* about 2 km */
+}
+function grabPosition(){
+  try {
+    if (!navigator.geolocation || !navigator.permissions) return;
+    navigator.permissions.query({ name: 'geolocation' }).then(function(r){ if (r.state === 'granted') navigator.geolocation.getCurrentPosition(function(pos){ LASTPOS = { lat: pos.coords.latitude, lng: pos.coords.longitude }; }, function(){}, { maximumAge: 300000, timeout: 4000 }); }, function(){});
+  } catch (e) {}
+}
+function defaultPid(){ return currentPid() || nearestPid() || s(lsGet('gc_autai_lastpid')) || ((myJobs()[0] || {}).id || ''); }
+function peopleNames(){ return users().filter(function(u){ return u.active !== false && s(u.name); }).map(function(u){ return s(u.name); }); }
+function userByName(n){ n = low(n); if (!n) return null; return users().filter(function(u){ return low(u.name) === n; })[0] || users().filter(function(u){ return low(u.name).split(' ')[0] === n.split(' ')[0]; })[0] || null; }
+
+var MIC = { rec: null, media: null, chunks: [], on: false };
+function stopRec(){
+  try { if (MIC.rec) MIC.rec.stop(); } catch (e) {}
+  try { if (MIC.media && MIC.media.state !== 'inactive') MIC.media.stop(); } catch (e) {}
+  MIC.on = false;
+}
+function openMic(pid, preset){
+  closeMic();
+  grabPosition();
+  pid = pid != null ? String(pid) : defaultPid();
+  var ov = D.createElement('div'); ov.id = '_gcMicOv'; ov.className = 'gcautai-ov'; ov.setAttribute('data-gc-keep', '1');
+  var jobs = myJobs(); if (pid && !jobs.some(function(p){ return String(p.id) === pid; }) && proj(pid)) jobs.unshift(proj(pid));
+  var sel = { note: true };
+  if (preset && preset.dest) { sel = {}; sel[preset.dest] = true; }
+  ov.innerHTML = '<div class="gcautai-sheet" role="dialog" aria-label="Voice note">' +
+    '<div class="gcautai-h"><b>🎤 Voice note</b><button class="gcautai-x" id="_gcMicInbox" style="display:none">📥 E-mailed notes</button><button class="gcautai-x" id="_gcMicX" aria-label="Close">✕</button></div>' +
+    '<div class="gcautai-l">Job</div><select class="gcautai-sel" id="_gcMicJob"><option value="">— No job —</option>' +
+    jobs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (String(p.id) === pid ? ' selected' : '') + '>' + esc(p.name) + (p.autoPO ? ' · PO ' + esc(p.autoPO) : '') + '</option>'; }).join('') + '</select>' +
+    '<div class="gcautai-l">Send to</div><div class="gcautai-chips" id="_gcMicDest">' + DEST.map(function(d){ return '<button class="gcautai-chip' + (sel[d[0]] ? ' on' : '') + '" data-d="' + d[0] + '">' + esc(d[1]) + '</button>'; }).join('') + '</div>' +
+    '<div id="_gcMicWhoWrap" style="display:none"><div class="gcautai-l">For</div><select class="gcautai-sel" id="_gcMicWho"><option value="">Me (' + esc(myName()) + ')</option>' +
+    peopleNames().filter(function(n){ return low(n) !== low(myName()); }).map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('') + '<option value="__office">The office</option></select></div>' +
+    '<button class="gcautai-rec" id="_gcMicRec">🎤 Tap to talk</button>' +
+    '<div class="gcautai-hint" id="_gcMicHint"></div>' +
+    '<textarea class="gcautai-ta" id="_gcMicText" placeholder="What do you want to say? (or tap the 🎤 on your keyboard)"></textarea>' +
+    '<div class="gcautai-row" style="margin-top:6px"><label class="gcautai-x" style="flex:1;text-align:center;font-size:13px;cursor:pointer">📄 Transcript file (Plaud…)<input type="file" id="_gcMicFile" accept=".txt,.md,.vtt,.srt,text/plain" style="display:none"></label>' +
+    '<button class="gcautai-x" id="_gcMicTr" style="flex:1;font-size:13px;display:none">⏺ Record for transcription</button></div>' +
+    '<div class="gcautai-row"><button class="gcautai-btn ai" id="_gcMicAI">✨ Smart route</button><button class="gcautai-btn go" id="_gcMicGo">Preview →</button></div>' +
+    '<div id="_gcMicActs"></div><div class="gcautai-msg" id="_gcMicMsg"></div></div>';
+  D.body.appendChild(ov);
+  var q = function(x){ return ov.querySelector(x); };
+  var ta = q('#_gcMicText'), hint = q('#_gcMicHint');
+  ov.__state = { sel: sel, actions: null, inbox: null };
+  q('#_gcMicX').onclick = closeMic;
+  ov.addEventListener('click', function(e){ if (e.target === ov) closeMic(); });
+  function syncWho(){ q('#_gcMicWhoWrap').style.display = (sel.todo || sel.message) ? 'block' : 'none'; }
+  q('#_gcMicDest').onclick = function(e){
+    var b = e.target.closest && e.target.closest('[data-d]'); if (!b) return;
+    var d = b.getAttribute('data-d'); sel[d] = !sel[d]; b.classList.toggle('on', !!sel[d]); syncWho();
+  };
+  syncWho();
+  q('#_gcMicJob').onchange = function(){ lsSet('gc_autai_lastpid', this.value); };
+  /* ── recording ── */
+  var recBtn = q('#_gcMicRec');
+  if (!speechUsable()) {
+    recBtn.textContent = '⌨️ Tap here, then the 🎤 on your keyboard';
+    hint.textContent = 'Tap the 🎤 on your keyboard to talk — your phone types what you say.';
+    recBtn.onclick = function(){ ta.focus(); try { ta.click(); } catch (e) {} };
+    ST(function(){ try { ta.focus(); } catch (e) {} }, 60);
+  } else {
+    recBtn.onclick = function(){
+      if (MIC.on) { stopRec(); recBtn.classList.remove('on'); recBtn.textContent = '🎤 Tap to talk'; return; }
+      var C = speechCtor(), base = ta.value ? ta.value.replace(/\s*$/, ' ') : '';
+      var r; try { r = new C(); } catch (e) { r = null; }
+      if (!r) { hint.textContent = 'This browser cannot listen — tap the 🎤 on your keyboard instead.'; ta.focus(); return; }
+      r.lang = 'en-US'; r.continuous = true; r.interimResults = true;
+      var finals = '';
+      r.onresult = function(ev){ var interim = ''; for (var i = ev.resultIndex; i < ev.results.length; i++) { var t = ev.results[i][0].transcript; if (ev.results[i].isFinal) finals += t + ' '; else interim += t; } ta.value = base + finals + interim; };
+      r.onerror = function(ev){ hint.textContent = (ev && ev.error === 'not-allowed') ? 'The microphone is blocked — allow it in Settings, or tap the 🎤 on your keyboard.' : 'Listening stopped (' + (ev && ev.error || 'error') + '). Tap the 🎤 on your keyboard instead.'; MIC.on = false; recBtn.classList.remove('on'); recBtn.textContent = '🎤 Tap to talk'; ta.focus(); };
+      r.onend = function(){ if (MIC.on) { try { r.start(); } catch (e) { MIC.on = false; recBtn.classList.remove('on'); recBtn.textContent = '🎤 Tap to talk'; } } };
+      try { r.start(); MIC.rec = r; MIC.on = true; recBtn.classList.add('on'); recBtn.textContent = '⏹ Listening… tap to stop'; hint.textContent = ''; }
+      catch (e) { hint.textContent = 'Could not start listening — tap the 🎤 on your keyboard.'; ta.focus(); }
+    };
+  }
+  /* optional: a recording sent for transcription (only when the server has a transcription key) */
+  caps().then(function(c){
+    var tb = q('#_gcMicTr'); if (!tb) return;
+    if (!c.transcribe || !W.MediaRecorder || !navigator.mediaDevices) return;
+    tb.style.display = '';
+    tb.onclick = function(){
+      if (MIC.media && MIC.media.state === 'recording') { MIC.media.stop(); return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+        var mr = new MediaRecorder(stream); MIC.media = mr; MIC.chunks = [];
+        mr.ondataavailable = function(e){ if (e.data && e.data.size) MIC.chunks.push(e.data); };
+        mr.onstop = function(){
+          stream.getTracks().forEach(function(t){ t.stop(); }); tb.textContent = '⏳ Transcribing…';
+          var blob = new Blob(MIC.chunks, { type: mr.mimeType || 'audio/webm' }), fr = new FileReader();
+          fr.onload = function(){ fn('voice-intake', { action: 'transcribe', audio: String(fr.result).split(',')[1], mime: blob.type }).then(function(j){
+            tb.textContent = '⏺ Record for transcription';
+            if (j.ok && j.text) ta.value = (ta.value ? ta.value + ' ' : '') + j.text; else hint.textContent = j.error || 'Could not transcribe it.';
+          }); };
+          fr.readAsDataURL(blob);
+        };
+        mr.start(); tb.textContent = '⏹ Stop recording';
+      }, function(){ hint.textContent = 'The microphone is blocked — tap the 🎤 on your keyboard instead.'; });
+    };
+  });
+  q('#_gcMicFile').onchange = function(){
+    var f = this.files && this.files[0]; if (!f) return;
+    var fr = new FileReader(); fr.onload = function(){ var t = String(fr.result || '').replace(/^WEBVTT.*$/m, '').replace(/^\d+\s*$/gm, '').replace(/^\d\d:\d\d:\d\d[.,]\d+ --> .*$/gm, '').replace(/\n{2,}/g, '\n').trim(); ta.value = (ta.value ? ta.value + '\n' : '') + t.slice(0, 30000); hint.textContent = 'Transcript loaded — tap ✨ Smart route.'; };
+    fr.readAsText(f); this.value = '';
+  };
+  q('#_gcMicAI').onclick = function(){ smartRoute(ov); };
+  q('#_gcMicGo').onclick = function(){ manualActions(ov); };
+  /* e-mailed notes (Plaud → notes@) */
+  fn('voice-intake?list=1', null, 'GET').then(function(j){
+    var items = arr(j.items).filter(function(x){ return isAdmin() || isOffice() || !x.from || low(x.from) === myEmail() || (x.result && x.result.jobId && (function(p){ return p && samePm(p, myName()); })(proj(x.result.jobId))); });
+    ov.__state.inbox = items;
+    var b = q('#_gcMicInbox'); if (!b || !items.length) return;
+    b.style.display = ''; b.textContent = '📥 E-mailed notes (' + items.length + ')';
+    b.onclick = function(){ showInbox(ov); };
+  });
+  if (preset && preset.text) ta.value = preset.text;
+  return ov;
+}
+function closeMic(){ stopRec(); var o = D.getElementById('_gcMicOv'); if (o) o.remove(); }
+
+function showInbox(ov){
+  var box = ov.querySelector('#_gcMicActs'), items = ov.__state.inbox || [];
+  box.innerHTML = '<div class="gcautai-l">E-mailed notes — pick one to review</div>' + items.map(function(x, i){
+    return '<div class="gcautai-act" data-i="' + i + '" style="cursor:pointer"><div class="t">📥 ' + esc(x.subject || 'Voice note') + '</div><div style="font-size:12px;color:#9fb3c8">' + esc((x.fromName || x.from) + ' · ' + s(x.at).slice(0, 16).replace('T', ' ')) + '</div><div style="font-size:13px;margin-top:4px">' + esc(s(x.text).slice(0, 160)) + '…</div></div>'; }).join('');
+  box.onclick = function(e){
+    var c = e.target.closest && e.target.closest('[data-i]'); if (!c) return;
+    var x = items[+c.getAttribute('data-i')]; ov.__state.fromInbox = x.id;
+    ov.querySelector('#_gcMicText').value = s(x.text).slice(0, 30000);
+    box.onclick = null;
+    if (x.result) showActions(ov, x.result); else smartRoute(ov);
+  };
+}
+function jobList(){ return myJobs().slice(0, 120).map(function(p){ return { id: p.id, name: p.name, client: p.client, address: p.address, po: p.autoPO || p.po, pm: p.pm }; }); }
+function smartRoute(ov){
+  var msg = ov.querySelector('#_gcMicMsg'), text = s(ov.querySelector('#_gcMicText').value), pid = ov.querySelector('#_gcMicJob').value;
+  if (!text) { msg.className = 'gcautai-msg gcautai-bad'; msg.textContent = 'Say or type something first.'; return; }
+  stopRec();
+  var b = ov.querySelector('#_gcMicAI'); b.disabled = true; b.textContent = '✨ Reading…'; msg.textContent = '';
+  fn('voice-intake', { action: 'route', text: text, projectId: pid, jobs: jobList(), people: peopleNames(), today: today() }).then(function(j){
+    b.disabled = false; b.textContent = '✨ Smart route';
+    if (!j.ok) { msg.className = 'gcautai-msg gcautai-bad'; msg.textContent = (j.error || 'The AI did not answer') + ' — showing your picks instead.'; manualActions(ov); return; }
+    showActions(ov, j);
+  });
+}
+function manualActions(ov){
+  var text = s(ov.querySelector('#_gcMicText').value), msg = ov.querySelector('#_gcMicMsg');
+  if (!text) { msg.className = 'gcautai-msg gcautai-bad'; msg.textContent = 'Say or type something first.'; return; }
+  stopRec();
+  var who = ov.querySelector('#_gcMicWho').value;
+  var acts = Object.keys(ov.__state.sel).filter(function(k){ return ov.__state.sel[k]; }).map(function(d, i){ return { id: 'm' + i, dest: d, text: text, assignee: who === '__office' ? 'The office' : who, due: '', price: null, scope: d === 'co' ? text : '' }; });
+  if (!acts.length) { msg.className = 'gcautai-msg gcautai-bad'; msg.textContent = 'Pick where it goes (Send to).'; return; }
+  renderActs(ov, acts, null);
+}
+function showActions(ov, r){
+  var jsel = ov.querySelector('#_gcMicJob'), note = '';
+  if (r.jobId && !jsel.value) {
+    if (!jsel.querySelector('option[value="' + CSS.escape(String(r.jobId)) + '"]') && proj(r.jobId)) { var o = D.createElement('option'); o.value = r.jobId; o.textContent = proj(r.jobId).name; jsel.appendChild(o); }
+    jsel.value = r.jobId; note = '🔎 Job found in what you said: ' + ((proj(r.jobId) || {}).name || r.jobId) + ' — change it above if that is wrong.';
+  }
+  var acts = arr(r.actions).map(function(a, i){ return { id: 'a' + i, dest: AI2DEST[a.type] || 'note', text: s(a.text), assignee: s(a.assignee), due: s(a.due), price: a.price, scope: s(a.scope), scheduleItem: s(a.scheduleItem), newDate: s(a.newDate) }; });
+  if (!acts.length) { manualActions(ov); return; }
+  /* the chips follow what the AI picked */
+  ov.querySelectorAll('#_gcMicDest [data-d]').forEach(function(b){ var d = b.getAttribute('data-d'); var on = acts.some(function(a){ return a.dest === d; }); ov.__state.sel[d] = on; b.classList.toggle('on', on); });
+  renderActs(ov, acts, note || (r.summary ? '✨ ' + r.summary : ''));
+}
+function destOpts(cur){ return DEST.concat([['schedule', '🗓 Schedule change']]).map(function(d){ return '<option value="' + d[0] + '"' + (d[0] === cur ? ' selected' : '') + '>' + esc(d[1]) + '</option>'; }).join(''); }
+function renderActs(ov, acts, note){
+  ov.__state.actions = acts;
+  var box = ov.querySelector('#_gcMicActs');
+  box.onclick = null;
+  box.innerHTML = (note ? '<div class="gcautai-hint" style="color:#a5b4fc">' + esc(note) + '</div>' : '') + '<div class="gcautai-l">Check each one, then Post</div>' + acts.map(function(a){
+    var extra = '';
+    if (a.dest === 'todo' || a.dest === 'message') extra = '<div class="gcautai-grid"><input class="gcautai-in" data-f="assignee" placeholder="Who (blank = me)" value="' + esc(a.assignee) + '" list="_gcMicPeople"><input class="gcautai-in" data-f="due" type="date" value="' + esc(a.due) + '"></div>';
+    if (a.dest === 'co') extra = '<div class="gcautai-grid"><input class="gcautai-in" data-f="price" inputmode="decimal" placeholder="Price $ (if known)" value="' + (a.price != null ? esc(a.price) : '') + '"><input class="gcautai-in" data-f="scope" placeholder="Scope" value="' + esc(a.scope || a.text) + '"></div>';
+    if (a.dest === 'schedule') extra = '<div class="gcautai-grid"><input class="gcautai-in" data-f="scheduleItem" placeholder="What moves" value="' + esc(a.scheduleItem) + '"><input class="gcautai-in" data-f="newDate" type="date" value="' + esc(a.newDate) + '"></div>';
+    return '<div class="gcautai-act" data-a="' + esc(a.id) + '"><div class="t"><input type="checkbox" class="_gcAOn" checked style="width:20px;height:20px"><select class="gcautai-sel _gcADest" style="flex:1;padding:7px;font-size:14px">' + destOpts(a.dest) + '</select></div>' +
+      '<textarea class="gcautai-ta _gcAText">' + esc(a.text) + '</textarea>' + extra + '<div class="_gcARes" style="font-size:13px;margin-top:4px"></div></div>';
+  }).join('') + '<datalist id="_gcMicPeople">' + peopleNames().map(function(n){ return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>' +
+  '<div class="gcautai-row"><button class="gcautai-btn go" id="_gcMicPost">✅ Post</button></div>';
+  box.querySelectorAll('._gcADest').forEach(function(sl){ sl.onchange = function(){ var c = sl.closest('[data-a]'); var a = acts.filter(function(x){ return x.id === c.getAttribute('data-a'); })[0]; readCard(c, a); a.dest = sl.value; renderActs(ov, acts, note); }; });
+  box.querySelector('#_gcMicPost').onclick = function(){ postAll(ov); };
+}
+function readCard(c, a){
+  a.on = c.querySelector('._gcAOn').checked; a.dest = c.querySelector('._gcADest').value; a.text = c.querySelector('._gcAText').value;
+  c.querySelectorAll('[data-f]').forEach(function(i){ a[i.getAttribute('data-f')] = i.value; });
+  if (a.price != null && a.price !== '') a.price = num(a.price); else a.price = null;
+  return a;
+}
+function postAll(ov){
+  var acts = ov.__state.actions || [], pid = ov.querySelector('#_gcMicJob').value, msg = ov.querySelector('#_gcMicMsg');
+  var cards = ov.querySelectorAll('[data-a]'), todo = [];
+  cards.forEach(function(c){ var a = acts.filter(function(x){ return x.id === c.getAttribute('data-a'); })[0]; if (!a) return; readCard(c, a); if (a.on && s(a.text)) todo.push({ a: a, c: c }); });
+  if (!todo.length) { msg.className = 'gcautai-msg gcautai-bad'; msg.textContent = 'Nothing checked.'; return; }
+  var btn = ov.querySelector('#_gcMicPost'); btn.disabled = true; btn.textContent = 'Posting…';
+  var stamp = { by: myName(), byEmail: myEmail(), at: nowIso(), source: 'voice' };
+  var chain = Promise.resolve(), done = 0, bad = 0;
+  todo.forEach(function(t){
+    chain = chain.then(function(){ return apply(t.a, pid, stamp); }).then(function(r){
+      var res = t.c.querySelector('._gcARes'); if (r && r.ok) { done++; res.className = '_gcARes gcautai-ok'; res.textContent = '✓ ' + (r.where || 'Posted'); } else { bad++; res.className = '_gcARes gcautai-bad'; res.textContent = '⚠ ' + (r && r.error || 'Not posted'); }
+      log({ what: 'voice', dest: t.a.dest, pid: pid, ok: !!(r && r.ok) });
+    });
+  });
+  chain.then(function(){
+    btn.disabled = false; btn.textContent = bad ? '↻ Post the rest again' : '✓ Posted';
+    msg.className = 'gcautai-msg ' + (bad ? 'gcautai-bad' : 'gcautai-ok'); msg.textContent = done + ' posted' + (bad ? ', ' + bad + ' not posted (see above)' : '') + '.';
+    if (!bad && ov.__state.fromInbox) fn('voice-intake?act=1', { id: ov.__state.fromInbox, op: 'done' });
+    todo.forEach(function(t){ if (/✓/.test(t.c.querySelector('._gcARes').textContent)) t.c.querySelector('._gcAOn').checked = false; });
+    if (!bad) { toast('🎤 ' + done + ' posted'); ST(function(){ if (D.getElementById('_gcMicOv') === ov) closeMic(); }, 1400); }
+  });
+}
+/* ── where each action lands ── */
+function needJob(pid){ return pid && proj(pid) ? null : { ok: false, error: 'Pick the job first.' }; }
+function apply(a, pid, st){
+  var p = proj(pid), t = s(a.text), tag = '🎤 ';
+  try {
+    if (a.dest === 'note') {
+      if (needJob(pid)) return Promise.resolve(needJob(pid));
+      var u = { text: tag + t, by: st.by, at: st.at, source: 'voice' };
+      if (!patchProject(pid, function(q){ q.updates = [u].concat(arr(q.updates)); })) return Promise.resolve({ ok: false, error: 'The job list is not ready.' });
+      return Promise.resolve({ ok: true, where: 'Job notes — ' + p.name });
+    }
+    if (a.dest === 'board') {
+      if (needJob(pid)) return Promise.resolve(needJob(pid));
+      var mu = meUser(), tg = userByName(a.assignee);
+      var m = { id: uid('M'), pid: String(pid), authorId: mu.id || mu.email || myEmail() || 'me', authorName: st.by, text: tag + t, tags: tg ? [tg.id || tg.email || tg.name] : [], at: st.at, source: 'voice' };
+      return kvAdd('gc_job_messages', [m]).then(function(r){ return { ok: true, where: 'Job message board — ' + p.name + (r.ok ? '' : ' (goes up when online)') }; });
+    }
+    if (a.dest === 'portal') {
+      if (needJob(pid)) return Promise.resolve(needJob(pid));
+      return fn('portal', { action: 'approval', op: 'queue', kind: 'portal_post', projectId: pid, text: t, by: st.by, source: 'voice' }).then(function(j){
+        if (j.ok) { try { W._gcApprovalsRefresh && W._gcApprovalsRefresh(); } catch (e) {} return { ok: true, where: 'Customer portal post — waiting for approval' }; }
+        return { ok: false, error: j.error || 'Could not queue it' };
+      });
+    }
+    if (a.dest === 'todo') return addTodo(a, pid, st);
+    if (a.dest === 'announce') return announce(a, st, null);
+    if (a.dest === 'message') {
+      var who = userByName(a.assignee); if (!who) return Promise.resolve({ ok: false, error: 'Who is it for? (type a name from the team)' });
+      return announce(a, st, who);
+    }
+    if (a.dest === 'co') {
+      if (needJob(pid)) return Promise.resolve(needJob(pid));
+      if (typeof W._gcSetCOs !== 'function') return Promise.resolve({ ok: false, error: 'Change orders are not ready on this screen.' });
+      var co = { id: uid('CO'), pid: String(pid), desc: s(a.scope) || t, amt: a.price != null ? a.price : '', status: 'draft', date: today(), by: st.by, createdBy: st.by, createdAt: st.at, source: 'voice', notes: tag + t, sentToCustomer: false };
+      W._gcSetCOs(function(list){ return [].concat(list || [], [co]); });
+      return Promise.resolve({ ok: true, where: 'Change-order DRAFT — ' + p.name + (a.price != null ? ' (' + money(a.price) + ')' : '') + ' · nothing was sent' });
+    }
+    if (a.dest === 'log') {
+      if (needJob(pid)) return Promise.resolve(needJob(pid));
+      var lg = { id: uid('LOG'), pid: String(pid), date: today(), weather: '', crew: '', work: tag + t, problems: '', by: st.by, at: st.at, source: 'voice' };
+      if (typeof W._setLogs === 'function') { W._setLogs(function(l){ return [].concat(l || [], [lg]); }); return Promise.resolve({ ok: true, where: 'Daily log — ' + p.name }); }
+      return kvAdd('logs', [lg], { force: true }).then(function(r){ return { ok: !!r.ok, where: 'Daily log — ' + p.name, error: 'The daily logs could not be saved' }; });
+    }
+    if (a.dest === 'schedule') {
+      if (needJob(pid)) return Promise.resolve(needJob(pid));
+      if (!s(a.newDate)) return Promise.resolve({ ok: false, error: 'Which new date?' });
+      var it = low(a.scheduleItem), moved = false;
+      if (typeof W._setSchedule === 'function') {
+        var sch = arr(crm().schedule).filter(function(x){ return String(x.pid) === String(pid); });
+        var hit = sch.filter(function(x){ return it && low(x.title).indexOf(it) >= 0; })[0] || (sch.length === 1 ? sch[0] : null);
+        if (hit) { W._setSchedule(function(l){ return (l || []).map(function(x){ return x === hit || x.id === hit.id ? Object.assign({}, x, { date: a.newDate, movedBy: st.by, movedAt: st.at, moveNote: tag + t }) : x; }); }); moved = true; }
+      }
+      if (!moved && /start/.test(it)) moved = patchProject(pid, function(q){ q.startDate = a.newDate; });
+      if (!moved && /finish|end|complet/.test(it)) moved = patchProject(pid, function(q){ q.endDate = a.newDate; });
+      if (!moved) return addTodo({ text: '🗓 Schedule change: ' + (a.scheduleItem || '') + ' → ' + a.newDate + ' — ' + t, assignee: '', due: a.newDate }, pid, st).then(function(r){ r.where = 'No matching schedule item — a to-do was made to move it'; return r; });
+      return Promise.resolve({ ok: true, where: 'Schedule moved to ' + a.newDate });
+    }
+  } catch (e) { return Promise.resolve({ ok: false, error: e.message }); }
+  return Promise.resolve({ ok: false, error: 'Unknown place' });
+}
+function addTodo(a, pid, st){
+  var p = proj(pid), who = s(a.assignee), office = /^the office$|^office$/i.test(who), u = office ? null : (who ? userByName(who) : meUser());
+  var label = '🎤 ' + s(a.text) + (p ? ' — ' + p.name : '');
+  var t = { id: uid('T'), label: label.slice(0, 300), note: (p ? 'Job: ' + p.name + (p.autoPO ? ' (PO ' + p.autoPO + ')' : '') : '') + (a.due ? ' · due ' + a.due : ''), addedBy: st.by, addedAt: st.at, updatedAt: st.at, done: false,
+    assignee: office ? 'office' : s(u && u.name) || st.by, assigneeEmail: low(u && u.email), pid: pid || '', due: s(a.due), source: 'voice' };
+  var list = arr(lsGet('gc_office_tasks')); list.push(t); lsSet('gc_office_tasks', JSON.stringify(list));
+  try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); else if (W._supaUpsertNow) W._supaUpsertNow('gc_office_tasks', JSON.stringify(list)); } catch (e) {}
+  var extra = Promise.resolve();
+  /* someone in the field (not the office, not me): it also shows in their Alerts */
+  if (u && low(u.name) !== low(st.by) && !/office/i.test(s(u.role))) extra = kvAdd('gc_pm_broadcasts', [{ id: uid('BC'), msg: '✅ To-do from ' + st.by + ': ' + s(a.text) + (p ? ' (' + p.name + ')' : '') + (a.due ? ' — due ' + a.due : ''), pri: 'normal', by: st.by, at: st.at, expires: 0, target: s(u.name), source: 'voice' }]);
+  return extra.then(function(){ return { ok: true, where: 'To-do for ' + (office ? 'the office' : (u && u.name) || 'me') + (a.due ? ', due ' + a.due : '') }; });
+}
+function hasAdm(){ return !!(W._gcAdm && typeof W._gcAdm === 'object'); }
+function announce(a, st, person){
+  var all = users().filter(function(u){ return u.active !== false && s(u.email || u.name); });
+  var rec = person ? [person] : all;
+  var store = hasAdm() ? 'gc_adm_msgs' : 'gc_pm_broadcasts';
+  var record = hasAdm()
+    ? { id: uid('AM'), at: st.at, by: st.byEmail, byName: st.by, subject: person ? '' : 'Announcement', text: '🎤 ' + s(a.text), to: { mode: person ? 'one' : 'all', label: person ? s(person.name) : 'Everyone' },
+        recipients: rec.map(function(u){ return { id: u.id || '', name: s(u.name), email: low(u.email) }; }), channels: ['crm'], jobs: [], readBy: {}, source: 'voice' }
+    : { id: uid('BC'), msg: '🎤 ' + s(a.text) + ' — ' + st.by, pri: 'normal', by: st.by, at: st.at, expires: 0, target: person ? s(person.name) : 'ALL', source: 'voice' };
+  if (!person && !isAdmin()) {
+    return fn('portal', { action: 'approval', op: 'queue', kind: 'announcement', text: s(a.text), store: store, record: record, subject: 'Company announcement' }).then(function(j){
+      return j.ok ? { ok: true, where: 'Company announcement — waiting for Wesley or Nick to approve' } : { ok: false, error: j.error || 'Could not queue it' };
+    });
+  }
+  return kvAdd(store, [record], { newestFirst: store === 'gc_adm_msgs' }).then(function(r){ return { ok: true, where: (person ? 'Message to ' + person.name : 'Company announcement') + (r.ok ? '' : ' (goes up when online)') }; });
+}
+
+/* the button: one mic, kept clear of the green APPROVE button (right side) */
+function paintMic(){
+  try {
+    if (!myEmail() || D.getElementById('gc-auth-email')) { var x = D.getElementById('_gcMicBtn'); if (x) x.remove(); return; }
+    var b = D.getElementById('_gcMicBtn');
+    if (!b) { b = D.createElement('button'); b.id = '_gcMicBtn'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('aria-label', 'Voice note'); b.title = 'Voice note: say it, pick the job and where it goes'; b.textContent = '🎤';
+      b.onclick = function(){ openMic(); }; D.body.appendChild(b); }
+    var cls = isField() ? 'field' : 'desk'; if (b.className !== cls) b.className = cls;
+    var old = D.getElementById('_voiceBtn'); if (old && old.style.display !== 'none') old.style.display = 'none';
+  } catch (e) {}
+}
+SI(paintMic, 1500); ST(paintMic, 1200);
+
+/* ════════════════════ 2. WEEKLY UPDATE: approved posts on the job too ════════════════════ */
+var POSTED = {};
+function mirrorPosts(){
+  try {
+    if (!W._gcCustApprovals) return;
+    var all = arr(W._gcCustApprovals().all);
+    all.forEach(function(x){
+      if (!(x.kind === 'weekly_update' || x.kind === 'portal_post') || x.status !== 'sent' || !x.jobId) return;
+      var id = 'pp_aq_' + s(x.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60);
+      if (POSTED[id]) return;
+      var p = proj(x.jobId); if (!p) return;
+      if (arr(p.portalPosts).some(function(y){ return y.id === id; })) { POSTED[id] = 1; return; }
+      var m = x.meta || {}, ap = (x.approvals || []).slice(-1)[0] || {};
+      var post = { id: id, at: s(x.sentAt) || nowIso(), by: s(m.by || ap.by || x.pm), text: s(m.postText || x.text).slice(0, 2000), files: arr(m.photos), source: x.kind, approvedBy: s(ap.by) };
+      if (patchProject(x.jobId, function(q){ var l = arr(q.portalPosts); if (!l.some(function(y){ return y.id === id; })) l.push(post); q.portalPosts = l; })) { POSTED[id] = 1; log({ what: 'post-mirrored', id: id }); }
+    });
+  } catch (e) {}
+}
+SI(mirrorPosts, 20000);
+
+/* ════════════════════ 3. COI / W-9 → THE SUB RECORD ════════════════════ */
+var SUBF = 'gc_autai_subextra';   /* fields the open sub form does not know: re-applied if a form save drops them */
+function subs(){ return arr(crm().subs); }
+function subById(id){ return subs().filter(function(x){ return String(x.id) === String(id); })[0] || null; }
+function normName(v){ return low(v).replace(/\b(llc|inc|co|corp|corporation|company|l\.l\.c\.|the)\b/g, '').replace(/[^a-z0-9]/g, ''); }
+function subByName(n){ var k = normName(n); if (!k) return null; return subs().filter(function(x){ return normName(x.name) === k || normName(x.company) === k; })[0] || subs().filter(function(x){ var a = normName(x.name); return a && (a.indexOf(k) >= 0 || k.indexOf(a) >= 0) && Math.min(a.length, k.length) >= 5; })[0] || null; }
+function formFor(head){ var n = head; for (var i = 0; i < 8 && n; i++) { n = n.parentElement; if (n && n.querySelectorAll('input').length >= 12) return n; } return null; }
+function formInput(form, label){
+  if (!form) return null;
+  var els = form.querySelectorAll('label,div,span');
+  for (var i = 0; i < els.length; i++) { var e = els[i]; if (e.children.length > 3) continue; var t = s(e.firstChild && e.firstChild.nodeType === 3 ? e.firstChild.nodeValue : e.textContent); if (t !== label) continue;
+    var box = e.closest('label') || e.parentElement; var inp = (e.tagName === 'LABEL' ? e : box).querySelector('input'); if (inp) return inp; }
+  return null;
+}
+function setInput(inp, v){
+  if (!inp || v == null || v === '') return false;
+  try { var d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); d.set.call(inp, String(v)); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); return true; } catch (e) { return false; }
+}
+function formSubId(form){
+  var n = formInput(form, 'Company'); var sb = n && subByName(n.value); return sb ? String(sb.id) : '';
+}
+function paintSubButtons(){
+  try {
+    D.querySelectorAll('b').forEach(function(h){
+      if (s(h.textContent) !== 'Insurance & Compliance' || h.__autai) return;
+      h.__autai = true;
+      var form = formFor(h);
+      var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'gcautai-subbtn'; bt.textContent = '📄 Drop COI / W-9';
+      bt.style.cssText = 'margin-left:10px;padding:5px 10px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;font-size:12px;cursor:pointer';
+      var fi = D.createElement('input'); fi.type = 'file'; fi.accept = 'application/pdf,image/*'; fi.style.display = 'none';
+      bt.onclick = function(){ fi.click(); };
+      fi.onchange = function(){ var f = fi.files && fi.files[0]; fi.value = ''; if (f) readSubFile(f, formSubId(form), form); };
+      h.parentNode.insertBefore(bt, h.nextSibling); h.parentNode.insertBefore(fi, bt.nextSibling);
+      if (isAdmin()) {
+        var tb = D.createElement('button'); tb.type = 'button'; tb.textContent = '🔒 Show full tax ID'; tb.style.cssText = 'margin-left:6px;padding:5px 10px;border:1px solid #94a3b8;border-radius:8px;background:transparent;color:inherit;font-weight:700;font-size:12px;cursor:pointer';
+        tb.onclick = function(){ showTin(formSubId(form), tb); };
+        h.parentNode.insertBefore(tb, fi.nextSibling);
+      }
+    });
+  } catch (e) {}
+}
+SI(paintSubButtons, 1500);
+function showTin(subId, btn){
+  if (!isAdmin()) return;
+  kvGet('gc_tax_ids').then(function(v){
+    var r = arr(v).filter(function(x){ return String(x.subId) === String(subId); }).sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; })[0];
+    if (!r) { btn.textContent = '🔒 No tax ID read for this sub'; return; }
+    var d = s(r.tin); btn.textContent = (r.type === 'ssn' ? 'SSN ' + d.slice(0, 3) + '-' + d.slice(3, 5) + '-' + d.slice(5) : 'EIN ' + d.slice(0, 2) + '-' + d.slice(2));
+    ST(function(){ btn.textContent = '🔒 Show full tax ID'; }, 20000);
+  }, function(){ btn.textContent = '🔒 Admins only'; });
+}
+function readSubFile(file, subId, form){
+  var ov = sheet('📄 Reading ' + esc(file.name) + '…', '<div class="gcautai-msg">Saving the file, then reading it…</div>');
+  var store = typeof W._gcStoreFile === 'function' ? W._gcStoreFile(file, { kind: 'doc', name: file.name }) : Promise.reject(new Error('file storage is not ready'));
+  store.then(function(meta){
+    if (!meta || !meta.ref) throw new Error('the file was not saved');
+    return fn('sub-doc-read', { ref: meta.ref, name: file.name, subId: subId, source: 'crm' }).then(function(j){ j.__meta = meta; return j; });
+  }).then(function(j){
+    if (!j.ok) { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(j.error || 'Could not read it') + '</div>'; return; }
+    confirmSubRead(ov, j.read, subId, form, j.__meta);
+  }, function(e){ ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(e.message) + '</div>'; });
+}
+var LABELS = { insCarrier: 'GL insurer', insPolicy: 'GL policy #', insEff: 'GL effective', insExp: 'GL expires', glEach: 'GL each occurrence', glAgg: 'GL aggregate', wcCarrier: 'WC insurer', wcPolicy: 'WC policy #', wcExp: 'WC expires', wcEach: 'WC each accident',
+  autoInsCarrier: 'Auto insurer', autoInsExp: 'Auto expires', umbCarrier: 'Umbrella insurer', umbExp: 'Umbrella expires', addlInsured: 'GrayCo additional insured', insuredName: 'Insured', certHolder: 'Certificate holder',
+  legalName: 'Legal name', businessName: 'Business name', taxClass: 'Tax classification', address: 'Address', tinType: 'Tax ID type' };
+function confirmSubRead(ov, rd, subId, form, meta){
+  var f = rd.fields || {}, guess = subId || (subByName(f.businessName || f.legalName || f.insuredName) || {}).id || '';
+  var rows = Object.keys(LABELS).filter(function(k){ return f[k] != null && f[k] !== '' && !(k === 'addlInsured' && rd.kind !== 'coi'); }).map(function(k){
+    var v = f[k]; if (typeof v === 'number') v = money(v).replace('.00', ''); if (typeof v === 'boolean') v = v ? 'Yes' : 'NO — ask for it';
+    return '<tr><td style="color:#475569">' + esc(LABELS[k]) + '</td><td><b>' + esc(v) + '</b></td></tr>'; }).join('') + (rd.tinMasked ? '<tr><td style="color:#475569">' + (f.tinType === 'ssn' ? 'SSN' : 'EIN') + '</td><td><b>' + esc(rd.tinMasked) + '</b> <span style="font-size:11px;color:#64748b">(full number: admins only)</span></td></tr>' : '');
+  ov.body.innerHTML = '<div class="gcautai-card"><div style="font-weight:800;margin-bottom:6px">' + (rd.kind === 'coi' ? '🛡 Certificate of insurance' : rd.kind === 'w9' ? '🧾 W-9' : '❔ Not a COI or W-9') + '</div>' +
+    (rows ? '<table>' + rows + '</table>' : '<div>Nothing could be read from it.</div>') + '</div>' +
+    (rd.kind === 'coi' || rd.kind === 'w9' ? '<div class="gcautai-l">Sub</div><select class="gcautai-sel" id="_gcSdSub"><option value="">— pick the sub —</option>' + subs().slice().sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).map(function(x){ return '<option value="' + esc(x.id) + '"' + (String(x.id) === String(guess) ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select>' +
+      '<div class="gcautai-row"><button class="gcautai-btn go" id="_gcSdOk">✅ Fill the sub record</button><button class="gcautai-btn" id="_gcSdNo">Not now</button></div>' : '<div class="gcautai-row"><button class="gcautai-btn" id="_gcSdNo">Close</button></div>') +
+    '<div class="gcautai-msg" id="_gcSdMsg"></div>';
+  var q = function(x){ return ov.body.querySelector(x); };
+  q('#_gcSdNo').onclick = function(){ if (rd.status === 'new' && (rd.kind !== 'coi' && rd.kind !== 'w9')) fn('sub-doc-read', { act: 'done', id: rd.id, dismiss: true }); ov.close(); };
+  if (q('#_gcSdOk')) q('#_gcSdOk').onclick = function(){
+    var sid = q('#_gcSdSub').value; if (!sid) { q('#_gcSdMsg').className = 'gcautai-msg gcautai-bad'; q('#_gcSdMsg').textContent = 'Pick the sub.'; return; }
+    var r = applySubRead(rd, sid, form, meta);
+    q('#_gcSdMsg').className = 'gcautai-msg ' + (r.ok ? 'gcautai-ok' : 'gcautai-bad'); q('#_gcSdMsg').textContent = r.ok ? '✓ ' + r.msg : '⚠ ' + r.error;
+    if (r.ok) { this.disabled = true; ST(ov.close, 1600); }
+  };
+}
+function applySubRead(rd, sid, form, meta){
+  var sb = subById(sid); if (!sb) return { ok: false, error: 'That sub is not loaded.' };
+  if (typeof W._setSubs !== 'function') return { ok: false, error: 'The sub list is not ready on this screen.' };
+  var f = rd.fields || {}, at = nowIso(), by = myName(), ch = {}, extra = {};
+  var file = { id: uid('F'), cat: rd.kind === 'coi' ? 'COI' : 'W-9', ref: s(rd.ref || (meta && meta.ref)), data: s(rd.ref || (meta && meta.ref)), name: s(rd.name || (meta && meta.name)) || (rd.kind === 'coi' ? 'COI.pdf' : 'W-9.pdf'), by: by, at: at, aiRead: rd.id };
+  if (rd.kind === 'coi') {
+    ['insCarrier', 'insPolicy', 'insExp', 'wcCarrier', 'wcPolicy', 'wcExp', 'autoInsCarrier', 'autoInsExp'].forEach(function(k){ if (s(f[k])) ch[k] = f[k]; });
+    ['insEff', 'glEach', 'glAgg', 'wcEach', 'wcEff', 'autoInsPolicy', 'autoCsl', 'umbCarrier', 'umbExp', 'umbEach', 'certHolder', 'insuredName', 'addlInsuredText'].forEach(function(k){ if (f[k] != null && f[k] !== '') extra[k] = f[k]; });
+    extra.addlInsured = f.addlInsured === true; extra.coi = true; extra.coiExp = s(f.insExp) || s(f.wcExp); extra.coiReadAt = at; extra.coiReadBy = by;
+    if (s(f.wcCarrier)) extra.wcExempt = false;
+  } else if (rd.kind === 'w9') {
+    extra.w9 = true; extra.legalName = s(f.legalName); extra.taxClass = s(f.taxClass); extra.w9ReadAt = at; extra.w9ReadBy = by;
+    if (s(f.businessName)) extra.dba = s(f.businessName);
+    if (s(f.address) && !s(sb.address)) extra.address = s(f.address);
+    if (rd.tinMasked) { ch.ein = rd.tinMasked; extra.taxId = rd.tinMasked; extra.tinType = s(f.tinType); extra.taxRef = s(rd.taxRef); }
+  } else return { ok: false, error: 'Not a COI or W-9.' };
+  var all = Object.assign({}, ch, extra);
+  W._setSubs(function(list){ return (list || []).map(function(x){ if (!x || String(x.id) !== String(sid)) return x; var y = Object.assign({}, x, all); var fl = arr(x.files); if (file.ref && !fl.some(function(z){ return z.ref === file.ref; })) fl = fl.concat([file]); y.files = fl; y.updatedAt = at; return y; }); });
+  /* the open form (React state) gets the same values, so its Save keeps them */
+  var LBL = { insCarrier: 'GL Insurance Carrier', insPolicy: 'GL Policy #', insExp: 'GL Insurance Exp', wcCarrier: 'WC Carrier', wcPolicy: 'WC Policy #', wcExp: 'WC Exp', autoInsCarrier: 'Auto Insurance Carrier', autoInsExp: 'Auto Insurance Exp', ein: 'Tax ID / EIN' };
+  if (form && D.body.contains(form) && formSubId(form) === String(sid)) Object.keys(ch).forEach(function(k){ setInput(formInput(form, LBL[k]), ch[k]); });
+  var pend = {}; try { pend = JSON.parse(lsGet(SUBF) || '{}') || {}; } catch (e) {}
+  pend[sid] = { at: Date.now(), f: all, file: file }; lsSet(SUBF, JSON.stringify(pend));
+  if (rd.taxRef) fn('sub-doc-read', { act: 'link', taxRef: rd.taxRef, subId: sid });
+  fn('sub-doc-read', { act: 'done', id: rd.id, subId: sid });
+  try { W._gcPushAll && ST(W._gcPushAll, 800); } catch (e) {}
+  log({ what: 'subdoc', kind: rd.kind, sub: sid });
+  return { ok: true, msg: (rd.kind === 'coi' ? 'Insurance filled' + (extra.coiExp ? ' — COI expires ' + extra.coiExp + ' (the 30-day alert uses it)' : '') : 'W-9 filled' + (rd.tinMasked ? ' — EIN kept as ' + rd.tinMasked : '')) + ' on ' + sb.name + '.' };
+}
+/* a sub's form save that was opened before the read can drop the extra fields: put them back (10 minutes) */
+function reapplySubExtras(){
+  var pend = {}; try { pend = JSON.parse(lsGet(SUBF) || '{}') || {}; } catch (e) { return; }
+  var ch = false;
+  Object.keys(pend).forEach(function(sid){
+    var p = pend[sid]; if (!p || Date.now() - p.at > 10 * 60e3) { delete pend[sid]; ch = true; return; }
+    var sb = subById(sid); if (!sb || typeof W._setSubs !== 'function') return;
+    var miss = Object.keys(p.f).filter(function(k){ return JSON.stringify(sb[k]) !== JSON.stringify(p.f[k]); });
+    var noFile = p.file && p.file.ref && !arr(sb.files).some(function(z){ return z.ref === p.file.ref; });
+    if (!miss.length && !noFile) return;
+    if (D.querySelector('.gcautai-subbtn') && formSubId(formFor(D.querySelector('.gcautai-subbtn').previousSibling)) === sid) return;   /* still being edited */
+    W._setSubs(function(list){ return (list || []).map(function(x){ if (!x || String(x.id) !== sid) return x; var y = Object.assign({}, x); miss.forEach(function(k){ y[k] = p.f[k]; }); if (noFile) y.files = arr(x.files).concat([p.file]); return y; }); });
+  });
+  if (ch) lsSet(SUBF, JSON.stringify(pend));
+}
+SI(reapplySubExtras, 4000);
+/* COI / W-9 filed on a sub's documents (the CRM's sub docs, the sub portal) that nobody read yet: offer them */
+var SEENDOC = {};
+function subDocQueue(){
+  if (!isOffice()) return;
+  var cands = [];
+  subs().forEach(function(sb){ arr(sb.files).forEach(function(f){
+    var t = s(f.cat) + ' ' + s(f.name);
+    if (f.aiRead || !/^sb:crm-files\/[0-9a-f]{64}\.(pdf|jpe?g|png|webp)$/i.test(s(f.ref)) || SEENDOC[f.ref]) return;
+    if (!/\bcoi\b|certificate|insurance|acord|\bw-?9\b/i.test(t)) return;
+    if (Date.parse(f.at || f.uploadedAt || f.savedAt || 0) && Date.now() - Date.parse(f.at || f.uploadedAt || f.savedAt) > 45 * 864e5) return;   /* recent ones only */
+    cands.push({ sub: sb, f: f });
+  }); });
+  return cands;
+}
+var SDQ = [];
+function scanSubDocs(){
+  if (!myEmail() || !isOffice()) return;
+  var c = subDocQueue() || [];
+  fn('sub-doc-read?list=1', null, 'GET').then(function(j){
+    var waiting = arr(j.items);
+    SDQ = waiting.concat(c.filter(function(x){ return !waiting.some(function(w){ return w.ref === x.f.ref; }); }).map(function(x){ return { pending: true, ref: x.f.ref, name: x.f.name, subId: x.sub.id, cat: x.f.cat }; }));
+    paintPills();
+  });
+}
+SI(function(){ if (!D.hidden) scanSubDocs(); }, 120000); ST(scanSubDocs, 15000);
+function openSubDocs(){
+  var ov = sheet('📄 COI / W-9 to confirm', '');
+  ov.body.innerHTML = SDQ.length ? SDQ.map(function(x, i){ var sb = subById(x.subId) || {}; return '<div class="gcautai-act" data-i="' + i + '" style="cursor:pointer"><div class="t">' + (x.kind === 'w9' || /w-?9/i.test(s(x.cat) + s(x.name)) ? '🧾' : '🛡') + ' ' + esc(sb.name || x.fields && (x.fields.businessName || x.fields.insuredName) || 'Sub') + '</div><div style="font-size:12px;color:#9fb3c8">' + esc(x.name) + (x.pending ? ' · not read yet — tap to read it' : ' · read, waiting for you') + '</div></div>'; }).join('') : '<div>Nothing waiting.</div>';
+  ov.body.onclick = function(e){
+    var c = e.target.closest && e.target.closest('[data-i]'); if (!c) return; ov.body.onclick = null;
+    var x = SDQ[+c.getAttribute('data-i')]; SEENDOC[x.ref] = 1;
+    if (!x.pending) { confirmSubRead(ov, x, x.subId, null, null); return; }
+    ov.body.innerHTML = '<div class="gcautai-msg">Reading…</div>';
+    fn('sub-doc-read', { ref: x.ref, name: x.name, subId: x.subId, kind: /w-?9/i.test(s(x.cat) + s(x.name)) ? 'w9' : 'coi', source: 'sub-docs' }).then(function(j){
+      if (!j.ok) { ov.body.innerHTML = '<div class="gcautai-msg gcautai-bad">⚠ ' + esc(j.error) + '</div>'; return; }
+      confirmSubRead(ov, j.read, x.subId, null, { ref: x.ref, name: x.name });
+    });
+  };
+}
+
+/* ── a small sheet ── */
+function sheet(title, html){
+  var ov = D.createElement('div'); ov.className = 'gcautai-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="gcautai-sheet"><div class="gcautai-h"><b>' + title + '</b><button class="gcautai-x" aria-label="Close">✕</button></div><div class="gcautai-body">' + html + '</div></div>';
+  D.body.appendChild(ov);
+  var o = { ov: ov, body: ov.querySelector('.gcautai-body'), close: function(){ try { ov.remove(); } catch (e) {} } };
+  ov.querySelector('.gcautai-x').onclick = o.close; ov.addEventListener('click', function(e){ if (e.target === ov) o.close(); });
+  return o;
+}
+
+/* ════════════════════ 4. RECEIPTS READ THEMSELVES (Log Expense) ════════════════════ */
+var VENDOR_CAT = [[/home ?depot|lowe'?s|abc supply|srs|beacon|menards|84 lumber|ferguson|sherwin|lumber|supply|hardware|floor ?& ?decor|builders/i, 'Materials'],
+  [/shell|exxon|mobil|chevron|bp\b|valero|marathon|circle ?k|qt\b|quiktrip|speedway|murphy|kroger fuel|fuel|gas/i, 'Fuel'],
+  [/sunbelt|united rentals|herc|rental|equipment/i, 'Equipment'], [/dump|landfill|waste|republic services/i, 'Other']];
+function catFor(vendor){
+  for (var i = 0; i < VENDOR_CAT.length; i++) if (VENDOR_CAT[i][0].test(vendor)) return VENDOR_CAT[i][1];
+  var past = arr(crm().expenses).filter(function(x){ return low(x.vendor) && low(x.vendor) === low(vendor) && (x.category || x.cat); }).slice(-1)[0];
+  return past ? s(past.category || past.cat) : '';
+}
+function jobFor(vendor){
+  var mine = myJobs().filter(function(p){ return samePm(p, myName()); });
+  var cur = currentPid(); if (cur) return { pid: cur, why: 'the job you are in' };
+  var hist = arr(crm().expenses).filter(function(x){ return low(x.vendor) && low(x.vendor) === low(vendor) && mine.some(function(p){ return String(p.id) === String(x.pid); }); }).sort(function(a, b){ return s(b.date) < s(a.date) ? -1 : 1; })[0];
+  if (hist) return { pid: String(hist.pid), why: 'your job that used ' + vendor + ' last' };
+  var nr = nearestPid(); if (nr) return { pid: nr, why: 'the job you are at' };
+  if (mine.length === 1) return { pid: String(mine[0].id), why: 'your only active job' };
+  return { pid: '', why: '' };
+}
+function readReceipt(file){
+  return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res(String(fr.result).split(',')[1]); }; fr.onerror = rej; fr.readAsDataURL(file); }).then(function(b64){
+    var mt = file.type || 'image/jpeg', pdf = /pdf/i.test(mt);
+    var content = [pdf ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } } : { type: 'image', source: { type: 'base64', media_type: mt, data: b64 } },
+      { type: 'text', text: 'Read this purchase receipt. Return ONLY valid JSON, no markdown: {"vendor":"store name","date":"YYYY-MM-DD","subtotal":number,"tax":number,"total":number,"lineItems":[{"name":"item","price":number,"qty":number}]}. Use null for anything not printed; never guess.' }];
+    return W.fetch('/.netlify/functions/claude-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1200, messages: [{ role: 'user', content: content }] }) })
+      .then(function(r){ return r.json(); }).then(function(d){
+        var t = arr(d.content).map(function(c){ return c.text || ''; }).join('').replace(/```json|```/g, '').trim();
+        var o = null; try { o = JSON.parse(t); } catch (e) { var i = t.indexOf('{'), j = t.lastIndexOf('}'); if (i >= 0 && j > i) { try { o = JSON.parse(t.slice(i, j + 1)); } catch (e2) {} } }
+        if (!o) throw new Error((d.error && d.error.message) || 'the AI could not read it');
+        return o;
+      });
+  });
+}
+var RCPT = null;
+function hookExpense(){
+  var f = W._gcFieldLogExpense;
+  if (typeof f !== 'function' || f.__autai) return;
+  var w = function(job){
+    var r = f.apply(this, arguments);
+    ST(function(){ try { enhanceExpense(); } catch (e) {} }, 30);
+    return r;
+  };
+  w.__autai = true; W._gcFieldLogExpense = w;
+}
+SI(hookExpense, 2000); ST(hookExpense, 500);
+function enhanceExpense(){
+  var ov = D.getElementById('_gcLogExpOv'); if (!ov || ov.__autai) return; ov.__autai = true;
+  var ph = ov.querySelector('#_lePhoto'); if (!ph) return;
+  ph.setAttribute('accept', 'image/*,application/pdf');
+  var bar = D.createElement('div'); bar.id = '_gcRcptBar'; bar.style.cssText = 'margin:6px 0 10px;font-size:13px';
+  ph.parentNode.insertBefore(bar, ph.nextSibling);
+  ph.addEventListener('change', function(){
+    var file = ph.files && ph.files[0]; if (!file) return;
+    bar.innerHTML = '<div style="color:#93c5fd">🔍 Reading the receipt…</div>';
+    readReceipt(file).then(function(o){
+      var vendor = s(o.vendor), total = num(o.total), tax = o.tax == null ? null : num(o.tax), date = /^\d{4}-\d{2}-\d{2}$/.test(s(o.date)) ? s(o.date) : '';
+      var jf = jobFor(vendor), cat = catFor(vendor);
+      var q = function(x){ return ov.querySelector(x); };
+      if (vendor && !s(q('#_leStore').value)) q('#_leStore').value = vendor;
+      if (total && !num(q('#_lePrice').value)) q('#_lePrice').value = total.toFixed(2);
+      if (date) q('#_leDate').value = date;
+      if (cat && q('#_leCat')) { Array.prototype.forEach.call(q('#_leCat').options, function(op){ if (op.value === cat || op.textContent === cat) q('#_leCat').value = op.value; }); }
+      if (jf.pid && !q('#_leJob').value) q('#_leJob').value = jf.pid;
+      RCPT = { vendor: vendor, total: total, tax: tax, date: date, file: file.name, at: Date.now() };
+      var p = proj(q('#_leJob').value);
+      bar.innerHTML = '<div style="background:#0a1628;border:1px solid #16a34a;border-radius:10px;padding:10px;color:#e2e8f0">' +
+        '<div style="font-weight:800">🧾 ' + esc(vendor || 'Receipt') + ' · ' + money(total) + (tax != null ? ' (tax ' + money(tax) + ')' : '') + (date ? ' · ' + esc(date) : '') + '</div>' +
+        '<div style="font-size:12px;color:#9fb3c8;margin-top:2px">Job: ' + esc(p ? p.name : '— pick one above —') + (jf.why && p ? ' (' + esc(jf.why) + ')' : '') + ' · ' + esc(q('#_leCat').value) + '</div>' +
+        '<button id="_gcRcptOk" style="width:100%;margin-top:8px;padding:13px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:16px;cursor:pointer">✅ Confirm — save to ' + esc(p ? p.name : 'the job') + '</button></div>';
+      q('#_gcRcptOk').onclick = function(){ if (!q('#_leJob').value) { bar.querySelector('div div:nth-child(2)').textContent = 'Pick the job above first.'; return; } q('#_leSave').click(); tagSavedExpense(0); };
+      log({ what: 'receipt', vendor: vendor, total: total, pid: jf.pid });
+    }, function(e){ bar.innerHTML = '<div style="color:#fbbf24">Could not read it (' + esc(e.message) + ') — type the price and store.</div>'; });
+  });
+}
+/* the saved expense gets the tax and "read by AI" (the Log Expense save does not know them) */
+function tagSavedExpense(n){
+  if (!RCPT || typeof W._setExpenses !== 'function') return;
+  var r = RCPT;
+  var mine = function(x){ return x && x.source === 'field' && Math.abs(num(x.amt) - r.total) < 0.01 && Date.parse(x.at || x.savedAt || 0) >= r.at - 1000; };
+  var l0 = arr(crm().expenses);
+  if (l0.some(function(x){ return mine(x) && x.aiRead; })) { RCPT = null; return; }
+  if (l0.some(mine)) W._setExpenses(function(list){ return (list || []).map(function(x){ return mine(x) && !x.aiRead ? Object.assign({}, x, { tax: r.tax, aiRead: true, aiVendor: r.vendor, updatedAt: nowIso() }) : x; }); });
+  if (n < 12) ST(function(){ tagSavedExpense(n + 1); }, 700);   /* the save is async: look until it is there and tagged */
+  else RCPT = null;
+}
+
+/* ════════════════════ 5. PAYMENTS MATCH THEMSELVES ════════════════════ */
+var PMK = 'gc_pay_matches';
+var PM = { list: [], at: 0 };
+function invoices(){ var a = arr(crm().invoices); return a.length ? a : arr(crm().invs); }
+function openInv(r){ return r && /client/.test(s(r.type) || 'client') && !/sub/.test(s(r.type)) && !/paid|void|cancel|draft|deleted/.test(low(r.status)) && r.paid !== true && r.deleted !== true; }
+function balOf(r){ if (r.openBalance != null && r.openBalance !== '') return num(r.openBalance); var a = num(r.amt != null ? r.amt : r.amount); var pd = typeof r.paid === 'number' ? r.paid : num(r.amountPaid || r.paidAmount); return Math.max(0, a - pd); }
+var REGC = null;   /* the register is only in window._crm once the money screens loaded it: else the cloud copy */
+function regList(){ var a = crm().gcAcctRegister; return Array.isArray(a) ? arr(a) : arr(REGC); }
+function loadReg(){ if (Array.isArray(crm().gcAcctRegister)) return Promise.resolve(); return kvGet('gcAcctRegister').then(function(v){ REGC = arr(v); }, function(){}); }
+function moneyIn(x){ return x && (x.type === 'income' || x.isIncome === true || x.direction === 'in') && !x.srcInvId && !x.matchedInv && x.deleted !== true; }
+function regId(x){ return s(x._id || x.id); }
+function scoreMatch(x, inv){
+  var amt = num(x.amount != null ? x.amount : x.amt), desc = low([x.desc, x.payee, x.memo, x.ref].join(' ')), why = [], sc = 0;
+  var bal = balOf(inv), tot = num(inv.amt != null ? inv.amt : inv.amount);
+  if (Math.abs(amt - bal) < 0.01) { sc += 3; why.push('amount = balance'); } else if (Math.abs(amt - tot) < 0.01) { sc += 2; why.push('amount = invoice'); } else return { sc: 0 };
+  var p = proj(inv.pid) || {};
+  var nm = low(inv.client || p.client).split(/[\s,&]+/).filter(function(w){ return w.length > 2 && !/^(llc|inc|the|and|mr|mrs)$/.test(w); });
+  if (nm.some(function(w){ return desc.indexOf(w) >= 0; })) { sc += 2; why.push('customer name'); }
+  var num1 = s(inv.invNum || inv.num || inv.qbNum); if (num1 && num1.length >= 3 && desc.indexOf(low(num1)) >= 0) { sc += 3; why.push('invoice #'); }
+  var po = s(inv.po || p.autoPO); if (po && po.length >= 3 && desc.indexOf(low(po)) >= 0) { sc += 2; why.push('PO'); }
+  var d1 = Date.parse(x.date), d0 = Date.parse(inv.sentDate || inv.date); if (isFinite(d1) && isFinite(d0) && d1 < d0 - 3 * 864e5) sc -= 2;
+  return { sc: sc, why: why };
+}
+function findMatches(){
+  var invs = invoices().filter(openInv), out = [], since = Date.now() - 150 * 864e5;
+  var done = {}; PM.list.forEach(function(m){ if (m.status !== 'new') done[m.regId] = 1; });
+  regList().filter(moneyIn).forEach(function(x){
+    var id = regId(x); if (!id || done[id]) return;
+    var d = Date.parse(x.date); if (isFinite(d) && d < since) return;
+    var best = null, second = 0;
+    invs.forEach(function(inv){ var r = scoreMatch(x, inv); if (r.sc <= 0) return; if (!best || r.sc > best.sc) { if (best) second = Math.max(second, best.sc); best = { inv: inv, sc: r.sc, why: r.why }; } else second = Math.max(second, r.sc); });
+    if (!best || best.sc < 3 || best.sc === second) return;
+    out.push({ id: 'pm_' + id + '_' + best.inv.id, regId: id, invId: String(best.inv.id), pid: s(best.inv.pid), amt: num(x.amount != null ? x.amount : x.amt), date: s(x.date), desc: s(x.desc || x.payee), score: best.sc, why: best.why.join(', '),
+      invNum: s(best.inv.invNum || best.inv.num || best.inv.qbNum || best.inv.id), client: s(best.inv.client || (proj(best.inv.pid) || {}).client), status: 'new', at: nowIso() });
+  });
+  return out;
+}
+/* the cloud copy of the register: only that one line changes (read just before writing; nothing else touched) */
+function regPatchCloud(id, row){
+  if (!row) return Promise.resolve(false);
+  var c = creds();
+  return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.gcAcctRegister&select=value', { headers: sbHeaders(), cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
+    if (!Array.isArray(rows) || !rows[0]) return false;
+    var raw = rows[0].value, wasText = typeof raw === 'string', l = arr(raw); if (!l.length) return false;
+    var hit = false; l = l.map(function(x){ if (regId(x) === id) { hit = true; return Object.assign({}, x, row); } return x; });
+    if (!hit) return false;
+    return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: sbHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ key: 'gcAcctRegister', value: wasText ? JSON.stringify(l) : l, updated_at: nowIso() }) }).then(function(r){ return r.ok; });
+  }, function(){ return false; });
+}
+function scanPayments(){
+  if (!myEmail() || !isOffice()) return;
+  loadReg().then(function(){ return kvGet(PMK); }).then(function(v){ return arr(v); }, function(){ return arr(lsGet(PMK)); }).then(function(cloud){
+    PM.list = cloud;
+    var fresh = findMatches().filter(function(m){ return !cloud.some(function(c){ return c.id === m.id; }); });
+    if (fresh.length) return kvAdd(PMK, fresh).then(function(){ PM.list = arr(lsGet(PMK)); });
+  }).then(function(){ PM.at = Date.now(); paintPills(); });
+}
+SI(function(){ if (!D.hidden) scanPayments(); }, 90000); ST(scanPayments, 20000);
+/* after a bank / CSV import: look at once */
+function hookRegister(){
+  var f = W._gcMergeIntoRegister; if (typeof f !== 'function' || f.__autai) return;
+  var w = function(){ var r = f.apply(this, arguments); Promise.resolve(r).then(function(){ ST(scanPayments, 1500); }); return r; };
+  w.__autai = true; W._gcMergeIntoRegister = w;
+}
+SI(hookRegister, 3000); ST(hookRegister, 800);
+function confirmPayment(m){
+  var inv = invoices().filter(function(r){ return String(r.id) === m.invId; })[0];
+  if (!inv) return Promise.resolve({ ok: false, error: 'That invoice is not loaded.' });
+  if (typeof W._setInvoices !== 'function') return Promise.resolve({ ok: false, error: 'Invoices are not ready on this screen.' });
+  var at = nowIso(), by = myName(), bal = balOf(inv), full = m.amt >= bal - 0.01, left = Math.max(0, Math.round((bal - m.amt) * 100) / 100);
+  W._setInvoices(function(list){ return (list || []).map(function(r){ if (!r || String(r.id) !== m.invId) return r;
+    var y = Object.assign({}, r, { payments: arr(r.payments).concat([{ id: m.regId, amt: m.amt, date: m.date, method: 'bank deposit', by: by, at: at, source: 'match' }]), updatedAt: at });
+    if (full) { y.status = 'paid'; y.paid = true; y.paidDate = m.date || today(); y.openBalance = 0; } else { y.openBalance = left; y.status = 'partial'; }
+    return y; }); });
+  /* the register line points at the invoice */
+  var reg = regList().map(function(x){ return regId(x) === m.regId ? Object.assign({}, x, { srcInvId: m.invId, matchedInv: m.invId, pid: x.pid || m.pid, projPO: x.projPO || s((proj(m.pid) || {}).autoPO), category: x.category && x.category !== 'Imported' ? x.category : 'Client payment', matchedBy: by, matchedAt: at, updatedAt: at }) : x; });
+  try { if (W._gcApplySync) W._gcApplySync('gcAcctRegister', reg); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('gcAcctRegister', reg); } catch (e) {}
+  try { if (W._crm) W._crm.gcAcctRegister = reg; } catch (e) {}
+  REGC = reg;
+  regPatchCloud(m.regId, reg.filter(function(x){ return regId(x) === m.regId; })[0]);
+  var rec = Object.assign({}, m, { status: 'confirmed', confirmedBy: by, confirmedAt: at, updatedAt: at });
+  return kvAdd(PMK, [rec]).then(function(){
+    PM.list = arr(lsGet(PMK));
+    return sendReceipt({ invoiceId: m.invId, amount: m.amt, date: m.date, method: 'bank deposit', paymentId: m.regId, balanceAfter: full ? 0 : left }, 0);
+  }).then(function(j){ paintPills(); return { ok: true, receipt: j }; });
+}
+/* the receipt: the invoice may not be in the cloud for a few seconds — try again */
+function sendReceipt(body, n){
+  return fn('portal', Object.assign({ action: 'payment-receipt' }, body)).then(function(j){
+    if (j.ok || j.noEmail || n >= 4 || !j.retry) return j;
+    return new Promise(function(res){ ST(res, 6000); }).then(function(){ return sendReceipt(body, n + 1); });
+  });
+}
+function dismissMatch(m){ return kvAdd(PMK, [Object.assign({}, m, { status: 'dismissed', dismissedBy: myName(), updatedAt: nowIso() })]).then(function(){ PM.list = arr(lsGet(PMK)); paintPills(); }); }
+function openPayMatches(){
+  var ov = sheet('💵 Payments that match invoices', '');
+  function draw(){
+    var open = PM.list.filter(function(m){ return m.status === 'new'; });
+    ov.body.innerHTML = open.length ? open.map(function(m, i){ return '<div class="gcautai-act" data-i="' + i + '"><div class="t">' + money(m.amt) + ' · ' + esc(m.date) + '</div>' +
+      '<div style="font-size:13px;margin-top:2px">' + esc(m.desc) + '</div><div style="font-size:13px;color:#a7f3d0;margin-top:4px">→ Invoice #' + esc(m.invNum) + ' — ' + esc(m.client) + ' (' + esc((proj(m.pid) || {}).name || '') + ')</div>' +
+      '<div style="font-size:12px;color:#9fb3c8">Why: ' + esc(m.why) + '</div><div class="gcautai-row"><button class="gcautai-btn go _ok">✅ Confirm — mark paid + send receipt</button><button class="gcautai-btn _no">Not this one</button></div><div class="_res gcautai-msg"></div></div>'; }).join('') : '<div>Nothing to match right now.</div>';
+    ov.body.querySelectorAll('[data-i]').forEach(function(c){
+      var m = open[+c.getAttribute('data-i')];
+      c.querySelector('._ok').onclick = function(){ var b = this; b.disabled = true; b.textContent = 'Working…';
+        confirmPayment(m).then(function(r){ var res = c.querySelector('._res');
+          if (!r.ok) { res.className = '_res gcautai-msg gcautai-bad'; res.textContent = '⚠ ' + r.error; b.disabled = false; b.textContent = '✅ Confirm'; return; }
+          var rc = r.receipt || {}; res.className = '_res gcautai-msg ' + (rc.ok ? 'gcautai-ok' : 'gcautai-bad');
+          res.textContent = '✓ Marked paid. ' + (rc.ok ? (rc.already ? 'Receipt was already sent.' : 'Receipt e-mailed to ' + (rc.to || 'the customer') + '.') : 'Receipt not sent: ' + (rc.error || 'no answer'));
+          ST(draw, 2500); }); };
+      c.querySelector('._no').onclick = function(){ dismissMatch(m).then(draw); };
+    });
+  }
+  draw();
+}
+
+/* ── the pills (admins / office): payments to confirm, COI / W-9 to confirm ── */
+function paintPills(){
+  try {
+    var show = myEmail() && isOffice() && !D.getElementById('gc-auth-email');
+    var n1 = PM.list.filter(function(m){ return m.status === 'new'; }).length, n2 = SDQ.length;
+    [['_gcPayPill', n1, '💵 ' + n1 + ' payment' + (n1 === 1 ? '' : 's') + ' match invoices', openPayMatches, 0], ['_gcSubDocPill', n2, '📄 ' + n2 + ' COI / W-9 to confirm', openSubDocs, 44]].forEach(function(c){
+      var b = D.getElementById(c[0]);
+      if (!show || !c[1]) { if (b) b.remove(); return; }
+      if (!b) { b = D.createElement('button'); b.id = c[0]; b.className = 'gcautai-pill'; b.setAttribute('data-gc-keep', '1'); D.body.appendChild(b); }
+      b.textContent = c[2]; b.onclick = c[3]; b.style.marginBottom = c[4] + 'px';
+    });
+  } catch (e) {}
+}
+SI(paintPills, 5000);
+
+W._gcAUTAI = {
+  mic: function(pid, preset){ return openMic(pid, preset); }, closeMic: closeMic,
+  route: function(text, pid){ return fn('voice-intake', { action: 'route', text: text, projectId: pid || '', jobs: jobList(), people: peopleNames(), today: today() }); },
+  apply: apply, payMatches: function(){ scanPayments(); return PM.list.slice(); }, findMatches: findMatches, openPayMatches: openPayMatches, confirmPayment: confirmPayment,
+  subDocs: function(){ return SDQ.slice(); }, scanSubDocs: scanSubDocs, readSubFile: readSubFile, applySubRead: applySubRead, confirmSubRead: confirmSubRead, sheet: sheet,
+  readReceipt: readReceipt, jobFor: jobFor, catFor: catFor, mirrorPosts: mirrorPosts, speechUsable: speechUsable,
+  state: function(){ return { log: LOG.slice(-30), payMatches: PM.list.length, subDocs: SDQ.length, caps: CAPS, mic: !!D.getElementById('_gcMicBtn') }; }
+};
+/* the lifecycle bus (patch AUT1), when it is there: a new invoice / payment / sub doc looks again at once */
+['gc:invoice-paid', 'gc:invoice-created', 'gc:sub-added', 'gc:payment'].forEach(function(ev){ D.addEventListener(ev, function(){ ST(scanPayments, 1500); ST(scanSubDocs, 2500); }); });
+try { console.log('[GC] AUTAI: 🎤 voice notes, weekly update posts, COI / W-9 reader, receipts and payment matching — _gcAUTAI.state()'); } catch (e) {}
 })();
 
 </script>

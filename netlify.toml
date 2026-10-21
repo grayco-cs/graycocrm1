@@ -53,6 +53,12 @@
 [functions."approval-escalate"]
   schedule = "*/15 * * * *"
 
+# Weekly customer update (patch AUTAI, docs/AUTOMATIONS-AUTAI.md): Friday 2 PM Central. Netlify's clock is UTC, so it
+# runs at 19:00 and 20:00 UTC on Fridays and only the run that is 2 PM in Memphis drafts (daylight saving or not).
+# Each active job with the portal and its weekly-update switch on gets ONE draft on the approvals list for its PM.
+[functions."weekly-update"]
+  schedule = "0 19,20 * * 5"
+
 # Lead Inbox (docs/LEAD-INBOX.md): the public bid watcher — weekdays at 7, 10, 1, 4 and 6 o'clock Central
 # (12:17, 15:17, 18:17, 21:17, 23:17 UTC). One polite look at each public bid listing; new ones go to the
 # Lead Inbox, become CRM leads and draft bid-portal jobs, and each new one is e-mailed to the admins at once.

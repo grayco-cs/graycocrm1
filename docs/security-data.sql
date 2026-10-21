@@ -19,6 +19,8 @@
 --                    users_private (pay, bank, ID, insurance, home address of every
 --                    employee), commission structures, margin goals, hiring candidates,
 --                    the cash keys, every in-cloud daily backup (it holds copies of all of it)
+--                    and gc_tax_ids (subs' full EIN / SSN from their W-9s, patch AUTAI; the sub
+--                    record keeps only the masked number)
 --        payroll     admins + gc_staff.payroll people read and write it:
 --                    payrollRuns, payrollProfiles, payrollW4, payrollTaxPayments,
 --                    payrollSettings, timesheets, gc_payroll_approvals,
@@ -107,7 +109,8 @@ returns text language sql immutable set search_path = public, pg_temp as $$
     when k like 'gc\_dailybackup\_%' then 'admin'                  -- in-cloud daily backups hold copies of everything
     when regexp_replace(k, '__(chunk[0-9]+|manifest)$', '') = any (array[
       'users_private', 'user', 'candidates', 'gc_commission_structures', 'gc_margin_goals',
-      'gc_cash_anchor', 'gc_accounts_cfg', 'gc_accounts_ledger'])
+      'gc_cash_anchor', 'gc_accounts_cfg', 'gc_accounts_ledger',
+      'gc_tax_ids'])                                               -- patch AUTAI: subs' full EIN / SSN (read from W-9s)
       then 'admin'
     when regexp_replace(k, '__(chunk[0-9]+|manifest)$', '') = any (array[
       'payrollRuns', 'payrollProfiles', 'payrollW4', 'payrollTaxPayments', 'payrollSettings', 'timesheets',

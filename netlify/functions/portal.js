@@ -109,7 +109,8 @@ const STAGES = ['Lead', 'Contacted', 'Appointment booked', 'Estimate sent', 'Con
 const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
 const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320/';
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
-                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults'];
+                 'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults',
+                 'gc_portal_auto_posts'];   /* patch AUTAI: approved weekly updates / voice posts */
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -481,7 +482,10 @@ async function buildView(data, p, opts){
   const pmUser = users.find(function(u){ return pmName && low(u.name) === low(pmName); }) || {};
 
   /* files: every crm-files reference shown gets ONE short-lived signed link */
-  const posts = arr(p.portalPosts).filter(function(x){ return x.hidden !== true && (s(x.text) || arr(x.files).length); })
+  const postSeen = {};   /* patch AUTAI: approved posts kept by the server (gc_portal_auto_posts) join the job's own */
+  const posts = arr(p.portalPosts).concat(arr(data.gc_portal_auto_posts).filter(function(x){ return s(x.pid) === pid; }))
+    .filter(function(x){ const k = s(x.id); if (k && postSeen[k]) return false; if (k) postSeen[k] = 1; return true; })
+    .filter(function(x){ return x.hidden !== true && (s(x.text) || arr(x.files).length); })
     .sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 40);
   const refs = [];
   posts.forEach(function(x){ arr(x.files).forEach(function(f){ refs.push(f.ref); }); });
@@ -1219,6 +1223,10 @@ async function aqSend(item, now){
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
+  /* patch AUTAI: a weekly update / a voice note's portal post goes on the customer's portal page when approved
+     (then its e-mail, if it has one); a staff announcement goes to the company messages */
+  if (AUTAI_POST[item.kind]) { const pr = await autaiPost(item, now); if (!pr.ok) return pr; if (item.channel === 'portal') { await autaiText(item); return { ok: true, posted: true }; } }
+  if (item.kind === 'announcement') return autaiAnnounce(item, now);
   if (item.channel === 'sms') { const t = await sendText(item.to, item.text); return t.ok ? { ok: true } : { ok: false, error: 'Texting is not set up yet (' + (t.skipped || 'no provider') + ').' }; }
   if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
@@ -1263,6 +1271,7 @@ async function aqSend(item, now){
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) return { ok: false, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
+  if (AUTAI_POST[item.kind]) await autaiText(item);   /* patch AUTAI: the job's text switch */
   const m = item.meta || {};
   try {   /* patch AP2: a FINAL invoice e-mailed this way is the first final-invoice e-mail: the 15-day reminders follow */
     if (item.kind === 'invoice' && m.isFinal && m.invoiceId) await fetch(sbUrl() + '/rest/v1/gc_portal_mail?on_conflict=invoice_id', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
@@ -1313,6 +1322,7 @@ async function approvalAction(body, who){
        The recipient is the job's own customer e-mail (never one the page sends). */
     if (mktLib().isMktKind(body.kind)) return mktLib().queueForApproval(body, who, { queueApproval: queueApproval, officeTodo: officeTodo });   /* patch MKT */
     if (s(body.kind) === 'invoice') return queueInvoiceMail(s(body.invoiceId), who);   /* patch AP2 */
+    if (s(body.kind) === 'portal_post' || s(body.kind) === 'announcement') return autaiQueue(body, who);   /* patch AUTAI */
     if (require('./_lib/auto-queue.js').handles(body.kind)) return require('./_lib/auto-queue.js').queue(body, who, { crmData: crmData, findProject: findProject, pmOf: pmOf, queueApproval: queueApproval, kvListRead: kvListRead, kvListUpdate: kvListUpdate, aqSend: aqSend, AQ_KEY: AQ_KEY });   /* patch AUT2 */
     if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you and invoice e-mails are queued from the CRM.' } };
     const pid = s(body.projectId);
@@ -1826,6 +1836,102 @@ async function ping(){
   return out;
 }
 
+
+/* ── patch AUTAI (automations 10 + 11 + payments) ───────────────────────────────────────────────────────────
+   · weekly_update (weekly-update.js) and portal_post (a voice note's "customer update"): approved → the post goes on
+     the customer's portal page (gc_kv "gc_portal_auto_posts", shown with the job's own posts; the CRM also copies
+     it onto project.portalPosts with the same id), then the e-mail when the item has one (channel email), and a
+     text when the job's text switch is on (meta.sms; only once a texting provider exists — sendText).
+   · announcement: a staff member's company message from a voice note; an admin approves, then it is added to the
+     company messages (gc_adm_msgs: Admin → Message employees, or gc_pm_broadcasts: the PM alerts).
+   · payment-receipt: a payment someone CONFIRMED against an invoice → the customer's receipt e-mail at once (the
+     owner rule's exception: receipts send by themselves), recorded on the approvals list as sent, never twice. */
+const AUTAI_POST = { weekly_update: 1, portal_post: 1 };
+const AUTAI_STORES = { gc_adm_msgs: 1, gc_pm_broadcasts: 1 };
+function autaiRefs(v){ return arr(v).map(function(f){ return { ref: s(f.ref), name: clip(f.name, 120), type: clip(f.type || 'image/jpeg', 40) }; }).filter(function(f){ return refPath(f.ref); }).slice(0, 12); }
+async function autaiPost(item, now){
+  const m = item.meta || {};
+  const ap = (item.approvals || []).slice(-1)[0] || {};
+  const post = { id: 'pp_aq_' + s(item.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60), pid: s(item.jobId), at: now, by: s(m.by || ap.by || item.pm || 'GrayCo'),
+    text: clip(m.postText || item.text, 2000), files: autaiRefs(m.photos), src: item.kind, approvedBy: s(ap.by) };
+  if (!post.pid) return { ok: false, error: 'No job on this item.' };
+  const has = function(l){ return l.some(function(x){ return s(x.id) === post.id; }); };
+  const r = await kvListUpdate('gc_portal_auto_posts', function(l){ return has(l) ? null : { list: l.concat([post]).slice(-3000), check: has }; });
+  return r.ok ? { ok: true } : { ok: false, error: 'Could not put it on the portal page (' + r.error + ').' };
+}
+async function autaiText(item){
+  const sm = (item.meta || {}).sms;
+  if (!sm || !s(sm.to)) return;
+  let body = clip(sm.text || item.text, 600);
+  if (body.indexOf(LINK_PH) >= 0) { let tok = ''; try { tok = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) {} body = body.split(LINK_PH).join(tok ? linkFor(null, tok) : ''); }
+  let t; try { t = await sendText(s(sm.to), body); } catch (e) { t = { ok: false, skipped: 'error' }; }
+  item.meta.smsResult = t && t.ok ? 'sent' : 'not sent (' + (t && t.skipped || 'no provider') + ')';
+}
+async function autaiAnnounce(item, now){
+  const m = item.meta || {};
+  if (!AUTAI_STORES[m.store] || !m.record || typeof m.record !== 'object') return { ok: false, error: 'Nothing to post.' };
+  const rec = JSON.parse(JSON.stringify(m.record)); rec.id = s(rec.id) || ('AN' + Date.now().toString(36)); rec.at = now; rec.approvedBy = s(((item.approvals || []).slice(-1)[0] || {}).by);
+  const has = function(l){ return l.some(function(x){ return s(x.id) === rec.id; }); };
+  const r = await kvListUpdate(m.store, function(l){ return has(l) ? null : { list: (m.store === 'gc_adm_msgs' ? [rec].concat(l) : l.concat([rec])).slice(0, 2000), check: has }; });
+  return r.ok ? { ok: true } : { ok: false, error: 'Could not post it (' + r.error + ').' };
+}
+async function autaiQueue(body, who){
+  const kind = s(body.kind), now = new Date().toISOString();
+  const qid = 'appr_' + (kind === 'portal_post' ? 'post' : 'ann') + '_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+  const text = String(body.text || '').slice(0, 2000).trim();
+  if (!text) return { status: 400, out: { ok: false, error: 'Nothing to post.' } };
+  if (kind === 'announcement') {
+    const store = AUTAI_STORES[s(body.store)] ? s(body.store) : 'gc_pm_broadcasts';
+    const rec = body.record && typeof body.record === 'object' && JSON.stringify(body.record).length < 20000 ? body.record : { msg: text, pri: 'normal', target: 'ALL', expires: 0 };
+    rec.by = rec.by || who.email; rec.source = 'voice'; rec.requestedBy = who.email;
+    const q = await queueApproval({ id: qid, kind: 'announcement', pid: '', jobName: 'Company', pm: null, to: 'Everyone at GrayCo (CRM)', channel: 'crm',
+      title: '📣 Company announcement from ' + (s(who.name) || who.email), subject: clip(body.subject || 'Company announcement', 200), html: textHtml(text), meta: { store: store, record: rec, by: who.email } });
+    return { status: q ? 200 : 502, out: { ok: !!q, id: qid, queued: !!q } };
+  }
+  const pid = s(body.projectId);
+  const data = await crmData(true); const p = pid && findProject(data, pid);
+  if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
+  const q = await queueApproval({ id: qid, kind: 'portal_post', pid: pid, jobName: p.name, pm: pmOf(data, p), to: 'Customer portal — ' + (s(p.client) || 'customer'), channel: 'portal',
+    title: '📣 Portal post — ' + s(p.name), subject: 'Update on ' + s(p.name), html: textHtml(text),
+    meta: { postText: text, photos: autaiRefs(body.photos), by: s(body.by) || who.name || who.email, source: s(body.source) || 'voice' } });
+  return { status: q ? 200 : 502, out: { ok: !!q, id: qid, queued: !!q } };
+}
+function autaiReceiptHtml(doc, amt, date, method){   /* the body: _lib/brand.js puts the GrayCo shell around it */
+  return '<p style="margin:0 0 4px;font-size:12px;font-weight:bold;letter-spacing:.06em;color:#D4A017">PAYMENT RECEIVED — THANK YOU</p>' +
+    '<p>Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
+    '<p>We received your payment of <b>' + usd(amt) + '</b>' + (date ? ' on ' + esc(date) : '') + (method ? ' (' + esc(method) + ')' : '') + ' for <b>' + esc(doc.job) + '</b>, invoice #' + esc(doc.number) + '.</p>' +
+    '<p>Invoice total ' + usd(doc.total) + ' · balance now <b>' + usd(Math.max(0, doc.balance)) + '</b>.</p>' +
+    '<p style="margin:20px 0"><a href="' + LINK_PH + '" style="display:inline-block;background:#0F1D2F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">See it on my GrayCo project page</a></p>';
+}
+async function autaiReceipt(body, who){
+  const invId = s(body.invoiceId), amt = money(num(body.amount));
+  if (!invId || !(amt > 0)) return { status: 400, out: { ok: false, error: 'Which invoice and how much?' } };
+  const rid = 'rcpt_' + invId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 50) + '_' + s(body.paymentId || (ymd(body.date) + '_' + Math.round(amt * 100))).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60);
+  const cur = await kvListRead(AQ_KEY);
+  if (cur && cur.list.some(function(x){ return s(x.id) === rid && x.status === 'sent'; })) return { status: 200, out: { ok: true, already: true, id: rid } };
+  const data = await crmData(true); const ij = invoiceAndJob(data, invId);
+  if (!ij) return { status: 404, out: { ok: false, retry: true, error: 'That invoice (or its job) is not in the cloud yet.' } };
+  const doc = invoiceDoc(data, ij.p, ij.r);
+  if (body.balanceAfter != null && body.balanceAfter !== '' && isFinite(num(body.balanceAfter))) doc.balance = money(num(body.balanceAfter));   /* the CRM's copy may be newer than the cloud's */
+  const to = s(doc.email);
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No customer e-mail on this job.' } };
+  if (!s(process.env.RESEND_API_KEY) || mailOff()) return { status: 200, out: { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' } };
+  let token = ''; try { token = await createFor(s(ij.p.id), 'receipt'); } catch (e) {}
+  let html = autaiReceiptHtml(doc, amt, ymd(body.date), clip(body.method, 40)).split(LINK_PH).join(token ? esc(linkFor(null, token)) : esc(baseUrl({}) + '/portal.html'));
+  try { html = await require('./_lib/brand.js').shellFor(html, { email: 'billing@grayco-cs.com', name: 'GrayCo Billing' }); } catch (e) {}
+  const subject = 'Payment received — ' + clip(doc.job, 80) + ' (invoice #' + doc.number + ')';
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: subject, html: html }) });
+  if (!r.ok) return { status: 502, out: { ok: false, error: 'The receipt did not go out (' + r.status + ').' } };
+  const now = new Date().toISOString();
+  const item = { id: rid, kind: 'receipt', title: '🧾 Payment receipt — ' + clip(doc.job, 80), jobId: s(ij.p.id), jobName: s(ij.p.name), pm: '', pmEmail: '', channel: 'email', to: to, subject: subject,
+    html: html, text: htmlText(html), attachments: [], steps: [], step: '', approvals: [], status: 'sent', createdAt: now, updatedAt: now, sentAt: now, sentBy: s(who.name) || who.email,
+    meta: { invoiceId: invId, amount: amt, auto: true, confirmedBy: who.email } };
+  const has = function(l){ return l.some(function(x){ return s(x.id) === rid; }); };
+  await kvListUpdate(AQ_KEY, function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
+  return { status: 200, out: { ok: true, sent: true, id: rid, to: to } };
+}
+
 /* ── the door ──────────────────────────────────────────────────────────────── */
 function reply(statusCode, headers, obj){ return { statusCode: statusCode, headers: headers, body: JSON.stringify(obj) }; }
 async function notActive(headers, t0){
@@ -1852,7 +1958,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -1898,6 +2004,10 @@ exports.handler = async function (event) {
         if (op === 'subscribers') { const list = await N.subscribers(await crmData(true)); return reply(200, headers, { ok: true, count: list.length, subscribers: list }); }
         return reply(400, headers, { ok: false, error: 'Bad request' });
       } catch (e) { return reply(503, headers, { ok: false, setup: true, error: 'GrayCo News list is not set up: run docs/news-unsubscribe.sql in Supabase.' }); }
+    }
+    if (action === 'payment-receipt') {   /* patch AUTAI: the customer's receipt once a payment is confirmed (never asks) */
+      try { const rc = await autaiReceipt(body, who); return reply(rc.status || 200, headers, rc.out); }
+      catch (e) { return reply(500, headers, { ok: false, error: 'The receipt hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     const pid = s(body.projectId);
     if (!pid) return reply(400, headers, { ok: false, error: 'Open a job first.' });
@@ -1971,6 +2081,8 @@ exports.handler = async function (event) {
 exports._core = { JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
+/* patch AUTAI */
+Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
