@@ -141308,3 +141308,50 @@ try { var adCss = D.createElement('style'); adCss.textContent = '#ag-mount{posit
 try { console.log('[GC] 📣 Marketing ready (patch MKT): _gcMkt.open(section)'); } catch (e) {}
 })();
 </script><!-- /MKT -->
+<script id="gc-fix-filehold">
+/* GATE fix_2 — the file-window hold ends when the person is back (no window focus event needed). */
+(function(){
+  'use strict';
+  if (window.__GC_FILEHOLD_FIX__) return; window.__GC_FILEHOLD_FIX__ = true;
+  var openAt = 0, chosen = false, timer = 0;
+  function held(){ try { return !!window.__GC_FILE_DIALOG__ || (typeof window._gcFileWindowOpen === 'function' && window._gcFileWindowOpen()); } catch (e) { return false; } }
+  function release(){
+    if (!openAt) return; openAt = 0; clearTimeout(timer);
+    if (chosen) return;                                    /* a file was picked: the 20 s reading hold stays */
+    try { if (held()) window.dispatchEvent(new Event('focus')); } catch (e) {}
+  }
+  function check(){
+    if (!openAt) return;
+    var back = false; try { back = document.hasFocus() && !document.hidden; } catch (e) {}
+    if (back && Date.now() - openAt >= 10000) return release();
+    timer = setTimeout(check, 2000);
+  }
+  function opened(el){
+    openAt = Date.now(); chosen = false; clearTimeout(timer); timer = setTimeout(check, 10000);
+    try {
+      if (el && !el.__gcHoldHooked) {
+        el.__gcHoldHooked = true;
+        el.addEventListener('change', function(){ chosen = true; openAt = 0; clearTimeout(timer); });
+        el.addEventListener('cancel', function(){ release(); });
+      }
+    } catch (e) {}
+  }
+  try {
+    var c0 = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function(){
+      try { if (String(this.type).toLowerCase() === 'file') opened(this); } catch (e) {}
+      return c0.apply(this, arguments);
+    };
+  } catch (e) {}
+  document.addEventListener('click', function(e){
+    var t = e && e.target; try { if (t && t.tagName === 'INPUT' && String(t.type).toLowerCase() === 'file') opened(t); } catch (er) {}
+  }, true);
+  ['pointerdown', 'touchstart', 'keydown'].forEach(function(ev){
+    window.addEventListener(ev, function(e){
+      if (!openAt || (e && e.isTrusted === false)) return;
+      if (Date.now() - openAt < 400) return;               /* the tap that opened it */
+      release();
+    }, true);
+  });
+})();
+</script>
