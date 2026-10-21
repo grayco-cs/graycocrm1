@@ -227,7 +227,7 @@ async function sendPersonal(body, who, key, headers){
   const att = await readAttachments(body.attachments);
   if (!att.ok) return { statusCode: 400, headers, body: JSON.stringify({ error: att.error }) };
   const name = cleanName(who.name) || cleanName(body.fromName) || me.split('@')[0];
-  const payload = { from: name + ' <' + me + '>', reply_to: me, to: to, subject: subject, html: await shellOut(html, who, body), bcc: [me] };
+  const payload = { from: name + ' <' + me + '>', reply_to: me, to: to, subject: subject, html: await shellOut(html, who, body), bcc: [me], headers: { 'X-GrayCo-CRM': 'personal' } };   /* patch X9: the job's e-mail history shows it from the CRM's log, not twice */
   if (cc.length) payload.cc = cc;
   if (att.files.length) payload.attachments = att.files;
   let data = {}, resp;

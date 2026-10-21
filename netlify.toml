@@ -103,6 +103,11 @@
 [functions."field-auto"]
   schedule = "*/15 * * * *"
 
+# Maintenance plans (patch X9): once a day, 13:20 UTC (8:20 AM Central in summer, 7:20 in winter) — visits coming up
+# (office to-do), the yearly plan invoice on ✅ Approvals, and "Offer a maintenance plan" for finished home jobs.
+[functions."maint-scheduled"]
+  schedule = "20 13 * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
@@ -184,6 +189,13 @@
 [[redirects]]
   from = "https://portal.grayco-cs.com/portal-logo.png"
   to = "/portal-logo.png"
+  status = 200
+  force = true
+
+# patch X9: the portal's "How did you hear about us?" and maintenance-plan cards
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-plus.js"
+  to = "/portal-plus.js"
   status = 200
   force = true
 

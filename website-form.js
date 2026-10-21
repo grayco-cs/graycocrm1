@@ -27,6 +27,7 @@ var CSS = ':host{all:initial;display:block;font-family:-apple-system,BlinkMacSys
  + '.meas{display:inline-block;background:#f4f2fb;border-radius:8px;padding:8px 12px;font-size:13px;color:#3b3563;margin-top:8px}.hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}'
  + '.spin{display:inline-block;width:18px;height:18px;border:3px solid #e3e1ee;border-top-color:' + NAVY + ';border-radius:50%;animation:r 1s linear infinite;vertical-align:-4px;margin-right:8px}@keyframes r{to{transform:rotate(360deg)}}';
 var TYPES = { estimate: 'Free estimate request', storm: 'Storm / insurance damage', commercial: 'Commercial bid inquiry', maintenance: 'Maintenance plan sign-up', problem: 'Report a problem (existing customer)', careers: 'Job application (careers)' };
+var HEARD = ['Google', 'Facebook', 'A friend or neighbor (referral)', 'Yard sign', 'Our truck', 'Repeat customer', 'Insurance company', 'Other'];   /* patch X9 */
 var POS = ['Project Manager', 'Superintendent', 'Estimator', 'Carpenter', 'Roofer', 'Laborer', 'Office / Admin', 'Other'];
 function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function F(name, label, o){
@@ -71,7 +72,7 @@ function mount(host){
   function form(){
     var picker = !roof && !TYPES[want] ? '<div class="types">' + Object.keys(TYPES).map(function(k){ return '<button type="button" data-t="' + k + '" class="' + (k === type ? 'on' : '') + '">' + esc(TYPES[k]) + '</button>'; }).join('') + '</div>' : '';
     var body = roof ? '<p class="fine" style="margin:0 0 12px;font-size:14px">We measure your roof from satellite imagery. Tell us where to send your price:</p>' + addr('Home address') + '<div class="row">' + F('name', 'Your name', { req: true, ac: 'name' }) + F('phone', 'Phone', { type: 'tel', ac: 'tel', req: true }) + '</div>' + F('email', 'E-mail', { type: 'email', ac: 'email', req: true })
-      : fields(type);
+      : fields(type) + (type !== 'careers' ? F('howHeard', 'How did you hear about us?', { type: 'select', opts: HEARD }) : '');   /* patch X9 */
     return '<style>' + CSS + '</style><div class="w">' + head() + '<form class="bd" novalidate>' + picker + body
       + '<div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div><slot name="ts"></slot>'
       + '<button class="go" type="submit">' + (roof ? 'Show my price' : type === 'careers' ? 'Send my application' : 'Send') + '</button><div class="err" role="alert"></div>'

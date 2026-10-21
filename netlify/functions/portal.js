@@ -1272,6 +1272,7 @@ async function aqSend(item, now){
   }
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
   if (item.kind === 'winback') return require('./_lib/winback.js').onApproved(item, now);   /* patch AUTO6: lost-lead check-ins, one e-mail each from news@ */   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
+  if (item.kind === 'maint_invoice') return require('./portal-plus.js').maintInvoiceSend(item, now);   /* patch X9: the yearly maintenance-plan invoice, with its PDF */
   /* patch AUTAI: a weekly update / a voice note's portal post goes on the customer's portal page when approved
      (then its e-mail, if it has one); a staff announcement goes to the company messages */
   if (AUTAI_POST[item.kind]) { const pr = await autaiPost(item, now); if (!pr.ok) return pr; if (item.channel === 'portal') { await autaiText(item); return { ok: true, posted: true }; } }

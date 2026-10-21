@@ -683,6 +683,10 @@ async function processEvent(evt, opts){
       from: mail.from.email, fromName: mail.from.name, subject: s(mail.subject).slice(0, 200), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 1500) }).catch(() => false);
     return ok ? { status: 200, body: { ok: true, results: true } } : { status: 503, body: { ok: false, error: 'GrayCo could not store the bid results yet — retry.' } };
   }
+  /* patch X9: a copy for the job's e-mail history (the Google routing rule → mail@in.grayco-cs.com): kept on its job,
+     or thrown away — never a lead or a bid, even when it was addressed to bids@ / leads@ */
+  try { const CM = require('./_lib/comms.js'); if (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } }; return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail)) }; } }
+  catch (e) { return { status: 503, body: { ok: false, error: 'The e-mail history could not store this yet (' + (e && e.message) + ') — retry.' } }; }
   const leadMail = !forBids(mail, data) && forLeads(mail, data);   /* patch STL: leads@ — never when it is for bids@ too */
   /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
   const orderMail = !leadMail && !forBids(mail, data) && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));

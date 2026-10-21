@@ -206,7 +206,8 @@ function readForm(b){
     availability: pick(b, ['availability', 'start_date', 'available']),
     hp: s(b.website) || s(b.company_url) || s(b.hp_field), token: s(b.token || b._t), turnstile: s(b.turnstile || b['cf-turnstile-response']),
     resume: b.resume && typeof b.resume === 'object' ? b.resume : null,
-    via: s(b.via) || '', page: clip(b.page, 300)
+    via: s(b.via) || '', page: clip(b.page, 300),
+    howHeard: pick(b, ['howheard', 'how_heard', 'how_did_you_hear', 'how_did_you_hear_about_us', 'heard_about', 'hear_about_us', 'referral_source'])   /* patch X9 */
   };
   if (!f.address && (f.city || f.zip)) f.address = '';
   ['name', 'company', 'project', 'service', 'property', 'position', 'carrier'].forEach(k => { f[k] = clip(f[k], 120); });
@@ -263,6 +264,7 @@ async function fileLead(f, extra){
     contactName: f.name, receivedAt: at, unassigned: true };
   if (cust) Object.assign(leadExtra, { existingCustomer: true, customerPid: cust.pid || '', customerJob: cust.job || '', customerName: cust.client || '', customerMatch: cust.by });
   if (extra.roofQuote) leadExtra.roofQuote = extra.roofQuote;
+  if (f.howHeard) { try { const MX = require('./_lib/maint.js'); leadExtra.howHeard = MX.heardNorm(f.howHeard); } catch (e) { leadExtra.howHeard = clip(f.howHeard, 60); } }   /* patch X9: "How did you hear about us?" */
   if (f.type === 'commercial' && f.company) leadExtra.company = f.company;
   const rec = {
     id, title: leadTitle(f, T), source: src, sourceKind: 'website', sourceRef: T.label, type: T.kind === 'careers' ? 'residential' : T.kind,
