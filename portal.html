@@ -202,6 +202,14 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 .sel-pad{width:100%;aspect-ratio:3/1;border:1px dashed #9AA5B1;border-radius:10px;background:#fff;touch-action:none;display:block}
 .sel-agree{display:flex;align-items:flex-start;gap:6px;font-size:14px}.sel-agree input{width:22px;height:22px;flex:0 0 22px}
 .sel-clear{min-height:36px;font-size:13px}.sel-msg{font-size:14px;font-weight:600;color:var(--goldDk);min-height:18px}
+/* patch AUTO5: ✍️ Papers to sign + 🎁 Refer a friend */
+.es .es-sec{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--rule);padding-top:10px}
+.rf .es-sec{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--rule);padding-top:10px}
+.es-item{display:flex;flex-direction:column;gap:6px;border:1px solid var(--rule);border-radius:12px;padding:10px;min-width:0}
+.es-lines{width:100%;border-collapse:collapse;font-size:14px}.es-lines td{border-top:1px solid var(--rule);padding:5px 2px;vertical-align:top;overflow-wrap:anywhere}.es-lines td+td{text-align:right;white-space:nowrap}
+.es-amt{font-size:16px;font-weight:700}.es-btns{display:flex;gap:8px;flex-wrap:wrap}.es-btns .btn{flex:1 1 140px}
+.es-dec{min-height:40px;font-size:14px;border-color:#C9C2B2;color:var(--mute)}
+.rf input,.rf textarea{width:100%;min-height:46px;border:1px solid #C9C2B2;border-radius:10px;padding:8px 12px;font-size:16px;font-family:inherit;box-sizing:border-box}.rf textarea{min-height:70px}
 </style>
 </head>
 <body>
@@ -1192,6 +1200,170 @@ try {
 } catch (e) {}
 start();
 window._gcPortalAuto7 = { reload: load, data: function(){ return D; } };
+})();
+</script>
+<script id="gc-portal-esign">
+/* patch AUTO5 — "✍️ Papers to sign" and "🎁 Refer a friend" on the customer's Home page.
+   Owner 10/21: "I do want all signatures to be in their portal." Every paper GrayCo asks the customer to sign
+   (estimate, contract, change order, other papers) shows here: what it is, the amount, the lines, the document;
+   they sign with their typed name (+ a drawn signature), or tell us they won't sign. Their copy is kept here and
+   e-mailed at once. "Refer a friend": "Contact your PM about our referral program" — the PM's name and phone,
+   and a short form that becomes a lead for their PM. Everything goes through /.netlify/functions/portal-sign with
+   the same link code; the server checks every input. Never anything about subs or the insurance company. */
+(function(){
+'use strict';
+if (window.__GC_PESIGN__) return; window.__GC_PESIGN__ = true;
+var FN = '/.netlify/functions/portal-sign', OFFICE = '901-585-0944';
+var token = '';
+try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
+var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
+function sess(){ try { return token ? '' : (localStorage.getItem('gc_portal_s') || ''); } catch (e) { return ''; } }
+function pid(){ try { return String(window.PID || ''); } catch (e) { return ''; } }
+var D = null, card = null, rcard = null, pads = {}, keep = {}, note = {}, busy = false, started = false, lastPid = '', rnote = '', rkeep = {};
+function h(tag, attrs, kids){
+  var el = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){
+    var v = attrs[k]; if (v == null || v === false) return;
+    if (k === 'text') el.textContent = v;
+    else if (k === 'on') Object.keys(v).forEach(function(e){ el.addEventListener(e, v[e]); });
+    else if ((k === 'href' || k === 'src') && !/^https:\/\//i.test(String(v)) && !/^tel:\+?\d{7,15}$/.test(String(v))) return;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  });
+  (kids || []).forEach(function(c){ if (c == null || c === false) return; el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return el;
+}
+function usd(n){ n = Number(n) || 0; return (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function dt(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function api(body){
+  return fetch(FN, { method: 'POST', headers: sess() ? { 'Content-Type': 'application/json', 'x-portal-session': sess() } : { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(Object.assign(PREVIEW ? { preview: true } : {}, sess() ? { projectId: pid() || undefined } : {}, body)), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); }, function(){ return { status: 0, data: { error: 'No connection — check your signal and try again.' } }; });
+}
+function load(){ return api({ action: 'view' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; paint(); } }); }
+function makePad(){
+  var cv = h('canvas', { class: 'sel-pad', width: '600', height: '200', 'aria-label': 'Draw your signature here' });
+  var ctx = cv.getContext('2d'), strokes = [], cur = null;
+  function pt(e){ var r = cv.getBoundingClientRect(); return [Math.max(0, Math.min(600, (e.clientX - r.left) * 600 / r.width)), Math.max(0, Math.min(200, (e.clientY - r.top) * 200 / r.height))]; }
+  function redraw(){ ctx.clearRect(0, 0, 600, 200); ctx.strokeStyle = '#0F1D2F'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    strokes.forEach(function(st){ ctx.beginPath(); st.forEach(function(p, i){ if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); if (st.length === 1) ctx.lineTo(st[0][0] + 1, st[0][1]); ctx.stroke(); }); }
+  cv.addEventListener('pointerdown', function(e){ if (strokes.length >= 38) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} cur = [pt(e)]; strokes.push(cur); redraw(); });
+  cv.addEventListener('pointermove', function(e){ if (!cur || cur.length >= 590) return; e.preventDefault(); var p = pt(e), l = cur[cur.length - 1]; if (Math.abs(p[0] - l[0]) + Math.abs(p[1] - l[1]) < 2) return; cur.push(p); redraw(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(n){ cv.addEventListener(n, function(){ cur = null; }); });
+  return { el: cv, strokes: function(){ return strokes.map(function(st){ return st.map(function(p){ return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]; }); }); }, clear: function(){ strokes = []; cur = null; redraw(); } };
+}
+function kept(el, k, ck){ if (ck) { el.checked = !!keep[k]; el.addEventListener('change', function(){ keep[k] = el.checked; }); } else { el.value = keep[k] || ''; el.addEventListener('input', function(){ keep[k] = el.value; }); } return el; }
+function itemBox(x){
+  var box = h('div', { class: 'es-item', 'data-id': x.id, 'data-status': x.status }, [
+    h('div', { class: 'row' }, [h('b', { text: x.label + ': ' + x.title }), x.status === 'pending' ? h('span', { class: 'pill now', text: 'To sign' }) : x.status === 'signed' ? h('span', { class: 'pill ok', text: '✓ Signed' }) : h('span', { class: 'pill skip', text: 'Not signed' })])]);
+  if (x.lines && x.lines.length) box.appendChild(h('table', { class: 'es-lines' }, [h('tbody', null, x.lines.map(function(l){ return h('tr', null, [h('td', { text: l.l }), h('td', { text: l.r || '' })]); }))]));
+  if (x.amount != null) box.appendChild(h('div', { class: 'es-amt', text: (x.kind === 'change_order' ? 'Change to your contract: ' : 'Amount: ') + usd(x.amount) }));
+  if (x.doc) box.appendChild(h('a', { class: 'btn', href: x.doc, target: '_blank', rel: 'noopener', text: '📄 Read the ' + x.label.toLowerCase() }));
+  if (x.status === 'signed' && x.signed) {
+    box.appendChild(h('div', { class: 'muted', text: '✓ Signed by ' + x.signed.name + ' on ' + dt(x.signed.at) }));
+    if (x.signed.url) box.appendChild(h('a', { class: 'btn', href: x.signed.url, target: '_blank', rel: 'noopener', text: 'Open my signed copy' }));
+    return box;
+  }
+  if (x.status === 'declined') { box.appendChild(h('div', { class: 'muted', text: 'You told us you would not sign this one' + (x.declined ? ' (' + dt(x.declined.at) + ')' : '') + '. Your Project Manager will call you.' })); return box; }
+  var pad = pads[x.id] || (pads[x.id] = makePad());
+  var nm = kept(h('input', { type: 'text', class: 'sel-name', maxlength: '80', autocomplete: 'name', placeholder: 'Type your full name', 'aria-label': 'Your full name' }), 'n_' + x.id);
+  var ag = kept(h('input', { type: 'checkbox' }), 'a_' + x.id, true);
+  var msg = h('div', { class: 'sel-msg', role: 'status', text: note[x.id] || '' });
+  var go = h('button', { type: 'button', class: 'btn gold es-sign', text: 'Sign' });
+  var no = h('button', { type: 'button', class: 'btn es-dec', text: 'I will not sign this' });
+  go.disabled = PREVIEW; no.disabled = PREVIEW;
+  box.appendChild(h('label', { class: 'muted', text: 'Your full name' })); box.appendChild(nm);
+  box.appendChild(h('div', { class: 'muted', text: 'Draw your signature (or leave it blank and tap Sign to accept with your typed name):' }));
+  box.appendChild(pad.el);
+  box.appendChild(h('button', { type: 'button', class: 'btn sel-clear', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
+  box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: x.kind === 'change_order' ? ' I approve this change order and the change to my contract price.' : x.kind === 'doc' ? ' I reviewed this paper and I sign it.' : ' I accept this ' + x.label.toLowerCase() + ' for the work and the price shown.' })]));
+  box.appendChild(h('div', { class: 'es-btns' }, [go, no])); box.appendChild(msg);
+  go.addEventListener('click', function(){
+    if (busy) return; if (!nm.value.trim()) { msg.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { msg.textContent = 'Please tick the box to agree.'; return; }
+    busy = true; go.disabled = true; msg.textContent = 'Signing…';
+    api({ action: 'sign', id: x.id, name: nm.value, agree: true, strokes: pad.strokes() }).then(function(r){
+      busy = false;
+      if (r.data && r.data.ok) { keep['a_' + x.id] = false; note[x.id] = ''; note._top = '✓ Thank you — signed. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); pad.clear(); return load(); }
+      msg.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; go.disabled = false;
+    });
+  });
+  no.addEventListener('click', function(){
+    if (busy) return; var why = ''; try { why = prompt('Tell your Project Manager why (optional):', ''); } catch (e) {} if (why === null) return;
+    busy = true; no.disabled = true; msg.textContent = 'Sending…';
+    api({ action: 'decline', id: x.id, reason: why || '' }).then(function(r){ busy = false; if (r.data && r.data.ok) { note._top = 'Thank you — your Project Manager will call you.'; return load(); } msg.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; no.disabled = false; });
+  });
+  return box;
+}
+function paint(){
+  var items = (D && D.items) || [];
+  var todo = items.filter(function(x){ return x.status === 'pending'; }), done = items.filter(function(x){ return x.status !== 'pending'; });
+  if (!items.length) { if (card && card.parentNode) card.parentNode.removeChild(card); card = null; }
+  else {
+    var c = card || h('section', { class: 'card es', id: 'gcesign' }); c.innerHTML = '';
+    c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '✍️ Papers to sign' }), h('span', { class: 'pill ' + (todo.length ? 'now' : 'ok'), text: todo.length ? todo.length + ' to sign' : 'All signed' })]));
+    if (PREVIEW) c.appendChild(h('div', { class: 'muted', text: 'Preview — only the customer can sign.' }));
+    if (note._top) c.appendChild(h('div', { class: 'sel-msg', id: 'gcesign-msg', text: note._top }));
+    if (todo.length) { var a = h('div', { class: 'es-sec', id: 'gcesign-todo' }); todo.forEach(function(x){ a.appendChild(itemBox(x)); }); c.appendChild(a); }
+    if (done.length) { var b = h('div', { class: 'es-sec', id: 'gcesign-done' }, [h('h3', { text: '📄 Signed papers' })]); done.forEach(function(x){ b.appendChild(itemBox(x)); }); c.appendChild(b); }
+    c.appendChild(h('div', { class: 'muted', text: 'Questions about a paper? Call ' + ((D.pm && D.pm.name) || 'your Project Manager') + (D.pm && D.pm.phone ? ' at ' + D.pm.phone : '') + ' or the office at ' + OFFICE + '.' }));
+    card = c;
+  }
+  paintRefer();
+  place();
+}
+/* 🎁 Refer a friend — owner: "Contact your PM about our referral program" */
+function paintRefer(){
+  var pm = (D && D.pm) || {};
+  var c = rcard || h('section', { class: 'card rf', id: 'gcrefer' }); c.innerHTML = '';
+  c.appendChild(h('h2', { text: '🎁 Refer a friend' }));
+  c.appendChild(h('div', { class: 'muted', text: 'Know someone who needs a roof, a remodel or storm repairs? Contact your Project Manager about our referral program' + (pm.name ? ' — ' + pm.name + (pm.phone ? ', ' + pm.phone : '') : '') + '.' }));
+  var tel = String(pm.phone || '').replace(/[^\d+]/g, '');
+  if (tel.length >= 7) c.appendChild(h('a', { class: 'btn', href: 'tel:' + tel, text: '📞 Call ' + (pm.name || 'your Project Manager') }));
+  var f = { name: h('input', { type: 'text', maxlength: '80', placeholder: 'Your friend’s name', 'aria-label': 'Your friend’s name', id: 'gcrefer-name' }), phone: h('input', { type: 'tel', maxlength: '30', placeholder: 'Their phone', 'aria-label': 'Their phone', id: 'gcrefer-phone' }),
+    email: h('input', { type: 'email', maxlength: '120', placeholder: 'Their e-mail (optional)', 'aria-label': 'Their e-mail', id: 'gcrefer-email' }), address: h('input', { type: 'text', maxlength: '200', placeholder: 'Their address (optional)', 'aria-label': 'Their address', id: 'gcrefer-address' }),
+    note: h('textarea', { maxlength: '1000', placeholder: 'What do they need? (optional)', 'aria-label': 'What do they need', id: 'gcrefer-note' }) };
+  Object.keys(f).forEach(function(k){ f[k].value = rkeep[k] || ''; f[k].addEventListener('input', function(){ rkeep[k] = f[k].value; }); });
+  var msg = h('div', { class: 'sel-msg', role: 'status', id: 'gcrefer-msg', text: rnote });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'gcrefer-send', text: 'Send to ' + (pm.name ? pm.name.split(' ')[0] : 'my Project Manager') });
+  go.disabled = PREVIEW;
+  c.appendChild(h('div', { class: 'es-sec' }, [h('h3', { text: 'Or send us their name' }), f.name, f.phone, f.email, f.address, f.note, go, msg]));
+  go.addEventListener('click', function(){
+    if (busy) return; if (!f.name.value.trim()) { msg.textContent = 'Please add your friend’s name.'; f.name.focus(); return; }
+    if (!f.phone.value.trim() && !f.email.value.trim()) { msg.textContent = 'Please add their phone or e-mail.'; f.phone.focus(); return; }
+    busy = true; go.disabled = true; msg.textContent = 'Sending…';
+    api({ action: 'refer', name: f.name.value, phone: f.phone.value, email: f.email.value, address: f.address.value, note: f.note.value }).then(function(r){
+      busy = false;
+      if (r.data && r.data.ok) { rkeep = {}; rnote = '✓ Thank you! ' + (pm.name ? pm.name.split(' ')[0] : 'Your Project Manager') + ' will reach out to them.'; paintRefer(); place(); return; }
+      msg.textContent = (r.data && r.data.error) || 'That did not work — please call ' + OFFICE + '.'; go.disabled = false;
+    });
+  });
+  rcard = c;
+}
+function homeShown(){ var t = document.getElementById('tabs'); if (!t || t.hidden) return false; var b = document.querySelector('nav.tabs button[data-tab="home"]'); return !b || b.getAttribute('aria-selected') === 'true'; }
+function place(){
+  var main = document.getElementById('main'); if (!main) return;
+  var show = homeShown();
+  [card, rcard].forEach(function(cd){ if (cd && !show && cd.parentNode) cd.parentNode.removeChild(cd); });
+  if (!show) return;
+  var host = main.querySelector('.col-r') || main;
+  if (card && card.parentNode !== host) {
+    var after = document.getElementById('gcsel');
+    var first = host.firstElementChild; while (first && first.classList && first.classList.contains('jobbar')) first = first.nextElementSibling;
+    host.insertBefore(card, after && after.parentNode === host ? after.nextSibling : first || null);
+  }
+  if (rcard && (rcard.parentNode !== host || host.lastElementChild !== rcard)) host.appendChild(rcard);
+}
+function start(){
+  if (window.GCPartner) return;   /* patch SUB: the sub portal has none of this */
+  if (started && sess() && pid() !== lastPid) { lastPid = pid(); D = null; [card, rcard].forEach(function(cd){ if (cd && cd.parentNode) cd.parentNode.removeChild(cd); }); card = null; rcard = null; pads = {}; load(); return; }
+  if (started || !(token || sess())) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
+  started = true; lastPid = pid(); load();
+}
+try {
+  new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: false });
+  var tb = document.getElementById('tabs'); if (tb) new MutationObserver(function(){ start(); place(); }).observe(tb, { attributes: true, subtree: true, attributeFilter: ['hidden', 'aria-selected'] });
+} catch (e) {}
+start();
+window._gcPortalESignCard = { reload: load, data: function(){ return D; } };
 })();
 </script>
 </body>

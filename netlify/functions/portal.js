@@ -1292,6 +1292,8 @@ async function aqSend(item, now){
   if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch AUT2: the GrayCo shell + the PM's signature */
   let from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
     : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
+  /* patch AUTO5: a signature request / an estimate follow-up goes out from the job's PM (replies go to the PM) */
+  if (item.meta && item.meta.fromPm === true && /^[^@\s<>"]+@grayco-cs\.com$/i.test(s(item.pmEmail)) && !/^office@/i.test(s(item.pmEmail))) from = s(item.pm).replace(/[<>"]/g, '') + ' \u2014 GrayCo Construction Services <' + low(item.pmEmail) + '>';
   let subj = item.subject; if (item.jobId) { try { const dj = await crmData(false); subj = withJob(subj, findProject(dj, item.jobId)); } catch (e) {} }
   const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: subj, html: html };
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
@@ -2140,6 +2142,8 @@ exports._core = { JA: JA, jaAllows: jaAllows, pmByName: async function(name){ co
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
+/* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */
+Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
 /* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */

@@ -276,6 +276,7 @@ async function fileLead(f, extra){
   if (extra.formLabel) { rec.websiteForm = extra.formLabel; rec.sourceRef = extra.formLabel; leadExtra.websiteForm = extra.formLabel; }   /* patch AUTO6: "Missed call" */
   if (extra.title) rec.title = clip(extra.title, 200);
   if (extra.leadExtra) Object.assign(leadExtra, extra.leadExtra);
+  if (extra.patch) Object.assign(rec, extra.patch);   /* patch AUTO5: a referral is not a website lead */
   let action = '';
   await L().kvCas(L().KV, v => { const o = L().upsert(arr(v), rec); action = o.action; return o.items; });
   return { id, rec, action, customer: cust };
@@ -609,6 +610,23 @@ exports.fromEmail = async function(mail){
 
 /* patch AUTO6: the missed-call text-back (missed-call.js) files its leads the same way */
 exports._lib = { fileLead, alertLead, findCustomer, phone10, tidyPhone, SOURCE };
+
+/* patch AUTO5: "Refer a friend" in the customer portal (portal-sign.js refer) — a GrayCo lead on the Lead Inbox,
+   assigned to the referring customer's PM (they know the family; the 4 h / 24 h reach-out reminders follow them),
+   tagged "Referred by <customer>". The PM gets the e-mail from portal-sign.js; nothing goes to the friend by itself. */
+const REF_SOURCE = 'Customer referral';
+exports.fromReferral = async function(o){
+  o = o || {};
+  const f = readForm({ type: 'estimate', name: o.name, email: o.email, phone: o.phone, address: o.address, message: o.note });
+  const pm = o.pm && o.pm.name ? o.pm : null, at = nowIso();
+  const sid = crypto.createHash('sha256').update('referral|' + s(o.referrerPid) + '|' + low(f.email) + '|' + phone10(f.phone) + '|' + low(f.name) + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
+  const r = await fileLead(f, { sid, source: REF_SOURCE + ' — ' + clip(o.referrer, 80), how: 'referred by ' + clip(o.referrer, 80) + ' (' + clip(o.referrerJob, 80) + ') in their GrayCo Portal',
+    notes: ['REFERRED BY: ' + clip(o.referrer, 80) + (o.referrerEmail ? ' (' + low(o.referrerEmail) + ')' : '') + ' — job ' + clip(o.referrerJob, 80) + '. Thank them for the referral (referral program).'],
+    leadExtra: { websiteLead: false, websiteForm: '', referral: true, referredBy: clip(o.referrer, 80), referrerPid: s(o.referrerPid), referrerJob: clip(o.referrerJob, 120), leadSource: REF_SOURCE, unassigned: !pm },
+    patch: Object.assign({ origin: 'referral', sourceKind: 'referral', websiteLead: false, websiteForm: '', title: ('Referral — ' + f.name + (s(f.address) ? ' — ' + s(f.address).split(',')[0] : '') + ' (from ' + clip(o.referrer, 60) + ')').slice(0, 200) },
+      pm ? { pm: pm.name, pmEmail: low(pm.email), assignedAt: at, assignedBy: 'Customer portal referral (the customer\'s PM)' } : {}) });
+  return { ok: true, id: r.id, action: r.action };
+};
 
 exports._test = { fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
   reset: () => { HITS.clear(); } };

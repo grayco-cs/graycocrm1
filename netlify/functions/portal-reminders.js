@@ -1,5 +1,5 @@
 // netlify/functions/portal-reminders.js
-// GrayCo — FINAL INVOICE E-MAIL + THE FRIENDLY REMINDER EVERY 15 DAYS (patch Q).
+// GrayCo — FINAL INVOICE E-MAIL + THE FRIENDLY REMINDER EVERY 15 DAYS (patch Q). Estimate follow-ups (patch AUTO5).
 // Scheduled in netlify.toml ([functions."portal-reminders"], every hour). Also sends the
 // "new papers in your portal" e-mails that are still waiting (see notifyDocs in portal.js).
 //
@@ -64,6 +64,8 @@ exports.handler = async function (event) {
     const rep = await portal._core.runReminders({});
     rep.invoiceMail = invoiceMail;
     try { rep.notices = await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
+    /* patch AUTO5: estimate follow-ups — day 2 (approval), day 5 and day 10 (the approved text, by themselves) */
+    try { rep.estFollowups = await require('./portal-sign.js')._ps.runFollowups({}); } catch (e) { rep.estFollowups = { error: String(e && e.message || e) }; }
     try { console.log('[portal-reminders]', JSON.stringify({ sent: rep.sent, reminded: rep.reminded, todos: rep.todos, skipped: rep.skipped, paused: rep.paused })); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(rep) };
   } catch (e) {

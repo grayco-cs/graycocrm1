@@ -150826,3 +150826,475 @@ if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', start); e
 try { console.log('[GC] Field & insurance automations (patch AUTO7): _gcAuto7.state()'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-auto5">
+/* __GC_PATCH_AUTO5__ ══════════════════════════════════════════════════════════
+   GrayCo — AUTOMATIONS, PHASE 5 (patch AUTO5): signatures in the portal, closeout autopilot, year-end archive.
+
+   Owner 10/21: "the job is probably already a job if we send an estimate out anyway. If it goes into GrayCo Photos
+   it's turned into a job with a PO, but I do want all signatures to be in their portal." "All change orders need a
+   signature." "All archives at end of the year get put into one file for end of year download and record keeping."
+
+   1. ✍️ SIGNATURES IN THE PORTAL (server: /.netlify/functions/portal-sign, shared list gc_kv "gc_sign_requests").
+      • Job → Customer portal card → "✍️ Signatures": send an estimate, a contract (any paper on the job) or a change
+        order for the customer's signature; see each one (e-mail waiting on ✅ Approvals / in the portal / signed /
+        not signed); take one back.
+      • Every new change order asks for the customer's signature by itself (its e-mail waits on ✅ Approvals — the
+        PM approves; the CO shows in the portal once that e-mail went out).
+      • window._gcPortalESign({pid, ref, name, kind, title, amount, refId}) — the hook patch BB's claim papers use.
+      • window._gcESignEstimate(estId) — an estimate with no job gets one first (a PO the same way the CRM makes it).
+      • What the customer signed comes back here (every minute): the signed copy goes into the job's documents
+        (and stays in their portal); a signed estimate / contract marks the contract signed (contract amount if the
+        job had none) and moves a job that is still bidding to Active, so patch AUT3's "signed" stage runs (draft
+        schedule from the job type's template, deposit invoice draft → ✅ Approvals, welcome e-mail → approval); a
+        job already past that gets its template schedule if it has none. A signed change order is marked approved
+        (signed by, when, the copy). Every computer may see it; the job's own record says it was done (never twice).
+   2. CLOSEOUT AUTOPILOT — when the FINAL invoice is fully paid (every client invoice paid): the warranty certificate
+      (5 years roofing / insurance, 1 year everything else — AUT3's rule) into the customer portal; the thank-you +
+      review request (✅ Approvals, PM then admin); the 11-month checkup (an Office To-Do for the PM when it is due,
+      and AUT3's checkup e-mail then waits for approval); the job is marked Completed / closed and archived for the
+      year. Only a final payment dated on or after this build's day starts it; older jobs are left alone; an insurance closeout
+      still open (window._gcInsCloseout — supplements / depreciation) holds it until that is done.
+   3. 🗄 YEAR-END ARCHIVE — ⚙ Admin: one .zip per year of every job closed that year: a summary page per job,
+      invoices, payments, change orders, the signed documents and warranty (the files themselves), photo links, and
+      an index of all jobs. Built on this computer, nothing leaves the CRM.
+   Console: _gcAuto5.status()  _gcAuto5.pull()  _gcAuto5.closeoutTick()  _gcAuto5.archive(2026)
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTO5__) return; window.__GC_PATCH_AUTO5__ = true;
+var W = window, D = document, A = W._gcAut, CHX = W._gcCH, I = CHX && CHX._i;
+if (!A || !A.util || !I) { try { console.warn('[GC] patch AUTO5 needs AUT1 and CH'); } catch (e) {} return; }
+var U = A.util, s = U.s, low = U.low, arr = U.arr, num = U.num, esc = U.esc, nowIso = U.nowIso, today = U.today, jget = U.jget, jset = U.jset, ST = U.ST, SI = U.SI;
+var FN = '/.netlify/functions/portal-sign', KEY = 'gc_sign_requests', BOOT_DATE = '2026-10-21';
+var KIND_LABEL = { estimate: 'Estimate', contract: 'Contract', change_order: 'Change order', doc: 'Document' };
+var REQS = [], stats = { pulls: 0, applied: 0, docs: 0, coAsked: 0, closeouts: 0, checkups: 0, errors: '' };
+function crm(){ return W._crm || {}; }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function toast(t, bad){ try { I.toast(t, bad); } catch (e) {} }
+function money(n){ return '$' + (Math.round(num(n) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function addMonths(iso, n){ var d = new Date(s(iso).slice(0, 10) + 'T12:00:00'); if (isNaN(d)) d = new Date(); d.setMonth(d.getMonth() + n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function call(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.__s = r.status; return j; }); }, function(){ return { ok: false, __s: 0, error: 'No connection.' }; });
+}
+
+/* ═══ 1. SIGNATURES ═══════════════════════════════════════════════════════════ */
+var PIPE = /^(bidding|quoted|submitted|proposal|estimate sent|estimating|estimate|lead|pending|negotiat\w*|sent|new|)$/i;
+var EST_IDB = [];
+/* the estimates: the CRM's live list when it has loaded it (Estimates tab / Estimate Builder), else this device's copy */
+function estList(){ var e = W._gcEstimatesState; if (!Array.isArray(e) || !e.length) e = crm().estimates; if ((!Array.isArray(e) || !e.length) && EST_IDB.length) e = EST_IDB; return arr(e); }
+function loadEst(){ return Promise.resolve(W.idbGet ? W.idbGet('estimates') : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (Array.isArray(v)) EST_IDB = v; }, function(){}); }
+var CO_IDB = [];
+function coList(){ var l = crm().changeOrders; if ((!Array.isArray(l) || !l.length) && CO_IDB.length) l = CO_IDB; return arr(l); }
+function loadCO(){ return Promise.resolve(W.idbGet ? W.idbGet('changeOrders') : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (Array.isArray(v)) CO_IDB = v; }, function(){}); }
+/* change one change order: through the CRM's own list when it has it loaded, else this device's store + the cloud */
+function setCO(id, put){
+  var inState = false;
+  try { if (W._gcSetCOs) W._gcSetCOs(function(list){ list = arr(list); if (list.some(function(c){ return c && String(c.id) === String(id); })) { inState = true; return list.map(function(c){ return c && String(c.id) === String(id) ? put(c) : c; }); } return list; }); } catch (e) {}
+  return new Promise(function(res){ ST(function(){
+    if (inState) return res(true);
+    loadCO().then(function(){
+      if (!CO_IDB.some(function(c){ return c && String(c.id) === String(id); })) return res(false);
+      var next = CO_IDB.map(function(c){ return c && String(c.id) === String(id) ? put(c) : c; }); CO_IDB = next;
+      try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('signed change order'); if (W.idbSet) W.idbSet('changeOrders', next); if (W._supaUpsert) W._supaUpsert('changeOrders', next); if (W._gcTabChangeSync) W._gcTabChangeSync('signed change order'); } catch (e) {}
+      ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+      res(true);
+    });
+  }, 50); });
+}
+var DOCS_IDB = [];
+function docsNow(){ var d = crm().projectDocs || W._gcProjectDocs; if ((!Array.isArray(d) || !d.length) && DOCS_IDB.length) d = DOCS_IDB; return Array.isArray(d) ? d : []; }
+function loadDocs(){ return Promise.resolve(W.idbGet ? W.idbGet('projectDocs') : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (Array.isArray(v)) DOCS_IDB = v; }, function(){}); }
+function jobEstimates(p){ return estList().filter(function(e){ return e && e.deleted !== true && (String(e.pid) === String(p.id) || (p.estimateId && String(e.id) === String(p.estimateId)) || (p._lastEstId && String(e.id) === String(p._lastEstId))); }); }
+function estTotal(e){ var t = num(e.totalCharge) || num(e.contract) || num(e.quoteTotal) || num(e.total); return t ? Math.round(t * 100) / 100 : null; }
+function estTitle(e){ return 'Estimate' + (s(e.num) ? ' #' + s(e.num) : '') + (s(e.name) ? ' — ' + s(e.name) : ''); }
+/* what the customer may see of an estimate: the scope words and the price — never costs, margins, labor or materials */
+function estLines(e){
+  var sc = e.scope && typeof e.scope === 'object' ? e.scope : {}, out = [];
+  var t = s(e.scopeNotes || e.description || sc.text); if (t) out.push({ l: 'Scope: ' + t.slice(0, 135) });
+  if (s(sc.inc)) out.push({ l: 'Included: ' + s(sc.inc).slice(0, 130) }); if (s(sc.exc)) out.push({ l: 'Not included: ' + s(sc.exc).slice(0, 126) });
+  return out;
+}
+function estDoc(e){ return docsNow().filter(function(d){ return d && d.deleted !== true && String(d.estimateId) === String(e.id) && /^sb:crm-files\//.test(s(d.ref)); })[0] || null; }
+function coOpen(co){ return co && co.deleted !== true && !/^(approved|signed|void|voided|rejected|declined|deleted|cancell?ed|draft)$/i.test(s(co.status)) && !co.signedAt && !co.customerSigned; }
+function reqFor(kind, refId){ return REQS.filter(function(r){ return r && r.kind === kind && String(r.refId) === String(refId) && r.status !== 'void'; }).sort(function(a, b){ return s(a.createdAt) < s(b.createdAt) ? 1 : -1; })[0] || null; }
+
+function request(o){
+  if (!o || !o.pid) return Promise.resolve({ ok: false, error: 'No job.' });
+  return call({ action: 'request', projectId: String(o.pid), kind: o.kind, refId: s(o.refId), title: s(o.title).slice(0, 120), amount: o.amount, lines: o.lines || [], docRef: s(o.docRef), docName: s(o.docName), url: s(o.url), auto: o.auto === true, again: o.again === true })
+    .then(function(j){ if (j.ok) ST(function(){ pull(true); }, 600); return j; });
+}
+/* the hook other patches use (BB's claim papers): any paper on a job → the customer signs it in the portal */
+W._gcPortalESign = function(o){
+  o = o || {};
+  var kind = /^(estimate|contract|change_order)$/.test(s(o.kind)) ? s(o.kind) : (/contract/i.test(s(o.kind) + ' ' + s(o.title)) ? 'contract' : 'doc');
+  var refId = s(o.refId || o.docId || o.id) || s(o.ref).replace(/^sb:crm-files\//, '').slice(0, 16);
+  return request({ pid: o.pid, kind: kind, refId: refId.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 80), title: s(o.title || o.name || KIND_LABEL[kind]), amount: o.amount, docRef: o.ref, docName: o.name, lines: o.lines })
+    .then(function(j){ if (!j.ok) throw new Error(j.error || 'The signature request did not go through.'); return { id: j.id, requestId: j.id, queued: !!j.queued }; });
+};
+/* an estimate with no job yet: the job first (a PO the CRM's way), then the signature request */
+function newJobFor(e){
+  var list = arr(crm().projects).slice(), pos = list.map(function(p){ return p && (p.autoPO || p.po); }).filter(Boolean);
+  var po = s(e.po || e.autoPO); if (!po) { try { po = W.nextPO ? W.nextPO(pos) : ''; } catch (x) {} } if (!po) po = 'PO-' + Date.now().toString().slice(-6);
+  var t = today(), p = { id: 'PRJ' + Date.now().toString(36).toUpperCase(), name: s(e.name) || 'Estimate ' + s(e.num), client: s(e.client || e.customer), address: s(e.address), autoPO: po,
+    status: 'bidding', type: s(e.jobType) || 'Construction', contract: 0, estimateId: s(e.id), _lastEstId: s(e.id), pm: s(e.pm || e.estimator), clientEmail: s(e.clientEmail || e.email),
+    source: 'grayco', graycoOrigin: true, created: t, createdAt: nowIso(), createdFrom: 'estimate (sent for signature)', createdBy: U.me() };
+  list.unshift(p);
+  try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('a job for an estimate'); } catch (x) {}
+  try { if (W._crm) W._crm.projects = list; } catch (x) {}
+  try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? [p].concat(prev.filter(function(q){ return q && q.id !== p.id; })) : list; }); } catch (x) {}
+  try { if (W.idbSet) W.idbSet('projects', list); } catch (x) {}
+  try { if (W._supaUpsert) W._supaUpsert('projects', list); } catch (x) {}
+  ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (x) {} }, 1500);
+  return p;
+}
+W._gcESignEstimate = function(estId, opts){
+  opts = opts || {};
+  if (!estList().some(function(x){ return x && String(x.id) === String(estId); })) return loadEst().then(function(){ return estList().some(function(x){ return x && String(x.id) === String(estId); }) ? W._gcESignEstimate(estId, opts) : { ok: false, error: 'Estimate not found.' }; });
+  var e = estList().filter(function(x){ return x && String(x.id) === String(estId); })[0];
+  if (!e) return Promise.resolve({ ok: false, error: 'Estimate not found.' });
+  var p = e.pid && A.proj(e.pid) || arr(crm().projects).filter(function(q){ return q && (String(q.estimateId) === String(e.id) || String(q._lastEstId) === String(e.id)); })[0] || null;
+  var made = false;
+  if (!p) { p = newJobFor(e); made = true; }
+  var d = estDoc(e);
+  /* the job may take a moment to reach the cloud: the server answers "not in the cloud yet" — try again a few times */
+  var tries = 0;
+  function go(){ tries++; return request({ pid: p.id, kind: 'estimate', refId: e.id, title: estTitle(e), amount: estTotal(e), lines: estLines(e), docRef: d && d.ref, docName: d && d.name, again: opts.again })
+    .then(function(j){ if (!j.ok && j.__s === 404 && tries < 6) return new Promise(function(res){ ST(function(){ res(go()); }, 5000); }); j.pid = p.id; j.newJob = made; return j; }); }
+  return go();
+};
+
+/* what the customers did, and the change orders that still need asking */
+var pulling = null, lastPull = 0;
+function pull(manual){
+  if (pulling) return pulling;
+  if (!signedIn()) return Promise.resolve(REQS);
+  pulling = Promise.all([loadCO(), loadEst()]).then(function(){ return I.kvRead(KEY, !!manual); }).then(function(v){
+    stats.pulls++; lastPull = Date.now();
+    if (Array.isArray(v)) { REQS = v.filter(function(x){ return x && x.id; }); try { if (W.idbSet) W.idbSet(KEY, REQS); } catch (e) {} }
+    return apply().then(askCOs).then(function(){ strips(); return REQS; });
+  }).then(function(x){ pulling = null; return x; }, function(e){ pulling = null; stats.errors = s(e && e.message || e); return REQS; });
+  return pulling;
+}
+function fileSigned(r){
+  var sg = r.signed || {}; if (!/^sb:crm-files\/[0-9a-f]{64}\.pdf$/.test(s(sg.docRef))) return Promise.resolve(false);
+  var id = 'esdoc_' + s(sg.sigId || r.id);
+  return Promise.resolve(W.idbGet ? W.idbGet('projectDocs') : null).then(function(all){
+    if (!Array.isArray(all)) all = docsNow().slice();
+    if (all.concat(docsNow()).some(function(d){ return d && d.id === id; })) return false;
+    var t = nowIso(), cat = r.kind === 'change_order' ? 'Change Orders' : (r.kind === 'estimate' || r.kind === 'contract' ? 'Contracts' : 'Customer portal');
+    var doc = { id: id, pid: String(r.pid), name: s(sg.docName) || 'Signed ' + (KIND_LABEL[r.kind] || 'paper').toLowerCase() + '.pdf', cat: cat, type: 'application/pdf', ref: sg.docRef, hash: s(sg.docRef).slice(13, 77),
+      uploaded: s(sg.at).slice(0, 10), uploadedAt: s(sg.at), by: s(sg.name) + ' (customer portal)', portalShare: true, source: 'portal-signature', signedBy: s(sg.name), signedAt: s(sg.at), signRequestId: r.id, savedAt: t, updatedAt: t };
+    var next = all.concat([doc]); DOCS_IDB = next;
+    try { W.idbSet('projectDocs', next); } catch (e) {}
+    try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? (prev.some(function(d){ return d && d.id === id; }) ? prev : prev.concat([doc])) : next; }); } catch (e) {}
+    try { if (W._crm) W._crm.projectDocs = next; } catch (e) {}
+    try { W.__GC_MANUAL_SAVE__ = true; if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+    ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+    try { if (W._gcManualNow) W._gcManualNow('signed paper'); if (W._gcTabChangeSync) W._gcTabChangeSync('signed paper copy'); } catch (e) {}
+    stats.docs++; return true;
+  });
+}
+function applyContract(r){
+  var p = A.proj(r.pid); if (!p) return Promise.resolve(false);
+  if ((p.esign || {})[r.id]) return Promise.resolve(false);
+  var prevStage = s(p.jobStage), wasPipe = PIPE.test(s(p.status)) && !/lost|dead|cancel/i.test(s(p.status));
+  return A.saveProject(r.pid, function(q){
+    if ((q.esign || {})[r.id]) return false;
+    q.esign = Object.assign({}, q.esign || {}); q.esign[r.id] = s(r.signed.at);
+    q.contractStatus = 'signed'; q.contractSignedAt = q.contractSignedAt || s(r.signed.at); q.contractSignedBy = s(r.signed.name); q.contractSignedDoc = s(r.signed.docRef);
+    if (!(num(q.contract) > 0) && num(r.amount) > 0) { q.contract = Math.round(num(r.amount) * 100) / 100; q.contractSetFrom = { estId: s(r.refId), amount: q.contract, at: s(r.signed.at), how: 'signed in the customer portal' }; }
+    if (PIPE.test(s(q.status)) && !/lost|dead|cancel/i.test(s(q.status))) { q.status = 'active'; q.statusChangedAt = nowIso(); q.soldAt = q.soldAt || s(r.signed.at); }
+    A.jobNote(q, '✍️ ' + s(r.signed.name) + ' signed the ' + low(KIND_LABEL[r.kind]) + ' “' + s(r.title) + '” in the customer portal' + (num(r.amount) ? ' (' + money(r.amount) + ')' : '') + '.');
+  }).then(function(saved){
+    if (!saved) return false;
+    var A3 = W._gcAut3;
+    try { if (A3) { A3.markLive(r.pid); ST(function(){ try { A3.evaluate(r.pid, prevStage || (wasPipe ? 'lead' : '')); } catch (e) {} }, 1200); } } catch (e) {}
+    /* the job type's schedule template, when the job has none yet (patch AUT3 — the PM then only moves dates) */
+    ST(function(){ try { var q = A.proj(r.pid); if (q && !q.schedPlan && W._gcSchedTemplates) W._gcSchedTemplates.apply(r.pid); } catch (e) {} }, 6000);
+    A.emit('gc:contract-signed', { pid: r.pid, requestId: r.id, amount: r.amount });
+    return true;
+  });
+}
+function applyCO(r){
+  var co = coList().filter(function(c){ return c && String(c.id) === String(r.refId); })[0];
+  if (!co || s(co.signedAt) === s(r.signed.at)) return Promise.resolve(false);
+  var put = function(c){ return Object.assign({}, c, { status: 'approved', customerSigned: true, signedBy: s(r.signed.name), signedAt: s(r.signed.at), signedDocRef: s(r.signed.docRef), approvedBy: s(r.signed.name) + ' (customer portal)', approvedAt: s(r.signed.at), sentToCustomer: true, updatedAt: nowIso() }); };
+  return setCO(r.refId, put).then(function(){ return A.saveProject(r.pid, function(q){ A.jobNote(q, '✍️ ' + s(r.signed.name) + ' signed the change order “' + s(r.title) + '” in the customer portal' + (r.amount != null ? ' (' + money(r.amount) + ')' : '') + '.'); }); }).then(function(){ A.emit('gc:co-signed', { pid: r.pid, coId: r.refId }); return true; });
+}
+function applyDeclined(r){
+  var p = A.proj(r.pid); if (!p || (p.esignDeclined || {})[r.id]) return Promise.resolve(false);
+  return A.saveProject(r.pid, function(q){ if ((q.esignDeclined || {})[r.id]) return false; q.esignDeclined = Object.assign({}, q.esignDeclined || {}); q.esignDeclined[r.id] = s(r.declined && r.declined.at) || nowIso(); A.jobNote(q, '↩️ The customer did not sign the ' + low(KIND_LABEL[r.kind] || 'paper') + ' “' + s(r.title) + '”' + (r.declined && r.declined.reason ? ' — “' + s(r.declined.reason).slice(0, 160) + '”' : '') + '.'); });
+}
+var DONE_KEY = 'gc_auto5_applied';
+function apply(){
+  var done = jget(DONE_KEY, {}); if (!done || typeof done !== 'object') done = {};
+  var work = REQS.filter(function(r){ return (r.status === 'signed' && r.signed) || r.status === 'declined'; }).filter(function(r){ return !done[r.id + '|' + r.status]; });
+  return work.reduce(function(pr, r){
+    return pr.then(function(){
+      if (!A.proj(r.pid)) return;   /* a job this computer does not have yet: next time */
+      var steps = r.status === 'declined' ? applyDeclined(r) : fileSigned(r).then(function(){ return r.kind === 'change_order' ? applyCO(r) : (r.kind === 'estimate' || r.kind === 'contract') ? applyContract(r) : null; });
+      return Promise.resolve(steps).then(function(){ done[r.id + '|' + r.status] = nowIso(); jset(DONE_KEY, done); stats.applied++; }, function(e){ stats.errors = s(e && e.message || e); });
+    });
+  }, Promise.resolve());
+}
+/* every new change order asks for the customer's signature (owner: all change orders need a signature) */
+var ASKED = 'gc_auto5_coasked';
+function askCOs(){
+  if (!signedIn()) return Promise.resolve();
+  var asked = jget(ASKED, {}); if (!asked || typeof asked !== 'object') asked = {};
+  var want = coList().filter(function(c){ return c && c.id && c.pid && coOpen(c) && s(c.createdAt || c.date).slice(0, 10) >= BOOT_DATE && !reqFor('change_order', c.id) && !(asked[c.id] && Date.now() - asked[c.id] < 3600e3) && A.proj(c.pid); }).slice(0, 4);
+  return want.reduce(function(pr, c){
+    return pr.then(function(){
+      asked[c.id] = Date.now(); jset(ASKED, asked);
+      return request({ pid: c.pid, kind: 'change_order', refId: c.id, title: 'Change order — ' + s(c.desc || c.title || c.id).slice(0, 100), amount: s(c.amt) === '' ? null : num(c.amt), lines: s(c.notes) ? [{ l: s(c.notes).replace(/^\[[^\]]*\]\s*/, '').slice(0, 140) }] : [], auto: true })
+        .then(function(j){ if (j.ok) stats.coAsked++; });
+    });
+  }, Promise.resolve());
+}
+
+/* ── the job's "✍️ Signatures" (on the Customer portal card) ── */
+function jobState(pid){ var l = REQS.filter(function(r){ return String(r.pid) === String(pid) && r.status !== 'void'; }); return { all: l.length, waiting: l.filter(function(r){ return r.status === 'pending'; }).length, signed: l.filter(function(r){ return r.status === 'signed'; }).length }; }
+function strips(){
+  Array.prototype.forEach.call(D.querySelectorAll('.gcq-card'), function(card){
+    var pid = card.getAttribute('data-pid'); if (!pid) return;
+    var st = jobState(pid), html = '<button type="button" class="gcch-chip" data-gcau5="sign"' + (st.waiting ? ' style="border-color:#b45309;color:#92400e;background:#FEF3C7"' : '') + '>✍️ Signatures' + (st.all ? ' (' + (st.waiting ? st.waiting + ' waiting' : st.signed + ' signed') + ')' : '') + '</button>';
+    var have = card.querySelector(':scope > .gcau5-strip');
+    if (have && have.__h === html && have.getAttribute('data-pid') === pid) return;
+    if (!have) { have = D.createElement('div'); have.className = 'gcch-strip gcau5-strip'; card.appendChild(have); }
+    have.setAttribute('data-pid', pid); have.innerHTML = html; have.__h = html;
+    have.onclick = function(ev){ var b = ev.target.closest && ev.target.closest('[data-gcau5]'); if (!b) return; ev.stopPropagation(); openSign(pid); };
+  });
+}
+function pill(t, c, bg){ return '<span style="font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;color:' + c + ';background:' + bg + ';white-space:nowrap">' + esc(t) + '</span>'; }
+function reqPill(x){
+  if (x.status === 'signed') return pill('✓ Signed' + (x.signed ? ' by ' + s(x.signed.name) + ' ' + s(x.signed.at).slice(0, 10) : ''), '#166534', '#DCFCE7');
+  if (x.status === 'declined') return pill('Not signed', '#991b1b', '#FDE2E2');
+  if (x.status === 'void') return pill('Taken back', '#475569', '#E2E8F0');
+  var e = x.email;
+  if (e && (e.status === 'waiting' || e.status === 'sending')) return pill('E-mail waiting on ✅ Approvals (' + (e.step === 'admin' ? 'admin' : 'PM') + ')', '#92400e', '#FEF3C7');
+  if (e && e.status === 'rejected') return pill('E-mail not approved' + (x.inPortal ? ' — in the portal' : ''), '#991b1b', '#FDE2E2');
+  return pill(x.inPortal ? 'In the portal — waiting for the customer' : 'Waiting', '#1e3a8a', '#DBEAFE');
+}
+function openSign(pid){
+  var p = A.proj(pid); if (!p) return;
+  var sh = I.sheet('gcau5-sign', '✍️ Signatures — ' + s(p.name)), live = [];
+  function row(left, right){ return '<div style="border-top:1px solid #EFEAE0;padding:10px 0;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><div style="min-width:0;flex:1 1 220px">' + left + '</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + right + '</div></div>'; }
+  function paint(msg){
+    var ests = jobEstimates(p), cos = coList().filter(function(c){ return c && String(c.pid) === String(pid) && c.deleted !== true; });
+    var papers = docsNow().filter(function(d){ return d && String(d.pid) === String(pid) && d.deleted !== true && /^sb:crm-files\//.test(s(d.ref)) && /contract|agreement|authori[sz]ation|proposal|change.?order|addendum|waiver|sign/i.test(s(d.cat) + ' ' + s(d.name)) && d.source !== 'portal-signature'; });
+    var h = '<div style="font-size:14px;color:#55626F;line-height:1.45;margin-bottom:6px">Every signature is collected in the customer’s GrayCo Portal. The e-mail asking them to sign waits on <b>✅ Approvals</b> (estimate / contract: the PM, then an admin; change order: the PM). They get their signed copy at once; it comes back into the job’s documents here. Day 2, 5 and 10 follow-ups on a sent estimate (only the first one needs approval).</div>' +
+      (msg ? '<div id="gcau5-msg" style="font-weight:700;color:#166534;margin:6px 0">' + esc(msg) + '</div>' : '');
+    h += '<h3 style="margin:12px 0 2px;font-size:15px">Requested</h3>';
+    h += live.length ? live.map(function(x){ return row('<b>' + esc(KIND_LABEL[x.kind] || 'Paper') + ':</b> ' + esc(x.title) + (x.amount != null ? ' — ' + esc(money(x.amount)) : '') + '<div style="font-size:12px;color:#55626F">asked ' + esc(s(x.createdAt).slice(0, 10)) + ' by ' + esc(x.createdBy || '') + (x.auto ? ' (automatic)' : '') + '</div>',
+      reqPill(x) + (x.status === 'pending' ? '<button type="button" data-void="' + esc(x.id) + '" style="' + I.BTN + '">Take back</button>' : '')); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">Nothing yet.</div>';
+    h += '<h3 style="margin:14px 0 2px;font-size:15px">Estimates</h3>';
+    h += ests.length ? ests.map(function(e){ var r = reqFor('estimate', e.id); return row('<b>' + esc(estTitle(e)) + '</b>' + (estTotal(e) != null ? ' — ' + esc(money(estTotal(e))) : '') + '<div style="font-size:12px;color:#55626F">' + esc(s(e.status) || 'Draft') + (estDoc(e) ? ' · proposal PDF attached' : '') + '</div>',
+      r && r.status !== 'declined' ? reqPill(r) : '<button type="button" data-est="' + esc(e.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">No estimate on this job.</div>';
+    h += '<h3 style="margin:14px 0 2px;font-size:15px">Change orders</h3>';
+    h += cos.length ? cos.map(function(c){ var r = reqFor('change_order', c.id); return row('<b>' + esc(s(c.desc || c.title || c.id).slice(0, 120)) + '</b>' + (s(c.amt) !== '' ? ' — ' + esc(money(c.amt)) : '') + '<div style="font-size:12px;color:#55626F">' + esc(s(c.status) || 'pending') + (c.signedAt ? ' · signed by ' + esc(c.signedBy) : '') + '</div>',
+      c.signedAt ? pill('✓ Signed', '#166534', '#DCFCE7') : r && r.status !== 'declined' ? reqPill(r) : '<button type="button" data-co="' + esc(c.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">No change orders. New ones ask for the customer’s signature by themselves.</div>';
+    h += '<h3 style="margin:14px 0 2px;font-size:15px">Contracts and other papers on the job</h3>';
+    h += papers.length ? papers.map(function(d){ var r = reqFor(/contract|agreement|proposal/i.test(s(d.cat) + ' ' + s(d.name)) ? 'contract' : 'doc', s(d.id)); return row('<b>' + esc(s(d.name)) + '</b><div style="font-size:12px;color:#55626F">' + esc(s(d.cat)) + '</div>',
+      r && r.status !== 'declined' ? reqPill(r) : '<button type="button" data-doc="' + esc(d.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">No contract on the job yet (patch AUT3 drafts one when the job is signed).</div>';
+    sh.body.innerHTML = h;
+  }
+  function refresh(msg){ return call({ action: 'list', projectId: String(pid) }).then(function(j){ if (j.ok) { live = arr(j.items).sort(function(a, b){ return s(a.createdAt) < s(b.createdAt) ? 1 : -1; }); j.items.forEach(function(x){ var i = REQS.findIndex(function(y){ return y.id === x.id; }); if (i >= 0) REQS[i] = x; else REQS.push(x); }); } paint(msg); strips(); }); }
+  function done(j, what){ if (j.ok) return refresh(j.already ? what + ' — already asked.' : j.noEmail ? what + ' is in the portal. No customer e-mail: an Office To-Do says to send them the link.' : what + ' is in the portal; the e-mail waits on ✅ Approvals.'); toast(j.error || 'That did not go through.', true); }
+  sh.body.onclick = function(ev){
+    var b = ev.target.closest && ev.target.closest('button'); if (!b || b.disabled) return;
+    var e = b.getAttribute('data-est'), c = b.getAttribute('data-co'), dd = b.getAttribute('data-doc'), v = b.getAttribute('data-void');
+    if (!(e || c || dd || v)) return;
+    b.disabled = true; b.textContent = '…';
+    if (e) return W._gcESignEstimate(e).then(function(j){ done(j, 'The estimate'); });
+    if (c) { var co = coList().filter(function(x){ return x && String(x.id) === String(c); })[0]; return request({ pid: pid, kind: 'change_order', refId: c, title: 'Change order — ' + s(co && (co.desc || co.title) || c).slice(0, 100), amount: co && s(co.amt) !== '' ? num(co.amt) : null }).then(function(j){ done(j, 'The change order'); }); }
+    if (dd) { var d = docsNow().filter(function(x){ return x && String(x.id) === String(dd); })[0]; if (!d) return; return request({ pid: pid, kind: /contract|agreement|proposal/i.test(s(d.cat) + ' ' + s(d.name)) ? 'contract' : 'doc', refId: s(d.id), title: s(d.name).replace(/\.pdf$/i, '').slice(0, 120), amount: /contract|agreement/i.test(s(d.cat) + ' ' + s(d.name)) && num(p.contract) > 0 ? num(p.contract) : null, docRef: d.ref, docName: d.name }).then(function(j){ done(j, 'The paper'); }); }
+    if (v) { var sure = true; try { sure = confirm('Take this signature request back? It leaves the customer’s portal.'); } catch (x) {} if (!sure) { b.disabled = false; b.textContent = 'Take back'; return; } return call({ action: 'void', id: v }).then(function(j){ if (j.ok) refresh('Taken back.'); else toast(j.error || 'Could not take it back.', true); }); }
+  };
+  paint(); Promise.all([loadEst(), loadCO(), loadDocs()]).then(function(){ return refresh(); });
+  return sh;
+}
+
+/* ═══ 2. CLOSEOUT AUTOPILOT ═══════════════════════════════════════════════════ */
+var DONE_RX = /^(complete|completed|closed|done)$/i;
+function clientInvs(pid){ return arr(crm().invoices).filter(function(r){ return r && String(r.pid) === String(pid) && r.deleted !== true && (r.type === 'client' || (!r.type && !r.sub && !r.subId)); }); }
+function paidOn(r){ return s(r.paidDate || r.paidAt || r.datePaid || r.paymentDate || (arr(r.payments).map(function(x){ return s(x && (x.date || x.at)); }).sort().pop() || '')).slice(0, 10); }
+function finalPaid(pid){
+  var l = clientInvs(pid); if (!l.length || !l.some(A.invFinal) || !l.every(A.invPaid)) return null;
+  return l.map(paidOn).filter(Boolean).sort().pop() || '';
+}
+/* only a final payment recorded on or after this build's day (its paid date) starts a closeout: old jobs, and a
+   payment with no date, are left alone (nothing is closed by a list that has not finished loading) */
+function closeoutTick(){
+  if (!signedIn() || D.hidden || !arr(crm().invoices).length) return 0;
+  var n = 0;
+  A.projects().forEach(function(p){
+    if (!p || !p.id || p.closeout || /lost|dead|cancel/i.test(s(p.status)) || n >= 3) return;
+    var when = finalPaid(p.id); if (!when || when < BOOT_DATE) return;
+    try { if (W._gcInsCloseout && W._gcInsCloseout.open(p.id)) return; } catch (e) {}   /* an insurance closeout still open (supplements, depreciation) holds it */
+    n++; closeout(p.id, when);
+  });
+  return n;
+}
+function closeout(pid, paid){
+  var p = A.proj(pid); if (!p || p.closeout) return Promise.resolve(null);
+  var due = addMonths(paid, 11), year = s(paid).slice(0, 4) || today().slice(0, 4);
+  return A.saveProject(pid, function(q){
+    if (q.closeout) return false;
+    q.closeout = { at: nowIso(), paid: paid, year: year, by: 'Automations' };
+    q.checkup11Due = due;
+    if (!s(q.checkupDue) || s(q.checkupDue) > due) q.checkupDue = due;   /* AUT3's checkup e-mail (approval) at 11 months */
+    if (!DONE_RX.test(s(q.status))) { q.status = 'completed'; q.statusChangedAt = nowIso(); }
+    q.completedAt = q.completedAt || q.completionDate || paid;
+    q.closedAt = q.closedAt || nowIso(); q.archived = true; q.archivedAt = nowIso(); q.archiveYear = year;
+    A.jobNote(q, '🏁 Final invoice paid (' + paid + ') — closeout: warranty certificate to the portal, thank-you + review request to ✅ Approvals, 11-month checkup on ' + due + ', job closed and archived for ' + year + '.');
+  }).then(function(saved){
+    if (!saved) return null;
+    stats.closeouts++;
+    try { if (W._gcAut3) { W._gcAut3.markLive(pid); ST(function(){ try { W._gcAut3.closeoutWarranty(pid); } catch (e) {} }, 1500); } } catch (e) {}
+    try { if (W._gcQueueCustomerEmail && s(saved.clientEmail || saved.customerEmail)) W._gcQueueCustomerEmail({ kind: 'thank_you', projectId: pid }); } catch (e) {}
+    A.emit('gc:closeout', { pid: pid, paid: paid, checkup: due });
+    return saved;
+  });
+}
+function checkupTick(){
+  if (!signedIn()) return 0;
+  var t = today(), n = 0;
+  A.projects().forEach(function(p){
+    if (!p || !p.checkup11Due || s(p.checkup11Due) > t || p.checkup11Todo) return;
+    var pm = s(p.pm) || 'the PM';
+    if (A.officeTodo('checkup11_' + p.id, '🔧 11-month checkup — ' + s(p.name) + ' (' + pm + ')', 'The job was finished ' + s(p.closeout && p.closeout.paid || p.completedAt) + '. ' + pm + ': call ' + (s(p.client) || 'the customer') + (s(p.clientPhone) ? ' (' + s(p.clientPhone) + ')' : '') + ' and set up the free checkup before the first year is up. The checkup e-mail waits on ✅ Approvals.')) n++;
+    A.saveProject(p.id, function(q){ if (q.checkup11Todo) return false; q.checkup11Todo = nowIso(); });
+  });
+  stats.checkups += n; return n;
+}
+
+/* ═══ 3. YEAR-END ARCHIVE ══════════════════════════════════════════════════════ */
+var CRC = (function(){ var t = [], c; for (var n = 0; n < 256; n++) { c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8){ var c = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+/* a plain .zip (stored, UTF-8 names) — opens in Windows, macOS and phones */
+function zip(files){
+  var enc = new TextEncoder(), parts = [], central = [], off = 0;
+  files.forEach(function(f){
+    var nm = enc.encode(f.name), d = f.data instanceof Uint8Array ? f.data : enc.encode(String(f.data)), crc = crc32(d);
+    var h = new DataView(new ArrayBuffer(30)); h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true); h.setUint16(10, 0, true); h.setUint16(12, 0x21, true);
+    h.setUint32(14, crc, true); h.setUint32(18, d.length, true); h.setUint32(22, d.length, true); h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), nm, d);
+    var c = new DataView(new ArrayBuffer(46)); c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true);
+    c.setUint32(16, crc, true); c.setUint32(20, d.length, true); c.setUint32(24, d.length, true); c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + d.length;
+  });
+  var csize = central.reduce(function(a, b){ return a + b.length; }, 0);
+  var e = new DataView(new ArrayBuffer(22)); e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, csize, true); e.setUint32(16, off, true);
+  return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]), { type: 'application/zip' });
+}
+function csv(rows){ return rows.map(function(r){ return r.map(function(v){ v = s(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }).join('\r\n') + '\r\n'; }
+function safe(t){ return s(t).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 70) || 'job'; }
+function closedYear(p){
+  if (p.closeout && s(p.closeout.year)) return s(p.closeout.year);
+  if (s(p.archiveYear)) return s(p.archiveYear);
+  if (!DONE_RX.test(s(p.status))) return '';
+  return s(p.closedAt || p.completedAt || p.completionDate || p.endDate).slice(0, 4);
+}
+function yearsAvail(){ var y = {}; A.projects().forEach(function(p){ var k = p && closedYear(p); if (/^\d{4}$/.test(k)) y[k] = (y[k] || 0) + 1; }); return y; }
+function fetchRef(ref){
+  return Promise.resolve(typeof W._gcFileUrl === 'function' ? W._gcFileUrl(ref) : null).then(function(u){
+    if (!u) return null;
+    return W.fetch(u, { cache: 'no-store' }).then(function(r){ return r.ok ? r.arrayBuffer() : null; }, function(){ return null; });
+  }, function(){ return null; }).then(function(b){ return b && b.byteLength && b.byteLength < 30e6 ? new Uint8Array(b) : null; }, function(){ return null; });
+}
+var KEEP_DOC = /contract|agreement|change.?order|warrant|completion|signed|lien|waiver|authori[sz]ation|invoice|receipt|permit|inspection|proposal|closeout|certificate/i;
+function jobSummary(p, inv, cos, docs){
+  var w = W._gcAut3 && W._gcAut3.warrantyOf ? W._gcAut3.warrantyOf(p) : null, paid = 0, billed = 0;
+  inv.forEach(function(r){ billed += num(r.amt); if (A.invPaid(r)) paid += num(r.amt); });
+  var row = function(k, v){ return v === '' || v == null ? '' : '<tr><th style="text-align:left;padding:4px 10px 4px 0;color:#475569">' + esc(k) + '</th><td>' + esc(v) + '</td></tr>'; };
+  return '<!doctype html><meta charset="utf-8"><title>' + esc(p.name) + '</title><body style="font:14px Arial;color:#0f172a;max-width:800px;margin:24px auto"><h1 style="font-size:20px">' + esc(p.name) + '</h1><table>' +
+    row('PO', s(p.autoPO || p.po)) + row('Customer', s(p.client)) + row('Address', s(p.address)) + row('PM', s(p.pm)) + row('Type', s(p.type || p.jobType)) + row('Status', s(p.status)) +
+    row('Contract', num(p.contract) ? money(p.contract) : '') + row('Billed', money(billed)) + row('Paid', money(paid)) + row('Start', s(p.startDate)) + row('Completed', s(p.completedAt || p.endDate)) +
+    row('Final paid', s(p.closeout && p.closeout.paid)) + row('Warranty', w ? w.years + ' year' + (w.years > 1 ? 's' : '') + ' (' + w.kind + ')' : '') + row('Contract signed', s(p.contractSignedAt).slice(0, 10) + (p.contractSignedBy ? ' by ' + p.contractSignedBy : '')) +
+    row('Change orders', String(cos.length)) + row('Documents in this folder', String(docs)) + '</table><p style="color:#64748b;font-size:12px">GrayCo Construction Services — year-end record, made ' + esc(today()) + '.</p></body>';
+}
+function archive(year, onStep){
+  return Promise.all([loadCO(), loadDocs()]).then(function(){ return archive1(year, onStep); });
+}
+function archive1(year, onStep){
+  year = s(year); onStep = onStep || function(){};
+  var jobs = A.projects().filter(function(p){ return p && p.id && closedYear(p) === year; });
+  var files = [], index = [['PO', 'Job', 'Customer', 'Address', 'PM', 'Contract', 'Billed', 'Paid', 'Final paid', 'Folder']], missing = [];
+  var allDocs = docsNow(), cosAll = coList(), payAll = arr(crm().projectPayments);
+  var i = 0;
+  return jobs.reduce(function(pr, p){
+    return pr.then(function(){
+      i++; onStep('Job ' + i + ' of ' + jobs.length + ': ' + s(p.name));
+      var folder = safe((s(p.autoPO || p.po) ? s(p.autoPO || p.po) + ' ' : '') + s(p.name)) + '/';
+      var inv = clientInvs(p.id), cos = cosAll.filter(function(c){ return c && String(c.pid) === String(p.id) && c.deleted !== true; });
+      var docs = allDocs.filter(function(d){ return d && String(d.pid) === String(p.id) && d.deleted !== true && /^sb:crm-files\//.test(s(d.ref)) && (d.signedBy || d.portalShare === true || KEEP_DOC.test(s(d.cat) + ' ' + s(d.name))); });
+      files.push({ name: folder + 'invoices.csv', data: csv([['Invoice #', 'Date', 'Description', 'Amount', 'Status', 'Paid on', 'Final']].concat(inv.map(function(r){ return [s(r.invNum || r.num), s(r.date), s(r.desc), num(r.amt).toFixed(2), s(r.status), paidOn(r), A.invFinal(r) ? 'yes' : '']; }))) });
+      var pays = arr(p.drawPayments).map(function(x){ return [s(x.date), num(x.amt).toFixed(2), s(x.method || ''), s(x.note || ''), 'draw ' + s(x.draw || '')]; })
+        .concat(payAll.filter(function(x){ return x && String(x.pid) === String(p.id); }).map(function(x){ return [s(x.date || x.at), num(x.amt || x.amount).toFixed(2), s(x.method || ''), s(x.note || x.memo || ''), 'payment']; }));
+      inv.forEach(function(r){ arr(r.payments).forEach(function(x){ pays.push([s(x && (x.date || x.at)), num(x && (x.amt || x.amount)).toFixed(2), s(x && x.method), s(x && (x.note || x.ref)), 'invoice ' + s(r.invNum || r.num)]); }); });
+      files.push({ name: folder + 'payments.csv', data: csv([['Date', 'Amount', 'Method', 'Note', 'For']].concat(pays)) });
+      files.push({ name: folder + 'change_orders.csv', data: csv([['Date', 'Description', 'Amount', 'Status', 'Signed by', 'Signed on']].concat(cos.map(function(c){ return [s(c.date || c.createdAt).slice(0, 10), s(c.desc || c.title), s(c.amt), s(c.status), s(c.signedBy), s(c.signedAt).slice(0, 10)]; }))) });
+      var links = ['GrayCo Construction Services — ' + s(p.name), ''];
+      [['CompanyCam / GrayCo Photos', s(p.ccamUrl || p.companyCamUrl || p.ccUrl)], ['Customer portal', s(p.portalUrl)], ['Signed contract link', s(p.contractUrl)]].forEach(function(x){ if (/^https?:\/\//.test(x[1])) links.push(x[0] + ': ' + x[1]); });
+      arr(p.photos).slice(0, 200).forEach(function(ph){ var u = s(ph && (ph.url || ph.uri)); if (/^https:\/\//.test(u)) links.push('Photo: ' + u); });
+      files.push({ name: folder + 'photos_and_links.txt', data: links.join('\r\n') + '\r\n' });
+      var got = 0, used = {};
+      return docs.reduce(function(p2, d){
+        return p2.then(function(){ return fetchRef(d.ref).then(function(u8){
+          if (!u8) { missing.push(s(p.name) + ': ' + s(d.name)); return; }
+          var nm = safe(s(d.name).replace(/\.[a-z0-9]{1,5}$/i, '')), ext = (/\.([a-z0-9]{1,5})$/i.exec(s(d.name)) || [, /pdf/.test(s(d.type)) ? 'pdf' : 'bin'])[1];
+          var key = nm + '.' + ext, k = 2; while (used[key]) key = nm + ' (' + (k++) + ').' + ext; used[key] = 1;
+          files.push({ name: folder + 'documents/' + key, data: u8 }); got++;
+        }); });
+      }, Promise.resolve()).then(function(){
+        var billed = 0, paid = 0; inv.forEach(function(r){ billed += num(r.amt); if (A.invPaid(r)) paid += num(r.amt); });
+        files.push({ name: folder + 'summary.html', data: jobSummary(p, inv, cos, got) });
+        index.push([s(p.autoPO || p.po), s(p.name), s(p.client), s(p.address), s(p.pm), num(p.contract).toFixed(2), billed.toFixed(2), paid.toFixed(2), s(p.closeout && p.closeout.paid), folder]);
+      });
+    });
+  }, Promise.resolve()).then(function(){
+    files.unshift({ name: 'index.csv', data: csv(index) });
+    files.unshift({ name: 'README.txt', data: 'GrayCo Construction Services — year-end archive ' + year + '\r\nMade ' + nowIso() + ' by ' + U.me() + '.\r\n' + jobs.length + ' job(s) closed in ' + year + '. One folder per job: summary, invoices, payments, change orders, signed documents and warranty, photo links.\r\n' + (missing.length ? '\r\nFiles that could not be read (open the job in the CRM):\r\n' + missing.join('\r\n') + '\r\n' : '') });
+    return { blob: zip(files), jobs: jobs.length, files: files.length, missing: missing };
+  });
+}
+function download(blob, name){ var a = D.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; D.body.appendChild(a); a.click(); ST(function(){ try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 4000); }
+function adminBar(){
+  var main = D.querySelector('main'); if (!main) return;
+  var h1 = null, hs = main.querySelectorAll('h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'Admin') { h1 = hs[i]; break; }
+  var have = D.getElementById('gc-auto5-admin');
+  if (!h1 || !I.isAdmin()) { if (have) have.remove(); return; }
+  if (have && have.isConnected) return;
+  var ys = yearsAvail(), keys = Object.keys(ys).sort().reverse(), cur = today().slice(0, 4); if (keys.indexOf(cur) < 0) keys.unshift(cur);
+  var c = D.createElement('div'); c.id = 'gc-auto5-admin';
+  c.style.cssText = 'display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#0f2440;border:1px solid #1e3a5f;border-radius:10px;padding:10px 14px;margin:8px 0;color:#cbd5e1;font:13px/1.4 Inter,-apple-system,Arial,sans-serif';
+  c.innerHTML = '<span><b style="color:#fff">🗄 Year-end archive</b> · one file per year of every job closed that year (summary, invoices, payments, change orders, signed papers + warranty, photo links)</span>' +
+    '<span style="display:flex;gap:8px;align-items:center"><select id="gc-auto5-year" style="padding:6px;border-radius:6px">' + keys.map(function(k){ return '<option value="' + esc(k) + '">' + esc(k) + (ys[k] ? ' (' + ys[k] + ' jobs)' : '') + '</option>'; }).join('') + '</select>' +
+    '<button type="button" id="gc-auto5-dl" style="background:#d4a017;color:#0a1628;border:0;border-radius:8px;padding:7px 14px;font-weight:800;cursor:pointer">Download</button><span id="gc-auto5-st" style="color:#fde68a"></span></span>';
+  c.querySelector('#gc-auto5-dl').onclick = function(){
+    var b = this, y = c.querySelector('#gc-auto5-year').value, st = c.querySelector('#gc-auto5-st');
+    b.disabled = true; st.textContent = 'Building…';
+    archive(y, function(t){ st.textContent = t; }).then(function(r){
+      b.disabled = false; st.textContent = r.jobs + ' job(s), ' + r.files + ' files' + (r.missing.length ? ' — ' + r.missing.length + ' file(s) could not be read (listed in README)' : '') + '.';
+      download(r.blob, 'GrayCo_Year_End_Archive_' + y + '.zip');
+    }, function(e){ b.disabled = false; st.textContent = 'Could not build it: ' + s(e && e.message || e); });
+  };
+  var anchor = D.getElementById('gc-aut3-admin') || D.getElementById('gc-ja-admin') || D.getElementById('gc-adm-top');
+  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(c, anchor.nextSibling); else h1.parentNode.insertBefore(c, h1.nextSibling);
+}
+
+/* ── start ── */
+var lastF = 0; function frame(t){ if (t - lastF > 800) { lastF = t; try { strips(); } catch (e) {} } try { W.requestAnimationFrame(frame); } catch (e) {} }
+try { W.requestAnimationFrame(frame); } catch (e) {}
+SI(function(){ try { strips(); } catch (e) {} try { adminBar(); } catch (e) {} }, 1200);
+ST(function(){ pull(); SI(function(){ if (!D.hidden) pull(); }, 60000); }, 9000);
+ST(function(){ try { closeoutTick(); } catch (e) { stats.errors = s(e); } SI(function(){ try { closeoutTick(); } catch (e) { stats.errors = s(e); } }, 120000); }, 25000);
+ST(function(){ try { checkupTick(); } catch (e) {} SI(function(){ if (!D.hidden) checkupTick(); }, 6 * 3600e3); }, 40000);
+Promise.resolve(W.idbGet ? W.idbGet(KEY) : null).then(function(v){ if (Array.isArray(v) && !REQS.length) REQS = v.filter(function(x){ return x && x.id; }); }, function(){});
+W._gcAuto5 = { pull: pull, requests: function(){ return REQS.slice(); }, openSign: openSign, closeoutTick: closeoutTick, closeout: closeout, checkupTick: checkupTick, finalPaid: finalPaid, archive: archive, zip: zip, years: yearsAvail, closedYear: closedYear,
+  status: function(){ return Object.assign({ requests: REQS.length, lastPull: lastPull }, stats); } };
+try { console.log('[GC] patch AUTO5: signatures in the portal, closeout autopilot, year-end archive — _gcAuto5.status()'); } catch (e) {}
+})();
+</script>

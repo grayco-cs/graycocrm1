@@ -420,7 +420,7 @@ function make(d){
   }
 
   /* ── 4. speed to lead: assign it, then reach out (4 hours, 24 hours) ─────────── */
-  const LEAD_SOURCES = /roof\s*ignite|contractor\s*connection|alacrity|sedgwick|leads@|homeadvisor|angi|thumbtack|google\s*(lsa|local)|facebook\s*lead/i;
+  const LEAD_SOURCES = /referral|roof\s*ignite|contractor\s*connection|alacrity|sedgwick|leads@|homeadvisor|angi|thumbtack|google\s*(lsa|local)|facebook\s*lead/i;
   function inbound(l){
     if (!l) return false;
     if (isWebsite(l)) return true;
