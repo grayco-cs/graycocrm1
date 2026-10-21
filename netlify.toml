@@ -35,6 +35,8 @@
 
 [functions]
   node_bundler = "esbuild"
+  # optional at run time (phone push); every require of it is inside try/catch
+  external_node_modules = ["web-push"]
 
 # Nightly protected backup (docs/SECURITY-SETUP.md). 07:15 UTC = 2:15 am Central
 # (1:15 am in winter). Copies the CRM's cloud tables into the private gc_backups
