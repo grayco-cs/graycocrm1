@@ -45,6 +45,12 @@
 
    It never answers the sender. The only e-mail it sends is the admins' alert.
 
+   leads@ (patch STL): leads@grayco-cs.com is a Google Group too; its member leads@in.grayco-cs.com is on the same
+   Resend receiving domain and webhook. Mail for leads@ (and not for bids@) — the website's Squarespace form
+   notifications, people writing to the company — is handed to website-intake.js fromEmail: an unassigned GrayCo
+   lead (source "Website / leads@ e-mail"), the admins' 🌐 new-lead alert, then the speed-to-lead reminders
+   (_lib/bid-alerts.js). Mail for bids@ is handled exactly as before.
+
    DOORS
      POST /.netlify/functions/bid-inbox            Resend webhook (signed)
      GET  ?ping=1                                  alive check, says nothing secret
@@ -64,6 +70,7 @@
      ANTHROPIC_API_KEY       Claude reads the e-mail
      SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)
      optional: BID_INBOX_TO (default bids@in.grayco-cs.com,bids@grayco-cs.com),
+               LEAD_INBOX_TO (default leads@in.grayco-cs.com,leads@grayco-cs.com),
                BID_INBOX_TOKEN, BID_AI_MODEL (default claude-opus-5-5),
                BID_AI_TIMEOUT_MS, BID_INBOX_INLINE=1, LEAD_ADMINS (extra e-mails
                allowed to dismiss/merge; admins on the staff list always can),
@@ -315,8 +322,10 @@ function recipients(mail, data){
   return list((data || {}).to).concat(list((data || {}).cc), mail.to, mail.cc).map(x => x.email)
     .concat([H['x-forwarded-to'], H['delivered-to'], H['x-original-to'], H['x-google-original-to'], H['envelope-to']].join(',').split(',').map(x => addr(x).email)).filter(Boolean);
 }
-function forBids(mail, data){
-  const want = inboxAddrs(), H = mail.headers || {};
+function leadAddrs(){ return (env('LEAD_INBOX_TO') || 'leads@in.grayco-cs.com,leads@grayco-cs.com').split(',').map(low).filter(Boolean); }
+function forLeads(mail, data){ return forBids(mail, data, leadAddrs()); }
+function forBids(mail, data, addrs){
+  const want = addrs || inboxAddrs(), H = mail.headers || {};
   if (recipients(mail, data).some(x => want.indexOf(x) >= 0)) return true;
   /* a Google Group keeps its own address in List-Id: <bids.grayco-cs.com> */
   const lid = low(H['list-id']);
@@ -654,7 +663,8 @@ async function processEvent(evt, opts){
   /* mail plainly for the bill or claim inbox (same webhook) is not even downloaded */
   if (otherInbox(data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const mail = await readMail(data);
-  if (!forBids(mail, data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
+  const leadMail = !forBids(mail, data) && forLeads(mail, data);   /* patch STL: leads@ — never when it is for bids@ too */
+  if (!leadMail && !forBids(mail, data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const own = ownOrAuto(mail); if (own) return { status: 200, body: { ok: true, ignored: own } };
   if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
   /* Google's forwarding / group set-up messages: kept for the owner, never a lead */
@@ -663,6 +673,10 @@ async function processEvent(evt, opts){
     return { status: 200, body: { ok: true, notice: true } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
+  if (leadMail) {
+    try { const r = await require('./website-intake.js').fromEmail(mail); return { status: 200, body: Object.assign({ inbox: 'leads' }, r) }; }
+    catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this lead yet (' + (e && e.message) + ') — retry.' } }; }
+  }
   const links = linksOf(mail), hint = sourceHint(mail, links);
   const ai = await extract(mail, links, hint, opts.inline ? 18000 : 0);
   const pdfs = mail.files.filter(f => f.type === 'application/pdf').length;
@@ -832,7 +846,7 @@ exports.handler = async function(event){
   const C = cors(event);
   if (event.httpMethod === 'OPTIONS') return J(200, {}, C);
   if (event.httpMethod === 'GET' && qs.ping)
-    return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(),
+    return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(), leadsTo: leadAddrs(),
       buildingConnectedApi: !!(env('BC_CLIENT_ID') && env('BC_CLIENT_SECRET') && env('BC_REFRESH_TOKEN')),
       bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
       phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')) }, C);
@@ -917,6 +931,6 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { isCommercial, estimatorOf, svixOk, verified, forBids, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { isCommercial, estimatorOf, svixOk, verified, forBids, forLeads, leadAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;

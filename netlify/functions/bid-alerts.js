@@ -15,6 +15,9 @@
         saved more than 3 at once: one e-mail listing them);
      3. a new-lead e-mail that could not be sent (Resend down) is tried again, for 24 hours;
      4. creates the bid-portal drafts that waited because the portal was not set up yet (_lib/bid-portal.js).
+     5. speed to lead (patch STL): "👤 Assign this lead" to the admins 4 h / 24 h after a website / leads@ / lead-source
+        lead came in with no PM; "⏰ Reach out" to its PM 4 h after it was assigned with nobody in touch, and to the PM
+        and the admins at 24 h (_lib/bid-alerts.js speedToLead; quiet 9 PM – 7 AM Central).
    New leads from bids@, the bid watchers and the website are e-mailed the moment they arrive, by
    bid-inbox.js / bid-watch.js / lead-intake.js — not here. Nothing due → nothing sent.
    A scheduled function cannot be called by its URL in production.

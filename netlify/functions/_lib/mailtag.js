@@ -21,6 +21,7 @@ function internalOnly(to){
   return list.length > 0 && list.every(x => /@grayco-cs\.com>?$/.test(x));
 }
 function areaOf(subject, hint){
+  const m = /^area:(\w+)$/.exec(String(hint || '')); if (m) return m[1];   /* the sender names the area itself */
   const t = String(hint || '') + ' ' + String(subject || '');
   for (const [name, re] of AREAS) if (re.test(t)) return name;
   return 'CRM';

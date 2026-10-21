@@ -100,6 +100,28 @@ Google keeps your normal mail. Only the sub-address `in.grayco-cs.com` goes to R
 
 To bring in a single e-mail someone already got, **forward it to bids@grayco-cs.com**. Its plan PDFs come in too.
 
+## 3b. leads@grayco-cs.com: website inquiries into the CRM (10 min)
+
+Everything sent to **leads@grayco-cs.com** becomes a GrayCo lead with no PM. This covers the website's form notifications and people who write in. The admins get a 🌐 alert. Then the speed-to-lead reminders start:
+
+- No PM after **4 hours** (and again at 24 hours): the admins get a reminder to assign it.
+- Assigned, but nobody has reached out after **4 hours**: the PM gets a reminder.
+- Still no contact after **24 hours**: the PM, Wesley and Nick get a reminder.
+- Nothing is sent between 9 PM and 7 AM Central.
+- To stop the reminders, press **✅ Contacted** on the lead, or move its stage to Contacted.
+
+Set it up:
+
+1. **admin.google.com → Directory → Groups → Create group.** Name it **Leads**, with the address **leads@grayco-cs.com**. Add Wesley and Nick (and the office, if they want copies).
+2. **Members → Add members.** Type `leads@in.grayco-cs.com`, turn on **Add directly**, then click **Add to group**.
+3. **Group settings → Who can post → Anyone on the web**, then click **Save**. Without this step, Squarespace's form e-mails and customers' e-mails bounce.
+4. **Squarespace → Website → each form block → Edit → Storage → Email.** Set the notification address to **leads@grayco-cs.com**. Do the same for the Contact page form and any other form.
+5. Nothing to add on Netlify. The default is `LEAD_INBOX_TO=leads@in.grayco-cs.com,leads@grayco-cs.com`. `SPEED_TO_LEAD_OFF=1` turns off the reminders.
+
+**Test:** fill in the website's contact form with your own phone number. Within a minute or two, it shows in **CRM → Leads → 📥 Lead Inbox** with source "Website / leads@ e-mail", and Wesley and Nick get a "🌐 New website lead" e-mail. Replying to that e-mail goes to the customer.
+
+The `in.grayco-cs.com` receiving domain (step 2) has to show **Verified** in Resend first. Until then, nothing sent to bids@ or leads@ reaches the CRM.
+
 ## 4. Point the bid boards and planrooms at bids@grayco-cs.com (10 min)
 
 | Site | Exact steps |
