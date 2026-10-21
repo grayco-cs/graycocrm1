@@ -82,11 +82,11 @@ const SUB_PROFILE_FIELDS = ['name', 'phone', 'contactTitle', 'company', 'dbaName
 const QUESTION_FIELDS = ['id', 'jobId', 'body', 'attachments', 'at', 'answer', 'answerAttachments', 'answeredAt', 'visibility', 'num'];
 // What a subcontractor sees of a GrayCo person (the PM / estimator on a job).
 const STAFF_PUBLIC_FIELDS = ['id', 'name', 'email', 'phone', 'title', 'role', 'company'];
-// Phone and title for the people already at GrayCo, used the first time they open the portal.
+// Phone and title for the people already at GrayCo, used the first time they open the portal. Anyone else (a new
+// PM, APM or super) gets theirs from the CRM's people list (knownStaff) — patch PMG: no PM is listed by name here.
 const KNOWN_STAFF = {
   'nthomas@grayco-cs.com': { name: 'Nick Thomas', phone: '901-634-4354', title: 'Owner' },
   'wjohnson@grayco-cs.com': { name: 'Wesley Johnson', phone: '901-692-7255', title: 'Owner' },
-  'sbiffle@grayco-cs.com': { name: 'Steven Biffle', phone: '901-456-6922', title: 'Project Manager' },
   'gmiller@grayco-cs.com': { name: 'Glenn Miller', phone: '901-860-8251', title: 'Commercial Estimator' },
   'office@grayco-cs.com': { name: 'Brittany', phone: '901-585-0944', title: 'Office Manager' }
 };
@@ -229,6 +229,10 @@ async function staffList(){
   staffCache = { at: Date.now(), list: list };
   return list;
 }
+/* patch PMG: a GrayCo person's phone / title from the CRM's people list (gc_kv "users") */
+async function crmUsers(){ try { const d = await kvRead(['users']); return arr(d.users); } catch (e) { return []; } }
+function fromCrm(list, email){ const u = list.find(function(x){ return low(x.email) === low(email); }); return u ? { name: s(u.name), phone: s(u.phone || u.cell || u.mobile), title: s(u.title || u.role) } : {}; }
+async function knownStaff(email){ return KNOWN_STAFF[email] || fromCrm(await crmUsers(), email); }
 async function staffByEmail(email){
   const list = await staffList();
   return list.find(function(x){ return x.email === email; }) || null;
@@ -256,7 +260,7 @@ async function whoAmI(event){
   let profile = row ? row.data : null;
   if (staff) {
     // GrayCo staff: make sure their portal profile exists and says admin.
-    const known = KNOWN_STAFF[t.email] || {};
+    const known = profile ? {} : await knownStaff(t.email);
     const base = profile || { id: staffId(t.email), email: t.email, company: 'GrayCo Construction Services',
       name: staff.name || known.name || t.email, phone: known.phone || '', title: known.title || '',
       trades: [], createdAt: new Date().toISOString() };
@@ -307,8 +311,9 @@ async function staffUsers(){
   const [rows, staff] = await Promise.all([listRows([eq('collection', 'users')]), staffList()]);
   // Everyone on the staff list gets a profile, so they can be picked as PM / estimator.
   const have = new Set(rows.map(function(r){ return low(r.email); }));
+  const crmPeople = staff.some(function(x){ return !have.has(x.email) && !KNOWN_STAFF[x.email]; }) ? await crmUsers() : [];
   const add = staff.filter(function(x){ return !have.has(x.email); }).map(function(x){
-    const known = KNOWN_STAFF[x.email] || {};
+    const known = KNOWN_STAFF[x.email] || fromCrm(crmPeople, x.email);
     return { id: staffId(x.email), email: x.email, role: 'admin', approved: true, name: x.name || known.name || x.email,
       phone: known.phone || '', title: known.title || '', company: 'GrayCo Construction Services', trades: [],
       createdAt: new Date().toISOString() };

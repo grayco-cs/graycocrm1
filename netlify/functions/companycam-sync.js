@@ -3,7 +3,7 @@
 
    Until now a new CompanyCam project became a CRM job only inside a browser: someone had to have the CRM open,
    signed in, with the CompanyCam key check answered "works" in that browser, and the job it made had no PM —
-   so Steven's projects came in (when they came in at all) as nobody's job, which a PM's own lists never show.
+   so a PM's projects came in (when they came in at all) as nobody's job, which a PM's own lists never show.
 
    This scheduled function does the same work without anyone's browser:
      1. pages through EVERY CompanyCam project changed since the stored cursor (gc_kv "gc_cc_sync_state"),
@@ -12,8 +12,10 @@
         customer carries its CompanyCam id, it was not ignored ("gc_cc_dismissed"), its job was not deleted
         (gc_tombstones "projects:PRJcc_<id>", gc_deleted_projects) — becomes a Bidding job (Pipeline), id
         PRJcc_<CompanyCam id>, the same record the CRM itself makes, so it is never made twice;
-     3. the PM is the CompanyCam creator: gc_cc_creator_map, a user's ccUserId, the user's name, or the
-        CompanyCam user's e-mail (Steven Biffle's projects → PM "Steven Biffle");
+     3. the PM is the CompanyCam creator: gc_cc_creator_map, a person's "GrayCo Photos name / e-mail" (ccName, set in
+        Admin → Employees), a user's ccUserId, the user's name, or the CompanyCam user's e-mail (a PM's own projects
+        → that PM). A creator nobody is mapped to → the Senior PM (gc_senior_pm, Admin → Employees), not as their
+        own lead (patch PMG). A creator who has left (turned off / offboarded) is never made PM;
      4. a project with the name or address of a job already here is left alone (the CRM's own check links it or
         asks about it), except that the same address as a FINISHED job is a new job when the project was made
         after that job ended (a repeat customer);
@@ -135,13 +137,20 @@ async function ccUser(token, id){
 
 /* ── who the PM is ── */
 function pmFinder(users, creatorMap){
-  users = arr(users).filter(u => u && s(u.name) && u.active !== false && !u.fired && !u.deleted);
+  const P = require('./_lib/people.js'), all = arr(users).filter(u => u && s(u.name));
+  users = all.filter(u => P.isActive(u));   /* patch PMG: someone who has left is never made PM */
+  const gone = all.filter(u => !P.isActive(u));
   const map = {}; Object.keys(obj(creatorMap)).forEach(k => { map[normName(k)] = s(creatorMap[k]); });
   function byName(n){ const k = normName(n); return k ? users.find(u => normName(u.name) === k) || null : null; }
+  function left(n){ const k = normName(n); return !!k && gone.some(u => normName(u.name) === k || low(u.email) === low(n)); }
   return function(p, ccu){
     if (!p.creator && !p.creatorId) return null;
     const viaMap = map[normName(p.creator)] || (p.creatorId && map[normName(p.creatorId)]);
-    if (viaMap) return byName(viaMap) || { name: viaMap };
+    if (viaMap) return byName(viaMap) || (left(viaMap) ? null : { name: viaMap });
+    /* patch PMG: the person's own "GrayCo Photos name / e-mail" (Admin → Employees) */
+    const em0 = low(p.creatorEmail || (ccu && (ccu.email_address || ccu.email)));
+    const viaSet = users.find(u => { const v = s(u.ccName); return !!v && (normName(v) === normName(p.creator) || (!!em0 && low(v) === em0)); });
+    if (viaSet) return viaSet;
     if (p.creatorId) { const u = users.find(x => [x.ccUserId, x.companyCamId, x.companycamUserId].map(s).indexOf(p.creatorId) >= 0); if (u) return u; }
     const u1 = byName(p.creator); if (u1) return u1;
     const em = low(p.creatorEmail || (ccu && (ccu.email_address || ccu.email)));
@@ -183,13 +192,13 @@ function decide(idx, p){
 function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } }
 /* patch CC2: a project its creator made is their lead */
 function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm }; }
-function jobFor(p, pm, note, nowIso){
+function jobFor(p, pm, note, nowIso, senior){
   const c = p.contact || {}, iso = new Date(p.created_at * 1000).toISOString();
   const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
     address: p.address || '', type: 'Residential Reno', status: 'bidding', contract: 0, source: 'companycam',
     ccamId: p.id, ccProjectId: p.id, ccamUrl: p.url, companyCamUrl: p.url, ccCreator: p.creator || '', ccCreatorId: p.creatorId || '',
     created: ymd(p.created_at), createdAt: iso, keepAsJob: true, _ccAuto: true, _ccServer: true, savedAt: nowIso, updatedAt: nowIso };
-  if (pm) Object.assign(j, selfFields(pm)); else j.createdBy = 'CompanyCam' + (p.creator ? ' (' + p.creator + ')' : '');
+  if (pm) Object.assign(j, selfFields(pm)); else { j.createdBy = 'CompanyCam' + (p.creator ? ' (' + p.creator + ')' : ''); if (senior) { j.pm = senior; j.pmBy = 'senior-pm'; } }   /* patch PMG: nobody mapped → the Senior PM runs it (not their own lead) */
   if (note) j.notes = 'Made in CompanyCam' + (p.creator ? ' by ' + p.creator : '') + ' — ' + note + '.';
   return j;
 }
@@ -201,7 +210,8 @@ async function run(opts){
   if (!token) return { ok: false, skipped: 'COMPANYCAM_TOKEN is not set' };
   if (!e.url || !e.key) return { ok: false, skipped: 'SUPABASE_URL / SUPABASE_SERVICE_KEY are not set' };
   const nowIso = new Date().toISOString();
-  const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', STATE_KEY]);
+  const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', 'gc_senior_pm', STATE_KEY]);
+  const seniorU = require('./_lib/people.js').seniorPm(kv.users, kv.gc_senior_pm), senior = seniorU ? s(seniorU.name) : '';   /* patch PMG */
   const st = Object.assign({ cursor: 0, made: {}, creators: {} }, obj(kv[STATE_KEY]));
   st.made = obj(st.made); st.creators = obj(st.creators);
   const epoch = s(obj(kv.gc_epoch).epoch);
@@ -237,7 +247,7 @@ async function run(opts){
     const d = decide(idx, p);
     if (d.kind === 'linked') { R.linked++; continue; }
     if (d.kind === 'ask') { R.ask.push(p.id); continue; }
-    const j = jobFor(p, await pmOf(p), d.note, nowIso);
+    const j = jobFor(p, await pmOf(p), d.note, nowIso, senior);
     jobs.push(j); idx.id[p.id] = { kind: 'job', id: j.id };
     st.made[p.id] = { id: j.id, at: nowIso };
     R.made.push({ cc: p.id, job: j.id, pm: j.pm || '', name: j.name });
@@ -248,7 +258,7 @@ async function run(opts){
   /* earlier CompanyCam jobs without a PM get their creator's (not over a person's own edit of the PM) */
   const fixes = {};
   for (const r of P.list) {
-    if (!r || !/^PRJcc_\d+$/.test(s(r.id)) || s(r.pm) || dead[r.id] || r.deleted === true) continue;
+    if (!r || !/^PRJcc_\d+$/.test(s(r.id)) || (s(r.pm) && r.pmBy !== 'senior-pm') || dead[r.id] || r.deleted === true) continue;   /* patch PMG: a Senior PM stand-in gives way to the creator once mapped */
     if (r._fe && r._fe.pm) continue;
     const ccId = ccIdFromAny(r.id), p = ccById[ccId] || { id: ccId, creator: s(r.ccCreator), creatorId: s(r.ccCreatorId) };
     if (!p.creator && !p.creatorId) continue;
@@ -265,7 +275,7 @@ async function run(opts){
     const has2 = {}; P2.list.forEach(r => { if (r && r.id) has2[r.id] = 1; });
     const add = jobs.filter(j => !has2[j.id]);
     for (const j of add) if (!j.pm) { const pm = await pmOf(ccById[j.ccProjectId] || { creator: j.ccCreator, creatorId: j.ccCreatorId }); if (pm) Object.assign(j, selfFields(pm)); }
-    const fix = r => (r && fixes[r.id] && !s(r.pm)) ? Object.assign({}, r, fixes[r.id]) : r;
+    const fix = r => (r && fixes[r.id] && (!s(r.pm) || r.pmBy === 'senior-pm')) ? Object.assign({}, r, fixes[r.id], { pmBy: '' }) : r;
     if (P2.chunked) {
       const chunks = P2.chunks.map(c => c.map(fix));
       chunks[chunks.length - 1] = chunks[chunks.length - 1].concat(add);

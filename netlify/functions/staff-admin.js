@@ -11,7 +11,7 @@
 //        → creates the sign-in (with a temporary password shown ONCE) and puts the
 //          person on gc_staff. Re-adding a removed person lets them back in.
 //   POST { action:'profile', email, profile } → the person's job profile (patch RP): '' (from their role in
-//          Admin → Employees) | estimator | insurance | mitigation | super | pm | office | field. The CRM shows that
+//          Admin → Employees) | estimator | insurance | mitigation | super | pm | apm | office | field. The CRM shows that
 //          profile's menu, home dashboard and field view. Needs docs/role-profiles.sql (gc_staff.profile).
 //   POST { action:'remove', email }         → off gc_staff (blocked at once) + sign-in banned
 //   POST { action:'reset',  email }         → new temporary password, shown ONCE
@@ -107,7 +107,7 @@ function cleanEmail(e){ return String(e || '').trim().toLowerCase(); }
 function okEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
 /* patch RP: the job profile on gc_staff (docs/role-profiles.sql). Only these; '' = from the role in Admin → Employees. */
-const PROFILES = ['', 'estimator', 'insurance', 'mitigation', 'super', 'pm', 'office', 'field'];
+const PROFILES = ['', 'estimator', 'insurance', 'mitigation', 'super', 'pm', 'apm', 'office', 'field'];   /* patch PMG: + apm (Assistant PM) */
 function cleanProfile(p){ const v = String(p == null ? '' : p).trim().toLowerCase(); return PROFILES.indexOf(v) > -1 ? v : null; }
 async function listStaff(){
   /* select=* so the list works before and after docs/role-profiles.sql (the profile column) */

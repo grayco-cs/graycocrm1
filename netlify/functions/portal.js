@@ -110,7 +110,8 @@ const REVIEW_URL = 'https://share.google/quDuhdlL0ckxPLLY3';
 const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LLC-100092932745320/';
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
                  'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults',
-                 'gc_portal_auto_posts'];   /* patch AUTAI: approved weekly updates / voice posts */
+                 'gc_portal_auto_posts',   /* patch AUTAI: approved weekly updates / voice posts */
+                 'gc_senior_pm', 'gc_team_settings'];   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -1207,8 +1208,11 @@ function pmOf(data, p){
   const name = s(p.pm || p.projectManager || p.pmName);
   if (!name) return null;
   const u = arr(data.users).find(function(x){ return low(x.name) === low(name); });
-  return { name: name, email: low((u && u.email) || p.pmEmail || '') };
+  /* patch PMG: a PM who is no longer active → the Senior PM (Admin → Employees), else the no-PM path (the admins) */
+  if (u && !PEOPLE().isActive(u)) { const h = PEOPLE().seniorPm(data.users, data.gc_senior_pm); return h ? { name: s(h.name), email: low(h.email), phone: s(h.phone || h.cell || h.mobile) } : null; }
+  return { name: name, email: low((u && u.email) || p.pmEmail || ''), phone: s(u && (u.phone || u.cell || u.mobile)) };
 }
+function PEOPLE(){ return require('./_lib/people.js'); }
 /* where a customer's reply to an automatic e-mail goes (owner, 10/21): a job's PM for job mail; billing, the
    newsletter and anything without a PM go to the shared replies box (REPLY_TO_ADMIN, default replies@grayco-cs.com).
    Never office@. */
@@ -1412,13 +1416,24 @@ async function approvalAction(body, who){
   const it0 = cur.list.find(function(x){ return s(x.id) === id; });
   if (!it0) return { status: 404, out: { ok: false, error: 'That approval is not on the list any more.' } };
   if (!myName) { try { const d = await crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); myName = s(u && u.name); } catch (e) {} }
-  const isPm = (it0.pmEmail && low(it0.pmEmail) === low(who.email)) || (it0.pm && myName && low(it0.pm) === low(myName));
+  let isPm = (it0.pmEmail && low(it0.pmEmail) === low(who.email)) || (it0.pm && myName && low(it0.pm) === low(myName));
+  /* patch PMG: the job's APM may take the PM's step only when an admin turned "APMs may approve" on (Admin → Employees) */
+  let isApmStep = false;
+  if (!isPm && it0.step === 'pm') {
+    try {
+      const d = await crmData(false); let ts = d.gc_team_settings; if (typeof ts === 'string') { try { ts = JSON.parse(ts); } catch (e) { ts = {}; } }
+      if (ts && ts.apmCanApprove === true) {
+        const P = PEOPLE(), u = P.findUser(d.users, who.email), job = listOf(d, ['projects']).find(function(x){ return s(x.id) === s(it0.jobId); }) || {};
+        if (u && P.isActive(u) && P.isApm(u) && P.apmsFor(d.users, job, P.findUser(d.users, it0.pmEmail || it0.pm)).some(function(a){ return a.email === low(who.email); })) { isPm = true; isApmStep = true; }
+      }
+    } catch (e) {}
+  }
   const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
   if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
   const office = !admin && it0.step === 'admin' && escalatedOrDue(it0, Date.now()) && await isOffice(who);
   if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
-  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : (office ? 'office' : 'pm'), at: now };
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
   if (office && !it0.escalated) { try { await escalateDue({ only: id }); } catch (e) {} }
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
@@ -2156,7 +2171,7 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch AUTAI */

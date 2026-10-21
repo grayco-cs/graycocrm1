@@ -28,7 +28,7 @@ do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'gc_staff_profile_known') then
     alter table public.gc_staff add constraint gc_staff_profile_known
-      check (profile is null or profile in ('estimator', 'insurance', 'mitigation', 'super', 'pm', 'office', 'field'));
+      check (profile is null or profile in ('estimator', 'insurance', 'mitigation', 'super', 'pm', 'apm', 'office', 'field'));   -- apm: patch PMG (docs/team-roles.sql updates an existing table)
   end if;
 end $$;
 

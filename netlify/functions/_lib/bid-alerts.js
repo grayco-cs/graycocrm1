@@ -70,7 +70,7 @@ function make(d){
     return { id, key, title: s(it.title || it.name).slice(0, 200) || 'New lead', source: s(it.source || o.source), type: s(it.type || it.leadKind),
       bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc), detail: s(it.detail).slice(0, 300),
       dueToCompany: s(it.dueToCompany), dueToContact: s(it.dueToContact), dueToEmail: s(it.dueToEmail), dueToPhone: s(it.dueToPhone), submitMethod: s(it.submitMethod), submitWhere: s(it.submitWhere),
-      dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: assigneeEmail || emailOf(assignee), assignedBy: s(it.assignedBy),
+      dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: GONE[low(assignee)] || (assigneeEmail && GONE[assigneeEmail]) ? '' : (assigneeEmail || emailOf(assignee)), assignedBy: s(it.assignedBy),   /* patch PMG: never to someone who has left */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
       website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
@@ -79,13 +79,13 @@ function make(d){
   /* patch API: a lead a partner posted with its GrayCo code (partner-api.js) — handled like a website lead */
   function isPartner(l){ return !!(l && (s(l.origin) === 'partner' || l.partnerLead || (l.leadExtra && l.leadExtra.partnerLead))); }
   /* the people: name → e-mail (the CRM's people list in gc_kv "users", and gc_staff) */
-  const PEOPLE = {};
+  const PEOPLE = {}, GONE = {};   /* patch PMG: GONE — people turned off / offboarded (by name and by e-mail) */
   function emailOf(name){ return PEOPLE[low(name)] || ''; }
   async function loadPeople(users){
     if (users == null) {   /* the CRM's people list, when the caller did not bring it */
       try { const r = await sb('gc_kv?select=value&key=eq.users'); if (r.ok) { let v = (arr(await r.json())[0] || {}).value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } if (v && !Array.isArray(v) && Array.isArray(v.v)) v = v.v; users = arr(v); } } catch (e) {}
     }
-    arr(users).forEach(u => { if (u && u.name && u.email && u.active !== false) PEOPLE[low(u.name)] = low(u.email); });
+    arr(users).forEach(u => { if (!u || !u.name) return; if (require('./people.js').isActive(u)) { if (u.email) PEOPLE[low(u.name)] = low(u.email); } else { GONE[low(u.name)] = 1; if (u.email) GONE[low(u.email)] = 1; } });
     try { const r = await sb('gc_staff?select=email,name,active'); if (r.ok) arr(await r.json()).forEach(x => { if (x && x.name && x.email && x.active !== false && !PEOPLE[low(x.name)]) PEOPLE[low(x.name)] = low(x.email); }); } catch (e) {}
     return PEOPLE;
   }

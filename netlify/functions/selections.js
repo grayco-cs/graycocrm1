@@ -372,7 +372,7 @@ function mailShell(title, body){
 const JA = require('./_lib/job-auto.js');   /* patch JA */
 function jaPick(J){ return JA.allows(J.p, 'portalSelections', JA.parseAdmin(J.data && J.data[JA.KV_KEY])); }
 async function loadJob(pid){
-  const data = await kvRead(['projects', 'gc_deleted_projects', 'users', CH_KEY, RESP_KEY, JA.KV_KEY]);
+  const data = await kvRead(['projects', 'gc_deleted_projects', 'users', CH_KEY, RESP_KEY, JA.KV_KEY, 'gc_senior_pm']);   /* patch PMG: + the Senior PM */
   const p = findProject(data, pid);
   return p ? { data: data, p: p, choices: choicesOf(data, p), resps: arr(data[RESP_KEY]).filter(function(r){ return s(r.pid) === s(pid); }) } : null;
 }
@@ -467,14 +467,19 @@ async function record(event, row, body, J, kind){
   /* tell the people: the PM (an e-mail), the office (a to-do), the customer (their copy, at once) */
   const pmName = s(J.p.pm || J.p.projectManager || J.p.pmName);
   const pmUser = arr(J.data.users).find(function(u){ return pmName && low(u.name) === low(pmName); });
-  const pmEmail = low((pmUser && pmUser.email) || J.p.pmEmail);
+  /* patch PMG: the job's PM (and APM) while active; else the Senior PM, the PMs, then the admins — never a fixed person */
+  const P = require('./_lib/people.js');
+  const rt = (!pmUser && pmName && okEmail(J.p.pmEmail)) ? { to: [{ email: low(J.p.pmEmail) }], why: 'pm' }
+    : P.route({ pm: pmName, job: J.p, users: J.data.users, senior: J.data.gc_senior_pm, admins: (process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',') });
+  const pmTo = rt.to.map(function(x){ return x.email; }).filter(okEmail);
+  const pmEmail = rt.why === 'pm' || rt.why === 'senior' ? (pmTo[0] || '') : '';   /* the customer's replies: the PM / Senior PM, else replies@ */
   const what = items.map(function(x){ return x.title + ': ' + x.label; }).join('; ');
   const jobName = scrubText(J.p.name, words) || 'the job';
   try { await core.officeTodo('portal_sel_' + sigId, (kind === 'sign' ? '✍️ ' + name + ' signed their selections — ' : '🎨 ' + name + ' picked their selections — ') + jobName,
     what + '. Recorded in the customer portal ' + central(at) + (pmName ? '. PM: ' + pmName : '') + '. The signed copy is in the job\'s documents.'); } catch (e) {}
   let pmMail = { ok: false }, custMail = { ok: false };
-  if (okEmail(pmEmail)) pmMail = await resend({ to: pmEmail, from: 'GrayCo CRM <office@grayco-cs.com>', subject: (kind === 'sign' ? 'Signed: ' : 'Customer picked: ') + jobName,
-    html: mailShell(jobName, '<p>' + esc(name) + (kind === 'sign' ? ' signed the selections you picked for them' : ' picked their selections') + ' in the customer portal (' + esc(central(at)) + '):</p><ul>' + items.map(function(x){ return '<li>' + esc(x.title) + ': <b>' + esc(x.label) + '</b></li>'; }).join('') + '</ul><p>It is on the job in the CRM (Customer portal → 🎨 Customer choices).</p>') });
+  for (const pmTo1 of pmTo) { const r1 = await resend({ to: pmTo1, from: 'GrayCo CRM <office@grayco-cs.com>', subject: (kind === 'sign' ? 'Signed: ' : 'Customer picked: ') + jobName,
+    html: mailShell(jobName, '<p>' + esc(name) + (kind === 'sign' ? ' signed the selections you picked for them' : ' picked their selections') + ' in the customer portal (' + esc(central(at)) + '):</p><ul>' + items.map(function(x){ return '<li>' + esc(x.title) + ': <b>' + esc(x.label) + '</b></li>'; }).join('') + '</ul><p>It is on the job in the CRM (Customer portal → 🎨 Customer choices).</p>') }); if (r1 && r1.ok) pmMail = r1; }   /* patch PMG: the PM, or the Senior PM / PMs / admins */
   const to = s(J.p.clientEmail || J.p.customerEmail || J.p.email);
   const jobTagSel = [s(J.p.autoPO || J.p.po) ? 'PO ' + s(J.p.autoPO || J.p.po) : '', jobName, s(J.p.address || J.p.jobAddress)].filter(Boolean).join(' \u00b7 ');   /* owner 10/21: the job in every subject; replies go to the PM */
   if (okEmail(to)) custMail = await resend({ to: to, replyTo: /@grayco-cs\.com$/i.test(pmEmail || '') ? pmEmail : '', subject: 'Your ' + (kind === 'sign' ? 'signed ' : '') + 'selections — ' + jobTagSel,

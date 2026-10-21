@@ -88,7 +88,7 @@ const OFFICE_EMAIL = 'office@grayco-cs.com';
 const NOT_ACTIVE = 'This link is not active — call GrayCo ' + OFFICE_PHONE;
 const SESSION_DAYS = 30, CODE_MIN = 10, CODE_TRIES = 5, MIN_FAIL_MS = 250, SIGN_SECS = 3600;
 const MAX_UPLOAD = 4.5 * 1024 * 1024;
-const KV_KEYS = ['projects', 'subs', 'vendors', 'users', 'invs', 'invoices', 'punch', 'schedule', 'projectDocs', 'customers',
+const KV_KEYS = ['gc_senior_pm', 'projects', 'subs', 'vendors', 'users', 'invs', 'invoices', 'punch', 'schedule', 'projectDocs', 'customers',
                  'gc_tombstones', 'gc_deleted_projects', 'gc_deleted_subs', 'gc_deleted_vendors', 'gc_deleted_invs', 'gc_sub_portal_settings'];
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -216,8 +216,10 @@ function liveProjects(data){
   return arr(data.projects).filter(function(p){ return s(p.id) && !gone('projects', p.id) && !del.has(s(p.id)) && !/lost|dead|cancel/.test(low(p.status)); });
 }
 function pmOf(data, p){
-  const n = s(p.pm || p.projectManager);
-  const u = arr(data.users).find(function(x){ return n && low(x.name) === low(n); }) || {};
+  let n = s(p.pm || p.projectManager);
+  let u = arr(data.users).find(function(x){ return n && low(x.name) === low(n); }) || {};
+  /* patch PMG: a PM who has left is not shown — the Senior PM instead (Admin → Employees), else the office */
+  if (u.name && !require('./_lib/people.js').isActive(u)) { const h = require('./_lib/people.js').seniorPm(data.users, data.gc_senior_pm); u = h || {}; n = h ? s(h.name) : ''; }
   return { name: n || 'GrayCo office', phone: s(u.phone || u.cell || u.mobile) || OFFICE_PHONE, email: low(u.email) || OFFICE_EMAIL };
 }
 function settingsOf(data){ const v = data.gc_sub_portal_settings; return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }

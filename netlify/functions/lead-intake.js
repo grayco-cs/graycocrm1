@@ -34,7 +34,9 @@
 //                        once, per computer. NOT one of the keys above.
 //   RESEND_API_KEY       already set — the email goes out through it.
 //   SUPABASE_URL / SUPABASE_SERVICE_KEY   already set — where leads wait.
-//   GRAYCO_CONTACT_NAME  / GRAYCO_CONTACT_PHONE   who the email introduces.
+//   GRAYCO_CONTACT_NAME  / GRAYCO_CONTACT_PHONE   optional: who the email introduces when the lead has no
+//                        PM yet. Otherwise it is the lead's PM, else the Senior PM (Admin → Employees),
+//                        else "one of our project managers" (patch PMG — no person is named in code).
 //   LEAD_INTAKE_ALERTS=0 no "New lead" e-mail to the admins (patch LA; on by default —
 //                        the same alert as the bid inbox, _lib/bid-alerts.js)
 //
@@ -50,7 +52,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const RESEND_URL   = 'https://api.resend.com/emails';
 const TABLE        = 'ri_pending_leads';
 
-const CONTACT_NAME  = process.env.GRAYCO_CONTACT_NAME  || 'Steven Biffle';
+const CONTACT_NAME  = process.env.GRAYCO_CONTACT_NAME  || '';
 const CONTACT_PHONE = process.env.GRAYCO_CONTACT_PHONE || '';
 
 /* ── little helpers ──────────────────────────────────────────────────────── */
@@ -146,25 +148,28 @@ function readLead(b) {
 }
 
 /* ── the email ───────────────────────────────────────────────────────────────
-   From GrayCo, introducing Steven and his number, saying he will be in touch
-   and asking them to reply — which is what turns a bought lead into a
-   conversation, and gives Steven something to work with when he calls. */
-function firstEmail(lead) {
-  const who = CONTACT_NAME;
-  const tel = tidyPhone(CONTACT_PHONE);
+   From GrayCo, introducing the lead's PM (else the Senior PM, else "one of our
+   project managers") and their number, saying they will be in touch and asking
+   them to reply — which is what turns a bought lead into a conversation, and
+   gives the PM something to work with when they call.  (patch PMG) */
+function firstEmail(lead, contact) {
+  contact = contact || {};
+  const who = s(contact.name) || CONTACT_NAME;
+  const tel = tidyPhone(s(contact.phone) || (who && who === CONTACT_NAME ? CONTACT_PHONE : '') || (!who ? CONTACT_PHONE : ''));
   const hi = lead.name ? ('Hi ' + esc(lead.name.split(/\s+/)[0]) + ',') : 'Hello,';
   const what = lead.jobType ? esc(lead.jobType.toLowerCase()) : 'your roof';
+  const whoH = who ? esc(who) : 'One of our project managers';
   const line = tel
-    ? (esc(who) + ' handles our estimates and you can reach him directly at <b>' + esc(tel) + '</b>.')
-    : (esc(who) + ' handles our estimates and will be in touch from this address.');
+    ? (whoH + ' handles our estimates and you can reach them directly at <b>' + esc(tel) + '</b>.')
+    : (whoH + ' handles our estimates and will be in touch from this address.');
 
   const text =
     hi.replace(/<[^>]+>/g, '') + '\n\n' +
     'Thanks for your interest in getting ' + what.replace(/<[^>]+>/g, '') + ' looked at. ' +
     'This is GrayCo Construction Services — we received your details and wanted to reach out right away.\n\n' +
-    who + ' handles our estimates' + (tel ? (' and you can reach him directly at ' + tel) : '') + '. ' +
-    'He will be reaching out to you as soon as possible.\n\n' +
-    'If you reply to this email with a good time to reach you, he will work around it.\n\n' +
+    (who || 'One of our project managers') + ' handles our estimates' + (tel ? (' and you can reach them directly at ' + tel) : '') + '. ' +
+    'We will be reaching out to you as soon as possible.\n\n' +
+    'If you reply to this email with a good time to reach you, we will work around it.\n\n' +
     'GrayCo Construction Services\nTN License #85034 BCB · AR License #0486990627 · MS License #27769\noffice@grayco-cs.com';
 
   const html =
@@ -172,14 +177,14 @@ function firstEmail(lead) {
     + '<p>' + hi + '</p>'
     + '<p>Thanks for your interest in getting ' + what + ' looked at. This is <b>GrayCo Construction '
     + 'Services</b> — we have your details and wanted to reach out right away.</p>'
-    + '<p>' + line + ' He will be reaching out to you as soon as possible.</p>'
-    + '<p><b>If you reply to this email with a good time to reach you, he will work around it.</b></p>'
+    + '<p>' + line + ' We will be reaching out to you as soon as possible.</p>'
+    + '<p><b>If you reply to this email with a good time to reach you, we will work around it.</b></p>'
     + '<p style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#666">'
     + 'GrayCo Construction Services<br>TN License #85034 BCB · AR License #0486990627 · MS License #27769<br>'
     + 'office@grayco-cs.com</p></div>';
 
   return {
-    subject: 'GrayCo Construction — ' + (who) + ' will be reaching out',
+    subject: 'GrayCo Construction — ' + (who || 'we') + ' will be reaching out',
     html, text
   };
 }
@@ -190,13 +195,22 @@ function firstEmail(lead) {
    LEAD_ASSIGN_TO on Netlify); a lead nobody is assigned to goes to the admins (Wesley, Nick).
    PORTAL_AUTO_EMAIL=1 turns automatic sending back on, as for the portal's e-mails. */
 const LEAD_ASSIGN_FIELDS = ['assigned_to', 'assignedto', 'assignee', 'assigned', 'rep', 'sales_rep', 'salesrep', 'salesperson', 'project_manager', 'pm', 'estimator'];
+/* patch PMG: who the first e-mail introduces — the lead's PM, else the Senior PM (Admin → Employees), else nobody by name */
+async function contactFor(pm) {
+  try {
+    if (pm && s(pm.name) && s(pm.email)) return { name: s(pm.name), phone: s(pm.phone) };
+    if (CONTACT_NAME) return { name: CONTACT_NAME, phone: CONTACT_PHONE };
+    const h = await require('./portal.js')._core.seniorPm();
+    return h ? { name: s(h.name), phone: s(h.phone || h.cell || h.mobile) } : {};
+  } catch (e) { return CONTACT_NAME ? { name: CONTACT_NAME, phone: CONTACT_PHONE } : {}; }
+}
 async function queueFirstEmail(lead) {
   if (!looksLikeEmail(lead.email)) return { sent: false, why: 'no usable email address on the lead' };
-  const msg = firstEmail(lead);
   try {
     const core = require('./portal.js')._core;
     const who = s(lead.assignedTo) || s(process.env.LEAD_ASSIGN_TO);
     const pm = who ? await core.pmByName(who) : null;
+    const msg = firstEmail(lead, await contactFor(pm));
     const ok = await core.queueApproval({ id: 'appr_lead_' + lead.id, kind: 'lead_first_contact', pid: lead.id, jobName: 'New lead — ' + lead.name + (lead.leadSource ? ' (' + lead.leadSource + ')' : ''),
       pm: pm, to: lead.email, subject: msg.subject, html: msg.html, attachments: [], meta: { leadId: lead.id, leadSource: lead.leadSource || '', phone: lead.phone || '', address: lead.address || '' } });
     return ok ? { sent: false, queued: true, why: 'waiting for approval (' + (pm ? pm.name : 'admins') + ')' } : { sent: false, why: 'could not put it on the approvals list' };
@@ -207,7 +221,8 @@ async function sendEmail(lead) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return { sent: false, why: 'RESEND_API_KEY is not set on Netlify' };
   if (!looksLikeEmail(lead.email)) return { sent: false, why: 'no usable email address on the lead' };
-  const msg = firstEmail(lead);
+  let pm0 = null; try { const who = s(lead.assignedTo) || s(process.env.LEAD_ASSIGN_TO); pm0 = who ? await require('./portal.js')._core.pmByName(who) : null; } catch (e) {}
+  const msg = firstEmail(lead, await contactFor(pm0));
   try {
     const r = await fetch(RESEND_URL, {
       method: 'POST',
@@ -426,3 +441,4 @@ exports.handler = async function (event) {
       : ('Lead received and the customer was contacted, but it is not filed yet (' + storeWhy + '). Please re-send if you do not hear back.')
   });
 };
+exports._t = { firstEmail, contactFor };   /* tests (patch PMG) */
