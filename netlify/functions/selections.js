@@ -359,7 +359,7 @@ async function resend(o){
   if (!key || mailOff() || !okEmail(o.to)) return { ok: false, skipped: true };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ from: o.from || 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'admin@grayco-cs.com'), to: [o.to], subject: o.subject, html: o.html }, o.attachments ? { attachments: o.attachments } : {})) });
+      body: JSON.stringify(Object.assign({ from: o.from || 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: [o.to], subject: o.subject, html: o.html }, o.attachments ? { attachments: o.attachments } : {})) });
     return { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false }; }
 }

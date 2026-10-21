@@ -1210,9 +1210,9 @@ function pmOf(data, p){
   return { name: name, email: low((u && u.email) || p.pmEmail || '') };
 }
 /* where a customer's reply to an automatic e-mail goes (owner, 10/21): a job's PM for job mail; billing, the
-   newsletter and anything without a PM go to the shared admin box (REPLY_TO_ADMIN, default admin@grayco-cs.com).
+   newsletter and anything without a PM go to the shared replies box (REPLY_TO_ADMIN, default replies@grayco-cs.com).
    Never office@. */
-function adminReplyTo(){ const v = low(process.env.REPLY_TO_ADMIN || ''); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'admin@grayco-cs.com'; }
+function adminReplyTo(){ const v = low(process.env.REPLY_TO_ADMIN || ''); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'replies@grayco-cs.com'; }
 function replyToFor(pmEmail, kind){
   if (/final|invoice|receipt|payment|billing|news|thank/i.test(s(kind))) return adminReplyTo();
   const e = low(pmEmail || ''); return /@grayco-cs\.com$/.test(e) && !/^office@/.test(e) ? e : adminReplyTo();

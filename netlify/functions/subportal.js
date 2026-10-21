@@ -689,7 +689,7 @@ async function sendMail(to, subject, html){
   if (!key || mailOff() || !to.length) return false;
   const r = await fetch('https://api.resend.com/emails', { method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Bids <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'admin@grayco-cs.com'), to: to, subject: subject, html: html }) });
+    body: JSON.stringify({ from: 'GrayCo Bids <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: to, subject: subject, html: html }) });
   return r.ok;
 }
 async function staffEmailsFor(job){
