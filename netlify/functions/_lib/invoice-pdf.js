@@ -6,10 +6,14 @@
    job, jobAddress, po, lines:[{desc, amt}], total, paid, balance, isFinal, pm, pmPhone }.
    ──────────────────────────────────────────────────────────────────────────── */
 'use strict';
-const COMPANY = 'GrayCo Construction Services';
-const ADDRESS = '4014 Broadway Rd, Bartlett, TN 38135';
-const PHONE = '(901) 585-0944';
-const EMAIL = 'office@grayco-cs.com';
+/* patch AUT2 (audit #4): name, address, phone, licenses and the logo come from the ONE brand file */
+const BR = require('./brand.js').BRAND;
+const LOGO = require('./brand-logo.js');
+const COMPANY = BR.name;
+const ADDRESS = BR.address;
+const PHONE = BR.phone;
+const EMAIL = BR.email;
+const LICENSES = BR.licenses;
 
 /* Helvetica advance widths (1/1000 em) for the characters an invoice uses; others ~ 556 */
 const W_REG = { ' ': 278, '!': 278, '"': 355, '#': 556, '$': 556, '%': 889, '&': 667, "'": 191, '(': 333, ')': 333, '*': 389, '+': 584, ',': 278, '-': 333, '.': 278, '/': 278,
@@ -63,14 +67,21 @@ function build(doc){
   function textR(x, y, t, size, bold, color){ text(x - width(clean(t), size, bold), y, t, size, bold, color); }
   function rect(x, y, w, h, color){ ops.push(color + ' rg ' + x + ' ' + y + ' ' + w + ' ' + h + ' re f'); }
   function line(x1, y1, x2, y2, color, wd){ ops.push((color || MUTED) + ' RG ' + (wd || 0.6) + ' w ' + x1 + ' ' + y1 + ' m ' + x2 + ' ' + y2 + ' l S'); }
-  function newPage(){ if (ops.length) pages.push(ops.join('\n')); ops = []; }
+  /* every page: the company line and the licenses at the foot */
+  function foot(){ text(L, 22, BR.legalName + '  \xb7  ' + ADDRESS + '  \xb7  ' + LICENSES, 7.5, false, MUTED); }
+  function newPage(){ if (ops.length) { foot(); pages.push(ops.join('\n')); } ops = []; }
 
-  /* header band */
+  /* header band: the logo on a white tile, name, address / phone / e-mail, licenses */
   rect(0, PH - 96, PW, 96, NAVY);
   rect(0, PH - 100, PW, 4, GOLD);
-  text(L, PH - 46, COMPANY, 20, true, '1 1 1');
-  text(L, PH - 64, ADDRESS + '  \xb7  ' + PHONE + '  \xb7  ' + EMAIL, 9, false, '0.80 0.85 0.92');
-  textR(R, PH - 48, doc.isFinal ? 'FINAL INVOICE' : 'INVOICE', 22, true, '1 1 1');
+  rect(L - 4, PH - 88, 76, 76, '1 1 1');
+  ops.push('q 68 0 0 68 ' + L + ' ' + (PH - 84) + ' cm /Im1 Do Q');
+  const TX = L + 84;
+  text(TX, PH - 40, COMPANY, 18, true, '1 1 1');
+  text(TX, PH - 56, ADDRESS + '  \xb7  ' + PHONE, 9, false, '0.80 0.85 0.92');
+  text(TX, PH - 68, EMAIL, 9, false, '0.80 0.85 0.92');
+  text(TX, PH - 81, LICENSES, 8, false, '0.97 0.80 0.30');
+  textR(R, PH - 48, doc.isFinal ? 'FINAL INVOICE' : 'INVOICE', doc.isFinal ? 18 : 22, true, '1 1 1');
   textR(R, PH - 66, 'Invoice #' + (doc.number || ''), 10, true, '0.97 0.80 0.30');
 
   /* bill to + facts */
@@ -131,21 +142,31 @@ function build(doc){
   objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
   objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
   objs[5] = '<< /Producer (GrayCo CRM) /Title ' + str('Invoice ' + (doc.number || '')) + ' >>';
+  const img = Buffer.from(LOGO.jpegBase64, 'base64');
+  objs[6] = { head: '<< /Type /XObject /Subtype /Image /Width ' + LOGO.W + ' /Height ' + LOGO.H + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + img.length + ' >>\nstream\n', bin: img, tail: '\nendstream' };
   const kids = [];
   pages.forEach(function(c, i){
-    const pn = 6 + i * 2, cn = pn + 1;
+    const pn = 7 + i * 2, cn = pn + 1;
     kids.push(pn + ' 0 R');
-    objs[pn] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cn + ' 0 R >>';
+    objs[pn] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << /Im1 6 0 R >> >> /Contents ' + cn + ' 0 R >>';
     objs[cn] = '<< /Length ' + Buffer.byteLength(c, 'latin1') + ' >>\nstream\n' + c + '\nendstream';
   });
   objs[2] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + kids.length + ' >>';
-  let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n';
+  const parts = [Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n', 'latin1')];
+  let len = parts[0].length;
+  const put = function(b){ parts.push(b); len += b.length; };
   const offs = [];
-  for (let n = 1; n < objs.length; n++) { offs[n] = Buffer.byteLength(out, 'latin1'); out += n + ' 0 obj\n' + objs[n] + '\nendobj\n'; }
-  const xref = Buffer.byteLength(out, 'latin1');
-  out += 'xref\n0 ' + objs.length + '\n0000000000 65535 f \n';
+  for (let n = 1; n < objs.length; n++) {
+    offs[n] = len;
+    const o = objs[n];
+    if (o && typeof o === 'object') { put(Buffer.from(n + ' 0 obj\n' + o.head, 'latin1')); put(o.bin); put(Buffer.from(o.tail + '\nendobj\n', 'latin1')); }
+    else put(Buffer.from(n + ' 0 obj\n' + o + '\nendobj\n', 'latin1'));
+  }
+  const xref = len;
+  let out = 'xref\n0 ' + objs.length + '\n0000000000 65535 f \n';
   for (let n = 1; n < objs.length; n++) out += String(offs[n]).padStart(10, '0') + ' 00000 n \n';
   out += 'trailer\n<< /Size ' + objs.length + ' /Root 1 0 R /Info 5 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
-  return Buffer.from(out, 'latin1');
+  put(Buffer.from(out, 'latin1'));
+  return Buffer.concat(parts);
 }
-module.exports = { build: build, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE };
+module.exports = { build: build, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE, LICENSES: LICENSES };

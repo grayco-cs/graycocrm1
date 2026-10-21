@@ -132833,7 +132833,8 @@ async function doSave(pid, change){
   if (hit && saved) { try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('automations'); } catch (e) {} try { await W.idbSet('projects', next); } catch (e) {} }
   /* the screen copy gets the change applied to ITSELF (never the stored copy laid over newer screen data) */
   try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (q !== p) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
-  if (saved) { RECENT[pid] = saved; try { if (W._supaUpsert) ST(function(){ try { W._supaUpsert('projects', hit ? next : arr(crm().projects)); } catch (e) {} }, 300); } catch (e) {} }
+  if (!saved && !hit) { var cur0 = proj(pid); if (cur0) { var q0 = put(cur0); if (q0 !== cur0) saved = q0; } }   /* a job not in the device store yet: the screen copy updates later */
+  if (saved) { RECENT[pid] = saved; if (hit) { try { if (W._supaUpsert) ST(function(){ try { W._supaUpsert('projects', next); } catch (e) {} }, 300); } catch (e) {} } }   /* not in the store yet: the CRM saves its screen copy itself */
   ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
   return saved;
 }
@@ -134645,6 +134646,216 @@ W._gcAdm = {
 };
 try { console.log('[GC] Admin: the team on top, every admin setting under it (patch ADM) — _gcAdm.state()'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-aut2">
+/* __GC_PATCH_AUT2__ ══════════════════════════════════════════════════════════
+   GrayCo — AUTOMATIONS, PHASE 2 (patch AUT2): one brand everywhere + appointment confirmations / reminders.
+
+   1. BRAND (audit #4). window.GC_BRAND = the ONE company name / address (4014 Broadway Rd, Bartlett, TN 38135) /
+      phone / licenses (TN #85034 BCB · AR #0486990627 · MS #27769) / logo — the same constant as the server's
+      netlify/functions/_lib/brand.js (e-mail shell, invoice PDF, portal). From it:
+        · every jsPDF paper (contract, COC, warranty, sub agreement, schedule, invoices … through GC_pdfHeader /
+          GC_pdfFooter) prints this address and these licenses (window.GC_ADDR / GC_LICENSE / GC_PHONE / GC_EMAIL);
+        · every HTML paper the CRM opens in a new window (Forms & Docs, letters) gets the same license line and
+          address (the old "MS License #27769" alone, the long "TN License #…" form and the old remit box become
+          the one form);
+        · window._gcBrandShell(html, sender) — the e-mail shell, for previews (the server wraps every e-mail).
+   2. APPROVALS QUEUE for the automations: window._gcAut.queue({ kind, projectId, ref, subject, html, title }) →
+      the ONE approvals list (portal function, op "queue"; kinds in _lib/auto-queue.js). Waits in this computer's
+      send buffer (gc_aut_outbox) until the function answers. Checks the job's switch first.
+   3. APPOINTMENTS (audit #14). A schedule item on a customer's job (appointment, inspection, meeting, a start /
+      install / walkthrough / estimate visit, or a template task marked "tell the customer") that is made or moved
+      → a confirmation; the day before, from 4 PM → a reminder with the PM's name, photo, phone and the arrival
+      window. Both go through approvals: the PM approves the first; after that (or with the job's apptAuto switch)
+      they go out by themselves with the approved wording. Job switch: scheduleUpdates.
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUT2__) return; window.__GC_PATCH_AUT2__ = true;
+var W = window, D = document, A = W._gcAut;
+if (!A) { try { console.warn('[GC] patch AUT2 needs AUT1'); } catch (e) {} return; }
+var U = A.util, s = U.s, low = U.low, arr = U.arr, esc = U.esc, ST = U.ST, SI = U.SI, jget = U.jget, jset = U.jset;
+
+/* ═══ 1. BRAND ═══════════════════════════════════════════════════════════════ */
+var B = W.GC_BRAND = {
+  name: 'GrayCo Construction Services', legalName: 'GrayCo Construction Services, LLC',
+  street: '4014 Broadway Rd', city: 'Bartlett', state: 'TN', zip: '38135', address: '4014 Broadway Rd, Bartlett, TN 38135',
+  phone: '(901) 585-0944', email: 'office@grayco-cs.com', web: 'https://grayco-cs.com',
+  licenses: 'TN #85034 BCB · AR #0486990627 · MS #27769', logo: '/portal-logo.png',
+  reviewUrl: 'https://share.google/quDuhdlL0ckxPLLY3', navy: '#0F1D2F', gold: '#D4A017'
+};
+function brandGlobals(){
+  try { if (W.GC_ADDR !== B.address) W.GC_ADDR = B.address; if (W.GC_LICENSE !== B.licenses) W.GC_LICENSE = B.licenses; if (W.GC_PHONE !== B.phone) W.GC_PHONE = B.phone; if (W.GC_EMAIL !== B.email) W.GC_EMAIL = B.email; } catch (e) {}
+}
+/* one license line and one address in any HTML paper */
+var LIC_FULL = /TN\s*(?:License\s*)?#\s*85034\s*BCB\s*(?:[·•|,-]|&middot;|&#183;)\s*AR\s*(?:License\s*)?#\s*0486990627\s*(?:[·•|,-]|&middot;|&#183;)\s*MS\s*(?:License\s*)?#\s*27769/gi;
+var LIC_MS = /MS\s+License\s*#\s*27769/gi;
+function brandHtml(h){
+  if (typeof h !== 'string' || h.length < 40) return h;
+  var out = h.replace(LIC_FULL, '\u0001').replace(LIC_MS, '\u0001').split('\u0001').join(B.licenses)
+    .replace(/P\.?\s*O\.?\s*Box\s*341804,?\s*Bartlett,?\s*TN\s*38184/gi, B.address)
+    .replace(/4014 Broadway Rd\.,/g, '4014 Broadway Rd,');
+  return out;
+}
+function wrapWindowDoc(w){
+  try {
+    if (!w || w.__gcBrand) return w;
+    var d = w.document; if (!d || typeof d.write !== 'function') return w;
+    var wr = d.write, wl = d.writeln;
+    d.write = function(){ var a = [].slice.call(arguments).map(brandHtml); return wr.apply(d, a); };
+    if (wl) d.writeln = function(){ var a = [].slice.call(arguments).map(brandHtml); return wl.apply(d, a); };
+    w.__gcBrand = true;
+  } catch (e) {}
+  return w;
+}
+function wrapOpen(){
+  var o = W.open; if (typeof o !== 'function' || o.__gcBrand) return;
+  var w = function(){ var r = o.apply(this, arguments); return wrapWindowDoc(r); };
+  try { Object.keys(o).forEach(function(k){ w[k] = o[k]; }); } catch (e) {}
+  w.__gcBrand = true; W.open = w;
+}
+/* the e-mail shell, as the server makes it (for previews in the CRM) */
+function shell(html, sender){
+  if (/data-gc-shell=/.test(String(html || ''))) return html;
+  var sg = sender && sender.name ? '<div style="margin-top:20px;border-top:1px solid #E5E0D3;padding-top:14px;font-size:13px;line-height:1.55">' + (sender.photo && /^https:/.test(sender.photo) ? '<img src="' + esc(sender.photo) + '" width="52" height="52" style="border-radius:26px;float:left;margin-right:12px" alt="">' : '') +
+    '<b>' + esc(sender.name) + '</b><br>' + esc(sender.title || 'Project Manager') + ' · ' + B.name + (sender.phone ? '<br>📱 ' + esc(sender.phone) : '') + (sender.email ? '<br>' + esc(sender.email) : '') + '<div style="clear:both"></div></div>' : '';
+  return '<div data-gc-shell="1" style="background:#F5F1E8;padding:16px 8px"><div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #E5E0D3;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#14202E">' +
+    '<div style="padding:16px 22px;border-bottom:4px solid ' + B.gold + '"><img src="' + B.logo + '" alt="' + B.name + '" width="150" style="width:150px;height:auto"></div>' +
+    '<div style="padding:20px 22px;font-size:15px;line-height:1.55">' + html + sg + '</div>' +
+    '<div style="background:' + B.navy + ';color:#C9D3E0;padding:12px 22px;font-size:12px;line-height:1.6"><b style="color:#fff">' + B.legalName + '</b><br>' + B.address + ' · ' + B.phone + ' · ' + B.email + '<br><span style="color:' + B.gold + '">' + B.licenses + '</span></div></div></div>';
+}
+
+/* ═══ 2. THE APPROVALS QUEUE (client side) ═══════════════════════════════════ */
+var FN = '/.netlify/functions/portal', OUT = 'gc_aut_outbox';
+var KIND_KEY = { welcome: 'welcome', next_steps: 'scheduleUpdates', appt_confirm: 'scheduleUpdates', appt_reminder: 'scheduleUpdates', closeout: 'warrantyCert',
+  checkup: 'yearlyCheckup', contract: 'contractSign', progress_update: 'progressPosts', thank_you: 'thankYou', invoice: 'invoiceEmail' };
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function okey(o){ return o.kind + '|' + o.projectId + '|' + (o.ref || ''); }
+var busy = false, RESULTS = {};
+function queue(o){
+  if (!o || !o.kind || !o.projectId) return Promise.resolve({ ok: false, error: 'kind and projectId' });
+  var p = A.proj(o.projectId);
+  var key = KIND_KEY[o.kind];
+  if (p && key && !A.jobAuto(p, key)) { A.emit('gc:auto-skipped', { pid: o.projectId, kind: o.kind, key: key }); return Promise.resolve({ ok: false, off: key }); }
+  var buf = jget(OUT, []); if (!Array.isArray(buf)) buf = [];
+  var k = okey(o);
+  if (!buf.some(function(x){ return okey(x) === k; })) buf.push({ kind: o.kind, projectId: String(o.projectId), ref: s(o.ref), subject: s(o.subject), html: String(o.html || ''), title: s(o.title), channel: o.channel || 'email', at: U.nowIso() });
+  jset(OUT, buf);
+  return flush().then(function(){ return RESULTS[k] || { ok: true, waiting: true }; });
+}
+function flush(){
+  if (busy || !signedIn() || navigator.onLine === false) return Promise.resolve();
+  var buf = jget(OUT, []); if (!Array.isArray(buf) || !buf.length) return Promise.resolve();
+  busy = true;
+  var o = buf[0];
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'approval', op: 'queue', kind: o.kind, projectId: o.projectId, ref: o.ref, subject: o.subject, html: o.html, title: o.title, channel: o.channel }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__s = r.status; return j; }); }, function(){ return { __s: 0 }; })
+    .then(function(j){
+      busy = false;
+      var done = j.ok || j.noEmail || j.off || j.__s === 400 || j.__s === 403;
+      if (j.__s === 404 && !j.retry) done = true;   /* an old server without this kind */
+      if (done) {
+        RESULTS[okey(o)] = j;
+        A.emit('gc:auto-queued', { pid: o.projectId, kind: o.kind, ref: o.ref, ok: !!j.ok, sent: !!j.sent, noEmail: !!j.noEmail, off: j.off || '' });
+        jset(OUT, jget(OUT, []).filter(function(x){ return okey(x) !== okey(o); }));
+        try { if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {}
+        if (jget(OUT, []).length) ST(flush, 300);
+      }
+      return j;
+    });
+}
+
+/* the PM card (name, photo, phone) */
+function pmOf(p){
+  var name = s(p && (p.pm || p.projectManager));
+  var u = arr((W._crm || {}).users).filter(function(x){ return x && name && low(x.name) === low(name); })[0] || {};
+  return { name: name || 'your GrayCo project manager', phone: s(u.phone) || B.phone, email: s(u.email), photo: /^https:/.test(s(u.photo)) ? s(u.photo) : '', title: s(u.title) || 'Project Manager' };
+}
+function first(n){ return s(n).split(/[\s,&]+/)[0] || 'there'; }
+
+/* ═══ 3. APPOINTMENTS ════════════════════════════════════════════════════════ */
+var SEEN = 'gc_appt_seen', REM = 'gc_appt_rem', CONF = 'gc_appt_conf', AHEAD = 14;   /* confirm appointments up to 14 days out */
+var CUST_TYPES = /^(appointment|inspection|meeting|walkthrough|estimate|site.?visit|consult)$/i;
+var CUST_WORDS = /estimate|walk.?through|consult|measure|site visit|inspection|appointment|\bstart\b|install|tear.?off|kick.?off|selection/i;
+var NOT_CUST = /^(personal|reminder|sub_work|delivery)$/i;
+function rows(){ return arr((W._crm || {}).schedule); }
+function isCustomerItem(r, p){
+  if (!r || !r.id || !r.pid || !p) return false;
+  if (r.customerVisible === false || r.notify === false) return false;
+  if (r.notify === true || r.portal === true && r.notifyCustomer === true) return true;
+  if (NOT_CUST.test(s(r.type))) return false;
+  if (/lost|dead|cancel|complete|closed/.test(low(p.status))) return false;
+  return CUST_TYPES.test(s(r.type)) || CUST_WORDS.test(s(r.title));
+}
+function ymd(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function niceDate(iso){ var d = new Date(s(iso) + 'T12:00:00'); if (isNaN(d)) return s(iso); return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); }
+function niceTime(t){ var m = /^(\d{1,2}):(\d{2})/.exec(s(t)); if (!m) return ''; var h = +m[1], ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + (m[2] !== '00' ? ':' + m[2] : '') + ' ' + ap; }
+function windowOf(r){
+  var t = s(r.time); if (!/^\d{1,2}:\d{2}/.test(t)) return 'during the day (your PM will text when the crew is on the way)';
+  var h = +t.split(':')[0], m = t.split(':')[1].slice(0, 2), end = (h + 2) + ':' + m;
+  if (/^\d{1,2}:\d{2}/.test(s(r.endTime))) { var eh = +s(r.endTime).split(':')[0]; if (eh > h && eh - h <= 3) end = s(r.endTime); }
+  return 'between ' + niceTime(t) + ' and ' + niceTime(end);
+}
+function what(r){ var t = s(r.title).replace(/^.*?—\s*/, ''); return t || ({ inspection: 'Inspection', meeting: 'Meeting', appointment: 'Appointment', work: 'Work day' })[low(r.type)] || 'Appointment'; }
+function pmCard(pm){
+  return '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0;background:#F5F1E8;border-radius:10px;width:100%"><tr>' +
+    (pm.photo ? '<td style="padding:12px 0 12px 12px;width:60px"><img src="' + esc(pm.photo) + '" width="52" height="52" style="border-radius:26px;display:block" alt=""></td>' : '') +
+    '<td style="padding:12px;font-size:14px;line-height:1.5"><b>' + esc(pm.name) + '</b> — ' + esc(pm.title) + '<br>📱 <a href="tel:' + esc(pm.phone.replace(/[^\d+]/g, '')) + '" style="color:#0F1D2F">' + esc(pm.phone) + '</a></td></tr></table>';
+}
+function apptHtml(kind, r, p){
+  var pm = pmOf(p), addr = s(r.address) || s(p.address);
+  var lead = kind === 'appt_reminder' ? 'A quick reminder: we will see you <b>tomorrow, ' + esc(niceDate(r.date)) + '</b>.' : 'This confirms your appointment with GrayCo on <b>' + esc(niceDate(r.date)) + '</b>.';
+  return '<p>Hi ' + esc(first(p.client)) + ',</p><p>' + lead + '</p>' +
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px;line-height:1.6;margin:10px 0">' +
+    '<tr><td style="color:#55626F;padding-right:12px">What</td><td><b>' + esc(what(r)) + '</b></td></tr>' +
+    '<tr><td style="color:#55626F;padding-right:12px">When</td><td>' + esc(niceDate(r.date)) + ', ' + esc(windowOf(r)) + '</td></tr>' +
+    (addr ? '<tr><td style="color:#55626F;padding-right:12px">Where</td><td>' + esc(addr) + '</td></tr>' : '') + '</table>' +
+    '<p>Your project manager:</p>' + pmCard(pm) +
+    '<p>Need a different time? Just reply or call ' + esc(pm.phone) + '.</p>';
+}
+function apptTick(force, at){   /* at: a Date to run as (tests) */
+  if (!force && (D.hidden || W.__GC_IS_TYPING__)) return;
+  var list = rows(); if (!list.length && !force) return;
+  var seen = jget(SEEN, null), firstLook = !seen; seen = seen || {};
+  var now0 = at instanceof Date ? at : new Date();
+  var today = ymd(now0), tm = new Date(now0.getTime()); tm.setDate(tm.getDate() + 1); var tomorrow = ymd(tm);
+  var rem = jget(REM, {}), hour = now0.getHours(), conf = jget(CONF, {});
+  var horizon = ymd(new Date(now0.getTime() + AHEAD * 864e5));
+  var next = {};
+  list.forEach(function(r){
+    if (!r || !r.id) return;
+    var sig = s(r.date) + ' ' + s(r.time);
+    next[r.id] = sig;
+    var p = r.pid && A.proj(r.pid);
+    if (!isCustomerItem(r, p) || !/^\d{4}-\d{2}-\d{2}/.test(s(r.date)) || s(r.date) < today) return;
+    if (firstLook) { conf[r.id] = sig; return; }
+    if (conf[r.id] !== sig && s(r.date) <= horizon) {   /* made or moved (or now within 14 days) */
+      conf[r.id] = sig;
+      A.queue({ kind: 'appt_confirm', projectId: p.id, ref: r.id + '_' + s(r.date).replace(/-/g, '') + s(r.time).replace(/\D/g, ''), title: '📅 Confirm ' + what(r) + ' — ' + s(p.name) + ' (' + niceDate(r.date) + ')',
+        subject: 'Confirmed: ' + what(r) + ' on ' + niceDate(r.date) + ' — GrayCo', html: apptHtml('appt_confirm', r, p) });
+    }
+    if (s(r.date) === tomorrow && hour >= 16 && !rem[r.id + '_' + r.date]) {
+      rem[r.id + '_' + r.date] = U.nowIso();
+      A.queue({ kind: 'appt_reminder', projectId: p.id, ref: r.id + '_' + s(r.date).replace(/-/g, ''), title: '⏰ Reminder: ' + what(r) + ' tomorrow — ' + s(p.name),
+        subject: 'Reminder: GrayCo ' + what(r).toLowerCase() + ' tomorrow (' + niceDate(r.date) + ')', html: apptHtml('appt_reminder', r, p) });
+    }
+  });
+  Object.keys(rem).forEach(function(k){ if (k.slice(-10) < today) delete rem[k]; });
+  Object.keys(conf).forEach(function(k){ if (!(k in next)) delete conf[k]; });
+  jset(REM, rem); jset(SEEN, next); jset(CONF, conf);
+}
+
+/* ── public ── */
+A.queue = queue; A.flushQueue = flush; A.pmOf = pmOf; A.brandHtml = brandHtml; A.apptTick = apptTick; A.apptHtml = apptHtml; A.isCustomerItem = isCustomerItem; A.KIND_KEY = KIND_KEY;
+W._gcBrandShell = shell;
+
+brandGlobals(); wrapOpen();
+SI(function(){ try { brandGlobals(); wrapOpen(); } catch (e) {} }, 2000);
+SI(function(){ if (!D.hidden && jget(OUT, []).length) flush(); }, 30000); ST(flush, 8000);
+ST(function(){ apptTick(false); }, 12000); SI(function(){ try { apptTick(false); } catch (e) {} }, 60000);
+try { console.log('[GC] patch AUT2: GC_BRAND, one license line + address on every paper, automations → approvals, appointment confirmations / reminders'); } catch (e) {}
+})();
+
 </script><!-- /INSP -->
 
 

@@ -99,6 +99,7 @@ async function gcStaffAuth(event){
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
 const crypto = require('crypto');
+try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */
 
 const OFFICE_PHONE = '901-585-0944';
 const NOT_ACTIVE = 'This link is not active — call GrayCo ' + OFFICE_PHONE;
@@ -1193,6 +1194,7 @@ async function aqSend(item, now){
     try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
+  if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch AUT2: the GrayCo shell + the PM's signature */
   let from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
     : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
   const payload = { from: from, reply_to: 'office@grayco-cs.com', to: [item.to], subject: item.subject, html: html };
@@ -1277,6 +1279,7 @@ async function approvalAction(body, who){
     /* the CRM's automatic thank-you e-mail (job complete + paid): it waits here for the PM, then an admin.
        The recipient is the job's own customer e-mail (never one the page sends). */
     if (s(body.kind) === 'invoice') return queueInvoiceMail(s(body.invoiceId), who);   /* patch AP2 */
+    if (require('./_lib/auto-queue.js').handles(body.kind)) return require('./_lib/auto-queue.js').queue(body, who, { crmData: crmData, findProject: findProject, pmOf: pmOf, queueApproval: queueApproval, kvListRead: kvListRead, kvListUpdate: kvListUpdate, aqSend: aqSend, AQ_KEY: AQ_KEY });   /* patch AUT2 */
     if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you and invoice e-mails are queued from the CRM.' } };
     const pid = s(body.projectId);
     const data = await crmData(true); const p = pid && findProject(data, pid);

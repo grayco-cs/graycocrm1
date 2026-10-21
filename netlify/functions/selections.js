@@ -63,6 +63,7 @@ async function gcStaffAuth(event){
 }
 
 const crypto = require('crypto');
+try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */
 const OFFICE_PHONE = '901-585-0944';
 const NOT_ACTIVE = 'This link is not active — call GrayCo ' + OFFICE_PHONE;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
