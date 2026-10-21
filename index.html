@@ -5276,7 +5276,7 @@ body{background:#ffffff !important;color:#000000 !important;}
     </body></html>`},xu=g=>{const te=hl(g),H=window.open("","_blank");H?(H.document.write(te),H.document.close()):se("Pop-up blocked — allow pop-ups for this site")},zf=({pd:_initPd,onGenerate:H,onClose:_})=>{const[g,te]=ce.useState(_initPd),[Q,y]=ce.useState("info"),[_gen,_setGen]=ce.useState(!1),T=[{id:"info",l:"Project Info"},{id:"scope",l:"Scope"},{id:"estimate",l:"Estimate"},{id:"payment",l:"Payment"},{id:"schedule",l:"Schedule"},{id:"warranty",l:"Warranty"},{id:"contract",l:"Contract"},{id:"links",l:"Links & Contact"}],L=(w,E)=>te(q=>({...q,[w]:E})),Y={width:"100%",padding:"6px 8px",border:`1px solid ${u.bdr}`,borderRadius:4,fontSize:11,fontFamily:"inherit",background:"#fff"},We={...Y,minHeight:80,resize:"vertical"},B={fontSize:10,fontWeight:600,color:u.tx2,marginBottom:2,display:"block"},U=(w,E,q)=>e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L(E,[...w,q]),children:"+ Add"}),Z=(w,E,q)=>e.jsx("button",{style:{color:u.red,background:"none",border:"none",fontSize:11,cursor:"pointer",padding:"0 4px"},onClick:()=>L(E,w.filter((ke,z)=>z!==q)),children:"✕"});return e.jsx("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.6)",zIndex:2e3,display:"flex",alignItems:"center",justifyContent:"center"},children:e.jsxs("div",{style:{background:"#fff",borderRadius:10,width:"90vw",maxWidth:900,maxHeight:"90vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"},children:[e.jsxs("div",{style:{padding:"14px 20px",borderBottom:`1px solid ${u.bdr}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:"linear-gradient(135deg,#0f1d2f,#162d4a)",borderRadius:"10px 10px 0 0",color:"#fff"},children:[e.jsxs("div",{children:[e.jsxs("div",{style:{fontSize:16,fontWeight:800},children:["📄 Proposal Editor — ",g.projectName||"New Proposal"]}),e.jsx("button",{onClick:()=>{window._openGDocImport&&window._openGDocImport(function(_p){te(function(_g){var m=Object.assign({},_g);Object.keys(_p).forEach(function(k){var v=_p[k];if(v!==void 0&&v!==""&&!(Array.isArray(v)&&v.length===0))m[k]=v});return m})})},style:{marginTop:6,padding:"5px 12px",borderRadius:7,border:"1px solid #2f6fb3",background:"#143458",color:"#cfe3ff",fontWeight:700,fontSize:12,cursor:"pointer"},children:"\u2B07 Import Google Doc Estimate"}),e.jsxs("div",{style:{fontSize:11,color:"#94a3b8"},children:_gen?["✓ Opened in new tab — edit below and click Regenerate • ",g.jobTypeLabel]:["Edit everything before generating • ",g.jobTypeLabel]})]}),e.jsxs("div",{style:{display:"flex",gap:8},children:[e.jsx("button",{style:{padding:"8px 20px",background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",borderRadius:6,fontWeight:700,fontSize:12,cursor:"pointer"},onClick:()=>{try{if(g&&g.pid){var _ctx={startDate:g.startDate,pm:g.pm,address:g.address,by:(n&&n.name)||"",jobName:g.projectName||g.name||""};if(Array.isArray(g.tentativeSchedule)&&g.tentativeSchedule.length&&window._gcAddTentativeSchedule){window._gcAddTentativeSchedule(g.pid,g.tentativeSchedule,_ctx);}else if(g.startDate&&window._gcAddTentativeRange){window._gcAddTentativeRange(g.pid,g.startDate,g.endDate,_ctx);}}}catch(_e){}_setGen(!0);te(g);H(g)},children:_gen?"\uD83D\uDD01 Regenerate Proposal":"📄 Generate Proposal"}),e.jsx("button",{style:{padding:"8px 14px",background:"rgba(255,255,255,0.1)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,fontWeight:600,fontSize:12,cursor:"pointer"},onClick:_,children:"Close"})]})]}),e.jsx("div",{style:{display:"flex",borderBottom:`1px solid ${u.bdr}`,overflowX:"auto",background:"#f8fafc"},children:T.map(w=>e.jsx("button",{onClick:()=>y(w.id),style:{padding:"8px 14px",border:"none",background:"none",borderBottom:Q===w.id?"2px solid #2563eb":"2px solid transparent",color:Q===w.id?"#2563eb":u.tx2,fontWeight:Q===w.id?700:400,fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"},children:w.l},w.id))}),e.jsxs("div",{style:{flex:1,overflow:"auto",padding:20},children:[Q==="info"&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12},children:[e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Project Name"}),e.jsx("input",{style:Y,value:g.projectName,onChange:w=>L("projectName",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Job Type Template"}),e.jsx("select",{style:Y,value:g.jobType,onChange:w=>{const E=w.target.value,q=Ks[E]||Ks["Residential Reno"];L("jobType",E),L("jobTypeLabel",q.label),L("inclusions",[...q.inclusions]),L("exclusions",[...q.exclusions]),L("commPromise",[...q.commPromise]),L("schedNotes",[...q.schedNotes]),L("payNotes",[...q.payNotes]),L("contractText",q.contract)},children:Object.entries(Ks).map(([w,E])=>e.jsx("option",{value:w,children:E.label},w))})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Client Name"}),e.jsx("input",{style:Y,value:g.client,onChange:w=>L("client",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Client Phone"}),e.jsx("input",{style:Y,value:g.clientPhone,onChange:w=>L("clientPhone",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Client Email"}),e.jsx("input",{style:Y,value:g.clientEmail,onChange:w=>L("clientEmail",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Address"}),e.jsx("input",{style:Y,value:g.address,onChange:w=>L("address",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"PO #"}),e.jsx("input",{style:Y,value:g.po,onChange:w=>L("po",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Project Manager"}),e.jsx("input",{style:Y,value:g.pm,onChange:w=>L("pm",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"PM Phone"}),e.jsx("input",{style:Y,value:g.pmPhone,onChange:w=>L("pmPhone",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"PM Email"}),e.jsx("input",{style:Y,value:g.pmEmail,onChange:w=>L("pmEmail",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Contract Amount ($ — from the SIGNED CONTRACT. This is the job revenue.)"}),e.jsx("input",{style:Y,type:"number",value:g.contractAmt,onChange:w=>L("contractAmt",parseFloat(w.target.value)||0)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Contract Status"}),e.jsxs("select",{style:Y,value:g.contractStatus||"not sent",onChange:w=>L("contractStatus",w.target.value),children:[e.jsx("option",{value:"not sent",children:"Not sent"}),e.jsx("option",{value:"sent",children:"Sent — awaiting signature"}),e.jsx("option",{value:"signed",children:"Signed"})]})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Signed Contract (link to PDF / Google Doc / Drive)"}),e.jsx("input",{style:Y,type:"text",placeholder:"Paste link to the signed contract",value:g.contractUrl||"",onChange:w=>{var _v=w.target.value;te(function(q){var _n={...q,contractUrl:_v};if(_v&&_v.trim()){_n.contractStatus="signed";}return _n;});}}),(g.contractUrl?e.jsx("a",{href:g.contractUrl,target:"_blank",rel:"noopener",style:{fontSize:11,color:"#0ea5e9",textDecoration:"underline"},children:"Open signed contract"}):null)]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Estimated Weeks"}),e.jsx("input",{style:Y,type:"number",value:g.weeks,onChange:w=>L("weeks",parseInt(w.target.value)||4)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Start Date"}),e.jsx("input",{style:Y,type:"date",value:g.startDate,onChange:w=>L("startDate",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"End Date"}),e.jsx("input",{style:Y,type:"date",value:g.endDate,onChange:w=>L("endDate",w.target.value)})]})]}),Q==="scope"&&e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4},children:[e.jsx("label",{style:B,children:"Scope of Work Description"}),e.jsx("label",{style:{background:"#2563eb",color:"#fff",padding:"4px 10px",borderRadius:5,fontSize:11,cursor:"pointer",fontWeight:600,display:"flex",alignItems:"center",gap:4},title:"Upload Word, Excel, CSV or TXT — text will be added to scope below",children:[e.jsx("input",{type:"file",accept:".docx,.doc,.xlsx,.xls,.csv,.txt,.pdf",style:{display:"none"},onChange:async _ev=>{const _f=(_ev.target.files||[])[0];if(!_f)return;se("Reading document...");try{const _ext=_f.name.split(".").pop().toLowerCase();let _txt="";if(_ext==="csv"||_ext==="txt"){_txt=await _f.text();}else if(_ext==="xlsx"||_ext==="xls"){const _ab=await _f.arrayBuffer();const _xl=await Zc();const _wb=_xl.read(new Uint8Array(_ab),{type:"array"});_wb.SheetNames.forEach((_sn,_si)=>{const _ws=_wb.Sheets[_sn];const _rows=_xl.utils.sheet_to_json(_ws,{header:1,defval:"",raw:false});if(_si>0)_txt+="\n\n--- "+_sn+" ---\n";_txt+=_rows.filter(_r=>_r.some(_c=>String(_c||"").trim())).map(_r=>_r.map(_c=>String(_c||"").trim()).filter(Boolean).join("\t")).join("\n");});}else if(_ext==="docx"||_ext==="doc"){const _ab=await _f.arrayBuffer();try{const _mam=await import("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js").catch(()=>null);if(_mam){const _res=await mammoth.extractRawText({arrayBuffer:_ab});_txt=_res.value||"";}}catch(_de){_txt="[Could not parse Word doc — copy/paste content below]";}}else{_txt=await _f.text().catch(()=>"[Binary file — cannot extract text]");}_txt=_txt.trim().slice(0,8000);if(!_txt){se("No text found in file");return;}L("scopeDescription",(g.scopeDescription?g.scopeDescription+"\n\n--- From: "+_f.name+" ---\n":"")+_txt);se("✅ Document added to scope — review and edit");}catch(_err){se("Failed: "+_err.message);}finally{_ev.target.value="";}}}),"📄 Upload to Scope"]})]}),e.jsx("textarea",{style:{...We,minHeight:150},value:g.scopeDescription,onChange:w=>L("scopeDescription",w.target.value)}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"What's Included"}),g.inclusions.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("span",{style:{color:"#16a34a",fontWeight:700},children:"✓"}),e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.inclusions];ke[E]=q.target.value,L("inclusions",ke)}}),Z(g.inclusions,"inclusions",E)]},E)),U(g.inclusions,"inclusions","")]}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Exclusions"}),g.exclusions.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("span",{style:{color:"#dc2626",fontWeight:700},children:"✕"}),e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.exclusions];ke[E]=q.target.value,L("exclusions",ke)}}),Z(g.exclusions,"exclusions",E)]},E)),U(g.exclusions,"exclusions","")]})]}),Q==="estimate"&&e.jsxs("div",{children:[e.jsxs("div",{style:{marginBottom:10,padding:"8px 12px",background:"#f0fdf4",border:"1px solid #86efac",borderRadius:6},children:[e.jsx("div",{style:{fontSize:11,fontWeight:700,color:"#15803d",marginBottom:6},children:"📊 Load Estimate Into Template:"}),e.jsxs("div",{style:{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"},children:[e.jsxs("select",{style:{...Y,fontSize:11,flex:1,minWidth:160},onChange:_ev=>{const _eid=_ev.target.value;if(!_eid)return;const _est=fa.find(_e=>_e.id===_eid);if(!_est)return;const _mats=((_est.mats)||[]).map(_m=>({desc:_m.name,amount:Math.round(_m.qty*_m.uc*(1+(qa[_m.cat]||0)/100)*100)/100}));const _lab=((_est.labor)||[]).map(_l=>({desc:(_l.cat||"Lab")+": "+(_l.desc||""),amount:Math.round(_l.hrs*_l.rate*100)/100}));const _li=[..._mats,..._lab].filter(_x=>_x.desc);const _tot=_li.reduce((_a,_x)=>_a+(_x.amount||0),0);te(_s=>({..._s,lineItems:_li,contractAmt:cl(_tot,_est)}));se("Estimate loaded");_ev.target.value=""},children:[e.jsx("option",{value:"",children:"Load from CRM estimate..."}),...fa.filter(_e=>g.pid&&_e.pid&&_e.pid===g.pid&&_e.status!=="template").map(_e=>e.jsx("option",{value:_e.id,children:_e.name},_e.id))]}),e.jsx("label",{style:{...ht,cursor:"pointer",fontSize:11},children:[e.jsx("input",{type:"file",accept:".xlsx,.xls,.csv,.docx,.doc,.pdf,.txt,.rtf",style:{display:"none"},onChange:async _ev=>{const _f=(_ev.target.files||[])[0];if(!_f)return;se("Reading "+_f.name+"...");try{const _ab=await _f.arrayBuffer();const _u8=new Uint8Array(_ab);const _xl=await Zc();const _wb=_xl.read(_u8,{type:"array",raw:false,cellDates:true});const _ws=_wb.Sheets[_wb.SheetNames[0]];const _rows=_xl.utils.sheet_to_json(_ws,{header:1,defval:"",raw:false});if(!_rows||_rows.length<2){se("No data");return}const _hdrs=_rows[0].map(_x=>String(_x||"").toLowerCase().trim());const _fi=_kws=>{let _r=-1;_kws.forEach(_w=>{if(_r<0){const _i=_hdrs.findIndex(_h=>_h.includes(_w));if(_i>=0)_r=_i}});return _r};const _dC=_fi(["desc","name","item","material"]);const _aC=_fi(["amount","total","price","cost"]);const _li=_rows.slice(1).map(_r=>{const _d=String(_r[_dC>=0?_dC:0]||"").trim();const _a=_aC>=0?parseFloat(String(_r[_aC]).replace(/[$,]/g,""))||0:0;return _d||_a?{desc:_d.slice(0,100),amount:Math.round(_a*100)/100}:null}).filter(Boolean);if(!_li.length){se("No items found");return}const _tot=_li.reduce((_a,_x)=>_a+(_x.amount||0),0);te(_s=>({..._s,lineItems:_li,contractAmt:_tot}));se(_li.length+" items loaded")}catch(_err){se("Failed: "+_err.message)}finally{_ev.target.value=""}}}),e.jsx("span",{children:"📁 Excel/CSV"})]})]})]}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700,margin:0},children:"Line Items"}),e.jsxs("div",{style:{fontSize:12,fontWeight:700,color:"#2563eb"},children:["Total: $",g.lineItems.reduce((w,E)=>w+(E.amount||0),0).toLocaleString("en-US",{minimumFractionDigits:2})," to Contract & Draws Auto-Updated"]})]}),e.jsxs("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:[e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 100px 30px",gap:0,background:"#f1f5f9",padding:"4px 8px",fontSize:9,fontWeight:700,color:u.tx2},children:[e.jsx("div",{children:"DESCRIPTION"}),e.jsx("div",{style:{textAlign:"right"},children:"AMOUNT"}),e.jsx("div",{})]}),g.lineItems.map((w,E)=>e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 100px 30px",gap:4,padding:"3px 8px",borderBottom:`1px solid ${u.bdr}`,alignItems:"center"},children:[e.jsx("input",{style:{...Y,fontSize:10},value:w.desc,onChange:q=>{const ke=[...g.lineItems];ke[E]={...ke[E],desc:q.target.value},L("lineItems",ke)}}),e.jsx("input",{style:{...Y,fontSize:10,textAlign:"right"},type:"number",value:w.amount,onChange:q=>{const ke=[...g.lineItems];ke[E]={...ke[E],amount:parseFloat(q.target.value)||0};const _tot=ke.reduce((_a,_i)=>_a+(_i.amount||0),0);te(q=>{var _o=(q.lineItems||[]).reduce((_a,_i)=>_a+(_i.amount||0),0),_r=q._mkr&&Math.abs(Math.round(_o*q._mkr*100)/100-q.contractAmt)<0.011?q._mkr:(_o>0&&q.contractAmt>0?q.contractAmt/_o:(q._mkr||1));return{...q,lineItems:ke,_mkr:_r,contractAmt:Math.round(_tot*_r*100)/100}})}}),Z(g.lineItems,"lineItems",E)]},E))]}),e.jsx("button",{style:{...ot,fontSize:10,marginTop:6},onClick:()=>L("lineItems",[...g.lineItems,{desc:"",amount:0}]),children:"+ Add Line Item"}),e.jsxs("div",{style:{marginTop:10,padding:8,background:"#fefce8",border:"1px solid #fde047",borderRadius:6,fontSize:11},children:[e.jsx("b",{children:"💡 These numbers are FINAL:"})," When you click Generate Proposal, the contract amount and draws update your project in the CRM automatically. These are the numbers on the quote you send to the homeowner."]})]}),Q==="payment"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Payment Draws"}),e.jsxs("div",{style:{fontSize:11,color:u.tx2,marginBottom:8},children:["Contract Amount: ",e.jsxs("b",{children:["$",g.contractAmt.toLocaleString("en-US",{minimumFractionDigits:2})]})," — draws should total 100%"]}),g.draws.map((w,E)=>{const _drawAmt=g.contractAmt*w.pct/100;const _paid=parseFloat(w.paid)||0;const _pctLeft=_drawAmt>0?Math.max(0,Math.round((_drawAmt-_paid)/_drawAmt*100)):(_paid>0?0:100);const _isPaid=_paid>=_drawAmt&&_drawAmt>0;return e.jsxs("div",{style:{border:"1px solid "+(_isPaid?"#86efac":w.paidDate?u.acc+"44":u.bdr),borderRadius:6,padding:"8px 10px",marginBottom:6,background:_isPaid?"#f0fdf4":"transparent"},children:[e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"36px 1fr 70px 90px 28px",gap:5,alignItems:"center",marginBottom:_paid>0||_isPaid?6:0},children:[e.jsxs("div",{style:{textAlign:"center",fontWeight:700,color:"#2563eb",fontSize:12},children:["#",w.n]}),e.jsx("input",{style:{...Y,fontSize:12},value:w.desc,placeholder:"Draw description",onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],desc:q.target.value},L("draws",ke)}}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:2},children:[e.jsx("input",{style:{...Y,width:44,textAlign:"center",fontSize:11},type:"number",value:w.pct,onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],pct:parseFloat(q.target.value)||0},L("draws",ke)}}),e.jsx("span",{style:{fontSize:10},children:"%"})]}),e.jsxs("div",{style:{fontWeight:700,fontSize:11,textAlign:"right",color:_isPaid?"#16a34a":u.tx},children:["$",_drawAmt.toLocaleString("en-US",{minimumFractionDigits:2})]}),Z(g.draws,"draws",E)]}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:5,alignItems:"center"},children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:3},children:[e.jsx("span",{style:{fontSize:10,color:u.tx2,whiteSpace:"nowrap"},children:"Received $:"}),e.jsx("input",{style:{...Y,flex:1,fontSize:11,background:_paid>0?"#f0fdf4":""},type:"number",value:w.paid||"",placeholder:"0.00",onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],paid:parseFloat(q.target.value)||0,paidDate:q.target.value&&!ke[E].paidDate?new Date().toISOString().slice(0,10):ke[E].paidDate},L("draws",ke)}})]}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:3},children:[e.jsx("span",{style:{fontSize:10,color:u.tx2},children:"Date:"}),e.jsx("input",{style:{...Y,fontSize:11,width:100},type:"date",value:w.paidDate||"",onChange:q=>{const ke=[...g.draws];ke[E]={...ke[E],paidDate:q.target.value},L("draws",ke)}})]}),e.jsxs("div",{style:{background:_isPaid?"#16a34a":_pctLeft<50?"#f59e0b":"#dc2626",color:"#fff",borderRadius:12,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"},children:[_isPaid?"✓ PAID":_pctLeft+"%  left"]})]})]},E)}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4},children:[e.jsx("button",{style:{...ot,fontSize:10},onClick:()=>L("draws",[...g.draws,{n:g.draws.length+1,desc:"",pct:0,paid:0,paidDate:""}]),children:"+ Add Draw"}),e.jsxs("div",{style:{fontSize:11,fontWeight:700,color:g.draws.reduce((w,E)=>w+E.pct,0)===100?"#16a34a":"#dc2626"},children:["Total: ",g.draws.reduce((w,E)=>w+E.pct,0),"%"]})]}),e.jsxs("div",{style:{marginTop:10,padding:"10px 12px",background:u.card,border:"1px solid "+u.bdr,borderRadius:6},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6},children:[e.jsx("span",{style:{fontSize:11,fontWeight:700},children:"Payment Summary"}),e.jsxs("span",{style:{fontSize:11,color:u.tx2},children:["Contract: ",e.jsx("b",{children:"$"+g.contractAmt.toLocaleString("en-US",{minimumFractionDigits:2})})]})]}),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6},children:[e.jsxs("div",{style:{textAlign:"center",padding:"6px 4px",background:"#f0fdf4",borderRadius:4},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,textTransform:"uppercase",fontWeight:600},children:"Total Received"}),e.jsxs("div",{style:{fontSize:13,fontWeight:700,color:"#16a34a"},children:["$",g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0).toLocaleString("en-US",{minimumFractionDigits:2})]})]}),e.jsxs("div",{style:{textAlign:"center",padding:"6px 4px",background:"#fef3c7",borderRadius:4},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,textTransform:"uppercase",fontWeight:600},children:"Remaining"}),e.jsxs("div",{style:{fontSize:13,fontWeight:700,color:"#d97706"},children:["$",Math.max(0,g.contractAmt-g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)).toLocaleString("en-US",{minimumFractionDigits:2})]})]}),e.jsxs("div",{style:{textAlign:"center",padding:"6px 4px",background:g.contractAmt>0&&g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)>=g.contractAmt?"#f0fdf4":"#fef2f2",borderRadius:4},children:[e.jsx("div",{style:{fontSize:9,color:u.tx2,textTransform:"uppercase",fontWeight:600},children:"% Collected"}),e.jsxs("div",{style:{fontSize:13,fontWeight:700,color:g.contractAmt>0&&g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)>=g.contractAmt?"#16a34a":"#dc2626"},children:[g.contractAmt>0?Math.round(g.draws.reduce((_a,_d)=>_a+(parseFloat(_d.paid)||0),0)/g.contractAmt*100):0,"%"]})]})]})]}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Payment Notes"}),g.payNotes.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.payNotes];ke[E]=q.target.value,L("payNotes",ke)}}),Z(g.payNotes,"payNotes",E)]},E)),U(g.payNotes,"payNotes","")]})]}),Q==="schedule"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Tentative Schedule"}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:8},children:"This shows the customer HOW you'd schedule the job — builds from your notes & checklist"}),e.jsxs("div",{style:{marginBottom:10,padding:"8px 10px",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:6,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"},children:[e.jsx("span",{style:{fontSize:11,color:"#0369a1",fontWeight:600},children:"📂 Import Schedule:"}),e.jsx("label",{style:{padding:"5px 12px",background:"#0369a1",color:"#fff",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",border:"none"},children:[e.jsx("input",{type:"file",accept:".xlsx,.xls,.csv,.docx,.doc,.txt",style:{display:"none"},onChange:async(_ev)=>{const _f=_ev.target.files[0];if(!_f)return;se("Reading file...");const _ext=_f.name.split(".").pop().toLowerCase();const _pushItems=(_items)=>{if(!_items.length){se("No rows found in file — check the file has data");return}const _clean=_items.filter(_i=>_i.title&&String(_i.title).trim().length>0).map((_i,_idx)=>({week:_i.week||(_idx+1),title:String(_i.title).trim().slice(0,100),desc:String(_i.desc||"").trim().slice(0,200)}));if(!_clean.length){se("No usable rows found — every row was empty");return}te(_s=>({..._s,tentativeSchedule:_clean}));const _pid=g.pid;if(_pid){const _base=g.startDate?new Date(g.startDate+"T12:00:00"):new Date();const _crm=_clean.map((_it,_i)=>{const _d2=new Date(_base);_d2.setDate(_base.getDate()+(_it.week-1)*7);const _ds=_d2.getFullYear()+"-"+String(_d2.getMonth()+1).padStart(2,"0")+"-"+String(_d2.getDate()).padStart(2,"0");return{id:$t("SCH"),pid:_pid,title:_it.title,date:_ds,time:"08:00",endTime:"17:00",assignee:g.pm||n.name,vendor:"",type:"work",address:g.address||"",notes:_it.desc,scope:"company",by:n.name}});rn(_ex=>{const _keep=_ex.filter(_e=>_e.pid!==_pid);const _existing=_ex.filter(_e=>_e.pid===_pid);const _nodupes=_crm.filter(_c=>!_existing.some(_e=>_e.title.toLowerCase().trim()===_c.title.toLowerCase().trim()));return[..._keep,..._existing,..._nodupes]});se("✅ "+_clean.length+" phases imported → template + schedule")}else{se("✅ "+_clean.length+" phases imported into template")}};try{if(_ext==="xlsx"||_ext==="xls"||_ext==="csv"){const _XLSX=await Zc();const _ab=await _f.arrayBuffer();const _u8=new Uint8Array(_ab);const _wb=_XLSX.read(_u8,{type:"array",raw:false,cellDates:false});const _ws=_wb.Sheets[_wb.SheetNames[0]];const _raw=_XLSX.utils.sheet_to_json(_ws,{header:1,defval:"",raw:false});if(!_raw||!_raw.length){se("File appears empty");return}const _nonEmpty=_raw.filter(_r=>_r.some(_c=>String(_c||"").trim().length>0));if(_nonEmpty.length<2){se("File needs at least a header row + one data row");return}var _hdrIdx=0;for(var _ri=0;_ri<Math.min(10,_nonEmpty.length);_ri++){var _rr=_nonEmpty[_ri].map(function(h){return String(h||"").toLowerCase().trim()});if(_rr.some(function(h){return h.includes("task")||h.includes("phase")||h.includes("activity")||h.includes("item")||h.includes("week")||h.includes("wk")||h.includes("scope")||h.includes("trade")||h.includes("milestone")||h.includes("name")||h.includes("title")})){_hdrIdx=_ri;break}}const _hdrs=_nonEmpty[_hdrIdx].map(_h=>String(_h||"").toLowerCase().trim());const _data=_nonEmpty.slice(_hdrIdx+1);const _fi=_kws=>{let _best=-1;_kws.forEach(_w=>{if(_best<0){const _i=_hdrs.findIndex(_h=>_h.includes(_w));if(_i>=0)_best=_i}});return _best};const _wCol=_fi(["week","wk","wbs","#","no"]);const _tCol=(()=>{let _c=_fi(["task name","activity name","phase","title","task","activity","scope","trade","milestone"]);if(_c<0)_c=_fi(["name","item","work","line item","deliverable"]);if(_c<0)_c=_fi(["description","desc"]);if(_c<0){for(var i=0;i<_hdrs.length;i++){var h=_hdrs[i];if(h.length>0&&!h.includes("date")&&!h.includes("start")&&!h.includes("end")&&!h.includes("dur")&&!h.includes("cost")&&!h.includes("budget")&&!h.includes("#")&&!h.includes("id")&&!h.includes("wbs")&&!h.includes("week")){_c=i;break}}_c=_c<0?0:_c};return _c})();const _dCol=(()=>{let _c=_fi(["desc","detail","notes","note","comment","sub","remark"]);if(_c<0)_c=_fi(["description"]);if(_c>=0&&_c===_tCol)_c=-1;if(_c<0&&_hdrs.length>_tCol+1)_c=_tCol===0?1:(_tCol===1?2:-1);return _c})();const _sCol=_fi(["start date","start","date","begin","planned start"]);const _eCol=_fi(["end date","finish","end","complete","planned finish"]);const _duCol=_fi(["duration","dur","days","length","span"]);const _items=_data.map((_r,_i)=>({week:_wCol>=0&&_r[_wCol]?parseInt(String(_r[_wCol]))||(_i+1):_i+1,title:String(_r[_tCol]||""),desc:String(_dCol>=0&&_dCol!==_tCol?_r[_dCol]||"":"")}));_pushItems(_items)}else if(_ext==="docx"||_ext==="doc"){const _mn=await import("https://esm.sh/mammoth@1.6.0/+esm");const _ab=await _f.arrayBuffer();const _res=await _mn.extractRawText({arrayBuffer:_ab});const _lines=_res.value.split("\n").map(_l=>_l.trim()).filter(_l=>_l.length>2);const _items=_lines.map((_l,_i)=>{const _m=_l.match(/^(?:week\s*)?([0-9]+)[.:)\-]\s*(.+)/i);if(_m)return{week:parseInt(_m[1])||(_i+1),title:_m[2].split(/[-–:|]/)[0].trim(),desc:_m[2].split(/[-–:|]/).slice(1).join(" ").trim()};return{week:_i+1,title:_l.split(/[-–:|]/)[0].trim().slice(0,80),desc:_l.split(/[-–:|]/).slice(1).join(" ").trim()}});_pushItems(_items)}else if(_ext==="txt"){const _text=await _f.text();const _lines=_text.split("\n").map(_l=>_l.trim()).filter(_l=>_l.length>2);const _items=_lines.map((_l,_i)=>{const _m=_l.match(/^(?:week\s*)?([0-9]+)[.:)\-]\s*(.+)/i);if(_m)return{week:parseInt(_m[1])||(_i+1),title:_m[2].split(/[-–:|]/)[0].trim(),desc:_m[2].split(/[-–:|]/).slice(1).join(" ").trim()};return{week:_i+1,title:_l.split(/[-–:|]/)[0].trim().slice(0,80),desc:_l.split(/[-–:|]/).slice(1).join(" ").trim()}});_pushItems(_items)}else{se("Unsupported file type: ."+_ext+". Use .xlsx, .xls, .csv, .docx, or .txt")}}catch(_err){se("Import error: "+_err.message);console.error("Schedule import error:",_err)}_ev.target.value=""}}),e.jsx("span",{children:"📥 Excel / Word / CSV"})]}),g.tentativeSchedule.length>0&&e.jsx("button",{style:{padding:"5px 10px",background:"none",border:"1px solid #fca5a5",color:"#ef4444",borderRadius:5,fontSize:11,cursor:"pointer"},onClick:()=>L("tentativeSchedule",[]),children:"🗑 Clear"}),e.jsx("span",{style:{fontSize:10,color:"#64748b"},children:"Columns auto-detected: Week, Phase/Title, Description"})]}),g.tentativeSchedule.map((w,E)=>e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"60px 1fr 1fr 30px",gap:6,marginBottom:4,alignItems:"center"},children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:4},children:[e.jsx("span",{style:{fontSize:9,color:u.tx2},children:"Wk"}),e.jsx("input",{style:{...Y,width:36,textAlign:"center"},type:"number",value:w.week,onChange:q=>{const ke=[...g.tentativeSchedule];ke[E]={...ke[E],week:parseInt(q.target.value)||1},L("tentativeSchedule",ke)}})]}),e.jsx("input",{style:Y,placeholder:"Phase title",value:w.title,onChange:q=>{const ke=[...g.tentativeSchedule];ke[E]={...ke[E],title:q.target.value},L("tentativeSchedule",ke)}}),e.jsx("input",{style:Y,placeholder:"Description",value:w.desc,onChange:q=>{const ke=[...g.tentativeSchedule];ke[E]={...ke[E],desc:q.target.value},L("tentativeSchedule",ke)}}),Z(g.tentativeSchedule,"tentativeSchedule",E)]},E)),e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L("tentativeSchedule",[...g.tentativeSchedule,{week:g.tentativeSchedule.length+1,title:"",desc:""}]),children:"+ Add Phase"}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Schedule Notes"}),g.schedNotes.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.schedNotes];ke[E]=q.target.value,L("schedNotes",ke)}}),Z(g.schedNotes,"schedNotes",E)]},E)),U(g.schedNotes,"schedNotes","")]}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Checklist Items (shown on proposal)"}),g.checklist.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{type:"checkbox",checked:w.done,onChange:()=>{const q=[...g.checklist];q[E]={...q[E],done:!q[E].done},L("checklist",q)}}),e.jsx("input",{style:{...Y,flex:1},value:w.text,onChange:q=>{const ke=[...g.checklist];ke[E]={...ke[E],text:q.target.value},L("checklist",ke)}}),Z(g.checklist,"checklist",E)]},E)),e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L("checklist",[...g.checklist,{text:"",done:!1}]),children:"+ Add Checklist Item"})]})]}),Q==="warranty"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Warranty Table"}),g.warranties.map((w,E)=>e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"120px 120px 1fr 30px",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:Y,value:w[0],onChange:q=>{const ke=g.warranties.map(z=>[...z]);ke[E][0]=q.target.value,L("warranties",ke)}}),e.jsx("input",{style:Y,value:w[1],onChange:q=>{const ke=g.warranties.map(z=>[...z]);ke[E][1]=q.target.value,L("warranties",ke)}}),e.jsx("input",{style:Y,value:w[2],onChange:q=>{const ke=g.warranties.map(z=>[...z]);ke[E][2]=q.target.value,L("warranties",ke)}}),e.jsx("button",{style:{color:u.red,background:"none",border:"none",fontSize:11,cursor:"pointer"},onClick:()=>L("warranties",g.warranties.filter((q,ke)=>ke!==E)),children:"✕"})]},E)),e.jsx("button",{style:{...ot,fontSize:10,marginTop:4},onClick:()=>L("warranties",[...g.warranties,["","",""]]),children:"+ Add Warranty"}),e.jsxs("div",{style:{marginTop:14},children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Communication Promise"}),g.commPromise.map((w,E)=>e.jsxs("div",{style:{display:"flex",gap:6,marginBottom:3,alignItems:"center"},children:[e.jsx("input",{style:{...Y,flex:1},value:w,onChange:q=>{const ke=[...g.commPromise];ke[E]=q.target.value,L("commPromise",ke)}}),Z(g.commPromise,"commPromise",E)]},E)),U(g.commPromise,"commPromise","")]})]}),Q==="contract"&&e.jsxs("div",{children:[e.jsx("label",{style:{...B,fontSize:12,fontWeight:700},children:"Contract / Agreement Text"}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:6},children:"This appears on the signature page. Edit the full contract language below. Line breaks preserved."}),e.jsx("textarea",{style:{...We,minHeight:400,fontSize:10,lineHeight:1.6},value:g.contractText,onChange:w=>L("contractText",w.target.value)}),e.jsxs("div",{style:{marginTop:8,padding:8,background:"#fef3c7",borderRadius:6,fontSize:10,color:"#92400e"},children:[e.jsx("b",{children:"Note:"}),' Lines starting with a number + period (like "1.") become bold section headers. ALL-CAPS lines become section titles. Everything else is body text.']})]}),Q==="links"&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12},children:[e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Company Phone"}),e.jsx("input",{style:Y,value:g.companyPhone,onChange:w=>L("companyPhone",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Company Email"}),e.jsx("input",{style:Y,value:g.companyEmail,onChange:w=>L("companyEmail",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Website"}),e.jsx("input",{style:Y,value:g.companyWebsite,onChange:w=>L("companyWebsite",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Facebook Page URL"}),e.jsx("input",{style:Y,value:g.companyFacebook,onChange:w=>L("companyFacebook",w.target.value)})]}),e.jsxs("div",{children:[e.jsx("label",{style:B,children:"Company Address"}),e.jsx("input",{style:Y,value:g.companyAddress,onChange:w=>L("companyAddress",w.target.value)})]}),e.jsxs("div",{style:{gridColumn:"span 2"},children:[e.jsx("label",{style:B,children:"📷 CompanyCam Project URL"}),e.jsx("input",{style:Y,placeholder:"https://app.companycam.com/projects/...",value:g.ccamUrl||"",onChange:w=>L("ccamUrl",w.target.value)}),g.ccamUrl&&e.jsxs("div",{style:{marginTop:4,fontSize:11,color:"#0369a1"},children:["🔗 ",e.jsx("a",{href:g.ccamUrl,target:"_blank",rel:"noreferrer",style:{color:"#0369a1"},children:"Preview link"})]})]})]})]}),e.jsxs("div",{style:{padding:"10px 20px",borderTop:`1px solid ${u.bdr}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:"#f8fafc",borderRadius:"0 0 10px 10px"},children:[e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:["Template: ",e.jsx("b",{children:g.jobTypeLabel})," · ",g.lineItems.length," line items · ",g.draws.reduce((w,E)=>w+E.pct,0),"% draws"]}),e.jsxs("div",{style:{display:"flex",gap:8},children:[e.jsx("button",{style:{...ot,fontSize:11},onClick:_,children:"Cancel"}),e.jsx("button",{style:{padding:"8px 24px",background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",border:"none",borderRadius:6,fontWeight:700,fontSize:12,cursor:"pointer"},onClick:()=>H(g),children:"📄 Generate Proposal →"})]})]})]})})},Yi=(g,te,H,_,Q,y)=>{!g||!te||Ia(T=>{const L=T.findIndex(Y=>Y.name.toLowerCase()===g.toLowerCase());if(L>=0){const Y=[...T];return Y[L]={...Y[L],cost:parseFloat(te)},Y}return[...T,{id:$t("P"),name:g,sku:y||"",v:Q||"V1",cat:_||"Misc",unit:H||"ea",cost:parseFloat(te)}]})},ji=g=>{var Q;if(!window.__gcSpentMap||window.__gcSpentMapSrc!==Ea){var _m=Object.create(null);for(var _k=0;_k<Ea.length;_k++){var _y=Ea[_k];if(!_y||_y.type==="mpo"||_y.status==="denied"||_y.type==="bill"||_y.type==="purchase"||_y.type==="payment"||((parseFloat(_y.amt)||0)<0&&window._gcIsMoneyIn&&window._gcIsMoneyIn(_y)))continue;var _p=_y.pid;if(_p==null)continue;_m[_p]=(_m[_p]||0)+(parseFloat(_y.amt)||0);}window.__gcSpentMap=_m;window.__gcSpentMapSrc=Ea;}if(!window.__gcContractMap||window.__gcContractMapSrc!==Wt||window.__gcContractMapCos!==hr){var _cm=Object.create(null),_co=Object.create(null);for(var _j=0;_j<Wt.length;_j++){if(Wt[_j]&&Wt[_j].id!=null)_cm[Wt[_j].id]=parseFloat(Wt[_j].contract)||0;}(hr||[]).forEach(function(c){if(c&&c.pid!=null&&!c._filed&&String(c.status||"").toLowerCase()==="approved"&&(c.pid in _cm)){_co[c.pid]=(_co[c.pid]||0)+(parseFloat(c.amt)||0);}});window.__gcContractMap=_cm;window.__gcCosMap=_co;window.__gcContractMapSrc=Wt;window.__gcContractMapCos=hr;}const H=window.__gcSpentMap[g]||0,_=window.__gcContractMap[g]||0;var _cv=(window.__gcCosMap&&window.__gcCosMap[g])||0,_b=_,_t=Math.round((_b+_cv)*100)/100;return{spent:H,base:_b,cos:_cv,contract:_t,profit:_t-H,margin:_t?((_t-H)/_t*100).toFixed(1):"0"}},qs=g=>{const{spent:te,contract:H}=ji(g);if(!H)return null;const _=te/H*100;return _>=100?{pct:_.toFixed(0),c:u.red,lbl:"OVER"}:_>=90?{pct:_.toFixed(0),c:u.red,lbl:"critical"}:_>=75?{pct:_.toFixed(0),c:u.yel,lbl:"warning"}:null},[nc,Vs]=ce.useState(!1),[ac,ic]=ce.useState(!1),[Ji,cs]=ce.useState([]),[Vr,Xs]=ce.useState(""),[Va,Ys]=ce.useState(""),[jo,As]=ce.useState("togal");var _h1=ce.useState(!1),g=_h1[0],te=_h1[1],_h2=ce.useState(""),H=_h2[0],_=_h2[1],_h3=ce.useState(""),Q=_h3[0],y=_h3[1];if(ce.useRef(null),t)return e.jsx("div",{style:{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0a1628",fontFamily:"'Inter',sans-serif"},children:e.jsxs("div",{style:{textAlign:"center",color:"#fff"},children:[e.jsx("div",{style:{fontSize:28,fontWeight:800,marginBottom:12},children:"GrayCo"}),e.jsx("div",{style:{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:20},children:"Loading system data..."}),e.jsx("div",{style:{width:200,height:4,background:"rgba(255,255,255,0.1)",borderRadius:2,overflow:"hidden",margin:"0 auto"},children:e.jsx("div",{style:{width:"60%",height:"100%",background:"#2563eb",borderRadius:2,animation:"pulse 1.5s ease-in-out infinite"}})}),e.jsx("style",{children:"@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}"})]})});if(!n){var T=()=>{!H||!Q||(localStorage.setItem("grayco_sb_url",H.trim()),localStorage.setItem("grayco_sb_key",Q.trim()),window.location.reload())},L=async()=>{if(!(window.crypto&&window.crypto.subtle)&&!window._gcSha256Hex){A("This page is not running in a secure context (needs https://crm.grayco-cs.com). Passwords cannot be checked here.");return;}var Y;try{Y=await ed(S.password);}catch(_he){A("Could not verify password (secure-context error). Open https://crm.grayco-cs.com");return;}const _em=(S.email||"").toLowerCase().trim();let We=(window.__GC_AUTH__&&typeof window.__GC_AUTH__.email==="function"&&window.__GC_AUTH__.email()&&window.__GC_AUTH__.email()===_em)?An.find(B=>B.email&&B.email.toLowerCase().trim()===_em&&B.active!==!1):null;if(!We){const _GCH=null;/* S: no shared password */const _byEmail=An.find(B=>B.email&&B.email.toLowerCase().trim()===_em);if(_byEmail&&Y===_GCH){Ya(j=>j.map(W=>W.id===_byEmail.id?{...W,active:!0,pwHash:_GCH}:W));We={..._byEmail,active:!0,pwHash:_GCH};}else{const _def=(window._uDef||[]).find(B=>B.email&&B.email.toLowerCase().trim()===_em);if(_def&&Y===_GCH){const _nu={..._def,active:!0,pwHash:_GCH};Ya(j=>[...j.filter(W=>W.id!==_nu.id),_nu]);We=_nu;}}}We?(r(We),A("")):A("This screen only opens the CRM for the email you signed in with at the company sign-in. To use another account: \uD83D\uDC8E \u2192 Sign out of GrayCo, then sign in as that person.")};return e.jsxs("div",{style:{minHeight:"100vh",display:"flex",fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,sans-serif",background:"#0a1628"},children:[e.jsxs("div",{style:{flex:"0 0 480px",background:"linear-gradient(160deg,#0f2440 0%,#1a3a65 40%,#2563eb 100%)",display:"flex",flexDirection:"column",justifyContent:"space-between",padding:"48px 48px 32px",position:"relative",overflow:"hidden"},children:[e.jsx("div",{style:{position:"absolute",inset:0,opacity:.06,backgroundImage:"repeating-linear-gradient(45deg,transparent,transparent 35px,rgba(255,255,255,0.1) 35px,rgba(255,255,255,0.1) 36px)",pointerEvents:"none"}}),e.jsx("div",{style:{position:"absolute",right:-80,top:-80,width:300,height:300,borderRadius:"50%",background:"rgba(37,99,235,0.15)",filter:"blur(60px)"}}),e.jsx("div",{style:{position:"absolute",left:-40,bottom:-40,width:200,height:200,borderRadius:"50%",background:"rgba(59,130,246,0.1)",filter:"blur(40px)"}}),e.jsxs("div",{style:{position:"relative",zIndex:1},children:[e.jsx("div",{style:{display:"flex",alignItems:"center",gap:14,marginBottom:48},children:e.jsx("img",{src:Bf,alt:"GrayCo",style:{width:180,height:"auto",borderRadius:8,filter:"drop-shadow(0 8px 32px rgba(0,0,0,0.3))",background:"#fff",padding:8}})}),e.jsxs("h1",{style:{fontSize:36,fontWeight:800,color:"#fff",lineHeight:1.2,margin:"0 0 16px",letterSpacing:"-0.02em"},children:["Project Management",e.jsx("br",{}),"Built for GrayCo —",e.jsx("br",{}),e.jsx("span",{style:{color:"rgba(255,255,255,0.5)",fontSize:24},children:"by GrayCo"})]}),e.jsx("p",{style:{fontSize:15,color:"rgba(255,255,255,0.6)",lineHeight:1.6,margin:"0 0 40px",maxWidth:360},children:"Estimates, scheduling, subs, financials, and field ops — all in one place. No fluff, just tools that work the way you do."}),e.jsx("div",{style:{display:"flex",flexWrap:"wrap",gap:8},children:["Estimating","Project Tracking","Sub Compliance","CompanyCam Sync","Invoicing","Scope Generator","Products Database","Price Sheets","Daily Logs","Crew Board","Plans & Docs","CC Transactions","Change Orders","Punch Lists"].map(Y=>e.jsx("span",{style:{padding:"6px 14px",borderRadius:20,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:500,backdropFilter:"blur(8px)"},children:Y},Y))})]}),e.jsxs("div",{style:{position:"relative",zIndex:1,display:"flex",justifyContent:"space-between",alignItems:"end"},children:[e.jsxs("div",{children:[e.jsx("div",{style:{color:"rgba(255,255,255,0.35)",fontSize:11},children:"Bartlett, Tennessee"}),e.jsx("div",{style:{color:"rgba(255,255,255,0.35)",fontSize:11},children:"Commercial · Residential · Restoration"})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("a",{href:"https://grayco-cs.com",target:"_blank",rel:"noreferrer",style:{color:"rgba(255,255,255,0.5)",fontSize:11,textDecoration:"none"},children:"grayco-cs.com"}),e.jsxs("div",{style:{color:"rgba(255,255,255,0.3)",fontSize:10,marginTop:2},children:["© ",new Date().getFullYear()," GrayCo Construction Services"]})]})]})]}),e.jsxs("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#0f1d32",position:"relative"},children:[e.jsx("div",{style:{position:"absolute",inset:0,background:"radial-gradient(ellipse at 30% 50%,rgba(37,99,235,0.05) 0%,transparent 60%)"}}),e.jsxs("div",{style:{width:400,position:"relative",zIndex:1},children:[e.jsxs("div",{style:{textAlign:"center",marginBottom:32},children:[e.jsx("h2",{style:{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px"},children:"Sign in to your account"}),e.jsx("p",{style:{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0},children:"Enter your credentials to access the project hub"})]}),e.jsxs("div",{style:{background:"#172a45",borderRadius:16,padding:"32px 28px",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 24px 64px rgba(0,0,0,0.4)"},children:[e.jsxs("div",{style:{marginBottom:18},children:[e.jsx("label",{style:{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"},children:"Email Address"}),e.jsxs("div",{style:{position:"relative"},children:[e.jsx("div",{style:{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.3)",fontSize:16},children:"✉"}),e.jsx("input",{style:{width:"100%",padding:"12px 12px 12px 38px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",transition:"border-color 0.2s"},value:S.email,onChange:Y=>b({...S,email:Y.target.value}),placeholder:"you\x40grayco-cs.com",type:"email",autoComplete:"email",onFocus:Y=>{Y.target.style.borderColor="rgba(37,99,235,0.5)"},onBlur:Y=>{Y.target.style.borderColor="rgba(255,255,255,0.1)"}})]})]}),e.jsxs("div",{style:{marginBottom:18},children:[e.jsx("label",{style:{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"},children:"Password"}),e.jsxs("div",{style:{position:"relative"},children:[e.jsx("div",{style:{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"rgba(255,255,255,0.3)",fontSize:16},children:"🔒"}),e.jsx("input",{style:{width:"100%",padding:"12px 42px 12px 38px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",transition:"border-color 0.2s"},value:S.password,onChange:Y=>b({...S,password:Y.target.value}),onKeyDown:Y=>Y.key==="Enter"&&L(),type:nc?"text":"password",placeholder:"••••••••",autoComplete:"current-password",onFocus:Y=>{Y.target.style.borderColor="rgba(37,99,235,0.5)"},onBlur:Y=>{Y.target.style.borderColor="rgba(255,255,255,0.1)"}}),e.jsx("button",{onClick:()=>Vs(!nc),style:{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.35)",fontSize:14,padding:4},children:nc?"🙈":"👁"})]})]}),e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22},children:[e.jsxs("label",{style:{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:"rgba(255,255,255,0.5)"},children:[e.jsx("input",{type:"checkbox",checked:ac,onChange:()=>ic(!ac),style:{accentColor:"#2563eb"}}),"Remember me"]}),e.jsx("span",{style:{fontSize:12,color:"#3b82f6",cursor:"pointer"},children:"Forgot password?"})]}),C&&e.jsxs("div",{style:{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:8},children:[e.jsx("span",{style:{color:"#ef4444",fontSize:16},children:"⚠"}),e.jsx("span",{style:{color:"#fca5a5",fontSize:13},children:C})]}),e.jsx("button",{onClick:L,style:{width:"100%",padding:"13px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#2563eb 0%,#3b82f6 100%)",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(37,99,235,0.4)",transition:"transform 0.1s,box-shadow 0.1s",letterSpacing:"0.02em"},onMouseDown:Y=>{Y.target.style.transform="scale(0.98)"},onMouseUp:Y=>{Y.target.style.transform="scale(1)"},children:"Sign In"})]}),e.jsxs("div",{style:{textAlign:"center",marginTop:24},children:[e.jsx("p",{style:{fontSize:12,color:"rgba(255,255,255,0.25)",margin:0},children:"Need access? Contact your administrator"}),e.jsxs("p",{style:{fontSize:11,color:"rgba(255,255,255,0.15)",marginTop:8},children:[e.jsx("a",{href:"tel:9015850944",style:{color:"rgba(255,255,255,0.3)",textDecoration:"none"},children:"901-585-0944"}),e.jsx("span",{style:{margin:"0 8px"},children:"·"}),e.jsx("a",{href:"mailto:info\x40grayco-cs.com",style:{color:"rgba(255,255,255,0.3)",textDecoration:"none"},children:"info\x40grayco-cs.com"})]})]}),e.jsxs("div",{style:{marginTop:20,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:16,textAlign:"center"},children:[e.jsxs("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:8},children:[e.jsx("div",{style:{width:8,height:8,borderRadius:4,background:p==="connected"?"#22c55e":p==="connecting"?"#f59e0b":p==="error"?"#ef4444":"#64748b"}}),e.jsx("span",{style:{fontSize:11,color:"rgba(255,255,255,0.4)"},children:p==="connected"?"☁️ Cloud Sync Active":p==="connecting"?"Connecting...":p==="error"?"Connection Error":"Local Only — No Cloud Sync"})]}),p!=="connected"&&!g&&e.jsx("button",{onClick:()=>te(!0),style:{background:"none",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.4)",padding:"6px 14px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:"inherit"},children:"⚙ Connect Cloud (Multi-User)"}),g&&e.jsxs("div",{style:{background:"rgba(255,255,255,0.05)",borderRadius:10,padding:16,marginTop:8,textAlign:"left"},children:[e.jsx("div",{style:{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",marginBottom:8},children:"☁️ Supabase Cloud Setup"}),e.jsxs("div",{style:{fontSize:10,color:"rgba(255,255,255,0.35)",marginBottom:10,lineHeight:1.5},children:["1. Go to ",e.jsx("a",{href:"https://supabase.com",target:"_blank",rel:"noreferrer",style:{color:"#60a5fa"},children:"supabase.com"})," → Create free project",e.jsx("br",{}),"2. Go to SQL Editor → Run this SQL:",e.jsx("br",{}),e.jsx("code",{style:{background:"rgba(0,0,0,0.3)",padding:"4px 6px",borderRadius:4,fontSize:9,display:"block",margin:"4px 0",color:"#93c5fd",whiteSpace:"pre-wrap"},children:`create table app_data (key text primary key, value jsonb default '[]'::jsonb, updated_at timestamptz default now());
 alter table app_data enable row level security;
 create policy "allow_all" on app_data for all using (true) with check (true);
-alter publication supabase_realtime add table app_data;`}),"3. Settings → API → copy Project URL + anon key below"]}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:6,fontFamily:"inherit",outline:"none"},placeholder:"Project URL (https://xxxxx.supabase.co)",value:H,onChange:Y=>_(Y.target.value)}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:8,fontFamily:"inherit",outline:"none"},placeholder:"anon / public key",value:Q,onChange:Y=>y(Y.target.value)}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("button",{onClick:T,style:{flex:1,padding:"9px 0",borderRadius:6,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},children:"Connect & Sync"}),e.jsx("button",{onClick:()=>te(!1),style:{padding:"9px 14px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"none",color:"rgba(255,255,255,0.4)",fontSize:11,cursor:"pointer",fontFamily:"inherit"},children:"Cancel"})]})]})]})]})]})]})}const Uf=[{id:"dashboard",l:"Dashboard",ic:"▣"},{id:"todo",l:"To-Do",ic:"✅"},{id:"launchjob",l:"Launch Job",ic:"🚀"},{id:"leads",l:"Leads",ic:"◈"},{id:"roofscout",l:"RoofScout",ic:"🏠"},{id:"projects",l:"Projects",ic:"◫"},{id:"cordova",l:"Cordova Club",ic:"🏢"},{id:"scopes",l:"Scopes",ic:"📋"},{id:"estimates",l:"Estimates",ic:"≡"},{id:"templates",l:"Templates",ic:"◩"},{id:"expenses",l:"Expenses",ic:"⊞"},{id:"payments",l:"Payments",ic:"💵"},{id:"gmail",l:"Gmail",ic:"📧"},{id:"claude",l:"Business Brain",ic:"🧠"},{id:"brain-manager",l:"Brain Manager",ic:"⚙️"},{id:"review-queue",l:"Review Queue",ic:"✅"},{id:"allphotos",l:"GrayCo Photos",ic:"📸"},{id:"qbimport",l:"QuickBooks",ic:"📊"},{id:"invoices",l:"Invoices",ic:"▥"},{id:"taxcenter",l:"Accounting",ic:"📊"},{id:"changeorders",l:"Change Orders",ic:"△"},{id:"schedule",l:"Schedule",ic:"◧"},{id:"crewboard",l:"Crew Board",ic:"⊟"},{id:"dailylogs",l:"Daily Logs",ic:"✎"},{id:"punchlist",l:"Punch List",ic:"☐"},{id:"subs",l:"Subs",ic:"⚑"},{id:"vendors",l:"Vendors",ic:"⊡"},{id:"customers",l:"Customers",ic:"👥"},{id:"products",l:`Products (${Da.length})`,ic:"▦"},{id:"quickadd",l:"Quick Add",ic:"⚡"},{id:"warranties",l:"Warranties",ic:"⛨"},{id:"docs",l:"Docs",ic:"▤"},{id:"forms",l:"Forms & Docs",ic:"📄"},{id:"playbook",l:"PM Playbook",ic:"📘"},{id:"mastercrm",l:"Large Job CRMs",ic:"🏗"},{id:"myprofile",l:"My Profile",ic:"👤"},{id:"integrations",l:"Integrations",ic:"⊕"},{id:"payroll",l:"Payroll",ic:"💵"},{id:"admin",l:"Admin",ic:"⚙"},{id:"officemanager",l:"Office",ic:"🏢"}],pl=yi?(Ux[yi.role]||Ux[(yi.role||"").trim()]||Ux["Project Manager"]||[]):null,ml=Uf.filter(g=>((yi||n)&&((yi||n).email||"").toLowerCase().trim()==="office@grayco-cs.com")?["dashboard","roofscout","todo","launchjob","projects","cordova","leads","scopes","estimates","templates","expenses","cctrans","invoices","payments","taxcenter","pnl","reports","subs","vendors","customers","products","schedule","changeorders","dailylogs","punchlist","crewboard","warranties","docs","forms","playbook","gmail","claude","allphotos","qbimport","quickadd","myprofile","integrations","officemanager","payroll"].indexOf(g.id)>=0:(yi?(pl==null?void 0:pl.includes(g.id))||g.id==="quickadd"||g.id==="playbook"||g.id==="allphotos":mu(g.id)||g.id==="quickadd"||g.id==="playbook"||g.id==="allphotos")),Js=wt[n==null?void 0:n.id],xl=(function(){
+alter publication supabase_realtime add table app_data;`}),"3. Settings → API → copy Project URL + anon key below"]}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:6,fontFamily:"inherit",outline:"none"},placeholder:"Project URL (https://xxxxx.supabase.co)",value:H,onChange:Y=>_(Y.target.value)}),e.jsx("input",{style:{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.08)",color:"#fff",fontSize:12,marginBottom:8,fontFamily:"inherit",outline:"none"},placeholder:"anon / public key",value:Q,onChange:Y=>y(Y.target.value)}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("button",{onClick:T,style:{flex:1,padding:"9px 0",borderRadius:6,border:"none",background:"#22c55e",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},children:"Connect & Sync"}),e.jsx("button",{onClick:()=>te(!1),style:{padding:"9px 14px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"none",color:"rgba(255,255,255,0.4)",fontSize:11,cursor:"pointer",fontFamily:"inherit"},children:"Cancel"})]})]})]})]})]})]})}const Uf=[{id:"dashboard",l:"Dashboard",ic:"▣"},{id:"todo",l:"To-Do",ic:"✅"},{id:"launchjob",l:"Launch Job",ic:"🚀"},{id:"leads",l:"Leads",ic:"◈"},{id:"roofscout",l:"RoofScout",ic:"🏠"},{id:"subportal",l:"Sub Portal",ic:"🔨"},{id:"projects",l:"Projects",ic:"◫"},{id:"cordova",l:"Cordova Club",ic:"🏢"},{id:"scopes",l:"Scopes",ic:"📋"},{id:"estimates",l:"Estimates",ic:"≡"},{id:"templates",l:"Templates",ic:"◩"},{id:"expenses",l:"Expenses",ic:"⊞"},{id:"payments",l:"Payments",ic:"💵"},{id:"gmail",l:"Gmail",ic:"📧"},{id:"claude",l:"Business Brain",ic:"🧠"},{id:"brain-manager",l:"Brain Manager",ic:"⚙️"},{id:"review-queue",l:"Review Queue",ic:"✅"},{id:"allphotos",l:"GrayCo Photos",ic:"📸"},{id:"qbimport",l:"QuickBooks",ic:"📊"},{id:"invoices",l:"Invoices",ic:"▥"},{id:"taxcenter",l:"Accounting",ic:"📊"},{id:"changeorders",l:"Change Orders",ic:"△"},{id:"schedule",l:"Schedule",ic:"◧"},{id:"crewboard",l:"Crew Board",ic:"⊟"},{id:"dailylogs",l:"Daily Logs",ic:"✎"},{id:"punchlist",l:"Punch List",ic:"☐"},{id:"subs",l:"Subs",ic:"⚑"},{id:"vendors",l:"Vendors",ic:"⊡"},{id:"customers",l:"Customers",ic:"👥"},{id:"products",l:`Products (${Da.length})`,ic:"▦"},{id:"quickadd",l:"Quick Add",ic:"⚡"},{id:"warranties",l:"Warranties",ic:"⛨"},{id:"docs",l:"Docs",ic:"▤"},{id:"forms",l:"Forms & Docs",ic:"📄"},{id:"playbook",l:"PM Playbook",ic:"📘"},{id:"mastercrm",l:"Large Job CRMs",ic:"🏗"},{id:"myprofile",l:"My Profile",ic:"👤"},{id:"integrations",l:"Integrations",ic:"⊕"},{id:"payroll",l:"Payroll",ic:"💵"},{id:"admin",l:"Admin",ic:"⚙"},{id:"officemanager",l:"Office",ic:"🏢"}],pl=yi?(Ux[yi.role]||Ux[(yi.role||"").trim()]||Ux["Project Manager"]||[]):null,ml=Uf.filter(g=>((yi||n)&&((yi||n).email||"").toLowerCase().trim()==="office@grayco-cs.com")?["dashboard","roofscout","todo","launchjob","projects","cordova","leads","scopes","estimates","templates","expenses","cctrans","invoices","payments","taxcenter","pnl","reports","subs","vendors","customers","products","schedule","changeorders","dailylogs","punchlist","crewboard","warranties","docs","forms","playbook","gmail","claude","allphotos","qbimport","quickadd","myprofile","integrations","officemanager","payroll"].indexOf(g.id)>=0:(yi?(pl==null?void 0:pl.includes(g.id))||g.id==="quickadd"||g.id==="playbook"||g.id==="allphotos":mu(g.id)||g.id==="quickadd"||g.id==="playbook"||g.id==="allphotos")),Js=wt[n==null?void 0:n.id],xl=(function(){
   var _ordered=(function(){if(!Js)return ml;var _seen=new Set,_r=[];Js.forEach(function(g){var _f=ml.find(function(te){return te.id===g});if(_f&&!_seen.has(_f.id)){_seen.add(_f.id);_r.push(_f)}});ml.forEach(function(g){if(!_seen.has(g.id)){_seen.add(g.id);_r.push(g)}});return _r})();
   // Per-user tab visibility — read live from window so the external Nav
   // Settings panel can toggle without needing a React re-render trigger.
@@ -7748,7 +7748,7 @@ e.jsx("button",{style:{background:"#ef444422",border:"1px solid #ef444455",borde
 ]})
 })(),_st==="pnl"&&e.jsx(__gcStable("bu",bu),{}),_st==="cctrans"&&e.jsx(__gcStable("yl",yl),{}),_st==="reports"&&e.jsx(__gcStable("wu",wu),{}),_st==="estvactual"&&e.jsx(__gcStable("Yf",Yf),{}),e.jsx("div",{id:"tc-mount",style:{display:_st==="tax"?"block":"none",width:"100%",height:"calc(100vh - 100px)"}})]})},
 _spay=function(nm){var _i=Ba.filter(function(x){return x.sub===nm&&x.status==="paid"});return{t:_i.reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),m:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,7)===new Date().toISOString().slice(0,7)}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),y:_i.filter(function(x){return(x.paidDate||x.recvDate||"").slice(0,4)===""+new Date().getFullYear()}).reduce(function(a,x){return a+(parseFloat(x.amt)||0)},0),inv:_i}},
-ch=()=>{switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,{projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
+ch=()=>{switch(P){case"dashboard":return e.jsx(__gcStable("vu",vu),{});case"leads":return e.jsx(__gcStable("th",th),{});case"projects":return e.jsx(__gcStable("id",id),{});case"cordova":return e.jsx("div",{id:"cordova-club-root",ref:function(el){if(el&&!el._ccInit){el._ccInit=true;window.__mountCC&&window.__mountCC(el)}},style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"scopes":return e.jsx(__gcStable("Gf",Gf),{});case"estimates":return e.jsx(__gcStable("Kf",Kf),{});case"templates":return e.jsx(__gcStable("Xf",Xf),{});case"estvactual":return e.jsx(__gcStable("Yf",Yf),{});case"expenses":return e.jsx(__gcStable("rh",rh),{});case"gmail":return e.jsxs("div",{style:{width:"100%",height:"calc(100vh - 60px)",position:"relative"},children:[e.jsx("div",{id:"gmail-mount",style:{width:"100%",height:"100%"}}),e.jsx("a",{href:"https://mail.google.com",target:"_blank",style:{position:"absolute",top:10,right:10,zIndex:10,padding:"8px 16px",background:"#d4a017",color:"#0d1b2a",borderRadius:6,textDecoration:"none",fontWeight:700,fontSize:12},children:"Open Gmail ↗"})]});case"claude":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.GrayCoBrain?e.jsx(window.GrayCoBrain,{projects:(window._crm&&window._crm.projects)||[],invs:(window._crm&&window._crm.invoices)||[],expenses:(window._crm&&window._crm.expenses)||[],leads:(window._crm&&window._crm.leads)||[],bidLists:(window._crm&&window._crm.bidLists)||[],cos:(window._crm&&window._crm.changeOrders)||[],currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Business Brain is loading\u2026"}))});case"brain-manager":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.BrainManagerTab?e.jsx(window.BrainManagerTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Brain Manager is loading\u2026"}))});case"roofscout":return e.jsx("iframe",{src:"/roofscout/",title:"RoofScout",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#f3f5f9"}});case"subportal":return e.jsx("iframe",{src:"/subportal/",title:"Sub Portal",allow:"clipboard-write",style:{display:"block",width:"100%",height:"calc(100vh - 60px)",border:"none",borderRadius:8,background:"#FBFAF7"}});case"review-queue":return e.jsx("div",{style:{height:"calc(100vh - 60px)",overflow:"auto"},children:(window.ReviewQueueTab?e.jsx(window.ReviewQueueTab,{currentUser:(yi||n)}):e.jsx("div",{style:{padding:20,color:u.tx2},children:"Review Queue is loading\u2026"}))});case"qbimport":return e.jsxs("div",{children:[
 e.jsx("div",{style:{fontSize:18,fontWeight:800,marginBottom:4},children:"QuickBooks Import & Sync"}),
 e.jsx("div",{style:{fontSize:11,color:u.tx2,marginBottom:14},children:"Import your QuickBooks data — customers, invoices, expenses, vendors, and jobs. Export CSV files from QuickBooks and upload them here."}),
 
@@ -33406,7 +33406,7 @@ function _gcNavIDBSet(k,v){return new Promise(function(r){var q=indexedDB.open('
 
 var ALL_TABS = [
   {id:"dashboard",l:"Dashboard",ic:"▣"},{id:"todo",l:"To-Do",ic:"✅"},
-  {id:"launchjob",l:"Launch Job",ic:"🚀"},{id:"leads",l:"Leads",ic:"◈"},{id:"roofscout",l:"RoofScout",ic:"🏠"},
+  {id:"launchjob",l:"Launch Job",ic:"🚀"},{id:"leads",l:"Leads",ic:"◈"},{id:"roofscout",l:"RoofScout",ic:"🏠"},{id:"subportal",l:"Sub Portal",ic:"🔨"},
   {id:"projects",l:"Projects",ic:"◫"},{id:"cordova",l:"Cordova Club",ic:"🏢"},
   {id:"scopes",l:"Scopes",ic:"📋"},{id:"estimates",l:"Estimates",ic:"≡"},
   {id:"templates",l:"Templates",ic:"◩"},{id:"expenses",l:"Expenses",ic:"⊞"},
@@ -34442,7 +34442,7 @@ function _gcAlertNavTo(arg){
   // Some alerts were written with tab names that are not real tabs
   // ("projsubs", "accounting", ...). _setView() silently did nothing, so
   // clicking the alert appeared to do nothing at all.
-  var VALID = ['dashboard','todo','launchjob','leads','roofscout','projects','cordova','scopes','estimates',
+  var VALID = ['dashboard','todo','launchjob','leads','roofscout','subportal','projects','cordova','scopes','estimates',
     'templates','expenses','payments','gmail','claude','allphotos','qbimport','invoices','taxcenter',
     'changeorders','schedule','crewboard','dailylogs','punchlist','subs','vendors','customers',
     'products','quickadd','warranties','docs','forms','mastercrm','myprofile','integrations',
@@ -36114,6 +36114,7 @@ var TAB_INDEX = [
   {id:'warranties',     label:'Warranties',          aliases:['warranty','punch','guarantee']},
   {id:'qbimport',       label:'QuickBooks',          aliases:['quickbooks','qb','import','accounting import']},
   {id:'gmail',          label:'Gmail',               aliases:['email','mail','gmail','inbox']},
+  {id:'subportal',      label:'Sub Portal',          aliases:['sub portal','subportal','subcontractor portal','bids','bid portal','sub bids','bid site']},
   {id:'roofscout',      label:'RoofScout',           aliases:['roofscout','roof scout','roof leads','scan','roofs']},
   {id:'allphotos',      label:'Photos',              aliases:['photos','pictures','images','companycam']},
   {id:'integrations',   label:'Integrations',        aliases:['integrations','connect','apps','tools','buildingconnected','planhub']},
@@ -131789,6 +131790,969 @@ tick();
 RI.call(window, tick, 800);
 RI.call(window, notices, 60000); ST.call(window, notices, 9000);
 try{ console.log('[GC] Approvals: 24 hours at the admins, then the office too (patch AP4).'); }catch(e){}
+})();
+
+</script>
+<script id="gc-patch-sub">
+/* ============================================================================
+   GrayCo — THE PORTALS, CRM SIDE (customer + sub).   Build 33.151 (patch SUB)   __GC_PATCH_SUB__
+
+   Owner (20 Oct 2026): "All data in the sub portal works with the CRM. Anything a sub adds goes into the CRM.
+   When the owner/PM makes a scope for a job in the CRM, it shows up in that sub's portal. Talking between GrayCo
+   and the sub can be opened from field view and from the main desk CRM. In the CRM each sub has quick
+   Call / Text / Email buttons."
+
+   1. SUB HUB per job — desk job page (a row under the job header) and the field job screen (a "👷 Subs" tile with
+      an unread badge). Each sub on the job: status, scope sent / accepted, % done, open punch items, invoices
+      waiting, unread messages; 📞 Call · 💬 Text · ✉️ Email; portal link (copy / e-mail / text from my phone /
+      revoke); 🧾 scope · ➕ change order · ☑ punch item; their files. Customer messages and the customer's login too.
+   2. SCOPES — lines (area, work, measurement, qty, unit), ONE total, included / not included, materials, notes,
+      plans and photos. NO line prices. "Send for approval" → the job's PM (or an owner) taps Approve & publish →
+      the sub sees it in their portal. Lines can be copied from a patch-SC sub scope when that patch is loaded.
+   3. FILING what subs send — every minute this page asks the portal server (netlify/functions/portal-access) for
+      what subs sent and files it with the CRM's own saves (merge by id, updatedAt stamped):
+        invoice → Sub Invoices (type 'sub', status 'received' = waiting for approval, PO#, pay date)
+        photos / progress / punch photos → the job's documents (tagged with the sub; internal) + GrayCo Photos hook
+        progress → the job's sub row (% done) + the job's updates + a Daily Log entry
+        punch done → the punch item (complete, with the photo)
+        W-9 / COI / agreement / lien waiver → the sub's record (w9 / coi + insExp / subAgreement / lien)
+        scope accepted → the job's sub row (scopeStatus Accepted, status Awarded)
+        and a line in the job's activity (project.updates) for each.
+      Ids are fixed per event, so filing twice (two computers) changes nothing.
+   4. Subs tab — a "Sub portal" panel: every sub with Call / Text / Email, link, messages, uploads, invoices waiting;
+      owners: "Portal links to send" (one tap each) and "Bid site requests" (approve / deny).
+   5. 🔨 Sub Portal tab (the bid site, bids.grayco-cs.com) — from build 33.147, re-applied by patch_SUB.py.
+   Unread badges: window._gcUnread(pid) → { total, customer, subs:{subId:n} } (defined here when no one else did).
+   Every sheet has ‹ Back / ✕ at the top (patch NAV's back rule).
+   Console: _gcSubHub.open(pid) · .sync() · .state() · .thread(pid, party)
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SUB__) return; window.__GC_PATCH_SUB__ = true;
+
+var nST = window.__GC_NATIVE_SETTIMEOUT__ || window.setTimeout.bind(window);
+var nSI = window.__GC_NATIVE_SETINTERVAL__ || window.__GC_RAW_SETINTERVAL__ || window.setInterval.bind(window);
+var FN = '/.netlify/functions/portal-access';
+var GOLD = '#D4A017', NAVY = '#0F1D2F';
+var ST = { events: [], unread: {}, links: {}, waiting: [], bids: [], codes: [], at: 0, admin: false, me: '', err: '' };
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function norm(v){ return low(v).replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim(); }
+function digits(v){ return s(v).replace(/[^0-9+]/g, ''); }
+function money(n){ return '$' + num(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function ago(iso){ var t = Date.parse(iso); if (!t) return ''; var m = Math.round((Date.now() - t) / 60000); if (m < 2) return 'just now'; if (m < 60) return m + ' min ago'; var h = Math.round(m / 60); if (h < 24) return h + ' h ago'; var d = Math.round(h / 24); return d === 1 ? 'yesterday' : d + ' days ago'; }
+function crm(){ return window._crm || {}; }
+function projects(){ return (crm().projects || []).filter(Boolean); }
+function proj(pid){ var r = recent[pid], p = projects().find(function(x){ return String(x.id) === String(pid); }) || null; if (r && (!p || s(r.updatedAt) > s(p.updatedAt))) return r; return p; }
+function subsList(){
+  var seen = {}, out = [];
+  (crm().subs || []).concat(crm().vendors || []).forEach(function(r){ if (!r || typeof r !== 'object' || !r.id || seen[r.id]) return; if (!(r.isSub === true || (r.isSub === undefined && (r.trade || r.cat === 'Sub')))) return; seen[r.id] = 1; out.push(r); });
+  return out.sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); });
+}
+function subFor(row){
+  if (!row) return null;
+  var id = s(row.subId || row.vendorId);
+  var all = subsList();
+  if (id) { var x = all.find(function(r){ return s(r.id) === id; }); if (x) return x; }
+  var n = norm(row.name || row.sub || row.vendor || row.company);
+  return all.find(function(r){ return n && (norm(r.name) === n || norm(r.company) === n); }) || null;
+}
+function me(){ try { var n = localStorage.getItem('grayco_user'); if (n) return n; } catch (e) {} try { if (window.__GC_AUTH__) return window.__GC_AUTH__.email(); } catch (e) {} return 'GrayCo'; }
+function signedIn(){ try { var A = window.__GC_AUTH__; if (!A) return true; return !!A.email() && A.mode() !== 'none'; } catch (e) { return false; } }
+function epochOk(){ try { if (typeof window._gcEpochStatus !== 'function') return true; var st = window._gcEpochStatus(); return !!st && st.state === 'ok'; } catch (e) { return false; } }
+function fieldMode(){ return document.documentElement.classList.contains('_fieldmode') || !!document.getElementById('_gcJobDash') || !!document.getElementById('_gcJobPick'); }
+function toast(msg, bad){
+  try { Array.prototype.forEach.call(document.querySelectorAll('.gcsub-toast'), function(x){ x.remove(); });
+    var t = document.createElement('div'); t.className = 'gcsub-toast'; t.textContent = msg; t.setAttribute('data-gc-keep', '');
+    t.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));z-index:2147483100;background:' + (bad ? '#B42318' : '#1D5E2C') + ';color:#fff;padding:12px 16px;border-radius:10px;font:600 14px Inter,-apple-system,sans-serif;max-width:90vw;pointer-events:none';
+    document.body.appendChild(t); nST(function(){ t.remove(); }, 4200); } catch (e) {}
+}
+function copy(text){
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(function(){ toast('Copied'); }, function(){ fallback(); }); } catch (e) {}
+  fallback();
+  function fallback(){ try { var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Copied'); } catch (e) { window.prompt('Copy this:', text); } }
+}
+
+/* ── the server (the CRM's fetch adds the signed-in person's token to /.netlify/functions calls) ── */
+function api(body){
+  return window.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){
+    return r.text().then(function(t){ var j = null; try { j = JSON.parse(t); } catch (e) {} return { status: r.status, ok: r.ok && !!(j && j.ok), data: j || {} }; });
+  }, function(){ return { status: 0, ok: false, data: { error: 'No internet — try again.' } }; });
+}
+
+/* ── saving, the way the rest of the CRM does (idb → screen → cloud) ──
+   The cloud write goes straight out (_supaUpsertNow, the CRM's own union push) — the CRM's "wait until nobody types"
+   queue keeps only the latest list per key and can hold it while a sheet is open; filing is not typing. */
+function push(key, list){ try { var f = window._supaUpsertNow || window._supaUpsert; if (f) return f(key, list); } catch (e) {} }
+var recent = {}, saving = Promise.resolve();
+/* changes: { pid: fn(copy) } — all in one write. opts.person: a person did it here (site notes, adding a sub…);
+   otherwise it is filing what a sub sent: no "person edit" stamp, and updatedAt moves on by one millisecond only,
+   so a PM edit made at the same time on another computer still wins — the filing is re-checked (and re-applied
+   on top) at the next minute check, so neither is lost. */
+function saveProjects(changes, opts){
+  saving = saving.then(function(){ return doSave(changes, opts || {}); }, function(){ return doSave(changes, opts || {}); });
+  return saving;
+}
+function nudge(ts){ var t = Date.parse(ts || ''); return isFinite(t) && t > 0 ? new Date(t + 1).toISOString() : nowIso(); }
+async function doSave(changes, opts){
+  var pids = Object.keys(changes); if (!pids.length) return;
+  var now = nowIso();
+  function put(p){ var q = JSON.parse(JSON.stringify(p)); changes[String(p.id)](q); q.updatedAt = opts.person ? now : nudge(p.updatedAt); if (opts.person) q.savedAt = now; return q; }
+  /* the screen's list first (it has an edit someone just made here), then the disk */
+  var all = null;
+  var screen = projects();
+  try { all = window._gcProjectsRaw ? await window._gcProjectsRaw() : await window.idbGet('projects'); } catch (e) {}
+  if (Array.isArray(all) && screen.length) { var byS = {}; screen.forEach(function(p){ byS[String(p.id)] = p; }); all = all.map(function(p){ var sp = p && byS[String(p.id)]; return sp && s(sp.updatedAt) >= s(p.updatedAt) ? sp : p; }); }
+  else if (!Array.isArray(all) && screen.length) all = screen.slice();
+  /* filing (not a person): start each changed job from the newest copy anywhere — an edit another computer
+     already sent to the cloud is kept, never overwritten by this computer's older copy */
+  if (!opts.person && Array.isArray(all) && typeof window._gcCloudGet === 'function') {
+    try {
+      var cl = await window._gcCloudGet('projects');
+      if (Array.isArray(cl)) { var byC = {}; cl.forEach(function(p){ if (p && p.id != null && changes[String(p.id)]) byC[String(p.id)] = p; });
+        all = all.map(function(p){ var c = p && byC[String(p.id)]; return c && s(c.updatedAt) > s(p.updatedAt) ? c : p; }); }
+    } catch (e) {}
+  }
+  if (opts.person) { try { window.__GC_MANUAL_SAVE__ = true; } catch (e) {} }
+  var next = null, hit = {};
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && changes[String(p.id)]) { hit[p.id] = 1; var base = recent[p.id] && s(recent[p.id].updatedAt) > s(p.updatedAt) ? recent[p.id] : p; var q = put(base); recent[p.id] = q; return q; } return p; });
+  if (next) { try { await window.idbSet('projects', next); } catch (e) {} }
+  try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && changes[String(p.id)]) { var q = recent[p.id] && hit[p.id] ? recent[p.id] : put(p); recent[p.id] = q; return q; } return p; }) : prev; }); } catch (e) {}
+  if (next) push('projects', next); else nST(function(){ push('projects', projects()); }, 400);
+  if (opts.person) nST(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+}
+async function addToList(key, recs, setter){   /* add records by id (never twice), keep everything else */
+  var all = null; try { all = await window.idbGet(key); } catch (e) {}
+  var scr = ((key === 'invs' ? (crm().invoices || crm().invs) : crm()[key]) || []);
+  if (!Array.isArray(all) || (!all.length && scr.length)) all = scr.slice();
+  else if (scr.length) { var inAll = {}; all.forEach(function(r){ if (r && r.id != null) inAll[String(r.id)] = 1; }); scr.forEach(function(r){ if (r && r.id != null && !inAll[String(r.id)]) all.push(r); }); }
+  var have = {}; all.forEach(function(r){ if (r && r.id != null) have[String(r.id)] = 1; });
+  var add = recs.filter(function(r){ return !have[String(r.id)]; });
+  if (!add.length) return 0;
+  var next = all.concat(add);
+  try { await window.idbSet(key, next); } catch (e) {}
+  try {
+    if (setter && window[setter]) window[setter](function(prev){ var hv = {}; (Array.isArray(prev) ? prev : []).forEach(function(r){ if (r && r.id != null) hv[String(r.id)] = 1; }); return (Array.isArray(prev) ? prev : []).concat(add.filter(function(r){ return !hv[String(r.id)]; })); });
+    else if (window._gcApplyOrQueue) window._gcApplyOrQueue(key, next);
+  } catch (e) {}
+  push(key, next);
+  return add.length;
+}
+async function changeInList(key, id, fn, setter){
+  var all = null; try { all = await window.idbGet(key); } catch (e) {}
+  if (!Array.isArray(all)) all = (crm()[key] || []).slice();
+  var now = nowIso(), hit = false;
+  var next = all.map(function(r){ if (r && String(r.id) === String(id)) { hit = true; var q = Object.assign({}, r); fn(q); q.updatedAt = now; return q; } return r; });
+  if (!hit) return false;
+  try { await window.idbSet(key, next); } catch (e) {}
+  try { if (setter && window[setter]) window[setter](function(prev){ return (Array.isArray(prev) ? prev : []).map(function(r){ if (r && String(r.id) === String(id)) { var q = Object.assign({}, r); fn(q); q.updatedAt = now; return q; } return r; }); }); else if (window._gcApplyOrQueue) window._gcApplyOrQueue(key, next); } catch (e) {}
+  push(key, next);
+  return true;
+}
+function changeSub(subId, fn){
+  var now = nowIso();
+  try { if (typeof window._setSubs === 'function') window._setSubs(function(prev){ return (prev || []).map(function(r){ if (r && String(r.id) === String(subId)) { var q = Object.assign({}, r); fn(q); q.updatedAt = now; return q; } return r; }); }); } catch (e) {}
+  /* the sub list lives in the "vendors" key (the screen's combined list); write it there too, merged by id.
+     One change at a time: two papers filed together must not each start from the list before the other. */
+  var run = subChain.then(function(){ return (async function(){
+    var all = null; try { all = await window.idbGet('vendors'); } catch (e) {}
+    var scr = crm().subs || [];
+    if (!Array.isArray(all) || !all.length) all = scr.slice();
+    if (!all.some(function(r){ return r && String(r.id) === String(subId); })) { var fromScr = scr.find(function(r){ return r && String(r.id) === String(subId); }); if (fromScr) all = all.concat([fromScr]); }
+    /* start from the newest copy anywhere: a paper another computer already filed is kept */
+    var cv = null; try { if (typeof window._gcCloudGet === 'function') { var cl = await window._gcCloudGet('vendors'); if (Array.isArray(cl)) cv = cl.find(function(r){ return r && String(r.id) === String(subId); }) || null; } } catch (e) {}
+    var next = all.map(function(r){ if (r && String(r.id) === String(subId)) { var base = cv && s(cv.updatedAt) > s(r.updatedAt) ? cv : r; var q = Object.assign({}, base); fn(q); q.updatedAt = now; return q; } return r; });
+    if (cv) { try { if (typeof window._setSubs === 'function') window._setSubs(function(prev){ return (prev || []).map(function(r){ if (r && String(r.id) === String(subId) && s(cv.updatedAt) > s(r.updatedAt)) { var q = Object.assign({}, cv); fn(q); q.updatedAt = now; return q; } return r; }); }); } catch (e) {} }
+    try { await window.idbSet('vendors', next); } catch (e) {}
+    await push('vendors', next);
+    /* the CRM also keeps subs in the "subs" key and rebuilds its list from both: the changed record goes there too,
+       so an older copy there can never win back the W-9 / insurance date a sub just sent */
+    try {
+      var changed = next.find(function(r){ return r && String(r.id) === String(subId); });
+      var sl = null; try { sl = await window.idbGet('subs'); } catch (e) {}
+      if (changed && Array.isArray(sl) && sl.some(function(r){ return r && String(r.id) === String(subId); })) {
+        var sn = sl.map(function(r){ return r && String(r.id) === String(subId) ? changed : r; });
+        try { await window.idbSet('subs', sn); } catch (e) {}
+        await push('subs', sn);
+      }
+    } catch (e) {}
+    return true;
+  })(); });
+  subChain = run.catch(function(){});
+  return run;
+}
+var subChain = Promise.resolve();
+
+/* ── 3. FILING what subs sent ─────────────────────────────────────────────── */
+function rowIndex(p, subId, subName){
+  var rows = Array.isArray(p.subs) ? p.subs : [];
+  for (var i = 0; i < rows.length; i++) { var r = rows[i] || {}; var rid = s(r.subId || r.vendorId); if (rid ? rid === s(subId) : (norm(r.name) && norm(r.name) === norm(subName))) return i; }
+  return -1;
+}
+function activity(p, id, text){ p.updates = Array.isArray(p.updates) ? p.updates : []; if (p.updates.some(function(u){ return u && u.id === id; })) return; p.updates.push({ id: id, at: nowIso(), by: 'Sub portal', text: text }); }
+function fileDocs(ev, files, cat){
+  return (files || []).map(function(f, i){ return { id: 'SPD_' + ev.id + '_' + i, pid: s(ev.project_id), name: f.name || 'file', cat: cat, type: f.type || '', size: f.size || 0, ref: f.ref, hash: f.hash || '',
+    uploaded: s(ev.created_at).slice(0, 10), uploadedAt: ev.created_at, by: s((ev.data || {}).subName) + ' (sub)', subId: s(ev.sub_id), subName: s((ev.data || {}).subName), source: 'sub-portal', portalShare: false, savedAt: nowIso(), updatedAt: nowIso() }; });
+}
+function photosHook(ev, files){
+  /* GrayCo Photos (patch U): the photo goes into the job's photos, tagged with the sub */
+  try { var P = window._gcPhotos; if (P && typeof P.addFromPortal === 'function') files.forEach(function(f){ if (/^image\//.test(s(f.type))) P.addFromPortal({ pid: s(ev.project_id), ref: f.ref, name: f.name, by: s((ev.data || {}).subName), subId: s(ev.sub_id), tag: 'sub:' + s(ev.sub_id), at: ev.created_at, source: 'sub-portal' }); }); } catch (e) {}
+}
+var filing = false, LOADED = Date.now();
+var FILED_KEY = 'gc_sub_filed';
+function filedGet(){ try { var v = JSON.parse(localStorage.getItem(FILED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function filedPut(evs){
+  try { var cut = Date.now() - 2 * 864e5, have = {}, out = [];
+    evs.concat(filedGet()).forEach(function(e){ if (!e || !e.id || have[e.id] || Date.parse(e.created_at) < cut) return; have[e.id] = 1; out.push(e); });
+    localStorage.setItem(FILED_KEY, JSON.stringify(out.slice(0, 300))); } catch (e) {}
+}
+var CLOUDP = null;   /* the cloud's jobs, read once per sync when there is something to re-check */
+function hasMark(p, ev){ return !!(p && Array.isArray(p.updates) && p.updates.some(function(u){ return u && u.id === 'SPA_' + ev.id; })); }
+/* filed = on this screen AND in the cloud (another computer's older copy can have replaced the job there; then it is filed again) */
+function alreadyOnJob(pid, ev){ if (!hasMark(proj(pid), ev)) return false; var c = CLOUDP && CLOUDP[String(pid)]; return !CLOUDP || !c || hasMark(c, ev); }
+var CLOUDV = null;
+function alreadyOnSub(ev){ var c = CLOUDV && CLOUDV[String(ev.sub_id)]; if (CLOUDV && c && !onSub(c, ev)) return false; return onSub((crm().subs || []).find(function(r){ return r && String(r.id) === String(ev.sub_id); }), ev); }
+function onSub(sb, ev){ return !!(sb && (Array.isArray(sb.files) && sb.files.some(function(f){ return f && f.id === 'SPF_' + ev.id; }) || (ev.kind === 'lang' && sb.lang === ((ev.data || {}).lang === 'es' ? 'es' : 'en')))); }
+async function fileEvents(events){
+  if (filing || !events.length) return [];
+  /* the CRM must have its lists loaded first (filing into a half-loaded list could leave records out) */
+  if (Date.now() - LOADED < 20000 || !projects().length) return [];
+  filing = true;
+  var done = [], projCh = {}, docs = [], invs = [], logs = [];
+  function onProj(pid, fn){ pid = s(pid); if (!pid || !proj(pid)) return; var prev = projCh[pid]; projCh[pid] = prev ? function(q){ prev(q); fn(q); } : fn; }
+  var onJob = {};   /* events whose job changes are already there (a re-check) */
+  try {
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i], d = ev.data || {}, nm = s(d.subName) || 'Sub', pid = s(ev.project_id);
+      if (pid && !proj(pid) && ev.kind !== 'paper' && ev.kind !== 'lang') continue;    /* that job is not on this computer yet */
+      (function(ev, d, nm, pid){
+        var jobDone = pid ? alreadyOnJob(pid, ev) : true;
+        var _onProj = onProj; onProj = function(p2, fn){ if (!jobDone) _onProj(p2, fn); };
+        if (ev.kind === 'invoice') {
+          var p = proj(pid) || {};
+          invs.push({ id: d.invId, type: 'sub', pid: pid, sub: nm, subId: s(ev.sub_id), po: d.po || p.autoPO || '', amt: num(d.amount), desc: d.note || ('Invoice from the sub portal' + (d.scopeTitle ? ' — ' + d.scopeTitle : '')),
+            invNum: d.invNum || '', recvDate: d.recvDate || s(ev.created_at).slice(0, 10), date: d.recvDate || s(ev.created_at).slice(0, 10), status: 'received', source: 'sub-portal', scopeId: d.scopeId || '',
+            payDate: d.payDate || '', payDateAuto: d.payDate || '', payDateRule: 'in by Wednesday, pays the following Friday', files: (d.files || []).map(function(f){ return { ref: f.ref, name: f.name, type: f.type }; }),
+            by: nm + ' (sub portal)', createdAt: ev.created_at, savedAt: nowIso(), updatedAt: nowIso() });
+          docs = docs.concat(fileDocs(ev, d.files, 'Sub Invoices'));
+          onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '🧾 ' + nm + ' sent invoice ' + money(d.amount) + (d.invNum ? ' (#' + d.invNum + ')' : '') + ' — in Sub Invoices, waiting for approval'); });
+        } else if (ev.kind === 'photos') {
+          docs = docs.concat(fileDocs(ev, d.files, 'Sub photos')); photosHook(ev, d.files || []);
+          onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '📷 ' + nm + ' added ' + ((d.files || []).length + (Number(d.gphotos) || 0)) + ' photo(s)' + (d.gphotos ? ' (in GrayCo Photos)' : '') + (d.note ? ': ' + d.note : '')); });
+        } else if (ev.kind === 'progress') {
+          docs = docs.concat(fileDocs(ev, d.files, 'Sub photos')); photosHook(ev, d.files || []);
+          logs.push({ id: 'LOG_SP_' + ev.id, pid: pid, date: s(ev.created_at).slice(0, 10), weather: '', crew: '', work: nm + ' (' + num(d.pct) + '% done): ' + (d.note || ''), problems: '', by: nm + ' (sub portal)', source: 'sub-portal', subId: s(ev.sub_id), updatedAt: nowIso() });
+          onProj(pid, function(q){
+            var k = rowIndex(q, ev.sub_id, nm);
+            if (k > -1) { var r = Object.assign({}, q.subs[k]); r.pct = num(d.pct); if (/^(awarded|bidding)$/i.test(s(r.status)) && num(d.pct) > 0) r.status = 'In Progress'; r.pctUpdatedAt = ev.created_at; q.subs = q.subs.slice(); q.subs[k] = r; }
+            activity(q, 'SPA_' + ev.id, '📈 ' + nm + ' is ' + num(d.pct) + '% done' + (d.note ? ': ' + d.note : ''));
+          });
+        } else if (ev.kind === 'punch') {
+          docs = docs.concat(fileDocs(ev, d.files, 'Punch list')); photosHook(ev, d.files || []);
+          if (!jobDone) changeInList('punch', d.punchId, function(x){ x.status = 'complete'; x.completedAt = ev.created_at; x.completedBy = nm + ' (sub)'; x.donePhoto = (d.files || [])[0] ? d.files[0].ref : ''; });
+          onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '☑ ' + nm + ' finished punch item: ' + (d.item || '')); });
+        } else if (ev.kind === 'paper') {
+          docs = docs.concat(fileDocs(ev, d.files, d.paper === 'coi' ? 'Insurance (COI)' : d.paper === 'w9' ? 'W-9' : d.paper === 'lien' ? 'Lien Waivers' : 'Sub agreement').map(function(x){ x.pid = pid || ''; x.unfiled = !pid; return x; }));
+          if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){
+            if (d.paper === 'w9') x.w9 = true;
+            if (d.paper === 'coi') { x.coi = true; if (d.exp) x.insExp = d.exp; }
+            if (d.paper === 'agreement') x.subAgreement = true;
+            if (d.paper === 'lien') x.lien = true;
+            x.files = (Array.isArray(x.files) ? x.files : []).concat((d.files || []).map(function(f){ return { id: 'SPF_' + ev.id, ref: f.ref, name: f.name, type: f.type, kind: d.paper, exp: d.exp || '', date: s(ev.created_at).slice(0, 10), source: 'sub-portal' }; })
+              .filter(function(f){ return !(x.files || []).some(function(o){ return o && o.id === f.id; }); }));
+          });
+          if (pid) onProj(pid, function(q){ activity(q, 'SPA_' + ev.id, '📄 ' + nm + ' sent their ' + (d.paper === 'coi' ? 'insurance certificate' + (d.exp ? ' (expires ' + d.exp + ')' : '') : d.paper === 'w9' ? 'W-9' : d.paper)); });
+        } else if (ev.kind === 'scope') {
+          onProj(pid, function(q){
+            var k = rowIndex(q, ev.sub_id, nm);
+            var sub = subsList().find(function(r){ return s(r.id) === s(ev.sub_id); }) || {};
+            if (k < 0 && (d.op === 'accepted' || d.op === 'published')) { q.subs = (Array.isArray(q.subs) ? q.subs : []).concat([{ id: 'PSB' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), subId: s(ev.sub_id), name: s(sub.name) || nm, trade: s(sub.trade), bidAmt: '', status: 'Awarded', w9: !!sub.w9, insured: !!sub.coi, addedBy: 'Sub portal', addedDate: today() }]); k = q.subs.length - 1; }
+            if (k > -1) {
+              var r = Object.assign({}, q.subs[k]);
+              if (d.kind !== 'co') { r.scopeId = d.scopeId; r.scopeTitle = d.title; if (d.op === 'published') { r.scopeStatus = 'Sent'; if (!num(r.bidAmt)) r.bidAmt = String(d.total || ''); r.scope = r.scope || d.title; } }
+              if (d.op === 'accepted') { r.scopeStatus = d.kind === 'co' ? r.scopeStatus : 'Accepted'; r.scopeAcceptedAt = ev.created_at; if (/bidding|^$/i.test(s(r.status))) r.status = 'Awarded'; if (d.kind !== 'co') r.bidAmt = String(d.total != null ? d.total : r.bidAmt); }
+              if (d.op === 'question') r.scopeStatus = 'Question';
+              q.subs = q.subs.slice(); q.subs[k] = r;
+            }
+            activity(q, 'SPA_' + ev.id, (d.op === 'accepted' ? '✅ ' + nm + ' accepted ' : d.op === 'question' ? '❓ ' + nm + ' asked about ' : '📤 Sent to ' + nm + ': ') + (d.kind === 'co' ? 'change order' : 'scope') + ' "' + (d.title || '') + '"' + (d.op === 'question' ? ': ' + (d.question || '') : '') + (d.total ? ' · ' + money(d.total) : ''));
+          });
+        } else if (ev.kind === 'lang') {
+          if (!alreadyOnSub(ev)) changeSub(ev.sub_id, function(x){ x.lang = d.lang === 'es' ? 'es' : 'en'; });
+        }
+        onProj = _onProj;
+        done.push(ev.id);
+      })(ev, d, nm, pid);
+    }
+    if (invs.length) await addToList('invs', invs, '_setInvoices');
+    if (docs.length) await addToList('projectDocs', docs, '_setProjectDocs');
+    if (logs.length) await addToList('logs', logs, null);
+    if (Object.keys(projCh).length) await saveProjects(projCh);
+  } catch (e) { try { console.warn('[GC SUB] filing', e); } catch (_) {} }
+  filing = false;
+  return done;
+}
+
+/* ── the minute check ─────────────────────────────────────────────────────── */
+var syncing = null;
+function sync(){
+  if (syncing) return syncing;
+  if (!signedIn() || !epochOk()) return Promise.resolve(ST);
+  syncing = api({ action: 's-sync' }).then(async function(r){
+    if (!r.ok) { ST.err = r.data.error || ('error ' + r.status); return ST; }
+    var d = r.data;
+    ST.unread = d.unread || {}; ST.links = d.links || {}; ST.waiting = d.waiting || []; ST.bids = d.bids || []; ST.codes = d.codes || []; ST.admin = !!d.admin; ST.me = d.me || ''; ST.at = Date.now(); ST.err = ''; ST.text = !!d.text;
+    ST.events = d.events || [];
+    var fresh = ST.events.slice();
+    CLOUDP = null; CLOUDV = null;
+    if (filedGet().length && typeof window._gcCloudGet === 'function') { try { var cvl = await window._gcCloudGet('vendors'); if (Array.isArray(cvl)) { CLOUDV = {}; cvl.forEach(function(r){ if (r && r.id != null) CLOUDV[String(r.id)] = r; }); } } catch (e) {} try { var cl = await window._gcCloudGet('projects'); if (Array.isArray(cl)) { CLOUDP = {}; cl.forEach(function(p){ if (p && p.id != null) CLOUDP[String(p.id)] = p; }); } } catch (e) {} }
+    var done = await fileEvents(fresh.concat(filedGet().filter(function(e){ return !fresh.some(function(f){ return f.id === e.id; }); })));
+    var newly = fresh.filter(function(e){ return done.indexOf(e.id) > -1; });
+    if (newly.length) { filedPut(newly); await api({ action: 's-ack', ids: newly.map(function(e){ return e.id; }) }); ST.events = ST.events.filter(function(e){ return done.indexOf(e.id) < 0; }); }
+    try { approvalsHook(); } catch (e) {}
+    paintBadges();
+    return ST;
+  }).finally(function(){ syncing = null; });
+  return syncing;
+}
+/* the approvals queue (patch APPR), when it is loaded: scopes waiting for the job's PM, bid-site requests */
+function approvalsHook(){
+  var A = window._gcApprovals; if (!A || typeof A.add !== 'function') return;
+  ST.waiting.forEach(function(x){ var p = proj(x.project_id) || {}; A.add({ id: 'subscope_' + x.id, kind: 'sub_scope', jobId: x.project_id, jobName: p.name || '', pm: p.pm || '', step: 'pm', status: 'waiting', title: (x.kind === 'co' ? 'Change order' : 'Scope') + ' for ' + ((subsList().find(function(r){ return r.id === x.sub_id; }) || {}).name || 'sub') + ': ' + (x.title || ''), open: function(){ hub(x.project_id); } }); });
+  ST.bids.forEach(function(b){ A.add({ id: 'bidsite_' + b.id, kind: 'bid_site', step: 'admin', status: 'waiting', title: 'Bid site request — ' + b.company, open: function(){ openSubsPanel(); } }); });
+}
+/* ── badges: the same counter the customer side uses (window._gcUnread) ── */
+function unreadOf(pid){
+  var u = ST.unread[String(pid)] || { c: 0, subs: {}, total: 0 };
+  return { total: u.total || 0, customer: u.c || 0, subs: Object.assign({}, u.subs || {}) };
+}
+if (typeof window._gcUnread !== 'function') window._gcUnread = function(pid){
+  if (pid) return unreadOf(pid);
+  var t = 0; Object.keys(ST.unread).forEach(function(k){ t += ST.unread[k].total || 0; }); return { total: t, jobs: Object.keys(ST.unread).length };
+};
+function badge(n){ return n ? '<span class="gcsub-badge" data-n="' + n + '">' + n + '</span>' : ''; }
+function paintBadges(){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-gcsub-badge]'), function(el){ var pid = el.getAttribute('data-gcsub-badge'); var n = pid === '*' ? window._gcUnread().total : unreadOf(pid).total; el.innerHTML = badge(n); });
+  var row = document.querySelector('main .gcsub-row'); if (row) { var pid = row.getAttribute('data-pid'); var p = proj(pid); if (p) row.innerHTML = rowHtml(p); }
+  var open = document.getElementById('gcsub-hub'); if (open && !open.contains(document.activeElement)) { var hp = open.getAttribute('data-pid'); if (hp && open.__paint) open.__paint(); }
+}
+
+/* ── shared sheet (full screen, ‹ Back / ✕ at the top: patch NAV's back rule) ── */
+function sheet(id, title, onBack){
+  var old = document.getElementById(id); if (old) old.remove();
+  var ov = document.createElement('div'); ov.id = id; ov.className = '_gcSheetOv gcsub-sheet'; ov.setAttribute('data-gc-keep', '');
+  ov.innerHTML = '<div class="gcsub-head"><button type="button" class="gcsub-back" data-x="back">‹ Back</button><b class="gcsub-title">' + esc(title) + '</b><button type="button" class="gcsub-x" data-x="close" aria-label="Close">✕</button></div><div class="gcsub-body"></div>';
+  document.body.appendChild(ov);
+  function close(){ ov.remove(); if (onBack) try { onBack(); } catch (e) {} }
+  ov.querySelector('[data-x=back]').onclick = close; ov.querySelector('[data-x=close]').onclick = function(){ ov.remove(); };
+  return { el: ov, body: ov.querySelector('.gcsub-body'), close: close };
+}
+
+/* ── 1. the SUB HUB of one job ─────────────────────────────────────────────── */
+function invoicesWaiting(pid, sub){
+  return ((crm().invoices || crm().invs) || []).filter(function(iv){ return iv && iv.type === 'sub' && String(iv.pid) === String(pid) && /^(received|draft|pending)$/i.test(s(iv.status) || 'received') &&
+    (s(iv.subId) ? s(iv.subId) === s(sub && sub.id) : (sub && norm(iv.sub) === norm(sub.name))); });
+}
+function openPunch(pid, sub){ return (punchCache || []).filter(function(x){ return x && String(x.pid) === String(pid) && !/complete|done|closed/i.test(s(x.status)) && (s(x.subId) ? s(x.subId) === s(sub && sub.id) : (sub && norm(x.assignee) === norm(sub.name))); }); }
+function filesOf(pid, sub){ return (crm().projectDocs || []).filter(function(d){ return d && String(d.pid) === String(pid) && sub && s(d.subId) === s(sub.id); }); }
+var punchCache = [];
+function loadPunch(){ try { return Promise.resolve(window.idbGet('punch')).then(function(v){ punchCache = Array.isArray(v) ? v : (crm().punch || []); return punchCache; }); } catch (e) { return Promise.resolve([]); } }
+function contactBtns(name, phone, email, extra){
+  var p = digits(phone);
+  return '<div class="gcsub-cta">' +
+    (p ? '<a class="gcsub-btn g" data-act="call" href="tel:' + esc(p) + '">📞 Call</a><a class="gcsub-btn" data-act="text" href="sms:' + esc(p) + '">💬 Text</a>' : '<span class="gcsub-btn off" data-act="call" title="No phone on file">📞 No phone</span>') +
+    (email ? '<a class="gcsub-btn" data-act="email" href="mailto:' + esc(email) + '">✉️ Email</a>' : '<span class="gcsub-btn off" data-act="email" title="No e-mail on file">✉️ No e-mail</span>') + (extra || '') + '</div>';
+}
+function hub(pid, back){
+  var p = proj(pid); if (!p) { toast('That job is not loaded yet.', true); return; }
+  var sh = sheet('gcsub-hub', '👷 Subs & portal — ' + (p.name || ''), back);
+  sh.el.setAttribute('data-pid', pid);
+  var loginInfo = null, scopes = null;
+  function paint(){
+    p = proj(pid) || p;
+    var u = unreadOf(pid), rows = Array.isArray(p.subs) ? p.subs : [];
+    var waiting = (scopes || []).filter(function(x){ return x.status === 'waiting'; });
+    var h = '';
+    /* customer */
+    h += '<section class="gcsub-card"><div class="gcsub-row2"><b>Customer — ' + esc(p.client || '—') + '</b><button type="button" class="gcsub-btn g" data-act="cust-msgs">💬 Messages' + (u.customer ? ' <span class="gcsub-badge">' + u.customer + '</span>' : '') + '</button></div>';
+    h += contactBtns(p.client, p.clientPhone || p.phone, p.clientEmail || p.email);
+    if (loginInfo) {
+      h += '<div class="gcsub-note" data-act="login-card">' + (loginInfo.loginWorks ? 'Login: <b>' + esc(loginInfo.email || loginInfo.phone) + '</b>' + (loginInfo.email && loginInfo.phone ? ' or <b>' + esc(loginInfo.phone) + '</b>' : '') + ' · starter password = first name · changed: <b>' + (loginInfo.changed ? 'yes' : 'no') + '</b>' : '⚠ ' + esc(loginInfo.why)) + '</div>';
+      h += '<div class="gcsub-cta">' + (loginInfo.loginWorks ? '<button type="button" class="gcsub-btn" data-act="welcome">📨 Welcome note (link + login)</button>' : '') + (ST.admin && loginInfo.changed ? '<button type="button" class="gcsub-btn" data-act="reset-pw">Reset to first name</button>' : '') + '</div>';
+    }
+    h += '</section>';
+    /* scopes waiting for approval */
+    if (waiting.length) h += '<section class="gcsub-card gcsub-wait"><b>Waiting for approval (' + waiting.length + ')</b>' + waiting.map(function(x){ var sb = subsList().find(function(r){ return r.id === x.sub_id; }) || {};
+      return '<div class="gcsub-row2"><span>' + (x.kind === 'co' ? 'Change order' : 'Scope') + ' — ' + esc(sb.name || x.sub_id) + ': ' + esc(x.title || '') + ' · ' + money(x.total) + '</span>' + (x.canApprove ? '<button type="button" class="gcsub-btn g" data-act="approve" data-id="' + esc(x.id) + '">✅ Approve & publish</button>' : '<span class="gcsub-muted">waiting for ' + esc(p.pm || 'the PM') + '</span>') + '<button type="button" class="gcsub-btn" data-act="edit-scope" data-id="' + esc(x.id) + '">Edit</button></div>'; }).join('') + '</section>';
+    /* subs on the job */
+    h += '<div class="gcsub-h">Subs on this job (' + rows.length + ')</div>';
+    rows.forEach(function(r, i){
+      var sb = subFor(r), sid = sb ? s(sb.id) : '';
+      var lk = sid ? ST.links[sid] : null, un = sid ? (u.subs[sid] || 0) : 0;
+      var sc = (scopes || []).filter(function(x){ return x.sub_id === sid && x.status !== 'void'; });
+      var mine = sc.filter(function(x){ return x.kind !== 'co'; }).slice(-1)[0];
+      var inv = invoicesWaiting(pid, sb), pun = openPunch(pid, sb), fl = filesOf(pid, sb);
+      var scopeTxt = mine ? ({ draft: 'Scope draft', waiting: 'Scope waiting for approval', published: 'Scope sent', accepted: 'Scope accepted ✓', question: 'Question on scope' }[mine.status] || mine.status) + ' (v' + mine.version + ', ' + money(mine.total) + ')' : (r.scopeStatus ? 'Scope ' + r.scopeStatus : 'No scope yet');
+      h += '<section class="gcsub-card" data-sub="' + esc(sid) + '" data-row="' + i + '"><div class="gcsub-row2"><b>' + esc(r.name || (sb && sb.name) || 'Sub') + '</b><span class="gcsub-muted">' + esc(r.trade || (sb && sb.trade) || '') + ' · ' + esc(r.status || '') + (r.bidAmt ? ' · ' + money(r.bidAmt) : '') + '</span></div>';
+      h += '<div class="gcsub-stats"><span>' + esc(scopeTxt) + '</span><span>' + num(r.pct) + '% done</span><span>' + pun.length + ' open punch</span><span>' + inv.length + ' invoice' + (inv.length === 1 ? '' : 's') + ' waiting' + (inv.length ? ' (' + money(inv.reduce(function(t, x){ return t + num(x.amt); }, 0)) + ')' : '') + '</span><span>' + fl.length + ' file' + (fl.length === 1 ? '' : 's') + '</span></div>';
+      if (!sb) { h += '<div class="gcsub-note">⚠ This row is not tied to a sub in the Subs list — add the sub there (same name) to give them a portal.</div></section>'; return; }
+      h += contactBtns(sb.name, sb.phone, sb.email, '<button type="button" class="gcsub-btn g" data-act="sub-msgs">💬 Messages' + (un ? ' <span class="gcsub-badge">' + un + '</span>' : '') + '</button>');
+      h += '<div class="gcsub-cta"><button type="button" class="gcsub-btn" data-act="link">🔗 Portal link' + (lk ? (lk.viewed ? ' · opened ' + ago(lk.viewed) : ' · not opened yet') : ' · none yet') + '</button>' +
+        '<button type="button" class="gcsub-btn" data-act="scope">🧾 ' + (mine ? 'Edit scope' : 'Create scope') + '</button><button type="button" class="gcsub-btn" data-act="co">➕ Change order</button><button type="button" class="gcsub-btn" data-act="punch">☑ Punch item</button>' +
+        (fl.length ? '<button type="button" class="gcsub-btn" data-act="files">📁 Files (' + fl.length + ')</button>' : '') + '</div>';
+      h += '<label class="gcsub-chk"><input type="checkbox" data-act="custok"' + (p.subCustomerContact === true ? ' checked' : '') + '> This sub may see the customer\'s phone / e-mail</label></section>';
+    });
+    h += '<div class="gcsub-cta"><button type="button" class="gcsub-btn" data-act="add-sub">➕ Add a sub to this job</button><button type="button" class="gcsub-btn" data-act="site">📍 Site notes (gate, parking, hours…)</button></div>';
+    sh.body.innerHTML = h;
+  }
+  sh.el.__paint = paint;
+  paint();
+  loadPunch().then(paint);
+  api({ action: 's-login', projectId: pid }).then(function(r){ if (r.ok) { loginInfo = r.data; paint(); } });
+  api({ action: 's-scopes', projectId: pid }).then(function(r){ if (r.ok) { scopes = r.data.scopes || []; paint(); } });
+  sh.body.addEventListener('click', function(e){
+    var b = e.target.closest('[data-act]'); if (!b || b.tagName === 'A') return;
+    var act = b.getAttribute('data-act'), cardEl = b.closest('[data-sub]'), sid = cardEl ? cardEl.getAttribute('data-sub') : '';
+    var sb = sid ? subsList().find(function(r){ return s(r.id) === sid; }) : null;
+    function reopen(){ hub(pid, back); }
+    if (act === 'cust-msgs') return thread(pid, 'c', 'Customer — ' + (p.client || ''), reopen);
+    if (act === 'sub-msgs') return thread(pid, 's:' + sid, (sb && sb.name) || 'Sub', reopen);
+    if (act === 'link') return linkSheet(sb, reopen);
+    if (act === 'scope') { var mine = (scopes || []).filter(function(x){ return x.sub_id === sid && x.kind !== 'co' && x.status !== 'void'; }).slice(-1)[0]; return scopeEditor(pid, sb, mine || null, 'scope', reopen); }
+    if (act === 'co') return scopeEditor(pid, sb, null, 'co', reopen);
+    if (act === 'edit-scope') { var x = (scopes || []).find(function(y){ return y.id === b.getAttribute('data-id'); }); return scopeEditor(pid, subsList().find(function(r){ return r.id === (x || {}).sub_id; }), x, x && x.kind, reopen); }
+    if (act === 'approve') { b.disabled = true; return api({ action: 's-scope-approve', id: b.getAttribute('data-id') }).then(function(r){ if (!r.ok) { b.disabled = false; toast(r.data.error || 'Not approved', true); return; } toast('Approved — the sub sees it now' + (r.data.mailed ? ' (e-mailed)' : '')); sync(); api({ action: 's-scopes', projectId: pid }).then(function(x){ if (x.ok) { scopes = x.data.scopes; paint(); } }); }); }
+    if (act === 'punch') return punchSheet(pid, sb, reopen);
+    if (act === 'files') return filesSheet(pid, sb, reopen);
+    if (act === 'add-sub') return addSubSheet(pid, reopen);
+    if (act === 'site') return siteSheet(pid, reopen);
+    if (act === 'welcome') return welcomeSheet(pid, reopen);
+    if (act === 'reset-pw') { if (!window.confirm('Reset this customer\'s password to their first name?')) return; return api({ action: 's-login', projectId: pid, op: 'reset' }).then(function(r){ if (r.ok) { loginInfo = r.data; paint(); toast('Reset — their first name works again'); } else toast(r.data.error, true); }); }
+  });
+  sh.body.addEventListener('change', function(e){
+    if (e.target.getAttribute('data-act') !== 'custok') return;
+    var on = e.target.checked;
+    saveProjects((function(){ var o = {}; o[pid] = function(q){ q.subCustomerContact = on; }; return o; })(), { person: true }).then(function(){ toast(on ? 'Subs on this job can see the customer\'s contact' : 'Customer contact hidden from subs'); });
+  });
+  return sh;
+}
+
+/* ── messages (customer or sub) ── */
+function thread(pid, party, title, back){
+  var sh = sheet('gcsub-thread', '💬 ' + title, back);
+  sh.el.setAttribute('data-party', party);
+  sh.body.innerHTML = '<div class="gcsub-msgs" id="gcsub-msgs"><div class="gcsub-muted">Loading…</div></div><textarea id="gcsub-msg" rows="3" placeholder="Write a message" class="gcsub-inp"></textarea>' +
+    '<div class="gcsub-cta"><label class="gcsub-btn">📎 Photo / file<input type="file" id="gcsub-file" accept="image/*,application/pdf" multiple hidden></label><span id="gcsub-fn" class="gcsub-muted"></span><button type="button" class="gcsub-btn g" id="gcsub-send">Send</button></div>';
+  var files = [];
+  sh.body.querySelector('#gcsub-file').onchange = function(e){ files = Array.prototype.slice.call(e.target.files || []); sh.body.querySelector('#gcsub-fn').textContent = files.map(function(f){ return f.name; }).join(', '); };
+  function load(){
+    return api({ action: 's-thread', projectId: pid, party: party }).then(function(r){
+      var box = sh.body.querySelector('#gcsub-msgs'); if (!box) return;
+      if (!r.ok) { box.innerHTML = '<div class="gcsub-note">' + esc(r.data.error || 'Could not load') + '</div>'; return; }
+      var ms = r.data.messages || [];
+      box.innerHTML = ms.length ? ms.map(function(m){ return '<div class="gcsub-m ' + (m.mine ? 'me' : 'them') + '"><div class="gcsub-muted">' + esc(m.mine ? (m.by || 'GrayCo') : m.by) + ' · ' + esc(new Date(m.at).toLocaleString()) + '</div><div>' + esc(m.text).replace(/\n/g, '<br>') + '</div>' +
+        (m.files || []).map(function(f){ return '<a href="' + esc(f.url) + '" target="_blank" rel="noopener" class="gcsub-file">📎 ' + esc(f.name) + '</a>'; }).join(' ') + (m.mine ? '<div class="gcsub-rr">' + (m.read ? '✓✓ Read' : '✓ Sent') + '</div>' : '') + '</div>'; }).join('') : '<div class="gcsub-muted">No messages yet.</div>';
+      box.scrollTop = box.scrollHeight;
+      var u = ST.unread[String(pid)]; if (u) { if (party === 'c') { u.total -= u.c; u.c = 0; } else { var k = party.slice(2); u.total -= (u.subs[k] || 0); u.subs[k] = 0; } paintBadges(); }
+    });
+  }
+  sh.body.querySelector('#gcsub-send').onclick = async function(){
+    var t = sh.body.querySelector('#gcsub-msg').value.trim(); if (!t && !files.length) return;
+    var btn = this; btn.disabled = true;
+    var refs = [];
+    for (var i = 0; i < files.length && i < 6; i++) { try { var meta = await window._gcStoreFile(files[i], { kind: 'doc', pid: pid, name: files[i].name }); if (meta && meta.ref) refs.push({ ref: meta.ref, name: meta.name || files[i].name, type: meta.type || files[i].type }); } catch (e) {} }
+    var r = await api({ action: 's-send', projectId: pid, party: party, text: t, files: refs });
+    btn.disabled = false;
+    if (!r.ok) { toast(r.data.error || 'Not sent', true); return; }
+    sh.body.querySelector('#gcsub-msg').value = ''; files = []; sh.body.querySelector('#gcsub-fn').textContent = '';
+    load();
+  };
+  load();
+  var iv = nSI(function(){ if (!document.body.contains(sh.el)) { clearInterval(iv); return; } if (!document.hidden) load(); }, 20000);
+  return sh;
+}
+
+/* ── a sub's portal link: copy / e-mail / text from my phone / revoke ── */
+function linkSheet(sb, back){
+  if (!sb) return;
+  var sh = sheet('gcsub-link', '🔗 Portal link — ' + sb.name, back);
+  function paint(url, info){
+    var msg = (sb.lang === 'es' ? 'GrayCo: su Portal GrayCo (trabajos, alcances, mensajes, pagos): ' : 'GrayCo: your GrayCo Portal (jobs, scopes, messages, pay): ') + url;
+    sh.body.innerHTML = (url ? '<div class="gcsub-note" style="word-break:break-all"><b>' + esc(url) + '</b></div>' : '<div class="gcsub-note">No link yet.</div>') +
+      (info && info.viewed ? '<div class="gcsub-muted">Last opened ' + esc(ago(info.viewed)) + '</div>' : '') +
+      '<div class="gcsub-cta">' + (url ? '<button type="button" class="gcsub-btn g" data-l="copy">Copy link</button>' +
+        (sb.email ? '<button type="button" class="gcsub-btn" data-l="email">✉️ E-mail it to ' + esc(sb.email) + '</button>' : '') +
+        (digits(sb.phone) ? '<a class="gcsub-btn" data-l="sms" href="sms:' + esc(digits(sb.phone)) + '?body=' + encodeURIComponent(msg) + '">💬 Text from my phone</a>' : '') +
+        '<button type="button" class="gcsub-btn r" data-l="revoke">Turn the link off</button>' : '<button type="button" class="gcsub-btn g" data-l="create">Make the link</button>') + '</div>' +
+      '<div class="gcsub-muted">One link per sub company. Turning it off ends every phone signed in with it at once.</div>';
+  }
+  api({ action: 's-link', subId: sb.id }).then(function(r){ paint(r.data.url || '', r.data); });
+  sh.body.addEventListener('click', function(e){
+    var b = e.target.closest('[data-l]'); if (!b || b.tagName === 'A') return;
+    var l = b.getAttribute('data-l');
+    if (l === 'copy') { var u = (sh.body.querySelector('.gcsub-note b') || {}).textContent; if (u) copy(u); return; }
+    b.disabled = true;
+    if (l === 'create') return api({ action: 's-link', subId: sb.id, op: 'create' }).then(function(r){ b.disabled = false; if (r.ok) { paint(r.data.url, {}); sync(); } else toast(r.data.error, true); });
+    if (l === 'email') return api({ action: 's-link-send', subId: sb.id }).then(function(r){ b.disabled = false; toast(r.ok ? 'E-mailed to ' + sb.email : (r.data.error || 'Not sent'), !r.ok); if (r.ok) sync(); });
+    if (l === 'revoke') { if (!window.confirm('Turn off ' + sb.name + '\'s portal link? Their phones are signed out at once.')) { b.disabled = false; return; }
+      return api({ action: 's-link', subId: sb.id, op: 'revoke' }).then(function(r){ b.disabled = false; if (r.ok) { paint('', null); toast('Link turned off'); sync(); } else toast(r.data.error, true); }); }
+  });
+  return sh;
+}
+
+/* ── 2. scope / change order editor (no line prices — ONE total) ── */
+function scopeEditor(pid, sb, x, kind, back){
+  if (!sb) { toast('Pick a sub from the Subs list first.', true); return; }
+  kind = kind === 'co' ? 'co' : 'scope';
+  var d = (x && x.data) || {};
+  var lines = (d.lines || []).map(function(l){ return { room: l.room || '', desc: l.desc || '', meas: l.meas || '', qty: l.qty == null ? '' : l.qty, unit: l.unit || '' }; });
+  if (!lines.length) lines.push({ room: '', desc: '', meas: '', qty: '', unit: '' });
+  var files = (d.files || []).slice(), photos = (d.photos || []).slice();
+  var p = proj(pid) || {};
+  var sh = sheet('gcsub-scope', (kind === 'co' ? '➕ Change order' : '🧾 Scope') + ' for ' + sb.name, back);
+  function lineRow(l, i){ return '<div class="gcsub-line" data-i="' + i + '"><input class="gcsub-inp" data-f="room" placeholder="Area" value="' + esc(l.room) + '"><input class="gcsub-inp w" data-f="desc" placeholder="Work" value="' + esc(l.desc) + '"><input class="gcsub-inp" data-f="meas" placeholder="Measurement" value="' + esc(l.meas) + '"><input class="gcsub-inp n" data-f="qty" placeholder="Qty" inputmode="decimal" value="' + esc(l.qty) + '"><input class="gcsub-inp n" data-f="unit" placeholder="Unit" value="' + esc(l.unit) + '"><button type="button" class="gcsub-x2" data-del="' + i + '" aria-label="Remove line">✕</button></div>'; }
+  function scSources(){ return (Array.isArray(p.subScopes) ? p.subScopes : []).filter(function(z){ return z && Array.isArray(z.lines) && z.lines.length; }); }
+  function paint(){
+    var src = scSources();
+    sh.body.innerHTML = '<label class="gcsub-fld">Title<input class="gcsub-inp" id="sc-title" value="' + esc(x ? x.title : (kind === 'co' ? 'Change order — ' : 'Scope — ') + (sb.trade || '')) + '"></label>' +
+      (src.length ? '<div class="gcsub-cta"><select class="gcsub-inp" id="sc-src"><option value="">Copy lines from a sub scope (estimate / Xactimate)…</option>' + src.map(function(z, i){ return '<option value="' + i + '">' + esc((z.title || z.name || 'Sub scope') + ' — ' + (z.lines.length) + ' lines') + '</option>'; }).join('') + '</select></div>' : '') +
+      '<div class="gcsub-h">Lines — measurements and quantities, no prices</div><div id="sc-lines">' + lines.map(lineRow).join('') + '</div><button type="button" class="gcsub-btn" id="sc-add">＋ Add a line</button>' +
+      '<label class="gcsub-fld">Included<textarea class="gcsub-inp" id="sc-inc" rows="2">' + esc(d.included || '') + '</textarea></label>' +
+      '<label class="gcsub-fld">Not included<textarea class="gcsub-inp" id="sc-exc" rows="2">' + esc(d.excluded || '') + '</textarea></label>' +
+      '<div class="gcsub-two"><label class="gcsub-fld">Material GrayCo provides<textarea class="gcsub-inp" id="sc-mg" rows="2">' + esc(d.matGc || '') + '</textarea></label><label class="gcsub-fld">Material the sub provides<textarea class="gcsub-inp" id="sc-ms" rows="2">' + esc(d.matSub || '') + '</textarea></label></div>' +
+      '<label class="gcsub-fld">Notes<textarea class="gcsub-inp" id="sc-notes" rows="2">' + esc(d.notes || '') + '</textarea></label>' +
+      '<div class="gcsub-two"><label class="gcsub-fld">Start<input type="date" class="gcsub-inp" id="sc-start" value="' + esc(d.start || '') + '"></label><label class="gcsub-fld">End<input type="date" class="gcsub-inp" id="sc-end" value="' + esc(d.end || '') + '"></label></div>' +
+      '<div class="gcsub-h">Plans, drawings, specs and photos (' + (files.length + photos.length) + ')</div><div class="gcsub-muted">' + files.concat(photos).map(function(f){ return esc(f.name); }).join(' · ') + '</div>' +
+      '<label class="gcsub-btn">📎 Add files<input type="file" id="sc-files" accept="application/pdf,image/*" multiple hidden></label>' +
+      '<label class="gcsub-fld"><b>' + (kind === 'co' ? 'Amount of this change order' : 'The sub\'s ONE total for this scope') + '</b><input class="gcsub-inp big" id="sc-total" inputmode="decimal" value="' + esc(x ? x.total : '') + '"></label>' +
+      '<div class="gcsub-muted">The sub sees the lines and this one total — never GrayCo\'s prices or margin. Nothing goes to the sub until the job\'s PM (or an owner) approves it.</div>' +
+      '<div class="gcsub-cta"><button type="button" class="gcsub-btn" id="sc-draft">Save draft</button><button type="button" class="gcsub-btn g" id="sc-send">Send for approval</button></div>';
+  }
+  function read(){
+    Array.prototype.forEach.call(sh.body.querySelectorAll('.gcsub-line'), function(r){ var i = +r.getAttribute('data-i'); ['room', 'desc', 'meas', 'qty', 'unit'].forEach(function(f){ lines[i][f] = r.querySelector('[data-f=' + f + ']').value; }); });
+    return { id: x ? x.id : undefined, baseVersion: x ? x.version : undefined, projectId: pid, subId: sb.id, kind: kind, title: sh.body.querySelector('#sc-title').value, lines: lines,
+      included: sh.body.querySelector('#sc-inc').value, excluded: sh.body.querySelector('#sc-exc').value, matGc: sh.body.querySelector('#sc-mg').value, matSub: sh.body.querySelector('#sc-ms').value,
+      notes: sh.body.querySelector('#sc-notes').value, start: sh.body.querySelector('#sc-start').value, end: sh.body.querySelector('#sc-end').value, files: files, photos: photos, total: sh.body.querySelector('#sc-total').value, source: 'crm' };
+  }
+  paint();
+  sh.body.addEventListener('click', function(e){
+    var t = e.target;
+    if (t.id === 'sc-add') { read(); lines.push({ room: '', desc: '', meas: '', qty: '', unit: '' }); var keep = read(); paint(); restore(keep); return; }
+    if (t.hasAttribute('data-del')) { read(); var keep2 = read(); lines.splice(+t.getAttribute('data-del'), 1); if (!lines.length) lines.push({ room: '', desc: '', meas: '', qty: '', unit: '' }); paint(); restore(keep2); return; }
+    if (t.id === 'sc-draft' || t.id === 'sc-send') {
+      var sc = read();
+      if (t.id === 'sc-send' && !(num(sc.total) > 0)) { toast('Enter the total first.', true); return; }
+      t.disabled = true;
+      api({ action: 's-scope-save', scope: sc, submit: t.id === 'sc-send' }).then(function(r){
+        t.disabled = false;
+        if (!r.ok) { toast(r.data.error || 'Not saved', true); return; }
+        toast(t.id === 'sc-send' ? 'Sent for approval (' + (p.pm || 'the PM') + ')' : 'Draft saved');
+        sync(); sh.close();
+      });
+    }
+  });
+  function restore(v){ ['#sc-title', '#sc-inc', '#sc-exc', '#sc-mg', '#sc-ms', '#sc-notes', '#sc-start', '#sc-end', '#sc-total'].forEach(function(q, i){ var el = sh.body.querySelector(q); var k = ['title', 'included', 'excluded', 'matGc', 'matSub', 'notes', 'start', 'end', 'total'][i]; if (el) el.value = v[k] == null ? '' : v[k]; }); }
+  sh.body.addEventListener('change', async function(e){
+    if (e.target.id === 'sc-src') {
+      var z = scSources()[+e.target.value]; if (!z) return;
+      var keep = read();
+      lines = z.lines.filter(function(l){ return l && !l.excluded; }).map(function(l){ return { room: l.room || l.area || '', desc: l.desc || l.description || l.name || '', meas: l.meas || l.measurement || l.measurements || '', qty: l.qty == null ? '' : l.qty, unit: l.unit || '' }; });
+      if (z.total != null && !keep.total) keep.total = z.total;
+      paint(); restore(keep); toast('Lines copied (no prices)');
+    }
+    if (e.target.id === 'sc-files') {
+      var keep3 = read();
+      var fs = Array.prototype.slice.call(e.target.files || []);
+      for (var i = 0; i < fs.length && i < 20; i++) { try { var meta = await window._gcStoreFile(fs[i], { kind: 'doc', pid: pid, name: fs[i].name }); if (meta && meta.ref) (/^image\//.test(fs[i].type) ? photos : files).push({ ref: meta.ref, name: meta.name || fs[i].name, type: meta.type || fs[i].type }); } catch (er) { toast('A file could not be stored', true); } }
+      paint(); restore(keep3);
+    }
+  });
+  return sh;
+}
+
+/* ── punch item for a sub ── */
+function punchSheet(pid, sb, back){
+  if (!sb) return;
+  var sh = sheet('gcsub-punch', '☑ Punch item for ' + sb.name, back);
+  sh.body.innerHTML = '<label class="gcsub-fld">Item<input class="gcsub-inp" id="pu-item"></label><label class="gcsub-fld">Details<textarea class="gcsub-inp" id="pu-det" rows="3"></textarea></label><label class="gcsub-fld">Due<input type="date" class="gcsub-inp" id="pu-due"></label><button type="button" class="gcsub-btn g" id="pu-save">Add to the punch list</button>';
+  sh.body.querySelector('#pu-save').onclick = function(){
+    var item = sh.body.querySelector('#pu-item').value.trim(); if (!item) { toast('Type the item', true); return; }
+    var rec = { id: 'PL' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), pid: pid, item: item, details: sh.body.querySelector('#pu-det').value, dueDate: sh.body.querySelector('#pu-due').value, priority: 'Medium', status: 'open', assignee: sb.name, subId: sb.id, by: me(), createdAt: nowIso(), updatedAt: nowIso() };
+    addToList('punch', [rec], null).then(function(){ punchCache.push(rec); toast('Added — ' + sb.name + ' sees it in their portal'); sh.close(); });
+  };
+  return sh;
+}
+function filesSheet(pid, sb, back){
+  var sh = sheet('gcsub-files', '📁 Files from ' + (sb ? sb.name : 'sub'), back);
+  var fl = filesOf(pid, sb);
+  sh.body.innerHTML = fl.length ? fl.map(function(d, i){ return '<button type="button" class="gcsub-filerow" data-i="' + i + '">' + (/image/.test(d.type) ? '🖼️' : '📄') + ' ' + esc(d.name) + ' <span class="gcsub-muted">' + esc(d.cat) + ' · ' + esc(d.uploaded || '') + '</span></button>'; }).join('') : '<div class="gcsub-muted">No files yet.</div>';
+  sh.body.addEventListener('click', function(e){ var b = e.target.closest('[data-i]'); if (!b) return; var d = fl[+b.getAttribute('data-i')]; try { if (window._gcOpenRef) window._gcOpenRef(d.ref, d.name); } catch (er) {} });
+  return sh;
+}
+function addSubSheet(pid, back){
+  var sh = sheet('gcsub-add', '➕ Add a sub to this job', back);
+  var all = subsList();
+  sh.body.innerHTML = '<select class="gcsub-inp" id="as-sub">' + all.map(function(r){ return '<option value="' + esc(r.id) + '">' + esc(r.name + (r.trade ? ' — ' + r.trade : '')) + '</option>'; }).join('') + '</select><label class="gcsub-fld">Trade<input class="gcsub-inp" id="as-trade"></label><button type="button" class="gcsub-btn g" id="as-go">Add</button>';
+  sh.body.querySelector('#as-go').onclick = function(){
+    var sb = all.find(function(r){ return r.id === sh.body.querySelector('#as-sub').value; }); if (!sb) return;
+    var o = {}; o[pid] = function(q){ q.subs = Array.isArray(q.subs) ? q.subs.slice() : []; if (rowIndex(q, sb.id, sb.name) > -1) return; q.subs.push({ id: 'PSB' + Date.now().toString(36), subId: sb.id, name: sb.name, trade: sh.body.querySelector('#as-trade').value || sb.trade || '', bidAmt: '', status: 'Awarded', w9: !!sb.w9, insured: !!sb.coi, addedBy: me(), addedDate: today() }); };
+    saveProjects(o, { person: true }).then(function(){ toast(sb.name + ' added'); sh.close(); });
+  };
+  return sh;
+}
+function siteSheet(pid, back){
+  var p = proj(pid) || {}, sn = p.siteNotes || {};
+  var sh = sheet('gcsub-site', '📍 Site notes — ' + (p.name || ''), back);
+  var F = [['gate', 'Gate code'], ['parking', 'Parking'], ['hours', 'Work hours'], ['dumpster', 'Dumpster location'], ['power', 'Power access'], ['water', 'Water access'], ['notes', 'Other notes']];
+  sh.body.innerHTML = '<div class="gcsub-muted">Subs on this job see these in their portal.</div>' + F.map(function(f){ return '<label class="gcsub-fld">' + f[1] + '<input class="gcsub-inp" data-k="' + f[0] + '" value="' + esc(sn[f[0]] || '') + '"></label>'; }).join('') + '<button type="button" class="gcsub-btn g" id="site-save">Save</button>';
+  sh.body.querySelector('#site-save').onclick = function(){
+    var v = {}; Array.prototype.forEach.call(sh.body.querySelectorAll('[data-k]'), function(i){ v[i.getAttribute('data-k')] = i.value; });
+    var o = {}; o[pid] = function(q){ q.siteNotes = v; };
+    saveProjects(o, { person: true }).then(function(){ toast('Site notes saved'); sh.close(); });
+  };
+  return sh;
+}
+/* the customer's welcome: link + "sign in at portal.grayco-cs.com · E-mail/Phone · Password: your first name" */
+function welcomeSheet(pid, back){
+  var p = proj(pid) || {};
+  var sh = sheet('gcsub-welcome', '📨 Welcome note — ' + (p.client || ''), back);
+  sh.body.innerHTML = '<div class="gcsub-muted">Loading…</div>';
+  api({ action: 's-login', projectId: pid, op: 'welcome', via: 'pm-phone' }).then(function(r){
+    if (!r.ok) { sh.body.innerHTML = '<div class="gcsub-note">' + esc(r.data.error || 'Could not load') + '</div>'; return; }
+    var d = r.data;
+    sh.body.innerHTML = '<div class="gcsub-note" id="wl-msg" style="white-space:pre-wrap">' + esc(d.message || '') + '</div>' +
+      '<div class="gcsub-cta">' + (d.sms ? '<a class="gcsub-btn g" id="wl-sms" href="' + esc(d.sms) + '">💬 Text from my phone</a>' : '') + '<button type="button" class="gcsub-btn" id="wl-copy">Copy</button>' +
+      (d.text && d.phone ? '<button type="button" class="gcsub-btn" id="wl-twilio">Send by text (GrayCo number)</button>' : '') + '<button type="button" class="gcsub-btn" id="wl-done">Mark sent by my phone</button></div>' +
+      (d.email ? '<div class="gcsub-muted">The e-mail version goes out from the job\'s Customer portal card (approved there).</div>' : '') + (!d.text ? '<div class="gcsub-muted">Texting from GrayCo\'s number starts once Twilio is set up — until then, text it from your phone.</div>' : '');
+    sh.body.querySelector('#wl-copy').onclick = function(){ copy(d.message || ''); };
+    var tw = sh.body.querySelector('#wl-twilio'); if (tw) tw.onclick = function(){ tw.disabled = true; api({ action: 's-login', projectId: pid, op: 'welcome' }).then(function(x){ toast(x.data.sent === 'text' ? 'Texted' : 'Not sent', x.data.sent !== 'text'); }); };
+    sh.body.querySelector('#wl-done').onclick = function(){ var o = {}; o[pid] = function(q){ q.portalWelcome = { via: 'pm-phone', at: nowIso(), by: me() }; q.portalSentAt = q.portalSentAt || nowIso(); q.portalSentVia = q.portalSentVia || 'pm-phone'; }; saveProjects(o, { person: true }).then(function(){ toast('Recorded: sent by your phone'); sh.close(); }); };
+  });
+  return sh;
+}
+
+/* ── desk: one row under the job header ── */
+function rowHtml(p){
+  var u = unreadOf(p.id), rows = Array.isArray(p.subs) ? p.subs : [];
+  var inv = 0; rows.forEach(function(r){ inv += invoicesWaiting(p.id, subFor(r)).length; });
+  var w = ST.waiting.filter(function(x){ return String(x.project_id) === String(p.id); }).length;
+  var noContact = !s(p.clientEmail || p.email) && !s(p.clientPhone || p.phone);
+  return '<button type="button" class="gcsub-open" data-act="open-hub">👷 Subs & portal messages' + (u.total ? ' <span class="gcsub-badge">' + u.total + '</span>' : '') + '</button>' +
+    '<span class="gcsub-muted">' + rows.length + ' sub' + (rows.length === 1 ? '' : 's') + (u.customer ? ' · ' + u.customer + ' from the customer' : '') + (inv ? ' · ' + inv + ' sub invoice' + (inv === 1 ? '' : 's') + ' waiting' : '') + (w ? ' · ' + w + ' scope' + (w === 1 ? '' : 's') + ' to approve' : '') + '</span>' +
+    (noContact ? '<span class="gcsub-warn">Add an e-mail or mobile number to give this customer a portal login</span>' : '');
+}
+function jobPageRoot(main, op){
+  var bs = main.getElementsByTagName('button');
+  for (var i = 0; i < bs.length && i < 80; i++) {
+    var b = bs[i];
+    if (!/^\s*←\s*All Projects\s*$/.test(b.textContent || '')) continue;
+    var nm = s(op.name), par = b.parentElement;
+    if (nm && (par.textContent || '').indexOf(nm) < 0) continue;
+    return { root: par, back: b };
+  }
+  return null;
+}
+function deskTick(){
+  if (document.hidden || fieldMode()) return;
+  var main = document.querySelector('main'); if (!main) return;
+  var op = window._gcOpenProject;
+  var hit = op && op.id && proj(op.id) ? jobPageRoot(main, proj(op.id)) : null;
+  var have = main.querySelector('.gcsub-row');
+  if (!hit) { if (have) have.remove(); return; }
+  if (have && have.getAttribute('data-pid') === String(op.id) && have.parentNode === hit.root) return;
+  if (have) have.remove();
+  var row = document.createElement('div'); row.className = 'gcsub-row'; row.setAttribute('data-pid', op.id);
+  row.innerHTML = rowHtml(proj(op.id));
+  row.addEventListener('click', function(e){ if (e.target.closest('[data-act=open-hub]')) hub(op.id); });
+  var after = hit.root.querySelector(':scope > .gcq-card') || hit.back.nextElementSibling || hit.back;
+  hit.root.insertBefore(row, after.nextSibling);
+}
+
+/* ── field: a "👷 Subs" tile on the job screen ── */
+function wrapDash(){
+  var f = window._gcJobDashboard;
+  if (typeof f !== 'function' || f.__gcSUB) return;
+  var w = function(jobId){
+    var r = f.apply(this, arguments);
+    try {
+      var ov = document.getElementById('_gcJobDash'), p = proj(jobId);
+      if (ov && p && !ov.querySelector('.gcsub-tile')) {
+        var grid = Array.prototype.find.call(ov.querySelectorAll('div'), function(d){ return /grid-template-columns/.test(d.getAttribute('style') || '') && d.querySelector('._jdAct'); });
+        if (grid) {
+          /* one slim full-width row under the job's tiles (the 8 tiles keep fitting above the bottom bar) */
+          var b = document.createElement('button'); b.type = 'button'; b.className = 'gcsub-tile'; b.setAttribute('data-fn', 'gcsub');
+          b.style.cssText = 'width:100%;box-sizing:border-box;margin-top:10px;display:flex;align-items:center;gap:10px;min-height:48px;background:#0f2440;border:1px solid ' + GOLD + ';border-radius:14px;padding:8px 14px;cursor:pointer;text-align:left;color:#fff;font-family:inherit;position:relative';
+          b.innerHTML = '<span style="font-size:20px">👷</span><span style="font-weight:700;font-size:14px;flex:1">Subs & messages</span><span class="gcsub-tb" data-gcsub-badge="' + esc(p.id) + '">' + badge(unreadOf(p.id).total) + '</span>';
+          b.onclick = function(e){ e.stopPropagation(); hub(p.id, function(){ if (!document.getElementById('_gcJobDash')) try { window._gcJobDashboard(p.id); } catch (er) {} }); };
+          grid.parentNode.insertBefore(b, grid.nextSibling);
+        }
+      }
+    } catch (e) {}
+    return r;
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcSUB = true; window._gcJobDashboard = w;
+}
+/* field job list: a small badge on jobs with unread portal messages */
+function paintPicker(){
+  var pk = document.getElementById('_gcJobPick'); if (!pk) return;
+  Object.keys(ST.unread).forEach(function(pid){
+    var n = ST.unread[pid].total; if (!n) return;
+    var p = proj(pid); if (!p) return;
+    var el = Array.prototype.find.call(pk.querySelectorAll('button,[data-pid],[data-id]'), function(x){ return (x.getAttribute('data-pid') === pid || x.getAttribute('data-id') === pid) || ((x.textContent || '').indexOf(p.name) > -1 && x.children.length < 12); });
+    if (el && !el.querySelector('.gcsub-badge')) { var sp = document.createElement('span'); sp.className = 'gcsub-badge'; sp.textContent = '💬 ' + n; sp.style.marginLeft = '6px'; el.appendChild(sp); }
+  });
+}
+
+/* ── 4b. pre-bid questions on the bid site (bids.grayco-cs.com) — stored where the bid site keeps them (sp_rows,
+   netlify/functions/subportal.js), answered here on desk or in the field: privately, or to all bidders (numbered
+   Q1, Q2…; e-mailed to every invited / bidding sub only after someone taps "Approve & e-mail all bidders") ── */
+var BQ = { list: [], jobs: {}, at: 0, err: '' };
+function bidApi(body){
+  return window.fetch('/.netlify/functions/subportal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok && !j.error, status: r.status, data: j }; }); }, function(){ return { ok: false, data: { error: 'offline' } }; });
+}
+var BQSEQ = 0, BQ_PAINT = null;
+function loadBidQ(){
+  if (!signedIn()) return Promise.resolve(BQ);
+  var seq = ++BQSEQ;
+  return bidApi({ action: 'load', keys: ['questions', 'jobs', 'planreqs'] }).then(function(r){
+    if (seq !== BQSEQ) return BQ;   /* an older answer that came back late never replaces a newer one */
+    if (!r.ok) { BQ.err = r.data.error || ''; return BQ; }
+    var d = r.data.data || {}; BQ.reqs = Array.isArray(d.planreqs) ? d.planreqs : []; BQ.list = Array.isArray(d.questions) ? d.questions : []; BQ.jobs = {}; (d.jobs || []).forEach(function(j){ if (j && j.id) BQ.jobs[j.id] = j; }); BQ.at = Date.now(); BQ.err = '';
+    try { var A = window._gcApprovals; if (A && typeof A.add === 'function') BQ.list.filter(function(q){ return q.noticeStatus === 'waiting'; }).forEach(function(q){ A.add({ id: 'bidq_' + q.id, kind: 'bid_answer', step: 'pm', status: 'waiting', title: 'E-mail Q' + (q.num || '') + ' answer to all bidders — ' + ((BQ.jobs[q.jobId] || {}).title || ''), open: bidQSheet }); }); } catch (e) {}
+    try { paintBidBtn(); } catch (e) { try { console.warn('[GC] bid questions button', e); } catch (_e) {} }
+    try { if (BQ_PAINT) BQ_PAINT(); } catch (e) {}   /* the open questions sheet always shows the newest list */
+    return BQ;
+  }).catch(function(e){ try { console.warn('[GC] bid questions', e); } catch (_e) {} return BQ; });
+}
+function bidOpen(){ return BQ.list.filter(function(q){ return !s(q.answer); }).length + BQ.list.filter(function(q){ return q.noticeStatus === 'waiting'; }).length; }
+function bidQSheet(back){
+  var sh = sheet('gcsub-bidq', '❓ Bid questions (bids.grayco-cs.com)', back);
+  var lastAt = -1;
+  BQ_PAINT = function(){ if (!sh.el.isConnected) { BQ_PAINT = null; return; } var ae = document.activeElement; if (ae && ae.matches && ae.matches('[data-bqa]') && sh.el.contains(ae)) return; paint(); };
+  /* the sheet follows the newest list by itself (never while someone is typing in it) */
+  var iv = setInterval(function(){
+    if (!sh.el.isConnected) { clearInterval(iv); return; }
+    var ae = document.activeElement; if (ae && ae.matches && ae.matches('[data-bqa]') && sh.el.contains(ae)) return;
+    if (BQ.at !== lastAt) paint();
+  }, 1000);
+  function paint(){ try { paint0(); } catch (e) { try { console.error('[GC] bid questions sheet', e); } catch (_e) {} } }
+  function paint0(){
+    lastAt = BQ.at;
+    /* a fresh list never wipes an answer someone is typing */
+    var typed = {}; Array.prototype.forEach.call(sh.body.querySelectorAll('[data-bq]'), function(c){ var ta = c.querySelector('[data-bqa]'); if (ta && ta.dataset.dirty) typed[c.getAttribute('data-bq')] = ta.value; });
+    var qs = BQ.list.slice().sort(function(a, b){ return (s(a.answer) ? 1 : 0) - (s(b.answer) ? 1 : 0) || String(b.at).localeCompare(String(a.at)); });
+    /* the CRM holds a panel someone just typed in (its "held your place" guard); this repaint is the result of the
+       PM's own tap (or nobody is typing — see below), so it goes through like his own save */
+    var mf = window.__GC_MANUAL_SAVE__; window.__GC_MANUAL_SAVE__ = true;
+    try { sh.body.innerHTML = (BQ.err ? '<div class="gcsub-note">' + esc(BQ.err) + '</div>' : '') + (qs.length ? qs.map(function(q){ var j = BQ.jobs[q.jobId] || {};
+      return '<section class="gcsub-card' + (!s(q.answer) || q.noticeStatus === 'waiting' ? ' gcsub-wait' : '') + '" data-bq="' + esc(q.id) + '"><div class="gcsub-row2"><b>' + esc(j.title || q.jobId) + (q.num ? ' · Q' + q.num : '') + '</b><span class="gcsub-muted">' + esc(q.userCompany || '') + ' · ' + esc(new Date(q.at).toLocaleDateString()) + ' · ' + (q.visibility === 'public' ? 'to all bidders' : 'private') + (j.questionsDue ? ' · questions due ' + esc(j.questionsDue) : '') + '</span></div>' +
+        '<div>' + esc(q.body).replace(/\n/g, '<br>') + '</div>' + (q.attachments || []).filter(function(a){ return a.dataUrl; }).map(function(a){ return '<a class="gcsub-file" target="_blank" rel="noopener" href="' + esc(a.dataUrl) + '">📎 ' + esc(a.name) + '</a>'; }).join(' ') +
+        '<textarea class="gcsub-inp" rows="2" data-bqa placeholder="Answer">' + esc(q.answer || '') + '</textarea>' +
+        '<div class="gcsub-cta"><button type="button" class="gcsub-btn" data-bqv="private">Answer privately</button><button type="button" class="gcsub-btn g" data-bqv="public">Answer to all bidders</button>' +
+        (q.noticeStatus === 'waiting' ? '<button type="button" class="gcsub-btn g" data-bqv="approve">✅ Approve & e-mail all bidders</button>' : '') + (q.noticeStatus === 'sent' ? '<span class="gcsub-muted">E-mailed to all bidders</span>' : '') + '</div></section>'; }).join('') : '<div class="gcsub-muted">No questions from bidders.</div>'); } finally { window.__GC_MANUAL_SAVE__ = mf; }
+    Object.keys(typed).forEach(function(id){ var c = sh.body.querySelector('[data-bq="' + id.replace(/"/g, '') + '"] [data-bqa]'); if (c) { c.value = typed[id]; c.dataset.dirty = '1'; } });
+  }
+  paint();
+  loadBidQ().then(paint);
+  sh.body.addEventListener('input', function(e){ if (e.target && e.target.matches && e.target.matches('[data-bqa]')) e.target.dataset.dirty = '1'; });
+  sh.body.addEventListener('click', function(e){
+    var b = e.target.closest('[data-bqv]'); if (!b) return;
+    var card = b.closest('[data-bq]'), q = BQ.list.find(function(x){ return x.id === card.getAttribute('data-bq'); }); if (!q) return;
+    var v = b.getAttribute('data-bqv'), a = card.querySelector('[data-bqa]').value.trim();
+    var rec = Object.assign({}, q);
+    if (v === 'approve') rec.noticeStatus = 'approve';
+    else { if (!a) { toast('Type the answer first', true); return; } rec.answer = a; rec.visibility = v; }
+    b.disabled = true;
+    bidApi({ action: 'save', key: 'questions', upsert: [rec] }).then(function(r){
+      b.disabled = false;
+      if (!r.ok) { toast(r.data.error || 'Not saved', true); return; }
+      try { var ta = card.querySelector('[data-bqa]'); if (ta) delete ta.dataset.dirty; } catch (e) {}
+      toast(v === 'approve' ? 'E-mailed to every bidder on the job' : v === 'public' ? 'Answered to all bidders — tap Approve to e-mail them' : 'Answered privately');
+      loadBidQ().then(paint);
+    });
+  });
+  return sh;
+}
+function plansReqByJob(){ var out = {}; (BQ.reqs || []).forEach(function(q){ if (!q || !q.jobId) return; var o = out[q.jobId] || (out[q.jobId] = { n: 0, waiting: 0 }); o.n++; if (!q.notifiedAt) o.waiting++; }); return out; }
+/* upload plans for a bid job from the CRM: each file goes straight to the bid site's bucket (a signed upload),
+   then the server lists it on the job (a ZIP is unpacked there) and e-mails whoever asked */
+function pickPlans(jobId){
+  var inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = '.zip,.pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.heic,.dwg,.dxf'; inp.style.display = 'none'; inp.id = 'gcsub-plans-file';
+  inp.onchange = function(){ var fs = Array.prototype.slice.call(inp.files || []); inp.remove(); uploadPlans(jobId, fs); };
+  document.body.appendChild(inp); inp.click();
+}
+async function uploadPlans(jobId, files){
+  var added = 0, told = 0, left = [];
+  toast('Uploading plans…');
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (!/\.(zip|pdf|png|jpe?g|webp|gif|tiff?|heic|dwg|dxf)$/i.test(f.name)) { left.push(f.name); continue; }
+    if (f.size > 50 * 1024 * 1024) { left.push(f.name + ' (over 50 MB)'); continue; }
+    var up = await bidApi({ action: 'upload', name: f.name, type: f.type || 'application/octet-stream', size: f.size });
+    if (!up.ok || !up.data.url) { toast((up.data && up.data.error) || 'Upload failed', true); return; }
+    var k = ''; try { k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+    var put = await window.fetch(up.data.url, { method: 'PUT', headers: Object.assign({ 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false' }, k ? { apikey: k } : {}), body: f }).catch(function(){ return null; });
+    if (!put || !put.ok) { toast('Could not upload ' + f.name, true); return; }
+    var r = await bidApi({ action: 'plans-import', jobId: jobId, fileRef: up.data.path, name: f.name, size: f.size });
+    if (!r.ok) { toast(r.data.error || 'Not added', true); return; }
+    added += (r.data.added || []).length; told += r.data.notified || 0; (r.data.skipped || []).forEach(function(x){ left.push(x.name); });
+  }
+  toast(added + ' plan file' + (added === 1 ? '' : 's') + ' added' + (told ? ' · ' + told + ' sub' + (told === 1 ? '' : 's') + ' e-mailed' : '') + (left.length ? ' · left out: ' + left.slice(0, 3).join(', ') : ''), !added);
+  loadBidQ();
+}
+/* the Lead Inbox (patch LD2): each lead with a bid-site job shows who asked for the plans + Upload plans (ZIP/PDF) */
+function decorateLeads(){
+  var root = document.getElementById('gc-ldi'); if (!root || !ST.admin) return;
+  var preq = plansReqByJob(), leads = crm().leads || [];
+  Array.prototype.forEach.call(root.querySelectorAll('.card[data-id]'), function(card){
+    var l = leads.find(function(x){ return x && String(x.id) === card.getAttribute('data-id'); }); var jid = l && l.bidPortalJob; if (!jid) return;
+    var r = preq[jid] || { n: 0, waiting: 0 }, key = jid + ':' + r.n + ':' + r.waiting;
+    var have = card.querySelector('.gcsub-leadplans'); if (have && have.getAttribute('data-k') === key) return;
+    if (have) have.remove();
+    var el = document.createElement('div'); el.className = 'gcsub-leadplans'; el.setAttribute('data-k', key); el.setAttribute('data-gc-keep', '');
+    el.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0';
+    el.innerHTML = (r.n ? '<b style="color:#D4A017">📄 Plans requested by ' + r.n + ' sub' + (r.n === 1 ? '' : 's') + '</b>' : '') + '<button type="button" class="gcsub-btn g" data-pu="' + esc(jid) + '">⬆ Upload plans (ZIP/PDF)</button>';
+    el.querySelector('[data-pu]').onclick = function(e){ e.stopPropagation(); pickPlans(jid); };
+    var acts = card.querySelector('.acts'); if (acts) card.insertBefore(el, acts); else card.appendChild(el);
+  });
+}
+nSI(decorateLeads, 2000);
+function paintBidBtn(){
+  var n = bidOpen();
+  var pk = document.getElementById('_gcJobPick');
+  var btn = document.getElementById('gcsub-bidq-btn');
+  if (pk && n) {
+    if (!btn) { btn = document.createElement('button'); btn.type = 'button'; btn.id = 'gcsub-bidq-btn'; btn.className = 'gcsub-btn g'; btn.setAttribute('data-gc-keep', '');
+      btn.style.cssText = 'position:fixed;left:12px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:99990;box-shadow:0 4px 14px rgba(0,0,0,.3)';
+      btn.onclick = function(){ bidQSheet(); }; document.body.appendChild(btn); }
+    btn.innerHTML = '❓ Bid questions <span class="gcsub-badge">' + n + '</span>';
+  } else if (btn) btn.remove();
+}
+
+/* ── 4. Subs tab: the sub portal panel ── */
+function subStats(sb){
+  var jobs = projects().filter(function(p){ return (p.subs || []).some(function(r){ return subFor(r) && subFor(r).id === sb.id; }); });
+  var un = 0, inv = 0, files = 0;
+  jobs.forEach(function(p){ un += unreadOf(p.id).subs[sb.id] || 0; inv += invoicesWaiting(p.id, sb).length; files += filesOf(p.id, sb).length; });
+  return { jobs: jobs, unread: un, inv: inv, files: files };
+}
+function panelHtml(){
+  var all = subsList(), h = '<div class="gcsub-ph"><b>Sub portal</b> <span class="gcsub-muted">portal.grayco-cs.com · each sub sees only their jobs, scopes (no GrayCo prices), messages and pay</span></div>';
+  if (ST.admin) {
+    var toSend = all.filter(function(r){ return !ST.links[r.id] && (r.email || digits(r.phone)); });
+    if (toSend.length) h += '<div class="gcsub-card gcsub-wait" data-sec="tosend"><b>📨 Portal links to send (' + toSend.length + ')</b> <span class="gcsub-muted">one tap each — your tap is the approval</span>' + toSend.slice(0, 30).map(function(r){ return '<div class="gcsub-row2"><span>' + esc(r.name) + ' <span class="gcsub-muted">' + esc(r.email || r.phone) + '</span></span><button type="button" class="gcsub-btn g" data-p="send-link" data-id="' + esc(r.id) + '">Approve & send portal link</button></div>'; }).join('') + '</div>';
+    if (ST.bids.length) h += '<div class="gcsub-card gcsub-wait" data-sec="bids"><b>🔨 Bid site requests (' + ST.bids.length + ')</b>' + ST.bids.map(function(b){ return '<div class="gcsub-row2"><span>' + esc(b.company) + ' <span class="gcsub-muted">' + esc(b.email) + '</span></span><button type="button" class="gcsub-btn g" data-p="bids-ok" data-id="' + esc(b.id) + '">Approve for bids.grayco-cs.com</button><button type="button" class="gcsub-btn r" data-p="bids-no" data-id="' + esc(b.id) + '">Deny</button></div>'; }).join('') + '</div>';
+  }
+  /* plans requested on the bid site (owner request 21 Oct 2026): who asked, and one tap to upload a ZIP / PDF */
+  var preq = plansReqByJob();
+  if (Object.keys(preq).length) h += '<div class="gcsub-card gcsub-wait" data-sec="plansreq"><b>📄 Plans requested</b>' + Object.keys(preq).map(function(jid){ var r = preq[jid], j = BQ.jobs[jid] || {};
+    return '<div class="gcsub-row2" data-plansjob="' + esc(jid) + '"><span>' + esc(j.title || jid) + ' <span class="gcsub-muted">Plans requested by ' + r.n + ' sub' + (r.n === 1 ? '' : 's') + (r.waiting ? '' : ' · all told') + '</span></span><button type="button" class="gcsub-btn g" data-p="plans-up" data-id="' + esc(jid) + '">⬆ Upload plans (ZIP/PDF)</button></div>'; }).join('') + '</div>';
+  h += '<div class="gcsub-card' + (bidOpen() ? ' gcsub-wait' : '') + '" data-sec="bidq"><div class="gcsub-row2"><b>❓ Bid questions' + (bidOpen() ? ' <span class="gcsub-badge">' + bidOpen() + '</span>' : '') + '</b><button type="button" class="gcsub-btn" data-p="bidq">Open the questions from bidders</button></div></div>';
+  if (ST.codes.length) h += '<div class="gcsub-card gcsub-wait" data-sec="codes"><b>🔑 Sign-in codes to text (no texting service yet)</b>' + ST.codes.map(function(c){ return '<div class="gcsub-row2"><span>' + esc(c.who || c.phone) + ' · ' + esc(c.phone) + '</span><a class="gcsub-btn g" href="' + esc(c.sms) + '">💬 Text from my phone</a></div>'; }).join('') + '</div>';
+  h += all.map(function(r){ var st = subStats(r), lk = ST.links[r.id];
+    return '<div class="gcsub-card" data-sub="' + esc(r.id) + '"><div class="gcsub-row2"><b>' + esc(r.name) + '</b><span class="gcsub-muted">' + esc(r.trade || '') + ' · ' + st.jobs.length + ' job' + (st.jobs.length === 1 ? '' : 's') + ' · link: ' + (lk ? 'on' + (lk.viewed ? ', opened ' + ago(lk.viewed) : '') : 'none') + ' · ' + st.inv + ' invoice' + (st.inv === 1 ? '' : 's') + ' waiting · ' + st.files + ' upload' + (st.files === 1 ? '' : 's') + '</span></div>' +
+      contactBtns(r.name, r.phone, r.email, '<button type="button" class="gcsub-btn g" data-p="msgs" data-id="' + esc(r.id) + '">💬 Messages' + (st.unread ? ' <span class="gcsub-badge">' + st.unread + '</span>' : '') + '</button><button type="button" class="gcsub-btn" data-p="link" data-id="' + esc(r.id) + '">🔗 Portal link</button>') + '</div>'; }).join('');
+  return h;
+}
+function openSubsPanel(){ try { if (window._setView) window._setView('subs'); } catch (e) {} }
+function subsTick(){
+  if (document.hidden || fieldMode()) return;
+  var view = ''; try { view = localStorage.getItem('grayco_view') || ''; } catch (e) {}
+  var main = document.querySelector('main'); if (!main) return;
+  var have = main.querySelector('.gcsub-panel');
+  if (view !== 'subs') { if (have) have.remove(); return; }
+  var host = main.firstElementChild; if (!host) return;
+  if (have && have.__at === ST.at + ':' + BQ.at && main.contains(have)) return;   /* repaint when the sub list or the bid questions change */
+  if (have && have.contains(document.activeElement)) return;
+  var el = have || document.createElement('div');
+  el.className = 'gcsub-panel'; el.innerHTML = panelHtml(); el.__at = ST.at + ':' + BQ.at;
+  if (!have) {
+    el.addEventListener('click', function(e){
+      var b = e.target.closest('[data-p]'); if (!b) return;
+      var id = b.getAttribute('data-id'), sb = subsList().find(function(r){ return r.id === id; }), act = b.getAttribute('data-p');
+      if (act === 'bidq') return bidQSheet();
+      if (act === 'plans-up') return pickPlans(b.getAttribute('data-id'));
+      if (act === 'link') return linkSheet(sb);
+      if (act === 'msgs') {
+        var st = subStats(sb);
+        if (st.jobs.length === 1) return thread(st.jobs[0].id, 's:' + sb.id, sb.name + ' — ' + st.jobs[0].name);
+        var sh = sheet('gcsub-pick', '💬 ' + sb.name + ' — pick a job');
+        sh.body.innerHTML = st.jobs.length ? st.jobs.map(function(p){ var n = unreadOf(p.id).subs[sb.id] || 0; return '<button type="button" class="gcsub-filerow" data-j="' + esc(p.id) + '">' + esc(p.name) + (n ? ' <span class="gcsub-badge">' + n + '</span>' : '') + '</button>'; }).join('') : '<div class="gcsub-muted">' + esc(sb.name) + ' is not on a job yet. Add them from a job\'s 👷 Subs & portal.</div>';
+        sh.body.addEventListener('click', function(ev){ var j = ev.target.closest('[data-j]'); if (j) thread(j.getAttribute('data-j'), 's:' + sb.id, sb.name + ' — ' + (proj(j.getAttribute('data-j')) || {}).name, function(){}); });
+        return;
+      }
+      b.disabled = true;
+      if (act === 'send-link') return (sb && sb.email ? api({ action: 's-link-send', subId: id }) : api({ action: 's-link', subId: id, op: 'create' })).then(function(r){
+        b.disabled = false;
+        if (!r.ok) { toast(r.data.error || 'Not sent', true); return; }
+        if (r.data.sent) toast('Portal link e-mailed to ' + sb.email);
+        else linkSheet(sb);
+        sync().then(function(){ el.__at = 0; subsTick(); });
+      });
+      if (act === 'bids-ok' || act === 'bids-no') return api({ action: 's-bids-approve', id: id, approve: act === 'bids-ok' }).then(function(r){ b.disabled = false; toast(r.ok ? (act === 'bids-ok' ? 'Approved — they got the e-mail' : 'Denied') : (r.data.error || 'Not saved'), !r.ok); sync().then(function(){ el.__at = 0; subsTick(); }); });
+    });
+    host.parentNode.insertBefore(el, host);
+  }
+}
+
+/* ── styles ── */
+(function css(){
+  var st = document.createElement('style'); st.setAttribute('data-gcsub', '');
+  st.textContent = [
+    '.gcsub-sheet{position:fixed;inset:0;z-index:100019;background:#F6F3EC;display:flex;flex-direction:column;font-family:Inter,-apple-system,sans-serif;color:#14202E}',
+    '.gcsub-head{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:' + NAVY + ';color:#fff}',
+    '.gcsub-title{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px}',
+    '.gcsub-back{min-height:44px;min-width:44px;border:1px solid #22344D;background:transparent;color:#fff;border-radius:22px;padding:0 14px;font:700 15px inherit;font-family:inherit;cursor:pointer}',
+    '.gcsub-x{min-width:44px;min-height:44px;border:0;border-radius:22px;background:#1A3A5F;color:#fff;font-size:16px;cursor:pointer}',
+    '.gcsub-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 14px calc(90px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px;max-width:980px;width:100%;margin:0 auto;box-sizing:border-box}',
+    '.gcsub-card{background:#fff;border:1px solid #E2DCCD;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}',
+    '.gcsub-wait{border-left:4px solid ' + GOLD + '}',
+    '.gcsub-row2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between}',
+    '.gcsub-stats{display:flex;gap:6px;flex-wrap:wrap}.gcsub-stats span{background:#F6F3EC;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:600}',
+    '.gcsub-cta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}',
+    '.gcsub-btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 14px;border-radius:10px;border:1px solid #1A3A5F;background:#fff;color:#1A3A5F;font:600 14px Inter,-apple-system,sans-serif;text-decoration:none;cursor:pointer;box-sizing:border-box}',
+    '.gcsub-btn.g{background:' + GOLD + ';border-color:' + GOLD + ';color:' + NAVY + ';font-weight:800}.gcsub-btn.r{border-color:#B42318;color:#B42318}.gcsub-btn.off{opacity:.5;cursor:default}.gcsub-btn[disabled]{opacity:.6}',
+    '.gcsub-badge{display:inline-block;min-width:20px;height:20px;line-height:20px;border-radius:10px;background:#B42318;color:#fff;font:700 11px Inter,sans-serif;padding:0 6px;text-align:center}',
+    '.gcsub-muted{color:#55626F;font-size:13px}.gcsub-note{background:#FCF0CF;border-radius:10px;padding:10px;font-size:14px}.gcsub-warn{color:#8a1c1c;font-size:13px;font-weight:700}',
+    '.gcsub-h{font-weight:800;font-size:13px;color:#8A5A00;text-transform:uppercase;letter-spacing:.04em;margin-top:6px}',
+    '.gcsub-inp{width:100%;min-height:44px;border:1px solid #E2DCCD;border-radius:10px;padding:8px 10px;font:15px Inter,-apple-system,sans-serif;box-sizing:border-box;background:#fff;color:#14202E}.gcsub-inp.big{font-size:20px;font-weight:800}',
+    '.gcsub-fld{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700}',
+    '.gcsub-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}',
+    '.gcsub-line{display:grid;grid-template-columns:1fr 2fr 1.2fr .6fr .6fr 44px;gap:6px;margin-bottom:6px}',
+    '.gcsub-x2{min-width:44px;min-height:44px;border:1px solid #E2DCCD;background:#fff;border-radius:10px;cursor:pointer}',
+    '@media (max-width:720px){.gcsub-line{grid-template-columns:1fr 1fr;padding:8px;border:1px solid #EFEAE0;border-radius:10px}.gcsub-line .w{grid-column:1/-1}.gcsub-two{grid-template-columns:1fr}}',
+    '.gcsub-chk{display:flex;gap:8px;align-items:center;font-size:13px;min-height:44px}',
+    '.gcsub-msgs{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow-y:auto;background:#fff;border:1px solid #E2DCCD;border-radius:12px;padding:10px}',
+    '.gcsub-m{max-width:85%;border-radius:12px;padding:8px 10px;font-size:14px;display:flex;flex-direction:column;gap:3px}.gcsub-m.me{align-self:flex-end;background:#FCF0CF}.gcsub-m.them{align-self:flex-start;background:#EEF2F6}',
+    '.gcsub-rr{font-size:11px;color:#55626F;text-align:right}.gcsub-file{font-size:13px}',
+    '.gcsub-filerow{display:flex;gap:8px;align-items:center;min-height:52px;width:100%;text-align:left;border:1px solid #E2DCCD;background:#fff;border-radius:10px;padding:8px 12px;font:14px Inter,sans-serif;cursor:pointer}',
+    '.gcsub-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;color:#14202E;border:1px solid #E2DCCD;border-left:4px solid #1A3A5F;border-radius:12px;padding:8px 10px;margin:10px 0;font-family:Inter,-apple-system,sans-serif}',
+    '.gcsub-open{min-height:40px;border-radius:10px;border:0;background:' + NAVY + ';color:#fff;font:700 14px Inter,sans-serif;padding:0 14px;cursor:pointer}',
+    '.gcsub-panel{display:flex;flex-direction:column;gap:10px;margin:0 0 16px;font-family:Inter,-apple-system,sans-serif;color:#14202E}',
+    '.gcsub-ph{font-size:16px}'
+  ].join('\n');
+  (document.head || document.documentElement).appendChild(st);
+})();
+
+/* ── start ── */
+wrapDash(); nST(wrapDash, 3000); nST(wrapDash, 15000);
+nSI(deskTick, 1500);
+nSI(function(){ subsTick(); paintPicker(); }, 2000);
+nST(function(){ sync(); }, 22000);
+nSI(function(){ if (!document.hidden) sync(); }, 60000);
+nST(function(){ loadBidQ(); }, 26000);
+nSI(function(){ if (!document.hidden) loadBidQ().then(function(){ var el = document.querySelector('main .gcsub-panel'); if (el) el.__at = 0; }); }, 120000);
+nSI(paintBidBtn, 3000);
+document.addEventListener('visibilitychange', function(){ if (!document.hidden && Date.now() - ST.at > 20000) sync(); });
+
+window._gcSubHub = { open: hub, sync: sync, thread: thread, state: function(){ return ST; }, file: fileEvents, scope: scopeEditor, link: linkSheet, bidQuestions: bidQSheet, loadBidQ: loadBidQ, bidState: function(){ return BQ; }, };
+try { console.log('[GC] Sub portal (CRM side) ready — patch SUB'); } catch (e) {}
 })();
 
 </script><!-- /INSP -->

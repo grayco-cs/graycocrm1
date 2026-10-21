@@ -213,6 +213,23 @@ async function tokenRow(token){
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   return row;
 }
+/* patch SUB: a customer signed in at portal.grayco-cs.com (e-mail + password) has a session instead of the link
+   code — the same check as portal.js sessionRow(): a live customer session (gc_portal_session, sha-256 of the
+   code) whose links include an active link for this job. Turning the link off ends it here too. */
+async function sessionLinkRow(sessTok, pid){
+  if (!/^[A-Za-z0-9_-]{30,80}$/.test(sessTok)) return null;
+  const id = crypto.createHash('sha256').update(sessTok).digest('hex');
+  const r = await fetch(sbUrl() + '/rest/v1/gc_portal_session?select=kind,links,expires_at,revoked&id=eq.' + id, { headers: H() });
+  if (!r.ok) return null;
+  const ses = ((await r.json()) || [])[0];
+  if (!ses || ses.kind !== 'customer' || ses.revoked === true || Date.parse(ses.expires_at) < Date.now()) return null;
+  const links = (Array.isArray(ses.links) ? ses.links : []).map(String).filter(function(x){ return TOKEN_RE.test(x); });
+  if (!links.length) return null;
+  const q = await fetch(sbUrl() + '/rest/v1/gc_portal?select=token,project_id,revoked&revoked=eq.false&token=in.(' + links.map(function(x){ return '"' + x + '"'; }).join(',') + ')', { headers: H() });
+  if (!q.ok) return null;
+  const live = (await q.json()) || [];
+  return live.find(function(x){ return String(x.project_id) === String(pid); }) || (!pid && live.length === 1 ? live[0] : null);
+}
 const hits = new Map(), writes = new Map();
 const LIMIT = { req: 60, bad: 8, windowMs: 10 * 60e3, writes: 25 };
 function ipOf(event){ return s(gcHeader(event, 'x-nf-client-connection-ip') || gcHeader(event, 'x-forwarded-for').split(',')[0] || gcHeader(event, 'client-ip') || 'unknown'); }
@@ -494,7 +511,7 @@ async function notActive(headers, t0){ const wait = MIN_FAIL_MS + Math.floor(Mat
 exports.handler = async function(event){
   event = event || {};
   const t0 = Date.now();
-  const headers = Object.assign(gcCors(event, 'POST, OPTIONS', 'x-portal-token'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
+  const headers = Object.assign(gcCors(event, 'POST, OPTIONS', 'x-portal-token, x-portal-session'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
   if (event.httpMethod !== 'POST') return reply(405, headers, { ok: false, error: 'Method not allowed' });
   if (String(event.body || '').length > 200000) return reply(413, headers, { ok: false, error: 'Too big' });
@@ -516,16 +533,17 @@ exports.handler = async function(event){
   if (['view', 'pick', 'sign'].indexOf(action) < 0) return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
-  const token = s(gcHeader(event, 'x-portal-token'));
-  if (!TOKEN_RE.test(token) || !svcKey()) { noteBad(ip); return notActive(headers, t0); }
-  let row = null; try { row = await tokenRow(token); } catch (e) {}
+  const token = s(gcHeader(event, 'x-portal-token')), sess = s(gcHeader(event, 'x-portal-session'));
+  if ((!TOKEN_RE.test(token) && !sess) || !svcKey()) { noteBad(ip); return notActive(headers, t0); }
+  let row = null;
+  try { row = TOKEN_RE.test(token) ? await tokenRow(token) : await sessionLinkRow(sess, s(body.projectId)); } catch (e) {}
   if (!row || row.revoked === true) { noteBad(ip); return notActive(headers, t0); }
   let J = null;
   try { J = await loadJob(s(row.project_id)); } catch (e) { return reply(503, headers, { ok: false, error: 'We could not load your selections just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   if (!J) return notActive(headers, t0);
   if (action === 'view') return reply(200, headers, await view(J));
   if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can pick or sign.' });
-  if (tooManyWrites(token)) return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' });
+  if (tooManyWrites(row.token)) return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' });
   try { const r = await record(event, row, body, J, action); return reply(r.status, headers, r.out); }
   catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };

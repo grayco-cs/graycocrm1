@@ -29,7 +29,9 @@
   # PORTAL_BASE_URL (https://crm.grayco-cs.com) are public too: the scanner
   # failed 33.149 on the CRM address in solar-lookup.js, staff-admin.js and
   # roofscout/PROJECT-BRIEF.md, and on the contact e-mail in roofscout-scan.js.
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL"
+  # 33.151: BIDS_URL (https://bids.grayco-cs.com) and SUBPORTAL_NOTIFY (an e-mail) are public too; they are defaults in subportal.js /
+  # portal-access.js. (TWILIO_* and every key stay scanned: none of them is in any file.)
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL,BIDS_URL,SUBPORTAL_NOTIFY"
 
 [functions]
   node_bundler = "esbuild"
@@ -118,7 +120,7 @@
   force = true
 
 # Customer portal's own address: portal.grayco-cs.com opens the portal page, never the CRM.
-# Customer links look like https://portal.grayco-cs.com/portal.html#t=... (PORTAL_BASE_URL).
+# Customer links look like https://portal.grayco-cs.com/#t=... (33.151; .../portal.html#t=... works too) (PORTAL_BASE_URL).
 [[redirects]]
   from = "https://portal.grayco-cs.com/"
   to = "/portal.html"
@@ -128,6 +130,50 @@
 [[redirects]]
   from = "https://portal.grayco-cs.com/index.html"
   to = "/portal.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/subportal-app/*"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+# ── 33.151: the portals ──────────────────────────────────────────────────────────────────────────────
+# portal.grayco-cs.com — "GrayCo Portal", ONE address for customers and subs (docs/SUB-PORTAL.md). It shows
+# only the portal page (portal.html: sign-in, the customer portal, and the sub portal portal-app.js) and never the
+# CRM: every other path on that host answers with the portal page. A link is portal.grayco-cs.com/#t=<code>; the
+# server says which portal the code opens. Old customer links (crm.grayco-cs.com/portal.html#t=…) keep working.
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-app.js"
+  to = "/portal-app.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-logo.png"
+  to = "/portal-logo.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/*"
+  to = "/portal.html"
+  status = 200
+  force = true
+
+# bids.grayco-cs.com — the GrayCo bid site (built from subportal-app/ into subportal/, build 33.147): jobs to bid,
+# plans, takeoff, bids. Subs sign in with their bid-site account once Wesley or Nick approved them. Inside the CRM
+# the same site is the 🔨 Sub Portal tab (crm.grayco-cs.com/subportal/).
+[[redirects]]
+  from = "https://bids.grayco-cs.com/subportal/*"
+  to = "https://bids.grayco-cs.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://bids.grayco-cs.com/*"
+  to = "/subportal/:splat"
   status = 200
   force = true
 

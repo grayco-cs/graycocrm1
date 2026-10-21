@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0F1D2F">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; frame-src https://docs.google.com https://drive.google.com blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
-<title>Your GrayCo project</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data: blob:; frame-src https: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>GrayCo Portal</title>
 <style>
 :root{--navy:#0F1D2F;--navy2:#1A3A5F;--line:#22344D;--gold:#D4A017;--goldDk:#8A5A00;--goldBg:#FCF0CF;--bg:#F6F3EC;--ink:#14202E;--mute:#55626F;--soft:#C9D3DF;--card:#FFFFFF;--rule:#EFEAE0;--edge:#E2DCCD;--green:#1D5E2C;--greenBg:#E3F1E6}
 *{box-sizing:border-box}
@@ -17,23 +17,29 @@ a{color:var(--navy2)}
 .wrap{max-width:560px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg)}
 header{background:var(--navy);color:#fff;padding:calc(14px + env(safe-area-inset-top,0px)) 20px 16px;display:flex;flex-direction:column;align-items:center;gap:10px;position:relative}
 header .logo{width:190px;max-width:52vw;height:auto;display:block}
-.call{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:16px;width:44px;height:44px;border-radius:22px;background:var(--navy2);display:flex;align-items:center;justify-content:center;color:#fff;text-decoration:none}
+.hbtns{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:12px;display:flex;gap:8px;align-items:center}
+.hbtns.l{right:auto;left:12px}
+@media (max-width:999px){header{padding-top:calc(64px + env(safe-area-inset-top,0px))}.out{min-height:40px;padding:0 10px}}
+.call{width:44px;height:44px;border-radius:22px;background:var(--navy2);display:flex;align-items:center;justify-content:center;color:#fff;text-decoration:none}
+.lang{min-height:44px;min-width:44px;padding:0 10px;border-radius:22px;border:1px solid var(--line);background:transparent;color:#fff;font:600 13px inherit;font-family:inherit;cursor:pointer}
+.lang b{color:var(--gold)}
+.out{min-height:44px;padding:0 12px;border-radius:22px;border:1px solid var(--line);background:transparent;color:var(--soft);font-family:inherit;font-size:13px;cursor:pointer}
 .hello{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;border-top:1px solid var(--line);padding-top:10px;width:100%}
 .hello .sm{font-size:13px;color:var(--soft)}
 .hello .big{font-size:24px;font-weight:700;line-height:1.15;letter-spacing:-.01em;overflow-wrap:anywhere}
-main{flex:1 1 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+main{flex:1 1 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px;min-width:0}
+footer.lic{text-align:center;font-size:12px;color:var(--mute);padding:6px 16px calc(84px + env(safe-area-inset-bottom,0px));line-height:1.6}
 .card{background:var(--card);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 2px rgba(15,29,47,.08);min-width:0}
 .card h2{margin:0;font-size:16px;font-weight:700}
 .card h3{margin:4px 0 0;font-size:14px;font-weight:700}
-.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .muted{color:var(--mute);font-size:13px;line-height:1.45}
+.big{font-size:17px;font-weight:700}
+.grow{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
 .pill{font-size:12px;font-weight:600;padding:4px 8px;border-radius:999px;white-space:nowrap}
 .pill.now{color:var(--goldDk);background:var(--goldBg)}
 .pill.ok{color:var(--green);background:var(--greenBg)}
 .pill.due{color:#8a1c1c;background:#fbe3e3}
-.inv{padding:10px 0;border-bottom:1px solid var(--rule)}.inv:last-child{border-bottom:none}
-.inv .act{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.inv .act .btn,.inv .act a{min-height:40px;font-size:14px;padding:0 12px}
-.inv iframe.pdf{width:100%;height:70vh;max-height:640px;border:1px solid var(--rule);border-radius:10px;margin-top:8px;background:#fff}
 ol.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
 ol.steps li{display:flex;align-items:center;gap:10px;font-size:14px}
 .dot{width:14px;height:14px;border-radius:7px;flex:0 0 14px;border:2px solid #B8B1A2;background:#fff}
@@ -42,52 +48,105 @@ li.done{color:#2F3B47}
 li.now .dot{background:var(--gold);border-color:var(--goldDk)}
 li.now{font-weight:700}
 li.todo{color:#6B7682}
-.btn{min-height:44px;border-radius:10px;border:1px solid var(--navy2);background:#fff;color:var(--navy2);font-weight:600;font-size:15px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:0 14px;cursor:pointer}
+.btn{min-height:44px;border-radius:10px;border:1px solid var(--navy2);background:#fff;color:var(--navy2);font-weight:600;font-size:15px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;padding:0 14px;cursor:pointer;text-align:center}
 .btn.gold{background:var(--gold);border-color:var(--gold);color:var(--navy);font-weight:700}
 .btn.navy{background:var(--navy);border-color:var(--navy);color:#fff}
+.btn[disabled]{opacity:.6;cursor:default}
 .btns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.btns3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.btns3 .btn{font-size:14px;padding:0 6px}
 .pm{display:flex;align-items:center;gap:12px}
 .av{width:48px;height:48px;border-radius:24px;background:var(--navy2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 48px}
-.cc{background:var(--navy);color:#fff;border-radius:14px;padding:16px;display:flex;align-items:center;gap:12px;text-decoration:none;border:0;font:inherit;text-align:left;width:100%;cursor:pointer}
-.cc .t{font-size:15px;font-weight:700}.cc .s{font-size:12px;color:var(--soft)}
+.sel{user-select:text;-webkit-user-select:text;font-size:14px;overflow-wrap:anywhere}
 .post{border-top:1px solid var(--rule);padding-top:12px;display:flex;flex-direction:column;gap:8px}
 .post:first-of-type{border-top:0;padding-top:0}
-.post p{margin:0;font-size:15px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+.post p,p.pre{margin:0;font-size:15px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
 .pics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .pics button{padding:0;border:0;background:#E9E4D8;border-radius:8px;overflow:hidden;aspect-ratio:1/1;cursor:pointer;display:block;width:100%}
 .pics img{width:100%;height:100%;object-fit:cover;display:block}
 .doc{min-height:52px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--rule);padding-top:10px}
 .doc:first-of-type{border-top:0;padding-top:0}
 .doc .n{font-size:14px;font-weight:600;overflow-wrap:anywhere}
-.doc .grow{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
 .doc .act{display:flex;gap:6px;flex:0 0 auto}
-.doc .act .btn{min-height:40px;font-size:14px;padding:0 12px}
+.doc .act .btn{min-height:44px;font-size:14px;padding:0 12px}
 iframe.prev{width:100%;height:420px;border:1px solid var(--edge);border-radius:10px;background:#fff}
-.money{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.money div{background:var(--bg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px;min-width:0}
-.money b{font-size:18px}
+.money,.money3{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.money3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.money div,.money3 div{background:var(--bg);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.money b,.money3 b{font-size:17px;overflow-wrap:anywhere}
 .line{display:flex;justify-content:space-between;gap:10px;font-size:14px;border-top:1px solid var(--rule);padding-top:10px}
-.line > span:last-child{font-weight:600;white-space:nowrap}
+.line > span:last-child{font-weight:600;text-align:right}
 .how{background:var(--navy);color:#fff;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.45}
 .box{border:1px solid var(--edge);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px}
 dl.info{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;font-size:14px}
 dl.info dt{color:var(--mute)}dl.info dd{margin:0;overflow-wrap:anywhere;font-weight:600}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--edge);padding:6px 4px calc(10px + env(safe-area-inset-bottom,0px));z-index:5}
-nav.tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
-nav.tabs button{min-height:48px;border:none;background:transparent;font-family:inherit;border-radius:10px;cursor:pointer;color:var(--mute);font-weight:500;font-size:13px}
+nav.tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+nav.tabs button{min-height:48px;border:none;background:transparent;font-family:inherit;border-radius:10px;cursor:pointer;color:var(--mute);font-weight:500;font-size:13px;position:relative}
 nav.tabs button[aria-selected="true"]{color:var(--navy);font-weight:700;box-shadow:inset 0 -3px 0 var(--gold)}
+.badge{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:#B42318;color:#fff;font-size:11px;font-weight:700;padding:0 5px;margin-left:4px}
 .empty{color:var(--mute);font-size:14px;text-align:center;padding:12px 0}
 .skel{height:84px;border-radius:14px;background:linear-gradient(90deg,#ece7dc,#f4f0e8,#ece7dc);background-size:200% 100%;animation:sk 1.2s infinite}
 @keyframes sk{to{background-position:-200% 0}}
-.lb{position:fixed;inset:0;background:rgba(6,12,20,.96);z-index:20;display:flex;flex-direction:column}
-.lb .top{display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 6px;color:#fff;font-size:14px}
-.lb .top button{min-width:44px;min-height:44px;border-radius:22px;border:0;background:#1A3A5F;color:#fff;font-size:20px;cursor:pointer}
+.lb{position:fixed;inset:0;background:rgba(6,12,20,.96);z-index:30;display:flex;flex-direction:column}
+.lb .top{display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 6px;color:#fff;font-size:14px;gap:8px}
+.lb .top button{min-width:44px;min-height:44px;border-radius:22px;border:0;background:#1A3A5F;color:#fff;font-size:16px;cursor:pointer;padding:0 12px}
 .lb .ph{flex:1 1 auto;display:flex;align-items:center;justify-content:center;min-height:0;padding:6px}
 .lb img{max-width:100%;max-height:100%;object-fit:contain}
 .lb .nav{display:flex;justify-content:space-between;padding:8px 12px calc(14px + env(safe-area-inset-bottom,0px))}
-.lb .nav button{min-width:96px;min-height:44px;border-radius:10px;border:0;background:#1A3A5F;color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+.lb .nav button{min-width:96px;min-height:44px;border-radius:10px;border:0;background:#1A3A5F;color:#fff;font-weight:700;font-size:18px;cursor:pointer}
 .off{padding:40px 20px;text-align:center;display:flex;flex-direction:column;gap:16px;align-items:center}
 .off p{font-size:17px;line-height:1.45;margin:0}
+.inp{width:100%;min-height:48px;border:1px solid var(--edge);border-radius:10px;padding:10px 12px;font:16px inherit;font-family:inherit;background:#fff;color:var(--ink)}
+textarea.inp{min-height:72px;resize:vertical}
+.fld{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}
+.code{letter-spacing:8px;font-size:26px;text-align:center;font-weight:700}
+.signin{max-width:440px;margin:0 auto;width:100%}
+.err{color:#8a1c1c;font-size:14px;min-height:18px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--green);color:#fff;padding:12px 16px;border-radius:10px;z-index:40;font-weight:600;max-width:90vw}
+.toast.bad{background:#B42318}
+/* the working portal for GrayCo's trade partners (portal-app.js) */
+.need,.jobrow{display:flex;align-items:center;gap:10px;min-height:52px;width:100%;border:0;border-top:1px solid var(--rule);background:transparent;padding:10px 0;font:inherit;font-size:15px;text-align:left;cursor:pointer;color:var(--ink)}
+.need:first-of-type,.jobrow:first-of-type{border-top:0}
+.need .chev{margin-left:auto;color:var(--goldDk);font-size:20px}
+.dotg{width:10px;height:10px;border-radius:5px;background:var(--gold);flex:0 0 10px}
+.jobrow .tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.jobbar{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:4;background:var(--bg);padding:6px 0}
+.back{min-height:44px;min-width:44px;border:1px solid var(--navy2);background:#fff;color:var(--navy2);border-radius:22px;padding:0 14px;font:600 15px inherit;font-family:inherit;cursor:pointer}
+.jtabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.jtabs button{flex:0 0 auto;min-height:44px;padding:0 14px;border-radius:22px;border:1px solid var(--edge);background:#fff;font:600 14px inherit;font-family:inherit;color:var(--ink);cursor:pointer}
+.jtabs button[aria-selected="true"]{background:var(--navy);color:#fff;border-color:var(--navy)}
+.tblw{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;font-size:12px;color:var(--mute);border-bottom:1px solid var(--edge);padding:6px}
+.tbl td{border-bottom:1px solid var(--rule);padding:8px 6px;vertical-align:top}
+.row.total{border-top:2px solid var(--edge);padding-top:10px}.row.total b{font-size:22px}
+.inv{border-top:1px solid var(--rule);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+ol.track{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+ol.track li{font-size:11px;color:var(--mute);border-top:4px solid var(--edge);padding-top:4px}
+ol.track li.on{color:var(--green);border-top-color:var(--green);font-weight:700}
+.paper{border-top:1px solid var(--rule);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+.paper:first-of-type{border-top:0;padding-top:0}
+.range{width:100%;min-height:44px}
+.msgs{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto;padding:4px}
+.msg{max-width:85%;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.msg.me{align-self:flex-end;background:var(--goldBg)}
+.msg.them{align-self:flex-start;background:#EEF2F6}
+.msg .who{font-size:12px;color:var(--mute)}
+.msg p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px}
+.msg .rr{font-size:11px;color:var(--mute);text-align:right}
+.mfiles{display:flex;gap:6px;flex-wrap:wrap}
+.mimg{padding:0;border:0;background:none;cursor:pointer}.mimg img{width:96px;height:96px;object-fit:cover;border-radius:8px}
+.lnk{font-weight:700}
+.sheet{position:fixed;inset:0;z-index:25;background:rgba(6,12,20,.55);display:flex;align-items:flex-end;justify-content:center}
+.sheet-in{background:var(--bg);width:100%;max-width:560px;max-height:100%;display:flex;flex-direction:column;border-radius:16px 16px 0 0;overflow:hidden}
+.sheet-top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:var(--navy);color:#fff}
+.sheet-top b{flex:1 1 auto;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-top .back{background:transparent;color:#fff;border-color:var(--line)}
+.sheet-top .x{min-width:44px;min-height:44px;border-radius:22px;border:0;background:var(--navy2);color:#fff;font-size:16px;cursor:pointer}
+.sheet-body{padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
+.sheet.wide .sheet-in{max-width:1100px;height:100%}
+iframe.pdf{width:100%;height:70vh;border:1px solid var(--edge);border-radius:10px;background:#fff}
 /* patch INSP: the insurance-claim view */
 .pill.ins{color:#fff;background:var(--navy2)}.pill.skip{color:var(--mute);background:var(--rule)}
 li.skipped{color:#8A939C}li.skipped .dot{border-style:dashed}
@@ -100,7 +159,31 @@ ol.steps li .note{margin-left:auto;font-weight:400;font-size:12px;white-space:no
 ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.45}
 .nextp{margin:0;font-size:15px;line-height:1.5}
 .pvbar{background:var(--goldBg);color:var(--goldDk);font-size:13px;font-weight:600;text-align:center;padding:8px 12px}
+.inv{padding:10px 0;border-bottom:1px solid var(--rule)}.inv:last-child{border-bottom:none}
+.inv .act{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.inv .act .btn,.inv .act a{min-height:40px;font-size:14px;padding:0 12px}
+.inv iframe.pdf{width:100%;height:70vh;max-height:640px;border:1px solid var(--rule);border-radius:10px;margin-top:8px;background:#fff}
 [hidden]{display:none!important}
+/* a computer: two columns — the job and its status on the left, the tabs on the right */
+@media (min-width:1000px){
+  .wrap{max-width:1200px}
+  header{flex-direction:row;justify-content:space-between;padding:18px 28px}
+  header .logo{width:170px}
+  .hbtns{position:static;order:3}.hbtns.l{order:4}
+  .hello{border-top:0;padding-top:0;width:auto;flex:1 1 auto;align-items:flex-start;text-align:left;border-left:1px solid var(--line);padding-left:20px}
+  main{padding:24px 28px 40px}
+  nav.tabs{position:static;border:0;background:transparent;padding:0}
+  nav.tabs .in{max-width:1200px;padding:0 28px;display:flex;gap:6px}
+  nav.tabs button{flex:0 0 auto;padding:0 18px;border:1px solid var(--edge);background:#fff;border-radius:22px}
+  nav.tabs button[aria-selected="true"]{background:var(--navy);color:#fff;box-shadow:none;border-color:var(--navy)}
+  .two{display:grid;grid-template-columns:minmax(320px,400px) minmax(0,1fr);gap:20px;align-items:start}
+  .col-l,.col-r{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .col-l{position:sticky;top:12px}
+  footer.lic{padding-bottom:24px}
+  .sheet{align-items:center}
+  .sheet-in{border-radius:16px;max-height:90vh}
+  .toast{bottom:24px}
+  .signin{margin-top:40px}
+}
 /* patch SEL: Your selections */
 .sel .sel-sec{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--rule);padding-top:10px}
 .sel h3{margin:0;font-size:15px}
@@ -123,36 +206,67 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 <div class="wrap">
   <header>
     <img class="logo" alt="GrayCo Construction Services" src="data:image/png;base64,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">
-    <a class="call" id="callTop" href="tel:9015850944" aria-label="Call GrayCo">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>
-    </a>
+    <div class="hbtns l"><button type="button" class="lang" id="langBtn" aria-label="English / Español"><b>EN</b> / ES</button></div>
+    <div class="hbtns">
+      <a class="call" id="callTop" href="tel:9015850944" aria-label="Call GrayCo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>
+      </a>
+      <button type="button" class="out" id="signOut" hidden>Sign out</button>
+    </div>
     <div class="hello" id="hello" hidden>
       <span class="sm" id="hi"></span>
       <span class="big" id="jobName"></span>
       <span class="sm" id="jobSub"></span>
     </div>
   </header>
+  <nav class="tabs" id="tabs" hidden aria-label="Portal sections"><div class="in" role="tablist">
+    <button type="button" role="tab" data-tab="home" aria-selected="true">Home</button>
+    <button type="button" role="tab" data-tab="photos" aria-selected="false">Photos</button>
+    <button type="button" role="tab" data-tab="docs" aria-selected="false">Documents</button>
+    <button type="button" role="tab" data-tab="pay" aria-selected="false">Payments</button>
+    <button type="button" role="tab" data-tab="msgs" aria-selected="false">Messages</button>
+  </div></nav>
   <main id="main">
     <div class="skel"></div><div class="skel"></div><div class="skel"></div>
   </main>
+  <footer class="lic">GrayCo Construction Services · 901-585-0944<br>TN #85034 BCB · AR #0486990627 · MS #27769</footer>
 </div>
-<nav class="tabs" id="tabs" hidden aria-label="Portal sections"><div class="in" role="tablist">
-  <button type="button" role="tab" data-tab="home" aria-selected="true">Home</button>
-  <button type="button" role="tab" data-tab="photos" aria-selected="false">Photos</button>
-  <button type="button" role="tab" data-tab="docs" aria-selected="false">Documents</button>
-  <button type="button" role="tab" data-tab="pay" aria-selected="false">Payments</button>
-</div></nav>
 <script>
 (function(){
 'use strict';
 var FN = '/.netlify/functions/portal';
+var ACC = '/.netlify/functions/portal-access';
 var OFFICE = '901-585-0944';
-var V = null, PHOTOS = null, TAB = 'home', token = '';
-var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');   /* patch INSP: "Preview as customer" from the CRM */
+var V = null, PHOTOS = null, TAB = 'home', token = '', session = '', JOBS = null, PID = '', MSGS = null, UNREAD = 0;
+var S = {
+  en: { title: 'GrayCo Portal', welcome: 'Welcome to your GrayCo Portal', openLink: 'Sign in with your e-mail (or mobile number) and password — or just open the link we sent you.', who: 'E-mail or mobile number', sendCode: 'Send me a code',
+    codeNote: 'We send a 6-digit code to the e-mail we have for you (texting is coming soon). It works for 10 minutes.', codeSent: 'If that is on file with GrayCo, a 6-digit code is on its way. Check your e-mail.',
+    code: '6-digit code', signIn: 'Sign in', other: 'Use a different e-mail or number', resend: 'Send a new code', badCode: 'That code is not right or has run out. Ask for a new one.', wait: 'Too many tries. Wait a few minutes.',
+    needWho: 'Enter your e-mail or mobile number.', signOut: 'Sign out', pick: 'Your projects', pickNote: 'Pick a project to open it.', home: 'Home', photos: 'Photos', docs: 'Documents', pay: 'Payments', msgs: 'Messages',
+    device: 'Confirm this phone', deviceNote: 'The first time this link opens on a new phone or computer, we send a 6-digit code to {to}.', deviceSend: 'Send the code', remember: 'This phone is remembered after that.',
+    notActive: 'This link is not active — call GrayCo ' + OFFICE, msgPh: 'Write a message to your GrayCo team', send: 'Send', noMsgs: 'No messages yet. Write to your Project Manager here.', you: 'You', read: 'Read', sentM: 'Sent',
+    yourTeam: 'your GrayCo team', loadFail: 'We could not load your job just now. Check your signal and try again, or call GrayCo ' + OFFICE + '.', photosAll: 'Every photo of your job', seeAll: 'See your job photos',
+    allProjects: '‹ All projects', emailL: 'E-mail or mobile number', pwL: 'Password', pwHint: 'New here? Your password is your first name.', forgot: 'Forgot password? E-mail me a code', back2: '‹ Back to sign in',
+    ownPw: 'Make your own password', ownPwNote: 'You signed in with your first name. You can pick your own password (8 or more characters) — or keep using your first name.', newPw: 'New password', savePw: 'Save password', later: 'Not now', pwSaved: 'Your password is saved.' },
+  es: { title: 'Portal GrayCo', welcome: 'Bienvenido a su Portal GrayCo', openLink: 'Entre con su correo (o número de celular) y contraseña — o abra el enlace que le enviamos.', who: 'Correo o número de celular', sendCode: 'Enviarme un código',
+    codeNote: 'Enviamos un código de 6 dígitos al correo que tenemos de usted (los mensajes de texto llegarán pronto). Sirve por 10 minutos.', codeSent: 'Si eso está en el archivo de GrayCo, le llega un código de 6 dígitos. Revise su correo.',
+    code: 'Código de 6 dígitos', signIn: 'Entrar', other: 'Usar otro correo o número', resend: 'Enviar un código nuevo', badCode: 'Ese código no es correcto o ya venció. Pida uno nuevo.', wait: 'Demasiados intentos. Espere unos minutos.',
+    needWho: 'Escriba su correo o número de celular.', signOut: 'Salir', pick: 'Sus proyectos', pickNote: 'Escoja un proyecto para abrirlo.', home: 'Inicio', photos: 'Fotos', docs: 'Documentos', pay: 'Pagos', msgs: 'Mensajes',
+    device: 'Confirme este teléfono', deviceNote: 'La primera vez que este enlace se abre en un teléfono o computadora nueva, enviamos un código de 6 dígitos a {to}.', deviceSend: 'Enviar el código', remember: 'Después, este teléfono queda recordado.',
+    notActive: 'Este enlace no está activo — llame a GrayCo ' + OFFICE, msgPh: 'Escriba un mensaje a su equipo de GrayCo', send: 'Enviar', noMsgs: 'Todavía no hay mensajes. Escríbale a su Gerente de Proyecto aquí.', you: 'Usted', read: 'Leído', sentM: 'Enviado',
+    yourTeam: 'su equipo de GrayCo', loadFail: 'No pudimos cargar su trabajo. Revise su señal e intente otra vez, o llame a GrayCo ' + OFFICE + '.', photosAll: 'Todas las fotos de su trabajo', seeAll: 'Ver las fotos de su trabajo',
+    allProjects: '‹ Todos los proyectos', emailL: 'Correo o número de celular', pwL: 'Contraseña', pwHint: '¿Primera vez? Su contraseña es su primer nombre.', forgot: '¿Olvidó la contraseña? Envíenme un código', back2: '‹ Volver a entrar',
+    ownPw: 'Cree su propia contraseña', ownPwNote: 'Entró con su primer nombre. Puede escoger su propia contraseña (8 caracteres o más) — o seguir usando su primer nombre.', newPw: 'Contraseña nueva', savePw: 'Guardar contraseña', later: 'Ahora no', pwSaved: 'Su contraseña quedó guardada.' }
+};
+var LANG = 'en';
+try { LANG = localStorage.getItem('gc_lang') === 'es' ? 'es' : 'en'; } catch (e) {}
+function tr(k, v){ var s = (S[LANG] || S.en)[k] || S.en[k] || k; if (v) Object.keys(v).forEach(function(x){ s = s.replace('{' + x + '}', v[x]); }); return s; }
 
 /* the link code lives after the # — it never reaches a server log or another site */
 try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+var PREVIEW = !!token && /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');   /* patch INSP: "Preview as customer" from the CRM */
 try { if (token) localStorage.setItem('gc_portal_t', token); else token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
+try { session = localStorage.getItem('gc_portal_s') || ''; } catch (e) {}
 
 function $(id){ return document.getElementById(id); }
 function h(tag, attrs, kids){
@@ -169,25 +283,222 @@ function h(tag, attrs, kids){
 }
 function safeUrl(u){ return /^(https:\/\/|tel:|sms:|mailto:|#)/i.test(String(u || '')); }
 function usd(n){ n = Number(n) || 0; return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function dt(s){ if (!s) return ''; var d = new Date(String(s).length === 10 ? s + 'T12:00:00' : s); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-function when(s){ var d = new Date(s); if (isNaN(d)) return ''; var days = Math.floor((Date.now() - d) / 864e5); if (days <= 0) return 'Today'; if (days === 1) return 'Yesterday'; return dt(s); }
+function dt(s){ if (!s) return ''; var d = new Date(String(s).length === 10 ? s + 'T12:00:00' : s); return isNaN(d) ? '' : d.toLocaleDateString(LANG === 'es' ? 'es-US' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function when(s){ var d = new Date(s); if (isNaN(d)) return ''; var days = Math.floor((Date.now() - d) / 864e5); if (days <= 0) return LANG === 'es' ? 'Hoy' : 'Today'; if (days === 1) return LANG === 'es' ? 'Ayer' : 'Yesterday'; return dt(s); }
+function tm(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleString(LANG === 'es' ? 'es-US' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
 function tel(p){ return 'tel:' + String(p || '').replace(/[^0-9+]/g, ''); }
-function card(title, kids, extra){ return h('section', { class: 'card' }, [title ? h('h2', { text: title }) : null].concat(kids || [])); }
+function card(title, kids){ return h('section', { class: 'card' }, [title ? h('h2', { text: title }) : null].concat(kids || [])); }
+function wide(){ return window.matchMedia('(min-width: 1000px)').matches; }
+function store(k, v){ try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
 
-function api(action){
-  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(PREVIEW ? { action: action, preview: true } : { action: action }), cache: 'no-store', credentials: 'omit' })
-    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j }; }); });
+function post(fn, body, extra){
+  var hd = { 'Content-Type': 'application/json' };
+  if (extra && extra.token) hd['x-portal-token'] = extra.token;
+  if (extra && extra.session) hd['x-portal-session'] = extra.session;
+  if (extra && extra.device) hd['x-portal-device'] = extra.device;
+  return fetch(fn, { method: 'POST', headers: hd, body: JSON.stringify(body), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); });
 }
+function cred(){ return token && !session ? { token: token } : { session: session, token: session ? '' : token }; }
+function api(action){ return post(FN, PREVIEW ? { action: action, preview: true } : { action: action, projectId: PID || undefined }, cred()); }
+function acc(action, body){ return post(ACC, Object.assign({ action: action, projectId: PID || undefined }, PREVIEW ? { preview: true } : {}, body || {}), cred()); }
+
+/* ── header bits ── */
+function paintLang(){
+  $('langBtn').innerHTML = LANG === 'es' ? 'EN / <b>ES</b>' : '<b>EN</b> / ES';
+  document.documentElement.lang = LANG;
+  $('signOut').textContent = tr('signOut');
+  var labels = { home: 'home', photos: 'photos', docs: 'docs', pay: 'pay', msgs: 'msgs' };
+  if (!window.GCPartner) Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function(b){ var k = labels[b.getAttribute('data-tab')]; if (k) { var badge = b.querySelector('.badge'); b.textContent = tr(k); if (badge) b.appendChild(badge); } });
+}
+$('langBtn').addEventListener('click', function(){
+  LANG = LANG === 'es' ? 'en' : 'es'; store('gc_lang', LANG); paintLang();
+  if (window.GCPartner && window.GCPartner._state && window.GCPartner._state().home) { window.GCPartner.setLang(LANG, true); return; }
+  if (V) draw(); else if (JOBS) picker(); else if ($('signinBox')) signin(); else if ($('deviceBox')) deviceScreen(lastDevice);
+});
+$('signOut').addEventListener('click', function(){
+  var s0 = session;
+  store('gc_portal_s', ''); store('gc_portal_t', ''); store('gc_portal_dev', ''); session = ''; token = '';
+  post(ACC, { action: 'signout' }, { session: s0 }).then(function(){ location.replace(location.pathname); }, function(){ location.replace(location.pathname); });
+});
+paintLang();
 
 function notActive(msg){
+  $('tabs').hidden = true; $('hello').hidden = true;
   $('main').innerHTML = '';
   $('main').appendChild(h('div', { class: 'off' }, [
-    h('p', { text: msg || ('This link is not active — call GrayCo ' + OFFICE) }),
-    h('a', { class: 'btn gold', href: 'tel:9015850944', text: 'Call GrayCo ' + OFFICE })
+    h('p', { text: msg || tr('notActive') }),
+    h('a', { class: 'btn gold', href: 'tel:9015850944', text: 'Call GrayCo ' + OFFICE }),
+    h('button', { type: 'button', class: 'btn', id: 'toSignin', text: tr('signIn'), on: { click: function(){ store('gc_portal_t', ''); token = ''; signin(); } } })
   ]));
 }
 
-/* ── HOME ─────────────────────────────────────────────────────────────── */
+/* ── SIGN IN (no password: a 6-digit code to the e-mail on file) ── */
+function signin(step, who){
+  $('tabs').hidden = true; $('hello').hidden = true;
+  var main = $('main'); main.innerHTML = '';
+  var err = h('div', { class: 'err', role: 'alert', id: 'siErr' });
+  var box = h('section', { class: 'card signin', id: 'signinBox' });
+  main.appendChild(box);
+  box.appendChild(h('h2', { text: tr('welcome') }));
+  if (!step || step === 'pw') {
+    var em = h('input', { class: 'inp', id: 'siEmail', type: 'text', inputmode: 'email', autocomplete: 'username', value: who || '' });
+    var pw = h('input', { class: 'inp', id: 'siPw', type: 'password', autocomplete: 'current-password' });
+    var enter = h('button', { type: 'button', class: 'btn gold', id: 'siLogin', text: tr('signIn') });
+    box.appendChild(h('p', { class: 'muted', text: tr('openLink') }));
+    box.appendChild(h('label', { class: 'fld' }, [h('span', { text: tr('emailL') }), em]));
+    box.appendChild(h('label', { class: 'fld' }, [h('span', { text: tr('pwL') }), pw]));
+    box.appendChild(h('p', { class: 'muted', text: tr('pwHint') }));
+    box.appendChild(enter); box.appendChild(err);
+    box.appendChild(h('button', { type: 'button', class: 'btn', id: 'siForgot', text: tr('forgot'), on: { click: function(){ signin('who', em.value.trim()); } } }));
+    function login(){
+      if (!em.value.trim() || !pw.value) { err.textContent = tr('needWho'); return; }
+      enter.disabled = true;
+      post(ACC, { action: 'signin-password', email: em.value.trim(), password: pw.value }).then(function(r){
+        enter.disabled = false;
+        if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); return; }
+        session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
+        store('gc_portal_starter', r.data.starter ? '1' : '');
+        route(r.data.kind);
+      }, function(){ enter.disabled = false; err.textContent = tr('loadFail'); });
+    }
+    enter.addEventListener('click', login);
+    pw.addEventListener('keydown', function(e){ if (e.key === 'Enter') login(); });
+    return;
+  }
+  if (step !== 'code') {
+    var inp = h('input', { class: 'inp', id: 'siWho', type: 'text', inputmode: 'email', autocomplete: 'email', value: who || '' });
+    var go = h('button', { type: 'button', class: 'btn gold', id: 'siSend', text: tr('sendCode') });
+    box.appendChild(h('p', { class: 'muted', text: tr('openLink') }));
+    box.appendChild(h('label', { class: 'fld' }, [h('span', { text: tr('who') }), inp]));
+    box.appendChild(go); box.appendChild(err);
+    box.appendChild(h('p', { class: 'muted', text: tr('codeNote') }));
+    box.appendChild(h('button', { type: 'button', class: 'btn', id: 'siBack', text: tr('back2'), on: { click: function(){ signin('pw', inp.value.trim()); } } }));
+    function send(){
+      var w = inp.value.trim(); if (!w) { err.textContent = tr('needWho'); return; }
+      go.disabled = true;
+      post(ACC, { action: 'signin-start', who: w }).then(function(r){
+        go.disabled = false;
+        if (r.status === 429) { err.textContent = tr('wait'); return; }
+        if (r.status >= 400) { err.textContent = r.data.error || tr('needWho'); return; }
+        signin('code', w);
+      }, function(){ go.disabled = false; err.textContent = tr('loadFail'); });
+    }
+    go.addEventListener('click', send);
+    inp.addEventListener('keydown', function(e){ if (e.key === 'Enter') send(); });
+    return;
+  }
+  var code = h('input', { class: 'inp code', id: 'siCode', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6' });
+  var ok = h('button', { type: 'button', class: 'btn gold', id: 'siVerify', text: tr('signIn') });
+  box.appendChild(h('p', { class: 'muted', id: 'siSent', text: tr('codeSent') }));
+  box.appendChild(h('label', { class: 'fld' }, [h('span', { text: tr('code') }), code]));
+  box.appendChild(ok); box.appendChild(err);
+  box.appendChild(h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn', text: tr('resend'), on: { click: function(){ post(ACC, { action: 'signin-start', who: who }); err.textContent = ''; } } }),
+    h('button', { type: 'button', class: 'btn', text: tr('other'), on: { click: function(){ signin('who', who); } } })]));
+  function verify(){
+    ok.disabled = true;
+    post(ACC, { action: 'signin-verify', who: who, code: code.value.trim() }).then(function(r){
+      ok.disabled = false;
+      if (r.status === 429) { err.textContent = tr('wait'); return; }
+      if (!r.data.ok || !r.data.session) { err.textContent = tr('badCode'); return; }
+      session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
+      route(r.data.kind);
+    }, function(){ ok.disabled = false; err.textContent = tr('loadFail'); });
+  }
+  ok.addEventListener('click', verify);
+  code.addEventListener('keydown', function(e){ if (e.key === 'Enter') verify(); });
+  setTimeout(function(){ try { code.focus(); } catch (e) {} }, 50);
+}
+
+/* ── a new phone opening a sub link: confirm it with a code ── */
+var lastDevice = null;
+function deviceScreen(info){
+  lastDevice = info;
+  $('tabs').hidden = true; $('hello').hidden = true;
+  var main = $('main'); main.innerHTML = '';
+  var err = h('div', { class: 'err', role: 'alert' });
+  var code = h('input', { class: 'inp code', id: 'devCode', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', hidden: true });
+  var ok = h('button', { type: 'button', class: 'btn gold', id: 'devVerify', text: tr('signIn'), hidden: true });
+  var send = h('button', { type: 'button', class: 'btn gold', id: 'devSend', text: tr('deviceSend') });
+  main.appendChild(h('section', { class: 'card signin', id: 'deviceBox' }, [h('h2', { text: tr('device') }), h('p', { class: 'muted', text: tr('deviceNote', { to: info.to || '' }) }), send, code, ok, err, h('p', { class: 'muted', text: tr('remember') })]));
+  send.addEventListener('click', function(){
+    send.disabled = true;
+    post(ACC, { action: 'device-start' }, { token: token }).then(function(r){ send.disabled = false; if (!r.data.ok) { err.textContent = r.data.error || tr('notActive'); return; } code.hidden = false; ok.hidden = false; send.textContent = tr('resend'); err.textContent = ''; try { code.focus(); } catch (e) {} });
+  });
+  ok.addEventListener('click', function(){
+    ok.disabled = true;
+    post(ACC, { action: 'device-verify', code: code.value.trim() }, { token: token }).then(function(r){
+      ok.disabled = false;
+      if (!r.data.ok) { err.textContent = r.status === 429 ? tr('wait') : tr('badCode'); return; }
+      store('gc_portal_dev', r.data.device); session = r.data.session; store('gc_portal_s', session);
+      route('partner');
+    });
+  });
+}
+
+/* ── where this person goes ── */
+function route(kind){
+  $('signOut').hidden = !session;
+  if (kind === 'partner') return startPartner();
+  if (kind === 'customer') return startCustomer();
+  signin();
+}
+function startPartner(){
+  $('tabs').hidden = true;
+  $('main').innerHTML = '<div class="skel"></div><div class="skel"></div>';
+  var host = {
+    hello: function(big, small, line3){ $('hi').textContent = big; $('jobName').textContent = small; $('jobSub').textContent = line3 || ''; $('hello').hidden = false; },
+    ended: function(){ store('gc_portal_s', ''); session = ''; notActive(); },
+    setLang: function(l){ LANG = l; store('gc_lang', l); paintLang(); }
+  };
+  document.title = tr('title');
+  function go(){ window.GCPartner.start({ session: session, host: host, lang: LANG }); }
+  if (window.GCPartner) return go();
+  var s = document.createElement('script'); s.src = '/portal-app.js?v=33.151'; s.onload = go; s.onerror = function(){ notActive(tr('loadFail')); };
+  document.head.appendChild(s);
+}
+
+/* ═══ THE CUSTOMER PORTAL ═══ */
+function startCustomer(){
+  if (session && !token) {
+    return acc('c-jobs').then(function(r){
+      if (!r.data.ok) { store('gc_portal_s', ''); session = ''; return notActive(r.data.error); }
+      JOBS = r.data.jobs || [];
+      var want = /[#&]job=([A-Za-z0-9_.:-]{1,80})/.exec(location.hash || '');
+      if (want && JOBS.some(function(j){ return j.id === want[1]; })) { PID = want[1]; return loadView(); }
+      if (JOBS.length === 1) { PID = JOBS[0].id; return loadView(); }
+      picker();
+    }, function(){ notActive(tr('loadFail')); });
+  }
+  return loadView();
+}
+function picker(){
+  V = null; $('tabs').hidden = true; $('hello').hidden = true;
+  var main = $('main'); main.innerHTML = '';
+  main.appendChild(card(tr('pick'), [h('p', { class: 'muted', text: tr('pickNote') })].concat(JOBS.map(function(j){
+    return h('button', { type: 'button', class: 'jobrow', 'data-job': j.id, on: { click: function(){ PID = j.id; PHOTOS = null; MSGS = null; TAB = 'home'; loadView(); } } },
+      [h('span', { class: 'grow' }, [h('b', { text: j.name }), h('span', { class: 'muted', text: j.address || '' })]), j.unread ? h('span', { class: 'badge', text: String(j.unread) }) : null]);
+  }))));
+}
+function loadView(){
+  $('main').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+  return api('view').then(function(r){
+    if (!r.data || !r.data.ok) { notActive(r.data && r.data.error); return; }
+    V = r.data;
+    var c = V.customer || {}, j = V.job || {};
+    $('hi').textContent = (LANG === 'es' ? 'Hola ' : 'Hi ') + (c.firstName || (LANG === 'es' ? '' : 'there')) + (LANG === 'es' ? ' — su proyecto' : ' — your project');
+    $('jobName').textContent = j.name || 'Your project';
+    $('jobSub').textContent = [j.address, j.po ? 'Job ' + j.po : ''].filter(Boolean).join(' · ');
+    $('hello').hidden = false; $('tabs').hidden = false;
+    if (PREVIEW && !$('pvbar')) document.querySelector('.wrap').insertBefore(h('div', { class: 'pvbar', id: 'pvbar', text: 'Preview — exactly what the customer sees. Opening it here does not count as the customer opening it.' }), $('main'));   /* patch INSP */
+    document.title = (j.name ? j.name + ' — ' : '') + 'GrayCo Portal';
+    draw();
+    setTimeout(loadPhotos, 1500);
+    loadMsgs(false);
+  }, function(){ notActive(tr('loadFail')); });
+}
+
+/* ── HOME ── */
 function tracker(){
   var j = V.job, list = h('ol', { class: 'steps' });
   (j.stages || []).forEach(function(n, i){
@@ -198,7 +509,7 @@ function tracker(){
     h('div', { class: 'row' }, [h('h2', { text: 'Where your job is' }), h('span', { class: 'pill now', text: j.stageName || '' })]), list]);
 }
 function postEl(p){
-  var kids = [h('div', { class: 'row' }, [h('b', { style: 'font-size:13px', text: (p.by ? p.by + ' · ' : '') + 'your GrayCo team' }), h('span', { class: 'muted', text: when(p.at) })])];
+  var kids = [h('div', { class: 'row' }, [h('b', { style: 'font-size:13px', text: (p.by ? p.by + ' · ' : '') + tr('yourTeam') }), h('span', { class: 'muted', text: when(p.at) })])];
   if (p.text) kids.push(h('p', { text: p.text }));
   if (p.photos && p.photos.length) {
     var g = h('div', { class: 'pics' });
@@ -207,38 +518,62 @@ function postEl(p){
   }
   return h('div', { class: 'post' }, kids);
 }
-function home(){
-  var out = V.insurance ? insHome() : [tracker()];   /* patch INSP */
-  var posts = V.posts || [];
-  out.push(card('Updates from your team', posts.length ? posts.slice(0, 10).map(postEl) : [h('div', { class: 'empty', text: 'Your Project Manager posts updates and photos here.' })]));
-  var pm = V.pm || {}, phone = pm.phone || OFFICE;
+function pmCard(){
+  var pm = V.pm || {}, phone = pm.phone || OFFICE, email = pm.email || '';
   var ini = (pm.name || 'PM').split(/\s+/).map(function(x){ return x[0] || ''; }).join('').slice(0, 2).toUpperCase();
-  out.push(card(null, [
-    h('div', { class: 'pm' }, [h('div', { class: 'av', text: ini || 'PM' }), h('div', { style: 'flex:1 1 auto;min-width:0' }, [
-      h('div', { class: 'muted', text: 'Your Project Manager' }), h('div', { style: 'font-size:15px;font-weight:700', text: pm.name || 'GrayCo office' })])]),
-    h('div', { class: 'btns' }, [h('a', { class: 'btn gold', href: tel(phone), text: 'Call' }), h('a', { class: 'btn', href: 'sms:' + String(phone).replace(/[^0-9+]/g, ''), text: 'Text' })])
-  ]));
-  out.push(h('button', { type: 'button', class: 'cc', id: 'gp-open', on: { click: function(){ go('photos'); } } }, [
-    h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:22px', text: '📸' }),
-    h('span', { style: 'flex:1 1 auto;display:flex;flex-direction:column;gap:2px' }, [h('span', { class: 't', text: 'See your job photos' }), h('span', { class: 's', text: 'GrayCo Photos of your job' })]),
-    h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:20px', text: '›' })]));
-  if (V.showReview && V.review) out.push(card('Thank you for choosing GrayCo!', [
-    h('p', { class: 'muted', style: 'margin:0', text: 'If you were happy with our work, a quick review helps a lot.' }),
-    h('a', { class: 'btn gold', href: V.review.google, target: '_blank', rel: 'noopener', text: '★ Leave a Google review' }),
-    h('a', { class: 'btn', href: V.review.facebook, target: '_blank', rel: 'noopener', text: 'Find us on Facebook' })]));
+  return card(null, [
+    h('div', { class: 'pm' }, [h('div', { class: 'av', text: ini || 'PM' }), h('div', { class: 'grow' }, [
+      h('div', { class: 'muted', text: LANG === 'es' ? 'Su Gerente de Proyecto' : 'Your Project Manager' }), h('div', { style: 'font-size:15px;font-weight:700', text: pm.name || 'GrayCo office' }),
+      h('div', { class: 'sel' }, [h('a', { href: tel(phone), text: phone }), email ? ' · ' : '', email ? h('a', { href: 'mailto:' + email, text: email }) : null])])]),
+    h('div', { class: 'btns3' }, [h('a', { class: 'btn gold', href: tel(phone), text: LANG === 'es' ? 'Llamar' : 'Call' }), h('a', { class: 'btn', href: 'sms:' + String(phone).replace(/[^0-9+]/g, ''), text: LANG === 'es' ? 'Texto' : 'Text' }),
+      TAB === 'msgs' ? h('a', { class: 'btn', href: 'mailto:' + (email || 'office@grayco-cs.com'), text: 'E-mail' }) : h('button', { type: 'button', class: 'btn', text: tr('msgs'), on: { click: function(){ go('msgs'); } } })])
+  ]);
+}
+function infoCard(){
   var c = V.customer || {};
-  out.push(card('Your info', [
+  return card('Your info', [
     h('dl', { class: 'info' }, [h('dt', { text: 'Name' }), h('dd', { text: c.name || '—' }), h('dt', { text: 'Address' }), h('dd', { text: c.address || '—' }),
       h('dt', { text: 'Phone' }), h('dd', { text: c.phone || '—' }), h('dt', { text: 'Email' }), h('dd', { text: c.email || '—' })]),
-    h('div', { class: 'muted' }, ['Something wrong? ', h('a', { href: 'tel:9015850944', text: 'Call us to change it' }), ' — ' + OFFICE + '.'])]));
-  return out;
+    h('div', { class: 'muted' }, ['Something wrong? ', h('a', { href: 'tel:9015850944', text: 'Call us to change it' }), ' — ' + OFFICE + '.'])]);
+}
+function photosButton(){
+  return h('button', { type: 'button', class: 'cc btn navy', id: 'gp-open', style: 'justify-content:flex-start;min-height:56px', on: { click: function(){ go('photos'); } } }, [
+    h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:22px', text: '📷' }),
+    h('span', { style: 'flex:1 1 auto;display:flex;flex-direction:column;gap:2px;text-align:left' }, [h('span', { text: tr('seeAll') }), h('span', { class: 'muted', style: 'color:#C9D3DF', text: tr('photosAll') })]),
+    h('span', { 'aria-hidden': 'true', style: 'color:#D4A017;font-size:20px', text: '›' })]);
+}
+function updates(){ var posts = V.posts || []; return card('Updates from your team', posts.length ? posts.slice(0, 10).map(postEl) : [h('div', { class: 'empty', text: 'Your Project Manager posts updates and photos here.' })]); }
+function reviewCard(){
+  if (!(V.showReview && V.review)) return null;
+  return card('Thank you for choosing GrayCo!', [
+    h('p', { class: 'muted', style: 'margin:0', text: 'If you were happy with our work, a quick review helps a lot.' }),
+    h('a', { class: 'btn gold', href: V.review.google, target: '_blank', rel: 'noopener', text: '★ Leave a Google review' }),
+    h('a', { class: 'btn', href: V.review.facebook, target: '_blank', rel: 'noopener', text: 'Find us on Facebook' })]);
+}
+/* signed in with the starter password (first name): an optional, dismissible card — never forced */
+function ownPwCard(){
+  var st = '', off = ''; try { st = localStorage.getItem('gc_portal_starter') || ''; off = localStorage.getItem('gc_pw_card_off') || ''; } catch (e) {}
+  if (st !== '1' || off === '1' || !session) return null;
+  var pw = h('input', { class: 'inp', type: 'password', id: 'ownPw', autocomplete: 'new-password', minlength: '8' });
+  var err = h('div', { class: 'err' });
+  var c = card(tr('ownPw'), [h('p', { class: 'muted', text: tr('ownPwNote') }), h('label', { class: 'fld' }, [h('span', { text: tr('newPw') }), pw]), err,
+    h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn gold', id: 'ownPwSave', text: tr('savePw'), on: { click: function(){
+      acc('c-password', { password: pw.value }).then(function(r){ if (!r.data.ok) { err.textContent = r.data.error || ''; return; } store('gc_portal_starter', ''); c.innerHTML = ''; c.appendChild(h('div', { class: 'muted', text: tr('pwSaved') })); });
+    } } }), h('button', { type: 'button', class: 'btn', id: 'ownPwLater', text: tr('later'), on: { click: function(){ store('gc_pw_card_off', '1'); if (c.parentNode) c.parentNode.removeChild(c); } } })])]);
+  c.id = 'ownPwCard';
+  return c;
+}
+function home(){
+  var tr0 = V.insurance ? insHome() : [tracker()];   /* patch INSP: an insurance job shows its claim instead of the job steps */
+  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : [], [updates(), photosButton(), reviewCard()]);
+  return [ownPwCard()].concat(tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
-/* ── PHOTOS: GrayCo Photos of THIS job only (read-only; signed links that expire; lazy) ── */
+/* ── PHOTOS: GrayCo Photos of this job only ── */
 function photos(){
-  var box = h('section', { class: 'card', id: 'gp-gallery' }, [h('h2', { text: 'GrayCo Photos of your job' })]);
+  var box = h('section', { class: 'card', id: 'gp-gallery' }, [h('h2', { text: LANG === 'es' ? 'Fotos GrayCo de su trabajo' : 'GrayCo Photos of your job' })]);
   if (!PHOTOS) { box.appendChild(h('div', { class: 'empty', text: 'Loading photos…' })); loadPhotos(); return [box]; }
-  if (!PHOTOS.length) { box.appendChild(h('div', { class: 'empty', text: 'No photos yet — they show up here as soon as your GrayCo team takes them.' })); return [box]; }
+  if (!PHOTOS.length) { box.appendChild(h('div', { class: 'empty', text: LANG === 'es' ? 'Todavía no hay fotos — aparecen aquí en cuanto su equipo GrayCo las tome.' : 'No photos yet — they show up here as soon as your GrayCo team takes them.' })); return [box]; }
   box.appendChild(h('div', { class: 'muted', text: PHOTOS.length + ' photo' + (PHOTOS.length === 1 ? '' : 's') + ' · newest first · tap one to see it big' }));
   var grid = h('div', { class: 'pics', id: 'grid' }), shown = 0, sentinel = h('div', { style: 'height:1px' });
   function more(){
@@ -257,7 +592,10 @@ function photos(){
 var photosLoading = false, photosAt = 0;
 function loadPhotos(){
   if (photosLoading || PHOTOS) return; photosLoading = true;
-  api('photos').then(function(r){ PHOTOS = (r.data && r.data.ok && Array.isArray(r.data.photos)) ? r.data.photos : []; }, function(){ PHOTOS = []; })
+  /* GrayCo Photos of this one job (portal.js {action:'photos'}, patch U2): photos marked "hidden from customer"
+     never come, and there is never a link to another site */
+  api('photos').then(function(x){ return (x.data && x.data.ok && Array.isArray(x.data.photos)) ? x.data.photos.map(function(p){ return { t: p.t || p.thumb, f: p.f || p.url || p.t, at: p.at || '' }; }) : []; })
+    .then(function(list){ PHOTOS = (list || []).filter(function(p){ return p && p.t && p.f; }); }, function(){ PHOTOS = []; })
     .then(function(){ photosLoading = false; photosAt = Date.now(); if (TAB === 'photos') draw(); });
   /* the links expire after an hour: a page left open asks again before then */
   setTimeout(function(){ if (photosAt && Date.now() - photosAt > 50 * 60e3) { PHOTOS = null; if (TAB === 'photos') draw(); } }, 51 * 60e3);
@@ -268,8 +606,8 @@ function lightbox(list, i){
   var ov = h('div', { class: 'lb', role: 'dialog', 'aria-label': 'Photo' }, [
     h('div', { class: 'top' }, [count, h('button', { type: 'button', 'aria-label': 'Close photo', text: '✕', on: { click: close } })]),
     h('div', { class: 'ph' }, [img]),
-    list.length > 1 ? h('div', { class: 'nav' }, [h('button', { type: 'button', text: '‹ Back', on: { click: function(){ i = (i - 1 + list.length) % list.length; show(); } } }),
-      h('button', { type: 'button', text: 'Next ›', on: { click: function(){ i = (i + 1) % list.length; show(); } } })]) : null]);
+    list.length > 1 ? h('div', { class: 'nav' }, [h('button', { type: 'button', text: '‹', 'aria-label': 'Previous', on: { click: function(){ i = (i - 1 + list.length) % list.length; show(); } } }),
+      h('button', { type: 'button', text: '›', 'aria-label': 'Next', on: { click: function(){ i = (i + 1) % list.length; show(); } } })]) : null]);
   var x0 = null;
   ov.addEventListener('touchstart', function(e){ x0 = e.touches[0].clientX; }, { passive: true });
   ov.addEventListener('touchend', function(e){ if (x0 == null) return; var dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50 && list.length > 1) { i = (i + (dx < 0 ? 1 : -1) + list.length) % list.length; show(); } });
@@ -279,7 +617,7 @@ function lightbox(list, i){
   show(); document.body.appendChild(ov);
 }
 
-/* ── DOCUMENTS & PROPOSALS ────────────────────────────────────────────── */
+/* ── DOCUMENTS & PROPOSALS ── */
 function docs(){
   if (V.insurance) return insDocs();   /* patch INSP */
   var list = V.docs || [];
@@ -306,11 +644,10 @@ function docs(){
   return [box, wcard];
 }
 
-/* ── INVOICES & PAYMENTS ──────────────────────────────────────────────── */
 /* patch AP2: every invoice from the CRM, its state (Approved / Sent / Due / Overdue / Paid) and its PDF */
 function invPdf(id){
-  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify({ action: 'invoice', id: id }), cache: 'no-store', credentials: 'omit' })
-    .then(function(r){ return r.json().catch(function(){ return null; }); }).then(function(j){
+  /* patch SUB: through post(), so it works with the link code or with the e-mail + password session */
+  return post(FN, { action: 'invoice', id: id, projectId: PID || undefined }, cred()).then(function(r){ return r.data; }).then(function(j){
       if (!j || !j.ok || !j.pdf) throw new Error((j && j.error) || 'not available');
       var bin = atob(j.pdf), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
       return { url: URL.createObjectURL(new Blob([u], { type: 'application/pdf' })), name: j.filename || 'GrayCo Invoice.pdf' };
@@ -347,10 +684,11 @@ function invRow(x){
   }
   return box;
 }
+/* ── INVOICES & PAYMENTS ── */
 function pay(){
   if (V.insurance) return insPay();   /* patch INSP */
   var m = V.money || {}, out = [];
-  var top = h('section', { class: 'card' }, [h('h2', { text: 'Invoices & payments' }),
+  out.push(h('section', { class: 'card' }, [h('h2', { text: 'Invoices & payments' }),
     h('div', { class: 'money' }, [
       h('div', null, [h('span', { class: 'muted', text: 'Contract' }), h('b', { text: m.contract ? usd(m.contract) : '—' })]),
       h('div', null, [h('span', { class: 'muted', text: 'Paid so far' }), h('b', { text: usd(m.paid) })]),
@@ -359,8 +697,7 @@ function pay(){
     ]),
     h('div', { class: 'how' }, [h('b', { text: 'How to pay' }),
       h('span', null, ['Pay by ', h('b', { text: 'check' }), ' made out to GrayCo Construction Services, or ', h('b', { text: 'cash' }), ' — hand it to your Project Manager' + (V.pm && V.pm.name ? ' (' + V.pm.name + ')' : '') + '. Every payment shows on your ', h('b', { text: 'final invoice' }), '.'])])
-  ]);
-  out.push(top);
+  ]));
   var fi = m.finalInvoice;
   out.push(h('section', { class: 'card' }, [h('div', { class: 'row' }, [h('h2', { text: 'Final invoice' }), fi ? h('span', { class: 'pill ' + (fi.balance > 0 ? 'due' : 'ok'), text: fi.balance > 0 ? 'Balance ' + usd(fi.balance) : 'Paid — thank you!' }) : null]),
     fi ? h('div', { class: 'muted', text: (fi.number ? 'Invoice ' + fi.number + ' · ' : '') + dt(fi.date) + ' · ' + usd(fi.amount) }) : null,
@@ -373,6 +710,46 @@ function pay(){
   out.push(card('Payment history', ps.length ? ps.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dt(x.date) + (x.method && x.method !== 'Payment' ? ' · ' + x.method : '') }), h('span', { text: usd(x.amount) })]); })
     : [h('div', { class: 'empty', text: 'No payments yet.' })]));
   return out;
+}
+
+/* ── MESSAGES with your GrayCo team ── */
+var msgTimer = null;
+function loadMsgs(markRead){
+  if (!markRead && TAB !== 'msgs') {
+    /* only the count (the thread is marked read when it is opened) */
+    if (session && !token) acc('c-jobs').then(function(r){ var j = (r.data.jobs || []).find(function(x){ return x.id === (PID || (V && V.job && V.job.id)); }); setUnread(j ? j.unread : 0); });
+    else acc('c-jobs').then(function(r){ var j = (r.data.jobs || [])[0]; setUnread(j ? j.unread : 0); });
+    return;
+  }
+  return acc('c-msgs').then(function(r){ if (r.data.ok) { MSGS = r.data.messages || []; setUnread(0); if (TAB === 'msgs') paintMsgs(); } });
+}
+function setUnread(n){
+  UNREAD = n || 0;
+  var b = document.querySelector('#tabs button[data-tab="msgs"]'); if (!b) return;
+  var old = b.querySelector('.badge'); if (old) old.remove();
+  if (UNREAD) b.appendChild(h('span', { class: 'badge', id: 'msgBadge', text: String(UNREAD) }));
+}
+function paintMsgs(){
+  var list = $('cMsgList'); if (!list) return;
+  list.innerHTML = '';
+  if (!MSGS || !MSGS.length) { list.appendChild(h('div', { class: 'empty', text: tr('noMsgs') })); return; }
+  MSGS.forEach(function(m){ list.appendChild(h('div', { class: 'msg ' + (m.mine ? 'me' : 'them') }, [h('div', { class: 'who', text: (m.mine ? tr('you') : m.by) + ' · ' + tm(m.at) }), h('p', { text: m.text }),
+    m.files && m.files.length ? h('div', { class: 'mfiles' }, m.files.map(function(f){ return h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: '📎 ' + f.name }); })) : null,
+    m.mine ? h('div', { class: 'rr', text: m.read ? '✓✓ ' + tr('read') : '✓ ' + tr('sentM') }) : null])); });
+  list.scrollTop = list.scrollHeight;
+}
+function msgs(){
+  var list = h('div', { class: 'msgs', id: 'cMsgList' }, [h('div', { class: 'empty', text: '…' })]);
+  var box = h('textarea', { class: 'inp', rows: '2', id: 'cMsgText', placeholder: tr('msgPh') });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'cMsgSend', text: tr('send') });
+  go.addEventListener('click', function(){
+    var text = box.value.trim(); if (!text) return;
+    go.disabled = true;
+    acc('c-send', { text: text }).then(function(r){ go.disabled = false; if (r.data.ok) { box.value = ''; loadMsgs(true); } });
+  });
+  setTimeout(function(){ loadMsgs(true); }, 0);
+  clearInterval(msgTimer); msgTimer = setInterval(function(){ if (TAB === 'msgs' && !document.hidden) loadMsgs(true); }, 20000);
+  return [card(tr('msgs'), PREVIEW ? [list] : [list, box, go])];
 }
 
 /* ── INSURANCE CLAIM VIEW (patch INSP) — only when the job is marked insurance (V.insurance) ── */
@@ -485,30 +862,51 @@ function insPay(){
   return out;
 }
 
-/* ── frame ─────────────────────────────────────────────────────────────── */
+/* ── frame ── */
 function go(t){ TAB = t; draw(); window.scrollTo(0, 0); }
 function draw(){
   var main = $('main'); main.innerHTML = '';
-  var parts = TAB === 'photos' ? photos() : TAB === 'docs' ? docs() : TAB === 'pay' ? pay() : home();
-  parts.forEach(function(p){ if (p) main.appendChild(p); });
+  var parts = TAB === 'photos' ? photos() : TAB === 'docs' ? docs() : TAB === 'pay' ? pay() : TAB === 'msgs' ? msgs() : home();
+  var top = [];
+  if (JOBS && JOBS.length > 1) top.push(h('div', { class: 'jobbar' }, [h('button', { type: 'button', class: 'back', id: 'allJobs', text: tr('allProjects'), on: { click: function(){ V = null; PID = ''; picker(); } } })]));
+  if (wide()) {
+    var left = h('aside', { class: 'col-l' }, [V.insurance ? null : tracker(), pmCard(), infoCard()].filter(Boolean));
+    var right = h('section', { class: 'col-r' }, []);
+    parts.forEach(function(p){ if (p) right.appendChild(p); });
+    top.forEach(function(x){ main.appendChild(x); });
+    main.appendChild(h('div', { class: 'two' }, [left, right]));
+  } else {
+    top.concat(parts).forEach(function(p){ if (p) main.appendChild(p); });
+  }
   Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function(b){ b.setAttribute('aria-selected', b.getAttribute('data-tab') === TAB ? 'true' : 'false'); });
 }
-Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function(b){ b.addEventListener('click', function(){ go(b.getAttribute('data-tab')); }); });
+Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function(b){ b.addEventListener('click', function(){ if (window.GCPartner) return; go(b.getAttribute('data-tab')); }); });
+var lastWide = wide();
+window.addEventListener('resize', function(){ var w = wide(); if (w !== lastWide) { lastWide = w; if (V && !window.GCPartner) draw(); } });
 
-if (!token) { notActive('Welcome to your GrayCo Portal. Open it with the personal link we sent you by text and e-mail. Can\u2019t find it? Call GrayCo ' + OFFICE + '.'); return; }
-api('view').then(function(r){
-  if (!r.data || !r.data.ok) { notActive(r.data && r.data.error); return; }
-  V = r.data;
-  var c = V.customer || {}, j = V.job || {};
-  $('hi').textContent = 'Hi ' + (c.firstName || 'there') + ' — your project';
-  $('jobName').textContent = j.name || 'Your project';
-  $('jobSub').textContent = [j.address, j.po ? 'Job ' + j.po : ''].filter(Boolean).join(' · ');
-  $('hello').hidden = false; $('tabs').hidden = false;
-  if (PREVIEW) document.querySelector('.wrap').insertBefore(h('div', { class: 'pvbar', text: 'Preview — exactly what the customer sees. Opening it here does not count as the customer opening it.' }), $('main'));   /* patch INSP */
-  document.title = (j.name ? j.name + ' — ' : '') + 'GrayCo';
-  draw();
-  setTimeout(loadPhotos, 1500);   /* ready before they tap Photos */
-}, function(){ notActive('We could not load your job just now. Check your signal and try again, or call GrayCo ' + OFFICE + '.'); });
+/* ── start: a link, a signed-in device, or the sign-in screen ── */
+if (token) {
+  var dev = ''; try { dev = localStorage.getItem('gc_portal_dev') || ''; } catch (e) {}
+  post(ACC, { action: 'open' }, { token: token, device: dev }).then(function(r){
+    var d = r.data || {};
+    if (!d.ok) {
+      /* a customer link still opens if only the new door is not there / not set up yet */
+      if (r.status !== 404 || !d.error) { session = ''; return route('customer'); }
+      store('gc_portal_t', ''); return notActive(d.error);
+    }
+    if (d.kind === 'customer') { session = ''; store('gc_portal_s', ''); return route('customer'); }
+    if (d.lang && !localStorage.getItem('gc_lang')) { LANG = d.lang; paintLang(); }
+    if (d.need === 'device') return deviceScreen(d);
+    session = d.session; store('gc_portal_s', session); token = '';
+    if (location.hash) history.replaceState(null, '', location.pathname);
+    route('partner');
+  }, function(){ route('customer'); });
+} else if (session) {
+  post(ACC, { action: 'whoami' }, { session: session }).then(function(r){
+    if (!r.data.ok) { store('gc_portal_s', ''); session = ''; return signin(); }
+    route(r.data.kind);
+  }, function(){ notActive(tr('loadFail')); });
+} else signin();
 })();
 </script>
 <script id="gc-portal-sel">
@@ -526,6 +924,10 @@ var token = '';
 try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
 try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
 var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
+/* patch SUB: signed in with e-mail + password → the session code and the job picked (no link code) */
+function sess(){ try { return token ? '' : (localStorage.getItem('gc_portal_s') || ''); } catch (e) { return ''; } }
+function pid(){ try { return String(window.PID || ''); } catch (e) { return ''; } }
+var lastPid = '';
 var D = null, card = null, chosen = {}, note = { pick: '', sign: '' }, busy = false, pad = null, started = false;
 var keep = { pick: '', sign: '', pickOk: false, signOk: false };   /* what was typed / ticked survives a repaint */
 function kept(el, k, ck){ if (ck) { el.checked = keep[k]; el.addEventListener('change', function(){ keep[k] = el.checked; }); } else { el.value = keep[k]; el.addEventListener('input', function(){ keep[k] = el.value; }); } return el; }
@@ -546,7 +948,7 @@ function usd(n){ n = Number(n) || 0; return '$' + n.toLocaleString('en-US', { mi
 function dt(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
 function priceTxt(o){ var t = o.price != null ? usd(o.price) + (o.unit ? ' / ' + o.unit : '') : ''; if (o.priceDiff) t += (t ? ' · ' : '') + (o.priceDiff > 0 ? '+' : '−') + usd(Math.abs(o.priceDiff)) + ' on your contract'; return t; }
 function api(body){
-  return fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(PREVIEW ? Object.assign({ preview: true }, body) : body), cache: 'no-store', credentials: 'omit' })
+  return fetch(FN, { method: 'POST', headers: sess() ? { 'Content-Type': 'application/json', 'x-portal-session': sess() } : { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(Object.assign(PREVIEW ? { preview: true } : {}, sess() ? { projectId: pid() || undefined } : {}, body)), cache: 'no-store', credentials: 'omit' })
     .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); }, function(){ return { status: 0, data: { error: 'No connection — check your signal and try again.' } }; });
 }
 function load(){ return api({ action: 'view' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; paint(); } }); }
@@ -667,8 +1069,10 @@ function place(){
   host.insertBefore(card, first || null);
 }
 function start(){
-  if (started || !token) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
-  started = true; load();
+  if (window.GCPartner) return;   /* patch SUB: the sub portal has no selections */
+  if (started && sess() && pid() !== lastPid) { lastPid = pid(); D = null; if (card && card.parentNode) card.parentNode.removeChild(card); card = null; load(); return; }   /* another job picked */
+  if (started || !(token || sess())) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
+  started = true; lastPid = pid(); load();
 }
 try {
   new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: false });

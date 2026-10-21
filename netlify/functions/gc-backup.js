@@ -87,13 +87,16 @@ const KEEP = 30;
 const TABLES = ['gc_kv', 'gc_admin_kv', 'app_data', 'projects', 'project_estimates', 'project_scope',
                 'project_materials', 'estimate_line_items', 'products',
                 // RoofScout (docs/roofscout-setup.sql); skipped until those tables exist
-                'rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles', 'rs_usage'];
+                'rs_leads', 'rs_activity', 'rs_settings', 'rs_profiles', 'rs_usage',
+                // Sub portal + portal sign-in (docs/subportal-setup.sql); skipped until those tables exist.
+                // Codes and signed-in devices are not kept: they run out by themselves.
+                'sp_rows', 'gc_sub_link', 'gc_sub_scope', 'gc_portal_msg', 'gc_sub_event'];
 
 function sbUrl(){ return (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, ''); }
 function svcKey(){ return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''; }
 function H(extra){ const k = svcKey(); return Object.assign({ apikey: k, Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, extra || {}); }
 
-const ORDER = { gc_kv: 'key', gc_admin_kv: 'key', app_data: 'key', rs_leads: 'id', rs_activity: 'id' };   // others are small; no guessed column names
+const ORDER = { gc_kv: 'key', gc_admin_kv: 'key', app_data: 'key', rs_leads: 'id', rs_activity: 'id', sp_rows: 'key', gc_sub_link: 'token', gc_sub_scope: 'id', gc_portal_msg: 'id', gc_sub_event: 'id' };   // others are small; no guessed column names
 async function readAll(table){
   const out = [];
   const ord = ORDER[table] ? '&order=' + ORDER[table] + '.asc' : '';

@@ -40,6 +40,8 @@ const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
 const GC_DEFAULT_ORIGINS = 'https://graycocrm1.netlify.app,https://crm.grayco-cs.com';
+const GC_PORTAL_ORIGIN = 'https://portal.grayco-cs.com';
+function portalOrigin(){ const v = String(process.env.PORTAL_BASE_URL || '').trim().replace(/\/$/, ''); return /^https:\/\//.test(v) ? v : GC_PORTAL_ORIGIN; }
 function gcHeader(event, name){
   const h = (event && event.headers) || {};
   const k = Object.keys(h).find(function(x){ return x.toLowerCase() === name; });
@@ -47,7 +49,8 @@ function gcHeader(event, name){
 }
 /* CORS: only the CRM's own site may call from a browser (SITE_ORIGIN, comma list). */
 function gcCors(event, methods, extraHeaders){
-  const allowed = (process.env.SITE_ORIGIN || GC_DEFAULT_ORIGINS).split(',')
+  /* 33.151: the portal's own address (PORTAL_BASE_URL, default portal.grayco-cs.com) may call too */
+  const allowed = (process.env.SITE_ORIGIN || GC_DEFAULT_ORIGINS).split(',').concat([portalOrigin()])
     .map(function(s){ return s.trim().replace(/\/$/, ''); }).filter(Boolean);
   const origin = gcHeader(event, 'origin').replace(/\/$/, '');
   return {
@@ -832,6 +835,21 @@ async function tokenRow(token){
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   return row;
 }
+/* 33.151: a customer signed in with a code (portal-access.js). The session row lists the link codes of the jobs
+   it may open; a link turned off in the CRM closes that job (and with no link left, the session). */
+async function sessionRow(sessTok, pid){
+  const id = crypto.createHash('sha256').update(sessTok).digest('hex');
+  const r = await fetch(sbUrl() + '/rest/v1/gc_portal_session?select=kind,links,expires_at,revoked&id=eq.' + id, { headers: H() });
+  if (!r.ok) return null;
+  const ses = ((await r.json()) || [])[0];
+  if (!ses || ses.kind !== 'customer' || ses.revoked === true || Date.parse(ses.expires_at) < Date.now()) return null;
+  const links = (Array.isArray(ses.links) ? ses.links : []).map(String).filter(function(t){ return TOKEN_RE.test(t); });
+  if (!links.length) return null;
+  const q = await fetch(sbUrl() + '/rest/v1/gc_portal?select=token,project_id,revoked,last_viewed_at&revoked=eq.false&token=in.(' + links.map(function(t){ return '"' + t + '"'; }).join(',') + ')', { headers: H() });
+  if (!q.ok) return null;
+  const live = (await q.json()) || [];
+  return live.find(function(x){ return String(x.project_id) === String(pid); }) || (!pid && live.length === 1 ? live[0] : null);
+}
 /* what went wrong, in plain words (shown on the job card) */
 function dbError(status, what){
   const e = new Error(what || 'db');
@@ -874,7 +892,9 @@ function baseUrl(event){
   const origin = gcHeader(event || {}, 'origin').replace(/\/$/, '');
   return allowed.indexOf(origin) > -1 ? origin : allowed[0];
 }
-function linkFor(event, token){ return baseUrl(event) + '/portal.html#t=' + token; }
+/* 33.151: on the portal's own address (PORTAL_BASE_URL = https://portal.grayco-cs.com) a link is <address>/#t=…;
+   on the CRM's address it stays /portal.html#t=… — and every link already sent (crm.grayco-cs.com/portal.html#t=…) keeps working */
+function linkFor(event, token){ const b = baseUrl(event); return b + (/^https:\/\/portal\./.test(b) ? '/#t=' : '/portal.html#t=') + token; }
 
 /* ── a simple per-address rate limit (per warm instance) ──────────────────── */
 const hits = new Map();
@@ -1545,6 +1565,8 @@ function linkMailHtml(v, link){
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
     '<p style="font-size:15px;line-height:1.5">Thank you for choosing GrayCo! This is your <b>GrayCo Portal</b>, your own private project page. See your project\u2019s progress and updates from ' + esc(v.pm.name || 'your Project Manager') + ', job photos, every document (proposal, contract, change orders, invoices, warranty) and your payments, all in one place, on your phone or computer. No app or password needed.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Open my GrayCo Portal</a></p>' +
+    /* 33.151: the login too (owner rule): user name = this e-mail, starter password = the first name */
+    '<p style="font-size:14px;line-height:1.5;background:#F6F3EC;border-radius:8px;padding:10px 12px">Or sign in at <b>' + esc(PORTAL_HOST) + '</b> · E-mail: <b>' + esc(v.customer.email) + '</b> · Password: <b>your first name</b> (you can change it after you sign in).</p>' +
     '<p style="font-size:13px;color:#55626F">Keep this e-mail — the button is your personal link and always opens your portal (' + PORTAL_HOST + '). Questions? Call us at ' + OFFICE_PHONE + '.</p></div></div>';
 }
 async function sendLink(pid, event, who){
@@ -1764,7 +1786,7 @@ async function notActive(headers, t0){
 exports.handler = async function (event) {
   event = event || {};
   const t0 = Date.now();
-  const headers = Object.assign(gcCors(event, 'POST, OPTIONS', 'x-portal-token'), {
+  const headers = Object.assign(gcCors(event, 'POST, OPTIONS', 'x-portal-token, x-portal-session'), {
     'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
   const qsp = event.queryStringParameters || {};
@@ -1847,10 +1869,17 @@ exports.handler = async function (event) {
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
-  if (!TOKEN_RE.test(token) || !svcKey()) { noteBad(ip); return notActive(headers, t0); }
   let row = null;
+  const sessTok = s(gcHeader(event, 'x-portal-session'));
+  if (!TOKEN_RE.test(token) && TOKEN_RE.test(sessTok) && svcKey()) {
+    /* 33.151: signed in with a code (portal-access.js) — the session opens only jobs whose link is still on */
+    try { row = await sessionRow(sessTok, s(body.projectId)); } catch (e) { row = null; }
+    if (!row) { noteBad(ip); return notActive(headers, t0); }
+  } else {
+  if (!TOKEN_RE.test(token) || !svcKey()) { noteBad(ip); return notActive(headers, t0); }
   try { row = await tokenRow(token); } catch (e) { row = null; }
   if (!row || row.revoked === true) { noteBad(ip); return notActive(headers, t0); }
+  }
   let data, p;
   try { data = await crmData(false); p = findProject(data, row.project_id); } catch (e) { return reply(503, headers, { ok: false, error: 'We could not load your job just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' }); }
   if (!p) return notActive(headers, t0);
@@ -1872,8 +1901,8 @@ exports.handler = async function (event) {
   const view = await buildView(data, p);
   /* when was it last opened (at most once every 10 minutes per link) */
   const last = row.last_viewed_at ? Date.parse(row.last_viewed_at) : 0;
-  if (body.preview !== true && (!last || Date.now() - last > 10 * 60e3)) {   /* patch INSP: a staff preview is not a visit */
-    try { await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(token), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ last_viewed_at: new Date().toISOString() }) }); } catch (e) {}
+  if (row.token && body.preview !== true && (!last || Date.now() - last > 10 * 60e3)) {   /* patch INSP: a staff preview is not a visit */
+    try { await fetch(sbUrl() + '/rest/v1/gc_portal?token=eq.' + encodeURIComponent(row.token), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ last_viewed_at: new Date().toISOString() }) }); } catch (e) {}
   }
   return reply(200, headers, view);
 };
