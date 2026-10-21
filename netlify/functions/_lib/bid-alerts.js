@@ -73,9 +73,11 @@ function make(d){
       dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: assigneeEmail || emailOf(assignee), assignedBy: s(it.assignedBy),
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
-      website: isWebsite(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
+      website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
   }
-  function isWebsite(l){ return !!(l && (s(l.origin) === 'website' || l.websiteLead || (l.leadExtra && l.leadExtra.websiteLead) || /^website\b/i.test(s(l.source)))); }
+  function isWebsite(l){ return !!(l && (s(l.origin) === 'website' || l.websiteLead || (l.leadExtra && l.leadExtra.websiteLead) || /^website\b/i.test(s(l.source)) || isPartner(l))); }
+  /* patch API: a lead a partner posted with its GrayCo code (partner-api.js) — handled like a website lead */
+  function isPartner(l){ return !!(l && (s(l.origin) === 'partner' || l.partnerLead || (l.leadExtra && l.leadExtra.partnerLead))); }
   /* the people: name → e-mail (the CRM's people list in gc_kv "users", and gc_staff) */
   const PEOPLE = {};
   function emailOf(name){ return PEOPLE[low(name)] || ''; }
@@ -186,9 +188,11 @@ function make(d){
   /* patch WEB: the new-lead message for website leads (no "Bid due date: NOT FOUND") */
   function mailWeb(list){
     const n = list.length;
-    const subject = (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · ')).slice(0, 250);
-    const html = frame('GrayCo — new website lead' + (n === 1 ? '' : 's'), (n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
-      'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every website lead.');
+    const api = list.every(x => x.partner), from = api ? Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ') : '';   /* patch API */
+    const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
+      : (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · '))).slice(0, 250);
+    const html = frame('GrayCo — new ' + (api ? 'lead' : 'website lead') + (n === 1 ? '' : 's'), (api ? esc(from) + ' sent ' + (n === 1 ? 'a lead' : n + ' leads') + ' through the GrayCo partner API' : n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
+      'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
     const text = subject + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
     return { area: 'area:Leads', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
