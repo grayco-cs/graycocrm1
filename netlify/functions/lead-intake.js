@@ -215,7 +215,7 @@ async function sendEmail(lead) {
       body: JSON.stringify({
         from: 'GrayCo Construction Services <office@grayco-cs.com>',
         to: [lead.email],
-        reply_to: 'office@grayco-cs.com',
+        reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'admin@grayco-cs.com'),
         subject: msg.subject,
         html: msg.html,
         text: msg.text

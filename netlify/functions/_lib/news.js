@@ -12,7 +12,7 @@
      of it (NEWS_UNSUB_SECRET, or a key derived from the service key), so nobody can unsubscribe someone
      else by guessing.
    * sendNews(): THE way any news / marketing mail goes out. It skips unsubscribed addresses, sends from
-     "GrayCo Construction Services <news@grayco-cs.com>" (reply-to office@), adds the footer (why you get it,
+     "GrayCo Construction Services <news@grayco-cs.com>" (reply-to admin@), adds the footer (why you get it,
      one-click unsubscribe, the street address and phone — CAN-SPAM) and the List-Unsubscribe +
      List-Unsubscribe-Post (RFC 8058 one-click) headers.
    * Transactional mail (invoices, portal links, signed papers, receipts) never looks at this list.
@@ -20,7 +20,7 @@
 'use strict';
 const crypto = require('crypto');
 const NEWS_FROM = 'GrayCo Construction Services <news@grayco-cs.com>';
-const REPLY_TO = 'office@grayco-cs.com';
+const REPLY_TO = (function(){ const v = String(process.env.REPLY_TO_ADMIN || '').trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'admin@grayco-cs.com'; })();   /* owner 10/21: replies never land in office@ */
 const ADDRESS = '4014 Broadway Rd, Bartlett, TN 38135';
 const PHONE = '(901) 585-0944';
 const TABLE = 'gc_news_suppress';

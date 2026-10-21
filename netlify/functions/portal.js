@@ -991,7 +991,7 @@ async function sendMail(to, subject, html){
   const key = s(process.env.RESEND_API_KEY);
   if (!key || mailOff()) return { ok: false, skipped: 'no-key' };
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: subject, html: html }) });
+    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [to], subject: subject, html: html }) });
   return { ok: r.ok, status: r.status };
 }
 async function mailRows(){
@@ -1209,6 +1209,14 @@ function pmOf(data, p){
   const u = arr(data.users).find(function(x){ return low(x.name) === low(name); });
   return { name: name, email: low((u && u.email) || p.pmEmail || '') };
 }
+/* where a customer's reply to an automatic e-mail goes (owner, 10/21): a job's PM for job mail; billing, the
+   newsletter and anything without a PM go to the shared admin box (REPLY_TO_ADMIN, default admin@grayco-cs.com).
+   Never office@. */
+function adminReplyTo(){ const v = low(process.env.REPLY_TO_ADMIN || ''); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'admin@grayco-cs.com'; }
+function replyToFor(pmEmail, kind){
+  if (/final|invoice|receipt|payment|billing|news|thank/i.test(s(kind))) return adminReplyTo();
+  const e = low(pmEmail || ''); return /@grayco-cs\.com$/.test(e) && !/^office@/.test(e) ? e : adminReplyTo();
+}
 function stepsFor(kind, pm){ return !pm ? ['admin'] : (MONEY_KIND.test(kind) ? ['pm', 'admin'] : ['pm']); }
 function htmlText(html){
   return s(String(html || '').replace(/<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '$2: $1').replace(/<(br|\/p|\/div|\/li|\/h\d)[^>]*>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
@@ -1261,7 +1269,7 @@ async function aqSend(item, now){
   if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch AUT2: the GrayCo shell + the PM's signature */
   let from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
     : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
-  const payload = { from: from, reply_to: 'office@grayco-cs.com', to: [item.to], subject: item.subject, html: html };
+  const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: item.subject, html: html };
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
   /* patch AP2: the invoice PDF, made fresh from the CRM's record, goes with the e-mail */
   const pdfs = (item.attachments || []).filter(function(a){ return a && a.kind === 'pdf' && a.invoiceId; });
@@ -1499,7 +1507,7 @@ async function sendApprovedReminder(tpl, pid){
     let token; try { token = await createFor(pid, 'auto: approved reminder'); } catch (e) { return { ok: false, error: 'no link' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
-  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [tpl.to], subject: tpl.subject, html: html };
+  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [tpl.to], subject: tpl.subject, html: html };
   if (Array.isArray(tpl.cc) && tpl.cc.length) payload.cc = tpl.cc.slice(0, 5);
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -1685,7 +1693,7 @@ async function sendLink(pid, event, who){
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: 'Your GrayCo Portal — ' + (view.job.name || 'your job'), html: linkMailHtml(view, link) }) });
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: 'Your GrayCo Portal — ' + (view.job.name || 'your job'), html: linkMailHtml(view, link) }) });
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) {
@@ -1803,7 +1811,7 @@ async function notifyDocs(pid, event, opts){
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: subject, html: html }) });
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_docs'), to: [to], subject: subject, html: html }) });
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) { await revert(); return { ok: false, retry: true, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' }; }
@@ -1944,7 +1952,7 @@ async function autaiReceipt(body, who){
   try { html = await require('./_lib/brand.js').shellFor(html, { email: 'billing@grayco-cs.com', name: 'GrayCo Billing' }); } catch (e) {}
   const subject = 'Payment received — ' + clip(doc.job, 80) + ' (invoice #' + doc.number + ')';
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: 'office@grayco-cs.com', to: [to], subject: subject, html: html }) });
+    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [to], subject: subject, html: html }) });
   if (!r.ok) return { status: 502, out: { ok: false, error: 'The receipt did not go out (' + r.status + ').' } };
   const now = new Date().toISOString();
   const item = { id: rid, kind: 'receipt', title: '🧾 Payment receipt — ' + clip(doc.job, 80), jobId: s(ij.p.id), jobName: s(ij.p.name), pm: '', pmEmail: '', channel: 'email', to: to, subject: subject,

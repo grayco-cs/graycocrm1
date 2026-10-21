@@ -303,7 +303,7 @@ async function autoReply(f, id, extra){
     const key = env('RESEND_API_KEY'); if (!key) return { why: 'RESEND_API_KEY is not set' };
     try {
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'GrayCo Construction Services <office@grayco-cs.com>', to: [f.email], reply_to: 'office@grayco-cs.com', subject: m.subject, html: m.html, text: m.text }) });
+        body: JSON.stringify({ from: 'GrayCo Construction Services <office@grayco-cs.com>', to: [f.email], reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'admin@grayco-cs.com'), subject: m.subject, html: m.html, text: m.text }) });
       return r.ok ? { sent: true } : { why: 'Resend ' + r.status };
     } catch (e) { return { why: 'could not reach Resend' }; }
   }

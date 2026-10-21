@@ -313,7 +313,7 @@ async function sendMail(to, subject, html){
   if (!key || mailOff() || !to.length) return { ok: false, skipped: !key ? 'no-key' : (mailOff() ? 'mail-off' : 'no-address') };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Portal <portal@grayco-cs.com>', reply_to: OFFICE_EMAIL, to: to, subject: subject, html: html }) });
+      body: JSON.stringify({ from: 'GrayCo Portal <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'admin@grayco-cs.com'), to: to, subject: subject, html: html }) });
     return { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false }; }
 }
