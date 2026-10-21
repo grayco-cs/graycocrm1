@@ -1026,6 +1026,7 @@ async function officeTodo(id, label, note){
 /* ── patch AP2: the invoice PDF (portal + e-mail attachment), the invoice e-mail approval, GrayCo News ── */
 function invPdfLib(){ return require('./_lib/invoice-pdf.js'); }
 function newsLib(){ return require('./_lib/news.js'); }
+function mktLib(){ return require('./_lib/mkt.js'); }   /* patch MKT: marketing e-mails, social posts, door hangers */
 function invoiceDoc(data, p, r){
   const users = arr(data.users), customers = arr(data.customers);
   const clientName = s(p.client || p.customer || p.clientName || r.client || r.customer);
@@ -1186,6 +1187,7 @@ async function aqOpenFor(test){
   return !!(cur && cur.list.some(function(x){ return (x.status === 'waiting' || x.status === 'sending') && test(x); }));
 }
 async function aqSend(item, now){
+  if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
   if (item.channel === 'sms') { const t = await sendText(item.to, item.text); return t.ok ? { ok: true } : { ok: false, error: 'Texting is not set up yet (' + (t.skipped || 'no provider') + ').' }; }
   if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
@@ -1278,6 +1280,7 @@ async function approvalAction(body, who){
   if (op === 'queue') {
     /* the CRM's automatic thank-you e-mail (job complete + paid): it waits here for the PM, then an admin.
        The recipient is the job's own customer e-mail (never one the page sends). */
+    if (mktLib().isMktKind(body.kind)) return mktLib().queueForApproval(body, who, { queueApproval: queueApproval, officeTodo: officeTodo });   /* patch MKT */
     if (s(body.kind) === 'invoice') return queueInvoiceMail(s(body.invoiceId), who);   /* patch AP2 */
     if (require('./_lib/auto-queue.js').handles(body.kind)) return require('./_lib/auto-queue.js').queue(body, who, { crmData: crmData, findProject: findProject, pmOf: pmOf, queueApproval: queueApproval, kvListRead: kvListRead, kvListUpdate: kvListUpdate, aqSend: aqSend, AQ_KEY: AQ_KEY });   /* patch AUT2 */
     if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you and invoice e-mails are queued from the CRM.' } };
@@ -1307,6 +1310,7 @@ async function approvalAction(body, who){
     const r = await upd(function(x){ if (x.status !== 'waiting' && !stale) return false; x.status = 'rejected'; x.rejectedBy = me.by; x.rejectedEmail = me.email; x.rejectedAt = now; x.reason = clip(body.reason, 500); }, function(z){ return z.status === 'rejected'; });
     if (!r.ok || !r.result || r.result.status !== 'rejected') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
     const m = it0.meta || {};
+    if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });

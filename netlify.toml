@@ -72,6 +72,12 @@
 [functions."companycam-sync"]
   schedule = "*/15 * * * *"
 
+# Marketing (patch MKT, docs/SOCIAL-SETUP.md): every 15 minutes — approved social posts and news@ campaigns whose time
+# came go out (unsubscribed customers skipped), and Autopilot drafts this week's posts / this month's e-mail. Every draft
+# waits on Approvals; nothing customer-facing goes out without an admin's OK.
+[functions."mkt-scheduled"]
+  schedule = "*/15 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
