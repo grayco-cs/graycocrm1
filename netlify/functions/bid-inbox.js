@@ -673,6 +673,16 @@ async function processEvent(evt, opts){
   /* mail plainly for the bill or claim inbox (same webhook) is not even downloaded */
   if (otherInbox(data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const mail = await readMail(data);
+  /* patch AUTO8: a GC's answer to Glenn's "Bid results?" e-mail (its Reply-To has results+<lead id>@in.grayco-cs.com):
+     kept for the CRM (gc_kv gc_bid_results — the lead shows it, Glenn's dashboard counts it); never a new lead */
+  const resHit = recipients(mail, data).map(x => /^results\+([a-z0-9_-]{1,60})@in\.grayco-cs\.com$/i.exec(x)).filter(Boolean)[0];
+  if (resHit) {
+    if (ownOrAuto(mail)) return { status: 200, body: { ok: true, ignored: ownOrAuto(mail) } };
+    if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+    const ok = await alertsApi().kvAppendResult({ id: 'ans_' + (mail.id || itemId(mail.from.email + mail.subject + mail.date)), kind: 'answer', lead: low(resHit[1]), at: nowIso(),
+      from: mail.from.email, fromName: mail.from.name, subject: s(mail.subject).slice(0, 200), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 1500) }).catch(() => false);
+    return ok ? { status: 200, body: { ok: true, results: true } } : { status: 503, body: { ok: false, error: 'GrayCo could not store the bid results yet — retry.' } };
+  }
   const leadMail = !forBids(mail, data) && forLeads(mail, data);   /* patch STL: leads@ — never when it is for bids@ too */
   /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
   const orderMail = !leadMail && !forBids(mail, data) && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));

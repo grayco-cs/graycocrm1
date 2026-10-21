@@ -26,7 +26,8 @@ const OPTS = [
   ['contractSign', 'docs', true], ['faqPacket', 'docs', true], ['warrantyCert', 'docs', true], ['lienWaivers', 'docs', true],
   ['w9', 'docs', { commercial: true, program: true, other: false }], ['coSign', 'docs', true],
   ['signedCopies', 'docs', true, true], ['receipts', 'docs', true, true],
-  ['teamAlert', 'internal', false], ['pmPush', 'internal', true], ['newsletter', 'internal', true]
+  ['teamAlert', 'internal', false], ['pmPush', 'internal', true], ['newsletter', 'internal', true],
+  ['equipment', 'internal', false]   /* patch AUTO8: the dumpster & equipment tracker on this job */
 ];
 const KEYS = OPTS.map(function(o){ return o[0]; });
 const LOCKED = {}; OPTS.forEach(function(o){ if (o[3]) LOCKED[o[0]] = true; });

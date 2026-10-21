@@ -554,3 +554,8 @@ exports.handler = async function(event){
   catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
 exports._sel = { stateOf: stateOf, cleanName: cleanName, cleanStrokes: cleanStrokes, buildPdf: buildPdf, signedCopy: signedCopy, RESP_KEY: RESP_KEY, _reset: function(){ hits.clear(); writes.clear(); } };
+/* patch AUTO8: the final walkthrough (walkthrough.js) signs in the portal the same way — the same link / session check,
+   rate limit, name and signature-pad rules, signed-copy PDF and e-mail */
+Object.assign(exports._sel, { gcStaffAuth: gcStaffAuth, gcCors: gcCors, gcHeader: gcHeader, kvRead: kvRead, findProject: findProject, carrierWords: carrierWords, scrubText: scrubText,
+  signRefs: signRefs, uploadPdf: uploadPdf, tokenRow: tokenRow, sessionLinkRow: sessionLinkRow, ipOf: ipOf, limited: limited, noteBad: noteBad, tooManyWrites: tooManyWrites,
+  central: central, resend: resend, mailShell: mailShell, svcKey: svcKey, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE, MIN_FAIL_MS: MIN_FAIL_MS });

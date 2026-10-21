@@ -1183,7 +1183,7 @@ function thankYouNewsBlock(){
 const AQ_KEY = 'gc_approval_queue';
 const LINK_PH = '{{PORTAL_LINK}}';
 const AQ_RANK = { waiting: 0, sending: 1, approved: 2, rejected: 3, sent: 4 };
-const MONEY_KIND = /final|invoice|lien|waiver|contract|thank_you/;   /* patch AP2: 'invoice' = the invoice PDF e-mail */   /* PM, then an admin (owner: the thank-you e-mail too) */
+const MONEY_KIND = /final|invoice|lien|waiver|contract|thank_you|pay_app/;   /* patch AP2: 'invoice' = the invoice PDF e-mail */   /* PM, then an admin (owner: the thank-you e-mail too) */
 const AUTO_OK = { signed_copy: 1, receipt: 1 };   /* the exceptions: these still go out by themselves */
 function approvalNeeded(kind){ return needsApproval() && !AUTO_OK[kind]; }
 function aqDone(st){ return st === 'sent' || st === 'rejected'; }
@@ -1214,7 +1214,7 @@ function pmOf(data, p){
    Never office@. */
 function adminReplyTo(){ const v = low(process.env.REPLY_TO_ADMIN || ''); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'replies@grayco-cs.com'; }
 function replyToFor(pmEmail, kind){
-  if (/final|invoice|receipt|payment|billing|news|thank/i.test(s(kind))) return adminReplyTo();
+  if (/final|invoice|receipt|payment|billing|news|thank|pay_app|offer_letter/i.test(s(kind))) return adminReplyTo();
   const e = low(pmEmail || ''); return /@grayco-cs\.com$/.test(e) && !/^office@/.test(e) ? e : adminReplyTo();
 }
 /* owner 10/21: every e-mail about a job carries the job in its subject — PO · name · address — so a reply
@@ -1290,8 +1290,8 @@ async function aqSend(item, now){
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
   if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch AUT2: the GrayCo shell + the PM's signature */
-  let from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
-    : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
+  let from = /final|invoice|pay_app/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
+    : (/thank_you|lead|offer_letter/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
   /* patch AUTO5: a signature request / an estimate follow-up goes out from the job's PM (replies go to the PM) */
   if (item.meta && item.meta.fromPm === true && /^[^@\s<>"]+@grayco-cs\.com$/i.test(s(item.pmEmail)) && !/^office@/i.test(s(item.pmEmail))) from = s(item.pm).replace(/[<>"]/g, '') + ' \u2014 GrayCo Construction Services <' + low(item.pmEmail) + '>';
   let subj = item.subject; if (item.jobId) { try { const dj = await crmData(false); subj = withJob(subj, findProject(dj, item.jobId)); } catch (e) {} }
@@ -1308,6 +1308,19 @@ async function aqSend(item, now){
         return { filename: f.filename, content: f.pdf.toString('base64') };
       });
     } catch (e) { return { ok: false, error: 'Could not make the invoice PDF (' + clip(e && e.message || e, 80) + ').' }; }
+  }
+  /* patch AUTO8: a stored PDF (a pay application, an offer letter) goes with the e-mail, read from the private file storage */
+  const stored = (item.attachments || []).filter(function(a){ return a && a.kind === 'file' && refPath(a.ref); }).slice(0, 3);
+  if (stored.length) {
+    try {
+      const more = [];
+      for (const a of stored) {
+        const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + refPath(a.ref), { headers: keyHeaders(svcKey()) });
+        if (!r.ok) throw new Error('file ' + r.status);
+        more.push({ filename: clip(a.name || 'document.pdf', 120).replace(/[^\w .()#-]+/g, '-'), content: Buffer.from(await r.arrayBuffer()).toString('base64') });
+      }
+      payload.attachments = (payload.attachments || []).concat(more);
+    } catch (e) { return { ok: false, error: 'Could not attach the PDF (' + clip(e && e.message || e, 80) + ').' }; }
   }
   /* patch AP2: the thank-you comes from news@ with the newsletter part, the unsubscribe footer and the
      List-Unsubscribe headers — unless the customer unsubscribed (or the list cannot be read): then it is a

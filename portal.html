@@ -1366,5 +1366,122 @@ start();
 window._gcPortalESignCard = { reload: load, data: function(){ return D; } };
 })();
 </script>
+<script id="gc-portal-wt">
+/* patch AUTO8 — "🏁 Final walkthrough" on the customer's Home page. When the PM sends the walkthrough (the punch list),
+   the customer reads it and signs here: typed name + a drawn signature (or tap Sign to accept with the typed name),
+   exactly like "Your selections". Everything goes through /.netlify/functions/walkthrough with the same link code /
+   session; the server checks every input and records the name, the time and the address. Their signed copy is shown
+   below and e-mailed to them. The card sits on top of Home and survives the page redrawing. */
+(function(){
+'use strict';
+if (window.__GC_PWT__) return; window.__GC_PWT__ = true;
+var FN = '/.netlify/functions/walkthrough', OFFICE = '901-585-0944';
+var token = '';
+try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
+try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
+var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
+function sess(){ try { return token ? '' : (localStorage.getItem('gc_portal_s') || ''); } catch (e) { return ''; } }
+function pid(){ try { return String(window.PID || ''); } catch (e) { return ''; } }
+var D = null, card = null, busy = false, pad = null, started = false, lastPid = '', msg = '', keep = { name: '', ok: false };
+function h(tag, attrs, kids){
+  var el = document.createElement(tag);
+  if (attrs) Object.keys(attrs).forEach(function(k){
+    var v = attrs[k]; if (v == null || v === false) return;
+    if (k === 'text') el.textContent = v;
+    else if (k === 'on') Object.keys(v).forEach(function(e){ el.addEventListener(e, v[e]); });
+    else if ((k === 'href' || k === 'src') && !/^https:\/\//i.test(String(v))) return;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  });
+  (kids || []).forEach(function(c){ if (c == null || c === false) return; el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return el;
+}
+function dt(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function api(body){
+  return fetch(FN, { method: 'POST', headers: sess() ? { 'Content-Type': 'application/json', 'x-portal-session': sess() } : { 'Content-Type': 'application/json', 'x-portal-token': token }, body: JSON.stringify(Object.assign(PREVIEW ? { preview: true } : {}, sess() ? { projectId: pid() || undefined } : {}, body)), cache: 'no-store', credentials: 'omit' })
+    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); }, function(){ return { status: 0, data: { error: 'No connection — check your signal and try again.' } }; });
+}
+function load(){ return api({ action: 'view' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; paint(); } }); }
+function makePad(){
+  var cv = h('canvas', { class: 'sel-pad', width: '600', height: '200', 'aria-label': 'Draw your signature here' });
+  var ctx = cv.getContext('2d'), strokes = [], cur = null;
+  function pt(e){ var r = cv.getBoundingClientRect(); return [Math.max(0, Math.min(600, (e.clientX - r.left) * 600 / r.width)), Math.max(0, Math.min(200, (e.clientY - r.top) * 200 / r.height))]; }
+  function redraw(){ ctx.clearRect(0, 0, 600, 200); ctx.strokeStyle = '#0F1D2F'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    strokes.forEach(function(st){ ctx.beginPath(); st.forEach(function(p, i){ if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); if (st.length === 1) ctx.lineTo(st[0][0] + 1, st[0][1]); ctx.stroke(); }); }
+  cv.addEventListener('pointerdown', function(e){ if (strokes.length >= 38) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} cur = [pt(e)]; strokes.push(cur); redraw(); });
+  cv.addEventListener('pointermove', function(e){ if (!cur || cur.length >= 590) return; e.preventDefault(); var p = pt(e), l = cur[cur.length - 1]; if (Math.abs(p[0] - l[0]) + Math.abs(p[1] - l[1]) < 2) return; cur.push(p); redraw(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(n){ cv.addEventListener(n, function(){ cur = null; }); });
+  return { el: cv, strokes: function(){ return strokes.map(function(st){ return st.map(function(p){ return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10]; }); }); }, clear: function(){ strokes = []; cur = null; redraw(); } };
+}
+function paint(){
+  var w = D && D.walkthrough, docs = (D && D.docs) || [];
+  if (!w && !docs.length) { if (card && card.parentNode) card.parentNode.removeChild(card); card = null; return; }
+  var c = card || h('section', { class: 'card sel', id: 'gcwt' }); c.innerHTML = '';
+  var need = w && w.status === 'needs-sign';
+  c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🏁 Final walkthrough' }), h('span', { class: 'pill ' + (need ? 'now' : 'ok'), text: need ? 'Please sign' : 'Signed' })]));
+  if (PREVIEW) c.appendChild(h('div', { class: 'muted', text: 'Preview — only the customer can sign.' }));
+  if (w) {
+    var list = h('div', { class: 'sel-sec', id: 'gcwt-items' }, [h('h3', { text: need ? 'Your job is finished — please look it over' : '✓ Walkthrough' })]);
+    w.items.forEach(function(x){ list.appendChild(h('div', { class: 'sel-row' }, [h('span', { class: 'sel-ph', 'aria-hidden': 'true', text: x.done ? '✅' : '🔧' }), h('div', { class: 'grow' }, [h('b', { text: x.text }), h('span', { class: 'sel-st ' + (x.done ? 'ok' : 'now'), text: x.done ? 'Complete' : 'To finish (agreed)' })])])); });
+    if (w.note) list.appendChild(h('div', { class: 'muted', text: w.note }));
+    c.appendChild(list);
+    if (need) {
+      var sb = h('div', { class: 'sel-sec', id: 'gcwt-sign' }, [h('h3', { text: '✍️ Sign the walkthrough' })]);
+      if (!pad) pad = makePad();
+      var nm = h('input', { type: 'text', class: 'sel-name', id: 'gcwt-name', maxlength: '80', autocomplete: 'name', placeholder: 'Type your full name' }); nm.value = keep.name; nm.addEventListener('input', function(){ keep.name = nm.value; });
+      var ag = h('input', { type: 'checkbox', id: 'gcwt-agree' }); ag.checked = keep.ok; ag.addEventListener('change', function(){ keep.ok = ag.checked; });
+      var go = h('button', { type: 'button', class: 'btn gold', id: 'gcwt-btn', text: 'Sign' });
+      var sm = h('div', { class: 'sel-msg', id: 'gcwt-msg', role: 'status', text: msg });
+      sb.appendChild(h('label', { class: 'muted', for: 'gcwt-name', text: 'Your full name' })); sb.appendChild(nm);
+      sb.appendChild(h('div', { class: 'muted', text: 'Draw your signature (or leave it blank and tap Sign to accept with your typed name):' }));
+      sb.appendChild(pad.el);
+      sb.appendChild(h('button', { type: 'button', class: 'btn sel-clear', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
+      sb.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: ' I walked through the finished work and I accept it as complete (items marked "to finish" will be finished as agreed).' })]));
+      sb.appendChild(go); sb.appendChild(sm);
+      go.disabled = PREVIEW;
+      go.addEventListener('click', function(){
+        if (busy) return; if (!nm.value.trim()) { sm.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { sm.textContent = 'Please tick the box to accept.'; return; }
+        busy = true; go.disabled = true; sm.textContent = 'Signing…';
+        api({ action: 'sign', wtId: w.id, name: nm.value, agree: true, strokes: pad.strokes() }).then(function(r){
+          busy = false;
+          if (r.data && r.data.ok) { keep.ok = false; msg = '✓ Thank you — signed. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); pad.clear(); return load(); }
+          msg = ''; sm.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; go.disabled = false;
+        });
+      });
+      c.appendChild(sb);
+    } else {
+      if (w.signed) c.appendChild(h('div', { class: 'sel-msg', text: msg || ('✓ Signed by ' + w.signed.name + ' on ' + dt(w.signed.at) + '. Thank you!') }));
+    }
+  }
+  if (docs.length) {
+    var dc = h('div', { class: 'sel-sec', id: 'gcwt-docs' }, [h('h3', { text: '📄 Your signed walkthrough' })]);
+    docs.forEach(function(d){ dc.appendChild(h('div', { class: 'doc' }, [h('div', { class: 'grow' }, [h('span', { class: 'n', text: d.title }), h('span', { class: 'muted', text: dt(d.at) })]), h('div', { class: 'act' }, [h('a', { class: 'btn', href: d.url, target: '_blank', rel: 'noopener', text: 'Open' })])])); });
+    c.appendChild(dc);
+  }
+  c.appendChild(h('div', { class: 'muted', text: 'Questions about the work? Call your Project Manager or the office at ' + OFFICE + '.' }));
+  card = c; place();
+}
+function homeShown(){ var t = document.getElementById('tabs'); if (!t || t.hidden) return false; var b = document.querySelector('nav.tabs button[data-tab="home"]'); return !b || b.getAttribute('aria-selected') === 'true'; }
+function place(){
+  var main = document.getElementById('main'); if (!main) return;
+  if (!card || !homeShown()) { if (card && card.parentNode) card.parentNode.removeChild(card); return; }
+  var host = main.querySelector('.col-r') || main;
+  if (card.parentNode === host) return;
+  var first = host.firstElementChild; while (first && first.classList && first.classList.contains('jobbar')) first = first.nextElementSibling;
+  host.insertBefore(card, first || null);
+}
+function start(){
+  if (window.GCPartner) return;   /* the sub portal has no walkthrough */
+  if (started && sess() && pid() !== lastPid) { lastPid = pid(); D = null; if (card && card.parentNode) card.parentNode.removeChild(card); card = null; load(); return; }
+  if (started || !(token || sess())) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
+  started = true; lastPid = pid(); load();
+}
+try {
+  new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: false });
+  var tb = document.getElementById('tabs'); if (tb) new MutationObserver(function(){ start(); place(); }).observe(tb, { attributes: true, subtree: true, attributeFilter: ['hidden', 'aria-selected'] });
+} catch (e) {}
+start();
+window._gcPortalWt = { reload: load, data: function(){ return D; } };
+})();
+</script>
 </body>
 </html>

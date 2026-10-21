@@ -345,7 +345,75 @@ function make(d){
     try { out.nag = await nag(src, t); } catch (e) { out.nag = { error: s(e && e.message) }; }
     try { out.assigned = await sweepAssigned(src, t); } catch (e) { out.assigned = { error: s(e && e.message) }; }
     try { out.speed = await speedToLead(src, t); } catch (e) { out.speed = { error: s(e && e.message) }; }
+    try { out.results = await resultsAsk(src, t); } catch (e) { out.results = { error: s(e && e.message) }; }
     return out;
+  }
+
+  /* ── patch AUTO8: "Bid results?" — 7 days after a SUBMITTED bid's due date, still not won / lost: one e-mail from
+     Glenn (BID_RESULTS_FROM, default gmiller@grayco-cs.com) to whoever the bid was due to (dueToEmail), asking how it
+     came out. Glenn gets a copy (bcc); replies go to him AND to results+<lead>@in.grayco-cs.com, where bid-inbox.js
+     files the answer for the CRM (gc_kv gc_bid_results → the lead and Glenn's dashboard). A staff member's own e-mail
+     to a GC — not a customer — so it goes straight out (no approval), weekdays 9 AM – 4 PM Central only, once per
+     lead and due date. BID_RESULTS_OFF=1 turns it off. ─────────────────────────────────────────────────────── */
+  const RESULTS_DAYS = 7;
+  function resultsWanted(l, t){
+    if (!l || !l.id || !isBid(l) || l.deleted || l._deleted || l.converted || l.notBidding || l.noBid) return false;
+    if (/^(won|lost|no\s*bid|not\s*bidding|dead|deleted|converted|declined|archived|cancell?ed|closed|dismissed)$/i.test(s(l.bidStatus))) return false;
+    if (/^(won|lost|dead|deleted|converted|declined|archived|closed|dismissed)$/i.test(s(l.stage)) || /^(won|lost)$/i.test(s(l.status))) return false;
+    if (!(/^submitted$/i.test(s(l.bidStatus)) || s(l.submittedAt))) return false;   /* only a bid GrayCo actually sent in */
+    if (!/^\d{4}-\d{2}-\d{2}/.test(s(l.bidDue))) return false;
+    const dueAt = BD.wallToEpoch(s(l.bidDue).length > 10 ? s(l.bidDue) : s(l.bidDue) + 'T17:00');
+    if (!isFinite(dueAt) || t - dueAt < RESULTS_DAYS * 86400000 || t - dueAt > 60 * 86400000) return false;
+    return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(l.dueToEmail));
+  }
+  function resultsToken(id){ return s(id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60); }
+  function resultsMail(l, fromName){
+    const title = s(l.name || l.title) || 'the project', who = s(l.dueToContact).split(/\s+/)[0];
+    const due = fmtDue(s(l.bidDue));
+    const html = '<div style="font:14px Arial,Helvetica,sans-serif;color:#1b1640;max-width:600px">'
+      + '<p>Hi ' + esc(who || 'there') + ',</p>'
+      + '<p>Thank you for the chance to bid <b>' + esc(title) + '</b> (bid due ' + esc(due) + '). When you have a moment, could you share the bid results — '
+      + 'was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.</p>'
+      + '<p>Thanks again — we appreciate being on your bid list.</p>'
+      + '<p>' + esc(fromName) + '<br>Estimator · GrayCo Construction Services<br>4014 Broadway Rd, Bartlett, TN 38135 · 901-585-0944</p></div>';
+    const text = 'Hi ' + (who || 'there') + ',\n\nThank you for the chance to bid ' + title + ' (bid due ' + due + '). When you have a moment, could you share the bid results — was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.\n\nThanks again — we appreciate being on your bid list.\n\n' + fromName + '\nEstimator · GrayCo Construction Services\n4014 Broadway Rd, Bartlett, TN 38135 · 901-585-0944';
+    return { subject: ('Bid results — ' + title).slice(0, 200), html, text };
+  }
+  async function resultsAsk(src, t){
+    if (off() || env('BID_RESULTS_OFF') === '1') return { sent: 0, off: true };
+    const w = BD.epochToWall(t), wd = new Date(w.slice(0, 10) + 'T12:00:00Z').getUTCDay(), hm = w.slice(11, 16);
+    if (wd === 0 || wd === 6 || hm < '09:00' || hm >= '16:00') return { sent: 0, quiet: true };
+    const want = arr(src.leads).filter(l => resultsWanted(l, t) && !(src.tombs && src.tombs['leads:' + l.id]));
+    if (!want.length) return { sent: 0 };
+    let mine = [];
+    await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); return mine.length ? st : undefined; });
+    const key = env('RESEND_API_KEY'); const out = { sent: 0, failed: 0, list: [] };
+    const fromEmail = low(env('BID_RESULTS_FROM') || 'gmiller@grayco-cs.com');
+    const fromName = s(env('BID_RESULTS_NAME')) || (fromEmail === 'gmiller@grayco-cs.com' ? 'Glenn Miller' : (Object.keys(PEOPLE).filter(n => PEOPLE[n] === fromEmail)[0] || 'GrayCo Estimating').replace(/\b\w/g, c => c.toUpperCase()));
+    for (const l of mine.slice(0, 10)) {
+      const m = resultsMail(l, fromName);
+      let ok = false;
+      if (key) {
+        try {
+          const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: fromName + ' — GrayCo Construction Services <' + fromEmail + '>', to: [low(l.dueToEmail)], bcc: [fromEmail],
+              reply_to: [fromEmail, 'results+' + resultsToken(l.id) + '@in.grayco-cs.com'], subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'bid-results' } }) });
+          ok = r.ok;
+        } catch (e) {}
+      }
+      out.list.push({ id: l.id, ok });
+      if (ok) out.sent++; else { out.failed++; await kvCas(KA, v => { const st = loadState(v); delete st.reminded['results|' + l.id + '|' + s(l.bidDue)]; return st; }).catch(() => {}); }
+      if (ok) await kvAppendResult({ id: 'ask_' + resultsToken(l.id) + '_' + s(l.bidDue).slice(0, 10), kind: 'asked', leadId: s(l.id), at: nowIso(), to: low(l.dueToEmail), by: fromEmail }).catch(() => {});
+    }
+    return out;
+  }
+  /* the CRM reads gc_kv "gc_bid_results" (asked / answered), newest 500 */
+  async function kvAppendResult(item){
+    const r = await sb('gc_kv?select=value&key=eq.gc_bid_results'); if (!r.ok) return false;
+    const rows = await r.json(); let v = rows && rows[0] ? rows[0].value : []; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
+    const list = arr(v).filter(x => x && x.id !== item.id).concat([item]).slice(-500);
+    const w = await sb('gc_kv?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: 'gc_bid_results', value: JSON.stringify(list), updated_at: nowIso() }) });
+    return w.ok;
   }
 
   /* ── "Missing due info": the assigned person, once a day from 8 AM Central, for each open bid marked
@@ -554,7 +622,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }
