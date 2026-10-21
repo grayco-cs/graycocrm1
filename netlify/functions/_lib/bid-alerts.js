@@ -188,6 +188,13 @@ function make(d){
   /* patch WEB: the new-lead message for website leads (no "Bid due date: NOT FOUND") */
   function mailWeb(list){
     const n = list.length;
+    if (list.every(x => x.form === 'Missed call')) {   /* patch AUTO6: the missed-call text-back */
+      const subj = (n === 1 ? '📞 Missed call — auto-text sent: ' + list[0].title : '📞 ' + n + ' missed calls — auto-texts sent').slice(0, 250);
+      const h = frame('GrayCo — missed call', (n === 1 ? 'Someone called GrayCo and nobody answered' : n + ' calls were not answered') + '. They got the automatic text ("Sorry we missed your call…"). It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM and call them back.', list.map(rowHtml).join(''),
+        'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every missed call that is not an existing customer.');
+      const t = subj + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
+      return { area: 'area:Leads', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
+    }
     const api = list.every(x => x.partner), from = api ? Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ') : '';   /* patch API */
     const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
       : (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · '))).slice(0, 250);

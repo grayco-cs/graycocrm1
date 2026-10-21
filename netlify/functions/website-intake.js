@@ -273,6 +273,9 @@ async function fileLead(f, extra){
     files: [], emails: [], emailIds: [], notes, origin: 'website', websiteForm: T.label, websiteLead: true, leadExtra,
     needsReview: false, dueUnknown: false
   };
+  if (extra.formLabel) { rec.websiteForm = extra.formLabel; rec.sourceRef = extra.formLabel; leadExtra.websiteForm = extra.formLabel; }   /* patch AUTO6: "Missed call" */
+  if (extra.title) rec.title = clip(extra.title, 200);
+  if (extra.leadExtra) Object.assign(leadExtra, extra.leadExtra);
   let action = '';
   await L().kvCas(L().KV, v => { const o = L().upsert(arr(v), rec); action = o.action; return o.items; });
   return { id, rec, action, customer: cust };
@@ -603,6 +606,9 @@ exports.fromEmail = async function(mail){
   const alerts = r.action === 'added' ? await alertLead(r.rec) : { skipped: r.action };
   return { ok: true, lead: r.id, action: r.action, alerts, type: f.type };
 };
+
+/* patch AUTO6: the missed-call text-back (missed-call.js) files its leads the same way */
+exports._lib = { fileLead, alertLead, findCustomer, phone10, tidyPhone, SOURCE };
 
 exports._test = { fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
   reset: () => { HITS.clear(); } };

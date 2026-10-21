@@ -74,6 +74,17 @@
 [functions."bid-alerts"]
   schedule = "*/10 * * * *"
 
+# Nightly data check (patch AUTO6): 07:05 UTC = 2:05 AM Central (1:05 AM in winter). Duplicate customers, jobs missing
+# a PM / address / contract amount / signed contract, leads missing a due date / assignee → ONE item on the shared
+# Office To-Do. Never deletes or merges anything.
+[functions."data-check"]
+  schedule = "5 7 * * *"
+
+# Lost-lead win-back (patch AUTO6): 15:20 UTC = 10:20 AM Central (9:20 AM in winter). Leads lost 6 / 12 months ago →
+# one approval item per batch; nothing goes out until an admin approves it (then one e-mail each from news@).
+[functions."winback"]
+  schedule = "20 15 * * *"
+
 # CompanyCam (patch CC, docs/COMPANYCAM.md): every 15 minutes, on the server — every CompanyCam project changed
 # since the last look; a new 2026+ one becomes a Bidding job with the PM who made it in CompanyCam. Nobody has
 # to have the CRM open. Needs COMPANYCAM_TOKEN and SUPABASE_SERVICE_KEY.
