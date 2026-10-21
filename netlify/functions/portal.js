@@ -1802,7 +1802,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -1812,6 +1812,15 @@ exports.handler = async function (event) {
         if (body.set && typeof body.set === 'object') return reply(200, headers, Object.assign({ ok: true }, await settingsSet(body.set, who.email)));
         return reply(200, headers, Object.assign({ ok: true }, await settingsGet()));
       } catch (e) { return reply(502, headers, { ok: false, error: 'Could not save the setting. Try again.' }); }
+    }
+    if (action === 'links') {        /* patch ADM: every portal link's state for Admin → System check (no link codes) */
+      if (low(who.role) !== 'admin') return reply(403, headers, { ok: false, error: 'Admins only.' });
+      try {
+        const r = await sbFetch(sbUrl() + '/rest/v1/gc_portal?select=project_id,created_at,last_viewed_at,revoked,sent_at&order=created_at.desc&limit=2000', { headers: H() });
+        if (!r.ok) return reply(r.status === 404 ? 503 : 502, headers, { ok: false, error: r.status === 404 ? 'Portal not set up: run docs/portal-setup.sql in Supabase.' : 'gc_portal read ' + r.status });
+        const rows = await r.json();
+        return reply(200, headers, { ok: true, links: (Array.isArray(rows) ? rows : []).map(function(x){ return { projectId: x.project_id, createdAt: x.created_at, lastViewedAt: x.last_viewed_at, revoked: !!x.revoked, sentAt: x.sent_at }; }) });
+      } catch (e) { return reply(500, headers, { ok: false, error: 'The portal server hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'approval') {
       try { const a = await approvalAction(body, who); return reply(a.status, headers, a.out); }

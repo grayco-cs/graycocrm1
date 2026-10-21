@@ -108,6 +108,22 @@ async function listStaff(){
   if (!r.ok) throw new Error('Could not read gc_staff (' + r.status + '). Has docs/security-lockdown.sql been run?');
   return r.json();
 }
+async function signIns(){
+  const staff = await listStaff(), want = {}, out = [];
+  (Array.isArray(staff) ? staff : []).forEach(function(p){ if (p && p.email) want[cleanEmail(p.email)] = p; });
+  for (let page = 1; page <= 20; page++) {
+    const r = await fetch(sbUrl() + '/auth/v1/admin/users?page=' + page + '&per_page=200', { headers: svcHeaders() });
+    if (!r.ok) break;
+    const j = await r.json();
+    const users = Array.isArray(j) ? j : (j.users || []);
+    users.forEach(function(u){ const e = cleanEmail(u.email); if (!want[e]) return;
+      out.push({ email: e, lastSignInAt: u.last_sign_in_at || null, createdAt: u.created_at || null, banned: !!(u.banned_until && Date.parse(u.banned_until) > Date.now()), confirmed: !!(u.email_confirmed_at || u.confirmed_at) });
+      delete want[e]; });
+    if (users.length < 200) break;
+  }
+  Object.keys(want).forEach(function(e){ out.push({ email: e, lastSignInAt: null, noLogin: true }); });
+  return out;
+}
 async function findAuthUser(email){
   for (let page = 1; page <= 20; page++) {
     const r = await fetch(sbUrl() + '/auth/v1/admin/users?page=' + page + '&per_page=200', { headers: svcHeaders() });
@@ -145,6 +161,8 @@ exports.handler = async function (event) {
   try {
     if (event.httpMethod === 'GET') {
       if (q.action === 'list') return J(200, { staff: await listStaff() });
+      /* patch ADM: when each person on the staff list last signed in (Supabase sign-in records) — dates only */
+      if (q.action === 'signins') return J(200, { signins: await signIns() });
       return J(400, { error: 'Unknown action.' });
     }
     if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' });

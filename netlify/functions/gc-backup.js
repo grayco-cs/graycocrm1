@@ -147,6 +147,16 @@ exports.handler = async function (event) {
      list of each kept nightly snapshot — only the fields people edit — for "Find edits that were undone". Read-only. */
   if (!isScheduled(event)) {
     let req = {}; try { req = JSON.parse(event.body || '{}'); } catch (e) {}
+    /* patch ADM: POST {"action":"last"} — when each table was last backed up (time and row count only). Read-only. */
+    if (req && req.action === 'last') {
+      try {
+        const lr = await fetch(sbUrl() + '/rest/v1/gc_backups?select=source,taken_at,row_count&order=taken_at.desc&limit=200', { headers: H() });
+        if (!lr.ok) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: lr.status === 404 ? 'gc_backups is missing — run docs/security-prepare.sql' : 'gc_backups read ' + lr.status }) };
+        const rows = await lr.json(), seen = {}, last = [];
+        (Array.isArray(rows) ? rows : []).forEach(function(r){ if (r && !seen[r.source]) { seen[r.source] = 1; last.push({ source: r.source, at: r.taken_at, rows: r.row_count }); } });
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, last: last }) };
+      } catch (e) { return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) }; }
+    }
     if (req && req.action === 'history') {
       const nights = Math.max(1, Math.min(30, parseInt(req.nights, 10) || 10));
       const F = ['id', 'name', 'autoPO', 'status', 'pct', 'pm', 'contract', 'client', 'address', 'type', 'startDate', 'endDate', 'completionDate', 'updatedAt', '_fe'];
