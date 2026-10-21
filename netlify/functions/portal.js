@@ -1271,6 +1271,7 @@ async function aqSend(item, now){
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
+  if (/^gcp_/.test(s(item.kind))) return require('./_lib/gcp.js').onApproved(item, now);   /* patch GCP: GC pay apps / change orders / company COI / inspection offers */
   if (item.kind === 'refcredit' || item.kind === 'refgift') return require('./_lib/referral.js').onApproved(item, now);   /* patch REF: approved → credit on the member's balance / a one-time gift code (only its hash kept) */
   if (item.kind === 'winback') return require('./_lib/winback.js').onApproved(item, now);   /* patch AUTO6: lost-lead check-ins, one e-mail each from news@ */   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
   if (item.kind === 'maint_invoice') return require('./portal-plus.js').maintInvoiceSend(item, now);   /* patch X9: the yearly maintenance-plan invoice, with its PDF */
@@ -2160,6 +2161,8 @@ exports._core = { JA: JA, jaAllows: jaAllows, pmByName: async function(name){ co
   queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
+/* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */
+Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
 /* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */

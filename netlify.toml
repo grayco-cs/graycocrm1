@@ -85,6 +85,11 @@
 [functions."winback"]
   schedule = "20 15 * * *"
 
+# GC portal (patch GCP, docs/GC-PORTAL.md): 13:40 UTC = 8:40 AM Central (7:40 AM in winter). Company documents running out
+# (30 / 7 days, expired) → the admins; from Mar 15 / Sep 15 the free roof inspection offer → ONE approval item.
+[functions."gc-portal-daily"]
+  schedule = "40 13 * * *"
+
 # CompanyCam (patch CC, docs/COMPANYCAM.md): every 15 minutes, on the server — every CompanyCam project changed
 # since the last look; a new 2026+ one becomes a Bidding job with the PM who made it in CompanyCam. Nobody has
 # to have the CRM open. Needs COMPANYCAM_TOKEN and SUPABASE_SERVICE_KEY.
@@ -221,6 +226,37 @@
 [[redirects]]
   from = "https://portal.grayco-cs.com/portal-home.js"
   to = "/portal-home.js"
+  status = 200
+  force = true
+
+# patch GCP: the portal works like an app on the phone (installable): its manifest, icons and service worker
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-sw.js"
+  to = "/portal-sw.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal.webmanifest"
+  to = "/portal.webmanifest"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-icon-192.png"
+  to = "/portal-icon-192.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-icon-512.png"
+  to = "/portal-icon-512.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-icon-180.png"
+  to = "/portal-icon-180.png"
   status = 200
   force = true
 

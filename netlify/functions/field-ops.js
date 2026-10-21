@@ -62,9 +62,18 @@ async function queueDoc(body, who){
     const pid = s(body.projectId); if (!PID_RE.test(pid)) return { status: 400, out: { ok: false, error: 'Open a job first.' } };
     const data = await C.crmData(true), p = C.findProject(data, pid);
     if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
+    const num = s(body.number).replace(/[^0-9]/g, '').slice(0, 4) || '1';
+    /* patch GCP: on a job GrayCo is hired on by a GC, the AIA pay app goes the GC portal's way — to the GC's billing
+       contact, with an "Approve" link on their project page, and its status (sent / approved / paid) is kept */
+    try {
+      const G = require('./_lib/gcp.js');
+      if (G.isGcJob(data, p) && G.billingOf(G.contactsOf(data, p))) {
+        const r = await G.payappAdd(data, p, { id: 'AIA_' + pid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) + '_' + num, number: num, amount: body.amount, retainage: body.retainage, ref: ref, fileName: fileName, source: 'aia' }, who);
+        return { status: r.code, out: Object.assign({ gcPortal: true }, r.out, r.out.payapp ? { id: 'appr_gcp_pa_' + r.out.payapp.id } : {}) };
+      }
+    } catch (e) { if (/already approved/.test(s(e && e.message))) return { status: 409, out: { ok: false, error: s(e.message) } }; }
     const to = s(p.clientEmail || p.customerEmail || p.email);
     if (!EMAIL_RE.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No customer (GC / owner) e-mail on this job — add it on the job, then send again.' } };
-    const num = s(body.number).replace(/[^0-9]/g, '').slice(0, 4) || '1';
     const id = 'appr_payapp_' + pid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) + '_' + num;
     const ok = await C.queueApproval({ id: id, kind: 'pay_app', pid: pid, jobName: p.name, pm: C.pmOf(data, p), to: to, channel: 'email',
       title: clip(body.title, 120) || ('🏗 Pay application #' + num + ' — ' + clip(p.name, 80)), subject: subject, html: html,

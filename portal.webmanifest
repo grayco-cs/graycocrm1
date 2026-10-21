@@ -1,0 +1,17 @@
+{
+  "id": "/?app=grayco-portal",
+  "name": "GrayCo Portal",
+  "short_name": "GrayCo",
+  "description": "Your GrayCo Construction Services project: updates, photos, documents, payments and messages.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F1D2F",
+  "theme_color": "#0F1D2F",
+  "icons": [
+    { "src": "/portal-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/portal-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/portal-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
