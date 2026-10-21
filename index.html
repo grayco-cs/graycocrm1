@@ -149094,3 +149094,33 @@ console.log('[GC] Jobs stay put: a failed cloud read changes nothing, 5xx backs 
   NS(function(){ try { wrap(); dedupe(); } catch (e) {} }, 5000);
 })();
 </script>
+<script id="gc-fix-admgate">
+/* GATE fix_10 — 'admin' is for admins; everyone else goes home */
+(function(){
+  'use strict';
+  if (window.__GC_ADMGATE__) return; window.__GC_ADMGATE__ = true;
+  function isAdmin(){
+    try { if (window._gcRP && typeof window._gcRP.status === 'function') { var st = window._gcRP.status(); if (st && typeof st.admin === 'boolean') return st.admin; } } catch (e) {}
+    try { if (window.__gcAuthIsAdmin && window.__gcAuthIsAdmin()) return true; } catch (e) {}
+    try { var me = window._gcMeNow || null; if (me) return me.role === 'Admin' || String(me.payType || '').toLowerCase() === 'owner'; } catch (e) {}
+    return true;                                   /* not known yet: never block an owner while the app loads */
+  }
+  function wrap(){
+    var f = window._setView; if (typeof f !== 'function' || f.__gcAdmGate) return;
+    var w = function(v){
+      if (v === 'admin' && !isAdmin()) {
+        try { if (window._gcViewRefused) window._gcViewRefused('admin'); } catch (e) {}
+        return f.call(this, 'dashboard');
+      }
+      return f.apply(this, arguments);
+    };
+    try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+    w.__gcAdmGate = true; window._setView = w;
+  }
+  wrap(); (window.__GC_NATIVE_SETINTERVAL__ || setInterval)(wrap, 1500);
+  /* a stale saved view of 'admin' on a non-admin computer */
+  (window.__GC_NATIVE_SETINTERVAL__ || setInterval)(function(){
+    try { if (localStorage.getItem('grayco_view') === 'admin' && window._gcMeNow && !isAdmin() && typeof window._setView === 'function') window._setView('admin'); } catch (e) {}
+  }, 2000);
+})();
+</script>
