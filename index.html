@@ -130321,7 +130321,7 @@ window._gcCompose = function(o){
     '<div style="font-size:12px;color:#475569;margin-top:4px">From <b>' + esc(me.name) + ' &lt;' + esc(me.email) + '&gt;</b> — replies come to you, and a copy lands in your mailbox.' + (job ? ' Logged on <b>' + esc(job.name) + '</b>.' : '') + '</div>' +
     '<label style="' + LB + '">To</label><input class="_cmTo" type="email" style="' + IN + '" value="' + esc(o.to || '') + '">' +
     '<label style="' + LB + '">CC</label><input class="_cmCc" style="' + IN + '" placeholder="(optional)" value="' + esc(o.cc || '') + '">' +
-    '<label style="' + LB + '">Subject</label><input class="_cmSubj" style="' + IN + '" value="' + esc(o.subject || (job ? job.name : '')) + '">' +
+    '<label style="' + LB + '">Subject</label><input class="_cmSubj" style="' + IN + '" value="' + esc(o.subject || (job ? [(job.autoPO || job.po) ? 'PO ' + (job.autoPO || job.po) : '', job.name, job.address || job.jobAddress].filter(Boolean).join(' \u00b7 ') : '')) + '">' +
     '<label style="' + LB + '">Message</label><textarea class="_cmBody" rows="9" style="' + IN + '">' + esc(o.body || '') + '</textarea>' +
     (job ? '<label style="' + LB + '">Attach job files</label><div class="_cmFiles" style="max-height:160px;overflow:auto;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px">' + fileBox() + '</div>' : '') +
     '<label style="' + LB + '">Attach from this device (PDF / photo)</label><input class="_cmUp" type="file" accept="application/pdf,image/png,image/jpeg" multiple style="font-size:14px">' +

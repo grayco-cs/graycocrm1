@@ -1217,6 +1217,21 @@ function replyToFor(pmEmail, kind){
   if (/final|invoice|receipt|payment|billing|news|thank/i.test(s(kind))) return adminReplyTo();
   const e = low(pmEmail || ''); return /@grayco-cs\.com$/.test(e) && !/^office@/.test(e) ? e : adminReplyTo();
 }
+/* owner 10/21: every e-mail about a job carries the job in its subject — PO · name · address — so a reply
+   ("Re: …") says which job it is for. Added once; never twice. */
+function jobTag(p){
+  if (!p) return '';
+  const po = s(p.autoPO || p.po), name = s(p.name), addr = s(p.address || p.jobAddress);
+  return [po ? 'PO ' + po : '', name, addr && low(addr) !== low(name) ? addr : ''].filter(Boolean).join(' \u00b7 ');
+}
+function withJob(subject, p){
+  subject = s(subject); if (!p) return clip(subject, 240);
+  const po = s(p.autoPO || p.po);
+  if (po && subject.indexOf('PO ' + po) >= 0) return clip(subject, 240);
+  const name = s(p.name), addr = s(p.address || p.jobAddress), has = function(x){ return x && low(subject).indexOf(low(x)) >= 0; };
+  const t = [po ? 'PO ' + po : '', has(name) ? '' : name, addr && !has(addr) && low(addr) !== low(name) ? addr : ''].filter(Boolean).join(' \u00b7 ');
+  return clip(t ? subject + ' \u2014 ' + t : subject, 240);
+}
 function stepsFor(kind, pm){ return !pm ? ['admin'] : (MONEY_KIND.test(kind) ? ['pm', 'admin'] : ['pm']); }
 function htmlText(html){
   return s(String(html || '').replace(/<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '$2: $1').replace(/<(br|\/p|\/div|\/li|\/h\d)[^>]*>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
@@ -1269,7 +1284,8 @@ async function aqSend(item, now){
   if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch AUT2: the GrayCo shell + the PM's signature */
   let from = /final|invoice/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
     : (/thank_you|lead/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
-  const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: item.subject, html: html };
+  let subj = item.subject; if (item.jobId) { try { const dj = await crmData(false); subj = withJob(subj, findProject(dj, item.jobId)); } catch (e) {} }
+  const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: subj, html: html };
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
   /* patch AP2: the invoice PDF, made fresh from the CRM's record, goes with the e-mail */
   const pdfs = (item.attachments || []).filter(function(a){ return a && a.kind === 'pdf' && a.invoiceId; });
@@ -1507,7 +1523,7 @@ async function sendApprovedReminder(tpl, pid){
     let token; try { token = await createFor(pid, 'auto: approved reminder'); } catch (e) { return { ok: false, error: 'no link' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
-  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [tpl.to], subject: tpl.subject, html: html };
+  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [tpl.to], subject: await (async function(){ try { return withJob(tpl.subject, findProject(await crmData(false), pid)); } catch (e) { return tpl.subject; } })(), html: html };
   if (Array.isArray(tpl.cc) && tpl.cc.length) payload.cc = tpl.cc.slice(0, 5);
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -1590,7 +1606,7 @@ async function runReminders(opts){
       const link = linkFor(null, token);
       const subject = first ? 'Your final invoice from GrayCo — ' + (view.job.name || 'your job') : 'Friendly reminder: your GrayCo invoice — ' + (view.job.name || 'your job');
       let res;
-      try { res = await sendMail(to, subject, mailHtml(first ? 'first' : 'reminder', view, link)); } catch (e) { res = { ok: false }; }
+      try { res = await sendMail(to, withJob(subject, p), mailHtml(first ? 'first' : 'reminder', view, link)); } catch (e) { res = { ok: false }; }
       if (res.ok) {
         await patchMail(invId, first ? { first_sent_at: nowIso, last_result: 'sent' } : { reminders: num(prev.reminders) + 1, last_result: 'reminded' });
         if (first) report.sent++; else report.reminded++;
@@ -1693,7 +1709,7 @@ async function sendLink(pid, event, who){
   let res;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: 'Your GrayCo Portal — ' + (view.job.name || 'your job'), html: linkMailHtml(view, link) }) });
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link) }) });
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) {
@@ -1806,7 +1822,7 @@ async function notifyDocs(pid, event, opts){
   async function revert(){ await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + batch, { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ sent_at: null, batch_id: null }) }); }
   const link = linkFor(event, token);
   const titles = mine.map(function(x){ return s(x.title) || 'Document'; });
-  const subject = titles.length === 1 ? 'New in your GrayCo portal: ' + titles[0] : titles.length + ' new papers in your GrayCo portal — ' + (view.job.name || 'your job');
+  const subject = withJob(titles.length === 1 ? 'New in your GrayCo portal: ' + titles[0] : titles.length + ' new papers in your GrayCo portal — ' + (view.job.name || 'your job'), p);
   const html = docsMailHtml(view, titles, link);
   let res;
   try {
@@ -1950,7 +1966,7 @@ async function autaiReceipt(body, who){
   let token = ''; try { token = await createFor(s(ij.p.id), 'receipt'); } catch (e) {}
   let html = autaiReceiptHtml(doc, amt, ymd(body.date), clip(body.method, 40)).split(LINK_PH).join(token ? esc(linkFor(null, token)) : esc(baseUrl({}) + '/portal.html'));
   try { html = await require('./_lib/brand.js').shellFor(html, { email: 'billing@grayco-cs.com', name: 'GrayCo Billing' }); } catch (e) {}
-  const subject = 'Payment received — ' + clip(doc.job, 80) + ' (invoice #' + doc.number + ')';
+  const subject = withJob('Payment received — ' + clip(doc.job, 80) + ' (invoice #' + doc.number + ')', ij.p);
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [to], subject: subject, html: html }) });
   if (!r.ok) return { status: 502, out: { ok: false, error: 'The receipt did not go out (' + r.status + ').' } };

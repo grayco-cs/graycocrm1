@@ -359,7 +359,7 @@ async function resend(o){
   if (!key || mailOff() || !okEmail(o.to)) return { ok: false, skipped: true };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ from: o.from || 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: [o.to], subject: o.subject, html: o.html }, o.attachments ? { attachments: o.attachments } : {})) });
+      body: JSON.stringify(Object.assign({ from: o.from || 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: (String(process.env.REPLY_TO_ADMIN || '').trim() || 'replies@grayco-cs.com'), to: [o.to], subject: o.subject, html: o.html }, o.attachments ? { attachments: o.attachments } : {}, o.replyTo ? { reply_to: o.replyTo } : {})) });
     return { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false }; }
 }
@@ -476,7 +476,8 @@ async function record(event, row, body, J, kind){
   if (okEmail(pmEmail)) pmMail = await resend({ to: pmEmail, from: 'GrayCo CRM <office@grayco-cs.com>', subject: (kind === 'sign' ? 'Signed: ' : 'Customer picked: ') + jobName,
     html: mailShell(jobName, '<p>' + esc(name) + (kind === 'sign' ? ' signed the selections you picked for them' : ' picked their selections') + ' in the customer portal (' + esc(central(at)) + '):</p><ul>' + items.map(function(x){ return '<li>' + esc(x.title) + ': <b>' + esc(x.label) + '</b></li>'; }).join('') + '</ul><p>It is on the job in the CRM (Customer portal → 🎨 Customer choices).</p>') });
   const to = s(J.p.clientEmail || J.p.customerEmail || J.p.email);
-  if (okEmail(to)) custMail = await resend({ to: to, subject: 'Your ' + (kind === 'sign' ? 'signed ' : '') + 'selections — ' + jobName,
+  const jobTagSel = [s(J.p.autoPO || J.p.po) ? 'PO ' + s(J.p.autoPO || J.p.po) : '', jobName, s(J.p.address || J.p.jobAddress)].filter(Boolean).join(' \u00b7 ');   /* owner 10/21: the job in every subject; replies go to the PM */
+  if (okEmail(to)) custMail = await resend({ to: to, replyTo: /@grayco-cs\.com$/i.test(pmEmail || '') ? pmEmail : '', subject: 'Your ' + (kind === 'sign' ? 'signed ' : '') + 'selections — ' + jobTagSel,
     html: mailShell(jobName, '<p>Hi ' + esc(firstName(customer || name) || 'there') + ',</p><p>Thank you! ' + (kind === 'sign' ? 'You signed these selections' : 'You chose these selections') + ' in your GrayCo Portal:</p><ul>' + items.map(function(x){ return '<li>' + esc(x.title) + ': <b>' + esc(x.label) + '</b></li>'; }).join('') + '</ul><p>Your copy is attached and is always in your portal. Questions? Call ' + esc(pmName || 'us') + ' or the office at ' + OFFICE_PHONE + '.</p>'),
     attachments: [{ filename: docName.replace(/[^\w .()-]+/g, '-'), content: pdf.toString('base64') }] });
   return { status: 200, out: { ok: true, ref: sigId, saved: recs.length, copy: !!docRef, emailed: !!custMail.ok, pmTold: !!pmMail.ok } };
