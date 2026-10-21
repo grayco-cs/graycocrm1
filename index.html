@@ -133574,7 +133574,21 @@ function viewAsRow(){
   var P = W._gcRP;
   if (P && (typeof P.viewAs === 'function' || typeof P.openViewAs === 'function'))
     return row('View the CRM as someone', 'See exactly what a PM, the office, an estimator or the field sees (admin preview — nothing is changed).', 'patch RP: View as',
-      { have: function(){ return true; }, run: function(){ return typeof P.openViewAs === 'function' ? P.openViewAs() : P.viewAs(); } }, 'modal');
+      { have: function(){ return true; }, run: function(){ /* gate-fix-8 */ if (typeof P.openViewAs === 'function') return P.openViewAs();
+        var old = D.getElementById('gc-adm-viewas'); if (old) old.remove();
+        var opts = Array.prototype.map.call(D.querySelectorAll('#gc-rp-viewas [data-va]'), function(b){ return [b.getAttribute('data-va'), (b.textContent || '').trim()]; });
+        if (!opts.length) opts = [['', 'Admin — everything'], ['Estimator', 'Estimator'], ['Insurance', 'Insurance restoration'], ['Mitigation', 'Mitigation'], ['Superintendent', 'Superintendent'], ['Project Manager', 'Project Manager'], ['Office', 'Office']];
+        var cur = ''; try { cur = P.viewAs() || ''; } catch (e) {}
+        var ov = D.createElement('div'); ov.id = 'gc-adm-viewas'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', 'View the CRM as someone');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:100050;background:rgba(6,12,20,.7);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,Arial,sans-serif';
+        ov.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:12px;width:min(420px,96vw);padding:18px"><div style="font-size:17px;font-weight:800;margin-bottom:4px">👁 View the CRM as someone</div><div style="font-size:12.5px;color:#475569;margin-bottom:12px">Preview only — nothing is changed. "Back to Admin" at the top ends it.</div>'
+          + opts.map(function(o){ return '<button type="button" data-va="' + esc(o[0]) + '" style="display:block;width:100%;text-align:left;padding:10px 12px;margin:0 0 6px;border-radius:8px;border:1px solid ' + (o[0] === cur ? '#16a34a;background:#f0fdf4' : '#cbd5e1;background:#fff') + ';font-weight:700;cursor:pointer">' + esc(o[1]) + (o[0] === cur ? ' ✓' : '') + '</button>'; }).join('')
+          + '<button type="button" data-x="1" style="width:100%;padding:9px;border-radius:8px;border:none;background:#e2e8f0;font-weight:700;cursor:pointer;margin-top:4px">Close</button></div>';
+        function close(){ ov.remove(); D.removeEventListener('keydown', onKey, true); }
+        function onKey(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } }
+        ov.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('button'); if (e.target === ov || (b && b.getAttribute('data-x'))) return close(); if (b && b.hasAttribute('data-va')) { var v = b.getAttribute('data-va'); close(); try { P.viewAs(v); } catch (er) {} } });
+        D.addEventListener('keydown', onKey, true); D.body.appendChild(ov);
+      } }, 'modal');
   return row('View the CRM as someone', 'See what a person sees: “👁 View App” on their row in the list above, or “View as employee” at the bottom of the left menu.', 'Employees → 👁 View App',
     { have: function(){ return true; }, run: function(){
       var sel = Array.prototype.filter.call(D.querySelectorAll('aside select'), function(x){ return /view as/i.test(x.textContent || ''); })[0];
