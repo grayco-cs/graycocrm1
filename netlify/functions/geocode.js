@@ -2,6 +2,7 @@
 // GrayCo Photos (patch U2) — where a job is, with NO key: the US Census Bureau geocoder
 // (geocoding.geo.census.gov, free, public, no account). Staff only (signed-in CRM token).
 //   POST {addresses:[...up to 20]} → {ok, results:[{lat,lng,matched}|null, ...]} (same order)
+//   POST {geo:1, addresses:[...]}  → {ok, results:[{lat,lng,matched,county,city,incorporated,state,zip,postalCity}|null]}  (patch AUT1)
 // The CRM keeps the answer on the job (geoLat / geoLng), so an address is looked up once.
 /* ── GrayCo staff check (security build) ──────────────────────────────────────
    A call from the CRM must carry the signed-in person's Supabase token:
@@ -77,7 +78,32 @@ function keyHeaders(k){ return isJwt(k) ? { apikey: k, Authorization: 'Bearer ' 
 
 
 const CENSUS = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress';
+/* patch AUT1 (audit #12): {geo:1} also returns the jurisdiction — county, incorporated city (or unincorporated),
+   state, ZIP — from the Census "geographies" geocoder (same service, free, no key). */
+const CENSUS_GEO = 'https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress';
 const cache = new Map();
+const STATE_FIPS = { '47': 'TN', '05': 'AR', '28': 'MS', '01': 'AL', '29': 'MO', '21': 'KY', '22': 'LA', '13': 'GA' };
+async function geoOne(addr){
+  const a = s(addr).replace(/\s+/g, ' ').slice(0, 200);
+  if (a.length < 6) return null;
+  const k = 'geo|' + a.toLowerCase();
+  if (cache.has(k)) return cache.get(k);
+  let out = null;
+  try {
+    const r = await fetch(CENSUS_GEO + '?benchmark=Public_AR_Current&vintage=Current_Current&layers=' + encodeURIComponent('Counties,Incorporated Places') + '&format=json&address=' + encodeURIComponent(a), { headers: { Accept: 'application/json' } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const m = j && j.result && Array.isArray(j.result.addressMatches) && j.result.addressMatches[0];
+    if (m) {
+      const g = m.geographies || {}, co = (g.Counties || [])[0] || {}, pl = (g['Incorporated Places'] || [])[0] || null, ac = m.addressComponents || {};
+      out = { lat: m.coordinates && isFinite(+m.coordinates.y) ? +(+m.coordinates.y).toFixed(6) : null, lng: m.coordinates && isFinite(+m.coordinates.x) ? +(+m.coordinates.x).toFixed(6) : null,
+        matched: s(m.matchedAddress).slice(0, 200), county: s(co.NAME || co.BASENAME), city: pl ? s(pl.BASENAME || String(pl.NAME || '').replace(/ (city|town|village)$/i, '')) : '',
+        incorporated: !!pl, state: s(ac.state) || STATE_FIPS[s(co.STATE)] || '', zip: s(ac.zip), postalCity: s(ac.city) };
+    }
+  } catch (e) { return null; }
+  cache.set(k, out); if (cache.size > 2000) cache.delete(cache.keys().next().value);
+  return out;
+}
 function s(v){ return v == null ? '' : String(v).trim(); }
 async function one(addr){
   const a = s(addr).replace(/\s+/g, ' ').slice(0, 200);
@@ -107,7 +133,8 @@ exports.handler = async function(event){
   let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad request' }) }; }
   const list = (Array.isArray(b.addresses) ? b.addresses : [b.address]).slice(0, 20);
   const results = [];
-  for (let i = 0; i < list.length; i += 4) results.push.apply(results, await Promise.all(list.slice(i, i + 4).map(one)));
+  const fn = b.geo ? geoOne : one;   /* patch AUT1 */
+  for (let i = 0; i < list.length; i += 4) results.push.apply(results, await Promise.all(list.slice(i, i + 4).map(fn)));
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true, results: results }) };
 };
 exports._reset = function(){ cache.clear(); };

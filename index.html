@@ -132755,6 +132755,588 @@ window._gcSubHub = { open: hub, sync: sync, thread: thread, state: function(){ r
 try { console.log('[GC] Sub portal (CRM side) ready — patch SUB'); } catch (e) {}
 })();
 
+</script>
+<script id="gc-patch-aut1">
+/* __GC_PATCH_AUT1__ ══════════════════════════════════════════════════════════
+   GrayCo — AUTOMATIONS, PHASE 1 (patch AUT1): the event bus and the "type it once" automations.
+
+   1. EVENT BUS (audit #2). Every 15 s (page visible, nobody typing) the jobs, client invoices and change orders are
+      compared with the last look (localStorage gc_lc_seen) and these window events fire on document:
+        gc:job-created {pid}            a job this computer has not seen before
+        gc:job-activated {pid, estimateId, via}   a job became active / approved / in progress (or was made active)
+        gc:job-status {pid, from, to}   gc:job-pct {pid, from, to}   gc:job-complete {pid}
+        gc:invoice-created {invId, pid} gc:invoice-paid {invId, pid, final}
+        gc:co-approved {coId, pid}      gc:sub-added {pid, sub}
+      The first look only remembers (no flood of events). Listeners: window._gcAut.on(name, fn).
+      The old "Auto-Deploy Document Triggers" (confirm() boxes that never fired) are retired: gcAutoDoc.trigger
+      only records the request on the bus, and the Forms → "Auto-Deploy" panel says what really happens.
+      window._gcHeadlessDoc(job, kind, {id}) → makes a job document and files it on the job / portal without a
+      download. (jsPDF keeps save() per document, so patch Q's prototype hook never filed generated papers; the
+      jsPDF constructor is wrapped here instead, which also makes Q's "generated paper → job + portal" work.)
+   2. ESTIMATE → JOB CARRIES THE CUSTOMER (audit #1). After 🚀 Activate (and for any new job made from an estimate
+      or a bid), the job gets the customer's phone, e-mail, address, lead source, lead, estimate and customer ids
+      from the customer list / the estimate's lead — never overwriting what is filled in.
+   3. CUSTOMER ↔ JOB CONTACT SYNC (audit #5). A customer's new phone / e-mail goes to their open jobs (with a
+      note on the job); a job's contact fills an empty customer field; a real conflict becomes an office to-do.
+   4. PICKING A JOB FILLS THE REST (audit #3). Any job picker (a <select> of jobs) fills the empty customer, phone,
+      e-mail, address, PO and PM boxes next to it; typing a job's PO picks the job.
+   5. ADDRESS → JURISDICTION (audit #12). Each job / customer address is looked up once (Census, no key, through
+      /.netlify/functions/geocode {geo:1}) → job.jurisdiction {county, city, incorporated, state, zip, lat, lng}
+      and empty county / city / state / zip filled. window._gcJurisdiction(pidOrProject).
+   Every automation asks the job's switches first: window._gcJobAuto(p, key) when present (patch JA), on otherwise.
+   Console: _gcAut.state(), _gcAut.log()
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUT1__) return; window.__GC_PATCH_AUT1__ = true;
+var W = window, D = document;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+function lsGet(k){ try { return Storage.prototype.getItem.call(localStorage, k); } catch (e) { return null; } }
+function lsSet(k, v){ try { Storage.prototype.setItem.call(localStorage, k, v); } catch (e) {} }
+function jget(k, d){ try { var v = JSON.parse(lsGet(k)); return v == null ? d : v; } catch (e) { return d; } }
+function jset(k, v){ lsSet(k, JSON.stringify(v)); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,]/g, '')); return isFinite(n) ? n : 0; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects); }
+function typing(){ return !!W.__GC_IS_TYPING__; }
+function normName(v){ return low(v).replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|the)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function digits(v){ return s(v).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); }
+function me(){ try { var u = W.meUser && W.meUser(); if (u && u.name) return u.name; } catch (e) {} return s(lsGet('grayco_user')) || 'GrayCo CRM'; }
+var LOG = [];
+function log(what, o){ LOG.push(Object.assign({ at: nowIso(), what: what }, o || {})); if (LOG.length > 200) LOG.shift(); }
+
+/* ── jobs: read and save (the same safe save patch Q uses: device store, screen, cloud, newest wins) ── */
+var RECENT = {};
+function proj(pid){
+  if (pid && typeof pid === 'object') pid = pid.id;
+  var p = projects().filter(function(x){ return x && String(x.id) === String(pid); })[0] || null;
+  var r = RECENT[pid]; if (r && (!p || s(r.updatedAt) > s(p.updatedAt))) return r;
+  return p;
+}
+var saving = Promise.resolve();
+function saveProject(pid, change){ saving = saving.then(function(){ return doSave(pid, change); }, function(){ return doSave(pid, change); }); return saving; }
+async function doSave(pid, change){
+  var now = nowIso(), changed = false;
+  function put(p){ var q = Object.assign({}, p); if (change(q) === false) return p; changed = true; q.updatedAt = now; q.savedAt = now; return q; }
+  var all = null; try { all = W._gcProjectsRaw ? await W._gcProjectsRaw() : await W.idbGet('projects'); } catch (e) {}
+  var hit = false, next = null, saved = null;
+  if (Array.isArray(all)) next = all.map(function(p){ if (p && String(p.id) === String(pid)) { hit = true; var scr = projects().filter(function(x){ return x && String(x.id) === String(pid); })[0];
+    var base = scr && s(scr.updatedAt) >= s(p.updatedAt) ? scr : p; if (RECENT[pid] && s(RECENT[pid].updatedAt) > s(base.updatedAt)) base = RECENT[pid]; var q = put(base); if (q !== base) saved = q; return q; } return p; });
+  if (hit && saved) { try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('automations'); } catch (e) {} try { await W.idbSet('projects', next); } catch (e) {} }
+  /* the screen copy gets the change applied to ITSELF (never the stored copy laid over newer screen data) */
+  try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ if (p && String(p.id) === String(pid)) { var q = put(p); if (q !== p) saved = q; return q; } return p; }) : prev; }); } catch (e) {}
+  if (saved) { RECENT[pid] = saved; try { if (W._supaUpsert) ST(function(){ try { W._supaUpsert('projects', hit ? next : arr(crm().projects)); } catch (e) {} }, 300); } catch (e) {} }
+  ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+  return saved;
+}
+/* a small note on the job (what the automations did), never shown to the customer */
+function jobNote(q, text){ var l = arr(q.autoLog).slice(-49); l.push({ at: nowIso(), by: 'Automations', text: s(text).slice(0, 300) }); q.autoLog = l; }
+
+/* ── customers ── */
+var CUST = [];   /* the customer list lives in the device store until the Customers tab is opened */
+/* read the CRM's own customer list through its setter (an identity update: nothing re-renders); the device store
+   only when the CRM has not loaded it */
+function loadCustomers(){
+  return new Promise(function(res){
+    var got = false;
+    try { if (typeof W._setCustomers === 'function') W._setCustomers(function(prev){ if (Array.isArray(prev) && prev.length) { CUST = prev; got = true; } return prev; }); } catch (e) {}
+    ST(function(){
+      if (got) return res(CUST);
+      try { if (W.idbGet) return Promise.resolve(W.idbGet('customers')).then(function(v){ if (Array.isArray(v) && !got) CUST = v; res(CUST); }, function(){ res(CUST); }); } catch (e) {}
+      res(CUST);
+    }, 60);
+  });
+}
+function customers(){ var c = W._graycoCustomers; if (!Array.isArray(c) || !c.length) c = crm().customers; if (!Array.isArray(c) || !c.length) c = CUST; return arr(c); }
+function saveCustomer(id, change){
+  var now = nowIso(), out = null;
+  var put = function(c){ var q = Object.assign({}, c); if (change(q) === false) return c; q.updatedAt = now; q.savedAt = now; out = q; return q; };
+  var list = customers().map(function(c){ return c && String(c.id) === String(id) ? put(c) : c; });
+  if (!out) return null;
+  try { if (W._setCustomers) W._setCustomers(function(prev){ return Array.isArray(prev) ? prev.map(function(c){ return c && String(c.id) === String(id) ? Object.assign({}, c, out) : c; }) : list; }); } catch (e) {}
+  CUST = list;
+  try { if (W.idbSet) W.idbSet('customers', list); } catch (e) {}
+  try { if (W._supaUpsert) ST(function(){ W._supaUpsert('customers', list); }, 300); } catch (e) {}
+  return out;
+}
+function customerFor(p){
+  if (!p) return null;
+  var cs = customers();
+  if (p.customerId) { var c0 = cs.filter(function(c){ return c && String(c.id) === String(p.customerId); })[0]; if (c0) return c0; }
+  var keys = [normName(p.client), normName(p.company), normName(p.customer)].filter(function(k){ return k.length >= 3; });
+  if (!keys.length) return null;
+  var hits = cs.filter(function(c){ return c && (keys.indexOf(normName(c.name)) >= 0 || (c.company && keys.indexOf(normName(c.company)) >= 0)); });
+  return hits.length === 1 ? hits[0] : (hits.filter(function(c){ return c.email || c.phone; })[0] || hits[0] || null);
+}
+
+/* ── the job's own switches (patch JA): on unless turned off ── */
+function jobAuto(p, key){
+  try { if (typeof W._gcJobAuto === 'function') return W._gcJobAuto(p, key) !== false; } catch (e) {}
+  try { if (W._gcJA && typeof W._gcJA.allows === 'function') return W._gcJA.allows(p, key) !== false; } catch (e) {}
+  try { var a = p && (typeof p === 'object' ? p : proj(p)); if (a && a.auto && a.auto[key] === false) return false; } catch (e) {}
+  return true;
+}
+
+/* ── office to-do (once per id) ── */
+function officeTodo(id, label, note){
+  var l = jget('gc_office_tasks', []); if (typeof l === 'string') l = jget('gc_office_tasks', []);
+  if (!Array.isArray(l)) l = [];
+  if (l.some(function(t){ return t && t.id === id; })) return false;
+  l.push({ id: id, label: s(label).slice(0, 200), note: s(note).slice(0, 600), addedBy: 'Automations', addedAt: nowIso(), updatedAt: nowIso(), done: false });
+  jset('gc_office_tasks', l);
+  try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {}
+  return true;
+}
+
+/* ── events ── */
+function emit(name, detail){ log(name, detail); try { D.dispatchEvent(new CustomEvent(name, { detail: detail || {} })); } catch (e) {} }
+function on(name, fn){ D.addEventListener(name, function(ev){ try { fn(ev.detail || {}, ev); } catch (e) { try { console.warn('[GC] automation ' + name, e); } catch (_) {} } }); }
+
+/* ═══ 1. THE EVENT BUS ═══════════════════════════════════════════════════════ */
+var SEEN = 'gc_lc_seen';
+var ACTIVE = /^(active|approved|in.?progress|scheduled|contract|signed)$/;
+var DONE = /^(complete|completed|closed|done)$/;
+function invList(){ var l = crm().invoices; return arr(l); }
+function invPaid(r){ return (/paid/.test(low(r.status)) && !/unpaid|partial/.test(low(r.status))) || r.paid === true && !/partial/.test(low(r.status)) || r.paidInFull === true; }
+function invFinal(r){ return r.isFinal === true || r.final === true || /^final/i.test(s(r.drawType)); }
+function isClientInv(r){ return r && r.id && (r.type === 'client' || (!r.type && !r.sub && !r.subId)); }
+function coList(){ return arr(crm().changeOrders); }
+function subKeys(p){ return arr(p.subs || p.assignedSubs).map(function(x){ return s(x && (x.subId || x.id || x.name)); }).filter(Boolean); }
+function snap(){
+  var o = { v: 1, at: nowIso(), p: {}, i: {}, c: {} };
+  projects().forEach(function(p){ if (p && p.id) o.p[p.id] = { st: low(p.status), pct: num(p.pct), sb: subKeys(p) }; });
+  invList().forEach(function(r){ if (isClientInv(r)) o.i[r.id] = { pid: s(r.pid), pd: invPaid(r) ? 1 : 0 }; });
+  coList().forEach(function(c){ if (c && c.id) o.c[c.id] = low(c.status); });
+  return o;
+}
+var lastP = null, lastI = null, lastC = null, busOn = true;
+function tick(force){
+  if (!busOn) return;
+  if (!force && (D.hidden || typing())) return;
+  var P = crm().projects, I = crm().invoices, C = crm().changeOrders;
+  if (!Array.isArray(P) || !P.length) return;           /* not loaded yet */
+  if (!force && P === lastP && I === lastI && C === lastC) return;
+  lastP = P; lastI = I; lastC = C;
+  var old = jget(SEEN, null), cur = snap();
+  jset(SEEN, cur);
+  if (!old || old.v !== 1) { log('bus seeded', { jobs: Object.keys(cur.p).length }); return; }
+  var ev = [];
+  Object.keys(cur.p).forEach(function(pid){
+    var a = old.p[pid], b = cur.p[pid];
+    if (!a) {
+      ev.push(['gc:job-created', { pid: pid }]);
+      if (ACTIVE.test(b.st)) ev.push(['gc:job-activated', { pid: pid, via: 'new job' }]);
+      if (DONE.test(b.st)) ev.push(['gc:job-complete', { pid: pid }]);
+      return;
+    }
+    if (a.st !== b.st) {
+      ev.push(['gc:job-status', { pid: pid, from: a.st, to: b.st }]);
+      if (ACTIVE.test(b.st) && !ACTIVE.test(a.st) && !DONE.test(a.st)) ev.push(['gc:job-activated', { pid: pid, via: 'status' }]);
+      if (DONE.test(b.st) && !DONE.test(a.st)) ev.push(['gc:job-complete', { pid: pid }]);
+    }
+    if (a.pct !== b.pct) ev.push(['gc:job-pct', { pid: pid, from: a.pct, to: b.pct }]);
+    var had = {}; arr(a.sb).forEach(function(k){ had[k] = 1; });
+    arr(b.sb).forEach(function(k){ if (!had[k]) ev.push(['gc:sub-added', { pid: pid, sub: k }]); });
+  });
+  Object.keys(cur.i).forEach(function(id){
+    var a = old.i[id], b = cur.i[id];
+    var r = invList().filter(function(x){ return x && x.id === id; })[0] || {};
+    if (!a) ev.push(['gc:invoice-created', { invId: id, pid: b.pid, final: invFinal(r) }]);
+    if (b.pd && !(a && a.pd)) ev.push(['gc:invoice-paid', { invId: id, pid: b.pid, final: invFinal(r) }]);
+  });
+  Object.keys(cur.c).forEach(function(id){
+    var a = old.c[id], b = cur.c[id];
+    if (/approv|sign|accept/.test(b) && !/approv|sign|accept/.test(a || '')) {
+      var c = coList().filter(function(x){ return x && x.id === id; })[0] || {};
+      ev.push(['gc:co-approved', { coId: id, pid: s(c.pid || c.projectId) }]);
+    }
+  });
+  if (ev.length > 60) { log('bus: too many changes at once (a sync or an import) — remembered, not fired', { n: ev.length }); return; }
+  ev.forEach(function(e){ emit(e[0], e[1]); });
+}
+/* a manual nudge (another patch can call it right after it changes a job) */
+function nudge(){ ST(function(){ tick(true); }, 50); }
+
+/* the old auto-document triggers: retired (they asked with confirm() boxes and never fired) */
+function retireOld(){
+  var a = W.gcAutoDoc; if (!a || a.__gcAut) return;
+  a.trigger = function(key, pid){ log('old trigger (now automatic)', { key: key, pid: pid }); };
+  a.checkJobType = function(){}; a.checkNoticeToOwner = function(){};
+  a.__gcAut = true;
+}
+var PANEL_HTML = [
+  '<div style="font-size:12px;font-weight:700;color:#d4a017;margin-bottom:6px;">⚡ What the CRM does by itself</div>',
+  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;">',
+  '<div>🚀 <b style="color:#ccc">Job signed / activated</b> → customer phone + e-mail carried over; draw schedule default; deposit invoice <i>draft</i>; welcome e-mail and contract <i>queued for approval</i>; permit &amp; inspection checklist; draft schedule from the job type</div>',
+  '<div>🗓 <b style="color:#ccc">Appointment on the schedule</b> → confirmation and day-before reminder <i>queued for approval</i></div>',
+  '<div>📈 <b style="color:#ccc">Progress % / stage moves</b> → the draw invoice for that milestone is drafted (you approve it); the customer portal shows the stage</div>',
+  '<div>✅ <b style="color:#ccc">Job complete</b> → Certificate of Completion made and put in the portal (the “new papers” e-mail waits for approval)</div>',
+  '<div>💰 <b style="color:#ccc">Final payment</b> → Warranty certificate made and put in the portal; thank-you + review request <i>queued for approval</i></div>',
+  '<div>👷 <b style="color:#ccc">Sub picked</b> → sub agreement filled from the estimate, the awarded bid and the schedule</div>',
+  '<div>📜 <b style="color:#ccc">Lien waivers, change orders, Notice to Owner</b> → made on demand from here (not automatic)</div>',
+  '</div>',
+  '<div style="font-size:10px;color:#6b8ab5;margin-top:6px;">Nothing reaches a customer without approval (✅ Approvals in To-Do) — except their copy of a paper they signed and payment receipts. Each job’s ⚙ Automations switches turn any of these off for that job.</div>'
+].join('');
+function fixPanel(){
+  var p = D.getElementById('gc-autodeploy-panel');
+  if (p && p.getAttribute('data-gc-aut') !== '1') { p.innerHTML = PANEL_HTML; p.setAttribute('data-gc-aut', '1'); }
+}
+
+/* ── job documents ──────────────────────────────────────────────────────────
+   jsPDF keeps save() on each document, not on its prototype, so patch Q's "a generated paper goes to the job and
+   the portal" hook (J.prototype.save) never ran. Here the jsPDF constructor is wrapped once: when patch Q marked a
+   job paper (window.__gcqGen, set by its _gcGenJobDoc wrapper) the PDF is filed on the job with portal sharing, as
+   Q meant; when the automations made it (window.__gcqSilent) it is filed WITHOUT the browser download. */
+var GEN_CAT = { change_order: 'Change Orders', lien: 'Lien Waivers', cert_completion: 'Certificate of Completion', warranty: 'Warranty', work_auth: 'Work Authorization' };
+async function addJobDoc(rec){
+  var all = null; try { all = await W.idbGet('projectDocs'); } catch (e) {}
+  if (!Array.isArray(all)) all = arr(crm().projectDocs || W._gcProjectDocs).slice();
+  if (all.some(function(d){ return d && d.id === rec.id; })) return false;
+  var next = all.concat([rec]);
+  try { await W.idbSet('projectDocs', next); } catch (e) {}
+  try { if (W._setProjectDocs) W._setProjectDocs(function(prev){ return Array.isArray(prev) ? (prev.some(function(d){ return d && d.id === rec.id; }) ? prev : prev.concat([rec])) : next; }); } catch (e) {}
+  try { if (W._crm) W._crm.projectDocs = next; } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('projectDocs', next); } catch (e) {}
+  return true;
+}
+/* file a PDF (Blob) on the job; portal: shared with the customer (the "new papers" e-mail waits for approval) */
+function fileDoc(pid, blob, name, cat, o){
+  o = o || {};
+  if (typeof W._gcStoreFile !== 'function') return Promise.resolve(null);
+  var id = o.id || ('pgen_' + Date.now().toString(36));
+  return W._gcStoreFile(new File([blob], name, { type: 'application/pdf' }), { kind: 'doc', pid: pid, name: name }).then(function(meta){
+    if (!meta || !meta.ref) return null;
+    var now = nowIso();
+    var rec = { id: id, pid: pid, name: name, cat: cat, type: 'application/pdf', size: meta.size, ref: meta.ref, hash: meta.hash || '', uploaded: now.slice(0, 10), uploadedAt: now,
+      by: o.by || me(), portalShare: o.portal !== false, source: o.source || 'generated', kind: o.kind || '', savedAt: now, updatedAt: now };
+    return addJobDoc(rec).then(function(added){
+      log('filed', { pid: pid, name: name, id: id, added: added });
+      if (added && rec.portalShare) { try { if (W._gcPortal && W._gcPortal.notify) W._gcPortal.notify(pid); } catch (e) {} }
+      return rec;
+    });
+  }).catch(function(e){ log('file failed', { pid: pid, name: name, err: String(e && e.message || e) }); return null; });
+}
+var LAST_FILED = null;
+function wrapJsPdf(){
+  var ns = W.jspdf, J = ns && ns.jsPDF;
+  if (!J || J.__gcAut) return;
+  var J2 = function(){
+    var a = [null].concat([].slice.call(arguments));
+    var doc = new (Function.prototype.bind.apply(J, a))();
+    try {
+      var sv = doc.save;
+      if (typeof sv === 'function') doc.save = function(name){
+        var silent = W.__gcqSilent, g = W.__gcqGen;
+        if (g && Date.now() - g.at < 120000) {
+          W.__gcqGen = null;
+          try { var fname = s(name) || ((GEN_CAT[g.kind] || 'Document') + '.pdf'); var did = W.__gcAutDocId || ''; W.__gcAutDocId = ''; LAST_FILED = fileDoc(g.pid, this.output('blob'), fname, GEN_CAT[g.kind] || 'Documents', { kind: g.kind, id: did || undefined, source: silent ? 'automations' : 'generated' }); } catch (e) {}
+        }
+        if (silent) { W.__gcqSilent = 0; return this; }
+        return sv.apply(this, arguments);
+      };
+    } catch (e) {}
+    return doc;
+  };
+  J2.prototype = J.prototype; try { Object.keys(J).forEach(function(k){ J2[k] = J[k]; }); } catch (e) {}
+  J2.API = J.API; J2.version = J.version; J2.__gcAut = true; J2.__orig = J;
+  try { ns.jsPDF = J2; } catch (e) {}
+  try { if (W.jsPDF === J) W.jsPDF = J2; } catch (e) {}
+}
+var DOC_MAKERS = {};   /* kind → function(job, opts) → Promise<doc record> (later phases add filled-in papers) */
+function loadJsPdf(){
+  if (W.jspdf && W.jspdf.jsPDF) { wrapJsPdf(); return Promise.resolve(W.jspdf.jsPDF); }
+  return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; sc.onload = function(){ wrapJsPdf(); res(W.jspdf.jsPDF); }; sc.onerror = rej; D.head.appendChild(sc); });
+}
+function headlessDoc(job, kind, opts){
+  job = proj(job) || job;
+  if (!job || !job.id) return Promise.resolve(null);
+  if (DOC_MAKERS[kind]) return Promise.resolve().then(function(){ return DOC_MAKERS[kind](job, opts || {}); });
+  if (typeof W._gcGenJobDoc !== 'function' || !W.GC_pdfHeader) return Promise.resolve(null);
+  return loadJsPdf().then(function(){
+    LAST_FILED = null;
+    W.__gcqSilent = Date.now();
+    W.__gcqGen = { pid: String(job.id), kind: kind, at: Date.now() }; W.__gcAutDocId = (opts && opts.id) || '';
+    try { W._gcGenJobDoc(job, kind); } catch (e) { W.__gcqSilent = 0; return null; }
+    W.__gcqSilent = 0;
+    return LAST_FILED;
+  });
+}
+
+/* ═══ 2. ESTIMATE → JOB CARRIES THE CUSTOMER ════════════════════════════════ */
+function estimates(){ var e = W._gcEstimatesState; if (!Array.isArray(e) || !e.length) e = crm().estimates; return arr(e); }
+function leads(){ return arr(crm().leads || W._gcLeadsState); }
+function normAddr(a){ return low(a).replace(/[.,#]/g, ' ').replace(/\b(road|rd)\b/g, 'rd').replace(/\b(street|st)\b/g, 'st').replace(/\b(drive|dr)\b/g, 'dr').replace(/\b(avenue|ave)\b/g, 'ave').replace(/\s+/g, ' ').trim(); }
+function estFor(p){
+  var es = estimates();
+  return es.filter(function(e){ return e && (String(e.pid) === String(p.id) || (p.estimateId && String(e.id) === String(p.estimateId))); })[0] || null;
+}
+function leadFor(p, est){
+  var ls = leads(), ids = [est && est.leadId, est && est.rsLeadId, p.leadId].map(s).filter(Boolean);
+  var l = ls.filter(function(x){ return x && ids.indexOf(s(x.id)) >= 0; })[0];
+  if (!l) l = ls.filter(function(x){ return x && (String(x.pid) === String(p.id) || (est && x.estimateId && String(x.estimateId) === String(est.id))); })[0];
+  if (!l && s(p.address).length > 6) { var a = normAddr(p.address); l = ls.filter(function(x){ return x && normAddr(x.address) === a; })[0]; }
+  return l || null;
+}
+function carry(pid, why){ return loadCustomers().then(function(){ return carry1(pid, why); }); }
+function carry1(pid, why){
+  var p = proj(pid); if (!p) return Promise.resolve(null);
+  var est = estFor(p), lead = leadFor(p, est), c = customerFor(p);
+  if (!c && lead) c = customerFor({ client: lead.client || lead.name || lead.contact, company: lead.company });
+  var add = {};
+  function want(k, v){ v = s(v); if (v && !s(p[k])) add[k] = v; }
+  want('clientPhone', (c && c.phone) || (lead && lead.phone) || (est && (est.clientPhone || est.phone)));
+  want('clientEmail', (c && c.email) || (lead && lead.email) || (est && (est.clientEmail || est.email)));
+  want('address', (c && c.address) || (lead && lead.address) || (est && est.address));
+  want('client', (c && c.name) || (lead && (lead.client || lead.contact || lead.name)) || (est && est.client));
+  want('source', lead && (lead.leadSource || lead.source));
+  want('leadId', lead && lead.id);
+  want('estimateId', est && est.id);
+  want('customerId', c && c.id);
+  if (!Object.keys(add).length) return Promise.resolve(null);
+  log('carry', { pid: pid, why: why, fields: Object.keys(add) });
+  return saveProject(pid, function(q){
+    var n = 0; Object.keys(add).forEach(function(k){ if (!s(q[k])) { q[k] = add[k]; n++; } });
+    if (!n) return false;
+    jobNote(q, 'Customer details carried over (' + Object.keys(add).join(', ') + ') from ' + (c ? 'the customer list' : (lead ? 'the lead' : 'the estimate')) + '.');
+  });
+}
+var actDone = jget('gc_aut_act', {});
+function activated(pid, est, via){
+  pid = s(pid); if (!pid) return;
+  if (actDone[pid] && Date.now() - actDone[pid] < 10 * 60e3) return;   /* the wrapper and the bus both see it */
+  actDone[pid] = Date.now(); jset('gc_aut_act', actDone);
+  carry(pid, via).then(function(){ emit('gc:job-activated:ready', { pid: pid, estimateId: est || '', via: via }); });
+}
+function wrapActivate(){
+  var f = W._gcActivateScheduleCheck; if (typeof f !== 'function' || f.__gcAut) return;
+  var w = function(p){
+    var r = f.apply(this, arguments);
+    try { var pid = p && p.id; if (pid) ST(function(){ var e = estFor(proj(pid) || p); emit('gc:job-activated', { pid: pid, estimateId: e && e.id, via: 'estimate' }); }, 600); } catch (e) {}
+    return r;
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcAut = true; W._gcActivateScheduleCheck = w;
+}
+on('gc:job-activated', function(d){ activated(d.pid, d.estimateId, d.via); });
+on('gc:job-created', function(d){
+  var p = proj(d.pid); if (!p) return;
+  var made = Date.parse(s(p.createdAt) || s(p.created)); if (isFinite(made) && Date.now() - made > 3 * 864e5) return;
+  if (!s(p.clientPhone) || !s(p.clientEmail)) carry(d.pid, 'new job');
+});
+
+/* ═══ 3. CUSTOMER ↔ JOB CONTACT SYNC ════════════════════════════════════════ */
+var CS = 'gc_csync_seen';
+function openJob(p){ return p && !DONE.test(low(p.status)) && !/lost|dead|cancel/.test(low(p.status)); }
+var FIELDS = [['phone', 'clientPhone', digits], ['email', 'clientEmail', low]];
+function csync(){ return loadCustomers().then(csync1); }
+function csync1(){
+  if (D.hidden || typing()) return;
+  var cs = customers(), ps = projects(); if (!cs.length || !ps.length) return;
+  var seen = jget(CS, null), first = !seen; seen = seen || {};
+  var byId = {}; cs.forEach(function(c){ if (c && c.id) byId[c.id] = c; });
+  var jobsFor = {};
+  ps.forEach(function(p){ if (!openJob(p)) return; var c = customerFor(p); if (c) (jobsFor[c.id] = jobsFor[c.id] || []).push(p); });
+  Object.keys(byId).forEach(function(cid){
+    var c = byId[cid], was = seen[cid] || {}, now = { phone: s(c.phone), email: s(c.email) };
+    var custAdd = {};
+    arr(jobsFor[cid]).forEach(function(p){
+      var jobSet = [];   /* [field, from, to, why] — one save per job */
+      FIELDS.forEach(function(f){
+        var cf = f[0], jf = f[1], n = f[2];
+        var cv = s(c[cf]), jv = s(p[jf]);
+        if (cv && !jv) { jobSet.push([jf, '', cv, 'copied from the customer record']); return; }
+        if (jv && !cv) { if (!custAdd[cf]) custAdd[cf] = jv; return; }
+        if (!cv || !jv || n(cv) === n(jv)) return;
+        if (!first && was[cf] != null && n(was[cf]) !== n(cv) && n(was[cf]) === n(jv)) { jobSet.push([jf, jv, cv, 'updated from the customer record']); return; }   /* the customer record changed: the job follows */
+        if (first) return;   /* the first look only learns */
+        officeTodo('csync_' + p.id + '_' + cf + '_' + (n(cv) + '|' + n(jv)).replace(/[^a-z0-9|@.]/g, '').slice(0, 80),
+          '📇 Check the customer ' + cf + ' for ' + s(p.name).slice(0, 60),
+          'The customer record (' + s(c.name) + ') has ' + cv + ' but the job has ' + jv + '. Keep the right one in both places.');
+      });
+      if (jobSet.length) saveProject(p.id, function(q){
+        var n2 = 0;
+        jobSet.forEach(function(x){ if (s(q[x[0]]) !== x[1]) return; q[x[0]] = x[2]; n2++; jobNote(q, 'Customer ' + (x[0] === 'clientPhone' ? 'phone' : 'e-mail') + ' ' + x[3] + ': ' + (x[1] ? x[1] + ' → ' : '') + x[2]); });
+        if (!n2) return false;
+        if (!q.customerId) q.customerId = cid;
+      });
+    });
+    if (Object.keys(custAdd).length) { saveCustomer(cid, function(q){ var k = 0; Object.keys(custAdd).forEach(function(f){ if (!s(q[f])) { q[f] = custAdd[f]; k++; } }); if (!k) return false; }); Object.keys(custAdd).forEach(function(f){ now[f] = custAdd[f]; }); }
+    seen[cid] = now;
+  });
+  jset(CS, seen);
+}
+
+/* ═══ 4. PICKING A JOB FILLS THE REST ═══════════════════════════════════════ */
+function projFromSelect(sel){
+  var v = s(sel.value); if (!v) return null;
+  var p = proj(v); if (p) return p;
+  var opt = sel.options[sel.selectedIndex], t = opt ? s(opt.textContent) : '';
+  var ps = projects();
+  var hit = ps.filter(function(x){ return x && (s(x.name) === v || s(x.autoPO) === v); })[0];
+  if (!hit && t) { var po = (t.match(/^\[([^\]]+)\]/) || [])[1]; hit = ps.filter(function(x){ return x && ((po && s(x.autoPO) === po) || (s(x.name) && (t === s(x.name) || t.indexOf(s(x.name)) >= 0 && s(x.name).length > 5))); })[0]; }
+  return hit || null;
+}
+function isJobSelect(sel){
+  if (!sel || sel.tagName !== 'SELECT' || sel.multiple) return false;
+  var ps = projects(); if (!ps.length) return false;
+  var ids = {}; ps.forEach(function(p){ if (p && p.id) ids[p.id] = 1; });
+  var n = 0, m = 0;
+  for (var i = 0; i < sel.options.length && i < 60; i++) { var v = sel.options[i].value; if (!v) continue; m++; if (ids[v]) n++; }
+  return m > 0 && n / m >= 0.6;
+}
+function labelText(el){
+  var t = [el.id, el.name, el.placeholder, el.getAttribute('aria-label'), el.title].map(s).join(' ');
+  var l = el.id && D.querySelector('label[for="' + (W.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]');
+  if (l) t += ' ' + s(l.textContent);
+  else { var pv = el.previousElementSibling; if (pv && /^(LABEL|DIV|SPAN)$/.test(pv.tagName) && s(pv.textContent).length < 40) t += ' ' + s(pv.textContent); }
+  if (!l && el.parentElement && el.parentElement.tagName === 'LABEL') t += ' ' + s(el.parentElement.textContent).slice(0, 40);
+  return low(t);
+}
+function kindOf(el){
+  if (!el || el.disabled || el.readOnly) return '';
+  var ty = low(el.type);
+  if (el.tagName === 'INPUT' && /^(checkbox|radio|file|date|number|hidden|submit|button|search|month|time|datetime-local|range|color)$/.test(ty)) return '';
+  var t = labelText(el);
+  if (/new.?cust|new.?lead|search|filter|subject|note|memo|desc|amount|price|\bdate\b|vendor|\bsub\b|subcontr/.test(t)) return '';
+  if (ty === 'email' || /e-?mail/.test(t)) return 'email';
+  if (ty === 'tel' || /phone|\btel\b|cell|mobile/.test(t)) return 'phone';
+  if (/address|\baddr|job ?site|location/.test(t)) return 'address';
+  if (/\bp\.?o\.?\b|purchase order|_po\b|sharepo/.test(t)) return 'po';
+  if (/\bpm\b|project manager/.test(t)) return 'pm';
+  if (/customer|client|homeowner|owner name|bill to/.test(t)) return 'customer';
+  return '';
+}
+function scopeOf(el){
+  var c = el, best = null;
+  for (var i = 0; i < 8 && c && c !== D.body; i++) {
+    if (c.id && /newcust|newlead/i.test(c.id)) return null;
+    if (c.parentNode === D.body || c.tagName === 'FORM' || c.getAttribute('role') === 'dialog') { best = c; break; }
+    if (c.querySelectorAll && c.querySelectorAll('input,textarea,select').length >= 3) best = c;
+    c = c.parentElement;
+  }
+  return best;
+}
+var nativeIn = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+var nativeTa = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+var nativeSel = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+function setVal(el, v){
+  try { (el.tagName === 'TEXTAREA' ? nativeTa : el.tagName === 'SELECT' ? nativeSel : nativeIn).set.call(el, v); } catch (e) { el.value = v; }
+  el.__gcFilling = true;
+  try { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); } finally { el.__gcFilling = false; }
+  el.setAttribute('data-gc-autofill', '1');
+}
+function valuesFor(p){
+  var c = customerFor(p) || {};
+  return { customer: s(p.client) || s(c.name), phone: s(p.clientPhone) || s(p.phone) || s(c.phone), email: s(p.clientEmail) || s(c.email),
+    address: s(p.address) || s(c.address), po: s(p.autoPO) || s(p.po), pm: s(p.pm) };
+}
+function excludedEl(el){ for (var e = el; e && e !== D.body; e = e.parentElement) if (e.id && /newcust|newlead/i.test(e.id)) return true; return false; }
+function fillFrom(sel, p){
+  var sc = scopeOf(sel); if (!sc) return 0;
+  var v = valuesFor(p), n = 0;
+  sc.querySelectorAll('input,textarea,select').forEach(function(el){
+    if (el === sel || excludedEl(el) || !el.offsetParent && el.type !== 'hidden' && !el.getClientRects().length) return;
+    var k = kindOf(el); if (!k || !v[k]) return;
+    if (el.tagName === 'SELECT') {
+      if (s(el.value)) return;
+      var o = [].filter.call(el.options, function(x){ return low(x.value) === low(v[k]) || low(x.textContent) === low(v[k]); })[0];
+      if (o) { setVal(el, o.value); n++; }
+      return;
+    }
+    if (s(el.value)) return;
+    setVal(el, v[k]); n++;
+  });
+  if (n) log('job fill', { pid: p.id, n: n, form: sel.id || sel.name || '' });
+  return n;
+}
+function onPickChange(ev){
+  var t = ev.target;
+  if (!t || !t.tagName) return;
+  if (t.tagName === 'SELECT') {
+    if (t.__gcFilling) return;
+    if (!isJobSelect(t) && !/job|project|_pid|projid/i.test(s(t.id) + ' ' + s(t.name))) return;
+    var p = projFromSelect(t); if (!p) return;
+    if (!jobAuto(p, 'formFill')) return;
+    ST(function(){ fillFrom(t, p); }, 40);
+    return;
+  }
+  if ((t.tagName === 'INPUT') && !t.__gcFilling && kindOf(t) === 'po') {
+    var po = s(t.value); if (po.length < 3) return;
+    var hit = projects().filter(function(x){ return x && s(x.autoPO) && low(x.autoPO) === low(po); })[0]; if (!hit) return;
+    var sc = scopeOf(t); if (!sc) return;
+    var js = [].filter.call(sc.querySelectorAll('select'), isJobSelect)[0];
+    if (js && !s(js.value) && [].some.call(js.options, function(o){ return o.value === hit.id; })) { setVal(js, hit.id); ST(function(){ fillFrom(js, hit); }, 40); }
+  }
+}
+D.addEventListener('change', onPickChange, true);
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.tagName === 'INPUT' && !t.__gcFilling && kindOf(t) === 'po') { clearTimeout(t.__gcPoT); t.__gcPoT = ST(function(){ onPickChange({ target: t }); }, 500); } }, true);
+
+/* ═══ 5. ADDRESS → JURISDICTION ═════════════════════════════════════════════ */
+var GEO_MISS = 'gc_geo_miss', geoBusy = false;
+function geoNeeded(x){ var a = s(x.address); if (a.length < 8 || !/\d/.test(a)) return false; var j = x.jurisdiction; return !(j && j.for === a); }
+function geoTick(){
+  if (geoBusy || D.hidden || typing() || navigator.onLine === false) return;
+  var miss = jget(GEO_MISS, {}), cut = Date.now() - 7 * 864e5;
+  var want = [];
+  projects().forEach(function(p){ if (want.length < 6 && p && p.id && !/lost|dead|cancel/.test(low(p.status)) && geoNeeded(p) && !(miss[normAddr(p.address)] > cut) && jobAuto(p, 'jurisdiction')) want.push({ t: 'p', id: p.id, a: s(p.address) }); });
+  customers().forEach(function(c){ if (want.length < 8 && c && c.id && geoNeeded(c) && !(miss[normAddr(c.address)] > cut)) want.push({ t: 'c', id: c.id, a: s(c.address) }); });
+  if (!want.length) return;
+  geoBusy = true;
+  W.fetch('/.netlify/functions/geocode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ geo: 1, addresses: want.map(function(x){ return x.a; }) }) })
+    .then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; })
+    .then(function(j){
+      geoBusy = false;
+      if (!j || !j.ok) return;
+      arr(j.results).forEach(function(g, i){
+        var x = want[i]; if (!x) return;
+        if (!g || !g.county) { miss[normAddr(x.a)] = Date.now(); return; }
+        var J = { county: s(g.county), city: s(g.city), incorporated: !!g.incorporated, state: s(g.state), zip: s(g.zip), lat: g.lat, lng: g.lng, matched: s(g.matched), for: x.a, at: nowIso() };
+        var put = function(q){ q.jurisdiction = J; if (!s(q.county)) q.county = J.county; if (!s(q.state)) q.state = J.state; if (!s(q.zip)) q.zip = J.zip; if (!s(q.city)) q.city = J.city || J.postalCity || ''; if (q.geoLat == null && J.lat != null) { q.geoLat = J.lat; q.geoLng = J.lng; } };
+        if (x.t === 'p') saveProject(x.id, function(q){ if (s(q.address) !== x.a) return false; put(q); });
+        else saveCustomer(x.id, function(q){ if (s(q.address) !== x.a) return false; q.jurisdiction = J; if (!s(q.county)) q.county = J.county; if (!s(q.state)) q.state = J.state; if (!s(q.zip)) q.zip = J.zip; if (!s(q.city)) q.city = J.city; });
+        log('jurisdiction', { t: x.t, id: x.id, county: J.county, city: J.city || 'unincorporated', state: J.state });
+      });
+      jset(GEO_MISS, miss);
+    }).catch(function(){ geoBusy = false; });
+}
+function jurisdiction(p){
+  p = proj(p) || p; if (!p) return null;
+  var j = p.jurisdiction || null;
+  if (j) return j;
+  if (s(p.county) || s(p.state)) return { county: s(p.county), city: s(p.city), state: s(p.state), zip: s(p.zip), guessed: true };
+  var a = s(p.address), st = (a.match(/\b(TN|AR|MS|Tennessee|Arkansas|Mississippi)\b/i) || [])[1];
+  return st ? { state: ({ tennessee: 'TN', arkansas: 'AR', mississippi: 'MS' })[low(st)] || st.toUpperCase(), guessed: true } : null;
+}
+
+/* ── public ── */
+W._gcAut = {
+  proj: proj, projects: projects, saveProject: saveProject, saveCustomer: saveCustomer, customerFor: customerFor, customers: customers,
+  jobAuto: jobAuto, officeTodo: officeTodo, jobNote: jobNote, emit: emit, on: on, nudge: nudge, tick: tick, log: function(){ return LOG.slice(); },
+  estFor: estFor, leadFor: leadFor, carry: carry, fillFrom: fillFrom, isJobSelect: isJobSelect, kindOf: kindOf, csync: csync, geoTick: geoTick,
+  docMakers: DOC_MAKERS, headlessDoc: headlessDoc, fileDoc: fileDoc, addJobDoc: addJobDoc, loadJsPdf: loadJsPdf, loadCustomers: loadCustomers, invFinal: invFinal, invPaid: invPaid, util: { s: s, low: low, arr: arr, num: num, esc: esc, nowIso: nowIso, today: today, jget: jget, jset: jset, ST: ST, SI: SI, normName: normName, digits: digits, me: me },
+  state: function(){ return { seen: jget(SEEN, null), log: LOG.slice(-30) }; },
+  pause: function(v){ busOn = !v; }
+};
+W._gcHeadlessDoc = headlessDoc;
+W._gcJurisdiction = jurisdiction;
+
+retireOld(); wrapActivate(); wrapJsPdf(); loadCustomers();
+SI(function(){ try { retireOld(); wrapActivate(); wrapJsPdf(); fixPanel(); } catch (e) {} }, 1000);
+SI(function(){ if (!D.hidden) loadCustomers(); }, 30000);
+ST(function(){ tick(true); }, 6000);
+SI(function(){ try { tick(false); } catch (e) {} }, 15000);
+ST(csync, 20000); SI(function(){ try { csync(); } catch (e) {} }, 30000);
+ST(geoTick, 25000); SI(function(){ try { geoTick(); } catch (e) {} }, 60000);
+try { console.log('[GC] patch AUT1: event bus, estimate → job customer, contact sync, job pickers fill the form, jurisdiction — _gcAut.state()'); } catch (e) {}
+})();
+
 </script><!-- /INSP -->
 
 
