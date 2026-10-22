@@ -77,19 +77,22 @@ async function gcStaffAuth(event){
 // Signed-in GrayCo staff only. Nothing customer-facing is sent from here without an approval on THE approvals list.
 'use strict';
 const L = require('./_lib/mkt.js');
-function reply(code, headers, o){ return { statusCode: code, headers: headers, body: JSON.stringify(o) }; }
+const MMH = new WeakSet();   /* patch MM: answers to the Marketing Manager are redacted (no customer e-mail / phone / address) */
+function reply(code, headers, o){ return { statusCode: code, headers: headers, body: JSON.stringify(MMH.has(headers) ? require('./_lib/mm.js').redact(o) : o) }; }
 exports.handler = async function(event){
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
   if (event.httpMethod !== 'POST') return reply(405, headers, { ok: false, error: 'Method not allowed' });
-  const who = await gcStaffAuth(event);
+  const who = await require('./_lib/mm.js').orStaff(await gcStaffAuth(event), event);   /* patch MM: or the Marketing Manager (marketing calls only) */
   if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
+  if (who.marketing) MMH.add(headers);
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY.' });
   let body = {}; try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
   const op = String(body.op || '');
   let data = {}; try { data = await L.crmData(['users']); } catch (e) {}
   const role = L.roleOf(who, data), admin = role === 'admin';
   try {
+    if (who.marketing && ['status', 'audience', 'sendlog', 'review_reply'].indexOf(op) < 0) return reply(403, headers, { ok: false, error: 'Not part of the Marketing Manager profile.' });
     if (op === 'status') {
       const st = require('./_lib/social.js').status();
       const doc = await L.readDoc(); const a = (doc.cfg && doc.cfg.main && doc.cfg.main.autopilot) || {};
@@ -105,7 +108,7 @@ exports.handler = async function(event){
       const r = await fetch(((process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, '')) + '/rest/v1/gc_kv?select=value&key=eq.' + L.LOG_KEY, { headers: { apikey: process.env.SUPABASE_SERVICE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_SERVICE_KEY } });
       let v = r.ok ? ((await r.json())[0] || {}).value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
       const one = (v && v[String(body.id || '')]) || {};
-      const rows = Object.keys(one).map(function(e){ return { email: admin || role === 'office' ? e : e.replace(/^(.).*(@.*)$/, '$1…$2'), st: one[e].st, at: one[e].at, err: one[e].err || '' }; });
+      const rows = Object.keys(one).map(function(e){ return { email: (admin || role === 'office') && !who.marketing ? e : e.replace(/^(.).*(@.*)$/, '$1…$2'), st: one[e].st, at: one[e].at, err: one[e].err || '' }; });
       return reply(200, headers, { ok: true, rows: rows });
     }
     if (op === 'review_reply') { const a = await L.approveReply(String(body.id || ''), body.text, Object.assign({}, who, { role: role })); return reply(a.status, headers, a.out); }

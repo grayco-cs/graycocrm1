@@ -1260,6 +1260,7 @@ async function queueApproval(o){
     to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
     status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
   if (o.officeOk === true) item.officeOk = true;   /* patch SOC: the marketing approval stage — the office may approve this one */
+  if (o.mmOk === true) item.mmOk = true;   /* patch MM: the Marketing Manager may approve this one (stage 2+, not flagged, never paid ads) */
   if (Array.isArray(o.flags) && o.flags.length) item.flags = o.flags.slice(0, 8);
   if (item.step === 'admin') item.adminSince = now;   /* patch AP4: when it reached the admin step */
   const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
@@ -1435,9 +1436,11 @@ async function approvalAction(body, who){
   const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
   if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
-  const office = !admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who);   /* patch SOC: officeOk (approval stage 2 / 3) */
+  const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
+  if (who && who.marketing === true && !mmOk) return { status: 403, out: { ok: false, error: 'This one needs an admin.' } };
+  const office = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
   if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
-  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
   if (office && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {

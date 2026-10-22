@@ -56,8 +56,14 @@ exports.handler = async function(event){
   if (m === 'OPTIONS') return J(event, 204, {});
   if (m === 'GET' && qs.ping === '1') return J(event, 200, { ok: true, service: 'GrayCo referral program', database: L().dbReady() });
   if (!L().dbReady()) return J(event, 503, { ok: false, error: 'The CRM database is not configured.' });
-  const who = await staffAuth(event);
+  let who = await staffAuth(event);
+  if (!who.ok && who.code === 403) { const mm = await require('./_lib/mm.js').auth(event); if (mm.ok) who = mm; }   /* patch MM: the Marketing Manager — read-only, redacted */
   if (!who.ok) return J(event, who.code || 401, { ok: false, error: who.error });
+  if (who.marketing) {
+    if (m === 'GET' && qs.list === '1') return J(event, 200, require('./_lib/mm.js').redact(Object.assign({ ok: true, admin: false, readOnly: true }, await R.overview())));
+    if (m === 'GET' && qs.settings === '1') return J(event, 200, { ok: true, settings: await R.settings(), min: R.MIN, max: R.MAX });
+    return J(event, 403, { ok: false, error: 'The Marketing Manager profile sees the referral program read-only.' });
+  }
   const office = who.admin || /office/.test(low(who.role));
   const by = who.name || who.email;
   let b = {};

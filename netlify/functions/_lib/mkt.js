@@ -27,7 +27,7 @@ const crypto = require('crypto');
 const C = require('./mkt-content.js');
 const KEY = 'gc_mkt_v1', LOG_KEY = 'gc_mkt_sendlog', AQ_KEY = 'gc_approval_queue';
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
-const MKT_KINDS = { mkt_campaign: 'campaigns', social_post: 'posts', mkt_neighbor: 'neighbors', mkt_ad: 'adchanges', mkt_payout: 'payouts', mkt_event: 'roofevents', mkt_giveaway: 'giveaways', mkt_page: 'citypages', mkt_outreach: 'outreach', soc_week: 'socweeks', mkt_addraft: 'addrafts' };   /* patch SOC: + paid-ads drafts (restoration only, never automatic) */   /* patch SOC: the week of 3 posts, one approval */   /* patch MKT2d: website page text, HOA / PM outreach e-mails */   /* patch MKT2c: the giveaway winner e-mail */   /* patch MKT2: ad changes, partner fees, event reminders */
+const MKT_KINDS = { mkt_campaign: 'campaigns', social_post: 'posts', mkt_neighbor: 'neighbors', mkt_ad: 'adchanges', mkt_payout: 'payouts', mkt_event: 'roofevents', mkt_giveaway: 'giveaways', mkt_page: 'citypages', mkt_outreach: 'outreach', soc_week: 'socweeks', mkt_addraft: 'addrafts', mkt_experiment: 'experiments', mkt_feature: 'features' };   /* patch MM: 💡 experiments (an admin approves), CRM feature requests (to the owner) */   /* patch SOC: + paid-ads drafts (restoration only, never automatic) */   /* patch SOC: the week of 3 posts, one approval */   /* patch MKT2d: website page text, HOA / PM outreach e-mails */   /* patch MKT2c: the giveaway winner e-mail */   /* patch MKT2: ad changes, partner fees, event reminders */
 function stKey(coll){ return coll === 'roofevents' ? 'remindStatus' : coll === 'giveaways' ? 'notifyStatus' : 'status'; }   /* an event keeps its own open / closed status */
 function mkt2(){ return require('./mkt2.js'); }
 function soc(){ return require('./soc.js'); }   /* patch SOC */
@@ -122,6 +122,7 @@ async function signRef(ref, secs){
 
 /* ── who may do what ── */
 function roleOf(who, data){
+  if (who && who.marketing === true) return 'marketing';   /* patch MM: the Marketing Manager profile (never admin, never office) */
   if (low(who && who.role) === 'admin') return 'admin';
   if (/office/.test(low(who && who.role)) || low(who && who.email) === 'office@grayco-cs.com') return 'office';
   const u = arr(data && data.users).find(function(x){ return low(x.email) === low(who && who.email); });
@@ -165,6 +166,7 @@ async function queueForApproval(body, who, core){
   if (!coll || !id) return { status: 400, out: { ok: false, error: 'Bad request' } };
   let data = {}; try { data = await crmData(['customers', 'projects', 'users']); } catch (e) {}
   const role = roleOf(who, data);
+  if (role === 'marketing' && !(SC().CONTENT_KINDS[kind] || kind === 'mkt_event' || kind === 'mkt_page' || kind === 'mkt_outreach' || kind === 'mkt_experiment' || kind === 'mkt_feature')) return { status: 403, out: { ok: false, error: 'The Marketing Manager profile cannot send that for approval.' } };   /* patch MM */
   if (role === 'staff' && !body.system) return { status: 403, out: { ok: false, error: 'Only the office or an admin can send marketing for approval.' } };
   const doc = await readDoc(); const rec0 = get(doc, coll, id), rec = rec0 ? Object.assign({}, rec0, { reviewLink: s(cfg(doc).reviewLink) }) : null;
   if (!rec) return { status: 404, out: { ok: false, retry: true, error: 'That draft is not in the cloud yet — try again in a few seconds.' } };
@@ -191,6 +193,13 @@ async function queueForApproval(body, who, core){
   } else if (kind === 'soc_week') {   /* patch SOC: the week — three posts, one approval */
     const a = await soc().weekApproval(rec, doc); if (a.error) return { status: 400, out: { ok: false, error: a.error } };
     title = a.title; to = a.to; subject = a.subject; html = a.html; meta.posts = a.meta.posts;
+  } else if (kind === 'mkt_experiment' || kind === 'mkt_feature') {   /* patch MM: an experiment to run / a CRM feature request — always an admin */
+    const isF = kind === 'mkt_feature';
+    title = (isF ? '💡 CRM feature request: ' : '🧪 Marketing experiment: ') + s(rec.title); to = isF ? 'The owner → development' : (s(rec.channel) || 'Marketing') + (rec.cost ? ' · est. $' + Math.round(+rec.cost || 0) : '');
+    subject = s(rec.title);
+    html = '<p><b>' + C.esc(rec.title) + '</b></p>' + (isF ? '<p>' + C.esc(rec.detail || rec.notes || '').replace(/\n/g, '<br>') + '</p><p class="m">Why it helps: ' + C.esc(rec.why || rec.goal || '') + '</p>'
+      : '<p>Goal: ' + C.esc(rec.goal) + ' · Channel: ' + C.esc(rec.channel) + ' · Cost estimate: $' + C.esc(Math.round(+rec.cost || 0)) + '<br>Dates: ' + C.esc(rec.start || '?') + ' → ' + C.esc(rec.end || '?') + '<br>How we measure: ' + C.esc((rec.measure && (rec.measure.campaign || rec.measure.source)) || '—') + '</p><p>' + C.esc(rec.notes || '').replace(/\n/g, '<br>') + '</p>');
+    if (isF) { try { await featureLog(rec, 'waiting', who); } catch (e) {} }
   } else if (kind === 'mkt_addraft') {   /* patch SOC: a Google Ads draft / a boost — restoration only (cfg.main.adsFocus); the CRM never spends */
     if (!SC().adsAllowed(cfg(doc).adsFocus, { service: rec.service || '', title: rec.name || rec.title })) return { status: 400, out: { ok: false, error: 'Ads focus: paid ads are for ' + Object.keys(SC().adsFocusOf(cfg(doc).adsFocus)).filter(function(k){ return SC().adsFocusOf(cfg(doc).adsFocus)[k] > 0; }).join(', ') + ' only.' } };
     title = '📣 Marketing — paid ads draft: ' + s(rec.name || rec.title); to = rec.kind === 'boost' ? 'Facebook / Instagram boost' : 'Google Ads (built by hand from the file)'; subject = s(rec.name || rec.title); html = SC().addraftHtml(rec);
@@ -213,7 +222,11 @@ async function queueForApproval(body, who, core){
       return ch; });
     return { status: 200, out: { ok: true, auto: true, vetoUntil: veto, stage: 3 } };
   }
-  const ok = await core.queueApproval({ id: qid, kind: kind, title: title + (rt.flags.length ? ' ⚑ ' + rt.flags.map(function(f){ return SC().FLAG_L[f] || f; }).join(', ') : ''), pid: s(rec.jobId), jobName: s(rec.jobName), pm: null, to: to, subject: subject, html: html, attachments: [], meta: meta, officeOk: rt.office, flags: rt.flags });
+  /* patch MM: the Marketing Manager approves at stage 2+ what the office could (setting, default on) — never a flagged draft, never paid ads */
+  let mmS = { approvesStage2: false }; try { mmS = await require('./mm.js').settings(); } catch (e) {}
+  const mmOk = rt.office && !rt.flags.length && kind !== 'mkt_addraft' && rt.stage >= 2 && mmS.approvesStage2 === true;
+  meta.mmOk = mmOk;
+  const ok = await core.queueApproval({ mmOk: mmOk, id: qid, kind: kind, title: title + (rt.flags.length ? ' ⚑ ' + rt.flags.map(function(f){ return SC().FLAG_L[f] || f; }).join(', ') : ''), pid: s(rec.jobId), jobName: s(rec.jobName), pm: null, to: to, subject: subject, html: html, attachments: [], meta: meta, officeOk: rt.office, flags: rt.flags });
   if (ok && rt.office) { try { await core.officeTodo('mkt_appr_' + qid, '✅ Approve marketing: ' + (s(rec.title) || subject || 'a draft'), 'Approvals → ' + title + '. Stage ' + rt.stage + ': the office approves this one.'); } catch (e) {} }
   if (!ok) return { status: 502, out: { ok: false, error: 'Could not put it on the approvals list — try again.' } };
   await update(function(d){ const r = get(d, coll, id); if (!r) return null; r[stKey(coll)] = 'waiting'; r.apprId = qid; r.submits = n; r.submittedBy = low(who && who.email); r.submittedAt = nowIso(); r.reason = ''; return [[coll, id]]; });
@@ -244,6 +257,10 @@ async function onApproved(item){
   if (coll === 'adchanges' || coll === 'payouts' || coll === 'roofevents' || coll === 'giveaways' || coll === 'citypages' || coll === 'outreach') {   /* patch MKT2 */
     try { const r2 = get(r.doc, coll, id); if (r2) await mkt2().afterApproved(item.kind, r2, item, { officeTodo: require('../portal.js')._core.officeTodo }); } catch (e) {}
   }
+  if (coll === 'experiments' || coll === 'features') {   /* patch MM: an approved experiment may run; an approved feature request goes to development */
+    try { const r3 = get(r.doc, coll, id); if (coll === 'experiments') await update(function(d){ const x = get(d, 'experiments', id); if (!x || (x.stage && x.stage !== 'idea')) return null; x.stage = 'approved'; return [['experiments', id]]; });
+      else await featureLog(r3 || { id: id }, 'approved', { email: last.email, name: last.by }); } catch (e) {}
+  }
   if (coll === 'addrafts') {   /* patch SOC: approved ads draft → a person builds it (nothing is spent by the CRM) */
     try { const a = get(r.doc, 'addrafts', id); await require('../portal.js')._core.officeTodo('mkt_ads_' + id, (a && a.kind === 'boost' ? '🚀 Boost on Facebook: ' : '🔎 Build in Google Ads: ') + s(a && (a.name || a.title)), 'Approved paid-ads draft. Marketing → 🚨 Restoration ads → ' + (a && a.kind === 'boost' ? 'open the post in Meta Business Suite → Boost (set the amount there).' : 'download the Google Ads Editor file, import it, set the budget in Google Ads.') + ' The CRM never spends money by itself.'); } catch (e) {}
   }
@@ -255,6 +272,7 @@ async function onApproved(item){
 async function onRejected(item, me){
   const m = item.meta || {}, coll = m.coll || MKT_KINDS[item.kind], id = s(m.recId);
   if (!coll || !id) return;
+  if (coll === 'features') { try { await featureLog({ id: id }, 'rejected', me); } catch (e) {} }   /* patch MM */
   await update(function(d){ const rec = get(d, coll, id); if (!rec || rec.apprId !== s(item.id)) return null; rec[stKey(coll)] = 'rejected'; rec.reason = s(item.reason); rec.rejectedBy = s(me && me.by); return [[coll, id]]; });
 }
 /* the approvals list said so, but the record did not hear it (a reject, or an approve whose update failed) */
@@ -456,11 +474,26 @@ async function autopilot(o){
   return { ok: true, made: made };
 }
 
+/* ── patch MM: the CRM feature requests the owner reads (gc_kv "mkt_feature_requests": newest last) ── */
+const FEATURE_KEY = 'mkt_feature_requests';
+async function featureLog(rec, status, who){
+  const cur = await kvRow(FEATURE_KEY); const l = arr(cur.v);   /* a failed read throws: never overwrite the list blind */
+  let x = l.find(function(y){ return y && y.id === s(rec.id); });
+  if (!x) { x = { id: s(rec.id), createdAt: nowIso() }; l.push(x); }
+  if (rec.title) x.title = s(rec.title).slice(0, 200); if (rec.detail || rec.notes) x.detail = s(rec.detail || rec.notes).slice(0, 4000); if (rec.why || rec.goal) x.why = s(rec.why || rec.goal).slice(0, 600);
+  if (rec.createdBy) x.by = s(rec.createdBy); x.status = status; x[status + 'At'] = nowIso(); if (status !== 'waiting') x[status + 'By'] = s(who && (who.name || who.by || who.email));
+  await kvPut(FEATURE_KEY, l.slice(-500)); return x;
+}
 /* ── 5. review replies (office or admin approves) and insights ── */
 async function approveReply(id, text, who){
   let data = {}; try { data = await crmData(['users']); } catch (e) {}
   const role = roleOf(who, data);
-  if (role !== 'admin' && role !== 'office') return { status: 403, out: { ok: false, error: 'The office or an admin approves review replies.' } };
+  if (role !== 'admin' && role !== 'office' && role !== 'marketing') return { status: 403, out: { ok: false, error: 'The office or an admin approves review replies.' } };
+  if (role === 'marketing') {   /* patch MM: like the office at stage 2+, never a flagged (1–3★) reply, and only with the admin setting on */
+    const d1 = await readDoc(), r1 = get(d1, 'reviews', id), rt1 = SC().route(SC().stageCfg(cfg(d1)), 'review_reply', r1 || {}, { rating: r1 && r1.rating });
+    let mmS1 = { approvesStage2: false }; try { mmS1 = await require('./mm.js').settings(); } catch (e) {}
+    if (!(rt1.office && !rt1.flags.length && rt1.stage >= 2 && mmS1.approvesStage2)) return { status: 403, out: { ok: false, error: rt1.stage === 1 ? 'Stage 1: an admin approves review replies for now.' : 'This reply needs an admin.' } };
+  }
   if (role !== 'admin') {   /* patch SOC: the approval stage — stage 1 admins only; stage 2 the office except 1–3★ replies; stage 3 the office */
     const d0 = await readDoc(), r0 = get(d0, 'reviews', id), rt = SC().route(SC().stageCfg(cfg(d0)), 'review_reply', r0 || {}, { rating: r0 && r0.rating });
     if (!rt.office) return { status: 403, out: { ok: false, error: rt.stage === 1 ? 'Stage 1: an admin approves review replies for now (Marketing → Approval stage).' : 'A 1–3★ review reply needs an admin.' } };
@@ -484,7 +517,7 @@ async function refreshInsights(){
   return out.length;
 }
 
-module.exports = { KEY: KEY, LOG_KEY: LOG_KEY, MKT_KINDS: MKT_KINDS, isMktKind: function(k){ return !!MKT_KINDS[s(k)]; },
+module.exports = { FEATURE_KEY: FEATURE_KEY, featureLog: featureLog, kvRow: kvRow, KEY: KEY, LOG_KEY: LOG_KEY, MKT_KINDS: MKT_KINDS, isMktKind: function(k){ return !!MKT_KINDS[s(k)]; },
   queueForApproval: queueForApproval, onApproved: onApproved, onRejected: onRejected, reconcile: reconcile, runDue: runDue, autopilot: autopilot,
   approveReply: approveReply, refreshInsights: refreshInsights, audienceFor: audienceFor, readDoc: readDoc, update: update, crmData: crmData, roleOf: roleOf, signRef: signRef,
   reviewReplyDraft: reviewReplyDraft, publishPost: publishPost, _recs: recs, _get: get, _put: put, _rid: rid, _cfg: cfg,   /* patch SOC */

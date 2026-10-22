@@ -117,7 +117,7 @@ function fromAuth(j, prev){
     access_token: j.access_token, refresh_token: j.refresh_token,
     expires_at: j.expires_at || Math.floor(now() / 1000) + (j.expires_in || 3600),
     email: low(u.email || (prev && prev.email)), uid: u.id || (prev && prev.uid) || '',
-    role: prev ? prev.role : '', roleKnown: prev ? !!prev.roleKnown : false,
+    role: prev ? prev.role : '', roleKnown: prev ? !!prev.roleKnown : false, marketing: prev ? !!prev.marketing : false,   /* patch MM */
     validatedAt: now()
   };
 }
@@ -193,14 +193,16 @@ function whenUsable(signal){
 async function checkStaff(){
   if (!S) return 'none';
   try {
-    var r = await nativeFetch(SB_URL + '/rest/v1/gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(S.email),
+    var r = await nativeFetch(SB_URL + '/rest/v1/gc_staff?select=*&email=eq.' + encodeURIComponent(S.email),   /* patch MM: * = the profile too */
       { headers: { apikey: ANON, Authorization: 'Bearer ' + S.access_token } });
     if (r.status === 401) return 'expired';
     if (r.ok) {
       var rows = await r.json();
       var row = Array.isArray(rows) && rows[0];
-      if (!row || row.active === false) return 'not-staff';
-      S.role = low(row.role || 'staff'); S.roleKnown = true; store(S);
+      /* patch MM: the Marketing Manager profile is never active staff (docs/marketing-role.sql): marketing only */
+      var mkt = !!row && row.active === false && low(row.profile) === 'marketing' && row.mkt_active === true && low(row.role || 'staff') !== 'admin';
+      if (!row || (row.active === false && !mkt)) return 'not-staff';
+      S.role = mkt ? 'marketing' : low(row.role || 'staff'); S.marketing = mkt; S.roleKnown = true; store(S);
       return 'staff';
     }
     return 'no-table';          /* lockdown SQL not run yet: the sign-in alone decides */
@@ -523,6 +525,7 @@ window.__GC_AUTH__ = {
   email: function(){ return S ? S.email : ''; },
   mode: function(){ return mode; },
   isAdmin: isAdmin,
+  marketing: function(){ return !!(S && S.marketing === true); },   /* patch MM: the Marketing Manager profile */
   signOut: function(){ lock('Signed out.'); },
   /* RoofScout runs as the 🏠 RoofScout tab (same site, in a frame). It uses THIS sign-in — the one the CRM
      is using right now — instead of reading its own copy from browser storage, which can be missing or out
@@ -704,6 +707,57 @@ console.log('[GC] Company sign-in active' + (S ? ' (' + S.email + ')' : ' — wa
 })();
 
 </script>
+<script id="gc-patch-mm-early">
+/* ═══ patch MM (early) — the Marketing Manager profile: his data comes ONLY through netlify/functions/soc.js ═══════════════
+   Who: a gc_staff row with profile "marketing" (💎 → Team access → Profile) — never active staff, so the database and every
+   staff function refuse him (docs/marketing-role.sql). The sign-in marks the session (S.marketing). This script, before the
+   Marketing tab draws, points the tab's data at the marketing server calls: the marketing document (redacted), the jobs as a
+   marketing projection, the photos with the customer's OK, picture links one at a time, uploads, his drafts' approvals.
+   Console: _gcIsMM(), _gcMMData */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MM_EARLY__) return; window.__GC_PATCH_MM_EARLY__ = true;
+var W = window;
+function isMM(){ try { return !!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.marketing === 'function' && W.__GC_AUTH__.marketing()); } catch (e) { return false; } }
+W._gcIsMM = isMM;
+if (!isMM()) return;
+try { var v = localStorage.getItem('grayco_view'); if (v !== 'marketing') localStorage.setItem('grayco_view', 'marketing'); } catch (e) {}
+var FN = '/.netlify/functions/soc';
+function call(body){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: t.slice(0, 200) }; } j.__status = r.status; return j; }); }, function(e){ return { error: 'Cannot reach the server.', __status: 0 }; });
+}
+var J = { jobs: [], photos: [], at: 0, p: null }, files = {}, appr = { items: [], at: 0 };
+function load(force){
+  if (J.p && !force) return J.p;
+  J.p = call({ op: 'mm_jobs' }).then(function(j){ if (j && j.ok) { J.jobs = j.jobs || []; J.photos = j.photos || []; J.at = Date.now(); try { W.dispatchEvent(new Event('gc-mm-data')); } catch (e) {} } return J; });
+  return J.p;
+}
+W._gcMMData = {
+  call: call, load: load,
+  projects: function(){ if (!J.p) load(); return J.jobs.slice(); },
+  photosOf: function(pid){ if (!J.p) load(); return J.photos.filter(function(p){ return String(p.jobId) === String(pid); }).sort(function(a, b){ return String(a.at) < String(b.at) ? 1 : -1; }); },
+  photos: function(){ if (!J.p) load(); return J.photos.slice(); },
+  fileUrl: function(ref){
+    ref = String(ref || '');
+    if (/^(https?:|data:image\/)/.test(ref)) return Promise.resolve(ref);
+    var c = files[ref]; if (c && c.exp > Date.now()) return Promise.resolve(c.u);
+    return call({ op: 'mm_file', ref: ref }).then(function(j){ if (!j || !j.url) throw new Error((j && j.error) || 'not reachable'); files[ref] = { u: j.url, exp: Date.now() + 50 * 60e3 }; return j.url; });
+  },
+  store: function(dataUrl, name){ return call({ op: 'mm_upload', dataUrl: dataUrl, name: name || 'marketing.jpg' }).then(function(j){ return (j && j.ref) || ''; }); },
+  approvals: function(){ return appr.items.slice(); },
+  loadApprovals: function(){ return call({ op: 'mm_approvals' }).then(function(j){ if (j && j.ok) { appr.items = j.items || []; appr.at = Date.now(); } return appr.items; }); },
+  approve: null
+};
+/* approve / reject: the call body's "op" is the soc operation, so the decision goes as "decision" */
+W._gcMMData.approve = function(id, decision, extra){ return call({ op: 'mm_approve', id: id, decision: decision || 'approve', reason: (extra && extra.reason) || '' }); };
+W._gcMMKv = {
+  read: function(key){ return call({ op: 'mm_kv_read', key: key }).then(function(j){ return j && j.ok ? j.value : undefined; }); },
+  write: function(key, value){ return call({ op: 'mm_kv_write', key: key, value: value }).then(function(j){ if (!j || !j.ok) throw new Error((j && j.error) || 'HTTP ' + (j && j.__status)); return true; }); }
+};
+})();
+
+</script><!-- /MM-EARLY -->
 <script>
 /* ═══ 33.145 hotfix — who counts as a person in a list: current, active, not let go, not deleted ═══
    One rule for every chip, picker and team list: window._gcActivePeople() / window._gcIsGonePerson(nameOrUser).
@@ -133633,7 +133687,7 @@ function hookRoles(){
   var out = [];
   try { var r = W._gcRoles; r = typeof r === 'function' ? r() : r; out = out.concat(arr(r).map(function(x){ return typeof x === 'string' ? x : (x && (x.name || x.label || x.id)) || ''; })); } catch (e) {}
   try { var P = W._gcRP; if (P) { var pr = typeof P.roles === 'function' ? P.roles() : P.roles; out = out.concat(arr(pr).map(function(x){ return typeof x === 'string' ? x : (x && (x.name || x.label)) || ''; })); } } catch (e) {}
-  if (W.__GC_PATCH_RP__ || W._gcRP) out = out.concat(['Estimator', 'Insurance', 'Mitigation']);
+  if (W.__GC_PATCH_RP__ || W._gcRP) out = out.concat(['Estimator', 'Insurance', 'Mitigation', 'Marketing Manager']);   /* patch MM */
   return out.filter(Boolean);
 }
 function roleList(){
@@ -140558,12 +140612,13 @@ function meUser(){ var em = myEmail(); return arr(crm().users).filter(function(u
 function myName(){ var u = meUser(); return (u && u.name) || myEmail() || 'someone'; }
 function isAdmin(){ try { var A = W.__GC_AUTH__; if (A && typeof A.isAdmin === 'function') return !!A.isAdmin(); } catch (e) {} var u = meUser(); return !!(u && /admin|owner/i.test(s(u.role))); }
 function role(){
+  if (W._gcMMData) return 'marketing';   /* patch MM: the Marketing Manager — every marketing tool, nothing else */
   if (isAdmin()) return 'admin';
   var u = meUser();
   if (myEmail() === 'office@grayco-cs.com' || (u && /office/i.test(s(u.role)))) return 'office';
   return 'pm';
 }
-function full(){ var r = role(); return r === 'admin' || r === 'office'; }
+function full(){ var r = role(); return r === 'admin' || r === 'office' || r === 'marketing'; }
 W._gcMkCanSee = W._gcMktCanSee = function(){ try { return !!myEmail(); } catch (e) { return false; } };
 function toast(msg, bad){
   Array.prototype.forEach.call(D.querySelectorAll('.gmt-toast'), function(x){ x.remove(); });
@@ -140610,11 +140665,13 @@ function creds(){ try { return { u: (localStorage.getItem('grayco_sb_url') || 'h
 function signedIn(){ try { var A = W.__GC_AUTH__; if (!A) return true; return !!A.email() && A.mode() !== 'none'; } catch (e) { return false; } }
 function epochOk(){ try { if (typeof W._gcEpochStatus !== 'function') return true; var st = W._gcEpochStatus(); return !!st && st.state !== 'stale'; } catch (e) { return false; } }
 function kvRead(key){
+  if (W._gcMMKv) return W._gcMMKv.read(key);   /* patch MM: the Marketing Manager's records come redacted from the server */
   var c = creds(); if (!c.u || !c.k) return Promise.resolve(undefined);
   return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' })
     .then(function(r){ if (!r.ok) return undefined; return r.json().then(function(rows){ if (!Array.isArray(rows)) return undefined; if (!rows.length) return null; var v = rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return v; }); }, function(){ return undefined; });
 }
 function kvWrite(key, value){
+  if (W._gcMMKv) return W._gcMMKv.write(key, value);   /* patch MM */
   var c = creds(); if (!c.u || !c.k) return Promise.reject(new Error('no cloud'));
   return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return true; });
@@ -140688,9 +140745,10 @@ function reviewLink(){ return s(cfg().reviewLink) || s(W._GOOGLE_REVIEW_LINK) ||
 var DATA = { leads: [], estimates: [], at: 0 };
 function idb(k){ try { return W.idbGet ? Promise.resolve(W.idbGet(k)).catch(function(){ return null; }) : Promise.resolve(null); } catch (e) { return Promise.resolve(null); } }
 function loadData(){ return Promise.all([idb('leads'), idb('estimates')]).then(function(r){ DATA.leads = arr(r[0]); DATA.estimates = arr(r[1]); DATA.at = Date.now(); }); }
-function projects(){ return arr(crm().projects).filter(function(p){ return p && p.deleted !== true; }); }
+function projects(){ if (W._gcMMData) return W._gcMMData.projects(); return arr(crm().projects).filter(function(p){ return p && p.deleted !== true; }); }
 function customers(){ var c = crm().customers || W._graycoCustomers; return arr(c); }
 function photosOf(pid){
+  if (W._gcMMData) return W._gcMMData.photosOf(pid);   /* patch MM: only jobs whose customer said yes */
   var recs = []; try { recs = W._gcPhotos && W._gcPhotos.records ? W._gcPhotos.records() : []; } catch (e) {}
   return arr(recs).filter(function(r){ return r && r.deleted !== true && r.source !== 'ccflag' && s(r.jobId) === s(pid) && s(r.ref) && s(r.tag) !== 'Damage'; })
     .sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });
@@ -140700,8 +140758,8 @@ function finishedJobs(days){
   return projects().filter(function(p){ return C.isDone(p) && (C.doneDate(p) || s(p.updatedAt).slice(0, 10) || '0000') >= cut; })
     .sort(function(a, b){ return (C.doneDate(a) || '') < (C.doneDate(b) || '') ? 1 : -1; });
 }
-function fileUrl(ref){ try { return W._gcFileUrl ? Promise.resolve(W._gcFileUrl(ref)) : Promise.reject(new Error('no file store')); } catch (e) { return Promise.reject(e); } }
-function storeDataUrl(dataUrl, name){ try { return W._gcStoreFile ? Promise.resolve(W._gcStoreFile(dataUrl, { kind: 'mkt', name: name || 'marketing.jpg' })).then(function(m){ return m && m.ref; }) : Promise.resolve(''); } catch (e) { return Promise.resolve(''); } }
+function fileUrl(ref){ if (W._gcMMData) return W._gcMMData.fileUrl(ref); try { return W._gcFileUrl ? Promise.resolve(W._gcFileUrl(ref)) : Promise.reject(new Error('no file store')); } catch (e) { return Promise.reject(e); } }
+function storeDataUrl(dataUrl, name){ if (W._gcMMData) return W._gcMMData.store(dataUrl, name); try { return W._gcStoreFile ? Promise.resolve(W._gcStoreFile(dataUrl, { kind: 'mkt', name: name || 'marketing.jpg' })).then(function(m){ return m && m.ref; }) : Promise.resolve(''); } catch (e) { return Promise.resolve(''); } }
 
 /* ── onto THE approvals list (the portal function: kinds mkt_campaign / social_post / mkt_neighbor) ── */
 function sendForApproval(kind, coll, id, again){
@@ -140709,7 +140767,7 @@ function sendForApproval(kind, coll, id, again){
   if (kind === 'social_post') { var pr = C.guard(rec.caption, rec.jobAddresses || []); if (pr.length) { toast(pr[0].l, true); return Promise.resolve({ ok: false, error: pr[0].l }); } }
   var tries = 0;
   function go(){
-    return MK.push().then(function(){ return api('portal', { action: 'approval', op: 'queue', kind: kind, recId: id, again: !!again }); }).then(function(j){
+    return MK.push().then(function(){ return W._gcMMData ? api('soc', { op: 'mm_queue', kind: kind, recId: id, again: !!again }) : api('portal', { action: 'approval', op: 'queue', kind: kind, recId: id, again: !!again });   /* patch MM */ }).then(function(j){
       if (j && j.retry && tries++ < 4) return new Promise(function(r){ nST(r, 1500); }).then(function(){ MK.dirty = true; return go(); });
       return j;
     });
@@ -143290,8 +143348,9 @@ ACT['soc-approve-week'] = function(b){
     if (!j || !j.ok) { STATE.busy = ''; draw(); return; }
     if (j.auto) { STATE.busy = ''; toast('Stage 3: approved by Autopilot — posts after the 24-hour veto.'); MK.pull(true); return; }
     var aid = j.id || (MK.get('socweeks', id) || {}).apprId;
-    if (!W._gcApprovalAct || !aid) { STATE.busy = ''; draw(); return; }
-    return Promise.resolve(W._gcApprovalAct(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + r.error : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
+    var act = W._gcMMData ? W._gcMMData.approve : W._gcApprovalAct;   /* patch MM: the Marketing Manager decides through the marketing server */
+    if (!act || !aid) { STATE.busy = ''; draw(); return; }
+    return Promise.resolve(act(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + r.error : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
   });
 };
 ACT['soc-swap'] = function(b){ var id = b.getAttribute('data-id'), t = D.querySelector('[data-soc-swap="' + id + '"]'), sv = D.querySelector('[data-soc-swaps="' + id + '"]'); b.disabled = true; b.textContent = 'Writing…';
@@ -143420,7 +143479,10 @@ VIEWS.listings = function(){
     }).join('') + '</table></div></div>';
   return h;
 };
-D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-li'); if (!k) return; var a = k.split('|'), o = { id: a[0] }; o[a[1]] = s(t.value); if (/^(name|address|phone)$/.test(a[1]) && !MK.get('listings', a[0])) o.checkedAt = X.nowIso(); MK.put('listings', o); draw(); }, true);
+D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-li'); if (!k) return; var a = k.split('|'), o = { id: a[0] }; o[a[1]] = s(t.value); if (/^(name|address|phone)$/.test(a[1]) && !MK.get('listings', a[0])) o.checkedAt = X.nowIso();
+  /* patch MM: the monthly scorecard counts a listing as FIXED when an edit turns it from "fix" / "not listed" into right */
+  try { var dd = new Date().toISOString().slice(0, 10), was = SC.napCheck(MK.get('listings', a[0]) || {}, addrCfg(), dd).state, now = SC.napCheck(Object.assign({}, MK.get('listings', a[0]) || {}, o, { checkedAt: X.nowIso() }), addrCfg(), dd).state; if (/^(fix|missing)$/.test(was) && /^(ok|soon)$/.test(now)) o.fixedAt = X.nowIso(); } catch (e) {}
+  MK.put('listings', o); draw(); }, true);
 ACT['li-checked'] = function(b){ MK.put('listings', { id: b.getAttribute('data-id'), checkedAt: X.nowIso(), checkedBy: X.myName() }); draw(); };
 ACT['li-bl'] = function(b){ b.disabled = true; MK.push().then(function(){ return api('soc', { op: 'listings_sync' }); }).then(function(j){ toast(j && j.dormant ? j.note : j && j.ok ? 'BrightLocal: ' + j.updated + ' listing(s) updated.' : 'BrightLocal: ' + ((j && j.error) || 'not reachable'), !(j && j.ok)); MK.pull(true); nST(draw, 600); }); };
 ACT['li-todo'] = function(){
@@ -143564,6 +143626,274 @@ W._gcSoc = { state: function(){ return { secs: NEW.map(function(x){ return x.id;
 })();
 
 </script><!-- /SOC -->
+<script id="gc-patch-mm">
+/* ==========================================================================
+   GrayCo CRM — patch MM __GC_PATCH_MM__ : the MARKETING MANAGER profile (inside the 📣 Marketing tab)
+   Owner (22 Oct 2026): "he needs strictly marketing stuff in his profile, doesn't need to see company data, but I want
+   him to see how his leads are playing out … he will use our CRM to grow our business … have all tools we have."
+   Who: data — 💎 → Team access → Profile "Marketing Manager" (docs/TEAM-ROLES.md). His menu is Marketing only; every
+   marketing tool is in it, plus 📈 My leads (read-only, no customer contact data), ✅ My To-Do & today's plan,
+   ✅ Approvals (what he may decide), 🌐 Website (embed code, roof prices, website leads).
+   The lock is on the server and in the database (docs/marketing-role.sql, netlify/functions/_lib/mm.js); this file
+   only draws. Admins: ⚙️ Focus & approvals → "📣 Marketing Manager profile" (sees sold values / approves at stage 2).
+   Console: _gcMM.state()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MM__) return; window.__GC_PATCH_MM__ = true;
+var W = window, D = document;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout.bind(W);
+var X = null, SC = null, tries = 0;
+function boot(){ X = W._gcMktExt; SC = W.__gcSocContent; if (!X || !SC || !X.VIEWS.socweek) { if (tries++ < 160) nST(boot, 500); return; } install(); }
+nST(boot, 0);
+function isMM(){ try { return typeof W._gcIsMM === 'function' && W._gcIsMM(); } catch (e) { return false; } }
+
+function install(){
+var SECS = X.SECS, VIEWS = X.VIEWS, ACT = X.ACT, UI = X.UI, MK = X.MK, C = X.C, esc = X.esc, s = X.s, arr = X.arr, toast = X.toast, api = X.api, draw = X.draw;
+function admin(){ return X.role() === 'admin'; }
+function money(n){ return X.money(n); }
+var ST = { leads: null, tasks: null, appr: null, web: null, mm: null, busy: '' };
+var mm = isMM();
+var NEW = [
+  { id: 'myleads', ic: '📈', l: 'My leads (results)', d: 'Every lead from posts, ads, the website, Google Business, referrals, door hangers, the newsletter — stage, service, city, won' },
+  { id: 'website', ic: '🌐', l: 'Website leads & form', d: 'The website form embed code, the instant roof price ranges, website leads this week' }
+];
+/* 💡 Ideas & experiments: the Marketing Manager and admins (the role can arrive a moment after this runs) */
+function ensureIdeas(n){ if ((isMM() || admin()) && !SECS.some(function(y){ return y.id === 'experiments'; })) { var i = SECS.map(function(y){ return y.id; }).indexOf('myleads'); SECS.splice(i >= 0 ? i + 1 : SECS.length - 1, 0, { id: 'experiments', ic: '💡', l: 'Ideas & experiments', d: 'Try an idea, measure it by its campaign, keep what works — and request CRM features' }); if (UI.root && UI.root.isConnected) X.redrawSoon(); } else if (n > 0 && !SECS.some(function(y){ return y.id === 'experiments'; })) nST(function(){ ensureIdeas(n - 1); }, 1000); }
+if (mm) NEW.unshift({ id: 'mytodo', ic: '✅', l: 'My To-Do & today\'s plan', d: 'My own to-dos, this week\'s posts, drafts to finish, approvals waiting for me' }, { id: 'mmappr', ic: '🗳', l: 'Approvals', d: 'The marketing drafts waiting — the ones I may approve are marked' });
+NEW.forEach(function(x){ if (!SECS.some(function(y){ return y.id === x.id; })) SECS.splice(mm ? 0 : SECS.length - 1, 0, x); });
+ensureIdeas(60);
+if (mm) {
+  /* his menu inside Marketing: no company dashboard, no company approvals list, no PM photo form */
+  ['dashboard', 'approvals', 'photos'].forEach(function(id){ var i = SECS.map(function(x){ return x.id; }).indexOf(id); if (i >= 0) SECS.splice(i, 1); });
+  W._gcMarketingSystems = ['marketing'];   /* for the GrayCo Systems launcher: the marketing systems only */
+  /* the Marketing report's lead numbers come from his redacted leads, never the company's lead list */
+  loadLeads(true);
+}
+function loadLeads(force){ if (ST.leads && !force) return; ST.leads = ST.leads || { loading: true, rows: [] }; (isMM() ? X.api('soc', { op: 'my_leads' }) : Promise.resolve(null)).then(function(j){
+  if (!isMM()) return;
+  ST.leads = j && j.ok ? j : { rows: [], err: (j && j.error) || 'not reachable' };
+  /* the Marketing report / ads report read X.DATA.leads: his projection (service + source only) */
+  X.DATA.leads = arr(ST.leads.rows).map(function(r){ var src = low(r.source); return { id: r.id, createdAt: r.date + 'T12:00:00Z', type: r.service, city: r.city, stage: r.stage,
+    attrib: { utm_source: /facebook/.test(src) ? 'facebook' : /instagram/.test(src) ? 'instagram' : /tiktok/.test(src) ? 'tiktok' : /linkedin/.test(src) ? 'linkedin' : /google business/.test(src) ? 'gbp' : '', gclid: /google ads/.test(src) ? 'x' : '', fbclid: /facebook \/ instagram ads/.test(src) ? 'x' : '', utm_campaign: r.campaign } }; });
+  X.DATA.at = Date.now();
+  if (/^(myleads|socreport|adsrest|website)$/.test(UI.sec)) draw(); }); }
+function low(v){ return s(v).toLowerCase(); }
+
+/* ══════════════ 📈 MY LEADS ══════════════ */
+var STAGES = ['New Lead', 'Contacted', 'Site Visit', 'Estimate Sent', 'Won', 'Lost'];
+var SVC_L = { water: '💧 Water', fire: '🔥 Fire', storm: '🌩 Storm', roofing: '🏠 Roofing', remodel: '🛠 Remodel', commercial: '🏢 Commercial', '': '—' };
+function funnelTable(title, by){
+  var keys = Object.keys(by || {}).sort(function(a, b){ return by[b].leads - by[a].leads; });
+  return '<div class="gmt-card"><h2>' + esc(title) + '</h2>' + (keys.length ? '<table><tr><th></th><th>Leads</th>' + STAGES.map(function(x){ return '<th>' + esc(x) + '</th>'; }).join('') + '<th>Won %</th></tr>' +
+    keys.map(function(k){ var x = by[k]; return '<tr><td><b>' + esc(SVC_L[k] || k) + '</b></td><td>' + x.leads + '</td>' + STAGES.map(function(st){ return '<td>' + (x[st] || 0) + '</td>'; }).join('') + '<td>' + (x.leads ? Math.round((x.Won || 0) / x.leads * 100) : 0) + '%</td></tr>'; }).join('') + '</table>' : '<div class="gmt-muted">No marketing leads yet.</div>') + '</div>';
+}
+VIEWS.myleads = function(){
+  if (!isMM()) {   /* an admin / the office: the same view from the company list (they may see it all anyway) */
+    if (!ST.adminLeads) { ST.adminLeads = { loading: true }; api('soc', { op: 'my_leads_admin' }).then(function(j){ ST.adminLeads = j && j.ok ? j : { rows: [], err: (j && j.error) || '' }; if (UI.sec === 'myleads') draw(); }); }
+  } else loadLeads();
+  var L = isMM() ? ST.leads : ST.adminLeads;
+  if (!L || L.loading) return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
+  if (L.err) return '<div class="gmt-warn">Not loaded: ' + esc(L.err) + '</div>';
+  var rows = arr(L.rows), f = L.funnel || {}, sv = L.soldValues, h = '';
+  var won = rows.filter(function(r){ return r.won; }), wonV = won.reduce(function(a, r){ return a + (r.sold || 0); }, 0), contact = rows.filter(function(r){ return r.daysToContact != null; });
+  h += '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + rows.length + '</b><span>marketing leads</span></div><div class="gmt-kpi"><b>' + won.length + '</b><span>won</span></div>' + (sv ? '<div class="gmt-kpi"><b>' + money(wonV) + '</b><span>sold (won jobs)</span></div>' : '') +
+    '<div class="gmt-kpi"><b>' + (contact.length ? (Math.round(contact.reduce(function(a, r){ return a + r.daysToContact; }, 0) / contact.length * 10) / 10) : '—') + '</b><span>avg days to contact</span></div>' +
+    '<div class="gmt-kpi"><b>' + ((f.restoration || {}).share || 0) + '%</b><span>restoration (focus ' + ((f.restoration || {}).target || 60) + '%)</span></div></div>';
+  h += '<div class="gmt-card"><div class="gmt-muted">Read-only. Customer names, phone numbers, e-mails and street addresses are never shown here — the city only. ' + (sv ? 'Sold values are the job\'s sold amount (no costs, margins or profit).' : 'Sold values are hidden by an admin.') + '</div></div>';
+  h += funnelTable('Funnel by source', f.bySource) + funnelTable('Funnel by service', f.byService);
+  var camps = arr(f.campaigns);
+  h += '<div class="gmt-card"><h2>Campaigns — leads, wins' + (sv ? ', sold and ROI' : '') + '</h2>' + (camps.length ? '<table><tr><th>Campaign</th><th>Source</th><th>Leads</th><th>Won</th>' + (sv ? '<th>Sold</th>' : '') + '<th>Ad spend (30 d)</th><th>Cost / lead</th>' + (sv ? '<th>Sold ÷ spend</th>' : '') + '</tr>' +
+    camps.map(function(c){ return '<tr><td><b>' + esc(c.campaign || '—') + '</b></td><td>' + esc(c.source) + '</td><td>' + c.leads + '</td><td>' + c.won + '</td>' + (sv ? '<td>' + money(c.sold || 0) + '</td>' : '') + '<td>' + (c.spend ? money(c.spend) : '—') + '</td><td>' + (c.cpl != null ? money(c.cpl) : '—') + '</td>' + (sv ? '<td>' + (c.spend ? (c.roi || 0) + '×' : '—') + '</td>' : '') + '</tr>'; }).join('') + '</table>' : '<div class="gmt-muted">No campaigns yet.</div>') + '</div>';
+  h += '<div class="gmt-card"><h2>Every lead</h2><div style="overflow-x:auto"><table data-mm-leads><tr><th>Date</th><th>Source / campaign</th><th>Service</th><th>City</th><th>Stage</th><th>Lost reason</th><th>Days to contact</th><th>Assigned</th>' + (sv ? '<th>Sold</th>' : '') + '</tr>' +
+    rows.slice(0, 400).map(function(r){ return '<tr><td>' + esc(r.date) + '</td><td>' + esc(r.source) + (r.campaign ? '<div class="gmt-muted">' + esc(r.campaign) + '</div>' : '') + '</td><td>' + esc(SVC_L[r.service] || r.service) + '</td><td>' + esc(r.city || '—') + '</td><td>' + X.chip(r.stage === 'Won' ? 'posted' : r.stage === 'Lost' ? 'rejected' : 'waiting').replace(/>[^<]*</, '>' + esc(r.stage) + '<') + '</td><td>' + esc(r.lostReason || '') + '</td><td>' + (r.daysToContact != null ? r.daysToContact : '—') + '</td><td>' + esc(r.assigned) + '</td>' + (sv ? '<td>' + (r.won ? money(r.sold || 0) : '') + '</td>' : '') + '</tr>'; }).join('') + '</table></div></div>';
+  return h;
+};
+
+/* ══════════════ ✅ MY TO-DO & TODAY'S PLAN (Marketing Manager) ══════════════ */
+function loadTasks(){ X.api('soc', { op: 'mm_tasks' }).then(function(j){ ST.tasks = j && j.ok ? j : { tasks: [], plan: {}, err: (j && j.error) || '' }; if (UI.sec === 'mytodo') draw(); }); }
+VIEWS.mytodo = function(){
+  if (!ST.tasks) { ST.tasks = { loading: true }; loadTasks(); }
+  var T = ST.tasks; if (T.loading) return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
+  var p = T.plan || {}, h = '';
+  h += '<div class="gmt-card"><h2>☀️ Today\'s plan</h2>' +
+    (arr(p.week).length ? '<div class="gmt-warn">The week plan of ' + esc(p.week.join(', ')) + ' is not approved yet — <a href="#" class="gmt-link" data-a="go" data-sec="socweek">open 🗓 Week plan</a></div>' : '') +
+    (p.approvals ? '<div class="gmt-ok">' + p.approvals + ' marketing draft' + (p.approvals > 1 ? 's' : '') + ' waiting for my OK — <a href="#" class="gmt-link" data-a="go" data-sec="mmappr">Approvals</a></div>' : '') +
+    (p.drafts ? '<div class="gmt-muted">' + p.drafts + ' post draft(s) to finish.</div>' : '') +
+    '<h3>Posting in the next 7 days</h3>' + (arr(p.posts).length ? arr(p.posts).map(function(x){ return '<div class="gmt-check"><div><b>' + esc(C.ctLabel(x.when)) + '</b> — ' + esc(x.title) + ' ' + X.chip(x.status) + '</div></div>'; }).join('') : '<div class="gmt-muted">Nothing scheduled.</div>') + '</div>';
+  var open = arr(T.tasks).filter(function(t){ return !t.done; }), done = arr(T.tasks).filter(function(t){ return t.done; }).slice(0, 10);
+  h += '<div class="gmt-card"><h2>My To-Do (' + open.length + ')</h2><div class="gmt-row"><input id="mm-task" placeholder="Add a to-do…" style="flex:1;min-width:220px"><input type="date" id="mm-task-due"><button class="gmt-btn" data-a="mm-task-add">Add</button></div>' +
+    open.map(function(t){ return '<div class="gmt-check"><input type="checkbox" data-a="mm-task-done" data-id="' + esc(t.id) + '"><div><b>' + esc(t.label) + '</b>' + (t.due ? ' <span class="gmt-muted">due ' + esc(t.due) + '</span>' : '') + (t.note ? '<div class="gmt-muted">' + esc(t.note).replace(/\n/g, '<br>') + '</div>' : '') +
+      arr(t.items).map(function(i){ return '<div class="gmt-check" style="border:none;padding:2px 0"><input type="checkbox" data-a="mm-item-done" data-id="' + esc(t.id) + '" data-item="' + esc(i.id) + '"' + (i.done ? ' checked' : '') + '><div>' + esc(i.label) + '</div></div>'; }).join('') + '</div></div>'; }).join('') +
+    (done.length ? '<h3>Done</h3>' + done.map(function(t){ return '<div class="gmt-muted">✓ ' + esc(t.label) + '</div>'; }).join('') : '') + '</div>';
+  return h;
+};
+ACT['mm-task-add'] = function(){ var l = s((D.getElementById('mm-task') || {}).value), due = s((D.getElementById('mm-task-due') || {}).value); if (!l) return; X.api('soc', { op: 'mm_task', add: { label: l, due: due } }).then(function(j){ toast(j && j.ok ? 'Added.' : 'Not added.', !(j && j.ok)); loadTasks(); }); };
+ACT['mm-task-done'] = function(b){ X.api('soc', { op: 'mm_task', id: b.getAttribute('data-id'), done: !!b.checked }).then(function(j){ if (!(j && j.ok)) toast('Not saved.', true); loadTasks(); }); };
+ACT['mm-item-done'] = function(b){ X.api('soc', { op: 'mm_task', id: b.getAttribute('data-id'), itemId: b.getAttribute('data-item'), done: !!b.checked }).then(function(){ loadTasks(); }); };
+
+/* ══════════════ 🗳 APPROVALS (Marketing Manager) ══════════════ */
+function loadAppr(){ W._gcMMData.loadApprovals().then(function(l){ ST.appr = l; if (UI.sec === 'mmappr') draw(); }); }
+VIEWS.mmappr = function(){
+  if (!ST.appr) { ST.appr = 'loading'; loadAppr(); }
+  if (ST.appr === 'loading') return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
+  var l = arr(ST.appr), wait = l.filter(function(x){ return x.status === 'waiting'; }), past = l.filter(function(x){ return x.status !== 'waiting'; }).slice(-15).reverse(), h = '';
+  h += '<div class="gmt-card"><div class="gmt-muted">Stage ' + ((ST.mm && ST.mm.stage) || '') + ': what I may approve is marked. Flagged drafts (price, insurance, a customer, 1–3★ reviews, new templates) and every paid-ads draft go to an admin. I never approve spending money.</div></div>';
+  h += '<div class="gmt-card"><h2>Waiting (' + wait.length + ')</h2>' + (wait.length ? wait.map(function(x){ return '<div class="gmt-card" style="margin:8px 0" data-mm-appr="' + esc(x.id) + '"><div class="gmt-row" style="justify-content:space-between"><b>' + esc(x.title) + '</b>' + (x.mine ? X.chip('approved').replace(/>[^<]*</, '>I may approve<') : X.chip('waiting').replace(/>[^<]*</, '>Needs an admin<')) + '</div>' +
+    '<div class="gmt-muted">' + esc(x.to || '') + (arr(x.flags).length ? ' · ⚑ ' + esc(x.flags.map(function(f){ return SC.FLAG_L[f] || f; }).join(', ')) : '') + '</div>' + (x.html ? '<div style="margin-top:8px;max-height:320px;overflow:auto;border-top:1px solid #eef1f6;padding-top:8px">' + x.html + '</div>' : '') +
+    (x.mine ? '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn g" data-a="mm-yes" data-id="' + esc(x.id) + '">✓ Approve</button><input id="mm-rj-' + esc(x.id) + '" placeholder="Why not (optional)"><button class="gmt-btn r" data-a="mm-no" data-id="' + esc(x.id) + '">Not now</button></div>' : '') + '</div>'; }).join('') : '<div class="gmt-muted">Nothing waiting.</div>') + '</div>';
+  if (past.length) h += '<div class="gmt-card"><h2>Decided lately</h2>' + past.map(function(x){ return '<div class="gmt-muted">' + esc(x.status) + ' — ' + esc(x.title) + (x.decidedBy ? ' (' + esc(x.decidedBy) + ')' : '') + '</div>'; }).join('') + '</div>';
+  return h;
+};
+ACT['mm-yes'] = function(b){ b.disabled = true; W._gcMMData.approve(b.getAttribute('data-id'), 'approve').then(function(j){ toast(j && j.ok ? 'Approved — it goes out on time.' : 'Not approved: ' + ((j && j.error) || 'try again'), !(j && j.ok)); MK.pull(true); loadAppr(); }); };
+ACT['mm-no'] = function(b){ var id = b.getAttribute('data-id'), r = s((D.getElementById('mm-rj-' + id) || {}).value); b.disabled = true; W._gcMMData.approve(id, 'reject', { reason: r }).then(function(){ toast('Sent back as a draft.'); MK.pull(true); loadAppr(); }); };
+
+/* ══════════════ 🌐 WEBSITE LEADS & FORM ══════════════ */
+var FORMS = [['general', 'Contact form (any service)'], ['storm', 'Storm damage'], ['water', 'Water damage'], ['roofing', 'Roofing'], ['remodel', 'Remodel'], ['commercial', 'Commercial'], ['roofprice', 'Instant roof price']];
+function snippet(kind){ return '<div data-grayco-form="' + kind + '"></div>\n<script src="https://crm.grayco-cs.com/website-form.js" defer><\/script>'; }
+VIEWS.website = function(){
+  if (!ST.web) { ST.web = { loading: true }; api('soc', { op: 'mm_website' }).then(function(j){ ST.web = j && j.ok !== false ? j : { err: (j && j.error) || '' }; if (UI.sec === 'website') draw(); }); }
+  if (isMM()) loadLeads();
+  var rows = isMM() ? arr(ST.leads && ST.leads.rows) : [], wk = Date.now() - 7 * 864e5, h = '';
+  var web = rows.filter(function(r){ return /website/i.test(r.source); });
+  if (isMM()) h += '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + web.filter(function(r){ return Date.parse(r.date) >= wk; }).length + '</b><span>website leads this week</span></div><div class="gmt-kpi"><b>' + web.length + '</b><span>website leads in all</span></div><div class="gmt-kpi"><b>' + web.filter(function(r){ return r.won; }).length + '</b><span>won</span></div></div>';
+  h += '<div class="gmt-card"><h2>🧩 Website form — embed code</h2><div class="gmt-muted">Paste one where the form should show on grayco-cs.com (or any page). Leads land in the CRM as GrayCo leads; the UTM tags of the visit come along.</div>' +
+    FORMS.map(function(f){ return '<h3>' + esc(f[1]) + '</h3><pre style="white-space:pre-wrap;background:#f3f1fb;border:1px solid #ddd8f3;border-radius:8px;padding:8px;font-size:12px">' + esc(snippet(f[0])) + '</pre><button class="gmt-btn o" data-a="mm-copy-snip" data-k="' + f[0] + '">📋 Copy</button>'; }).join('') + '</div>';
+  var W0 = ST.web || {}, pr = W0.roofPriceRanges;
+  h += '<div class="gmt-card"><h2>💲 Instant roof price ranges</h2>' + (W0.loading ? '<div class="gmt-muted">Loading…</div>' : pr && arr(pr.tiers).length ? '<table><tr><th>Tier</th><th>Up to pitch</th><th>Per square</th></tr>' + arr(pr.tiers).map(function(t){ return '<tr><td>' + esc(t.label) + '</td><td>' + esc(t.maxRise) + '/12</td><td>' + esc(String(t.min)) + ' – ' + esc(String(t.max)) + '</td></tr>'; }).join('') + '</table><div class="gmt-muted">Waste ' + esc(pr.wastePct || 0) + '%. ' + (isMM() ? 'An admin changes the prices (Leads → 🌐 Website).' : '') + '</div>' : '<div class="gmt-muted">Not set yet — the website shows no price until an admin sets them.</div>') + '</div>';
+  return h;
+};
+ACT['mm-copy-snip'] = function(b){ X.copyText(snippet(b.getAttribute('data-k'))).then(function(){ toast('Embed code copied.'); }); };
+
+/* ══════════════ 💡 IDEAS & EXPERIMENTS (the Marketing Manager and admins) ══════════════
+   A card: title, goal, channel, cost estimate, start / end, how we measure (a UTM campaign or a source tag).
+   Idea → Approved by admin → Running → Results → Keep / Kill. A running card's numbers come from My leads (server).
+   "Request a CRM feature" goes to an admin's Approvals and is kept for the owner (gc_kv mkt_feature_requests). */
+X.KINDS.mkt_experiment = 'experiments'; X.KINDS.mkt_feature = 'features';
+var GOALS = ['More restoration leads', 'More reviews', 'More referrals', 'More website leads', 'More roofing leads', 'Brand awareness', 'Other'];
+var CHANNELS = ['Facebook', 'Instagram', 'TikTok', 'LinkedIn', 'Nextdoor', 'Google Business', 'Google Ads', 'Facebook / Instagram ads', 'Local Services Ads', 'Website', 'Newsletter', 'Door hangers / flyers', 'Yard signs / truck', 'Referral program', 'Event', 'Other'];
+var COLS = [['idea', '💭 Idea'], ['approved', '✅ Approved by admin'], ['running', '▶ Running'], ['results', '📊 Results'], ['done', '🏁 Keep / Kill']];
+function ideasOk(){ return isMM() || admin(); }
+function thisMonth(){ return new Date().toISOString().slice(0, 7); }
+function loadIdeas(){ var m = ST.ideaMonth || thisMonth(); ST.ideas = ST.ideas || { loading: true }; api('soc', { op: 'ideas', month: m }).then(function(j){ ST.ideas = j && j.ok ? j : { err: (j && j.error) || 'not reachable' }; if (UI.sec === 'experiments') draw(); }); }
+function stageOf(x){ var st = s(x.stage) || 'idea'; return st === 'keep' || st === 'kill' ? 'done' : st; }
+function resultsHtml(x){
+  var r = ST.ideas && ST.ideas.results && ST.ideas.results[x.id], sv = ST.ideas && ST.ideas.soldValues;
+  if (!r) return /^(running|results|keep|kill)$/.test(s(x.stage)) ? '<div class="gmt-muted">' + (x.measure && (x.measure.campaign || x.measure.source) ? 'No leads with that tag yet.' : 'No campaign / source tag — add one to measure it.') + '</div>' : '';
+  return '<div class="gmt-row" data-idea-res="' + esc(x.id) + '" style="gap:10px;font-size:12px;margin-top:6px"><span><b>' + r.leads + '</b> leads</span><span><b>' + r.won + '</b> won</span>' + (sv && r.sold != null ? '<span><b>' + money(r.sold) + '</b> sold</span>' : '') +
+    '<span><b>' + (r.cpl != null ? money(r.cpl) : '—') + '</b> / lead</span>' + (r.restoration ? '<span>' + r.restoration + ' restoration</span>' : '') + '</div>';
+}
+function ideaCard(x){
+  var st = s(x.stage) || 'idea', a = s(x.status) || 'draft', m = x.measure || {}, mine = isMM(), btn = '';
+  if (st === 'idea') {
+    if (admin() && a !== 'waiting') btn += '<button class="gmt-btn g" data-a="idea-approve" data-id="' + esc(x.id) + '">✓ Approve</button>';
+    if (admin() && a === 'waiting') btn += '<a href="#" class="gmt-link" data-a="go" data-sec="approvals">Decide in Approvals</a>';
+    if (mine && /^(draft|rejected)$/.test(a)) btn += '<button class="gmt-btn" data-a="idea-send" data-id="' + esc(x.id) + '">Send to an admin</button>';
+    if (a !== 'waiting') btn += '<button class="gmt-btn o" data-a="idea-edit" data-id="' + esc(x.id) + '">Edit</button><button class="gmt-btn o" data-a="idea-del" data-id="' + esc(x.id) + '">Delete</button>';
+  }
+  if (st === 'approved') btn += '<button class="gmt-btn g" data-a="idea-stage" data-st="running" data-id="' + esc(x.id) + '">▶ Start</button>';
+  if (st === 'running') btn += '<button class="gmt-btn" data-a="idea-stage" data-st="results" data-id="' + esc(x.id) + '">Results are in →</button>';
+  if (st === 'results') btn += '<input id="idea-why-' + esc(x.id) + '" placeholder="What we learned" style="width:100%"><button class="gmt-btn g" data-a="idea-stage" data-st="keep" data-id="' + esc(x.id) + '">👍 Keep</button><button class="gmt-btn r" data-a="idea-stage" data-st="kill" data-id="' + esc(x.id) + '">👎 Kill</button>';
+  return '<div class="gmt-card" data-idea="' + esc(x.id) + '" style="margin:0 0 8px;padding:10px"><b>' + esc(x.title) + '</b>' + (st === 'keep' ? ' ' + X.chip('posted').replace(/>[^<]*</, '>Keep<') : st === 'kill' ? ' ' + X.chip('rejected').replace(/>[^<]*</, '>Kill<') : st === 'idea' ? ' ' + X.chip(a) : '') +
+    '<div class="gmt-muted">' + esc(x.goal || '') + ' · ' + esc(x.channel || '') + (x.cost ? ' · est. ' + money(+x.cost || 0) : '') + '</div>' +
+    '<div class="gmt-muted">' + esc(x.start || '?') + ' → ' + esc(x.end || '?') + ' · measure: ' + esc(m.campaign ? 'utm_campaign=' + m.campaign : m.source ? 'source ' + m.source : '—') + '</div>' +
+    (x.reason && a === 'rejected' ? '<div class="gmt-warn">' + esc(x.reason) + '</div>' : '') + (x.learned ? '<div class="gmt-muted">Learned: ' + esc(x.learned) + '</div>' : '') +
+    resultsHtml(x) + (btn ? '<div class="gmt-row" style="margin-top:6px;gap:6px;flex-wrap:wrap">' + btn + '</div>' : '') + '</div>';
+}
+function opts(list, v){ return list.map(function(o){ return '<option' + (o === v ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join(''); }
+function ideaForm(){
+  var f = ST.ideaForm; if (!f) return '';
+  if (f.type === 'feature') return '<div class="gmt-card" data-idea-form="feature"><h2>💡 Request a CRM feature</h2><div class="gmt-muted">Goes to an admin\'s Approvals; the owner keeps every request.</div>' +
+    '<input id="idea-f-title" placeholder="What should the CRM do? (short)" style="width:100%"><textarea id="idea-f-detail" rows="4" placeholder="How it would work" style="width:100%"></textarea><input id="idea-f-why" placeholder="Why it helps (more leads, less time…)" style="width:100%">' +
+    '<div class="gmt-row"><button class="gmt-btn g" data-a="idea-save" data-t="feature">Send the request</button><button class="gmt-btn o" data-a="idea-cancel">Cancel</button></div></div>';
+  var x = f.id ? (MK.get('experiments', f.id) || {}) : {}, m = x.measure || {};
+  return '<div class="gmt-card" data-idea-form="idea"><h2>' + (f.id ? 'Edit the idea' : '💭 New idea') + '</h2>' +
+    '<input id="idea-f-title" placeholder="Title — e.g. Storm-season Nextdoor post series" value="' + esc(x.title || '') + '" style="width:100%">' +
+    '<div class="gmt-row"><label>Goal <select id="idea-f-goal">' + opts(GOALS, x.goal || GOALS[0]) + '</select></label><label>Channel <select id="idea-f-channel">' + opts(CHANNELS, x.channel || CHANNELS[0]) + '</select></label><label>Cost estimate $ <input id="idea-f-cost" type="number" min="0" value="' + esc(x.cost || '') + '" style="width:90px"></label></div>' +
+    '<div class="gmt-row"><label>Start <input id="idea-f-start" type="date" value="' + esc(x.start || '') + '"></label><label>End <input id="idea-f-end" type="date" value="' + esc(x.end || '') + '"></label></div>' +
+    '<div class="gmt-row"><label>How we\'ll measure <select id="idea-f-mtype"><option value="campaign"' + (m.source && !m.campaign ? '' : ' selected') + '>UTM campaign</option><option value="source"' + (m.source && !m.campaign ? ' selected' : '') + '>Source tag</option></select></label><input id="idea-f-mval" placeholder="e.g. storm-nextdoor-oct" value="' + esc(m.campaign || m.source || '') + '"></div>' +
+    '<textarea id="idea-f-notes" rows="3" placeholder="Notes — what we will do, who does it" style="width:100%">' + esc(x.notes || '') + '</textarea>' +
+    '<div class="gmt-row"><button class="gmt-btn g" data-a="idea-save" data-t="idea">Save the idea</button><button class="gmt-btn o" data-a="idea-cancel">Cancel</button></div></div>';
+}
+function scoreTile(){
+  var I = ST.ideas || {}, c = I.scorecard; if (!c) return '<div class="gmt-card"><div class="gmt-muted">' + (I.err ? 'Scorecard not loaded: ' + esc(I.err) : 'Loading the scorecard…') + '</div></div>';
+  var r = c.restoration || {}, sv = I.soldValues, m = ST.ideaMonth || thisMonth(), prev = new Date(Date.parse(m + '-15') - 30 * 864e5).toISOString().slice(0, 7);
+  var line = function(o){ var k = Object.keys(o || {}).sort(function(a, b){ return o[b] - o[a]; }); return k.length ? k.map(function(x){ return esc(SVC_L[x] || x) + ' <b>' + o[x] + '</b>'; }).join(' · ') : '—'; };
+  var camp = function(x){ return x ? '<b>' + esc(x.campaign) + '</b> (' + esc(x.source) + ') — ' + x.leads + ' leads, ' + x.won + ' won' + (sv && x.sold != null ? ', ' + money(x.sold) : '') : '—'; };
+  return '<div class="gmt-card" data-mm-scorecard><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">📋 Monthly scorecard — ' + esc(c.month) + '</h2><div class="gmt-row"><button class="gmt-btn o" data-a="idea-month" data-m="' + esc(prev) + '">◀ ' + esc(prev) + '</button>' + (m !== thisMonth() ? '<button class="gmt-btn o" data-a="idea-month" data-m="' + thisMonth() + '">This month</button>' : '') + '</div></div>' +
+    '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + c.leads + '</b><span>marketing leads</span></div><div class="gmt-kpi"><b>' + c.won + '</b><span>won</span></div><div class="gmt-kpi"><b>' + (r.share || 0) + '%</b><span>restoration (focus ' + (r.target || 60) + '%)</span></div>' +
+    '<div class="gmt-kpi"><b>' + c.reviews + '</b><span>reviews gained</span></div><div class="gmt-kpi"><b>' + c.posts + '</b><span>posts published</span></div><div class="gmt-kpi"><b>' + c.listingsFixed + '</b><span>listings fixed</span></div></div>' +
+    '<div class="gmt-muted">By source: ' + line(c.bySource) + '</div><div class="gmt-muted">By service: ' + line(c.byService) + '</div>' +
+    '<div>🏆 Best campaign: ' + camp(c.best) + '</div><div>🐢 Worst campaign: ' + camp(c.worst) + '</div></div>';
+}
+VIEWS.experiments = function(){
+  if (!ideasOk()) return '<div class="gmt-card"><div class="gmt-muted">Ideas & experiments: the Marketing Manager and admins.</div></div>';
+  if (!ST.ideas) loadIdeas();
+  var all = MK.all('experiments'), h = scoreTile();
+  h += '<div class="gmt-card"><div class="gmt-row"><button class="gmt-btn g" data-a="idea-new">💭 New idea</button><button class="gmt-btn" data-a="idea-feature">💡 Request a CRM feature</button><span class="gmt-muted">Ideas run once an admin approves them. Results fill in from My leads by the campaign / source tag.</span></div></div>';
+  h += ideaForm();
+  h += '<div style="display:flex;gap:10px;overflow-x:auto;align-items:flex-start" data-idea-board>' + COLS.map(function(c){ var l = all.filter(function(x){ return stageOf(x) === c[0]; }).sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; });
+    return '<div style="min-width:230px;flex:1;background:#f6f7fb;border-radius:10px;padding:8px" data-idea-col="' + c[0] + '"><h3 style="margin:2px 0 8px">' + c[1] + ' (' + l.length + ')</h3>' + l.map(ideaCard).join('') + '</div>'; }).join('') + '</div>';
+  var fr = MK.all('features').sort(function(a, b){ return s(b.at) < s(a.at) ? -1 : 1; });
+  h += '<div class="gmt-card" data-idea-features><h2>💡 CRM feature requests (' + fr.length + ')</h2>' + (fr.length ? fr.map(function(x){ return '<div class="gmt-check"><div><b>' + esc(x.title) + '</b> ' + X.chip(s(x.status) || 'draft') + '<div class="gmt-muted">' + esc(x.detail || '') + (x.why ? ' — ' + esc(x.why) : '') + '</div>' + (/^(draft|rejected)$/.test(s(x.status) || 'draft') ? '<button class="gmt-btn o" data-a="feat-send" data-id="' + esc(x.id) + '">Send again</button>' : '') + '</div></div>'; }).join('') : '<div class="gmt-muted">None yet.</div>') + '</div>';
+  return h;
+};
+function fv(id){ return s((D.getElementById('idea-f-' + id) || {}).value); }
+ACT['idea-new'] = function(){ ST.ideaForm = { type: 'idea' }; draw(); };
+ACT['idea-feature'] = function(){ ST.ideaForm = { type: 'feature' }; draw(); };
+ACT['idea-cancel'] = function(){ ST.ideaForm = null; draw(); };
+ACT['idea-edit'] = function(b){ ST.ideaForm = { type: 'idea', id: b.getAttribute('data-id') }; draw(); };
+ACT['idea-month'] = function(b){ ST.ideaMonth = b.getAttribute('data-m'); ST.ideas = null; draw(); };
+ACT['idea-save'] = function(b){
+  var t = b.getAttribute('data-t'), title = fv('title'); if (!title) { toast('Add a title.', true); return; }
+  if (t === 'feature') {
+    var fid = X.uid('feat'); MK.put('features', { id: fid, title: title.slice(0, 200), detail: fv('detail').slice(0, 4000), why: fv('why').slice(0, 600), status: 'draft', createdBy: X.myName(), createdAt: X.nowIso() });
+    ST.ideaForm = null; draw(); X.sendForApproval('mkt_feature', 'features', fid).then(function(){ draw(); }); return;
+  }
+  var f = ST.ideaForm || {}, id = f.id || X.uid('exp'), mv = fv('mval').replace(/\s+/g, '-').toLowerCase(), mt = fv('mtype');
+  var rec = { id: id, title: title.slice(0, 200), goal: fv('goal'), channel: fv('channel'), cost: Math.max(0, Math.round(+fv('cost') || 0)), start: fv('start'), end: fv('end'), measure: mt === 'source' ? { source: fv('mval') } : { campaign: mv }, notes: fv('notes').slice(0, 2000) };
+  if (!f.id) { rec.stage = 'idea'; rec.status = 'draft'; rec.createdBy = X.myName(); rec.createdAt = X.nowIso(); }
+  else if (s((MK.get('experiments', id) || {}).status) === 'approved') rec.status = 'draft';   /* an approved idea changed → an admin approves it again */
+  MK.put('experiments', rec); ST.ideaForm = null; toast(f.id ? 'Saved.' : 'Idea saved — send it to an admin when it is ready.'); draw();
+};
+ACT['idea-send'] = function(b){ b.disabled = true; X.sendForApproval('mkt_experiment', 'experiments', b.getAttribute('data-id'), s((MK.get('experiments', b.getAttribute('data-id')) || {}).status) === 'rejected').then(function(){ draw(); }); };
+ACT['feat-send'] = function(b){ b.disabled = true; X.sendForApproval('mkt_feature', 'features', b.getAttribute('data-id'), true).then(function(){ draw(); }); };
+ACT['idea-approve'] = function(b){ if (!admin()) return; MK.put('experiments', { id: b.getAttribute('data-id'), stage: 'approved', status: 'approved', approvedBy: X.myName(), approvedAt: X.nowIso() }); toast('Approved — it can start.'); draw(); };
+ACT['idea-del'] = function(b){ if (!confirm('Delete this idea?')) return; MK.del('experiments', b.getAttribute('data-id')); draw(); };
+ACT['idea-stage'] = function(b){
+  var id = b.getAttribute('data-id'), st = b.getAttribute('data-st'), x = MK.get('experiments', id) || {}, o = { id: id, stage: st };
+  if (st === 'running' && !x.start) o.start = X.today();
+  if (st === 'results' && !x.end) o.end = X.today();
+  if (st === 'keep' || st === 'kill') { o.learned = s((D.getElementById('idea-why-' + id) || {}).value).slice(0, 600); o.decidedAt = X.nowIso(); }
+  MK.put('experiments', o); ST.ideas = null; draw();
+};
+
+/* ══════════════ admins: the profile's two settings (⚙️ Focus & approvals) ══════════════ */
+var setV = VIEWS.mktsettings;
+VIEWS.mktsettings = function(){
+  var h = setV();
+  if (!ST.mm) { ST.mm = { loading: true }; api('soc', { op: isMM() ? 'mm_boot' : 'mm_settings' }).then(function(j){ ST.mm = j && j.ok ? Object.assign({ stage: j.stage }, j.mm || {}) : { err: true }; if (UI.sec === 'mktsettings') draw(); }); }
+  var m = ST.mm || {};
+  return h + '<div class="gmt-card" data-mm-settings><h2>📣 Marketing Manager profile</h2><div class="gmt-muted">For the person with the profile "Marketing Manager" (💎 → Team access). Marketing only — never jobs, money, invoices, payroll, estimates or other people\'s to-dos.</div>' +
+    '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="mm-set" data-k="soldValues"' + (m.soldValues !== false ? ' checked' : '') + (admin() ? '' : ' disabled') + '> Marketing Manager sees sold values (won jobs: count and sold amount per campaign)</label>' +
+    '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="mm-set" data-k="approvesStage2"' + (m.approvesStage2 !== false ? ' checked' : '') + (admin() ? '' : ' disabled') + '> Marketing Manager approves at stage 2 (like the office; flagged drafts and paid ads still go to an admin)</label></div>';
+};
+ACT['mm-set'] = function(b){ if (!admin()) return; var o = {}; o[b.getAttribute('data-k')] = !!b.checked; api('soc', { op: 'mm_settings', set: o }).then(function(j){ ST.mm = j && j.ok ? j.mm : ST.mm; toast(j && j.ok ? 'Saved.' : 'Not saved: ' + ((j && j.error) || ''), !(j && j.ok)); draw(); }); };
+
+if (mm) {
+  /* only the marketing tools that are here now: a section another patch adds later (e.g. warranty check-ups, which lists customers) is not his */
+  var KEEP = {}; SECS.forEach(function(x){ KEEP[x.id] = 1; });
+  VIEWS.approvals = VIEWS.mmappr; VIEWS.dashboard = VIEWS.myleads;   /* the links that point there open his own views */
+  (function prune(){ for (var i = SECS.length - 1; i >= 0; i--) if (!KEEP[SECS[i].id]) SECS.splice(i, 1); nST(prune, 1500); })();
+  /* the app opens its dashboard after sign-in: his start screen is Marketing */
+  (function keepView(){ try { if (!/^(marketing|systems)$/.test(localStorage.getItem('grayco_view') || '') && typeof W._setView === 'function') W._setView('marketing');   /* Marketing, or the GrayCo Systems launcher (marketing systems only) */ } catch (e) {} nST(keepView, 1000); })();
+}
+if (mm) { api('soc', { op: 'mm_boot' }).then(function(j){ if (j && j.ok) ST.mm = Object.assign({ stage: j.stage }, j.mm || {}); }); W.addEventListener('gc-mm-data', function(){ if (UI.root && UI.root.isConnected && !UI.editing) X.redrawSoon(); }); }
+W._gcMM = { state: function(){ return { mm: isMM(), secs: SECS.map(function(x){ return x.id; }), leads: ST.leads && arr(ST.leads.rows).length, settings: ST.mm }; }, _ST: ST };
+}
+})();
+
+</script><!-- /MM -->
 <script id="gc-fix-filehold">
 /* GATE fix_2 — the file-window hold ends when the person is back (no window focus event needed). */
 (function(){
@@ -149828,10 +150158,11 @@ function myName(){ var m = me(); if (m && m.name) return s(m.name); try { return
 function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
 function ux(){ return W._gcUx || {}; }
 
-var TAILORED = { Estimator: 1, Insurance: 1, Mitigation: 1, Superintendent: 1 };
-var PROFILE_ROLE = { estimator: 'Estimator', insurance: 'Insurance', mitigation: 'Mitigation', super: 'Superintendent', pm: 'Project Manager', apm: 'Project Manager', office: 'Office', field: 'Field Supervisor' };   /* patch PMG: an APM works the PM screens; which jobs — _gcSamePM (the PM(s) they assist, jobs where they are APM) */
-var PROFILES = [['', '— from Admin → Employees (role) —'], ['estimator', 'Estimator'], ['insurance', 'Insurance restoration'], ['mitigation', 'Mitigation'], ['super', 'Superintendent'], ['pm', 'Project Manager'], ['apm', 'Assistant PM (APM)'], ['office', 'Office'], ['field', 'Field']];
-var VIEWAS = [['', 'Admin — everything'], ['Estimator', 'Estimator'], ['Insurance', 'Insurance restoration'], ['Mitigation', 'Mitigation'], ['Superintendent', 'Superintendent'], ['Project Manager', 'Project Manager'], ['Assistant PM', 'Assistant PM (APM)'], ['Office', 'Office']];
+var TAILORED = { Estimator: 1, Insurance: 1, Mitigation: 1, Superintendent: 1, 'Marketing Manager': 1 };
+var MM_TABS = { 'Marketing Manager': ['marketing', 'systems'] };   /* patch MM: Marketing only (+ the GrayCo Systems launcher when there is one) */
+var PROFILE_ROLE = { estimator: 'Estimator', insurance: 'Insurance', mitigation: 'Mitigation', super: 'Superintendent', pm: 'Project Manager', apm: 'Project Manager', office: 'Office', field: 'Field Supervisor', marketing: 'Marketing Manager' };   /* patch PMG: an APM works the PM screens; which jobs — _gcSamePM (the PM(s) they assist, jobs where they are APM) */
+var PROFILES = [['', '— from Admin → Employees (role) —'], ['estimator', 'Estimator'], ['insurance', 'Insurance restoration'], ['mitigation', 'Mitigation'], ['super', 'Superintendent'], ['pm', 'Project Manager'], ['apm', 'Assistant PM (APM)'], ['office', 'Office'], ['field', 'Field'], ['marketing', 'Marketing Manager']];
+var VIEWAS = [['', 'Admin — everything'], ['Estimator', 'Estimator'], ['Insurance', 'Insurance restoration'], ['Mitigation', 'Mitigation'], ['Superintendent', 'Superintendent'], ['Project Manager', 'Project Manager'], ['Assistant PM', 'Assistant PM (APM)'], ['Office', 'Office'], ['Marketing Manager', 'Marketing Manager']];
 
 /* the profile set on gc_staff (server: only an admin can change it, staff-admin "profile") */
 var staffProf = null, profAt = 0;
@@ -149857,6 +150188,7 @@ function baseRole(u){ try { return s(origRoleOf ? origRoleOf(u) : (u && u.role))
 function effRole(u){
   u = u || me();
   if (realAdmin()) { var va = viewAs(); return va === 'Assistant PM' ? 'Project Manager' : (va || 'Admin'); }   /* patch PMG */
+  try { if (typeof W._gcIsMM === 'function' && W._gcIsMM()) return 'Marketing Manager'; } catch (e) {}   /* patch MM: from the sign-in itself */
   if (staffProf && PROFILE_ROLE[staffProf]) return PROFILE_ROLE[staffProf];
   var r = baseRole(u);
   if (/^(assistant\s*(pm|project\s*manager)|apm)$/i.test(r)) return 'Project Manager';   /* patch PMG: an APM (Admin → Employees role) */
@@ -149880,7 +150212,7 @@ function pmHas(kind){ var l = claimsVisible(); if (kind === 'mit') { var f = W._
 /* ── the menu (patch_RP.py sends the page's menu here) ── */
 function menu(Uf, list){
   try {
-    var role = effRole(), order = ux()[role];
+    var role = effRole(), order = ux()[role] || MM_TABS[role];
     if (TAILORED[role] && Array.isArray(order)) {
       var by = {}; arr(Uf).forEach(function(g){ by[g.id] = g; });
       return order.map(function(id){ return by[id]; }).filter(Boolean);   /* exactly the profile's tabs, in its order */
@@ -149909,7 +150241,8 @@ function wrapAllowed(){
   var w = function(v){
     try {
       if (realAdmin()) return true;
-      var role = effRole(), l = ux()[role];
+      var role = effRole(), l = ux()[role] || MM_TABS[role];
+      if (role === 'Marketing Manager') return arr(l).indexOf(v) >= 0;   /* patch MM: every other screen is refused */
       if (MINE[v] && Array.isArray(l)) {
         if (role === 'Project Manager' && (v === 'insurance' || v === 'mitigation')) return pmHas(v === 'insurance' ? 'ins' : 'mit');
         return l.indexOf(v) >= 0;
@@ -164266,6 +164599,7 @@ function TILES(){
     { g: 'Admin only', k: 'resend', ic: '📮', b: 'Resend', d: 'E-mail sent and received' },
     { g: 'Admin only', k: 'gadmin', ic: '🛡', b: 'Google Admin', d: 'GrayCo e-mail accounts' }
   ]);
+  if (W._gcIsMM && W._gcIsMM()) return t.filter(function(x){ return x.g === 'Website & marketing'; });   /* patch MM: the Marketing Manager — the marketing systems only */
   return est ? t.filter(function(x){ return x.est; }) : t;
 }
 var URLS = { bidsite: 'https://bids.grayco-cs.com/', subportal: 'https://portal.grayco-cs.com/', photosapp: '/?app=photos', companycam: 'https://app.companycam.com/', website: 'https://grayco-cs.com/', news: 'https://grayco-cs.com/news/',
@@ -164306,11 +164640,11 @@ function drawSys(){
   if (m.getAttribute('data-sig') !== sig) {
     m.setAttribute('data-sig', sig);
     m.innerHTML = '<div class="gcsys" id="gc-sys-sys"><h2>🧭 GrayCo Systems</h2><p class="sub">Every portal, site and app GrayCo runs — one tap away.</p>'
-      + '<div class="status" data-sys-status></div>'
+      + (W._gcIsMM && W._gcIsMM() ? '' : '<div class="status" data-sys-status></div>')   /* patch MM: no system status strip for the Marketing Manager */
       + groups.map(function(g){ return '<div class="grp">' + esc(g) + '</div><div class="tiles">' + by[g].map(function(t){
         return '<button type="button" class="tile" data-sys="tile" data-k="' + t.k + '">' + (t.dot ? '<span class="dot" data-dot="' + t.dot + '"></span>' : '') + '<span class="ic">' + t.ic + '</span><b>' + esc(t.b) + '</b><span class="mut">' + esc(t.d) + '</span></button>'; }).join('') + '</div>'; }).join('') + '</div>';
   }
-  ping(); drawSysDots();
+  if (!(W._gcIsMM && W._gcIsMM())) ping(); drawSysDots();   /* patch MM: he does not check the bid portal / inbox / health */
 }
 function drawSysDots(){
   var m = D.getElementById('gc-sys-sys-mount'); if (!m) return;

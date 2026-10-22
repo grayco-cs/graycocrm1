@@ -66,6 +66,8 @@ begin
              and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'))
              -- SEC2: the owner-only rules inside gc_kv (docs/security-data.sql) are not "old rules" either
              and not (tablename in ('gc_kv', 'app_data') and policyname in ('gc_sec2_read', 'gc_sec2_insert', 'gc_sec2_update', 'gc_sec2_delete'))
+             -- patch MM: the Marketing Manager's narrow read rules (docs/marketing-role.sql) are not "old rules" either
+             and not (tablename in ('gc_kv', 'app_data') and policyname = 'gc_mm_read') and not (tablename = 'gc_staff' and policyname = 'gc_mm_staff_self')
   loop
     execute format('drop policy if exists %I on %I.%I', p.policyname, p.schemaname, p.tablename);
     raise notice 'dropped old rule "%" on %', p.policyname, p.tablename;
@@ -159,7 +161,8 @@ select 'no rules other than GrayCo staff rules',
        coalesce('PROBLEM: ' || string_agg(tablename || '.' || policyname, ', '), 'OK')
 from pg_policies where schemaname = 'public' and policyname not in ('gc_staff_all', 'gc_staff_read')
   and not (tablename = 'gc_admin_kv' and policyname in ('gc_admin_read', 'gc_admin_insert', 'gc_admin_update'))
-  and not (tablename in ('gc_kv', 'app_data') and policyname in ('gc_sec2_read', 'gc_sec2_insert', 'gc_sec2_update', 'gc_sec2_delete'));
+  and not (tablename in ('gc_kv', 'app_data') and policyname in ('gc_sec2_read', 'gc_sec2_insert', 'gc_sec2_update', 'gc_sec2_delete'))
+  and not (tablename in ('gc_kv', 'app_data') and policyname = 'gc_mm_read') and not (tablename = 'gc_staff' and policyname = 'gc_mm_staff_self');   -- patch MM
 
 insert into gc_verify
 select 'anon has no table rights',

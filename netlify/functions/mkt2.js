@@ -85,7 +85,8 @@ async function gcStaffAuth(event){
 'use strict';
 const X = require('./_lib/mkt2.js');
 function mk(){ return require('./_lib/mkt.js'); }
-function reply(code, headers, o){ return { statusCode: code, headers: headers, body: JSON.stringify(o) }; }
+const MMH = new WeakSet();   /* patch MM: answers to the Marketing Manager are redacted (no customer e-mail / phone / address) */
+function reply(code, headers, o){ return { statusCode: code, headers: headers, body: JSON.stringify(MMH.has(headers) ? require('./_lib/mm.js').redact(o) : o) }; }
 function page(title, msg, ok){
   return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     body: '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + title + '</title></head>' +
@@ -102,8 +103,9 @@ exports.handler = async function(event){
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
   if (event.httpMethod !== 'POST') return reply(405, headers, { ok: false, error: 'Method not allowed' });
-  const who = await gcStaffAuth(event);
+  const who = await require('./_lib/mm.js').orStaff(await gcStaffAuth(event), event);   /* patch MM: or the Marketing Manager (answers redacted) */
   if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
+  if (who.marketing) MMH.add(headers);
   let body = {}; try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
   const op = String(body.op || '');
   let data = {}; try { data = await mk().crmData(['users']); } catch (e) {}
