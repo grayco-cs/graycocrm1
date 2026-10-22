@@ -145972,7 +145972,7 @@ function slas(c, st, now){
   add('estimate', 'Estimate written (' + S.estimateH + ' h)', S.estimateH * 36e5, phaseAt(c, 'Estimate written'));
   if (phaseIdx(c.phase) >= phaseIdx('Submitted to carrier') && c.phase !== 'Closed') {
     var last = [phaseAt(c, 'Submitted to carrier')].concat(arr(c.notes).filter(function(n){ return n && !n.internal; }).map(function(n){ return n.at; })).concat(arr(c.followups).map(function(f){ return f.at; })).filter(Boolean).sort().pop();
-    var d = S.followupD * 864e5, due = Date.parse(last) + d, left = due - now;
+    var d = S.followupD * 864e5, due = (isFinite(Date.parse(last)) ? Date.parse(last) : start) /* INS3-sla */ + d, left = due - now;
     out.push({ k: 'followup', l: 'Follow up with the adjuster (every ' + S.followupD + ' days)', due: new Date(due).toISOString(), done: false, leftMs: left, overdue: left < 0, color: left < 0 ? 'bad' : left < d * 0.25 ? 'warn' : 'ok', recurring: true });
   }
   return out;
@@ -147404,7 +147404,7 @@ function App(root, opts){
   function phaseTag(ph){ var i = phaseIdx(ph); return '<span class="gcbb-tag" style="background:' + PHASE_COLOR[i] + '22;color:' + PHASE_COLOR[i] + '">' + esc(ph) + '</span>'; }
   function filtered(){
     var q = low(A.S.q);
-    return visClaims().filter(function(c){
+    return (window._gcIns3BoardFilter ? window._gcIns3BoardFilter(visClaims()) /* INS3-filter */ : visClaims()).filter(function(c){
       if (!q) return true;
       var p = proj(c.projectId) || {};
       return low([claimTitle(c), c.insured, c.address, c.carrier, c.claimNumber, c.policyNumber, c.program, p.client, p.address, (c.adjuster || {}).name].join(' ')).indexOf(q) >= 0;
@@ -147448,7 +147448,7 @@ function App(root, opts){
         '<div class="gcbb-kpi"><span>Submitted → approved</span><b>' + d(k.avgSubmittedToApproved) + '</b></div>' +
         '<div class="gcbb-kpi"><span>Final → depreciation</span><b>' + d(k.avgFinalToDepreciation) + '</b></div>' +
       '</div>' + moreKpiHtml(visClaims()) +
-      '<div class="gcbb-bar"><input class="gcbb-in gcbb-q" data-a="q" type="search" placeholder="Search claim #, insured, address, carrier, adjuster" value="' + esc(A.S.q) + '" aria-label="Search claims">' + syncPill() + '</div>' +
+      '<div class="gcbb-bar"><input class="gcbb-in gcbb-q" data-a="q" type="search" placeholder="Search claim #, insured, address, carrier, adjuster" value="' + esc(A.S.q) + '" aria-label="Search claims">' + syncPill() + '</div>' + (window._gcIns3BoardBar ? window._gcIns3BoardBar(visClaims()) : '') /* INS3-bar */ +
       (visClaims().length ? '<div class="gcbb-boardwrap">' + boardBody() + '</div>' : '<div class="gcbb-empty"><b>No insurance claims yet.</b><br>Open one with “+ New claim” — or from an insurance job in Projects (its 🛡 Claim tab).</div>') +
       '</div>';
   }
@@ -147490,8 +147490,8 @@ function App(root, opts){
       '</div><div class="gcbb-bar" style="margin-top:14px"><button class="gcbb-btn pri" data-a="create">Open claim</button>' + (A.opts.projectId ? '' : '<button class="gcbb-btn" data-a="board">Cancel</button>') + '</div></div></div>';
   }
   function claimView(c){
-    var p = proj(c.projectId) || {}, m = calc(c), tabs = [['overview', 'Overview'], ['estimate', 'Estimate' + (m.versions ? ' (v' + m.versions + ')' : '')], ['notes', 'Notes (' + arr(c.notes).length + ')'], ['docs', 'Documents (' + arr(c.docs).filter(function(d){ return !d.deleted; }).length + ')'],
-      ['checklist', 'Checklist ' + checklist(c).filter(function(x){ return x.done; }).length + '/' + checklist(c).length], ['drying', 'Drying'], ['rooms', 'Job type & rooms'], ['photos', 'Photos'], ['contents', 'Contents'], ['papers', 'Papers & money'], ['closeout', '🏁 Closeout' /* AUTO7-tab */], ['sync', 'Sync ' + syncTag(c)]];
+    var p = proj(c.projectId) || {}, m = calc(c), tabs = [['overview', 'Overview'], ['activity', '📝 Activity' /* INS3-tabs */], ['mail', '✉️ E-mail'], ['xact', '📐 Xactimate'], ['gallery', '📸 All photos'], ['estimate', 'Estimate' + (m.versions ? ' (v' + m.versions + ')' : '')], ['notes', 'Notes (' + arr(c.notes).length + ')'], ['docs', 'Documents (' + arr(c.docs).filter(function(d){ return !d.deleted; }).length + ')'],
+      ['checklist', 'Checklist ' + checklist(c).filter(function(x){ return x.done; }).length + '/' + checklist(c).length], ['drying', 'Drying'], ['rooms', 'Job type & rooms'], ['photos', 'Required photos' /* INS3-req */], ['contents', 'Contents'], ['papers', 'Papers & money'], ['closeout', '🏁 Closeout' /* AUTO7-tab */], ['sync', 'Sync ' + syncTag(c)]];
     var i = phaseIdx(c.phase);
     var steps = '<div class="gcbb-steps" role="list" aria-label="Claim phase">' + PHASES.map(function(ph, k){ return '<button role="listitem" class="gcbb-step' + (k < i ? ' done' : k === i ? ' on' : '') + '" data-a="step" data-v="' + esc(ph) + '"' + (k === i ? ' aria-current="step"' : '') + '>' + (k + 1) + '. ' + esc(ph) + '</button>'; }).join('') + '</div>';
     var body = P2TABS[A.S.tab] ? function(c){ return P2TABS[A.S.tab](A, c); } : ({ overview: overviewTab, estimate: estimateTab, notes: notesTab, docs: docsTab, checklist: checklistTab, sync: syncTab }[A.S.tab] || overviewTab);
@@ -157583,4 +157583,442 @@ W._gcFlyerPick = function(sel, pref){
 };
 try { console.log('[GC] Flyers print the person who makes them (patch FLY) ready'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-ins3">
+/* __GC_PATCH_INS3__ ═══════════════════════════════════════════════════════════
+   GrayCo — 🛡 INSURANCE TAB, DASH-LEVEL CLAIM WORKSPACE + 💾 STORAGE (patch INS3).
+
+   Owner (10/22): "insurance tab needs to be like DASH and I need to be able to see all photos on this tab also for
+   those insurance jobs. I need this very detailed and helpful to not forget — do notes, e-mail and write estimates
+   from Xactimate from this tab. Will need a button for Xactimate on this tab too, needs to accept PDFs."
+   "Make sure we can create scopes from the estimates from Xactimate deleting prices but keeping lines and measurements."
+   "This entire CRM will have lots of memory of files in it, how do we store so much data?"
+
+   On top of patch BB/BB2/AUTO7 (nothing of theirs is replaced), the claim page gets four more tabs:
+     📝 Activity     one running log (notes, phase moves, documents, checks, estimate imports, the job's e-mails),
+                     pinned notes, one-tap note templates, and a "Don't forget" list for the claim's stage.
+     ✉️ E-mail       adjuster / desk adjuster / homeowner cards (call, e-mail), ready-made e-mails (from your own
+                     address via ✉️ compose — logged on the job), the job's e-mail history (patch X9).
+     📐 Xactimate    Open Xactimate · import the PDF or ESX (patch BB's importer) · every version with RCV / ACV /
+                     depreciation / O&P · "Write our estimate from this" (a draft in 📐 Estimates) ·
+                     "📋 Make a scope (no prices)" — lines, quantities, units, rooms and measurements kept, every $
+                     removed; pick rooms / trades / lines; save to the claim, PDF, copy, send to a sub bid.
+     📸 All photos   every GrayCo Photos (CompanyCam) photo of the job + CRM uploads, by date or by tag, full screen,
+                     select many → claim package / supplement / report, download. (The old "Photos" tab stays as
+                     "Required photos".)
+   The board gets PM / carrier / overdue filters. ⚙ Admin gets 💾 Storage (netlify/functions/storage-usage.js).
+   Console: _gcIns3.scope.fromEstimate(est, claim) · _gcIns3.status()
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_INS3__) return; W.__GC_PATCH_INS3__ = true;
+function later(fn, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, fn, ms || 0); }
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var x = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function nowIso(){ return new Date().toISOString(); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function warn(e){ try { console.warn('[INS3]', e); } catch (x) {} }
+function G(){ return W._gcClaims && W._gcClaims.ext ? W._gcClaims : null; }
+function crm(){ return W._crm || {}; }
+function proj(id){ id = s(id); return arr(crm().projects).filter(function(p){ return p && s(p.id) === id; })[0] || null; }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function myName(){ var e = myEmail(); var u = arr(crm().users).filter(function(x){ return x && low(x.email) === e; })[0]; return (u && s(u.name)) || (e ? e.split('@')[0] : 'Me'); }
+function money(v){ var n = r2(v), neg = n < 0; n = Math.abs(n); return (neg ? '−$' : '$') + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function md(iso){ var d = new Date(iso); return isNaN(d) ? '' : (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2); }
+function when(iso){ var d = new Date(iso); if (isNaN(d)) return ''; var h = d.getHours(), m = d.getMinutes(); return md(iso) + ' ' + ((h % 12) || 12) + ':' + ('0' + m).slice(-2) + (h < 12 ? 'a' : 'p'); }
+function toast(msg, bad){ try { if (W._gcToast) return W._gcToast(msg, bad); } catch (e) {} var t = D.createElement('div'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;padding:10px 16px;border-radius:10px;font:600 14px system-ui;color:#fff;background:' + (bad ? '#B42318' : '#1B1452'); D.body.appendChild(t); later(function(){ t.remove(); }, 3200); }
+function liveEsts(c){ return arr(c && c.estimates).filter(function(e){ return e && e.deleted !== true; }).sort(function(a, b){ return num(a.version) - num(b.version); }); }
+
+/* ══ 1. SCOPE FROM AN ESTIMATE — every line kept, every $ removed (pure, testable) ═════════════════════ */
+var MEAS_KEYS = ['room', 'name', 'level', 'length', 'len', 'width', 'wid', 'height', 'ht', 'sf', 'sqft', 'area', 'floorSf', 'wallSf', 'ceilingSf', 'ceilSf', 'perimeter', 'lf',
+  'squares', 'sq', 'pitch', 'waste', 'wastePct', 'stories', 'layers', 'ridgeLf', 'valleyLf', 'eaveLf', 'rakeLf', 'hipLf', 'dripLf', 'stepFlashLf'];
+var MONEY_RE = /\$\s?-?[\d,]+(?:\.\d+)?/g;
+function stripMoney(t){ return s(t).replace(MONEY_RE, '').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim(); }
+function measOf(o){
+  if (!o || typeof o !== 'object') return null;
+  var out = {}, any = false;
+  MEAS_KEYS.forEach(function(k){ var v = o[k]; if (v == null || v === '' || typeof v === 'object') return; if (typeof v === 'string') v = stripMoney(v); if (v === '') return; out[k] = v; if (k !== 'room' && k !== 'name' && k !== 'level') any = true; });
+  return any ? out : null;
+}
+function measurementsOf(est, c){
+  var list = [];
+  function take(v, from){ (Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.keys(v).map(function(k){ var o = v[k]; return o && typeof o === 'object' ? Object.assign({ room: k }, o) : null; }) : [])).forEach(function(o){ var m = measOf(o); if (m) { m.from = from; list.push(m); } }); }
+  take(est && (est.roomDims || est.measurements || est.roomInfo), 'estimate');
+  take(arr(est && est.rooms).filter(function(r){ return r && typeof r === 'object' && !Array.isArray(r.lines); }), 'estimate');
+  take(c && c.rooms, 'claim');
+  var roof = c && (c.roof || c.roofInfo); if (roof) { var m = measOf(Object.assign({ room: 'Roof' }, roof)); if (m) { m.from = 'claim'; list.push(m); } }
+  return list;
+}
+/* opt: { rooms: {name:true}, cats: {CAT:true}, skip: {lineId:true}, title } — undefined = everything */
+function scopeFromEstimate(est, c, opt){
+  opt = opt || {};
+  var lines = arr(est && est.lines).filter(function(l){ return l && (s(l.desc) || s(l.cat)); })
+    .filter(function(l){ return !opt.rooms || opt.rooms[s(l.room) || 'General']; })
+    .filter(function(l){ return !opt.cats || opt.cats[s(l.cat) || '—']; })
+    .filter(function(l){ return !(opt.skip && opt.skip[s(l.id)]); });
+  var by = {}, order = [];
+  lines.forEach(function(l){
+    var room = s(l.room) || 'General';
+    if (!by[room]) { by[room] = []; order.push(room); }
+    by[room].push({ id: s(l.id), line: s(l.line), code: [s(l.cat), s(l.sel)].filter(Boolean).join(' '), act: s(l.act), desc: stripMoney(l.desc), qty: r2(l.qty), unit: s(l.unit).toUpperCase(), cat: s(l.cat) });
+  });
+  var meas = measurementsOf(est, c).filter(function(m){ return !opt.rooms || !m.room || opt.rooms[s(m.room)] || /^roof$/i.test(s(m.room)) && order.some(function(r){ return /roof/i.test(r); }); });
+  var cats = {}; lines.forEach(function(l){ if (l.cat) cats[s(l.cat)] = 1; });
+  return { id: uid('SC'), title: s(opt.title) || ('Scope — ' + s((c && (c.title || c.insured)) || 'claim')), source: 'xactimate', estId: s(est && est.id), version: num(est && est.version),
+    createdAt: nowIso(), by: myName(), noPrices: true, trades: Object.keys(cats).sort(),
+    rooms: order.map(function(r){ return { room: r, measure: meas.filter(function(m){ return low(m.room) === low(r); })[0] || null, lines: by[r] }; }),
+    measurements: meas, lineCount: lines.length };
+}
+function scopeText(sc){
+  var out = [s(sc.title), 'No prices — quantities, units and measurements only.', ''];
+  arr(sc.measurements).forEach(function(m){ out.push('Measure · ' + Object.keys(m).filter(function(k){ return k !== 'from'; }).map(function(k){ return k + ': ' + m[k]; }).join(', ')); });
+  if (arr(sc.measurements).length) out.push('');
+  arr(sc.rooms).forEach(function(r){ out.push('== ' + r.room + ' =='); r.lines.forEach(function(l){ out.push('- ' + [l.code, l.act].filter(Boolean).join(' ') + (l.code || l.act ? ' · ' : '') + l.desc + ' — ' + l.qty + ' ' + l.unit); }); out.push(''); });
+  return out.join('\n');
+}
+function scopeHtml(sc, c){
+  var p = proj(c && c.projectId) || {}, addr = '';
+  try { addr = W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) {}
+  return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(sc.title) + '</title><style>body{font:13px Arial,sans-serif;color:#1b1640;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#241968}h2{font-size:15px;margin:18px 0 6px;color:#241968;border-bottom:2px solid #F2A51A;padding-bottom:3px}table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;border-bottom:1px solid #e5e5ee;text-align:left;vertical-align:top}th{font-size:11px;text-transform:uppercase;color:#555}.q{text-align:right;white-space:nowrap}.m{color:#555;font-size:12px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #241968;padding-bottom:8px;margin-bottom:10px}</style></head><body>' +
+    '<div class="hdr"><div><b style="font-size:16px">GRAYCO CONSTRUCTION SERVICES</b><div class="m">' + esc(addr) + ' · (901) 585-0944</div></div><div class="m" style="text-align:right">Scope of work · no prices<br>' + esc(md(sc.createdAt)) + '</div></div>' +
+    '<h1>' + esc(sc.title) + '</h1><div class="m">' + esc([p.name, p.address].filter(Boolean).join(' · ')) + '</div>' +
+    (arr(sc.measurements).length ? '<h2>Measurements</h2><table>' + sc.measurements.map(function(m){ return '<tr><td><b>' + esc(m.room || m.name || '—') + '</b></td><td class="m">' + esc(Object.keys(m).filter(function(k){ return ['room', 'name', 'from'].indexOf(k) < 0; }).map(function(k){ return k + ': ' + m[k]; }).join(' · ')) + '</td></tr>'; }).join('') + '</table>' : '') +
+    arr(sc.rooms).map(function(r){ return '<h2>' + esc(r.room) + '</h2><table><tr><th>Code</th><th>Description</th><th class="q">Qty</th><th>Unit</th></tr>' + r.lines.map(function(l){ return '<tr><td>' + esc([l.code, l.act].filter(Boolean).join(' ')) + '</td><td>' + esc(l.desc) + '</td><td class="q">' + esc(l.qty) + '</td><td>' + esc(l.unit) + '</td></tr>'; }).join('') + '</table>'; }).join('') +
+    '<p class="m" style="margin-top:20px">Quantities from the insurance estimate. Prices are not part of this scope.</p></body></html>';
+}
+
+/* ══ 2. the photos of a job (GrayCo Photos / CompanyCam + CRM uploads) ════════════════════════════════════ */
+var PH = {};   /* pid → { list, at, busy } */
+function photoTags(p){
+  var t = [];
+  arr(p.aiTags).concat(arr(p.tags)).forEach(function(x){ x = s(x && x.tag || x); if (x) t.push(x); });
+  if (s(p.tag)) t.push(s(p.tag));
+  try { if (W._gcPhotoAI && typeof W._gcPhotoAI.tagsOf === 'function') arr(W._gcPhotoAI.tagsOf(p.id)).forEach(function(x){ x = s(x && x.tag || x); if (x) t.push(x); }); } catch (e) {}
+  var seen = {}; return t.filter(function(x){ var k = low(x); if (seen[k]) return false; seen[k] = 1; return true; });
+}
+function normPhoto(p, src){
+  var full = s(p.fullUrl || p.url || p.full || p.src || p.dataUrl), thumb = s(p.thumbUrl || p.thumb || p.small || full);
+  if (!full && !thumb) return null;
+  return { id: s(p.id) || uid('P'), full: full || thumb, thumb: thumb || full, at: s(p.at || p.createdAt || p.date), by: s(p.by), note: s(p.note || p.caption), src: src, tags: photoTags(p) };
+}
+function loadPhotos(pid, force, done){
+  pid = s(pid); var st = PH[pid] || (PH[pid] = { list: null, at: 0, busy: false });
+  if (st.busy || (!force && st.list && Date.now() - st.at < 5 * 60e3)) return;
+  st.busy = true;
+  var P = W._gcPhotos || {}, own = [];
+  try { own = arr(typeof P.records === 'function' ? P.records() : []).filter(function(r){ return r && !r.deleted && s(r.jobId) === pid; }).map(function(r){ return normPhoto(r, 'crm'); }).filter(Boolean); } catch (e) {}
+  var cc = typeof P.ccLoad === 'function' ? Promise.resolve(P.ccLoad(pid, force)).catch(function(){ return []; }) : Promise.resolve([]);
+  cc.then(function(l){
+    var all = own.concat(arr(l).map(function(r){ return normPhoto(r, 'companycam'); }).filter(Boolean)), seen = {};
+    st.list = all.filter(function(x){ if (seen[x.id]) return false; seen[x.id] = 1; return true; }).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+    st.at = Date.now(); st.busy = false; done && done();
+  });
+}
+
+/* ══ 3. "Don't forget" for the claim's stage ══════════════════════════════════════════════════════════ */
+var PHASES_ORDER = ['New loss', 'Inspection', 'Estimate written', 'Submitted to carrier', 'Approved', 'Supplement', 'Work', 'Final invoice', 'Depreciation released', 'Closed'];
+function phaseAt(c){ var i = PHASES_ORDER.indexOf(s(c && c.phase)); return i < 0 ? 0 : i; }
+function hasDoc(c, re){ return arr(c.docs).some(function(d){ return d && !d.deleted && (re.test(s(d.kind)) || re.test(s(d.name))); }); }
+function noteSays(c, re){ return arr(c.notes).some(function(n){ return n && re.test(s(n.text)); }); }
+function dontForget(c){
+  var i = phaseAt(c), est = liveEsts(c), car = est.some(function(e){ return e.side === 'carrier' || /carrier|adjust/i.test(s(e.header && e.header.company)); }), co = c.closeout || {};
+  var L = [
+    { k: 'contract', at: 0, l: 'Signed work authorization / contract on file', done: hasDoc(c, /workauth|aob|contract|authoriz/i) },
+    { k: 'photos', at: 1, l: 'Photos sent to the adjuster', done: noteSays(c, /photo.*(sent|adjuster)|sent.*photo/i) || hasDoc(c, /^photos$|package/i) },
+    { k: 'insp', at: 1, l: 'Adjuster inspection scheduled / met', done: !!(c.inspectionDate || c.adjMeetingAt) || noteSays(c, /inspection (scheduled|done|met)|met (the )?adjuster/i) },
+    { k: 'carrierest', at: 2, l: 'Carrier estimate (Xactimate) uploaded', done: car },
+    { k: 'ourest', at: 2, l: 'Our estimate written', done: est.some(function(e){ return e.side === 'grayco'; }) || arr(crm().estimates).some(function(e){ return e && s(e.pid || e.projectId) === s(c.projectId); }) },
+    { k: 'mortgage', at: 4, l: 'Mortgage company on the check? Endorsement started', done: !!(c.mortgage && (c.mortgage.none || c.mortgage.stage)) || arr(c.mortgageChecks).length > 0 || noteSays(c, /no mortgage|endors/i) },
+    { k: 'deductible', at: 6, l: 'Deductible collected from the homeowner', done: arr(c.payments).some(function(p){ return p && !p.deleted && /deductible/i.test(s(p.kind)); }) },
+    { k: 'supp', at: 7, l: 'Supplement check done (found → sent, or "no supplement")', done: !!(co.supp && co.supp.state) || arr(c.supplements).some(function(x){ return x && !x.deleted; }) },
+    { k: 'dep', at: 7, l: 'Depreciation packet sent', done: !!(co.dep && co.dep.sentAt) || noteSays(c, /depreciation (packet|request) sent/i) },
+    { k: 'final', at: 7, l: 'Final invoice sent', done: !!(c.checks && c.checks.final) || hasDoc(c, /invoice/i) }
+  ];
+  var ticks = c.ins3Checks || {};
+  return L.filter(function(x){ return x.at <= Math.max(i, 0); }).map(function(x){ var t = ticks[x.k]; return Object.assign(x, { done: x.done || !!(t && t.on), tick: t || null, due: !x.done && !(t && t.on) && i > x.at }); });
+}
+
+/* ══ 4. the four tabs ══════════════════════════════════════════════════════════════════════════════════ */
+var UI = { sel: {}, group: 'date', comms: {}, scope: {} };
+var NOTE_T = ['Left a voicemail for the adjuster', 'Talked to the adjuster', 'Adjuster inspection scheduled', 'Met the adjuster on site', 'Photos sent to the adjuster', 'Estimate sent to the carrier', 'Supplement sent', 'Depreciation packet sent', 'Homeowner updated', 'Waiting on the mortgage company'];
+function I(cls){ return 'gcbb-' + cls; }
+function activityTab(A, c){
+  var g = G(), pid = s(c.projectId), notes = arr(c.notes).filter(function(n){ return n && !n.deleted; });
+  var pins = notes.filter(function(n){ return n.pinned; });
+  var df = dontForget(c);
+  var ev = [];
+  notes.forEach(function(n){ ev.push({ at: n.at, ic: '📝', t: n.text, by: n.by, id: n.id, pin: !!n.pinned, note: true }); });
+  arr(c.phaseHistory).forEach(function(h){ if (h) ev.push({ at: h.at, ic: '➡️', t: 'Moved to ' + s(h.phase || h.to), by: h.by }); });
+  arr(c.docs).forEach(function(d){ if (d && !d.deleted) ev.push({ at: d.at, ic: '📄', t: 'Document: ' + s(d.name || d.kind), by: d.by }); });
+  arr(c.payments).forEach(function(p){ if (p && !p.deleted) ev.push({ at: p.at || p.date, ic: '💵', t: 'Check ' + money(p.amount) + ' from ' + s(p.from) + (p.kind ? ' (' + s(p.kind) + ')' : ''), by: p.by }); });
+  liveEsts(c).forEach(function(e){ ev.push({ at: e.importedAt, ic: '📐', t: 'Estimate v' + num(e.version) + ' imported (' + (e.side || 'side not set') + ')', by: e.by }); });
+  var cm = UI.comms[pid];
+  if (cm && cm.items) cm.items.forEach(function(x){ ev.push({ at: x.at, ic: x.kind === 'text' ? '💬' : x.kind === 'portal' ? '🌐' : '✉️', t: s(x.subject || x.text).slice(0, 160), by: s(x.from && (x.from.name || x.from.email)) }); });
+  else if (pid && W._gcX9 && W._gcX9.comms && !(cm && cm.busy)) { UI.comms[pid] = { busy: true }; Promise.resolve(W._gcX9.comms.load(pid)).then(function(j){ UI.comms[pid] = { items: j && j.ok ? arr(j.items) : [] }; A.render(true); }, function(){ UI.comms[pid] = { items: [] }; }); }
+  ev.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });
+  var due = df.filter(function(x){ return x.due; }).length;
+  return '<div class="gcbb-panel"><h3>✅ Don’t forget' + (due ? ' — <span style="color:#B42318">' + due + ' overdue</span>' : '') + '</h3>' +
+      df.map(function(x){ return '<label class="gcbb-preq ' + (x.done ? 'done' : x.due ? 'miss' : 'later') + '" style="cursor:pointer"><input type="checkbox" data-a="i3chk" value="' + x.k + '"' + (x.done ? ' checked' : '') + ' style="margin-right:8px"><span class="t"><b>' + esc(x.l) + '</b><small>' + (x.tick && x.tick.on ? 'ticked by ' + esc(x.tick.by) + ' ' + esc(md(x.tick.at)) : x.done ? 'done' : x.due ? 'overdue for this stage' : 'next') + '</small></span></label>'; }).join('') +
+    '</div>' +
+    (pins.length ? '<div class="gcbb-panel"><h3>📌 Pinned</h3>' + pins.map(function(n){ return '<div class="gcbb-note"><b>' + esc(n.text) + '</b><small> — ' + esc(n.by) + ' ' + esc(when(n.at)) + '</small> <button class="gcbb-btn sm" data-a="i3pin" data-v="' + esc(n.id) + '">Unpin</button></div>'; }).join('') + '</div>' : '') +
+    '<div class="gcbb-panel"><h3>📝 Add to the claim log</h3><div class="gcbb-bar" style="flex-wrap:wrap">' + NOTE_T.map(function(t){ return '<button class="gcbb-btn sm" data-a="i3qn" data-v="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
+      '<div class="gcbb-bar" style="margin-top:8px"><input class="gcbb-in" style="flex:1;min-width:200px" data-draft="i3note-' + esc(c.id) + '" placeholder="Type a note (who you talked to, what was said, what is next)"><button class="gcbb-btn pri" data-a="i3add">Save note</button></div>' +
+      '<div style="font-size:12px;color:var(--muted,#666)">Notes saved here stay inside GrayCo (they are not sent to DASH or the carrier). To send a note out, use the Notes tab.</div></div>' +
+    '<div class="gcbb-panel"><h3>🕘 Everything on this claim (' + ev.length + ')</h3>' + (ev.length ? ev.slice(0, 200).map(function(x){ return '<div class="gcbb-ev" style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line,#eee)"><span>' + x.ic + '</span><span style="flex:1"><b style="font-weight:600">' + esc(x.t) + '</b><br><small style="color:var(--muted,#666)">' + esc(when(x.at)) + (x.by ? ' · ' + esc(x.by) : '') + '</small></span>' + (x.note ? '<button class="gcbb-btn sm" data-a="i3pin" data-v="' + esc(x.id) + '">' + (x.pin ? 'Unpin' : '📌 Pin') + '</button>' : '') + '</div>'; }).join('') : '<div style="color:var(--muted,#666)">Nothing yet.</div>') + '</div>';
+}
+function people(c){
+  var p = proj(c.projectId) || {}, a = c.adjuster || {}, d = c.deskAdjuster || {};
+  return [
+    { k: 'adj', l: 'Field adjuster', name: s(a.name || c.adjName), phone: s(a.phone || c.adjPhone), email: s(a.email || c.adjEmail), co: s(a.company || c.adjCompany) },
+    { k: 'desk', l: 'Desk adjuster', name: s(d.name || c.deskName), phone: s(d.phone || c.deskPhone), email: s(d.email || c.deskEmail), co: s(d.company) },
+    { k: 'ho', l: 'Homeowner', name: s(c.insured || p.client), phone: s(p.clientPhone || c.insuredPhone), email: s(p.clientEmail || c.insuredEmail), co: '' },
+    { k: 'carrier', l: 'Carrier claims office (internal)', name: s(c.carrier), phone: s(c.carrierPhone), email: s(c.carrierEmail || c.claimsEmail), co: '' }
+  ].filter(function(x){ return x.name || x.phone || x.email; });
+}
+var MAIL_T = [
+  { k: 'insp', l: 'Ask for an inspection date', who: 'adj', b: 'Hello {name},\n\nWe are the contractor for {insured} (claim #{claim}). Could you let us know when you are available to inspect the property at {address}? We would like to meet you on site.\n\nThank you,\n{me}\nGrayCo Construction Services · (901) 585-0944' },
+  { k: 'status', l: 'Status check', who: 'desk', b: 'Hello {name},\n\nChecking on the status of claim #{claim} for {insured} at {address}. Is there anything you still need from us?\n\nThank you,\n{me}\nGrayCo Construction Services · (901) 585-0944' },
+  { k: 'photos', l: 'Send photos / documents', who: 'adj', b: 'Hello {name},\n\nAttached are the photos and documents for claim #{claim} ({insured}, {address}).\n\nThank you,\n{me}\nGrayCo Construction Services · (901) 585-0944' },
+  { k: 'supp', l: 'Supplement follow-up', who: 'desk', b: 'Hello {name},\n\nFollowing up on the supplement we sent for claim #{claim} ({insured}). Please let us know when it has been reviewed.\n\nThank you,\n{me}\nGrayCo Construction Services · (901) 585-0944' },
+  { k: 'dep', l: 'Depreciation release request', who: 'desk', b: 'Hello {name},\n\nThe work for claim #{claim} ({insured}, {address}) is complete. Attached are the final invoice and certificate of completion. Please release the recoverable depreciation.\n\nThank you,\n{me}\nGrayCo Construction Services · (901) 585-0944' },
+  { k: 'ho', l: 'Homeowner update', who: 'ho', b: 'Hello {name},\n\nA quick update on your claim: \n\nCall me any time with questions.\n\n{me}\nGrayCo Construction Services · (901) 585-0944' }
+];
+function fill(t, c, who){ var p = proj(c.projectId) || {}; return t.replace(/\{name\}/g, (who && who.name) ? s(who.name).split(/\s+/)[0] : 'there').replace(/\{insured\}/g, s(c.insured || p.client) || 'the homeowner').replace(/\{claim\}/g, s(c.claimNumber) || '—').replace(/\{address\}/g, s(c.address || p.address) || 'the property').replace(/\{me\}/g, myName()); }
+function compose(c, who, subj, body){
+  var p = proj(c.projectId) || {};
+  var tag = [p.autoPO || p.po ? 'PO ' + s(p.autoPO || p.po) : '', s(c.insured || p.client), s(c.address || p.address)].filter(Boolean).join(' · ');
+  var subject = subj + (s(c.claimNumber) ? ' — Claim #' + s(c.claimNumber) : '') + (tag ? ' — ' + tag : '');
+  if (typeof W._gcCompose === 'function') { W._gcCompose({ to: who && who.email || '', subject: subject, body: body, pid: c.projectId, about: who && who.k === 'ho' ? 'customer' : 'adjuster' }); return; }
+  var bcc = ''; try { var st = W._gcX9 && W._gcX9.comms && W._gcX9.comms.status(); if (!(st && st.routingConfirmed)) bcc = (st && st.address) || 'mail@in.grayco-cs.com'; } catch (e) {}
+  W.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(who && who.email || '') + '&su=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body) + (bcc ? '&bcc=' + encodeURIComponent(bcc) : ''), '_blank', 'noopener');
+}
+function mailTab(A, c){
+  var ppl = people(c), pid = s(c.projectId), cm = UI.comms[pid];
+  if (!cm && pid && W._gcX9 && W._gcX9.comms) { UI.comms[pid] = { busy: true }; Promise.resolve(W._gcX9.comms.load(pid)).then(function(j){ UI.comms[pid] = { items: j && j.ok ? arr(j.items) : [] }; A.render(true); }, function(){ UI.comms[pid] = { items: [] }; }); }
+  var mails = cm && cm.items ? cm.items.filter(function(x){ return x.kind === 'email' || !x.kind; }) : null;
+  var adj = '';
+  try { if (W._gcAdjMail && typeof W._gcAdjMail.panel === 'function') adj = s(W._gcAdjMail.panel(c)); } catch (e) {}
+  return '<div class="gcbb-panel"><h3>👥 People on this claim</h3>' + (ppl.length ? ppl.map(function(x){ return '<div class="gcbb-bar" style="padding:6px 0;border-bottom:1px solid var(--line,#eee)"><span style="flex:1;min-width:180px"><b>' + esc(x.name || '—') + '</b><br><small>' + esc(x.l) + (x.co ? ' · ' + esc(x.co) : '') + (x.email ? ' · ' + esc(x.email) : '') + (x.phone ? ' · ' + esc(x.phone) : '') + '</small></span>' +
+      (x.phone ? '<a class="gcbb-btn sm" href="tel:' + esc(x.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a>' : '') + (x.email ? '<button class="gcbb-btn sm" data-a="i3mail" data-v="' + x.k + '">✉️ E-mail</button>' : '') + '</div>'; }).join('') : '<div style="color:var(--muted,#666)">Add the adjuster on the Overview tab to e-mail and call from here.</div>') + '</div>' +
+    '<div class="gcbb-panel"><h3>✉️ Ready-made e-mails</h3><div style="font-size:12px;color:var(--muted,#666);margin-bottom:6px">Opens from your own @grayco-cs.com address with the claim # and job in the subject; it is logged on the job (💬 history).</div><div class="gcbb-bar" style="flex-wrap:wrap">' +
+      MAIL_T.map(function(t){ return '<button class="gcbb-btn sm" data-a="i3tpl" data-v="' + t.k + '">' + esc(t.l) + '</button>'; }).join('') + '</div></div>' + adj +
+    '<div class="gcbb-panel"><h3>📨 E-mails on this job' + (mails ? ' (' + mails.length + ')' : '') + '</h3>' + (mails == null ? '<div style="color:var(--muted,#666)">' + (W._gcX9 ? 'Loading…' : 'E-mail history is not on this build.') + '</div>' : mails.length ? mails.slice(0, 60).map(function(x){ return '<div style="padding:6px 0;border-bottom:1px solid var(--line,#eee)"><b>' + esc(x.subject || '(no subject)') + '</b><br><small>' + esc(when(x.at)) + ' · ' + esc(s(x.from && (x.from.name || x.from.email))) + '</small><div style="font-size:13px;white-space:pre-wrap;max-height:4.5em;overflow:hidden">' + esc(s(x.text).slice(0, 400)) + '</div></div>'; }).join('') : '<div style="color:var(--muted,#666)">No e-mails on this job yet.</div>') +
+      (W._gcX9 && W._gcX9.comms && W._gcX9.comms.open ? '<button class="gcbb-btn sm" data-a="i3comms" style="margin-top:8px">Open full 💬 history</button>' : '') + '</div>';
+}
+function xactTab(A, c){
+  var l = liveEsts(c), sc = UI.scope[c.id];
+  var list = l.length ? l.slice().reverse().map(function(e){ var t = e.totals || {}; return '<div class="gcbb-panel" style="margin:8px 0;padding:10px"><div class="gcbb-bar"><b style="flex:1">v' + num(e.version) + ' · ' + esc(e.side === 'carrier' ? 'Carrier' : e.side === 'grayco' ? 'GrayCo' : 'Side not set') + ' · ' + esc(md(e.importedAt)) + ' · ' + arr(e.lines).length + ' lines</b></div>' +
+      '<div style="font-size:13px;margin:4px 0 8px">RCV <b>' + money(t.rcv) + '</b> · Depreciation ' + money(t.dep) + ' · ACV ' + money(t.acv) + ' · O&amp;P ' + money(t.op) + ' · Tax ' + money(t.tax) + '</div>' +
+      '<div class="gcbb-bar" style="flex-wrap:wrap"><button class="gcbb-btn sm pri" data-a="i3est" data-v="' + esc(e.id) + '">📐 Write our estimate from this</button><button class="gcbb-btn sm" data-a="i3scope" data-v="' + esc(e.id) + '">📋 Make a scope (no prices)</button><button class="gcbb-btn sm" data-a="tab" data-v="estimate">⚖ Compare / supplement</button></div></div>'; }).join('') : '<div style="color:var(--muted,#666)">No Xactimate estimate on this claim yet — import the PDF or ESX above.</div>';
+  var saved = arr(c.scopes).filter(function(x){ return x && !x.deleted; });
+  return '<div class="gcbb-panel"><h3>📐 Xactimate</h3><div class="gcbb-bar" style="flex-wrap:wrap">' +
+      '<a class="gcbb-btn pri" href="https://www.xactimate.com/" target="_blank" rel="noopener" data-i3="xact">🔗 Open Xactimate</a>' +
+      '<label class="gcbb-imp-side">Who wrote it?<select class="gcbb-in" name="impSide"><option value="auto">Detect from the PDF</option><option value="carrier">Carrier (adjuster / desk)</option><option value="grayco">GrayCo (ours)</option></select></label>' +
+      '<label class="gcbb-btn">⬆ Xactimate PDF<input type="file" accept="application/pdf,.pdf" data-a="pdf" hidden></label>' +
+      '<label class="gcbb-btn">⬆ ESX file<input type="file" accept=".esx,application/zip" data-a="esx" hidden></label></div>' +
+      '<div style="font-size:12px;color:var(--muted,#666);margin-top:6px">Xactimate desktop: export the estimate as PDF (or ESX) and drop it here. Xactimate Online opens in a new tab. Each import is a new version.</div></div>' +
+    (sc ? scopeBuilder(A, c, sc) : '') +
+    '<div class="gcbb-panel"><h3>Estimates on this claim</h3>' + list + '</div>' +
+    (saved.length ? '<div class="gcbb-panel"><h3>📋 Saved scopes (no prices)</h3>' + saved.map(function(x){ return '<div class="gcbb-bar" style="padding:6px 0;border-bottom:1px solid var(--line,#eee)"><span style="flex:1"><b>' + esc(x.title) + '</b><br><small>' + x.lineCount + ' lines · ' + esc((x.trades || []).join(', ')) + ' · ' + esc(x.by) + ' ' + esc(md(x.createdAt)) + '</small></span><button class="gcbb-btn sm" data-a="i3scpdf" data-v="' + esc(x.id) + '">📄 PDF</button><button class="gcbb-btn sm" data-a="i3sccopy" data-v="' + esc(x.id) + '">Copy</button>' + (subBidOn() ? '<button class="gcbb-btn sm" data-a="i3scsub" data-v="' + esc(x.id) + '">📨 To sub bid</button>' : '') + '<button class="gcbb-btn sm" data-a="i3scdel" data-v="' + esc(x.id) + '">Remove</button></div>'; }).join('') + '</div>' : '');
+}
+function subBidOn(){ return !!(W._gcSubBidScope && typeof W._gcSubBidScope.attach === 'function') || !!(W._gcLeadsScope && typeof W._gcLeadsScope.attach === 'function'); }
+function scopeBuilder(A, c, st){
+  var e = liveEsts(c).filter(function(x){ return x.id === st.estId; })[0]; if (!e) return '';
+  var rooms = [], cats = [];
+  arr(e.lines).forEach(function(l){ var r = s(l.room) || 'General', k = s(l.cat) || '—'; if (rooms.indexOf(r) < 0) rooms.push(r); if (cats.indexOf(k) < 0) cats.push(k); });
+  var sc = scopeFromEstimate(e, c, opts(st));
+  return '<div class="gcbb-panel" style="border:2px solid #F2A51A"><h3>📋 Make a scope from v' + num(e.version) + ' — no prices</h3>' +
+    '<div style="font-size:13px;margin-bottom:6px">Keeps every line, quantity, unit, room and measurement. Every price, tax, O&amp;P, RCV, ACV and depreciation is removed.</div>' +
+    '<label style="display:block;margin:6px 0">Title <input class="gcbb-in" data-draft="i3sct-' + esc(c.id) + '" value="' + esc(st.title || sc.title) + '" style="width:100%"></label>' +
+    '<div><b>Rooms</b><div class="gcbb-bar" style="flex-wrap:wrap">' + rooms.map(function(r){ return '<label class="gcbb-tag" style="cursor:pointer"><input type="checkbox" data-a="i3scr" value="' + esc(r) + '"' + (!st.rooms || st.rooms[r] ? ' checked' : '') + '> ' + esc(r) + '</label>'; }).join('') + '</div></div>' +
+    '<div style="margin-top:6px"><b>Trades (Xactimate categories)</b><div class="gcbb-bar" style="flex-wrap:wrap">' + cats.map(function(k){ return '<label class="gcbb-tag" style="cursor:pointer"><input type="checkbox" data-a="i3scc" value="' + esc(k) + '"' + (!st.cats || st.cats[k] ? ' checked' : '') + '> ' + esc(k) + '</label>'; }).join('') + '</div></div>' +
+    '<details style="margin-top:6px"><summary>Lines (' + sc.lineCount + ') — untick any you don’t want</summary>' + arr(e.lines).filter(function(l){ return (!st.rooms || st.rooms[s(l.room) || 'General']) && (!st.cats || st.cats[s(l.cat) || '—']); }).map(function(l){ return '<label style="display:block;font-size:13px;padding:2px 0"><input type="checkbox" data-a="i3scl" value="' + esc(l.id) + '"' + (st.skip && st.skip[l.id] ? '' : ' checked') + '> ' + esc([l.cat, l.sel].filter(Boolean).join(' ')) + ' ' + esc(stripMoney(l.desc)) + ' — ' + esc(r2(l.qty)) + ' ' + esc(s(l.unit).toUpperCase()) + '</label>'; }).join('') + '</details>' +
+    '<div class="gcbb-bar" style="margin-top:10px;flex-wrap:wrap"><button class="gcbb-btn pri" data-a="i3scsave">💾 Save scope (' + sc.lineCount + ' lines)</button><button class="gcbb-btn" data-a="i3scprev">📄 Preview / PDF</button><button class="gcbb-btn" data-a="i3scclose">Close</button></div></div>';
+}
+function opts(st){ return { rooms: st.rooms, cats: st.cats, skip: st.skip, title: st.title }; }
+function galleryTab(A, c){
+  var pid = s(c.projectId), st = PH[pid];
+  if (!st || (!st.list && !st.busy)) loadPhotos(pid, false, function(){ A.render(true); });
+  if (!st || !st.list) return '<div class="gcbb-panel"><h3>📸 All photos</h3><div style="color:var(--muted,#666)">Loading the photos of this job…</div></div>';
+  var list = st.list, sel = UI.sel[pid] || (UI.sel[pid] = {}), nSel = Object.keys(sel).filter(function(k){ return sel[k]; }).length;
+  var groups = {}, order = [];
+  list.forEach(function(p){
+    var keys = UI.group === 'tag' ? (p.tags.length ? p.tags : ['Not tagged']) : [p.at ? md(p.at) : 'No date'];
+    keys.forEach(function(k){ if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(p); });
+  });
+  if (UI.group === 'tag') order.sort();
+  var picks = arr(c.photoPicks);
+  return '<div class="gcbb-panel"><h3>📸 All photos of this job (' + list.length + ')</h3>' +
+    '<div class="gcbb-bar" style="flex-wrap:wrap"><button class="gcbb-btn sm' + (UI.group === 'date' ? ' pri' : '') + '" data-a="i3grp" data-v="date">By date</button><button class="gcbb-btn sm' + (UI.group === 'tag' ? ' pri' : '') + '" data-a="i3grp" data-v="tag">By tag</button><button class="gcbb-btn sm" data-a="i3reload">↻ Refresh</button>' +
+      (W._gcPhotos && W._gcPhotos.open ? '<button class="gcbb-btn sm" data-a="openphotos">Open GrayCo Photos</button>' : '') + '<span style="flex:1"></span>' +
+      '<b>' + nSel + ' selected</b><button class="gcbb-btn sm" data-a="i3all">Select all</button><button class="gcbb-btn sm" data-a="i3none">Clear</button></div>' +
+    (nSel ? '<div class="gcbb-bar" style="flex-wrap:wrap;margin-top:6px"><button class="gcbb-btn sm pri" data-a="i3pick" data-v="package">➕ Claim package</button><button class="gcbb-btn sm pri" data-a="i3pick" data-v="supplement">➕ Supplement</button><button class="gcbb-btn sm pri" data-a="i3pick" data-v="report">➕ Photo report</button><button class="gcbb-btn sm" data-a="i3dl">⬇ Download</button></div>' : '') +
+    (picks.length ? '<div style="font-size:13px;margin-top:6px">Picked: ' + ['package', 'supplement', 'report'].map(function(k){ var n = picks.filter(function(x){ return x.for === k; }).length; return n ? n + ' for ' + (k === 'package' ? 'the claim package' : k === 'report' ? 'the photo report' : 'the supplement') : ''; }).filter(Boolean).join(' · ') + '</div>' : '') +
+    (list.length ? order.map(function(k){ return '<h4 style="margin:12px 0 6px">' + esc(k) + ' <small>(' + groups[k].length + ')</small></h4><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">' + groups[k].map(function(p){ return '<div style="position:relative;border-radius:8px;overflow:hidden;border:3px solid ' + (sel[p.id] ? '#F2A51A' : 'transparent') + '"><img src="' + esc(p.thumb) + '" alt="' + esc(p.note || p.tags.join(', ') || 'photo') + '" loading="lazy" data-a="i3view" data-v="' + esc(p.id) + '" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;cursor:zoom-in"><label style="position:absolute;top:4px;left:4px;background:#fff;border-radius:6px;padding:2px 4px"><input type="checkbox" data-a="i3sel" value="' + esc(p.id) + '"' + (sel[p.id] ? ' checked' : '') + ' aria-label="Select photo"></label>' + (p.tags.length ? '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(27,20,82,.75);color:#fff;font-size:11px;padding:2px 4px">' + esc(p.tags.slice(0, 3).join(' · ')) + '</div>' : '') + '</div>'; }).join('') + '</div>'; }).join('') : '<div style="color:var(--muted,#666);margin-top:8px">No photos for this job yet. Photos taken in GrayCo Photos (CompanyCam) on this job show here.</div>') + '</div>';
+}
+function viewer(pid, id){
+  var st = PH[pid]; if (!st || !st.list) return;
+  var i = st.list.findIndex(function(p){ return p.id === id; }); if (i < 0) return;
+  var ov = D.createElement('div'); ov.id = 'gcins3-view';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483500;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center';
+  function show(){ var p = st.list[i]; ov.innerHTML = '<img src="' + esc(p.full) + '" alt="photo" style="max-width:96vw;max-height:82vh;object-fit:contain"><div style="color:#fff;font:14px system-ui;margin-top:8px;text-align:center">' + esc([when(p.at), p.by, p.tags.join(' · '), p.note].filter(Boolean).join(' — ')) + '</div><div style="margin-top:10px;display:flex;gap:8px"><button data-v="-1" style="padding:8px 14px">‹ Prev</button><a href="' + esc(p.full) + '" target="_blank" rel="noopener" download style="padding:8px 14px;background:#fff;color:#000;border-radius:4px;text-decoration:none">⬇ Download</a><button data-v="1" style="padding:8px 14px">Next ›</button><button data-v="x" style="padding:8px 14px">✕ Close</button></div>'; }
+  ov.addEventListener('click', function(ev){ var b = ev.target.closest('button'); if (!b) { if (ev.target === ov) ov.remove(); return; } var v = b.getAttribute('data-v'); if (v === 'x') return ov.remove(); i = (i + Number(v) + st.list.length) % st.list.length; show(); });
+  D.addEventListener('keydown', function k(ev){ if (!D.body.contains(ov)) return D.removeEventListener('keydown', k); if (ev.key === 'Escape') ov.remove(); });
+  show(); D.body.appendChild(ov);
+}
+function printHtml(html){ var w = W.open('', '_blank'); if (!w) { toast('Allow pop-ups to make the PDF.', true); return; } w.document.write(html); w.document.close(); later(function(){ try { w.focus(); w.print(); } catch (e) {} }, 400); }
+function copyText(t){ function fb(){ var ta = D.createElement('textarea'); ta.value = t; D.body.appendChild(ta); ta.select(); try { D.execCommand('copy'); toast('Copied'); } catch (e) {} ta.remove(); } try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(function(){ toast('Copied'); }, fb); } catch (e) {} return fb(); }
+
+/* "Write our estimate from this" → a draft in 📐 Estimates, Xactimate's lines and unit prices as the start */
+function estimateFromXact(c, e){
+  var p = proj(c.projectId) || {};
+  var mats = arr(e.lines).filter(function(l){ return s(l.desc); }).map(function(l, i){ var q = r2(l.qty) || 1; return { id: 'XM' + (i + 1) + '_' + Date.now().toString(36), name: [s(l.cat), s(l.sel)].filter(Boolean).join(' ') + (l.cat ? ' — ' : '') + s(l.desc), qty: q, unit: s(l.unit).toLowerCase() || 'ea', uc: r2(l.unitPrice || (num(l.rcv) - num(l.tax) - num(l.op)) / q), room: s(l.room), cat: s(l.cat) || 'Insurance', type: 'material', xact: true }; });
+  var t = nowIso();
+  return { id: 'EST' + Date.now().toString(36).toUpperCase(), name: s(p.name || c.title || c.insured || 'Insurance job') + ' — from Xactimate v' + num(e.version), pid: s(c.projectId), projectId: s(c.projectId), gc: s(p.client || c.insured), client: s(p.client || c.insured), address: s(c.address || p.address),
+    jobType: 'Insurance', type: 'Insurance', estimator: myName(), status: 'Draft', created: t, updated: t, updatedAt: t, mats: mats, labor: [], notes: 'Started from the carrier Xactimate estimate v' + num(e.version) + ' (claim #' + s(c.claimNumber) + '). Prices are Xactimate’s — edit before sending.', xactEstId: s(e.id), claimId: s(c.id) };
+}
+function writeEstimate(c, e){
+  if (typeof W._gcSetEstimates !== 'function') { toast('The Estimates tab is not ready yet — open it once, then try again.', true); return; }
+  var est = estimateFromXact(c, e);
+  W._gcSetEstimates(function(prev){ return [est].concat(Array.isArray(prev) ? prev : []); });
+  try { G().note(c.id, '📐 Our estimate started from Xactimate v' + num(e.version) + ' (' + est.mats.length + ' lines) — ' + est.name, { internal: true }); } catch (x) {}
+  toast('📐 Draft estimate made from ' + est.mats.length + ' Xactimate lines — opening it…');
+  later(function(){ try { if (W._gcEST3 && W._gcEST3.open) W._gcEST3.open(est.id); else if (W._gcOpenEstimateObj) W._gcOpenEstimateObj(est); } catch (x) { warn(x); } }, 400);
+  return est;
+}
+
+function hook(){
+  var g = G(); if (!g || hook.done) return !!hook.done;
+  hook.done = true;
+  var E = g.ext, P = E.P2TABS, X = E.EXT_ACT;
+  function safe(f){ return function(A, c){ try { return f(A, c); } catch (e) { warn(e); return '<div class="gcbb-panel">This part could not load: ' + esc(e && e.message) + '</div>'; } }; }
+  P.activity = safe(activityTab); P.mail = safe(mailTab); P.xact = safe(xactTab); P.gallery = safe(galleryTab);
+  function re(A){ return A.render(true); }
+  function cur(A, c){ return c || (A.S && A.S.claimId ? g.get(A.S.claimId) : null); }
+  function draft(A, k){ var el = D.querySelector('[data-draft="' + k + '"]'); return s(el && el.value) || s(A.S && A.S.drafts && A.S.drafts[k]); }
+  X.i3qn = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; return g.note(c.id, v, { internal: true }).then(function(){ toast('📝 Saved to the claim log'); re(A); }); };
+  X.i3add = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var k = 'i3note-' + c.id, txt = draft(A, k); if (!txt) { toast('Type the note first.', true); return; } return g.note(c.id, txt, { internal: true }).then(function(){ if (A.S.drafts) delete A.S.drafts[k]; toast('📝 Note saved'); re(A); }); };
+  X.i3pin = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; return g.update(c.id, function(x){ x.notes = arr(x.notes).map(function(n){ if (n && n.id === v) { n = Object.assign({}, n, { pinned: !n.pinned, updatedAt: nowIso() }); } return n; }); x.updatedAt = nowIso(); }).then(function(){ re(A); }); };
+  X.i3chk = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var on = !!(t && t.checked); return g.update(c.id, function(x){ x.ins3Checks = Object.assign({}, x.ins3Checks || {}); x.ins3Checks[v] = { on: on, by: myName(), at: nowIso() }; x.updatedAt = nowIso(); }).then(function(){ re(A); }); };
+  X.i3mail = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var who = people(c).filter(function(x){ return x.k === v; })[0]; compose(c, who, 'Claim', fill('Hello {name},\n\n\n\n{me}\nGrayCo Construction Services · (901) 585-0944', c, who)); };
+  X.i3tpl = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var T = MAIL_T.filter(function(x){ return x.k === v; })[0]; if (!T) return; var ppl = people(c), who = ppl.filter(function(x){ return x.k === T.who && x.email; })[0] || ppl.filter(function(x){ return x.email && x.k !== 'ho'; })[0] || null; compose(c, who, T.l, fill(T.b, c, who)); };
+  X.i3comms = function(A, v, t, ev, c){ c = cur(A, c); if (c && W._gcX9) W._gcX9.comms.open(c.projectId); };
+  X.i3est = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var e = liveEsts(c).filter(function(x){ return x.id === v; })[0]; if (e) writeEstimate(c, e); };
+  X.i3scope = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; UI.scope[c.id] = { estId: v }; A.S.tab = 'xact'; return re(A); };
+  X.i3scclose = function(A, v, t, ev, c){ c = cur(A, c); if (c) delete UI.scope[c.id]; return re(A); };
+  function scTog(key){ return function(A, v, t, ev, c){ c = cur(A, c); var st = c && UI.scope[c.id]; if (!st) return; var e = liveEsts(c).filter(function(x){ return x.id === st.estId; })[0]; if (!e) return;
+    if (key === 'skip') { st.skip = st.skip || {}; st.skip[v] = !(t && t.checked); }
+    else { if (!st[key]) { st[key] = {}; arr(e.lines).forEach(function(l){ st[key][key === 'rooms' ? (s(l.room) || 'General') : (s(l.cat) || '—')] = true; }); } st[key][v] = !!(t && t.checked); }
+    st.title = draft(A, 'i3sct-' + c.id) || st.title; return re(A); }; }
+  X.i3scr = scTog('rooms'); X.i3scc = scTog('cats'); X.i3scl = scTog('skip');
+  function curScope(A, c){ var st = UI.scope[c.id]; if (!st) return null; st.title = draft(A, 'i3sct-' + c.id) || st.title; var e = liveEsts(c).filter(function(x){ return x.id === st.estId; })[0]; return e ? scopeFromEstimate(e, c, opts(st)) : null; }
+  X.i3scprev = function(A, v, t, ev, c){ c = cur(A, c); var sc = c && curScope(A, c); if (sc) printHtml(scopeHtml(sc, c)); };
+  X.i3scsave = function(A, v, t, ev, c){ c = cur(A, c); var sc = c && curScope(A, c); if (!sc) return; if (!sc.lineCount) { toast('Pick at least one line.', true); return; }
+    return g.update(c.id, function(x){ x.scopes = arr(x.scopes).concat([sc]); x.updatedAt = nowIso(); }).then(function(){
+      try { D.dispatchEvent(new CustomEvent('gc:scope-saved', { detail: { pid: s(c.projectId), claimId: c.id, scope: sc, text: scopeText(sc) } })); } catch (e) {}
+      try { if (W._gcScopeStore && typeof W._gcScopeStore.save === 'function') W._gcScopeStore.save(s(c.projectId), { title: sc.title, text: scopeText(sc), lines: sc.rooms, source: 'xactimate', noPrices: true }); } catch (e) { warn(e); }
+      delete UI.scope[c.id]; toast('📋 Scope saved (' + sc.lineCount + ' lines, no prices)'); re(A); }); };
+  function savedScope(c, id){ return arr(c.scopes).filter(function(x){ return x && x.id === id; })[0]; }
+  X.i3scpdf = function(A, v, t, ev, c){ c = cur(A, c); var sc = c && savedScope(c, v); if (sc) printHtml(scopeHtml(sc, c)); };
+  X.i3sccopy = function(A, v, t, ev, c){ c = cur(A, c); var sc = c && savedScope(c, v); if (sc) copyText(scopeText(sc)); };
+  X.i3scdel = function(A, v, t, ev, c){ c = cur(A, c); if (!c || !confirm('Remove this saved scope?')) return; return g.update(c.id, function(x){ x.scopes = arr(x.scopes).map(function(y){ return y && y.id === v ? Object.assign({}, y, { deleted: true, updatedAt: nowIso() }) : y; }); x.updatedAt = nowIso(); }).then(function(){ re(A); }); };
+  X.i3scsub = function(A, v, t, ev, c){ c = cur(A, c); var sc = c && savedScope(c, v); if (!sc) return; var api = W._gcSubBidScope || W._gcLeadsScope; try { Promise.resolve(api.attach(s(c.projectId), { title: sc.title, text: scopeText(sc), lines: sc.rooms, noPrices: true, private: true })).then(function(){ toast('📨 Scope attached to the private sub bid'); }, function(e){ toast(s(e && e.message) || 'Could not attach the scope', true); }); } catch (e) { toast('The sub bid portal is not ready on this build.', true); } };
+  X.i3grp = function(A, v){ UI.group = v === 'tag' ? 'tag' : 'date'; return re(A); };
+  X.i3reload = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; loadPhotos(c.projectId, true, function(){ re(A); }); toast('Refreshing photos…'); };
+  X.i3sel = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var m = UI.sel[s(c.projectId)] || (UI.sel[s(c.projectId)] = {}); m[v] = !!(t && t.checked); return re(A); };
+  X.i3all = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var st = PH[s(c.projectId)], m = UI.sel[s(c.projectId)] = {}; arr(st && st.list).forEach(function(p){ m[p.id] = true; }); return re(A); };
+  X.i3none = function(A, v, t, ev, c){ c = cur(A, c); if (c) UI.sel[s(c.projectId)] = {}; return re(A); };
+  X.i3view = function(A, v, t, ev, c){ c = cur(A, c); if (c) viewer(s(c.projectId), v); };
+  function picked(c){ var st = PH[s(c.projectId)], m = UI.sel[s(c.projectId)] || {}; return arr(st && st.list).filter(function(p){ return m[p.id]; }); }
+  X.i3pick = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; var l = picked(c); if (!l.length) return;
+    return g.update(c.id, function(x){ var have = {}; arr(x.photoPicks).forEach(function(p){ have[p.id + '|' + p.for] = 1; }); x.photoPicks = arr(x.photoPicks).concat(l.filter(function(p){ return !have[p.id + '|' + v]; }).map(function(p){ return { id: p.id, for: v, full: p.full, thumb: p.thumb, at: p.at, tags: p.tags, src: p.src, by: myName(), addedAt: nowIso() }; })); x.updatedAt = nowIso(); })
+      .then(function(){ UI.sel[s(c.projectId)] = {}; toast('➕ ' + l.length + ' photo' + (l.length > 1 ? 's' : '') + ' added for the ' + (v === 'package' ? 'claim package' : v === 'report' ? 'photo report' : 'supplement')); re(A); }); };
+  X.i3dl = function(A, v, t, ev, c){ c = cur(A, c); if (!c) return; picked(c).slice(0, 40).forEach(function(p, i){ later(function(){ var a = D.createElement('a'); a.href = p.full; a.target = '_blank'; a.rel = 'noopener'; a.download = 'photo-' + (i + 1) + '.jpg'; D.body.appendChild(a); a.click(); a.remove(); }, i * 250); }); };
+  return true;
+}
+if (!hook()) { var n0 = 0, iv0 = RI.call(W, function(){ if (hook() || ++n0 > 240) clearInterval(iv0); }, 500); }
+
+/* ══ 5. the board: PM / carrier / overdue filters (patch BB's search stays) ═════════════════════════ */
+var BF = { pm: '', carrier: '', late: false };
+W._gcIns3BoardFilter = function(list){
+  if (!BF.pm && !BF.carrier && !BF.late) return list;
+  var g = G();
+  return arr(list).filter(function(c){
+    var p = proj(c.projectId) || {};
+    if (BF.pm && low(p.pm || c.pm) !== low(BF.pm)) return false;
+    if (BF.carrier && low(c.carrier) !== low(BF.carrier)) return false;
+    if (BF.late) { var late = []; try { late = g && g.more && g.more.late ? g.more.late(c) : []; } catch (e) {} if (!arr(late).length && !dontForget(c).some(function(x){ return x.due; })) return false; }
+    return true;
+  });
+};
+W._gcIns3BoardBar = function(list){
+  var pms = {}, cars = {};
+  arr(list).forEach(function(c){ var p = proj(c.projectId) || {}; if (s(p.pm || c.pm)) pms[s(p.pm || c.pm)] = 1; if (s(c.carrier)) cars[s(c.carrier)] = 1; });
+  function sel(name, cur, opts, all){ return '<select class="gcbb-in" data-a="i3bf" data-i3f="' + name + '" aria-label="' + all + '"><option value="">' + all + '</option>' + Object.keys(opts).sort().map(function(k){ return '<option' + (k === cur ? ' selected' : '') + '>' + esc(k) + '</option>'; }).join('') + '</select>'; }
+  return '<div class="gcbb-bar" style="flex-wrap:wrap;margin-top:6px">' + sel('pm', BF.pm, pms, 'All PMs') + sel('carrier', BF.carrier, cars, 'All carriers') + '<label class="gcbb-tag" style="cursor:pointer"><input type="checkbox" data-a="i3bf" data-i3f="late"' + (BF.late ? ' checked' : '') + '> Overdue only</label></div>';
+};
+function boardHook(){ var g = G(); if (!g || boardHook.done) return !!boardHook.done; boardHook.done = true;
+  g.ext.EXT_ACT.i3bf = function(A, v, t){ var k = t && t.getAttribute('data-i3f'); if (!k) return; if (k === 'late') BF.late = !!t.checked; else BF[k] = s(t.value); return A.render(true); };
+  return true; }
+if (!boardHook()) { var n2 = 0, iv2 = RI.call(W, function(){ if (boardHook() || ++n2 > 240) clearInterval(iv2); }, 500); }
+
+/* ══ 6. ⚙ Admin → 💾 Storage ═══════════════════════════════════════════════════════════════════════ */
+var SU = { data: null, err: '', busy: false };
+function gb(b){ return b == null ? '—' : (b / 1073741824 >= 1 ? (b / 1073741824).toFixed(2) + ' GB' : (b / 1048576).toFixed(1) + ' MB'); }
+function stCall(method, body){
+  return W.fetch('/.netlify/functions/storage-usage', { method: method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'The server answered ' + r.status }; }); });
+}
+function storageHtml(){
+  var d = SU.data, st = (d && d.settings) || { storageGb: 100, dbGb: 8, warnPct: 80, archiveOn: false, archiveYears: 3 };
+  var used = d && d.totals ? d.totals.bytes : null, lim = st.storageGb * 1073741824, pct = used != null ? Math.round(used / lim * 100) : null;
+  var dbPct = d && d.dbBytes != null ? Math.round(d.dbBytes / (st.dbGb * 1073741824) * 100) : null;
+  function bar(p){ p = Math.min(100, Math.max(0, p || 0)); return '<div style="height:10px;border-radius:5px;background:#e8e8f0;overflow:hidden;margin:4px 0"><div style="height:100%;width:' + p + '%;background:' + (p >= st.warnPct ? '#B42318' : '#241968') + '"></div></div>'; }
+  var years = d && d.totals ? Object.keys(d.totals.byYear).sort().reverse() : [];
+  return '<div style="font:14px system-ui;max-width:760px">' + (SU.err ? '<div style="color:#B42318;margin:6px 0">' + esc(SU.err) + '</div>' : '') +
+    (d && d.needsSql ? '<div style="background:#FFF4E0;border:1px solid #F2A51A;border-radius:8px;padding:10px;margin:8px 0"><b>Turn on the numbers:</b> run <code>docs/storage-usage.sql</code> once in Supabase → SQL Editor (read-only; it only adds two counting functions). Until then only the plan limits show.</div>' : '') +
+    '<h3 style="margin:8px 0 2px">Files (photos you upload, PDFs, documents)</h3><div>' + (used != null ? '<b>' + gb(used) + '</b> of ' + st.storageGb + ' GB · ' + pct + '% · ' + (d.totals.files || 0).toLocaleString() + ' files' : 'Not counted yet') + '</div>' + (pct != null ? bar(pct) : '') +
+    (pct != null && pct >= st.warnPct ? '<div style="color:#B42318;font-weight:600">⚠️ Over ' + st.warnPct + '% — extra space is about $0.021 per GB per month, or turn on archiving below.</div>' : '') +
+    '<h3 style="margin:12px 0 2px">Database (jobs, customers, notes — text)</h3><div>' + (d && d.dbBytes != null ? '<b>' + gb(d.dbBytes) + '</b> of ' + st.dbGb + ' GB · ' + dbPct + '%' : 'Not counted yet') + '</div>' + (dbPct != null ? bar(dbPct) : '') +
+    (d && d.totals && years.length ? '<h3 style="margin:12px 0 4px">By year and kind</h3><table style="border-collapse:collapse;width:100%"><tr><th style="text-align:left">Year</th><th style="text-align:right">Size</th></tr>' + years.map(function(y){ return '<tr><td>' + esc(y) + '</td><td style="text-align:right">' + gb(d.totals.byYear[y]) + '</td></tr>'; }).join('') + '</table><div style="margin-top:6px">' + Object.keys(d.totals.byKind).map(function(k){ return '<span style="display:inline-block;margin:2px 8px 2px 0">' + esc(k === 'image' ? '🖼 Images' : k === 'pdf' ? '📄 PDFs' : '📦 Other') + ': <b>' + gb(d.totals.byKind[k]) + '</b></span>'; }).join('') + '</div>' : '') +
+    '<div style="background:#F4F3FA;border-radius:8px;padding:10px;margin:12px 0;font-size:13px"><b>How it works:</b> job photos stay in GrayCo Photos (CompanyCam) and use none of this space. Photos uploaded into the CRM or the portals are shrunk first (long side 1600 px, about 150–400 KB). PDFs are 1–5 MB. The same file stored twice is kept once. The Pro plan includes 100 GB of files and 8 GB of database — many years of room. <b>Nothing has to be deleted each year</b>; the 🗄 Year-end archive keeps one download per year.</div>' +
+    '<h3 style="margin:12px 0 4px">Settings</h3><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">' +
+      '<label>File space (GB)<br><input data-su="storageGb" type="number" min="1" value="' + esc(st.storageGb) + '" style="width:90px"></label><label>Database (GB)<br><input data-su="dbGb" type="number" min="1" value="' + esc(st.dbGb) + '" style="width:90px"></label><label>Warn at (%)<br><input data-su="warnPct" type="number" min="10" max="100" value="' + esc(st.warnPct) + '" style="width:80px"></label></div>' +
+    '<label style="display:block;margin-top:10px"><input type="checkbox" data-su="archiveOn"' + (st.archiveOn ? ' checked' : '') + '> Archive old years: list files of jobs closed more than <input data-su="archiveYears" type="number" min="1" max="30" value="' + esc(st.archiveYears) + '" style="width:60px"> years ago for moving to the company Google Drive (off by default; nothing is ever deleted — in this build it only counts).</label>' +
+    '<div style="margin-top:10px;display:flex;gap:8px"><button type="button" data-su-a="save" style="padding:8px 14px;background:#241968;color:#fff;border:0;border-radius:6px;font-weight:600">Save settings</button><button type="button" data-su-a="refresh" style="padding:8px 14px">↻ Refresh</button></div></div>';
+}
+function renderStorage(box){
+  SU.box = box; box.innerHTML = storageHtml();
+  if (!box.__su) { box.__su = true; box.addEventListener('click', function(ev){ var b = ev.target.closest('[data-su-a]'); if (!b) return; if (b.getAttribute('data-su-a') === 'refresh') return loadStorage(true);
+    var o = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-su]'), function(i){ o[i.getAttribute('data-su')] = i.type === 'checkbox' ? i.checked : i.value; });
+    stCall('POST', { settings: o }).then(function(j){ if (j && j.ok) { SU.data = Object.assign({}, SU.data || {}, { settings: j.settings }); toast('Storage settings saved'); } else toast((j && j.error) || 'Could not save', true); if (SU.box) SU.box.innerHTML = storageHtml(); }); }); }
+  loadStorage(false);
+}
+function loadStorage(force){
+  if (SU.busy || (!force && SU.data && Date.now() - (SU.at || 0) < 5 * 60e3)) return;
+  SU.busy = true;
+  stCall('GET').then(function(j){ SU.busy = false; SU.at = Date.now(); if (j && j.ok) { SU.data = j; SU.err = j.error || ''; } else SU.err = (j && j.error) || 'Could not load storage.'; if (SU.box && D.body.contains(SU.box)) SU.box.innerHTML = storageHtml(); }, function(){ SU.busy = false; SU.err = 'Could not reach the server.'; });
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'storage', after: 'security', ic: '💾', t: 'Storage', d: 'How much the CRM keeps (files, database), the plan limits, archiving old years', render: renderStorage,
+    count: function(){ var d = SU.data; if (!d || !d.totals || d.needsSql) return 'files & database'; return gb(d.totals.bytes) + ' used'; } });
+  return true;
+}
+if (!addSection()) { var n1 = 0, iv1 = RI.call(W, function(){ if (addSection() || ++n1 > 120) clearInterval(iv1); }, 500); }
+W._gcAdmExtraWarnings = W._gcAdmExtraWarnings || [];
+W._gcAdmExtraWarnings.push(function(){ var d = SU.data; if (!d || !d.totals || d.needsSql) return []; var st = d.settings || {}, p = d.totals.bytes / ((st.storageGb || 100) * 1073741824) * 100; return p >= (st.warnPct || 80) ? [{ title: '💾 File storage is ' + Math.round(p) + '% full', text: 'Admin → 💾 Storage' }] : []; });
+
+W._gcIns3 = { scope: { fromEstimate: scopeFromEstimate, text: scopeText, html: scopeHtml, stripMoney: stripMoney, measurementsOf: measurementsOf }, dontForget: dontForget, estimateFromXact: estimateFromXact, photos: { load: loadPhotos, state: PH, norm: normPhoto },
+  storage: { load: loadStorage, state: SU, html: storageHtml, render: renderStorage }, board: BF,
+  status: function(){ return { hooked: !!hook.done, photos: Object.keys(PH).length, storage: !!SU.data }; } };
+try { console.log('[GC] Insurance claim workspace + storage (patch INS3) — _gcIns3.status()'); } catch (e) {}
+})();
+
 </script>
