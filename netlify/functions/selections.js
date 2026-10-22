@@ -289,12 +289,15 @@ function wrap(t, max){
   words.forEach(function(w){ while (w.length > max) { if (cur) { out.push(cur); cur = ''; } out.push(w.slice(0, max)); w = w.slice(max); } if ((cur + ' ' + w).trim().length > max) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); });
   if (cur) out.push(cur); return out.length ? out : [''];
 }
+const LOGO = (function(){ try { const L = require('./_lib/logo-jpg.js'); return { w: L.w, h: L.h, bin: Buffer.from(L.b64, 'base64').toString('latin1') }; } catch (e) { return null; } })();   /* patch HOT3 */
 function buildPdf(blocks){
   const W = 612, Hh = 792, M = 54, pages = []; let ops = [], y = Hh - M;
   function page(){ if (ops.length) pages.push(ops.join('\n')); ops = []; y = Hh - M; }
   function need(h){ if (y - h < M) page(); }
   function text(t, size, bold, x, color){ ops.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + (color || '0.08 0.13 0.18') + ' rg ' + (x || M) + ' ' + y.toFixed(1) + ' Td ' + pdfStr(t) + ' Tj ET'); }
   blocks.forEach(function(b){
+    if (b.t === 'title' && LOGO) { need(64); const top = y; ops.push('q 52 0 0 52 ' + M + ' ' + (top - 52).toFixed(1) + ' cm /Im1 Do Q'); y -= 32; text(b.text, 18, true, M + 62); y = top - 60;   /* patch HOT3: the logo */
+      ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return; }
     if (b.t === 'title') { need(30); y -= 18; text(b.text, 18, true); y -= 8; ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return; }
     if (b.t === 'h') { need(26); y -= 14; text(b.text, 12, true); y -= 6; return; }
     if (b.t === 'gap') { y -= b.h || 8; return; }
@@ -320,12 +323,14 @@ function buildPdf(blocks){
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
   const kids = []; let n = 6;
   const pageObjs = pages.map(function(c){ const pg = n++, ct = n++; kids.push(pg + ' 0 R'); return { pg: pg, ct: ct, c: c }; });
+  const imgObj = LOGO ? n++ : 0;   /* patch HOT3 */
+  if (LOGO) objs[imgObj] = '<< /Type /XObject /Subtype /Image /Width ' + LOGO.w + ' /Height ' + LOGO.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + LOGO.bin.length + ' >>\nstream\n' + LOGO.bin + '\nendstream';
   objs[2] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + kids.length + ' >>';
   objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
   objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
   objs[5] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>';
   pageObjs.forEach(function(x){
-    objs[x.pg] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + Hh + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents ' + x.ct + ' 0 R >>';
+    objs[x.pg] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + Hh + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >>' + (LOGO ? ' /XObject << /Im1 ' + imgObj + ' 0 R >>' : '') + ' >> /Contents ' + x.ct + ' 0 R >>';
     objs[x.ct] = '<< /Length ' + Buffer.byteLength(x.c, 'latin1') + ' >>\nstream\n' + x.c + '\nendstream';
   });
   let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'; const offs = [];
