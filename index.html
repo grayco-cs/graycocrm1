@@ -124930,7 +124930,7 @@ function render(){
   var list = filtered(), n = newCount(), w = S.watch && S.watch.lastRun;
   var h = '<div class="hd"><b>📥 Lead Inbox</b>' + (n ? '<span class="cnt">' + n + ' new</span>' : '') + '<span class="sp"></span>'
     + '<small>' + (busy ? 'Checking…' : S.at ? 'Checked ' + new Date(S.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Not checked yet') + (w ? ' · public bids looked at ' + new Date(w.at).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '') + '</small>'
-    + '<button class="hb" data-a="refresh">↻ Check now</button>' + (isAdmin() ? '<button class="hb" data-a="settings" title="Bid sources and keywords">⚙</button>' : '')
+    + '<button class="hb" data-a="refresh">↻ Check now</button>' + (isAdmin() ? '<button class="hb" data-a="settings" title="🔎 Bid boards — what the CRM watches, and keywords">⚙</button>' : '')
     + '<button class="hb" data-a="fold">' + (UI.open ? '▴' : '▾') + '</button></div>';
   if (lastErr) h += '<div class="err">' + esc(lastErr) + '</div>';
   if (isAdmin() && S.portal && S.portal.ready === false) h += '<div class="info">Bid portal: ' + esc(S.portal.why || 'not set up yet') + (S.portal.queued ? ' — ' + S.portal.queued + ' draft' + (S.portal.queued === 1 ? '' : 's') + ' waiting; they are created there within the hour once it is set up.' : '') + '</div>';
@@ -125048,34 +125048,250 @@ function dlgPublish(id){
     + '<div class="mini">To change the title, scope or plans first, open the job in the bid portal (Sub Portal tab) — it is there as a draft.</div>',
     [{ label: 'Publish to bid portal', pri: true, run: function(){ return publish(id).then(function(r){ toast(r && r.already ? 'Already on the bid portal.' : 'Published to the bid portal.'); }); } }]);
 }
+/* ── patch BW: 🔎 Bid boards — every board the CRM watches, the admins' own (add / Test read / change / remove), the
+   keywords and the "All public bids" switch, SAM.gov (its key entered here). A section of the Leads tab (⚙ opens it);
+   window._gcRenderBidBoards(el) draws it into any container (the Leads tab redesign mounts it). Admins only. ── */
+function bwCss(){
+  if (document.getElementById('gc-bw-css')) return;
+  var st = document.createElement('style'); st.id = 'gc-bw-css';
+  st.textContent = '.gc-bw{font-size:13px;color:#1b1640;display:flex;flex-direction:column;gap:8px}'
+    + '.gc-bw label{font-size:12px;font-weight:700;color:#4b4670;display:flex;flex-direction:column;gap:4px}'
+    + '.gc-bw select,.gc-bw input:not([type=checkbox]),.gc-bw textarea{border:1px solid #cfc8ea;border-radius:7px;padding:8px;font-size:14px;font-family:inherit;color:#1b1640;background:#fff;width:100%;box-sizing:border-box}'
+    + '.gc-bw .mini{font-size:11.5px;color:#57527a}.gc-bw .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    + '.gc-bw .src{border:1px solid #e7e3f5;border-radius:8px;padding:7px 9px;font-size:12px;background:#fff}'
+    + '.gc-bw .hb{background:#fff;color:#1b1640;border:1px solid #cfc8ea;border-radius:7px;padding:5px 10px;font-size:12px;font-weight:700;min-height:32px;cursor:pointer}'
+    + '.gc-bw .hb.pri{background:#241968;color:#fff;border-color:#241968}.gc-bw .hb:disabled{opacity:.5}'
+    + '.gc-bw .bar{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0}'
+    + '.gc-bw h4{margin:6px 0 0;font-size:13px}'
+    + '#gc-bw-sec{background:#f7f5fc;border:1px solid #e7e3f5;border-radius:12px;padding:10px 12px;margin:0 0 12px}'
+    + '#gc-bw-sec .gc-bw-hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}#gc-bw-sec .gc-bw-hd span{flex:1}'
+    + '.gc-bw-unas{display:inline-block;min-width:18px;height:18px;line-height:18px;border-radius:9px;background:#d97706;color:#fff;font-size:11px;font-weight:800;text-align:center;padding:0 5px;margin-left:6px;vertical-align:middle}';
+  document.head.appendChild(st);
+}
+function bwRender(el){
+  if (!el) return null;
+  bwCss();
+  if (!isAdmin()) { el.innerHTML = '<div class="gc-bw"><div class="mini">Only an admin changes the bid boards.</div></div>'; return null; }
+  var D = { src: null, ping: {}, edit: null };
+  el.innerHTML = '<div class="gc-bw"><div class="bar"><button type="button" class="hb pri" data-bw="savecfg">Save keywords &amp; switches</button><button type="button" class="hb" data-bw="runall">Check public bids now</button></div><div class="gc-bw-main"><div class="mini">Loading…</div></div></div>';
+  var root = el.querySelector('.gc-bw'), body = el.querySelector('.gc-bw-main');
+  function when(t){ try { return new Date(t).toLocaleString(); } catch (e) { return ''; } }
+  function line(id){
+    var w = ((D.src && D.src.watch && D.src.watch.sources) || (S.watch && S.watch.sources) || {})[id];
+    if (!w) return '<div class="mini">not looked at yet</div>';
+    if (w.off) return '<div class="mini">switched off</div>';
+    return '<div class="mini">' + esc(when(w.at)) + ' · ' + (w.why ? '⚠️ ' + esc(w.why) : (w.parsed + ' bids read · ' + w.matched + ' matched · ' + (w.added || 0) + ' new')) + '</div>';
+  }
+  function cfg(id){ return (((D.src && D.src.settings && D.src.settings.sources) || {})[id]) || {}; }
+  function kindTag(k){ return '<span class="mini" style="border:1px solid #cbd5e1;border-radius:9px;padding:0 6px">' + (k === 'rss' ? 'RSS feed' : k === 'email' ? 'e-mail alerts' : 'web page') + '</span>'; }
+  function autoRow(x, custom){
+    var o = cfg(x.id);
+    return '<div class="src"><div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-src="' + esc(x.id) + '"' + (o.on === false ? '' : ' checked') + '> ' + esc(x.name) + '</label>' + kindTag(x.kind)
+      + (custom ? '<span class="mini">added by ' + esc(s(x.addedBy) || 'an admin') + '</span>' : '')
+      + '<span style="flex:1"></span><button type="button" class="hb" data-bw="run" data-id="' + esc(x.id) + '">Check now</button>'
+      + (custom ? '<button type="button" class="hb" data-bw="edit" data-id="' + esc(x.id) + '">Edit</button><button type="button" class="hb" data-bw="rm" data-id="' + esc(x.id) + '">Remove</button>' : '') + '</div>'
+      + (custom ? '<div class="mini">' + esc(x.url) + (x.city || x.state ? ' · ' + esc([x.city, x.state].filter(Boolean).join(', ')) : '') + '</div>'
+               : '<input data-url="' + esc(x.id) + '" value="' + esc(o.url || '') + '" placeholder="' + esc(x.url) + '" style="font-size:12px;margin-top:4px" aria-label="Another address for ' + esc(x.name) + '">')
+      + line(x.id) + '</div>';
+  }
+  function mailRow(x, custom){
+    return '<div class="src"><div class="row"><b>' + esc(x.name) + '</b>' + (custom ? kindTag('email') + '<span style="flex:1"></span><button type="button" class="hb" data-bw="edit" data-id="' + esc(x.id) + '">Edit</button><button type="button" class="hb" data-bw="rm" data-id="' + esc(x.id) + '">Remove</button>' : '') + '</div>'
+      + '<div class="mini">' + esc(x.how || ('Register' + (x.url ? ' at ' + x.url : '') + ' with bids@grayco-cs.com.')) + '</div></div>';
+  }
+  function form(){
+    var e = D.edit || {}, k = e.kind || 'links';
+    return '<details id="bw-add"' + (D.edit ? ' open' : '') + ' class="src"><summary><b>' + (e.id ? '✏️ Change ' + esc(e.name) : '＋ Add a bid board') + '</b></summary>'
+      + '<div class="mini">Paste the page where the agency lists its open bids. The CRM reads it a few times each weekday (it asks the site\'s robots.txt first) and adds the bids to the Lead Inbox. A site that needs a log-in: choose "E-mail alerts only" — the sign-up goes on the owners\' and office to-do.</div>'
+      + '<label>Agency / board name<input id="bw-name" value="' + esc(e.name || '') + '" placeholder="e.g. City of Bartlett"></label>'
+      + '<label>Type<select id="bw-kind"><option value="links"' + (k === 'links' ? ' selected' : '') + '>Public web page — the CRM reads it</option><option value="rss"' + (k === 'rss' ? ' selected' : '') + '>RSS feed — the CRM reads it</option><option value="email"' + (k === 'email' ? ' selected' : '') + '>E-mail alerts only (needs a log-in)</option></select></label>'
+      + '<label>Web address (https://…)<input id="bw-url" value="' + esc(e.url || '') + '" placeholder="https://www.example.gov/bids"></label>'
+      + '<div class="row"><label style="flex:2">City<input id="bw-city" value="' + esc(e.city || '') + '"></label><label style="flex:1">State<input id="bw-state" value="' + esc(e.state || '') + '" maxlength="2"></label></div>'
+      + '<div id="bw-linkopts"' + (k === 'links' ? '' : ' style="display:none"') + '><label>Only links like (optional)<input id="bw-pat" value="' + esc(e.pattern || '') + '" placeholder="e.g. /bid/ or Bids.aspx"></label>'
+      + '<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="bw-any"' + (e.anyRow ? ' checked' : '') + '> every table row with a PDF and a date is a bid</label></div>'
+      + '<div id="bw-howbox"' + (k === 'email' ? '' : ' style="display:none"') + '><label>How to sign up (for the to-do)<textarea id="bw-how" rows="2" placeholder="Register as a vendor at … and use bids@grayco-cs.com">' + esc(e.how || '') + '</textarea></label></div>'
+      + '<div class="row" style="margin-top:6px"><button type="button" class="hb" data-bw="test">Test read</button><button type="button" class="hb pri" data-bw="save">' + (e.id ? 'Save changes' : 'Add board') + '</button>' + (e.id ? '<button type="button" class="hb" data-bw="cancel">Cancel</button>' : '') + '</div>'
+      + '<div id="bw-test" class="mini" style="margin-top:6px"></div></details>';
+  }
+  function samBox(){
+    var sm = (D.src && D.src.sam) || { ready: !!D.ping.samApi, settings: { on: true, states: ['TN', 'MS', 'AR'], naics: [] } }, c = sm.settings || {};
+    return '<div class="src"><div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="bw-sam-on"' + (c.on === false ? '' : ' checked') + '> <b>🇺🇸 SAM.gov — federal bids</b></label>'
+      + '<span class="mini">' + (sm.ready ? 'key ••••' + esc(sm.last4 || '') + (sm.from === 'env' ? ' (from Netlify)' : '') : 'not set up') + '</span><span style="flex:1"></span>' + (sm.ready ? '<button type="button" class="hb" data-bw="run" data-id="sam-gov">Check now</button>' : '') + '</div>'
+      + '<div class="row"><label style="flex:3">SAM.gov API key<input id="bw-sam-key" type="password" autocomplete="off" placeholder="' + (sm.ready ? 'saved — paste a new one to replace it' : 'paste the key') + '"></label>'
+      + '<button type="button" class="hb pri" data-bw="samkey">Save key</button><button type="button" class="hb" data-bw="samtest">Test</button>' + (sm.ready && sm.from === 'crm' ? '<button type="button" class="hb" data-bw="samdel">Remove key</button>' : '') + '</div>'
+      + '<div id="bw-sam-msg" class="mini"></div>'
+      + (sm.ready ? '' : '<div class="mini">Get the free key: sign in at sam.gov (a Login.gov account) → your profile → <b>Public API Key</b> → request it, then paste it here. It is kept on the server only (this page never shows it again).</div>')
+      + '<div class="row"><label style="flex:1">States<input id="bw-sam-st" value="' + esc(arr(c.states).join(', ')) + '"></label><label style="flex:2">NAICS codes<input id="bw-sam-na" value="' + esc(arr(c.naics).join(', ')) + '"></label></div>'
+      + '<div class="mini">Once a day: solicitations whose place of performance is in those states and whose NAICS code starts with one of these (236220 commercial building · 238160 roofing · 236118 residential remodel · 238310 drywall · 238390 finishes · 562910 remediation).</div>' + line('sam-gov') + '</div>';
+  }
+  function formVal(){
+    var v = function(id){ var e = body.querySelector(id); return e ? s(e.value) : ''; };
+    return { name: v('#bw-name'), url: v('#bw-url'), kind: v('#bw-kind') || 'links', city: v('#bw-city'), state: v('#bw-state'), pattern: v('#bw-pat'), anyRow: !!(body.querySelector('#bw-any') || {}).checked, how: v('#bw-how') };
+  }
+  function render(){
+    /* a refresh (Check now, a reload) never throws away a half-filled Add form, nor unsaved keywords / switches */
+    var pf = body.querySelector('#bw-add'), keep = pf && pf.open && !D.edit && !D.clear ? formVal() : null; D.clear = false;
+    var dirty = null;
+    if (D.touched) { dirty = { kw: (body.querySelector('#ldi-kw') || {}).value, ex: (body.querySelector('#ldi-ex') || {}).value, all: (body.querySelector('#bw-all') || {}).checked, on: {}, url: {}, sam: null };
+      Array.prototype.forEach.call(body.querySelectorAll('[data-src]'), function(b){ dirty.on[b.getAttribute('data-src')] = b.checked; });
+      Array.prototype.forEach.call(body.querySelectorAll('[data-url]'), function(b){ dirty.url[b.getAttribute('data-url')] = b.value; });
+      if (body.querySelector('#bw-sam-on')) dirty.sam = [body.querySelector('#bw-sam-on').checked, body.querySelector('#bw-sam-st').value, body.querySelector('#bw-sam-na').value]; }
+    var src = D.src || {}, p = D.ping || {}, st = src.settings || S.settings || {}, al = S.alerts || {};
+    var built = arr(src.builtins).length ? arr(src.builtins) : arr(window.__GC_LDI_SOURCES__);
+    var custom = arr(src.custom).map(function(c){ return { id: c.id, name: c.name, kind: c.kind, url: c.url, city: c.city, state: c.state, how: c.how, addedBy: c.addedBy, pattern: c.pattern, anyRow: c.anyRow, auto: c.kind !== 'email' }; });
+    var allOn = st.allBids !== false;
+    body.innerHTML = (src.error ? '<div class="src" style="color:#991b1b">' + esc(src.error) + '</div>' : '')
+      + '<div class="src"><b>Set-up</b><br>' + [['E-mail signature', p.signed], ['Resend API', p.resendApi], ['Claude', p.ai], ['Database', p.database], ['Bid portal', p.bidPortal], ['Admin e-mail alerts', p.adminAlerts], ['Phone push', p.phonePush], ['BuildingConnected API', p.buildingConnectedApi], ['SAM.gov', p.samApi]].map(function(x){ return (x[1] ? '✅ ' : '⬜ ') + x[0]; }).join(' · ')
+      + '<div class="mini">Forward bid e-mails to <b>bids@grayco-cs.com</b>. Admin alerts: one e-mail (+ phone push) the moment a new lead arrives, and one 1 hour before its bid is due' + (al.retrying ? ' (' + al.retrying + ' waiting to be re-sent)' : '') + '.</div></div>'
+      + '<div class="src"><label style="flex-direction:row;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="bw-all"' + (allOn ? ' checked' : '') + '> <b>All public bids (no keyword filter)</b></label>'
+      + '<div class="mini">On: every bid on the boards comes in, except the "leave out" words below (supplies, software, vehicles, food, medical…). Off: only bids that mention one of the keywords.</div></div>'
+      + '<label>Keywords' + (allOn ? ' (used when the switch is off, and to tag each bid)' : ' (a public bid must mention one)') + '<textarea id="ldi-kw" rows="4">' + esc(arr(st.keywords).join(', ')) + '</textarea></label>'
+      + (src.defaults ? '<div class="row"><button type="button" class="hb" data-bw="kwdef">＋ Add the recommended construction keywords</button><span class="mini">(' + arr(src.defaults.keywords).length + ' words: new construction, remodel, addition, bathroom, kitchen, framing, concrete, ADA, build-out, mitigation …)</span></div>' : '')
+      + '<label>Leave out bids that mention<textarea id="ldi-ex" rows="3">' + esc(arr(st.exclude).join(', ')) + '</textarea></label>'
+      + form()
+      + '<h4>Public bid sites read automatically <span class="mini">(weekdays, every 3 hours · switch any off · built-ins can\'t be deleted)</span></h4>'
+      + built.filter(function(x){ return x.auto; }).map(function(x){ return autoRow(x, false); }).join('')
+      + custom.filter(function(x){ return x.auto; }).map(function(x){ return autoRow(x, true); }).join('')
+      + samBox()
+      + '<h4>Sign up for e-mail alerts to bids@grayco-cs.com <span class="mini">(these need a log-in or ask robots not to read them — sign up once; they are on the owners\' and office to-do)</span></h4>'
+      + built.filter(function(x){ return !x.auto && !x.local; }).map(function(x){ return mailRow(x, false); }).join('')
+      + custom.filter(function(x){ return !x.auto; }).map(function(x){ return mailRow(x, true); }).join('')
+      + (built.some(function(x){ return x.local; }) ? '<details class="src"><summary><b>More local public buyers</b> <span class="mini">(' + built.filter(function(x){ return x.local; }).length + ' — find each one\'s vendor / bid page)</span></summary>'
+        + built.filter(function(x){ return x.local; }).map(function(x){ return mailRow(x, false); }).join('') + '</details>' : '')
+      + (arr(S.notices).length ? '<h4>Messages from Google to bids@</h4>' + S.notices.slice(-5).map(function(n){ return '<div class="src"><b>' + esc(n.subject) + '</b><div class="mini" style="white-space:pre-wrap">' + esc(s(n.text).slice(0, 600)) + '</div></div>'; }).join('') : '');
+    if (dirty) {
+      if (dirty.kw != null && body.querySelector('#ldi-kw')) body.querySelector('#ldi-kw').value = dirty.kw;
+      if (dirty.ex != null && body.querySelector('#ldi-ex')) body.querySelector('#ldi-ex').value = dirty.ex;
+      if (dirty.all != null && body.querySelector('#bw-all')) body.querySelector('#bw-all').checked = dirty.all;
+      Array.prototype.forEach.call(body.querySelectorAll('[data-src]'), function(b){ var id = b.getAttribute('data-src'); if (id in dirty.on) b.checked = dirty.on[id]; });
+      Array.prototype.forEach.call(body.querySelectorAll('[data-url]'), function(b){ var id = b.getAttribute('data-url'); if (id in dirty.url) b.value = dirty.url[id]; });
+      if (dirty.sam && body.querySelector('#bw-sam-on')) { body.querySelector('#bw-sam-on').checked = dirty.sam[0]; body.querySelector('#bw-sam-st').value = dirty.sam[1]; body.querySelector('#bw-sam-na').value = dirty.sam[2]; }
+    }
+    if (keep) { body.querySelector('#bw-add').open = true; [['#bw-name', 'name'], ['#bw-url', 'url'], ['#bw-city', 'city'], ['#bw-state', 'state'], ['#bw-pat', 'pattern'], ['#bw-how', 'how'], ['#bw-kind', 'kind']].forEach(function(f){ var e = body.querySelector(f[0]); if (e) e.value = keep[f[1]] || (f[1] === 'kind' ? 'links' : ''); }); var an = body.querySelector('#bw-any'); if (an) an.checked = !!keep.anyRow; body.querySelector('#bw-linkopts').style.display = keep.kind === 'links' ? '' : 'none'; body.querySelector('#bw-howbox').style.display = keep.kind === 'email' ? '' : 'none'; }
+    var ks = body.querySelector('#bw-kind'); if (ks) ks.onchange = function(){ body.querySelector('#bw-linkopts').style.display = ks.value === 'links' ? '' : 'none'; body.querySelector('#bw-howbox').style.display = ks.value === 'email' ? '' : 'none'; };
+  }
+  function load(){
+    return Promise.all([api('GET', 'ping=1').catch(function(){ return {}; }), api('GET', 'sources=1').catch(function(e){ return { error: 'Could not load the bid boards: ' + s(e && e.message) }; })])
+      .then(function(r){ D.ping = r[0] || {}; D.src = r[1] || {}; if (el.isConnected) render(); });
+  }
+  function saveCfg(){
+    var words = function(sel){ var e = body.querySelector(sel); return e ? s(e.value).split(/[,\n]+/).map(function(x){ return low(x); }).filter(Boolean) : undefined; };
+    var src = {}; Array.prototype.forEach.call(body.querySelectorAll('[data-src]'), function(b){ var id = b.getAttribute('data-src'); src[id] = { on: b.checked, url: s((body.querySelector('[data-url="' + id + '"]') || {}).value) }; });
+    var b = { keywords: words('#ldi-kw'), exclude: words('#ldi-ex'), sources: src, allBids: !!(body.querySelector('#bw-all') || {}).checked };
+    var so = body.querySelector('#bw-sam-on');
+    if (so) b.sam = { on: so.checked, states: s(body.querySelector('#bw-sam-st').value).split(/[,\s]+/).filter(Boolean), naics: s(body.querySelector('#bw-sam-na').value).split(/[,\s]+/).filter(Boolean) };
+    return api('POST', 'settings=1', b).then(function(r){ S.settings = r.settings; D.touched = false; toast('Saved'); return load(); });
+  }
+  var mark = function(e){ if (e.target && e.target.matches && e.target.matches('#ldi-kw, #ldi-ex, #bw-all, [data-src], [data-url], #bw-sam-on, #bw-sam-st, #bw-sam-na')) D.touched = true; };
+  root.addEventListener('input', mark); root.addEventListener('change', mark);
+  var busy = function(b, p){ b.disabled = true; return Promise.resolve(p).catch(function(err){ toast(s(err && err.message) || 'Could not do that.', true); }).then(function(){ b.disabled = false; }); };
+  root.addEventListener('click', function(e){
+    var b = e.target.closest('[data-bw]'); if (!b || !root.contains(b)) return;
+    e.preventDefault(); var a = b.getAttribute('data-bw'), id = b.getAttribute('data-id');
+    if (a === 'savecfg') return busy(b, saveCfg());
+    if (a === 'runall') return busy(b, api('POST', 'watch=1', {}).then(function(r){ toast(r && r.started ? 'The public bid watcher is running — new bids show in the Lead Inbox in a few minutes (press ↻).' : 'Public bids checked: ' + ((r && r.added) || 0) + ' new.'); later(function(){ pull(true); }, 4000); later(load, 1500); }));
+    if (a === 'run') return busy(b, api('POST', 'watch=1', { source: id }).then(function(r){ toast(r && r.started ? 'Checking — results in a minute.' : 'Checked: ' + ((r && r.added) || 0) + ' new.'); later(load, r && r.started ? 30000 : 500); later(function(){ pull(true); }, 3000); }));
+    if (a === 'kwdef') { var kw = body.querySelector('#ldi-kw'), have = s(kw.value).split(/[,\n]+/).map(function(x){ return low(x); }).filter(Boolean); arr(D.src && D.src.defaults && D.src.defaults.keywords).forEach(function(w){ if (have.indexOf(w) < 0) have.push(w); }); kw.value = have.join(', '); D.touched = true; toast('Added — press "Save keywords & switches"'); return; }
+    if (a === 'edit') { D.edit = arr(D.src && D.src.custom).filter(function(c){ return c.id === id; })[0] || null; render(); var f = body.querySelector('#bw-add'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' }); return; }
+    if (a === 'cancel') { D.edit = null; return render(); }
+    if (a === 'rm') { if (!window.confirm('Remove this bid board? Bids already in the Lead Inbox stay.')) return; return busy(b, api('POST', 'boards=1', { op: 'remove', id: id }).then(function(){ toast('Removed'); return load(); })); }
+    if (a === 'samkey' || a === 'samdel') {
+      var k = a === 'samdel' ? '' : s((body.querySelector('#bw-sam-key') || {}).value);
+      if (a === 'samkey' && !k) { toast('Paste the SAM.gov key first.', true); return; }
+      if (a === 'samdel' && !window.confirm('Remove the SAM.gov key saved here?')) return;
+      return busy(b, api('POST', 'boards=1', { op: 'samkey', key: k }).then(function(r){ toast(a === 'samdel' ? 'Key removed' : 'Key saved (••••' + ((r && r.sam && r.sam.last4) || '') + ')'); return load(); }));
+    }
+    if (a === 'samtest') {
+      var msg = body.querySelector('#bw-sam-msg'); msg.textContent = 'Asking SAM.gov…';
+      return busy(b, api('POST', 'boards=1', { op: 'samtest', key: s((body.querySelector('#bw-sam-key') || {}).value) }).then(function(r){ msg.textContent = r && r.ok ? '✅ The key works (' + (r.total || 0) + ' Tennessee notices this week).' : '⚠️ ' + ((r && r.why) || 'It did not work.'); }));
+    }
+    if (a === 'test') {
+      var out = body.querySelector('#bw-test'); out.textContent = 'Reading the page once…';
+      return busy(b, api('POST', 'testread=1', formVal()).then(function(r){
+        if (!r || !r.ok) { out.innerHTML = '⚠️ ' + esc((r && r.why) || 'Could not read it.'); return; }
+        out.innerHTML = '<b>' + r.parsed + ' bids found · ' + r.matched + ' would come in</b>' + (r.why ? '<div>' + esc(r.why) + '</div>' : '')
+          + arr(r.items).slice(0, 25).map(function(x){ return '<div style="margin-top:3px">' + (x.closed ? '⏹ ' : x.matched ? '✅ ' : '▫️ ') + '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' + (x.number ? ' · ' + esc(x.number) : '') + (x.due ? ' · due ' + esc(x.due.replace('T', ' ')) : '') + (x.closed ? ' · closed' : '') + '</div>'; }).join('')
+          + '<div style="margin-top:4px">✅ = would go to the Lead Inbox · ▫️ = left out (keyword switch / leave-out words) · ⏹ = closed / past due</div>';
+      }, function(err){ out.innerHTML = '⚠️ ' + esc(s(err && err.message) || 'Could not read it.'); }));
+    }
+    if (a === 'save') {
+      var val = formVal(), ed = D.edit;
+      return busy(b, api('POST', 'boards=1', ed ? { op: 'update', id: ed.id, source: val } : { op: 'add', source: val }).then(function(){
+        toast(ed ? 'Saved' : (val.kind === 'email' ? 'Added — the sign-up is on the owners\' and office to-do' : 'Added — the CRM reads it from the next run (or press Check now)'));
+        D.edit = null; D.clear = true; return load();
+      }));
+    }
+  });
+  load();
+  return { reload: load };
+}
+/* the ⚙ on the Lead Inbox opens / closes the 🔎 Bid boards section at the top of the Leads tab */
 function dlgSettings(){
   if (!isAdmin()) return;
-  var st = S.settings || {}, wsrc = (S.watch && S.watch.sources) || {};
-  var ov = dialog('Lead Inbox — sources and keywords', '<div class="mini">Loading…</div>', [
-    { label: 'Check public bids now', run: function(){ return api('POST', 'watch=1', {}).then(function(r){ toast(r && r.started ? 'The public bid watcher is running — new bids show here in a few minutes (press ↻).' : 'Public bids checked: ' + ((r && r.added) || 0) + ' new.'); later(function(){ pull(true); }, 4000); }); } },
-    { label: 'Save', pri: true, run: function(ov){
-      var words = function(sel){ return s(ov.querySelector(sel).value).split(/[,\n]+/).map(function(x){ return low(x); }).filter(Boolean); };
-      var src = {}; Array.prototype.forEach.call(ov.querySelectorAll('[data-src]'), function(b){ var id = b.getAttribute('data-src'); src[id] = { on: b.checked, url: s((ov.querySelector('[data-url="' + id + '"]') || {}).value) }; });
-      return api('POST', 'settings=1', { keywords: words('#ldi-kw'), exclude: words('#ldi-ex'), sources: src }).then(function(r){ S.settings = r.settings; toast('Saved'); });
-    } }]);
-  var body = ov.querySelector('.db');
-  api('GET', 'ping=1').catch(function(){ return {}; }).then(function(p){
-    var srcs = window.__GC_LDI_SOURCES__ || [];
-    var line = function(id){ var w = wsrc[id]; if (!w) return '<span class="mini">not looked at yet</span>'; return '<span class="mini">' + esc(new Date(w.at).toLocaleString()) + ' · ' + (w.why ? esc(w.why) : (w.parsed + ' bids read · ' + w.matched + ' matched · ' + (w.added || 0) + ' new')) + '</span>'; };
-    var al = S.alerts || {};
-    body.innerHTML = '<div class="src"><b>Set-up</b><br>' + [['E-mail signature', p.signed], ['Resend API', p.resendApi], ['Claude', p.ai], ['Database', p.database], ['Bid portal', p.bidPortal], ['Admin e-mail alerts', p.adminAlerts], ['Phone push', p.phonePush], ['BuildingConnected API', p.buildingConnectedApi]].map(function(x){ return (x[1] ? '✅ ' : '⬜ ') + x[0]; }).join(' · ')
-      + '<div class="mini">Forward bid e-mails to <b>bids@grayco-cs.com</b>. Steps: docs/LEAD-INBOX.md.</div>'
-      + '<div class="mini">Admin alerts: one e-mail (+ phone push) the moment a new lead arrives, and one 1 hour before its bid is due (8 AM Central on the day when only the date is known) — no hourly digest' + (al.retrying ? ' (' + al.retrying + ' waiting to be re-sent)' : '') + (al.last ? '. Last: ' + esc(new Date(al.last.at).toLocaleString()) + ' — ' + (al.last.ok ? al.last.n + ' sent to ' + al.last.to + ' admin' + (al.last.to === 1 ? '' : 's') : esc(al.last.why || 'not sent')) : '') + '.</div></div>'
-      + '<label>Keywords (a public bid must mention one)<textarea id="ldi-kw" rows="3">' + esc(arr(st.keywords).join(', ')) + '</textarea></label>'
-      + '<label>Leave out bids that mention<textarea id="ldi-ex" rows="2">' + esc(arr(st.exclude).join(', ')) + '</textarea></label>'
-      + '<div><b>Public bid sites read automatically</b> (weekdays, every 3 hours)</div>'
-      + srcs.filter(function(x){ return x.auto; }).map(function(x){ var cfg = (st.sources || {})[x.id] || {}; return '<div class="src"><div class="row"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-src="' + esc(x.id) + '"' + (cfg.on === false ? '' : ' checked') + ' style="width:auto"> ' + esc(x.name) + '</label></div>'
-        + '<input data-url="' + esc(x.id) + '" value="' + esc(cfg.url || '') + '" placeholder="' + esc(x.url) + '" style="font-size:12px;margin-top:4px">' + line(x.id) + '</div>'; }).join('')
-      + '<div><b>Sign up for e-mail alerts to bids@grayco-cs.com</b> (these sites need a login or ask not to be read by robots)</div>'
-      + srcs.filter(function(x){ return !x.auto; }).map(function(x){ return '<div class="src"><b>' + esc(x.name) + '</b><div class="mini">' + esc(x.how) + '</div></div>'; }).join('')
-      + (arr(S.notices).length ? '<div><b>Messages from Google to bids@</b></div>' + S.notices.slice(-5).map(function(n){ return '<div class="src"><b>' + esc(n.subject) + '</b><div class="mini" style="white-space:pre-wrap">' + esc(s(n.text).slice(0, 600)) + '</div></div>'; }).join('') : '');
-  });
+  var sec = document.getElementById('gc-bw-sec');
+  if (sec && sec.isConnected) { sec.remove(); return; }
+  bwCss();
+  sec = document.createElement('section'); sec.id = 'gc-bw-sec'; sec.setAttribute('aria-label', 'Bid boards');
+  sec.innerHTML = '<div class="gc-bw-hd"><b>🔎 Bid boards</b><span class="mini" style="font-size:12px;color:#57527a">what the CRM watches for public bids</span><button type="button" data-bwx style="background:#fff;border:1px solid #cfc8ea;border-radius:7px;padding:5px 10px;font-weight:700;min-height:32px">✕ Close</button></div><div class="gc-bw-body"></div>';
+  var ldi = document.getElementById('gc-ldi');
+  if (ldi && ldi.parentNode) ldi.parentNode.insertBefore(sec, ldi); else (document.querySelector('main') || document.body).appendChild(sec);
+  sec.querySelector('[data-bwx]').onclick = function(){ sec.remove(); };
+  bwRender(sec.querySelector('.gc-bw-body'));
+  try { sec.scrollIntoView({ block: 'start' }); } catch (e) {}
 }
+window._gcRenderBidBoards = function(el){ return bwRender(el); };
+window._gcBidBoards = function(){ try { if (window._setView) window._setView('leads'); } catch (e) {} later(function(){ if (!document.getElementById('gc-bw-sec')) dlgSettings(); }, 600); };
+/* the owners' + office to-do "Sign up for government bid lists" (Admin's seed adm_seed_govbids_v1) gets the new local
+   buyers and SAM.gov as more lines — the same to-do, opened again; never a second one */
+(function(){
+  var ID = 'adm_seed_govbids_v1', FLAG = 'gc_bw_govbids_upd_v1';
+  var WANT = ['City of Bartlett', 'City of Germantown', 'Town of Collierville', 'Town of Arlington', 'City of Lakeland', 'City of Millington',
+    'Bartlett City Schools', 'Germantown Municipal School District', 'Collierville Schools', 'Arlington Community Schools', 'Lakeland School System', 'Millington Municipal Schools',
+    'University of Memphis', 'Southwest Tennessee Community College', 'UT Health Science Center', 'Tennessee Board of Regents',
+    'Memphis Housing Authority', 'MATA', 'DeSoto County Schools', 'Tipton County', 'Fayette County',
+    'Any of them with a PUBLIC bid page: Leads → 🔎 Bid boards → ＋ Add a bid board → Test read',
+    'SAM.gov (federal): request the free Public API Key and paste it in Leads → 🔎 Bid boards'];
+  var tries = 0;
+  function upd(){
+    if (lsGet(FLAG, 0) || ++tries > 30) return;
+    if (!isAdmin() || !arr(window._crm && window._crm.users).length) return later(upd, 60000);
+    var l; try { l = arr(JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e) { return; }
+    var t = l.filter(function(x){ return x && x.id === ID; })[0];
+    if (!t) return later(upd, 60000);   /* Admin seeds it first */
+    var have = {}; arr(t.items).forEach(function(i){ if (i) have[low(i.label)] = 1; });
+    var add = WANT.filter(function(w){ return !have[low(w)]; });
+    if (add.length) {
+      var now = nowIso(); t.items = arr(t.items).concat(add.map(function(w, k){ return { id: ID + '_bw' + (arr(t.items).length + k), label: w, done: false }; }));
+      t.done = false; t.doneAt = ''; t.updatedAt = now; t.note = s(t.note) + (s(t.note) ? ' · ' : '') + add.slice(0, 21).map(function(w){ return '☐ ' + w; }).join(' · ');
+      try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {}
+      try { if (window._gcApplySync) window._gcApplySync('gc_office_tasks', l); } catch (e) {}
+      try { if (window._gcOfficeTasksPush) window._gcOfficeTasksPush(); else if (window._supaUpsert) window._supaUpsert('gc_office_tasks', l); } catch (e) {}
+    }
+    lsSet(FLAG, 1);
+  }
+  later(upd, 30000);
+})();
+/* admins: how many leads nobody is assigned to yet (every source) — and an amber count on the Leads menu item */
+window._gcUnassignedLeadCount = function(){ try { return assignList().length; } catch (e) { return 0; } };
+(function(){
+  var els = [];
+  function paintUnassigned(){
+    if (!els.length || els.some(function(x){ return !x.isConnected; })) {
+      els = []; var c = document.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button');
+      for (var i = 0; i < c.length; i++) { if (c[i].closest('#gc-ldi, #gc-bw-sec')) continue; if (/^Leads$/.test(s(c[i].textContent).replace(/(\s*\d+\+?)+$/, '').replace(/^[^A-Za-z]+/, ''))) els.push(c[i]); }
+    }
+    var n = isAdmin() ? window._gcUnassignedLeadCount() : 0;
+    els.forEach(function(nav){
+      var b = nav.querySelector('.gc-bw-unas');
+      if (!n) { if (b) b.remove(); return; }
+      if (!b) { bwCss(); b = document.createElement('span'); b.className = 'gc-bw-unas'; nav.appendChild(b); }
+      var v = n > 99 ? '99+' : String(n); if (b.textContent !== v) b.textContent = v;
+      b.title = n + ' lead' + (n === 1 ? '' : 's') + ' not assigned to anyone yet';
+    });
+  }
+  window._gcPaintUnassigned = paintUnassigned;
+  window.addEventListener('gc:leads-changed', function(){ later(paintUnassigned, 50); });
+  setInterval(paintUnassigned, 15000); later(paintUnassigned, 3000);
+})();
 
 /* the public sources (names + how to sign up), the same list bid-watch.js uses */
 window.__GC_LDI_SOURCES__ = [

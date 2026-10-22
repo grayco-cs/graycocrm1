@@ -75,7 +75,30 @@ const SOURCES = [
   { id: 'mscs-ionwave', name: 'MSCS — Ion Wave e-bid alerts', label: 'MSCS', auto: false, how: 'Register (free) at mscsprocurementservices.ionwave.net with the construction / roofing categories; e-mail bids@grayco-cs.com.' },
   { id: 'memphis-oracle', name: 'City of Memphis — supplier portal alerts', label: 'City of Memphis', auto: false, how: 'Register as a City of Memphis supplier (Become a Supplier) with the construction / roofing commodity codes; e-mail bids@grayco-cs.com.' },
   { id: 'shelby-notify', name: 'Shelby County — vendor registration', label: 'Shelby County', auto: false, how: 'Keep the county vendor registration (BRN + vendor number) current with the NIGP codes for roofing / building repair; e-mail bids@grayco-cs.com.' },
-  { id: 'mscaa-opengov', name: 'MSCAA — OpenGov procurement portal', label: 'Memphis Airport (MSCAA)', auto: false, how: 'Follow the Memphis-Shelby County Airport Authority on OpenGov Procurement; notification e-mail bids@grayco-cs.com.' }
+  { id: 'mscaa-opengov', name: 'MSCAA — OpenGov procurement portal', label: 'Memphis Airport (MSCAA)', auto: false, how: 'Follow the Memphis-Shelby County Airport Authority on OpenGov Procurement; notification e-mail bids@grayco-cs.com.' },
+  /* patch BW: more local public buyers. Their listing pages were not verified from here, so they start as
+     e-mail-alert sources; an admin adds a verified public page with "＋ Add a bid board". */
+  { id: 'loc-bartlett', name: 'City of Bartlett — bids (find the vendor page)', label: 'City of Bartlett', auto: false, local: true, how: 'Find City of Bartlett\'s bid / purchasing page (search “City of Bartlett bids” or “City of Bartlett purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-germantown', name: 'City of Germantown — bids (find the vendor page)', label: 'City of Germantown', auto: false, local: true, how: 'Find City of Germantown\'s bid / purchasing page (search “City of Germantown bids” or “City of Germantown purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-collierville', name: 'Town of Collierville — bids (find the vendor page)', label: 'Town of Collierville', auto: false, local: true, how: 'Find Town of Collierville\'s bid / purchasing page (search “Town of Collierville bids” or “Town of Collierville purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-arlington', name: 'Town of Arlington — bids (find the vendor page)', label: 'Town of Arlington', auto: false, local: true, how: 'Find Town of Arlington\'s bid / purchasing page (search “Town of Arlington bids” or “Town of Arlington purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-lakeland', name: 'City of Lakeland — bids (find the vendor page)', label: 'City of Lakeland', auto: false, local: true, how: 'Find City of Lakeland\'s bid / purchasing page (search “City of Lakeland bids” or “City of Lakeland purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-millington', name: 'City of Millington — bids (find the vendor page)', label: 'City of Millington', auto: false, local: true, how: 'Find City of Millington\'s bid / purchasing page (search “City of Millington bids” or “City of Millington purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-bartlett-schools', name: 'Bartlett City Schools — bids (find the vendor page)', label: 'Bartlett City Schools', auto: false, local: true, how: 'Find Bartlett City Schools\'s bid / purchasing page (search “Bartlett City Schools bids” or “Bartlett City Schools purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-germantown-schools', name: 'Germantown Municipal School District — bids (find the vendor page)', label: 'Germantown Schools', auto: false, local: true, how: 'Find Germantown Municipal School District\'s bid / purchasing page (search “Germantown Municipal School District bids” or “Germantown Municipal School District purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-collierville-schools', name: 'Collierville Schools — bids (find the vendor page)', label: 'Collierville Schools', auto: false, local: true, how: 'Find Collierville Schools\'s bid / purchasing page (search “Collierville Schools bids” or “Collierville Schools purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-arlington-schools', name: 'Arlington Community Schools — bids (find the vendor page)', label: 'Arlington Schools', auto: false, local: true, how: 'Find Arlington Community Schools\'s bid / purchasing page (search “Arlington Community Schools bids” or “Arlington Community Schools purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-lakeland-schools', name: 'Lakeland School System — bids (find the vendor page)', label: 'Lakeland Schools', auto: false, local: true, how: 'Find Lakeland School System\'s bid / purchasing page (search “Lakeland School System bids” or “Lakeland School System purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-millington-schools', name: 'Millington Municipal Schools — bids (find the vendor page)', label: 'Millington Schools', auto: false, local: true, how: 'Find Millington Municipal Schools\'s bid / purchasing page (search “Millington Municipal Schools bids” or “Millington Municipal Schools purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-uofm', name: 'University of Memphis — bids (find the vendor page)', label: 'University of Memphis', auto: false, local: true, how: 'Find University of Memphis\'s bid / purchasing page (search “University of Memphis bids” or “University of Memphis purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-southwest-tn', name: 'Southwest Tennessee Community College — bids (find the vendor page)', label: 'Southwest TN CC', auto: false, local: true, how: 'Find Southwest Tennessee Community College\'s bid / purchasing page (search “Southwest Tennessee Community College bids” or “Southwest Tennessee Community College purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-uthsc', name: 'UT Health Science Center — bids (find the vendor page)', label: 'UTHSC', auto: false, local: true, how: 'Find UT Health Science Center\'s bid / purchasing page (search “UT Health Science Center bids” or “UT Health Science Center purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-tbr', name: 'Tennessee Board of Regents — bids (find the vendor page)', label: 'TN Board of Regents', auto: false, local: true, how: 'Find Tennessee Board of Regents\'s bid / purchasing page (search “Tennessee Board of Regents bids” or “Tennessee Board of Regents purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-mha', name: 'Memphis Housing Authority — bids (find the vendor page)', label: 'Memphis Housing Authority', auto: false, local: true, how: 'Find Memphis Housing Authority\'s bid / purchasing page (search “Memphis Housing Authority bids” or “Memphis Housing Authority purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-mata', name: 'MATA (Memphis Area Transit Authority) — bids (find the vendor page)', label: 'MATA', auto: false, local: true, how: 'Find MATA (Memphis Area Transit Authority)\'s bid / purchasing page (search “MATA (Memphis Area Transit Authority) bids” or “MATA (Memphis Area Transit Authority) purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-desoto-schools', name: 'DeSoto County Schools — bids (find the vendor page)', label: 'DeSoto County Schools', auto: false, local: true, how: 'Find DeSoto County Schools\'s bid / purchasing page (search “DeSoto County Schools bids” or “DeSoto County Schools purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-tipton-county', name: 'Tipton County — bids (find the vendor page)', label: 'Tipton County', auto: false, local: true, how: 'Find Tipton County\'s bid / purchasing page (search “Tipton County bids” or “Tipton County purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' },
+  { id: 'loc-fayette-county', name: 'Fayette County — bids (find the vendor page)', label: 'Fayette County', auto: false, local: true, how: 'Find Fayette County\'s bid / purchasing page (search “Fayette County bids” or “Fayette County purchasing”) and register as a vendor with bids@grayco-cs.com for construction / roofing / repair. If its bid list is a public page, add it with “＋ Add a bid board” so the CRM reads it every few hours.' }
 ];
 
 /* ── fetching, politely ─────────────────────────────────────────────────────── */
@@ -203,6 +226,7 @@ function matchWords(text, settings){
   const st = Object.assign({}, DEFAULT_SETTINGS, settings || {});
   const hits = arr(st.keywords).filter(w => w && wordRe(low(w)).test(text));
   const bad = arr(st.exclude).filter(w => w && wordRe(low(w)).test(text));
+  if (st.allBids) return { ok: !bad.length, hits: hits.length ? hits : ['all public bids'], bad };   /* patch BW: "All public bids (no keyword filter)" */
   return { ok: hits.length > 0 && !bad.length, hits, bad };
 }
 function expired(due){ if (!due) return false; const d = Date.parse(s(due).slice(0, 10) + 'T23:59:59'); return isFinite(d) && d < Date.now() - 86400000; }
@@ -278,6 +302,146 @@ async function bcRun(state, fetchImpl){
   return { ok: true, records, since: nowIso() };
 }
 
+/* ── patch BW: bid boards an admin adds in the CRM (Leads → Lead Inbox ⚙ → 🔎 Bid boards) ───────────
+   Kept in the lead-inbox settings (the service-only store) as settings.custom = [{ id, name, label, url, kind,
+   pattern, anyRow, city, state, how, on }]. Only the generic adapters read them (a "links" page or an RSS feed) — never code. */
+function urlOk(u){
+  let x; try { x = new URL(s(u)); } catch (e) { return false; }
+  if (x.protocol !== 'https:' || x.username || x.password || (x.port && x.port !== '443')) return false;
+  const h = low(x.hostname);
+  if (!h || h === 'localhost' || /\.(local|internal|localhost|lan|home|corp)$/.test(h) || !/\./.test(h)) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.indexOf(':') >= 0 || /^\[/.test(h)) return false;   /* no bare IP addresses */
+  if (/(^|\.)netlify\.(app|com)$|(^|\.)supabase\.co$|(^|\.)grayco-cs\.com$/.test(h)) return false;   /* never our own services */
+  return true;
+}
+function safeRe(p){
+  p = s(p); if (!p) return null;
+  if (p.length > 120 || /\([^)]*[+*][^)]*\)\s*[+*{]/.test(p)) return null;   /* no nested repeats */
+  try { return new RegExp(p.replace(/^\/|\/[a-z]*$/g, ''), 'i'); } catch (e) { return null; }
+}
+function cleanCustom(x, old){
+  x = x || {}; old = old || {};
+  const kind = /^(links|rss|email)$/.test(s(x.kind)) ? s(x.kind) : 'links';
+  const name = s(x.name).replace(/\s+/g, ' ').slice(0, 100);
+  if (!name) return { err: 'Give the bid board a name (the agency).' };
+  const url = s(x.url).slice(0, 400);
+  if (kind !== 'email' && !urlOk(url)) return { err: 'The address must be a public https:// web page (not a log-in page, an IP address or one of our own sites).' };
+  if (kind === 'email' && url && !urlOk(url)) return { err: 'The sign-up page must be an https:// address.' };
+  if (kind === 'links' && s(x.pattern) && !safeRe(x.pattern)) return { err: 'The link pattern is not a simple pattern — leave it empty or use plain words like /bid/ or Bids.aspx.' };
+  const st = s(x.state).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+  const id = /^c-[a-f0-9]{8}$/.test(s(old.id)) ? s(old.id) : 'c-' + crypto.randomBytes(4).toString('hex');
+  return { src: { id, name, label: s(x.label).slice(0, 40) || name.slice(0, 40), url, kind, pattern: kind === 'links' ? s(x.pattern).slice(0, 120) : '', anyRow: kind === 'links' && !!x.anyRow,
+    city: s(x.city).slice(0, 60), state: st, how: s(x.how).slice(0, 400), on: x.on !== false, addedBy: s(old.addedBy || x.addedBy).slice(0, 120), addedAt: s(old.addedAt) || nowIso(), updatedAt: nowIso() } };
+}
+function customSources(settings){
+  return arr(settings && settings.custom).filter(c => c && c.id && c.name).map(c => ({
+    id: c.id, name: c.name, label: c.label || c.name, owner: c.name, city: c.city || '', state: c.state || '', url: c.url, custom: true, on: c.on !== false,
+    auto: c.kind === 'links' || c.kind === 'rss', kind: c.kind === 'rss' ? 'rss' : (c.kind === 'email' ? 'email' : 'links'),
+    hrefRe: c.kind === 'links' ? safeRe(c.pattern) : null, anyRow: !!c.anyRow,
+    how: c.how || (c.kind === 'email' ? 'Register with ' + c.name + (c.url ? ' (' + c.url + ')' : '') + ' for bid notices; notification e-mail bids@grayco-cs.com.' : '') }));
+}
+/* "Test read": one look now, nothing stored — what the watcher WOULD find on that page */
+async function testRead(b, opts){
+  opts = opts || {}; const f = opts.fetchImpl;
+  const c = cleanCustom(Object.assign({}, b, { name: s(b && b.name) || 'Test' }));
+  if (c.err) return { ok: false, why: c.err };
+  const src = customSources({ custom: [c.src] })[0];
+  if (!src.auto) return { ok: false, why: 'E-mail-alert boards are not read — nothing to test.' };
+  const u = new URL(src.url);
+  const rb = await get(u.origin + '/robots.txt', {}, f);
+  if (!robotsAllows(rb.status === 200 ? rb.text : '', u.pathname + u.search)) return { ok: false, robots: false, why: 'This site\'s robots.txt asks robots not to read that page. Choose "E-mail alerts only" and sign up there instead.' };
+  const page = await get(src.url, {}, f);
+  if (page.status !== 200) return { ok: false, robots: true, http: page.status, why: page.why || ('The site answered ' + page.status + (page.status === 401 || page.status === 403 ? ' — it needs a log-in. Choose "E-mail alerts only".' : '.')) };
+  if (/<input[^>]+type=["']?password/i.test(page.text) && (page.text.match(/<a\b/gi) || []).length < 15) return { ok: false, robots: true, http: 200, why: 'That page is a log-in page. Choose "E-mail alerts only".' };
+  const items = src.kind === 'rss' ? parseRss(page.text) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow });
+  const settings = Object.assign({}, DEFAULT_SETTINGS, opts.settings || {});
+  const out = items.slice(0, 40).map(it => { const mw = matchWords(it.title + ' ' + (it.context || ''), settings); return { title: it.title, number: it.number, due: it.due, url: it.url, closed: it.status === 'closed' || expired(it.due), matched: mw.ok, words: mw.hits.slice(0, 4) }; });
+  return { ok: true, http: 200, robots: true, parsed: items.length, matched: out.filter(x => x.matched && !x.closed).length, items: out,
+    why: items.length ? '' : 'The page was read but no bids were recognised on it. Try the page that lists the bids itself, a link pattern, or "every row with a PDF and a date".' };
+}
+
+/* ── patch BW: SAM.gov (federal) — the official public API with a free api.data.gov key (env SAM_API_KEY) ─────
+   Once a day (Central): solicitations / presolicitations posted since the last look whose place of performance is in
+   the chosen states and whose NAICS is one of ours. One call per state (a key with no SAM.gov role gets about 10 calls
+   a day). The key is never stored, logged or shown. */
+/* the key: entered in the CRM (🔎 Bid boards, admins) and kept sealed in the service-only gc_admin_kv, else env SAM_API_KEY */
+function samSealKey(){ return crypto.createHash('sha256').update('gc-sam:' + (env('SUPABASE_SERVICE_ROLE_KEY') || env('SUPABASE_SERVICE_KEY'))).digest(); }
+function samSeal(txt){ const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', samSealKey(), iv); const enc = Buffer.concat([c.update(txt, 'utf8'), c.final()]); return [iv.toString('base64'), c.getAuthTag().toString('base64'), enc.toString('base64')].join('.'); }
+function samUnseal(v){ try { const [iv, tag, enc] = s(v).split('.').map(x => Buffer.from(x, 'base64')); const d = crypto.createDecipheriv('aes-256-gcm', samSealKey(), iv); d.setAuthTag(tag); return Buffer.concat([d.update(enc), d.final()]).toString('utf8'); } catch (e) { return ''; } }
+async function samKey(){
+  const st = await adminKv('srv_sam_key');
+  const k = st && st.sealed ? samUnseal(st.sealed) : '';
+  if (k) return { key: k, from: 'crm', last4: k.slice(-4), at: s(st.at), by: s(st.by) };
+  if (env('SAM_API_KEY')) return { key: env('SAM_API_KEY'), from: 'env', last4: env('SAM_API_KEY').slice(-4) };
+  return { key: '', from: '', last4: '' };
+}
+async function samKeySet(key, by){
+  key = s(key);
+  if (!key) return adminKv('srv_sam_key', { sealed: '', last4: '', at: nowIso(), by: s(by) });
+  if (!/^[A-Za-z0-9_\-]{20,80}$/.test(key)) return false;
+  return adminKv('srv_sam_key', { sealed: samSeal(key), last4: key.slice(-4), at: nowIso(), by: s(by) });
+}
+/* "Test": one small call with the key, nothing kept */
+async function samTest(key, opts){
+  opts = opts || {}; const f = opts.fetchImpl || fetch;
+  key = s(key) || (await samKey()).key; if (!key) return { ok: false, why: 'No SAM.gov key yet.' };
+  const q = 'https://api.sam.gov/opportunities/v2/search?limit=1&postedFrom=' + encodeURIComponent(mdy(chiDay((opts.now || Date.now()) - 7 * 86400000))) + '&postedTo=' + encodeURIComponent(mdy(chiDay(opts.now))) + '&state=TN';
+  try {
+    const r = await f(q + '&api_key=' + encodeURIComponent(key), { headers: { Accept: 'application/json', 'User-Agent': UA } }); const j = await r.json().catch(() => null);
+    if (r.ok) return { ok: true, total: (j && j.totalRecords) || 0 };
+    return { ok: false, why: r.status === 401 || r.status === 403 ? 'SAM.gov refused this key.' : r.status === 429 ? 'SAM.gov says today\'s limit is used up (the key itself may be fine).' : 'SAM.gov answered ' + r.status + '.' };
+  } catch (e) { return { ok: false, why: 'SAM.gov could not be reached.' }; }
+}
+const SAM_DEFAULT = { on: true, states: ['TN', 'MS', 'AR'], naics: ['236220', '238160', '236118', '238310', '238390', '562910'] };
+function samSettings(settings){
+  const x = Object.assign({}, SAM_DEFAULT, (settings && settings.sam) || {});
+  x.states = arr(x.states).map(v => s(v).toUpperCase()).filter(v => /^[A-Z]{2}$/.test(v)).slice(0, 6);
+  x.naics = arr(x.naics).map(v => s(v).replace(/\D/g, '')).filter(v => /^\d{2,6}$/.test(v)).slice(0, 20);
+  if (!x.states.length) x.states = SAM_DEFAULT.states.slice(); if (!x.naics.length) x.naics = SAM_DEFAULT.naics.slice();
+  return x;
+}
+function chiDay(t){ return new Date(t || Date.now()).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(0, 10); }
+function mdy(day){ const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day); return m ? m[2] + '/' + m[3] + '/' + m[1] : ''; }
+function samDue(v){ v = s(v); if (!v) return ''; const t = Date.parse(v); if (!isFinite(t)) return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : ''; return new Date(t).toLocaleString('sv-SE', { timeZone: 'America/Chicago' }).slice(0, 16).replace(' ', 'T'); }
+const SAM_TYPES = /^(solicitation|combined synopsis\/solicitation|presolicitation)$/i;
+function samRecord(o){
+  const pop = o.placeOfPerformance || {}, city = s(pop.city && pop.city.name), st = s(pop.state && pop.state.code).toUpperCase().slice(0, 2);
+  const id = s(o.noticeId), agency = s(o.fullParentPathName).split('.').map(x => s(x)).filter(Boolean);
+  const link = /^https:\/\/sam\.gov\//.test(s(o.uiLink)) ? s(o.uiLink) : (id ? 'https://sam.gov/opp/' + encodeURIComponent(id) + '/view' : '');
+  const what = [s(o.type), o.naicsCode ? 'NAICS ' + s(o.naicsCode) : '', s(o.typeOfSetAsideDescription) ? 'Set-aside: ' + s(o.typeOfSetAsideDescription) : ''].filter(Boolean);
+  return {
+    id: itemId('sam|' + id), title: s(o.title).slice(0, 200) || 'Federal opportunity', source: 'SAM.gov (federal)', sourceKind: 'public_bid', sourceRef: 'SAM.gov — federal contract opportunities', type: 'government',
+    owner: agency.slice(-1)[0] || 'U.S. government', gc: '', address: '', city, state: st, zip: s(pop.zip).slice(0, 10), bidDue: samDue(o.responseDeadLine), preBid: '', trades: [],
+    scope: what.concat(agency.length ? [agency.join(' › ')] : []).join(' · ').slice(0, 300),
+    bidNumber: s(o.solicitationNumber), contact: { name: '', email: '', phone: '' }, estValue: null,
+    plansLinks: link ? [{ url: link, label: 'Notice & documents (SAM.gov)', board: 'Government', host: 'sam.gov' }] : [],
+    files: [], emails: [], emailIds: [], watchKeys: ['w:sam-gov:' + id], notes: ['Found on SAM.gov (federal). ' + what.join(' · ') + '.'],
+    matchWords: o.naicsCode ? ['NAICS ' + s(o.naicsCode)] : [], origin: 'watch', addendum: 0, samId: id
+  };
+}
+async function samRun(settings, prev, opts){
+  opts = opts || {}; const f = opts.fetchImpl || fetch, key = opts.key || env('SAM_API_KEY');
+  const cfg = samSettings(settings), today = chiDay(opts.now), out = { ok: true, records: [], parsed: 0, why: '', day: today, calls: 0 };
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(s(prev && prev.lastDay)) ? s(prev.lastDay) : chiDay((opts.now || Date.now()) - 14 * 86400000);
+  const st = Object.assign({}, DEFAULT_SETTINGS, settings || {}), seenId = {};
+  for (const state of cfg.states) {
+    const q = 'https://api.sam.gov/opportunities/v2/search?limit=1000&postedFrom=' + encodeURIComponent(mdy(from)) + '&postedTo=' + encodeURIComponent(mdy(today)) + '&state=' + state;
+    let r, j = null;
+    try { out.calls++; r = await f(q + '&api_key=' + encodeURIComponent(key), { headers: { Accept: 'application/json', 'User-Agent': UA } }); j = await r.json().catch(() => null); }
+    catch (e) { out.ok = false; out.why = 'SAM.gov could not be reached'; break; }
+    if (!r.ok) { out.ok = false; out.why = r.status === 401 || r.status === 403 ? 'SAM.gov refused the key — check SAM_API_KEY on Netlify' : r.status === 429 ? 'SAM.gov daily limit reached — it tries again tomorrow' : 'SAM.gov answered ' + r.status; break; }
+    arr(j && j.opportunitiesData).forEach(o => {
+      out.parsed++;
+      if (!o || !s(o.noticeId) || seenId[o.noticeId] || low(o.active) === 'no' || !SAM_TYPES.test(s(o.type))) return;
+      const n = s(o.naicsCode).replace(/\D/g, ''); if (!cfg.naics.some(w => n.indexOf(w) === 0)) return;
+      if (arr(st.exclude).some(w => w && wordRe(low(w)).test(s(o.title)))) return;
+      const rec = samRecord(o); if (expired(rec.bidDue)) return;
+      seenId[o.noticeId] = 1; out.records.push(rec);
+    });
+  }
+  return out;
+}
+
 /* ── one run ───────────────────────────────────────────────────────────────── */
 async function runAll(opts){
   opts = opts || {};
@@ -286,13 +450,14 @@ async function runAll(opts){
   const seen = (await kvGet(KV_SEEN)) || {}, status = (await kvGet(KV_STATUS)) || {};
   status.sources = status.sources || {};
   const robots = {}, records = [], summary = [];
-  const list = SOURCES.filter(x => x.auto && (!opts.only || x.id === opts.only));
+  const list = SOURCES.filter(x => x.auto).concat(customSources(settings).filter(x => x.auto)).filter(x => !opts.only || x.id === opts.only);   /* patch BW: + the admins' own boards */
   for (const src0 of list) {
     if (Date.now() - t0 > budget) { summary.push({ id: src0.id, skipped: 'out of time this run' }); continue; }
     const cfg = (settings.sources || {})[src0.id] || {};
     const prev = status.sources[src0.id] || {};
-    if (cfg.on === false) { status.sources[src0.id] = Object.assign({}, prev, { off: true }); continue; }
-    const src = Object.assign({}, src0, cfg.url ? { url: cfg.url } : {});
+    if (cfg.on === false || src0.on === false) { status.sources[src0.id] = Object.assign({}, prev, { off: true }); continue; }
+    const src = Object.assign({}, src0, cfg.url && !src0.custom ? { url: cfg.url } : {});
+    if (src.custom && !urlOk(src.url)) { status.sources[src.id] = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: 'not a public https address — edit it in 🔎 Bid boards' }; continue; }
     const st = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: '' };
     try {
       const u = new URL(src.url);
@@ -326,6 +491,19 @@ async function runAll(opts){
     } catch (e) { st.why = 'could not read: ' + s(e && e.message); }
     status.sources[src.id] = st; summary.push({ id: src.id, http: st.http, parsed: st.parsed, matched: st.matched, why: st.why });
     await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
+  }
+  /* patch BW: SAM.gov once a day (Central), or now when asked for by name; the key from the CRM, else env SAM_API_KEY */
+  const samK = (!opts.only || opts.only === 'sam-gov') ? await samKey().catch(() => ({ key: '' })) : { key: '' };
+  if (samK.key && samSettings(settings).on !== false) {
+    const ps = status.sources['sam-gov'] || {};
+    if (opts.only === 'sam-gov' || ps.day !== chiDay(opts.now)) {
+      const out = await samRun(settings, ps, { fetchImpl: f, now: opts.now, key: samK.key }).catch(e => ({ ok: false, why: s(e && e.message).replace(/api_key=[^&\s]+/g, 'api_key=…'), records: [], parsed: 0 }));
+      const m = seen['sam-gov'] = seen['sam-gov'] || {};
+      const fresh = out.records.filter(r => { const n = !m[r.samId]; m[r.samId] = m[r.samId] || nowIso().slice(0, 10); return n; });
+      records.push.apply(records, fresh);
+      status.sources['sam-gov'] = { at: nowIso(), http: out.ok ? 200 : 0, parsed: out.parsed, matched: fresh.length, added: 0, why: out.ok ? '' : out.why, day: out.ok ? out.day : ps.day, lastDay: out.ok ? out.day : ps.lastDay, calls: out.calls };
+      summary.push({ id: 'sam-gov', parsed: out.parsed, matched: fresh.length, why: out.ok ? '' : out.why });
+    }
   }
   /* BuildingConnected's Bid Board, when the owner has given the API keys */
   if (bcReady() && (!opts.only || opts.only === 'buildingconnected')) {
@@ -361,4 +539,6 @@ exports.handler = async function(){
 };
 exports.runAll = runAll;
 exports.SOURCES = SOURCES;
-exports._test = { parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };
+/* patch BW */
+exports.testRead = testRead; exports.samKey = samKey; exports.samKeySet = samKeySet; exports.samTest = samTest; exports.cleanCustom = cleanCustom; exports.customSources = customSources; exports.samSettings = samSettings; exports.SAM_DEFAULT = SAM_DEFAULT; exports.urlOk = urlOk;
+exports._test = { samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };

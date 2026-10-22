@@ -847,10 +847,16 @@ function applyAct(items, b, who){
   return { items: trim(items), item: it };
 }
 const DEFAULT_SETTINGS = {
-  keywords: ['roof', 'roofing', 'reroof', 're-roof', 'building', 'renovation', 'remodel', 'construction', 'drywall', 'interior', 'restoration', 'repair', 'tpo', 'metal roof',
-    'gutter', 'demolition', 'ceiling', 'flooring', 'painting', 'carpentry', 'siding', 'waterproofing', 'envelope', 'canopy', 'storm damage', 'fire damage', 'water damage',
-    'facility improvements', 'improvements', 'abatement', 'doors', 'windows', 'masonry', 'facility'],
-  exclude: ['vehicle', 'truck', 'software', 'janitorial', 'uniform', 'food', 'fuel', 'lobbying', 'audit', 'consultant', 'insurance broker', 'printing services', 'mowing'],
+  keywords: ['roof', 'roofing', 'reroof', 're-roof', 'roof replacement', 'roof repair', 'roof coating', 'shingle', 'tpo', 'epdm', 'metal roof', 'modified bitumen', 'built-up roof',
+    'building', 'construction', 'new construction', 'general construction', 'general contractor', 'renovation', 'remodel', 'addition', 'alteration', 'build-out', 'buildout', 'finish-out',
+    'tenant improvement', 'interior improvements', 'improvements', 'facility improvements', 'facility', 'building repairs', 'repair', 'maintenance', 'restoration',
+    'bathroom', 'restroom', 'kitchen', 'flooring', 'floor', 'carpet', 'tile', 'painting', 'paint', 'drywall', 'framing', 'carpentry', 'ceiling', 'siding', 'gutter', 'gutters',
+    'windows', 'window', 'doors', 'door', 'storefront', 'canopy', 'envelope', 'waterproofing', 'masonry', 'concrete', 'sidewalk', 'demolition', 'abatement',
+    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation'],
+  exclude: ['vehicle', 'truck', 'automobile', 'software', 'hardware', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
+    'fuel', 'lobbying', 'audit', 'consultant', 'consulting services', 'legal services', 'staffing', 'insurance broker', 'printing services', 'printing', 'mowing', 'lawn care',
+    'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'supplies', 'textbook', 'furniture', 'elevator', 'bus', 'tires', 'ammunition', 'firearms'],
+  allBids: true,   /* patch BW: "All public bids (no keyword filter)" — every solicitation from the boards except the excluded words */
   sources: {},
   /* LA: "Commercial bids go to:" (Leads ⚙) */
   estimator: { name: 'Glenn Miller', email: 'gmiller@grayco-cs.com' }
@@ -860,14 +866,38 @@ function cleanSettings(b, cur){
   const out = Object.assign({}, DEFAULT_SETTINGS, cur || {});
   if (b.keywords) out.keywords = words(b.keywords);
   if (b.exclude) out.exclude = words(b.exclude);
+  if (b.allBids != null) out.allBids = !!b.allBids;   /* patch BW */
   if (b.estimator && typeof b.estimator === 'object') {
     const em = low(b.estimator.email);
     if (em && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(em)) throw new Error('The estimator e-mail does not look right.');
     out.estimator = { name: s(b.estimator.name).slice(0, 80), email: em };
   }
-  if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 40).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }
+  if (b.sam && typeof b.sam === 'object') out.sam = { on: b.sam.on !== false, states: arr(b.sam.states).map(x => s(x).toUpperCase()).filter(x => /^[A-Z]{2}$/.test(x)).slice(0, 6), naics: arr(b.sam.naics).map(x => s(x).replace(/\D/g, '')).filter(x => /^\d{2,6}$/.test(x)).slice(0, 20) };   /* patch BW */
+  if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 150).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }
   out.updatedAt = nowIso();
   return out;
+}
+
+/* patch BW: an e-mail-alert board → ONE shared owners + office to-do "Sign up for bid alerts …" (gc_office_tasks, whoever
+   does it first ticks it); each new board is a line on its checklist, and a done to-do is opened again for a new line */
+const BW_TODO = 'bw_signups';
+function signupLine(src){ return { id: BW_TODO + '_' + src.id, label: src.name + (src.url ? ' — ' + src.url : '') + (src.how ? ' (' + s(src.how).slice(0, 160) + ')' : ''), done: false }; }
+function signupMerge(l, src, who){
+  const owners = (env('OWNER_EMAILS') || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(x => /@/.test(x));
+  const assignees = Array.from(new Set(owners.concat(['office@grayco-cs.com']))), at = nowIso(), line = signupLine(src);
+  /* the existing "Sign up for government bid lists" seed to-do when it is there, else our own — never two */
+  let t = l.find(x => x && String(x.id) === 'adm_seed_govbids_v1') || l.find(x => x && String(x.id) === BW_TODO);
+  if (t && arr(t.items).some(i => i && i.id === line.id)) return null;   /* already on it */
+  if (!t) { t = { id: BW_TODO, label: 'Sign up for bid alerts with bids@grayco-cs.com (boards added in 🔎 Bid boards)', note: 'Register as a vendor on each and use bids@grayco-cs.com for the bid notices. Tick each one off; the boards are in Leads → 🔎 Bid boards.',
+    addedBy: 'Bid boards (' + s(who && (who.name || who.email)) + ')', addedAt: at, done: false, assignees, assignee: 'the owners and the office', personal: false, shared: true, kind: 'admin_seed', items: [], source: 'bid-boards' }; l = l.concat([t]); }
+  t.items = arr(t.items).concat([line]); t.done = false; t.doneAt = ''; t.updatedAt = at;
+  return l;
+}
+async function signupTodo(src, who){
+  const has = l => l.some(t => t && (String(t.id) === BW_TODO || String(t.id) === 'adm_seed_govbids_v1') && arr(t.items).some(i => i && i.id === BW_TODO + '_' + src.id));
+  if (exports._todoAdd) { const r = await exports._todoAdd(src, who, signupMerge); return !!(r && r.ok !== false); }   /* tests */
+  const r = await require('./portal.js')._core.kvListUpdate('gc_office_tasks', l => { const n = signupMerge(arr(l), src, who); return n ? { list: n, check: has } : null; });
+  return !!(r && r.ok !== false);
 }
 
 /* ── handlers ──────────────────────────────────────────────────────────────── */
@@ -877,7 +907,7 @@ exports.handler = async function(event){
   if (event.httpMethod === 'OPTIONS') return J(200, {}, C);
   if (event.httpMethod === 'GET' && qs.ping)
     return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(), leadsTo: leadAddrs(), ordersTo: orderAddrs(),
-      buildingConnectedApi: !!(env('BC_CLIENT_ID') && env('BC_CLIENT_SECRET') && env('BC_REFRESH_TOKEN')),
+      buildingConnectedApi: !!(env('BC_CLIENT_ID') && env('BC_CLIENT_SECRET') && env('BC_REFRESH_TOKEN')), samApi: !!env('SAM_API_KEY') || !!(dbReady() && (await require('./bid-watch.js').samKey().catch(() => ({}))).key),
       bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
       phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')) }, C);
 
@@ -894,6 +924,18 @@ exports.handler = async function(event){
       return J(200, out, C);
     } catch (e) { return J(502, { error: 'Could not read the lead inbox.' }, C); }
   }
+  /* patch BW: 🔎 Bid boards — the built-in boards, the admins' own, their last run and SAM.gov */
+  if (event.httpMethod === 'GET' && qs.sources) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!who.admin) return J(403, { error: 'Only an admin sees the bid boards.' }, C);
+    const BW = require('./bid-watch.js');
+    const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
+    const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local });
+    const sk = await BW.samKey().catch(() => ({ key: '' }));   /* the key itself never leaves the server: where it came from + its last 4 */
+    return J(200, { ok: true, builtins: BW.SOURCES.map(pub), custom: arr(settings.custom), settings: { keywords: settings.keywords, exclude: settings.exclude, allBids: settings.allBids !== false, sources: settings.sources || {} },
+      defaults: { keywords: DEFAULT_SETTINGS.keywords, exclude: DEFAULT_SETTINGS.exclude },
+      sam: { ready: !!sk.key, from: sk.from || '', last4: sk.key ? sk.last4 : '', settings: BW.samSettings(settings) }, watch: (await kvGet('gc_bid_watch_status')) || null }, C);
+  }
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' }, C);
 
   /* LA: a lead assigned to someone in the CRM (or entered by hand for them): tell that person now (once) */
@@ -903,9 +945,53 @@ exports.handler = async function(event){
     const lead = b && b.lead; if (!lead || !s(lead.id)) return J(400, { error: 'No lead.' }, C);
     try { const r = await alertsApi().notifyAssigned(lead, { by: who.email, byName: who.name }); return J(200, Object.assign({ ok: true }, r), C); } catch (e) { return J(503, { error: s(e && e.message) }, C); }
   }
-  if (qs.act || qs.settings || qs.watch) {
+  if (qs.act || qs.settings || qs.watch || qs.boards || qs.testread) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
     let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    /* patch BW: "Test read" — one look at a page now, nothing kept */
+    if (qs.testread) {
+      if (!who.admin) return J(403, { error: 'Only an admin tests a bid board.' }, C);
+      try { const r = await require('./bid-watch.js').testRead(b, { settings: await kvGet(KV_SET), fetchImpl: exports._fetch }); return J(200, r, C); }
+      catch (e) { return J(502, { ok: false, why: 'Could not read it: ' + s(e && e.message) }, C); }
+    }
+    /* patch BW: add / change / remove an admin's own bid board (built-ins can only be switched off) */
+    if (qs.boards) {
+      if (!who.admin) return J(403, { error: 'Only an admin changes the bid boards.' }, C);
+      const BW = require('./bid-watch.js'), op = s(b.op);
+      /* the SAM.gov key, entered here: kept sealed server-side; only its last 4 come back */
+      if (op === 'samkey') {
+        const k = s(b.key).replace(/\s+/g, '');
+        const r = await BW.samKeySet(k, who.email);
+        if (r === false) return J(400, { error: 'That does not look like a SAM.gov API key (letters and numbers, 20–80 long).' }, C);
+        if (!r) return J(503, { error: 'Could not save the key — try again.' }, C);
+        const sk = await BW.samKey().catch(() => ({ key: '' }));
+        return J(200, { ok: true, sam: { ready: !!sk.key, from: sk.from || '', last4: sk.key ? sk.last4 : '' } }, C);
+      }
+      if (op === 'samtest') { const r = await BW.samTest(s(b.key).replace(/\s+/g, ''), { fetchImpl: exports._fetch }); return J(200, r, C); }
+      if (!/^(add|update|remove)$/.test(op)) return J(400, { error: 'Unknown action.' }, C);
+      let err = '', done = null, wasEmail = false;
+      try {
+        await kvCas(KV_SET, v => {
+          const cur = Object.assign({}, DEFAULT_SETTINGS, v || {}); const list = arr(cur.custom).slice();
+          if (op === 'remove') { const i = list.findIndex(x => x && x.id === s(b.id)); if (i < 0) { err = 'No such bid board.'; return undefined; } done = list.splice(i, 1)[0]; }
+          else {
+            const old = op === 'update' ? list.find(x => x && x.id === s(b.id)) : null;
+            if (op === 'update' && !old) { err = 'No such bid board.'; return undefined; }
+            if (op === 'add' && list.length >= 60) { err = 'That is 60 boards already — remove one first.'; return undefined; }
+            const c = BW.cleanCustom(Object.assign({}, b.source || {}, { addedBy: who.email }), old || {}); if (c.err) { err = c.err; return undefined; }
+            if (list.some(x => x && x !== old && x.url && c.src.url && low(x.url) === low(c.src.url))) { err = 'That address is already a bid board.'; return undefined; }
+            wasEmail = !!(old && old.kind === 'email');
+            if (old) list[list.indexOf(old)] = c.src; else list.push(c.src); done = c.src;
+          }
+          cur.custom = list; cur.updatedAt = nowIso(); return cur;
+        });
+      } catch (e) { return J(503, { error: s(e.message) }, C); }
+      if (err) return J(400, { error: err }, C);
+      /* an e-mail-alert board: one shared sign-up to-do for the owners and the office (once per board) */
+      let todo = false;
+      if (op !== 'remove' && done && done.kind === 'email' && !wasEmail) { try { todo = await signupTodo(done, who); } catch (e) {} }
+      return J(200, { ok: true, source: done, todo }, C);
+    }
     if (qs.settings) {
       if (!who.admin) return J(403, { error: 'Only an admin changes the bid watcher.' }, C);
       try { const r = await kvCas(KV_SET, v => cleanSettings(b, v)); return J(200, { ok: true, settings: r.value, estimator: await estimatorOf(r.value) }, C); } catch (e) { return J(/look right/.test(s(e.message)) ? 400 : 503, { error: s(e.message) }, C); }
