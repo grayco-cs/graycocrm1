@@ -125387,7 +125387,7 @@ var lastMountPull = 0;
 function mountInbox(){
   var bar = leadsBar(), cur = document.getElementById('gc-ldi');
   if (!bar) { if (cur && !cur.isConnected) cur = null; return; }
-  if (cur && cur.nextElementSibling === bar) return;
+  if (cur && (cur.nextElementSibling === bar || (cur.nextElementSibling && cur.nextElementSibling.id === 'gc-web' && cur.nextElementSibling.nextElementSibling === bar))) return;   /* patch HOT2d: the Website strip sits between, leave both where they are */
   ensureCss();
   if (!cur) {
     cur = document.createElement('div'); cur.id = 'gc-ldi';
