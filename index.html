@@ -92960,7 +92960,8 @@ window._gcCanSeeMoney = function(){
   var u=me();
   var role=String((u&&(u.role||u.payType))||'').toLowerCase();
   if(/owner|admin|office|book|account/.test(role)) return true;
-  if(/wesley|nick/i.test(String(u&&u.name||''))) return true;
+  if(u && (u.isAdmin===true || u.admin===true)) return true;
+  try{ if(typeof window._gcPayrollIsAdmin==='function' && window._gcPayrollIsAdmin()) return true; }catch(e){}   /* patch REL: the database says admin (SEC2) — no names */
   return false;                      // a PM sees his own jobs, not the company's books
 };
 
@@ -99058,6 +99059,25 @@ document.addEventListener('pointerdown', function(e){
     if(isField(el)) return;                    // moving between boxes keeps the hold
     var btn = el && el.closest && el.closest('button,a,[role="button"],[role="tab"]');
     if(btn){ root=null; at=0; disarm(); }      // a real button ends the entry
+  }catch(err){}
+}, true);
+/* patch REL: a button pressed from the keyboard (Tab + Enter/Space) or clicked by code also ends the entry,
+   so a dialog's own Close / ✕ always works after typing; a click on a dialog's backdrop does too */
+document.addEventListener('click', function(e){
+  try{
+    var el=e.target;
+    if(isField(el)) return;
+    var btn = el && el.closest && el.closest('button,a,[role="button"],[role="tab"],[data-x],[data-r]');
+    var backdrop = el && el.getAttribute && el.getAttribute('role')==='dialog';
+    if(btn || backdrop){ root=null; at=0; disarm(); }
+  }catch(err){}
+}, true);
+document.addEventListener('keydown', function(e){
+  try{
+    if(!e || (e.key!=='Enter' && e.key!==' ' && e.key!=='Escape')) return;
+    var a=document.activeElement;
+    if(isField(a)) return;
+    root=null; at=0; disarm();
   }catch(err){}
 }, true);
 
@@ -130181,7 +130201,7 @@ function wrapCount(){
   var f = window._gcPmActionCount;
   if(typeof f !== 'function' || f.__ap2) return;
   var w = function(){ var n = 0; try{ n = f.apply(this, arguments) || 0; }catch(e){} return n + items().length; };
-  w.__ap2 = true; w.__orig = f; window._gcPmActionCount = w;
+  Object.keys(f).forEach(function(k){ if (/^__(gc|ap2|a7|orig)/.test(k)) w[k] = f[k]; });   /* patch REL: keep the flags below */ w.__ap2 = true; w.__orig = f; window._gcPmActionCount = w;
 }
 /* the green APPROVE button: same count, at once (its own refresh is every 15 s) */
 function green(){
@@ -148227,7 +148247,7 @@ EXT_ACT.recipsave = function(A, v, t, ev, c){
 /* the CRM's green 📋 APPROVE button counts and opens the claim approvals too (feature-detected) */
 function hookGreenButton(){
   try {
-    if (typeof window._gcPmActionCount === 'function' && !window._gcPmActionCount.__gcbb) { var f0 = window._gcPmActionCount, w0 = function(){ var n = 0; try { n = f0.apply(this, arguments) || 0; } catch (e) {} return n + approvalsList(true).length; }; w0.__gcbb = true; window._gcPmActionCount = w0; }
+    if (typeof window._gcPmActionCount === 'function' && !window._gcPmActionCount.__gcbb) { var f0 = window._gcPmActionCount, w0 = function(){ var n = 0; try { n = f0.apply(this, arguments) || 0; } catch (e) {} return n + approvalsList(true).length; }; Object.keys(f0).forEach(function(k){ if (/^__(gc|ap2|a7|orig)/.test(k)) w0[k] = f0[k]; });   /* patch REL: keep the flags below */ w0.__gcbb = true; window._gcPmActionCount = w0; }
     else if (typeof window._gcPmActionCount !== 'function') { window._gcPmActionCount = function(){ var n = 0; try { if (window._gcExpenseApprovalsFor) n = window._gcExpenseApprovalsFor().length; } catch (e) {} return n + approvalsList(true).length; }; window._gcPmActionCount.__gcbb = true; }
     var o = window._gcOpenPmApprovals;
     if (!(o && o.__gcbb)) { var w1 = function(){ if (approvalsList(true).length || typeof o !== 'function') { var ov = openOverlay({}); ov.S.screen = 'approvals'; ov.S.fromGreen = typeof o === 'function' ? function(){ closeOverlay(); o(); } : null; ov.render(true); return; } return o.apply(this, arguments); }; w1.__gcbb = true; window._gcOpenPmApprovals = w1; }
@@ -149599,7 +149619,7 @@ try { console.log('[GC] Role profiles (patch RP): _gcRP.status()'); } catch (e) 
   function wrapCount(){
     var f = window._gcPmActionCount; if (typeof f !== 'function' || f.__gcSet) return;
     var w = function(){ try { return current().total; } catch (e) { try { return f.apply(this, arguments); } catch (_) { return 0; } } };
-    w.__gcSet = true; w.__ap2 = true; w.__orig = f.__orig || f; w.__prev = f; window._gcPmActionCount = w;
+    Object.keys(f).forEach(function(k){ if (/^__(gc|ap2|a7|orig)/.test(k)) w[k] = f[k]; });   /* patch REL: keep the flags below */ w.__gcSet = true; w.__ap2 = true; w.__orig = f.__orig || f; w.__prev = f; window._gcPmActionCount = w;
   }
   function badge(){
     wrapCount();
@@ -150275,6 +150295,7 @@ function wrap(){
       return e.jsxs('span', { style: { display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }, children: [r, b] });
     } catch (x) { return r; }
   };
+  Object.keys(c0).forEach(function(k){ if (/^__gc/.test(k)) c1[k] = c0[k]; });   /* patch REL: keep the flags of the wrappers below */
   c1.__gcSTL = true; LA.cell = c1;
 }
 document.addEventListener('click', function(ev){
@@ -150817,6 +150838,7 @@ function mergeCustomers(keep, others, list){
     try { if (W._gcApplySync) W._gcApplySync('customers', next); } catch (e) {}
     try { if (W.idbSet) W.idbSet('customers', next); } catch (e) {}
     try { if (W._crm && Array.isArray(W._crm.customers) && W._crm.customers.length) W._crm.customers = next; } catch (e) {}
+    try { if (Array.isArray(W._graycoCustomers)) W._graycoCustomers = next; } catch (e) {}   /* patch REL: the live copy too */
     return { removed: removed, moved: moved };
   });
 }
@@ -151632,7 +151654,7 @@ function onStage(ev){
   try {
     var d = ev && (ev.detail || ev), p = proj(d && d.pid); if (!p || !(isAdmin() || mine(p))) return;
     var miss = missingFor(p, d.to); if (!miss.length) return;
-    softDialog('📸 A few photos would help', '<p><b>' + esc(p.name) + '</b> moved to the next stage. Missing (only if you can):</p><ul>' + miss.map(function(x){ return '<li>' + esc(x.l) + '</li>'; }).join('') + '</ul>', 'Continue anyway', 'Open the photo checklist', function(r){ if (r === 'no') photosDialog(p.id); });
+    softNote('📸 A few photos would help', '<b>' + esc(p.name) + '</b> — missing (only if you can): ' + miss.map(function(x){ return esc(x.l); }).join(', '), 'Photo checklist', function(){ photosDialog(p.id); });   /* patch REL: a banner, never in the way */
   } catch (e) { warn(e); }
 }
 /* approving a FINAL invoice (the one approval door, window._gcApprovalAct): one "Continue anyway" when final photos are missing */
@@ -151652,6 +151674,19 @@ function wrapApprove(){
     return f.apply(W, arguments);
   };
   w.ok = {}; w.__a7 = true; W._gcApprovalAct = w; return true;
+}
+/* patch REL: a small corner note — never covers the page, closes itself after 15 s */
+function softNote(title, html, actLabel, onAct){
+  try {
+    var old = D.getElementById('gc7-note'); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var n = D.createElement('div'); n.id = 'gc7-note'; n.setAttribute('role', 'status');
+    n.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:99980;max-width:min(360px,calc(100vw - 24px));background:#fff;color:#171A2B;border:1px solid #d9dbe7;border-left:4px solid #F2A51A;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:10px 12px;font:13px/1.4 system-ui,sans-serif';
+    n.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b>' + esc(title) + '</b><button type="button" data-x="1" aria-label="Close" style="border:0;background:none;font-size:16px;cursor:pointer;line-height:1">✕</button></div><div style="margin:4px 0 8px">' + html + '</div><button type="button" data-a="1" style="border:1px solid #241968;background:#241968;color:#fff;border-radius:6px;padding:5px 10px;cursor:pointer;font:600 12px system-ui,sans-serif">' + esc(actLabel) + '</button>';
+    D.body.appendChild(n);
+    var gone = function(){ if (n.parentNode) n.parentNode.removeChild(n); };
+    n.addEventListener('click', function(e){ if (e.target.closest('[data-a]')) { gone(); try { onAct(); } catch (er) { warn(er); } } else if (e.target.closest('[data-x]')) gone(); });
+    later(gone, 15000);
+  } catch (e) { warn(e); }
 }
 /* cb('yes' | 'no' | 'dismiss') */
 function softDialog(title, html, yes, no, cb){
@@ -154940,6 +154975,7 @@ function wrapLeadCell(){
       var chip = e.jsx('span', { className: 'gcx10-chip grn', title: 'On-call page accepted', style: { marginLeft: 4 }, children: '📟 ' + s(l.onCallAcceptedBy) + ' ' + when(l.onCallAcceptedAt) });
       return e.jsxs('span', { style: { display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }, children: [r, chip] }); } catch (x) { return r; }
   };
+  Object.keys(c0).forEach(function(k){ if (/^__gc/.test(k)) c1[k] = c0[k]; });   /* patch REL: keep the flags of the wrappers below */
   c1.__gcX10 = true; LA.cell = c1;
 }
 function mitStrip(){
@@ -158579,13 +158615,13 @@ function docs(){ var d = crm().projectDocs; if (!arr(d).length && Array.isArray(
 /* the customer list: the CRM keeps it in its own state and on this computer (IndexedDB "customers"); window._crm.customers
    is not always filled in, so the list is read from the device and kept here (and handed back to window._crm) */
 var CUST = null;
-function customers(){ if (Array.isArray(CUST)) return arr(CUST); var c = crm().customers; if (!arr(c).length && Array.isArray(W._graycoCustomers)) c = W._graycoCustomers; return arr(c); }
+function customers(){ var g = W._graycoCustomers; if (Array.isArray(g) && g.length) return arr(g); var c = crm().customers; if (arr(c).length) return arr(c); return arr(CUST); }   /* patch REL: the live list first */
 function loadCust(){
   var get = W.idbGet ? Promise.resolve().then(function(){ return W.idbGet('customers'); }).catch(function(){ return null; }) : Promise.resolve(null);
   return get.then(function(v){
     if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
     if (Array.isArray(v) && (v.length || !Array.isArray(CUST))) CUST = v.slice();
-    try { if (Array.isArray(CUST)) { W._graycoCustomers = CUST; if (W._crm && !arr(W._crm.customers).length) W._crm.customers = CUST; } } catch (e) {}
+    try { if (Array.isArray(CUST)) { if (!arr(W._graycoCustomers).length) W._graycoCustomers = CUST; if (W._crm && !arr(W._crm.customers).length) W._crm.customers = CUST; } } catch (e) {}   /* patch REL: only fills an empty list */
     return W.idbGet ? Promise.resolve().then(function(){ return W.idbGet('leads'); }).catch(function(){ return null; }) : null;
   }).then(function(l){ if (typeof l === 'string') { try { l = JSON.parse(l); } catch (e) { l = null; } } if (Array.isArray(l)) LEADS = l; return customers(); });
 }
@@ -158875,7 +158911,7 @@ function draw360(idOrName, opts){
     var a = b.getAttribute('data-a');
     if (a === 'call') { logIt('call', '', { outcome: 'called' }); W.location.href = 'tel:' + s(c.phone); }
     else if (a === 'text') { logIt('text', ''); W.location.href = 'sms:' + s(c.phone); }
-    else if (a === 'mail') { logIt('email', ''); if (W._gcCompose) W._gcCompose({ to: c.email, customer: name, about: 'customer' }); else W.location.href = 'mailto:' + s(c.email); }
+    else if (a === 'mail') { logIt('email', ''); if (W._gcCompose) W._gcCompose({ to: c.email, customer: name, about: 'customer' }); else W.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s(c.email)), '_blank');   /* patch REL: Gmail, not mailto */ }
     else if (a === 'note') { var t = prompt('Note about ' + name + ':'); if (t) logIt('note', t); }
     else if (a === 'logcall') { var o = prompt('Call with ' + name + ' — what happened? (e.g. "Left voicemail", "Booked estimate Tue")'); if (o) logIt('call', o, { outcome: o.slice(0, 60) }); }
     else if (a === 'newjob') { sh.ov.remove(); try { if (W._setView) W._setView('launchjob'); } catch (x2) {} setTimeout(function(){ try { if (W._gcLaunchPrefill) W._gcLaunchPrefill({ client: name, clientPhone: s(c.phone), clientEmail: s(c.email), address: s(c.address) }); } catch (x3) {} }, 150); }
@@ -159013,7 +159049,7 @@ W._gcSub360 = function(idOrName){
   bd.addEventListener('click', function(e){
     var t = e.target.closest ? e.target.closest('[data-a]') : null; if (!t) return;
     var a = t.getAttribute('data-a');
-    if (a === 'mail') { if (W._gcCompose) W._gcCompose({ to: sb.email, about: 'sub' }); else W.location.href = 'mailto:' + s(sb.email); }
+    if (a === 'mail') { if (W._gcCompose) W._gcCompose({ to: sb.email, about: 'sub' }); else W.open('https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(s(sb.email)), '_blank');   /* patch REL: Gmail, not mailto */ }
     else if (a === 'sched') { sh.ov.remove(); W._gcOpenSubSchedule(); }
     else if (a === 'comp') { sh.ov.remove(); W._gcOpenSubCompliance(); }
     else if (a === 'pdfs') { sh.ov.remove(); W._gcOpenSubPDFManager(); }
@@ -160839,4 +160875,54 @@ function tick(){ try { if (D.hidden) return; css(); mount(); navBadge(); if (vie
 RI.call(W, tick, 1500); later(tick, 600);
 })();
 
+</script>
+<script id="gc-patch-rel">
+/* __GC_PATCH_REL__ — release: "Possible duplicate estimates" in Admin's warnings (list only — never deletes).
+   The Estimate Builder's recovery once promoted drafts into the shared list while people typed (fixed by the
+   cut-off hotfix). Those copies carry _recovered / _promotedFrom ("Saved work recovered from the Estimate Builder").
+   A recovered estimate that has a twin (same name, or same job and total) is listed for a person to review. */
+(function(){
+'use strict';
+if (window.__GC_PATCH_REL__) return; window.__GC_PATCH_REL__ = true;
+var W = window;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var n = Number(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function total(e){ return num(e && (e.total || e.grandTotal || e.amount || e.price || (e.totals && e.totals.total))); }
+function name(e){ return low(e && (e.name || e.title || e.project || e.job)).replace(/\s+/g, ' '); }
+function list(){
+  var all = [];
+  try { if (W._gcEST3 && typeof W._gcEST3.list === 'function') all = W._gcEST3.list() || []; } catch (e) {}
+  if (!all.length) try { all = (W._crm && W._crm.estimates) || []; } catch (e) {}
+  return Array.isArray(all) ? all.filter(function(e){ return e && e.id && !e.deleted && !e._deleted; }) : [];
+}
+W._gcPossibleDupEstimates = function(){
+  var all = list(), out = [];
+  all.forEach(function(r){
+    if (!(r._recovered || r._promotedFrom || /recovered from the estimate builder/i.test(s(r.recoveredNote)))) return;
+    var twin = all.filter(function(o){
+      if (o === r || o.id === r.id) return false;
+      if (r._promotedFrom && (o.id === r._promotedFrom || o.estBuilderId === r._promotedFrom)) return true;
+      if (name(o) && name(o) === name(r)) return true;
+      var pr = s(r.pid || r.projectId), po = s(o.pid || o.projectId);
+      return !!(pr && pr === po && Math.abs(total(o) - total(r)) < 1 && total(r) > 0);
+    })[0];
+    if (twin) out.push({ id: r.id, name: s(r.name || r.title) || '(no name)', total: total(r), twinId: twin.id, twinName: s(twin.name || twin.title) || '(no name)' });
+  });
+  return out;
+};
+function openEst(id){ try { if (W._gcEST3 && W._gcEST3.open) return W._gcEST3.open(id); } catch (e) {} try { if (W._gcOpenEstimateObj) W._gcOpenEstimateObj(id); } catch (e) {} }
+W._gcAdmExtraWarnings = W._gcAdmExtraWarnings || [];
+W._gcAdmExtraWarnings.push(function(){
+  var d = []; try { d = W._gcPossibleDupEstimates(); } catch (e) {}
+  if (!d.length) return [];
+  var fixes = d.slice(0, 6).map(function(x){ return { label: 'Open “' + x.name.slice(0, 28) + '”', run: function(){ openEst(x.id); } }; });
+  return [{ id: 'dup-estimates', level: 'amber', key: 'dupest', title: d.length + ' possible duplicate estimate' + (d.length === 1 ? '' : 's') + ' (recovered from the Estimate Builder)',
+    text: d.slice(0, 8).map(function(x){ return esc(x.name) + (x.total ? ' — $' + Math.round(x.total).toLocaleString('en-US') : '') + ' · twin: ' + esc(x.twinName); }).join('<br>') + (d.length > 8 ? '<br>…' : '') +
+      '<br>Before the 10/22 fix, typing in the Estimate Builder could save a second copy. Open each, keep the right one and delete the extra yourself — nothing is deleted automatically.',
+    fixes: fixes }];
+});
+try { console.log('[GC] Release checks: _gcPossibleDupEstimates() lists recovered twins for review (patch REL)'); } catch (e) {}
+})();
 </script>
