@@ -1277,6 +1277,8 @@ async function aqSend(item, now){
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
   if (/^gcp_/.test(s(item.kind))) return require('./_lib/gcp.js').onApproved(item, now);   /* patch GCP: GC pay apps / change orders / company COI / inspection offers */
   if (item.kind === 'refcredit' || item.kind === 'refgift') return require('./_lib/referral.js').onApproved(item, now);   /* patch REF: approved → credit on the member's balance / a one-time gift code (only its hash kept) */
+  if (item.kind === 'warranty_check') return require('./_lib/care11.js').onApproved(item, now);   /* patch AUTO11: warranty check-up offers, one e-mail each from news@ */
+  if (item.kind === 'cneeds_remind') { try { await require('./_lib/care11.js').needsApproved(item); } catch (e) {} }   /* patch AUTO11: the first "We need from you" reminder was approved — it goes out below; day 7 then goes by itself */
   if (item.kind === 'winback') return require('./_lib/winback.js').onApproved(item, now);   /* patch AUTO6: lost-lead check-ins, one e-mail each from news@ */   /* patch MKT: approved → posts / sends at its time (mkt-scheduled.js) */
   if (item.kind === 'maint_invoice') return require('./portal-plus.js').maintInvoiceSend(item, now);   /* patch X9: the yearly maintenance-plan invoice, with its PDF */
   /* patch AUTAI: a weekly update / a voice note's portal post goes on the customer's portal page when approved

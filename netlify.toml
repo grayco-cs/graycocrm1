@@ -123,6 +123,10 @@
 [functions."x10-scheduled"]
   schedule = "*/2 * * * *"
 
+# patch AUTO11: COI renewal requests to subs, warranty check-up offers, "We need from you" reminders (daily, ~9:35 AM Central)
+[functions."care11-scheduled"]
+  schedule = "35 14 * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.

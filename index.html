@@ -144835,7 +144835,7 @@ function subDocQueue(){
   if (!isOffice()) return;
   var cands = [];
   subs().forEach(function(sb){ arr(sb.files).forEach(function(f){
-    var t = s(f.cat) + ' ' + s(f.name);
+    var t = s(f.cat) + ' ' + s(f.name) + ' ' + s(f.kind);   /* patch AUTO11: a COI / W-9 sent in the sub portal (kind coi / w9) is read too */
     if (f.aiRead || !/^sb:crm-files\/[0-9a-f]{64}\.(pdf|jpe?g|png|webp)$/i.test(s(f.ref)) || SEENDOC[f.ref]) return;
     if (!/\bcoi\b|certificate|insurance|acord|\bw-?9\b/i.test(t)) return;
     if (Date.parse(f.at || f.uploadedAt || f.savedAt || 0) && Date.now() - Date.parse(f.at || f.uploadedAt || f.savedAt) > 45 * 864e5) return;   /* recent ones only */
@@ -157382,5 +157382,151 @@ W._gcRenderDefaultEstimator = renderDefault;
   });
 })();
 try { console.log('[GC] The estimator by role, bid notices to leads@, subs\' bids to bids@ (patch EST4)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-auto11">
+/* ══ patch AUTO11 — 📎 "Requested from customer" on the job, 🛡 Warranty check-ups in Marketing ══════════════════
+   Owner (10/22): "yes 1 (COI requests from subs), yes 2 (warranty-ending outreach), yes 4 (customer document requests
+   in the portal)". The server side is netlify/functions/cust-care.js + _lib/care11.js (daily: care11-scheduled.js).
+   • Job page (desk): a bar "📎 Requested from customer" under the job's header — what the customer has been asked for,
+     their answers / files (signed links), ＋ Ask for… (insurance papers, adjuster, HOA letter, colors, door / gate
+     code → the 🔐 Access codes vault, signed forms, photos, other, or your own), Mark received, Cancel.
+     window._gcCustNeeds(pid) opens it from anywhere.
+   • Marketing → 🛡 Warranty check-ups: offers sent, accepted, coming up in the next 60 days, the recent ones.
+   The COI requests need nothing here: the daily run e-mails the sub and puts "🛡 COI expiring: <sub>" on the shared
+   Office To-Do; the COI the sub uploads in the sub portal is read by the COI reader (patch AUTAI) for the office. */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_AUTO11__) return; W.__GC_AUTO11__ = true;
+var ST = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, f, ms || 0); };
+var SI = function(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval).call(W, f, ms); };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function day(iso){ var d = new Date(String(iso).length === 10 ? iso + 'T12:00:00' : iso); return isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function crm(){ return W._crm || {}; }
+function proj(pid){ return arr(crm().projects).filter(function(x){ return x && String(x.id) === String(pid); })[0] || null; }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('role', 'status'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:34px;transform:translateX(-50%);z-index:2147483002;color:#fff;padding:12px 18px;border-radius:12px;font:700 14px Inter,Arial,sans-serif;box-shadow:0 6px 22px rgba(0,0,0,.25);background:' + (bad ? '#b91c1c' : '#1f7a3a');
+    D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 4800); } catch (e) {}
+}
+function fn(body){
+  return W.fetch('/.netlify/functions/cust-care', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__status = r.status; return j; }); }, function(e){ return { ok: false, error: 'Cannot reach the server (' + (e && e.message) + ').', __status: 0 }; });
+}
+function css(){
+  if (D.getElementById('gc-a11-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-a11-css';
+  st.textContent = '.gca11-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;background:#fffdf5;border:1px solid #ecdcae;border-radius:10px;padding:8px 12px;margin:8px 0;font:14px Inter,Arial,sans-serif;color:#1b1640}' +
+    '.gca11-bar button,.gca11-btn{background:#241968;color:#fff;border:0;border-radius:8px;padding:8px 12px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;min-height:36px}.gca11-btn.o{background:#fff;color:#241968;border:1px solid #241968}.gca11-btn.r{background:#fff;color:#b91c1c;border:1px solid #b91c1c}' +
+    '.gca11-ov{position:fixed;inset:0;z-index:100060;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px}.gca11-card{background:#fff;border-radius:14px;max-width:720px;width:100%;padding:18px 18px 22px;font:14px Inter,Arial,sans-serif;color:#1b1640;box-shadow:0 10px 40px rgba(0,0,0,.3)}' +
+    '.gca11-card h3{margin:0 0 4px;font-size:18px}.gca11-mut{color:#5b6475;font-size:13px}.gca11-it{border:1px solid #e3e8f0;border-radius:10px;padding:10px 12px;margin:8px 0}.gca11-chip{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;margin-left:6px}' +
+    '.gca11-chip.open{background:#fff4d6;color:#8a5300}.gca11-chip.done{background:#e3f5ec;color:#1f7a3a}.gca11-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}.gca11-in{border:1px solid #cfd6e3;border-radius:8px;padding:8px 10px;font:14px Inter,Arial,sans-serif;min-height:36px;box-sizing:border-box}' +
+    '.gca11-kinds{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;margin:8px 0}.gca11-kinds label{display:flex;gap:8px;align-items:center;border:1px solid #e3e8f0;border-radius:8px;padding:8px}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function overlay(title, sub){
+  css(); var ov = D.createElement('div'); ov.className = 'gca11-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', title);
+  var c = D.createElement('div'); c.className = 'gca11-card';
+  c.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><h3>' + esc(title) + '</h3><div class="gca11-mut">' + esc(sub || '') + '</div></div><button type="button" class="gca11-btn o" data-x="1" aria-label="Close">✕</button></div><div data-b="1"></div>';
+  ov.appendChild(c); D.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-x]'))) ov.remove(); });
+  return { ov: ov, body: c.querySelector('[data-b]') };
+}
+
+/* ── 📎 Requested from customer ── */
+var KINDS = { policy: 'Insurance policy / declarations page', adjuster: 'Adjuster name, phone and e-mail', hoa: 'HOA approval letter', colors: 'Paint / material colors', codes: 'Door / gate / lockbox code', forms: 'Signed forms', photos: 'Photos', other: 'Other' };
+function openNeeds(pid){
+  var p = proj(pid), O = overlay('📎 Requested from customer — ' + s(p && p.name), 'What the customer sees under “We need from you” in their portal. They upload a file or type the answer; you get an e-mail each time. Day 3: a reminder waits on ✅ Approvals; day 7: it goes again by itself and the PM gets a To-Do.');
+  var R = null;
+  function paint(){
+    if (!R) { O.body.innerHTML = '<p class="gca11-mut">Loading…</p>'; return; }
+    var items = arr(R.items), open = items.filter(function(x){ return x.status === 'open'; }).length;
+    var h = '<div class="gca11-row"><b>' + (items.length ? (open ? open + ' waiting on the customer' : 'Everything asked for came in ✓') : 'Nothing asked for yet.') + '</b></div>';
+    h += items.map(function(x){
+      return '<div class="gca11-it"><b>' + esc(x.label) + '</b><span class="gca11-chip ' + (x.status === 'done' ? 'done' : 'open') + '">' + (x.status === 'done' ? '✓ Received ' + esc(day(x.answeredAt)) : 'Waiting') + '</span>' +
+        (x.note ? '<div class="gca11-mut">' + esc(x.note) + '</div>' : '') +
+        (x.answer ? '<div style="margin-top:6px;white-space:pre-wrap">' + esc(x.kind === 'codes' ? '🔐 Saved to the job’s Access codes (never shown here).' : x.answer) + '</div>' : '') +
+        (arr(x.refs).length ? '<div class="gca11-row">' + x.refs.map(function(f){ return f.url ? '<a class="gca11-btn o" target="_blank" rel="noopener" href="' + esc(f.url) + '">📄 ' + esc(f.name || 'File') + '</a>' : '<span class="gca11-mut">📄 ' + esc(f.name || 'File') + '</span>'; }).join('') + '</div>' : '') +
+        '<div class="gca11-row gca11-mut">Asked ' + esc(day(x.createdAt)) + (x.createdBy ? ' by ' + esc(x.createdBy) : '') + '</div>' +
+        '<div class="gca11-row">' + (x.status === 'open' ? '<button type="button" class="gca11-btn o" data-done="' + esc(x.id) + '">Mark received</button><button type="button" class="gca11-btn r" data-cancel="' + esc(x.id) + '">Not needed</button>' : '<button type="button" class="gca11-btn o" data-reopen="' + esc(x.id) + '">Ask again</button>') + '</div></div>';
+    }).join('');
+    h += '<div class="gca11-it" style="background:#f8fafc"><b>＋ Ask the customer for…</b><div class="gca11-kinds">' + Object.keys(KINDS).filter(function(k){ return k !== 'other'; }).map(function(k){ return '<label><input type="checkbox" data-k="' + k + '"> ' + esc(KINDS[k]) + '</label>'; }).join('') + '</div>' +
+      '<div class="gca11-row"><input class="gca11-in" data-own="1" placeholder="Something else (type it)" style="flex:1;min-width:220px"></div>' +
+      '<div class="gca11-row"><input class="gca11-in" data-note="1" placeholder="A note for the customer (optional)" style="flex:1;min-width:220px"></div>' +
+      '<div class="gca11-row"><button type="button" class="gca11-btn" data-ask="1">Ask the customer</button><span class="gca11-mut">They see it in their portal; no e-mail goes out until the reminder is approved.</span></div></div>';
+    O.body.innerHTML = h;
+  }
+  function load(){ fn({ action: 'needs-list', pid: pid }).then(function(r){ if (!r.ok) { O.body.innerHTML = '<p>' + esc(r.error || 'Could not load.') + '</p>'; return; } R = r; paint(); }); }
+  O.body.addEventListener('click', function(e){
+    var t = e.target && e.target.closest ? e.target.closest('button') : null; if (!t) return;
+    if (t.hasAttribute('data-ask')) {
+      var items = [], note = s((O.body.querySelector('[data-note]') || {}).value);
+      Array.prototype.forEach.call(O.body.querySelectorAll('[data-k]'), function(c){ if (c.checked) items.push({ kind: c.getAttribute('data-k'), note: note }); });
+      var own = s((O.body.querySelector('[data-own]') || {}).value); if (own) items.push({ kind: 'other', label: own, note: note });
+      if (!items.length) { toast('Tick what you need (or type it).', true); return; }
+      t.disabled = true;
+      fn({ action: 'needs-request', pid: pid, items: items }).then(function(r){ t.disabled = false; toast(r.ok ? '📎 Asked — it shows in their portal' + (r.added ? '' : ' (already asked)') : (r.error || 'Could not save.'), !r.ok); if (r.ok) load(); });
+      return;
+    }
+    var id = t.getAttribute('data-done') || t.getAttribute('data-cancel') || t.getAttribute('data-reopen'); if (!id) return;
+    var patch = t.hasAttribute('data-done') ? { done: true } : t.hasAttribute('data-cancel') ? { cancel: true } : { reopen: true };
+    fn(Object.assign({ action: 'needs-update', id: id }, patch)).then(function(r){ if (!r.ok) toast(r.error || 'Could not save.', true); load(); });
+  });
+  paint(); load();
+}
+W._gcCustNeeds = openNeeds;
+
+/* the bar on the job page (desk), under the job's other bars */
+function makeBar(p){
+  css(); var b = D.createElement('div'); b.className = 'gca11-bar gca11-jobbar'; b.setAttribute('data-pid', String(p.id));
+  b.innerHTML = '<span><b>📎 Requested from customer</b> <span class="gca11-mut">insurance papers, HOA letter, colors, codes…</span></span><button type="button" data-a11="needs">📎 Open</button>';
+  b.addEventListener('click', function(e){ var t = e.target && e.target.closest ? e.target.closest('[data-a11]') : null; if (t) openNeeds(p.id); });
+  return b;
+}
+function deskBar(){
+  if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
+  var main = D.querySelector('main'); if (!main) return;
+  var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
+  var bars = main.querySelectorAll('.gca11-jobbar');
+  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  var back = null, bs = main.getElementsByTagName('button');
+  for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
+  if (!back) return;
+  var root = back.parentElement, have = root.querySelector(':scope > .gca11-jobbar');
+  Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
+  if (have && have.getAttribute('data-pid') === String(p.id)) return;
+  if (have) have.remove();
+  var after = root.querySelector(':scope > .gcx10-jobbar') || root.querySelector(':scope > .gcx9-bars') || back;
+  root.insertBefore(makeBar(p), after.nextSibling);
+}
+SI(deskBar, 1500);
+
+/* ── Marketing → 🛡 Warranty check-ups ── */
+var WS = { st: null, at: 0 };
+var mtries = 0;
+function mkt(){
+  var X = W._gcMktExt;
+  if (!X) { if (mtries++ < 120) ST(mkt, 500); return; }
+  var SECS = X.SECS, VIEWS = X.VIEWS, ACT = X.ACT;
+  if (!SECS.some(function(y){ return y.id === 'warrcheck'; })) SECS.splice(Math.max(0, SECS.length - 1), 0, { id: 'warrcheck', ic: '🛡', l: 'Warranty check-ups', d: 'Customers whose warranty ends within 60 days get a free check-up offer (on approval) — sent, accepted, coming up' });
+  function load(force){ if (WS.st && !force && Date.now() - WS.at < 60000) return; WS.at = Date.now(); fn({ action: 'warranty-stats' }).then(function(j){ WS.st = j || {}; try { if (X.UI.sec === 'warrcheck') X.draw(); } catch (e) {} }); }
+  VIEWS.warrcheck = function(){
+    load(); var st = WS.st;
+    if (!st) return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
+    if (!st.ok) return '<div class="gmt-card"><div class="gmt-warn">' + esc(st.error || 'Could not load.') + '</div></div>';
+    var rate = st.sent ? Math.round(st.accepted / st.sent * 100) : 0;
+    var h = '<div class="gmt-card"><h2>🛡 Warranty check-ups</h2><div class="gmt-muted">When a finished job’s GrayCo warranty (5 years on roofing and insurance work, 1 year on everything else) ends within 60 days, the customer is offered a free check-up from news@ — one approval item a day on ✅ Approvals; nobody gets it twice. A “yes” becomes a lead for their original PM, and the e-mail mentions the maintenance plans.</div>' +
+      '<table><tr><th>Coming up (next 60 days)</th><th>Offers sent</th><th>Sent this year</th><th>Said yes</th><th>Yes rate</th></tr><tr><td><b>' + (st.upcoming || 0) + '</b></td><td>' + (st.sent || 0) + '</td><td>' + (st.sentYear || 0) + '</td><td>' + (st.accepted || 0) + '</td><td>' + rate + '%</td></tr></table>' +
+      '<div class="gmt-row"><button class="gmt-btn o" data-a="wc-refresh">⟳ Refresh</button></div></div>';
+    if (arr(st.recent).length) h += '<div class="gmt-card"><h2>Recent offers</h2><table><tr><th>Customer</th><th>Job</th><th>Warranty ends</th><th>Sent</th><th>Answer</th></tr>' + st.recent.map(function(x){ return '<tr><td>' + esc(x.name) + '</td><td>' + esc(x.title) + '</td><td>' + esc(day(x.end)) + '</td><td>' + esc(day(x.sentAt)) + '</td><td>' + (x.acceptedAt ? '✅ Yes — ' + esc(day(x.acceptedAt)) : '—') + '</td></tr>'; }).join('') + '</table></div>';
+    if (arr(st.batches).length) h += '<div class="gmt-card"><h2>Daily batches</h2><table><tr><th>Day</th><th>Customers</th></tr>' + st.batches.map(function(b){ return '<tr><td>' + esc(day(b.day)) + '</td><td>' + (b.n || 0) + '</td></tr>'; }).join('') + '</table></div>';
+    return h;
+  };
+  ACT['wc-refresh'] = function(){ WS.st = null; load(true); };
+}
+mkt();
 })();
 </script>
