@@ -712,7 +712,7 @@ async function staffEmailsFor(job){
      size limits below. Every file goes to the subportal-files bucket and onto the job's plans list (the same
      plans/<jobId> row the bid site and the Lead Inbox (patch LD2, _lib/bid-portal.js) use).
    • A sub on a job with no plans taps "Request plans — I'm interested in bidding": recorded (who, when, note,
-     trade) in planreqs/<jobId>__<userId>; Wesley, Nick and the job's estimator (the default estimator — the Estimator role — when none
+     trade) in planreqs/<jobId>__<userId>; Wesley, Nick and the job's estimator (the head estimator — the Estimator role — when none
      is set) get an e-mail, a phone push when push is set up, and one CRM to-do per job.
    • As soon as the job has plans (uploaded here, saved in the bid site, or copied by the Lead Inbox), every
      sub who asked gets "Plans are ready for <job>" once, in their language. It is a transactional notice
@@ -811,7 +811,7 @@ async function estimatorEmail(job){
     const st = await staffList(); const hit = st.find(function(x){ return staffId(x.email) === id; }); if (hit) return hit.email;
     const r = await getRow('users', id); if (r && r.email) return low(r.email);
   }
-  return defaultEstimatorEmail();   /* patch EST4: the default estimator (the Estimator role / Leads ⚙), never a name */
+  return defaultEstimatorEmail();   /* patch EST4: the head estimator (the Estimator role / Leads ⚙), never a name */
 }
 async function defaultEstimatorEmail(){
   let settings = null;

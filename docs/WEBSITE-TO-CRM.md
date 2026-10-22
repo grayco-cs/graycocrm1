@@ -114,7 +114,7 @@ Open `https://crm.grayco-cs.com/.netlify/functions/website-intake?ping=1` — `d
 |---|---|
 | `website-form.js` (site root) | The embeddable form and roof widget (shadow DOM, so the site's CSS cannot break it). No keys inside. |
 | `netlify/functions/website-intake.js` | Public: `GET ?form=1` (signed token, Turnstile site key), `POST` (a form), `POST ?act=roofprice`, `GET ?ping=1`. CRM sign-in: `GET ?settings=1` (staff), `POST ?settings=1` (admins: roofPriceRanges), `GET ?list=1` / `?file=<id>` / `POST ?act=imported` (admins: applications → Hiring). CORS: grayco-cs.com, www, the CRM, `WEBSITE_ORIGINS`, and `*.squarespace.com` (editor preview; `WEBSITE_SQSP_PREVIEW=0` turns it off). |
-| `netlify/functions/bid-inbox.js` | Leads are Lead Inbox items (`gc_lead_inbox`, origin `website`, `leadExtra` copied onto the CRM lead by patch LD2). A website item is matched only by its own id (same person + same form + same day = one lead). No bid-portal draft, no default estimator. |
+| `netlify/functions/bid-inbox.js` | Leads are Lead Inbox items (`gc_lead_inbox`, origin `website`, `leadExtra` copied onto the CRM lead by patch LD2). A website item is matched only by its own id (same person + same form + same day = one lead). No bid-portal draft, no head estimator. |
 | `netlify/functions/_lib/bid-alerts.js` | The admins' "🌐 New website lead" e-mail (patch LA's new-lead alert); website leads are not bids (no "Missing due info"). |
 | `netlify/functions/solar-lookup.js` | `_measure(lat, lng)`: the same Google Solar lookup and monthly limit as RoofScout. |
 | `index.html` (`tail_WEB.js`, `<script id="gc-patch-web">`) | The 🌐 card line, the existing-customer note on the job, applications → Hiring, the 🌐 Website strip (embed code, roof prices). |

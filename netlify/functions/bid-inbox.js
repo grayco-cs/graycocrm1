@@ -668,7 +668,7 @@ const BID_WORDS = /\b(bid|bids|bidding|rfp|rfq|itb|ifb|invitation|addend(um|a)|p
 /* ── the whole job for one e-mail ──────────────────────────────────────────── */
 /* ── patch EST4: a subcontractor's bid e-mailed to bids@ ───────────────────────
    Matched to the bid-portal job (PO, street address, the sub's invitation, the project title), its files kept
-   (crm-files), the job's estimator told (else the default estimator, else the admins). Unmatched ones wait in
+   (crm-files), the job's estimator told (else the head estimator, else the admins). Unmatched ones wait in
    "Unmatched sub bids" (gc_sub_bids_email, service-only) for the estimator. Never a customer lead. */
 const KV_SUBBIDS = 'gc_sub_bids_email';
 async function portalJobs(){
@@ -692,7 +692,7 @@ async function subBidMailTo(rec, est){
     + '<p style="color:#555">Subject: ' + esc(rec.subject) + '<br>' + (rec.files.length ? rec.files.length + ' file(s): ' + rec.files.map(f => esc(f.name)).join(', ') : 'No files attached') + '</p>'
     + (rec.text ? '<blockquote style="border-left:3px solid #ddd;margin:8px 0;padding:4px 10px;color:#333">' + esc(rec.text.slice(0, 1200)).replace(/\n/g, '<br>') + '</blockquote>' : '')
     + '<p><a href="' + esc(site) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Sub bids in the CRM</a></p>'
-    + '<p style="color:#777;font-size:12px">Hit Reply to answer the sub. Sent to the estimator (the Estimator role / Leads ⚙ Default estimator).</p></div></div>';
+    + '<p style="color:#777;font-size:12px">Hit Reply to answer the sub. Sent to the estimator (the Estimator role / Leads ⚙ Head estimator).</p></div></div>';
   try {
     const r = await (exports._fetch || fetch)('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: env('SUB_BID_FROM') || 'GrayCo Bids <bids@grayco-cs.com>', to, reply_to: rec.sub.email || undefined, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Bids'), html, headers: { 'X-GrayCo-CRM': 'sub-bid' } }) });
@@ -708,7 +708,7 @@ async function subBidFromEmail(mail){
   const m = SB.matchJob(mail, jobs);
   const files = [];
   for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref, stored: st.stored }); }
-  /* the job's own estimator (its Lead Inbox item), else the default estimator */
+  /* the job's own estimator (its Lead Inbox item), else the head estimator */
   let est = null;
   if (m && m.job.leadId) { const it = arr(await kvGet(KV)).find(x => x && x.id === m.job.leadId); if (it && low(it.estimatorEmail)) est = { name: s(it.estimator), email: low(it.estimatorEmail) }; }
   if (!est) { const d = await estimatorOf(); if (d.email) est = { name: d.name, email: d.email }; }
@@ -816,7 +816,7 @@ async function afterStore(results, items, opt){
   if (Object.keys(marks).length) {
     try { await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? list : undefined; }); } catch (e) {}
   }
-  /* LA: commercial / government / bid-board bids go to the default estimator (EST4: the Estimator role / Leads ⚙), unless assigned */
+  /* LA: commercial / government / bid-board bids go to the head estimator (EST4: the Estimator role / Leads ⚙), unless assigned */
   const added = touched.filter(t => t.action === 'added').map(t => t.it);
   try {
     const est = await estimatorOf();
@@ -872,13 +872,17 @@ async function fetchPlans(items){
   }
   return { stored, changes };
 }
-/* LA: what counts as a commercial bid (default estimator): commercial (large and small), government, and anything
+/* LA: what counts as a commercial bid (head estimator): commercial (large and small), government, and anything
    from a bid board / planroom (BuildingConnected, PlanHub, A&B, RKA, ConstructConnect, the public bid sites) */
 function isCommercial(it){
-  return /^(commercial|government)$/.test(low(it && it.type)) || /buildingconnected|planhub|planroom|constructconnect|dodge|government|county|city of|mscs|mscaa|stream|osp/i.test(s(it && it.source)) || s(it && it.origin) === 'watch';
+  if (!it || /^(referral|partner)$/.test(s(it.origin))) return false;   /* patch HOT2: homeowner leads never */
+  if (it.websiteLead || s(it.origin) === 'website') return /^(commercial|government)$/.test(low(it.type));   /* the website's "Commercial bid inquiry" form is a bid */
+  if (/resid|home|insur|storm|claim|mitig/i.test(s(it.type))) return false;
+  return /^(commercial|government)$/.test(low(it.type)) || /buildingconnected|building connected|planhub|plan hub|planroom|constructconnect|dodge|isqft|government|county|city of|state of|mscs|mscaa|mlgw|stream|osp|sam\.gov|\bsam\b|bid ?board|procurement/i.test(s(it.source))
+    || /^(watch|api|email|partner-bid)$/.test(s(it.origin));   /* patch HOT2: every bid source — bid e-mail (bids@ / leads@ bid path), public boards, the BuildingConnected API, SAM.gov, partner bids */
 }
-/* the default estimator (patch EST4): worked out from the people's roles (_lib/estimator.js) — the one active
-   Estimator; with several, the Leads ⚙ "Default estimator" setting (an e-mail kept as data); none → the admins */
+/* the head estimator (patch EST4): worked out from the people's roles (_lib/estimator.js) — the one active
+   Estimator; with several, the Leads ⚙ "Head estimator" setting (an e-mail kept as data); none → the admins */
 async function estimatorOf(settings){
   const st = Object.assign({}, DEFAULT_SETTINGS, settings || (await kvGet(KV_SET)) || {});
   const r = await require('./_lib/estimator.js').resolve({ sb, settings: st, fresh: !!settings });
@@ -975,7 +979,7 @@ const DEFAULT_SETTINGS = {
     'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'supplies', 'textbook', 'furniture', 'elevator', 'bus', 'tires', 'ammunition', 'firearms'],
   allBids: true,   /* patch BW: "All public bids (no keyword filter)" — every solicitation from the boards except the excluded words */
   sources: {},
-  /* LA / EST4: "Default estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
+  /* LA / EST4: "Head estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
   estimator: { name: '', email: '' }
 };
 function cleanSettings(b, cur){
