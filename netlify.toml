@@ -315,3 +315,8 @@
 # Dormant without ANTHROPIC_API_KEY; at most PHOTO_TAG_DAILY_MAX a day (default 300).
 [functions."photo-tag"]
   schedule = "*/20 * * * *"
+
+# patch PLAN: the nightly "📅 Today's plan" on everyone's To-Do (acts only when it is 2 AM Central; 6 AM Central = the
+# optional e-mail). plan-nightly (no schedule) answers the Admin "Run now" / preview calls.
+[functions."plan-scheduled"]
+  schedule = "0 7,8,11,12 * * *"

@@ -161281,3 +161281,193 @@ later(pull, 500);
 try { console.log('[GC] Lead deep links + "Assign this lead" approvals (patch HOT1): _gcOpenLead(id), _gcLeadsToAssign()'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-plan">
+/* __GC_PATCH_PLAN__ — 📅 TODAY'S PLAN (owner: "to-do list for every profile needs to update every night 2am with things
+   they can do the next day on CRM"). netlify/functions/plan-nightly.js writes one "📅 Today's plan — <day>" record per
+   person into the To-Do (gc_office_tasks, kind 'daily_plan') at 2 AM Central; this tail:
+     • the plan opens by itself on the To-Do, and every line gets "↗ Open" (the job, the lead, the claim or the tab);
+     • Admin → 📅 Daily plan: "Run tonight's plan now" and a preview of any person's plan (nothing is changed);
+     • My Profile → "E-mail me my plan at 6 AM" (off until the person turns it on; gc_kv "gc_plan_prefs").
+   API: window._gcPlan = { decorate(), go(goObj), run(), preview(email), prefs() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_PLAN__) return; window.__GC_PATCH_PLAN__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/plan-nightly', OT = 'gc_office_tasks', PREFS = 'gc_plan_prefs', PFX = 'st:' + OT + ':plan_';
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return (v == null ? '' : String(v)).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v : []; }
+function obj(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return {}; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(lsGet('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
+function myEmail(){ return low(me().email); }
+function isAdmin(){ var u = me(); return /admin|owner/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483300;background:' + (bad ? '#b91c1c' : '#111827') + ';color:#fff;border-radius:10px;padding:10px 16px;font:600 13px Inter,Arial,sans-serif;box-shadow:0 8px 26px rgba(0,0,0,.25)';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function css(){
+  if (D.getElementById('gc-plan-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-plan-css';
+  st.textContent = '.gcpl-go{margin-left:8px;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:6px;padding:1px 8px;font:600 11px Inter,Arial,sans-serif;cursor:pointer;white-space:nowrap}'
+    + '.gcpl-go:hover{background:#e0e7ff}.gcpl-card{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:10px 0;background:#fff;font:13px Inter,Arial,sans-serif;color:#1b1640}'
+    + '.gcpl-btn{border:0;border-radius:8px;padding:8px 14px;font:700 13px Inter,Arial,sans-serif;cursor:pointer;background:#241968;color:#fff}.gcpl-btn.sec{background:#eef2ff;color:#241968}'
+    + '.gcpl-btn[disabled]{opacity:.6;cursor:default}.gcpl-in{border:1px solid #cbd5e1;border-radius:8px;padding:7px 10px;font:13px Inter,Arial,sans-serif}'
+    + '.gcpl-mut{color:#64748b;font-size:12px}.gcpl-list{margin:8px 0 0;padding-left:18px}.gcpl-list li{margin:3px 0}';
+  (D.head || D.documentElement).appendChild(st);
+}
+
+/* ── the plan on the To-Do: open by itself, "↗ Open" on every line ── */
+function plans(){ var o = {}; arr(lsGet(OT)).forEach(function(t){ if (t && t.kind === 'daily_plan' && t.id) o[s(t.id)] = t; }); return o; }
+var opened = {};
+function decorate(){
+  var ins = D.querySelectorAll('input[data-td2s^="' + PFX + '"]'); if (!ins.length) return 0;
+  var P = plans(), n = 0;
+  for (var i = 0; i < ins.length; i++) {
+    var inp = ins[i], lab = inp.parentNode; if (!lab || lab.querySelector('.gcpl-go')) continue;
+    var parts = s(inp.getAttribute('data-td2s')).split('|'), rid = parts[0].slice(('st:' + OT + ':').length), sid = parts.slice(1).join('|');
+    var rec = P[rid]; if (!rec) continue;
+    var it = arr(rec.items).filter(function(x){ return x && s(x.id) === sid; })[0];
+    if (!it || !it.go) continue;
+    var b = D.createElement('button'); b.type = 'button'; b.className = 'gcpl-go'; b.textContent = '↗ Open';
+    b.setAttribute('data-gcplan-go', rid + '|' + sid); b.title = 'Open it in the CRM';
+    lab.appendChild(b); n++;
+  }
+  return n;
+}
+function autoOpen(){
+  var td = W._gcTD2; if (!td || !td.ui || !td.ui.open) return;
+  var P = plans(), mine = myEmail(), changed = false;
+  Object.keys(P).forEach(function(id){
+    var t = P[id]; if (t.done || t.deleted) return;
+    if (mine && arr(t.assignees).map(low).indexOf(mine) < 0) return;
+    var k = 'st:' + OT + ':' + id, tag = k + '@' + s(t.planDay);
+    if (opened[tag]) return; opened[tag] = 1;
+    if (td.ui.open[k] === undefined) { td.ui.open[k] = true; changed = true; }
+  });
+  if (changed) { try { td.paint(); } catch (e) {} }
+}
+function go(g){
+  g = obj(g);
+  try {
+    if (g.lead) {
+      if (typeof W._setView === 'function') W._setView('leads');
+      later(function(){ try { if (W._gcLeadsHub && typeof W._gcLeadsHub.open === 'function') W._gcLeadsHub.open(g.lead); } catch (e) {} }, 600);
+      return 'lead';
+    }
+    if (g.claim && W._gcClaims && typeof W._gcClaims.open === 'function') { W._gcClaims.open({ claimId: g.claim }); return 'claim'; }
+    if (g.pid && typeof W._gcGoToTaskJob === 'function') { W._gcGoToTaskJob(g.pid, ''); return 'job'; }
+    if (g.tab && typeof W._setView === 'function') { W._setView(g.tab); return 'tab'; }
+    if (g.pid && typeof W._setView === 'function') { W._setView('projects'); return 'projects'; }
+  } catch (e) {}
+  return '';
+}
+D.addEventListener('click', function(ev){
+  var b = ev.target && ev.target.closest ? ev.target.closest('[data-gcplan-go]') : null; if (!b) return;
+  ev.preventDefault(); ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+  var p = s(b.getAttribute('data-gcplan-go')).split('|'), rec = plans()[p[0]];
+  var it = rec && arr(rec.items).filter(function(x){ return x && s(x.id) === p.slice(1).join('|'); })[0];
+  if (!it || !go(it.go)) toast('Could not open that one — find it in the CRM.', true);
+}, true);
+
+/* ── server calls (the CRM sign-in) ── */
+function token(){
+  var A = W.__GC_AUTH__;
+  if (!A || typeof A.fresh !== 'function') return Promise.reject(new Error('Sign in to the CRM first.'));
+  return Promise.resolve(A.fresh()).then(function(x){ if (!x || !x.access_token) throw new Error('Sign in to the CRM first.'); return x.access_token; });
+}
+function api(body){
+  return token().then(function(t){
+    return W.fetch(FN, { method: 'POST', cache: 'no-store', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }).then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { error: 'The server answered ' + r.status + '.' }; } if (!r.ok || !j.ok) throw new Error(j.error || ('The server answered ' + r.status + '.')); return j; }); });
+}
+function run(){ return api({ run: true }); }
+function preview(email){ return api({ dry: true, email: low(email) }); }
+
+/* ── Admin → 📅 Daily plan ── */
+function people(){
+  var src = arr(W._crm && W._crm.users); if (!src.length) src = arr(lsGet('users'));
+  var seen = {};
+  return src.filter(function(u){ var e = low(u && u.email); if (!u || u.active === false || !/@/.test(e) || seen[e]) return false; seen[e] = 1; return true; }).sort(function(a, b){ return s(a.name || a.email) < s(b.name || b.email) ? -1 : 1; }); }
+function renderAdmin(box){
+  css();
+  box.innerHTML = '<div class="gcpl-card"><b>📅 Today’s plan</b><div class="gcpl-mut" style="margin:4px 0 10px">Every night at 2 AM Central each person’s To-Do gets “📅 Today’s plan” — the things they can do that day, by role. Done or no-longer-needed lines drop off; open ones carry over. Manual to-dos are never touched.</div>'
+    + '<button type="button" class="gcpl-btn" data-gcpl="run">▶ Run tonight’s plan now</button> <span class="gcpl-mut" data-gcpl="runout"></span>'
+    + '<div style="margin-top:14px"><b>Preview a person’s plan</b> <span class="gcpl-mut">(nothing is changed)</span><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap"><select class="gcpl-in" data-gcpl="who">'
+    + people().map(function(u){ return '<option value="' + esc(u.email) + '">' + esc(u.name || u.email) + (u.role ? ' — ' + esc(u.role) : '') + '</option>'; }).join('')
+    + '</select><button type="button" class="gcpl-btn sec" data-gcpl="dry">👁 Preview</button></div><div data-gcpl="dryout"></div></div></div>';
+  box.onclick = function(e){
+    var t = e.target && e.target.closest ? e.target.closest('[data-gcpl]') : null; if (!t) return;
+    var a = t.getAttribute('data-gcpl');
+    if (a === 'run') {
+      t.disabled = true; var o = box.querySelector('[data-gcpl="runout"]'); o.textContent = 'Building…';
+      run().then(function(j){ var r = j.report || {}; o.textContent = '✓ ' + (r.people || 0) + ' people, ' + (r.items || 0) + ' lines for ' + s(r.day) + (r.changed ? '' : ' (nothing new)'); t.disabled = false; toast('Plans written'); },
+        function(err){ o.textContent = ''; t.disabled = false; toast(err.message, true); });
+    }
+    if (a === 'dry') {
+      var who = box.querySelector('[data-gcpl="who"]').value, out = box.querySelector('[data-gcpl="dryout"]'); t.disabled = true; out.innerHTML = '<div class="gcpl-mut">Building…</div>';
+      preview(who).then(function(j){
+        var r = j.report || {}, p = obj(r.plans)[low(who)]; t.disabled = false;
+        if (!p) { out.innerHTML = '<div class="gcpl-mut" style="margin-top:8px">No plan for ' + esc(who) + ' on ' + esc(r.day) + ' (nothing to do, inactive, or a weekend with no work).</div>'; return; }
+        out.innerHTML = '<div style="margin-top:8px"><b>' + esc(p.name || who) + '</b> <span class="gcpl-mut">' + esc(arr(p.roles).join(', ')) + ' · ' + esc(r.day) + ' · ' + p.items.length + ' line' + (p.items.length === 1 ? '' : 's') + (p.more ? ' (+' + p.more + ' more)' : '') + '</span><ul class="gcpl-list">'
+          + arr(p.items).map(function(i){ return '<li>' + esc(i.label) + '</li>'; }).join('') + '</ul></div>';
+      }, function(err){ t.disabled = false; out.innerHTML = ''; toast(err.message, true); });
+    }
+  };
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'plan', after: 'api', ic: '📅', t: 'Daily plan', d: 'Everyone’s “Today’s plan” on the To-Do at 2 AM: run it now or preview a person', render: renderAdmin,
+    count: function(){ return '2 AM Central'; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+
+/* ── My Profile → "E-mail me my plan at 6 AM" (gc_kv gc_plan_prefs; off until the person turns it on) ── */
+function sb(){ return { u: s(lsGet('grayco_sb_url')).replace(/\/$/, ''), k: s(lsGet('grayco_sb_key')) }; }
+function kvGet(key){
+  var c = sb(); if (!c.u || !c.k) return Promise.resolve(undefined);
+  return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: { apikey: c.k }, cache: 'no-store' })
+    .then(function(r){ return r && r.ok ? r.json() : undefined; }).then(function(rows){ return Array.isArray(rows) ? (rows[0] ? rows[0].value : null) : undefined; }, function(){ return undefined; });
+}
+function kvPut(key, value){
+  var c = sb(); if (!c.u || !c.k) return Promise.resolve(false);
+  return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) }).then(function(r){ return !!(r && r.ok); }, function(){ return false; });
+}
+function prefs(){ return kvGet(PREFS).then(obj); }
+function setMail(on){
+  var em = myEmail(); if (!em) return Promise.resolve(false);
+  return kvGet(PREFS).then(function(v){
+    if (v === undefined) return false;
+    var p = obj(v); p[em] = Object.assign({}, obj(p[em]), { email: !!on, at: new Date().toISOString() });
+    return kvPut(PREFS, p);
+  });
+}
+function profileCard(){
+  var h1 = null, hs = D.querySelectorAll('main h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'My Profile') { h1 = hs[i]; break; }
+  var have = D.getElementById('gc-plan-prof');
+  if (!h1) { if (have) have.remove(); return; }
+  if (have && have.isConnected) return;
+  css(); var c = D.createElement('div'); c.id = 'gc-plan-prof'; c.className = 'gcpl-card';
+  c.innerHTML = '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-gcpl="mail" disabled> <b>📅 E-mail me my plan at 6 AM</b></label><div class="gcpl-mut" style="margin:4px 0 0 24px">Your “Today’s plan” is on your To-Do every morning. Turn this on to also get it by e-mail (weekdays, and weekends you have work).</div>';
+  h1.parentNode.insertBefore(c, h1.nextSibling);
+  var cb = c.querySelector('[data-gcpl="mail"]'), em = myEmail();
+  prefs().then(function(p){ cb.checked = obj(p[em]).email === true; cb.disabled = !em; });
+  cb.addEventListener('change', function(){
+    var on = cb.checked; cb.disabled = true;
+    setMail(on).then(function(ok){ cb.disabled = false; if (!ok) { cb.checked = !on; toast('Could not save — check the connection.', true); } else toast(on ? 'You will get your plan by e-mail at 6 AM' : 'Plan e-mail turned off'); });
+  });
+}
+
+function tick(){ try { autoOpen(); decorate(); profileCard(); } catch (e) {} }
+tick(); RI.call(W, tick, 1500);
+W._gcPlan = { decorate: decorate, go: go, run: run, preview: preview, prefs: prefs, setMail: setMail };
+try { console.log('[GC] 📅 Today\'s plan on the To-Do (patch PLAN)'); } catch (e) {}
+})();
+</script>
