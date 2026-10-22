@@ -130,6 +130,16 @@ function make(d){
       + (x.detail ? '<br><span style="color:#555;font-size:13px">' + esc(x.detail) + '</span>' : '')
       + '<br><span style="font-size:13px;color:#b45309"><b>Not assigned yet</b> — an admin assigns it to a PM on Leads → 📥 Lead Inbox (Assign PM).</span></td></tr>';
   }
+  /* patch HOT1: a link that opens THIS lead in the CRM (#leads&lead=<id>), the button names it */
+  function leadLink(key){ return site() + '/#leads&lead=' + encodeURIComponent(s(key)); }
+  function linkify(m){
+    if (!m || !s(m.leadKey) || m.__hot1) return m;
+    const base = site() + '/#leads', ln = leadLink(m.leadKey), out = Object.assign({}, m, { __hot1: true });
+    if (out.html) out.html = String(out.html).split(esc(base) + '"').join(esc(ln) + '"').split('>Open Leads in the CRM<').join('>Open this lead in the CRM<');
+    if (out.text) out.text = String(out.text).replace(/(https?:\/\/[^\s]*\/#leads)(?![&\w])/g, function(u){ return u === base ? ln : u; });
+    if (out.push) out.push = Object.assign({}, out.push, { link: ln });
+    return out;
+  }
   function frame(head, intro, rows, foot){
     return '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(head) + '</div><div style="padding:6px 18px 18px">'
       + '<p>' + intro + '</p><table style="width:100%;border-collapse:collapse;font:14px Arial">' + rows + '</table>'
@@ -149,7 +159,7 @@ function make(d){
     const text = subject + '\n\n' + list.map(x => '- ' + x.title + ' (' + [x.type, x.source, [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(', ') + ') — ' + dueLine(x) + (x.assignee ? ' — assigned to ' + x.assignee : '') + (x.link ? '\n  ' + x.link : '')).join('\n') + '\n\nOpen Leads: ' + site() + '/#leads';
     const push = { title: (n === 1 ? 'New lead: ' + list[0].title : n + ' new leads: ' + list[0].title + ' + ' + (n - 1) + ' more').slice(0, 100),
       body: list.slice(0, 3).map(x => x.title.slice(0, 60) + ' — ' + dueLine(x)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id };
-    return { subject, html, text, push };
+    return { subject, html, text, push, leadKey: n === 1 ? list[0].key : '' };
   }
   function mailRemind(x, kind){
     const clock = fmtDue(x.bidDue).replace(/^\w+ \w+ \d+ /, ''), to = x.dueToCompany ? ' to ' + x.dueToCompany : '';
@@ -157,7 +167,7 @@ function make(d){
     const subject = (kind === 'today' ? '⏰ Bid due TODAY: ' + x.title + to : kind === 'eve' ? '⏰ Bid due tomorrow: ' + x.title + ' — ' + fmtDue(x.bidDue) + to : '⏰ Bid due in 1 hour: ' + x.title + ' — ' + clock + to).slice(0, 250);
     const html = frame('GrayCo — bid due ' + (kind === 'today' ? 'today' : kind === 'eve' ? 'tomorrow' : 'in 1 hour'), 'The bid for this lead is due <b>' + esc(when) + '</b>' + (to ? ' <b>' + esc(to) + '</b>' : '') + '.', rowHtml(x), FOOT);
     const text = subject + '\n\n' + x.title + ' — bid due ' + when + (x.source ? '\nFrom ' + x.source : '') + (x.link ? '\n' + x.link : '') + '\n\nOpen Leads: ' + site() + '/#leads';
-    return { subject, html, text, push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueTxt(x.bidDue)).slice(0, 180), tag: 'lead-due-' + x.key } };
+    return { subject, html, text, leadKey: x.key, push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueTxt(x.bidDue)).slice(0, 180), tag: 'lead-due-' + x.key } };
   }
 
   async function sendMail(to, m){
@@ -176,7 +186,7 @@ function make(d){
     if (!pub || !priv) return { sent: 0, why: 'phone push is not set up (patch TD)' };
     const wp = d.webPush || loadWebPush(); if (!wp) return { sent: 0, why: 'web-push is not installed' };
     try { wp.setVapidDetails(env('VAPID_SUBJECT') || 'mailto:office@grayco-cs.com', pub, priv); } catch (e) { return { sent: 0, why: 'bad VAPID keys' }; }
-    const payload = JSON.stringify({ title: p.title, body: p.body, link: site() + '/#leads', tag: p.tag });
+    const payload = JSON.stringify({ title: p.title, body: p.body, link: s(p.link) || site() + '/#leads', tag: p.tag });
     let sent = 0;
     for (const email of to) {
       let subs = [];
@@ -193,7 +203,7 @@ function make(d){
       const h = frame('GrayCo — missed call', (n === 1 ? 'Someone called GrayCo and nobody answered' : n + ' calls were not answered') + '. They got the automatic text ("Sorry we missed your call…"). It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM and call them back.', list.map(rowHtml).join(''),
         'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every missed call that is not an existing customer.');
       const t = subj + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
-      return { area: 'area:Leads', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
+      return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
     }
     const api = list.every(x => x.partner), from = api ? Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ') : '';   /* patch API */
     const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
@@ -201,10 +211,11 @@ function make(d){
     const html = frame('GrayCo — new ' + (api ? 'lead' : 'website lead') + (n === 1 ? '' : 's'), (api ? esc(from) + ' sent ' + (n === 1 ? 'a lead' : n + ' leads') + ' through the GrayCo partner API' : n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
       'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
     const text = subject + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
-    return { area: 'area:Leads', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
+    return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
   /* extra: the assigned estimator / PM; only: just these people (not the admins) */
   async function deliver(m, extra, only){
+    m = linkify(m);   /* patch HOT1 */
     const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : await recipients(extra);
     const r = await sendMail(to, m);
     const p = await push(to, m.push);   /* the push goes out even when the e-mail could not */
@@ -455,7 +466,7 @@ function make(d){
   function mailAssigned(x){
     const subject = ('Assigned to you: ' + x.title + ' — ' + dueLine(x)).slice(0, 250);
     const html = frame('GrayCo — a lead assigned to you', 'This lead is assigned to you' + (x.assignedBy ? ' by ' + esc(x.assignedBy) : '') + '. ' + (x.bidDue ? 'The bid is due <b>' + esc(fmtDue(x.bidDue)) + '</b>' + (x.dueToCompany ? ' to <b>' + esc(x.dueToCompany) + '</b>' : '') + '.' : '<b>No bid due date yet — add it on the lead.</b>'), rowHtml(x), FOOT);
-    return { subject, html, text: subject + '\n\n' + x.title + ' — ' + dueLine(x) + '\n' + site() + '/#leads', push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueLine(x)).slice(0, 180), tag: 'lead-asg-' + x.key } };
+    return { leadKey: x.key, subject, html, text: subject + '\n\n' + x.title + ' — ' + dueLine(x) + '\n' + site() + '/#leads', push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueLine(x)).slice(0, 180), tag: 'lead-asg-' + x.key } };
   }
   async function notifyAssigned(lead, o){
     o = o || {};
@@ -538,7 +549,7 @@ function make(d){
       + (x.assignee ? '<br><span style="font-size:13px"><b>Assigned to:</b> ' + esc(x.assignee) + '</span>' : '<br><span style="font-size:13px;color:#b45309"><b>Not assigned yet</b></span>') + '</td></tr>';
     const html = frame(head, intro, row, 'Speed to lead: the admins hear when a new lead has no PM after 4 and 24 hours; the PM when nobody has reached out 4 hours after it was assigned, and the PM and admins at 24 hours. Nothing between 9 PM and 7 AM Central.');
     const text = subject + '\n\n' + x.title + (who ? '\n' + who : '') + (x.address ? '\n' + x.address : '') + '\n\nOpen Leads: ' + site() + '/#leads';
-    return { area: 'area:Leads', replyTo: s(x.email || (x.contact || {}).email), subject, html, text, push: { title: subject.slice(0, 100), body: (x.title + (who ? ' — ' + who : '')).slice(0, 180), tag: 'lead-stl-' + kind + '-' + x.key } };
+    return { area: 'area:Leads', leadKey: x.key, replyTo: s(x.email || (x.contact || {}).email), subject, html, text, push: { title: subject.slice(0, 100), body: (x.title + (who ? ' — ' + who : '')).slice(0, 180), tag: 'lead-stl-' + kind + '-' + x.key } };
   }
   function speedCandidates(leads, items, tombs){
     const out = [], haveInbox = {}, have = {};

@@ -149601,6 +149601,7 @@ try { console.log('[GC] Role profiles (patch RP): _gcRP.status()'); } catch (e) 
       });
       if (st && window._gcTD2) window._gcTD2.__lastItems = st.items;
     } catch (e) {}
+    try { arr(window._gcHot1Approvals && window._gcHot1Approvals()).forEach(function(x){ g.other.push(x); }); } catch (e) {}   /* patch HOT1: 👤 Assign this lead */
     var parts = [], L = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
     var total = 0; Object.keys(g).forEach(function(k){ total += g[k].length; if (g[k].length) parts.push(plural(g[k].length, L[k][0], L[k][1])); });
     return { total: total, groups: g, tip: parts.join(' · '), at: Date.now() };
@@ -160718,7 +160719,7 @@ function drawerHtml(l){
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     /* assign */
-    + '<section><h4>👤 Assigned to</h4><div class="row"><select data-d="assign" aria-label="Assign"' + (adm ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm ? '' : '<span class="note">An admin assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
+    + '<section><h4>👤 Assigned to</h4><div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() /* patch HOT1 */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
     /* contact */
     + '<section><h4>Contact</h4><div class="kv">' + esc(c.name || '—') + (c.phone ? ' · ' + esc(c.phone) : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div><div class="row">'
     + (c.phone ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="call" href="tel:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a><a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="text" href="sms:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">💬 Text</a>' : '')
@@ -160969,5 +160970,187 @@ try { console.log('[GC] Release checks: _gcPossibleDupEstimates() lists recovere
       return hdr + html;
     } catch (e) { return html; }
   };
+})();
+</script>
+<script id="gc-patch-hot1">
+/* ============================================================================
+   patch HOT1 (10/22) — "I clicked the lead in the e-mail and it took me to the portal page. It should take whoever
+   got the lead to the CRM, to the lead on the Leads tab. It should also show up as the admin approvals to assign
+   the job, and those always go to the estimators too."
+
+   1. Deep link: crm.grayco-cs.com/#leads&lead=<lead id> (every lead alert e-mail / push now uses it) — after
+      sign-in the CRM opens Leads and that lead's drawer. A lead still on its way from the Lead Inbox is fetched
+      first (up to ~2 minutes). #leads alone opens the Leads tab. &sec=assign scrolls to "Assigned to".
+   2. "👤 Assign this lead" approvals: every open lead with nobody assigned — or only assigned automatically
+      (the default estimator, the Lead Inbox) and not yet confirmed by a person — is one approval item in the
+      one approval set (To-Do pin = APPROVE count = Approvals tab), for the admins / office AND every estimator.
+      Its button opens the lead at "Assigned to"; picking someone (even the same person) clears it. In-app only.
+   3. Estimators may assign leads in the drawer (not only admins).
+   ========================================================================== */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_HOT1__) return; W.__GC_HOT1__ = true;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function later(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || setTimeout)(f, ms || 0); }
+function every(f, ms){ return (W.__GC_NATIVE_SETINTERVAL__ || setInterval)(f, ms); }
+function warn(e){ try { console.warn('[GC hot1]', e); } catch (x) {} }
+function crm(){ return W._crm || {}; }
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()) && !D.getElementById('gc-auth-gate') && typeof W._setView === 'function'; } catch (e) { return false; } }
+function toast(t){
+  try { var n = D.createElement('div'); n.textContent = t; n.setAttribute('data-gc-keep', '1');
+    n.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;z-index:100000;font:600 14px Arial;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+    D.body.appendChild(n); later(function(){ n.remove(); }, 6000); } catch (e) {}
+}
+
+/* ── the lead list (this computer's saved copy, as the Leads hub reads it) ─────────────────────── */
+var LEADS = null, LBUSY = false, SEEN = {};
+function pull(){
+  if (LBUSY || typeof W.idbGet !== 'function') return; LBUSY = true;
+  try { Promise.resolve(W.idbGet('leads')).then(function(v){ LBUSY = false; if (Array.isArray(v)) LEADS = v; }, function(){ LBUSY = false; }); } catch (e) { LBUSY = false; }
+}
+/* both copies merged by id (the newer edit wins), so the list never flips between them */
+function leads(){
+  var by = {}, out = [];
+  arr(crm().leads).concat(arr(LEADS)).forEach(function(l){ if (!l || !l.id) return; var k = s(l.id), o = by[k];
+    if (!o) { by[k] = l; out.push(k); } else if (s(l.updatedAt) > s(o.updatedAt)) by[k] = l; });
+  /* this computer's two copies can briefly disagree while a save lands; a lead seen in the last
+     minute stays in the list, so an approval never blinks out and back */
+  var now = Date.now();
+  out.forEach(function(k){ SEEN[k] = { l: by[k], t: now }; });
+  Object.keys(SEEN).forEach(function(k){ if (by[k]) return; if (now - SEEN[k].t > 60000) delete SEEN[k]; else { by[k] = SEEN[k].l; out.push(k); } });
+  return out.map(function(k){ return by[k]; });
+}
+function byId(id){ return leads().filter(function(l){ return l && s(l.id) === s(id); })[0] || null; }
+var CLOSED = /^(won|lost|dead|deleted|converted|declined|not\s*bidding|no\s*bid|archived|cancell?ed|closed|dismissed|merged|submitted)$/i;
+function closed(l){
+  if (!l || !l.id || l.deleted || l._deleted || l.converted || l.notBidding || l.noBid || l.pid || l.jobId) return true;
+  if ([l.stage, l.status, l.inboxState, l.bidStatus].some(function(v){ return CLOSED.test(s(v)); })) return true;
+  try { if (typeof W._gcIsTombstoned === 'function' && W._gcIsTombstoned('leads', l.id)) return true; } catch (e) {}
+  return false;
+}
+var AUTO_BY = /lead inbox|default estimator|system|auto|grayco crm|roofscout|website|server/i;
+/* nobody assigned — or only the automatic assignment that no person has confirmed yet */
+function needsAssign(l){
+  if (closed(l)) return false;
+  var who = s(l.pm || l.estimator || l.apm);
+  if (!who) return true;
+  if (l.assignConfirmed) return false;
+  return !!(l.inboxId && AUTO_BY.test(s(l.assignedBy)) && !s(l.assignedBy).match(/@/));
+}
+W._gcLeadsToAssign = function(){ return leads().filter(needsAssign); };
+
+/* ── who also sees them: every estimator (role / profile) and the default estimator ──────────── */
+function estimators(){
+  var out = {};
+  arr(crm().users).forEach(function(u){ if (u && u.email && u.active !== false && /estimat/i.test(s(u.role) + ' ' + s(u.profile))) out[low(u.email)] = 1; });
+  try { var d = typeof W._gcDefEst === 'function' ? W._gcDefEst() : null; if (d && d.email) out[low(d.email)] = 1; } catch (e) {}
+  return Object.keys(out);
+}
+
+/* ── 1. the deep link ─────────────────────────────────────────────────────────── */
+var WANT = null;
+function readHash(){
+  var h = location.hash || '';
+  var m = /[#&]lead=([^&]+)/.exec(h);
+  if (m) { WANT = { id: decodeURIComponent(m[1]), sec: (/[#&]sec=([^&]+)/.exec(h) || [])[1] || '', at: Date.now(), refreshed: false };
+    try { sessionStorage.setItem('gc_hot1_want', JSON.stringify(WANT)); } catch (e) {} return; }
+  if (/^#\/?leads$/.test(h)) WANT = { id: '', at: Date.now() };
+}
+try { var sv = JSON.parse(sessionStorage.getItem('gc_hot1_want') || 'null'); if (sv && Date.now() - sv.at < 10 * 60e3) WANT = sv; } catch (e) {}
+readHash();
+W.addEventListener('hashchange', readHash);
+function clearHash(){ try { sessionStorage.removeItem('gc_hot1_want'); } catch (e) {} try { if (/[#&](lead=|leads)/.test(location.hash)) history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {} }
+function toAssign(){
+  later(function(){
+    var sel = D.querySelector('#gcl-drawer select[data-d="assign"]');
+    if (sel) { try { sel.scrollIntoView({ block: 'center' }); sel.focus(); } catch (e) {} }
+  }, 250);
+}
+function openLead(id, sec){
+  if (view() !== 'leads') { try { W._setView('leads'); } catch (e) {} }
+  var H = W._gcLeadsHub;
+  if (H && !D.getElementById('gc-leads-hub')) {   /* Leads opened on another sub-tab (Lead Inbox …): the pipeline holds the hub */
+    try { var b = Array.prototype.filter.call(D.querySelectorAll('button'), function(x){ return s(x.textContent) === 'Lead Pipeline'; })[0]; if (b) b.click(); } catch (e) {}
+    try { if (H.redraw) H.redraw(); } catch (e) {}
+  }
+  if (!H || !D.getElementById('gc-leads-hub')) return false;
+  try { H.open(id); } catch (e) { warn(e); }
+  var ok = false; try { ok = H.ui().open === id && !!D.getElementById('gcl-drawer'); } catch (e) {}
+  if (ok && sec === 'assign') toAssign();
+  return ok;
+}
+W._gcOpenLead = function(id, sec){ WANT = { id: s(id), sec: s(sec), at: Date.now(), refreshed: true }; return tickWant(); };
+function tickWant(){
+  if (!WANT || !signedIn()) return false;
+  if (!WANT.id) { try { W._setView('leads'); } catch (e) {} WANT = null; clearHash(); return true; }
+  if (Date.now() - WANT.at > 150e3) { toast('That lead is not in the CRM yet — look in Leads → 📥 Lead Inbox.'); try { W._setView('leads'); } catch (e) {} WANT = null; clearHash(); return false; }
+  if (byId(WANT.id) && openLead(WANT.id, WANT.sec)) { WANT = null; clearHash(); return true; }
+  if (!byId(WANT.id)) {
+    pull();
+    if (!WANT.refreshed && W._gcLeadInbox && typeof W._gcLeadInbox.refresh === 'function') { WANT.refreshed = true; try { W._gcLeadInbox.refresh(); } catch (e) {} }
+    if (view() !== 'leads') { try { W._setView('leads'); } catch (e) {} }
+  }
+  return false;
+}
+
+/* ── 2. "👤 Assign this lead" in the one approval set ───────── */
+function fmtDue(d){ try { if (W._gcLA && W._gcLA.fmtDue) return W._gcLA.fmtDue(d); } catch (e) {} return s(d).slice(0, 16).replace('T', ' '); }
+/* worked out again only when the leads, the estimators or the people list change */
+var MEMO = null;
+function todoItems(){
+  var L = leads(), sig = L.length + '|' + L.reduce(function(m, l){ var u = s(l && l.updatedAt); return u > m ? u : m; }, '') + '|' + estimators().join(',') + '|' + arr(crm().users).length;
+  if (MEMO && MEMO.sig === sig) return MEMO.items;
+  MEMO = { sig: sig, items: buildItems() };
+  return MEMO.items;
+}
+function buildItems(){
+  var ests = estimators();
+  return W._gcLeadsToAssign().map(function(l){
+    var nm = s(l.name || l.title || l.company || l.address || 'Lead');
+    var auto = s(l.pm || l.estimator);
+    var bits = [s(l.bidDue) ? 'bid due ' + fmtDue(l.bidDue) : '', s(l.source) || (l.inboxId ? 'Lead Inbox' : ''), auto ? 'set to ' + auto + ' automatically — confirm or change' : 'nobody assigned'].filter(Boolean);
+    return { key: 'hot1:asg:' + l.id, thing: 'hot1asg|' + l.id, cat: 'appr', prio: 'high', title: '👤 Assign this lead: ' + nm,
+      sub: bits.join(' · '), who: ests, vis: 'both',
+      act: { l: '👤 Assign', f: function(){ W._gcOpenLead(l.id, 'assign'); } } };
+  });
+}
+/* who sees them: the admins / office and every estimator (not PMs) */
+function meU(){ try { var me = low(localStorage.getItem('grayco_user') || ''); var em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email());
+  return arr(crm().users).filter(function(x){ return x && ((em && low(x.email) === em) || (me && (low(x.email) === me || low(x.name) === me))); })[0] || null; } catch (e) { return null; } }
+function seesThem(){
+  var u = meU(); if (!u) return false;
+  if (low(u.payType) === 'owner' || u.role === 'Admin' || /office/i.test(s(u.role))) return true;
+  try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+  return estimators().indexOf(low(u.email)) >= 0;
+}
+/* straight into the one approval set (fix_3 calls this), so the chip, the badge, the panel and the Approvals tab
+   all count the same items in the same second */
+W._gcHot1Approvals = function(){
+  if (!seesThem()) return [];
+  return todoItems().map(function(x){ return { id: 'td:' + x.key, title: x.title, sub: x.sub, act: x.act }; });
+};
+
+/* picking someone in the drawer (the Leads hub's assign) records who assigned it — that clears the item */
+
+/* an estimator (no PM jobs, not an admin): the green 📋 APPROVE button opens the Approvals tab, where his
+   "Assign this lead" items are (the old My Approvals panel only knows PM / admin items) */
+function estimatorOnly(){
+  var u = meU(); if (!u) return false;
+  if (low(u.payType) === 'owner' || u.role === 'Admin' || /office|project manager|pm/i.test(s(u.role))) return false;
+  return estimators().indexOf(low(u.email)) >= 0;
+}
+function wrapGreen(){
+  var o = W._gcOpenPmApprovals; if (typeof o !== 'function' || o.__hot1) return;
+  var w = function(){ if (estimatorOnly()) { try { W._setView('approvals'); return; } catch (e) {} } return o.apply(this, arguments); };
+  try { Object.keys(o).forEach(function(k){ w[k] = o[k]; }); } catch (e) {}
+  w.__hot1 = true; W._gcOpenPmApprovals = w;
+}
+every(function(){ try { wrapGreen(); if (D.hidden) return; pull(); tickWant(); } catch (e) { warn(e); } }, 1500);
+later(pull, 500);
+try { console.log('[GC] Lead deep links + "Assign this lead" approvals (patch HOT1): _gcOpenLead(id), _gcLeadsToAssign()'); } catch (e) {}
 })();
 </script>
