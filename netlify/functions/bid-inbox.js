@@ -907,6 +907,19 @@ async function afterStore(results, items, opt){
       out.leadRoles = { n: Object.keys(set).length };
     }
   } catch (e) { out.leadRoles = { error: s(e && e.message) }; }
+  /* patch SYS: every estimator lead (commercial / government / bid board, or one with an estimator) is a PRIVATE bid
+     job at once: invited subs only, until an admin or estimator makes it public. Never downgrades a public job. */
+  try {
+    const priv = added.filter(it => it && (it.estimatorEmail || it.estimator || isCommercial(it)) && marks[it.id] && /^(draft|updated|unchanged)$/.test(s(marks[it.id].state)));
+    const pm = {};
+    for (const it of priv.slice(0, 25)) {
+      try { const r = await BP.setPortal(it, { mode: 'private', auto: true }, { email: 'auto' }); if (r && r.ok) pm[it.id] = { jobId: r.jobId, state: r.state, at: nowIso() }; } catch (e) {}
+    }
+    if (Object.keys(pm).length) {
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && pm[x.id]) { x.portal = Object.assign({}, x.portal || {}, pm[x.id]); ch = true; } }); return ch ? list : undefined; });
+      out.private = Object.keys(pm).length;
+    }
+  } catch (e) { out.private = { error: s(e && e.message) }; }
   try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
   return out;
 }
@@ -1257,7 +1270,8 @@ exports.handler = async function(event){
       if (s(b.id)) { const items = arr(await kvGet(KV)); it = items.find(x => x && x.id === s(b.id)); if (it) it = liveTarget(items, it); if (!it || it.status === 'dismissed') return J(404, { error: 'No such lead in the inbox.' }, C); }
       else if (b.lead && s(b.lead.id)) it = leadItem(b.lead);
       else return J(400, { error: 'No lead.' }, C);
-      let pr; try { pr = await portalApi().setPortal(it, { mode, scope: b.scope, scopeMode: b.scopeMode, sharedNotes: b.sharedNotes, plansLinks: b.plansLinks || it.plansLinks }, who); } catch (e) { return J(502, { error: 'The sub bid portal could not be reached: ' + s(e && e.message) }, C); }
+      const auto = mode === 'draft' && isCommercial(it);   /* patch SYS: an estimator lead's bid job is PRIVATE at once (never downgrades a public one) */
+      let pr; try { pr = await portalApi().setPortal(it, { mode: auto ? 'private' : mode, auto, scope: b.scope, scopeMode: b.scopeMode, sharedNotes: b.sharedNotes, plansLinks: b.plansLinks || it.plansLinks }, who); } catch (e) { return J(502, { error: 'The sub bid portal could not be reached: ' + s(e && e.message) }, C); }
       if (!pr.ok) return J(pr.code || 502, { error: pr.error }, C);
       const mark = { jobId: pr.jobId, state: pr.state, visibility: pr.visibility, at: nowIso(), by: who.email };
       if (s(b.id)) { try { await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === it.id); if (!x) return undefined; x.portal = Object.assign({}, x.portal || {}, mark); x.updatedAt = nowIso(); return list; }); } catch (e) {} }

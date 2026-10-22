@@ -96,6 +96,26 @@ The sub's portal shows **"You're invited to bid on GrayCo jobs"** → **Accept i
 
 The CRM's 📥 Lead Inbox (patch LD2) turns each new bid opportunity into a **draft** bid job on bids.grayco-cs.com (with its plans copied over). GrayCo staff see it in 🔨 Sub Portal with a **📝 Draft** badge; **no sub ever sees a draft** — not even one invited to it — and nobody can ask questions on it. Editing a draft keeps it a draft. It goes live only when an admin taps **Publish to bid portal** (in the Lead Inbox, or on the job in 🔨 Sub Portal; it needs a bid due date).
 
+## 🏗 Bid portal tab and 🧭 GrayCo Systems (patch SYS)
+
+- **Every estimator lead is a PRIVATE bid job at once.** This covers commercial, government and bid-board leads, and any lead with an estimator. It is created the moment the lead comes in, from bids@ / leads@, a bid watcher, or a lead typed into the CRM. Only the subs you invite see it. Leads that were already drafts are switched to private when an admin or the estimator opens the 🏗 Bid portal tab. This never makes a public job private again. Residential leads stay drafts.
+- **🏗 Bid portal** (left menu: Admin, Office, Estimator — right under Leads for the estimator) lists every bid job: 🔒 private / 🌐 public / 📝 draft, how many subs were invited, how many sub bids came in, and the bid due date.
+  - **🌐 Make public**: an admin or an estimator, after a yes. It needs a bid due date.
+  - **✉️ Invite subs**:
+    - pick subs (⭐ Preferred first; ⛔ Do not use never shown), **invite all subs in these trades**, or **invite all subs**;
+    - each sub gets their own e-mail, in Spanish when that is their language, with the job, address and due date in the subject;
+    - nobody sees who else was invited;
+    - inviting on a draft opens it as private.
+- **📨 Sub bids** is ONE list per job, from all three doors: ✉️ e-mailed to bids@, 🏗 the bid portal, 🔨 the sub portal. It is grouped by trade with the low bid in green, and an admin or estimator can **🏆 Mark awarded**. The same list is in each lead's drawer under 🏗 Sub bid portal.
+- **🧭 GrayCo Systems** (Admin, Office; a short one for the Estimator) has a tile for every portal, site and app:
+  - the bid site, sub portal and customer / GC portal (pick a job), RoofScout, GrayCo Photos, CompanyCam;
+  - the website and News, and the partner / roof check / giveaway / coupon pages;
+  - Marketing, Business Brain, the office TV and CRM health;
+  - admins also get the year-end archive, QuickBooks, Supabase, Netlify, Resend and Google Admin.
+
+  Status dots come from the `?ping=1` checks.
+- Server: `netlify/functions/bid-hub.js` (GrayCo staff only; a customer never sees subs).
+
 ## Plans on bid jobs
 
 - **Automatic:** a bid job made by the Lead Inbox (bids@ e-mails, bid watchers) gets the plans that came with it (PDFs copied into the bid site's file bucket, links in the job notes) — patch LD2.

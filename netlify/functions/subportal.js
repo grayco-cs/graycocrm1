@@ -1302,3 +1302,5 @@ exports.handler = async function (event) {
     return J(500, { error: 'Something went wrong. Try again, or call GrayCo ' + OFFICE_PHONE + '.' });
   }
 };
+/* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
+exports._hub = { listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN };

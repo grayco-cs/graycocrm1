@@ -195,7 +195,7 @@ function make(d){
   }
 
   /* patch LEADS: the lead's sub bid job — private by default (invited subs only), public only when a person says so.
-     o: { mode: 'draft'|'private'|'public', scope, scopeMode: 'claude'|'manual'|'estimate', sharedNotes: [text], plansLinks: [{url,label}] } */
+     o: { mode: 'draft'|'private'|'public', auto (patch SYS: the automatic private job — never downgrades a public one), scope, scopeMode: 'claude'|'manual'|'estimate', sharedNotes: [text], plansLinks: [{url,label}] } */
   function noPrices(t){   /* the same rule as the CRM's window._gcStripPrices: no $ amount, price, cost, tax, O&P, RCV / ACV, markup survives */
     return s(t).split('\n').map(x => x.replace(/[$€£]\s?-?\d[\d,]*(\.\d+)?/g, '')
       .replace(/\(?\b(rcv|acv|o\s?&\s?p|overhead(\s*(and|&)\s*profit)?|profit|sales\s*tax|tax|depreciation|deprec\.?|markup|margin|unit\s*(price|cost)|price|cost|total|subtotal|amount|charge)\b\.?\s*[:=]?\s*\(?\s*-?\s?\d[\d,]*(\.\d+)?\s*%?\)?/gi, '')
@@ -221,7 +221,10 @@ function make(d){
     if (mode === 'public') {
       if (!job.bidDueDate) return { ok: false, code: 400, error: 'Add a bid due date first — a public bid job needs one.' };
       Object.assign(job, { status: 'open', visibility: 'public', draft: false, publishedAt: job.publishedAt || nowIso(), publishedBy: s(who && who.email) || 'staff', madePublicAt: nowIso() });
+    } else if (mode === 'private' && o.auto && job.draft === false) {
+      /* patch SYS: the automatic "every lead → a private bid job" never touches a job a person already opened or made public */
     } else if (mode === 'private') {
+      if (o.auto) job.autoPrivate = true;
       Object.assign(job, { status: CLOSEDRE.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: s(who && who.email) || 'staff' });
     }
     job.notes = notesFor(item, job.draft === false) + (arr(job.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + job.crmNotes.map(n => '• ' + n).join('\n') : '');
