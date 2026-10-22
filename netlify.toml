@@ -306,3 +306,8 @@
 # patch EST3: the daily "material prices up on your open estimates" e-mail (about 7:20 AM Central)
 [functions."est-price-watch"]
   schedule = "20 12 * * *"
+
+# patch X12: AI photo tags (stage / damage / materials) for new GrayCo Photos + CompanyCam photos.
+# Dormant without ANTHROPIC_API_KEY; at most PHOTO_TAG_DAILY_MAX a day (default 300).
+[functions."photo-tag"]
+  schedule = "*/20 * * * *"

@@ -146875,6 +146875,8 @@ function factsToSuggestions(x){
   if (num(f.depreciation)) out.push({ id: base + 'dep', kind: 'dep', amount: num(f.depreciation), text: 'Depreciation: ' + money(f.depreciation), btn: '✓ Note it' });
   if (s(f.site_visit)) out.push({ id: base + 'visit', kind: 'visit', when: s(f.site_visit), text: 'Site visit / re-inspection: ' + when(f.site_visit), btn: '📅 Add to the schedule' });
   if (arr(f.requested_items).length) out.push({ id: base + 'req', kind: 'requested', items: arr(f.requested_items).map(s), text: 'The adjuster asks for: ' + arr(f.requested_items).map(s).join(', '), btn: '✓ Add to the checklist' });
+  /* patch X12: the claim's own facts (claim #, adjuster, inspection, amounts, supplement decision) — one Review & apply */
+  try { if (typeof window._gcX12ClaimUpdates === 'function') { var x12c = x.match && claim(x.match.claimId), ups = window._gcX12ClaimUpdates(x12c, f); if (ups.length) out.push({ id: base + 'fields', kind: 'fields', updates: ups, text: '📨 From the adjuster e-mail: ' + ups.length + ' update' + (ups.length > 1 ? 's' : '') + ' — ' + ups.map(function(u){ return u.label; }).join(', '), btn: '🔎 Review & apply' }); } } catch (e) {}
   return out.map(function(o){ return Object.assign(o, { at: x.at, from: s(x.from && x.from.email), mailId: x.id, status: 'new' }); });
 }
 function applyInbound(x){
@@ -146929,6 +146931,7 @@ function matchMail(itemId, claimId){ var x = IB.map[itemId]; if (!x) return Prom
 /* one-tap suggestions from the e-mail (nothing changes money without this tap) */
 function applySuggestion(claimId, sid){
   var c = claim(claimId), g = arr(c && c.suggestions).find(function(x){ return x.id === sid; }); if (!g) return Promise.reject(new Error('gone'));
+  if (g.kind === 'fields' && typeof window._gcX12ApplyFields === 'function') return window._gcX12ApplyFields(claimId, g, mutate, addNote);   /* patch X12 */
   var done = mutate(claimId, function(cc){ var y = arr(cc.suggestions).find(function(x){ return x.id === sid; }); if (y) { y.status = 'done'; y.doneBy = myName(); y.doneAt = nowIso(); }
     if (g.kind === 'payment') cc.payments = arr(cc.payments).concat([{ id: 'P-' + sid, date: ymd(g.at) || ymd(nowIso()), amount: g.amount, from: 'Carrier', kind: 'Other', checkNo: g.checkNo, status: 'Mailed', by: myName(), at: nowIso(), fromMail: g.mailId }]);
     if (g.kind === 'visit') cc.siteVisitAt = g.when;
@@ -150995,7 +150998,7 @@ function photoChecklist(p, photos, ticks, claim){
   var items = list.map(function(it){
     var hits = mine.filter(function(r){
       var tag = s(r.tag) || (Array.isArray(r.tags) ? r.tags : []).map(function(t){ return s(t && typeof t === 'object' ? t.name : t); }).join(' ');
-      var words = [r.note, r.caption, r.label, r.description, r.title, tag].map(s).join(' ');
+      var words = [r.note, r.caption, r.label, r.description, r.title, tag].map(s).join(' ') + (typeof window._gcX12PhotoWords === 'function' ? ' ' + window._gcX12PhotoWords(r) : '');   /* patch X12: AI photo tags */
       return (it.tag && it.tag.test(s(r.tag))) || (it.kw && it.kw.test(words));
     }).length;
     var t = ticks[it.k];
@@ -158019,6 +158022,497 @@ W._gcIns3 = { scope: { fromEstimate: scopeFromEstimate, text: scopeText, html: s
   storage: { load: loadStorage, state: SU, html: storageHtml, render: renderStorage }, board: BF,
   status: function(){ return { hooked: !!hook.done, photos: Object.keys(PH).length, storage: !!SU.data }; } };
 try { console.log('[GC] Insurance claim workspace + storage (patch INS3) — _gcIns3.status()'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-x12">
+/* GrayCo — JOB HEALTH SCORE (patch X12). One function, the same in the CRM page (inlined by wAUTO12/patch_X12.py)
+   and in the node tests. score(job, ctx, weights) → { score 0–100, level green/amber/red, reasons[] }.
+   ctx: { today 'YYYY-MM-DD', invoices[], schedule[], expenses[], punch[], tickets[], approvals n, photoMissing n,
+          contractWithCOs n }. Weights are points taken off per problem; an admin edits them (gc_kv gc_health_weights). */
+(function(root){
+  var DEFAULT_WEIGHTS = { lateTask: 6, lateTaskMax: 24, overBudget: 25, budgetAhead: 12, overdueInvoice: 10, overdueInvoiceMax: 30, unpaid60: 10,
+    approvals: 3, approvalsMax: 12, photos: 2, photosMax: 8, sadMood: 25, okMood: 8, punch: 2, punchMax: 10, ticket: 10, ticketMax: 20, noContract: 15, staleDays: 7, stale: 10, veryStaleDays: 14, veryStale: 20 };
+  function s(v){ return v == null ? '' : String(v).trim(); }
+  function low(v){ return s(v).toLowerCase(); }
+  function num(v){ if (v == null || v === '') return 0; var n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+  function arr(v){ return Array.isArray(v) ? v : []; }
+  function ymd(v){ v = s(v); return /^\d{4}-\d\d-\d\d/.test(v) ? v.slice(0, 10) : (function(){ var d = Date.parse(v); return isFinite(d) ? new Date(d).toISOString().slice(0, 10) : ''; })(); }
+  function days(a, b){ var x = Date.parse(a + 'T12:00:00Z'), y = Date.parse(b + 'T12:00:00Z'); return isFinite(x) && isFinite(y) ? Math.round((y - x) / 864e5) : 0; }
+  function pidOf(r){ return s(r && (r.pid || r.projectId || r.jobId)); }
+  function done(r){ return r && (r.done === true || r.completed === true || /^(done|complete|completed|closed|resolved|finished)$/i.test(s(r.status)) || num(r.pct) >= 100); }
+  function money(n){ return '$' + Math.round(n).toLocaleString('en-US'); }
+  function isOpenJob(p){ return p && !p.deleted && !/^(complete|completed|closed|done|lost|dead|cancell?ed|archived|bidding|lead|estimate|estimating|proposal)$/i.test(s(p.status)) && p.archived !== true; }
+  function score(p, ctx, W0){
+    ctx = ctx || {}; var W = {}, k; for (k in DEFAULT_WEIGHTS) W[k] = DEFAULT_WEIGHTS[k]; if (W0) for (k in W0) if (isFinite(+W0[k])) W[k] = +W0[k];
+    var today = ctx.today || new Date().toISOString().slice(0, 10), pid = s(p && p.id), off = 0, why = [];
+    function hit(pts, text){ if (pts > 0) { off += pts; why.push({ pts: Math.round(pts), text: text }); } }
+    /* late schedule tasks */
+    var late = arr(ctx.schedule).filter(function(r){ var end = ymd(r.end || r.endDate || r.due || r.date); return pidOf(r) === pid && end && end < today && !done(r); });
+    if (late.length) hit(Math.min(W.lateTask * late.length, W.lateTaskMax), late.length + ' schedule task' + (late.length > 1 ? 's' : '') + ' past due');
+    /* budget used vs % complete */
+    var contract = num(ctx.contractWithCOs || (p && p.contract)), spent = arr(ctx.expenses).filter(function(e){ return pidOf(e) === pid; }).reduce(function(t, e){ return t + num(e.amount || e.amt || e.total); }, 0);
+    var budget = num(p && (p.budget || p.costBudget)) || contract * 0.7, pct = num(p && p.pct);
+    if (budget > 0 && spent > budget) hit(W.overBudget, 'Costs ' + money(spent) + ' are over the budget ' + money(budget));
+    else if (budget > 0 && spent / budget * 100 > pct + 25) hit(W.budgetAhead, Math.round(spent / budget * 100) + '% of the budget used at ' + Math.round(pct) + '% complete');
+    /* unpaid / overdue invoices */
+    var od = arr(ctx.invoices).filter(function(i){ if (pidOf(i) !== pid || s(i.type) === 'sub' || /draft|void|paid|cancel/i.test(s(i.status))) return false; var due = ymd(i.due || i.dueDate); return due && due < today && num(i.amt || i.amount) - num(i.paid || i.amtPaid) > 0.5; });
+    if (od.length) { var worst = od.reduce(function(m, i){ return Math.max(m, days(ymd(i.due || i.dueDate), today)); }, 0); hit(Math.min(W.overdueInvoice * od.length, W.overdueInvoiceMax), (od.length > 1 ? od.length + ' invoices' : 'Invoice') + ' ' + worst + ' days overdue'); if (worst > 60) hit(W.unpaid60, 'Unpaid over 60 days'); }
+    /* approvals waiting */
+    var ap = num(ctx.approvals); if (ap) hit(Math.min(W.approvals * ap, W.approvalsMax), ap + ' approval' + (ap > 1 ? 's' : '') + ' waiting');
+    /* photos (soft) */
+    var ph = num(ctx.photoMissing); if (ph) hit(Math.min(W.photos * ph, W.photosMax), ph + ' photo' + (ph > 1 ? 's' : '') + ' missing for this stage');
+    /* customer mood (the mid-job 😀😐😟, patch GCP) — the last 30 days */
+    var moods = arr(p && p.checkinLog).concat(arr(p && p.moodLog)).filter(function(m){ return m && days(ymd(m.at), today) <= 30; });
+    var last = moods.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; })[0], mood = low(last && (last.mood || last.face));
+    if (/sad|😟|bad|unhappy/.test(mood)) hit(W.sadMood, '😟 customer check-in'); else if (/ok|meh|😐|neutral/.test(mood) && s(last.comment)) hit(W.okMood, '😐 customer check-in with a comment');
+    /* open punch items, warranty tickets */
+    var pu = arr(ctx.punch).filter(function(r){ return pidOf(r) === pid && !done(r); }).length; if (pu) hit(Math.min(W.punch * pu, W.punchMax), pu + ' open punch item' + (pu > 1 ? 's' : ''));
+    var tk = arr(ctx.tickets).filter(function(t){ return pidOf(t) === pid && !/^(closed|resolved|done|fixed)$/i.test(s(t.status)); }).length; if (tk) hit(Math.min(W.ticket * tk, W.ticketMax), tk + ' warranty ticket' + (tk > 1 ? 's' : '') + ' open');
+    /* signed contract */
+    if (p && !(p.contractSigned || p.contractSignedAt || p.signedAt || p.contractSignedBy)) hit(W.noContract, 'No signed contract on file');
+    /* days since the last update */
+    var lastAt = ymd(p && (p.updatedAt || p.lastActivity || p.modified)); if (lastAt) { var d = days(lastAt, today); if (d >= W.veryStaleDays) hit(W.veryStale, 'No update ' + d + ' days'); else if (d >= W.staleDays) hit(W.stale, 'No update ' + d + ' days'); }
+    var sc = Math.max(0, Math.min(100, Math.round(100 - off)));
+    why.sort(function(a, b){ return b.pts - a.pts; });
+    return { score: sc, level: sc >= 80 ? 'green' : sc >= 60 ? 'amber' : 'red', reasons: why };
+  }
+  var api = { score: score, isOpenJob: isOpenJob, DEFAULT_WEIGHTS: DEFAULT_WEIGHTS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root._gcHealth = api;
+})(typeof window !== 'undefined' ? window : this);
+
+/* __GC_PATCH_X12__ ═══════════════════════════════════════════════════════════
+   GrayCo — AUTOMATIC DATA, LITTLE TYPING.   (patch X12)
+   Owner (10/22): "I want every aspect of the CRM in depth and automatic, lots of data collecting, little entries."
+   1. AI photo tags: the server (photo-tag.js, every 20 min) tags new GrayCo Photos / CompanyCam photos (stage, damage,
+      materials, area) into gc_kv "gc_photo_ai". Here they feed the soft photo checklist (AUTO7), a stage suggestion
+      ("Photos show decking — set progress to 40%?", a PM confirms), and 🔎 photo search on the job.
+   2. 📝 Visit notes — talk OR type: the AI turns them into measurements, scope, materials, damage and access notes;
+      a review screen lets the person fix every field before Save. Typed offline → read when back online.
+   3. Adjuster e-mails (claims@): the facts become one "📨 From the adjuster e-mail: n updates — Review & apply" on the
+      claim (patch BB's suggestions); nothing changes until a person applies it.
+   4. 🩺 Job health (Admin): every open job scored 0–100 with the reasons; a chip on the job for admins and its PM.
+   5. Smart defaults, always editable: Launch Job "✨ Fill from a lead", Estimates "＋ From a similar job",
+      the job's "✨ Next invoice" and "✨ New change order" drafts — every filled field marked "auto-filled".
+   ========================================================================== */
+(function(){
+'use strict';
+var W = window, D = document, ST = W.__GC_NATIVE_SETTIMEOUT__ || setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || setInterval;
+if (W.__gcX12) return; W.__gcX12 = true;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ if (v == null || v === '') return 0; var n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(Date.now() - 5 * 3600e3); return d.toISOString().slice(0, 10); }
+function money(n){ return '$' + (Math.round(num(n) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function me(){ return W._gcMeNow || {}; }
+function myName(){ return s(me().name); }
+function isAdmin(){ var r = low(me().role); return r === 'admin' || r === 'owner' || me().isOwner === true; }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects); }
+function proj(pid){ return projects().filter(function(x){ return x && String(x.id) === String(pid); })[0] || null; }
+function samePerson(a, b){ a = low(a); b = low(b); return !!a && !!b && (a === b || a.split(' ')[0] === b.split(' ')[0] && a.split(' ').pop() === b.split(' ').pop()); }
+function toast(msg, bad){ try { var t = D.createElement('div'); t.setAttribute('role', 'status'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147483300;background:' + (bad ? '#7f1d1d' : '#111827') + ';color:#fff;border-radius:10px;padding:10px 14px;font:600 13px Arial,sans-serif;box-shadow:0 8px 26px rgba(0,0,0,.35);max-width:calc(100vw - 32px)'; D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 4200); } catch (e) {} }
+function fn(path, body){ return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__status = r.status; return j; }); }, function(e){ return { ok: false, error: 'Cannot reach the server (' + (e && e.message) + ').', __status: 0 }; }); }
+function cloudGet(k){ try { return typeof W._gcCloudGet === 'function' ? Promise.resolve(W._gcCloudGet(k)).catch(function(){ return null; }) : Promise.resolve(null); } catch (e) { return Promise.resolve(null); } }
+function cloudPut(k, v){ try { if (typeof W._supaUpsert === 'function') return Promise.resolve(W._supaUpsert(k, v)); } catch (e) {} return Promise.resolve(); }
+function saveProject(pid, fn2){
+  var set = W._setProjects; if (typeof set !== 'function') return false;
+  set(function(list){ return arr(list).map(function(p){ if (!p || String(p.id) !== String(pid)) return p; var q = Object.assign({}, p); var r = fn2(q); if (r === false) return p; q.updatedAt = nowIso(); return q; }); });
+  return true;
+}
+function saveLead(id, fn2){
+  var set = W._setLeads; if (typeof set !== 'function') return false;
+  set(function(list){ return arr(list).map(function(l){ if (!l || String(l.id) !== String(id)) return l; var q = Object.assign({}, l); if (fn2(q) === false) return l; q.updatedAt = nowIso(); return q; }); });
+  return true;
+}
+
+/* ══ styles + a dialog ══════════════════════════════════════════════════════ */
+function css(){
+  if (D.getElementById('gc-x12-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-x12-css';
+  st.textContent = '.gcx12-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#fff;border:1px solid #e2e8f0;border-left:3px solid #7c3aed;border-radius:10px;padding:8px 10px;margin:8px 0;font:13px Arial,sans-serif;color:#0f172a}' +
+    '.gcx12-bar button,.gcx12-b{padding:8px 12px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer;min-height:38px;font-size:13px}.gcx12-b.o{background:#fff;color:#4c1d95;border:1px solid #c4b5fd}.gcx12-b.g{background:#16a34a}' +
+    '.gcx12-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 10px;font-weight:800;font-size:12px;cursor:pointer;border:none}.gcx12-chip.green{background:#dcfce7;color:#14532d}.gcx12-chip.amber{background:#fef3c7;color:#7c2d12}.gcx12-chip.red{background:#fee2e2;color:#7f1d1d}' +
+    '.gcx12-sug{background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;font-weight:700}' +
+    '.gcx12-ov{position:fixed;inset:0;z-index:100300;background:rgba(6,12,20,.72);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto}.gcx12-card{background:#fff;color:#0f172a;border-radius:14px;max-width:780px;width:100%;padding:18px;font:14px Arial,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.4)}' +
+    '.gcx12-card h2{margin:0 0 4px;font-size:19px}.gcx12-x{float:right;border:none;background:#e2e8f0;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;min-height:40px}.gcx12-mut{color:#64748b;font-size:12.5px}' +
+    '.gcx12-card textarea{width:100%;min-height:150px;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font:15px Arial,sans-serif}.gcx12-card input,.gcx12-card select{border:1px solid #cbd5e1;border-radius:8px;padding:7px 8px;font:14px Arial,sans-serif;min-height:36px;box-sizing:border-box}' +
+    '.gcx12-auto{background:#fefce8!important;outline:2px solid #fde047}.gcx12-autotag{display:inline-block;font-size:10.5px;font-weight:800;color:#854d0e;background:#fef9c3;border-radius:999px;padding:1px 7px;margin-left:6px}' +
+    '.gcx12-tbl{width:100%;border-collapse:collapse;font-size:13px}.gcx12-tbl th,.gcx12-tbl td{text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top}.gcx12-tbl input{width:100%}' +
+    '.gcx12-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.gcx12-ph{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.gcx12-ph div{font-size:11px;color:#475569}.gcx12-ph img{width:100%;height:96px;object-fit:cover;border-radius:8px;background:#f1f5f9}' +
+    '@media (max-width:640px){.gcx12-ov{padding:0}.gcx12-card{border-radius:0;min-height:100vh}}';
+  D.head.appendChild(st);
+}
+function overlay(title, sub){
+  css();
+  var ov = D.createElement('div'); ov.className = 'gcx12-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', title);
+  var c = D.createElement('div'); c.className = 'gcx12-card';
+  c.innerHTML = '<button type="button" class="gcx12-x">Close</button><h2>' + esc(title) + '</h2>' + (sub ? '<div class="gcx12-mut">' + esc(sub) + '</div>' : '') + '<div class="gcx12-body"></div>';
+  ov.appendChild(c); D.body.appendChild(ov);
+  /* the person closes it on purpose: get past the "held your place" typing guard (it protects panels from timers, not from Close) */
+  var close = function(){ try { if (D.activeElement && ov.contains(D.activeElement)) D.activeElement.blur(); } catch (e) {} var was = W.__GC_MANUAL_SAVE__; W.__GC_MANUAL_SAVE__ = true; try { Element.prototype.remove.call(ov); } catch (e) {} W.__GC_MANUAL_SAVE__ = was; };
+  c.querySelector('.gcx12-x').onclick = close;
+  return { ov: ov, body: c.querySelector('.gcx12-body'), close: close };
+}
+/* a filled field is marked until the person edits it */
+function markAuto(el){ if (!el) return; el.classList.add('gcx12-auto'); el.title = 'Auto-filled — check it and change it if needed'; var off = function(){ el.classList.remove('gcx12-auto'); el.removeEventListener('input', off); }; el.addEventListener('input', off); }
+
+/* ══ 1. AI photo tags ═══════════════════════════════════════════════════════ */
+var AI = { map: {}, at: 0, loading: null };
+function loadTags(force){
+  if (AI.loading) return AI.loading;
+  if (!force && Date.now() - AI.at < 5 * 60e3) return Promise.resolve(AI.map);
+  AI.loading = cloudGet('gc_photo_ai').then(function(v){ AI.map = (v && v.map) || AI.map || {}; AI.at = Date.now(); AI.loading = null; return AI.map; }, function(){ AI.loading = null; return AI.map; });
+  return AI.loading;
+}
+function tagOf(r){ if (!r) return null; return AI.map[s(r.id)] || (r.ccId ? AI.map['cc:' + s(r.ccId)] : null) || null; }
+/* the words the soft photo checklist reads from a photo (AUTO7 calls this for every photo) */
+W._gcX12PhotoWords = function(r){ var t = tagOf(r); return t ? s(t.words) || [t.stage].concat(arr(t.damage), arr(t.materials), [t.area]).join(' ') : ''; };
+function jobPhotos(pid){ try { var P = W._gcPhotos; if (!P || typeof P.records !== 'function') return []; return arr(P.records()).filter(function(r){ return r && !r.deleted && r.source !== 'ccflag' && String(r.jobId) === String(pid); }); } catch (e) { return []; } }
+var STAGE_PCT = { 'tear-off': 30, decking: 40, underlayment: 50, 'dry-in': 55, install: 65, progress: 50, final: 95, punch: 95 };
+var STAGE_WORD = { 'tear-off': 'tear-off', decking: 'decking', underlayment: 'underlayment', 'dry-in': 'dry-in', install: 'the install', progress: 'work in progress', final: 'the finished job', punch: 'punch-list work' };
+function stageSuggestion(p){
+  if (!p) return null; var best = null;
+  jobPhotos(p.id).forEach(function(r){ var t = tagOf(r); if (!t || !STAGE_PCT[t.stage] || num(t.conf) < 0.55) return; if (!best || STAGE_PCT[t.stage] > STAGE_PCT[best.stage]) best = t; });
+  if (!best) return null; var pct = STAGE_PCT[best.stage];
+  if (num(p.pct) >= pct || (p.x12Dismiss || {})[best.stage]) return null;
+  return { stage: best.stage, pct: pct, text: '📸 Photos show ' + STAGE_WORD[best.stage] + ' — set progress to ' + pct + '%?' };
+}
+function photoSearch(p){
+  var O = overlay('🔎 Photos — ' + s(p.name), 'Search by what is in the photo (AI tags) or its note: “decking”, “hail”, “final”, “kitchen”.');
+  var list = jobPhotos(p.id);
+  O.body.innerHTML = '<div class="gcx12-row"><input data-q placeholder="decking, hail, final…" style="flex:1;min-width:200px"> <span class="gcx12-mut" data-n></span></div><div class="gcx12-ph" data-g></div>';
+  var q = O.body.querySelector('[data-q]'), g = O.body.querySelector('[data-g]'), n = O.body.querySelector('[data-n]');
+  function url(r){ try { var ref = r.thumbRef || r.ref; if (r.thumbUrl) return Promise.resolve(r.thumbUrl); if (ref && typeof W._gcFileUrl === 'function') return Promise.resolve(W._gcFileUrl(ref)); } catch (e) {} return Promise.resolve(''); }
+  function paint(){
+    var w = low(q.value), hits = list.filter(function(r){ var words = low([r.note, r.caption, r.tag, W._gcX12PhotoWords(r)].join(' ')); return !w || w.split(/\s+/).every(function(x){ return words.indexOf(x) >= 0; }); });
+    n.textContent = hits.length + ' of ' + list.length + ' photos';
+    g.innerHTML = hits.slice(0, 120).map(function(r, i){ var t = tagOf(r); return '<div><img data-i="' + i + '" alt=""><br>' + esc(t ? t.stage + (arr(t.damage).length ? ' · ' + t.damage.join(', ') : '') : s(r.tag) || '—') + '</div>'; }).join('') || '<div class="gcx12-mut">No photos match.</div>';
+    hits.slice(0, 120).forEach(function(r, i){ url(r).then(function(u){ var im = g.querySelector('img[data-i="' + i + '"]'); if (im && u) im.src = u; }); });
+  }
+  q.oninput = paint; loadTags().then(paint);
+}
+
+/* ══ 2. visit notes: talk OR type → fields ══════════════════════════════════ */
+var QKEY = 'gc_x12_notes_q';
+function queue(){ try { return arr(JSON.parse(localStorage.getItem(QKEY) || '[]')); } catch (e) { return []; } }
+function setQueue(a){ try { localStorage.setItem(QKEY, JSON.stringify(a.slice(-30))); } catch (e) {} }
+function recordOf(kind, id){ return kind === 'lead' ? arr(crm().leads).concat(arr(W._gcLeadsList)).filter(function(l){ return l && String(l.id) === String(id); })[0] || { id: id } : proj(id) || { id: id }; }
+W._gcVisitNotes = function(kind, id, preText){
+  kind = kind === 'lead' ? 'lead' : 'job';
+  var rec = recordOf(kind, id), O = overlay('📝 Visit notes — ' + s(rec.name || rec.title || rec.client || ''), 'Talk or type what you found. The AI fills the measurements, scope, materials and notes — you check every field before anything is saved.');
+  var canTalk = !!(W.SpeechRecognition || W.webkitSpeechRecognition);
+  O.body.innerHTML = '<textarea data-t placeholder="e.g. Roof is about 28 squares, 8/12 pitch, two layers. Needs 6 sheets of decking, 180 ft drip edge, ridge vent. Hail on the front slope, gutters dented. Gate on the left, dog in the yard."></textarea>' +
+    '<div class="gcx12-row">' + (canTalk ? '<button class="gcx12-b o" data-mic>🎤 Talk</button>' : '<span class="gcx12-mut">🎤 Talking isn’t supported in this browser — type, or use your keyboard’s microphone.</span>') +
+    '<button class="gcx12-b" data-go>✨ Fill the fields</button><span class="gcx12-mut" data-st></span></div><div data-rev></div>';
+  var ta = O.body.querySelector('[data-t]'), stEl = O.body.querySelector('[data-st]'), rev = O.body.querySelector('[data-rev]');
+  if (preText) ta.value = preText;
+  var rec2 = null;
+  if (canTalk) O.body.querySelector('[data-mic]').onclick = function(){
+    var b = this; if (rec2) { try { rec2.stop(); } catch (e) {} return; }
+    var SR = W.SpeechRecognition || W.webkitSpeechRecognition; rec2 = new SR(); rec2.lang = 'en-US'; rec2.continuous = true; rec2.interimResults = false;
+    var base = ta.value ? ta.value.replace(/\s*$/, ' ') : '';
+    rec2.onresult = function(e){ var txt = ''; for (var i = 0; i < e.results.length; i++) if (e.results[i].isFinal) txt += e.results[i][0].transcript + ' '; ta.value = base + txt; };
+    rec2.onend = function(){ rec2 = null; b.textContent = '🎤 Talk'; }; rec2.onerror = function(){ rec2 = null; b.textContent = '🎤 Talk'; };
+    try { rec2.start(); b.textContent = '⏹ Stop'; } catch (e) { rec2 = null; }
+  };
+  O.body.querySelector('[data-go]').onclick = function(){
+    var text = s(ta.value); if (text.length < 8) { toast('Type or say a few words first.', true); return; }
+    if (!navigator.onLine) { setQueue(queue().concat([{ id: uid('VN'), kind: kind, rid: s(id), text: text, at: nowIso(), by: myName() }])); toast('Saved — the fields fill in when you are back online (you’ll get a reminder).'); O.close(); return; }
+    stEl.textContent = 'Reading…';
+    fn('ai-assist', { action: 'extract', text: text, kind: kind, jobType: s(rec.type || rec.leadKind) }).then(function(j){
+      stEl.textContent = '';
+      if (!j || !j.ok) { stEl.textContent = (j && j.error) || 'Could not read it.'; return; }
+      review(rev, kind, id, text, j.fields, O);
+    });
+  };
+  return O;
+};
+function review(box, kind, id, text, f, O){
+  var meas = f.measurements || {}, mk = Object.keys(meas);
+  var h = '<h3 style="margin:14px 0 6px">Check the fields <span class="gcx12-autotag">auto-filled</span></h3><div class="gcx12-mut">' + esc(f.summary) + '</div>' +
+    '<table class="gcx12-tbl"><tr><th>Measurement</th><th>Value</th></tr>' + (mk.length ? mk.map(function(k){ return '<tr><td>' + esc(k.replace(/_/g, ' ')) + '</td><td><input class="gcx12-auto" data-m="' + esc(k) + '" value="' + esc(meas[k]) + '"></td></tr>'; }).join('') : '<tr><td colspan=2 class="gcx12-mut">none said</td></tr>') + '</table>' +
+    '<table class="gcx12-tbl" style="margin-top:8px"><tr><th>Scope item</th><th style="width:80px">Qty</th><th style="width:70px">Unit</th><th style="width:40px"></th></tr>' + arr(f.scope).map(function(x, i){ return '<tr data-sr="' + i + '"><td><input class="gcx12-auto" data-sd value="' + esc(x.desc) + '"></td><td><input class="gcx12-auto" data-sq value="' + esc(x.qty == null ? '' : x.qty) + '"></td><td><input class="gcx12-auto" data-su value="' + esc(x.unit) + '"></td><td><button class="gcx12-b o" data-del>✕</button></td></tr>'; }).join('') + '</table>' +
+    '<div class="gcx12-row"><b>Materials:</b> <input class="gcx12-auto" data-mat style="flex:1" value="' + esc(arr(f.materials).map(function(m){ return (m.qty != null ? m.qty + ' ' + (m.unit || '') + ' ' : '') + m.name + (m.color ? ' (' + m.color + ')' : ''); }).join('; ')) + '"></div>' +
+    '<div class="gcx12-row"><b>Damage:</b> <input class="gcx12-auto" data-dmg style="flex:1" value="' + esc(f.damage) + '"></div>' +
+    '<div class="gcx12-row"><b>Access:</b> <input class="gcx12-auto" data-acc style="flex:1" value="' + esc(f.access) + '"></div>' +
+    (s(f.customerRequests) ? '<div class="gcx12-row"><b>Customer asked:</b> <input class="gcx12-auto" data-req style="flex:1" value="' + esc(f.customerRequests) + '"></div>' : '') +
+    '<div class="gcx12-row"><label><input type="checkbox" data-est ' + (arr(f.scope).length ? 'checked' : '') + '> Start a draft estimate with these scope lines (no prices unless the product library has them)</label></div>' +
+    '<div class="gcx12-row"><button class="gcx12-b g" data-save>✓ Save to the ' + (kind === 'lead' ? 'lead' : 'job') + '</button><span class="gcx12-mut">Your original note is kept with it.</span></div>';
+  box.innerHTML = h;
+  Array.prototype.forEach.call(box.querySelectorAll('input.gcx12-auto'), markAuto);
+  box.addEventListener('click', function(e){ var d = e.target.closest('[data-del]'); if (d) { e.preventDefault(); d.closest('tr').remove(); } });
+  box.querySelector('[data-save]').onclick = function(){
+    var m = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-m]'), function(i){ var v = s(i.value); if (v) m[i.getAttribute('data-m')] = /^-?\d+(\.\d+)?$/.test(v) ? +v : v; });
+    var scope = Array.prototype.map.call(box.querySelectorAll('[data-sr]'), function(tr){ return { desc: s(tr.querySelector('[data-sd]').value), qty: s(tr.querySelector('[data-sq]').value) === '' ? null : num(tr.querySelector('[data-sq]').value), unit: s(tr.querySelector('[data-su]').value) }; }).filter(function(x){ return x.desc; });
+    var val = function(sel){ var el = box.querySelector(sel); return el ? s(el.value) : ''; };
+    var entry = { id: uid('VN'), at: nowIso(), by: myName(), text: text.slice(0, 6000), summary: s(f.summary), measurements: m, scope: scope, materials: val('[data-mat]'), damage: val('[data-dmg]'), access: val('[data-acc]'), customerRequests: val('[data-req]') };
+    var apply = function(q){ q.visitNotes = arr(q.visitNotes).concat([entry]).slice(-40); q.measurements = Object.assign({}, q.measurements || {}, m); if (entry.damage) q.damageNotes = entry.damage; if (entry.access) q.accessNotes = entry.access; if (entry.materials) q.materialNotes = entry.materials; if (scope.length && !s(q.scope)) q.scope = scope.map(function(x){ return '• ' + x.desc + (x.qty != null ? ' — ' + x.qty + ' ' + x.unit : ''); }).join('\n'); };
+    var ok = kind === 'lead' ? saveLead(id, apply) : saveProject(id, apply);
+    if (!ok) { toast('Could not save here — open the CRM page and try again.', true); return; }
+    if (box.querySelector('[data-est]') && box.querySelector('[data-est]').checked && scope.length) draftEstimate(kind, id, scope, entry);
+    toast('✓ Saved to the ' + (kind === 'lead' ? 'lead' : 'job') + '.'); O.close();
+  };
+}
+function productPrice(desc){ try { var P = arr(typeof W._gcGetProducts === 'function' ? W._gcGetProducts() : W._gcAllProducts), d = low(desc); var hit = P.filter(function(x){ return x && x.name && d.indexOf(low(x.name)) >= 0 || (x && x.name && low(x.name).indexOf(d) >= 0 && d.length > 6); })[0]; return hit ? num(hit.cost) : 0; } catch (e) { return 0; } }
+function draftEstimate(kind, id, scope, entry){
+  var set = W._gcSetEstimates; if (typeof set !== 'function') return;
+  var rec = recordOf(kind, id), lines = scope.map(function(x){ var uc = productPrice(x.desc); return { id: uid('L'), desc: x.desc, name: x.desc, qty: x.qty == null ? 1 : x.qty, unit: x.unit || 'ea', uc: uc, cost: uc, autoFilled: true }; });
+  var est = { id: uid('EST'), name: s(rec.name || rec.title || rec.client) + ' — from visit notes', pid: kind === 'job' ? s(id) : '', leadId: kind === 'lead' ? s(id) : '', client: s(rec.client), address: s(rec.address), status: 'Draft', date: today(), by: myName(), createdAt: nowIso(), updatedAt: nowIso(), lines: lines, items: lines, source: 'visit-notes', visitNoteId: entry.id, autoFilled: true };
+  set(function(list){ return arr(list).concat([est]); });
+  toast('📐 Draft estimate started — open Estimates to price it.');
+}
+function drainQueue(){
+  if (!navigator.onLine) return; var q = queue(); if (!q.length) return;
+  var mine = q.filter(function(x){ return samePerson(x.by, myName()); }); if (!mine.length) return;
+  var x = mine[0]; setQueue(q.filter(function(y){ return y.id !== x.id; }));
+  toast('📝 Back online — reading the visit note you typed earlier.');
+  var O = W._gcVisitNotes(x.kind, x.rid, x.text); ST(function(){ var b = O.body.querySelector('[data-go]'); if (b) b.click(); }, 300);
+}
+W.addEventListener('online', function(){ ST(drainQueue, 1500); });
+
+/* ══ 3. adjuster e-mail facts → "Review & apply" on the claim (called from patch BB) ══ */
+var FIELD_DEFS = [
+  ['claim_number', 'Claim #', function(c){ return s(c.claimNumber); }, function(c, v){ c.claimNumber = v; }],
+  ['policy_number', 'Policy #', function(c){ return s(c.policyNumber); }, function(c, v){ c.policyNumber = v; }],
+  ['carrier', 'Carrier (internal only)', function(c){ return s(c.carrier); }, function(c, v){ c.carrier = v; }],
+  ['adjuster_name', 'Field adjuster', function(c){ return s((c.adjuster || {}).name); }, function(c, v){ c.adjuster = Object.assign({}, c.adjuster || {}, { name: v }); }],
+  ['adjuster_phone', 'Adjuster phone', function(c){ return s((c.adjuster || {}).phone); }, function(c, v){ c.adjuster = Object.assign({}, c.adjuster || {}, { phone: v }); }],
+  ['adjuster_email', 'Adjuster e-mail', function(c){ return s((c.adjuster || {}).email); }, function(c, v){ c.adjuster = Object.assign({}, c.adjuster || {}, { email: v }); }],
+  ['adjuster_company', 'Adjusting company', function(c){ return s((c.adjuster || {}).company); }, function(c, v){ c.adjuster = Object.assign({}, c.adjuster || {}, { company: v }); }],
+  ['desk_adjuster_name', 'Desk adjuster', function(c){ return s((c.deskAdjuster || {}).name); }, function(c, v){ c.deskAdjuster = Object.assign({}, c.deskAdjuster || {}, { name: v }); }],
+  ['desk_adjuster_phone', 'Desk adjuster phone', function(c){ return s((c.deskAdjuster || {}).phone); }, function(c, v){ c.deskAdjuster = Object.assign({}, c.deskAdjuster || {}, { phone: v }); }],
+  ['desk_adjuster_email', 'Desk adjuster e-mail', function(c){ return s((c.deskAdjuster || {}).email); }, function(c, v){ c.deskAdjuster = Object.assign({}, c.deskAdjuster || {}, { email: v }); }],
+  ['inspection_at', 'Inspection', function(c){ return s(c.siteVisitAt); }, function(c, v){ c.siteVisitAt = v; }],
+  ['date_of_loss', 'Date of loss', function(c){ return s(c.dateOfLoss); }, function(c, v){ c.dateOfLoss = v; }],
+  ['rcv', 'Carrier RCV', function(c){ return c.carrierRcv == null ? '' : String(c.carrierRcv); }, function(c, v){ c.carrierRcv = num(v); }, true],
+  ['acv', 'Carrier ACV', function(c){ return c.carrierAcv == null ? '' : String(c.carrierAcv); }, function(c, v){ c.carrierAcv = num(v); }, true],
+  ['depreciation', 'Recoverable depreciation', function(c){ return c.carrierDep == null ? '' : String(c.carrierDep); }, function(c, v){ c.carrierDep = num(v); }, true],
+  ['deductible', 'Deductible', function(c){ return c.deductible == null ? '' : String(c.deductible); }, function(c, v){ c.deductible = num(v); }, true]
+];
+W._gcX12ClaimUpdates = function(c, f){
+  c = c || {}; f = f || {}; var ups = [];
+  FIELD_DEFS.forEach(function(d){ var v = f[d[0]]; if (v == null || v === '') return; v = d[4] ? String(Math.round(num(v) * 100) / 100) : s(v); if (!v || (d[4] && !num(v))) return; var cur = d[2](c); if (d[4] ? Math.abs(num(cur) - num(v)) < 0.01 : low(cur) === low(v)) return; ups.push({ k: d[0], label: d[1], from: cur, to: v, money: !!d[4] }); });
+  var co = c.closeout || {};
+  if (s(f.supplement_decision) && s((co.supp || {}).state) !== s(f.supplement_decision)) ups.push({ k: 'supplement', label: 'Supplement decision', from: s((co.supp || {}).state), to: s(f.supplement_decision) + (num(f.supplement_amount) ? ' ' + money(f.supplement_amount) : ''), dec: s(f.supplement_decision), amount: num(f.supplement_amount) });
+  if (f.payment_is_depreciation && num(f.payment_amount) && !((co.dep || {}).received)) ups.push({ k: 'dep_received', label: 'Depreciation paid', from: '', to: money(f.payment_amount) + (s(f.check_number) ? ' (check #' + s(f.check_number) + ')' : ''), amount: num(f.payment_amount) });
+  return ups;
+};
+W._gcX12ApplyFields = function(claimId, g, mutate, addNote){
+  var ups = arr(g.updates); if (!ups.length) return Promise.resolve();
+  var O = overlay('📨 From the adjuster e-mail — ' + ups.length + ' update' + (ups.length > 1 ? 's' : ''), 'Tick what to apply. Nothing on the claim changes until you press Apply.');
+  O.body.innerHTML = '<table class="gcx12-tbl"><tr><th></th><th>Field</th><th>Now</th><th>From the e-mail</th></tr>' + ups.map(function(u, i){ return '<tr><td><input type="checkbox" data-u="' + i + '" checked></td><td>' + esc(u.label) + '</td><td class="gcx12-mut">' + esc(u.money && u.from ? money(u.from) : u.from || '—') + '</td><td><input data-v="' + i + '" value="' + esc(u.money ? u.to : u.to) + '"></td></tr>'; }).join('') + '</table>' +
+    '<div class="gcx12-row"><button class="gcx12-b g" data-ap>Apply the ticked updates</button><span class="gcx12-mut">The carrier name stays internal — never shown to the customer.</span></div>';
+  return new Promise(function(res){
+    O.ov.addEventListener('click', function(e){ if (e.target.classList.contains('gcx12-x')) res(); });
+    O.body.querySelector('[data-ap]').onclick = function(){
+      var pick = ups.map(function(u, i){ var cb = O.body.querySelector('[data-u="' + i + '"]'); return cb && cb.checked ? Object.assign({}, u, { to: s(O.body.querySelector('[data-v="' + i + '"]').value) }) : null; }).filter(Boolean);
+      if (!pick.length) { O.close(); res(); return; }
+      mutate(claimId, function(cc){
+        pick.forEach(function(u){
+          var d = FIELD_DEFS.filter(function(x){ return x[0] === u.k; })[0];
+          if (d) { d[3](cc, u.money ? num(u.to) : u.to); return; }
+          cc.closeout = Object.assign({}, cc.closeout || {});
+          if (u.k === 'supplement') cc.closeout.supp = Object.assign({}, cc.closeout.supp || {}, u.dec === 'denied' ? { state: 'denied', decidedBy: myName() + ' (from the adjuster e-mail)', decidedAt: nowIso() } : { state: 'approved', approved: u.amount || num((cc.closeout.supp || {}).requested), decidedBy: myName() + ' (from the adjuster e-mail)', decidedAt: nowIso() });
+          if (u.k === 'dep_received') cc.closeout.dep = Object.assign({}, cc.closeout.dep || {}, { received: { amount: u.amount, at: nowIso(), by: myName() + ' (from the adjuster e-mail)' } });
+        });
+        var y = arr(cc.suggestions).filter(function(x){ return x.id === g.id; })[0]; if (y) { y.status = 'done'; y.doneBy = myName(); y.doneAt = nowIso(); }
+      }).then(function(){ return addNote(claimId, 'Applied from the adjuster’s e-mail by ' + myName() + ': ' + pick.map(function(u){ return u.label + ' → ' + u.to; }).join('; '), { internal: true }); }).then(function(){ toast('✓ ' + pick.length + ' update' + (pick.length > 1 ? 's' : '') + ' applied.'); O.close(); res(); }, function(e){ toast((e && e.message) || 'Could not apply.', true); res(); });
+    };
+  });
+};
+
+/* ══ 4. 🩺 Job health ══════════════════════════════════════════════════════ */
+var HW = { w: null, at: 0 };
+function weights(){ if (!HW.w) { try { HW.w = JSON.parse(localStorage.getItem('gc_health_weights') || 'null'); } catch (e) {} } return HW.w || {}; }
+function loadWeights(){ if (Date.now() - HW.at < 10 * 60e3) return Promise.resolve(weights()); HW.at = Date.now(); return cloudGet('gc_health_weights').then(function(v){ if (v && typeof v === 'object') { HW.w = v; try { localStorage.setItem('gc_health_weights', JSON.stringify(v)); } catch (e) {} } return weights(); }); }
+function approvalsFor(pid){ var n = 0; try { arr(W._gcAp2Items && W._gcAp2Items()).forEach(function(x){ if (String(x.jobId || x.pid || x.projectId) === String(pid)) n++; }); } catch (e) {} try { arr(JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]')).forEach(function(a){ if (a && /pending/.test(s(a.status)) && String(a.pid || a.projectId) === String(pid)) n++; }); } catch (e) {} return n; }
+function photoMissing(p){ var tags = jobPhotos(p.id).map(function(r){ var t = tagOf(r); return t ? t.stage : low(r.tag); }), pct = num(p.pct), miss = 0; if (pct > 0 && tags.indexOf('before') < 0 && tags.indexOf('damage') < 0 && !jobPhotos(p.id).length) miss++; if (pct >= 90 && tags.indexOf('final') < 0 && tags.indexOf('after') < 0) miss++; return miss; }
+function healthOf(p){
+  var H = W._gcHealth; if (!H || !p) return null;
+  var c = crm(), tickets = []; try { tickets = arr(W._gcAuto7 && W._gcAuto7._C && W._gcAuto7._C.tickets); } catch (e) {}
+  return H.score(p, { today: today(), invoices: arr(c.invoices), schedule: arr(c.schedule), expenses: arr(c.expenses), punch: arr(c.punch), tickets: tickets, approvals: approvalsFor(p.id), photoMissing: photoMissing(p), contractWithCOs: typeof W._gcContractWithCOs === 'function' ? W._gcContractWithCOs(p.id) : num(p.contract) }, weights());
+}
+W._gcJobHealth = function(pid){ var p = proj(pid); return p ? healthOf(p) : null; };
+function openJob(pid){ try { var p = proj(pid); if (p && typeof W._gcOpenProject === 'function') W._gcOpenProject(p); else if (p && W._openJobDetail) W._openJobDetail(p); if (W._setView) W._setView('projects'); } catch (e) {} }
+function renderHealth(box){
+  css(); var H = W._gcHealth; if (!H) { box.textContent = 'Loading…'; return; }
+  var rows = projects().filter(H.isOpenJob).map(function(p){ return { p: p, h: healthOf(p) }; }).filter(function(x){ return x.h; }).sort(function(a, b){ return a.h.score - b.h.score; });
+  var cnt = { red: 0, amber: 0, green: 0 }; rows.forEach(function(x){ cnt[x.h.level]++; });
+  var w = Object.assign({}, H.DEFAULT_WEIGHTS, weights());
+  box.innerHTML = '<div class="gcx12-row"><span class="gcx12-chip red">🔴 ' + cnt.red + ' red</span><span class="gcx12-chip amber">🟠 ' + cnt.amber + ' amber</span><span class="gcx12-chip green">🟢 ' + cnt.green + ' green</span><span class="gcx12-mut">Every open job scored 0–100 from the CRM’s own data. Worst first.</span></div>' +
+    '<table class="gcx12-tbl"><tr><th>Score</th><th>Job</th><th>PM</th><th>Why</th><th></th></tr>' + rows.map(function(x){ return '<tr><td><span class="gcx12-chip ' + x.h.level + '">' + x.h.score + '</span></td><td><b>' + esc(x.p.name) + '</b><div class="gcx12-mut">' + esc([x.p.autoPO ? 'PO ' + x.p.autoPO : '', x.p.address].filter(Boolean).join(' · ')) + '</div></td><td>' + esc(x.p.pm || '—') + '</td><td>' + (x.h.reasons.length ? esc(x.h.reasons.map(function(r){ return r.text; }).join('; ')) : '<span class="gcx12-mut">All good</span>') + '</td><td><button class="gcx12-b o" data-open="' + esc(x.p.id) + '">Open job</button></td></tr>'; }).join('') + '</table>' +
+    '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:700">⚖ Weights (points off per problem)</summary><div class="gcx12-row" style="flex-wrap:wrap">' + Object.keys(H.DEFAULT_WEIGHTS).map(function(k){ return '<label style="font-size:12px">' + esc(k) + ' <input data-w="' + esc(k) + '" value="' + esc(w[k]) + '" style="width:64px"></label>'; }).join('') + '</div><div class="gcx12-row"><button class="gcx12-b" data-wsave>Save weights</button><button class="gcx12-b o" data-wreset>Back to the defaults</button></div></details>';
+  box.onclick = function(e){
+    var o = e.target.closest('[data-open]'); if (o) { openJob(o.getAttribute('data-open')); return; }
+    if (e.target.closest('[data-wsave]')) { if (!isAdmin()) { toast('Only an admin can change the weights.', true); return; } var nw = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-w]'), function(i){ var v = parseFloat(i.value); if (isFinite(v) && v >= 0) nw[i.getAttribute('data-w')] = v; }); HW.w = nw; try { localStorage.setItem('gc_health_weights', JSON.stringify(nw)); } catch (e2) {} cloudPut('gc_health_weights', nw); toast('Weights saved.'); renderHealth(box); }
+    if (e.target.closest('[data-wreset]')) { HW.w = {}; try { localStorage.setItem('gc_health_weights', '{}'); } catch (e3) {} cloudPut('gc_health_weights', {}); renderHealth(box); }
+  };
+}
+function addHealthSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'health', after: 'security', ic: '🩺', t: 'Job health', d: 'Every open job scored 0–100, worst first, with the reasons', render: function(box){ loadTags().then(function(){ return loadWeights(); }).then(function(){ renderHealth(box); }); renderHealth(box); },
+    count: function(){ var H = W._gcHealth; if (!H) return ''; var red = projects().filter(H.isOpenJob).filter(function(p){ var h = healthOf(p); return h && h.level === 'red'; }).length; return red ? red + ' red' : 'all green / amber'; } });
+  return true;
+}
+
+/* ══ 5. smart defaults (always editable) ════════════════════════════════════ */
+function nextInvoice(p){
+  if (!p) return null; var contract = typeof W._gcContractWithCOs === 'function' ? W._gcContractWithCOs(p.id) : num(p.contract); if (!contract) return null;
+  var billed = typeof W._gcClientInvoiced === 'function' ? num(W._gcClientInvoiced(p.id)) : arr(crm().invoices).filter(function(i){ return i && String(i.pid) === String(p.id) && s(i.type) !== 'sub' && !/void|cancel/i.test(s(i.status)); }).reduce(function(t, i){ return t + num(i.amt); }, 0);
+  var ms = []; try { if (typeof W._gcDrawMilestones === 'function') ms = arr(W._gcDrawMilestones(p)); } catch (e) {}
+  var cum = 0, pick = null;
+  ms.forEach(function(m){ if (pick) return; var at = num(m.at || m.pct); var target = Math.round(contract * at) / 100; if (target - billed > 0.5) pick = { amt: Math.round((target - billed) * 100) / 100, desc: s(m.label || m.name || (at + '% draw')) }; cum = at; });
+  if (!pick && contract - billed > 0.5) pick = { amt: Math.round((contract - billed) * 100) / 100, desc: 'Balance due' };
+  return pick ? Object.assign(pick, { billed: billed, contract: contract }) : null;
+}
+function draftInvoice(p){
+  var n = nextInvoice(p); if (!n) { toast('Nothing left to bill on this job.'); return; }
+  var O = overlay('✨ Next invoice — ' + s(p.name), 'Filled from the payment schedule and what is already billed. Change anything, then create the draft.');
+  O.body.innerHTML = '<div class="gcx12-row"><label>Amount <input data-a value="' + esc(n.amt) + '"></label><label style="flex:1">Description <input data-d style="width:100%" value="' + esc(n.desc + ' — ' + s(p.name)) + '"></label><label>Due <input data-due type="date" value="' + esc(new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10)) + '"></label></div>' +
+    '<div class="gcx12-mut">Contract with change orders ' + money(n.contract) + ' · billed so far ' + money(n.billed) + '</div><div class="gcx12-row"><button class="gcx12-b g" data-mk>Create the draft invoice</button><span class="gcx12-mut">It is only a draft — it goes through ✅ Approvals before the customer sees it.</span></div>';
+  Array.prototype.forEach.call(O.body.querySelectorAll('input'), markAuto);
+  O.body.querySelector('[data-mk]').onclick = function(){
+    var amt = num(O.body.querySelector('[data-a]').value); if (!(amt > 0)) { toast('Enter an amount.', true); return; }
+    var inv = { id: uid('INV'), pid: p.id, type: 'client', po: s(p.autoPO), amt: amt, desc: s(O.body.querySelector('[data-d]').value), date: today(), due: s(O.body.querySelector('[data-due]').value), status: 'draft', by: myName(), createdAt: nowIso(), source: 'smart-default' };
+    if (typeof W._setInvoices !== 'function') { toast('Open the CRM page first.', true); return; }
+    W._setInvoices(function(list){ return arr(list).concat([inv]); }); toast('🧾 Draft invoice created — finish it on the job’s invoices.'); O.close();
+  };
+}
+function nextCoNum(pid){ var n = 0; arr(crm().changeOrders).forEach(function(c){ if (c && String(c.pid) === String(pid)) { var m = /(\d+)\s*$/.exec(s(c.num || c.coNum || c.number)); n = Math.max(n, m ? +m[1] : 0) || n + 0; } }); var cnt = arr(crm().changeOrders).filter(function(c){ return c && String(c.pid) === String(pid); }).length; return 'CO-' + (Math.max(n, cnt) + 1); }
+function draftCO(p){
+  var O = overlay('✨ New change order — ' + s(p.name), 'The job, PM and next CO number are filled in. Add what changed and the price.');
+  var no = nextCoNum(p.id);
+  O.body.innerHTML = '<div class="gcx12-row"><label>CO # <input data-n value="' + esc(no) + '" style="width:90px"></label><label>PM <input data-pm value="' + esc(p.pm || myName()) + '"></label><label>Amount <input data-a placeholder="0.00" style="width:110px"></label></div><textarea data-d placeholder="What changed and why…" style="min-height:90px"></textarea>' +
+    '<div class="gcx12-row"><button class="gcx12-b g" data-mk>Create the change order</button><span class="gcx12-mut">It needs the customer’s signature in the portal, as every change order does.</span></div>';
+  markAuto(O.body.querySelector('[data-n]')); markAuto(O.body.querySelector('[data-pm]'));
+  O.body.querySelector('[data-mk]').onclick = function(){
+    var d = s(O.body.querySelector('[data-d]').value); if (!d) { toast('Say what changed.', true); return; }
+    var co = { id: uid('CO'), pid: p.id, num: s(O.body.querySelector('[data-n]').value), pm: s(O.body.querySelector('[data-pm]').value), desc: d, amt: num(O.body.querySelector('[data-a]').value), status: 'pending', date: today(), by: myName(), source: 'smart-default' };
+    if (typeof W._gcSetCOs !== 'function') { toast('Open the CRM page first.', true); return; }
+    W._gcSetCOs(function(list){ return arr(list).concat([co]); }); toast('📝 Change order ' + co.num + ' created (pending signature).'); O.close();
+  };
+}
+/* Launch Job: "✨ Fill from a lead" */
+function leads(){ return arr(crm().leads).concat(arr(W._gcLeadsList)).filter(function(l){ return l && !l.deleted && !l.converted && !/lost|dead/i.test(s(l.stage || l.status)); }); }
+function similarJob(type){ var t = low(type); return projects().filter(function(p){ return p && low(p.type) === t && (p.super || p.superintendent || p.crew); }).sort(function(a, b){ return s(b.startDate || b.created) < s(a.startDate || a.created) ? -1 : 1; })[0] || null; }
+function fillFromLead(l){
+  if (typeof W._gcLaunchPrefill !== 'function') { toast('Open Launch Job first.', true); return; }
+  var c = l.contact || {}, sim = similarJob(l.leadKind || l.type);
+  var o = { name: s(l.name || l.title), client: s(l.client || c.name || l.contactName), address: s(l.address), type: s(l.jobType || l.type || l.leadKind) || 'Residential Reno', pm: s(l.pm) || myName(), source: s(l.source), clientPhone: s(l.phone || c.phone), clientEmail: s(l.email || c.email), scope: s(l.scope || l.detail || l.notes).slice(0, 1500), notes: 'From lead ' + s(l.name || l.title) + (sim && (sim.super || sim.superintendent) ? ' · Super on a similar job: ' + s(sim.super || sim.superintendent) : '') };
+  Object.keys(o).forEach(function(k){ if (!o[k]) delete o[k]; });
+  W._gcLaunchPrefill(o); W.__gcX12LaunchLead = l.id;
+  ST(function(){ var main = D.querySelector('main'); if (!main) return; Array.prototype.forEach.call(main.querySelectorAll('input,textarea,select'), function(el){ if (s(el.value) && Object.keys(o).some(function(k){ return s(o[k]) === s(el.value); })) markAuto(el); }); }, 200);
+  toast('✨ Filled from the lead — check every field (yellow = auto-filled), then launch. The schedule template for the job type is applied on launch.');
+}
+function launchBar(){
+  var main = D.querySelector('main'); if (!main) return;
+  var h = null; Array.prototype.some.call(main.querySelectorAll('h1,h2'), function(x){ if (/launch (a )?job|new job|🚀/i.test(s(x.textContent)) && x.offsetParent) { h = x; return true; } return false; });
+  var have = main.querySelector('.gcx12-launch');
+  if (!h) { if (have) have.remove(); return; } if (have) return;
+  css(); var bar = D.createElement('div'); bar.className = 'gcx12-bar gcx12-launch';
+  var ls = leads().slice(0, 300);
+  bar.innerHTML = '<b>✨ Fill from a lead</b><select data-l style="min-width:220px"><option value="">— pick a lead —</option>' + ls.map(function(l){ return '<option value="' + esc(l.id) + '">' + esc((l.name || l.title || 'Lead') + (l.address ? ' — ' + s(l.address).split(',')[0] : '')) + '</option>'; }).join('') + '</select><span class="gcx12-mut">Customer, address, type, source, PM and scope come from the lead — all editable.</span>';
+  bar.querySelector('[data-l]').onchange = function(){ var l = ls.filter(function(x){ return String(x.id) === this.value; }, this)[0]; if (l) fillFromLead(l); };
+  h.parentNode.insertBefore(bar, h.nextSibling);
+}
+/* Estimates: "＋ From a similar job" */
+function estimates(){ try { if (W._gcEST3 && typeof W._gcEST3.list === 'function') return arr(W._gcEST3.list()); } catch (e) {} return arr(W._gcEstimatesState); }
+function estLines(e){ return arr(e && (e.lines || e.items || e.mats)); }
+function estTotal(e){ return num(e && (e.total || e.grandTotal || e.amount)) || estLines(e).reduce(function(t, l){ return t + num(l.qty) * num(l.uc || l.cost || l.price); }, 0); }
+function closestEstimate(p){
+  var t = low(p.type), size = num(p.contract), best = null, bs = 1e18;
+  estimates().forEach(function(e){ if (!e || e.deleted || !estLines(e).length || String(e.pid) === String(p.id)) return; var ep = proj(e.pid) || {}; var same = low(ep.type || e.jobType || e.type) === t ? 0 : 1; var d = size ? Math.abs(estTotal(e) - size) / Math.max(size, 1) : 0; var sc = same * 10 + d; if (sc < bs) { bs = sc; best = e; } });
+  return best;
+}
+function fromSimilar(){
+  var ps = projects().filter(function(p){ return p && !p.deleted; }).slice(-400).reverse();
+  var O = overlay('＋ Estimate from a similar job', 'Pick the job this estimate is for. The closest past estimate (same job type, nearest size) fills the scope lines — every line stays editable.');
+  O.body.innerHTML = '<div class="gcx12-row"><select data-p style="min-width:260px"><option value="">— pick the job —</option>' + ps.map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((p.autoPO ? p.autoPO + ' · ' : '') + s(p.name)) + '</option>'; }).join('') + '</select></div><div data-r></div>';
+  O.body.querySelector('[data-p]').onchange = function(){
+    var p = proj(this.value), r = O.body.querySelector('[data-r]'); if (!p) { r.innerHTML = ''; return; }
+    var e = closestEstimate(p); if (!e) { r.innerHTML = '<div class="gcx12-mut">No past estimate with lines to copy yet — start a blank one with ＋ New estimate.</div>'; return; }
+    r.innerHTML = '<div class="gcx12-sug">Closest: <b>' + esc(e.name || e.title || 'estimate') + '</b> — ' + estLines(e).length + ' lines, ' + money(estTotal(e)) + '</div><div class="gcx12-row"><button class="gcx12-b g" data-mk>Start the new estimate from it</button></div>';
+    r.querySelector('[data-mk]').onclick = function(){
+      if (typeof W._gcSetEstimates !== 'function') { toast('Open Estimates first.', true); return; }
+      var copy = JSON.parse(JSON.stringify(e)); copy.id = uid('EST'); copy.pid = p.id; copy.name = s(p.name) + ' — estimate'; copy.client = s(p.client); copy.address = s(p.address); copy.status = 'Draft'; copy.date = today(); copy.createdAt = nowIso(); copy.updatedAt = nowIso(); copy.by = myName(); copy.fromSimilar = e.id; copy.autoFilled = true;
+      delete copy.signedAt; delete copy.sentAt; delete copy.versions; delete copy.esign;
+      W._gcSetEstimates(function(list){ return arr(list).concat([copy]); });
+      O.close(); toast('📐 New estimate started from “' + s(e.name) + '” — every line is editable.');
+      try { if (W._gcEST3 && typeof W._gcEST3.open === 'function') ST(function(){ W._gcEST3.open(copy); }, 300); } catch (e2) {}
+    };
+  };
+}
+function estBar(){
+  var main = D.querySelector('main'); if (!main || main.querySelector('.gcx12-simbtn')) return;
+  var nb = null; Array.prototype.some.call(main.querySelectorAll('button'), function(b){ if (/^\s*＋\s*New estimate\s*$/i.test(s(b.textContent)) && b.offsetParent) { nb = b; return true; } return false; });
+  if (!nb) return; css();
+  var b = D.createElement('button'); b.className = 'gcx12-b o gcx12-simbtn'; b.type = 'button'; b.textContent = '＋ From a similar job'; b.style.marginLeft = '6px'; b.onclick = fromSimilar;
+  nb.parentNode.insertBefore(b, nb.nextSibling);
+}
+
+/* ══ the job's bar (desk + field) ═══════════════════════════════════════════ */
+function canSeeHealth(p){ return isAdmin() || samePerson(p.pm, myName()) || samePerson(p.apm, myName()); }
+function makeBar(p, field){
+  css(); var bar = D.createElement('div'); bar.className = 'gcx12-bar'; bar.setAttribute('data-pid', p.id); if (field) bar.setAttribute('data-field', '1');
+  var h = canSeeHealth(p) ? healthOf(p) : null, sg = stageSuggestion(p);
+  bar.innerHTML = (h ? '<button type="button" class="gcx12-chip ' + h.level + '" data-a="health" title="' + esc(h.reasons.map(function(r){ return r.text; }).join('\n') || 'All good') + '">🩺 ' + h.score + '</button>' : '') +
+    '<button type="button" data-a="notes">📝 Visit notes</button><button type="button" class="gcx12-b o" data-a="photos">🔎 Photos</button><button type="button" class="gcx12-b o" data-a="inv">✨ Next invoice</button><button type="button" class="gcx12-b o" data-a="co">✨ Change order</button>' +
+    (sg ? '<span class="gcx12-sug">' + esc(sg.text) + ' <button type="button" class="gcx12-b g" data-a="stage">Yes</button> <button type="button" class="gcx12-b o" data-a="nostage">No</button></span>' : '');
+  bar.__sig = sig(p);
+  bar.onclick = function(e){
+    var a = e.target.closest('[data-a]'); if (!a) return; var k = a.getAttribute('data-a');
+    if (k === 'notes') W._gcVisitNotes('job', p.id);
+    if (k === 'photos') photoSearch(p);
+    if (k === 'inv') draftInvoice(proj(p.id) || p);
+    if (k === 'co') draftCO(proj(p.id) || p);
+    if (k === 'health') { var hh = healthOf(proj(p.id) || p); var O = overlay('🩺 Job health — ' + s(p.name) + ': ' + hh.score, 'Points off for each problem the CRM can see. Admins change the weights in Admin → 🩺 Job health.'); O.body.innerHTML = hh.reasons.length ? '<ul>' + hh.reasons.map(function(r){ return '<li>' + esc(r.text) + ' <span class="gcx12-mut">(−' + r.pts + ')</span></li>'; }).join('') + '</ul>' : '<p>All good.</p>'; }
+    if (k === 'stage' && sg) { saveProject(p.id, function(q){ if (num(q.pct) >= sg.pct) return false; q.pct = sg.pct; q.pctFrom = 'photos (confirmed by ' + myName() + ')'; }); toast('Progress set to ' + sg.pct + '% — the stage automations follow.'); ST(paint, 400); }
+    if (k === 'nostage' && sg) { saveProject(p.id, function(q){ q.x12Dismiss = Object.assign({}, q.x12Dismiss || {}); q.x12Dismiss[sg.stage] = nowIso(); }); ST(paint, 400); }
+  };
+  return bar;
+}
+function sig(p){ var h = canSeeHealth(p) ? healthOf(p) : null, sg = stageSuggestion(p); return [p.id, h ? h.score : '', sg ? sg.stage : '', Object.keys(AI.map).length].join('|'); }
+function deskBar(){
+  if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
+  var main = D.querySelector('main'); if (!main) return;
+  var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, bars = main.querySelectorAll('.gcx12-bar:not([data-field]):not(.gcx12-launch)');
+  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  var back = null, bs = main.getElementsByTagName('button');
+  for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
+  if (!back) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  var root = back.parentElement, have = root.querySelector(':scope > .gcx12-bar');
+  Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
+  if (have && have.getAttribute('data-pid') === String(p.id) && have.__sig === sig(p)) return;
+  if (have) have.remove();
+  var after = root.querySelector(':scope > .gcx9-bars') || root.querySelector(':scope > .gcja-bar') || back;
+  root.insertBefore(makeBar(p, false), after.nextSibling);
+}
+var FIELD_PID = null;
+function wrapDash(){ var f = W._gcJobDashboard; if (typeof f !== 'function' || f.__gcX12) return; var w = function(jobId){ FIELD_PID = jobId; var r = f.apply(this, arguments); ST(fieldBar, 0); ST(fieldBar, 600); return r; }; w.__gcX12 = true; try { Object.keys(f).forEach(function(k){ if (!(k in w)) w[k] = f[k]; }); } catch (e) {} W._gcJobDashboard = w; }
+function fieldBar(){
+  var ov = D.getElementById('_gcJobDash'); if (!ov || !FIELD_PID) return; var p = proj(FIELD_PID); if (!p) return;
+  var have = ov.querySelector('.gcx12-bar[data-field]'); if (have && have.getAttribute('data-pid') === String(p.id) && have.__sig === sig(p)) return; if (have) have.remove();
+  var body = ov.children[1] || ov, after = body.querySelector('.gcx9-bars[data-field]') || body.querySelector('.gcja-bar[data-field]');
+  var bar = makeBar(p, true); if (after && after.parentNode === body) body.insertBefore(bar, after.nextSibling); else body.insertBefore(bar, body.firstChild);
+}
+function paint(){ try { deskBar(); } catch (e) {} try { fieldBar(); } catch (e) {} try { launchBar(); } catch (e) {} try { estBar(); } catch (e) {} }
+
+/* ══ start ══════════════════════════════════════════════════════════════════ */
+var added = false;
+function start(){
+  css(); loadTags(); loadWeights();
+  SI(function(){ if (D.hidden) return; wrapDash(); if (!added) added = addHealthSection(); paint(); }, 1500);
+  SI(function(){ if (!D.hidden) loadTags(true).then(paint); }, 10 * 60e3);
+  ST(drainQueue, 8000);
+}
+W._gcX12 = { health: W._gcJobHealth, tags: function(){ return AI.map; }, setTags: function(m){ AI.map = m || {}; AI.at = Date.now(); }, nextInvoice: function(pid){ return nextInvoice(proj(pid)); }, nextCoNum: nextCoNum, closestEstimate: function(pid){ return closestEstimate(proj(pid) || {}); }, stageSuggestion: function(pid){ return stageSuggestion(proj(pid)); }, claimUpdates: W._gcX12ClaimUpdates, paint: paint, drainQueue: drainQueue, fillFromLead: fillFromLead, fromSimilar: fromSimilar };
+if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', start); else start();
+try { console.log('[GC] Automatic data: AI photo tags, talk-or-type visit notes, adjuster e-mail updates, 🩺 job health, smart defaults (patch X12) — _gcX12'); } catch (e) {}
 })();
 
 </script>

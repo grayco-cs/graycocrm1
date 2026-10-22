@@ -146,6 +146,14 @@ const TOOL = { name: 'record_claim_mail', description: 'Key facts from an insura
   site_visit: { type: 'string', description: 'a re-inspection / site visit date-time YYYY-MM-DDTHH:MM, or empty' },
   payment_amount: { type: ['number', 'null'], description: 'a payment / check issued, if stated' },
   check_number: { type: 'string' },
+  /* patch X12: the claim's facts too — each one becomes a "Review & apply" update on the claim, never a silent change */
+  claim_number: { type: 'string' }, policy_number: { type: 'string' }, carrier: { type: 'string', description: 'the insurance company' },
+  adjuster_name: { type: 'string' }, adjuster_phone: { type: 'string' }, adjuster_email: { type: 'string' }, adjuster_company: { type: 'string', description: 'independent adjusting firm, if any' },
+  desk_adjuster_name: { type: 'string' }, desk_adjuster_phone: { type: 'string' }, desk_adjuster_email: { type: 'string' },
+  inspection_at: { type: 'string', description: 'inspection / re-inspection date-time YYYY-MM-DDTHH:MM, or empty' }, date_of_loss: { type: 'string', description: 'YYYY-MM-DD or empty' },
+  rcv: { type: ['number', 'null'] }, acv: { type: ['number', 'null'] }, deductible: { type: ['number', 'null'] },
+  supplement_decision: { type: 'string', enum: ['', 'approved', 'denied', 'partial'], description: 'the carrier\'s decision on a supplement, if this e-mail gives one' }, supplement_amount: { type: ['number', 'null'] },
+  payment_is_depreciation: { type: 'boolean', description: 'true when the payment issued is the recoverable depreciation' },
   attachments: { type: 'array', items: { type: 'object', properties: { index: { type: 'integer' }, kind: { type: 'string', enum: ['xactimate_estimate', 'photo', 'letter', 'invoice', 'other'] } }, required: ['index', 'kind'] } }
 }, required: ['summary', 'attachments'] } };
 async function readFacts(mail){
@@ -183,7 +191,10 @@ async function processEvent(evt){
   if (list0.some(x => x && x.id === id)) return { status: 200, body: { ok: true, repeat: true, id } };
   const files = [];
   for (const f of mail.files) files.push({ name: f.name, type: f.type, size: f.size, ref: await storeFile(f.buf, f.type, f.name) });
-  const facts = await readFacts(mail);
+  const ai = await readFacts(mail);
+  /* patch X12: plain rules read the same facts (claim #, adjuster, dates, amounts); the AI wins, the rules fill gaps */
+  let rules = {}; try { rules = require('./_lib/x12.js').ruleClaimFacts(mail.subject, mail.text); } catch (e) {}
+  const facts = Object.keys(rules).length || ai.ok ? Object.assign(require('./_lib/x12.js').mergeFacts(ai.ok ? ai : {}, rules), { ok: true, ai: !!ai.ok }) : ai;
   files.forEach((f, i) => { f.kind = classify(mail.files[i], i, facts); });
   const [claims, projects] = [await kvGet('gc_claims'), await kvGet('projects')];
   const match = matchClaim(mail, claims, projects);

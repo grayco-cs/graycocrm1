@@ -2150,6 +2150,9 @@ exports.handler = async function (event) {
     const cc = (ccId ? await ccPhotos(ccId) : []).filter(function(x){ return !hide[String(x.id).replace(/^cc_/, '')]; });
     const gc = await grayCoPhotos(p.id, recs || []);
     const list = gc.concat(cc).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+    /* patch X12: the AI photo tag's STAGE label only ("Tear-off", "Finished") — never a damage word */
+    try { const ai = (await kvRead(['gc_photo_ai'])).gc_photo_ai; const map = (ai && ai.map) || {}; const X12 = require('./_lib/x12.js');
+      list.forEach(function(x){ const k = /^cc_/.test(s(x.id)) ? 'cc:' + s(x.id).slice(3) : s(x.id), lab = X12.portalLabel(map[k]); if (lab) x.stage = lab; }); } catch (e) {}
     return reply(200, headers, { ok: true, photos: list, expiresIn: SIGN_SECS });
   }
   if (action === 'referral') {   /* patch REF: the referral program card — join, refer a friend, the member's gift cards, use a gift card on this job */
