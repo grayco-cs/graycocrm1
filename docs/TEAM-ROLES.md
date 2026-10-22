@@ -46,11 +46,42 @@ A new hire with one of these roles appears in every pick-list, in the routing an
 
 | Key (gc_kv) | What it holds | Who reads / writes |
 |---|---|---|
-| `gc_senior_pm` | `{ email, id, name }` | everyone reads, admins change |
-| `gc_team_settings` | `{ apmCanApprove }` | everyone reads, admins change |
+| `gc_senior_pm` | `{ email, id, name, setBy, setAt }`, or `{ none: true, setBy, setAt }` for "— Nobody yet —" | everyone reads, admins change |
+| `gc_team_settings` | `{ apmCanApprove, leadRoles: { insurancePm, roofingMgr }, seniorFixV1 }` | everyone reads, admins change |
 | `gc_reassign_log` | the reassign history | everyone reads, admins add |
 | `gc_pay_templates` | the saved pay structures | admins only |
 
 People records may carry `ccName` (GrayCo Photos name) and `assistsPm` (for an APM). Jobs may carry `apm` and `superintendent`.
 
 The server uses the same rules: `netlify/functions/_lib/people.js`.
+
+## Senior PM can be "nobody" (patch HOT2)
+
+- The Senior PM pick-list starts with **"— Nobody yet —"**. Saving it is a choice like any other (`setBy` / `setAt`), and the
+  first-time setup never fills it in again.
+- While nobody is Senior PM, Admin shows a grey info line, not a red warning, and work with no PM goes to **every active PM**,
+  then the admins.
+- One time only (`gc_team_settings.seniorFixV1`): a Senior PM that the automatic first-time setup picked (not an admin) became
+  the **Senior Roofing PM**, and Senior PM was left empty. A Senior PM an admin picked is kept, with a note "Senior PM is … —
+  change if needed".
+
+## Lead roles (patch HOT2)
+
+Admin → Admin settings → 👥 Team roles → **🎯 Lead roles**. A new lead goes, by its type, to the person in that role the moment
+it comes in (website forms, missed calls, referrals, the partner API, bid e-mail, bid boards, BuildingConnected, SAM.gov):
+
+| Role | Gets | Where it is kept |
+|---|---|---|
+| **Senior Estimator** | commercial / government bids (the lead's owner) | Leads → 📥 Lead Inbox → ⚙ (`_lib/estimator.js`) |
+| **Senior Insurance PM** | restoration: water (water, flood, leak, mitigation, mold), fire (fire, smoke, soot), storm (storm, hail, wind, tree), insurance / claims | `gc_team_settings.leadRoles.insurancePm` |
+| **Senior Roofing PM** | roofing with no storm / water words. Also the **second person** (`lead.coAssignees`) on a commercial roofing bid and on a storm / water lead about a roof — they get its alerts and due reminders too | `gc_team_settings.leadRoles.roofingMgr` |
+| nobody | remodel and everything else | an admin assigns it ("👤 Assign this lead") |
+
+- A storm + roof lead follows the lead's own insurance answer when it has one ("not insurance" → Senior Roofing PM); with
+  none it goes to the Senior Insurance PM and the Senior Roofing PM is added as the second person.
+- A role nobody holds, or whose person is turned off, routes nothing: the lead waits for an admin, and Admin shows a grey
+  info line "Pick a …".
+- Leads already in the CRM are routed the same way the next time an admin, an estimator or a role holder opens Leads (once;
+  closed leads are left alone). Routed leads are not "Assign this lead" approvals.
+- Admins see and reassign every lead; a role holder may reassign the leads of their own area.
+- Rules: `netlify/functions/_lib/lead-roles.js` (server) and `window._gcLeadRoles` (the CRM page) — keep the two in step.

@@ -5,7 +5,7 @@
    when a sub sends a bid in, and it should go to the estimator."
 
    leads@  → bid invitations (ITB / RFP / RFQ / BuildingConnected / PlanHub / planroom / agency notices, plan
-             links, a bid date) take the BID path (Lead Inbox bid, due date, default estimator, alerts, private
+             links, a bid date) take the BID path (Lead Inbox bid, due date, Senior Estimator, alerts, private
              bid-portal draft); everything else (homeowners, website forms, people writing in) the customer-lead
              path (website-intake.js fromEmail).                                       → isBidInvite(mail)
    bids@   → (patch BIDSEND, owner 10/22: our bids now go out FROM bids@ and replies come back to it — bids@ is a Google
@@ -19,7 +19,7 @@
              (c) an INVITATION to bid still sent to bids@ → the bid path (isInviteForBids);
              anything else waits in "Unsorted bids@ mail" for the estimator to say what it is.
    bids@ (b) → a SUBCONTRACTOR's bid / proposal / quote for one of our bid jobs. It is matched to the bid-portal
-             job, its files are kept, the job's estimator (else the default estimator, else the admins) is told
+             job, its files are kept, the job's estimator (else the Senior Estimator, else the admins) is told
              "Sub bid received: <sub> — <project>". Unmatched ones wait in "Unmatched sub bids". Never a customer
              lead. An old-style bid INVITATION still sent to bids@ (sign-ups made before the switch) is
              recognised and handled on the bid path, so nothing is lost.                → isInviteForBids(mail)

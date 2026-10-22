@@ -672,7 +672,7 @@ const BID_WORDS = /\b(bid|bids|bidding|rfp|rfq|itb|ifb|invitation|addend(um|a)|p
 /* ── the whole job for one e-mail ──────────────────────────────────────────── */
 /* ── patch EST4: a subcontractor's bid e-mailed to bids@ ───────────────────────
    Matched to the bid-portal job (PO, street address, the sub's invitation, the project title), its files kept
-   (crm-files), the job's estimator told (else the head estimator, else the admins). Unmatched ones wait in
+   (crm-files), the job's estimator told (else the Senior Estimator, else the admins). Unmatched ones wait in
    "Unmatched sub bids" (gc_sub_bids_email, service-only) for the estimator. Never a customer lead. */
 const KV_SUBBIDS = 'gc_sub_bids_email';
 async function portalJobs(){
@@ -696,7 +696,7 @@ async function subBidMailTo(rec, est, head){
     + '<p style="color:#555">Subject: ' + esc(rec.subject) + '<br>' + (rec.files.length ? rec.files.length + ' file(s): ' + rec.files.map(f => esc(f.name)).join(', ') : 'No files attached') + '</p>'
     + (rec.text ? '<blockquote style="border-left:3px solid #ddd;margin:8px 0;padding:4px 10px;color:#333">' + esc(rec.text.slice(0, 1200)).replace(/\n/g, '<br>') + '</blockquote>' : '')
     + '<p><a href="' + esc(site) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Sub bids in the CRM</a></p>'
-    + '<p style="color:#777;font-size:12px">Hit Reply to answer the sub. Sent to the estimator (the Estimator role / Leads ⚙ Head estimator).</p></div></div>';
+    + '<p style="color:#777;font-size:12px">Hit Reply to answer the sub. Sent to the estimator (the Estimator role / Leads ⚙ Senior Estimator).</p></div></div>';
   try {
     const r = await (exports._fetch || fetch)('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: env('SUB_BID_FROM') || 'GrayCo Bids <bids@grayco-cs.com>', to, reply_to: rec.sub.email || undefined, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Bids'), html, headers: { 'X-GrayCo-CRM': 'sub-bid' } }) });
@@ -744,7 +744,7 @@ async function subBidFromEmail(mail){
   const m = SB.matchJob(mail, jobs);
   const files = [];
   for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref, stored: st.stored }); }
-  /* the job's own estimator (its Lead Inbox item), else the head estimator */
+  /* the job's own estimator (its Lead Inbox item), else the Senior Estimator */
   let est = null;
   if (m && m.job.leadId) { const it = arr(await kvGet(KV)).find(x => x && x.id === m.job.leadId); if (it && low(it.estimatorEmail)) est = { name: s(it.estimator), email: low(it.estimatorEmail) }; }
   let head = null; try { const d = await estimatorOf(); if (d.email) head = { name: d.name, email: low(d.email) }; } catch (e) {}   /* patch BIDSEND: the Lead Estimator */
@@ -866,17 +866,47 @@ async function afterStore(results, items, opt){
   if (Object.keys(marks).length) {
     try { await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? list : undefined; }); } catch (e) {}
   }
-  /* LA: commercial / government / bid-board bids go to the head estimator (EST4: the Estimator role / Leads ⚙), unless assigned */
+  /* LA: commercial / government / bid-board bids go to the Senior Estimator (EST4: the Estimator role / Leads ⚙), unless assigned */
   const added = touched.filter(t => t.action === 'added').map(t => t.it);
   try {
     const est = await estimatorOf();
     const mine = added.filter(it => !it.pm && !it.estimator && est.email && isCommercial(it));
     if (mine.length) {
-      const ids = {}; mine.forEach(it => { ids[it.id] = 1; it.estimator = est.name; it.estimatorEmail = est.email; });
-      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { x.estimator = est.name; x.estimatorEmail = est.email; ch = true; } }); return ch ? list : undefined; });
+      const ids = {}, at = nowIso(); mine.forEach(it => { ids[it.id] = 1; it.estimator = est.name; it.estimatorEmail = est.email; it.assignedBy = 'Auto · Senior Estimator'; it.assignedAt = at; it.autoAssignedAt = at; it.leadRole = 'bid'; });   /* patch HOT2: logged as automatic */
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { x.estimator = est.name; x.estimatorEmail = est.email; x.assignedBy = 'Auto · Senior Estimator'; x.assignedAt = at; x.autoAssignedAt = at; x.leadRole = 'bid'; ch = true; } }); return ch ? list : undefined; });
       out.estimator = { name: est.name, email: est.email, n: mine.length };
     }
   } catch (e) { out.estimator = { error: s(e && e.message) }; }
+  /* patch HOT2 (owner 10/22): the other lead roles, by type (Admin → 👥 Team roles; _lib/lead-roles.js) — insurance /
+     restoration → the Senior Insurance PM, roofing → the Senior Roofing PM; a commercial ROOFING bid stays the Senior
+     Estimator's and gets the Senior Roofing PM as a second person (coAssignees: the alerts and due reminders too).
+     A role not set, or its person turned off → nobody (an admin assigns it). */
+  try {
+    const LR = require('./_lib/lead-roles.js');
+    const team = await kvGet(LR.TEAM_KEY), users = arr(await kvGet('users')), at = nowIso(), set = {};
+    const roofer = LR.holder('roofing', team, users);
+    added.forEach(it => {
+      if (!it) return;
+      if (!it) return;
+      const k = LR.classify(it, isCommercial);
+      if (!it.pm && !it.estimator && (k === 'insurance' || k === 'roofing')) {
+        const h = LR.holder(k, team, users);
+        if (h) { Object.assign(it, { pm: h.name, pmEmail: h.email, assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k }); set[it.id] = it; }
+      }
+      /* the Senior Roofing PM as the second person: a commercial roofing bid, a storm / water lead about a roof */
+      const prim = low(it.pmEmail || it.estimatorEmail);
+      if (LR.coRole(it, k) === 'roofing' && roofer && roofer.email !== prim && !arr(it.coAssignees).some(c => c && low(c.email) === roofer.email)) {
+        it.coAssignees = arr(it.coAssignees).concat([{ name: roofer.name, email: roofer.email, role: 'roofing', label: roofer.label, at }]); set[it.id] = it;
+      }
+    });
+    if (Object.keys(set).length) {
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { const y = x && set[x.id]; if (!y) return;
+        if (y.coAssignees && !arr(x.coAssignees).length) { x.coAssignees = y.coAssignees; ch = true; }
+        if (y.leadRole && y.leadRole !== 'bid' && y.pm && !x.pm && !x.estimator) { Object.assign(x, { pm: y.pm, pmEmail: y.pmEmail, assignedBy: y.assignedBy, assignedAt: y.assignedAt, autoAssignedAt: y.autoAssignedAt, leadRole: y.leadRole }); ch = true; } });
+        return ch ? list : undefined; });
+      out.leadRoles = { n: Object.keys(set).length };
+    }
+  } catch (e) { out.leadRoles = { error: s(e && e.message) }; }
   try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
   return out;
 }
@@ -922,7 +952,7 @@ async function fetchPlans(items){
   }
   return { stored, changes };
 }
-/* LA: what counts as a commercial bid (head estimator): commercial (large and small), government, and anything
+/* LA: what counts as a commercial bid (Senior Estimator): commercial (large and small), government, and anything
    from a bid board / planroom (BuildingConnected, PlanHub, A&B, RKA, ConstructConnect, the public bid sites) */
 function isCommercial(it){
   if (!it || /^(referral|partner)$/.test(s(it.origin))) return false;   /* patch HOT2: homeowner leads never */
@@ -931,8 +961,26 @@ function isCommercial(it){
   return /^(commercial|government)$/.test(low(it.type)) || /buildingconnected|building connected|planhub|plan hub|planroom|constructconnect|dodge|isqft|government|county|city of|state of|mscs|mscaa|mlgw|stream|osp|sam\.gov|\bsam\b|bid ?board|procurement/i.test(s(it.source))
     || /^(watch|api|email|partner-bid)$/.test(s(it.origin));   /* patch HOT2: every bid source — bid e-mail (bids@ / leads@ bid path), public boards, the BuildingConnected API, SAM.gov, partner bids */
 }
-/* the head estimator (patch EST4): worked out from the people's roles (_lib/estimator.js) — the one active
-   Estimator; with several, the Leads ⚙ "Head estimator" setting (an e-mail kept as data); none → the admins */
+/* patch HOT2 (lead roles): one stored Lead Inbox item, routed by its type — for the paths that file a lead without
+   afterStore (website-intake fileLead: website forms, missed calls, referrals; the partner API's leads). Only a lead
+   nobody is on; a role nobody holds routes nothing. → the fields set, or null */
+async function routeLead(id){
+  const LR = require('./_lib/lead-roles.js');
+  const it = arr(await kvGet(KV)).find(x => x && x.id === id); if (!it || it.pm || it.estimator) return null;
+  const k = LR.classify(it, isCommercial); let h = null, field = 'pm', team = null, users = null;
+  const roles = async () => { if (!users) { team = await kvGet(LR.TEAM_KEY); users = arr(await kvGet('users')); } };
+  if (k === 'bid') { const est = await estimatorOf(); if (est.email) { h = { name: est.name, email: est.email, label: 'Senior Estimator' }; field = 'estimator'; } }
+  else if (k === 'insurance' || k === 'roofing') { await roles(); h = LR.holder(k, team, users); }
+  const at = nowIso(), patch = h ? { assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k } : {};
+  if (h) { patch[field] = h.name; patch[field + 'Email'] = h.email; }
+  if (LR.coRole(it, k) === 'roofing') { await roles(); const r = LR.holder('roofing', team, users); if (r && r.email !== low(h ? h.email : '')) patch.coAssignees = [{ name: r.name, email: r.email, role: 'roofing', label: r.label, at }]; }   /* the Senior Roofing PM too: a commercial roofing bid, a storm / water lead about a roof */
+  let done = false;
+  if (!Object.keys(patch).length) return null;
+  await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === id); if (!x || x.pm || x.estimator) return undefined; Object.assign(x, patch); done = true; return list; });
+  return done ? patch : null;
+}
+/* the Senior Estimator (patch EST4): worked out from the people's roles (_lib/estimator.js) — the one active
+   Estimator; with several, the Leads ⚙ "Senior Estimator" setting (an e-mail kept as data); none → the admins */
 async function estimatorOf(settings){
   const st = Object.assign({}, DEFAULT_SETTINGS, settings || (await kvGet(KV_SET)) || {});
   const r = await require('./_lib/estimator.js').resolve({ sb, settings: st, fresh: !!settings });
@@ -1029,7 +1077,7 @@ const DEFAULT_SETTINGS = {
     'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'supplies', 'textbook', 'furniture', 'elevator', 'bus', 'tires', 'ammunition', 'firearms'],
   allBids: true,   /* patch BW: "All public bids (no keyword filter)" — every solicitation from the boards except the excluded words */
   sources: {},
-  /* LA / EST4: "Head estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
+  /* LA / EST4: "Senior Estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
   estimator: { name: '', email: '' }
 };
 function cleanSettings(b, cur){
@@ -1256,7 +1304,7 @@ exports.backgroundHandler = async function(event){
 };
 
 /* shared with bid-watch.js, and the test harness */
-exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
+exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
 exports._test = { bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */

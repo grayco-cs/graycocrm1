@@ -13,7 +13,7 @@
    Every lead:   one item in the 📥 Lead Inbox (gc_lead_inbox, bid-inbox.js) with source "Website (grayco-cs.com)",
                  NO PM, owner GrayCo (commission source "grayco"); the CRM makes it a lead on the Lead Pipeline
                  (patch LD2 + WEB). The admins get the new-lead e-mail at once (patch LA, _lib/bid-alerts.js).
-                 No bid-portal draft, no default estimator.
+                 No bid-portal draft, no Senior Estimator.
                  An existing customer (same e-mail, or the same phone number) → the lead says so and the CRM puts a
                  note on that customer's job.
                  The optional instant reply to the customer goes on ✅ Approvals (owner rule: nothing goes to a
@@ -302,6 +302,7 @@ async function fileLead(f, extra){
   if (extra.patch) Object.assign(rec, extra.patch);   /* patch AUTO5: a referral is not a website lead */
   let action = '';
   await L().kvCas(L().KV, v => { const o = L().upsert(arr(v), rec); action = o.action; return o.items; });
+  if (action === 'added') { try { const p = await L().routeLead(id); if (p) Object.assign(rec, p); } catch (e) {} }   /* patch HOT2: routed by its type (lead roles) */
   return { id, rec, action, customer: cust };
 }
 /* patch LA's new-lead alert (admins, e-mail + push) — never holds up the visitor's answer */

@@ -26,7 +26,7 @@
    There is NO hourly digest any more.
      3. WHO IT IS DUE TO, AND WHO DOES IT (owner, later on 10/21): every message says when the bid is due AND who it
         is due to (the GC / company / agency, contact, how to submit). The lead's assigned estimator / PM (pm, or the
-        head estimator for commercial bids — the Estimator role / Leads ⚙) gets the new-lead message, the 1-hour /
+        Senior Estimator for commercial bids — the Estimator role / Leads ⚙) gets the new-lead message, the 1-hour /
         "today" reminder, "⏰ Bid due tomorrow" at 8 AM the day before, "Assigned to you" when a lead is given to
         them (notifyAssigned: the CRM's ?notify=1, and the 10-minute sweep), and once a day "⚠️ Missing due info"
         for bids assigned to them marked "Unknown yet".
@@ -71,6 +71,7 @@ function make(d){
       bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc), detail: s(it.detail).slice(0, 300),
       dueToCompany: s(it.dueToCompany), dueToContact: s(it.dueToContact), dueToEmail: s(it.dueToEmail), dueToPhone: s(it.dueToPhone), submitMethod: s(it.submitMethod), submitWhere: s(it.submitWhere),
       dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: GONE[low(assignee)] || (assigneeEmail && GONE[assigneeEmail]) ? '' : (assigneeEmail || emailOf(assignee)), assignedBy: s(it.assignedBy),   /* patch PMG: never to someone who has left */
+      coEmails: arr(it.coAssignees).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
       website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
@@ -245,7 +246,7 @@ function make(d){
     const groups = o.group ? [mine] : mine.map(x => [x]);
     const out = { sent: 0, messages: 0, failed: 0, to: [] };
     for (const g of groups) {
-      const r = await deliver(mailNew(g), g.map(x => x.assigneeEmail));
+      const r = await deliver(mailNew(g), [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || []))));   /* patch HOT2: + coAssignees */
       out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;
       if (r.ok) out.sent += g.length; else { out.failed += g.length; out.why = r.why; }
       const at = nowIso();
@@ -330,7 +331,7 @@ function make(d){
     await loadPeople(src.users);
     const want = [];
     candidates(src.leads, src.items, src.tombs).forEach(x => reminderKinds(x.bidDue, t).forEach(k => {
-      if (k === 'eve' && !x.assigneeEmail) return;   /* the day-before reminder is the assigned person's */
+      if (k === 'eve' && !x.assigneeEmail && !(x.coEmails || []).length) return;   /* the day-before reminder is the assigned person's */
       want.push(Object.assign({}, x, { kind: k }));
     }));
     let mine = [];
@@ -344,7 +345,8 @@ function make(d){
     const out = { sent: 0, failed: 0, list: [] };
     for (const x of mine) {
       /* 1 hour / today: the admins and the assigned person; the day before: the assigned person */
-      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, [x.assigneeEmail]) : await deliver(mailRemind(x, x.kind), [x.assigneeEmail]);
+      const who = [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean);   /* patch HOT2: + coAssignees */
+      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, who) : await deliver(mailRemind(x, x.kind), who);
       out.list.push({ key: x.key, kind: x.kind, ok: r.ok, why: r.why || '', to: r.to });
       if (r.ok) out.sent++; else out.failed++;
       await kvCas(KA, v => {
@@ -363,7 +365,7 @@ function make(d){
   }
 
   /* ── patch AUTO8: "Bid results?" — 7 days after a SUBMITTED bid's due date, still not won / lost: one e-mail from
-     the estimator (BID_RESULTS_FROM, else the head estimator — EST4, the Estimator role) to whoever the bid was due
+     the estimator (BID_RESULTS_FROM, else the Senior Estimator — EST4, the Estimator role) to whoever the bid was due
      to (dueToEmail), asking how it came out. The estimator gets a copy (bcc); replies go to them AND to
      results+<lead>@in.grayco-cs.com, where bid-inbox.js files the answer for the CRM (gc_kv gc_bid_results → the lead
      and the estimator's dashboard). A staff member's own e-mail
@@ -424,7 +426,7 @@ function make(d){
     await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; });
       mineGc = gcs.filter(x => { if (st.reminded[gk(x)]) return false; st.reminded[gk(x)] = nowIso(); return true; }); return mine.length || mineGc.length ? st : undefined; });
     const key = env('RESEND_API_KEY'); const out = { sent: 0, failed: 0, list: [] };
-    /* patch EST4: from the head estimator (the Estimator role / Leads ⚙), never a name in the code */
+    /* patch EST4: from the Senior Estimator (the Estimator role / Leads ⚙), never a name in the code */
     let est = { name: '', email: '' }; try { if (typeof d.estimatorOf === 'function') est = (await d.estimatorOf()) || est; } catch (e) {}
     const fromEmail = low(env('BID_RESULTS_FROM') || est.email || 'leads@grayco-cs.com');
     const fromName = s(env('BID_RESULTS_NAME')) || (est.email && low(est.email) === fromEmail && s(est.name)) || (Object.keys(PEOPLE).filter(n => PEOPLE[n] === fromEmail)[0] || 'GrayCo Estimating').replace(/\b\w/g, c => c.toUpperCase());

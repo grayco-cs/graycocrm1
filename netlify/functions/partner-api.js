@@ -17,7 +17,7 @@
             new-lead e-mail at once; the 4-hour / 24-hour "assign / reach out" reminders apply (patch STL).
      POST { kind: 'bid', title, bid_due, due_to, due_to_contact, due_to_email, due_to_phone, submit_method,
             submit_where, address, city, state, type, scope, plans_url, bid_number, external_id }
-          → a bid in the Lead Inbox (commercial bids go to the default estimator); the bid-due alerts apply (LA).
+          → a bid in the Lead Inbox (commercial bids go to the Senior Estimator); the bid-due alerts apply (LA).
             bid_due (YYYY-MM-DD or YYYY-MM-DDTHH:MM, Central) and due_to are required (owner rule).
      POST { kind: 'job', name, client, address, phone, email, type, scope, contract, start_date, notes, external_id }
           → NOT a live job (a job carries money): a "🚀 New job from <partner>" approval on the admins' To-Do
@@ -157,6 +157,7 @@ async function postLead(key, b){
   };
   let action = '';
   await L().kvCas(L().KV, v => { const o = L().upsert(arr(v), rec); action = o.action; return o.items; });
+  if (action === 'added') { try { const p = await L().routeLead(rec.id); if (p) Object.assign(rec, p); } catch (e) {} }   /* patch HOT2: routed by its type (lead roles) */
   if (action === 'added' && env('LEAD_INTAKE_ALERTS') !== '0') {
     try { const c = rec.contact; await L().alertsApi().notifyNew([Object.assign({}, rec, { detail: [f.service, c.phone, c.email, clip(rec.scope, 140)].filter(Boolean).join(' · ') })], { source: src }); } catch (e) {}
   }

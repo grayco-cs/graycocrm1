@@ -1,0 +1,87 @@
+/* ═════════════════════════════════════════════════════════════════════════════
+   GrayCo — LEAD ROLES: a new lead goes, by its TYPE, to the person holding that lead role.   (patch HOT2, owner 10/22)
+   netlify/functions/_lib/lead-roles.js
+
+   The roles are data, never names in code — Admin → Admin settings → 👥 Team roles & Senior PM, kept in
+   gc_kv "gc_team_settings".leadRoles:
+     • Senior Estimator    — commercial / government / bid invitations (EST4: _lib/estimator.js; not stored here)
+     • Senior Insurance PM — insurance claims and restoration (water, fire, mold, storm damage, mitigation)  { insurancePm: { email, name } }
+     • Senior Roofing PM   — roofing leads (residential, re-roof, roof repair). A COMMERCIAL roofing bid stays the
+                             Senior Estimator's (the owner of the lead); the Senior Roofing PM is added as a second
+                             person on it (lead.coAssignees) and gets its alerts and due reminders too.   { roofingMgr: { email, name } }
+     • everything else (remodel, general residential, a website "other") — nobody: an admin assigns it
+       (patch HOT1's "👤 Assign this lead" approval).
+   A role that is not set, or whose person is turned off, routes nothing: the lead stays unassigned for an admin.
+   Soft leads (a guide download, the giveaway), careers and partner sign-ups are never routed.
+
+   The CRM page carries the same rules (window._gcLeadRoles, index.html) — keep the two in step.
+   ═════════════════════════════════════════════════════════════════════════════ */
+'use strict';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+
+const ROLES = {
+  insurance: { key: 'insurancePm', label: 'Senior Insurance PM' },
+  roofing: { key: 'roofingMgr', label: 'Senior Roofing PM' }
+};
+const SOFT = /giveaway|guide download|lead magnet|free guide/i;
+const INS_TYPE = /insur|claim|mitig|restor|water|fire|mold|storm/;
+/* restoration = water, fire and storm (owner 10/22): fire, smoke, soot · water, flood, leak, mitigation, mold ·
+   storm, hail, wind, tree · insurance, claim */
+const INS_TEXT = /\b(fire|smoke|soot|water|flood(s|ed|ing)?|leak(s|ed|ing|y)?|mitigation|mold|mould|storm|hail|wind|tree|insurance|insured|claims?|adjuster|restoration|xactimate)\b/i;
+const ROOF_TEXT = /\broof|re-?roof|shingle/i;
+/* an explicit "this is not insurance" on the lead (a form's insurance question answered no) */
+function notInsurance(l){ return l.isInsurance === false || l.insuranceClaim === false || /^(no|false|none)$/i.test(s(l.insurance)) || /^(no|false|none)$/i.test(s(l.leadExtra && l.leadExtra.insurance)); }
+
+function textOf(l){
+  const x = l.leadExtra || {};
+  return [l.leadKind, l.type, l.title, l.name, l.scope, l.service, l.form, l.subject, l.message, x.form, x.type, x.message].concat(arr(l.trades)).concat(arr(l.notes).slice(0, 3)).map(s).join(' | ');
+}
+/* 'bid' | 'insurance' | 'roofing' | '' (nobody: an admin assigns it) */
+function classify(l, isBid){
+  if (!l) return '';
+  if (l.softLead || (l.leadExtra && l.leadExtra.softLead) || SOFT.test(s(l.source)) || /^(careers|partner)$/i.test(s(l.type))) return '';
+  if (typeof isBid === 'function' && isBid(l)) return 'bid';
+  const typ = low(l.leadKind || l.type);
+  if (/commerc|gov/.test(typ)) return 'bid';
+  if (l.isInsurance || l.claimId || l.claimNumber) return 'insurance';
+  const tx = textOf(l), roof = /roof|shingle/.test(typ) || ROOF_TEXT.test(tx);
+  if (INS_TYPE.test(typ) || INS_TEXT.test(tx)) return roof && notInsurance(l) ? 'roofing' : 'insurance';   /* storm + roof: the lead's own insurance answer decides; none → insurance (the Senior Roofing PM is told too: coRole) */
+  if (roof) return 'roofing';
+  return '';
+}
+/* the second person a lead also goes to: the Senior Roofing PM on a commercial roofing bid, and on a restoration lead
+   that is about a roof (storm / water + roof) — they get its alerts and reminders too */
+function coRole(l, kind){ return (kind === 'bid' || kind === 'insurance') && isRoofing(l) ? 'roofing' : ''; }
+/* roofing work, whatever the type (a commercial roofing bid too) */
+function isRoofing(l){ return !!l && (/roof|shingle/.test(low(l.leadKind || l.type)) || ROOF_TEXT.test(textOf(l))); }
+function isActive(u){
+  return !!u && u.active !== false && u.departed !== true && u.fired !== true && u.deleted !== true && u._deleted !== true && u.tombstoned !== true
+    && !/^(terminated|inactive|former|departed|fired)$/i.test(s(u.status));
+}
+function roleSetting(team, kind){
+  const r = ROLES[kind]; if (!r) return null;
+  let t = team; if (typeof t === 'string') { try { t = JSON.parse(t); } catch (e) { t = null; } }
+  const h = t && t.leadRoles && t.leadRoles[r.key];
+  return h && (s(h.email) || s(h.name)) ? { email: low(h.email), name: s(h.name) } : null;
+}
+/* the person who gets a lead of this kind: { name, email, label } — null when the role is unset or that person is off */
+function holder(kind, team, users){
+  const r = ROLES[kind], h = roleSetting(team, kind); if (!r || !h) return null;
+  const u = arr(users).find(x => x && ((h.email && low(x.email) === h.email) || (!h.email && low(x.name) === low(h.name))));
+  if (!u || !isActive(u)) return null;
+  return { name: s(u.name), email: low(u.email), label: r.label };
+}
+/* what Admin shows: { insurance: { set, ok, name, why }, roofing: … } — "unset" is an info line, not an error */
+function state(team, users){
+  const out = {};
+  Object.keys(ROLES).forEach(k => {
+    const h = roleSetting(team, k);
+    if (!h) { out[k] = { set: false, ok: false, why: 'unset', label: ROLES[k].label }; return; }
+    const u = arr(users).find(x => x && ((h.email && low(x.email) === h.email) || (!h.email && low(x.name) === low(h.name))));
+    out[k] = { set: true, ok: !!u && isActive(u), why: !u ? 'missing' : !isActive(u) ? 'inactive' : '', name: s(u ? u.name : h.name), label: ROLES[k].label };
+  });
+  return out;
+}
+module.exports = { ROLES, classify, coRole, isRoofing, holder, state, roleSetting, TEAM_KEY: 'gc_team_settings' };
