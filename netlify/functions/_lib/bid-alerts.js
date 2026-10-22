@@ -377,8 +377,8 @@ function make(d){
       + '<p>Thank you for the chance to bid <b>' + esc(title) + '</b> (bid due ' + esc(due) + '). When you have a moment, could you share the bid results — '
       + 'was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.</p>'
       + '<p>Thanks again — we appreciate being on your bid list.</p>'
-      + '<p>' + esc(fromName) + '<br>Estimator · GrayCo Construction Services<br>4014 Broadway Rd, Bartlett, TN 38135 · 901-585-0944</p></div>';
-    const text = 'Hi ' + (who || 'there') + ',\n\nThank you for the chance to bid ' + title + ' (bid due ' + due + '). When you have a moment, could you share the bid results — was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.\n\nThanks again — we appreciate being on your bid list.\n\n' + fromName + '\nEstimator · GrayCo Construction Services\n4014 Broadway Rd, Bartlett, TN 38135 · 901-585-0944';
+      + '<p>' + esc(fromName) + '<br>Estimator · GrayCo Construction Services<br>' + require('./brand.js').companyAddress() + ' · 901-585-0944</p></div>';
+    const text = 'Hi ' + (who || 'there') + ',\n\nThank you for the chance to bid ' + title + ' (bid due ' + due + '). When you have a moment, could you share the bid results — was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.\n\nThanks again — we appreciate being on your bid list.\n\n' + fromName + '\nEstimator · GrayCo Construction Services\n' + require('./brand.js').companyAddress() + ' · 901-585-0944';
     return { subject: ('Bid results — ' + title).slice(0, 200), html, text };
   }
   async function resultsAsk(src, t){

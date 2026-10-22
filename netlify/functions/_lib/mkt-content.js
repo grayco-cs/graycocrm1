@@ -3,7 +3,7 @@
    audiences, safety checks and posting times. Pure functions: no network, no DOM.
 
    Rules kept here (owner):
-   * Branding everywhere: logo, 4014 Broadway Rd, Bartlett, TN 38135, (901) 585-0944, the TN / AR / MS licenses.
+   * Branding everywhere: logo, the company address (brand.js companyAddress(), patch ADDR2), (901) 585-0944, the TN / AR / MS licenses.
    * Never a customer's address in anything public: guard() refuses house numbers + street, the job's own address
      and ZIP+street combos; scrub() takes them out of a caption (the street NAME alone is allowed on a door hanger
      and a "we just finished a job near you" note — the owner approved "We just replaced a roof on Elm St").
@@ -25,7 +25,7 @@ function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(
 var BRAND = {
   name: 'GrayCo Construction Services',
   short: 'GrayCo',
-  address: '4014 Broadway Rd, Bartlett, TN 38135',
+  get address(){ return require('./brand.js').companyAddress(); },   /* patch ADDR2 */
   phone: '(901) 585-0944',
   tel: '+19015850944',
   web: 'https://grayco-cs.com',
@@ -55,7 +55,7 @@ function guard(text, extra){
   var t = s(text), out = [];
   if (!t) return out;
   var m = HOUSE_RE.exec(t);
-  if (m && low(m[0]).indexOf('4014 broadway') < 0 && low(m[0]).indexOf('12060 donelson') < 0) out.push({ k: 'address', l: 'Shows a street address (“' + m[0] + '”). Customer addresses never go public — say the street name or the neighborhood only.' });
+  if (m && !/^(4007|4014) broadway/.test(low(m[0])) && low(m[0]).indexOf('12060 donelson') < 0) out.push({ k: 'address', l: 'Shows a street address (“' + m[0] + '”). Customer addresses never go public — say the street name or the neighborhood only.' });
   var c = CARRIER_RE.exec(t);
   if (c) out.push({ k: 'carrier', l: 'Names an insurance company (“' + c[0] + '”). We never name carriers — say “your insurance company”.' });
   arr(extra).forEach(function(x){
@@ -78,7 +78,7 @@ function scrub(text, extra){
     t = t.split(a).join(city).split(first).join(city);
     if (street.length >= 6) t = t.replace(new RegExp(street.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), city); });
   var re = new RegExp(HOUSE_RE.source, 'gi');
-  t = t.replace(re, function(m){ if (/^(4014 broadway|12060 donelson)/i.test(m)) return m; return m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); });
+  t = t.replace(re, function(m){ if (/^(4007 broadway|4014 broadway|12060 donelson)/i.test(m)) return m; return m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); });
   t = t.replace(new RegExp(CARRIER_RE.source, 'gi'), 'the insurance company');
   return t;
 }
@@ -437,7 +437,7 @@ var IDEAS = [
 var GBP_CHECKLIST = [
   'Business name exactly “GrayCo Construction Services” (no keywords stuffed in)',
   'Primary category: Roofing contractor; secondary: General contractor, Water damage restoration service, Commercial roofing contractor, Remodeler',
-  'Address 4014 Broadway Rd, Bartlett, TN 38135 (or service-area business with the address hidden)',
+  'Address ' + require('./brand.js').companyAddress() + ' (or service-area business with the address hidden)',
   'Service areas: Bartlett, Memphis, Germantown, Collierville, Cordova, Arlington, Lakeland, Olive Branch, Southaven',
   'Phone (901) 585-0944 and website with a UTM link (?utm_source=google&utm_medium=gbp)',
   'Hours, and “Online estimates” attribute on',

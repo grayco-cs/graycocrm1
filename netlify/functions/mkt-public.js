@@ -9,6 +9,9 @@
 //   POST { op:'partner_link', email }       → a referral partner asks for their sign-in link (always "sent")
 //   POST { op:'partner_me', t }              → the partner page (partner.html): code, links, referrals, fees
 //   POST { op:'partner_refer', t, name, phone, email, address, note } → a lead tagged with the partner
+//   GET  ?news=1 / ?news=<slug>         → the approved newsletters on the website (patch ADDR2; no personal data)
+//   POST { op:'news_signup', email, name, zip } → joins GrayCo News (the website's sign-up box)
+//   GET  ?company=1                     → the company address with its scheduled move (gc-address.js)
 // Spam: a honeypot field ("website"), per-connection limits, and short answers.
 'use strict';
 const X = require('./_lib/mkt2.js');
@@ -27,6 +30,8 @@ exports.handler = async function(event){
     if (event.httpMethod === 'GET') {
       if (q.site === '1') return J(event, 200, await X.siteData(), { 'Cache-Control': 'public, max-age=600' });
       if (q.giveaway != null) return J(event, 200, await X.giveawayCurrent());
+      if (q.news != null) { const r = await X.newsPosts(q.news === '1' || q.news === '' ? '' : String(q.news).slice(0, 80)); return r ? J(event, 200, r, { 'Cache-Control': 'public, max-age=300' }) : J(event, 404, { ok: false, error: 'Not found.' }); }
+      if (q.company != null) { const B = require('./_lib/brand.js'); await B.refreshAddress(); const c = B.addressConfig(); return J(event, 200, { ok: true, address: B.companyAddress(), config: { current: c.current, next: c.next, switchOn: c.switchOn } }, { 'Cache-Control': 'public, max-age=300' }); }
       if (q.event) { const e = await X.eventPublic(q.event); return e ? J(event, 200, e) : J(event, 404, { ok: false, error: 'This event is not open.' }); }
       if (q.coupon != null) { const doc = await require('./_lib/mkt.js').readDoc(); const sp = doc.sponsors && doc.sponsors[X.cleanCode(q.coupon)]; return J(event, 200, { ok: true, name: sp && !sp.del ? s(sp.publicName || '') : '', value: X.COUPON_VALUE, min: X.COUPON_MIN }); }
       return J(event, 400, { ok: false, error: 'Unknown request.' });
@@ -35,6 +40,11 @@ exports.handler = async function(event){
     let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(event, 400, { ok: false, error: 'Bad request.' }); }
     if (s(b.website)) return J(event, 200, { ok: true });   /* the honeypot: a bot filled the hidden field */
     const op = s(b.op);
+    if (op === 'news_signup') {
+      if (limited(ip, 'ns', 5, 600000)) return J(event, 429, { ok: false, error: 'Too many tries — please try again later.' });
+      const ok = await X.addSignup({ email: s(b.email).slice(0, 120), name: s(b.name).slice(0, 80), zip: s(b.zip).slice(0, 10), source: 'website-news' });
+      return ok ? J(event, 200, { ok: true, message: 'Thank you — you are on GrayCo News.' }) : J(event, 400, { ok: false, error: 'Please enter a valid e-mail.' });
+    }
     if (op === 'event_signup') {
       if (limited(ip, 'ev', 6, 600000)) return J(event, 429, { ok: false, error: 'Too many tries — please call (901) 585-0944.' });
       const r = await X.eventSignup(b.id, b); return J(event, r.status || 200, r);

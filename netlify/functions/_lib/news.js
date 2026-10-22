@@ -21,7 +21,7 @@
 const crypto = require('crypto');
 const NEWS_FROM = 'GrayCo Construction Services <news@grayco-cs.com>';
 const REPLY_TO = (function(){ const v = String(process.env.REPLY_TO_ADMIN || '').trim().toLowerCase(); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'replies@grayco-cs.com'; })();   /* owner 10/21: replies never land in office@ */
-const ADDRESS = '4014 Broadway Rd, Bartlett, TN 38135';
+function ADDR(){ return require('./brand.js').companyAddress(); }   /* patch ADDR2: the scheduled address */
 const PHONE = '(901) 585-0944';
 const TABLE = 'gc_news_suppress';
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
@@ -69,7 +69,7 @@ function footerHtml(email){
   return '<div class="gc-news-footer" style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:18px auto 0;padding:14px 16px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;line-height:1.6;text-align:center">' +
     'You’re receiving GrayCo news because you’re a GrayCo customer. ' +
     (u ? '<a href="' + esc(u) + '" style="color:#374151;font-weight:bold;text-decoration:underline">Unsubscribe from our newsletters</a>' : '<b>Reply “unsubscribe” to stop our newsletters.</b>') +
-    '<br>GrayCo Construction Services · ' + ADDRESS + ' · ' + PHONE + '</div>';
+    '<br>GrayCo Construction Services · ' + ADDR() + ' · ' + PHONE + '</div>';
 }
 
 /* ── the suppression list (server only) ── */
@@ -140,14 +140,14 @@ async function sendNews(o){
   if (off) return { ok: true, skipped: 'unsubscribed' };
   const html = String(o.html || '') + footerHtml(to);
   const body = { from: NEWS_FROM, reply_to: REPLY_TO, to: [to], subject: s(o.subject), html: html, headers: listHeaders(to) };
-  if (o.text) body.text = String(o.text) + '\n\n--\nYou’re receiving GrayCo news because you’re a GrayCo customer. Unsubscribe: ' + unsubUrl(to) + '\nGrayCo Construction Services · ' + ADDRESS + ' · ' + PHONE;
+  if (o.text) body.text = String(o.text) + '\n\n--\nYou’re receiving GrayCo news because you’re a GrayCo customer. Unsubscribe: ' + unsubUrl(to) + '\nGrayCo Construction Services · ' + ADDR() + ' · ' + PHONE;
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     return { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false, error: 'no answer' }; }
 }
 
-module.exports = { NEWS_FROM: NEWS_FROM, REPLY_TO: REPLY_TO, ADDRESS: ADDRESS, PHONE: PHONE, TABLE: TABLE,
+module.exports = { NEWS_FROM: NEWS_FROM, REPLY_TO: REPLY_TO, get ADDRESS(){ return ADDR(); }, PHONE: PHONE, TABLE: TABLE,
   token: token, verify: verify, unsubUrl: unsubUrl, listHeaders: listHeaders, footerHtml: footerHtml,
   suppressed: suppressed, isUnsubscribed: isUnsubscribed, status: status, unsubscribe: unsubscribe, resubscribe: resubscribe,
   everyone: everyone, subscribers: subscribers, sendNews: sendNews, okEmail: okEmail };

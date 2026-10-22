@@ -996,7 +996,7 @@
   function showGeoResults(list) {
     var box = $('#geo-results');
     if (!box) return;
-    if (!list || !list.length) { box.innerHTML = '<p class="fine">No match. Try adding the city, e.g. "4014 Broadway Rd, Bartlett TN".</p>'; return; }
+    if (!list || !list.length) { box.innerHTML = '<p class="fine">No match. Try adding the city, e.g. "123 Main St, Bartlett TN".</p>'; return; }
     box.innerHTML = '<ul class="mini-list">' + list.map(function (r, i) {
       return '<li><button data-act="geo-go" data-i="' + i + '"><span>' + esc(r.display_name) + '</span></button></li>';
     }).join('') + '</ul>';

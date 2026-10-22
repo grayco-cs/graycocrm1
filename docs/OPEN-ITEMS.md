@@ -111,3 +111,15 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 
 - 33.143 on GitHub: all fixes, security, fresh start, small file storage, pop-up windows always close
 - Clean data reviewed with you: bogus jobs removed, lost invoices recovered, your decisions on each disputed invoice
+
+## Company address move (patch ADDR2)
+- GrayCo is at **4007 Broadway Rd, Bartlett, TN 38135** until the switch date, then **4014 Broadway Rd**.
+  One setting: ⚙ Admin → 🏢 Company address (current, new, switch date; default 2026-10-29, Central time).
+  E-mails, PDFs, the portal, website forms, flyers, marketing copy and the CRM switch by themselves that day.
+- **Printed materials** (cards, yard signs, truck wraps, letterhead, the print pack in docs/): print them
+  **after the move date**; the files in docs/ already show the new address.
+- The "Update our address everywhere" to-do (Nick + the office) is due on the switch date.
+
+## Website News (patch ADDR2)
+- Every newsletter an admin approves in Marketing → 📰 Newsletter is listed on grayco-cs.com/news
+  (public door: /.netlify/functions/mkt-public?news=1). Unpublish / Publish is in the newsletter table (admins).

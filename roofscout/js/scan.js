@@ -496,7 +496,7 @@
 
   var SUFFIX = { STREET: 'ST', ROAD: 'RD', AVENUE: 'AVE', AV: 'AVE', BOULEVARD: 'BLVD', DRIVE: 'DR', LANE: 'LN', PARKWAY: 'PKWY', PKY: 'PKWY', HIGHWAY: 'HWY', COURT: 'CT', CIRCLE: 'CIR', PLACE: 'PL', COVE: 'CV', TERRACE: 'TER', TRAIL: 'TRL', SQUARE: 'SQ', PLAZA: 'PLZ', EXTENDED: 'EXT', NORTH: 'N', SOUTH: 'S', EAST: 'E', WEST: 'W' };
 
-  // "4014 Broadway Road, Bartlett, TN 38135" → "4014 BROADWAY RD". '' when no house number.
+  // "123 Main Street, Bartlett, TN 38135" → "123 MAIN ST". '' when no house number.
   function normAddress(a) {
     var s = String(a || '').split(',')[0].toUpperCase().replace(/[.#]/g, ' ').replace(/\b(STE|SUITE|UNIT|APT|BLDG)\b.*$/, '');
     var words = s.replace(/[^A-Z0-9 -]/g, ' ').split(/\s+/).filter(Boolean).map(function (w) { return SUFFIX[w] || w; });
@@ -541,7 +541,7 @@
 
   var DEFAULT_WEIGHTS = { size: 30, age: 30, hail: 20, type: 10, distance: 10 };
   var TYPE_VALUE = { commercial: 1, industrial: 1, institutional: 0.8, church: 0.8, multifamily: 0.7, school: 0.6, other: 0.5 };
-  var HOME = { lat: 35.2045, lng: -89.874, label: 'Bartlett' };   // GrayCo, 4014 Broadway Rd, Bartlett TN
+  var HOME = { lat: 35.2045, lng: -89.874, label: 'Bartlett' };   // GrayCo, Broadway Rd, Bartlett TN
 
   function clamp01(v) { return Math.max(0, Math.min(1, v)); }
   function fmtNum(n) { return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }

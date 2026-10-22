@@ -199,7 +199,7 @@ test('inputs: unsaved lead, bad id, unusable address', async function () {
   net.db.leads.L4 = { address: 'somewhere', ownerMail: '100 Sample St, Memphis, TN 38103', owner: {} };
   var r = await trace({ leadId: 'L4' });
   assert.strictEqual(r.statusCode, 200, 'falls back to the mailing address');
-  assert.strictEqual(fn._splitAddress('4014 Broadway Road, Bartlett TN 38135').city, 'Bartlett');
+  assert.strictEqual(fn._splitAddress('123 Main Street, Bartlett TN 38135').city, 'Bartlett');
   assert.deepStrictEqual(fn._splitAddress('6000 Stage Rd, Bartlett, TN'), { address: '6000 Stage Rd', city: 'Bartlett', state: 'TN', zip: '' });
 });
 

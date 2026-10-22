@@ -323,9 +323,9 @@ function replyFor(f, extra){
   else if (f.type === 'problem') body = 'We received your message about a problem at your property. Someone from our office will contact you as soon as possible. If water is coming in right now, please call our office at 901-585-0944.';
   else if (f.type === 'roofprice') body = 'Thanks for using our instant roof price. ' + (extra && extra.priceText ? 'Your ballpark range is ' + extra.priceText + '. ' : '') + 'A GrayCo estimator will contact you to schedule a free inspection and give you an exact price.';
   else body = 'Thank you for contacting GrayCo Construction Services about your ' + (TYPES[f.type] ? TYPES[f.type].short.toLowerCase() : 'project') + '. We received your request and a member of our team will contact you shortly.';
-  const text = hi + '\n\n' + body + '\n\nGrayCo Construction Services\n4014 Broadway Rd, Bartlett, TN 38135\n901-585-0944 · office@grayco-cs.com';
+  const text = hi + '\n\n' + body + '\n\nGrayCo Construction Services\n' + require('./_lib/brand.js').companyAddress() + '\n901-585-0944 · office@grayco-cs.com';
   const html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.55;max-width:560px"><p>' + esc(hi) + '</p><p>' + esc(body) + '</p>'
-    + '<p style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#666">GrayCo Construction Services<br>4014 Broadway Rd, Bartlett, TN 38135<br>901-585-0944 · office@grayco-cs.com</p></div>';
+    + '<p style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#666">GrayCo Construction Services<br>' + require('./_lib/brand.js').companyAddress() + '<br>901-585-0944 · office@grayco-cs.com</p></div>';
   return { subject: f.type === 'careers' ? 'GrayCo Construction — we received your application' : 'GrayCo Construction — we received your request', html, text };
 }
 async function autoReply(f, id, extra){

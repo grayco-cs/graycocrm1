@@ -212,7 +212,7 @@ async function mailMember(to, subject, html, text, cc){
     return r.ok ? { ok: true } : { ok: false, why: 'Resend ' + r.status };
   } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
 }
-const FOOT = '<p style="font-size:12px;color:#666">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · ' + OFFICE + ' · office@grayco-cs.com</p>';
+const FOOT = '<p style="font-size:12px;color:#666">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + ' · ' + OFFICE + ' · office@grayco-cs.com</p>';
 function paras(t){ return s(t) ? '<p style="font-size:15px;line-height:1.55">' + s(t).split(/\n{2,}/).map(esc).join('</p><p style="font-size:15px;line-height:1.55">').replace(/\n/g, '<br>') + '</p>' : ''; }
 /* the credit e-mail (a member earned credit) */
 function creditHtml(o){

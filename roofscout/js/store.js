@@ -36,7 +36,7 @@
         phone: '(901) 585-0944',
         email: 'wjohnson@grayco-cs.com',
         website: 'www.grayco-cs.com',
-        address: '4014 Broadway Road, Bartlett, TN 38135',
+        address: (typeof window !== 'undefined' && window._gcCompanyAddress ? window._gcCompanyAddress() : (new Date() >= new Date('2026-10-29T05:00:00Z') ? '4014' : '4007') + ' Broadway Rd, Bartlett, TN 38135'),   // patch ADDR2: the scheduled move
         licTN: '',
         licAR: '',
         licMS: '',

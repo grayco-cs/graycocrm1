@@ -96,7 +96,7 @@ function model(){ return (process.env.BRAIN_MODEL || 'claude-opus-5-5').trim(); 
 function core(){ return require('./portal.js')._core; }
 function s(v){ return v == null ? '' : String(v).trim(); }
 
-const FALLBACK_RULES = `GrayCo Construction Services, LLC — licensed GC and specialty contractor in TN, AR and MS (4014 Broadway Rd, Bartlett, TN 38135; office 901-585-0944).
+const FALLBACK_RULES = `GrayCo Construction Services, LLC — licensed GC and specialty contractor in TN, AR and MS (${require('./_lib/brand.js').companyAddress()}; office 901-585-0944).
 Wesley Johnson: business strategy and financials. Nick Thomas: sales and client relationships. Glenn Miller: estimating.
 Top 3 priorities: cash flow, scheduling, estimating fast and correctly.
 Estimating: 1.5x on materials (1.3x floor, Wesley or Nick approval), 1.5x on labor always.

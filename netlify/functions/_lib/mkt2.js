@@ -337,7 +337,7 @@ const LIMITS = { google: { headline: 30, description: 90, nH: 10, nD: 4 }, meta:
 function fit(list, max, n){ const seen = {}; return arr(list).map(function(x){ x = s(x).replace(/\s+/g, ' '); if (x.length > max) x = x.slice(0, max).replace(/\s+\S*$/, ''); return x; }).filter(function(x){ if (!x || seen[low(x)]) return false; seen[low(x)] = 1; return true; }).slice(0, n); }
 async function draftCopy(o){
   o = o || {}; const plat = o.platform === 'meta' ? 'meta' : 'google', lim = LIMITS[plat];
-  const facts = 'GrayCo Construction Services, 4014 Broadway Rd, Bartlett, TN 38135, (901) 585-0944, licensed general contractor (TN #85034 BCB). Services: roofing, roof repair, storm and insurance restoration, water mitigation, remodeling, maintenance plans. Warranty: 5 years on roofing and insurance work, 1 year on other work. Areas: Bartlett, Memphis, Germantown, Collierville, Cordova, Arlington, Lakeland, DeSoto County.';
+  const facts = 'GrayCo Construction Services, ' + require('./brand.js').companyAddress() + ', (901) 585-0944, licensed general contractor (TN #85034 BCB). Services: roofing, roof repair, storm and insurance restoration, water mitigation, remodeling, maintenance plans. Warranty: 5 years on roofing and insurance work, 1 year on other work. Areas: Bartlett, Memphis, Germantown, Collierville, Cordova, Arlington, Lakeland, DeSoto County.';
   const ask = 'Write ' + (plat === 'google' ? 'a Google Ads responsive search ad: ' + lim.nH + ' headlines (max ' + lim.headline + ' characters each) and ' + lim.nD + ' descriptions (max ' + lim.description + ' characters each)'
     : 'Facebook / Instagram ad copy: ' + lim.nD + ' primary texts (max ' + lim.primary + ' characters) and ' + lim.nH + ' headlines (max ' + lim.headline + ' characters). Facebook home-improvement ads run in the Housing special category: no wording about age, gender, family or who the reader is') +
     ' for: ' + (s(o.service) || 'roof replacement') + (s(o.city) ? ' in ' + s(o.city) + ', TN' : '') + (s(o.offer) ? '. Offer: ' + s(o.offer) : '') +
@@ -350,7 +350,7 @@ async function draftCopy(o){
   const svc = s(o.service) || 'Roof Replacement', city = s(o.city);
   const base = plat === 'google' ? {
     headlines: [svc + (city ? ' ' + city : ''), 'GrayCo Construction', 'Licensed TN Contractor', 'Free Estimates', '5-Year Roofing Warranty', 'Storm Damage? Call Us', 'Insurance Claim Help', 'Local Bartlett Contractor', 'Call (901) 585-0944', 'Book Your Free Inspection'],
-    descriptions: ['GrayCo Construction Services — licensed TN general contractor. Free estimates. Call (901) 585-0944.', '5-year warranty on roofing and insurance work. Serving Bartlett, Memphis, Germantown and Collierville.', 'Storm or water damage? We help with your insurance claim from inspection to final repair.', 'Local contractor at 4014 Broadway Rd, Bartlett. Book a free inspection today.'] }
+    descriptions: ['GrayCo Construction Services — licensed TN general contractor. Free estimates. Call (901) 585-0944.', '5-year warranty on roofing and insurance work. Serving Bartlett, Memphis, Germantown and Collierville.', 'Storm or water damage? We help with your insurance claim from inspection to final repair.', 'Local contractor at ' + require('./brand.js').companyStreet() + ', Bartlett. Book a free inspection today.'] }
     : { headlines: ['Free Roof Inspection', 'Storm Damage? We Can Help', svc, 'GrayCo Construction', 'Book a Free Estimate'],
       descriptions: [svc + ' by GrayCo Construction Services — a licensed Tennessee general contractor. Free estimates. 5-year warranty on roofing and insurance work. Call (901) 585-0944.',
         'Storm or water damage? GrayCo helps from the first inspection through the insurance claim to the final repair. Serving the Memphis area.', 'Local, licensed and right here in Bartlett. Book your free inspection with GrayCo today.'] };
@@ -460,7 +460,7 @@ async function sendPartnerLink(p){
     '<div style="padding:16px 18px;color:#14202E"><p>Hi ' + esc(s(p.name).split(/\s+/)[0] || 'there') + ',</p><p>Here is your link to your <b>GrayCo Referral Partner</b> page — your partner code, your share link, the people you referred and where each one stands.</p>' +
     '<p style="margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">Open my partner page</a></p>' +
     '<p style="color:#55626F;font-size:13px">The link works for 30 days; you can ask for a new one any time on that page. Questions: (901) 585-0944.</p>' +
-    '<p style="color:#55626F;font-size:12px">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135</p></div></div>';
+    '<p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p></div></div>';
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: 'GrayCo Referral Partners <portal@grayco-cs.com>', reply_to: (env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com'), to: [low(p.email)], subject: 'Your GrayCo Referral Partner page', html: html }) }).catch(function(){ return { ok: false }; });
   return { ok: !!(r && r.ok) };
@@ -569,6 +569,61 @@ async function ensureNewsletter(o){
   return { ok: !!w.ok, made: made };
 }
 
+/* ══════════════════ 9. WEBSITE NEWS (patch ADDR2) ══════════════════
+   Owner (10/22): every newsletter an admin approves also goes on grayco-cs.com/news. Only records of kind "newsletter"
+   whose status is approved / sending / sent, and not taken off by an admin (webHidden). The public copy has the title,
+   the date, a summary and the body cleaned to plain tags: no {{merge fields}} (no greeting with a name), no e-mail
+   addresses, no phone numbers but GrayCo's, no scripts, styles, forms or tracking; only https pictures. The newsletter
+   draft only names jobs the customer OK'd for marketing, and an admin approved the text, so nothing private is added. */
+const NEWS_TAGS = { p: 1, h2: 1, h3: 1, h4: 1, ul: 1, ol: 1, li: 1, b: 1, strong: 1, i: 1, em: 1, br: 1, a: 1, img: 1, blockquote: 1 };
+function newsSlug(r){ return ('grayco-news-' + (s(r.month) || s(r.id))).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''); }
+function attr(tag, name){ const m = new RegExp('\\b' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(tag); return m ? s(m[2] != null ? m[2] : m[3] != null ? m[3] : m[4]) : ''; }
+function cleanNewsHtml(html){
+  let h = String(html || '');
+  h = h.replace(/<(script|style|iframe|object|embed|form|head|title|noscript|svg|template)[\s\S]*?<\/\1\s*>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  h = h.replace(/<p\b[^>]*>(?:(?!<\/p>)[\s\S])*\{\{\s*first_name[\s\S]*?<\/p>/gi, '');   /* "Hi {{first_name}}," */
+  h = h.replace(/<a\b[^>]*(unsubscribe|news-unsubscribe|mailto:)[^>]*>[\s\S]*?<\/a>/gi, '');   /* the unsubscribe / personal links go with their text */
+  h = h.replace(/\{\{[^}]*\}\}/g, '');
+  const imgs = [];
+  h = h.replace(/<\/?([a-z0-9]+)\b[^>]*>/gi, function(tag, name){
+    name = name.toLowerCase(); if (!NEWS_TAGS[name]) return name === 'div' || name === 'tr' || name === 'table' ? ' ' : '';
+    if (tag[1] === '/') return name === 'br' || name === 'img' ? '' : '</' + name + '>';
+    if (name === 'a') { const u = attr(tag, 'href'); return /^https:\/\/[^\s"'<>]+$/i.test(u) && !/unsubscribe|news-unsubscribe|[?&](t|token|email)=/i.test(u) ? '<a href="' + esc(u) + '" rel="noopener">' : '<a>'; }
+    if (name === 'img') { const u = attr(tag, 'src'); if (!/^https:\/\/[^\s"'<>]+$/i.test(u) || /[?&](token|sig|signature|x-amz|expires)=/i.test(u)) return ''; imgs.push(u); return '<img src="' + esc(u) + '" alt="' + esc(attr(tag, 'alt').slice(0, 120)) + '" loading="lazy">'; }
+    return '<' + name + '>';
+  });
+  h = h.replace(/[A-Za-z0-9._%+-]+@(?!grayco-cs\.com)[A-Za-z0-9.-]+\.[a-z]{2,}/gi, '');
+  h = h.replace(/\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, function(m){ return m.replace(/\D/g, '') === '9015850944' ? m : ''; });
+  h = h.replace(/<(p|li|h[2-4])>\s*<\/\1>/g, '').replace(/\s{3,}/g, ' ').trim();
+  return { html: h, images: imgs };
+}
+function newsText(html){ return s(String(html || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ')); }
+function newsPublic(r, full){
+  const c = cleanNewsHtml(r.approvedHtml || r.body), text = newsText(c.html);
+  const o = { slug: newsSlug(r), title: s(r.webTitle || r.title || r.subject).slice(0, 140), date: s(r.sentAt || r.approvedAt || r.at || (s(r.month) ? r.month + '-01' : '')).slice(0, 10),
+    summary: text.length > 220 ? text.slice(0, 217).replace(/\s+\S*$/, '') + '…' : text, image: c.images[0] || '' };
+  if (full) { o.html = c.html; o.images = c.images; if (r.cta && /^https:\/\//.test(s(r.cta.url))) o.cta = { label: s(r.cta.label).slice(0, 60), url: s(r.cta.url) }; }
+  return o;
+}
+function newsVisible(r){ return r && r.kind === 'newsletter' && !r.del && /^(approved|sending|sent)$/.test(s(r.status)) && r.webHidden !== true; }
+async function newsPosts(slug){
+  const doc = await M().readDoc();
+  const list = recs(doc, 'campaigns').filter(newsVisible).sort(function(a, b){ return s(a.approvedAt || a.month) < s(b.approvedAt || b.month) ? 1 : -1; });
+  if (slug) { const r = list.find(function(x){ return newsSlug(x) === s(slug).toLowerCase(); }); return r ? { ok: true, post: newsPublic(r, true) } : null; }
+  return { ok: true, posts: list.slice(0, 60).map(function(r){ return newsPublic(r, false); }) };
+}
+/* an admin takes a post off the website (or puts it back) */
+async function newsWeb(id, published, by){
+  let hit = null;
+  const w = await M().update(function(doc){
+    const r = doc.campaigns && doc.campaigns[s(id)]; if (!r || r.kind !== 'newsletter') return null; hit = r;
+    if ((r.webHidden === true) === !published) return null;
+    r.webHidden = !published; r.webBy = s(by); r.webAt = nowIso(); return [['campaigns', r.id]];
+  });
+  if (!hit) return { ok: false, status: 404, error: 'That newsletter is not here.' };
+  return { ok: !!w.ok, published: !!published, live: newsVisible(Object.assign({}, hit, { webHidden: !published })), slug: newsSlug(hit) };
+}
+
 /* ══════════════════ 8. APPROVALS (kinds mkt_ad, mkt_payout) — called by _lib/mkt.js ══════════════════ */
 function approvalFor(kind, r, doc){
   if (kind === 'mkt_ad') {
@@ -610,7 +665,7 @@ async function afterApproved(kind, r, item, core){
   if (kind === 'mkt_outreach') {
     const key = env('RESEND_API_KEY'); let ok = false;
     if (key && okEmail(r.to) && /@grayco-cs\.com$/i.test(s(r.fromEmail))) {
-      const html = '<div style="font-family:Arial,sans-serif;font-size:15px;color:#14202E">' + esc(r.body).replace(/\n/g, '<br>') + '<p style="color:#55626F;font-size:12px">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · (901) 585-0944<br>Not interested? Reply "no thanks" and we will not write again.</p></div>';
+      const html = '<div style="font-family:Arial,sans-serif;font-size:15px;color:#14202E">' + esc(r.body).replace(/\n/g, '<br>') + '<p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + ' · (901) 585-0944<br>Not interested? Reply "no thanks" and we will not write again.</p></div>';
       const x = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: s(r.fromName || 'GrayCo').replace(/[<>"]/g, '') + ' <' + low(r.fromEmail) + '>', reply_to: low(r.fromEmail), to: [low(r.to)], subject: s(r.subject), html: html }) }).catch(function(){ return { ok: false }; });
       ok = !!(x && x.ok);
     }
@@ -690,7 +745,7 @@ async function eventReminders(){
       if (su.reminded) continue;
       let ok = false;
       if (key && okEmail(su.email)) {
-        const html = '<p>Hi ' + esc(s(su.name).split(/\s+/)[0]) + ',</p><p>This is your reminder: your <b>free GrayCo roof check</b> is tomorrow, <b>' + esc(dayLabel(ev.date)) + ' at ' + esc(slotLabel(su.slot)) + '</b>' + (su.address ? ' at ' + esc(su.address) : '') + '.</p><p>You do not need to be on the roof or in the attic — we will knock when we arrive. Questions or need a new time? Call (901) 585-0944.</p><p>GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135</p>';
+        const html = '<p>Hi ' + esc(s(su.name).split(/\s+/)[0]) + ',</p><p>This is your reminder: your <b>free GrayCo roof check</b> is tomorrow, <b>' + esc(dayLabel(ev.date)) + ' at ' + esc(slotLabel(su.slot)) + '</b>' + (su.address ? ' at ' + esc(su.address) : '') + '.</p><p>You do not need to be on the roof or in the attic — we will knock when we arrive. Questions or need a new time? Call (901) 585-0944.</p><p>GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>';
         const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>', reply_to: low(ev.pmEmail) || 'replies@grayco-cs.com', to: [su.email], subject: 'Reminder: your free roof check tomorrow at ' + slotLabel(su.slot), html: html }) }).catch(function(){ return { ok: false }; });
         ok = !!(r && r.ok);
       }
@@ -744,7 +799,7 @@ async function couponClaim(srcCode, b){
   const key = env('RESEND_API_KEY');
   if (key && okEmail(email)) {
     await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>', reply_to: 'replies@grayco-cs.com', to: [email],
-      subject: 'Your GrayCo $100 coupon: ' + code, html: '<p>Hi ' + esc(name.split(/\s+/)[0]) + ',</p><p>Here is your coupon: <b style="font-size:20px;letter-spacing:1px">' + esc(code) + '</b></p><p><b>$100 off GrayCo work</b> on projects over $1,000. One-time use, one per household; not combined with other coupons (GrayCo referral credit is OK). Give the code to your GrayCo project manager before your estimate or invoice.</p><p>Call (901) 585-0944 to book a free estimate.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135</p>' }) }).catch(function(){});
+      subject: 'Your GrayCo $100 coupon: ' + code, html: '<p>Hi ' + esc(name.split(/\s+/)[0]) + ',</p><p>Here is your coupon: <b style="font-size:20px;letter-spacing:1px">' + esc(code) + '</b></p><p><b>$100 off GrayCo work</b> on projects over $1,000. One-time use, one per household; not combined with other coupons (GrayCo referral credit is OK). Give the code to your GrayCo project manager before your estimate or invoice.</p><p>Call (901) 585-0944 to book a free estimate.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>' }) }).catch(function(){});
   }
   return { ok: true, code: code, message: 'Your coupon: ' + code + ' — $100 off GrayCo work on projects over $1,000. We also e-mailed it to you.' };
 }
@@ -832,7 +887,7 @@ async function giveawayDraw(id, by){
 }
 async function sendWinner(g){
   const key = env('RESEND_API_KEY'), w = g && g.winner; if (!key || !w || !okEmail(w.email)) return { ok: false };
-  const html = '<p>Hi ' + esc(s(w.name).split(/\s+/)[0]) + ',</p><p><b>Congratulations — you won the GrayCo ' + esc(s(g.monthName || g.month)) + ' giveaway: ' + esc(s(g.prize) || DEFAULT_PRIZE) + '!</b></p><p>Reply to this e-mail or call (901) 585-0944 and we will set up a time. ' + esc(s(g.claimNote) || 'Please claim your prize within 30 days.') + '</p><p>Thank you for following GrayCo Construction Services.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135</p>';
+  const html = '<p>Hi ' + esc(s(w.name).split(/\s+/)[0]) + ',</p><p><b>Congratulations — you won the GrayCo ' + esc(s(g.monthName || g.month)) + ' giveaway: ' + esc(s(g.prize) || DEFAULT_PRIZE) + '!</b></p><p>Reply to this e-mail or call (901) 585-0944 and we will set up a time. ' + esc(s(g.claimNote) || 'Please claim your prize within 30 days.') + '</p><p>Thank you for following GrayCo Construction Services.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>';
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <news@grayco-cs.com>', reply_to: 'replies@grayco-cs.com', to: [low(w.email)], subject: 'You won the GrayCo giveaway!', html: html }) }).catch(function(){ return { ok: false }; });
   return { ok: !!(r && r.ok) };
 }
@@ -887,6 +942,7 @@ module.exports = {
   siteData, CITIES, cityKey, kindKey,
   PARTNER_TYPES, partnerType, partnerJoin, partnerToken, readPartnerToken, partnerLink, sendPartnerLink, partnerView, partnerRefer, partnerFor, findPartner, feeFor, newCode,
   addSignup, signups, draftNewsletter, ensureNewsletter, NL_TIPS,
+  newsSlug, cleanNewsHtml, newsPublic, newsPosts, newsWeb,
   approvalFor, afterApproved, makeState, readState,
   _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; }, _cache: CACHE
 };

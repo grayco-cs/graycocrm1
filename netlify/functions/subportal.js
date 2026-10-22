@@ -685,7 +685,7 @@ function mailHtml(title, lines, button){
     '<div style="padding:20px;border:1px solid #EDE9E0;border-top:0"><h2 style="margin:0 0 12px;font-size:18px">' + esc(title) + '</h2>' +
     lines.map(function(l){ return '<p style="margin:0 0 10px;line-height:1.5">' + l + '</p>'; }).join('') +
     (button ? '<p style="margin:18px 0 0"><a href="' + esc(button.href) + '" style="background:#D4A017;color:#140665;padding:11px 18px;border-radius:999px;text-decoration:none;font-weight:700">' + esc(button.label) + '</a></p>' : '') +
-    '<p style="margin:18px 0 0;font-size:12px;color:#64748B">GrayCo Construction Services, LLC · 4014 Broadway Rd, Bartlett, TN 38135 · ' + OFFICE_PHONE + '</p></div></div>';
+    '<p style="margin:18px 0 0;font-size:12px;color:#64748B">GrayCo Construction Services, LLC · ' + require('./_lib/brand.js').companyAddress() + ' · ' + OFFICE_PHONE + '</p></div></div>';
 }
 async function sendMail(to, subject, html){
   const key = s(process.env.RESEND_API_KEY);

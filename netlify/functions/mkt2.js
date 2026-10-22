@@ -123,6 +123,7 @@ exports.handler = async function(event){
     if (op === 'giveaway_entries') { const l = await X.giveawayEntries(String(body.id || X.gwId())); return reply(200, headers, { ok: true, count: l.length, list: office ? l.slice(-300).map(function(x){ return { name: x.name, email: x.email, zip: x.zip, src: x.src, at: x.at }; }) : [] }); }
     if (op === 'site_stats') { X._cache.v = null; return reply(200, headers, await X.siteData()); }
     if (!admin) return reply(403, headers, { ok: false, error: 'Only Wesley or Nick can do that.' });
+    if (op === 'news_web') { const r = await X.newsWeb(String(body.id || ''), body.published === true, who.email); return reply(r.status || 200, headers, r); }   /* patch ADDR2: a newsletter on / off the website */
     if (op === 'ads_connect') { const u = X.authUrl(String(body.platform || ''), who.email); return u ? reply(200, headers, { ok: true, url: u }) : reply(400, headers, { ok: false, setup: true, error: 'This platform is not set up on Netlify yet — see the setup steps.' }); }
     if (op === 'ads_disconnect') { await X.forget(String(body.platform || '')); return reply(200, headers, { ok: true }); }
     if (op === 'ads_sync') return reply(200, headers, Object.assign({ ok: true }, await X.syncAds({ days: 30 })));

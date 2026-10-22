@@ -10,8 +10,7 @@
 const BRAND = {
   name: 'GrayCo Construction Services',
   legalName: 'GrayCo Construction Services, LLC',
-  street: '4014 Broadway Rd', city: 'Bartlett', state: 'TN', zip: '38135',
-  address: '4014 Broadway Rd, Bartlett, TN 38135',
+  city: 'Bartlett', state: 'TN', zip: '38135',
   phone: '(901) 585-0944', phoneTel: '+19015850944',
   email: 'office@grayco-cs.com',
   web: 'https://grayco-cs.com',
@@ -21,6 +20,45 @@ const BRAND = {
   navy: '#0F1D2F', gold: '#D4A017', ink: '#14202E', cream: '#F5F1E8'
 };
 function s(v){ return v == null ? '' : String(v).trim(); }
+/* patch ADDR2 — the company address moves on a date (owner 10/21: "we are at 4007 Broadway for 1 more week, then we move
+   to 4014"). ONE setting, gc_kv "gc_company_address" { current, next, switchOn (YYYY-MM-DD, Central) }, edited in
+   ⚙ Admin → 🏢 Company address. Before switchOn every output shows `current`, on and after it `next`. Until the setting
+   is read (or with no database) the defaults below apply. BRAND.address / BRAND.street follow it everywhere. */
+const ADDRESS_DEFAULTS = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' };
+let addrSetting = null, addrAt = 0, addrBusy = null;
+function centralDay(d){
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d || new Date()); }
+  catch (e) { return new Date((d || new Date()).getTime() - 6 * 3600e3).toISOString().slice(0, 10); }
+}
+function addressConfig(){
+  const c = Object.assign({}, ADDRESS_DEFAULTS);
+  const v = addrSetting || {};
+  if (s(v.current)) c.current = s(v.current);
+  if (s(v.next)) c.next = s(v.next);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s(v.switchOn))) c.switchOn = s(v.switchOn);
+  if (v.switchOn === '') c.switchOn = '';
+  return c;
+}
+/* the address on a given moment (default now) */
+function companyAddress(when){
+  if (!addrBusy && Date.now() - addrAt > 120e3) refreshAddress();
+  const c = addressConfig();
+  if (!c.next || !c.switchOn) return c.current;
+  return centralDay(when ? new Date(when) : new Date()) >= c.switchOn ? c.next : c.current;
+}
+function companyStreet(when){ return companyAddress(when).split(',')[0].trim(); }
+function refreshAddress(){
+  const svc = s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (!svc || typeof fetch !== 'function') { addrAt = Date.now(); return Promise.resolve(addressConfig()); }
+  const base = s(process.env.SUPABASE_URL || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, '');
+  const H = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(svc) ? { apikey: svc, Authorization: 'Bearer ' + svc } : { apikey: svc };
+  addrBusy = fetch(base + '/rest/v1/gc_kv?select=value&key=eq.gc_company_address', { headers: H }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){
+    if (Array.isArray(rows)) { let v = rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } addrSetting = v && typeof v === 'object' ? v : null; }
+  }).catch(function(){}).then(function(){ addrAt = Date.now(); addrBusy = null; return addressConfig(); });
+  return addrBusy;
+}
+Object.defineProperty(BRAND, 'address', { enumerable: true, get: function(){ return companyAddress(); } });
+Object.defineProperty(BRAND, 'street', { enumerable: true, get: function(){ return companyStreet(); } });
 function low(v){ return s(v).toLowerCase(); }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function siteBase(){
@@ -136,4 +174,5 @@ function installResend(){
   g.fetch = w;
 }
 module.exports = { BRAND: BRAND, installResend: installResend, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
-  logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, _reset: function(){ usersCache = null; } };
+  logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
+  _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };
