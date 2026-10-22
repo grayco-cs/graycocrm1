@@ -1093,8 +1093,9 @@ async function crmSubs(){
   const FA = require('./_lib/fa-core.js');
   return crmSubList(data).filter(function(r){ return s(r.id); }).map(function(r){
     let sc = null; try { sc = FA.subScore(r, { schedule: more.schedule, punch: more.punch, tickets: more.gc_warranty_tickets, ratings: more.gc_sub_ratings }); } catch (e) {}
-    return { id: s(r.id), name: s(r.name || r.company), company: s(r.company), email: low(r.email), phone: s(r.phone), trade: s(r.trade || r.cat), score: sc ? sc.score : null, grade: sc ? sc.letter : '' };
-  }).sort(function(a, b){ return (b.score == null ? -1 : b.score) - (a.score == null ? -1 : a.score) || a.name.localeCompare(b.name); });
+    return { id: s(r.id), name: s(r.name || r.company), company: s(r.company), email: low(r.email), phone: s(r.phone), trade: s(r.trade || r.cat), score: sc ? sc.score : null, grade: sc ? sc.letter : '', flag: /^(preferred|dnu)$/.test(low(r.subFlag)) ? low(r.subFlag) : '' };
+  }).sort(function(a, b){ const fw = function(x){ return x.flag === 'preferred' ? 1 : x.flag === 'dnu' ? -1 : 0; };   /* patch DEPTH1: ⭐ Preferred first, ⛔ Do not use last */
+    return fw(b) - fw(a) || (b.score == null ? -1 : b.score) - (a.score == null ? -1 : a.score) || a.name.localeCompare(b.name); });
 }
 function ymd(v){
   if (!v) return '';
