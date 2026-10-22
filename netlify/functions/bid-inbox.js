@@ -350,7 +350,7 @@ function otherInbox(data){
 }
 function ownOrAuto(mail){
   const H = mail.headers || {};
-  const mine = (env('BID_IGNORE_FROM') || 'bids@grayco-cs.com,noreply@grayco-cs.com,portal@grayco-cs.com,billing@grayco-cs.com,claims@grayco-cs.com').split(',').map(low);
+  const mine = (env('BID_IGNORE_FROM') || 'bids@grayco-cs.com,leads@grayco-cs.com,noreply@grayco-cs.com,portal@grayco-cs.com,billing@grayco-cs.com,claims@grayco-cs.com').split(',').map(low);
   if (mine.indexOf(mail.from.email) >= 0) return 'sent by the CRM';
   if (H['x-grayco-crm'] || H['x-grayco-item']) return 'sent by the CRM (header)';
   const a = low(H['auto-submitted']); if (a && a !== 'no' && !/auto-generated/.test(a)) return 'automatic reply';

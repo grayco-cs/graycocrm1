@@ -165,7 +165,7 @@ function make(d){
     if (!to.length) return { ok: false, why: 'no admin e-mail addresses' };
     try {
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject: require('./mailtag.js').tag(m.subject, to, m.area || 'bid lead'), html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }, /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(m.replyTo)) ? { reply_to: s(m.replyTo) } : {})) });
+        body: JSON.stringify(Object.assign({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./mailtag.js').tag(m.subject, to, m.area || 'bid lead'), html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }, /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(m.replyTo)) ? { reply_to: s(m.replyTo) } : {})) });
       return r.ok ? { ok: true } : { ok: false, why: 'Resend answered ' + r.status };
     } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
   }
@@ -496,7 +496,11 @@ function make(d){
     if (l.softLead || (l.leadExtra && l.leadExtra.softLead)) return false;   /* patch MKT2: a guide download is a soft lead — no reach-out clock */
     if (isWebsite(l)) return true;
     if (/commercial|government/i.test(s(l.leadKind || l.type))) return false;
-    return LEAD_SOURCES.test([s(l.source), s(l.leadSource), s(l.subSource)].join(' '));
+    const src = [s(l.source), s(l.leadSource), s(l.subSource)].join(' ');
+    if (!LEAD_SOURCES.test(src)) return false;
+    /* a "Referral" typed into the CRM by hand is not inbound; one from the portal / website / referral program is (it came through the Lead Inbox) */
+    if (!LEAD_SOURCES.test(src.replace(/referral/ig, ''))) return !!(l.inboxId || l.leadExtra || l.referredById || l.refMember || l.origin);
+    return true;
   }
   function ms(v){ if (!v) return NaN; const x = Date.parse(/^\d{4}-\d\d-\d\d$/.test(s(v)) ? s(v) + 'T12:00:00Z' : s(v)); return isFinite(x) ? x : NaN; }
   function bornAt(l){ for (const f of ['createdAt', 'receivedAt', 'created', 'dateAdded']) { const x = ms(l[f]); if (isFinite(x)) return x; } const r = ms(l.leadExtra && l.leadExtra.receivedAt); return isFinite(r) ? r : ms(l.date); }

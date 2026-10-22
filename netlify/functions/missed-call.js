@@ -115,7 +115,7 @@ async function mailStaff(extra, subject, html, text){
   if (!to.length) return { ok: false, why: 'nobody to tell' };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <noreply@grayco-cs.com>', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Leads'), html, text, headers: { 'X-GrayCo-CRM': 'missed-call' } }) });
+      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Leads'), html, text, headers: { 'X-GrayCo-CRM': 'missed-call' } }) });
     return { ok: r.ok, to };
   } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
 }
