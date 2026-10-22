@@ -1,6 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+<style id="gc-hot2b-css">
+/* patch HOT2b: on the Leads tab the hub is the only view — the classic Lead Pipeline never paints (html.gcl-leads is set
+   before React draws). html.gcl-classic-ok (an admin's "old table" link, or the hub failing to appear) shows it again. */
+html.gcl-leads:not(.gcl-classic-ok) #root main div:has(> h1),
+html.gcl-leads:not(.gcl-classic-ok) #root main div:has(> div > h1) > div:has(> input):has(> button),
+html.gcl-leads:not(.gcl-classic-ok) #root main div[style*="border-radius"]:has(> div[style*="overflow"] > table),
+html.gcl-leads:not(.gcl-classic-ok) #root main .gcl-classic-body,
+html.gcl-leads:not(.gcl-classic-ok) #gc-la-set,
+html.gcl-leads:not(.gcl-classic-ok) #gcx-ldel-bar { display: none !important; }
+</style>
+<script id="gc-patch-hot2b-early">
+/* patch HOT2b (early): which view is on screen, as a class on <html>, from the very first frame */
+(function(){
+  'use strict';
+  if (window.__GC_HOT2B_EARLY__) return; window.__GC_HOT2B_EARLY__ = true;
+  var W = window, H = document.documentElement;
+  var ST = W.setTimeout, SI = W.setInterval;   /* taken before any governor wraps them: this must keep running */
+  function cur(){ try { return W.localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+  function classicChosen(){ try { return W.sessionStorage.getItem('gcl_classic_ok') === '1'; } catch (e) { return false; } }
+  var since = 0;   /* when Leads opened with no hub on screen */
+  function sync(){
+    var on = cur() === 'leads';
+    if (H.classList.contains('gcl-leads') !== on) { H.classList.toggle('gcl-leads', on); since = 0; if (on) kick(); }
+    if (classicChosen()) H.classList.add('gcl-classic-ok');
+    if (!on) { since = 0; return; }
+    if (document.getElementById('gc-leads-hub')) {
+      since = 0;
+      if (H.classList.contains('gcl-hub-failed')) { H.classList.remove('gcl-hub-failed'); if (!classicChosen()) H.classList.remove('gcl-classic-ok'); }
+    } else if (!since) since = Date.now();
+    else if (Date.now() - since >= 3000 && !H.classList.contains('gcl-hub-failed')) {   /* 3 s with no hub */
+      H.classList.add('gcl-hub-failed'); H.classList.add('gcl-classic-ok');
+      try { console.warn('[GC] The Leads hub did not appear — showing the classic Lead Pipeline (patch HOT2b).'); } catch (e) {}
+    }
+  }
+  /* mount the hub at once (not on the next background tick) */
+  function kick(){ [0, 60, 150, 300, 600, 1000, 1600, 2400].forEach(function(ms){ ST.call(W, function(){ try { if (cur() === 'leads' && !document.getElementById('gc-leads-hub') && W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {} }, ms); }); }
+  try {
+    var set0 = W.Storage.prototype.setItem;
+    W.Storage.prototype.setItem = function(k, v){ var r = set0.apply(this, arguments); try { if (k === 'grayco_view') sync(); } catch (e) {} return r; };
+  } catch (e) {}
+  sync();
+  SI.call(W, sync, 250);
+  W._gcLeadsClassic = function(on){ try { if (on) W.sessionStorage.setItem('gcl_classic_ok', '1'); else W.sessionStorage.removeItem('gcl_classic_ok'); } catch (e) {} H.classList.toggle('gcl-classic-ok', !!on || H.classList.contains('gcl-hub-failed')); try { if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {} return !!on; };
+})();
+</script>
 <style id="gcx2-first">._gcRowX{display:none!important} #_voiceBtn{display:none!important}</style>
 <script id="gc-addr2-early">window.__GC_ADDR_NO_FETCH__ = true;
 /* gc-address.js — GrayCo's company address with its scheduled move (patch ADDR2).
@@ -161883,7 +161928,7 @@ function uiKey(){ return 'gc_leads_ui_v2:' + (myEmail() || 'me') + ':' + (amEsti
 function loadUI(){
   var k = uiKey(), est = amEstimator(), U = lsGet(k, null);
   if (!U) { U = est ? { v: 'list', sort: 'born', dir: -1, preset: 'bids' } : (lsGet('gc_leads_ui_v1', null) || {}); U.closed = false; if (!est) U.preset = U.preset === 'bids' ? 'bids' : 'all'; }
-  return { _k: k, v: U.v || (est ? 'list' : 'board'), who: U.who || '', src: U.src || '', type: U.type || '', stage: U.stage || '', due: U.due || '', un: !!U.un, q: '', sort: U.sort || 'born', dir: U.dir || -1, open: '', cal: U.cal || '', classic: U.classic != null ? U.classic !== false : !est, closed: !!U.closed, preset: U.preset === 'bids' ? 'bids' : 'all', exp: !!U.exp, prio: /^(hi|md|lo|none)$/.test(U.prio) ? U.prio : '' };
+  return { _k: k, v: U.v || (est ? 'list' : 'board'), who: U.who || '', src: U.src || '', type: U.type || '', stage: U.stage || '', due: U.due || '', un: !!U.un, q: '', sort: U.sort || 'born', dir: U.dir || -1, open: '', cal: U.cal || '', classic: false,   /* patch HOT2b: the hub only (the old table: an admin's small link, html.gcl-classic-ok) */ closed: !!U.closed, preset: U.preset === 'bids' ? 'bids' : 'all', exp: !!U.exp, prio: /^(hi|md|lo|none)$/.test(U.prio) ? U.prio : '' };
 }
 var UI = loadUI();
 function syncUI(){ if (UI._k !== uiKey()) { UI = loadUI(); HUB_SIG = ''; } }
@@ -162027,7 +162072,7 @@ function hubHtml(){
             + '<button type="button" class="gcl-mv gcl-exp' + (UI.exp ? ' on' : '') + '" data-gcl-exp aria-pressed="' + UI.exp + '" title="Bids whose due date went by more than a week ago and were never submitted">⌛ Expired (' + nExp + ')</button>'; })()
       + '</div>')
     + '<div class="gcl-body">' + bodyHtml() + '</div>'
-    + '<div class="gcl-classic"><span>📋 Classic table</span><button type="button" data-gcl-classic>' + (UI.classic ? 'Fold it away' : 'Show it') + '</button><span style="font-weight:400;font-size:12px">(the old Lead Pipeline table — everything it does still works)</span></div>';
+    + (isAdmin() ? '<div class="gcl-classic" style="justify-content:flex-end;margin-top:8px"><button type="button" data-gcl-classic style="border:0;background:none;color:#888;font:12px Arial;text-decoration:underline;cursor:pointer;padding:2px">' + (D.documentElement.classList.contains('gcl-classic-ok') ? 'hide the old table' : 'old table (admin)') + '</button></div>' : '')   /* patch HOT2b */;
 }
 function cardHtml(l){
   var a = assignee(l), pl = plansOf(l), it = inboxOf(l);
@@ -162101,7 +162146,7 @@ function mount(){
     bind(hub);
   }
   var pw = pipelineWrap(); if (pw && !pw.classList.contains('gcl-classic-body')) pw.classList.add('gcl-classic-body');
-  D.body.classList.toggle('gcl-noclassic', !UI.classic);
+  D.body.classList.toggle('gcl-noclassic', !UI.classic && !D.documentElement.classList.contains('gcl-classic-ok'));   /* patch HOT2b: the admin's "old table" link (or a hub failure) shows it */
   var ae = D.activeElement, typing = ae && hub.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
   var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
@@ -162113,6 +162158,29 @@ function mount(){
   if (UI.v === 'boards' && typeof W._gcRenderBidBoards === 'function') { try { W._gcRenderBidBoards(hub.querySelector('#gcl-boards')); } catch (e) { warn(e); } }
 }
 function redraw(){ HUB_SIG = ''; FORCE = true; mount(); FORCE = false; }
+/* patch HOT2b: "＋ New lead" = the Lead Pipeline's own "+ Add" form (same fields, same save); its header is hidden, the
+   form is not — it opens above the (hidden) table and is scrolled into view */
+/* the old table's row for a lead (kept, hidden) and one of its buttons */
+function classicRow(id, re){
+  var c = D.querySelector('#root main input.gcx-ldel-chk[data-id="' + String(id).replace(/["\\]/g, '') + '"]'), tr = c && c.closest('tr');
+  if (!tr) return null; if (!re) return tr;
+  return Array.prototype.filter.call(tr.querySelectorAll('button'), function(b){ return re.test(s(b.textContent)); })[0] || null;
+}
+/* the open lead form (not the hub, not the Lead Inbox): scrolled into view and focused */
+function focusForm(){
+  var ins = D.querySelectorAll('#root main input, #root main select'), f = null;
+  for (var i = 0; i < ins.length && !f; i++) { var el = ins[i]; if (el.closest('#gc-leads-hub') || el.closest('[data-gc-keep]') || el.closest('#gc-ldi') || !el.offsetParent || el.type === 'checkbox') continue; f = el; }
+  if (f) { try { f.scrollIntoView({ block: 'center' }); f.focus(); } catch (e) {} }
+  return !!f;
+}
+function newLead(){
+  var b = Array.prototype.filter.call(D.querySelectorAll('#root main button'), function(x){ return s(x.textContent).trim() === '+ Add'; })[0];
+  if (!b) { toast('The add form is not ready yet — try again in a moment.'); return false; }
+  var before = D.querySelectorAll('#root main input').length;
+  b.click();
+  later(function(){ if (!focusForm() && D.querySelectorAll('#root main input').length <= before) toast('Could not open the add form.'); }, 250);
+  return true;
+}
 
 var dragId = '', QT = 0;
 function bind(hub){
@@ -162137,8 +162205,8 @@ function bind(hub){
     if (t.hasAttribute('data-gcl-cal')) { var dlt = +t.getAttribute('data-gcl-cal'); var b = UI.cal ? new Date(UI.cal + '-01T12:00:00') : new Date(); if (!dlt) b = new Date(); else b.setMonth(b.getMonth() + dlt); UI.cal = b.getFullYear() + '-' + ('0' + (b.getMonth() + 1)).slice(-2); saveUI(); return redraw(); }
     if (t.hasAttribute('data-gcl-map')) { UI.mapSel = t.getAttribute('data-gcl-map'); return redraw(); }
     if (t.hasAttribute('data-gcl-contact')) { ev.stopPropagation(); var id = t.getAttribute('data-gcl-contact'); t.disabled = true; markContacted(id).then(redraw); return; }
-    if (t.hasAttribute('data-gcl-classic')) { UI.classic = !UI.classic; saveUI(); return redraw(); }
-    if (t.hasAttribute('data-gcl-new')) { var bs = D.querySelectorAll('#root button'); for (var i = 0; i < bs.length; i++) { if (s(bs[i].textContent).trim() === '+ Add' && D.querySelector('#root table[data-gc-fid="LEAD"]')) { UI.classic = true; saveUI(); D.body.classList.remove('gcl-noclassic'); bs[i].click(); return; } } toast('Open the classic table to add a lead (＋ Add).'); return; }
+    if (t.hasAttribute('data-gcl-classic')) { if (isAdmin() && typeof W._gcLeadsClassic === 'function') W._gcLeadsClassic(!D.documentElement.classList.contains('gcl-classic-ok')); return redraw(); }   /* patch HOT2b */
+    if (t.hasAttribute('data-gcl-new')) { newLead(); return; }   /* patch HOT2b: the same add form, with the old table still hidden */
     if (t.hasAttribute('data-gcl-id')) openDrawer(t.getAttribute('data-gcl-id'));
   });
   hub.addEventListener('change', function(ev){
@@ -162332,7 +162400,7 @@ function drawerHtml(l){
     + '<div class="kv"><span>Address:</span> ' + esc([l.address, l.city, l.state, l.zip].filter(Boolean).join(', ') || '—') + '</div>'
     + '<div class="row"><select data-d="stage" aria-label="Stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select>'
     + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '')
-    + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button></div>'
+    + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button>' + (classicRow(l.id) ? '<button type="button" class="b" data-d="editfull" title="Name, phone, e-mail, address, type, value … — the full lead form">✏️ Edit details</button><button type="button" class="b red" data-d="delfull">🗑 Delete…</button>' : '') + '</div>'   /* patch HOT2b */
     + '<div class="row gcl-prio-row"><span class="kv"><span>⭐ Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'   /* patch HOT2 */
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
@@ -162402,6 +162470,7 @@ function drawerClick(ev){
   var t = ev.target.closest ? ev.target.closest('[data-d]') : null; if (!t) return;
   var k = t.getAttribute('data-d'), l = cur(); if (!l) return;
   if (k === 'x') return closeDrawer();
+  if (k === 'editfull' || k === 'delfull') { var rb = classicRow(l.id, k === 'editfull' ? /✏/ : /🗑/); if (!rb) { toast('Not ready yet — try again in a moment.'); return; } closeDrawer(); rb.click(); if (k === 'editfull') later(function(){ focusForm(); }, 250); return; }   /* patch HOT2b */
   if (k === 'prio') { setPriority(l.id, +t.getAttribute('data-gcl-prio')).then(function(){ openDrawer(l.id); }); return; }   /* patch HOT2 */
   if (k === 'contacted') { markContacted(l.id).then(function(){ openDrawer(l.id); redraw(); }); return; }
   if (k === 'won') { moveStage(l.id, 'Won'); return; }
@@ -162554,6 +162623,27 @@ function navBadge(){
   });
 }
 
+/* patch HOT2b: window._gcLeadsAudit() — READ-ONLY. Where the leads came from and what the KPI tiles count. Changes nothing. */
+W._gcLeadsAudit = function(){
+  var L = leads(), now = Date.now(), wk = now - 7 * 864e5, d30 = now - 30 * 864e5, out = { total: L.length, open: 0, bySource: {}, filed: {}, newThisWeekBySource: {}, value: { fields: {}, top: [] } };
+  function kind(l){ var id = s(l.id); return /^LQB_/.test(id) ? 'LQB_ (QuickBooks customer kept off the job board)' : /^LCCR_/.test(id) ? 'LCCR_ (CompanyCam "Make lead")' : /^LCC_/.test(id) ? 'LCC_ (CompanyCam project kept off the job board)' : /^LGN_/.test(id) ? 'LGN_ (CompanyCam lead generator)' : ''; }
+  L.forEach(function(l){
+    var src = srcOf(l), b = born(l), k = kind(l), o = !shut(l);
+    if (o) out.open++;
+    var x = out.bySource[src] = out.bySource[src] || { n: 0, open: 0, last7: 0, last30: 0, noInquiry: 0, dateField: {} };
+    x.n++; if (o) x.open++; if (b >= wk) x.last7++; if (b >= d30) x.last30++;
+    if (!s(l.phone || l.email || l.contact || l.contactName || l.message || l.scope) && !arr(l.activity).length) x.noInquiry++;
+    var df = s(l.createdAt) ? 'createdAt' : s(l.receivedAt) ? 'receivedAt' : s(l.created) ? 'created (date only)' : s(l.dateAdded) ? 'dateAdded' : 'none'; x.dateField[df] = (x.dateField[df] || 0) + 1;
+    if (k) { var f = out.filed[k] = out.filed[k] || { n: 0, last7: 0, notes: {} }; f.n++; if (b >= wk) f.last7++; var nt = s(l.note).slice(0, 60); if (nt) f.notes[nt] = (f.notes[nt] || 0) + 1; }
+    if (b >= wk) out.newThisWeekBySource[src] = (out.newThisWeekBySource[src] || 0) + 1;
+    ['value', 'estValue', 'amount', 'estimate'].forEach(function(fl){ var v = l[fl]; if (v == null || v === '') return; var e = out.value.fields[fl] = out.value.fields[fl] || { n: 0, types: {}, sumAsUsed: 0, samples: [] }; e.n++; e.types[typeof v] = (e.types[typeof v] || 0) + 1; if (e.samples.length < 5) e.samples.push(typeof v === 'object' ? '[object]' : String(v).slice(0, 30)); });
+    if (o && value(l)) out.value.top.push({ id: l.id, name: s(l.name || l.company).slice(0, 40), used: value(l), from: l.value ? 'value' : l.estValue ? 'estValue' : l.amount ? 'amount' : 'estimate', raw: String(l.value || l.estValue || l.amount || l.estimate).slice(0, 30) });
+  });
+  out.value.top.sort(function(a, b){ return b.used - a.used; }); out.value.top = out.value.top.slice(0, 15);
+  out.value.pipelineAsShown = L.filter(function(l){ return !shut(l); }).reduce(function(t2, l){ return t2 + value(l); }, 0);
+  try { console.table(Object.keys(out.bySource).map(function(k){ var x = out.bySource[k]; return { source: k, leads: x.n, open: x.open, last7days: x.last7, last30days: x.last30, noInquiry: x.noInquiry, dates: JSON.stringify(x.dateField) }; })); console.log('[GC] Leads audit (read-only):', out); } catch (e) {}
+  return out;
+};
 W._gcLeadsHub = { redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
 var n0 = 0;
 function tick(){ try { if (D.hidden) return; css(); mount(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
