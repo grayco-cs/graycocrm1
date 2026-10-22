@@ -491,6 +491,7 @@ function make(d){
   const LEAD_SOURCES = /referral|roof\s*ignite|contractor\s*connection|alacrity|sedgwick|leads@|homeadvisor|angi|thumbtack|google\s*(lsa|local)|facebook\s*lead/i;
   function inbound(l){
     if (!l) return false;
+    if (l.softLead || (l.leadExtra && l.leadExtra.softLead)) return false;   /* patch MKT2: a guide download is a soft lead — no reach-out clock */
     if (isWebsite(l)) return true;
     if (/commercial|government/i.test(s(l.leadKind || l.type))) return false;
     return LEAD_SOURCES.test([s(l.source), s(l.leadSource), s(l.subSource)].join(' '));

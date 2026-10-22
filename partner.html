@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GrayCo Referral Partner</title><meta name="robots" content="noindex">
+<link rel="stylesheet" href="mkt-pages.css">
+</head><body>
+<header class="gp-head"><img src="portal-logo.png" alt="GrayCo Construction Services"><div><b>Referral Partner</b><span>GrayCo Construction Services</span></div></header>
+<div class="gp-gold"></div>
+<main class="gp-main" id="app"><p class="gp-muted">Loading…</p></main>
+<footer class="gp-foot">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · <a href="tel:+19015850944">(901) 585-0944</a></footer>
+<script>
+/* GrayCo referral partners (patch MKT2): realtors, insurance agents, property managers. The magic link (?t=…) opens this
+   page: their code, their share links + QR, the people they referred (first name + initial, where it stands) and fees.
+   No customer details, no prices. */
+(function(){
+  var API = '/.netlify/functions/mkt-public', app = document.getElementById('app');
+  var t = new URLSearchParams(location.search).get('t') || '';
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function post(body){ return fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'No answer.' }; }); }, function(){ return { ok: false, error: 'No connection.' }; }); }
+  function askLink(msg){
+    app.innerHTML = (msg ? '<div class="gp-warn">' + esc(msg) + '</div>' : '') + '<div class="gp-card"><h2>Your partner page</h2><p>Enter the e-mail GrayCo has for you and we will send your sign-in link.</p>' +
+      '<label>E-mail</label><input id="em" type="email" autocomplete="email"><input id="hp" class="gp-hp" tabindex="-1" autocomplete="off"><button id="go" class="gp-btn">E-mail me my link</button><p id="out" class="gp-muted"></p>' +
+      '<p class="gp-muted">Not a partner yet? <a href="https://grayco-cs.com/#partners">Join the GrayCo Referral Partner program</a>.</p></div>';
+    document.getElementById('go').onclick = function(){ var b = this; b.disabled = true; post({ op: 'partner_link', email: document.getElementById('em').value, website: document.getElementById('hp').value }).then(function(j){ document.getElementById('out').textContent = j.message || j.error || 'Sent.'; b.disabled = false; }); };
+  }
+  function draw(v){
+    var p = v.partner, L = v.links, T = v.totals;
+    app.innerHTML = '<div class="gp-card"><h2>Welcome, ' + esc(String(p.name).split(' ')[0]) + '</h2><p>' + esc(p.type) + (p.company ? ' · ' + esc(p.company) : '') + '</p>' +
+      '<div class="gp-kpis"><div><b>' + T.referred + '</b><span>referred</span></div><div><b>' + T.hired + '</b><span>hired GrayCo</span></div><div><b>$' + Number(T.paid || 0).toLocaleString('en-US') + '</b><span>fees paid</span></div></div>' +
+      '<p><b>Your partner code: <span class="gp-code">' + esc(p.code) + '</span></b><br><span class="gp-muted">' + esc(p.feeText) + '</span></p></div>' +
+      '<div class="gp-card"><h2>Share your link</h2><p>Send this link or QR code. Anyone who reaches GrayCo through it is tagged as your referral.</p>' +
+      '<div class="gp-row"><input readonly value="' + esc(L.short) + '" id="lk"><button class="gp-btn o" id="cp">Copy</button></div><p class="gp-muted">Want printed cards or a flyer with your own QR code? Ask GrayCo — we make them for you.</p></div>' +
+      '<div class="gp-card"><h2>Refer someone now</h2><p>Type their details (with their OK) and GrayCo reaches out to them.</p>' +
+      '<label>Their name</label><input id="r-name"><label>Phone</label><input id="r-phone" type="tel"><label>E-mail</label><input id="r-email" type="email"><label>Property address</label><input id="r-address"><label>What do they need?</label><textarea id="r-note" rows="3"></textarea>' +
+      '<input id="hp" class="gp-hp" tabindex="-1" autocomplete="off"><button id="send" class="gp-btn">Send referral</button><p id="r-out" class="gp-muted"></p></div>' +
+      '<div class="gp-card"><h2>Your referrals</h2>' + (v.referrals.length ? '<table><tr><th>Name</th><th>Received</th><th>Where it stands</th></tr>' + v.referrals.map(function(r){ return '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.received) + '</td><td>' + esc(r.stage) + '</td></tr>'; }).join('') + '</table>' : '<p class="gp-muted">None yet — share your link!</p>') + '</div>' +
+      '<div class="gp-card"><h2>Your fees</h2>' + (v.payouts.length ? '<table><tr><th>For</th><th>Amount</th><th>Status</th><th>Date</th></tr>' + v.payouts.map(function(x){ return '<tr><td>' + esc(x.job) + '</td><td>$' + Number(x.amount).toLocaleString('en-US') + '</td><td>' + esc(x.status) + '</td><td>' + esc(x.date) + '</td></tr>'; }).join('') + '</table>' : '<p class="gp-muted">Fees show here once a referral hires GrayCo.</p>') + '</div>';
+    document.getElementById('cp').onclick = function(){ var i = document.getElementById('lk'); i.select(); try { navigator.clipboard.writeText(i.value); } catch (e) { document.execCommand('copy'); } this.textContent = 'Copied'; };
+    document.getElementById('send').onclick = function(){
+      var b = this, g = function(id){ return document.getElementById(id).value; }; b.disabled = true;
+      post({ op: 'partner_refer', t: t, name: g('r-name'), phone: g('r-phone'), email: g('r-email'), address: g('r-address'), note: g('r-note'), website: g('hp') }).then(function(j){
+        document.getElementById('r-out').textContent = j.ok ? 'Thank you! GrayCo will reach out to them.' : (j.error || 'Not sent.'); b.disabled = false;
+        if (j.ok) ['r-name', 'r-phone', 'r-email', 'r-address', 'r-note'].forEach(function(id){ document.getElementById(id).value = ''; });
+      });
+    };
+  }
+  if (!t) { askLink(''); return; }
+  post({ op: 'partner_me', t: t }).then(function(j){ if (j.ok) draw(j); else askLink(j.error || 'This link does not work.'); });
+})();
+</script>
+</body></html>

@@ -27,7 +27,9 @@ const crypto = require('crypto');
 const C = require('./mkt-content.js');
 const KEY = 'gc_mkt_v1', LOG_KEY = 'gc_mkt_sendlog', AQ_KEY = 'gc_approval_queue';
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
-const MKT_KINDS = { mkt_campaign: 'campaigns', social_post: 'posts', mkt_neighbor: 'neighbors' };
+const MKT_KINDS = { mkt_campaign: 'campaigns', social_post: 'posts', mkt_neighbor: 'neighbors', mkt_ad: 'adchanges', mkt_payout: 'payouts', mkt_event: 'roofevents', mkt_giveaway: 'giveaways', mkt_page: 'citypages', mkt_outreach: 'outreach' };   /* patch MKT2d: website page text, HOA / PM outreach e-mails */   /* patch MKT2c: the giveaway winner e-mail */   /* patch MKT2: ad changes, partner fees, event reminders */
+function stKey(coll){ return coll === 'roofevents' ? 'remindStatus' : coll === 'giveaways' ? 'notifyStatus' : 'status'; }   /* an event keeps its own open / closed status */
+function mkt2(){ return require('./mkt2.js'); }
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
@@ -138,6 +140,7 @@ async function audienceFor(rec, data){
     arr(data && data.projects).forEach(function(p){ if (!p || p.deleted === true) return; const e = String(p.clientEmail || p.customerEmail || p.email || '').trim().toLowerCase(); if (!e) return; if (JA.allows(p, 'newsletter', adm)) on[e] = 1; else jaOff[e] = 1; });
     Object.keys(on).forEach(function(e){ delete jaOff[e]; });
   } catch (e) { jaOff = {}; }
+  if (data && data.newsSignups === undefined) { try { data = Object.assign({}, data, { newsSignups: await mkt2().signups() }); } catch (e) {} }   /* patch MKT2: lead-magnet sign-ups */
   const list = C.audience(data, rec.aud || { type: 'all' }, nowIso()).filter(function(c){ return !jaOff[String(c.email || '').toLowerCase()]; });
   const off = await news().suppressed(list.map(function(c){ return c.email; }));
   return { send: list.filter(function(c){ return !off.has(c.email); }), skipped: list.filter(function(c){ return off.has(c.email); }).map(function(c){ return c.email; }) };
@@ -163,7 +166,7 @@ async function queueForApproval(body, who, core){
   if (role === 'staff' && !body.system) return { status: 403, out: { ok: false, error: 'Only the office or an admin can send marketing for approval.' } };
   const doc = await readDoc(); const rec0 = get(doc, coll, id), rec = rec0 ? Object.assign({}, rec0, { reviewLink: s(cfg(doc).reviewLink) }) : null;
   if (!rec) return { status: 404, out: { ok: false, retry: true, error: 'That draft is not in the cloud yet — try again in a few seconds.' } };
-  if (/^(waiting|approved|sending|sent|posting|posted)$/.test(s(rec.status)) && !body.again) return { status: 200, out: { ok: true, already: rec.status, id: rec.apprId } };
+  if (/^(waiting|approved|sending|sent|posting|posted|applied|paid)$/.test(s(rec[stKey(coll)])) && !body.again) return { status: 200, out: { ok: true, already: rec[stKey(coll)], id: rec.apprId } };
   const n = (+rec.submits || 0) + 1, qid = 'appr_mkt_' + id + '_' + n;
   let title, to, subject, html, meta = { recId: id, coll: coll, by: low(who && who.email) };
   if (kind === 'social_post') {
@@ -182,13 +185,16 @@ async function queueForApproval(body, who, core){
     const sample = aud.send[0] || { first: 'Pat', zip: '', kinds: [] };
     const b = campaignBodyFor(rec, sample); subject = b.subject; html = b.html;
     meta.count = aud.send.length; meta.skipped = aud.skipped.length;
+  } else if (kind === 'mkt_ad' || kind === 'mkt_payout' || kind === 'mkt_event' || kind === 'mkt_giveaway' || kind === 'mkt_page' || kind === 'mkt_outreach') {   /* patch MKT2 */
+    if (kind !== 'mkt_event' && kind !== 'mkt_page' && kind !== 'mkt_outreach' && role !== 'admin' && !body.system) return { status: 403, out: { ok: false, error: 'Only an admin can send this for approval.' } };
+    const a = mkt2().approvalFor(kind, rec, doc); title = a.title; to = a.to; subject = a.subject; html = a.html;
   } else {
     title = '📣 Marketing — door hangers / postcards near ' + (s(rec.street) || 'a finished job'); to = (+rec.count || 0) + ' homes';
     subject = 'Neighbor marketing: ' + s(rec.street); html = '<p>Print and deliver ' + C.esc(rec.count || '') + ' door hangers on ' + C.esc(rec.street) + ' (' + C.esc(rec.city) + '). The list and the printable door hanger are in Marketing → Neighborhood.</p>';
   }
   const ok = await core.queueApproval({ id: qid, kind: kind, title: title, pid: s(rec.jobId), jobName: s(rec.jobName), pm: null, to: to, subject: subject, html: html, attachments: [], meta: meta });
   if (!ok) return { status: 502, out: { ok: false, error: 'Could not put it on the approvals list — try again.' } };
-  await update(function(d){ const r = get(d, coll, id); if (!r) return null; r.status = 'waiting'; r.apprId = qid; r.submits = n; r.submittedBy = low(who && who.email); r.submittedAt = nowIso(); r.reason = ''; return [[coll, id]]; });
+  await update(function(d){ const r = get(d, coll, id); if (!r) return null; r[stKey(coll)] = 'waiting'; r.apprId = qid; r.submits = n; r.submittedBy = low(who && who.email); r.submittedAt = nowIso(); r.reason = ''; return [[coll, id]]; });
   return { status: 200, out: { ok: true, id: qid, queued: true } };
 }
 
@@ -198,13 +204,16 @@ async function onApproved(item){
   const last = (item.approvals || []).slice(-1)[0] || {};
   const r = await update(function(d){
     const rec = get(d, coll, id); if (!rec) return null;
-    rec.status = 'approved'; rec.approvedBy = s(last.by) || 'admin'; rec.approvedEmail = s(last.email); rec.approvedAt = nowIso(); rec.apprId = s(item.id);
+    rec[stKey(coll)] = 'approved'; rec.approvedBy = s(last.by) || 'admin'; rec.approvedEmail = s(last.email); rec.approvedAt = nowIso(); rec.apprId = s(item.id);
     if (coll === 'posts' && item.editedAt && s(item.text)) rec.caption = s(item.text);
     if (coll === 'campaigns' && item.editedAt) { rec.subject = s(item.subject) || rec.subject; rec.approvedHtml = String(item.html || ''); }
     if (coll === 'posts' && !rec.scheduleAt) rec.scheduleAt = nowIso();
     return [[coll, id]];
   });
   if (!r.ok) return { ok: false, error: 'Approved, but the marketing record could not be updated — try again.' };
+  if (coll === 'adchanges' || coll === 'payouts' || coll === 'roofevents' || coll === 'giveaways' || coll === 'citypages' || coll === 'outreach') {   /* patch MKT2 */
+    try { const r2 = get(r.doc, coll, id); if (r2) await mkt2().afterApproved(item.kind, r2, item, { officeTodo: require('../portal.js')._core.officeTodo }); } catch (e) {}
+  }
   if (coll === 'neighbors') {
     try { const core = require('../portal.js')._core; await core.officeTodo('mkt_nb_' + id, 'Print & deliver door hangers on ' + s(get(r.doc, 'neighbors', id) && get(r.doc, 'neighbors', id).street), 'Marketing → Neighborhood has the list, the CSV and the printable door hanger.'); } catch (e) {}
   }
@@ -213,14 +222,14 @@ async function onApproved(item){
 async function onRejected(item, me){
   const m = item.meta || {}, coll = m.coll || MKT_KINDS[item.kind], id = s(m.recId);
   if (!coll || !id) return;
-  await update(function(d){ const rec = get(d, coll, id); if (!rec || rec.apprId !== s(item.id)) return null; rec.status = 'rejected'; rec.reason = s(item.reason); rec.rejectedBy = s(me && me.by); return [[coll, id]]; });
+  await update(function(d){ const rec = get(d, coll, id); if (!rec || rec.apprId !== s(item.id)) return null; rec[stKey(coll)] = 'rejected'; rec.reason = s(item.reason); rec.rejectedBy = s(me && me.by); return [[coll, id]]; });
 }
 /* the approvals list said so, but the record did not hear it (a reject, or an approve whose update failed) */
 async function reconcile(doc){
   let q = []; try { const r = await kvRow(AQ_KEY); q = arr(r.v); } catch (e) { return 0; }
   const by = {}; q.forEach(function(x){ if (x && x.id) by[x.id] = x; });
   const fix = [];
-  Object.keys(MKT_KINDS).forEach(function(k){ recs(doc, MKT_KINDS[k]).forEach(function(rec){ const it = rec.apprId && by[rec.apprId]; if (!it || rec.status !== 'waiting') return; if (it.status === 'rejected' || it.status === 'sent') fix.push(it); }); });
+  Object.keys(MKT_KINDS).forEach(function(k){ recs(doc, MKT_KINDS[k]).forEach(function(rec){ const it = rec.apprId && by[rec.apprId]; if (!it || rec[stKey(MKT_KINDS[k])] !== 'waiting') return; if (it.status === 'rejected' || it.status === 'sent') fix.push(it); }); });
   for (const it of fix) { if (it.status === 'rejected') await onRejected(it, { by: it.rejectedBy }); else await onApproved(it); }
   return fix.length;
 }

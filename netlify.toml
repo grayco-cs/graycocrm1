@@ -108,10 +108,23 @@
 [functions."maint-scheduled"]
   schedule = "20 13 * * *"
 
+# Marketing part 2 (patch MKT2): every hour — the daily Google Ads / Facebook numbers (from 6 AM Central), this month's
+# newsletter draft (once a month), thank-you to-dos (December + milestones), free roof check reminders the day before.
+[functions."mkt2-scheduled"]
+  schedule = "41 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
 # (/.netlify/functions/* is never redirected by Netlify, so functions keep working there.)
+
+# Tracked links (patch MKT2): crm.grayco-cs.com/go/<code> → the go function (it counts the click and sends the
+# visitor on with the UTM tags). Only this path; everything else is untouched.
+[[redirects]]
+  from = "/go/*"
+  to = "/.netlify/functions/go?c=:splat"
+  status = 200
+  force = true
 
 # ── audit C: internal files are not public ───────────────────────────────────
 # publish = "." serves every file in the repository. The setup notes and SQL in docs/ (staff e-mails, the

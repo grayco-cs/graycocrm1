@@ -120,6 +120,7 @@ function everyone(data){
   function add(email, name, from){ const e = low(email); if (!okEmail(e) || by[e] || (offE[e] && !onE[e])) return; by[e] = { email: e, name: s(name), from: from }; }
   arr(data && data.customers).forEach(function(c){ if (c && c.deleted !== true) add(c.email || c.contactEmail, c.name || c.company, 'customer'); });
   arr(data && data.projects).forEach(function(p){ if (p && p.deleted !== true) add(p.clientEmail || p.customerEmail || p.email, p.client || p.customer, 'job'); });
+  arr(data && data.newsSignups).forEach(function(sg){ if (sg) add(sg.email, sg.name, 'signup'); });   /* patch MKT2: guide downloads */
   return Object.keys(by).map(function(k){ return by[k]; });
 }
 async function subscribers(data){

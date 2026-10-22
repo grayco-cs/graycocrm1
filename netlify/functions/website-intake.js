@@ -61,7 +61,9 @@ const TYPES = {
   problem:     { label: 'Report a problem (existing customer)', kind: 'residential', short: 'Problem report' },
   careers:     { label: 'Job application (careers)', kind: 'careers', short: 'Job application' },
   roofprice:   { label: 'Instant roof price', kind: 'residential', short: 'Instant roof price' },
-  referral:    { label: 'Referral program', kind: 'residential', short: 'Referral program' }   /* patch REF: join (and refer a friend) */
+  referral:    { label: 'Referral program', kind: 'residential', short: 'Referral program' },   /* patch REF: join (and refer a friend) */
+  magnet:      { label: 'Free guide download', kind: 'residential', short: 'Guide download' },   /* patch MKT2: lead magnets */
+  partner:     { label: 'Referral partner sign-up', kind: 'partner', short: 'Partner sign-up' }   /* patch MKT2: realtors, agents, managers */
 };
 const POSITIONS = ['Project Manager', 'Superintendent', 'Estimator', 'Carpenter', 'Roofer', 'Laborer', 'Office / Admin', 'Other'];
 
@@ -214,7 +216,10 @@ function readForm(b){
     /* patch REF: a member's referral code (their link ?ref=R-XXXXXX), how they know us, and the friend they refer */
     ref: pick(b, ['ref', 'referral_code', 'member_code', 'refcode']).slice(0, 20), howKnow: clip(pick(b, ['how_know', 'howknow', 'relationship', 'how_do_you_know_us']), 120),
     referred: { name: clip(pick(b, ['referred_name', 'friend_name', 'referral_name']), 80), email: low(pick(b, ['referred_email', 'friend_email'])), phone: pick(b, ['referred_phone', 'friend_phone']),
-      address: clip(pick(b, ['referred_address', 'friend_address']), 200), note: clip(pick(b, ['referred_note', 'friend_note', 'referral_note']), 600) }
+      address: clip(pick(b, ['referred_address', 'friend_address']), 200), note: clip(pick(b, ['referred_note', 'friend_note', 'referral_note']), 600) },
+    /* patch MKT2: where the visitor came from (the website keeps the UTM tags, the ad click ids, a tracked-link code and a partner code) */
+    attrib: (function(){ const a = {}; ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid', 'gc', 'ref'].forEach(k => { const v = s(b[k] || (b.attrib && b.attrib[k])).slice(0, 120); if (v && /^[\w .:\/+-]+$/.test(v)) a[k] = v; }); return a; })(),
+    guide: clip(b.guide, 60), partnerType: clip(b.partner_type || b.partnerType, 40)
   };
   if (!f.address && (f.city || f.zip)) f.address = '';
   ['name', 'company', 'project', 'service', 'property', 'position', 'carrier'].forEach(k => { f[k] = clip(f[k], 120); });
@@ -273,6 +278,15 @@ async function fileLead(f, extra){
   if (extra.roofQuote) leadExtra.roofQuote = extra.roofQuote;
   if (f.howHeard) { try { const MX = require('./_lib/maint.js'); leadExtra.howHeard = MX.heardNorm(f.howHeard); } catch (e) { leadExtra.howHeard = clip(f.howHeard, 60); } }   /* patch X9: "How did you hear about us?" */
   if (f.type === 'commercial' && f.company) leadExtra.company = f.company;
+  if (f.attrib && Object.keys(f.attrib).length) {   /* patch MKT2: the ad / link / partner the lead came from */
+    const a = f.attrib; leadExtra.attrib = a; if (a.utm_campaign) leadExtra.utmCampaign = a.utm_campaign; if (a.gc) leadExtra.trackCode = a.gc;
+    const src = low(a.utm_source), med = low(a.utm_medium);
+    const ms = a.gclid || (/google/.test(src) && /cpc|ppc|paid|ads?$/.test(med)) ? 'Google Ads' : a.fbclid || (/facebook|instagram|^fb$|^ig$|meta/.test(src) && /cpc|ppc|paid|ads?$|social_paid/.test(med)) ? 'Facebook/Instagram Ads'
+      : /nextdoor/.test(src) ? 'Nextdoor' : /gbp|business.?profile/.test(med + src) ? 'Google Business Profile' : /flyer|door|postcard/.test(med) ? 'Door hanger / postcard' : /sign|truck|shirt|uniform/.test(med) ? 'Yard sign' : src === 'partner' ? 'Referral' : '';
+    if (ms && !leadExtra.howHeard) leadExtra.mkSource = ms;
+  }
+  if (extra.partner) { const p = extra.partner; Object.assign(leadExtra, { partnerCode: p.code, partnerName: p.name, partnerType: p.type, mkSource: 'Referral' }); notes.push('REFERRAL PARTNER: ' + p.name + (p.company ? ', ' + p.company : '') + ' (code ' + p.code + '). Their fee is paid after the job is hired (Marketing → 🤝 Referral partners).'); }
+  if (f.type === 'magnet') leadExtra.softLead = true;
   const rec = {
     id, title: leadTitle(f, T), source: src, sourceKind: 'website', sourceRef: T.label, type: T.kind === 'careers' ? 'residential' : T.kind,
     address: f.address, city: f.city, state: f.state, zip: f.zip, bidDue: f.type === 'commercial' && /^\d{4}-\d{2}-\d{2}$/.test(f.bidDue) ? f.bidDue : '',
@@ -456,7 +470,7 @@ exports.handler = async function(event){
   }
   if (m === 'GET' && qs.form === '1') {
     let priced = false; try { priced = pricesSet(await priceSettings()); } catch (e) {}
-    return J(event, 200, { ok: true, token: newToken(), turnstileSiteKey: env('TURNSTILE_SECRET') ? env('TURNSTILE_SITE_KEY') : '', types: Object.keys(TYPES).filter(k => k !== 'roofprice' && k !== 'referral').map(k => ({ id: k, label: TYPES[k].label })), positions: POSITIONS, priced });
+    return J(event, 200, { ok: true, token: newToken(), turnstileSiteKey: env('TURNSTILE_SECRET') ? env('TURNSTILE_SITE_KEY') : '', types: Object.keys(TYPES).filter(k => k !== 'roofprice' && k !== 'referral' && k !== 'magnet' && k !== 'partner').map(k => ({ id: k, label: TYPES[k].label })), positions: POSITIONS, priced });
   }
 
   /* ── admin doors ── */
@@ -560,7 +574,21 @@ exports.handler = async function(event){
           : rq.measured ? 'Thanks — we measured your roof (' + rq.areaSqft.toLocaleString('en-US') + ' sq ft). A GrayCo estimator will call you with your price shortly.'
           : 'Thanks — we have your address. A GrayCo estimator will measure your roof and call you with a price shortly.' });
     }
-    const lead = await fileLead(f, refExtra);
+    if (f.type === 'partner') {   /* patch MKT2: "Become a referral partner" — a pending partner an admin turns on */
+      if (!isEmail(f.email)) return J(event, 400, { ok: false, error: 'Please add your e-mail address.', field: 'email' });
+      const pj = await require('./_lib/mkt2.js').partnerJoin(f);
+      return J(event, 200, { ok: true, received: true, kind: 'partner', existing: pj.existing, message: pj.existing ? 'You are already signed up — we will be in touch.' : 'Thank you! We will review your sign-up and e-mail you your partner link.' });
+    }
+    if (f.type === 'magnet') {   /* patch MKT2: a free guide — name + e-mail, joins GrayCo News, a soft lead (no reach-out clock, no alert) */
+      if (!isEmail(f.email)) return J(event, 400, { ok: false, error: 'Please add your e-mail address so we can send the guide.', field: 'email' });
+      const M2 = require('./_lib/mkt2.js');
+      await M2.addSignup({ email: f.email, name: f.name, source: 'guide:' + (f.guide || 'guide'), zip: f.zip });
+      const g = await fileLead(f, { title: ('Guide download — ' + f.name + ' (' + (f.guide || 'guide') + ')').slice(0, 200), how: 'downloaded a free guide (' + (f.guide || 'guide') + ')', notes: ['Soft lead: downloaded a free guide and joined GrayCo News (they can unsubscribe any time). No reach-out clock — follow up if it fits.'] });
+      const GUIDES = { storm: 'GrayCo-Storm-Damage-Checklist.pdf', hire: 'GrayCo-Before-You-Hire-a-Contractor.pdf' };
+      return J(event, 200, { ok: true, received: true, kind: 'magnet', leadId: g.id, file: GUIDES[f.guide] || GUIDES.storm, message: 'Thank you! Your guide is downloading now. You will also get GrayCo News — unsubscribe any time.' });
+    }
+    let partner = null; if (f.attrib && f.attrib.ref) { try { partner = await require('./_lib/mkt2.js').partnerFor(f.attrib.ref); } catch (e) {} }   /* patch MKT2 */
+    const lead = await fileLead(f, partner ? Object.assign({}, refExtra, { partner: partner }) : refExtra);
     await refNote(lead);
     if (lead.action === 'added') await Promise.all([alertLead(lead.rec), autoReply(f, lead.id)]);
     return J(event, 200, { ok: true, received: true, kind: 'lead', leadId: lead.id, existingCustomer: !!lead.customer, duplicate: lead.action !== 'added',
@@ -606,9 +634,11 @@ exports.fromEmail = async function(mail){
   mail = mail || {};
   const text = s(mail.text), from = mail.from || {}, H = mail.headers || {};
   const got = fieldsOf(text), b = splitAddress(got.b);
+  const lsa = /local services|localservices|google guaranteed|google screened/i.test(s(mail.subject) + ' ' + text.slice(0, 3000));   /* patch MKT2 LSA: a Google Local Services lead e-mail forwarded to leads@ */
+  if (lsa) { if (!b.phone) { const m = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(text); if (m) b.phone = m[1] + m[2] + m[3]; } if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.message) b.message = clip(text, 1500); }
   const replyTo = low(s(H['reply-to']).replace(/^.*<([^>]+)>.*$/, '$1'));
   const sender = [low(b.email || b.email_address), replyTo, low(from.email)].find(x => isEmail(x) && !NOT_CUSTOMER.test(x)) || '';
-  if (got.n < 2) {   /* a person writing in (or junk): no form fields */
+  if (got.n < 2 && !(lsa && (b.phone || b.name))) {   /* a person writing in (or junk): no form fields */
     if (bulk(mail) || !sender) return { ok: true, ignored: 'not a lead (no form, no customer address)' };
     b.message = clip((s(mail.subject) ? s(mail.subject) + '\n\n' : '') + text, 3000);
     b.type = s(mail.subject);
@@ -624,7 +654,7 @@ exports.fromEmail = async function(mail){
   }
   if (f.type === 'roofprice') f.type = 'estimate';
   const sid = crypto.createHash('sha256').update('leads@|' + (s(mail.messageId) || s(mail.id) || (low(f.email) + '|' + f.phone + '|' + s(mail.subject) + '|' + s(mail.date)))).digest('hex').slice(0, 24);
-  const r = await fileLead(f, { sid, source: MAIL_SOURCE, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
+  const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? { mkSource: 'Google Ads', leadSource: 'Google LSA' } : undefined, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
   const alerts = r.action === 'added' ? await alertLead(r.rec) : { skipped: r.action };
   return { ok: true, lead: r.id, action: r.action, alerts, type: f.type };
 };

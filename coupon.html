@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>$100 off GrayCo — claim your coupon</title>
+<link rel="stylesheet" href="mkt-pages.css">
+</head><body>
+<header class="gp-head"><img src="portal-logo.png" alt="GrayCo Construction Services"><div><b>GrayCo Construction Services</b><span>Licensed TN general contractor · Bartlett, TN</span></div></header>
+<div class="gp-gold"></div>
+<main class="gp-main">
+  <div class="gp-card gp-hero"><div class="big">$100 OFF</div><h1>GrayCo work</h1><p id="who">Roofing, repairs, remodeling, storm and water damage — licensed, local, right here in Bartlett.</p><p class="gp-muted" style="color:#c9d4e3">On projects over $1,000. One coupon per household.</p></div>
+  <div class="gp-card" id="form"><h2>Claim your coupon</h2>
+    <label>Your name</label><input id="f-name" autocomplete="name">
+    <label>E-mail</label><input id="f-email" type="email" autocomplete="email">
+    <label>Phone</label><input id="f-phone" type="tel" autocomplete="tel">
+    <label>Home address (optional)</label><input id="f-address" autocomplete="street-address">
+    <input id="hp" class="gp-hp" tabindex="-1" autocomplete="off">
+    <button id="go" class="gp-btn">Get my $100 coupon</button><p id="out"></p>
+  </div>
+  <div class="gp-card gp-rules"><b>The fine print:</b> $100 off GrayCo Construction Services work on projects over $1,000. One coupon per household (e-mail, phone or address), used once. Not combined with other coupons; GrayCo referral credit is OK. No cash value. Give the code to your GrayCo project manager before your estimate or invoice.</div>
+</main>
+<footer class="gp-foot">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · <a href="tel:+19015850944">(901) 585-0944</a></footer>
+<script>
+/* GrayCo $100-off coupon QR (patch MKT2): ?s=<source code> (which sponsorship, truck, shirt or banner). One unique code
+   per household; the claim is a GrayCo lead tagged with the source; the code works once (checked by the server). */
+(function(){
+  var API = '/.netlify/functions/mkt-public', src = new URLSearchParams(location.search).get('s') || '';
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  fetch(API + '?coupon=' + encodeURIComponent(src)).then(function(r){ return r.json(); }).then(function(j){ if (j && j.name) document.getElementById('who').textContent = 'Thanks for supporting ' + j.name + '! ' + document.getElementById('who').textContent; }).catch(function(){});
+  document.getElementById('go').onclick = function(){
+    var b = this, g = function(k){ return document.getElementById(k).value; }, out = document.getElementById('out'); b.disabled = true;
+    fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'coupon_claim', s: src, name: g('f-name'), email: g('f-email'), phone: g('f-phone'), address: g('f-address'), website: g('hp') }) })
+      .then(function(r){ return r.json(); }).then(function(j){
+        b.disabled = false;
+        if (j.ok && j.code) { document.getElementById('form').innerHTML = '<h2>Your coupon</h2><div class="gp-coupon">' + esc(j.code) + '</div><p>' + esc(j.message) + '</p><p>Save a screenshot. Call <a href="tel:+19015850944">(901) 585-0944</a> to book your free estimate.</p>'; return; }
+        out.innerHTML = j.ok ? '<div class="gp-ok">' + esc(j.message) + '</div>' : '<span class="gp-err">' + esc(j.error || 'Not claimed — call (901) 585-0944.') + '</span>';
+      }, function(){ b.disabled = false; out.innerHTML = '<span class="gp-err">No connection — call (901) 585-0944.</span>'; });
+  };
+})();
+</script>
+</body></html>

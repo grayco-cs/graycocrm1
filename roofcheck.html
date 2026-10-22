@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Free Roof Check — GrayCo</title>
+<link rel="stylesheet" href="mkt-pages.css">
+</head><body>
+<header class="gp-head"><img src="portal-logo.png" alt="GrayCo Construction Services"><div><b>GrayCo Construction Services</b><span>Licensed TN general contractor · Bartlett, TN</span></div></header>
+<div class="gp-gold"></div>
+<main class="gp-main" id="app"><p class="gp-muted">Loading…</p></main>
+<footer class="gp-foot">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · <a href="tel:+19015850944">(901) 585-0944</a></footer>
+<script>
+/* GrayCo free roof check events + lunch-and-learn RSVPs (patch MKT2): ?e=<event id>. Pick a time, add your details —
+   a roof check books a GrayCo lead for the event's PM; a lunch-and-learn RSVP joins the referral partner program. */
+(function(){
+  var API = '/.netlify/functions/mkt-public', app = document.getElementById('app');
+  var id = new URLSearchParams(location.search).get('e') || '', slot = '';
+  var attrib = {}; try { new URLSearchParams(location.search).forEach(function(v, k){ if (/^(utm_|gc$)/.test(k)) attrib[k] = v; }); } catch (e) {}
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  if (!id) { app.innerHTML = '<div class="gp-card"><h2>Free roof check</h2><p>This link is missing its event. Call us at <a href="tel:+19015850944">(901) 585-0944</a>.</p></div>'; return; }
+  fetch(API + '?event=' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(ev){
+    if (!ev.ok) { app.innerHTML = '<div class="gp-card"><h2>Sign-ups are closed</h2><p>' + esc(ev.error || '') + ' Call us at <a href="tel:+19015850944">(901) 585-0944</a> for a free inspection any time.</p></div>'; return; }
+    var lunch = ev.kind === 'lunch';
+    document.title = ev.title + ' — GrayCo';
+    app.innerHTML = '<div class="gp-card gp-hero"><h1>' + esc(ev.title) + '</h1><div class="big">' + esc(ev.day) + '</div><p>' + esc(ev.area || '') + (ev.place ? ' · ' + esc(ev.place) : '') + '</p>' +
+      (lunch ? '<p>Lunch is on us. A short, useful talk from GrayCo — and how our referral partner program works.</p>' : '<p>A GrayCo pro looks at your roof for free — shingles, flashing, gutters and storm damage — and tells you what we see. No pressure, no cost.</p>') + '</div>' +
+      '<div class="gp-card"><h2>' + (lunch ? 'Reserve your seat' : 'Pick a time') + '</h2><div class="gp-slots">' + ev.slots.map(function(x){ return '<button type="button" data-t="' + esc(x.t) + '"' + (x.left ? '' : ' disabled') + '>' + esc(x.label) + (x.left ? '' : ' (full)') + '</button>'; }).join('') + '</div>' +
+      '<label>Your name</label><input id="f-name" autocomplete="name">' + (lunch ? '<label>Company</label><input id="f-company" autocomplete="organization"><label>You are a…</label><select id="f-type"><option value="realtor">Realtor</option><option value="insurance">Insurance agent</option><option value="property">Property manager</option><option value="other">Other</option></select>' : '') +
+      '<label>Phone</label><input id="f-phone" type="tel" autocomplete="tel"><label>E-mail</label><input id="f-email" type="email" autocomplete="email">' + (lunch ? '' : '<label>Home address to check</label><input id="f-address" autocomplete="street-address">') +
+      '<input id="hp" class="gp-hp" tabindex="-1" autocomplete="off"><button id="go" class="gp-btn">' + (lunch ? 'Reserve my seat' : 'Book my free roof check') + '</button><p id="out"></p></div>';
+    app.querySelectorAll('.gp-slots button').forEach(function(b){ b.onclick = function(){ slot = b.getAttribute('data-t'); app.querySelectorAll('.gp-slots button').forEach(function(x){ x.classList.toggle('sel', x === b); }); }; });
+    document.getElementById('go').onclick = function(){
+      var b = this, g = function(k){ var el = document.getElementById(k); return el ? el.value : ''; }, out = document.getElementById('out');
+      if (!slot) { out.innerHTML = '<span class="gp-err">Pick a time first.</span>'; return; }
+      b.disabled = true;
+      fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ op: 'event_signup', id: id, slot: slot, name: g('f-name'), phone: g('f-phone'), email: g('f-email'), address: g('f-address'), company: g('f-company'), partnerType: g('f-type'), website: g('hp') }, attrib)) })
+        .then(function(r){ return r.json(); }).then(function(j){ b.disabled = false; out.innerHTML = j.ok ? '<div class="gp-ok">' + esc(j.message) + '</div>' : '<span class="gp-err">' + esc(j.error || 'Not booked — call (901) 585-0944.') + '</span>'; if (j.ok) b.style.display = 'none'; },
+          function(){ b.disabled = false; out.innerHTML = '<span class="gp-err">No connection — call (901) 585-0944.</span>'; });
+    };
+  }, function(){ app.innerHTML = '<div class="gp-card"><p>Could not load. Call us at <a href="tel:+19015850944">(901) 585-0944</a>.</p></div>'; });
+})();
+</script>
+</body></html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>GrayCo Monthly Giveaway</title>
+<link rel="stylesheet" href="mkt-pages.css">
+</head><body>
+<header class="gp-head"><img src="portal-logo.png" alt="GrayCo Construction Services"><div><b>GrayCo Construction Services</b><span>Licensed TN general contractor · Bartlett, TN</span></div></header>
+<div class="gp-gold"></div>
+<main class="gp-main" id="app"><p class="gp-muted">Loading…</p></main>
+<footer class="gp-foot">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · <a href="tel:+19015850944">(901) 585-0944</a></footer>
+<script>
+/* GrayCo monthly giveaway (patch MKT2): one entry per person per month; entrants join GrayCo News (unsubscribe any time).
+   The official rules are below the form; the CRM's Marketing → 🎁 Giveaway sets the prize and the rules each month. */
+(function(){
+  var API = '/.netlify/functions/mkt-public', app = document.getElementById('app'), gc = '';
+  try { var u = new URLSearchParams(location.search); gc = u.get('gc') || u.get('utm_source') || ''; } catch (e) {}
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  var RULES = 'NO PURCHASE NECESSARY. A purchase does not improve your chance of winning. Open to legal residents of the GrayCo service area (Memphis, TN metro and DeSoto County, MS), [ELIGIBILITY]. Entry period: [DATES]. One entry per person per month. The winner is drawn at random from all eligible entries after the entry period, notified by e-mail and must respond within 14 days or another winner is drawn. Prize: as shown above; no cash value, not transferable, must be used within 90 days at an address in the service area. Employees of GrayCo Construction Services and their households are not eligible. Void where prohibited. Sponsor: GrayCo Construction Services, 4014 Broadway Rd, Bartlett, TN 38135, (901) 585-0944. Entry never requires liking, sharing, tagging or following any account. This giveaway is not sponsored, endorsed or administered by Facebook, Instagram or Google.';
+  fetch(API + '?giveaway=1').then(function(r){ return r.json(); }).then(function(g){
+    var rules = (g && g.rules) || RULES;
+    if (!g || !g.open) { app.innerHTML = '<div class="gp-card"><h2>The giveaway is closed this month</h2><p>Check back next month — or call us at <a href="tel:+19015850944">(901) 585-0944</a>.</p></div>'; return; }
+    app.innerHTML = '<div class="gp-card gp-hero"><h1>Win ' + esc(g.prize) + '</h1><p>The GrayCo ' + esc(g.monthName) + ' giveaway. One entry per person — we draw a winner at the end of the month.</p></div>' +
+      '<div class="gp-card"><h2>Enter now</h2><label>Your name</label><input id="f-name" autocomplete="name"><label>E-mail</label><input id="f-email" type="email" autocomplete="email"><label>Phone (optional)</label><input id="f-phone" type="tel" autocomplete="tel"><label>ZIP code</label><input id="f-zip" inputmode="numeric" maxlength="5">' +
+      '<label class="gp-check"><input type="checkbox" id="f-agree"> <span>I agree to the official rules below.</span></label>' +
+      '<label class="gp-check"><input type="checkbox" id="f-news" checked> <span>Optional: join GrayCo News (tips + next month\'s giveaway) — unsubscribe any time.</span></label>' +
+      '<label class="gp-check"><input type="checkbox" id="f-fb"> <span>Optional: follow GrayCo on Facebook (opens Facebook — not needed to enter).</span></label>' +
+      '<input id="hp" class="gp-hp" tabindex="-1" autocomplete="off"><button id="go" class="gp-btn">Enter the giveaway</button><p id="out"></p></div>' +
+      '<div class="gp-card gp-rules" id="rules"><b>Official rules</b><p>' + esc(rules) + '</p></div>';
+    document.getElementById('f-fb').onchange = function(){ if (this.checked) window.open('https://www.facebook.com/search/top?q=GrayCo%20Construction%20Services', '_blank', 'noopener'); };
+    document.getElementById('go').onclick = function(){
+      var b = this, v = function(k){ return document.getElementById(k).value; }, out = document.getElementById('out'); b.disabled = true;
+      fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'giveaway_enter', name: v('f-name'), email: v('f-email'), phone: v('f-phone'), zip: v('f-zip'), agree: document.getElementById('f-agree').checked, newsletter: document.getElementById('f-news').checked, gc: gc, website: v('hp') }) })
+        .then(function(r){ return r.json(); }).then(function(j){ b.disabled = false; out.innerHTML = j.ok ? '<div class="gp-ok">' + esc(j.message) + '</div>' : '<span class="gp-err">' + esc(j.error || 'Not entered.') + '</span>'; if (j.ok) b.style.display = 'none'; },
+          function(){ b.disabled = false; out.innerHTML = '<span class="gp-err">No connection — please try again.</span>'; });
+    };
+  });
+})();
+</script>
+</body></html>

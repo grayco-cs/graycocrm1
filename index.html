@@ -140793,7 +140793,7 @@ function newCampaignForm(tplId, aud, vars){
   var t = C.tplById(tplId) || { id: '', name: 'New campaign', subject: '', preheader: '', title: '', body: '<p>Hi {{first_name}},</p><p></p>', cta: { label: 'Call GrayCo', url: B.web }, audience: { type: 'all' } };
   var a = Object.assign({ type: 'all', jobType: 'Roofing', zips: [], years: 10, emails: [] }, aud || t.audience || {});
   return { kind: 'campaign', id: '', tpl: t.id, title: t.name, subject: t.subject, preheader: t.preheader, ctitle: t.title, body: t.body, ctaLabel: t.cta ? t.cta.label : '', ctaUrl: t.cta ? t.cta.url : '',
-    audType: a.type, jobType: a.jobType || 'Roofing', zips: arr(a.zips).join(', '), years: a.years || 10, emails: arr(a.emails).join(', '), schedule: '', vars: vars || {}, aiPrompt: '', audInfo: '', exclude: arr(a.exclude) };
+    audType: a.type, jobType: a.jobType || 'Roofing', zips: arr(a.zips).join(', '), years: a.years || 10, emails: arr(a.emails).join(', '), schedule: '', vars: vars || {}, aiPrompt: '', audInfo: '', exclude: arr(a.exclude), blitz: a.type === 'reviewBlitz' ? { batch: a.batch, size: a.size } : null };   /* patch MKT2 blitz */
 }
 ACT['camp-new'] = function(b){ go('campaigns', newCampaignForm(b.getAttribute('data-tpl'))); };
 ACT['camp-edit'] = function(b){ var c = MK.get('campaigns', b.getAttribute('data-id')); if (!c) return; var f = newCampaignForm(c.tpl, c.aud, c.vars); Object.assign(f, { id: c.id, title: c.title, subject: c.subject, preheader: c.preheader, ctitle: c.ctitle || c.title, body: c.body, ctaLabel: c.cta && c.cta.label, ctaUrl: c.cta && c.cta.url, schedule: isoToCtInput(c.scheduleAt) }); go('campaigns', f); };
@@ -140804,6 +140804,7 @@ function formAud(f){
   if (a.type === 'jobType') a.jobType = f.jobType || 'Roofing';
   if (a.type === 'zips') a.zips = s(f.zips).split(/[\s,;]+/).filter(function(z){ return /^\d{5}$/.test(z); });
   if (a.type === 'oldRoof') a.years = +f.years || 10;
+  if (a.type === 'reviewBlitz' && f.blitz) { a.batch = f.blitz.batch; a.size = f.blitz.size; }   /* patch MKT2 blitz */
   if (arr(f.exclude).filter(Boolean).length) a.exclude = arr(f.exclude).filter(Boolean);
   if (a.type === 'emails') { a.emails = s(f.emails).split(/[\s,;]+/).filter(Boolean); a.names = arr(f.vars && f.vars.names); }
   return a;
@@ -141423,6 +141424,7 @@ W._gcMktSourceOpts = function(items){
   return o;
 };
 /* ── the left menu tab, phone, API ── */
+W._gcMktExt = { SECS: SECS, VIEWS: VIEWS, ACT: ACT, LIVE: LIVE, UI: UI, KINDS: KINDS, PM_SECS: PM_SECS, draw: draw, go: go, F: F, chip: chip, esc: esc, s: s, arr: arr, money: money, toast: toast, api: api, MK: MK, C: C, M: M, B: B, cfg: cfg, setCfg: setCfg, uid: uid, myName: myName, myEmail: myEmail, nowIso: nowIso, today: today, full: full, role: role, isAdmin: isAdmin, projects: projects, customers: customers, photosOf: photosOf, finishedJobs: finishedJobs, fileUrl: fileUrl, storeDataUrl: storeDataUrl, sendForApproval: sendForApproval, newPostForm: newPostForm, newCampaignForm: newCampaignForm, qrSvg: qrSvg, qrPng: qrPng, downloadQr: downloadQr, utm: utm, copyText: copyText, download: download, openUrl: openUrl, walkList: walkList, DATA: DATA, loadData: loadData, redrawSoon: redrawSoon };   /* patch MKT2: the part-2 sections plug in here */
 W._gcMkt = { open: open, close: close, go: go, state: function(){ return { sec: UI.sec, role: role(), form: UI.form ? UI.form.kind : null, overlay: UI.overlay, status: UI.status }; }, doc: MK, content: C, walkList: walkList, qrSvg: qrSvg, utm: utm, approvals: mktApprovals, push: function(){ return MK.push(); }, pull: function(){ return MK.pull(true); } };
 W._gcOpenMarketing = open;
 /* the Leads tab's old "📣 Ads" sub-tab now says where its new home is */
@@ -141439,6 +141441,861 @@ try { var adCss = D.createElement('style'); adCss.textContent = '#ag-mount{posit
 try { console.log('[GC] 📣 Marketing ready (patch MKT): _gcMkt.open(section)'); } catch (e) {}
 })();
 </script><!-- /MKT -->
+<script id="gc-patch-mkt2">
+/* ==========================================================================
+   GrayCo CRM — patch MKT2 __GC_PATCH_MKT2__ : Marketing, part 2 (inside the 📣 Marketing tab)
+   Owner (22 Oct 2026): Google Ads + Facebook in the Marketing tab, tracked links / QR / call numbers, website pixels,
+   neighborhood flyers for PMs, Google Business drafts (approvals), city pages, referral partners (realtors, agents,
+   managers), "a lot of ads I can always be posting in different places", lead magnets, a yearly calendar, the monthly
+   newsletter (editable), free roof check events, charity tie-ins, a before/after reel kit, $100 coupon QR codes,
+   the monthly giveaway, a lunch-and-learn kit, a presentations library and a marketing coach.
+   Server: netlify/functions/_lib/mkt2.js (mkt2.js staff calls, mkt-public.js public doors, go.js links,
+   track-call.js numbers, mkt2-scheduled.js hourly). Records: the same gc_mkt_v1 document (collections links,
+   partners, payouts, adchanges, adcamps, flyers, perms, plan, coach, decks, yearcal, charity, sponsors, roofevents,
+   giveaways) — newest record wins. Customer-facing sends wait on ✅ Approvals (kinds mkt_ad, mkt_payout, mkt_event,
+   mkt_giveaway + the existing social_post / mkt_campaign).
+   Console: _gcMkt2.state()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MKT2__) return; window.__GC_PATCH_MKT2__ = true;
+var W = window, D = document;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout.bind(W);
+/* ── MKT2 content: the ad library, the yearly calendar, the coach, the presentations (all editable in the CRM) ── */
+var MK2D = (function(){
+var PH = '(901) 585-0944', ADDR = '4014 Broadway Rd, Bartlett, TN 38135', WEB = 'grayco-cs.com';
+/* the ad library — {LINK} becomes the tracked link for the ad's category. Never a price we did not set, never a claim we cannot back. */
+var ADS = [
+  /* customer referral credits (repeatable — credits stack) */
+  { c: 'referral', f: 'Facebook / Instagram post', t: 'Need a new kitchen and don\'t have the money? 🏡\n\nJoin the GrayCo Referral Program: every friend you refer who hires GrayCo earns you GrayCo credit. There is no limit — refer again and again and your credits stack up toward your own kitchen, bathroom, floors, roof or remodel.\n\nAsk us how: {LINK} · ' + PH },
+  { c: 'referral', f: 'Short ad', t: 'Refer a friend. Earn GrayCo credit. Do it again — credits stack. Put them toward your next project. {LINK}' },
+  { c: 'referral', f: 'Google search headlines', t: 'Earn Credit for Referrals | Refer Friends, Stack Credits | GrayCo Referral Program\nEvery friend you refer who hires GrayCo earns you credit — no limit. Use it on your own home project.' },
+  { c: 'referral', f: 'Nextdoor post', t: 'Neighbors — GrayCo Construction here (Bartlett). If you know someone who needs a roof, repair or remodel, our referral program gives you GrayCo credit for every friend who hires us. Refer as many as you like; the credits add up. Details: {LINK}' },
+  { c: 'referral', f: 'E-mail blurb', t: 'Know someone who needs a roof, a repair or a remodel? Every friend you refer who hires GrayCo earns you GrayCo credit — and there is no limit. Refer again and again, stack your credits, and put them toward your own project. Reply to this e-mail or visit {LINK}.' },
+  { c: 'referral', f: 'Text message', t: 'Thanks for choosing GrayCo! Know someone who needs work on their home? Every referral who hires us earns you GrayCo credit — refer as many as you like, credits stack. {LINK}' },
+  { c: 'referral', f: 'Flyer blurb', t: 'THE GRAYCO REFERRAL PROGRAM\nRefer a friend → they hire GrayCo → you earn GrayCo credit.\nNo limit: refer again and again, your credits stack.\nUse them on kitchens, baths, floors, roofs, maintenance and remodels.' },
+  /* referral partners (realtors, agents, managers) */
+  { c: 'partner', f: 'Facebook / Instagram post', t: 'Realtors, insurance agents and property managers: become a GrayCo Referral Partner. Send us your clients\' roof, repair, storm and remodel work — we treat them right, keep you posted on every referral, and thank you for each one that hires us. Sign up: {LINK}' },
+  { c: 'partner', f: 'E-mail blurb', t: 'Your clients trust you for recommendations. When a home inspection flags the roof, a storm hits, or a rental needs work fast, send them to GrayCo. As a GrayCo Referral Partner you get your own link and a page that shows every referral and where it stands. Join here: {LINK}' },
+  { c: 'partner', f: 'Short ad', t: 'Realtors & agents: a contractor you can hand clients to. Licensed, local, quick to respond. Become a GrayCo Referral Partner. {LINK}' },
+  { c: 'partner', f: 'Flyer blurb', t: 'GRAYCO REFERRAL PARTNERS\nFor realtors, insurance agents and property managers.\n• Your own partner link and page\n• Fast response for your clients\n• We report back on every referral\nCall ' + PH },
+  { c: 'partner', f: 'Text message', t: 'Hi, this is GrayCo Construction. If any of your clients need roof, repair, storm or remodel work, we would love to help — and you can track every referral on your own partner page: {LINK}' },
+  /* roofing */
+  { c: 'roofing', f: 'Facebook / Instagram post', t: 'Is your roof ready for storm season? GrayCo Construction Services does free roof inspections across Bartlett, Memphis, Germantown and Collierville. Licensed TN contractor, 5-year warranty on roofing work. Book yours: {LINK} · ' + PH },
+  { c: 'roofing', f: 'Google search headlines', t: 'Roof Replacement Bartlett TN | Free Roof Inspection | 5-Year Roofing Warranty | Licensed TN Contractor | Call ' + PH + '\nGrayCo Construction Services — local roofing and repair. Free estimates.' },
+  { c: 'roofing', f: 'Short ad', t: 'New roof? Leak? Free inspection from a licensed local contractor. 5-year warranty on roofing work. {LINK}' },
+  { c: 'roofing', f: 'Yard sign / truck text', t: 'ROOFING • REPAIRS • REMODELING\nGrayCo Construction\n' + PH + ' • ' + WEB },
+  { c: 'roofing', f: 'Craigslist services ad', t: 'Roof repair and replacement — GrayCo Construction Services (licensed TN general contractor #85034 BCB). Free inspections, written estimates, 5-year warranty on roofing work. Serving Bartlett, Memphis, Germantown, Collierville, Cordova, Arlington, Lakeland. Call ' + PH + '.' },
+  { c: 'roofing', f: 'Nextdoor post', t: 'GrayCo Construction (Bartlett) here — if you have missing shingles or a leak after the last storm, we are happy to take a look for free. Local, licensed, 5-year warranty on roofing. {LINK}' },
+  /* storm / insurance */
+  { c: 'storm', f: 'Facebook / Instagram post', t: 'Storm damage? Don\'t wait. GrayCo helps from the first inspection through your insurance claim to the final repair — and we stay in touch the whole way. Free storm inspection: {LINK} · ' + PH },
+  { c: 'storm', f: 'Google search headlines', t: 'Storm Damage Roof Repair | Insurance Claim Help | Free Storm Inspection | Local Bartlett Contractor\nWe document the damage and work with your insurance claim from start to finish.' },
+  { c: 'storm', f: 'Short ad', t: 'Hail or wind damage? Free inspection, help with your insurance claim, 5-year warranty on insurance work. {LINK}' },
+  { c: 'storm', f: 'Text message', t: 'GrayCo Construction: checking on our neighbors after the storm. If you see damage, we do free inspections and help with insurance claims. ' + PH },
+  { c: 'storm', f: 'Flyer blurb', t: 'STORM DAMAGE? WE CAN HELP.\n• Free storm inspection\n• Photos and documentation for your claim\n• We work with your insurance from start to finish\n• 5-year warranty on insurance work' },
+  /* water mitigation */
+  { c: 'water', f: 'Facebook / Instagram post', t: 'Water in your home? The first 24–48 hours matter. GrayCo dries it out, documents it for your insurance and puts it back together. Call ' + PH + ' — day or night.' },
+  { c: 'water', f: 'Google search headlines', t: 'Water Damage Cleanup | Emergency Water Mitigation | Call ' + PH + ' | Insurance Claim Help\nFast response in the Memphis area. We dry, document and rebuild.' },
+  { c: 'water', f: 'Short ad', t: 'Burst pipe? Leak? Flood? Fast water mitigation + rebuild, insurance claim help. ' + PH },
+  { c: 'water', f: 'E-mail blurb', t: 'If water ever gets into your home, call us first: (901) 585-0944. Fast drying in the first 24–48 hours keeps damage and mold risk down, and we document everything for your insurance.' },
+  /* remodel */
+  { c: 'remodel', f: 'Facebook / Instagram post', t: 'Dreaming of a new kitchen or bathroom? GrayCo plans it with you, builds it right and keeps you updated in your own online portal. Free estimate: {LINK}' },
+  { c: 'remodel', f: 'Google search headlines', t: 'Kitchen & Bath Remodeling | Bartlett & Memphis Remodeler | Free Remodel Estimate\nLicensed general contractor. Clear estimates and updates in your own portal.' },
+  { c: 'remodel', f: 'Nextdoor post', t: 'Planning a remodel this year? GrayCo Construction (Bartlett) does kitchens, bathrooms, floors and more — with a portal so you can see progress and approve every change. {LINK}' },
+  { c: 'remodel', f: 'Craigslist services ad', t: 'Kitchen, bathroom and whole-home remodeling — GrayCo Construction Services, licensed TN general contractor. Free estimates, clear written scope, 1-year warranty on remodel work. Call ' + PH + '.' },
+  /* maintenance plans */
+  { c: 'maintenance', f: 'Facebook / Instagram post', t: 'Protect the investment you made in your home. A GrayCo maintenance plan puts a yearly check of your roof, gutters and more on the calendar — we remind you, we show up. Ask about plans: {LINK}' },
+  { c: 'maintenance', f: 'E-mail blurb', t: 'Small problems caught early stay small. Our yearly maintenance plan schedules a check of your roof, flashing, gutters and caulking — priced for your home. Reply to ask about a plan.' },
+  { c: 'maintenance', f: 'Short ad', t: 'Yearly home check-up, booked for you. GrayCo maintenance plans. {LINK}' },
+  /* giveaway */
+  { c: 'giveaway', f: 'Facebook / Instagram post', t: '🎁 This month\'s GrayCo giveaway: win a FREE handyman hour! Enter in 20 seconds — one entry per person: {LINK}\nNo purchase necessary. Official rules on the entry page.' },
+  { c: 'giveaway', f: 'Nextdoor post', t: 'Neighbors — GrayCo Construction gives away a free handyman hour every month. Enter here (one entry per person, no purchase necessary): {LINK}' },
+  { c: 'giveaway', f: 'Text message', t: 'Win a FREE handyman hour from GrayCo this month! Enter: {LINK} (no purchase necessary)' },
+  /* coupon */
+  { c: 'coupon', f: 'Yard sign / truck text', t: 'SCAN ME — $100 OFF GRAYCO WORK\n(on projects over $1,000)\n' + PH },
+  { c: 'coupon', f: 'Facebook / Instagram post', t: 'Proud to support our community! Scan the GrayCo QR code on our trucks, shirts and banners for $100 off GrayCo work on projects over $1,000. One per household. {LINK}' },
+  /* seasonal */
+  { c: 'seasonal', f: 'Facebook / Instagram post', t: 'Fall checklist from GrayCo: clean the gutters, check the flashing around chimneys and vents, and replace cracked caulk before winter. Want us to look? {LINK}' },
+  { c: 'seasonal', f: 'Facebook / Instagram post', t: 'Spring storms are coming. Take photos of your roof and siding now — if hail or wind hits, you can show exactly what changed. Free inspections: {LINK}' },
+  { c: 'seasonal', f: 'Nextdoor post', t: 'GrayCo Construction will be at Trunk or Treat on Sunday, October 25 at 5:30 PM — come say hi and grab some candy! 🎃' },
+  /* Facebook Marketplace (services) + community groups — posted by hand (no API): Copy, then Open */
+  { c: 'roofing', f: 'Facebook Marketplace (services)', t: 'Roof Repair & Replacement — Free Inspection | GrayCo Construction (Bartlett)\nLicensed TN general contractor (#85034 BCB). Leaks, missing shingles, storm damage, full replacements. Free inspection and written estimate. 5-year warranty on roofing work. Serving Bartlett, Memphis, Germantown, Collierville, Cordova, Arlington, Lakeland. Call ' + PH + ' or message us here.' },
+  { c: 'remodel', f: 'Facebook Marketplace (services)', t: 'Kitchen, Bath & Home Remodeling | GrayCo Construction\nPlanning a remodel? Free estimate, clear written scope, updates in your own online portal, 1-year warranty on remodel work. Licensed TN general contractor. Call ' + PH + '.' },
+  { c: 'water', f: 'Facebook Marketplace (services)', t: 'Water Damage Cleanup & Repair | GrayCo Construction\nBurst pipe or leak? We dry it, document it for insurance and rebuild. Call ' + PH + ' any time.' },
+  { c: 'roofing', f: 'Facebook group post', t: 'Hi neighbors! GrayCo Construction here (we are on Broadway Rd in Bartlett). If anyone noticed shingles in the yard after the last storm, we are glad to take a free look — no pressure. Happy to answer roof questions in the comments too. ' + PH },
+  { c: 'seasonal', f: 'Facebook group post', t: 'Quick tip from a local contractor: clean your gutters before the leaves pile up — clogged gutters back water up under the roof edge. If you want someone to check yours, GrayCo is local in Bartlett: ' + PH },
+  { c: 'referral', f: 'Facebook group post', t: 'Thank you to everyone who has recommended GrayCo to a friend this year! Our referral program gives you GrayCo credit every time a friend you send hires us — no limit, the credits stack. Ask us how: {LINK}' },
+  /* realtors: free pre-listing roof check (feeds the partner program) */
+  { c: 'prelisting', f: 'E-mail blurb', t: 'Listing a home soon? Get ahead of the inspection: GrayCo does a free pre-listing roof check for your sellers and gives you a short written summary with photos — so the roof never surprises anyone at closing. Book it here: {LINK} · ' + PH },
+  { c: 'prelisting', f: 'Facebook / Instagram post', t: 'Realtors: book a FREE pre-listing roof check for your sellers. Photos and a short written summary before you list, so the inspection has no surprises. Become a GrayCo Referral Partner while you are at it: {LINK}' },
+  { c: 'prelisting', f: 'Short ad', t: 'Free pre-listing roof check for realtors\' sellers — photos + written summary. {LINK}' },
+  { c: 'prelisting', f: 'Flyer blurb', t: 'FREE PRE-LISTING ROOF CHECK\nFor realtors and their sellers.\n• Photos + a short written summary before you list\n• Repair or replacement estimate if needed\n• Your own GrayCo Referral Partner link\nCall ' + PH },
+  /* Nextdoor recommendation ask (an e-mail to past customers — through approval) */
+  { c: 'referral', f: 'Nextdoor recommendation ask', t: 'Hi {{first_name}}, thank you again for choosing GrayCo! If you were happy with our work, would you take 30 seconds to recommend us on Nextdoor? Neighbors trust neighbors. Search “GrayCo Construction Services” on Nextdoor and tap Recommend. Thank you! — The GrayCo team' },
+  { c: 'seasonal', f: 'E-mail blurb', t: 'Winter tip: ice dams and frozen gutters push water under shingles. Keep gutters clear and the attic vented. If you see a new ceiling stain, call us before it spreads: ' + PH + '.' }
+];
+var CATS = [['referral', '🤝 Customer referral credits'], ['partner', '🏢 Referral partners'], ['roofing', '🏠 Roofing'], ['storm', '🌩 Storm / insurance'], ['water', '💧 Water mitigation'], ['remodel', '🔨 Remodel'], ['maintenance', '🛠 Maintenance plans'], ['giveaway', '🎁 Giveaway'], ['coupon', '🎟 Coupons'], ['seasonal', '🗓 Seasonal'], ['prelisting', '🏡 Realtor pre-listing roof check']];
+var PLAN = [
+  { id: 'fb', l: 'Facebook page: 2 posts (one job photo, one tip or referral ad)', where: 'facebook.com/GrayCo' },
+  { id: 'fbg', l: 'Facebook local groups: 1 helpful post (no spam — follow each group\'s rules)', where: 'Bartlett / Germantown / Collierville community groups' },
+  { id: 'ig', l: 'Instagram: 1 post + 1 story', where: 'instagram.com' },
+  { id: 'gbp', l: 'Google Business Profile: 1 post + 3 new photos', where: 'business.google.com' },
+  { id: 'nd', l: 'Nextdoor: 1 neighbor post', where: 'business.nextdoor.com' },
+  { id: 'cl', l: 'Craigslist services: renew the ad (roofing or remodel)', where: 'memphis.craigslist.org' },
+  { id: 'fbm', l: 'Facebook Marketplace (services): 1 listing', where: 'facebook.com/marketplace' },
+  { id: 'ref', l: 'Send the referral ad to last month\'s finished customers (text or e-mail)', where: 'CRM → Marketing → Ad library' }
+];
+var YEAR = [
+  { m: 1, t: 'New year home check-up', e: 'Start the year right: a free roof and gutter check before spring storms.', svc: 'Roof inspection' },
+  { m: 2, t: 'Plan your spring remodel', e: 'Design now, build in spring — book your remodel estimate early.', svc: 'Remodeling' },
+  { m: 3, t: 'Storm season prep', e: 'Photograph your roof now, know who to call, and book a free inspection.', svc: 'Storm damage inspection' },
+  { m: 4, t: 'Hail season: free storm inspections', e: 'After every hailstorm: free inspections and insurance claim help.', svc: 'Storm damage repair' },
+  { m: 5, t: 'Maintenance plan month', e: 'A yearly check-up for your roof and gutters, booked for you.', svc: 'Home maintenance plan' },
+  { m: 6, t: 'Summer storm water damage', e: 'Leaks and floods: the first 24–48 hours matter. Save our number.', svc: 'Water damage mitigation' },
+  { m: 7, t: 'Referral month', e: 'Every friend you refer who hires GrayCo earns you credit — no limit, credits stack.', svc: 'Referral program' },
+  { m: 8, t: 'Exterior paint & caulk before fall', e: 'Seal it before the weather turns.', svc: 'Exterior repairs' },
+  { m: 9, t: 'Fall roof & gutter check', e: 'Clean gutters, check flashing — or let us do it.', svc: 'Gutter and roof check' },
+  { m: 10, t: 'Trunk or Treat — Sun 10/25, 5:30 PM', e: 'Come see GrayCo at Trunk or Treat, Sunday, October 25 at 5:30 PM!', svc: 'Community event', date: '10-25' },
+  { m: 11, t: 'Thankful for our customers', e: 'Thank-you note + referral reminder (credits stack).', svc: 'Referral program' },
+  { m: 12, t: 'Winter leaks & ice dams', e: 'Ceiling stain after a freeze? Call before it spreads.', svc: 'Roof leak repair' }
+];
+/* the marketing coach: weekly + one-time steps */
+var COACH = [
+  { id: 'gbp-post', w: 1, l: 'Google Business Profile: publish 1 post', how: 'business.google.com → your profile → Add update. Use a finished job photo (customer OK) or a tip from the Ad library.', url: 'https://business.google.com/' },
+  { id: 'gbp-photos', w: 1, l: 'Google Business Profile: add 3+ new photos', how: 'Add photos → job photos, crew, trucks. Real photos only.', url: 'https://business.google.com/' },
+  { id: 'gbp-reviews', w: 1, l: 'Reply to every new Google review', how: 'Marketing → Reviews & referrals has reply drafts; the office approves them.', url: 'https://business.google.com/' },
+  { id: 'gbp-qa', w: 1, l: 'Answer Google Q&A (and add 1 common question yourself)', how: 'On your profile in Google Maps → Questions & answers.', url: 'https://maps.google.com/' },
+  { id: 'fb-page', w: 1, l: 'Facebook business page: 2 posts', how: 'Use Marketing → Ad library → Post via autopilot, or post straight from the page.', url: 'https://www.facebook.com/' },
+  { id: 'fb-groups', w: 1, l: 'Facebook local groups: 1 helpful post', how: 'Join Bartlett, Germantown, Collierville, Cordova and Lakeland groups as GrayCo. Helpful tips beat ads; follow each group\'s rules.', url: 'https://www.facebook.com/groups/' },
+  { id: 'fb-market', w: 1, l: 'Facebook Marketplace: renew a services listing', how: 'Marketplace → Create new listing → Services (where available in your account).', url: 'https://www.facebook.com/marketplace/' },
+  { id: 'ig', w: 1, l: 'Instagram: 1 post + 1 story', how: 'Before/after reels from Marketing → 🎬 Reel kit work well.', url: 'https://www.instagram.com/' },
+  { id: 'video', w: 1, l: 'Record + post 1 Video FAQ (30 seconds)', how: 'Video FAQ series below: pick the next topic, read the script to your phone, post it to Facebook, Instagram and Google Business, tick “recorded” / “posted”.', url: '' },
+  { id: 'nextdoor', w: 1, l: 'Nextdoor Business: 1 neighborhood post', how: 'business.nextdoor.com → Post. Keep it local and helpful.', url: 'https://business.nextdoor.com/' },
+  { id: 'lsa', w: 0, l: 'Google Local Services Ads (Google Guaranteed): set up', how: '1. ads.google.com/local-services-ads → Get started. 2. Pick services: roofing, water damage, remodeling (as offered in your area). 3. Business info: GrayCo Construction Services, 4014 Broadway Rd, Bartlett, TN 38135, (901) 585-0944. 4. Upload license (TN #85034 BCB) and insurance; owners/field staff pass the background check. 5. Set a weekly budget and service ZIPs. 6. Turn on lead notifications to the office and add LSA leads to the CRM (Marketing → Google → LSA).', url: 'https://ads.google.com/local-services-ads/' },
+  { id: 'lsa-docs', w: 0, l: 'LSA document checklist (have these ready)', how: '☐ Tennessee contractor license #85034 BCB (and AR / MS licenses for those areas) ☐ General liability insurance certificate (GrayCo named, current) ☐ Business registration / EIN ☐ Background check consent for the owner(s) and every field worker who goes into homes (Google\'s partner runs them) ☐ At least one Google review on the Business Profile (more helps ranking) ☐ The Business Profile linked, with 4014 Broadway Rd, Bartlett, TN 38135 ☐ Service ZIP codes and job types ☐ A weekly budget. Verification usually takes several weeks.', url: 'https://ads.google.com/local-services-ads/' },
+  { id: 'lsa-leads', w: 0, l: 'LSA leads into the CRM', how: 'In the LSA dashboard → Settings → Notifications: send lead e-mails to leads@grayco-cs.com. The CRM files each one as a lead with source "Google LSA" (counted under Google Ads). Answer every LSA lead fast — Google ranks responsive businesses higher.', url: 'https://ads.google.com/local-services-ads/' },
+  { id: 'nextdoor-setup', w: 0, l: 'Nextdoor Business page + Faves', how: '1. business.nextdoor.com → claim GrayCo Construction Services (4014 Broadway Rd). 2. Add photos, services, the website. 3. Ask happy past customers to Recommend you (the “Nextdoor recommendation ask” e-mail below, through approval). 4. Recommendations make you eligible for Neighborhood Faves each year. Never pay for or trade anything for a recommendation.', url: 'https://business.nextdoor.com/' },
+  { id: 'nap', w: 0, l: 'Listing consistency: the same name, address and phone everywhere', how: 'Exactly: "GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · (901) 585-0944". Update: Google Business Profile, Facebook, Instagram bio, Nextdoor, Yelp, BBB, Angi, Thumbtack, Apple Maps (Apple Business Connect), Bing Places, the website footer, trucks, cards. Remove the old PO Box everywhere.', url: 'https://businessconnect.apple.com/' },
+  { id: 'yelp', w: 0, l: 'Yelp: claim the listing (optional)', how: 'biz.yelp.com → claim, fix the address and hours. Advertising there is optional — evaluate cost per lead first.', url: 'https://biz.yelp.com/' },
+  { id: 'bbb', w: 0, l: 'BBB: claim / update the profile (optional)', how: 'bbb.org → business login. Accreditation is optional.', url: 'https://www.bbb.org/' },
+  { id: 'angi', w: 0, l: 'Angi / Thumbtack: evaluate (optional)', how: 'Pay-per-lead sites. Try one for a month, then compare cost per job in Marketing → Dashboard before keeping it.', url: 'https://www.thumbtack.com/pro' },
+  { id: 'bing', w: 0, l: 'Bing Places + Apple Business Connect', how: 'Both are free and import from Google. Check the 4014 address.', url: 'https://www.bingplaces.com/' }
+];
+/* presentations: slides [title, bullets[], presenter note] — general, accurate, no legal or medical claims */
+function d(id, group, title, aud, slides){ return { id: id, group: group, title: title, aud: aud, slides: slides.map(function(x){ return { t: x[0], b: x[1], n: x[2] || '' }; }) }; }
+var CLOSE = ['Thank you', ['GrayCo Construction Services', ADDR, PH + ' · ' + WEB, 'Licensed TN general contractor #85034 BCB'], 'Hand out cards. Ask: who do you know that needs this?'];
+var DECKS = [
+  d('bni60-water', 'BNI', 'BNI 60 seconds — Water damage', 'BNI weekly', [['Water in the house?', ['The first 24–48 hours decide how bad it gets', 'Stop the water, call us, take photos', 'We dry it, document it for insurance, and rebuild'], 'Keep it to 60 seconds. One idea only.'], ['My ask this week', ['An introduction to a plumber, property manager or insurance agent'], 'Name a specific person if you can.'], CLOSE]),
+  d('bni60-roof', 'BNI', 'BNI 60 seconds — Roof storm damage', 'BNI weekly', [['After the storm', ['Hail and wind damage is easy to miss from the ground', 'Free inspection, photos, and help with the insurance claim', '5-year warranty on roofing and insurance work'], ''], ['My ask this week', ['Anyone who just had a storm hit their neighborhood'], ''], CLOSE]),
+  d('bni60-contractor', 'BNI', 'BNI 60 seconds — Choosing a contractor', 'BNI weekly', [['Hire the right contractor', ['Licensed and insured — ask to see it', 'A written scope and price before work starts', 'Change orders signed before extra work'], ''], ['My ask', ['Realtors whose buyers need work before closing'], ''], CLOSE]),
+  d('bni60-remodel', 'BNI', 'BNI 60 seconds — Remodel planning', 'BNI weekly', [['Planning a remodel', ['Decide the must-haves first, then the nice-to-haves', 'Pick materials early so the schedule holds', 'Keep a contingency for surprises behind the walls'], ''], ['My ask', ['Kitchen and bath designers, cabinet and countertop shops'], ''], CLOSE]),
+  d('bni60-maint', 'BNI', 'BNI 60 seconds — Home maintenance', 'BNI weekly', [['Small problems stay small', ['Clean gutters, check flashing and caulk twice a year', 'A yearly maintenance plan puts it on the calendar'], ''], ['My ask', ['Homeowners who just bought an older house'], ''], CLOSE]),
+  d('bni60-commercial', 'BNI', 'BNI 60 seconds — Commercial / GC', 'BNI weekly', [['Commercial work', ['General contracting for tenant build-outs, repairs and roofing', 'Clear schedules, pay applications and lien-free closeout paperwork'], ''], ['My ask', ['Property managers and business owners planning a build-out'], ''], CLOSE]),
+  d('bni60-fire', 'BNI', 'BNI 60 seconds — Fire damage', 'BNI weekly', [['After a fire', ['Board-up and secure the home', 'Smoke and soot travel far beyond the burned area', 'We document for insurance and rebuild'], ''], ['My ask', ['Insurance agents and adjusters'], ''], CLOSE]),
+  d('bni60-referral', 'BNI', 'BNI 60 seconds — Who is a good referral for GrayCo', 'BNI weekly', [['A good referral for GrayCo is…', ['A homeowner who just had a storm, a leak or a failed inspection', 'A realtor with a buyer who needs repairs', 'A property manager who needs a fast, reliable contractor'], 'Say it the same way every week.'], ['Listen for…', ['"We have a leak" · "the inspection found the roof" · "the tenant reported water"'], ''], CLOSE]),
+  d('bni10-water', 'BNI', 'BNI 10-minute feature — Water damage: the first 24 hours', 'BNI feature', [
+    ['Who we are', ['GrayCo Construction Services — Bartlett, TN', 'Water mitigation, restoration, roofing and remodeling'], 'Quick intro, 30 seconds.'],
+    ['What to do in the first hour', ['Stop the source: shut off the water main if you can', 'Turn off power to wet areas only if it is safe', 'Take photos and video before moving things', 'Call your insurance and a mitigation company'], ''],
+    ['Categories of water (general industry guidance, e.g. IICRC)', ['Category 1: clean water — supply lines', 'Category 2: gray water — appliances, some contaminants', 'Category 3: black water — sewage, floodwater; needs professional handling'], 'Keep it general; we do not make health claims.'],
+    ['Why speed matters', ['Wet materials can start growing mold in about 24–48 hours', 'Drying fast saves flooring, drywall and cabinets', 'Moisture readings document the drying for the insurance claim'], ''],
+    ['How we work', ['Extract, set drying equipment, monitor every day', 'Photo and moisture logs shared with the customer and adjuster', 'Then we rebuild — one company start to finish'], ''],
+    ['Insurance basics', ['Sudden and accidental water is often covered; long-term leaks often are not — check your policy', 'We document; the adjuster decides coverage'], 'Never promise coverage.'],
+    ['A good referral for us', ['Plumbers, property managers, insurance agents, realtors', 'Anyone who just said "we have a leak"'], ''], CLOSE]),
+  d('bni10-roof', 'BNI', 'BNI 10-minute feature — Roof storm damage & insurance claims', 'BNI feature', [
+    ['What storms do to roofs', ['Hail bruises and cracks shingles', 'Wind lifts and creases shingles', 'Damage is often invisible from the ground'], ''],
+    ['After a storm', ['Photograph the roof, gutters, siding, cars', 'Get a free inspection from a licensed contractor', 'Report the claim promptly — policies have deadlines'], ''],
+    ['How the claim works', ['Inspection → claim → adjuster visit → estimate', 'Supplements for items the first estimate missed', 'Depreciation is released when the work is done (on many policies)'], 'General only; every policy differs.'],
+    ['How GrayCo helps', ['We meet the adjuster and document everything', 'We do the work and handle the closeout paperwork', '5-year warranty on roofing and insurance work'], ''],
+    ['Red flags', ['Pressure to sign on the spot', 'No license or insurance', 'Offers to "cover your deductible" — that can be insurance fraud'], ''],
+    ['A good referral for us', ['Anyone in a neighborhood that just had hail', 'Insurance agents, realtors'], ''], CLOSE]),
+  d('bni10-contractor', 'BNI', 'BNI 10-minute feature — Choosing a contractor', 'BNI feature', [['Check the basics', ['License (TN board), insurance certificate, local address'], ''], ['Get it in writing', ['Scope, materials, price, schedule, warranty'], ''], ['How payments should work', ['Deposit, progress payments tied to work, final after walkthrough'], ''], ['Changes', ['Every change order signed before the extra work'], ''], ['Communication', ['Who is your project manager? How will you get updates?', 'GrayCo customers get an online portal'], ''], CLOSE]),
+  d('bni10-remodel', 'BNI', 'BNI 10-minute feature — Remodeling: planning & budgets', 'BNI feature', [['Start with the why', ['How you will use the space', 'Must-haves vs nice-to-haves'], ''], ['Budget', ['Labor, materials, permits, contingency', 'Selections drive the price — choose early'], ''], ['Schedule', ['Design → selections → order → build → walkthrough'], ''], ['Surprises', ['Old wiring, rot, plumbing behind walls — why a contingency matters'], ''], ['How GrayCo runs it', ['Selections and signatures in the customer portal', '1-year warranty on remodel work'], ''], CLOSE]),
+  d('bni10-maint', 'BNI', 'BNI 10-minute feature — Maintenance that protects your home', 'BNI feature', [['Twice a year', ['Gutters and downspouts', 'Flashing at chimneys, vents, walls', 'Caulk and paint on trim'], ''], ['After storms', ['Look for shingles, dents, leaks'], ''], ['Inside', ['Attic: daylight, damp wood, ventilation', 'Ceilings: new stains'], ''], ['Maintenance plans', ['A yearly visit, booked for you, priced per home'], ''], CLOSE]),
+  d('bni10-commercial', 'BNI', 'BNI 10-minute feature — Commercial construction & GC services', 'BNI feature', [['What we do', ['Tenant build-outs, renovations, roofing, repairs'], ''], ['How we bid', ['Plans review, subcontractor bids, clear proposal'], ''], ['How we run jobs', ['Schedule, daily updates, AIA pay applications, retainage tracking'], ''], ['Closeout', ['Punch list, warranties, lien paperwork as required'], ''], ['A good referral', ['Property managers, business owners, architects'], ''], CLOSE]),
+  d('bni10-fire', 'BNI', 'BNI 10-minute feature — Fire damage restoration', 'BNI feature', [['First steps', ['Safety first; wait for the fire department\'s OK', 'Board-up and tarp to secure the home'], ''], ['Smoke and soot', ['They spread beyond the burned rooms', 'Cleaning vs replacing — documented room by room'], ''], ['Insurance', ['We document; the adjuster decides coverage', 'Contents, structure, temporary housing are separate parts of many policies'], 'General only.'], ['Rebuild', ['One company from board-up to final walkthrough'], ''], CLOSE]),
+  d('ll-realtors', 'Lunch & learn', 'Lunch & learn — Realtors: roof issues in home inspections', 'Realtors', [['Why roofs kill deals', ['Inspection reports flag age, damage, leaks', 'Buyers get nervous; timelines slip'], ''], ['Reading the report', ['"Near end of life" vs "active leak" vs "storm damage"'], ''], ['Options before closing', ['Repair, replace, credit, or an insurance claim if storm damage'], 'No legal advice — talk to your broker.'], ['How GrayCo helps', ['Fast inspection and written estimate', 'Photos you can share with both sides'], ''], ['The partner program', ['Your own partner link and page', 'We report back on every referral'], 'Hand out the sign-in sheet.'], CLOSE]),
+  d('ll-insurance', 'Lunch & learn', 'Lunch & learn — Insurance agents: how claims work with a contractor', 'Insurance agents', [['The customer\'s journey', ['Damage → call → inspection → claim → adjuster → repair'], ''], ['Where contractors help', ['Documentation, meeting the adjuster, scope accuracy'], ''], ['Supplements & depreciation', ['Items missed in the first estimate; depreciation released after completion on many policies'], 'General only.'], ['What we never do', ['Promise coverage', 'Waive deductibles'], ''], ['Partner program', ['Your link, your page, updates on every referral'], ''], CLOSE]),
+  d('ll-pm', 'Lunch & learn', 'Lunch & learn — Property managers: mitigation response & maintenance plans', 'Property managers', [['When a tenant reports water', ['Who to call, what to photograph, how fast'], ''], ['Our response', ['Extraction, drying, daily monitoring, documentation'], ''], ['Preventing the next one', ['Yearly maintenance plans per property'], ''], ['Working together', ['One contact, updates in writing, clear invoices'], ''], ['Partner program', ['Your link, your page, updates on every referral'], ''], CLOSE]),
+  d('tr-overview', 'Training', 'GrayCo overview & values', 'New hires', [['Who we are', ['GrayCo Construction Services — ' + ADDR, 'Roofing, restoration, mitigation, remodeling, commercial'], ''], ['How we treat customers', ['Show up when we say', 'Tell the truth, in writing', 'Leave the site clean'], ''], ['Warranty', ['5 years on roofing and insurance work', '1 year on other work'], ''], ['Our tools', ['The CRM, GrayCo Photos, the customer portal'], ''], CLOSE]),
+  d('tr-job', 'Training', 'How we run a job (PM Playbook stages)', 'New hires', [['From lead to job', ['Lead → contact within hours → inspection → estimate → signed contract'], ''], ['Before work', ['Selections signed, schedule set, materials ordered, customer briefed'], ''], ['During work', ['Daily photos, updates in the portal, change orders signed first'], ''], ['Closeout', ['Final walkthrough signed, final invoice, warranty, review request'], ''], ['Where it lives', ['Company Docs → PM Playbook has every step'], ''], CLOSE]),
+  d('tr-crm', 'Training', 'CRM basics by role', 'New hires', [['Everyone', ['To-Do first: approvals and tasks', 'Job page: updates, photos, documents'], ''], ['PMs / APMs', ['Leads, estimates, schedule, change orders, approvals'], ''], ['Superintendents', ['Field view: today\'s jobs, crew arrived/done, safety sign-in, voice notes'], ''], ['Office', ['Approvals, invoices, payments, customer calls'], ''], ['Getting help', ['Ask your PM or an admin; Company Docs has the playbook'], ''], CLOSE]),
+  d('tr-safety', 'Training', 'Safety basics', 'New hires', [['Every day', ['Daily safety sign-in on the super\'s phone', 'Right PPE for the task'], ''], ['Roofs and ladders', ['Fall protection, ladder setup and tie-off'], 'Follow OSHA rules and your super\'s instructions.'], ['Tools and power', ['Inspect cords and tools; lock out when needed'], ''], ['If someone gets hurt', ['Get help, tell your super right away, write it down'], ''], CLOSE]),
+  d('tr-comms', 'Training', 'Customer communication standards', 'New hires', [['Speed', ['New leads contacted within hours', 'Return calls the same day'], ''], ['In writing', ['Estimates, changes and dates go through the CRM / portal'], ''], ['On site', ['Introduce yourself, explain the day, clean up'], ''], ['Problems', ['Tell the customer early, with a plan'], ''], CLOSE]),
+  d('tr-insurance', 'Training', 'Insurance job workflow (supplements + depreciation)', 'New hires', [['The claim', ['Inspection, photos, claim number, adjuster meeting'], ''], ['The estimate', ['Compare the carrier estimate to the real scope'], ''], ['Supplements — always check', ['Missed items, code items, extra materials ordered', 'Submitted through approvals before closeout'], ''], ['Depreciation', ['Release packet at completion: final invoice, completion certificate, photos'], ''], ['Never', ['Waive a deductible or promise coverage', 'Show the carrier name to the customer in marketing'], ''], CLOSE]),
+  d('tr-mitigation', 'Training', 'Mitigation response', 'New hires', [['The call', ['Address, source of water, safety, insurance info'], ''], ['On site', ['Stop the source, photos, moisture readings, extraction'], ''], ['Drying', ['Equipment set, daily readings logged'], ''], ['Handoff', ['Documentation to the adjuster; rebuild estimate'], ''], CLOSE])
+];
+/* the Video FAQ series: [id, topic, 30-second script] — general, accurate, no legal or medical claims */
+var FAQ = [
+  ['water-first', 'Water in the house: the first 3 things to do', 'If water is coming in: one, stop it — shut off the main valve or the appliance. Two, stay safe — keep away from wet outlets and turn power off only if it is safe. Three, take photos and call a mitigation company fast: drying in the first day or two keeps the damage — and the mold risk — down. I am [name] with GrayCo Construction in Bartlett. Save our number: 901-585-0944.'],
+  ['roof-insurance', 'Does insurance cover my roof?', 'It depends on your policy and on what caused the damage. Sudden damage from hail or wind is often covered; wear and tear usually is not. The best first step is a free inspection with photos, so you know what is there before you call your insurance. We document it and work with your adjuster — the insurance company decides coverage. GrayCo, 901-585-0944.'],
+  ['new-roof-signs', '5 signs you need a new roof', 'Curling or cracked shingles. Granules piling up in the gutters. Bald or missing shingles. Daylight or damp wood in the attic. A roof older than about 20 years. If you see two or more, get it looked at — a free inspection costs you nothing. GrayCo Construction, Bartlett.'],
+  ['hail-check', 'How to check for hail damage from the ground', 'Look at the soft metals first: dents in gutters, downspouts, vents and your car tell you how big the hail was. Shingle damage is hard to see from the ground — and you should never climb up yourself. Call for a free inspection with photos: 901-585-0944.'],
+  ['choose-contractor', 'How to choose a contractor', 'Ask three questions: Are you licensed and insured — can I see it? Will I get a written scope and price before you start? Will every change be in writing before the work? A good contractor says yes to all three. GrayCo does — and you get your own online portal.'],
+  ['mold-myth', 'Mold after a leak: what to know', 'Wet drywall, carpet and wood can start to grow mold within a day or two, so drying fast matters. Do not just paint over a stain — find out if it is still wet. A moisture meter tells. We check and document it for your insurance. GrayCo, 901-585-0944.'],
+  ['gutters', 'Why gutters matter for your roof', 'Clogged gutters hold water at the edge of your roof and can push it under the shingles and into the fascia. Clean them in spring and fall, and make sure downspouts carry water away from the foundation.'],
+  ['remodel-budget', 'Planning a remodel budget', 'Labor, materials, permits — and a contingency for surprises behind the walls. Pick your materials early: selections drive the price and the schedule. We plan it with you and you approve every choice in your portal.'],
+  ['deductible', 'Why a contractor should never "cover your deductible"', 'Your deductible is your share of an insurance claim. A contractor who offers to waive or cover it is asking you to misrepresent the claim — that can be insurance fraud. We will never do it, and you should walk away from anyone who does.'],
+  ['maintenance', 'The 10-minute yearly home check', 'Walk around twice a year: gutters, downspouts, caulk around windows, the flashing at the chimney, and the attic for daylight or damp spots. Or let us do it — ask about a GrayCo maintenance plan.']
+];
+
+return { ADS: ADS, CATS: CATS, PLAN: PLAN, YEAR: YEAR, COACH: COACH, DECKS: DECKS, FAQ: FAQ };
+})();
+
+var ADS = MK2D.ADS, CATS = MK2D.CATS, PLAN = MK2D.PLAN, YEAR = MK2D.YEAR, COACH = MK2D.COACH, DECKS = MK2D.DECKS, FAQ = MK2D.FAQ || [];
+var X = null, tries = 0;
+function boot(){
+  X = W._gcMktExt;
+  if (!X) { if (tries++ < 120) nST(boot, 500); return; }
+  install();
+}
+nST(boot, 0);
+
+function install(){
+var SECS = X.SECS, VIEWS = X.VIEWS, ACT = X.ACT, UI = X.UI, MK = X.MK, C = X.C, B = X.B, esc = X.esc, s = X.s, arr = X.arr, money = X.money, toast = X.toast, api = X.api, go = X.go, draw = X.draw;
+var CRM = (function(){ try { var o = W.location.origin; return /^https?:/.test(o) ? o : 'https://crm.grayco-cs.com'; } catch (e) { return 'https://crm.grayco-cs.com'; } })();
+var WEB = 'https://grayco-cs.com';
+function num(v){ var x = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(x) ? x : 0; }
+function low(v){ return s(v).toLowerCase(); }
+function admin(){ return X.role() === 'admin'; }
+function office(){ return X.full(); }
+function code(v){ return low(v).replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); }
+function goLink(c){ return CRM + '/go/' + c; }
+function weekId(d){ d = d ? new Date(d) : new Date(); var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); var day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); var y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return t.getUTCFullYear() + '-W' + ('0' + Math.ceil(((t - y0) / 864e5 + 1) / 7)).slice(-2); }
+function kindKey(p){ var t = low([p.type, p.jobType, p.projectType, p.category, p.name].join(' ')); if (/roof/.test(t)) return 'Roofing'; if (/water|mitigat|dry/.test(t)) return 'Water mitigation'; if (p.isInsurance === true || /insur|claim|storm|fire|restor/.test(t)) return 'Insurance / storm'; if (/remodel|kitchen|bath|floor|renov/.test(t)) return 'Remodel'; return 'Other'; }
+function cityOf(a){ var m = /,\s*([A-Za-z .'-]+?),?\s+(TN|MS|AR)\b/i.exec(s(a)); return m ? m[1] : ''; }
+function streetOnly(a){ return s(a).split(',')[0].replace(/^\s*\d+[A-Za-z]?\s+/, ''); }
+function proj(id){ return X.projects().filter(function(p){ return s(p.id) === s(id); })[0] || null; }
+function permOk(pid){ var r = MK.get('perms', 'job_' + pid); var p = proj(pid); return !!((r && r.marketing === true) || (p && (p.marketingOk === true || p.mktPhotoOk === true))); }
+function setPerm(pid, on){ MK.put('perms', { id: 'job_' + pid, jobId: pid, marketing: !!on, by: X.myName(), atSet: X.nowIso() }); }
+function ensureLink(c, rec){ var have = MK.get('links', c); if (!have) MK.put('links', Object.assign({ id: c, code: c, createdBy: X.myName(), createdAt: X.nowIso() }, rec)); return goLink(c); }
+function printHtml(title, css, body){
+  var w = W.open('', '_blank'); if (!w) { toast('Allow pop-ups to print / save as PDF.', true); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>' + css + '</style></head><body>' + body + '<script>setTimeout(function(){ window.print(); }, 600);<\/script></body></html>');
+  w.document.close();
+}
+function dl(name, text, type){ X.download(name, text, type); }
+function chipS(st, map){ return '<span class="gmt-chip ' + esc(st) + '">' + esc((map && map[st]) || st) + '</span>'; }
+
+/* ── the new sections ── */
+var NEW = [
+  { id: 'adshub', ic: '📈', l: 'Ads hub', d: 'Google Ads + Facebook / Instagram: spend, leads, cost per job, AI ad copy, changes on approval' },
+  { id: 'library', ic: '📚', l: 'Ad library & posting plan', d: ADS.length + ' ready ads (referrals, partners, roofing, storm…) + where to post each week' },
+  { id: 'links', ic: '🔗', l: 'Tracked links, QR & numbers', d: 'Short links + QR codes for every ad, flyer, truck, sign, shirt — clicks and calls counted' },
+  { id: 'flyers', ic: '🗞', l: 'Neighborhood flyers', d: 'PMs: a branded flyer / door hanger for any neighborhood, with a tracked QR' },
+  { id: 'partners', ic: '🤝', l: 'Referral partners', d: 'Realtors, insurance agents, property managers: codes, their page, fees on approval, lunch & learn kit' },
+  { id: 'events2', ic: '🏠', l: 'Free roof check events', d: 'Date, area, time slots, sign-up page, flyer, Facebook radius ad, reminders' },
+  { id: 'coupons', ic: '🎟', l: 'Coupons & sponsorships', d: '$100-off QR for sponsorships, trucks, shirts — one per household, ROI per sponsorship' },
+  { id: 'giveaway', ic: '🎁', l: 'Monthly giveaway', d: 'A FREE handyman hour (or this month\'s prize): entries, the logged draw, the winner on approval' },
+  { id: 'newsletter', ic: '📰', l: 'Newsletter & charity', d: 'This month\'s newsletter drafted for you to edit · "Every roof in May = $[AMOUNT] to [cause]"' },
+  { id: 'yearcal', ic: '📆', l: 'Yearly marketing calendar', d: 'Seasonal campaigns month by month — draft the e-mail, post or ad in one tap' },
+  { id: 'webpages', ic: '🌐', l: 'Website, pixels & guides', d: 'City pages, Google tag + Meta pixel, free guide downloads, Google Business drafts' },
+  { id: 'reels', ic: '🎬', l: 'Before/after reel kit', d: 'PMs: a short branded slideshow video from job photos (customer OK required)' },
+  { id: 'decks', ic: '🎤', l: 'Presentations', d: 'BNI 60-second + 10-minute, lunch & learns, new-hire training — slides with notes, print to PDF' },
+  { id: 'coach', ic: '🧭', l: 'Marketing coach', d: 'This week\'s checklist: Google, Facebook, Instagram, Nextdoor, LSA, listings — with streaks' }
+];
+NEW.forEach(function(x){ if (!SECS.some(function(y){ return y.id === x.id; })) SECS.splice(SECS.length - 1, 0, x); });
+['flyers', 'reels', 'decks', 'coach', 'library'].forEach(function(x){ if (X.PM_SECS.indexOf(x) < 0) X.PM_SECS.push(x); });
+X.KINDS.mkt_ad = 'adchanges'; X.KINDS.mkt_payout = 'payouts'; X.KINDS.mkt_event = 'roofevents'; X.KINDS.mkt_giveaway = 'giveaways';
+
+/* ══════════════ 📈 ADS HUB ══════════════ */
+var AH = { st: null, copy: null, busy: false };
+function loadAds(force){ if (AH.st && !force) return; api('mkt2', { op: 'ads_status' }).then(function(j){ AH.st = j || {}; if (UI.sec === 'adshub') draw(); }); }
+function leadsFor(c){
+  var ids = [low(c.campaignId), low(c.name)];
+  return arr(X.DATA.leads).filter(function(l){ if (!l || l.deleted) return false; var uc = low(l.utmCampaign || (l.attrib && l.attrib.utm_campaign)); return uc && ids.indexOf(uc) >= 0; });
+}
+function wonFor(leads){
+  var ps = X.projects(), won = [], rev = 0;
+  leads.forEach(function(l){ var p = ps.filter(function(x){ return x.leadId === l.id || x.fromLeadId === l.id || (l.projectId && x.id === l.projectId) || (l.jobId && x.id === l.jobId); })[0]; if (p && !/^(lost|cancel|dead)/i.test(s(p.status))) { won.push(p); rev += num(p.contract); } });
+  return { n: won.length, rev: rev };
+}
+VIEWS.adshub = function(){
+  loadAds();
+  var st = AH.st, h = '';
+  var setup = function(plat){
+    if (plat === 'google') return '<ol class="gmt-muted"><li>Google Ads → Tools → API Center: apply for a <b>developer token</b> (Basic access lets the CRM make approved changes; a test token can only read test accounts).</li><li>Google Cloud console → APIs → enable “Google Ads API” → Credentials → OAuth client (Web). Authorized redirect URI: <code>' + esc(CRM) + '/.netlify/functions/mkt2?callback=1</code></li><li>Netlify → Environment variables: <code>GOOGLE_ADS_DEVELOPER_TOKEN</code>, <code>GOOGLE_ADS_CLIENT_ID</code>, <code>GOOGLE_ADS_CLIENT_SECRET</code>, and if you use a manager (MCC) account <code>GOOGLE_ADS_LOGIN_CUSTOMER_ID</code> (digits only). Optional: <code>GOOGLE_ADS_CUSTOMER_ID</code>. Redeploy.</li><li>Come back here → <b>Connect Google Ads</b> and sign in with the Google account that owns the ads.</li><li>In each campaign: Final URL suffix <code>utm_source=google&amp;utm_medium=cpc&amp;utm_campaign={campaignid}</code> (auto-tagging stays on) — that is how leads find their campaign.</li></ol>';
+    return '<ol class="gmt-muted"><li>developers.facebook.com → My apps → Create app (type Business) → add “Marketing API”.</li><li>App settings → Basic: copy the App ID and App secret. Facebook Login → Valid OAuth redirect URI: <code>' + esc(CRM) + '/.netlify/functions/mkt2?callback=1</code></li><li>Netlify: <code>META_APP_ID</code>, <code>META_APP_SECRET</code> (optional <code>META_AD_ACCOUNT_ID</code>). Or, for a token that never expires: Business settings → System users → generate a token with ads_read + ads_management → <code>META_SYSTEM_TOKEN</code>. Redeploy.</li><li>Back here → <b>Connect Facebook / Instagram</b>. (A login token lasts about 60 days — reconnect when it says so; a system-user token does not expire.)</li><li>Ad URL parameters: <code>utm_source=facebook&amp;utm_medium=paid&amp;utm_campaign={{campaign.id}}</code>. Home-improvement ads may have to run in the Housing special ad category (no age, gender or ZIP targeting; 15-mile minimum radius).</li></ol>';
+  };
+  ['google', 'meta'].forEach(function(p){
+    var x = st && st[p] || {}, name = p === 'google' ? 'Google Ads' : 'Facebook / Instagram';
+    h += '<div class="gmt-card"><h2>' + (p === 'google' ? '🔎 ' : '📘 ') + name + '</h2>' +
+      (!st ? '<div class="gmt-muted">Loading…</div>' : x.connected ? '<div class="gmt-ok">✓ Connected' + (x.by ? ' by ' + esc(x.by) : '') + (x.lastSync ? ' · last pulled ' + esc(s(x.lastSync).slice(0, 16).replace('T', ' ')) + ' UTC' : ' · not pulled yet') + '</div>' + (x.lastError ? '<div class="gmt-warn">Last problem: ' + esc(x.lastError) + '</div>' : '') +
+        (admin() ? '<div class="gmt-row"><button class="gmt-btn o" data-a="ah-sync">⟳ Pull numbers now</button><button class="gmt-btn r" data-a="ah-off" data-p="' + p + '">Disconnect</button></div>' : '')
+        : x.configured ? '<div class="gmt-warn">Not connected yet.</div>' + (admin() ? '<button class="gmt-btn" data-a="ah-connect" data-p="' + p + '">Connect ' + name + '</button>' : '<div class="gmt-muted">An admin connects it.</div>')
+        : '<div class="gmt-warn">Not set up on Netlify yet — the steps:</div>' + setup(p)) + '</div>';
+  });
+  var camps = MK.all('adcamps').filter(function(c){ return !c.del; }).sort(function(a, b){ return num(b.spend30) - num(a.spend30); });
+  h += '<div class="gmt-card"><h2>Campaigns — last 30 days</h2>' + (camps.length ? '<table><tr><th>Campaign</th><th>Status</th><th>Daily budget</th><th>Spend</th><th>Clicks</th><th>Leads (CRM)</th><th>Cost / lead</th><th>Jobs won</th><th>Cost / job</th><th>Suggestion</th><th></th></tr>' + camps.map(function(c){
+    var L = leadsFor(c), wn = wonFor(L), cpl = L.length ? num(c.spend30) / L.length : null, cpj = wn.n ? num(c.spend30) / wn.n : null;
+    var sug = '', on = !/pause|removed|inactive|archived/i.test(s(c.status));
+    if (on && num(c.spend30) >= 150 && !L.length) sug = 'No CRM leads on $' + Math.round(c.spend30) + ' — pause or fix the landing page';
+    else if (on && wn.n && cpj != null && (num(c.spend30) / Math.max(1, num(c.budget) * 30)) > 0.85) sug = 'Winning jobs and spending its budget — try +20%';
+    else if (on && L.length >= 3 && !wn.n) sug = 'Leads but no jobs yet — check follow-up speed';
+    var pend = MK.all('adchanges').filter(function(x){ return x.campaignId === c.campaignId && /^(draft|waiting)$/.test(s(x.status) || 'draft'); })[0];
+    return '<tr><td><b>' + esc(c.name) + '</b><div class="gmt-muted">' + (c.platform === 'google' ? 'Google Ads' : 'Facebook / Instagram') + ' · ' + esc(c.campaignId) + '</div></td><td>' + esc(s(c.status).toLowerCase()) + '</td><td>' + (c.budget ? '$' + num(c.budget).toFixed(2) : '—') + '</td><td>' + money(c.spend30) + '</td><td>' + (num(c.clicks30) || 0) + '</td><td>' + L.length + '</td><td>' + (cpl != null ? money(cpl) : '—') + '</td><td>' + wn.n + (wn.rev ? '<div class="gmt-muted">' + money(wn.rev) + '</div>' : '') + '</td><td>' + (cpj != null ? money(cpj) : '—') + '</td><td class="gmt-muted">' + esc(sug) + '</td><td>' +
+      (pend ? chipS(pend.status === 'waiting' ? 'waiting' : 'draft', { waiting: 'Change waiting for approval', draft: 'Draft change' }) : admin() ? '<button class="gmt-btn o" data-a="ah-change" data-id="' + esc(c.id) + '" data-act="' + (on ? 'pause' : 'enable') + '">' + (on ? '⏸ Pause' : '▶ Turn on') + '</button><button class="gmt-btn o" data-a="ah-change" data-id="' + esc(c.id) + '" data-act="budget">$ Budget</button>' : '') + '</td></tr>';
+  }).join('') + '</table><div class="gmt-muted">Leads count when the lead\'s campaign tag matches (see the URL suffix in the setup steps). Spend also feeds 📊 Dashboard → cost per lead / per job. Every change waits on ✅ Approvals; if the platform does not accept it, the office gets a to-do to make it by hand.</div>' : '<div class="gmt-muted">Nothing yet — connect an account and pull the numbers.</div>') + '</div>';
+  var chg = MK.all('adchanges').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 10);
+  if (chg.length) h += '<div class="gmt-card"><h2>Changes</h2><table>' + chg.map(function(x){ return '<tr><td>' + esc(x.campaignName) + '</td><td>' + esc(x.action === 'budget' ? 'Budget → $' + num(x.amount).toFixed(2) : x.action === 'pause' ? 'Pause' : 'Turn on') + '</td><td>' + chipS(s(x.status) || 'draft', { applied: 'Done on the platform', approved: 'Approved — make it by hand', waiting: 'Waiting for approval', rejected: 'Not approved', draft: 'Draft' }) + (x.applyError ? '<div class="gmt-muted">' + esc(x.applyError) + '</div>' : '') + '</td></tr>'; }).join('') + '</table></div>';
+  var f = AH.form || (AH.form = { platform: 'google', service: 'Roof replacement', city: 'Bartlett', offer: '' });
+  h += '<div class="gmt-card"><h2>✍️ Ad copy writer</h2><div class="gmt-muted">Headlines and descriptions inside each platform\'s limits — only true facts about GrayCo (no prices or claims we cannot back). New ads are made in Google Ads / Ads Manager: copy, then open.</div><div class="gmt-two"><div>' +
+    '<label>Platform</label><select id="ah-plat"><option value="google"' + (f.platform === 'google' ? ' selected' : '') + '>Google search ad</option><option value="meta"' + (f.platform === 'meta' ? ' selected' : '') + '>Facebook / Instagram ad</option></select>' +
+    '<label>Service</label><input id="ah-svc" value="' + esc(f.service) + '"><label>City (optional)</label><input id="ah-city" value="' + esc(f.city) + '"><label>Offer (optional, only one you really give)</label><input id="ah-offer" value="' + esc(f.offer) + '" placeholder="e.g. Free roof inspection">' +
+    '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn" data-a="ah-copy"' + (AH.busy ? ' disabled' : '') + '>' + (AH.busy ? 'Writing…' : 'Write ad copy') + '</button><button class="gmt-btn o" data-a="open" data-url="https://ads.google.com/">Open Google Ads</button><button class="gmt-btn o" data-a="open" data-url="https://adsmanager.facebook.com/">Open Ads Manager</button></div></div><div>' +
+    (AH.copy ? '<h3>Headlines (' + (AH.copy.limits.headline) + ' max)</h3>' + AH.copy.headlines.map(function(t){ return '<div class="gmt-row" style="justify-content:space-between;border-bottom:1px solid #eef1f6"><span>' + esc(t) + ' <span class="gmt-muted">' + t.length + '</span></span><button class="gmt-btn o" data-a="copy" data-t="' + esc(t) + '">Copy</button></div>'; }).join('') +
+      '<h3>' + (AH.copy.platform === 'google' ? 'Descriptions (90 max)' : 'Primary text') + '</h3>' + AH.copy.descriptions.map(function(t){ return '<div class="gmt-row" style="justify-content:space-between;border-bottom:1px solid #eef1f6"><span>' + esc(t) + '</span><button class="gmt-btn o" data-a="copy" data-t="' + esc(t) + '">Copy</button></div>'; }).join('') +
+      '<button class="gmt-btn o" data-a="copy" data-t="' + esc(AH.copy.headlines.concat(AH.copy.descriptions).join('\n')) + '">Copy all</button>' + (AH.copy.ai ? '' : '<div class="gmt-muted">(Template copy — set ANTHROPIC_API_KEY for AI-written variations.)</div>') : '<div class="gmt-muted">Pick a platform and service, then “Write ad copy”.</div>') + '</div></div></div>';
+  return h;
+};
+ACT['ah-connect'] = function(b){ api('mkt2', { op: 'ads_connect', platform: b.getAttribute('data-p') }).then(function(j){ if (j && j.url) W.location.href = j.url; else toast((j && j.error) || 'Not set up.', true); }); };
+ACT['ah-off'] = function(b){ if (!W.confirm('Disconnect? The numbers already pulled stay.')) return; api('mkt2', { op: 'ads_disconnect', platform: b.getAttribute('data-p') }).then(function(){ AH.st = null; loadAds(true); }); };
+ACT['ah-sync'] = function(b){ b.disabled = true; b.textContent = 'Pulling…'; api('mkt2', { op: 'ads_sync' }).then(function(j){ var e = ['google', 'meta'].map(function(p){ return j && j[p] && j[p].error ? p + ': ' + j[p].error : ''; }).filter(Boolean).join(' · '); toast(e ? 'Pulled with problems — ' + e : 'Numbers pulled.', !!e); MK.pull(true); AH.st = null; loadAds(true); }); };
+ACT['ah-copy'] = function(){ var f = AH.form; f.platform = D.getElementById('ah-plat').value; f.service = D.getElementById('ah-svc').value; f.city = D.getElementById('ah-city').value; f.offer = D.getElementById('ah-offer').value; AH.busy = true; draw();
+  api('mkt2', Object.assign({ op: 'ad_copy' }, f)).then(function(j){ AH.busy = false; AH.copy = j && j.ok ? j : null; if (!AH.copy) toast((j && j.error) || 'No copy.', true); draw(); }); };
+ACT['ah-change'] = function(b){
+  var c = MK.get('adcamps', b.getAttribute('data-id')); if (!c) return; var act = b.getAttribute('data-act'), amount = 0;
+  if (act === 'budget') { var v = W.prompt('New DAILY budget for “' + c.name + '” in $ (now $' + num(c.budget).toFixed(2) + '):', num(c.budget) ? (num(c.budget) * 1.2).toFixed(2) : ''); if (v == null) return; amount = num(v); if (!(amount > 0 && amount < 5000)) { toast('Type a daily amount in dollars.', true); return; } }
+  var why = W.prompt('Why? (shown on the approval)', act === 'pause' ? 'Not bringing leads' : act === 'budget' ? 'Bringing jobs — give it more room' : 'Turning it back on'); if (why == null) return;
+  var L = leadsFor(c), wn = wonFor(L), id = X.uid('adc');
+  MK.put('adchanges', { id: id, platform: c.platform, account: c.account, campaignId: c.campaignId, campaignName: c.name, action: act, amount: amount, oldAmount: num(c.budget), budgetRef: c.budgetRef, reason: why, spend30: num(c.spend30), leads30: L.length, won30: wn.n, status: 'draft', by: X.myName(), createdAt: X.nowIso() });
+  X.sendForApproval('mkt_ad', 'adchanges', id);
+};
+
+/* ══════════════ 📚 AD LIBRARY & POSTING PLAN ══════════════ */
+var LIB = { cat: 'referral', fmt: '' };
+var CAT_LINK = { referral: { dest: WEB + '/#referrals', med: 'social' }, partner: { dest: WEB + '/#partners', med: 'social' }, roofing: { dest: WEB + '/', med: 'social' }, storm: { dest: WEB + '/', med: 'social' }, water: { dest: WEB + '/', med: 'social' }, remodel: { dest: WEB + '/', med: 'social' }, maintenance: { dest: WEB + '/', med: 'social' }, giveaway: { dest: CRM + '/giveaway.html', med: 'social' }, coupon: { dest: CRM + '/coupon.html?s=general', med: 'social' }, seasonal: { dest: WEB + '/', med: 'social' } };
+function adText(a){ var c = 'ad-' + a.c; var link = ensureLink(c, { label: 'Ad library — ' + a.c, kind: 'ad', dest: CAT_LINK[a.c].dest, src: 'adlibrary', med: CAT_LINK[a.c].med, camp: c }); return a.t.replace(/\{LINK\}/g, link); }
+function myAds(){ var ov = MK.get('cfg', 'adlib') || {}; return ADS.map(function(a, i){ return Object.assign({ i: i }, a, ov['a' + i] ? { t: ov['a' + i] } : {}); }).concat(arr(ov.extra).map(function(a, j){ return Object.assign({ i: 'x' + j, mine: true }, a); })); }
+VIEWS.library = function(){
+  var list = myAds().filter(function(a){ return a.c === LIB.cat && (!LIB.fmt || a.f === LIB.fmt); }), fmts = {}; myAds().forEach(function(a){ fmts[a.f] = 1; });
+  var h = '<div class="gmt-card"><h2>📚 Ad library — ' + myAds().length + ' ads</h2><div class="gmt-muted">Copy one, post it, repeat. Each ad carries a tracked link (Marketing → 🔗) so the Dashboard sees what it brings. Customer referrals are never one-time: a customer can refer again and again and the credits stack.</div>' +
+    '<div class="gmt-row" style="margin:8px 0">' + CATS.map(function(c){ return '<button class="gmt-btn ' + (LIB.cat === c[0] ? '' : 'o') + '" data-a="lib-cat" data-c="' + c[0] + '">' + esc(c[1]) + '</button>'; }).join('') + '</div>' +
+    '<select data-ch="lib-fmt"><option value="">All formats</option>' + Object.keys(fmts).sort().map(function(f){ return '<option' + (LIB.fmt === f ? ' selected' : '') + '>' + esc(f) + '</option>'; }).join('') + '</select></div>';
+  h += list.map(function(a){ var t = adText(a); return '<div class="gmt-card"><div class="gmt-row" style="justify-content:space-between"><b>' + esc(a.f) + '</b><span class="gmt-muted">' + esc(a.c) + (a.mine ? ' · yours' : '') + '</span></div><div style="white-space:pre-wrap;margin:8px 0">' + esc(t) + '</div><div class="gmt-row">' +
+    '<button class="gmt-btn o" data-a="copy" data-t="' + esc(t) + '">📋 Copy</button>' + (office() ? '<button class="gmt-btn o" data-a="lib-post" data-i="' + a.i + '">📱 Post via autopilot (approval)</button>' : '') + '<button class="gmt-btn o" data-a="lib-flyer" data-i="' + a.i + '">🗞 Make flyer</button>' + (office() ? '<button class="gmt-btn o" data-a="lib-edit" data-i="' + a.i + '">✏️ Edit</button>' : '') + '</div></div>'; }).join('');
+  if (office()) h += '<div class="gmt-card"><h2>＋ Add your own ad</h2><label>Category</label><select id="lib-nc">' + CATS.map(function(c){ return '<option value="' + c[0] + '">' + esc(c[1]) + '</option>'; }).join('') + '</select><label>Format</label><input id="lib-nf" placeholder="Facebook / Instagram post"><label>Text ({LINK} becomes the tracked link)</label><textarea id="lib-nt" rows="4"></textarea><button class="gmt-btn" data-a="lib-add">Add</button></div>';
+  var wk = weekId(), pr = MK.get('plan', 'w_' + wk) || { done: {} };
+  h += '<div class="gmt-card"><h2>🗓 Posting plan — week ' + esc(wk) + '</h2>' + PLAN.map(function(p){ return '<div class="gmt-check"><input type="checkbox" data-a="plan-tick" data-id="' + p.id + '"' + (pr.done && pr.done[p.id] ? ' checked' : '') + '><div><b>' + esc(p.l) + '</b><div class="gmt-muted">' + esc(p.where) + '</div></div></div>'; }).join('') +
+    '<div class="gmt-muted" style="margin-top:6px">' + Object.keys(pr.done || {}).filter(function(k){ return pr.done[k]; }).length + ' of ' + PLAN.length + ' done this week.</div></div>';
+  return h;
+};
+function adByI(i){ return myAds().filter(function(a){ return String(a.i) === String(i); })[0]; }
+ACT['lib-cat'] = function(b){ LIB.cat = b.getAttribute('data-c'); draw(); };
+ACT['lib-fmt'] = function(t){ LIB.fmt = t.value; draw(); };
+ACT['lib-post'] = function(b){ var a = adByI(b.getAttribute('data-i')); if (!a) return; go('social', X.newPostForm('blank', { title: 'Ad library — ' + a.c, caption: adText(a) })); };
+ACT['lib-flyer'] = function(b){ var a = adByI(b.getAttribute('data-i')); if (!a) return; FL.form = Object.assign(flyerForm(''), { tpl: a.c === 'referral' ? 'referral' : a.c === 'giveaway' ? 'giveaway' : a.c === 'storm' ? 'storm' : 'working', blurb: a.t.replace(/\{LINK\}/g, '').trim() }); go('flyers'); };
+ACT['lib-edit'] = function(b){ var i = b.getAttribute('data-i'), a = adByI(i); if (!a) return; var t = W.prompt('Edit the ad text ({LINK} = the tracked link):', a.t); if (t == null) return; var ov = Object.assign({ id: 'adlib' }, MK.get('cfg', 'adlib') || {}); if (/^x/.test(i)) { var ex = arr(ov.extra).slice(); ex[+i.slice(1)] = Object.assign({}, ex[+i.slice(1)], { t: t }); ov.extra = ex; } else ov['a' + i] = t; MK.put('cfg', ov); };
+ACT['lib-add'] = function(){ var t = s(D.getElementById('lib-nt').value); if (!t) { toast('Type the ad text.', true); return; } var ov = Object.assign({ id: 'adlib' }, MK.get('cfg', 'adlib') || {}); ov.extra = arr(ov.extra).concat([{ c: D.getElementById('lib-nc').value, f: s(D.getElementById('lib-nf').value) || 'Post', t: t }]); MK.put('cfg', ov); toast('Added.'); };
+ACT['plan-tick'] = function(b){ var wk = weekId(), pr = Object.assign({ id: 'w_' + wk, week: wk, done: {} }, MK.get('plan', 'w_' + wk) || {}); pr.done = Object.assign({}, pr.done); pr.done[b.getAttribute('data-id')] = b.checked; MK.put('plan', pr); };
+
+/* ══════════════ 🔗 TRACKED LINKS, QR & NUMBERS ══════════════ */
+var LK = { stats: null };
+function loadLinkStats(){ api('mkt2', { op: 'link_stats' }).then(function(j){ LK.stats = j && j.ok ? j : { clicks: {}, calls: [] }; if (UI.sec === 'links' || UI.sec === 'coupons') draw(); }); }
+var KINDS_L = ['ad', 'flyer', 'door hanger', 'truck', 'yard sign', 'shirt', 'banner', 'giveaway', 'partner', 'sponsorship', 'business card', 'other'];
+VIEWS.links = function(){
+  if (!LK.stats) loadLinkStats();
+  var cl = (LK.stats && LK.stats.clicks) || {}, links = MK.all('links').filter(function(l){ return !l.del; }).sort(function(a, b){ return s(a.createdAt) < s(b.createdAt) ? 1 : -1; });
+  var h = '<div class="gmt-card"><h2>＋ New tracked link</h2><div class="gmt-muted">A short link like <code>' + esc(CRM) + '/go/truck-1</code> → your page with UTM tags. Print its QR on anything; every scan is counted and leads carry the source.</div><div class="gmt-two"><div>' +
+    '<label>Short name (letters, numbers, dashes)</label><input id="lk-code" placeholder="truck-1"><label>What is it?</label><select id="lk-kind">' + KINDS_L.map(function(k){ return '<option>' + k + '</option>'; }).join('') + '</select></div><div>' +
+    '<label>Label</label><input id="lk-label" placeholder="Ford F-150 tailgate decal"><label>Opens (page)</label><input id="lk-dest" value="' + esc(WEB) + '/"><label>Campaign (optional)</label><input id="lk-camp" placeholder="trucks-2026"></div></div><button class="gmt-btn" data-a="lk-add">Make link + QR</button></div>';
+  h += '<div class="gmt-card"><h2>Links (' + links.length + ')</h2>' + (links.length ? '<table><tr><th>Link</th><th>Kind</th><th>Scans / clicks</th><th>Last 7 days</th><th>Leads</th><th></th></tr>' + links.map(function(l){
+    var c = cl[l.code] || {}, d7 = 0; Object.keys(c.days || {}).forEach(function(d){ if (d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) d7 += c.days[d]; });
+    var leads = arr(X.DATA.leads).filter(function(x){ return x && (low(x.trackCode) === l.code || low(x.attrib && x.attrib.gc) === l.code); }).length;
+    return '<tr><td><b>' + esc(l.label || l.code) + '</b><div class="gmt-muted">' + esc(goLink(l.code)) + ' → ' + esc(l.dest) + '</div></td><td>' + esc(l.kind) + '</td><td>' + (c.n || 0) + '</td><td>' + d7 + '</td><td>' + leads + '</td><td class="gmt-row"><button class="gmt-btn o" data-a="copy" data-t="' + esc(goLink(l.code)) + '">📋</button><button class="gmt-btn o" data-a="qr-dl" data-t="' + esc(goLink(l.code)) + '" data-n="grayco-qr-' + esc(l.code) + '">⬇ QR PNG</button><button class="gmt-btn o" data-a="lk-svg" data-c="' + esc(l.code) + '">⬇ QR SVG</button>' + (office() ? '<button class="gmt-btn r" data-a="lk-del" data-c="' + esc(l.code) + '">✕</button>' : '') + '</td></tr>';
+  }).join('') + '</table>' : '<div class="gmt-muted">No links yet.</div>') + '</div>';
+  var c = X.cfg(), nums = arr(c.trackNumbers), calls = (LK.stats && LK.stats.calls) || [];
+  h += '<div class="gmt-card"><h2>📞 Tracking phone numbers</h2><div class="gmt-muted">One Twilio number per source (a Google ad, the trucks, a flyer…). Calls forward to the office and each is logged here. Needs Twilio on Netlify (TWILIO_AUTH_TOKEN); in Twilio set each number\'s “A call comes in” webhook (POST) to <code>' + esc(CRM) + '/.netlify/functions/track-call</code>.</div>' +
+    '<table><tr><th>Number</th><th>Source</th><th>Calls (all)</th><th>Last 30 days</th><th></th></tr>' + nums.map(function(n, i){ var e = s(n.number).replace(/\D/g, '').slice(-10); var all = calls.filter(function(x){ return s(x.to).replace(/\D/g, '').slice(-10) === e; }); return '<tr><td>' + esc(n.number) + '</td><td>' + esc(n.source) + '</td><td>' + all.length + '</td><td>' + all.filter(function(x){ return s(x.at) >= new Date(Date.now() - 30 * 864e5).toISOString(); }).length + '</td><td>' + (admin() ? '<button class="gmt-btn r" data-a="tn-del" data-i="' + i + '">✕</button>' : '') + '</td></tr>'; }).join('') + '</table>' +
+    (admin() ? '<div class="gmt-row" style="margin-top:8px"><input id="tn-num" placeholder="(901) 555-0100"><input id="tn-src" placeholder="Source, e.g. Google Ads"><button class="gmt-btn o" data-a="tn-add">Add number</button></div><label>Forward calls to</label><div class="gmt-row"><input id="tn-fwd" value="' + esc(c.trackForward || '(901) 585-0944') + '"><button class="gmt-btn o" data-a="tn-fwd">Save</button></div>' : '') + '</div>';
+  return h;
+};
+ACT['lk-add'] = function(){
+  var c = code(D.getElementById('lk-code').value); if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(c)) { toast('Short name: 2–40 letters, numbers or dashes.', true); return; }
+  if (MK.get('links', c) || MK.all('partners').some(function(p){ return low(p.code) === c; })) { toast('That name is taken.', true); return; }
+  var dest = s(D.getElementById('lk-dest').value) || WEB + '/', kind = D.getElementById('lk-kind').value;
+  MK.put('links', { id: c, code: c, label: s(D.getElementById('lk-label').value), kind: kind, dest: dest, src: kind.replace(/\s+/g, '-'), med: /ad/.test(kind) ? 'paid' : 'offline-' + kind.replace(/\s+/g, '-'), camp: s(D.getElementById('lk-camp').value) || c, createdBy: X.myName(), createdAt: X.nowIso() });
+  toast('Link ready: ' + goLink(c));
+};
+ACT['lk-del'] = function(b){ if (W.confirm('Delete this link? Printed QR codes will open the website home page.')) MK.del('links', b.getAttribute('data-c')); };
+ACT['lk-svg'] = function(b){ var c = b.getAttribute('data-c'); dl('grayco-qr-' + c + '.svg', X.qrSvg(goLink(c), 10), 'image/svg+xml'); };
+ACT['tn-add'] = function(){ var n = s(D.getElementById('tn-num').value), src = s(D.getElementById('tn-src').value); if (n.replace(/\D/g, '').length < 10 || !src) { toast('Number and source, please.', true); return; } X.setCfg({ trackNumbers: arr(X.cfg().trackNumbers).concat([{ number: n, source: src, code: code(src) }]) }); };
+ACT['tn-del'] = function(b){ var l = arr(X.cfg().trackNumbers).slice(); l.splice(+b.getAttribute('data-i'), 1); X.setCfg({ trackNumbers: l }); };
+ACT['tn-fwd'] = function(){ X.setCfg({ trackForward: s(D.getElementById('tn-fwd').value) }); toast('Saved.'); };
+
+/* ══════════════ 🗞 NEIGHBORHOOD FLYERS ══════════════ */
+var FL = { form: null };
+var TPL = {
+  working: { h: 'We\'re working in your neighborhood!', b: 'GrayCo Construction is on a project near you{street}. While our crew is here, we are happy to take a free look at your roof, gutters or any repair you have been putting off.' },
+  storm: { h: 'Storm damage in {area}?', b: 'Hail and wind damage is easy to miss from the ground. GrayCo does free storm inspections, documents the damage and helps with your insurance claim from start to finish. 5-year warranty on roofing and insurance work.' },
+  referral: { h: 'Earn GrayCo credit for every referral', b: 'Know someone who needs a roof, repair or remodel? Every friend you refer who hires GrayCo earns you credit — no limit, refer again and again and your credits stack. Use them on your own project.' },
+  giveaway: { h: 'Win a FREE handyman hour!', b: 'GrayCo gives away a free handyman hour every month. Scan the code to enter — one entry per person, no purchase necessary.' },
+  roofcheck: { h: 'Free roof check — {date}', b: 'GrayCo is doing free roof checks in {area}. Scan to pick a time — it takes 10 minutes and there is no cost or pressure.' }
+};
+var SIZES = { letter: { l: 'Letter flyer (8.5×11)', page: '8.5in 11in', w: '7.5in', h: '10in' }, half: { l: 'Half-page (5.5×8.5)', page: '5.5in 8.5in', w: '4.9in', h: '7.9in' }, door: { l: 'Door hanger (4.25×11)', page: '4.25in 11in', w: '3.85in', h: '10.4in' } };
+function flyerForm(pid){ var p = pid ? proj(pid) : null, me = X.myName(), u = null; try { u = (W.users || []).filter(function(x){ return x.name === me; })[0]; } catch (e) {}
+  return { pid: pid || '', tpl: 'working', size: 'letter', area: p ? (cityOf(p.address || p.jobAddress) || '') : '', street: p ? streetOnly(p.address || p.jobAddress) : '', showStreet: true, pm: me, phone: s(u && (u.phone || u.cell)) || '(901) 585-0944', photo: false, blurb: '', date: '', copies: 40 }; }
+VIEWS.flyers = function(){
+  var f = FL.form || (FL.form = flyerForm(''));
+  var jobs = X.projects().filter(function(p){ return p.address || p.jobAddress; }).slice(0, 400);
+  var t = TPL[f.tpl] || TPL.working, pOk = f.pid && permOk(f.pid);
+  var h = '<div class="gmt-two"><div class="gmt-card"><h2>🗞 Make a neighborhood flyer</h2>' +
+    '<label>Job (optional — fills the area)</label><select data-ch="fl-job"><option value="">— any area —</option>' + jobs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (f.pid === p.id ? ' selected' : '') + '>' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select>' +
+    '<label>Template</label><select id="fl-tpl" data-ch="fl-set">' + Object.keys(TPL).map(function(k){ return '<option value="' + k + '"' + (f.tpl === k ? ' selected' : '') + '>' + esc(TPL[k].h.replace(/\{.*?\}/g, '…')) + '</option>'; }).join('') + '</select>' +
+    '<label>Size</label><select id="fl-size" data-ch="fl-set">' + Object.keys(SIZES).map(function(k){ return '<option value="' + k + '"' + (f.size === k ? ' selected' : '') + '>' + SIZES[k].l + '</option>'; }).join('') + '</select>' +
+    '<label>Area / neighborhood (shown on the flyer)</label><input id="fl-area" value="' + esc(f.area) + '" placeholder="Dogwood Creek, Bartlett">' +
+    '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-street"' + (f.showStreet ? ' checked' : '') + '> Mention the street (“near ' + esc(f.street || 'Elm St') + '”) — never the house number or the customer\'s name</label>' +
+    (f.tpl === 'roofcheck' ? '<label>Event date</label><input id="fl-date" value="' + esc(f.date) + '" placeholder="Saturday, May 9">' : '') +
+    '<label>Your name + phone on the flyer</label><div class="gmt-row"><input id="fl-pm" value="' + esc(f.pm) + '"><input id="fl-phone" value="' + esc(f.phone) + '"></div>' +
+    '<label>Extra text (optional)</label><textarea id="fl-blurb" rows="3">' + esc(f.blurb) + '</textarea>' +
+    (f.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-perm"' + (pOk ? ' checked' : '') + ' data-a="fl-perm"> The customer said OK to use photos of this job in marketing</label>' + (pOk ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-photo"' + (f.photo ? ' checked' : '') + '> Put a before / after photo on it</label>' : '<div class="gmt-muted">No photos without the customer\'s OK.</div>') : '') +
+    '<label>Nearby homes for the delivery list</label><input id="fl-copies" type="number" min="10" max="200" value="' + (+f.copies || 40) + '">' +
+    '<div class="gmt-row" style="margin-top:10px"><button class="gmt-btn" data-a="fl-print">🖨 Print / save PDF</button><button class="gmt-btn o" data-a="fl-list">⬇ Delivery list (CSV)</button></div></div>';
+  var saved = MK.all('flyers').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 15);
+  h += '<div class="gmt-card"><h2>Preview</h2><div style="border:1px solid #dce3ee;border-radius:10px;padding:14px;max-width:360px"><img src="grayco-logo.jpg" alt="" style="height:40px"><h3 style="color:' + B.navy + '">' + esc(fill(t.h, f)) + '</h3><div>' + esc(fill(t.b, f)) + '</div>' + (f.blurb ? '<p>' + esc(f.blurb) + '</p>' : '') + '<div class="gmt-qr" style="margin-top:8px">' + X.qrSvg(flyerLink(f, true), 3) + '</div><div class="gmt-muted">' + esc(f.pm) + ' · ' + esc(f.phone) + '</div></div>' +
+    '<h3>Saved flyers</h3>' + (saved.length ? saved.map(function(x){ return '<div class="gmt-row" style="justify-content:space-between;border-bottom:1px solid #eef1f6;padding:4px 0"><span>' + esc(x.title) + ' <span class="gmt-muted">' + esc(s(x.at).slice(0, 10)) + ' · ' + esc(x.by) + '</span></span><span class="gmt-muted">' + ((((LK.stats && LK.stats.clicks) || {})[x.code] || {}).n || 0) + ' scans</span></div>'; }).join('') : '<div class="gmt-muted">None yet.</div>') + '</div></div>';
+  if (!LK.stats) loadLinkStats();
+  return h;
+};
+function fill(t, f){ return s(t).replace('{street}', f.showStreet && f.street ? ' on ' + f.street : '').replace('{area}', f.area || 'your area').replace('{date}', f.date || 'soon'); }
+function flyerLink(f, preview){
+  var dest = f.tpl === 'giveaway' ? CRM + '/giveaway.html' : f.tpl === 'roofcheck' && f.eventId ? CRM + '/roofcheck.html?e=' + f.eventId : f.tpl === 'referral' ? WEB + '/#referrals' : WEB + '/#contact';
+  var c = 'fl-' + code((f.area || 'area').split(',')[0]).slice(0, 18) + '-' + (f.tpl || 'x').slice(0, 4);
+  if (preview) return goLink(c);
+  return ensureLink(c, { label: 'Flyer — ' + (f.area || 'area') + ' (' + f.tpl + ')', kind: 'flyer', dest: dest, src: 'flyer', med: 'flyer', camp: 'flyer-' + (f.tpl || '') });
+}
+function readFlyer(){ var f = FL.form; ['area', 'pm', 'phone', 'blurb', 'date'].forEach(function(k){ var el = D.getElementById('fl-' + k); if (el) f[k] = el.value; }); var st = D.getElementById('fl-street'); if (st) f.showStreet = st.checked; var ph = D.getElementById('fl-photo'); f.photo = !!(ph && ph.checked); var cp = D.getElementById('fl-copies'); if (cp) f.copies = +cp.value || 40; var tp = D.getElementById('fl-tpl'); if (tp) f.tpl = tp.value; var sz = D.getElementById('fl-size'); if (sz) f.size = sz.value; return f; }
+ACT['fl-job'] = function(t){ FL.form = Object.assign(flyerForm(t.value), { tpl: FL.form.tpl, size: FL.form.size }); draw(); };
+ACT['fl-set'] = function(){ readFlyer(); draw(); };
+ACT['fl-perm'] = function(b){ if (!FL.form.pid) return; setPerm(FL.form.pid, b.checked); readFlyer(); nST(draw, 200); };
+ACT['fl-print'] = function(){
+  var f = readFlyer(), t = TPL[f.tpl] || TPL.working, z = SIZES[f.size] || SIZES.letter, link = flyerLink(f, false), c = link.split('/go/')[1];
+  var go2 = function(img){
+    var qr = X.qrSvg(link, 6), door = f.size === 'door';
+    var css = '@page{size:' + z.page + ';margin:0.25in}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#14202E}.f{width:' + z.w + ';height:' + z.h + ';box-sizing:border-box;border:3px solid ' + B.navy + ';border-radius:14px;padding:' + (door ? '0.25in' : '0.4in') + ';display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden}' +
+      (door ? '.hole{width:1.4in;height:1.4in;border:2px dashed #999;border-radius:50%;margin:0 auto 6px}' : '') + '.top{display:flex;align-items:center;gap:10px}.top img{height:' + (door ? '0.55in' : '0.8in') + '}h1{color:' + B.navy + ';font-size:' + (door ? '22px' : f.size === 'half' ? '24px' : '34px') + ';margin:6px 0}.b{font-size:' + (door ? '14px' : '16px') + ';line-height:1.45}.ph{width:100%;max-height:' + (door ? '2.2in' : '3.4in') + ';object-fit:cover;border-radius:8px}' +
+      '.bot{margin-top:auto;display:flex;gap:12px;align-items:center;border-top:3px solid ' + B.gold + ';padding-top:10px}.bot svg{width:' + (door ? '1.2in' : '1.4in') + ';height:' + (door ? '1.2in' : '1.4in') + '}.small{font-size:11px;color:#55626F}';
+    var body = '<div class="f">' + (door ? '<div class="hole"></div>' : '') + '<div class="top"><img src="' + CRM + '/grayco-logo.jpg"><div><b>' + esc(B.name) + '</b><div class="small">' + esc(B.licenses) + '</div></div></div><h1>' + esc(fill(t.h, f)) + '</h1>' + (img ? '<img class="ph" src="' + img + '">' : '') + '<div class="b">' + esc(fill(t.b, f)) + (f.blurb ? '<p>' + esc(f.blurb) + '</p>' : '') + '</div>' +
+      '<div class="bot">' + qr + '<div><b>Scan me</b> or call<br><span style="font-size:20px;font-weight:800">' + esc(f.phone) + '</span><br>' + esc(f.pm) + ' · GrayCo<br><span class="small">' + esc(B.address) + ' · grayco-cs.com</span></div></div></div>';
+    printHtml('GrayCo flyer — ' + (f.area || ''), css, body);
+    MK.put('flyers', { id: X.uid('fly'), title: fill(t.h, f) + ' · ' + SIZES[f.size].l, area: f.area, tpl: f.tpl, size: f.size, jobId: f.pid, code: c, by: X.myName(), at: X.nowIso() });
+  };
+  if (f.photo && f.pid && permOk(f.pid)) { var ph = X.photosOf(f.pid)[0]; if (ph) { X.fileUrl(ph.ref).then(go2, function(){ go2(''); }); return; } }
+  go2('');
+};
+ACT['fl-list'] = function(){ var f = readFlyer(), p = f.pid ? proj(f.pid) : null; if (!p) { toast('Pick a job first — the list is built around its street.', true); return; } var l = X.walkList(p.address || p.jobAddress, f.copies || 40); if (!l.length) { toast('Could not read a house number from the job address.', true); return; }
+  dl('grayco-flyer-delivery-' + code(f.area || 'list') + '.csv', 'Address,City,State,ZIP,Delivered\n' + l.map(function(x){ return [x.address, x.city, x.state, x.zip, ''].map(function(v){ return '"' + s(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n'), 'text/csv'); };
+
+/* ══════════════ 🤝 REFERRAL PARTNERS (+ lunch & learn kit) ══════════════ */
+var PT_TYPES = { realtor: 'Realtor', insurance: 'Insurance agent', property: 'Property manager', other: 'Other partner' };
+function partnerLeads(p){ return arr(X.DATA.leads).filter(function(l){ return l && !l.deleted && low(l.partnerCode) === low(p.code); }); }
+VIEWS.partners = function(){
+  var c = X.cfg(), fees = c.partnerFees || {}, list = MK.all('partners').filter(function(p){ return !p.del; }).sort(function(a, b){ return (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || s(a.name).localeCompare(s(b.name)); });
+  var h = '<div class="gmt-card"><h2>🤝 Referral partners — realtors, insurance agents, property managers</h2><div class="gmt-muted">Different from the customer referral program (customers earn GrayCo credit that stacks). Partners get a code, a share link (' + esc(CRM) + '/go/&lt;code&gt;) and their own page (partner.html — a sign-in link by e-mail) that shows every referral and where it stands. Their fee is paid only after an admin approves it. Sign-up form: the website\'s “Become a partner” section, or a lunch & learn.</div>' +
+    '<h3>Default fee per closed job</h3><div class="gmt-row">' + Object.keys(PT_TYPES).map(function(k){ return '<label style="margin:0">' + PT_TYPES[k] + ' $<input data-ptfee="' + k + '" value="' + esc(fees[k] != null ? fees[k] : '') + '" placeholder="[AMOUNT]" style="width:90px"' + (admin() ? '' : ' disabled') + '></label>'; }).join('') + (admin() ? '<button class="gmt-btn o" data-a="pt-fees">Save</button>' : '') + '</div><div class="gmt-muted">Licensed realtors and insurance agents may have rules about referral fees — check before paying cash (a gift card, credit or a donation in their name can work instead).</div></div>';
+  h += '<div class="gmt-card"><h2>Partners (' + list.length + ')</h2>' + (list.length ? '<table><tr><th>Partner</th><th>Code</th><th>Status</th><th>Leads</th><th>Hired</th><th>Fee</th><th></th></tr>' + list.map(function(p){
+    var L = partnerLeads(p), wn = wonFor(L), fee = num(p.fee) || num(fees[p.type]);
+    return '<tr><td><b>' + esc(p.name) + '</b><div class="gmt-muted">' + esc(PT_TYPES[p.type] || 'Partner') + (p.company ? ' · ' + esc(p.company) : '') + ' · ' + esc(p.email) + ' ' + esc(p.phone) + (p.source ? ' · from ' + esc(p.source) : '') + '</div></td><td><code>' + esc(p.code) + '</code></td><td>' + chipS(p.status || 'pending', { pending: 'Waiting for an admin', active: 'Active', paused: 'Paused' }) + '</td><td>' + L.length + '</td><td>' + wn.n + '</td><td>' + (fee ? '$' + fee : '[AMOUNT]') + '</td><td class="gmt-row">' +
+      (admin() ? (p.status !== 'active' ? '<button class="gmt-btn g" data-a="pt-status" data-id="' + esc(p.id) + '" data-s="active">Turn on</button>' : '<button class="gmt-btn o" data-a="pt-link" data-id="' + esc(p.id) + '">✉️ Send their link</button><button class="gmt-btn o" data-a="pt-status" data-id="' + esc(p.id) + '" data-s="paused">Pause</button>') + '<button class="gmt-btn o" data-a="pt-fee" data-id="' + esc(p.id) + '">$ Fee</button>' : '') +
+      '<button class="gmt-btn o" data-a="copy" data-t="' + esc(CRM + '/go/' + low(p.code)) + '">📋 Link</button></td></tr>';
+  }).join('') + '</table>' : '<div class="gmt-muted">No partners yet.</div>') + '</div>';
+  /* fees: hired referrals without a payout yet */
+  var due = []; list.forEach(function(p){ partnerLeads(p).forEach(function(l){ var w = wonFor([l]); if (w.n && !MK.all('payouts').some(function(x){ return x.leadId === l.id && !/^(rejected)$/.test(s(x.status)); })) due.push({ p: p, l: l }); }); });
+  var pays = MK.all('payouts').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });
+  h += '<div class="gmt-card"><h2>Fees</h2>' + (due.length ? '<h3>Hired — fee not started</h3>' + due.map(function(x){ var fee = num(x.p.fee) || num(fees[x.p.type]); return '<div class="gmt-row" style="justify-content:space-between;border-bottom:1px solid #eef1f6;padding:4px 0"><span><b>' + esc(x.l.name || x.l.client) + '</b> — from ' + esc(x.p.name) + '</span>' + (admin() ? '<button class="gmt-btn" data-a="pt-pay" data-p="' + esc(x.p.id) + '" data-l="' + esc(x.l.id) + '">Propose $' + (fee || '[AMOUNT]') + ' fee</button>' : '') + '</div>'; }).join('') : '') +
+    (pays.length ? '<table><tr><th>Partner</th><th>For</th><th>Amount</th><th>Status</th><th></th></tr>' + pays.map(function(x){ return '<tr><td>' + esc(x.partnerName) + '</td><td>' + esc(x.leadName) + '</td><td>$' + num(x.amount).toFixed(2) + '</td><td>' + chipS(s(x.status) || 'draft', { waiting: 'Waiting for approval', approved: 'Approved — pay it', paid: 'Paid', rejected: 'Not approved', draft: 'Draft' }) + '</td><td>' + (x.status === 'approved' && office() ? '<button class="gmt-btn g" data-a="pt-paid" data-id="' + esc(x.id) + '">Mark paid</button>' : '') + '</td></tr>'; }).join('') + '</table>' : (due.length ? '' : '<div class="gmt-muted">No fees yet.</div>')) + '</div>';
+  if (admin()) h += '<div class="gmt-card"><h2>＋ Add a partner</h2><div class="gmt-two"><div><label>Name</label><input id="pt-name"><label>Company</label><input id="pt-co"><label>Type</label><select id="pt-type">' + Object.keys(PT_TYPES).map(function(k){ return '<option value="' + k + '">' + PT_TYPES[k] + '</option>'; }).join('') + '</select></div><div><label>E-mail</label><input id="pt-email"><label>Phone</label><input id="pt-phone"></div></div><button class="gmt-btn" data-a="pt-add">Add (active)</button></div>';
+  /* the lunch & learn kit */
+  var lunches = MK.all('roofevents').filter(function(e){ return e.kind === 'lunch' && !e.del; });
+  h += '<div class="gmt-card"><h2>🥪 Lunch & learn kit (optional)</h2><div class="gmt-muted">For realtor, insurance-agent or property-manager offices: an invite, an RSVP link, a slide outline, and a sign-in sheet that enrolls everyone in the partner program.</div><div class="gmt-row" style="margin:8px 0"><button class="gmt-btn" data-a="ll-new">＋ New lunch & learn</button><button class="gmt-btn o" data-a="go" data-sec="decks">🎤 Slide decks</button><button class="gmt-btn o" data-a="ll-sheet">🖨 Blank sign-in sheet</button></div>' +
+    (lunches.length ? '<table><tr><th>Lunch & learn</th><th>Date</th><th>RSVP link</th><th></th></tr>' + lunches.map(function(e){ var link = CRM + '/roofcheck.html?e=' + e.id; return '<tr><td><b>' + esc(e.title) + '</b><div class="gmt-muted">' + esc(e.area) + '</div></td><td>' + esc(e.date) + '</td><td><code style="font-size:11px">' + esc(link) + '</code></td><td class="gmt-row"><button class="gmt-btn o" data-a="copy" data-t="' + esc(link) + '">📋</button><button class="gmt-btn o" data-a="ll-invite" data-id="' + esc(e.id) + '">✉️ Invite text</button><button class="gmt-btn o" data-a="ll-flyer" data-id="' + esc(e.id) + '">🖨 Invite flyer</button><button class="gmt-btn o" data-a="ev-signups" data-id="' + esc(e.id) + '">RSVPs</button></td></tr>'; }).join('') + '</table>' : '') +
+    '<label>Enroll from a paper sign-in sheet — one per line: name, company, e-mail, phone, type (realtor / insurance / property)</label><textarea id="ll-enroll" rows="3" placeholder="Rita Jones, Bluff City Realty, rita@example.com, 901-555-0100, realtor"></textarea><button class="gmt-btn o" data-a="ll-enroll">Enroll as partners</button>' + EV_LIST() + '</div>';
+  return h;
+};
+function newCodeFor(name, type){ var pre = { realtor: 'RE', insurance: 'IN', property: 'PM', other: 'GP' }[type] || 'GP', base = s(name).replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 6) || 'PART'; var taken = {}; MK.all('partners').forEach(function(p){ taken[low(p.code)] = 1; }); MK.all('links').forEach(function(l){ taken[low(l.code)] = 1; }); for (var i = 0; i < 99; i++) { var c = pre + '-' + base + (i ? i + 1 : ''); if (!taken[low(c)]) return c; } return pre + '-' + Date.now().toString(36).toUpperCase(); }
+function addPartner(o, status){ var type = PT_TYPES[o.type] ? o.type : (/realt/i.test(o.type) ? 'realtor' : /insur/i.test(o.type) ? 'insurance' : /propert|manag/i.test(o.type) ? 'property' : 'other'); var id = X.uid('pt'); MK.put('partners', { id: id, code: newCodeFor(o.name, type), name: s(o.name), company: s(o.company), type: type, email: low(o.email), phone: s(o.phone), status: status || 'active', source: o.source || 'added in the CRM', joinedAt: X.nowIso(), by: X.myName() }); return id; }
+ACT['pt-fees'] = function(){ var f = {}; D.querySelectorAll('[data-ptfee]').forEach(function(i){ var v = num(i.value); if (v > 0) f[i.getAttribute('data-ptfee')] = v; }); X.setCfg({ partnerFees: f }); toast('Saved.'); };
+ACT['pt-status'] = function(b){ var p = MK.get('partners', b.getAttribute('data-id')); if (!p) return; MK.put('partners', { id: p.id, status: b.getAttribute('data-s') }); if (b.getAttribute('data-s') === 'active') toast('Turned on — now “Send their link”.'); };
+ACT['pt-link'] = function(b){ X.MK.push().then(function(){ return api('mkt2', { op: 'partner_link', id: b.getAttribute('data-id') }); }).then(function(j){ toast(j && j.ok ? 'Link e-mailed.' : (j && j.error) || 'Not sent.', !(j && j.ok)); }); };
+ACT['pt-fee'] = function(b){ var p = MK.get('partners', b.getAttribute('data-id')); if (!p) return; var v = W.prompt('This partner\'s fee per hired referral ($, empty = the default for their type):', p.fee || ''); if (v == null) return; MK.put('partners', { id: p.id, fee: num(v) || '' }); };
+ACT['pt-add'] = function(){ var g = function(k){ return s(D.getElementById(k).value); }; if (!g('pt-name')) { toast('Name, please.', true); return; } addPartner({ name: g('pt-name'), company: g('pt-co'), type: g('pt-type'), email: g('pt-email'), phone: g('pt-phone') }, 'active'); toast('Added — send them their link.'); };
+ACT['pt-pay'] = function(b){ var p = MK.get('partners', b.getAttribute('data-p')), l = arr(X.DATA.leads).filter(function(x){ return x.id === b.getAttribute('data-l'); })[0]; if (!p || !l) return; var fee = num(p.fee) || num((X.cfg().partnerFees || {})[p.type]); var v = W.prompt('Fee for ' + p.name + ' for ' + (l.name || l.client) + ' ($):', fee || ''); if (v == null || !(num(v) > 0)) return;
+  var id = X.uid('pay'), w = wonFor([l]); MK.put('payouts', { id: id, partnerId: p.id, partnerName: p.name, leadId: l.id, leadName: s(l.name || l.client), jobName: '', amount: num(v), status: 'draft', by: X.myName(), createdAt: X.nowIso() }); X.sendForApproval('mkt_payout', 'payouts', id); };
+ACT['pt-paid'] = function(b){ MK.put('payouts', { id: b.getAttribute('data-id'), status: 'paid', paidAt: X.nowIso(), paidBy: X.myName() }); };
+ACT['ll-new'] = function(){ EV.form = evForm('lunch'); go('events2'); };
+ACT['ll-sheet'] = function(){ var rows = ''; for (var i = 0; i < 18; i++) rows += '<tr><td></td><td></td><td></td><td></td><td></td></tr>'; printHtml('GrayCo lunch & learn sign-in', '@page{size:letter;margin:0.5in}body{font-family:Arial,sans-serif}table{width:100%;border-collapse:collapse}td,th{border:1px solid #999;height:30px;padding:4px;font-size:12px}th{background:#0F1D2F;color:#fff}', '<img src="' + CRM + '/grayco-logo.jpg" style="height:50px"><h2>Lunch & Learn — sign in</h2><p>Sign in to join the GrayCo Referral Partner program: your own partner link, a page that tracks every referral, and a thank-you for each one that hires GrayCo. (Check one: Realtor / Insurance agent / Property manager)</p><table><tr><th>Name</th><th>Company</th><th>E-mail</th><th>Phone</th><th>Realtor / Agent / PM</th></tr>' + rows + '</table><p style="font-size:11px">' + esc(B.name) + ' · ' + esc(B.address) + ' · (901) 585-0944</p>'); };
+ACT['ll-enroll'] = function(){ var n = 0; s(D.getElementById('ll-enroll').value).split(/\n+/).forEach(function(line){ var p = line.split(',').map(s); if (!p[0]) return; if (MK.all('partners').some(function(x){ return p[2] && low(x.email) === low(p[2]); })) return; addPartner({ name: p[0], company: p[1], email: p[2], phone: p[3], type: p[4] || '', source: 'lunch & learn sign-in sheet' }, 'pending'); n++; }); toast(n + ' enrolled (pending — turn each on, then send their link).'); };
+ACT['ll-invite'] = function(b){ var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; var link = CRM + '/roofcheck.html?e=' + e.id; X.copyText('You\'re invited: ' + e.title + ' — ' + e.date + (e.area ? ' at ' + e.area : '') + '. Lunch is on GrayCo Construction. A short, practical talk and how our referral partner program works for you and your clients. RSVP: ' + link + ' · Questions: (901) 585-0944').then(function(){ toast('Invite text copied — paste it into an e-mail or text.'); }); };
+ACT['ll-flyer'] = function(b){ var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; var link = ensureLink('ll-' + e.id.slice(-6), { label: 'Lunch & learn — ' + e.title, kind: 'flyer', dest: CRM + '/roofcheck.html?e=' + e.id, src: 'flyer', med: 'flyer', camp: 'lunch-learn' });
+  printHtml('Lunch & learn invite', '@page{size:letter;margin:0.5in}body{font-family:Arial,sans-serif;color:#14202E}.f{border:3px solid ' + B.navy + ';border-radius:14px;padding:0.5in}h1{color:' + B.navy + '}svg{width:1.6in;height:1.6in}', '<div class="f"><img src="' + CRM + '/grayco-logo.jpg" style="height:60px"><h1>' + esc(e.title) + '</h1><h2>' + esc(e.date) + (e.area ? ' · ' + esc(e.area) : '') + '</h2><p style="font-size:18px">Lunch is on us. A short, practical talk from GrayCo Construction — and how our referral partner program works for you and your clients.</p>' + X.qrSvg(link, 6) + '<p><b>Scan to RSVP</b> or call (901) 585-0944</p><p style="font-size:12px">' + esc(B.name) + ' · ' + esc(B.address) + '</p></div>'); };
+
+/* ══════════════ 🏠 FREE ROOF CHECK EVENTS (and lunch & learns) ══════════════ */
+var EV = { form: null, su: {} };
+function evForm(kind){ return { kind: kind || 'roofcheck', id: '', title: kind === 'lunch' ? 'Lunch & Learn' : 'Free Roof Check', date: '', area: '', address: '', pm: X.myName(), audience: 'realtor', slots: kind === 'lunch' ? '12:00x25' : '09:00x2, 10:00x2, 11:00x2, 13:00x2, 14:00x2' }; }
+function pms(){ var u = []; try { u = (W.users || []).filter(function(x){ return x && x.active !== false && x.name; }); } catch (e) {} return u; }
+function EV_LIST(){ return ''; }
+VIEWS.events2 = function(){
+  var f = EV.form, h = '';
+  if (f) {
+    h += '<div class="gmt-card"><h2>' + (f.id ? 'Edit' : 'New') + ' ' + (f.kind === 'lunch' ? 'lunch & learn' : 'free roof check event') + '</h2><div class="gmt-two"><div><label>Title</label><input id="ev-title" value="' + esc(f.title) + '"><label>Date</label><input id="ev-date" type="date" value="' + esc(f.date) + '"><label>Area / neighborhood (public)</label><input id="ev-area" value="' + esc(f.area) + '" placeholder="Dogwood Creek, Bartlett"><label>Meeting point / street (public, optional — no house numbers)</label><input id="ev-addr" value="' + esc(f.address) + '"></div><div>' +
+      '<label>PM (gets the leads)</label><select id="ev-pm">' + pms().map(function(u){ return '<option' + (u.name === f.pm ? ' selected' : '') + '>' + esc(u.name) + '</option>'; }).join('') + '</select>' + (f.kind === 'lunch' ? '<label>Audience</label><select id="ev-aud">' + Object.keys(PT_TYPES).map(function(k){ return '<option value="' + k + '"' + (f.audience === k ? ' selected' : '') + '>' + PT_TYPES[k] + 's</option>'; }).join('') + '</select>' : '') +
+      '<label>Time slots (time x seats, comma separated, 24-hour)</label><input id="ev-slots" value="' + esc(f.slots) + '"></div></div><div class="gmt-row" style="margin-top:8px"><button class="gmt-btn" data-a="ev-save">Save & open sign-ups</button><button class="gmt-btn o" data-a="ev-cancel">Cancel</button></div></div>';
+    return h;
+  }
+  var list = MK.all('roofevents').filter(function(e){ return !e.del; }).sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; });
+  h += '<div class="gmt-card"><h2>🏠 Free roof check events</h2><div class="gmt-muted">Pick a date and an area, set time slots; neighbors sign up on a page (' + esc(CRM) + '/roofcheck.html?e=…). Each sign-up becomes a lead with its booked time for the event\'s PM. The day before, everyone gets a reminder (e-mail; text when Twilio is set) — once an admin approves the reminder.</div><div class="gmt-row" style="margin-top:8px"><button class="gmt-btn" data-a="ev-new">＋ New roof check event</button><button class="gmt-btn o" data-a="ll-new">＋ New lunch & learn</button></div></div>';
+  h += list.map(function(e){
+    var link = CRM + '/roofcheck.html?e=' + e.id, su = EV.su[e.id];
+    return '<div class="gmt-card"><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">' + (e.kind === 'lunch' ? '🥪 ' : '🏠 ') + esc(e.title) + ' — ' + esc(e.date) + '</h2>' + chipS(e.status || 'draft', { open: 'Sign-ups open', closed: 'Closed', draft: 'Draft' }) + '</div><div class="gmt-muted">' + esc(e.area) + ' · PM ' + esc(e.pm) + ' · ' + arr(e.slots).map(function(x){ return x.t + '×' + x.cap; }).join(', ') + '</div>' +
+      '<div class="gmt-row" style="margin:8px 0;align-items:flex-start"><div class="gmt-qr">' + X.qrSvg(link, 3) + '</div><div><code style="font-size:11px">' + esc(link) + '</code><div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="copy" data-t="' + esc(link) + '">📋 Link</button>' + (e.kind !== 'lunch' ? '<button class="gmt-btn o" data-a="ev-flyer" data-id="' + esc(e.id) + '">🗞 Flyer</button><button class="gmt-btn o" data-a="ev-fbad" data-id="' + esc(e.id) + '">📘 Facebook radius ad</button>' : '') +
+      '<button class="gmt-btn o" data-a="ev-signups" data-id="' + esc(e.id) + '">👥 Sign-ups</button>' + (office() ? '<button class="gmt-btn o" data-a="ev-edit" data-id="' + esc(e.id) + '">✏️</button>' + (e.status === 'open' ? '<button class="gmt-btn o" data-a="ev-close" data-id="' + esc(e.id) + '">Close sign-ups</button>' : '') : '') + '</div>' +
+      '<div style="margin-top:6px">Reminders: ' + (e.remindApprovedAt ? '<span class="gmt-chip approved">Approved — they go out the day before</span>' : e.remindStatus === 'waiting' ? '<span class="gmt-chip waiting">Waiting for approval</span>' : office() ? '<button class="gmt-btn g" data-a="ev-remind" data-id="' + esc(e.id) + '">Send reminders for approval</button>' : '<span class="gmt-muted">not approved yet</span>') + '</div></div></div>' +
+      (su ? (su.length ? '<table><tr><th>Name</th><th>Time</th><th>Phone</th><th>Address</th><th>Reminded</th></tr>' + su.map(function(x){ return '<tr><td>' + esc(x.name) + '</td><td>' + esc(x.slot) + '</td><td>' + esc(x.phone) + '</td><td>' + esc(x.address) + '</td><td>' + (x.reminded ? '✓' : '') + '</td></tr>'; }).join('') + '</table>' : '<div class="gmt-muted">No sign-ups yet.</div>') : '') + '</div>';
+  }).join('');
+  return h;
+};
+ACT['ev-new'] = function(){ EV.form = evForm('roofcheck'); draw(); };
+ACT['ev-cancel'] = function(){ EV.form = null; draw(); };
+ACT['ev-edit'] = function(b){ var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; EV.form = Object.assign(evForm(e.kind), e, { slots: arr(e.slots).map(function(x){ return x.t + 'x' + x.cap; }).join(', ') }); draw(); };
+ACT['ev-save'] = function(){
+  var f = EV.form, g = function(k){ var el = D.getElementById(k); return el ? s(el.value) : ''; };
+  var slots = g('ev-slots').split(',').map(function(x){ var m = /^\s*(\d{1,2}):(\d{2})\s*(?:x\s*(\d+))?\s*$/i.exec(x); return m ? { t: ('0' + m[1]).slice(-2) + ':' + m[2], cap: Math.max(1, Math.min(200, +m[3] || 1)) } : null; }).filter(Boolean);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(g('ev-date')) || !slots.length) { toast('A date and at least one time (like 09:00x2).', true); return; }
+  var pm = g('ev-pm'), u = pms().filter(function(x){ return x.name === pm; })[0];
+  var id = f.id || X.uid('ev');
+  MK.put('roofevents', { id: id, kind: f.kind, title: g('ev-title') || f.title, date: g('ev-date'), area: g('ev-area'), address: g('ev-addr').replace(/^\s*\d+\s+/, ''), pm: pm, pmEmail: s(u && u.email).toLowerCase(), audience: g('ev-aud') || f.audience, slots: slots, status: 'open', by: X.myName(), createdAt: f.createdAt || X.nowIso() });
+  EV.form = null; toast('Saved — sign-ups are open.'); MK.push(); draw();
+};
+ACT['ev-close'] = function(b){ MK.put('roofevents', { id: b.getAttribute('data-id'), status: 'closed' }); };
+ACT['ev-remind'] = function(b){ X.sendForApproval('mkt_event', 'roofevents', b.getAttribute('data-id')); };
+ACT['ev-signups'] = function(b){ var id = b.getAttribute('data-id'); api('mkt2', { op: 'event_signups', id: id }).then(function(j){ EV.su[id] = (j && j.list) || []; draw(); }); };
+ACT['ev-flyer'] = function(b){ var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; FL.form = Object.assign(flyerForm(''), { tpl: 'roofcheck', area: e.area, date: e.date, eventId: e.id, pm: e.pm }); go('flyers'); };
+ACT['ev-fbad'] = function(b){ var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; var link = ensureLink('ev-' + e.id.slice(-8), { label: 'Roof check ad — ' + e.area, kind: 'ad', dest: CRM + '/roofcheck.html?e=' + e.id, src: 'facebook', med: 'paid', camp: 'roofcheck-' + e.date });
+  var t = 'Free roof check in ' + (e.area || 'your neighborhood') + ' on ' + e.date + '! 🏠\nA GrayCo pro takes a free look at your roof — shingles, flashing, gutters, storm damage — and tells you what we see. 10 minutes, no cost, no pressure.\nPick your time: ' + link + '\n\nTargeting: a radius around ' + (e.area || 'the neighborhood') + '. Home-improvement ads may have to run in Meta\'s Housing special ad category — then the radius is at least 15 miles and age / gender / ZIP targeting is off. Run 5–7 days before the event.';
+  X.copyText(t).then(function(){ toast('Ad text + targeting notes copied — paste into Ads Manager.'); }); X.openUrl('https://adsmanager.facebook.com/'); };
+
+/* ══════════════ 🎟 COUPONS & SPONSORSHIPS ══════════════ */
+var CP = { stats: null, check: null };
+function loadCp(){ api('mkt2', { op: 'coupon_stats' }).then(function(j){ CP.stats = (j && j.by) || {}; if (UI.sec === 'coupons') draw(); }); }
+var ART = { truck: { l: 'Truck decal (24×24 in)', w: 24, h: 24 }, chest: { l: 'Shirt chest (4×4 in)', w: 4, h: 4.6 }, back: { l: 'Shirt back (11×13 in)', w: 11, h: 13 }, banner: { l: 'Banner (6×3 ft)', w: 72, h: 36 } };
+function artSvg(fmt, link){
+  var a = ART[fmt], W2 = a.w * 100, H2 = a.h * 100, qr = X.qrSvg(link, 10).replace(/^<svg /, '<svg x="__X__" y="__Y__" width="__S__" height="__S__" ');
+  var wide = W2 > H2 * 1.4, S = wide ? H2 * 0.8 : Math.min(W2, H2) * 0.62, qx = wide ? H2 * 0.1 : (W2 - S) / 2, qy = wide ? H2 * 0.1 : H2 * 0.27;
+  qr = qr.replace(/__X__/, qx).replace(/__Y__/, qy).replace(/__S__/g, S);
+  var tx = wide ? qx + S + H2 * 0.08 : W2 / 2, anchor = wide ? 'start' : 'middle', big = wide ? H2 * 0.16 : W2 * 0.1, small = big * 0.38;
+  var lines = wide ? '<text x="' + tx + '" y="' + H2 * 0.32 + '" font-size="' + big + '" font-weight="800" fill="#0F1D2F" text-anchor="' + anchor + '">SCAN ME</text><text x="' + tx + '" y="' + H2 * 0.52 + '" font-size="' + big * 0.9 + '" font-weight="800" fill="#D4A017" text-anchor="' + anchor + '">$100 OFF</text><text x="' + tx + '" y="' + H2 * 0.68 + '" font-size="' + big * 0.55 + '" font-weight="700" fill="#0F1D2F" text-anchor="' + anchor + '">GrayCo Construction work</text><text x="' + tx + '" y="' + H2 * 0.8 + '" font-size="' + small + '" fill="#334" text-anchor="' + anchor + '">on projects over $1,000 · (901) 585-0944</text>'
+    : '<text x="' + tx + '" y="' + H2 * 0.12 + '" font-size="' + big + '" font-weight="800" fill="#0F1D2F" text-anchor="middle">SCAN ME</text><text x="' + tx + '" y="' + H2 * 0.22 + '" font-size="' + big * 0.85 + '" font-weight="800" fill="#D4A017" text-anchor="middle">$100 OFF GrayCo work</text><text x="' + tx + '" y="' + (qy + S + H2 * 0.08) + '" font-size="' + small + '" fill="#334" text-anchor="middle">on projects over $1,000 · one per household</text><text x="' + tx + '" y="' + (qy + S + H2 * 0.14) + '" font-size="' + small + '" font-weight="700" fill="#0F1D2F" text-anchor="middle">GrayCo Construction · (901) 585-0944</text>';
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + a.w + 'in" height="' + a.h + 'in" viewBox="0 0 ' + W2 + ' ' + H2 + '"><rect width="100%" height="100%" fill="#fff"/>' + qr + lines + '</svg>';
+}
+VIEWS.coupons = function(){
+  if (!CP.stats) loadCp(); if (!LK.stats) loadLinkStats();
+  var c = X.cfg().coupons || {}, sp = MK.all('sponsors').filter(function(x){ return !x.del; }), cl = (LK.stats && LK.stats.clicks) || {};
+  var h = '<div class="gmt-card"><h2>🎟 $100-off coupon QR codes</h2><div class="gmt-muted">For sponsorships, truck wraps, uniforms and banners: “Scan me — $100 off GrayCo work” (on projects over $1,000). Scanning opens a page where the person claims ONE unique code (one per household — e-mail, phone or address). Each claim is a lead tagged with the sponsorship / truck / shirt. The code works once — checked by the server.</div>' +
+    '<div class="gmt-row" style="margin-top:8px"><label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="cp-comb"' + (c.combinable ? ' checked' : '') + (admin() ? '' : ' disabled') + '> Can be combined with other coupons</label><span class="gmt-muted">GrayCo referral credit is always OK with it.</span>' + (admin() ? '<button class="gmt-btn o" data-a="cp-set">Save</button>' : '') + '</div></div>';
+  h += '<div class="gmt-card"><h2>✓ Check / redeem a coupon</h2><div class="gmt-row"><input id="cp-code" placeholder="GC100-XXXX-XXXX" style="min-width:200px"><input id="cp-amt" placeholder="Estimate / invoice total $" style="width:180px"><select id="cp-job"><option value="">— job —</option>' + X.projects().slice(0, 300).map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select><input id="cp-ref" placeholder="Estimate / invoice #" style="width:140px"><label style="margin:0;display:flex;gap:4px;align-items:center"><input type="checkbox" id="cp-other"> another coupon on it</label></div><div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="cp-check">Check</button><button class="gmt-btn g" data-a="cp-redeem">Redeem ($100 off)</button></div>' + (CP.check ? '<div class="' + (CP.check.ok ? 'gmt-ok' : 'gmt-warn') + '">' + esc(CP.check.msg) + '</div>' : '') + '<div class="gmt-muted">After redeeming, put a “$100 coupon” discount line on that estimate / invoice.</div></div>';
+  h += '<div class="gmt-card"><h2>Sponsorships, trucks & shirts — ROI</h2>' + (sp.length ? '<table><tr><th>Source</th><th>Cost</th><th>Scans</th><th>Claims</th><th>Leads</th><th>Jobs won</th><th>$ won</th><th>ROI</th><th>Artwork</th></tr>' + sp.map(function(x){
+    var st = (CP.stats || {})[x.id] || {}, L = arr(X.DATA.leads).filter(function(l){ return l && (l.couponSource === x.id || low(l.trackCode) === x.id); }), wn = wonFor(L), cost = num(x.cost), roi = cost ? Math.round((wn.rev - cost) / cost * 100) + '%' : '—';
+    return '<tr><td><b>' + esc(x.name) + '</b><div class="gmt-muted">' + esc(x.kind) + ' · ' + esc(goLink(x.id)) + '</div></td><td>' + money(cost) + '</td><td>' + ((cl[x.id] || {}).n || 0) + '</td><td>' + (st.claims || 0) + (st.redeemed ? ' (' + st.redeemed + ' used)' : '') + '</td><td>' + L.length + '</td><td>' + wn.n + '</td><td>' + money(wn.rev) + '</td><td>' + roi + '</td><td class="gmt-row">' + Object.keys(ART).map(function(k){ return '<button class="gmt-btn o" data-a="cp-art" data-id="' + esc(x.id) + '" data-f="' + k + '" title="' + esc(ART[k].l) + '">⬇ ' + esc(ART[k].l.split(' (')[0]) + '</button>'; }).join('') + '</td></tr>';
+  }).join('') + '</table>' : '<div class="gmt-muted">Add a sponsorship, truck or shirt below.</div>') +
+    (office() ? '<h3>＋ Add</h3><div class="gmt-row"><input id="sp-name" placeholder="Bartlett Little League banner"><select id="sp-kind"><option>sponsorship</option><option>truck</option><option>shirt</option><option>banner</option><option>event</option><option>other</option></select><input id="sp-cost" placeholder="Cost $" style="width:100px"><input id="sp-pub" placeholder="Name shown on the page (optional)"><button class="gmt-btn" data-a="sp-add">Add + make QR</button></div>' : '') + '</div>';
+  return h;
+};
+ACT['cp-set'] = function(){ X.setCfg({ coupons: Object.assign({}, X.cfg().coupons || {}, { combinable: D.getElementById('cp-comb').checked, min: 1000 }) }); toast('Saved.'); };
+ACT['cp-check'] = function(){ api('mkt2', { op: 'coupon_check', code: D.getElementById('cp-code').value }).then(function(j){ CP.check = { ok: !!(j && j.ok && !j.redeemed), msg: j && j.ok ? (j.redeemed ? 'Already used on ' + s(j.redeemed.at).slice(0, 10) + (j.redeemed.jobName ? ' (' + j.redeemed.jobName + ')' : '') : 'Valid — ' + j.name + ', from ' + j.source + ', claimed ' + s(j.claimedAt).slice(0, 10)) : (j && j.error) || 'Not found.' }; draw(); }); };
+ACT['cp-redeem'] = function(){ var job = D.getElementById('cp-job'), p = job.value ? proj(job.value) : null; api('mkt2', { op: 'coupon_redeem', code: D.getElementById('cp-code').value, amount: num(D.getElementById('cp-amt').value), jobId: job.value, jobName: p ? (p.name || p.client) : '', ref: D.getElementById('cp-ref').value, otherCoupons: D.getElementById('cp-other').checked ? 1 : 0 }).then(function(j){ CP.check = { ok: !!(j && j.ok), msg: j && j.ok ? '✓ Redeemed: $100 off. Add the discount line on the estimate / invoice.' : (j && j.error) || 'Not redeemed.' }; CP.stats = null; draw(); }); };
+ACT['sp-add'] = function(){ var n = s(D.getElementById('sp-name').value); if (!n) { toast('Name it.', true); return; } var id = code(D.getElementById('sp-kind').value + '-' + n).slice(0, 40); if (MK.get('sponsors', id)) { toast('Already there.', true); return; }
+  MK.put('sponsors', { id: id, name: n, kind: D.getElementById('sp-kind').value, cost: num(D.getElementById('sp-cost').value), publicName: s(D.getElementById('sp-pub').value), linkCode: id, by: X.myName(), createdAt: X.nowIso() });
+  ensureLink(id, { label: 'Coupon QR — ' + n, kind: D.getElementById('sp-kind').value, dest: CRM + '/coupon.html?s=' + id, src: 'coupon', med: 'offline-' + D.getElementById('sp-kind').value, camp: 'coupon-' + id }); toast('Added — download the artwork.'); };
+ACT['cp-art'] = function(b){ var id = b.getAttribute('data-id'), f = b.getAttribute('data-f'); dl('grayco-coupon-' + id + '-' + f + '.svg', artSvg(f, goLink(id)), 'image/svg+xml'); toast(ART[f].l + ' — vector SVG, ready for the print shop.'); };
+
+/* ══════════════ 🎁 MONTHLY GIVEAWAY ══════════════ */
+var GW = { n: null, list: [] };
+var RULES = 'NO PURCHASE NECESSARY. A purchase does not improve your chance of winning. Open to legal residents of the GrayCo service area (Memphis, TN metro and DeSoto County, MS), [ELIGIBILITY]. Entry period: [DATES]. One entry per person per month. The winner is drawn at random from all eligible entries after the entry period, notified by e-mail and must respond within 14 days or another winner is drawn. Prize: as shown on the entry page; no cash value, not transferable, must be used within 90 days at an address in the service area. Employees of GrayCo Construction Services and their households are not eligible. Void where prohibited. Sponsor: GrayCo Construction Services, 4014 Broadway Rd, Bartlett, TN 38135, (901) 585-0944. This giveaway is not sponsored, endorsed or administered by Facebook, Instagram or Google.';
+function gwId(){ return 'gw_' + new Date().toISOString().slice(0, 7).replace('-', ''); }
+VIEWS.giveaway = function(){
+  var id = gwId(), g = MK.get('giveaways', id) || { id: id, prize: 'a FREE handyman hour', status: 'open' };
+  if (GW.n == null) api('mkt2', { op: 'giveaway_entries', id: id }).then(function(j){ GW.n = (j && j.count) || 0; GW.list = (j && j.list) || []; if (UI.sec === 'giveaway') draw(); });
+  var link = ensureLink('giveaway', { label: 'Monthly giveaway', kind: 'giveaway', dest: CRM + '/giveaway.html', src: 'giveaway', med: 'social', camp: 'giveaway' });
+  var h = '<div class="gmt-card"><h2>🎁 ' + esc(new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })) + ' giveaway</h2><div class="gmt-two"><div>' +
+    '<label>Prize</label><input id="gw-prize" value="' + esc(g.prize) + '"' + (admin() ? '' : ' disabled') + '><label>Status</label><select id="gw-status"' + (admin() ? '' : ' disabled') + '><option value="open"' + (g.status !== 'closed' ? ' selected' : '') + '>Open for entries</option><option value="closed"' + (g.status === 'closed' ? ' selected' : '') + '>Closed</option></select>' +
+    '<label>Official rules (fill [DATES] and [ELIGIBILITY])</label><textarea id="gw-rules" rows="7"' + (admin() ? '' : ' disabled') + '>' + esc(g.rules || RULES) + '</textarea>' + (admin() ? '<button class="gmt-btn o" data-a="gw-save">Save</button>' : '') + '</div><div>' +
+    '<label>Entry page (tracked)</label><div class="gmt-qr">' + X.qrSvg(link, 3) + '</div><code style="font-size:11px">' + esc(link) + '</code><div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="copy" data-t="' + esc(link) + '">📋 Link</button><button class="gmt-btn o" data-a="go" data-sec="library">📚 Giveaway ads</button></div>' +
+    '<h3>Entries: ' + (GW.n == null ? '…' : GW.n) + '</h3><div class="gmt-muted">One per person per month. Every entrant joins GrayCo News (unsubscribe any time) and is a soft lead. The website and the customer portal link here too.</div>' +
+    (g.winner ? '<div class="gmt-ok">Winner: <b>' + esc(g.winner.name) + '</b> — drawn ' + esc(s(g.draw && g.draw.at).slice(0, 16).replace('T', ' ')) + ' UTC by ' + esc(g.draw && g.draw.by) + ' from ' + (g.draw && g.draw.count) + ' entries · seed <code>' + esc(s(g.draw && g.draw.seed)) + '</code></div><div class="gmt-row">' + (g.notifyStatus === 'sent' ? '<span class="gmt-chip sent">Winner e-mailed</span>' : g.notifyStatus === 'waiting' ? '<span class="gmt-chip waiting">E-mail waiting for approval</span>' : admin() ? '<button class="gmt-btn g" data-a="gw-notify">✉️ Winner e-mail → approval</button>' : '') + (office() ? '<button class="gmt-btn o" data-a="gw-post">📱 Draft winner post</button>' : '') + '</div>'
+      : admin() ? '<button class="gmt-btn" data-a="gw-draw"' + (GW.n ? '' : ' disabled') + '>🎲 Draw the winner</button><div class="gmt-muted">Random, logged (who, when, seed) — anyone can re-check it.</div>' : '') + '</div></div></div>';
+  return h;
+};
+ACT['gw-save'] = function(){ var id = gwId(); MK.put('giveaways', Object.assign({ id: id, month: new Date().toISOString().slice(0, 7) }, MK.get('giveaways', id) || {}, { prize: s(D.getElementById('gw-prize').value) || 'a FREE handyman hour', status: D.getElementById('gw-status').value, rules: D.getElementById('gw-rules').value })); toast('Saved.'); };
+ACT['gw-draw'] = function(){ if (!W.confirm('Draw this month\'s winner now? It cannot be undone.')) return; MK.push().then(function(){ return api('mkt2', { op: 'giveaway_draw', id: gwId() }); }).then(function(j){ toast(j && j.ok ? 'Winner: ' + j.winner.name : (j && j.error) || 'Not drawn.', !(j && j.ok)); MK.pull(true); }); };
+ACT['gw-notify'] = function(){ X.sendForApproval('mkt_giveaway', 'giveaways', gwId()); };
+ACT['gw-post'] = function(){ var g = MK.get('giveaways', gwId()); if (!g || !g.winner) return; var n = s(g.winner.name).split(/\s+/); go('social', X.newPostForm('blank', { title: 'Giveaway winner', caption: '🎉 Congratulations to ' + n[0] + (n[1] ? ' ' + n[1][0] + '.' : '') + ', winner of this month\'s GrayCo giveaway — ' + s(g.prize) + '! Thank you to everyone who entered. A new giveaway starts every month: ' + goLink('giveaway') + '\n' + B.hashtags })); };
+
+/* ══════════════ 📰 NEWSLETTER & CHARITY ══════════════ */
+VIEWS.newsletter = function(){
+  var c = X.cfg(), mo = new Date().toISOString().slice(0, 7), id = 'nl_' + mo.replace('-', ''), cur = MK.get('campaigns', id);
+  var list = MK.all('campaigns').filter(function(x){ return x.kind === 'newsletter'; }).sort(function(a, b){ return s(a.month) < s(b.month) ? 1 : -1; });
+  var h = '<div class="gmt-card"><h2>📰 Monthly newsletter</h2><div class="gmt-muted">On the 1st the CRM drafts “GrayCo News — Month Year”: last month\'s finished work (only jobs the customer OK\'d by name), the tip of the month, the referral program (credits stack — refer again and again), any giveaway or charity news. Edit everything, then send it for approval — it goes from news@ with the unsubscribe link.</div>' +
+    '<div class="gmt-row" style="margin-top:8px">' + (cur ? '<button class="gmt-btn" data-a="camp-edit" data-id="' + id + '">✏️ Edit this month\'s</button>' : office() ? '<button class="gmt-btn" data-a="nl-draft">Draft this month\'s now</button>' : '') + (admin() ? '<label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" data-a="nl-auto"' + (c.newsletterAuto === false ? '' : ' checked') + '> Draft it automatically every month</label>' : '') + '</div>' +
+    (list.length ? '<table style="margin-top:8px"><tr><th>Newsletter</th><th>Status</th><th></th></tr>' + list.map(function(x){ return '<tr><td>' + esc(x.title) + '</td><td>' + X.chip(x.status) + '</td><td>' + (/^(draft|rejected)$/.test(s(x.status) || 'draft') ? '<button class="gmt-btn o" data-a="camp-edit" data-id="' + esc(x.id) + '">Edit</button><button class="gmt-btn g" data-a="camp-submit" data-id="' + esc(x.id) + '">Send for approval</button>' : '') + '</td></tr>'; }).join('') + '</table>' : '') + '</div>';
+  var ch = MK.all('charity').filter(function(x){ return !x.del; });
+  h += '<div class="gmt-card"><h2>💛 Charity tie-ins</h2><div class="gmt-muted">“Every [job type] in [month] = $[AMOUNT] to [cause]”. The running total counts jobs of that type finished in that month. An admin confirms the donation. Drafts for a post and a newsletter block.</div>' +
+    ch.map(function(x){ var jobs = X.projects().filter(function(p){ return /^(completed?|closed|paid)/i.test(s(p.status)) && s(p.completedAt || p.completionDate || p.endDate).slice(0, 7) === x.month && (x.jobType === 'Any' || kindKey(p) === x.jobType); }), tot = jobs.length * num(x.amount);
+      return '<div style="border-top:1px solid #eef1f6;padding:8px 0"><b>Every ' + esc(x.jobType === 'Any' ? 'job' : x.jobType.toLowerCase() + ' job') + ' in ' + esc(x.month) + ' = $' + num(x.amount) + ' to ' + esc(x.cause) + '</b><div>' + jobs.length + ' finished → <b>$' + tot.toLocaleString('en-US') + '</b> so far ' + (x.confirmedAt ? '<span class="gmt-chip sent">Donation confirmed $' + num(x.confirmedAmount).toLocaleString('en-US') + ' by ' + esc(x.confirmedBy) + '</span>' : admin() ? '<button class="gmt-btn g" data-a="ch-confirm" data-id="' + esc(x.id) + '" data-t="' + tot + '">Confirm donation</button>' : '') + '</div><div class="gmt-row"><button class="gmt-btn o" data-a="ch-post" data-id="' + esc(x.id) + '" data-t="' + tot + '">📱 Draft post</button><button class="gmt-btn o" data-a="ch-block" data-id="' + esc(x.id) + '" data-t="' + tot + '">📰 Add to newsletter</button></div></div>'; }).join('') +
+    (office() ? '<h3>＋ New tie-in</h3><div class="gmt-row"><select id="ch-type"><option>Roofing</option><option>Remodel</option><option>Insurance / storm</option><option>Water mitigation</option><option>Any</option></select><input id="ch-month" type="month" value="' + mo + '"><input id="ch-amt" placeholder="$ per job" style="width:100px"><input id="ch-cause" placeholder="Cause, e.g. St. Jude"><button class="gmt-btn" data-a="ch-add">Add</button></div>' : '') + '</div>';
+  return h;
+};
+ACT['nl-draft'] = function(b){ b.disabled = true; MK.push().then(function(){ return api('mkt2', { op: 'newsletter' }); }).then(function(j){ MK.pull(true); toast(j && j.made ? 'Drafted — open it to edit.' : (j && j.error) || 'Already drafted this month.'); }); };
+ACT['nl-auto'] = function(b){ X.setCfg({ newsletterAuto: b.checked }); };
+ACT['ch-add'] = function(){ var amt = num(D.getElementById('ch-amt').value), cause = s(D.getElementById('ch-cause').value); if (!(amt > 0) || !cause) { toast('Amount and cause, please.', true); return; } MK.put('charity', { id: X.uid('ch'), jobType: D.getElementById('ch-type').value, month: D.getElementById('ch-month').value, amount: amt, cause: cause, by: X.myName(), createdAt: X.nowIso() }); };
+ACT['ch-confirm'] = function(b){ var v = W.prompt('Donation amount confirmed ($):', b.getAttribute('data-t')); if (v == null) return; MK.put('charity', { id: b.getAttribute('data-id'), confirmedAt: X.nowIso(), confirmedBy: X.myName(), confirmedAmount: num(v) }); };
+function chText(x, tot){ return 'This ' + new Date(x.month + '-15').toLocaleString('en-US', { month: 'long' }) + ', GrayCo gives $' + num(x.amount) + ' to ' + x.cause + ' for every ' + (x.jobType === 'Any' ? 'job' : x.jobType.toLowerCase() + ' job') + ' we finish' + (tot ? ' — $' + num(tot).toLocaleString('en-US') + ' so far!' : '.') + ' Thank you for helping us give back.'; }
+ACT['ch-post'] = function(b){ var x = MK.get('charity', b.getAttribute('data-id')); if (!x) return; go('social', X.newPostForm('blank', { title: 'Charity — ' + x.cause, caption: chText(x, num(b.getAttribute('data-t'))) + '\n' + B.hashtags })); };
+ACT['ch-block'] = function(b){ var x = MK.get('charity', b.getAttribute('data-id')); if (!x) return; var id = 'nl_' + new Date().toISOString().slice(0, 7).replace('-', ''), c = MK.get('campaigns', id); if (!c) { toast('Draft this month\'s newsletter first.', true); return; } if (!/^(draft|rejected)$/.test(s(c.status) || 'draft')) { toast('This month\'s newsletter is already sent for approval.', true); return; } MK.put('campaigns', { id: id, body: s(c.body) + '<h3 style="color:#1E2060">Giving back</h3><p>' + esc(chText(x, num(b.getAttribute('data-t')))) + '</p>' }); toast('Added to the newsletter draft.'); };
+
+/* ══════════════ 📆 YEARLY CALENDAR ══════════════ */
+VIEWS.yearcal = function(){
+  var m = new Date().getMonth() + 1, ov = MK.get('cfg', 'yearcal') || {};
+  return '<div class="gmt-card"><h2>📆 The GrayCo marketing year</h2><div class="gmt-muted">A theme per month with a ready idea — tap to draft the e-mail (news@), a post, or ad copy. Everything still waits on ✅ Approvals. Edit any month\'s idea.</div></div>' + YEAR.map(function(y){
+    var e = ov['m' + y.m] || y.e;
+    return '<div class="gmt-card"' + (y.m === m ? ' style="border-color:' + B.gold + '"' : '') + '><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">' + new Date(2026, y.m - 1, 1).toLocaleString('en-US', { month: 'long' }) + ' — ' + esc(y.t) + '</h2>' + (y.m === m ? '<span class="gmt-chip approved">This month</span>' : '') + '</div><div style="margin:6px 0">' + esc(e) + '</div><div class="gmt-row">' +
+      (office() ? '<button class="gmt-btn o" data-a="yc-mail" data-m="' + y.m + '">✉️ Draft e-mail</button><button class="gmt-btn o" data-a="yc-post" data-m="' + y.m + '">📱 Draft post</button>' : '') + '<button class="gmt-btn o" data-a="yc-ad" data-m="' + y.m + '">🎯 Ad copy</button>' + (office() ? '<button class="gmt-btn o" data-a="yc-edit" data-m="' + y.m + '">✏️ Edit idea</button>' : '') + '</div></div>';
+  }).join('');
+};
+function yrow(mm){ var y = YEAR.filter(function(x){ return x.m === +mm; })[0], ov = MK.get('cfg', 'yearcal') || {}; return Object.assign({}, y, { e: ov['m' + y.m] || y.e }); }
+ACT['yc-mail'] = function(b){ var y = yrow(b.getAttribute('data-m')), f = X.newCampaignForm(''); Object.assign(f, { title: y.t, subject: y.t + ' — GrayCo', ctitle: y.t, preheader: y.e, body: '<p>Hi {{first_name}},</p><p>' + esc(y.e) + '</p><p>Call us at (901) 585-0944 or reply to this e-mail.</p>' }); go('campaigns', f); };
+ACT['yc-post'] = function(b){ var y = yrow(b.getAttribute('data-m')); go('social', X.newPostForm('blank', { title: y.t, caption: y.e + '\n\nGrayCo Construction · (901) 585-0944\n' + B.hashtags })); };
+ACT['yc-ad'] = function(b){ var y = yrow(b.getAttribute('data-m')); AH.form = { platform: 'meta', service: y.svc, city: '', offer: '' }; AH.copy = null; go('adshub'); };
+ACT['yc-edit'] = function(b){ var y = yrow(b.getAttribute('data-m')), v = W.prompt('The idea for ' + y.t + ':', y.e); if (v == null) return; var ov = Object.assign({ id: 'yearcal' }, MK.get('cfg', 'yearcal') || {}); ov['m' + y.m] = v; MK.put('cfg', ov); };
+
+/* ══════════════ 🌐 WEBSITE, PIXELS, GUIDES, GOOGLE BUSINESS DRAFTS ══════════════ */
+var WP = { stats: null };
+var CITY = ['Bartlett', 'Memphis', 'Germantown', 'Collierville', 'Cordova', 'Arlington', 'Lakeland'], SVC = [['roofing', 'Roofing'], ['roof-repair', 'Roof repair'], ['storm-damage-restoration', 'Storm & insurance restoration'], ['water-damage-mitigation', 'Water mitigation'], ['remodeling', 'Remodeling']];
+VIEWS.webpages = function(){
+  var c = X.cfg(), px = c.pixels || {};
+  var h = '<div class="gmt-card"><h2>📍 Tags on the website (Google tag + Meta pixel)</h2><div class="gmt-muted">The website shows a small cookie notice; only if the visitor accepts are these loaded. A finished form fires a “lead” conversion — never a name, e-mail or phone. Empty = off.</div><div class="gmt-two"><div><label>Google tag (GA4) — G-…</label><input id="px-gtag" value="' + esc(px.gtag || '') + '" placeholder="G-XXXXXXX"><label>Google Ads conversion — AW-…/label</label><input id="px-ads" value="' + esc(px.ads || '') + '" placeholder="AW-123456789/AbCdEf"></div><div><label>Meta pixel ID (digits)</label><input id="px-meta" value="' + esc(px.meta || '') + '" placeholder="123456789012345"><div class="gmt-muted" style="margin-top:8px">Find them: Google Analytics → Admin → Data streams; Google Ads → Goals → Conversions (“Submit lead form”, tag setup → use Google tag); Meta Events Manager → Data sources.</div></div></div>' + (admin() ? '<button class="gmt-btn" data-a="px-save">Save</button>' : '') + '</div>';
+  var st = WP.stats;
+  h += '<div class="gmt-card"><h2>🏙 City + service pages</h2><div class="gmt-muted">' + CITY.length * SVC.length + ' pages on grayco-cs.com (e.g. /roofing-bartlett-tn). Each has a quote form that lands in the Lead Inbox. Real numbers only: finished jobs per city and testimonials customers allowed — refreshed hourly from the CRM. No made-up reviews.</div><div class="gmt-row" style="margin:8px 0"><button class="gmt-btn o" data-a="wp-stats">⟳ See what the pages show now</button><button class="gmt-btn o" data-a="open" data-url="' + WEB + '/sitemap.xml">sitemap.xml</button></div>' +
+    (st ? '<div class="gmt-ok">' + st.stats.total + ' finished jobs counted · ' + Object.keys(st.stats.cities).map(function(k){ return esc(k) + ': ' + st.stats.cities[k].total; }).join(' · ') + ' · ' + st.testimonials.length + ' testimonials allowed</div>' : '') +
+    '<table><tr><th>City</th>' + SVC.map(function(x){ return '<th>' + esc(x[1]) + '</th>'; }).join('') + '</tr>' + CITY.map(function(ct){ return '<tr><td>' + ct + '</td>' + SVC.map(function(x){ var u = WEB + '/' + x[0] + '-' + ct.toLowerCase() + '-tn'; return '<td><a href="' + u + '" target="_blank" rel="noopener">open</a></td>'; }).join('') + '</tr>'; }).join('') + '</table></div>';
+  h += '<div class="gmt-card"><h2>📥 Free guides (lead magnets)</h2><div class="gmt-muted">On the website: “Storm Damage Checklist” and “Before You Hire a Contractor”. The download asks for name + e-mail; the person joins GrayCo News (unsubscribe any time) and shows in the Lead Inbox as a soft lead (no reach-out clock).</div><div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="open" data-url="' + WEB + '/downloads/GrayCo-Storm-Damage-Checklist.pdf">Storm Damage Checklist (PDF)</button><button class="gmt-btn o" data-a="open" data-url="' + WEB + '/downloads/GrayCo-Before-You-Hire-a-Contractor.pdf">Before You Hire a Contractor (PDF)</button></div></div>';
+  var done = X.finishedJobs(120).slice(0, 25);
+  h += '<div class="gmt-card"><h2>📍 Google Business Profile drafts</h2><div class="gmt-muted">A post per finished job (city and job type — never the house number or the name; a photo only with the customer\'s OK). Each draft waits on ✅ Approvals, then posts (or the office copies it into Google Business if the API is not connected).</div>' +
+    (done.length ? '<table>' + done.map(function(p){ var ok = permOk(p.id), has = MK.all('posts').some(function(x){ return x.jobId === p.id && x.gbpDraft; }); return '<tr><td>' + esc(kindKey(p)) + ' — ' + esc(cityOf(p.address || p.jobAddress) || '') + '<div class="gmt-muted">' + esc(p.name || '') + '</div></td><td>' + (ok ? '<span class="gmt-chip approved">photo OK</span>' : '<span class="gmt-muted">no photo OK</span>') + '</td><td>' + (has ? '<span class="gmt-chip">drafted</span>' : office() ? '<button class="gmt-btn o" data-a="gbp-draft" data-id="' + esc(p.id) + '">Draft GBP post</button>' : '') + '</td></tr>'; }).join('') + '</table>' : '<div class="gmt-muted">No finished jobs in the last 120 days.</div>') + '</div>';
+  return h;
+};
+ACT['px-save'] = function(){ var g = s(D.getElementById('px-gtag').value).toUpperCase(), a = s(D.getElementById('px-ads').value), m = s(D.getElementById('px-meta').value).replace(/\D/g, '');
+  if (g && !/^G-[A-Z0-9]{4,}$/.test(g)) { toast('The Google tag looks like G-XXXXXXX.', true); return; } if (a && !/^AW-\d{5,}(\/[\w-]+)?$/.test(a)) { toast('The Ads conversion looks like AW-123456789/label.', true); return; } if (m && !/^\d{8,20}$/.test(m)) { toast('The Meta pixel ID is digits.', true); return; }
+  X.setCfg({ pixels: { gtag: g, ads: a, meta: m } }); toast('Saved — the website picks it up within the hour.'); };
+ACT['wp-stats'] = function(){ api('mkt2', { op: 'site_stats' }).then(function(j){ WP.stats = j && j.ok ? j : null; draw(); }); };
+ACT['gbp-draft'] = function(b){ var p = proj(b.getAttribute('data-id')); if (!p) return; var city = cityOf(p.address || p.jobAddress), k = kindKey(p);
+  var cap = 'Another ' + (k === 'Other' ? 'project' : k.toLowerCase() + ' project') + ' finished' + (city ? ' in ' + city : '') + '! Thank you for trusting GrayCo Construction Services. ' + (k === 'Roofing' || k === 'Insurance / storm' ? '5-year warranty on roofing and insurance work. ' : '') + 'Free estimates: (901) 585-0944.';
+  var f = X.newPostForm('blank', { title: 'Google Business — ' + (city || k), caption: cap, jobId: p.id, nf: false, ni: false, ng: true, gbpDraft: true }); if (permOk(p.id)) { var ph = X.photosOf(p.id)[0]; if (ph) f.photoRef = ph.ref; } go('social', f); };
+
+/* ══════════════ 🎬 BEFORE/AFTER REEL KIT ══════════════ */
+var RL = { pid: '', sel: [], urls: {}, cap: '', busy: false, out: null };
+VIEWS.reels = function(){
+  var jobs = X.finishedJobs(365).slice(0, 80).concat(X.projects().filter(function(p){ return /active|progress/i.test(s(p.status)); }).slice(0, 40));
+  var ok = RL.pid && permOk(RL.pid), ph = RL.pid ? X.photosOf(RL.pid).slice(0, 40) : [];
+  var h = '<div class="gmt-card"><h2>🎬 Before / after reel</h2><div class="gmt-muted">Pick a job, check the customer said OK, pick 3–8 photos (before first), add captions — the CRM makes a short vertical video with the GrayCo logo, right in this browser. Download it, or send it to Marketing for an approved post. Optional, never automatic.</div>' +
+    '<label>Job</label><select data-ch="rl-job"><option value="">— pick —</option>' + jobs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (RL.pid === p.id ? ' selected' : '') + '>' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select>' +
+    (RL.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="rl-perm"' + (ok ? ' checked' : '') + '> The customer said OK to use photos of this job in marketing</label>' : '') + '</div>';
+  if (RL.pid && !ok) return h + '<div class="gmt-warn">No video without the customer\'s OK.</div>';
+  if (RL.pid) {
+    h += '<div class="gmt-card"><h2>Photos (' + RL.sel.length + ' picked)</h2><div class="gmt-row">' + (ph.length ? ph.map(function(r){ var u = RL.urls[r.ref]; if (!u) { RL.urls[r.ref] = 'loading'; X.fileUrl(r.ref).then(function(x){ RL.urls[r.ref] = x; X.redrawSoon(); }, function(){}); } return '<img class="gmt-thumb' + (RL.sel.indexOf(r.ref) >= 0 ? ' sel' : '') + '" data-a="rl-pick" data-ref="' + esc(r.ref) + '" src="' + (u && u !== 'loading' ? esc(u) : '') + '" alt="' + esc(r.tag || '') + '" title="' + (RL.sel.indexOf(r.ref) >= 0 ? '#' + (RL.sel.indexOf(r.ref) + 1) : '') + '">'; }).join('') : '<div class="gmt-muted">No GrayCo Photos on this job.</div>') + '</div>' +
+      '<label>Captions — one per photo, in order (e.g. Before · Tear-off · New underlayment · After)</label><textarea id="rl-cap" rows="3">' + esc(RL.cap) + '</textarea>' +
+      '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn" data-a="rl-make"' + (RL.busy || RL.sel.length < 2 ? ' disabled' : '') + '>' + (RL.busy ? 'Making the video…' : '🎬 Make the video') + '</button></div>' +
+      (RL.out ? '<video src="' + RL.out.url + '" controls playsinline style="max-width:240px;display:block;margin:10px 0;border-radius:10px"></video><div class="gmt-row"><a class="gmt-btn o" style="text-decoration:none" href="' + RL.out.url + '" download="grayco-reel.' + RL.out.ext + '">⬇ Download</a><button class="gmt-btn o" data-a="rl-send">📤 Send to Marketing</button></div>' : '') + '</div>';
+  }
+  return h;
+};
+ACT['rl-job'] = function(t){ RL = { pid: t.value, sel: [], urls: RL.urls, cap: '', busy: false, out: null }; draw(); };
+ACT['rl-perm'] = function(b){ setPerm(RL.pid, b.checked); nST(draw, 200); };
+ACT['rl-pick'] = function(b){ var r = b.getAttribute('data-ref'), i = RL.sel.indexOf(r); if (i >= 0) RL.sel.splice(i, 1); else if (RL.sel.length < 8) RL.sel.push(r); var c = D.getElementById('rl-cap'); if (c) RL.cap = c.value; draw(); };
+function loadImg(u){ return new Promise(function(res, rej){ var i = new Image(); i.crossOrigin = 'anonymous'; i.onload = function(){ res(i); }; i.onerror = rej; i.src = u; }); }
+ACT['rl-make'] = function(){
+  var c = D.getElementById('rl-cap'); RL.cap = c ? c.value : ''; var caps = RL.cap.split(/\n|·/).map(s);
+  if (!W.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) { toast('This browser cannot make videos — try Chrome or Edge on a computer.', true); return; }
+  RL.busy = true; draw();
+  Promise.all(RL.sel.map(function(r){ return X.fileUrl(r).then(loadImg); }).concat([loadImg('grayco-logo.jpg').catch(function(){ return null; })])).then(function(imgs){
+    var logo = imgs.pop(), cv = D.createElement('canvas'); cv.width = 720; cv.height = 1280; var g = cv.getContext('2d');
+    var type = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm'].filter(function(t){ try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; } })[0] || 'video/webm';
+    var rec = new MediaRecorder(cv.captureStream(30), { mimeType: type, videoBitsPerSecond: 2500000 }), chunks = [];
+    rec.ondataavailable = function(e){ if (e.data && e.data.size) chunks.push(e.data); };
+    var per = 2200, total = per * imgs.length + 1600, t0 = performance.now();
+    function frame(){
+      var t = performance.now() - t0, i = Math.min(imgs.length - 1, Math.floor(t / per)), k = (t % per) / per;
+      g.fillStyle = '#0F1D2F'; g.fillRect(0, 0, 720, 1280);
+      if (t < per * imgs.length) {
+        var im = imgs[i], sc = Math.max(720 / im.width, 1000 / im.height) * (1 + 0.06 * k), w = im.width * sc, h = im.height * sc;
+        g.save(); g.beginPath(); g.rect(0, 140, 720, 1000); g.clip(); g.globalAlpha = Math.min(1, k * 4); g.drawImage(im, (720 - w) / 2, 140 + (1000 - h) / 2, w, h); g.restore(); g.globalAlpha = 1;
+        var cap = caps[i] || (i === 0 ? 'Before' : i === imgs.length - 1 ? 'After' : '');
+        if (cap) { g.fillStyle = 'rgba(15,29,47,.78)'; g.fillRect(0, 1040, 720, 100); g.fillStyle = '#D4A017'; g.font = '800 46px Arial'; g.textAlign = 'center'; g.fillText(cap.toUpperCase(), 360, 1106); }
+      } else { g.fillStyle = '#fff'; g.font = '800 44px Arial'; g.textAlign = 'center'; g.fillText('GrayCo Construction', 360, 600); g.fillStyle = '#D4A017'; g.font = '700 38px Arial'; g.fillText('(901) 585-0944', 360, 670); g.fillStyle = '#c9d4e3'; g.font = '28px Arial'; g.fillText('grayco-cs.com', 360, 720); }
+      if (logo) { g.fillStyle = '#fff'; g.fillRect(250, 30, 220, 90); g.drawImage(logo, 260, 35, 200, 80); }
+      g.fillStyle = '#D4A017'; g.fillRect(0, 1270, 720 * Math.min(1, t / total), 10);
+      if (t < total) requestAnimationFrame(frame); else rec.stop();
+    }
+    rec.onstop = function(){ var blob = new Blob(chunks, { type: type.split(';')[0] }); RL.blob = blob; RL.out = { url: URL.createObjectURL(blob), ext: /mp4/.test(type) ? 'mp4' : 'webm' }; RL.busy = false; draw(); };
+    rec.start(250); frame();
+  }).catch(function(e){ RL.busy = false; toast('Could not load the photos: ' + (e && e.message || e), true); draw(); });
+};
+ACT['rl-send'] = function(){ if (!RL.blob) return; if (RL.blob.size > 25 * 1024 * 1024) { toast('The video is too big to send — download it instead.', true); return; }
+  var fr = new FileReader(); fr.onload = function(){ X.storeDataUrl(fr.result, 'grayco-reel-' + RL.pid + '.' + RL.out.ext).then(function(ref){ if (!ref) { toast('Could not store the video — download it instead.', true); return; } var p = proj(RL.pid); MK.put('submissions', { id: X.uid('sub'), kind: 'video', ref: ref, jobId: RL.pid, jobName: s(p && (p.name || p.client)), tag: 'Before/after reel', note: 'Customer OK for marketing recorded', n: 1, by: X.myName(), at: X.nowIso() }); toast('Sent to Marketing — the office makes the post (it waits on approval).'); }); }; fr.readAsDataURL(RL.blob); };
+
+/* ══════════════ 🎤 PRESENTATIONS ══════════════ */
+function decks(){ var ov = MK.all('decks'); return DECKS.map(function(d){ var o = ov.filter(function(x){ return x.id === d.id && !x.del; })[0]; return o && o.slides ? Object.assign({}, d, { slides: o.slides, edited: o.by }) : d; }).concat(ov.filter(function(x){ return x.custom && !x.del; })); }
+function deckById(id){ return decks().filter(function(d){ return d.id === id; })[0]; }
+function deckText(d){ return d.slides.map(function(x){ return '# ' + x.t + '\n' + arr(x.b).map(function(b){ return '- ' + b; }).join('\n') + (x.n ? '\n> ' + x.n : ''); }).join('\n\n'); }
+function parseDeck(t){ var out = [], cur = null; s(t).split('\n').forEach(function(l){ var m; if ((m = /^#\s*(.*)$/.exec(l))) { cur = { t: m[1].trim(), b: [], n: '' }; out.push(cur); } else if (cur && (m = /^\s*[-•]\s*(.*)$/.exec(l))) cur.b.push(m[1].trim()); else if (cur && (m = /^\s*>\s*(.*)$/.exec(l))) cur.n = (cur.n ? cur.n + ' ' : '') + m[1].trim(); }); return out; }
+var DK = { edit: null };
+VIEWS.decks = function(){
+  if (DK.edit) { var d = deckById(DK.edit); return '<div class="gmt-card"><h2>✏️ ' + esc(d.title) + '</h2><div class="gmt-muted"># starts a slide · - a bullet · > the presenter note</div><textarea id="dk-text" rows="22" style="font-family:ui-monospace,Menlo,monospace;font-size:13px">' + esc(deckText(d)) + '</textarea><div class="gmt-row" style="margin-top:8px"><button class="gmt-btn" data-a="dk-save">Save</button><button class="gmt-btn o" data-a="dk-cancel">Cancel</button>' + (d.edited ? '<button class="gmt-btn r" data-a="dk-reset">Back to the original</button>' : '') + '</div></div>'; }
+  var groups = {}; decks().forEach(function(d){ (groups[d.group] = groups[d.group] || []).push(d); });
+  return '<div class="gmt-card"><h2>🎤 Presentations</h2><div class="gmt-muted">Branded slides with presenter notes — present from the browser (arrow keys) or print / save as PDF (one slide per page, notes underneath). General, accurate content: no legal or medical claims; warranty 5 years roofing / insurance, 1 year other. Training decks are linked from Company Docs and the new-hire training to-do.</div></div>' +
+    Object.keys(groups).map(function(g){ return '<div class="gmt-card"><h2>' + esc({ BNI: '🤝 BNI', 'Lunch & learn': '🥪 Lunch & learns', Training: '🎓 Company training (new hires)' }[g] || g) + '</h2><table>' + groups[g].map(function(d){ return '<tr><td><b>' + esc(d.title) + '</b><div class="gmt-muted">' + esc(d.aud) + ' · ' + d.slides.length + ' slides' + (d.edited ? ' · edited by ' + esc(d.edited) : '') + '</div></td><td class="gmt-row"><button class="gmt-btn" data-a="dk-show" data-id="' + esc(d.id) + '">▶ Present</button><button class="gmt-btn o" data-a="dk-pdf" data-id="' + esc(d.id) + '">🖨 PDF</button>' + (office() ? '<button class="gmt-btn o" data-a="dk-edit" data-id="' + esc(d.id) + '">✏️ Edit</button>' : '') + '</td></tr>'; }).join('') + '</table></div>'; }).join('');
+};
+function slideHtml(d, x, i, n){ return '<section class="sl"><div class="hd"><img src="' + CRM + '/grayco-logo.jpg"><span>' + esc(d.title) + '</span><span class="pg">' + (i + 1) + ' / ' + n + '</span></div><h1>' + esc(x.t) + '</h1><ul>' + arr(x.b).map(function(b){ return '<li>' + esc(b) + '</li>'; }).join('') + '</ul><div class="ft">GrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · (901) 585-0944</div></section>' + (x.n ? '<div class="nt"><b>Presenter notes:</b> ' + esc(x.n) + '</div>' : '<div class="nt"></div>'); }
+var DECK_CSS = 'body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#14202E;background:#e9edf3}.sl{width:10in;height:5.625in;box-sizing:border-box;background:#fff;border-top:10px solid #0F1D2F;border-bottom:6px solid #D4A017;padding:0.35in 0.6in;position:relative;margin:0.2in auto;page-break-after:avoid}.hd{display:flex;align-items:center;gap:12px;font-size:13px;color:#55626F}.hd img{height:34px}.pg{margin-left:auto}h1{color:#1E2060;font-size:34px;margin:18px 0 12px}li{font-size:22px;margin:8px 0}.ft{position:absolute;bottom:10px;left:0.6in;font-size:11px;color:#6b7b92}.nt{width:10in;margin:0 auto 0.2in;font-size:13px;color:#334;page-break-after:always}@page{size:11in 8.5in;margin:0.3in}@media print{body{background:#fff}}';
+ACT['dk-pdf'] = function(b){ var d = deckById(b.getAttribute('data-id')); printHtml(d.title, DECK_CSS, d.slides.map(function(x, i){ return slideHtml(d, x, i, d.slides.length); }).join('')); };
+ACT['dk-show'] = function(b){ var d = deckById(b.getAttribute('data-id')), w = W.open('', '_blank'); if (!w) { toast('Allow pop-ups to present.', true); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(d.title) + '</title><style>' + DECK_CSS + 'body{background:#0F1D2F;overflow:hidden}.sl,.nt{display:none;margin:0 auto}.sl.on{display:block;transform-origin:top center}.nt.on{display:block;color:#c9d4e3;background:transparent}.hint{position:fixed;bottom:8px;right:12px;color:#6b7b92;font-size:12px}</style></head><body>' + d.slides.map(function(x, i){ return slideHtml(d, x, i, d.slides.length); }).join('') +
+    '<div class="hint">← → to move · N notes · F full screen</div><script>var i=0,S=document.querySelectorAll(".sl"),Nn=document.querySelectorAll(".nt"),notes=true;function sh(){S.forEach(function(x,k){x.classList.toggle("on",k===i);var sc=Math.min(innerWidth/x.offsetWidth||1,(innerHeight-(notes?90:20))/540);x.style.transform="scale("+Math.min(sc,2)+")";});Nn.forEach(function(x,k){x.classList.toggle("on",notes&&k===i);});}addEventListener("keydown",function(e){if(e.key==="ArrowRight"||e.key===" "||e.key==="PageDown")i=Math.min(S.length-1,i+1);else if(e.key==="ArrowLeft"||e.key==="PageUp")i=Math.max(0,i-1);else if(e.key==="n"||e.key==="N")notes=!notes;else if(e.key==="f"||e.key==="F")document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();sh();});addEventListener("click",function(){i=Math.min(S.length-1,i+1);sh();});addEventListener("resize",sh);sh();<\/script></body></html>'); w.document.close(); };
+ACT['dk-edit'] = function(b){ DK.edit = b.getAttribute('data-id'); draw(); };
+ACT['dk-cancel'] = function(){ DK.edit = null; draw(); };
+ACT['dk-save'] = function(){ var sl = parseDeck(D.getElementById('dk-text').value); if (!sl.length) { toast('Start each slide with # Title.', true); return; } MK.put('decks', { id: DK.edit, slides: sl, by: X.myName(), editedAt: X.nowIso() }); DK.edit = null; toast('Saved.'); draw(); };
+ACT['dk-reset'] = function(){ if (W.confirm('Go back to the original slides?')) { MK.del('decks', DK.edit); DK.edit = null; draw(); } };
+
+/* ══════════════ 🧭 MARKETING COACH ══════════════ */
+VIEWS.coach = function(){
+  var wk = weekId(), r = MK.get('coach', 'w_' + wk) || { done: {} }, once = MK.get('coach', 'once') || { done: {} };
+  var weekly = COACH.filter(function(x){ return x.w; }), setup = COACH.filter(function(x){ return !x.w; });
+  var n = weekly.filter(function(x){ return r.done && r.done[x.id]; }).length;
+  var streak = 0; for (var i = 1; i < 60; i++) { var w = weekId(Date.now() - i * 7 * 864e5), rr = MK.get('coach', 'w_' + w); if (rr && Object.keys(rr.done || {}).filter(function(k){ return rr.done[k]; }).length >= Math.ceil(weekly.length * 0.7)) streak++; else break; }
+  if (n >= Math.ceil(weekly.length * 0.7)) streak++;
+  var row = function(x, done, a){ return '<div class="gmt-check"><input type="checkbox" data-a="' + a + '" data-id="' + x.id + '"' + (done ? ' checked' : '') + '><div><b>' + esc(x.l) + '</b><div class="gmt-muted">' + esc(x.how) + '</div>' + (x.url ? '<button class="gmt-btn o" style="margin-top:4px;padding:4px 10px" data-a="open" data-url="' + esc(x.url) + '">Open ↗</button>' : '') + '</div></div>'; };
+  return '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + n + ' / ' + weekly.length + '</b><span>this week (' + esc(wk) + ')</span></div><div class="gmt-kpi"><b>🔥 ' + streak + '</b><span>week streak (70%+ done)</span></div><div class="gmt-kpi"><b>' + setup.filter(function(x){ return once.done && once.done[x.id]; }).length + ' / ' + setup.length + '</b><span>setup steps done</span></div></div>' +
+    '<div class="gmt-card"><h2>🧭 This week</h2>' + weekly.map(function(x){ return row(x, r.done && r.done[x.id], 'coach-w'); }).join('') + '</div>' +
+    '<div class="gmt-card"><h2>🧰 One-time setup</h2>' + setup.map(function(x){ return row(x, once.done && once.done[x.id], 'coach-o'); }).join('') + '</div>';
+};
+ACT['coach-w'] = function(b){ var wk = weekId(), r = Object.assign({ id: 'w_' + wk, week: wk, done: {} }, MK.get('coach', 'w_' + wk) || {}); r.done = Object.assign({}, r.done); r.done[b.getAttribute('data-id')] = b.checked; MK.put('coach', r); };
+ACT['coach-o'] = function(b){ var r = Object.assign({ id: 'once', done: {} }, MK.get('coach', 'once') || {}); r.done = Object.assign({}, r.done); r.done[b.getAttribute('data-id')] = b.checked; MK.put('coach', r); };
+
+/* ══════════════ owner items 21–31 (22 Oct, later): Facebook giveaway entry, city page text, Marketplace / groups,
+   Nextdoor ask, review blitz, video FAQ, pre-listing roof checks, HOA / property-manager outreach, what posts itself ══════════════ */
+X.KINDS.mkt_page = 'citypages'; X.KINDS.mkt_outreach = 'outreach';
+CAT_LINK.prelisting = { dest: WEB + '/#partners', med: 'social' };
+TPL.prelisting = { h: 'Free pre-listing roof check', b: 'Realtors: before you list, GrayCo checks the roof for free and gives you photos and a short written summary — so the inspection has no surprises. Become a GrayCo Referral Partner and track every referral on your own page.' };
+var OPEN_FOR = { 'Facebook Marketplace (services)': 'https://www.facebook.com/marketplace/create/', 'Facebook group post': 'https://www.facebook.com/groups/feed/', 'Nextdoor post': 'https://business.nextdoor.com/', 'Craigslist services ad': 'https://post.craigslist.org/c/mem', 'Google search headlines': 'https://ads.google.com/', 'Facebook / Instagram post': 'https://business.facebook.com/latest/composer' };
+var AUTOPOST = '<div class="gmt-card"><h2>📤 What posts itself — and what you post by hand</h2><div class="gmt-muted"><b>Posts itself after ✅ Approval:</b> Facebook + Instagram (once connected — Marketing → Social posts); Google Business Profile (once its API access is granted — until then the draft has Copy + Open). <b>Always by hand</b> (no API): Nextdoor, Facebook Marketplace, Facebook groups, Craigslist — use Copy, then Open.</div></div>';
+var libView = VIEWS.library;
+VIEWS.library = function(){ return AUTOPOST + libView().replace(/<button class="gmt-btn o" data-a="lib-flyer" data-i="([^"]+)">/g, function(m, i){ var a = adByI(i), u = a && OPEN_FOR[a.f]; return (u ? '<button class="gmt-btn o" data-a="open" data-url="' + u + '">↗ Open ' + esc(a.f.split(' (')[0].replace(' post', '')) + '</button>' : '') + (a && a.f === 'Nextdoor recommendation ask' && office() ? '<button class="gmt-btn o" data-a="nd-ask">✉️ E-mail it to past customers (approval)</button>' : '') + m; }); };
+ACT['nd-ask'] = function(){ var a = ADS.filter(function(x){ return x.f === 'Nextdoor recommendation ask'; })[0], f = X.newCampaignForm('', { type: 'reviewBlitz' }); Object.assign(f, { title: 'Nextdoor recommendation ask', subject: 'A quick favor? Recommend GrayCo on Nextdoor', ctitle: 'Would you recommend us?', preheader: '30 seconds on Nextdoor helps your neighbors find a contractor they can trust', body: '<p>' + esc(a.t).replace(/\n/g, '<br>') + '</p>', ctaLabel: 'Open Nextdoor', ctaUrl: 'https://nextdoor.com/' }); go('campaigns', f); };
+
+/* 21 — the giveaway from Facebook (and a Lead Ads form) */
+var gwView = VIEWS.giveaway;
+VIEWS.giveaway = function(){
+  var fb = ensureLink('giveaway-fb', { label: 'Monthly giveaway — Facebook', kind: 'giveaway', dest: CRM + '/giveaway.html?gc=giveaway-fb', src: 'facebook', med: 'social', camp: 'giveaway' });
+  var form = 'Meta Lead Ads — instant form template (create it in Ads Manager → Instant forms):\n• Intro: "Win ' + ((MK.get('giveaways', gwId()) || {}).prize || 'a FREE handyman hour') + ' — the GrayCo monthly giveaway. One entry per person. No purchase necessary."\n• Questions: Full name · E-mail · ZIP code\n• Custom checkbox (optional): "Send me GrayCo News — unsubscribe any time"\n• Privacy policy: grayco-cs.com (link your privacy page)\n• Rules link: ' + CRM + '/giveaway.html#rules\n• Do NOT require likes, shares, tags or follows to enter (Meta\'s promotion rules).\nLeads from the form: Ads Manager → Leads center → download, or connect Zapier → the CRM\'s partner API (Admin → 🔑 API access) so they arrive as leads.';
+  return gwView() + '<div class="gmt-card"><h2>📘 Entering from Facebook</h2><div class="gmt-muted">Post the Facebook link below (tracked as source “facebook”). On the entry page “Follow us on Facebook” and “Join our newsletter” are optional boxes — entering never requires a like, share, tag or follow (Meta\'s rules, and it is in the official rules).</div><div class="gmt-row" style="margin:8px 0"><code style="font-size:11px">' + esc(fb) + '</code><button class="gmt-btn o" data-a="copy" data-t="' + esc(fb) + '">📋 Facebook link</button>' + (office() ? '<button class="gmt-btn o" data-a="gw-fbpost">📱 Draft the Facebook post</button>' : '') + '</div>' +
+    '<h3>Lead Ads instant form (optional, when the Ads hub is connected)</h3><textarea rows="9" readonly>' + esc(form) + '</textarea><button class="gmt-btn o" data-a="copy" data-t="' + esc(form) + '">📋 Copy the template</button></div>';
+};
+RULES = RULES.replace('This giveaway is not sponsored', 'Entry never requires liking, sharing, tagging or following any account. This giveaway is not sponsored');
+ACT['gw-fbpost'] = function(){ var g = MK.get('giveaways', gwId()) || {}; go('social', X.newPostForm('blank', { title: 'Giveaway — Facebook', caption: '🎁 Win ' + (g.prize || 'a FREE handyman hour') + ' from GrayCo Construction! Enter here (20 seconds, one entry per person): ' + goLink('giveaway-fb') + '\nNo purchase necessary — you do not have to like, share or tag anything to enter. Official rules on the entry page.', nf: true, ni: false, ng: false })); };
+
+/* 22 — the city pages' text: edit, preview, approval */
+var CP2 = { slug: 'roofing-bartlett-tn' };
+function pageLabel(slug){ var m = /^(.*)-([a-z-]+)-tn$/.exec(slug); var svc = SVC.filter(function(x){ return m && x[0] === m[1]; })[0]; var city = CITY.filter(function(c){ return m && c.toLowerCase() === m[2]; })[0]; return (svc ? svc[1] : slug) + (city ? ' in ' + city + ', TN' : ''); }
+function pageDefault(slug){ var L = pageLabel(slug); return { headline: L + ' — GrayCo Construction Services', intro: 'GrayCo Construction Services is a licensed Tennessee general contractor at 4014 Broadway Rd in Bartlett. We do ' + L.toLowerCase() + ' with a free estimate, a clear written scope, and updates in your own online portal.', body: '' }; }
+var wpView = VIEWS.webpages;
+VIEWS.webpages = function(){
+  var all = []; CITY.forEach(function(ct){ SVC.forEach(function(x){ all.push(x[0] + '-' + ct.toLowerCase() + '-tn'); }); });
+  var r = MK.get('citypages', CP2.slug) || {}, d = Object.assign(pageDefault(CP2.slug), r.draft || r.approved || {});
+  var h = '<div class="gmt-card"><h2>✏️ City page text</h2><div class="gmt-muted">Each page fills itself from the CRM (finished-job counts, testimonials customers allowed, photos customers allowed). The words are yours: edit, preview, then send for approval — the page shows the new text only after an admin approves it. Empty fields keep the standard text.</div>' +
+    '<label>Page</label><select data-ch="cp2-page">' + all.map(function(sl){ var x = MK.get('citypages', sl) || {}; return '<option value="' + sl + '"' + (sl === CP2.slug ? ' selected' : '') + '>' + esc(pageLabel(sl)) + (x.approved ? ' ✓' : x.status === 'waiting' ? ' (waiting)' : x.draft ? ' (draft)' : '') + '</option>'; }).join('') + '</select>' +
+    '<div class="gmt-two"><div><label>Headline</label><input id="cp2-h" value="' + esc(d.headline) + '"><label>Intro</label><textarea id="cp2-i" rows="4">' + esc(d.intro) + '</textarea><label>More text (optional)</label><textarea id="cp2-b" rows="6">' + esc(d.body) + '</textarea>' +
+    '<div class="gmt-row" style="margin-top:8px">' + (office() ? '<button class="gmt-btn o" data-a="cp2-save">Save draft</button><button class="gmt-btn g" data-a="cp2-submit">Send for approval</button>' : '') + '<button class="gmt-btn o" data-a="open" data-url="' + WEB + '/' + CP2.slug + '">Open the live page</button></div>' +
+    '<div class="gmt-muted">' + (r.approved ? 'Live text approved ' + esc(s(r.publishedAt).slice(0, 10)) + '. ' : 'Showing the standard text. ') + (r.status === 'waiting' ? 'A new version is waiting for approval.' : '') + '</div></div>' +
+    '<div><label>Preview</label><div style="border:1px solid #dce3ee;border-radius:10px;padding:14px;background:#fff"><h3 style="color:' + B.navy + ';margin-top:0">' + esc(d.headline) + '</h3><p>' + esc(d.intro) + '</p>' + (d.body ? '<p>' + esc(d.body).replace(/\n/g, '<br>') + '</p>' : '') + '<div class="gmt-muted">[finished-job count for the city] · [testimonials customers allowed] · [photos customers allowed] · quote form</div></div></div></div></div>';
+  return h + wpView();
+};
+function cp2Read(){ return { headline: s(D.getElementById('cp2-h').value), intro: s(D.getElementById('cp2-i').value), body: s(D.getElementById('cp2-b').value) }; }
+ACT['cp2-page'] = function(t){ CP2.slug = t.value; draw(); };
+ACT['cp2-save'] = function(){ MK.put('citypages', { id: CP2.slug, label: pageLabel(CP2.slug), draft: cp2Read(), status: 'draft', editedBy: X.myName(), editedAt: X.nowIso() }); toast('Draft saved.'); };
+ACT['cp2-submit'] = function(){ MK.put('citypages', { id: CP2.slug, label: pageLabel(CP2.slug), draft: cp2Read(), status: 'draft', editedBy: X.myName(), editedAt: X.nowIso() }); X.sendForApproval('mkt_page', 'citypages', CP2.slug, true); };
+
+/* 26 + 27 — the review blitz and the video FAQ series (in the coach) */
+var coachView = VIEWS.coach;
+VIEWS.coach = function(){
+  var v = MK.get('cfg', 'videofaq') || {}, done = FAQ.filter(function(x){ return (v[x[0]] || {}).posted; }).length;
+  var blitz = MK.all('campaigns').filter(function(c){ return c.aud && c.aud.type === 'reviewBlitz' && c.kind === 'blitz'; });
+  return coachView() +
+    '<div class="gmt-card"><h2>🎥 Video FAQ series (' + done + ' / ' + FAQ.length + ' posted)</h2><div class="gmt-muted">30-second answers to what customers ask. Read the script to your phone, post to Facebook, Instagram and Google Business, then tick.</div>' + FAQ.map(function(x){ var r = v[x[0]] || {}; return '<div style="border-top:1px solid #eef1f6;padding:8px 0"><b>' + esc(x[1]) + '</b><div class="gmt-muted" style="white-space:pre-wrap">' + esc(x[2]) + '</div><div class="gmt-row"><button class="gmt-btn o" data-a="copy" data-t="' + esc(x[2]) + '">📋 Script</button><label style="margin:0;display:flex;gap:4px;align-items:center"><input type="checkbox" data-a="vf" data-id="' + x[0] + '" data-k="recorded"' + (r.recorded ? ' checked' : '') + '> recorded</label><label style="margin:0;display:flex;gap:4px;align-items:center"><input type="checkbox" data-a="vf" data-id="' + x[0] + '" data-k="posted"' + (r.posted ? ' checked' : '') + '> posted</label>' + (r.postedAt ? '<span class="gmt-muted">' + esc(s(r.postedAt).slice(0, 10)) + '</span>' : '') + '</div></div>'; }).join('') + '</div>' +
+    '<div class="gmt-card"><h2>⭐ Review blitz (one time)</h2><div class="gmt-muted">E-mails customers whose job finished in the last 2 years asking for a Google review — in batches of 50, each batch waits on ✅ Approvals. Never to anyone who gave us a bad rating or who unsubscribed (the server checks both when it sends).</div>' +
+    (blitz.length ? '<table>' + blitz.map(function(c){ return '<tr><td>' + esc(c.title) + '</td><td>' + X.chip(c.status) + '</td><td>' + (/^(draft|rejected)$/.test(s(c.status) || 'draft') && office() ? '<button class="gmt-btn g" data-a="camp-submit" data-id="' + esc(c.id) + '">Send for approval</button>' : '') + '</td></tr>'; }).join('') + '</table>' : office() ? '<button class="gmt-btn" data-a="blitz-make">Make the review blitz batches</button>' : '') + '</div>' +
+    '<div class="gmt-card"><h2>🏡 Nextdoor recommendation ask</h2><div class="gmt-muted">An e-mail to happy past customers asking them to Recommend GrayCo on Nextdoor (helps for Neighborhood Faves). Never offer anything in return.</div>' + (office() ? '<button class="gmt-btn o" data-a="nd-ask">✉️ Draft the e-mail (approval)</button>' : '') + '</div>';
+};
+ACT['vf'] = function(b){ var o = Object.assign({ id: 'videofaq' }, MK.get('cfg', 'videofaq') || {}), id = b.getAttribute('data-id'), k = b.getAttribute('data-k'); o[id] = Object.assign({}, o[id] || {}); o[id][k] = b.checked; if (b.checked) o[id][k + 'At'] = X.nowIso(); MK.put('cfg', o); };
+ACT['blitz-make'] = function(b){ b.disabled = true; api('mkt', { op: 'audience', aud: { type: 'reviewBlitz' } }).then(function(j){
+  if (!j || !j.ok) { toast((j && j.error) || 'Could not count the customers.', true); b.disabled = false; return; }
+  var n = j.count || 0, batches = Math.ceil(n / 50), rl = (C.BRAND && C.BRAND.reviewLink) || 'https://share.google/quDuhdlL0ckxPLLY3';
+  if (!n) { toast('Nobody qualifies (finished in the last 2 years, no bad rating, not unsubscribed).', true); b.disabled = false; return; }
+  for (var i = 0; i < batches; i++) MK.put('campaigns', { id: 'blitz_' + i + '_' + Date.now().toString(36), kind: 'blitz', title: 'Review blitz — batch ' + (i + 1) + ' of ' + batches, subject: 'Would you share a quick Google review?', ctitle: 'How did we do?', preheader: 'One minute on Google helps your neighbors find a contractor they can trust',
+    body: '<p>Hi {{first_name}},</p><p>Thank you for trusting GrayCo with your home. If you were happy with our work, would you take one minute to leave us a Google review? It helps neighbors find a contractor they can trust.</p><p>If anything was not right, just reply to this e-mail — we want to fix it.</p>', cta: { label: 'Leave a Google review', url: rl }, aud: { type: 'reviewBlitz', batch: i, size: 50 }, status: 'draft', createdAt: X.nowIso(), by: X.myName() });
+  toast(batches + ' batch' + (batches > 1 ? 'es' : '') + ' made (' + n + ' customers) — send each for approval.'); draw(); }); };
+
+/* 29 — HOA, apartment and property-management outreach */
+SECS.splice(SECS.length - 1, 0, { id: 'outreach', ic: '🏢', l: 'HOA & property managers', d: 'Target list (CSV import), 3-step intro e-mails from your own address (approval), community maintenance pitch, status' });
+var TG_ST = ['new', 'emailed', 'replied', 'meeting', 'proposal', 'won', 'lost'];
+var SEQ = [
+  { n: 1, subject: 'A local contractor for {{community}}', body: 'Hi {{name}},\n\nI am {{me}} with GrayCo Construction Services in Bartlett. We work with HOAs, apartment communities and property managers on roofing, storm and water damage, and repairs — with fast response when a resident reports a problem.\n\nWould you be open to a 15-minute call to see if we can help {{community}}?\n\n{{me}}\nGrayCo Construction Services · (901) 585-0944' },
+  { n: 2, subject: 'Re: a local contractor for {{community}}', body: 'Hi {{name}},\n\nFollowing up on my note. One thing communities like {{community}} use us for: a yearly roof and gutter check for every building, so small problems are fixed before they become leaks — one contract, one invoice, and a written report per building.\n\nWorth a quick call?\n\n{{me}} · (901) 585-0944' },
+  { n: 3, subject: 'Last note — {{community}}', body: 'Hi {{name}},\n\nI will not keep filling your inbox. If {{community}} ever needs a contractor for roofs, storm or water damage, or a maintenance plan for the whole community, we are 10 minutes away at 4014 Broadway Rd in Bartlett.\n\nThank you,\n{{me}} · (901) 585-0944' }
+];
+var PITCH = 'WHOLE-COMMUNITY MAINTENANCE CONTRACT — GrayCo Construction Services\n• A yearly roof, flashing and gutter check on every building, on one schedule\n• A written report with photos per building; repairs priced up front, done only when you approve\n• Priority response for leaks and storm damage, 24/7 for water\n• One contract, one invoice per visit, one contact\n• Pricing per community: [PRICE] per building per year (set after a walk-through)\nGrayCo Construction Services · 4014 Broadway Rd, Bartlett, TN 38135 · (901) 585-0944 · Licensed TN general contractor #85034 BCB';
+var OR = { sel: '' };
+function fillSeq(t, tg){ var me = X.myName(); return s(t).replace(/\{\{name\}\}/g, s(tg.contact).split(/\s+/)[0] || 'there').replace(/\{\{community\}\}/g, tg.name || 'your community').replace(/\{\{me\}\}/g, me); }
+VIEWS.outreach = function(){
+  var tg = MK.all('targets').filter(function(x){ return !x.del; }).sort(function(a, b){ return TG_ST.indexOf(a.status || 'new') - TG_ST.indexOf(b.status || 'new') || s(a.name).localeCompare(s(b.name)); });
+  var mails = MK.all('outreach');
+  var h = '<div class="gmt-card"><h2>🏢 HOA, apartments & property managers</h2><div class="gmt-muted">Keep a list of communities and managers, send a 3-step intro sequence from your own @grayco-cs.com address (each e-mail waits on ✅ Approvals), and pitch a whole-community maintenance contract. Track where each one stands.</div><div class="gmt-row" style="margin-top:8px"><button class="gmt-btn o" data-a="copy" data-t="' + esc(PITCH) + '">📋 Community maintenance pitch</button><button class="gmt-btn o" data-a="or-pitch-pdf">🖨 Pitch one-pager</button></div></div>';
+  h += '<div class="gmt-card"><h2>Targets (' + tg.length + ')</h2>' + (tg.length ? '<table><tr><th>Community / company</th><th>Contact</th><th>Units</th><th>Status</th><th>E-mails</th><th></th></tr>' + tg.map(function(x){ var m = mails.filter(function(y){ return y.targetId === x.id; }); var next = [1, 2, 3].filter(function(n){ return !m.some(function(y){ return y.step === n && !/^(rejected)$/.test(s(y.status)); }); })[0];
+    return '<tr><td><b>' + esc(x.name) + '</b><div class="gmt-muted">' + esc(x.type) + (x.city ? ' · ' + esc(x.city) : '') + '</div></td><td>' + esc(x.contact) + '<div class="gmt-muted">' + esc(x.email) + ' ' + esc(x.phone) + '</div></td><td>' + esc(x.units || '') + '</td><td><select data-ch="or-st" data-id="' + esc(x.id) + '">' + TG_ST.map(function(st){ return '<option' + ((x.status || 'new') === st ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></td><td>' + m.map(function(y){ return '#' + y.step + ' ' + X.chip(y.status === 'sent' ? 'sent' : y.status); }).join(' ') + '</td><td>' + (next && x.email && office() ? '<button class="gmt-btn o" data-a="or-send" data-id="' + esc(x.id) + '" data-n="' + next + '">✉️ E-mail #' + next + ' (approval)</button>' : '') + '</td></tr>'; }).join('') + '</table>' : '<div class="gmt-muted">No targets yet.</div>') + '</div>';
+  if (office()) h += '<div class="gmt-card"><h2>＋ Add targets</h2><div class="gmt-row"><input id="or-name" placeholder="Community / company"><select id="or-type"><option>HOA</option><option>Apartment community</option><option>Property management company</option><option>Condo association</option><option>Other</option></select><input id="or-contact" placeholder="Contact name"><input id="or-email" placeholder="E-mail"><input id="or-phone" placeholder="Phone"><input id="or-units" placeholder="Units / buildings" style="width:120px"><input id="or-city" placeholder="City" style="width:120px"><button class="gmt-btn" data-a="or-add">Add</button></div>' +
+    '<label>…or import a CSV (columns: name, type, contact, email, phone, units, city)</label><input type="file" accept=".csv,text/csv" data-ch="or-csv"></div>';
+  return h;
+};
+ACT['or-add'] = function(){ var g = function(k){ return s(D.getElementById(k).value); }; if (!g('or-name')) { toast('Name, please.', true); return; } MK.put('targets', { id: X.uid('tg'), name: g('or-name'), type: g('or-type'), contact: g('or-contact'), email: low(g('or-email')), phone: g('or-phone'), units: g('or-units'), city: g('or-city'), status: 'new', by: X.myName(), createdAt: X.nowIso() }); };
+ACT['or-csv'] = function(t){ var f = t.files && t.files[0]; if (!f) return; var r = new FileReader(); r.onload = function(){ var rows = (C.parseCSV ? C.parseCSV(r.result) : (X.M && X.M.parseCSV ? X.M.parseCSV(r.result) : String(r.result).split(/\r?\n/).map(function(l){ return l.split(','); }))), n = 0; var head = (rows[0] || []).map(function(h){ return low(h); }), col = function(k){ return head.indexOf(k); };
+  rows.slice(1).forEach(function(c){ var name = s(c[col('name')] || c[0]); if (!name) return; MK.put('targets', { id: X.uid('tg'), name: name, type: s(c[col('type')]) || 'HOA', contact: s(c[col('contact')]), email: low(c[col('email')]), phone: s(c[col('phone')]), units: s(c[col('units')]), city: s(c[col('city')]), status: 'new', by: X.myName(), createdAt: X.nowIso() }); n++; }); toast(n + ' imported.'); t.value = ''; }; r.readAsText(f); };
+ACT['or-st'] = function(t){ MK.put('targets', { id: t.getAttribute('data-id'), status: t.value, statusAt: X.nowIso() }); };
+ACT['or-send'] = function(b){ var tg = MK.get('targets', b.getAttribute('data-id')), n = +b.getAttribute('data-n'), q = SEQ[n - 1]; if (!tg || !q) return;
+  var body = W.prompt('E-mail #' + n + ' to ' + tg.contact + ' (edit if you like — it goes from ' + X.myEmail() + ' after approval):', fillSeq(q.body, tg)); if (body == null) return;
+  var id = X.uid('or'); MK.put('outreach', { id: id, targetId: tg.id, targetName: tg.name, step: n, to: tg.email, toName: tg.contact, fromEmail: low(X.myEmail()), fromName: X.myName(), subject: fillSeq(q.subject, tg), body: body, status: 'draft', createdAt: X.nowIso() });
+  if (n === 1 && (tg.status || 'new') === 'new') MK.put('targets', { id: tg.id, status: 'emailed', statusAt: X.nowIso() });
+  X.sendForApproval('mkt_outreach', 'outreach', id); };
+ACT['or-pitch-pdf'] = function(){ printHtml('GrayCo community maintenance contract', '@page{size:letter;margin:0.6in}body{font-family:Arial,sans-serif;color:#14202E}h1{color:' + B.navy + '}li{margin:8px 0;font-size:16px}', '<img src="' + CRM + '/grayco-logo.jpg" style="height:60px"><h1>Whole-community maintenance contract</h1><ul>' + PITCH.split('\n').slice(1, -1).map(function(l){ return '<li>' + esc(l.replace(/^•\s*/, '')) + '</li>'; }).join('') + '</ul><p>' + esc(PITCH.split('\n').slice(-1)[0]) + '</p>'); };
+
+/* ── the job tools bar (patch AUTO8): 🗞 Flyer + 🎬 Video on every job ── */
+D.addEventListener('click', function(ev){
+  var b = ev.target.closest && ev.target.closest('[data-mkt2]'); if (!b) return;
+  var bar = b.closest('[data-pid]'), pid = bar && bar.getAttribute('data-pid'); if (!pid) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (b.getAttribute('data-mkt2') === 'flyer') FL.form = flyerForm(pid); else RL = { pid: pid, sel: [], urls: RL.urls, cap: '', busy: false, out: null };
+  var sec = b.getAttribute('data-mkt2') === 'flyer' ? 'flyers' : 'reels';
+  if (W._gcMkt && W._gcMkt.open) W._gcMkt.open(sec);
+}, true);
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){
+  try { D.querySelectorAll('.gc-a8-bar').forEach(function(bar){ if (bar.querySelector('[data-mkt2]')) return; var a = D.createElement('button'); a.type = 'button'; a.setAttribute('data-mkt2', 'flyer'); a.textContent = '🗞 Flyer'; var v = D.createElement('button'); v.type = 'button'; v.setAttribute('data-mkt2', 'video'); v.textContent = '🎬 Video'; bar.appendChild(a); bar.appendChild(v); }); } catch (e) {}
+}, 1500);
+
+/* ── link the training decks into Company Docs + the new-hire training to-do ── */
+W._gcDecks = { list: function(){ return decks().map(function(d){ return { id: d.id, group: d.group, title: d.title }; }); }, open: function(id){ if (W._gcMkt && W._gcMkt.open) { W._gcMkt.open('decks'); } }, training: function(){ return decks().filter(function(d){ return d.group === 'Training'; }).map(function(d){ return d.title; }); } };
+W._gcMkt2 = { state: function(){ return { secs: NEW.map(function(x){ return x.id; }), ads: ADS.length, decks: decks().length, coach: COACH.length }; }, adText: adText, artSvg: artSvg, parseDeck: parseDeck, weekId: weekId };
+try { if (UI.root && UI.root.isConnected) draw(); } catch (e) {}
+try { console.log('[GC] 📣 Marketing part 2 ready (patch MKT2): _gcMkt2.state()'); } catch (e) {}
+}
+})();
+
+</script><!-- /MKT2 -->
 <script id="gc-fix-filehold">
 /* GATE fix_2 — the file-window hold ends when the person is back (no window focus event needed). */
 (function(){

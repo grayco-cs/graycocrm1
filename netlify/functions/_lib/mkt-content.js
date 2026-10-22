@@ -281,6 +281,7 @@ function contacts(data){
     if (/commercial|gc|general contractor|property|manager|business|hoa/.test(ty) || s(cu.company)) c.commercial = c.commercial || /commercial|gc|general contractor|property|manager|business|hoa/.test(ty) || !!s(cu.company);
     if (/insur/.test(ty)) c.insurance = true;
   });
+  arr(data && data.newsSignups).forEach(function(sg){ if (sg && sg.email) add(sg.email, sg.name, { zip: s(sg.zip), signup: true }); });   /* patch MKT2: lead-magnet downloads joined GrayCo News */
   arr(data && data.projects).forEach(function(p){
     if (dead(p)) return;
     var addr = s(p.address || p.jobAddress);
@@ -291,9 +292,13 @@ function contacts(data){
     if (k === 'Commercial') c.commercial = true;
     if (k === 'Insurance') c.insurance = true;
     c.jobs.push({ id: s(p.id), kind: k, done: isDone(p), doneDate: doneDate(p), zip: zipOf(addr) });
+    if (badRating(p)) c.bad = true;   /* patch MKT2 blitz */
   });
   return Object.keys(by).map(function(k){ return by[k]; });
 }
+/* patch MKT2 blitz: a customer who told us they were unhappy is never asked for a review */
+function badRating(p){ var n = function(v){ var x = parseFloat(v); return isFinite(x) ? x : null; }; var r = [n(p.rating), n(p.csat), n(p.csatScore), n(p.satisfaction), n(p.reviewStars), n(p.npsScore != null ? p.npsScore / 2 : null)].filter(function(x){ return x != null; });
+  return r.some(function(x){ return x <= 3; }) || /sad|unhappy|bad|😟|angry|complain/i.test([p.mood, p.checkinMood, p.midJobMood, p.sentiment].map(s).join(' ')) || p.badReview === true || p.noReviewAsk === true || p.doNotContact === true; }
 var AUD_TYPES = [
   { v: 'all', l: 'Everyone on GrayCo News' },
   { v: 'jobType', l: 'By job type' },
@@ -311,6 +316,7 @@ function audLabel(a){
   if (t === 'insurance') return 'Insurance customers';
   if (t === 'commercial') return 'Commercial contacts';
   if (t === 'anniversary') return 'Job anniversary this month';
+  if (t === 'reviewBlitz') return 'Review blitz' + (a.batch != null ? ' — batch ' + ((+a.batch || 0) + 1) : '') + ' (finished in the last 2 years, no bad rating)';
   if (t === 'emails') return arr(a.emails).length === 1 ? 'one person (' + arr(a.emails)[0] + ')' : arr(a.emails).length + ' people';
   return 'Everyone on GrayCo News';
 }
@@ -327,6 +333,11 @@ function audience(data, a, nowIso){
   else if (t === 'emails') {
     var want = arr(a.emails).map(low), have = {}; all.forEach(function(c){ have[c.email] = c; });
     out = want.filter(function(e){ return /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(e); }).map(function(e, i){ return have[e] || { email: e, name: s(arr(a.names)[i]), first: firstName(arr(a.names)[i]), zip: '', kinds: [], jobs: [] }; });
+  }
+  else if (t === 'reviewBlitz') {   /* patch MKT2 blitz: finished in the last 2 years, no bad rating, in batches of a.size */
+    var cut2 = (nowY - 2) + now.slice(4, 10), size = Math.max(10, Math.min(500, +a.size || 50));
+    out = all.filter(function(c){ return !c.bad && c.jobs.some(function(j){ return j.done && j.doneDate && j.doneDate >= cut2; }); }).sort(function(x, y){ return x.email < y.email ? -1 : 1; });
+    if (a.batch != null) out = out.slice((+a.batch || 0) * size, ((+a.batch || 0) + 1) * size);
   }
   else if (t === 'insurance') out = all.filter(function(c){ return c.insurance; });
   else if (t === 'commercial') out = all.filter(function(c){ return c.commercial; });
