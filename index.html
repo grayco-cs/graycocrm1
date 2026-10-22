@@ -160126,3 +160126,717 @@ try { console.log('[GC] Work authorization, carrier library, equipment billing, 
 })();
 
 </script>
+<script id="gc-patch-leads">
+/* __GC_PATCH_LEADS__ — THE LEADS TAB, REBUILT (owner 10/22: "Leads are important, needs a good tab … every lead goes on the
+   sub bid portal as private, public only when we say … plans always in the CRM, or the link … unassigned leads need a number
+   on the tab for the admin").
+   On Leads → a hub above the classic table:
+     • KPI strip (unassigned · new today/week · due this week · not contacted >4h · win rate 90 d · pipeline $ · by source)
+     • views: Board (drag a card to a stage, or its ▸ menu on a touch screen) · List (sortable) · Calendar (bid due dates)
+       · Map · 🔎 Bid boards (patch BW's manager when it is there)
+     • filters: assignee (PM / APM / estimator), source, type, stage, due window, unassigned only, search; "My bids" preset
+     • a lead drawer: overview, call / text / e-mail (logged), bid info, 📐 plans (stored in the CRM, else the link),
+       🏗 sub bid portal (private by default · "Make public" with a confirm · scope: ✨ Claude / ✍️ manual / 📐 from the
+       estimate with every price removed · notes shared with subs only when ticked), activity, estimate, convert to job,
+       won / lost with a reason, assign with each person's load.
+   The classic table stays underneath ("📋 Classic table", can be folded) for one release; nothing it does was removed.
+   Every lead without a sub bid job gets a PRIVATE DRAFT there (staff-only; never public by itself) — bid-inbox.js op "portal". */
+(function(){
+if (window.__GC_PATCH_LEADS__) return; window.__GC_PATCH_LEADS__ = true;
+var W = window, D = document, ST = W.setTimeout, RI = W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v); }
+function low(v){ return s(v).trim().toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function num(v){ var n = +s(v).replace(/[^0-9.\-]/g, ''); return isFinite(n) ? n : 0; }
+function money(n){ n = +n || 0; return '$' + (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : Math.round(n).toLocaleString('en-US')); }
+function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function warn(e){ try { console.warn('[GC LEADS]', e && e.message || e); } catch (x) {} }
+function toast(msg){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.className = 'gcl-toast'; t.textContent = msg; D.body.appendChild(t); later(function(){ t.remove(); }, 4200); } catch (e) {} }
+function fn(path, opt){
+  opt = opt || {};
+  return W.fetch('/.netlify/functions/' + path, { method: opt.body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: opt.body ? JSON.stringify(opt.body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || ('The server answered ' + r.status)); return j; }); });
+}
+
+/* ── who and what ─────────────────────────────────────────────────────────── */
+function crm(){ return W._crm || {}; }
+function users(){ return arr(crm().users); }
+function myEmail(){ try { var A = W.__GC_AUTH__; var e = A && A.email && A.email(); if (e) return low(e); } catch (e) {} try { return low(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function meUser(){ var e = myEmail(), g = ''; try { g = s(localStorage.getItem('grayco_user')); } catch (x) {} return users().filter(function(u){ return u && ((e && low(u.email) === e) || (g && (u.email === g || u.name === g))); })[0] || null; }
+function myName(){ var u = meUser(); if (u && u.name) return s(u.name); try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = meUser(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner')); }
+function isEstimatorMe(){ var u = meUser(); return !!(u && /estimat/i.test(s(u.role) + ' ' + s(u.profile))); }
+function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })()); }
+var LEADS_NOW = null, LEADS_AT = 0;
+/* the CRM's lead list: this computer's saved copy (IndexedDB 'leads', which every save writes), read every 2 s on the
+   Leads tab — never through the synced setter on a timer (that setter is shared with every other screen's save);
+   window._crm.leads until the first read answers; our own saves update it at once */
+var LEADS_SEEN = false, LEADS_BUSY = false;
+function pullLeads(){
+  if (LEADS_BUSY || Date.now() - LEADS_AT < 2000 || typeof W.idbGet !== 'function') return;
+  LEADS_AT = Date.now(); LEADS_BUSY = true;
+  try { Promise.resolve(W.idbGet('leads')).then(function(v){ LEADS_BUSY = false; if (!Array.isArray(v)) return; var sig = v.length + '|' + v.reduce(function(m, l){ var u = s(l && (l.updatedAt || l.savedAt)); return u > m ? u : m; }, ''); if (sig !== LEADS_SIG) { LEADS_SIG = sig; LEADS_NOW = v; if (view() === 'leads') later(function(){ HUB_SIG = ''; mount(); }, 0); } }, function(){ LEADS_BUSY = false; }); } catch (e) { LEADS_BUSY = false; }
+}
+var LEADS_SIG = '';
+function rawLeads(){ if (view() === 'leads') pullLeads(); var c = arr(crm().leads); return LEADS_NOW && (LEADS_NOW.length >= c.length || !c.length) ? LEADS_NOW : c; }
+function leads(){ return rawLeads().filter(function(l){ return !dead(l); }); }
+function inboxItems(){ var k = lsGet('gc_ldi_cache_v2', null); return arr(k && k.items); }
+function inboxOf(l){ var id = s(l && l.inboxId); if (!id) return null; return inboxItems().filter(function(x){ return x && x.id === id; })[0] || null; }
+var STAGES = ['New Lead', 'Contacted', 'Site Visit', 'Estimate Sent', 'Negotiating', 'Won', 'Lost'];
+var STAGE_IC = { 'New Lead': '🆕', 'Contacted': '📞', 'Site Visit': '📍', 'Estimate Sent': '📐', 'Negotiating': '🤝', 'Won': '🏆', 'Lost': '✖' };
+function stageOf(l){ var st = s(l.stage); if (STAGES.indexOf(st) >= 0) return st; if (/^(new|lead|)$/i.test(st)) return 'New Lead'; if (/won/i.test(st)) return 'Won'; if (/lost|dead|no ?bid|declin/i.test(st)) return 'Lost'; if (/submit|sent|bid/i.test(st)) return 'Estimate Sent'; return 'Contacted'; }
+function closed(l){ var st = stageOf(l); return st === 'Won' || st === 'Lost' || l.converted || l.notBidding; }
+function assignee(l){ return s(l.pm || l.estimator || l.apm); }
+function typeOf(l){ var t = low(l.leadKind || l.type); if (/gov/.test(t)) return 'government'; if (/commerc/.test(t)) return 'commercial'; if (/insur|storm|claim/.test(t)) return 'insurance'; if (/mitig|water|fire/.test(t)) return 'mitigation'; return t ? 'residential' : 'residential'; }
+var TYPE_IC = { residential: '🏠', commercial: '🏢', government: '🏛', insurance: '🛡', mitigation: '💧' };
+function srcOf(l){ return s(l.source || l.leadSource) || 'Other'; }
+function srcIc(l){ var x = low(srcOf(l)); if (/website|leads@|web/.test(x)) return '🌐'; if (/referr/.test(x)) return '🎁'; if (/partner|api|realtor|agent/.test(x)) return '🔌'; if (/missed|call|phone/.test(x)) return '📞'; if (/roofscout/.test(x)) return '🛰'; if (/google|lsa|facebook|ad/.test(x)) return '📣'; if (/bid|county|city|state|mscs|mscaa|board|buildingconnected|planhub|sam/.test(x)) return '🏗'; return '•'; }
+function value(l){ return num(l.value || l.estValue || l.amount || l.estimate); }
+function born(l){ var t = Date.parse(s(l.createdAt || l.receivedAt || l.created || l.dateAdded || l.date)); return isFinite(t) ? t : 0; }
+function dueMs(l){ var d = s(l.bidDue); if (!d) return NaN; return Date.parse(d.length === 10 ? d + 'T17:00:00' : d); }
+function dueChip(l){
+  var t = dueMs(l); if (!isFinite(t)) return l.dueUnknown || /commercial|government/.test(typeOf(l)) ? '<span class="gcl-chip warn" title="Bid due date not found">⏰ due ?</span>' : '';
+  var h = (t - Date.now()) / 3600e3, txt = h < 0 ? 'past due' : h < 24 ? Math.max(1, Math.round(h)) + 'h left' : Math.round(h / 24) + 'd left';
+  return '<span class="gcl-chip ' + (h < 0 ? 'bad' : h < 72 ? 'hot' : '') + '" title="Bid due ' + esc(s(l.bidDue).replace('T', ' ')) + '">⏰ ' + esc(txt) + '</span>';
+}
+function contacted(l){ return !!(s(l.contactedAt) || s(l.lastContact) || stageOf(l) !== 'New Lead'); }
+function speedChip(l){
+  if (closed(l) || contacted(l)) return '';
+  var b = born(l); if (!b) return '';
+  var h = (Date.now() - b) / 3600e3; if (h < 0.05) return '';
+  return '<span class="gcl-chip ' + (h >= 24 ? 'bad' : h >= 4 ? 'hot' : '') + '" title="Not contacted yet">⏱ ' + (h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd') + '</span>';
+}
+function plansOf(l){
+  var it = inboxOf(l) || {}, files = [], links = [], seen = {};
+  arr(l.files).concat(arr(it.files)).forEach(function(f){ if (f && s(f.ref) && f.kind !== 'email' && !seen[f.ref]) { seen[f.ref] = 1; files.push(f); } });
+  var byUrl = {};
+  arr(it.plansLinks).concat(arr(l.plansLinks)).concat(s(l.plansLink) ? [{ url: l.plansLink, label: 'Plans' }] : []).forEach(function(x){ var u = s(x && x.url); if (!/^https?:\/\//.test(u)) return; if (!byUrl[u]) { byUrl[u] = Object.assign({}, x); links.push(byUrl[u]); } else { var y = byUrl[u]; if (!y.why && x.why) y.why = x.why; if (!y.stored && x.stored) y.stored = x.stored; if (!y.label && x.label) y.label = x.label; } });
+  return { files: files, links: links };
+}
+function portalOf(l){ var it = inboxOf(l); var p = (it && it.portal) || l.subPortal || null; return p; }
+function portalChip(l){
+  var p = portalOf(l); if (!p || !p.jobId) return '<span class="gcl-chip mute" title="Not on the sub bid portal yet">🏗 —</span>';
+  var st = s(p.state || p.visibility); var pub = /public|published/.test(st);
+  return '<span class="gcl-chip ' + (pub ? 'pub' : 'priv') + '" title="Sub bid portal: ' + (pub ? 'public to all subs' : /private/.test(st) ? 'open to invited subs (private)' : 'private draft (staff only)') + '">🏗 ' + (pub ? 'public' : /private/.test(st) ? 'private' : 'draft') + '</span>';
+}
+function initials(n){ n = s(n).trim(); if (!n) return '?'; var p = n.split(/\s+/); return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
+
+/* ── saving (the CRM's synced setter, as patches LA / STL do) ─────────────── */
+function persist(list){
+  try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcManualNow === 'function') W._gcManualNow('lead edited'); } catch (e) {}
+  try { if (typeof W.idbSet === 'function') W.idbSet('leads', list); } catch (e) {}
+  try { if (typeof W._supaUpsert === 'function') W._supaUpsert('leads', list); } catch (e) {}
+  later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+}
+function setLeads(mut){
+  return new Promise(function(res){
+    var S = W._setLeads; if (typeof S !== 'function') return res(false);
+    var done = false;
+    try { S(function(prev){ var a = Array.isArray(prev) ? prev : []; var n = mut(a.slice()); if (!Array.isArray(n)) { if (!done) { done = true; res(false); } return prev; } if (!done) { done = true; later(function(){ persist(n); res(true); }, 0); } return n; }); } catch (e) {}
+    later(function(){
+      if (done) return; done = true;
+      if (typeof W.idbGet !== 'function') return res(false);
+      Promise.resolve(W.idbGet('leads')).then(function(cur){ var n = mut(arr(cur).slice()); if (!Array.isArray(n)) return res(false); persist(n); try { S(n.slice()); } catch (e) {} res(true); }, function(){ res(false); });
+    }, 2500);
+  });
+}
+function patchLead(id, fn2){
+  return setLeads(function(list){
+    var i = -1; list.forEach(function(l, k){ if (l && l.id === id) i = k; }); if (i < 0) return null;
+    var l = Object.assign({}, list[i]); if (fn2(l) === false) return null; l.updatedAt = nowIso(); list[i] = l; LEADS_NOW = list; LEADS_SIG = ''; return list;
+  });
+}
+function logAct(l, type, text){ var a = arr(l.activity).slice(); a.push({ type: type, text: s(text).slice(0, 500), at: nowIso(), by: myName() || myEmail() }); l.activity = a.slice(-200); }
+
+/* ── the UI state ─────────────────────────────────────────────────────────── */
+var UI = lsGet('gc_leads_ui_v1', null) || {};
+UI = { v: UI.v || 'board', who: UI.who || '', src: UI.src || '', type: UI.type || '', stage: UI.stage || '', due: UI.due || '', un: !!UI.un, q: '', sort: UI.sort || 'born', dir: UI.dir || -1, open: '', cal: UI.cal || '', classic: UI.classic !== false, closed: !!UI.closed };
+function saveUI(){ lsSet('gc_leads_ui_v1', { v: UI.v, who: UI.who, src: UI.src, type: UI.type, stage: UI.stage, due: UI.due, un: UI.un, sort: UI.sort, dir: UI.dir, cal: UI.cal, classic: UI.classic, closed: UI.closed }); }
+
+function unassignedCount(){
+  if (typeof W._gcUnassignedLeadCount === 'function') { try { var n = W._gcUnassignedLeadCount(); if (typeof n === 'number') return n; } catch (e) {} }
+  return leads().filter(function(l){ return !closed(l) && !assignee(l); }).length;
+}
+W._gcLeadsUnassigned = unassignedCount;
+
+function filtered(){
+  var q = low(UI.q), now = Date.now();
+  return leads().filter(function(l){
+    if (!UI.closed && UI.v !== 'board' && closed(l) && UI.stage !== 'Won' && UI.stage !== 'Lost') return false;
+    if (UI.un && assignee(l)) return false;
+    if (UI.who === '__me' && low(assignee(l)) !== low(myName())) return false;
+    if (UI.who === '__mybids' && (low(assignee(l)) !== low(myName()) || !/commercial|government/.test(typeOf(l)))) return false;
+    if (UI.who && UI.who.indexOf('__') !== 0 && low(assignee(l)) !== low(UI.who)) return false;
+    if (UI.src && srcOf(l) !== UI.src) return false;
+    if (UI.type && typeOf(l) !== UI.type) return false;
+    if (UI.stage && stageOf(l) !== UI.stage) return false;
+    if (UI.due) { var t = dueMs(l); if (!isFinite(t)) return false; var d = (t - now) / 864e5; if (UI.due === 'past' ? d >= 0 : UI.due === '7' ? (d < 0 || d > 7) : (d < 0 || d > 30)) return false; }
+    if (q && low([l.name, l.title, l.client, l.contact, l.email, l.phone, l.address, l.city, srcOf(l), assignee(l), l.gc, l.dueToCompany, l.bidNumber].join(' ')).indexOf(q) < 0) return false;
+    return true;
+  });
+}
+
+/* ── CSS ───────────────────────────────────────────────────────────────────── */
+function css(){
+  if (D.getElementById('gc-leads-css')) return;
+  var c = D.createElement('style'); c.id = 'gc-leads-css';
+  c.textContent = [
+    '#gc-leads-hub{font:14px Arial,sans-serif;color:#1b1640;margin:0 0 14px}',
+    '#gc-leads-hub *{box-sizing:border-box}',
+    '.gcl-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.gcl-top h2{margin:0;font-size:20px}',
+    '.gcl-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px}',
+    '.gcl-kpi{background:#fff;border:1px solid #e3e1f0;border-radius:10px;padding:10px 12px;cursor:pointer;text-align:left;font:inherit;color:inherit}.gcl-kpi:hover{border-color:#241968}',
+    '.gcl-kpi b{display:block;font-size:22px;line-height:1.1}.gcl-kpi span{font-size:12px;color:#666}.gcl-kpi.alert{border-color:#f59e0b;background:#fffbeb}.gcl-kpi.bad{border-color:#ef4444;background:#fef2f2}',
+    '.gcl-tabs{display:flex;gap:4px;flex-wrap:wrap}.gcl-tabs button{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:7px 12px;font:700 13px Arial;cursor:pointer;color:#241968}.gcl-tabs button.on{background:#241968;color:#fff;border-color:#241968}',
+    '.gcl-fil{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 10px}.gcl-fil select,.gcl-fil input[type=search]{border:1px solid #d6d3ea;border-radius:8px;padding:7px 8px;font:13px Arial;background:#fff;min-height:36px}.gcl-fil input[type=search]{flex:1;min-width:160px}',
+    '.gcl-fil label{font-size:13px;display:flex;gap:4px;align-items:center}',
+    '.gcl-board{display:grid;grid-template-columns:repeat(7,minmax(210px,1fr));gap:8px;overflow-x:auto;padding-bottom:6px}',
+    '.gcl-col{background:#f6f5fb;border-radius:10px;padding:8px;min-height:120px}.gcl-col.drop{outline:2px dashed #241968}',
+    '.gcl-col h4{margin:0 0 8px;font-size:13px;display:flex;justify-content:space-between}.gcl-col h4 small{color:#666;font-weight:400}',
+    '.gcl-card{background:#fff;border:1px solid #e3e1f0;border-radius:9px;padding:9px;margin-bottom:7px;cursor:pointer;touch-action:manipulation}.gcl-card:hover{border-color:#241968}',
+    '.gcl-card .t{font-weight:700;font-size:13px;margin-bottom:4px;word-break:break-word}.gcl-card .m{font-size:12px;color:#555;display:flex;gap:4px;flex-wrap:wrap;align-items:center}',
+    '.gcl-av{display:inline-flex;width:22px;height:22px;border-radius:50%;background:#241968;color:#fff;font:700 10px Arial;align-items:center;justify-content:center}.gcl-av.none{background:#f59e0b}',
+    '.gcl-chip{display:inline-block;border-radius:999px;padding:1px 7px;font:700 11px Arial;background:#eef;color:#241968;white-space:nowrap}.gcl-chip.hot{background:#fff7ed;color:#c2410c}.gcl-chip.bad{background:#fee2e2;color:#b91c1c}.gcl-chip.warn{background:#fffbeb;color:#b45309}.gcl-chip.mute{background:#f3f4f6;color:#888}.gcl-chip.pub{background:#dcfce7;color:#166534}.gcl-chip.priv{background:#ede9fe;color:#5b21b6}',
+    '.gcl-mv{border:1px solid #d6d3ea;border-radius:6px;background:#fff;font:12px Arial;padding:2px 4px;max-width:100%}',
+    '.gcl-list{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e3e1f0;border-radius:10px;overflow:hidden}.gcl-list th{background:#f6f5fb;text-align:left;font-size:12px;padding:8px;cursor:pointer;white-space:nowrap}.gcl-list td{padding:8px;border-top:1px solid #f0eef8;font-size:13px;vertical-align:top}.gcl-list tr:hover td{background:#faf9ff;cursor:pointer}',
+    '.gcl-wrap{overflow-x:auto}',
+    '.gcl-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.gcl-cal .d{background:#fff;border:1px solid #e3e1f0;border-radius:8px;min-height:84px;padding:5px;font-size:11px}.gcl-cal .d.today{border-color:#241968;border-width:2px}.gcl-cal .d.other{opacity:.45}.gcl-cal .d b{font-size:12px}.gcl-cal .ev{display:block;background:#ede9fe;color:#241968;border-radius:5px;padding:2px 4px;margin-top:3px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;width:100%;text-align:left;font:11px Arial}.gcl-cal .hd{font:700 12px Arial;text-align:center;color:#666}',
+    '.gcl-map{display:grid;grid-template-columns:minmax(220px,1fr) 2fr;gap:10px}.gcl-map ul{list-style:none;margin:0;padding:0;max-height:440px;overflow:auto;background:#fff;border:1px solid #e3e1f0;border-radius:10px}.gcl-map li{padding:8px;border-bottom:1px solid #f0eef8;cursor:pointer;font-size:13px}.gcl-map li.on{background:#ede9fe}.gcl-map iframe{width:100%;height:440px;border:0;border-radius:10px;background:#eee}',
+    '.gcl-classic{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font:700 13px Arial;color:#555}.gcl-classic button{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:5px 10px;cursor:pointer;font:700 12px Arial}',
+    'body.gcl-noclassic #gc-la-set,body.gcl-noclassic .gcl-classic-body{display:none!important}',
+    '#gcl-drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);background:#fff;z-index:100100;box-shadow:-8px 0 30px rgba(0,0,0,.18);overflow-y:auto;font:14px Arial,sans-serif;color:#1b1640}',
+    '#gcl-shade{position:fixed;inset:0;background:rgba(15,10,40,.35);z-index:100099}',
+    'body:has(#gcl-drawer) #_gConnBar,body:has(#gcl-drawer) #_gcJobMsgFab{display:none!important}',
+    '#gcl-drawer .hd{position:sticky;top:0;background:#241968;color:#fff;padding:14px 16px;display:flex;gap:8px;align-items:flex-start;z-index:2}#gcl-drawer .hd h3{margin:0;font-size:17px;flex:1;word-break:break-word}#gcl-drawer .hd button{background:transparent;border:0;color:#fff;font-size:22px;cursor:pointer;min-width:40px;min-height:40px}',
+    '#gcl-drawer section{padding:12px 16px;border-bottom:1px solid #f0eef8}#gcl-drawer section h4{margin:0 0 8px;font-size:14px}',
+    '#gcl-drawer .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0}#gcl-drawer .kv{font-size:13px;margin:2px 0}#gcl-drawer .kv span{color:#666}',
+    '#gcl-drawer button.b{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:8px 11px;font:700 13px Arial;cursor:pointer;color:#241968;min-height:38px}#gcl-drawer button.b.pri{background:#241968;color:#fff;border-color:#241968}#gcl-drawer button.b.gold{background:#d4a017;border-color:#d4a017;color:#1b1640}#gcl-drawer button.b.red{color:#b91c1c;border-color:#fecaca}',
+    '#gcl-drawer select,#gcl-drawer input[type=text],#gcl-drawer input[type=datetime-local],#gcl-drawer textarea{border:1px solid #d6d3ea;border-radius:8px;padding:7px;font:13px Arial;max-width:100%}#gcl-drawer textarea{width:100%;min-height:140px}',
+    '#gcl-drawer .tl{font-size:12px;border-left:2px solid #e3e1f0;padding-left:10px;margin:0}#gcl-drawer .tl li{list-style:none;margin:0 0 6px}#gcl-drawer .tl i{color:#888;font-style:normal}',
+    '#gcl-drawer .sm{display:flex;gap:4px;margin:6px 0}#gcl-drawer .sm button{flex:1}#gcl-drawer .sm button.on{background:#ede9fe;border-color:#5b21b6}',
+    '#gcl-drawer .note{font-size:12px;color:#666;margin:4px 0}#gcl-drawer .err{color:#b91c1c;font-size:12px}',
+    '.gcl-nb{display:inline-block;margin-left:6px;min-width:18px;padding:0 5px;border-radius:999px;background:#f59e0b;color:#fff;font:700 11px Arial;line-height:18px;text-align:center}',
+    '.gcl-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Arial;z-index:100400;max-width:90vw}',
+    '@media (max-width:760px){.gcl-board{grid-template-columns:repeat(7,82vw)}.gcl-map{grid-template-columns:1fr}.gcl-map iframe{height:300px}.gcl-kpi b{font-size:18px}}'
+  ].join('\n');
+  (D.head || D.documentElement).appendChild(c);
+}
+
+/* ── the hub ──────────────────────────────────────────────────────────────── */
+function pipelineWrap(){ var tb = D.querySelector('#root table[data-gc-fid="LEAD"]'); if (!tb) return null; var w = tb.parentElement; while (w && w.parentElement && !/border/.test(w.getAttribute('style') || '')) w = w.parentElement; return w; }
+function anchor(){
+  var la = D.getElementById('gc-la-set'); if (la && la.parentElement) return la;
+  return pipelineWrap();
+}
+function kpis(){
+  var all = leads(), open = all.filter(function(l){ return !closed(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  var wk = now - 7 * 864e5, q90 = now - 90 * 864e5;
+  var un = unassignedCount();
+  var today = all.filter(function(l){ return born(l) >= day0.getTime(); }).length, week = all.filter(function(l){ return born(l) >= wk; }).length;
+  var due7 = open.filter(function(l){ var t = dueMs(l); return isFinite(t) && t >= now && t - now <= 7 * 864e5; }).length;
+  var slow = open.filter(function(l){ return assignee(l) && !contacted(l) && born(l) && now - born(l) > 4 * 3600e3; }).length;
+  var recent = all.filter(function(l){ var t = Date.parse(s(l.stageChangedAt || l.updatedAt)); return isFinite(t) && t >= q90; });
+  var won = recent.filter(function(l){ return stageOf(l) === 'Won'; }).length, lost = recent.filter(function(l){ return stageOf(l) === 'Lost'; }).length;
+  var pipe = open.reduce(function(t, l){ return t + value(l); }, 0);
+  var by = {}; all.filter(function(l){ return born(l) >= now - 30 * 864e5; }).forEach(function(l){ by[srcOf(l)] = (by[srcOf(l)] || 0) + 1; });
+  var top = Object.keys(by).sort(function(a, b){ return by[b] - by[a]; }).slice(0, 3).map(function(k){ return k + ' ' + by[k]; }).join(' · ') || '—';
+  return [
+    { k: 'un', n: un, l: 'Unassigned', c: un ? 'alert' : '', t: 'Leads with nobody assigned — click to see them' },
+    { k: 'today', n: today, l: 'New today · ' + week + ' this week', t: 'New leads' },
+    { k: 'due', n: due7, l: 'Bids due in 7 days', c: due7 ? 'alert' : '', t: 'Bid due dates this week' },
+    { k: 'slow', n: slow, l: 'Not contacted > 4h', c: slow ? 'bad' : '', t: 'Assigned, but nobody reached out yet' },
+    { k: 'win', n: (won + lost) ? Math.round(100 * won / (won + lost)) + '%' : '—', l: 'Win rate · 90 days (' + won + '/' + (won + lost) + ')' },
+    { k: 'pipe', n: money(pipe), l: 'Open pipeline (' + open.length + ' leads)' },
+    { k: 'src', n: Object.keys(by).length, l: 'Sources · 30 d: ' + top, t: 'Where leads came from in the last 30 days' }
+  ];
+}
+function optionsFor(list, sel, all){ return '<option value="">' + esc(all) + '</option>' + list.map(function(x){ var v = typeof x === 'string' ? x : x.v, t = typeof x === 'string' ? x : x.t; return '<option value="' + esc(v) + '"' + (v === sel ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join(''); }
+function people(){
+  var seen = {}, out = [];
+  users().forEach(function(u){ if (u && u.name && u.active !== false && !seen[low(u.name)] && /admin|pm|project|estimat|apm|assistant|super|insur|mitig|owner|sales/i.test(s(u.role) + ' ' + s(u.profile) + ' ' + s(u.payType))) { seen[low(u.name)] = 1; out.push(u.name); } });
+  leads().forEach(function(l){ var a = assignee(l); if (a && !seen[low(a)]) { seen[low(a)] = 1; out.push(a); } });
+  return out.sort();
+}
+function hubHtml(){
+  var ks = kpis();
+  var src = []; leads().forEach(function(l){ if (src.indexOf(srcOf(l)) < 0) src.push(srcOf(l)); }); src.sort();
+  var who = [{ v: '__me', t: 'Mine' }, { v: '__mybids', t: '📐 My bids (estimator)' }].concat(people().map(function(n){ return { v: n, t: n }; }));
+  var tabs = [['board', '🗂 Board'], ['list', '📋 List'], ['cal', '📅 Calendar'], ['map', '🗺 Map'], ['boards', '🔎 Bid boards']];
+  return '<div class="gcl-top"><h2>◈ Leads</h2><div class="gcl-tabs" role="tablist">' + tabs.map(function(t){ return '<button type="button" role="tab" data-gcl-v="' + t[0] + '" class="' + (UI.v === t[0] ? 'on' : '') + '" aria-selected="' + (UI.v === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>'
+    + '<span style="flex:1"></span><button type="button" class="gcl-tabs-x" data-gcl-new style="border:0;background:#d4a017;color:#1b1640;border-radius:8px;padding:8px 14px;font:700 13px Arial;cursor:pointer">＋ New lead</button></div>'
+    + '<div class="gcl-kpis">' + ks.map(function(k){ return '<button type="button" class="gcl-kpi ' + (k.c || '') + '" data-gcl-kpi="' + k.k + '" title="' + esc(k.t || '') + '"><b>' + esc(k.n) + '</b><span>' + esc(k.l) + '</span></button>'; }).join('') + '</div>'
+    + (UI.v === 'boards' ? '' : '<div class="gcl-fil"><input type="search" placeholder="Search leads, people, addresses, bid #…" data-gcl-f="q" value="' + esc(UI.q) + '">'
+      + '<select data-gcl-f="who" aria-label="Assignee">' + optionsFor(who, UI.who, 'Everyone') + '</select>'
+      + '<select data-gcl-f="src" aria-label="Source">' + optionsFor(src, UI.src, 'All sources') + '</select>'
+      + '<select data-gcl-f="type" aria-label="Type">' + optionsFor(['residential', 'commercial', 'government', 'insurance', 'mitigation'].map(function(t){ return { v: t, t: TYPE_IC[t] + ' ' + t }; }), UI.type, 'All types') + '</select>'
+      + (UI.v === 'board' ? '' : '<select data-gcl-f="stage" aria-label="Stage">' + optionsFor(STAGES, UI.stage, 'All stages') + '</select>')
+      + '<select data-gcl-f="due" aria-label="Bid due">' + optionsFor([{ v: '7', t: 'Due in 7 days' }, { v: '30', t: 'Due in 30 days' }, { v: 'past', t: 'Past due' }], UI.due, 'Any due date') + '</select>'
+      + '<label><input type="checkbox" data-gcl-f="un"' + (UI.un ? ' checked' : '') + '> Unassigned only</label>'
+      + (UI.v === 'board' ? '' : '<label><input type="checkbox" data-gcl-f="closed"' + (UI.closed ? ' checked' : '') + '> Show won / lost</label>')
+      + '</div>')
+    + '<div class="gcl-body">' + bodyHtml() + '</div>'
+    + '<div class="gcl-classic"><span>📋 Classic table</span><button type="button" data-gcl-classic>' + (UI.classic ? 'Fold it away' : 'Show it') + '</button><span style="font-weight:400;font-size:12px">(the old Lead Pipeline table — everything it does still works)</span></div>';
+}
+function cardHtml(l){
+  var a = assignee(l), pl = plansOf(l), it = inboxOf(l);
+  var bids = it && it.portal && it.portal.bids ? ' · ' + it.portal.bids + ' bids' : '';
+  return '<div class="gcl-card" draggable="true" data-gcl-id="' + esc(l.id) + '">'
+    + '<div class="t">' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</div>'
+    + '<div class="m">' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + (value(l) ? ' · <b>' + money(value(l)) + '</b>' : '') + '</div>'
+    + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
+    + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
+    + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
+    + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
+    + '</div>';
+}
+function bodyHtml(){
+  if (UI.v === 'boards') return '<div id="gcl-boards">' + (typeof W._gcRenderBidBoards === 'function' ? '' : '<p style="color:#666">The 🔎 Bid boards manager is on its way (public boards the CRM reads, and the ones you sign up for). Until it is here: Leads → 📥 Lead Inbox → ⚙.</p>') + '</div>';
+  var list = filtered();
+  if (UI.v === 'board') {
+    return '<div class="gcl-board">' + STAGES.map(function(st){
+      var cs = list.filter(function(l){ return stageOf(l) === st; });
+      if (st === 'Won' || st === 'Lost') cs = cs.filter(function(l){ var t = Date.parse(s(l.stageChangedAt || l.updatedAt)); return !isFinite(t) || Date.now() - t < 45 * 864e5; });
+      cs.sort(function(a, b){ var da = dueMs(a), db = dueMs(b); if (isFinite(da) !== isFinite(db)) return isFinite(da) ? -1 : 1; if (isFinite(da)) return da - db; return born(b) - born(a); });
+      var tot = cs.reduce(function(t, l){ return t + value(l); }, 0);
+      return '<div class="gcl-col" data-gcl-stage="' + esc(st) + '"><h4><span>' + STAGE_IC[st] + ' ' + esc(st) + ' (' + cs.length + ')</span><small>' + (tot ? money(tot) : '') + '</small></h4>' + cs.slice(0, 80).map(cardHtml).join('') + (cs.length > 80 ? '<div class="note">+' + (cs.length - 80) + ' more — use the List</div>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  if (UI.v === 'list') {
+    var cols = [['name', 'Lead'], ['stage', 'Stage'], ['who', 'Assigned'], ['type', 'Type'], ['src', 'Source'], ['value', 'Value'], ['due', 'Bid due'], ['born', 'Came in']];
+    var key = { name: function(l){ return low(l.name); }, stage: function(l){ return STAGES.indexOf(stageOf(l)); }, who: function(l){ return low(assignee(l)) || 'zzz'; }, type: typeOf, src: function(l){ return low(srcOf(l)); }, value: value, due: function(l){ var t = dueMs(l); return isFinite(t) ? t : 9e15; }, born: born }[UI.sort] || born;
+    list.sort(function(a, b){ var x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * UI.dir; });
+    return '<div class="gcl-wrap"><table class="gcl-list"><thead><tr>' + cols.map(function(c){ return '<th data-gcl-sort="' + c[0] + '">' + c[1] + (UI.sort === c[0] ? (UI.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
+      + list.slice(0, 400).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td><b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (born(l) ? new Date(born(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
+      + '</tbody></table></div>' + (list.length ? '' : '<p style="color:#666">No leads match.</p>');
+  }
+  if (UI.v === 'cal') {
+    var base = UI.cal ? new Date(UI.cal + '-01T12:00:00') : new Date(); base.setDate(1);
+    var y = base.getFullYear(), m = base.getMonth(), first = new Date(y, m, 1), start = new Date(y, m, 1 - first.getDay()), today = new Date().toDateString();
+    var byDay = {}; list.forEach(function(l){ var t = dueMs(l); if (!isFinite(t)) return; var k = new Date(t).toDateString(); (byDay[k] = byDay[k] || []).push(l); });
+    var h = '<div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><button type="button" class="gcl-mv" data-gcl-cal="-1">‹ Prev</button><b>' + base.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + '</b><button type="button" class="gcl-mv" data-gcl-cal="1">Next ›</button><button type="button" class="gcl-mv" data-gcl-cal="0">Today</button><span class="note" style="font-size:12px;color:#666">Bid due dates</span></div><div class="gcl-cal">';
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(function(d){ h += '<div class="hd">' + d + '</div>'; });
+    for (var i = 0; i < 42; i++) {
+      var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), ev = byDay[d.toDateString()] || [];
+      h += '<div class="d' + (d.getMonth() !== m ? ' other' : '') + (d.toDateString() === today ? ' today' : '') + '"><b>' + d.getDate() + '</b>' + ev.map(function(l){ return '<button type="button" class="ev" data-gcl-id="' + esc(l.id) + '" title="' + esc(s(l.name) + ' — ' + s(l.bidDue).replace('T', ' ')) + '">' + esc((s(l.bidDue).length > 10 ? s(l.bidDue).slice(11, 16) + ' ' : '') + s(l.name || l.title)) + '</button>'; }).join('') + '</div>';
+    }
+    return h + '</div>';
+  }
+  if (UI.v === 'map') {
+    var withAddr = list.filter(function(l){ return s(l.address || l.city); });
+    var sel = withAddr.filter(function(l){ return l.id === UI.mapSel; })[0] || withAddr[0];
+    var q = sel ? encodeURIComponent([sel.address, sel.city, sel.state, sel.zip].filter(Boolean).join(', ')) : encodeURIComponent('Bartlett, TN');
+    return '<div class="gcl-map"><ul>' + withAddr.slice(0, 300).map(function(l){ return '<li data-gcl-map="' + esc(l.id) + '" class="' + (sel && sel.id === l.id ? 'on' : '') + '"><b>' + srcIc(l) + ' ' + esc(s(l.name) || 'Lead') + '</b><br><span style="color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</span> ' + dueChip(l) + '</li>'; }).join('') + (withAddr.length ? '' : '<li>No leads with an address match the filters.</li>') + '</ul>'
+      + '<div><iframe title="Map" loading="lazy" referrerpolicy="no-referrer" src="https://maps.google.com/maps?q=' + q + '&output=embed"></iframe>' + (sel ? '<div class="row" style="margin-top:6px"><button type="button" class="gcl-mv" data-gcl-id="' + esc(sel.id) + '">Open lead</button> <a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=' + q + '">Directions ↗</a></div>' : '') + '</div></div>';
+  }
+  return '';
+}
+
+var HUB_SIG = '', FORCE = false;
+function mount(){
+  if (view() !== 'leads') { var old = D.getElementById('gc-leads-hub'); if (old) old.remove(); D.body.classList.remove('gcl-noclassic'); return; }
+  var a = anchor(); if (!a || !a.parentElement) return;
+  css();
+  var hub = D.getElementById('gc-leads-hub');
+  if (!hub || hub.nextElementSibling !== a) {
+    if (hub) hub.remove();
+    hub = D.createElement('div'); hub.id = 'gc-leads-hub'; hub.setAttribute('data-gc-keep', '1');
+    a.parentElement.insertBefore(hub, a); HUB_SIG = '';
+    bind(hub);
+  }
+  var pw = pipelineWrap(); if (pw && !pw.classList.contains('gcl-classic-body')) pw.classList.add('gcl-classic-body');
+  D.body.classList.toggle('gcl-noclassic', !UI.classic);
+  var ae = D.activeElement, typing = ae && hub.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
+  if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
+  var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
+  var sig = JSON.stringify([UI, leads().length, leads().reduce(function(m, l){ var u = s(l.updatedAt); return u > m ? u : m; }, ''), inboxItems().length, unassignedCount(), Math.floor(Date.now() / 60000)]);
+  if (sig === HUB_SIG) return;
+  HUB_SIG = sig;
+  var hh = hubHtml(); held(function(){ hub.innerHTML = hh; });
+  if (refocus) { var el = hub.querySelector('[data-gcl-f="' + refocus + '"]'); if (el) { try { el.focus(); if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} } }
+  if (UI.v === 'boards' && typeof W._gcRenderBidBoards === 'function') { try { W._gcRenderBidBoards(hub.querySelector('#gcl-boards')); } catch (e) { warn(e); } }
+}
+function redraw(){ HUB_SIG = ''; FORCE = true; mount(); FORCE = false; }
+
+var dragId = '', QT = 0;
+function bind(hub){
+  hub.addEventListener('click', function(ev){
+    var t = ev.target.closest ? ev.target.closest('[data-gcl-v],[data-gcl-kpi],[data-gcl-sort],[data-gcl-cal],[data-gcl-map],[data-gcl-contact],[data-gcl-classic],[data-gcl-new],[data-gcl-id]') : null;
+    if (!t || t.tagName === 'SELECT') return;
+    if (t.hasAttribute('data-gcl-v')) { UI.v = t.getAttribute('data-gcl-v'); saveUI(); return redraw(); }
+    if (t.hasAttribute('data-gcl-kpi')) {
+      var k = t.getAttribute('data-gcl-kpi');
+      if (k === 'un') { UI.un = true; UI.who = ''; UI.v = UI.v === 'boards' ? 'board' : UI.v; }
+      else if (k === 'due') { UI.due = '7'; if (UI.v === 'boards' || UI.v === 'map') UI.v = 'list'; }
+      else if (k === 'slow') { UI.v = 'list'; UI.stage = 'New Lead'; UI.sort = 'born'; UI.dir = 1; }
+      else if (k === 'today') { UI.v = 'list'; UI.sort = 'born'; UI.dir = -1; }
+      else if (k === 'win') { UI.v = 'list'; UI.closed = true; }
+      saveUI(); return redraw();
+    }
+    if (t.hasAttribute('data-gcl-sort')) { var c = t.getAttribute('data-gcl-sort'); if (UI.sort === c) UI.dir = -UI.dir; else { UI.sort = c; UI.dir = c === 'born' || c === 'value' ? -1 : 1; } saveUI(); return redraw(); }
+    if (t.hasAttribute('data-gcl-cal')) { var dlt = +t.getAttribute('data-gcl-cal'); var b = UI.cal ? new Date(UI.cal + '-01T12:00:00') : new Date(); if (!dlt) b = new Date(); else b.setMonth(b.getMonth() + dlt); UI.cal = b.getFullYear() + '-' + ('0' + (b.getMonth() + 1)).slice(-2); saveUI(); return redraw(); }
+    if (t.hasAttribute('data-gcl-map')) { UI.mapSel = t.getAttribute('data-gcl-map'); return redraw(); }
+    if (t.hasAttribute('data-gcl-contact')) { ev.stopPropagation(); var id = t.getAttribute('data-gcl-contact'); t.disabled = true; markContacted(id).then(redraw); return; }
+    if (t.hasAttribute('data-gcl-classic')) { UI.classic = !UI.classic; saveUI(); return redraw(); }
+    if (t.hasAttribute('data-gcl-new')) { var bs = D.querySelectorAll('#root button'); for (var i = 0; i < bs.length; i++) { if (s(bs[i].textContent).trim() === '+ Add' && D.querySelector('#root table[data-gc-fid="LEAD"]')) { UI.classic = true; saveUI(); D.body.classList.remove('gcl-noclassic'); bs[i].click(); return; } } toast('Open the classic table to add a lead (＋ Add).'); return; }
+    if (t.hasAttribute('data-gcl-id')) openDrawer(t.getAttribute('data-gcl-id'));
+  });
+  hub.addEventListener('change', function(ev){
+    var t = ev.target;
+    if (t.hasAttribute('data-gcl-move')) { moveStage(t.getAttribute('data-gcl-move'), t.value); return; }
+    var f = t.getAttribute('data-gcl-f'); if (!f) return;
+    if (f === 'q') return qNow(t);
+    UI[f] = t.type === 'checkbox' ? t.checked : t.value; saveUI(); redraw();
+  });
+  function qNow(t){ if (UI.q === t.value) return; UI.q = t.value; redraw(); }   /* at once: a few hundred leads draw in a few ms */
+  hub.addEventListener('input', function(ev){ if (ev.target.getAttribute && ev.target.getAttribute('data-gcl-f') === 'q') qNow(ev.target); }, true);
+  hub.addEventListener('keyup', function(ev){ if (ev.target.getAttribute && ev.target.getAttribute('data-gcl-f') === 'q' && ev.target.value !== UI.q) qNow(ev.target); }, true);
+  hub.addEventListener('dragstart', function(ev){ var c = ev.target.closest && ev.target.closest('.gcl-card'); if (!c) return; dragId = c.getAttribute('data-gcl-id'); try { ev.dataTransfer.setData('text/plain', dragId); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {} });
+  hub.addEventListener('dragover', function(ev){ var col = ev.target.closest && ev.target.closest('.gcl-col'); if (!col || !dragId) return; ev.preventDefault(); Array.prototype.forEach.call(hub.querySelectorAll('.gcl-col.drop'), function(x){ if (x !== col) x.classList.remove('drop'); }); col.classList.add('drop'); });
+  hub.addEventListener('dragleave', function(ev){ var col = ev.target.closest && ev.target.closest('.gcl-col'); if (col && !col.contains(ev.relatedTarget)) col.classList.remove('drop'); });
+  hub.addEventListener('drop', function(ev){ var col = ev.target.closest && ev.target.closest('.gcl-col'); if (!col) return; ev.preventDefault(); col.classList.remove('drop'); var id = dragId; try { id = ev.dataTransfer.getData('text/plain') || id; } catch (e) {} dragId = ''; if (id) moveStage(id, col.getAttribute('data-gcl-stage')); });
+}
+
+/* ── actions ──────────────────────────────────────────────────────────────── */
+function moveStage(id, st, reason){
+  if (STAGES.indexOf(st) < 0) return Promise.resolve(false);
+  if ((st === 'Lost') && reason == null) { var r = W.prompt('Why was it lost? (price, timing, went with someone else, not bidding…)', ''); if (r == null) { redraw(); return Promise.resolve(false); } reason = r; }
+  var at = nowIso();
+  return patchLead(id, function(l){
+    if (stageOf(l) === st) return false;
+    var from = stageOf(l); l.stage = st; l.stageChangedAt = at;
+    if (st !== 'New Lead' && !s(l.contactedAt)) { l.contactedAt = at; l.contactedBy = myName(); }
+    if (st === 'Lost') { l.lostReason = s(reason).slice(0, 300); l.lostAt = at; }
+    if (st === 'Won') l.wonAt = at;
+    var h = arr(l.stageHistory).slice(); h.push({ from: from, to: st, at: at, by: myName() }); l.stageHistory = h.slice(-60);
+  }).then(function(ok){ toast(ok ? 'Moved to ' + st : 'Could not save — try again'); redraw(); if (UI.open === id) openDrawer(id); return ok; });
+}
+function markContacted(id){
+  var at = nowIso();
+  return patchLead(id, function(l){ if (s(l.contactedAt)) return false; l.contactedAt = at; l.contactedBy = myName(); l.lastContact = at; if (stageOf(l) === 'New Lead') { l.stage = 'Contacted'; l.stageChangedAt = at; } })
+    .then(function(ok){ toast(ok ? '✅ Marked contacted — the reach-out reminders stop' : 'Could not save — try again'); return ok; });
+}
+function assign(id, name){
+  var at = nowIso();
+  return patchLead(id, function(l){ var commercial = /commercial|government/.test(typeOf(l)); if (commercial && !l.pm) l.estimator = name; else l.pm = name; l.assignedAt = at; l.assignedBy = myName(); logAct(l, 'assign', 'Assigned to ' + name); })
+    .then(function(ok){
+      toast(ok ? 'Assigned to ' + name : 'Could not save — try again');
+      if (ok) { var l = leads().filter(function(x){ return x.id === id; })[0]; if (l) fn('bid-inbox?notify=1', { body: { lead: l } }).catch(function(){}); }
+      redraw(); return ok;
+    });
+}
+function loadOf(name){
+  var n = low(name), ls = leads().filter(function(l){ return !closed(l) && low(assignee(l)) === n; }).length;
+  var js = arr(crm().projects).filter(function(p){ return p && low(p.pm) === n && !/complete|closed|cancel|lost/i.test(s(p.status) + ' ' + s(p.stage)); }).length;
+  return { leads: ls, jobs: js };
+}
+
+/* ── the lead drawer ──────────────────────────────────────────────────────── */
+function closeDrawer(){ var d = D.getElementById('gcl-drawer'), sh = D.getElementById('gcl-shade'); held(function(){ try { if (d && d.contains(D.activeElement)) D.activeElement.blur(); } catch (e) {} if (d) Element.prototype.remove.call(d); if (sh) Element.prototype.remove.call(sh); }); UI.open = ''; }
+var SC = { mode: 'manual', text: '', busy: false, err: '' };
+var ESTS = null, ESTS_AT = 0;
+function loadEsts(){ if (Date.now() - ESTS_AT < 5000) return; ESTS_AT = Date.now(); try { if (typeof W.idbGet === 'function') Promise.resolve(W.idbGet('estimates')).then(function(v){ ESTS = arr(v); }, function(){}); } catch (e) {} }
+function estimateFor(l){
+  loadEsts();
+  var es = arr(crm().estimates).concat(arr(ESTS)).filter(function(e){ return e && !e.deleted && (s(e.leadId) === s(l.id) || (s(l.pid) && s(e.projectId || e.pid) === s(l.pid)) || (s(l.name) && low(e.name || e.title) === low(l.name))); });
+  es.sort(function(a, b){ return s(b.updatedAt || b.date).localeCompare(s(a.updatedAt || a.date)); });
+  return es[0] || null;
+}
+/* ONE price stripper for every no-price scope (the estimate here, wINS3's Xactimate import): what, where and how much —
+   never what it costs. window._gcScopeFromLines(lines, { stripPrices: true, trade, title }) → plain text.
+   Kept: description, category / trade, room or group, quantity, unit, measurements (dims, SF / LF / SY …), notes.
+   Removed: every money field (price, cost, charge, total, tax, O&P, RCV, ACV, depreciation, markup, margin …) and any
+   "$…" or "RCV 1,234" text left inside a description. */
+function stripMoney(txt){
+  return s(txt)
+    .replace(/[$€£]\s?-?\d[\d,]*(\.\d+)?/g, '')
+    .replace(/\(?\b(rcv|acv|o\s?&\s?p|overhead(\s*(and|&)\s*profit)?|profit|sales\s*tax|tax|depreciation|deprec\.?|markup|margin|unit\s*(price|cost)|price|cost|total|subtotal|amount|charge)\b\.?\s*[:=]?\s*\(?\s*-?\s?\d[\d,]*(\.\d+)?\s*%?\)?/gi, '')
+    .replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+([,.;])/g, '$1').replace(/[ \t]*[—–-][ \t]*$/gm, '').trim();
+}
+function stripText(t3){ return s(t3).split('\n').map(stripMoney).join('\n').replace(/\n{3,}/g, '\n\n').trim(); }
+function scopeFromLines(lines, opt){
+  opt = opt || {};
+  var groups = [], byG = {};
+  arr(lines).forEach(function(x){
+    if (!x) return;
+    var d = stripMoney(x.desc || x.description || x.name || x.item || x.text);
+    if (!d) return;
+    if (opt.trade && (x.trade || x.cat || x.category) && low(x.trade) !== low(opt.trade) && low(x.cat || x.category) !== low(opt.trade)) return;
+    var g = s(x.room || x.group || x.area || x.section || x.location).trim();
+    var q = s(x.qty != null ? x.qty : x.quantity).trim(), u = s(x.unit || x.uom || x.units).trim(), c = s(x.cat || x.category || x.trade).trim();
+    var meas = [s(typeof x.measurements === 'string' ? x.measurements : '') || s(x.measure || x.dims || x.dimensions)].concat(['sf', 'lf', 'sy', 'sq', 'cf', 'perimeter', 'area', 'height', 'length', 'width'].filter(function(k){ return x[k] != null && s(x[k]) !== '' && typeof x[k] !== 'object'; }).map(function(k){ return k.toUpperCase() + ' ' + s(x[k]); }))
+      .concat(x.measurements && typeof x.measurements === 'object' ? Object.keys(x.measurements).filter(function(k){ return !/price|cost|rcv|acv|tax|total|amount/i.test(k); }).map(function(k){ return k + ' ' + s(x.measurements[k]); }) : [])
+      .map(stripMoney).filter(Boolean).join(', ');
+    var note = stripMoney(x.note || x.notes || x.remarks);
+    var line = '• ' + (c && !opt.trade ? '[' + stripMoney(c) + '] ' : '') + d + (q && q !== '1' ? ' — qty ' + q + (u ? ' ' + u : '') : u && q === '1' ? ' — 1 ' + u : '') + (meas ? ' (' + meas + ')' : '') + (note ? ' — ' + note : '');
+    if (!byG[g]) { byG[g] = []; groups.push(g); } byG[g].push(line);
+  });
+  var out = (opt.title ? stripMoney(opt.title) + '\n\n' : '') + groups.map(function(g){ return (g ? stripMoney(g) + ':\n' : '') + byG[g].join('\n'); }).join('\n\n');
+  return opt.stripPrices === false ? out : stripText(out);
+}
+W._gcScopeFromLines = W._gcScopeFromLines || scopeFromLines;
+W._gcStripPrices = W._gcStripPrices || stripText;
+function scopeFromEstimate(e){
+  var head = stripText(e.scope || e.scopeOfWork);
+  return (head ? head + '\n\n' : '') + scopeFromLines(e.lines || e.lineItems || e.items, { stripPrices: true });
+}
+/* the job's insurance claim with an imported Xactimate estimate (wINS3): its own helper when it is there, else the claim record */
+function claimsList(){ try { if (W._gcClaims && typeof W._gcClaims.list === 'function') { var cc = arr(W._gcClaims.list()); if (cc.length) return cc; } } catch (e) {} var c = arr(crm().claims); if (c.length) return c; var v = lsGet('gc_claims', null); return arr(v && v.claims ? v.claims : v); }
+function xactFor(l){
+  var sv = savedScopes(l).filter(function(x){ return /xact/i.test(s(x.source)); }); if (sv.length) { var last = sv[sv.length - 1]; return { text: last.text, title: last.title, saved: true, lines: [] }; }
+  if (typeof W._gcXactimateFor === 'function') { try { var r = W._gcXactimateFor({ leadId: l.id, pid: l.pid, claim: l.claimNumber || l.claimNo, address: l.address }); if (r && arr(r.lines).length) return r; } catch (e) {} }
+  var cl = claimsList().filter(function(c){ return c && ((s(c.leadId) && s(c.leadId) === s(l.id)) || (s(l.pid) && s(c.pid || c.projectId) === s(l.pid)) || (s(l.claimNumber) && s(c.claimNumber || c.number) === s(l.claimNumber))); });
+  for (var k = 0; k < cl.length; k++) {   /* the Insurance tab's imported estimates (Xactimate PDF / ESX): the newest one with lines */
+    var es = arr(cl[k].estimates).filter(function(e){ return e && e.deleted !== true && arr(e.lines).length; });
+    if (es.length) { var e = es[es.length - 1]; return { lines: e.lines, title: s(e.label || 'Xactimate estimate') + ' — claim ' + s(cl[k].claimNumber || cl[k].number), claim: cl[k] }; }
+  }
+  for (var i = 0; i < cl.length; i++) { var x = cl[i].xactimate || cl[i].xactEstimate || cl[i].xact; if (x && arr(x.lines).length) return { lines: x.lines, title: s(x.title || x.name || ('Claim ' + s(cl[i].claimNumber || cl[i].number))), claim: cl[i] }; }
+  return null;
+}
+function scopeFromXact(x){
+  if (x && x.saved) return stripText(x.text);
+  if (typeof W._gcXactimateScope === 'function') { try { var t2 = W._gcXactimateScope(x, { stripPrices: true }); if (t2) return stripText(t2); } catch (e) {} }
+  return scopeFromLines(x.lines, { stripPrices: true, title: x.title });
+}
+/* ── the scope store (patch INS3 hands its Xactimate "scope with no prices" here) ──────────────────────────────
+   window._gcScopeStore.save(pid, { title, text, lines, source, noPrices }) — kept per job (and on the lead that
+   points at the job), offered in the lead's Sub bid portal scope builder as a scope source.
+   window._gcSubBidScope.attach(pid, scope) — puts that scope on the job's PRIVATE sub bid job (never public). */
+var K_STORE = 'gc_scope_store_v1';
+function storeAll(){ var v = lsGet(K_STORE, {}); return v && typeof v === 'object' ? v : {}; }
+function storeFor(pid){ return arr(storeAll()[s(pid)]); }
+function cleanScope(sc){ sc = sc || {}; return { title: stripMoney(sc.title).slice(0, 200), text: stripText(sc.text || (arr(sc.lines).length ? scopeFromLines(flatLines(sc.lines), { stripPrices: true }) : '')).slice(0, 20000), source: s(sc.source || 'xactimate').slice(0, 30), at: nowIso(), by: myName() }; }
+function flatLines(ls){ var out = []; arr(ls).forEach(function(x){ if (x && arr(x.lines).length) arr(x.lines).forEach(function(y){ out.push(Object.assign({ room: s(x.room || x.name) }, y)); }); else if (x) out.push(x); }); return out; }
+function leadForPid(pid){ pid = s(pid); if (!pid) return null; return leads().filter(function(l){ return s(l.pid) === pid || s(l.projectId) === pid || s(l.id) === pid; })[0] || null; }
+function saveScope(pid, sc){
+  pid = s(pid); var c = cleanScope(sc); if (!pid || !c.text) return Promise.resolve(false);
+  var all = storeAll(), list = arr(all[pid]).filter(function(x){ return x && x.text !== c.text; }); list.push(c); all[pid] = list.slice(-10); lsSet(K_STORE, all);
+  var l = leadForPid(pid);
+  if (!l) return Promise.resolve(true);
+  return patchLead(l.id, function(x){ var a = arr(x.savedScopes).filter(function(y){ return y && y.text !== c.text; }); a.push(c); x.savedScopes = a.slice(-10); logAct(x, 'note', 'Scope saved from ' + c.source + ' (no prices)'); }).then(function(){ return true; });
+}
+function attachScope(pid, sc){
+  pid = s(pid); var c = cleanScope(sc);
+  if (!c.text) return Promise.reject(new Error('The scope is empty.'));
+  saveScope(pid, sc);
+  var l = leadForPid(pid), body = { op: 'portal', mode: 'private', scope: c.text, scopeMode: c.source === 'xactimate' ? 'xactimate' : 'manual' };
+  if (l && l.inboxId) body.id = l.inboxId;
+  else if (l) { body.lead = leadForServer(l); body.sharedNotes = arr(l.subNotesShared); }
+  else { var p = arr(crm().projects).filter(function(x){ return x && s(x.id) === pid; })[0] || {}; body.lead = { id: 'job-' + pid, name: s(p.name || c.title || 'Job ' + pid), address: s(p.address), source: 'CRM job' }; }
+  return fn('bid-inbox?act=1', { body: body }).then(function(j){
+    if (l) patchLead(l.id, function(x){ x.subScope = c.text; x.subScopeMode = body.scopeMode; x.subPortal = { jobId: j.jobId, state: j.state, visibility: j.visibility, at: j.at }; logAct(x, 'portal', 'Scope from ' + c.source + ' attached to the private sub bid job'); });
+    redraw(); return j;
+  });
+}
+W._gcScopeStore = { save: saveScope, list: storeFor, all: storeAll };
+W._gcSubBidScope = { attach: attachScope };
+if (!W._gcLeadsScope) W._gcLeadsScope = W._gcSubBidScope;
+D.addEventListener('gc:scope-saved', function(ev){ var d = ev && ev.detail || {}; if (!d.pid || !s(d.text)) return; var have = storeFor(d.pid).some(function(x){ return x.text === stripText(d.text); }); if (!have) saveScope(d.pid, { title: d.scope && d.scope.title, text: d.text, source: 'xactimate' }); });
+/* the saved scopes for this lead (its job's, and its own) */
+function savedScopes(l){ var a = arr(l.savedScopes).slice(), seen = {}; a.forEach(function(x){ seen[x.text] = 1; }); [l.pid, l.projectId, l.id].forEach(function(p){ if (p) storeFor(p).forEach(function(x){ if (!seen[x.text]) { seen[x.text] = 1; a.push(x); } }); }); return a; }
+/* the typing guard ("held your place") protects a panel from timers, not from the person: their own Close / redraw goes through */
+function held(f){ var was = W.__GC_MANUAL_SAVE__; W.__GC_MANUAL_SAVE__ = true; try { return f(); } finally { W.__GC_MANUAL_SAVE__ = was; } }
+function claudeScope(l){
+  var it = inboxOf(l) || {}, notes = [s(l.notes), s(l.description), s(l.scope), s(it.scope), arr(it.notes).join('\n'), s(it.detail)].filter(Boolean).join('\n').slice(0, 9000);
+  var prompt = 'Write a clear scope of work for subcontractors bidding this project for GrayCo Construction Services (general contractor, Bartlett TN). '
+    + 'Use short trade-by-trade bullet points (what is included, materials, quantities if known, exclusions, site conditions, schedule notes). '
+    + 'NEVER include prices, costs, budgets, markups or GrayCo\'s numbers. Do not invent quantities — write "verify on plans" when unknown. Plain text only.\n\n'
+    + 'Project: ' + s(l.name || l.title) + '\nType: ' + typeOf(l) + '\nAddress: ' + [l.address, l.city, l.state].filter(Boolean).join(', ') + '\nBid due: ' + s(l.bidDue) + '\nWhat we know:\n' + notes;
+  return W.fetch('/.netlify/functions/claude-proxy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, messages: [{ role: 'user', content: prompt }] }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error && (j.error.message || j.error) || ('The AI answered ' + r.status)); return arr(j.content).filter(function(c){ return c && c.type === 'text'; }).map(function(c){ return c.text; }).join('').replace(/\$\s?\d[\d,]*(\.\d+)?/g, '').trim(); }); });
+}
+function noteLines(l){
+  var out = [];
+  s(l.notes).split(/\n+/).forEach(function(x){ x = x.trim(); if (x) out.push(x); });
+  arr(l.comments).concat(arr(l.activity)).forEach(function(c){ if (c && /note|comment/i.test(s(c.type || 'note')) && s(c.text)) out.push(s(c.text)); });
+  return out.slice(-30);
+}
+function drawerHtml(l){
+  var it = inboxOf(l) || {}, pl = plansOf(l), p = portalOf(l), a = assignee(l), adm = isAdmin(), est = estimateFor(l);
+  var c = { name: s(l.client || l.contact || l.contactName || (l.contact && l.contact.name)), phone: s(l.phone || l.clientPhone || it.phone || (it.contact && it.contact.phone)), email: s(l.email || l.clientEmail || (it.contact && it.contact.email)) };
+  var shared = arr(l.subNotesShared);
+  var tl = [];
+  arr(l.stageHistory).forEach(function(h){ tl.push({ at: h.at, t: '➡️ ' + s(h.from) + ' → ' + s(h.to), by: h.by }); });
+  arr(l.activity).forEach(function(h){ tl.push({ at: h.at, t: ({ call: '📞', text: '💬', email: '✉️', assign: '👤', note: '📝', portal: '🏗' }[h.type] || '•') + ' ' + s(h.text || h.type), by: h.by }); });
+  arr(l.calls).concat(arr(l.followUps)).forEach(function(h){ if (h) tl.push({ at: h.at || h.date, t: '📞 ' + s(h.note || h.text || h.result || 'Call'), by: h.by }); });
+  if (l.contactedAt) tl.push({ at: l.contactedAt, t: '✅ Contacted', by: l.contactedBy });
+  if (born(l)) tl.push({ at: new Date(born(l)).toISOString(), t: '🆕 Came in from ' + srcOf(l), by: '' });
+  arr(it.notes).slice(-5).forEach(function(n){ tl.push({ at: it.updatedAt || it.at, t: '📥 ' + s(n).slice(0, 160), by: 'Lead Inbox' }); });
+  tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
+  var ppl = people();
+  var pst = p && p.jobId ? s(p.state || p.visibility) : '';
+  return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
+    /* overview */
+    + '<section><h4>Overview</h4>'
+    + '<div class="kv"><span>Value:</span> ' + (value(l) ? money(value(l)) : '—') + ' &nbsp; <span>Came in:</span> ' + (born(l) ? new Date(born(l)).toLocaleString() : '—') + ' ' + speedChip(l) + '</div>'
+    + '<div class="kv"><span>Address:</span> ' + esc([l.address, l.city, l.state, l.zip].filter(Boolean).join(', ') || '—') + '</div>'
+    + '<div class="row"><select data-d="stage" aria-label="Stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select>'
+    + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '')
+    + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button></div>'
+    + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
+    + '</section>'
+    /* assign */
+    + '<section><h4>👤 Assigned to</h4><div class="row"><select data-d="assign" aria-label="Assign"' + (adm ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm ? '' : '<span class="note">An admin assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
+    /* contact */
+    + '<section><h4>Contact</h4><div class="kv">' + esc(c.name || '—') + (c.phone ? ' · ' + esc(c.phone) : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div><div class="row">'
+    + (c.phone ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="call" href="tel:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a><a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="text" href="sms:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">💬 Text</a>' : '')
+    + (c.email ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="email" target="_blank" rel="noopener" href="https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(c.email) + '&su=' + encodeURIComponent(s(l.name || l.title)) + '">✉️ E-mail</a>' : '')
+    + '<button type="button" class="b" data-d="lognote">📝 Log a call / note</button>' + (typeof W._gcCustomer360 === 'function' ? '<button type="button" class="b" data-d="cust">👤 Customer</button>' : '') + (typeof W._gcVisitNotes === 'function' ? '<button type="button" class="b" data-d="visit">🎤 Visit notes (talk or type)</button>' : '') + '</div><div class="note">Calls, texts and e-mails you start here are logged on the lead.</div></section>'
+    /* bid info */
+    + '<section><h4>⏰ Bid</h4><div class="kv"><span>Due:</span> ' + (s(l.bidDue) ? esc(s(l.bidDue).replace('T', ' ')) + ' ' + dueChip(l) : '<b style="color:#b45309">NOT FOUND — add it</b>') + '</div>'
+    + '<div class="kv"><span>Due to:</span> ' + esc([l.dueToCompany, l.dueToContact, l.dueToEmail, l.dueToPhone].filter(Boolean).join(' · ') || '—') + (l.submitMethod ? ' — ' + esc(l.submitMethod) : '') + '</div>'
+    + (l.bidNumber || it.bidNumber ? '<div class="kv"><span>Bid #:</span> ' + esc(l.bidNumber || it.bidNumber) + '</div>' : '')
+    + '<div class="row"><input type="datetime-local" data-d="due" value="' + esc(s(l.bidDue).length > 10 ? s(l.bidDue).slice(0, 16) : s(l.bidDue) ? s(l.bidDue) + 'T14:00' : '') + '" aria-label="Bid due"><input type="text" data-d="dueto" placeholder="Due to (company)" value="' + esc(l.dueToCompany) + '"><button type="button" class="b" data-d="savedue">Save</button></div></section>'
+    /* plans */
+    + '<section><h4>📐 Plans & files</h4>'
+    + (pl.files.length ? pl.files.map(function(f, i){ return '<div class="row"><button type="button" class="b" data-d="file" data-i="' + i + '">📄 ' + esc(s(f.name) || 'Plans') + '</button><span class="note">' + (f.size ? Math.round(f.size / 1024) + ' KB · ' : '') + 'stored in the CRM</span></div>'; }).join('') : '')
+    + (pl.links.length ? pl.links.map(function(x){ return '<div class="row"><a target="_blank" rel="noopener" href="' + esc(x.url) + '" style="font-weight:700">🔗 ' + esc(s(x.label || x.board) || 'Plans — open link') + ' ↗</a>' + (x.why ? '<span class="note">' + esc(x.why) + '</span>' : x.stored ? '<span class="note">also stored in the CRM</span>' : '') + '</div>'; }).join('') : '')
+    + (!pl.files.length && !pl.links.length ? '<div class="note">No plans yet.</div>' : '')
+    + '<div class="row"><input type="text" data-d="planurl" placeholder="Paste a plans link (planroom, Dropbox, county site…)" style="flex:1"><button type="button" class="b" data-d="addplan">Add link</button></div>'
+    + '<div class="note">Plans that come with an e-mail or as a plain PDF link are stored in the CRM. When a site needs a sign-in, the link is kept here.</div></section>'
+    /* sub bid portal */
+    + '<section><h4>🏗 Sub bid portal</h4>'
+    + '<div class="kv"><span>Status:</span> ' + (pst ? (/public|published/.test(pst) ? '<span class="gcl-chip pub">Public — every approved sub can see it</span>' : /private/.test(pst) ? '<span class="gcl-chip priv">Private — invited subs only</span>' : '<span class="gcl-chip priv">Private draft — staff only</span>') : '<span class="gcl-chip mute">Not on the portal yet</span>') + '</div>'
+    + '<div class="note">Every lead goes on the sub bid portal as <b>private</b>. Only you make it public. GrayCo prices are never shown to subs.</div>'
+    + '<div class="sm" role="tablist"><button type="button" class="b' + (SC.mode === 'claude' ? ' on' : '') + '" data-d="sm" data-m="claude">✨ Claude</button><button type="button" class="b' + (SC.mode === 'manual' ? ' on' : '') + '" data-d="sm" data-m="manual">✍️ Manual</button><button type="button" class="b' + (SC.mode === 'estimate' ? ' on' : '') + '" data-d="sm" data-m="estimate">📐 From estimate</button>' + (xactFor(l) ? '<button type="button" class="b' + (SC.mode === 'xactimate' ? ' on' : '') + '" data-d="sm" data-m="xactimate">🛡 From Xactimate</button>' : '') + '</div>'
+    + (SC.mode === 'claude' ? '<div class="row"><button type="button" class="b" data-d="draftai"' + (SC.busy ? ' disabled' : '') + '>' + (SC.busy ? 'Writing…' : '✨ Draft the scope') + '</button><span class="note">From the lead, its notes and the inbox details. Edit it before you save.</span></div>' : '')
+    + (SC.mode === 'estimate' ? '<div class="row">' + (est ? '<button type="button" class="b" data-d="fromest">📐 Use "' + esc(s(est.name || est.title || 'the estimate').slice(0, 40)) + '" (prices removed)</button>' : '<span class="note">No estimate is linked to this lead yet.</span>') + '</div>' : '')
+    + (SC.mode === 'xactimate' && xactFor(l) ? '<div class="row"><button type="button" class="b" data-d="fromxact">🛡 Use the Xactimate estimate (prices removed)</button><span class="note">Rooms, quantities, units and measurements kept; every price, tax, O&amp;P, RCV / ACV removed.</span></div>' : '')
+    + '<textarea data-d="scope" placeholder="Scope of work for the subs (no prices)">' + esc(SC.text || s(l.subScope)) + '</textarea>'
+    + (SC.err ? '<div class="err">' + esc(SC.err) + '</div>' : '')
+    + '<div class="note" style="margin-top:6px"><b>Notes the subs may see</b> (internal notes stay internal unless you tick them):</div>'
+    + (noteLines(l).length ? noteLines(l).map(function(n, i){ return '<label class="kv" style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-d="share" data-i="' + i + '"' + (shared.indexOf(n) >= 0 ? ' checked' : '') + '> <span style="color:#1b1640">' + esc(n.slice(0, 220)) + '</span></label>'; }).join('') : '<div class="note">No notes on this lead.</div>')
+    + '<div class="row" style="margin-top:8px"><button type="button" class="b pri" data-d="portal" data-m="private">🔒 Save & open to invited subs (private)</button>'
+    + ((adm || isEstimatorMe()) ? '<button type="button" class="b" data-d="portal" data-m="public">🌐 Make public to all subs</button>' : '') + '</div></section>'
+    /* estimate / job */
+    + '<section><h4>📐 Estimate & job</h4><div class="row">' + (est ? '<button type="button" class="b" data-d="openest">Open estimate: ' + esc(s(est.name || est.title || 'estimate').slice(0, 40)) + '</button>' : '<span class="note">No estimate yet.</span>') + '<button type="button" class="b" data-d="estimates">📐 Estimates</button><button type="button" class="b pri" data-d="convert">🚀 Convert to job</button></div></section>'
+    /* activity */
+    + '<section><h4>🕘 Activity</h4><ul class="tl">' + (tl.length ? tl.slice(0, 40).map(function(h){ return '<li>' + esc(h.t) + ' <i>' + (h.at ? esc(new Date(h.at).toLocaleString()) : '') + (h.by ? ' · ' + esc(h.by) : '') + '</i></li>'; }).join('') : '<li>Nothing yet.</li>') + '</ul></section>';
+}
+function openDrawer(id){
+  var l = leads().filter(function(x){ return x.id === id; })[0]; if (!l) return;
+  if (UI.open !== id) SC = { mode: 'manual', text: s(l.subScope), busy: false, err: '' };
+  UI.open = id; css();
+  var d = D.getElementById('gcl-drawer');
+  if (!d) {
+    var sh = D.createElement('div'); sh.id = 'gcl-shade'; sh.setAttribute('data-gc-keep', '1'); sh.onclick = closeDrawer; D.body.appendChild(sh);
+    d = D.createElement('div'); d.id = 'gcl-drawer'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Lead'); D.body.appendChild(d);
+    d.addEventListener('click', drawerClick); d.addEventListener('change', drawerChange);
+    d.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') closeDrawer(); });
+    d.addEventListener('input', function(ev){ if (ev.target.getAttribute('data-d') === 'scope') SC.text = ev.target.value; });
+  }
+  var top = d.scrollTop, html = drawerHtml(l); held(function(){ d.innerHTML = html; }); d.scrollTop = top;
+}
+function cur(){ return leads().filter(function(x){ return x.id === UI.open; })[0] || null; }
+function drawerChange(ev){
+  var t = ev.target, k = t.getAttribute('data-d'), l = cur(); if (!l) return;
+  if (k === 'stage') moveStage(l.id, t.value);
+  if (k === 'assign' && t.value) assign(l.id, t.value).then(function(){ openDrawer(l.id); });
+  if (k === 'share') {
+    var n = noteLines(l)[+t.getAttribute('data-i')], on = t.checked;
+    patchLead(l.id, function(x){ var a = arr(x.subNotesShared).filter(function(y){ return y !== n; }); if (on) a.push(n); x.subNotesShared = a.slice(-30); });
+  }
+}
+function drawerClick(ev){
+  var t = ev.target.closest ? ev.target.closest('[data-d]') : null; if (!t) return;
+  var k = t.getAttribute('data-d'), l = cur(); if (!l) return;
+  if (k === 'x') return closeDrawer();
+  if (k === 'contacted') { markContacted(l.id).then(function(){ openDrawer(l.id); redraw(); }); return; }
+  if (k === 'won') { moveStage(l.id, 'Won'); return; }
+  if (k === 'lost') { moveStage(l.id, 'Lost'); return; }
+  if (k === 'log') { var kind = t.getAttribute('data-k'); patchLead(l.id, function(x){ logAct(x, kind, ({ call: 'Called', text: 'Texted', email: 'E-mailed' }[kind]) + ' from the Leads tab'); if (!s(x.lastContact)) x.lastContact = nowIso(); }); return; }   /* the link still opens the phone / Gmail */
+  if (k === 'cust') { if (typeof W._gcCustomer360 === 'function') { var who = s(l.customerId || l.clientId || l.client || l.contactName || l.contact || l.name); try { closeDrawer(); W._gcCustomer360(who, { rec: l }); } catch (e) { warn(e); } } return; }
+  if (k === 'visit') { if (typeof W._gcVisitNotes === 'function') { try { W._gcVisitNotes('lead', l.id); } catch (e) { warn(e); } } return; }
+  if (k === 'lognote') { var txt = W.prompt('What happened? (a call, a message left, a note)', ''); if (!txt) return; patchLead(l.id, function(x){ logAct(x, 'note', txt); x.notes = (s(x.notes) ? s(x.notes) + '\n' : '') + txt; }).then(function(){ openDrawer(l.id); }); return; }
+  if (k === 'savedue') {
+    var d = D.querySelector('#gcl-drawer [data-d="due"]'), to = D.querySelector('#gcl-drawer [data-d="dueto"]');
+    var v = s(d && d.value), comp = s(to && to.value).trim();
+    patchLead(l.id, function(x){ x.bidDue = v ? v.slice(0, 16) : ''; x.dueToCompany = comp; if (v && comp) x.dueUnknown = false; }).then(function(ok){ toast(ok ? 'Bid due saved — the reminders follow it' : 'Could not save'); if (ok && l.inboxId) fn('bid-inbox?act=1', { body: { op: 'due', id: l.inboxId, bidDue: v ? v.slice(0, 16) : '', dueToCompany: comp } }).catch(function(){}); openDrawer(l.id); redraw(); });
+    return;
+  }
+  if (k === 'file') { var f = plansOf(l).files[+t.getAttribute('data-i')]; if (f && typeof W._gcDownloadRef === 'function') { try { W._gcDownloadRef(f.ref, f.name); } catch (e) { toast('Could not open the file'); } } else toast('The file viewer is still loading — try again in a moment'); return; }
+  if (k === 'addplan') {
+    var u = s((D.querySelector('#gcl-drawer [data-d="planurl"]') || {}).value).trim();
+    if (!/^https?:\/\/\S+$/i.test(u)) return toast('Paste a full link (https://…)');
+    patchLead(l.id, function(x){ var a = arr(x.plansLinks).slice(); if (!a.some(function(y){ return y && y.url === u; })) a.push({ url: u, label: 'Plans — open link', at: nowIso(), by: myName() }); x.plansLinks = a; }).then(function(){ openDrawer(l.id); redraw(); });
+    return;
+  }
+  if (k === 'sm') { SC.mode = t.getAttribute('data-m'); SC.err = ''; return openDrawer(l.id); }
+  if (k === 'draftai') {
+    SC.busy = true; SC.err = ''; openDrawer(l.id);
+    claudeScope(l).then(function(txt){ SC.busy = false; SC.text = txt || SC.text; openDrawer(l.id); }, function(e){ SC.busy = false; SC.err = 'Claude could not write it: ' + s(e && e.message); openDrawer(l.id); });
+    return;
+  }
+  if (k === 'fromxact') { var xx = xactFor(l); if (xx) { SC.text = scopeFromXact(xx); openDrawer(l.id); } return; }
+  if (k === 'fromest') { var e = estimateFor(l); if (e) { SC.text = scopeFromEstimate(e); openDrawer(l.id); } return; }
+  if (k === 'portal') {
+    var mode = t.getAttribute('data-m');
+    if (mode === 'public' && !W.confirm('Make this bid job PUBLIC?\n\nEvery approved sub on the bid portal will see it (title, address, scope, plans, shared notes). GrayCo prices are never shown.\n\nPrivate (invited subs only) is the default.')) return;
+    var scope = s(SC.text || s((D.querySelector('#gcl-drawer [data-d="scope"]') || {}).value) || l.subScope);
+    if (SC.mode === 'estimate' || SC.mode === 'xactimate') scope = stripText(scope);
+    t.disabled = true; t.textContent = 'Saving…';
+    var body = { op: 'portal', mode: mode, scope: scope, scopeMode: SC.mode, sharedNotes: arr(l.subNotesShared), plansLinks: plansOf(l).links.map(function(x){ return { url: x.url, label: s(x.label || x.board) }; }) };
+    if (l.inboxId) body.id = l.inboxId; else body.lead = leadForServer(l);
+    fn('bid-inbox?act=1', { body: body }).then(function(j){
+      return patchLead(l.id, function(x){ x.subScope = scope; x.subScopeMode = SC.mode; x.subPortal = { jobId: j.jobId, state: j.state, visibility: j.visibility, at: j.at }; logAct(x, 'portal', mode === 'public' ? 'Made public on the sub bid portal' : 'Opened to invited subs (private) on the sub bid portal'); })
+        .then(function(){ toast(mode === 'public' ? '🌐 Public on the sub bid portal' : '🔒 On the sub bid portal — private (invited subs only)'); refreshInbox(); openDrawer(l.id); redraw(); });
+    }, function(e){ SC.err = s(e && e.message); openDrawer(l.id); });
+    return;
+  }
+  if (k === 'openest') { var es = estimateFor(l); if (es && typeof W._gcOpenEstimate === 'function') { try { W._gcOpenEstimate(es.id); return; } catch (x) {} } goView('estimates'); return; }
+  if (k === 'estimates') { goView('estimates'); return; }
+  if (k === 'convert') {
+    closeDrawer(); goView('launchjob');
+    var it = inboxOf(l) || {}, fill = { name: s(l.name || l.title), client: s(l.client || l.contactName), address: [l.address, l.city, l.state, l.zip].filter(Boolean).join(', '), clientPhone: s(l.phone || l.clientPhone), clientEmail: s(l.email || l.clientEmail), scope: s(l.subScope || l.scope || it.scope), source: srcOf(l), notes: 'From lead ' + s(l.name) + ' (' + srcOf(l) + ').' };
+    var n = 0; (function tryFill(){ if (typeof W._gcLaunchPrefill === 'function') { try { W._gcLaunchPrefill(fill); toast('Launch Job is filled in from the lead — check it, pick the PM, then launch.'); } catch (e) {} return; } if (++n < 30) later(tryFill, 200); })();
+    return;
+  }
+}
+function goView(v){ try { if (typeof W._setView === 'function') { W._setView(v); return; } } catch (e) {} try { localStorage.setItem('grayco_view', v); } catch (e) {} }
+function leadForServer(l){ return { id: l.id, name: l.name || l.title, address: l.address, city: l.city, state: l.state, zip: l.zip, bidDue: l.bidDue, source: srcOf(l), leadKind: l.leadKind || l.type, gc: l.gc, dueToCompany: l.dueToCompany, bidNumber: l.bidNumber, plansLinks: arr(l.plansLinks), plansLink: l.plansLink, trades: arr(l.trades) }; }
+function refreshInbox(){ fn('bid-inbox?list=1').then(function(j){ var k = lsGet('gc_ldi_cache_v2', null) || {}; k.items = arr(j.items); k.at = nowIso(); lsSet('gc_ldi_cache_v2', k); redraw(); }, function(){}); }
+
+/* ── every lead on the sub bid portal, as a PRIVATE draft (staff-only; never public by itself) ── */
+var SWEEP = lsGet('gc_leads_portal_sweep_v1', {}) || {};
+function sweepPortal(){
+  if (!isAdmin() && !isEstimatorMe()) return;
+  if (typeof W._setLeads !== 'function' || view() !== 'leads' || !D.getElementById('gc-leads-hub')) return;   /* only while the Leads tab is open: never races another screen's save */
+  var todo = leads().filter(function(l){ return !closed(l) && !l.inboxId && !(l.subPortal && l.subPortal.jobId) && !SWEEP[l.id]; }).slice(0, 2);
+  todo.forEach(function(l){
+    SWEEP[l.id] = nowIso(); lsSet('gc_leads_portal_sweep_v1', SWEEP);
+    fn('bid-inbox?act=1', { body: { op: 'portal', mode: 'draft', lead: leadForServer(l) } }).then(function(j){
+      if (!j || !j.jobId) return;
+      patchLead(l.id, function(x){ if (x.subPortal && x.subPortal.jobId) return false; x.subPortal = { jobId: j.jobId, state: j.state, visibility: j.visibility, at: j.at }; });
+    }, function(e){ if (/not set up/i.test(s(e && e.message))) { delete SWEEP[l.id]; lsSet('gc_leads_portal_sweep_v1', SWEEP); } });
+  });
+}
+
+/* ── the Leads menu badge (admins): the unassigned count ─────────────────── */
+var navEls = [];
+function navBadge(){
+  /* patch BW badges the Leads menu itself (window._gcUnassignedLeadCount): then this one stays out, so there is one number */
+  if (!isAdmin() || typeof W._gcUnassignedLeadCount === 'function') { Array.prototype.forEach.call(D.querySelectorAll('.gcl-nb'), function(b){ b.remove(); }); return; }
+  if (!navEls.length || navEls.some(function(el){ return !el.isConnected; })) {
+    navEls = Array.prototype.filter.call(D.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button'), function(el){ return /^Leads$/.test(s(el.textContent).replace(/\s*\d+\+?$/, '').replace(/^[^A-Za-z]+/, '').trim()); });
+  }
+  var n = unassignedCount();
+  navEls.forEach(function(el){
+    var b = el.querySelector('.gcl-nb');
+    if (!n) { if (b) b.remove(); return; }
+    if (!b) { b = D.createElement('span'); b.className = 'gcl-nb'; el.appendChild(b); }
+    var v = n > 99 ? '99+' : String(n); if (b.textContent !== v) b.textContent = v;
+    b.title = n + ' lead' + (n === 1 ? '' : 's') + ' not assigned yet';
+  });
+}
+
+W._gcLeadsHub = { redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
+var n0 = 0;
+function tick(){ try { if (D.hidden) return; css(); mount(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
+RI.call(W, tick, 1500); later(tick, 600);
+})();
+
+</script>

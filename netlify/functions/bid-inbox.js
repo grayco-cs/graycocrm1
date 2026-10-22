@@ -801,6 +801,9 @@ async function afterStore(results, items, opt){
   const touched = []; const seen = {};
   arr(results).forEach(r => { if (r && /^(added|merged|addendum)$/.test(r.action) && byId[r.id] && !seen[r.id]) { seen[r.id] = 1; touched.push({ it: byId[r.id], action: r.action }); } });
   if (!touched.length) return out;
+  /* patch LEADS: plans that are a plain public file link (a PDF / ZIP / drawing) are stored in the CRM too;
+     a link that needs a login or is a web page stays a link (always kept on the lead) */
+  try { await fetchPlans(touched.map(t => t.it)); } catch (e) {}
   const BP = portalApi();
   const marks = {};
   for (const t of touched) {
@@ -826,6 +829,48 @@ async function afterStore(results, items, opt){
   } catch (e) { out.estimator = { error: s(e && e.message) }; }
   try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
   return out;
+}
+const PLAN_FILE_RE = /\.(pdf|zip|dwg|dxf|png|jpe?g|tiff?|docx?|xlsx?)(\?|#|$)/i, PLAN_MAX = 25 * 1024 * 1024;
+async function fetchPlans(items){
+  if (env('PLANS_FETCH') === '0') return { stored: 0 };
+  let stored = 0; const changes = {};
+  for (const it of arr(items)) {
+    if (!it || !it.id) continue;
+    const have = {}; arr(it.files).forEach(f => { if (f && f.fromUrl) have[f.fromUrl] = 1; });
+    const links = arr(it.plansLinks).filter(l => l && /^https:\/\//.test(s(l.url)) && PLAN_FILE_RE.test(s(l.url).split('?')[0] + '?') && !have[s(l.url)] && !l.stored && !l.why).slice(0, 3);
+    for (const l of links) {
+      const res = { url: s(l.url) };
+      try {
+        const ctl = typeof AbortController === 'function' ? new AbortController() : null; const tm = ctl ? setTimeout(() => ctl.abort(), 20000) : null;
+        const r = await fetch(res.url, { headers: { 'User-Agent': 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; bids@grayco-cs.com)' }, redirect: 'follow', signal: ctl ? ctl.signal : undefined });
+        if (tm) clearTimeout(tm);
+        const type = low(r.headers.get('content-type') || '').split(';')[0], len = +(r.headers.get('content-length') || 0);
+        if (!r.ok) res.why = 'the link answered ' + r.status;
+        else if (/text\/html/.test(type)) res.why = 'the link is a web page (a sign-in may be needed) — open it from the CRM';
+        else if (len > PLAN_MAX) res.why = 'over 25 MB — open it from the link';
+        else {
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length > PLAN_MAX) res.why = 'over 25 MB — open it from the link';
+          else {
+            const name = decodeURIComponent(s(res.url).split('?')[0].split('/').pop() || 'plans.pdf').slice(0, 120);
+            const f = await storeFile(buf, type || EXT_TYPES[low(name.split('.').pop())] || 'application/octet-stream', name);
+            if (f.stored) { res.file = { name, size: buf.length, type: type || 'application/pdf', ref: f.ref, hash: f.hash, kind: 'plans', fromUrl: res.url, at: nowIso() }; stored++; }
+            else res.why = 'could not be stored (' + s(f.why) + ')';
+          }
+        }
+      } catch (e) { res.why = 'the link could not be reached'; }
+      (changes[it.id] = changes[it.id] || []).push(res);
+      if (res.file) { it.files = arr(it.files).concat([res.file]); }
+      l.stored = !!res.file; if (res.why) l.why = res.why;
+    }
+  }
+  if (Object.keys(changes).length) {
+    await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { const c = x && changes[x.id]; if (!c) return; c.forEach(res => {
+      if (res.file && !arr(x.files).some(f => f && f.fromUrl === res.url)) { x.files = arr(x.files).concat([res.file]); ch = true; }
+      arr(x.plansLinks).forEach(l => { if (l && s(l.url) === res.url) { l.stored = !!res.file; if (res.why) l.why = res.why; ch = true; } });
+    }); }); return ch ? list : undefined; });
+  }
+  return { stored, changes };
 }
 /* LA: what counts as a commercial bid (default estimator): commercial (large and small), government, and anything
    from a bid board / planroom (BuildingConnected, PlanHub, A&B, RKA, ConstructConnect, the public bid sites) */
@@ -871,8 +916,18 @@ async function staffAuth(event){
   return { ok: true, email, name, role, admin: role === 'admin' || admins.indexOf(email) > -1 };
 }
 
+/* patch LEADS: a lead typed into the CRM (no inbox item) → the item shape the bid portal adapter reads */
+function leadItem(l){
+  const links = arr(l.plansLinks).concat(s(l.plansLink) ? [{ url: s(l.plansLink), label: 'Plans' }] : []).filter(x => x && /^https?:\/\//.test(s(x.url)));
+  return { id: 'crm:' + s(l.id).slice(0, 80), title: s(l.name || l.title).slice(0, 200) || 'Lead', address: s(l.address), city: s(l.city), state: s(l.state), zip: s(l.zip),
+    bidDue: s(l.bidDue), source: s(l.source) || 'CRM lead', type: s(l.leadKind || l.type), gc: s(l.gc || l.dueToCompany), bidNumber: s(l.bidNumber), scope: '', notes: [], plansLinks: links, files: [], trades: arr(l.trades) };
+}
+async function isEstimator(email){
+  try { const r = await sb('gc_staff?select=profile,role&email=eq.' + encodeURIComponent(low(email))); if (!r.ok) return false; const row = arr(await r.json())[0]; return !!row && /estimat/i.test(s(row.profile) + ' ' + s(row.role)); } catch (e) { return false; }
+}
+
 /* ── what a person did in the CRM ──────────────────────────────────────────── */
-const OPS = { imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', restore: 'admin', publish: 'admin', due: 'staff' };
+const OPS = { portal: 'staff', imported: 'staff', assigned: 'admin', job: 'staff', dismissed: 'admin', merged: 'admin', restore: 'admin', publish: 'admin', due: 'staff' };
 function applyAct(items, b, who){
   items = arr(items);
   const t = nowIso(), op = s(b.op), id = s(b.id);
@@ -1083,6 +1138,19 @@ exports.handler = async function(event){
     }
     const need = OPS[s(b.op)]; if (!need) return J(400, { error: 'Unknown action.' }, C);
     if (need === 'admin' && !who.admin) return J(403, { error: 'Only an admin can do that.' }, C);
+    if (s(b.op) === 'portal') {   /* patch LEADS: the lead's sub bid job — private (invited subs only) by default; public only on a person's say-so */
+      const mode = /^(draft|private|public)$/.test(s(b.mode)) ? s(b.mode) : 'private';
+      if (mode === 'public' && !who.admin && !(await isEstimator(who.email))) return J(403, { error: 'Only an admin or an estimator can make a bid job public to all subs.' }, C);
+      let it = null;
+      if (s(b.id)) { const items = arr(await kvGet(KV)); it = items.find(x => x && x.id === s(b.id)); if (it) it = liveTarget(items, it); if (!it || it.status === 'dismissed') return J(404, { error: 'No such lead in the inbox.' }, C); }
+      else if (b.lead && s(b.lead.id)) it = leadItem(b.lead);
+      else return J(400, { error: 'No lead.' }, C);
+      let pr; try { pr = await portalApi().setPortal(it, { mode, scope: b.scope, scopeMode: b.scopeMode, sharedNotes: b.sharedNotes, plansLinks: b.plansLinks || it.plansLinks }, who); } catch (e) { return J(502, { error: 'The sub bid portal could not be reached: ' + s(e && e.message) }, C); }
+      if (!pr.ok) return J(pr.code || 502, { error: pr.error }, C);
+      const mark = { jobId: pr.jobId, state: pr.state, visibility: pr.visibility, at: nowIso(), by: who.email };
+      if (s(b.id)) { try { await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === it.id); if (!x) return undefined; x.portal = Object.assign({}, x.portal || {}, mark); x.updatedAt = nowIso(); return list; }); } catch (e) {} }
+      return J(200, Object.assign({ ok: true }, mark), C);
+    }
     if (s(b.op) === 'publish') {   /* "Publish to bid portal": the ONLY way a draft reaches the subs */
       const items = arr(await kvGet(KV)); let it = items.find(x => x && x.id === s(b.id)); if (it) it = liveTarget(items, it);
       if (!it || it.status === 'dismissed') return J(404, { error: 'No such lead in the inbox.' }, C);
@@ -1126,6 +1194,6 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;

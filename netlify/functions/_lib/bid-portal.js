@@ -93,8 +93,9 @@ function make(d){
   function due(item){ const v = s(item.bidDue); return { day: v.slice(0, 10), time: v.length > 10 ? v.slice(11, 16) : '' }; }
   function where(item){ const cs = [s(item.city), [s(item.state), s(item.zip)].filter(Boolean).join(' ')].filter(Boolean).join(', '); return [s(item.address), cs].filter(Boolean).join(', '); }
   function srcLink(item){ const l = arr(item.plansLinks).find(x => x && /^https?:/.test(s(x.url))); return l ? s(l.url) : ''; }
-  function notesFor(item){
-    const out = ['Draft from the CRM Lead Inbox — ' + (s(item.source) || 'lead') + '. Check it, then publish it from the CRM (📥 Lead Inbox → Publish to bid portal).'];
+  function notesFor(item, opened){
+    const out = [opened ? 'From GrayCo Construction Services' + (s(item.bidNumber) ? ' — bid # ' + s(item.bidNumber) : '') + '.'
+      : 'Draft from the CRM Lead Inbox — ' + (s(item.source) || 'lead') + '. Check it, then open it to invited subs (private) or publish it from the CRM (Leads → the lead → 🏗 Sub bid portal).'];
     if (item.gc) out.push('GC: ' + item.gc); if (item.owner) out.push('Owner: ' + item.owner); if (item.bidNumber) out.push('Bid #: ' + item.bidNumber);
     if (item.preBid) out.push('Pre-bid: ' + item.preBid.replace('T', ' ') + (item.preBidLocation ? ' at ' + item.preBidLocation : '') + (item.preBidMandatory ? ' (MANDATORY)' : ''));
     if (item.flag) out.push(item.flag);
@@ -108,7 +109,7 @@ function make(d){
       createdBy: 'lead-inbox', createdByName: 'CRM Lead Inbox', createdAt: nowIso() };
     const j = Object.assign({}, base, {
       title: s(item.title).slice(0, 200), address: where(item), bidDueDate: dd.day, bidDueTime: dd.time,
-      scope: s(item.scope), notes: notesFor(item), tradesSought: arr(item.trades).join(', '),
+      scope: (prev && prev.crmScope) ? prev.scope : s(item.scope), notes: notesFor(item, !!(prev && prev.draft === false)) + (prev && arr(prev.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + prev.crmNotes.map(n => '• ' + n).join('\n') : ''), tradesSought: arr(item.trades).join(', '),
       grayCoRole: item.gc ? 'sub' : (prev && prev.grayCoRole) || 'gc', sourceLink: srcLink(item),
       plans: plansMeta, specDocs: specs,
       leadInbox: { id: item.id, source: s(item.source), type: s(item.type), bidNumber: s(item.bidNumber), alsoOn: arr(item.alsoOn), rev: item.rev || 1 },
@@ -193,6 +194,43 @@ function make(d){
     return { created, left: q.length - done.length, results };
   }
 
-  return { status, draft, publish, flush, jobIdFor, _copyFile: copyFile, KQ };
+  /* patch LEADS: the lead's sub bid job — private by default (invited subs only), public only when a person says so.
+     o: { mode: 'draft'|'private'|'public', scope, scopeMode: 'claude'|'manual'|'estimate', sharedNotes: [text], plansLinks: [{url,label}] } */
+  function noPrices(t){   /* the same rule as the CRM's window._gcStripPrices: no $ amount, price, cost, tax, O&P, RCV / ACV, markup survives */
+    return s(t).split('\n').map(x => x.replace(/[$€£]\s?-?\d[\d,]*(\.\d+)?/g, '')
+      .replace(/\(?\b(rcv|acv|o\s?&\s?p|overhead(\s*(and|&)\s*profit)?|profit|sales\s*tax|tax|depreciation|deprec\.?|markup|margin|unit\s*(price|cost)|price|cost|total|subtotal|amount|charge)\b\.?\s*[:=]?\s*\(?\s*-?\s?\d[\d,]*(\.\d+)?\s*%?\)?/gi, '')
+      .replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+([,.;])/g, '$1').replace(/[ \t]*[—–-][ \t]*$/, '').trim()).join('\n').trim();
+  }
+  async function setPortal(item, o, who){
+    o = o || {};
+    const mode = /^(draft|private|public)$/.test(s(o.mode)) ? s(o.mode) : 'private';
+    const st = await status(true);
+    if (!st.ready) return { ok: false, code: 409, error: 'The sub bid portal is not set up yet (' + st.why + ').' };
+    const r = await draft(item);
+    if (!r.ok || r.state === 'queued') return { ok: false, code: 503, error: 'The sub bid job could not be written: ' + s(r.why || r.state) };
+    if (r.state === 'removed') return { ok: false, code: 410, error: 'This bid job was deleted in the sub bid portal.' };
+    const row = await getRow('jobs/' + r.jobId);
+    if (!row) return { ok: false, code: 404, error: 'The bid job is not in the sub bid portal.' };
+    const job = Object.assign({}, row.data);
+    if (o.scope != null) {
+      const sm = /^(claude|manual|estimate|xactimate)$/.test(s(o.scopeMode)) ? s(o.scopeMode) : 'manual';
+      job.scope = (sm === 'manual' ? s(o.scope) : noPrices(o.scope)).slice(0, 20000);   /* Claude, estimate and Xactimate scopes are cleaned of prices here too */ job.scopeMode = sm; job.crmScope = true;
+    }
+    if (o.sharedNotes) job.crmNotes = arr(o.sharedNotes).map(x => s(x).slice(0, 2000)).filter(Boolean).slice(0, 30);
+    if (o.plansLinks) job.plansLinks = arr(o.plansLinks).filter(x => x && /^https?:\/\//.test(s(x.url))).map(x => ({ url: s(x.url).slice(0, 1000), label: s(x.label).slice(0, 120) })).slice(0, 20);
+    if (mode === 'public') {
+      if (!job.bidDueDate) return { ok: false, code: 400, error: 'Add a bid due date first — a public bid job needs one.' };
+      Object.assign(job, { status: 'open', visibility: 'public', draft: false, publishedAt: job.publishedAt || nowIso(), publishedBy: s(who && who.email) || 'staff', madePublicAt: nowIso() });
+    } else if (mode === 'private') {
+      Object.assign(job, { status: CLOSEDRE.test(s(job.status)) ? job.status : 'open', visibility: 'private', draft: false, openedPrivateAt: job.openedPrivateAt || nowIso(), openedBy: s(who && who.email) || 'staff' });
+    }
+    job.notes = notesFor(item, job.draft === false) + (arr(job.crmNotes).length ? '\n\nFrom the GrayCo team:\n' + job.crmNotes.map(n => '• ' + n).join('\n') : '');
+    job.updatedAt = nowIso();
+    await putRows([{ collection: 'jobs', id: r.jobId, job_id: r.jobId, data: job }]);
+    return { ok: true, jobId: r.jobId, state: job.draft === false ? (job.visibility === 'public' ? 'public' : 'private') : 'draft', visibility: job.visibility, files: r.files || 0 };
+  }
+  const CLOSEDRE = /^(closed|awarded|cancell?ed|archived)$/i;
+
+  return { status, draft, publish, flush, setPortal, jobIdFor, _copyFile: copyFile, _noPrices: noPrices, KQ };
 }
 module.exports = { make, BUCKET, KQ };
