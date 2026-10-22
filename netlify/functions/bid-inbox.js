@@ -7,9 +7,13 @@
 
    patch EST4 (owner 10/22): bid NOTICES now go to leads@grayco-cs.com (a Google Group whose member
    leads@in.grayco-cs.com is a Resend receiving address on this webhook); an invitation that reaches leads@
-   takes the bid path below, a customer the lead path (website-intake.js). bids@grayco-cs.com is only for
-   SUBCONTRACTORS' bids: they are matched to the bid-portal job and the estimator is told (subBidFromEmail).
-   An old-style invitation still sent to bids@ is recognised and handled as a bid, so nothing is lost.
+   takes the bid path below, a customer the lead path (website-intake.js).
+   patch BIDSEND (owner 10/22): OUR bids go out FROM bids@grayco-cs.com (send-email.js mode 'bid') and GCs reply to
+   it, so mail for bids@ is one of THREE kinds (bidsKind, _lib/subbids.js): (a) a GC's REPLY to one of our bids → filed
+   on that lead's GC row, urgent ones alert the estimator (_lib/bid-replies.js); (b) a SUBCONTRACTOR's bid (a sub
+   bid) → matched to the bid-portal job, the estimator is told (subBidFromEmail); (c) an INVITATION to bid → the bid
+   path, so nothing is lost; anything else → "Unsorted bids@ mail" (the estimator says what it is). A GC's reply
+   that reaches the e-mail history (mail@in, X9) is filed on its lead as well (the same e-mail once).
 
    For every e-mail this function:
      1. checks Resend's signature (Svix, RESEND_INBOUND_SECRET), or ?token=BID_INBOX_TOKEN;
@@ -678,9 +682,9 @@ async function portalJobs(){
   return jobs.map(r => { const d = (r && r.data) || {}; return { id: s(r.job_id || d.id), title: s(d.title), po: s(d.poNumber || d.po), address: s(d.address), leadId: s(d.leadInbox && d.leadInbox.id), invited: inv[r.job_id] || [], status: s(d.status) }; })
     .filter(j => j.id && !/^(deleted|archived)$/i.test(j.status));
 }
-async function subBidMailTo(rec, est){
+async function subBidMailTo(rec, est, head){
   const key = env('RESEND_API_KEY'); if (!key) return { ok: false, why: 'RESEND_API_KEY is not set' };
-  let to = est && est.email ? [est.email] : [];
+  let to = Array.from(new Set([head && head.email, est && est.email].map(low).filter(Boolean)));   /* patch BIDSEND: the Lead Estimator always */
   if (!to.length) { try { to = await alertsApi().recipients([]); } catch (e) {} }
   if (!to.length) return { ok: false, why: 'nobody to tell' };
   const site = (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
@@ -699,6 +703,38 @@ async function subBidMailTo(rec, est){
     return { ok: r.ok, to, why: r.ok ? '' : 'Resend answered ' + r.status };
   } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
 }
+/* ── patch BIDSEND: what a bids@ e-mail is ──────────────────────────────────────
+   (a) a GC's reply to one of our bids (a "Bidding to" contact / our subject) · (b) a sub bid (a sub we know, or "our
+   price is attached") · (c) an invitation to bid · else unsorted (the estimator decides in the CRM). */
+function repliesApi(){ return require('./_lib/bid-replies.js').make({ env, s, low, arr, nowIso, sb, storeFile, callClaude, estimatorOf: () => estimatorOf(), webPush: exports._webPush, now: exports._now, fetch: exports._fetch,
+  recipients: x => alertsApi().recipients(x), kvAppendResult: x => alertsApi().kvAppendResult(x) }); }
+async function knownSubs(){
+  const set = {};
+  try { (await portalJobs()).forEach(j => arr(j.invited).forEach(e => { if (e) set[low(e)] = 1; })); } catch (e) {}
+  try { const r = await sb('gc_kv?select=value&key=eq.subs'); if (r.ok) { const rows = await r.json(); (JSON.stringify(rows && rows[0] ? rows[0].value : '').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []).forEach(e => { set[low(e)] = 1; }); } } catch (e) {}
+  return e => !!set[low(e)];
+}
+async function bidsKind(mail){
+  const SB = require('./_lib/subbids.js'), R = repliesApi();
+  const isSub = await knownSubs(), ctx = await R.context();
+  if (R.match(mail, ctx, { isSub })) { const r = await R.handle(mail, { via: 'bids@', ctx, isSub }); if (r) return { kind: 'reply', r }; }
+  if (isSub(mail.from.email)) return { kind: 'sub' };
+  if (SB.isInviteForBids(mail, boardOf)) return { kind: 'invite' };
+  if (SB.isSubBid(mail)) return { kind: 'sub' };
+  return { kind: 'unsorted' };
+}
+async function unsortedBidsMail(mail){
+  const SB = require('./_lib/subbids.js');
+  const id = 'sbu_' + itemId('unsorted|' + (mail.messageId || mail.id || (mail.from.email + mail.subject + mail.date)));
+  if (arr(await kvGet(KV_SUBBIDS)).some(x => x && x.id === id)) return { ok: true, already: true, id };
+  const files = [];
+  for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref, stored: st.stored }); }
+  const rec = { id, at: nowIso(), kind: 'unsorted', status: 'unsorted', sub: SB.subName(mail), subject: s(mail.subject).slice(0, 240), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 3000),
+    files, jobId: '', jobTitle: '', leadId: '', match: '', estimator: '' };
+  try { const d = await estimatorOf(); if (d.email) rec.estimator = low(d.email); } catch (e) {}   /* the unsorted list belongs to the Lead Estimator */
+  await kvCas(KV_SUBBIDS, v => arr(v).filter(x => x && x.id !== id).concat([rec]).slice(-500));
+  return { ok: true, id, unsorted: true };
+}
 async function subBidFromEmail(mail){
   const SB = require('./_lib/subbids.js');
   const id = 'sbe_' + itemId('subbid|' + (mail.messageId || mail.id || (mail.from.email + mail.subject + mail.date)));
@@ -711,11 +747,12 @@ async function subBidFromEmail(mail){
   /* the job's own estimator (its Lead Inbox item), else the head estimator */
   let est = null;
   if (m && m.job.leadId) { const it = arr(await kvGet(KV)).find(x => x && x.id === m.job.leadId); if (it && low(it.estimatorEmail)) est = { name: s(it.estimator), email: low(it.estimatorEmail) }; }
-  if (!est) { const d = await estimatorOf(); if (d.email) est = { name: d.name, email: d.email }; }
+  let head = null; try { const d = await estimatorOf(); if (d.email) head = { name: d.name, email: low(d.email) }; } catch (e) {}   /* patch BIDSEND: the Lead Estimator */
+  if (!est) est = head;
   const rec = { id, at: nowIso(), sub: SB.subName(mail), subject: s(mail.subject).slice(0, 240), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 3000),
     files, jobId: m ? m.job.id : '', jobTitle: m ? m.job.title : '', leadId: m ? m.job.leadId : '', match: m ? m.why.join(', ') : '', estimator: est ? est.email : '', status: m ? 'matched' : 'unmatched' };
   await kvCas(KV_SUBBIDS, v => arr(v).filter(x => x && x.id !== id).concat([rec]).slice(-500));
-  const told = await subBidMailTo(rec, est);
+  const told = await subBidMailTo(rec, est, head);
   try { await kvCas(KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === id); if (!x) return undefined; x.told = { ok: told.ok, to: told.to || [], why: told.why || '' }; return l; }); } catch (e) {}
   return { ok: true, id, matched: !!m, jobId: rec.jobId, files: files.length, told: told.ok };
 }
@@ -740,14 +777,17 @@ async function processEvent(evt, opts){
   }
   /* patch X9: a copy for the job's e-mail history (the Google routing rule → mail@in.grayco-cs.com): kept on its job,
      or thrown away — never a lead or a bid, even when it was addressed to bids@ / leads@ */
-  try { const CM = require('./_lib/comms.js'); if (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } }; return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail)) }; } }
+  try { const CM = require('./_lib/comms.js'); if (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+    /* patch BIDSEND: a GC's answer to one of our bids that came by the routing rule is filed on its lead too */
+    let br = null; if (!/@(in\.)?grayco-cs\.com$/i.test(mail.from.email) && !ownOrAuto(mail)) br = await repliesApi().handle(mail, { via: 'e-mail history', isSub: await knownSubs() });
+    return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail), br ? { bidReply: br } : {}) }; } }
   catch (e) { return { status: 503, body: { ok: false, error: 'The e-mail history could not store this yet (' + (e && e.message) + ') — retry.' } }; }
   /* patch EST4: leads@ carries bid invitations too (they take the bid path below); bids@ is only for subcontractors'
      bids (unless it is plainly an old-style invitation still sent to bids@) */
   const SB = require('./_lib/subbids.js');
   const toBids = forBids(mail, data), toLeads = forLeads(mail, data);
   const leadMail = !toBids && toLeads && !SB.isBidInvite(mail, boardOf).bid;
-  const subBidMail = toBids && !toLeads && !SB.isInviteForBids(mail, boardOf);
+  let subBidMail = false;   /* patch BIDSEND: bids@ is sorted below (a GC's reply · a sub bid · an invitation · unsorted) */
   /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
   const orderMail = !leadMail && !toBids && !toLeads && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));
   if (!leadMail && !orderMail && !toBids && !toLeads) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
@@ -759,6 +799,16 @@ async function processEvent(evt, opts){
     return { status: 200, body: { ok: true, notice: true } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
+  if (toBids && !toLeads) {   /* patch BIDSEND */
+    let k;
+    try { k = await bidsKind(mail); } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not sort this bids@ e-mail yet (' + (e && e.message) + ') — retry.' } }; }
+    if (k.kind === 'reply') return { status: 200, body: Object.assign({ inbox: 'bid-replies' }, k.r) };
+    if (k.kind === 'sub') subBidMail = true;
+    else if (k.kind === 'unsorted') {
+      try { return { status: 200, body: Object.assign({ inbox: 'unsorted' }, await unsortedBidsMail(mail)) }; }
+      catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this bids@ e-mail yet (' + (e && e.message) + ') — retry.' } }; }
+    }
+  }
   if (orderMail) {   /* patch AUTO7 */
     try { const r = await require('./_lib/fa-orders.js').fromEmail(mail); return { status: 200, body: Object.assign({ inbox: 'orders' }, r) }; }
     catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this order yet (' + (e && e.message) + ') — retry.' } }; }
@@ -1063,13 +1113,23 @@ exports.handler = async function(event){
     if (event.httpMethod === 'GET') {
       const list = arr(await kvGet(KV_SUBBIDS)).slice(-200).reverse();
       let jobs = []; try { jobs = (await portalJobs()).map(j => ({ id: j.id, title: j.title, po: j.po })); } catch (e) {}
-      return J(200, { ok: true, items: list, jobs, unmatched: list.filter(x => x && x.status === 'unmatched').length }, C);
+      return J(200, { ok: true, items: list, jobs, unmatched: list.filter(x => x && x.status === 'unmatched').length, unsorted: list.filter(x => x && x.status === 'unsorted').length }, C);
     }
     let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
     const op = s(b.op); let out = null, err = '';
+    /* patch BIDSEND: an unsorted bids@ e-mail is a GC's reply to our bid on this lead (and GC row) */
+    if (op === 'reply') {
+      const x = arr(await kvGet(KV_SUBBIDS)).find(y => y && y.id === s(b.id)); if (!x) return J(400, { error: 'No such e-mail.' }, C);
+      const fake = { id: x.id, messageId: x.id, from: { email: low(x.sub && x.sub.email), name: s(x.sub && x.sub.name) }, subject: x.subject, text: x.text, date: x.at, files: arr(x.files).filter(f => f && f.ref) };
+      let r; try { r = await repliesApi().handle(fake, { force: { leadId: s(b.leadId), bidderId: s(b.bidderId) }, via: 'bids@ (sorted by ' + who.email + ')' }); } catch (e) { return J(503, { error: s(e && e.message) }, C); }
+      if (!r || r.ok === false) return J(400, { error: (r && r.why) || 'That lead was not found.' }, C);
+      await kvCas(KV_SUBBIDS, v => { const l = arr(v); const y = l.find(z => z && z.id === x.id); if (!y) return undefined; y.status = 'handled'; y.kind = 'reply'; y.leadId = s(b.leadId); y.handledBy = who.email; y.handledAt = nowIso(); out = y; return l; });
+      return J(200, { ok: true, item: out, reply: r }, C);
+    }
     await kvCas(KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === s(b.id)); if (!x) { err = 'No such sub bid.'; return undefined; }
       if (op === 'assign') { x.jobId = s(b.jobId).slice(0, 80); x.jobTitle = s(b.jobTitle).slice(0, 200); x.status = x.jobId ? 'matched' : 'unmatched'; x.match = 'picked by ' + who.email; }
       else if (op === 'done') { x.status = 'handled'; x.handledBy = who.email; x.handledAt = nowIso(); }
+      else if (op === 'sub') { x.kind = 'sub'; x.status = x.jobId ? 'matched' : 'unmatched'; x.match = 'sorted by ' + who.email; }   /* patch BIDSEND: "it is a sub bid" */
       else { err = 'Unknown action.'; return undefined; }
       out = x; return l; });
     return err ? J(400, { error: err }, C) : J(200, { ok: true, item: out }, C);
@@ -1198,6 +1258,6 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;

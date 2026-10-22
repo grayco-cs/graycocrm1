@@ -393,14 +393,36 @@ function make(d){
     const text = 'Hi ' + (who || 'there') + ',\n\nThank you for the chance to bid ' + title + ' (bid due ' + due + '). When you have a moment, could you share the bid results — was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.\n\nThanks again — we appreciate being on your bid list.\n\n' + fromName + '\nEstimator · GrayCo Construction Services\n' + require('./brand.js').companyAddress() + ' · 901-585-0944';
     return { subject: ('Bid results — ' + title).slice(0, 200), html, text };
   }
+  /* patch BIDSEND: a lead with a "Bidding to" list (gc_kv gc_bid_bidders, the CRM's 📤 Send bid) is asked PER GC —
+     one e-mail to each GC the bid was sent to, 7 days after THAT GC's due date, naming only that GC's contact and due
+     date; From "<the estimator's own name> <bids@grayco-cs.com>", Reply-To bids@ (the Google Group: the estimator, the
+     admins, the office and the CRM — _lib/bid-replies.js files the answer). Leads without a list: as before. */
+  function biddersFor(src, l){ const m = src && src.bidders && typeof src.bidders === 'object' ? src.bidders : {}; const r = m['lead:' + s(l && l.id)]; return arr(r && r.list).filter(b => b && b.id); }
+  function gcWanted(l, b, t){
+    if (!l || !l.id || !b || l.deleted || l._deleted || l.converted || l.notBidding || l.noBid) return false;
+    if (/^(won|lost|no\s*bid|not\s*bidding|dead|deleted|converted|declined|archived|cancell?ed|closed|dismissed)$/i.test(s(l.bidStatus))) return false;
+    if (/^(won|lost|dead|deleted|converted|declined|archived|closed|dismissed)$/i.test(s(l.stage)) || /^(won|lost)$/i.test(s(l.status))) return false;
+    if (!/^(sent|opened)$/i.test(s(b.status))) return false;
+    const due = s(b.due) || s(l.bidDue); if (!/^\d{4}-\d{2}-\d{2}/.test(due)) return false;
+    const dueAt = BD.wallToEpoch(due.length > 10 ? due : due + 'T17:00');
+    if (!isFinite(dueAt) || t - dueAt < RESULTS_DAYS * 86400000 || t - dueAt > 60 * 86400000) return false;
+    return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(b.email));
+  }
   async function resultsAsk(src, t){
     if (off() || env('BID_RESULTS_OFF') === '1') return { sent: 0, off: true };
     const w = BD.epochToWall(t), wd = new Date(w.slice(0, 10) + 'T12:00:00Z').getUTCDay(), hm = w.slice(11, 16);
     if (wd === 0 || wd === 6 || hm < '09:00' || hm >= '16:00') return { sent: 0, quiet: true };
-    const want = arr(src.leads).filter(l => resultsWanted(l, t) && !(src.tombs && src.tombs['leads:' + l.id]));
-    if (!want.length) return { sent: 0 };
-    let mine = [];
-    await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); return mine.length ? st : undefined; });
+    src = src || {};
+    if (src.bidders == null) { try { const r = await sb('gc_kv?select=value&key=eq.gc_bid_bidders'); if (r.ok) { const rows = await r.json(); let v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } src = Object.assign({}, src, { bidders: v && typeof v === 'object' ? v : {} }); } } catch (e) {} }
+    const live = arr(src.leads).filter(l => l && l.id && !(src.tombs && src.tombs['leads:' + l.id]));
+    const gcs = [];
+    live.forEach(l => { biddersFor(src, l).forEach(b => { if (gcWanted(l, b, t)) gcs.push({ l, b, due: s(b.due) || s(l.bidDue) }); }); });
+    const want = live.filter(l => !biddersFor(src, l).length && resultsWanted(l, t));
+    if (!want.length && !gcs.length) return { sent: 0 };
+    let mine = [], mineGc = [];
+    const gk = x => 'results|' + x.l.id + '|' + x.b.id + '|' + x.due;
+    await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; });
+      mineGc = gcs.filter(x => { if (st.reminded[gk(x)]) return false; st.reminded[gk(x)] = nowIso(); return true; }); return mine.length || mineGc.length ? st : undefined; });
     const key = env('RESEND_API_KEY'); const out = { sent: 0, failed: 0, list: [] };
     /* patch EST4: from the head estimator (the Estimator role / Leads ⚙), never a name in the code */
     let est = { name: '', email: '' }; try { if (typeof d.estimatorOf === 'function') est = (await d.estimatorOf()) || est; } catch (e) {}
@@ -420,6 +442,23 @@ function make(d){
       out.list.push({ id: l.id, ok });
       if (ok) out.sent++; else { out.failed++; await kvCas(KA, v => { const st = loadState(v); delete st.reminded['results|' + l.id + '|' + s(l.bidDue)]; return st; }).catch(() => {}); }
       if (ok) await kvAppendResult({ id: 'ask_' + resultsToken(l.id) + '_' + s(l.bidDue).slice(0, 10), kind: 'asked', leadId: s(l.id), at: nowIso(), to: low(l.dueToEmail), by: fromEmail }).catch(() => {});
+    }
+    /* patch BIDSEND: one per GC — only that GC's contact and due date, never another GC or how many bid */
+    const bidsFrom = low(env('BID_SEND_FROM') || 'bids@grayco-cs.com');
+    for (const x of mineGc.slice(0, 20)) {
+      const m = resultsMail(Object.assign({}, x.l, { dueToContact: s(x.b.contact), bidDue: x.due }), fromName);
+      let ok = false;
+      if (key) {
+        try {
+          const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: fromName.replace(/[<>"|,;]/g, ' ').trim() + ' <' + bidsFrom + '>', to: [low(x.b.email)], bcc: /@grayco-cs\.com$/.test(fromEmail) && fromEmail !== bidsFrom ? [fromEmail] : undefined,
+              reply_to: bidsFrom, subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'bid-results' } }) });
+          ok = r.ok;
+        } catch (e) {}
+      }
+      out.list.push({ id: x.l.id, gc: x.b.id, ok });
+      if (ok) out.sent++; else { out.failed++; await kvCas(KA, v => { const st = loadState(v); delete st.reminded[gk(x)]; return st; }).catch(() => {}); }
+      if (ok) await kvAppendResult({ id: 'ask_' + resultsToken(x.l.id) + '_' + s(x.b.id) + '_' + x.due.slice(0, 10), kind: 'asked', leadId: s(x.l.id), bidderId: s(x.b.id), gc: s(x.b.company), at: nowIso(), to: low(x.b.email), by: fromEmail }).catch(() => {});
     }
     return out;
   }
@@ -643,7 +682,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }
