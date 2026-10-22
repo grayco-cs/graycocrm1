@@ -129542,7 +129542,7 @@ function bar(nShow, nAll){
     b = document.createElement('div'); b.id = 'gcx-ldel-bar'; b.setAttribute('data-gc-keep', '1');
     b.addEventListener('click', onBar); b.addEventListener('change', onBar);
   }
-  if (b.nextSibling !== wrap) wrap.parentNode.insertBefore(b, wrap);
+  if (b.nextSibling !== wrap && !(b.parentNode === wrap.parentNode && (b.compareDocumentPosition(wrap) & 4) && !(function(y){ for (; y && y !== wrap; y = y.nextElementSibling) if (!y.hasAttribute('data-gc-keep')) return 1; return 0; })(b.nextElementSibling))) wrap.parentNode.insertBefore(b, wrap);   /* patch HOT2c: no ping-pong with the hub / LA bar */
   var srcs = {}; (LEADS || []).forEach(function(l){ if (l) srcs[srcOf(l)] = (srcs[srcOf(l)] || 0) + 1; });
   var me = who(), nTrash = trash().length;
   var sig = JSON.stringify([F, nShow, nAll, srcs, me.all, me.pm, nTrash]);
@@ -131301,7 +131301,7 @@ function mountSettings(){
   var est = estimator(), adm = isAdmin();
   var html = '<span class="lbl">⚙ Commercial bids go to:</span> <b class="who">' + esc(est.name || est.email || 'nobody yet — the admins (pick one)') + '</b> <span class="em">(Senior Estimator)</span>' + (est.name && est.email ? ' <span class="em">(' + esc(est.email) + ')</span>' : '')
     + (adm ? ' <button type="button" data-la="est">Change</button> <button type="button" data-la="new">+ Enter a bid</button>' : '');
-  if (cur && cur.nextElementSibling === w) { if (cur.getAttribute('data-sig') !== html) { cur.innerHTML = html; cur.setAttribute('data-sig', html); } return; }
+  if (cur && (cur.nextElementSibling === w || (cur.parentNode === w.parentNode && (cur.compareDocumentPosition(w) & 4) && !(function(y){ for (; y && y !== w; y = y.nextElementSibling) if (!y.hasAttribute('data-gc-keep')) return 1; return 0; })(cur.nextElementSibling)))) { if (cur.getAttribute('data-sig') !== html) { cur.innerHTML = html; cur.setAttribute('data-sig', html); } return; }   /* patch HOT2c */
   if (cur) cur.remove();
   ensureCss();
   cur = document.createElement('div'); cur.id = 'gc-la-set'; cur.setAttribute('data-gc-keep', '1'); cur.innerHTML = html; cur.setAttribute('data-sig', html);
@@ -161849,7 +161849,7 @@ function setPriority(id, p){
   if (prioOf(l0) === p) return Promise.resolve(true);
   var at = nowIso();
   return patchLead(id, function(l){ var was = prioOf(l); l.priority = p; l.prioritySetAt = at; l.prioritySetBy = myName() || myEmail(); logAct(l, 'priority', 'Priority ' + (was ? was + ' → ' : '') + p); })
-    .then(function(ok){ toast(ok ? '⭐ Priority ' + p : 'Could not save — try again'); if (ok) { HUB_SIG = ''; redraw(); } return ok; });
+    .then(function(ok){ toast(ok ? '⭐ Priority ' + p : 'Could not save — try again'); if (ok) { HUB_SIG = ''; redraw(); try { var pushed = LEADS_NOW; later(function(){ if (typeof W._supaUpsertNow === 'function' && Array.isArray(pushed)) W._supaUpsertNow('leads', pushed); }, 300); } catch (e) {} } return ok; });   /* patch HOT2c: a priority is one click — to the cloud now, not when the drawer closes */
 }
 function dueSort(l){ var t = dueMs(l); return isFinite(t) ? t : 9e15; }
 /* "Most important first": priority 10 → 1 (none last), the same priority by bid due date (soonest first, none last), then the newest */
@@ -162139,7 +162139,7 @@ function mount(){
   var a = anchor(); if (!a || !a.parentElement) return;
   css();
   var hub = D.getElementById('gc-leads-hub');
-  if (!hub || hub.nextElementSibling !== a) {
+  if (!hub || (hub.nextElementSibling !== a && !(hub.parentNode === a.parentNode && (hub.compareDocumentPosition(a) & 4) && !(function(y){ for (; y && y !== a; y = y.nextElementSibling) if (!y.hasAttribute('data-gc-keep')) return 1; return 0; })(hub.nextElementSibling)))) {   /* patch HOT2c: left where it is (no rebuild) when only kept blocks sit between */
     if (hub) hub.remove();
     hub = D.createElement('div'); hub.id = 'gc-leads-hub'; hub.setAttribute('data-gc-keep', '1');
     a.parentElement.insertBefore(hub, a); HUB_SIG = '';
@@ -162153,7 +162153,7 @@ function mount(){
   var sig = JSON.stringify([UI, leads().length, leads().reduce(function(m, l){ var u = s(l.updatedAt); return u > m ? u : m; }, ''), inboxItems().length, unassignedCount(), Math.floor(Date.now() / 60000)]);
   if (sig === HUB_SIG) return;
   HUB_SIG = sig;
-  var hh = hubHtml(); held(function(){ hub.innerHTML = hh; });
+  var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; }); }   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
   if (refocus) { var el = hub.querySelector('[data-gcl-f="' + refocus + '"]'); if (el) { try { el.focus(); if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} } }
   if (UI.v === 'boards' && typeof W._gcRenderBidBoards === 'function') { try { W._gcRenderBidBoards(hub.querySelector('#gcl-boards')); } catch (e) { warn(e); } }
 }
