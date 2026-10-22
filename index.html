@@ -72874,7 +72874,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
               if(!cm) return '<div style="color:#8fa8c4;">Profit: <span style="color:'+(r.paidInFull?'#3b82f6':'#64748b')+';">'+(r.paidInFull?money(r.profit):'\u2014')+'</span></div>';
               return '<div style="color:#8fa8c4;">Gross: <span style="color:#3b82f6;">'+money(cm.grossProfit)+'</span></div>'+
                 '<div style="color:#8fa8c4;">Net: <span style="color:#e2e8f0;">'+money(cm.netProfit)+'</span></div>'+
-                '<div style="color:#8fa8c4;grid-column:1/3;">My commission: <span style="color:'+(cm.paidInFull?'#22c55e':'#64748b')+';">'+(cm.paidInFull?(money(cm.commission)+(cm.ready?' \u2713':'')):'shows after final payment')+'</span></div>';
+                (window._gcLeadSourceTag?'<div style="grid-column:1/3;">'+window._gcLeadSourceTag(r.p)+'</div>':'')+'<div style="color:#8fa8c4;grid-column:1/3;">My commission: <span style="color:'+(cm.paidInFull?'#22c55e':'#64748b')+';">'+(cm.paidInFull?(money(cm.commission)+(cm.ready?' \u2713':'')):'shows after final payment')+'</span></div>';
             })()+
           '</div></div>';
       });
@@ -72953,7 +72953,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       html+='<div style="background:#0f2440;border:1px solid #1e3a5f;border-radius:14px;padding:16px;margin-bottom:16px;">'+
         '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;"><span style="color:#8fa8c4;font-size:12px;font-weight:700;">GROSS PROFIT</span><span style="color:#3b82f6;font-size:22px;font-weight:800;">'+money(_cm.grossProfit)+'</span></div>'+
         '<div style="color:#64748b;font-size:10.5px;margin-bottom:12px;">Revenue − costs − overhead ('+_cm.overheadPct+'%). Commission is still inside this number.</div>'+
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-top:1px solid #1e3a5f;"><span style="color:#8fa8c4;font-size:12px;font-weight:700;">MY COMMISSION ('+_cm.splitPct+'% of profit — '+_cm.basis+(_cm.resolved?'':' ⚠ pay structure not set')+')</span><span style="color:'+(payable?'#22c55e':'#f59e0b')+';font-size:20px;font-weight:800;">'+(_cm.paidInFull?(money(_cm.commission)+(payable?'':'')):'\u2014')+'</span></div>'+'<div style="color:#64748b;font-size:11px;margin-top:2px;">'+(_cm.paidInFull?'':'Commission shows once final payment is collected.')+'</div>'+
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-top:1px solid #1e3a5f;"><span style="color:#8fa8c4;font-size:12px;font-weight:700;">MY COMMISSION ('+_cm.splitPct+'% of profit — '+_cm.basis+(_cm.resolved?'':' ⚠ pay structure not set')+')'+(window._gcLeadSourceTag?window._gcLeadSourceTag(job):'')+'</span><span style="color:'+(payable?'#22c55e':'#f59e0b')+';font-size:20px;font-weight:800;">'+(_cm.paidInFull?(money(_cm.commission)+(payable?'':'')):'\u2014')+'</span></div>'+'<div style="color:#64748b;font-size:11px;margin-top:2px;">'+(_cm.paidInFull?'':'Commission shows once final payment is collected.')+'</div>'+
         '<div style="color:'+(payable?'#86efac':'#f59e0b')+';font-size:10.5px;margin-bottom:6px;">'+(payable?'✓ Payable — job complete & paid in full':('⏳ Pays out when job is complete AND paid in full'))+'</div>'+
         '<div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:10px;border-top:1px solid #1e3a5f;"><span style="color:#8fa8c4;font-size:12px;font-weight:700;">NET PROFIT (after commission)</span><span style="color:#e2e8f0;font-size:22px;font-weight:800;">'+money(_cm.netProfit)+'</span></div>'+
         '<div style="color:#64748b;font-size:10.5px;margin-top:4px;">What the company keeps after the commission is paid out.</div>'+
@@ -93404,6 +93404,8 @@ function hasSource(p){
   var cs=p.commissionSource;
   if(cs==='company') return true;
   if(cs==='self' && (p.broughtInBy||p.leadSource)) return true;
+  if(cs==='self' && !String(p.pm||'').trim()) return true;   /* patch SRC: a PM's own job is never turned into GrayCo by itself (pay) */
+  if(window._gcLeadSrcOwns && window._gcLeadSrcOwns(p)) return true;   /* patch SRC: a new job gets the lead-source rule */
   return false;
 }
 
@@ -93420,7 +93422,7 @@ window._gcAutoSourceJobs = async function(quiet){
     var pmLead = (p.enteredBy && p.pm && p.enteredBy===p.pm)
               || (p.ccamCreator && p.pm && p.ccamCreator===p.pm)
               || (p.source && /pm|self|own/i.test(String(p.source)));
-    if(pmLead && p.pm){
+    if((pmLead || p.commissionSource==='self') && p.pm){   /* patch SRC: marked the PM's own → stays his */
       p.commissionSource='self';
       p.broughtInBy=p.pm;
       p.sourceSetBy='auto';
@@ -156245,7 +156247,7 @@ function commissionFor(u){
         var lg = log[p.id], paid = !!(lg && (lg.paid === true || lg.paidAt || lg.checkNo)), queued = q.some(function(x){ return x && String(x.jobId || x.pid) === String(p.id) && /entered|queued/i.test(s(x.status)); });
         var done = /complete|closed|done/i.test(s(p.status));
         var state = paid ? 'paid' : queued ? 'check queued' : done ? 'earned — pending' : 'job running';
-        return { name: s(p.name), po: s(p.autoPO || p.po), share: Math.max(0, share), state: state };
+        return { name: s(p.name), po: s(p.autoPO || p.po), share: Math.max(0, share), state: state, src: typeof W._gcLeadSourceTag === 'function' ? W._gcLeadSourceTag(p) : '' };   /* patch SRC */
       });
     }).catch(function(){ return null; });
   });
@@ -156257,7 +156259,7 @@ function myDataHtml(u, srv, com, fl){
   var html = '<div class="gcx10-kpis">' + k(n.openJobs != null ? n.openJobs : '—', 'Open jobs') + k(usd0(n.billed), 'Billed (my jobs)') + k(usd0(n.collected), 'Collected (my jobs)') + k(usd0(n.billedMonth), 'Billed this month') + k(usd0(n.collectedMonth), 'Collected this month') +
     k(n.leads != null ? n.leads : '—', 'My leads') + k(n.closeRate == null ? '—' : n.closeRate + '%', 'Close rate') + (low(u.email) === myEmail() ? k(appr, 'Approvals waiting on me') : '') + '</div>';
   html += '<h3>💵 Commission</h3>' + (com ? '<div class="gcx10-kpis">' + k(usd(com.expected), 'Earned') + k(usd(com.paid), 'Paid') + k(usd(com.pending), 'Pending') + '</div><table class="gcx10-tbl"><tr><th>Job</th><th>My share</th><th>State</th></tr>' +
-    com.jobs.map(function(j){ return '<tr><td>' + esc(j.name) + (j.po ? ' <span class="gcx10-mut">PO ' + esc(j.po) + '</span>' : '') + '</td><td>' + usd(j.share) + '</td><td>' + esc(j.state) + '</td></tr>'; }).join('') + '</table><div class="gcx10-mut">From the CRM’s commission rules (your split, the job’s costs). Questions → an admin.</div>' : '<p class="gcx10-mut">Working it out…</p>');
+    com.jobs.map(function(j){ return '<tr><td>' + esc(j.name) + (j.po ? ' <span class="gcx10-mut">PO ' + esc(j.po) + '</span>' : '') + (j.src || '') + '</td><td>' + usd(j.share) + '</td><td>' + esc(j.state) + '</td></tr>'; }).join('') + '</table><div class="gcx10-mut">From the CRM’s commission rules (your split, the job’s costs). Questions → an admin.</div>' : '<p class="gcx10-mut">Working it out…</p>');
   html += '<h3>🚚 Vehicle & gas</h3>' + fleetMine(u, fl);
   return html;
 }
@@ -163308,4 +163310,435 @@ W._gcBidSend = { pullLeads: function(){ return pullLeads(true); }, state: functi
 try { console.log('[GC] Our bids, one GC at a time: 🏢 Bidding to · 📤 Send bid · GC replies (patch BIDSEND) — _gcBidSend.state()'); } catch (e) {}
 })();
 
+</script>
+<script id="gc-patch-src">
+/* __GC_PATCH_SRC__ ═══════════════════════════════════════════════════════════
+   GrayCo — GRAYCO LEAD OR THE PM'S OWN LEAD?   (patch SRC)
+   Owner (10/22): "Every job that comes in our CRM and is divvied out is a GrayCo lead. If the job comes in from
+   GrayCo Photos (CompanyCam) without being in the CRM first, then it is that PM's lead (a different pay scale).
+   All RoofScout leads: if they have the same address as a lead made in GrayCo Photos or CompanyCam, then they
+   would be qualified as a GrayCo lead."
+   The rule (netlify/functions/_lib/leadsource.js, the same code inlined below as LS): earliest record at the
+   street address wins; any company intake → GrayCo; the PM's own only when the job FIRST appeared as his
+   GrayCo Photos project (or he typed it in) with no earlier CRM / Lead Inbox / RoofScout record there.
+   PAY IS NEVER CHANGED ON A JOB THAT ALREADY EXISTS:
+     • NEW jobs (made after SINCE) get the rule when they appear (companycam-sync does it on the server too):
+       no source yet → the rule's answer; "PM's own" but an earlier record exists → GrayCo. A job already
+       marked GrayCo is never switched to "PM's own" by itself — it goes on the admin's list instead.
+     • Existing open jobs: Admin → warnings "Lead source to review (n)" — Apply / Keep, admins only, logged.
+     • The job page: 🏢 GrayCo lead / 👤 <PM>'s own lead chip with the reason; admins can Change it (a note
+       is required; logged who / when). The same tag shows next to the job in the commission and My data views.
+   ========================================================================== */
+(function(){
+'use strict';
+var W = window, D = document, ST = W.__GC_NATIVE_SETTIMEOUT__ || setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || setInterval;
+if (W.__gcSRC) return; W.__gcSRC = true;
+var LS = (function(){ var module = { exports: {} };
+/* ── GrayCo lead or the PM's own lead? (patch SRC) ─────────────────────────────────────────────
+   Owner (10/22): "Every job that comes in our CRM and is divvied out is a GrayCo lead. If the job comes in
+   from GrayCo Photos (CompanyCam) without being in the CRM first, then it is that PM's lead (a different pay
+   scale). All RoofScout leads: if they have the same address as a lead made in GrayCo Photos or CompanyCam,
+   then they would be qualified as a GrayCo lead."
+
+   ONE rule, used by the server (companycam-sync, lead-source.js) and mirrored in the CRM page
+   (window._gcLeadSource, same code inlined):
+     • A job that came in through the company (website, leads@, bids / bid boards, partner API, missed call,
+       referral program, marketing events, the Lead Inbox, a lead the office or an admin typed, a converted
+       lead) → GrayCo lead.
+     • A job that FIRST appeared as a GrayCo Photos / CompanyCam project made by a PM (or a job the PM typed in
+       himself) → that PM's own lead — unless an earlier record exists at the same street address:
+         – a RoofScout lead made before it, or
+         – a CRM lead / Lead Inbox item / job / customer made before it (not the PM's own CompanyCam job)
+       → then it is a GrayCo lead. Earliest record wins.
+     • No PM (an unmapped CompanyCam creator, the Senior PM standing in) → GrayCo lead.
+   It never changes pay on its own: the callers apply it to NEW jobs only; jobs that already exist are listed
+   for an admin to review (Admin → warnings → "Lead source to review").
+   Values: commissionSource 'company' (GrayCo) | 'self' (the PM's own) — what the commission engine reads. */
+'use strict';
+
+const SUFFIX = { street: 'st', st: 'st', road: 'rd', rd: 'rd', avenue: 'ave', ave: 'ave', av: 'ave', drive: 'dr', dr: 'dr', lane: 'ln', ln: 'ln', court: 'ct', ct: 'ct',
+  boulevard: 'blvd', blvd: 'blvd', highway: 'hwy', hwy: 'hwy', place: 'pl', pl: 'pl', circle: 'cir', cir: 'cir', parkway: 'pkwy', pkwy: 'pkwy', cove: 'cv', cv: 'cv',
+  terrace: 'ter', ter: 'ter', trail: 'trl', trl: 'trl', way: 'way', north: 'n', n: 'n', south: 's', s: 's', east: 'e', e: 'e', west: 'w', w: 'w' };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+/* "123 N. Main Street, Bartlett TN" → "123nmainst" (same as companycam-sync) */
+function normAddr(a){
+  const line = low(a).split(',')[0].replace(/[.#]/g, ' ').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!line || !/\d/.test(line)) return '';
+  return line.split(' ').map(function(w){ return SUFFIX[w] || w; }).join('');
+}
+function ms(v){
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return v < 1e12 ? v * 1000 : v;
+  const n = Number(v); if (isFinite(n) && s(v) !== '') return n < 1e12 ? n * 1000 : n;
+  const d = Date.parse(v); return isNaN(d) ? 0 : d;
+}
+function bornAt(r){
+  if (!r) return 0;
+  const cand = [r.createdAt, r.created_at, r.receivedAt, r.created, r.dateAdded, r.ccCreatedAt, r.leadExtra && r.leadExtra.receivedAt].map(ms).filter(function(x){ return x > 0; });
+  return cand.length ? Math.min.apply(null, cand) : 0;
+}
+function ymd(t){ try { const d = new Date(t); return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear(); } catch (e) { return ''; } }
+function addrOf(r){ return s(r && (r.address || r.jobAddress || r.siteAddress || r.street || r.propertyAddress || (r.leadExtra && r.leadExtra.address) || (r.data && r.data.address))); }
+
+/* how the job came in: 'cc' (GrayCo Photos / CompanyCam, made there first), 'pm' (a PM typed it in himself),
+   'company' (any company intake, a converted lead, the office/admin) */
+const INTAKE = /website|lead inbox|leads@|inbox|partner|referr|missed call|roof ?ignite|contractor connection|alacrity|sedgwick|homeadvisor|angi|thumbtack|google|facebook|bid|board|planhub|buildingconnected|sam\.gov|giveaway|roof ?check|event|coupon|news|marketing|roofscout|grayco/i;
+function isCcJob(j){ return !!j && (/^PRJcc_\d+$/.test(s(j.id)) || j._ccAuto === true || j._ccImported === true || low(j.source) === 'companycam'); }
+function originOf(j){
+  if (!j) return 'company';
+  if (j.leadId || j.fromLead || j.fromLeadId || j.inboxId || j.leadInboxId || j.convertedFrom || j.partnerId) return 'company';
+  if (isCcJob(j)) return 'cc';
+  const by = low(j.enteredBy || j.createdBy), pm = low(j.pm);
+  if (pm && by && by === pm) return 'pm';
+  if (j.selfGenerated === true && !INTAKE.test(s(j.source) + ' ' + s(j.origin))) return 'pm';
+  return 'company';
+}
+function pmOf(j){ return s(j && (j.broughtInBy || j.pm || j.owner)); }
+/* real sign of a company intake on the job (a lead / inbox / partner link, or a named intake as its source);
+   a bare "grayco" source is the CRM's default and says nothing */
+function hasIntake(j){
+  if (!j) return false;
+  if (j.leadId || j.fromLead || j.fromLeadId || j.inboxId || j.leadInboxId || j.convertedFrom || j.partnerId) return true;
+  const t = (s(j.source) + ' ' + s(j.origin) + ' ' + s(j.leadSource)).replace(/\bgrayco\b/ig, ' ');
+  return INTAKE.test(t);
+}
+/* the owners, admins and office (a job they type in is the company's, as in the pay resolver) */
+function adminsFrom(users){
+  return arr(users).filter(function(u){ return u && u.name && (low(u.payType) === 'owner' || /admin|office/i.test(s(u.role))); }).map(function(u){ return low(u.name); });
+}
+
+/* ctx: { records: [{ kind, id, name, address, at, cc, pm }], roofscout: [{ id, address, at }] }
+   (records = CRM leads, Lead Inbox items, jobs, customers; cc = it is itself a PM's CompanyCam job)
+   → { source: 'company'|'self', pm, reason, origin, evidence } */
+function classify(job, ctx){
+  ctx = ctx || {};
+  const j = job || {};
+  if (j.leadSourceOverride && /^(company|self)$/.test(s(j.leadSourceOverride.source))) {
+    const o = j.leadSourceOverride;
+    return { source: o.source, pm: o.source === 'self' ? (s(o.pm) || pmOf(j)) : '', origin: 'override', reason: 'Set by ' + (s(o.by) || 'an admin') + (o.at ? ' ' + ymd(ms(o.at)) : '') + (o.note ? ': ' + s(o.note) : ''), evidence: null };
+  }
+  const origin = originOf(j);
+  if (origin === 'company') {
+    const via = s(j.leadSource || j.source || j.origin);
+    return { source: 'company', pm: '', origin, reason: hasIntake(j) ? 'GrayCo lead — came in through ' + (via && !/^self/i.test(via) && !/^grayco$/i.test(via) ? via : 'the company (a lead / the Lead Inbox)') : 'GrayCo lead — entered in the CRM (not first a PM’s GrayCo Photos project)', evidence: null };
+  }
+  const pm = pmOf(j);
+  if (!pm || j.pmBy === 'senior-pm') return { source: 'company', pm: '', origin, reason: 'GrayCo lead — no PM of its own (the Senior PM runs it)', evidence: null };
+  if (origin === 'pm' && arr(ctx.admins).indexOf(low(pm)) >= 0) return { source: 'company', pm: '', origin, reason: 'GrayCo lead — entered by the office (' + pm + ')', evidence: null };
+  const at = bornAt(j) || Date.now();
+  const a = normAddr(addrOf(j));
+  const SLACK = 60 * 1000;   /* a record made in the same minute is the same event, not "earlier" */
+  let best = null;
+  if (a.length >= 6) {
+    arr(ctx.roofscout).forEach(function(r){
+      const t = ms(r.at || r.created_at); if (!t || t >= at - SLACK) return;
+      if (normAddr(r.address) !== a) return;
+      if (!best || t < best.at) best = { kind: 'roofscout', id: s(r.id), at: t, label: 'RoofScout lead ' + ymd(t) + ' at the same address' };
+    });
+    arr(ctx.records).forEach(function(r){
+      if (!r || s(r.id) === s(j.id)) return;
+      const t = ms(r.at); if (!t || t >= at - SLACK) return;
+      if (normAddr(r.address) !== a) return;
+      if (r.cc && low(r.pm) === low(pm)) return;      /* his own earlier CompanyCam job is not a company record */
+      if (r.own && low(r.pm) === low(pm)) return;     /* nor a job he typed in himself */
+      if (!best || t < best.at) best = { kind: s(r.kind) || 'record', id: s(r.id), at: t, label: (s(r.kind) || 'record') + ' "' + (s(r.name) || s(r.id)) + '" in the CRM since ' + ymd(t) + ' at the same address' };
+    });
+  }
+  if (best) return { source: 'company', pm: '', origin, reason: 'GrayCo lead — ' + best.label, evidence: best };
+  return { source: 'self', pm: pm, origin, reason: pm + '’s own lead — ' + (origin === 'cc' ? 'created in GrayCo Photos' : 'entered in the CRM') + ' by ' + pm + ' ' + ymd(at) + ', no earlier record at that address', evidence: null };
+}
+/* the fields a classification writes on a job (what the pay engines read: commissionSource for the commission
+   reports, graycoOrigin / leadIsMine for the pay-structure resolver) */
+function fieldsFor(c, at){
+  const stamp = at || new Date().toISOString();
+  if (c.source === 'self') return { commissionSource: 'self', pmSourced: true, selfGenerated: true, broughtInBy: c.pm, leadSource: 'Self-generated (' + c.pm + ')', graycoOrigin: false, leadIsMine: true, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
+  return { commissionSource: 'company', pmSourced: false, selfGenerated: false, broughtInBy: '', leadSource: 'GrayCo', graycoOrigin: true, leadIsMine: false, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
+}
+/* what the job says now: 'company' | 'self' | '' (nothing on it — the engines then read it as GrayCo).
+   ov = the admins' per-job choice map (gc_kv gc_job_source: { jobId: 'self'|'company' }) */
+function storedOf(j, ov){
+  if (!j) return '';
+  const o = ov && ov[j.id];
+  if (o === 'self') return 'self';
+  if (o === 'company' || o === 'gray') return 'company';
+  const cs = low(j.commissionSource);
+  if (cs === 'self') return 'self';
+  if (cs === 'company' || cs === 'grayco') return 'company';
+  if (j.graycoOrigin === true || j.assignedByAdmin === true) return 'company';
+  if (j.pmSourced === true || j.leadIsMine === true || j.ownLead === true || j.leadType === 'pm') return 'self';
+  if (/\b(own|self|my lead|pm companycam|pm lead)\b/i.test(s(j.leadSource))) return 'self';
+  return '';
+}
+/* build the "records" list from the CRM's lists */
+function recordsFrom(lists){
+  lists = lists || {};
+  const out = [];
+  arr(lists.projects).forEach(function(r){ if (r && r.id && r.deleted !== true) out.push({ kind: 'job', id: s(r.id), name: s(r.name), address: addrOf(r), at: bornAt(r), cc: isCcJob(r) && storedOf(r) === 'self', own: originOf(r) === 'pm', pm: pmOf(r) }); });
+  arr(lists.leads).forEach(function(r){ if (r && r.id && r.deleted !== true) out.push({ kind: 'lead', id: s(r.id), name: s(r.name || r.title), address: addrOf(r), at: bornAt(r), own: originOf(r) === 'pm', pm: pmOf(r) }); });
+  arr(lists.inbox).forEach(function(r){ if (r && r.id && !r.stub) out.push({ kind: 'Lead Inbox item', id: s(r.id), name: s(r.title || r.name), address: addrOf(r), at: bornAt(r) }); });
+  arr(lists.customers).forEach(function(r){ if (r && (r.id || r.name)) out.push({ kind: 'customer', id: s(r.id || r.name), name: s(r.name || r.company), address: addrOf(r), at: bornAt(r) }); });
+  return out;
+}
+/* RoofScout rows (rs_leads: { id, data, created_at }) → [{ id, address, at }]; demo and do-not-contact rows left out */
+function roofscoutFrom(rows){
+  return arr(rows).filter(function(x){ const d = (x && x.data) || {}; return x && !(d.demo === true || /^DEMO\s/.test(s(d.name)) || d.doNotContact === true || d.dnc === true); })
+    .map(function(x){ const d = x.data || {}; return { id: s(x.id), address: s(d.address), at: x.created_at || d.createdAt }; });
+}
+const CLOSED = /^(completed?|closed|lost|cancell?ed|done|archived|dead|declined|paid)$/i;
+/* open jobs whose stored source differs from the rule (read-only; for the admin's review list) */
+function reviewList(lists, rs, opts){
+  opts = opts || {};
+  const ov = opts.jobSource || {};
+  const recs = recordsFrom(lists), out = [];
+  arr(lists.projects).forEach(function(j){
+    if (!j || !j.id || j.deleted === true || CLOSED.test(s(j.status))) return;
+    if (j.leadSourceOverride || ov[j.id]) return;   /* an admin already set this one by hand */
+    const c = classify(j, { records: recs, roofscout: rs, admins: opts.admins });
+    const st = storedOf(j);
+    if (st === c.source || (!st && c.source === 'company')) return;   /* no source yet reads as GrayCo in the engine */
+    if (c.origin === 'company' && !hasIntake(j)) return;   /* nothing on the job says where it came from: a person's choice stands */
+    const kept = j.leadSourceReview;
+    if (kept && kept.kept === st && kept.computed === c.source) return;   /* an admin already chose "Keep" for this */
+    out.push({ id: s(j.id), name: s(j.name), address: addrOf(j), po: s(j.autoPO || j.po), pm: s(j.pm), stored: st || '(none)', computed: c.source, computedPm: c.pm, reason: c.reason, evidence: c.evidence });
+  });
+  return out;
+}
+
+module.exports = { classify, fieldsFor, storedOf, recordsFrom, roofscoutFrom, reviewList, adminsFrom, hasIntake, normAddr, originOf, isCcJob, bornAt, ms };
+
+return module.exports; })();
+var SINCE = Date.parse('2026-10-23T05:00:00Z');   /* jobs made before this are "existing": review list only */
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function me(){ return W._gcMeNow || {}; }
+function myName(){ return s(me().name); }
+function isAdmin(){ var r = low(me().role); return r === 'admin' || r === 'owner' || me().isOwner === true; }
+function isOffice(){ return /office/.test(low(me().role)); }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects); }
+function proj(pid){ return projects().filter(function(x){ return x && String(x.id) === String(pid); })[0] || null; }
+function samePerson(a, b){ a = low(a); b = low(b); return !!a && !!b && (a === b || a.split(' ')[0] === b.split(' ')[0] && a.split(' ').pop() === b.split(' ').pop()); }
+function toast(msg, bad){ try { var t = D.createElement('div'); t.setAttribute('role', 'status'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:2147483300;background:' + (bad ? '#b91c1c' : '#0f172a') + ';color:#fff;padding:10px 16px;border-radius:10px;font:14px Arial,sans-serif;max-width:92vw;box-shadow:0 6px 20px rgba(0,0,0,.3)'; D.body.appendChild(t); ST(function(){ try { t.remove(); } catch (e) {} }, 4200); } catch (e) {} }
+function fn(path, body){ return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__status = r.status; return j; }); }, function(e){ return { ok: false, error: 'Cannot reach the server (' + (e && e.message) + ').', __status: 0 }; }); }
+function jobSourceMap(){ try { return JSON.parse(localStorage.getItem('gc_job_source') || '{}') || {}; } catch (e) { return {}; } }
+function saveProject(pid, fn2){
+  var set = W._setProjects; if (typeof set !== 'function') return false;
+  set(function(list){ return arr(list).map(function(p){ if (!p || String(p.id) !== String(pid)) return p; var q = Object.assign({}, p); var r = fn2(q); if (r === false) return p; q.updatedAt = nowIso(); q.savedAt = q.updatedAt; return q; }); });
+  return true;
+}
+function logLine(entry){ return fn('lead-source', { action: 'log', entry: entry }).then(function(r){ if (!r || !r.ok) console.warn('[SRC] log', r && r.error); return r; }); }
+function ymd(v){ var t = LS.ms(v); if (!t) return ''; var d = new Date(t); return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear(); }
+
+/* ══ what a job is now, and why ═══════════════════════════════════════════ */
+function stored(p){ return LS.storedOf(p, jobSourceMap()); }
+function ownerOf(p){ return s(p && (p.leadSourceOverride && p.leadSourceOverride.pm || p.broughtInBy || p.pm)); }
+function whyOf(p){
+  if (!p) return '';
+  var o = p.leadSourceOverride;
+  if (o && o.source) return 'Set by ' + (s(o.by) || 'an admin') + (o.at ? ' ' + ymd(o.at) : '') + (o.note ? ': ' + s(o.note) : '');
+  if (s(p.leadSourceWhy)) return s(p.leadSourceWhy);
+  if (jobSourceMap()[p.id]) return 'Set by hand on this device (Commission → lead source)';
+  return 'Set before the lead-source rule (10/22)' + (stored(p) ? '' : ' — nothing on the job, so the pay reads it as a GrayCo lead');
+}
+function label(p){ var st = stored(p); return st === 'self' ? '👤 ' + (ownerOf(p) || 'PM') + '’s own lead' : '🏢 GrayCo lead'; }
+/* small tag for the commission / My data lists (HTML) */
+W._gcLeadSourceTag = function(p){
+  try { if (!p) return ''; var self = stored(p) === 'self';
+    return ' <span class="gcsrc-tag" title="' + esc(whyOf(p)) + '" style="display:inline-block;border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:800;vertical-align:middle;background:' + (self ? '#ede9fe;color:#5b21b6' : '#e0f2fe;color:#075985') + '">' + esc(label(p)) + '</span>';
+  } catch (e) { return ''; }
+};
+/* the rule, in the page: the CRM's own lists (+ RoofScout rows when given) */
+W._gcLeadSource = function(job, ctx){
+  ctx = ctx || {};
+  var recs = ctx.records || LS.recordsFrom({ projects: projects(), leads: arr(crm().leads || W._gcLeadsState), customers: arr(crm().customers || W._graycoCustomers), inbox: arr(ctx.inbox) });
+  var c = LS.classify(job, { records: recs, roofscout: arr(ctx.roofscout), admins: ctx.admins || LS.adminsFrom(crm().users) });
+  c.stored = stored(job); c.why = whyOf(job); return c;
+};
+
+/* ══ NEW jobs: the rule when they appear ══════════════════════════════════ */
+var TRIED = {}, BUSY = false;
+var SENT = ['id', 'name', 'address', 'pm', 'pmBy', 'source', 'origin', 'leadSource', 'commissionSource', 'pmSourced', 'selfGenerated', 'broughtInBy', 'owner', 'enteredBy', 'createdBy', 'addedBy',
+  'createdAt', 'created', 'dateAdded', 'ccCreatedAt', 'leadId', 'fromLead', 'fromLeadId', 'inboxId', 'leadInboxId', 'convertedFrom', 'partnerId', '_ccAuto', '_ccImported', 'graycoOrigin', 'leadIsMine', 'leadExtra'];
+function isNew(p){ return !!p && p.id && p.deleted !== true && !p.leadSourceV && !p.leadSourceOverride && LS.bornAt(p) > SINCE; }
+W._gcLeadSrcOwns = function(p){ return isNew(p); };   /* the page's own auto-source leaves these to the rule */
+function mine(p){ return isAdmin() || isOffice() || samePerson(p.pm, myName()); }
+/* the safe rule for a new job: returns the fields to write, or null (leave it; the admin list shows it) */
+function decideNew(p, c){
+  if (jobSourceMap()[p.id]) return null;
+  var st = stored(p), stamp = { leadSourceWhy: c.reason, leadSourceAt: nowIso(), leadSourceV: 1 };
+  if (st === c.source) return { fields: stamp, change: false };
+  if (!st) return { fields: LS.fieldsFor(c), change: c.source === 'self' };
+  if (st === 'self' && c.source === 'company' && /^(cc|pm)$/.test(c.origin)) return { fields: LS.fieldsFor(c), change: true };
+  return null;   /* GrayCo → "PM's own" is never done by itself */
+}
+function sweep(){
+  if (BUSY || D.hidden || !me().name) return Promise.resolve(0);
+  var todo = projects().filter(function(p){ return isNew(p) && !TRIED[p.id] && mine(p); }).slice(0, 5);
+  if (!todo.length) return Promise.resolve(0);
+  BUSY = true; var done = 0;
+  return todo.reduce(function(pr, p){
+    return pr.then(function(){
+      TRIED[p.id] = 1;
+      var j = {}; SENT.forEach(function(k){ if (p[k] != null) j[k] = p[k]; });
+      return fn('lead-source', { action: 'check', job: j }).then(function(r){
+        if (!r || !r.ok || !/^(company|self)$/.test(s(r.source))) { delete TRIED[p.id]; return; }   /* try again next time */
+        var cur = proj(p.id); if (!cur || !isNew(cur)) return;
+        var d = decideNew(cur, r); if (!d) return;
+        var from = stored(cur) || '(none)';
+        saveProject(cur.id, function(q){ var pm = q.pm; Object.assign(q, d.fields); if (r.source === 'company') q.pm = pm; });
+        done++;
+        if (d.change || (from !== r.source && from !== '(none)')) logLine({ job: cur.id, name: cur.name, action: 'auto', from: from, to: r.source, pm: r.pm, reason: r.reason });
+      });
+    });
+  }, Promise.resolve()).then(function(){ BUSY = false; return done; }, function(){ BUSY = false; return done; });
+}
+
+/* ══ existing jobs: the admin's review list ═══════════════════════════════ */
+var REV = { items: null, at: 0, loading: false, error: '' };
+function loadReview(force){
+  if (!isAdmin() || REV.loading) return Promise.resolve(REV);
+  if (!force && REV.at && Date.now() - REV.at < 10 * 60e3) return Promise.resolve(REV);
+  REV.loading = true;
+  return fn('lead-source?review=1').then(function(r){
+    REV.loading = false; REV.at = Date.now();
+    if (r && r.ok) { REV.items = arr(r.items); REV.error = ''; REV.checked = r.checked; } else REV.error = s(r && r.error) || 'Could not check';
+    return REV;
+  });
+}
+function pending(){ var m = jobSourceMap(); return arr(REV.items).filter(function(x){ var p = proj(x.id); return p && !p.leadSourceOverride && !m[x.id] && !(p.leadSourceReview && p.leadSourceReview.at && LS.ms(p.leadSourceReview.at) > REV.at - 1); }); }
+function srcName(v, pm){ return v === 'self' ? (pm ? pm + '’s own' : 'PM’s own') : v === 'company' ? 'GrayCo' : 'not set (reads as GrayCo)'; }
+W._gcAdmExtraWarnings = W._gcAdmExtraWarnings || [];
+W._gcAdmExtraWarnings.push(function(){
+  if (!isAdmin()) return [];
+  var L = pending(); if (!L.length) return [];
+  return [{ id: 'leadsrc-review', level: 'amber', key: 'leadsrc', title: 'Lead source to review (' + L.length + ')',
+    text: L.slice(0, 4).map(function(x){ return esc(x.name) + (x.po ? ' (PO ' + esc(x.po) + ')' : '') + ': ' + esc(srcName(x.stored === '(none)' ? '' : x.stored, x.pm)) + ' → the rule says ' + esc(srcName(x.computed, x.computedPm)); }).join('<br>') + (L.length > 4 ? '<br>…' : '') +
+      '<br>Existing jobs are never changed by themselves — this affects the PM’s pay. Apply or Keep each one.',
+    fixes: [{ label: 'Review', run: function(){ openReview(); } }] }];
+});
+function css(){
+  if (D.getElementById('gc-src-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-src-css';
+  st.textContent = '.gcsrc-ov{position:fixed;inset:0;z-index:100300;background:rgba(6,12,20,.72);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto}' +
+    '.gcsrc-card{background:#fff;color:#0f172a;border-radius:14px;max-width:760px;width:100%;padding:16px 18px;font:14px Arial,sans-serif;box-sizing:border-box}.gcsrc-card h2{margin:0 0 4px;font-size:19px}' +
+    '.gcsrc-x{float:right;border:none;background:#e2e8f0;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;min-height:40px}.gcsrc-mut{color:#64748b;font-size:12.5px}' +
+    '.gcsrc-row{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin:8px 0}.gcsrc-row b{font-size:14.5px}' +
+    '.gcsrc-b{padding:8px 14px;border-radius:8px;border:none;background:#0f766e;color:#fff;font-weight:700;cursor:pointer;min-height:40px;margin:6px 6px 0 0}.gcsrc-b.o{background:#fff;color:#0f172a;border:1px solid #cbd5e1}' +
+    '.gcsrc-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 12px;font-weight:800;font-size:12.5px;cursor:pointer;border:none;min-height:34px}.gcsrc-chip.self{background:#ede9fe;color:#5b21b6}.gcsrc-chip.company{background:#e0f2fe;color:#075985}' +
+    '.gcsrc-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0;font:13px Arial,sans-serif}' +
+    '.gcsrc-card select,.gcsrc-card textarea{border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:14px Arial,sans-serif;box-sizing:border-box;min-height:40px}.gcsrc-card textarea{width:100%;min-height:70px}';
+  D.head.appendChild(st);
+}
+function overlay(html){
+  css(); var ov = D.createElement('div'); ov.className = 'gcsrc-ov'; ov.innerHTML = '<div class="gcsrc-card" role="dialog" aria-modal="true"><button type="button" class="gcsrc-x" aria-label="Close">✕</button>' + html + '</div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+  ov.querySelector('.gcsrc-x').onclick = function(){ ov.remove(); };
+  D.body.appendChild(ov); return ov;
+}
+function evidenceText(x){ var e = x.evidence; return e ? ' <span class="gcsrc-mut">(' + esc(e.kind) + ' ' + esc(e.id) + ')</span>' : ''; }
+function applyItem(x){
+  if (!isAdmin()) { toast('Only an admin can change a lead source.', true); return false; }
+  var p = proj(x.id); if (!p) return false;
+  var from = stored(p) || '(none)', c = { source: x.computed, pm: x.computedPm, reason: x.reason }, at = nowIso();
+  saveProject(p.id, function(q){ var pm = q.pm; Object.assign(q, LS.fieldsFor(c, at)); if (c.source === 'company') q.pm = pm;
+    q.leadSourceReview = { decision: 'apply', from: from, to: c.source, by: myName(), at: at }; });
+  logLine({ job: p.id, name: p.name, action: 'apply', from: from, to: c.source, pm: c.pm, reason: c.reason });
+  return true;
+}
+function keepItem(x){
+  if (!isAdmin()) { toast('Only an admin can change a lead source.', true); return false; }
+  var p = proj(x.id); if (!p) return false;
+  var st = stored(p), at = nowIso();
+  saveProject(p.id, function(q){ q.leadSourceReview = { decision: 'keep', kept: st, computed: x.computed, by: myName(), at: at }; });
+  logLine({ job: p.id, name: p.name, action: 'keep', from: st || '(none)', to: st || '(none)', pm: x.computedPm, reason: x.reason });
+  return true;
+}
+function openReview(){
+  if (!isAdmin()) { toast('Only an admin can review lead sources.', true); return null; }
+  var ov = overlay('<h2>Lead source to review</h2><div class="gcsrc-mut">Open jobs whose lead source differs from the rule (earliest record at the address wins; RoofScout counts). Nothing changes until you press Apply. Each choice is logged with your name.</div><div class="gcsrc-list"><p class="gcsrc-mut">Checking…</p></div>');
+  function paint(){
+    var box = ov.querySelector('.gcsrc-list'), L = pending();
+    if (REV.error && !L.length) { box.innerHTML = '<p style="color:#b91c1c">' + esc(REV.error) + '</p>'; return; }
+    if (!L.length) { box.innerHTML = '<p>✅ Nothing to review' + (REV.checked ? ' (' + REV.checked + ' jobs checked)' : '') + '.</p>'; return; }
+    box.innerHTML = L.map(function(x, i){
+      return '<div class="gcsrc-row" data-i="' + i + '"><b>' + esc(x.name || x.id) + '</b>' + (x.po ? ' <span class="gcsrc-mut">PO ' + esc(x.po) + '</span>' : '') + (x.pm ? ' <span class="gcsrc-mut">· PM ' + esc(x.pm) + '</span>' : '') +
+        '<div>' + esc(x.address) + '</div><div style="margin-top:4px">Now: <b>' + esc(srcName(x.stored === '(none)' ? '' : x.stored, x.pm)) + '</b> → the rule says: <b>' + esc(srcName(x.computed, x.computedPm)) + '</b></div>' +
+        '<div class="gcsrc-mut">' + esc(x.reason) + evidenceText(x) + '</div>' +
+        '<button type="button" class="gcsrc-b" data-a="apply">Apply (' + esc(srcName(x.computed, x.computedPm)) + ')</button><button type="button" class="gcsrc-b o" data-a="keep">Keep as is</button></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.gcsrc-row'), function(row){
+      var x = L[+row.getAttribute('data-i')];
+      row.querySelector('[data-a="apply"]').onclick = function(){ if (applyItem(x)) { REV.items = arr(REV.items).filter(function(y){ return y.id !== x.id; }); toast('Applied — ' + (x.name || x.id) + ' is now ' + srcName(x.computed, x.computedPm) + '.'); paint(); } };
+      row.querySelector('[data-a="keep"]').onclick = function(){ if (keepItem(x)) { REV.items = arr(REV.items).filter(function(y){ return y.id !== x.id; }); toast('Kept as is — ' + (x.name || x.id) + '.'); paint(); } };
+    });
+  }
+  if (REV.items) paint();
+  loadReview(true).then(paint);
+  return ov;
+}
+
+/* ══ the job page: the chip, and an admin's Change ════════════════════════ */
+function openChip(p){
+  var admin = isAdmin(), st = stored(p);
+  var pms = arr(crm().users).filter(function(u){ return u && u.name && u.active !== false && /pm|project|manager|estimat|sales|owner|admin/i.test(s(u.role) + ' ' + s(u.payType)); }).map(function(u){ return s(u.name); });
+  if (p.pm && pms.indexOf(s(p.pm)) < 0) pms.unshift(s(p.pm));
+  var ov = overlay('<h2>' + esc(label(p)) + '</h2><div style="margin:6px 0 10px">' + esc(whyOf(p)) + '</div>' +
+    (p.leadSourceReview ? '<div class="gcsrc-mut">Reviewed by ' + esc(p.leadSourceReview.by) + ' ' + esc(ymd(p.leadSourceReview.at)) + ' (' + esc(p.leadSourceReview.decision) + ')</div>' : '') +
+    '<div class="gcsrc-mut">GrayCo lead = it came in through the company, or the company had it first (a lead, a RoofScout lead, an earlier job or customer at that address). The PM’s own = it first appeared as the PM’s GrayCo Photos project with nothing earlier at that address. It sets the pay scale.</div>' +
+    (admin ? '<h3 style="margin:14px 0 6px">Change (admin)</h3><div class="gcsrc-line"><select data-f="src"><option value="company"' + (st !== 'self' ? ' selected' : '') + '>🏢 GrayCo lead</option><option value="self"' + (st === 'self' ? ' selected' : '') + '>👤 The PM’s own lead</option></select>' +
+      '<select data-f="pm">' + pms.map(function(n){ return '<option' + (samePerson(n, ownerOf(p)) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select></div>' +
+      '<textarea data-f="note" placeholder="Why (required) — e.g. the PM found this roof himself; the RoofScout lead was never worked"></textarea><button type="button" class="gcsrc-b" data-a="save">Save the change</button>' : ''));
+  var sv = ov.querySelector('[data-a="save"]');
+  if (sv) sv.onclick = function(){
+    var src = ov.querySelector('[data-f="src"]').value, pm = ov.querySelector('[data-f="pm"]').value, note = s(ov.querySelector('[data-f="note"]').value);
+    if (!note) { toast('Write why — the change is logged.', true); return; }
+    if (overrideJob(p.id, src, pm, note)) { ov.remove(); toast('Lead source changed — logged.'); }
+  };
+  return ov;
+}
+function overrideJob(pid, src, pm, note){
+  if (!isAdmin()) { toast('Only an admin can change a lead source.', true); return false; }
+  if (!/^(company|self)$/.test(src) || !s(note)) return false;
+  var p = proj(pid); if (!p) return false;
+  var from = stored(p) || '(none)', at = nowIso(), who = myName();
+  var c = { source: src, pm: src === 'self' ? s(pm) || s(p.pm) : '', reason: 'Set by ' + who + ' ' + ymd(at) + ': ' + s(note) };
+  saveProject(pid, function(q){ var keep = q.pm; Object.assign(q, LS.fieldsFor(c, at)); q.pm = keep || c.pm;
+    q.leadSourceOverride = { source: src, pm: c.pm, by: who, at: at, note: s(note), from: from }; });
+  try { if (typeof W._gcSetJobSource === 'function' && jobSourceMap()[pid]) W._gcSetJobSource(pid, src); } catch (e) {}
+  logLine({ job: pid, name: p.name, action: 'override', from: from, to: src, pm: c.pm, note: note, reason: c.reason });
+  return true;
+}
+function chipSig(p){ return [p.id, stored(p), ownerOf(p), whyOf(p)].join('|'); }
+function deskChip(){
+  if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
+  var main = D.querySelector('main'); if (!main) return;
+  var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, olds = main.querySelectorAll('.gcsrc-line[data-desk]');
+  if (!p) { Array.prototype.forEach.call(olds, function(x){ x.remove(); }); return; }
+  var back = null, bs = main.getElementsByTagName('button');
+  for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
+  if (!back) { Array.prototype.forEach.call(olds, function(x){ x.remove(); }); return; }
+  var root = back.parentElement, have = root.querySelector(':scope > .gcsrc-line[data-desk]');
+  Array.prototype.forEach.call(olds, function(x){ if (x !== have) x.remove(); });
+  if (have && have.__sig === chipSig(p)) return;
+  if (have) have.remove();
+  css();
+  var line = D.createElement('div'); line.className = 'gcsrc-line'; line.setAttribute('data-desk', '1'); line.__sig = chipSig(p);
+  var self = stored(p) === 'self';
+  line.innerHTML = '<button type="button" class="gcsrc-chip ' + (self ? 'self' : 'company') + '" title="' + esc(whyOf(p)) + '">' + esc(label(p)) + '</button><span class="gcsrc-mut" style="color:#94a3b8;font-size:12px">' + esc(whyOf(p)) + '</span>';
+  line.querySelector('button').onclick = function(){ openChip(proj(p.id) || p); };
+  var after = root.querySelector(':scope > .gcx12-bar') || root.querySelector(':scope > .gcx9-bars') || root.querySelector(':scope > .gcja-bar') || back;
+  root.insertBefore(line, after.nextSibling);
+}
+
+W._gcLeadSrc = { LS: LS, since: function(v){ if (v) SINCE = +v; return SINCE; }, sweep: sweep, decideNew: decideNew, loadReview: loadReview, openReview: openReview, applyItem: applyItem, keepItem: keepItem, overrideJob: overrideJob, openChip: openChip, paint: deskChip, rev: REV, stored: stored, whyOf: whyOf };
+SI(function(){ try { deskChip(); } catch (e) {} }, 1500);
+SI(function(){ try { sweep(); } catch (e) {} }, 60e3);
+SI(function(){ try { if (isAdmin()) loadReview(false); } catch (e) {} }, 5 * 60e3);
+ST(function(){ try { sweep(); } catch (e) {} try { if (isAdmin()) loadReview(false); } catch (e) {} }, 9000);
+})();
 </script>

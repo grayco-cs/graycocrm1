@@ -112,6 +112,23 @@ async function readProjects(){
   return { chunked: false, list: arr(m.projects) };
 }
 
+/* patch SRC: RoofScout leads at one street address (service key; matched on the house number, then the
+   normalized street — the rule in _lib/leadsource.js). A failed read is "none found". */
+const _rsCache = {};
+async function rsNear(address){
+  const SRC = require('./_lib/leadsource.js');
+  const a = SRC.normAddr(address); if (a.length < 6) return [];
+  if (_rsCache[a]) return _rsCache[a];
+  const num = (/^\s*(\d+)/.exec(String(address || '')) || [])[1]; if (!num) return [];
+  const e = sbEnv(); let rows = [];
+  try {
+    const r = await fetch(e.url + '/rest/v1/rs_leads?select=id,data,created_at&order=created_at.asc&limit=200&data->>address=ilike.' + encodeURIComponent(num + ' *'), { headers: { apikey: e.key, Authorization: 'Bearer ' + e.key } });
+    if (r.ok) rows = arr(await r.json());
+  } catch (err) {}
+  _rsCache[a] = SRC.roofscoutFrom(rows).filter(x => SRC.normAddr(x.address) === a);
+  return _rsCache[a];
+}
+
 /* ── CompanyCam ── */
 function ccHeaders(t){ return { Authorization: 'Bearer ' + t, Accept: 'application/json' }; }
 /* every project changed since `since`, all pages; complete=false when a page failed (the cursor then stays) */
@@ -210,7 +227,7 @@ async function run(opts){
   if (!token) return { ok: false, skipped: 'COMPANYCAM_TOKEN is not set' };
   if (!e.url || !e.key) return { ok: false, skipped: 'SUPABASE_URL / SUPABASE_SERVICE_KEY are not set' };
   const nowIso = new Date().toISOString();
-  const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', 'gc_senior_pm', STATE_KEY]);
+  const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', 'gc_senior_pm', 'gc_lead_inbox', STATE_KEY]);
   const seniorU = require('./_lib/people.js').seniorPm(kv.users, kv.gc_senior_pm), senior = seniorU ? s(seniorU.name) : '';   /* patch PMG */
   const st = Object.assign({ cursor: 0, made: {}, creators: {} }, obj(kv[STATE_KEY]));
   st.made = obj(st.made); st.creators = obj(st.creators);
@@ -227,6 +244,20 @@ async function run(opts){
   const dis = obj(kv.gc_cc_dismissed);
   const idx = knownIndex(P.list, kv.leads, kv.customers);
   const findPm = pmFinder(kv.users, kv.gc_cc_creator_map);
+  /* patch SRC: GrayCo lead or the PM's own? (earliest record at the address wins; RoofScout counts) */
+  const SRC = require('./_lib/leadsource.js');
+  let inboxV = null;   /* the Lead Inbox's own table once docs/lead-inbox.sql has run; gc_kv before that */
+  try { const r = await fetch(e.url + '/rest/v1/gc_lead_inbox_kv?select=value&key=eq.gc_lead_inbox', { headers: { apikey: e.key, Authorization: 'Bearer ' + e.key } }); if (r.ok) { const x = arr(await r.json())[0]; if (x) inboxV = parse(x.value); } } catch (err) {}
+  if (inboxV == null) inboxV = kv.gc_lead_inbox;
+  const inboxItems = Array.isArray(inboxV) ? inboxV : arr(obj(inboxV).items);
+  const srcRecs = SRC.recordsFrom({ projects: P.list, leads: kv.leads, customers: kv.customers, inbox: inboxItems });
+  async function srcFix(j){
+    if (!j || SRC.storedOf(j) !== 'self') return j;
+    const c = SRC.classify(j, { records: srcRecs, roofscout: await rsNear(j.address) });
+    if (c.source === 'company') { const pm = j.pm; Object.assign(j, SRC.fieldsFor(c, nowIso)); j.pm = pm; j.owner = 'GrayCo'; }
+    else Object.assign(j, { leadSourceWhy: c.reason, leadSourceAt: nowIso, leadSourceV: 1 });
+    return j;
+  }
   async function pmOf(p){
     let ccu = null;
     const cached = p.creatorId && st.creators[p.creatorId];
@@ -247,7 +278,7 @@ async function run(opts){
     const d = decide(idx, p);
     if (d.kind === 'linked') { R.linked++; continue; }
     if (d.kind === 'ask') { R.ask.push(p.id); continue; }
-    const j = jobFor(p, await pmOf(p), d.note, nowIso, senior);
+    const j = await srcFix(jobFor(p, await pmOf(p), d.note, nowIso, senior));
     jobs.push(j); idx.id[p.id] = { kind: 'job', id: j.id };
     st.made[p.id] = { id: j.id, at: nowIso };
     R.made.push({ cc: p.id, job: j.id, pm: j.pm || '', name: j.name });
@@ -264,6 +295,9 @@ async function run(opts){
     if (!p.creator && !p.creatorId) continue;
     const pm = await pmOf(p); if (!pm) continue;
     fixes[r.id] = Object.assign(selfFields(pm), { leadSource: s(r.leadSource) && r.leadSource !== 'CompanyCam' && low(r.leadSource) !== low(pm) ? r.leadSource : 'Self-generated (' + pm + ')', broughtInBy: s(r.broughtInBy) || pm, owner: s(r.owner) || pm, createdBy: s(r.createdBy) || pm, updatedAt: nowIso, savedAt: nowIso });
+    { const c = SRC.classify(Object.assign({}, r, fixes[r.id], { pmBy: '' }), { records: srcRecs, roofscout: await rsNear(r.address) });   /* patch SRC */
+      if (c.source === 'company') fixes[r.id] = Object.assign({ pm: pm, updatedAt: nowIso, savedAt: nowIso }, SRC.fieldsFor(c, nowIso));
+      else fixes[r.id].leadSourceWhy = c.reason; }
     R.pmFixed.push({ job: r.id, pm: pm });
   }
   const back = Object.keys(st.made).filter(cid => { const id = st.made[cid].id; return !have[id] && !dead[id] && !jobs.some(j => j.id === id) && ccById[cid]; });
@@ -274,7 +308,7 @@ async function run(opts){
     const P2 = await readProjects();
     const has2 = {}; P2.list.forEach(r => { if (r && r.id) has2[r.id] = 1; });
     const add = jobs.filter(j => !has2[j.id]);
-    for (const j of add) if (!j.pm) { const pm = await pmOf(ccById[j.ccProjectId] || { creator: j.ccCreator, creatorId: j.ccCreatorId }); if (pm) Object.assign(j, selfFields(pm)); }
+    for (const j of add) if (!j.pm) { const pm = await pmOf(ccById[j.ccProjectId] || { creator: j.ccCreator, creatorId: j.ccCreatorId }); if (pm) { Object.assign(j, selfFields(pm)); await srcFix(j); } }
     const fix = r => (r && fixes[r.id] && (!s(r.pm) || r.pmBy === 'senior-pm')) ? Object.assign({}, r, fixes[r.id], { pmBy: '' }) : r;
     if (P2.chunked) {
       const chunks = P2.chunks.map(c => c.map(fix));
@@ -303,4 +337,4 @@ exports.handler = async function(event){
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) };
   }
 };
-exports._t = { run, compact, decide, knownIndex, pmFinder, listChanged, CUT };
+exports._t = { run, compact, decide, knownIndex, pmFinder, listChanged, rsNear, CUT };
