@@ -370,7 +370,7 @@ async function alertApplication(app){
   const key = env('RESEND_API_KEY'); if (!key) return { why: 'RESEND_API_KEY is not set' };
   try {
     const to = await L().alertsApi().recipients();
-    const site = (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
+    const site = (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
     const subject = ('👷 New job application: ' + app.name + (app.position ? ' — ' + app.position : '')).slice(0, 200);
     const lines = [['Position', app.position], ['Phone', app.phone], ['E-mail', app.email], ['Experience', app.experience], ['Available', app.availability], ['Résumé', app.resume ? app.resume.name + (app.resume.ref ? '' : ' (' + app.resume.why + ')') : 'none'], ['Message', app.message]].filter(x => s(x[1]));
     const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">GrayCo — new job application</div><div style="padding:6px 18px 18px">'

@@ -52,7 +52,7 @@ function esc(v){ return s(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 function now(){ return typeof exports._now === 'function' ? exports._now() : Date.now(); }
 
 function ready(){ return !!(env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM')); }
-function site(){ return (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
+function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
 function hookUrl(ev){ return site() + '/.netlify/functions/missed-call?event=' + ev; }
 function L(){ return require('./bid-inbox.js')._lib; }
 function WI(){ return require('./website-intake.js')._lib; }

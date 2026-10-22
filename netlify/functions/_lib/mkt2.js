@@ -36,7 +36,7 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function okEmail(e){ return /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(s(e)); }
 let nowFn = function(){ return Date.now(); };
 function nowIso(){ return new Date(nowFn()).toISOString(); }
-function site(){ return (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
+function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
 function web(){ return (env('WEBSITE_URL') || 'https://grayco-cs.com').replace(/\/$/, ''); }
 function M(){ return require('./mkt.js'); }
 function L(){ return require('../bid-inbox.js')._lib; }

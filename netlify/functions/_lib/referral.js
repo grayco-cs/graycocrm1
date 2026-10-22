@@ -195,7 +195,7 @@ async function mailAdmins(subject, lines){
   const key = env('RESEND_API_KEY'); if (!key) return false;
   let to = []; try { to = await L().alertsApi().recipients(); } catch (e) {}
   if (!to.length) return false;
-  const site = (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
+  const site = (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
   const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(subject) + '</div><div style="padding:6px 18px 18px">'
     + lines.map(function(l){ return '<p>' + esc(l) + '</p>'; }).join('') + '<p><a href="' + esc(site) + '/#marketing" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Marketing → 🎁 Referral program</a></p></div></div>';
   try {

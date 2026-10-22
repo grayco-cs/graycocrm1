@@ -36,7 +36,7 @@ function central(d){
   const o = {}; parts.forEach(function(p){ o[p.type] = p.value; });
   return { wd: o.weekday, hour: parseInt(o.hour, 10) % 24, ymd: o.year + '-' + o.month + '-' + o.day };
 }
-function site(){ return (process.env.CRM_URL || process.env.PORTAL_BASE_URL || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
+function site(){ return (process.env.CRM_URL || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
 function okEmail(e){ return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(e)); }
 function owners(data){ return Array.from(new Set((process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail).concat(C.adminEmails(data || {})))); }
 

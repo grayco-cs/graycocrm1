@@ -134,7 +134,7 @@ async function run(opts){
   const data = await portal._core.kvRead(['estimates', '__est__gc_matlog_v2', 'selectionLibrary', 'users', 'projects', 'gc_tombstones', 'gc_est_price_watch']);
   let st = data.gc_est_price_watch; if (typeof st === 'string') { try { st = JSON.parse(st); } catch (e) { st = null; } }
   st = st && typeof st === 'object' ? st : {}; st.sent = st.sent && typeof st.sent === 'object' ? st.sent : {};
-  const dg = digest(data), site = (process.env.CRM_URL || process.env.PORTAL_BASE_URL || 'https://crm.grayco-cs.com').replace(/\/$/, '');
+  const dg = digest(data), site = (process.env.CRM_URL || 'https://crm.grayco-cs.com').replace(/\/$/, '');
   const out = { ok: true, day: day, people: Object.keys(dg).length, sent: [], skipped: [], dry: !!opts.dry };
   const key = process.env.RESEND_API_KEY;
   for (const em of Object.keys(dg)) {

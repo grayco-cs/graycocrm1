@@ -54,7 +54,7 @@ function make(d){
   const { env, s, low, arr, nowIso, sb, kvCas, kvGet } = d;
   const now = () => (typeof d.now === 'function' ? d.now() : Date.now());
   const off = () => env('BID_ALERTS_OFF') === '1';
-  const site = () => (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
+  const site = () => (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
   function esc(v){ return s(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   const fmtDue = due => BD.fmtDue(due);
   const dueTxt = due => due ? 'Bid due ' + fmtDue(due) : 'Bid due date: NOT FOUND — add it';

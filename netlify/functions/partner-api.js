@@ -67,7 +67,7 @@ function esc(v){ return s(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 function hdrs(event){ const h = {}; Object.keys((event && event.headers) || {}).forEach(k => { h[low(k)] = event.headers[k]; }); return h; }
 function J(code, body){ return { statusCode: code, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': 'https://crm.grayco-cs.com', Vary: 'Origin',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' }, body: JSON.stringify(body) }; }
-function site(){ return (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
+function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
 function endpoint(){ return site() + ENDPOINT_PATH; }
 
 /* every reasonable spelling of a field (partners name them their own way) */

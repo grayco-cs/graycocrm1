@@ -20,7 +20,7 @@ function make(d){
   const env = function(k){ return s(d.env(k)); };
   const now = function(){ return typeof d.now === 'function' ? d.now() : Date.now(); };
   const nowIso = function(){ return new Date(now()).toISOString(); };
-  const site = function(){ return (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); };
+  const site = function(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); };
   function secret(){ return env('ONCALL_SECRET') || crypto.createHash('sha256').update('gc-oncall|' + (env('SUPABASE_SERVICE_KEY') || env('SUPABASE_SERVICE_ROLE_KEY') || 'x')).digest('hex'); }
   function sig(id, email){ return crypto.createHmac('sha256', secret()).update(s(id) + '|' + low(email)).digest('hex').slice(0, 32); }
   function acceptUrl(id, email){ return site() + '/.netlify/functions/x10?accept=' + encodeURIComponent(id) + '&e=' + encodeURIComponent(low(email)) + '&s=' + sig(id, email); }

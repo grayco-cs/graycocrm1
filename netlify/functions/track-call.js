@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const X = require('./_lib/mkt2.js');
 function s(v){ return v == null ? '' : String(v).trim(); }
 function env(k){ return s(process.env[k]); }
-function site(){ return (env('CRM_URL') || env('PORTAL_BASE_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
+function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
 function header(event, name){ const h = event.headers || {}; const k = Object.keys(h).find(x => x.toLowerCase() === name); return k ? s(h[k]) : ''; }
 function params(event){ const raw = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64').toString('utf8') : s(event.body); const p = {}; raw.split('&').filter(Boolean).forEach(kv => { const i = kv.indexOf('='); const k = decodeURIComponent((i < 0 ? kv : kv.slice(0, i)).replace(/\+/g, ' ')); p[k] = decodeURIComponent((i < 0 ? '' : kv.slice(i + 1)).replace(/\+/g, ' ')); }); return p; }
 function signed(event, p){
