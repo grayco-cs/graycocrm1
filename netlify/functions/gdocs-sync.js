@@ -156,6 +156,14 @@ function parseQuote(text){
   return out;
 }
 
+/* patch EST4: whose Google tokens to try — gc_team_google_users when an admin set it, else every active person on
+   the CRM's people list (and the office), so nobody's name is in the code */
+async function teamGoogleUsers(){
+  const raw = await kvGet('gc_team_google_users'); if (Array.isArray(raw) && raw.length) return raw;
+  let u = await kvGet('users'); if (u && !Array.isArray(u) && Array.isArray(u.v)) u = u.v;
+  const names = (Array.isArray(u) ? u : []).filter(x => x && x.name && x.active !== false).map(x => String(x.name));
+  return names.concat(names.indexOf('office') >= 0 ? [] : ['office']);
+}
 exports.handler = async function(event){
   const _cors = Object.assign(gcCors(event, 'GET, POST, OPTIONS'), { 'Content-Type': 'application/json' });
   if (event && event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: _cors, body: '' };
@@ -166,7 +174,7 @@ exports.handler = async function(event){
     if(qp.export){
       // Export a single Google Doc's plain text (used by the Change Order doc-reader).
       // Uses the first team member's token that works.
-      var users = (await kvGet('gc_team_google_users')) || ['Wesley Johnson','Nick Thomas','Glenn Miller','office'];
+      var users = await teamGoogleUsers();   /* patch EST4: the team from the data, never a list of names */
       for(var ui=0; ui<users.length; ui++){
         var tks = await kvGet('gcal_token_'+users[ui]);
         if(!tks) continue;
@@ -183,7 +191,7 @@ exports.handler = async function(event){
   try{
     const teamRaw = await kvGet('gc_team_google_users');
     // Which users to check: explicit list, else default GrayCo owners/PMs.
-    let users = Array.isArray(teamRaw) ? teamRaw : ['Wesley Johnson','Nick Thomas','Glenn Miller','office'];
+    let users = Array.isArray(teamRaw) ? teamRaw : await teamGoogleUsers();
 
     const seen = (await kvGet('gc_gdoc_imported')) || {};   // { docId: true }
     const estimates = (await kvGet('estimates')) || [];
@@ -233,7 +241,7 @@ exports.handler = async function(event){
 // SETUP NOTES:
 // 1. In Google Cloud Console, add scope https://www.googleapis.com/auth/drive.readonly to the
 //    OAuth consent screen, and update the CRM's connect button to request it (done in the app).
-// 2. Each person (Wesley, Nick, Glenn, office) clicks Connect Google once to authorize Drive read.
+// 2. Each person (the owners, the estimator, the PMs, office) clicks Connect Google once to authorize Drive read.
 // 3. Optionally set gc_team_google_users in gc_kv to the exact list of users to pull from.
 // 4. This imports Docs whose NAME contains quote/estimate/proposal/bid. Tell users to name
 //    their quote docs accordingly, or we can switch to watching a specific Drive folder.

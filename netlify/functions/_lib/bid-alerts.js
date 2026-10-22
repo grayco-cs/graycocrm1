@@ -26,7 +26,7 @@
    There is NO hourly digest any more.
      3. WHO IT IS DUE TO, AND WHO DOES IT (owner, later on 10/21): every message says when the bid is due AND who it
         is due to (the GC / company / agency, contact, how to submit). The lead's assigned estimator / PM (pm, or the
-        default estimator for commercial bids — Leads ⚙, Glenn Miller) gets the new-lead message, the 1-hour /
+        default estimator for commercial bids — the Estimator role / Leads ⚙) gets the new-lead message, the 1-hour /
         "today" reminder, "⏰ Bid due tomorrow" at 8 AM the day before, "Assigned to you" when a lead is given to
         them (notifyAssigned: the CRM's ?notify=1, and the 10-minute sweep), and once a day "⚠️ Missing due info"
         for bids assigned to them marked "Unknown yet".
@@ -352,9 +352,10 @@ function make(d){
   }
 
   /* ── patch AUTO8: "Bid results?" — 7 days after a SUBMITTED bid's due date, still not won / lost: one e-mail from
-     Glenn (BID_RESULTS_FROM, default gmiller@grayco-cs.com) to whoever the bid was due to (dueToEmail), asking how it
-     came out. Glenn gets a copy (bcc); replies go to him AND to results+<lead>@in.grayco-cs.com, where bid-inbox.js
-     files the answer for the CRM (gc_kv gc_bid_results → the lead and Glenn's dashboard). A staff member's own e-mail
+     the estimator (BID_RESULTS_FROM, else the default estimator — EST4, the Estimator role) to whoever the bid was due
+     to (dueToEmail), asking how it came out. The estimator gets a copy (bcc); replies go to them AND to
+     results+<lead>@in.grayco-cs.com, where bid-inbox.js files the answer for the CRM (gc_kv gc_bid_results → the lead
+     and the estimator's dashboard). A staff member's own e-mail
      to a GC — not a customer — so it goes straight out (no approval), weekdays 9 AM – 4 PM Central only, once per
      lead and due date. BID_RESULTS_OFF=1 turns it off. ─────────────────────────────────────────────────────── */
   const RESULTS_DAYS = 7;
@@ -390,8 +391,10 @@ function make(d){
     let mine = [];
     await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); return mine.length ? st : undefined; });
     const key = env('RESEND_API_KEY'); const out = { sent: 0, failed: 0, list: [] };
-    const fromEmail = low(env('BID_RESULTS_FROM') || 'gmiller@grayco-cs.com');
-    const fromName = s(env('BID_RESULTS_NAME')) || (fromEmail === 'gmiller@grayco-cs.com' ? 'Glenn Miller' : (Object.keys(PEOPLE).filter(n => PEOPLE[n] === fromEmail)[0] || 'GrayCo Estimating').replace(/\b\w/g, c => c.toUpperCase()));
+    /* patch EST4: from the default estimator (the Estimator role / Leads ⚙), never a name in the code */
+    let est = { name: '', email: '' }; try { if (typeof d.estimatorOf === 'function') est = (await d.estimatorOf()) || est; } catch (e) {}
+    const fromEmail = low(env('BID_RESULTS_FROM') || est.email || 'leads@grayco-cs.com');
+    const fromName = s(env('BID_RESULTS_NAME')) || (est.email && low(est.email) === fromEmail && s(est.name)) || (Object.keys(PEOPLE).filter(n => PEOPLE[n] === fromEmail)[0] || 'GrayCo Estimating').replace(/\b\w/g, c => c.toUpperCase());
     for (const l of mine.slice(0, 10)) {
       const m = resultsMail(l, fromName);
       let ok = false;

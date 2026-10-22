@@ -1,8 +1,15 @@
 # Lead Inbox + bid portal: owner setup (about 45 minutes, once)
 
+> **Changed 10/22 (patch EST4): bid notices go to leads@grayco-cs.com.** BuildingConnected, PlanHub, the planrooms, GCs and the
+> agencies send their invitations to **leads@**; the CRM tells a bid invitation from a customer by itself. **bids@grayco-cs.com is now only
+> for subcontractors sending their bids to GrayCo**: each one is matched to its bid job and the estimator is told (Leads → 📨 Sub bids).
+> Make bids@ a Google Group whose members are the estimator and `bids@in.grayco-cs.com`. Invitations that still arrive at bids@ (old sign-ups)
+> are recognised and still become bids. <!-- patch EST4 -->
+
+
 **What you get.** Every bid opportunity reaches GrayCo in one of three ways:
 
-- an e-mail to **bids@grayco-cs.com** (BuildingConnected, PlanHub, A&B, RKA, GCs, agencies);
+- an e-mail to **leads@grayco-cs.com** (BuildingConnected, PlanHub, A&B, RKA, GCs, agencies);
 - a public government bid list that the CRM reads on its own;
 - the BuildingConnected API (optional).
 
@@ -12,7 +19,7 @@ Each one becomes:
 2. a **draft** job in the bid portal (bids.grayco-cs.com), which subs never see until you press **Publish to bid portal**;
 3. an alert to the admins. Wesley, Nick and every admin on the staff list get an e-mail. A bid due within 3 days is e-mailed at once; the rest come in one e-mail an hour.
 
-**What it never does.** Nothing signs in to BuildingConnected, PlanHub or the planrooms with your password. Those sites e-mail bids@ instead, which is allowed by their terms.
+**What it never does.** Nothing signs in to BuildingConnected, PlanHub or the planrooms with your password. Those sites e-mail leads@ instead, which is allowed by their terms.
 
 Do the steps in order. Where a screen in BuildingConnected, PlanHub or a planroom looks different from what is written here, look for "Notifications" or "Email settings" in your profile. Those sites change their menus often.
 
@@ -74,7 +81,7 @@ Google keeps your normal mail. Only the sub-address `in.grayco-cs.com` goes to R
 4. **Check:** open `https://crm.grayco-cs.com/.netlify/functions/bid-inbox?ping=1`. You should see `"signed":true`, `"resendApi":true`, `"ai":true`, `"database":true` and `"adminAlerts":true`.
    - `"bidPortal":true` appears once the bid portal's SQL has run.
 
-## 3. Google: copy everything sent to bids@ into the CRM (5 min)
+## 3. Google: copy everything sent to bids@ (subs' bids) into the CRM (5 min)
 
 **If bids@grayco-cs.com is a Google Group:**
 
@@ -93,12 +100,12 @@ Google keeps your normal mail. Only the sub-address `in.grayco-cs.com` goes to R
 4. Type the code in Gmail and click **Verify**.
 5. Choose **Forward a copy … and keep Gmail's copy in the inbox**, then click **Save Changes**.
 
-**Test:** from your own phone, e-mail **bids@grayco-cs.com** with the subject "ITB – test project, bids due next Friday".
+**Test:** from your own phone, e-mail **leads@grayco-cs.com** with the subject "ITB – test project, bids due next Friday". (A sub's bid test: e-mail **bids@** "Our bid for <a bid job's name>" with a PDF — the estimator gets "Sub bid received".)
 
 - Within a minute or two, in **CRM → Leads**, press **↻ Check now**. The test shows as a lead with "Draft in the bid portal".
 - Mark it **Not interested** afterwards.
 
-To bring in a single e-mail someone already got, **forward it to bids@grayco-cs.com**. Its plan PDFs come in too.
+To bring in a single bid invitation someone already got, **forward it to leads@grayco-cs.com**. Its plan PDFs come in too.
 
 ## 3b. leads@grayco-cs.com: website inquiries into the CRM (10 min)
 
@@ -122,18 +129,18 @@ Set it up:
 
 The `in.grayco-cs.com` receiving domain (step 2) has to show **Verified** in Resend first. Until then, nothing sent to bids@ or leads@ reaches the CRM.
 
-## 4. Point the bid boards and planrooms at bids@grayco-cs.com (10 min)
+## 4. Point the bid boards and planrooms at leads@grayco-cs.com (10 min)
 
 | Site | Exact steps |
 |---|---|
-| **BuildingConnected** | Sign in at app.buildingconnected.com. Click your name (top right) → **Settings → Notifications** (or **Email Preferences**). Turn on **Bid invitations**, **Addenda / file updates** and **Messages**, then save. **Then either:** (a) Profile → **Email** → set the notification e-mail to `bids@grayco-cs.com`, **or** (b) **Company → Team → Invite** `bids@grayco-cs.com` as an estimator, so invitations to the company reach it. |
-| **PlanHub** | Sign in at app.planhub.com. Click your name → **Account Settings → Notifications**. Turn on **Project invitations** and **New projects** for your trades (Roofing, Drywall, General) and your area (Memphis metro, North MS, East AR). Set the e-mail to `bids@grayco-cs.com`, or add a **user** with that e-mail. Click **Save**. |
-| **A&B Planroom** (aandbplanroom.com) | Sign in. Open **My Account / Profile → Notifications**. Turn on **new projects** and **addenda**, and set the e-mail to `bids@grayco-cs.com`. Save. **If there is no such setting:** call A&B and ask them to add `bids@grayco-cs.com` to their bid-notice distribution list. |
-| **RKA Planroom** (rkaplanroom.com) | Same as A&B: profile → notifications → `bids@grayco-cs.com`, or ask them to add it to their distribution list. |
-| **GCs you bid for** | Ask each estimator to add `bids@grayco-cs.com` to their invite list. (Their invitations then come through BuildingConnected or PlanHub to the same address.) |
-| **Dodge / ConstructConnect** (only if you subscribe) | Point their project alerts at `bids@grayco-cs.com`. They come in as source "Other". |
+| **BuildingConnected** | Sign in at app.buildingconnected.com. Click your name (top right) → **Settings → Notifications** (or **Email Preferences**). Turn on **Bid invitations**, **Addenda / file updates** and **Messages**, then save. **Then either:** (a) Profile → **Email** → set the notification e-mail to `leads@grayco-cs.com`, **or** (b) **Company → Team → Invite** `leads@grayco-cs.com` as an estimator, so invitations to the company reach it. |
+| **PlanHub** | Sign in at app.planhub.com. Click your name → **Account Settings → Notifications**. Turn on **Project invitations** and **New projects** for your trades (Roofing, Drywall, General) and your area (Memphis metro, North MS, East AR). Set the e-mail to `leads@grayco-cs.com`, or add a **user** with that e-mail. Click **Save**. |
+| **A&B Planroom** (aandbplanroom.com) | Sign in. Open **My Account / Profile → Notifications**. Turn on **new projects** and **addenda**, and set the e-mail to `leads@grayco-cs.com`. Save. **If there is no such setting:** call A&B and ask them to add `leads@grayco-cs.com` to their bid-notice distribution list. |
+| **RKA Planroom** (rkaplanroom.com) | Same as A&B: profile → notifications → `leads@grayco-cs.com`, or ask them to add it to their distribution list. |
+| **GCs you bid for** | Ask each estimator to add `leads@grayco-cs.com` to their invite list. (Their invitations then come through BuildingConnected or PlanHub to the same address.) |
+| **Dodge / ConstructConnect** (only if you subscribe) | Point their project alerts at `leads@grayco-cs.com`. They come in as source "Other". |
 
-## 5. Government vendor registrations (use bids@grayco-cs.com as the contact e-mail everywhere)
+## 5. Government vendor registrations (use leads@grayco-cs.com as the contact e-mail everywhere)
 
 These public lists are **also read automatically**, weekdays at 7, 10, 1, 4 and 6 o'clock:
 

@@ -87,7 +87,6 @@ const STAFF_PUBLIC_FIELDS = ['id', 'name', 'email', 'phone', 'title', 'role', 'c
 const KNOWN_STAFF = {
   'nthomas@grayco-cs.com': { name: 'Nick Thomas', phone: '901-634-4354', title: 'Owner' },
   'wjohnson@grayco-cs.com': { name: 'Wesley Johnson', phone: '901-692-7255', title: 'Owner' },
-  'gmiller@grayco-cs.com': { name: 'Glenn Miller', phone: '901-860-8251', title: 'Commercial Estimator' },
   'office@grayco-cs.com': { name: 'Brittany', phone: '901-585-0944', title: 'Office Manager' }
 };
 
@@ -713,7 +712,7 @@ async function staffEmailsFor(job){
      size limits below. Every file goes to the subportal-files bucket and onto the job's plans list (the same
      plans/<jobId> row the bid site and the Lead Inbox (patch LD2, _lib/bid-portal.js) use).
    • A sub on a job with no plans taps "Request plans — I'm interested in bidding": recorded (who, when, note,
-     trade) in planreqs/<jobId>__<userId>; Wesley, Nick and the job's estimator (Glenn for commercial when none
+     trade) in planreqs/<jobId>__<userId>; Wesley, Nick and the job's estimator (the default estimator — the Estimator role — when none
      is set) get an e-mail, a phone push when push is set up, and one CRM to-do per job.
    • As soon as the job has plans (uploaded here, saved in the bid site, or copied by the Lead Inbox), every
      sub who asked gets "Plans are ready for <job>" once, in their language. It is a transactional notice
@@ -812,7 +811,16 @@ async function estimatorEmail(job){
     const st = await staffList(); const hit = st.find(function(x){ return staffId(x.email) === id; }); if (hit) return hit.email;
     const r = await getRow('users', id); if (r && r.email) return low(r.email);
   }
-  return 'gmiller@grayco-cs.com';   /* Glenn, the commercial estimator, when no estimator is set */
+  return defaultEstimatorEmail();   /* patch EST4: the default estimator (the Estimator role / Leads ⚙), never a name */
+}
+async function defaultEstimatorEmail(){
+  let settings = null;
+  for (const table of ['gc_lead_inbox_kv', 'gc_kv']) {
+    try { const r = await fetch(sbUrl() + '/rest/v1/' + table + '?select=value&key=eq.gc_lead_inbox_settings', { headers: H() }); if (r.ok) { const v = ((await r.json())[0] || {}).value; if (v) { settings = typeof v === 'string' ? JSON.parse(v) : v; break; } } } catch (e) {}
+  }
+  const sbf = function(path){ return fetch(sbUrl() + '/rest/v1/' + path, { headers: H() }); };
+  const r = await require('./_lib/estimator.js').resolve({ sb: sbf, settings: settings || {} });
+  return r.email || ownerEmails()[0] || '';
 }
 function ownerEmails(){ return String(process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,nthomas@grayco-cs.com').split(',').map(low).filter(okEmail); }
 function loadWebPush(){ try { return require('web-push'); } catch (e) { return null; } }
@@ -875,8 +883,8 @@ async function notifyPlanRequests(jobId){
     const q = r.data, es = q.lang === 'es', link = PORTAL_ORIGIN + '/';
     const ok = await sendMail(q.email, (es ? 'Los planos están listos — ' : 'Plans are ready for ') + title,
       mailHtml(es ? 'Los planos están listos' : 'Plans are ready',
-        es ? ['Hola ' + esc(q.name || '') + ',', 'Los planos de <b>' + esc(title) + '</b> ya están en el sitio de licitaciones de GrayCo.', 'Entre en ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' para verlos y enviar su oferta.']
-           : ['Hi ' + esc(q.name || '') + ',', 'The plans for <b>' + esc(title) + '</b> are now on the GrayCo bid site.', 'Sign in at ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' to see them and send your bid.'],
+        es ? ['Hola ' + esc(q.name || '') + ',', 'Los planos de <b>' + esc(title) + '</b> ya están en el sitio de licitaciones de GrayCo.', 'Entre en ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' para verlos y enviar su oferta (o envíe su oferta por correo a bids@grayco-cs.com).']
+           : ['Hi ' + esc(q.name || '') + ',', 'The plans for <b>' + esc(title) + '</b> are now on the GrayCo bid site.', 'Sign in at ' + esc(link.replace(/^https:\/\//, '').replace(/\/$/, '')) + ' to see them and send your bid (or e-mail your bid to bids@grayco-cs.com).'],
         { href: link, label: es ? 'Ver los planos' : 'See the plans' })).catch(function(){ return false; });
     if (ok) { await upsertRows([{ collection: 'planreqs', id: r.id, job_id: jobId, user_id: r.user_id, email: r.email, data: Object.assign({}, q, { notifiedAt: new Date().toISOString() }) }], 'plans-ready'); n++; }
   }

@@ -97,7 +97,7 @@ function core(){ return require('./portal.js')._core; }
 function s(v){ return v == null ? '' : String(v).trim(); }
 
 const FALLBACK_RULES = `GrayCo Construction Services, LLC — licensed GC and specialty contractor in TN, AR and MS (${require('./_lib/brand.js').companyAddress()}; office 901-585-0944).
-Wesley Johnson: business strategy and financials. Nick Thomas: sales and client relationships. Glenn Miller: estimating.
+Wesley Johnson: business strategy and financials. Nick Thomas: sales and client relationships. The estimator (whoever has the Estimator role): estimating.
 Top 3 priorities: cash flow, scheduling, estimating fast and correctly.
 Estimating: 1.5x on materials (1.3x floor, Wesley or Nick approval), 1.5x on labor always.
 Approval authority: Wesley or Nick — either can approve anything. Nothing goes to a customer without approval.
