@@ -109,14 +109,22 @@ function planMix(o){
 function weekNo(ms){ return Math.floor((ms - Date.UTC(2026, 0, 5)) / (7 * 864e5)); }
 
 /* ── words per service ── */
-/* the 7 cities with restoration pages on grayco-cs.com; any other area links to the Memphis page */
+/* the 7 cities with service pages on grayco-cs.com; any other area links to the Bartlett page. The ONLY page patterns on the site
+   (SITE_PAGES); commercial has no page — it links to the homepage. */
 var REST_CITIES = ['bartlett', 'memphis', 'germantown', 'collierville', 'cordova', 'arlington', 'lakeland'];
 function slugCity(c){ return low(c).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 /* the restoration page for the city: water → /water-damage-mitigation-<city>-tn/, fire → /fire-damage-restoration-<city>-tn/, storm → /storm-damage-restoration-<city>-tn/ */
-function restPage(sub, city){ var c = slugCity(city || 'Bartlett'); if (REST_CITIES.indexOf(c) < 0) c = 'memphis'; return WEB + '/' + (sub === 'water' ? 'water-damage-mitigation-' : sub === 'fire' ? 'fire-damage-restoration-' : 'storm-damage-restoration-') + c + '-tn/'; }
+var SITE_PAGES = ['roofing', 'roof-repair', 'remodeling', 'water-damage-mitigation', 'fire-damage-restoration', 'storm-damage-restoration'];
+function cityPage(kind, city){ var c = slugCity(city || 'Bartlett'); if (REST_CITIES.indexOf(c) < 0) c = 'bartlett'; return WEB + '/' + (SITE_PAGES.indexOf(kind) >= 0 ? kind : 'roofing') + '-' + c + '-tn/'; }
+function restPage(sub, city){ return cityPage(sub === 'water' ? 'water-damage-mitigation' : sub === 'fire' ? 'fire-damage-restoration' : 'storm-damage-restoration', city); }
+/* is this one of the site's real pages? (the homepage, or <pattern>-<one of the 7 cities>-tn/) */
+function sitePageOk(url){ var m = /^https:\/\/grayco-cs\.com(\/[^?#]*)?/.exec(s(url)); if (!m) return false; var path = m[1] || '/'; if (path === '/') return true;
+  var x = /^\/([a-z-]+)-([a-z-]+)-tn\/$/.exec(path); if (!x) return false; return SITE_PAGES.some(function(k){ var c = path.slice(1).replace(/-tn\/$/, ''); return c.indexOf(k + '-') === 0 && REST_CITIES.indexOf(c.slice(k.length + 1)) >= 0; }); }
 function pageFor(idea){
   if (idea.service === 'restoration') return restPage(idea.sub, idea.city);
-  return WEB + '/' + ({ roofing: 'roofing', remodel: 'remodeling', commercial: 'commercial' })[idea.service] + '/';
+  if (idea.service === 'roofing') return cityPage(/repair|leak|patch/i.test(s(idea.jobText) + ' ' + s(idea.tip)) ? 'roof-repair' : 'roofing', idea.city);
+  if (idea.service === 'remodel') return cityPage('remodeling', idea.city);
+  return WEB + '/';   /* commercial: no page — the homepage */
 }
 function withUtm(url, platV, idea){
   var camp = 'soc-' + (idea.service || 'brand') + (idea.sub ? '-' + idea.sub : '');
@@ -629,7 +637,7 @@ function report(posts, leads, projects, nowMs, weeks, focus){
 return {
   PLATS: PLATS, PLAT_IDS: PLAT_IDS, plat: plat, SERVICES: SERVICES, FOCUS: FOCUS, focusOf: focusOf, serviceOf: serviceOf, allocate: allocate,
   TYPES: TYPES, typeLabel: typeLabel, planMix: planMix, weekNo: weekNo, REST_TIPS: REST_TIPS, SEASON: SEASON, CTA247: CTA247, SVC: SVC,
-  POSITION: POSITION, restPage: restPage, pageFor: pageFor, withUtm: withUtm, subFor: subFor, nextSub: nextSub, RSUBS: RSUBS, REST_CITIES: REST_CITIES, slugCity: slugCity,
+  POSITION: POSITION, SITE_PAGES: SITE_PAGES, cityPage: cityPage, sitePageOk: sitePageOk, restPage: restPage, pageFor: pageFor, withUtm: withUtm, subFor: subFor, nextSub: nextSub, RSUBS: RSUBS, REST_CITIES: REST_CITIES, slugCity: slugCity,
   templates: templates, captionFor: captionFor, allText: allText, problems: problems, protect: protect, protectVersion: protectVersion, postProblems: postProblems,
   distinct: distinct, normalize: normalize, aiPrompt: aiPrompt,
   ASTAGES: ASTAGES, CONTENT_KINDS: CONTENT_KINDS, stageCfg: stageCfg, flagsOf: flagsOf, FLAG_L: FLAG_L, tplKeys: tplKeys, route: route, stageHint: stageHint,
