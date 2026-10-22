@@ -27,9 +27,11 @@ const crypto = require('crypto');
 const C = require('./mkt-content.js');
 const KEY = 'gc_mkt_v1', LOG_KEY = 'gc_mkt_sendlog', AQ_KEY = 'gc_approval_queue';
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
-const MKT_KINDS = { mkt_campaign: 'campaigns', social_post: 'posts', mkt_neighbor: 'neighbors', mkt_ad: 'adchanges', mkt_payout: 'payouts', mkt_event: 'roofevents', mkt_giveaway: 'giveaways', mkt_page: 'citypages', mkt_outreach: 'outreach' };   /* patch MKT2d: website page text, HOA / PM outreach e-mails */   /* patch MKT2c: the giveaway winner e-mail */   /* patch MKT2: ad changes, partner fees, event reminders */
+const MKT_KINDS = { mkt_campaign: 'campaigns', social_post: 'posts', mkt_neighbor: 'neighbors', mkt_ad: 'adchanges', mkt_payout: 'payouts', mkt_event: 'roofevents', mkt_giveaway: 'giveaways', mkt_page: 'citypages', mkt_outreach: 'outreach', soc_week: 'socweeks', mkt_addraft: 'addrafts' };   /* patch SOC: + paid-ads drafts (restoration only, never automatic) */   /* patch SOC: the week of 3 posts, one approval */   /* patch MKT2d: website page text, HOA / PM outreach e-mails */   /* patch MKT2c: the giveaway winner e-mail */   /* patch MKT2: ad changes, partner fees, event reminders */
 function stKey(coll){ return coll === 'roofevents' ? 'remindStatus' : coll === 'giveaways' ? 'notifyStatus' : 'status'; }   /* an event keeps its own open / closed status */
 function mkt2(){ return require('./mkt2.js'); }
+function soc(){ return require('./soc.js'); }   /* patch SOC */
+function SC(){ return require('./soc-content.js'); }
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
@@ -170,7 +172,7 @@ async function queueForApproval(body, who, core){
   const n = (+rec.submits || 0) + 1, qid = 'appr_mkt_' + id + '_' + n;
   let title, to, subject, html, meta = { recId: id, coll: coll, by: low(who && who.email) };
   if (kind === 'social_post') {
-    const pr = C.guard(rec.caption, rec.jobAddresses || []);
+    const pr = C.guard(rec.caption, rec.jobAddresses || []).concat(SC().postProblems(rec));   /* patch SOC: every platform's version */
     if (pr.length) return { status: 400, out: { ok: false, error: pr.map(function(p){ return p.l; }).join(' ') } };
     const img = rec.photoRef ? await signRef(rec.photoRef, 7 * 86400) : '';
     const nets = arr(rec.networks).map(function(v){ const n0 = C.NETWORKS.find(function(x){ return x.v === v; }); return n0 ? n0.l : v; }).join(' · ');
@@ -178,6 +180,7 @@ async function queueForApproval(body, who, core){
     to = nets; subject = s(rec.title) || 'Social post';
     html = (img ? '<img src="' + C.esc(img) + '" alt="post picture" style="max-width:100%;border-radius:8px;display:block;margin:0 0 10px">' : '') + '<div>' + C.esc(rec.caption).replace(/\n/g, '<br>') + '</div>';
     meta.image = img;
+    if (rec.versions) html += SC().PLATS.filter(function(x){ return rec.versions[x.v] && arr(rec.networks).indexOf(x.v) >= 0; }).map(function(x){ return '<div style="margin-top:8px"><b>' + C.esc(x.ic + ' ' + x.l) + '</b><br>' + C.esc(SC().captionFor(x.v, rec.versions[x.v])).replace(/\n/g, '<br>') + '</div>'; }).join('');   /* patch SOC */
   } else if (kind === 'mkt_campaign') {
     let aud; try { aud = await audienceFor(rec, data); } catch (e) { return { status: 503, out: { ok: false, error: 'The GrayCo News unsubscribe list cannot be read (run docs/news-unsubscribe.sql) — nothing can be queued blind.' } }; }
     title = '📣 Marketing — e-mail “' + s(rec.title || rec.subject) + '”' + (rec.scheduleAt ? ' · ' + C.ctLabel(rec.scheduleAt) : ' · when approved');
@@ -185,6 +188,12 @@ async function queueForApproval(body, who, core){
     const sample = aud.send[0] || { first: 'Pat', zip: '', kinds: [] };
     const b = campaignBodyFor(rec, sample); subject = b.subject; html = b.html;
     meta.count = aud.send.length; meta.skipped = aud.skipped.length;
+  } else if (kind === 'soc_week') {   /* patch SOC: the week — three posts, one approval */
+    const a = await soc().weekApproval(rec, doc); if (a.error) return { status: 400, out: { ok: false, error: a.error } };
+    title = a.title; to = a.to; subject = a.subject; html = a.html; meta.posts = a.meta.posts;
+  } else if (kind === 'mkt_addraft') {   /* patch SOC: a Google Ads draft / a boost — restoration only (cfg.main.adsFocus); the CRM never spends */
+    if (!SC().adsAllowed(cfg(doc).adsFocus, { service: rec.service || '', title: rec.name || rec.title })) return { status: 400, out: { ok: false, error: 'Ads focus: paid ads are for ' + Object.keys(SC().adsFocusOf(cfg(doc).adsFocus)).filter(function(k){ return SC().adsFocusOf(cfg(doc).adsFocus)[k] > 0; }).join(', ') + ' only.' } };
+    title = '📣 Marketing — paid ads draft: ' + s(rec.name || rec.title); to = rec.kind === 'boost' ? 'Facebook / Instagram boost' : 'Google Ads (built by hand from the file)'; subject = s(rec.name || rec.title); html = SC().addraftHtml(rec);
   } else if (kind === 'mkt_ad' || kind === 'mkt_payout' || kind === 'mkt_event' || kind === 'mkt_giveaway' || kind === 'mkt_page' || kind === 'mkt_outreach') {   /* patch MKT2 */
     if (kind !== 'mkt_event' && kind !== 'mkt_page' && kind !== 'mkt_outreach' && role !== 'admin' && !body.system) return { status: 403, out: { ok: false, error: 'Only an admin can send this for approval.' } };
     const a = mkt2().approvalFor(kind, rec, doc); title = a.title; to = a.to; subject = a.subject; html = a.html;
@@ -192,7 +201,20 @@ async function queueForApproval(body, who, core){
     title = '📣 Marketing — door hangers / postcards near ' + (s(rec.street) || 'a finished job'); to = (+rec.count || 0) + ' homes';
     subject = 'Neighbor marketing: ' + s(rec.street); html = '<p>Print and deliver ' + C.esc(rec.count || '') + ' door hangers on ' + C.esc(rec.street) + ' (' + C.esc(rec.city) + '). The list and the printable door hanger are in Marketing → Neighborhood.</p>';
   }
-  const ok = await core.queueApproval({ id: qid, kind: kind, title: title, pid: s(rec.jobId), jobName: s(rec.jobName), pm: null, to: to, subject: subject, html: html, attachments: [], meta: meta });
+  /* patch SOC: the approval stage (cfg.main.apprStage) decides who approves; stage 3 lets a known template post by itself after a 24-hour veto */
+  const weekPosts = kind === 'soc_week' ? arr(rec.postIds).map(function(x){ return get(doc, 'posts', x); }).filter(Boolean) : [];
+  const rt = SC().route(SC().stageCfg(cfg(doc)), kind, rec, { posts: weekPosts });
+  meta.stage = rt.stage; meta.flags = rt.flags;
+  if (rt.auto) {
+    const veto = new Date(nowFn() + rt.veto * 3600e3).toISOString();
+    const ids = kind === 'soc_week' ? weekPosts.map(function(x){ return x.id; }) : coll === 'posts' ? [id] : [];
+    await update(function(d){ const ch = [], r = get(d, coll, id); if (!r) return null; r[stKey(coll)] = 'approved'; r.approvedBy = 'Autopilot (stage 3)'; r.approvedAt = nowIso(); r.vetoUntil = veto; r.autoApproved = true; if (coll === 'posts' && (!r.scheduleAt || r.scheduleAt < veto)) r.scheduleAt = veto; ch.push([coll, id]);
+      ids.forEach(function(pid){ const x = get(d, 'posts', pid); if (!x || !/^(draft|waiting|rejected)$/.test(s(x.status) || 'draft')) return; x.status = 'approved'; x.approvedBy = 'Autopilot (stage 3)'; x.approvedAt = nowIso(); x.autoApproved = true; x.vetoUntil = veto; if (!x.scheduleAt || x.scheduleAt < veto) x.scheduleAt = veto; if (x.id !== id) ch.push(['posts', x.id]); });
+      return ch; });
+    return { status: 200, out: { ok: true, auto: true, vetoUntil: veto, stage: 3 } };
+  }
+  const ok = await core.queueApproval({ id: qid, kind: kind, title: title + (rt.flags.length ? ' ⚑ ' + rt.flags.map(function(f){ return SC().FLAG_L[f] || f; }).join(', ') : ''), pid: s(rec.jobId), jobName: s(rec.jobName), pm: null, to: to, subject: subject, html: html, attachments: [], meta: meta, officeOk: rt.office, flags: rt.flags });
+  if (ok && rt.office) { try { await core.officeTodo('mkt_appr_' + qid, '✅ Approve marketing: ' + (s(rec.title) || subject || 'a draft'), 'Approvals → ' + title + '. Stage ' + rt.stage + ': the office approves this one.'); } catch (e) {} }
   if (!ok) return { status: 502, out: { ok: false, error: 'Could not put it on the approvals list — try again.' } };
   await update(function(d){ const r = get(d, coll, id); if (!r) return null; r[stKey(coll)] = 'waiting'; r.apprId = qid; r.submits = n; r.submittedBy = low(who && who.email); r.submittedAt = nowIso(); r.reason = ''; return [[coll, id]]; });
   return { status: 200, out: { ok: true, id: qid, queued: true } };
@@ -208,11 +230,22 @@ async function onApproved(item){
     if (coll === 'posts' && item.editedAt && s(item.text)) rec.caption = s(item.text);
     if (coll === 'campaigns' && item.editedAt) { rec.subject = s(item.subject) || rec.subject; rec.approvedHtml = String(item.html || ''); }
     if (coll === 'posts' && !rec.scheduleAt) rec.scheduleAt = nowIso();
-    return [[coll, id]];
+    const ch = [[coll, id]];
+    if (coll === 'socweeks') soc().afterWeekApproved(d, rec, { by: last.by, email: last.email, apprId: item.id }).forEach(function(x){ ch.push(x); });   /* patch SOC */
+    if (/admin/.test(low(last.role)) && SC().CONTENT_KINDS[item.kind]) {   /* patch SOC: an admin approved this kind of draft → a known template for stage 3 */
+      const posts = coll === 'socweeks' ? arr(rec.postIds).map(function(x){ return get(d, 'posts', x); }).filter(Boolean) : [];
+      const c0 = get(d, 'cfg', 'main') || { id: 'main' }, a0 = Object.assign({}, c0.apprStage || {}), known = arr(a0.known).slice();
+      SC().tplKeys(item.kind, rec, posts).forEach(function(k){ if (known.indexOf(k) < 0) known.push(k); });
+      if (known.length !== arr(a0.known).length) { a0.known = known.slice(-200); c0.apprStage = a0; c0.id = 'main'; (d.cfg = d.cfg || {}).main = c0; ch.push(['cfg', 'main']); }
+    }
+    return ch;
   });
   if (!r.ok) return { ok: false, error: 'Approved, but the marketing record could not be updated — try again.' };
   if (coll === 'adchanges' || coll === 'payouts' || coll === 'roofevents' || coll === 'giveaways' || coll === 'citypages' || coll === 'outreach') {   /* patch MKT2 */
     try { const r2 = get(r.doc, coll, id); if (r2) await mkt2().afterApproved(item.kind, r2, item, { officeTodo: require('../portal.js')._core.officeTodo }); } catch (e) {}
+  }
+  if (coll === 'addrafts') {   /* patch SOC: approved ads draft → a person builds it (nothing is spent by the CRM) */
+    try { const a = get(r.doc, 'addrafts', id); await require('../portal.js')._core.officeTodo('mkt_ads_' + id, (a && a.kind === 'boost' ? '🚀 Boost on Facebook: ' : '🔎 Build in Google Ads: ') + s(a && (a.name || a.title)), 'Approved paid-ads draft. Marketing → 🚨 Restoration ads → ' + (a && a.kind === 'boost' ? 'open the post in Meta Business Suite → Boost (set the amount there).' : 'download the Google Ads Editor file, import it, set the budget in Google Ads.') + ' The CRM never spends money by itself.'); } catch (e) {}
   }
   if (coll === 'neighbors') {
     try { const core = require('../portal.js')._core; await core.officeTodo('mkt_nb_' + id, 'Print & deliver door hangers on ' + s(get(r.doc, 'neighbors', id) && get(r.doc, 'neighbors', id).street), 'Marketing → Neighborhood has the list, the CSV and the printable door hanger.'); } catch (e) {}
@@ -266,10 +299,18 @@ async function sendCampaign(rec, deadline){
   return { sent: n, more: more, stats: stats };
 }
 async function publishPost(rec){
-  const st = social().status();
+  const st = await soc().status();   /* patch SOC: + TikTok / LinkedIn */
   const want = arr(rec.networks);
-  if (!st.any || !want.some(function(n){ return st[n]; })) {
-    if (!rec.needsManual) await update(function(d){ const r = get(d, 'posts', rec.id); if (!r || r.status !== 'approved') return null; r.needsManual = true; r.lastError = 'Not connected yet — use “Copy + open” in Marketing → Social, or connect the networks (docs/SOCIAL-SETUP.md).'; return [['posts', r.id]]; });
+  /* patch SOC: the platforms that cannot post by themselves → one Ready-to-post To-Do (caption + picture + Open app) */
+  const done0 = rec.results || {}, noMedia = !rec.photoRef && !rec.videoRef;
+  const manualNets = want.filter(function(n){ return (!st[n] || (noMedia && (n === 'instagram' || n === 'tiktok'))) && !(done0[n] && (done0[n].ok || done0[n].manual)); });
+  if (manualNets.length) {
+    const tid = await soc().readyTodo(rec, manualNets);
+    await update(function(d){ const r = get(d, 'posts', rec.id); if (!r) return null; r.results = Object.assign({}, r.results || {}); manualNets.forEach(function(n){ r.results[n] = { ok: false, manual: true, todo: tid, at: nowIso() }; }); r.readyTodo = tid; return [['posts', r.id]]; });
+    rec = Object.assign({}, rec, { results: Object.assign({}, done0) }); manualNets.forEach(function(n){ rec.results[n] = { manual: true }; });
+  }
+  if (!want.some(function(n){ return st[n] && !(noMedia && (n === 'instagram' || n === 'tiktok')) && !(rec.results && rec.results[n] && rec.results[n].ok); })) {
+    if (!rec.needsManual) await update(function(d){ const r = get(d, 'posts', rec.id); if (!r || r.status !== 'approved') return null; r.needsManual = true; r.lastError = 'Not connected yet — use the Ready-to-post pack (on the To-Do) or “Copy + open” in Marketing → Social, or connect the networks (Marketing → 🔌 Connections).'; return [['posts', r.id]]; });
     return { manual: true };
   }
   const claim = 'p' + crypto.randomBytes(5).toString('hex');
@@ -277,15 +318,16 @@ async function publishPost(rec){
   const mine = get(c1.doc, 'posts', rec.id);
   if (!mine || mine.claim !== claim) return { skipped: 'busy' };
   const img = mine.photoRef ? await signRef(mine.photoRef, 3600) : '';
-  const nets = want.filter(function(n){ return st[n] && !(mine.results && mine.results[n] && mine.results[n].ok); });
-  const res = await social().publish({ caption: mine.caption, imageUrl: img, networks: nets, link: mine.link || '', extra: mine.jobAddresses || [] });
+  const noPic = !mine.photoRef && !mine.videoRef;   /* patch SOC: a platform connected since its Ready-to-post pack posts now; one that needs a picture waits for the pack */
+  const nets = want.filter(function(n){ return st[n] && !(noPic && (n === 'instagram' || n === 'tiktok')) && !(mine.results && mine.results[n] && mine.results[n].ok); });
+  const res = await social().publish({ caption: mine.caption, captions: soc().captionsFor(mine), imageUrl: img, networks: nets, link: mine.link || '', extra: mine.jobAddresses || [], names: mine.names || [], nameOk: !!mine.nameOk, photoRef: mine.photoRef || '', videoRef: mine.videoRef || '' });
   await update(function(d){
     const r = get(d, 'posts', rec.id); if (!r || r.claim !== claim) return null;
     r.results = Object.assign({}, r.results || {}); Object.keys(res).forEach(function(k){ if (k !== '_error') r.results[k] = Object.assign({ at: nowIso() }, res[k]); });
     const oks = Object.keys(r.results).filter(function(k){ return r.results[k] && r.results[k].ok; });
     if (res._error) { r.status = 'failed'; r.lastError = res._error; }
-    else if (oks.length) { r.status = 'posted'; r.postedAt = r.postedAt || nowIso(); r.lastError = Object.keys(r.results).filter(function(k){ return !r.results[k].ok; }).map(function(k){ return r.results[k].error; }).join(' ').slice(0, 400); }
-    else { r.status = 'failed'; r.lastError = Object.keys(r.results).map(function(k){ return r.results[k].error; }).join(' ').slice(0, 400); }
+    else if (oks.length) { r.status = 'posted'; r.postedAt = r.postedAt || nowIso(); r.lastError = Object.keys(r.results).filter(function(k){ return !r.results[k].ok && !r.results[k].manual; }).map(function(k){ return r.results[k].error; }).join(' ').slice(0, 400); }
+    else { r.status = 'failed'; r.lastError = Object.keys(r.results).filter(function(k){ return !r.results[k].manual; }).map(function(k){ return r.results[k].error; }).join(' ').slice(0, 400); }
     return [['posts', r.id]];
   });
   return res;
@@ -298,6 +340,7 @@ async function runDue(o){
   const now = nowFn();
   for (const p of recs(doc, 'posts')) {
     if (nowFn() > deadline) break;
+    if (p.vetoUntil && Date.parse(p.vetoUntil) > now) continue;   /* patch SOC: stage 3 — the 24-hour veto window */
     if ((p.status === 'approved' || p.status === 'posting') && (!p.scheduleAt || Date.parse(p.scheduleAt) <= now) && !(p.needsManual && !social().status().any)) out.posts.push({ id: p.id, r: await publishPost(p) });
   }
   for (const c of recs(doc, 'campaigns')) {
@@ -329,7 +372,8 @@ async function autopilot(o){
   let data = {}; try { data = await crmData(['customers', 'projects', 'users', 'gc_photos']); } catch (e) {}
   const projects = arr(data.projects).filter(function(p){ return p && p.deleted !== true; });
   const newRecs = [];
-  const weekly = !state.weeks[wk] || o.forceWeek;
+  const socOn = !!(cfg(doc).socPlan && cfg(doc).socPlan.on === true);   /* patch SOC: the Mon / Wed / Fri plan (soc.scheduled) has the week */
+  const weekly = (!state.weeks[wk] || o.forceWeek) && !socOn;
   if (weekly) {
     const slots = C.nextSlots(nowMs, A.postsPerWeek + 1, A.times);
     const usedJobs = recs(doc, 'posts').map(function(p){ return s(p.jobId); }).filter(Boolean);
@@ -354,8 +398,14 @@ async function autopilot(o){
     });
     if (A.gbpWeekly && A.networks.indexOf('gbp') >= 0) {
       const g = plan[0];
-      newRecs.push(['posts', { id: rid('post'), title: 'Google Business weekly', kind: 'gbp', networks: ['gbp'], caption: C.gbpFromCaption(g.kind === 'job' ? C.jobCaption(projects.find(function(p){ return s(p.id) === g.jobId; }) || {}, 'gbp') : g.caption),
-        photoRef: g.photoRef || '', jobId: g.jobId || '', jobAddresses: g.jobAddresses || [], scheduleAt: slots[0], status: 'draft', autopilot: true, createdAt: nowIso() }]);
+      /* patch SOC: the topic follows the marketing focus (restoration first); a job post only when the job is that service */
+      const gh = {}, gs = {}; recs(doc, 'posts').forEach(function(x){ if (x.kind === 'gbp' && x.socService) gh[x.socService] = (gh[x.socService] || 0) + 1; if (x.socSub) gs[x.socSub] = (gs[x.socSub] || 0) + 1; });
+      const gsvc = SC().allocate(1, cfg(doc).socFocus, gh)[0], gjob = g.kind === 'job' ? projects.find(function(p){ return s(p.id) === g.jobId; }) : null;
+      const useJob = gjob && (SC().serviceOf(gjob) || 'remodel') === gsvc;
+      const gidea = { type: 'seasonal', service: gsvc, city: useJob ? C.areaOf(gjob) : 'Bartlett', season: SC().SEASON[month], week: wk }; if (gsvc === 'restoration') gidea.sub = SC().nextSub(gs);
+      const gv = SC().templates(gidea).gbp;
+      newRecs.push(['posts', { id: rid('post'), title: 'Google Business weekly — ' + gsvc, kind: 'gbp', networks: ['gbp'], caption: useJob ? C.gbpFromCaption(C.jobCaption(gjob, 'gbp')) : gv.text, link: gv.url, socService: gsvc, socSub: gidea.sub || '',
+        photoRef: useJob ? g.photoRef || '' : '', jobId: useJob ? g.jobId || '' : '', jobAddresses: useJob ? g.jobAddresses || [] : [], scheduleAt: slots[0], status: 'draft', autopilot: true, createdAt: nowIso() }]);
     }
     if (rv) state.reviews[rv.id] = state.reviews[rv.id] || 'thanks';
     state.weeks[wk] = nowIso();
@@ -411,6 +461,10 @@ async function approveReply(id, text, who){
   let data = {}; try { data = await crmData(['users']); } catch (e) {}
   const role = roleOf(who, data);
   if (role !== 'admin' && role !== 'office') return { status: 403, out: { ok: false, error: 'The office or an admin approves review replies.' } };
+  if (role !== 'admin') {   /* patch SOC: the approval stage — stage 1 admins only; stage 2 the office except 1–3★ replies; stage 3 the office */
+    const d0 = await readDoc(), r0 = get(d0, 'reviews', id), rt = SC().route(SC().stageCfg(cfg(d0)), 'review_reply', r0 || {}, { rating: r0 && r0.rating });
+    if (!rt.office) return { status: 403, out: { ok: false, error: rt.stage === 1 ? 'Stage 1: an admin approves review replies for now (Marketing → Approval stage).' : 'A 1–3★ review reply needs an admin.' } };
+  }
   const doc = await readDoc(); const r = get(doc, 'reviews', id);
   if (!r) return { status: 404, out: { ok: false, error: 'That review is not in the cloud yet.' } };
   const reply = s(text) || s(r.replyDraft);
@@ -423,7 +477,7 @@ async function approveReply(id, text, who){
 async function refreshInsights(){
   const doc = await readDoc(), since = nowFn() - 45 * 864e5, out = [];
   for (const p of recs(doc, 'posts').filter(function(p){ return p.status === 'posted' && Date.parse(p.postedAt || 0) > since; }).slice(0, 25)) {
-    const ins = await social().insights(p.results || {});
+    const ins = Object.assign(await social().insights(p.results || {}), await soc().insights(p.results || {}));   /* patch SOC: TikTok / LinkedIn */
     if (Object.keys(ins).length) out.push([p.id, ins]);
   }
   if (out.length) await update(function(d){ return out.map(function(x){ const r = get(d, 'posts', x[0]); if (!r) return null; r.insights = Object.assign({}, x[1], { at: nowIso() }); return ['posts', x[0]]; }).filter(Boolean); });
@@ -433,4 +487,5 @@ async function refreshInsights(){
 module.exports = { KEY: KEY, LOG_KEY: LOG_KEY, MKT_KINDS: MKT_KINDS, isMktKind: function(k){ return !!MKT_KINDS[s(k)]; },
   queueForApproval: queueForApproval, onApproved: onApproved, onRejected: onRejected, reconcile: reconcile, runDue: runDue, autopilot: autopilot,
   approveReply: approveReply, refreshInsights: refreshInsights, audienceFor: audienceFor, readDoc: readDoc, update: update, crmData: crmData, roleOf: roleOf, signRef: signRef,
-  reviewReplyDraft: reviewReplyDraft, _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; } };
+  reviewReplyDraft: reviewReplyDraft, publishPost: publishPost, _recs: recs, _get: get, _put: put, _rid: rid, _cfg: cfg,   /* patch SOC */
+  _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; } };

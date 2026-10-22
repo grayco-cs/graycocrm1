@@ -140709,7 +140709,8 @@ function sendForApproval(kind, coll, id, again){
     });
   }
   return go().then(function(j){
-    if (j && j.ok) { MK.put(coll, { id: id, status: j.already || 'waiting', apprId: j.id || rec.apprId, submittedAt: nowIso() }); toast('Sent to Approvals — an admin approves it, then it goes out on time.'); try { if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {} }
+    if (j && j.ok && j.auto) toast('Stage 3 (Autopilot): approved — it posts after the 24-hour veto window. Pause it in 🗓 Week plan if needed.');   /* patch SOC: the server approved it; never write "waiting" over it */
+    else if (j && j.ok) { MK.put(coll, { id: id, status: j.already || 'waiting', apprId: j.id || rec.apprId, submittedAt: nowIso() }); toast('Sent to Approvals — it goes out on time once approved.'); try { if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {} }
     else toast('Not sent for approval: ' + ((j && j.error) || 'try again'), true);
     MK.pull(true);
     return j;
@@ -141912,7 +141913,7 @@ VIEWS.adshub = function(){
   }).join('') + '</table><div class="gmt-muted">Leads count when the lead\'s campaign tag matches (see the URL suffix in the setup steps). Spend also feeds 📊 Dashboard → cost per lead / per job. Every change waits on ✅ Approvals; if the platform does not accept it, the office gets a to-do to make it by hand.</div>' : '<div class="gmt-muted">Nothing yet — connect an account and pull the numbers.</div>') + '</div>';
   var chg = MK.all('adchanges').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 10);
   if (chg.length) h += '<div class="gmt-card"><h2>Changes</h2><table>' + chg.map(function(x){ return '<tr><td>' + esc(x.campaignName) + '</td><td>' + esc(x.action === 'budget' ? 'Budget → $' + num(x.amount).toFixed(2) : x.action === 'pause' ? 'Pause' : 'Turn on') + '</td><td>' + chipS(s(x.status) || 'draft', { applied: 'Done on the platform', approved: 'Approved — make it by hand', waiting: 'Waiting for approval', rejected: 'Not approved', draft: 'Draft' }) + (x.applyError ? '<div class="gmt-muted">' + esc(x.applyError) + '</div>' : '') + '</td></tr>'; }).join('') + '</table></div>';
-  var f = AH.form || (AH.form = { platform: 'google', service: 'Roof replacement', city: 'Bartlett', offer: '' });
+  var f = AH.form || (AH.form = { platform: 'google', service: 'Water damage restoration', city: 'Bartlett', offer: '' });
   h += '<div class="gmt-card"><h2>✍️ Ad copy writer</h2><div class="gmt-muted">Headlines and descriptions inside each platform\'s limits — only true facts about GrayCo (no prices or claims we cannot back). New ads are made in Google Ads / Ads Manager: copy, then open.</div><div class="gmt-two"><div>' +
     '<label>Platform</label><select id="ah-plat"><option value="google"' + (f.platform === 'google' ? ' selected' : '') + '>Google search ad</option><option value="meta"' + (f.platform === 'meta' ? ' selected' : '') + '>Facebook / Instagram ad</option></select>' +
     '<label>Service</label><input id="ah-svc" value="' + esc(f.service) + '"><label>City (optional)</label><input id="ah-city" value="' + esc(f.city) + '"><label>Offer (optional, only one you really give)</label><input id="ah-offer" value="' + esc(f.offer) + '" placeholder="e.g. Free roof inspection">' +
@@ -142471,6 +142472,1084 @@ try { console.log('[GC] 📣 Marketing part 2 ready (patch MKT2): _gcMkt2.state(
 })();
 
 </script><!-- /MKT2 -->
+<script id="gc-patch-soc">
+/* ==========================================================================
+   GrayCo CRM — patch SOC __GC_PATCH_SOC__ : Social, part 3 (inside the 📣 Marketing tab)
+   Owner (22 Oct 2026, the agency quote): 3 posts a week on Facebook, Instagram, TikTok, LinkedIn and Google Business,
+   each one written for its platform; a content library; 40+ listings kept right; reporting. Restoration first
+   (water, fire, storm), then roofing, remodel, commercial — the weights are data. Approvals move from the admins to
+   the office in stages (data, never names): 1 admin checks everything, 2 office approves, 3 autopilot with a veto.
+   Sections: 🗓 Week plan · 📚 Media library · 📍 Listings · 🔌 Connections · 📊 Social report · ⚙️ Focus & approvals.
+   Server: netlify/functions/soc.js (+ _lib/soc.js, _lib/soc-content.js — the same content file is pasted below).
+   Records: the gc_mkt_v1 document (collections socweeks, posts, media, listings, stagelog; cfg.main.socFocus /
+   socPlan / socNetworks / socTimes / apprStage) — newest record wins. Tokens never reach the page.
+   Console: _gcSoc.state()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SOC__) return; window.__GC_PATCH_SOC__ = true;
+var W = window, D = document;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout.bind(W);
+/* GrayCo Social — the shared content and rules (patch SOC). ONE copy: the CRM's 📣 Marketing tab (pasted into the
+   gc-patch-soc script by wSOC/patch_SOC.py) and the server (_lib/soc.js, _lib/mkt.js) use the same platforms, the
+   same per-platform templates, the same weekly mix, the same listings list and NAP check. Pure functions: no network,
+   no DOM. Needs the marketing content (mkt-content.js: guard / scrub / brand / tips) — required here on the server,
+   window.__gcMktContent in the page.
+
+   Owner (22 Oct 2026, the agency quote): 3 posts a week on Facebook, Instagram, TikTok, LinkedIn and Google Business,
+   each one ADAPTED to the platform (never the same text twice), a content library, 40+ listings kept right.
+   Owner (22 Oct 2026, later): restoration first — water damage, storm damage, mitigation, insurance-claim help ahead
+   of roofing, remodels and commercial. FOCUS below is the default; Marketing → 🎯 Marketing focus changes the
+   weights (cfg.main.socFocus). Restoration posts carry the 24/7 emergency line and link to the city's
+   storm-damage / water-damage page on grayco-cs.com.
+   Rules: never a customer's address or name without their OK, never an insurance carrier, photos only from jobs whose
+   customer said yes to marketing. */
+(function(root, factory){
+  var MC = null;
+  try { if (typeof module === 'object' && module && module.exports) MC = require('./mkt-content.js'); } catch (e) {}
+  if (!MC && root && root.__gcMktContent) MC = root.__gcMktContent;
+  var S = factory(MC);
+  if (typeof module === 'object' && module && module.exports) module.exports = S;
+  if (root && typeof root === 'object' && typeof root.document !== 'undefined') root.__gcSocContent = S;
+})(typeof self !== 'undefined' ? self : this, function(MC){
+'use strict';
+
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+var B = MC.BRAND;
+var PHONE = B.phone, WEB = 'https://grayco-cs.com';
+
+/* ── the platforms ── */
+var PLATS = [
+  { v: 'facebook', l: 'Facebook', ic: '📘', open: 'https://www.facebook.com/', max: 5000 },
+  { v: 'instagram', l: 'Instagram', ic: '📸', open: 'https://www.instagram.com/', max: 2200 },
+  { v: 'tiktok', l: 'TikTok', ic: '🎵', open: 'https://www.tiktok.com/upload', max: 2200 },
+  { v: 'linkedin', l: 'LinkedIn', ic: '💼', open: 'https://www.linkedin.com/feed/', max: 3000 },
+  { v: 'gbp', l: 'Google Business', ic: '📍', open: 'https://business.google.com/', max: 1500 }
+];
+var PLAT_IDS = PLATS.map(function(p){ return p.v; });
+function plat(v){ return PLATS.filter(function(p){ return p.v === v; })[0] || null; }
+
+/* ── the services and the focus (restoration first) ── */
+var SERVICES = [
+  { v: 'restoration', l: 'Restoration (water / storm / mitigation / claims)' },
+  { v: 'roofing', l: 'Roofing' },
+  { v: 'remodel', l: 'Remodel' },
+  { v: 'commercial', l: 'Commercial' }
+];
+var FOCUS = { restoration: 60, roofing: 20, remodel: 12, commercial: 8 };
+/* the weights in use: the admin's setting (numbers ≥ 0), else the default; always adds up to 100 */
+function focusOf(setting){
+  var w = {}, tot = 0;
+  SERVICES.forEach(function(x){ var n = setting && setting[x.v] != null ? +setting[x.v] : FOCUS[x.v]; w[x.v] = isFinite(n) && n > 0 ? n : 0; tot += w[x.v]; });
+  if (!tot) { w = Object.assign({}, FOCUS); tot = 100; }
+  var out = {}; SERVICES.forEach(function(x){ out[x.v] = Math.round(w[x.v] / tot * 1000) / 10; });
+  return out;
+}
+/* a job / lead → its service (insurance, storm, water and fire work is restoration, even on a roof) */
+function serviceOf(x){
+  x = x || {};
+  var t = low([x.type, x.jobType, x.projectType, x.leadType, x.category, x.service, x.title, x.name, x.scope].join(' '));
+  if (x.isInsurance === true || x.insurance === true || /water|mitigat|storm|hail|wind damage|fire|smoke|flood|mold|restor|insur|claim|dry.?out|emergency/.test(t)) return 'restoration';
+  if (/roof|shingle/.test(t)) return 'roofing';
+  if (/commercial|tenant|\bti\b|retail|warehouse|office build|church|school/.test(t)) return 'commercial';
+  if (/remodel|kitchen|bath|renovat|floor|addition|deck|paint|cabinet|handyman|residential/.test(t)) return 'remodel';
+  return '';
+}
+/* how many of the next n posts go to each service: the one furthest behind its share goes next (deterministic) */
+function allocate(n, weights, history){
+  var w = focusOf(weights), h = {}, tot = 0, out = [];
+  SERVICES.forEach(function(x){ h[x.v] = +(history && history[x.v]) || 0; tot += h[x.v]; });
+  for (var i = 0; i < n; i++) {
+    var best = null, bestGap = -Infinity;
+    SERVICES.forEach(function(x){ if (!w[x.v]) return; var gap = (tot + 1) * w[x.v] / 100 - h[x.v]; if (gap > bestGap + 1e-9) { bestGap = gap; best = x.v; } });
+    out.push(best); h[best]++; tot++;
+  }
+  return out;
+}
+
+/* ── the weekly mix ── */
+var TYPES = [
+  { v: 'progress', l: 'Job in progress', ic: '🚧' },
+  { v: 'beforeafter', l: 'Before / after', ic: '✨' },
+  { v: 'testimonial', l: 'Customer testimonial', ic: '💬' },
+  { v: 'team', l: 'Meet the team', ic: '👷' },
+  { v: 'tip', l: 'Homeowner tip', ic: '💡' },
+  { v: 'seasonal', l: 'Seasonal', ic: '🍂' }
+];
+function typeLabel(v){ var t = TYPES.filter(function(x){ return x.v === v; })[0]; return t ? t.ic + ' ' + t.l : v; }
+var JOB_TYPES = { progress: 1, beforeafter: 1, testimonial: 1 };
+/* o = { week: number (weeks since 2026-01-05), weights, history: {service: posts so far}, avail: { service: { progress, beforeafter, testimonial } },
+         team: bool (a team photo in the library), last: [types used last week] } → [{ service, type }] × 3, three different types */
+function planMix(o){
+  o = o || {};
+  var n = o.count || 3, svcs = allocate(n, o.weights, o.history), wk = Math.abs(+o.week || 0), last = arr(o.last);
+  var order = TYPES.map(function(t){ return t.v; }), rot = (wk * 2) % order.length;
+  order = order.slice(rot).concat(order.slice(0, rot));
+  /* types not used last week first, so the six come round every two weeks */
+  order = order.filter(function(t){ return last.indexOf(t) < 0; }).concat(order.filter(function(t){ return last.indexOf(t) >= 0; }));
+  var used = [], out = [];
+  svcs.forEach(function(svc){
+    var av = (o.avail && o.avail[svc]) || {};
+    var t = order.filter(function(x){ if (used.indexOf(x) >= 0) return false; if (JOB_TYPES[x]) return !!av[x]; if (x === 'team') return !!o.team; return true; })[0]
+      || order.filter(function(x){ return used.indexOf(x) < 0 && !JOB_TYPES[x]; })[0] || 'tip';   /* team as a text post when no team photo */
+    used.push(t); out.push({ service: svc, type: t });
+  });
+  return out;
+}
+function weekNo(ms){ return Math.floor((ms - Date.UTC(2026, 0, 5)) / (7 * 864e5)); }
+
+/* ── words per service ── */
+/* the 7 cities with restoration pages on grayco-cs.com; any other area links to the Memphis page */
+var REST_CITIES = ['bartlett', 'memphis', 'germantown', 'collierville', 'cordova', 'arlington', 'lakeland'];
+function slugCity(c){ return low(c).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+/* the restoration page for the city: water → /water-damage-mitigation-<city>-tn/, fire → /fire-damage-restoration-<city>-tn/, storm → /storm-damage-restoration-<city>-tn/ */
+function restPage(sub, city){ var c = slugCity(city || 'Bartlett'); if (REST_CITIES.indexOf(c) < 0) c = 'memphis'; return WEB + '/' + (sub === 'water' ? 'water-damage-mitigation-' : sub === 'fire' ? 'fire-damage-restoration-' : 'storm-damage-restoration-') + c + '-tn/'; }
+function pageFor(idea){
+  if (idea.service === 'restoration') return restPage(idea.sub, idea.city);
+  return WEB + '/' + ({ roofing: 'roofing', remodel: 'remodeling', commercial: 'commercial' })[idea.service] + '/';
+}
+function withUtm(url, platV, idea){
+  var camp = 'soc-' + (idea.service || 'brand') + (idea.sub ? '-' + idea.sub : '');
+  return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'utm_source=' + platV + '&utm_medium=social&utm_campaign=' + camp + (idea.week ? '&utm_content=' + idea.week : '');
+}
+/* restoration = WATER, FIRE and STORM (owner): the job says which; otherwise they take turns evenly (n = restoration posts so far) */
+var RSUBS = ['water', 'fire', 'storm'];
+function subFor(idea, n){
+  var t = low(idea && idea.jobText);
+  if (/fire|smoke|soot/.test(t)) return 'fire';
+  if (/water|pipe|leak|flood|mitigat|dry|mold/.test(t)) return 'water';
+  if (/storm|hail|wind|tree/.test(t)) return 'storm';
+  return RSUBS[Math.abs(+n || 0) % 3];
+}
+/* the next sub for a template post: the one used least so far (ties: water, fire, storm) */
+function nextSub(counts){ counts = counts || {}; return RSUBS.slice().sort(function(a, b){ return (+counts[a] || 0) - (+counts[b] || 0) || RSUBS.indexOf(a) - RSUBS.indexOf(b); })[0]; }
+var CTA247 = '🚨 Water, fire or storm emergency? We answer 24/7: ' + PHONE;
+/* the owner's positioning line (no license number is invented here) */
+var POSITION = 'Restoration + Licensed General Contractor (Unlimited) — one company from mitigation to full rebuild';
+var SVC = {
+  restoration: {
+    water: { what: 'a water damage dry-out and rebuild', short: 'water damage', tag: '#WaterDamage #WaterMitigation #MemphisRestoration', li: 'water mitigation and restoration' },
+    fire: { what: 'a fire and smoke damage restoration', short: 'fire & smoke damage', tag: '#FireDamage #SmokeDamage #MemphisRestoration', li: 'fire and smoke damage restoration' },
+    storm: { what: 'a storm damage restoration', short: 'storm damage', tag: '#StormDamage #StormRestoration #MemphisRestoration', li: 'storm damage restoration' }
+  },
+  roofing: { what: 'a brand-new roof', short: 'roofing', tag: '#MemphisRoofing #NewRoof #BartlettTN', li: 'residential roofing' },
+  remodel: { what: 'a home remodel', short: 'remodeling', tag: '#HomeRemodel #KitchenRemodel #BartlettTN', li: 'residential remodeling' },
+  commercial: { what: 'a commercial project', short: 'commercial construction', tag: '#CommercialConstruction #MemphisBusiness', li: 'commercial construction' }
+};
+function words(idea){ var w = SVC[idea.service] || SVC.remodel; return idea.service === 'restoration' ? w[idea.sub === 'water' || idea.sub === 'fire' ? idea.sub : 'storm'] : w; }
+/* restoration tips: water, fire, storm, mitigation, insurance-claim help (never a carrier's name) */
+var REST_TIPS = [
+  { id: 'rt_48h', sub: 'water', t: 'Water damage gets worse by the hour — wet drywall and insulation can start growing mold within 48 hours. Shut off the water, get photos, and call a mitigation crew right away.' },
+  { id: 'rt_shutoff', sub: 'water', t: 'Do you know where your main water shut-off is? Find it today and tag it. In a burst-pipe emergency those first minutes save floors, walls and cabinets.' },
+  { id: 'rt_freeze', sub: 'water', t: 'Freeze coming? Drip the faucets on outside walls, open the sink cabinets and keep the heat at 55°F or more — even when you travel.' },
+  { id: 'rt_photos', sub: 'storm', t: 'After a storm, take photos of the roof, siding, gutters and windows before anything is moved or cleaned up. Good photos make the insurance claim go smoother.' },
+  { id: 'rt_tarp', sub: 'storm', t: 'Storm opened up your roof? An emergency tarp the same day stops the second round of damage — and your insurance policy expects you to protect the home.' },
+  { id: 'rt_claim', sub: 'storm', t: 'Filing an insurance claim? Keep every receipt, write down every call, and have your contractor meet the adjuster so nothing gets missed. We help with claims every week.' },
+  { id: 'rt_hidden', sub: 'water', t: 'A small ceiling stain is often a big leak above it. Moisture meters and thermal cameras find the water you can\'t see — before it becomes mold.' },
+  { id: 'rt_fire_soot', sub: 'fire', t: 'After a fire, soot and smoke keep damaging the home for days — they etch glass, stain walls and get into the HVAC. Fast professional cleanup saves more than you think.' },
+  { id: 'rt_fire_safe', sub: 'fire', t: 'Smoke alarm check: test them monthly, change the batteries twice a year, and replace any alarm older than 10 years.' },
+  { id: 'rt_fire_after', sub: 'fire', t: 'After a fire: don\'t run the HVAC, don\'t wipe soot off walls, and take photos of every room before cleanup starts. Then call a restoration team that also rebuilds.' },
+  { id: 'rt_hail', sub: 'storm', t: 'Hail damage usually can\'t be seen from the ground. If hail hit your street, get a free inspection with photos before deciding anything.' }
+];
+var SEASON = {
+  1: 'January freeze season: burst pipes are the #1 call we get. Know your shut-off and drip your faucets on cold nights.',
+  2: 'Late-winter storms are around the corner. Now is the time to check the roof, gutters and sump pump.',
+  3: 'Spring storm season is here in the Mid-South. Walk your property after every big storm and take photos.',
+  4: 'April hail and wind — if a storm rolls through your neighborhood, get a free inspection before small damage turns into a leak.',
+  5: 'May storms and heavy rain: clear the gutters and downspouts so the water goes away from the house.',
+  6: 'Summer thunderstorms: trees and big limbs over the roof are worth a look before the next one.',
+  7: 'July heat and pop-up storms — keep an eye on attic ventilation and any new ceiling stains after heavy rain.',
+  8: 'Late-summer storms and tropical rain can push water where it doesn\'t belong. Check windows, flashing and basements.',
+  9: 'Fall checklist: gutters, flashing and caulk — before the leaves and the cold arrive.',
+  10: 'October: clean the gutters after the leaves drop, check the roof before winter storms, and know where your water shut-off is.',
+  11: 'November: insulate outside pipes and disconnect the garden hoses before the first hard freeze.',
+  12: 'December freeze: a burst pipe can put hundreds of gallons on the floor. Keep the heat on and the cabinets open on cold nights.'
+};
+
+/* ── per-platform versions from templates (no AI key, or the AI's version did not pass the rules) ── */
+/* idea = { type, service, sub, city, week, quote, quoteBy (first name, only with the customer's OK), tip, season, team (staff first names),
+            photos (count), video (bool), title } */
+function templates(idea){
+  var w = words(idea), city = s(idea.city) || 'the Memphis area', rest = idea.service === 'restoration';
+  var cta = rest ? CTA247 : 'Free estimates: ' + PHONE;
+  var link = function(p){ return withUtm(pageFor(idea), p, idea); };
+  var q = s(idea.quote), by = s(idea.quoteBy) || 'a GrayCo customer';
+  var tip = s(idea.tip), season = s(idea.season), team = s(idea.team) || 'our crew';
+  var head = {
+    progress: { fb: 'Today in ' + city + ': our crew is in the middle of ' + w.what + '.', hook: 'POV: you called GrayCo about ' + w.short + ' ⬇️', li: 'Project update — ' + w.li + ' underway in ' + city + '.', g: 'Work in progress in ' + city + ': ' + w.what + '.' },
+    beforeafter: { fb: 'Before ➡️ after in ' + city + '! We just finished ' + w.what + '.', hook: 'Wait for the after… 👀', li: 'Completed: ' + w.li + ' in ' + city + '.', g: 'Just finished ' + w.what + ' in ' + city + '.' },
+    testimonial: { fb: 'This one made our week 🙏', hook: 'What our customers say after ' + w.short, li: 'Customer feedback on a recent ' + w.li + ' project.', g: 'What a customer said about our ' + w.short + ' work.' },
+    team: { fb: 'Meet the people behind GrayCo 👋', hook: 'Meet the crew that shows up when you call 📞', li: 'Behind every GrayCo project is a team we are proud of.', g: 'Meet the GrayCo team serving ' + city + '.' },
+    tip: { fb: '💡 Homeowner tip from GrayCo:', hook: 'Homeowners — save this one 💾', li: 'A practical tip for homeowners and property managers:', g: 'Homeowner tip:' },
+    seasonal: { fb: '🍂 This time of year in the Mid-South:', hook: 'Do this before the weather turns 🌧', li: 'Seasonal reminder for property owners in the Mid-South:', g: 'Seasonal tip from GrayCo:' }
+  }[idea.type] || { fb: 'From GrayCo:', hook: 'From GrayCo', li: 'From GrayCo:', g: 'From GrayCo:' };
+  var body = idea.type === 'testimonial' ? '“' + q + '” — ' + by
+    : idea.type === 'tip' ? tip : idea.type === 'seasonal' ? season
+    : idea.type === 'team' ? 'Say hi to ' + team + '. Licensed, insured and local — the same people you will meet on your job.'
+    : idea.type === 'progress' ? (rest ? (idea.sub === 'fire' ? 'Board-up, soot and smoke cleanup, documenting it all, then the rebuild — step by step, with the homeowner updated the whole way.' : idea.sub === 'water' ? 'Drying, documenting, and putting it back together — step by step, with the homeowner updated the whole way.' : 'Tarping, documenting the storm damage, then the full repair — step by step, with the homeowner updated the whole way.') : 'Clean site, clear updates, and the homeowner sees every step in their own portal.')
+    : (rest ? 'From the first call to the final repair — ' + (idea.sub === 'fire' ? 'board-up, smoke and soot cleanup' : idea.sub === 'water' ? 'dry-out' : 'emergency tarp') + ', insurance paperwork help, and the rebuild, one team.' : 'Thank you to our customer for trusting GrayCo with their home.');
+  var fb = head.fb + '\n\n' + body + '\n\n' + (rest ? 'GrayCo: ' + POSITION + '.\n' + CTA247 + '\n' + link('facebook') : 'Neighbors, if you need a hand, we are right here in Bartlett. ' + cta + '\n' + link('facebook'));
+  var many = (+idea.photos || 0) >= 3 && !idea.video;
+  var ig = {
+    format: many ? 'carousel' : 'reel',
+    slides: many ? ['Cover: the "after" with the GrayCo logo', 'The "before"', 'The work in progress', 'The finished detail shot', 'Last slide: ' + (rest ? '24/7 emergency line ' + PHONE : 'free estimate ' + PHONE)] : [],
+    script: many ? [] : ['0–2s: ' + head.hook, '2–8s: the ' + (idea.type === 'beforeafter' ? 'before' : 'problem') + ' — wide shot, then close-up', '8–14s: the crew at work (no faces of customers, no house numbers)', '14–20s: the result / the tip on screen', '20–25s: GrayCo logo + ' + (rest ? '"24/7 emergencies"' : '"Free estimates"') + ' + ' + PHONE],
+    caption: (idea.type === 'testimonial' ? '💬 ' : '') + head.hook.replace(/[⬇️👀💾📞🌧]/g, '').trim() + '\n\n' + body + '\n\n' + (rest ? 'One company from mitigation to full rebuild. 🚨 24/7 emergency line in our bio.' : 'Free estimates — link in bio.'),
+    hashtags: w.tag + ' #GrayCo #Bartlett #MemphisHomes #MidSouth'
+  };
+  var tt = {
+    hook: head.hook,
+    onScreen: [head.hook, idea.type === 'tip' || idea.type === 'seasonal' ? tip || season : w.short + ' in ' + city, rest ? '24/7 water · fire · storm' : 'Free estimates', PHONE],
+    script: ['Hook (0–2s): say "' + head.hook.replace(/[⬇️👀💾📞🌧]/g, '').trim() + '" to camera or show the worst "before" shot', 'Show (2–15s): ' + (idea.type === 'tip' || idea.type === 'seasonal' ? 'walk through the tip in 3 quick shots' : 'quick cuts of the work — no house numbers, no customer faces'), 'Payoff (15–22s): the result / the answer', 'Close (22–25s): "GrayCo — ' + (rest ? 'we answer 24/7' : 'free estimates') + '."'],
+    caption: (idea.type === 'testimonial' ? 'Real words from a real customer. ' : '') + (rest ? w.short.charAt(0).toUpperCase() + w.short.slice(1) + '? We answer 24/7 📞' : 'Local, licensed, insured — Bartlett / Memphis 🛠'),
+    hashtags: '#fyp #homeowner ' + w.tag.split(' ').slice(0, 2).join(' ') + ' #memphis'
+  };
+  var li = head.li + '\n\n' + (idea.type === 'testimonial' ? 'Our customer shared: "' + q + '"' : body) + '\n\n' +
+    (rest ? 'GrayCo Construction Services — ' + POSITION + '. Water mitigation, fire and smoke restoration, storm restoration and insurance-claim documentation for homeowners, property managers and businesses across the Mid-South — 24/7 at ' + PHONE + '.'
+      : 'GrayCo Construction Services is a licensed general contractor (TN #85034 BCB) serving the Mid-South.') + '\n' + link('linkedin') + '\n\n#GrayCo ' + (rest ? '#PropertyManagement #Restoration' : '#Construction #MidSouth');
+  var g = { text: head.g + ' ' + (idea.type === 'testimonial' ? '"' + q.slice(0, 220) + '"' : body).slice(0, 600) + ' ' + (rest ? 'Restoration + licensed general contractor (unlimited): mitigation to full rebuild. Water, fire or storm emergency? We answer 24/7.' : 'Local, licensed and insured.'),
+    cta: rest ? 'CALL' : 'LEARN_MORE', url: link('gbp') };
+  return { facebook: { caption: fb }, instagram: ig, tiktok: tt, linkedin: { text: li }, gbp: g };
+}
+/* the text that is posted, per platform */
+function captionFor(v, version){
+  var x = version || {};
+  if (v === 'facebook') return s(x.caption);
+  if (v === 'instagram') return s(x.caption) + (s(x.hashtags) ? '\n\n' + s(x.hashtags) : '');
+  if (v === 'tiktok') return (s(x.caption) + (s(x.hashtags) ? ' ' + s(x.hashtags) : '')).slice(0, 2200);
+  if (v === 'linkedin') return s(x.text);
+  if (v === 'gbp') return s(x.text).slice(0, 1500);
+  return s(x.caption || x.text);
+}
+function allText(v, version){ var x = version || {}; return [captionFor(v, x), arr(x.script).join('\n'), arr(x.onScreen).join('\n'), arr(x.slides).join('\n'), s(x.hook)].join('\n'); }
+
+/* ── the rules for public text: addresses, carriers, customers' names (only with their OK) ── */
+/* o = { addresses: [job addresses], names: [customer names], nameOk: true only when the customer gave permission (then the first name may show) } */
+function problems(text, o){
+  o = o || {};
+  var out = MC.guard(text, arr(o.addresses)), t = low(text);
+  arr(o.names).forEach(function(n){
+    n = s(n); if (n.length < 3) return;
+    var parts = n.split(/\s+/), last = parts.length > 1 ? parts[parts.length - 1] : '';
+    if (t.indexOf(low(n)) >= 0 && parts.length > 1) out.push({ k: 'name', l: 'Names the customer (“' + n + '”) — only a first name, and only with their OK.' });
+    else if (last.length >= 3 && new RegExp('\\b' + last.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(text)) out.push({ k: 'name', l: 'Names the customer (“' + last + '”).' });
+    else if (!o.nameOk && parts[0].length >= 3 && new RegExp('\\b' + parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(text)) out.push({ k: 'name', l: 'Names the customer (“' + parts[0] + '”) without their OK.' });
+  });
+  return out;
+}
+function protect(text, o){
+  o = o || {};
+  var t = MC.scrub(text, arr(o.addresses));
+  arr(o.names).forEach(function(n){
+    n = s(n); if (n.length < 3) return; var parts = n.split(/\s+/);
+    var rx = function(x){ return new RegExp('\\b' + x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'); };
+    if (parts.length > 1) t = t.replace(rx(n), o.nameOk ? parts[0] : 'our customer');
+    if (parts.length > 1 && parts[parts.length - 1].length >= 3) t = t.replace(rx(parts[parts.length - 1]), '');
+    if (!o.nameOk && parts[0].length >= 3) t = t.replace(rx(parts[0]), 'our customer');
+  });
+  return t.replace(/[ \t]{2,}/g, ' ');
+}
+function protectVersion(v, version, o){
+  var x = JSON.parse(JSON.stringify(version || {}));
+  ['caption', 'text', 'hook', 'hashtags'].forEach(function(k){ if (x[k] != null) x[k] = protect(x[k], o); });
+  ['script', 'onScreen', 'slides'].forEach(function(k){ if (Array.isArray(x[k])) x[k] = x[k].map(function(y){ return protect(y, o); }); });
+  return x;
+}
+/* every version of a post: its problems (empty = OK to go public) */
+function postProblems(post){
+  var o = { addresses: arr(post && post.jobAddresses), names: arr(post && post.names), nameOk: !!(post && post.nameOk) }, out = [];
+  var vs = (post && post.versions) || {};
+  Object.keys(vs).forEach(function(v){ problems(allText(v, vs[v]), o).forEach(function(p){ out.push({ k: p.k, l: (plat(v) ? plat(v).l + ': ' : '') + p.l, plat: v }); }); });
+  if (post && post.caption) problems(post.caption, o).forEach(function(p){ out.push(p); });
+  return out;
+}
+/* no two platforms get the same text: a duplicate (or an empty one) falls back to that platform's template */
+function distinct(versions, tpl){
+  var seen = {}, out = {};
+  PLAT_IDS.forEach(function(v){
+    var x = versions && versions[v]; if (!x) return;
+    var key = low(captionFor(v, x)).replace(/\s+/g, ' ');
+    if (!key || seen[key]) { x = tpl && tpl[v]; key = low(captionFor(v, x)).replace(/\s+/g, ' '); }
+    seen[key] = 1; out[v] = x;
+  });
+  return out;
+}
+/* the AI's answer, cleaned: the fields each platform needs, the rules applied, a template where it fell short */
+function normalize(raw, idea, o){
+  var tpl = templates(idea), out = {};
+  raw = raw || {};
+  var clip = function(x, n){ return s(x).slice(0, n); }, list = function(x, n){ return arr(x).map(function(y){ return clip(y, 200); }).filter(Boolean).slice(0, n || 8); };
+  var cand = {
+    facebook: raw.facebook && { caption: clip(raw.facebook.caption || raw.facebook.text, 2000) },
+    instagram: raw.instagram && { format: raw.instagram.format === 'carousel' ? 'carousel' : 'reel', slides: list(raw.instagram.slides, 10), script: list(raw.instagram.script, 8), caption: clip(raw.instagram.caption, 1800), hashtags: clip(raw.instagram.hashtags, 300) },
+    tiktok: raw.tiktok && { hook: clip(raw.tiktok.hook, 150), onScreen: list(raw.tiktok.onScreen || raw.tiktok.on_screen, 6), script: list(raw.tiktok.script, 8), caption: clip(raw.tiktok.caption, 1500), hashtags: clip(raw.tiktok.hashtags, 200) },
+    linkedin: raw.linkedin && { text: clip(raw.linkedin.text || raw.linkedin.caption, 2500) },
+    gbp: raw.gbp && { text: clip(raw.gbp.text || raw.gbp.caption, 1400), cta: /^(CALL|LEARN_MORE|BOOK|SIGN_UP)$/.test(s(raw.gbp.cta)) ? s(raw.gbp.cta) : tpl.gbp.cta, url: tpl.gbp.url }
+  };
+  PLAT_IDS.forEach(function(v){
+    var x = cand[v];
+    if (!x || !s(captionFor(v, x))) { out[v] = tpl[v]; return; }
+    if (v === 'instagram' && !x.slides.length && !x.script.length) x[x.format === 'carousel' ? 'slides' : 'script'] = tpl.instagram[x.format === 'carousel' ? 'slides' : 'script'].length ? tpl.instagram[x.format === 'carousel' ? 'slides' : 'script'] : tpl.instagram.script;
+    if (v === 'tiktok' && !x.hook) x.hook = tpl.tiktok.hook;
+    if (idea.service === 'restoration' && (v === 'facebook' || v === 'linkedin') && !/24\/7|24-7|24 hours/i.test(captionFor(v, x))) { if (v === 'facebook') x.caption += '\n\n' + CTA247; else x.text += '\n\nWe answer 24/7: ' + PHONE; }
+    if ((v === 'facebook' || v === 'linkedin') && !/https?:\/\//.test(captionFor(v, x))) { if (v === 'facebook') x.caption += '\n' + tpl.facebook.caption.split('\n').pop(); else x.text += '\n' + withUtm(pageFor(idea), 'linkedin', idea); }
+    x = protectVersion(v, x, o);
+    out[v] = problems(allText(v, x), o).length ? tpl[v] : x;
+  });
+  return distinct(out, tpl);
+}
+/* the AI's instructions (the tool's input schema lives in _lib/soc.js) */
+function aiPrompt(idea){
+  return 'You write social posts for GrayCo Construction Services (Bartlett, TN; licensed general contractor; ' + PHONE + '). ' +
+    'Write ONE idea five ways — each must read differently, never the same text:\n' +
+    '• facebook: a friendly community-style post (neighbors, local), 60–120 words.\n' +
+    '• instagram: either a Reel (script = 4–6 shot lines) or a carousel (slides = 4–6 slide lines) + a short caption + 5–8 hashtags.\n' +
+    '• tiktok: a 1-line hook for the first 2 seconds, 3–4 on-screen text lines, a 4-line script, a very short caption, 4–5 hashtags.\n' +
+    '• linkedin: a professional update for property managers / business owners, 50–100 words, no emojis.\n' +
+    '• gbp: a Google Business "what\'s new" post, under 300 characters, and a call-to-action (CALL or LEARN_MORE).\n' +
+    'RULES: never a street address or house number, never a customer\'s name' + (idea.quoteBy ? ' (except the first name "' + idea.quoteBy + '", who gave permission)' : '') + ', never an insurance company\'s name (say "your insurance company"), no prices, no promises we cannot keep.' +
+    ' Positioning: "' + POSITION + '" — never invent a license number.' + (idea.service === 'restoration' ? ' This is RESTORATION work (' + (idea.sub === 'water' ? 'water damage / mitigation' : idea.sub === 'fire' ? 'fire and smoke damage' : 'storm damage') + ', insurance-claim help): every version says we answer 24/7 for water, fire and storm emergencies.' : '') + '\n' +
+    'The idea: type=' + idea.type + ', service=' + idea.service + (idea.sub ? '/' + idea.sub : '') + ', area=' + (idea.city || 'Memphis area') +
+    (idea.quote ? ', customer words: "' + idea.quote + '"' : '') + (idea.tip ? ', tip: ' + idea.tip : '') + (idea.season ? ', season: ' + idea.season : '') + (idea.team ? ', team: ' + idea.team : '') +
+    ', photos: ' + (+idea.photos || 0) + (idea.video ? ', a video clip' : '') + '.';
+}
+
+/* ── listings: 40+ places GrayCo should be listed (the owner keeps them right; BrightLocal can check them) ── */
+var LISTINGS = [
+  ['gbp', 'Google Business Profile', 'Core', 'https://business.google.com/', 'google.com', 1],
+  ['bing', 'Bing Places', 'Core', 'https://www.bingplaces.com/', 'bing.com', 1],
+  ['apple', 'Apple Business Connect (Maps)', 'Core', 'https://businessconnect.apple.com/', 'apple.com', 1],
+  ['facebook', 'Facebook Page', 'Core', 'https://www.facebook.com/', 'facebook.com', 1],
+  ['yelp', 'Yelp', 'Core', 'https://biz.yelp.com/', 'yelp.com', 1],
+  ['bbb', 'Better Business Bureau', 'Core', 'https://www.bbb.org/', 'bbb.org', 1],
+  ['nextdoor', 'Nextdoor Business', 'Core', 'https://business.nextdoor.com/', 'nextdoor.com', 1],
+  ['instagram', 'Instagram', 'Social', 'https://www.instagram.com/', 'instagram.com', 2],
+  ['tiktok', 'TikTok', 'Social', 'https://www.tiktok.com/', 'tiktok.com', 2],
+  ['linkedin', 'LinkedIn Company Page', 'Social', 'https://www.linkedin.com/company/', 'linkedin.com', 2],
+  ['youtube', 'YouTube', 'Social', 'https://www.youtube.com/', 'youtube.com', 3],
+  ['angi', 'Angi (Angie\'s List)', 'Home services', 'https://office.angi.com/', 'angi.com', 1],
+  ['homeadvisor', 'HomeAdvisor', 'Home services', 'https://pro.homeadvisor.com/', 'homeadvisor.com', 2],
+  ['thumbtack', 'Thumbtack', 'Home services', 'https://www.thumbtack.com/pro', 'thumbtack.com', 2],
+  ['houzz', 'Houzz', 'Home services', 'https://www.houzz.com/pro', 'houzz.com', 2],
+  ['porch', 'Porch', 'Home services', 'https://pro.porch.com/', 'porch.com', 2],
+  ['buildzoom', 'BuildZoom', 'Home services', 'https://www.buildzoom.com/', 'buildzoom.com', 2],
+  ['networx', 'Networx', 'Home services', 'https://www.networx.com/', 'networx.com', 3],
+  ['bark', 'Bark', 'Home services', 'https://www.bark.com/', 'bark.com', 3],
+  ['homeyou', 'HomeYou', 'Home services', 'https://www.homeyou.com/', 'homeyou.com', 3],
+  ['craftjack', 'CraftJack', 'Home services', 'https://www.craftjack.com/', 'craftjack.com', 3],
+  ['iicrc', 'IICRC Certified Firm locator', 'Restoration', 'https://www.iicrc.org/', 'iicrc.org', 1],
+  ['restorationind', 'Restoration Industry Association', 'Restoration', 'https://www.restorationindustry.org/', 'restorationindustry.org', 2],
+  ['gaf', 'GAF contractor directory', 'Roofing', 'https://www.gaf.com/', 'gaf.com', 2],
+  ['owenscorning', 'Owens Corning contractor network', 'Roofing', 'https://www.owenscorning.com/', 'owenscorning.com', 2],
+  ['certainteed', 'CertainTeed contractor locator', 'Roofing', 'https://www.certainteed.com/', 'certainteed.com', 3],
+  ['yellowpages', 'YellowPages (YP)', 'Directory', 'https://adsolutions.yp.com/', 'yellowpages.com', 2],
+  ['superpages', 'Superpages', 'Directory', 'https://www.superpages.com/', 'superpages.com', 3],
+  ['manta', 'Manta', 'Directory', 'https://www.manta.com/', 'manta.com', 3],
+  ['foursquare', 'Foursquare', 'Data aggregator', 'https://foursquare.com/', 'foursquare.com', 2],
+  ['dataaxle', 'Data Axle (Infogroup)', 'Data aggregator', 'https://www.data-axle.com/', 'data-axle.com', 1],
+  ['neustar', 'Neustar Localeze', 'Data aggregator', 'https://www.neustarlocaleze.biz/', 'neustarlocaleze.biz', 1],
+  ['mapquest', 'MapQuest', 'Maps', 'https://www.mapquest.com/', 'mapquest.com', 3],
+  ['hotfrog', 'Hotfrog', 'Directory', 'https://www.hotfrog.com/', 'hotfrog.com', 3],
+  ['chamberofcommerce', 'ChamberofCommerce.com', 'Directory', 'https://www.chamberofcommerce.com/', 'chamberofcommerce.com', 3],
+  ['bartlettchamber', 'Bartlett Area Chamber of Commerce', 'Local', 'https://www.bartlettchamber.org/', 'bartlettchamber.org', 1],
+  ['memphischamber', 'Greater Memphis Chamber', 'Local', 'https://memphischamber.com/', 'memphischamber.com', 2],
+  ['commercialappeal', 'Commercial Appeal local directory', 'Local', 'https://www.commercialappeal.com/', 'commercialappeal.com', 3],
+  ['merchantcircle', 'MerchantCircle', 'Directory', 'https://www.merchantcircle.com/', 'merchantcircle.com', 3],
+  ['cylex', 'Cylex', 'Directory', 'https://www.cylex.us.com/', 'cylex.us.com', 3],
+  ['ezlocal', 'EZlocal', 'Directory', 'https://ezlocal.com/', 'ezlocal.com', 3],
+  ['brownbook', 'Brownbook', 'Directory', 'https://www.brownbook.net/', 'brownbook.net', 3],
+  ['showmelocal', 'ShowMeLocal', 'Directory', 'https://www.showmelocal.com/', 'showmelocal.com', 3],
+  ['alignable', 'Alignable', 'Local', 'https://www.alignable.com/', 'alignable.com', 3],
+  ['tnboard', 'TN Board for Licensing Contractors (license lookup)', 'Licensing', 'https://verify.tn.gov/', 'tn.gov', 1]
+].map(function(x){ return { id: x[0], n: x[1], cat: x[2], url: x[3], dom: x[4], pri: x[5] }; });
+function digits(v){ return s(v).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); }
+function streetNo(a){ var m = /^\s*(\d{2,6})\b/.exec(s(a)); return m ? m[1] : ''; }
+/* the NAP check of one listing. row = { url, name, address, phone, checkedAt, listed:false? }, addr = { current, next, switchOn },
+   today = 'YYYY-MM-DD' (Central). → { state: ok | fix | soon | unchecked | missing, issues: [{ k, l, fix }], expect } */
+function napCheck(row, addr, today){
+  row = row || {}; addr = addr || {};
+  var moved = !!(addr.next && addr.switchOn && s(today) >= addr.switchOn);
+  var expect = moved ? s(addr.next) : s(addr.current), other = moved ? s(addr.current) : s(addr.next);
+  var issues = [];
+  if (row.listed === false || !s(row.url)) return { state: 'missing', issues: [{ k: 'missing', l: 'Not listed yet (or no link saved) — claim / create the listing.', fix: true }], expect: expect };
+  if (!s(row.checkedAt) && !s(row.address) && !s(row.phone)) return { state: 'unchecked', issues: [{ k: 'unchecked', l: 'Not checked yet — open it and copy what it shows.', fix: false }], expect: expect };
+  if (s(row.name) && !/gray\s*co/i.test(row.name)) issues.push({ k: 'name', l: 'The name shows “' + s(row.name) + '” — use “GrayCo Construction Services”.', fix: true });
+  if (s(row.phone) && digits(row.phone) !== digits(PHONE)) issues.push({ k: 'phone', l: 'The phone shows ' + s(row.phone) + ' — use ' + PHONE + '.', fix: true });
+  var a = s(row.address), no = streetNo(a), soon = false;
+  if (a) {
+    if (no && no === streetNo(expect) && /broadway/i.test(a)) { /* right */ }
+    else if (no && other && no === streetNo(other) && /broadway/i.test(a)) {
+      if (moved) issues.push({ k: 'address', l: 'Still shows ' + no + ' Broadway — change it to ' + expect.split(',')[0] + ' (we moved ' + addr.switchOn + ').', fix: true, move: true });
+      else { issues.push({ k: 'address-soon', l: 'Shows ' + no + ' Broadway — that is the NEW address, live on ' + addr.switchOn + '. Until then: ' + expect.split(',')[0] + '.', fix: true, move: true }); }
+    } else issues.push({ k: 'address', l: 'The address shows “' + a + '” — use ' + expect + '.', fix: true, move: /broadway/i.test(a) });
+    if (!moved && addr.next && addr.switchOn && no === streetNo(expect)) { soon = true; issues.push({ k: 'move', l: 'Change to ' + s(addr.next).split(',')[0] + ' on ' + addr.switchOn + ' (the move).', fix: false, move: true }); }
+  }
+  var age = s(row.checkedAt) ? (Date.parse(s(today) + 'T12:00:00Z') - Date.parse(row.checkedAt)) / 864e5 : 999;
+  if (age > 120) issues.push({ k: 'stale', l: 'Last checked ' + (s(row.checkedAt) ? Math.round(age) + ' days ago' : 'never') + ' — look again.', fix: false });
+  var fix = issues.some(function(x){ return x.fix; });
+  return { state: fix ? 'fix' : soon ? 'soon' : 'ok', issues: issues, expect: expect };
+}
+
+/* ── who approves marketing: the APPROVAL STAGE (owner, 22 Oct 2026) — data, never names ──
+   cfg.main.apprStage = { stage: 1 | 2 | 3, since, flags: { price, insurance, customer }, known: ['kind:type', …] }
+   1 "Admin checks everything" (default): every marketing draft waits for an admin.
+   2 "Office approves": the office approves; admins get the Friday digest + the FLAGGED drafts only.
+   3 "Autopilot": a template type an admin already approved posts by itself at its time, after a 24-hour veto window
+     (the office gets a "posting tomorrow" list to pause or edit). Flagged drafts go to the office; negative review
+     replies go to the office AND the admins. The CRM only SUGGESTS the next stage; a person moves it (logged). */
+var ASTAGES = [
+  { v: 1, l: 'Stage 1 — Admin checks everything', d: 'Every marketing draft (posts, Google Business posts, review replies, newsletter, door hangers, before/after) waits for an admin.' },
+  { v: 2, l: 'Stage 2 — Office approves', d: 'The office approves. Admins get a Friday digest of what went out, plus anything flagged: a 1–3★ review reply, a post that mentions price, insurance or a customer, the monthly newsletter, any new template.' },
+  { v: 3, l: 'Stage 3 — Autopilot', d: 'Template types an admin already approved post by themselves at their time, after a 24-hour veto window (the office gets a "posting tomorrow" list to pause or edit). Flagged drafts go to the office; negative review replies go to the office and the admins.' }
+];
+var CONTENT_KINDS = { social_post: 1, soc_week: 1, mkt_campaign: 1, mkt_neighbor: 1, review_reply: 1, mkt_addraft: 1 };
+function stageCfg(c){
+  var a = (c && c.apprStage) || {}, st = +a.stage;
+  return { stage: st === 2 || st === 3 ? st : 1, since: s(a.since), flags: Object.assign({ price: true, insurance: true, customer: true }, a.flags || {}), known: arr(a.known) };
+}
+var PRICE_RE = /\$\s?\d|\bprices?\b|\bpricing\b|\bcosts?\b|\d+\s?% off|\bdiscount|\bcoupon|\bfinanc/i, INS_RE = /\binsurance\b|\bclaims?\b|\badjuster|\bdeductible/i;
+function recText(rec){
+  rec = rec || {}; var vs = rec.versions || {};
+  return [rec.caption, rec.subject, rec.title, rec.body, rec.preheader, rec.approvedHtml, rec.reply, rec.text].concat(Object.keys(vs).map(function(n){ return allText(n, vs[n]); })).map(s).join('\n');
+}
+/* the template key of a draft: an admin's approval of one teaches stage 3 that this type is known */
+function tplKeys(kind, rec, posts){
+  rec = rec || {};
+  if (kind === 'soc_week') return arr(posts).map(function(p){ return 'post:' + (p.socType || 'custom') + ':' + (p.socService || ''); });
+  if (kind === 'social_post') return ['post:' + (rec.socType || rec.kind || (rec.autopilot ? 'auto' : 'custom')) + ':' + (rec.socService || '')];
+  if (kind === 'mkt_campaign') return ['email:' + (rec.tpl || 'custom')];
+  if (kind === 'mkt_neighbor') return ['neighbor:' + (rec.kind || 'door')];
+  return [kind + ':' + (rec.tpl || rec.kind || 'custom')];
+}
+/* the flags of a draft. o = { rating (review replies), posts (a week's posts) } */
+function flagsOf(kind, rec, sc, o){
+  o = o || {}; sc = sc && sc.stage ? sc : stageCfg(sc); rec = rec || {};
+  var out = [], txt = [recText(rec)].concat(arr(o.posts).map(recText)).join('\n'), all = [rec].concat(arr(o.posts));
+  if (kind === 'review_reply' && (+o.rating || +rec.rating || 5) <= 3) out.push('negative-review');
+  if (kind === 'mkt_addraft') out.push('ad-spend');   /* paid ads: never by itself, at any stage */
+  if (sc.flags.price && PRICE_RE.test(txt)) out.push('price');
+  if (sc.flags.insurance && INS_RE.test(txt)) out.push('insurance');
+  if (sc.flags.customer && all.some(function(p){ return p && (p.nameOk || p.testimonialId || p.reviewId || p.kind === 'review' || p.socType === 'testimonial'); })) out.push('customer');
+  if (kind === 'mkt_campaign' && (rec.newsletter || /newsletter|seasonal|monthly/i.test(s(rec.tpl) + ' ' + s(rec.title)) || rec.autopilot)) out.push('newsletter');
+  if (kind !== 'review_reply' && tplKeys(kind, rec, o.posts).some(function(k){ return sc.known.indexOf(k) < 0; })) out.push('new-template');
+  return out;
+}
+var FLAG_L = { 'negative-review': '1–3★ review reply', price: 'mentions a price', insurance: 'mentions insurance', customer: 'mentions a customer', newsletter: 'the monthly newsletter', 'new-template': 'a new template', 'ad-spend': 'paid ads (never automatic)' };
+/* where a draft goes → { stage, flags, admin: admins may approve, office: the office may approve, notifyAdmins, auto: posts by itself after the veto, veto: hours } */
+function route(sc, kind, rec, o){
+  sc = sc && sc.stage ? sc : stageCfg(sc);
+  if (!CONTENT_KINDS[kind]) return { stage: sc.stage, flags: [], admin: true, office: false, auto: false, notifyAdmins: false, veto: 0 };
+  var f = flagsOf(kind, rec, sc, o), flagged = f.length > 0, neg = f.indexOf('negative-review') >= 0;
+  if (sc.stage === 1) return { stage: 1, flags: f, admin: true, office: false, auto: false, notifyAdmins: false, veto: 0 };
+  if (sc.stage === 2) return { stage: 2, flags: f, admin: true, office: !flagged, auto: false, notifyAdmins: flagged, veto: 0 };
+  return { stage: 3, flags: f, admin: true, office: true, auto: !flagged && kind !== 'review_reply', notifyAdmins: neg, veto: !flagged && kind !== 'review_reply' ? 24 : 0 };
+}
+/* the graduation hint: 14 days at this stage and no admin edited a marketing draft in them → suggest the next stage.
+   decided = [{ at, adminEdit }] (marketing approvals decided since the stage began) */
+function stageHint(sc, decided, nowMs){
+  sc = sc && sc.stage ? sc : stageCfg(sc); nowMs = nowMs || Date.now();
+  if (sc.stage >= 3) return null;
+  var since = Date.parse(sc.since || 0) || 0;
+  if (!since || nowMs - since < 14 * 864e5) return null;
+  var from = nowMs - 14 * 864e5, mine = arr(decided).filter(function(x){ return x && Date.parse(x.at || 0) >= from; });
+  if (mine.length < 3 || mine.some(function(x){ return x.adminEdit; })) return null;
+  return { next: sc.stage + 1, label: ASTAGES[sc.stage].l, why: mine.length + ' marketing drafts in the last 14 days and no admin changed any of them.' };
+}
+
+/* ── PAID ADS: restoration only (owner, 22 Oct 2026) — separate from the organic mix ──
+   cfg.main.adsFocus (default Restoration 100). Everything the CRM drafts or suggests for paid ads — Google Ads campaign /
+   ad-group drafts, keywords, boosted-post suggestions, the Local Services Ads job types, the ad copy writer — uses only
+   the services with a weight. The CRM never spends money: a draft goes to ✅ Approvals (kind mkt_addraft, never
+   automatic at any stage); approved, it is a "build it" pack (Google Ads Editor CSV) + a To-Do. */
+var ADS_FOCUS = { restoration: 100, roofing: 0, remodel: 0, commercial: 0 };
+function adsFocusOf(setting){
+  var w = {}, tot = 0;
+  SERVICES.forEach(function(x){ var n = setting && setting[x.v] != null ? +setting[x.v] : ADS_FOCUS[x.v]; w[x.v] = isFinite(n) && n > 0 ? n : 0; tot += w[x.v]; });
+  if (!tot) { w = Object.assign({}, ADS_FOCUS); tot = 100; }
+  var out = {}; SERVICES.forEach(function(x){ out[x.v] = Math.round(w[x.v] / tot * 1000) / 10; });
+  return out;
+}
+/* may a paid ad be about this? (a service name, a job, a lead) */
+function adsAllowed(setting, what){ var svc = typeof what === 'string' ? serviceOf({ service: what }) : serviceOf(what); return !!svc && adsFocusOf(setting)[svc] > 0; }
+/* water / fire / storm of a restoration job, lead, campaign or post ('' when it is not restoration) */
+function restSubOf(x){
+  if (!x) return '';
+  if (x.socSub) return x.socSub;
+  var t = low([x.name, x.title, x.type, x.jobType, x.service, x.scope, x.campaign, x.utmCampaign, x.attrib && x.attrib.utm_campaign].join(' '));
+  if (/fire|smoke|soot/.test(t)) return 'fire';
+  if (/water|flood|pipe|leak|mitigat|dry|mold/.test(t)) return 'water';
+  if (/storm|hail|wind|tarp|tree/.test(t)) return 'storm';
+  return serviceOf(x) === 'restoration' ? 'storm' : '';
+}
+var AD_TERMS = {
+  water: ['water damage restoration', 'emergency water removal', 'flood cleanup', 'burst pipe'],
+  fire: ['fire damage restoration', 'smoke damage cleanup', 'soot removal'],
+  storm: ['storm damage repair', 'emergency roof tarp', 'hail damage']
+};
+var AD_CITIES = ['memphis', 'bartlett', 'germantown', 'collierville', 'cordova', 'arlington', 'lakeland'];
+var NEGATIVES = ['remodel', 'remodeling', 'kitchen', 'bathroom', 'addition', 'commercial bid', 'jobs', 'careers', 'diy', 'how to', 'insurance agent', 'free'];
+function cap(c){ return s(c).split(' ').map(function(w){ return w.charAt(0).toUpperCase() + w.slice(1); }).join(' '); }
+/* every term paired with each city and "near me" */
+function adKeywords(sub, cities){
+  var subs = sub ? [sub] : RSUBS, cs = arr(cities).length ? cities : AD_CITIES, out = [];
+  subs.forEach(function(x){ AD_TERMS[x].forEach(function(t){ cs.forEach(function(c){ out.push({ sub: x, kw: t + ' ' + low(c) }); }); out.push({ sub: x, kw: t + ' near me' }); }); });
+  return out;
+}
+var AD_LIMITS = { headline: 30, description: 90 };
+function adCopy(sub, city){
+  var c = cap(city || 'Memphis'), w = ({ water: 'Water Damage', fire: 'Fire Damage', storm: 'Storm Damage' })[sub] || 'Restoration';
+  var H = ['24/7 ' + w + ' Help', w + ' ' + c, ({ water: 'Emergency Water Removal', fire: 'Smoke & Soot Cleanup', storm: 'Emergency Roof Tarping' })[sub], 'We Restore and Rebuild', 'Unlimited Licensed GC', 'Insurance Claim Help', 'Call (901) 585-0944', 'Local ' + c + ' Restoration'];
+  var Dd = ['Unlimited licensed general contractor — we restore and rebuild. 24/7 emergency response.',
+    ({ water: 'Water extraction, drying and the rebuild — one company. Call us 24/7.', fire: 'Board-up, smoke and soot cleanup, then the rebuild — one company. 24/7.', storm: 'Emergency tarp, storm damage repair and the rebuild — one company. 24/7.' })[sub] || 'Mitigation to full rebuild — one company. Call us 24/7.',
+    'We help with your insurance claim from the first call to the final repair.',
+    'Serving ' + c + ' and the Mid-South. Call (901) 585-0944 any time, day or night.'];
+  var fit = function(l, n){ return l.filter(Boolean).filter(function(x, i, a){ return x.length <= n && a.indexOf(x) === i; }); };
+  return { sub: sub, city: c, headlines: fit(H, AD_LIMITS.headline), descriptions: fit(Dd, AD_LIMITS.description),
+    finalUrl: restPage(sub, city) + '?utm_source=google&utm_medium=cpc&utm_campaign=ads-restoration-' + sub + '&utm_content=' + slugCity(city || 'memphis') };
+}
+/* Google Ads drafts: one campaign per restoration type (water / fire / storm), one ad group per city — only when restoration has a weight */
+function campaignDrafts(setting){
+  if (!(adsFocusOf(setting).restoration > 0)) return [];
+  return RSUBS.map(function(sub){
+    return { id: 'gads_' + sub, kind: 'campaign', platform: 'google', sub: sub, service: 'restoration', name: 'GrayCo — ' + cap(sub) + ' damage restoration (search)', negatives: NEGATIVES.slice(),
+      adGroups: AD_CITIES.map(function(c){ var a = adCopy(sub, c); return { name: cap(sub) + ' — ' + cap(c), city: c, keywords: AD_TERMS[sub].map(function(t){ return t + ' ' + c; }).concat(AD_TERMS[sub].map(function(t){ return t + ' near me'; })), finalUrl: a.finalUrl, headlines: a.headlines, descriptions: a.descriptions }; }) };
+  });
+}
+/* the Google Ads Editor CSV of a campaign draft (keywords, negatives, ads) — built by a person after approval */
+function draftCsv(d){
+  var q = function(v){ return '"' + s(v).replace(/"/g, '""') + '"'; }, rows = [['Campaign', 'Ad group', 'Keyword', 'Criterion type', 'Final URL', 'Headline 1', 'Headline 2', 'Headline 3', 'Description 1', 'Description 2'].map(q).join(',')];
+  arr(d && d.adGroups).forEach(function(g){
+    g.keywords.forEach(function(k){ rows.push([d.name, g.name, k, 'Phrase', '', '', '', '', '', ''].map(q).join(',')); });
+    rows.push([d.name, g.name, '', '', g.finalUrl, g.headlines[0], g.headlines[1], g.headlines[2], g.descriptions[0], g.descriptions[1]].map(q).join(','));
+  });
+  arr(d && d.negatives).forEach(function(n){ rows.push([d.name, '', n, 'Negative phrase', '', '', '', '', '', ''].map(q).join(',')); });
+  return rows.join('\n');
+}
+/* Local Services Ads job types: on only for the services with an ads weight */
+var LSA_TYPES = [
+  { t: 'Water damage restoration', svc: 'restoration' }, { t: 'Fire damage restoration', svc: 'restoration' }, { t: 'Storm damage restoration', svc: 'restoration' },
+  { t: 'Emergency roof tarping', svc: 'restoration' }, { t: 'Mold remediation', svc: 'restoration' }, { t: 'Roof repair', svc: 'roofing' }, { t: 'Roof replacement', svc: 'roofing' },
+  { t: 'Kitchen remodeling', svc: 'remodel' }, { t: 'Bathroom remodeling', svc: 'remodel' }, { t: 'Home additions', svc: 'remodel' }, { t: 'Commercial construction', svc: 'commercial' }
+];
+function lsaChecklist(setting){ var f = adsFocusOf(setting); return LSA_TYPES.map(function(x){ return { t: x.t, svc: x.svc, on: f[x.svc] > 0 }; }); }
+/* "boost this": only for a restoration post that went out, and only while restoration has an ads weight */
+function boostable(post, setting){
+  if (!post || post.del || !/^(posted|approved)$/.test(s(post.status))) return false;
+  var svc = post.socService || serviceOf({ title: post.title, scope: post.caption });
+  return svc === 'restoration' && adsFocusOf(setting).restoration > 0;
+}
+function boostDraft(post, setting){
+  if (!boostable(post, setting)) return null;
+  var sub = post.socSub || restSubOf(post) || 'water';
+  return { id: 'boost_' + s(post.id), kind: 'boost', platform: 'meta', service: 'restoration', sub: sub, postId: s(post.id), title: 'Boost: ' + s(post.title),
+    audience: 'People within 15 miles of Bartlett, TN (Housing special ad category: no age / gender / ZIP targeting)', finalUrl: restPage(sub, 'Memphis') + '?utm_source=facebook&utm_medium=paid_social&utm_campaign=boost-restoration-' + sub,
+    note: 'Suggested: 7 days. The amount is set by the person who approves it in Ads Manager — the CRM never spends.' };
+}
+function paidLead(l){ var a = (l && l.attrib) || {}, m = low(a.utm_medium), src = low(a.utm_source); return !!(a.gclid || a.fbclid || /cpc|ppc|paid|ads?$/.test(m) || /ads/i.test(s(l && l.mkSource)) || /lsa|local services/.test(low([l && l.source, l && l.mkSource, src].join(' ')))); }
+/* spend and leads by restoration type; cost per restoration lead */
+function adsReport(camps, leads, nowMs, days){
+  nowMs = nowMs || Date.now(); days = days || 30;
+  var out = { subs: {}, other: { spend: 0, leads: 0 }, total: { spend: 0, leads: 0, cpl: null } };
+  RSUBS.forEach(function(x){ out.subs[x] = { spend: 0, clicks: 0, leads: 0, paidLeads: 0, cpl: null }; });
+  arr(camps).forEach(function(c){ if (!c || c.del) return; var sub = restSubOf({ name: c.name, campaign: c.campaignId, socSub: c.sub }), sp = +c.spend30 || 0;
+    if (sub) { out.subs[sub].spend += sp; out.subs[sub].clicks += +c.clicks30 || 0; } else out.other.spend += sp; });
+  var since = nowMs - days * 864e5;
+  arr(leads).forEach(function(l){ if (!l || l.deleted || (Date.parse(l.createdAt || l.created || 0) || 0) < since) return; var sub = serviceOf(l) === 'restoration' ? restSubOf(l) : '';
+    if (sub) { out.subs[sub].leads++; if (paidLead(l)) out.subs[sub].paidLeads++; } else if (paidLead(l)) out.other.leads++; });
+  RSUBS.forEach(function(x){ var o = out.subs[x]; o.cpl = o.paidLeads ? Math.round(o.spend / o.paidLeads) : null; out.total.spend += o.spend; out.total.leads += o.paidLeads; });
+  out.total.cpl = out.total.leads ? Math.round(out.total.spend / out.total.leads) : null;
+  return out;
+}
+/* the approval preview of an ads draft */
+function addraftHtml(d){
+  d = d || {};
+  if (d.kind === 'boost') return '<p><b>Boost a restoration post</b> on Facebook / Instagram — ' + MC.esc(d.title) + '</p><p>Audience: ' + MC.esc(d.audience) + '<br>Landing page: ' + MC.esc(d.finalUrl) + '</p><p>' + MC.esc(d.note) + '</p>';
+  return '<p><b>' + MC.esc(d.name) + '</b> — a Google Ads search campaign DRAFT (restoration only). Nothing is created or spent by the CRM: approved, it becomes a Google Ads Editor file and a To-Do.</p>' +
+    arr(d.adGroups).map(function(g){ return '<div style="margin:6px 0"><b>' + MC.esc(g.name) + '</b> → ' + MC.esc(g.finalUrl) + '<br><i>Keywords:</i> ' + MC.esc(g.keywords.join(', ')) + '<br><i>Headlines:</i> ' + MC.esc(g.headlines.join(' | ')) + '<br><i>Descriptions:</i> ' + MC.esc(g.descriptions.join(' | ')) + '</div>'; }).join('') +
+    '<p><i>Negative keywords:</i> ' + MC.esc(arr(d.negatives).join(', ')) + '</p>';
+}
+
+/* ── reporting: posts / week / platform, engagement, leads and jobs by platform (UTM) and by service vs the focus ── */
+function leadPlat(l){
+  var a = (l && l.attrib) || {}, src = low(a.utm_source || l.utmSource || ''), t = low([src, l && l.mkSource, l && l.source, l && l.howHeard].join(' '));
+  if (/tiktok/.test(t)) return 'tiktok';
+  if (/linkedin/.test(t)) return 'linkedin';
+  if (/instagram|^ig$/.test(src) || /instagram/.test(t)) return 'instagram';
+  if (/gbp|gmb|business.?profile|google business/.test(t)) return 'gbp';
+  if (/facebook|^fb$/.test(src) || /facebook/.test(t)) return 'facebook';
+  return '';
+}
+function report(posts, leads, projects, nowMs, weeks, focus){
+  weeks = weeks || 8; nowMs = nowMs || Date.now();
+  var wkKeys = []; for (var i = weeks - 1; i >= 0; i--) wkKeys.push(MC.weekKey(nowMs - i * 7 * 864e5));
+  var out = { weeks: wkKeys.map(function(k){ var o = { wk: k, total: 0 }; PLAT_IDS.forEach(function(v){ o[v] = 0; }); return o; }), plats: {}, services: {}, focus: focusOf(focus) };
+  PLAT_IDS.forEach(function(v){ out.plats[v] = { posts: 0, likes: 0, comments: 0, shares: 0, reach: 0, clicks: 0, views: 0, leads: 0, jobs: 0, revenue: 0, links: [] }; });
+  arr(posts).forEach(function(p){
+    if (!p || p.del) return;
+    var r = p.results || {}, ins = p.insights || {}, at = p.postedAt || p.scheduleAt;
+    PLAT_IDS.forEach(function(v){
+      var x = r[v]; if (!x || !(x.ok || x.manualDone)) return;
+      var w = MC.weekKey(Date.parse(x.at || at) || nowMs), row = out.weeks.filter(function(q){ return q.wk === w; })[0];
+      if (row) { row[v]++; row.total++; }
+      var P = out.plats[v]; P.posts++; if (x.url) P.links.push({ url: x.url, title: s(p.title), at: s(x.at || at) });
+      var e = ins[v] || {}; ['likes', 'comments', 'shares', 'reach', 'clicks', 'views'].forEach(function(k){ P[k] += +e[k] || 0; });
+    });
+  });
+  var byLead = {};
+  arr(projects).forEach(function(pr){ if (pr && (pr.leadId || pr.fromLeadId)) byLead[s(pr.leadId || pr.fromLeadId)] = pr; });
+  var since = nowMs - weeks * 7 * 864e5, months = {};
+  SERVICES.forEach(function(x){ out.services[x.v] = { leads: 0, jobs: 0, share: 0, target: out.focus[x.v], social: 0 }; });
+  var svcTotal = 0;
+  arr(leads).forEach(function(l){
+    if (!l || l.deleted) return;
+    var at = Date.parse(l.createdAt || l.created || l.date || 0) || 0;
+    var svc = serviceOf(l);
+    if (svc && at >= nowMs - 180 * 864e5) { var mk = new Date(at).toISOString().slice(0, 7); months[mk] = months[mk] || { m: mk, total: 0 }; months[mk].total++; months[mk][svc] = (months[mk][svc] || 0) + 1; }
+    if (at < since) return;
+    var pl = leadPlat(l), pr = byLead[s(l.id)] || null, won = !!(pr && !/^(lost|cancel|dead)/i.test(s(pr.status)));
+    if (pl) { out.plats[pl].leads++; if (won) { out.plats[pl].jobs++; out.plats[pl].revenue += +(pr.contract || pr.contractAmount || pr.value || 0) || 0; } }
+    if (svc) { svcTotal++; out.services[svc].leads++; if (won) out.services[svc].jobs++; if (pl) out.services[svc].social++; }
+  });
+  SERVICES.forEach(function(x){ out.services[x.v].share = svcTotal ? Math.round(out.services[x.v].leads / svcTotal * 1000) / 10 : 0; });
+  out.months = Object.keys(months).sort().map(function(k){ return months[k]; });
+  out.svcTotal = svcTotal;
+  return out;
+}
+
+return {
+  PLATS: PLATS, PLAT_IDS: PLAT_IDS, plat: plat, SERVICES: SERVICES, FOCUS: FOCUS, focusOf: focusOf, serviceOf: serviceOf, allocate: allocate,
+  TYPES: TYPES, typeLabel: typeLabel, planMix: planMix, weekNo: weekNo, REST_TIPS: REST_TIPS, SEASON: SEASON, CTA247: CTA247, SVC: SVC,
+  POSITION: POSITION, restPage: restPage, pageFor: pageFor, withUtm: withUtm, subFor: subFor, nextSub: nextSub, RSUBS: RSUBS, REST_CITIES: REST_CITIES, slugCity: slugCity,
+  templates: templates, captionFor: captionFor, allText: allText, problems: problems, protect: protect, protectVersion: protectVersion, postProblems: postProblems,
+  distinct: distinct, normalize: normalize, aiPrompt: aiPrompt,
+  ASTAGES: ASTAGES, CONTENT_KINDS: CONTENT_KINDS, stageCfg: stageCfg, flagsOf: flagsOf, FLAG_L: FLAG_L, tplKeys: tplKeys, route: route, stageHint: stageHint,
+  ADS_FOCUS: ADS_FOCUS, adsFocusOf: adsFocusOf, adsAllowed: adsAllowed, restSubOf: restSubOf, AD_TERMS: AD_TERMS, AD_CITIES: AD_CITIES, NEGATIVES: NEGATIVES, adKeywords: adKeywords, AD_LIMITS: AD_LIMITS, adCopy: adCopy,
+  campaignDrafts: campaignDrafts, draftCsv: draftCsv, LSA_TYPES: LSA_TYPES, lsaChecklist: lsaChecklist, boostable: boostable, boostDraft: boostDraft, paidLead: paidLead, adsReport: adsReport, addraftHtml: addraftHtml,
+  LISTINGS: LISTINGS, napCheck: napCheck, digits: digits, leadPlat: leadPlat, report: report
+};
+});
+
+var SC = W.__gcSocContent, X = null, tries = 0;
+function boot(){
+  X = W._gcMktExt;
+  if (!X || !SC) { if (tries++ < 120) nST(boot, 500); return; }
+  install();
+}
+nST(boot, 0);
+
+function install(){
+var SECS = X.SECS, VIEWS = X.VIEWS, ACT = X.ACT, UI = X.UI, MK = X.MK, C = X.C, esc = X.esc, s = X.s, arr = X.arr, toast = X.toast, api = X.api, go = X.go, draw = X.draw;
+function low(v){ return s(v).toLowerCase(); }
+function admin(){ return X.role() === 'admin'; }
+function office(){ return X.full(); }
+function cfg(){ return X.cfg(); }
+function chipS(st, label){ return '<span class="gmt-chip ' + esc(st) + '">' + esc(label || st) + '</span>'; }
+function plat(v){ return SC.plat(v) || { v: v, l: v, ic: '' }; }
+function proj(id){ return X.projects().filter(function(p){ return s(p.id) === s(id); })[0] || null; }
+function permOk(pid){ var r = MK.get('perms', 'job_' + pid), p = proj(pid); return !!((r && r.marketing === true) || (p && (p.marketingOk === true || p.mktPhotoOk === true))); }
+function centralToday(){ try { return W._gcCompanyAddress.centralDay(new Date()); } catch (e) { return X.today(); } }
+function addrCfg(){ try { return W._gcCompanyAddress.config(); } catch (e) { return { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' }; } }
+var STATE = { st: null, lib: null, wk: '', tab: {}, sel: {}, f: { q: '', job: '', type: '', tag: '', perm: '', best: false, from: '', to: '' }, busy: '' };
+function loadStatus(force){ if (STATE.st && !force && Date.now() - STATE.st.at < 60000) return; api('soc', { op: 'status' }).then(function(j){ STATE.st = Object.assign({ at: Date.now() }, j && j.ok ? j : { err: (j && j.error) || 'not reachable', platforms: {} }); if (/^(socweek|connect|mktsettings|home)$/.test(UI.sec)) draw(); }); }
+function loadLib(force){ if (STATE.lib && !force) return; STATE.lib = { tags: {}, testimonials: [], loading: true }; api('soc', { op: 'library' }).then(function(j){ STATE.lib = j && j.ok ? j : { tags: {}, testimonials: [], err: j && j.error }; if (UI.sec === 'media' || UI.sec === 'socweek') draw(); }); }
+/* the thumbnails: a private file → a short signed link, filled after the draw */
+function thumb(ref, cls){ return ref ? '<img class="' + (cls || 'gmt-thumb') + '" data-soc-ref="' + esc(ref) + '" alt="" loading="lazy">' : ''; }
+function fillThumbs(){ Array.prototype.forEach.call(D.querySelectorAll('img[data-soc-ref]:not([src])'), function(im){ var r = im.getAttribute('data-soc-ref'); if (/^(https?:|data:image\/)/.test(r)) { im.src = r; return; } X.fileUrl(r).then(function(u){ im.src = u; }, function(){ im.style.background = '#eef1f6'; }); }); }
+function later(){ nST(fillThumbs, 30); }
+
+/* ── the sections ── */
+var NEW = [
+  { id: 'socweek', ic: '🗓', l: 'Week plan — 3 posts', d: 'Mon / Wed / Fri, written for Facebook, Instagram, TikTok, LinkedIn and Google Business — approve the week in one tap' },
+  { id: 'media', ic: '🗂', l: 'Media library', d: 'Every job photo, upload, testimonial video and reel — by job, date, type, AI tags, permission, ⭐ best of' },
+  { id: 'listings', ic: '📍', l: 'Listings (40+)', d: 'Google, Bing, Apple, Yelp, BBB, Angi… name / address / phone checked — the 4014 Broadway move' },
+  { id: 'connect', ic: '🔌', l: 'Platform connections', d: 'Facebook, Instagram, Google Business, TikTok, LinkedIn, BrightLocal — what posts by itself' },
+  { id: 'socreport', ic: '📊', l: 'Social report', d: 'Posts per week per platform, engagement, leads and jobs by platform and by service vs the focus' },
+  { id: 'adsrest', ic: '🚨', l: 'Restoration ads', d: 'Paid ads are restoration only: Google Ads drafts, keywords, negatives, LSA job types, boosts, cost per restoration lead' },
+  { id: 'mktsettings', ic: '⚙️', l: 'Focus & approvals', d: 'Marketing focus (restoration first), Ads focus (restoration 100%) and the approval stage: admin → office → autopilot' }
+];
+NEW.forEach(function(x){ if (!SECS.some(function(y){ return y.id === x.id; })) SECS.splice(SECS.length - 1, 0, x); });
+if (!D.getElementById('gc-soc-css')) { var cs = D.createElement('style'); cs.id = 'gc-soc-css'; cs.textContent = '.gmt-ml{width:100%;height:110px;object-fit:cover;border-radius:6px;display:block;background:#eef1f6}'; (D.head || D.documentElement).appendChild(cs); }
+X.KINDS.soc_week = 'socweeks'; X.KINDS.mkt_addraft = 'addrafts';
+
+/* ══════════════ 🗓 WEEK PLAN ══════════════ */
+function weeks(){ return MK.all('socweeks').sort(function(a, b){ return a.id < b.id ? 1 : -1; }); }
+function curWeek(){ var ws = weeks(); if (STATE.wk) { var w = MK.get('socweeks', STATE.wk); if (w) return w; } var mon = mondayIso(0); return ws.filter(function(w){ return w.id >= mon; }).slice(-1)[0] || ws[0] || null; }
+function mondayIso(addWeeks){ var p = C.ctParts(Date.now()), back = (p.wd + 6) % 7; return new Date(Date.UTC(p.y, p.mo - 1, p.d - back + 7 * (addWeeks || 0))).toISOString().slice(0, 10); }
+function svcLabel(v){ return ({ restoration: '🚨 Restoration', roofing: '🏠 Roofing', remodel: '🛠 Remodel', commercial: '🏢 Commercial' })[v] || v || ''; }
+function stLabel(st){ return ({ draft: 'Draft', waiting: 'Waiting for approval', approved: 'Approved — scheduled', paused: '⏸ Paused', posting: 'Posting…', posted: 'Posted', rejected: 'Not approved', failed: 'Failed' })[st] || st; }
+function versionEditor(p, n){
+  var v = (p.versions || {})[n] || {}, k = function(f){ return 'data-soc="' + esc(p.id) + '|' + n + '|' + f + '"'; }, ta = function(f, label, rows, val){ return '<label>' + esc(label) + '</label><textarea ' + k(f) + ' rows="' + rows + '">' + esc(val == null ? v[f] : val) + '</textarea>'; };
+  var lines = function(f){ return arr(v[f]).join('\n'); };
+  if (n === 'facebook') return ta('caption', 'Facebook post (community)', 10);
+  if (n === 'instagram') return '<label>Format</label><select ' + k('format') + '><option value="reel"' + (v.format !== 'carousel' ? ' selected' : '') + '>Reel</option><option value="carousel"' + (v.format === 'carousel' ? ' selected' : '') + '>Carousel</option></select>' +
+    (v.format === 'carousel' ? ta('slides', 'Carousel slides (one per line)', 5, lines('slides')) : ta('script', 'Reel script (one shot per line)', 5, lines('script'))) + ta('caption', 'Caption', 4) + ta('hashtags', 'Hashtags', 2);
+  if (n === 'tiktok') return ta('hook', 'Hook (first 2 seconds)', 2) + ta('onScreen', 'On-screen text (one per line)', 4, lines('onScreen')) + ta('script', 'Script (one line per beat)', 4, lines('script')) + ta('caption', 'Caption', 2) + ta('hashtags', 'Hashtags', 2);
+  if (n === 'linkedin') return ta('text', 'LinkedIn update (professional)', 10);
+  return ta('text', 'Google Business "what\'s new" post', 5) + '<label>Button</label><select ' + k('cta') + '><option value="CALL"' + (v.cta === 'CALL' ? ' selected' : '') + '>Call now</option><option value="LEARN_MORE"' + (v.cta !== 'CALL' ? ' selected' : '') + '>Learn more → ' + esc(s(v.url).split('?')[0]) + '</option></select>';
+}
+function packHtml(p, n){
+  var v = (p.versions || {})[n] || {}, cap = SC.captionFor(n, v), r = (p.results || {})[n] || {};
+  return '<div class="gmt-card" style="background:#fffdf3;border-color:#f3e3a0;margin:8px 0"><b>📲 Ready to post on ' + esc(plat(n).l) + '</b>' + (r.todo ? ' <span class="gmt-muted">· on the To-Do</span>' : '') +
+    '<div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="soc-copy" data-id="' + esc(p.id) + '" data-n="' + n + '">📋 Copy caption</button>' +
+    (p.photoRef || p.videoRef ? '<button class="gmt-btn o" data-a="soc-media" data-ref="' + esc(p.videoRef || p.photoRef) + '">⬇ ' + (p.videoRef ? 'Video' : 'Picture') + '</button>' : (n === 'tiktok' || n === 'instagram' ? '<span class="gmt-muted">Film it from the script above.</span>' : '')) +
+    '<button class="gmt-btn o" data-a="open" data-url="' + esc(plat(n).open) + '">Open ' + esc(plat(n).l) + ' ↗</button>' +
+    (r.ok ? chipS('posted', '✓ Posted') : '<button class="gmt-btn g" data-a="soc-done" data-id="' + esc(p.id) + '" data-n="' + n + '">✓ Mark posted</button>') + '</div>' +
+    '<div class="gmt-muted" style="white-space:pre-wrap;margin-top:6px">' + esc(cap.slice(0, 600)) + '</div></div>';
+}
+function postCard(p, st){
+  var tab = STATE.tab[p.id] || 'facebook', nets = arr(p.networks), conn = (st && st.platforms) || {}, pr = SC.postProblems(p), res = p.results || {};
+  var h = '<div class="gmt-card" data-soc-post="' + esc(p.id) + '"><div class="gmt-row" style="justify-content:space-between"><div><h2 style="margin:0">' + esc(p.socDay || '') + ' · ' + esc(C.ctLabel(p.scheduleAt)) + '</h2>' +
+    '<div class="gmt-row" style="margin-top:4px">' + chipS('draft', SC.typeLabel(p.socType)) + chipS('approved', svcLabel(p.socService) + (p.socSub ? ' · ' + p.socSub : '')) + chipS(p.status === 'paused' ? 'waiting' : p.status, stLabel(p.status)) + (p.autoApproved ? chipS('waiting', 'Autopilot — veto until ' + C.ctLabel(p.vetoUntil)) : '') + (p.ai ? chipS('draft', '✨ AI') : '') + '</div></div>' +
+    '<div>' + thumb(p.photoRef) + (p.beforeRef ? thumb(p.beforeRef) : '') + '</div></div>';
+  h += '<div class="gmt-row" style="margin:10px 0 4px">' + SC.PLATS.map(function(x){ var on = nets.indexOf(x.v) >= 0, r = res[x.v];
+    return '<button class="gmt-btn ' + (tab === x.v ? '' : 'o') + '" data-a="soc-tab" data-id="' + esc(p.id) + '" data-n="' + x.v + '" style="' + (on ? '' : 'opacity:.45') + '">' + x.ic + ' ' + esc(x.l) + (r && r.ok ? ' ✓' : r && r.manual ? ' 📲' : '') + '</button>'; }).join('') + '</div>';
+  h += '<div>' + versionEditor(p, tab) + '</div>';
+  h += '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="soc-net" data-id="' + esc(p.id) + '" data-n="' + tab + '"' + (nets.indexOf(tab) >= 0 ? ' checked' : '') + '> Post this one on ' + esc(plat(tab).l) + (conn[tab] ? ' — posts by itself' : ' — not connected: a Ready-to-post pack') + '</label>';
+  h += '<div class="gmt-warn" data-soc-warn style="' + (pr.length ? '' : 'display:none') + '">' + pr.map(function(x){ return esc(x.l); }).join('<br>') + '</div>';
+  var r = res[tab];
+  if (r && r.ok && r.url) h += '<div class="gmt-ok">✓ Posted — <a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.url.slice(0, 70)) + '</a></div>';
+  if ((r && r.manual && !r.ok) || (!conn[tab] && nets.indexOf(tab) >= 0 && /^(approved|posted)$/.test(s(p.status)))) h += packHtml(p, tab);
+  h += '<div class="gmt-row" style="margin-top:8px">' +
+    (!/^(posted|posting)$/.test(s(p.status)) ? '<select data-soc-swap="' + esc(p.id) + '">' + SC.TYPES.map(function(t){ return '<option value="' + t.v + '">' + esc(t.ic + ' ' + t.l) + '</option>'; }).join('') + '</select><select data-soc-swaps="' + esc(p.id) + '">' + SC.SERVICES.map(function(x){ return '<option value="' + x.v + '"' + (x.v === p.socService ? ' selected' : '') + '>' + esc(svcLabel(x.v)) + '</option>'; }).join('') + '</select><button class="gmt-btn o" data-a="soc-swap" data-id="' + esc(p.id) + '">🔁 Swap</button>' : '') +
+    (SC.boostable(p, cfg().adsFocus) && office() && !MK.get('addrafts', 'boost_' + p.id) ? '<button class="gmt-btn o" data-a="soc-boost" data-id="' + esc(p.id) + '">🚀 Boost this (paid)</button>' : '') +
+    (p.status === 'approved' ? '<button class="gmt-btn o" data-a="soc-pause" data-id="' + esc(p.id) + '">⏸ Pause</button>' : '') + (p.status === 'paused' ? '<button class="gmt-btn o" data-a="soc-resume" data-id="' + esc(p.id) + '">▶ Resume</button>' : '') +
+    (p.status === 'draft' && (!p.socWeek || s((MK.get('socweeks', p.socWeek) || {}).status) === 'approved') ? '<button class="gmt-btn o" data-a="post-submit" data-id="' + esc(p.id) + '">Send this post for approval</button>' : '') + '</div>';
+  return h + '</div>';
+}
+VIEWS.socweek = function(){
+  loadStatus(); loadLib();
+  var st = STATE.st, c = cfg(), sp = c.socPlan || {}, w = curWeek(), h = '';
+  h += '<div class="gmt-card"><div class="gmt-row" style="justify-content:space-between"><div><h2 style="margin:0">🤖 3-a-week Autopilot plan</h2><div class="gmt-muted">Every Sunday the CRM proposes Monday / Wednesday / Friday posts — a mix of job progress, before/after, testimonials, team, tips and seasonal, ' +
+    'restoration first. Each post is written for every platform. Nothing goes out until the week is approved (stage ' + SC.stageCfg(c).stage + ').</div></div>' +
+    '<label style="display:flex;gap:6px;align-items:center;font-weight:800"><input type="checkbox" data-a="soc-plan-on"' + (sp.on ? ' checked' : '') + (office() ? '' : ' disabled') + '> ' + (sp.on ? 'On' : 'Off') + '</label></div>' +
+    '<div class="gmt-row" style="margin-top:8px">' + (office() ? '<button class="gmt-btn" data-a="soc-plan" data-w="next">🗓 Plan next week now</button><button class="gmt-btn o" data-a="soc-plan" data-w="this">Plan this week</button>' : '') +
+    '<select data-soc-week>' + weeks().map(function(x){ return '<option value="' + esc(x.id) + '"' + (w && w.id === x.id ? ' selected' : '') + '>Week of ' + esc(x.id) + ' — ' + esc(stLabel(x.status)) + '</option>'; }).join('') + '</select></div></div>';
+  if (!w) return h + '<div class="gmt-card"><div class="gmt-muted">No week planned yet — tap “Plan next week now”.</div></div>';
+  var posts = arr(w.postIds).map(function(id){ return MK.get('posts', id); }).filter(Boolean);
+  var allOk = posts.every(function(p){ return /^(approved|posted|posting|paused)$/.test(s(p.status)); });
+  h += '<div class="gmt-card" data-soc-week-card="' + esc(w.id) + '"><div class="gmt-row" style="justify-content:space-between"><div><h2 style="margin:0">The week of ' + esc(w.id) + '</h2><div class="gmt-muted">' +
+    posts.map(function(p){ return esc(p.socDay + ': ' + SC.typeLabel(p.socType) + ' · ' + svcLabel(p.socService)); }).join(' &nbsp;·&nbsp; ') + '</div></div>' +
+    '<div class="gmt-row">' + chipS(allOk ? 'approved' : w.status, allOk ? 'Approved' : stLabel(w.status)) +
+    (!allOk && office() ? '<button class="gmt-btn g" data-a="soc-approve-week" data-id="' + esc(w.id) + '"' + (STATE.busy === 'week' ? ' disabled' : '') + '>✅ Approve the week</button>' : '') +
+    (w.status === 'draft' && office() ? '<button class="gmt-btn o" data-a="soc-plan" data-w="' + esc(w.id) + '" data-replace="1">↻ Re-plan</button>' : '') + '</div></div>' +
+    (w.reason ? '<div class="gmt-warn">Not approved: ' + esc(w.reason) + '</div>' : '') + '</div>';
+  posts.forEach(function(p){ h += postCard(p, st); });
+  later();
+  return h;
+};
+function editPost(id, fn){
+  var p = MK.get('posts', id); if (!p) return;
+  var v = JSON.parse(JSON.stringify(p.versions || {})); fn(v, p);
+  var patch = { id: id, versions: v, caption: SC.captionFor('facebook', v.facebook) || p.caption };
+  if (/^(waiting|approved|paused)$/.test(s(p.status))) { patch.status = 'draft'; patch.weekApproved = false; patch.autoApproved = false; var w = p.socWeek && MK.get('socweeks', p.socWeek); if (w && w.status === 'waiting') MK.put('socweeks', { id: w.id, status: 'draft' }); }
+  if (admin()) patch.adminEditAt = X.nowIso();
+  MK.put('posts', patch, true);
+  var g = D.querySelector('[data-soc-post="' + id + '"] [data-soc-warn]'), pr = SC.postProblems(Object.assign({}, p, patch));
+  if (g) { g.innerHTML = pr.map(function(x){ return esc(x.l); }).join('<br>'); g.style.display = pr.length ? '' : 'none'; }
+}
+D.addEventListener('input', function(ev){
+  var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-soc'); if (!k) return;
+  var a = k.split('|'), val = t.value;
+  UI.editing = true; nST(function(){ UI.editing = false; }, 4000);
+  editPost(a[0], function(v){ var x = v[a[1]] = v[a[1]] || {}; x[a[2]] = /^(script|slides|onScreen)$/.test(a[2]) ? val.split('\n').map(function(y){ return y.trim(); }).filter(Boolean) : val; });
+}, true);
+D.addEventListener('change', function(ev){
+  var t = ev.target; if (!t || !t.getAttribute) return;
+  if (t.hasAttribute('data-soc-week')) { STATE.wk = t.value; draw(); return; }
+  var k = t.getAttribute('data-soc'); if (k && t.tagName === 'SELECT') { var a = k.split('|'); editPost(a[0], function(v){ (v[a[1]] = v[a[1]] || {})[a[2]] = t.value; }); draw(); }
+}, true);
+ACT['soc-tab'] = function(b){ STATE.tab[b.getAttribute('data-id')] = b.getAttribute('data-n'); draw(); };
+ACT['soc-net'] = function(b){ var p = MK.get('posts', b.getAttribute('data-id')), n = b.getAttribute('data-n'); if (!p) return; var nets = arr(p.networks).filter(function(x){ return x !== n; }); if (b.checked) nets.push(n); MK.put('posts', { id: p.id, networks: nets }); draw(); };
+ACT['soc-plan-on'] = function(b){ var sp = Object.assign({}, cfg().socPlan || {}, { on: !!b.checked, by: X.myName(), atSet: X.nowIso() }); X.setCfg({ socPlan: sp }); toast(b.checked ? 'The 3-a-week plan is on — every Sunday the next week is proposed.' : 'The 3-a-week plan is off.'); draw(); };
+ACT['soc-plan'] = function(b){ var wk = b.getAttribute('data-w'), rep = b.getAttribute('data-replace') === '1'; if (rep && !W.confirm('Re-plan this week? Its three drafts are replaced.')) return; b.disabled = true; b.textContent = 'Writing the posts…';
+  MK.push().then(function(){ return api('soc', { op: 'plan_week', week: wk === 'this' ? 'this' : wk === 'next' ? 'next' : wk, replace: rep }); }).then(function(j){ if (j && j.ok) { STATE.wk = j.week; toast(j.existing ? 'That week is already planned.' : 'The week is planned — it is on ✅ Approvals.'); } else toast('Not planned: ' + ((j && j.error) || 'try again'), true); MK.pull(true); nST(draw, 600); }); };
+ACT['soc-approve-week'] = function(b){
+  var id = b.getAttribute('data-id'), w = MK.get('socweeks', id); if (!w) return;
+  var bad = []; arr(w.postIds).forEach(function(pid){ var p = MK.get('posts', pid); if (p) SC.postProblems(p).forEach(function(x){ bad.push(p.socDay + ': ' + x.l); }); });
+  if (bad.length) { toast(bad[0], true); return; }
+  STATE.busy = 'week'; draw();
+  /* the drafts the week covers go back to the week's approval */
+  arr(w.postIds).forEach(function(pid){ var p = MK.get('posts', pid); if (p && /^(draft|rejected)$/.test(s(p.status) || 'draft')) MK.put('posts', { id: pid, status: 'draft' }, true); });
+  X.sendForApproval('soc_week', 'socweeks', id, w.status === 'rejected' || w.status === 'draft' && !!w.apprId).then(function(j){
+    if (!j || !j.ok) { STATE.busy = ''; draw(); return; }
+    if (j.auto) { STATE.busy = ''; toast('Stage 3: approved by Autopilot — posts after the 24-hour veto.'); MK.pull(true); return; }
+    var aid = j.id || (MK.get('socweeks', id) || {}).apprId;
+    if (!W._gcApprovalAct || !aid) { STATE.busy = ''; draw(); return; }
+    return Promise.resolve(W._gcApprovalAct(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + r.error : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
+  });
+};
+ACT['soc-swap'] = function(b){ var id = b.getAttribute('data-id'), t = D.querySelector('[data-soc-swap="' + id + '"]'), sv = D.querySelector('[data-soc-swaps="' + id + '"]'); b.disabled = true; b.textContent = 'Writing…';
+  MK.push().then(function(){ return api('soc', { op: 'swap', id: id, type: t && t.value, service: sv && sv.value }); }).then(function(j){ toast(j && j.ok ? 'Swapped — check the new versions.' : (j && j.error) || 'Not swapped.', !(j && j.ok)); MK.pull(true); nST(draw, 600); }); };
+ACT['soc-pause'] = function(b){ MK.put('posts', { id: b.getAttribute('data-id'), status: 'paused', pausedBy: X.myName(), pausedAt: X.nowIso() }); toast('Paused — it will not post until resumed.'); draw(); };
+ACT['soc-resume'] = function(b){ MK.put('posts', { id: b.getAttribute('data-id'), status: 'approved', resumedBy: X.myName() }); toast('Resumed.'); draw(); };
+ACT['soc-copy'] = function(b){ var p = MK.get('posts', b.getAttribute('data-id')), n = b.getAttribute('data-n'); if (!p) return; X.copyText(SC.captionFor(n, (p.versions || {})[n])).then(function(){ toast('Caption copied — paste it in ' + plat(n).l + '.'); }); };
+ACT['soc-media'] = function(b){ var ref = b.getAttribute('data-ref'); X.fileUrl(ref).then(function(u){ var a = D.createElement('a'); a.href = u; a.download = 'grayco-' + ref.split('/').pop(); a.target = '_blank'; D.body.appendChild(a); a.click(); nST(function(){ a.remove(); }, 1000); }, function(){ toast('The file is not reachable from this computer yet.', true); }); };
+ACT['soc-done'] = function(b){ var p = MK.get('posts', b.getAttribute('data-id')), n = b.getAttribute('data-n'); if (!p) return; var url = W.prompt('Paste the link to the ' + plat(n).l + ' post (optional):', '') || '';
+  var r = Object.assign({}, p.results || {}); r[n] = { ok: true, manualDone: true, url: /^https?:\/\//.test(url) ? url : '', at: X.nowIso(), by: X.myName() };
+  MK.put('posts', { id: p.id, results: r, status: p.status === 'approved' ? 'posted' : p.status, postedAt: p.postedAt || X.nowIso() }); toast('Marked as posted on ' + plat(n).l + '.'); draw(); };
+
+/* ══════════════ 🗂 MEDIA LIBRARY ══════════════ */
+function photoRecs(){ try { return arr(W._gcPhotos && W._gcPhotos.records ? W._gcPhotos.records() : []); } catch (e) { return []; } }
+function mediaItems(){
+  var lib = STATE.lib || { tags: {}, testimonials: [] }, out = [], meta = {};
+  MK.all('media').forEach(function(m){ meta[m.id] = m; });
+  photoRecs().forEach(function(r){
+    if (!r || r.deleted === true || r.source === 'ccflag' || !s(r.ref || r.thumbRef)) return;
+    var id = 'ph_' + s(r.id), m = meta[id] || {}, t = lib.tags[s(r.id)] || lib.tags['cc:' + s(r.id).replace(/^cc_/, '')] || {};
+    out.push({ id: id, src: /^cc/.test(s(r.id)) || r.source === 'companycam' ? 'CompanyCam' : 'GrayCo Photos', ref: s(r.ref), thumb: s(r.thumbRef || r.ref), kind: /\.(mp4|mov|webm)$/i.test(s(r.ref)) ? 'video' : 'photo', jobId: s(r.jobId),
+      date: s(r.at || r.takenAt).slice(0, 10), type: m.type || low(r.tag) || t.stage || '', tags: [t.stage].concat(t.materials || [], [t.area, r.tag]).filter(Boolean).map(low), best: !!m.best, note: s(r.note || r.caption) });
+  });
+  MK.all('media').filter(function(m){ return s(m.ref) && !/^ph_/.test(m.id); }).forEach(function(m){
+    out.push({ id: m.id, src: m.session ? 'Content session' : 'CRM upload', ref: m.ref, thumb: m.ref, kind: m.kind || 'photo', jobId: s(m.jobId), date: s(m.date || m.createdAt).slice(0, 10), type: m.type || '', tags: arr(m.tags).map(low), best: !!m.best, session: m.session, note: s(m.people || m.note) });
+  });
+  arr(lib.testimonials).forEach(function(t){ var m = meta['ts_' + t.id] || {}; out.push({ id: 'ts_' + t.id, src: 'Testimonial', ref: t.video || '', thumb: '', kind: t.video ? 'video' : 'quote', jobId: s(t.pid), date: s(t.at).slice(0, 10), type: 'testimonial', tags: ['testimonial'], best: !!m.best, note: '“' + s(t.text).slice(0, 120) + '” — ' + s(t.first), permAlways: true }); });
+  MK.all('reels').forEach(function(r){ var ref = s(r.videoRef || r.ref); if (!ref) return; out.push({ id: 'rl_' + r.id, src: 'Reel kit', ref: ref, thumb: '', kind: 'video', jobId: s(r.jobId), date: s(r.createdAt || r.at).slice(0, 10), type: 'reel', tags: ['reel'], best: !!(meta['rl_' + r.id] || {}).best, note: s(r.title) }); });
+  out.forEach(function(x){ x.perm = x.permAlways || (x.jobId ? permOk(x.jobId) : x.src === 'CRM upload' || x.src === 'Content session' ? (meta[x.id] || {}).perm !== false : false); var p = proj(x.jobId); x.jobName = p ? s(p.name) : ''; });
+  return out.sort(function(a, b){ return a.date < b.date ? 1 : -1; });
+}
+function filtered(){
+  var f = STATE.f, q = low(f.q);
+  return mediaItems().filter(function(x){
+    if (f.job && x.jobId !== f.job) return false;
+    if (f.type && !(x.type === f.type || x.kind === f.type)) return false;
+    if (f.tag && x.tags.indexOf(low(f.tag)) < 0) return false;
+    if (f.perm === 'ok' && !x.perm) return false; if (f.perm === 'no' && x.perm) return false;
+    if (f.best && !x.best) return false;
+    if (f.from && x.date < f.from) return false; if (f.to && x.date > f.to) return false;
+    if (q && [x.jobName, x.note, x.type, x.src, x.tags.join(' ')].join(' ').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+VIEWS.media = function(){
+  loadLib();
+  var all = mediaItems(), list = filtered(), f = STATE.f, sel = Object.keys(STATE.sel).filter(function(k){ return STATE.sel[k]; });
+  var jobs = {}; all.forEach(function(x){ if (x.jobId) jobs[x.jobId] = x.jobName || x.jobId; });
+  var tags = {}; all.forEach(function(x){ x.tags.forEach(function(t){ tags[t] = (tags[t] || 0) + 1; }); });
+  var h = '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + all.length + '</b><span>items</span></div><div class="gmt-kpi"><b>' + all.filter(function(x){ return x.perm; }).length + '</b><span>OK to use publicly</span></div><div class="gmt-kpi"><b>' + all.filter(function(x){ return x.best; }).length + '</b><span>⭐ Best of</span></div><div class="gmt-kpi"><b>' + all.filter(function(x){ return x.kind === 'video'; }).length + '</b><span>videos</span></div></div>';
+  h += '<div class="gmt-card"><h2>🔎 Find</h2><div class="gmt-row">' +
+    '<input data-soc-f="q" placeholder="Search job, tag, note…" value="' + esc(f.q) + '" style="min-width:200px">' +
+    '<select data-soc-f="job"><option value="">All jobs</option>' + Object.keys(jobs).map(function(k){ return '<option value="' + esc(k) + '"' + (f.job === k ? ' selected' : '') + '>' + esc(jobs[k]) + '</option>'; }).join('') + '</select>' +
+    '<select data-soc-f="type"><option value="">All types</option>' + ['photo', 'video', 'before', 'after', 'progress', 'team', 'testimonial', 'reel'].map(function(t){ return '<option' + (f.type === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select>' +
+    '<select data-soc-f="tag"><option value="">All AI tags</option>' + Object.keys(tags).sort().slice(0, 60).map(function(t){ return '<option' + (f.tag === t ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
+    '<select data-soc-f="perm"><option value="">Any permission</option><option value="ok"' + (f.perm === 'ok' ? ' selected' : '') + '>✓ OK to use publicly</option><option value="no"' + (f.perm === 'no' ? ' selected' : '') + '>✗ No OK yet</option></select>' +
+    '<input type="date" data-soc-f="from" value="' + esc(f.from) + '"><input type="date" data-soc-f="to" value="' + esc(f.to) + '">' +
+    '<label style="display:flex;gap:6px;align-items:center;font-weight:700;margin:0"><input type="checkbox" data-soc-f="best"' + (f.best ? ' checked' : '') + '> ⭐ Best of only</label></div>' +
+    '<div class="gmt-row" style="margin-top:8px"><b>' + list.length + '</b>&nbsp;shown · <b data-soc-selcount>' + sel.length + '</b>&nbsp;selected' +
+    '<button class="gmt-btn" data-a="ml-post">📣 Post</button><button class="gmt-btn o" data-a="ml-web">🌐 Website portfolio</button><button class="gmt-btn o" data-a="ml-dl">⬇ Download</button><button class="gmt-btn o" data-a="ml-best">⭐ Best of</button><button class="gmt-btn o" data-a="ml-clear">Clear</button></div></div>';
+  h += '<div class="gmt-card"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px" data-soc-grid>' + list.slice(0, 240).map(function(x){
+    return '<label style="display:block;border:2px solid ' + (STATE.sel[x.id] ? '#D4A017' : '#e3e8f0') + ';border-radius:10px;padding:6px;cursor:pointer;background:#fff;margin:0" data-soc-item="' + esc(x.id) + '"><input type="checkbox" data-a="ml-sel" data-id="' + esc(x.id) + '"' + (STATE.sel[x.id] ? ' checked' : '') + ' style="float:right">' +
+      (x.thumb ? thumb(x.thumb, 'gmt-ml') : '<div style="height:96px;display:flex;align-items:center;justify-content:center;background:#eef1f6;border-radius:6px;font-size:30px">' + (x.kind === 'video' ? '🎬' : '💬') + '</div>') +
+      '<div style="font-size:11px;font-weight:800;margin-top:4px">' + (x.best ? '⭐ ' : '') + esc(x.jobName || x.src) + '</div><div class="gmt-muted" style="font-size:10px">' + esc(x.date) + ' · ' + esc(x.src) + (x.type ? ' · ' + esc(x.type) : '') + '</div>' +
+      '<div style="font-size:10px;margin-top:2px">' + (x.perm ? '<span style="color:#166534">✓ OK to post</span>' : '<span style="color:#9a3412">✗ no customer OK</span>') + (x.tags.length ? ' · <span class="gmt-muted">' + esc(x.tags.slice(0, 3).join(', ')) + '</span>' : '') + '</div>' +
+      (x.note && !x.thumb ? '<div class="gmt-muted" style="font-size:10px">' + esc(x.note) + '</div>' : '') + '</label>';
+  }).join('') + '</div>' + (list.length > 240 ? '<div class="gmt-muted">Showing the newest 240 — filter to see more.</div>' : '') + (!list.length ? '<div class="gmt-muted">Nothing matches.</div>' : '') + '</div>';
+  var jl = X.projects().slice(0, 400);
+  h += '<div class="gmt-card"><h2>📸 Content session — batch upload</h2><div class="gmt-muted">Every 2–3 months: shoot the crew, the trucks, a job start-to-finish. Pick the job (or “Team / company”), the type, then the files — each one is tagged and lands here.</div>' +
+    '<div class="gmt-row"><select id="ml-s-job"><option value="">Team / company (no job)</option>' + jl.map(function(p){ return '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>' +
+    '<select id="ml-s-type">' + ['team', 'progress', 'before', 'after', 'truck', 'office', 'event'].map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select>' +
+    '<input id="ml-s-people" placeholder="Who is in it (staff first names)"><input type="file" id="ml-s-files" multiple accept="image/*,video/*" data-ch="ml-upload"></div><div class="gmt-muted" data-soc-up></div></div>';
+  later();
+  return h;
+};
+D.addEventListener('input', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-soc-f'); if (!k || k === 'best') return; STATE.f[k] = t.value; draw(); if (k === 'q') { var i = D.querySelector('[data-soc-f="q"]'); if (i) { i.focus(); try { i.setSelectionRange(i.value.length, i.value.length); } catch (e) {} } } }, true);
+D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-soc-f'); if (k === 'best') { STATE.f.best = t.checked; draw(); } }, true);
+function selected(){ var by = {}; mediaItems().forEach(function(x){ by[x.id] = x; }); return Object.keys(STATE.sel).filter(function(k){ return STATE.sel[k] && by[k]; }).map(function(k){ return by[k]; }); }
+ACT['ml-sel'] = function(b){ STATE.sel[b.getAttribute('data-id')] = b.checked; var c = D.querySelector('[data-soc-selcount]'); if (c) c.textContent = Object.keys(STATE.sel).filter(function(k){ return STATE.sel[k]; }).length; var l = b.closest('[data-soc-item]'); if (l) l.style.borderColor = b.checked ? '#D4A017' : '#e3e8f0'; };
+ACT['ml-clear'] = function(){ STATE.sel = {}; draw(); };
+ACT['ml-best'] = function(){ var l = selected(); if (!l.length) { toast('Select something first.', true); return; } var on = !l.every(function(x){ return x.best; }); l.forEach(function(x){ MK.put('media', { id: x.id, best: on, src: x.src, jobId: x.jobId }, true); }); toast(on ? '⭐ Added to Best of.' : 'Taken out of Best of.'); draw(); };
+ACT['ml-post'] = function(){
+  var l = selected().filter(function(x){ return x.ref; }); if (!l.length) { toast('Select a photo or video first.', true); return; }
+  var bad = l.filter(function(x){ return !x.perm; }); if (bad.length) { toast('No customer OK for ' + bad.length + ' of them — only photos with the customer\'s OK go public.', true); return; }
+  var p = proj(l[0].jobId);
+  go('social', X.newPostForm('blank', { photoRef: l[0].ref, jobId: l[0].jobId || '', jobAddresses: p ? [s(p.address)] : [], title: (l[0].jobName || 'GrayCo') + ' — from the library', ni: true }));
+};
+ACT['ml-web'] = function(){
+  var l = selected().filter(function(x){ return x.ref && x.kind === 'photo'; }); if (!l.length) { toast('Select photos first.', true); return; }
+  var bad = l.filter(function(x){ return !x.perm; }); if (bad.length) { toast('No customer OK for ' + bad.length + ' of them — they cannot go on the website.', true); return; }
+  l.forEach(function(x){ MK.put('portfolio', { id: 'pf_' + x.id.replace(/[^\w-]/g, ''), ref: x.ref, jobId: x.jobId, kind: SC.serviceOf(proj(x.jobId) || {}) || 'remodel', city: C.areaOf(proj(x.jobId) || {}), type: x.type, addedBy: X.myName(), approved: false }, true); });
+  toast(l.length + ' added to the website portfolio list (Website, pixels & guides) — the web page shows them after an admin approves.');
+};
+ACT['ml-dl'] = function(){ var l = selected().filter(function(x){ return x.ref; }); if (!l.length) { toast('Select files first.', true); return; } l.slice(0, 30).forEach(function(x, i){ nST(function(){ ACT['soc-media']({ getAttribute: function(){ return x.ref; } }); }, i * 400); }); toast('Downloading ' + Math.min(30, l.length) + ' file(s)…'); };
+ACT['ml-upload'] = function(t){
+  var files = Array.prototype.slice.call(t.files || []); if (!files.length) return;
+  var job = (D.getElementById('ml-s-job') || {}).value || '', type = (D.getElementById('ml-s-type') || {}).value || 'team', people = (D.getElementById('ml-s-people') || {}).value || '', sess = X.uid('sess'), out = D.querySelector('[data-soc-up]'), done = 0;
+  var one = function(f){ return new Promise(function(res){ var r = new FileReader(); r.onload = function(){ X.storeDataUrl(r.result, f.name).then(function(ref){ if (ref) MK.put('media', { id: X.uid('md'), ref: ref, kind: /^video/.test(f.type) ? 'video' : 'photo', jobId: job, type: type, people: people, session: sess, date: X.today(), tags: [type], perm: job ? undefined : true, createdAt: X.nowIso(), by: X.myName() }, true); done++; if (out) out.textContent = done + ' of ' + files.length + ' uploaded…'; res(); }, function(){ res(); }); }; r.onerror = function(){ res(); }; r.readAsDataURL(f); }); };
+  files.reduce(function(p, f){ return p.then(function(){ return one(f); }); }, Promise.resolve()).then(function(){ toast(done + ' file(s) added to the library — content session tagged.'); t.value = ''; draw(); });
+};
+
+/* ══════════════ 📍 LISTINGS ══════════════ */
+function lrow(L){ return Object.assign({ id: L.id }, MK.get('listings', L.id) || {}); }
+function addrTodo(){ try { var l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); return arr(l).filter(function(t){ return t && t.id === 'adm_seed_address_v1'; })[0] || null; } catch (e) { return null; } }
+function people(){ var seen = {}; return arr((W._crm || {}).users).filter(function(u){ var e = low(u && u.email); if (!e || u.active === false || seen[e]) return false; seen[e] = 1; return true; }); }
+VIEWS.listings = function(){
+  var A = addrCfg(), day = centralToday(), rows = SC.LISTINGS.map(function(L){ var r = lrow(L); return { L: L, r: r, c: SC.napCheck(r, A, day) }; });
+  var fix = rows.filter(function(x){ return x.c.state === 'fix' || (x.c.state === 'missing' && x.L.pri === 1); }), move = rows.filter(function(x){ return x.c.issues.some(function(i){ return i.move; }); });
+  var t = addrTodo(), h = '';
+  h += '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + SC.LISTINGS.length + '</b><span>platforms</span></div><div class="gmt-kpi"><b>' + rows.filter(function(x){ return x.c.state === 'ok' || x.c.state === 'soon'; }).length + '</b><span>right today</span></div><div class="gmt-kpi"><b>' + fix.length + '</b><span>fix needed</span></div><div class="gmt-kpi"><b>' + move.length + '</b><span>to change for the move</span></div></div>';
+  h += '<div class="gmt-card"><h2>🏢 The address move</h2><div>' + (day >= A.switchOn ? 'Since <b>' + esc(A.switchOn) + '</b> the company address is <b>' + esc(A.next) + '</b>.' : 'Today: <b>' + esc(A.current) + '</b> · from <b>' + esc(A.switchOn) + '</b>: <b>' + esc(A.next) + '</b>.') + ' (⚙ Admin → 🏢 Company address)</div>' +
+    (t ? '<div class="gmt-row" style="margin-top:6px">' + chipS(t.done ? 'done' : 'waiting', t.done ? '✓ Done' : 'Open') + ' <b>' + esc(t.label) + '</b>' + (t.due ? ' <span class="gmt-muted">due ' + esc(t.due) + '</span>' : '') + ' <span class="gmt-muted">' + arr(t.items).filter(function(i){ return /listing/i.test(i.label); }).length + ' listing steps on it</span></div>' : '<div class="gmt-muted">The “Update our address” to-do is not on this computer yet.</div>') +
+    (move.length && t && !t.done && office() ? '<button class="gmt-btn" data-a="li-todo" style="margin-top:8px">Add the ' + move.length + ' listings to the address to-do</button>' : '') + '</div>';
+  h += '<div class="gmt-card"><h2>🛠 Fix needed (' + fix.length + ')</h2>' + (fix.length ? fix.map(function(x){ return '<div class="gmt-check"><div><b>' + esc(x.L.n) + '</b> ' + (x.r.url ? '<a href="#" class="gmt-link" data-a="open" data-url="' + esc(x.r.url) + '">Open ↗</a>' : '<a href="#" class="gmt-link" data-a="open" data-url="' + esc(x.L.url) + '">Claim / create ↗</a>') +
+    '<div class="gmt-muted">' + x.c.issues.filter(function(i){ return i.fix; }).map(function(i){ return esc(i.l); }).join(' · ') + (x.r.owner ? ' · owner: ' + esc(x.r.owner) : '') + '</div></div></div>'; }).join('') : '<div class="gmt-ok">Nothing to fix right now.</div>') + '</div>';
+  var st = STATE.st && STATE.st.platforms;
+  h += '<div class="gmt-card"><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">All listings</h2><div class="gmt-row">' + (office() ? '<button class="gmt-btn o" data-a="li-bl">⟳ Check with BrightLocal</button>' : '') + '<span class="gmt-muted">' + (st && st.brightlocal ? 'BrightLocal connected' : 'BrightLocal optional (BRIGHTLOCAL_API_KEY / _SECRET / _REPORT_ID)') + '</span></div></div>' +
+    '<div class="gmt-muted">Expected: GrayCo Construction Services · ' + esc(SC.napCheck({ url: 'x', checkedAt: X.nowIso(), address: '1' }, A, day).expect) + ' · ' + esc(C.BRAND.phone) + '. Paste what each listing shows — the check runs as you type.</div>' +
+    '<div style="overflow-x:auto"><table><tr><th>Platform</th><th>Status</th><th>URL</th><th>Name shown</th><th>Address shown</th><th>Phone shown</th><th>Last checked</th><th>Owner</th><th>Notes</th></tr>' + rows.map(function(x){
+      var r = x.r, k = function(f){ return 'data-li="' + esc(x.L.id) + '|' + f + '"'; }, cls = { ok: 'posted', soon: 'approved', fix: 'failed', missing: 'rejected', unchecked: 'draft' }[x.c.state];
+      return '<tr data-li-row="' + esc(x.L.id) + '"><td><b>' + esc(x.L.n) + '</b><div class="gmt-muted">' + esc(x.L.cat) + ' · ' + ['', 'must have', 'should have', 'nice to have'][x.L.pri] + '</div></td><td>' + chipS(cls, { ok: '✓ Right', soon: 'Right · change on ' + addrCfg().switchOn, fix: 'Fix needed', missing: 'Not listed', unchecked: 'Not checked' }[x.c.state]) +
+        (x.c.issues.length ? '<div class="gmt-muted" style="max-width:240px">' + x.c.issues.map(function(i){ return esc(i.l); }).join('<br>') + '</div>' : '') + '</td>' +
+        '<td><input ' + k('url') + ' value="' + esc(r.url) + '" placeholder="' + esc(x.L.url) + '" style="width:170px"></td><td><input ' + k('name') + ' value="' + esc(r.name) + '" style="width:150px"></td><td><input ' + k('address') + ' value="' + esc(r.address) + '" style="width:190px"></td><td><input ' + k('phone') + ' value="' + esc(r.phone) + '" style="width:120px"></td>' +
+        '<td>' + esc(s(r.checkedAt).slice(0, 10) || '—') + (office() ? '<br><button class="gmt-btn o" data-a="li-checked" data-id="' + esc(x.L.id) + '" style="padding:4px 8px;font-size:11px">✓ Checked today</button>' : '') + '</td>' +
+        '<td><select ' + k('owner') + '><option value="">—</option>' + people().map(function(u){ return '<option' + (r.owner === u.name ? ' selected' : '') + '>' + esc(u.name) + '</option>'; }).join('') + '<option' + (r.owner === 'Office' ? ' selected' : '') + '>Office</option></select></td><td><input ' + k('notes') + ' value="' + esc(r.notes) + '" style="width:150px"></td></tr>';
+    }).join('') + '</table></div></div>';
+  return h;
+};
+D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-li'); if (!k) return; var a = k.split('|'), o = { id: a[0] }; o[a[1]] = s(t.value); if (/^(name|address|phone)$/.test(a[1]) && !MK.get('listings', a[0])) o.checkedAt = X.nowIso(); MK.put('listings', o); draw(); }, true);
+ACT['li-checked'] = function(b){ MK.put('listings', { id: b.getAttribute('data-id'), checkedAt: X.nowIso(), checkedBy: X.myName() }); draw(); };
+ACT['li-bl'] = function(b){ b.disabled = true; MK.push().then(function(){ return api('soc', { op: 'listings_sync' }); }).then(function(j){ toast(j && j.dormant ? j.note : j && j.ok ? 'BrightLocal: ' + j.updated + ' listing(s) updated.' : 'BrightLocal: ' + ((j && j.error) || 'not reachable'), !(j && j.ok)); MK.pull(true); nST(draw, 600); }); };
+ACT['li-todo'] = function(){
+  var A = addrCfg(), day = centralToday(), l; try { l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); } catch (e) { l = []; }
+  var t = arr(l).filter(function(x){ return x && x.id === 'adm_seed_address_v1'; })[0]; if (!t) { toast('The address to-do is not here yet.', true); return; }
+  var items = arr(t.items).slice(), have = items.map(function(i){ return i.label; }), n = 0;
+  SC.LISTINGS.forEach(function(L){ var r = lrow(L), c = SC.napCheck(r, A, day); if (!c.issues.some(function(i){ return i.move; })) return; var lab = 'Update the listing on ' + L.n + ' to ' + s(A.next).split(',')[0] + (r.url ? ' (' + r.url + ')' : ''); if (have.indexOf(lab) >= 0) return; items.push({ id: t.id + '_li_' + L.id, label: lab, done: false }); n++; });
+  t.items = items; t.updatedAt = X.nowIso();
+  try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); if (W._gcApplySync) W._gcApplySync('gc_office_tasks', l); if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', l); if (W._gcTD2 && W._gcTD2.paint) W._gcTD2.paint(); } catch (e) {}
+  toast(n ? n + ' listing step(s) added to the address to-do.' : 'They are already on it.'); draw();
+};
+
+/* ══════════════ 🔌 CONNECTIONS ══════════════ */
+var CRM = (function(){ try { var o = W.location.origin; return /^https?:/.test(o) ? o : 'https://crm.grayco-cs.com'; } catch (e) { return 'https://crm.grayco-cs.com'; } })();
+function steps(p){
+  var cb = (STATE.st && STATE.st.redirect) || CRM + '/.netlify/functions/soc?callback=1';
+  if (p === 'tiktok') return '<ol class="gmt-muted"><li>developers.tiktok.com → Manage apps → Connect an app (GrayCo). Add the products <b>Login Kit</b> and <b>Content Posting API</b> (Direct Post on).</li><li>Login Kit → Redirect URI: <code>' + esc(cb) + '</code>. Scopes: user.info.basic, video.publish, video.upload, video.list.</li><li>URL properties → verify the domain <code>' + esc(CRM.replace(/^https?:\/\//, '')) + '</code> (TikTok pulls the pictures from the CRM\'s signed links).</li><li>Submit the app for <b>review</b> — TikTok must approve it before posts can be public (until then they post as private / “only me”).</li><li>Netlify → Site settings → Environment variables: <code>TIKTOK_CLIENT_KEY</code>, <code>TIKTOK_CLIENT_SECRET</code>. Redeploy, then “Connect TikTok” here.</li></ol>';
+  if (p === 'linkedin') return '<ol class="gmt-muted"><li>linkedin.com/developers → Create app, linked to the <b>GrayCo company page</b> (a page admin verifies it).</li><li>Products: <b>Sign In with LinkedIn (OpenID)</b>, <b>Share on LinkedIn</b> and <b>Community Management API</b> (to post as the company page — LinkedIn <b>reviews</b> this request; it can take a few weeks).</li><li>Auth → Redirect URL: <code>' + esc(cb) + '</code>.</li><li>Netlify: <code>LINKEDIN_CLIENT_ID</code>, <code>LINKEDIN_CLIENT_SECRET</code> (optional <code>LINKEDIN_ORG_ID</code> = the page\'s number). Redeploy, then “Connect LinkedIn”. The sign-in lasts 60 days — the CRM says when to reconnect.</li></ol>';
+  if (p === 'meta') return '<ol class="gmt-muted"><li>Facebook Page + Instagram Business account linked (Marketing → Getting started).</li><li>developers.facebook.com → app (Business) → Graph API Explorer: a long-lived <b>Page</b> token with pages_manage_posts, pages_read_engagement, instagram_basic, instagram_content_publish. Meta <b>app review</b> is needed for those permissions on a live app.</li><li>Netlify: <code>META_PAGE_ID</code>, <code>META_PAGE_TOKEN</code>, <code>META_IG_USER_ID</code> (docs/SOCIAL-SETUP.md). Or one <code>AYRSHARE_API_KEY</code> for all.</li></ol>';
+  if (p === 'gbp') return '<ol class="gmt-muted"><li>Google Cloud (the CRM\'s project) → enable the <b>Business Profile APIs</b> (Google approves access on request).</li><li>Netlify: <code>GBP_ACCOUNT_ID</code>, <code>GBP_LOCATION_ID</code>, <code>GBP_REFRESH_TOKEN</code> + the existing <code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code> (docs/SOCIAL-SETUP.md).</li></ol>';
+  return '<ol class="gmt-muted"><li>Optional — brightlocal.com → Citation Tracker → create a report for GrayCo.</li><li>Netlify: <code>BRIGHTLOCAL_API_KEY</code>, <code>BRIGHTLOCAL_API_SECRET</code>, <code>BRIGHTLOCAL_REPORT_ID</code>. Then 📍 Listings → “Check with BrightLocal” fills what each site shows.</li></ol>';
+}
+VIEWS.connect = function(){
+  loadStatus();
+  var st = STATE.st, P = (st && st.platforms) || {}, h = '';
+  if (!st) return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
+  if (st.err) h += '<div class="gmt-warn">The server did not answer: ' + esc(st.err) + '</div>';
+  var row = function(ic, name, on, body){ return '<div class="gmt-card"><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">' + ic + ' ' + esc(name) + '</h2>' + chipS(on ? 'posted' : 'draft', on ? '✓ Posts by itself' : 'Ready-to-post packs (by hand)') + '</div>' + body + '</div>'; };
+  h += row('📘', 'Facebook Page', P.facebook, P.facebook ? '' : steps('meta'));
+  h += row('📸', 'Instagram (Business)', P.instagram, P.instagram ? '' : '<div class="gmt-muted">Same Meta setup as Facebook (META_IG_USER_ID).</div>');
+  h += row('📍', 'Google Business Profile', P.gbp, P.gbp ? '' : steps('gbp'));
+  ['tiktok', 'linkedin'].forEach(function(p){
+    var i = P[p + 'Info'] || {}, name = p === 'tiktok' ? 'TikTok' : 'LinkedIn (company page)';
+    h += row(p === 'tiktok' ? '🎵' : '💼', name, P[p], i.connected ? '<div class="gmt-ok">✓ Connected' + (i.by ? ' by ' + esc(i.by) : '') + (i.connectedAt ? ' · ' + esc(s(i.connectedAt).slice(0, 10)) : '') + (p === 'linkedin' && i.expiresAt ? ' · sign-in good until ' + esc(s(i.expiresAt).slice(0, 10)) : '') + '</div>' + (i.lastError ? '<div class="gmt-warn">' + esc(i.lastError) + '</div>' : '') + (admin() ? '<button class="gmt-btn r" data-a="soc-off" data-p="' + p + '">Disconnect</button>' : '')
+      : i.configured ? '<div class="gmt-warn">Set up on Netlify — not connected yet.</div>' + (admin() ? '<button class="gmt-btn" data-a="soc-connect" data-p="' + p + '">Connect ' + esc(name) + '</button>' : '<div class="gmt-muted">An admin connects it.</div>')
+      : '<div class="gmt-warn">Dormant — not set up on Netlify yet. Both apps need the platform\'s review first. The steps:</div>' + steps(p));
+  });
+  h += row('🔎', 'BrightLocal (listings, optional)', P.brightlocal, P.brightlocal ? '' : steps('bl'));
+  h += '<div class="gmt-card"><h2>✨ AI writer</h2>' + (P.ai ? '<div class="gmt-ok">On — each idea is written five ways by the AI, then checked (no address, no customer name without OK, no insurance company).</div>' : '<div class="gmt-muted">Off — templates write the five versions. Set ANTHROPIC_API_KEY on Netlify for AI-written versions.</div>') + '</div>';
+  return h;
+};
+ACT['soc-connect'] = function(b){ api('soc', { op: 'connect', platform: b.getAttribute('data-p') }).then(function(j){ if (j && j.url) W.location.href = j.url; else toast((j && j.error) || 'Not set up.', true); }); };
+ACT['soc-off'] = function(b){ if (!W.confirm('Disconnect? Approved posts become Ready-to-post packs until you connect again.')) return; api('soc', { op: 'disconnect', platform: b.getAttribute('data-p') }).then(function(){ loadStatus(true); }); };
+
+/* ══════════════ 📊 SOCIAL REPORT ══════════════ */
+VIEWS.socreport = function(){
+  if (!X.DATA.at) X.loadData().then(function(){ if (UI.sec === 'socreport') draw(); });
+  var c = cfg(), r = SC.report(MK.all('posts'), X.DATA.leads, X.projects(), Date.now(), 8, c.socFocus), h = '';
+  var tot = function(k){ return SC.PLAT_IDS.reduce(function(a, n){ return a + (r.plats[n][k] || 0); }, 0); };
+  h += '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + tot('posts') + '</b><span>posts (8 weeks)</span></div><div class="gmt-kpi"><b>' + (Math.round(tot('posts') / 8 * 10) / 10) + '</b><span>posts / week (goal 3)</span></div><div class="gmt-kpi"><b>' + tot('leads') + '</b><span>leads from social</span></div><div class="gmt-kpi"><b>' + tot('jobs') + '</b><span>jobs won from social</span></div><div class="gmt-kpi"><b>' + X.money(tot('revenue')) + '</b><span>won from social</span></div></div>';
+  h += '<div class="gmt-card"><h2>Posts per week</h2><table><tr><th>Week of</th>' + SC.PLATS.map(function(p){ return '<th>' + p.ic + ' ' + esc(p.l) + '</th>'; }).join('') + '<th>Total</th></tr>' + r.weeks.slice().reverse().map(function(w){ return '<tr><td>' + esc(w.wk) + '</td>' + SC.PLAT_IDS.map(function(n){ return '<td>' + (w[n] || '·') + '</td>'; }).join('') + '<td><b>' + w.total + '</b>' + (w.total < 3 ? ' <span class="gmt-muted">(goal 3)</span>' : '') + '</td></tr>'; }).join('') + '</table></div>';
+  h += '<div class="gmt-card"><h2>By platform</h2><table><tr><th>Platform</th><th>Posts</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Reach / views</th><th>Clicks</th><th>Leads (UTM)</th><th>Jobs</th><th>Won</th></tr>' + SC.PLATS.map(function(p){ var x = r.plats[p.v]; return '<tr><td>' + p.ic + ' ' + esc(p.l) + '</td><td>' + x.posts + '</td><td>' + x.likes + '</td><td>' + x.comments + '</td><td>' + x.shares + '</td><td>' + (x.reach + x.views) + '</td><td>' + x.clicks + '</td><td><b>' + x.leads + '</b></td><td>' + x.jobs + '</td><td>' + X.money(x.revenue) + '</td></tr>'; }).join('') +
+    '</table><div class="gmt-muted">Engagement comes from the platforms that share it (Facebook, Instagram, LinkedIn, TikTok — once connected). Leads count when the visitor came through a post\'s link (utm_source = the platform).</div></div>';
+  var bar = function(v, t){ return '<div style="position:relative;height:14px;background:#eef1f6;border-radius:7px;min-width:160px"><div style="position:absolute;left:0;top:0;bottom:0;width:' + Math.min(100, v) + '%;background:#1E2060;border-radius:7px"></div><div style="position:absolute;top:-3px;bottom:-3px;left:' + Math.min(100, t) + '%;width:2px;background:#D4A017"></div></div>'; };
+  h += '<div class="gmt-card"><h2>Leads by service vs the focus (8 weeks)</h2><table><tr><th>Service</th><th>Leads</th><th>Share</th><th>Focus</th><th></th><th>From social</th><th>Jobs</th></tr>' + SC.SERVICES.map(function(x){ var v = r.services[x.v]; return '<tr><td>' + esc(svcLabel(x.v)) + '</td><td><b>' + v.leads + '</b></td><td>' + v.share + '%</td><td>' + v.target + '%</td><td>' + bar(v.share, v.target) + '</td><td>' + v.social + '</td><td>' + v.jobs + '</td></tr>'; }).join('') + '</table>' +
+    '<h3>Restoration leads by month</h3><table><tr><th>Month</th><th>All leads</th><th>Restoration</th><th>Share</th></tr>' + r.months.map(function(m){ return '<tr><td>' + esc(m.m) + '</td><td>' + m.total + '</td><td><b>' + (m.restoration || 0) + '</b></td><td>' + (m.total ? Math.round((m.restoration || 0) / m.total * 100) : 0) + '%</td></tr>'; }).join('') + '</table><div class="gmt-muted">The gold line is the focus target. Restoration = water, fire and storm work, mitigation and insurance-claim help.</div></div>';
+  var links = []; SC.PLAT_IDS.forEach(function(n){ r.plats[n].links.forEach(function(l){ links.push(Object.assign({ n: n }, l)); }); });
+  if (links.length) h += '<div class="gmt-card"><h2>Post links</h2>' + links.sort(function(a, b){ return a.at < b.at ? 1 : -1; }).slice(0, 30).map(function(l){ return '<div>' + esc(plat(l.n).ic) + ' ' + esc(s(l.at).slice(0, 10)) + ' — <a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.title || l.url) + '</a></div>'; }).join('') + '</div>';
+  return h;
+};
+
+
+/* ══════════════ 🚨 RESTORATION ADS (paid ads: the Ads focus, default restoration 100%) ══════════════ */
+function adsF(){ return SC.adsFocusOf(cfg().adsFocus); }
+function sendDraft(rec){
+  var have = MK.get('addrafts', rec.id);
+  if (have && /^(waiting|approved)$/.test(s(have.status))) { toast('That draft is already ' + have.status + '.'); return; }
+  MK.put('addrafts', Object.assign({}, rec, { status: 'draft', createdBy: X.myName(), createdAt: X.nowIso() }));
+  X.sendForApproval('mkt_addraft', 'addrafts', rec.id, !!(have && have.status === 'rejected')).then(function(){ draw(); });
+}
+VIEWS.adsrest = function(){
+  var f = adsF(), on = SC.SERVICES.filter(function(x){ return f[x.v] > 0; }).map(function(x){ return svcLabel(x.v); }), h = '';
+  var camps = MK.all('adcamps').filter(function(c){ return !c.del; }), rep = SC.adsReport(camps, X.DATA.leads, Date.now(), 30);
+  if (!X.DATA.at) X.loadData().then(function(){ if (UI.sec === 'adsrest') draw(); });
+  h += '<div class="gmt-card"><h2>🎯 Ads focus: ' + esc(on.join(', ')) + '</h2><div class="gmt-muted">Paid ads are separate from the organic posts (those stay about 60% restoration). Everything drafted or suggested here is for restoration — water, fire and storm. ' +
+    'The CRM never spends money: each draft goes to ✅ Approvals (never automatic, at any stage); approved, a person builds it in Google Ads / Ads Manager and sets the amount.</div>' + (admin() ? '<a href="#" class="gmt-link" data-a="go" data-sec="mktsettings">Change the Ads focus →</a>' : '') + '</div>';
+  h += '<div class="gmt-card"><h2>📊 Spend and leads by restoration type (30 days)</h2><table><tr><th>Type</th><th>Ad spend</th><th>Clicks</th><th>Restoration leads</th><th>From ads</th><th>Cost per restoration lead</th></tr>' +
+    SC.RSUBS.map(function(x){ var o = rep.subs[x]; return '<tr><td>' + ({ water: '💧 Water', fire: '🔥 Fire', storm: '🌩 Storm' })[x] + '</td><td>' + X.money(o.spend) + '</td><td>' + o.clicks + '</td><td>' + o.leads + '</td><td><b>' + o.paidLeads + '</b></td><td><b>' + (o.cpl != null ? X.money(o.cpl) : '—') + '</b></td></tr>'; }).join('') +
+    '<tr><td><b>All restoration</b></td><td><b>' + X.money(rep.total.spend) + '</b></td><td></td><td></td><td><b>' + rep.total.leads + '</b></td><td><b>' + (rep.total.cpl != null ? X.money(rep.total.cpl) : '—') + '</b></td></tr></table>' +
+    (rep.other.spend ? '<div class="gmt-warn">' + X.money(rep.other.spend) + ' was spent on campaigns that are not restoration — the Ads focus says restoration only.</div>' : '') +
+    '<div class="gmt-muted">Spend comes from 📈 Ads hub (Google Ads / Meta, once connected); the type from the campaign name (water / fire / storm). A lead counts as "from ads" with a gclid / fbclid or a paid UTM.</div></div>';
+  var drafts = SC.campaignDrafts(cfg().adsFocus);
+  h += '<div class="gmt-card"><h2>🔎 Google Ads drafts</h2>' + (drafts.length ? drafts.map(function(d){ var r = MK.get('addrafts', d.id);
+    return '<div class="gmt-check"><div style="flex:1"><b>' + esc(d.name) + '</b> ' + (r ? chipS(r.status, stLabel(r.status)) : '') + '<div class="gmt-muted">' + d.adGroups.length + ' ad groups (one per city) · ' + d.adGroups.reduce(function(a, g){ return a + g.keywords.length; }, 0) + ' keywords · ' + d.negatives.length + ' negatives · final URLs → ' + esc(d.adGroups[0].finalUrl.split('?')[0].replace(/memphis-tn\/$/, '<city>-tn/')) + '</div></div>' +
+      '<div class="gmt-row"><button class="gmt-btn o" data-a="ads-csv" data-id="' + d.id + '">⬇ Editor file</button>' + (office() ? '<button class="gmt-btn" data-a="ads-draft" data-id="' + d.id + '">Send for approval</button>' : '') + '</div></div>'; }).join('') : '<div class="gmt-muted">Restoration has no ads weight — no drafts.</div>') + '</div>';
+  var kws = SC.adKeywords();
+  h += '<div class="gmt-two"><div class="gmt-card"><h2>🔑 Keywords (' + kws.length + ')</h2><div class="gmt-muted">Each term × Memphis, Bartlett, Germantown, Collierville, Cordova, Arlington, Lakeland and “near me”.</div>' +
+    SC.RSUBS.map(function(x){ return '<h3>' + ({ water: '💧 Water', fire: '🔥 Fire', storm: '🌩 Storm' })[x] + '</h3><div class="gmt-muted">' + esc(SC.AD_TERMS[x].join(' · ')) + '</div>'; }).join('') +
+    '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn o" data-a="ads-copykw">📋 Copy all keywords</button></div></div>' +
+    '<div class="gmt-card"><h2>⛔ Negative keywords</h2><div>' + SC.NEGATIVES.map(function(n){ return '<span class="gmt-chip" style="margin:2px">' + esc(n) + '</span>'; }).join('') + '</div><button class="gmt-btn o" data-a="ads-copyneg" style="margin-top:8px">📋 Copy</button>' +
+    '<h2 style="margin-top:14px">📍 Local Services Ads job types</h2>' + SC.lsaChecklist(cfg().adsFocus).map(function(x){ return '<div class="gmt-check"><input type="checkbox" disabled' + (x.on ? ' checked' : '') + '><div>' + esc(x.t) + (x.on ? '' : ' <span class="gmt-muted">— off (Ads focus)</span>') + '</div></div>'; }).join('') + '</div></div>';
+  var ex = SC.adCopy('water', 'Bartlett');
+  h += '<div class="gmt-card"><h2>✍️ Ad copy (example: water, Bartlett)</h2><div class="gmt-muted">24/7 emergency · “Unlimited licensed general contractor — we restore and rebuild” · insurance-claim help (never a carrier\'s name). Final URL: ' + esc(ex.finalUrl) + '</div>' +
+    '<h3>Headlines (30 max)</h3>' + ex.headlines.map(function(x){ return '<div>' + esc(x) + ' <span class="gmt-muted">' + x.length + '</span></div>'; }).join('') + '<h3>Descriptions (90 max)</h3>' + ex.descriptions.map(function(x){ return '<div>' + esc(x) + ' <span class="gmt-muted">' + x.length + '</span></div>'; }).join('') + '</div>';
+  var boosts = MK.all('posts').filter(function(p){ return SC.boostable(p, cfg().adsFocus); }).slice(0, 10);
+  h += '<div class="gmt-card"><h2>🚀 Boost suggestions</h2><div class="gmt-muted">Only restoration posts are suggested for a paid boost.</div>' + (boosts.length ? boosts.map(function(p){ var d = SC.boostDraft(p, cfg().adsFocus), r = MK.get('addrafts', d.id);
+    return '<div class="gmt-check"><div style="flex:1"><b>' + esc(p.title || 'Post') + '</b> · ' + esc(p.socSub || '') + (r ? ' ' + chipS(r.status, stLabel(r.status)) : '') + '<div class="gmt-muted">' + esc(d.audience) + '</div></div>' + (office() && !r ? '<button class="gmt-btn o" data-a="soc-boost" data-id="' + esc(p.id) + '">🚀 Boost this</button>' : '') + '</div>'; }).join('') : '<div class="gmt-muted">No restoration post has gone out yet.</div>') + '</div>';
+  return h;
+};
+ACT['ads-draft'] = function(b){ var d = SC.campaignDrafts(cfg().adsFocus).filter(function(x){ return x.id === b.getAttribute('data-id'); })[0]; if (d) sendDraft(d); };
+ACT['ads-csv'] = function(b){ var d = SC.campaignDrafts(cfg().adsFocus).filter(function(x){ return x.id === b.getAttribute('data-id'); })[0]; if (d) X.download(d.id + '-google-ads-editor.csv', SC.draftCsv(d), 'text/csv'); };
+ACT['ads-copykw'] = function(){ X.copyText(SC.adKeywords().map(function(k){ return k.kw; }).join('\n')).then(function(){ toast('Keywords copied.'); }); };
+ACT['ads-copyneg'] = function(){ X.copyText(SC.NEGATIVES.join('\n')).then(function(){ toast('Negative keywords copied.'); }); };
+ACT['soc-boost'] = function(b){ var p = MK.get('posts', b.getAttribute('data-id')), d = SC.boostDraft(p, cfg().adsFocus); if (!d) { toast('Only restoration posts are boosted (Ads focus).', true); return; } sendDraft(d); };
+
+/* ══════════════ ⚙️ FOCUS & APPROVALS ══════════════ */
+VIEWS.mktsettings = function(){
+  loadStatus();
+  var c = cfg(), w = SC.focusOf(c.socFocus), raw = c.socFocus || SC.FOCUS, sc = SC.stageCfg(c), h = '', hint = STATE.st && STATE.st.hint;
+  h += '<div class="gmt-card"><h2>🎯 Marketing focus</h2><div class="gmt-muted">How the 3-a-week plan and the weekly Google Business post pick their topics. Restoration = water, fire and storm damage, mitigation and insurance-claim help (24/7 call-to-action, linked to the city pages).</div><table><tr><th>Service</th><th>Weight</th><th>Share</th></tr>' +
+    SC.SERVICES.map(function(x){ return '<tr><td>' + esc(svcLabel(x.v)) + '<div class="gmt-muted">' + esc(x.l) + '</div></td><td><input type="number" min="0" max="100" data-focus="' + x.v + '" value="' + esc(raw[x.v] != null ? raw[x.v] : SC.FOCUS[x.v]) + '" style="width:80px"' + (admin() ? '' : ' disabled') + '></td><td>' + w[x.v] + '%</td></tr>'; }).join('') + '</table>' +
+    (admin() ? '<button class="gmt-btn o" data-a="focus-reset">Back to the default (60 / 20 / 12 / 8)</button>' : '<div class="gmt-muted">An admin changes the focus.</div>') + '</div>';
+  var af = SC.adsFocusOf(c.adsFocus), araw = c.adsFocus || SC.ADS_FOCUS;
+  h += '<div class="gmt-card" data-soc-adsfocus><h2>🚨 Ads focus (paid ads)</h2><div class="gmt-muted">Separate from the posts above. Google Ads drafts, keywords, boosts and the Local Services Ads job types use only the services with a weight. Default: restoration 100%.</div><table><tr><th>Service</th><th>Weight</th><th>Share</th></tr>' +
+    SC.SERVICES.map(function(x){ return '<tr><td>' + esc(svcLabel(x.v)) + '</td><td><input type="number" min="0" max="100" data-adsfocus="' + x.v + '" value="' + esc(araw[x.v] != null ? araw[x.v] : SC.ADS_FOCUS[x.v]) + '" style="width:80px"' + (admin() ? '' : ' disabled') + '></td><td>' + af[x.v] + '%</td></tr>'; }).join('') + '</table>' +
+    (admin() ? '<button class="gmt-btn o" data-a="adsfocus-reset">Back to restoration 100%</button>' : '') + '</div>';
+  if (hint && admin()) h += '<div class="gmt-card" style="border-color:#D4A017"><h2>🎓 Ready for the next stage?</h2><div>' + esc(hint.why) + ' Consider <b>' + esc(hint.label) + '</b>.</div><div class="gmt-muted">The CRM never moves on its own.</div><button class="gmt-btn gold" data-a="stage-set" data-s="' + hint.next + '">Move to stage ' + hint.next + '</button></div>';
+  h += '<div class="gmt-card"><h2>✅ Approval stage</h2>' + SC.ASTAGES.map(function(x){ return '<label class="gmt-check" style="font-weight:400"><input type="radio" name="soc-stage" data-a="stage-set" data-s="' + x.v + '"' + (sc.stage === x.v ? ' checked' : '') + (admin() ? '' : ' disabled') + '><div><b>' + esc(x.l) + '</b>' + (sc.stage === x.v ? ' ' + chipS('approved', 'now' + (sc.since ? ' · since ' + s(sc.since).slice(0, 10) : '')) : '') + '<div class="gmt-muted">' + esc(x.d) + '</div></div></label>'; }).join('') +
+    '<h3>Always flagged for an admin (stage 2) / the office (stage 3)</h3><div class="gmt-row">' + ['price', 'insurance', 'customer'].map(function(k){ return '<label style="display:flex;gap:6px;align-items:center;font-weight:600;margin:0"><input type="checkbox" data-a="stage-flag" data-k="' + k + '"' + (sc.flags[k] ? ' checked' : '') + (admin() ? '' : ' disabled') + '> mentions ' + (k === 'customer' ? 'a customer' : k) + '</label>'; }).join('') + '</div>' +
+    '<div class="gmt-muted">Also always flagged: 1–3★ review replies, the monthly newsletter, any new template. ' + sc.known.length + ' template type(s) are known (an admin approved one before).</div></div>';
+  var log = MK.all('stagelog').sort(function(a, b){ return s(a.when) < s(b.when) ? 1 : -1; });
+  h += '<div class="gmt-card"><h2>Stage changes</h2>' + (log.length ? '<table><tr><th>When</th><th>From → to</th><th>Who</th><th>Note</th></tr>' + log.map(function(l){ return '<tr><td>' + esc(s(l.when).slice(0, 16).replace('T', ' ')) + '</td><td>' + l.from + ' → ' + l.to + '</td><td>' + esc(l.name || l.by) + '</td><td>' + esc(l.note) + '</td></tr>'; }).join('') + '</table>' : '<div class="gmt-muted">Stage 1 since the start.</div>') + '</div>';
+  return h;
+};
+D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-focus'); if (!k || !admin()) return; var f = Object.assign({}, SC.FOCUS, cfg().socFocus || {}); f[k] = Math.max(0, Math.min(100, +t.value || 0)); X.setCfg({ socFocus: f }); draw(); }, true);
+D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-adsfocus'); if (!k || !admin()) return; var f = Object.assign({}, SC.ADS_FOCUS, cfg().adsFocus || {}); f[k] = Math.max(0, Math.min(100, +t.value || 0)); X.setCfg({ adsFocus: f }); draw(); }, true);
+ACT['adsfocus-reset'] = function(){ X.setCfg({ adsFocus: Object.assign({}, SC.ADS_FOCUS) }); draw(); };
+ACT['focus-reset'] = function(){ X.setCfg({ socFocus: Object.assign({}, SC.FOCUS) }); draw(); };
+ACT['stage-set'] = function(b){ if (!admin()) return; var n = +b.getAttribute('data-s'), cur = SC.stageCfg(cfg()).stage; if (n === cur) return; var note = W.prompt('Move marketing approvals to ' + SC.ASTAGES[n - 1].l + '? A note for the log (optional):', ''); if (note == null) { draw(); return; }
+  MK.push().then(function(){ return api('soc', { op: 'set_stage', stage: n, note: note }); }).then(function(j){ toast(j && j.ok ? 'Now: ' + SC.ASTAGES[n - 1].l + ' (logged).' : 'Not changed: ' + ((j && j.error) || 'try again'), !(j && j.ok)); MK.pull(true); loadStatus(true); nST(draw, 700); }); };
+ACT['stage-flag'] = function(b){ if (!admin()) return; var a = Object.assign({}, cfg().apprStage || {}); a.flags = Object.assign({ price: true, insurance: true, customer: true }, a.flags || {}); a.flags[b.getAttribute('data-k')] = !!b.checked; X.setCfg({ apprStage: a }); draw(); };
+
+/* the graduation hint on Marketing home (admins) and in ⚙ Admin */
+var homeV = VIEWS.home;
+VIEWS.home = function(){ var h = homeV(); loadStatus(); var hint = admin() && STATE.st && STATE.st.hint; return (hint ? '<div class="gmt-card" style="border-color:#D4A017" data-soc-hint><b>🎓 Marketing approvals:</b> ' + esc(hint.why) + ' Ready for <b>' + esc(hint.label) + '</b>? <a href="#" class="gmt-link" data-a="go" data-sec="mktsettings">Decide →</a></div>' : '') + h; };
+try { if (W._gcAdmAddSection) W._gcAdmAddSection({ id: 'mktstage', after: 'address', ic: '✅', t: 'Marketing approvals', d: 'Approval stage: admin → office → autopilot', count: function(){ return STATE.st && STATE.st.hint ? 1 : 0; }, render: function(el){ el.innerHTML = '<div style="padding:10px">Stage ' + SC.stageCfg(cfg()).stage + ' — ' + esc(SC.ASTAGES[SC.stageCfg(cfg()).stage - 1].l) + '. <a href="#" onclick="window._gcMkt&&window._gcMkt.open(\'mktsettings\');return false">Open Marketing → ⚙️ Focus & approvals</a></div>'; } }); } catch (e) {}
+
+W._gcSoc = { state: function(){ return { secs: NEW.map(function(x){ return x.id; }), listings: SC.LISTINGS.length, weeks: weeks().length, stage: SC.stageCfg(cfg()).stage, focus: SC.focusOf(cfg().socFocus), media: mediaItems().length, st: STATE.st }; },
+  media: mediaItems, report: function(){ return SC.report(MK.all('posts'), X.DATA.leads, X.projects(), Date.now(), 8, cfg().socFocus); }, _S: STATE };
+}
+})();
+
+</script><!-- /SOC -->
 <script id="gc-fix-filehold">
 /* GATE fix_2 — the file-window hold ends when the person is back (no window focus event needed). */
 (function(){

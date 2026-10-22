@@ -110,7 +110,12 @@ exports.handler = async function(event){
   const role = mk().roleOf(who, data), admin = role === 'admin', office = admin || role === 'office';
   try {
     if (op === 'ads_status') return reply(200, headers, Object.assign({ ok: true, role: role }, await X.adsStatus()));
-    if (op === 'ad_copy') return reply(200, headers, await X.draftCopy(body));
+    if (op === 'ad_copy') {   /* patch SOC: paid ads only for the services in the Ads focus (default: restoration — water, fire, storm) */
+      const SC = require('./_lib/soc-content.js'), d0 = await require('./_lib/mkt.js').readDoc(), af = ((d0.cfg && d0.cfg.main) || {}).adsFocus;
+      if (!String(body.service || '').trim()) body.service = 'Water damage restoration';
+      if (!SC.adsAllowed(af, String(body.service))) return reply(400, headers, { ok: false, error: 'Ads focus: paid ads are restoration only right now (water, fire, storm). Change it in Marketing → ⚙️ Focus & approvals.' });
+      return reply(200, headers, await X.draftCopy(body));
+    }
     if (op === 'link_stats') { const c = await X.calls(); return reply(200, headers, { ok: true, clicks: await X.clicks(), calls: c.slice(-500).map(function(x){ return Object.assign({}, x, { from: office ? x.from : String(x.from || '').slice(-4) }); }) }); }
     if (op === 'newsletter') { if (!office) return reply(403, headers, { ok: false, error: 'Only the office or an admin can do that.' }); return reply(200, headers, await X.ensureNewsletter({ month: /^\d{4}-\d{2}$/.test(String(body.month || '')) ? body.month : '', force: body.force === true })); }
     if (op === 'coupon_check') return reply(200, headers, await X.couponCheck(String(body.code || '')));

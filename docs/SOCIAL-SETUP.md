@@ -168,3 +168,26 @@ Leads from the e-mails' buttons already count today, because every button carrie
 | “Google Business: … PERMISSION_DENIED” | API access is not approved yet (B2 step 2), or the refresh token belongs to a Google account that does not own the profile. |
 | A post stays “Approved — scheduled” | Its time has not come yet (see the 🗓 calendar). An admin can tap **🚀 Post now**. |
 | Nothing is connected yet | Use **📋 Copy + open Facebook / Google Business** on the approved post. |
+
+## Part C — TikTok, LinkedIn, BrightLocal, the week plan, approval stages (patch SOC)
+
+Everything below is **dormant until its keys are on Netlify**. Until then each approved post becomes a
+**📲 Ready-to-post pack** (caption + picture + Open app) on the To-Do. Tokens from the sign-ins are kept only on
+the server (service-only store `gc_social_tokens`); the CRM page only ever sees "connected yes / no".
+
+| Platform | What to do | Netlify variables |
+|---|---|---|
+| TikTok | developers.tiktok.com → app with **Login Kit** + **Content Posting API** (Direct Post). Redirect URI `https://crm.grayco-cs.com/.netlify/functions/soc?callback=1`. Verify the domain `crm.grayco-cs.com` (TikTok pulls pictures from the CRM's signed links). **Submit the app for review** — until TikTok approves it, posts can only be private. Then Marketing → 🔌 Connections → Connect TikTok. | `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` (optional `TIKTOK_PRIVACY`) |
+| LinkedIn | linkedin.com/developers → app linked to the GrayCo company page; products Sign In with LinkedIn (OpenID), Share on LinkedIn, **Community Management API** (LinkedIn **reviews** this one — posting as the company page needs it). Redirect URL as above. Then Connect LinkedIn (the sign-in lasts 60 days). | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` (optional `LINKEDIN_ORG_ID`) |
+| Facebook / Instagram / Google Business | Part A / B above (Meta and Google also review the posting permissions). | as above |
+| BrightLocal (optional) | Citation Tracker report for GrayCo → 📍 Listings → Check with BrightLocal. | `BRIGHTLOCAL_API_KEY`, `BRIGHTLOCAL_API_SECRET`, `BRIGHTLOCAL_REPORT_ID` |
+| AI versions (optional) | Without it, templates write the five versions. | `ANTHROPIC_API_KEY` (optional `SOC_AI_MODEL`) |
+
+* **🗓 Week plan** — Marketing → 🗓 Week plan → turn the 3-a-week plan on. Every Sunday the CRM proposes Mon / Wed / Fri
+  posts (restoration first: Marketing focus), each written for Facebook, Instagram, TikTok, LinkedIn and Google Business.
+  The week is ONE approval; edit, swap or pause any post.
+* **⚙️ Focus & approvals** — the Marketing focus (organic, default 60 / 20 / 12 / 8), the Ads focus (paid ads, default
+  restoration 100%) and the approval stage (1 admin checks everything → 2 office approves → 3 autopilot with a 24-hour
+  veto). The CRM suggests the next stage after 2 weeks without admin edits; a person moves it, and every move is logged.
+* **🚨 Restoration ads** — Google Ads drafts (water / fire / storm × 7 cities), keywords, negatives, LSA job types, boosts.
+  The CRM never spends money: an approved draft is a Google Ads Editor file + a To-Do.
