@@ -113,6 +113,11 @@
 [functions."mkt2-scheduled"]
   schedule = "41 * * * *"
 
+# patch X10: on-call escalation (every 2 minutes), vehicle reminders + access-code wipe (daily, 7 AM Central),
+# monthly customer statements + "My data" e-mails (the 1st, 8 AM Central)
+[functions."x10-scheduled"]
+  schedule = "*/2 * * * *"
+
 # RoofScout's own address (docs/ROOFSCOUT-SETUP.md): roofscout.grayco-cs.com shows the
 # roofscout/ folder, so https://roofscout.grayco-cs.com/ opens RoofScout and none of the CRM.
 # Only that host is matched; graycocrm1.netlify.app and crm.grayco-cs.com are unaffected.
@@ -209,6 +214,13 @@
 [[redirects]]
   from = "https://portal.grayco-cs.com/portal-plus.js"
   to = "/portal-plus.js"
+  status = 200
+  force = true
+
+# patch X10: the portal's 🏠 Home profile and 💬 testimonial cards
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-home.js"
+  to = "/portal-home.js"
   status = 200
   force = true
 

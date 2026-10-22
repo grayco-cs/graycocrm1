@@ -553,7 +553,7 @@ exports.handler = async function(event){
   try { const r = await record(event, row, body, J, action); return reply(r.status, headers, r.out); }
   catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
-exports._sel = { stateOf: stateOf, cleanName: cleanName, cleanStrokes: cleanStrokes, buildPdf: buildPdf, signedCopy: signedCopy, RESP_KEY: RESP_KEY, _reset: function(){ hits.clear(); writes.clear(); } };
+exports._sel = { choicesOf: choicesOf, titleOf: titleOf, stateOf: stateOf, cleanName: cleanName, cleanStrokes: cleanStrokes, buildPdf: buildPdf, signedCopy: signedCopy, RESP_KEY: RESP_KEY, _reset: function(){ hits.clear(); writes.clear(); } };
 /* patch AUTO8: the final walkthrough (walkthrough.js) signs in the portal the same way — the same link / session check,
    rate limit, name and signature-pad rules, signed-copy PDF and e-mail */
 Object.assign(exports._sel, { gcStaffAuth: gcStaffAuth, gcCors: gcCors, gcHeader: gcHeader, kvRead: kvRead, findProject: findProject, carrierWords: carrierWords, scrubText: scrubText,

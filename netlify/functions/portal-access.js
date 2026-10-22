@@ -789,6 +789,35 @@ async function pHome(ctx){
     payRule: 'wed-fri'
   };
 }
+/* patch X10: the sub's own schedule (60 days) and their busy days (the CRM's scheduler warns when a sub is booked on one) */
+function x10Lib(){ return require('./bid-inbox.js')._lib; }
+function todayCentral(){ return require('./_lib/x10.js').wall(Date.now()).day; }
+async function pAvail(ctx, body, action){
+  const L = x10Lib(), K = 'gc_x10_subavail', id = s(ctx.sub.id), today = todayCentral();
+  if (action === 'p-avail-set') {
+    const days = (Array.isArray(body.days) ? body.days : []).map(s).filter(function(d){ return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= today; }).slice(0, 60);
+    const busy = body.busy !== false, note = clip(body.note, 120);
+    await L.kvCas(K, function(v){ v = v && typeof v === 'object' && !Array.isArray(v) ? v : {}; const r = v[id] = v[id] || { name: s(ctx.sub.company || ctx.sub.name), days: {} };
+      days.forEach(function(d){ if (busy) r.days[d] = { at: new Date().toISOString(), note: note }; else delete r.days[d]; });
+      Object.keys(r.days).forEach(function(d){ if (d < today) delete r.days[d]; }); r.name = s(ctx.sub.company || ctx.sub.name); r.updatedAt = new Date().toISOString(); return v; });
+  }
+  const all = (await L.kvGet(K)) || {}, mine = (all[id] && all[id].days) || {};
+  const end = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
+  const sched = schedFor(ctx.data, ctx.jobs, ctx.sub).filter(function(x){ return x.date >= today && x.date <= end; });
+  return { ok: true, today: today, busy: Object.keys(mine).filter(function(d){ return d >= today; }).sort().map(function(d){ return { date: d, note: s(mine[d].note) }; }), sched: sched };
+}
+async function pCodes(ctx, pid){
+  const p = jobOf(ctx, pid), today = todayCentral(), X = require('./_lib/x10.js');
+  if (X.jobClosed(p)) return { ok: true, codes: [], why: 'closed' };
+  const r = rowFor(p, ctx.sub), start = ymd(r.startDate), end = ymd(r.endDate) || start;
+  const onSched = schedFor(ctx.data, ctx.jobs, ctx.sub).some(function(x){ return s(x.pid) === s(p.id) && x.date === today; }) || (start && start <= today && today <= end);
+  if (!onSched) return { ok: true, codes: [], why: 'not-today' };
+  const L = x10Lib(); let out = [];
+  await L.kvCas('gc_x10_codes', function(v){ const l = Array.isArray(v) ? v : []; const rec = l.find(function(x){ return s(x.pid) === s(p.id); }); if (!rec || !arr(rec.codes).length) return undefined;
+    out = arr(rec.codes).map(function(c){ return { label: s(c.label), code: s(c.code) }; });
+    rec.log = arr(rec.log).concat([{ at: new Date().toISOString(), by: 'sub: ' + s(ctx.sub.company || ctx.sub.name), what: 'viewed in the sub portal' }]).slice(-200); return l; });
+  return { ok: true, codes: out, why: out.length ? '' : 'none' };
+}
 /* patch AUTO7: the sub scorecard — only this sub's own numbers, never anyone else's */
 async function pScore(ctx){
   const more = await kvRead(['schedule', 'punch', 'gc_warranty_tickets', 'gc_sub_ratings']);
@@ -857,7 +886,9 @@ function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) ==
 async function partnerAction(action, body, ctx){
   const sub = ctx.sub;
   if (action === 'p-home') return pHome(ctx);
-  if (action === 'p-score') return pScore(ctx);   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
+  if (action === 'p-score') return pScore(ctx);
+  if (action === 'p-avail' || action === 'p-avail-set') return pAvail(ctx, body, action);   /* patch X10: my schedule + the days I can't work */
+  if (action === 'p-codes') return pCodes(ctx, body.projectId);   /* patch X10: the job's access codes — only on my scheduled days, every look logged */   /* patch AUTO7: the sub's own scorecard (Papers, at the bottom) */
   if (action === 'p-job') return pJob(ctx, body.projectId);
   if (action === 'p-upload') {
     if (body.projectId) jobOf(ctx, body.projectId);

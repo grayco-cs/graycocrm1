@@ -248,6 +248,8 @@ function make(d){
         return st;
       }).catch(() => {});
     }
+    /* patch X10: an after-hours emergency (water / fire) pages the person on call (_lib/oncall.js) — never blocks the alert */
+    if (env('ONCALL_OFF') !== '1') { try { out.oncall = await require('./oncall.js').make({ env: env, kvGet: kvGet, kvCas: kvCas, now: now, push: push }).maybePage(mine); } catch (e) { out.oncall = { error: s(e && e.message) }; } }
     return out;
   }
   /* a new-lead message that could not be sent: tried again on each 10-minute run, for 24 hours */

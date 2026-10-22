@@ -58,6 +58,54 @@ var L = {
     awarded: 'Adjudicado', inprogress: 'En progreso', complete: 'Terminado', bidding: 'Licitando'
   }
 };
+/* patch X10 */
+Object.assign(L.en, { avail: 'My schedule & days off', availBtn: 'Open my calendar', availNote: 'Tap a day to mark it busy (you can’t work that day); tap again to clear it. Your PM sees it when scheduling.',
+  busy: 'Busy', free: 'Open', scheduled: 'Scheduled', availSaved: 'Saved — your PM will see it', availLoad: 'Loading your calendar…', codes: 'Access codes', codesBtn: 'Show access codes',
+  codesNote: 'Lockbox / gate / door codes show here only on the days you are scheduled on this job. Every look is logged. Never share them.', codesNone: 'No codes for this job.',
+  codesNotToday: 'Codes show only on the days you are scheduled on this job.' });
+Object.assign(L.es, { avail: 'Mi calendario y días libres', availBtn: 'Abrir mi calendario', availNote: 'Toque un día para marcarlo ocupado (no puede trabajar ese día); tóquelo otra vez para quitarlo. Su PM lo ve al programar.',
+  busy: 'Ocupado', free: 'Libre', scheduled: 'Programado', availSaved: 'Guardado — su PM lo verá', availLoad: 'Cargando su calendario…', codes: 'Códigos de acceso', codesBtn: 'Mostrar códigos de acceso',
+  codesNote: 'Los códigos de caja de llaves / portón / puerta aparecen aquí solo los días que usted está programado en este trabajo. Cada consulta queda registrada. Nunca los comparta.', codesNone: 'No hay códigos para este trabajo.',
+  codesNotToday: 'Los códigos aparecen solo los días que usted está programado en este trabajo.' });
+var X10_ES = { l: { ontime: 'A tiempo', punch: 'Lista de pendientes', callbacks: 'Llamadas de garantía', papers: 'Papeles', rating: 'Calificación del PM' },
+  tips: { 'Upload a current insurance certificate (COI).': 'Suba un certificado de seguro (COI) vigente.', 'Send GrayCo your W-9.': 'Envíe su W-9 a GrayCo.', 'Great work — keep it up.': 'Excelente trabajo — siga así.',
+    'Finish scheduled tasks by their end date — tell your PM early when something slips.': 'Termine las tareas programadas para su fecha final — avise a su PM a tiempo si algo se atrasa.' } };
+function x10Es(txt){ if (LANG !== 'es') return txt; return String(txt || '').replace(/ of /g, ' de ').replace('scheduled tasks finished on time', 'tareas programadas terminadas a tiempo').replace('punch items closed within a week', 'pendientes cerrados en una semana').replace('open over a week', 'abiertos más de una semana')
+  .replace('No callbacks', 'Sin llamadas de garantía').replace(/warranty callbacks?/, 'llamada(s) de garantía').replace(/ on (\d+) jobs?/, ' en $1 trabajo(s)').replace('COI current', 'COI vigente').replace('COI missing or expired', 'COI faltante o vencido').replace('W-9 on file', 'W-9 en archivo').replace('W-9 missing', 'W-9 faltante').replace(/^Average /, 'Promedio ').replace(/ from (\d+) jobs?/, ' de $1 trabajo(s)'); }
+function availSheet(){
+  var body = h('div', null, [h('div', { class: 'muted', text: t('availLoad') })]), sh = sheet(t('avail'), [body]), D = null;
+  function paint(){
+    body.innerHTML = '';
+    body.appendChild(h('div', { class: 'muted', text: t('availNote') }));
+    var busyMap = {}; (D.busy || []).forEach(function(b){ busyMap[b.date] = b; });
+    var sched = {}; (D.sched || []).forEach(function(x){ (sched[x.date] = sched[x.date] || []).push(x); });
+    var start = new Date(D.today + 'T12:00:00'), grid = h('div', { class: 'gc-avail', style: 'display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:10px' });
+    var lead = start.getDay(); for (var i = 0; i < lead; i++) grid.appendChild(h('div'));
+    for (var k = 0; k < 56; k++) {
+      var d = new Date(start.getTime() + k * 864e5), ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      (function(ymd, isB, sc, day){
+        grid.appendChild(h('button', { type: 'button', 'data-day': ymd, 'aria-pressed': isB ? 'true' : 'false', 'aria-label': dt(ymd) + ' — ' + (isB ? t('busy') : sc ? t('scheduled') : t('free')),
+          style: 'min-height:54px;border-radius:8px;border:1px solid ' + (isB ? '#b91c1c' : sc ? '#1d4ed8' : '#d6d0c0') + ';background:' + (isB ? '#fee2e2' : sc ? '#dbeafe' : '#fff') + ';font:600 13px Arial;cursor:pointer;padding:2px',
+          on: { click: function(){ api('p-avail-set', { days: [ymd], busy: !isB }).then(function(r){ D = r; paint(); toast(t('availSaved')); }, function(e){ toast(e.message, true); }); } } },
+          [h('div', { text: String(day) }), h('div', { style: 'font-size:10px', text: isB ? t('busy') : sc ? '🔨' : '' })]));
+      })(ymd, !!busyMap[ymd], sched[ymd], d.getDate());
+    }
+    body.appendChild(grid);
+    var list = (D.sched || []).slice(0, 30);
+    if (list.length) body.appendChild(card(t('scheduled'), list.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })]); })));
+  }
+  api('p-avail').then(function(r){ D = r; paint(); }, function(e){ body.innerHTML = ''; body.appendChild(h('div', { class: 'muted', text: e.message || t('loadFail') })); });
+  return sh;
+}
+function codesCard(pid){
+  var box = h('div', { class: 'gc-codes' });
+  box.appendChild(h('div', { class: 'muted', text: t('codesNote') }));
+  var b = h('button', { type: 'button', class: 'btn', text: '🔐 ' + t('codesBtn'), on: { click: function(){ busy(b, true); api('p-codes', { projectId: pid }).then(function(r){ b.remove();
+    if (!r.codes || !r.codes.length) { box.appendChild(h('div', { class: 'empty', text: r.why === 'not-today' ? t('codesNotToday') : t('codesNone') })); return; }
+    r.codes.forEach(function(c){ box.appendChild(h('div', { class: 'line' }, [h('span', { text: c.label }), h('b', { style: 'font-size:20px;letter-spacing:2px', text: c.code })])); }); }, function(e){ busy(b, false); toast(e.message, true); }); } } });
+  box.appendChild(b);
+  return card(t('codes'), [box]);
+}
 var LANG = 'en', session = '', H = null, HOME = null, JOB = null, TAB = 'home', JTAB = 'overview', root = null;
 function t(k, v){ var s = (L[LANG] && L[LANG][k]) || L.en[k] || k; if (v) Object.keys(v).forEach(function(x){ s = s.replace('{' + x + '}', v[x]); }); return s; }
 
@@ -189,6 +237,7 @@ function home(){
     h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') })]));
   var wk = v.week || [];
   out.push(card(t('week'), wk.length ? wk.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })]); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
   out.push(card(t('yourJobs'), (v.jobs || []).length ? v.jobs.map(jobRow) : [h('div', { class: 'empty', text: t('noJobs') })]));
   var bc = bidsCard(v.bids); if (bc) out.push(bc);
   var pm = (v.jobs || [])[0] && v.jobs[0].pm;
@@ -277,8 +326,8 @@ function scoreCard(){
     if (SCORE.err) { box.appendChild(h('div', { class: 'muted', text: t('loadFail') })); return; }
     box.appendChild(h('div', { style: 'display:flex;align-items:baseline;gap:10px' }, [h('b', { style: 'font-size:34px', text: String(SCORE.score) }), h('span', { style: 'font-size:22px;font-weight:700', text: SCORE.letter })]));
     box.appendChild(h('div', { class: 'muted', text: t('scoreNote') }));
-    (SCORE.parts || []).forEach(function(x){ box.appendChild(h('div', { style: 'margin-top:6px' }, [h('b', { text: x.l + ' — ' + x.pct + '%' }), h('div', { class: 'muted', text: x.detail })])); });
-    if ((SCORE.tips || []).length) { box.appendChild(h('div', { style: 'margin-top:8px;font-weight:700', text: t('scoreTips') })); SCORE.tips.forEach(function(x){ box.appendChild(h('div', { text: '• ' + x })); }); }
+    (SCORE.parts || []).forEach(function(x){ box.appendChild(h('div', { style: 'margin-top:6px' }, [h('b', { text: (LANG === 'es' && X10_ES.l[x.k] || x.l) + ' — ' + x.pct + '%' }), h('div', { class: 'muted', text: x10Es(x.detail) })])); });
+    if ((SCORE.tips || []).length) { box.appendChild(h('div', { style: 'margin-top:8px;font-weight:700', text: t('scoreTips') })); SCORE.tips.forEach(function(x){ box.appendChild(h('div', { text: '• ' + (LANG === 'es' && X10_ES.tips[x] || x10Es(x)) })); }); }
     box.appendChild(h('button', { type: 'button', class: 'btn', style: 'margin-top:8px', text: t('scoreHide'), on: { click: function(){ scoreOpen = false; paint(); } } }));
   }
   paint();
@@ -305,6 +354,7 @@ function overview(){
   var sch = JOB.schedule || [];
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })]); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
+  out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));
   return out;
 }
