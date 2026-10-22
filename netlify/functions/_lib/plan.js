@@ -104,7 +104,8 @@ function contacted(l){
   if (st && !/^(new|new lead|lead|unassigned)$/.test(st)) return true;
   return ['contactedAt', 'lastContact', 'lastContacted', 'lastContactAt', 'firstContactAt'].some(function(f){ return !!s(l[f]); });
 }
-function jobTag(p){ return [s(p.autoPO || p.po) ? 'PO ' + s(p.autoPO || p.po) : '', clip(p.name, 50)].filter(Boolean).join(' · '); }
+/* PO · job name · street — the street tells apart a GC's look-alike jobs (owner 10/22) */
+function jobTag(p){ const st = s(p.address || p.jobAddress).split(',')[0].trim(); return [s(p.autoPO || p.po) ? 'PO ' + s(p.autoPO || p.po) : '', clip(p.name, 50), st && low(p.name).indexOf(low(st)) < 0 ? st : ''].filter(Boolean).join(' · '); }
 function invNo(i){ return s(i.number || i.invNumber || i.num || i.id); }
 function invTotal(i){ return num(i.amount != null ? i.amount : (i.total != null ? i.total : i.amt)); }
 function invPaid(i){ return num(i.paid != null ? i.paid : i.amountPaid) + arr(i.payments).reduce(function(a, p){ return a + num(p && p.amount); }, 0); }

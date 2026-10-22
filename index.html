@@ -10869,7 +10869,7 @@ function doSearch(){
     if(txt.includes(q)){
       var subs=(p.subs||[]).filter(function(s){return s.status==="In Progress"||s.status==="Awarded"});
       var subList=subs.map(function(s){return s.name+" ("+s.trade+")"}).join(", ");
-      hits.push({type:"project",icon:"◫",label:p.name,detail:[
+      hits.push({type:"project",icon:"◫",label:(window._gcJobLabel?window._gcJobLabel(p):p.name),detail:[
         p.client?"Client: "+p.client:"",
         p.address?"Address: "+p.address:"",
         "PO: "+(p.autoPO||"—"),
@@ -10928,7 +10928,7 @@ function doSearch(){
         cu.email?"Email: "+cu.email:"",
         cu.address?"Address: "+cu.address:"",
         cu.type?"Type: "+cu.type:"",
-        custJobs.length>0?"Jobs: "+custJobs.map(function(j){return j.name+" ("+j.status+")"}).join(", "):""
+        custJobs.length>0?"Jobs: "+custJobs.map(function(j){return (window._gcJobLabel?window._gcJobLabel(j):j.name)+" ("+j.status+")"}).join(", "):""
       ].filter(Boolean)})
     }
   });
@@ -13743,12 +13743,12 @@ window._cjPacketHTML=function(proj,owed,invs,note){
   return '<!doctype html><html><head><meta charset="utf-8"><title>Completion Packet — '+window._cjEsc(proj.name||"")+'</title>'
    +'<style>body{font-family:Arial,Helvetica,sans-serif;color:#1a2332;max-width:820px;margin:0 auto;padding:32px;line-height:1.5}'
    +'h1{color:#1E2060;font-size:22px;margin:0} h2{color:#1E2060;font-size:15px;border-bottom:2px solid #c4a469;padding-bottom:4px;margin-top:30px}'
-   +'.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1E2060;padding-bottom:12px}'
+   +'.hdr{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;border-bottom:3px solid #1E2060;padding-bottom:12px}'
    +'.muted{color:#667} table{width:100%;border-collapse:collapse;margin-top:8px} td,th{border:1px solid #d4dae3;padding:7px 9px;font-size:13px;text-align:left}'
    +'th{background:#1E2060;color:#fff} .sig{margin-top:34px;display:flex;gap:40px} .sig div{flex:1;border-top:1px solid #333;padding-top:5px;font-size:12px;color:#555}'
    +'.box{background:#f4f6fb;border:1px solid #dce3ee;border-radius:8px;padding:14px;margin-top:10px} .cta{display:inline-block;margin-top:8px;background:#1E7145;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700}'
    +'@media print{.noprint{display:none}}</style></head><body>'
-   +'<div class="hdr"><div><h1>GRAYCO CONSTRUCTION SERVICES</h1><div class="muted">office@grayco-cs.com · '+(pmPhone||'(901) 585-0944')+' · ' + window._gcCompanyAddress() + '</div></div><div style="text-align:right;font-size:12px;color:#667">Date: '+d+'</div></div>'
+   +'<div class="hdr"><div>'+(window._gcPrintLogo?window._gcPrintLogo(60):'')+'<h1>GRAYCO CONSTRUCTION SERVICES</h1><div class="muted">' + window._gcCompanyAddress() + ' · '+(pmPhone||'(901) 585-0944')+' · grayco-cs.com · office@grayco-cs.com</div></div><div style="font-size:12px;color:#667">Date: '+d+'</div></div>'
    +'<h2 style="border:none;text-align:center;margin-top:20px">Thank You</h2>'
    +'<div class="box" style="margin-top:6px"><p>Dear '+window._cjEsc(proj.client||"Valued Client")+',</p>'
    +'<p>Thank you for choosing GrayCo Construction Services for your '+window._cjEsc((proj.type||"").toLowerCase())+' project'+(proj.address?' at '+window._cjEsc(proj.address):'')+'. It was a pleasure working with you, and we\u2019re proud of the finished result. Our team takes pride in quality workmanship and clear communication from start to finish.</p>'
@@ -26188,7 +26188,7 @@ function exportScopeDoc(){
   const linesBycat={};lines.forEach(l=>{if(!linesBycat[l.cat])linesBycat[l.cat]=[];linesBycat[l.cat].push(l);});
   const catSummary=Object.entries(linesBycat).map(([cat,ls])=>`<tr><td style="padding:5px 10px">${cat}</td><td style="padding:5px 10px;text-align:right">${fmt(ls.reduce((s,l)=>s+lineCharge(l),0))}</td></tr>`).join('');
   const html=`<html><head><title>Scope  --  ${name}</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:2rem;max-width:800px;margin:0 auto}h1{font-size:20px}h2{font-size:14px;border-bottom:1px solid #ddd;padding-bottom:4px;margin:1.5rem 0 .5rem}p{line-height:1.7}table{border-collapse:collapse;width:100%}th{background:#f5f5f5;padding:6px 10px;text-align:left;font-size:11px;text-transform:uppercase}td{border-bottom:1px solid #eee}.sig{border-top:1px solid #999;margin-top:3rem;padding-top:4px;font-size:11px;color:#666}</style></head><body>
-  <h1>GrayCo Construction Services</h1><h2>Scope of Work${num?'  --  Job #'+num:''}</h2>
+  ${window._gcPrintHead?'':'<h1>GrayCo Construction Services</h1>'}<h2>Scope of Work${num?'  --  Job #'+num:''}</h2>
   <p><strong>Project:</strong> ${name} &nbsp;|&nbsp; <strong>Customer/GC:</strong> ${gc} &nbsp;|&nbsp; <strong>Estimator:</strong> ${est} &nbsp;|&nbsp; <strong>Date:</strong> ${date}</p>
   <h2>Scope</h2><p>${sc.replace(/\n/g,'<br>')}</p>
   ${scope.inc?`<h2>Inclusions</h2><p>${scope.inc.replace(/\n/g,'<br>')}</p>`:''}
@@ -26408,7 +26408,7 @@ function _estPrintablePDF(){
       +'.tot{font-size:18px;font-weight:bold;text-align:right;margin-top:12px;color:#16a34a}'
       +'.notes{margin-top:16px;font-size:12px;color:#444;white-space:pre-wrap}'
       +'.hdr{border-bottom:3px solid #2563eb;padding-bottom:10px;margin-bottom:16px}</style></head><body>'
-      +'<div class="hdr"><h1>GrayCo Construction Services</h1><div class="sub">TN License #85034 BCB · AR License #0486990627 · MS License #27769 · grayco-cs.com</div></div>'
+      +(window._gcPrintHead?window._gcPrintHead():'<div class="hdr"><h1>GrayCo Construction Services</h1><div class="sub">TN License #85034 BCB · AR License #0486990627 · MS License #27769 · grayco-cs.com</div></div>')
       +'<h2 style="margin:0">Estimate: '+name+'</h2>'
       +'<div class="sub">'+(num?('#'+num+' · '):'')+(gc?(gc+' · '):'')+(date||'')+(estr?(' · '+estr):'')+(addr?('<br>'+addr):'')+'</div>'
       +'<table><thead><tr><th style="text-align:left;padding:8px;border-bottom:2px solid #333">Scope of Work</th><th style="text-align:right;padding:8px;border-bottom:2px solid #333">Price</th></tr></thead><tbody>'+rows+'</tbody></table>'
@@ -39840,13 +39840,13 @@ window._gcViewInvoicePDF = function(invId, pid){
         '.topbar{height:5px;background:linear-gradient(90deg,#3b82f6,#22d3ee,#8b5cf6,#3b82f6);background-size:300% 100%;animation:shimmer 6s linear infinite;}@keyframes shimmer{0%{background-position:0 0;}100%{background-position:300% 0;}}',
         '.anim{opacity:0;animation:up .7s cubic-bezier(.2,.7,.2,1) forwards;}@keyframes up{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:none;}}',
         '.d1{animation-delay:.15s;}.d2{animation-delay:.28s;}.d3{animation-delay:.4s;}.d5{animation-delay:.64s;}.d6{animation-delay:.76s;}',
-        '.head{display:flex;justify-content:space-between;align-items:flex-start;padding:36px 40px 26px;gap:24px;}',
-        '.logo-block{display:flex;flex-direction:column;align-items:flex-start;}',
+        '.head{display:flex;flex-direction:column;align-items:center;text-align:center;padding:36px 40px 26px;gap:14px;}.head .right{display:flex;flex-direction:column;align-items:center;text-align:center;}.head .fromblock{order:-1;margin:0 0 12px;padding:0;border:0;}.head .fromblock .flabel{display:none;}',
+        '.logo-block{display:flex;flex-direction:column;align-items:center;}',
         '.roof{width:230px;height:44px;overflow:visible;margin-bottom:6px;}.roof path,.roof rect{fill:none;stroke:#dbe8ff;stroke-width:7;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 6px rgba(120,180,255,.5));}',
         '.logo-name{font-family:Sora;font-weight:800;font-size:56px;letter-spacing:3px;line-height:.9;background:linear-gradient(110deg,#a9c8ff 18%,#fff 43%,#fff 50%,#7fb4ff 57%,#a9c8ff 82%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:shine 3.6s linear infinite;filter:drop-shadow(0 0 12px rgba(120,180,255,.35));}',
         '@keyframes shine{0%{background-position:160% 0;}100%{background-position:-160% 0;}}',
         '.logo-sub{font-family:Sora;font-weight:600;font-size:12.5px;letter-spacing:7px;color:#8fb0e6;margin-top:6px;padding-left:3px;}',
-        '.right{text-align:right;min-width:240px;}',
+        '.right{text-align:center;min-width:240px;}',
         '.word{font-family:Sora;font-weight:800;font-size:38px;letter-spacing:2px;background:linear-gradient(90deg,#fff,#a9c8ff);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1;}',
         '.num{margin-top:7px;font-size:13px;font-weight:600;color:#22d3ee;letter-spacing:2px;}',
         '.fromblock{margin-top:16px;padding-top:14px;border-top:1px solid rgba(130,160,220,.2);}',
@@ -39881,7 +39881,7 @@ window._gcViewInvoicePDF = function(invId, pid){
         '@media print{.actions{display:none;}}',
         '@media print{body{background:#fff;padding:0;color:#111;}.orb{display:none;}.sheet{box-shadow:none;border:none;animation:none;background:#fff;}.anim{animation:none!important;opacity:1!important;}.trow.grand::after{display:none;}.print-btn{display:none;}',
         '.word{color:#0b1f42;-webkit-text-fill-color:#0b1f42;}.logo-name{color:#0b1f42;-webkit-text-fill-color:#0b1f42;animation:none;filter:none;}.roof path,.roof rect{stroke:#0b1f42;filter:none;}.logo-sub{color:#0b1f42;}.name,.review h3{color:#0b1f42;}.line,.fline,.desc-sub,.pay,.foot,.trow,.card .lbl,.lbl2,.fromblock .flabel{color:#444;}.desc-main,.card .val,.fname{color:#111;}.card{border-color:#ddd;}}',
-        '@media(max-width:560px){.head{flex-direction:column;}.right{text-align:left;min-width:0;}.summary{grid-template-columns:1fr;margin:4px 22px 0;}.body,.pay,.foot,.head{padding-left:22px;padding-right:22px;}.review{margin:24px 22px 0;}.logo-name{font-size:46px;}.roof{width:190px;}}',
+        '@media(max-width:560px){.head{flex-direction:column;}.right{text-align:center;min-width:0;}.summary{grid-template-columns:1fr;margin:4px 22px 0;}.body,.pay,.foot,.head{padding-left:22px;padding-right:22px;}.review{margin:24px 22px 0;}.logo-name{font-size:46px;}.roof{width:190px;}}',
         '</style></head><body>',
         '<img src="https://graycocrm1.netlify.app/.netlify/functions/invoice-track?hit='+encodeURIComponent(invId)+'" alt="" width="1" height="1" style="position:absolute;left:-9999px;">',
         '<div class="orb a"></div><div class="orb b"></div><div class="orb c"></div>',
@@ -43335,8 +43335,8 @@ function header(docTitle, sub){
 function gcLogoBar(docTitle){
   return [
     '<div class="logo-bar">',
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">',
-        '<div style="display:flex;align-items:center;gap:14px">',
+      '<div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px">',
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">',
           '<img src="data:image/png;base64,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" style="height:56px;width:auto;object-fit:contain" alt="GrayCo Logo">',
           '<div>',
             '<div class="logo-name">GrayCo</div>',
@@ -43350,7 +43350,7 @@ function gcLogoBar(docTitle){
             '</div>',
           '</div>',
         '</div>',
-        '<div style="text-align:right">',
+        '<div style="text-align:center">',
           '<div class="doc-title" style="border-color:#d4a017;color:#d4a017">'+esc(docTitle)+'</div>',
         '</div>',
       '</div>',
@@ -43460,9 +43460,9 @@ function hookDocLib(){
 
         // ── HEADER ────────────────────────────────────────────────────────
         '<div class="inv-header">',
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1">',
+          '<div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;position:relative;z-index:1">',
             // Logo + company
-            '<div style="display:flex;align-items:center;gap:16px">',
+            '<div style="display:flex;flex-direction:column;align-items:center;gap:8px">',
               '<img src="'+logo_src+'" style="height:64px;width:auto;object-fit:contain;filter:brightness(1.05)" alt="GrayCo Logo">',
               '<div>',
                 '<div style="font-size:26pt;font-weight:900;color:#d4a017;letter-spacing:2px;line-height:1">GrayCo</div>',
@@ -43476,7 +43476,7 @@ function hookDocLib(){
               '</div>',
             '</div>',
             // INVOICE badge
-            '<div style="text-align:right">',
+            '<div style="text-align:center">',
               '<div style="border:2px solid #d4a017;padding:10px 22px;display:inline-block;margin-bottom:8px">',
                 '<div style="color:#d4a017;font-size:20pt;font-weight:900;letter-spacing:3px">INVOICE</div>',
               '</div>',
@@ -45516,12 +45516,12 @@ function buildEstPDFHTML(est, projName, projAddr){
     '<style>',
     'body{font-family:Arial,sans-serif;font-size:11pt;margin:0;padding:0;color:#111}',
     '.page{max-width:760px;margin:0 auto}',
-    '.hdr{background:#0c1e2b;color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:flex-start}',
+    '.hdr{background:#0c1e2b;color:#fff;padding:20px 28px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px}',
     '.co-name{font-size:20pt;font-weight:900;color:#d4a017;letter-spacing:2px}',
     '.co-sub{font-size:8pt;color:#8ab;letter-spacing:3px;text-transform:uppercase}',
     '.co-info{font-size:9pt;color:#8ab;margin-top:5px;line-height:1.7}',
     '.gold-bar{height:4px;background:linear-gradient(90deg,#b8860b,#d4a017,#f0c040,#d4a017,#b8860b)}',
-    '.est-badge{text-align:right}',
+    '.est-badge{text-align:center}',
     '.est-badge-box{border:2px solid #d4a017;padding:8px 18px;display:inline-block}',
     '.est-badge-text{font-size:16pt;font-weight:900;color:#d4a017;letter-spacing:3px}',
     '.est-meta{font-size:10pt;color:#8ab;margin-top:5px;line-height:1.8}',
@@ -45543,8 +45543,8 @@ function buildEstPDFHTML(est, projName, projAddr){
 
     // Header
     '<div class="hdr">',
-      '<div style="display:flex;align-items:center;gap:14px">',
-        (window.GC_LOGO_B64 ? '<img src="'+(window.GC_LOGO_PRINT || 'data:image/png;base64,'+window.GC_LOGO_B64)+'" style="height:58px;width:auto" />' : ''),
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">',
+        ((window.GC_LOGO_PRINT||window.GC_LOGO_B64) ? '<img src="'+(window.GC_LOGO_PRINT || 'data:image/png;base64,'+window.GC_LOGO_B64)+'" style="height:58px;width:auto" />' : ''),
         '<div>',
         '<div class="co-name">GrayCo</div>',
         '<div class="co-sub">Construction Services LLC</div>',
@@ -46768,12 +46768,12 @@ window.gcOpenInvoicePDF = async function(invId){
     '<style>',
     'body{font-family:Arial,sans-serif;margin:0;padding:0;color:#111;background:#fff}',
     '.page{max-width:820px;margin:0 auto;padding:0}',
-    '.hdr{background:#0c1e2b;color:#fff;padding:24px 30px;display:flex;justify-content:space-between;align-items:flex-start}',
+    '.hdr{background:#0c1e2b;color:#fff;padding:24px 30px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px}',
     '.co-name{font-size:22pt;font-weight:900;color:#d4a017;letter-spacing:2px}',
     '.co-sub{font-size:8pt;color:#8ab;letter-spacing:3px;text-transform:uppercase}',
     '.co-info{font-size:9pt;color:#8ab;margin-top:6px;line-height:1.7}',
     '.gold-bar{height:4px;background:linear-gradient(90deg,#b8860b,#d4a017,#f0c040,#d4a017,#b8860b)}',
-    '.inv-badge{text-align:right}',
+    '.inv-badge{text-align:center}',
     '.inv-badge-box{border:2px solid #d4a017;padding:8px 20px;display:inline-block}',
     '.inv-num{font-size:18pt;font-weight:900;color:#d4a017;letter-spacing:3px}',
     '.inv-meta{font-size:10pt;color:#8ab;margin-top:6px;line-height:1.8}',
@@ -46799,7 +46799,7 @@ window.gcOpenInvoicePDF = async function(invId){
     '</div>',
     // Header
     '<div class="hdr">',
-      '<div>',
+      '<div>', (window._gcPrintLogo?window._gcPrintLogo(56,1):''),
         '<div class="co-name">GrayCo</div>',
         '<div class="co-sub">Construction Services LLC</div>',
         '<div class="co-info">' + window._gcCompanyAddress() + '<br>(901) 585-0944 · office@grayco-cs.com<br>grayco-cs.com<br><span style="font-size:.9em">TN License #85034 BCB · AR License #0486990627 · MS License #27769</span></div>',
@@ -57290,9 +57290,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         + (email?(' &nbsp;|&nbsp; '+esc(email)):'')
         + (phone?(' &nbsp;|&nbsp; '+esc(phone)):'') + '</div>';
     }
-    var header = '<div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #0f2440;padding-bottom:10px;margin-bottom:12px">'
-      + '<div>'+logoImg+'</div>'
-      + '<div style="flex:1">'
+    var header = '<div style="text-align:center;border-bottom:3px solid #0f2440;padding-bottom:10px;margin-bottom:12px">'
+      + '<div style="display:flex;justify-content:center;margin-bottom:6px">'+logoImg+'</div>'
+      + '<div>'
         + '<div style="font-size:15pt;font-weight:800;color:#0f2440">GrayCo Construction Services</div>'
         + '<div style="font-size:8.5pt;color:#334">TN License #85034 BCB · AR License #0486990627 · MS License #27769 &nbsp;|&nbsp; Bartlett, TN</div>'
         + personBlock('Estimator', estName, estU)
@@ -58433,7 +58433,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       }).join(' ');
 
       ov.innerHTML='<div style="background:#f1f5f9;border-radius:14px;max-width:560px;width:100%;padding:16px;font-family:Arial;display:flex;flex-direction:column;max-height:90vh">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><div style="font-size:16px;font-weight:800;color:#0f2440">\uD83D\uDCAC Job Messages</div><div style="font-size:11px;color:#64748b">'+esc(proj.name||proj.address||pid)+'</div></div>'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><div style="font-size:16px;font-weight:800;color:#0f2440">\uD83D\uDCAC Job Messages</div><div style="font-size:11px;color:#64748b">'+esc(window._gcJobTag?window._gcJobTag(proj):(proj.name||proj.address||pid))+(proj.client&&(window._gcJobTag?window._gcJobTag(proj):'').indexOf(proj.client)<0?' \u2014 '+esc(proj.client):'')+'</div></div>'
         +'<button id="_jmX" style="padding:6px 12px;border:none;border-radius:6px;background:#334155;color:#fff;cursor:pointer">Close</button></div>'
         +'<div style="position:relative;margin-bottom:8px"><input id="_jmJobSearch" type="search" placeholder="\uD83D\uDD0D Switch job..." autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box" /><div id="_jmJobResults" style="display:none;position:absolute;top:38px;left:0;right:0;background:#fff;border:1px solid #cbd5e1;border-radius:8px;max-height:200px;overflow:auto;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.2)"></div></div>'
         +'<div id="_jmThread" style="flex:1;overflow:auto;background:#e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px;min-height:180px">'+thread+'</div>'
@@ -58460,7 +58460,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
           res.innerHTML=list.map(function(p){
             var un=0; try{ un=(window._gcJobMsgUnread&&window._gcJobMsgUnread(p.id))||0; }catch(e){}
             return '<div class="_jmJobOpt" data-pid="'+p.id+'" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid #eef2f7;font-size:13px;color:#0f2440;display:flex;justify-content:space-between;align-items:center">'
-              +'<span>'+esc(p.name||p.address||p.id)+(p.address&&p.name?(' <span style=\'color:#94a3b8;font-size:11px\'>'+esc(p.address)+'</span>'):'')+'</span>'
+              +'<span>'+esc(window._gcJobTag?window._gcJobTag(p):(p.name||p.address||p.id))+(false?(' <span style=\'color:#94a3b8;font-size:11px\'>'+esc(p.address)+'</span>'):'')+'</span>'
               +(un?('<span style="background:#e11d48;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px">'+un+'</span>'):'')
               +'</div>';
           }).join('');
@@ -58508,12 +58508,12 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   window._gcPickJobForMessages = function(){
     var projects=(crm().projects||[]).filter(function(p){ return p && p.id && (p.name||p.address); });
-    projects.sort(function(a,b){ return (b._lastMsg||0)-(a._lastMsg||0); });
+    projects.sort(function(a,b){ var f=window._gcJobMsgLast; return (f?f(b.id):0)-(f?f(a.id):0); });
     var ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;z-index:100228;background:rgba(6,12,20,.9);display:flex;align-items:center;justify-content:center;padding:16px';
     var rows=projects.map(function(p){
       var un=(window._gcJobMsgUnread&&window._gcJobMsgUnread(p.id))||0;
-      return '<div data-pid="'+esc(p.id)+'" style="padding:9px 12px;background:#fff;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;color:#0f2440">'+esc(p.name||p.address)+'</span>'+(un?('<span style="background:#e11d48;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700">'+un+'</span>'):'')+'</div>';
+      return '<div data-pid="'+esc(p.id)+'" style="padding:9px 12px;background:#fff;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;color:#0f2440">'+esc(window._gcJobTag?window._gcJobTag(p):(p.name||p.address))+(p.client?'<span style=\'display:block;font-weight:400;font-size:11px;color:#64748b\'>'+esc(p.client)+'</span>':'')+'</span>'+(un?('<span style="background:#e11d48;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700">'+un+'</span>'):'')+'</div>';
     }).join('');
     ov.innerHTML='<div style="background:#f1f5f9;border-radius:14px;max-width:520px;width:100%;padding:16px;font-family:Arial;max-height:88vh;overflow:auto">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:16px;font-weight:800;color:#0f2440">\uD83D\uDCAC Pick a job to message</div>'
@@ -58537,7 +58537,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var listEl=ov.querySelector('#_jpList');
         listEl.innerHTML = filtered.length ? filtered.map(function(p){
           var un=(window._gcJobMsgUnread&&window._gcJobMsgUnread(p.id))||0;
-          return '<div data-pid="'+esc(p.id)+'" style="padding:9px 12px;background:#fff;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;color:#0f2440">'+esc(p.name||p.address)+'</span>'+(un?('<span style="background:#e11d48;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700">'+un+'</span>'):'')+'</div>';
+          return '<div data-pid="'+esc(p.id)+'" style="padding:9px 12px;background:#fff;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600;color:#0f2440">'+esc(window._gcJobTag?window._gcJobTag(p):(p.name||p.address))+(p.client?'<span style=\'display:block;font-weight:400;font-size:11px;color:#64748b\'>'+esc(p.client)+'</span>':'')+'</span>'+(un?('<span style="background:#e11d48;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700">'+un+'</span>'):'')+'</div>';
         }).join('') : '<div style="color:#94a3b8;text-align:center;padding:20px">No matching jobs.</div>';
         wire();
       };
@@ -62668,9 +62668,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     }).join('');
 
     var css = 'body{font-family:\"Times New Roman\",Georgia,serif;color:#111;font-size:12pt;line-height:1.5;margin:0;padding:40px 54px;max-width:8.5in}'
-      +'.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}'
-      +'.co{font-size:15pt;font-weight:700;text-align:right}'
-      +'.coinfo{font-size:9pt;color:#444;text-align:right;line-height:1.4}'
+      +'.hdr{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin-bottom:8px}'
+      +'.co{font-size:15pt;font-weight:700;text-align:center}'
+      +'.coinfo{font-size:9pt;color:#444;text-align:center;line-height:1.4}'
       +'.logo{height:78px}'
       +'h2{font-size:12pt;margin:18px 0 6px;text-decoration:underline}'
       +'.center{text-align:center}'
@@ -62681,7 +62681,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       +'.sig{margin-top:26px;font-size:11pt;line-height:2.4}'
       +'@media print{body{padding:24px}}';
 
-    var logo = window.GC_LOGO_B64 ? ('<img class="logo" src="'+(window.GC_LOGO_PRINT || 'data:image/png;base64,'+window.GC_LOGO_B64)+'"/>') : '<div style="font-weight:800;font-size:16pt">GRAYCO</div>';
+    var logo = (window.GC_LOGO_PRINT||window.GC_LOGO_B64) ? ('<img class="logo" src="'+(window.GC_LOGO_PRINT || 'data:image/png;base64,'+window.GC_LOGO_B64)+'"/>') : '<div style="font-weight:800;font-size:16pt">GRAYCO</div>';
 
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>GrayCo Proposal - '+esc(proj)+'</title><style>'+css+'</style></head><body>'
       + '<div class="gc-toolbar" style="position:sticky;top:0;background:#0f1b2d;padding:10px 14px;margin:-16px -16px 16px;display:flex;gap:8px;justify-content:flex-end;border-bottom:2px solid #d4a017;">'
@@ -68450,13 +68450,14 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var y=window.GC_pdfHeader?window.GC_pdfHeader(doc,{m:m}):54;
       // Invoice label
       doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.setTextColor(37,99,235);
-      doc.text('INVOICE', W-m, 60, {align:'right'});
+      var hy=window._gcPdfHeaderCentered?y:46;   /* patch QA: below the centered letterhead */
+      doc.text('INVOICE', W-m, hy+8, {align:'right'});
       doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-      doc.text('Invoice #: '+(inv.id||''), W-m, 80, {align:'right'});
-      doc.text('Date: '+(inv.sentDate||inv.date||new Date().toISOString().slice(0,10)), W-m, 94, {align:'right'});
-      if(inv.due) doc.text('Due: '+inv.due, W-m, 108, {align:'right'});
+      doc.text('Invoice #: '+(inv.id||''), W-m, hy+26, {align:'right'});
+      doc.text('Date: '+(inv.sentDate||inv.date||new Date().toISOString().slice(0,10)), W-m, hy+39, {align:'right'});
+      if(inv.due) doc.text('Due: '+inv.due, W-m, hy+52, {align:'right'});
       // Bill to
-      y=140; doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(15,36,64);
+      y=window._gcPdfHeaderCentered?hy+8:140; doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(15,36,64);
       doc.text('Bill To:', m, y);
       doc.setFont('helvetica','normal'); doc.setTextColor(60,60,60);
       y+=15; doc.text((job&&(job.client||job.name))||'Customer', m, y);
@@ -68667,11 +68668,12 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var m=48;
       var y=window.GC_pdfHeader?window.GC_pdfHeader(doc,{m:m}):54;
       doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.setTextColor(37,99,235);
-      doc.text('ESTIMATE', W-m, 60, {align:'right'});
+      var hy=window._gcPdfHeaderCentered?y:46;   /* patch QA: below the centered letterhead */
+      doc.text('ESTIMATE', W-m, hy+8, {align:'right'});
       doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-      doc.text('Date: '+today(), W-m, 80, {align:'right'});
-      if(est.id) doc.text('Est #: '+String(est.id).slice(-8), W-m, 94, {align:'right'});
-      y=Math.max(y,110);
+      doc.text('Date: '+today(), W-m, hy+26, {align:'right'});
+      if(est.id) doc.text('Est #: '+String(est.id).slice(-8), W-m, hy+39, {align:'right'});
+      y=window._gcPdfHeaderCentered?hy+8:Math.max(y,110);
       doc.setTextColor(30,30,30); doc.setFontSize(12); doc.setFont('helvetica','bold');
       doc.text(String(est.name||'Estimate'), m, y); y+=16;
       doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(80,80,80);
@@ -71098,6 +71100,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     opts=opts||{};
     var W=doc.internal.pageSize.getWidth(), m=opts.m||48, y=opts.y||46;
     var logoDrawn=false;
+    if(window._gcPdfHeaderCentered){ try{ return window._gcPdfHeaderCentered(doc, opts); }catch(eC){} }   /* patch QA: centered letterhead */
     if(window.GC_LOGO_PRINT){ try{ doc.addImage(window.GC_LOGO_PRINT, 'JPEG', m, y+4, 70, 42); logoDrawn=2; }catch(e0){} }   /* patch HOT3: the navy logo (GC_LOGO_B64 is white) */
     if(!logoDrawn && window.GC_LOGO_B64){
       try{
@@ -72323,7 +72326,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     if(jobs.length){
       jobsHtml='<div style="color:#f0c451;font-weight:700;font-size:13px;margin:18px 0 10px;">JOBS ('+jobs.length+')</div>';
       jobs.forEach(function(p){
-        jobsHtml+='<button class="_cpJob" data-id="'+p.id+'" style="display:block;width:100%;text-align:left;background:#0f2440;border:1px solid #1e3a5f;border-radius:12px;padding:14px;margin-bottom:9px;cursor:pointer;"><div style="color:#fff;font-size:15px;font-weight:700;">'+p.name+'</div><div style="color:#8fa8c4;font-size:12px;margin-top:3px;">'+(p.po?('PO '+p.po+'  \u2022  '):'')+(p.status||'')+(p.contractAmount?('  \u2022  '+money(p.contractAmount)):'')+'</div></button>';
+        jobsHtml+='<button class="_cpJob" data-id="'+p.id+'" style="display:block;width:100%;text-align:left;background:#0f2440;border:1px solid #1e3a5f;border-radius:12px;padding:14px;margin-bottom:9px;cursor:pointer;"><div style="color:#fff;font-size:15px;font-weight:700;">'+(window._gcJobLabel?window._gcJobLabel(p,{html:true}):p.name)+'</div><div style="color:#8fa8c4;font-size:12px;margin-top:3px;">'+(p.po?('PO '+p.po+'  \u2022  '):'')+(p.status||'')+(p.contractAmount?('  \u2022  '+money(p.contractAmount)):'')+'</div></button>';
       });
     } else {
       jobsHtml='<div style="color:#64748b;font-size:13px;margin-top:16px;">No jobs linked to this customer yet.</div>';
@@ -79915,8 +79918,7 @@ window._gcForceFixSchedule = async function(silent){
     +'<head><meta charset="utf-8"><title>GrayCo Estimate</title>'
     +'<style>body{font-family:Arial,sans-serif;font-size:11pt;} .r{text-align:right;} .c{text-align:center;} .muted{color:#666;font-size:9pt;} .logo{width:150px;height:auto;}</style></head><body>'
     +'<table style="width:100%;border:none;"><tr>'
-    +'<td style="border:none;vertical-align:top;text-align:left;width:40%;">'+(window.GC_LOGO_B64?('<img class="logo" src="'+(window.GC_LOGO_PRINT || 'data:image/png;base64,'+window.GC_LOGO_B64)+'"/>'):'')+'</td>'
-    +'<td style="border:none;vertical-align:top;text-align:right;width:60%;">'
+    +'<td style="border:none;vertical-align:top;text-align:center;">'+((window.GC_LOGO_PRINT||window.GC_LOGO_B64)?('<img class="logo" src="'+(window.GC_LOGO_PRINT || 'data:image/png;base64,'+window.GC_LOGO_B64)+'"/>'):'')+'<br>'
     +'<b style="font-size:14pt;">GrayCo Construction Services, LLC</b><br>'
     +'<span class="muted">' + window._gcCompanyStreet() + '<br>Bartlett, TN 38135<br>(901) 585-0944<br>TN License # 85034<br>AR license # 0486990627<br>MS License # 27769<br>TIN#33-2106808</span>'
     +'</td></tr></table>'
@@ -106627,8 +106629,8 @@ window._gcEstimateProposalHTML = function(est){
     +'.tot{font-size:18px;font-weight:bold;text-align:right;margin-top:12px;color:#16a34a}'
     +'.notes{margin-top:16px;font-size:12px;color:#444;white-space:pre-wrap}'
     +'.hdr{border-bottom:3px solid #2563eb;padding-bottom:10px;margin-bottom:16px}</style></head><body>'
-    +'<div class="hdr"><h1>GrayCo Construction Services</h1>'
-      +'<div class="sub">TN License #85034 BCB · AR License #0486990627 · MS License #27769 · grayco-cs.com</div></div>'
+    +(window._gcPrintHead?window._gcPrintHead():'<div class="hdr"><h1>GrayCo Construction Services</h1>'
+      +'<div class="sub">TN License #85034 BCB · AR License #0486990627 · MS License #27769 · grayco-cs.com</div></div>')
     +'<h2 style="margin:0">Estimate: '+esc(name)+'</h2>'
     +'<div class="sub">'+(num?('#'+esc(num)+' · '):'')+(gc?(esc(gc)+' · '):'')+esc(date||'')
       +(estr?(' · '+esc(estr)):'')+(addr?('<br>'+esc(addr)):'')+'</div>'
@@ -128508,10 +128510,10 @@ function selectionsHtml(pid){
       (c.note ? '<div class="n">' + esc(c.note) + '</div>' : '') + '</td><td>' + (picked ? 'Picked' + (c.pick.at ? ' ' + esc(new Date(c.pick.at).toLocaleDateString()) : '') : (c.dueBy ? 'Pick by ' + esc(c.dueBy) : 'Open')) + '</td></tr>';
   }).join('');
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Your selections — ' + esc(p.name) + '</title><style>' +
-    'body{font:14px/1.45 -apple-system,Segoe UI,Arial,sans-serif;color:#14202E;margin:24px;background:#fff}h1{font-size:22px;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #D4A017;padding-bottom:10px;margin-bottom:14px;gap:12px}' +
+    'body{font:14px/1.45 -apple-system,Segoe UI,Arial,sans-serif;color:#14202E;margin:24px;background:#fff}h1{font-size:22px;margin:0}.top{display:flex;flex-direction:column;align-items:center;text-align:center;border-bottom:3px solid #D4A017;padding-bottom:10px;margin-bottom:14px;gap:6px}' +
     '.co{font-weight:800;font-size:18px;color:#0F1D2F}.m{color:#55626F;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border:1px solid #D9D2C3;padding:8px;text-align:left;vertical-align:top}th{background:#F6F1E4;font-size:12px;text-transform:uppercase;letter-spacing:.04em}' +
     '.n{color:#55626F;font-size:12px;margin-top:4px}.sig{margin-top:28px;display:grid;grid-template-columns:2fr 1fr;gap:24px}.sig div{border-top:1px solid #14202E;padding-top:4px;font-size:12px;color:#55626F}@media print{body{margin:12mm}}</style></head><body>' +
-    '<div class="top"><div><div class="co">GrayCo Construction Services</div><div class="m">901-585-0944</div></div><div style="text-align:right"><h1>Your selections</h1><div class="m">' + esc(today) + '</div></div></div>' +
+    '<div class="top"><div>' + (window._gcPrintLogo?window._gcPrintLogo(54):'') + '<div class="co">GrayCo Construction Services</div><div class="m">' + (window._gcCompanyAddress ? esc(window._gcCompanyAddress()) + ' · ' : '') + '901-585-0944 · grayco-cs.com</div></div><div><h1>Your selections</h1><div class="m">' + esc(today) + '</div></div></div>' +
     '<div><b>' + esc(p.name) + '</b></div><div class="m">' + esc([p.client, p.address].filter(Boolean).join(' · ')) + '</div>' +
     '<table><thead><tr><th style="width:32%">Item</th><th>Options / your pick</th><th style="width:18%">Status</th></tr></thead><tbody>' + (rows || '<tr><td colspan="3">No selections yet.</td></tr>') + '</tbody></table>' +
     '<p class="m" style="margin-top:12px">Colors on screens and samples can vary — please confirm with a physical sample. Price differences shown are added to (+) or taken off (−) your contract when you pick that option. To pick or change a selection, contact ' + esc(pm.name || 'your Project Manager') + (pm.phone ? ' at ' + esc(pm.phone) : '') + (pm.email ? ' (' + esc(pm.email) + ')' : '') + ' or call GrayCo at 901-585-0944.</p>' +
@@ -130322,7 +130324,7 @@ function green(){
     badge.textContent = t;
     badge.style.cssText = n > 0 ? 'position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;' : 'display:none;';
   }
-  b.setAttribute('aria-label', 'Approvals (' + n + ')');
+  if(b.getAttribute('aria-label') !== 'Approvals (' + n + ')') b.setAttribute('aria-label', 'Approvals (' + n + ')');
 }
 var lastSig = '';
 function paintAll(force){
@@ -150525,8 +150527,9 @@ function drawMessages(){
   var q = low(MSGQ), un = function(p){ try { return typeof W._gcJobMsgUnread === 'function' ? W._gcJobMsgUnread(p.id) || 0 : 0; } catch (e) { return 0; } };
   var role = effRole(), list = projects().filter(function(p){ return !q || low([p.name, p.client, p.address, p.autoPO].join(' ')).indexOf(q) >= 0; });
   if (role === 'Project Manager') list = list.filter(samePM);
-  list.sort(function(a, b){ return un(b) - un(a) || (num(b._lastMsg) - num(a._lastMsg)) || s(a.name).localeCompare(s(b.name)); });
-  var html = list.slice(0, 80).map(function(p){ var n = un(p); return '<button type="button" class="row" data-pid="' + esc(p.id) + '"><span><b>' + esc(p.name || p.address) + '</b><div class="m">' + esc([p.client, p.address].filter(Boolean).join(' · ')) + '</div></span>' + (n ? '<span class="un">' + n + '</span>' : '') + '</button>'; }).join('') || '<div class="gc-rp-empty">No jobs match.</div>';
+  list.sort(function(a, b){ return un(b) - un(a) || ((W._gcJobMsgLast ? W._gcJobMsgLast(b.id) : 0) - (W._gcJobMsgLast ? W._gcJobMsgLast(a.id) : 0)) || s(a.name).localeCompare(s(b.name)); });
+  var html = list.slice(0, 80).map(function(p){ var n = un(p); return '<button type="button" class="row" data-pid="' + esc(p.id) + '"><span>' + (W._gcJobLabel ? W._gcJobLabel(p, { html: true }) : '<b>' + esc(p.name || p.address) + '</b>') + '<div class="m">' + esc([p.client ? 'Customer: ' + p.client : '', p.pm ? 'PM ' + p.pm : ''].filter(Boolean).join(' · ')) + '</div></span>' + (n ? '<span class="un">' + n + '</span>' : '') + '</button>'; }).join('') || '<div class="gc-rp-empty">No jobs match.</div>';
+  if (W._gcMsgUnsortedHtml && !q) html = W._gcMsgUnsortedHtml() + html;
   var l = box.querySelector('.list'); if (l.getAttribute('data-sig') !== html) { l.innerHTML = html; l.setAttribute('data-sig', html); }
 }
 
@@ -150675,7 +150678,7 @@ function paintViewAs(){
       box.addEventListener('click', function(ev){ var b = ev.target.closest('[data-va]'); if (b) setViewAs(b.getAttribute('data-va')); });
       if (nav && nav.parentElement === aside) aside.insertBefore(box, nav); else aside.appendChild(box);
     }
-    Array.prototype.forEach.call(box.querySelectorAll('[data-va]'), function(b){ var on = b.getAttribute('data-va') === va; if (b.classList.contains('on') !== on) b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
+    Array.prototype.forEach.call(box.querySelectorAll('[data-va]'), function(b){ var on = b.getAttribute('data-va') === va; if (b.classList.contains('on') !== on) b.classList.toggle('on', on); if (b.getAttribute('aria-checked') !== (on ? 'true' : 'false')) b.setAttribute('aria-checked', on ? 'true' : 'false'); });
   }
   var pb = D.getElementById('gc-rp-preview');
   if (va) {
@@ -155845,6 +155848,7 @@ function projects(){ return arr(crm().projects); }
 function proj(pid){ pid = s(pid); if (!pid) return null; return projects().filter(function(p){ return p && s(p.id) === pid; })[0] || null; }
 function jobLine(p, fallback){
   if (!p) return s(fallback);
+  if (W._gcJobLabel) return W._gcJobLabel(p);
   var po = s(p.autoPO || p.po), name = s(p.name), addr = s(p.address || p.jobAddress);
   return [po ? 'PO ' + po : '', name, addr && low(addr) !== low(name) ? addr : ''].filter(Boolean).join(' · ');
 }
@@ -158606,19 +158610,20 @@ function SEEDS(){
     { id: 'adm_seed_govbids_v1', to: both, label: 'Sign up for the bid boards', note: 'Use leads@grayco-cs.com as the contact e-mail on every one.', items: ['MLGW Bid Notification + iSupplier', 'Central Bidding (Southaven, Olive Branch, DeSoto County)',
       'MSCS Ion Wave', 'City of Memphis supplier registration', 'Shelby County vendor registration', 'MSCAA on OpenGov', 'TN Edison', 'Arkansas ARBuy', 'Mississippi MAGIC',
       'BuildingConnected / PlanHub / planrooms (notifications to leads@ — bid invitations are Leads)'] },
+    { id: 'adm_seed_bni_v1', to: three, label: 'Fill out the BNI application', items: ['Get the application from the BNI chapter', 'Fill it out and send it in', 'Add the meeting day/time to the calendar'] },
     { id: 'adm_seed_2fa_v1', to: both, label: 'Turn on two-step login', items: ['myaccount.google.com → Security', '2-Step Verification → Get started', 'Add your phone', 'Turn on', 'Save the backup codes somewhere safe'] },
     { id: 'adm_seed_financing_v1', to: [OWNERS.n], label: 'Compare customer financing companies', items: ['GreenSky', 'Hearth', 'Service Finance', 'Synchrony', 'Wisetack', 'Acorn',
       'Compare: dealer fees, approval rates, promo plans (0% / deferred), funding speed, how the customer applies (link or QR)',
       'Pick one, then tell Claude to add the "monthly payments as low as" line and the apply link to estimates and the portal'] }
   ];
 }
-var SEEDV = 2;
+var SEEDV = 3;
 function seedRec(x, now, old){
   var r = old || { id: x.id, addedAt: now, done: false };
   r.label = x.label; r.note = x.note || ''; r.addedBy = r.addedBy || 'Admin (setup)'; r.updatedAt = now; r.kind = 'admin_seed'; r.seedV = SEEDV;
   r.assignees = x.to.slice(); r.assignee = whoLabel(x.to); r.personal = x.to.length === 1; r.shared = x.to.length > 1;
   var had = {}; arr(r.items).forEach(function(i){ if (i && i.label) had[low(i.label)] = !!i.done; });
-  r.items = x.items.map(function(l, k){ return { id: x.id + '_' + k, label: l, done: !!had[low(l)] }; });
+  r.items = x.items.map(function(l, k){ return { id: x.id + '_' + k, label: l, done: !!(had[low(l)] || had[low(l).replace(/to leads@.*\)$/, 'to bids@)')]) }; });
   return r;
 }
 function seed(){
@@ -158811,7 +158816,16 @@ function start(){
   every(function(){ if (!D.hidden) pull(); }, 10 * 60000);
   every(decorate, 1200);
   var seeded = false;
-  later(function go(){ if (seeded) return; try { if (users().length && isAdmin()) { seed(); seeded = true; return; } } catch (e) { warn(e); } later(go, 5000); }, 15000);
+  later(function go(){ if (seeded) return; try { if (users().length && isAdmin()) { seeded = true;
+    kvRead(OT).then(function(v){
+      if (v === null) v = [];   /* no row yet: nothing in the cloud to keep */
+      if (!Array.isArray(v)) { seeded = false; later(go, 5 * 60000); return; }   /* patch QA: the cloud copy could not be read → not now */
+      var loc = tasks(), by = {}, out = [];
+      loc.concat(v).forEach(function(t){ if (t && typeof t === 'object' && t.id) { var o = by[t.id]; if (!o || s(t.updatedAt) > s(o.updatedAt)) by[t.id] = t; } });
+      loc.concat(v).forEach(function(t){ if (!t || typeof t !== 'object') return; if (!t.id) { out.push(t); return; } if (by[t.id]) { out.push(by[t.id]); delete by[t.id]; } });
+      lsSet(OT, JSON.stringify(out)); seed();
+    }).catch(function(e){ warn(e); seeded = false; });
+    return; } } catch (e) { warn(e); } later(go, 5000); }, 15000);
   every(function(){ try { if (!D.hidden && isAdmin()) dueAddressTodo(); } catch (e) {} }, 5 * 60000);
 }
 W._gcADDR2 = { state: function(){ return { config: A.config(), now: A(), street: A.street(), admin: isAdmin(), me: myEmail(), mine: mine().length }; }, pull: pull, seed: seed, assign: assign, remove: removeAssigned, open: open, seeds: SEEDS, dueAddressTodo: dueAddressTodo, decorate: decorate, newsSlug: newsSlug };
@@ -159320,8 +159334,8 @@ function scopeText(sc){
 function scopeHtml(sc, c){
   var p = proj(c && c.projectId) || {}, addr = '';
   try { addr = W._gcCompanyAddress ? W._gcCompanyAddress() : ''; } catch (e) {}
-  return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(sc.title) + '</title><style>body{font:13px Arial,sans-serif;color:#1b1640;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#241968}h2{font-size:15px;margin:18px 0 6px;color:#241968;border-bottom:2px solid #F2A51A;padding-bottom:3px}table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;border-bottom:1px solid #e5e5ee;text-align:left;vertical-align:top}th{font-size:11px;text-transform:uppercase;color:#555}.q{text-align:right;white-space:nowrap}.m{color:#555;font-size:12px}.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #241968;padding-bottom:8px;margin-bottom:10px}</style></head><body>' +
-    '<div class="hdr"><div><b style="font-size:16px">GRAYCO CONSTRUCTION SERVICES</b><div class="m">' + esc(addr) + ' · (901) 585-0944</div></div><div class="m" style="text-align:right">Scope of work · no prices<br>' + esc(md(sc.createdAt)) + '</div></div>' +
+  return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(sc.title) + '</title><style>body{font:13px Arial,sans-serif;color:#1b1640;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#241968}h2{font-size:15px;margin:18px 0 6px;color:#241968;border-bottom:2px solid #F2A51A;padding-bottom:3px}table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;border-bottom:1px solid #e5e5ee;text-align:left;vertical-align:top}th{font-size:11px;text-transform:uppercase;color:#555}.q{text-align:right;white-space:nowrap}.m{color:#555;font-size:12px}.hdr{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;border-bottom:3px solid #241968;padding-bottom:8px;margin-bottom:10px}</style></head><body>' +
+    '<div class="hdr"><div>' + (window._gcPrintLogo?window._gcPrintLogo(54):'') + '<b style="font-size:16px">GRAYCO CONSTRUCTION SERVICES</b><div class="m">' + esc(addr) + ' · (901) 585-0944 · grayco-cs.com</div></div><div class="m">Scope of work · no prices<br>' + esc(md(sc.createdAt)) + '</div></div>' +
     '<h1>' + esc(sc.title) + '</h1><div class="m">' + esc([p.name, p.address].filter(Boolean).join(' · ')) + '</div>' +
     (arr(sc.measurements).length ? '<h2>Measurements</h2><table>' + sc.measurements.map(function(m){ return '<tr><td><b>' + esc(m.room || m.name || '—') + '</b></td><td class="m">' + esc(Object.keys(m).filter(function(k){ return ['room', 'name', 'from'].indexOf(k) < 0; }).map(function(k){ return k + ': ' + m[k]; }).join(' · ')) + '</td></tr>'; }).join('') + '</table>' : '') +
     arr(sc.rooms).map(function(r){ return '<h2>' + esc(r.room) + '</h2><table><tr><th>Code</th><th>Description</th><th class="q">Qty</th><th>Unit</th></tr>' + r.lines.map(function(l){ return '<tr><td>' + esc([l.code, l.act].filter(Boolean).join(' ')) + '</td><td>' + esc(l.desc) + '</td><td class="q">' + esc(l.qty) + '</td><td>' + esc(l.unit) + '</td></tr>'; }).join('') + '</table>'; }).join('') +
@@ -161244,7 +161258,7 @@ function openVendor(k){
 function vendorCard(){
   var l = supplierList();
   return '<div class="dp2-card" data-dp2="vendors"><div class="dp2-hd"><b>🏪 Supplier profiles</b><span class="dp2-mut">' + l.length + ' supplier' + (l.length === 1 ? '' : 's') + ' seen in expenses, bills, the product library and orders@</span><input data-q placeholder="Find a supplier…"></div>' +
-    '<div class="dp2-vlist">' + l.slice(0, 40).map(function(v){ var P = profOf(v.key); return '<button class="dp2-v" data-v="' + esc(v.key) + '"><b>' + esc(P.displayName || v.name) + '</b><small>' + (P.account ? 'Acct ' + esc(P.account) + ' · ' : '') + (P.rep && P.rep.name ? esc(P.rep.name) : Object.keys(v.sources).join(', ')) + '</small></button>'; }).join('') + '</div></div>';
+    '<div class="dp2-vlist">' + l.slice(0, 40).map(function(v){ var P = profOf(v.key); return '<button class="dp2-v" data-v="' + esc(v.key) + '"><b>' + esc(P.displayName || v.name) + '</b><small>' + (P.account ? 'Acct ' + esc(P.account) + ' · ' : '') + (P.rep && P.rep.name ? esc(P.rep.name) : Object.keys(v.sources).map(function(k){ return ({ vendors: 'Vendor list', expenses: 'Expenses', bills: 'Supplier bills', products: 'Product library', orders: 'Orders' })[k] || k; }).join(' · ')) + '</small></button>'; }).join('') + '</div></div>';
 }
 
 /* ── the shared modal ── */
@@ -161312,7 +161326,7 @@ D.addEventListener('click', function(e){
 D.addEventListener('input', function(e){
   var t = e.target; if (!t || !t.matches || !t.matches('.dp2-mount [data-q]')) return;
   var q = low(t.value); Array.prototype.forEach.call(D.querySelectorAll('.dp2-mount .dp2-v'), function(b){ b.style.display = !q || low(b.textContent).indexOf(q) >= 0 ? '' : 'none'; });
-  if (q) { var have = {}; Array.prototype.forEach.call(D.querySelectorAll('.dp2-mount .dp2-v'), function(b){ have[b.getAttribute('data-v')] = 1; }); var list = D.querySelector('.dp2-mount .dp2-vlist'); supplierList().filter(function(v){ return !have[v.key] && low(v.name).indexOf(q) >= 0; }).slice(0, 20).forEach(function(v){ var b = D.createElement('button'); b.className = 'dp2-v'; b.setAttribute('data-v', v.key); b.innerHTML = '<b>' + esc(v.name) + '</b><small>' + Object.keys(v.sources).join(', ') + '</small>'; list.appendChild(b); }); }
+  if (q) { var have = {}; Array.prototype.forEach.call(D.querySelectorAll('.dp2-mount .dp2-v'), function(b){ have[b.getAttribute('data-v')] = 1; }); var list = D.querySelector('.dp2-mount .dp2-vlist'); supplierList().filter(function(v){ return !have[v.key] && low(v.name).indexOf(q) >= 0; }).slice(0, 20).forEach(function(v){ var b = D.createElement('button'); b.className = 'dp2-v'; b.setAttribute('data-v', v.key); b.innerHTML = '<b>' + esc(v.name) + '</b><small>' + Object.keys(v.sources).map(function(k){ return ({ vendors: 'Vendor list', expenses: 'Expenses', bills: 'Supplier bills', products: 'Product library', orders: 'Orders' })[k] || k; }).join(' · ') + '</small>'; list.appendChild(b); }); }
 });
 
 /* ── To-Do (patch TD2): over-budget and margin alerts, once per job and threshold ── */
@@ -164700,7 +164714,7 @@ function pickJob(title, list, onPick){
   var m = modal('<button type="button" class="b x" data-sys="close">✕</button><h3>' + esc(title) + '</h3><input type="search" data-sys="q2" placeholder="Search jobs" style="width:100%;margin:8px 0"><div class="list" data-sys-jobs></div>');
   function draw(q){ var b = m.querySelector('[data-sys-jobs]'); q = low(q);
     var l = list.filter(function(p){ return !q || low(p.name + ' ' + p.client + ' ' + p.address + ' ' + p.autoPO).indexOf(q) > -1; }).slice(0, 80);
-    b.innerHTML = l.length ? l.map(function(p){ return '<label class="row" data-pid="' + esc(p.id) + '"><span style="flex:1"><b>' + esc(p.name || 'Job') + '</b> <span class="mut">' + esc([p.client, p.address, p.status].filter(Boolean).join(' · ')) + '</span></span><span class="mut">Open →</span></label>'; }).join('') : '<div class="mut" style="padding:10px">No jobs.</div>'; }
+    b.innerHTML = l.length ? l.map(function(p){ return '<label class="row" data-pid="' + esc(p.id) + '"><span style="flex:1"><b>' + esc(W._gcJobLabel ? W._gcJobLabel(p) : (p.name || 'Job')) + '</b> <span class="mut">' + esc([p.client, p.status].filter(Boolean).join(' · ')) + '</span></span><span class="mut">Open →</span></label>'; }).join('') : '<div class="mut" style="padding:10px">No jobs.</div>'; }
   m.querySelector('[data-sys=q2]').addEventListener('input', function(ev){ draw(ev.target.value); });
   m.querySelector('[data-sys-jobs]').addEventListener('click', function(ev){ var r = ev.target.closest('[data-pid]'); if (!r) return; var p = list.filter(function(x){ return x.id === r.getAttribute('data-pid'); })[0]; closeModal(); if (p) onPick(p); });
   draw('');
@@ -164759,5 +164773,186 @@ RI.call(W, tick, 1200); later(tick, 500);
 W._gcSys = { bp: { load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, vis: setVis }, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
   state: function(){ return { jobs: arr(BP.jobs).length, me: BP.me, err: BP.err, pings: JSON.parse(JSON.stringify(PING)), lsb: LSB.key, role: role(), ticks: TICKS, err2: TERR }; } };
 try { console.log('[GC] patch SYS: 🏗 Bid portal tab, 🧭 GrayCo Systems tab, 📨 one sub-bid list (bids@ + bid portal + sub portal) — _gcSys.state()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-qa">
+/* ══ patch QA — job messages are organised by JOB, not by customer (owner 10/22: "job messages has customers on it but
+   some customers have multiple jobs"). Every thread is labelled "PO · job name · address"; messages with no job
+   (or a job that no longer exists) wait in "Unsorted — pick a job" until someone moves them. ══ */
+(function(){
+'use strict';
+var W = window, D = document;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function projects(){ try { return arr((W._crm || {}).projects).filter(function(p){ return p && p.id && p.deleted !== true; }); } catch (e) { return []; } }
+function msgs(){ try { return arr(JSON.parse(localStorage.getItem('gc_job_messages') || '[]')); } catch (e) { return []; } }
+/* ── one job label for every list and dropdown (owner 10/22: "companies and GCs that give us multiple jobs, I can
+   differ between them … sometimes the address is the only thing you can tell is any different").
+   _gcJobLabel(job) → "PO A001 · EAN Holdings remodel · 600 W Church St". When another open job has the same customer
+   or a similar name, the street comes first (plus the city when the street is shared too):
+   "PO A012 · 600 W Church St · EAN Holdings — remodel". { html: true } puts that address in bold on its own line;
+   { short: true } trims the job name. Display only — nothing stored changes. ── */
+function street(p){ return s(p.address || p.jobAddress || p.street).split(',')[0].trim(); }
+function city(p){ var c = s(p.city); if (c) return c; var parts = s(p.address || p.jobAddress).split(','); return parts.length > 1 ? s(parts[1]) : ''; }
+var CLOSED = /^(closed|complete|completed|cancel+ed|lost|archived|dead|void)$/;
+function nname(n){ return low(n).replace(/[^a-z0-9 ]/g, ' ').replace(/\b(the|job|project|re ?roof|roof|roofing|remodel|repair|phase|bldg|building|unit|\d+)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+var AMB = { at: 0, ref: null, n: -1, by: {} };
+function ambIndex(){
+  var list = projects(), ref = (W._crm || {}).projects;
+  if (AMB.ref === ref && AMB.n === list.length && Date.now() - AMB.at < 3000) return AMB.by;
+  var open = list.filter(function(p){ return !CLOSED.test(low(p.status)); }), byC = {}, by = {};
+  open.forEach(function(p){ var c = low(p.client || p.company); if (c) (byC[c] = byC[c] || []).push(p); });
+  open.forEach(function(p){
+    var c = low(p.client || p.company), nn = nname(p.name);
+    var peers = open.filter(function(q){ if (q === p) return false; if (c && low(q.client || q.company) === c) return true; var qn = nname(q.name); return nn.length >= 4 && qn.length >= 4 && (qn === nn || qn.indexOf(nn) >= 0 || nn.indexOf(qn) >= 0); });
+    if (peers.length) by[s(p.id)] = { city: peers.some(function(q){ return street(q) && low(street(q)) === low(street(p)); }) };
+  });
+  AMB = { at: Date.now(), ref: ref, n: list.length, by: by }; return by;
+}
+W._gcJobLabel = function(p, o){
+  if (!p) return '';
+  o = o || {};
+  var po = s(p.autoPO || p.poNumber || p.po), name = s(p.name), st = street(p), cl = s(p.client || p.company);
+  var nm = name;
+  if (cl && name.length > cl.length && low(name).indexOf(low(cl)) === 0) nm = name.slice(cl.length).replace(/^[\s\u2014\u2013:,·-]+/, '') || name;   /* "EAN Holdings — remodel" → "remodel" next to the customer */
+  if (o.short && name.length > 32) name = name.slice(0, 30) + '…';
+  var amb = ambIndex()[s(p.id)], out, addr;
+  if (amb && st) {
+    addr = st + (amb.city && city(p) ? ', ' + city(p) : '');
+    var who = [cl, nm && low(nm) !== low(cl) && low(nm).indexOf(low(st)) < 0 ? nm : ''].filter(Boolean).join(' — ');
+    var rest = [po ? 'PO ' + po : '', who].filter(Boolean).join(' · ');
+    if (o.html) return '<b style="display:block">📍 ' + esc(addr) + '</b><span style="font-weight:600">' + esc(rest) + '</span>';
+    return [po ? 'PO ' + po : '', addr, who].filter(Boolean).join(' · ');
+  }
+  out = [po ? 'PO ' + po : '', name, st && low(name).indexOf(low(st)) < 0 ? st : ''].filter(Boolean).join(' · ') || s(p.id);
+  return o.html ? '<b>' + esc(out) + '</b>' : out;
+};
+/* the job tag used in thread headers and e-mail subjects: the same label */
+W._gcJobTag = function(p){ return W._gcJobLabel(p); };
+/* every <select> whose options are jobs (to-dos, change orders, invoices, expenses, schedule, photos, leads …):
+   the option text becomes the job label; a leading 🛡 and a trailing "(…)" note from the page are kept */
+function jobById(){ var m = {}; projects().forEach(function(p){ m[s(p.id)] = p; }); return m; }
+function relabel(sel, by){
+  var opts = sel.options; if (!opts || !opts.length) return;
+  for (var i = 0; i < opts.length; i++) {
+    var op = opts[i], p = op.value && by[op.value]; if (!p || op.hasAttribute('data-gc-keep')) continue;
+    var cur = op.textContent;
+    if (cur === op.getAttribute('data-gc-lab')) continue;
+    var pre = (/^\s*(🛡\s*)/.exec(cur) || [])[1] || '', tail = (/\s(\((?!PO)[^()]*\))\s*$/.exec(cur) || [])[1] || '';
+    var lab = pre + W._gcJobLabel(p) + (tail ? ' ' + tail : '');
+    op.setAttribute('data-gc-lab', lab);
+    if (cur !== lab) op.textContent = lab;
+  }
+}
+var pend = null;
+function sweep(){
+  pend = null; if (D.hidden) return;
+  var by = jobById(); if (!Object.keys(by).length) return;
+  D.querySelectorAll('select').forEach(function(sel){ try { relabel(sel, by); } catch (e) {} });
+}
+W._gcJobSelectSweep = sweep;
+function soon(ms){ if (pend) clearTimeout(pend); pend = setTimeout(sweep, ms || 700); }
+/* no MutationObserver on the whole page (it slowed the first load and could fight other scripts that redraw their
+   lists): a dropdown is relabelled when it is touched or focused, and every select once a moment after any click */
+D.addEventListener('pointerdown', function(ev){ var t = ev.target; if (t && t.nodeName === 'SELECT') try { relabel(t, jobById()); } catch (e) {} }, true);
+D.addEventListener('focusin', function(ev){ if (ev.target && ev.target.nodeName === 'SELECT') try { relabel(ev.target, jobById()); } catch (e) {} }, true);
+D.addEventListener('click', function(){ soon(); }, true);
+setTimeout(sweep, 4000);
+var LAST = { at: 0, by: {} };
+W._gcJobMsgLast = function(pid){
+  if (Date.now() - LAST.at > 3000) { LAST.by = {}; msgs().forEach(function(m){ if (m && m.pid && s(m.at) > s(LAST.by[m.pid])) LAST.by[m.pid] = s(m.at); }); LAST.at = Date.now(); }
+  return Date.parse(LAST.by[pid] || '') || 0;
+};
+W._gcMsgUnsorted = function(){
+  var ids = {}; projects().forEach(function(p){ ids[s(p.id)] = 1; });
+  if (!Object.keys(ids).length) return [];   /* the job list is not loaded yet: nothing is "unsorted" */
+  return msgs().filter(function(m){ return m && m.id && !m.deleted && (!s(m.pid) || !ids[s(m.pid)]); });
+};
+W._gcMsgUnsortedHtml = function(){
+  var u = W._gcMsgUnsorted(); if (!u.length) return '';
+  var opts = projects().slice().sort(function(a, b){ return W._gcJobTag(a).localeCompare(W._gcJobTag(b)); })
+    .map(function(p){ return '<option value="' + esc(p.id) + '">' + esc(W._gcJobTag(p) + (p.client ? ' — ' + p.client : '')) + '</option>'; }).join('');
+  return '<div class="gc-qa-unsorted" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:10px 12px;margin:0 0 10px">'
+    + '<b style="color:#9a3412">📥 Unsorted — pick a job (' + u.length + ')</b><div style="font-size:12px;color:#7c2d12;margin:2px 0 8px">These messages were saved without a job (or their job was deleted). Pick the right job so they show on its thread.</div>'
+    + u.slice(0, 40).map(function(m){
+      return '<div class="gc-qa-urow" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #fde7d0">'
+        + '<div style="flex:1 1 220px;min-width:0;font-size:13px"><b>' + esc(m.authorName || 'Someone') + '</b> <span style="color:#64748b;font-size:11px">' + esc(s(m.at).slice(0, 10)) + '</span><div style="overflow-wrap:anywhere">' + esc(s(m.text).slice(0, 240)) + '</div></div>'
+        + '<select data-qa-pick="' + esc(m.id) + '" style="max-width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"><option value="">Pick a job…</option>' + opts + '</select>'
+        + '<button type="button" data-qa-move="' + esc(m.id) + '" style="padding:6px 10px;border:0;border-radius:6px;background:#1b1640;color:#fff;font-weight:700;cursor:pointer">Move</button></div>';
+    }).join('') + '</div>';
+};
+function sbCreds(){ var u = '', k = ''; try { u = localStorage.getItem('grayco_sb_url') || ''; k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {} return { u: u || W._GC_SB_URL || 'https://ieeonhpfahmwwecizdut.supabase.co', k: k || W._GC_SB_KEY || W.SB_KEY || '' }; }
+/* move one message to a job: change it here, merge with the cloud copy and write the list back with the move applied */
+W._gcMsgMove = function(id, pid){
+  id = s(id); pid = s(pid); if (!id || !pid) return Promise.resolve(false);
+  var me = ''; try { var u = W.meUser && W.meUser(); me = s(u && (u.name || u.email)); } catch (e) {}
+  var stamp = new Date().toISOString();
+  var fix = function(list){ return arr(list).map(function(m){ return m && m.id === id ? Object.assign({}, m, { pid: pid, movedBy: me, movedAt: stamp }) : m; }); };
+  var local = fix(msgs());
+  try { localStorage.setItem('gc_job_messages', JSON.stringify(local)); } catch (e) {}
+  var cr = sbCreds(); if (!cr.k) return Promise.resolve(true);
+  var H = { apikey: cr.k, Authorization: 'Bearer ' + cr.k, 'Content-Type': 'application/json' };
+  var base = cr.u.replace(/\/$/, '') + '/rest/v1/gc_kv';
+  return fetch(base + '?key=eq.gc_job_messages&select=value', { headers: H }).then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){
+    var remote = []; try { var v = rows && rows[0] && rows[0].value; remote = typeof v === 'string' ? JSON.parse(v) : arr(v); } catch (e) {}
+    var all = {}; arr(remote).concat(local).forEach(function(m){ if (m && m.id) all[m.id] = m; });
+    var merged = fix(Object.keys(all).map(function(k){ return all[k]; })).sort(function(a, b){ return s(a.at).localeCompare(s(b.at)); });
+    try { localStorage.setItem('gc_job_messages', JSON.stringify(merged)); } catch (e) {}
+    return fetch(base + '?on_conflict=key', { method: 'POST', headers: Object.assign({ Prefer: 'resolution=merge-duplicates,return=minimal' }, H), body: JSON.stringify({ key: 'gc_job_messages', value: JSON.stringify(merged), updated_at: stamp }) }).then(function(){ return true; });
+  }).catch(function(){ return true; });
+};
+D.addEventListener('click', function(ev){
+  var b = ev.target && ev.target.closest && ev.target.closest('[data-qa-move]'); if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  var id = b.getAttribute('data-qa-move'), row = b.closest('.gc-qa-urow'), sel = row && row.querySelector('[data-qa-pick]'), pid = sel && sel.value;
+  if (!pid) { try { sel.focus(); } catch (e) {} return; }
+  b.disabled = true; b.textContent = 'Moving…';
+  W._gcMsgMove(id, pid).then(function(){ if (row) row.remove(); });
+}, true);
+/* ── printed / PDF letterhead, CENTERED (owner 10/22: "always center the headers with company name and logos"):
+   the navy logo, the company name, address · phone · website, the license line — stacked and centered. The document's
+   own number / date / customer goes below it. Used by HOT3's branded header (_gcEstLogoHeader), the estimate roll-ups
+   and the jsPDF documents (GC_pdfHeader → _gcPdfHeaderCentered). ── */
+function printLogoSrc(){ try { if (W.GC_LOGO_PRINT) return W.GC_LOGO_PRINT; } catch (e) {} return 'https://crm.grayco-cs.com/grayco-logo.jpg'; }
+function coAddr(){ try { return s(W._gcCompanyAddress ? W._gcCompanyAddress() : W.GC_ADDR); } catch (e) { return s(W.GC_ADDR); } }
+var LIC = 'TN License #85034 BCB · AR #0486990627 · MS #27769';
+/* onDark: the logo is a navy-on-white JPEG, so on a dark band it sits on a small white plate */
+W._gcPrintLogo = function(h, onDark){
+  return '<img data-gc-logo="1" src="' + esc(printLogoSrc()) + '" alt="GrayCo Construction Services" style="height:' + (h || 60) + 'px;width:auto;display:block;margin:0 auto 6px' + (onDark ? ';background:#fff;padding:4px 8px;border-radius:6px' : '') + '">';
+};
+W._gcPrintHead = function(o){
+  o = o || {};
+  var a = coAddr();
+  return '<div data-gc-logo="1" class="gc-print-head" style="text-align:center;font-family:Arial,Helvetica,sans-serif;border-bottom:2px solid #241968;padding:0 0 10px;margin:0 0 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    + '<img src="' + esc(printLogoSrc()) + '" alt="GrayCo Construction Services" style="height:' + (o.logoH || 64) + 'px;width:auto;display:block;margin:0 auto 6px">'
+    + '<div style="font-size:15pt;font-weight:800;color:#0f2440;letter-spacing:.5px">GrayCo Construction Services, LLC</div>'
+    + '<div style="font-size:9.5pt;line-height:1.5;color:#333">' + (a ? esc(a) + ' · ' : '') + '(901) 585-0944 · grayco-cs.com</div>'
+    + (o.noLicense ? '' : '<div style="font-size:8.5pt;line-height:1.5;color:#555">' + LIC + '</div>') + '</div>';
+};
+/* HOT3's header for Estimate Builder prints, now centered (same rule as every other document) */
+W._gcEstLogoHeader = function(html){ return W._gcPrintHead({ noLicense: /License/i.test(String(html || '')) }); };
+/* jsPDF: the same letterhead, centered; returns the y below it */
+W._gcPdfHeaderCentered = function(doc, opts){
+  opts = opts || {};
+  var PW = doc.internal.pageSize.getWidth(), m = opts.m || 48, y = opts.y || 40, cx = PW / 2, ty = y + 12;
+  var drew = false;
+  if (W.GC_LOGO_PRINT) { try { doc.addImage(W.GC_LOGO_PRINT, 'JPEG', cx - 40, y, 80, 48); drew = true; } catch (e) {} }
+  if (!drew && W.GC_LOGO_B64) { try { doc.addImage(/^data:/.test(W.GC_LOGO_B64) ? W.GC_LOGO_B64 : 'data:image/png;base64,' + W.GC_LOGO_B64, 'PNG', cx - 23, y, 46, 46); drew = true; } catch (e) {} }
+  if (drew) ty = y + 64;
+  doc.setFontSize(17); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 36, 64);
+  doc.text('GrayCo Construction Services', cx, ty, { align: 'center' });
+  doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(90, 100, 115);
+  var line = [s(W.GC_ADDR) || coAddr(), s(W.GC_PHONE) || '(901) 585-0944', s(W.GC_WEB) || 'grayco-cs.com'].filter(Boolean).join('  •  ');
+  doc.text(line, cx, ty + 13, { align: 'center' });
+  var lic = s(W.GC_LICENSE) || LIC, fs = 8.5;
+  try { while (fs > 6 && doc.getTextWidth(lic) > PW - 2 * m) { fs -= 0.25; doc.setFontSize(fs); } } catch (e) {}
+  doc.text(lic, cx, ty + 24, { align: 'center' }); doc.setFontSize(8.5);
+  var ry = ty + 32;
+  doc.setDrawColor(200, 155, 20); doc.setLineWidth(2); doc.line(m, ry, PW - m, ry);
+  return ry + 24;
+};
+try { console.log('[GC] Job messages by job: _gcJobTag(p), _gcMsgUnsorted(), _gcMsgMove(id, pid) (patch QA)'); } catch (e) {}
 })();
 </script>

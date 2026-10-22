@@ -290,15 +290,37 @@ function wrap(t, max){
   if (cur) out.push(cur); return out.length ? out : [''];
 }
 const LOGO = (function(){ try { const L = require('./_lib/logo-jpg.js'); return { w: L.w, h: L.h, bin: Buffer.from(L.b64, 'base64').toString('latin1') }; } catch (e) { return null; } })();   /* patch HOT3 */
+/* Helvetica / Helvetica-Bold advance widths (per 1000 em) for centering; close enough for one line of text */
+function textW(t, size, bold){
+  let w = 0;
+  latin(t).split('').forEach(function(c){
+    let k;
+    if (c === ' ') k = 278; else if (/[0-9]/.test(c)) k = 556;
+    else if (/[ijl]/.test(c)) k = bold ? 278 : 222; else if (/[ftI]/.test(c)) k = bold ? 333 : 278; else if (c === 'r') k = bold ? 389 : 333;
+    else if (/[mM]/.test(c)) k = 833; else if (/[wW]/.test(c)) k = c === 'W' ? 944 : (bold ? 778 : 722);
+    else if (/[a-z]/.test(c)) k = bold ? 611 : 556; else if (/[A-Z]/.test(c)) k = bold ? 722 : 667;
+    else if (/[.,:;'·]/.test(c)) k = 278; else if (/[-()]/.test(c)) k = 333; else k = 556;
+    w += k;
+  });
+  return w * size / 1000;
+}
 function buildPdf(blocks){
   const W = 612, Hh = 792, M = 54, pages = []; let ops = [], y = Hh - M;
   function page(){ if (ops.length) pages.push(ops.join('\n')); ops = []; y = Hh - M; }
   function need(h){ if (y - h < M) page(); }
   function text(t, size, bold, x, color){ ops.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + (color || '0.08 0.13 0.18') + ' rg ' + (x || M) + ' ' + y.toFixed(1) + ' Td ' + pdfStr(t) + ' Tj ET'); }
+  /* the letterhead is centered (owner 10/22: "always center the headers with company name and logos"):
+     logo, company name, address · phone · website — then the document's own lines below it */
+  function textC(t, size, bold, color){ text(t, size, bold, Math.max(M, (W - textW(t, size, bold)) / 2).toFixed(1), color); }
   blocks.forEach(function(b){
-    if (b.t === 'title' && LOGO) { need(64); const top = y; ops.push('q 52 0 0 52 ' + M + ' ' + (top - 52).toFixed(1) + ' cm /Im1 Do Q'); y -= 32; text(b.text, 18, true, M + 62); y = top - 60;   /* patch HOT3: the logo */
-      ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return; }
-    if (b.t === 'title') { need(30); y -= 18; text(b.text, 18, true); y -= 8; ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return; }
+    if (b.t === 'title') {
+      const lh = LOGO ? 52 : 0, lw = LOGO ? Math.round(lh * LOGO.w / LOGO.h) : 0; need(lh + 52); const top = y;
+      if (LOGO) ops.push('q ' + lw + ' 0 0 ' + lh + ' ' + ((W - lw) / 2).toFixed(1) + ' ' + (top - lh).toFixed(1) + ' cm /Im1 Do Q');
+      y = top - lh - 20; textC(b.text, 18, true);
+      let addr = ''; try { addr = require('./_lib/brand.js').companyAddress(); } catch (e) {}
+      y -= 13; textC([addr, OFFICE_PHONE, 'grayco-cs.com'].filter(Boolean).join(' · '), 9, false, '0.33 0.38 0.44');
+      y -= 9; ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return;
+    }
     if (b.t === 'h') { need(26); y -= 14; text(b.text, 12, true); y -= 6; return; }
     if (b.t === 'gap') { y -= b.h || 8; return; }
     if (b.t === 'row') {
