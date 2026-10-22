@@ -145868,7 +145868,7 @@ function liveEquip(c){ return arr(c && c.equipment).filter(function(e){ return e
 function dayDiff(a, b){ var x = Date.parse(ymd(a) + 'T12:00:00Z'), y = Date.parse(ymd(b) + 'T12:00:00Z'); return isFinite(x) && isFinite(y) ? Math.round((y - x) / 864e5) : 0; }
 function equipDays(e, today){ return Math.max(1, dayDiff(e.placedAt, e.removedAt || today || ymd(nowIso()))) * Math.max(1, num(e.qty) || 1); }
 function equipTotals(c, today){
-  var t = { airmover: 0, dehu: 0, scrubber: 0, desiccant: 0 }, onsite = { airmover: 0, dehu: 0, scrubber: 0, desiccant: 0 };
+  var t = { airmover: 0, dehu: 0, scrubber: 0, desiccant: 0, negair: 0, heater: 0 }, onsite = { airmover: 0, dehu: 0, scrubber: 0, desiccant: 0, negair: 0, heater: 0 };   /* AUTO13-eq2 */
   liveEquip(c).forEach(function(e){ var k = t[e.kind] != null ? e.kind : 'airmover'; t[k] += equipDays(e, today); if (!e.removedAt) onsite[k] += Math.max(1, num(e.qty) || 1); });
   var days = {}; arr(c.moisture).concat(arr(c.atmos)).forEach(function(x){ if (x && !x.deleted) days[ymd(x.date || x.at)] = 1; });
   return { days: t, onsite: onsite, monitoringDays: Object.keys(days).filter(Boolean).length, active: liveEquip(c).some(function(e){ return !e.removedAt; }) };
@@ -145880,6 +145880,8 @@ function mitigationLines(c, cfg, today){
   if (T.days.airmover) out.push({ room: 'Mitigation', cat: 'WTR', desc: 'Air mover (per 24 hour period)', qty: T.days.airmover, unit: 'DA', unitPrice: R.airmover });
   if (T.days.scrubber) out.push({ room: 'Mitigation', cat: 'WTR', desc: 'Air scrubber / negative air (per 24 hour period)', qty: T.days.scrubber, unit: 'DA', unitPrice: R.scrubber });
   if (T.days.desiccant) out.push({ room: 'Mitigation', cat: 'WTR', desc: 'Desiccant dehumidifier (per 24 hour period)', qty: T.days.desiccant, unit: 'DA', unitPrice: R.desiccant });
+  if (T.days.negair) out.push({ room: 'Mitigation', cat: 'WTR', desc: 'Negative air machine (per 24 hour period)' + (num(R.negair) ? '' : ' — [RATE]'), qty: T.days.negair, unit: 'DA', unitPrice: num(R.negair) });   /* AUTO13-eq3 */
+  if (T.days.heater) out.push({ room: 'Mitigation', cat: 'WTR', desc: 'Heater / drying heat (per 24 hour period)' + (num(R.heater) ? '' : ' — [RATE]'), qty: T.days.heater, unit: 'DA', unitPrice: num(R.heater) });
   if (T.monitoringDays) out.push({ room: 'Mitigation', cat: 'WTR', desc: 'Moisture monitoring / equipment check (per day)', qty: T.monitoringDays, unit: 'DA', unitPrice: R.monitor });
   out.forEach(function(l){ l.rcv = r2(l.qty * l.unitPrice); });
   return out;
@@ -145911,7 +145913,7 @@ function dryingState(c, today){
   var allDry = pts.length > 0 && pts.every(function(p){ return p.dry; });
   return { points: pts, dueToday: T.active && !readToday, readToday: readToday, stalled: pts.filter(function(p){ return p.stalled; }), allDry: allDry, remove: removeSug, active: T.active, totals: T, complete: !!(c.drying && c.drying.completeAt) };
 }
-var EQ_NAMES = { airmover: 'air mover', dehu: 'dehumidifier', scrubber: 'air scrubber', desiccant: 'desiccant' };
+var EQ_NAMES = { airmover: 'air mover', dehu: 'dehumidifier', scrubber: 'air scrubber', desiccant: 'desiccant', negair: 'negative air machine', heater: 'heater' };   /* AUTO13-eq1 */
 
 /* ── job types: their checklist, required documents and required photos ── */
 var JOB_TYPES = [
@@ -147979,9 +147981,9 @@ P2PANELS.drying = function(A, c){
     (arr(c.atmos).length ? '<table class="gcbb-tbl" style="margin-top:8px"><thead><tr><th>Date</th><th>Where</th><th class="n">°F</th><th class="n">RH</th><th class="n">GPP</th><th class="n">Dew pt</th></tr></thead><tbody>' + arr(c.atmos).filter(function(a){ return a && !a.deleted; }).map(atmosOf).sort(function(a, b){ return s(a.date) < s(b.date) ? 1 : -1; }).slice(0, 20).map(function(a){ return '<tr><td>' + esc(md(a.date)) + '</td><td>' + esc({ affected: 'Wet area', dehu: 'Dehu outlet', unaffected: 'Dry area', outside: 'Outside' }[a.where] || a.where) + (a.room ? ' · ' + esc(a.room) : '') + '</td><td class="n">' + a.tempF + '</td><td class="n">' + a.rh + '</td><td class="n"><b>' + a.gpp + '</b></td><td class="n">' + a.dew + '</td></tr>'; }).join('') + '</tbody></table>' : '') + '</div>';
   var pts = '<div class="gcbb-panel"><h3>Moisture points (' + D.points.length + ')</h3>' + (D.points.length ? '<table class="gcbb-tbl"><thead><tr><th>Room</th><th>Material · point</th><th class="n">Last</th><th class="n">Goal</th><th></th></tr></thead><tbody>' + D.points.map(function(p){ return '<tr><td>' + esc(p.room) + '</td><td>' + esc([p.material, p.point].filter(Boolean).join(' · ')) + '</td><td class="n">' + esc(p.last.reading) + (p.last.scale ? ' ' + esc(p.last.scale) : '') + '</td><td class="n">' + esc(p.goal) + '</td><td>' + (p.dry ? '<span class="gcbb-tag ok">dry</span>' : p.stalled ? '<span class="gcbb-tag bad">stalled</span>' : '<span class="gcbb-tag warn">wet</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : '<p class="gcbb-csub">No readings yet.</p>') + '</div>';
   var eql = liveEquip(c), eqp = '<div class="gcbb-panel gcbb-eqform"><h3>🌀 Equipment on site</h3>' + (eql.length ? '<table class="gcbb-tbl"><thead><tr><th>Equipment</th><th>Room</th><th class="n">Qty</th><th>Placed</th><th>Removed</th><th class="n">Days</th><th></th></tr></thead><tbody>' + eql.map(function(e){ return '<tr data-eq="' + esc(e.id) + '"><td>' + esc(s(e.model) || EQ_NAMES[e.kind]) + '</td><td>' + esc(e.room) + '</td><td class="n">' + (num(e.qty) || 1) + '</td><td>' + esc(md(e.placedAt)) + '</td><td>' + (e.removedAt ? esc(md(e.removedAt)) : '<span class="gcbb-tag info">on site</span>') + '</td><td class="n">' + equipDays(e) + '</td><td>' + (e.removedAt ? '' : '<button class="gcbb-btn sm" data-a="eqrm" data-v="' + esc(e.id) + '">Remove</button>') + '</td></tr>'; }).join('') + '</tbody></table>' : (plan.rooms.length ? '<button class="gcbb-big pri" data-a="eqplace">✓ Place the planned equipment (today)</button>' : '<p class="gcbb-csub">Add the wet rooms first (Rooms) — the equipment is figured from them.</p>')) +
-    '<div class="gcbb-form" style="margin-top:8px">' + selN('Add', 'kind', [{ k: 'airmover', l: 'Air mover' }, { k: 'dehu', l: 'Dehumidifier' }, { k: 'scrubber', l: 'Air scrubber' }, { k: 'desiccant', l: 'Desiccant' }], 'airmover') + '<label>Room<input class="gcbb-in" name="eroom" list="gcbb-rooms"></label>' + fieldN('How many', 'qty', '1') + '</div><button class="gcbb-btn" data-a="eqadd">+ Add equipment</button>' +
-    '<div class="gcbb-info" style="margin-top:10px"><b>Equipment days:</b> ' + ['dehu', 'airmover', 'scrubber', 'desiccant'].map(function(k){ return EQ_NAMES[k] + 's ' + T.days[k]; }).join(' · ') + ' · monitoring days ' + T.monitoringDays + '</div>' +
-    (mitigationLines(c, eqCfg(settings())).length ? '<p style="margin:10px 0 4px;font-weight:700">Suggested mitigation invoice lines</p><table class="gcbb-tbl"><tbody>' + mitigationLines(c, eqCfg(settings())).map(function(l){ return '<tr><td>' + esc(l.desc) + '</td><td class="n">' + l.qty + ' ' + l.unit + '</td><td class="n">' + money(l.unitPrice) + '</td><td class="n">' + money(l.rcv) + '</td></tr>'; }).join('') + '</tbody></table><p class="gcbb-csub">These also feed ⚖ Compare (“GrayCo mitigation”), e.g. carrier allowed 3 dehu days vs our ' + T.days.dehu + '.</p>' : '') + '</div>';
+    '<div class="gcbb-form" style="margin-top:8px">' + selN('Add', 'kind', [{ k: 'airmover', l: 'Air mover' }, { k: 'dehu', l: 'Dehumidifier' }, { k: 'scrubber', l: 'Air scrubber' }, { k: 'negair', l: 'Negative air machine' }, { k: 'desiccant', l: 'Desiccant' }, { k: 'heater', l: 'Heater' }], 'airmover') /* AUTO13-eq4 */ + '<label>Room<input class="gcbb-in" name="eroom" list="gcbb-rooms"></label>' + fieldN('How many', 'qty', '1') + '</div><button class="gcbb-btn" data-a="eqadd">+ Add equipment</button>' +
+    '<div class="gcbb-info" style="margin-top:10px"><b>Equipment days:</b> ' + ['dehu', 'airmover', 'scrubber', 'negair', 'desiccant', 'heater'].filter(function(k){ return k !== 'negair' && k !== 'heater' || T.days[k]; }).map(function(k){ return EQ_NAMES[k] + 's ' + T.days[k]; }).join(' · ') /* AUTO13-eq5 */ + ' · monitoring days ' + T.monitoringDays + '</div>' +
+    (mitigationLines(c, eqCfg(settings())).length ? '<p style="margin:10px 0 4px;font-weight:700">Suggested mitigation invoice lines</p><table class="gcbb-tbl"><tbody>' + mitigationLines(c, eqCfg(settings())).map(function(l){ return '<tr><td>' + esc(l.desc) + '</td><td class="n">' + l.qty + ' ' + l.unit + '</td><td class="n">' + money(l.unitPrice) + '</td><td class="n">' + money(l.rcv) + '</td></tr>'; }).join('') + '</tbody></table><p class="gcbb-csub">These also feed ⚖ Compare (“GrayCo mitigation”), e.g. carrier allowed 3 dehu days vs our ' + T.days.dehu + '.</p><button class="gcbb-btn" data-a13="eqsupp" data-claim="' + esc(c.id) + '">➕ Add these equipment days to the supplement</button>' : '') + '</div>'; /* AUTO13-eq6 */
   var rep = '<div class="gcbb-panel"><h3>📄 Drying report</h3><div class="gcbb-bar">' + (c.drying && c.drying.reportDocId ? '<button class="gcbb-big sm" data-a="opendocid" data-v="' + esc(c.drying.reportDocId) + '">Open the report</button>' + (dryOutState(c) ? '<span class="gcbb-tag ' + (dryOutState(c) === 'sent' ? 'ok' : 'warn') + '">' + (dryOutState(c) === 'sent' ? '✓ sent' : '⏳ waiting for approval (📋)') + '</span>' : '<button class="gcbb-big sm pri" data-a="drysend">✉ Send report + mitigation invoice to the carrier (for approval)</button>') : '') + '<button class="gcbb-big sm" data-a="dryreport">Make the drying report now</button></div></div>';
   return alerts + mform + aform + gtab + pts + eqp + rep;
 };
@@ -151958,6 +151960,7 @@ function estLines(e){
 }
 function estDoc(e){ return docsNow().filter(function(d){ return d && d.deleted !== true && String(d.estimateId) === String(e.id) && /^sb:crm-files\//.test(s(d.ref)); })[0] || null; }
 function coOpen(co){ return co && co.deleted !== true && !/^(approved|signed|void|voided|rejected|declined|deleted|cancell?ed|draft)$/i.test(s(co.status)) && !co.signedAt && !co.customerSigned; }
+function coProofOk(co){ return !W._gcCoProof || W._gcCoProof.ready(co); }   /* AUTO13-co */
 function reqFor(kind, refId){ return REQS.filter(function(r){ return r && r.kind === kind && String(r.refId) === String(refId) && r.status !== 'void'; }).sort(function(a, b){ return s(a.createdAt) < s(b.createdAt) ? 1 : -1; })[0] || null; }
 
 function request(o){
@@ -152084,7 +152087,7 @@ var ASKED = 'gc_auto5_coasked';
 function askCOs(){
   if (!signedIn()) return Promise.resolve();
   var asked = jget(ASKED, {}); if (!asked || typeof asked !== 'object') asked = {};
-  var want = coList().filter(function(c){ return c && c.id && c.pid && coOpen(c) && s(c.createdAt || c.date).slice(0, 10) >= BOOT_DATE && !reqFor('change_order', c.id) && !(asked[c.id] && Date.now() - asked[c.id] < 3600e3) && A.proj(c.pid); }).slice(0, 4);
+  var want = coList().filter(function(c){ return c && c.id && c.pid && coOpen(c) && s(c.createdAt || c.date).slice(0, 10) >= BOOT_DATE && !reqFor('change_order', c.id) && coProofOk(c) && !(asked[c.id] && Date.now() - asked[c.id] < 3600e3) && A.proj(c.pid); }).slice(0, 4);   /* AUTO13-co2 */
   return want.reduce(function(pr, c){
     return pr.then(function(){
       asked[c.id] = Date.now(); jset(ASKED, asked);
@@ -152134,7 +152137,7 @@ function openSign(pid){
       r && r.status !== 'declined' ? reqPill(r) : '<button type="button" data-est="' + esc(e.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">No estimate on this job.</div>';
     h += '<h3 style="margin:14px 0 2px;font-size:15px">Change orders</h3>';
     h += cos.length ? cos.map(function(c){ var r = reqFor('change_order', c.id); return row('<b>' + esc(s(c.desc || c.title || c.id).slice(0, 120)) + '</b>' + (s(c.amt) !== '' ? ' — ' + esc(money(c.amt)) : '') + '<div style="font-size:12px;color:#55626F">' + esc(s(c.status) || 'pending') + (c.signedAt ? ' · signed by ' + esc(c.signedBy) : '') + '</div>',
-      c.signedAt ? pill('✓ Signed', '#166534', '#DCFCE7') : r && r.status !== 'declined' ? reqPill(r) : '<button type="button" data-co="' + esc(c.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">No change orders. New ones ask for the customer’s signature by themselves.</div>';
+      c.signedAt ? pill('✓ Signed', '#166534', '#DCFCE7') : r && r.status !== 'declined' ? reqPill(r) : !coProofOk(c) ? '<button type="button" data-coproof="' + esc(c.id) + '" style="' + I.BTN + '">📎 Add reason + photo first</button>' : '<button type="button" data-co="' + esc(c.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') /* AUTO13-co3 */ : '<div style="color:#55626F;font-size:14px;padding:6px 0">No change orders. New ones ask for the customer’s signature by themselves.</div>';
     h += '<h3 style="margin:14px 0 2px;font-size:15px">Contracts and other papers on the job</h3>';
     h += papers.length ? papers.map(function(d){ var r = reqFor(/contract|agreement|proposal/i.test(s(d.cat) + ' ' + s(d.name)) ? 'contract' : 'doc', s(d.id)); return row('<b>' + esc(s(d.name)) + '</b><div style="font-size:12px;color:#55626F">' + esc(s(d.cat)) + '</div>',
       r && r.status !== 'declined' ? reqPill(r) : '<button type="button" data-doc="' + esc(d.id) + '" style="' + I.BTNG + '">Send for signature</button>'); }).join('') : '<div style="color:#55626F;font-size:14px;padding:6px 0">No contract on the job yet (patch AUT3 drafts one when the job is signed).</div>';
@@ -152144,6 +152147,7 @@ function openSign(pid){
   function done(j, what){ if (j.ok) return refresh(j.already ? what + ' — already asked.' : j.noEmail ? what + ' is in the portal. No customer e-mail: an Office To-Do says to send them the link.' : what + ' is in the portal; the e-mail waits on ✅ Approvals.'); toast(j.error || 'That did not go through.', true); }
   sh.body.onclick = function(ev){
     var b = ev.target.closest && ev.target.closest('button'); if (!b || b.disabled) return;
+    var pf = b.getAttribute('data-coproof'); if (pf && W._gcCoProof) { W._gcCoProof.open(pf, function(){ paint('📎 Proof saved — it can go for signature now.'); }); return; }   /* AUTO13-co4 */
     var e = b.getAttribute('data-est'), c = b.getAttribute('data-co'), dd = b.getAttribute('data-doc'), v = b.getAttribute('data-void');
     if (!(e || c || dd || v)) return;
     b.disabled = true; b.textContent = '…';
@@ -157743,8 +157747,9 @@ function dontForget(c){
     { k: 'dep', at: 7, l: 'Depreciation packet sent', done: !!(co.dep && co.dep.sentAt) || noteSays(c, /depreciation (packet|request) sent/i) },
     { k: 'final', at: 7, l: 'Final invoice sent', done: !!(c.checks && c.checks.final) || hasDoc(c, /invoice/i) }
   ];
+  try { (Array.isArray(W.__GC_DF_EXTRA__) ? W.__GC_DF_EXTRA__ : []).forEach(function(f){ arr(f(c)).forEach(function(x){ if (x && x.k && !L.some(function(y){ return y.k === x.k; })) L.push(x); }); }); } catch (e) {}   /* AUTO13-df */
   var ticks = c.ins3Checks || {};
-  return L.filter(function(x){ return x.at <= Math.max(i, 0); }).map(function(x){ var t = ticks[x.k]; return Object.assign(x, { done: x.done || !!(t && t.on), tick: t || null, due: !x.done && !(t && t.on) && i > x.at }); });
+  return L.filter(function(x){ return x.at <= Math.max(i, 0); }).map(function(x){ var t = ticks[x.k]; return Object.assign(x, { done: x.done || !!(t && t.on), tick: t || null, due: !x.done && !(t && t.on) && (x.dueAt ? Date.now() > Date.parse(x.dueAt) : i > x.at) }); });
 }
 
 /* ══ 4. the four tabs ══════════════════════════════════════════════════════════════════════════════════ */
@@ -157766,7 +157771,7 @@ function activityTab(A, c){
   else if (pid && W._gcX9 && W._gcX9.comms && !(cm && cm.busy)) { UI.comms[pid] = { busy: true }; Promise.resolve(W._gcX9.comms.load(pid)).then(function(j){ UI.comms[pid] = { items: j && j.ok ? arr(j.items) : [] }; A.render(true); }, function(){ UI.comms[pid] = { items: [] }; }); }
   ev.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });
   var due = df.filter(function(x){ return x.due; }).length;
-  return '<div class="gcbb-panel"><h3>✅ Don’t forget' + (due ? ' — <span style="color:#B42318">' + due + ' overdue</span>' : '') + '</h3>' +
+  return '<div class="gcbb-panel"><h3>✅ Don’t forget' + (due ? ' — <span style="color:#B42318">' + due + ' overdue</span>' : '') + '</h3>' + (typeof W.__GC_DF_BAR__ === 'function' ? W.__GC_DF_BAR__(c) : '') + /* AUTO13-bar */
       df.map(function(x){ return '<label class="gcbb-preq ' + (x.done ? 'done' : x.due ? 'miss' : 'later') + '" style="cursor:pointer"><input type="checkbox" data-a="i3chk" value="' + x.k + '"' + (x.done ? ' checked' : '') + ' style="margin-right:8px"><span class="t"><b>' + esc(x.l) + '</b><small>' + (x.tick && x.tick.on ? 'ticked by ' + esc(x.tick.by) + ' ' + esc(md(x.tick.at)) : x.done ? 'done' : x.due ? 'overdue for this stage' : 'next') + '</small></span></label>'; }).join('') +
     '</div>' +
     (pins.length ? '<div class="gcbb-panel"><h3>📌 Pinned</h3>' + pins.map(function(n){ return '<div class="gcbb-note"><b>' + esc(n.text) + '</b><small> — ' + esc(n.by) + ' ' + esc(when(n.at)) + '</small> <button class="gcbb-btn sm" data-a="i3pin" data-v="' + esc(n.id) + '">Unpin</button></div>'; }).join('') + '</div>' : '') +
@@ -159707,4 +159712,417 @@ RI.call(W, function(){ if (!D.hidden) load(false).then(function(ch){ if (ch) { l
 ST.call(W, function(){ load(true).then(function(){ lastSig = ''; }); }, 4000);
 try { console.log('[GC] patch DEPTH2: 📊 job costing (Accounting), 👷 crew capacity (Schedule), 🏪 supplier profiles (Vendors) — _gcDP2'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-auto13">
+/* __GC_PATCH_AUTO13__ ═════════════════════════════════════════════════════════
+   GrayCo — patch AUTO13: ✍️ work authorization / Direction to Pay in the portal · 📚 carrier requirements library ·
+   🌀 mitigation equipment billing · 📎 change orders need a reason + a photo · 🩺 monthly CRM health e-mail.
+
+   Owner (10/22): "1 yes, yes 2 be able to add to this library too, yes 3, 4 yes, yes 5".
+   1. Claim → ✅ Don't forget → "✍️ Send work authorization": the Work Authorization (and, ticked, a Direction to Pay)
+      from the templates in ⚙ Admin → 📝 Work authorization (placeholders [COMPANY] [ADDRESS] [CUSTOMER] [PROPERTY]
+      [CLAIM] [DATE]; the shipped text is a TEMPLATE — have your attorney review it). It goes to the customer's portal
+      to e-sign (patch AUTO5's signer; the e-mail waits on ✅ Approvals). The signed copy comes back onto the claim's
+      documents (kind "workauth"), which ticks "Signed work authorization / contract on file".
+   2. 📚 Carrier requirements (⚙ Admin, and the button on a claim's Don't-forget list): per carrier, photo rules,
+      deadlines ("supplement within 30 days of the inspection"), how to submit, documents, tips. A claim with that
+      carrier gets them on its Don't-forget list (deduped), with due dates from the claim's dates. Admins and the
+      Insurance / Mitigation profiles add and edit (who / when kept). Internal only — never shown to a customer.
+   3. 🌀 Mitigation equipment: heater and negative air join the equipment log; ⚙ Admin → 🌀 Mitigation equipment sets
+      the day rates ("[RATE]" until set) and the reminder (equipment on site more than N days, default 5 → an Office
+      To-Do from netlify/functions/crm-health.js every day). "➕ Add these equipment days to the supplement" puts the
+      equipment-day lines on the claim's supplement list (patch AUTO7's check).
+   4. 📎 Change orders: a change order is sent for the customer's signature only after it has a reason and at least
+      one photo (✍️ Signatures → "📎 Add reason + photo"). On an insurance job the change order goes on the claim's
+      supplement list with its photos (until it is signed — then AUTO7 counts the signed change order itself).
+   5. 🩺 ⚙ Admin → CRM health: the same report the admins get by e-mail on the 1st (backups, storage, e-mail into the
+      CRM, automatic jobs, errors, approvals stuck over 48 h, sign-ins, switches off). "Send now".
+   Console: _gcAuto13.status()
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_AUTO13__) return; W.__GC_PATCH_AUTO13__ = true;
+function later(fn, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, fn, ms || 0); }
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function num(v){ var x = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function nowIso(){ return new Date().toISOString(); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function md(iso){ var d = new Date(s(iso).length === 10 ? s(iso) + 'T12:00:00' : iso); return isNaN(d) ? '' : (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2); }
+function toast(msg, bad){ try { if (W._gcToast) return W._gcToast(msg, bad); } catch (e) {} var t = D.createElement('div'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;padding:10px 16px;border-radius:10px;font:600 14px system-ui;color:#fff;background:' + (bad ? '#B42318' : '#1B1452'); D.body.appendChild(t); later(function(){ t.remove(); }, 3600); }
+function crm(){ return W._crm || {}; }
+function G(){ return W._gcClaims && W._gcClaims.settings ? W._gcClaims : null; }
+function proj(id){ id = s(id); return arr(crm().projects).filter(function(p){ return p && s(p.id) === id; })[0] || null; }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function me(){ var e = myEmail(); return arr(crm().users).filter(function(u){ return u && low(u.email) === e; })[0] || {}; }
+function myName(){ var u = me(); return s(u.name) || (myEmail() ? myEmail().split('@')[0] : 'Me'); }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return s(u.role) === 'Admin' || /^(admin|owner)$/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function insUser(){ var u = me(); return isAdmin() || /insurance|mitigation/i.test(s(u.profile) + ' ' + s(u.role)); }
+var STATS = { waSent: 0, waFiled: 0, coProof: 0, eqSupp: 0, errors: '' };
+
+/* ── claims settings (gc_integration_settings, synced by the insurance module) ── */
+function cs(){ var g = G(); try { return g ? g.settings() : {}; } catch (e) { return {}; } }
+function saveCs(fn){
+  var g = G(); if (!g || !g.saveSettings) return Promise.reject(new Error('The insurance module is not loaded yet.'));
+  var cur = JSON.parse(JSON.stringify(cs())), nx = fn(cur) || cur;
+  return Promise.resolve(g.saveSettings(nx)).then(function(){ try { if (g.sync) g.sync(); } catch (e) {} return nx; });
+}
+
+/* ── a simple sheet ── */
+function sheet(title){
+  var o = D.createElement('div'); o.className = 'gca13-ov';
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,12,40,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 10px';
+  o.innerHTML = '<div class="gca13-sh" style="background:#fff;color:#1b1640;border-radius:14px;max-width:760px;width:100%;padding:16px 18px 20px;font:14px system-ui,Arial;box-shadow:0 20px 50px rgba(0,0,0,.3)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b style="font-size:17px">' + esc(title) + '</b><button type="button" data-x style="border:0;background:#EEF0F6;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Close</button></div><div class="gca13-b" style="margin-top:10px"></div></div>';
+  D.body.appendChild(o);
+  o.addEventListener('click', function(ev){ if (ev.target === o || (ev.target.closest && ev.target.closest('[data-x]'))) o.remove(); });
+  return { el: o, body: o.querySelector('.gca13-b'), close: function(){ o.remove(); } };
+}
+var BTN = 'border:1px solid #CBD2E1;background:#fff;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;margin:2px';
+var BTNP = 'border:0;background:#241968;color:#fff;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer;margin:2px';
+var IN = 'border:1px solid #CBD2E1;border-radius:7px;padding:6px 8px;font:14px system-ui,Arial';
+
+/* ═══ 2. CARRIER REQUIREMENTS LIBRARY ═══════════════════════════════════════ */
+var STAGES = ['New loss', 'Inspection', 'Estimate written', 'Submitted to carrier', 'Approved', 'Supplement', 'Work', 'Final invoice', 'Depreciation released', 'Closed'];
+var TYPES = { photo: '📸 Photos', deadline: '⏱ Deadline', submit: '📤 How to submit', doc: '📄 Document', tip: '💡 Tip' };
+var FROM = { created: 'claim opened', loss: 'date of loss', inspection: 'inspection', final: 'final invoice' };
+function lib(){ return arr(cs().carrierReqs).filter(function(e){ return e && !e.deleted; }); }
+function matchCarrier(c){
+  var n = low(c && c.carrier); if (!n) return [];
+  return lib().filter(function(e){ return [e.carrier].concat(s(e.aliases).split(',')).some(function(a){ a = low(a); return a.length >= 3 && (n.indexOf(a) >= 0 || a.indexOf(n) >= 0); }); });
+}
+function phaseTime(c, ph){ var h = arr(c.phaseHistory).filter(function(x){ return x && s(x.phase || x.to) === ph; })[0]; return h ? s(h.at) : ''; }
+function baseDate(c, from){
+  if (from === 'loss') return s(c.dateOfLoss);
+  if (from === 'inspection') return s(c.inspectionDate || c.adjMeetingAt) || phaseTime(c, 'Inspection');
+  if (from === 'final') return phaseTime(c, 'Final invoice');
+  return s(c.createdAt);
+}
+function addDays(d, n){ var t = Date.parse(s(d).length === 10 ? s(d) + 'T12:00:00Z' : s(d)); return isFinite(t) ? new Date(t + n * 864e5).toISOString() : ''; }
+function dfExtra(c){
+  var out = [];
+  matchCarrier(c).forEach(function(e){ arr(e.items).forEach(function(it){
+    if (!it || it.deleted || !s(it.text)) return;
+    var at = Math.max(0, STAGES.indexOf(s(it.stage))), due = '';
+    if (num(it.days) > 0) { var b = baseDate(c, it.from || 'created'); if (b) due = addDays(b, num(it.days)); }
+    out.push({ k: 'cr_' + s(e.id) + '_' + s(it.id), at: at, l: (TYPES[it.type] || '•') + ' ' + s(e.carrier) + ': ' + s(it.text) + (due ? ' — due ' + md(due) : ''), done: false, dueAt: due || undefined });
+  }); });
+  return out;
+}
+W.__GC_DF_EXTRA__ = arr(W.__GC_DF_EXTRA__).concat([dfExtra]);
+
+function libEditor(box, focusCarrier){
+  var can = insUser(), L = JSON.parse(JSON.stringify(lib())), msg = '';
+  function sel(name, opts, v){ return '<select data-f="' + name + '" style="' + IN + '"' + (can ? '' : ' disabled') + '>' + opts.map(function(o){ return '<option value="' + esc(o[0]) + '"' + (s(v) === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>'; }
+  function paint(){
+    var h = '<div style="color:#55626F;margin-bottom:8px">Per insurance company: what they want and by when. A claim with that carrier gets these on its ✅ Don’t forget list automatically. Inside GrayCo only — customers never see this.' + (can ? '' : ' <b>Only admins and the Insurance / Mitigation profiles can change it.</b>') + '</div>';
+    if (msg) h += '<div style="font-weight:700;color:#166534;margin:6px 0">' + esc(msg) + '</div>';
+    h += L.filter(function(e){ return !e.deleted; }).map(function(e){
+      var open = !focusCarrier || low(e.carrier) === low(focusCarrier) || low(focusCarrier).indexOf(low(e.carrier)) >= 0;
+      return '<details data-e="' + esc(e.id) + '"' + (open ? ' open' : '') + ' style="border:1px solid #E1E3EC;border-radius:10px;padding:8px 10px;margin:8px 0"><summary style="font-weight:700;cursor:pointer">' + esc(e.carrier || 'New carrier') + ' <small style="color:#55626F;font-weight:400">· ' + arr(e.items).filter(function(i){ return i && !i.deleted; }).length + ' item(s)' + (e.updatedBy ? ' · last changed by ' + esc(e.updatedBy) + ' ' + esc(md(e.updatedAt)) : '') + '</small></summary>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><label>Carrier <input data-f="carrier" value="' + esc(e.carrier) + '" style="' + IN + '"' + (can ? '' : ' disabled') + '></label><label>Also matches (comma) <input data-f="aliases" value="' + esc(e.aliases) + '" placeholder="e.g. SF, State Farm Fire" style="' + IN + ';min-width:220px"' + (can ? '' : ' disabled') + '></label></div>' +
+        arr(e.items).filter(function(i){ return i && !i.deleted; }).map(function(i){
+          return '<div data-i="' + esc(i.id) + '" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-top:1px solid #EEF0F6;padding:6px 0">' + sel('type', Object.keys(TYPES).map(function(k){ return [k, TYPES[k]]; }), i.type) +
+            '<input data-f="text" value="' + esc(i.text) + '" placeholder="What they want" style="' + IN + ';flex:1 1 240px"' + (can ? '' : ' disabled') + '>' +
+            '<label style="font-size:12px">from stage ' + sel('stage', STAGES.map(function(x){ return [x, x]; }), i.stage || 'New loss') + '</label>' +
+            '<label style="font-size:12px">due in <input data-f="days" value="' + esc(i.days || '') + '" style="' + IN + ';width:54px"' + (can ? '' : ' disabled') + '> days after ' + sel('from', Object.keys(FROM).map(function(k){ return [k, FROM[k]]; }), i.from || 'created') + '</label>' +
+            (can ? '<button type="button" data-a="delitem" style="' + BTN + '">✕</button>' : '') + '</div>';
+        }).join('') +
+        (can ? '<div><button type="button" data-a="additem" style="' + BTN + '">＋ Add a requirement</button><button type="button" data-a="delcar" style="' + BTN + ';color:#B42318">Remove this carrier</button></div>' : '') +
+        (arr(e.history).length ? '<div style="font-size:12px;color:#55626F;margin-top:6px">History: ' + arr(e.history).slice(-5).map(function(x){ return esc(x.by) + ' ' + esc(md(x.at)); }).join(' · ') + '</div>' : '') + '</details>';
+    }).join('') || '<div style="color:#55626F">No carriers yet.</div>';
+    if (can) h += '<div style="margin-top:10px"><button type="button" data-a="addcar" style="' + BTN + '">＋ Add a carrier</button><button type="button" data-a="save" style="' + BTNP + '">Save for everyone</button></div>';
+    box.innerHTML = h;
+  }
+  function readBack(){
+    box.querySelectorAll('details[data-e]').forEach(function(dEl){
+      var e = L.filter(function(x){ return x.id === dEl.getAttribute('data-e'); })[0]; if (!e) return;
+      var cIn = dEl.querySelector(':scope > div [data-f="carrier"]'), aIn = dEl.querySelector(':scope > div [data-f="aliases"]');
+      if (cIn) e.carrier = s(cIn.value); if (aIn) e.aliases = s(aIn.value);
+      dEl.querySelectorAll('[data-i]').forEach(function(r){
+        var it = arr(e.items).filter(function(x){ return x && x.id === r.getAttribute('data-i'); })[0]; if (!it) return;
+        ['type', 'text', 'stage', 'days', 'from'].forEach(function(f){ var x = r.querySelector('[data-f="' + f + '"]'); if (x) it[f] = f === 'days' ? (num(x.value) || '') : s(x.value); });
+      });
+    });
+  }
+  box.onclick = function(ev){
+    var b = ev.target.closest && ev.target.closest('button[data-a]'); if (!b || !can) return;
+    readBack(); var a = b.getAttribute('data-a'), dEl = b.closest('details[data-e]'), e = dEl && L.filter(function(x){ return x.id === dEl.getAttribute('data-e'); })[0];
+    if (a === 'addcar') { L.push({ id: uid('CR'), carrier: '', aliases: '', items: [{ id: uid('I'), type: 'photo', text: '', stage: 'New loss' }], createdBy: myName(), createdAt: nowIso() }); msg = ''; return paint(); }
+    if (a === 'additem' && e) { e.items = arr(e.items).concat([{ id: uid('I'), type: 'deadline', text: '', stage: 'New loss', days: '', from: 'created' }]); return paint(); }
+    if (a === 'delitem' && e) { var r = b.closest('[data-i]'); arr(e.items).forEach(function(i){ if (i && i.id === r.getAttribute('data-i')) i.deleted = true; }); return paint(); }
+    if (a === 'delcar' && e) { if (!confirm('Remove ' + (e.carrier || 'this carrier') + ' from the library?')) return; e.deleted = true; return paint(); }
+    if (a === 'save') {
+      var before = {}; lib().forEach(function(x){ before[x.id] = JSON.stringify(x); });
+      L.forEach(function(x){ if (JSON.stringify(x) !== before[x.id]) { x.updatedBy = myName(); x.updatedAt = nowIso(); x.history = arr(x.history).concat([{ by: myName(), at: x.updatedAt }]).slice(-20); } });
+      var keep = L.filter(function(x){ return !(x.deleted && !before[x.id]) && (s(x.carrier) || x.deleted); });
+      b.disabled = true;
+      saveCs(function(cur){ var old = arr(cur.carrierReqs), by = {}; old.forEach(function(x){ if (x && x.id) by[x.id] = x; }); keep.forEach(function(x){ by[x.id] = x; }); cur.carrierReqs = Object.keys(by).map(function(k){ return by[k]; }); return cur; })
+        .then(function(){ msg = '✓ Saved for everyone'; L = JSON.parse(JSON.stringify(lib())); paint(); }, function(err){ b.disabled = false; toast(err.message || 'Could not save', true); });
+    }
+  };
+  paint();
+}
+function openLib(carrier){ var sh = sheet('📚 Carrier requirements'); libEditor(sh.body, carrier); return sh; }
+
+/* ═══ 1. WORK AUTHORIZATION / DIRECTION TO PAY ══════════════════════════════ */
+var TPL_NOTE = 'TEMPLATE — Have your attorney review this template before you use it.';
+var WA_DEFAULT = TPL_NOTE + '\n\nWORK AUTHORIZATION\n\nCustomer: [CUSTOMER]\nProperty: [PROPERTY]\nClaim #: [CLAIM]\nDate: [DATE]\n\nI authorize [COMPANY], [ADDRESS], to begin the work described by [COMPANY] at the property above.\n\n[Terms reviewed by your attorney go here.]';
+var DTP_DEFAULT = TPL_NOTE + '\n\nDIRECTION TO PAY\n\nCustomer: [CUSTOMER]\nProperty: [PROPERTY]\nClaim #: [CLAIM]\nDate: [DATE]\n\nI direct my insurance company to include [COMPANY], [ADDRESS], as a payee on payments for this claim.\n\n[Terms reviewed by your attorney go here.]';
+function tpl(){ var t = cs().workAuthTpl || {}; return { wa: s(t.wa) || WA_DEFAULT, dtp: s(t.dtp) || DTP_DEFAULT, by: s(t.by), at: s(t.at) }; }
+function companyAddr(){ try { if (typeof W._gcCompanyAddress === 'function') return s(W._gcCompanyAddress()); } catch (e) {} return 'Bartlett, TN'; }
+function fill(text, c){
+  var p = proj(c.projectId) || {}, today = new Date().toLocaleDateString('en-US');
+  return s(text).replace(/\[COMPANY\]/g, 'GrayCo Construction Services').replace(/\[ADDRESS\]/g, companyAddr()).replace(/\[CUSTOMER\]/g, s(c.insured || p.client) || '______').replace(/\[PROPERTY\]/g, s(c.address || p.address) || '______').replace(/\[CLAIM\]/g, s(c.claimNumber) || '______').replace(/\[DATE\]/g, today);
+}
+function jsPDF(){
+  if (W.jspdf && W.jspdf.jsPDF) return Promise.resolve(W.jspdf.jsPDF);
+  return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; sc.onload = function(){ res(W.jspdf.jsPDF); }; sc.onerror = function(){ rej(new Error('The PDF tool did not load.')); }; D.head.appendChild(sc); });
+}
+function makePdf(title, body){
+  return jsPDF().then(function(P){
+    var doc = new P({ unit: 'pt', format: 'letter' }), m = 54, y = 60;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('GrayCo Construction Services', m, y); y += 16;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(companyAddr() + '  ·  (901) 585-0944', m, y); y += 26;
+    doc.setFontSize(11);
+    doc.splitTextToSize(body, 612 - 2 * m).forEach(function(line){ if (y > 740) { doc.addPage(); y = 60; } doc.text(line, m, y); y += 15; });
+    y += 20; if (y > 720) { doc.addPage(); y = 60; }
+    doc.setFontSize(9); doc.setTextColor(90); doc.text('Signed electronically in the GrayCo customer portal (name, date and time are added to the signed copy).', m, y);
+    return doc.output('blob');
+  });
+}
+function sendWA(claimId, withDtp){
+  var g = G(), c = g && g.get(claimId); if (!c) return Promise.reject(new Error('Claim not found.'));
+  if (!c.projectId) return Promise.reject(new Error('Link the claim to a job first.'));
+  if (typeof W._gcPortalESign !== 'function' || typeof W._gcStoreFile !== 'function') return Promise.reject(new Error('The portal signer is not loaded yet — try again in a moment.'));
+  var T = tpl(), papers = [{ k: 'workauth', title: 'Work authorization', text: fill(T.wa, c) }];
+  if (withDtp) papers.push({ k: 'dtp', title: 'Direction to Pay', text: fill(T.dtp, c) });
+  var ids = [];
+  return papers.reduce(function(pr, x){
+    return pr.then(function(){
+      return makePdf(x.title, x.text).then(function(blob){
+        var name = x.title + ' — ' + (s(c.insured) || 'customer') + '.pdf';
+        return W._gcStoreFile(new File([blob], name, { type: 'application/pdf' }), { kind: 'doc', pid: c.projectId, name: name });
+      }).then(function(meta){
+        return Promise.resolve(W._gcFilesUploadNow ? W._gcFilesUploadNow() : null).catch(function(){}).then(function(){
+          return W._gcPortalESign({ pid: c.projectId, kind: 'doc', refId: x.k + '_' + c.id, title: x.title, ref: meta.ref, name: meta.name || (x.title + '.pdf') });
+        });
+      }).then(function(r){ ids.push(r && r.id); STATS.waSent++; });
+    });
+  }, Promise.resolve()).then(function(){
+    return g.update(c.id, function(y){ y.workAuth = { sentAt: nowIso(), by: myName(), dtp: !!withDtp, requests: ids }; y.notes = arr(y.notes).concat([{ id: uid('N'), at: nowIso(), by: myName(), internal: true, text: '✍️ ' + papers.map(function(p){ return p.title; }).join(' + ') + ' sent to the homeowner to sign in the portal (the e-mail waits on ✅ Approvals).' }]); });
+  });
+}
+function openWA(claimId){
+  var g = G(), c = g && g.get(claimId); if (!c) return;
+  var sh = sheet('✍️ Send work authorization');
+  sh.body.innerHTML = '<p style="color:#55626F">The homeowner signs in their GrayCo portal. The e-mail asking them waits on <b>✅ Approvals</b>. Their signed copy comes back onto this claim.</p>' +
+    (c.workAuth ? '<p style="color:#92400e"><b>Already sent</b> ' + esc(md(c.workAuth.sentAt)) + ' by ' + esc(c.workAuth.by) + '. Sending again asks again.</p>' : '') +
+    '<label style="display:block;margin:8px 0"><input type="checkbox" data-dtp> Also send a <b>Direction to Pay</b></label>' +
+    '<details><summary>Preview the work authorization</summary><pre style="white-space:pre-wrap;font:13px system-ui;background:#F6F7FB;padding:10px;border-radius:8px">' + esc(fill(tpl().wa, c)) + '</pre></details>' +
+    '<p style="font-size:12px;color:#55626F">The wording comes from ⚙ Admin → 📝 Work authorization (a template — have your attorney review it).</p>' +
+    '<button type="button" data-go style="' + BTNP + '">Send to the portal</button>';
+  sh.body.querySelector('[data-go]').onclick = function(ev){
+    var b = ev.currentTarget; b.disabled = true; b.textContent = 'Sending…';
+    sendWA(c.id, !!sh.body.querySelector('[data-dtp]').checked).then(function(){ sh.close(); toast('✍️ In the portal — the e-mail waits on ✅ Approvals.'); }, function(e){ b.disabled = false; b.textContent = 'Send to the portal'; STATS.errors = s(e && e.message); toast(e && e.message || 'Did not go through.', true); });
+  };
+}
+/* the signed copies → onto the claim (ticks "Signed work authorization / contract on file") */
+function fileSignedWA(){
+  var g = G(), A5 = W._gcAuto5; if (!g || !A5 || typeof A5.requests !== 'function') return;
+  arr(A5.requests()).forEach(function(r){
+    var m = /^(workauth|dtp)_(.+)$/.exec(s(r && r.refId)); if (!m || r.status !== 'signed' || !r.signed || !s(r.signed.docRef)) return;
+    var c = g.get(m[2]); if (!c || arr(c.docs).some(function(d){ return d && d.signRequestId === r.id; })) return;
+    var wa = m[1] === 'workauth';
+    try { g.doc(c.id, { kind: wa ? 'workauth' : 'dtp', name: (wa ? 'Signed work authorization' : 'Signed direction to pay') + '.pdf', ref: s(r.signed.docRef), internal: true, signRequestId: r.id, signedBy: s(r.signed.name), signedAt: s(r.signed.at) }); STATS.waFiled++; } catch (e) { STATS.errors = s(e && e.message); }
+  });
+}
+
+/* ═══ 4. CHANGE ORDERS NEED A REASON + A PHOTO ═════════════════════════════ */
+var CO_IDB = [];
+function coList(){ var l = crm().changeOrders; if ((!Array.isArray(l) || !l.length) && CO_IDB.length) l = CO_IDB; return arr(l); }
+function loadCO(){ return Promise.resolve(W.idbGet ? W.idbGet('changeOrders') : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } if (Array.isArray(v)) CO_IDB = v; }, function(){}); }
+function setCO(id, put){
+  var inState = false;
+  try { if (W._gcSetCOs) W._gcSetCOs(function(list){ list = arr(list); if (list.some(function(c){ return c && String(c.id) === String(id); })) { inState = true; return list.map(function(c){ return c && String(c.id) === String(id) ? put(c) : c; }); } return list; }); } catch (e) {}
+  return new Promise(function(res){ later(function(){
+    if (inState) { try { if (W._gcManualNow) W._gcManualNow('change order proof'); } catch (e) {} return res(true); }
+    loadCO().then(function(){
+      if (!CO_IDB.some(function(c){ return c && String(c.id) === String(id); })) return res(false);
+      var next = CO_IDB.map(function(c){ return c && String(c.id) === String(id) ? put(c) : c; }); CO_IDB = next;
+      try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow('change order proof'); if (W.idbSet) W.idbSet('changeOrders', next); if (W._supaUpsert) W._supaUpsert('changeOrders', next); if (W._gcTabChangeSync) W._gcTabChangeSync('change order proof'); } catch (e) {}
+      later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
+      res(true);
+    });
+  }, 50); });
+}
+var PROOF = {};   /* this page: proof saved here before the CRM's own lists catch up */
+function ready(co){ if (!co) return false; var p = PROOF[s(co.id)] || co; return !!(s(p.proofReason) && arr(p.proofPhotos).length); }
+function touchLists(id, fields){ [crm().changeOrders, CO_IDB].forEach(function(l){ arr(l).forEach(function(c){ if (c && String(c.id) === String(id)) Object.assign(c, fields); }); }); }
+function photoSrc(ph){ return s(ph && (ph.thumb || ph.url)); }
+function openProof(coId, cb){
+  return loadCO().then(function(){
+    var co = coList().filter(function(x){ return x && String(x.id) === String(coId); })[0]; if (!co) { toast('Change order not found.', true); return; }
+    var pid = s(co.pid), reason = s(co.proofReason), photos = arr(co.proofPhotos).slice();
+    var sh = sheet('📎 Change order proof — ' + s(co.desc || co.title || co.id).slice(0, 60));
+    function paint(){
+      sh.body.innerHTML = '<p style="color:#55626F">Every change order needs <b>why</b> and <b>at least one photo</b> before it goes to the customer to sign.' + (G() && G().forProject && G().forProject(pid) ? ' This is an insurance job: the change order also goes on the claim’s supplement list with these photos.' : '') + '</p>' +
+        '<label style="display:block;font-weight:700">Reason<textarea data-r rows="3" style="' + IN + ';width:100%;margin-top:4px" placeholder="What changed and why (hidden rot found under the decking, customer asked for…)">' + esc(reason) + '</textarea></label>' +
+        '<div style="font-weight:700;margin-top:10px">Photos (' + photos.length + ')</div><div data-ph style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">' + photos.map(function(ph, i){ return '<div style="position:relative"><img data-i="' + i + '" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:8px;background:#EEF0F6" src="' + esc(photoSrc(ph)) + '"><button type="button" data-del="' + i + '" style="position:absolute;top:2px;right:2px;border:0;border-radius:6px;background:#fff;cursor:pointer">✕</button></div>'; }).join('') + '</div>' +
+        '<label style="' + BTN + ';display:inline-block">📷 Take / add photos<input data-up type="file" accept="image/*" capture="environment" multiple style="display:none"></label><button type="button" data-pick style="' + BTN + '">🖼 Pick from the job’s photos</button>' +
+        '<div data-grid style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>' +
+        '<div style="margin-top:12px"><button type="button" data-save style="' + BTNP + '">Save proof</button></div>';
+      photos.forEach(function(ph, i){ if (!photoSrc(ph) && ph.ref && W._gcFileUrl) Promise.resolve(W._gcFileUrl(ph.ref)).then(function(u){ var im = sh.body.querySelector('img[data-i="' + i + '"]'); if (im) im.src = u; }, function(){}); });
+    }
+    paint();
+    sh.body.addEventListener('change', function(ev){
+      var inp = ev.target; if (!inp.matches || !inp.matches('[data-up]')) return; reason = s(sh.body.querySelector('[data-r]').value);
+      var files = Array.prototype.slice.call(inp.files || []); if (!files.length) return;
+      Promise.all(files.map(function(f){ return W._gcStoreFile(f, { kind: 'photo', pid: pid, name: f.name }).then(function(meta){ photos.push({ ref: meta.ref, name: meta.name, src: 'upload', at: nowIso(), by: myName() }); }, function(e){ toast('A photo did not save: ' + (e && e.message || e), true); }); })).then(paint);
+    });
+    sh.body.addEventListener('click', function(ev){
+      var t = ev.target; reason = s((sh.body.querySelector('[data-r]') || {}).value);
+      if (t.getAttribute && t.getAttribute('data-del') != null) { photos.splice(num(t.getAttribute('data-del')), 1); return paint(); }
+      if (t.matches && t.matches('[data-pick]')) {
+        var grid = sh.body.querySelector('[data-grid]'); grid.textContent = 'Loading the job’s photos…';
+        var P = W._gcPhotos || {}, own = [];
+        try { own = arr(typeof P.records === 'function' ? P.records() : []).filter(function(r){ return r && !r.deleted && s(r.jobId) === pid; }); } catch (e) {}
+        Promise.resolve(typeof P.ccLoad === 'function' ? P.ccLoad(pid) : []).catch(function(){ return []; }).then(function(cc){
+          var all = own.concat(arr(cc)).map(function(r){ return { url: s(r.fullUrl || r.url || r.full || r.src), thumb: s(r.thumbUrl || r.thumb || r.small || r.url), id: s(r.id), src: 'job' }; }).filter(function(x){ return x.url || x.thumb; }).slice(0, 60);
+          grid.innerHTML = all.length ? all.map(function(x, i){ return '<img data-pk="' + i + '" alt="" src="' + esc(x.thumb || x.url) + '" style="width:72px;height:72px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid transparent">'; }).join('') : '<span style="color:#55626F">No photos on this job yet.</span>';
+          grid.onclick = function(e2){ var im = e2.target.closest && e2.target.closest('[data-pk]'); if (!im) return; var x = all[num(im.getAttribute('data-pk'))]; if (x && !photos.some(function(p){ return p.url === x.url; })) { photos.push(x); paint(); } };
+        });
+        return;
+      }
+      if (t.matches && t.matches('[data-save]')) {
+        if (!reason) { toast('Say why the change order is needed.', true); return; }
+        if (!photos.length) { toast('Add at least one photo.', true); return; }
+        t.disabled = true;
+        var fields = { proofReason: reason, proofPhotos: photos, proofBy: myName(), proofAt: nowIso(), updatedAt: nowIso() };
+        setCO(coId, function(c){ return Object.assign({}, c, fields); }).then(function(ok){
+          if (!ok) throw new Error('The change order could not be saved — open the job’s Change Orders once and try again.');
+          PROOF[s(coId)] = fields; touchLists(coId, fields);
+          STATS.coProof++;
+          return flagSupp(Object.assign({}, co, { proofReason: reason, proofPhotos: photos }));
+        }).then(function(){ sh.close(); toast('📎 Proof saved — the change order can go for signature.'); cb && cb(); }, function(e){ t.disabled = false; toast(e && e.message || 'Could not save', true); });
+      }
+    });
+  });
+}
+/* an insurance job's change order → the claim's supplement list, with its photos (until it is signed) */
+function flagSupp(co){
+  var g = G(); if (!g || !g.forProject || !co || co.signedAt) return Promise.resolve();
+  var c = g.forProject(co.pid); if (!c) return Promise.resolve();
+  var it = { id: 'COP_' + s(co.id), coId: s(co.id), desc: 'Change order: ' + s(co.desc || co.title || co.id).slice(0, 120), room: '', what: 'Change order — supplement candidate (' + s(co.proofReason).slice(0, 80) + ')', amount: num(co.amt != null ? co.amt : co.amount), qty: 1, unit: 'EA',
+    photos: arr(co.proofPhotos).map(function(p){ return s(p.url || p.ref); }).filter(Boolean), by: myName(), at: nowIso() };
+  return g.update(c.id, function(x){ x.suppMarks = arr(x.suppMarks).filter(function(m){ return !(m && m.id === it.id); }).concat([it]); });
+}
+/* once a flagged change order is signed, AUTO7 counts the signed change order itself — the mark steps aside */
+function sweepCoMarks(){
+  var g = G(); if (!g || !g.list) return;
+  var signed = {}; coList().forEach(function(c){ if (c && (c.signedAt || c.customerSigned)) signed[s(c.id)] = 1; });
+  arr(g.list()).forEach(function(c){
+    if (!arr(c.suppMarks).some(function(m){ return m && !m.deleted && m.coId && signed[s(m.coId)]; })) return;
+    g.update(c.id, function(x){ arr(x.suppMarks).forEach(function(m){ if (m && !m.deleted && m.coId && signed[s(m.coId)]) { m.deleted = true; m.deletedWhy = 'change order signed — counted as the signed change order'; } }); }, true);
+  });
+}
+W._gcCoProof = { ready: ready, open: openProof, flag: flagSupp };
+
+/* ═══ 3. EQUIPMENT DAYS → THE SUPPLEMENT ═══════════════════════════════════ */
+function eqToSupp(claimId){
+  var g = G(), c = g && g.get(claimId); if (!c || !g.p2) return;
+  var lines = []; try { lines = g.p2.mitigationLines(c, g.p2.eqCfg(g.settings())); } catch (e) {}
+  if (!lines.length) { toast('No equipment days logged yet.', true); return; }
+  var marks = lines.map(function(l){ return { id: 'EQ_' + low(l.desc).replace(/[^a-z]+/g, '_').slice(0, 40), desc: l.desc, room: 'Mitigation', what: 'Equipment days (from the equipment log)', amount: num(l.rcv), qty: num(l.qty), unit: s(l.unit) || 'DA', by: myName(), at: nowIso() }; });
+  g.update(c.id, function(x){ x.suppMarks = arr(x.suppMarks).filter(function(m){ return !(m && /^EQ_/.test(s(m.id))); }).concat(marks); }).then(function(){ STATS.eqSupp++; toast('➕ ' + marks.length + ' equipment line(s) on the supplement list (🏁 Closeout → supplement check).'); });
+}
+
+/* ═══ the claim page: buttons on the Don't-forget list ════════════════════ */
+function dfBar(c){
+  if (!c || !c.id) return '';
+  return '<div data-a13bar style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px"><button type="button" data-a13="wa" data-claim="' + esc(c.id) + '" style="' + BTN + '">✍️ Send work authorization' + (c.workAuth ? ' (sent ' + esc(md(c.workAuth.sentAt)) + ')' : '') + '</button><button type="button" data-a13="lib" data-claim="' + esc(c.id) + '" style="' + BTN + '">📚 Carrier rules' + (matchCarrier(c).length ? ' ✓' : '') + '</button></div>';
+}
+W.__GC_DF_BAR__ = dfBar;
+function decorate(){
+  D.querySelectorAll('.gcbb-panel > h3').forEach(function(h){
+    if (h.getAttribute('data-a13') || !/Don.t forget/.test(h.textContent) || h.parentElement.querySelector('[data-a13bar]')) return;
+    var root = h.closest('.gcbb-panel').parentElement, inp = root && root.querySelector('[data-draft^="i3note-"]');
+    var cid = inp ? s(inp.getAttribute('data-draft')).replace(/^i3note-/, '') : ''; if (!cid) return;
+    h.setAttribute('data-a13', '1');
+    var c = G() && G().get(cid), bar = D.createElement('div'); bar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px';
+    bar.innerHTML = '<button type="button" data-a13="wa" data-claim="' + esc(cid) + '" style="' + BTN + '">✍️ Send work authorization</button><button type="button" data-a13="lib" data-claim="' + esc(cid) + '" style="' + BTN + '">📚 Carrier rules' + (c && matchCarrier(c).length ? ' ✓' : '') + '</button>';
+    h.insertAdjacentElement('afterend', bar);
+  });
+}
+D.addEventListener('click', function(ev){
+  var b = ev.target.closest && ev.target.closest('[data-a13]'); if (!b) return;
+  var a = b.getAttribute('data-a13'), cid = b.getAttribute('data-claim'); if (a !== 'wa' && a !== 'lib' && a !== 'eqsupp') return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (a === 'wa') openWA(cid);
+  else if (a === 'lib') { var c = G() && G().get(cid); openLib(c ? s(c.carrier) : ''); }
+  else if (a === 'eqsupp') eqToSupp(cid);
+}, true);
+
+/* ═══ ⚙ ADMIN SECTIONS ══════════════════════════════════════════════════════ */
+function renderHealth(box){
+  box.innerHTML = '<p style="color:#55626F">The same short report the admins get by e-mail on the 1st of each month.</p><div data-h>Checking…</div><div style="margin-top:10px"><button type="button" data-send style="' + BTNP + '">📨 Send it to the admins now</button><button type="button" data-re style="' + BTN + '">↻ Check again</button></div>';
+  var DOTS = { green: '🟢', amber: '🟡', red: '🔴' };
+  function load(){
+    var el = box.querySelector('[data-h]'); el.textContent = 'Checking…';
+    W.fetch('/.netlify/functions/crm-health', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){
+      if (!j || !j.ok) { el.textContent = (j && j.error) || 'Could not check.'; return; }
+      el.innerHTML = '<table style="width:100%;border-collapse:collapse">' + arr(j.items).map(function(x){ return '<tr><td style="padding:6px;border-bottom:1px solid #eee;white-space:nowrap">' + (DOTS[x.status] || '') + ' <b>' + esc(x.label) + '</b></td><td style="padding:6px;border-bottom:1px solid #eee">' + esc(x.text) + '</td></tr>'; }).join('') + '</table>';
+    }, function(){ el.textContent = 'Could not reach the server.'; });
+  }
+  box.querySelector('[data-re]').onclick = load;
+  box.querySelector('[data-send]').onclick = function(ev){ var b = ev.currentTarget; b.disabled = true;
+    W.fetch('/.netlify/functions/crm-health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: 'send' }) }).then(function(r){ return r.json(); }).then(function(j){ b.disabled = false; toast(j && j.ok ? '📨 Sent to ' + arr(j.to).join(', ') : (j && j.error) || 'Not sent', !(j && j.ok)); }, function(){ b.disabled = false; toast('Not sent', true); }); };
+  load();
+}
+function renderTpl(box){
+  var T = tpl();
+  box.innerHTML = '<p style="color:#B42318;font-weight:700">' + esc(TPL_NOTE) + '</p><p style="color:#55626F">Placeholders: [COMPANY] [ADDRESS] [CUSTOMER] [PROPERTY] [CLAIM] [DATE]. Sent from a claim’s ✅ Don’t forget list → ✍️ Send work authorization.</p>' +
+    '<label style="display:block;font-weight:700">Work authorization<textarea data-wa rows="10" style="' + IN + ';width:100%">' + esc(T.wa) + '</textarea></label>' +
+    '<label style="display:block;font-weight:700;margin-top:8px">Direction to Pay<textarea data-dtp rows="10" style="' + IN + ';width:100%">' + esc(T.dtp) + '</textarea></label>' +
+    (T.by ? '<p style="font-size:12px;color:#55626F">Last changed by ' + esc(T.by) + ' ' + esc(md(T.at)) + '</p>' : '') + '<button type="button" data-s style="' + BTNP + '">Save</button>';
+  box.querySelector('[data-s]').onclick = function(){ var wa = s(box.querySelector('[data-wa]').value), dtp = s(box.querySelector('[data-dtp]').value);
+    saveCs(function(cur){ cur.workAuthTpl = { wa: wa, dtp: dtp, by: myName(), at: nowIso() }; return cur; }).then(function(){ toast('✓ Saved'); }, function(e){ toast(e.message, true); }); };
+}
+var EQ_KEYS = [['dehu', 'Dehumidifier'], ['airmover', 'Air mover'], ['scrubber', 'Air scrubber'], ['negair', 'Negative air machine'], ['desiccant', 'Desiccant'], ['heater', 'Heater / drying heat'], ['monitor', 'Monitoring / equipment check']];
+function renderEq(box){
+  var dr = (cs().drying || {}), R = dr.rates || {}, def = (G() && G().p2 && G().p2.EQ_DEFAULTS && G().p2.EQ_DEFAULTS.rates) || {};
+  box.innerHTML = '<p style="color:#55626F">Day rates for the mitigation invoice and supplement lines (per 24-hour period). Blank = “[RATE]” until you set it.</p><table>' +
+    EQ_KEYS.map(function(k){ var v = R[k[0]] != null && R[k[0]] !== '' ? R[k[0]] : def[k[0]]; return '<tr><td style="padding:4px 8px 4px 0">' + esc(k[1]) + '</td><td>$<input data-k="' + k[0] + '" value="' + esc(v == null ? '' : v) + '" style="' + IN + ';width:90px"> / day</td></tr>'; }).join('') + '</table>' +
+    '<p style="margin-top:10px">Remind when equipment is on site more than <input data-days value="' + esc(dr.eqRemindDays || 5) + '" style="' + IN + ';width:54px"> days (an Office To-Do, checked every morning).</p><button type="button" data-s style="' + BTNP + '">Save</button>';
+  box.querySelector('[data-s]').onclick = function(){
+    var rates = {}; box.querySelectorAll('[data-k]').forEach(function(i){ var v = s(i.value); rates[i.getAttribute('data-k')] = v === '' ? '' : num(v); });
+    var days = Math.max(1, Math.round(num(box.querySelector('[data-days]').value) || 5));
+    saveCs(function(cur){ cur.drying = Object.assign({}, cur.drying || {}, { rates: Object.assign({}, (cur.drying || {}).rates || {}, rates), eqRemindDays: days }); return cur; }).then(function(){ toast('✓ Saved'); }, function(e){ toast(e.message, true); });
+  };
+}
+var SECTIONS_ADDED = false;
+function addSections(){
+  if (SECTIONS_ADDED || typeof W._gcAdmAddSection !== 'function') return SECTIONS_ADDED;
+  W._gcAdmAddSection({ id: 'crmhealth', after: 'security', ic: '🩺', t: 'CRM health', d: 'Backups, storage, e-mail into the CRM, automatic jobs, errors, stuck approvals — and the monthly e-mail', render: renderHealth });
+  W._gcAdmAddSection({ id: 'carrierlib', after: 'crmhealth', ic: '📚', t: 'Carrier requirements', d: 'What each insurance company wants and by when — added to every claim with that carrier', render: function(box){ libEditor(box, ''); } });
+  W._gcAdmAddSection({ id: 'workauth', after: 'carrierlib', ic: '📝', t: 'Work authorization', d: 'The Work Authorization and Direction to Pay templates homeowners sign in the portal', render: renderTpl });
+  W._gcAdmAddSection({ id: 'mitequip', after: 'workauth', ic: '🌀', t: 'Mitigation equipment', d: 'Day rates for equipment billing, and the on-site reminder', render: renderEq });
+  SECTIONS_ADDED = true; return true;
+}
+
+/* ═══ start ══════════════════════════════════════════════════════════════════ */
+function tick(){ try { fileSignedWA(); } catch (e) { STATS.errors = s(e && e.message); } try { sweepCoMarks(); } catch (e) {} }
+function start(){
+  addSections(); var n = 0; var t = RI.call(W, function(){ if (addSections() || ++n > 60) clearInterval(t); }, 1000);
+  var decT = null; try { new MutationObserver(function(){ if (decT) return; decT = later(function(){ decT = null; decorate(); }, 300); }).observe(D.body, { childList: true, subtree: true }); } catch (e) {}
+  decorate(); later(tick, 8000); RI.call(W, tick, 60000);
+}
+W._gcAuto13 = { status: function(){ return Object.assign({ carriers: lib().length, sections: SECTIONS_ADDED }, STATS); }, dfExtra: dfExtra, matchCarrier: matchCarrier, openLib: openLib, openWA: openWA, sendWA: sendWA, fill: fill, fileSignedWA: fileSignedWA, eqToSupp: eqToSupp, sweepCoMarks: sweepCoMarks, decorate: decorate, coList: coList, renderHealth: renderHealth, renderTpl: renderTpl, renderEq: renderEq, WA_DEFAULT: WA_DEFAULT, DTP_DEFAULT: DTP_DEFAULT };
+if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', start); else start();
+try { console.log('[GC] Work authorization, carrier library, equipment billing, change-order proof, CRM health (patch AUTO13) — _gcAuto13'); } catch (e) {}
+})();
+
 </script>
