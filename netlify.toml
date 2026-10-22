@@ -298,3 +298,7 @@
 # expire). Nothing is added or sent until an admin approves it.
 [functions."referral"]
   schedule = "37 * * * *"
+
+# patch EST3: the daily "material prices up on your open estimates" e-mail (about 7:20 AM Central)
+[functions."est-price-watch"]
+  schedule = "20 12 * * *"
