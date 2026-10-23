@@ -48579,7 +48579,7 @@ async function checkAndPushDiffs(){
     // same record resolves to the same id on every computer (no duplicates).
     try{
       if(Array.isArray(val) && window._gcEnsureRecordIds){
-        if(window._gcEnsureRecordIds(val)){
+        if(window._gcEnsureRecordIds(val, key)){   /* patch SYNCFIX: the list's key */
           await idbSet(key, val);
           if(window._applyOrQueue) try{ _applyOrQueue(key, val); }catch(e){}
         }
@@ -64694,13 +64694,47 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     if(f.replace(/\|/g,'').trim()==='') { try{ f=JSON.stringify(rec); }catch(e){ f=String(Math.random()); } }
     return hash(f);
   }
+  /* patch SYNCFIX: an approval queue entry is the record it waits on (invId / expId). Its old content id was
+     the same for many entries (the fingerprint fields are not a queue entry's fields), so every merge
+     "de-collided" them again by list order: gidX-gidX-gidX…, a different id on each computer, forever. */
+  var QALT = { gc_sub_approvals:'invId', gc_invoice_approvals:'invId', gc_expense_approvals:'expId' };
+  var AUTO = /^gid[0-9a-z]+(-gid[0-9a-z]+)*$/;
+  /* gidX-gidX-gidX -> gidX ; EXP1-gidY-gidY -> EXP1-gidY (only repeated machine suffixes) */
+  function collapse(id){
+    var str = String(id), m = /^(.*?)((?:-gid[0-9a-z]+)+)$/.exec(str); if(!m || !m[1]) return str;
+    var head = m[1], out = [];
+    m[2].slice(1).split('-').forEach(function(t){ if(t === head || out[out.length-1] === t) return; out.push(t); });
+    return head + (out.length ? '-' + out.join('-') : '');
+  }
+  /* what makes a record itself (no status / decision / stamps), so a second record never takes the first one's id */
+  function strongFp(rec){
+    var f = [rec.invId, rec.expId, rec.createdAt, rec.addedAt, rec.sub, rec.vendor, rec.payee, rec.desc, rec.label, rec.text,
+             rec.amt, rec.amount, rec.total, rec.name, rec.title, rec.pid, rec.date, rec.fileName, rec.email].join('|');
+    if(f.replace(/\|/g,'').trim()===''){
+      try{ var o={}; Object.keys(rec).sort().forEach(function(k){ if(!/^(id|_id|updatedAt|updated_at|savedAt|modified|status|decided\w*|pmDecided\w*|payCheck|matched\w*)$/.test(k)) o[k]=rec[k]; }); f=JSON.stringify(o); }catch(e){ f=String(rec.id||''); }
+    }
+    return hash('s|'+f);
+  }
+  function qRank(r){ var st=String(r && r.status || '').toLowerCase(); if((r && r.pmDecidedAt) || /approved|rejected|denied|posted|paid|void|recorded|done/.test(st)) return 3; if(st==='escalated') return 2; return st ? 1 : 0; }
+  function qWhen(r){ var w=r && (r.pmDecidedAt || r.decidedAt || r.updatedAt || r.matchedAt || r.createdAt); var n=+w; if(!isNaN(n) && n) return n; var t=Date.parse(w||''); return isNaN(t)?0:t; }
   // Ensure every record in a list has a stable unique id. Returns true if any changed.
-  window._gcEnsureRecordIds = function(list){
+  window._gcEnsureRecordIds = function(list, key){
     if(!Array.isArray(list)) return false;
-    var seen={}, changed=false;
-    list.forEach(function(rec){
+    var seen={}, changed=false, alt=key && QALT[key], firstAt={}, drop=[];
+    list.forEach(function(rec, ix){
       if(!rec || typeof rec!=='object') return;
       var id = rec.id;
+      if(id!==undefined && id!==null && id!==''){ var cid = collapse(id); if(cid!==String(id)){ rec.id = cid; changed=true; id=cid; } }   /* patch SYNCFIX: repair */
+      var qid = (alt && rec[alt]!=null && rec[alt]!=='') ? alt+':'+String(rec[alt]) : null;
+      if(qid && (id===undefined || id===null || id==='' || AUTO.test(String(id)) || String(id)===qid || String(id).indexOf(qid+'-gid')===0)){
+        if(id!==qid){ rec.id = qid; changed=true; id=qid; }
+        if(seen[qid]){   /* the same queue entry twice: one entry — a decided one beats a waiting one, then the newest */
+          var j=firstAt[qid], cur=list[j];
+          if(qRank(rec)>qRank(cur) || (qRank(rec)===qRank(cur) && qWhen(rec)>qWhen(cur))){ list[j]=rec; drop.push(ix); } else drop.push(ix);
+          changed=true; return;
+        }
+        seen[qid]=1; firstAt[qid]=ix; return;
+      }
       /* 33.129 (audit): accounting register rows carry their identity in _id. Fingerprinting
          them instead gave the same row a different id on each side of a merge, so every
          sync / auto-recover union DOUBLED the register (measured: 13 rows -> 24). */
@@ -64710,11 +64744,19 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       // Duplicate id in the same list (e.g. two Date.now() collisions) -> de-collide
       // deterministically by mixing in the fingerprint, so both survive and both
       // machines compute the same second id.
-      if(seen[id]){ rec.id = String(id)+'-'+fingerprint(rec); changed=true; id=rec.id; }
+      if(seen[id]){
+        /* patch SYNCFIX: the second id is new and different from the first (the old suffix could be the base itself) */
+        var fp=fingerprint(rec), nid=String(id)+'-'+fp;
+        if(fp===String(id) || seen[nid]) nid=String(id)+'-'+strongFp(rec);
+        var cand=nid, n=2; while(seen[cand]) cand=nid+'-'+(n++);
+        rec.id = cand; changed=true; id=rec.id;
+      }
       seen[id]=1;
     });
+    if(drop.length){ drop.sort(function(a,b){ return b-a; }).forEach(function(i){ list.splice(i,1); }); }
     return changed;
   };
+  window._gcEnsureRecordIds.__syncfix = 1;
 
   // Read the manual-delete (tombstone) set for a given list key.
   function deadSet(key){
@@ -64745,8 +64787,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   window._gcUnionMerge = function(key, a, b){
     var dead = deadSet(key);
     // Make sure both sides have ids before merging (so nothing is invisible).
-    if(Array.isArray(a)) window._gcEnsureRecordIds(a);
-    if(Array.isArray(b)) window._gcEnsureRecordIds(b);
+    if(Array.isArray(a)) window._gcEnsureRecordIds(a, key);   /* patch SYNCFIX: the list's key */
+    if(Array.isArray(b)) window._gcEnsureRecordIds(b, key);
     var byId={}, order=[];
     [a,b].forEach(function(list){
       (Array.isArray(list)?list:[]).forEach(function(rec){
@@ -64757,6 +64799,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         // drop only true __TEST__ rows
         for(var k in rec){ try{ if(typeof rec[k]==='string' && rec[k].indexOf('__TEST__')>=0) return; }catch(e){} }
         if(!(id in byId)){ byId[id]=rec; order.push(id); }
+        else if(QALT[key] && qRank(rec)!==qRank(byId[id])){ if(qRank(rec)>qRank(byId[id])) byId[id]=Object.assign({}, byId[id], rec); }   /* patch SYNCFIX: a decided approval stays decided */
         else if(newer(rec, byId[id])){ byId[id]=Object.assign({}, byId[id], rec); }
       });
     });
@@ -113788,6 +113831,22 @@ window._gcPullMerge = async function(key, inc, idbLocal){
   var lsKey = LS_BACKED[key] || (lsRead(key) !== undefined && (idbLocal === null || idbLocal === undefined));
   var local = lsKey ? lsRead(key) : idbLocal;
   var merged = mergeVal(key, local, inc);
+  if(Array.isArray(merged) && /^gc_(sub|invoice|expense)_approvals$/.test(key) && window._gcEnsureRecordIds){ try{ window._gcEnsureRecordIds(merged, key); }catch(e){} }   /* patch SYNCFIX */
+  /* patch SYNCFIX: the same fold written on two computers (each with its own copy of the row: amt here, amount there)
+     — both keep the same one: an undo / re-fold by its newer stamp, otherwise the first fold, then the smaller text */
+  if(key==='gc_folded' && Array.isArray(merged) && Array.isArray(inc)){
+    try{
+      var _fin = {}, _flo = {}; inc.forEach(function(f){ if(f && f.id!=null) _fin[String(f.id)] = f; });
+      if(Array.isArray(local)) local.forEach(function(f){ if(f && f.id!=null) _flo[String(f.id)] = f; });
+      var _fj = function(f){ try{ return JSON.stringify(f, Object.keys(f).sort()) + JSON.stringify(f.record||null); }catch(e){ return ''; } };
+      var _fw = function(a, b){
+        if(!!a.unfolded !== !!b.unfolded) return String(b.updatedAt||'') > String(a.updatedAt||'') ? b : a;
+        var fa = String(a.foldedAt||''), fb = String(b.foldedAt||''); if(fa !== fb) return (fb && (!fa || fb < fa)) ? b : a;
+        return _fj(b) < _fj(a) ? b : a;
+      };
+      merged = merged.map(function(f){ if(!f || f.id==null) return f; var w = f, o = _fin[String(f.id)], l = _flo[String(f.id)]; if(o && o !== w) w = _fw(w, o); if(l && l !== w) w = _fw(w, l); return w; });
+    }catch(e){}
+  }
   if(lsKey){
     var before = null, after = null;
     try{ before = JSON.stringify(local); after = JSON.stringify(merged); }catch(e){}
@@ -113805,6 +113864,7 @@ window._gcPullMerge = async function(key, inc, idbLocal){
       for(var i=0;i<keys.length;i++){
         var k = keys[i], v = lsRead(k);
         if(v === undefined) continue;
+        if(Array.isArray(v) && /^gc_(sub|invoice|expense)_approvals$/.test(k) && window._gcEnsureRecordIds){ try{ if(window._gcEnsureRecordIds(v, k)) lsWrite(k, v); }catch(e){} }   /* patch SYNCFIX: this computer's copy repaired before it is pushed */
         var cur = await window.idbGet(k);
         var j1 = null, j2 = null; try{ j1 = JSON.stringify(v); j2 = JSON.stringify(cur); }catch(e){}
         if(j1 !== j2) await window.idbSet(k, v);
@@ -115759,14 +115819,18 @@ window._gcFold = async function(key, keepId, dropIds, rule, reason, opts){
   gone.forEach(function(g){ if(keep) absorb(keep, g); });
   if(keep){ keep.updatedAt=nowISO(); }
   var kept=list.filter(function(r){ return !(r && drop[idOf(r)]); });
-  var F=await foldList(), who=(me().name||'');
+  var F=await foldList(), who=(me().name||''), fch=false;
   gone.forEach(function(g){
     var fid='FOLD_'+key+'_'+idOf(g);
+    /* patch SYNCFIX: already folded (and not undone) = the same fold; re-writing it with a new stamp and this
+       computer's copy of the row made two computers trade gc_folded back and forth every time the row came back */
+    if(F.some(function(f){ return f && f.id===fid && !f.unfolded; })) return;
+    fch=true;
     F=F.filter(function(f){ return f && f.id!==fid; });
     F.push({ id:fid, list:key, recordId:idOf(g), keptId:String(keepId||''), rule:rule||'', reason:reason||'', foldedAt:nowISO(), updatedAt:nowISO(), by:opts.by||who||'CRM', record:JSON.parse(JSON.stringify(g)) });
   });
   try{ window.__GC_MERGED_AWAY__={ key:key, ids:drop, at:Date.now() }; }catch(e){}
-  await saveList(FOLDK, F, 'fold duplicates'); foldCache=F;
+  if(fch){ await saveList(FOLDK, F, 'fold duplicates'); foldCache=F; }   /* patch SYNCFIX */
   await saveList(key, kept, 'fold duplicates');
   return gone.length;
 };
@@ -117889,7 +117953,11 @@ var seenRec = {};      /* key -> { id -> {sig:1} } */
 var seenVal = {};      /* key -> { sig:1 } (values that are not record lists) */
 var STAMP = /^(updatedAt|updated_at|savedAt|lastSeen|modified|modifiedAt|lastModified|_\w*UpdatedAt)$/;
 var _rsigStep = null;   /* patch X: per-object signatures, kept only for one synchronous push step */
-function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ _g = sigOf(JSON.stringify(r, function(k, v){ return (k && STAMP.test(k)) ? undefined : v; })); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
+/* patch SYNCFIX: fields in sorted order — a merge (Object.assign) that only moved a field made the record look edited, so
+   the write stamp gave every vendor a new updatedAt on each pull while someone was at the computer, and the other
+   computer did the same back */
+function _rsigRep(k, v){ return (k && STAMP.test(k)) ? undefined : v; }
+function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
 var ownStamp = {};   /* stamps this computer wrote */
 function recIdOf(r){ return (r && typeof r==='object' && !Array.isArray(r)) ? (r.id!=null && r.id!=='' ? String(r.id) : (r._id!=null && r._id!=='' ? String(r._id) : null)) : null; }
 function isRecList(a){ return Array.isArray(a) && a.length && a.every(function(x){ return x==null || (typeof x==='object' && !Array.isArray(x)); }); }
