@@ -112418,6 +112418,13 @@ function sig(e){
   }catch(_e){ return Math.random()+''; }
 }
 function stamp(e){ return String((e&&(e.firstSavedAt||e.savedAt||e.date||''))||''); }
+var SIGM={}, SIGM_AT=Date.now();   /* patch LEADPERF-2: one signature per estimate version (it stringified every line, for every job, every few seconds) */
+function sigM(e){
+  if(Date.now()-SIGM_AT>60000){ SIGM={}; SIGM_AT=Date.now(); }
+  var L=(Array.isArray(e.lines)&&e.lines.length)?e.lines:null;
+  var key=[e.id, e.savedAt||'', e.updatedAt||'', e.firstSavedAt||'', e.name||'', e.num||e.po||'', e.totalCharge||e.total||'', L?L.length:-1, (e.mats||[]).length, (e.labor||[]).length, (e.materials||[]).length, (e.subs||[]).length].join('\u0001');
+  var v=SIGM[key]; if(v===undefined){ v=sig(e); SIGM[key]=v; } return v;
+}
 function fold(list, why){
   if(!Array.isArray(list)) return list;
   var byId={}; list.forEach(function(e){ if(e&&e.id) byId[e.id]=e; });
@@ -112433,7 +112440,7 @@ function fold(list, why){
   list.forEach(function(e){
     if(!e||!e.id||hide[e.id]) return;
     if(!(Array.isArray(e.lines)&&e.lines.length) && !(Array.isArray(e.mats)&&e.mats.length) && !(Array.isArray(e.labor)&&e.labor.length)) return;   /* an empty stub is left alone */
-    var k=sig(e); var prev=bySig[k];
+    var k=sigM(e); var prev=bySig[k];   /* patch LEADPERF-2 */
     if(!prev){ bySig[k]=e; return; }
     var keep = (stamp(prev)<=stamp(e)) ? prev : e; var drop = (keep===prev)?e:prev;
     bySig[k]=keep; hide[drop.id]=1; reasons[drop.id]='the same bid as '+keep.id+' (same job, number, lines and price)';
@@ -125735,6 +125742,7 @@ function bwRender(el){
 /* the ⚙ on the Lead Inbox opens / closes the 🔎 Bid boards section at the top of the Leads tab */
 function dlgSettings(){
   if (!isAdmin()) return;
+  if (window._gcLeadSettings && typeof window._gcLeadSettings.open === 'function') { var old0 = document.getElementById('gc-bw-sec'); if (old0) old0.remove(); window._gcLeadSettings.open(); return; }   /* patch LEADPERF-2: ⚙ Lead settings drawer, never inline */
   var sec = document.getElementById('gc-bw-sec');
   if (sec && sec.isConnected) { sec.remove(); return; }
   bwCss();
@@ -162650,9 +162658,11 @@ function pullLeads(){
 }
 var LEADS_SIG = '';
 function rawLeads(){ if (view() === 'leads') pullLeads(); var c = arr(crm().leads); return LEADS_NOW && (LEADS_NOW.length >= c.length || !c.length) ? LEADS_NOW : c; }
-function leads(){ return rawLeads().filter(function(l){ return !dead(l) && !archivedL(l); }); }   /* patch LCLEAN: archived leads leave every list */
-function inboxItems(){ var k = lsGet('gc_ldi_cache_v2', null); return arr(k && k.items); }
-function inboxOf(l){ var id = s(l && l.inboxId); if (!id) return null; return inboxItems().filter(function(x){ return x && x.id === id; })[0] || null; }
+var LD_C = { ref: null, at: 0, v: [] };   /* patch LEADPERF-2: the same list (within 1 s) → the same answer; a copy, so a caller's sort cannot touch it */
+function leads(){ var r = rawLeads(); if (r !== LD_C.ref || Date.now() - LD_C.at > 1000) { LD_C.ref = r; LD_C.at = Date.now(); LD_C.v = r.filter(function(l){ return !dead(l) && !archivedL(l); }); } return LD_C.v.slice(); }   /* patch LCLEAN: archived leads leave every list */
+var IB_C = { raw: null, v: [], by: {} };   /* patch LEADPERF-2: the inbox cache parsed once per change (it was parsed for every card) */
+function inboxItems(){ var raw = null; try { raw = localStorage.getItem('gc_ldi_cache_v2'); } catch (e) {} if (raw !== IB_C.raw) { IB_C.raw = raw; var k = null; try { k = raw ? JSON.parse(raw) : null; } catch (e) {} IB_C.v = arr(k && k.items); IB_C.by = {}; IB_C.v.forEach(function(x){ if (x && x.id && !IB_C.by[x.id]) IB_C.by[x.id] = x; }); } return IB_C.v; }
+function inboxOf(l){ var id = s(l && l.inboxId); if (!id) return null; inboxItems(); return IB_C.by[id] || null; }
 var STAGES = ['New Lead', 'Contacted', 'Site Visit', 'Estimate Sent', 'Negotiating', 'Won', 'Lost'];
 var STAGE_IC = { 'New Lead': '🆕', 'Contacted': '📞', 'Site Visit': '📍', 'Estimate Sent': '📐', 'Negotiating': '🤝', 'Won': '🏆', 'Lost': '✖' };
 function stageOf(l){ var st = s(l.stage); if (STAGES.indexOf(st) >= 0) return st; if (/^(new|lead|)$/i.test(st)) return 'New Lead'; if (/won/i.test(st)) return 'Won'; if (/lost|dead|no ?bid|declin/i.test(st)) return 'Lost'; if (/submit|sent|bid/i.test(st)) return 'Estimate Sent'; return 'Contacted'; }
@@ -162990,9 +163000,9 @@ function hubHtml(){
   if (UI.type && TYPE_OLD[UI.type]) UI.type = TYPE_OLD[UI.type];
   if (UI.src) UI.src = srcLabel(UI.src);
   var who = [{ v: '__me', t: 'Mine' }, { v: '__mybids', t: '📐 My bids (estimator)' }].concat(people().map(function(n){ return { v: n, t: n }; }));
-  var tabs = [['board', '🗂 Board'], ['list', '📋 List'], ['cal', '📅 Calendar'], ['map', '🗺 Map'], ['boards', '🔎 Bid boards']];
+  var tabs = [['board', '🗂 Board'], ['list', '📋 List'], ['cal', '📅 Calendar'], ['map', '🗺 Map']];   /* patch LEADPERF-2: the bid boards set-up is behind ⚙ Lead settings */
   return '<div class="gcl-top"><h2>◈ Leads</h2><div class="gcl-tabs" role="tablist">' + tabs.map(function(t){ return '<button type="button" role="tab" data-gcl-v="' + t[0] + '" class="' + (UI.v === t[0] ? 'on' : '') + '" aria-selected="' + (UI.v === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>'
-    + '<span style="flex:1"></span><button type="button" class="gcl-tabs-x" data-gcl-new style="border:0;background:#d4a017;color:#1b1640;border-radius:8px;padding:8px 14px;font:700 13px Arial;cursor:pointer">＋ New lead</button></div>'
+    + '<span style="flex:1"></span>' + (isAdmin() ? '<button type="button" class="gcl-tabs-x" data-gcl-settings title="Bid boards, keywords &amp; switches, Check public bids now, Set-up (admins)" style="border:1px solid #cfc8ea;background:#fff;color:#241968;border-radius:8px;padding:8px 12px;font:700 13px Arial;cursor:pointer;margin-right:6px">⚙ Lead settings</button>' : '') + '<button type="button" class="gcl-tabs-x" data-gcl-new style="border:0;background:#d4a017;color:#1b1640;border-radius:8px;padding:8px 14px;font:700 13px Arial;cursor:pointer">＋ New lead</button></div>'
     + '<div class="gcl-kpis">' + ks.map(function(k){ return '<button type="button" class="gcl-kpi ' + (k.c || '') + '" data-gcl-kpi="' + k.k + '" title="' + esc(k.t || '') + '"><b>' + esc(k.n) + '</b><span>' + esc(k.l) + '</span></button>'; }).join('') + '</div>'
     + (UI.v === 'boards' ? '' : '<div class="gcl-fil"><span class="gcl-tabs gcl-preset" role="group" aria-label="Which leads"><button type="button" data-gcl-preset="all" class="' + (UI.preset !== 'bids' ? 'on' : '') + '" aria-pressed="' + (UI.preset !== 'bids') + '">All open leads</button><button type="button" data-gcl-preset="bids" class="' + (UI.preset === 'bids' ? 'on' : '') + '" aria-pressed="' + (UI.preset === 'bids') + '" title="Commercial / government bids: leads@ bid mail, bid boards, SAM.gov, BuildingConnected, PlanHub, planrooms, GCs">📐 Bids</button></span>' + '<button type="button" class="gcl-mv gcl-imp' + (UI.sort === 'prio' ? ' on' : '') + '" data-gcl-imp aria-pressed="' + (UI.sort === 'prio') + '" title="Priority 10 → 1; the same priority by bid due date (soonest first); then the newest. Tap again for newest received first.">⭐ Most important first</button>'   /* patch HOT2 */
       + '<input type="search" placeholder="Search leads, people, addresses, bid #…" data-gcl-f="q" value="' + esc(UI.q) + '">'
@@ -163041,7 +163051,7 @@ function bodyHtml(){
       else if (UI.preset === 'bids') cs.sort(function(a, b){ return receivedMs(b) - receivedMs(a); });   /* patch HOT2: bids newest received first */
       else cs.sort(function(a, b){ var da = dueMs(a), db = dueMs(b); if (isFinite(da) !== isFinite(db)) return isFinite(da) ? -1 : 1; if (isFinite(da)) return da - db; return born(b) - born(a); });
       var tot = cs.reduce(function(t, l){ return t + value(l); }, 0);
-      return '<div class="gcl-col" data-gcl-stage="' + esc(st) + '"><h4><span>' + STAGE_IC[st] + ' ' + esc(st) + ' (' + cs.length + ')</span><small>' + (tot ? money(tot) : '') + '</small></h4>' + cs.slice(0, 80).map(cardHtml).join('') + (cs.length > 80 ? '<div class="note">+' + (cs.length - 80) + ' more — use the List</div>' : '') + '</div>';
+      return '<div class="gcl-col" data-gcl-stage="' + esc(st) + '"><h4><span>' + STAGE_IC[st] + ' ' + esc(st) + ' (' + cs.length + ')</span><small>' + (tot ? money(tot) : '') + '</small></h4>' + cs.slice(0, lim('col:' + st, COLPAGE)).map(cardHtml).join('') + moreBtn('col:' + st, cs.length, COLPAGE)   /* patch LEADPERF-2 */ + '</div>';
     }).join('') + '</div>';
   }
   if (UI.v === 'list') {
@@ -163052,8 +163062,8 @@ function bodyHtml(){
     var npk = Object.keys(PICK).filter(function(id){ return PICK[id] && list.some(function(l){ return l.id === id; }); }).length;   /* patch LROLEVIEW: bulk assign */
     return (canAssignAll() ? '<div class="gcl-fil" style="margin:0 0 6px"><button type="button" class="gcl-mv" data-gcl-pickall>☑ Select all shown / none</button><button type="button" class="gcl-mv gcl-asg" data-gcl-bulkasg' + (npk ? '' : ' disabled') + '>👤 Assign selected (' + npk + ')…</button></div>' : '')
       + '<div class="gcl-wrap"><table class="gcl-list"><thead><tr>' + cols.map(function(c){ return '<th data-gcl-sort="' + c[0] + '">' + c[1] + (UI.sort === c[0] ? (UI.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
-      + list.slice(0, 400).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>') + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
-      + '</tbody></table></div>' + (list.length ? '' : '<p style="color:#666">No leads match.</p>');
+      + list.slice(0, lim('list')).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>') + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
+      + '</tbody></table></div>' + moreBtn('list', list.length) + (list.length ? '' : '<p style="color:#666">No leads match.</p>');   /* patch LEADPERF-2 */
   }
   if (UI.v === 'cal') {
     var base = UI.cal ? new Date(UI.cal + '-01T12:00:00') : new Date(); base.setDate(1);
@@ -163078,9 +163088,18 @@ function bodyHtml(){
 }
 
 var HUB_SIG = '', FORCE = false;
+/* patch LEADPERF-2: how many rows / cards are drawn (the rest one click — or, in the List, one scroll — away) */
+var MORE = {}, PAGE = 100, COLPAGE = 30;
+function lim(k, p){ return MORE[k] || p || PAGE; }
+function moreBtn(k, n, p){ var m = lim(k, p); if (n <= m) return ''; var step = p || PAGE; return '<button type="button" class="gcl-mv gcl-more" data-gcl-more="' + esc(k) + '" data-gcl-step="' + step + '" style="display:block;width:100%;margin:6px 0">Show ' + Math.min(step, n - m) + ' more (' + (n - m) + ' not shown)</button>'; }
+function watchMore(hub){
+  try { var sen = hub.querySelector('.gcl-more[data-gcl-more="list"]'); if (hub.__gcIO && hub.__gcIOel !== sen) { hub.__gcIO.disconnect(); hub.__gcIO = null; } if (!sen || hub.__gcIO || !W.IntersectionObserver) return;
+    hub.__gcIOel = sen; hub.__gcIO = new IntersectionObserver(function(es){ if (!es.some(function(e){ return e.isIntersecting; })) return; hub.__gcIO.disconnect(); hub.__gcIO = null; MORE.list = lim('list') + PAGE; later(redraw, 0); }, { rootMargin: '400px' }); hub.__gcIO.observe(sen); } catch (e) {}
+}
 function mount(){
-  if (view() !== 'leads') { var old = D.getElementById('gc-leads-hub'); if (old) old.remove(); D.body.classList.remove('gcl-noclassic'); return; }
+  if (view() !== 'leads') { var old = D.getElementById('gc-leads-hub'); if (old) old.remove(); D.body.classList.remove('gcl-noclassic'); if (D.getElementById('gcl-settings')) closeSettings(); return; }
   syncUI();   /* patch HOT2: whose view (and View as) */
+  if (UI.v === 'boards') { UI.v = 'board'; saveUI(); }   /* patch LEADPERF-2: no Bid boards tab (⚙ Lead settings) */
   var a = anchor(); if (!a || !a.parentElement) return;
   css();
   var hub = D.getElementById('gc-leads-hub');
@@ -163095,10 +163114,12 @@ function mount(){
   var ae = D.activeElement, typing = ae && hub.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
   var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
-  var sig = JSON.stringify([UI, Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, leads().length, leads().reduce(function(m, l){ var u = s(l.updatedAt); return u > m ? u : m; }, ''), inboxItems().length, unassignedCount(), Math.floor(Date.now() / 60000)]);
+  var LL = leads(), mx = '';   /* patch LEADPERF-2: one pass */
+  for (var li = 0; li < LL.length; li++) { var u0 = s(LL[li].updatedAt); if (u0 > mx) mx = u0; }
+  var sig = JSON.stringify([UI, MORE, Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, LL.length, mx, inboxItems().length, unassignedCount(), Math.floor(Date.now() / 60000)]);
   if (sig === HUB_SIG) return;
   HUB_SIG = sig;
-  var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; }); }   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
+  var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; }); watchMore(hub); }   /* patch LEADPERF-2: watchMore */   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
   if (refocus) { var el = hub.querySelector('[data-gcl-f="' + refocus + '"]'); if (el) { try { el.focus(); if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} } }
   if (UI.v === 'boards' && typeof W._gcRenderBidBoards === 'function') { try { W._gcRenderBidBoards(hub.querySelector('#gcl-boards')); } catch (e) { warn(e); } }
 }
@@ -163130,8 +163151,10 @@ function newLead(){
 var dragId = '', QT = 0;
 function bind(hub){
   hub.addEventListener('click', function(ev){
-    var t = ev.target.closest ? ev.target.closest('[data-gcl-v],[data-gcl-preset],[data-gcl-exp],[data-gcl-imp],[data-gcl-kpi],[data-gcl-sort],[data-gcl-cal],[data-gcl-map],[data-gcl-contact],[data-gcl-classic],[data-gcl-new],[data-gcl-id]') : null;
+    var t = ev.target.closest ? ev.target.closest('[data-gcl-settings],[data-gcl-more],[data-gcl-v],[data-gcl-preset],[data-gcl-exp],[data-gcl-imp],[data-gcl-kpi],[data-gcl-sort],[data-gcl-cal],[data-gcl-map],[data-gcl-contact],[data-gcl-classic],[data-gcl-new],[data-gcl-id]') : null;
     if (!t || t.tagName === 'SELECT') return;
+    if (t.hasAttribute('data-gcl-settings')) { openSettings(); return; }   /* patch LEADPERF-2 */
+    if (t.hasAttribute('data-gcl-more')) { var mk = t.getAttribute('data-gcl-more'), stp = +t.getAttribute('data-gcl-step') || PAGE; MORE[mk] = lim(mk, stp) + stp; return redraw(); }
     if (t.hasAttribute('data-gcl-v')) { UI.v = t.getAttribute('data-gcl-v'); saveUI(); return redraw(); }
     if (t.hasAttribute('data-gcl-preset')) { UI.preset = t.getAttribute('data-gcl-preset') === 'bids' ? 'bids' : 'all'; if (UI.preset === 'bids') { UI.sort = 'born'; UI.dir = -1; } saveUI(); return redraw(); }   /* patch HOT2 */
     if (t.hasAttribute('data-gcl-exp')) { UI.exp = !UI.exp; saveUI(); return redraw(); }
@@ -163241,6 +163264,26 @@ function loadOf(name){
 }
 
 /* ── the lead drawer ──────────────────────────────────────────────────────── */
+/* patch LEADPERF-2: ⚙ Lead settings — the bid boards (keywords & switches, Check public bids now, Set-up) in a side drawer
+   an admin opens; drawn once when opened, never on the Leads page itself and never again on a hub redraw */
+function closeSettings(){ var d = D.getElementById('gcl-settings'), sh = D.getElementById('gcl-settings-shade'); if (d) Element.prototype.remove.call(d); if (sh) Element.prototype.remove.call(sh); }
+function openSettings(){
+  if (!isAdmin()) return null;
+  closeSettings();
+  var sh = D.createElement('div'); sh.id = 'gcl-settings-shade'; sh.setAttribute('data-gc-keep', '1'); sh.style.cssText = 'position:fixed;inset:0;background:rgba(20,16,50,.35);z-index:2147483000';
+  var d = D.createElement('aside'); d.id = 'gcl-settings'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.setAttribute('aria-label', 'Lead settings');
+  d.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:min(600px,100vw);background:#fff;z-index:2147483001;box-shadow:-8px 0 30px rgba(0,0,0,.25);display:flex;flex-direction:column;font:14px/1.4 Arial,sans-serif;color:#1b1640';
+  d.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #e7e3f5;background:#f7f5fc"><b style="flex:1;font-size:16px">⚙ Lead settings</b><span style="font-size:12px;color:#57527a">bid boards · keywords · set-up</span><button type="button" data-gcl-setx aria-label="Close" style="border:1px solid #cfc8ea;background:#fff;border-radius:7px;padding:6px 11px;font-weight:700;cursor:pointer;min-height:36px">✕</button></div><div class="gcl-set-body" style="flex:1;overflow:auto;padding:12px 14px;-webkit-overflow-scrolling:touch"></div>';
+  D.body.appendChild(sh); D.body.appendChild(d);
+  sh.onclick = closeSettings; d.querySelector('[data-gcl-setx]').onclick = closeSettings;
+  var body = d.querySelector('.gcl-set-body');
+  if (typeof W._gcRenderBidBoards === 'function') { try { W._gcRenderBidBoards(body); } catch (e) { warn(e); } }
+  else body.innerHTML = '<p style="color:#666">The bid boards manager is still loading — close this and open it again in a moment.</p>';
+  try { d.querySelector('[data-gcl-setx]').focus(); } catch (e) {}
+  return d;
+}
+D.addEventListener('keydown', function(e){ if (e.key === 'Escape' && D.getElementById('gcl-settings')) closeSettings(); });
+W._gcLeadSettings = { open: openSettings, close: closeSettings };
 function closeDrawer(){ var d = D.getElementById('gcl-drawer'), sh = D.getElementById('gcl-shade'); held(function(){ try { if (d && d.contains(D.activeElement)) D.activeElement.blur(); } catch (e) {} if (d) Element.prototype.remove.call(d); if (sh) Element.prototype.remove.call(sh); }); UI.open = ''; }
 var SC = { mode: 'manual', text: '', busy: false, err: '' };
 var ESTS = null, ESTS_AT = 0;
@@ -163638,6 +163681,7 @@ function tick(){ try { if (D.hidden) return; css(); mount(); navBadge(); if (vie
    back for long stretches (a busy screen, a typing hand), and a new bid must not wait on that. Cheap off the Leads tab. */
 function autoLoop(){ try { if (!D.hidden) autoAssignBids(); } catch (e) { warn(e); } later(autoLoop, 3000); }
 later(autoLoop, 3000);
+W._gcLeadsHub.tick = tick;   /* patch LEADPERF-2: the perf gate times the idle tick */
 RI.call(W, tick, 1500); later(tick, 600);
 })();
 
