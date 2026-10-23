@@ -5058,7 +5058,7 @@ return"Other"},[Gs,__i0]=ce.useState([]),_i=(v)=>__i0(p=>{const r=typeof v==="fu
       return;
     }
   }catch(_e){}
-  du.add(k);x.current[k](_vv);setTimeout(function(){du.delete(k)},1000)}}}catch(e){}},[]),ce.useEffect(()=>{if(!(!c||!f)){if(!window.supabase){console.warn("Supabase JS not loaded");return}m("connecting");try{const{createClient:g}=window.supabase;ol=g(c,f,{realtime:{params:{eventsPerSecond:10}}}),ol.from("app_data").select("key",{count:"exact",head:!0}).then(({error:H,count:_})=>{if(H){window._cloudOK=!1;m("error"),console.error("Supabase connection error:",H);return}window._cloudOK=!0;m("connected"),_===0?(console.log("Cloud empty — pushing local data..."),Gx.forEach(async Q=>{const y=await sl(Q,null);y!==null&&(Array.isArray(y)?y.length>0:Object.keys(y).length>0)&&Kx(Q,y)})):ol.from("app_data").select("key,value").then(({data:Q})=>{Q&&Q.length>0&&Q.forEach(({key:y,value:T})=>{if(window._isDirty&&window._isDirty(y)){Gx.has(y)&&sl(y,null).then(function(lv){(lv!=null&&(!Array.isArray(lv)||lv.length>0))&&Kx(y,lv)});return;}if((Array.isArray(T)&&T.length===0)||(T&&typeof T==="object"&&!Array.isArray(T)&&Object.keys(T).length===0))return;x.current[y]&&(du.add(y),x.current[y](window._syncVal?window._syncVal(y,T):T),td(y,window._syncVal?window._syncVal(y,T):T)),(y==="priceEdits"||y==="customProducts")&&sl("priceEdits",{}).then(L=>{sl("customProducts",[]).then(Y=>{const We=y==="priceEdits"?T:L,B=y==="customProducts"?T:Y,U=ll.map(Z=>We[Z.id]!==void 0?{...Z,cost:We[Z.id]}:Z);Ia([...U,...B])})})})})});const te=ol.channel("grayco-sync").on("postgres_changes",{event:"*",schema:"public",table:"app_data"},H=>{try{if(H.eventType==="DELETE")return;const{key:_,value:Q}=H.new;if(window._isDirty&&window._isDirty(_))return;if((Array.isArray(Q)&&Q.length===0)||(Q&&typeof Q==="object"&&!Array.isArray(Q)&&Object.keys(Q).length===0))return;if(window._gcSyncSafe&&!window._gcSyncSafe(_,Q))return;try{window.__gcRTLast=window.__gcRTLast||{};var __rtj=JSON.stringify(Q);if(window.__gcRTLast[_]===__rtj)return;window.__gcRTLast[_]=__rtj;}catch(__e){}du.add(_),(function(){try{if(window._gcApplyTombstoneFilter)Q=window._gcApplyTombstoneFilter(_,Q);}catch(__tf){}})(),x.current[_]&&(((window._gcHoldAnyRerender&&window._gcHoldAnyRerender())||((_==="projects"||_==="invs"||_==="schedule")&&window._gcHoldProjectsRerender&&window._gcHoldProjectsRerender()))?window._gcDeferApply(_,Q,function(v){x.current[_]&&(x.current[_](v),td(_,v));}):(x.current[_](Q),td(_,Q))),(_==="priceEdits"||_==="customProducts")&&sl("priceEdits",{}).then(y=>{sl("customProducts",[]).then(T=>{const L=_==="priceEdits"?Q:y,Y=_==="customProducts"?Q:T,We=ll.map(B=>L[B.id]!==void 0?{...B,cost:L[B.id]}:B);Ia([...We,...Y])})})}catch(_err){}}).subscribe();return()=>{te.unsubscribe(),ol=null}}catch(g){m("error"),console.error("Supabase init error:",g)}}},[c,f]);const se=ce.useCallback(g=>{Fe(g),setTimeout(()=>Fe(null),3e3)},[]),mu=g=>{var te;return n&&((te=Ux[window._gcRoleOf?window._gcRoleOf(n):n.role])==null?void 0:te.includes(g))},sr=n,yi=(n==null?void 0:(window._gcRoleOf?window._gcRoleOf(n):n.role))==="Admin"&&s?An.find(g=>g.id===s&&g.role!=="Admin"):null,vo=yi||n,Xi=g=>{document.activeElement&&document.activeElement.blur&&document.activeElement.blur();D(g),Ae(null),Pe(null),Et("")},yo=g=>{const te=Wt.find(H=>H.id===g);return(te==null?void 0:te.autoPO)||""},ec=()=>Wt.map(g=>({v:g.id,l:`${g.name}${g.autoPO?" ("+g.autoPO+")":""}`})),ko=g=>[{v:"",l:g||"Select..."},...ec()],or=({pid:g,big:te})=>{const H=yo(g);return H?e.jsxs("span",{onClick:_=>{_.stopPropagation(),navigator.clipboard.writeText(H).then(()=>se("PO "+H+" copied")).catch(()=>{})},title:"Click to copy PO "+H,style:{fontFamily:"monospace",padding:te?"4px 10px":"2px 7px",borderRadius:4,background:"#2563eb15",color:"#2563eb",fontSize:te?13:10,fontWeight:800,whiteSpace:"nowrap",border:"1px solid #2563eb30",cursor:"pointer"},children:["PO: ",H]}):null},xr={k:"po",l:"PO#",r:g=>{const te=g.po||yo(g.pid);return te?e.jsx("b",{onClick:()=>{navigator.clipboard.writeText(te).then(()=>se("PO "+te+" copied")).catch(()=>{})},title:"Click to copy "+te,style:{fontFamily:"monospace",color:"#2563eb",fontSize:12,background:"#2563eb10",padding:"2px 6px",borderRadius:3,border:"1px solid #2563eb25",cursor:"pointer"},children:te}):e.jsx("span",{style:{color:u.tx3},children:"—"})}},Dr={k:"proj",l:"Project",r:g=>{const te=Wt.find(H=>H.id===g.pid);return te?e.jsxs("span",{children:[te.name," ",e.jsx(__gcStable("or",or),{pid:g.pid})]}):"—"}},Wi=ce.useMemo(()=>{const g=new Map;return Ot.forEach(te=>{te.name&&g.set(te.name.toLowerCase(),{...te,source:"db"})}),Wt.forEach(te=>{if(!te.client)return;const H=te.client.toLowerCase();if(!g.has(H))g.set(H,{id:$t("CUS"),name:te.client,phone:te.clientPhone||"",email:te.clientEmail||"",address:te.address||"",company:"",type:"homeowner",gcInfo:{pm:"",pmPhone:"",pmEmail:"",billingContact:"",billingEmail:"",billingPhone:"",billingAddress:"",payTerms:""},notes:"",created:te.created||Lt(),by:te.pm||"",source:"project"});else{const _=g.get(H);!_.phone&&te.clientPhone&&(_.phone=te.clientPhone),!_.email&&te.clientEmail&&(_.email=te.clientEmail),!_.address&&te.address&&(_.address=te.address)}}),rr.forEach(te=>{if(!te.client)return;const H=te.client.toLowerCase();g.has(H)||g.set(H,{id:$t("CUS"),name:te.client,phone:te.phone||"",email:te.email||"",address:te.address||"",company:"",type:"homeowner",gcInfo:{pm:"",pmPhone:"",pmEmail:"",billingContact:"",billingEmail:"",billingPhone:"",billingAddress:"",payTerms:""},notes:"",created:te.created||Lt(),by:"",source:"lead"})}),Array.from(g.values()).sort((te,H)=>te.name.localeCompare(H.name))},[Ot,Wt,rr]),So=g=>{Jt(te=>{const H=te.findIndex(_=>_.id===g.id||_.name.toLowerCase()===g.name.toLowerCase());if(H>=0){const _=[...te];return _[H]={..._[H],...g},_}return[...te,{...g,id:g.id||$t("CUS"),created:g.created||Lt()}]})},os="cl-"+Math.random().toString(36).slice(2,8),Nf=g=>Wi.find(te=>te.name.toLowerCase()===(g==null?void 0:g.toLowerCase())),Po=(g,te,H,_)=>e.jsxs("div",{style:{position:"relative"},children:[e.jsx("input",{list:os,style:{...R,width:"100%"},value:g||"",placeholder:_||"Type or select customer",onChange:Q=>{te(Q.target.value);const y=Nf(Q.target.value);y&&H&&H(y)}}),e.jsx("datalist",{id:os,children:Wi.map(Q=>e.jsxs("option",{value:Q.name,children:[Q.name,Q.phone?" — "+Q.phone:"",Q.company?" ("+Q.company+")":""]},Q.id))})]}),bo=Bf,[Hf,fl]=ce.useState(!1),[Ds,tc]=ce.useState(null),Ks={"Residential Reno":{label:"Residential Renovation",inclusions:["All materials, labor & subcontractor work as described in scope","Project management from start to finish by your dedicated PM","All required building permits & inspections","Daily job site cleanup & final professional cleaning","Dumpster rental & debris haul-off","Photo documentation throughout the project via CompanyCam","1-year workmanship warranty on all labor (manufacturer warranties on materials are separate)","Manufacturer warranties on all materials (see warranty page)"],exclusions:["Structural modifications beyond scope described","Appliance purchases (unless specified in scope)","Unforeseen conditions behind walls/floors (addressed via Change Order)","Landscaping, exterior work, or HVAC modifications (unless specified)"],commPromise:["Daily photo updates in your GrayCo customer portal — view your project anytime","Same-day response to all calls, texts, and emails","Immediate notification of any schedule changes or issues","Pre-construction meeting before Day 1 to review everything"],schedNotes:["Schedule is weather-dependent — rain days may extend timeline.","Customer selections must be finalized before rough-in to avoid delays.","Daily work hours: Monday–Friday, 8:00 AM – 5:00 PM.","Daily progress photos in your GrayCo customer portal at any time."],payNotes:["This proposal is valid for 30 days from the date above.","Payment terms: Net 30 from invoice date unless otherwise agreed in writing.","Changes to scope documented via written Change Order — approved before work begins.","Unforeseen conditions (rot, mold, structural) communicated immediately with options.","We accept check, ACH, Zelle, or credit card (3% CC processing fee applies).","Final walkthrough with PM before final payment is due."],contract:`CONSTRUCTION AGREEMENT
+  du.add(k);x.current[k](_vv);setTimeout(function(){du.delete(k)},1000)}}}catch(e){}},[]),ce.useEffect(()=>{if(!(!c||!f)){if(!window.supabase){console.warn("Supabase JS not loaded");return}m("connecting");try{const{createClient:g}=window.supabase;ol=g(c,f,{realtime:{params:{eventsPerSecond:10}}}),ol.from("app_data").select("key",{count:"exact",head:!0}).then(({error:H,count:_})=>{if(H){window._cloudOK=!1;m("error"),console.error("Supabase connection error:",H);return}window._cloudOK=!0;m("connected"),_===0?(console.log("Cloud empty — pushing local data..."),Gx.forEach(async Q=>{const y=await sl(Q,null);y!==null&&(Array.isArray(y)?y.length>0:Object.keys(y).length>0)&&Kx(Q,y)})):ol.from("app_data").select("key,value").then(({data:Q})=>{Q&&Q.length>0&&Q.forEach(({key:y,value:T})=>{if(window._isDirty&&window._isDirty(y)){Gx.has(y)&&sl(y,null).then(function(lv){(lv!=null&&(!Array.isArray(lv)||lv.length>0))&&Kx(y,lv)});return;}if((Array.isArray(T)&&T.length===0)||(T&&typeof T==="object"&&!Array.isArray(T)&&Object.keys(T).length===0))return;x.current[y]&&(du.add(y),x.current[y](window._syncVal?window._syncVal(y,T):T),td(y,window._syncVal?window._syncVal(y,T):T)),(y==="priceEdits"||y==="customProducts")&&sl("priceEdits",{}).then(L=>{sl("customProducts",[]).then(Y=>{const We=y==="priceEdits"?T:L,B=y==="customProducts"?T:Y,U=ll.map(Z=>We[Z.id]!==void 0?{...Z,cost:We[Z.id]}:Z);Ia([...U,...B])})})})})});const te=ol.channel("grayco-sync").on("postgres_changes",{event:"*",schema:"public",table:"app_data"},H=>{try{if(H.eventType==="DELETE")return;const{key:_,value:Q}=H.new;if(window._isDirty&&window._isDirty(_))return;if((Array.isArray(Q)&&Q.length===0)||(Q&&typeof Q==="object"&&!Array.isArray(Q)&&Object.keys(Q).length===0))return;if(window._gcSyncSafe&&!window._gcSyncSafe(_,Q))return;try{window.__gcRTLast=window.__gcRTLast||{};var __rtj=JSON.stringify(Q);if(window.__gcRTLast[_]===__rtj)return;window.__gcRTLast[_]=__rtj;}catch(__e){}du.add(_),(function(){try{if(window._gcApplyTombstoneFilter)Q=window._gcApplyTombstoneFilter(_,Q);}catch(__tf){}})(),x.current[_]&&(((window._gcHoldAnyRerender&&window._gcHoldAnyRerender())||((_==="projects"||_==="invs"||_==="schedule")&&window._gcHoldProjectsRerender&&window._gcHoldProjectsRerender()))?window._gcDeferApply(_,Q,function(v){x.current[_]&&(x.current[_](v),td(_,v));}):(x.current[_](Q),td(_,Q))),(_==="priceEdits"||_==="customProducts")&&sl("priceEdits",{}).then(y=>{sl("customProducts",[]).then(T=>{const L=_==="priceEdits"?Q:y,Y=_==="customProducts"?Q:T,We=ll.map(B=>L[B.id]!==void 0?{...B,cost:L[B.id]}:B);Ia([...We,...Y])})})}catch(_err){}}).subscribe();return()=>{te.unsubscribe(),ol=null}}catch(g){m("error"),console.error("Supabase init error:",g)}}},[c,f]);const se=ce.useCallback(g=>{Fe(g),setTimeout(()=>Fe(null),3e3)},[]),mu=g=>{var te;return n&&((te=Ux[window._gcRoleOf?window._gcRoleOf(n):n.role])==null?void 0:te.includes(g))},sr=n,yi=(n==null?void 0:(window._gcRoleOf?window._gcRoleOf(n):n.role))==="Admin"&&s?An.find(g=>g.id===s&&g.role!=="Admin"):null,vo=yi||n,Xi=g=>{document.activeElement&&document.activeElement.blur&&document.activeElement.blur();D(g),Ae(null),Pe(null),Et("")},yo=g=>{const te=Wt.find(H=>H.id===g);return(te==null?void 0:te.autoPO)||""},ec=()=>Wt.map(g=>({v:g.id,l:`${g.name}${g.autoPO?" ("+g.autoPO+")":""}`})),ko=g=>[{v:"",l:g||"Select..."},...ec()],or=({pid:g,big:te})=>{const H=yo(g);return H?e.jsxs("span",{onClick:_=>{_.stopPropagation(),navigator.clipboard.writeText(H).then(()=>se("PO "+H+" copied")).catch(()=>{})},title:"Click to copy PO "+H,style:{fontFamily:"monospace",padding:te?"4px 10px":"2px 7px",borderRadius:4,background:"#2563eb15",color:"#2563eb",fontSize:te?13:10,fontWeight:800,whiteSpace:"nowrap",border:"1px solid #2563eb30",cursor:"pointer"},children:["PO: ",H]}):null},xr={k:"po",l:"PO#",r:g=>{const te=g.po||yo(g.pid);return te?e.jsx("b",{onClick:()=>{navigator.clipboard.writeText(te).then(()=>se("PO "+te+" copied")).catch(()=>{})},title:"Click to copy "+te,style:{fontFamily:"monospace",color:"#2563eb",fontSize:12,background:"#2563eb10",padding:"2px 6px",borderRadius:3,border:"1px solid #2563eb25",cursor:"pointer"},children:te}):e.jsx("span",{style:{color:u.tx3},children:"—"})}},Dr={k:"proj",l:"Project",r:g=>{const te=Wt.find(H=>H.id===g.pid);return te?e.jsxs("span",{children:[te.name," ",e.jsx(__gcStable("or",or),{pid:g.pid})]}):"—"}},Wi=ce.useMemo(()=>{const g=new Map;return Ot.forEach(te=>{te.name&&g.set(te.name.toLowerCase(),{...te,source:"db"})}),Wt.forEach(te=>{if(!te.client)return;const H=te.client.toLowerCase();if(!g.has(H))g.set(H,{id:$t("CUS"),name:te.client,phone:te.clientPhone||"",email:te.clientEmail||"",address:te.address||"",company:"",type:"homeowner",gcInfo:{pm:"",pmPhone:"",pmEmail:"",billingContact:"",billingEmail:"",billingPhone:"",billingAddress:"",payTerms:""},notes:"",created:te.created||Lt(),by:te.pm||"",source:"project"});else{const _=g.get(H);!_.phone&&te.clientPhone&&(_.phone=te.clientPhone),!_.email&&te.clientEmail&&(_.email=te.clientEmail),!_.address&&te.address&&(_.address=te.address)}}),rr.forEach(te=>{if(!te.client)return;const H=te.client.toLowerCase();g.has(H)||g.set(H,{id:$t("CUS"),name:te.client,phone:te.phone||"",email:te.email||"",address:te.address||"",company:"",type:"homeowner",gcInfo:{pm:"",pmPhone:"",pmEmail:"",billingContact:"",billingEmail:"",billingPhone:"",billingAddress:"",payTerms:""},notes:"",created:te.created||Lt(),by:"",source:"lead"})}),Array.from(g.values()).sort((te,H)=>te.name.localeCompare(H.name))},[Ot,Wt,rr]),So=g=>{Jt(te=>{const H=te.findIndex(_=>_.id===g.id||_.name.toLowerCase()===g.name.toLowerCase());if(H>=0){const _=[...te];return _[H]={..._[H],...g},_}return[...te,{...g,id:g.id||$t("CUS"),created:g.created||Lt()}]})},os="cl-gccust",Nf=g=>Wi.find(te=>te.name.toLowerCase()===(g==null?void 0:g.toLowerCase())),Po=(g,te,H,_)=>e.jsxs("div",{style:{position:"relative"},children:[e.jsx("input",{list:os,style:{...R,width:"100%"},value:g||"",placeholder:_||"Type or select customer",onChange:Q=>{te(Q.target.value);const y=Nf(Q.target.value);y&&H&&H(y)}}),e.jsx("datalist",{id:os,children:Wi.map(Q=>e.jsxs("option",{value:Q.name,children:[Q.name,Q.phone?" — "+Q.phone:"",Q.company?" ("+Q.company+")":""]},Q.id))})]}),bo=Bf,[Hf,fl]=ce.useState(!1),[Ds,tc]=ce.useState(null),Ks={"Residential Reno":{label:"Residential Renovation",inclusions:["All materials, labor & subcontractor work as described in scope","Project management from start to finish by your dedicated PM","All required building permits & inspections","Daily job site cleanup & final professional cleaning","Dumpster rental & debris haul-off","Photo documentation throughout the project via CompanyCam","1-year workmanship warranty on all labor (manufacturer warranties on materials are separate)","Manufacturer warranties on all materials (see warranty page)"],exclusions:["Structural modifications beyond scope described","Appliance purchases (unless specified in scope)","Unforeseen conditions behind walls/floors (addressed via Change Order)","Landscaping, exterior work, or HVAC modifications (unless specified)"],commPromise:["Daily photo updates in your GrayCo customer portal — view your project anytime","Same-day response to all calls, texts, and emails","Immediate notification of any schedule changes or issues","Pre-construction meeting before Day 1 to review everything"],schedNotes:["Schedule is weather-dependent — rain days may extend timeline.","Customer selections must be finalized before rough-in to avoid delays.","Daily work hours: Monday–Friday, 8:00 AM – 5:00 PM.","Daily progress photos in your GrayCo customer portal at any time."],payNotes:["This proposal is valid for 30 days from the date above.","Payment terms: Net 30 from invoice date unless otherwise agreed in writing.","Changes to scope documented via written Change Order — approved before work begins.","Unforeseen conditions (rot, mold, structural) communicated immediately with options.","We accept check, ACH, Zelle, or credit card (3% CC processing fee applies).","Final walkthrough with PM before final payment is due."],contract:`CONSTRUCTION AGREEMENT
 
 This Agreement is entered into on the date signed below between GrayCo Construction Services, LLC ("GrayCo" or "Contractor") and the Client(s) identified above ("Owner") for the construction work described in the Scope of Work at the Project Address above.
 
@@ -40077,17 +40077,34 @@ window._gcMountProjInv = function(mount){
 };
 
 // ── MutationObserver — mount both features (backup path) ──────────────────
-var _obs = new MutationObserver(function(){
-  // Mount invoice+payments tab
-  var mount = document.getElementById('gc-projinv-mount');
-  if(mount){
-    // Always re-render — project context may have changed
-    mount._gcPIMounted = true;
-    renderInvPayTab(mount);
+/* patch JOBSTILL: render on a new tab / another job / changed money data — never on its own (or anyone's) DOM churn */
+var _piLast = null, _piPid = '', _piSig = '', _piAt = 0, _piBusy = false;
+function _piPidOf(mount){ var d = mount && mount.getAttribute && mount.getAttribute('data-pid'); if (d) return String(d); try { var op = window._gcOpenProject; return op && op.id ? String(op.id) : ''; } catch (e) { return ''; } }
+async function _piSigOf(pid){
+  var invs = await idb('invs') || [], pm = await idb('invoicePayments') || {};
+  var mine = invs.filter(function(i){ return i && i.pid === pid; });
+  var p = ((window._crm && window._crm.projects) || []).find(function(x){ return x && x.id === pid; }) || {};
+  return pid + '|' + (p.contract || '') + '|' + JSON.stringify(mine.map(function(i){ return [i.id, i.status, i.amt, i.paidDate, i.type, i.updatedAt]; })) + '|' + JSON.stringify(mine.map(function(i){ return pm[i.id] || null; }));
+}
+function _piCheck(force){
+  var mount = document.getElementById('gc-projinv-mount'); if (!mount) { _piLast = null; return; }
+  var pid = _piPidOf(mount);
+  if (mount !== _piLast || pid !== _piPid || !mount.firstChild) {
+    _piLast = mount; _piPid = pid; _piAt = Date.now(); mount._gcPIMounted = true;
+    renderInvPayTab(mount); _piSigOf(pid).then(function(s){ _piSig = s; }, function(){});
+    return;
   }
-  // Inject edit button on overview
-  injectEditBtn();
+  if (_piBusy || (!force && Date.now() - _piAt < 2000)) return;
+  _piBusy = true; _piAt = Date.now();
+  _piSigOf(pid).then(function(s){ _piBusy = false; if (s !== _piSig && document.getElementById('gc-projinv-mount') === mount) { _piSig = s; renderInvPayTab(mount); } }, function(){ _piBusy = false; });
+}
+var _obs = new MutationObserver(function(recs){
+  var mount = document.getElementById('gc-projinv-mount');
+  /* its own render (every change inside the tab) is not a reason to render again */
+  if (mount && recs && recs.length && recs.every(function(r){ return mount.contains(r.target); })) return;
+  _piCheck(false);
 });
+setInterval(function(){ if (document.getElementById('gc-projinv-mount')) _piCheck(true); }, 5000);
 setTimeout(function(){ _obs.observe(document.body, {childList:true,subtree:true}); }, 1500);
 setTimeout(function(){ injectEditBtn(); }, 2000);
 
@@ -53062,15 +53079,21 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     return bestN>=8 ? best : null;
   }
 
+  var scanSig='';   /* patch JOBSTILL: the costly scan once per view / list size, never on a job page */
   function apply(){
     if(!onProjects()) return;
     if(window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || document.hidden) return;
-    if(!listStillGood()){ cachedList=findList(); }
+    try{ var op=window._gcOpenProject; if(op&&op.id){ cachedList=null; return; } }catch(e){}
+    try{ var bs=document.querySelectorAll('main button'); for(var b=0;b<bs.length&&b<80;b++){ if(/^\s*\u2190\s*All Projects\s*$/.test(bs[b].textContent||'')){ cachedList=null; return; } } }catch(e){}
+    if(!listStillGood()){
+      var sig=''; try{ sig=(localStorage.getItem('grayco_view')||'')+'|'+((window._crm&&window._crm.projects)||[]).length+'|'+document.querySelectorAll('main div').length; }catch(e){}
+      if(sig===scanSig) return; scanSig=sig; cachedList=findList();
+    }
     if(!cachedList) return;
     var kids=cachedList.children;
     for(var i=0;i<kids.length;i++){
       var k=kids[i];
-      if(k.tagName==='DIV' && k.className.indexOf('gc-cv-row')<0){
+      if(k.tagName==='DIV' && k.className.indexOf('gc-cv-row')<0 && !/(^|\s)_?gc|data-gc-keep/.test(k.className+(k.hasAttribute('data-gc-keep')?' data-gc-keep':''))){
         k.className += (k.className?' ':'')+'gc-cv-row';
       }
     }
@@ -60898,7 +60921,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       var po=findPO();
       if(!po){ if(existing) existing.remove(); return; }
       var pid=proj.id;
-      if(existing){ existing.setAttribute('data-pid', pid); return; }
+      if(existing){ if(existing.getAttribute('data-pid') !== String(pid)) existing.setAttribute('data-pid', pid); return; }   /* patch JOBSTILL */
       var un=0; try{ un=(window._gcJobMsgUnread&&window._gcJobMsgUnread(pid))||0; }catch(e){}
       var btn=document.createElement('button');
       btn.id='_gcJobMsgBtn';
@@ -77224,7 +77247,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var el = node.parentNode;
     while(el && el.nodeType===1){
       var tag=el.tagName;
-      if(tag==='A'||tag==='BUTTON'||tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||tag==='SCRIPT'||tag==='STYLE'||el.isContentEditable) return true;
+      if(tag==='A'||tag==='BUTTON'||tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||tag==='SCRIPT'||tag==='STYLE'||tag==='DATALIST'||tag==='OPTION'||tag==='OPTGROUP'||tag==='TEMPLATE'||el.isContentEditable) return true;   /* patch JOBSTILL: + lists / options */
       if(el.getAttribute && el.getAttribute('data-gc-linked')==='1') return true;
       el=el.parentNode;
     }
@@ -118792,7 +118815,9 @@ function repaint(pid){
     var p = proj(pid); if (!p) return;
     if (el.contains(document.activeElement) && /SELECT|INPUT/.test(document.activeElement.tagName)) return;
     var open = el.querySelector('[data-q="panel"]'); open = open && !open.hidden;
+    var strips = Array.prototype.slice.call(el.querySelectorAll(':scope > .gcch-strip'));   /* patch JOBSTILL: the 🎨 / ✍️ strips stay */
     el.innerHTML = cardHtml(p, el.__compact); el.setAttribute('data-has', linkOf(p) ? '1' : '0');
+    strips.forEach(function(x){ el.appendChild(x); });
     if (open) { var pn = el.querySelector('[data-q="panel"]'); if (pn) { pn.hidden = false; loadSettings(el); } }
     var seen = el.querySelector('[data-q="seen"]'); if (seen) lastViewed(pid, seen);
   });
@@ -118822,7 +118847,7 @@ function deskTick(){
   var main = document.querySelector('main'); if (!main) return;
   var op = window._gcOpenProject;
   var hit = op && op.id && proj(op.id) ? jobPageRoot(main, proj(op.id) || op) : null;
-  if (!hit) { if (main.querySelector('.gcq-card')) dropCards(main, null); return; }
+  if (!hit) { if (main.querySelector('.gcq-card') && (!window.__gcRowGone || window.__gcRowGone(main.querySelectorAll('.gcq-card:not([data-field])')))) dropCards(main, null); return; }   /* patch JOBSTILL: 1.5 s grace */
   var root = hit.root, back = hit.back;
   var have = root.querySelector(':scope > .gcq-card');
   dropCards(main, have && String(have.getAttribute('data-pid')) === String(op.id) ? have : null);
@@ -123235,13 +123260,14 @@ function unclipActions(){
     var box = tb.parentElement; if (!box) return;
     if (tb.scrollWidth <= box.clientWidth + 2) return;
     Array.prototype.forEach.call(tb.querySelectorAll('td'), function(td){
-      if (td.querySelectorAll('button,a').length >= 2 && getComputedStyle(td).whiteSpace === 'nowrap') { td.style.whiteSpace = 'normal'; td.style.minWidth = '150px'; }
+      if (td.querySelectorAll('button,a').length >= 2 && !td.hasAttribute('data-gc-unclip') && getComputedStyle(td).whiteSpace === 'nowrap') td.setAttribute('data-gc-unclip', '');   /* patch JOBSTILL: a data attribute, not inline style / class the render fights */
     });
   });
 }
 
 /* ── the field app's sheets scroll (More: "Customers" and "Switch to Desk View" were below the screen at 390 px)
       and clear the bottom tab bar ── */
+css.textContent += 'td[data-gc-unclip]{white-space:normal!important;min-width:150px}';   /* patch JOBSTILL */
 css.textContent +=
   'html._fieldmode ._gcSheet{overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;max-height:calc(100% - 8px - env(safe-area-inset-top,0px))!important;padding-bottom:20px!important;box-sizing:border-box}' +
   /* the sheet ends above the bottom tab bar, so its last row is never under it */
@@ -128992,7 +129018,7 @@ function stripHtml(pid){
 function strips(){
   Array.prototype.forEach.call(document.querySelectorAll('.gcq-card'), function(card){
     var pid = card.getAttribute('data-pid'); if (!pid) return;
-    var have = card.querySelector(':scope > .gcch-strip'), html = stripHtml(pid);
+    var have = card.querySelector(':scope > .gcch-strip:not(.gcau5-strip)'), html = stripHtml(pid);   /* patch JOBSTILL: not the Signatures strip */
     if (have && have.__h === html && have.getAttribute('data-pid') === pid) return;
     if (!have) { have = document.createElement('div'); have.className = 'gcch-strip'; card.appendChild(have); }
     have.setAttribute('data-pid', pid); have.innerHTML = html; have.__h = html;
@@ -143110,8 +143136,9 @@ D.addEventListener('click', function(ev){
   var sec = b.getAttribute('data-mkt2') === 'flyer' ? 'flyers' : 'reels';
   if (W._gcMkt && W._gcMkt.open) W._gcMkt.open(sec);
 }, true);
+W._gcMkt2Deco = function(bar){ if (!bar || bar.querySelector('[data-mkt2]')) return; var a = D.createElement('button'); a.type = 'button'; a.setAttribute('data-mkt2', 'flyer'); a.textContent = '🗞 Flyer'; var v = D.createElement('button'); v.type = 'button'; v.setAttribute('data-mkt2', 'video'); v.textContent = '🎬 Video'; bar.appendChild(a); bar.appendChild(v); };   /* patch JOBSTILL: patch A8 calls it on a new bar */
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){
-  try { D.querySelectorAll('.gc-a8-bar').forEach(function(bar){ if (bar.querySelector('[data-mkt2]')) return; var a = D.createElement('button'); a.type = 'button'; a.setAttribute('data-mkt2', 'flyer'); a.textContent = '🗞 Flyer'; var v = D.createElement('button'); v.type = 'button'; v.setAttribute('data-mkt2', 'video'); v.textContent = '🎬 Video'; bar.appendChild(a); bar.appendChild(v); }); } catch (e) {}
+  try { D.querySelectorAll('.gc-a8-bar[data-pid]').forEach(W._gcMkt2Deco); } catch (e) {}
 }, 1500);
 
 /* ── link the training decks into Company Docs + the new-hire training to-do ── */
@@ -144996,7 +145023,7 @@ function barHtml(p){
 }
 function makeBar(p, field){
   var b = D.createElement('div'); b.className = 'gcja-bar' + (field ? '' : ' gcja-light'); b.setAttribute('data-pid', p.id); if (field) b.setAttribute('data-field', '1');
-  b.innerHTML = barHtml(p); b.__sig = barSig(p);
+  b.innerHTML = b.__h = barHtml(p); b.__sig = barSig(p);   /* patch JOBSTILL: __h */
   b.addEventListener('click', function(e){ if (e.target && e.target.getAttribute('data-ja-open')) open(b.getAttribute('data-pid')); });
   return b;
 }
@@ -145005,14 +145032,14 @@ function deskBar(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
-  var bars = main.querySelectorAll('.gcja-bar:not([data-field])');
-  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  var bars = main.querySelectorAll('.gcja-bar:not([data-field]):not([data-gc-ja-admin])');   /* patch JOBSTILL: not the Admin card */
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
-  if (!back) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!back) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var root = back.parentElement, have = root.querySelector(':scope > .gcja-bar');
   Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
-  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== barSig(p)) { have.innerHTML = barHtml(p); have.__sig = barSig(p); } return; }
+  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== barSig(p)) { var h2 = barHtml(p); if (have.__h !== h2) { have.innerHTML = h2; have.__h = h2; } have.__sig = barSig(p); }   /* patch JOBSTILL */ return; }
   if (have) have.remove();
   var card = root.querySelector(':scope > .gcq-card'), head = back.nextElementSibling;
   var after = card || (head && !head.classList.contains('gcja-bar') ? head : back);
@@ -145029,12 +145056,13 @@ function fieldBar(){
   var ov = D.getElementById('_gcJobDash'); if (!ov || !FIELD_PID) return;
   var p = proj(FIELD_PID); if (!p) return;
   var have = ov.querySelector('.gcja-bar[data-field]');
-  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== barSig(p)) { have.innerHTML = barHtml(p); have.__sig = barSig(p); } return; }
+  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== barSig(p)) { var h2 = barHtml(p); if (have.__h !== h2) { have.innerHTML = h2; have.__h = h2; } have.__sig = barSig(p); }   /* patch JOBSTILL */ return; }
   if (have) have.remove();
   var body = ov.children[1] || ov, q = body.querySelector('.gcq-card[data-field]');
   var bar = makeBar(p, true); bar.style.margin = '8px 12px';
   if (q && q.parentNode === body) body.insertBefore(bar, q.nextSibling); else body.insertBefore(bar, body.firstChild);
 }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { paintBars(false); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function paintBars(force){
   if (force) Array.prototype.forEach.call(D.querySelectorAll('.gcja-bar'), function(b){ b.__sig = ''; });
   try { deskBar(); } catch (e) {} try { fieldBar(); } catch (e) {}
@@ -155491,22 +155519,29 @@ function barHtml(p, field){
   return h;
 }
 function sigOf(p, field){ return JSON.stringify([field, p.payApps, p.equipment, p.walkthrough, p.crewDays && p.crewDays[today()], safetyToday(p) && safetyToday(p).crew.length, p.auto, p.type, p.retainageBilled]); }
+function a8Set(b, html){   /* patch JOBSTILL: a rebuild kept wiping MKT2's 🗞 Flyer / 🎬 Video for ~2 s */
+  if (b.__h === html) return;
+  var keep = Array.prototype.slice.call(b.querySelectorAll(':scope > [data-mkt2]'));
+  b.innerHTML = html; b.__h = html;
+  keep.forEach(function(k){ b.appendChild(k); });
+  if (!keep.length && typeof W._gcMkt2Deco === 'function') { try { W._gcMkt2Deco(b); } catch (e) {} }
+}
 function makeBar(p, field){
   var b = D.createElement('div'); b.className = 'gc-a8-bar' + (field ? '' : ' light'); b.setAttribute('data-pid', p.id); if (field) b.setAttribute('data-field', '1');
-  b.innerHTML = barHtml(p, field); b.__sig = sigOf(p, field); return b;
+  a8Set(b, barHtml(p, field)); b.__sig = sigOf(p, field); return b;
 }
 function deskBar(){
   if (D.hidden || inField()) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
-  var bars = main.querySelectorAll('.gc-a8-bar:not([data-field])');
-  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  var bars = main.querySelectorAll('.gc-a8-bar:not([data-field]):not(#gc-a8-admin)');   /* patch JOBSTILL: not the Admin card */
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
-  if (!back) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!back) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var root = back.parentElement, have = root.querySelector(':scope > .gc-a8-bar');
   Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
-  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== sigOf(p, false)) { have.innerHTML = barHtml(p, false); have.__sig = sigOf(p, false); } return; }
+  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== sigOf(p, false)) { a8Set(have, barHtml(p, false)); have.__sig = sigOf(p, false); } return; }
   if (have) have.remove();
   var ja = root.querySelector(':scope > .gcja-bar'), card = root.querySelector(':scope > .gcq-card'), head = back.nextElementSibling;
   var after = ja || card || (head && !head.classList.contains('gc-a8-bar') ? head : back);
@@ -155523,7 +155558,7 @@ function fieldBar(){
   var ov = D.getElementById('_gcJobDash'); if (!ov || !FIELD_PID) return;
   var p = proj(FIELD_PID); if (!p) return;
   var have = ov.querySelector('.gc-a8-bar[data-field]');
-  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== sigOf(p, true)) { have.innerHTML = barHtml(p, true); have.__sig = sigOf(p, true); } return; }
+  if (have && have.getAttribute('data-pid') === String(p.id)) { if (have.__sig !== sigOf(p, true)) { a8Set(have, barHtml(p, true)); have.__sig = sigOf(p, true); } return; }
   if (have) have.remove();
   css();
   var body = ov.children[1] || ov, ja = body.querySelector('.gcja-bar[data-field]'), q = body.querySelector('.gcq-card[data-field]');
@@ -155531,6 +155566,7 @@ function fieldBar(){
   var after = ja && ja.parentNode === body ? ja : q && q.parentNode === body ? q : null;
   if (after) body.insertBefore(bar, after.nextSibling); else body.insertBefore(bar, body.firstChild);
 }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { paintBars(false); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function paintBars(force){
   if (force) Array.prototype.forEach.call(D.querySelectorAll('.gc-a8-bar'), function(b){ b.__sig = ''; });
   try { deskBar(); } catch (e) {} try { fieldBar(); } catch (e) {}
@@ -155880,10 +155916,10 @@ function deskBars(){
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
   var bars = main.querySelectorAll('.gcx9-bars:not([data-field])');
-  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
-  if (!back) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!back) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var root = back.parentElement, have = root.querySelector(':scope > .gcx9-bars');
   Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
   if (have && have.getAttribute('data-pid') === String(p.id) && have.__sig === barSig(p)) return;
@@ -155909,6 +155945,7 @@ function fieldBars(){
   var bar = makeBars(p, true), after = ja || q;
   if (after && after.parentNode === body) body.insertBefore(bar, after.nextSibling); else body.insertBefore(bar, body.firstChild);
 }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { paintBars(false); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function paintBars(force){
   if (force) Array.prototype.forEach.call(D.querySelectorAll('.gcx9-bars'), function(b){ b.__sig = ''; });
   try { deskBars(); } catch (e) {} try { fieldBars(); } catch (e) {}
@@ -157218,12 +157255,13 @@ function makeBar(p, field){
   b.addEventListener('click', function(e){ var t = e.target && e.target.closest ? e.target.closest('[data-x10]') : null; if (!t) return; var k = t.getAttribute('data-x10'); if (k === 'home') openHome(p.id); if (k === 'codes') openCodes(p.id); if (k === 'insp') openInsp(p.id); });
   return b;
 }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { deskBar(); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function deskBar(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
   var bars = main.querySelectorAll('.gcx10-jobbar:not([data-field])');
-  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
   if (!back) return;
@@ -157416,7 +157454,7 @@ function adminCards(){
   var h1 = null, hs = main.querySelectorAll('h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'Admin') { h1 = hs[i]; break; }
   var have = D.getElementById('gc-x10-admin');
   if (!h1) { if (have) have.remove(); return; }
-  if (have && have.isConnected) { var gl = have.querySelector('[data-goal]'); if (gl) gl.textContent = goalLine(); return; }
+  if (have && have.isConnected) { var gl = have.querySelector('[data-goal]'), gt = goalLine(); if (gl && gl.textContent !== gt) gl.textContent = gt; return; }   /* patch JOBSTILL */
   css(); var c = D.createElement('div'); c.id = 'gc-x10-admin';
   c.innerHTML = '<div class="gcx10-bar" style="border-left-color:#d4a017"><span><b>🎯 Company goal</b> · <span data-goal="1">' + esc(goalLine()) + '</span></span><button type="button" data-a="goal" style="background:#d4a017;color:#0f172a">Set</button></div>' +
     '<div class="gcx10-bar oc"><span><b>📟 On call</b> · after-hours emergency paging (the rotation)</span><button type="button" data-a="oc">Open</button></div>' +
@@ -157584,16 +157622,17 @@ function patchJob(pid, patch, why){ if (typeof W._gcxPatchJob === 'function') re
 
 /* ── the job page bar ───────────────────────────────────────────────────────── */
 function barHtml(p){ var gc = isGc(p); return '<span><b>🏗 GC portal</b> · ' + (gc ? 'hired by ' + esc((custOf(p) && (custOf(p).company || custOf(p).name)) || p.gc || 'a GC') + ' — pay apps, change orders, RFIs, documents' : 'not marked as a GC job') + '</span><button type="button" data-gcgp-open="1">' + (gc ? 'Open' : 'Set up') + '</button>'; }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { deskBar(); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function deskBar(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
   var bars = main.querySelectorAll('.gcgp-bar');
   var show = p && (isGc(p) || isCommercial(p));
-  if (!show) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!show) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
-  if (!back) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!back) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var root = back.parentElement, have = root.querySelector(':scope > .gcgp-bar');
   Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
   var sig = JSON.stringify([p.id, p.gcJob, p.client, p.type, isGc(p)]);
@@ -159861,12 +159900,13 @@ function makeBar(p){
   b.addEventListener('click', function(e){ var t = e.target && e.target.closest ? e.target.closest('[data-a11]') : null; if (t) openNeeds(p.id); });
   return b;
 }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { deskBar(); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function deskBar(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null;
   var bars = main.querySelectorAll('.gca11-jobbar');
-  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
   if (!back) return;
@@ -160783,7 +160823,8 @@ function fillFromLead(l){
 }
 function launchBar(){
   var main = D.querySelector('main'); if (!main) return;
-  var h = null; Array.prototype.some.call(main.querySelectorAll('h1,h2'), function(x){ if (/launch (a )?job|new job|🚀/i.test(s(x.textContent)) && x.offsetParent) { h = x; return true; } return false; });
+  var lv = ''; try { lv = localStorage.getItem('grayco_view') || ''; } catch (e) {}   /* patch JOBSTILL: Launch Job only (not Marketing's "🚀 Getting started") */
+  var h = null; if (lv === 'launchjob') Array.prototype.some.call(main.querySelectorAll('h1,h2'), function(x){ if (/^\W*(launch (a )?job|new job)\b/i.test(s(x.textContent)) && x.offsetParent) { h = x; return true; } return false; });
   var have = main.querySelector('.gcx12-launch');
   if (!h) { if (have) have.remove(); return; } if (have) return;
   css(); var bar = D.createElement('div'); bar.className = 'gcx12-bar gcx12-launch';
@@ -160853,14 +160894,14 @@ function deskBar(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, bars = main.querySelectorAll('.gcx12-bar:not([data-field]):not(.gcx12-launch)');
-  if (!p) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
-  if (!back) { Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
+  if (!back) { if (window.__gcRowGone && !window.__gcRowGone(bars)) return; Array.prototype.forEach.call(bars, function(x){ x.remove(); }); return; }
   var root = back.parentElement, have = root.querySelector(':scope > .gcx12-bar');
   Array.prototype.forEach.call(bars, function(x){ if (x !== have) x.remove(); });
   if (have && have.getAttribute('data-pid') === String(p.id) && have.__sig === sig(p)) return;
-  if (have) have.remove();
+  if (have) { have.replaceWith(makeBar(p, false)); return; }   /* patch JOBSTILL: swap in place */
   var after = root.querySelector(':scope > .gcx9-bars') || root.querySelector(':scope > .gcja-bar') || back;
   root.insertBefore(makeBar(p, false), after.nextSibling);
 }
@@ -160872,6 +160913,7 @@ function fieldBar(){
   var body = ov.children[1] || ov, after = body.querySelector('.gcx9-bars[data-field]') || body.querySelector('.gcja-bar[data-field]');
   var bar = makeBar(p, true); if (after && after.parentNode === body) body.insertBefore(bar, after.nextSibling); else body.insertBefore(bar, body.firstChild);
 }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { paint(); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function paint(){ try { deskBar(); } catch (e) {} try { fieldBar(); } catch (e) {} try { launchBar(); } catch (e) {} try { estBar(); } catch (e) {} }
 
 /* ══ start ══════════════════════════════════════════════════════════════════ */
@@ -165166,14 +165208,15 @@ function overrideJob(pid, src, pm, note){
   return true;
 }
 function chipSig(p){ return [p.id, stored(p), ownerOf(p), whyOf(p)].join('|'); }
+try { (window.__gcJobPaint = window.__gcJobPaint || []).push(function(){ try { deskChip(); } catch (e) {} }); } catch (e) {}   /* patch JOBSTILL */
 function deskChip(){
   if (D.hidden || D.documentElement.classList.contains('_fieldmode')) return;
   var main = D.querySelector('main'); if (!main) return;
   var op = W._gcOpenProject, p = op && op.id ? proj(op.id) : null, olds = main.querySelectorAll('.gcsrc-line[data-desk]');
-  if (!p) { Array.prototype.forEach.call(olds, function(x){ x.remove(); }); return; }
+  if (!p) { if (window.__gcRowGone && !window.__gcRowGone(olds)) return; Array.prototype.forEach.call(olds, function(x){ x.remove(); }); return; }
   var back = null, bs = main.getElementsByTagName('button');
   for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
-  if (!back) { Array.prototype.forEach.call(olds, function(x){ x.remove(); }); return; }
+  if (!back) { if (window.__gcRowGone && !window.__gcRowGone(olds)) return; Array.prototype.forEach.call(olds, function(x){ x.remove(); }); return; }
   var root = back.parentElement, have = root.querySelector(':scope > .gcsrc-line[data-desk]');
   Array.prototype.forEach.call(olds, function(x){ if (x !== have) x.remove(); });
   if (have && have.__sig === chipSig(p)) return;
@@ -171386,5 +171429,53 @@ RI.call(W, tick, 2000); ST.call(W, tick, 2500);
 try { D.addEventListener('change', function(e){ if (e.target && e.target.closest && e.target.closest('.td2')) ST.call(W, tick, 400); }, true); } catch (e) {}
 W._gcTodoBadge = { tick: tick, counts: counts, last: function(){ return last; } };
 try { console.log('[GC] To-Do keeps up; To-Do count in the menu; exact badge numbers (patch TODOPERF)'); } catch (e) {}
+})();
+</script>
+<script>
+/* patch JOBSTILL — the job page's rows arrive together and stay put (owner 10/23: "the job tools lagged … they were
+   gone at one point"). __gcRowGone(bars): a row may remove itself only after it has been "missing" for 1.5 s in a row
+   (a re-render or a sync that drops the open job for one tick no longer makes a row vanish and come back).
+   The kick: a native MutationObserver (not the app's governed one, which waits while the person is clicking) notices
+   a newly opened job and runs every registered row painter at 0 / 120 / 400 ms. */
+(function(){
+  'use strict';
+  if (window.__GC_PATCH_JOBSTILL__) return; window.__GC_PATCH_JOBSTILL__ = true;
+  var W = window, D = document, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+  W.__gcRowGone = function(bars){
+    var now = Date.now(), ok = true;
+    Array.prototype.forEach.call(bars || [], function(b){
+      if (!b.__gcMiss || now - (b.__gcMissLast || 0) > 3000) b.__gcMiss = now;   /* a found tick in between restarts it */
+      b.__gcMissLast = now;
+      if (now - b.__gcMiss < 1500) ok = false;
+    });
+    return ok;
+  };
+  function paintAll(){ (W.__gcJobPaint || []).forEach(function(f){ try { f(); } catch (e) {} }); }
+  var Native = null;   /* the governor keeps the browser's own observer at ._n */
+  try { var probe = new W.MutationObserver(function(){}); Native = probe && probe._n && probe._n.constructor; if (Native === W.MutationObserver) Native = null; } catch (e) {}
+  var last = '', T = [];
+  function check(){
+    var op = W._gcOpenProject, id = op && op.id ? String(op.id) : '';
+    if (id === last) return;
+    last = id; if (!id) return;
+    T.forEach(function(x){ try { clearTimeout(x); } catch (e) {} });
+    T = [ST.call(W, paintAll, 0), ST.call(W, paintAll, 120), ST.call(W, paintAll, 400)];
+  }
+  /* a PM's job page shows its header ~1 s before the app records which job is open; the rows waited for that. When the
+     "← All Projects" page is up and no job is recorded yet, the job is read from the header (one exact, longest match) */
+  function early(){
+    var op = W._gcOpenProject; if (op && op.id) return;
+    var main = D.querySelector('main'); if (!main) return;
+    var back = null, bs = main.getElementsByTagName('button');
+    for (var i = 0; i < bs.length && i < 80; i++) if (/^\s*←\s*All Projects\s*$/.test(bs[i].textContent || '')) { back = bs[i]; break; }
+    if (!back || !back.nextElementSibling) return;
+    var t = back.nextElementSibling.textContent || '', best = null, tie = false;
+    ((W._crm && W._crm.projects) || []).forEach(function(p){ var n = p && p.id && String(p.name || '').trim(); if (!n || n.length < 3 || t.indexOf(n) < 0) return;
+      if (!best || n.length > String(best.name).trim().length) { best = p; tie = false; } else if (n.length === String(best.name).trim().length) tie = true; });
+    if (best && !tie) { try { W._gcOpenProject = best; } catch (e) {} }
+  }
+  if (Native) { try { new Native(function(){ check(); }).observe(D.body || D.documentElement, { childList: true, subtree: true }); } catch (e) {} }
+  (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { early(); } catch (e) {} check(); }, 250);
+  try { console.log('[GC] Job page rows arrive together and stay put (patch JOBSTILL)'); } catch (e) {}
 })();
 </script>
