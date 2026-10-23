@@ -758,7 +758,14 @@ async function subBidFromEmail(mail){
   return { ok: true, id, matched: !!m, jobId: rec.jobId, files: files.length, told: told.ok };
 }
 
+/* patch MAILC: every e-mail this webhook gets is noted for the Email Center's "📥 All company mail" (who, to which
+   address, the subject, what the CRM did — never the body). The note never holds up or changes the result. */
 async function processEvent(evt, opts){
+  const r = await processEventCore(evt, opts);
+  try { await require('./_lib/mailcenter.js').log(evt, r, { kvCas }); } catch (e) {}
+  return r;
+}
+async function processEventCore(evt, opts){
   opts = opts || {};
   const type = s(evt && evt.type);
   if (type && type !== 'email.received') return { status: 200, body: { ok: true, ignored: 'event ' + type } };
@@ -1301,7 +1308,7 @@ exports.handler = async function(event){
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
   if (s(evt.type) && s(evt.type) !== 'email.received') return J(200, { ok: true, ignored: 'event ' + evt.type });
   /* cheap routing before the hand-off: mail plainly for bills@ / claims@ is not touched */
-  if (otherInbox(evt.data || evt)) return J(200, { ok: true, ignored: 'not addressed to the bid inbox' });
+  if (otherInbox(evt.data || evt)) { try { await require('./_lib/mailcenter.js').log(evt, { status: 200, body: { ok: true, ignored: 'for bills@ / claims@ (their own inbox handles it)' } }, { kvCas }); } catch (e) {} return J(200, { ok: true, ignored: 'not addressed to the bid inbox' }); }
   if (await handOff(raw)) return J(200, { ok: true, accepted: true, how: v.how });
   const r = await processEvent(evt, { inline: true });
   return J(r.status, r.body);
@@ -1324,3 +1331,4 @@ exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, k
 exports._test = { bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
+exports._test.processEvent = processEvent;   /* patch MAILC: tests */

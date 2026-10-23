@@ -8191,7 +8191,7 @@ lg:b64toURL("PCFET0NUWVBFIGh0bWw+CjxodG1sPjxoZWFkPgo8bWV0YSBjaGFyc2V0PSJVVEYtOCI
 };
 
 function inject(){
-[["ag-mount",urls.ag],["lg-mount",urls.lg],["tc-mount",urls.tc],["gmail-mount",urls.gm],["claude-mount",urls.cl]].forEach(function(p){
+[["ag-mount",urls.ag],["lg-mount",urls.lg],["tc-mount",urls.tc],["claude-mount",urls.cl]]/* patch MAILC: the Email Center draws itself into gmail-mount */.forEach(function(p){
 var el=document.getElementById(p[0]);
 if(el&&!el.querySelector("iframe")){
 var f=document.createElement("iframe");f.src=p[1];
@@ -8203,7 +8203,7 @@ var obs=new MutationObserver(function(){inject()});
 var root=document.getElementById("root");
 if(root)obs.observe(root,{childList:true,subtree:false});
 setTimeout(inject,500);setTimeout(inject,1500);setTimeout(inject,3000);
-setInterval(inject,8000);/*SWEEP*/setInterval(function(){try{if(["ag-mount","lg-mount","tc-mount","gmail-mount","claude-mount"].some(function(i){var e=document.getElementById(i);return e&&!e.querySelector("iframe");}))inject();}catch(e){}},300);
+setInterval(inject,8000);/*SWEEP*/setInterval(function(){try{if(["ag-mount","lg-mount","tc-mount","claude-mount"].some(function(i){var e=document.getElementById(i);return e&&!e.querySelector("iframe");}))inject();}catch(e){}},300);
 
 // Auto-save: blur active input on any sidebar nav click
 document.addEventListener("click",function(ev){
@@ -166298,5 +166298,223 @@ later(deepLink, 1500);
 later(function(){ status(); }, 4000);
 W._gcTexts = { status: status, send: send, textUsLine: textUsLine, open: function(pid){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); }, _phoneFor: phoneFor, _decorate: decorateUnsorted };
 try { console.log('[GC] 💬 Text us: Job Messages "📱 Text them", Unsorted "📱 Text back", Admin → 💬 Text auto-answers (patch TXT) — _gcTexts'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-mailc">
+/* __GC_PATCH_MAILC__ — 📧 EMAIL CENTER, rebuilt (owner 10/23: "I don't think any of this works, but I'd like this to work
+   for all emails and aliases that I have, so I can see all emails in here").
+   The old Gmail tab was a fixed page in a frame: three hard-coded accounts (nick@, office@, wesley@ — two of them are not
+   real GrayCo mailboxes) opened as Gmail "slot" numbers /mail/u/0, /u/1, /u/2 — which point at whatever account the
+   browser signed in first, second, third, so the buttons opened the wrong mailbox or none. This replaces it:
+     • every mailbox (each GrayCo person from the staff list + extra ones an admin adds) and every alias / group
+       (leads@, bids@, billing@ …, edited by admins, kept in the CRM — mail-center.js ?settings=1);
+     • Gmail links by ADDRESS (mail.google.com/mail/?authuser=<email>), never slot numbers; an alias or group opens the
+       mailbox that receives it with a search for to:<alias>; the Smart Search chips are real Gmail searches;
+     • "📥 All company mail": what the CRM itself receives (copies to in.grayco-cs.com — leads@, bids@, orders, the
+       job e-mail history), filterable by address, linked to the lead / job — and it says plainly what is NOT included.
+   API: window._gcMailCenter = { url(entry, kind, me), entries(), render(), mailboxOf(entry, me) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MAILC__) return; window.__GC_PATCH_MAILC__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/mail-center';
+var DATA = { set: null, routing: false, admin: false, me: '', loaded: 0 }, LOG = { rows: [], counts: {}, total: 0, addr: '', q: '', at: 0, err: '' };
+var UI = { sel: '', edit: false };
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function me(){ try { return low((W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()) || JSON.parse(localStorage.getItem('grayco_user') || '{}').email); } catch (e) { return ''; } }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+var ACTIVE = /^(terminated|inactive|former|departed|fired)$/i;
+function staff(){
+  try {
+    return arr((W._crm || {}).users).filter(function(u){ return u && /@grayco-cs\.com$/i.test(s(u.email)) && u.active !== false && u.departed !== true && u.deleted !== true && !ACTIVE.test(s(u.status)); })
+      .map(function(u){ return { address: low(u.email), kind: 'mailbox', name: s(u.name) || low(u.email), mailbox: low(u.email) }; });
+  } catch (e) { return []; }
+}
+/* every entry the page shows: the people's mailboxes, extra mailboxes, then the aliases / groups */
+function entries(){
+  var set = DATA.set || { aliases: [], mailboxes: [], hidden: [] }, seen = {}, out = [];
+  function add(e){ if (!e || !e.address || seen[e.address]) return; if (arr(set.hidden).indexOf(e.address) >= 0) return; seen[e.address] = 1; out.push(e); }
+  staff().forEach(add);
+  arr(set.mailboxes).forEach(function(m){ add({ address: low(m), kind: 'mailbox', name: low(m), mailbox: low(m) }); });
+  add({ address: 'office@grayco-cs.com', kind: 'mailbox', name: 'Office', mailbox: 'office@grayco-cs.com' });
+  arr(set.aliases).forEach(function(a){ add({ address: low(a.address), kind: a.kind || 'alias', name: a.name || '', mailbox: low(a.mailbox), crm: !!a.crm, note: s(a.note) }); });
+  return out;
+}
+/* the Google account to open for an entry: itself for a mailbox; the receiving mailbox for an alias; for a group with
+   no single mailbox, the signed-in person's own (they are a member) */
+function mailboxOf(e, who){ if (!e) return low(who); if (e.kind === 'mailbox') return low(e.address); return low(e.mailbox) || low(who) || ''; }
+var KINDS = { open: '#inbox', inbox: '#inbox', sent: '#sent', compose: 'compose', unread: 'is:unread', starred: 'is:starred', attach: 'has:attachment' };
+var CHIPS = [
+  ['Insurance & claims', 'subject:(claim OR adjuster OR "date of loss" OR supplement OR estimate)'],
+  ['Bids & estimates', 'subject:(bid OR estimate OR proposal OR quote OR RFP OR RFQ)'],
+  ['Permits & plans', 'subject:(permit OR inspection OR code OR plans OR drawings)'],
+  ['Payments & invoices', 'subject:(payment OR draw OR invoice OR receipt OR "pay app" OR PO)'],
+  ['Contracts & scopes', 'subject:(contract OR scope OR agreement OR signed)'],
+  ['Change orders', 'subject:("change order" OR addendum OR CO)'],
+  ['Last 24 hours', 'newer_than:1d'],
+  ['Last 7 days', 'newer_than:7d']
+];
+function gq(q){ return encodeURIComponent(q).replace(/%20/g, '+'); }
+/* the Gmail address-based URL: https://mail.google.com/mail/?authuser=<email>#…  (kind: open/inbox/sent/compose/unread/
+   starred/attach, or { q: 'search words' }) — an alias adds to:<alias> to the search */
+function url(e, kind, who){
+  var box = mailboxOf(e, who), base = 'https://mail.google.com/mail/' + (box ? '?authuser=' + encodeURIComponent(box) : '');
+  var alias = e && e.kind !== 'mailbox' ? low(e.address) : '';
+  var k = typeof kind === 'object' && kind ? null : (KINDS[kind] || '#inbox'), q = typeof kind === 'object' && kind ? s(kind.q) : '';
+  if (k === 'compose') return 'https://mail.google.com/mail/?' + (box ? 'authuser=' + encodeURIComponent(box) + '&' : '') + 'view=cm&fs=1';
+  if (k === '#inbox' && !alias) return base + '#inbox';
+  if (k === '#sent') return base + (alias ? '#search/' + gq('from:' + alias) : '#sent');
+  if (k && k.charAt(0) !== '#') q = k;
+  var words = [alias ? 'to:' + alias : '', q].filter(Boolean).join(' ');
+  return base + (words ? '#search/' + gq(words) : '#inbox');
+}
+
+/* ── load ── */
+function load(force){
+  if (!force && DATA.set && Date.now() - DATA.loaded < 120000) return Promise.resolve(DATA);
+  return j(FN + '?settings=1').then(function(o){
+    if (o && o.ok) { DATA = { set: o.settings, routing: !!o.routingConfirmed, admin: !!o.admin, me: o.me, loaded: Date.now() }; }
+    else if (!DATA.set) DATA.err = s(o && o.error) || 'Could not load the company addresses.';
+    return DATA;
+  });
+}
+function loadLog(){
+  return j(FN + '?log=1&limit=200' + (LOG.addr ? '&addr=' + encodeURIComponent(LOG.addr) : '') + (LOG.q ? '&q=' + encodeURIComponent(LOG.q) : '')).then(function(o){
+    if (o && o.ok) { LOG.rows = arr(o.rows); LOG.counts = o.counts || {}; LOG.total = o.total || 0; LOG.err = ''; } else LOG.err = s(o && o.error) || 'Could not load.';
+    LOG.at = Date.now(); return LOG;
+  });
+}
+
+/* ── the page ── */
+function css(){
+  if (D.getElementById('gcm-css')) return;
+  var st = D.createElement('style'); st.id = 'gcm-css';
+  st.textContent = '.gcm-root{height:100%;overflow:auto;background:#0d1b2a;color:#e2e8f0;font:13px Inter,Arial,sans-serif;padding:16px;box-sizing:border-box}'
+    + '.gcm-card{background:#13243a;border:1px solid #1e3a5f;border-radius:12px;padding:14px;margin:0 0 12px}'
+    + '.gcm-h{font-size:18px;font-weight:800;color:#fff;margin:0 0 4px}.gcm-mut{color:#94a3b8;font-size:12px}'
+    + '.gcm-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}'
+    + '.gcm-chip{border:1px solid #1e3a5f;background:#0f1d30;color:#cbd5e1;border-radius:999px;padding:5px 10px;font:600 12px Inter,sans-serif;cursor:pointer;text-decoration:none;display:inline-flex;gap:6px;align-items:center}'
+    + '.gcm-chip.on{border-color:#d4a017;color:#d4a017;background:#1b2b40}.gcm-chip .gcm-k{font-size:10px;opacity:.75}'
+    + '.gcm-btns{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px}'
+    + '.gcm-btn{display:block;text-align:center;border:1px solid #1e3a5f;background:#0f1d30;color:#e2e8f0;border-radius:8px;padding:9px 8px;font-weight:700;text-decoration:none}'
+    + '.gcm-btn.gold{background:#d4a017;color:#0d1b2a;border-color:#d4a017}'
+    + '.gcm-tbl{width:100%;border-collapse:collapse;margin-top:8px}.gcm-tbl td,.gcm-tbl th{border-bottom:1px solid #1e3a5f;padding:6px 6px;text-align:left;vertical-align:top;font-size:12px}'
+    + '.gcm-tbl th{color:#94a3b8;font-weight:700}.gcm-tbl a{color:#93c5fd}'
+    + '.gcm-in{background:#0f1d30;border:1px solid #1e3a5f;border-radius:8px;color:#e2e8f0;padding:7px 9px;font:13px Inter,sans-serif}'
+    + '.gcm-ok{color:#86efac}.gcm-no{color:#fca5a5}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+function selEntry(list){ var e = list.filter(function(x){ return x.address === UI.sel; })[0]; if (!e) { e = list.filter(function(x){ return x.address === me(); })[0] || list[0]; UI.sel = e ? e.address : ''; } return e; }
+function kindTag(e){ return e.kind === 'mailbox' ? 'mailbox' : e.kind === 'group' ? 'group' : 'alias'; }
+function html(){
+  var list = entries(), e = selEntry(list), who = me(), box = mailboxOf(e, who);
+  var h = '<div class="gcm-card"><div class="gcm-h">📧 GrayCo Email Center</div><div class="gcm-mut">Every GrayCo mailbox and address in one place. Links open Gmail by e-mail address, so the right account opens — you need to be signed in to that Google account in this browser (Gmail asks you to pick or sign in if not).</div>'
+    + '<div class="gcm-chips">' + list.map(function(x){ return '<button type="button" class="gcm-chip' + (x.address === UI.sel ? ' on' : '') + '" data-gcm-sel="' + esc(x.address) + '">' + esc(x.address.replace('@grayco-cs.com', '@')) + ' <span class="gcm-k">' + kindTag(x) + (x.crm ? ' · CRM' : '') + '</span></button>'; }).join('') + '</div></div>';
+  if (e) {
+    var note = e.kind === 'mailbox' ? 'Its own Google mailbox.' : (e.mailbox ? 'Delivered to <b>' + esc(e.mailbox) + '</b> — opens that mailbox, searching <b>to:' + esc(e.address) + '</b>.' : 'A group: it lands in each member\'s own mailbox — opens <b>your</b> mailbox (' + esc(who || 'signed-in person') + '), searching <b>to:' + esc(e.address) + '</b>.');
+    h += '<div class="gcm-card"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><div style="font-size:16px;font-weight:800;color:#d4a017">' + esc(e.name || e.address) + '</div><div class="gcm-mut">' + esc(e.address) + ' · ' + note + (e.note ? '<br>' + esc(e.note) : '') + '</div></div>'
+      + '<a class="gcm-btn gold" target="_blank" rel="noopener" href="' + esc(url(e, 'open', who)) + '">Open ' + esc(box || 'Gmail') + ' ↗</a></div>'
+      + '<div class="gcm-btns">' + [['inbox', '📥 Inbox'], ['sent', '📤 Sent'], ['compose', '✏️ Compose'], ['unread', '🔴 Unread'], ['starred', '⭐ Starred'], ['attach', '📎 Attachments']].map(function(b){ return '<a class="gcm-btn" data-gcm-k="' + b[0] + '" target="_blank" rel="noopener" href="' + esc(url(e, b[0], who)) + '">' + b[1] + '</a>'; }).join('') + '</div>'
+      + '<div style="margin-top:12px;font-weight:700">Smart search — ' + esc(e.address) + '</div><div class="gcm-chips">' + CHIPS.map(function(c){ return '<a class="gcm-chip" target="_blank" rel="noopener" href="' + esc(url(e, { q: c[1] }, who)) + '">' + esc(c[0]) + '</a>'; }).join('')
+      + '<form data-gcm-q style="display:inline-flex;gap:6px"><input class="gcm-in" name="q" placeholder="Search this mailbox…" style="width:200px"><button class="gcm-chip" type="submit">Search ↗</button></form></div></div>';
+  }
+  h += '<div class="gcm-card"><div style="font-weight:800;margin-bottom:4px">All accounts — quick switch</div><div class="gcm-chips">' + list.map(function(x){ return '<a class="gcm-chip" target="_blank" rel="noopener" href="' + esc(url(x, 'inbox', who)) + '">' + esc(x.address) + '</a>'; }).join('') + '</div></div>';
+  /* 📥 All company mail */
+  var crmAddrs = list.filter(function(x){ return x.crm; }).map(function(x){ return x.address; });
+  var notIn = list.filter(function(x){ return !x.crm; }).map(function(x){ return x.address; });
+  h += '<div class="gcm-card" data-gcm-log><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div style="font-weight:800">📥 All company mail the CRM receives</div><button type="button" class="gcm-chip" data-gcm-refresh>↻ Refresh</button></div>'
+    + '<div class="gcm-mut" style="margin-top:4px">Only e-mail that is copied to the CRM shows here (to an <b>in.grayco-cs.com</b> address): '
+    + (crmAddrs.length ? crmAddrs.map(esc).join(', ') : 'none set') + (DATA.routing ? ', plus <b>every job e-mail</b> (the Google routing rule to mail@in is on)' : '. The Google routing rule for job e-mail (mail@in.grayco-cs.com) is <b>not</b> confirmed yet') + '. '
+    + 'Not included: ' + (notIn.length ? notIn.map(esc).join(', ') : '—') + ' — use the Gmail buttons above for those. Who sent it, the subject and what the CRM did are kept — not the message body (open it in Gmail).</div>'
+    + '<div class="gcm-chips"><button type="button" class="gcm-chip' + (!LOG.addr ? ' on' : '') + '" data-gcm-addr="">All (' + LOG.total + ')</button>'
+    + crmAddrs.concat(DATA.routing ? ['history'] : []).map(function(a){ var n = a === 'history' ? '' : (LOG.counts[a] || 0); return '<button type="button" class="gcm-chip' + (LOG.addr === a ? ' on' : '') + '" data-gcm-addr="' + esc(a) + '">' + esc(a === 'history' ? 'job e-mail history' : a.replace('@grayco-cs.com', '@')) + (n !== '' ? ' (' + n + ')' : '') + '</button>'; }).join('')
+    + '<form data-gcm-lq style="display:inline-flex;gap:6px"><input class="gcm-in" name="q" value="' + esc(LOG.q) + '" placeholder="From, subject…" style="width:180px"><button class="gcm-chip" type="submit">Filter</button></form></div>'
+    + (LOG.err ? '<div class="gcm-no" style="margin-top:8px">' + esc(LOG.err) + '</div>' : !LOG.at ? '<div class="gcm-mut" style="margin-top:8px">Loading…</div>' : !LOG.rows.length ? '<div class="gcm-mut" style="margin-top:8px">Nothing yet. Mail shows here as it arrives (the log starts with this update).</div>'
+      : '<table class="gcm-tbl"><tr><th>When</th><th>To</th><th>From</th><th>Subject</th><th>What the CRM did</th></tr>' + LOG.rows.map(function(r){
+          var to = arr(r.to).map(function(t){ return t.replace('@in.grayco-cs.com', '@ (CRM copy)').replace('@grayco-cs.com', '@'); }).join(', ');
+          var e2 = list.filter(function(x){ return arr(r.to).some(function(t){ return low(t) === x.address || low(t) === x.address.replace('@grayco-cs.com', '@in.grayco-cs.com'); }); })[0] || { kind: 'mailbox', address: who };
+          var g = url(e2, { q: (r.from ? 'from:' + r.from + ' ' : '') + (r.subject ? 'subject:"' + r.subject.replace(/"/g, '').slice(0, 80) + '"' : '') }, who);
+          var link = r.lead ? ' · <a href="#leads&lead=' + encodeURIComponent(r.lead) + '" data-gcm-lead="' + esc(r.lead) + '">open lead</a>' : r.pid ? ' · <a href="#" data-gcm-job="' + esc(r.pid) + '">open job</a>' : '';
+          return '<tr><td>' + esc(when(r.at)) + '</td><td>' + esc(to) + '</td><td>' + esc(r.from) + '</td><td><a target="_blank" rel="noopener" href="' + esc(g) + '">' + esc(r.subject || '(no subject)') + '</a></td><td>' + esc(r.what) + link + '</td></tr>';
+        }).join('') + '</table>')
+    + '</div>';
+  /* admins: the addresses */
+  if (isAdmin()) {
+    var set = DATA.set || { aliases: [], mailboxes: [], hidden: [] };
+    h += '<div class="gcm-card"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800">⚙ Company addresses (admins)</div><button type="button" class="gcm-chip" data-gcm-edit>' + (UI.edit ? 'Close' : '✏️ Edit') + '</button></div>';
+    if (UI.edit) {
+      h += '<div class="gcm-mut">Aliases and groups: which Google mailbox receives each (leave empty for a group — each member gets it), and whether a copy reaches the CRM (an in.grayco-cs.com member / forward).</div>'
+        + '<table class="gcm-tbl"><tr><th>Address</th><th>Kind</th><th>Mailbox that receives it</th><th>Copy to CRM</th><th>Note</th><th></th></tr>'
+        + arr(set.aliases).map(function(a, i){ return '<tr data-gcm-row="' + i + '"><td><input class="gcm-in" data-f="address" value="' + esc(a.address) + '" style="width:190px"></td><td><select class="gcm-in" data-f="kind"><option' + (a.kind === 'alias' ? ' selected' : '') + '>alias</option><option' + (a.kind === 'group' ? ' selected' : '') + '>group</option><option' + (a.kind === 'mailbox' ? ' selected' : '') + '>mailbox</option></select></td><td><input class="gcm-in" data-f="mailbox" value="' + esc(a.mailbox) + '" placeholder="(each member)" style="width:190px"></td><td><input type="checkbox" data-f="crm"' + (a.crm ? ' checked' : '') + '></td><td><input class="gcm-in" data-f="note" value="' + esc(a.note) + '" style="width:220px"></td><td><button type="button" class="gcm-chip" data-gcm-del="' + i + '">✕</button></td></tr>'; }).join('')
+        + '</table><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="gcm-chip" data-gcm-add>+ Add address</button></div>'
+        + '<div style="margin-top:10px">Extra mailboxes (beyond each person on the staff list): <input class="gcm-in" data-gcm-extra value="' + esc(arr(set.mailboxes).join(', ')) + '" style="width:100%;box-sizing:border-box"></div>'
+        + '<div style="margin-top:6px">Hide from the list: <input class="gcm-in" data-gcm-hidden value="' + esc(arr(set.hidden).join(', ')) + '" style="width:100%;box-sizing:border-box"></div>'
+        + '<div style="margin-top:10px"><button type="button" class="gcm-btn gold" data-gcm-save style="display:inline-block;padding:9px 18px">Save addresses</button></div>';
+    }
+    h += '</div>';
+  }
+  return h;
+}
+function readEdit(root){
+  var set = JSON.parse(JSON.stringify(DATA.set || { aliases: [] }));
+  set.aliases = Array.prototype.map.call(root.querySelectorAll('[data-gcm-row]'), function(tr){
+    return { address: tr.querySelector('[data-f="address"]').value, kind: tr.querySelector('[data-f="kind"]').value, mailbox: tr.querySelector('[data-f="mailbox"]').value, crm: tr.querySelector('[data-f="crm"]').checked, note: tr.querySelector('[data-f="note"]').value };
+  });
+  set.mailboxes = s((root.querySelector('[data-gcm-extra]') || {}).value).split(/[\s,;]+/).filter(Boolean);
+  set.hidden = s((root.querySelector('[data-gcm-hidden]') || {}).value).split(/[\s,;]+/).filter(Boolean);
+  return set;
+}
+var ROOT = null, LAST = '';
+function paint(){
+  if (!ROOT || !ROOT.isConnected) return;
+  var h = html(); if (h === LAST) return; LAST = h;
+  var y = ROOT.scrollTop; ROOT.innerHTML = h; ROOT.scrollTop = y;
+}
+function bind(root){
+  root.addEventListener('click', function(ev){
+    var t = ev.target.closest ? ev.target.closest('[data-gcm-sel],[data-gcm-addr],[data-gcm-refresh],[data-gcm-edit],[data-gcm-add],[data-gcm-del],[data-gcm-save],[data-gcm-job],[data-gcm-lead]') : null; if (!t) return;
+    if (t.hasAttribute('data-gcm-sel')) { UI.sel = t.getAttribute('data-gcm-sel'); paint(); }
+    else if (t.hasAttribute('data-gcm-addr')) { LOG.addr = t.getAttribute('data-gcm-addr'); LOG.at = 0; paint(); loadLog().then(paint); }
+    else if (t.hasAttribute('data-gcm-refresh')) { loadLog().then(paint); }
+    else if (t.hasAttribute('data-gcm-edit')) { UI.edit = !UI.edit; paint(); }
+    else if (t.hasAttribute('data-gcm-add')) { DATA.set = readEdit(root); DATA.set.aliases.push({ address: '', kind: 'alias', mailbox: '', crm: false, note: '' }); paint(); }
+    else if (t.hasAttribute('data-gcm-del')) { DATA.set = readEdit(root); DATA.set.aliases.splice(+t.getAttribute('data-gcm-del'), 1); paint(); }
+    else if (t.hasAttribute('data-gcm-save')) {
+      var v = readEdit(root); t.textContent = 'Saving…';
+      j(FN + '?settings=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: v }) }).then(function(o){
+        if (o && o.ok) { DATA.set = o.settings; UI.edit = false; } else alert('Not saved: ' + s(o && o.error)); paint();
+      });
+    }
+    else if (t.hasAttribute('data-gcm-job')) { ev.preventDefault(); var pid = t.getAttribute('data-gcm-job'); try { if (W._gcOpenProject) W._gcOpenProject(pid); else if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); } catch (e) {} }
+    else if (t.hasAttribute('data-gcm-lead') && typeof W._gcOpenLead === 'function') { ev.preventDefault(); try { W._gcOpenLead(t.getAttribute('data-gcm-lead')); } catch (e) {} }
+  });
+  root.addEventListener('submit', function(ev){
+    var f = ev.target; ev.preventDefault();
+    if (f.hasAttribute('data-gcm-q')) { var e = selEntry(entries()), q = s(f.q.value); if (q) W.open(url(e, { q: q }, me()), '_blank', 'noopener'); }
+    if (f.hasAttribute('data-gcm-lq')) { LOG.q = s(f.q.value); loadLog().then(paint); }
+  });
+}
+function mount(){
+  var host = D.getElementById('gmail-mount'); if (!host) { ROOT = null; return; }
+  if (ROOT && ROOT.isConnected && host.contains(ROOT)) return;
+  Array.prototype.forEach.call(host.querySelectorAll('iframe'), function(f){ f.remove(); });   /* the old fixed page */
+  css(); ROOT = D.createElement('div'); ROOT.className = 'gcm-root'; ROOT.setAttribute('data-gc-keep', '1'); host.appendChild(ROOT); bind(ROOT); LAST = '';
+  paint();
+  load().then(function(){ paint(); return loadLog(); }).then(paint);
+}
+RI.call(W, function(){ if (!D.hidden) mount(); }, 700);
+W._gcMailCenter = { url: url, entries: entries, mailboxOf: mailboxOf, render: function(){ LAST = ''; paint(); }, load: load, loadLog: loadLog, _state: function(){ return { data: DATA, log: LOG, ui: UI }; } };
+try { console.log('[GC] 📧 Email Center: mailboxes + aliases by address, real Gmail searches, 📥 All company mail (patch MAILC) — _gcMailCenter'); } catch (e) {}
 })();
 </script>
