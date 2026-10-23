@@ -168197,7 +168197,18 @@ function emailFor(L, profs){
   try { var u = ((W._crm || {}).users || []).find(function(x){ return x && ((x.id && x.id === L.empId) || s(x.name) === s(L.name)); }); if (u && u.email) return low(u.email); } catch (e) {}
   return '';
 }
-function ssn4For(L, profs){ var p = (profs || []).find(function(x){ return x && ((x.userId && x.userId === L.empId) || s(x.name) === s(L.name)); }); return s(p && p.ssn4).replace(/[^0-9]/g, '').slice(-4); }
+function last4(v){ var d = s(v).replace(/[^0-9]/g, ''); return d.length >= 4 ? d.slice(-4) : ''; }   /* patch PAYSSN */
+function ssn4For(L, profs){
+  var p = (profs || []).find(function(x){ return x && ((x.userId && x.userId === L.empId) || s(x.name) === s(L.name)); });
+  var v = last4(p && p.ssn4); if (v) return v;
+  /* the employee record (Admin → Employees keeps the last 4 there — users_private, merged in on an admin's computer) */
+  try {
+    var uid = s(p && p.userId) || s(L.empId), em = low(p && p.email), nm = low(L.name);
+    var u = ((W._crm || {}).users || []).find(function(x){ return x && ((uid && s(x.id) === uid) || (em && low(x.email) === em) || (nm && low(x.name) === nm)); });
+    v = last4(u && (u.ssn4 || u.ssnLast4)); if (v) return v;
+  } catch (e) {}
+  return '';   /* the server fills it from users_private when it can */
+}
 function stubFromLine(run, L, set, profs){
   var earn = (L.grossParts || []).map(function(g){
     var o = { label: g.label, amount: r2(g.amount) };
@@ -168272,7 +168283,7 @@ function stubHtml(st){
     + '@media print{.noprint{display:none}}</style></head><body>' + head
     + '<div style="text-align:center;font-weight:800;font-size:16px;margin:10px 0">PAY STUB' + (st.adjusts ? ' — ADJUSTED' : '') + '</div>'
     + '<div class="box" style="display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between">'
-    + '<div><div class="y" style="font-size:10px">EMPLOYEE</div><b>' + esc(st.name) + '</b>' + (st.ssn4 ? '<div class="y" style="font-size:12px">SSN ***-**-' + esc(st.ssn4) + '</div>' : '') + '</div>'
+    + '<div><div class="y" style="font-size:10px">EMPLOYEE</div><b>' + esc(st.name) + '</b>' + '<div class="y" style="font-size:12px">SSN ' + (st.ssn4 ? '***-**-' + esc(st.ssn4) : '—') + '</div>' + '</div>'
     + '<div><div class="y" style="font-size:10px">PAY PERIOD</div>' + esc(st.periodFrom) + ' → ' + esc(st.periodTo) + '</div>'
     + '<div><div class="y" style="font-size:10px">PAY DATE</div>' + esc(st.payDate) + (st.checkNo ? ' · Check #' + esc(st.checkNo) : '') + '</div>'
     + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '') + '</div>' : '')

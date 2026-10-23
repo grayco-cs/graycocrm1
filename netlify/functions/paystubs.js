@@ -157,6 +157,24 @@ function withYtd(stub, all){
 
 async function readYear(year){ const v = await kvGet(keyFor(year)); return Array.isArray(v) ? v : []; }
 
+/* patch PAYSSN: the SSN last 4 lives on the employee record (users_private, { <user id>: { ssn4 } }), which the person
+   issuing payroll (the office) may not be allowed to read. A stub sent without it gets it filled here — last 4 only. */
+function last4(v){ const d = s(v).replace(/[^0-9]/g, ''); return d.length >= 4 ? d.slice(-4) : ''; }
+async function fillSsn4(stubs){
+  if (!stubs.some(function(x){ return !x.ssn4; })) return;
+  let users = [], priv = {};
+  try { const u = await kvGet('users'); if (Array.isArray(u)) users = u; } catch (e) {}
+  try { const p = await kvGet('users_private'); if (p && typeof p === 'object' && !Array.isArray(p)) priv = p; } catch (e) {}
+  stubs.forEach(function(st){
+    if (st.ssn4) return;
+    const k = low(st.empKey), em = low(st.email), nm = low(st.name);
+    const u = users.find(function(x){ return x && (low(x.id) === k || (em && low(x.email) === em) || (nm && low(x.name) === nm)); });
+    const rec = (u && priv[u.id]) || priv[st.empKey] || null;
+    const v = last4(rec && (rec.ssn4 || rec.ssnLast4)) || last4(u && u.ssn4);
+    if (v) st.ssn4 = v;
+  });
+}
+
 function stubHtml(st){
   const m = function(v){ return '$' + n2(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
   const e = function(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
@@ -164,7 +182,7 @@ function stubHtml(st){
   return '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">'
     + '<div style="text-align:center;border-bottom:3px solid #0f2440;padding-bottom:8px;margin-bottom:12px"><b style="font-size:18px">' + e(st.company.name || 'GrayCo Construction Services') + '</b><br>'
     + '<span style="font-size:12px;color:#555">' + e(st.company.address) + (st.company.phone ? ' · ' + e(st.company.phone) : '') + '</span></div>'
-    + '<p><b>Pay stub — ' + e(st.name) + '</b>' + (st.ssn4 ? ' · SSN ***-**-' + e(st.ssn4) : '') + '<br>Pay period ' + e(st.periodFrom) + ' → ' + e(st.periodTo) + ' · Paid ' + e(st.payDate) + (st.checkNo ? ' · Check #' + e(st.checkNo) : '') + (st.adjusts ? '<br><b>ADJUSTED</b> — replaces stub ' + e(st.adjusts) : '') + '</p>'
+    + '<p><b>Pay stub — ' + e(st.name) + '</b>' + ' · SSN ' + (st.ssn4 ? '***-**-' + e(st.ssn4) : '—') + '<br>Pay period ' + e(st.periodFrom) + ' → ' + e(st.periodTo) + ' · Paid ' + e(st.payDate) + (st.checkNo ? ' · Check #' + e(st.checkNo) : '') + (st.adjusts ? '<br><b>ADJUSTED</b> — replaces stub ' + e(st.adjusts) : '') + '</p>'
     + (st.withholdState === 'MS' && !st.stateTaxVerified ? '<p style="background:#fef3c7;padding:8px;border-radius:6px"><b>Mississippi withholding rates not yet verified by our CPA.</b></p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th style="text-align:left">Earnings</th><th style="text-align:right">This check</th><th style="text-align:right">YTD</th></tr>' + rows(st.earnings)
     + '<tr><th style="text-align:left">Taxes</th><th></th><th></th></tr>' + rows(st.taxes, true)
@@ -219,6 +237,7 @@ exports.handler = async function(event){
             st.id = stubId(st); st.kind = 'issued';
             if (have[st.id]) { result.skipped.push({ id: st.id, why: 'already issued (stubs never change — use Adjust)' }); continue; }
           }
+          await fillSsn4([st]);   /* patch PAYSSN */
           withYtd(st, list);
           list.push(st); have[st.id] = st; result.issued.push(st.id);
         }
