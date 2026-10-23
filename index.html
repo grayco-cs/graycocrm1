@@ -166551,6 +166551,7 @@ function html(){
       + '<form data-gcm-q style="display:inline-flex;gap:6px"><input class="gcm-in" name="q" placeholder="Search this mailbox…" style="width:200px"><button class="gcm-chip" type="submit">Search ↗</button></form></div></div>';
   }
   h += '<div class="gcm-card"><div style="font-weight:800;margin-bottom:4px">All accounts — quick switch</div><div class="gcm-chips">' + list.map(function(x){ return '<a class="gcm-chip" target="_blank" rel="noopener" href="' + esc(url(x, 'inbox', who)) + '">' + esc(x.address) + '</a>'; }).join('') + '</div></div>';
+  if (isAdmin()) h += '<div data-gcm-allslot></div>';   /* patch MAILALL: 🌐 All GrayCo e-mail (admins) goes here */
   /* 📥 All company mail */
   var crmAddrs = list.filter(function(x){ return x.crm; }).map(function(x){ return x.address; });
   var notIn = list.filter(function(x){ return !x.crm; }).map(function(x){ return x.address; });
@@ -166601,6 +166602,7 @@ function paint(){
   if (!ROOT || !ROOT.isConnected) return;
   var h = html(); if (h === LAST) return; LAST = h;
   var y = ROOT.scrollTop; ROOT.innerHTML = h; ROOT.scrollTop = y;
+  try { if (W._gcMailAllSlot) W._gcMailAllSlot(ROOT); } catch (e) {}   /* patch MAILALL: move its one card into the slot */
 }
 function bind(root){
   root.addEventListener('click', function(ev){
@@ -166637,6 +166639,253 @@ function mount(){
 RI.call(W, function(){ if (!D.hidden) mount(); }, 700);
 W._gcMailCenter = { url: url, entries: entries, mailboxOf: mailboxOf, render: function(){ LAST = ''; paint(); }, load: load, loadLog: loadLog, _state: function(){ return { data: DATA, log: LOG, ui: UI }; } };
 try { console.log('[GC] 📧 Email Center: mailboxes + aliases by address, real Gmail searches, 📥 All company mail (patch MAILC) — _gcMailCenter'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-mailall">
+/* __GC_PATCH_MAILALL__ — 🌐 ALL GRAYCO E-MAIL (owner 10/23: "open all aliases and e-mails that receive and send — I want to
+   see all e-mailing from GrayCo"). Admins only (the server checks every call: netlify/functions/mail-all.js).
+     • In the Email Center (Gmail tab): every GrayCo mailbox, sent and received (Gmail, read-only, synced every 15 minutes —
+       metadata only), plus every e-mail and text the CRM itself sent (sent / paused / failed). Filters: mailbox, in/out,
+       CRM-sent / texts, attachments, dates, search; "Search Gmail live". A row opens the message, fetched live from Gmail
+       (never stored; each opening is logged), with "Open in Gmail" and "Link to job".
+     • On a job page (the 💬 Communication bar) and on a customer page: "📧 All e-mail" — the e-mail matched to it.
+     • Until Google is set up (docs/EMAIL-ALL.md) it shows the setup steps; the CRM-sent list works right away.
+   API: window._gcMailAll = { openFor({ pid | cust | emails, title }), slot(root), state() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MAILALL__) return; window.__GC_PATCH_MAILALL__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/mail-all';
+var ST8 = { status: null, rows: [], total: 0, err: '', loading: false, more: false, f: { mailbox: '', dir: '', src: '', att: false, from: '', to: '', q: '', live: false }, offset: 0 };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+function proj(pid){ return arr((W._crm || {}).projects).filter(function(p){ return p && s(p.id) === s(pid); })[0] || null; }
+function jobLabel(p){ try { if (typeof W._gcJobLabel === 'function') return s(W._gcJobLabel(p)); } catch (e) {} return s(p && (p.name || p.id)); }
+function short(a){ return s(a).replace('@grayco-cs.com', '@'); }
+function qs(o){ return Object.keys(o).filter(function(k){ return o[k] !== '' && o[k] != null && o[k] !== false; }).map(function(k){ return encodeURIComponent(k) + '=' + encodeURIComponent(o[k] === true ? '1' : o[k]); }).join('&'); }
+
+/* ── data ── */
+function loadStatus(){ return j(FN + '?op=status').then(function(o){ if (o && o.ok) ST8.status = o; else ST8.err = s(o && o.error) || 'Could not load.'; return ST8; }); }
+function loadList(append){
+  var f = ST8.f; ST8.loading = true;
+  var p = { op: 'list', limit: 100, offset: append ? ST8.offset : 0, q: f.q, dir: f.dir, src: f.src === 'crm' || f.src === 'sms' || f.src === 'gmail' ? f.src : '', att: f.att, from: f.from, to: f.to };
+  if (f.mailbox) p.mailbox = f.mailbox;
+  if (f.live && f.q) { p = { op: 'list', live: 1, q: f.q }; if (f.mailbox && f.mailbox !== 'crm') p.mailboxes = f.mailbox; }
+  return j(FN + '?' + qs(p)).then(function(o){
+    ST8.loading = false;
+    if (o && o.ok) { ST8.rows = append ? ST8.rows.concat(arr(o.rows)) : arr(o.rows); ST8.total = o.total || ST8.rows.length; ST8.offset = (append ? ST8.offset : 0) + arr(o.rows).length; ST8.more = !o.live && ST8.offset < ST8.total; ST8.err = ''; }
+    else ST8.err = s(o && o.error) || 'Could not load.';
+    return ST8;
+  });
+}
+
+/* ── the table (shared by the Email Center card and the job / customer list) ── */
+/* an address in a cell: a plain link-looking span the ✉️ e-mail decorator (patch AP3) leaves alone — a row tap opens the
+   message, not a new e-mail */
+function addrCell(v){ return '<a href="#" data-gcma-a style="color:inherit;text-decoration:none">' + esc(v) + '</a>'; }
+D.addEventListener('click', function(e){ var a = e.target && e.target.closest ? e.target.closest('a[data-gcma-a]') : null; if (a) e.preventDefault(); }, true);
+function rowsHtml(rows, compact){
+  if (!rows.length) return '<div class="gcm-mut" style="margin-top:8px">Nothing here yet.</div>';
+  return '<table class="gcm-tbl"><tr><th>When</th>' + (compact ? '' : '<th>Mailbox</th>') + '<th></th><th>From</th><th>To</th><th>Subject</th><th>Job</th></tr>' + rows.map(function(r, i){
+    var p = r.pid ? proj(r.pid) : null;
+    var box = r.mailbox === 'crm' ? (r.src === 'sms' ? '💬 CRM text' : '🤖 Sent by CRM') : arr(r.mailboxes || [r.mailbox]).map(short).join(', ');
+    var st = r.src !== 'gmail' && r.status ? ' <span class="gcm-k" style="color:' + (r.status === 'sent' ? '#86efac' : r.status === 'paused' ? '#fcd34d' : '#fca5a5') + '">' + esc(r.status) + '</span>' : '';
+    return '<tr data-gcma-row="' + i + '" style="cursor:pointer"><td>' + esc(when(r.at)) + '</td>' + (compact ? '' : '<td>' + esc(box) + '</td>') + '<td title="' + (r.dir === 'out' ? 'sent' : 'received') + '">' + (r.dir === 'out' ? '📤' : '📥') + (r.att ? '📎' : '') + '</td>'
+      + '<td>' + addrCell(r.fromName || r.from || '—') + '</td><td>' + addrCell(arr(r.to).slice(0, 3).map(short).join(', ') + (arr(r.to).length > 3 ? ' +' + (arr(r.to).length - 3) : '')) + '</td>'
+      + '<td><b>' + esc(r.subject || '(no subject)') + '</b>' + st + (r.snippet ? '<div class="gcm-mut">' + esc(r.snippet.slice(0, 120)) + '</div>' : '') + '</td><td>' + (p ? esc(jobLabel(p)) : '') + '</td></tr>';
+  }).join('') + '</table>';
+}
+
+/* ── one message ── */
+function overlay(){
+  var ov = D.createElement('div'); ov.className = 'gcma-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100095;background:rgba(6,12,20,.78);display:flex;align-items:center;justify-content:center;padding:16px;font:13px Inter,Arial,sans-serif';
+  var pn = D.createElement('div'); pn.style.cssText = 'background:#fff;color:#0f172a;border-radius:14px;width:min(920px,100%);max-height:92vh;overflow:auto;padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.4)';
+  ov.appendChild(pn);
+  function close(){ ov.remove(); D.removeEventListener('keydown', key, true); }
+  function key(e){ if (e.key === 'Escape') close(); }
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-gcma-x]'))) close(); });
+  D.addEventListener('keydown', key, true);
+  D.body.appendChild(ov);
+  return { ov: ov, pn: pn, close: close };
+}
+function head(r){
+  return '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div style="font-size:17px;font-weight:800">' + esc(r.subject || '(no subject)') + '</div>'
+    + '<div style="color:#475569;margin-top:4px">From <b>' + esc(r.fromName ? r.fromName + ' <' + r.from + '>' : r.from) + '</b> · To ' + esc(arr(r.to).join(', ')) + (arr(r.cc).length ? ' · Cc ' + esc(arr(r.cc).join(', ')) : '') + '<br>' + esc(when(r.at)) + (r.mailbox ? ' · ' + esc(r.mailbox === 'crm' ? 'sent by the CRM' : 'mailbox ' + r.mailbox) : '') + '</div></div>'
+    + '<button type="button" data-gcma-x style="border:none;background:#f1f5f9;border-radius:8px;width:36px;height:36px;font-size:18px;cursor:pointer">✕</button></div>';
+}
+function linkPicker(r){
+  if (!isAdmin()) return '';
+  var ps = arr((W._crm || {}).projects).filter(function(p){ return p && p.id && p.deleted !== true; });
+  return '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><b>🔗 Link to job:</b><select data-gcma-link style="padding:6px;border:1px solid #cbd5e1;border-radius:8px;max-width:420px"><option value="">— none —</option>'
+    + ps.map(function(p){ return '<option value="' + esc(p.id) + '"' + (s(r.pid) === s(p.id) ? ' selected' : '') + '>' + esc(jobLabel(p)) + '</option>'; }).join('') + '</select><span data-gcma-linkmsg style="color:#16a34a"></span></div>';
+}
+function bindLink(o, r){
+  var sel = o.pn.querySelector('[data-gcma-link]'); if (!sel) return;
+  sel.addEventListener('change', function(){
+    var msg = o.pn.querySelector('[data-gcma-linkmsg]'); msg.textContent = 'Saving…';
+    j(FN + '?op=link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mid: r.mid, id: r.mid ? '' : r.id, pid: sel.value }) }).then(function(x){
+      msg.textContent = x && x.ok ? '✓ Saved' : 'Not saved: ' + s(x && x.error); if (x && x.ok) { r.pid = sel.value; }
+    });
+  });
+}
+function openRow(r){
+  var o = overlay();
+  if (r.src !== 'gmail') {
+    o.pn.innerHTML = head(r) + '<div style="margin-top:12px;padding:10px;background:#f8fafc;border-radius:10px">' + (r.src === 'sms' ? '💬 A text the CRM sent' : '🤖 An e-mail the CRM sent') + ' — status <b>' + esc(r.status || 'sent') + '</b>' + (r.kind ? ' · ' + esc(r.kind) : '') + '.<br>' + (r.snippet ? esc(r.snippet) + '<br>' : '') + '<span style="color:#64748b">Only who, to whom, the subject and the status are kept for e-mail the CRM sends — not the message itself.</span></div>' + linkPicker(r);
+    bindLink(o, r); return;
+  }
+  o.pn.innerHTML = head(r) + '<div style="margin-top:12px;color:#64748b">Opening from Gmail…</div>';
+  j(FN + '?' + qs({ op: 'get', mailbox: arr(r.mailboxes || [r.mailbox])[0], id: r.id })).then(function(x){
+    if (!x || !x.ok) { o.pn.innerHTML = head(r) + '<div style="margin-top:12px;color:#b91c1c">' + esc(s(x && x.error) || 'Could not open it.') + '</div>'; return; }
+    var b = x.body || {};
+    o.pn.innerHTML = head(x.row || r)
+      + '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><a href="' + esc(x.gmail) + '" target="_blank" rel="noopener" style="background:#d4a017;color:#0d1b2a;padding:8px 14px;border-radius:8px;font-weight:800;text-decoration:none">Open in Gmail ↗</a>'
+      + (arr(b.files).length ? '<span style="align-self:center;color:#475569">📎 ' + arr(b.files).map(function(f){ return esc(f.name); }).join(', ') + ' (open in Gmail to download)</span>' : '') + '</div>'
+      + linkPicker(r)
+      + '<div style="margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">' + (b.html ? '<iframe data-gcma-body sandbox="" referrerpolicy="no-referrer" style="width:100%;height:60vh;border:0;background:#fff"></iframe>' : '<pre style="white-space:pre-wrap;margin:0;padding:12px;font:13px/1.5 Inter,Arial,sans-serif">' + esc(b.text || '(empty)') + '</pre>') + '</div>'
+      + '<div style="margin-top:6px;color:#94a3b8;font-size:11px">Shown from Gmail now — not stored in the CRM. Opening it was recorded in the admins\' access log.</div>';
+    var fr = o.pn.querySelector('[data-gcma-body]'); if (fr) fr.srcdoc = b.html;   /* sandbox="": no scripts, no forms, no navigation */
+    bindLink(o, r);
+  });
+}
+
+/* ── the Email Center card ── */
+var CARD = null, LAST = '';
+function setupHtml(st){
+  return '<div style="margin-top:8px;padding:10px;border:1px dashed #d4a017;border-radius:10px"><b style="color:#d4a017">Gmail reading is not set up yet</b> — the e-mail the CRM sends is listed below already; for every GrayCo mailbox, do this once (docs/EMAIL-ALL.md):'
+    + '<ol style="margin:6px 0 0 18px;padding:0">' + arr(st && st.setup).map(function(x){ return '<li style="margin:3px 0">' + esc(x) + '</li>'; }).join('') + '</ol>'
+    + '<div class="gcm-mut" style="margin-top:6px">Read-only: the CRM asks Google only for <b>' + esc((st && st.scope) || 'gmail.readonly') + '</b> — it can never send, change or delete mail. Bodies are never stored.</div></div>';
+}
+function cardHtml(){
+  var st = ST8.status || {}, f = ST8.f, boxes = arr(st.mailboxes);
+  var last = Object.keys(st.state || {}).map(function(k){ return st.state[k] && st.state[k].at; }).filter(Boolean).sort().pop();
+  var errs = Object.keys(st.state || {}).filter(function(k){ return st.state[k] && st.state[k].err; });
+  return '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div style="font-weight:800;font-size:15px">🌐 All GrayCo e-mail <span class="gcm-k">admins only</span></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">' + (st.configured ? '<button type="button" class="gcm-chip" data-gcma-sync>⟳ Sync now</button>' : '') + '<button type="button" class="gcm-chip" data-gcma-refresh>↻ Refresh</button></div></div>'
+    + '<div class="gcm-mut" style="margin-top:4px">' + (st.configured ? 'Every GrayCo mailbox (' + boxes.length + '), sent and received, synced every 15 minutes' + (last ? ' — last ' + esc(when(last)) : '') + (errs.length ? ' · <span class="gcm-no">' + errs.length + ' mailbox(es) had a problem: ' + esc(errs.map(function(k){ return short(k) + ' — ' + st.state[k].err; }).join('; ').slice(0, 300)) + '</span>' : '') + '. ' : '') + 'Plus every e-mail and text the CRM itself sent. Only who / to whom / subject / date are kept — a message opens live from Gmail.</div>'
+    + (st && st.ok && !st.configured ? setupHtml(st) : '')
+    + '<form data-gcma-f style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center">'
+    + '<select class="gcm-in" name="mailbox"><option value="">All mailboxes + CRM</option>' + boxes.map(function(b){ return '<option value="' + esc(b) + '"' + (f.mailbox === b ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('') + '<option value="crm"' + (f.mailbox === 'crm' ? ' selected' : '') + '>🤖 Sent by the CRM</option></select>'
+    + '<select class="gcm-in" name="dir"><option value="">In + out</option><option value="in"' + (f.dir === 'in' ? ' selected' : '') + '>📥 Received</option><option value="out"' + (f.dir === 'out' ? ' selected' : '') + '>📤 Sent</option></select>'
+    + '<select class="gcm-in" name="src"><option value="">Everything</option><option value="gmail"' + (f.src === 'gmail' ? ' selected' : '') + '>Mailboxes (Gmail)</option><option value="crm"' + (f.src === 'crm' ? ' selected' : '') + '>CRM e-mails</option><option value="sms"' + (f.src === 'sms' ? ' selected' : '') + '>CRM texts</option></select>'
+    + '<label class="gcm-mut"><input type="checkbox" name="att"' + (f.att ? ' checked' : '') + '> 📎</label>'
+    + '<input class="gcm-in" type="date" name="from" value="' + esc(f.from) + '" title="From"><input class="gcm-in" type="date" name="to" value="' + esc(f.to) + '" title="To">'
+    + '<input class="gcm-in" name="q" value="' + esc(f.q) + '" placeholder="Search who, subject…" style="width:200px">'
+    + (st.configured ? '<label class="gcm-mut" title="Ask Gmail itself (Gmail search words, newest 25 per mailbox)"><input type="checkbox" name="live"' + (f.live ? ' checked' : '') + '> search Gmail live</label>' : '')
+    + '<button class="gcm-chip" type="submit">Apply</button></form>'
+    + (ST8.err ? '<div class="gcm-no" style="margin-top:8px">' + esc(ST8.err) + '</div>' : ST8.loading && !ST8.rows.length ? '<div class="gcm-mut" style="margin-top:8px">Loading…</div>' : '<div class="gcm-mut" style="margin-top:6px">' + ST8.total + ' e-mail(s)</div>' + rowsHtml(ST8.rows))
+    + (ST8.more ? '<button type="button" class="gcm-chip" data-gcma-more style="margin-top:8px">Load more</button>' : '')
+    + '<div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:center"><label class="gcm-mut"><input type="checkbox" data-gcma-pm' + (st.settings && st.settings.pmSeesJobMail ? ' checked' : '') + '> PMs see the e-mail matched to <b>their own</b> jobs (off = admins only)</label><button type="button" class="gcm-chip" data-gcma-access>🔐 Who opened what</button></div>';
+}
+function paintCard(){
+  if (!CARD) return; var h = cardHtml(); if (h === LAST) return; LAST = h; CARD.innerHTML = h;
+}
+function bindCard(card){
+  card.addEventListener('click', function(ev){
+    var t = ev.target.closest ? ev.target.closest('[data-gcma-row],[data-gcma-sync],[data-gcma-refresh],[data-gcma-more],[data-gcma-access]') : null; if (!t) return;
+    if (t.hasAttribute('data-gcma-row')) { var r = ST8.rows[+t.getAttribute('data-gcma-row')]; if (r) openRow(r); }
+    else if (t.hasAttribute('data-gcma-refresh')) { loadStatus().then(function(){ return loadList(); }).then(paintCard); }
+    else if (t.hasAttribute('data-gcma-more')) { loadList(true).then(paintCard); }
+    else if (t.hasAttribute('data-gcma-sync')) { t.textContent = 'Syncing…'; j(FN + '?op=sync', { method: 'POST' }).then(function(o){ if (!(o && o.ok)) alert('Sync: ' + s(o && (o.error || o.skipped))); return loadStatus(); }).then(function(){ return loadList(); }).then(paintCard); }
+    else if (t.hasAttribute('data-gcma-access')) {
+      j(FN + '?op=access').then(function(o){ var x = overlay(); x.pn.innerHTML = '<div style="display:flex;justify-content:space-between"><b style="font-size:16px">🔐 Who opened which e-mail</b><button type="button" data-gcma-x style="border:none;background:#f1f5f9;border-radius:8px;width:36px;height:36px;cursor:pointer">✕</button></div>'
+        + (o && o.ok ? '<table style="width:100%;border-collapse:collapse;margin-top:8px">' + arr(o.rows).map(function(a){ return '<tr><td style="padding:4px;border-bottom:1px solid #e2e8f0">' + esc(when(a.at)) + '</td><td style="padding:4px;border-bottom:1px solid #e2e8f0">' + esc(a.by) + '</td><td style="padding:4px;border-bottom:1px solid #e2e8f0">' + esc(a.mailbox) + '</td><td style="padding:4px;border-bottom:1px solid #e2e8f0">' + esc(a.subject) + '</td></tr>'; }).join('') + '</table>' : '<div>' + esc(s(o && o.error)) + '</div>'); });
+    }
+  });
+  card.addEventListener('change', function(ev){
+    var t = ev.target; if (!t || !t.hasAttribute || !t.hasAttribute('data-gcma-pm')) return;
+    j(FN + '?op=settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pmSeesJobMail: !!t.checked }) }).then(function(o){ if (o && o.ok && ST8.status) ST8.status.settings = o.settings; else alert('Not saved: ' + s(o && o.error)); paintCard(); });
+  });
+  card.addEventListener('submit', function(ev){
+    var f = ev.target; if (!f.hasAttribute('data-gcma-f')) return; ev.preventDefault();
+    ST8.f = { mailbox: f.mailbox.value, dir: f.dir.value, src: f.src.value, att: f.att.checked, from: f.from.value, to: f.to.value, q: s(f.q.value), live: !!(f.live && f.live.checked) };
+    ST8.rows = []; ST8.loading = true; paintCard(); loadList().then(paintCard);
+  });
+}
+/* called by the Email Center after it draws (patch MAILC's paint) — the card is ONE node, moved, never rebuilt */
+function slot(root){
+  if (!root || !isAdmin()) return;
+  var sl = root.querySelector('[data-gcm-allslot]'); if (!sl) return;
+  if (!CARD) { CARD = D.createElement('div'); CARD.className = 'gcm-card'; CARD.setAttribute('data-gcma-card', '1'); bindCard(CARD); LAST = ''; paintCard(); loadStatus().then(paintCard).then(function(){ return loadList(); }).then(paintCard); }
+  if (CARD.parentNode !== sl) sl.appendChild(CARD);
+}
+W._gcMailAllSlot = slot;
+
+/* ── a job's / a customer's e-mail ── */
+function openFor(o){
+  o = o || {}; var x = overlay();
+  x.pn.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16px">📧 All e-mail — ' + esc(o.title || '') + '</b><button type="button" data-gcma-x style="border:none;background:#f1f5f9;border-radius:8px;width:36px;height:36px;font-size:18px;cursor:pointer">✕</button></div><div data-gcma-list style="margin-top:8px;color:#64748b">Loading…</div>';
+  var p = { op: 'list', limit: 200 }; if (o.pid) p.pid = o.pid; if (o.cust) p.cust = o.cust; if (arr(o.emails).length) p.emails = arr(o.emails).join(',');
+  j(FN + '?' + qs(p)).then(function(r){
+    var box = x.pn.querySelector('[data-gcma-list]'); if (!box) return;
+    if (!r || !r.ok) { box.innerHTML = '<span style="color:#b91c1c">' + esc(s(r && r.error) || 'Could not load.') + '</span>'; return; }
+    var rows = arr(r.rows);
+    box.innerHTML = '<div style="color:#475569">' + rows.length + ' e-mail(s) matched' + (r.configured === false ? ' (only what the CRM sent — Gmail reading is not set up yet; see the Gmail tab)' : '') + '. Click one to open it.</div>'
+      + '<div class="gcma-light">' + rowsHtml(rows, true).replace(/gcm-tbl/g, 'gcma-tbl').replace(/gcm-mut/g, 'gcma-mut').replace(/gcm-k/g, 'gcma-k') + '</div>';
+    box.addEventListener('click', function(ev){ var t = ev.target.closest ? ev.target.closest('[data-gcma-row]') : null; if (t) { var rr = rows[+t.getAttribute('data-gcma-row')]; if (rr) openRow(rr); } });
+  });
+}
+function lightCss(){
+  if (D.getElementById('gcma-css')) return;
+  var st = D.createElement('style'); st.id = 'gcma-css';
+  st.textContent = '.gcma-tbl{width:100%;border-collapse:collapse;margin-top:8px}.gcma-tbl td,.gcma-tbl th{border-bottom:1px solid #e2e8f0;padding:6px;text-align:left;vertical-align:top;font-size:12px}.gcma-tbl th{color:#64748b}.gcma-tbl tr[data-gcma-row]:hover{background:#f8fafc}.gcma-mut{color:#64748b;font-size:12px}.gcma-k{font-size:10px;font-weight:700}'
+    + '.gcma-btn{border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:8px;padding:5px 10px;font:700 12px Inter,Arial,sans-serif;cursor:pointer;margin-left:6px}';
+  (D.head || D.documentElement).appendChild(st);
+}
+/* the button on the job page's 💬 Communication bar (added once into the bar; never moves anything) */
+var PMOK = null;
+function canJob(pid){
+  if (isAdmin()) return true;
+  if (PMOK === null) return false;
+  if (!PMOK) return false;
+  var p = proj(pid); var me = ''; try { me = low((W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()) || ''); } catch (e) {}
+  var meName = ''; try { meName = low(JSON.parse(localStorage.getItem('grayco_user') || '{}').name); } catch (e) {}
+  return !!p && ((low(p.pmEmail) && low(p.pmEmail) === me) || (meName && low(p.pm) === meName));
+}
+function decorate(){
+  if (D.hidden) return;
+  var bars = D.querySelectorAll('.gcx9-bars[data-pid]');
+  for (var i = 0; i < bars.length; i++) {
+    var b = bars[i], pid = b.getAttribute('data-pid'), bar = b.querySelector('.gcx9-bar');
+    if (!bar || bar.querySelector('[data-gcma-job]') || !canJob(pid)) continue;
+    lightCss();
+    var btn = D.createElement('button'); btn.type = 'button'; btn.className = 'gcma-btn'; btn.setAttribute('data-gcma-job', pid); btn.textContent = '📧 All e-mail';
+    btn.addEventListener('click', function(ev){ ev.stopPropagation(); var id = this.getAttribute('data-gcma-job'), p = proj(id); openFor({ pid: id, title: p ? jobLabel(p) : id }); });
+    bar.appendChild(btn);
+  }
+  /* the customer page (patch D1's 👤 sheet): one button at the top of the open sheet */
+  if (isAdmin()) {
+    var pn = D.querySelector('.gcd1-ov .gcd1-pn');
+    if (pn && !pn.querySelector('[data-gcma-cust]')) {
+      var ems = []; Array.prototype.forEach.call(pn.querySelectorAll('a[href^="mailto:"],a[data-gc-mailto]'), function(a){ var e = low((a.getAttribute('data-gc-mailto') || a.getAttribute('href') || '').replace(/^mailto:/i, '').split('?')[0]); if (/@/.test(e) && ems.indexOf(e) < 0) ems.push(e); });   /* another patch turns mailto: into Gmail links (data-gc-mailto keeps the address) */
+      if (ems.length) {
+        lightCss();
+        var cb = D.createElement('button'); cb.type = 'button'; cb.className = 'gcma-btn'; cb.setAttribute('data-gcma-cust', '1'); cb.textContent = '📧 All e-mail with this customer'; cb.style.margin = '0 0 8px';
+        cb.addEventListener('click', function(){ var t = pn.querySelector('h2,h3,b'); openFor({ emails: ems, title: t ? s(t.textContent).slice(0, 80) : ems[0] }); });
+        pn.insertBefore(cb, pn.firstChild);
+      }
+    }
+  }
+}
+function pmSetting(){
+  if (isAdmin()) { PMOK = true; return; }
+  j(FN + '?op=settings').then(function(o){ PMOK = false; if (o && o.ok && o.settings) PMOK = !!o.settings.pmSeesJobMail; }, function(){ PMOK = false; });
+}
+ST.call(W, pmSetting, 4000);
+RI.call(W, decorate, 1500);
+W._gcMailAll = { openFor: openFor, slot: slot, state: function(){ return ST8; }, reload: function(){ return loadStatus().then(function(){ return loadList(); }).then(paintCard); } };
+try { console.log('[GC] 🌐 All GrayCo e-mail — admins (patch MAILALL) — _gcMailAll'); } catch (e) {}
 })();
 </script>
 <script>

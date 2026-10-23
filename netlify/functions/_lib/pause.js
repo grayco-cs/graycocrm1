@@ -127,16 +127,44 @@ function fakeResponse(c){
   if (typeof Response === 'function') return new Response(JSON.stringify(body), { status: c.status, headers: headers });
   return { ok: c.status < 300, status: c.status, headers: { get: function(k){ return headers[k] || headers[s(k).toLowerCase()] || null; } }, json: async function(){ return body; }, text: async function(){ return JSON.stringify(body); } };
 }
+/* patch MAILALL: every e-mail / text the CRM itself sends (sent, paused or failed) goes into the admins' "🌐 All GrayCo
+   e-mail" index — metadata only (from, to, subject, kind, job, status), never the body. Logged here, at the one place
+   every send passes, so no function can be missed. A slow or broken index never holds a send up (0.8 s cap, errors ignored). */
+function sendKind(url, opts){
+  let u; try { u = new URL(s(url)); } catch (e) { return null; }
+  const method = s((opts && opts.method) || 'GET').toUpperCase(); if (method !== 'POST') return null;
+  const host = u.hostname.toLowerCase();
+  if (host === 'api.resend.com' && /^\/emails\/batch\/?$/.test(u.pathname)) return 'batch';
+  if (host === 'api.resend.com' && /^\/emails\/?$/.test(u.pathname)) return 'email';
+  if (host === 'api.twilio.com' && /\/Messages(\.json)?$/i.test(u.pathname)) return 'sms';
+  return null;
+}
+async function logSend(kind, opts, status, res){
+  try {
+    const X = require('./mailidx.js');
+    let ids = [];
+    try { const r = res && typeof res.clone === 'function' ? res.clone() : null; const j = r ? await r.json() : null; if (j) ids = j.sid ? [j.sid] : j.id ? [j.id] : Array.isArray(j.data) ? j.data.map(function(x){ return x && x.id; }) : []; } catch (e) {}
+    let rows = [];
+    if (kind === 'sms') { const p = {}; try { new URLSearchParams(bodyText(opts)).forEach(function(v, k){ p[k] = v; }); } catch (e) {} rows = [X.crmRow('sms', '', p, status, ids[0])]; }
+    else if (kind === 'batch') { rows = (bodyJson(opts) || []).map(function(m, i){ return X.crmRow('email', '', m, status, ids[i]); }); }
+    else rows = [X.crmRow('email', '', bodyJson(opts) || {}, status, ids[0])];
+    await Promise.race([X.logCrmSend(rows), new Promise(function(r){ setTimeout(r, 800); })]);
+  } catch (e) {}
+}
 async function guardedFetch(raw, url, opts){
   const target = url && typeof url === 'object' && url.url ? url.url : url;
   const o = opts || (url && typeof url === 'object' && url.method ? { method: url.method } : undefined);
-  const c = classify(target, o);
+  const c = classify(target, o), lk = sendKind(target, o);
   if (c && await isPaused()) {
     let host = ''; try { host = new URL(s(target)).hostname; } catch (e) {}
     try { console.log('[pause] skipped ' + c.kind + ' → ' + host + ' (data-entry mode' + (state.why && !/data-entry mode is on/.test(state.why) ? '; ' + state.why : '') + ')'); } catch (e) {}
-    return fakeResponse(c);
+    const fake = fakeResponse(c);
+    if (lk) await logSend(lk, o, 'paused', fake);
+    return fake;
   }
-  return raw.call(globalThis, url, opts);
+  const res = await raw.call(globalThis, url, opts);
+  if (lk) await logSend(lk, o, res && res.ok ? 'sent' : 'failed', res);
+  return res;
 }
 /* install once per bundle: wraps the global fetch (the function files call this on their first line). Each wrapper
    keeps the fetch it wrapped, so a second install (another wrapper in between, e.g. brand.js) only checks twice. */
@@ -152,4 +180,4 @@ function install(){
 /* for code that holds its own fetch: true when this send must be skipped right now */
 async function shouldSkip(url, opts){ return !!(classify(url, opts) && await isPaused()); }
 
-module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, _t: { readFlag, addrList, fakeResponse } };
+module.exports = { install, isPaused, why, reset, classify, staffOnly, shouldSkip, KEY, _t: { readFlag, addrList, fakeResponse, sendKind, logSend } };

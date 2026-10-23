@@ -320,3 +320,8 @@
 # optional e-mail). plan-nightly (no schedule) answers the Admin "Run now" / preview calls.
 [functions."plan-scheduled"]
   schedule = "0 7,8,11,12 * * *"
+
+# patch MAILALL: "🌐 All GrayCo e-mail" (docs/EMAIL-ALL.md) — every 15 minutes, the new e-mail in every GrayCo mailbox
+# (Gmail, read-only, metadata only) into the admins' index. Does nothing until GOOGLE_SA_EMAIL / GOOGLE_SA_KEY are set.
+[functions."mail-all-sync"]
+  schedule = "*/15 * * * *"
