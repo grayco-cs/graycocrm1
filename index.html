@@ -80815,7 +80815,10 @@ window._gcForceFixSchedule = async function(silent){
           return Promise.resolve(new Response(null, { status: 503, statusText: 'sync backoff' }));
         }
         return _origFetch.apply(this, arguments).then(function(res){
-          window._gcReportSync(res.ok || res.status===409, res.status);  // 409 = conflict but reachable
+          /* patch BOFF4XX: only 429 / 5xx are "the cloud is struggling". Any other 4xx (404 a table not set up, 401/403 no permission,
+             400 a bad row) is the database answering — backing off for it made every other call answer 503 for a minute
+             (RoofScout's "not set up" showed as "resting its background syncs"). */
+          window._gcReportSync(res.ok || (res.status>=400 && res.status<500 && res.status!==429), res.status);  // 409 = conflict but reachable
           return res;
         }).catch(function(err){
           window._gcReportSync(false, 0);
@@ -167570,6 +167573,14 @@ function bar(ov, pid){
     });
   };
 }
+/* patch TXTBAR: the browser's own MutationObserver. The CRM's governed one holds callbacks until nobody is
+   "busy", and the Job Messages panel being open counts as busy — so the bar never came back after the thread
+   redrew. This watcher only looks at the panel's own children and re-adds one bar: cheap, and it must be instant. */
+function nativeMO(){
+  var C = W.MutationObserver;
+  try { var probe = new C(function(){}), k = 0; while (probe && probe._n && k++ < 5) { C = probe._n.constructor; probe = probe._n; } } catch (e) {}
+  return C;
+}
 function wrapOpen(){
   var f = W._gcOpenJobMessages; if (typeof f !== 'function' || f.__gcTxt) return !!f;
   var w = function(pid){
@@ -167579,7 +167590,7 @@ function wrapOpen(){
     var ov = D.getElementById('_gcJobMsgOv');
     if (ov && pid && !ov.__gctxObs) {
       ov.setAttribute('data-gctx-pid', pid); bar(ov, pid);
-      try { var mo = new MutationObserver(function(){ if (!ov.isConnected) { mo.disconnect(); return; } if (!ov.querySelector('.gctx-bar')) bar(ov, pid); }); mo.observe(ov, { childList: true }); ov.__gctxObs = mo; } catch (e) {}
+      try { var mo = new (nativeMO())(function(){ if (!ov.isConnected) { mo.disconnect(); return; } if (!ov.querySelector('.gctx-bar')) { try { bar(ov, pid); } catch (e2) { try { console.warn('[GC] text bar', e2); } catch (_e) {} } } }); mo.observe(ov, { childList: true }); ov.__gctxObs = mo; } catch (e) {}
     }
     return r;
   };
@@ -168689,15 +168700,22 @@ function companyBlock(set){
   return { name: s(set && set.companyName) || 'GrayCo Construction Services', address: addr || s(set && set.companyAddr),
            phone: s(W.GC_BRAND && W.GC_BRAND.phone) || '(901) 585-0944', ein: s(set && set.ein) };
 }
+function profFor(L, profs, has){   /* patch PAYPICK: the employee's own profile — userId first; a name match only when it is the only one, or the only one carrying the field */
+  var a = (profs || []).filter(Boolean), id = s(L.empId), nm = s(L.name);
+  if (id) { var byId = a.filter(function(x){ return s(x.userId) && s(x.userId) === id; }); if (byId.length) return byId[0]; }
+  var byName = nm ? a.filter(function(x){ return s(x.name) === nm; }) : [];
+  if (byName.length === 1) return byName[0];
+  var withF = byName.filter(has); return withF.length === 1 ? withF[0] : null;
+}
 function emailFor(L, profs){
-  var p = (profs || []).find(function(x){ return x && ((x.userId && x.userId === L.empId) || s(x.name) === s(L.name)); });
+  var p = profFor(L, profs, function(x){ return !!s(x.email); });
   if (p && p.email) return low(p.email);
   try { var u = ((W._crm || {}).users || []).find(function(x){ return x && ((x.id && x.id === L.empId) || s(x.name) === s(L.name)); }); if (u && u.email) return low(u.email); } catch (e) {}
   return '';
 }
 function last4(v){ var d = s(v).replace(/[^0-9]/g, ''); return d.length >= 4 ? d.slice(-4) : ''; }   /* patch PAYSSN */
 function ssn4For(L, profs){
-  var p = (profs || []).find(function(x){ return x && ((x.userId && x.userId === L.empId) || s(x.name) === s(L.name)); });
+  var p = profFor(L, profs, function(x){ return !!last4(x.ssn4); });
   var v = last4(p && p.ssn4); if (v) return v;
   /* the employee record (Admin → Employees keeps the last 4 there — users_private, merged in on an admin's computer) */
   try {
