@@ -141846,7 +141846,8 @@ var NEW = [
   { id: 'webpages', ic: '🌐', l: 'Website, pixels & guides', d: 'City pages, Google tag + Meta pixel, free guide downloads, Google Business drafts' },
   { id: 'reels', ic: '🎬', l: 'Before/after reel kit', d: 'PMs: a short branded slideshow video from job photos (customer OK required)' },
   { id: 'decks', ic: '🎤', l: 'Presentations', d: 'BNI 60-second + 10-minute, lunch & learns, new-hire training — slides with notes, print to PDF' },
-  { id: 'coach', ic: '🧭', l: 'Marketing coach', d: 'This week\'s checklist: Google, Facebook, Instagram, Nextdoor, LSA, listings — with streaks' }
+  { id: 'coach', ic: '🧭', l: 'Marketing coach', d: 'This week\'s checklist: Google, Facebook, Instagram, Nextdoor, LSA, listings — with streaks' },
+  { id: 'agency', ic: '🤝', l: 'Agency portal', d: 'The marketing agency\'s own page: results by source, the plan, spend, calls, notes — no customer details' }   /* patch AGY */
 ];
 NEW.forEach(function(x){ if (!SECS.some(function(y){ return y.id === x.id; })) SECS.splice(SECS.length - 1, 0, x); });
 ['flyers', 'reels', 'decks', 'coach', 'library'].forEach(function(x){ if (X.PM_SECS.indexOf(x) < 0) X.PM_SECS.push(x); });
@@ -142247,6 +142248,13 @@ ACT['gbp-draft'] = function(b){ var p = proj(b.getAttribute('data-id')); if (!p)
 
 /* ══════════════ 🎬 BEFORE/AFTER REEL KIT ══════════════ */
 var RL = { pid: '', sel: [], urls: {}, cap: '', busy: false, out: null };
+/* patch AGY: the marketing agency's page (agency.html, server netlify/functions/agency.js) — opened from here with the CRM sign-in */
+VIEWS.agency = function(){
+  return '<div class="gmt-card"><h2>🤝 Agency portal</h2><div class="gmt-muted">The marketing agency (AdVentures Media) works from its own page: results by lead source, the marketing plan, the spend log, tracked calls, setup status, notes back and forth and the monthly report. ' +
+    'They sign in with a link e-mailed to them and see marketing numbers only — no customer names, phones or addresses. You open it with your CRM sign-in; admins add or turn off agency people and choose what they see (👥 Team & settings).</div>' +
+    '<p><a class="gmt-btn" href="/agency" target="_blank" rel="noopener">Open the agency portal</a></p>' +
+    '<div class="gmt-muted">Agency link to send them: <b>' + esc(W.location.origin) + '/agency</b> · Guide: docs/AGENCY-PORTAL.md</div></div>';
+};
 VIEWS.reels = function(){
   var jobs = X.finishedJobs(365).slice(0, 80).concat(X.projects().filter(function(p){ return /active|progress/i.test(s(p.status)); }).slice(0, 40));
   var ok = RL.pid && permOk(RL.pid), ph = RL.pid ? X.photosOf(RL.pid).slice(0, 40) : [];
