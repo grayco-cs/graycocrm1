@@ -73134,7 +73134,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var pm=job?job.pm:(e.pm||null);
       if(!byId[e.id]){
         q.unshift({ expId:e.id, jobId:jobId, pm:pm, amount:(e.amt||e.amount||0), payee:(e.payee||e.vendor||e.sub||''), desc:(e.description||e.category||''),
-          matched:!!job, status:'pending_pm', enteredAt:e.enteredAt||new Date().toISOString(), source:(e.source||'crm') });
+          matched:!!job, status:'pending_pm', enteredAt:e.enteredAt||e.createdAt||e.date||new Date().toISOString(), source:(e.source||'crm') });   /* patch DEDUP: a stable date, the same on every computer */
         changed=true;
       }
     });
@@ -113134,23 +113134,26 @@ function deadSetFor(key){
   try{ (JSON.parse(localStorage.getItem('gc_deleted_'+key)||'[]')||[]).forEach(function(id){ d[id] = 1; }); }catch(e){}
   return d;
 }
-function recId(r){ return isObj(r) ? (r.id!=null && r.id!=='' ? String(r.id) : (r._id!=null && r._id!=='' ? String(r._id) : null)) : null; }
+var ALT_ID = { gc_expense_approvals:'expId', gc_sub_approvals:'invId', gc_invoice_approvals:'invId' };   /* patch DEDUP: queues keyed by the record they wait on */
+function recId(r, key){ if(!isObj(r)) return null; if(r.id!=null && r.id!=='') return String(r.id); if(r._id!=null && r._id!=='') return String(r._id); var f = key && ALT_ID[key]; if(f && r[f]!=null && r[f]!=='') return f + ':' + String(r[f]); return null; }
+function qRank(r){ var st = String(r && r.status || '').toLowerCase(); if(/approved|rejected|denied|posted|paid|void|recorded|done/.test(st)) return 3; if(st === 'escalated') return 2; return st ? 1 : 0; }   /* patch DEDUP: a decided entry beats a waiting one */
 function mergeRecords(key, local, inc){
   var dead = deadSetFor(key), out = [], at = {}, seenJ = {};
   local.forEach(function(r){
-    var id = recId(r);
+    var id = recId(r, key);
     if(id!=null){ if(dead[id]) return; if(id in at) return; at[id] = out.length; }
     else { try{ seenJ[JSON.stringify(r)] = 1; }catch(e){} }
     out.push(r);
   });
   inc.forEach(function(r){
     if(r==null) return;
-    var id = recId(r);
+    var id = recId(r, key);
     if(id==null){ var j; try{ j = JSON.stringify(r); }catch(e){ return; } if(!seenJ[j]){ seenJ[j] = 1; out.push(r); } return; }
     if(dead[id]) return;
     if(!(id in at)){ at[id] = out.length; out.push(r); return; }
     var mine = out[at[id]], a = tsOf(r), b = tsOf(mine);
     if(a && b && a > b) out[at[id]] = r;                       /* strictly newer elsewhere */
+    else if(!(a && b) && ALT_ID[key] && qRank(r) > qRank(mine)) out[at[id]] = r;   /* patch DEDUP: a queue entry decided elsewhere wins */
   });
   return out;
 }
@@ -167836,4 +167839,442 @@ later(function(){
 W._gcDocs3 = { list: list, entry: entry, html: html, launch: launch, addToJob: addToJob, upload: upload, custom: function(uid){ return CUS[uid] || null; }, setCustom: setCustom, favs: favs, toggleFav: toggleFav, customize: customize, paint: paint, ALIAS: ALIAS, GROUPS: GROUPS };
 try { console.log('[GC] 📄 One document library (patch DOCLIB3): _gcDocs3'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-dedup">
+/* __GC_PATCH_DEDUP__ — no duplicates anywhere (owner 10/23: "Approvals waiting on you (272)" showed
+   "🧾 Expense — Jon Rodriguez · Escalated · 87 days ago · $250.00" five-plus times; "there shouldn't be duplicates
+   anywhere in the CRM").
+   Why it happened: the expense approval list (localStorage gc_expense_approvals, shared through the sync) keeps one
+   entry per expense keyed by expId — there is no id field. The sync's merge only knew id / _id, so it compared those
+   entries as whole JSON: the same expense queued on two computers (each stamped its own "entered now", then one turned
+   it "escalated") became two entries, then three … one per computer per change. Every copy was a card, and the
+   Approvals tab drew every copy on purpose ("the set counts both").
+   This patch:
+     • sync: queue entries are matched by the record they wait on (expId / invId); a decided entry wins (in the merge);
+       the scanner stamps a stable date (both in the patch script);
+     • clean-up: the queues are collapsed to one entry per record (decided beats waiting, newest wins), at load and
+       every 20 s; exact same-id repeats in any list are collapsed (keep the newest / fullest copy);
+     • display: the approval set and the Approvals tab never show one record twice (count = cards);
+     • save: the expense Save button cannot save twice (a double tap made two expenses);
+     • 🧹 Duplicates (Admin → Duplicates, and on the Approvals page): likely duplicates with DIFFERENT ids — expenses,
+       invoices, change orders (money: always a person's tick, never automatic), customers, subs / vendors, jobs,
+       estimates, schedule, punch, documents. Merge into the keeper (everything pointing at a duplicate is pointed at
+       the keeper: approvals, job links, payments …) or Archive. Nothing is hard-deleted: the duplicates go through the
+       CRM's own delete list (_gcxDel) with a full copy kept in gc_kv gc_dedupe_log; Undo for 7 days.
+       Leads have their own tool (🧹 Lead cleanup, patch LCLEAN).
+   API: window._gcDedupe = { scan, open, merge, archive, undo, log, collapseQueues, collapseRepeats } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_DEDUP__) return; window.__GC_PATCH_DEDUP__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function every(f, ms){ return RI.call(W, f, ms); }
+function s(v){ return v == null ? '' : String(v); }
+function low(v){ return s(v).trim().toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function jparse(v, d){ try { var r = JSON.parse(v); return r == null ? d : r; } catch (e) { return d; } }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function nowISO(){ return new Date().toISOString(); }
+function warn(e){ try { console.warn('[GC DEDUP]', e && e.message || e); } catch (x) {} }
+function norm(v){ return low(v).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function cents(v){ var n = parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? Math.round(n * 100) : 0; }
+function money(c){ return '$' + (c / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function digits(v){ var d = s(v).replace(/\D+/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
+function who(){ try { var A = W.__GC_AUTH__; var e = A && A.email && A.email(); if (e) return low(e); } catch (e) {} return s(lsGet('grayco_user')); }
+function isAdminish(){
+  try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+  try { var u = (W._gcMeNow) || null; if (u && (low(u.payType) === 'owner' || u.role === 'Admin' || /office/i.test(u.role || ''))) return true; } catch (e) {}
+  return who() === 'office@grayco-cs.com';
+}
+function tsOf(r){ return s(isObj(r) && (r.updatedAt || r.updated_at || r.modifiedAt || r.savedAt || r.approvedAt || r.escalatedAt || r.createdAt || r.enteredAt || r.created || r.date)); }
+function fullness(r){ var n = 0; if (!isObj(r)) return 0; Object.keys(r).forEach(function(k){ var v = r[k]; if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) n++; }); return n; }
+function idOf(r){ return isObj(r) ? s(r.id != null && r.id !== '' ? r.id : (r._id != null ? r._id : '')) : ''; }
+
+/* ── 1. queues: one entry per record ───────────────────────────────────────── */
+var QUEUES = { gc_expense_approvals: function(a){ return s(a.expId || a.id || a._id); }, gc_invoice_approvals: function(a){ return s(a.invId || a.id || a._id); } };
+function qRank(a){ var st = low(a && a.status); if (/approved|rejected|denied|posted|paid|void|recorded|done/.test(st)) return 3; if (st === 'escalated') return 2; return st ? 1 : 0; }
+function collapseList(list, keyFn){
+  var best = {}, order = [], extra = 0;
+  list.forEach(function(a, i){
+    var k = isObj(a) ? keyFn(a) : ''; if (!k) k = '#' + i;
+    if (!(k in best)) { best[k] = a; order.push(k); return; }
+    extra++;
+    var b = best[k];
+    if (qRank(a) > qRank(b) || (qRank(a) === qRank(b) && tsOf(a) > tsOf(b))) best[k] = a;
+  });
+  return extra ? order.map(function(k){ return best[k]; }) : null;
+}
+function collapseQueues(){
+  var removed = 0;
+  Object.keys(QUEUES).forEach(function(key){
+    var q = jparse(lsGet(key), []); if (!Array.isArray(q) || q.length < 2) return;
+    var out = collapseList(q, QUEUES[key]); if (!out) return;
+    removed += q.length - out.length;
+    lsSet(key, JSON.stringify(out));
+    try { if (W.idbSet) W.idbSet(key, out); } catch (e) {}
+    try { if (W._supaUpsert) W._supaUpsert(key, out); } catch (e) {}
+    try { console.log('[GC DEDUP] ' + key + ': ' + (q.length - out.length) + ' duplicate entr' + (q.length - out.length === 1 ? 'y' : 'ies') + ' folded into one per record'); } catch (e) {}
+  });
+  return removed;
+}
+
+/* ── 2. the approval set and the expense list never carry one record twice ─── */
+function ddGroups(r){
+  try {
+    if (!r || !r.groups) return r;
+    var total = 0, parts = [], L = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
+    Object.keys(r.groups).forEach(function(g){
+      var seen = {}, list = arr(r.groups[g]);
+      var u = list.filter(function(x){ var k = x && s(x.id); if (!k || /:$/.test(k)) return true; if (seen[k]) return false; seen[k] = 1; return true; });
+      r.groups[g] = u; total += u.length;
+      if (u.length && L[g]) parts.push(u.length + ' ' + (u.length === 1 ? L[g][0] : L[g][1]));
+    });
+    if (total !== r.total) { r.total = total; r.tip = parts.join(' · '); }
+  } catch (e) { warn(e); }
+  return r;
+}
+function wrapFns(){
+  var f = W._gcApprovalSet;
+  if (typeof f === 'function' && !f.__gcDEDUP) {
+    var w = function(){ return ddGroups(f.apply(this, arguments)); };
+    try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+    w.__gcDEDUP = true; w.__gcDD = true; W._gcApprovalSet = w;
+  }
+  var e = W._gcExpenseApprovalsFor;
+  if (typeof e === 'function' && !e.__gcDEDUP) {
+    var we = function(){ var r = e.apply(this, arguments); if (!Array.isArray(r)) return r; return collapseList(r, QUEUES.gc_expense_approvals) || r; };
+    try { Object.keys(e).forEach(function(k){ we[k] = e[k]; }); } catch (x) {}
+    we.__gcDEDUP = true; W._gcExpenseApprovalsFor = we;
+  }
+  var sc = W._gcScanExpenses;
+  if (typeof sc === 'function' && !sc.__gcDEDUP) {
+    var ws = function(){ var r = sc.apply(this, arguments); try { collapseQueues(); } catch (x) {} return r; };
+    try { Object.keys(sc).forEach(function(k){ ws[k] = sc[k]; }); } catch (x) {}
+    ws.__gcDEDUP = true; W._gcScanExpenses = ws;
+  }
+  var ex = W.gcExpCenter;
+  if (ex && typeof ex.saveExpense === 'function' && !ex.saveExpense.__gcDEDUP) {
+    var orig = ex.saveExpense;
+    var wsave = async function(){
+      if (ex.__gcSaving) return;                                   /* a second tap while saving does nothing */
+      ex.__gcSaving = true;
+      var btns = D.querySelectorAll('[onclick*="gcExpCenter.saveExpense"]');
+      Array.prototype.forEach.call(btns, function(b){ b.disabled = true; b.setAttribute('data-gc-saving', '1'); });
+      try { return await orig.apply(ex, arguments); }
+      finally { ex.__gcSaving = false; Array.prototype.forEach.call(btns, function(b){ if (b.isConnected) { b.disabled = false; b.removeAttribute('data-gc-saving'); } }); }
+    };
+    wsave.__gcDEDUP = true; ex.saveExpense = wsave;
+  }
+}
+
+/* ── 3. lists: exact same-id repeats are folded (that is never two records) ── */
+var LISTS = ['projects', 'estimates', 'expenses', 'schedule', 'vendors', 'cos', 'punch', 'invs', 'projectDocs', 'customers'];
+async function readList(k){ try { var v = await W.idbGet(k); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+/* a person's change: the app's own setter (the screen and its save), the disk at once, the cloud on the next sync.
+   (_gcApplySync is the sync's door for INCOMING copies — it is held outside a tab-change sync, so it is not used.) */
+function setterFor(k){
+  var RS = W.__GC_RAW_SETTERS__ || {};
+  var m = { projects: W._setProjects, expenses: W._setExpenses, invs: W._setInvoices, schedule: W._setSchedule, customers: W._setCustomers,
+    vendors: RS._setVendors || RS._setSubs, cos: W._gcSetCOs, estimates: W._gcSetEstimates, projectDocs: W._setProjectDocs };
+  return typeof m[k] === 'function' ? m[k] : null;
+}
+function writeList(k, list, ids){
+  try { if (W._gcxRestored && ids && ids.length) W._gcxRestored(k, ids, true); } catch (e) {}   /* "a person changed these here" */
+  var f = setterFor(k);
+  try { if (f) f(list.slice()); } catch (e) { warn(e); }
+  try { if (W.idbSet) W.idbSet(k === 'invs' ? 'invs' : k, list); } catch (e) {}
+  try { if (W._crm && k === 'customers' && Array.isArray(W._crm.customers)) W._crm.customers = list.slice(); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert(k, list); } catch (e) {}
+  return !!f;
+}
+async function collapseRepeats(){
+  var total = 0;
+  for (var i = 0; i < LISTS.length; i++) {
+    var k = LISTS[i], list = await readList(k); if (list.length < 2) continue;
+    var best = {}, order = [], extra = 0;
+    list.forEach(function(r, j){
+      var id = idOf(r); var key = id ? 'i:' + id : '#' + j;
+      if (!(key in best)) { best[key] = r; order.push(key); return; }
+      extra++; var b = best[key];
+      if (tsOf(r) > tsOf(b) || (tsOf(r) === tsOf(b) && fullness(r) > fullness(b))) best[key] = r;
+    });
+    if (!extra) continue;
+    total += extra;
+    writeList(k, order.map(function(x){ return best[x]; }));
+    try { console.log('[GC DEDUP] ' + k + ': ' + extra + ' repeat(s) of the same record folded'); } catch (e) {}
+  }
+  return total;
+}
+
+/* ── 4. likely duplicates with different ids ───────────────────────────────── */
+var NAMES = { projects: 'Jobs', estimates: 'Estimates', expenses: 'Expenses', schedule: 'Schedule items', vendors: 'Subs / vendors', cos: 'Change orders', punch: 'Punch items', invs: 'Invoices', projectDocs: 'Documents', customers: 'Customers' };
+var MONEY = { expenses: 1, invs: 1, cos: 1 };
+var REF = { projects: ['pid', 'jobId', 'projectId'], customers: ['customerId', 'custId', 'clientId'], vendors: ['subId', 'vendorId'], expenses: ['expId'], invs: ['invId'], estimates: ['estimateId', 'estId'] };
+var LSQ = ['gc_expense_approvals', 'gc_sub_approvals', 'gc_invoice_approvals', 'gc_email_queue'];
+function sigs(k, r){
+  var pid = s(r.pid || r.jobId || r.projectId);
+  switch (k) {
+    case 'expenses': { var c = cents(r.amt != null ? r.amt : r.amount); if (!c) return []; return ['e|' + pid + '|' + c + '|' + s(r.date || r.recvDate).slice(0, 10) + '|' + norm(r.payee || r.vendor || r.sub || r.desc)]; }
+    case 'invs': { if (r.invNum) return ['n|' + pid + '|' + norm(r.invNum) + '|' + s(r.type)]; var ci = cents(r.amt != null ? r.amt : r.amount); return ci ? ['a|' + pid + '|' + ci + '|' + s(r.date || r.created).slice(0, 10) + '|' + s(r.type) + '|' + norm(r.sub || r.desc)] : []; }
+    case 'cos': { var cc = cents(r.amt != null ? r.amt : r.amount); return cc ? [pid + '|' + cc + '|' + norm(r.desc || r.description || r.title)] : []; }
+    case 'customers': case 'vendors': {
+      var out = [], nm = norm(r.company || r.name), ph = digits(r.phone || r.cell || r.mobile), em = low(r.email);
+      if (nm.length >= 3) out.push('n|' + nm); if (ph) out.push('p|' + ph); if (/@/.test(em)) out.push('m|' + em); return out;
+    }
+    case 'projects': { var n = norm(r.name), a = norm(r.address || r.jobAddress); return n && a ? [n + '|' + a] : []; }
+    case 'estimates': { var en = norm(r.name || r.title || r.num); var t = cents(r.total || r.grandTotal || r.amount); return en ? [en + '|' + (pid || norm(r.client || r.customer)) + '|' + t] : []; }
+    case 'schedule': { var st = norm(r.title || r.name || r.task); return st ? [pid + '|' + s(r.date || r.start).slice(0, 10) + '|' + st] : []; }
+    case 'punch': { var pt = norm(r.title || r.item || r.desc || r.text); return pt && pid ? [pid + '|' + pt] : []; }
+    case 'projectDocs': { var fn = norm(r.fileName || r.name || r.title); return fn ? [pid + '|' + fn + '|' + s(r.size || '')] : []; }
+  }
+  return [];
+}
+function labelOf(k, r){
+  var bits = [];
+  if (r.name || r.company || r.title) bits.push(s(r.company || r.name || r.title));
+  if (r.payee || r.vendor || r.sub) bits.push(s(r.payee || r.vendor || r.sub));
+  if (r.desc && !r.name) bits.push(s(r.desc).slice(0, 50));
+  var c = cents(r.amt != null ? r.amt : (r.amount != null ? r.amount : r.total)); if (c) bits.push(money(c));
+  if (r.date) bits.push(s(r.date).slice(0, 10));
+  if (r.invNum) bits.push('#' + s(r.invNum));
+  if (r.phone) bits.push(s(r.phone)); if (r.email) bits.push(s(r.email)); if (r.address && k !== 'expenses') bits.push(s(r.address));
+  return bits.filter(Boolean).join(' · ') || idOf(r);
+}
+function ignored(){ return jparse(lsGet('gc_dedupe_ignore'), {}) || {}; }
+function deadSet(){ try { return (W._gcTombstones && W._gcTombstones()) || {}; } catch (e) { return {}; } }
+var lastScan = null;
+async function scan(){
+  var dead = deadSet(), ign = ignored(), groups = [];
+  for (var i = 0; i < LISTS.length; i++) {
+    var k = LISTS[i], list = (await readList(k)).filter(function(r){ var id = idOf(r); return isObj(r) && id && !dead[k + ':' + id] && !r.archived && !r.deletedAt; });
+    if (list.length < 2) continue;
+    /* union-find over the signatures, so a customer with the same phone under two spellings is one group */
+    var parent = {}; function find(x){ while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    var bySig = {}, byId = {};
+    list.forEach(function(r){ var id = idOf(r); byId[id] = r; parent[id] = id; });
+    list.forEach(function(r){ var id = idOf(r); sigs(k, r).forEach(function(g){ if (bySig[g]) { var a = find(bySig[g]), b = find(id); if (a !== b) parent[a] = b; } else bySig[g] = id; }); });
+    var g = {};
+    Object.keys(byId).forEach(function(id){ var root = find(id); (g[root] = g[root] || []).push(id); });
+    Object.keys(g).forEach(function(root){
+      var ids = g[root]; if (ids.length < 2) return;
+      ids.sort();
+      var gid = k + '|' + ids.join(',');
+      if (ign[gid]) return;
+      var recs = ids.map(function(id){ return byId[id]; });
+      var keeper = recs.slice().sort(function(a, b){ return fullness(b) - fullness(a) || (tsOf(a) < tsOf(b) ? -1 : tsOf(a) > tsOf(b) ? 1 : 0); })[0];
+      groups.push({ gid: gid, list: k, name: NAMES[k], money: !!MONEY[k], ids: ids, keeper: idOf(keeper), recs: recs, label: labelOf(k, keeper) });
+    });
+  }
+  lastScan = { at: Date.now(), groups: groups };
+  paintCounts();
+  return groups;
+}
+
+/* ── 5. merge / archive / undo ─────────────────────────────────────────────── */
+function logGet(){ var l = jparse(lsGet('gc_dedupe_log'), []); return Array.isArray(l) ? l : []; }
+function logPut(l){
+  var cut = Date.now() - 7 * 864e5;
+  l = l.filter(function(e){ return e && Date.parse(e.at) > cut; }).slice(-200);
+  lsSet('gc_dedupe_log', JSON.stringify(l));
+  try { if (W._supaUpsertNow) W._supaUpsertNow('gc_dedupe_log', l); else if (W._supaUpsert) W._supaUpsert('gc_dedupe_log', l); } catch (e) {}
+  return l;
+}
+async function repoint(listKey, from, to, rec){
+  var fields = REF[listKey]; if (!fields) return;
+  var fromSet = {}; from.forEach(function(id){ fromSet[id] = 1; });
+  for (var i = 0; i < LISTS.length; i++) {
+    var k = LISTS[i], list = await readList(k), changed = [];
+    var out = list.map(function(r){
+      if (!isObj(r)) return r; var c = null;
+      fields.forEach(function(f){ if (r[f] != null && fromSet[s(r[f])]) { if (!c) c = Object.assign({}, r); rec.push({ key: k, rid: idOf(r), field: f, from: s(r[f]), to: to }); c[f] = to; } });
+      if (c) { changed.push(idOf(r)); c.updatedAt = nowISO(); return c; } return r;
+    });
+    if (changed.length) writeList(k, out, changed);
+  }
+  LSQ.forEach(function(k){
+    var q = jparse(lsGet(k), null); if (!Array.isArray(q)) return; var changed = false;
+    q = q.map(function(r){
+      if (!isObj(r)) return r; var c = null;
+      fields.concat(listKey === 'expenses' ? ['id'] : []).forEach(function(f){
+        if (f === 'id' && k !== 'gc_expense_approvals') return;
+        if (r[f] != null && fromSet[s(r[f])]) { if (!c) c = Object.assign({}, r); rec.push({ key: k, ls: true, rid: s(r.id || r.expId || r.invId), field: f, from: s(r[f]), to: to }); c[f] = to; }
+      });
+      if (c) { changed = true; return c; } return r;
+    });
+    if (changed) { lsSet(k, JSON.stringify(q)); try { if (W.idbSet) W.idbSet(k, q); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert(k, q); } catch (e) {} }
+  });
+}
+async function act(mode, listKey, keeperId, dupIds){
+  if (!isAdminish()) return { ok: false, error: 'admins and the office only' };
+  dupIds = arr(dupIds).map(s).filter(function(id){ return id && id !== s(keeperId); });
+  if (!dupIds.length) return { ok: false, error: 'nothing picked' };
+  var list = await readList(listKey), byId = {};
+  list.forEach(function(r){ var id = idOf(r); if (id) byId[id] = r; });
+  var keeper = byId[s(keeperId)];
+  if (mode === 'merge' && !keeper) return { ok: false, error: 'keeper not found' };
+  var removed = dupIds.map(function(id){ return byId[id]; }).filter(Boolean);
+  if (!removed.length) return { ok: false, error: 'not found' };
+  var entry = { id: 'dd_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: nowISO(), by: who(), mode: mode, list: listKey,
+    keeper: mode === 'merge' ? s(keeperId) : '', keeperBefore: mode === 'merge' ? keeper : null, removed: removed, repoint: [] };
+  try { if (W._gcManualNow) W._gcManualNow((mode === 'merge' ? 'merge' : 'archive') + ' duplicate ' + listKey); } catch (e) {}
+  var gone = {}; removed.forEach(function(r){ gone[idOf(r)] = 1; });
+  var next = list.filter(function(r){ return !gone[idOf(r)]; });
+  if (mode === 'merge') {
+    var k2 = Object.assign({}, keeper);
+    removed.forEach(function(r){ Object.keys(r).forEach(function(f){ if (f === 'id' || f === '_id') return; var v = k2[f]; if (v == null || v === '' || (Array.isArray(v) && !v.length)) k2[f] = r[f]; }); });
+    k2.mergedFrom = arr(k2.mergedFrom).concat(Object.keys(gone)); k2.updatedAt = nowISO();
+    next = next.map(function(r){ return idOf(r) === s(keeperId) ? k2 : r; });
+  }
+  writeList(listKey, next, mode === 'merge' ? [s(keeperId)] : []);
+  Object.keys(gone).forEach(function(id){ try { if (W._gcxDel) W._gcxDel(listKey, id); else if (W._gcTombstone) W._gcTombstone(listKey, id); } catch (e) {} });
+  if (mode === 'merge') await repoint(listKey, Object.keys(gone), s(keeperId), entry.repoint);
+  logPut(logGet().concat([entry]));
+  later(scan, 400);
+  return { ok: true, entry: entry.id, removed: removed.length, repointed: entry.repoint.length };
+}
+async function undo(entryId){
+  if (!isAdminish()) return { ok: false, error: 'admins and the office only' };
+  var l = logGet(), e = l.filter(function(x){ return x && x.id === entryId; })[0];
+  if (!e || e.undone) return { ok: false, error: 'nothing to undo' };
+  if (Date.now() - Date.parse(e.at) > 7 * 864e5) return { ok: false, error: 'older than 7 days' };
+  try { if (W._gcManualNow) W._gcManualNow('undo duplicate clean-up'); } catch (x) {}
+  var ids = e.removed.map(idOf);
+  ids.forEach(function(id){ try { if (W._gcClearTombstone) W._gcClearTombstone(e.list, id); } catch (x) {} });
+  try { if (W._gcxRestored) W._gcxRestored(e.list, ids, true); } catch (x) {}
+  var list = await readList(e.list), have = {};
+  list.forEach(function(r){ have[idOf(r)] = 1; });
+  var at = nowISO();
+  var back = e.removed.filter(function(r){ return !have[idOf(r)]; }).map(function(r){ return Object.assign({}, r, { updatedAt: at, restoredAt: at }); });
+  var next = list.concat(back);
+  if (e.keeperBefore) next = next.map(function(r){ return idOf(r) === e.keeper ? Object.assign({}, e.keeperBefore, { updatedAt: at }) : r; });
+  writeList(e.list, next, ids.concat(e.keeper ? [e.keeper] : []));
+  /* the links that were pointed at the keeper go back */
+  var byKey = {}; arr(e.repoint).forEach(function(p){ (byKey[p.key] = byKey[p.key] || []).push(p); });
+  for (var k in byKey) {
+    var ps = byKey[k];
+    if (LSQ.indexOf(k) >= 0) {
+      var q = jparse(lsGet(k), []);
+      q = q.map(function(r){ var c = r; ps.forEach(function(p){ if (isObj(c) && s(c.id || c.expId || c.invId) === p.rid && s(c[p.field]) === p.to) { c = Object.assign({}, c); c[p.field] = p.from; } }); return c; });
+      lsSet(k, JSON.stringify(q)); try { if (W._supaUpsert) W._supaUpsert(k, q); } catch (x) {}
+    } else {
+      var L2 = await readList(k);
+      writeList(k, L2.map(function(r){ var c = r; ps.forEach(function(p){ if (isObj(c) && idOf(c) === p.rid && s(c[p.field]) === p.to) { c = Object.assign({}, c, { updatedAt: at }); c[p.field] = p.from; } }); return c; }), ps.map(function(p){ return p.rid; }));
+    }
+  }
+  e.undone = at; e.undoneBy = who(); logPut(l);
+  later(scan, 400);
+  return { ok: true, restored: back.length };
+}
+function notDup(gid){ var m = ignored(); m[gid] = nowISO(); lsSet('gc_dedupe_ignore', JSON.stringify(m)); try { if (W._supaUpsert) W._supaUpsert('gc_dedupe_ignore', m); } catch (e) {} if (lastScan) lastScan.groups = lastScan.groups.filter(function(g){ return g.gid !== gid; }); paintCounts(); }
+
+/* ── 6. screens ─────────────────────────────────────────────────────────────── */
+function css(){
+  if (D.getElementById('gc-dd-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-dd-css';
+  st.textContent = '.gcdd-ov{position:fixed;inset:0;z-index:1000020;background:rgba(8,15,28,.72);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;font-family:Inter,-apple-system,Arial,sans-serif}'
+    + '.gcdd-box{background:#fff;color:#0f172a;border-radius:14px;max-width:880px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)}'
+    + '.gcdd-head{background:#0f1d2f;color:#fff;padding:14px 18px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;gap:8px}'
+    + '.gcdd-body{padding:14px 18px}.gcdd-g{border:1px solid #e2e8f0;border-left:5px solid #2563eb;border-radius:10px;padding:10px 12px;margin-bottom:10px}'
+    + '.gcdd-g.money{border-left-color:#f59e0b}.gcdd-r{display:flex;gap:8px;align-items:center;font-size:13px;padding:4px 0}.gcdd-r small{color:#64748b}'
+    + '.gcdd-b{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px;cursor:pointer;color:#0f172a}'
+    + '.gcdd-b.p{background:#16a34a;border-color:#16a34a;color:#fff}.gcdd-b.w{background:#fff7ed;border-color:#f59e0b;color:#92400e}'
+    + '.gcdd-btn{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;color:#0f172a;margin:0 0 10px}';
+  D.head.appendChild(st);
+}
+function groupHtml(g, i){
+  var rows = g.recs.map(function(r){
+    var id = idOf(r), k = id === g.keeper;
+    return '<label class="gcdd-r"><input type="radio" name="kp' + i + '" value="' + esc(id) + '"' + (k ? ' checked' : '') + ' title="Keep this one">'
+      + '<input type="checkbox" data-dup="' + i + '" value="' + esc(id) + '"' + (!k && !g.money ? ' checked' : '') + ' title="Merge / archive this one">'
+      + '<span>' + esc(labelOf(g.list, r)) + ' <small>· ' + esc(id) + (r.source ? ' · ' + esc(r.source) : '') + '</small></span></label>';
+  }).join('');
+  return '<div class="gcdd-g' + (g.money ? ' money' : '') + '" data-g="' + i + '"><div style="font-weight:800;font-size:14px;margin-bottom:4px">' + esc(g.name) + ' · ' + g.ids.length + ' look the same'
+    + (g.money ? ' <span style="color:#92400e;font-weight:700;font-size:12px">· money: tick the copies yourself — two equal payments can both be real</span>' : '') + '</div>'
+    + '<div style="font-size:12px;color:#64748b;margin-bottom:6px">● keep · ☑ fold into the kept one</div>' + rows
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="gcdd-b p" data-do="merge" data-i="' + i + '">Merge ticked into the kept one</button>'
+    + '<button type="button" class="gcdd-b" data-do="archive" data-i="' + i + '">Archive ticked</button><button type="button" class="gcdd-b" data-do="nodup" data-i="' + i + '">Not duplicates</button></div></div>';
+}
+function undoHtml(){
+  var l = logGet().filter(function(e){ return e && !e.undone; }).slice(-10).reverse(); if (!l.length) return '';
+  return '<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:10px"><div style="font-weight:800;font-size:14px;margin-bottom:6px">↶ Undo (7 days)</div>'
+    + l.map(function(e){ return '<div class="gcdd-r"><span style="flex:1">' + esc(e.at.slice(0, 16).replace('T', ' ')) + ' · ' + esc(e.mode === 'merge' ? 'merged' : 'archived') + ' ' + e.removed.length + ' · ' + esc(NAMES[e.list] || e.list) + ' <small>' + esc(e.by) + '</small></span><button type="button" class="gcdd-b w" data-undo="' + esc(e.id) + '">Undo</button></div>'; }).join('') + '</div>';
+}
+function render(box){
+  css();
+  box.innerHTML = '<div style="color:#64748b;font-size:13px">Looking for duplicates…</div>';
+  return scan().then(function(groups){
+    var h = '<div style="font-size:13px;color:#334155;margin-bottom:10px">Records that look like the same thing entered more than once. Nothing is deleted for good: merged or archived copies are kept 7 days for Undo. Leads: <b>Leads → 🧹 Clean up</b>.</div>';
+    h += groups.length ? groups.map(groupHtml).join('') : '<div style="padding:16px;text-align:center;color:#16a34a;font-weight:700">✓ No duplicates found</div>';
+    h += undoHtml();
+    box.innerHTML = h;
+    box.onclick = function(ev){
+      var t = ev.target.closest ? ev.target.closest('[data-do],[data-undo]') : null; if (!t) return;
+      if (t.hasAttribute('data-undo')) { t.disabled = true; undo(t.getAttribute('data-undo')).then(function(r){ toast(r.ok ? '↶ Undone — ' + r.restored + ' back' : '⚠ ' + r.error); render(box); }); return; }
+      var i = +t.getAttribute('data-i'), g = groups[i]; if (!g) return;
+      if (t.getAttribute('data-do') === 'nodup') { notDup(g.gid); render(box); return; }
+      var kp = box.querySelector('input[name="kp' + i + '"]:checked'), keeper = kp ? kp.value : g.keeper;
+      var ids = Array.prototype.map.call(box.querySelectorAll('input[data-dup="' + i + '"]:checked'), function(c){ return c.value; }).filter(function(id){ return id !== keeper; });
+      if (!ids.length) { toast('Tick the copies to fold in'); return; }
+      var mode = t.getAttribute('data-do');
+      if (!confirm((mode === 'merge' ? 'Merge ' : 'Archive ') + ids.length + ' ' + g.name.toLowerCase() + (mode === 'merge' ? ' into the kept one' : '') + '? You can undo it for 7 days.')) return;
+      t.disabled = true;
+      act(mode, g.list, keeper, ids).then(function(r){ toast(r.ok ? '✓ ' + (mode === 'merge' ? 'Merged ' : 'Archived ') + r.removed + (r.repointed ? ' · ' + r.repointed + ' link(s) moved to the kept one' : '') : '⚠ ' + r.error); render(box); });
+    };
+  });
+}
+function toast(m){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#0f1d2f;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif;z-index:1000030'; D.body.appendChild(t); later(function(){ t.remove(); }, 3500); } catch (e) {} }
+function open(){
+  if (!isAdminish()) { toast('Duplicates: admins and the office'); return; }
+  css();
+  var ov = D.createElement('div'); ov.className = 'gcdd-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="gcdd-box"><div class="gcdd-head"><div style="font-weight:800;font-size:16px">🧹 Duplicates</div><button type="button" class="gcdd-b" data-x="1" aria-label="Close">✕</button></div><div class="gcdd-body"></div></div>';
+  ov.addEventListener('click', function(ev){ if (ev.target === ov || (ev.target.closest && ev.target.closest('[data-x]'))) ov.remove(); });
+  D.addEventListener('keydown', function k(ev){ if (ev.key === 'Escape') { ov.remove(); D.removeEventListener('keydown', k); } });
+  D.body.appendChild(ov);
+  render(ov.querySelector('.gcdd-body'));
+}
+function count(){ return lastScan ? lastScan.groups.length : 0; }
+function paintCounts(){
+  var n = count(), txt = '🧹 Duplicates' + (n ? ' (' + n + ')' : '');
+  Array.prototype.forEach.call(D.querySelectorAll('[data-gcdd-btn]'), function(b){ if (b.textContent !== txt) b.textContent = txt; });
+}
+function mountApx(){
+  if (!isAdminish()) return;
+  var m = D.getElementById('gc-apx-mount'); if (!m || !m.parentNode) return;
+  if (m.previousElementSibling && m.previousElementSibling.hasAttribute('data-gcdd-btn')) return;
+  var old = m.parentNode.querySelector(':scope > [data-gcdd-btn]'); if (old) old.remove();
+  css();
+  var b = D.createElement('button'); b.type = 'button'; b.className = 'gcdd-btn'; b.setAttribute('data-gcdd-btn', '1'); b.setAttribute('data-gc-keep', '1');
+  b.textContent = '🧹 Duplicates' + (count() ? ' (' + count() + ')' : ''); b.onclick = open;
+  m.parentNode.insertBefore(b, m);
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'dedupe', after: 'pause', ic: '🧹', t: 'Duplicates', d: 'Records entered more than once — merge into one (links follow) or archive; 7-day Undo',
+    render: function(box){ render(box); }, count: function(){ var n = count(); return n ? String(n) : ''; } });
+  return true;
+}
+
+/* ── start ──────────────────────────────────────────────────────────────────── */
+wrapFns();
+later(function(){ try { collapseQueues(); } catch (e) { warn(e); } }, 1500);
+every(function(){ wrapFns(); try { collapseQueues(); } catch (e) {} }, 20000);
+every(wrapFns, 3000);
+later(function(){ collapseRepeats().catch(warn); }, 25000);
+every(function(){ if (!D.hidden) collapseRepeats().catch(warn); }, 600000);
+later(function(){ if (isAdminish()) scan().catch(warn); }, 30000);
+every(function(){ if (!D.hidden && isAdminish()) scan().catch(warn); }, 300000);
+every(mountApx, 2500);
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+
+W._gcDedupe = { scan: scan, open: open, merge: function(l, k, ids){ return act('merge', l, k, ids); }, archive: function(l, ids){ return act('archive', l, '', ids); },
+  undo: undo, log: logGet, collapseQueues: collapseQueues, collapseRepeats: collapseRepeats, notDup: notDup, count: count, _sigs: sigs };
+try { console.log('[GC] 🧹 No duplicates (patch DEDUP): _gcDedupe'); } catch (e) {}
+})();
+
 </script>
