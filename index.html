@@ -167351,3 +167351,489 @@ tick(); RI.call(W, tick, 1500);
 try { console.log('[GC] 💵 Weekly pay stubs saved for good (patch PAY)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-doclib3">
+/* __GC_PATCH_DOCLIB3__ — ONE GrayCo document library (owner 10/23, on the Docs tab: "I know I have more documents. I
+   should have ALL documents I create or use in here, for easy access and customizable").
+   Everything the CRM makes or holds, in one list on the Docs tab (and in each job's 📋 Documents picker):
+     • the Docs tab's own generators (gcDocLib: client, sub, lien waivers, closeout, internal — 31);
+     • the 📚 built-in papers (patch DOCLIB) — where one is the SAME paper as a generator (contract, change order,
+       work authorization, warranty, completion, satisfaction, walkthrough, subcontract, final lien waivers, daily
+       report) ONE entry is kept: the richer generator; a job's defaults follow it (alias);
+     • the papers made elsewhere: GrayCo proposal, estimate summary, thank-you letter, PM Playbook, flyers, new-hire
+       onboarding, Company Documents (W-9 …);
+     • a loaded .json set (Word templates) and 📁 My uploads (PDF / Word / image: name, group, job types → the cloud
+       list gc_kv gc_doc_uploads; the files go to the company file store like every upload).
+   Groups: Client · Sub · Lien Waivers · Closeout · Insurance · Commercial · Internal · HR · Marketing · My uploads;
+   🔎 search; ⭐ favorites (per person) pinned on top. Each: ✨ Generate filled (for the job picked) · 📄 Blank ·
+   👁 Preview · ✏️ Customize · ＋ Add to job.
+   ✏️ Customize: a template paper → its HTML with merge-field chips (patch DOCLIB's editor; ↺ Reset to built-in);
+   a paper the CRM builds in code (proposal, invoice …) → text blocks (opening, terms, warranty, footer) in
+   gc_kv gc_doc_custom, added to that paper wherever it is made; ↺ Reset removes them.
+   Saves go to the cloud at once (_supaUpsertNow, read-merge-write).
+   API: window._gcDocs3 = { list(), entry(uid), html(uid, pid, filled), launch(uid, pid, filled), addToJob(uid, pid),
+        upload(meta), custom(uid), setCustom(uid, blocks), favs() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_DOCLIB3__) return; window.__GC_PATCH_DOCLIB3__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var UPK = 'gc_doc_uploads', CUSK = 'gc_doc_custom', FAVK = 'gc_doc_favs';
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function myKey(){ var u = me(); return low(u.email || u.name || 'me'); }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin|owner/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function isOffice(){ var u = me(); return /office/i.test(s(u.role) + ' ' + s(u.profile)); }
+function sb(k){ try { return Promise.resolve(W._ehSb ? W._ehSb(k) : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }); } catch (e) { return Promise.resolve(null); } }
+function put(k, v){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(k, v) : null); } catch (e) { return Promise.resolve(null); } }
+function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000030;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;max-width:90vw'; D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {} }
+function job(pid){ return (((W._crm || {}).projects) || []).filter(function(x){ return x && String(x.id) === String(pid); })[0] || null; }
+var R = ['residential'], C = ['commercial'], I = ['insurance'], ALL = ['residential', 'commercial', 'insurance'];
+
+/* ── the inventory ── */
+var GROUPS = ['Client', 'Sub', 'Lien Waivers', 'Closeout', 'Insurance', 'Commercial', 'Internal', 'HR', 'Marketing', 'My uploads'];
+var GEN = [
+  ['invoice', 'Professional Invoice', 'Client', ALL, true, /\binvoice\b/i],
+  ['contract', 'Client Contract / Agreement', 'Client', ALL, true, /contract|agreement/i],
+  ['ar_prenotice', 'Arkansas Pre-Construction Notice to Owner', 'Client', R, true, /arkansas|pre-construction notice/i],
+  ['work_auth', 'Work Authorization (Insurance)', 'Insurance', I, true, /work authori[sz]ation/i],
+  ['residential_q', 'Residential Client Questionnaire', 'Client', R, true, /residential.*questionnaire/i],
+  ['insurance_q', 'Insurance / Restoration Questionnaire', 'Insurance', I, true, /insurance.*questionnaire|restoration questionnaire/i],
+  ['client_faq', 'Welcome & FAQ Packet', 'Client', ALL, true, /welcome|faq/i],
+  ['change_order', 'Change Order', 'Client', ALL, true, /change order/i],
+  ['final_inspection', 'Final Inspection / Walkthrough Sign-Off', 'Closeout', ALL, true, /final inspection|walkthrough/i],
+  ['cert_completion', 'Certificate of Substantial Completion', 'Closeout', ALL, true, /substantial completion/i],
+  ['cert_satisfaction', 'Certificate of Completion & Satisfaction', 'Insurance', I, true, /satisfaction/i],
+  ['warranty_res', 'Residential Warranty (1 Year)', 'Closeout', R, true, /residential warranty/i],
+  ['warranty_ins', 'Roofing & Insurance / Restoration Warranty (5 Year)', 'Closeout', ['residential', 'insurance'], true, /5.year|roofing .*warranty/i],
+  ['warranty_com', 'Commercial Warranty (1 Year)', 'Closeout', C, true, /commercial warranty/i],
+  ['warranty_reg', 'Warranty Registration Card', 'Closeout', ALL, true, /warranty registration/i],
+  ['retainage_release', 'Retainage Release Request', 'Commercial', C, true, /retainage/i],
+  ['sub_agreement', 'Subcontractor Agreement', 'Sub', ALL, false, /subcontractor agreement/i],
+  ['sub_onboard', 'Subcontractor Onboarding Packet', 'Sub', ALL, false, /onboarding packet/i],
+  ['sub_scope', 'Sub Scope of Work Agreement', 'Sub', ALL, false, /sub scope/i],
+  ['sub_scope_email', 'Sub Scope Request E-mail Template', 'Sub', ALL, false, /scope request/i],
+  ['material_receipt', 'Material Delivery Receipt', 'Internal', ALL, false, /delivery receipt/i],
+  ['notice_to_owner', 'Notice to Owner / Pre-Lien Notice', 'Lien Waivers', ALL, true, /notice to owner|pre-lien/i],
+  ['lien_cond_prog_sub', 'Conditional Lien Waiver — Progress (Sub)', 'Lien Waivers', ALL, false, /conditional.*progress/i],
+  ['lien_uncond_prog_sub', 'Unconditional Lien Waiver — Progress (Sub)', 'Lien Waivers', ALL, false, /unconditional.*progress/i],
+  ['lien_cond_final_gc', 'Conditional Lien Waiver — Final (GrayCo)', 'Lien Waivers', ALL, true, /conditional.*final/i],
+  ['lien_uncond_final_gc', 'Unconditional Lien Waiver — Final (GrayCo)', 'Lien Waivers', ALL, true, /unconditional.*final/i],
+  ['closeout_checklist', 'Project Closeout Checklist', 'Closeout', ALL, false, /closeout checklist/i],
+  ['job_cost_summary', 'Job Cost Summary', 'Internal', ALL, false, /job cost/i],
+  ['daily_job_report', 'Daily Job Report', 'Commercial', ALL, false, /daily (job )?report/i],
+  ['pm_manual', 'PM Operations Manual', 'Internal', ALL, false, /operations manual/i],
+  ['sw_tutorial', 'Software Tutorial Guide', 'Internal', ALL, false, /software tutorial/i]
+];
+/* the built-in paper that is the same document as a generator → the generator */
+var ALIAS = { gcb_contract: 'gen:contract', gcb_change_order: 'gen:change_order', gcb_work_auth: 'gen:work_auth', gcb_warranty: 'gen:warranty_res', gcb_completion: 'gen:cert_completion', gcb_satisfaction: 'gen:cert_satisfaction', gcb_walkthrough: 'gen:final_inspection', gcb_subcontract: 'gen:sub_agreement', gcb_lien_cond_final: 'gen:lien_cond_final_gc', gcb_lien_uncond_final: 'gen:lien_uncond_final_gc', gcb_daily_report: 'gen:daily_job_report' };
+var TPL_GROUP = { gcb_scope: 'Client', gcb_lien_cond_progress: 'Lien Waivers', gcb_lien_uncond_progress: 'Lien Waivers', gcb_selections: 'Client', gcb_coi_request: 'Sub', gcb_w9_request: 'Sub', gcb_notice_reminder: 'Internal', gcb_sov: 'Commercial', gcb_site_policy: 'Client', gcb_payment_terms: 'Client', gcb_direction_to_pay: 'Insurance', gcb_mitigation: 'Insurance', gcb_drying_log: 'Insurance', gcb_packout: 'Insurance', gcb_mold: 'Insurance', gcb_rfi: 'Commercial', gcb_transmittal: 'Commercial', gcb_toolbox: 'Commercial' };
+function estFor(pid){ var es = (((W._crm || {}).estimates) || []).filter(Boolean), pj = job(pid); if (!pj) return null; return es.filter(function(e){ return String(e.pid) === String(pid); }).slice(-1)[0] || es.filter(function(e){ return low(e.name) && low(e.name) === low(pj.name); }).slice(-1)[0] || null; }
+var FN = [
+  { id: 'proposal', title: 'GrayCo Proposal', group: 'Client', jobTypes: ALL, clientFacing: true, match: /proposal/i, needsJob: true, desc: 'From the job\'s estimate — your proposal layout',
+    html: function(pid){ var e = estFor(pid); if (!e || !W._gcBuildGrayCoProposal) return null; return W._gcBuildGrayCoProposal(e); } },
+  { id: 'estimate_summary', title: 'Estimate Summary (PDF)', group: 'Client', jobTypes: ALL, clientFacing: true, match: /estimate/i, needsJob: true, desc: 'The estimate as a one-page summary',
+    html: function(pid){ var e = estFor(pid); if (!e || !W._gcEstimateProposalHTML) return null; return W._gcEstimateProposalHTML(e); } },
+  { id: 'thank_you', title: 'Thank-You Letter (completion)', group: 'Closeout', jobTypes: ALL, clientFacing: true, match: /thank you/i, needsJob: true, desc: 'The completion thank-you with the review link',
+    html: function(pid){ var pj = job(pid); if (!pj || !W._gcBuildThankYou) return null; return W._gcBuildThankYou(pj); } },
+  { id: 'playbook', title: 'GrayCo PM Playbook', group: 'Internal', jobTypes: ALL, clientFacing: false, match: /playbook/i, desc: 'How we run every job',
+    html: function(){ return typeof W._gcPlaybookHTML === 'string' ? W._gcPlaybookHTML : null; } },
+  { id: 'company_docs', title: 'Company Documents (W-9, insurance certificates)', group: 'Internal', jobTypes: ALL, clientFacing: false, desc: 'GrayCo\'s own W-9 and certificates',
+    open: function(){ if (W._gcOpenCompanyDocuments) W._gcOpenCompanyDocuments(); } },
+  { id: 'onboarding', title: 'New-Hire Onboarding Papers', group: 'HR', jobTypes: ALL, clientFacing: false, desc: 'Offer, W-4 / I-9 checklist and handbook acknowledgment',
+    open: function(){ if (W._gcOpenOnboarding) W._gcOpenOnboarding(); else toast('Onboarding is in Admin → Hiring.'); } },
+  { id: 'flyers', title: 'Flyers & Door Hangers', group: 'Marketing', jobTypes: ALL, clientFacing: true, desc: 'Neighborhood hangers and flyers (Marketing)',
+    open: function(){ try { W._setView && W._setView('marketing'); } catch (e) {} toast('Marketing → 📰 Flyers / 🏘 Neighbors'); } }
+];
+function genAvailable(){ return !!(W.gcDocLib && W.gcDocLib.generate); }
+
+/* the unified list (Promise) */
+var UPL = [], CUS = {}, FAV = {}, WROTE = { up: 0, cus: 0, fav: 0 };
+/* the cloud copies; a change made on this computer in the last 20 s is kept (the cloud read may be older) */
+function loadState(){
+  return Promise.all([sb(UPK), sb(CUSK), sb(FAVK)]).then(function(a){
+    var now = Date.now();
+    if (now - WROTE.up > 20000) UPL = isObj(a[0]) ? arr(a[0].list) : arr(a[0]);
+    if (now - WROTE.cus > 20000) CUS = isObj(a[1]) ? a[1] : {};
+    if (now - WROTE.fav > 20000) FAV = isObj(a[2]) ? a[2] : {};
+    return true;
+  });
+}
+function list(){
+  var base = (W._gcDocLib && W._gcDocLib.__fetchIndex) ? W._gcDocLib.__fetchIndex() : Promise.resolve([]);
+  return Promise.all([base, loadState()]).then(function(a){
+    var out = [], seen = {};
+    function add(e){ if (seen[e.uid]) return; seen[e.uid] = 1; out.push(e); }
+    if (genAvailable()) GEN.forEach(function(g){ add({ uid: 'gen:' + g[0], id: 'gen:' + g[0], kind: 'gen', gid: g[0], title: g[1], name: g[1], group: g[2], category: g[2], jobTypes: g[3], clientFacing: g[4], match: g[5], blank: true, custom: 'blocks' }); });
+    arr(a[0]).forEach(function(d){
+      if (!d || !d.id || ALIAS[d.id]) return;
+      var b = /^gcb_/.test(d.id);
+      add({ uid: d.id, id: d.id, kind: b || d.kind === 'html' ? 'tpl' : 'docx', title: d.name, name: d.name, group: b ? (TPL_GROUP[d.id] || 'Internal') : (d.category === 'Lien Waivers' ? 'Lien Waivers' : /sub/i.test(d.category || '') ? 'Sub' : /closeout|warrant/i.test(d.category || '') ? 'Closeout' : /intake|change/i.test(d.category || '') ? 'Client' : 'Internal'), category: d.category, jobTypes: arr(d.jobTypes), clientFacing: !!d.clientFacing, blank: true, custom: b ? 'html' : null });
+    });
+    FN.forEach(function(f){ add({ uid: 'fn:' + f.id, id: 'fn:' + f.id, kind: 'fn', fid: f.id, title: f.title, name: f.title, group: f.group, category: f.group, jobTypes: f.jobTypes, clientFacing: f.clientFacing, match: f.match, desc: f.desc, blank: !!f.html && !f.needsJob, needsJob: !!f.needsJob, openOnly: !f.html, custom: f.html ? 'blocks' : null }); });
+    UPL.filter(function(u){ return u && u.id && !u.deleted; }).forEach(function(u){ add({ uid: 'up:' + u.id, id: 'up:' + u.id, kind: 'upload', up: u, title: s(u.name) || s(u.fileName), name: s(u.name) || s(u.fileName), group: GROUPS.indexOf(u.group) >= 0 ? u.group : 'My uploads', category: u.group || 'My uploads', jobTypes: arr(u.jobTypes), clientFacing: !!u.clientFacing, file: true, custom: 'meta' }); });
+    /* the older local "⭐ Company Docs" (this computer only) — shown until moved to the cloud list */
+    try { JSON.parse(localStorage.getItem('gc_custom_docs') || '[]').forEach(function(d){ if (d && d.id && !UPL.some(function(u){ return u.legacyId === d.id; })) add({ uid: 'lc:' + d.id, id: 'lc:' + d.id, kind: 'legacy', legacy: d, title: d.title, name: d.title, group: 'My uploads', category: 'My uploads', jobTypes: ALL, clientFacing: false, file: true }); }); } catch (e) {}
+    return out;
+  });
+}
+function entry(uid){ return list().then(function(l){ uid = ALIAS[uid] || uid; return l.filter(function(e){ return e.uid === uid; })[0] || null; }); }
+
+/* ── capturing a generator's page (it opens a window; we take the HTML instead) ── */
+function capture(run){
+  return new Promise(function(res){
+    var parts = [], done = false, blobs = [];
+    var oOpen = W.open, oDoc = W._gcOpenDocHTML, oOv = W._gcDocOverlay;
+    function finish(){ if (done) return; done = true; W.open = oOpen; W._gcOpenDocHTML = oDoc; W._gcDocOverlay = oOv;
+      Promise.all(blobs).then(function(){ res(parts.join('')); }); }
+    var fake = { closed: false, focus: function(){}, print: function(){}, close: function(){}, location: { replace: function(u){ grab(u); }, set href(u){ grab(u); } },
+      document: { open: function(){}, close: function(){}, write: function(){ parts.push([].slice.call(arguments).join('')); }, writeln: function(){ parts.push([].slice.call(arguments).join('') + '\n'); }, body: null, title: '' } };
+    function grab(u){ if (typeof u === 'string' && /^blob:/i.test(u)) blobs.push(fetch(u).then(function(r){ return r.text(); }).then(function(t){ parts.push(t); }).catch(function(){})); }
+    W.open = function(u){ grab(u); return fake; };
+    W._gcOpenDocHTML = function(h){ parts.push(Array.isArray(h) ? h.join('') : String(h || '')); return true; };
+    W._gcDocOverlay = function(h){ parts.push(String(h || '')); return true; };
+    var r; try { r = run(); } catch (e) { finish(); return; }
+    Promise.resolve(r).then(function(){ later(finish, 60); }, function(){ finish(); });
+    later(finish, 6000);
+  });
+}
+
+/* ── customization blocks for code-built papers (gc_kv gc_doc_custom[uid] = { intro, terms, warranty, footer }) ── */
+var BLOCKS = [['intro', 'Opening paragraph (shown under the title)'], ['terms', 'Extra terms'], ['warranty', 'Warranty text'], ['footer', 'Footer note']];
+function blockHtml(k, t){ return '<div data-gc-custom="' + k + '" style="margin:10px 0;font-size:10.5pt;line-height:1.5;white-space:pre-wrap' + (k === 'footer' ? ';text-align:center;color:#555;font-size:9pt;border-top:1px solid #ddd;padding-top:6px' : '') + '">' + (k === 'terms' ? '<b>Terms</b><br>' : k === 'warranty' ? '<b>Warranty</b><br>' : '') + esc(t) + '</div>'; }
+function applyCustom(html, uid){
+  var c = CUS[uid]; if (!c || typeof html !== 'string' || /data-gc-custom=/.test(html)) return html;
+  var top = c.intro ? blockHtml('intro', c.intro) : '', bot = (c.terms ? blockHtml('terms', c.terms) : '') + (c.warranty ? blockHtml('warranty', c.warranty) : '') + (c.footer ? blockHtml('footer', c.footer) : '');
+  if (top) { var m = /<\/h1>|<\/h2>/i.exec(html); if (m) html = html.slice(0, m.index + m[0].length) + top + html.slice(m.index + m[0].length); else html = html.replace(/<body[^>]*>/i, function(x){ return x + top; }); }
+  if (bot) html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, bot + '</body>') : html + bot;
+  return html;
+}
+/* papers opened anywhere in the CRM: their window gets the blocks of the matching entry */
+var CTX = { uid: '', until: 0 };
+function uidForTitle(t){
+  if (CTX.uid && Date.now() < CTX.until) return CTX.uid;
+  t = s(t); if (!t) return '';
+  for (var i = 0; i < GEN.length; i++) if (CUS['gen:' + GEN[i][0]] && GEN[i][5].test(t)) return 'gen:' + GEN[i][0];
+  for (var j = 0; j < FN.length; j++) if (FN[j].match && CUS['fn:' + FN[j].id] && FN[j].match.test(t)) return 'fn:' + FN[j].id;
+  return '';
+}
+function decorateWin(w){
+  if (!w || w.__gcCustomDone) return;
+  var n = 0;
+  (function tick(){
+    try {
+      var d = w.document; if (!d || !d.body || !d.body.innerHTML || /Preparing…/.test(d.title || '')) { if (++n < 60) later(tick, 200); return; }
+      var fromLib = CTX.uid && Date.now() < CTX.until;
+      if (fromLib && !d.querySelector('[data-gc-logo], .gc-print-head') && W._gcPrintHead) { var hd = d.createElement('div'); hd.setAttribute('data-gc-d3head', '1'); hd.innerHTML = W._gcPrintHead(); d.body.insertBefore(hd, d.body.firstChild); }
+      var uid = uidForTitle(d.title || ((d.querySelector('h1,h2') || {}).textContent)); if (!uid || !CUS[uid] || d.querySelector('[data-gc-custom]')) { w.__gcCustomDone = true; return; }
+      var c = CUS[uid], h = d.querySelector('h1, h2');
+      if (c.intro) { var x = d.createElement('div'); x.innerHTML = blockHtml('intro', c.intro); if (h && h.parentNode) h.parentNode.insertBefore(x.firstChild, h.nextSibling); else d.body.insertBefore(x.firstChild, d.body.firstChild); }
+      ['terms', 'warranty', 'footer'].forEach(function(k){ if (c[k]) { var y = d.createElement('div'); y.innerHTML = blockHtml(k, c[k]); d.body.appendChild(y.firstChild); } });
+      w.__gcCustomDone = true;
+    } catch (e) {}
+  })();
+}
+(function hookOpen(){
+  var o = W.open; if (typeof o !== 'function' || o.__gcDocs3) return;
+  var w2 = function(){ var r = o.apply(this, arguments); try { if (r && (Object.keys(CUS).length || (CTX.uid && Date.now() < CTX.until))) decorateWin(r); } catch (e) {} return r; };
+  try { Object.keys(o).forEach(function(k){ w2[k] = o[k]; }); } catch (e) {}
+  w2.__gcDocs3 = true; W.open = w2;
+  var od = W._gcOpenDocHTML;
+  if (typeof od === 'function' && !od.__gcDocs3) { var nd = function(h){ if (Array.isArray(h)) h = h.join(''); var t = /<title>([^<]*)<\/title>/i.exec(h || ''); var uid = uidForTitle(t ? t[1] : ''); return od.call(this, uid ? applyCustom(h, uid) : h); }; nd.__gcDocs3 = true; W._gcOpenDocHTML = nd; }
+})();
+
+/* ── a paper's HTML (filled for a job, or blank) ── */
+function html(uid, pid, filled){
+  uid = ALIAS[uid] || uid;
+  return Promise.all([entry(uid), loadState()]).then(function(a){
+    var e = a[0]; if (!e) return null;
+    var pj = pid ? job(pid) : null;
+    if (e.kind === 'tpl') return W._gcDocLib.render(e.id, filled !== false ? pid : '').then(function(r){ return r ? r.page : null; });
+    if (e.kind === 'gen') return capture(function(){ return filled !== false && pj ? W.gcDocLib.generate(e.gid, pj, true) : W.gcDocLib.generate(e.gid, false); }).then(function(h){ return h ? ensureHead(applyCustom(h, uid)) : null; });
+    if (e.kind === 'fn') { var f = FN.filter(function(x){ return x.id === e.fid; })[0]; if (!f || !f.html) return null; var h0 = f.html(pid); return h0 ? ensureHead(applyCustom(String(h0), uid)) : null; }
+    return null;
+  });
+}
+function ensureHead(h){
+  if (typeof h !== 'string' || /data-gc-logo|gc-print-head/.test(h) || !W._gcPrintHead) return h;
+  var head = '<div data-gc-d3head="1" style="max-width:780px;margin:0 auto 10px">' + W._gcPrintHead() + '</div>';
+  return /<body[^>]*>/i.test(h) ? h.replace(/<body[^>]*>/i, function(x){ return x + head; }) : head + h;
+}
+function openHtml(h){ var w = W.open('', '_blank'); if (!w) { toast('Allow pop-ups for the CRM to see the document.', true); return; } try { w.document.open(); w.document.write(h); w.document.close(); } catch (e) {} }
+function openFile(e){
+  var u = e.up || {}, l = e.legacy || {};
+  var data = u.data || u.ref || l.fileData, name = u.fileName || l.fileName || e.title;
+  if (!data) { toast('That file is not stored yet.', true); return; }
+  if (W._gcIsRef && W._gcIsRef(data)) { W._gcOpenRef(data, name); return; }
+  try { var p = String(data).split(','), mime = (p[0].match(/:(.*?);/) || [])[1] || u.fileType || 'application/octet-stream', bin = atob(p[1]), b = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); var url = URL.createObjectURL(new Blob([b], { type: mime })); if (/pdf|image|text/.test(mime)) W.open(url, '_blank'); else { var a = D.createElement('a'); a.href = url; a.download = name; D.body.appendChild(a); a.click(); a.remove(); } later(function(){ URL.revokeObjectURL(url); }, 5000); } catch (x) { toast('Could not open the file.', true); }
+}
+function launch(uid, pid, filled){
+  uid = ALIAS[uid] || uid;
+  return entry(uid).then(function(e){
+    if (!e) return toast('Document not found.', true);
+    if (e.file) return openFile(e);
+    if (e.kind === 'docx') return W._dlTplData && W._dlTplData(e.id);
+    if (e.kind === 'fn' && e.openOnly) { var f = FN.filter(function(x){ return x.id === e.fid; })[0]; return f && f.open && f.open(); }
+    if ((filled !== false && e.needsJob) && !pid) return toast('Pick a job first.', true);
+    if (e.kind === 'gen') { CTX = { uid: uid, until: Date.now() + 8000 }; var pj = pid && filled !== false ? job(pid) : null; return pj ? W.gcDocLib.generate(e.gid, pj, true) : W.gcDocLib.generate(e.gid, false); }
+    return html(uid, pid, filled).then(function(h){ if (!h) return toast(e.needsJob ? 'That job has no estimate yet.' : 'Could not make that document.', true); openHtml(h); });
+  });
+}
+
+/* ── ＋ Add to job (Files & Docs) ── */
+function b64(t){ try { return btoa(unescape(encodeURIComponent(t))); } catch (e) { return ''; } }
+function pushDoc(pid, doc){
+  return sb('projectDocs').then(function(v){
+    if (v != null && !Array.isArray(v)) { toast('Could not read the job files list — nothing was changed.', true); return null; }
+    var ds = arr(v).slice(), seen = {}; ds.forEach(function(x){ if (x && x.id) seen[x.id] = 1; });
+    try { arr((W._crm || {}).projectDocs).forEach(function(x){ if (x && x.id && !seen[x.id]) { ds.push(x); seen[x.id] = 1; } }); } catch (e) {}
+    ds.push(doc);
+    try { if (W._gcApplySync) W._gcApplySync('projectDocs', ds); } catch (e) {}
+    return put('projectDocs', ds).then(function(){ try { if (W._crm) W._crm.projectDocs = ds; } catch (e) {} return doc; });
+  });
+}
+function addToJob(uid, pid){
+  uid = ALIAS[uid] || uid;
+  if (!pid) { toast('Pick a job first.', true); return Promise.resolve(null); }
+  return entry(uid).then(function(e){
+    if (!e) return null;
+    var pj = job(pid), by = s(me().name) || 'Office', base = { id: 'DOC' + Date.now().toString(36) + Math.floor(Math.random() * 999).toString(36), pid: String(pid), cat: e.group === 'Lien Waivers' ? 'Sub Docs' : /warranty/i.test(e.title) ? 'Warranty Docs' : /change order/i.test(e.title) ? 'Change Orders' : e.group === 'Closeout' ? 'Closeout' : 'Other', uploaded: new Date().toISOString().slice(0, 10), by: by, confirmed: false, fromTemplate: uid };
+    if (e.kind === 'tpl') return W._gcDocLib.save(e.id, pid);
+    if (e.file) { var u = e.up || {}, l = e.legacy || {}; return pushDoc(pid, Object.assign(base, { name: e.title + (pj ? ' — ' + pj.name : '') + (/\.[a-z0-9]{2,5}$/i.test(u.fileName || l.fileName || '') ? (u.fileName || l.fileName).replace(/^.*(\.[a-z0-9]{2,5})$/i, '$1') : ''), type: u.fileType || l.fileType || '', data: u.data || u.ref || l.fileData, size: u.size || 0 })).then(function(d){ if (d) toast('✓ Added "' + e.title + '" to ' + (pj ? pj.name : 'the job')); return d; }); }
+    if (e.kind === 'docx') { toast('Use 📚 Company Documents → + Job for Word templates.', true); return null; }
+    if (e.openOnly) { toast('That one opens in its own screen.', true); return null; }
+    return html(uid, pid, true).then(function(h){
+      if (!h) { toast('Could not make that document for this job.', true); return null; }
+      return pushDoc(pid, Object.assign(base, { name: e.title + (pj ? ' — ' + pj.name : '') + '.html', type: 'text/html', size: h.length, data: 'data:text/html;base64,' + b64(h) })).then(function(d){ if (d) toast('✓ Added "' + e.title + '" to ' + (pj ? pj.name : 'the job') + ' → Files & Docs'); return d; });
+    });
+  });
+}
+
+/* ── 📁 My uploads ── */
+function upload(meta){
+  meta = meta || {};
+  if (!s(meta.name) || !meta.data) return Promise.resolve({ ok: false, error: 'A name and a file are needed.' });
+  return sb(UPK).then(function(v){
+    var cur = isObj(v) ? arr(v.list) : arr(v);
+    var rec = { id: 'u' + Date.now().toString(36) + Math.floor(Math.random() * 999).toString(36), name: s(meta.name), group: GROUPS.indexOf(meta.group) >= 0 ? meta.group : 'My uploads', jobTypes: arr(meta.jobTypes).length ? arr(meta.jobTypes) : ALL.slice(), clientFacing: !!meta.clientFacing, fileName: s(meta.fileName), fileType: s(meta.fileType), size: meta.size || 0, data: meta.data, legacyId: meta.legacyId || '', at: new Date().toISOString(), by: s(me().name || me().email) };
+    var next = { list: cur.concat([rec]) };
+    UPL = next.list; WROTE.up = Date.now();
+    return put(UPK, next).then(function(){ return { ok: true, rec: rec }; });
+  });
+}
+function updateUpload(id, patch){ return sb(UPK).then(function(v){ var cur = isObj(v) ? arr(v.list) : arr(v); cur = cur.map(function(u){ return u && u.id === id ? Object.assign({}, u, patch, { editedAt: new Date().toISOString() }) : u; }); UPL = cur; WROTE.up = Date.now(); return put(UPK, { list: cur }).then(function(){ return { ok: true }; }); }); }
+function uploadForm(prefill){
+  var ov = D.createElement('div'); ov.setAttribute('data-gc-keep', '1'); ov.className = 'gc-d3-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000016;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,sans-serif';
+  var p = prefill || {};
+  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:480px;width:100%;padding:18px;color:#0f172a"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">' + (p.id ? '✏️ Edit document' : '＋ Upload a document') + '</b><button type="button" data-x="1" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button></div>' +
+    '<label style="display:block;font-size:12px;font-weight:700;margin-top:10px">Name</label><input data-f="name" value="' + esc(p.name || '') + '" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:7px">' +
+    '<label style="display:block;font-size:12px;font-weight:700;margin-top:10px">Group</label><select data-f="group" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:7px">' + GROUPS.map(function(g){ return '<option' + ((p.group || 'My uploads') === g ? ' selected' : '') + '>' + g + '</option>'; }).join('') + '</select>' +
+    '<div style="font-size:12px;font-weight:700;margin-top:10px">Job types</div>' + ALL.map(function(t){ return '<label style="margin-right:10px;font-size:12px"><input type="checkbox" data-jt="' + t + '"' + (!p.jobTypes || arr(p.jobTypes).indexOf(t) >= 0 ? ' checked' : '') + '> ' + t + '</label>'; }).join('') +
+    '<label style="display:block;font-size:12px;margin-top:8px"><input type="checkbox" data-f="client"' + (p.clientFacing ? ' checked' : '') + '> Goes to customers</label>' +
+    (p.id ? '' : '<label style="display:block;font-size:12px;font-weight:700;margin-top:10px">File (PDF, Word, image)</label><input type="file" data-f="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.rtf,.xlsx">') +
+    '<button type="button" data-go="1" style="margin-top:14px;width:100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">' + (p.id ? '💾 Save' : '📁 Add to the library') + '</button></div>';
+  D.body.appendChild(ov);
+  ov.addEventListener('click', function(e){ if (e.target === ov || e.target.getAttribute('data-x')) ov.remove(); });
+  ov.querySelector('[data-go]').onclick = function(){
+    var name = s(ov.querySelector('[data-f=name]').value), group = ov.querySelector('[data-f=group]').value, jt = [].slice.call(ov.querySelectorAll('[data-jt]')).filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-jt'); }), cf = ov.querySelector('[data-f=client]').checked;
+    if (!name) { alert('Give it a name.'); return; }
+    if (p.id) { updateUpload(p.id, { name: name, group: group, jobTypes: jt, clientFacing: cf }).then(function(){ toast('✓ Saved'); ov.remove(); paint(); }); return; }
+    var f = ov.querySelector('[data-f=file]').files[0]; if (!f) { alert('Choose a file.'); return; }
+    var rd = new FileReader();
+    rd.onload = function(){ upload({ name: name, group: group, jobTypes: jt, clientFacing: cf, fileName: f.name, fileType: f.type, size: f.size, data: rd.result }).then(function(r){ if (r.ok) { toast('✓ "' + name + '" is in the library'); ov.remove(); paint(); } else toast(r.error || 'Not saved', true); }); };
+    rd.readAsDataURL(f);
+  };
+}
+
+/* ── ✏️ Customize ── */
+function setCustom(uid, blocks){
+  return sb(CUSK).then(function(v){ var o = isObj(v) ? v : {}; if (blocks) o[uid] = Object.assign({}, blocks, { at: new Date().toISOString(), by: s(me().name || me().email) }); else delete o[uid]; CUS = o; WROTE.cus = Date.now(); return put(CUSK, o).then(function(){ return { ok: true }; }); });
+}
+function customize(uid){
+  if (!(isAdmin() || isOffice())) { toast('Only an admin or the office can customize documents.', true); return; }
+  entry(uid).then(function(e){
+    if (!e) return;
+    if (e.custom === 'html') { if (!isAdmin()) return toast('Only an admin can edit a template.', true); return W._gcDocLib.edit(e.id); }
+    if (e.custom === 'meta') return uploadForm(Object.assign({}, e.up));
+    if (e.custom !== 'blocks') return toast(e.kind === 'legacy' ? 'Move it to the cloud list first: ＋ Upload it again.' : 'That one is customized in its own screen.', true);
+    var c = CUS[uid] || {};
+    var ov = D.createElement('div'); ov.setAttribute('data-gc-keep', '1'); ov.className = 'gc-d3-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000016;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,sans-serif';
+    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:92vh;overflow:auto;padding:18px;color:#0f172a"><div style="display:flex;justify-content:space-between"><b style="font-size:15px">✏️ ' + esc(e.title) + '</b><button type="button" data-x="1" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button></div>' +
+      '<div style="font-size:12px;color:#475569;margin:6px 0 10px">The CRM builds this paper from the job. Add your own wording — it is added to this paper everywhere it is made. Leave a box empty to leave it out.</div>' +
+      BLOCKS.map(function(b){ return '<label style="display:block;font-size:12px;font-weight:700;margin-top:8px">' + b[1] + '</label><textarea data-b="' + b[0] + '" style="width:100%;box-sizing:border-box;min-height:70px;padding:8px;border:1px solid #cbd5e1;border-radius:7px;font:13px/1.45 Arial">' + esc(c[b[0]] || '') + '</textarea>'; }).join('') +
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button type="button" data-save="1" style="padding:9px 14px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Save the company version</button><button type="button" data-reset="1" style="padding:9px 14px;background:#fff;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;font-weight:700;cursor:pointer">↺ Reset to built-in</button></div></div>';
+    D.body.appendChild(ov);
+    ov.addEventListener('click', function(ev){
+      var t = ev.target;
+      if (t === ov || t.getAttribute('data-x')) { ov.remove(); return; }
+      if (t.getAttribute('data-save')) { var o = {}; [].slice.call(ov.querySelectorAll('[data-b]')).forEach(function(x){ if (s(x.value)) o[x.getAttribute('data-b')] = x.value; }); setCustom(uid, Object.keys(o).length ? o : null).then(function(){ toast('✓ Saved — "' + e.title + '" now carries your wording'); ov.remove(); }); }
+      if (t.getAttribute('data-reset')) { if (!confirm('Remove your wording from "' + e.title + '"?')) return; setCustom(uid, null).then(function(){ toast('↺ "' + e.title + '" is back to the built-in'); ov.remove(); }); }
+    });
+  });
+}
+
+/* ── ⭐ favorites (per person) ── */
+function favs(){ return arr(FAV[myKey()]); }
+function toggleFav(uid){ return sb(FAVK).then(function(v){ var o = isObj(v) ? v : {}, k = myKey(), l = arr(o[k]); l = l.indexOf(uid) >= 0 ? l.filter(function(x){ return x !== uid; }) : l.concat([uid]); o[k] = l; FAV = o; WROTE.fav = Date.now(); paint(); return put(FAVK, o); }); }
+
+/* ── the Docs tab: ONE library ── */
+var UI = { pid: '', q: '' };
+function selectedPid(){ try { var p = W.gcDocLib && W.gcDocLib.selectedProject && W.gcDocLib.selectedProject(); if (p && p.id) return p.id; } catch (e) {} return UI.pid; }
+function card(e, pid){
+  var fav = favs().indexOf(e.uid) >= 0, canC = !!e.custom && (isAdmin() || isOffice());
+  var b = function(label, act, primary, dis){ return '<button type="button" data-d3="' + act + '" data-u="' + esc(e.uid) + '"' + (dis ? ' disabled style="opacity:.45;' : ' style="') + 'padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:' + (primary ? 'none;background:#d4a017;color:#0a1628' : '1px solid #2a4a7f;background:#1e3a5f;color:#93c5fd') + '">' + label + '</button>'; };
+  var btns = e.file ? b('📄 Open', 'open', true) + b('＋ Add to job', 'add', false, !pid)
+    : e.openOnly ? b('↗ Open', 'open', true)
+    : b('✨ Generate filled', 'fill', true, !pid) + (e.blank ? b('📄 Blank', 'blank') : '') + b('👁 Preview', 'prev') + b('＋ Add to job', 'add', false, !pid || e.kind === 'docx');
+  if (canC) btns += b('✏️ Customize', 'cust');
+  var tag = e.kind === 'gen' ? '' : e.kind === 'tpl' ? 'template' : e.kind === 'fn' ? 'made in the CRM' : e.kind === 'docx' ? 'Word' : 'my upload';
+  return '<div class="gc-dl-card" data-d3card="' + esc(e.uid) + '" style="flex-wrap:wrap"><button type="button" data-d3="fav" data-u="' + esc(e.uid) + '" title="Favorite" style="background:none;border:none;font-size:18px;cursor:pointer;color:' + (fav ? '#d4a017' : '#475569') + '">' + (fav ? '★' : '☆') + '</button>' +
+    '<div class="gc-dl-info" style="min-width:180px"><div class="gc-dl-title">' + esc(e.title) + (e.clientFacing ? ' <span style="font-size:9px;color:#60a5fa;font-weight:800">CLIENT</span>' : '') + (CUS[e.uid] ? ' <span style="font-size:9px;color:#c4b5fd;font-weight:800">CUSTOMIZED</span>' : '') + '</div><div class="gc-dl-desc">' + esc(e.desc || tag) + ' · ' + esc(arr(e.jobTypes).join(', ') || 'all jobs') + '</div></div>' +
+    '<div class="gc-dl-btns" style="flex-wrap:wrap">' + btns + '</div></div>';
+}
+var LAST = [];
+function paintList(){
+  var host = D.getElementById('gc-d3-list'); if (!host) return;
+  var pid = selectedPid(), q = low(UI.q), l = LAST.filter(function(e){ return !q || low(e.title + ' ' + (e.desc || '') + ' ' + e.group).indexOf(q) >= 0; });
+  var f = favs(), h = '';
+  var fl = l.filter(function(e){ return f.indexOf(e.uid) >= 0; });
+  if (fl.length) h += '<div style="font-size:11px;font-weight:800;color:#d4a017;text-transform:uppercase;margin:12px 0 6px">⭐ Favorites</div>' + fl.map(function(e){ return card(e, pid); }).join('');
+  GROUPS.forEach(function(g){ var gl = l.filter(function(e){ return e.group === g; }); if (!gl.length) return; h += '<div data-d3group="' + esc(g) + '" style="font-size:11px;font-weight:800;color:#93c5fd;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px">' + esc(g) + ' <span style="color:#475569">(' + gl.length + ')</span></div>' + gl.map(function(e){ return card(e, pid); }).join(''); });
+  host.innerHTML = h || '<div style="color:#6b8ab5;padding:20px;text-align:center">Nothing matches.</div>';
+}
+function paint(){
+  var box = D.getElementById('gc-doclib-box'); if (!box) return Promise.resolve();
+  return list().then(function(l){
+    LAST = l;
+    var projects = (((W._crm || {}).projects) || []).filter(function(p){ return p && p.id && p.name; });
+    var pid = selectedPid();
+    var opts = '<option value="">— pick a job to fill papers in —</option>' + projects.map(function(p){ return '<option value="' + esc(p.id) + '"' + (String(p.id) === String(pid) ? ' selected' : '') + '>' + esc((W._gcJobLabel ? W._gcJobLabel(p) : (p.autoPO ? '[' + p.autoPO + '] ' : '') + p.name)) + '</option>'; }).join('');
+    var head = D.getElementById('gc-d3-head');
+    if (!head || head.parentNode !== box) {
+      box.innerHTML = '<div id="gc-d3-head" style="padding:16px 20px 0"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:16px;font-weight:800;color:#e8eef5">📄 GrayCo Document Library <span id="gc-d3-n" style="font-size:12px;color:#6b8ab5;font-weight:600"></span></div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (isAdmin() || isOffice() ? '<button type="button" data-d3="upload" style="background:#d4a017;color:#1a1a1a;border:none;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">＋ Upload a document</button>' : '') + (isAdmin() && W._gcDocSet ? '<button type="button" data-d3="defaults" style="background:#1e3a5f;color:#93c5fd;border:1px solid #2a4a7f;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">⚙ Job defaults</button>' : '') + '</div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><select id="gc-d3-job" class="gc-dl-job-sel" style="flex:2;min-width:200px;margin:0"></select><input id="gc-d3-q" type="search" placeholder="🔎 Search documents…" class="gc-dl-job-sel" style="flex:1;min-width:160px;margin:0"></div>' +
+        (W._gcPlaybookPin ? W._gcPlaybookPin() : '') + '</div><div id="gc-d3-list" style="padding:4px 20px 20px"></div>';
+    }
+    var sel = D.getElementById('gc-d3-job'); if (sel) sel.innerHTML = opts;
+    var qn = D.getElementById('gc-d3-q'); if (qn && qn.value !== UI.q && D.activeElement !== qn) qn.value = UI.q;
+    var n = D.getElementById('gc-d3-n'); if (n) n.textContent = l.length + ' documents';
+    paintList();
+  });
+}
+/* the Docs tab's own renders → ours */
+(function wrapLib(){
+  var t = 0;
+  (function go(){
+    var L = W.gcDocLib;
+    if (!L || !L.open || L.__gcDocs3) { if (!L || !L.open) { if (++t < 120) later(go, 500); } return; }
+    ['open', 'tab', 'selProj'].forEach(function(k){ var o = L[k]; if (typeof o !== 'function') return; L[k] = function(){ var r = o.apply(this, arguments); if (k === 'selProj') UI.pid = s(arguments[0]); D.getElementById('gc-d3-head') && D.getElementById('gc-d3-head').remove(); paint(); return r; }; });
+    L.__gcDocs3 = true;
+    if (D.getElementById('gc-doclib-box')) paint();
+  })();
+})();
+D.addEventListener('input', function(e){ if (e.target && e.target.id === 'gc-d3-q') { UI.q = e.target.value; paintList(); } }, true);
+D.addEventListener('change', function(e){ if (e.target && e.target.id === 'gc-d3-job') { UI.pid = e.target.value; try { var L = W.gcDocLib; L.__sel = true; } catch (x) {} try { W.gcDocLib.selProj(UI.pid); } catch (x) { paint(); } } }, true);
+D.addEventListener('click', function(e){
+  var el = e.target && e.target.closest ? e.target.closest('[data-d3]') : null; if (!el) return;
+  e.preventDefault(); e.stopPropagation();
+  var act = el.getAttribute('data-d3'), uid = el.getAttribute('data-u'), pid = selectedPid();
+  if (act === 'upload') return uploadForm();
+  if (act === 'defaults') return W._gcDocSet && W._gcDocSet.openDefaults();
+  if (act === 'fav') return toggleFav(uid);
+  if (act === 'fill') return launch(uid, pid, true);
+  if (act === 'blank') return launch(uid, '', false);
+  if (act === 'prev' || act === 'open') return launch(uid, pid, !!pid);
+  if (act === 'add') return addToJob(uid, pid);
+  if (act === 'cust') return customize(uid);
+}, true);
+
+/* ── the per-job picker (patch DOCLIB2) draws from this same list ── */
+(function wireJobPicker(){
+  if (W._gcDocLib && !W._gcDocLib.__fetchIndex) W._gcDocLib.__fetchIndex = W._fetchDocIndex;   /* the templates + a loaded set */
+  var base = W._gcDocLib && W._gcDocLib.__fetchIndex;
+  W._fetchDocIndex = function(){
+    return list().then(function(l){
+      var out = l.map(function(e){ return { id: e.uid, file: e.uid, name: e.title, category: e.group, scope: 'project', jobTypes: e.jobTypes, clientFacing: e.clientFacing, kind: e.kind === 'tpl' ? 'html' : e.kind, unified: true }; });
+      W._docIndex = out; return out;
+    }, function(){ return base ? base() : []; });
+  };
+  var ds = W._gcDocSet;
+  if (ds && !ds.__docs3) {
+    var of = ds.forJob;
+    ds.forJob = function(pid){ return of(pid).then(function(r){ var ids = [], src = {}; r.ids.forEach(function(id){ var n = ALIAS[id] || id; if (ids.indexOf(n) < 0) ids.push(n); src[n] = src[n] || r.src[id]; }); r.ids = ids; r.src = src; r.required = r.required.map(function(id){ return ALIAS[id] || id; }); r.waived = arr(r.waived).map(function(id){ return ALIAS[id] || id; }); return r; }); };
+    ds.__docs3 = true;
+  }
+})();
+/* the job picker's ticks for papers merged into a generator (a default / required named by the template id) */
+(function wrapPack(){
+  var o = W._jobDocPack; if (typeof o !== 'function' || o.__docs3) return;
+  var w = function(pid){
+    var r = o.apply(this, arguments), n = 0;
+    (function fix(){
+      var body = D.getElementById('_jdpBody');
+      if (!body || !body.querySelector('input[data-id]')) { if (++n < 60) later(fix, 150); return; }
+      if (!W._gcDocSet) return;
+      W._gcDocSet.forJob(pid).then(function(set){
+        var admin = isAdmin();
+        set.ids.forEach(function(id){
+          if (!/^(gen|fn|up):/.test(id)) return;
+          var c = body.querySelector('input[data-id="' + id.replace(/"/g, '') + '"]'); if (!c || c.checked) return;
+          c.checked = true;
+          var req = set.required.indexOf(id) >= 0;
+          if (req && !admin) { c.disabled = true; c.title = 'Required by the office \u2014 only an admin can remove it'; }
+          var span = c.parentNode && c.parentNode.querySelector('span');
+          var k = set.src[id] || 'default', lab = { 'default': ['default', '#475569', '#f1f5f9'], customer: ['customer', '#1d4ed8', '#eff6ff'], pm: ['added by PM', '#7c3aed', '#f5f3ff'], required: ['required', '#b91c1c', '#fef2f2'] }[k];
+          if (span && lab && !span.querySelector('[data-src]')) { var b = D.createElement('span'); b.setAttribute('data-src', k); b.textContent = lab[0]; b.style.cssText = 'font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:999px;color:' + lab[1] + ';background:' + lab[2] + ';margin-left:6px'; span.appendChild(b); }
+          var row = c.closest('div'); if (row) { row.style.borderColor = '#bbf7d0'; row.style.background = '#f0fdf4'; }
+        });
+      });
+    })();
+    return r;
+  };
+  w.__docs3 = true; W._jobDocPack = w;
+})();
+/* clicks in 📋 Documents for this Job on the documents patch DOCLIB does not know (generators, code-built, uploads) */
+W.addEventListener('click', function(e){
+  var el = e.target && e.target.closest ? e.target.closest('#_jdpOv [data-dl-act]') : null; if (!el) return;
+  var act = el.getAttribute('data-dl-act'), id = el.getAttribute('data-dl-id') || '', pid = W._jdpPid;
+  if (act === 'addsel') {
+    var ov = el.closest('#_jdpOv');
+    var ids = [].slice.call(ov.querySelectorAll('input[type=checkbox][data-id]')).filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-id'); });
+    var mine = ids.filter(function(x){ return /^(gen|fn|up|lc):/.test(x) || /^gcb_/.test(x); });
+    if (!mine.length) return;   /* only Word templates: DOCLIB's own path */
+    e.preventDefault(); e.stopImmediatePropagation();
+    var msg = D.getElementById('_jdpMsg'); if (msg) msg.textContent = 'Putting ' + ids.length + ' paper(s) in Files & Docs…';
+    var chain = Promise.resolve();
+    mine.forEach(function(x){ chain = chain.then(function(){ return addToJob(x, pid); }); });
+    chain.then(function(){ if (msg) msg.textContent = '✓ ' + mine.length + ' paper(s) are in this job\'s Files & Docs.' + (ids.length > mine.length ? ' (Word templates: use 📚 Company Documents → + Job.)' : ''); try { W._setJobStatus(pid, { _docsPrepared: true }); } catch (x) {} });
+    return;
+  }
+  if (!/^(gen|fn|up|lc):/.test(id)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (act === 'open' || act === 'prev') return launch(id, pid, true);
+  if (act === 'print') return launch(id, pid, true);
+  if (act === 'save') return addToJob(id, pid);
+  if (act === 'send') return toast('Send this one from where it is made (or save it to the job and attach it).', true);
+}, true);
+
+/* the old local "⭐ Company Docs" move to the cloud list once (admin / office) */
+later(function(){
+  if (!(isAdmin() || isOffice())) return;
+  var old = []; try { old = JSON.parse(localStorage.getItem('gc_custom_docs') || '[]'); } catch (e) {}
+  if (!old.length) return;
+  loadState().then(function(){
+    var chain = Promise.resolve();
+    old.forEach(function(d){ if (!d || !d.id || !d.fileData || UPL.some(function(u){ return u.legacyId === d.id; })) return; chain = chain.then(function(){ return upload({ name: d.title, group: 'My uploads', fileName: d.fileName, fileType: d.fileType, data: d.fileData, legacyId: d.id }); }); });
+  });
+}, 15000);
+
+W._gcDocs3 = { list: list, entry: entry, html: html, launch: launch, addToJob: addToJob, upload: upload, custom: function(uid){ return CUS[uid] || null; }, setCustom: setCustom, favs: favs, toggleFav: toggleFav, customize: customize, paint: paint, ALIAS: ALIAS, GROUPS: GROUPS };
+try { console.log('[GC] 📄 One document library (patch DOCLIB3): _gcDocs3'); } catch (e) {}
+})();
+</script>
