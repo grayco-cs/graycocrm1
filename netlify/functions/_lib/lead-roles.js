@@ -84,4 +84,36 @@ function state(team, users){
   });
   return out;
 }
-module.exports = { ROLES, classify, coRole, isRoofing, holder, state, roleSetting, TEAM_KEY: 'gc_team_settings' };
+/* patch LROLEVIEW (owner 10/23): which leads a person works — by profile / role and the lead roles, never by name:
+   admin, office → all · estimator → bids (commercial / government / bid invitations) · insurance / mitigation profile or the
+   Senior Insurance PM → insurance & restoration · a roofing profile or the Senior Roofing PM → roofing (storm roofs too) ·
+   anyone else → only the leads assigned to them. A lead assigned or co-assigned to the person is always theirs. */
+function scopeFor(person, team, users){
+  const p = person || {}, x = low([p.profile, p.role, p.title].map(s).join(' ')), me = low(p.email), nm = low(p.name);
+  const roles = p.roles || {};
+  if (roles.admin || /\badmin|owner/.test(x)) return 'all';
+  if (roles.office || /office/.test(x)) return 'all';
+  if (roles.estimator || /estimat/.test(x)) return 'bids';
+  if (roles.insurance || roles.mitigation || /insur|mitig/.test(x)) return 'insurance';
+  if (/roof/.test(x)) return 'roofing';
+  const is = h => !!h && ((me && low(h.email) === me) || (nm && low(h.name) === nm));
+  if (is(holder('insurance', team, users))) return 'insurance';
+  if (is(holder('roofing', team, users))) return 'roofing';
+  return 'mine';
+}
+function assignedTo(l, p){
+  const me = low(p && p.email), nm = low(p && p.name); if (!me && !nm) return false;
+  const hit = v => { v = low(v); return !!v && (v === me || v === nm); };
+  return [l.pm, l.estimator, l.apm, l.assignee, l.assignedTo, l.pmEmail, l.estimatorEmail].some(hit) || arr(l.coAssignees).some(c => c && (hit(c.name) || hit(c.email)));
+}
+function inScope(l, scope, person, isBid){
+  if (!l) return false;
+  if (scope === 'all') return true;
+  if (person && assignedTo(l, person)) return true;
+  const k = classify(l, isBid);
+  if (scope === 'bids') return k === 'bid';
+  if (scope === 'insurance') return k === 'insurance';
+  if (scope === 'roofing') return k === 'roofing' || isRoofing(l);
+  return false;
+}
+module.exports = { ROLES, classify, coRole, isRoofing, holder, state, roleSetting, scopeFor, inScope, assignedTo, TEAM_KEY: 'gc_team_settings' };

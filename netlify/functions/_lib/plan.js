@@ -216,6 +216,18 @@ function build(src, opts){
       });
     }
 
+    /* patch LROLEVIEW: the Senior Insurance / Roofing PM (or an insurance / roofing profile): the new leads of their kind
+       nobody is on yet — only theirs (an insurance PM is never told about a remodel lead) */
+    if (!R.admin && !R.office) {
+      try {
+        const LRS = require('./lead-roles.js'), sc = LRS.scopeFor(me, src.gc_team_settings, src.users);
+        if (sc === 'insurance' || sc === 'roofing') {
+          const un = leads.filter(function(l){ return !leadWho(l).length && !arr(l.coAssignees).length && LRS.inScope(l, sc, me, isBid); });
+          if (un.length) add('scope:' + sc + ':' + day, 'leads', (sc === 'insurance' ? '🛡 ' : '🏠 ') + un.length + ' new ' + (sc === 'insurance' ? 'insurance / restoration' : 'roofing') + ' lead' + (un.length > 1 ? 's' : '') + ' nobody is on yet', { tab: 'leads' });
+        }
+      } catch (e) {}
+    }
+
     /* estimator: bids due soon (priority, then due), bids missing info, sub bids, results to chase */
     if (R.estimator) {
       const isHead = headEst && headEst === me.email;

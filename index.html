@@ -162305,6 +162305,44 @@ function value(l){ var e = money2(l.estValue); return e > 0 ? e : money2(l.value
 function hasInquiry(l){ return !!(s(l.inboxId) || l.leadExtra || s(l.referredById) || s(l.refMember) || s(l.contactedAt) || s(l.lastContact) || s(l.estimateId) || s(l.estId) || arr(l.estimates).length || s(l.bidDue)
   || arr(l.activity).some(function(a){ return a && !/^(priority|system|import|archive|restore|merge|assign)$/.test(s(a.type)); }) || stageOf(l) !== 'New Lead' || value(l) > 0); }
 function importedL(l){ if (!l || l.imported === false) return false; if (!/^(LQB_|LCC_|LCCR_)/.test(s(l.id)) && l.importedOnly !== true) return false; return !hasInquiry(l); }
+/* patch LROLEVIEW (owner 10/23): each profile sees its own leads — admin / office all · estimator bids · insurance /
+   mitigation (or the Senior Insurance PM) insurance & restoration · roofing (or the Senior Roofing PM) roofing · anyone else
+   the leads assigned to them. A lead assigned / co-assigned to me is always mine. "View as" shows that profile's leads.
+   The same rule as the server's lead-roles.js scopeFor / inScope (the lead-roles classifier decides the kind). */
+var SCOPE_MEMO = { at: 0, key: '', v: null };
+function scopeForLabel(label, name, email){
+  var x = low(label);
+  if (/\badmin|owner/.test(x)) return { kind: 'all', why: 'admin' };
+  if (/office/.test(x)) return { kind: 'all', why: 'office' };
+  if (/estimat/.test(x)) return { kind: 'bids', why: 'estimator' };
+  if (/insur|mitig/.test(x)) return { kind: 'insurance', why: 'insurance profile' };
+  if (/roof/.test(x)) return { kind: 'roofing', why: 'roofing profile' };
+  var R = W._gcLeadRoles || {}, is = function(h){ return !!h && ((email && low(h.email) === low(email)) || (name && low(h.name) === low(name))); };
+  try { if (R.holder && is(R.holder('insurance'))) return { kind: 'insurance', why: 'Senior Insurance PM' }; } catch (e) {}
+  try { if (R.holder && is(R.holder('roofing'))) return { kind: 'roofing', why: 'Senior Roofing PM' }; } catch (e) {}
+  return { kind: 'mine', why: 'assigned to me' };
+}
+function myScope(){
+  var label = ''; try { if (W._gcRP && typeof W._gcRP.role === 'function') label = s(W._gcRP.role()); } catch (e) {}
+  if (!label) { if (isAdmin()) label = 'Admin'; else { var u = meUser() || {}; label = [u.profile, u.role, u.title].map(s).join(' '); } }
+  var key = label + '|' + myName() + '|' + myEmail();
+  if (SCOPE_MEMO.v && SCOPE_MEMO.key === key && Date.now() - SCOPE_MEMO.at < 3000) return SCOPE_MEMO.v;
+  var v = scopeForLabel(label, myName(), myEmail()); v.label = label; SCOPE_MEMO = { at: Date.now(), key: key, v: v }; return v;
+}
+function mineL(l){ var me = low(myName()), em = myEmail(), hit = function(v){ v = low(v); return !!v && (v === me || v === em); };
+  return [l.pm, l.estimator, l.apm, l.assignee, l.assignedTo, l.pmEmail, l.estimatorEmail].some(hit) || arr(l.coAssignees).some(function(c){ return c && (hit(c.name) || hit(c.email)); }); }
+function inScopeFor(l, sc){
+  if (!l) return false; if (sc.kind === 'all') return true; if (mineL(l)) return true;
+  var R = W._gcLeadRoles || {}, k = ''; try { k = R.classify ? R.classify(l) : ''; } catch (e) {}
+  if (sc.kind === 'bids') return k === 'bid' || isBidL(l);
+  if (sc.kind === 'insurance') return k === 'insurance';
+  if (sc.kind === 'roofing') { var r = false; try { r = R.isRoofing ? !!R.isRoofing(l) : false; } catch (e) {} return k === 'roofing' || r; }
+  return false;
+}
+function inScope(l){ return inScopeFor(l, myScope()); }
+function scoped(){ var sc = myScope(), all = leads(); return sc.kind === 'all' ? all : all.filter(function(l){ return inScopeFor(l, sc); }); }   /* the scope once per call (LEADPERF) */
+function canAssignAll(){ return isAdmin() && myScope().kind === 'all' && myScope().why === 'admin'; }
+W._gcLeadScope = { of: function(){ return myScope(); }, forLabel: scopeForLabel, has: function(l, label){ return label ? inScopeFor(l, scopeForLabel(label, myName(), myEmail())) : inScope(l); }, visible: function(){ return scoped().map(function(l){ return l.id; }); } };
 function archivedL(l){ return !!l && (l.archived === true || /^archived$/i.test(s(l.status))); }
 function born(l){ var t = Date.parse(s(l.createdAt || l.receivedAt || l.created || l.dateAdded || l.date)); return isFinite(t) ? t : 0; }
 function dueMs(l){ var d = s(l.bidDue); if (!d) return NaN; return Date.parse(d.length === 10 ? d + 'T17:00:00' : d); }
@@ -162375,14 +162413,14 @@ function syncUI(){ if (UI._k !== uiKey()) { UI = loadUI(); HUB_SIG = ''; } }
 function saveUI(){ lsSet(UI._k || uiKey(), { v: UI.v, who: UI.who, src: UI.src, type: UI.type, stage: UI.stage, due: UI.due, un: UI.un, sort: UI.sort, dir: UI.dir, cal: UI.cal, classic: UI.classic, closed: UI.closed, preset: UI.preset, exp: UI.exp, prio: UI.prio }); }
 
 function unassignedCount(){
-  if (typeof W._gcUnassignedLeadCount === 'function') { try { var n = W._gcUnassignedLeadCount(); if (typeof n === 'number') return n; } catch (e) {} }
-  return leads().filter(function(l){ return !closed(l) && !assignee(l); }).length;
+  if (myScope().kind === 'all' && typeof W._gcUnassignedLeadCount === 'function') { try { var n = W._gcUnassignedLeadCount(); if (typeof n === 'number') return n; } catch (e) {} }   /* patch LROLEVIEW: the inbox count is everyone's */
+  return scoped().filter(function(l){ return !closed(l) && !assignee(l); }).length;   /* patch LROLEVIEW */
 }
 W._gcLeadsUnassigned = unassignedCount;
 
 function filtered(){
   var q = low(UI.q), now = Date.now();
-  return (UI.arch ? rawLeads().filter(function(l){ return !dead(l) && archivedL(l); }) : leads()).filter(function(l){   /* patch LCLEAN: 🗄 Archived */
+  return (UI.arch ? rawLeads().filter(function(l){ return !dead(l) && archivedL(l); }) : scoped()).filter(function(l){   /* patch LCLEAN: 🗄 Archived; patch LROLEVIEW: my leads */
     if (!UI.arch && !!UI.imp !== importedL(l)) return false;   /* patch LCLEAN: 📦 Imported only when asked for */
     if (UI.exp) { if (!expired(l)) return false; }   /* patch HOT2: ⌛ Expired chip */
     else if (!UI.closed && !UI.arch && shut(l) && UI.stage !== 'Won' && UI.stage !== 'Lost') return false;   /* patch HOT2: closed hidden by default, in every view */
@@ -162457,7 +162495,7 @@ function anchor(){
   return pipelineWrap();
 }
 function kpis0(){
-  var all = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), open = all.filter(function(l){ return !shut(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);   /* patch HOT2; patch LCLEAN: 📦 imported not counted */
+  var all = scoped().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), open = all.filter(function(l){ return !shut(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);   /* patch HOT2; patch LCLEAN: 📦 imported not counted */
   var wk = now - 7 * 864e5, q90 = now - 90 * 864e5;
   var un = unassignedCount();
   var today = all.filter(function(l){ return born(l) >= day0.getTime(); }).length, week = all.filter(function(l){ return born(l) >= wk; }).length;
@@ -162480,7 +162518,7 @@ function kpis0(){
 }
 function kpis(){   /* patch HOT2: + "Needs priority" for admins */
   var k = kpis0(); if (!isAdmin()) return k;
-  var n = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && needsPrio(l) && !importedL(l); }).length;   /* patch LCLEAN */
+  var n = scoped().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && needsPrio(l) && !importedL(l); }).length;   /* patch LCLEAN, LROLEVIEW */
   k.splice(1, 0, { k: 'noprio', n: n, l: 'Needs priority', c: n ? 'alert' : '', t: 'Open leads nobody has given a 1–10 priority yet — click to see them' });
   return k;
 }
@@ -162494,7 +162532,7 @@ function people(){
 function hubHtml(){
   var ks = kpis();
   /* patch LCLEAN: every standard source + any found on a lead, each with its count; every type with its count */
-  var base0 = leads().filter(function(l){ return !importedL(l) || UI.imp; }), sc = {}, tc = {};
+  var base0 = scoped().filter(function(l){ return !importedL(l) || UI.imp; }), sc = {}, tc = {};   /* patch LROLEVIEW */
   base0.forEach(function(l){ var k = srcCanon(l); sc[k] = (sc[k] || 0) + 1; typesOf(l).forEach(function(x){ tc[x] = (tc[x] || 0) + 1; }); });
   var src = sourceList(rawLeads()).map(function(x){ return { v: x, t: x + ' (' + (sc[x] || 0) + ')' }; });
   if (UI.type && TYPE_OLD[UI.type]) UI.type = TYPE_OLD[UI.type];
@@ -162513,7 +162551,7 @@ function hubHtml(){
       + '<select data-gcl-f="due" aria-label="Bid due">' + optionsFor([{ v: '7', t: 'Due in 7 days' }, { v: '30', t: 'Due in 30 days' }, { v: 'past', t: 'Past due' }], UI.due, 'Any due date') + '</select>'
       + '<select data-gcl-f="prio" aria-label="Priority">' + optionsFor([{ v: 'hi', t: '⭐ 8–10 (high)' }, { v: 'md', t: '⭐ 5–7' }, { v: 'lo', t: '⭐ 1–4' }, { v: 'none', t: 'No priority yet' }], UI.prio, 'Any priority') + '</select>'
       + '<label><input type="checkbox" data-gcl-f="un"' + (UI.un ? ' checked' : '') + '> Unassigned only</label>'
-      + (function(){ var base = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), nShut = base.filter(shut).length, nExp = base.filter(expired).length;   /* patch HOT2; patch LCLEAN */
+      + (function(){ var base = scoped().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), nShut = base.filter(shut).length, nExp = base.filter(expired).length;   /* patch HOT2; patch LCLEAN */
           return '<label><input type="checkbox" data-gcl-f="closed"' + (UI.closed ? ' checked' : '') + '> Show lost / closed (' + nShut + ')</label>'
             + '<button type="button" class="gcl-mv gcl-exp' + (UI.exp ? ' on' : '') + '" data-gcl-exp aria-pressed="' + UI.exp + '" title="Bids whose due date went by more than a week ago and were never submitted">⌛ Expired (' + nExp + ')</button>'
             + (function(){ /* patch LCLEAN: 📦 Imported · 🗄 Archived · 🧹 Clean up (admins) */
@@ -162536,6 +162574,7 @@ function cardHtml(l){
     + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
     + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
     + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
+    + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + (assignee(l) ? 'Reassign' : 'Assign to PM') + '</button>' : '')   /* patch LROLEVIEW */
     + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
     + '</div>';
 }
@@ -162558,8 +162597,10 @@ function bodyHtml(){
     var key = { name: function(l){ return low(l.name); }, stage: function(l){ return STAGES.indexOf(stageOf(l)); }, who: function(l){ return low(assignee(l)) || 'zzz'; }, type: typeOf, src: function(l){ return low(srcOf(l)); }, value: value, due: function(l){ var t = dueMs(l); return isFinite(t) ? t : 9e15; }, born: receivedMs }[UI.sort] || receivedMs;   /* patch HOT2: "Came in" = received */
     if (UI.sort === 'prio') list.sort(function(a, b){ return importance(a, b) * (UI.dir < 0 ? 1 : -1); });   /* patch HOT2 */
     else list.sort(function(a, b){ var x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * UI.dir; });
-    return '<div class="gcl-wrap"><table class="gcl-list"><thead><tr>' + cols.map(function(c){ return '<th data-gcl-sort="' + c[0] + '">' + c[1] + (UI.sort === c[0] ? (UI.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
-      + list.slice(0, 400).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td><b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
+    var npk = Object.keys(PICK).filter(function(id){ return PICK[id] && list.some(function(l){ return l.id === id; }); }).length;   /* patch LROLEVIEW: bulk assign */
+    return (canAssignAll() ? '<div class="gcl-fil" style="margin:0 0 6px"><button type="button" class="gcl-mv" data-gcl-pickall>☑ Select all shown / none</button><button type="button" class="gcl-mv gcl-asg" data-gcl-bulkasg' + (npk ? '' : ' disabled') + '>👤 Assign selected (' + npk + ')…</button></div>' : '')
+      + '<div class="gcl-wrap"><table class="gcl-list"><thead><tr>' + cols.map(function(c){ return '<th data-gcl-sort="' + c[0] + '">' + c[1] + (UI.sort === c[0] ? (UI.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
+      + list.slice(0, 400).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>') + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
       + '</tbody></table></div>' + (list.length ? '' : '<p style="color:#666">No leads match.</p>');
   }
   if (UI.v === 'cal') {
@@ -162602,7 +162643,7 @@ function mount(){
   var ae = D.activeElement, typing = ae && hub.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
   var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
-  var sig = JSON.stringify([UI, leads().length, leads().reduce(function(m, l){ var u = s(l.updatedAt); return u > m ? u : m; }, ''), inboxItems().length, unassignedCount(), Math.floor(Date.now() / 60000)]);
+  var sig = JSON.stringify([UI, Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, leads().length, leads().reduce(function(m, l){ var u = s(l.updatedAt); return u > m ? u : m; }, ''), inboxItems().length, unassignedCount(), Math.floor(Date.now() / 60000)]);
   if (sig === HUB_SIG) return;
   HUB_SIG = sig;
   var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; }); }   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
@@ -162705,6 +162746,42 @@ function assign(id, name){
       redraw(); return ok;
     });
 }
+/* patch LROLEVIEW: the assign picker — everyone who takes leads, with their load; one lead or the selected ones; the
+   existing assign() does the saving and the notice (so alerts and approvals behave as before) */
+var PICK = {};
+function closePicker(){ var p = D.getElementById('gcl-asgpick'); if (p) p.remove(); }
+function openPicker(ids, anchorEl){
+  closePicker(); ids = arr(ids).filter(Boolean); if (!ids.length || !canAssignAll()) return;
+  var ppl = people().map(function(n){ var ld = loadOf(n); return { n: n, ld: ld }; }).sort(function(a, b){ return (a.ld.leads + a.ld.jobs) - (b.ld.leads + b.ld.jobs) || (a.n < b.n ? -1 : 1); });
+  var p = D.createElement('div'); p.id = 'gcl-asgpick'; p.setAttribute('data-gc-keep', '1'); p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Assign to');
+  p.style.cssText = 'position:fixed;z-index:100200;background:#fff;border:1px solid #d6d3ea;border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.22);min-width:260px;max-width:92vw;max-height:60vh;overflow:auto;font:14px Arial,sans-serif;color:#1b1640';
+  p.innerHTML = '<div style="padding:9px 12px;font-weight:700;border-bottom:1px solid #eee;display:flex;justify-content:space-between;gap:8px"><span>👤 Assign ' + (ids.length > 1 ? ids.length + ' leads' : 'to') + '</span><button type="button" data-asg-x style="border:0;background:none;font-size:18px;cursor:pointer" aria-label="Close">✕</button></div>'
+    + ppl.map(function(x){ return '<button type="button" data-asg-to="' + esc(x.n) + '" style="display:flex;justify-content:space-between;gap:10px;width:100%;border:0;border-bottom:1px solid #f3f2f8;background:#fff;padding:10px 12px;text-align:left;cursor:pointer;font:14px Arial;min-height:40px"><b>' + esc(x.n) + '</b><span style="color:#666;font-size:12px">' + x.ld.leads + ' lead' + (x.ld.leads === 1 ? '' : 's') + ' · ' + x.ld.jobs + ' job' + (x.ld.jobs === 1 ? '' : 's') + '</span></button>'; }).join('')
+    + (ppl.length ? '' : '<div style="padding:12px;color:#666">Nobody to assign to yet (Admin → Employees).</div>');
+  D.body.appendChild(p);
+  var r = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : { left: 20, bottom: 80 };
+  p.style.left = Math.max(8, Math.min(r.left, W.innerWidth - p.offsetWidth - 8)) + 'px'; p.style.top = Math.max(8, Math.min(r.bottom + 4, W.innerHeight - p.offsetHeight - 8)) + 'px';
+  p.addEventListener('click', function(ev){
+    var b = ev.target.closest && ev.target.closest('button'); if (!b) return; ev.stopPropagation();
+    if (b.hasAttribute('data-asg-x')) return closePicker();
+    var to = b.getAttribute('data-asg-to'); if (!to) return;
+    closePicker();
+    ids.reduce(function(pr, id){ return pr.then(function(n){ return assign(id, to).then(function(ok){ return n + (ok ? 1 : 0); }); }); }, Promise.resolve(0))
+      .then(function(n){ ids.forEach(function(id){ delete PICK[id]; }); if (ids.length > 1) toast('👤 Assigned ' + n + ' of ' + ids.length + ' leads to ' + to); redraw(); });
+  });
+}
+D.addEventListener('click', function(ev){
+  var t = ev.target; if (!t || !t.closest) return;
+  var pk = D.getElementById('gcl-asgpick'); if (pk && !pk.contains(t) && !t.closest('[data-gcl-asg],[data-gcl-bulkasg]')) closePicker();
+  var b = t.closest('[data-gcl-asg],[data-gcl-bulkasg],[data-gcl-pickall],[data-gcl-pick]'); if (!b || !b.closest('#gc-leads-hub')) return;
+  ev.stopPropagation();   /* not the row / card click (that opens the drawer) */
+  if (b.hasAttribute('data-gcl-pick')) { PICK[b.getAttribute('data-gcl-pick')] = !!b.checked; redraw(); return; }
+  if (b.hasAttribute('data-gcl-pickall')) { var shown = filtered().slice(0, 400).map(function(l){ return l.id; }), all1 = shown.length && shown.every(function(id){ return PICK[id]; }); shown.forEach(function(id){ PICK[id] = !all1; }); redraw(); return; }
+  ev.preventDefault();
+  if (b.hasAttribute('data-gcl-bulkasg')) { var sel = Object.keys(PICK).filter(function(id){ return PICK[id]; }); if (!sel.length) return toast('Tick the leads first'); openPicker(sel, b); return; }
+  openPicker([b.getAttribute('data-gcl-asg')], b);
+}, true);
+D.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') closePicker(); }, true);
 function loadOf(name){
   var n = low(name), ls = leads().filter(function(l){ return !closed(l) && low(assignee(l)) === n; }).length;
   var js = arr(crm().projects).filter(function(p){ return p && low(p.pm) === n && !/complete|closed|cancel|lost/i.test(s(p.status) + ' ' + s(p.stage)); }).length;
