@@ -9,6 +9,7 @@
      checkup          🔧 one-year checkup                                                   job switch: yearlyCheckup
      contract         ✍️ contract for signature (PM, then an admin: money / legal)          job switch: contractSign
      progress_update  📸 the weekly progress update                                         job switch: progressPosts
+     document         📄 a paper from the document library (patch DOCLIB; ref = template id)  no job switch
    The recipient is always the job's own customer e-mail (or phone for a text) — never one the page sends.
    One item per (kind, job, ref): asking again is harmless.
    APPOINTMENTS ("the PM approves the first; later ones go with the approved wording", as final-invoice reminders):
@@ -23,7 +24,8 @@ const KINDS = {
   closeout: { key: 'warrantyCert', title: '🏁 Closeout papers' },
   checkup: { key: 'yearlyCheckup', title: '🔧 One-year checkup' },
   contract: { key: 'contractSign', title: '✍️ Contract for signature' },
-  progress_update: { key: 'progressPosts', title: '📸 Progress update' }
+  progress_update: { key: 'progressPosts', title: '📸 Progress update' },
+  document: { key: 'docSend', title: '📄 Document' }   /* patch DOCLIB: a paper from 📚 the document library, sent from a job */
 };
 function s(v){ return v == null ? '' : String(v).trim(); }
 function clip(v, n){ return s(v).slice(0, n); }

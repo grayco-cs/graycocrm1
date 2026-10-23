@@ -165391,3 +165391,473 @@ W._gcPause = { state: function(){ return JSON.parse(JSON.stringify(STATE)); }, r
 try { console.log('[GC] ⏸ Data-entry mode (patch PAUSE): _gcPause.state()'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-doclib">
+/* __GC_PATCH_DOCLIB__ — 📚 the built-in GrayCo document library (owner 10/23, on a job's "📋 Documents for this Job":
+   "No document templates loaded yet … confused why aren't there docs here"). The library used to be ONLY a .json the
+   owner once loaded (Documents → 📚 Company Documents → Load); a fresh start wiped it. Now:
+     • a starter set of GrayCo documents ships in the CRM (contracts, change orders, lien waivers, warranty, completion,
+       insurance / restoration and commercial papers) — HTML with the centered logo letterhead and merge fields
+       {customer} {gc} {job_name} {job_address} {po} {date} {contract_amount} {pm} {office_phone} {billing_email} {license};
+     • it is added to the cloud list (gc_kv docTemplatesIndex) once, from an admin / office session, MERGED with what is
+       there (never overwrites; a loaded .json still works and sits beside it); the job panel shows it even before that;
+     • 📋 Documents for this Job: per document 👁 Fill & preview · 🖨 Print / PDF · 💾 Save to job (Files & Docs) ·
+       📧 Send (client-facing ones; through ✅ Approvals, never straight out; not while ⏸ data-entry mode is on);
+     • 📚 Company Documents: ✏️ Edit template (admins; merge-field chips) and ↺ Reset to built-in.
+   The office phone is the company's (brand), never a person's. Legal wording is plain and generic; every one carries an
+   admin-only note "Have your attorney review before first use" (never printed). No insurance company is ever named.
+   API: window._gcDocLib = { builtins(), render(id, pid, opts), seed(), open(id, pid), edit(id) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_DOCLIB__) return; window.__GC_PATCH_DOCLIB__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var SEED_FLAG = 'gc_doclib_seed_v1', IDX = 'docTemplatesIndex', PORTAL = '/.netlify/functions/portal';
+var ATTORNEY = 'Have your attorney review before first use.';
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function brand(){ return W.GC_BRAND || {}; }
+function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin|owner/i.test(s(u.role)) || s(u.payType).toLowerCase() === 'owner'; }
+function isOffice(){ var u = me(); return /office/i.test(s(u.role) + ' ' + s(u.profile)); }
+/* the cloud value (_ehSb answers [] for a key that is not there, and some keys are stored as JSON text) */
+function sb(k){ try { return Promise.resolve(W._ehSb ? W._ehSb(k) : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }); } catch (e) { return Promise.resolve(null); } }
+function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+/* written to the cloud now (_supaUpsertNow): the everyday _supaUpsert waits for a tab change and only carries the app's own lists */
+function put(k, v){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(k, v) : null); } catch (e) { return Promise.resolve(null); } }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000020;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function paused(){ try { var st = W._gcPause && W._gcPause.state(); return !!(st && st.paused); } catch (e) { return false; } }
+
+/* ── building blocks for the papers ── */
+function p(t){ return '<p style="margin:0 0 10px;line-height:1.55">' + t + '</p>'; }
+function h(t){ return '<h3 style="font-size:12pt;margin:16px 0 6px;color:#0f2440">' + t + '</h3>'; }
+function title(t, sub){ return '<h2 style="text-align:center;font-size:15pt;margin:4px 0 2px;color:#0f2440;letter-spacing:.3px">' + t + '</h2>' + (sub ? '<div style="text-align:center;font-size:9.5pt;color:#555;margin-bottom:10px">' + sub + '</div>' : '<div style="height:8px"></div>'); }
+function info(rows){ return '<table style="width:100%;border-collapse:collapse;font-size:10pt;margin:6px 0 12px">' + rows.map(function(r){ return '<tr><td style="padding:4px 6px;width:34%;color:#555;border-bottom:1px solid #e5e7eb">' + r[0] + '</td><td style="padding:4px 6px;border-bottom:1px solid #e5e7eb"><b>' + r[1] + '</b></td></tr>'; }).join('') + '</table>'; }
+var JOB = [['Job', '{job_name}'], ['Job address', '{job_address}'], ['PO / Job #', '{po}'], ['Date', '{date}']];
+function line(label){ return '<td style="padding:22px 8px 4px;vertical-align:bottom;width:50%"><div style="border-top:1px solid #333;padding-top:3px;font-size:9pt;color:#444">' + label + '</div></td>'; }
+function sigs(a, b){ return '<table style="width:100%;border-collapse:collapse;margin-top:18px"><tr>' + line(a + ' — signature') + line(b + ' — signature') + '</tr><tr>' + line('Printed name / title') + line('Printed name / title') + '</tr><tr>' + line('Date') + line('Date') + '</tr></table>'; }
+function grid(cols, n){ var hd = '<tr>' + cols.map(function(c){ return '<th style="border:1px solid #cbd5e1;padding:5px;background:#f1f5f9;font-size:9pt;text-align:left">' + c + '</th>'; }).join('') + '</tr>'; var r = ''; for (var i = 0; i < (n || 8); i++) r += '<tr>' + cols.map(function(){ return '<td style="border:1px solid #cbd5e1;padding:9px 5px">&nbsp;</td>'; }).join('') + '</tr>'; return '<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin:6px 0 12px">' + hd + r + '</table>'; }
+function checks(items){ return '<div style="font-size:10pt;line-height:1.9">' + items.map(function(t){ return '☐ ' + t; }).join('<br>') + '</div>'; }
+var GCO = 'GrayCo Construction Services, LLC';
+
+/* ── the starter set ── */
+var ALL = ['residential', 'commercial', 'insurance'];
+var L = [];
+function T(id, name, category, jobTypes, clientFacing, body){ L.push({ id: 'gcb_' + id, file: 'gcb_' + id + '.html', name: name, category: category, scope: 'project', jobTypes: jobTypes, clientFacing: clientFacing, editable: true, builtin: true, kind: 'html', body: body }); }
+
+T('contract', 'Construction Agreement', 'Contracts', ALL, true,
+  title('Construction Agreement') + info([['Owner / Customer', '{customer}'], ['General contractor (if any)', '{gc}']].concat(JOB).concat([['Contract amount', '{contract_amount}'], ['Project manager', '{pm}']])) +
+  h('1. Work') + p('Contractor (' + GCO + ', {license}) will furnish the labor, materials and equipment to complete the work described in the attached Scope of Work / proposal for the job above. Work not listed there is not included.') +
+  h('2. Price and payment') + p('The customer agrees to pay {contract_amount}, plus approved change orders, on the payment schedule in the proposal. Invoices are due on receipt unless the proposal says otherwise. Questions about invoices: {billing_email}.') +
+  h('3. Changes') + p('Any change to the work, price or schedule must be in a written change order signed by both parties before the changed work starts.') +
+  h('4. Schedule') + p('Contractor will start and finish within a reasonable time, allowing for weather, material availability, inspections, owner selections and other conditions outside its control.') +
+  h('5. Site, permits and access') + p('The customer gives reasonable access to the property, utilities and a place to stage materials. Contractor obtains the permits its work requires unless the proposal says otherwise.') +
+  h('6. Hidden conditions') + p('Conditions that could not be seen before work started (rot, mold, damaged framing, code issues, buried items) are not included and will be handled by change order.') +
+  h('7. Warranty') + p('Contractor warrants its workmanship for one (1) year from substantial completion. Manufacturer warranties pass through to the customer. See the Warranty Certificate.') +
+  h('8. Insurance') + p('Contractor carries general liability and workers’ compensation insurance as required by law and will provide a certificate on request.') +
+  h('9. Disputes') + p('The parties will first try in good faith to resolve any disagreement by talking. This agreement is governed by the laws of the state where the job is located.') +
+  h('10. Entire agreement') + p('This agreement, the proposal / Scope of Work and signed change orders are the whole agreement. Questions: {office_phone}.') +
+  sigs('Customer', GCO));
+
+T('scope', 'Scope of Work', 'Contracts', ALL, true,
+  title('Scope of Work') + info([['Customer', '{customer}']].concat(JOB).concat([['Project manager', '{pm}']])) +
+  h('Included work') + grid(['#', 'Area / item', 'Description of work', 'Qty / unit'], 10) +
+  h('Not included') + p('Anything not listed above, including permits / fees not named, hidden-condition repairs, and owner-supplied items, unless added by signed change order.') +
+  h('Owner responsibilities') + p('Selections by the dates requested, clear access to work areas, and removal of personal items from work areas.') + sigs('Customer', GCO));
+
+T('change_order', 'Change Order', 'Change Orders', ALL, true,
+  title('Change Order', 'Change Order #: ________') + info([['Customer', '{customer}'], ['General contractor', '{gc}']].concat(JOB).concat([['Original contract amount', '{contract_amount}']])) +
+  h('Description of change') + grid(['Item', 'Description', 'Amount'], 6) +
+  info([['Total of this change order', '$ ____________'], ['Revised contract amount', '$ ____________'], ['Schedule change', '______ days (+ / −)']]) +
+  p('This change order becomes part of the contract when signed by both parties. All other contract terms stay the same.') + sigs('Customer / GC', GCO));
+
+function waiver(kind, cond, fin){
+  var t = (cond ? 'Conditional' : 'Unconditional') + ' Waiver and Release on ' + (fin ? 'Final Payment' : 'Progress Payment');
+  T('lien_' + kind, t, 'Lien Waivers', ALL, true,
+    title(t) + info([['Owner / Customer', '{customer}'], ['Paying party / GC', '{gc}']].concat(JOB)) +
+    p('Claimant: ' + GCO + '. Amount of this payment: $ ____________. ' + (fin ? 'This is the final payment for all labor, services, equipment and materials furnished to the job above.' : 'Work through date: ____________.')) +
+    (cond ? p('Upon receipt by the claimant of payment in the amount above, and when that payment has cleared the bank, the claimant waives and releases its lien, bond and payment rights for the work ' + (fin ? 'on this job, except for disputed claims listed below.' : 'performed through the date above, except for retainage, extras not yet paid and disputed claims listed below.') + ' This document is not effective until the payment is received and clears.')
+          : p('The claimant has been paid in full the amount above and waives and releases its lien, bond and payment rights for the work ' + (fin ? 'on this job, except for disputed claims listed below.' : 'performed through the date above, except for retainage, extras not yet paid and disputed claims listed below.') + ' NOTICE: This document waives rights unconditionally and states that you have been paid. Do not sign it if you have not been paid.')) +
+    p('Exceptions / disputed claims: ________________________________________________') +
+    '<table style="width:100%;border-collapse:collapse;margin-top:18px"><tr>' + line(GCO + ' — authorized signature') + line('Printed name / title') + '</tr><tr>' + line('Date') + line('Notary (if required)') + '</tr></table>');
+}
+waiver('cond_progress', true, false); waiver('uncond_progress', false, false); waiver('cond_final', true, true); waiver('uncond_final', false, true);
+
+T('warranty', 'Warranty Certificate', 'Warranties', ALL, true,
+  title('Warranty Certificate') + info([['Issued to', '{customer}']].concat(JOB).concat([['Completion date', '____________']])) +
+  p(GCO + ' warrants the workmanship of the work it performed at the job above to be free from defects for one (1) year from the completion date.') +
+  h('What is covered') + p('Repair or correction of defects in our workmanship that show up under normal use and are reported to us in writing during the warranty period.') +
+  h('What is not covered') + p('Normal wear, settling, owner or third-party damage or alterations, lack of maintenance, acts of nature, and items supplied by others. Materials carry their manufacturers’ warranties, which pass through to you.') +
+  h('How to make a claim') + p('Call our office at {office_phone} or write to us with photos and a description. We will schedule an inspection promptly.') + sigs('Customer', GCO));
+
+T('completion', 'Certificate of Completion', 'Closeout', ALL, true,
+  title('Certificate of Completion') + info([['Customer', '{customer}'], ['General contractor', '{gc}']].concat(JOB).concat([['Project manager', '{pm}']])) +
+  p('The parties confirm that the work under the contract for the job above is complete, except for any items listed below, and that the customer has accepted it.') +
+  h('Open items (if any)') + grid(['Item', 'Description', 'Target date'], 4) + p('The warranty period starts on the date this certificate is signed.') + sigs('Customer', GCO));
+
+T('walkthrough', 'Final Walkthrough / Punch List Sign-off', 'Closeout', ALL, true,
+  title('Final Walkthrough & Punch List') + info([['Customer', '{customer}']].concat(JOB).concat([['Project manager', '{pm}']])) +
+  grid(['#', 'Location', 'Punch item', 'Done (initials)'], 12) +
+  p('Signing below confirms the walkthrough took place and the list above is complete. Items will be finished and initialed when done.') + sigs('Customer', GCO));
+
+T('selections', 'Material Selection Sheet', 'Intake & FAQs', ALL, true,
+  title('Material Selection Sheet') + info([['Customer', '{customer}']].concat(JOB)) +
+  grid(['Area', 'Item', 'Brand / product', 'Color / finish', 'Qty', 'Selected by (date)'], 12) +
+  p('Selections not made by the requested date may delay the schedule. Changes after ordering may carry restocking fees and are handled by change order.') + sigs('Customer', GCO));
+
+T('coi_request', 'Certificate of Insurance (COI) Request', 'Subcontractor', ['commercial', 'residential', 'insurance'], false,
+  title('Certificate of Insurance Request') + info([['To (subcontractor / vendor)', '____________________']].concat(JOB)) +
+  p('Before work starts on the job above, please send a current certificate of insurance showing:') +
+  checks(['Commercial general liability (limits per our subcontract)', 'Workers’ compensation (or a valid exemption)', 'Auto liability, if vehicles are used on site', GCO + ' named as certificate holder' + ', and additional insured where the subcontract requires']) +
+  p('Please e-mail it to our office or call {office_phone} with questions. Work cannot start and payments cannot be released without a current certificate.'));
+
+T('w9_request', 'W-9 Request to Subcontractor', 'Subcontractor', ALL, false,
+  title('W-9 Request') + info([['To (subcontractor / vendor)', '____________________'], ['Date', '{date}']]) +
+  p('Please complete and return an IRS Form W-9 so we can set you up for payment and year-end reporting. Payments cannot be released until we have it on file.') +
+  p('Please return it to our office (or upload it in your GrayCo portal if you were invited). Questions: {office_phone}. Do not e-mail your full tax ID in the body of an e-mail.'));
+
+T('notice_reminder', 'Notice of Commencement / Preliminary Notice Reminder', 'Company & Internal', ['commercial', 'residential'], false,
+  title('Notice Reminder (internal)', 'Lien-rights deadlines depend on the state, the project type and our position on the job — consult your attorney.') + info(JOB.concat([['Customer', '{customer}'], ['General contractor', '{gc}']])) +
+  checks(['Is a notice of commencement recorded for this job? Get a copy.', 'Does a preliminary / notice to owner deadline apply to us on this job? Date: ____________', 'Who receives the notice (owner, GC, lender)?', 'Sent by: ________ on ________ (method: ________)', 'Copy filed in this job’s Files & Docs']));
+
+T('sov', 'Schedule of Values', 'Contracts', ['commercial', 'residential', 'insurance'], true,
+  title('Schedule of Values') + info([['Owner / GC', '{gc}']].concat(JOB).concat([['Contract amount', '{contract_amount}']])) +
+  grid(['#', 'Description of work', 'Scheduled value', 'Previous', 'This period', '% complete', 'Balance'], 12) +
+  p('Retainage, if any, per the contract. Pay applications follow this schedule.'));
+
+T('site_policy', 'Photo & Jobsite Policy', 'Intake & FAQs', ALL, true,
+  title('Photo & Jobsite Policy') + info([['Customer', '{customer}']].concat(JOB)) +
+  p('Our team takes progress photos to document the work, conditions found and quality. Photos are kept in your private GrayCo portal and our records. We will not post photos of your home that show your address, people or personal items without your permission.') +
+  p('For everyone’s safety, please keep children and pets out of work areas, and let us know about anything we should be careful around (alarms, pets, fragile items, special access).') + sigs('Customer', GCO));
+
+T('payment_terms', 'Payment Terms', 'Contracts', ALL, true,
+  title('Payment Terms') + info([['Customer', '{customer}']].concat(JOB).concat([['Contract amount', '{contract_amount}']])) +
+  p('Payment schedule: as listed in your proposal. Invoices are due on receipt unless your proposal says otherwise.') +
+  p('Ways to pay: check, ACH bank transfer, or card (a processing fee may apply). For ACH details, receipts or any billing question, e-mail {billing_email} or call {office_phone}.') +
+  p('Past-due balances may delay scheduling of remaining work. Final payment is due at substantial completion.'));
+
+/* insurance / restoration */
+var INS = ['insurance'];
+T('work_auth', 'Work Authorization', 'Insurance & Restoration', INS, true,
+  title('Work Authorization') + info([['Property owner', '{customer}']].concat(JOB).concat([['Claim #', '____________'], ['Date of loss', '____________']])) +
+  p('I authorize ' + GCO + ' to perform emergency services, mitigation and the repairs agreed to at the property above, and to communicate with my insurance company and its adjuster about this claim.') +
+  p('I understand I am responsible for my deductible, for work not covered by my insurance, and for any upgrades I choose. Payments received from my insurance company for this work will be paid to GrayCo.') + sigs('Property owner', GCO));
+
+T('direction_to_pay', 'Direction to Pay', 'Insurance & Restoration', INS, true,
+  title('Direction to Pay') + info([['Insured / owner', '{customer}']].concat(JOB).concat([['Claim #', '____________'], ['Policy #', '____________']])) +
+  p('I direct my insurance company to include ' + GCO + ' as a payee on, or to pay directly to GrayCo, the payments for the work GrayCo performs on this claim. This does not assign my policy or my other rights under it.') +
+  p('This direction stays in effect until the work is paid in full or I revoke it in writing.') + sigs('Insured / owner', GCO));
+
+T('satisfaction', 'Certificate of Satisfaction', 'Insurance & Restoration', INS, true,
+  title('Certificate of Satisfaction') + info([['Property owner', '{customer}']].concat(JOB).concat([['Claim #', '____________']])) +
+  p('I confirm that the repairs performed by ' + GCO + ' at the property above under this claim are complete and satisfactory, except for any items listed below.') +
+  h('Open items (if any)') + grid(['Item', 'Description'], 3) + sigs('Property owner', GCO));
+
+T('mitigation', 'Mitigation Services Agreement', 'Insurance & Restoration', INS, true,
+  title('Mitigation Services Agreement') + info([['Property owner', '{customer}']].concat(JOB).concat([['Type of loss', '☐ Water  ☐ Fire / smoke  ☐ Storm'], ['Date of loss', '____________']])) +
+  p('GrayCo will perform emergency mitigation: extraction, removal of damaged materials as needed, drying with air movers and dehumidifiers, and moisture monitoring until dry standards are met.') +
+  p('Drying equipment must stay running and in place until we remove it. Moving or turning it off can lengthen drying and cause further damage. Equipment charges are billed per day per unit.') +
+  p('Charges are billed at the rates used for the claim; the owner is responsible for amounts not paid by insurance and for the deductible.') + sigs('Property owner', GCO));
+
+T('drying_log', 'Moisture / Drying Log', 'Insurance & Restoration', INS, false,
+  title('Moisture / Drying Log') + info(JOB.concat([['Technician', '____________']])) +
+  grid(['Date / time', 'Room', 'Material', 'Reading', 'Dry standard', 'Temp / RH', 'Equipment on site', 'Initials'], 14));
+
+T('packout', 'Contents Pack-out Inventory', 'Insurance & Restoration', INS, true,
+  title('Contents Pack-out Inventory') + info([['Property owner', '{customer}']].concat(JOB).concat([['Box / tag range', '____________']])) +
+  grid(['Box / tag #', 'Room', 'Item description', 'Condition', 'Qty', 'Photo #'], 14) +
+  p('The owner has reviewed this list and agrees it describes the items packed out. Items listed as damaged were damaged before pack-out.') + sigs('Property owner', GCO));
+
+T('mold', 'Mold Disclosure & Disclaimer', 'Insurance & Restoration', INS, true,
+  title('Mold Disclosure & Disclaimer') + info([['Property owner', '{customer}']].concat(JOB)) +
+  p('Mold can grow quickly after water damage. GrayCo will follow accepted industry practices for the work in its scope, but cannot guarantee that mold will not be present or return, especially in areas outside our scope or if moisture comes back.') +
+  p('Mold testing, remediation beyond the scope listed, and health-related advice are not part of our work unless listed in writing. Report any new water, odor or visible growth to us right away at {office_phone}.') + sigs('Property owner', GCO));
+
+/* commercial */
+var COM = ['commercial'];
+T('subcontract', 'Subcontract Agreement', 'Subcontractor', COM, false,
+  title('Subcontract Agreement') + info([['Subcontractor', '____________________'], ['Prime contract with', '{gc}']].concat(JOB).concat([['Subcontract amount', '$ ____________']])) +
+  h('Scope') + p('Subcontractor will perform the scope described in Exhibit A, per the plans, specifications and schedule for this job.') +
+  h('Payment') + p('Monthly pay applications, less retainage per the prime contract, paid within the time GrayCo is paid for the work, with lien waivers for each payment.') +
+  h('Insurance and safety') + p('Current certificate of insurance and W-9 on file before work starts. Subcontractor follows site safety rules and OSHA requirements.') +
+  h('Changes, warranty and cleanup') + p('Changes only by written change order. Subcontractor warrants its work for the same period GrayCo gives the owner, and keeps its work areas clean.') + sigs(GCO, 'Subcontractor'));
+
+T('rfi', 'Request for Information (RFI)', 'Commercial', COM, false,
+  title('Request for Information', 'RFI #: ________') + info([['To', '{gc}']].concat(JOB).concat([['From', '{pm}, ' + GCO], ['Response needed by', '____________']])) +
+  h('Question') + grid(['Drawing / spec reference', 'Question'], 3) + h('Suggested answer (optional)') + grid(['Notes'], 2) + h('Response') + grid(['Answer', 'By / date'], 3));
+
+T('transmittal', 'Transmittal', 'Commercial', COM, false,
+  title('Transmittal', 'Transmittal #: ________') + info([['To', '{gc}']].concat(JOB).concat([['From', '{pm}, ' + GCO]])) +
+  grid(['Copies', 'Date', 'Description', 'For: approval / review / record'], 8) + p('Remarks: ______________________________________________'));
+
+T('daily_report', 'Daily Report', 'Commercial', COM, false,
+  title('Daily Report') + info(JOB.concat([['Weather', '____________'], ['Superintendent / PM', '{pm}']])) +
+  grid(['Company / trade', 'Workers', 'Hours', 'Work performed'], 8) + h('Deliveries, inspections, visitors') + grid(['Time', 'Description'], 4) + h('Delays / issues / safety') + grid(['Description'], 3));
+
+T('toolbox', 'Safety / Toolbox Talk Sign-in', 'Commercial', COM, false,
+  title('Safety / Toolbox Talk Sign-in') + info(JOB.concat([['Topic', '____________________'], ['Presented by', '____________']])) +
+  grid(['Printed name', 'Company', 'Signature'], 15));
+
+function builtins(){ return L; }
+function byId(id){ id = s(id); for (var i = 0; i < L.length; i++) if (L[i].id === id || L[i].file === id) return L[i]; return null; }
+function metaOf(t){ return { id: t.id, file: t.file, name: t.name, category: t.category, scope: t.scope, jobTypes: t.jobTypes.slice(), clientFacing: t.clientFacing, editable: true, builtin: true, kind: 'html' }; }
+
+/* ── the merged list: the cloud's (a loaded .json and anything seeded) + every built-in not there yet ── */
+function readIndex(){ return sb(IDX).then(function(v){ var t = v; if (v && v.templates) t = v.templates; return { raw: v, list: Array.isArray(t) ? t : [] }; }); }
+function merged(list){
+  var have = {}, out = (list || []).filter(Boolean).slice();
+  out.forEach(function(x){ have[s(x.id)] = 1; });
+  L.forEach(function(t){ if (!have[t.id]) out.push(metaOf(t)); });
+  return out;
+}
+var origFetchIndex = W._fetchDocIndex;
+W._fetchDocIndex = function(){ return readIndex().then(function(r){ var t = merged(r.list); W._docIndex = t; return t; }); };
+
+/* ── seed: once, admin / office, MERGE (adds the built-ins missing from the cloud list; never removes or changes one) ── */
+var seeding = null;
+function seed(force){
+  if (seeding) return seeding;
+  if (!(isAdmin() || isOffice())) return Promise.resolve({ ok: false, why: 'not admin / office' });
+  seeding = Promise.all([readIndex(), sb(SEED_FLAG)]).then(function(a){
+    var r = a[0], flag = a[1];
+    var empty = !r.list.length;
+    if (!empty && isObj(flag) && flag.at && !force) return { ok: true, skipped: 'already seeded' };
+    var have = {}; r.list.forEach(function(x){ if (x) have[s(x.id)] = 1; });
+    var add = L.filter(function(t){ return !have[t.id]; }).map(metaOf);
+    var base = isObj(r.raw) ? r.raw : {};
+    var next = { version: base.version || 3, updated: new Date().toISOString().slice(0, 10), templates: r.list.concat(add) };
+    if (base.hiddenBuiltins) next.hiddenBuiltins = base.hiddenBuiltins;
+    var w = add.length ? put(IDX, next) : Promise.resolve();
+    return w.then(function(){ return put(SEED_FLAG, { at: new Date().toISOString(), by: s(me().email || me().name), added: add.length }); }).then(function(){ return { ok: true, added: add.length }; });
+  }).then(function(x){ seeding = null; return x; }, function(e){ seeding = null; return { ok: false, error: String(e && e.message || e) }; });
+  return seeding;
+}
+
+/* ── one template's body: an admin's edit (doctpl:<id> { html }) wins over the built-in ── */
+var origOneTpl = W._fetchOneTpl;
+W._fetchOneTpl = function(id){
+  var b = byId(id);
+  if (!b) return origOneTpl ? origOneTpl(id) : Promise.resolve(null);
+  return sb('doctpl:' + b.id).then(function(v){
+    if (isObj(v) && s(v.html)) return { id: b.id, file: b.file, name: b.name, html: v.html, edited: true, editedBy: v.editedBy, editedAt: v.editedAt };
+    return { id: b.id, file: b.file, name: b.name, html: b.body, edited: false };
+  }, function(){ return { id: b.id, file: b.file, name: b.name, html: b.body, edited: false }; });
+};
+
+/* ── merge fields ── */
+function money(v){ var n = +String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); return isFinite(n) && n ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''; }
+function job(pid){ return (((W._crm || {}).projects) || []).filter(function(x){ return x && String(x.id) === String(pid); })[0] || null; }
+function fieldsFor(pj){
+  var B = brand(), d = new Date();
+  var typ = W._jobTypeKey ? W._jobTypeKey(pj && pj.type) : '';
+  var who = s(pj && (pj.client || pj.customer || pj.customerName || pj.clientName));
+  return {
+    customer: who, gc: s(pj && (pj.gc || pj.gcName || pj.generalContractor)) || (typ === 'commercial' ? who : ''),
+    job_name: s(pj && pj.name), job_address: s(pj && pj.address), po: s(pj && (pj.po || pj.poNumber || pj.num)),
+    date: d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    contract_amount: money(pj && (pj.contract || pj.contractAmount || pj.contractAmt || pj.contractValue)),
+    pm: s(pj && (pj.pm || pj.pmName)),
+    office_phone: s(B.phone) || '(901) 585-0944',   /* the company's line — never a person's */
+    billing_email: s(B.billingEmail) || 'billing@grayco-cs.com',
+    license: s(B.licenses) || 'TN #85034 BCB'
+  };
+}
+var FIELDS = ['customer', 'gc', 'job_name', 'job_address', 'po', 'date', 'contract_amount', 'pm', 'office_phone', 'billing_email', 'license'];
+function fill(html, f){
+  return String(html || '').replace(/\{([a-z_]+)\}/g, function(m, k){
+    if (FIELDS.indexOf(k) < 0) return m;
+    var v = f[k]; return v ? esc(v) : '<span style="display:inline-block;min-width:120px;border-bottom:1px solid #999">&nbsp;</span>';
+  });
+}
+function head(t){ try { if (W._gcPrintHead) return W._gcPrintHead(t && /payment terms/i.test(t.name) ? { email: brand().billingEmail || 'billing@grayco-cs.com' } : {}); } catch (e) {} return '<div style="text-align:center;font-weight:800;font-size:15pt">GrayCo Construction Services, LLC</div>'; }
+/* the full printable page (letterhead + filled body) */
+function render(id, pid, opts){
+  opts = opts || {};
+  return W._fetchOneTpl(id).then(function(t){
+    if (!t || !s(t.html)) return null;
+    var pj = pid ? job(pid) : null, f = fieldsFor(pj);
+    var body = fill(t.html, f);
+    var page = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(t.name + (pj ? ' — ' + pj.name : '')) + '</title>' +
+      '<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:780px;margin:24px auto;padding:0 18px;font-size:10.5pt}@media print{body{margin:0 auto}.noprint{display:none}}</style></head><body>' +
+      head(t) + body + '<div style="margin-top:22px;font-size:8.5pt;color:#777;text-align:center">' + esc(GCO) + ' · ' + esc(f.office_phone) + ' · grayco-cs.com</div></body></html>';
+    return { t: t, job: pj, fields: f, body: body, page: page };
+  });
+}
+function openWin(html, print){
+  var w = W.open('', '_blank');
+  if (!w) { toast('Allow pop-ups for the CRM to see the document.', true); return null; }
+  try { w.document.open(); w.document.write(html); w.document.close(); if (print) ST.call(W, function(){ try { w.focus(); w.print(); } catch (e) {} }, 500); } catch (e) {}
+  return w;
+}
+function preview(id, pid, print){ return render(id, pid).then(function(r){ if (!r) { toast('Could not open that document.', true); return null; } openWin(r.page, print); return r; }); }
+
+/* ── save to the job's 📁 Files & Docs (projectDocs) ── */
+function b64(str){ try { return btoa(unescape(encodeURIComponent(str))); } catch (e) { return ''; } }
+function saveToJob(id, pid){
+  if (!pid) { toast('Open a job first.', true); return Promise.resolve(null); }
+  return render(id, pid).then(function(r){
+    if (!r) { toast('Could not make that document.', true); return null; }
+    return sb('projectDocs').then(function(arr){
+      if (arr != null && !Array.isArray(arr)) { toast('Could not read the job files list — nothing was changed. Try again.', true); return null; }
+      var ds = Array.isArray(arr) ? arr.slice() : [], seen = {};
+      ds.forEach(function(x){ if (x && x.id) seen[x.id] = 1; });
+      try { (((W._crm || {}).projectDocs) || []).forEach(function(x){ if (x && x.id && !seen[x.id]) { ds.push(x); seen[x.id] = 1; } }); } catch (e) {}   /* files on this computer not in the cloud yet are kept */
+      var by = 'Office'; try { by = s(me().name) || localStorage.getItem('grayco_user') || 'Office'; } catch (e) {}
+      var cat = /lien/i.test(r.t.name) ? 'Sub Docs' : /warrant/i.test(r.t.name) ? 'Warranty Docs' : /change order/i.test(r.t.name) ? 'Change Orders' : /completion|walkthrough|satisfaction/i.test(r.t.name) ? 'Closeout' : 'Other';
+      var doc = { id: 'DOC' + Date.now().toString(36) + Math.floor(Math.random() * 999).toString(36), pid: String(pid), cat: cat,
+        name: r.t.name + ' — ' + (r.job ? r.job.name : '') + '.html', size: r.page.length, type: 'text/html',
+        data: 'data:text/html;base64,' + b64(r.page), uploaded: new Date().toISOString().slice(0, 10), by: by, confirmed: false, fromTemplate: r.t.file };
+      ds.push(doc);
+      try { if (W._gcApplySync) W._gcApplySync('projectDocs', ds); } catch (e) {}
+      return put('projectDocs', ds).then(function(){ try { if (W._crm) W._crm.projectDocs = ds; } catch (e) {} toast('✓ Saved "' + r.t.name + '" to ' + (r.job ? r.job.name : 'the job') + ' → Files & Docs'); return doc; });
+    });
+  });
+}
+
+/* ── send: a client-facing paper goes to the job's own customer through ✅ Approvals (never straight out) ── */
+function send(id, pid){
+  if (!pid) { toast('Open a job first.', true); return Promise.resolve({ ok: false }); }
+  if (paused()) { toast('⏸ Data-entry mode is on — nothing is sent. Use 💾 Save to job instead.', true); return Promise.resolve({ ok: false, paused: true }); }
+  var b = byId(id); if (b && !b.clientFacing) { toast('That one is for internal / sub use — print it or save it to the job.', true); return Promise.resolve({ ok: false }); }
+  return render(id, pid).then(function(r){
+    if (!r) return { ok: false };
+    var intro = '<p>Hi ' + esc(r.fields.customer || 'there') + ',</p><p>Here is your <b>' + esc(r.t.name) + '</b> for ' + esc(r.job ? r.job.name : 'your project') + '. It is also in your GrayCo portal. Questions? Call our office at ' + esc(r.fields.office_phone) + '.</p><hr style="border:none;border-top:1px solid #ddd;margin:14px 0">';
+    var body = { action: 'approval', op: 'queue', kind: 'document', projectId: String(pid), ref: r.t.id.replace(/[^A-Za-z0-9_.:-]/g, ''), subject: r.t.name + ' — ' + (r.job ? r.job.name : ''), title: '📄 ' + r.t.name + ' — ' + (r.job ? r.job.name : ''), html: intro + r.body };
+    return W.fetch(PORTAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function(x){ return x.json().catch(function(){ return {}; }); }, function(){ return { ok: false, error: 'Cannot reach the server.' }; })
+      .then(function(j){
+        if (j && j.ok) { toast('✓ "' + r.t.name + '" is waiting in ✅ Approvals — it goes to the customer when approved.'); try { if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {} }
+        else toast('Not queued: ' + ((j && j.error) || 'try again'), true);
+        return j || { ok: false };
+      });
+  });
+}
+
+/* ── 📋 Documents for this Job (replaces the old checklist; .docx documents from a loaded set still work) ── */
+function btn(label, act, id, primary){ return '<button type="button" data-dl-act="' + act + '" data-dl-id="' + esc(id) + '" style="padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;' + (primary ? 'background:#0f1d2f;color:#fff;border:none' : 'background:#fff;color:#1e3a5f;border:1px solid #cbd5e1') + '">' + label + '</button>'; }
+W._jobDocPack = function(pid){
+  if (!pid) { alert('Open a job first.'); return; }
+  var pj = job(pid) || { id: pid, name: '', type: '' };
+  var key = W._jobTypeKey ? W._jobTypeKey(pj.type) : 'residential';
+  var ov = D.getElementById('_jdpOv');
+  if (!ov) { ov = D.createElement('div'); ov.id = '_jdpOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000008;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;padding:16px'; ov.onclick = function(e){ if (e.target === ov) ov.remove(); }; D.body.appendChild(ov); }
+  var lab = (W._jdpLabel || {})[key] || key;
+  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)"><div style="background:#0f1d2f;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:1"><div><div style="font-weight:800;font-size:15px">📋 Documents for this Job</div><div style="font-size:11px;color:#9bb3d1">' + esc(pj.name || pid) + ' · <b style="color:#c4a469">' + esc(lab) + '</b></div></div><button type="button" onclick="document.getElementById(\'_jdpOv\').remove()" style="background:none;border:none;color:#9bb3d1;font-size:20px;cursor:pointer">✕</button></div><div id="_jdpBody" style="padding:16px 18px"><div style="color:#6b8ab5">Loading…</div></div></div>';
+  W._jdpPid = pid; W._jdpKey = key;
+  if (isAdmin() || isOffice()) seed();
+  W._fetchDocIndex().then(function(idx){
+    var list = (idx || []).filter(function(d){ var jt = (d.jobTypes || []).map(function(x){ return String(x).toLowerCase(); }); return jt.length === 0 || jt.indexOf('all') >= 0 || jt.indexOf(key) >= 0; });
+    var b = D.getElementById('_jdpBody'); if (!b) return;
+    if (!list.length) { b.innerHTML = '<div style="color:#6b8ab5">No documents for this kind of job yet.</div>'; return; }
+    var hh = '<div style="font-size:12.5px;color:#334;line-height:1.6;margin-bottom:10px">The papers a <b>' + esc(lab) + '</b> job uses, filled in from this job. <b>👁</b> preview · <b>🖨</b> print / PDF · <b>💾</b> save to the job\'s Files &amp; Docs · <b>📧</b> send to the customer (waits in ✅ Approvals).</div>';
+    var groups = {}, order = [];
+    list.forEach(function(d){ var c = d.category || 'Other'; if (!groups[c]) { groups[c] = []; order.push(c); } groups[c].push(d); });
+    order.forEach(function(cat){
+      hh += '<div style="font-size:11px;font-weight:800;color:#1e3a5f;text-transform:uppercase;letter-spacing:.4px;margin:12px 0 5px">' + esc(cat) + '</div>';
+      groups[cat].forEach(function(d){
+        var html = d.kind === 'html' || !!byId(d.id);
+        hh += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;border:1px solid #eef2f7;border-radius:8px;margin-bottom:5px;flex-wrap:wrap">' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:180px"><input type="checkbox" data-id="' + esc(d.id) + '" ' + (/lien/i.test(d.name) ? '' : '') + ' style="width:16px;height:16px"><span style="font-size:13px;color:#0f1d2f">' + esc(d.name) + (d.clientFacing ? ' <span style="font-size:9px;color:#2563eb;font-weight:700">CLIENT</span>' : '') + '</span></label>' +
+          '<span style="display:flex;gap:5px;flex-wrap:wrap">' + (html ? btn('👁 Fill & preview', 'prev', d.id, true) + btn('🖨', 'print', d.id) : btn('↓ Open', 'open', d.id, true)) + btn('💾 Save to job', 'save', d.id) + (d.clientFacing && html ? btn('📧 Send', 'send', d.id) : '') + '</span></div>';
+      });
+    });
+    hh += '<button type="button" data-dl-act="addsel" style="width:100%;padding:11px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-top:12px">💾 Save the ticked documents to this job</button><div id="_jdpMsg" style="font-size:12px;color:#16a34a;font-weight:700;margin-top:8px"></div>';
+    b.innerHTML = hh;
+  });
+};
+function onPanelClick(e){
+  var el = e.target && e.target.closest ? e.target.closest('[data-dl-act]') : null; if (!el) return;
+  var ov = el.closest('#_jdpOv'); if (!ov) return;
+  e.preventDefault(); e.stopPropagation();
+  var act = el.getAttribute('data-dl-act'), id = el.getAttribute('data-dl-id'), pid = W._jdpPid;
+  if (act === 'prev') return preview(id, pid, false);
+  if (act === 'print') return preview(id, pid, true);
+  if (act === 'open') { try { W._dlTplData(id); } catch (x) {} return; }
+  if (act === 'save') { if (byId(id) || (W._docIndex || []).some(function(d){ return d.id === id && d.kind === 'html'; })) return saveToJob(id, pid); return addDocx([id], pid); }
+  if (act === 'send') return send(id, pid);
+  if (act === 'addsel') {
+    var ids = [].slice.call(ov.querySelectorAll('input[type=checkbox][data-id]')).filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-id'); });
+    if (!ids.length) { alert('Tick at least one document.'); return; }
+    var msg = D.getElementById('_jdpMsg'); if (msg) msg.textContent = 'Saving ' + ids.length + ' document(s)…';
+    var html = ids.filter(function(x){ return !!byId(x); }), docx = ids.filter(function(x){ return !byId(x); });
+    var chain = Promise.resolve();
+    html.forEach(function(x){ chain = chain.then(function(){ return saveToJob(x, pid); }); });
+    chain.then(function(){ return docx.length ? addDocx(docx, pid) : null; }).then(function(){ if (msg) msg.textContent = '✓ Saved ' + ids.length + ' document(s) to the job.'; try { W._setJobStatus(pid, { _docsPrepared: true }); } catch (x) {} });
+  }
+}
+D.addEventListener('click', onPanelClick, true);
+/* the old .docx path (a loaded set): one at a time through the original job-pack add */
+function addDocx(ids, pid){
+  return new Promise(function(res){
+    var b = D.getElementById('_jdpBody'); if (!b || !W._jdpAdd) return res();
+    var boxes = [].slice.call(b.querySelectorAll('input[type=checkbox][data-id]'));
+    boxes.forEach(function(c){ c.checked = ids.indexOf(c.getAttribute('data-id')) >= 0; });
+    try { W._jdpAdd(); } catch (e) {}
+    ST.call(W, res, 800);
+  });
+}
+
+/* ── 📚 Company Documents: the built-ins open as filled-in previews; admins get ✏️ Edit and ↺ Reset ── */
+var origDl = W._dlTplData;
+W._dlTplData = function(id){ if (byId(id)) { var sel = D.getElementById('_tplJobSel'); return preview(id, sel && sel.value || '', false); } return origDl ? origDl(id) : null; };
+var origAdd = W._tplAddToJob;
+W._tplAddToJob = function(id){ if (byId(id)) { var sel = D.getElementById('_tplJobSel'); if (!sel || !sel.value) { alert('Pick a job first (dropdown at top).'); return; } return saveToJob(id, sel.value); } return origAdd ? origAdd(id) : null; };
+var origSend = W._tplSend;
+W._tplSend = function(id){ if (byId(id)) { var sel = D.getElementById('_tplJobSel'); if (!sel || !sel.value) { alert('Pick the job to send it for (dropdown at top).'); return; } return send(id, sel.value); } return origSend ? origSend(id) : null; };
+var origLib = W._docLibrary;
+W._docLibrary = function(){
+  if (isAdmin() || isOffice()) seed();
+  var r = origLib ? origLib.apply(this, arguments) : null;
+  decorateLib(0);
+  return r;
+};
+function decorateLib(n){
+  var body = D.getElementById('_docLibBody');
+  if (!body || !body.querySelector('[onclick*="_dlTplData"]')) { if (n < 40) later(function(){ decorateLib(n + 1); }, 150); return; }
+  if (!isAdmin()) return;
+  [].slice.call(body.querySelectorAll('[onclick*="_dlTplData"]')).forEach(function(b0){
+    var m = /_dlTplData\('([^']+)'\)/.exec(b0.getAttribute('onclick') || ''); if (!m || !byId(m[1])) return;
+    var row = b0.parentElement; if (!row || row.querySelector('[data-dl-edit]')) return;
+    var e1 = D.createElement('button'); e1.type = 'button'; e1.setAttribute('data-dl-edit', m[1]); e1.textContent = '✏️ Edit'; e1.title = 'Edit this template (admins)';
+    e1.style.cssText = 'padding:5px 9px;background:#fff;color:#7c3aed;border:1px solid #c4b5fd;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer';
+    e1.onclick = function(){ edit(m[1]); };
+    row.appendChild(e1);
+  });
+}
+
+/* ── ✏️ Edit template (admins): HTML with merge-field chips; Save → doctpl:<id> { html }; ↺ Reset → the built-in ── */
+function edit(id){
+  if (!isAdmin()) { toast('Only an admin can edit a template.', true); return; }
+  var b = byId(id); if (!b) return;
+  W._fetchOneTpl(id).then(function(t){
+    var ov = D.createElement('div'); ov.id = '_dlEditOv'; ov.setAttribute('data-gc-keep', '1');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000012;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,sans-serif';
+    var chips = FIELDS.map(function(f){ return '<button type="button" data-chip="{' + f + '}" style="padding:3px 7px;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:999px;font-size:11px;cursor:pointer">{' + f + '}</button>'; }).join(' ');
+    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:94vh;overflow:auto;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:15px">✏️ ' + esc(b.name) + (t && t.edited ? ' <span style="font-size:11px;color:#7c3aed">(edited)</span>' : '') + '</b><button type="button" data-x="1" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button></div>' +
+      '<div style="font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:6px 9px;margin:8px 0">Admin note (never printed): ' + ATTORNEY + '</div>' +
+      '<div style="margin:6px 0;display:flex;flex-wrap:wrap;gap:4px">' + chips + '</div>' +
+      '<textarea id="_dlEditTa" style="width:100%;box-sizing:border-box;height:46vh;font:12px/1.45 ui-monospace,Menlo,monospace;border:1px solid #cbd5e1;border-radius:8px;padding:8px"></textarea>' +
+      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" data-save="1" style="padding:9px 14px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Save template</button><button type="button" data-prev="1" style="padding:9px 14px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;cursor:pointer">👁 Preview</button><button type="button" data-reset="1" style="padding:9px 14px;background:#fff;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;font-weight:700;cursor:pointer">↺ Reset to built-in</button></div></div>';
+    D.body.appendChild(ov);
+    var ta = ov.querySelector('#_dlEditTa'); ta.value = (t && t.html) || b.body;
+    ov.addEventListener('click', function(e){
+      var el = e.target;
+      if (el === ov || el.getAttribute('data-x')) { ov.remove(); return; }
+      if (el.getAttribute('data-chip')) { var c = el.getAttribute('data-chip'), a0 = ta.selectionStart || ta.value.length, z = ta.selectionEnd || a0; ta.value = ta.value.slice(0, a0) + c + ta.value.slice(z); ta.focus(); ta.selectionStart = ta.selectionEnd = a0 + c.length; return; }
+      if (el.getAttribute('data-prev')) { openWin('<!doctype html><html><body style="font-family:Arial;max-width:780px;margin:24px auto;padding:0 18px">' + head(b) + fill(ta.value, fieldsFor(null)) + '</body></html>', false); return; }
+      if (el.getAttribute('data-save')) { put('doctpl:' + b.id, { id: b.id, file: b.file, name: b.name, html: ta.value, editedBy: s(me().name || me().email), editedAt: new Date().toISOString() }).then(function(){ toast('✓ Saved "' + b.name + '"'); ov.remove(); }); return; }
+      if (el.getAttribute('data-reset')) { if (!confirm('Put "' + b.name + '" back to the built-in wording? Your edits to it are removed.')) return; put('doctpl:' + b.id, { id: b.id, reset: true, html: '', resetBy: s(me().name || me().email), resetAt: new Date().toISOString() }).then(function(){ toast('↺ "' + b.name + '" is back to the built-in wording'); ov.remove(); }); }
+    });
+  });
+}
+
+/* seed once after sign-in (admin / office); the panels also seed when opened */
+later(function(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()) seed(); } catch (e) {} }, 12000);
+W._gcDocLib = { builtins: builtins, render: render, seed: seed, open: preview, edit: edit, save: saveToJob, send: send, fields: fieldsFor, ATTORNEY: ATTORNEY };
+try { console.log('[GC] 📚 Built-in document library (patch DOCLIB): ' + L.length + ' documents — _gcDocLib'); } catch (e) {}
+})();
+</script>
