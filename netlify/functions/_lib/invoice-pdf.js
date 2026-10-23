@@ -12,7 +12,7 @@ const LOGO = require('./brand-logo.js');
 const COMPANY = BR.name;
 const ADDRESS = BR.address;
 const PHONE = BR.phone;
-const EMAIL = BR.email;
+const EMAIL = require('./brand.js').billingEmail();   /* patch BILL: an invoice shows billing@ as its contact */
 const LICENSES = BR.licenses;
 
 /* Helvetica advance widths (1/1000 em) for the characters an invoice uses; others ~ 556 */
@@ -132,7 +132,7 @@ function build(doc){
   wrap('Pay by check made out to ' + COMPANY + ', or cash handed to your Project Manager' + (doc.pm ? ' (' + doc.pm + ')' : '') + '. Every payment shows on your invoice in your GrayCo Portal.', 10, R - L)
     .forEach(function(t){ text(L, y, t, 10); y -= 13; });
   y -= 6;
-  text(L, y, 'Questions? Call ' + PHONE + (doc.pmPhone ? ' or ' + (doc.pm || 'your PM') + ' at ' + doc.pmPhone : '') + '.', 10, false, MUTED);
+  text(L, y, 'Questions about this invoice? ' + EMAIL + '  \xb7  ' + PHONE + (doc.pmPhone ? ' (or ' + (doc.pm || 'your PM') + ' at ' + doc.pmPhone + ')' : '') + '.', 10, false, MUTED);   /* patch BILL */
   text(L, 40, 'Thank you for choosing ' + COMPANY + '.', 9, false, MUTED);
   newPage();
 

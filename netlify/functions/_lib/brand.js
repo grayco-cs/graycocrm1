@@ -19,6 +19,13 @@ const BRAND = {
   reviewUrl: 'https://share.google/quDuhdlL0ckxPLLY3',
   navy: '#0F1D2F', gold: '#D4A017', ink: '#14202E', cream: '#F5F1E8'
 };
+/* patch BILL (owner 10/23: "invoices should come from billing@, that's what should be on invoices too"): every
+   customer / GC money e-mail (invoices, pay apps, statements, reminders, receipts) goes From and Reply-To billing@,
+   and money documents show billing@ as the contact. One place: Netlify BILLING_EMAIL overrides the default. */
+function billingEmail(){ const v = String(process.env.BILLING_EMAIL || '').trim().toLowerCase(); return /^[^@\s<>"]+@[^@\s<>"]+\.[a-z]{2,}$/.test(v) ? v : 'billing@grayco-cs.com'; }
+function billingFrom(){ return 'GrayCo Construction Services Billing <' + billingEmail() + '>'; }
+/* a money kind: final_invoice, final_reminder, invoice, invoice_statement, pay_app, gcp_payapp_invoice, maint_invoice, receipt, … */
+function isMoneyKind(kind){ return /(^|_)(final|invoice|pay_?app|payapp|receipt|payment|deposit|statement|lien|dunning|balance)(_|$)/i.test(String(kind || '')); }
 function s(v){ return v == null ? '' : String(v).trim(); }
 /* patch ADDR2 — the company address moves on a date (owner 10/21: "we are at 4007 Broadway for 1 more week, then we move
    to 4014"). ONE setting, gc_kv "gc_company_address" { current, next, switchOn (YYYY-MM-DD, Central) }, edited in
@@ -175,4 +182,5 @@ function installResend(){
 }
 module.exports = { BRAND: BRAND, installResend: installResend, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
   logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
+  billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind,
   _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };

@@ -119,7 +119,7 @@ async function shellOut(html, who, body){
 const FROM = {
   office:  'GrayCo Construction Services <office@grayco-cs.com>',
   news:    'GrayCo Construction Services <news@grayco-cs.com>',
-  billing: 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
+  billing: require('./_lib/brand.js').billingFrom()   /* patch BILL: Netlify BILLING_EMAIL overrides */
 };
 const ALLOWED_DOMAIN = 'grayco-cs.com';
 // Resolve the sender: a named shortcut, a full "Name <addr>" string, or a bare
@@ -352,6 +352,7 @@ exports.handler = async function (event) {
     html: await shellOut(html, who, body)
   };
   if (body.replyTo) payload.reply_to = body.replyTo;
+  else if (/<billing@|^billing@/i.test(String(from || ''))) payload.reply_to = require('./_lib/brand.js').billingEmail();   /* patch BILL: billing mail is answered at billing@ */
   if (body.cc) payload.cc = Array.isArray(body.cc) ? body.cc : [body.cc];
   const att = await readAttachments(body.attachments);
   if (!att.ok) return { statusCode: 400, headers, body: JSON.stringify({ error: att.error }) };

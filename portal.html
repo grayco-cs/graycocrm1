@@ -722,7 +722,8 @@ function pay(){
   var fi = m.finalInvoice;
   out.push(h('section', { class: 'card' }, [h('div', { class: 'row' }, [h('h2', { text: 'Final invoice' }), fi ? h('span', { class: 'pill ' + (fi.balance > 0 ? 'due' : 'ok'), text: fi.balance > 0 ? 'Balance ' + usd(fi.balance) : 'Paid — thank you!' }) : null]),
     fi ? h('div', { class: 'muted', text: (fi.number ? 'Invoice ' + fi.number + ' · ' : '') + dt(fi.date) + ' · ' + usd(fi.amount) }) : null,
-    h('div', { class: 'muted', text: 'Emailed to you and posted here as soon as the job is done. If it isn\'t paid yet, we send a friendly reminder every 15 days.' })]));
+    h('div', { class: 'muted', text: 'Emailed to you and posted here as soon as the job is done. If it isn\'t paid yet, we send a friendly reminder every 15 days.' }),
+    h('div', { class: 'muted' }, ['Questions about this invoice? ', h('a', { href: 'mailto:billing@grayco-cs.com', text: 'billing@grayco-cs.com' }), ' · ', h('a', { href: 'tel:9015850944', text: '(901) 585-0944' })])]));   /* patch BILL */
   var cos = m.changeOrders || [];
   if (cos.length) out.push(card('Approved change orders', cos.map(function(c){ return h('div', { class: 'line' }, [h('span', { text: c.title + (c.date ? ' · ' + dt(c.date) : '') }), h('span', { text: usd(c.amount) })]); })));
   var inv = m.invoices || [];

@@ -40014,8 +40014,8 @@ window.gcProjInvoices = {
       var _a = window._gcAccountFor ? window._gcAccountFor(proj) : {};
       var email = _a.apEmail || proj.clientEmail || (/@/.test(proj.client||'') ? proj.client : '') || '';
       var subject = encodeURIComponent('Invoice — '+(proj.name||'GrayCo'));
-      var body = encodeURIComponent('Hi '+(proj.client||'')+',\\n\\nPlease find your invoice attached for '+(proj.name||'your project')+'.\\n\\nThank you,\\nGrayCo Construction Services LLC\\n(901) 585-0944 · office@grayco-cs.com');
-      if(email){ window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+subject+'&body='+body,'_blank'); }
+      var body = encodeURIComponent('Hi '+(proj.client||'')+',\\n\\nPlease find your invoice attached for '+(proj.name||'your project')+'.\\n\\nThank you,\\nGrayCo Construction Services LLC\\n(901) 585-0944 · '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com'));   /* patch BILL */
+      if(email){ window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&cc='+encodeURIComponent((window.GC_BILLING_EMAIL||'billing@grayco-cs.com'))+'&su='+subject+'&body='+body,'_blank'); }
       else { alert('No customer email on file for this job — add one in the project to email invoices.'); }
     }catch(e){}
   },
@@ -40470,7 +40470,7 @@ function generateHTML(docId, filled){
       '<div style="background:#f8f9fc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;font-size:11px;color:#555;">',
         '<div style="font-weight:800;font-size:12px;color:#1a3a5f;margin-bottom:6px;">Payment Instructions</div>',
         '<div>Please make checks payable to <strong>GrayCo Construction Services, LLC</strong></div>',
-        '<div style="margin-top:4px;">Zelle / ACH: office@grayco-cs.com &nbsp;|&nbsp; Reference Invoice # '+invNum+'</div>',
+        '<div style="margin-top:4px;">Zelle / ACH: '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' &nbsp;|&nbsp; Reference Invoice # '+invNum+'</div><div style="margin-top:2px;">Questions about this invoice? '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' &middot; (901) 585-0944</div>',   /* patch BILL */
         '<div style="margin-top:4px;font-weight:700;color:#c0392b;">Please include PO # '+jPO+' on all payments.</div>',
       '</div>',
       '<div style="text-align:center;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:14px;">',
@@ -43614,8 +43614,8 @@ function hookDocLib(){
           '}',
           'function gcInvEmail(){',
             'var subj=encodeURIComponent("Invoice #'+invNum+' — GrayCo Construction Services — '+esc(j.name)+'");',
-            'var body=encodeURIComponent("Hi '+esc(j.client||'[Client]')+'\\n\\nPlease find attached Invoice #'+invNum+' for '+esc(j.name)+' in the amount of '+invAmt+'.\\n\\nPayment is due by '+dueDate+'. Pay by check (GrayCo Construction Services LLC) or call (901) 585-0944 for ACH details.\\n\\nThank you,\\nGrayCo Construction Services\\n(901) 585-0944 | office@grayco-cs.com");',
-            'window.open("mailto:'+esc(j.email||'')+'?subject="+subj+"&body="+body,"_blank");',
+            'var body=encodeURIComponent("Hi '+esc(j.client||'[Client]')+'\\n\\nPlease find attached Invoice #'+invNum+' for '+esc(j.name)+' in the amount of '+invAmt+'.\\n\\nPayment is due by '+dueDate+'. Pay by check (GrayCo Construction Services LLC) or call (901) 585-0944 for ACH details.\\n\\nThank you,\\nGrayCo Construction Services\\n(901) 585-0944 | billing@grayco-cs.com");',   /* patch BILL */
+            'window.open("mailto:'+esc(j.email||'')+'?cc=billing@grayco-cs.com&subject="+subj+"&body="+body,"_blank");',
           '}',
           'function gcInvText(){',
             'var body=encodeURIComponent("GrayCo Invoice #'+invNum+' — '+esc(j.name)+' — '+invAmt+' due '+dueDate+' — Questions? (901) 585-0944");',
@@ -44008,7 +44008,7 @@ function hookDocLib(){
         '<div class="hdr">PAYMENT INSTRUCTIONS</div>',
         '<table><tr><td style="font-size:10pt">',
           'Pay by Check: Payable to <b>GrayCo Construction Services LLC</b> — ' + window._gcCompanyAddress() + '<br>',
-          'Pay by ACH: Contact (901) 585-0944 or office@grayco-cs.com for routing information<br>',
+          'Pay by ACH: Contact (901) 585-0944 or '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' for routing information<br>Questions about this invoice? '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' &middot; (901) 585-0944<br>',   /* patch BILL */
           '<b>Requested payment within 15 days per contract terms.</b>',
         '</td></tr></table>',
         sigRow('GrayCo Construction Services LLC — Authorized Rep, Date','Owner / GC Approval — Signature, Printed Name, Date'),
@@ -46996,9 +46996,9 @@ window.gcCreateInvoice = async function(preselJobId){
     }
     if(doEmail){
       var subject=encodeURIComponent('Invoice — '+(p.name||'GrayCo')+' — Draw #'+draw);
-      var body=encodeURIComponent('Hi '+(p.client||'')+',\n\nPlease find attached invoice for Draw #'+draw+' in the amount of $'+amt.toLocaleString()+' for '+(p.name||'your project')+'.\n\nUse the Print / Save as PDF button on the invoice that just opened, then attach the saved PDF to this email before sending.\n\nThank you,\nGrayCo Construction Services LLC\n(901) 585-0944 · office@grayco-cs.com');
+      var body=encodeURIComponent('Hi '+(p.client||'')+',\n\nPlease find attached invoice for Draw #'+draw+' in the amount of $'+amt.toLocaleString()+' for '+(p.name||'your project')+'.\n\nUse the Print / Save as PDF button on the invoice that just opened, then attach the saved PDF to this email before sending.\n\nThank you,\nGrayCo Construction Services LLC\n(901) 585-0944 · '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com'));   /* patch BILL */
       if(email){
-        window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+subject+'&body='+body,'_blank');
+        window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&cc='+encodeURIComponent((window.GC_BILLING_EMAIL||'billing@grayco-cs.com'))+'&su='+subject+'&body='+body,'_blank');
       } else {
         alert('No customer email on file — enter one to email the invoice.');
       }
@@ -54811,7 +54811,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     } else { tone='final';
       body='Invoice '+num+' for '+amt+' ('+ (p.name||'your project') +') is now '+od+' days past due (due '+inv.due+') and requires immediate attention. Please remit payment or contact us to make arrangements. Thank you for your prompt response.';
     }
-    var close='\n\nYou can pay by check, or by bank transfer if bank details are on your invoice. Please include '+num+' with your payment.\n\nThank you,\nGrayCo Construction Services\noffice@grayco-cs.com';
+    var close='\n\nYou can pay by check, or by bank transfer if bank details are on your invoice. Please include '+num+' with your payment.\n\nThank you,\nGrayCo Construction Services Billing\n'+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com');   /* patch BILL */
     return { subject:'Payment reminder \u2014 '+num+' ('+amt+')', body:greet+body+close, tone:tone, days:od };
   }
 
@@ -67349,12 +67349,12 @@ window._gcEmailInvoiceToClient = function(inv, opts){
     }
     // Determine the FROM email: default office@, or a chosen one the user is allowed to use.
     var _me=null; try{ var _mid=localStorage.getItem('grayco_user')||''; _me=((window._crm&&window._crm.users)||[]).find(function(u){return u&&(u.email===_mid||u.name===_mid);}); }catch(e){}
-    var _fromEmail = (opts && opts.fromEmail) ? String(opts.fromEmail).toLowerCase() : 'office@grayco-cs.com';
+    var _fromEmail = (opts && opts.fromEmail) ? String(opts.fromEmail).toLowerCase() : (window.GC_BILLING_EMAIL||'billing@grayco-cs.com');   /* patch BILL: invoices come from billing@ */
     if(window._gcCanSendAsEmail && !window._gcCanSendAsEmail(_me, _fromEmail)){
-      alert('You can only send from office@grayco-cs.com or your own email. Defaulting to office@.');
-      _fromEmail = 'office@grayco-cs.com';
+      alert('You can only send from billing@ / office@ or your own email. Defaulting to billing@.');
+      _fromEmail = (window.GC_BILLING_EMAIL||'billing@grayco-cs.com');   /* patch BILL */
     }
-    var _fromKey = (_fromEmail==='office@grayco-cs.com') ? 'office' : _fromEmail;
+    var _fromKey = (_fromEmail==='office@grayco-cs.com') ? 'office' : (_fromEmail===(window.GC_BILLING_EMAIL||'billing@grayco-cs.com') ? 'billing' : _fromEmail);   /* patch BILL */
 
     // TEST-MODE confirmation — always ask before a real email fires.
     if(!window.__GC_INVOICE_AUTOSEND__){
@@ -67382,7 +67382,7 @@ var subject = opts.subject || ('Invoice from GrayCo Construction Services'+(inv.
       body: JSON.stringify({ to: to, subject: subject, html: html, from: _fromKey, fromName: 'GrayCo Construction Services', replyTo: _fromEmail })
     }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
     .then(function(res){
-      if(res.ok){ alert('✅ Invoice emailed to '+to+' from office@grayco-cs.com.'); return {sent:true}; }
+      if(res.ok){ alert('✅ Invoice emailed to '+to+' from '+_fromEmail+'.'); return {sent:true}; }   /* patch BILL */
       alert('❌ Email did NOT send: '+((res.data&&res.data.error)||'unknown error')+'\n\nIf this says RESEND_API_KEY not set, the email service still needs to be set up on Netlify.');
       return {sent:false, error:(res.data&&res.data.error)};
     }).catch(function(e){ alert('❌ Email failed: '+e.message); return {sent:false, error:e.message}; });
@@ -67416,7 +67416,7 @@ window._gcDraftInvoiceInGmail = function(inv){
       '',
       'Thank you,',
       'GrayCo Construction Services, LLC',
-      'office@grayco-cs.com  ·  (901) 585-0944',
+      (window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+'  ·  (901) 585-0944',   /* patch BILL */
       '' + window._gcCompanyAddress() + '',
       'TN License #85034 BCB · AR License #0486990627 · MS License #27769'
     ];
@@ -67425,6 +67425,7 @@ window._gcDraftInvoiceInGmail = function(inv){
     // Gmail compose URL, targeted at the OFFICE account so it drafts from office@.
     var url = 'https://mail.google.com/mail/?authuser=office@grayco-cs.com&view=cm&fs=1'
       + '&to=' + encodeURIComponent(to)
+      + '&cc=' + encodeURIComponent((window.GC_BILLING_EMAIL||'billing@grayco-cs.com'))   /* patch BILL: billing@ keeps a copy */
       + '&su=' + encodeURIComponent(subject)
       + '&body=' + encodeURIComponent(body);
 
@@ -67435,7 +67436,7 @@ window._gcDraftInvoiceInGmail = function(inv){
     window.open(url, '_blank');
     // Optionally mark it as "sent" in the CRM once they confirm they sent it in Gmail.
     setTimeout(function(){
-      if(window.confirm('Gmail draft opened from office@grayco-cs.com.\n\nAfter you SEND it in Gmail, click OK to mark this invoice as SENT in the CRM. (Click Cancel if you haven\'t sent it yet.)')){
+      if(window.confirm('Gmail draft opened from office@grayco-cs.com (billing@ is CC\'d).\n\nAfter you SEND it in Gmail, click OK to mark this invoice as SENT in the CRM. (Click Cancel if you haven\'t sent it yet.)')){
         try{ if(window._setInvoices){ window._setInvoices(function(list){ return (list||[]).map(function(iv){ return (iv&&iv.id===inv.id)?Object.assign({},iv,{status:'sent',sentDate:new Date().toISOString().slice(0,10)}):iv; }); }); } }catch(e){}
       }
     }, 800);
@@ -67488,6 +67489,7 @@ window._gcCanSendAsEmail = function(user, fromEmail){
   try{
     var target = String(fromEmail||'').toLowerCase().trim();
     if(!target || target===GC_OFFICE_EMAIL) return true;   // office is always allowed
+    if(target===String((window.GC_BILLING_EMAIL||'billing@grayco-cs.com')).toLowerCase()) return true;   /* patch BILL: billing@ too (invoices) */
     var allowed = window._gcAllowedSendFromEmails(user).map(function(x){return x.email;});
     return allowed.indexOf(target) >= 0;
   }catch(e){ return false; }
@@ -68448,7 +68450,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var W=doc.internal.pageSize.getWidth();
       var m=48;
       // Branded header (logo + license + address)
-      var y=window.GC_pdfHeader?window.GC_pdfHeader(doc,{m:m}):54;
+      var y=window.GC_pdfHeader?window.GC_pdfHeader(doc,{m:m,email:(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')}):54;   /* patch BILL */
       // Invoice label
       doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.setTextColor(37,99,235);
       var hy=window._gcPdfHeaderCentered?y:46;   /* patch QA: below the centered letterhead */
@@ -68483,7 +68485,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       doc.setTextColor(22,163,74); doc.text(money(inv.amt||inv.amount), W-m-8, y+6, {align:'right'});
       // Footer
       doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(120,120,120);
-      doc.text('Thank you for your business. Please remit payment by the due date.', m, 720);
+      doc.text('Thank you for your business. Please remit payment by the due date.', m, 720); doc.text('Questions about this invoice? '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+'  \u2022  '+(window.GC_PHONE||'(901) 585-0944'), m, 734);   /* patch BILL */
       if(window.GC_pdfFooter)window.GC_pdfFooter(doc); else { doc.setFontSize(8); doc.setTextColor(150,150,150); doc.text('GrayCo Construction Services \u2022 '+(window.GC_LICENSE||'TN License #85034 BCB · AR License #0486990627 · MS License #27769'), m, 734); }
       return doc;
     });
@@ -116996,7 +116998,7 @@ function remind(id){
   var r=(V.lastModel||model()).ar.rows.filter(function(x){ return x.id===id; })[0]; if(!r) return;
   var who=(r.customer||'there').split(/[ ,]/)[0];
   var subj='Friendly reminder — invoice '+r.num+(r.po?' (PO '+r.po+')':'')+' from GrayCo Construction';
-  var body='Hi '+who+',\n\nI hope all is well. This is a friendly reminder that invoice '+r.num+(r.job?' for '+r.job:'')+' has a balance of '+money(r.balance)+(r.late>0?', which was due on '+fmtDay(r.due)+'.':', due '+fmtDay(r.due)+'.')+'\n\nIf it has already been sent, thank you — please disregard this note. If you need a copy of the invoice or have any questions, just reply to this email and we will be glad to help.\n\nThank you for your business,\nGrayCo Construction Services, LLC\noffice@grayco-cs.com · (901) 585-0944';
+  var body='Hi '+who+',\n\nI hope all is well. This is a friendly reminder that invoice '+r.num+(r.job?' for '+r.job:'')+' has a balance of '+money(r.balance)+(r.late>0?', which was due on '+fmtDay(r.due)+'.':', due '+fmtDay(r.due)+'.')+'\n\nIf it has already been sent, thank you — please disregard this note. If you need a copy of the invoice or have any questions, just reply to this email and we will be glad to help.\n\nThank you for your business,\nGrayCo Construction Services, LLC\n'+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' · (901) 585-0944';   /* patch BILL */
   var inner='<div style="padding:14px;display:grid;gap:8px">'
     +'<label style="font-size:12px;font-weight:700">To<input id="gck-rm-to" class="gck-in" style="width:100%" value="'+esc(r.email)+'" placeholder="client@email.com"></label>'
     +'<label style="font-size:12px;font-weight:700">Subject<input id="gck-rm-subj" class="gck-in" style="width:100%" value="'+esc(subj)+'"></label>'
@@ -135024,12 +135026,12 @@ var U = A.util, s = U.s, low = U.low, arr = U.arr, esc = U.esc, ST = U.ST, SI = 
 var B = W.GC_BRAND = {
   name: 'GrayCo Construction Services', legalName: 'GrayCo Construction Services, LLC',
   get street(){ return W._gcCompanyStreet(); }, city: 'Bartlett', state: 'TN', zip: '38135', get address(){ return W._gcCompanyAddress(); },   /* patch ADDR2 */
-  phone: '(901) 585-0944', email: 'office@grayco-cs.com', web: 'https://grayco-cs.com',
+  phone: '(901) 585-0944', email: 'office@grayco-cs.com', web: 'https://grayco-cs.com', billingEmail: 'billing@grayco-cs.com',   /* patch BILL */
   licenses: 'TN #85034 BCB · AR #0486990627 · MS #27769', logo: '/portal-logo.png',
   reviewUrl: 'https://share.google/quDuhdlL0ckxPLLY3', navy: '#0F1D2F', gold: '#D4A017'
 };
 function brandGlobals(){
-  try { if (W.GC_ADDR !== B.address) W.GC_ADDR = B.address; if (W.GC_LICENSE !== B.licenses) W.GC_LICENSE = B.licenses; if (W.GC_PHONE !== B.phone) W.GC_PHONE = B.phone; if (W.GC_EMAIL !== B.email) W.GC_EMAIL = B.email; } catch (e) {}
+  try { if (W.GC_ADDR !== B.address) W.GC_ADDR = B.address; if (W.GC_LICENSE !== B.licenses) W.GC_LICENSE = B.licenses; if (W.GC_PHONE !== B.phone) W.GC_PHONE = B.phone; if (W.GC_EMAIL !== B.email) W.GC_EMAIL = B.email; if (W.GC_BILLING_EMAIL !== B.billingEmail) W.GC_BILLING_EMAIL = B.billingEmail; } catch (e) {}
 }
 /* one license line and one address in any HTML paper */
 var LIC_FULL = /TN\s*(?:License\s*)?#\s*85034\s*BCB\s*(?:[·•|,-]|&middot;|&#183;)\s*AR\s*(?:License\s*)?#\s*0486990627\s*(?:[·•|,-]|&middot;|&#183;)\s*MS\s*(?:License\s*)?#\s*27769/gi;
@@ -164944,7 +164946,7 @@ W._gcPrintHead = function(o){
   return '<div data-gc-logo="1" class="gc-print-head" style="text-align:center;font-family:Arial,Helvetica,sans-serif;border-bottom:2px solid #241968;padding:0 0 10px;margin:0 0 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
     + '<img src="' + esc(printLogoSrc()) + '" alt="GrayCo Construction Services" style="height:' + (o.logoH || 64) + 'px;width:auto;display:block;margin:0 auto 6px">'
     + '<div style="font-size:15pt;font-weight:800;color:#0f2440;letter-spacing:.5px">GrayCo Construction Services, LLC</div>'
-    + '<div style="font-size:9.5pt;line-height:1.5;color:#333">' + (a ? esc(a) + ' · ' : '') + '(901) 585-0944 · grayco-cs.com</div>'
+    + '<div style="font-size:9.5pt;line-height:1.5;color:#333">' + (a ? esc(a) + ' · ' : '') + '(901) 585-0944 · ' + (o.email ? esc(o.email) + ' · ' : '') + 'grayco-cs.com</div>'   /* patch BILL: o.email */
     + (o.noLicense ? '' : '<div style="font-size:8.5pt;line-height:1.5;color:#555">' + LIC + '</div>') + '</div>';
 };
 /* HOT3's header for Estimate Builder prints, now centered (same rule as every other document) */
@@ -164960,7 +164962,7 @@ W._gcPdfHeaderCentered = function(doc, opts){
   doc.setFontSize(17); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 36, 64);
   doc.text('GrayCo Construction Services', cx, ty, { align: 'center' });
   doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(90, 100, 115);
-  var line = [s(W.GC_ADDR) || coAddr(), s(W.GC_PHONE) || '(901) 585-0944', s(W.GC_WEB) || 'grayco-cs.com'].filter(Boolean).join('  •  ');
+  var line = [s(W.GC_ADDR) || coAddr(), s(W.GC_PHONE) || '(901) 585-0944', s(opts.email), s(W.GC_WEB) || 'grayco-cs.com'].filter(Boolean).join('  •  ');   /* patch BILL: opts.email */
   doc.text(line, cx, ty + 13, { align: 'center' });
   var lic = s(W.GC_LICENSE) || LIC, fs = 8.5;
   try { while (fs > 6 && doc.getTextWidth(lic) > PW - 2 * m) { fs -= 0.25; doc.setFontSize(fs); } } catch (e) {}

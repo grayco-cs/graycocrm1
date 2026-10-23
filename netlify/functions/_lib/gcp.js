@@ -398,8 +398,8 @@ async function onApproved(item){
   const tokNeeded = /#g=|portal\.html#g=/.test(html) || html.indexOf('{{GC_PORTAL_LINK}}') >= 0;
   if (tokNeeded) { const tok = await createLink(p.id, 'approved ' + item.kind); html = html.split('{{GC_PORTAL_LINK}}').join(esc(gcLink(tok))); }
   html = await shell(html, { email: pm && pm.email, name: pm && pm.name });
-  const payload = { from: item.kind === 'gcp_payapp_invoice' ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>' : 'GrayCo Construction Services <portal@grayco-cs.com>',
-    reply_to: item.kind === 'gcp_payapp_invoice' ? 'replies@grayco-cs.com' : replyTo, to: [s(item.to)], subject: C.withJob(item.subject, p), html: html };
+  const payload = { from: item.kind === 'gcp_payapp_invoice' ? require('./brand.js').billingFrom() : 'GrayCo Construction Services <portal@grayco-cs.com>',   /* patch BILL */
+    reply_to: item.kind === 'gcp_payapp_invoice' ? require('./brand.js').billingEmail() : replyTo, to: [s(item.to)], subject: C.withJob(item.subject, p), html: html };
   const cc = arr(item.cc).concat(arr(m.cc)).map(low).filter(function(e, i, a){ return okEmail(e) && e !== low(item.to) && a.indexOf(e) === i; }).slice(0, 5);
   if (cc.length) payload.cc = cc;
   try {

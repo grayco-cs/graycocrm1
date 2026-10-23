@@ -158,7 +158,7 @@ async function runCloseout(o){
       const subject = 'Claim #' + s(c.claimNumber || '—') + ' — ' + (kind === 'dep' ? 'depreciation release' : 'supplement request') + ' follow-up' + (n > 1 ? ' (' + n + ')' : '') + ' — ' + clip(c.address || p.address || c.insured, 80);
       let html = followHtml(c, p, kind, n, pmU && pmU.name);
       try { html = await require('./_lib/brand.js').shellFor(html, { email: pmU && pmU.email, name: pmU && pmU.name }); } catch (e) {}
-      const r = await D.mail({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: C.replyToFor(pmU && pmU.email, 'claim'), to: [to], subject: subject, html: html, headers: { 'X-GrayCo-CRM': 'ins-followup' } });
+      const r = await D.mail({ from: require('./_lib/brand.js').billingFrom(), reply_to: C.replyToFor(pmU && pmU.email, 'claim'), to: [to], subject: subject, html: html, headers: { 'X-GrayCo-CRM': 'ins-followup' } });
       if (!r.ok) { await unclaim(k); continue; }
       await followPut(c.id, function(x){ x[kind] = arr(x[kind]).concat([{ at: new Date(now).toISOString(), to: to, n: n }]); });
       rep[kind]++;
