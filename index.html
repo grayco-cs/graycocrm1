@@ -5448,7 +5448,7 @@ alter publication supabase_realtime add table app_data;`}),"3. Settings → API 
   var _hidden=(window._gcNavHidden&&n&&window._gcNavHidden[n.id])||[];
   if(!_hidden.length) return _ordered;
   return _ordered.filter(function(g){return _hidden.indexOf(g.id)===-1;});
-})(),gu=g=>{if(!n)return;var _ids=[],_seen=new Set;g.forEach(function(H){if(!_seen.has(H.id)){_seen.add(H.id);_ids.push(H.id)}});Ct(te=>({...te,[n.id]:_ids}))},$f=g=>{if(_t===null||_t===g)return;const te=[...xl],[H]=te.splice(_t,1);te.splice(g,0,H),gu(te),En(null)},vu=()=>{const g=vo,te=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||"")),H=!!yi,[_,Q]=ce.useState(te?"company":(H?"mine":"company")),[_yr,_setYr]=ce.useState(new Date().getFullYear()),y=te&&!H&&_==="company",_paidYr=(N)=>{if(!N)return null;var _ci=Ba.filter(function(_i){return _i&&_i.pid===N.id&&_i.type==="client"&&_i.status==="paid"&&_i.paidDate;});if(_ci.length){var _dd=_ci.map(function(_i){return _i.paidDate;}).sort();return new Date(_dd[_dd.length-1]+"T12:00:00").getFullYear();}var _cd=N.completionDate||N.endDate||"";if(_cd)return new Date(_cd+"T12:00:00").getFullYear();var _sd=N.startDate||N.created||"";if(_sd)return new Date(_sd+"T12:00:00").getFullYear();return null;},_inYr=(N)=>{var _y=_paidYr(N);return _y===null?true:_y===_yr;},T=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))).filter(_inYr),_allMyJobs=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))),L=y?rr:rr.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name));y||fa.filter(N=>T.some(Ee=>Ee.id===N.pid)||N.by===g.name);const Y=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold"),_Yactive=T.filter(N=>{var _s=String(N.status||"").toLowerCase().trim();return !(_s==="completed"||_s==="complete"||_s==="done"||_s==="closed"||_s==="finished"||_s==="lost"||_s==="cancelled"||_s==="canceled"||_s==="declined"||_s==="dead"||_s==="archived"||_s==="void");}),_contracted=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold").reduce((N,Ee)=>N+(parseFloat(Ee.contract)||0),0),We=(function(){/* 33.129 (audit): Revenue is what has been BILLED to clients this year, not the contract values of open jobs */var _s=0,_seen={};(Ba||[]).forEach(function(N){if(!N||N.type!=="client")return;var _st=String(N.status||"").toLowerCase();if(_st==="draft"||_st==="void"||_st==="denied"||_st==="cancelled"||_st==="canceled")return;var _d=String(N.recvDate||N.date||"");if(_d&&parseInt(_d.slice(0,4),10)!==_yr)return;if(!y&&!(N.pid&&_allMyJobs.some(function(Ee){return Ee.id===N.pid})))return;if(window._gcIsTombstoned&&(window._gcIsTombstoned("invs",N.id)||window._gcIsTombstoned("invoices",N.id)))return;var _a=parseFloat(N.amt!=null?N.amt:N.amount)||0;if(!_a)return;var _k=N.id;if(_k&&_seen[_k])return;if(_k)_seen[_k]=1;/* 33.131: the same invoice under two ids (a copy a sync or a merge left behind) is one invoice */if(N.needsReview===true)return;if(window._gcIsFolded&&window._gcIsFolded("invs",N.id))return;var _ck=window._gcInvIdKey?window._gcInvIdKey(N):(String(N.pid||"")+"|"+_a.toFixed(2)+"|"+_d.slice(0,10));if(_seen["c:"+_ck])return;_seen["c:"+_ck]=1;_s+=_a;});return _s;})(),B=Ea.filter(N=>N.status!=="denied"&&(N.date?new Date(N.date+"T12:00:00").getFullYear()===_yr:true)&&(y||(N.pid&&_allMyJobs.some(Ee=>Ee.id===N.pid)))),U=(window._gcStableSpent?window._gcStableSpent({year:_yr,jobsOnly:true,pidSet:(y?null:(function(){var _m={};(_allMyJobs||[]).forEach(function(_j){if(_j&&_j.id)_m[_j.id]=1;});return _m;})())}):(B||[]).reduce(function(N,Ee){return N+Math.abs(Ee.amt||0);},0)),Z=T.map(N=>({...N,a:qs(N.id)})).filter(N=>N.a),w=kn.filter(N=>{const Ee=oa(N.insExp);return N.insExp&&Ee<=30}),q=new Date().getDay(),ke=Ba.filter(N=>N.type==="sub"&&["received","approved"].includes(N.status)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),z=ke.reduce((N,Ee)=>N+(parseFloat(Ee.amt)||0),0),De=Ba.filter(N=>N.status==="received"&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),Ve=Ba.filter(N=>N.type==="sub"&&N.status!=="paid"&&N.recvDate&&(window._gcSubLate?window._gcSubLate(N):[0,4,5,6].indexOf(new Date(N.recvDate+"T12:00:00").getDay())>=0)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),xt=q>=0&&q<=3,M=Ea.filter(N=>N.status==="pending");return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:H?g.name+"'s Dashboard":y?"Company Dashboard":"My Dashboard"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:H?g.title||g.role:"Welcome, "+g.name+" · "+(y?"Company-wide view":"Your projects & leads")})]}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:8},children:[e.jsx("select",{value:_yr,onChange:N=>_setYr(parseInt(N.target.value)),style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"inherit",background:"#fff",color:u.tx,cursor:"pointer"},children:(function(){var _yrs=[],_cur=new Date().getFullYear();for(var _i=_cur+1;_i>=2023;_i--)_yrs.push(_i);return _yrs.map(_y=>e.jsx("option",{value:_y,children:_y},_y));})()}),te&&!H&&e.jsxs("div",{style:{display:"flex",border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:[e.jsx("button",{onClick:()=>Q("company"),style:{padding:"5px 12px",border:"none",background:_==="company"?u.acc:"#fff",color:_==="company"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"🏢 Company"}),e.jsx("button",{onClick:()=>Q("mine"),style:{padding:"5px 12px",border:"none",background:_==="mine"?u.acc:"#fff",color:_==="mine"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"👤 My Jobs"})]}),te&&e.jsxs("select",{value:s||"",onChange:function(ev){l(ev.target.value||"");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx,background:"#fff",cursor:"pointer",fontFamily:"inherit"},children:[e.jsx("option",{value:"",children:"\uD83D\uDC65 View a person\u2026"}),An.filter(function(_u){return _u&&_u.active&&!_u.tombstoned&&!(window._gcIsGonePerson&&window._gcIsGonePerson(_u))&&!/^office/i.test(_u.role||"");}).map(function(_u){return e.jsx("option",{value:_u.id,children:_u.name+(String(_u.payType||"").toLowerCase()==="owner"?" (Owner)":"")},_u.id);})]}),(s?e.jsx("button",{onClick:function(){l("");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx2,background:"#fff",cursor:"pointer"},children:"\u2715 Back to company"}):null),e.jsx("a",{href:"https://grayco-cs.com",target:"_blank",rel:"noreferrer",style:{fontSize:11,color:u.acc2,textDecoration:"none",fontWeight:600},children:"grayco-cs.com →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14},children:[{l:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?("Active "+b.active+" · Pipeline "+b.pipeline):"Active / Pipeline";})(),v:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?(b.active+b.pipeline):_Yactive.length;})()},{l:"Revenue (billed)",v:ue(We)},{l:"Contracted",v:ue(_contracted)},{l:"Job Costs",v:ue(U)},{l:"Gross Profit",v:ue(We-U),c:We-U>=0?u.grn:u.red},{l:"Gross Margin",v:(We>0?(Math.round((We-U)/We*1000)/10)+"%":"—"),c:We-U>=0?u.grn:u.red},{l:"Pending Pay",v:ue(z),c:z>0?u.yel:u.tx}].map(N=>e.jsxs("div",{style:{...Ke,padding:"10px 12px"},children:[e.jsx("div",{style:{fontSize:10,color:u.tx2,fontWeight:600,textTransform:"uppercase",marginBottom:3},children:N.l}),e.jsx("div",{style:{fontSize:17,fontWeight:700,color:N.c||u.tx},children:N.v})]},N.l))}),(xt&&ke.length>0||Ve.length>0)&&e.jsx("div",{style:{...Ke,borderLeft:`3px solid ${Ve.length?u.red:u.yel}`,padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:Ve.length?u.red:u.yel,fontSize:12},children:"📋 Invoice Deadline"}),xt&&e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Sub invoices received ",e.jsx("b",{children:"by Wednesday"})," are paid the following Friday — ",ke.length," pending (",ue(z),")"]}),Ve.length>0&&e.jsxs("div",{style:{fontSize:12,marginTop:2,color:u.red,fontWeight:600},children:[Ve.length," late invoice",Ve.length>1?"s":""," missed the Wednesday cut-off (received Thu–Sun) — paid the Friday after next"]}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginTop:2},children:"Payment every Friday · PO# required on all invoices"})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("invoices"),children:"View Invoices →"})]})}),De.length>0&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #f59e0b",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsxs("b",{style:{color:"#f59e0b",fontSize:12},children:["📧 ",De.length," Invoice",De.length>1?"s":""," Need Review"]}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:[De.filter(N=>N.source==="gmail").length>0&&`${De.filter(N=>N.source==="gmail").length} from Gmail · `,De.filter(N=>N.source==="upload").length>0&&`${De.filter(N=>N.source==="upload").length} uploaded · `,"Assign project, verify amount, then approve"]})]}),e.jsx("button",{style:{...ht,padding:"5px 12px",fontSize:11,background:"#f59e0b",color:"#fff"},onClick:()=>Xi("invoices"),children:"Review Now →"})]})}),!1&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #dc2626",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:"#dc2626",fontSize:12},children:"🔄 Price Sync Overdue"}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Product prices haven't been updated in ",Eo===999?"—":""+Eo+"d",". Weekly sync checks all ",kn.length," vendors."]})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("products"),children:"Go to Products →"})]})}),(Z.length>0||w.length>0)&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14},children:[Z.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.red}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.red,fontSize:12},children:"Budget Alerts"}),Z.map(N=>e.jsxs("div",{onClick:function(){Pe(N);D("projects")},style:{fontSize:12,padding:"5px 8px",cursor:"pointer",borderRadius:4,marginBottom:2,display:"flex",justifyContent:"space-between",alignItems:"center",background:N.a.lbl==="OVER"?"#ef444410":"transparent",borderLeft:"3px solid "+(N.a.c||u.red)},children:[e.jsxs("span",{children:[e.jsx("b",{style:{color:u.acc2},children:N.name}),N.autoPO?e.jsx("span",{style:{fontFamily:"monospace",fontSize:10,color:u.tx2,marginLeft:6},children:"["+N.autoPO+"]"}):null]}),e.jsxs("span",{style:{color:N.a.c,fontWeight:700,fontSize:11},children:[N.a.pct,"% ",N.a.lbl==="OVER"?"⚠️ OVER":"used"," →"]})]},N.id))]}),w.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.yel}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.yel,fontSize:12},children:"Insurance Expiring (30 days)"}),w.map(N=>e.jsxs("div",{style:{fontSize:12,padding:"3px 0"},children:[e.jsx("b",{children:N.name})," — exp ",Ut(N.insExp)]},N.id))]})]}),T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length>0&&e.jsxs("div",{style:{...Ke,marginBottom:14},children:[e.jsxs("b",{style:{fontSize:13},children:[y?"Active & completed jobs":"My active & completed jobs"," (",T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length,")"]}),e.jsx("div",{style:{marginTop:8},children:T.filter(N=>["active","approved","completed","complete"].includes(N.status)).map(N=>{const Ee=ji(N.id);return e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsxs("div",{children:[e.jsx("b",{style:{cursor:"pointer",color:u.acc2},onClick:()=>{D("projects"),Ae(null),Pe(N)},children:N.name}),e.jsxs("span",{style:{color:u.tx2,marginLeft:6},children:[N.client," · PM: ",N.pm||"—"]})]}),e.jsxs("div",{style:{display:"flex",gap:12,alignItems:"center"},children:[e.jsx("span",{children:ue(N.contract)}),(sr.role==="Admin"||N.pm===sr.name)&&e.jsxs("span",{style:{color:Ee.profit>=0?u.grn:u.red,fontWeight:600},children:[Ee.margin,"%"]}),e.jsx(Wa,{s:N.status})]})]},N.id)})})]}),(()=>{const N=new Date,Ee=N.getDay(),Je=new Date(N);Je.setDate(N.getDate()-(Ee===0?6:Ee-1)),Je.setHours(0,0,0,0);const W=[],F=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];for(let de=0;de<7;de++){const Oe=new Date(Je);Oe.setDate(Je.getDate()+de);const Re=Oe.getFullYear(),K=String(Oe.getMonth()+1).padStart(2,"0"),$e=String(Oe.getDate()).padStart(2,"0");W.push({date:`${Re}-${K}-${$e}`,label:F[de],dayNum:$e,month:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Oe.getMonth()],isToday:`${Re}-${K}-${$e}`===Lt()})}const xe=la.filter(de=>de.date&&de.scope!=="personal"&&W.some(Oe=>Oe.date===de.date)&&(y||de.assignee===g.name||de.by===g.name||T.some(Oe=>Oe.id===de.pid))).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||"")),X=la.filter(de=>de.date&&de.scope==="personal"&&de.by===g.name&&W.some(Oe=>Oe.date===de.date)).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||""));return e.jsxs("div",{style:{...Ke,marginBottom:14,borderLeft:`3px solid ${u.acc}`},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:[e.jsxs("b",{style:{fontSize:13},children:["📅 ",H?g.name.split(" ")[0]+"'s":"My"," Week — ",W[0].month," ",W[0].dayNum," – ",W[6].month," ",W[6].dayNum]}),e.jsxs("div",{style:{display:"flex",gap:4,alignItems:"center"},children:[e.jsxs("span",{style:{fontSize:10,color:u.tx2},children:[xe.length," company",X.length>0?` · ${X.length} personal`:""]}),e.jsx("button",{style:{...ot,padding:"3px 10px",fontSize:10},onClick:()=>Xi("schedule"),children:"View Full →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4},children:W.map(de=>{const Oe=xe.filter($e=>$e.date===de.date),Re=X.filter($e=>$e.date===de.date),K=[...Oe,...Re].sort(($e,ze)=>($e.time||"").localeCompare(ze.time||""));return e.jsxs("div",{style:{borderRadius:6,border:`1px solid ${de.isToday?u.acc:u.bdr}`,background:de.isToday?u.acc+"08":"transparent",minHeight:90,padding:6},children:[e.jsxs("div",{style:{textAlign:"center",marginBottom:4},children:[e.jsx("div",{style:{fontSize:9,fontWeight:700,color:de.isToday?u.acc:u.tx2,textTransform:"uppercase"},children:de.label}),e.jsx("div",{style:{fontSize:14,fontWeight:de.isToday?800:600,color:de.isToday?u.acc:u.tx,lineHeight:1},children:de.dayNum})]}),K.length===0?e.jsx("div",{style:{fontSize:9,color:u.tx3,textAlign:"center",padding:"4px 0"},children:"—"}):K.map($e=>{var ve;const ze=vl($e.pid),et=$e.scope==="personal";return e.jsxs("div",{style:{fontSize:9,padding:"3px 4px",marginBottom:2,borderRadius:4,background:et?"#7c3aed15":ze+"18",borderLeft:`2px solid ${et?"#7c3aed":ze}`,lineHeight:1.3,overflow:"hidden"},children:[e.jsxs("div",{style:{fontWeight:700,color:et?"#7c3aed":u.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[$e.time?$e.time+" ":"",$e.title,et?" 🔒":""]}),$e.assignee&&!et&&e.jsx("div",{style:{color:u.tx2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:$e.assignee}),$e.pid&&e.jsxs("div",{style:{color:ze,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[((ve=Wt.find(ye=>ye.id===$e.pid))==null?void 0:ve.name)||""," ",e.jsx(__gcStable("or",or),{pid:$e.pid})]})]},$e.id)})]},de.date)})})]})})(),(function(){var _now=new Date();var _isAdm=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||""))&&!yi;var _myP=_isAdm?null:new Set(Wt.filter(function(p){return (window._gcSamePM?window._gcSamePM(p.pm,vo,p):p.pm===vo.name)}).map(function(p){return p.id}));var _days=[];for(var _i=0;_i<14;_i++){var _d=new Date(_now);_d.setDate(_now.getDate()+_i);_days.push(_d.toISOString().slice(0,10))}var _dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];var _sc=la.filter(function(s){if(!s.date||!_days.includes(s.date))return false;if(_isAdm)return true;return s.by===vo.name||s.assignee===vo.name||(s.pid&&_myP.has(s.pid))});var _bd={};_days.forEach(function(d){_bd[d]=_sc.filter(function(s){return s.date===d})});return e.jsxs("div",{style:{...Ke,marginBottom:10},children:[e.jsx("b",{style:{fontSize:14},children:_isAdm?"📅 Company Schedule":"📅 My Schedule"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginTop:8},children:_days.map(function(day){var _dt=new Date(day+"T12:00:00");var _isT=day===_now.toISOString().slice(0,10);var _ev=_bd[day]||[];return e.jsxs("div",{key:day,style:{background:_isT?"#d4a01722":(u.card||"#1a2e45"),border:"1px solid "+(_isT?"#d4a017":(u.bdr||"#1e3a5f")),borderRadius:5,padding:"6px 5px",minHeight:65,fontSize:10},children:[e.jsx("div",{style:{fontWeight:700,color:_isT?"#d4a017":(u.tx2||"#64748b"),fontSize:9},children:_dn[_dt.getDay()]+" "+(_dt.getMonth()+1)+"/"+_dt.getDate()}),_ev.length===0?e.jsx("div",{style:{color:"#475569",fontSize:9},children:"—"}):_ev.slice(0,3).map(function(ev,ei){return e.jsx("div",{key:ei,style:{background:"#d4a01711",borderLeft:"2px solid #d4a017",borderRadius:2,padding:"2px 4px",marginBottom:2,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},children:ev.title||"—"})})]})})}),e.jsx("button",{onClick:function(){D("schedule")},style:{marginTop:6,background:"none",border:"1px solid "+(u.bdr||"#1e3a5f"),color:"#d4a017",borderRadius:4,padding:"4px 12px",cursor:"pointer",fontSize:10,fontWeight:600,width:"100%"},children:"Open Full Schedule →"})]})})(),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},children:[e.jsx("div",{}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Recent Activity"}),e.jsxs("div",{style:{marginTop:8,fontSize:12,color:u.tx2},children:[B.slice(-5).reverse().map(N=>e.jsxs("div",{style:{padding:"3px 0",borderBottom:`1px solid ${u.bdr}`},children:[N.desc," — ",e.jsx("b",{children:ue(N.amt)})]},N.id)),B.length===0&&e.jsx("p",{style:{color:u.tx3},children:"No expenses yet"})]})]})]})]})},To=({title:g,desc:te,items:H,setItems:_,fid:Q,fields:y,cols:T,onAdd:L,sortKey:Y,sortDir:We,allowDelete:B,allowEdit:U})=>{const[Z,w]=ce.useState(!1),[E,q]=ce.useState(null),[_dragIdx,_setDragIdx]=ce.useState(null),ke={};y.forEach(Ee=>{ke[Ee.k]=Ee.def||""});const[z,De]=ce.useState(ke),Ve=(Ee,Je)=>De(W=>({...W,[Ee]:Je})),xt=[...H];Y&&xt.sort((Ee,Je)=>{const W=Ee[Y]||"",F=Je[Y]||"";if(Y==="date"||Y.toLowerCase().includes("date")){const xe=W?new Date(W+"T00:00:00"):new Date(0),X=F?new Date(F+"T00:00:00"):new Date(0);return We==="desc"?X-xe:xe-X}return We==="desc"?String(F).localeCompare(String(W)):String(W).localeCompare(String(F))});Q==="LEAD"&&window._gcLA&&window._gcLA.sort(xt);const M=xt.filter(Ee=>!rt||JSON.stringify(Ee).toLowerCase().includes(rt.toLowerCase())),N=Ee=>{const Je={};y.forEach(W=>{Je[W.k]=Ee[W.k]||W.def||""}),De(Je),q(Ee),w(!0)};return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:g}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:te})]}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("input",{style:{...R,width:140},placeholder:"Search...",value:rt,onChange:Ee=>Et(Ee.target.value),autoComplete:"off",name:"gc-projsearch",type:"search"}),e.jsx("button",{style:ht,onClick:()=>{q(null),De(ke),w(!Z)},children:"+ Add"})]})]}),Z&&e.jsxs("div",{style:{...Ke,marginBottom:12},children:[e.jsx("b",{style:{fontSize:13,marginBottom:6,display:"block"},children:E?"Edit Item":"Add New"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:`repeat(${Math.min(y.length,3)},1fr)`,gap:8},children:y.map(Ee=>e.jsx(re,{l:Ee.l,s:Ee.span,children:Ee.type==="select"?e.jsx("select",{style:R,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),children:Ee.opts.map(Je=>typeof Je=="string"?e.jsx("option",{children:Je},Je):e.jsx("option",{value:Je.v,children:Je.l},Je.v))}):Ee.type==="textarea"?e.jsx("textarea",{style:{...R,minHeight:80},value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value)}):Ee.type==="vendor"?e.jsxs(e.Fragment,{children:[e.jsx("input",{style:R,list:"vl_"+Ee.k,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:"Type or select..."}),e.jsx("datalist",{id:"vl_"+Ee.k,children:kn.map(Je=>e.jsx("option",{value:Je.name},Je.id))})]}):e.jsx("input",{style:R,type:Ee.type||"text",step:Ee.step,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:Ee.ph})},Ee.k))}),e.jsxs("div",{style:{display:"flex",gap:6,marginTop:8},children:[e.jsx("button",{style:ht,onClick:()=>{if(y.some(Ee=>(Ee.req||(Ee.reqNew&&!E))&&!z[Ee.k])){se("Required fields missing");return}if(Q==="LEAD"&&window._gcLA&&window._gcLA.formOk&&!window._gcLA.formOk(z,E,se))return;if(E){const Ee={...E,...z};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),_(L?Je=>Je.map(W=>W.id===E.id?Ee:W):Je=>Je.map(W=>W.id===E.id?Ee:W)),q(null),De(ke),w(!1),se("Updated")}else{const Ee={...z,id:$t(Q),date:z.date||Lt(),by:n.name};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),L?L(Ee):_(Je=>[...Je,Ee]),De(ke),w(!1),se("Added")}},children:E?"Update":"Save"}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:6},children:[e.jsx("button",{type:"button",style:{padding:"6px 14px",background:"#2563eb",color:"#fff",border:"none",borderRadius:4,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},onClick:function(ev){ev.preventDefault();var inp2=document.createElement("input");inp2.type="file";inp2.multiple=true;inp2.accept=".pdf,.doc,.docx,.jpg,.png,.xls,.xlsx";inp2.onchange=function(){var files=Array.from(inp2.files);var nf=[];var done=0;files.forEach(function(fl){var fr=new FileReader();fr.onload=function(e2){nf.push({name:fl.name,data:e2.target.result,type:fl.type,size:fl.size});done++;if(done===files.length){Ve("files",[...(z.files||[]),...nf]);se(nf.length+" file(s) attached")}};fr.readAsDataURL(fl)});};inp2.click()},children:"📎 Attach Files"}),(z.files||[]).length>0&&e.jsx("span",{style:{fontSize:10,color:"#22c55e"},children:(z.files||[]).length+" file(s) attached"})]}),e.jsx("button",{style:ot,onClick:()=>{w(!1),q(null)},children:"Cancel"}),E&&e.jsx("button",{style:{...ot,fontSize:13,padding:"6px 14px",fontWeight:600,color:u.red},onClick:()=>{if(Q==="LEAD"&&window._gcLDEL){var _gid=E.id;q(null),w(!1);window._gcLDEL.ask([_gid]);return}confirm("Delete this item?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",E.id),_(Ee=>Ee.filter(Je=>Je.id!==E.id)),q(null),w(!1),se("Deleted"))},children:"Delete"})]})]}),H.length===0?e.jsx(Zn,{t:`No ${g.toLowerCase()}`,d:"Click + Add to get started.",onA:()=>w(!0),al:"+ Add"}):e.jsx("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:e.jsx("div",{style:{overflowX:"auto"},children:e.jsxs("table",{"data-gc-fid":Q,style:{width:"100%",borderCollapse:"collapse",fontSize:12},children:[e.jsx("thead",{children:e.jsxs("tr",{style:{background:"#f3f5f9"},children:[Q==="LEAD"&&e.jsx("th",{style:{padding:"7px 6px",width:28,borderBottom:`1px solid ${u.bdr}`},children:e.jsx("input",{type:"checkbox",className:"gcx-ldel-all",title:"Select all shown","aria-label":"Select all shown"})},"_gcsel"),T.map(Ee=>e.jsx("th",{style:{padding:"7px 10px",textAlign:"left",fontWeight:600,fontSize:10,color:u.tx2,textTransform:"uppercase",borderBottom:`1px solid ${u.bdr}`,whiteSpace:"nowrap"},children:Ee.l},Ee.k)),e.jsx("th",{style:{padding:"7px 10px",width:60,borderBottom:`1px solid ${u.bdr}`}})]})}),e.jsx("tbody",{children:M.map((Ee,Je)=>e.jsxs("tr",{draggable:true,onDragStart:function(){_setDragIdx(Je)},onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="2px solid #d4a017"},onDragLeave:function(ev){ev.currentTarget.style.borderTop="none"},onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="none";if(_dragIdx!==null&&_dragIdx!==Je){var _ia=M[_dragIdx],_ib=M[Je],_dn=_dragIdx<Je;if(_ia&&_ib){_(function(full){var arr=(Array.isArray(full)?full:H).slice(),_f=function(x){var i=arr.indexOf(x);return i<0&&x&&x.id!=null?arr.findIndex(function(y){return y&&y.id===x.id}):i},i=_f(_ia);if(i<0)return full;arr.splice(i,1);var j=_f(_ib);if(j<0)return full;arr.splice(_dn?j+1:j,0,_ia);return arr})}}_setDragIdx(null)},onDragEnd:function(){_setDragIdx(null)},"data-gc-id":Q==="LEAD"?Ee.id:void 0,"data-gc-new":Q==="LEAD"&&window._gcLA&&window._gcLA.isNew(Ee)?"1":void 0,style:{borderBottom:`1px solid ${u.bdr}`,cursor:"grab",opacity:_dragIdx===Je?0.4:1},children:[Q==="LEAD"&&e.jsx("td",{style:{padding:"6px 6px",width:28},children:e.jsx("input",{type:"checkbox",className:"gcx-ldel-chk","data-id":Ee.id,"aria-label":"Select this lead"})},"_gcsel"),T.map(W=>e.jsx("td",{style:{padding:"6px 10px"},children:W.r?W.r(Ee):Ee[W.k]||"—"},W.k)),e.jsxs("td",{style:{padding:"6px 10px",whiteSpace:"nowrap"},children:[e.jsx("button",{onClick:()=>N(Ee),style:{background:"none",border:"none",color:u.acc2,cursor:"pointer",fontSize:11,marginRight:4},title:"Edit",children:"✏️"}),Q==="LEAD"&&window._gcLDEL?e.jsxs(e.Fragment,{children:[e.jsx("button",{type:"button",className:"gcx-ldel-bin","data-gc-ldel":Ee.id,style:{background:"none",cursor:"pointer",fontSize:12},title:"Delete this lead…","aria-label":"Delete this lead",children:"🗑"}),e.jsx("button",{type:"button",className:"gcx-ldel-more",title:"More","aria-label":"More",children:"⋯"})]}):e.jsx("button",{onClick:()=>{confirm("Delete?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",Ee.id),_(W=>W.filter(F=>F.id!==Ee.id)),se("Deleted"))},style:{background:"none",border:"none",color:u.red,cursor:"pointer",fontSize:11},title:"Delete",children:"🗑"})]})]},Ee.id||Je))})]})})})]})},id=()=>{var Ne;const[g,te]=ce.useState(!1),[H,_]=ce.useState(function(){try{return sessionStorage.getItem("grayco_subtab")||"overview"}catch(e){return"overview"}}),[_tabOrd,_setTabOrd]=ce.useState(null),Q={name:"",client:"",type:"Residential Reno",address:"",contract:"",status:"bidding",pm:"",soldBy:"",scope:""},[y,T]=ce.useState(Q),[L,Y]=ce.useState({date:"",type:"Rough-In",inspector:"",notes:""}),[We,B]=ce.useState(!1),[U,Z]=ce.useState(""),[w,E]=ce.useState(!1),[q,ke]=ce.useState(!1),[z,De]=ce.useState({}),[Ve,xt]=ce.useState(String(new Date().getFullYear())),[M,N]=ce.useState((sr.role==="Admin"||/office/i.test(sr.role||"")||((sr.email||"").toLowerCase()==="office@grayco-cs.com"))?"all":"mine"),[Ee,_JeRaw]=ce.useState((function(){try{return localStorage.getItem("gc_proj_subtab")||"pipeline";}catch(e){return "pipeline";}})()),Je=function(_v){try{if(typeof _v==="string")localStorage.setItem("gc_proj_subtab",_v);}catch(e){}return _JeRaw(_v);},[W,F]=ce.useState(null),[xe,X]=ce.useState({k:"startDate",d:"desc"}),[_qt,_Dt]=ce.useState(!1),[_ut,_Xt]=ce.useState(null),[_Bt,_gn]=ce.useState(null);if(be&&((Ne=be.id)!=null&&(Ne.startsWith("PRJ")||Ne.charAt(0)==="P"&&Wt.some(G=>G.id===Ne)))){try{sessionStorage.setItem("grayco_subtab",H)}catch(_x){}const j=Wt.find(G=>G.id===be.id)||be,kt=ji(j.id),qe=qs(j.id),Pt=fa.filter(G=>G.pid===j.id),jt=Ea.filter(G=>G.pid===j.id&&G.type!=="mpo"&&G.status!=="denied"),at=hr.filter(G=>G.pid===j.id),Tt=Gi.filter(G=>G.pid===j.id),le=Er.filter(G=>G.pid===j.id),Mt=Ba.filter(G=>G.pid===j.id),ln=Ts.filter(G=>G.pid===j.id),ra=[...la.filter(G=>G.pid===j.id)].sort((G,St)=>(G.date||"").localeCompare(St.date||"")),ea=$s.filter(G=>G.pid===j.id),_pest=(fa||[]).filter(G=>G&&(G.pid===j.id||(G.client&&j.client&&G.client.toLowerCase()===(j.client||"").toLowerCase()))),Ln=Gs.filter(G=>G.pid===j.id),ja=Pt.flatMap(G=>G.mats||[]),wa=gt.filter(G=>G.pid===j.id),ii=st.filter(G=>G.pid===j.id&&G.projectName!==void 0&&G.title===void 0),ui=wa.filter(G=>G.cat==="Plans/Drawings"),va=j.subs||[],Ar=[
+})(),gu=g=>{if(!n)return;var _ids=[],_seen=new Set;g.forEach(function(H){if(!_seen.has(H.id)){_seen.add(H.id);_ids.push(H.id)}});Ct(te=>({...te,[n.id]:_ids}))},$f=g=>{if(_t===null||_t===g)return;const te=[...xl],[H]=te.splice(_t,1);te.splice(g,0,H),gu(te),En(null)},vu=()=>{const g=vo,te=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||"")),H=!!yi,[_,Q]=ce.useState(te?"company":(H?"mine":"company")),[_yr,_setYr]=ce.useState(new Date().getFullYear()),y=te&&!H&&_==="company",_paidYr=(N)=>{if(!N)return null;var _ci=Ba.filter(function(_i){return _i&&_i.pid===N.id&&_i.type==="client"&&_i.status==="paid"&&_i.paidDate;});if(_ci.length){var _dd=_ci.map(function(_i){return _i.paidDate;}).sort();return new Date(_dd[_dd.length-1]+"T12:00:00").getFullYear();}var _cd=N.completionDate||N.endDate||"";if(_cd)return new Date(_cd+"T12:00:00").getFullYear();var _sd=N.startDate||N.created||"";if(_sd)return new Date(_sd+"T12:00:00").getFullYear();return null;},_inYr=(N)=>{var _y=_paidYr(N);return _y===null?true:_y===_yr;},T=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))).filter(_inYr),_allMyJobs=(y?Wt:Wt.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name))),L=y?rr:rr.filter(N=>(window._gcSamePM?window._gcSamePM(N.pm,g,N):N.pm===g.name));y||fa.filter(N=>T.some(Ee=>Ee.id===N.pid)||N.by===g.name);const Y=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold"),_Yactive=T.filter(N=>{var _s=String(N.status||"").toLowerCase().trim();return !(_s==="completed"||_s==="complete"||_s==="done"||_s==="closed"||_s==="finished"||_s==="lost"||_s==="cancelled"||_s==="canceled"||_s==="declined"||_s==="dead"||_s==="archived"||_s==="void");}),_contracted=T.filter(N=>N.status==="active"||N.status==="approved"||N.status==="completed"||N.status==="complete"||N.status==="on_hold").reduce((N,Ee)=>N+(parseFloat(Ee.contract)||0),0),We=(function(){/* 33.129 (audit): Revenue is what has been BILLED to clients this year, not the contract values of open jobs */var _s=0,_seen={};(Ba||[]).forEach(function(N){if(!N||N.type!=="client")return;var _st=String(N.status||"").toLowerCase();if(_st==="draft"||_st==="void"||_st==="denied"||_st==="cancelled"||_st==="canceled")return;var _d=String(N.recvDate||N.date||"");if(_d&&parseInt(_d.slice(0,4),10)!==_yr)return;if(!y&&!(N.pid&&_allMyJobs.some(function(Ee){return Ee.id===N.pid})))return;if(window._gcIsTombstoned&&(window._gcIsTombstoned("invs",N.id)||window._gcIsTombstoned("invoices",N.id)))return;var _a=parseFloat(N.amt!=null?N.amt:N.amount)||0;if(!_a)return;var _k=N.id;if(_k&&_seen[_k])return;if(_k)_seen[_k]=1;/* 33.131: the same invoice under two ids (a copy a sync or a merge left behind) is one invoice */if(N.needsReview===true)return;if(window._gcIsFolded&&window._gcIsFolded("invs",N.id))return;var _ck=window._gcInvIdKey?window._gcInvIdKey(N):(String(N.pid||"")+"|"+_a.toFixed(2)+"|"+_d.slice(0,10));if(_seen["c:"+_ck])return;_seen["c:"+_ck]=1;_s+=_a;});return _s;})(),B=Ea.filter(N=>N.status!=="denied"&&(N.date?new Date(N.date+"T12:00:00").getFullYear()===_yr:true)&&(y||(N.pid&&_allMyJobs.some(Ee=>Ee.id===N.pid)))),U=(window._gcStableSpent?window._gcStableSpent({year:_yr,jobsOnly:true,pidSet:(y?null:(function(){var _m={};(_allMyJobs||[]).forEach(function(_j){if(_j&&_j.id)_m[_j.id]=1;});return _m;})())}):(B||[]).reduce(function(N,Ee){return N+Math.abs(Ee.amt||0);},0)),Z=T.map(N=>({...N,a:qs(N.id)})).filter(N=>N.a),w=kn.filter(N=>{const Ee=oa(N.insExp);return N.insExp&&Ee<=30}),q=new Date().getDay(),ke=Ba.filter(N=>N.type==="sub"&&["received","approved"].includes(N.status)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),z=ke.reduce((N,Ee)=>N+(parseFloat(Ee.amt)||0),0),De=Ba.filter(N=>N.status==="received"&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),Ve=Ba.filter(N=>N.type==="sub"&&N.status!=="paid"&&N.recvDate&&(window._gcSubLate?window._gcSubLate(N):[0,4,5,6].indexOf(new Date(N.recvDate+"T12:00:00").getDay())>=0)&&(y||(N.pid&&_allMyJobs.some(_j=>_j.id===N.pid)))),xt=q>=0&&q<=3,M=Ea.filter(N=>N.status==="pending");return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:H?g.name+"'s Dashboard":y?"Company Dashboard":"My Dashboard"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:H?g.title||g.role:"Welcome, "+g.name+" · "+(y?"Company-wide view":"Your projects & leads")})]}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:8},children:[e.jsx("select",{value:_yr,onChange:N=>_setYr(parseInt(N.target.value)),style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,fontFamily:"inherit",background:"#fff",color:u.tx,cursor:"pointer"},children:(function(){var _yrs=[],_cur=new Date().getFullYear();for(var _i=_cur+1;_i>=2023;_i--)_yrs.push(_i);return _yrs.map(_y=>e.jsx("option",{value:_y,children:_y},_y));})()}),te&&!H&&e.jsxs("div",{style:{display:"flex",border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:[e.jsx("button",{onClick:()=>Q("company"),style:{padding:"5px 12px",border:"none",background:_==="company"?u.acc:"#fff",color:_==="company"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"🏢 Company"}),e.jsx("button",{onClick:()=>Q("mine"),style:{padding:"5px 12px",border:"none",background:_==="mine"?u.acc:"#fff",color:_==="mine"?"#fff":u.tx2,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"},children:"👤 My Jobs"})]}),te&&e.jsxs("select",{value:s||"",onChange:function(ev){l(ev.target.value||"");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx,background:"#fff",cursor:"pointer",fontFamily:"inherit"},children:[e.jsx("option",{value:"",children:"\uD83D\uDC65 View a person\u2026"}),An.filter(function(_u){return _u&&_u.active&&!_u.tombstoned&&!(window._gcIsGonePerson&&window._gcIsGonePerson(_u))&&!/^office/i.test(_u.role||"");}).map(function(_u){return e.jsx("option",{value:_u.id,children:_u.name+(String(_u.payType||"").toLowerCase()==="owner"?" (Owner)":"")},_u.id);})]}),(s?e.jsx("button",{onClick:function(){l("");},style:{padding:"5px 10px",border:`1px solid ${u.bdr}`,borderRadius:6,fontSize:11,fontWeight:600,color:u.tx2,background:"#fff",cursor:"pointer"},children:"\u2715 Back to company"}):null),e.jsx("a",{href:"https://grayco-cs.com",target:"_blank",rel:"noreferrer",style:{fontSize:11,color:u.acc2,textDecoration:"none",fontWeight:600},children:"grayco-cs.com →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14},children:[{l:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?("Active "+b.active+" · Pipeline "+b.pipeline):"Active / Pipeline";})(),v:(function(){var b=window._gcJobBuckets?window._gcJobBuckets(_allMyJobs):null;return b?(b.active+b.pipeline):_Yactive.length;})()},{l:"Revenue (billed)",v:ue(We)},{l:"Contracted",v:ue(_contracted)},{l:"Job Costs",v:ue(U)},{l:"Gross Profit",v:ue(We-U),c:We-U>=0?u.grn:u.red},{l:"Gross Margin",v:(We>0?(Math.round((We-U)/We*1000)/10)+"%":"—"),c:We-U>=0?u.grn:u.red},{l:"Pending Pay",v:ue(z),c:z>0?u.yel:u.tx}].map(N=>e.jsxs("div",{style:{...Ke,padding:"10px 12px"},children:[e.jsx("div",{style:{fontSize:10,color:u.tx2,fontWeight:600,textTransform:"uppercase",marginBottom:3},children:N.l}),e.jsx("div",{style:{fontSize:17,fontWeight:700,color:N.c||u.tx},children:N.v})]},N.l))}),(xt&&ke.length>0||Ve.length>0)&&e.jsx("div",{style:{...Ke,borderLeft:`3px solid ${Ve.length?u.red:u.yel}`,padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:Ve.length?u.red:u.yel,fontSize:12},children:"📋 Invoice Deadline"}),xt&&e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Sub invoices received ",e.jsx("b",{children:"by Wednesday"})," are paid the following Friday — ",ke.length," pending (",ue(z),")"]}),Ve.length>0&&e.jsxs("div",{style:{fontSize:12,marginTop:2,color:u.red,fontWeight:600},children:[Ve.length," late invoice",Ve.length>1?"s":""," missed the Wednesday cut-off (received Thu–Sun) — paid the Friday after next"]}),e.jsx("div",{style:{fontSize:11,color:u.tx2,marginTop:2},children:"Payment every Friday · PO# required on all invoices"})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("invoices"),children:"View Invoices →"})]})}),De.length>0&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #f59e0b",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsxs("b",{style:{color:"#f59e0b",fontSize:12},children:["📧 ",De.length," Invoice",De.length>1?"s":""," Need Review"]}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:[De.filter(N=>N.source==="gmail").length>0&&`${De.filter(N=>N.source==="gmail").length} from Gmail · `,De.filter(N=>N.source==="upload").length>0&&`${De.filter(N=>N.source==="upload").length} uploaded · `,"Assign project, verify amount, then approve"]})]}),e.jsx("button",{style:{...ht,padding:"5px 12px",fontSize:11,background:"#f59e0b",color:"#fff"},onClick:()=>Xi("invoices"),children:"Review Now →"})]})}),!1&&e.jsx("div",{style:{...Ke,borderLeft:"3px solid #dc2626",padding:"10px 14px",marginBottom:14},children:e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{color:"#dc2626",fontSize:12},children:"🔄 Price Sync Overdue"}),e.jsxs("div",{style:{fontSize:12,marginTop:2},children:["Product prices haven't been updated in ",Eo===999?"—":""+Eo+"d",". Weekly sync checks all ",kn.length," vendors."]})]}),e.jsx("button",{style:{...ot,padding:"5px 12px",fontSize:11},onClick:()=>Xi("products"),children:"Go to Products →"})]})}),(Z.length>0||w.length>0)&&e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14},children:[Z.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.red}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.red,fontSize:12},children:"Budget Alerts"}),Z.map(N=>e.jsxs("div",{onClick:function(){Pe(N);D("projects")},style:{fontSize:12,padding:"5px 8px",cursor:"pointer",borderRadius:4,marginBottom:2,display:"flex",justifyContent:"space-between",alignItems:"center",background:N.a.lbl==="OVER"?"#ef444410":"transparent",borderLeft:"3px solid "+(N.a.c||u.red)},children:[e.jsxs("span",{children:[e.jsx("b",{style:{color:u.acc2},children:N.name}),N.autoPO?e.jsx("span",{style:{fontFamily:"monospace",fontSize:10,color:u.tx2,marginLeft:6},children:"["+N.autoPO+"]"}):null]}),e.jsxs("span",{style:{color:N.a.c,fontWeight:700,fontSize:11},children:[N.a.pct,"% ",N.a.lbl==="OVER"?"⚠️ OVER":"used"," →"]})]},N.id))]}),w.length>0&&e.jsxs("div",{style:{...Ke,borderLeft:`3px solid ${u.yel}`,padding:"10px 14px"},children:[e.jsx("b",{style:{color:u.yel,fontSize:12},children:"Insurance Expiring (30 days)"}),w.map(N=>e.jsxs("div",{style:{fontSize:12,padding:"3px 0"},children:[e.jsx("b",{children:N.name})," — exp ",Ut(N.insExp)]},N.id))]})]}),T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length>0&&e.jsxs("div",{style:{...Ke,marginBottom:14},children:[e.jsxs("b",{style:{fontSize:13},children:[y?"Active & completed jobs":"My active & completed jobs"," (",T.filter(N=>["active","approved","completed","complete"].includes(N.status)).length,")"]}),e.jsx("div",{style:{marginTop:8},children:T.filter(N=>["active","approved","completed","complete"].includes(N.status)).map(N=>{const Ee=ji(N.id);return e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${u.bdr}`,fontSize:12},children:[e.jsxs("div",{children:[e.jsx("b",{style:{cursor:"pointer",color:u.acc2},onClick:()=>{D("projects"),Ae(null),Pe(N)},children:N.name}),e.jsxs("span",{style:{color:u.tx2,marginLeft:6},children:[N.client," · PM: ",N.pm||"—"]})]}),e.jsxs("div",{style:{display:"flex",gap:12,alignItems:"center"},children:[e.jsx("span",{children:ue(N.contract)}),(sr.role==="Admin"||N.pm===sr.name)&&e.jsxs("span",{style:{color:Ee.profit>=0?u.grn:u.red,fontWeight:600},children:[Ee.margin,"%"]}),e.jsx(Wa,{s:N.status})]})]},N.id)})})]}),(()=>{const N=new Date,Ee=N.getDay(),Je=new Date(N);Je.setDate(N.getDate()-(Ee===0?6:Ee-1)),Je.setHours(0,0,0,0);const W=[],F=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];for(let de=0;de<7;de++){const Oe=new Date(Je);Oe.setDate(Je.getDate()+de);const Re=Oe.getFullYear(),K=String(Oe.getMonth()+1).padStart(2,"0"),$e=String(Oe.getDate()).padStart(2,"0");W.push({date:`${Re}-${K}-${$e}`,label:F[de],dayNum:$e,month:["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Oe.getMonth()],isToday:`${Re}-${K}-${$e}`===Lt()})}const xe=la.filter(de=>de.date&&de.scope!=="personal"&&W.some(Oe=>Oe.date===de.date)&&(y||de.assignee===g.name||de.by===g.name||T.some(Oe=>Oe.id===de.pid))).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||"")),X=la.filter(de=>de.date&&de.scope==="personal"&&de.by===g.name&&W.some(Oe=>Oe.date===de.date)).sort((de,Oe)=>(de.date||"").localeCompare(Oe.date||"")||(de.time||"").localeCompare(Oe.time||""));return e.jsxs("div",{style:{...Ke,marginBottom:14,borderLeft:`3px solid ${u.acc}`},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10},children:[e.jsxs("b",{style:{fontSize:13},children:["📅 ",H?g.name.split(" ")[0]+"'s":"My"," Week — ",W[0].month," ",W[0].dayNum," – ",W[6].month," ",W[6].dayNum]}),e.jsxs("div",{style:{display:"flex",gap:4,alignItems:"center"},children:[e.jsxs("span",{style:{fontSize:10,color:u.tx2},children:[xe.length," company",X.length>0?` · ${X.length} personal`:""]}),e.jsx("button",{style:{...ot,padding:"3px 10px",fontSize:10},onClick:()=>Xi("schedule"),children:"View Full →"})]})]}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4},children:W.map(de=>{const Oe=xe.filter($e=>$e.date===de.date),Re=X.filter($e=>$e.date===de.date),K=[...Oe,...Re].sort(($e,ze)=>($e.time||"").localeCompare(ze.time||""));return e.jsxs("div",{style:{borderRadius:6,border:`1px solid ${de.isToday?u.acc:u.bdr}`,background:de.isToday?u.acc+"08":"transparent",minHeight:90,padding:6},children:[e.jsxs("div",{style:{textAlign:"center",marginBottom:4},children:[e.jsx("div",{style:{fontSize:9,fontWeight:700,color:de.isToday?u.acc:u.tx2,textTransform:"uppercase"},children:de.label}),e.jsx("div",{style:{fontSize:14,fontWeight:de.isToday?800:600,color:de.isToday?u.acc:u.tx,lineHeight:1},children:de.dayNum})]}),K.length===0?e.jsx("div",{style:{fontSize:9,color:u.tx3,textAlign:"center",padding:"4px 0"},children:"—"}):K.map($e=>{var ve;const ze=vl($e.pid),et=$e.scope==="personal";return e.jsxs("div",{style:{fontSize:9,padding:"3px 4px",marginBottom:2,borderRadius:4,background:et?"#7c3aed15":ze+"18",borderLeft:`2px solid ${et?"#7c3aed":ze}`,lineHeight:1.3,overflow:"hidden"},children:[e.jsxs("div",{style:{fontWeight:700,color:et?"#7c3aed":u.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[$e.time?$e.time+" ":"",$e.title,et?" 🔒":""]}),$e.assignee&&!et&&e.jsx("div",{style:{color:u.tx2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:$e.assignee}),$e.pid&&e.jsxs("div",{style:{color:ze,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"},children:[((ve=Wt.find(ye=>ye.id===$e.pid))==null?void 0:ve.name)||""," ",e.jsx(__gcStable("or",or),{pid:$e.pid})]})]},$e.id)})]},de.date)})})]})})(),(function(){var _now=new Date();var _isAdm=(String(sr.payType||"").toLowerCase()==="owner"||sr.role==="Admin"||/office/i.test(sr.role||""))&&!yi;var _myP=_isAdm?null:new Set(Wt.filter(function(p){return (window._gcSamePM?window._gcSamePM(p.pm,vo,p):p.pm===vo.name)}).map(function(p){return p.id}));var _days=[];for(var _i=0;_i<14;_i++){var _d=new Date(_now);_d.setDate(_now.getDate()+_i);_days.push(_d.toISOString().slice(0,10))}var _dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];var _sc=la.filter(function(s){if(!s.date||!_days.includes(s.date))return false;if(_isAdm)return true;return s.by===vo.name||s.assignee===vo.name||(s.pid&&_myP.has(s.pid))});var _bd={};_days.forEach(function(d){_bd[d]=_sc.filter(function(s){return s.date===d})});return e.jsxs("div",{style:{...Ke,marginBottom:10},children:[e.jsx("b",{style:{fontSize:14},children:_isAdm?"📅 Company Schedule":"📅 My Schedule"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginTop:8},children:_days.map(function(day){var _dt=new Date(day+"T12:00:00");var _isT=day===_now.toISOString().slice(0,10);var _ev=_bd[day]||[];return e.jsxs("div",{key:day,style:{background:_isT?"#d4a01722":(u.card||"#1a2e45"),border:"1px solid "+(_isT?"#d4a017":(u.bdr||"#1e3a5f")),borderRadius:5,padding:"6px 5px",minHeight:65,fontSize:10},children:[e.jsx("div",{style:{fontWeight:700,color:_isT?"#d4a017":(u.tx2||"#64748b"),fontSize:9},children:_dn[_dt.getDay()]+" "+(_dt.getMonth()+1)+"/"+_dt.getDate()}),_ev.length===0?e.jsx("div",{style:{color:"#475569",fontSize:9},children:"—"}):_ev.slice(0,3).map(function(ev,ei){return e.jsx("div",{key:ei,style:{background:"#d4a01711",borderLeft:"2px solid #d4a017",borderRadius:2,padding:"2px 4px",marginBottom:2,fontSize:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},children:ev.title||"—"})})]})})}),e.jsx("button",{onClick:function(){D("schedule")},style:{marginTop:6,background:"none",border:"1px solid "+(u.bdr||"#1e3a5f"),color:"#d4a017",borderRadius:4,padding:"4px 12px",cursor:"pointer",fontSize:10,fontWeight:600,width:"100%"},children:"Open Full Schedule →"})]})})(),e.jsxs("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10},children:[e.jsx("div",{}),e.jsxs("div",{style:Ke,children:[e.jsx("b",{style:{fontSize:13},children:"Recent Activity"}),e.jsxs("div",{style:{marginTop:8,fontSize:12,color:u.tx2},children:[B.slice(-5).reverse().map(N=>e.jsxs("div",{style:{padding:"3px 0",borderBottom:`1px solid ${u.bdr}`},children:[N.desc," — ",e.jsx("b",{children:ue(N.amt)})]},N.id)),B.length===0&&e.jsx("p",{style:{color:u.tx3},children:"No expenses yet"})]})]})]})]})},To=({title:g,desc:te,items:H,setItems:_,fid:Q,fields:y,cols:T,onAdd:L,sortKey:Y,sortDir:We,allowDelete:B,allowEdit:U})=>{const[Z,w]=ce.useState(!1),[E,q]=ce.useState(null),[_dragIdx,_setDragIdx]=ce.useState(null),ke={};y.forEach(Ee=>{ke[Ee.k]=Ee.def||""});const[z,De]=ce.useState(ke),Ve=(Ee,Je)=>De(W=>({...W,[Ee]:Je})),xt=[...H];Y&&xt.sort((Ee,Je)=>{const W=Ee[Y]||"",F=Je[Y]||"";if(Y==="date"||Y.toLowerCase().includes("date")){const xe=W?new Date(W+"T00:00:00"):new Date(0),X=F?new Date(F+"T00:00:00"):new Date(0);return We==="desc"?X-xe:xe-X}return We==="desc"?String(F).localeCompare(String(W)):String(W).localeCompare(String(F))});Q==="LEAD"&&window._gcLA&&window._gcLA.sort(xt);const M=xt.filter(Ee=>!rt||JSON.stringify(Ee).toLowerCase().includes(rt.toLowerCase())),N=Ee=>{const Je={};y.forEach(W=>{Je[W.k]=Ee[W.k]||W.def||""}),De(Je),q(Ee),w(!0)};return e.jsxs("div",{children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8},children:[e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:0},children:g}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:0},children:te})]}),e.jsxs("div",{style:{display:"flex",gap:6},children:[e.jsx("input",{style:{...R,width:140},placeholder:"Search...",value:rt,onChange:Ee=>Et(Ee.target.value),autoComplete:"off",name:"gc-projsearch",type:"search"}),e.jsx("button",{style:ht,onClick:()=>{q(null),De(ke),w(!Z)},children:"+ Add"})]})]}),Z&&e.jsxs("div",{style:{...Ke,marginBottom:12},children:[e.jsx("b",{style:{fontSize:13,marginBottom:6,display:"block"},children:E?"Edit Item":"Add New"}),e.jsx("div",{style:{display:"grid",gridTemplateColumns:`repeat(${Math.min(y.length,3)},1fr)`,gap:8},children:y.map(Ee=>e.jsx(re,{l:Ee.l,s:Ee.span,children:Ee.type==="select"?e.jsx("select",{style:R,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),children:Ee.opts.map(Je=>typeof Je=="string"?e.jsx("option",{children:Je},Je):e.jsx("option",{value:Je.v,children:Je.l},Je.v))}):Ee.type==="textarea"?e.jsx("textarea",{style:{...R,minHeight:80},value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value)}):Ee.type==="vendor"?e.jsxs(e.Fragment,{children:[e.jsx("input",{style:R,list:"vl_"+Ee.k,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:"Type or select..."}),e.jsx("datalist",{id:"vl_"+Ee.k,children:kn.map(Je=>e.jsx("option",{value:Je.name},Je.id))})]}):e.jsx("input",{style:R,type:Ee.type||"text",step:Ee.step,value:z[Ee.k],onChange:Je=>Ve(Ee.k,Je.target.value),placeholder:Ee.ph})},Ee.k))}),e.jsxs("div",{style:{display:"flex",gap:6,marginTop:8},children:[e.jsx("button",{style:ht,onClick:()=>{if(y.some(Ee=>(Ee.req||(Ee.reqNew&&!E))&&!z[Ee.k])){se("Required fields missing");return}if(Q==="LEAD"&&window._gcLA&&window._gcLA.formOk&&!window._gcLA.formOk(z,E,se))return;if(E){const Ee={...E,...z};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),_(L?Je=>Je.map(W=>W.id===E.id?Ee:W):Je=>Je.map(W=>W.id===E.id?Ee:W)),q(null),De(ke),w(!1),se("Updated")}else{const Ee={...z,id:$t(Q),date:z.date||Lt(),by:n.name};z.amt!=null&&(Ee.amt=parseFloat(z.amt)||0),L?L(Ee):_(Je=>[...Je,Ee]),De(ke),w(!1),se("Added")}},children:E?"Update":"Save"}),e.jsxs("div",{style:{display:"flex",alignItems:"center",gap:6},children:[e.jsx("button",{type:"button",style:{padding:"6px 14px",background:"#2563eb",color:"#fff",border:"none",borderRadius:4,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"},onClick:function(ev){ev.preventDefault();var inp2=document.createElement("input");inp2.type="file";inp2.multiple=true;inp2.accept=".pdf,.doc,.docx,.jpg,.png,.xls,.xlsx";inp2.onchange=function(){var files=Array.from(inp2.files);var nf=[];var done=0;files.forEach(function(fl){var fr=new FileReader();fr.onload=function(e2){nf.push({name:fl.name,data:e2.target.result,type:fl.type,size:fl.size});done++;if(done===files.length){Ve("files",[...(z.files||[]),...nf]);se(nf.length+" file(s) attached")}};fr.readAsDataURL(fl)});};inp2.click()},children:"📎 Attach Files"}),(z.files||[]).length>0&&e.jsx("span",{style:{fontSize:10,color:"#22c55e"},children:(z.files||[]).length+" file(s) attached"})]}),e.jsx("button",{style:ot,onClick:()=>{w(!1),q(null)},children:"Cancel"}),E&&e.jsx("button",{style:{...ot,fontSize:13,padding:"6px 14px",fontWeight:600,color:u.red},onClick:()=>{if(Q==="LEAD"&&window._gcLDEL){var _gid=E.id;q(null),w(!1);window._gcLDEL.ask([_gid]);return}confirm("Delete this item?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",E.id),_(Ee=>Ee.filter(Je=>Je.id!==E.id)),q(null),w(!1),se("Deleted"))},children:"Delete"})]})]}),H.length===0?e.jsx(Zn,{t:`No ${g.toLowerCase()}`,d:"Click + Add to get started.",onA:()=>w(!0),al:"+ Add"}):e.jsx("div",{style:{border:`1px solid ${u.bdr}`,borderRadius:6,overflow:"hidden"},children:e.jsx("div",{style:{overflowX:"auto"},children:e.jsxs("table",{"data-gc-fid":Q,style:{width:"100%",borderCollapse:"collapse",fontSize:12},children:[e.jsx("thead",{children:e.jsxs("tr",{style:{background:"#f3f5f9"},children:[Q==="LEAD"&&e.jsx("th",{style:{padding:"7px 6px",width:28,borderBottom:`1px solid ${u.bdr}`},children:e.jsx("input",{type:"checkbox",className:"gcx-ldel-all",title:"Select all shown","aria-label":"Select all shown"})},"_gcsel"),T.map(Ee=>e.jsx("th",{style:{padding:"7px 10px",textAlign:"left",fontWeight:600,fontSize:10,color:u.tx2,textTransform:"uppercase",borderBottom:`1px solid ${u.bdr}`,whiteSpace:"nowrap"},children:Ee.l},Ee.k)),e.jsx("th",{style:{padding:"7px 10px",width:60,borderBottom:`1px solid ${u.bdr}`}})]})}),e.jsx("tbody",{children:M.map((Ee,Je)=>e.jsxs("tr",{draggable:true,onDragStart:function(){_setDragIdx(Je)},onDragOver:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="2px solid #d4a017"},onDragLeave:function(ev){ev.currentTarget.style.borderTop="none"},onDrop:function(ev){ev.preventDefault();ev.currentTarget.style.borderTop="none";if(_dragIdx!==null&&_dragIdx!==Je){var _ia=M[_dragIdx],_ib=M[Je],_dn=_dragIdx<Je;if(_ia&&_ib){_(function(full){var arr=(Array.isArray(full)?full:H).slice(),_f=function(x){var i=arr.indexOf(x);return i<0&&x&&x.id!=null?arr.findIndex(function(y){return y&&y.id===x.id}):i},i=_f(_ia);if(i<0)return full;arr.splice(i,1);var j=_f(_ib);if(j<0)return full;arr.splice(_dn?j+1:j,0,_ia);return arr})}}_setDragIdx(null)},onDragEnd:function(){_setDragIdx(null)},"data-gc-id":Q==="LEAD"?Ee.id:void 0,"data-gc-new":Q==="LEAD"&&window._gcLA&&window._gcLA.isNew(Ee)?"1":void 0,style:{borderBottom:`1px solid ${u.bdr}`,cursor:"grab",opacity:_dragIdx===Je?0.4:1},children:[Q==="LEAD"&&e.jsx("td",{style:{padding:"6px 6px",width:28},children:e.jsx("input",{type:"checkbox",className:"gcx-ldel-chk","data-id":Ee.id,"aria-label":"Select this lead"})},"_gcsel"),T.map(W=>e.jsx("td",{style:{padding:"6px 10px"},children:W.r?W.r(Ee):Ee[W.k]||"—"},W.k)),e.jsxs("td",{style:{padding:"6px 10px",whiteSpace:"nowrap"},children:[e.jsx("button",{onClick:()=>N(Ee),style:{background:"none",border:"none",color:u.acc2,cursor:"pointer",fontSize:11,marginRight:4},title:"Edit",children:"✏️"}),Q==="LEAD"&&window._gcLDEL?e.jsxs(e.Fragment,{children:[e.jsx("button",{type:"button",className:"gcx-ldel-bin","data-gc-ldel":Ee.id,style:{background:"none",cursor:"pointer",fontSize:12},title:"Delete this lead…","aria-label":"Delete this lead",children:"🗑"}),e.jsx("button",{type:"button",className:"gcx-ldel-more",title:"More","aria-label":"More",children:"⋯"})]}):e.jsx("button",{onClick:()=>{confirm("Delete?")&&(Q==="EXP"&&window._gcTombstone&&window._gcTombstone("expenses",Ee.id),_(W=>W.filter(F=>F.id!==Ee.id)),se("Deleted"))},style:{background:"none",border:"none",color:u.red,cursor:"pointer",fontSize:11},title:"Delete",children:"🗑"})]})]},Ee.id||Je))})]})})})]})},id=()=>{var Ne;const[g,te]=ce.useState(!1),[H,_]=ce.useState(function(){try{return sessionStorage.getItem("grayco_subtab")||"overview"}catch(e){return"overview"}}),[_tabOrd,_setTabOrd]=ce.useState(null),Q={name:"",client:"",type:"Residential Reno",address:"",contract:"",status:"bidding",pm:"",soldBy:"",scope:""},[y,T]=ce.useState(Q),[L,Y]=ce.useState({date:"",type:"Rough-In",inspector:"",notes:""}),[We,B]=ce.useState(!1),[U,Z]=ce.useState(""),[w,E]=ce.useState(!1),[q,ke]=ce.useState(!1),[z,De]=ce.useState({}),[Ve,xt]=ce.useState(String(new Date().getFullYear())),[M,N]=ce.useState((sr.role==="Admin"||/office/i.test(sr.role||"")||((sr.email||"").toLowerCase()==="office@grayco-cs.com"))?"all":"mine"),[Ee,_JeRaw]=ce.useState((function(){try{return localStorage.getItem("gc_proj_subtab")||"pipeline";}catch(e){return "pipeline";}})()),Je=function(_v){try{if(typeof _v==="string")localStorage.setItem("gc_proj_subtab",_v);}catch(e){}return _JeRaw(_v);},[W,F]=ce.useState(null),[xe,X]=ce.useState({k:"startDate",d:"desc"}),[_qt,_Dt]=ce.useState(!1),[_ut,_Xt]=ce.useState(null),[_Bt,_gn]=ce.useState(null);if(be&&((Ne=be.id)!=null&&(Ne.startsWith("PRJ")||Ne.charAt(0)==="P"&&Wt.some(G=>G.id===Ne)))){try{sessionStorage.setItem("grayco_subtab",H)}catch(_x){}const j=Wt.find(G=>G.id===be.id)||be,kt=ji(j.id),qe=qs(j.id),Pt=fa.filter(G=>G.pid===j.id),jt=Ea.filter(G=>G.pid===j.id&&G.type!=="mpo"&&G.status!=="denied"),at=hr.filter(G=>G.pid===j.id),Tt=Gi.filter(G=>G.pid===j.id),le=Er.filter(G=>G.pid===j.id),Mt=Ba.filter(G=>G.pid===j.id),ln=Ts.filter(G=>G.pid===j.id),ra=[...la.filter(G=>G.pid===j.id)].sort((G,St)=>(G.date||"").localeCompare(St.date||"")),ea=$s.filter(G=>G.pid===j.id),_pest=(fa||[]).filter(G=>G&&G.pid===j.id)/* patch JOBFILL: own estimates only — a same-customer match put one GC job's estimate on all its jobs */,Ln=Gs.filter(G=>G.pid===j.id),ja=Pt.flatMap(G=>G.mats||[]),wa=gt.filter(G=>G.pid===j.id),ii=st.filter(G=>G.pid===j.id&&G.projectName!==void 0&&G.title===void 0),ui=wa.filter(G=>G.cat==="Plans/Drawings"),va=j.subs||[],Ar=[
   {id:"overview",         l:"Overview"},
   {id:"schedule",         l:"Schedule ("+ra.length+")"},
   {id:"scope",            l:"Scope"},
@@ -54897,8 +54897,8 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
        Only a real job id is accepted here. */
     try{ if(typeof window._gcMatchJob==='function'){ var r=window._gcMatchJob(text); if(typeof r==='string' && r) return r; if(r && r.confident===true && r.job && typeof r.job.id==='string') return r.job.id; } }catch(e){}
     var projs=(crm().projects)||[]; var t=(text||'').toLowerCase();
-    var hit=projs.find(function(p){ var po=String(p.autoPO||p.po||'').toLowerCase(), nm=String(p.name||'').toLowerCase(); return (po&&t.indexOf(po)>=0)||(nm&&nm.length>3&&t.indexOf(nm)>=0); });
-    return hit?hit.id:'';
+    var hits=projs.filter(function(p){ var po=String(p.autoPO||p.po||'').toLowerCase().replace(/[^a-z0-9]/g,''), nm=String(p.name||'').toLowerCase(); return (po&&new RegExp('(^|[^a-z0-9])'+po+'([^a-z0-9]|$)').test(t))||(nm&&nm.length>3&&t.indexOf(nm)>=0); });   /* patch JOBFILL: one clear match or none */
+    return hits.length===1?hits[0].id:''
   }
 
   // Run the scan. reconcile=true will apply the safe auto-fixes; otherwise it's a dry preview.
@@ -145071,7 +145071,7 @@ function evaluate(pid, prev){   /* prev: the stage just before this change (from
     cur = prev && STAGE_KEYS.indexOf(prev) >= 0 ? prev : 'lead';   /* an old job: only what this change crossed */
   }
   if (rank(d) <= rank(cur)) return;
-  if (!live && !p.schedPlan) {   /* moved while nobody watched (another computer ran it, or an import): just record */
+  if ((!live && !p.schedPlan) || p.importedHistory || p.noAutomations) {   /* patch JOBFILL: imported history only records its stage */   /* moved while nobody watched (another computer ran it, or an import): just record */
     A.saveProject(pid, function(q){ if (rank(q.jobStage) >= rank(d)) return false; q.jobStage = d; q.jobStageAt = Object.assign({}, q.jobStageAt || {}); q.jobStageAt[d] = nowIso(); }); return;
   }
   var fired = Object.assign({}, p.autoRan || {});
@@ -145101,7 +145101,7 @@ function runStage(k, pid){
 /* ── draws: drafted when the progress reaches a milestone (any path) ── */
 var DRAFTED = {};
 function ensureDraws(pid){
-  var p = A.proj(pid); if (!p || !A.jobAuto(p, 'invoiceEmail') && !A.jobAuto(p, 'drawInvoices')) return null;
+  var p = A.proj(pid); if (!p || p.importedHistory || p.noAutomations || !A.jobAuto(p, 'invoiceEmail') && !A.jobAuto(p, 'drawInvoices')) return null;   /* patch JOBFILL: never for imported history */
   if (typeof W._gcDrawMilestones !== 'function' || typeof W._gcClientInvoiced !== 'function') return null;
   var contract = num(p.contract), pct = num(p.pct); if (!contract || !pct) return null;
   var ms = W._gcDrawMilestones(p), sur = ms.filter(function(m){ return pct >= m.at; });
@@ -145207,7 +145207,8 @@ STAGE_RUN.inspection = function(pid){
 };
 STAGE_RUN.substantial = function(pid){
   var p = A.proj(pid); if (!p || !A.jobAuto(p, 'punchList')) return;
-  var tpl = pickTemplate(p), items = ['Final walkthrough with the customer'].concat(tpl ? tpl.punch : ['Paint touch-ups', 'Final clean']);
+  var tpl = pickTemplate(p), items = (W._gcPunchWalkthrough ? W._gcPunchWalkthrough(p, tpl) : true) ? ['Final walkthrough with the customer'] : [];   /* patch JOBFILL (owner 10/23 "we only did ceilings"): no generic list — the PM ticks the scope's suggestions */
+  try { if (W._gcPunchSuggestSave) W._gcPunchSuggestSave(pid, tpl); } catch (e) {}
   return Promise.resolve(W.idbGet ? W.idbGet('punch') : null).then(function(cur){
     var list = Array.isArray(cur) ? cur.slice() : arr(crm().punch).slice(), have = {}, n = 0;
     list.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
@@ -145580,7 +145581,7 @@ W._gcSchedTemplates = {
 };
 W._gcPermits = function(pid){ return permitsOf(pid); };
 W._gcPermits.seed = seedPermits; W._gcPermits.table = permitTable; W._gcPermits.officeFor = function(p){ return officeFor(A.proj(p) || p); };
-W._gcAut3 = { evaluate: evaluate, derive: function(pid){ return derive(A.proj(pid)); }, runStage: runStage, ensureDraws: ensureDraws, closeoutCoc: closeoutCoc, closeoutWarranty: closeoutWarranty, markLive: markLive,
+W._gcAut3 = { pickTemplate: pickTemplate, evaluate: evaluate, derive: function(pid){ return derive(A.proj(pid)); }, runStage: runStage, ensureDraws: ensureDraws, closeoutCoc: closeoutCoc, closeoutWarranty: closeoutWarranty, markLive: markLive,
   stageTick: stageTick, depTick: depTick, insTick: insTick, checkupTick: checkupTick, contractTick: contractTick, warrantyOf: warrantyOf,
   state: function(pid){ var p = A.proj(pid); return p ? { stage: p.jobStage, derived: derive(p), ran: p.autoRan || {}, plan: p.schedPlan || null, permits: permitsOf(pid) } : null; } };
 
@@ -169003,5 +169004,1074 @@ function tick(){
 }
 tick(); RI.call(W, tick, 1500);
 try { console.log('[GC] 🏛 State tax settings — Mississippi table + unemployment by state (patch PAY2)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-jobfill">
+/* __GC_PATCH_JOBFILL__ — EVERY JOB TAB SAYS WHY IT IS EMPTY, AND THINGS LAND ON THE RIGHT JOB (owner 10/23: "have we made
+   sure all of these get auto documents in them and everything gets put where it needs to be, everything should have
+   something in it right?" — and the Somerville job of A & B showed the ROTC Cordova estimate of A & B).
+     • a job tab with nothing in it shows ONE line: where its things come from, and a button that fixes it
+       (🔗 Unmatched expenses / invoices for this job — suggested by PO, address, customer, name; an admin links each
+       with one tap; nothing is linked silently);
+     • 📝 Estimates: only the job's own estimates (the React tab matched every estimate of the same customer — a GC with
+       two jobs saw both jobs' estimates). An unlinked estimate that looks like this job shows as "Suggested — link?";
+       admins get "↔ Move to job…" on each linked one (estimate.pid, logged);
+     • 📋 Job completeness (admin; Projects list button + window._gcJobCompleteness()): every open job ✓ / ✗ per tab,
+       most missing first, each ✗ opens the job on that tab — plus "Linked to the wrong job?" (an estimate whose own
+       PO / name points at another job; an estimate PDF filed on a different job than its estimate);
+     • safe filling, logged (gc_kv gc_jobfill_log): an estimate PDF whose estimate is on a job but the PDF on none →
+       that job; an unlinked QuickBooks expense whose memo carries exactly one job's PO → that job. Nothing else moves
+       by itself. Internal only — it never sends anything.
+   API: window._gcJobFill = { reasonFor(job, tab), suggest(job, kind), link(kind, id, pid), moveEstimate(id, pid),
+        completeness(), wrongLinks(), autofill() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_JOBFILL__) return; window.__GC_PATCH_JOBFILL__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(n){ n = +n || 0; return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function crm(){ return W._crm || {}; }
+function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
+function isAdmin(){ var u = me(); return /admin|owner/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function isMM(){ try { return !!(W._gcIsMM && W._gcIsMM()); } catch (e) { return false; } }
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function paused(){ try { var st = W._gcPause && W._gcPause.state ? W._gcPause.state() : null; return !!(st && (st.paused || (st.flag && st.flag.on))); } catch (e) { return false; } }   /* ⏸ data-entry mode (patch PAUSE) */
+
+/* ── the data ── */
+function projects(){ return arr(crm().projects).filter(Boolean); }
+var EST = { at: 0, list: null };
+function estimates(){
+  /* the CRM's own list: read through its setter (returning prev changes nothing), at most every 4 s; a change made here
+     clears the cache */
+  if (!EST.list || Date.now() - EST.at > 4000) {
+    var out = null;
+    try { if (typeof W._gcSetEstimates === 'function') W._gcSetEstimates(function(prev){ out = prev; return prev; }); } catch (e) {}
+    if (out) { EST.list = out; EST.at = Date.now(); }
+  }
+  return arr(EST.list || crm().estimates).filter(Boolean);
+}
+var DOC = { at: 0, list: null };
+function docs(){
+  if (!DOC.list || Date.now() - DOC.at > 4000) {
+    var out = null;
+    try { if (typeof W._setProjectDocs === 'function') W._setProjectDocs(function(prev){ out = prev; return prev; }); } catch (e) {}
+    if (out) { DOC.list = out; DOC.at = Date.now(); }
+  }
+  return arr(DOC.list || W._gcProjectDocs || crm().projectDocs).filter(Boolean);
+}
+function expenses(){ return arr(crm().expenses).filter(function(x){ return x && x.type !== 'mpo' && x.status !== 'denied'; }); }
+function invoices(){ return arr(crm().invoices).filter(Boolean); }
+function schedule(){ return arr(crm().schedule).filter(Boolean); }
+function isOpen(p){ return p && !/^(completed|complete|closed|lost|cancel+ed|dead|archived|paid)$/i.test(s(p.status)) && !p.deleted && !p._deleted; }
+function estPid(e){ return s(e.pid); }   /* the same rule as the job's stat strip (Pt: pid === job id) */
+function jobById(id){ id = s(id); return projects().filter(function(p){ return p.id === id; })[0] || null; }
+function label(p){ try { if (W._gcJobLabel) return W._gcJobLabel(p); } catch (e) {} return (p.autoPO ? 'PO ' + p.autoPO + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address) : ''); }
+function openJob(){
+  var j = W._gcOpenProject && W._gcOpenProject.id ? W._gcOpenProject : null;
+  if (!j) { var id = ''; try { id = sessionStorage.getItem('grayco_openpid') || ''; } catch (e) {} j = jobById(id); }
+  return j && jobById(j.id) || j;
+}
+function subtab(){ try { return sessionStorage.getItem('grayco_subtab') || 'overview'; } catch (e) { return 'overview'; } }
+
+/* ── matching helpers ── */
+function norm(t){ return low(t).replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(inc|llc|co|corp|company|the|construction|services?)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function addrKey(a){ var m = low(a).replace(/[.,#]/g, ' ').match(/(\d+)\s+([a-z0-9]+)/); return m ? m[1] + ' ' + m[2] : ''; }
+function tokens(t){ return norm(t).split(' ').filter(function(w){ return w.length > 2; }); }
+function poOf(p){ return s(p.autoPO || p.poNumber || p.po); }
+function hasPO(text, po){ return !!po && new RegExp('(^|[^A-Za-z0-9])' + po.replace(/[^A-Za-z0-9]/g, '') + '([^A-Za-z0-9]|$)', 'i').test(s(text)); }
+function openJobsOfClient(cl){ var n = norm(cl); if (!n) return []; return projects().filter(function(p){ return isOpen(p) && norm(p.client) === n; }); }
+function textOf(x){ return [x.desc, x.description, x.memo, x.note, x.notes, x.vendor, x.payee, x.client, x.customer, x.name, x.projName, x.po, x.projPO, x.ref, x.invNum, x.address, x.jobAddress].map(s).join(' | '); }
+/* the jobs whose PO appears in a text — the only match we trust on its own */
+function posIn(text){ return projects().filter(function(p){ return poOf(p) && hasPO(text, poOf(p)); }); }
+function score(job, x){
+  var t = textOf(x), sc = 0, why = [];
+  if (hasPO(t, poOf(job)) || s(x.projPO) === poOf(job) && poOf(job)) { sc += 60; why.push('PO ' + poOf(job)); }
+  var ak = addrKey(job.address); if (ak && addrKey(t.replace(/\|/g, ' ')) === ak || ak && low(t).indexOf(ak) >= 0) { sc += 30; why.push('address'); }
+  var cl = norm(job.client), xc = norm(x.client || x.customer || x.vendor && '');
+  if (cl && (xc === cl || norm(t).indexOf(cl) >= 0)) { var one = openJobsOfClient(job.client).length <= 1; sc += one ? 20 : 6; why.push(one ? 'customer' : 'same customer, ' + openJobsOfClient(job.client).length + ' open jobs'); }
+  var nt = tokens(job.name).filter(function(w){ return cl.indexOf(w) < 0; }), xt = tokens(t), hit = nt.filter(function(w){ return xt.indexOf(w) >= 0; });
+  if (nt.length && hit.length) { var add = Math.round(20 * hit.length / nt.length); sc += add; why.push('name: ' + hit.join(' ')); }
+  return { score: sc, why: why };
+}
+
+/* ── suggestions: things on NO job that look like this job ── */
+function suggest(job, kind){
+  if (!job) return [];
+  var pool = kind === 'expenses' ? expenses().filter(function(x){ return !s(x.pid); })
+    : kind === 'invoices' ? invoices().filter(function(x){ return !s(x.pid) && (x.type || 'client') === 'client'; })
+    : kind === 'estimates' ? estimates().filter(function(x){ return !estPid(x) && !x.deleted; })
+    : kind === 'docs' ? docs().filter(function(x){ return !s(x.pid); }) : [];
+  return pool.map(function(x){ var r = score(job, x); return { item: x, score: r.score, why: r.why }; })
+    .filter(function(r){ return r.score >= 20; }).sort(function(a, b){ return b.score - a.score; }).slice(0, 25);
+}
+
+/* ── the log (gc_kv gc_jobfill_log; newest first, 400 kept) ── */
+function log(entry){
+  entry.at = new Date().toISOString(); entry.by = s(me().name) || s(me().email);
+  var L = []; try { L = JSON.parse(localStorage.getItem('gc_jobfill_log') || '[]') || []; } catch (e) {}
+  L.unshift(entry); L = L.slice(0, 400);
+  try { localStorage.setItem('gc_jobfill_log', JSON.stringify(L)); } catch (e) {}
+  kvPut('gc_jobfill_log', L);
+}
+function sbUrl(){ var u = ''; try { u = localStorage.getItem('grayco_sb_url') || ''; } catch (e) {} return (u || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvPut(key, value){
+  try {
+    return fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; });
+  } catch (e) { return Promise.resolve(false); }
+}
+
+/* ── linking (the CRM's own setters, so it saves and syncs like any edit) ── */
+function patchList(setter, id, fields, after){
+  if (typeof setter !== 'function') return false;
+  var done = false;
+  setter(function(prev){ return arr(prev).map(function(x){ if (x && x.id === id && !(fields.pid && s(x.pid) === fields.pid)) { done = true; return Object.assign({}, x, fields); } return x; }); });
+  /* React runs the updater on its next render — report (log) only once it really changed something */
+  later(function(){ if (done && after) after(); }, 300);
+  return true;
+}
+function link(kind, id, pid, how){
+  var job = jobById(pid); if (!job) return false;
+  var f = { pid: pid, jobLinkedAt: new Date().toISOString(), jobLinkedBy: s(me().name), jobLinkedHow: how || 'manual' };
+  var ok = false, done = function(){ log({ kind: kind, id: id, to: pid, toLabel: label(job), how: how || 'manual' }); };
+  if (kind === 'expenses') ok = patchList(W._setExpenses, id, f, done);
+  else if (kind === 'invoices') ok = patchList(W._setInvoices, id, Object.assign(f, { po: job.autoPO || '' }), done);
+  else if (kind === 'docs') { DOC.at = 0; ok = patchList(W._setProjectDocs, id, f, done); }
+  else if (kind === 'estimates') return moveEstimate(id, pid, how);
+  return ok;
+}
+function moveEstimate(id, pid, how){
+  var job = jobById(pid); if (!job) return false;
+  var from = (estimates().filter(function(e){ return e.id === id; })[0] || {}).pid || '';
+  EST.at = 0;
+  return patchList(W._gcSetEstimates, id, { pid: pid, projName: job.name || '', projPO: job.autoPO || '', jobLinkedAt: new Date().toISOString(), jobLinkedBy: s(me().name), jobLinkedHow: how || 'manual' },
+    function(){ log({ kind: 'estimates', id: id, from: from, to: pid, toLabel: label(job), how: how || 'manual' }); });
+}
+
+/* ── why a tab is empty (one line + the fix) ── */
+var CC_HINT = 'GrayCo Photos (CompanyCam)';
+function ccLine(){ try { var j = W._gcCCSync && W._gcCCSync.text(); return j && j.ok === false ? j.text : ''; } catch (e) { return ''; } }
+function counts(job){
+  var pid = job.id;
+  return {
+    schedule: schedule().filter(function(x){ return x.pid === pid; }).length,
+    estimates: estimates().filter(function(e){ return estPid(e) === pid; }).length,
+    files: arr(job.files).length + docs().filter(function(d){ return d.pid === pid; }).length,
+    expenses: expenses().filter(function(x){ return x.pid === pid; }).length,
+    invoices: invoices().filter(function(x){ return x.pid === pid && (x.type || 'client') === 'client'; }).length,
+    plans: docs().filter(function(d){ return d.pid === pid && d.cat === 'Plans/Drawings'; }).length
+  };
+}
+function reasonFor(job, tab){
+  if (!job) return null;
+  var c = counts(job), po = poOf(job) || '(no PO yet)', sug, cc;
+  switch (tab) {
+    case 'expenses':
+      sug = suggest(job, 'expenses');
+      if (c.expenses && !sug.length) return null;
+      return { tab: tab, empty: !c.expenses, text: (c.expenses ? '' : 'No expenses yet. ') + 'The office puts expenses and receipts on the job (💳 Enter expenses) or imports the QuickBooks export into the 📥 Expense inbox; a QuickBooks memo with PO ' + po + ' goes on this job by itself. Card charges wait in 🔗 Match to Jobs.', fix: sug.length ? { k: 'expenses', t: '🔗 Unmatched expenses that look like this job (' + sug.length + ')' } : null, more: [{ k: 'matchall', t: '🔗 Match to Jobs (all)' }] };
+    case 'projectinvoices':
+      sug = suggest(job, 'invoices');
+      if (c.invoices && !sug.length) return null;
+      return { tab: tab, empty: !c.invoices, text: (c.invoices ? '' : 'No invoices on this job yet. ') + 'Invoices come from this tab, the deposit draft when the contract is signed, pay apps, and QuickBooks (matched by the QuickBooks customer or the PO ' + po + ').', fix: sug.length ? { k: 'invoices', t: '🔗 Unmatched invoices that look like this job (' + sug.length + ')' } : null };
+    case 'projestimates':
+      sug = suggest(job, 'estimates');
+      if (c.estimates && !sug.length) return { tab: tab, empty: false, text: '', fix: null, own: true };
+      return { tab: tab, empty: !c.estimates, text: c.estimates ? '' : 'No estimate is linked to this job. Estimates link when they are made from the job (+ New Estimate) or linked below.', fix: sug.length ? { k: 'estimates', t: 'Suggested — link? (' + sug.length + ')' } : null, own: true };
+    case 'scope':
+      if (c.estimates) return null;
+      sug = suggest(job, 'estimates');
+      return { tab: tab, empty: true, text: 'The scope is written from this job\'s estimate lines (prices removed) — no estimate is linked yet.', fix: sug.length ? { k: 'estimates', t: 'Link the estimate (' + sug.length + ' suggested)' } : { k: 'newest', t: '+ New estimate for this job' } };
+    case 'projfiles':
+      if (c.files) return null;
+      sug = suggest(job, 'docs');
+      return { tab: tab, empty: true, text: 'No files yet. Drop files here (Upload), or they arrive by themselves: papers signed in the customer portal, estimate PDFs of a linked estimate, contracts, change orders and pay apps made from this job.', fix: sug.length ? { k: 'docs', t: '🔗 Loose documents that look like this job (' + sug.length + ')' } : null, more: [{ k: 'matchall', t: '🔗 Match to Jobs (all)' }] };
+    case 'photos':
+      cc = ccLine();
+      if (!cc) return null;
+      return { tab: tab, empty: true, text: 'Photos come from ' + CC_HINT + ' and the field app. ' + cc, fix: { k: 'systems', t: '🧭 CompanyCam status' } };
+    case 'schedule':
+      if (c.schedule) return null;
+      return { tab: tab, empty: true, text: 'No schedule yet. It is built from the job type\'s template when the contract is signed in the portal, or import one (📥 Import Excel/CSV) / add items.', fix: null };
+    case 'punch':
+      return null;
+    case 'bidding':
+      if (c.plans) return null;
+      return { tab: tab, empty: true, text: 'No plans on this job. Plans from a bid invitation stay on the lead (📐 Plans) — upload them here, or add the plan link.', fix: null };
+  }
+  return null;
+}
+
+/* ── the banner under the job's tab strip ── */
+function strip(){
+  var b = [].slice.call(D.querySelectorAll('main button')).filter(function(x){ return /^Files & Docs \(/.test(s(x.textContent)); })[0];
+  return b ? b.parentElement : null;
+}
+function placeAfter(el, ref){
+  /* already right after the strip (only data-gc-keep blocks between)? leave it — never move what is in place */
+  var n = ref.nextElementSibling;
+  while (n && n !== el && n.getAttribute && n.getAttribute('data-gc-keep') === '1') n = n.nextElementSibling;
+  if (n === el) return;
+  ref.parentElement.insertBefore(el, ref.nextSibling);
+}
+var SIG = '';
+function sugHtml(job, kind){
+  var list = suggest(job, kind), admin = isAdmin();
+  if (!list.length) return '<div style="color:#64748b;padding:6px 0">Nothing unmatched looks like this job.</div>';
+  return list.map(function(r){
+    var x = r.item, t = kind === 'estimates' ? (s(x.name) || 'Estimate') + (x.status ? ' · ' + s(x.status) : '') + (x.date ? ' · ' + s(x.date).slice(0, 10) : '')
+      : kind === 'docs' ? s(x.name) + (x.cat ? ' · ' + s(x.cat) : '')
+      : money(x.amt != null ? x.amt : x.amount) + ' · ' + (s(x.desc || x.memo || x.vendor || x.payee || x.client || x.invNum) || '(no description)') + (x.date ? ' · ' + s(x.date).slice(0, 10) : '') + (x.source ? ' · ' + s(x.source) : '');
+    return '<div class="gcjf-row"><div style="flex:1;min-width:0"><div style="font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis">' + esc(t) + '</div><div style="font-size:11px;color:#64748b">matches: ' + esc(r.why.join(' · ')) + '</div></div>' +
+      (admin ? '<button type="button" class="gcjf-btn" data-gcjf-link="' + esc(kind) + '" data-id="' + esc(x.id) + '">Link to this job</button>' : '<span style="font-size:11px;color:#64748b">an admin links it</span>') + '</div>';
+  }).join('');
+}
+function ownEstimatesHtml(job){
+  if (!isAdmin()) return '';
+  var own = estimates().filter(function(e){ return estPid(e) === job.id; });
+  if (!own.length) return '';
+  var opts = projects().filter(function(p){ return isOpen(p) || p.id === job.id; }).map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === job.id ? ' selected' : '') + '>' + esc(label(p)) + '</option>'; }).join('');
+  return '<div style="margin-top:6px">' + own.map(function(e){
+    return '<div class="gcjf-row"><div style="flex:1;min-width:0;font-weight:700;color:#0f172a">' + esc(s(e.name) || 'Estimate') + (e.status ? ' <span style="font-weight:400;color:#64748b">· ' + esc(e.status) + '</span>' : '') + '</div>' +
+      '<select class="gcjf-sel" data-gcjf-movesel="' + esc(e.id) + '">' + opts + '</select><button type="button" class="gcjf-btn" data-gcjf-move="' + esc(e.id) + '">↔ Move to job</button></div>';
+  }).join('') + '</div>';
+}
+var OPEN = {};   /* which suggestion lists are unfolded, per job+kind */
+function paint(){
+  var st = strip(), host = D.getElementById('gc-jf-why');
+  if (!st || view() !== 'projects' || isMM()) { if (host) host.remove(); SIG = ''; return; }
+  var job = openJob(), tab = subtab();
+  if (!job) { if (host) host.remove(); SIG = ''; return; }
+  var r = reasonFor(job, tab);
+  var showOwn = tab === 'projestimates' && isAdmin() && estimates().some(function(e){ return estPid(e) === job.id; });
+  if (!r && !showOwn) { if (host) host.remove(); SIG = ''; return; }
+  var key = job.id + '|' + (r && r.fix ? r.fix.k : '');
+  var sig = JSON.stringify([job.id, tab, r, OPEN[key] || 0, showOwn ? ownEstimatesHtml(job) : '', OPEN[key] ? sugHtml(job, r.fix.k) : '']);
+  if (!host) { host = D.createElement('div'); host.id = 'gc-jf-why'; host.setAttribute('data-gc-keep', '1'); host.addEventListener('click', onClick); SIG = ''; }
+  placeAfter(host, st);
+  if (sig === SIG) return;
+  SIG = sig;
+  host.innerHTML = (r && r.text ? '<div class="gcjf-line">' + (r.empty ? '💡 ' : 'ℹ️ ') + esc(r.text) + '</div>' : '') +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:' + (r && r.text ? 6 : 0) + 'px">' +
+      (r && r.fix ? '<button type="button" class="gcjf-btn gcjf-main" data-gcjf-fix="' + esc(r.fix.k) + '">' + esc(r.fix.t) + (OPEN[key] ? ' ▴' : '') + '</button>' : '') +
+      (r && r.more ? r.more.map(function(m){ return '<button type="button" class="gcjf-btn" data-gcjf-fix="' + esc(m.k) + '">' + esc(m.t) + '</button>'; }).join('') : '') +
+    '</div>' +
+    (OPEN[key] && r && r.fix && /^(expenses|invoices|estimates|docs)$/.test(r.fix.k) ? '<div class="gcjf-list">' + sugHtml(job, r.fix.k) + '</div>' : '') +
+    (showOwn ? ownEstimatesHtml(job) : '');
+}
+function onClick(ev){
+  var t = ev.target.closest ? ev.target.closest('[data-gcjf-fix],[data-gcjf-link],[data-gcjf-move]') : null;
+  if (!t) return;
+  var job = openJob(); if (!job) return;
+  if (t.hasAttribute('data-gcjf-fix')) {
+    var k = t.getAttribute('data-gcjf-fix');
+    if (k === 'matchall') { if (W._gcOpenMatchToJobs) W._gcOpenMatchToJobs(); return; }
+    if (k === 'systems') { if (W._setView) W._setView('systems'); return; }
+    if (k === 'newest') { try { W._gcJumpToEstimates && W._gcJumpToEstimates(job.id, null); } catch (e) {} return; }
+    var key = job.id + '|' + k; OPEN[key] = OPEN[key] ? 0 : 1; SIG = ''; paint(); return;
+  }
+  if (!isAdmin()) return;
+  if (t.hasAttribute('data-gcjf-link')) {
+    var kind = t.getAttribute('data-gcjf-link'), id = t.getAttribute('data-id');
+    t.disabled = true; t.textContent = 'Linking…';
+    link(kind, id, job.id, 'suggested');
+    later(function(){ SIG = ''; paint(); }, 400); return;
+  }
+  if (t.hasAttribute('data-gcjf-move')) {
+    var eid = t.getAttribute('data-gcjf-move'), sel = D.querySelector('[data-gcjf-movesel="' + eid + '"]'), to = sel ? sel.value : '';
+    if (!to || to === job.id) { alert('Pick the job this estimate belongs to.'); return; }
+    var dest = jobById(to);
+    if (!confirm('Move this estimate to ' + label(dest) + '?')) return;
+    moveEstimate(eid, to, 'moved'); later(function(){ SIG = ''; paint(); }, 400);
+  }
+}
+
+/* ── 📋 Job completeness (admin) ── */
+var CHECKS = [
+  ['contract', 'Contract / estimate', 'overview'], ['schedule', 'Schedule', 'schedule'], ['scope', 'Scope', 'scope'], ['files', 'Files', 'projfiles'],
+  ['expenses', 'Expenses', 'expenses'], ['invoices', 'Invoices', 'projectinvoices'], ['photos', 'Photos', 'photos'], ['pm', 'PM', 'overview'],
+  ['contact', 'Customer contact', 'overview'], ['address', 'Address', 'overview']];
+function photoLinked(p){ return !!(p.ccProjectId || p.companyCamId || p.companycamId || p.ccId || p.photoCount || arr(p.photos).length); }
+function completeness(){
+  return projects().filter(isOpen).map(function(p){
+    var c = counts(p);
+    var ok = { contract: (+p.contract || 0) > 0 || c.estimates > 0, schedule: c.schedule > 0, scope: c.estimates > 0 || !!s(p.scope || p.sow), files: c.files > 0,
+      expenses: c.expenses > 0, invoices: c.invoices > 0, photos: photoLinked(p), pm: !!s(p.pm), contact: !!(s(p.clientPhone || p.phone) || s(p.clientEmail || p.email)), address: !!s(p.address) };
+    var miss = CHECKS.filter(function(k){ return !ok[k[0]]; }).length;
+    return { id: p.id, label: label(p), ok: ok, missing: miss };
+  }).sort(function(a, b){ return b.missing - a.missing || a.label.localeCompare(b.label); });
+}
+function wrongLinks(){
+  var out = [], ps = projects();
+  estimates().forEach(function(e){
+    var pid = estPid(e); if (!pid) return;
+    var job = jobById(pid); if (!job) return;
+    var po = s(e.projPO), byPO = po && ps.filter(function(p){ return poOf(p) === po; })[0];
+    if (byPO && byPO.id !== pid) { out.push({ kind: 'estimates', id: e.id, name: s(e.name) || 'Estimate', on: label(job), says: label(byPO), why: 'its PO is ' + po, suggest: byPO.id }); return; }
+    var nm = norm(e.projName || e.name), other = nm && ps.filter(function(p){ return p.id !== pid && norm(p.name) === nm; })[0];
+    if (other && norm(job.name) !== nm) out.push({ kind: 'estimates', id: e.id, name: s(e.name) || 'Estimate', on: label(job), says: label(other), why: 'its name matches that job', suggest: other.id });
+  });
+  var byId = {}; estimates().forEach(function(e){ byId[e.id] = e; });
+  docs().forEach(function(d){
+    var e = d.estId && byId[d.estId]; if (!e || !estPid(e) || !s(d.pid) || s(d.pid) === estPid(e)) return;
+    var a = jobById(d.pid), b = jobById(estPid(e)); if (!a || !b) return;
+    out.push({ kind: 'docs', id: d.id, name: s(d.name) || 'Estimate PDF', on: label(a), says: label(b), why: 'its estimate is on that job', suggest: b.id });
+  });
+  return out;
+}
+function openReport(){
+  if (!isAdmin()) { alert('Admins only.'); return; }
+  var old = D.getElementById('gc-jf-report'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-jf-report'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100095;background:rgba(6,12,20,.92);overflow-y:auto;padding:16px;font-family:Inter,-apple-system,Arial,sans-serif';
+  function render(){
+    var rows = completeness(), wrong = wrongLinks();
+    ov.innerHTML = '<div style="max-width:1100px;margin:0 auto;background:#fff;color:#0f172a;border-radius:14px;padding:18px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:0;font-size:19px">📋 Job completeness</h2><button type="button" data-jfr-close style="border:none;background:#e2e8f0;border-radius:16px;width:34px;height:34px;font-size:16px;cursor:pointer">✕</button></div>' +
+      '<div style="font-size:12.5px;color:#475569;margin:4px 0 12px">Every open job, most missing first. Tap a ✗ to open the job on that tab.</div>' +
+      (wrong.length ? '<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:10px;padding:10px;margin-bottom:12px"><b style="color:#b91c1c">Linked to the wrong job? (' + wrong.length + ')</b>' +
+        wrong.map(function(w){ return '<div class="gcjf-row" style="background:#fff"><div style="flex:1;min-width:0"><b>' + esc(w.name) + '</b> <span style="color:#64748b;font-size:12px">is on ' + esc(w.on) + ' — but ' + esc(w.why) + ': ' + esc(w.says) + '</span></div>' +
+          '<button type="button" class="gcjf-btn" data-jfr-fixwrong="' + esc(w.kind) + '" data-id="' + esc(w.id) + '" data-to="' + esc(w.suggest) + '">Move there</button></div>'; }).join('') + '</div>' : '') +
+      '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px"><thead><tr><th style="text-align:left;padding:6px">Job</th>' +
+      CHECKS.map(function(k){ return '<th style="padding:6px;font-weight:700;white-space:nowrap">' + esc(k[1]) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function(r){ return '<tr style="border-top:1px solid #e2e8f0"><td style="padding:6px;max-width:320px"><b>' + esc(r.label) + '</b> <span style="color:#64748b">(' + r.missing + ' missing)</span></td>' +
+        CHECKS.map(function(k){ return r.ok[k[0]] ? '<td style="text-align:center;color:#16a34a">✓</td>' : '<td style="text-align:center"><button type="button" data-jfr-go="' + esc(r.id) + '" data-tab="' + esc(k[2]) + '" style="border:none;background:#fee2e2;color:#b91c1c;font-weight:800;border-radius:6px;padding:2px 8px;cursor:pointer">✗</button></td>'; }).join('') + '</tr>'; }).join('') +
+      '</tbody></table></div>' + (rows.length ? '' : '<div style="padding:20px;text-align:center;color:#16a34a">No open jobs.</div>') + '</div>';
+  }
+  ov.addEventListener('click', function(ev){
+    var t = ev.target;
+    if (t === ov || (t.closest && t.closest('[data-jfr-close]'))) { ov.remove(); return; }
+    var go = t.closest && t.closest('[data-jfr-go]');
+    if (go) { var pid = go.getAttribute('data-jfr-go'), tab = go.getAttribute('data-tab'); ov.remove(); try { sessionStorage.setItem('grayco_subtab', tab); } catch (e) {} if (W._navToJob) W._navToJob(pid); later(function(){ clickTab(tab); }, 1200); return; }
+    var fw = t.closest && t.closest('[data-jfr-fixwrong]');
+    if (fw) { var kind = fw.getAttribute('data-jfr-fixwrong'), id = fw.getAttribute('data-id'), to = fw.getAttribute('data-to'); if (!confirm('Move it to ' + label(jobById(to)) + '?')) return; if (kind === 'estimates') moveEstimate(id, to, 'fixed-wrong-link'); else link(kind, id, to, 'fixed-wrong-link'); later(render, 400); }
+  });
+  render(); D.body.appendChild(ov);
+}
+var TABRE = { overview: /^Overview$/, schedule: /^Schedule \(/, scope: /^Scope$/, projfiles: /^Files & Docs \(/, expenses: /^Expenses \(/, projectinvoices: /Invoices & Payments$/, photos: /^Photos \(/ };
+function clickTab(tab){
+  var re = TABRE[tab]; if (!re) return;
+  var b = [].slice.call(D.querySelectorAll('main button')).filter(function(x){ return re.test(s(x.textContent)); })[0];
+  if (b) b.click();
+}
+
+/* the button on the Projects list (admins) */
+function listButton(){
+  if (view() !== 'projects' || !isAdmin() || strip()) { var o = D.getElementById('gc-jf-listbtn'); if (o && (view() !== 'projects' || strip())) o.remove(); return; }
+  var nb = [].slice.call(D.querySelectorAll('main button')).filter(function(x){ return s(x.textContent) === '+ New Project'; })[0];
+  if (!nb || !nb.parentElement) return;
+  var b = D.getElementById('gc-jf-listbtn');
+  if (b && b.parentElement === nb.parentElement) return;
+  if (!b) { b = D.createElement('button'); b.id = 'gc-jf-listbtn'; b.type = 'button'; b.setAttribute('data-gc-keep', '1'); b.textContent = '📋 Job completeness'; b.className = 'gcjf-btn'; b.style.marginLeft = '6px'; b.onclick = openReport; }
+  nb.parentElement.insertBefore(b, nb.nextSibling);
+}
+
+/* ── safe filling (logged; only where the job is certain) ── */
+var FILLED = {};
+function autofill(){
+  if (!isAdmin() || paused()) return 0;
+  var n = 0, byId = {};
+  estimates().forEach(function(e){ byId[e.id] = e; });
+  /* an estimate PDF whose estimate is on a job, the PDF on none → that job */
+  docs().forEach(function(d){
+    if (s(d.pid) || !d.estId || (FILLED['d' + d.id] || 0) >= 12) return;
+    var e = byId[d.estId], pid = e && estPid(e); if (!pid || !jobById(pid)) return;
+    FILLED['d' + d.id] = (FILLED['d' + d.id] || 0) + 1;   /* tried again next round if the list was not loaded yet (12 tries, a minute) */
+    if (link('docs', d.id, pid, 'auto: estimate ' + (e.name || e.id))) n++;
+  });
+  /* an unlinked expense whose memo carries exactly ONE job's PO → that job */
+  expenses().forEach(function(x){
+    if (s(x.pid) || x.overhead || (FILLED['e' + x.id] || 0) >= 12) return;
+    var hits = posIn(textOf(x)); if (hits.length !== 1) return;
+    FILLED['e' + x.id] = (FILLED['e' + x.id] || 0) + 1;
+    if (link('expenses', x.id, hits[0].id, 'auto: PO ' + poOf(hits[0]))) n++;
+  });
+  return n;
+}
+
+function css(){
+  if (D.getElementById('gc-jf-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-jf-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '#gc-jf-why{margin:0 0 12px;padding:10px 12px;border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;font-size:12.5px;color:#1e293b}' +
+    '.gcjf-line{line-height:1.45}.gcjf-btn{border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer}' +
+    '.gcjf-main{background:#4f46e5;color:#fff;border-color:#4f46e5}.gcjf-list{margin-top:8px}.gcjf-row{display:flex;gap:8px;align-items:center;padding:6px 8px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-top:6px}' +
+    '.gcjf-sel{max-width:260px;font-size:12px;padding:4px;border-radius:6px;border:1px solid #cbd5e1}';
+  D.head.appendChild(st);
+}
+var lastFill = 0, BORN = Date.now();
+function tick(){
+  try {
+    if (D.hidden) return;
+    css(); paint(); listButton();
+    if (Date.now() - lastFill > (Date.now() - BORN < 120e3 ? 5e3 : 60e3) && projects().length) { lastFill = Date.now(); autofill(); }   /* every 5 s while the CRM is loading its lists, then every minute */
+  } catch (e) { try { console.warn('[GC] patch JOBFILL', e); } catch (x) {} }
+}
+RI.call(W, tick, 1200); later(tick, 2500);
+W._gcJobCompleteness = openReport;
+W._gcJobFill = { _score: score, reasonFor: reasonFor, suggest: suggest, link: link, moveEstimate: moveEstimate, completeness: completeness, wrongLinks: wrongLinks, autofill: autofill, _paint: function(){ SIG = ''; paint(); } };
+try { console.log('[GC] Job tabs say why they are empty; unmatched finder; 📋 Job completeness (patch JOBFILL) — _gcJobFill'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-jobfill-exp">
+/* __GC_PATCH_JOBFILL_EXP__ — THE OFFICE PUTS EXPENSES ON JOBS, FAST (owner 10/23: "for expenses from QuickBooks, office
+   will have to do our P&L and add receipts, expenses etc. into jobs").
+     • 💳 Enter expenses (office + admins): a grid — date · vendor · amount · category · job · receipt · notes. Enter = next
+       row (a new one at the end), Tab = next field; the job box types-to-search the job labels (PO · street · customer)
+       and remembers the last job. Saves through the CRM's own expense list (it syncs like every expense).
+     • 📥 Expense inbox: drop a QuickBooks export (Transaction Detail by Account, Expenses by Vendor, P&L Detail — CSV or
+       Excel). Each row waits until the office puts it on a job (suggested by PO / memo / customer / address) or marks it
+       overhead. Duplicates (date + amount + vendor + QB ref, or already an expense) are skipped. Imported rows are
+       history: importedHistory, no automations, nothing is sent.
+     • 📊 Job P&L on the Expenses tab: contract (+ approved COs) · expenses by category · invoiced · paid · margin — the
+       same spent / contract rules as the job's number strip.
+     • 📋 Jobs with no expenses yet (office report): active jobs, and jobs finished in the last 12 months.
+   Opened from the To-Do (office / admins) and the job's Expenses tab.
+   API: window._gcExpEntry(pid?), window._gcExpInbox(), window._gcExp2 = { parseQB(text), importRows(rows), assign(id, pid),
+        overhead(id), jobPL(pid), noExpenseJobs(), inbox() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_JOBFILL_EXP__) return; window.__GC_PATCH_JOBFILL_EXP__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(n){ n = +n || 0; return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function crm(){ return W._crm || {}; }
+function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
+function canEnter(){ var u = me(); return /admin|owner|office/i.test(s(u.role) + ' ' + s(u.profile)) || low(u.payType) === 'owner'; }
+function isMM(){ try { return !!(W._gcIsMM && W._gcIsMM()); } catch (e) { return false; } }
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function uid(p){ return (p || 'EXP') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function projects(){ return arr(crm().projects).filter(Boolean); }
+function jobById(id){ id = s(id); return projects().filter(function(p){ return p.id === id; })[0] || null; }
+function label(p){ try { if (W._gcJobLabel) return W._gcJobLabel(p); } catch (e) {} return (p.autoPO ? 'PO ' + p.autoPO + ' · ' : '') + s(p.name); }
+function expenses(){ return arr(crm().expenses).filter(Boolean); }
+function invoices(){ return arr(crm().invoices).filter(Boolean); }
+var CATS = ['Materials', 'Sub', 'Labor', 'Equipment', 'Permit', 'Dump', 'Fuel', 'Other'];
+function isOpen(p){ return p && !/^(completed|complete|closed|lost|cancel+ed|dead|archived|paid)$/i.test(s(p.status)) && !p.deleted; }
+
+/* ── the CRM's own expense list (its React effect saves it; then the cloud push) ── */
+function addExpenses(rows){
+  if (!rows.length) return false;
+  if (typeof W._setExpenses === 'function') W._setExpenses(function(prev){ return rows.concat(arr(prev)); });
+  else return false;
+  try { if (W._gcPushAll) later(function(){ W._gcPushAll(); }, 900); } catch (e) {}
+  return true;
+}
+function sbUrl(){ var u = ''; try { u = localStorage.getItem('grayco_sb_url') || ''; } catch (e) {} return (u || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvPut(key, value){
+  try { return fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) }).then(function(r){ return r.ok; }, function(){ return false; }); } catch (e) { return Promise.resolve(false); }
+}
+function kvGet(key){
+  try { return fetch(sbUrl() + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value').then(function(r){ return r.ok ? r.json() : []; }).then(function(rows){ var v = rows && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return null; }); } catch (e) { return Promise.resolve(null); }
+}
+
+/* ── the job picker: type-to-search over the job labels ── */
+var LASTJOB = 'gc_exp2_lastjob';
+function jobOptions(){ return projects().filter(function(p){ return isOpen(p) || /complete/i.test(s(p.status)); }).map(function(p){ return { id: p.id, t: label(p) }; }); }
+function jobDatalist(){
+  var dl = D.getElementById('gc-exp2-jobs');
+  if (!dl) { dl = D.createElement('datalist'); dl.id = 'gc-exp2-jobs'; dl.setAttribute('data-gc-keep', '1'); D.body.appendChild(dl); }
+  dl.innerHTML = jobOptions().map(function(o){ return '<option value="' + esc(o.t) + '"></option>'; }).join('');
+}
+function pidFromText(t){
+  t = s(t); if (!t) return '';
+  var o = jobOptions(), hit = o.filter(function(x){ return x.t === t; })[0];
+  if (hit) return hit.id;
+  var lt = low(t), m = o.filter(function(x){ return low(x.t).indexOf(lt) >= 0; });
+  return m.length === 1 ? m[0].id : '';
+}
+
+/* ── 💳 Enter expenses ── */
+function css(){
+  if (D.getElementById('gc-exp2-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-exp2-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '.gcx-ov{position:fixed;inset:0;z-index:100094;background:rgba(6,12,20,.92);overflow-y:auto;padding:14px;font-family:Inter,-apple-system,Arial,sans-serif}' +
+    '.gcx-card{max-width:1180px;margin:0 auto;background:#fff;color:#0f172a;border-radius:14px;padding:16px}.gcx-card h2{margin:0;font-size:19px}' +
+    '.gcx-x{border:none;background:#e2e8f0;border-radius:16px;width:34px;height:34px;font-size:16px;cursor:pointer}' +
+    '.gcx-t{width:100%;border-collapse:collapse;font-size:13px}.gcx-t th{text-align:left;font-size:11.5px;color:#475569;padding:4px}.gcx-t td{padding:3px}' +
+    '.gcx-t input,.gcx-t select{width:100%;box-sizing:border-box;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px}' +
+    '.gcx-b{border:1px solid #4f46e5;background:#fff;color:#3730a3;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px;cursor:pointer}.gcx-p{background:#4f46e5;color:#fff}' +
+    '.gcx-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px;border:1px solid #e2e8f0;border-radius:9px;margin-top:6px}.gcx-m{font-size:11.5px;color:#64748b}';
+  D.head.appendChild(st);
+}
+function rowHtml(i, pid){
+  var j = pid ? jobById(pid) : null;
+  return '<tr data-r="' + i + '"><td style="width:120px"><input type="date" data-f="date" value="' + today() + '"></td>' +
+    '<td><input data-f="vendor" placeholder="Vendor / store"></td>' +
+    '<td style="width:105px"><input data-f="amt" inputmode="decimal" placeholder="0.00"></td>' +
+    '<td style="width:120px"><select data-f="cat">' + CATS.map(function(c){ return '<option>' + c + '</option>'; }).join('') + '</select></td>' +
+    '<td style="width:300px"><input data-f="job" list="gc-exp2-jobs" placeholder="Type PO, street or customer" value="' + esc(j ? label(j) : '') + '"></td>' +
+    '<td style="width:150px"><input type="file" data-f="rcpt" accept="image/*,application/pdf"></td>' +
+    '<td><input data-f="notes" placeholder="Notes"></td></tr>';
+}
+function openEntry(pid){
+  if (!canEnter()) { alert('Office or an admin enters expenses.'); return; }
+  css(); jobDatalist();
+  pid = s(pid) || (function(){ try { return localStorage.getItem(LASTJOB) || ''; } catch (e) { return ''; } })();
+  var old = D.getElementById('gc-exp2-entry'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-exp2-entry'; ov.className = 'gcx-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="gcx-card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>💳 Enter expenses</h2><button type="button" class="gcx-x" data-x>✕</button></div>' +
+    '<div class="gcx-m" style="margin:4px 0 10px">Enter = next row · Tab = next box · drop a receipt photo or PDF on a row. Saved to each job\'s Expenses (and the P&L).</div>' +
+    '<table class="gcx-t"><thead><tr><th>Date</th><th>Vendor</th><th>Amount</th><th>Category</th><th>Job</th><th>Receipt</th><th>Notes</th></tr></thead><tbody>' +
+    [0, 1, 2, 3, 4].map(function(i){ return rowHtml(i, pid); }).join('') + '</tbody></table>' +
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button type="button" class="gcx-b" data-add>+ 5 rows</button><button type="button" class="gcx-b gcx-p" data-save>Save expenses</button>' +
+    '<button type="button" class="gcx-b" data-inbox>📥 Expense inbox (QuickBooks import)</button><span class="gcx-m" data-msg></span></div></div>';
+  D.body.appendChild(ov);
+  var tb = ov.querySelector('tbody'), receipts = {};
+  function addRows(n){ var c = tb.children.length, j = ''; var lastJob = tb.lastElementChild && tb.lastElementChild.querySelector('[data-f="job"]'); for (var i = 0; i < n; i++) { tb.insertAdjacentHTML('beforeend', rowHtml(c + i, '')); } if (lastJob && lastJob.value) [].slice.call(tb.children, c).forEach(function(r){ r.querySelector('[data-f="job"]').value = lastJob.value; }); }
+  ov.addEventListener('click', function(ev){
+    var t = ev.target;
+    if (t === ov || t.hasAttribute('data-x')) { ov.remove(); return; }
+    if (t.hasAttribute('data-add')) { addRows(5); return; }
+    if (t.hasAttribute('data-inbox')) { ov.remove(); openInbox(); return; }
+    if (t.hasAttribute('data-save')) save();
+  });
+  ov.addEventListener('keydown', function(ev){
+    if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT' || ev.target.type === 'file') return;
+    ev.preventDefault();
+    var tr = ev.target.closest('tr'), f = ev.target.getAttribute('data-f'), nx = tr.nextElementSibling;
+    if (!nx) { addRows(1); nx = tr.nextElementSibling; }
+    var target = nx.querySelector('[data-f="' + f + '"]') || nx.querySelector('input'); if (target) target.focus();
+  });
+  ov.addEventListener('change', function(ev){
+    var t = ev.target; if (t.getAttribute('data-f') !== 'rcpt' || !t.files || !t.files[0]) return;
+    readFile(t.files[0], t.closest('tr').getAttribute('data-r'));
+  });
+  ov.addEventListener('dragover', function(ev){ if (ev.target.closest && ev.target.closest('tr[data-r]')) ev.preventDefault(); });
+  ov.addEventListener('drop', function(ev){ var tr = ev.target.closest && ev.target.closest('tr[data-r]'); if (!tr || !ev.dataTransfer || !ev.dataTransfer.files[0]) return; ev.preventDefault(); readFile(ev.dataTransfer.files[0], tr.getAttribute('data-r')); });
+  function readFile(f, r){
+    if (f.size > 8 * 1024 * 1024) { alert('That file is over 8 MB.'); return; }
+    var fr = new FileReader(); fr.onload = function(){ receipts[r] = { data: fr.result, name: f.name }; var tr = tb.querySelector('tr[data-r="' + r + '"]'); if (tr) tr.querySelector('[data-f="rcpt"]').title = '✅ ' + f.name; }; fr.readAsDataURL(f);
+  }
+  function save(){
+    var rows = [], bad = 0, who = s(me().name) || s(me().email), lastPid = '';
+    [].slice.call(tb.children).forEach(function(tr){
+      var g = function(k){ var el = tr.querySelector('[data-f="' + k + '"]'); return el ? s(el.value) : ''; };
+      var amt = parseFloat(g('amt').replace(/[$,]/g, '')), vendor = g('vendor'), jt = g('job');
+      if (!amt && !vendor) return;   /* an empty row (the job box may be pre-filled) */
+      var pid = pidFromText(jt);
+      if (!(amt > 0) || !vendor || !pid) { bad++; tr.style.background = '#fef2f2'; return; }
+      tr.style.background = '';
+      var rc = receipts[tr.getAttribute('data-r')] || null, cat = g('cat') || 'Other';
+      rows.push({ id: uid('EXP'), pid: pid, type: 'expense', vendor: vendor, desc: g('notes') || vendor, amt: amt, cat: cat, category: cat, date: g('date') || today(),
+        status: 'approved', by: who, payType: 'Office', source: 'Office entry', reviewed: true, receipt: rc ? rc.data : null, receiptName: rc ? rc.name : '', enteredAt: new Date().toISOString() });
+      lastPid = pid;
+    });
+    var msg = ov.querySelector('[data-msg]');
+    if (bad) { msg.textContent = '⚠ ' + bad + ' row' + (bad === 1 ? '' : 's') + ' need a vendor, an amount over $0 and a job (pick from the list).'; return; }
+    if (!rows.length) { msg.textContent = 'Nothing to save yet.'; return; }
+    if (!addExpenses(rows)) { msg.textContent = '⚠ Could not reach the expense list — reload and try again.'; return; }
+    try { localStorage.setItem(LASTJOB, lastPid); } catch (e) {}
+    ov.remove();
+    toast('✅ Saved ' + rows.length + ' expense' + (rows.length === 1 ? '' : 's') + ' (' + money(rows.reduce(function(a, r){ return a + r.amt; }, 0)) + ')');
+  }
+  later(function(){ var f = tb.querySelector('[data-f="vendor"]'); if (f) f.focus(); }, 50);
+}
+function toast(t){
+  var d = D.createElement('div'); d.setAttribute('data-gc-keep', '1'); d.textContent = t;
+  d.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:100099;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif';
+  D.body.appendChild(d); later(function(){ d.remove(); }, 3500);
+}
+
+/* ── QuickBooks export → rows ── */
+function csvRows(text){
+  var out = [], row = [], cell = '', q = false;
+  text = s(text).replace(/^﻿/, '');
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); out.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); out.push(row); }
+  return out;
+}
+function num(v){ v = s(v).replace(/[$,\s]/g, ''); var neg = /^\(.*\)$/.test(v) || /^-/.test(v); v = v.replace(/[()\-]/g, ''); var n = parseFloat(v); return isNaN(n) ? NaN : (neg ? -n : n); }
+function isoDate(v){
+  v = s(v); var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) { var y = +m[3]; if (y < 100) y += 2000; return y + '-' + String(+m[1]).padStart(2, '0') + '-' + String(+m[2]).padStart(2, '0'); }
+  m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : '';
+}
+function parseQB(text){
+  var rows = csvRows(text), hi = -1, H = {};
+  for (var i = 0; i < Math.min(rows.length, 40); i++) { var r = rows[i].map(low); if (r.indexOf('date') >= 0 && r.some(function(c){ return /^amount$|^debit$|^total$/.test(c); })) { hi = i; break; } }
+  if (hi < 0) return { rows: [], error: 'No "Date" + "Amount" header row found — export the QuickBooks report as CSV (Transaction Detail by Account, Expenses by Vendor or P&L Detail).' };
+  rows[hi].forEach(function(c, k){ c = low(c); if (c && H[c] == null) H[c] = k; });
+  function col(){ for (var a = 0; a < arguments.length; a++) { if (H[arguments[a]] != null) return H[arguments[a]]; } return -1; }
+  var cD = col('date'), cA = col('amount', 'debit', 'total'), cN = col('name', 'vendor', 'payee'), cM = col('memo/description', 'memo', 'description'), cR = col('num', 'no.', 'ref no.', 'doc num'),
+    cAcc = col('account', 'split', 'distribution account'), cT = col('transaction type', 'type'), cC = col('customer', 'customer/project', 'customer full name', 'class');
+  var sect = '', out = [], skipped = 0;
+  rows.slice(hi + 1).forEach(function(r){
+    var first = s(r.filter(function(x){ return s(x); })[0]);
+    var d = isoDate(r[cD]), a = num(r[cA]);
+    if (!d) { if (first && !/^total/i.test(first)) sect = first; return; }   /* a vendor / account section heading */
+    if (isNaN(a) || a === 0) return;
+    if (a < 0) { skipped++; return; }   /* refunds / credits are not costs */
+    var vendor = s(cN >= 0 ? r[cN] : '') || sect;
+    out.push({ date: d, amount: Math.round(a * 100) / 100, vendor: vendor, memo: s(cM >= 0 ? r[cM] : ''), ref: s(cR >= 0 ? r[cR] : ''), account: s(cAcc >= 0 ? r[cAcc] : ''), type: s(cT >= 0 ? r[cT] : ''), customer: s(cC >= 0 ? r[cC] : '') });
+  });
+  return { rows: out, credits: skipped };
+}
+
+/* ── 📥 the expense inbox (gc_kv gc_expense_inbox) ── */
+var IN = { list: null, at: 0 };
+function inboxLocal(){ try { return JSON.parse(localStorage.getItem('gc_expense_inbox') || '[]') || []; } catch (e) { return []; } }
+function inbox(){ return arr(IN.list || inboxLocal()); }
+function saveInbox(list){ IN.list = list; try { localStorage.setItem('gc_expense_inbox', JSON.stringify(list)); } catch (e) {} return kvPut('gc_expense_inbox', list); }
+function pullInbox(){ return kvGet('gc_expense_inbox').then(function(v){ if (Array.isArray(v)) { var loc = inboxLocal(), seen = {}; v.forEach(function(x){ seen[x.id] = 1; }); IN.list = v.concat(loc.filter(function(x){ return !seen[x.id]; })); try { localStorage.setItem('gc_expense_inbox', JSON.stringify(IN.list)); } catch (e) {} } return inbox(); }); }
+function dkey(d, a, v, r){ return [s(d), (+a || 0).toFixed(2), low(v).replace(/[^a-z0-9]/g, '').slice(0, 24), low(r)].join('|'); }
+function importRows(rows){
+  var cur = inbox(), have = {}, n = 0, dup = 0;
+  cur.forEach(function(x){ have[dkey(x.date, x.amount, x.vendor, x.ref)] = 1; });
+  expenses().forEach(function(e){ have[dkey(e.date, e.amt, e.vendor || e.desc, e.qbRef || '')] = 1; if (e.qbRef) have[dkey(e.date, e.amt, e.vendor || e.desc, e.qbRef)] = 1; });
+  var add = [];
+  rows.forEach(function(r){
+    var k = dkey(r.date, r.amount, r.vendor, r.ref), k0 = dkey(r.date, r.amount, r.vendor, '');
+    if (have[k] || have[k0]) { dup++; return; }
+    have[k] = 1; n++;
+    add.push(Object.assign({ id: uid('XI'), status: 'new', source: 'QuickBooks import', importedHistory: true, noAutomations: true, importedAt: new Date().toISOString(), importedBy: s(me().name) }, r));
+  });
+  if (add.length) saveInbox(add.concat(cur));
+  return { added: n, duplicates: dup };
+}
+function suggestFor(x){
+  var F = W._gcJobFill; if (!F || !F.suggest) return [];
+  /* score every job against this row (the same scoring as the job tabs' unmatched finder) */
+  var item = { desc: x.memo, memo: x.memo, vendor: x.vendor, client: x.customer, ref: x.ref, po: x.ref };
+  return projects().map(function(p){
+    var r = F._score ? F._score(p, item) : null; return r && r.score >= 20 ? { pid: p.id, score: r.score, why: r.why } : null;
+  }).filter(Boolean).sort(function(a, b){ return b.score - a.score; }).slice(0, 3);
+}
+function assign(id, pid){
+  var L = inbox().slice(), x = L.filter(function(y){ return y.id === id; })[0], job = jobById(pid);
+  if (!x || !job || x.status === 'assigned') return false;
+  var cat = /sub/i.test(x.account) ? 'Sub' : /fuel|gas/i.test(x.account) ? 'Fuel' : /permit/i.test(x.account) ? 'Permit' : /dump|disposal/i.test(x.account) ? 'Dump' : /equip|rental/i.test(x.account) ? 'Equipment' : /labor|payroll/i.test(x.account) ? 'Labor' : 'Materials';
+  var e = { id: uid('EXP'), pid: pid, type: 'expense', vendor: x.vendor, desc: x.memo || x.vendor, amt: x.amount, cat: cat, category: cat, date: x.date, status: 'approved',
+    by: s(me().name), payType: 'QB', source: 'QuickBooks import', qbRef: x.ref, qbAccount: x.account, reviewed: true, importedHistory: true, noAutomations: true, fromInbox: x.id };
+  if (!addExpenses([e])) return false;
+  x.status = 'assigned'; x.pid = pid; x.expenseId = e.id; x.assignedAt = new Date().toISOString(); x.assignedBy = s(me().name);
+  saveInbox(L); return true;
+}
+function overhead(id){
+  var L = inbox().slice(), x = L.filter(function(y){ return y.id === id; })[0];
+  if (!x || x.status === 'assigned') return false;
+  var e = { id: uid('EXP'), pid: '', overhead: true, type: 'expense', vendor: x.vendor, desc: x.memo || x.vendor, amt: x.amount, cat: 'Overhead', category: 'Overhead', date: x.date, status: 'approved',
+    by: s(me().name), payType: 'QB', source: 'QuickBooks import', qbRef: x.ref, qbAccount: x.account, reviewed: true, importedHistory: true, noAutomations: true, fromInbox: x.id };
+  if (!addExpenses([e])) return false;
+  x.status = 'overhead'; x.expenseId = e.id; x.assignedAt = new Date().toISOString(); x.assignedBy = s(me().name);
+  saveInbox(L); return true;
+}
+function openInbox(){
+  if (!canEnter()) { alert('Office or an admin works the expense inbox.'); return; }
+  css(); jobDatalist();
+  var old = D.getElementById('gc-exp2-inbox'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-exp2-inbox'; ov.className = 'gcx-ov'; ov.setAttribute('data-gc-keep', '1');
+  var card = D.createElement('div'); card.className = 'gcx-card'; ov.appendChild(card); D.body.appendChild(ov);
+  var msg = '';
+  function render(){
+    var L = inbox(), waiting = L.filter(function(x){ return x.status === 'new'; });
+    card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center"><h2>📥 Expense inbox (' + waiting.length + ' waiting)</h2><button type="button" class="gcx-x" data-x>✕</button></div>' +
+      '<div class="gcx-m" style="margin:4px 0 10px">Drop a QuickBooks export (CSV or Excel: Transaction Detail by Account, Expenses by Vendor or P&L Detail). Each row waits here until it is put on a job or marked overhead. Duplicates are skipped. Imported rows are history — nothing is sent.</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="gcx-b gcx-p" style="cursor:pointer">📂 Import QuickBooks export<input type="file" data-imp accept=".csv,.xlsx,.xls,text/csv" style="display:none"></label><button type="button" class="gcx-b" data-entry>💳 Enter expenses by hand</button><span class="gcx-m" data-msg>' + esc(msg) + '</span></div>' +
+      (waiting.length ? waiting.slice(0, 200).map(function(x){
+        var sg = suggestFor(x), best = sg[0] ? jobById(sg[0].pid) : null;
+        return '<div class="gcx-row" data-id="' + esc(x.id) + '"><div style="flex:1;min-width:240px"><b>' + money(x.amount) + '</b> · ' + esc(x.vendor || '(no vendor)') + ' · ' + esc(x.date) + (x.ref ? ' · #' + esc(x.ref) : '') +
+          '<div class="gcx-m">' + esc([x.memo, x.account, x.customer].filter(Boolean).join(' · ')) + (sg.length ? ' — suggested: ' + esc(label(best)) + ' (' + esc(sg[0].why.join(', ')) + ')' : '') + '</div></div>' +
+          '<input list="gc-exp2-jobs" data-job placeholder="Job (PO, street, customer)" style="width:280px;padding:7px;border:1px solid #cbd5e1;border-radius:7px" value="' + esc(best ? label(best) : '') + '">' +
+          '<button type="button" class="gcx-b gcx-p" data-assign>Put on job</button><button type="button" class="gcx-b" data-oh>Overhead</button></div>';
+      }).join('') : '<div style="padding:18px;text-align:center;color:#16a34a">Nothing waiting. ✅</div>') + '</div>';
+  }
+  card.addEventListener('click', function(ev){
+    var t = ev.target;
+    if (t.hasAttribute('data-x')) { ov.remove(); return; }
+    if (t.hasAttribute('data-entry')) { ov.remove(); openEntry(''); return; }
+    var row = t.closest && t.closest('[data-id]'); if (!row) return;
+    var id = row.getAttribute('data-id');
+    if (t.hasAttribute('data-assign')) { var pid = pidFromText(row.querySelector('[data-job]').value); if (!pid) { alert('Pick the job from the list.'); return; } assign(id, pid); msg = '✅ Put on ' + label(jobById(pid)); render(); }
+    else if (t.hasAttribute('data-oh')) { overhead(id); msg = '✅ Marked overhead'; render(); }
+  });
+  ov.addEventListener('click', function(ev){ if (ev.target === ov) ov.remove(); });
+  card.addEventListener('change', function(ev){
+    var t = ev.target; if (!t.hasAttribute('data-imp') || !t.files || !t.files[0]) return;
+    var f = t.files[0];
+    readExport(f).then(function(text){
+      var p = parseQB(text);
+      if (p.error) { msg = '⚠ ' + p.error; render(); return; }
+      var r = importRows(p.rows);
+      msg = '✅ ' + r.added + ' row' + (r.added === 1 ? '' : 's') + ' added' + (r.duplicates ? ', ' + r.duplicates + ' duplicate' + (r.duplicates === 1 ? '' : 's') + ' skipped' : '') + (p.credits ? ', ' + p.credits + ' credit' + (p.credits === 1 ? '' : 's') + ' skipped' : '');
+      render();
+    }, function(e){ msg = '⚠ Could not read that file: ' + s(e && e.message || e); render(); });
+  });
+  render(); pullInbox().then(render);
+}
+function readExport(f){
+  if (/\.xlsx?$/i.test(f.name)) {
+    return ensureXlsx().then(function(){ return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ try { var wb = W.XLSX.read(fr.result, { type: 'array' }); res(W.XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])); } catch (e) { rej(e); } }; fr.onerror = rej; fr.readAsArrayBuffer(f); }); });
+  }
+  return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res(fr.result); }; fr.onerror = rej; fr.readAsText(f); });
+}
+function ensureXlsx(){ if (W.XLSX) return Promise.resolve(); return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = function(){ rej(new Error('the Excel reader did not load — save the report as CSV')); }; D.head.appendChild(sc); }); }
+
+/* ── 📊 job P&L (the same spent / contract rules as the job's number strip) ── */
+function spentRow(y){ return y && y.type !== 'mpo' && y.status !== 'denied' && y.type !== 'bill' && y.type !== 'purchase' && y.type !== 'payment' && !((parseFloat(y.amt) || 0) < 0 && W._gcIsMoneyIn && W._gcIsMoneyIn(y)); }
+function jobPL(pid){
+  var j = jobById(pid); if (!j) return null;
+  var cos = 0; try { cos = +(W._gcApprovedCOs ? W._gcApprovedCOs(pid) : 0) || 0; } catch (e) {}
+  var contract = (parseFloat(j.contract) || 0) + cos, byCat = {}, spent = 0;
+  expenses().forEach(function(y){ if (y.pid !== pid || !spentRow(y)) return; var a = parseFloat(y.amt) || 0; spent += a; var c = s(y.category || y.cat) || 'Other'; byCat[c] = (byCat[c] || 0) + a; });
+  var inv = invoices().filter(function(x){ return x.pid === pid && (x.type || 'client') === 'client'; });
+  var invoiced = inv.reduce(function(a, x){ return a + (parseFloat(x.amt) || 0); }, 0), paid = inv.filter(function(x){ return low(x.status) === 'paid'; }).reduce(function(a, x){ return a + (parseFloat(x.amt) || 0); }, 0);
+  var profit = contract - spent;
+  return { contract: contract, cos: cos, spent: spent, byCat: byCat, invoiced: invoiced, paid: paid, profit: profit, margin: contract ? Math.round(profit / contract * 1000) / 10 : 0 };
+}
+function plHtml(pid){
+  var p = jobPL(pid); if (!p) return '';
+  var cats = Object.keys(p.byCat).sort(function(a, b){ return p.byCat[b] - p.byCat[a]; });
+  return '<div style="margin-top:8px;padding:8px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;font-size:12.5px"><b>📊 Job P&L</b> · Contract ' + money(p.contract) + (p.cos ? ' (incl. COs ' + money(p.cos) + ')' : '') +
+    ' · Expenses ' + money(p.spent) + ' · Invoiced ' + money(p.invoiced) + ' · Paid ' + money(p.paid) + ' · <b style="color:' + (p.profit >= 0 ? '#16a34a' : '#dc2626') + '">Profit ' + money(p.profit) + ' (' + p.margin + '%)</b>' +
+    (cats.length ? '<div class="gcx-m" style="margin-top:3px">' + cats.map(function(c){ return esc(c) + ' ' + money(p.byCat[c]); }).join(' · ') + '</div>' : '') + '</div>';
+}
+
+/* ── 📋 jobs with no expenses yet (active, or finished in the last 12 months) ── */
+function noExpenseJobs(){
+  var cut = Date.now() - 365 * 864e5, has = {};
+  expenses().forEach(function(y){ if (y.pid && spentRow(y)) has[y.pid] = 1; });
+  return projects().filter(function(p){
+    if (has[p.id] || p.deleted) return false;
+    if (isOpen(p)) return true;
+    var end = Date.parse(p.endDate || p.completedAt || p.closedAt || p.updatedAt || '') || 0;
+    return /complete/i.test(s(p.status)) && end >= cut;
+  }).map(function(p){ return { id: p.id, label: label(p), status: s(p.status) }; });
+}
+function openNoExp(){
+  css();
+  var L = noExpenseJobs(), old = D.getElementById('gc-exp2-noexp'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-exp2-noexp'; ov.className = 'gcx-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.innerHTML = '<div class="gcx-card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>📋 Jobs with no expenses yet (' + L.length + ')</h2><button type="button" class="gcx-x" data-x>✕</button></div>' +
+    '<div class="gcx-m" style="margin:4px 0 10px">Active jobs, and jobs finished in the last 12 months, with no expense entered — their P&L shows 100% profit until expenses go on.</div>' +
+    (L.length ? L.map(function(j){ return '<div class="gcx-row"><div style="flex:1"><b>' + esc(j.label) + '</b> <span class="gcx-m">' + esc(j.status) + '</span></div><button type="button" class="gcx-b gcx-p" data-enter="' + esc(j.id) + '">💳 Enter expenses</button></div>'; }).join('') : '<div style="padding:18px;text-align:center;color:#16a34a">Every job has expenses. ✅</div>') + '</div>';
+  ov.addEventListener('click', function(ev){ var t = ev.target; if (t === ov || t.hasAttribute('data-x')) { ov.remove(); return; } if (t.hasAttribute('data-enter')) { var id = t.getAttribute('data-enter'); ov.remove(); openEntry(id); } });
+  D.body.appendChild(ov);
+}
+
+/* ── where it shows: the job's Expenses tab, and the To-Do ── */
+function strip(){ var b = [].slice.call(D.querySelectorAll('main button')).filter(function(x){ return /^Files & Docs \(/.test(s(x.textContent)); })[0]; return b ? b.parentElement : null; }
+function openJob(){ var j = W._gcOpenProject && W._gcOpenProject.id ? W._gcOpenProject : null; if (!j) { var id = ''; try { id = sessionStorage.getItem('grayco_openpid') || ''; } catch (e) {} j = jobById(id); } return j ? (jobById(j.id) || j) : null; }
+function subtab(){ try { return sessionStorage.getItem('grayco_subtab') || ''; } catch (e) { return ''; } }
+var SIG = '';
+function paintJob(){
+  var st = strip(), host = D.getElementById('gc-exp2-job'), j = openJob();
+  if (!st || !j || subtab() !== 'expenses' || !canEnter() || isMM() || view() !== 'projects') { if (host) host.remove(); SIG = ''; return; }
+  var waiting = inbox().filter(function(x){ return x.status === 'new'; }).length;
+  var html = '<div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="gcx-b gcx-p" data-gcx-enter>💳 Enter expenses for this job</button><button type="button" class="gcx-b" data-gcx-inbox>📥 Expense inbox' + (waiting ? ' (' + waiting + ' waiting)' : '') + '</button></div>' + plHtml(j.id);
+  if (!host) {
+    host = D.createElement('div'); host.id = 'gc-exp2-job'; host.setAttribute('data-gc-keep', '1'); host.style.cssText = 'margin:0 0 12px';
+    host.addEventListener('click', function(ev){ var t = ev.target; var jj = openJob(); if (t.hasAttribute('data-gcx-enter')) openEntry(jj && jj.id); else if (t.hasAttribute('data-gcx-inbox')) openInbox(); });
+    SIG = '';
+  }
+  /* right under the strip — after the JOBFILL reason line when that one shows (only data-gc-keep blocks in between) */
+  var n = st.nextElementSibling; while (n && n !== host && n.getAttribute && n.getAttribute('data-gc-keep') === '1') n = n.nextElementSibling;
+  if (n !== host) { var after = st, k = st.nextElementSibling; while (k && k !== host && k.getAttribute && k.getAttribute('data-gc-keep') === '1') { after = k; k = k.nextElementSibling; } after.parentElement.insertBefore(host, after.nextSibling); }
+  var sig = j.id + '|' + html; if (sig === SIG) return; SIG = sig; host.innerHTML = html;
+}
+function paintTodo(){
+  var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-exp2-todo');
+  if (!mount || !canEnter() || isMM()) { if (host) host.remove(); return; }
+  if (!host) {
+    host = D.createElement('div'); host.id = 'gc-exp2-todo'; host.setAttribute('data-gc-keep', '1'); host.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px';
+    host.innerHTML = '<button type="button" class="gcx-b gcx-p" data-gcx-enter>💳 Enter expenses</button><button type="button" class="gcx-b" data-gcx-inbox>📥 Expense inbox</button><button type="button" class="gcx-b" data-gcx-noexp>📋 Jobs with no expenses</button>';
+    host.addEventListener('click', function(ev){ var t = ev.target; if (t.hasAttribute('data-gcx-enter')) openEntry(''); else if (t.hasAttribute('data-gcx-inbox')) openInbox(); else if (t.hasAttribute('data-gcx-noexp')) openNoExp(); });
+  }
+  if (host.parentElement !== mount.parentElement || host.nextElementSibling !== mount) mount.parentElement.insertBefore(host, mount);
+}
+function tick(){ try { if (D.hidden) return; css(); paintJob(); paintTodo(); } catch (e) { try { console.warn('[GC] patch JOBFILL_EXP', e); } catch (x) {} } }
+RI.call(W, tick, 1300); later(tick, 2600); later(function(){ if (canEnter()) pullInbox(); }, 5000);
+W._gcExpEntry = openEntry; W._gcExpInbox = openInbox; W._gcNoExpenseJobs = openNoExp;
+W._gcExp2 = { parseQB: parseQB, importRows: importRows, assign: assign, overhead: overhead, jobPL: jobPL, noExpenseJobs: noExpenseJobs, inbox: inbox, pullInbox: pullInbox };
+try { console.log('[GC] 💳 Enter expenses · 📥 Expense inbox (QuickBooks import) · 📊 job P&L (patch JOBFILL) — _gcExp2'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-jobfill-punch">
+/* __GC_PATCH_JOBFILL_PUNCH__ — PUNCH LISTS FROM THE JOB'S OWN SCOPE, AND 100% = THE JOB IS DONE (owner 10/23, on
+   Somerville ceilings: "why did it make so many punch lists for this job, we only did ceilings, but the PM should check
+   off if we require it. Job progression to 100% means the job is over, which triggers closing and final documents").
+     • At "substantially complete" the CRM no longer adds its generic list (ceiling tiles, paint touch-ups, doors,
+       life-safety, final clean …). Only "Final walkthrough with the customer" is added — and an admin can turn that off
+       per job type. The punch items that fit THIS job's scope and trades (a ceilings job → ceiling items only) wait on
+       the Punch tab as suggestions, unticked; the PM ticks the ones that apply and only those are made.
+     • 🧹 Remove unused suggested punch items: the generic items the old rule added and nobody touched (still open, no
+       note, no photo) — PM / admin, with a confirm; the walkthrough stays. Never removed by itself.
+     • 100% = complete: AUT3 runs the closeout (final walkthrough, Certificate of Completion, the final invoice draft,
+       the warranty when paid, the thank-you / review request) — every customer message through Approvals (data-entry
+       mode holds sending). A job marked imported history never runs any of it. The PM sees a "✅ Job complete —
+       closeout checklist" on the job. If the progress drops below 100% before closeout is finished, the waiting
+       closeout drafts are cancelled (final invoice draft + its approval, closeout e-mails still waiting) and the job
+       goes back to "substantially complete", so reaching 100% again runs it again.
+   API: window._gcPunch2 = { suggest(pid), add(pid, items), unused(pid), removeUnused(pid), closeout(pid), cancelCheck() };
+        window._gcPunchWalkthrough(job, tpl) (AUT3 asks it) */
+(function(){
+'use strict';
+if (window.__GC_PATCH_JOBFILL_PUNCH__) return; window.__GC_PATCH_JOBFILL_PUNCH__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : 0; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function crm(){ return W._crm || {}; }
+function me(){ try { return (typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}')) || {}; } catch (e) { return {}; } }
+function isAdmin(){ var u = me(); return /admin|owner/i.test(s(u.role)) || low(u.payType) === 'owner'; }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function slug(t){ return low(t).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30); }
+function projects(){ return arr(crm().projects).filter(Boolean); }
+function job(pid){ pid = s(pid); try { if (W._gcAut && W._gcAut.proj) { var p = W._gcAut.proj(pid); if (p) return p; } } catch (e) {} return projects().filter(function(p){ return p.id === pid; })[0] || null; }
+function isPM(p){ var u = me(); return isAdmin() || (p && s(p.pm) && low(p.pm) === low(u.name)) || /office/i.test(s(u.role)); }
+function imported(p){ return !!(p && (p.importedHistory || p.noAutomations)); }
+function save(pid, fn){ try { if (W._gcAut && W._gcAut.saveProject) return Promise.resolve(W._gcAut.saveProject(pid, fn)); } catch (e) {} return Promise.resolve(null); }
+
+/* ── the punch list (the CRM's device store + cloud, the same path AUT3 uses) ── */
+var P = { list: null, at: 0 };
+function loadPunch(){ return Promise.resolve(W.idbGet ? W.idbGet('punch') : null).then(function(v){ P.list = Array.isArray(v) ? v : arr(crm().punch); P.at = Date.now(); return P.list; }, function(){ P.list = arr(crm().punch); return P.list; }); }
+function punch(){ return arr(P.list || crm().punch); }
+function savePunch(list){
+  P.list = list; P.at = Date.now();
+  try { if (W._gcApplySync) W._gcApplySync('punch', list); } catch (e) {}
+  try { if (W.idbSet) W.idbSet('punch', list); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('punch', list); } catch (e) {}
+}
+function untouched(x){
+  return x && low(x.status) === 'open' && !s(x.notes || x.note || x.comment || x.comments) && !arr(x.photos).length && !s(x.photo || x.img) && !x.doneAt && !x.completedAt;
+}
+
+/* ── which punch items fit this job: its name, type, scope and the lines of its estimates ── */
+var TRADES = [
+  [/ceiling|acoustic|act\b|grid|tile ceiling|drop ceiling/, ['Ceiling grid level, straight and clean', 'Damaged / stained ceiling tiles replaced', 'Tiles cut neatly at walls, lights and diffusers', 'Ceiling area cleaned']],
+  [/drywall|sheetrock|gypsum|framing/, ['Drywall seams and screw pops touched up', 'Corners and edges checked']],
+  [/paint|primer|coating/, ['Paint touch-ups', 'Cut lines clean (walls / ceiling / trim)']],
+  [/door|hardware|frame/, ['Doors swing and latch', 'Hardware installed and adjusted']],
+  [/fire alarm|sprinkler|life.?safety|smoke detector|exit sign/, ['Life-safety devices in place and tested']],
+  [/floor|lvp|carpet|vinyl|laminate|hardwood/, ['Flooring transitions and edges', 'Flooring clean, no damage']],
+  [/tile(?! ceiling)|backsplash|grout/, ['Caulk and grout lines']],
+  [/cabinet|countertop|vanity/, ['Cabinet doors and drawers adjusted', 'Countertop seams and caulk']],
+  [/plumb|fixture|faucet|toilet|shower/, ['Fixtures tested (no leaks)']],
+  [/electric|outlet|switch|light/, ['Electrical devices and lights tested']],
+  [/roof|shingle|metal roof|flashing|gutter/, ['Magnet sweep: yard, driveway, beds', 'Flashing, vents and pipe boots checked', 'Gutters and downspouts clear']],
+  [/water damage|mitigation|dry.?out|moisture/, ['Moisture readings at dry standard']],
+  [/fire damage|smoke|soot/, ['Odor check (every room)']],
+  [/trim|baseboard|casing|molding/, ['Trim nail holes filled and painted']],
+  [/siding|soffit|fascia/, ['Siding / soffit secure, no gaps']],
+  [/concrete|flatwork|sidewalk|slab/, ['Concrete cured, edges clean']]
+];
+function jobText(p){
+  var bits = [p.name, p.type, p.jobType, p.scope, p.scopeOfWork, p.description, p.notes].filter(function(x){ return typeof x === 'string'; });
+  var ests = [];
+  try { if (W._gcSetEstimates) W._gcSetEstimates(function(prev){ ests = arr(prev); return prev; }); } catch (e) {}
+  ests.filter(function(e){ return e && e.pid === p.id; }).forEach(function(e){ bits.push(s(e.name)); arr(e.mats).concat(arr(e.labor), arr(e.lines), arr(e.items)).forEach(function(l){ if (l) bits.push(s(l.desc || l.name || l.item || l.description) + ' ' + s(l.cat || l.trade)); }); });
+  return low(bits.join(' | '));
+}
+var SUGC = {};
+function suggest(pid, tpl){
+  var c = SUGC[pid]; if (c && Date.now() - c.at < 15000) return c.items.slice();
+  var r = suggest0(pid, tpl); SUGC[pid] = { at: Date.now(), items: r }; return r.slice();
+}
+function suggest0(pid, tpl){
+  var p = job(pid); if (!p) return [];
+  var t = jobText(p), out = [];
+  TRADES.forEach(function(row){ if (row[0].test(t)) row[1].forEach(function(i){ if (out.indexOf(i) < 0) out.push(i); }); });
+  if (!out.length) {   /* nothing in the scope says what was done: the job type's list, as suggestions only */
+    try { tpl = tpl || (W._gcAut3 && W._gcAut3.pickTemplate ? W._gcAut3.pickTemplate(p) : null); } catch (e) {}
+    out = arr(tpl && tpl.punch).slice();
+  }
+  return out.filter(function(x, i, a){ return a.indexOf(x) === i; });
+}
+W._gcPunchSuggestSave = function(pid, tpl){
+  var items = suggest(pid, tpl);
+  return save(pid, function(q){ if (q.punchSuggest && q.punchSuggest.items) return false; q.punchSuggest = { at: nowIso(), items: items }; });
+};
+
+/* ── the admin rule: "Final walkthrough" by default, per job type ── */
+var SET_KEY = 'gc_punch_settings';
+function settings(){ try { return JSON.parse(localStorage.getItem(SET_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function tplKey(p, tpl){ try { tpl = tpl || (W._gcAut3 && W._gcAut3.pickTemplate ? W._gcAut3.pickTemplate(p) : null); } catch (e) {} return s(tpl && (tpl.id || tpl.name)) || 'other'; }
+W._gcPunchWalkthrough = function(p, tpl){ var off = settings().walkthroughOff || {}; return !off[tplKey(p, tpl)]; };
+function setWalkthrough(p, on){
+  var st = settings(); st.walkthroughOff = st.walkthroughOff || {}; var k = tplKey(p);
+  if (on) delete st.walkthroughOff[k]; else st.walkthroughOff[k] = true;
+  st.updatedAt = nowIso(); st.by = s(me().name);
+  try { localStorage.setItem(SET_KEY, JSON.stringify(st)); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert(SET_KEY, st); } catch (e) {}
+}
+
+/* ── tick → make only the ticked ones ── */
+function add(pid, items){
+  var p = job(pid); if (!p || !items.length) return 0;
+  var list = punch().slice(), have = {}, n = 0;
+  list.forEach(function(x){ if (x && x.id) have[x.id] = 1; });
+  items.forEach(function(t){ var id = 'PUN_S_' + pid + '_' + slug(t); if (have[id]) return; n++; list.push({ id: id, pid: pid, item: t, assignee: s(p.pm), status: 'open', by: s(me().name) || 'PM', date: today(), source: 'suggested from the scope (PM ticked)' }); });
+  if (!n) return 0;
+  savePunch(list);
+  save(pid, function(q){ var ps = Object.assign({}, q.punchSuggest || {}); ps.added = arr(ps.added).concat(items); ps.addedAt = nowIso(); q.punchSuggest = ps; });
+  return n;
+}
+function unused(pid){
+  var p = job(pid); if (!p) return [];
+  return punch().filter(function(x){ return x && x.pid === pid && /^PUN_T_/.test(s(x.id)) && !/final walkthrough/i.test(s(x.item)) && s(x.by) === 'Automations' && untouched(x); });
+}
+function removeUnused(pid){
+  var u = unused(pid); if (!u.length) return 0;
+  var ids = {}; u.forEach(function(x){ ids[x.id] = 1; try { if (W._gcTombstone) W._gcTombstone('punch', x.id); } catch (e) {} });   /* the CRM's delete-for-good, so a sync never brings them back */
+  savePunch(punch().filter(function(x){ return !(x && ids[x.id]); }));
+  var L = []; try { L = JSON.parse(localStorage.getItem('gc_jobfill_log') || '[]') || []; } catch (e) {}
+  L.unshift({ kind: 'punch-removed', pid: pid, items: u, at: nowIso(), by: s(me().name) }); L = L.slice(0, 400);
+  try { localStorage.setItem('gc_jobfill_log', JSON.stringify(L)); } catch (e) {}
+  save(pid, function(q){ try { if (W._gcAut && W._gcAut.jobNote) W._gcAut.jobNote(q, 'Removed ' + u.length + ' unused suggested punch items (' + u.map(function(x){ return x.item; }).join(', ') + ').'); } catch (e) {} });
+  return u.length;
+}
+
+/* ── 100% = complete: the closeout checklist, and the cancel when the progress drops back ── */
+function finalInv(pid){ return arr(crm().invoices).filter(function(r){ return r && r.pid === pid && (r.id === 'INV_AUTO_' + pid + '_100' || r.isFinal); })[0] || null; }
+function clientInvs(pid){ return arr(crm().invoices).filter(function(r){ return r && r.pid === pid && (r.type === 'client' || !r.type) && low(r.status) !== 'cancelled' && low(r.status) !== 'void'; }); }
+function paidAll(pid){ var l = clientInvs(pid); return l.length > 0 && l.every(function(r){ return low(r.status) === 'paid'; }); }
+function walkthroughDone(pid){ return punch().some(function(x){ return x && x.pid === pid && /final walkthrough/i.test(s(x.item)) && /done|complete|closed|fixed/i.test(s(x.status)); }); }
+function apprs(pid){ var a = []; try { a = arr(W._gcCustApprovals && W._gcCustApprovals().all); } catch (e) {} return a.filter(function(x){ return x && s(x.projectId || x.pid) === pid; }); }
+var CLOSE_KINDS = /^(final_invoice|final_reminder|thank_you|review|review_request|warranty|completion|cert_completion|closeout|checkup)/;
+function closeout(pid){
+  var p = job(pid); if (!p) return null;
+  var docs = p._closeoutDocs || {}, fi = finalInv(pid), ty = apprs(pid).filter(function(x){ return /thank_you|review/.test(s(x.kind)); })[0];
+  var steps = [
+    { k: 'walk', t: 'Final walkthrough with the customer', ok: walkthroughDone(pid), why: 'tick it done on the Punch tab' },
+    { k: 'punch', t: 'Punch list finished', ok: !punch().some(function(x){ return x && x.pid === pid && !/done|complete|closed|fixed/i.test(s(x.status)); }), why: 'open punch items left' },
+    { k: 'coc', t: 'Certificate of Completion', ok: !!docs.coc, why: 'made when the job reaches 100%' },
+    { k: 'finv', t: 'Final invoice', ok: !!fi && /sent|paid|approved/i.test(s(fi.status)), why: fi ? 'draft waiting for approval' : 'drafted at 100% (approval)' },
+    { k: 'paid', t: 'Final payment received', ok: paidAll(pid), why: 'not all invoices are paid' },
+    { k: 'war', t: 'Warranty certificate', ok: !!docs.warranty, why: 'made when the final payment is in' },
+    { k: 'thx', t: 'Thank-you + review request', ok: !!ty && /sent|approved/i.test(s(ty.status)), why: ty ? 'waiting for approval' : 'goes to approvals at completion' }
+  ];
+  return { pid: pid, imported: imported(p), complete: num(p.pct) >= 100 || s(p.jobStage) === 'complete', steps: steps, done: steps.every(function(x){ return x.ok; }) };
+}
+function cancelDrafts(p){
+  var pid = p.id, n = 0;
+  /* the final invoice draft and its approval */
+  var fi = finalInv(pid);
+  if (fi && /draft|pending|pm_review/i.test(s(fi.status))) {
+    try { if (W._setInvoices) W._setInvoices(function(l){ return arr(l).map(function(r){ return r && r.id === fi.id ? Object.assign({}, r, { status: 'cancelled', cancelledAt: nowIso(), cancelReason: 'progress went back below 100% before closeout' }) : r; }); }); n++; } catch (e) {}
+    try {
+      var q = JSON.parse(localStorage.getItem('gc_invoice_approvals') || '[]'), ch = false;
+      q.forEach(function(a){ if (a && a.invId === fi.id && a.status === 'pending') { a.status = 'cancelled'; ch = true; } });
+      if (ch) { localStorage.setItem('gc_invoice_approvals', JSON.stringify(q)); try { if (W._gcApplySync) W._gcApplySync('gc_invoice_approvals', q); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert('gc_invoice_approvals', q); } catch (e) {} }
+    } catch (e) {}
+  }
+  /* closeout e-mails still waiting for approval */
+  apprs(pid).forEach(function(x){ if (CLOSE_KINDS.test(s(x.kind)) && /waiting|pending/i.test(s(x.status)) && W._gcApprovalAct) { try { W._gcApprovalAct(x.id, 'reject', { note: 'Cancelled — the job went back below 100%' }); n++; } catch (e) {} } });
+  save(pid, function(q){
+    if (s(q.jobStage) !== 'complete') return false;
+    q.jobStage = 'substantial'; q.autoRan = Object.assign({}, q.autoRan || {}); delete q.autoRan.complete;
+    if (q._closeoutDocs) { q._closeoutDocs = Object.assign({}, q._closeoutDocs); delete q._closeoutDocs.coc; }
+    q.closeoutCancelledAt = nowIso();
+    try { if (W._gcAut && W._gcAut.jobNote) W._gcAut.jobNote(q, 'Progress went back below 100% before closeout was finished — the waiting closeout drafts were cancelled; reaching 100% runs closeout again.'); } catch (e) {}
+  });
+  return n;
+}
+var CANCELLED = {};
+function cancelCheck(){
+  var n = 0;
+  projects().forEach(function(p0){
+    var p = job(p0.id) || p0;
+    if (!p || imported(p) || s(p.jobStage) !== 'complete' || !(p.autoRan || {}).complete) return;
+    if (num(p.pct) >= 100 || /^(complete|completed|closed|done)$/i.test(s(p.status))) return;
+    var c = closeout(p.id); if (!c || c.steps.filter(function(x){ return x.k === 'paid'; })[0].ok) return;   /* paid = closeout finished: never undo */
+    if (CANCELLED[p.id] && Date.now() - CANCELLED[p.id] < 60e3) return;
+    CANCELLED[p.id] = Date.now(); cancelDrafts(p); n++;
+  });
+  return n;
+}
+
+/* ── on the job page: the Punch tab suggestions + cleanup, the closeout checklist ── */
+function strip(){ var b = [].slice.call(D.querySelectorAll('main button')).filter(function(x){ return /^Files & Docs \(/.test(s(x.textContent)); })[0]; return b ? b.parentElement : null; }
+function openJob(){ var j = W._gcOpenProject && W._gcOpenProject.id ? W._gcOpenProject : null; if (!j) { var id = ''; try { id = sessionStorage.getItem('grayco_openpid') || ''; } catch (e) {} j = id ? { id: id } : null; } return j ? job(j.id) : null; }
+function subtab(){ try { return sessionStorage.getItem('grayco_subtab') || 'overview'; } catch (e) { return 'overview'; } }
+function place(el, st){
+  var n = st.nextElementSibling; while (n && n !== el && n.getAttribute && n.getAttribute('data-gc-keep') === '1') n = n.nextElementSibling;
+  if (n === el) return;
+  var after = st, k = st.nextElementSibling; while (k && k !== el && k.getAttribute && k.getAttribute('data-gc-keep') === '1') { after = k; k = k.nextElementSibling; }
+  after.parentElement.insertBefore(el, after.nextSibling);
+}
+var SIG = '';
+function html(p, tab){
+  var out = '', c = closeout(p.id), pm = isPM(p);
+  if (c && c.complete && (tab === 'overview' || tab === 'punch')) {
+    out += '<div style="border:1px solid ' + (c.imported ? '#cbd5e1' : '#86efac') + ';background:' + (c.imported ? '#f8fafc' : '#f0fdf4') + ';border-radius:10px;padding:10px 12px;margin-bottom:8px">' +
+      '<b>' + (c.imported ? '📦 Imported history — no closeout automations run for this job' : '✅ Job complete — closeout checklist') + '</b>' +
+      (c.imported ? '' : '<div style="margin-top:4px;font-size:12.5px">' + c.steps.map(function(x){ return '<div>' + (x.ok ? '✅' : '⬜') + ' ' + esc(x.t) + (x.ok ? '' : ' <span style="color:#64748b">— ' + esc(x.why) + '</span>') + '</div>'; }).join('') + '</div>') + '</div>';
+  }
+  if (tab === 'punch' && pm) {
+    var sug = (p.punchSuggest && p.punchSuggest.items) ? p.punchSuggest.items : (num(p.pct) >= 90 || /substantial|complete/.test(s(p.jobStage)) ? suggest(p.id) : []);
+    var have = {}; punch().forEach(function(x){ if (x && x.pid === p.id) have[low(x.item)] = 1; });
+    sug = sug.filter(function(t){ return !have[low(t)]; });
+    if (sug.length) out += '<div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:10px 12px;margin-bottom:8px"><b>Suggested punch items for this job</b> <span style="font-size:12px;color:#475569">(from its scope — tick the ones that apply; only those are added)</span>' +
+      '<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">' + sug.map(function(t){ return '<label style="font-size:13px;cursor:pointer"><input type="checkbox" data-gcpu-sug value="' + esc(t) + '"> ' + esc(t) + '</label>'; }).join('') + '</div>' +
+      '<button type="button" data-gcpu-add style="margin-top:6px;border:none;background:#4f46e5;color:#fff;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Add the ticked items</button></div>';
+    var u = unused(p.id);
+    if (u.length) out += '<div style="border:1px solid #fde68a;background:#fffbeb;border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:12.5px">' + u.length + ' generic punch item' + (u.length === 1 ? ' was' : 's were') + ' added automatically and never touched (' + esc(u.map(function(x){ return x.item; }).join(', ')) + '). ' +
+      '<button type="button" data-gcpu-rm style="border:1px solid #d97706;background:#fff;color:#92400e;border-radius:8px;padding:4px 10px;font-weight:700;cursor:pointer">🧹 Remove unused suggested punch items</button></div>';
+    if (isAdmin()) { var on = W._gcPunchWalkthrough(p); out += '<div style="font-size:12px;color:#475569;margin-bottom:8px"><label style="cursor:pointer"><input type="checkbox" data-gcpu-wt' + (on ? ' checked' : '') + '> Add "Final walkthrough with the customer" by default for ' + esc(tplKey(p).replace(/_/g, ' ')) + ' jobs (admin)</label></div>'; }
+  }
+  return out;
+}
+function paint(){
+  var st = strip(), host = D.getElementById('gc-pu-panel'), p = openJob(), tab = subtab();
+  if (!st || !p || !/^(overview|punch)$/.test(tab)) { if (host) host.remove(); SIG = ''; return; }
+  var h = html(p, tab);
+  if (!h) { if (host) host.remove(); SIG = ''; return; }
+  if (!host) { host = D.createElement('div'); host.id = 'gc-pu-panel'; host.setAttribute('data-gc-keep', '1'); host.addEventListener('click', onClick); host.addEventListener('change', onChange); SIG = ''; }
+  place(host, st);
+  var sig = p.id + '|' + tab + '|' + h; if (sig === SIG) return; SIG = sig; host.innerHTML = h;
+}
+function onClick(ev){
+  var t = ev.target, p = openJob(); if (!p) return;
+  if (t.hasAttribute('data-gcpu-add')) {
+    var items = [].slice.call(D.querySelectorAll('#gc-pu-panel [data-gcpu-sug]:checked')).map(function(x){ return x.value; });
+    if (!items.length) { alert('Tick the items that apply to this job first.'); return; }
+    var n = add(p.id, items); SIG = ''; later(paint, 300);
+    toast('✅ Added ' + n + ' punch item' + (n === 1 ? '' : 's'));
+  } else if (t.hasAttribute('data-gcpu-rm')) {
+    var u = unused(p.id); if (!u.length) return;
+    if (!confirm('Remove ' + u.length + ' unused punch item' + (u.length === 1 ? '' : 's') + ' from ' + s(p.name) + '?\n\n' + u.map(function(x){ return '• ' + x.item; }).join('\n') + '\n\n(Only items nobody touched. The final walkthrough stays.)')) return;
+    var k = removeUnused(p.id); SIG = ''; later(paint, 300); toast('🧹 Removed ' + k + ' unused punch item' + (k === 1 ? '' : 's'));
+  }
+}
+function onChange(ev){ var t = ev.target, p = openJob(); if (p && t.hasAttribute('data-gcpu-wt') && isAdmin()) { setWalkthrough(p, t.checked); SIG = ''; } }
+function toast(t){ var d = D.createElement('div'); d.setAttribute('data-gc-keep', '1'); d.textContent = t; d.style.cssText = 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:100099;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif'; D.body.appendChild(d); later(function(){ d.remove(); }, 3500); }
+
+var lastLoad = 0, lastCancel = 0;
+function tick(){
+  try {
+    if (D.hidden) return;
+    if (Date.now() - lastLoad > 8000) { lastLoad = Date.now(); loadPunch().then(function(){ paint(); }); }
+    paint();
+    if (Date.now() - lastCancel > 5000) { lastCancel = Date.now(); cancelCheck(); }
+  } catch (e) { try { console.warn('[GC] patch JOBFILL_PUNCH', e); } catch (x) {} }
+}
+RI.call(W, tick, 1500); later(tick, 3000);
+W._gcPunch2 = { suggest: suggest, add: add, unused: unused, removeUnused: removeUnused, closeout: closeout, cancelCheck: cancelCheck, reload: loadPunch };
+try { console.log('[GC] punch items from the job\'s scope; 100% = closeout checklist (patch JOBFILL) — _gcPunch2'); } catch (e) {}
 })();
 </script>
