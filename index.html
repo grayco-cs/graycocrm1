@@ -103160,13 +103160,14 @@ try{
   }, true);
 }catch(e){}
 
+var BZ_C = { at: 0, v: false };   /* patch LEADPERF-1: the screen scan answered once per 400 ms (it walked every field for every timer) */
 function busy(){
   if(unsavedTyping()) return true;
   if(window.__GC_FORM_OPEN__) return true;
   if(fieldFocused()) return true;
-  if(panelOpen()) return true;
-  if(formOnScreen()) return true;
-  return false;
+  var now = Date.now(); if (now - BZ_C.at < 400) return BZ_C.v;
+  BZ_C.at = now; BZ_C.v = !!(panelOpen() || formOnScreen());
+  return BZ_C.v;
 }
 window.__GC_BUSY__ = busy;
 
@@ -103842,6 +103843,8 @@ async function doSweep(quiet){
 
       var res=collapse(rows, L);
       if(!res) continue;
+      try{ var dsig=(res.dropped_rows||[]).map(function(r){ return String(r&&(r.id||r._id)); }).sort().join(',') + '|' + rows.length;   /* patch LEADPERF-1b: the same duplicates as last time are not written again */
+        window.__GC_SWEEP_SIG__ = window.__GC_SWEEP_SIG__ || {}; if(window.__GC_SWEEP_SIG__[L.key]===dsig) continue; window.__GC_SWEEP_SIG__[L.key]=dsig; }catch(e){}
       total+=res.dropped; per[L.label]=(per[L.label]||0)+res.dropped;
 
       /* Say out loud that this removal is a merge, not data loss. The guard
@@ -103960,7 +103963,7 @@ RI.call(window, function(){
     if(document.hidden) return;
     if(window.__GC_FORM_OPEN__) return;          // never while he is entering something
     if(window.__GC_IS_TYPING__) return;
-    if(Date.now()-last < 20000) return;
+    if(Date.now()-last < 60000) return;   /* patch LEADPERF-1b: once a minute */
     last=Date.now();
     window._gcSweepEverything(true);
   }catch(e){}
@@ -124707,9 +124710,14 @@ function isNew(l){
   return (l.inboxState === 'new' || !l.inboxState) && !l.pm && !l.pid;
 }
 function newCount(){ return inboxLeads().filter(isNew).length; }
+/* patch LEADPERF-1: one answer per list (the same array, the same inbox, within 4 s) — it was rebuilt for every badge */
+var LP_C = { ref: null, n: -1, at: 0, al: null };
+function lpFresh(){ var L = leads(), n = S && S.items ? S.items.length : 0; if (LP_C.ref === L && LP_C.n === n && Date.now() - LP_C.at < 4000) return true; LP_C.ref = L; LP_C.n = n; LP_C.at = Date.now(); LP_C.al = null; return false; }
 function dueMs(d){ if (!d) return NaN; var t = Date.parse(d.length === 10 ? d + 'T23:59:00' : d); return t; }
 function daysLeft(d){ var t = dueMs(d); if (!isFinite(t)) return null; return (t - Date.now()) / 86400000; }
-function fmtWhen(d){
+var FW_C = {}, FW_N = 0;   /* patch LEADPERF-1: the same date gives the same words */
+function fmtWhen(d){ if (!d) return ''; if (FW_C[d] !== undefined) return FW_C[d]; if (++FW_N > 2000) { FW_C = {}; FW_N = 0; } return (FW_C[d] = fmtWhen0(d)); }
+function fmtWhen0(d){
   if (!d) return ''; var t = new Date(d.length === 10 ? d + 'T12:00:00' : d); if (isNaN(t)) return d;
   return t.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) + (d.length > 10 ? ' ' + t.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '');
 }
@@ -125420,7 +125428,7 @@ window._gcBidBoards = function(){ try { if (window._setView) window._setView('le
   later(upd, 30000);
 })();
 /* admins: how many leads nobody is assigned to yet (every source) — and an amber count on the Leads menu item */
-window._gcUnassignedLeadCount = function(){ try { return assignList().length; } catch (e) { return 0; } };
+window._gcUnassignedLeadCount = function(){ try { return assignList().length; } catch (e) { return 0; } };   /* patch LEADPERF-1: assignList is cached, so this is cheap */
 (function(){
   var els = [];
   function paintUnassigned(){
@@ -125586,7 +125594,8 @@ function listOut(o){
 }
 /* the admins' "assign to PM" list: every unassigned lead (the owner assigns them all), commercial and insurance first */
 function assignList(){
-  return listOut({ unassigned: true }).sort(function(a, b){ return (b.priority - a.priority) || ((dueMs(a.bidDue) || 9e15) - (dueMs(b.bidDue) || 9e15)); });
+  if (lpFresh() && LP_C.al) return LP_C.al.slice();   /* patch LEADPERF-1 */
+  return (LP_C.al = listOut({ unassigned: true }).sort(function(a, b){ return (b.priority - a.priority) || ((dueMs(a.bidDue) || 9e15) - (dueMs(b.bidDue) || 9e15)); })).slice();
 }
 window._gcLeadInbox = {
   list: listOut, assignList: assignList,
@@ -161935,7 +161944,7 @@ var LEADS_NOW = null, LEADS_AT = 0;
    window._crm.leads until the first read answers; our own saves update it at once */
 var LEADS_SEEN = false, LEADS_BUSY = false;
 function pullLeads(){
-  if (LEADS_BUSY || Date.now() - LEADS_AT < 2000 || typeof W.idbGet !== 'function') return;
+  if (LEADS_BUSY || D.hidden || Date.now() - LEADS_AT < 4000 || typeof W.idbGet !== 'function') return;   /* patch LEADPERF-1c: 4 s, not while hidden */
   LEADS_AT = Date.now(); LEADS_BUSY = true;
   try { Promise.resolve(W.idbGet('leads')).then(function(v){ LEADS_BUSY = false; if (!Array.isArray(v)) return; var sig = v.length + '|' + v.map(function(l){ return l ? s(l.id) + ':' + s(l.updatedAt || l.savedAt) + ':' + s(l.pm || l.estimator) + ':' + arr(l.coAssignees).length : ''; }).join(',');   /* patch HOT2: every lead's stamp and person — an older copy coming back (a whole-list save) is seen too */ if (sig !== LEADS_SIG) { LEADS_SIG = sig; LEADS_NOW = v; if (view() === 'leads') later(function(){ HUB_SIG = ''; mount(); }, 0); } }, function(){ LEADS_BUSY = false; }); } catch (e) { LEADS_BUSY = false; }
 }
@@ -161955,7 +161964,8 @@ var SHUT_HOT2 = /^(won|lost|dead|deleted|declined|not\s*bidding|no\s*bid|archive
 function shut(l){ return closed(l) || !!(l.noBid || l.dismissed) || [l.status, l.inboxState, l.bidStatus].some(function(v){ return SHUT_HOT2.test(s(v)); }) || expired(l); }
 function receivedMs(l){ var t = Date.parse(s(l.receivedAt || (l.leadExtra && l.leadExtra.receivedAt) || l.createdAt || l.created || l.dateAdded || l.date)); return isFinite(t) ? t : 0; }
 function amEstimator(){ try { if (W._gcRP && typeof W._gcRP.role === 'function') return W._gcRP.role() === 'Estimator'; } catch (e) {} return isEstimatorMe(); }
-function shortDay(ms){ return ms ? new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+var SD_C = {}, SD_N = 0;   /* patch LEADPERF-1 */
+function shortDay(ms){ if (!ms) return ''; var k = String(ms); if (SD_C[k] !== undefined) return SD_C[k]; if (++SD_N > 2000) { SD_C = {}; SD_N = 0; } return (SD_C[k] = new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); }
 function assignee(l){ return s(l.pm || l.estimator || l.apm); }
 /* ── patch HOT2 (owner 10/22): Priority 1–10 on every lead (10 = most important) ── */
 function prioOf(l){ var p = Math.round(+(l && l.priority)); return p >= 1 && p <= 10 ? p : 0; }
@@ -162457,10 +162467,12 @@ function loadOf(name){
 function closeDrawer(){ var d = D.getElementById('gcl-drawer'), sh = D.getElementById('gcl-shade'); held(function(){ try { if (d && d.contains(D.activeElement)) D.activeElement.blur(); } catch (e) {} if (d) Element.prototype.remove.call(d); if (sh) Element.prototype.remove.call(sh); }); UI.open = ''; }
 var SC = { mode: 'manual', text: '', busy: false, err: '' };
 var ESTS = null, ESTS_AT = 0;
-function loadEsts(){ if (Date.now() - ESTS_AT < 5000) return; ESTS_AT = Date.now(); try { if (typeof W.idbGet === 'function') Promise.resolve(W.idbGet('estimates')).then(function(v){ ESTS = arr(v); }, function(){}); } catch (e) {} }
+var EP_C = { a: null, b: null, v: [] };   /* patch LEADPERF-1: the joined list once per change, not once per card */
+function estPool(){ var a = crm().estimates, b = ESTS; if (EP_C.a !== a || EP_C.b !== b) { EP_C.a = a; EP_C.b = b; EP_C.v = arr(a).concat(arr(b)); } return EP_C.v; }
+function loadEsts(){ var mem = arr(crm().estimates); if (Date.now() - ESTS_AT < (mem.length ? 120000 : 30000)) return; ESTS_AT = Date.now(); try {   /* patch LEADPERF-1: the app's own list first; the device copy at most every 2 min */ if (typeof W.idbGet === 'function') Promise.resolve(W.idbGet('estimates')).then(function(v){ ESTS = arr(v); }, function(){}); } catch (e) {} }
 function estimateFor(l){
   loadEsts();
-  var es = arr(crm().estimates).concat(arr(ESTS)).filter(function(e){ return e && !e.deleted && (s(e.leadId) === s(l.id) || (s(l.pid) && s(e.projectId || e.pid) === s(l.pid)) || (s(l.name) && low(e.name || e.title) === low(l.name))); });
+  var es = estPool().filter(function(e){ return e && !e.deleted && (s(e.leadId) === s(l.id) || (s(l.pid) && s(e.projectId || e.pid) === s(l.pid)) || (s(l.name) && low(e.name || e.title) === low(l.name))); });
   es.sort(function(a, b){ return s(b.updatedAt || b.date).localeCompare(s(a.updatedAt || a.date)); });
   return es[0] || null;
 }
