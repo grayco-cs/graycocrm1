@@ -71,7 +71,7 @@ begin
     if to_regclass('public.' || t) is not null then
       execute format('drop policy if exists gc_mm_read on public.%I', t);
       execute format('create policy gc_mm_read on public.%I for select to authenticated '
-                     'using (public.gc_is_marketing() and key in (''users'', ''gc_company_address'', ''gc_epoch'', ''gc_mkt_admin''))', t);
+                     'using (public.gc_is_marketing() and key in (''users'', ''gc_company_address'', ''gc_epoch'', ''gc_mkt_admin'', ''gc_automation_pause''))', t);   -- patch PAUSE: he sees the banner too
     end if;
   end loop;
 end $$;
@@ -96,7 +96,8 @@ returns text language sql immutable set search_path = public, pg_temp as $$
     when regexp_replace(k, '__(chunk[0-9]+|manifest)$', '') = any (array[
       'gc_ach_details', 'gc_overhead_manual', 'gc_checkrun_settings',
       'gc_senior_pm', 'gc_team_settings', 'gc_reassign_log',        -- patch PMG
-      'gc_mkt_admin'])                                             -- patch MM: the admins' marketing settings
+      'gc_mkt_admin',                                              -- patch MM: the admins' marketing settings
+      'gc_automation_pause', 'gc_automation_pause_log'])          -- patch PAUSE: data-entry mode (admins only)
       then 'adminwrite'
     when k = 'users' then 'users'
     else 'staff'

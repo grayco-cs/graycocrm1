@@ -39,6 +39,7 @@
         Optional PARTNER_API_RATE (posts per code per hour, default 120), PARTNER_API_OFF=1 (refuses every post).
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 const KEYS_KV = 'gc_partner_keys';

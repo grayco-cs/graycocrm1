@@ -14,6 +14,7 @@
 //   POST {action:'needs-kinds'}                  → the pick-list
 //   POST {action:'warranty-stats'}               → Marketing → 🛡 Warranty check-ups
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const portal = require('./portal.js');
 const CARE = require('./_lib/care11.js');

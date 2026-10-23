@@ -15,6 +15,7 @@
 // PUBLIC: GET ?accept=<pageId>&e=<email>&s=<sig> → accepts the on-call page (HMAC-signed link from the page e-mail).
 // Everything is kept in the service-only lead-inbox table (never synced to a browser): gc_x10_*.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/x10.js');
 const OC = require('./_lib/oncall.js');
 function inbox(){ return require('./bid-inbox.js'); }

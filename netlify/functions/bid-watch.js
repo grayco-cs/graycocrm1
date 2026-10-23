@@ -33,6 +33,7 @@
    Until then, BuildingConnected's invitation e-mails to leads@ cover it.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 const crypto = require('crypto');
 const L = require('./bid-inbox.js')._lib;

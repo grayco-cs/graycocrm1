@@ -1,6 +1,7 @@
 // QuickBooks OAuth 2.0 callback — receives auth code, exchanges for tokens
 // Env vars needed: QB_CLIENT_ID, QB_CLIENT_SECRET
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const QBO_BASE = 'https://sandbox-quickbooks.api.intuit.com'; // change to https://quickbooks.api.intuit.com for production
 const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const REDIRECT_URI = process.env.QB_REDIRECT_URI || 'https://graycocrm1.netlify.app/.netlify/functions/qb-callback';

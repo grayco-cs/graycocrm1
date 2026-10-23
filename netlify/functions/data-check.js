@@ -4,6 +4,7 @@
    keeps ONE grouped item on the shared Office To-Do. Never deletes or merges anything.
    GET ?ping=1 → alive. Anything that is not Netlify's scheduled call (body { next_run }) is refused. */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 function isScheduled(event){
   try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
 }

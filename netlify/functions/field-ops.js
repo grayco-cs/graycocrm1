@@ -12,6 +12,7 @@
 //   POST {action:'queue_doc', kind:'offer_letter', candidateId, to, name, ref, fileName, subject, html}   (admins)
 //        A new hire's offer letter (Admin → Hiring → Hired): waits on ✅ Approvals for an admin.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const SEL = require('./selections.js')._sel;
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }

@@ -20,6 +20,7 @@
      POST {op:'sweep'}            every estimator lead's draft bid job → PRIVATE (the backfill; never touches a public one)
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const BI = require('./bid-inbox.js');
 const L = BI._lib, T = BI._test;

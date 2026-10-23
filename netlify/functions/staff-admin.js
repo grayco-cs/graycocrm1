@@ -19,6 +19,7 @@
 // Nothing here is saved in the app: a temporary password is returned to the admin
 // once and lives only in Supabase Auth (hashed).
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 /* ── GrayCo staff check (security build) ──────────────────────────────────────
    A call from the CRM must carry the signed-in person's Supabase token:

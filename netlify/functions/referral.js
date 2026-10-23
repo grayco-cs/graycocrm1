@@ -29,6 +29,7 @@
    ENV: nothing new (SUPABASE_*, RESEND_API_KEY are set). REFERRAL_OFF=1 stops the hourly proposals.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const R = require('./_lib/referral.js');
 
 function env(k){ return String(process.env[k] == null ? '' : process.env[k]).trim(); }

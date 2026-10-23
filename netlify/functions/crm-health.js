@@ -5,6 +5,7 @@
    POST {act:'send'} (admin)  → send the health e-mail to the admins now
    GET ?ping=1                → alive.   CRM_HEALTH_OFF=1 stops the e-mail; EQUIP_REMIND_OFF=1 stops the reminder. */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./bid-inbox.js')._lib;
 const H = require('./_lib/health13.js');
 const KEY = 'gc_health13_state';

@@ -25,6 +25,7 @@
 //
 // Only signed-in GrayCo staff may call it (same check as every other function).
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 const Scan = require('../../roofscout/js/scan.js');
 

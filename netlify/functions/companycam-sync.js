@@ -24,6 +24,7 @@
    it; every computer picks them up through the normal sync (lists are unions there, deletes are tombstones).
    Needs COMPANYCAM_TOKEN and SUPABASE_SERVICE_KEY (SUPABASE_URL optional). Answers only its schedule. */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const CC_API = 'https://api.companycam.com/v2';
 const CUT = Date.UTC(2026, 0, 1) / 1000;          /* owner rule: made before 2026 → never brought in */
 const PER_PAGE = 50, MAX_PAGES = 400, OVERLAP = 3600;

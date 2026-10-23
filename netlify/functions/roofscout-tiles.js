@@ -36,6 +36,7 @@
 // batched per warm function instance, so it can lag by a few dozen tiles: for a hard stop,
 // also set a daily quota on the Map Tiles API in Google Cloud (docs/ROOFSCOUT-SETUP.md step 8).
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 /* ── GrayCo staff check (security build) ──────────────────────────────────────

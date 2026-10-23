@@ -45,6 +45,7 @@
 //   GET  /.netlify/functions/lead-intake?drain=1 header x-crm-token: <token>
 //   GET  /.netlify/functions/lead-intake?ping=1  (no auth — says it is alive)
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;

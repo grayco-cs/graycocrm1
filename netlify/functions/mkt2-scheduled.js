@@ -4,6 +4,7 @@
 //   * thank-you to-dos: each December the top referrers / partners (gift suggestions + addresses), and partner / customer milestones;
 //   * free roof check reminders the day before (only events whose reminders an admin approved; from 9 AM Central).
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/mkt2.js');
 function ctHour(){ return +new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24; }
 exports.handler = async function(){

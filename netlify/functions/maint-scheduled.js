@@ -8,6 +8,7 @@
 //     to-do for its PM (once per job).
 // Netlify does not let anyone call a scheduled function by its URL in production; any other call must be an admin.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const M = require('./_lib/maint.js');
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }

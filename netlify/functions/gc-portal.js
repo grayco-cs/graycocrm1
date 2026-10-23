@@ -26,6 +26,7 @@
 //   docs-list · docs-url {id} · docs-add {kind, title, ref, name, type, expires, replaces, sendToGcs} (admins) · docs-remove {id} (admins)
 //   gcp-contacts-all {} → every active GC contact (for Admin)
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const G = require('./_lib/gcp.js');
 let CORE = null;
 function core(){ if (!CORE) CORE = require('./portal.js')._core; return CORE; }

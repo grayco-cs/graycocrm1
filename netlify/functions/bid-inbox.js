@@ -90,6 +90,7 @@
                BID_ALERTS_OFF=1 / BID_ALERT_FROM / CRM_URL (the admins' alerts)
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 const crypto = require('crypto');
 const BD = require('./_lib/bid-due.js');

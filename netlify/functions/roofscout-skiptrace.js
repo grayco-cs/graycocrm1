@@ -15,6 +15,7 @@
 // hits only: Tracerfy charges nothing for a miss); refused for leads marked "Do not contact"
 // and owners on the do-not-contact list.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 /* ── GrayCo staff check (security build) ──────────────────────────────────────
    A call from the CRM must carry the signed-in person's Supabase token:

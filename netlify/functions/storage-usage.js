@@ -10,6 +10,7 @@
    the card says so and shows the plan limits only. Nothing here moves or deletes a file.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./bid-inbox.js')._lib;
 const KEY = 'gc_storage_settings';
 const DEF = { storageGb: 100, dbGb: 8, warnPct: 80, archiveOn: false, archiveYears: 3 };

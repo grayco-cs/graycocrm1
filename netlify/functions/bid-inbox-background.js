@@ -4,4 +4,5 @@
    watcher can take its time. It only accepts work handed to it by bid-inbox.js (signed with the
    inbox secret). All the code is in bid-inbox.js and bid-watch.js. */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 exports.handler = require('./bid-inbox.js').backgroundHandler;

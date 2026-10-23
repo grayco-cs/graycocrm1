@@ -20,6 +20,7 @@
    It never sends e-mail, so it cannot loop.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const KV_KEY = 'gc_claim_inbox', KEEP = 300, MAX_BYTES = 15 * 1024 * 1024, MAX_FILES = 8, AUTO = 0.8;
 const OK_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/heic': 'heic', 'application/zip': 'esx', 'application/x-zip-compressed': 'esx', 'application/octet-stream': 'bin' };

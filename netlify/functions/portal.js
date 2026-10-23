@@ -36,6 +36,7 @@
    once — and the STAFF_EMAILS variable only before that table exists.
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -1458,6 +1459,24 @@ async function approvalAction(body, who){
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
     } catch (e) {}
     return { status: 200, out: { ok: true, item: r.result } };
+  }
+  /* patch PAUSE: "✅ Approve as record-only" — admins back-entering old work. The item is closed as handled
+     (status "recorded"), the approval is kept on it, and NOTHING is sent — on or off data-entry mode. A final
+     invoice's mail row is stamped like a "don't approve" so the automatic run does not send it later either. */
+  if (op === 'record') {
+    if (!admin) return { status: 403, out: { ok: false, error: 'Only an admin can record an approval without sending it.' } };
+    const r = await upd(function(x){
+      if (x.status !== 'waiting' && !stale) return false;
+      x.status = 'recorded'; x.recordOnly = true; x.recordedBy = me.by; x.recordedEmail = me.email; x.recordedAt = now;
+      x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step, recordOnly: true }, me)]);
+    }, function(z){ return z.status === 'recorded' && z.recordedAt === now; });
+    if (!r.ok || !r.result || r.result.status !== 'recorded') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
+    const m = it0.meta || {};
+    try {
+      if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'recorded' });
+      if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'recorded' }) });
+    } catch (e) {}
+    return { status: 200, out: { ok: true, recorded: true, sent: false, item: r.result } };
   }
   const edit = body.edit && typeof body.edit === 'object' ? body.edit : null;
   /* patch AP2: whoever must act now can open it, change To / CC / subject / body (a text: the message) and save it

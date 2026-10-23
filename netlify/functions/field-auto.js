@@ -19,6 +19,7 @@
 // Netlify does not let anyone call a scheduled function by its URL in production; any other call must be an admin
 // ({ run: 'dispatch' | 'closeout' | 'mortgage' | 'tickets' | 'anniversary', force: true }).
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 const FA = require('./_lib/fa-core.js');
 const C = portal._core;

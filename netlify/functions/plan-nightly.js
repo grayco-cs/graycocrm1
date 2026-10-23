@@ -10,6 +10,7 @@
 //   off for everybody until a person turns it on in My Profile; plan-scheduled sends it from the 11:00 / 12:00 UTC runs.
 //   PLAN_OFF=1 turns the whole thing off.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 const PLAN = require('./_lib/plan.js');
 const C = portal._core;

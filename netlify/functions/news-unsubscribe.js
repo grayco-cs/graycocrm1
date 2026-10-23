@@ -8,6 +8,7 @@
 // The token is the address + an HMAC of it (_lib/news.js), so a guessed or edited link does nothing.
 // The list is the server-only table gc_news_suppress (docs/news-unsubscribe.sql). No sign-in needed.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const news = require('./_lib/news.js');
 
 const hits = new Map();

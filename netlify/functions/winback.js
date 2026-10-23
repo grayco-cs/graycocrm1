@@ -3,6 +3,7 @@
    the approvals list; nothing is sent until an admin approves it. GET ?ping=1 → alive. A scheduled function has no
    public URL in production; anything that is not Netlify's scheduled call (body { next_run }) is refused. */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 function isScheduled(event){
   try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
 }

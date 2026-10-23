@@ -3,6 +3,7 @@
 //   tells the CRM where the lead came from); a referral partner's code → the website with ?ref=<code>.
 //   Each human click is counted (service-only store). An unknown code goes to the website's home page.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/mkt2.js');
 function home(){ return (process.env.WEBSITE_URL || 'https://grayco-cs.com').replace(/\/$/, '') + '/'; }
 exports.handler = async function(event){

@@ -19,6 +19,7 @@
 //
 // Netlify does not let anyone call a scheduled function by its URL in production. As a second
 // lock, any call that is not the scheduler must come from a signed-in admin.
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';

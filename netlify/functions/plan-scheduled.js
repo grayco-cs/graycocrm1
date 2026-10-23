@@ -3,6 +3,7 @@
 //   Central sends the optional plan e-mail to the people who turned it on. Every other run does nothing.
 //   The work is in plan-nightly.js (which also answers the Admin "Run now" / preview calls). PLAN_OFF=1 turns it off.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const N = require('./plan-nightly.js');
 function s(v){ return v == null ? '' : String(v).trim(); }
 exports.handler = async function(){

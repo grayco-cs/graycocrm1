@@ -165120,3 +165120,252 @@ W._gcCCSync = { state: function(){ return JSON.parse(JSON.stringify({ data: H.da
 try { console.log('[GC] CompanyCam sync status line (patch CCS) — _gcCCSync.state()'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-pause">
+/* __GC_PATCH_PAUSE__ — ⏸ DATA-ENTRY MODE (owner 10/23: "a button that stops all automatic everything … I need to enter
+   all my data but don't want to send invoices to people that already got invoices").
+   The real guard is on the server (netlify/functions/_lib/pause.js, first line of every function): while it is on,
+   nothing is sent to a customer, a sub, a GC or the public — e-mail only to @grayco-cs.com still goes (staff alerts),
+   texts / calls, social posts, review replies, Google Ads changes and QuickBooks writes are skipped. It FAILS CLOSED.
+   This page part:
+     • the switch: 💎 → "⏸ Data-entry mode" and Admin → ⏸ Data-entry mode (admins), with a confirm; who / when shown;
+     • a sticky amber banner for everyone while it is on (admins get "Resume");
+     • approval cards say "won't be sent — data-entry mode" while it is on; a send the page asks for says so too;
+     • "✅ Approve all as record-only (no sending)": closes waiting customer e-mails / invoices / reminders as handled
+       without sending them (server op "record") — works whether the mode is on or off, and never sends.
+   API: window._gcPause = { state(), refresh(), open(), setOn(bool, note), recordAll(opts) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_PAUSE__) return; window.__GC_PATCH_PAUSE__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/automation-pause', PORTAL = '/.netlify/functions/portal';
+var STATE = { known: false, paused: false, flag: { on: false }, why: '', at: 0 };
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100200;background:' + (bad ? '#7f1d1d' : '#78350f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+
+/* ── the state (everyone reads it; the server's own answer, including "fail closed") ── */
+function refresh(){
+  if (!signedIn()) return Promise.resolve(STATE);
+  return j(FN, { method: 'GET' }).then(function(o){
+    if (o && o.__status === 200) { STATE = { known: true, paused: !!o.paused, flag: o.flag || { on: false }, why: s(o.why), at: Date.now() }; paint(); }
+    return STATE;
+  });
+}
+function setOn(on, note){
+  return j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: !!on, note: s(note) }) }).then(function(o){
+    if (o && o.ok) { toast(on ? '⏸ Data-entry mode is ON — nothing goes to customers, subs or GCs.' : '▶ Data-entry mode is OFF — the CRM sends again.'); return refresh().then(function(){ return o; }); }
+    toast('Could not change it: ' + (o.error || o.__status), true); return o;
+  });
+}
+
+/* ── the banner ── */
+function css(){
+  if (D.getElementById('gcp-css')) return;
+  var st = D.createElement('style'); st.id = 'gcp-css';
+  st.textContent = '#gcp-banner{position:fixed;top:0;left:0;right:0;z-index:100050;background:#f59e0b;color:#1f1300;font:700 13px Inter,sans-serif;display:flex;align-items:center;justify-content:center;gap:10px;padding:5px 12px;box-shadow:0 2px 10px rgba(0,0,0,.25);flex-wrap:wrap;text-align:center}' +
+    'html.gc-paused body{padding-top:30px}' +
+    '#gcp-banner button{border:none;border-radius:6px;padding:3px 10px;font:700 12px Inter,sans-serif;cursor:pointer;background:#1f1300;color:#fde68a}' +
+    '#gcp-banner .gcp-sub{font-weight:500;font-size:12px;opacity:.85}' +
+    '.gcp-note{display:inline-block;margin:4px 6px;padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font:700 11px Inter,sans-serif;border:1px solid #f59e0b}' +
+    '.gcp-modal .gcp-row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}' +
+    '.gcp-modal button{border:none;border-radius:8px;padding:8px 14px;font:700 13px Inter,sans-serif;cursor:pointer}' +
+    '.gcp-on{background:#f59e0b;color:#1f1300}.gcp-off{background:#16a34a;color:#fff}.gcp-grey{background:#e2e8f0;color:#0f172a}' +
+    '.gcp-mut{color:#64748b;font-size:12px}.gcp-box{border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-top:12px}' +
+    '.gcp-kinds label{display:inline-flex;gap:6px;align-items:center;margin:3px 10px 3px 0;font-size:13px}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function paint(){
+  css();
+  var b = D.getElementById('gcp-banner');
+  if (!STATE.paused) { if (b) b.remove(); D.documentElement.classList.remove('gc-paused'); return; }
+  D.documentElement.classList.add('gc-paused');
+  var f = STATE.flag || {}, txt = '⏸ Data-entry mode — nothing is sent to customers, subs or GCs.';
+  var sub = f.on ? ('On since ' + when(f.since || f.at) + (f.byName || f.by ? ' · by ' + esc(f.byName || f.by) : '') + (f.note ? ' · ' + esc(f.note) : ''))
+                 : esc(STATE.why || 'the switch could not be read, so the server is not sending (fail safe)');
+  var html = '<span>' + txt + '</span><span class="gcp-sub">' + sub + '</span>' + (isAdmin() && f.on ? '<button type="button" data-gcp="resume">▶ Resume sending</button>' : '') + (isAdmin() ? '<button type="button" data-gcp="open">Details</button>' : '');
+  if (!b) {
+    b = D.createElement('div'); b.id = 'gcp-banner'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('role', 'status');
+    b.addEventListener('click', function(ev){
+      var t = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcp');
+      if (t === 'resume') { if (confirm('Turn data-entry mode OFF?\n\nFrom now on the CRM sends again (invoices, reminders, posts, texts). Nothing that came due while it was on is sent afterwards.')) setOn(false); }
+      if (t === 'open') open();
+    });
+    D.body.appendChild(b);
+  }
+  if (b.__html !== html) { b.innerHTML = html; b.__html = html; }
+}
+
+/* ── approval cards: say it plainly while the mode is on ── */
+function decorate(){
+  if (!STATE.paused) { Array.prototype.forEach.call(D.querySelectorAll('.gcp-note'), function(n){ n.remove(); }); return; }
+  var bs = D.querySelectorAll('button');
+  for (var i = 0; i < bs.length; i++) {
+    var b = bs[i], t = s(b.textContent);
+    if (!/Approve\s*(&|and)\s*send|^Send now|^📤 Send/i.test(t)) continue;
+    if (b.closest('#gcp-banner') || b.closest('.gcp-modal')) continue;
+    var nx = b.nextElementSibling; if (nx && nx.classList && nx.classList.contains('gcp-note')) continue;
+    var n = D.createElement('span'); n.className = 'gcp-note'; n.setAttribute('data-gc-keep', '1'); n.textContent = "⏸ won't be sent — data-entry mode";
+    b.insertAdjacentElement('afterend', n);
+  }
+}
+
+/* ── a send the page asks for while the mode is on: say so (the server already skipped it) ── */
+var lastToast = 0;
+(function wrapFetch(){
+  var prev = W.fetch; if (typeof prev !== 'function' || prev.__gcPauseNote) return;
+  var w = function(input, init){
+    var p = prev.apply(this, arguments);
+    try {
+      var url = s(typeof input === 'string' ? input : (input && input.url)), body = init && typeof init.body === 'string' ? init.body : '';
+      var send = /\/\.netlify\/functions\/(send-email|social-post|bid-hub|subportal)\b/.test(url) && /POST/i.test(s(init && init.method)) ||
+                 (/\/\.netlify\/functions\/portal\b/.test(url) && /"op"\s*:\s*"approve"/.test(body));
+      if (send && STATE.paused && Date.now() - lastToast > 5000) { lastToast = Date.now(); later(function(){ toast('⏸ Data-entry mode — recorded, nothing was sent to anyone outside GrayCo.'); }, 600); }
+    } catch (e) {}
+    return p;
+  };
+  try { Object.keys(prev).forEach(function(k){ if (!(k in w)) w[k] = prev[k]; }); } catch (e) {}
+  w.__gcPauseNote = true; W.fetch = w;
+})();
+
+/* ── record-only approvals (admins) ── */
+var KIND = { invoice: 'Invoice e-mails', final_invoice: 'Final invoice e-mails', final_reminder: 'Invoice reminders', thank_you: 'Thank-you e-mails',
+  portal_link: 'Portal links', portal_docs: 'New-papers notices', lien_waiver: 'Lien waivers', contract: 'Contracts', selection_sign: 'Selections', pay_app: 'Pay apps' };
+function waiting(){
+  try { var c = W._gcCustApprovals && W._gcCustApprovals(); return (c && c.all || []).filter(function(x){ return x && x.status === 'waiting'; }); } catch (e) { return []; }
+}
+function emailQueue(){ try { return JSON.parse(localStorage.getItem('gc_email_queue') || '[]').filter(function(e){ return e && e.status === 'pending'; }); } catch (e) { return []; } }
+function kindsOf(list){ var k = {}; list.forEach(function(x){ var n = s(x.kind) || 'other'; k[n] = (k[n] || 0) + 1; }); return k; }
+function recordAll(opts){
+  opts = opts || {}; var want = opts.kinds || null, onProgress = opts.progress || function(){};
+  var list = waiting().filter(function(x){ return !want || want.indexOf(s(x.kind) || 'other') > -1; });
+  var done = 0, failed = 0, errors = [];
+  function next(i){
+    if (i >= list.length) return Promise.resolve();
+    var x = list[i];
+    return j(PORTAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'approval', op: 'record', id: x.id }) }).then(function(o){
+      if (o && o.ok && o.recorded) done++; else { failed++; if (errors.length < 5) errors.push(s(x.title || x.subject || x.id) + ': ' + s(o && (o.error || o.__status))); }
+      onProgress(done + failed, list.length); return next(i + 1);
+    });
+  }
+  return next(0).then(function(){
+    var q = 0;
+    if (!want || want.indexOf('__queue') > -1) {
+      try { var all = JSON.parse(localStorage.getItem('gc_email_queue') || '[]'), now = new Date().toISOString();
+        all.forEach(function(e){ if (e && e.status === 'pending') { e.status = 'recorded'; e.recordOnly = true; e.recordedAt = now; q++; } });
+        if (q) { localStorage.setItem('gc_email_queue', JSON.stringify(all)); try { W.dispatchEvent(new Event('storage')); } catch (e) {} }
+      } catch (e) {}
+    }
+    try { if (typeof W._gcApprovalsRefresh === 'function') W._gcApprovalsRefresh(); } catch (e) {}
+    try { if (typeof W._gcAp2Refresh === 'function') W._gcAp2Refresh(); } catch (e) {}
+    return { recorded: done, failed: failed, queue: q, errors: errors, total: list.length };
+  });
+}
+
+/* ── the panel (💎 and Admin) ── */
+function renderPanel(box){
+  css();
+  var f = STATE.flag || {}, on = !!f.on, adm = isAdmin();
+  var list = waiting(), kinds = kindsOf(list), q = emailQueue().length;
+  var set = null; try { set = W._gcApprovalSet && W._gcApprovalSet(); } catch (e) {}
+  var other = set ? set.total - list.length - q : 0;
+  box.className = (box.className || '') + ' gcp-modal';
+  box.innerHTML =
+    '<div style="font-size:14px;line-height:1.5">While <b>data-entry mode</b> is on, the CRM sends <b>nothing</b> to customers, subs, GCs or the public: no invoices, reminders, e-mails, texts, review requests, sub invites, social posts, Google Ads changes or QuickBooks updates. ' +
+    'E-mail only between @grayco-cs.com people (staff alerts) still goes. Anything that comes due while it is on is <b>not</b> sent later. Use it while you enter old work.</div>' +
+    '<div class="gcp-row" style="margin-top:12px"><span style="font-size:15px;font-weight:800">' + (STATE.paused ? (on ? '⏸ ON' : '⏸ Not sending (the switch could not be read)') : '▶ OFF — the CRM sends normally') + '</span>' +
+    (on ? '<span class="gcp-mut">since ' + esc(when(f.since || f.at)) + ' · by ' + esc(f.byName || f.by || '?') + (f.note ? ' · ' + esc(f.note) : '') + '</span>' : (f.at ? '<span class="gcp-mut">last changed ' + esc(when(f.at)) + ' by ' + esc(f.byName || f.by || '?') + '</span>' : '')) + '</div>' +
+    (adm ? '<div class="gcp-row">' + (on ? '<button type="button" class="gcp-off" data-gcp="off">▶ Turn OFF — start sending again</button>'
+                                         : '<input data-gcp="note" placeholder="Why (optional), e.g. back-entering 2025 jobs" style="flex:1;min-width:200px;padding:8px;border:1px solid #cbd5e1;border-radius:8px"><button type="button" class="gcp-on" data-gcp="on">⏸ Turn ON data-entry mode</button>') + '</div>'
+         : '<div class="gcp-mut">Only Wesley or Nick (admins) can switch it.</div>') +
+    (adm ? '<div class="gcp-box"><div style="font-weight:800;margin-bottom:6px">✅ Approve all as record-only (no sending)</div>' +
+      '<div class="gcp-mut" style="margin-bottom:6px">Closes waiting customer e-mails, invoices and reminders as <b>handled</b> — the approval is kept on each one, and nothing is sent. Works with the mode on or off.</div>' +
+      '<div class="gcp-kinds">' + (Object.keys(kinds).length ? Object.keys(kinds).map(function(k){ return '<label><input type="checkbox" data-gcp-kind="' + esc(k) + '" checked> ' + esc(KIND[k] || k) + ' (' + kinds[k] + ')</label>'; }).join('') : '<span class="gcp-mut">No customer e-mails are waiting.</span>') +
+      (q ? '<label><input type="checkbox" data-gcp-kind="__queue" checked> Queued e-mails on this computer (' + q + ')</label>' : '') + '</div>' +
+      '<div class="gcp-row"><button type="button" class="gcp-grey" data-gcp="record"' + (list.length || q ? '' : ' disabled') + '>✅ Record ' + (list.length + q) + ' as approved — send nothing</button><span class="gcp-mut" data-gcp="prog"></span></div>' +
+      (other > 0 ? '<div class="gcp-mut">The other ' + other + ' approvals (sub invoices, invoice sign-offs, expenses, to-dos, lead assignments) do not e-mail anyone when approved — any e-mail they lead to comes back here as a customer e-mail, which this button (or the mode) keeps from being sent.</div>' : '') +
+      '</div>' : '');
+  box.onclick = function(ev){
+    var t = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-gcp'); if (!t) return;
+    if (t === 'on') { var note = s((box.querySelector('[data-gcp="note"]') || {}).value); if (confirm('Turn data-entry mode ON?\n\nNothing will be sent to customers, subs, GCs or the public until an admin turns it off. Staff e-mails still go.')) setOn(true, note).then(function(){ renderPanel(box); }); }
+    if (t === 'off') { if (confirm('Turn data-entry mode OFF?\n\nFrom now on the CRM sends again. Nothing that came due while it was on is sent afterwards.')) setOn(false).then(function(){ renderPanel(box); }); }
+    if (t === 'record') {
+      var picked = Array.prototype.map.call(box.querySelectorAll('[data-gcp-kind]:checked'), function(i){ return i.getAttribute('data-gcp-kind'); });
+      var n = waiting().filter(function(x){ return picked.indexOf(s(x.kind) || 'other') > -1; }).length + (picked.indexOf('__queue') > -1 ? emailQueue().length : 0);
+      if (!n) { toast('Nothing picked.'); return; }
+      if (!confirm('Record ' + n + ' approval' + (n === 1 ? '' : 's') + ' as approved WITHOUT sending anything?\n\nThey are closed as handled; no customer, sub or GC gets an e-mail. This cannot be undone.')) return;
+      var prog = box.querySelector('[data-gcp="prog"]'); ev.target.disabled = true;
+      recordAll({ kinds: picked, progress: function(a, b){ if (prog) prog.textContent = a + ' / ' + b + '…'; } }).then(function(r){
+        toast('✅ Recorded ' + (r.recorded + r.queue) + (r.failed ? ' · ' + r.failed + ' could not be recorded' : '') + ' — nothing was sent.', !!r.failed);
+        if (r.errors.length && prog) prog.textContent = 'Not recorded: ' + r.errors.join(' · ');
+        later(function(){ renderPanel(box); }, 1500);
+      });
+    }
+  };
+}
+function open(){
+  css();
+  var ov = D.createElement('div'); ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100100;background:rgba(6,12,20,.8);display:flex;align-items:center;justify-content:center;padding:16px';
+  var card = D.createElement('div'); card.style.cssText = 'background:#fff;color:#0f172a;width:100%;max-width:640px;border-radius:12px;padding:20px;max-height:88vh;overflow:auto;font:14px Inter,sans-serif;box-sizing:border-box';
+  card.innerHTML = '<button type="button" data-gcp-x style="float:right;border:none;background:#e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700">Close</button><div style="font-size:18px;font-weight:800;margin-bottom:10px">⏸ Data-entry mode</div><div data-gcp-body></div>';
+  ov.appendChild(card); D.body.appendChild(ov);
+  card.querySelector('[data-gcp-x]').onclick = function(){ ov.remove(); };
+  ov.addEventListener('click', function(ev){ if (ev.target === ov) ov.remove(); });
+  var body = card.querySelector('[data-gcp-body]'); body.innerHTML = '<div class="gcp-mut">Loading…</div>';
+  refresh().then(function(){ renderPanel(body); });
+}
+
+/* 💎 menu item (admins) — the same way the sign-in patch adds Team access */
+function hubItem(){
+  try {
+    if (!isAdmin()) return;
+    var all = D.querySelectorAll('.gc-hub-panel'), panel = null;
+    for (var i = 0; i < all.length; i++) if (all[i].getClientRects().length) { panel = all[i]; break; }
+    if (!panel) return;
+    var label = '⏸ Data-entry mode — ' + (STATE.flag && STATE.flag.on ? 'ON' : 'off');
+    var it = panel.querySelector('#gc-pause-hub');
+    if (!it) {
+      it = D.createElement('div'); it.id = 'gc-pause-hub'; it.className = 'gc-hub-item';
+      it.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;color:#92400e;border-bottom:1px solid #f1f5f9;background:#fffbeb';
+      it.onclick = open;
+      var first = panel.querySelector('#gc-auth-hub-team') || panel.firstElementChild;
+      if (first && first.parentNode === panel) panel.insertBefore(it, first); else panel.appendChild(it);
+    }
+    if (it.__label !== label) { it.textContent = label; it.__label = label; }
+  } catch (e) {}
+}
+D.addEventListener('click', function(){ later(hubItem, 160); }, true);
+
+/* Admin → ⏸ Data-entry mode */
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'pause', after: 'api', ic: '⏸', t: 'Data-entry mode', d: 'Pause ALL automatic sending while you enter old work; approve old items as record-only',
+    render: function(box){ box.innerHTML = '<div class="gcp-mut">Loading…</div>'; refresh().then(function(){ renderPanel(box); }); },
+    count: function(){ return STATE.paused ? 'ON' : 'off'; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+
+later(refresh, 1500);
+RI.call(W, function(){ if (!D.hidden) refresh(); }, 60000);
+RI.call(W, function(){ hubItem(); decorate(); if (STATE.paused) paint(); }, 2000);
+D.addEventListener('visibilitychange', function(){ if (!D.hidden) refresh(); });
+
+W._gcPause = { state: function(){ return JSON.parse(JSON.stringify(STATE)); }, refresh: refresh, open: open, setOn: setOn, recordAll: recordAll };
+try { console.log('[GC] ⏸ Data-entry mode (patch PAUSE): _gcPause.state()'); } catch (e) {}
+})();
+</script>

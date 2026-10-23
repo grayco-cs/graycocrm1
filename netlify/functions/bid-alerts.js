@@ -23,6 +23,7 @@
    A scheduled function cannot be called by its URL in production.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./bid-inbox.js')._lib;
 
 function parse(v){ if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { return JSON.parse(v); } catch (e) {} } return v; }

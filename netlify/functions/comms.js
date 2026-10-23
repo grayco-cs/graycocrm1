@@ -8,6 +8,7 @@
 //                          mail@in.grayco-cs.com themselves
 // Signed-in GrayCo staff (gc_staff) only. The customer portal and the sub portal never read it.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const CM = require('./_lib/comms.js');
 const SET = 'gc_comms_settings';
 function s(v){ return v == null ? '' : String(v).trim(); }

@@ -14,6 +14,7 @@
 //   GET  ?company=1                     → the company address with its scheduled move (gc-address.js)
 // Spam: a honeypot field ("website"), per-connection limits, and short answers.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/mkt2.js');
 function s(v){ return v == null ? '' : String(v).trim(); }
 const ORIGINS = ['https://grayco-cs.com', 'https://www.grayco-cs.com', 'https://crm.grayco-cs.com', 'https://graycocrm1.netlify.app'];

@@ -8,6 +8,7 @@
 //   5. patch SOC: Sunday → next week's Mon / Wed / Fri plan (when on); stage 3 → the office's "posting tomorrow" list; Friday → the admins' digest.
 // A scheduled function cannot be called by its URL in production.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./_lib/mkt.js');
 exports.handler = async function(){
   const out = {};

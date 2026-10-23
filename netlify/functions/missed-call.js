@@ -31,6 +31,7 @@
    lead / to-do each number belongs to.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 const TEXT = 'Sorry we missed your call — this is GrayCo Construction Services. How can we help? Reply here or call 901-585-0944.';

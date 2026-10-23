@@ -41,6 +41,7 @@
    WEBSITE_MIN_SECONDS (3), WEBSITE_RATE (5 forms per IP per 10 min), WEBSITE_ROOF_RATE (4 roof prices per IP per day).
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 const SOURCE = 'Website (grayco-cs.com)';

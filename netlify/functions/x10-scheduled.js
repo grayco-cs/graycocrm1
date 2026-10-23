@@ -7,6 +7,7 @@
 //     📊 each person's own "My data" statement by e-mail
 // X10_OFF=1 stops all of it.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/x10.js');
 const OC = require('./_lib/oncall.js');
 function L(){ return require('./bid-inbox.js')._lib; }

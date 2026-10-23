@@ -4,6 +4,7 @@
 // Flow: user clicks Connect -> Google login -> Google redirects here with ?code=...&state=USERNAME
 //       we exchange code for tokens, store {access, refresh, expiry} in Supabase keyed by user.
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 async function saveTokens(user, tokens){

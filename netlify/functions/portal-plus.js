@@ -23,6 +23,7 @@
 // The yearly invoice: maint-scheduled.js queues it on ✅ Approvals (kind maint_invoice: the PM, then an admin);
 // portal.js aqSend → maintInvoiceSend() here sends it once approved.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const M = require('./_lib/maint.js');
 try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */

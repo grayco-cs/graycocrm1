@@ -12,6 +12,7 @@
 //   POST {action:'home'}                                       → the home profile for this customer's home
 //   POST {action:'testimonial', text, permission, name?, video?: dataUrl}   → their testimonial (once per job)
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const C = require('./portal.js')._core;
 const X10 = require('./x10.js');
