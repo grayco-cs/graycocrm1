@@ -151735,6 +151735,61 @@ css();
 try { console.log('[GC] 👁 View as… in the 💎 menu (patch VAS)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-vas5">
+/* __GC_PATCH_VAS5__ — the Office profile's home is the 🏢 Office Manager Dashboard (owner 10/23). On the Dashboard tab,
+   when the profile is Office (a real office sign-in, or an admin's View as Office), the page shows the Office page
+   (window.gcOfficeManager, mounted in #gc-om-mount the same way the Office tab mounts it) instead of the company-wide
+   dashboard. "Open company dashboard →" (this computer, this session) shows the company dashboard; "← Office home" returns.
+   Nothing else changes: the Office tab, the data, the money rules (_gcCanSeeMoney). API: window._gcOfficeHome() */
+(function(){
+'use strict';
+if (window.__GC_PATCH_VAS5__) return; window.__GC_PATCH_VAS5__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var KEY = 'gc_office_home_company';
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function role(){ try { return W._gcRP && W._gcRP.role ? String(W._gcRP.role() || '') : ''; } catch (e) { return ''; } }
+function company(){ try { return sessionStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
+function setCompany(on){ try { if (on) sessionStorage.setItem(KEY, '1'); else sessionStorage.removeItem(KEY); } catch (e) {} tick(); }
+function personView(){ var h = D.querySelector('#root h1'); return !!h && /'s Dashboard$/.test(String(h.textContent || '').trim()); }
+function wanted(){ return view() === 'dashboard' && role() === 'Office' && !personView() && !D.documentElement.classList.contains('_fieldmode'); }
+function css(){
+  if (D.getElementById('gc-ofhome-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-ofhome-css';
+  st.textContent = 'main.gc-ofhome > :not(#gc-ofhome){display:none!important}#gc-ofhome .gc-ofh-bar{display:flex;justify-content:flex-end;padding:8px 16px 0}'
+    + '#gc-ofhome .gc-ofh-bar button,#gc-ofh-back{border:1px solid #cbd5e1;background:#fff;color:#241968;border-radius:8px;padding:5px 12px;font:600 12px Inter,sans-serif;cursor:pointer}'
+    + '#gc-ofh-back{margin:0 0 10px}';
+  D.head.appendChild(st);
+}
+function tick(){
+  var main = D.querySelector('main'); if (!main) return;
+  var host = D.getElementById('gc-ofhome'), back = D.getElementById('gc-ofh-back');
+  if (!wanted()) { if (host) host.remove(); if (back) back.remove(); main.classList.remove('gc-ofhome'); return; }
+  css();
+  if (company()) {   /* the company dashboard, with a way back */
+    if (host) host.remove(); main.classList.remove('gc-ofhome');
+    if (!back || back.parentElement !== main) { if (back) back.remove(); back = D.createElement('button'); back.type = 'button'; back.id = 'gc-ofh-back'; back.setAttribute('data-gc-keep', '1'); back.textContent = '← Office home'; back.onclick = function(){ setCompany(false); }; main.insertBefore(back, main.firstChild); }
+    return;
+  }
+  if (back) back.remove();
+  if (!host || host.parentElement !== main) {
+    if (host) host.remove();
+    host = D.createElement('div'); host.id = 'gc-ofhome'; host.setAttribute('data-gc-keep', '1');
+    host.innerHTML = '<div class="gc-ofh-bar"><button type="button" data-ofh="company">Open company dashboard →</button></div><div id="gc-om-mount"></div>';
+    host.querySelector('[data-ofh="company"]').onclick = function(){ setCompany(true); };
+    main.insertBefore(host, main.firstChild);
+    try { if (typeof W._gcMountOfficeNow === 'function') { W._gcMountOfficeNow(true); ST.call(W, function(){ W._gcMountOfficeNow(true); }, 300); } } catch (e) {}
+  }
+  if (main.firstChild !== host) main.insertBefore(host, main.firstChild);
+  main.classList.add('gc-ofhome');
+}
+W._gcOfficeHome = function(){ return { on: !!D.getElementById('gc-ofhome'), company: company(), role: role() }; };
+RI.call(W, tick, 700);
+D.addEventListener('click', function(){ ST.call(W, tick, 60); }, true);
+try { console.log('[GC] 🏢 Office profile home = the Office Manager Dashboard (patch VAS5)'); } catch (e) {}
+})();
+</script>
 <script id="gc-fix-apprset">
 /* GATE fix_3 — one approval set: To-Do chip = APPROVE badge = APPROVE panel. */
 (function(){
