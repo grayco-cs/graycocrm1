@@ -689,3 +689,6 @@ function make(d){
     enqueue: (items, o) => notifyNew(items, o) };
 }
 module.exports = { make, KA };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./brand.js').installResend(); } catch (e) {}

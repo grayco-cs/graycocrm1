@@ -132,3 +132,6 @@ async function run(){
 }
 exports.handler = async function(){ const r = await run(); return { statusCode: 200, body: JSON.stringify(r) }; };
 exports._test = { run: run, statementsMonthly: statementsMonthly, fleetDaily: fleetDaily, codesWipe: codesWipe, myDataMonthly: myDataMonthly, statementHtml: statementHtml };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}

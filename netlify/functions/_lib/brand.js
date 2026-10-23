@@ -73,6 +73,7 @@ function siteBase(){
   return b.replace(/\/$/, '');
 }
 function logoUrl(){ return siteBase() + BRAND.logoPath; }
+function directLines(){ return String(process.env.DOC_DIRECT_LINES || '').trim() === '1'; }   /* patch LOGOALL */
 function isShelled(html){ return /data-gc-shell=/.test(String(html || '')); }
 function telHref(p){ const d = s(p).replace(/\D/g, ''); return d.length === 10 ? 'tel:+1' + d : (d.length === 11 ? 'tel:+' + d : ''); }
 function niceTel(p){ const d = s(p).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(p); }
@@ -89,7 +90,10 @@ function signatureHtml(sender){
   if (!x || !x.name) return '';
   const ph = x.photo ? '<td style="padding:0 14px 0 0;vertical-align:top"><img src="' + esc(x.photo) + '" width="56" height="56" alt="" style="display:block;width:56px;height:56px;border-radius:28px;object-fit:cover"></td>' : '';
   const lines = ['<b style="font-size:15px;color:' + BRAND.ink + '">' + esc(x.name) + '</b>', '<span style="color:#55626F">' + esc(x.title) + ' · ' + BRAND.name + '</span>'];
-  if (x.phone) lines.push('<a href="' + esc(telHref(x.phone)) + '" style="color:' + BRAND.navy + ';text-decoration:none">📱 ' + esc(x.phone) + '</a>');
+  /* patch LOGOALL (owner 10/23): a staff member's own cell never goes on customer mail; the office line does. Netlify
+     DOC_DIRECT_LINES=1 turns direct lines on. */
+  const tel = directLines() && x.phone ? x.phone : BRAND.phone;
+  lines.push('<a href="' + esc(telHref(tel)) + '" style="color:' + BRAND.navy + ';text-decoration:none">' + (tel === BRAND.phone ? '☎ Office ' : '📱 ') + esc(tel) + '</a>');
   if (x.email) lines.push('<a href="mailto:' + esc(x.email) + '" style="color:' + BRAND.navy + ';text-decoration:none">' + esc(x.email) + '</a>');
   return '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-top:1px solid #E5E0D3;padding-top:16px;width:100%"><tr>' + ph +
     '<td style="vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55">' + lines.join('<br>') + '</td></tr></table>';
@@ -105,7 +109,8 @@ function shell(html, o){
   if (isShelled(html)) return String(html);
   const inner = bodyOf(html);
   const hasLogo = /portal-logo\.png|grayco-logo/i.test(inner);
-  const head = hasLogo ? '' : '<tr><td style="background:#ffffff;padding:18px 24px;border-bottom:4px solid ' + BRAND.gold + '"><img src="' + esc(o.logoUrl || logoUrl()) + '" alt="' + BRAND.name + '" width="150" style="display:block;width:150px;max-width:60%;height:auto;border:0"></td></tr>';
+  /* patch LOGOALL (owner 10/23: "should have our logo on it"): the logo header is centered, like every printed paper */
+  const head = hasLogo ? '' : '<tr><td align="center" style="background:#ffffff;padding:18px 24px;border-bottom:4px solid ' + BRAND.gold + ';text-align:center"><img src="' + esc(o.logoUrl || logoUrl()) + '" alt="' + BRAND.name + '" width="150" style="display:block;margin:0 auto;width:150px;max-width:60%;height:auto;border:0"></td></tr>';
   const sig = o.sender === false ? '' : signatureHtml(o.sender);
   const portal = o.portalUrl ? '<p style="margin:20px 0 0"><a href="' + esc(o.portalUrl) + '" style="display:inline-block;background:' + BRAND.navy + ';color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">Open my GrayCo project page</a></p>' : '';
   const pre = o.preheader ? '<div style="display:none;max-height:0;overflow:hidden;opacity:0">' + esc(o.preheader) + '</div>' : '';
@@ -182,5 +187,5 @@ function installResend(){
 }
 module.exports = { BRAND: BRAND, installResend: installResend, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
   logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
-  billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind,
+  billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind, directLines: directLines,
   _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };

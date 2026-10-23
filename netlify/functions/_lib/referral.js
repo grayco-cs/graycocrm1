@@ -639,3 +639,6 @@ async function lookup(last4){ const q = s(last4).toUpperCase().replace(/[^A-Z0-9
 module.exports = { K, MIN, MAX, GIFT_MIN, RL, DEFAULTS, AD_COPY, normCode, cardHash, newCardCode, newMemberCode, normMemberCode, cleanSettings, settings, saveSettings, suggest, upsertMember, members, memberById, memberByCode, addReferral, referrals, patchReferral,
   join, refer, fromRefCode, fromPortalReferral, propose, proposeGift, onApproved, earn, deduct, applyCredit, balance, ledger, makeGift, check, redeem, pending, claimApply, markApplied, voidCard, sweep, setAmount, portal, portalState, overview, lookup,
   matchJob, hasPayment, cardHtml, creditHtml, memberLink, clamp, introFromText, adForAutopilot };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./brand.js').installResend(); } catch (e) {}

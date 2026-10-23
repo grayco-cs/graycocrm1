@@ -256,3 +256,6 @@ exports.handler = async function(event){
   }
 };
 exports._test = { amountOf, subBids, subsList, jobsList, invite, visibility, award, sweep, inviteMail, whoIs };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}
