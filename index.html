@@ -149770,6 +149770,7 @@ function App(root, opts){
     if (sc === 'claim' && A.S.easy && c) return EXT_VIEW.easy(A, c);
     if (sc === 'approvals' || sc === 'mailmatch') return EXT_VIEW[sc](A);
     if (sc === 'ins4rep' && window._gcIns4) return head('Claim reports', 'Insurance', 'board') + '<div class="gcbb-main">' + errBox() + window._gcIns4.reports(A) + '</div>';   /* INS4-view */
+    if (sc.indexOf('ins4') === 0 && window._gcIns4 && window._gcIns4.screen) { var s4 = window._gcIns4.screen(A, sc); if (s4) return head(s4.title, s4.sub || 'Insurance', 'board') + '<div class="gcbb-main">' + errBox() + s4.html + '</div>'; }   /* INS4b-view */
     if (sc === 'board' && A.opts.mode !== 'mitigation' && window._gcIns4) { var h4 = window._gcIns4.home(A); if (h4) return head('', '', null) + '<div class="gcbb-main">' + errBox() + h4 + '</div>'; }
     if (EXT_VIEW[sc]) { if (!c) { A.S.screen = 'board'; return boardView(); } return EXT_VIEW[sc](A, c); }
     return (sc === 'board' ? (A.opts.mode === 'mitigation' ? mitBoardHtml(A) : boardView()) : sc === 'new' ? newView() : sc === 'settings' ? settingsView() : claimView(c));
@@ -149876,6 +149877,7 @@ function App(root, opts){
   function claimView(c){
     var p = proj(c.projectId) || {}, m = calc(c), tabs = [['cc', '🧭 Summary' /* INS4-tab */], ['overview', 'Overview'], ['activity', '📝 Activity' /* INS3-tabs */], ['mail', '✉️ E-mail'], ['xact', '📐 Xactimate'], ['gallery', '📸 All photos'], ['estimate', 'Estimate' + (m.versions ? ' (v' + m.versions + ')' : '')], ['notes', 'Notes (' + arr(c.notes).length + ')'], ['docs', 'Documents (' + arr(c.docs).filter(function(d){ return !d.deleted; }).length + ')'],
       ['checklist', 'Checklist ' + checklist(c).filter(function(x){ return x.done; }).length + '/' + checklist(c).length], ['drying', 'Drying'], ['rooms', 'Job type & rooms'], ['photos', 'Required photos' /* INS3-req */], ['contents', 'Contents'], ['papers', 'Papers & money'], ['closeout', '🏁 Closeout' /* AUTO7-tab */], ['sync', 'Sync ' + syncTag(c)]];
+    if (window._gcIns4 && window._gcIns4.tabs && A.opts.mode !== 'mitigation') tabs = window._gcIns4.tabs(tabs, c, A);   /* INS4b-tabs */
     var i = phaseIdx(c.phase);
     var steps = '<div class="gcbb-steps" role="list" aria-label="Claim phase">' + PHASES.map(function(ph, k){ return '<button role="listitem" class="gcbb-step' + (k < i ? ' done' : k === i ? ' on' : '') + '" data-a="step" data-v="' + esc(ph) + '"' + (k === i ? ' aria-current="step"' : '') + '>' + (k + 1) + '. ' + esc(ph) + '</button>'; }).join('') + '</div>';
     var body = P2TABS[A.S.tab] ? function(c){ return P2TABS[A.S.tab](A, c); } : ({ overview: overviewTab, estimate: estimateTab, notes: notesTab, docs: docsTab, checklist: checklistTab, sync: syncTab }[A.S.tab] || overviewTab);
@@ -172414,9 +172416,9 @@ function headBtns(A){
   return '<button class="gcbb-btn dk sm" data-a="ins4view" data-v="' + (v === 'dash' ? 'phases' : 'dash') + '">' + (v === 'dash' ? '🗂 Phase board' : '📊 Dashboard') + '</button>' +
     '<button class="gcbb-btn dk sm" data-a="ins4rep">📈 Reports</button>';
 }
-function home(A){
+function home(A, part){
   if (A.opts && (A.opts.mode === 'mitigation' || A.opts.projectId)) return '';
-  if (pref() !== 'dash') return '';
+  if (!part && pref() !== 'dash') return '';
   ensureCss(); dragOn(A);
   var all = visible(), list = filtered(A, all), K = kpis(all), M = canMoney(), F = A.S.f4 = A.S.f4 || {};
   if (!all.length) return '<div class="ins4"><div class="gcbb-empty"><b>No insurance claims yet.</b><br>Open one with “+ New claim” — or from an insurance job in Projects (its 🛡 Claim tab). The dashboard fills in as claims come in.</div></div>';
@@ -172443,7 +172445,7 @@ function home(A){
   var pipe = '<div class="ins4-sec"><h3>🧭 Claims pipeline <span class="ins4-chip" data-ins4n="1">' + list.length + '</span><span style="font-weight:400;font-size:12px;color:#64748b">drag a card, or pick its stage</span></h3>' + filters +
     '<div class="ins4-pipe" aria-label="Claims pipeline">' + pipeInner(list, M) + '</div></div>';
   return (paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — nothing goes to adjusters or homeowners until it is turned off.</div>' : '') +
-    '<div class="ins4 ins4-dash">' + tiles + needHtml + pipe + '</div>';
+    (part === 'board' ? '<div class="ins4 ins4-dash">' + pipe + '</div>' : '<div class="ins4 ins4-dash">' + tiles + needHtml + pipe + '</div>');
 }
 function reportsView(A){
   ensureCss();
@@ -172665,6 +172667,9 @@ var hooked = false;
 (function tryHook(n){ if (hook()) { hooked = true; return; } if (n < 200) later(function(){ tryHook(n + 1); }, 300); })(0);
 
 W._gcIns4 = {
+  _int: { home: home, pipeInner: pipeInner, filtered: filtered, kpiTile: kpiTile, card: card, ledgerHtml: ledgerHtml, factsHtml: factsHtml, docsHtml: docsHtml, timelineHtml: timelineHtml, suppBuilderHtml: suppBuilderHtml,
+    openDraft: openDraft, goTab: goTab, ensureCss: ensureCss, modal: modal, toastA: toastA, visible: visible, pmOf: pmOf, adjOf: adjOf, claimTitle: claimTitle, stuck: stuck, approvedOrLater: approvedOrLater,
+    lastAdjContact: lastAdjContact, cfg: cfg, paused: paused, logOn: logOn, mutate: mutate, contactLog: contactLog, suppDraft: suppDraft, stageSince: stageSince, isMit: isMit, SK: SK, STAGE_COLOR: STAGE_COLOR, LOSS: LOSS, LOSSN: LOSSN, pref: pref, setPref: setPref, summaryTab: summaryTab, wireActions: wireActions },
   home: function(A){ try { return home(A); } catch (e) { warn(e); return ''; } },
   reports: function(A){ try { return reportsView(A); } catch (e) { warn(e); return '<div class="gcbb-err">' + esc(e && e.message) + '</div>'; } },
   headBtns: function(A){ try { return headBtns(A); } catch (e) { return ''; } },
@@ -172676,6 +172681,1135 @@ W._gcIns4 = {
   status: function(){ return { hooked: hooked, pref: pref(), claims: visible().length, paused: paused() }; }
 };
 try { console.log('[GC] 🛡 Insurance claims command center (patch INS4) — _gcIns4.status()'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-ins4b">
+/* __GC_PATCH_INS4B__ ══════════════════════════════════════════════════════════
+   GrayCo — 🛡 INSURANCE AS ITS OWN SMALL CRM (patch INS4b, on top of INS4)
+
+   Owner (10/23): "the insurance tab doesn't seem like Dash or FieldPulse — needs more detail and easy to use, and
+   can use Xactimate from it: PDFs and ESX upload; all jobs and job info in a list. A small CRM for insurance jobs
+   inside the GrayCo CRM."
+
+   📋 LIST (the tab's home): every insurance / restoration job in one dense table — customer, PO · street, loss,
+      loss date, stage, days in stage, claim #, carrier (staff only), adjuster, PM, RCV, ACV, collected, owed, next
+      action + due, documents %, last contact. Saved views (My claims · Needs action · Waiting on carrier ·
+      Depreciation to recover · Mitigation active · Closed this month), filters, sort by any column, a column chooser,
+      CSV export, bulk (stage · PM · note), inline stage / PM, 50 rows a page, cards on a phone, keyboard ("/" search,
+      Enter opens). Jobs marked insurance with no claim yet are in the list with "+ Open claim"; new insurance leads
+      are one tap from a claim. List · Board · Dashboard switch like the Leads hub.
+   🗂 THE CLAIM AS A WORKSPACE: Overview · Contacts · Money · Xactimate · Documents · Photos · Mitigation ·
+      Supplements · Tasks · Timeline · Notes (patch BB / INS3's other tabs stay under "⋯").
+   ⚡ + NEW CLAIM in one small form (customer, address, loss type + date, claim #, carrier, adjuster) — it makes or
+      links the job.
+   📐 XACTIMATE IN THE TAB: ESX (zip + XML, read here) and PDF (text read here with pdf.js) → an estimate version
+      (carrier / ours, v1, v2 …), the original file always kept on the claim; a file we can't read is stored with
+      "couldn't read the details". Version compare by room and by category. Bulk upload: many files at once, each
+      matched to a claim by claim # / insured / address, a confirm screen for the rest ("upload all jobs").
+   Console: _gcIns4b.status() · _gcIns4b.read(file) · _gcIns4b.rows()
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_INS4B__) return; W.__GC_PATCH_INS4B__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ if (typeof v === 'number') return isFinite(v) ? v : 0; var t = s(v), neg = /^\(.*\)$/.test(t) || /^-/.test(t) || /^<.*>$/.test(t) && /\(/.test(t); var x = parseFloat(t.replace(/[^0-9.]/g, '')); return isFinite(x) ? (neg ? -x : x) : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money0(v){ var n = Math.round(num(v)), neg = n < 0; n = Math.abs(n); return (neg ? '−$' : '$') + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function money(v){ var n = r2(v), neg = n < 0; n = Math.abs(n); return (neg ? '−$' : '$') + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function nowIso(){ return new Date().toISOString(); }
+function ymd(v){ var t = s(v); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); var m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (m) { var y = m[3].length === 2 ? '20' + m[3] : m[3]; return y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2); } var d = new Date(t); return isNaN(d) || !t ? '' : d.toISOString().slice(0, 10); }
+function today(){ return ymd(nowIso()); }
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function md(v){ var t = ymd(v); if (!t) return ''; var d = new Date(t + 'T12:00:00'); return MON[d.getMonth()] + ' ' + d.getDate() + (d.getFullYear() !== new Date().getFullYear() ? ', ' + d.getFullYear() : ''); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function warn(e){ try { console.warn('[GC INS4b]', e); } catch (x) {} }
+function G(){ return W._gcClaims || null; }
+function I4(){ return W._gcIns4 || null; }
+function I(){ return (I4() || {})._int || {}; }
+function C4(){ return (I4() || {}).core || {}; }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return p && p.id && p.deleted !== true; }); }
+function proj(id){ id = s(id); return projects().filter(function(p){ return s(p.id) === id; })[0] || null; }
+function users(){ return arr(crm().users).filter(function(u){ return u && u.active !== false; }); }
+function myEmail(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.email()) return low(W.__GC_AUTH__.email()); } catch (e) {} return ''; }
+function myName(){ var e = myEmail(), u = users().filter(function(x){ return e && low(x.email) === e; })[0]; return u && u.name ? s(u.name) : (e ? e.split('@')[0] : 'Me'); }
+function lsGet(k, d){ try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+function canMoney(){ try { return !!C4().canMoney(); } catch (e) { return false; } }
+function isInsJob(p){
+  if (!p) return false;
+  try { if (typeof W._gcIsInsuranceJob === 'function') return !!W._gcIsInsuranceJob(p); } catch (e) {}
+  return p.isInsurance === true || !!s(p.claimNumber) || /insurance|restoration|water damage|fire damage|storm|claim|mitigation/i.test(s(p.type) + ' ' + s(p.jobType));
+}
+function claimFor(pid){ try { return G().forProject(pid); } catch (e) { return null; } }
+function jobLabel(p, c){
+  try { if (p && typeof W._gcJobLabel === 'function') { var l = W._gcJobLabel(p); if (l) return s(typeof l === 'string' ? l : l.text || l.label); } } catch (e) {}
+  var po = s(p && (p.autoPO || p.po || p.poNumber)), street = s((p && p.address) || (c && c.address)).split(',')[0];
+  return [po ? 'PO ' + po : '', street || s(p && p.name) || s(c && c.title)].filter(Boolean).join(' · ');
+}
+function stagesK(){ return C4().STAGES || []; }
+function stageLabel(k){ var x = stagesK().filter(function(y){ return y.k === k; })[0]; return x ? x.l : k; }
+
+/* ══ ROWS: one per insurance job (a claim, or an insurance job with no claim yet) ═════════════════════ */
+function lastContact(c){
+  var x = c.ins4 || {}, l = [s(x.adjLast)].concat(arr(x.log).filter(function(e){ return /📞|💬|✉️/.test(s(e.ic)); }).map(function(e){ return s(e.at); })).concat(arr(c.followups).map(function(f){ return s(f && f.at); })).filter(Boolean).sort();
+  return l.pop() || '';
+}
+function rowOf(c){
+  var p = proj(c.projectId) || {}, L = C4().ledger(c), k = C4().stageOf(c), n = C4().needs(c), Dd = C4().docs(c), st = (stagesK().filter(function(y){ return y.k === k; })[0] || {});
+  var since = I().stageSince(c), due = st.days ? ymd(new Date((Date.parse(since) || Date.now()) + st.days * 864e5).toISOString()) : '';
+  var adj = I().adjOf(c);
+  return { id: c.id, claim: c, pid: s(c.projectId), customer: s(c.insured || p.client), job: jobLabel(p, c), title: I().claimTitle(c), loss: C4().lossOf(c), lossDate: ymd(c.dateOfLoss), stage: k, stageL: stageLabel(k),
+    days: C4().daysInStage(c), claimNo: s(c.claimNumber), carrier: s(c.carrier), adjuster: adj.name, pm: I().pmOf(c), rcv: L.rcv, acv: L.acv, collected: L.paidToDate, owed: r2(L.carrierOwes + L.ownerOwes),
+    next: n[0] ? n[0].text : (st.todo || ''), nextDue: n[0] && n[0].prio === 'high' ? today() : due, docs: Dd.total ? Math.round(Dd.done / Dd.total * 100) : 0, contact: lastContact(c), needs: n.length,
+    mit: I().isMit(c) && arr(c.equipment).some(function(e){ return e && !e.deleted && !e.removedAt; }), dep: L.depOutstanding, closedAt: k === 'closed' ? (I().stageSince(c) || '') : '' };
+}
+function rowNoClaim(p){
+  return { id: 'P:' + p.id, claim: null, pid: s(p.id), customer: s(p.client), job: jobLabel(p, null), title: s(p.name), loss: lossFromText(s(p.type) + ' ' + s(p.name) + ' ' + s(p.notes)), lossDate: '', stage: '', stageL: 'No claim yet',
+    days: 0, claimNo: s(p.claimNumber), carrier: s(p.insCarrier), adjuster: '', pm: s(p.pm), rcv: 0, acv: 0, collected: 0, owed: 0, next: 'Open the claim (carrier, claim #, adjuster)', nextDue: '', docs: 0, contact: '', needs: 1, mit: false, dep: 0, closedAt: '' };
+}
+function lossFromText(t){ t = low(t); return /fire|smoke/.test(t) ? 'fire' : /mold/.test(t) ? 'mold' : /hail/.test(t) ? 'hail' : /water|flood|leak|pipe/.test(t) ? 'water' : /wind/.test(t) ? 'wind' : /storm|tree/.test(t) ? 'storm' : 'other'; }
+var ROWS_SIG = '', ROWS = [], ROWC = {}, PMS = null;
+function maxOf(l, k){ var m = ''; for (var i = 0; i < l.length; i++) { var v = s(l[i] && l[i][k]); if (v > m) m = v; } return m; }
+/* 300+ claims: a cheap signature first (the raw lists), the visible set only when it changed, and a row is rebuilt only
+   when its claim or its job changed */
+function rows(){
+  var raw = []; try { raw = G().list(); } catch (e) {}
+  var pr = projects(), sig = raw.length + '|' + maxOf(raw, 'updatedAt') + '|' + pr.length + '|' + maxOf(pr, 'updatedAt') + '|' + s(W._gcRP && W._gcRP.role && W._gcRP.role()) + '|' + today();
+  if (sig === ROWS_SIG && ROWS.length) return ROWS;
+  PMS = null;
+  var cl = I().visible ? I().visible() : [];
+  var byP = {}; pr.forEach(function(p){ byP[p.id] = s(p.updatedAt); });
+  var out = cl.map(function(c){ var k = s(c.updatedAt) + '|' + (byP[c.projectId] || ''), x = ROWC[c.id]; if (x && x.k === k) return x.r; var r = rowOf(c); ROWC[c.id] = { k: k, r: r }; return r; }), have = {};
+  cl.forEach(function(c){ have[s(c.projectId)] = 1; });
+  var pmOnly = !canMoney() && /Project Manager/i.test(s(W._gcRP && W._gcRP.role && W._gcRP.role()));
+  projects().forEach(function(p){ if (!have[p.id] && isInsJob(p) && !/closed|complete|lost|cancel/i.test(s(p.status)) && (!pmOnly || low(p.pm) === low(myName()))) out.push(rowNoClaim(p)); });
+  ROWS_SIG = sig; ROWS = out; return out;
+}
+
+/* ══ LIST VIEW ═══════════════════════════════════════════════════════════════════════════════════════ */
+var COLS = [
+  ['customer', 'Customer', 1], ['job', 'Job (PO · street)', 1], ['loss', 'Loss', 1], ['lossDate', 'Loss date', 0], ['stageL', 'Stage', 1], ['days', 'Days', 1],
+  ['claimNo', 'Claim #', 1], ['carrier', 'Carrier', 0, 'money'], ['adjuster', 'Adjuster', 1], ['pm', 'PM', 1], ['rcv', 'RCV', 1, 'money'], ['acv', 'ACV', 0, 'money'],
+  ['collected', 'Collected', 0, 'money'], ['owed', 'Owed', 1, 'money'], ['next', 'Next action', 1], ['nextDue', 'Due', 1], ['docs', 'Docs', 1], ['contact', 'Last contact', 0]
+];
+var VIEWS = [['all', 'All'], ['mine', 'My claims'], ['needs', 'Needs action'], ['waiting', 'Waiting on carrier'], ['dep', 'Depreciation to recover'], ['mit', 'Mitigation active'], ['closed', 'Closed this month']];
+function colsOn(){ var v = lsGet('gc_ins4b_cols', ''); if (!v) return COLS.filter(function(c){ return c[2]; }).map(function(c){ return c[0]; }); return v.split(','); }
+function S4(A){ return A.S.l4 = A.S.l4 || { view: lsGet('gc_ins4b_view', 'all'), sort: 'days', dir: -1, page: 1, sel: {}, loss: '', stage: '', pm: '' }; }
+function listRows(A){
+  var L = S4(A), q = low(A.S.q), t0 = today(), ym = t0.slice(0, 7), me = low(myName());
+  var out = rows().filter(function(r){
+    if (L.view === 'all' && r.stage === 'closed') return false;
+    if (L.view === 'mine' && low(r.pm) !== me) return false;
+    if (L.view === 'needs' && !r.needs) return false;
+    if (L.view === 'waiting' && !/^(est|review|supp)$/.test(r.stage)) return false;
+    if (L.view === 'dep' && !(r.dep > 0 && r.stage !== 'closed')) return false;
+    if (L.view === 'mit' && !r.mit) return false;
+    if (L.view === 'closed' && !(r.stage === 'closed' && s(r.closedAt).slice(0, 7) === ym)) return false;
+    if (L.loss && r.loss !== L.loss) return false;
+    if (L.stage && r.stage !== L.stage) return false;
+    if (L.pm && low(r.pm) !== low(L.pm)) return false;
+    if (q && low([r.customer, r.job, r.title, r.claimNo, canMoney() ? r.carrier : '', r.adjuster, r.pm].join(' ')).indexOf(q) < 0) return false;
+    return true;
+  });
+  var k = L.sort, d = L.dir;
+  out.sort(function(a, b){ var x = a[k], y = b[k]; if (typeof x === 'number' || typeof y === 'number') { x = num(x); y = num(y); } else { x = low(x); y = low(y); } return (x < y ? -1 : x > y ? 1 : 0) * d || (a.id < b.id ? -1 : 1); });
+  return out;
+}
+function cell(r, k, M){
+  var v = r[k];
+  if (k === 'loss') return esc((I().LOSSN || {})[v] || v);
+  if (k === 'lossDate' || k === 'contact') return esc(md(v));
+  if (k === 'nextDue') return v ? '<span class="ins4-chip ' + (v < today() ? 'bad' : v === today() ? 'warn' : '') + '">' + esc(md(v)) + '</span>' : '';
+  if (k === 'days') return r.claim ? '<span class="' + (v > 7 ? 'ins4b-bad' : '') + '">' + v + '</span>' : '';
+  if (k === 'docs') return r.claim ? '<span class="ins4b-pct"><i style="width:' + num(v) + '%"></i></span> ' + v + '%' : '';
+  if (k === 'rcv' || k === 'acv' || k === 'collected' || k === 'owed') return r.claim ? money0(v) : '';
+  if (k === 'stageL') {
+    if (!r.claim) return '<button class="ins4-btn gold" data-a="ins4bnew" data-v="' + esc(r.pid) + '">+ Open claim</button>';
+    return '<select data-a="ins4stage" data-id="' + esc(r.id) + '" aria-label="Stage">' + stagesK().map(function(x){ return '<option value="' + x.k + '"' + (x.k === r.stage ? ' selected' : '') + '>' + esc(x.l) + '</option>'; }).join('') + '</select>';
+  }
+  if (k === 'pm' && r.claim) return '<select data-a="ins4bpm" data-id="' + esc(r.id) + '" aria-label="PM"><option value="">—</option>' + pms().map(function(n){ return '<option value="' + esc(n) + '"' + (low(n) === low(v) ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + (v && pms().map(low).indexOf(low(v)) < 0 ? '<option value="' + esc(v) + '" selected>' + esc(v) + '</option>' : '') + '</select>';
+  if (k === 'customer') return '<b>' + esc(v || r.title) + '</b>';
+  return esc(v);
+}
+/* PM <option>s always carry the name as their value: another patch adds "— 3 jobs · …" to PM names shown in selects */
+function pms(){ rows(); if (PMS) return PMS; var o = {}; users().forEach(function(u){ if (/project manager|pm\b|admin|insurance/i.test(s(u.role) + ' ' + s(u.profile))) o[s(u.name)] = 1; }); ROWS.forEach(function(r){ if (r.pm) o[r.pm] = 1; }); return (PMS = Object.keys(o).filter(Boolean).sort()); }
+var PAGE = 50;
+function phone(){ return (W.innerWidth || 1000) < 700; }
+function listView(A){
+  I().ensureCss(); css();
+  var L = S4(A), M = canMoney(), all = listRows(A), shown = all.slice(0, PAGE * L.page), cols = colsOn().filter(function(k){ var c = COLS.filter(function(x){ return x[0] === k; })[0]; return c && (c[3] !== 'money' || M); });
+  var counts = {}; VIEWS.forEach(function(v){ var o = L.view; L.view = v[0]; counts[v[0]] = listRows(A).length; L.view = o; });
+  var sel = Object.keys(L.sel).filter(function(k){ return L.sel[k]; });
+  var leads = insLeads();
+  var h = '<div class="ins4 ins4b">' +
+    (I().paused && I().paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — nothing goes to adjusters or homeowners until it is turned off.</div>' : '') +
+    '<div class="ins4b-top"><button class="ins4-btn pri ins4b-big" data-a="ins4bnew" data-v="">⚡ + New claim</button><label class="ins4-btn ins4b-big" title="ESX or PDF — many at once">⬆ Upload Xactimate files<input type="file" multiple accept=".esx,.pdf,application/pdf,application/zip" data-a="ins4bulk" style="display:none"></label>' +
+      '<input class="ins4-in ins4b-q" data-a="q" type="search" placeholder="Search customer, PO, claim #, adjuster…  ( / )" value="' + esc(A.S.q) + '" aria-label="Search insurance jobs"></div>' +
+    (leads.length ? '<div class="ins4-sec ins4b-leads" data-ins4b="leads"><h3>📥 New insurance leads <span class="ins4-chip warn">' + leads.length + '</span><span style="font-weight:400;font-size:12px;color:#64748b">one tap makes the job and the claim</span></h3>' +
+      leads.slice(0, 5).map(function(l){ return '<div class="ins4-need"><i class="ins4-dot med"></i><div class="t"><b>' + esc(s(l.name || l.customer || l.title)) + '</b><span>' + esc([s(l.address), s(l.phone), s(l.desc || l.notes || l.message).slice(0, 90)].filter(Boolean).join(' · ')) + '</span></div><button class="ins4-btn pri" data-a="ins4blead" data-v="' + esc(l.id) + '">→ Open claim</button></div>'; }).join('') + '</div>' : '') +
+    '<div class="ins4b-views" role="tablist">' + VIEWS.map(function(v){ return '<button class="ins4b-view' + (L.view === v[0] ? ' on' : '') + '" data-a="ins4bview" data-v="' + v[0] + '" role="tab" aria-selected="' + (L.view === v[0]) + '">' + esc(v[1]) + ' <span>' + counts[v[0]] + '</span></button>'; }).join('') + '</div>' +
+    '<div class="ins4-filters">' + fsel('loss', 'Every loss type', I().LOSS || []) + fsel('stage', 'Every stage', stagesK().map(function(x){ return [x.k, x.l]; })) + fsel('pm', 'Every PM', pms().map(function(x){ return [x, x]; })) +
+      '<details class="ins4b-colpick"><summary class="ins4-btn">☰ Columns</summary><div>' + COLS.filter(function(c){ return c[3] !== 'money' || M; }).map(function(c){ return '<label><input type="checkbox" data-a="ins4bcol" data-v="' + c[0] + '"' + (colsOn().indexOf(c[0]) >= 0 ? ' checked' : '') + '> ' + esc(c[1]) + '</label>'; }).join('') + '</div></details>' +
+      '<button class="ins4-btn" data-a="ins4bcsv">⬇ CSV</button><span class="ins4b-count">' + all.length + ' job' + (all.length === 1 ? '' : 's') + '</span></div>' +
+    (sel.length ? '<div class="ins4b-bulk" data-ins4b="bulk"><b>' + sel.length + ' selected</b> <select data-a="ins4bbstage" aria-label="Change stage"><option value="">Change stage…</option>' + stagesK().map(function(x){ return '<option value="' + x.k + '">' + esc(x.l) + '</option>'; }).join('') + '</select>' +
+      '<select data-a="ins4bbpm" aria-label="Assign PM"><option value="">Assign PM…</option>' + pms().map(function(n){ return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') + '</select><button class="ins4-btn" data-a="ins4bbnote">📝 Add a note</button><button class="ins4-btn" data-a="ins4bclear">Clear</button></div>' : '');
+  if (!all.length) h += '<div class="gcbb-empty"><b>' + (rows().length ? 'Nothing in this view.' : 'No insurance claims yet.') + '</b><br>' + (rows().length ? 'Pick another view above, or clear the filters.' : 'Tap “⚡ + New claim”, upload Xactimate files, or open a claim from an insurance lead.') + '</div>';
+  else if (phone()) h += '<div class="ins4b-cards">' + shown.map(function(r){ return phoneCard(r, M); }).join('') + '</div>';
+  else h += '<div class="ins4b-tblwrap"><table class="ins4b-tbl" aria-label="Insurance jobs"><thead><tr><th><input type="checkbox" data-a="ins4bselall" aria-label="Select all"' + (sel.length && sel.length >= shown.filter(function(r){ return r.claim; }).length ? ' checked' : '') + '></th>' +
+    cols.map(function(k){ var c = COLS.filter(function(x){ return x[0] === k; })[0]; return '<th><button class="ins4b-sort' + (L.sort === k ? ' on' : '') + '" data-a="ins4bsort" data-v="' + k + '">' + esc(c[1]) + (L.sort === k ? (L.dir > 0 ? ' ▲' : ' ▼') : '') + '</button></th>'; }).join('') + '<th></th></tr></thead><tbody>' +
+    shown.map(function(r){ return '<tr data-row="' + esc(r.id) + '" tabindex="0" class="' + (r.needs && r.claim ? 'need' : '') + '"><td>' + (r.claim ? '<input type="checkbox" data-a="ins4bsel" data-v="' + esc(r.id) + '"' + (L.sel[r.id] ? ' checked' : '') + ' aria-label="Select ' + esc(r.customer) + '">' : '') + '</td>' +
+      cols.map(function(k){ return '<td data-c="' + k + '">' + cell(r, k, M) + '</td>'; }).join('') + '<td>' + (r.claim ? '<button class="ins4-btn" data-a="ins4open" data-v="' + esc(r.id) + '">Open ›</button>' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  if (all.length > shown.length) h += '<div class="ins4-row" style="justify-content:center"><button class="ins4-btn" data-a="ins4bmore">Show ' + Math.min(PAGE, all.length - shown.length) + ' more (' + (all.length - shown.length) + ' left)</button></div>';
+  return h + '</div>';
+}
+function phoneCard(r, M){
+  return '<div class="ins4b-card" data-row="' + esc(r.id) + '"><div class="ins4-row" style="justify-content:space-between"><b>' + esc(r.customer || r.title) + '</b>' + (r.claim ? '<span class="ins4-chip">' + esc(r.stageL) + ' · ' + r.days + ' d</span>' : '') + '</div>' +
+    '<div class="m">' + esc([r.job, (I().LOSSN || {})[r.loss], r.claimNo ? '#' + r.claimNo : '', r.pm ? 'PM ' + r.pm : ''].filter(Boolean).join(' · ')) + '</div>' +
+    (r.claim && M ? '<div class="m">RCV ' + money0(r.rcv) + ' · collected ' + money0(r.collected) + ' · owed <b>' + money0(r.owed) + '</b></div>' : '') +
+    (r.next ? '<div class="m">➜ ' + esc(r.next) + (r.nextDue ? ' · ' + esc(md(r.nextDue)) : '') + '</div>' : '') +
+    '<div class="ins4-row">' + (r.claim ? '<button class="ins4-btn pri" data-a="ins4open" data-v="' + esc(r.id) + '">Open</button>' : '<button class="ins4-btn gold" data-a="ins4bnew" data-v="' + esc(r.pid) + '">+ Open claim</button>') + '</div></div>';
+}
+function fsel(k, label, opts){ return '<select data-a="ins4bf" data-k="' + k + '" aria-label="' + esc(label) + '"><option value="">' + esc(label) + '</option>' + opts.map(function(o){ return '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>'; }).join('') + '</select>'; }
+function fixSelects(A){ var L = S4(A); Array.prototype.forEach.call(A.root.querySelectorAll('select[data-a="ins4bf"]'), function(el){ el.value = L[el.getAttribute('data-k')] || ''; }); }
+function csv(A){
+  var M = canMoney(), cols = colsOn().filter(function(k){ var c = COLS.filter(function(x){ return x[0] === k; })[0]; return c && (c[3] !== 'money' || M); });
+  var q = function(v){ v = s(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  var out = [cols.map(function(k){ return q(COLS.filter(function(x){ return x[0] === k; })[0][1]); }).join(',')];
+  listRows(A).forEach(function(r){ out.push(cols.map(function(k){ var v = r[k]; if (k === 'loss') v = (I().LOSSN || {})[v] || v; return q(typeof v === 'number' ? String(v) : v); }).join(',')); });
+  return out.join('\n');
+}
+function download(name, text, type){
+  try { var b = new Blob([text], { type: type || 'text/csv' }), a = D.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; D.body.appendChild(a); a.click(); later(function(){ try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 500); } catch (e) { warn(e); }
+  W.__gcIns4bLastDownload = { name: name, text: text };
+}
+/* insurance leads not yet a claim (the leads the Leads screen holds — patch HOT2) */
+var PEEK = { at: 0, list: [], t: 0 };
+/* React may hand the list back after this paint: the list repaints once with it */
+function redrawLists(){ try { G()._test.apps().forEach(function(a){ if (a.S && a.S.screen === 'board' && a.root && a.root.isConnected) a.render(); }); } catch (e) {} }
+function peekLeads(){
+  if (typeof W._setLeads !== 'function') return; PEEK.at = Date.now();
+  try { W._setLeads(function(prev){ if (Array.isArray(prev) && prev !== PEEK.list) { PEEK.list = prev; later(redrawLists, 0); } return prev; }); } catch (e) {}
+}
+function allLeads(){
+  var l = []; try { if (typeof W._gcLaLeads === 'function') l = arr(W._gcLaLeads()); } catch (e) {}
+  if (l.length) return l;
+  if (arr(crm().leads).length) return arr(crm().leads);
+  /* the CRM's own leads state: read it by handing back what is there (React keeps the same list, nothing repaints) */
+  if (Date.now() - PEEK.at > 3000) peekLeads();
+  else if (!PEEK.t) PEEK.t = later(function(){ PEEK.t = 0; peekLeads(); }, 3100 - (Date.now() - PEEK.at));   /* one look again once the wait is over (only after a paint asked) */
+  return PEEK.list;
+}
+function insLeads(){
+  var LR = W._gcLeadRoles;
+  return allLeads().filter(function(l){
+    if (!l || l.deleted || /won|lost|closed|dead|archiv|convert/i.test(s(l.status) + ' ' + s(l.stage))) return false;
+    if (l.projectId && claimFor(l.projectId)) return false;
+    try { if (LR && LR.classify) return LR.classify(l) === 'insurance'; } catch (e) {}
+    return /insurance|claim|water damage|fire|storm|mitigation|restoration/i.test(s(l.type) + ' ' + s(l.desc || l.notes || l.message));
+  });
+}
+
+/* ══ QUICK-CREATE ═══════════════════════════════════════════════════════════════════════════════════ */
+function makeProject(f){
+  var id = 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), t = nowIso();
+  var p = { id: id, name: s(f.name), client: s(f.client), clientPhone: s(f.phone), clientEmail: s(f.email), address: s(f.address), status: 'bidding', type: 'Insurance Restoration', isInsurance: true, insuranceTaggedBy: 'claim', insCarrier: s(f.carrier), created: t.slice(0, 10), createdAt: t, updatedAt: t };
+  try { if (typeof W._setProjects === 'function') W._setProjects(function(prev){ return [p].concat(Array.isArray(prev) ? prev : []); }); else if (W._crm) W._crm.projects = [p].concat(arr(W._crm.projects)); } catch (e) { warn(e); }
+  return new Promise(function(res){ var n = 0; (function wait(){ if (proj(id) || n++ > 30) return res(id); later(wait, 120); })(); });
+}
+var LOSS_CAUSE = { water: 'Water', fire: 'Fire / smoke', storm: 'Storm', hail: 'Wind / hail', wind: 'Wind / hail', mold: 'Mold', other: 'Other' };
+function quickCreate(f){
+  f = f || {};
+  if (!s(f.customer) && !s(f.projectId)) return Promise.reject(new Error('Who is the customer?'));
+  var go = s(f.projectId) ? Promise.resolve(s(f.projectId)) : makeProject({ name: s(f.customer) + (f.loss ? ' — ' + (LOSS_CAUSE[f.loss] || '') : ''), client: f.customer, address: f.address, phone: f.phone, email: f.email, carrier: f.carrier });
+  return go.then(function(pid){
+    var p = proj(pid) || {};
+    var ex = claimFor(pid); if (ex) return ex;
+    var loss = s(f.loss), jobType = /water|mold|fire/.test(loss) ? loss : (/storm|hail|wind/.test(loss) ? 'storm' : '');
+    return G().create({ projectId: pid, title: s(p.name), insured: s(f.customer) || s(p.client), address: s(f.address) || s(p.address), carrier: s(f.carrier), claimNumber: s(f.claimNumber), dateOfLoss: s(f.lossDate), causeOfLoss: LOSS_CAUSE[loss] || '',
+      scope: /water|mold|fire/.test(loss) ? 'both' : 'reconstruction', adjuster: { name: s(f.adjName), phone: s(f.adjPhone), email: s(f.adjEmail) } })
+      .then(function(c){ if (!jobType) return c; return G().update(c.id, function(x){ x.jobType = jobType; x.ins4 = x.ins4 || {}; x.ins4.fnolAt = nowIso(); }).then(function(){ return G().get(c.id); }); });
+  });
+}
+function quickForm(A, pre){
+  pre = pre || {};
+  var p = pre.projectId ? proj(pre.projectId) || {} : {};
+  var LO = I().LOSS || [];
+  return I().modal('<h3 style="margin:0 0 4px">⚡ New claim</h3><div style="font-size:12.5px;color:#475569;margin-bottom:8px">Seven fields — the rest can wait. ' + (pre.projectId ? 'It is opened on <b>' + esc(p.name) + '</b>.' : 'It makes the job too (or pick an existing one).') + '</div>' +
+    '<div class="ins4b-form">' +
+    (pre.projectId ? '' : '<label class="full">Existing job (optional)<select data-q="projectId"><option value="">➕ New job for this claim</option>' + projects().filter(function(x){ return !claimFor(x.id); }).sort(function(a, b){ return (isInsJob(b) ? 1 : 0) - (isInsJob(a) ? 1 : 0) || s(a.name).localeCompare(s(b.name)); }).map(function(x){ return '<option value="' + esc(x.id) + '">' + (isInsJob(x) ? '🛡 ' : '') + esc(x.name) + (x.client ? ' — ' + esc(x.client) : '') + '</option>'; }).join('') + '</select></label>') +
+    '<label>Customer<input data-q="customer" value="' + esc(pre.customer || p.client) + '" autofocus></label><label>Phone<input data-q="phone" type="tel" value="' + esc(pre.phone || p.clientPhone) + '"></label>' +
+    '<label class="full">Loss address<input data-q="address" value="' + esc(pre.address || p.address) + '"></label>' +
+    '<label>Loss type<select data-q="loss">' + LO.map(function(x){ return '<option value="' + x[0] + '"' + (x[0] === (pre.loss || 'water') ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select></label><label>Date of loss<input data-q="lossDate" type="date" value="' + esc(pre.lossDate || '') + '"></label>' +
+    '<label>Claim #<input data-q="claimNumber" value="' + esc(pre.claimNumber || p.claimNumber) + '"></label><label>Carrier (staff only)<input data-q="carrier" value="' + esc(pre.carrier || p.insCarrier) + '"></label>' +
+    '<label>Adjuster<input data-q="adjName" value="' + esc(pre.adjName) + '"></label><label>Adjuster e-mail<input data-q="adjEmail" type="email" value="' + esc(pre.adjEmail) + '"></label>' +
+    '</div><div class="ins4-row" style="justify-content:flex-end;margin-top:10px"><button class="ins4-btn" data-i4close="1">Cancel</button><button class="ins4-btn pri ins4b-big" data-i4go="1">Open the claim ›</button></div>', function(ov){
+    var go = function(){
+      var f = {}; Array.prototype.forEach.call(ov.querySelectorAll('[data-q]'), function(el){ f[el.getAttribute('data-q')] = el.value; });
+      if (pre.projectId) f.projectId = pre.projectId;
+      var b = ov.querySelector('[data-i4go]'); b.disabled = true; b.textContent = 'Opening…';
+      quickCreate(f).then(function(c){
+        ov.remove();
+        if (pre.leadId) markLead(pre.leadId, c.projectId);
+        I().goTab(A, c.id, 'cc'); I().toastA(A, '✓ Claim opened');
+      }, function(e){ b.disabled = false; b.textContent = 'Open the claim ›'; I().toastA(A, s(e && e.message)); });
+    };
+    ov.querySelector('[data-i4go]').onclick = go;
+    ov.addEventListener('keydown', function(ev){ if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); go(); } if (ev.key === 'Escape') ov.remove(); });
+    later(function(){ var el = ov.querySelector('[data-q="customer"]'); if (el) el.focus(); }, 30);
+  });
+}
+function markLead(id, pid){
+  try { if (typeof W._setLeads === 'function') W._setLeads(function(prev){ return arr(prev).map(function(l){ return l && s(l.id) === s(id) ? Object.assign({}, l, { status: 'Won', stage: 'Won', projectId: pid, convertedAt: nowIso(), convertedTo: 'claim', updatedAt: nowIso() }) : l; }); }); } catch (e) { warn(e); }
+}
+function leadPre(l){ var t = s(l.type) + ' ' + s(l.desc || l.notes || l.message); return { customer: s(l.name || l.customer), phone: s(l.phone), email: s(l.email), address: s(l.address), loss: lossFromText(t), leadId: l.id }; }
+
+/* ══ XACTIMATE: read ESX (zip + XML) and PDF (text) here ═════════════════════════════════════════════ */
+function u8(b){ return b instanceof Uint8Array ? b : new Uint8Array(b); }
+function rd16(b, o){ return b[o] | (b[o + 1] << 8); }
+function rd32(b, o){ return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
+function inflateRaw(bytes){ if (typeof DecompressionStream !== 'function') return Promise.reject(new Error('no unzip')); return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then(u8); }
+function isZip(b){ return b.length > 22 && b[0] === 0x50 && b[1] === 0x4b; }
+function unzip(buf, depth){
+  var b = u8(buf); depth = depth || 0;
+  if (!isZip(b)) return Promise.reject(new Error('not a zip'));
+  var eocd = -1; for (var i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) { if (rd32(b, i) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) return Promise.reject(new Error('no zip directory'));
+  var n = rd16(b, eocd + 10), off = rd32(b, eocd + 16), out = [], jobs = [];
+  for (var k = 0; k < n; k++) {
+    if (rd32(b, off) !== 0x02014b50) break;
+    var flags = rd16(b, off + 8), method = rd16(b, off + 10), csize = rd32(b, off + 20), nlen = rd16(b, off + 28), xlen = rd16(b, off + 30), clen = rd16(b, off + 32), loc = rd32(b, off + 42);
+    var name = new TextDecoder().decode(b.subarray(off + 46, off + 46 + nlen)); off += 46 + nlen + xlen + clen;
+    if (rd32(b, loc) !== 0x04034b50) continue;
+    var start = loc + 30 + rd16(b, loc + 26) + rd16(b, loc + 28), data = b.subarray(start, start + csize);
+    (function(name, flags, method, data){
+      if (flags & 1) { out.push({ name: name, encrypted: true }); return; }
+      if (method === 0) { out.push({ name: name, data: data }); return; }
+      if (method === 8) { jobs.push(inflateRaw(data).then(function(d){ out.push({ name: name, data: d }); }, function(){ out.push({ name: name, unreadable: true }); })); return; }
+      out.push({ name: name, unreadable: true });
+    })(name, flags, method, data);
+  }
+  return Promise.all(jobs).then(function(){
+    if (depth >= 2) return out;
+    return Promise.all(out.map(function(p){ return p.data && isZip(p.data) ? unzip(p.data, depth + 1).then(function(sub){ return sub.map(function(x){ x.name = p.name + '/' + x.name; return x; }); }, function(){ return [p]; }) : [p]; })).then(function(l){ return [].concat.apply([], l); });
+  });
+}
+function textOf(bytes){ var b = u8(bytes); if (b[0] === 0xff && b[1] === 0xfe) return new TextDecoder('utf-16le').decode(b.subarray(2)); if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder('utf-16be').decode(b.subarray(2)); return new TextDecoder('utf-8').decode(b); }
+function readEsx(buf, meta){
+  var core = G().core;
+  return unzip(buf).then(function(parts){
+    var best = null, xmls = 0;
+    parts.forEach(function(p){
+      if (!p.data || /\.(jpe?g|png|gif|bmp|tiff?)$/i.test(p.name)) return;
+      var t = ''; try { t = textOf(p.data); } catch (e) { return; }
+      if (!/^\s*(<\?xml|<[A-Za-z_])/.test(t.slice(0, 200))) return;
+      xmls++;
+      try { var r = core.parseXactXml(t); var score = r.lines.length * 10 + Object.keys(r.totals || {}).length * 2 + Object.keys(r.header || {}).length; if (!best || score > best.score) { best = r; best.score = score; best.part = p.name; best.text = t; } } catch (e) {}
+    });
+    if (!best || (!best.lines.length && !Object.keys(best.totals || {}).length && !Object.keys(best.header || {}).length)) return { ok: false, why: 'Stored — couldn’t read the details (' + parts.length + ' part' + (parts.length === 1 ? '' : 's') + ', ' + xmls + ' XML).' };
+    var est = core.normEstimate({ header: best.header, lines: best.lines, totals: best.totals, source: 'esx' }, Object.assign({ source: 'esx' }, meta || {}));
+    est.header.priceList = s(best.header.priceList) || est.header.priceList;
+    remRep(best.text, est.lines);
+    if (!est.header.lossAddress) { var am = s(best.text).match(/\b(?:lossAddress|propertyAddress|insuredAddress)="([^"]+)"/i); if (am) est.header.lossAddress = am[1]; }
+    if (!best.lines.length) est.warnings.push('The ESX had the summary but no readable line items — the totals are shown; the original file is on the claim.');
+    return { ok: true, est: est };
+  }, function(e){ return { ok: false, why: 'Stored — couldn’t read the details (' + s(e && e.message) + ').' }; });
+}
+/* the ESX keeps remove and replace prices apart — keep them on the line for the price book */
+function remRep(xml, lines){
+  try {
+    var dom = new DOMParser().parseFromString(xml, 'application/xml'), q = {};
+    Array.prototype.forEach.call(dom.getElementsByTagName('*'), function(el){
+      var g = function(n){ var v = el.getAttribute(n); if (v == null) { var ch = el.getElementsByTagName(n)[0]; v = ch && ch.parentNode === el ? ch.textContent : null; } return v; };
+      var d = g('desc') || g('description'), rm = g('remove'), rp = g('replace'); if (!d || (rm == null && rp == null)) return;
+      (q[low(d)] = q[low(d)] || []).push({ rem: num(rm), rep: num(rp) });
+    });
+    arr(lines).forEach(function(l){ var x = q[low(l.desc)]; if (x && x.length) { var y = x.shift(); l.rem = y.rem; l.rep = y.rep; } });
+  } catch (e) {}
+}
+var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', PDFW = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+function pdfjs(){
+  /* the CRM keeps a small local text reader under the same name (no positions); the real library replaces it, and the
+     local one is the fallback when the library cannot load */
+  if (W.pdfjsLib && !W.pdfjsLib.__gcLocal) return Promise.resolve(W.pdfjsLib);
+  var local = W.pdfjsLib && W.pdfjsLib.__gcLocal ? W.pdfjsLib : null;
+  return new Promise(function(res, rej){ var sc = D.createElement('script'); sc.src = PDFJS; sc.onload = function(){ try { W.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFW; } catch (e) {} res(W.pdfjsLib); }; sc.onerror = function(){ if (local) { W.pdfjsLib = local; res(local); } else rej(new Error('The PDF reader could not load (offline?).')); }; D.head.appendChild(sc); });
+}
+function pdfLines(buf){
+  return pdfjs().then(function(lib){ return lib.getDocument({ data: u8(buf) }).promise; }).then(function(doc){
+    var pages = []; for (var i = 1; i <= Math.min(doc.numPages, 120); i++) pages.push(i);
+    return Promise.all(pages.map(function(n){ return doc.getPage(n).then(function(pg){ return pg.getTextContent(); }).then(function(tc){
+      if (tc.items.length && !tc.items.some(function(it){ return it && it.transform; })) return tc.items.map(function(it){ return s(it && it.str).replace(/\s+/g, ' '); }).filter(Boolean);   /* the local reader: lines already */
+      var rowsY = {}; tc.items.forEach(function(it){ if (!it || !it.transform || typeof it.str !== 'string') return;   /* marked-content items carry no text */
+        var y = Math.round(it.transform[5]); var k = Object.keys(rowsY).filter(function(z){ return Math.abs(num(z) - y) <= 2; })[0] || String(y); (rowsY[k] = rowsY[k] || []).push({ x: it.transform[4], t: it.str }); });
+      return Object.keys(rowsY).sort(function(a, b){ return num(b) - num(a); }).map(function(k){ return rowsY[k].sort(function(a, b){ return a.x - b.x; }).map(function(x){ return x.t; }).join(' ').replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+    }); })).then(function(ps){ return [].concat.apply([], ps); });
+  });
+}
+var UNITS = 'SF|SY|LF|EA|SQ|HR|DA|CF|CY|GL|LS|WK|MO|RM|TN|BX|RL|PR|ST|LB|BG|CS|UN|SH|KT|DY|MH';
+var LINE_RE = new RegExp('^(\\d+)\\.\\s+(.+?)\\s+(-?[\\d,]+\\.\\d{2})\\s*(' + UNITS + ')\\s+(-?[\\d,]+\\.\\d{2})\\s+(-?[\\d,]+\\.\\d{2})\\s+(-?[\\d,]+\\.\\d{2})\\s+(-?[\\d,]+\\.\\d{2})\\s+([<(]*-?[\\d,]+\\.\\d{2}[>)]*)\\s+(-?[\\d,]+\\.\\d{2})\\s*$');
+var LINE_RE2 = new RegExp('^(\\d+)\\.\\s+(.+?)\\s+(-?[\\d,]+\\.\\d{2})\\s*(' + UNITS + ')\\s+(-?[\\d,]+\\.\\d{2})\\s+(-?[\\d,]+\\.\\d{2})\\s*$');
+function parsePdfText(lines){
+  var header = {}, totals = {}, out = [], room = 'General';
+  function hv(re){ for (var i = 0; i < lines.length; i++) { var m = lines[i].match(re); if (m) return s(m[1]); } return ''; }
+  header.insured = hv(/^Insured:\s*(.+?)(?:\s{2,}|\s+(?:Home|Cell|E-?mail|Phone):|$)/i);
+  header.claimNumber = hv(/Claim (?:Number|#|No\.?):\s*([A-Z0-9\-]+)/i);
+  header.policyNumber = hv(/Policy (?:Number|#|No\.?):\s*([A-Z0-9\-]+)/i);
+  header.dateOfLoss = ymd(hv(/Date of Loss:\s*([0-9\/\-]+)/i));
+  header.typeOfLoss = hv(/Type of Loss:\s*(.+?)(?:\s{2,}|$)/i);
+  header.priceList = hv(/Price List:\s*([A-Z0-9_]+)/i);
+  header.carrier = hv(/(?:Insurance Company|Carrier):\s*(.+?)(?:\s{2,}|$)/i);
+  header.lossAddress = hv(/(?:Property|Loss Address|Location):\s*(.+?)$/i);
+  header.estimateName = hv(/Estimate:\s*([A-Z0-9_\-\. ]+)/i);
+  function tv(re){ var v = hv(re); return v ? num(v) : null; }
+  var T = { lineItems: tv(/^Line Item Total\s+\$?\(?([\d,]+\.\d{2})/i), tax: tv(/^(?:Material )?Sales Tax\s+\$?([\d,]+\.\d{2})/i), overhead: tv(/^Overhead\s+\$?([\d,]+\.\d{2})/i), profit: tv(/^Profit\s+\$?([\d,]+\.\d{2})/i),
+    rcv: tv(/^Replacement Cost Value\s+\$?([\d,]+\.\d{2})/i), dep: tv(/^Less (?:Recoverable )?Depreciation\s+\$?\(?<?([\d,]+\.\d{2})/i), acv: tv(/^Actual Cash Value\s+\$?([\d,]+\.\d{2})/i), deductible: tv(/^Less Deductible\s+\$?\(?([\d,]+\.\d{2})/i), net: tv(/^Net Claim\s+\$?([\d,]+\.\d{2})/i) };
+  Object.keys(T).forEach(function(k){ if (T[k] != null) totals[k] = T[k]; });
+  lines.forEach(function(l, i){
+    var m = l.match(LINE_RE);
+    if (m) { out.push({ line: m[1], room: room, desc: m[2], qty: num(m[3]), unit: m[4], unitPrice: num(m[5]), tax: num(m[6]), op: num(m[7]), rcv: num(m[8]), dep: Math.abs(num(m[9])), acv: num(m[10]) }); return; }
+    var m2 = l.match(LINE_RE2);
+    if (m2) { out.push({ line: m2[1], room: room, desc: m2[2], qty: num(m2[3]), unit: m2[4], unitPrice: num(m2[5]), rcv: num(m2[6]) }); return; }
+    if (/^[A-Z][A-Za-z0-9 &\/'\-]{1,40}$/.test(l) && !/:/.test(l) && !/^(DESCRIPTION|QUANTITY|TOTALS?|SUMMARY|PAGE|DATE|RECAP)/i.test(l) && lines[i + 1] && (LINE_RE.test(lines[i + 1]) || LINE_RE2.test(lines[i + 1]) || /DESCRIPTION/i.test(lines[i + 1]))) room = l;
+  });
+  Object.keys(header).forEach(function(k){ if (!s(header[k])) delete header[k]; });
+  return { header: header, lines: out, totals: totals };
+}
+function readPdf(buf, meta){
+  return pdfLines(buf).then(function(lines){
+    var r = parsePdfText(lines);
+    if (!r.lines.length && !Object.keys(r.totals).length) return { ok: false, why: 'Stored — couldn’t read the details (no Xactimate totals or line items found in the text).', text: lines.length };
+    var est = G().core.normEstimate({ header: r.header, lines: r.lines, totals: r.totals, source: 'pdf' }, Object.assign({ source: 'pdf' }, meta || {}));
+    est.header.priceList = s(r.header.priceList); est.header.lossAddress = s(r.header.lossAddress) || est.header.lossAddress;
+    if (!r.lines.length) est.warnings.push('Only the totals could be read from this PDF. “Read with Claude” in the panel below reads every line.');
+    return { ok: true, est: est };
+  }, function(e){ return { ok: false, why: 'Stored — couldn’t read the details (' + s(e && e.message) + ').' }; });
+}
+function read(file){
+  var meta = { fileName: s(file.name), by: myName() };
+  return file.arrayBuffer().then(function(buf){
+    var b = u8(buf), isPdf = b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
+    if (isPdf || /\.pdf$/i.test(file.name)) return readPdf(buf, meta).then(function(r){ r.kind = 'pdf'; return r; });
+    return readEsx(buf, meta).then(function(r){ r.kind = 'esx'; return r; });
+  });
+}
+/* the same estimate twice = the same fingerprint (re-uploading never makes a second version) */
+function fingerprint(est){
+  var t = est.totals || {}, h = est.header || {};
+  return [low(h.claimNumber), low(h.priceList), r2(t.rcv), r2(t.acv), arr(est.lines).length, arr(est.lines).slice(0, 5).map(function(l){ return low(l.desc).slice(0, 24) + '@' + r2(l.unitPrice); }).join(';')].join('|');
+}
+function storeFile(file, c){
+  if (typeof W._gcStoreFile !== 'function') return Promise.resolve('');
+  return W._gcStoreFile(file, { kind: 'doc', pid: c.projectId, name: file.name }).then(function(m){ return (m && m.ref) || ''; }, function(){ return ''; });
+}
+function importRead(claimId, file, r, side){
+  var c = G().get(claimId); if (!c) return Promise.reject(new Error('claim not found'));
+  return storeFile(file, c).then(function(ref){
+    if (!r.ok) return G().doc(claimId, { kind: 'estimate', name: file.name, ref: ref, type: file.type || (r.kind === 'pdf' ? 'application/pdf' : 'application/zip'), size: file.size, internal: true, note: r.why, unread: true }).then(function(){ return { stored: true, why: r.why }; });
+    var est = r.est, fp = fingerprint(est);
+    var dup = arr(c.estimates).filter(function(e){ return e && !e.deleted && (e.fp === fp || fingerprint(e) === fp); })[0];
+    if (dup) return { duplicate: true, version: dup.version };
+    est.fp = fp; est.fileRef = ref; est.fileName = file.name;
+    est.side = side === 'carrier' || side === 'grayco' ? side : (G().cmp && G().cmp.detectSide ? G().cmp.detectSide(est, c) || 'carrier' : 'carrier');
+    return G().addEstimate(claimId, est).then(function(){ return G().doc(claimId, { kind: 'estimate', name: file.name, ref: ref, type: file.type || '', size: file.size, estimateId: est.id, internal: true }); })
+      .then(function(){ try { if (W._gcInsPriceBook && W._gcInsPriceBook.capture) W._gcInsPriceBook.capture(G().get(claimId), est); } catch (e) { warn(e); } return { est: est }; });
+  });
+}
+
+/* ── bulk: many files → a claim each (claim # → insured → address), confirm the rest ── */
+function normAddr(a){ return low(a).replace(/[.,#]/g, ' ').replace(/\b(street|st|road|rd|avenue|ave|lane|ln|drive|dr|court|ct|boulevard|blvd|circle|cir)\b/g, '').replace(/\s+/g, ' ').trim().split(' ').slice(0, 3).join(' '); }
+function normName(n){ return low(n).replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function matchClaim(est){
+  var h = (est && est.header) || {}, list = G().list();
+  var cn = low(h.claimNumber).replace(/[^a-z0-9]/g, '');
+  if (cn) { var m1 = list.filter(function(c){ return low(c.claimNumber).replace(/[^a-z0-9]/g, '') === cn; }); if (m1.length === 1) return { claim: m1[0], by: 'claim #' }; }
+  var nm = normName(h.insured);
+  if (nm) { var m2 = list.filter(function(c){ var p = proj(c.projectId) || {}; return normName(c.insured || p.client) === nm; }); if (m2.length === 1) return { claim: m2[0], by: 'insured' }; }
+  var ad = normAddr(h.lossAddress);
+  if (ad) { var m3 = list.filter(function(c){ var p = proj(c.projectId) || {}; return normAddr(c.address || p.address) === ad; }); if (m3.length === 1) return { claim: m3[0], by: 'address' }; }
+  return null;
+}
+function bulk(A, files){
+  files = Array.prototype.slice.call(files || []);
+  if (!files.length) return;
+  A.busy('Reading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…');
+  return Promise.all(files.map(function(f){ return read(f).then(function(r){ return { file: f, r: r, m: r.ok ? matchClaim(r.est) : null }; }, function(e){ return { file: f, r: { ok: false, why: s(e && e.message) }, m: null }; }); })).then(function(items){
+    A.busy('');
+    W.__gcIns4bBulk = items;
+    var opts = G().list().map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(I().claimTitle(c)) + (c.claimNumber ? ' · #' + esc(c.claimNumber) : '') + '</option>'; }).join('');
+    var body = items.map(function(it, i){
+      var h = it.r.ok ? it.r.est.header : {}, t = it.r.ok ? it.r.est.totals : {};
+      return '<tr data-bi="' + i + '"><td><b>' + esc(it.file.name) + '</b><div style="font-size:11.5px;color:#64748b">' + (it.r.ok ? esc([h.insured, h.claimNumber ? '#' + h.claimNumber : '', h.priceList, t.rcv ? 'RCV ' + money0(t.rcv) : '', arr(it.r.est.lines).length + ' lines'].filter(Boolean).join(' · ')) : esc(it.r.why)) + '</div></td>' +
+        '<td>' + (it.m ? '<span class="ins4-chip ok">matched by ' + esc(it.m.by) + '</span>' : '<span class="ins4-chip warn">pick a claim</span>') + '</td>' +
+        '<td><select data-bsel="' + i + '"><option value="__skip">Skip this file</option><option value="__new"' + (!it.m && it.r.ok ? ' selected' : '') + '>➕ New claim from this file</option>' + opts.replace('value="' + esc(it.m ? it.m.claim.id : '') + '"', 'value="' + esc(it.m ? it.m.claim.id : '') + '" selected') + '</select></td>' +
+        '<td><select data-bside="' + i + '"><option value="">auto</option><option value="carrier">carrier</option><option value="grayco">ours</option></select></td></tr>';
+    }).join('');
+    I().modal('<h3 style="margin:0 0 4px">⬆ Upload Xactimate files — check the matches</h3><div style="font-size:12.5px;color:#475569;margin-bottom:8px">' + items.filter(function(x){ return x.m; }).length + ' of ' + items.length + ' matched to a claim. Every original file is kept on its claim.</div>' +
+      '<div style="overflow-x:auto"><table class="ins4-tbl ins4b-bulktbl"><thead><tr><th>File</th><th>Match</th><th>Claim</th><th>Side</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<div class="ins4-row" style="justify-content:flex-end;margin-top:10px"><button class="ins4-btn" data-i4close="1">Cancel</button><button class="ins4-btn pri ins4b-big" data-i4go="1">Import</button></div>', function(ov){
+      ov.querySelector('[data-i4go]').onclick = function(){
+        var b = this; b.disabled = true; b.textContent = 'Importing…';
+        var done = { ok: 0, dup: 0, stored: 0, made: 0, skipped: 0 };
+        var chain = Promise.resolve();
+        items.forEach(function(it, i){
+          var target = ov.querySelector('[data-bsel="' + i + '"]').value, side = ov.querySelector('[data-bside="' + i + '"]').value;
+          chain = chain.then(function(){
+            if (target === '__skip') { done.skipped++; return; }
+            var go = target === '__new' ? quickCreate({ customer: s(it.r.ok && it.r.est.header.insured) || it.file.name.replace(/\.(esx|pdf)$/i, ''), address: s(it.r.ok && it.r.est.header.lossAddress), claimNumber: s(it.r.ok && it.r.est.header.claimNumber), carrier: s(it.r.ok && it.r.est.header.carrier), lossDate: s(it.r.ok && it.r.est.header.dateOfLoss), loss: lossFromText(s(it.r.ok && it.r.est.header.typeOfLoss)) }).then(function(c){ done.made++; return c.id; }) : Promise.resolve(target);
+            return go.then(function(cid){ return importRead(cid, it.file, it.r, side); }).then(function(x){ if (x.duplicate) done.dup++; else if (x.stored) done.stored++; else done.ok++; });
+          });
+        });
+        chain.then(function(){ ov.remove(); W.__gcIns4bBulkDone = done; I().toastA(A, '✓ ' + done.ok + ' estimate(s) imported' + (done.made ? ', ' + done.made + ' new claim(s)' : '') + (done.dup ? ', ' + done.dup + ' already there' : '') + (done.stored ? ', ' + done.stored + ' stored unread' : '')); A.render(true); }, function(e){ b.disabled = false; b.textContent = 'Import'; I().toastA(A, s(e && e.message)); });
+      };
+    });
+  }, function(e){ A.busy(''); A.fail(e); });
+}
+
+/* ══ THE CLAIM WORKSPACE ═══════════════════════════════════════════════════════════════════════════ */
+var MAIN = [['cc', '🧭 Overview'], ['ct4', '👥 Contacts'], ['mn4', '💵 Money'], ['xa4', '📐 Xactimate'], ['docs', '📄 Documents'], ['gallery', '📸 Photos'], ['drying', '💧 Mitigation'], ['sp4', '➕ Supplements'], ['tk4', '✅ Tasks'], ['tl4', '🕑 Timeline'], ['notes', '📝 Notes']];
+function tabs(orig, c){
+  var by = {}; arr(orig).forEach(function(t){ by[t[0]] = t; });
+  var out = MAIN.map(function(t){ var o = by[t[0]]; if (t[0] === 'notes' && o) return ['notes', '📝 ' + o[1]]; if (t[0] === 'docs' && o) return ['docs', '📄 ' + o[1]]; if (t[0] === 'ct4' || t[0] === 'mn4' || t[0] === 'xa4' || t[0] === 'sp4' || t[0] === 'tk4' || t[0] === 'tl4' || t[0] === 'cc') return t; return o ? [t[0], t[1]] : null; }).filter(Boolean);
+  var mainK = {}; MAIN.forEach(function(t){ mainK[t[0]] = 1; });
+  arr(orig).forEach(function(t){ if (!mainK[t[0]]) out.push([t[0], '⋯ ' + (t[0] === 'overview' ? 'Claim form' : String(t[1]).replace(/^[^\w(]+\s*/, ''))]); });
+  return out;
+}
+function overviewTab(A, c){
+  var P = I(), n = C4().needs(c);
+  return '<div class="ins4">' + (P.paused && P.paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — nothing goes to adjusters or homeowners.</div>' : '') + P.factsHtml(c) +
+    '<div class="ins4-grid"><div class="ins4-sec" data-ins4="next"><h3>⚡ Next for this claim <span class="ins4-chip ' + (n.length ? 'warn' : 'ok') + '">' + n.length + '</span></h3>' +
+      (n.length ? n.map(function(x){ return '<div class="ins4-need"><i class="ins4-dot ' + x.prio + '"></i><div class="t"><span>' + esc(x.text) + '</span></div><button class="ins4-btn" data-a="' + x.act + '" data-v="' + esc(x.v) + '">' + esc(x.btn) + '</button></div>'; }).join('') : '<div style="color:#166534;font-weight:700;font-size:13px">✓ Nothing waiting on this claim.</div>') + '</div>' +
+      moneyMini(c) + '</div>' + P.docsHtml(c) + '</div>';
+}
+function moneyMini(c){
+  if (!canMoney()) return '';
+  var L = C4().ledger(c);
+  return '<div class="ins4-sec" data-ins4="moneymini"><h3>💵 Money <button class="ins4-btn" data-a="tab" data-v="mn4" style="margin-left:auto">Ledger ›</button></h3><div class="ins4-kpis">' +
+    I().kpiTile('', 'RCV', money0(L.rcv)) + I().kpiTile('', 'ACV', money0(L.acv)) + I().kpiTile('', 'Collected', money0(L.paidToDate)) + I().kpiTile(L.carrierOwes + L.ownerOwes ? 'warn' : '', 'Owed', money0(L.carrierOwes + L.ownerOwes), 'carrier ' + money0(L.carrierOwes) + ' · homeowner ' + money0(L.ownerOwes)) + '</div></div>';
+}
+function contactsTab(A, c){
+  var p = proj(c.projectId) || {}, M = canMoney(), a = c.adjuster || {}, dk = c.deskAdjuster || {}, ia = c.ia || {}, mg = c.mortgage || {};
+  function card(role, key, o, editable, fields){
+    var ph = s(o.phone).replace(/[^\d+]/g, '');
+    return '<div class="ins4-sec ins4b-ct" data-ct="' + key + '"><h3>' + esc(role) + '</h3>' +
+      (editable ? '<div class="ins4b-form">' + fields.map(function(f){ return '<label>' + esc(f[1]) + '<input data-ctf="' + key + '.' + f[0] + '" value="' + esc(o[f[0]]) + '"' + (f[2] ? ' type="' + f[2] + '"' : '') + '></label>'; }).join('') + '</div>' : '<div style="font-size:13.5px"><b>' + esc(s(o.name) || '—') + '</b>' + (s(o.phone) ? ' · ' + esc(o.phone) : '') + (s(o.email) ? ' · ' + esc(o.email) : '') + '</div>') +
+      '<div class="ins4-row">' + (ph ? '<button class="ins4-btn" data-a="ins4bct" data-v="call|' + key + '" data-href="tel:' + esc(ph) + '">📞 Call</button><button class="ins4-btn" data-a="ins4bct" data-v="text|' + key + '" data-href="sms:' + esc(ph) + '">💬 Text</button>' : '') +
+        (s(o.email) ? '<button class="ins4-btn" data-a="ins4bct" data-v="email|' + key + '">✉️ E-mail</button>' : '') + '<span style="font-size:12px;color:#64748b">' + esc(lastFor(c, key)) + '</span></div></div>';
+  }
+  return '<div class="ins4"><div class="ins4-grid">' +
+    card('🏠 Homeowner', 'home', { name: s(c.insured || p.client), phone: s(p.clientPhone), email: s(p.clientEmail) }, false) +
+    card('🧑‍💼 Field adjuster', 'adj', a, true, [['name', 'Name'], ['phone', 'Phone', 'tel'], ['email', 'E-mail', 'email']].concat(M ? [['company', 'Company']] : [])) +
+    card('🖥 Desk adjuster', 'desk', dk, true, [['name', 'Name'], ['phone', 'Phone', 'tel'], ['email', 'E-mail', 'email']]) +
+    (M ? card('🏢 IA firm', 'ia', { name: s(ia.name || a.company), phone: s(ia.phone), email: s(ia.email) }, true, [['name', 'Firm'], ['phone', 'Phone', 'tel'], ['email', 'E-mail', 'email']]) : '') +
+    card('🏦 Mortgage company', 'mortgage', { name: s(mg.name || c.mortgageCo), phone: s(mg.phone), email: s(mg.email), loan: s(mg.loan || c.loanNumber) }, true, [['name', 'Company'], ['phone', 'Phone', 'tel'], ['email', 'E-mail', 'email'], ['loan', 'Loan #']]) +
+    '</div><div class="ins4-row"><button class="ins4-btn pri ins4b-big" data-a="ins4bctsave">Save contacts</button><span style="font-size:12px;color:#64748b">The homeowner’s details live on the job (Projects).</span></div></div>';
+}
+function lastFor(c, key){
+  var who = { home: 'homeowner', adj: 'adjuster', desk: 'desk adjuster', ia: 'IA', mortgage: 'mortgage' }[key];
+  var l = arr((c.ins4 || {}).log).filter(function(e){ return /📞|💬|✉️/.test(s(e.ic)) && low(e.text).indexOf(low(who)) >= 0; }).sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; })[0];
+  return l ? 'last: ' + md(l.at) + ' · ' + s(l.text) : 'no contact logged yet';
+}
+function moneyTab(A, c){ return '<div class="ins4">' + (I().ledgerHtml(c) || '<div class="gcbb-empty">The money on this claim is for the office and the insurance team.</div>') + '</div>'; }
+function suppTab(A, c){
+  var pb = W._gcInsPriceBook && W._gcInsPriceBook.underpaidHtml ? W._gcInsPriceBook.underpaidHtml(c) : '';
+  return '<div class="ins4">' + pb + I().suppBuilderHtml(c) + (I().ledgerHtml(c) ? '' : '') + '<div class="ins4-sec"><h3>⚖ Carrier vs ours</h3><div style="font-size:13px;color:#475569">The full line-by-line compare (match, mark “request in supplement”, PDF report):</div><div class="ins4-row"><button class="ins4-btn gold ins4b-big" data-a="cmpopen">⚖ Open the compare</button></div></div></div>';
+}
+function tasksTab(A, c){
+  var t = arr(c.tasks).filter(function(x){ return x && !x.deleted; }).sort(function(a, b){ return (a.done ? 1 : 0) - (b.done ? 1 : 0) || s(a.due || '9') < s(b.due || '9') ? -1 : 1; });
+  var n = C4().needs(c);
+  return '<div class="ins4"><div class="ins4-sec" data-ins4b="tasks"><h3>✅ Tasks <span class="ins4-chip">' + t.filter(function(x){ return !x.done; }).length + ' open</span></h3>' +
+    '<div class="ins4-row"><input class="ins4-in" data-tk="text" placeholder="What needs doing? (Enter to add)" style="flex:1;min-width:200px"><input class="ins4-in" data-tk="due" type="date"><select class="ins4-in" data-tk="who"><option value="">Anyone</option>' + pms().map(function(x){ return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('') + '</select><button class="ins4-btn pri" data-a="ins4btask">+ Add</button></div>' +
+    (t.length ? t.map(function(x){ return '<div class="ins4-doc"><input type="checkbox" data-a="ins4btdone" data-v="' + esc(x.id) + '"' + (x.done ? ' checked' : '') + ' aria-label="Done"><span class="l"' + (x.done ? ' style="text-decoration:line-through;color:#94a3b8"' : '') + '>' + esc(x.text) + '</span>' + (x.who ? '<span class="ins4-chip">' + esc(x.who) + '</span>' : '') + (x.due ? '<span class="ins4-chip ' + (!x.done && x.due < today() ? 'bad' : '') + '">' + esc(md(x.due)) + '</span>' : '') + '</div>'; }).join('') : '<div style="font-size:13px;color:#64748b">No tasks yet — add one above, or turn a suggestion below into a task.</div>') + '</div>' +
+    (n.length ? '<div class="ins4-sec"><h3>💡 Suggested from where the claim is</h3>' + n.map(function(x){ return '<div class="ins4-need"><i class="ins4-dot ' + x.prio + '"></i><div class="t"><span>' + esc(x.text) + '</span></div><button class="ins4-btn" data-a="ins4btsug" data-v="' + esc(x.text) + '">+ Make it a task</button></div>'; }).join('') + '</div>' : '') + '</div>';
+}
+function timelineTab(A, c){ return '<div class="ins4">' + I().timelineHtml(c) + '</div>'; }
+
+/* 📐 the Xactimate tab: upload here, versions, compare by room / category, + patch INS3's panel (Claude read, scope without prices) */
+function xactTab(A, c){
+  var ests = arr(c.estimates).filter(function(e){ return e && !e.deleted; }).sort(function(a, b){ return num(a.version) - num(b.version); }), M = canMoney();
+  var X = A.S.x4 = A.S.x4 || {};
+  var a = X.a && ests.some(function(e){ return e.id === X.a; }) ? X.a : (ests.length > 1 ? ests[ests.length - 2].id : ''), b = X.b && ests.some(function(e){ return e.id === X.b; }) ? X.b : (ests.length ? ests[ests.length - 1].id : '');
+  var unread = arr(c.docs).filter(function(d){ return d && !d.deleted && d.kind === 'estimate' && d.unread; });
+  var h = '<div class="ins4"><div class="ins4-sec" data-ins4b="xup"><h3>📐 Xactimate</h3><div class="ins4-row">' +
+    '<label class="ins4-btn pri ins4b-big">⬆ Upload ESX or PDF<input type="file" multiple accept=".esx,.pdf,application/pdf,application/zip" data-a="ins4bxup" style="display:none"></label>' +
+    '<select class="ins4-in" data-x4="side" aria-label="Whose estimate"><option value="">Whose estimate? auto</option><option value="carrier">Carrier’s</option><option value="grayco">Ours (GrayCo)</option></select>' +
+    '<span style="font-size:12.5px;color:#475569">Read right here — ESX (zip) and PDF. The original file always stays on the claim.</span></div>' +
+    (unread.length ? '<div style="margin-top:6px">' + unread.map(function(d){ return '<div class="ins4-chip warn">📎 ' + esc(d.name) + ' — ' + esc(d.note || 'stored, couldn’t read the details') + '</div>'; }).join(' ') + '</div>' : '') + '</div>';
+  if (!ests.length) h += '<div class="gcbb-empty"><b>No estimate yet.</b><br>Upload the carrier’s ESX or PDF (and ours) — each becomes a version: v1, v2 …</div>';
+  else {
+    h += '<div class="ins4-sec" data-ins4b="versions"><h3>🗂 Versions <span class="ins4-chip">' + ests.length + '</span></h3><table class="ins4-tbl"><thead><tr><th>v</th><th>Label</th><th>Whose</th><th>From</th><th>Price list</th><th>Lines</th>' + (M ? '<th>RCV</th><th>Dep.</th><th>ACV</th>' : '') + '<th>Read</th></tr></thead><tbody>' +
+      ests.map(function(e){ var T = e.totals || {}; return '<tr data-ver="' + esc(e.id) + '"><td>v' + esc(e.version) + '</td><td>' + esc(e.label || '') + '</td><td><select data-a="ins4bxside" data-id="' + esc(e.id) + '"><option value="carrier"' + (e.side !== 'grayco' ? ' selected' : '') + '>carrier</option><option value="grayco"' + (e.side === 'grayco' ? ' selected' : '') + '>ours</option></select></td><td>' + esc(e.source || '') + (e.fileName ? ' · ' + esc(e.fileName) : '') + '</td><td>' + esc((e.header || {}).priceList || '') + '</td><td>' + arr(e.lines).length + '</td>' +
+        (M ? '<td>' + money0(T.rcv) + '</td><td>' + money0(T.dep) + '</td><td>' + money0(T.acv) + '</td>' : '') + '<td>' + esc(md(e.importedAt)) + (arr(e.warnings).length ? ' <span class="ins4-chip warn" title="' + esc(e.warnings.join(' ')) + '">⚠ ' + e.warnings.length + '</span>' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    if (ests.length > 1) {
+      var opt = function(sel){ return ests.map(function(e){ return '<option value="' + esc(e.id) + '"' + (e.id === sel ? ' selected' : '') + '>v' + esc(e.version) + ' · ' + (e.side === 'grayco' ? 'ours' : 'carrier') + '</option>'; }).join(''); };
+      var A1 = ests.filter(function(e){ return e.id === a; })[0], B1 = ests.filter(function(e){ return e.id === b; })[0], d = A1 && B1 ? G().core.diffEstimates(A1, B1) : null;
+      var cats = {}; [[A1, 'a'], [B1, 'b']].forEach(function(z){ arr(z[0] && z[0].lines).forEach(function(l){ var k = l.cat || '—'; cats[k] = cats[k] || { a: 0, b: 0 }; cats[k][z[1]] += num(l.rcv); }); });
+      h += '<div class="ins4-sec" data-ins4b="cmp"><h3>⚖ Compare versions <select data-a="ins4bxa">' + opt(a) + '</select> → <select data-a="ins4bxb">' + opt(b) + '</select></h3>' +
+        (d ? '<div class="ins4-row"><span class="ins4-chip ok">+' + d.added.length + ' added</span><span class="ins4-chip bad">−' + d.removed.length + ' removed</span><span class="ins4-chip warn">' + d.changed.length + ' changed</span>' + (M ? '<b style="margin-left:auto">RCV ' + money0(d.totals.rcv.from) + ' → ' + money0(d.totals.rcv.to) + ' (' + (d.totals.rcv.delta >= 0 ? '+' : '') + money0(d.totals.rcv.delta) + ')</b>' : '') + '</div>' +
+          '<div class="ins4-grid"><div><b style="font-size:12.5px">By room</b><table class="ins4-tbl"><tbody>' + (d.rooms.length ? d.rooms.map(function(r){ return '<tr><td>' + esc(r.room) + '</td><td>' + (M ? money0(r.from) + ' → ' + money0(r.to) : '') + '</td><td><b>' + (r.delta >= 0 ? '+' : '') + money0(r.delta) + '</b></td></tr>'; }).join('') : '<tr><td>No room changed.</td></tr>') + '</tbody></table></div>' +
+          '<div><b style="font-size:12.5px">By category</b><table class="ins4-tbl"><tbody>' + Object.keys(cats).map(function(k){ var x = cats[k], dd = r2(x.b - x.a); return Math.abs(dd) > 0.5 ? '<tr><td>' + esc(k) + '</td><td>' + (M ? money0(x.a) + ' → ' + money0(x.b) : '') + '</td><td><b>' + (dd >= 0 ? '+' : '') + money0(dd) + '</b></td></tr>' : ''; }).join('') + '</tbody></table></div></div>' : '') + '</div>';
+    }
+  }
+  if (ests.length && W._gcInsPriceBook) h += W._gcInsPriceBook.underpaidHtml(c);
+  var ins3 = ''; try { var P2 = G().ext.P2TABS; if (P2 && P2.xact) ins3 = P2.xact(A, c); } catch (e) { warn(e); }
+  return h + '<div class="ins4-sec"><h3>🤖 Read with Claude · scope without prices · open Xactimate</h3>' + ins3 + '</div></div>';
+}
+
+/* ══ CSS ════════════════════════════════════════════════════════════════════════════════════════════ */
+var CSS = '.ins4b-top{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}.ins4b-big{font-size:14px;padding:9px 14px;min-height:40px;display:inline-flex;align-items:center;gap:6px}.ins4b-q{flex:1;min-width:220px;font-size:14px;padding:9px 12px}' +
+  '.ins4b-views{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}.ins4b-view{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 12px;font-weight:700;font-size:12.5px;cursor:pointer;color:#1e293b}.ins4b-view span{color:#64748b;font-weight:600;margin-left:3px}.ins4b-view.on{background:#1B1452;color:#fff;border-color:#1B1452}.ins4b-view.on span{color:#d8d4f5}' +
+  '.ins4b-count{margin-left:auto;font-size:12.5px;color:#64748b;align-self:center}.ins4b-colpick{position:relative}.ins4b-colpick>div{position:absolute;z-index:30;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;min-width:320px;box-shadow:0 10px 30px rgba(0,0,0,.15);font-size:13px}.ins4b-colpick summary{list-style:none}' +
+  '.ins4b-bulk{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:8px 10px;margin:0 0 8px;font-size:13px}.ins4b-bulk select{padding:5px 8px;border:1px solid #cbd5e1;border-radius:8px}' +
+  '.ins4b-tblwrap{overflow-x:auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px}.ins4b-tbl{width:100%;border-collapse:collapse;font-size:13px}.ins4b-tbl th{position:sticky;top:0;background:#f8fafc;text-align:left;padding:0;border-bottom:1px solid #e2e8f0;white-space:nowrap}' +
+  '.ins4b-sort{border:0;background:none;padding:8px 8px;font-size:11px;font-weight:800;text-transform:uppercase;color:#64748b;cursor:pointer;width:100%;text-align:left}.ins4b-sort.on{color:#1B1452}.ins4b-tbl td{padding:6px 8px;border-top:1px solid #f1f5f9;vertical-align:middle;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis}' +
+  '.ins4b-tbl tr:hover td{background:#f8fafc}.ins4b-tbl tr:focus{outline:2px solid #2563eb;outline-offset:-2px}.ins4b-tbl tr.need td:first-child{box-shadow:inset 3px 0 0 #f59e0b}.ins4b-tbl select{font-size:12.5px;padding:3px 4px;border:1px solid #cbd5e1;border-radius:6px;max-width:170px}.ins4b-tbl td[data-c="next"]{white-space:normal;min-width:180px;max-width:260px}' +
+  '.ins4b-bad{color:#b91c1c;font-weight:800}.ins4b-pct{display:inline-block;width:40px;height:6px;background:#e2e8f0;border-radius:9px;overflow:hidden;vertical-align:middle}.ins4b-pct i{display:block;height:100%;background:#16a34a}' +
+  '.ins4b-cards{display:flex;flex-direction:column;gap:8px}.ins4b-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px;font-size:13px;display:flex;flex-direction:column;gap:4px}.ins4b-card .m{color:#475569}' +
+  '.ins4b-form{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}.ins4b-form label{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:700;color:#334155}.ins4b-form .full{grid-column:1/-1}.ins4b-form input,.ins4b-form select{padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;font-weight:400}' +
+  '.ins4b-seg{display:inline-flex;border:1px solid rgba(255,255,255,.35);border-radius:10px;overflow:hidden}.ins4b-seg button{border:0;background:transparent;color:#fff;padding:7px 11px;font-weight:700;font-size:12.5px;cursor:pointer}.ins4b-seg button.on{background:#F2A51A;color:#1B1452}' +
+  '@media (max-width:700px){.ins4b-form{grid-template-columns:1fr}.ins4b-q{min-width:0;width:100%;flex-basis:100%;order:-1}.ins4b-colpick>div{min-width:240px;grid-template-columns:1fr}}';
+function css(){ if (D.getElementById('gc-ins4b-css')) return; var st = D.createElement('style'); st.id = 'gc-ins4b-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+
+/* ══ HOME + HEADER (replacing INS4's) ══════════════════════════════════════════════════════════════ */
+function homeView(){ var v = lsGet('gc_ins4_home', 'list'); return /^(list|board|dash|phases)$/.test(v) ? v : 'list'; }
+function home(A){
+  if (A.opts && (A.opts.mode === 'mitigation' || A.opts.projectId)) return '';
+  var v = homeView(); if (v === 'phases') return '';
+  css(); hookA(A);
+  if (v === 'list') return listView(A);
+  return I().home(A, v === 'board' ? 'board' : 'dash');
+}
+function headBtns(A){
+  var v = homeView();
+  return '<span class="ins4b-seg" role="tablist" aria-label="View">' + [['list', '📋 List'], ['board', '🧭 Board'], ['dash', '📊 Dashboard']].map(function(x){ return '<button class="' + (v === x[0] ? 'on' : '') + '" data-a="ins4view" data-v="' + x[0] + '" aria-selected="' + (v === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</span>' +
+    '<button class="gcbb-btn dk sm" data-a="ins4view" data-v="phases">🗂 Phases</button><button class="gcbb-btn dk sm" data-a="ins4rep">📈 Reports</button>' + (W._gcInsPriceBook ? '<button class="gcbb-btn dk sm" data-a="ins4pb">💲 Price book</button>' : '');
+}
+function screen(A, sc){
+  if (sc === 'ins4rep') return { title: 'Claim reports', html: I4().reports(A) };
+  if (sc === 'ins4pb' && W._gcInsPriceBook) return { title: 'Insurance price book', html: W._gcInsPriceBook.view(A) };
+  return null;
+}
+/* per App: the filters keep their values; "/" focuses search; Enter on a row opens it */
+function hookA(A){
+  if (A.__ins4b) return; A.__ins4b = true;
+  A.root.addEventListener('keydown', function(ev){
+    var t = ev.target;
+    if (ev.key === 'Enter' && t && t.getAttribute && t.getAttribute('data-row') && t.tagName === 'TR') { var id = t.getAttribute('data-row'); if (!/^P:/.test(id)) I().goTab(A, id, 'cc'); }
+  });
+  later(function(){ fixSelects(A); }, 0);
+}
+D.addEventListener('keydown', function(ev){
+  if (ev.key !== '/' || /INPUT|TEXTAREA|SELECT/.test((ev.target && ev.target.tagName) || '')) return;
+  var q = D.querySelector('[data-gcbb] .ins4b-q'); if (q && q.offsetParent) { ev.preventDefault(); q.focus(); }
+});
+/* the search box filters the list as you type (patch BB set A.S.q) */
+D.addEventListener('input', function(ev){
+  var t = ev.target; if (!t || !t.classList || !t.classList.contains('ins4b-q')) return;
+  var root = t.closest('[data-gcbb]'); var A = appOf(root); if (!A) return;
+  A.S.q = t.value; var L = S4(A); L.page = 1;
+  var pos = t.selectionStart; A.render(true); fixSelects(A);
+  var q = A.root.querySelector('.ins4b-q'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (e) {} }
+});
+function appOf(root){ var A = null; try { G()._test.apps().forEach(function(a){ if (a.root === root) A = a; }); } catch (e) {} return A; }
+
+/* ══ ACTIONS ═══════════════════════════════════════════════════════════════════════════════════════ */
+function wire(){
+  var X = G() && G().ext && G().ext.EXT_ACT, P2 = G() && G().ext && G().ext.P2TABS; if (!X || !P2 || !I4() || !I4()._int) return false;
+  if (X.ins4bnew) return true;
+  P2.cc = overviewTab; P2.ct4 = contactsTab; P2.mn4 = moneyTab; P2.xa4 = xactTab; P2.sp4 = suppTab; P2.tk4 = tasksTab; P2.tl4 = timelineTab;
+  I4().home = home; I4().headBtns = headBtns; I4().screen = screen; I4().tabs = tabs;
+  var rr = function(A){ A.render(true); later(function(){ fixSelects(A); }, 0); };
+  X.ins4view = function(A, v){ lsSet('gc_ins4_home', /^(list|board|dash|phases)$/.test(v) ? v : 'list'); A.S.screen = 'board'; rr(A); };
+  X.ins4pb = function(A){ A.S.screen = 'ins4pb'; A.render(true); };
+  X.ins4bview = function(A, v){ var L = S4(A); L.view = v; L.page = 1; L.sel = {}; lsSet('gc_ins4b_view', v); rr(A); };
+  X.ins4bf = function(A, v, t){ var L = S4(A); L[t.getAttribute('data-k')] = v; L.page = 1; rr(A); };
+  X.ins4bsort = function(A, v){ var L = S4(A); if (L.sort === v) L.dir = -L.dir; else { L.sort = v; L.dir = /^(days|rcv|acv|collected|owed|docs)$/.test(v) ? -1 : 1; } rr(A); };
+  X.ins4bmore = function(A){ S4(A).page++; rr(A); };
+  X.ins4bsel = function(A, v, t){ S4(A).sel[t.getAttribute('data-v')] = !!t.checked; rr(A); };   /* a checkbox's change passes its value, not data-v */
+  X.ins4bselall = function(A, v, t){ var L = S4(A); L.sel = {}; if (t.checked) listRows(A).slice(0, PAGE * L.page).forEach(function(r){ if (r.claim) L.sel[r.id] = true; }); rr(A); };
+  X.ins4bclear = function(A){ S4(A).sel = {}; rr(A); };
+  X.ins4bcol = function(A, v, t){ v = t.getAttribute('data-v'); var on = colsOn().filter(function(k){ return k !== v; }); if (t.checked) on.push(v); lsSet('gc_ins4b_cols', COLS.map(function(c){ return c[0]; }).filter(function(k){ return on.indexOf(k) >= 0; }).join(',')); rr(A); };
+  X.ins4bcsv = function(A){ download('grayco-insurance-jobs-' + today() + '.csv', csv(A)); I().toastA(A, '⬇ CSV downloaded'); };
+  X.ins4bpm = function(A, v, t, ev){ if (ev) ev.stopPropagation(); return setPm([t.getAttribute('data-id')], v).then(function(){ I().toastA(A, v ? 'PM: ' + v : 'PM cleared'); }); };
+  X.ins4bbstage = function(A, v){ if (!v) return; var ids = Object.keys(S4(A).sel).filter(function(k){ return S4(A).sel[k]; }); return ids.reduce(function(p, id){ return p.then(function(){ return I4().moveStage(id, v); }); }, Promise.resolve()).then(function(){ I().toastA(A, ids.length + ' moved to ' + stageLabel(v)); S4(A).sel = {}; rr(A); }); };
+  X.ins4bbpm = function(A, v){ if (!v) return; var ids = Object.keys(S4(A).sel).filter(function(k){ return S4(A).sel[k]; }); return setPm(ids, v).then(function(){ I().toastA(A, ids.length + ' assigned to ' + v); S4(A).sel = {}; rr(A); }); };
+  X.ins4bbnote = function(A){ var ids = Object.keys(S4(A).sel).filter(function(k){ return S4(A).sel[k]; }); var tx = W.prompt('Note for the ' + ids.length + ' selected claim(s) (staff only):', ''); if (!s(tx)) return; return ids.reduce(function(p, id){ return p.then(function(){ return G().note(id, tx, { internal: true }); }); }, Promise.resolve()).then(function(){ I().toastA(A, 'Note added to ' + ids.length); S4(A).sel = {}; rr(A); }); };
+  X.ins4bnew = function(A, v){ return quickForm(A, v ? { projectId: v } : {}); };
+  X.ins4blead = function(A, v){ var l = allLeads().filter(function(x){ return x && s(x.id) === s(v); })[0]; if (l) return quickForm(A, leadPre(l)); };
+  X.ins4bulk = function(A, v, t){ var f = t.files; var r = bulk(A, f); try { t.value = ''; } catch (e) {} return r; };
+  X.ins4bxup = function(A, v, t, ev, c){
+    var files = Array.prototype.slice.call(t.files || []), side = (A.root.querySelector('[data-x4="side"]') || {}).value || ''; try { t.value = ''; } catch (e) {}
+    if (!files.length || !c) return;
+    /* one upload at a time (a double tap on a phone must not read the same file twice) */
+    var key = files.map(function(f){ return f.name + ':' + f.size; }).join('|');
+    if (A.__ins4bUp && A.__ins4bUp.key === key && Date.now() - A.__ins4bUp.at < 15000) return;
+    A.__ins4bUp = { key: key, at: Date.now() };
+    A.busy('Reading ' + files.length + ' file(s)…'); var res = { ok: 0, dup: 0, stored: 0 };
+    return files.reduce(function(p, f){ return p.then(function(){ return read(f).then(function(r){ return importRead(c.id, f, r, side); }).then(function(x){ if (x.duplicate) res.dup++; else if (x.stored) res.stored++; else res.ok++; }); }); }, Promise.resolve())
+      .then(function(){ A.__ins4bUp = null; A.busy(''); W.__gcIns4bUp = res; I().toastA(A, (res.ok ? '✓ ' + res.ok + ' version(s) added' : '') + (res.dup ? ' · ' + res.dup + ' already there' : '') + (res.stored ? ' · ' + res.stored + ' stored (couldn’t read)' : '')); A.render(true); }, function(e){ A.__ins4bUp = null; A.fail(e); });
+  };
+  X.ins4bxside = function(A, v, t, ev, c){ var id = t.getAttribute('data-id'); return G().update(c.id, function(x){ var e = arr(x.estimates).filter(function(y){ return y && y.id === id; })[0]; if (e) { e.side = v; e.sideFrom = 'picked'; e.updatedAt = nowIso(); } }); };
+  X.ins4bxa = function(A, v){ (A.S.x4 = A.S.x4 || {}).a = v; A.render(true); };
+  X.ins4bxb = function(A, v){ (A.S.x4 = A.S.x4 || {}).b = v; A.render(true); };
+  X.ins4bct = function(A, v, t, ev, c){
+    var p = s(v).split('|'), key = p[1], o = key === 'home' ? (function(){ var pr = proj(c.projectId) || {}; return { name: s(c.insured || pr.client), email: s(pr.clientEmail) }; })() : key === 'ia' ? (c.ia || {}) : key === 'mortgage' ? Object.assign({ name: c.mortgageCo }, c.mortgage || {}) : ((key === 'desk' ? c.deskAdjuster : c.adjuster) || {});
+    var role = { home: 'the homeowner', adj: 'the adjuster', desk: 'the desk adjuster', ia: 'the IA', mortgage: 'the mortgage company' }[key];
+    try { if (p[0] === 'email' && typeof W._gcCompose === 'function') W._gcCompose({ to: s(o.email), subject: (s(c.claimNumber) ? 'Claim #' + s(c.claimNumber) + ' — ' : '') + (s(c.insured) || I().claimTitle(c)), pid: s(c.projectId) }); else if (t.getAttribute('data-href')) W.open(t.getAttribute('data-href'), '_self'); } catch (e) { warn(e); }
+    return I().contactLog(c.id, p[0], (s(o.name) ? s(o.name) + ' (' + role.replace('the ', '') + ')' : role)).then(function(){ I().toastA(A, 'Logged on the claim'); });
+  };
+  X.ins4bctsave = function(A, v, t, ev, c){
+    var f = {}; Array.prototype.forEach.call(A.root.querySelectorAll('[data-ctf]'), function(el){ var k = el.getAttribute('data-ctf').split('.'); (f[k[0]] = f[k[0]] || {})[k[1]] = s(el.value); });
+    return G().update(c.id, function(x){
+      if (f.adj) x.adjuster = Object.assign({}, x.adjuster || {}, f.adj);
+      if (f.desk) x.deskAdjuster = Object.assign({}, x.deskAdjuster || {}, f.desk);
+      if (f.ia) x.ia = Object.assign({}, x.ia || {}, f.ia);
+      if (f.mortgage) { x.mortgage = Object.assign({}, x.mortgage || {}, f.mortgage); x.mortgageCo = s(f.mortgage.name) || x.mortgageCo; x.loanNumber = s(f.mortgage.loan) || x.loanNumber; }
+      I().logOn(x, '👥', 'Contacts updated');
+    }).then(function(){ I().toastA(A, '✓ Contacts saved'); });
+  };
+  X.ins4btask = function(A, v, t, ev, c){
+    var q = function(k){ var el = A.root.querySelector('[data-tk="' + k + '"]'); return el ? s(el.value) : ''; }, tx = q('text'); if (!tx) return;
+    return G().update(c.id, function(x){ x.tasks = arr(x.tasks).concat([{ id: uid('TK'), text: tx, due: q('due'), who: q('who'), done: false, at: nowIso(), by: myName(), updatedAt: nowIso() }]); I().logOn(x, '✅', 'Task: ' + tx); }).then(function(){ I().toastA(A, 'Task added'); });
+  };
+  X.ins4btsug = function(A, v, t, ev, c){ return G().update(c.id, function(x){ x.tasks = arr(x.tasks).concat([{ id: uid('TK'), text: s(v), due: today(), who: I().pmOf(c), done: false, at: nowIso(), by: myName(), updatedAt: nowIso() }]); }).then(function(){ I().toastA(A, 'Task added'); }); };
+  X.ins4btdone = function(A, v, t, ev, c){ v = t.getAttribute('data-v'); return G().update(c.id, function(x){ var k = arr(x.tasks).filter(function(y){ return y && y.id === v; })[0]; if (k) { k.done = !!t.checked; k.doneAt = t.checked ? nowIso() : ''; k.doneBy = myName(); k.updatedAt = nowIso(); } }); };
+  return true;
+}
+/* the task box: Enter adds */
+D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key !== 'Enter' || !t || !t.getAttribute || t.getAttribute('data-tk') !== 'text') return; ev.preventDefault(); var b = t.closest('.ins4-sec') && t.closest('.ins4-sec').querySelector('[data-a="ins4btask"]'); if (b) b.click(); });
+function setPm(ids, name){
+  var pids = {};
+  return ids.reduce(function(p, id){ return p.then(function(){ var c = G().get(id); if (!c) return; if (c.projectId) pids[c.projectId] = 1; return G().update(id, function(x){ x.pm = s(name); I().logOn(x, '👤', 'PM: ' + (s(name) || '—')); }); }); }, Promise.resolve()).then(function(){
+    try { if (typeof W._setProjects === 'function' && Object.keys(pids).length) W._setProjects(function(prev){ return arr(prev).map(function(p){ return p && pids[p.id] ? Object.assign({}, p, { pm: s(name), updatedAt: nowIso() }) : p; }); }); } catch (e) { warn(e); }
+  });
+}
+/* the To-Do: claim tasks with a person on them */
+W._gcTodoExt = arr(W._gcTodoExt); W._gcTodoExt.push(function(){
+  try {
+    var out = [], me = low(myName());
+    (I().visible ? I().visible() : []).forEach(function(c){ arr(c.tasks).forEach(function(t){ if (!t || t.done || t.deleted || !s(t.text)) return; out.push({ key: 'ins4t:' + t.id, thing: 'ins4t|' + t.id, cat: 'jobs', prio: t.due && t.due <= today() ? 'high' : 'med', pid: s(c.projectId), due: s(t.due), title: '🛡 ' + I().claimTitle(c) + ' — ' + s(t.text), who: t.who ? [t.who] : [], vis: t.who ? 'who' : 'company', act: { l: '🛡 Open claim', f: function(){ try { var A = G().open({ claimId: c.id }); if (A && A.S) I().goTab(A, c.id, 'tk4'); } catch (e) { warn(e); } } } }); }); });
+    return out;
+  } catch (e) { warn(e); return []; }
+});
+
+var hooked = false;
+(function tryHook(n){ if (wire()) { hooked = true; try { G()._test.apps().forEach(function(a){ a.render(true); }); } catch (e) {} return; } if (n < 300) later(function(){ tryHook(n + 1); }, 300); })(0);
+W._gcIns4b = { status: function(){ return { hooked: hooked, view: homeView(), rows: rows().length }; }, rows: function(){ ROWS_SIG = ''; return rows(); }, read: read, pdfLines: pdfLines, parsePdfText: parsePdfText, readEsx: readEsx, fingerprint: fingerprint,
+  matchClaim: matchClaim, importRead: importRead, quickCreate: quickCreate, csv: function(A){ return csv(A); }, insLeads: insLeads, tabs: tabs };
+try { console.log('[GC] 🛡 Insurance mini-CRM: list, workspace, Xactimate ESX / PDF (patch INS4b) — _gcIns4b.status()'); } catch (e) {}
+})();
+
+</script>
+<script id="gc-patch-ins4c">
+/* __GC_PATCH_INS4C__ ══════════════════════════════════════════════════════════
+   GrayCo — 💲 INSURANCE PRICE BOOK (patch INS4c, on top of INS4 / INS4b)
+
+   Owner (10/23): "always read insurance estimates and define in our own system the prices, and price updates
+   throughout the year, for certain trades' line items etc."
+
+   📥 EVERY ESX / PDF READ (the carrier's and ours) feeds it: code (cat + sel), description, unit, unit price (remove /
+      replace when the ESX has them), O&P, the price list (e.g. TNME8X_OCT26 → region TNME8X, month Oct 2026), the
+      estimate date, whose estimate, the claim, and the trade (from the category). The same file twice adds nothing.
+   💲 INSURANCE → PRICE BOOK: one row per code + unit — current price, first price this year, change $ / %, min / max,
+      times seen, last seen, a monthly sparkline; filters (trade, price list / region, months, search); click a row for
+      every estimate it came from. 📅 "What changed": a new price-list month or a new price is logged; a monthly summary
+      by trade (top increases / decreases); an optional internal to-do for the Senior Insurance PM and Senior Estimator
+      (nothing is sent anywhere).
+   🧰 USING IT: carrier lines priced below the price book for the same code and price list are flagged in the claim's
+      Supplements and Xactimate tabs ("underpaid vs price list" → one tap puts the difference in the supplement); added
+      lines get the price-book price; the Estimate Builder offers the price-book price on an insurance job. A submitted
+      estimate is never changed — every price is a suggestion someone taps.
+   🏷 GRAYCO PRICES: admins / estimators set GrayCo's own price per line or a % per trade, with history, kept apart from
+      the Xactimate prices.
+   💾 gc_kv "gc_ins_pricebook" (split in parts when large), merged with the cloud copy before every save.
+   Console: _gcInsPriceBook.status() · .rows() · .capture(claim, est) · _gcInsPriceFor('RFG 300S laminated', 'SQ')
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_INS4C__) return; W.__GC_PATCH_INS4C__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ var x = typeof v === 'number' ? v : parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ var n = r2(v), neg = n < 0; n = Math.abs(n); return (neg ? '−$' : '$') + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function nowIso(){ return new Date().toISOString(); }
+function ymd(v){ var t = s(v); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); var d = new Date(t); return isNaN(d) || !t ? '' : d.toISOString().slice(0, 10); }
+function warn(e){ try { console.warn('[GC INS4c]', e); } catch (x) {} }
+function G(){ return W._gcClaims || null; }
+function I(){ return (W._gcIns4 || {})._int || {}; }
+function crm(){ return W._crm || {}; }
+function users(){ return arr(crm().users).filter(function(u){ return u && u.active !== false; }); }
+function myEmail(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.email()) return low(W.__GC_AUTH__.email()); } catch (e) {} return ''; }
+function myName(){ var e = myEmail(), u = users().filter(function(x){ return e && low(x.email) === e; })[0]; return u && u.name ? s(u.name) : (e ? e.split('@')[0] : 'Me'); }
+function role(){ try { return s(W._gcRP && W._gcRP.role && W._gcRP.role()); } catch (e) { return ''; } }
+function canMoney(){ try { return !!W._gcIns4.core.canMoney(); } catch (e) { return false; } }
+/* who sees the price book: the money people + estimators; who sets GrayCo prices: admins + estimators */
+function canSee(){ return canMoney() || /^(Estimator|Senior Estimator)/i.test(role()); }
+function canEdit(){ return /^(Admin|Owner|Estimator|Senior Estimator)/i.test(role()) || (!role() && canMoney()); }
+var MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+function monLabel(m){ if (!/^\d{4}-\d{2}$/.test(m)) return m || '—'; return MON[num(m.slice(5)) - 1].charAt(0) + MON[num(m.slice(5)) - 1].slice(1).toLowerCase() + ' ' + m.slice(0, 4); }
+
+/* ══ TRADES (from the Xactimate category) ══════════════════════════════════════════════════════════ */
+var TRADES = [['roofing', 'Roofing'], ['drywall', 'Drywall'], ['painting', 'Painting'], ['flooring', 'Flooring'], ['water', 'Water mitigation'], ['demo', 'Demo'], ['framing', 'Framing'], ['electrical', 'Electrical'],
+  ['plumbing', 'Plumbing'], ['hvac', 'HVAC'], ['cleaning', 'Cleaning'], ['contents', 'Contents'], ['general', 'General']];
+var TRN = {}; TRADES.forEach(function(t){ TRN[t[0]] = t[1]; });
+var CAT_TRADE = { RFG: 'roofing', DRY: 'drywall', PNT: 'painting', WPR: 'painting', FCC: 'flooring', FCV: 'flooring', FCW: 'flooring', FCT: 'flooring', FCS: 'flooring', FCR: 'flooring', FLR: 'flooring', TIL: 'flooring',
+  WTR: 'water', MLD: 'water', HMR: 'water', DMO: 'demo', FRM: 'framing', ELE: 'electrical', ELS: 'electrical', LIT: 'electrical', PLM: 'plumbing', HVC: 'hvac', CLN: 'cleaning', CON: 'contents', CPS: 'contents' };
+function tradeOf(l){
+  var c = s(l && l.cat).toUpperCase(); if (CAT_TRADE[c]) return CAT_TRADE[c];
+  var t = low((l && l.desc) + ' ' + (l && l.room));
+  return /shingle|roof|ridge|drip edge|felt|underlayment|flashing/.test(t) ? 'roofing' : /drywall|sheetrock|gypsum|tape.*float|texture/.test(t) ? 'drywall' : /paint|seal.*stain|primer/.test(t) ? 'painting'
+    : /carpet|vinyl|laminate|hardwood|tile floor|floor|pad\b|plank/.test(t) ? 'flooring' : /dehumid|air mover|extract|water|moisture|antimicrob|drying/.test(t) ? 'water' : /tear out|demo|haul|dumpster|debris/.test(t) ? 'demo'
+    : /stud|framing|joist|rafter|sheathing|osb|plywood/.test(t) ? 'framing' : /outlet|switch|electric|light fixture|wiring|breaker/.test(t) ? 'electrical' : /plumb|faucet|toilet|sink|water heater|pipe/.test(t) ? 'plumbing'
+    : /hvac|duct|furnace|condenser|register|vent cover/.test(t) ? 'hvac' : /clean|deodoriz|wipe|sanitiz/.test(t) ? 'cleaning' : /content|pack.?out|box|inventory|move out|move back/.test(t) ? 'contents' : 'general';
+}
+/* TNME8X_OCT26 → region TNME8X, month 2026-10 (else the estimate's own month) */
+function plInfo(pl, date){
+  var t = s(pl).toUpperCase(), m = t.match(/^([A-Z0-9]+)[_\-\s]?(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})$/);
+  if (m) return { pl: t, reg: m[1], mon: '20' + m[3] + '-' + ('0' + (MON.indexOf(m[2]) + 1)).slice(-2) };
+  return { pl: t, reg: t.replace(/[_\-].*$/, '') || '—', mon: ymd(date).slice(0, 7) };
+}
+function normDesc(d){ return low(d).replace(/[^a-z0-9 ]/g, ' ').replace(/\b(and|the|a|of|w|with|per)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function keyOf(l){ var code = (s(l.cat) + ' ' + s(l.sel)).trim().toUpperCase(), u = s(l.unit).toUpperCase(); return code && s(l.sel) ? 'c:' + code + '|' + u : 'd:' + normDesc(l.desc).slice(0, 80) + '|' + u; }
+
+/* ══ THE BOOK ═════════════════════════════════════════════════════════════════════════════════════ */
+var K = 'gc_ins_pricebook';
+function blank(){ return { v: 1, items: {}, seen: {}, events: [], overrides: {}, cfg: {}, ack: {}, updatedAt: '' }; }
+var BOOK = (function(){ try { var v = JSON.parse(localStorage.getItem(K) || 'null'); if (v && v.items) return Object.assign(blank(), v); } catch (e) {} return blank(); })();
+function mergeBook(a, b){
+  a = Object.assign(blank(), a || {}); b = Object.assign(blank(), b || {});
+  var o = blank();
+  [a.items, b.items].forEach(function(src){ Object.keys(src || {}).forEach(function(k){
+    var x = src[k]; if (!x) return; var y = o.items[k] = o.items[k] || Object.assign({}, x, { obs: [] }), ids = {};
+    y.obs.forEach(function(q){ ids[q.id] = 1; }); arr(x.obs).forEach(function(q){ if (q && !ids[q.id]) { y.obs.push(q); ids[q.id] = 1; } });
+    if (s(x.desc).length > s(y.desc).length) y.desc = x.desc;
+  }); });
+  Object.keys(o.items).forEach(function(k){ o.items[k].obs.sort(obsCmp); });
+  o.seen = Object.assign({}, b.seen, a.seen);
+  var ev = {}; a.events.concat(b.events).forEach(function(e){ if (e && e.id && !ev[e.id]) ev[e.id] = e; }); o.events = Object.keys(ev).map(function(k){ return ev[k]; }).sort(function(x, y){ return s(x.at) < s(y.at) ? -1 : 1; }).slice(-3000);
+  Object.keys(Object.assign({}, a.overrides, b.overrides)).forEach(function(k){
+    var x = a.overrides[k], y = b.overrides[k], w = !x ? y : !y ? x : (s(x.at) >= s(y.at) ? x : y), h = {};
+    arr(x && x.hist).concat(arr(y && y.hist)).forEach(function(e){ if (e) h[s(e.at) + s(e.by)] = e; });
+    o.overrides[k] = Object.assign({}, w, { hist: Object.keys(h).sort().map(function(z){ return h[z]; }).slice(-50) });
+  });
+  o.cfg = s(a.cfg.at) >= s(b.cfg.at) ? a.cfg : b.cfg;
+  o.ack = Object.assign({}, b.ack, a.ack);
+  o.updatedAt = s(a.updatedAt) > s(b.updatedAt) ? a.updatedAt : b.updatedAt;
+  return o;
+}
+function obsCmp(x, y){ return (s(x.mon) + s(x.date) + s(x.at)) < (s(y.mon) + s(y.date) + s(y.at)) ? -1 : 1; }
+/* parts: one gc_kv row while small, else gc_ins_pricebook + gc_ins_pricebook__1 … __n (items split by key) */
+function chunkLimit(){ return num(W.__GC_PB_CHUNK) || 700000; }
+function toRows(b){
+  var json = JSON.stringify(b); if (json.length <= chunkLimit()) return [[K, b]];
+  var keys = Object.keys(b.items), parts = [], cur = {}, size = 0;
+  keys.forEach(function(k){ var n = JSON.stringify(b.items[k]).length; if (size + n > chunkLimit() * 0.9 && size) { parts.push(cur); cur = {}; size = 0; } cur[k] = b.items[k]; size += n; });
+  if (size) parts.push(cur);
+  var head = Object.assign({}, b, { items: {}, chunks: parts.length });
+  return [[K, head]].concat(parts.map(function(p, i){ return [K + '__' + (i + 1), { items: p }]; }));
+}
+function cloudGet(key){ try { if (typeof W._ehSb !== 'function' || !localStorage.getItem('grayco_sb_url')) return Promise.resolve(null); return Promise.resolve(W._ehSb(key)).then(function(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }, function(){ return null; }); } catch (e) { return Promise.resolve(null); } }
+function cloudBook(){
+  return cloudGet(K).then(function(h){
+    if (!h) return null; var n = num(h.chunks); if (!n) return h;
+    var gets = []; for (var i = 1; i <= n; i++) gets.push(cloudGet(K + '__' + i));
+    return Promise.all(gets).then(function(ps){ var b = Object.assign({}, h, { items: {} }); ps.forEach(function(p){ Object.assign(b.items, (p && p.items) || {}); }); delete b.chunks; return b; });
+  });
+}
+var LOADED = null;
+function load(){ if (LOADED) return LOADED; LOADED = cloudBook().then(function(cb){ if (cb) { BOOK = mergeBook(BOOK, cb); keepLocal(); kick(); } return BOOK; }, function(){ return BOOK; }); return LOADED; }
+function keepLocal(){ try { localStorage.setItem(K, JSON.stringify(BOOK)); } catch (e) { warn(e); } }
+var saveT = null, saving = null;
+function save(){ keepLocal(); if (saveT) clearTimeout(saveT); return new Promise(function(res){ saveT = later(function(){ saveT = null; res(saveNow()); }, num(W.__GC_PB_SAVE_MS) || 1200); }); }
+function saveNow(){
+  return (saving = cloudBook().then(function(cb){
+    if (cb) BOOK = mergeBook(BOOK, cb);
+    BOOK.updatedAt = nowIso(); keepLocal();
+    var rows = toRows(BOOK);
+    rows.forEach(function(r){ try { if (typeof W._supaUpsertNow === 'function') W._supaUpsertNow(r[0], r[1]); else if (typeof W._supaUpsert === 'function') W._supaUpsert(r[0], r[1]); } catch (e) { warn(e); } });
+    kick(); return rows.length;
+  }, function(e){ warn(e); return 0; }));
+}
+var KICK = 0;
+function kick(){ KICK++; ROWS_SIG = ''; try { G()._test.apps().forEach(function(a){ if (a.S && (a.S.screen === 'ins4pb' || a.S.screen === 'claim')) a.render(); }); } catch (e) {} }
+
+/* ══ CAPTURE: an estimate's lines → observations (idempotent by the estimate's fingerprint) ═══════════ */
+function fp(est){ try { return s(est.fp) || W._gcIns4b.fingerprint(est); } catch (e) { return s(est && est.id); } }
+function capture(c, est, opt){
+  if (!est || !arr(est.lines).length) return { added: 0 };
+  var f = fp(est); if (!f) return { added: 0 };
+  if (BOOK.seen[f]) return { added: 0, seen: true };
+  var H = est.header || {}, P = plInfo(H.priceList, H.estimateDate || est.importedAt), date = ymd(H.estimateDate || est.importedAt) || ymd(nowIso()), src = est.side === 'grayco' ? 'grayco' : 'carrier', added = 0, chg = 0;
+  var monthNew = P.pl && !Object.keys(BOOK.items).some(function(k){ return BOOK.items[k].obs.some(function(o){ return o.reg === P.reg && o.mon === P.mon; }); });
+  var hadReg = Object.keys(BOOK.items).some(function(k){ return BOOK.items[k].obs.some(function(o){ return o.reg === P.reg; }); });
+  arr(est.lines).forEach(function(l, i){
+    var p = r2(l.unitPrice); if (!(p > 0) || !s(l.desc)) return;
+    var k = keyOf(l), it = BOOK.items[k] = BOOK.items[k] || { key: k, code: s(l.sel) ? (s(l.cat) + ' ' + s(l.sel)).toUpperCase() : '', cat: s(l.cat).toUpperCase(), sel: s(l.sel).toUpperCase(), desc: s(l.desc), unit: s(l.unit).toUpperCase(), trade: tradeOf(l), obs: [] };
+    var id = f + ':' + (s(l.line) || i) + ':' + i; if (it.obs.some(function(o){ return o.id === id; })) return;
+    var prevMon = it.obs.filter(function(o){ return o.reg === P.reg && o.mon < P.mon; }).map(function(o){ return o.mon; }).sort().pop(), prevEarlier = prevMon ? monthPrice(it.obs, P.reg, prevMon) : null;
+    var prev = prevEarlier != null && !it.obs.some(function(o){ return o.reg === P.reg && o.mon === P.mon; }) ? { p: prevEarlier, pl: it.obs.filter(function(o){ return o.reg === P.reg && o.mon === prevMon; })[0].pl, mon: prevMon } : null;
+    var o = { id: id, p: p, rem: l.rem != null ? r2(l.rem) : null, rep: l.rep != null ? r2(l.rep) : null, op: num(l.op) > 0, pl: P.pl, reg: P.reg, mon: P.mon, date: date, src: src, claimId: s(c && c.id), estId: s(est.id), v: num(est.version), at: nowIso() };
+    it.obs.push(o); it.obs.sort(obsCmp); added++;
+    if (prev && Math.abs(prev.p - p) > 0.004) {   /* a new price-list month with a new price (carriers paying differently in one month is not a price change) */
+       chg++; BOOK.events.push({ id: 'chg:' + k + ':' + P.pl + ':' + p, kind: 'change', key: k, trade: it.trade, from: prev.p, to: p, fromPl: prev.pl, pl: P.pl, mon: P.mon, at: nowIso(), claimId: o.claimId }); }
+  });
+  if (monthNew && added) BOOK.events.push({ id: 'mon:' + P.pl, kind: 'month', pl: P.pl, reg: P.reg, mon: P.mon, first: !hadReg, at: nowIso(), claimId: s(c && c.id) });
+  BOOK.seen[f] = { at: nowIso(), claimId: s(c && c.id), estId: s(est.id), pl: P.pl, lines: added };
+  if (!(opt && opt.noSave)) save();
+  ROWS_SIG = '';
+  return { added: added, changes: chg };
+}
+/* estimates already on claims (from before the price book) — read when the price book is opened */
+function backfill(){
+  var n = 0; try { G().list().forEach(function(c){ arr(c.estimates).forEach(function(e){ if (e && !e.deleted && e.source !== 'builder' && arr(e.lines).length) { var r = capture(c, e, { noSave: true }); n += r.added || 0; } }); }); } catch (e) { warn(e); }
+  if (n) save(); return n;
+}
+
+/* ══ STATS ═══════════════════════════════════════════════════════════════════════════════════════ */
+/* a month's price for a code = the most any estimate on that price list paid (a lower one is a carrier pricing under the list) */
+function monthPrice(obs, reg, mon){ var l = obs.filter(function(o){ return (!reg || o.reg === reg) && o.mon === mon; }).map(function(o){ return o.p; }); return l.length ? Math.max.apply(null, l) : null; }
+function stats(it, F){
+  var obs = it.obs.filter(function(o){ return (!F || ((!F.reg || o.reg === F.reg) && (!F.from || o.mon >= F.from) && (!F.to || o.mon <= F.to))); });
+  if (!obs.length) return null;
+  /* with no region picked, the region seen last (prices with a price list before the ones without) */
+  var reg = F && F.reg ? F.reg : ((obs.filter(function(o){ return o.pl; }).slice(-1)[0] || obs[obs.length - 1]).reg), ro = obs.filter(function(o){ return o.reg === reg; });
+  var months = {}; ro.forEach(function(o){ months[o.mon] = 1; });
+  var ms = Object.keys(months).sort(), curMon = ms[ms.length - 1], yr = s(curMon).slice(0, 4), firstMon = ms.filter(function(m){ return m.slice(0, 4) === yr; })[0] || ms[0];
+  var cur = monthPrice(ro, reg, curMon), first = monthPrice(ro, reg, firstMon), curPl = (ro.filter(function(o){ return o.mon === curMon && o.p === cur; })[0] || {}).pl;
+  var ps = obs.map(function(o){ return o.p; });
+  var spark = ms.slice(-12).map(function(m){ return { mon: m, p: monthPrice(ro, reg, m) }; });
+  return { reg: reg, cur: cur, curPl: curPl || reg, curMon: curMon, first: first, firstMon: firstMon, chg: r2(cur - first), pct: first ? Math.round((cur - first) / first * 1000) / 10 : 0, min: Math.min.apply(null, ps), max: Math.max.apply(null, ps), n: obs.length, last: obs.map(function(o){ return o.date; }).sort().pop(), spark: spark, grayco: graycoPrice(it, cur) };
+}
+function graycoPrice(it, xp){
+  var o = BOOK.overrides[it.key]; if (o && num(o.price) > 0) return { price: r2(o.price), how: 'line', by: o.by, at: o.at };
+  var t = BOOK.overrides['trade:' + it.trade]; if (t && t.pct != null && s(t.pct) !== '' && xp) return { price: r2(xp * (1 + num(t.pct) / 100)), how: 'trade', pct: num(t.pct), by: t.by, at: t.at };
+  return null;
+}
+var ROWS_SIG = '', ROWS = [];
+function rows(F){
+  F = F || {};
+  var out = [];
+  Object.keys(BOOK.items).forEach(function(k){
+    var it = BOOK.items[k];
+    if (F.trade && it.trade !== F.trade) return;
+    if (F.q && (low(it.code + ' ' + it.desc + ' ' + it.unit)).indexOf(low(F.q)) < 0) return;
+    var st = stats(it, F); if (!st) return;
+    out.push(Object.assign({ key: k, code: it.code, desc: it.desc, unit: it.unit, trade: it.trade }, st));
+  });
+  var sk = F.sort || 'trade';
+  out.sort(function(a, b){ var x = a[sk], y = b[sk]; if (typeof x === 'number') return (y - x) || (a.desc < b.desc ? -1 : 1); return low(x) < low(y) ? -1 : low(x) > low(y) ? 1 : (a.desc < b.desc ? -1 : 1); });
+  return out;
+}
+function regions(){ var o = {}; Object.keys(BOOK.items).forEach(function(k){ BOOK.items[k].obs.forEach(function(x){ o[x.reg] = 1; }); }); return Object.keys(o).sort(); }
+function months(){ var o = {}; Object.keys(BOOK.items).forEach(function(k){ BOOK.items[k].obs.forEach(function(x){ if (x.mon) o[x.mon] = 1; }); }); return Object.keys(o).sort(); }
+/* "What changed" in a month: the price changes logged, by trade, top up / down */
+function changed(mon){
+  var ev = BOOK.events.filter(function(e){ return e.kind === 'change' && (!mon || e.mon === mon); }), by = {};
+  ev.forEach(function(e){ var it = BOOK.items[e.key] || {}, pct = e.from ? Math.round((e.to - e.from) / e.from * 1000) / 10 : 0; (by[e.trade] = by[e.trade] || []).push({ key: e.key, code: it.code, desc: it.desc, unit: it.unit, from: e.from, to: e.to, chg: r2(e.to - e.from), pct: pct, pl: e.pl, fromPl: e.fromPl }); });
+  return Object.keys(by).sort().map(function(t){
+    var l = by[t]; return { trade: t, n: l.length, avgPct: Math.round(l.reduce(function(a, x){ return a + x.pct; }, 0) / l.length * 10) / 10,
+      up: l.filter(function(x){ return x.chg > 0; }).sort(function(a, b){ return b.pct - a.pct; }).slice(0, 5), down: l.filter(function(x){ return x.chg < 0; }).sort(function(a, b){ return a.pct - b.pct; }).slice(0, 5) };
+  });
+}
+function newMonths(){ return BOOK.events.filter(function(e){ return e.kind === 'month'; }); }
+
+/* ══ LOOKUPS: the price for a line (same code + same price list), and the Estimate Builder's suggestion ═══ */
+function refFor(l, pl, notFp){
+  var it = BOOK.items[keyOf(l)]; if (!it) return null;
+  var P = plInfo(pl), obs = it.obs.filter(function(o){ return o.pl === P.pl && (!notFp || o.id.indexOf(notFp + ':') !== 0); });
+  if (!obs.length) return null;
+  var best = obs.reduce(function(m, o){ return o.p > m.p ? o : m; }, obs[0]);   /* the most this price list has paid for it */
+  return { p: best.p, pl: best.pl, src: best.src, claimId: best.claimId, n: obs.length, item: it };
+}
+function underpaid(c){
+  var ests = arr(c && c.estimates).filter(function(e){ return e && !e.deleted; }), est = ests.filter(function(e){ return e.side !== 'grayco'; }).slice(-1)[0];
+  if (!est) return { est: null, lines: [], total: 0 };
+  var pl = s((est.header || {}).priceList), f = fp(est), out = [];
+  if (!pl) return { est: est, lines: [], total: 0, why: 'This carrier estimate has no price list on it.' };
+  arr(est.lines).forEach(function(l){
+    var ref = refFor(l, pl, f); if (!ref || !(num(l.unitPrice) > 0)) return;
+    if (ref.p - num(l.unitPrice) > 0.009) out.push({ line: l, ref: ref, diff: r2((ref.p - num(l.unitPrice)) * num(l.qty)) });
+  });
+  return { est: est, pl: pl, lines: out, total: r2(out.reduce(function(a, x){ return a + x.diff; }, 0)) };
+}
+function priceFor(text, unit, pl){
+  var t = s(text); if (!t) return null;
+  var u = s(unit).toUpperCase(), m = t.toUpperCase().match(/\b([A-Z]{3})\s+([A-Z0-9+<>]{1,8})\b/), cands = [];
+  Object.keys(BOOK.items).forEach(function(k){
+    var it = BOOK.items[k]; if (u && it.unit && it.unit !== u && !/^PER /.test(u)) return;
+    var score = 0;
+    if (m && it.code === (m[1] + ' ' + m[2])) score = 1;
+    else { var a = normDesc(t).split(' ').filter(function(w){ return w.length > 1; }), b = normDesc(it.desc).split(' ').filter(function(w){ return w.length > 1; }); if (!a.length || !b.length) return; var hit = a.filter(function(w){ return b.indexOf(w) >= 0; }).length; score = hit / Math.max(a.length, b.length); }
+    if (score >= 0.5) cands.push({ it: it, score: score });
+  });
+  if (!cands.length) return null;
+  cands.sort(function(x, y){ return y.score - x.score || y.it.obs.length - x.it.obs.length; });
+  var it = cands[0].it, st = (pl && stats(it, { reg: plInfo(pl).reg })) || stats(it); if (!st) return null;
+  return { price: st.grayco ? st.grayco.price : st.cur, xact: st.cur, grayco: st.grayco, code: it.code, desc: it.desc, unit: it.unit, pl: st.curPl, trade: it.trade, n: st.n, score: cands[0].score };
+}
+
+/* ══ OVERRIDES ═══════════════════════════════════════════════════════════════════════════════════ */
+function setOverride(k, val){
+  if (!canEdit()) return Promise.reject(new Error('Only an admin or an estimator sets GrayCo prices.'));
+  var o = BOOK.overrides[k] || { hist: [] }, at = nowIso(), isT = /^trade:/.test(k);
+  var rec = isT ? { pct: s(val) === '' ? null : num(val) } : { price: s(val) === '' ? null : r2(val) };
+  BOOK.overrides[k] = Object.assign({}, o, rec, { by: myName(), at: at, hist: arr(o.hist).concat([Object.assign({ by: myName(), at: at }, rec)]).slice(-50) });
+  ROWS_SIG = ''; return save();
+}
+
+/* ══ UI ══════════════════════════════════════════════════════════════════════════════════════════ */
+var CSS = '.ins4c-tbl th{padding:8px;font-size:11px;font-weight:800;text-transform:uppercase;color:#64748b}.ins4c-trades{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))!important}.ins4c-spark{vertical-align:middle}.ins4c-tbl td{white-space:nowrap}.ins4c-tbl td.d{white-space:normal;min-width:220px}.ins4c-tbl tr[data-pbk]{cursor:pointer}.ins4c-tbl tr[data-pbk]:hover td{background:#f8fafc}' +
+  '.ins4c-up{color:#b91c1c;font-weight:800}.ins4c-down{color:#166534;font-weight:800}.ins4c-gc{color:#1B1452;font-weight:800}.ins4c-hint{position:absolute;z-index:9999;background:#1B1452;color:#fff;border-radius:8px;padding:6px 8px;font:12px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;gap:6px;align-items:center;max-width:360px}.ins4c-hint button{background:#F2A51A;color:#1B1452;border:0;border-radius:6px;font-weight:800;padding:3px 8px;cursor:pointer}';
+function css(){ if (D.getElementById('gc-ins4c-css')) return; var st = D.createElement('style'); st.id = 'gc-ins4c-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+function spark(sp){
+  if (!sp || sp.length < 2) return '<span style="color:#94a3b8;font-size:11px">—</span>';
+  var ps = sp.map(function(x){ return x.p; }), mn = Math.min.apply(null, ps), mx = Math.max.apply(null, ps), w = 70, h = 18;
+  var pts = sp.map(function(x, i){ return (i * (w / (sp.length - 1))).toFixed(1) + ',' + (mx === mn ? h / 2 : (h - 2 - (x.p - mn) / (mx - mn) * (h - 4))).toFixed(1); }).join(' ');
+  return '<svg class="ins4c-spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(sp.map(function(x){ return monLabel(x.mon) + ' ' + money(x.p); }).join(', ')) + '"><polyline fill="none" stroke="#1B1452" stroke-width="1.6" points="' + pts + '"/></svg>';
+}
+function F_(A){ return A.S.pb = A.S.pb || { trade: '', reg: '', from: '', to: '', q: '', sort: 'trade', open: '', mon: '' }; }
+function view(A){
+  css(); try { I().ensureCss(); } catch (e) {}
+  if (!canSee()) return '<div class="gcbb-empty">The insurance price book is for the office, the insurance team and the estimators.</div>';
+  load(); backfill();   /* (no per-paint count on screen: a later paint would differ and the page would twitch) */
+  var F = F_(A), R = rows(F), RG = regions(), MS = months(), ed = canEdit();
+  var mon = F.mon || (BOOK.events.filter(function(e){ return e.kind === 'change'; }).map(function(e){ return e.mon; }).sort().pop() || MS[MS.length - 1] || '');
+  var ch = changed(mon), nm = newMonths().slice(-6).reverse();
+  var h = '<div class="ins4 ins4c">' +
+    '<div class="ins4-sec"><h3>💲 Insurance price book <span class="ins4-chip">' + Object.keys(BOOK.items).length + ' items</span><span class="ins4-chip">' + Object.keys(BOOK.seen).length + ' estimates read</span>' + '</h3>' +
+      '<div style="font-size:12.5px;color:#475569">Every Xactimate ESX / PDF read on a claim (carrier’s and ours) adds its prices here. Prices are per code + unit and per price list (region + month). GrayCo prices are ours, kept apart.</div></div>';
+  if (!R.length && !Object.keys(BOOK.items).length) return h + '<div class="gcbb-empty"><b>No prices yet.</b><br>Upload an Xactimate ESX or PDF on a claim (📐 Xactimate tab, or “⬆ Upload Xactimate files” on the list) — its line prices show up here.</div></div>';
+  h += '<div class="ins4-grid"><div class="ins4-sec" data-ins4c="changed"><h3>📅 What changed <select data-a="ins4cmon" aria-label="Month">' + MS.slice().reverse().map(function(m){ return '<option value="' + m + '"' + (m === mon ? ' selected' : '') + '>' + monLabel(m) + '</option>'; }).join('') + '</select></h3>' +
+    (ch.length ? ch.map(function(t){ return '<div style="margin:4px 0 8px"><b>' + esc(TRN[t.trade] || t.trade) + '</b> <span class="ins4-chip">' + t.n + ' change' + (t.n === 1 ? '' : 's') + ' · avg ' + (t.avgPct > 0 ? '+' : '') + t.avgPct + '%</span>' +
+      t.up.map(function(x){ return '<div style="font-size:12.5px">▲ <span class="ins4c-up">' + (x.pct > 0 ? '+' : '') + x.pct + '%</span> ' + esc(x.code || '') + ' ' + esc(x.desc) + ' — ' + money(x.from) + ' → ' + money(x.to) + '/' + esc(x.unit) + '</div>'; }).join('') +
+      t.down.map(function(x){ return '<div style="font-size:12.5px">▼ <span class="ins4c-down">' + x.pct + '%</span> ' + esc(x.code || '') + ' ' + esc(x.desc) + ' — ' + money(x.from) + ' → ' + money(x.to) + '/' + esc(x.unit) + '</div>'; }).join('') + '</div>'; }).join('') : '<div style="font-size:13px;color:#64748b">No price changes logged for ' + esc(monLabel(mon)) + '.</div>') +
+    (nm.length ? '<div style="font-size:12px;color:#475569;margin-top:6px">New price-list months: ' + nm.map(function(e){ return '<span class="ins4-chip">' + esc(e.pl) + '</span>'; }).join(' ') + '</div>' : '') + '</div>' +
+    '<div class="ins4-sec" data-ins4c="digest"><h3>🔔 Monthly digest</h3><label style="font-size:13px;display:flex;gap:6px;align-items:center"><input type="checkbox" data-a="ins4cdigest"' + (BOOK.cfg.digest ? ' checked' : '') + (ed ? '' : ' disabled') + '> A to-do for the Senior Insurance PM and the Senior Estimator when prices change in a month (inside the CRM only — nothing is e-mailed).</label>' +
+    (ed ? '<div style="margin-top:8px"><b style="font-size:12.5px">GrayCo % by trade</b> <span style="font-size:12px;color:#64748b">(over the Xactimate price; blank = none)</span><div class="ins4b-form ins4c-trades">' + TRADES.map(function(t){ var o = BOOK.overrides['trade:' + t[0]]; return '<label>' + esc(t[1]) + '<input data-pbt="' + t[0] + '" inputmode="decimal" placeholder="%" value="' + esc(o && o.pct != null ? o.pct : '') + '"></label>'; }).join('') + '</div><div class="ins4-row"><button class="ins4-btn pri" data-a="ins4ctrsave">Save trade %</button></div></div>' : '') + '</div></div>';
+  h += '<div class="ins4-filters"><select data-a="ins4cf" data-k="trade" aria-label="Trade"><option value="">Every trade</option>' + TRADES.map(function(t){ return '<option value="' + t[0] + '"' + (F.trade === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>'; }).join('') + '</select>' +
+    '<select data-a="ins4cf" data-k="reg" aria-label="Price list region"><option value="">Every price list</option>' + RG.map(function(r){ return '<option value="' + esc(r) + '"' + (F.reg === r ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') + '</select>' +
+    '<select data-a="ins4cf" data-k="from" aria-label="From month"><option value="">From …</option>' + MS.map(function(m){ return '<option value="' + m + '"' + (F.from === m ? ' selected' : '') + '>' + monLabel(m) + '</option>'; }).join('') + '</select>' +
+    '<select data-a="ins4cf" data-k="to" aria-label="To month"><option value="">To …</option>' + MS.map(function(m){ return '<option value="' + m + '"' + (F.to === m ? ' selected' : '') + '>' + monLabel(m) + '</option>'; }).join('') + '</select>' +
+    '<input class="ins4-in" data-pbq="1" type="search" placeholder="Search code or description" value="' + esc(F.q) + '" aria-label="Search the price book">' +
+    '<select data-a="ins4cf" data-k="sort" aria-label="Sort"><option value="trade"' + (F.sort === 'trade' ? ' selected' : '') + '>Sort: trade</option><option value="pct"' + (F.sort === 'pct' ? ' selected' : '') + '>Sort: biggest change %</option><option value="n"' + (F.sort === 'n' ? ' selected' : '') + '>Sort: most seen</option><option value="last"' + (F.sort === 'last' ? ' selected' : '') + '>Sort: last seen</option></select>' +
+    '<button class="ins4-btn" data-a="ins4ccsv">⬇ CSV</button><span class="ins4b-count">' + R.length + ' item' + (R.length === 1 ? '' : 's') + '</span></div>';
+  h += '<div class="ins4b-tblwrap"><table class="ins4b-tbl ins4c-tbl" aria-label="Price book"><thead><tr><th>Trade</th><th>Code</th><th>Description</th><th>Unit</th><th>Current</th><th>First this year</th><th>Change</th><th>Min–max</th><th>Seen</th><th>Last seen</th><th>Trend</th><th>GrayCo price</th></tr></thead><tbody>' +
+    R.slice(0, 400).map(function(r){ var cls = r.chg > 0 ? 'ins4c-up' : r.chg < 0 ? 'ins4c-down' : ''; return '<tr data-pbk="' + esc(r.key) + '" tabindex="0"><td>' + esc(TRN[r.trade] || r.trade) + '</td><td>' + esc(r.code || '—') + '</td><td class="d">' + esc(r.desc) + '</td><td>' + esc(r.unit) + '</td><td><b>' + money(r.cur) + '</b><div style="font-size:11px;color:#64748b">' + esc(r.curPl) + '</div></td><td>' + money(r.first) + '</td>' +
+      '<td class="' + cls + '">' + (r.chg ? (r.chg > 0 ? '+' : '') + money(r.chg) + ' (' + (r.pct > 0 ? '+' : '') + r.pct + '%)' : '—') + '</td><td>' + money(r.min) + '–' + money(r.max) + '</td><td>' + r.n + '</td><td>' + esc(r.last) + '</td><td>' + spark(r.spark) + '</td><td>' + (r.grayco ? '<span class="ins4c-gc">' + money(r.grayco.price) + '</span><div style="font-size:11px;color:#64748b">' + (r.grayco.how === 'trade' ? 'trade ' + (r.grayco.pct > 0 ? '+' : '') + r.grayco.pct + '%' : 'set by ' + esc(r.grayco.by)) + '</div>' : '') + '</td></tr>' +
+      (F.open === r.key ? '<tr><td colspan="12">' + detail(r) + '</td></tr>' : ''); }).join('') + '</tbody></table></div>' + (R.length > 400 ? '<div style="font-size:12px;color:#64748b;margin-top:6px">Showing 400 of ' + R.length + ' — narrow with the filters.</div>' : '');
+  return h + '</div>';
+}
+function detail(r){
+  var it = BOOK.items[r.key], o = BOOK.overrides[r.key], ed = canEdit();
+  return '<div data-ins4c="detail" style="padding:6px 2px"><b>Where this price came from</b><table class="ins4-tbl"><thead><tr><th>Price list</th><th>Date</th><th>Whose</th><th>Unit price</th><th>Remove / replace</th><th>O&amp;P</th><th>Claim</th></tr></thead><tbody>' +
+    it.obs.slice().reverse().slice(0, 60).map(function(x){ var c = null; try { c = G().get(x.claimId); } catch (e) {} return '<tr><td>' + esc(x.pl || '—') + '</td><td>' + esc(x.date) + '</td><td>' + (x.src === 'grayco' ? 'ours' : 'carrier') + ' v' + esc(x.v || '') + '</td><td>' + money(x.p) + '</td><td>' + (x.rem != null || x.rep != null ? money(x.rem) + ' / ' + money(x.rep) : '—') + '</td><td>' + (x.op ? 'yes' : '') + '</td><td>' + (c ? '<button class="ins4-btn" data-a="ins4open" data-v="' + esc(c.id) + '">' + esc(I().claimTitle ? I().claimTitle(c) : c.id) + ' ›</button>' : '<span style="color:#94a3b8">' + esc(x.claimId || '—') + '</span>') + '</td></tr>'; }).join('') + '</tbody></table>' +
+    '<div class="ins4-row" style="margin-top:6px"><b>GrayCo price</b>' + (ed ? '<input class="ins4-in" data-pbo="' + esc(r.key) + '" inputmode="decimal" placeholder="$ per ' + esc(r.unit) + '" value="' + esc(o && o.price != null ? o.price : '') + '" style="width:120px"><button class="ins4-btn pri" data-a="ins4cosave" data-v="' + esc(r.key) + '">Save</button>' : '<span>' + (r.grayco ? money(r.grayco.price) : '—') + '</span>') +
+    '<span style="font-size:12px;color:#64748b">' + (o && arr(o.hist).length ? 'History: ' + o.hist.slice().reverse().slice(0, 6).map(function(e){ return esc(ymd(e.at)) + ' ' + (e.price != null ? money(e.price) : 'cleared') + ' (' + esc(e.by) + ')'; }).join(' · ') : 'Xactimate prices are never changed — the GrayCo price is kept beside them.') + '</span></div></div>';
+}
+function csvText(A){
+  var q = function(v){ v = s(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  return ['Trade,Code,Description,Unit,Current,Price list,First this year,Change $,Change %,Min,Max,Seen,Last seen,GrayCo price'].concat(rows(F_(A)).map(function(r){ return [TRN[r.trade] || r.trade, r.code, r.desc, r.unit, r.cur, r.curPl, r.first, r.chg, r.pct, r.min, r.max, r.n, r.last, r.grayco ? r.grayco.price : ''].map(q).join(','); })).join('\n');
+}
+
+/* the claim: carrier lines below the price list + price-book prices for our added lines */
+function underpaidHtml(c){
+  if (!canSee()) return '';
+  load();
+  var U = underpaid(c), M = canMoney();
+  if (!U.est) return '';
+  var S = null; try { S = W._gcIns4.core.suggestions(c); } catch (e) {}
+  var adds = S && S.ready ? S.items.map(function(x){ var pf = priceFor(x.desc, x.unit, U.pl); return pf ? { x: x, pf: pf } : null; }).filter(Boolean) : [];
+  return '<div class="ins4-sec" data-ins4c="underpaid"><h3>💲 Underpaid vs price list <span class="ins4-chip ' + (U.lines.length ? 'warn' : 'ok') + '">' + U.lines.length + '</span>' + (U.pl ? '<span class="ins4-chip">' + esc(U.pl) + '</span>' : '') + (U.lines.length && M ? '<b style="margin-left:auto">' + money(U.total) + '</b>' : '') + '</h3>' +
+    (U.why ? '<div style="font-size:13px;color:#64748b">' + esc(U.why) + '</div>' : U.lines.length ? '<table class="ins4-tbl"><thead><tr><th>Line</th><th>Qty</th><th>Carrier</th><th>Price book</th><th>Short</th><th></th></tr></thead><tbody>' + U.lines.map(function(u, i){ return '<tr data-up="' + i + '"><td>' + esc([u.line.cat, u.line.sel].filter(Boolean).join(' ')) + ' ' + esc(u.line.desc) + '<div style="font-size:11px;color:#64748b">' + esc(u.line.room) + '</div></td><td>' + esc(u.line.qty) + ' ' + esc(u.line.unit) + '</td><td>' + money(u.line.unitPrice) + '</td><td><b>' + money(u.ref.p) + '</b><div style="font-size:11px;color:#64748b">seen ' + u.ref.n + '× on ' + esc(u.ref.pl) + '</div></td><td class="ins4c-up">' + money(u.diff) + '</td><td><button class="ins4-btn gold" data-a="ins4cupadd" data-v="' + i + '">➕ To supplement</button></td></tr>'; }).join('') + '</tbody></table>' : '<div style="font-size:13px;color:#166534">✓ No carrier line is below what ' + esc(U.pl) + ' has paid on other estimates.</div>') +
+    (adds.length ? '<div style="margin-top:8px"><b style="font-size:12.5px">Lines we added — price-book price</b>' + adds.map(function(a){ return '<div style="font-size:12.5px">• ' + esc(a.x.desc) + ' — <b>' + money(a.pf.price) + '/' + esc(a.pf.unit) + '</b> <span style="color:#64748b">(' + esc(a.pf.code || 'by description') + ', ' + esc(a.pf.pl) + (a.pf.grayco ? ', GrayCo price' : '') + ')</span></div>'; }).join('') + '</div>' : '') + '</div>';
+}
+
+/* ══ ACTIONS ═════════════════════════════════════════════════════════════════════════════════════ */
+function wire(){
+  var X = G() && G().ext && G().ext.EXT_ACT; if (!X || !I().suppDraft) return false;
+  if (X.ins4cf) return true;
+  X.ins4cf = function(A, v, t){ var F = F_(A); F[t.getAttribute('data-k')] = v; F.open = ''; A.render(true); };
+  X.ins4cmon = function(A, v){ F_(A).mon = v; A.render(true); };
+  X.ins4ccsv = function(A){ var tx = csvText(A); W.__gcIns4cLastCsv = tx; try { var b = new Blob([tx], { type: 'text/csv' }), a = D.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'grayco-insurance-price-book.csv'; D.body.appendChild(a); a.click(); later(function(){ try { a.remove(); } catch (e) {} }, 300); } catch (e) { warn(e); } };
+  X.ins4cosave = function(A, v){ var el = A.root.querySelector('[data-pbo="' + (W.CSS && W.CSS.escape ? W.CSS.escape(v) : v) + '"]'); return setOverride(v, el ? el.value : '').then(function(){ I().toastA(A, '✓ GrayCo price saved'); A.render(true); }, function(e){ I().toastA(A, s(e && e.message)); }); };
+  X.ins4ctrsave = function(A){ var p = Promise.resolve(); Array.prototype.forEach.call(A.root.querySelectorAll('[data-pbt]'), function(el){ var k = 'trade:' + el.getAttribute('data-pbt'), o = BOOK.overrides[k], cur = o && o.pct != null ? String(o.pct) : ''; if (s(el.value) !== cur) p = p.then(function(){ return setOverride(k, el.value); }); }); return p.then(function(){ I().toastA(A, '✓ Saved'); A.render(true); }, function(e){ I().toastA(A, s(e && e.message)); }); };
+  X.ins4cdigest = function(A, v, t){ if (!canEdit()) return; BOOK.cfg = { digest: !!t.checked, at: nowIso(), by: myName() }; save(); I().toastA(A, t.checked ? 'Digest on' : 'Digest off'); };
+  X.ins4cupadd = function(A, v, t, ev, c){
+    var U = underpaid(c), u = U.lines[num(v)]; if (!u) return;
+    var d = I().suppDraft(c.id), desc = (u.line.cat ? u.line.cat + ' ' + u.line.sel + ' ' : '') + u.line.desc + ' — priced below the price list (' + U.pl + ': ' + money(u.ref.p) + ' vs ' + money(u.line.unitPrice) + '/' + u.line.unit + ')';
+    if (!d.items.some(function(y){ return y.desc === desc; })) d.items.push({ room: s(u.line.room), desc: desc, qty: s(u.line.qty), unit: s(u.line.unit), amount: String(u.diff), reason: 'Underpaid vs price list ' + U.pl, photo: '' });
+    I().toastA(A, 'Added to the supplement builder'); A.render(true);
+  };
+  return true;
+}
+/* the price book's search box + row click */
+D.addEventListener('input', function(ev){
+  var t = ev.target; if (!t || !t.getAttribute || !t.getAttribute('data-pbq')) return;
+  var A = appOf(t.closest('[data-gcbb]')); if (!A) return; F_(A).q = t.value;
+  var pos = t.selectionStart; A.render(true); var q = A.root.querySelector('[data-pbq]'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (e) {} }
+});
+D.addEventListener('click', function(ev){
+  var tr = ev.target && ev.target.closest && ev.target.closest('tr[data-pbk]'); if (!tr || ev.target.closest('button,input,select,a')) return;
+  var A = appOf(tr.closest('[data-gcbb]')); if (!A) return; var F = F_(A), k = tr.getAttribute('data-pbk'); F.open = F.open === k ? '' : k; A.render(true);
+});
+D.addEventListener('keydown', function(ev){ var tr = ev.target; if (ev.key !== 'Enter' || !tr || !tr.getAttribute || !tr.getAttribute('data-pbk')) return; tr.click(); });
+function appOf(root){ var A = null; try { G()._test.apps().forEach(function(a){ if (a.root === root) A = a; }); } catch (e) {} return A; }
+
+/* ══ ESTIMATE BUILDER: on an insurance job, the unit-cost box offers the price-book price (a tap uses it) ══ */
+var HINT = null;
+function hideHint(){ if (HINT) { HINT.remove(); HINT = null; } }
+function builderIsInsurance(){ var t = D.getElementById('ej-type'); return !!(t && /insur|restor/i.test(s(t.value))); }
+D.addEventListener('focusin', function(ev){
+  var el = ev.target;
+  if (!el || !el.classList || !el.classList.contains('li') || el.type !== 'number') { if (!(el && el.closest && el.closest('.ins4c-hint'))) hideHint(); return; }
+  var row = el.closest('.el[data-lineid]'); if (!row || !D.getElementById('gc-est-overlay') || !builderIsInsurance()) return;
+  var label = (el.parentNode && el.parentNode.textContent) || ''; if (!/Unit cost/i.test(label)) return;
+  var dEl = row.querySelector('[onclick^="editDesc"]'), desc = dEl ? s(dEl.childNodes[0] && dEl.childNodes[0].textContent || dEl.textContent) : '';
+  var pf = priceFor(desc, ''); hideHint(); if (!pf) return;
+  css(); HINT = D.createElement('div'); HINT.className = 'ins4c-hint'; HINT.setAttribute('data-gc-keep', '1');
+  HINT.innerHTML = '<span>💲 Insurance price book: <b>' + money(pf.price) + '/' + esc(pf.unit) + '</b> · ' + esc(pf.code || pf.desc.slice(0, 40)) + ' · ' + esc(pf.pl) + (pf.grayco ? ' (GrayCo price)' : '') + '</span><button type="button">Use</button>';
+  var r = el.getBoundingClientRect(); HINT.style.left = Math.max(4, r.left + W.scrollX) + 'px'; HINT.style.top = (r.bottom + W.scrollY + 4) + 'px';
+  HINT.querySelector('button').addEventListener('mousedown', function(e){
+    e.preventDefault(); var id = row.getAttribute('data-lineid');
+    el.value = String(pf.price);
+    try { if (typeof W.ul === 'function') W.ul(id, 'cost', pf.price); else el.dispatchEvent(new Event('change', { bubbles: true })); } catch (x) { warn(x); }
+    W.__gcIns4cUsed = { id: id, price: pf.price, code: pf.code }; hideHint();
+  });
+  D.body.appendChild(HINT);
+}, true);
+
+/* ══ THE DIGEST TO-DO (optional, internal only) ══════════════════════════════════════════════════ */
+function holders(){ var out = []; ['insurance', 'bid'].forEach(function(k){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder && W._gcLeadRoles.holder(k); if (h && s(h.name)) out.push(s(h.name)); } catch (e) {} }); if (!out.length) users().forEach(function(u){ if (/admin/i.test(s(u.role))) out.push(s(u.name)); }); return out.filter(function(x, i, a){ return a.indexOf(x) === i; }); }
+W._gcTodoExt = arr(W._gcTodoExt); W._gcTodoExt.push(function(){
+  try {
+    if (!BOOK.cfg || !BOOK.cfg.digest) return [];
+    var ms = {}; BOOK.events.forEach(function(e){ if (e.kind === 'change' && e.mon) ms[e.mon] = (ms[e.mon] || 0) + 1; });
+    return Object.keys(ms).filter(function(m){ return !BOOK.ack[m]; }).sort().slice(-2).map(function(m){
+      return { key: 'ins4pb:' + m, thing: 'ins4pb|' + m, cat: 'jobs', prio: 'med', pid: '', due: '', title: '💲 Insurance prices changed — ' + monLabel(m) + ' (' + ms[m] + ' line' + (ms[m] === 1 ? '' : 's') + ')', sub: 'Price book → What changed', who: holders(), vis: 'who',
+        act: { l: '💲 Open the price book', f: function(){ BOOK.ack[m] = { at: nowIso(), by: myName() }; save(); try { var A = G().open({}); if (A && A.S) { A.S.screen = 'ins4pb'; F_(A).mon = m; A.render(true); } } catch (e) { warn(e); } } } };
+    });
+  } catch (e) { warn(e); return []; }
+});
+
+var hooked = false;
+(function tryHook(n){ if (wire()) { hooked = true; return; } if (n < 300) later(function(){ tryHook(n + 1); }, 300); })(0);
+W._gcInsPriceBook = { view: function(A){ try { return view(A); } catch (e) { warn(e); return '<div class="gcbb-err">' + esc(e && e.message) + '</div>'; } }, underpaidHtml: function(c){ try { return underpaidHtml(c); } catch (e) { warn(e); return ''; } },
+  capture: capture, backfill: backfill, rows: rows, stats: stats, changed: changed, underpaid: underpaid, priceFor: priceFor, plInfo: plInfo, tradeOf: tradeOf, keyOf: keyOf, setOverride: setOverride, mergeBook: mergeBook, toRows: toRows,
+  saveNow: saveNow, load: load, book: function(){ return BOOK; }, reset: function(){ BOOK = blank(); LOADED = null; keepLocal(); }, status: function(){ return { hooked: hooked, items: Object.keys(BOOK.items).length, estimates: Object.keys(BOOK.seen).length, events: BOOK.events.length }; } };
+W._gcInsPriceFor = function(text, unit, pl){ try { return priceFor(text, unit, pl); } catch (e) { return null; } };
+try { console.log('[GC] 💲 Insurance price book (patch INS4c) — _gcInsPriceBook.status()'); } catch (e) {}
 })();
 
 </script>
