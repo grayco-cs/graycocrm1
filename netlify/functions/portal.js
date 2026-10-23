@@ -515,7 +515,7 @@ async function buildView(data, p, opts){
     addDoc({ kind: 'proposal', title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),
       total: total > 0 ? money(total) : null,
       status: /sign|approv|accept|won|contract/.test(low(e.status)) ? 'Signed' : 'Sent',
-      url: g ? g.url : (pdf ? (signed[pdf.ref] || httpsUrl(pdf.url)) : ''), preview: g ? g.preview : '' });
+      url: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) || (g ? g.url : ''), preview: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) ? '' : (g ? g.preview : '') });   /* patch GDOCS: the PDF first — a private Google Doc does not open for the customer */
   });
   const pg = gdocInfo(p.gdocUrl);
   if (pg) addDoc({ kind: 'gdoc', title: 'Your proposal (Google Doc)', date: '', url: pg.url, preview: pg.preview });
@@ -1820,10 +1820,12 @@ function noticeItems(data, p){
   const pid = s(p.id), out = [];
   const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
-  ests.forEach(function(e){ out.push({ key: 'est:' + s(e.id), title: s(e.name) || 'Your proposal', kind: 'proposal', at: ymd(e.sentDate || e.finalizedDate || e.date || e.updatedAt) }); });
+  ests.forEach(function(e){ if (e.noNotice === true) return;   /* patch GDOCS: brought in from Google Docs — no e-mail unless the admin turned it on */
+    out.push({ key: 'est:' + s(e.id), title: s(e.name) || 'Your proposal', kind: 'proposal', at: ymd(e.sentDate || e.finalizedDate || e.date || e.updatedAt) }); });
   const insJ = isInsJob(p);   /* patch INSP */
   arr(data.projectDocs).filter(function(d){ return insJ ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){
     if (d.estimateId && shownEst[s(d.estimateId)]) return;               /* the estimate already counts */
+    if (d.noNotice === true) return;                                       /* patch GDOCS */
     if (/final invoice|\binvoice/i.test(s(d.name) + ' ' + s(d.cat)) && !/proposal/i.test(s(d.cat))) return;
     if (!(d.portalShare === true && /customer portal/i.test(s(d.cat))) && !NOTIFY_DOC.test(s(d.cat) + ' ' + s(d.name)) && !(insJ && insGroupOf(d))) return;
     out.push({ key: 'doc:' + s(d.id), title: s(d.name) || 'Document', kind: 'doc', at: ymd(d.uploadedAt || d.uploaded || d.savedAt) });

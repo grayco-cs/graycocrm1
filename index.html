@@ -173813,3 +173813,457 @@ try { console.log('[GC] 💲 Insurance price book (patch INS4c) — _gcInsPriceB
 })();
 
 </script>
+<script>
+/* ===== patch GDOCS: the team's Google Docs → the CRM ==========================================================
+   Owner 10/23: "when i make documents in google docs i want them to be read and entered into my crm system, if im giving
+   proposals and quotes i want those jobs entered or matched as a bidding job, docs i make that are invoices i want to go to
+   the jobs documents or make a matching invoice thats on the crm and add to portal etc, all quotes and proposals before jobs
+   are signed also add to the customers portal" · "read … everyone pm super apm estimator any docs".
+   The server reads every staff member's Google Docs (read only; netlify/functions/_lib/gdocs.js) and keeps only the
+   business papers. THIS page — an admin or office computer — places each one with the CRM's own data:
+     • proposal / quote / estimate → the job or lead it belongs to (a new version when the Doc changed), with the PDF in the
+       job's documents and the customer portal; no match → a new lead at "Estimate Sent" (the lead roles route it; the
+       Doc's author gets it when the roles allow);
+     • invoice → the job's documents + a matching CRM invoice (same number, amount, date, lines) — never a second copy of one
+       already there; recorded only: never e-mailed, no reminders (before 2026 or paid = history);
+     • change order / contract / scope → the job's documents;
+     • anything not sure (no clear job, two jobs alike, a weak read) → "🔎 Needs a person" in the panel and on the To-Do,
+       with Place on a job / New lead / Ignore. Every placement can be undone from the log.
+   Nothing here sends anything to a customer: the portal's "new papers" e-mail is off for these unless the admin turns
+   "Tell the customer" on. API: window._gcGdocs = { open(), sync(backfill), applyAll(), state() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_GDOCS__) return; window.__GC_PATCH_GDOCS__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/gdocs-sync';
+var S = { items: [], status: null, settings: null, busy: false, last: 0, err: '', applied: {} };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(Boolean) : []; }
+function nk(v){ return low(v).replace(/[^a-z0-9]+/g, ' ').trim(); }
+function digits(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function num(v){ var x = parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function cents(v){ return Math.round(Math.abs(num(v)) * 100); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(n){ n = num(n); return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ return nowIso().slice(0, 10); }
+function crm(){ return W._crm || {}; }
+/* the CRM's lists, read once per pass from this computer's own copy (IndexedDB), the page's lists as a fallback */
+var DATA = { at: 0 };
+var KEYS = { projects: ['projects'], leads: ['leads'], estimates: ['estimates', '_gcEstimatesState'], projectDocs: ['projectDocs', '_gcProjectDocs'], invs: ['invs', 'invoices'], customers: ['customers', '_graycoCustomers'], users: ['users'] };
+function readData(){
+  var ks = Object.keys(KEYS);
+  return Promise.all(ks.map(function(k){ return Promise.resolve(W.idbGet ? W.idbGet(k) : null).then(function(v){ return v; }, function(){ return null; }); })).then(function(vals){
+    var c = crm();
+    ks.forEach(function(k, i){ var v = vals[i]; if (!Array.isArray(v) || !v.length) { v = null; KEYS[k].forEach(function(n){ if (!v) { var x = c[n] || W[n]; if (Array.isArray(x) && x.length) v = x; } }); } DATA[k] = arr(v).slice(); });
+    DATA.at = Date.now(); return DATA;
+  });
+}
+function projects(){ return arr(DATA.projects).filter(function(p){ return p.id && p.deleted !== true; }); }
+function leadsAll(){ return arr(DATA.leads); }
+function customers(){ return arr(DATA.customers); }
+function estimates(){ return arr(DATA.estimates); }
+function invs(){ return arr(DATA.invs); }
+function pdocs(){ return arr(DATA.projectDocs); }
+function meName(){ try { return s((W._gcMeNow && W._gcMeNow.name) || localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function isOffice(){ try { if (W._gcRP && typeof W._gcRP.role === 'function' && /office/i.test(s(W._gcRP.role()))) return true; } catch (e) {} try { return /office/i.test(s(W._gcMeNow && (W._gcMeNow.role || W._gcMeNow.title))); } catch (e) { return false; } }
+function canPlace(){ return isAdmin() || isOffice(); }
+function viewingAs(){ try { return !!(W._gcRP && W._gcRP.status && W._gcRP.status().viewAs); } catch (e) { return false; } }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function api(op, body){
+  var get = !body;
+  return W.fetch(FN + (get ? '?op=' + encodeURIComponent(op) : ''), get ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ op: op }, body)) })
+    .then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { ok: false, error: t.slice(0, 160) }; } o.__status = r.status; return o; }); },
+      function(e){ return { ok: false, error: 'Cannot reach the server (' + e.message + ')' }; });
+}
+function manual(why){ try { W.__GC_MANUAL_SAVE__ = true; if (W._gcManualNow) W._gcManualNow(why); } catch (e) {} ST(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500); }
+function tomb(key, id){ try { if (W._gcTombstone) W._gcTombstone(key, id); } catch (e) {} }
+
+/* ── saving: through the app's own state (it saves locally and to the cloud) ── */
+function setList(key, fn){
+  var setter = { leads: '_setLeads', invs: '_setInvoices', projectDocs: '_setProjectDocs', customers: '_setCustomers', estimates: '_gcSetEstimates', projects: '_setProjects' }[key];
+  var f = W[setter];
+  if (typeof f === 'function') { try { f(function(prev){ var next = fn(Array.isArray(prev) ? prev.slice() : []); return next; }); return true; } catch (e) {} }
+  try {   /* no state yet (a page that has not opened the app): the local copy + the cloud */
+    Promise.resolve(W.idbGet && W.idbGet(key)).then(function(v){ var next = fn(Array.isArray(v) ? v.slice() : []); if (W.idbSet) W.idbSet(key, next); try { if (W._gcApplySync) W._gcApplySync(key, next); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert(key, next); } catch (e) {} });
+  } catch (e) {}
+  return false;
+}
+function upsertBy(key, rec){ setList(key, function(l){ var i = l.findIndex(function(x){ return x && x.id === rec.id; }); if (i >= 0) l[i] = Object.assign({}, l[i], rec); else l.push(rec); return l; }); mirror(key, rec); }
+function patchBy(key, id, ch){ setList(key, function(l){ return l.map(function(x){ return x && x.id === id ? Object.assign({}, x, ch, { updatedAt: nowIso() }) : x; }); }); DATA[key] = arr(DATA[key]).map(function(x){ return x.id === id ? Object.assign({}, x, ch) : x; }); }
+function removeBy(key, id){ setList(key, function(l){ return l.filter(function(x){ return !(x && x.id === id); }); }); tomb(key, id); DATA[key] = arr(DATA[key]).filter(function(x){ return x.id !== id; }); }
+/* this pass's own copy at once, so the next paper in this pass sees this one */
+function mirror(key, rec){ var l = arr(DATA[key]), i = l.findIndex(function(x){ return x.id === rec.id; }); if (i >= 0) l[i] = Object.assign({}, l[i], rec); else l.push(rec); DATA[key] = l; }
+
+/* ── who wrote it: the CRM person, and what the lead roles allow them ── */
+function person(email, name){
+  var us = arr(DATA.users).length ? arr(DATA.users) : arr(crm().users); var u = us.find(function(x){ return email && low(x.email) === low(email); }) || us.find(function(x){ return name && low(x.name) === low(name); });
+  return u || (name ? { name: name, email: email } : null);
+}
+function isEst(u){ return /estimat/i.test(s(u && (u.role + ' ' + (u.title || '') + ' ' + (u.profile || '')))); }
+function isPmish(u){ return /\b(pm|project manager|apm|assistant|super|superintendent|admin|owner|estimat)\b/i.test(s(u && (u.role + ' ' + (u.title || '')))); }
+
+/* ── matching: the job (or lead) this paper belongs to ── */
+function streetKey(a){ var m = /^\s*(\d{2,6})\s+([A-Za-z]+)/.exec(s(a)); return m ? (m[1] + ' ' + m[2]).toLowerCase() : ''; }
+function custOf(name){ var n = nk(name); return n ? customers().filter(function(c){ return nk(c.name || c.company) === n; }) : []; }
+function nameHit(a, b){
+  a = nk(a); b = nk(b); if (!a || !b || a.length < 4 || b.length < 4) return 0;
+  if (a === b) return 40;
+  var ta = a.split(' '), tb = b.split(' ');
+  if (ta.length >= 2 && tb.indexOf(ta[0]) >= 0 && tb.indexOf(ta[ta.length - 1]) >= 0) return 30;
+  if (b.indexOf(a) >= 0 || a.indexOf(b) >= 0) return 20;
+  return 0;
+}
+function scoreOf(rec, f, isLead){
+  var sc = 0, why = [];
+  var jobNo = low(f.jobNo);
+  if (!isLead && jobNo && [rec.autoPO, rec.po, rec.jobNumber, rec.jobNo].some(function(v){ return low(v) === jobNo; })) { sc += 100; why.push('job #'); }
+  var cust = custOf(rec.client || rec.customer)[0] || {};
+  var em = low(f.email);
+  if (em && [rec.clientEmail, rec.email, rec.customerEmail, cust.email].some(function(v){ return low(v) === em; })) { sc += 60; why.push('e-mail'); }
+  var ph = digits(f.phone);
+  if (ph && ph.length === 10 && [rec.clientPhone, rec.phone, rec.customerPhone, cust.phone].some(function(v){ return digits(v) === ph; })) { sc += 50; why.push('phone'); }
+  var sk = streetKey(f.address);
+  if (sk && [rec.address, rec.jobAddress, rec.siteAddress, cust.address].some(function(v){ return streetKey(v) === sk; })) { sc += 50; why.push('address'); }
+  var nh = Math.max(nameHit(f.customer, rec.client || rec.customer), nameHit(f.customer, isLead ? (rec.contact || rec.name || rec.company) : ''), nameHit(f.customer, isLead ? rec.company : ''));
+  if (nh) { sc += nh; why.push('name'); }
+  return { sc: sc, why: why };
+}
+function deadLead(l){ return /won|lost|dead|declin|cancel|archiv|dismiss|junk|convert/i.test(s(l.stage) + ' ' + s(l.status)) || l.dismissed || l.deleted === true; }
+function jobOfLead(l){ var ps = projects(); return ps.find(function(p){ return p.leadId === l.id || p.fromLeadId === l.id || (l.projectId && p.id === l.projectId) || (l.convertedTo && p.id === l.convertedTo) || (l.jobId && p.id === l.jobId); }) || null; }
+function match(it){
+  var f = it.f || {}, out = [];
+  projects().forEach(function(p){ if (/lost|dead|cancel/i.test(s(p.status))) return; var r = scoreOf(p, f, false); if (r.sc) out.push({ kind: 'job', rec: p, sc: r.sc + (/complete|closed/i.test(s(p.status)) && it.kind === 'proposal' ? -15 : 0), why: r.why }); });
+  if (it.kind === 'proposal') leadsAll().forEach(function(l){ if (deadLead(l) || jobOfLead(l)) return; var r = scoreOf(l, f, true); if (r.sc) out.push({ kind: 'lead', rec: l, sc: r.sc, why: r.why }); });
+  out.sort(function(a, b){ return b.sc - a.sc; });
+  var best = out[0], second = out[1];
+  if (!best || best.sc < 60) return { none: true, cands: out.slice(0, 5) };
+  if (second && second.sc >= best.sc - 25 && !(second.kind === 'lead' && best.kind === 'job')) return { tie: true, cands: out.slice(0, 5) };
+  return { hit: best, cands: out.slice(0, 5) };
+}
+
+/* ── placing one paper ── */
+function pdfName(it, label){ return (label ? label + ' — ' : '') + s(it.name).replace(/\.pdf$/i, '').slice(0, 100) + '.pdf'; }
+function docRec(it, pid, cat, extra){
+  return Object.assign({ id: 'DGD_' + it.fileId + '_' + s(it.id).slice(-8), pid: pid, projectId: pid, name: pdfName(it, cat), cat: cat, ref: it.ref, type: 'application/pdf', uploadedAt: nowIso(),
+    uploadedBy: it.ownerName || 'Google Docs', source: 'gdoc', gdocFileId: it.fileId, gdocItem: it.id, gdocUrl: it.url, noNotice: !(S.settings && S.settings.notify) }, extra || {});
+}
+function versionOf(fileId){ return estimates().filter(function(e){ return e.gdocFileId === fileId; }).reduce(function(m, e){ return Math.max(m, num(e.gdocVersion) || 1); }, 0); }
+function placeProposal(it, target){
+  var f = it.f || {}, set = S.settings || {}, res = { kind: 'proposal' };
+  var lead = null, job = null;
+  if (target && target.kind === 'job') job = target.rec;
+  else if (target && target.kind === 'lead') lead = target.rec;
+  else {
+    if (target !== 'new' && set.autoBid === false) return { review: 'auto-create bidding jobs is off' };
+    if (target !== 'new' && !(s(f.customer) && (f.email || f.phone || f.address))) return { review: 'no customer name with an e-mail, phone or address' };
+    var who = person(it.owner, it.ownerName), id = 'LGD_' + it.fileId;
+    if (leadsAll().some(function(l){ return l.id === id; })) lead = leadsAll().find(function(l){ return l.id === id; });
+    else {
+      lead = { id: id, name: s(f.customer) || s(it.name), contact: s(f.customer), email: s(f.email), phone: s(f.phone), address: s(f.address), company: '',
+        projectType: /roof/i.test(it.text || it.name) ? 'Roofing' : '', estValue: num(f.total), priority: 'Medium', source: 'Google Docs', stage: 'Estimate Sent', status: 'new',
+        created: today(), createdAt: nowIso(), updatedAt: nowIso(), addedBy: (who && who.name) || 'Google Docs', gdocAuthor: (who && who.name) || it.ownerName || '', gdocFileId: it.fileId,
+        note: 'From ' + ((who && who.name) || it.ownerName || 'a') + '\'s Google Doc "' + s(it.name) + '" (' + money(f.total) + ').' };
+      /* the author gets it when the lead roles allow (a bid → an estimator; insurance / roofing → that role's holder; else their own) */
+      try {
+        var LR = W._gcLeadRoles, k = LR && LR.classify ? LR.classify(lead) : '';
+        if (who && who.name) {
+          if (k === 'bid') { if (isEst(who)) lead.estimator = who.name; }
+          else if (k === 'insurance' || k === 'roofing') { var h = LR.holder ? LR.holder(k) : null; if (h && low(h.name) === low(who.name)) lead.pm = who.name; }
+          else if (isPmish(who)) lead.pm = who.name;
+          if (lead.pm || lead.estimator) { lead.assignedAt = nowIso(); lead.assignedBy = 'Google Docs (the Doc\'s author)'; }
+        }
+      } catch (e) {}
+      manual('google doc lead'); upsertBy('leads', lead); res.leadCreated = lead.id;
+    }
+  }
+  var v = versionOf(it.fileId) + 1, estId = 'EGD_' + it.fileId + '_v' + v;
+  if (estimates().some(function(e){ return e.gdocItem === it.id; })) { var e0 = estimates().find(function(e){ return e.gdocItem === it.id; }); return Object.assign(res, { estId: e0.id, already: true, pid: e0.pid || '', leadId: e0.gdocLeadId || '' }); }
+  var pid = job ? job.id : '';
+  var est = { id: estId, name: s(it.name) || 'Proposal', client: s((job && job.client) || (lead && (lead.contact || lead.name)) || f.customer), address: s((job && job.address) || (lead && lead.address) || f.address),
+    pid: pid, gdocLeadId: lead ? lead.id : '', status: 'sent', sentDate: f.date || s(it.modified).slice(0, 10), date: f.date || s(it.modified).slice(0, 10),
+    quoteTotal: num(f.total), totalCharge: num(f.total), priceType: 'margin', priceVal: 0, mats: [], labor: [], lines: arr(f.lines),
+    by: it.ownerName || '', author: it.ownerName || '', source: 'gdoc-auto', gdocUrl: it.url, gdocFileId: it.fileId, gdocItem: it.id, gdocRev: it.modified, gdocVersion: v,
+    gdocText: s(it.text).slice(0, 20000), noNotice: !set.notify, portalShare: set.portal !== false && !!pid, updatedAt: nowIso() };
+  estimates().forEach(function(e){ if (e.gdocFileId === it.fileId && !e.supersededBy) patchEst(e.id, { supersededBy: estId, portalHide: true }); });
+  manual('google doc proposal'); addEst(est); res.estId = estId; res.version = v;
+  if (pid && it.ref) { var d = docRec(it, pid, 'Proposal', { estimateId: estId, portalShare: set.portal !== false }); manual('google doc file'); upsertBy('projectDocs', d); res.docIds = [d.id]; }
+  else if (it.ref) res.pendingDoc = true;   /* on a lead: the PDF joins the job's documents when the lead becomes a job */
+  if (lead) {
+    var ch = { estimateId: estId, updatedAt: nowIso() };
+    if (!num(lead.estValue) && num(f.total)) ch.estValue = num(f.total);
+    if (/^(new lead|new|lead|contacted|site visit|)$/i.test(s(lead.stage))) ch.stage = 'Estimate Sent';
+    if (!res.leadCreated) { res.leadPrev = { estimateId: lead.estimateId || '', estValue: lead.estValue, stage: lead.stage || '' }; patchBy('leads', lead.id, ch); }
+    else patchBy('leads', lead.id, ch);
+    res.leadId = lead.id;
+  }
+  res.pid = pid;
+  return res;
+}
+function addEst(est){
+  try { if (typeof W._gcSetEstimates === 'function') { W._gcSetEstimates(function(prev){ var a = Array.isArray(prev) ? prev.slice() : []; if (!a.some(function(x){ return x && x.id === est.id; })) a.unshift(est); return a; }); mirror('estimates', est); return; } } catch (e) {}
+  setList('estimates', function(l){ if (!l.some(function(x){ return x && x.id === est.id; })) l.unshift(est); return l; }); mirror('estimates', est);
+}
+function patchEst(id, ch){
+  try { if (typeof W._gcSetEstimates === 'function') { W._gcSetEstimates(function(prev){ return (Array.isArray(prev) ? prev : []).map(function(x){ return x && x.id === id ? Object.assign({}, x, ch, { updatedAt: nowIso() }) : x; }); }); } else setList('estimates', function(l){ return l.map(function(x){ return x && x.id === id ? Object.assign({}, x, ch) : x; }); }); } catch (e) {}
+  DATA.estimates = estimates().map(function(x){ return x.id === id ? Object.assign({}, x, ch) : x; });
+}
+function sameInv(x, cand){
+  if (!x || !/client|customer/i.test(s(x.type) || 'client')) return false;
+  if (x.gdocFileId && x.gdocFileId === cand.gdocFileId) return true;
+  try { if (W._gcId && W._gcId.sameInvoice && W._gcId.sameInvoice(x, cand)) return true; } catch (e) {}
+  var n1 = low(s(x.invNum || x.qbNum || x.invNo).replace(/^#/, '')), n2 = low(cand.invNum);
+  if (n1 && n2) return n1 === n2 && (!x.pid || !cand.pid || x.pid === cand.pid);
+  return x.pid === cand.pid && cents(x.amt != null ? x.amt : x.amount) === cents(cand.amt) && s(x.date).slice(0, 10) === s(cand.date).slice(0, 10);
+}
+function placeInvoice(it, target){
+  var f = it.f || {}, set = S.settings || {}, res = { kind: 'invoice' };
+  if (!target || target.kind !== 'job') return { review: 'an invoice goes on a job — pick one' };
+  var p = target.rec, amt = num(f.total);
+  if (!amt) return { review: 'no amount could be read' };
+  var hist = (f.date && f.date < '2026-01-01') || f.paid === true;
+  var cand = { type: 'client', pid: p.id, client: s(p.client || f.customer), invNum: s(f.number), amt: amt, date: f.date || s(it.modified).slice(0, 10), gdocFileId: it.fileId };
+  var file = it.ref ? { ref: it.ref, name: pdfName(it, 'Invoice'), type: 'application/pdf' } : null;
+  var dup = invs().find(function(x){ return sameInv(x, cand); });
+  if (dup) {
+    var ch = {}; if (!dup.gdocFileId) ch.gdocFileId = it.fileId; if (!dup.gdocUrl) ch.gdocUrl = it.url;
+    if (file && !arr(dup.files).some(function(x){ return x.ref === file.ref; })) ch.files = arr(dup.files).concat([file]);
+    if (dup.gdocFileId === it.fileId && /gdoc/.test(s(dup.source)) && !/paid/i.test(s(dup.status)) && cents(dup.amt) !== cents(amt)) { ch.amt = amt; ch.lines = arr(f.lines); res.prevAmt = dup.amt; }
+    if (Object.keys(ch).length) { manual('google doc invoice match'); patchBy('invs', dup.id, ch); }
+    res.matchedInv = dup.id; res.prevFiles = arr(dup.files).length;
+  } else {
+    var inv = { id: 'IGD_' + it.fileId + '_' + s(it.id).slice(-8), type: 'client', pid: p.id, po: s(p.autoPO || p.po), client: cand.client, projectName: s(p.name), invNum: cand.invNum, amt: amt,
+      desc: 'Invoice' + (cand.invNum ? ' #' + cand.invNum : '') + ' — from Google Doc "' + s(it.name).slice(0, 80) + '"', lines: arr(f.lines), date: cand.date, sentDate: cand.date, dueDate: f.dueDate || '',
+      status: f.paid ? 'paid' : 'sent', paid: f.paid ? true : undefined, paidDate: f.paid ? cand.date : undefined,
+      from: 'billing@grayco-cs.com', fromAddr: 'billing@grayco-cs.com',
+      noSend: true, noAutoReminders: true, remindersPaused: true, noReminders: true, sendState: 'recorded', sent: 'recorded',
+      sentNote: 'Made from ' + (it.ownerName || 'a') + '\'s Google Doc ' + today() + ' — recorded, not sent', importedHistory: hist ? true : undefined,
+      files: file ? [file] : [], source: 'gdoc', gdocFileId: it.fileId, gdocItem: it.id, gdocUrl: it.url, by: it.ownerName || 'Google Docs', createdAt: nowIso(), updatedAt: nowIso() };
+    Object.keys(inv).forEach(function(k){ if (inv[k] === undefined) delete inv[k]; });
+    manual('google doc invoice'); upsertBy('invs', inv); res.invId = inv.id;
+  }
+  if (it.ref && !pdocs().some(function(d){ return d.ref === it.ref && d.pid === p.id; })) { var d = docRec(it, p.id, 'Invoice', { portalShare: false }); manual('google doc file'); upsertBy('projectDocs', d); res.docIds = [d.id]; }
+  res.pid = p.id; res.history = !!hist;
+  return res;
+}
+function placeOther(it, target){
+  if (!target || target.kind !== 'job') return { review: 'pick the job this paper belongs to' };
+  var cat = it.kind === 'co' ? 'Change order' : it.kind === 'contract' ? 'Contract' : 'Scope of work';
+  if (!it.ref) return { review: 'the PDF could not be made' };
+  if (pdocs().some(function(d){ return d.gdocItem === it.id; })) return { kind: it.kind, already: true, pid: target.rec.id };
+  var d = docRec(it, target.rec.id, cat, { portalShare: it.kind === 'scope' ? false : undefined });
+  if (d.portalShare === undefined) delete d.portalShare;
+  manual('google doc file'); upsertBy('projectDocs', d);
+  return { kind: it.kind, pid: target.rec.id, docIds: [d.id] };
+}
+/* one paper: decide, place, report back */
+function decide(it){
+  if (it.conf < 0.6) return { review: 'not sure what kind of paper this is (' + Math.round(it.conf * 100) + '%)' };
+  var m = match(it);
+  if (m.tie) return { review: 'more than one job or lead fits', cands: m.cands };
+  if (it.kind === 'proposal') return m.hit ? { target: m.hit } : { target: null, cands: m.cands };
+  if (it.kind === 'invoice' && S.settings && S.settings.autoInv === false) return { review: 'auto-create invoices is off', cands: m.cands };
+  if (!m.hit || m.hit.kind !== 'job') return { review: 'no job matches', cands: m.cands };
+  return { target: m.hit };
+}
+function place(it, target){
+  if (it.kind === 'proposal') return placeProposal(it, target);
+  if (it.kind === 'invoice') return placeInvoice(it, target);
+  return placeOther(it, target);
+}
+function candsOut(c){ return arr(c).slice(0, 4).map(function(x){ return { kind: x.kind, id: x.rec.id, label: label(x), sc: x.sc, why: x.why }; }); }
+function label(x){ var r = x.rec || x; return x.kind === 'lead' ? ('Lead: ' + s(r.name || r.company || r.contact)) : (s(r.name) + (r.autoPO ? ' [' + r.autoPO + ']' : '') + (r.client && r.client !== r.name ? ' — ' + s(r.client) : '')); }
+function report(it, state, result, reason){ S.applied[it.id] = state; it.state = state; it.result = result; it.reason = reason || ''; return api('mark', { id: it.id, state: state, result: result, reason: reason || '' }); }
+function applyOne(it, forced){
+  if (it.state !== 'new' && !forced) return Promise.resolve();
+  var d = forced ? { target: forced === 'new' ? 'new' : forced } : decide(it);
+  if (d.review) return report(it, 'review', { cands: candsOut(d.cands) }, d.review);
+  var r;
+  try { r = place(it, d.target); } catch (e) { return report(it, 'review', null, 'could not place: ' + e.message); }
+  if (r.review) return report(it, 'review', { cands: candsOut(d.cands) }, r.review);
+  r.matchedBy = d.target && d.target.why ? d.target.why : (forced ? ['picked by ' + meName()] : ['new']);
+  return report(it, 'applied', r, '');
+}
+/* the PDF of a proposal placed on a lead joins the job's documents (and the portal) once the lead is a job */
+function promote(){
+  estimates().forEach(function(e){
+    if (!e.gdocLeadId || e.pid || e.supersededBy) return;
+    var l = leadsAll().find(function(x){ return x.id === e.gdocLeadId; }); if (!l) return;
+    var p = jobOfLead(l); if (!p) return;
+    manual('google doc proposal → job'); patchEst(e.id, { pid: p.id, portalShare: !(S.settings && S.settings.portal === false) });
+    var it = S.items.find(function(x){ return x.id === e.gdocItem; });
+    var ref = it && it.ref; if (!ref) { var r0 = pdocs().find(function(d){ return d.gdocFileId === e.gdocFileId && d.ref; }); ref = r0 && r0.ref; }
+    if (ref && !pdocs().some(function(d){ return d.estimateId === e.id; })) upsertBy('projectDocs', docRec(it || { fileId: e.gdocFileId, id: e.gdocItem || e.id, name: e.name, url: e.gdocUrl, ref: ref, ownerName: e.author }, p.id, 'Proposal', { estimateId: e.id, ref: ref, portalShare: !(S.settings && S.settings.portal === false) }));
+  });
+}
+/* undo: everything a placement made goes away; what it changed goes back */
+function undo(it){
+  var r = it.result || {};
+  if (r.estId && !r.already) { patchEstRemove(r.estId); estimates().forEach(function(e){ if (e.supersededBy === r.estId) patchEst(e.id, { supersededBy: '', portalHide: false }); }); }
+  arr(r.docIds).forEach(function(id){ removeBy('projectDocs', id); });
+  if (r.invId) removeBy('invs', r.invId);
+  if (r.matchedInv) { var x = invs().find(function(i){ return i.id === r.matchedInv; }); if (x && x.gdocFileId === it.fileId) { var ch = { gdocFileId: '' }; if (r.prevAmt != null) ch.amt = r.prevAmt; if (r.prevFiles != null) ch.files = arr(x.files).slice(0, r.prevFiles); patchBy('invs', x.id, ch); } }
+  if (r.leadCreated) removeBy('leads', r.leadCreated);
+  else if (r.leadId && r.leadPrev) patchBy('leads', r.leadId, r.leadPrev);
+  return api('mark', { id: it.id, state: 'undone', result: r }).then(function(){ it.state = 'undone'; });
+}
+function patchEstRemove(id){
+  try { if (typeof W._gcSetEstimates === 'function') W._gcSetEstimates(function(prev){ return (Array.isArray(prev) ? prev : []).filter(function(x){ return !(x && x.id === id); }); }); else setList('estimates', function(l){ return l.filter(function(x){ return !(x && x.id === id); }); }); } catch (e) {}
+  tomb('estimates', id); DATA.estimates = estimates().filter(function(x){ return x.id !== id; });
+}
+
+/* ── the loop: an admin / office computer places what is waiting ── */
+/* the inbox first; the CRM's lists are read only when there is something to place (or now and then, for the
+   proposals waiting on a lead that may have become a job) — an idle office computer does almost nothing */
+var PROMOTED = 0;
+function load(always){
+  return api('inbox').then(function(o){
+    if (o && o.ok) { S.items = arr(o.items); S.settings = o.settings || S.settings || {}; S.err = ''; S.items.forEach(function(x){ if (S.applied[x.id] && x.state === 'new') x.state = S.applied[x.id]; }); }
+    else S.err = s(o && o.error);
+    var need = always || S.items.some(function(x){ return x.state === 'new'; }) || Date.now() - PROMOTED > 15 * 60e3;
+    return need ? readData().then(function(){ S.fresh = true; return S; }) : (S.fresh = false, S);
+  });
+}
+function applyAll(force){
+  if (S.busy || !canPlace() || viewingAs()) return Promise.resolve(0);
+  S.busy = true;
+  return load(!!force).then(function(){
+    if (!S.fresh || !projects().length) return [];   /* nothing to place, or the jobs are not loaded yet */
+    var todo = S.items.filter(function(x){ return x.state === 'new'; }).sort(function(a, b){ return s(a.modified) < s(b.modified) ? -1 : 1; }).slice(0, 15);
+    return todo.reduce(function(p, it){ return p.then(function(){ return applyOne(it); }); }, Promise.resolve()).then(function(){ try { promote(); PROMOTED = Date.now(); } catch (e) {} return todo.length; });
+  }).then(function(n){ S.busy = false; S.last = Date.now(); paint(); return n; }, function(){ S.busy = false; return 0; });
+}
+RI.call(W, function(){
+  if (D.hidden || W.__GC_IS_TYPING__ || !canPlace() || viewingAs()) return;
+  if (Date.now() - S.last < 3 * 60e3) return;
+  applyAll();
+}, 30000);
+
+/* ── the To-Do: one row per paper that needs a person ── */
+(function wrapTodo(){
+  var n = 0, iv = RI.call(W, function(){
+    var f = W._gcJOfficeTasks; if (typeof f !== 'function') { if (n++ > 120) clearInterval(iv); return; }
+    if (f.__gdocs) { clearInterval(iv); return; } clearInterval(iv);
+    var w = function(){
+      var out = []; try { out = f.apply(this, arguments) || []; } catch (e) {}
+      if (canPlace()) S.items.filter(function(x){ return x.state === 'review'; }).forEach(function(x){
+        out.push({ id: 'gdoc_' + x.id, cat: 'Google Docs to place', label: '📄 ' + (x.kind === 'invoice' ? 'Invoice' : x.kind === 'proposal' ? 'Proposal' : 'Paper') + ' — ' + s(x.name) + (x.f && x.f.total ? ' — ' + money(x.f.total) : ''),
+          sub: (x.ownerName ? 'From ' + x.ownerName + '\'s Google Docs · ' : '') + s(x.reason), color: '#2563eb', action: function(){ open(x.id); } });
+      });
+      return out;
+    };
+    Object.keys(f).forEach(function(k){ try { w[k] = f[k]; } catch (e) {} });
+    w.__gdocs = true; W._gcJOfficeTasks = w;
+  }, 1000);
+})();
+
+/* ── the panel ── */
+var OV = null, FOCUS = '';
+function close(){ if (OV) { OV.remove(); OV = null; } D.removeEventListener('keydown', key, true); }
+function key(e){ if (e.key === 'Escape') close(); }
+function open(focusId){
+  FOCUS = s(focusId);
+  if (!OV) {
+    OV = D.createElement('div'); OV.setAttribute('data-gc-keep', '1'); OV.id = 'gc-gdocs-ov';
+    OV.style.cssText = 'position:fixed;inset:0;z-index:100094;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;font:13px Inter,Arial,sans-serif';
+    OV.innerHTML = '<div data-gd-pn style="background:#fff;color:#0f172a;border-radius:14px;width:min(980px,100%);padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.35)"></div>';
+    OV.addEventListener('click', onClick); OV.addEventListener('change', onChange);
+    D.addEventListener('keydown', key, true); D.body.appendChild(OV);
+  }
+  paint('Loading…');
+  Promise.all([api('status'), load(true)]).then(function(r){ S.status = r[0] && r[0].ok ? r[0] : null; try { if (S.status && S.status.clientId && !W._GC_GOOGLE_CLIENT_ID) W._GC_GOOGLE_CLIENT_ID = S.status.clientId; } catch (e) {} if (!S.status) S.err = s(r[0] && r[0].error) || S.err; paint(); });
+}
+function when(iso){ var t = Date.parse(iso || ''); if (!t) return '—'; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+function jobOptions(it){
+  var c = arr(it.result && it.result.cands), seen = {}, opts = [];
+  c.forEach(function(x){ seen[x.kind + ':' + x.id] = 1; opts.push('<option value="' + esc(x.kind + ':' + x.id) + '">★ ' + esc(x.label) + '</option>'); });
+  projects().filter(function(p){ return !/lost|dead|cancel/i.test(s(p.status)); }).sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).forEach(function(p){ if (!seen['job:' + p.id]) opts.push('<option value="job:' + esc(p.id) + '">' + esc(label({ kind: 'job', rec: p })) + '</option>'); });
+  if (it.kind === 'proposal') leadsAll().filter(function(l){ return !deadLead(l) && !jobOfLead(l); }).forEach(function(l){ if (!seen['lead:' + l.id]) opts.push('<option value="lead:' + esc(l.id) + '">' + esc(label({ kind: 'lead', rec: l })) + '</option>'); });
+  return '<select data-gd-pick="' + esc(it.id) + '" style="padding:6px;border:1px solid #cbd5e1;border-radius:8px;max-width:360px"><option value="">— pick the job' + (it.kind === 'proposal' ? ' or lead' : '') + ' —</option>' + opts.join('') + '</select>';
+}
+function card(it){
+  var f = it.f || {}, k = { proposal: '📐 Proposal', invoice: '🧾 Invoice', co: '🔁 Change order', contract: '✍️ Contract', scope: '📋 Scope' }[it.kind] || '📄 Paper';
+  var meta = [f.customer, f.address, f.email, f.phone, f.number ? '#' + f.number : '', f.total ? money(f.total) : '', f.date].filter(Boolean).map(esc).join(' · ');
+  var r = it.result || {}, done = '';
+  if (it.state === 'applied') {
+    var p = r.pid ? projects().find(function(x){ return x.id === r.pid; }) : null, l = r.leadId ? leadsAll().find(function(x){ return x.id === r.leadId; }) : null;
+    done = (r.leadCreated ? '🆕 New lead ' : r.invId ? '🧾 New invoice on ' : r.matchedInv ? '🔗 Matched the invoice already on ' : r.estId ? '📐 Proposal v' + (r.version || 1) + ' on ' : '📎 Filed on ')
+      + esc(p ? label({ kind: 'job', rec: p }) : l ? s(l.name || l.company) : '') + (r.history ? ' (history — recorded, not sent)' : '') + (arr(r.matchedBy).length ? ' <span style="color:#64748b">· matched by ' + esc(arr(r.matchedBy).join(', ')) + '</span>' : '');
+  }
+  return '<div data-gd-item="' + esc(it.id) + '" style="border:1px solid ' + (FOCUS === it.id ? '#2563eb' : '#e2e8f0') + ';border-radius:10px;padding:10px 12px;margin:8px 0">'
+    + '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><b>' + k + '</b> — <a href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.name) + '</a>'
+    + '<div style="color:#475569;margin-top:2px">' + (meta || '<i>nothing read</i>') + '</div><div style="color:#64748b;font-size:12px;margin-top:2px">From ' + esc(it.ownerName || it.owner) + '\'s Drive · ' + esc(when(it.modified)) + ' · read ' + Math.round((it.conf || 0) * 100) + '% sure</div></div>'
+    + (it.state === 'applied' ? '<button type="button" data-gd-undo="' + esc(it.id) + '" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 10px;cursor:pointer;height:32px">↩ Undo</button>' : '') + '</div>'
+    + (it.state === 'review' ? '<div style="margin-top:8px;color:#b45309">🔎 ' + esc(it.reason || 'needs a person') + '</div><div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + jobOptions(it)
+      + '<button type="button" data-gd-place="' + esc(it.id) + '" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">Place it</button>'
+      + (it.kind === 'proposal' ? '<button type="button" data-gd-new="' + esc(it.id) + '" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">＋ New lead</button>' : '')
+      + '<button type="button" data-gd-ignore="' + esc(it.id) + '" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:7px 12px;cursor:pointer">Ignore</button></div>' : '')
+    + (done ? '<div style="margin-top:6px;color:#166534">' + done + '</div>' : '') + (it.state === 'undone' ? '<div style="margin-top:6px;color:#64748b">↩ Undone' + (it.undoneBy ? ' by ' + esc(it.undoneBy) : '') + '</div>' : '') + (it.state === 'ignored' ? '<div style="margin-top:6px;color:#64748b">Ignored</div>' : '')
+    + '</div>';
+}
+function sw(k, on, txt, dis){ return '<label style="display:inline-flex;gap:6px;align-items:center;margin:4px 14px 4px 0"><input type="checkbox" data-gd-set="' + k + '"' + (on ? ' checked' : '') + (dis ? ' disabled' : '') + '> ' + txt + '</label>'; }
+function paint(msg){
+  if (!OV) return;
+  var pn = OV.querySelector('[data-gd-pn]'); if (!pn) return;
+  var st = S.status, set = (st && st.settings) || S.settings || {}, adm = !!(st && st.admin), h = '';
+  h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div><div style="font-size:18px;font-weight:800">📄 Google Docs → CRM</div><div style="color:#475569;margin-top:2px">Proposals, quotes, invoices, change orders and contracts the team writes in Google Docs come in by themselves (every 15 minutes, read only). Personal docs are skipped — only their file id is noted.</div></div>'
+    + '<button type="button" data-gd-x style="border:none;background:#f1f5f9;border-radius:8px;width:36px;height:36px;font-size:18px;cursor:pointer">✕</button></div>';
+  if (msg) h += '<div style="margin-top:10px;color:#475569">' + esc(msg) + '</div>';
+  if (S.err) h += '<div style="margin-top:10px;color:#b91c1c">' + esc(S.err) + '</div>';
+  if (st) {
+    var pp = arr(st.people), conn = pp.filter(function(p){ return p.ok; }).length;
+    if (!st.workspace && !conn) h += '<div style="margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px"><b>Not connected to Google yet.</b> An admin turns this on once for everyone (docs/GDOCS.md): in Google Admin, add the scope <code>https://www.googleapis.com/auth/drive.readonly</code> to the CRM\'s service account (the same one as 🌐 All GrayCo e-mail) and turn on the Google Drive API. Until then, anyone can use <b>Connect Google</b> to bring in their own docs.</div>';
+    h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-gd-sync style="background:#0f172a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer">⟳ Sync now</button>'
+      + (adm ? '<button type="button" data-gd-back style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer">Bring in older docs (review first)</button>' : '')
+      + '<button type="button" data-gd-own style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer" title="Only needed when the company connection (Google Admin) is not set up, or does not reach you">🔗 Connect my Google Drive</button>'
+      + '<span style="color:#64748b;align-self:center">Waiting ' + (st.counts.waiting || 0) + ' · Needs a person ' + (st.counts.review || 0) + ' · Placed ' + (st.counts.done || 0) + '</span></div>';
+    h += '<div style="margin-top:12px"><b>Switches</b>' + (adm ? '' : ' <span style="color:#64748b">(an admin changes these)</span>') + '<div>'
+      + sw('autoBid', set.autoBid !== false, 'New proposals with no match → new lead', !adm) + sw('autoInv', set.autoInv !== false, 'Invoices → a matching CRM invoice', !adm)
+      + sw('portal', set.portal !== false, 'Proposals in the customer portal', !adm) + sw('notify', !!set.notify, 'E-mail the customer when one is added (off = never)', !adm) + sw('off', !!set.off, 'Pause reading Google Docs', !adm) + '</div>'
+      + '<div style="margin-top:4px;color:#475569">Folders to watch (optional — empty = every Google Doc each person owns): <input data-gd-folders value="' + esc(arr(set.folders).join(', ')) + '"' + (adm ? '' : ' disabled') + ' placeholder="Drive folder ids, comma separated" style="width:min(420px,100%);padding:5px;border:1px solid #cbd5e1;border-radius:6px"></div></div>';
+    h += '<div style="margin-top:12px"><b>Whose Drives</b><table style="width:100%;border-collapse:collapse;margin-top:4px"><tr style="text-align:left;color:#64748b"><th>On</th><th>Person</th><th>Last read</th><th>Docs seen / kept</th><th></th></tr>'
+      + pp.map(function(p){ return '<tr style="border-top:1px solid #f1f5f9"><td><input type="checkbox" data-gd-person="' + esc(p.email) + '"' + (p.off ? '' : ' checked') + (adm ? '' : ' disabled') + '></td><td>' + esc(p.name || p.email) + '<div style="color:#64748b;font-size:12px">' + esc(p.email) + (p.role ? ' · ' + esc(p.role) : '') + '</div></td><td>' + esc(when(p.lastRead || p.at)) + '</td><td>' + (p.seen || 0) + ' / ' + (p.kept || 0) + '</td><td style="color:' + (p.ok ? '#166534' : '#b45309') + '">' + (p.off ? 'off' : p.ok ? (p.via === 'own' ? '✓ their own connection' : '✓') : p.err === 'not_connected' ? 'not connected' : p.err === 'denied' ? 'Google refused (check the Drive scope)' : p.err ? esc(p.err) : '—') + '</td></tr>'; }).join('') + '</table></div>';
+  }
+  var rev = S.items.filter(function(x){ return x.state === 'review'; }), done = S.items.filter(function(x){ return x.state !== 'review' && x.state !== 'new'; }).sort(function(a, b){ return s(a.doneAt || a.at) < s(b.doneAt || b.at) ? 1 : -1; }).slice(0, 40);
+  h += '<div style="margin-top:14px;font-weight:800">🔎 Needs a person (' + rev.length + ')</div>' + (rev.length ? rev.map(card).join('') : '<div style="color:#64748b;margin-top:4px">Nothing waiting.</div>');
+  h += '<div style="margin-top:14px;font-weight:800">📜 Import log</div>' + (done.length ? done.map(card).join('') : '<div style="color:#64748b;margin-top:4px">Nothing placed yet.</div>');
+  pn.innerHTML = h;
+  if (FOCUS) { var el = pn.querySelector('[data-gd-item="' + FOCUS + '"]'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' }); }
+}
+function itemBy(id){ return S.items.find(function(x){ return x.id === id; }); }
+function pickTarget(id){
+  var sel = OV && OV.querySelector('[data-gd-pick="' + id + '"]'), v = sel ? s(sel.value) : ''; if (!v) return null;
+  var kind = v.split(':')[0], rid = v.slice(kind.length + 1);
+  var rec = kind === 'lead' ? leadsAll().find(function(l){ return l.id === rid; }) : projects().find(function(p){ return p.id === rid; });
+  return rec ? { kind: kind, rec: rec, why: ['picked by ' + meName()] } : null;
+}
+function onClick(e){
+  var t = e.target; if (!t || !t.closest) return;
+  if (t === OV || t.closest('[data-gd-x]')) { close(); return; }
+  var b;
+  if ((b = t.closest('[data-gd-sync]'))) { b.disabled = true; paint('Reading the team\'s Google Docs…'); api('sync', {}).then(function(r){ S.err = r && r.ok ? '' : s(r && r.error); S.last = 0; return applyAll(); }).then(function(){ return api('status'); }).then(function(st){ if (st && st.ok) S.status = st; paint(); }); return; }
+  if ((b = t.closest('[data-gd-own]'))) { try { localStorage.removeItem('gc_google_connected'); } catch (e) {} if (typeof W._gcConnectGoogleCal === 'function') W._gcConnectGoogleCal(); return; }
+  if ((b = t.closest('[data-gd-back]'))) { if (!confirm('Bring in the business docs made BEFORE this was turned on? Each one waits in "Needs a person" for you to place.')) return; paint('Reading older docs…'); api('sync', { backfill: true }).then(function(r){ S.err = r && r.ok ? '' : s(r && r.error); return load(true); }).then(function(){ S.items.forEach(function(x){ if (x.backfill && x.state === 'new') report(x, 'review', { cands: candsOut((match(x) || {}).cands) }, 'older doc — check before placing'); }); paint(); }); return; }
+  if ((b = t.closest('[data-gd-place]'))) { var id = b.getAttribute('data-gd-place'), it = itemBy(id), tg = pickTarget(id); if (!it) return; if (!tg) { alert('Pick the job' + (it.kind === 'proposal' ? ' or lead' : '') + ' first.'); return; } applyOne(it, tg).then(function(){ paint(); }); return; }
+  if ((b = t.closest('[data-gd-new]'))) { var it2 = itemBy(b.getAttribute('data-gd-new')); if (it2) applyOne(it2, 'new').then(function(){ paint(); }); return; }
+  if ((b = t.closest('[data-gd-ignore]'))) { var it3 = itemBy(b.getAttribute('data-gd-ignore')); if (it3) report(it3, 'ignored', it3.result, 'ignored by ' + meName()).then(function(){ paint(); }); return; }
+  if ((b = t.closest('[data-gd-undo]'))) { var it4 = itemBy(b.getAttribute('data-gd-undo')); if (it4 && confirm('Undo what this Google Doc added to the CRM?')) undo(it4).then(function(){ paint(); }); return; }
+}
+function onChange(e){
+  var t = e.target; if (!t) return;
+  if (t.hasAttribute('data-gd-set')) { var o = {}; o[t.getAttribute('data-gd-set')] = !!t.checked; api('settings', o).then(function(r){ if (r && r.ok) { S.settings = r.settings; if (S.status) S.status.settings = r.settings; } else alert((r && r.error) || 'Not saved'); paint(); }); return; }
+  if (t.hasAttribute('data-gd-person')) { api('settings', { person: { email: t.getAttribute('data-gd-person'), off: !t.checked } }).then(function(r){ if (!(r && r.ok)) alert((r && r.error) || 'Not saved'); return api('status'); }).then(function(st){ if (st && st.ok) S.status = st; paint(); }); return; }
+  if (t.hasAttribute('data-gd-folders')) { api('settings', { folders: s(t.value).split(/[,\s]+/).filter(Boolean) }).then(function(){ paint(); }); }
+}
+
+/* the older "Sync my Google Docs" button opens this */
+W._gcPullGoogleQuotes = function(manualTap){ if (manualTap) { open(); return Promise.resolve(0); } return api('sync', {}).then(function(r){ return applyAll().then(function(){ return (r && r.added) || 0; }); }); };
+W._gcGdocs = { open: open, sync: function(backfill){ return api('sync', { backfill: !!backfill }).then(function(){ S.last = 0; return applyAll(); }); }, applyAll: applyAll, state: function(){ return S; },
+  _t: { match: match, decide: decide, place: place, applyOne: applyOne, undo: undo, promote: promote, load: load } };
+try { console.log('[GC] Google Docs → CRM armed (patch GDOCS)'); } catch (e) {}
+})();
+</script>

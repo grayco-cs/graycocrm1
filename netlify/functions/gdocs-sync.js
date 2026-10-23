@@ -67,182 +67,72 @@ async function gcStaffAuth(event){
 }
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
-// GrayCo — Auto-pull Google Docs quotes/estimates from team members' Drives.
-// For each GrayCo user who has connected Google (token stored as gcal_token_<user>),
-// this finds Google Docs that look like quotes/estimates, pulls their text, and adds
-// them to the shared `estimates` list in gc_kv (linked + content), de-duplicated.
-//
-// REQUIREMENTS (must be set up before this works — see notes at bottom):
-//   - Google Cloud OAuth project must include the Drive read scope:
-//       https://www.googleapis.com/auth/drive.readonly
-//     (currently the app only requests calendar.events.readonly — the scope must be added
-//      and each person must re-connect / re-authorize once.)
-//   - Env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY
-//
-// Trigger: called by the CRM on an interval (and can be scheduled). Safe to call often —
-// it only imports docs it hasn't imported before (tracked by doc id).
-
-const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-
-function sb(){ return { url: (process.env.SUPABASE_URL||'').replace(/\/$/,''), key: process.env.SUPABASE_SERVICE_KEY||'' }; }
-
-async function kvGet(key){
-  const { url, keyk } = { url: sb().url, keyk: sb().key };
-  if(!url || !keyk) return null;
-  const r = await fetch(url+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', {
-    headers: { apikey: keyk, Authorization: 'Bearer '+keyk }
-  });
-  if(!r.ok) return null;
-  const rows = await r.json();
-  return (rows && rows[0]) ? rows[0].value : null;
-}
-async function kvSet(key, value){
-  const { url } = sb(); const keyk = sb().key;
-  if(!url || !keyk) return false;
-  const r = await fetch(url+'/rest/v1/gc_kv?on_conflict=key', {
-    method:'POST',
-    headers:{ apikey:keyk, Authorization:'Bearer '+keyk, 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates' },
-    body: JSON.stringify({ key, value })
-  });
-  return r.ok;
-}
-
-// Refresh an access token from a stored refresh token.
-async function freshAccess(tokens){
-  if(!tokens) return null;
-  // If we still have a non-expired access token, use it.
-  if(tokens.access && tokens.expiry && Date.now() < (tokens.expiry - 60000)) return tokens.access;
-  if(!tokens.refresh) return tokens.access || null;
-  const body = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID||'',
-    client_secret: process.env.GOOGLE_CLIENT_SECRET||'',
-    refresh_token: tokens.refresh,
-    grant_type: 'refresh_token'
-  });
-  const r = await fetch(TOKEN_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
-  if(!r.ok) return tokens.access || null;
-  const j = await r.json();
-  return j.access_token || tokens.access || null;
-}
-
-// List Google Docs that look like quotes/estimates, modified recently.
-async function listQuoteDocs(access){
-  // name contains quote/estimate/proposal/bid, is a Google Doc, not trashed.
-  const q = "mimeType='application/vnd.google-apps.document' and trashed=false and (name contains 'quote' or name contains 'Quote' or name contains 'estimate' or name contains 'Estimate' or name contains 'proposal' or name contains 'Proposal' or name contains 'bid' or name contains 'Bid')";
-  const url = 'https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&orderBy=modifiedTime desc&pageSize=25&fields=files(id,name,modifiedTime,owners(emailAddress),webViewLink)';
-  const r = await fetch(url, { headers:{ Authorization:'Bearer '+access } });
-  if(!r.ok) return [];
-  const j = await r.json();
-  return j.files || [];
-}
-
-// Export a Google Doc's plain text.
-async function docText(access, id){
-  const url = 'https://www.googleapis.com/drive/v3/files/'+id+'/export?mimeType=text/plain';
-  const r = await fetch(url, { headers:{ Authorization:'Bearer '+access } });
-  if(!r.ok) return '';
-  return await r.text();
-}
-
-// Very light parse: pull a client name and a total $ if present.
-function parseQuote(text){
-  const out = { client:'', total:0 };
-  try{
-    const cm = text.match(/(?:client|customer|prepared for)\s*[:\-]\s*(.+)/i);
-    if(cm) out.client = cm[1].split('\n')[0].trim().slice(0,60);
-    // biggest dollar amount = likely the total
-    const nums = (text.match(/\$\s?[\d,]+(?:\.\d{2})?/g)||[]).map(function(s){ return parseFloat(s.replace(/[^0-9.]/g,'')); }).filter(function(n){ return !isNaN(n); });
-    if(nums.length) out.total = Math.max.apply(null, nums);
-  }catch(e){}
-  return out;
-}
-
-/* patch EST4: whose Google tokens to try — gc_team_google_users when an admin set it, else every active person on
-   the CRM's people list (and the office), so nobody's name is in the code */
-async function teamGoogleUsers(){
-  const raw = await kvGet('gc_team_google_users'); if (Array.isArray(raw) && raw.length) return raw;
-  let u = await kvGet('users'); if (u && !Array.isArray(u) && Array.isArray(u.v)) u = u.v;
-  const names = (Array.isArray(u) ? u : []).filter(x => x && x.name && x.active !== false).map(x => String(x.name));
-  return names.concat(names.indexOf('office') >= 0 ? [] : ['office']);
+// GrayCo — the team's Google Docs → the CRM (patch GDOCS; the reading itself is netlify/functions/_lib/gdocs.js).
+// Every active staff member's Google Docs are read (Workspace domain-wide delegation with drive.readonly, or a person's own
+// "Connect my Google Drive"); only business papers (proposals / quotes / estimates, invoices, change orders, contracts,
+// scopes) are kept; the CRM page matches each one to its job (tail GDOCS). READ ONLY: nothing in Drive is ever changed.
+//   GET  ?op=status                     → people, last read, counts, settings            (admin / office)
+//   GET  ?op=inbox                      → the papers waiting / in review / recently done  (admin / office)
+//   POST {op:'sync', backfill?, only?}  → read the Drives now ("Sync now")                (admin / office; backfill: admin)
+//   POST {op:'mark', id, state, result} → what the CRM page did with a paper              (admin / office)
+//   POST {op:'settings', …}             → switches, folders, per-person on/off            (admin)
+//   GET  ?export=<docId>                → one Google Doc's text (the Change Order doc reader)  (staff)
+//   POST (no op)                        → the older "Sync my Google Docs" button = sync
+const GD = require('./_lib/gdocs');
+function J(code, body, headers){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; }
+async function extra(email){
+  try {
+    const url = (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, ''), k = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if (!k) return {};
+    const r = await fetch(url + '/rest/v1/gc_staff?select=profile&email=eq.' + encodeURIComponent(email), { headers: { apikey: k, Authorization: 'Bearer ' + k } });
+    if (!r.ok) return {}; const row = ((await r.json()) || [])[0]; return row || {};
+  } catch (e) { return {}; }
 }
 exports.handler = async function(event){
-  const _cors = Object.assign(gcCors(event, 'GET, POST, OPTIONS'), { 'Content-Type': 'application/json' });
+  const _cors = Object.assign(gcCors(event, 'GET, POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   if (event && event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: _cors, body: '' };
   const who = await gcStaffAuth(event);
-  if (!who.ok) return { statusCode: who.statusCode, headers: _cors, body: JSON.stringify({ ok: false, error: who.error }) };
-  try{
-    var qp = (event && event.queryStringParameters) || {};
-    if(qp.export){
-      // Export a single Google Doc's plain text (used by the Change Order doc-reader).
-      // Uses the first team member's token that works.
-      var users = await teamGoogleUsers();   /* patch EST4: the team from the data, never a list of names */
-      for(var ui=0; ui<users.length; ui++){
-        var tks = await kvGet('gcal_token_'+users[ui]);
-        if(!tks) continue;
-        var acc = await freshAccess(tks);
-        if(!acc) continue;
-        try{
-          var txt = await docText(acc, qp.export);
-          if(txt){ return { statusCode:200, headers:_cors, body: JSON.stringify({ ok:true, text:txt }) }; }
-        }catch(e){}
+  if (!who.ok) return J(who.statusCode, { ok: false, error: who.error }, _cors);
+  const qp = (event && event.queryStringParameters) || {};
+  let body = {}; try { body = event.body ? JSON.parse(event.body) : {}; } catch (e) { body = {}; }
+  const admins = String(process.env.LEAD_ADMINS || '').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
+  const admin = who.role === 'admin' || admins.indexOf(who.email) > -1;
+  const office = admin || /office/.test(who.role) || /office/i.test(String((await extra(who.email)).profile || ''));
+  try {
+    if (qp.export) {   /* one doc's text, for the Change Order doc reader: whoever's Drive can open it */
+      const team = await GD.people();
+      for (const p of team) {
+        const t = await GD.tokenFor(p); if (!t.ok) continue;
+        try {
+          const r = await fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(qp.export) + '/export?mimeType=text/plain', { headers: { Authorization: 'Bearer ' + t.t } });
+          if (r.ok) return J(200, { ok: true, text: await r.text() }, _cors);
+        } catch (e) {}
       }
-      return { statusCode:200, headers:_cors, body: JSON.stringify({ ok:false, error:'Could not read that doc (is Google connected?).' }) };
+      return J(200, { ok: false, error: 'Could not read that doc (is Google connected?).' }, _cors);
     }
-  }catch(e){}
-  try{
-    const teamRaw = await kvGet('gc_team_google_users');
-    // Which users to check: explicit list, else default GrayCo owners/PMs.
-    let users = Array.isArray(teamRaw) ? teamRaw : await teamGoogleUsers();
-
-    const seen = (await kvGet('gc_gdoc_imported')) || {};   // { docId: true }
-    const estimates = (await kvGet('estimates')) || [];
-    let added = 0;
-
-    for(const user of users){
-      const tokens = await kvGet('gcal_token_'+user);
-      if(!tokens) continue;                       // this person hasn't connected Google
-      const access = await freshAccess(tokens);
-      if(!access) continue;
-      let docs = [];
-      try{ docs = await listQuoteDocs(access); }catch(e){ docs = []; }
-      for(const d of docs){
-        if(!d.id || seen[d.id]) continue;         // already imported
-        let text = '';
-        try{ text = await docText(access, d.id); }catch(e){ text = ''; }
-        const meta = parseQuote(text||'');
-        const est = {
-          id: 'EST' + Date.now().toString(36) + Math.floor(Math.random()*9999).toString(36),
-          name: d.name || 'Google Doc Quote',
-          client: meta.client || '',
-          pid: '', priceType:'margin', priceVal:30,
-          status:'draft', date: (d.modifiedTime||new Date().toISOString()).slice(0,10),
-          mats:[], labor:[], by: (d.owners && d.owners[0] && d.owners[0].emailAddress) || user,
-          source:'gdoc-auto',
-          gdocUrl: d.webViewLink || ('https://docs.google.com/document/d/'+d.id+'/edit'),
-          gdocId: d.id,
-          gdocText: (text||'').slice(0, 20000),   // keep the pulled content (capped)
-          quoteTotal: meta.total || 0
-        };
-        estimates.push(est);
-        seen[d.id] = true;
-        added++;
-      }
+    const op = String(qp.op || body.op || (event.httpMethod === 'POST' ? 'sync' : 'status'));
+    if (!office) return J(403, { ok: false, error: 'Only an admin or the office can see the Google Docs import.' }, _cors);
+    if (op === 'status') return J(200, Object.assign(await GD.status(), { admin: admin }), _cors);
+    if (op === 'inbox') {
+      const items = (await GD.inbox()).map(function(x){ return (x.state === 'new' || x.state === 'review') ? x : Object.assign({}, x, { text: '' }); });
+      return J(200, { ok: true, items: items, settings: await GD.status().then(function(s){ return s.settings; }) }, _cors);
     }
-
-    if(added){
-      await kvSet('estimates', estimates);
-      await kvSet('gc_gdoc_imported', seen);
+    if (op === 'sync') {
+      if (body.backfill && !admin) return J(403, { ok: false, error: 'Only an admin can bring in older docs.' }, _cors);
+      const r = await GD.run({ backfill: !!body.backfill, only: body.only ? String(body.only).toLowerCase() : '', force: true, budgetMs: 20000 });
+      return J(200, r, _cors);
     }
-    return { statusCode: 200, headers:_cors, body: JSON.stringify({ ok:true, added }) };
-  }catch(e){
-    return { statusCode: 200, headers:_cors, body: JSON.stringify({ ok:false, error: String(e) }) };
+    if (op === 'mark') {
+      if (!body.id || !/^(applied|review|ignored|undone|new)$/.test(String(body.state || ''))) return J(400, { ok: false, error: 'id and state needed' }, _cors);
+      return J(200, await GD.mark(String(body.id), { state: body.state, result: body.result || null, reason: body.reason || '', by: who.name || who.email, doneAt: new Date().toISOString(),
+        undoneAt: body.state === 'undone' ? new Date().toISOString() : undefined, undoneBy: body.state === 'undone' ? (who.name || who.email) : undefined }), _cors);
+    }
+    if (op === 'settings') {
+      if (!admin) return J(403, { ok: false, error: 'Only an admin changes the Google Docs settings.' }, _cors);
+      return J(200, await GD.saveSettings(body, who.name || who.email), _cors);
+    }
+    return J(400, { ok: false, error: 'Unknown op' }, _cors);
+  } catch (e) {
+    return J(200, { ok: false, error: String(e && e.message || e) }, _cors);
   }
 };
-
-// SETUP NOTES:
-// 1. In Google Cloud Console, add scope https://www.googleapis.com/auth/drive.readonly to the
-//    OAuth consent screen, and update the CRM's connect button to request it (done in the app).
-// 2. Each person (the owners, the estimator, the PMs, office) clicks Connect Google once to authorize Drive read.
-// 3. Optionally set gc_team_google_users in gc_kv to the exact list of users to pull from.
-// 4. This imports Docs whose NAME contains quote/estimate/proposal/bid. Tell users to name
-//    their quote docs accordingly, or we can switch to watching a specific Drive folder.

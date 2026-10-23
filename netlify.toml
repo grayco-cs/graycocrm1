@@ -325,3 +325,7 @@
 # (Gmail, read-only, metadata only) into the admins' index. Does nothing until GOOGLE_SA_EMAIL / GOOGLE_SA_KEY are set.
 [functions."mail-all-sync"]
   schedule = "*/15 * * * *"
+
+# patch GDOCS: the team's new Google Docs (proposals, invoices …) read every 15 minutes (read only; docs/GDOCS.md)
+[functions."gdocs-scheduled"]
+  schedule = "8,23,38,53 * * * *"
