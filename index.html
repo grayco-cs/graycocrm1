@@ -80169,22 +80169,10 @@ window._gcForceFixSchedule = async function(silent){
   // ===== IRS Pub 15-T (2025) percentage method, STANDARD withholding =========
   // W-4 Step-2 checkbox NOT checked. Annualized wage brackets by filing status.
   // Each row: [over, base_tax, rate, of_excess_over]
-  var IRS_2025 = {
-    single: [ // Married-single-HoH tables per Pub 15-T Worksheet 1A (annual)
-      [0,0,0,0],[6400,0,0.10,6400],[18325,1192.50,0.12,18325],[54875,5578.50,0.22,54875],
-      [109750,13649.50,0.24,109750],[203700,36299.50,0.32,203700],[256925,53337.50,0.35,256925],
-      [632750,185043.75,0.37,632750]
-    ],
-    married: [
-      [0,0,0,0],[17100,0,0.10,17100],[40950,2385.00,0.12,40950],[114050,11157.00,0.22,114050],
-      [223800,27299.00,0.24,223800],[411700,72347.00,0.32,411700],[518150,106415.00,0.35,518150],
-      [768700,193870.00,0.37,768700]
-    ],
-    hoh: [
-      [0,0,0,0],[13900,0,0.10,13900],[36350,2245.00,0.12,36350],[80650,7561.00,0.22,80650],
-      [116050,15349.00,0.24,116050],[210000,37897.00,0.32,210000],[263200,54921.00,0.35,263200],
-      [639000,186435.00,0.37,639000]
-    ]
+  var IRS_2025 = {   /* patch PAY: corrected from the IRS brackets (see the main engine) */
+    single: [[0,0,0,0],[6400,0,0.1,6400],[18325,1192.5,0.12,18325],[54875,5578.5,0.22,54875],[109750,17651,0.24,109750],[203700,40199,0.32,203700],[256925,57231,0.35,256925],[632750,188769.75,0.37,632750]],
+    married: [[0,0,0,0],[17100,0,0.1,17100],[40950,2385,0.12,40950],[114050,11157,0.22,114050],[223800,35302,0.24,223800],[411700,80398,0.32,411700],[518150,114462,0.35,518150],[768700,202154.5,0.37,768700]],
+    hoh: [[0,0,0,0],[13900,0,0.1,13900],[30900,1700,0.12,30900],[78750,7442,0.22,78750],[117250,15912,0.24,117250],[211200,38460,0.32,211200],[264400,55484,0.35,264400],[640250,187031.5,0.37,640250]]
   };
   // Periods per year
   var PERIODS = { weekly:52, biweekly:26, semimonthly:24, monthly:12 };
@@ -81059,31 +81047,34 @@ window._gcPayrollSettings = settings;
       Each row: [wage_over, base_tax, rate, of_excess_over].
       Update these once a year in Payroll → Settings when the IRS publishes
       new tables; everything else recalculates itself.                        */
-var TABLES = {
+var TABLES = {   /* patch PAY: tables rebuilt from the IRS brackets and standard deductions (Pub 15-T Worksheet 1A, annual).
+     2025: Rev. Proc. 2024-40 brackets, $15,000/$30,000/$22,500. 2026: Rev. Proc. 2025-32 brackets, $16,100/$32,200/$24,150.
+     Standard table starts at standard deduction − $8,600 (single, HoH) / − $12,900 (married). The Step 2 checkbox
+     tables start at half the standard deduction with every bracket halved. */
   2025: {
-    single: [[0,0,0,0],[6400,0,0.10,6400],[18325,1192.50,0.12,18325],[54875,5578.50,0.22,54875],
-             [109750,13649.50,0.24,109750],[203700,36299.50,0.32,203700],[256925,53337.50,0.35,256925],
-             [632750,185043.75,0.37,632750]],
-    married:[[0,0,0,0],[17100,0,0.10,17100],[40950,2385.00,0.12,40950],[114050,11157.00,0.22,114050],
-             [223800,27299.00,0.24,223800],[411700,72347.00,0.32,411700],[518150,106415.00,0.35,518150],
-             [768700,193870.00,0.37,768700]],
-    hoh:    [[0,0,0,0],[13900,0,0.10,13900],[36350,2245.00,0.12,36350],[80650,7561.00,0.22,80650],
-             [116050,15349.00,0.24,116050],[210000,37897.00,0.32,210000],[263200,54921.00,0.35,263200],
-             [639000,186435.00,0.37,639000]]
+    single: [[0,0,0,0],[6400,0,0.1,6400],[18325,1192.5,0.12,18325],[54875,5578.5,0.22,54875],[109750,17651,0.24,109750],[203700,40199,0.32,203700],[256925,57231,0.35,256925],[632750,188769.75,0.37,632750]],
+    married:[[0,0,0,0],[17100,0,0.1,17100],[40950,2385,0.12,40950],[114050,11157,0.22,114050],[223800,35302,0.24,223800],[411700,80398,0.32,411700],[518150,114462,0.35,518150],[768700,202154.5,0.37,768700]],
+    hoh:    [[0,0,0,0],[13900,0,0.1,13900],[30900,1700,0.12,30900],[78750,7442,0.22,78750],[117250,15912,0.24,117250],[211200,38460,0.32,211200],[264400,55484,0.35,264400],[640250,187031.5,0.37,640250]]
   },
   2026: {
-    single: [[0,0,0,0],[7500,0,0.10,7500],[19900,1240.00,0.12,19900],[57900,5800.00,0.22,57900],
-             [113200,17966.00,0.24,113200],[209275,41024.00,0.32,209275],[263725,58448.00,0.35,263725],
-             [648100,192979.00,0.37,648100]],
-    married:[[0,0,0,0],[19300,0,0.10,19300],[44100,2480.00,0.12,44100],[120100,11600.00,0.22,120100],
-             [230700,35932.00,0.24,230700],[422850,82048.00,0.32,422850],[531750,116896.00,0.35,531750],
-             [788000,206584.00,0.37,788000]],
-    hoh:    [[0,0,0,0],[15550,0,0.10,15550],[33250,1770.00,0.12,33250],[83000,7740.00,0.22,83000],
-             [121250,16155.00,0.24,121250],[217300,39207.00,0.32,217300],[271750,56631.00,0.35,271750],
-             [656150,191171.00,0.37,656150]]
+    single: [[0,0,0,0],[7500,0,0.1,7500],[19900,1240,0.12,19900],[57900,5800,0.22,57900],[113200,17966,0.24,113200],[209275,41024,0.32,209275],[263725,58448,0.35,263725],[648100,192979.25,0.37,648100]],
+    married:[[0,0,0,0],[19300,0,0.1,19300],[44100,2480,0.12,44100],[120100,11600,0.22,120100],[230700,35932,0.24,230700],[422850,82048,0.32,422850],[531750,116896,0.35,531750],[788000,206583.5,0.37,788000]],
+    hoh:    [[0,0,0,0],[15550,0,0.1,15550],[33250,1770,0.12,33250],[83000,7740,0.22,83000],[121250,16155,0.24,121250],[217325,39213,0.32,217325],[271750,56629,0.35,271750],[656150,191169,0.37,656150]]
   }
 };
-function tablesFor(year){ return TABLES[String(year)] || TABLES[2026]; }
+var TABLES_STEP2 = {
+  2025: {
+    single: [[0,0,0,0],[7500,0,0.1,7500],[13462.5,596.25,0.12,13462.5],[31737.5,2789.25,0.22,31737.5],[59175,8825.5,0.24,59175],[106150,20099.5,0.32,106150],[132762.5,28615.5,0.35,132762.5],[320675,94384.88,0.37,320675]],
+    married:[[0,0,0,0],[15000,0,0.1,15000],[26925,1192.5,0.12,26925],[63475,5578.5,0.22,63475],[118350,17651,0.24,118350],[212300,40199,0.32,212300],[265525,57231,0.35,265525],[390800,101077.25,0.37,390800]],
+    hoh:    [[0,0,0,0],[11250,0,0.1,11250],[19750,850,0.12,19750],[43675,3721,0.22,43675],[62925,7956,0.24,62925],[109900,19230,0.32,109900],[136500,27742,0.35,136500],[324425,93515.75,0.37,324425]]
+  },
+  2026: {
+    single: [[0,0,0,0],[8050,0,0.1,8050],[14250,620,0.12,14250],[33250,2900,0.22,33250],[60900,8983,0.24,60900],[108937.5,20512,0.32,108937.5],[136162.5,29224,0.35,136162.5],[328350,96489.63,0.37,328350]],
+    married:[[0,0,0,0],[16100,0,0.1,16100],[28500,1240,0.12,28500],[66500,5800,0.22,66500],[121800,17966,0.24,121800],[217875,41024,0.32,217875],[272325,58448,0.35,272325],[400450,103291.75,0.37,400450]],
+    hoh:    [[0,0,0,0],[12075,0,0.1,12075],[20925,885,0.12,20925],[45800,3870,0.22,45800],[64925,8077.5,0.24,64925],[112962.5,19606.5,0.32,112962.5],[140175,28314.5,0.35,140175],[332375,95584.5,0.37,332375]]
+  }
+};
+function tablesFor(year, step2){ var S = step2 ? TABLES_STEP2 : TABLES; return S[String(year)] || S[2026]; }   /* patch PAY: W-4 step 2 */
 var IRS = TABLES[2026];
 var PERIODS = { weekly:52, biweekly:26, semimonthly:24, monthly:12 };
 var PERIOD_LABEL = { weekly:'Weekly (52/yr)', biweekly:'Every 2 weeks (26/yr)', semimonthly:'Twice a month (24/yr)', monthly:'Monthly (12/yr)' };
@@ -81095,7 +81086,7 @@ function blankProfile(u){
     id: 'PP'+(u && u.id ? u.id : Math.random().toString(36).slice(2,8)),
     userId: (u&&u.id)||'', name:(u&&u.name)||'', email:(u&&u.email)||'',
     payType:'', annualSalary:0, hourlyRate:0, otAfter:40, otMultiplier:1.5,
-    period:'biweekly', filing:'single', multipleJobs:false,
+    period:'weekly', filing:'single', multipleJobs:false,   /* patch PAY: GrayCo pays weekly */
     dependentsCredit:0, otherIncome:0, deductions:0, extra:0, exemptFed:false,
     state:'TN', stateRate:0, stateExtra:0,
     otherDeductions:[],                 // [{label, amount, pretax:false}]
@@ -81234,7 +81225,7 @@ window._gcPayrollHours = hoursFor;
 async function runs(){ var l=await get(K_RUNS); return Array.isArray(l)?l:[]; }
 async function saveRuns(l){ await put(K_RUNS, l); }
 function ytdFor(allRuns, empKey, year, beforeDate){
-  var t={gross:0,fed:0,ss:0,med:0,addlMed:0,state:0,other:0,net:0,ssWages:0,hours:0,checks:0};
+  var t={gross:0,fed:0,ss:0,med:0,addlMed:0,state:0,other:0,net:0,ssWages:0,medWages:0,bonus:0,reimbursement:0,hours:0,checks:0};   /* patch PAY */
   (allRuns||[]).forEach(function(run){
     if(!run || ['approved','paid'].indexOf(run.status)<0) return;
     if(yearOf(run.payDate)!==String(year)) return;
@@ -81245,6 +81236,7 @@ function ytdFor(allRuns, empKey, year, beforeDate){
       t.gross+=n2(L.gross); t.fed+=n2(L.fed); t.ss+=n2(L.ss); t.med+=n2(L.med);
       t.addlMed+=n2(L.addlMed); t.state+=n2(L.state); t.other+=n2(L.otherDed);
       t.net+=n2(L.net); t.ssWages+=n2(L.ssWages!=null?L.ssWages:L.gross);
+      t.medWages+=n2(L.medWages!=null?L.medWages:(L.taxable!=null?L.taxable:L.gross)); t.bonus+=n2(L.bonus); t.reimbursement+=n2(L.reimbursement);   /* patch PAY */
       t.hours+=n2(L.hours)+n2(L.otHours); t.checks++;
     });
   });
@@ -81256,8 +81248,8 @@ window._gcPayrollYTD = ytdFor;
 /* ── THE CALCULATION ──────────────────────────────────────────────────────
    Returns every intermediate number plus a plain-English trace so the screen
    can show exactly how the check was figured.                               */
-function fedAnnualTax(adjAnnual, filing, year){
-  var T = tablesFor(year);
+function fedAnnualTax(adjAnnual, filing, year, step2){
+  var T = tablesFor(year, step2);
   var tbl = T[filing] || T.single, row=null;
   for(var i=tbl.length-1;i>=0;i--){ if(adjAnnual > tbl[i][0]){ row=tbl[i]; break; } }
   if(!row) return { tax:0, row:[0,0,0,0] };
@@ -81265,9 +81257,10 @@ function fedAnnualTax(adjAnnual, filing, year){
   return { tax: Math.max(0,tax), row: row };
 }
 
-async function computeLine(prof, from, to, set, ytd, manualGross){
+async function computeLine(prof, from, to, set, ytd, manualGross, extras){
   var ppy = PERIODS[prof.period] || 26;
   var trace = [], gross = 0, hours = 0, otHours = 0, parts = [];
+  extras = extras || {}; var bonus = r2(Math.max(0, n2(extras.bonus))), reimb = r2(Math.max(0, n2(extras.reimbursement)));   /* patch PAY */
 
   function T(label, detail, amt){ trace.push({label:label, detail:detail, amt:(amt==null?null:r2(amt))}); }
 
@@ -81318,6 +81311,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross){
       }
     }
   }
+  if(bonus>0){ gross += bonus; parts.push({label:'Bonus', amount:bonus}); T('Bonus', 'Taxed like wages (added to this check)', bonus); }   /* patch PAY */
   gross = r2(gross);
   T('GROSS PAY', parts.map(function(p){ return p.label+' '+money(p.amount); }).join(' + ') || '—', gross);
 
@@ -81350,7 +81344,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross){
   // ---- MEDICARE (1.45%, plus 0.9% over the threshold) ----
   med = r2(taxable * n2(set.medRate));
   T('Medicare', money(taxable)+' × '+(n2(set.medRate)*100).toFixed(2)+'%', med);
-  var ytdG = n2(ytd.gross), thr = n2(set.addlMedThreshold);
+  var ytdG = n2(ytd.medWages != null ? ytd.medWages : ytd.gross), thr = n2(set.addlMedThreshold);   /* patch PAY: Medicare wages */
   if(ytdG + taxable > thr){
     var over = Math.min(taxable, (ytdG + taxable) - thr);
     addlMed = r2(over * n2(set.addlMedRate));
@@ -81374,10 +81368,11 @@ async function computeLine(prof, from, to, set, ytd, manualGross){
     if(n2(prof.otherIncome)) T('W-4 step 4(a) other income', '+ '+money(prof.otherIncome), null);
     if(n2(prof.deductions))  T('W-4 step 4(b) deductions', '− '+money(prof.deductions), null);
     adj = Math.max(0, adj);
-    var ft = fedAnnualTax(adj, prof.filing, set.taxYear);
+    var ft = fedAnnualTax(adj, prof.filing, set.taxYear, !!prof.multipleJobs);   /* patch PAY */
+    if(prof.multipleJobs) T('W-4 step 2 checked', 'Two jobs / working spouse — the IRS Step 2 checkbox table is used', null);
     var statusName = {single:'Single',married:'Married filing jointly',hoh:'Head of household'}[prof.filing]||'Single';
     if(ft.tax<=0){
-      var startAt = (tablesFor(set.taxYear)[prof.filing]||tablesFor(set.taxYear).single)[1][0];
+      var startAt = (tablesFor(set.taxYear, !!prof.multipleJobs)[prof.filing]||tablesFor(set.taxYear, !!prof.multipleJobs).single)[1][0];
       T('IRS table ('+statusName+')',
         'No federal is withheld — a year at this pay works out to '+money(adj)+', and for '+statusName+
         ' withholding does not start until '+money(startAt)+'. The standard deduction is already built into the table.', 0);
@@ -81437,7 +81432,19 @@ async function computeLine(prof, from, to, set, ytd, manualGross){
 
   if(postTax>0) T('Other deductions', otherList.filter(function(d){return !d.pretax;}).map(function(d){return d.label+' '+money(d.amount);}).join(', '), -postTax);
 
+  /* patch PAY: never a negative check — cut after-tax deductions back first, then the W-4 4(c) extra */
+  var room = r2(gross - preTax - ss - med - addlMed - fed - state), dedShort = 0;
+  if(room < postTax){
+    dedShort = r2(postTax - Math.max(0, room));
+    postTax = r2(Math.max(0, room));
+    T('Deductions held back', money(dedShort)+' of after-tax deductions did not fit in this check — carry it to the next one', -dedShort);
+  }
+  if(room < 0 && n2(prof.extra) > 0){
+    var cut = r2(Math.min(-room, n2(prof.extra), fed)); fed = r2(fed - cut);
+    T('Extra withholding cut', money(cut)+' of the W-4 step 4(c) extra skipped so the check is not negative', -cut);
+  }
   var net = r2(gross - preTax - postTax - ss - med - addlMed - fed - state);
+  if(reimb>0){ net = r2(net + reimb); T('Reimbursement (not taxed)', 'Added after taxes', reimb); }
   T('NET PAY (the check)', money(gross)+' − '+money(r2(preTax+postTax))+' deductions − '+
     money(r2(ss+med+addlMed))+' FICA − '+money(fed)+' federal − '+money(state)+' state', net);
 
@@ -81467,7 +81474,7 @@ async function computeLine(prof, from, to, set, ytd, manualGross){
        whenever anything added preTax to it separately. It is now the AFTER-tax
        deductions only, which is what its name says and what every screen that
        shows "other deductions" next to "pre-tax" means by it. */
-    otherDed: r2(postTax), allDeductions: r2(preTax+postTax),
+    otherDed: r2(postTax), allDeductions: r2(preTax+postTax), dedShort: dedShort, bonus: bonus, reimbursement: reimb, medWages: taxable, multipleJobs: !!prof.multipleJobs,   /* patch PAY */
     otherList: otherList, taxable: taxable, ssWages: r2(ssWages),
     ss: ss, med: med, addlMed: addlMed, fed: fed, state: state, stateName: prof.state||'TN',
     net: net, employerSS: erSS, employerMed: erMed, futa: futa, suta: suta,
@@ -81661,7 +81668,7 @@ async function calculate(profs){
     var key=pr.userId||pr.name;
     var ytd=P.ytdFor(all, key, year, S.payDate);
     var manual=S.manual[key];
-    var L=await P.computeLine(pr, S.from, S.to, set, ytd, manual);
+    var L=await P.computeLine(pr, S.from, S.to, set, ytd, manual, (window.__GC_PAY_EXTRAS||{})[key]);   /* patch PAY: bonus / reimbursement */
     L.ytdBefore=ytd;
     if(L.gross>0 || manual!=null) lines.push(L);
   }
@@ -82239,6 +82246,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
         +fld('Step 1(c) filing status','<select data-p="filing" style="'+CSS.inp+'width:100%;">'
            +[['single','Single or married filing separately'],['married','Married filing jointly'],['hoh','Head of household']]
              .map(function(v){ return '<option value="'+v[0]+'"'+(p.filing===v[0]?' selected':'')+'>'+v[1]+'</option>'; }).join('')+'</select>')
+        +fld('Step 2 multiple jobs / spouse works','<select data-p="multipleJobs" style="'+CSS.inp+'width:100%;"><option value="no"'+(!p.multipleJobs?' selected':'')+'>Not checked</option><option value="yes"'+(p.multipleJobs?' selected':'')+'>Checked</option></select>')   /* patch PAY */
         +fld('Step 3 dependents credit ($/yr)','<input data-p="dependentsCredit" value="'+esc(p.dependentsCredit)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Step 4(a) other income ($/yr)','<input data-p="otherIncome" value="'+esc(p.otherIncome)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Step 4(b) deductions ($/yr)','<input data-p="deductions" value="'+esc(p.deductions)+'" style="'+CSS.inp+'width:100%;">')
@@ -82331,6 +82339,7 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
       var k=i.getAttribute('data-p'), v=i.value;
       if(k==='active')        p.active = (v==='yes');
       else if(k==='exemptFed')p.exemptFed = (v==='yes');
+      else if(k==='multipleJobs')p.multipleJobs = (v==='yes');   /* patch PAY */
       else if(['payType','period','filing','state','hireDate','ssn4'].indexOf(k)>=0) p[k]=v;
       else p[k]=n2(v);
     });
@@ -167088,5 +167097,257 @@ function run(){
 RI.call(W, function(){ try { if (!document.hidden) run(); } catch (e) {} }, 5000);
 W._gcQbHistLink = { run: function(){ SIG = ''; return run(); }, jobFor: jobFor };
 try { console.log('[GC] QuickBooks history invoices find their job (patch LCLEAN-Q) — _gcQbHistLink.run()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-pay">
+/* __GC_PATCH_PAY__ — WEEKLY PAY STUBS, SAVED FOR GOOD (owner 10/23: "make sure payroll calculates correctly and also saves
+   a pay stub for the employee every week").
+     • When a payroll run is approved, every check in it becomes a pay stub, saved on the server for good
+       (netlify/functions/paystubs.js → gc_kv "payrollStubs_<year>", payroll-only). A stub never changes; a correction
+       is a new "Adjusted" stub that points at the original. Approving the same run again issues nothing twice.
+     • My Profile → 💵 My pay stubs: each person sees ONLY their own (the server matches the signed-in e-mail).
+     • Payroll → 💵 Pay stubs: payroll / admins see everyone's, filter by person and dates, re-print, e-mail, adjust,
+       and "Create stubs for past approved runs" (record-only, sends nothing).
+     • Payroll run: "＋ Bonus / reimb." per person before calculating (bonus is taxed, a reimbursement is not).
+   The stub shows the last 4 of the SSN only, never the employer's taxes, and the office phone in the letterhead.
+   Nothing here e-mails anyone by itself. */
+(function(){
+'use strict';
+if (window.__GC_PATCH_PAY__) return; window.__GC_PATCH_PAY__ = true;
+var W = window, D = document, FN = '/.netlify/functions/paystubs';
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function n2(v){ var x = parseFloat(v); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(n2(v) * 100) / 100; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ return '$' + n2(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function P(){ return W.__GC_PAY || null; }
+function myEmail(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()) || low((JSON.parse(localStorage.getItem('grayco_user_obj') || '{}') || {}).email); } catch (e) { return ''; } }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100200;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3)';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function post(body){ return j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+function list(q){ var u = FN + '?' + Object.keys(q || {}).filter(function(k){ return q[k]; }).map(function(k){ return k + '=' + encodeURIComponent(q[k]); }).join('&'); return j(u, { method: 'GET' }); }
+
+/* ── a run line → a stub (the snapshot the server keeps) ── */
+function companyBlock(set){
+  var addr = ''; try { addr = typeof W._gcCompanyAddress === 'function' ? s(W._gcCompanyAddress()) : ''; } catch (e) {}
+  return { name: s(set && set.companyName) || 'GrayCo Construction Services', address: addr || s(set && set.companyAddr),
+           phone: s(W.GC_BRAND && W.GC_BRAND.phone) || '(901) 585-0944', ein: s(set && set.ein) };
+}
+function emailFor(L, profs){
+  var p = (profs || []).find(function(x){ return x && ((x.userId && x.userId === L.empId) || s(x.name) === s(L.name)); });
+  if (p && p.email) return low(p.email);
+  try { var u = ((W._crm || {}).users || []).find(function(x){ return x && ((x.id && x.id === L.empId) || s(x.name) === s(L.name)); }); if (u && u.email) return low(u.email); } catch (e) {}
+  return '';
+}
+function ssn4For(L, profs){ var p = (profs || []).find(function(x){ return x && ((x.userId && x.userId === L.empId) || s(x.name) === s(L.name)); }); return s(p && p.ssn4).replace(/[^0-9]/g, '').slice(-4); }
+function stubFromLine(run, L, set, profs){
+  var earn = (L.grossParts || []).map(function(g){
+    var o = { label: g.label, amount: r2(g.amount) };
+    if (g.label === 'Regular hours') { o.hours = r2(L.hours); o.rate = r2(L.rate); }
+    if (g.label === 'Overtime') { o.hours = r2(L.otHours); }
+    return o;
+  });
+  if (!earn.length) earn = [{ label: 'Gross pay', amount: r2(L.gross) }];
+  if (n2(L.reimbursement) > 0) earn.push({ label: 'Reimbursement (not taxed)', amount: r2(L.reimbursement) });
+  var taxes = [{ label: 'Federal income tax', amount: r2(L.fed) }, { label: 'Social Security', amount: r2(L.ss) }, { label: 'Medicare', amount: r2(n2(L.med) + n2(L.addlMed)) }];
+  if (n2(L.state) > 0) taxes.push({ label: 'State income tax (' + s(L.stateName) + ')', amount: r2(L.state) });
+  var ded = (L.otherList || []).map(function(d){ return { label: d.label, amount: r2(d.amount), pretax: !!d.pretax }; });
+  return {
+    empKey: s(L.empId || L.name), name: s(L.name), email: emailFor(L, profs), ssn4: ssn4For(L, profs),
+    payType: s(L.payType), periodFrom: s(run.from), periodTo: s(run.to), payDate: s(run.payDate), checkNo: s(L.checkNo), runId: s(run.id),
+    hours: r2(L.hours), otHours: r2(L.otHours), rate: r2(L.rate), filing: s(L.filing),
+    earnings: earn, taxes: taxes, deductions: ded, gross: r2(L.gross), net: r2(L.net), reimbursement: r2(L.reimbursement), dedShort: r2(L.dedShort),
+    company: companyBlock(set)
+  };
+}
+W._gcPayStubFromLine = stubFromLine;
+
+/* ── issue the stubs for approved runs (after the approval is saved; never twice) ── */
+var ISSUING = {};
+function issueRuns(runsList){
+  var pp = P(); if (!pp) return Promise.resolve();
+  var todo = (runsList || []).filter(function(r){ return r && ['approved', 'paid'].indexOf(r.status) > -1 && !r.stubsIssuedAt && !ISSUING[r.id]; });
+  if (!todo.length) return Promise.resolve();
+  return Promise.all([pp.settings(), pp.profiles()]).then(function(a){
+    var set = a[0], profs = a[1], chain = Promise.resolve(), done = [];
+    todo.forEach(function(r){
+      ISSUING[r.id] = 1;
+      var stubs = (r.lines || []).filter(function(L){ return L && L.status !== 'denied'; }).map(function(L){ return stubFromLine(r, L, set, profs); });
+      chain = chain.then(function(){
+        if (!stubs.length) return null;
+        return post({ op: 'issue', stubs: stubs }).then(function(o){
+          delete ISSUING[r.id];
+          if (o && o.ok) { done.push(r.id); if ((o.issued || []).length) toast('💵 ' + o.issued.length + ' pay stub' + (o.issued.length > 1 ? 's' : '') + ' saved'); }
+          else if (o && o.__status !== 403) toast('Pay stubs were not saved: ' + (o && o.error || 'try again'), true);
+        });
+      });
+    });
+    return chain.then(function(){
+      if (!done.length) return;
+      return pp.runs().then(function(all){
+        var hit = false; all.forEach(function(r){ if (done.indexOf(r.id) > -1 && !r.stubsIssuedAt) { r.stubsIssuedAt = new Date().toISOString(); hit = true; } });
+        if (hit) return ORIG_SAVE(all);
+      });
+    });
+  });
+}
+var ORIG_SAVE = null;
+function wrap(){
+  var pp = P(); if (!pp || pp.__gcPayStubWrapped) return !!pp;
+  ORIG_SAVE = pp.saveRuns;
+  pp.saveRuns = function(l){ return Promise.resolve(ORIG_SAVE(l)).then(function(v){ try { issueRuns(l); } catch (e) {} return v; }); };
+  pp.__gcPayStubWrapped = true; return true;
+}
+W._gcPayIssueStubs = function(){ var pp = P(); if (!pp) return Promise.resolve(); return pp.runs().then(function(all){ /* backfill: try every approved run again — the server skips stubs it already has */
+  var copy = all.map(function(r){ return Object.assign({}, r, { stubsIssuedAt: '' }); }); return issueRuns(copy); }); };
+
+/* ── showing a stub ── */
+function stubHtml(st){
+  var head = W._gcPrintHead ? W._gcPrintHead({ logoH: 56 }) : '<div style="text-align:center"><b>' + esc(st.company.name) + '</b><br>' + esc(st.company.address) + ' · ' + esc(st.company.phone) + '</div>';
+  function rows(lst, neg){ return (lst || []).map(function(L){ return '<tr><td>' + esc(L.label) + (L.hours ? ' <span style="color:#666">' + n2(L.hours).toFixed(2) + ' h' + (L.rate ? ' × ' + money(L.rate) : '') + '</span>' : '') + (L.pretax ? ' <span style="color:#666">(before tax)</span>' : '') + '</td><td class="r">' + (neg ? '−' : '') + money(L.amount) + '</td><td class="r y">' + money(L.ytd) + '</td></tr>'; }).join(''); }
+  return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pay stub — ' + esc(st.name) + ' ' + esc(st.payDate) + '</title><style>'
+    + 'body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:26px;color:#111}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:5px 8px;border-bottom:1px solid #eee}'
+    + 'th{text-align:left;font-size:10px;text-transform:uppercase;color:#555;border-bottom:2px solid #333}.r{text-align:right}.y{color:#666}.box{border:1px solid #ddd;border-radius:8px;padding:12px;margin:12px 0}'
+    + '@media print{.noprint{display:none}}</style></head><body>' + head
+    + '<div style="text-align:center;font-weight:800;font-size:16px;margin:10px 0">PAY STUB' + (st.adjusts ? ' — ADJUSTED' : '') + '</div>'
+    + '<div class="box" style="display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between">'
+    + '<div><div class="y" style="font-size:10px">EMPLOYEE</div><b>' + esc(st.name) + '</b>' + (st.ssn4 ? '<div class="y" style="font-size:12px">SSN ***-**-' + esc(st.ssn4) + '</div>' : '') + '</div>'
+    + '<div><div class="y" style="font-size:10px">PAY PERIOD</div>' + esc(st.periodFrom) + ' → ' + esc(st.periodTo) + '</div>'
+    + '<div><div class="y" style="font-size:10px">PAY DATE</div>' + esc(st.payDate) + (st.checkNo ? ' · Check #' + esc(st.checkNo) : '') + '</div>'
+    + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '') + '</div>' : '')
+    + '</div>'
+    + (st.adjusts ? '<div class="box" style="background:#fff7ed">This stub corrects stub ' + esc(st.adjusts) + (st.note ? ': ' + esc(st.note) : '') + '</div>' : '')
+    + '<div class="box"><table><tr><th>Earnings</th><th class="r">This check</th><th class="r">YTD</th></tr>' + rows(st.earnings) + '<tr><td><b>Gross pay</b></td><td class="r"><b>' + money(st.gross) + '</b></td><td class="r y"><b>' + money(st.ytd && st.ytd.gross) + '</b></td></tr></table></div>'
+    + '<div class="box"><table><tr><th>Taxes</th><th class="r">This check</th><th class="r">YTD</th></tr>' + rows(st.taxes, true) + '</table></div>'
+    + ((st.deductions || []).length ? '<div class="box"><table><tr><th>Deductions</th><th class="r">This check</th><th class="r">YTD</th></tr>' + rows(st.deductions, true) + '</table></div>' : '')
+    + '<div style="background:#0f2440;color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center"><div>NET PAY — ' + esc(st.payDate) + '</div><div style="font-size:26px;font-weight:800">' + money(st.net) + '</div></div>'
+    + '<div class="y" style="font-size:11px;margin-top:8px">Net pay year to date ' + money(st.ytd && st.ytd.net) + '. Saved ' + esc(s(st.issuedAt).slice(0, 10)) + ' (stub ' + esc(st.id) + ').</div>'
+    + '<div class="noprint" style="text-align:center;margin-top:18px"><button onclick="window.print()" style="padding:10px 22px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">Print / save as PDF</button></div></body></html>';
+}
+W._gcPayStubHTML = stubHtml;
+function openStub(st){ var h = stubHtml(st); if (W._gcOpenDocHTML) W._gcOpenDocHTML(h); else { var w = W.open('', '_blank'); if (w) { w.document.write(h); w.document.close(); } } }
+
+/* the run screen's "Stub" button: the SAVED stub when there is one, else the old on-the-fly sheet */
+function hookOldStub(){
+  var old = W._gcPayStub; if (!old || old.__gcPay) return;
+  var w = function(runId, idx){
+    var pp = P(); if (!pp) return old(runId, idx);
+    return pp.runs().then(function(all){
+      var r = all.find(function(x){ return x.id === runId; }), L = r && (r.lines || [])[idx];
+      if (!r || !L) return old(runId, idx);
+      return list({ year: s(r.payDate).slice(0, 4), emp: s(L.empId || L.name) }).then(function(o){
+        var st = (o.stubs || []).filter(function(x){ return x.runId === runId && (x.empKey === s(L.empId || L.name)); })[0];
+        if (st) return openStub(st);
+        return old(runId, idx);
+      });
+    });
+  };
+  w.__gcPay = true; W._gcPayStub = w;
+}
+
+/* ── the stub list (My Profile = mine; Payroll = everyone's) ── */
+var STATE = { year: String(new Date().getFullYear()), emp: '', list: null, all: false };
+function rowsHtml(stubs, all){
+  if (!stubs.length) return '<div style="color:#64748b;font-size:13px;padding:8px 0">No pay stubs ' + (all ? 'for this filter' : 'yet') + '. A stub is saved for every approved paycheck.</div>';
+  return '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:#64748b;font-size:11px"><th style="padding:6px">Pay date</th>' + (all ? '<th>Employee</th>' : '') + '<th>Period</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th></th></tr>'
+    + stubs.map(function(st, i){ return '<tr style="border-top:1px solid #e2e8f0"><td style="padding:6px">' + esc(st.payDate) + (st.adjusts ? ' <b style="color:#b45309">ADJ</b>' : '') + '</td>' + (all ? '<td>' + esc(st.name) + '</td>' : '') + '<td>' + esc(st.periodFrom) + ' → ' + esc(st.periodTo) + '</td><td style="text-align:right">' + money(st.gross) + '</td><td style="text-align:right"><b>' + money(st.net) + '</b></td>'
+      + '<td style="text-align:right;white-space:nowrap"><button data-pst="view" data-i="' + i + '" style="padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">View / print</button> <button data-pst="mail" data-i="' + i + '" style="padding:4px 10px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">E-mail</button>'
+      + (all ? ' <button data-pst="adj" data-i="' + i + '" style="padding:4px 10px;border-radius:6px;border:1px solid #fcd34d;background:#fffbeb;cursor:pointer">Adjust…</button>' : '') + '</td></tr>'; }).join('') + '</table>';
+}
+function load(box, all){
+  box.querySelector('[data-pst-body]').innerHTML = '<div style="color:#64748b;font-size:13px">Loading…</div>';
+  return list({ year: STATE.year, emp: all ? STATE.emp : '' }).then(function(o){
+    if (o.error) { box.querySelector('[data-pst-body]').innerHTML = '<div style="color:#b91c1c;font-size:13px">' + esc(o.error) + '</div>'; return; }
+    STATE.list = o.stubs || []; box.querySelector('[data-pst-body]').innerHTML = rowsHtml(STATE.list, all && o.all);
+  });
+}
+function wireBox(box, all){
+  box.addEventListener('click', function(ev){
+    var b = ev.target.closest && ev.target.closest('[data-pst]'); if (!b) return;
+    var act = b.getAttribute('data-pst'), st = (STATE.list || [])[+b.getAttribute('data-i')];
+    if (act === 'reload') return load(box, all);
+    if (act === 'backfill') { if (!confirm('Create pay stubs for every approved payroll run that does not have them yet?\n\nThis only saves stubs. Nothing is sent.')) return; b.disabled = true; return W._gcPayIssueStubs().then(function(){ b.disabled = false; load(box, all); }); }
+    if (!st) return;
+    if (act === 'view') return openStub(st);
+    if (act === 'mail') { if (!confirm('E-mail this pay stub to ' + (st.email || 'the employee') + '?')) return; return post({ op: 'email', id: st.id, year: s(st.payDate).slice(0, 4) }).then(function(o){ toast(o.ok ? (o.paused ? 'Data-entry mode is on — not sent.' : 'Pay stub e-mailed.') : (o.error || 'Not sent.'), !o.ok); }); }
+    if (act === 'adj') {
+      var g = prompt('Corrected GROSS for this check (the new stub is saved as "Adjusted" and points at this one):', String(st.gross)); if (g === null) return;
+      var nnet = prompt('Corrected NET pay:', String(st.net)); if (nnet === null) return;
+      var why = prompt('What was corrected?') || '';
+      var ns = JSON.parse(JSON.stringify(st)); delete ns.id; delete ns.ytd; ns.gross = r2(g); ns.net = r2(nnet);
+      ns.earnings = [{ label: 'Gross pay (corrected)', amount: r2(g) }];
+      return post({ op: 'adjust', originalId: st.id, stub: ns, note: why }).then(function(o){ toast(o.ok ? 'Adjusted stub saved.' : (o.error || 'Not saved.'), !o.ok); load(box, all); });
+    }
+  });
+  box.addEventListener('change', function(ev){
+    var t = ev.target; if (t.getAttribute('data-pst-year') != null) { STATE.year = t.value; load(box, all); }
+    if (t.getAttribute('data-pst-emp') != null) { STATE.emp = t.value; load(box, all); }
+  });
+}
+function boxHtml(all, title){
+  var y = new Date().getFullYear(), years = [y, y - 1, y - 2];
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b style="font-size:15px">' + title + '</b><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+    + '<select data-pst-year style="padding:5px 8px;border-radius:6px;border:1px solid #cbd5e1">' + years.map(function(v){ return '<option' + (String(v) === STATE.year ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select>'
+    + (all ? '<input data-pst-emp placeholder="Employee name or e-mail" value="' + esc(STATE.emp) + '" style="padding:5px 8px;border-radius:6px;border:1px solid #cbd5e1"> <button data-pst="backfill" style="padding:5px 10px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc;cursor:pointer">Create stubs for past approved runs</button>' : '')
+    + '<button data-pst="reload" style="padding:5px 10px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">↻</button></div></div><div data-pst-body style="margin-top:8px"></div>';
+}
+function card(id, all, title, anchor, before){
+  var have = D.getElementById(id);
+  if (!anchor) { if (have) have.remove(); return; }
+  if (have && have.isConnected) return;
+  var c = D.createElement('div'); c.id = id; c.setAttribute('data-gc-keep', '1');
+  c.style.cssText = 'background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin:12px 0;font-family:Inter,-apple-system,Arial,sans-serif';
+  c.innerHTML = boxHtml(all, title);
+  if (before) anchor.parentNode.insertBefore(c, anchor); else anchor.parentNode.insertBefore(c, anchor.nextSibling);
+  wireBox(c, all); load(c, all);
+}
+function profileH1(){ var hs = D.querySelectorAll('main h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'My Profile') return hs[i]; return null; }
+
+/* ── payroll run: bonus / reimbursement per person (picked before Calculate) ── */
+function extrasButton(){
+  var m = D.getElementById('gc-payroll-mount'), calc = m && m.querySelector('#_pCalc');
+  if (!calc || D.getElementById('gc-pay-extras')) return;
+  var b = D.createElement('button'); b.id = 'gc-pay-extras'; b.type = 'button'; b.textContent = '＋ Bonus / reimb.';
+  b.style.cssText = 'margin-left:8px;padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:700;cursor:pointer';
+  b.title = 'Add a bonus (taxed) or a reimbursement (not taxed) for one person, then press Calculate';
+  b.onclick = function(){
+    var pp = P(); if (!pp) return;
+    pp.profiles().then(function(profs){
+      var names = profs.filter(function(p){ return p && p.active !== false; }).map(function(p){ return p.name; });
+      var who = prompt('Who? (type the name exactly)\n\n' + names.join('\n')); if (!who) return;
+      var p = profs.find(function(x){ return low(x.name) === low(who); }); if (!p) { alert('No employee named "' + who + '".'); return; }
+      var bonus = prompt('Bonus for ' + p.name + ' this check (taxed like wages). 0 for none:', '0'); if (bonus === null) return;
+      var reimb = prompt('Reimbursement for ' + p.name + ' (not taxed, e.g. mileage, receipts). 0 for none:', '0'); if (reimb === null) return;
+      var key = p.userId || p.name; W.__GC_PAY_EXTRAS = W.__GC_PAY_EXTRAS || {};
+      W.__GC_PAY_EXTRAS[key] = { bonus: r2(bonus), reimbursement: r2(reimb) };
+      toast('Added for ' + p.name + ' — press Calculate.');
+    });
+  };
+  calc.parentNode.insertBefore(b, calc.nextSibling);
+}
+
+function tick(){
+  try {
+    if (wrap()) hookOldStub();
+    var h1 = profileH1();
+    card('gc-pay-mystubs', false, '💵 My pay stubs', h1 && myEmail() ? h1 : null, false);
+    var pm = D.getElementById('gc-payroll-mount'), pp = P(), canAll = !!(pp && pp.canSee && pp.canSee());
+    card('gc-pay-allstubs', true, '💵 Pay stubs (everyone)', pm && canAll ? pm : null, false);
+    extrasButton();
+  } catch (e) {}
+}
+tick(); RI.call(W, tick, 1500);
+try { console.log('[GC] 💵 Weekly pay stubs saved for good (patch PAY)'); } catch (e) {}
 })();
 </script>
