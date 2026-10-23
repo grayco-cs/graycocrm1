@@ -13872,6 +13872,10 @@ window._jdpLabel={residential:"Residential",commercial:"Commercial",insurance:"I
 
 window._delDoc=function(pid,docId,cb){
   if(!window.confirm("Remove this document from the job? (It stays in your Document Library.)"))return;
+  /* patch SYNCQ: the delete used to be a whole-list save that never left the computer — tombstone it and take it off this computer's list */
+  try{ if(window._gcTombstone) window._gcTombstone("projectDocs", docId); }catch(_t){}
+  try{ if(window._setProjectDocs) window._setProjectDocs(function(L){ return (Array.isArray(L)?L:[]).filter(function(d){ return !(d&&d.id===docId); }); }); }catch(_s){}
+  try{ if(window.idbGet&&window.idbSet) Promise.resolve(window.idbGet("projectDocs")).then(function(L){ if(Array.isArray(L)) window.idbSet("projectDocs", L.filter(function(d){ return !(d&&d.id===docId); })); }); }catch(_i){}
   window._ehSb("projectDocs").then(function(arr){
     var a=(arr||[]).filter(function(d){return !(d&&d.id===docId);});
     window._supaUpsert("projectDocs",a).then(function(){if(cb)cb();}).catch(function(){alert("Could not delete.");});
@@ -14055,7 +14059,7 @@ window._mcAddMaint=function(){
   var a=(window._mcMaint||[]).concat([rec]);
   window._supaUpsert("maintenance",a).then(function(){window._mcRenderMaint(document.getElementById("_mcBody"));});
 };
-window._mcDelMaint=function(id){if(!window.confirm("Delete this maintenance contract?"))return;var a=(window._mcMaint||[]).filter(function(m){return m.id!==id;});window._supaUpsert("maintenance",a).then(function(){window._mcRenderMaint(document.getElementById("_mcBody"));});};
+window._mcDelMaint=function(id){if(!window.confirm("Delete this maintenance contract?"))return;try{if(window._gcTombstone)window._gcTombstone("maintenance",id);}catch(_t){}/* patch SYNCQ */var a=(window._mcMaint||[]).filter(function(m){return m.id!==id;});window._supaUpsert("maintenance",a).then(function(){window._mcRenderMaint(document.getElementById("_mcBody"));});};
 
 /* ---- Warranty Claims ---- */
 window._mcRenderClaims=function(b){
@@ -14082,7 +14086,7 @@ window._mcAddClaim=function(){
   var a=(window._mcClaims||[]).concat([rec]);
   window._supaUpsert("warrClaims",a).then(function(){window._mcRenderClaims(document.getElementById("_mcBody"));});
 };
-window._mcDelClaim=function(id){if(!window.confirm("Delete this claim?"))return;var a=(window._mcClaims||[]).filter(function(c){return c.id!==id;});window._supaUpsert("warrClaims",a).then(function(){window._mcRenderClaims(document.getElementById("_mcBody"));});};
+window._mcDelClaim=function(id){if(!window.confirm("Delete this claim?"))return;try{if(window._gcTombstone)window._gcTombstone("warrClaims",id);}catch(_t){}/* patch SYNCQ */var a=(window._mcClaims||[]).filter(function(c){return c.id!==id;});window._supaUpsert("warrClaims",a).then(function(){window._mcRenderClaims(document.getElementById("_mcBody"));});};
 
 /* ---- Per-job Checklists ---- */
 window._MC_CHECK=(window._CJ_CHECKLIST||["Punch list complete & signed off","Final photos in GrayCo Photos","Warranty certificate signed","Lien waivers collected (if required)","Final invoice issued & collected","Job folder filed","Stage set to COMPLETE"]);
@@ -64911,11 +64915,13 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   try{
     var _origUpsert = window._supaUpsert;
     if(typeof _origUpsert==='function' && !_origUpsert.__gcGoverned){
-      var governed = function(){
+      var governed = function(key, value){
+        /* patch SYNCQ: outside a tab-change sync this used to DROP the save — "the data is in IndexedDB" was only
+           true for SYNC_KEYS the caller had also written locally. Every save now waits in a queue (kept in IndexedDB)
+           and goes up, merged, as soon as nobody is typing — also one that happens to land during a sync, which used
+           to go up raw and could overwrite a list another computer had just added to. */
+        try{ if(window._gcSyncQ) return window._gcSyncQ.add(key, value); }catch(_q){}
         if(!window.__GC_SYNC_NOW__){
-          // Not a tab-change sync — do NOT push now. The data is safely in IndexedDB
-          // and will go up on the next tab change. This is what stops sync from
-          // stomping your work mid-typing.
           return Promise.resolve({deferred:true});
         }
         return _origUpsert.apply(this, arguments);
@@ -64924,6 +64930,203 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       window._supaUpsert = governed;
     }
   }catch(e){}
+
+  /* ---- patch SYNCQ: the queue of saves made between syncs -------------------------------------------- */
+  (function(){
+    var PQK = 'gc_supa_pending_v1', BQK = 'gc_supa_base_v1';
+    var Q = {}, BASE = {}, loaded = false, flushing = false, persistT = null, lastErr = '', lastFlushAt = 0, pushedCount = 0;
+    var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout, SI = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+    function syncKeys(){ var s = {}; try{ (window._gcSyncKeys || []).forEach(function(k){ s[k] = 1; }); }catch(e){} return s; }
+    function idGet(k){ try{ return Promise.resolve(window.idbGet ? window.idbGet(k) : null); }catch(e){ return Promise.resolve(null); } }
+    function idSet(k, v){ try{ return Promise.resolve(window.idbSet ? window.idbSet(k, v) : null); }catch(e){ return Promise.resolve(null); } }
+    /* the queue keeps its own small database (the app's idbGet can answer "nothing" while the page is still starting) */
+    var qdb = null;
+    function qOpen(){
+      if(qdb) return qdb;
+      qdb = new Promise(function(res, rej){
+        try{
+          var r = indexedDB.open('grayco_syncq', 1);
+          r.onupgradeneeded = function(){ try{ r.result.createObjectStore('q'); }catch(e){} };
+          r.onsuccess = function(){ res(r.result); };
+          r.onerror = function(){ qdb = null; rej(r.error); };
+        }catch(e){ qdb = null; rej(e); }
+      });
+      return qdb;
+    }
+    function qGet(k){ return qOpen().then(function(db){ return new Promise(function(res, rej){ var g = db.transaction('q', 'readonly').objectStore('q').get(k); g.onsuccess = function(){ res(g.result); }; g.onerror = function(){ rej(g.error); }; }); }); }
+    function qSet(k, v){ return qOpen().then(function(db){ return new Promise(function(res){ try{ var tx = db.transaction('q', 'readwrite'); tx.objectStore('q').put(v, k); tx.oncomplete = function(){ res(true); }; tx.onerror = function(){ res(false); }; }catch(e){ res(false); } }); }, function(){ return false; }); }
+    function persist(){
+      if(persistT) return;                                       /* throttle, not debounce: a stream of saves can't starve it */
+      /* never write before the stored queue has been read back — a save made while the page starts would overwrite it */
+      persistT = ST.call(window, function(){ persistT = null; if(!loaded){ persist(); return; } qSet(PQK, Q); qSet(BQK, BASE); }, 500);
+    }
+    function isIdList(v){
+      if(!Array.isArray(v)) return false;
+      if(!v.length) return true;
+      var n = 0; for(var i=0;i<v.length;i++){ var r = v[i]; if(r && typeof r==='object' && r.id!=null) n++; }
+      return n >= v.length * 0.9;
+    }
+    function idsOf(v){ var o = []; (Array.isArray(v)?v:[]).forEach(function(r){ if(r && r.id!=null) o.push(String(r.id)); }); return o; }
+    function creds(){ try{ return { u:(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k:localStorage.getItem('grayco_sb_key') }; }catch(e){ return {}; } }
+    function cloudGet(key){
+      var c = creds(); if(!c.u || !c.k) return Promise.reject(new Error('not signed in to the cloud'));
+      return fetch(c.u+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(key)+'&select=value', { headers:{ apikey:c.k, Authorization:'Bearer '+c.k } })
+        .then(function(r){ if(!r || !r.ok) throw new Error('cloud read answered '+(r && r.status)); return r.json(); })
+        .then(function(rows){ return (Array.isArray(rows) && rows.length) ? rows[0].value : undefined; });
+    }
+    function union(key, a, b){
+      /* a wins ties; b adds what a lacks, or replaces when its save stamp is newer */
+      try{ if(typeof window._gcUnionMerge === 'function') return window._gcUnionMerge(key, a, b); }catch(e){}
+      var by = {}, order = [];
+      (a||[]).concat(b||[]).forEach(function(r){ if(!r || r.id==null) return; var id = String(r.id); if(!(id in by)){ by[id] = r; order.push(id); } });
+      return order.map(function(id){ return by[id]; });
+    }
+    function tomb(key, list){
+      try{ if(typeof window._gcApplyTombstoneFilter === 'function') list = window._gcApplyTombstoneFilter(key, list) || list; }catch(e){}
+      try{
+        var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}') || {}, pre = String(key) + ':';
+        if(Array.isArray(list)) list = list.filter(function(r){ return !(r && r.id != null && m[pre + r.id]); });
+      }catch(e){}
+      return list;
+    }
+
+    function add(key, value, opt){
+      key = String(key);
+      if(!key || value === undefined) return Promise.resolve({deferred:true});
+      var item = { v: value, at: Date.now() };
+      if(opt && opt.recover) item.recover = true;
+      if(Q[key] && Q[key].recover && !item.recover) item.recover = false;
+      Q[key] = item;
+      persist();
+      kick(1500);
+      return Promise.resolve({ deferred:true, queued:true });
+    }
+
+    /* a SYNC_KEYS list: merge into IndexedDB + the screen (adds / newer only); the regular upload carries it */
+    function intoLocal(key, v){
+      if(!Array.isArray(v)) return idSet(key, v).then(function(){ return true; });
+      return idGet(key).then(function(cur){
+        cur = Array.isArray(cur) ? cur : [];
+        var merged = tomb(key, union(key, cur, v));           /* what this computer has wins a tie */
+        var a = '', b = ''; try{ a = JSON.stringify(cur); b = JSON.stringify(merged); }catch(e){}
+        if(a === b) return true;
+        return idSet(key, merged).then(function(){
+          try{ if(typeof window._gcApplySync === 'function') window._gcApplySync(key, merged); }catch(e){}
+          try{ window.__GC_MANUAL_AT__ = Date.now(); }catch(e){}       /* the "after your save" sync uploads it */
+          return true;
+        });
+      });
+    }
+
+    /* any other key: straight to the cloud; an id-list is merged with the cloud copy first */
+    /* a list may be stored as an array or as its JSON text (the office to-dos are text) — keep whichever the cloud uses */
+    function asList(x){
+      if(Array.isArray(x)) return { list:x, text:false };
+      if(typeof x === 'string' && /^\s*\[/.test(x)){ try{ var a = JSON.parse(x); if(Array.isArray(a)) return { list:a, text:true }; }catch(e){} }
+      return null;
+    }
+    function isMap(x){ return x && typeof x === 'object' && !Array.isArray(x); }
+    function toCloud(key, item){
+      var now = window._supaUpsertNow;
+      if(typeof now !== 'function') return Promise.reject(new Error('no direct save'));
+      var v = item.v, lv = asList(v);
+      var prep = Promise.resolve(v);
+      if(lv && isIdList(lv.list)){
+        prep = cloudGet(key).then(function(cloud){
+          var lc = asList(cloud);
+          if(!lc) return (cloud === undefined || cloud === null) ? v : v;
+          var mine = {}; idsOf(lv.list).forEach(function(id){ mine[id] = 1; });
+          var gone = {};
+          if(!item.recover) (BASE[key] || []).forEach(function(id){ if(!mine[id]) gone[id] = 1; });   /* this caller deleted it */
+          var merged = tomb(key, union(key, lv.list, lc.list).filter(function(r){ return !(r && r.id!=null && gone[String(r.id)]); }));
+          return lc.text ? JSON.stringify(merged) : merged;
+        });
+      } else if(isMap(v) && (/tombstone|deleted/i.test(key) || item.recover)){
+        /* delete-lists / tombstone maps (and recovered settings) only ever grow: union of the keys */
+        prep = cloudGet(key).then(function(cloud){ return isMap(cloud) ? Object.assign({}, cloud, v) : v; });
+      }
+      return prep.then(function(val){
+        return Promise.resolve(now(key, val)).then(function(res){
+          if(res && res.blocked) return true;                          /* the shrink guard kept the cloud copy */
+          if(res && typeof res.ok === 'boolean' && !res.ok) throw new Error('cloud answered '+res.status);
+          if(lv && isIdList(lv.list) && !item.recover) BASE[key] = idsOf(lv.list);
+          return true;
+        });
+      });
+    }
+
+    function busy(){
+      try{ if(isTyping()) return true; }catch(e){}
+      try{ if(window._gcShouldHoldSync && window._gcShouldHoldSync()) return true; }catch(e){}
+      return false;
+    }
+    var kickT = null;
+    function kick(ms){ if(kickT) return; kickT = ST.call(window, function(){ kickT = null; flush('after a save'); }, ms || 1500); }
+    var flushP = Promise.resolve(0);
+    function flush(why, force){
+      if(flushing) return force ? flushP.then(function(){ return flush(why, force); }) : Promise.resolve(0);
+      if(!loaded){ kick(2000); return Promise.resolve(0); }
+      var keys = Object.keys(Q);
+      if(!keys.length) return Promise.resolve(0);
+      if(!force && busy()){ kick(2500); return Promise.resolve(0); }
+      flushing = true;
+      var sk = syncKeys(), done = 0;
+      var chain = Promise.resolve();
+      keys.forEach(function(key){
+        chain = chain.then(function(){
+          var item = Q[key]; if(!item) return;
+          var p = (sk[key] && Array.isArray(item.v) && !item.recover) ? intoLocal(key, item.v) : toCloud(key, item);
+          return p.then(function(){ if(Q[key] === item) delete Q[key]; done++; pushedCount++; },
+                        function(err){ item.tries = (item.tries||0) + 1; lastErr = key + ': ' + String(err && err.message || err); });
+        });
+      });
+      flushP = chain.then(function(){
+        flushing = false; lastFlushAt = Date.now(); persist();
+        if(done){ try{ console.log('[GC] '+done+' waiting save(s) went up ('+(why||'')+').'); }catch(e){} }
+        if(Object.keys(Q).length) kick(15000);
+        return done;
+      }, function(){ flushing = false; persist(); kick(15000); return done; });
+      return flushP;
+    }
+
+    /* the past: everything this computer holds for keys that never synced — merged, nothing removed */
+    function pushThisComputer(){
+      var sk = syncKeys(), keys = {};
+      (window._gcSyncQKnownKeys || []).forEach(function(k){ if(!sk[k]) keys[k] = 1; });
+      var names = Object.keys(keys), found = [];
+      var chain = Promise.resolve();
+      names.forEach(function(k){
+        chain = chain.then(function(){
+          return idGet(k).then(function(v){
+            if(v === null || v === undefined){ try{ var raw = localStorage.getItem(k); if(raw != null){ try{ v = JSON.parse(raw); }catch(e){ v = raw; } } }catch(e){} }
+            if(v === null || v === undefined || (Array.isArray(v) && !v.length)) return;
+            if(!Array.isArray(v) && !isIdList(v)){
+              /* a setting / object: only send it when the cloud has nothing for it (never overwrite a newer one) */
+              return cloudGet(k).then(function(c){ if(c === undefined || c === null){ found.push(k); return add(k, v, { recover:true }); } }, function(){});
+            }
+            found.push(k); return add(k, v, { recover:true });
+          });
+        });
+      });
+      return chain.then(function(){ return flush('push everything this computer has', true); }).then(function(n){ return { keys: found, pushed: n, waiting: Object.keys(Q) }; });
+    }
+
+    function load(n){
+      qGet(PQK).then(function(v){
+        if(v && typeof v === 'object'){ Object.keys(v).forEach(function(k){ if(!Q[k] && v[k] && 'v' in v[k]) Q[k] = v[k]; }); }
+        loaded = true; persist(); if(Object.keys(Q).length) kick(8000);
+      }, function(){ if(n < 5) ST.call(window, function(){ load(n + 1); }, 2000); else loaded = true; });
+    }
+    load(0);
+    qGet(BQK).then(function(v){ if(v && typeof v === 'object') Object.keys(v).forEach(function(k){ if(!BASE[k]) BASE[k] = v[k]; }); });
+    SI.call(window, function(){ if(Object.keys(Q).length && !flushing) flush('a moment later'); }, 5000);
+    try{ document.addEventListener('visibilitychange', function(){ if(document.hidden && loaded){ qSet(PQK, Q); qSet(BQK, BASE); } }); }catch(e){}
+    try{ window.addEventListener('pagehide', function(){ if(loaded){ qSet(PQK, Q); qSet(BQK, BASE); } }); }catch(e){}
+
+        window._gcSyncQ = { add: add, flush: function(){ return flush('asked', true); }, flushQuiet: function(){ return flush('tab change'); }, pushThisComputer: pushThisComputer,
+      waiting: function(){ return Object.keys(Q).map(function(k){ return { key:k, since:new Date(Q[k].at).toISOString(), tries:Q[k].tries||0 }; }); },
+      state: function(){ return { waiting:Object.keys(Q).length, pushed:pushedCount, lastFlushAt:lastFlushAt, lastError:lastErr, loaded:loaded }; } };
+  })();
 
   // ---- Gate the INBOUND apply: an incoming realtime/cloud update is only
   //      applied during our tab-change sync, and never while typing. --------
@@ -64968,6 +65171,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{
       // Push this computer's data UP (union with cloud; add-only).
       if(window._gcPushAll){ try{ await window._gcPushAll(); }catch(e){} }
+      try{ if(window._gcSyncQ) await window._gcSyncQ.flushQuiet(); }catch(e){}   /* patch SYNCQ (still never while typing) */
       // Pull everyone else's data DOWN (union into local; add-only).
       if(window._gcPullNow){ try{ await window._gcPullNow(); }catch(e){} }
       console.log('[GC] Tab-change sync done ('+(reason||'')+').');
@@ -170137,5 +170341,63 @@ function tick(){
 RI.call(W, tick, 1500); later(tick, 3000);
 W._gcPunch2 = { suggest: suggest, add: add, unused: unused, removeUnused: removeUnused, closeout: closeout, cancelCheck: cancelCheck, reload: loadPunch };
 try { console.log('[GC] punch items from the job\'s scope; 100% = closeout checklist (patch JOBFILL) — _gcPunch2'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-syncq">
+/* __GC_PATCH_SYNCQ__ — ☁ Cloud saves (owner 10/23, before back-entering all his data): saves made between syncs used
+   to be dropped by the sync governor unless the list also lived in IndexedDB AND was one of the synced lists. The
+   governor now queues them (window._gcSyncQ, kept in IndexedDB) and sends them once nobody is typing. This tail:
+     • the keys an earlier build could have left on one computer only (for "Push everything this computer has");
+     • Admin → ☁ Cloud saves: what is waiting, "Send now", and the one-time safe push (merged with the cloud,
+       nothing removed, settings only when the cloud has none). Device-only keys (sign-in, button positions,
+       CompanyCam token copies) are never sent. */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SYNCQ__) return; window.__GC_PATCH_SYNCQ__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+W._gcSyncQKnownKeys = ['gc_office_tasks', 'todoDone', 'checklists', 'maintenance', 'warrClaims', 'docTemplatesIndex',
+  'gc_approval_notes', 'gc_needs_approval', 'gc_money_inbox', 'gc_recon_flags', 'gc_sub_docs', 'invoicePayments', 'commissionQueue',
+  'gc_pm_anniversary', 'gc_pm_broadcasts', 'gc_project_access_requests', 'gc_admin_tasks', 'gc_company_docs', 'gc_sitebook',
+  'gc_what_happened', 'pmPlaybookAdds', 'gc_departed', 'gc_leads_deleted', 'gc_deleted_estimates', 'gc_cc_dismissed',
+  'gc_margin_goals', 'gc_cash_anchor', 'gc_accounts_cfg', 'gc_accounts_ledger', 'gc_ach_details', 'gc_commission_structures',
+  'gc_overhead_manual', 'gc_pm_assignments'];
+function isAdmin(){ try { var u = typeof W._gcMeUser === 'function' ? W._gcMeUser() : JSON.parse(localStorage.getItem('grayco_user') || '{}'); return /admin|owner/i.test(String(u && u.role || '')) || String(u && u.payType || '').toLowerCase() === 'owner'; } catch (e) { return false; } }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function render(box){
+  var q = W._gcSyncQ; if (!q) { box.textContent = 'Not ready yet.'; return; }
+  var s = q.state(), w = q.waiting();
+  box.innerHTML = '<div style="font-size:13px;line-height:1.5;color:#0f172a">'
+    + '<div><b>' + s.waiting + '</b> save(s) waiting to go up · <b>' + s.pushed + '</b> sent since this page opened'
+    + (s.lastFlushAt ? ' · last sent ' + esc(new Date(s.lastFlushAt).toLocaleTimeString()) : '') + '</div>'
+    + (s.lastError ? '<div style="color:#b91c1c;margin-top:4px">Last problem: ' + esc(s.lastError) + ' — it will try again.</div>' : '')
+    + (w.length ? '<ul style="margin:6px 0 0 18px;padding:0">' + w.map(function(x){ return '<li>' + esc(x.key) + ' — waiting since ' + esc(x.since.slice(11, 19)) + (x.tries ? ' (' + x.tries + ' tries)' : '') + '</li>'; }).join('') + '</ul>' : '')
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+    + '<button type="button" data-sq="now" style="padding:8px 12px;border-radius:8px;border:1px solid #1e3a8a;background:#1e3a8a;color:#fff;font-weight:700;cursor:pointer">Send waiting saves now</button>'
+    + '<button type="button" data-sq="all" style="padding:8px 12px;border-radius:8px;border:1px solid #0f766e;background:#fff;color:#0f766e;font-weight:700;cursor:pointer">☁ Push everything this computer has</button>'
+    + '</div><div style="font-size:12px;color:#64748b;margin-top:6px">Push everything: once on each computer that was used before 10/24 (to-dos, warranty claims, maintenance, checklists, approval notes …). '
+    + 'It adds this computer\'s records to the company copy — nothing anyone else entered is removed, and settings only go up when the cloud has none.</div>'
+    + '<div data-sq-out style="font-size:12px;margin-top:6px;color:#0f766e"></div></div>';
+  box.onclick = function(ev){
+    var b = ev.target.closest && ev.target.closest('[data-sq]'); if (!b) return;
+    var out = box.querySelector('[data-sq-out]');
+    b.disabled = true;
+    if (b.getAttribute('data-sq') === 'now') {
+      q.flush().then(function(n){ out.textContent = n + ' save(s) sent.'; render(box); });
+    } else {
+      if (!W.confirm('Send everything this computer holds for the lists that did not sync before? It is merged with the company copy; nothing is removed.')) { b.disabled = false; return; }
+      out.textContent = 'Working…';
+      q.pushThisComputer().then(function(r){ out.textContent = 'Done: ' + (r.keys.length ? r.keys.join(', ') : 'nothing on this computer needed it') + (r.waiting.length ? ' · still waiting: ' + r.waiting.join(', ') : ''); b.disabled = false; });
+    }
+  };
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'syncq', after: 'pause', ic: '☁', t: 'Cloud saves', d: 'Saves waiting to go up · push everything this computer has (safe merge)',
+    render: render, count: function(){ try { var n = W._gcSyncQ.state().waiting; return n ? n + ' waiting' : 'ok'; } catch (e) { return ''; } } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+try { console.log('[GC] ☁ Cloud saves (patch SYNCQ): _gcSyncQ.state(), _gcSyncQ.pushThisComputer()'); } catch (e) {}
 })();
 </script>
