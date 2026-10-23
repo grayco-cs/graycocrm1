@@ -281,6 +281,131 @@ function withAuth(input, init, force){
 }
 function offlineError(){ return Promise.reject(new TypeError('Failed to fetch (GrayCo: not signed in)')); }
 
+/* patch SYNCPERF: A SAVE THE CLOUD ALREADY HOLDS IS NOT SENT AGAIN.
+   Two computers open on the realistic data (nobody typing): the second one was busy 14 of every 20
+   seconds, with long tasks up to 2 s. In two minutes the pair sent each other ~150 uploads of
+   values the cloud already had (approval queues, the register, vendors, projects …): every upload
+   tells every other computer "this changed", it downloads it, merges it, writes it to disk, redraws
+   the screen — and some of that work saves the list again. Here, at the one door every database
+   request goes through, an upload of gc_kv rows whose value is exactly what the cloud holds
+   (what this computer last sent there, or what the live feed last said is there — compared
+   with object keys sorted, because the database stores them in its own order) is answered
+   "done" without going out. A value that differs in any way goes out as before; nothing is held
+   or dropped, and after 10 minutes an identical save goes out once anyway. */
+var SP_KNOWN = {}, SP_EV = {}, SP_MEMO = {}, SP_TTL = 10 * 60e3, SP_MAXLEN = 6000000;
+function spCanon(v){
+  if (v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if (Array.isArray(v)) { var a = new Array(v.length); for (var i = 0; i < v.length; i++) a[i] = v[i] === undefined ? 'null' : spCanon(v[i]); return '[' + a.join(',') + ']'; }
+  var ks = Object.keys(v).sort(), out = [];
+  for (var j = 0; j < ks.length; j++) { var x = v[ks[j]]; if (x === undefined || typeof x === 'function') continue; out.push(JSON.stringify(ks[j]) + ':' + spCanon(x)); }
+  return '{' + out.join(',') + '}';
+}
+function spHash(str){   /* 53-bit string hash (cyrb53) + length: what is kept per key, not the value */
+  var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (var i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return str.length + ':' + (4294967296 * (2097151 & h2) + (h1 >>> 0));
+}
+/* a list of records (every entry an object with an id) is compared as a set: two computers that
+   merge the same records list them in their own order, and each re-sent "its" order to the other,
+   back and forth, forever. Only the outer list — an order kept inside a record still counts. */
+function spIsRec(x){ return !!x && typeof x === 'object' && !Array.isArray(x) && (typeof x.id === 'string' || typeof x.id === 'number' || typeof x.invId === 'string' || typeof x.expId === 'string'); }
+function spSig(v){
+  try {
+    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanon).sort().join(',') + ']');
+    return spHash(spCanon(v));
+  } catch (e) { return null; }
+}
+function spKnown(k, sig){ if (sig) SP_KNOWN[k] = { s: sig, at: now() }; else delete SP_KNOWN[k]; }
+window._gcSyncKnown = function(){ return Object.keys(SP_KNOWN).length; };
+window._gcSyncSkipped = 0;
+/* rows of a plain gc_kv upload: [{key, sig}] — or null when this request is anything else */
+function spRows(u, init){
+  try {
+    var m = methodOf(u, init);
+    if (m !== 'POST' || !init || typeof init.body !== 'string' || init.body.length > SP_MAXLEN) return null;
+    var x = new URL(u, location.href);
+    if (x.pathname !== '/rest/v1/gc_kv') return null;
+    var q = x.searchParams; var bad = false; q.forEach(function(v, k){ if (k !== 'on_conflict') bad = true; }); if (bad) return null;
+    var hd = new Headers(init.headers || undefined), pref = String(hd.get('Prefer') || '');
+    if (/return=representation|missing=default/.test(pref) || /resolution=ignore-duplicates/.test(pref)) return null;
+    /* the same text sent again (an unchanged list re-saved) is not taken apart again: a one-row upload is
+       remembered by a hash of its text without the save time at the end */
+    var one = /^\{"key":"((?:[^"\\]|\\.)*)","value":/.exec(init.body), rawH = null;
+    if (one) {
+      rawH = spHash(init.body.replace(/,"updated_at":"[^"]*"\}$/, '}'));
+      var mm = SP_MEMO[one[1]]; if (mm && mm.h === rawH) return [{ key: mm.k, sig: mm.s }];
+    }
+    var b = JSON.parse(init.body), rows = Array.isArray(b) ? b : [b], out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r || typeof r !== 'object' || typeof r.key !== 'string' || !('value' in r)) return null;
+      for (var f in r) if (f !== 'key' && f !== 'value' && f !== 'updated_at') return null;   /* other columns: not ours to judge */
+      var sg = spSig(r.value); if (!sg) return null;
+      out.push({ key: r.key, sig: sg });
+    }
+    if (rawH && out.length === 1) SP_MEMO[one[1]] = { h: rawH, k: out[0].key, s: out[0].sig };
+    return out.length ? out : null;
+  } catch (e) { return null; }
+}
+/* a delete, or a write of a shape not judged here: whatever it touched is no longer known */
+function spForget(u, init){
+  try {
+    var m = methodOf(u, init);
+    if (m === 'GET' || m === 'HEAD') return;
+    var x = new URL(u, location.href);
+    if (x.pathname !== '/rest/v1/gc_kv') return;
+    var kq = x.searchParams.get('key') || '';
+    if (/^eq\./.test(kq)) { spKnown(kq.slice(3), null); return; }
+    var mi = /^in\.\((.*)\)$/.exec(kq);
+    if (mi) { mi[1].split(',').forEach(function(k){ spKnown(k.replace(/^"|"$/g, ''), null); }); return; }
+    if (!kq && init && typeof init.body === 'string') {
+      var b = JSON.parse(init.body), rows = Array.isArray(b) ? b : [b];
+      if (rows.every(function(r){ return r && typeof r.key === 'string'; })) { rows.forEach(function(r){ spKnown(r.key, null); }); return; }
+    }
+  } catch (e) {}
+  SP_KNOWN = {};
+}
+function spSend(input, init){
+  var u = urlOf(input), rows = spRows(u, init), t = now();
+  if (rows && rows.every(function(r){ var k = SP_KNOWN[r.key]; if (k && k.s === undefined) { k.s = spSig(k.v); k.v = null; } return k && k.s && k.s === r.sig && (t - k.at) < SP_TTL; })) {
+    window._gcSyncSkipped++;
+    return Promise.resolve(new Response(null, { status: 201, statusText: 'Created' }));
+  }
+  var p = nativeFetch(input, withAuth(input, init, true));
+  if (rows) {
+    /* what the live feed says arrived while this was on its way is newer than this answer */
+    rows.forEach(function(r){ r.ev = SP_EV[r.key] || 0; });
+    p.then(function(res){ rows.forEach(function(r){ if ((SP_EV[r.key] || 0) === r.ev || !(res && res.ok)) spKnown(r.key, res && res.ok ? r.sig : null); }); }, function(){ rows.forEach(function(r){ spKnown(r.key, null); }); });
+  }
+  else spForget(u, init);
+  return p;
+}
+/* the live feed says what the cloud now holds for a key */
+try {
+  var SPWS = window.WebSocket;
+  if (SPWS && !SPWS.__gcSP) {
+    var SPW = function(u, pr){
+      var ws = pr === undefined ? new SPWS(u) : new SPWS(u, pr);
+      try {
+        if (String(u).indexOf(SB_HOST) >= 0) ws.addEventListener('message', function(ev){
+          try {
+            var d = ev.data; if (typeof d !== 'string' || d.indexOf('postgres_changes') < 0 || d.indexOf('gc_kv') < 0) return;
+            var j = JSON.parse(d), dd = j && j.payload && j.payload.data; if (!dd) return;
+            var rec = dd.record, old = dd.old_record, kk = (rec && rec.key) || (old && old.key); if (kk) SP_EV[kk] = (SP_EV[kk] || 0) + 1;
+            if (dd.type === 'DELETE') { if (old && old.key) spKnown(String(old.key), null); return; }
+            if (rec && typeof rec.key === 'string') { if ('value' in rec && d.length <= SP_MAXLEN) SP_KNOWN[rec.key] = { v: rec.value, s: undefined, at: now() }; else spKnown(rec.key, null);   /* signed only if this computer goes to save that key */ }
+          } catch (e) {}
+        });
+      } catch (e) {}
+      return ws;
+    };
+    SPW.prototype = SPWS.prototype; ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function(k){ try { SPW[k] = SPWS[k]; } catch (e) {} });
+    SPW.__gcSP = true; window.WebSocket = SPW;
+  }
+} catch (e) {}
+
 function gcFetch(input, init){
   var u = urlOf(input), kind = classify(u);
   if (kind === 'sb') {
@@ -295,7 +420,7 @@ function gcFetch(input, init){
     }
     return ensureFresh().then(function(){
       if (!S) return gcFetch(input, init);
-      return nativeFetch(input, withAuth(input, init, true));
+      return spSend(input, init);   /* patch SYNCPERF */
     });
   }
   if (kind === 'fn' && S && S.access_token) {
@@ -3206,9 +3331,11 @@ window.__GC_LIVE=function(key, v){
   //    (< 600ms) are left alone so nothing that needs to be snappy is slowed.
   try{
     var _setInt=window.setInterval;
+    try{ window.__GC_REAL_SETINTERVAL__=_setInt; }catch(e){}   /* patch SYNCPERF: the browser's own, for a check that must not be idle-paced */
     window.setInterval=function(fn, ms){
       var _ms=ms;
       if(typeof _ms==='number' && _ms>=600 && _ms<800) _ms=800;  // gently floor mid-range timers
+      var _lastRun=0;
       var guarded=function(){
         try{
           // Skip this tick only if the tab is hidden, or the user pressed a key in the last ~1.2s
@@ -3216,6 +3343,15 @@ window.__GC_LIVE=function(key, v){
           // active typing without freezing badges for long pauses.
           if(document.hidden) return;
           if(window.__GC_LAST_KEY__ && (Date.now()-window.__GC_LAST_KEY__)<1200) return;
+          /* patch SYNCPERF: NOBODY AT THE COMPUTER FOR A MINUTE — every background loop runs at most every 30 s.
+             Two computers open on the real data, nobody touching either: each was busy 13 of every 20 seconds,
+             most of it these loops (badge counts, the To-Do repaint, the menu and page scans) redoing their whole
+             job every 1-2 seconds for a screen nobody was looking at. The first touch (mouse, key, scroll, tap) or
+             coming back to the window puts them straight back on their own pace. Changes from other computers
+             still arrive on the live feed and are put on the screen as they come; this only slows the polish. */
+          var _n=Date.now();
+          if(!(_ms >= 29000) && _n-(window.__GC_LAST_INPUT_AT__||0) > 60000 && _n-_lastRun < 29000) return;   /* a loop slower than that keeps its own pace */
+          _lastRun=_n;
           if(typeof fn==='function') fn();
         }catch(e){}
       };
@@ -3226,6 +3362,15 @@ window.__GC_LIVE=function(key, v){
   }catch(e){}
 
     try{ document.addEventListener('keydown', function(){ window.__GC_LAST_KEY__=Date.now(); }, true); }catch(e){}
+    /* patch SYNCPERF: when a person last did anything here (see the 30 s idle pace above) */
+    try{
+      window.__GC_LAST_INPUT_AT__=Date.now();
+      var _seen=function(e){ if(e && e.isTrusted===false) return; window.__GC_LAST_INPUT_AT__=Date.now(); };
+      ['pointerdown','pointermove','mousemove','keydown','wheel','touchstart'].forEach(function(ev){ document.addEventListener(ev, _seen, {capture:true, passive:true}); });
+      window.addEventListener('focus', _seen, true);
+      window._gcIdle = function(){ return Date.now()-(window.__GC_LAST_INPUT_AT__||Date.now()) > 60000; };
+      document.addEventListener('visibilitychange', function(){ if(!document.hidden) window.__GC_LAST_INPUT_AT__=Date.now(); });
+    }catch(e){}
   console.log('[GC] Performance governor active (observers debounced, timers throttled while busy).');
 })();
 </script>
@@ -4124,13 +4269,22 @@ window.clearInterval = function(id){
    work stacking up that causes this, and holding back a one-off would make
    things feel slower, not faster. */
 
+/* patch SYNCPERF: nobody has touched this computer for a minute — every job here runs at most every 30 s
+   (its own pace if that is slower). The first touch (mouse, key, scroll wheel, tap) or coming back to the
+   window brings every job due straight away, spread over a second or two so they do not land together. */
+var IDLE_AFTER = 60000, IDLE_EVERY = 30000, wasIdle = false;
+function idleNow(){ try{ return Date.now() - (window.__GC_LAST_INPUT_AT__ || Date.now()) > IDLE_AFTER; }catch(e){ return false; } }
 function collect(){
-  var t = now(), ids = Object.keys(jobs);
+  var t = now(), ids = Object.keys(jobs), idle = idleNow();
+  if(wasIdle && !idle){
+    for(var w=0;w<ids.length;w++){ var jw = jobs[ids[w]]; if(jw && jw.due > t) jw.due = Math.min(jw.due, t + Math.random() * Math.min(jw.ms, 1500)); }
+  }
+  wasIdle = idle;
   for(var i=0;i<ids.length;i++){
     var id = ids[i], j = jobs[id];
     if(!j || j.running) continue;
     if(j.due > t) continue;
-    j.due = t + j.ms;                       // next time round, whatever happens now
+    j.due = t + (idle ? Math.max(j.ms, IDLE_EVERY) : j.ms);   // next time round, whatever happens now
     if(queue.indexOf(id) < 0) queue.push(id);
   }
 }
@@ -4463,7 +4617,7 @@ var lastActivity = 0;
   var step = function(){
     try{ look(); }catch(e){}
     var busyNow = (Date.now() - lastActivity) < BURST;
-    RSI.call(window, step, busyNow ? FAST : SLOW);
+    RSI.call(window, step, busyNow ? FAST : ((window._gcIdle && window._gcIdle()) ? 10000 : SLOW));   /* patch SYNCPERF: nobody here for a minute: every 10 s (a click or key still looks at once) */
   };
   RSI.call(window, step, FAST);
 })();
@@ -47408,13 +47562,43 @@ async function pullDocs(){
 // source of truth" tool). Left to itself it now uploads ONLY what actually
 // changed. This used to re-upload all ~60 tables on EVERY tab change, which is
 // what burned through the database's Disk IO budget and made it go unhealthy.
+/* patch SYNCPERF: which synced lists were written on this computer since the last full look. A list nobody
+   wrote since then is not read and turned into text again just to find it unchanged (each pass did that for
+   every list, a couple of megabytes of text, many times a minute). The first pass, and _gcPushAll(true),
+   look at everything. */
+var _spWritten = null;   /* null = look at every list */
+(function(){
+  try{
+    var PR = IDBObjectStore.prototype;
+    ['put','add','delete','clear'].forEach(function(n){
+      var o = PR[n]; if(!o || o.__gcSPw) return;
+      var w = function(a, b){
+        try{
+          if(_spWritten && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
+            var kk = (n === 'put' || n === 'add') ? b : a;
+            if(n === 'clear' || typeof kk !== 'string') _spWritten = null; else _spWritten[kk] = 1;
+          }
+        }catch(e){ _spWritten = null; }
+        return o.apply(this, arguments);
+      };
+      w.__gcSPw = true; try{ Object.keys(o).forEach(function(p){ w[p] = o[p]; }); }catch(e){}
+      PR[n] = w;
+    });
+  }catch(e){}
+})();
 window._gcPushAll = async function(force){
   var _n = 0, _skipped = [];
+  var _look = force ? null : _spWritten; _spWritten = {};
   for(var _i = 0; _i < SYNC_KEYS.length; _i++){
     var _k = SYNC_KEYS[_i];
     try{
       // Back off the moment the database signals it's struggling.
-      if(!force && window._gcShouldHoldSync && window._gcShouldHoldSync()) break;
+      if(!force && window._gcShouldHoldSync && window._gcShouldHoldSync()){
+        for(var _r = _i; _r < SYNC_KEYS.length; _r++){ if(_spWritten && (!_look || _look[SYNC_KEYS[_r]])) _spWritten[SYNC_KEYS[_r]] = 1; }   /* not looked at yet: next time */
+        if(!_look) _spWritten = null;
+        break;
+      }
+      if(_look && !_look[_k]) continue;
       var _v = await idbGet(_k);
       if(_v === null || _v === undefined) continue;
       if(Array.isArray(_v) && _v.length === 0) continue;
@@ -47717,7 +47901,31 @@ async function sbRead(key){
 }
 
 // ── IDB helpers ──────────────────────────────────────────────────────────
-function idbGet(k){return new Promise(function(r){var q=indexedDB.open('grayco_crm',3);q.onsuccess=function(e){var db=e.target.result,tx=db.transaction('kv','readonly'),s=tx.objectStore('kv'),g=s.get(k);g.onsuccess=function(){r(g.result!==undefined?g.result:null)};g.onerror=function(){r(null)}};q.onerror=function(){r(null)}});}
+/* patch SYNCPERF: every read used to open the database again (sixty reads, sixty opens, each pass). One open
+   connection now serves them; if it is gone (closed, upgraded) the read opens afresh exactly as before. */
+var _spDB = null;
+function _spOpenDB(){
+  if(_spDB) return _spDB;
+  _spDB = new Promise(function(res){
+    try{
+      var q = indexedDB.open('grayco_crm', 3);
+      q.onsuccess = function(e){ var db = e.target.result; try{ db.onversionchange = function(){ try{ db.close(); }catch(_e){} _spDB = null; }; db.onclose = function(){ _spDB = null; }; }catch(_e){} res(db); };
+      q.onerror = function(){ _spDB = null; res(null); };
+      q.onblocked = function(){ _spDB = null; res(null); };
+    }catch(e){ _spDB = null; res(null); }
+  });
+  return _spDB;
+}
+function _idbGetFresh(k){return new Promise(function(r){var q=indexedDB.open('grayco_crm',3);q.onsuccess=function(e){var db=e.target.result,tx=db.transaction('kv','readonly'),s=tx.objectStore('kv'),g=s.get(k);g.onsuccess=function(){r(g.result!==undefined?g.result:null)};g.onerror=function(){r(null)}};q.onerror=function(){r(null)}});}
+function idbGet(k){
+  return _spOpenDB().then(function(db){
+    if(!db) return _idbGetFresh(k);
+    return new Promise(function(r){
+      try{ var g = db.transaction('kv','readonly').objectStore('kv').get(k); g.onsuccess = function(){ r(g.result!==undefined?g.result:null); }; g.onerror = function(){ r(_idbGetFresh(k)); }; }
+      catch(e){ _spDB = null; r(_idbGetFresh(k)); }
+    });
+  });
+}
 function idbSet(k,v){return new Promise(function(r){var q=indexedDB.open('grayco_crm',3);q.onsuccess=function(e){var db=e.target.result,tx=db.transaction('kv','readwrite'),s=tx.objectStore('kv'),p=s.put(v,k);p.onsuccess=function(){r(true)};p.onerror=function(){r(false)}};q.onerror=function(){r(false)}});}
 
 // ── Push local IDB to Supabase ───────────────────────────────────────────
@@ -129063,7 +129271,7 @@ function tick(){ ticks++; deadlines();
 var SELIDLE = {};
 nSI.call(window, tick, 1000);
 /* the CRM's timer governors skip slow ticks while people work; a frame-driven check (every 600 ms, nothing when the tab is hidden) keeps the chips and the Products sub-tab prompt */
-var lastF = 0; function frame(t){ if (t - lastF > 600) { lastF = t; tick(); } try { window.requestAnimationFrame(frame); } catch (e) {} }
+var lastF = 0; function frame(t){ if (t - lastF > ((window._gcIdle && window._gcIdle()) ? 30000 : 600)) { lastF = t; tick(); }   /* patch SYNCPERF: every 30 s when nobody has touched the computer for a minute */ try { window.requestAnimationFrame(frame); } catch (e) {} }
 try { window.requestAnimationFrame(frame); } catch (e) {}
 CH.local().then(function(){ try { strips(); } catch (e) {} });
 var lastPull = 0;
@@ -137460,15 +137668,20 @@ function tick(){
     var hs = hosts();
     if (D.querySelector('[data-gc-ap2="status"]')) statusStrip();
     if (!hs.length) return;
-    var q = (lsGet(OT) || '').length + ':' + (lsGet(AT) || '').length + ':' + projects().length + ':' + invoices().length + ':' + invoices().filter(invPaid).length + ':' + (W._gcAp2Items ? arr(W._gcAp2Items()).length : 0);
+    var q = quickSig();
     if (q !== lastQuick) { lastQuick = q; dirty = true; }
     pullMeta(false).then(function(ch){ if (ch) paint(false); });
     paint(false);
   } catch (e) { warn(e); }
 }
+function quickSig(){ return (lsGet(OT) || '').length + ':' + (lsGet(AT) || '').length + ':' + projects().length + ':' + invoices().length + ':' + invoices().filter(invPaid).length + ':' + (W._gcAp2Items ? arr(W._gcAp2Items()).length : 0); }
 function start(){
   css(); hookOld(); hookOM();
   every(tick, 1500);
+  /* patch SYNCPERF: when nobody has touched the computer for a minute the loop above runs every 30 s; a to-do that
+     changes (another computer's, or one that completes itself when its invoice is paid) is still on screen within
+     ~1.5 s: this cheap look (list sizes, nothing drawn) runs the loop at once when something moved */
+  try { (W.__GC_REAL_SETINTERVAL__ || W.__GC_NATIVE_SETINTERVAL__ || setInterval).call(W, function(){ try { if (D.hidden || !(W._gcIdle && W._gcIdle()) || !hosts().length) return; if (dirty || quickSig() !== lastQuick) tick(); } catch (e) {} }, 1500); } catch (e) {}
   try { if (W.__GC_ON_CHANGE__) W.__GC_ON_CHANGE__(function(){ dirty = true; }); } catch (e) {}
   W.addEventListener('storage', function(e){ if (e.key === OT || e.key === AT || e.key === MK) { if (e.key === MK) meta = metaMerge(meta, obj(lsGet(MK))); dirty = true; } });
   D.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var m = D.querySelector('.td2-menu'); if (m) m.remove(); } }, true);
