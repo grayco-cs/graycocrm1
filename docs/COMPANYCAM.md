@@ -51,6 +51,39 @@ in green.
 Nothing has to be typed into the CRM, and no console command is needed on any
 computer.
 
+**Is the token accepted? One truth (patch CCS2).** Only a fresh, authenticated
+`GET https://api.companycam.com/v2/company` that answers 200 **with the company record**
+counts. The CRM records each such check with its time in gc_kv `gc_cc_whoami`; the
+server's check (Test Connection) and every sync run make one. Every CompanyCam
+message in the CRM now reads one of:
+
+- ✅ Token accepted (checked 11:42 PM)
+- ❌ Token not accepted (401/403)
+- ⚠ CompanyCam error 500 on projects (the token works, the projects list does not)
+- ⚠ Not checked yet
+
+Before this patch, several older checkers said "Token works", "Key works",
+"Connected!" or "connected and working" whenever they got a 200. They could get a
+200 without CompanyCam ever being asked, because this browser's CompanyCam gate
+answers those old requests with an empty `200 []`. That answer is now marked
+`X-GC-Gate: blocked`, and none of them treat it as success.
+
+**The projects request (patch CCS2), per CompanyCam's v2 spec**
+([openapi.yaml](https://github.com/CompanyCam/openapi-spec/blob/main/openapi.yaml)):
+
+- `modified_since` is an **ISO8601** date-time. Until this patch the CRM sent unix
+  seconds, which is the likely cause of the 500.
+- The list comes "sorted by most recent activity first". There is no sort parameter.
+- `status` is `active` or `deleted`. Photos take `per_page` up to 100.
+
+A 5xx is retried once. If page 1 still fails, the sync tries `per_page` 25, then the
+list with no filter (newest first). The form that worked and CompanyCam's own error
+text are kept in `gc_cc_sync_health`.
+
+The token from Netlify is cleaned on the way in: spaces, newlines, quotes and a
+pasted "Bearer " are removed. Only its length and those flags are recorded, as
+`tokenShape`, never the value.
+
 **Is the 15-minute sync running? (patch CCS)** Every run of `companycam-sync` now
 leaves one small record (gc_kv `gc_cc_sync_health`: time, OK / skipped / error,
 CompanyCam's HTTP status, projects read, jobs made; never the key). The CRM shows it

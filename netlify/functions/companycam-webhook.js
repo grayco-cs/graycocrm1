@@ -109,7 +109,7 @@ async function drainPendingLeads(){
    only while that variable is not set (the old way, kept as a fallback). No answer
    from this function ever contains the key. */
 function ccTokenFor(event){
-  const env = String(process.env.COMPANYCAM_TOKEN || '').trim();
+  const env = require('./_lib/cc-api.js').cleanToken(process.env.COMPANYCAM_TOKEN).token;   /* patch CCS2: spaces / quotes / "Bearer " cleaned */
   if (env) return { token: env, source: 'env' };
   const sent = gcHeader(event, 'x-cc-token').trim();
   if (sent) return { token: sent, source: 'browser' };
@@ -210,13 +210,16 @@ exports.handler = async function(event, context) {
       out.message = 'No CompanyCam key is set. Add COMPANYCAM_TOKEN on Netlify (Environment variables) and deploy again.';
       return { statusCode: 200, headers, body: JSON.stringify(out) };
     }
-    try{
-      const r = await fetch(CC_API + '/projects?per_page=1', { headers: ccHeaders(k.token) });
-      out.status = r.status;
-      if(r.ok){ out.ok = true; out.reason = 'ok'; out.message = 'CompanyCam answered — the key works.'; }
-      else if(r.status === 401 || r.status === 403){ out.reason = 'refused'; out.message = 'CompanyCam refused the key (' + r.status + '). It needs replacing.'; }
-      else { out.reason = 'companycam_' + r.status; out.message = 'CompanyCam answered ' + r.status + '. Try again later.'; }
-    }catch(err){ out.reason = 'unreachable'; out.message = 'Could not reach CompanyCam from the server.'; }
+    /* patch CCS2 — the one truth: a fresh authenticated GET /v2/company that answers 200 WITH a company object.
+       Recorded with its time (gc_kv gc_cc_whoami). The projects list can fail on its own (see ?proxy=sync). */
+    const CCA = require('./_lib/cc-api.js');
+    const w = await CCA.whoami(k.token);
+    out.status = w.status; out.verified = w.accepted === true; out.checkedAt = w.at;
+    if(w.accepted === true){ out.ok = true; out.reason = 'ok'; out.message = 'Token accepted'; }
+    else if(w.accepted === false){ out.reason = 'refused'; out.message = 'Token not accepted (' + w.status + ')'; }
+    else if(w.status === 0){ out.reason = 'unreachable'; out.message = 'Could not reach CompanyCam from the server.'; }
+    else { out.reason = 'companycam_' + w.status; out.message = 'CompanyCam answered ' + w.status + (w.status === 200 ? ' without the company record' : '') + '. Try again later.'; }
+    if(k.source === 'env') await CCA.saveWhoami(w);   /* only the Netlify key's check is the company's record */
     return { statusCode: 200, headers, body: JSON.stringify(out) };
   }
 
@@ -228,8 +231,16 @@ exports.handler = async function(event, context) {
     const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
     if(!svc){ out.serviceKey = false; return { statusCode: 200, headers, body: JSON.stringify(out) }; }
     try{
-      const r = await fetch(url + '/rest/v1/gc_kv?select=value&key=eq.gc_cc_sync_health', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
-      if(r.ok){ const rows = await r.json(); let v = Array.isArray(rows) && rows[0] ? rows[0].value : null; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } } out.health = v && typeof v === 'object' ? v : null; }
+      /* + patch CCS2 (one truth): gc_cc_whoami, the last real GET /company check, with its time */
+      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      if(r.ok){
+        const rows = await r.json();
+        (Array.isArray(rows) ? rows : []).forEach(function(x){
+          let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
+          if(!v || typeof v !== 'object') return;
+          if(x.key === 'gc_cc_sync_health') out.health = v; else if(x.key === 'gc_cc_whoami') out.whoami = v;
+        });
+      }
       else out.readError = r.status;
     }catch(err){ out.readError = 'unreachable'; }
     return { statusCode: 200, headers, body: JSON.stringify(out) };
@@ -243,23 +254,30 @@ exports.handler = async function(event, context) {
     let since = Math.floor(Date.now() / 1000) - days * 86400;
     const sinceQ = parseInt(qs.since, 10); if(sinceQ > 0 && sinceQ < Math.floor(Date.now() / 1000)) since = sinceQ;   // ?since=<unix> wins
     const out = []; let pages = 0, truncated = false;
+    /* patch CCS2: modified_since is ISO8601 per CompanyCam's v2 spec (was unix seconds); a 5xx is retried once,
+       then the same list without the filter (newest first; stop at the first page with nothing changed since) */
+    const CCA = require('./_lib/cc-api.js'), iso = CCA.isoOf(since);
     try{
+      let filter = true;
       for(let page = 1; page <= 40; page++){
-        const r = await fetch(CC_API + '/projects?per_page=50&page=' + page + '&status=active&modified_since=' + since, { headers: ccHeaders(token) });
-        if(!r.ok){
-          if(page === 1) return { statusCode: r.status, headers, body: JSON.stringify({ error: 'CompanyCam ' + r.status }) };
+        const g = await CCA.getRetry(CC_API + '/projects?per_page=50&page=' + page + '&status=active' + (filter ? '&modified_since=' + encodeURIComponent(iso) : ''), token);
+        if(!g.r){
+          if(page === 1 && filter && (g.status >= 500 || g.status === 400 || g.status === 422 || g.status === 0)){ filter = false; page = 0; continue; }
+          if(page === 1) return { statusCode: g.status || 502, headers, body: JSON.stringify({ error: 'CompanyCam ' + g.status, detail: g.body || '' }) };
           truncated = true; break;
         }
-        const chunk = await r.json();
+        const chunk = await g.r.json();
         pages = page;
         if(!Array.isArray(chunk) || !chunk.length) break;
+        let fresh = 0;
         chunk.forEach(function(p){
           if(!p || p.id == null) return;
           const c = ccCompact(p);
           if(c.status && c.status !== 'active') return;
           if(Math.max(c.created_at, c.updated_at) && Math.max(c.created_at, c.updated_at) < since) return;
-          out.push(c);
+          out.push(c); fresh++;
         });
+        if(!filter && !fresh) break;
         if(chunk.length < 50) break;
         if(page === 40) truncated = true;
       }
@@ -310,11 +328,11 @@ exports.handler = async function(event, context) {
         // pass on only these CompanyCam list parameters (the Photos tab searches by name and pages through photos)
         const pq = new URLSearchParams({ per_page: String(Math.min(parseInt(qs.per_page, 10) || 100, 100)) });
         ['query', 'page', 'status'].forEach(function(k){ if (qs[k] != null && String(qs[k]).length < 200) pq.set(k, String(qs[k])); });
-        const rr = await fetch(`https://api.companycam.com/v2/${String(endpoint).replace(/^\/+/, '')}?${pq.toString()}`, {
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-        });
-        const rd = await rr.json();
-        return { statusCode: rr.status, headers, body: JSON.stringify(rd) };
+        /* patch CCS2: a CompanyCam 5xx (photos, notes, searches) is retried once before it reaches the page */
+        const gg = await require('./_lib/cc-api.js').getRetry(`https://api.companycam.com/v2/${String(endpoint).replace(/^\/+/, '')}?${pq.toString()}`, token);
+        if(!gg.r) return { statusCode: gg.status || 502, headers, body: JSON.stringify({ error: 'CompanyCam ' + gg.status, detail: gg.body || '' }) };
+        const rd = await gg.r.json();
+        return { statusCode: gg.status, headers, body: JSON.stringify(rd) };
       }
       const ccResp = await fetch(`https://api.companycam.com/v2/${endpoint}?per_page=50&status=${status}`, {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }

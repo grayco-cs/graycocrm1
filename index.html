@@ -38807,10 +38807,11 @@ window.gcCCIntegration = {
     try{
       var resp = await fetch('/.netlify/functions/companycam-webhook?proxy=api&endpoint=projects', { headers:{'x-cc-token':token} });
       if(!resp.ok){ resp = await fetch('https://api.companycam.com/v2/projects?per_page=5', { headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'} }); }
-      if(resp.ok){
-        var data = await resp.json();
-        var n = Array.isArray(data) ? data.length : (data.projects ? data.projects.length : '?');
-        if(statusEl){ statusEl.style.color='#2ecc71'; statusEl.innerHTML='✅ Connected! Your token works. Found '+n+' project(s).'; }
+      if(resp.ok && window._gcCCTruth){   /* patch CCS2: a 200 here proves nothing (the gate answers 200 too) — ask the one truth */
+        var tr = await window._gcCCTruth(true);
+        if(statusEl){ statusEl.style.color = tr.level === 'ok' ? '#2ecc71' : '#e74c3c'; statusEl.textContent = tr.text; }
+      } else if(resp.ok){
+        if(statusEl){ statusEl.style.color='#b45309'; statusEl.textContent='⚠ Not checked yet'; }
       } else {
         var t = await resp.text().catch(function(){return '';});
         if(statusEl){ statusEl.style.color='#e74c3c'; statusEl.innerHTML='❌ Token rejected ('+resp.status+'). Re-check your CompanyCam API token.'; }
@@ -85596,7 +85597,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     try{
       var r=await fetch('https://api.companycam.com/v2/projects?per_page=1',
         {headers:{'Authorization':'Bearer '+tk,'Content-Type':'application/json'}});
-      return r.ok;
+      return r.ok && !(window._gcCCGated && window._gcCCGated(r));   /* patch CCS2: the gate's empty 200 is not CompanyCam */
     }catch(e){ return false; }
   }
 
@@ -85681,7 +85682,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
       if(cur && await works(cur)){
         save(cur);
         running=false;
-        if(opts.loud) banner('✅ CompanyCam is connected and working.', '#166534');
+        if(opts.loud && window._gcCCTruth) window._gcCCTruth(true).then(function(tr){ banner(tr.text, tr.level === 'ok' ? '#166534' : '#b45309'); });   /* patch CCS2: only the one truth */
         return {ok:true, fixed:false};
       }
 
@@ -87811,7 +87812,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     try{
       var r=await fetch('/.netlify/functions/companycam-webhook?proxy=api&endpoint=projects&status=active',
         {headers:{'x-cc-token':tk}});
-      if(r.ok){
+      if(r.ok && !(window._gcCCGated && window._gcCCGated(r))){   /* patch CCS2 */
         var l=await r.json();
         if(Array.isArray(l)) return {ok:true, count:l.length, via:'your site'};
       }
@@ -87819,6 +87820,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
     try{
       var r2=await fetch('https://api.companycam.com/v2/projects?per_page=5',
         {headers:{'Authorization':'Bearer '+tk,'Content-Type':'application/json'}});
+      if(r2.ok && window._gcCCGated && window._gcCCGated(r2)) return {ok:false, status:0, gated:true};   /* patch CCS2: not CompanyCam's answer */
       if(r2.ok){
         var l2=await r2.json();
         return {ok:true, count:Array.isArray(l2)?l2.length:0, via:'CompanyCam directly'};
@@ -87889,12 +87891,16 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
           localStorage.setItem('gc_cc_token_backup', tk);
         }catch(e){}
         msg.style.color='#166534';
-        msg.innerHTML='✅ <b>Token works</b> — reached CompanyCam via '+r.via+' and found '+r.count+' project(s). Saved.<br>Jobs will start pulling in within a couple of minutes.';
+        msg.innerHTML='Saved in this browser. '+(window._gcCCTruth ? '' : '⚠ Not checked yet');   /* patch CCS2: no "works" claim without the server's /company proof */
+        if(window._gcCCTruth) window._gcCCTruth(true).then(function(tr){ msg.style.color = tr.level === 'ok' ? '#166534' : '#b45309'; msg.textContent = 'Saved in this browser. ' + tr.text + ' — the CRM uses the key on Netlify (COMPANYCAM_TOKEN).'; });
         try{ if(window._gcPullNewFromCC) setTimeout(function(){ window._gcPullNewFromCC(false); }, 1200); }catch(e){}
         setTimeout(function(){ try{ ov.remove(); }catch(e){} }, 4000);
       } else if(r.status===401 || r.status===403){
         msg.style.color='#b91c1c';
         msg.innerHTML='❌ CompanyCam rejected this token (HTTP '+r.status+'). It is expired, mistyped, or lacks permission.<br>Create a fresh one with <b>Read &amp; Write</b> and <b>Expiration: Never</b>. Nothing was saved.';
+      } else if(r.gated){   /* patch CCS2: this browser never talks to CompanyCam — the key belongs on Netlify */
+        msg.style.color='#b45309';
+        msg.innerHTML='⚠ Not checked yet — this browser does not call CompanyCam. Put the token in Netlify → Environment variables → <b>COMPANYCAM_TOKEN</b>, Trigger deploy, then press Test Connection. Nothing was saved.';
       } else {
         msg.style.color='#b45309';
         msg.innerHTML='⚠ Could not reach CompanyCam'+(r.status?(' (HTTP '+r.status+')'):'')+'. That is a connection problem, not the token. Nothing was saved — try again in a moment.';
@@ -92238,6 +92244,7 @@ window._gcCompanyCamStatus = async function(){
     var r=await fetch('https://api.companycam.com/v2/projects?per_page=1',
       {headers:{Authorization:'Bearer '+tok, Accept:'application/json'}});
     out.reachable=true;
+    if(r.ok && window._gcCCGated && window._gcCCGated(r)){ out.reachable=false; out.note='⚠ Not checked yet — this browser does not call CompanyCam (see the CompanyCam status line).'; console.log(out.note); return out; }   /* patch CCS2 */
     if(r.ok){
       var j=await r.json();
       out.projects=Array.isArray(j)?j.length:(j&&j.projects?j.projects.length:0);
@@ -100013,6 +100020,7 @@ async function ask(endpoint){
   try{
     var r=await fetch(FN+'?proxy=api&raw=1&endpoint='+encodeURIComponent(endpoint),
       {headers:{'x-cc-token':t}});
+    if(window._gcCCGated && window._gcCCGated(r)) return {status:0, body:'', message:'not asked — blocked in this browser (not a CompanyCam answer)'};   /* patch CCS2 */
     var txt=''; try{ txt=await r.text(); }catch(e){}
     var msg='';
     try{
@@ -110324,6 +110332,16 @@ function isCompanyCam(u){
 function isAppData(u){
   try{ return String(u||'').indexOf('/rest/v1/app_data') >= 0; }catch(e){ return false; }
 }
+/* patch CCS2: the CompanyCam gate's empty answer — marked, so no checker can read it as "the token works" */
+function emptyCC(){
+  try{
+    return Promise.resolve(new Response('[]', {status:200, headers:{'Content-Type':'application/json','X-GC-Gate':'blocked'}}));
+  }catch(e){
+    return Promise.resolve({ok:true, status:200, headers:{get:function(k){ return /x-gc-gate/i.test(String(k)) ? 'blocked' : null; }},
+      json:function(){ return Promise.resolve([]); }, text:function(){ return Promise.resolve('[]'); }});
+  }
+}
+window._gcCCGated = function(r){ try{ return !!(r && r.headers && typeof r.headers.get === 'function' && r.headers.get('X-GC-Gate') === 'blocked'); }catch(e){ return false; } };
 function emptyOk(){
   try{
     return Promise.resolve(new Response('[]', {status:200,
@@ -110536,7 +110554,7 @@ async function splitReadOnce(u, init){
        through since the key died.
 
        _gcCompanyCamOn(true) turns it back on the moment a new key is in. */
-    if(isCompanyCam(u) && !ccAllowed(u, init)){
+    if(isCompanyCam(u) && !ccAllowed(u, init)){   /* patch CCS2: answered empty AND marked X-GC-Gate: blocked (it is not CompanyCam's answer) */
       stats.cc++;
       if(stats.cc === 1){
         try{ console.log('%c[GC] Old CompanyCam code paths are answered empty here (they were the request '
@@ -110544,7 +110562,7 @@ async function splitReadOnce(u, init){
           +'💎 → New in CompanyCam. _gcCCStatus()',
           'background:#7c2d12;color:#fff;padding:3px 7px;font-weight:bold'); }catch(e){}
       }
-      return emptyOk();
+      return emptyCC();
     }
 
     if(isAppData(u)){
@@ -114185,7 +114203,7 @@ window._gcCCCheckStatus = function(force){
   lastAsked = Date.now();
   asking = call('?proxy=status').then(function(r){
     var st;
-    if (r.ok && r.data && typeof r.data.ok === 'boolean') st = { ok: r.data.ok, reason: s(r.data.reason), source: s(r.data.source), message: s(r.data.message), at: Date.now() };
+    if (r.ok && r.data && typeof r.data.ok === 'boolean') st = { ok: r.data.ok === true && r.data.verified === true, reason: s(r.data.reason), source: s(r.data.source), message: s(r.data.message), status: +r.data.status || 0, verified: r.data.verified === true, at: Date.now() };   /* patch CCS2: ok only with the /company proof */
     else if (r.status === 401 || r.status === 403) st = { ok: false, reason: 'sign_in', source: '', message: 'The server did not accept this sign-in (' + r.status + ').', at: Date.now() };
     else if (r.status === 404) st = { ok: false, reason: 'no_function', source: '', message: 'The CompanyCam connector is not on the site (404).', at: Date.now() };
     else st = { ok: false, reason: 'unreachable', source: '', message: 'Could not reach the server' + (r.status ? ' (' + r.status + ')' : '') + '.', at: Date.now() };
@@ -114741,7 +114759,7 @@ window._gcCCReviewFeed = function(list){
       g.sync = function(){ return openList(); };
       g.testConnection = function(){
         var el = document.getElementById('gc-cc-sync-status');
-        return window._gcCCCheckStatus(true).then(function(st){ if (el) { el.style.color = st.ok ? '#16a34a' : '#dc2626'; el.textContent = st.ok ? 'Connected — the server key works.' : ('Not working: ' + (st.message || st.reason)); } });
+        return window._gcCCCheckStatus(true).then(function(){ var tr = window._gcCCTruthNow ? window._gcCCTruthNow() : { level: 'wait', text: '⚠ Not checked yet' }; if (el) { el.style.color = tr.level === 'ok' ? '#16a34a' : '#dc2626'; el.textContent = tr.text; } });   /* patch CCS2 */
       };
     }
     if (!g && tries++ < 20) nST(go, 3000);
@@ -114753,8 +114771,9 @@ function when(sec){ if (!sec) return ''; var d = new Date(sec * 1000); return is
 function noticeHtml(){
   if (override === true) return '<div style="background:#fef9c3;border:1px solid #ca8a04;color:#713f12;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:700">CompanyCam is forced ON for this session (console).</div>';
   if (!state) return '<div style="background:#f1f5f9;border:1px solid #cbd5e1;color:#334155;border-radius:8px;padding:10px 12px;font-size:13px">Checking the CompanyCam key…</div>';
-  if (state.ok) return '<div id="_gcCCGreen" style="background:#dcfce7;border:1px solid #16a34a;color:#14532d;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:700">● CompanyCam connected'
-    + (state.source === 'env' ? ' — using the key stored on Netlify (COMPANYCAM_TOKEN).' : ' — but with a key saved in this browser. Move it to Netlify → Environment variables → COMPANYCAM_TOKEN.') + '</div>';
+  if (state.ok && state.verified) return '<div id="_gcCCGreen" style="background:#dcfce7;border:1px solid #16a34a;color:#14532d;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:700">'
+    + esc(window._gcCCTruthNow ? window._gcCCTruthNow().text : '⚠ Not checked yet')   /* patch CCS2: the one truth, with its time */
+    + (state.source === 'env' ? ' — the key stored on Netlify (COMPANYCAM_TOKEN).' : ' — but with a key saved in this browser. Move it to Netlify → Environment variables → COMPANYCAM_TOKEN.') + '</div>';
   var red = /refused|no_key/.test(state.reason || '');
   return '<div id="_gcCCRed" style="background:' + (red ? '#fee2e2' : '#fef3c7') + ';border:2px solid ' + (red ? '#dc2626' : '#d97706') + ';color:' + (red ? '#7f1d1d' : '#78350f') + ';border-radius:8px;padding:11px 13px;font-size:13.5px">'
     + '<b>' + (red ? 'CompanyCam key needs replacing — Netlify → Environment variables → COMPANYCAM_TOKEN' : 'CompanyCam is not answering right now') + '</b>'
@@ -165197,24 +165216,57 @@ function poll(force){
   }, function(){ H.err = 'could not reach the server'; }).then(function(){ H.at = Date.now(); H.busy = false; paint(); return H; });
 }
 
-/* ── one line: { ok, text } ── */
+/* ── one line: { ok, text } ── patch CCS2: ONE truth for the token. "✅ Token accepted (checked 11:42 PM)" only after a
+   real GET /v2/company answered 200 with the company record (the server's ?proxy=status check, or the sync's own
+   check, recorded in gc_kv gc_cc_whoami); "❌ Token not accepted (401/403)"; "⚠ Not checked yet". The projects list is
+   its own line ("⚠ CompanyCam error 500 on projects"). */
+function clock(t){ try { return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } }
+function truthRec(){
+  var w = H.data && H.data.whoami, st = (W._gcCCStatus && W._gcCCStatus().state) || null, c = [];
+  if (w && w.at && (w.accepted === true || w.accepted === false)) c.push({ at: Date.parse(w.at) || 0, accepted: w.accepted, status: +w.status || 0 });
+  if (st && st.at && (st.verified === true || st.status === 401 || st.status === 403)) c.push({ at: +st.at, accepted: st.verified === true, status: +st.status || 0 });
+  c.sort(function(a, b){ return b.at - a.at; });
+  return c[0] || null;
+}
+function projErr(){
+  var h = H.data && H.data.health; if (!h) return 0;
+  if (h.ok) return 0;
+  var n = +(h.ccError && h.ccError.status) || +h.httpStatus || 0;
+  return n >= 500 ? n : 0;
+}
+function truthNow(){
+  var t = truthRec(), pe = projErr(), tok;
+  if (t && t.accepted === true) tok = { level: 'ok', text: '✅ Token accepted (checked ' + clock(t.at) + ')' };
+  else if (t && t.accepted === false) tok = { level: 'bad', text: '❌ Token not accepted (' + (t.status || 401) + ')' };
+  else tok = { level: 'wait', text: '⚠ Not checked yet' };
+  if (pe) return { level: tok.level === 'bad' ? 'bad' : 'warn', text: tok.text + ' · ⚠ CompanyCam error ' + pe + ' on projects', token: tok.level };
+  tok.token = tok.level; return tok;
+}
+W._gcCCTruthNow = truthNow;
+W._gcCCTruth = function(force){
+  var a = (force && W._gcCCCheckStatus) ? W._gcCCCheckStatus(true) : Promise.resolve();
+  return Promise.resolve(a).then(function(){ return poll(true); }, function(){ return poll(true); }).then(function(){ paint(); return truthNow(); });
+};
 function judge(){
-  var d = H.data, h = d && d.health, key = (W._gcCCStatus && W._gcCCStatus().state) || null;
+  var d = H.data, h = d && d.health;
   if (!d) return H.err ? { ok: false, text: '⚠ CompanyCam sync status unknown — ' + H.err } : { ok: null, text: 'CompanyCam sync: checking…' };
   if (!d.tokenSet && (!h || /COMPANYCAM_TOKEN/.test(s(h.skipped)) || !h.ok))
     return { ok: false, text: '⚠ CompanyCam token not set in Netlify — nothing syncs and GrayCo Photos stays empty. Add it: ' + HOW + '.' };
+  var tr = truthNow(), tokenOk = tr.token === 'ok', pre = tr.text.split(' · ')[0] + ' · ', line;
+  if (tr.token === 'bad') return { ok: false, text: pre + 'make a new token in CompanyCam (Settings → Access tokens) and paste it into ' + HOW + '.' };
   if (!h) {
-    if (d.serviceKey === false) return { ok: false, text: '⚠ No CompanyCam sync run recorded — SUPABASE_SERVICE_KEY is not set in Netlify, so the 15-minute sync cannot run.' };
-    return { ok: false, text: '⚠ No CompanyCam sync run recorded yet — it runs every 15 minutes after a deploy (Netlify → Deploys → Trigger deploy if it never has).' };
+    if (d.serviceKey === false) return { ok: false, text: pre + '⚠ No CompanyCam sync run recorded — SUPABASE_SERVICE_KEY is not set in Netlify, so the 15-minute sync cannot run.' };
+    return { ok: false, text: pre + '⚠ No CompanyCam sync run recorded yet — it runs every 15 minutes after a deploy (Netlify → Deploys → Trigger deploy if it never has).' };
   }
-  var age = Date.now() - (Date.parse(h.at) || 0), at = when(h.at);
-  if (/COMPANYCAM_TOKEN/.test(s(h.skipped))) return { ok: false, text: '⚠ Last sync ' + at + ': the token was not set then. It is set now — the next 15-minute run will pick it up (or Trigger deploy).' };
-  if (h.skipped) return { ok: false, text: '⚠ Last sync ' + at + ' skipped: ' + s(h.skipped) + ' (Netlify environment variables).' };
-  if (h.httpStatus === 401 || h.httpStatus === 403 || (key && key.reason === 'refused'))
-    return { ok: false, text: '⚠ CompanyCam refused the token (' + (h.httpStatus || 401) + '): make a new token in CompanyCam (Settings → Access tokens) and paste it into ' + HOW + '.' };
-  if (h.error) return { ok: false, text: '⚠ Last sync ' + at + ' failed: ' + s(h.error) };
-  if (age > STALE) return { ok: false, text: '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
-  return { ok: true, text: 'Last sync: ' + at + ' — OK, ' + (+h.read || 0) + ' project' + (+h.read === 1 ? '' : 's') + ' read, ' + (+h.made || 0) + ' job' + (+h.made === 1 ? '' : 's') + ' made' };
+  var age = Date.now() - (Date.parse(h.at) || 0), at = when(h.at), shape = h.tokenShape && h.tokenShape.malformed ? ' (the token in Netlify had extra spaces, quotes or "Bearer " — cleaned automatically; re-paste it when you can)' : '';
+  if (/COMPANYCAM_TOKEN/.test(s(h.skipped))) return { ok: false, text: pre + '⚠ Last sync ' + at + ': the token was not set then. It is set now — the next 15-minute run will pick it up (or Trigger deploy).' };
+  if (h.skipped) return { ok: false, text: pre + '⚠ Last sync ' + at + ' skipped: ' + s(h.skipped) + ' (Netlify environment variables).' };
+  if (projErr()) return { ok: false, text: tr.text + ' (last try ' + at + ' — the CRM tries again every 15 minutes)' + shape };
+  if (h.error) return { ok: false, text: pre + '⚠ Last sync ' + at + ' failed: ' + s(h.error) + shape };
+  if (age > STALE) return { ok: false, text: pre + '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
+  line = 'Last sync: ' + at + ' — OK, ' + (+h.read || 0) + ' project' + (+h.read === 1 ? '' : 's') + ' read, ' + (+h.made || 0) + ' job' + (+h.made === 1 ? '' : 's') + ' made';
+  if (h.ccError && +h.ccError.status >= 500) line += ' · CompanyCam had a server error (' + h.ccError.status + ') — retried another way';
+  return { ok: tokenOk ? true : null, text: pre + line + shape };
 }
 
 /* ── painting: only when something changed (no idle churn) ── */

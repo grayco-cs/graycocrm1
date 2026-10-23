@@ -132,22 +132,45 @@ async function rsNear(address){
 
 /* ── CompanyCam ── */
 function ccHeaders(t){ return { Authorization: 'Bearer ' + t, Accept: 'application/json' }; }
-/* every project changed since `since`, all pages; complete=false when a page failed (the cursor then stays) */
+/* patch CCS2: what this run learned about CompanyCam (copied into gc_cc_sync_health; never the token) */
+let DIAG = { attempts: [] };
+/* every project changed since `since`, all pages; complete=false when a page failed (the cursor then stays).
+   patch CCS2 — per CompanyCam's v2 spec modified_since is ISO8601 (it was sent as unix seconds) and the list comes
+   "sorted by most recent activity first". A 5xx is retried once; if page 1 still fails: per_page 25, then no filter at
+   all (newest first, stop at the first page with nothing changed since). 401 / 403 / 404 stop at once. */
+const VARIANTS = [{ name: 'iso50', per: PER_PAGE, filter: true }, { name: 'iso25', per: 25, filter: true }, { name: 'nofilter', per: PER_PAGE, filter: false }];
 async function listChanged(token, since){
-  const out = []; let complete = true, pages = 0;
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const r = await fetch(CC_API + '/projects?per_page=' + PER_PAGE + '&page=' + page + '&modified_since=' + since, { headers: ccHeaders(token) });
-    if (!r.ok) { if (page === 1) throw Object.assign(new Error('CompanyCam answered ' + r.status), { status: r.status }); complete = false; break; }
-    const chunk = await r.json(); pages = page;
-    if (!Array.isArray(chunk) || !chunk.length) break;
-    chunk.forEach(p => { if (p && p.id != null) out.push(compact(p)); });
-    if (chunk.length < PER_PAGE) break;
-    if (page === MAX_PAGES) complete = false;
+  const CCA = require('./_lib/cc-api.js'), iso = CCA.isoOf(since);
+  let firstErr = null;
+  for (const v of VARIANTS) {
+    const out = []; let complete = true, pages = 0, retried = false, failed = null;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const g = await CCA.getRetry(CC_API + '/projects?per_page=' + v.per + '&page=' + page + (v.filter ? '&modified_since=' + encodeURIComponent(iso) : ''), token);
+      if (g.retried) retried = true;
+      if (!g.r) { if (page === 1) failed = g; else complete = false; break; }
+      const chunk = await g.r.json(); pages = page;
+      if (!Array.isArray(chunk) || !chunk.length) break;
+      let fresh = 0;
+      chunk.forEach(p => { if (p && p.id != null) { const c = compact(p); if (v.filter || Math.max(c.updated_at || 0, c.created_at || 0) >= since) { out.push(c); fresh++; } } });
+      if (!v.filter && !fresh) break;
+      if (chunk.length < v.per) break;
+      if (page === MAX_PAGES) complete = false;
+    }
+    if (failed) {
+      if (!firstErr) firstErr = failed;
+      DIAG.attempts.push({ variant: v.name, status: failed.status, retried: !!failed.retried });
+      if (failed.status && failed.status < 500 && failed.status !== 400 && failed.status !== 422) break;   /* the token or the URL: no other form helps */
+      continue;
+    }
+    DIAG.variant = v.name; DIAG.retried = retried; DIAG.attempts.push({ variant: v.name, status: 200, retried });
+    if (firstErr) DIAG.ccError = { status: firstErr.status, body: firstErr.body || '' };
+    const seen = {}, list = [];
+    out.forEach(p => { if (!seen[p.id]) { seen[p.id] = 1; list.push(p); } });
+    list.sort((a, b) => (b.created_at - a.created_at) || (b.updated_at - a.updated_at));   /* newest first */
+    return { list, complete, pages, variant: v.name };
   }
-  const seen = {}, list = [];
-  out.forEach(p => { if (!seen[p.id]) { seen[p.id] = 1; list.push(p); } });
-  list.sort((a, b) => (b.created_at - a.created_at) || (b.updated_at - a.updated_at));   /* newest first */
-  return { list, complete, pages };
+  DIAG.ccError = { status: firstErr.status, body: firstErr.body || '' };
+  throw Object.assign(new Error('CompanyCam answered ' + firstErr.status), { status: firstErr.status });
 }
 async function ccUser(token, id){
   try { const r = await fetch(CC_API + '/users/' + encodeURIComponent(id), { headers: ccHeaders(token) }); if (!r.ok) return null; return await r.json(); } catch (e) { return null; }
@@ -224,9 +247,13 @@ function jobFor(p, pm, note, nowIso, senior){
 /* ── one run ── */
 async function run(opts){
   opts = opts || {};
-  const token = s(process.env.COMPANYCAM_TOKEN), e = sbEnv();
+  const CCA = require('./_lib/cc-api.js'), ct = CCA.cleanToken(process.env.COMPANYCAM_TOKEN), token = ct.token, e = sbEnv();   /* patch CCS2: spaces / quotes / "Bearer " cleaned */
+  DIAG = { attempts: [] };
+  if (process.env.COMPANYCAM_TOKEN != null && String(process.env.COMPANYCAM_TOKEN).length) DIAG.tokenShape = ct.shape;
   if (!token) return { ok: false, skipped: 'COMPANYCAM_TOKEN is not set' };
   if (!e.url || !e.key) return { ok: false, skipped: 'SUPABASE_URL / SUPABASE_SERVICE_KEY are not set' };
+  DIAG.whoami = await CCA.whoami(token);   /* is the token accepted at all (separate from the projects list)? */
+  await CCA.saveWhoami(DIAG.whoami);
   const nowIso = new Date().toISOString();
   const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', 'gc_senior_pm', 'gc_lead_inbox', STATE_KEY]);
   const seniorU = require('./_lib/people.js').seniorPm(kv.users, kv.gc_senior_pm), senior = seniorU ? s(seniorU.name) : '';   /* patch PMG */
@@ -335,11 +362,22 @@ function healthOf(r, err){
     h.error = String(err && err.message || err).replace(/Bearer\s+\S+/gi, 'Bearer ...').slice(0, 200);
     if (err && +err.status) h.httpStatus = +err.status;
     else { const m = /CompanyCam answered (\d{3})/.exec(h.error); if (m) h.httpStatus = +m[1]; }
-    return h;
+    return withDiag(h);
   }
   r = r || {};
-  if (r.skipped) { h.skipped = String(r.skipped); h.tokenSet = !/COMPANYCAM_TOKEN/.test(h.skipped); return h; }
+  if (r.skipped) { h.skipped = String(r.skipped); h.tokenSet = !/COMPANYCAM_TOKEN/.test(h.skipped); return withDiag(h); }
   h.ok = r.ok !== false; h.read = +r.read || 0; h.made = (r.made || []).length; h.pmFixed = (r.pmFixed || []).length; h.complete = r.complete !== false;
+  return withDiag(h);
+}
+/* patch CCS2: + which request form worked, CompanyCam's own error text, the /company check, the token's shape */
+function withDiag(h){
+  const d = DIAG || {};
+  if (d.variant) h.variant = d.variant;
+  if (d.retried) h.retried = true;
+  if (d.attempts && d.attempts.length) h.attempts = d.attempts.slice(0, 6);
+  if (d.ccError) h.ccError = { status: +d.ccError.status || 0, body: String(d.ccError.body || '').slice(0, 200) };
+  if (d.whoami) { h.tokenAccepted = d.whoami.accepted; h.whoamiStatus = d.whoami.status; if (d.whoami.company) h.company = d.whoami.company; }
+  if (d.tokenShape) h.tokenShape = d.tokenShape;
   return h;
 }
 async function saveHealth(h){
