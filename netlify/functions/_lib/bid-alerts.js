@@ -71,7 +71,7 @@ function make(d){
       bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc), detail: s(it.detail).slice(0, 300),
       dueToCompany: s(it.dueToCompany), dueToContact: s(it.dueToContact), dueToEmail: s(it.dueToEmail), dueToPhone: s(it.dueToPhone), submitMethod: s(it.submitMethod), submitWhere: s(it.submitWhere),
       dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: GONE[low(assignee)] || (assigneeEmail && GONE[assigneeEmail]) ? '' : (assigneeEmail || emailOf(assignee)), assignedBy: s(it.assignedBy),   /* patch PMG: never to someone who has left */
-      coEmails: arr(it.coAssignees).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead */
+      coEmails: require('./lead-roles.js').coList(it).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead; patch SPAMROLE: the Senior Roofing PM only on a roofing bid */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
       website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };

@@ -53,7 +53,27 @@ function classify(l, isBid){
 }
 /* the second person a lead also goes to: the Senior Roofing PM on a commercial roofing bid, and on a restoration lead
    that is about a roof (storm / water + roof) — they get its alerts and reminders too */
-function coRole(l, kind){ return (kind === 'bid' || kind === 'insurance') && isRoofing(l) ? 'roofing' : ''; }
+/* patch SPAMROLE (owner 10/23: "he shouldn't get any of those unless they are roofing"): only a commercial ROOFING bid
+   adds the Senior Roofing PM; an insurance / restoration lead stays the Senior Insurance PM's alone */
+function coRole(l, kind){ return kind === 'bid' && roofBid(l) ? 'roofing' : ''; }
+/* a bid that IS roofing work: its type says roofing, its title / subject names a roof job (not rooftop units, roof
+   drains, hatches…), or every trade / bid package it asks for is roofing. "Roof" somewhere in a whole-building
+   invite does not make it a roofing bid. */
+const ROOF_EXCL = /\broof\s?-?top\s+(units?|equipment|hvac|mechanical|chillers?)|\brtus?\b|\broof\s+(drains?|hatch(es)?|access|ladders?|curbs?|penetrations?|screens?)/ig;
+const ROOF_TRADE = /roof|shingle|gutter/i;
+function roofBid(l){
+  if (!l) return false;
+  if (/roof|shingle/.test(low(l.leadKind || l.type))) return true;
+  const direct = s(l.origin) === 'website' || !!l.websiteLead || !!(l.leadExtra && l.leadExtra.websiteLead) || /^(referral|partner|phone|walk-?in)$/i.test(s(l.origin));   /* a customer's own request (the website's commercial form): their words count */
+  const head = [l.title, l.name, l.subject, l.service].concat(direct ? [l.message, l.scope, l.leadExtra && l.leadExtra.message] : []).map(s).join(' | ').replace(ROOF_EXCL, ' ');
+  if (ROOF_TEXT.test(head)) return true;
+  const tr = arr(l.trades).map(s).filter(Boolean);
+  return tr.length > 0 && tr.every(t => ROOF_TRADE.test(t));
+}
+/* the lead's second people as the alerts / scope see them: an automatic Senior Roofing PM entry counts only while the
+   lead is a roofing bid (older leads got one for any "roof" in the text, or for a storm / water lead) */
+function insLead(l){ return !!l && (s(l.leadRole) === 'insurance' || !!l.isInsurance || !!l.claimId || !!l.claimNumber || INS_TYPE.test(low(l.leadKind || l.type))); }
+function coList(l){ return arr(l && l.coAssignees).filter(c => c && (c.role !== 'roofing' || (roofBid(l) && !insLead(l)))); }
 /* roofing work, whatever the type (a commercial roofing bid too) */
 function isRoofing(l){ return !!l && (/roof|shingle/.test(low(l.leadKind || l.type)) || ROOF_TEXT.test(textOf(l))); }
 function isActive(u){
@@ -104,7 +124,7 @@ function scopeFor(person, team, users){
 function assignedTo(l, p){
   const me = low(p && p.email), nm = low(p && p.name); if (!me && !nm) return false;
   const hit = v => { v = low(v); return !!v && (v === me || v === nm); };
-  return [l.pm, l.estimator, l.apm, l.assignee, l.assignedTo, l.pmEmail, l.estimatorEmail].some(hit) || arr(l.coAssignees).some(c => c && (hit(c.name) || hit(c.email)));
+  return [l.pm, l.estimator, l.apm, l.assignee, l.assignedTo, l.pmEmail, l.estimatorEmail].some(hit) || coList(l).some(c => c && (hit(c.name) || hit(c.email)));   /* patch SPAMROLE */
 }
 function inScope(l, scope, person, isBid){
   if (!l) return false;
@@ -113,7 +133,7 @@ function inScope(l, scope, person, isBid){
   const k = classify(l, isBid);
   if (scope === 'bids') return k === 'bid';
   if (scope === 'insurance') return k === 'insurance';
-  if (scope === 'roofing') return k === 'roofing' || isRoofing(l);
+  if (scope === 'roofing') return k === 'roofing' || (k === 'bid' ? roofBid(l) : isRoofing(l));   /* patch SPAMROLE: a bid only when it is a roofing bid */
   return false;
 }
-module.exports = { ROLES, classify, coRole, isRoofing, holder, state, roleSetting, scopeFor, inScope, assignedTo, TEAM_KEY: 'gc_team_settings' };
+module.exports = { ROLES, classify, coRole, isRoofing, roofBid, coList, holder, state, roleSetting, scopeFor, inScope, assignedTo, TEAM_KEY: 'gc_team_settings' };

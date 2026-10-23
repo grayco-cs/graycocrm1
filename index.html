@@ -159211,7 +159211,22 @@ function lrClassify(l){
 }
 function lrNotIns(l){ return l.isInsurance === false || l.insuranceClaim === false || /^(no|false|none)$/i.test(s(l.insurance)) || /^(no|false|none)$/i.test(s(l.leadExtra && l.leadExtra.insurance)); }
 /* the second person: the Senior Roofing PM on a commercial roofing bid and on a storm / water lead about a roof */
-function lrCoRole(l, kind){ return (kind === 'bid' || kind === 'insurance') && lrIsRoofing(l) ? 'roofing' : ''; }
+/* patch SPAMROLE (owner 10/23): only a commercial ROOFING bid adds the Senior Roofing PM (same as _lib/lead-roles.js);
+   an insurance / restoration lead stays the Senior Insurance PM's alone */
+function lrCoRole(l, kind){ return kind === 'bid' && lrRoofBid(l) ? 'roofing' : ''; }
+var LR_ROOF_EXCL = /\broof\s?-?top\s+(units?|equipment|hvac|mechanical|chillers?)|\brtus?\b|\broof\s+(drains?|hatch(es)?|access|ladders?|curbs?|penetrations?|screens?)/ig, LR_ROOF_TRADE = /roof|shingle|gutter/i;
+function lrRoofBid(l){
+  if (!l) return false;
+  if (/roof|shingle/.test(low(l.leadKind || l.type))) return true;
+  var direct = s(l.origin) === 'website' || !!l.websiteLead || !!(l.leadExtra && l.leadExtra.websiteLead) || /^(referral|partner|phone|walk-?in)$/i.test(s(l.origin));   /* a customer's own request: their words count */
+  var head = [l.title, l.name, l.subject, l.service].concat(direct ? [l.message, l.scope, l.leadExtra && l.leadExtra.message] : []).map(function(v){ return s(v); }).join(' | ').replace(LR_ROOF_EXCL, ' ');
+  if (LR_ROOF_TEXT.test(head)) return true;
+  var tr = arr(l.trades).map(function(v){ return s(v); }).filter(Boolean);
+  return tr.length > 0 && tr.every(function(t){ return LR_ROOF_TRADE.test(t); });
+}
+/* the second people that count: an automatic Senior Roofing PM entry only while the lead is a roofing bid */
+function lrInsLead(l){ return !!l && (s(l.leadRole) === 'insurance' || !!l.isInsurance || !!l.claimId || !!l.claimNumber || LR_INS_TYPE.test(low(l.leadKind || l.type))); }
+function lrCoList(l){ return arr(l && l.coAssignees).filter(function(c){ return c && (c.role !== 'roofing' || (lrRoofBid(l) && !lrInsLead(l))); }); }
 function lrIsRoofing(l){ return !!l && (/roof|shingle/.test(low(l.leadKind || l.type)) || LR_ROOF_TEXT.test(lrText(l))); }
 function lrSetting(kind){ var r = LR_ROLES[kind], ts = teamSettings(), h = r && ts.leadRoles && ts.leadRoles[r.key]; return h && (s(h.email) || s(h.name)) ? h : null; }
 function lrUser(kind){ var h = lrSetting(kind); return h ? (h.id && findUser(h.id)) || (h.email && findUser(h.email)) || findUser(h.name) : null; }
@@ -159231,7 +159246,7 @@ function setLeadRole(kind, key){
 }
 W._gcLeadRoles = {
   text: lrText,   /* patch LCLEAN: the lead's words, for the Leads hub's type filter */
-  ROLES: LR_ROLES, classify: lrClassify, coRole: lrCoRole, isRoofing: lrIsRoofing, holder: lrHolder, state: lrState, set: setLeadRole,
+  ROLES: LR_ROLES, classify: lrClassify, coRole: lrCoRole, isRoofing: lrIsRoofing, roofBid: lrRoofBid, coList: lrCoList, holder: lrHolder,   /* patch SPAMROLE: roofBid, coList */ state: lrState, set: setLeadRole,
   /* a lead whose person is the role holder its type routes to — an automatic assignment, not an "Assign this lead" */
   autoOk: function(l){ var k = lrClassify(l), h = k ? lrHolder(k) : null; if (!h || !l) return false; return low(k === 'bid' ? l.estimator : l.pm) === low(h.name) && !(k === 'bid' && s(l.pm)); },
   /* the role holder may reassign the leads of their area */
@@ -163076,13 +163091,13 @@ function myScope(){
   var v = scopeForLabel(label, myName(), myEmail()); v.label = label; SCOPE_MEMO = { at: Date.now(), key: key, v: v }; return v;
 }
 function mineL(l){ var me = low(myName()), em = myEmail(), hit = function(v){ v = low(v); return !!v && (v === me || v === em); };
-  return [l.pm, l.estimator, l.apm, l.assignee, l.assignedTo, l.pmEmail, l.estimatorEmail].some(hit) || arr(l.coAssignees).some(function(c){ return c && (hit(c.name) || hit(c.email)); }); }
+  return [l.pm, l.estimator, l.apm, l.assignee, l.assignedTo, l.pmEmail, l.estimatorEmail].some(hit) || ((W._gcLeadRoles && W._gcLeadRoles.coList) ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).some(function(c){ return c && (hit(c.name) || hit(c.email)); }); }   /* patch SPAMROLE */
 function inScopeFor(l, sc){
   if (!l) return false; if (sc.kind === 'all') return true; if (mineL(l)) return true;
   var R = W._gcLeadRoles || {}, k = ''; try { k = R.classify ? R.classify(l) : ''; } catch (e) {}
   if (sc.kind === 'bids') return k === 'bid' || isBidL(l);
   if (sc.kind === 'insurance') return k === 'insurance';
-  if (sc.kind === 'roofing') { var r = false; try { r = R.isRoofing ? !!R.isRoofing(l) : false; } catch (e) {} return k === 'roofing' || r; }
+  if (sc.kind === 'roofing') { var r = false; try { r = k === 'bid' ? (R.roofBid ? !!R.roofBid(l) : false) : (R.isRoofing ? !!R.isRoofing(l) : false); } catch (e) {} return k === 'roofing' || r; }   /* patch SPAMROLE: a bid only when it is a roofing bid */
   return false;
 }
 function inScope(l){ return inScopeFor(l, myScope()); }
@@ -163715,7 +163730,7 @@ function drawerHtml(l){
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     /* assign */
-    + '<section><h4>👤 Assigned to</h4>' + (arr(l.coAssignees).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + arr(l.coAssignees).map(function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
+    + '<section><h4>👤 Assigned to</h4>' + ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
     /* contact */
     + '<section><h4>Contact</h4><div class="kv">' + esc(c.name || '—') + (c.phone ? ' · ' + esc(c.phone) : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div><div class="row">'
     + (c.phone ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="call" href="tel:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a><a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="text" href="sms:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">💬 Text</a>' : '')
@@ -163872,7 +163887,7 @@ function coOf(l){
   var p = LR.holder('roofing'); if (!p || low(p.name) === low(assignee(l))) return null;
   return arr(l.coAssignees).some(function(c){ return c && (low(c.email) === low(p.email) || low(c.name) === low(p.name)); }) ? null : p;
 }
-function isCo(l){ var me = low(myName()), em = myEmail(); return arr(l && l.coAssignees).some(function(c){ return c && ((me && low(c.name) === me) || (em && low(c.email) === em)); }); }
+function isCo(l){ var me = low(myName()), em = myEmail(); return ((W._gcLeadRoles && W._gcLeadRoles.coList) ? W._gcLeadRoles.coList(l) : arr(l && l.coAssignees)).some(   /* patch SPAMROLE */function(c){ return c && ((me && low(c.name) === me) || (em && low(c.email) === em)); }); }
 function autoAssignBids(force){
   if (AUTO_BUSY) return Promise.resolve(0);
   if (!(isAdmin() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.amHolder && W._gcLeadRoles.amHolder()))) { AUTO_LAST = { why: 'not admin / estimator / role holder' }; return Promise.resolve(0); }

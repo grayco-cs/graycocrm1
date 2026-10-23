@@ -222,7 +222,7 @@ function build(src, opts){
       try {
         const LRS = require('./lead-roles.js'), sc = LRS.scopeFor(me, src.gc_team_settings, src.users);
         if (sc === 'insurance' || sc === 'roofing') {
-          const un = leads.filter(function(l){ return !leadWho(l).length && !arr(l.coAssignees).length && LRS.inScope(l, sc, me, isBid); });
+          const un = leads.filter(function(l){ return !leadWho(l).length && !LRS.coList(l).length && LRS.inScope(l, sc, me, isBid)   /* patch SPAMROLE */; });
           if (un.length) add('scope:' + sc + ':' + day, 'leads', (sc === 'insurance' ? '🛡 ' : '🏠 ') + un.length + ' new ' + (sc === 'insurance' ? 'insurance / restoration' : 'roofing') + ' lead' + (un.length > 1 ? 's' : '') + ' nobody is on yet', { tab: 'leads' });
         }
       } catch (e) {}
