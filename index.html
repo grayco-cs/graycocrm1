@@ -58178,15 +58178,52 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
   // Use the SAME table + live creds as the rest of the CRM (app_data), not a separate gc_kv table.
   function creds(){ return { u:(localStorage.getItem('grayco_sb_url')||SB), k:(localStorage.getItem('grayco_sb_key')||sbKey()) }; }
+  function rawPush(k, val){
+    var cr=creds(); if(!cr.k) return Promise.resolve(false);
+    return fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?on_conflict=key',{ method:'POST',
+      headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify({key:k, value:val, updated_at:new Date().toISOString()}) }).then(function(r){ return !!(r&&r.ok); }, function(){ return false; });
+  }
+  /* patch SYNCQ2: the to-do list is MERGED with the cloud copy before it goes up (it used to be uploaded as-is, so a
+     computer that had not pulled yet erased another person's new to-do). Only this computer's own removals (to-dos it
+     sent before and no longer has) and tombstoned ones leave the list. If the cloud can't be read, nothing is sent. */
+  var _pushChain=Promise.resolve();
+  function mergedPush(k){
+    var local=localStorage.getItem(k); if(local==null) return Promise.resolve(false);
+    var cr=creds(); if(!cr.k) return Promise.resolve(false);
+    return fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(k)+'&select=value',{headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k}})
+      .then(function(r){ if(!r||!r.ok) throw new Error('cloud read '+(r&&r.status)); return r.json(); })
+      .then(function(rows){
+        var cloud=(Array.isArray(rows)&&rows.length)?rows[0].value:null;
+        if(cloud!=null && typeof cloud!=='string'){ try{ cloud=JSON.stringify(cloud); }catch(e){ cloud=null; } }
+        /* a to-do is deleted by marking it (deleted / done, with a newer stamp) — never by leaving it out, so nothing
+           another person (or another part of this computer) added can be dropped here; tombstoned ones stay out */
+        var tomb={}; try{ tomb=JSON.parse(localStorage.getItem('gc_tombstones')||'{}')||{}; }catch(e){ tomb={}; }
+        var merged=mergeTaskLists(local, cloud).filter(function(x){ return !(x && x.id && tomb[k+':'+x.id]); });
+        var mergedRaw=JSON.stringify(merged);
+        return rawPush(k, mergedRaw).then(function(ok){
+          if(!ok) throw new Error('cloud write refused');
+          var cur=localStorage.getItem(k);
+          if(cur===local && mergedRaw!==local){
+            try{ localStorage.setItem(k, mergedRaw); }catch(e){}
+            try{ if(window._gcApplySync) window._gcApplySync(k, merged); }catch(e){}
+          }
+          return true;
+        });
+      });
+  }
   function push(k){
     try{
-      var val=localStorage.getItem(k); if(val==null) return;
-      var cr=creds(); if(!cr.k) return;
-      fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?on_conflict=key',{ method:'POST',
-        headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
-        body:JSON.stringify({key:k, value:val, updated_at:new Date().toISOString()}) }).catch(function(){});
+      if(localStorage.getItem(k)==null) return;
+      if(k!=='gc_office_tasks'){ rawPush(k, localStorage.getItem(k)); return; }    /* the category order: a list of names, as before */
+      _pushChain=_pushChain.then(function(){
+        window.__gcOTPush={ state:'pushing', at:Date.now() };
+        return Promise.race([ mergedPush(k), new Promise(function(res, rej){ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, function(){ rej(new Error('timed out')); }, 10000); }) ]);
+      }).then(function(){ _dirty=false; window.__gcOTPush={ state:'sent', at:Date.now() }; }, function(e){ _dirty=true; window.__gcOTPush={ state:'retry: '+String(e&&e.message||e), at:Date.now() }; });   /* not sent: tried again shortly */
     }catch(e){}
   }
+  var _dirty=false;
+  (window.__GC_NATIVE_SETINTERVAL__||setInterval).call(window, function(){ if(_dirty){ _dirty=false; push('gc_office_tasks'); } }, 15000);
   // MERGE, never overwrite. The old version replaced this computer's task list
   // with the cloud copy wholesale — so if the office manager ticked a task done
   // and the cloud still held the older copy, the next pull (every 60s) silently
@@ -62997,7 +63034,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         if(!ot.some(function(t){ return t && t.pid===pid && t._noContract && !t.done; })){
           ot.push({ id:'OT'+Date.now(), label:'Upload signed contract for "'+name+'"', note:'Job moved to active without a signed contract.', addedBy:'System', _noContract:true, pid:pid, done:false, at:when });
           localStorage.setItem(OK, JSON.stringify(ot));
-          try{ if(window._supaUpsertNow) window._supaUpsertNow(OK, JSON.stringify(ot)); }catch(e){}
+          try{ if(window._gcOfficeTasksPush) window._gcOfficeTasksPush(); else if(window._supaUpsertNow) window._supaUpsertNow(OK, JSON.stringify(ot)); }catch(e){}   /* patch SYNCQ2: merged push */
         }
       }catch(e){}
 
@@ -65041,7 +65078,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
           if(!lc) return (cloud === undefined || cloud === null) ? v : v;
           var mine = {}; idsOf(lv.list).forEach(function(id){ mine[id] = 1; });
           var gone = {};
-          if(!item.recover) (BASE[key] || []).forEach(function(id){ if(!mine[id]) gone[id] = 1; });   /* this caller deleted it */
+          /* patch SYNCQ2: nothing is removed by being left out (deletes are tombstones) — a list another part of this
+             computer sent without a record used to erase it from the cloud */
           var merged = tomb(key, union(key, lv.list, lc.list).filter(function(r){ return !(r && r.id!=null && gone[String(r.id)]); }));
           return lc.text ? JSON.stringify(merged) : merged;
         });
