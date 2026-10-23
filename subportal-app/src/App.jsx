@@ -21,6 +21,8 @@ import logoUrl from './grayco-logo.png';
    ============================================================ */
 const T = {
   en: {
+    addenda: 'Addenda', addendumN: 'Addendum #', acknowledge: 'Acknowledge addendum #', acknowledged: 'Acknowledged', dueChangedTo: 'Bid due date changed to', wasDue: 'was',
+    ackBy: 'Acknowledged by', notAckYet: 'Not acknowledged yet', updatesFromGrayCo: 'Updates from GrayCo', currentSet: 'CURRENT', versionL: 'Version', planLinks: 'Plan room links', openLink: 'Open link',
     questions: 'Questions', askQuestion: 'Ask GrayCo a question', questionsDue: 'Questions due by', yourQuestion: 'Your question', answerFromGrayCo: "GrayCo's answer", sendQuestion: 'Send question',
     noQuestions: 'No questions yet.', answerPrivately: 'Answer privately', answerAll: 'Answer to all bidders', approveNotice: 'Approve & e-mail all bidders', noticeSent: 'E-mailed to all bidders',
     noticeWaiting: 'Answer to all bidders — waiting for approval before it is e-mailed', attachPlan: 'Attach a photo or a marked-up plan page', waitingAnswer: 'Waiting for GrayCo\'s answer',
@@ -311,6 +313,8 @@ const T = {
     daysUntilExp: 'days until expiration',
   },
   es: {
+    addenda: 'Adendas', addendumN: 'Adenda #', acknowledge: 'Acuso recibo de la adenda #', acknowledged: 'Recibo confirmado', dueChangedTo: 'La fecha límite cambió a', wasDue: 'antes',
+    ackBy: 'Recibo confirmado por', notAckYet: 'Sin confirmar todavía', updatesFromGrayCo: 'Novedades de GrayCo', currentSet: 'VIGENTE', versionL: 'Versión', planLinks: 'Enlaces a planos', openLink: 'Abrir enlace',
     questions: 'Preguntas', askQuestion: 'Hágale una pregunta a GrayCo', questionsDue: 'Preguntas hasta el', yourQuestion: 'Su pregunta', answerFromGrayCo: 'Respuesta de GrayCo', sendQuestion: 'Enviar pregunta',
     noQuestions: 'Todavía no hay preguntas.', answerPrivately: 'Responder en privado', answerAll: 'Responder a todos los licitantes', approveNotice: 'Aprobar y enviar a todos', noticeSent: 'Enviado a todos los licitantes',
     noticeWaiting: 'Respuesta para todos — esperando aprobación antes de enviarla', attachPlan: 'Adjuntar una foto o una página del plano marcada', waitingAnswer: 'Esperando la respuesta de GrayCo',
@@ -1015,6 +1019,7 @@ export default function App() {
   const [invites, setInvites] = useState([]);     // {id, jobId, email, token, createdAt, createdBy, usedBy?}
   const [messages, setMessages] = useState([]);   // {id, jobId, senderId, senderName, senderCompany, senderRole, body, at, readBy: []}
   const [questions, setQuestions] = useState([]); // 33.151 pre-bid Q&A: {id, jobId, body, attachments, at, answer, visibility, num}
+  const [acks, setAcks] = useState([]);           // patch SYS2: {id, jobId, num, userId, at} — "I acknowledge addendum #n"
   const [subDocs, setSubDocs] = useState({});  // { userId: docs[] }
   const [user, setUser] = useState(null);
   const [impersonatedFrom, setImpersonatedFrom] = useState(null);  // holds real admin user when previewing as sub
@@ -1044,6 +1049,7 @@ export default function App() {
     setInvites(data.invites || []);
     setMessages(data.messages || []);
     setQuestions(data.questions || []);
+    setAcks(data.acks || []);
     setSubDocs(u.role === 'admin' ? (data[subKey] || {}) : { [u.id]: data[subKey] || [] });
     const fresh = (data.users || []).find(x => x.id === u.id);
     if (fresh) setUser(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
@@ -1110,6 +1116,7 @@ export default function App() {
       setInvites(data.invites || []);
       setMessages(data.messages || []);
       setQuestions(data.questions || []);
+      setAcks(data.acks || []);
       const subKey = keys[keys.length - 1];
       setSubDocs(user.role === 'admin' ? (data[subKey] || {}) : { [user.id]: data[subKey] || [] });
       setActiveJob(prev => prev ? ((data.jobs || []).find(j => j.id === prev.id) || prev) : prev);
@@ -1173,6 +1180,10 @@ export default function App() {
     if (loading || !user) return;
     sset('questions', questions).catch(e => console.warn('questions save failed', e));
   }, [questions, loading]);
+  useEffect(() => {
+    if (loading || !user) return;
+    sset('acks', acks).catch(e => console.warn('acks save failed', e));
+  }, [acks, loading]);
 
   // Persist login session so page refreshes don't log people out.
   // Session persistence is handled automatically by Supabase Auth
@@ -1408,6 +1419,7 @@ export default function App() {
               invites={invites} setInvites={setInvites}
               messages={messages} setMessages={setMessages}
               questions={questions} setQuestions={setQuestions}
+              acks={acks} setAcks={setAcks}
               setView={setView} />
           ) : (
             <>
@@ -2244,7 +2256,7 @@ function PlansRequests({ t, job, user, isAdmin, showToast, onAdded }) {
 /* ============================================================
    JOB DETAIL — view, download plans, submit bid
    ============================================================ */
-function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJobs, users, subDocs, estimates, setEstimates, activity, setActivity, invites, setInvites, messages, setMessages, questions, setQuestions, setView }) {
+function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJobs, users, subDocs, estimates, setEstimates, activity, setActivity, invites, setInvites, messages, setMessages, questions, setQuestions, acks, setAcks, setView }) {
   const isAdmin = user.role === 'admin';
   const myBid = bids.find(b => b.jobId === job.id && b.userId === user.id);
   const jobBids = bids.filter(b => b.jobId === job.id);
@@ -2988,6 +3000,66 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
             </Card>
           )}
 
+          {/* patch SYS2: numbered addenda — a sub acknowledges each one; GrayCo sees who did */}
+          {job.addenda && job.addenda.filter(a => a.publishedAt).length > 0 && (
+            <Card style={{ marginBottom: 16 }} >
+              <h3 style={sectionTitleStyle} id="bid-addenda"><ClipboardList size={18} /> {t.addenda}</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {job.addenda.filter(a => a.publishedAt).slice().sort((a, b) => b.num - a.num).map(a => {
+                  const mineAck = (acks || []).find(k => k.jobId === job.id && Number(k.num) === Number(a.num) && k.userId === user.id);
+                  const allAcks = (acks || []).filter(k => k.jobId === job.id && Number(k.num) === Number(a.num));
+                  return (
+                    <div key={a.num} data-addendum={a.num} style={{ border: `1px solid ${styles.border}`, borderRadius: 10, padding: 14, background: styles.surface }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>{t.addendumN}{a.num}{a.title ? ' — ' + a.title : ''}</div>
+                        <div style={{ fontSize: 12, color: styles.text2 }}>{a.date ? new Date(a.date + 'T12:00:00').toLocaleDateString() : ''}</div>
+                      </div>
+                      {a.dueTo && <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: styles.red }}>⏰ {t.dueChangedTo} {a.dueTo}{a.dueFrom ? ` (${t.wasDue} ${a.dueFrom})` : ''}</div>}
+                      {a.text && <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, fontSize: 14, marginTop: 8 }}>{a.text}</div>}
+                      {(a.files || []).length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                          {a.files.map((f, i) => (
+                            <a key={i} href={f.dataUrl} target="_blank" rel="noopener" onClick={() => logDownload(f.name)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: styles.accent, fontWeight: 600, textDecoration: 'none' }}>
+                              <FileText size={14} /> {f.name}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {!isAdmin && (
+                        <div style={{ marginTop: 10 }}>
+                          {mineAck
+                            ? <Badge color={styles.green}>✓ {t.acknowledged} {new Date(mineAck.at).toLocaleDateString()}</Badge>
+                            : <Btn size="sm" data-ack={a.num} onClick={() => setAcks([...(acks || []), { id: `${job.id}__a${a.num}__${user.id}`, jobId: job.id, num: a.num, userId: user.id, at: new Date().toISOString() }])}>✍️ {t.acknowledge}{a.num}</Btn>}
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: styles.text2 }}>
+                          {allAcks.length ? `${t.ackBy}: ${allAcks.map(k => k.userCompany || k.userName).join(', ')}` : t.notAckYet}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {/* patch SYS2: updates GrayCo posted for this job (they are in Messages too) */}
+          {!isAdmin && (messages || []).some(m => m.jobId === job.id && m.kind === 'update') && (
+            <Card style={{ marginBottom: 16 }}>
+              <h3 style={sectionTitleStyle} id="bid-updates"><MessageSquare size={18} /> {t.updatesFromGrayCo}</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(messages || []).filter(m => m.jobId === job.id && m.kind === 'update').slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).map(m => (
+                  <div key={m.id} data-update={m.postId || m.id} style={{ border: `1px solid ${styles.border}`, borderRadius: 8, padding: 12, background: styles.cream }}>
+                    <div style={{ fontSize: 12, color: styles.text2, marginBottom: 4 }}>{m.senderName} · {new Date(m.at).toLocaleString()}</div>
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, fontSize: 14 }}>{m.body}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {job.notes && (
             <Card style={{ marginBottom: 16 }}>
               <h3 style={sectionTitleStyle}><MessageSquare size={18} /> {t.notes}</h3>
@@ -3013,7 +3085,8 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <FileText size={20} color={styles.accent} />
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.name}</div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{plan.name}{plan.current && <span data-current="1" style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, background: styles.green, color: '#fff', padding: '2px 7px', borderRadius: 999 }}>{t.currentSet}</span>}</div>
+                        {(plan.version || plan.date) && <div style={{ fontSize: 11, color: styles.text2 }}>{plan.version ? `${t.versionL} ${plan.version}` : ''}{plan.version && plan.date ? ' · ' : ''}{plan.date ? new Date(plan.date + 'T12:00:00').toLocaleDateString() : ''}</div>}
                         {plan.category && <div style={{ fontSize: 11, color: styles.accentDk || styles.text2, fontWeight: 700, textTransform: 'uppercase' }}>{plan.category}</div>}
                         <div style={{ fontSize: 12, color: styles.text2 }}>{(plan.size / 1024).toFixed(0)} KB</div>
                       </div>
@@ -3042,6 +3115,20 @@ function JobDetail({ t, job, user, bids, setBids, onBack, showToast, jobs, setJo
               </div>
             )}
           </Card>
+
+          {/* patch SYS2: plan-room links (a plan room or a shared folder) */}
+          {job.plansLinks && job.plansLinks.length > 0 && (
+            <Card style={{ marginBottom: 16 }}>
+              <h3 style={sectionTitleStyle} id="bid-planlinks"><FileText size={18} /> {t.planLinks}</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {job.plansLinks.map((l, i) => (
+                  <a key={l.id || i} href={l.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', gap: 8, alignItems: 'center', color: styles.accent, fontWeight: 600, textDecoration: 'none', fontSize: 14 }}>
+                    🔗 {l.label || t.openLink}{l.version ? ` · ${t.versionL} ${l.version}` : ''}{l.date ? ` · ${new Date(l.date + 'T12:00:00').toLocaleDateString()}` : ''}
+                  </a>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* TAKEOFF MODAL */}
           {takeoffPlan && (

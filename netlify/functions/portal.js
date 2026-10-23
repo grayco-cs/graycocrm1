@@ -1293,6 +1293,7 @@ async function aqSend(item, now){
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
+  if (s(item.kind) === 'bp_notice') return require('./_lib/bp-notice.js').onApproved(item, now);   /* patch SYS2: a bid-job addendum / update to the invited subs */
   if (/^gcp_/.test(s(item.kind))) return require('./_lib/gcp.js').onApproved(item, now);   /* patch GCP: GC pay apps / change orders / company COI / inspection offers */
   if (item.kind === 'refcredit' || item.kind === 'refgift') return require('./_lib/referral.js').onApproved(item, now);   /* patch REF: approved → credit on the member's balance / a one-time gift code (only its hash kept) */
   if (item.kind === 'warranty_check') return require('./_lib/care11.js').onApproved(item, now);   /* patch AUTO11: warranty check-up offers, one e-mail each from news@ */

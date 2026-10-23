@@ -68,13 +68,26 @@ const SIGN_SECS = 8 * 3600;
 const MAX_ROW = 900 * 1024;
 const OFFICE = 'office@grayco-cs.com';
 const OFFICE_PHONE = '901-585-0944';
-const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions'];
+const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions', 'acks'];   /* patch SYS2: acks = a sub's "I acknowledge addendum #n" */
 const KEYED = ['plans', 'subdocs', 'takeoff', 'bid-draft'];
 const CLOSED = ['closed', 'won', 'lost'];
 /* patch LD2: the Lead Inbox writes DRAFT bid jobs here (netlify/functions/_lib/bid-portal.js: status "draft",
    visibility "private", draft:true). A draft is for GrayCo staff only — never shown to a sub, invited or not,
    until an admin publishes it (CRM Lead Inbox "Publish to bid portal", or the same button on the job here). */
 function isDraft(j){ return !!j && (j.draft === true || low(j.status) === 'draft'); }
+/* patch SYS2: deleted from the CRM's 🏗 Bid portal tab (a soft delete, restorable for 30 days) — no sub sees it any more */
+function isGone(j){ return !!j && (low(j.status) === 'archived' || !!j.archivedAt); }
+/* patch SYS2: what a sub sees of a bid job — trade scopes of their own trades only (all of them when they gave no trade),
+   published addenda without GrayCo's sending details, never the CRM's posting log */
+function subJobView(j, trades){
+  const v = Object.assign({}, j);
+  delete v.log; delete v.archivedFrom;
+  const mine = (Array.isArray(trades) ? trades : []).map(function(x){ return low(x); }).filter(Boolean);   /* arr() keeps objects only */
+  if (Array.isArray(v.tradeScopes) && mine.length) v.tradeScopes = v.tradeScopes.filter(function(ts){ const t = low(ts && ts.trade); return !t || mine.some(function(m){ return t.indexOf(m) > -1 || m.indexOf(t) > -1; }); });
+  if (Array.isArray(v.tradeScopes)) v.tradeScopes = v.tradeScopes.map(function(ts){ return pick(ts, ['id', 'trade', 'scope']); });
+  if (Array.isArray(v.addenda)) v.addenda = v.addenda.filter(function(a){ return a && a.publishedAt; }).map(function(a){ return pick(a, ['num', 'date', 'title', 'text', 'files', 'dueFrom', 'dueTo', 'publishedAt']); });
+  return v;
+}
 // What a subcontractor may change on their own profile. Never role, approval, e-mail or the CRM link.
 const SUB_PROFILE_FIELDS = ['name', 'phone', 'contactTitle', 'company', 'dbaName', 'businessAddress', 'businessCity',
   'businessState', 'businessZip', 'website', 'yearsInBusiness', 'numEmployees', 'unionAffiliation', 'serviceArea',
@@ -175,6 +188,7 @@ function rowFor(collection, rec){
   else if (collection === 'messages') { r.job_id = s(rec.jobId); r.user_id = threadOf(rec); }
   else if (collection === 'invites') { r.job_id = s(rec.jobId); r.email = low(rec.email); }
   else if (collection === 'questions') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
+  else if (collection === 'acks') { r.job_id = s(rec.jobId); r.user_id = s(rec.userId); }
   return r;
 }
 function threadOf(m){ return s(m.senderRole === 'sub' ? m.senderId : m.recipientSubId); }
@@ -297,7 +311,7 @@ async function subScope(who){
   if (who.approved) {
     jobs.forEach(function(r){
       const j = r.data || {};
-      if (isDraft(j)) return;
+      if (isDraft(j) || isGone(j)) return;   /* patch SYS2: a deleted bid job is gone for every sub, even one who bid on it */
       const canSee = (j.visibility || 'public') === 'public' || invited.has(r.id);
       const open = CLOSED.indexOf(low(j.status)) < 0;
       if (bidOn.has(r.id) || (canSee && open)) visible[r.id] = r;
@@ -347,7 +361,8 @@ async function loadKey(who, key, ctx){
       return all.filter(function(r){ return r.id === sc.me || (r.data.role === 'admin' && staff.has(low(r.email))); })
         .map(function(r){ return r.id === sc.me ? r.data : pick(r.data, STAFF_PUBLIC_FIELDS); });
     }
-    if (key === 'jobs') return Object.keys(sc.jobs).map(function(id){ return sc.jobs[id].data; });
+    if (key === 'jobs') { const tr = who.profile && Array.isArray(who.profile.trades) ? who.profile.trades : []; return Object.keys(sc.jobs).map(function(id){ return subJobView(sc.jobs[id].data, tr); }); }   /* patch SYS2 */
+    if (key === 'acks') return (await listRows([eq('collection', 'acks'), eq('user_id', sc.me)])).map(function(r){ return r.data; });
     if (key === 'bids') return bidsWithResults(sc);
     if (key === 'messages') {
       if (!who.approved) return [];
@@ -553,6 +568,16 @@ async function saveCollection(who, key, upsert, del, ctx){
           at: new Date().toISOString(), answer: '', visibility: 'private', lang: p.lang === 'es' ? 'es' : 'en' };
         notes.push({ kind: 'new-question', q: q, job: sc.jobs[jobId].data });
         rows.push(rowFor('questions', q));
+      }
+    } else if (key === 'acks') {   /* patch SYS2: "I acknowledge addendum #n" — only for a published addendum of a job they may see */
+      if (!who.approved) throw Fail(403, 'Your account is waiting for GrayCo to approve it.');
+      for (const x of upsert) {
+        const jobId = s(x.jobId), n = parseInt(x.num, 10);
+        const jr = sc.jobs[jobId]; if (!jr || !(n > 0)) continue;
+        if (!arr(jr.data.addenda).some(function(a){ return a && a.publishedAt && Number(a.num) === n; })) continue;
+        const id = jobId + '__a' + n + '__' + me;
+        if (existing[id]) continue;
+        rows.push(rowFor('acks', { id: id, jobId: jobId, num: n, userId: me, userName: p.name, userCompany: p.company, userEmail: p.email, at: new Date().toISOString() }));
       }
     } else if (key === 'activity') {
       upsert.filter(function(x){ return !existing[x.id] && sc.jobs[s(x.jobId)]; }).slice(0, 50).forEach(function(x){
@@ -1304,7 +1329,7 @@ exports.handler = async function (event) {
   }
 };
 /* patch SYS: the CRM's 🏗 Bid portal tab (bid-hub.js) works on the same rows with the same helpers — one copy of each */
-exports._hub = { listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN };
+exports._hub = { listRows, eq, inList, getRow, upsertRows, rowFor, crmSubs, crmData, crmSubList, sendMail, mailHtml, esc, okEmail, PORTAL_ORIGIN, saveCollection, isGone, subJobView, plansOf };   /* patch SYS2: + the Q&A save, the sub view, plans */
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
 try { require('./_lib/brand.js').installResend(); } catch (e) {}

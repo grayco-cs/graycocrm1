@@ -164854,6 +164854,12 @@ function css(){
     + '#gcsys-modal h3{margin:0 0 4px;font-size:18px}#gcsys-modal .x{float:right}#gcsys-modal .list{max-height:52vh;overflow:auto;border:1px solid #eeeaf6;border-radius:10px;margin:10px 0}#gcsys-modal label.row{display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #f1eef8;cursor:pointer}'
     + '#gcsys-modal .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}#gcsys-modal .low{background:#dcfce7}#gcsys-modal .trade{background:#f7f5fc;font-weight:800}'
     + '.gcsys-toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#241968;color:#fff;padding:10px 16px;border-radius:10px;z-index:100001;font:600 14px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.25)}.gcsys-toast.bad{background:#b91c1c}'
+    /* patch SYS2: the job list never scrolls sideways — fixed columns, one compact action row, ⋯ menu; cards on a phone */
+    + '.gcsys .bpt{table-layout:fixed}.gcsys .bpt td,.gcsys .bpt th{overflow:hidden;text-overflow:ellipsis}.gcsys .bpt td.t b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.gcsys .bpt td.t .mut{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '.gcsys .bpt .acts{flex-wrap:nowrap;gap:4px;justify-content:flex-end}.gcsys .bpt .acts .b{padding:5px 8px;font-size:12px;white-space:nowrap}.gcsys .bpt tr.del td{background:#fbf7f7;color:#6b6787}'
+    + '.gcsys .bulk{display:flex;gap:8px;align-items:center;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:8px 12px;margin:0 0 10px}'
+    + '#gcsys-menu{position:fixed;z-index:100002;background:#fff;border:1px solid #d6d1e6;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:6px;min-width:210px;font:14px system-ui}#gcsys-menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:9px 12px;border-radius:8px;cursor:pointer;font:inherit;color:#1b1640}#gcsys-menu button:hover{background:#f3f0fb}#gcsys-menu button.red{color:#b91c1c}'
+    + '@media (max-width:760px){.gcsys{padding:12px 10px 40px}.gcsys .bpt,.gcsys .bpt tbody,.gcsys .bpt tr,.gcsys .bpt td{display:block;width:auto!important}.gcsys .bpt thead,.gcsys .bpt colgroup{display:none}.gcsys .bpt tr{border:1px solid #e7e3f2;border-radius:12px;margin:0 0 10px;padding:8px 10px;background:#fff}.gcsys .bpt td{border:0;padding:3px 0}.gcsys .bpt td[data-l]:before{content:attr(data-l) ": ";color:#6b6787;font-size:12px}.gcsys .bpt .acts{justify-content:flex-start;flex-wrap:wrap;margin-top:6px}.gcsys .bpt td.t b,.gcsys .bpt td.t .mut{white-space:normal}.gcsys input[type=search]{min-width:0;width:100%}}'
     + '#gc-sys-lsb{margin-top:10px;border-top:1px dashed #d6d1e6;padding-top:8px}#gc-sys-lsb table{width:100%;border-collapse:collapse;font-size:13px}#gc-sys-lsb td{padding:4px 6px;border-bottom:1px solid #f0edf7}#gc-sys-lsb .trade td{background:#f7f5fc;font-weight:800}#gc-sys-lsb .low td{background:#f0fdf4}';
   D.head.appendChild(st);
 }
@@ -164907,6 +164913,8 @@ function loadJobs(force){
 function shown(){
   var q = low(BP.q);
   return arr(BP.jobs).filter(function(j){
+    if (BP.f === 'deleted') { if (!j.deleted) return false; }   /* patch SYS2 */
+    else if (j.deleted) return false;
     if (BP.f === 'open' && /^(closed|won|lost|awarded)$/i.test(j.status)) return false;
     if (BP.f === 'private' && j.visibility !== 'private') return false;
     if (BP.f === 'public' && j.visibility !== 'public') return false;
@@ -164924,27 +164932,81 @@ function drawBP(){
   drawRows();
   loadJobs(false);
 }
+function canDelete(){ return realAdmin() || isEst() || !!(BP.me && BP.me.canPublic); }   /* patch SYS2: an admin or an estimator */
+var SEL = {};
 function drawRows(){
   var m = D.getElementById('gc-sys-bp-mount'); if (!m) return;
   var fbar = m.querySelector('[data-sys-filters]'), box = m.querySelector('[data-sys-rows]'); if (!box) return;
   var all = arr(BP.jobs), cnt = function(f){ var o = BP.f; BP.f = f; var n = shown().length; BP.f = o; return n; };
   var q0 = BP.q; BP.q = '';
-  fbar.innerHTML = [['open', 'Open'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
+  fbar.innerHTML = [['open', 'Open'], ['private', '🔒 Private'], ['public', '🌐 Public'], ['draft', '📝 Drafts'], ['all', 'All'], ['deleted', '🗑 Deleted']].map(function(x){ return '<button type="button" class="b' + (BP.f === x[0] ? ' on' : '') + '" data-sys="f" data-f="' + x[0] + '">' + x[1] + (BP.jobs ? ' (' + cnt(x[0]) + ')' : '') + '</button>'; }).join('');
   BP.q = q0;
   if (BP.err && !BP.jobs) { box.innerHTML = '<div class="mut" style="color:#b91c1c">' + esc(BP.err) + '</div>'; return; }
   if (!BP.jobs) { box.innerHTML = '<div class="mut">Loading the bid jobs…</div>'; return; }
-  var rows = shown();
-  box.innerHTML = !all.length ? '<div class="mut">No bid jobs yet. Every estimator lead becomes one (private) as soon as it comes in.</div>'
-    : '<table><thead><tr><th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Sub bids</th><th>Bid due</th><th></th></tr></thead><tbody>' + rows.map(function(j){
-      return '<tr data-sys-job="' + esc(j.id) + '"><td><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + esc([j.address, j.po, j.trades].filter(Boolean).join(' · ')) + '</div></td>'
-        + '<td>' + visPill(j.visibility) + '</td><td class="num">' + j.invited + '</td><td class="num">' + j.bids + '</td>'
-        + '<td>' + (j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
-        + '<td><div class="acts"><button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '">📨 Sub bids</button>'
-        + (canInvite() ? '<button type="button" class="b" data-sys="invite" data-job="' + esc(j.id) + '">✉️ Invite subs</button>' : '')
-        + (canPublic() && j.visibility !== 'public' ? '<button type="button" class="b" data-sys="public" data-job="' + esc(j.id) + '">🌐 Make public</button>' : '')
-        + (canInvite() && j.visibility === 'public' ? '<button type="button" class="b" data-sys="private" data-job="' + esc(j.id) + '">🔒 Make private</button>' : '')
-        + (j.leadId ? '<button type="button" class="b" data-sys="lead" data-lead="' + esc(j.leadId) + '">◈ Lead</button>' : '') + '</div></td></tr>';
-    }).join('') + (rows.length ? '' : '<tr><td colspan="6" class="mut">Nothing in this view.</td></tr>') + '</tbody></table>';
+  var rows = shown(), del = BP.f === 'deleted', bulk = realAdmin() && !del;
+  Object.keys(SEL).forEach(function(id){ if (!rows.some(function(j){ return j.id === id; })) delete SEL[id]; });
+  var nSel = Object.keys(SEL).length;
+  box.innerHTML = (bulk && nSel ? '<div class="bulk" data-sys-bulk><b>' + nSel + ' selected</b><button type="button" class="b" data-sys="bulkdel" style="color:#b91c1c">🗑 Delete selected</button><button type="button" class="b" data-sys="selnone">Clear</button></div>' : '')
+    + (!all.length ? '<div class="mut">No bid jobs yet. Every estimator lead becomes one (private) as soon as it comes in.</div>'
+    : '<table class="bpt"><colgroup>' + (bulk ? '<col style="width:34px">' : '') + '<col><col style="width:104px"><col style="width:66px"><col style="width:70px"><col style="width:112px"><col style="width:' + (del ? 128 : 236) + 'px"></colgroup>'
+    + '<thead><tr>' + (bulk ? '<th><input type="checkbox" data-sys="selall" aria-label="Select all"' + (nSel && nSel === rows.length ? ' checked' : '') + '></th>' : '') + '<th>Bid job</th><th>Who sees it</th><th>Invited</th><th>Bids</th><th>' + (del ? 'Deleted' : 'Bid due') + '</th><th></th></tr></thead><tbody>' + rows.map(function(j){
+      var left = del && j.deletedAt ? Math.max(0, 30 - Math.floor((Date.now() - Date.parse(j.deletedAt)) / 864e5)) : 0;
+      return '<tr data-sys-job="' + esc(j.id) + '"' + (del ? ' class="del"' : '') + '>' + (bulk ? '<td><input type="checkbox" data-sys="sel" data-job="' + esc(j.id) + '"' + (SEL[j.id] ? ' checked' : '') + ' aria-label="Select"></td>' : '')
+        + '<td class="t" title="' + esc(j.title) + '"><b>' + esc(j.title || 'Bid job') + '</b><div class="mut">' + esc([j.address, j.po, j.trades].filter(Boolean).join(' · ')) + '</div></td>'
+        + '<td data-l="Who sees it">' + (del ? '<span class="pill draft">🗑 Deleted</span>' : visPill(j.visibility)) + '</td><td class="num" data-l="Invited">' + j.invited + '</td><td class="num" data-l="Bids">' + j.bids + '</td>'
+        + '<td data-l="' + (del ? 'Deleted' : 'Bid due') + '">' + (del ? '<span class="mut">' + esc(when(j.deletedAt)) + '<br>' + left + ' day' + (left === 1 ? '' : 's') + ' left</span>' : j.due ? esc(j.due + (j.dueTime ? ' ' + j.dueTime : '')) : '<span class="mut">—</span>') + '</td>'
+        + '<td><div class="acts">' + (del ? (canDelete() ? '<button type="button" class="b" data-sys="restore" data-job="' + esc(j.id) + '">↩ Restore</button>' : '')
+          : (canInvite() ? '<button type="button" class="b pri" data-sys="manage" data-job="' + esc(j.id) + '">📂 Manage</button>' : '')
+          + '<button type="button" class="b" data-sys="bids" data-job="' + esc(j.id) + '">📨 Bids</button>'
+          + '<button type="button" class="b" data-sys="menu" data-job="' + esc(j.id) + '" aria-label="More actions" title="More actions">⋯ Actions</button>') + '</div></td></tr>';
+    }).join('') + (rows.length ? '' : '<tr><td colspan="' + (bulk ? 7 : 6) + '" class="mut">Nothing in this view.</td></tr>') + '</tbody></table>');
+}
+/* ⋯ Actions: invite, public / private, the lead, delete */
+function closeMenu(){ var x = D.getElementById('gcsys-menu'); if (x) x.remove(); }
+function openMenu(btn, jobId){
+  closeMenu(); var j = jobOf(jobId);
+  var items = [];
+  if (canInvite()) items.push(['invite', '✉️ Invite subs']);
+  if (canPublic() && j.visibility !== 'public') items.push(['public', '🌐 Make public']);
+  if (canInvite() && j.visibility === 'public') items.push(['private', '🔒 Make private']);
+  items.push(['bids', '📨 Sub bids']);
+  if (j.leadId) items.push(['lead', '◈ Open the lead']);
+  if (canDelete()) items.push(['del', '🗑 Delete…']);
+  var m = D.createElement('div'); m.id = 'gcsys-menu'; m.setAttribute('data-gc-keep', '1'); m.setAttribute('role', 'menu');
+  m.innerHTML = items.map(function(x){ return '<button type="button" role="menuitem" data-sys="' + x[0] + '" data-job="' + esc(jobId) + '"' + (j.leadId ? ' data-lead="' + esc(j.leadId) + '"' : '') + (x[0] === 'del' ? ' class="red"' : '') + '>' + x[1] + '</button>'; }).join('');
+  D.body.appendChild(m);
+  var r = btn.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(r.right - w, W.innerWidth - w - 8)) + 'px';
+  m.style.top = (r.bottom + h + 8 > W.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+  m.addEventListener('click', function(ev){ closeMenu(); onClick(ev); });
+  later(function(){ D.addEventListener('click', function off(ev){ if (!m.contains(ev.target)) { closeMenu(); D.removeEventListener('click', off, true); } }, true); }, 0);
+}
+/* 🗑 Delete: a soft delete (restorable 30 days); subs lose the job at once; no sub is e-mailed */
+function askDelete(ids){
+  ids = ids.filter(Boolean); if (!ids.length) return;
+  var js = ids.map(jobOf), inv = js.reduce(function(n, j){ return n + (+j.invited || 0); }, 0), bids = js.reduce(function(n, j){ return n + (+j.bids || 0); }, 0);
+  var name = ids.length === 1 ? '"' + esc(js[0].title) + '"' : ids.length + ' bid jobs';
+  modal('<button type="button" class="b x" data-sys="close">✕</button><h3>🗑 Delete ' + name + '?</h3>'
+    + '<p>It leaves the bid portal: no sub can see it any more' + (inv ? ' — <b>' + inv + ' invited sub' + (inv === 1 ? '' : 's') + '</b> lose access' : '') + '. No sub is e-mailed about it.</p>'
+    + '<p class="mut">Invited subs' + (bids ? ' and the ' + bids + ' sub bid' + (bids === 1 ? '' : 's') : ' and sub bids') + ' stay in history. You can restore it from <b>🗑 Deleted</b> for 30 days.</p>'
+    + '<label class="row" style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" data-sys="marklead"> Also mark the lead' + (ids.length === 1 ? '' : 's') + ' <b>Lost / not bidding</b></label>'
+    + '<div class="bar"><button type="button" class="b" data-sys="delgo" data-ids="' + esc(ids.join(',')) + '" style="background:#b91c1c;color:#fff;border-color:#b91c1c">🗑 Delete</button><button type="button" class="b" data-sys="close">Cancel</button></div>');
+}
+function doDelete(ids, markLead){
+  fn('bid-hub', ids.length === 1 ? { op: 'archive', jobId: ids[0], markLead: markLead } : { op: 'archive', jobIds: ids, markLead: markLead }).then(function(r){
+    closeModal(); SEL = {};
+    if (markLead && W._gcLeadsHub && W._gcLeadsHub.moveStage) {   /* the CRM lead itself → Lost (only when ticked) */
+      ids.map(jobOf).forEach(function(j){ var lid = s(j.leadId); if (!lid) return;
+        var l = arr((W._crm || {}).leads).filter(function(x){ return x && (x.inboxId === lid || 'crm:' + x.id === lid); })[0];
+        var id = l ? l.id : /^crm:/.test(lid) ? lid.slice(4) : '';
+        if (id) { try { W._gcLeadsHub.moveStage(id, 'Lost', 'Not bidding (bid job deleted)'); } catch (e) { warn(e); } } });
+    }
+    toast('🗑 ' + r.deleted + ' bid job' + (r.deleted === 1 ? '' : 's') + ' deleted — restore from 🗑 Deleted for 30 days');
+    loadJobs(true);
+  }, function(e){ toast(e.message, true); });
+}
+function restoreJob(id){
+  fn('bid-hub', { op: 'restore', jobId: id }).then(function(){ toast('↩ Restored to the bid portal'); loadJobs(true); }, function(e){ toast(e.message, true); });
 }
 function jobOf(id){ return arr(BP.jobs).filter(function(j){ return j.id === id; })[0] || { id: id, title: 'Bid job' }; }
 
@@ -165012,7 +165074,9 @@ function openLead(id){
 function onClick(ev){
   var t = ev.target.closest && ev.target.closest('[data-sys]'); if (!t) return;
   var a = t.getAttribute('data-sys'), job = t.getAttribute('data-job');
-  if (a === 'q' || a === 'q2' || a === 'pick') { if (a === 'pick') { INV.pick[t.getAttribute('data-e')] = t.checked; drawInvite(); } return; }
+  if (a === 'q' || a === 'q2' || a === 'pick' || a === 'marklead') { if (a === 'pick') { INV.pick[t.getAttribute('data-e')] = t.checked; drawInvite(); } return; }
+  if (a === 'sel') { if (t.checked) SEL[job] = 1; else delete SEL[job]; return drawRows(); }   /* patch SYS2: bulk select (admins) */
+  if (a === 'selall') { SEL = {}; if (t.checked) shown().forEach(function(j){ SEL[j.id] = 1; }); return drawRows(); }
   ev.preventDefault(); ev.stopPropagation();
   if (a === 'close') return closeModal();
   if (a === 'openbids') return W.open('https://bids.grayco-cs.com/', '_blank', 'noopener');
@@ -165029,6 +165093,14 @@ function onClick(ev){
   if (a === 'sendtrades') { var ts = Object.keys(INV.trades); if (!W.confirm('E-mail every sub in ' + ts.join(', ') + ' who is not invited yet? Each gets their own e-mail.')) return; return sendInvite({ all: true, trades: ts }); }
   if (a === 'sendall') { if (!W.confirm('E-mail EVERY sub who is not invited yet (⛔ Do not use subs are skipped)? Each gets their own e-mail.')) return; return sendInvite({ all: true }); }
   if (a === 'tile') return tile(t.getAttribute('data-k'));
+  /* patch SYS2 */
+  if (a === 'menu') return openMenu(t, job);
+  if (a === 'manage') { if (W._gcSys2 && W._gcSys2.open) return W._gcSys2.open(job); return toast('The bid job manager is still loading — try again.', true); }
+  if (a === 'del') return askDelete([job]);
+  if (a === 'bulkdel') return askDelete(Object.keys(SEL));
+  if (a === 'selnone') { SEL = {}; return drawRows(); }
+  if (a === 'delgo') { var mk = D.querySelector('#gcsys-modal [data-sys=marklead]'); return doDelete(s(t.getAttribute('data-ids')).split(',').filter(Boolean), !!(mk && mk.checked)); }
+  if (a === 'restore') return restoreJob(job);
 }
 
 /* ── the lead drawer: 📨 Sub bids under "🏗 Sub bid portal" ── */
@@ -165056,7 +165128,7 @@ function drawerTick(){
     fn('bid-hub?lead=' + encodeURIComponent(key)).then(function(r){
       var list = arr(r.bids);
       LSB.html = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>📨 Sub bids (' + list.length + ')</b><span class="mut">✉️ bids@ · 🏗 bid portal · 🔨 sub portal</span>'
-        + (canInvite() ? '<button type="button" class="b" data-sys="invite" data-job="' + esc(r.jobId) + '" data-title="' + esc(k.title) + '">✉️ Invite subs</button>' : '')
+        + (canInvite() ? '<button type="button" class="b" data-sys="manage" data-job="' + esc(r.jobId) + '">📂 Manage</button><button type="button" class="b" data-sys="invite" data-job="' + esc(r.jobId) + '" data-title="' + esc(k.title) + '">✉️ Invite subs</button>' : '')
         + '<button type="button" class="b" data-sys="lbids" data-job="' + esc(r.jobId) + '" data-lead="' + esc(key) + '">Compare by trade</button></div>' + bidsTable(list, r.jobId);
       LSB.at = Date.now();
     }, function(e){ LSB.html = '<div class="mut">📨 Sub bids: ' + esc(e.message) + '</div>'; })
@@ -165175,9 +165247,309 @@ function tick(){
   } catch (e) { TERR = s(e && e.message); warn(e); }
 }
 RI.call(W, tick, 1200); later(tick, 500);
-W._gcSys = { bp: { load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, vis: setVis }, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
+W._gcSys = { bp: { load: loadJobs, draw: drawBP, invite: openInvite, bids: openBids, vis: setVis, jobs: function(){ return arr(BP.jobs); }, del: askDelete }, modal: modal, closeModal: closeModal, toast: toast, fn: fn, css: css, tiles: function(){ return TILES().map(function(t){ return t.k; }); }, tile: tile, ping: ping, drawer: drawerTick, leadKey: leadKey,
   state: function(){ return { jobs: arr(BP.jobs).length, me: BP.me, err: BP.err, pings: JSON.parse(JSON.stringify(PING)), lsb: LSB.key, role: role(), ticks: TICKS, err2: TERR }; } };
 try { console.log('[GC] patch SYS: 🏗 Bid portal tab, 🧭 GrayCo Systems tab, 📨 one sub-bid list (bids@ + bid portal + sub portal) — _gcSys.state()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-sys2">
+/* __GC_PATCH_SYS2__ ══════════════════════════════════════════════════════════════════════════════════════════════
+   GrayCo — 📂 MANAGE A BID JOB from the CRM (patch SYS2).
+
+   Owner, 10/23: "also need a spot where I can add plans, scopes, addenda, updates, messages etc. from the CRM that go
+   into the bid portal."  One drawer per bid job, opened from 🏗 Bid portal → 📂 Manage and from a lead's drawer:
+     📐 Plans & specs — upload (several at once, drag and drop; PDF / DWG / pictures / ZIP) or a plan-room link; a
+        version and a date on each; ⭐ mark one current. Files go to the bid site's own storage (subportal.js upload +
+        plans-import), so invited subs download them there.
+     📝 Scope — one per trade, typed or made from an estimate with every price removed (_gcScopeFromLines /
+        _gcStripPrices; the server removes prices again); a sub sees only the scopes of their trades.
+     📎 Addenda — Addendum #1, #2… with a date, what changed, files, and an optional new bid due date. Subs see it on
+        the bid site and tap "Acknowledge addendum #n"; this drawer shows who did. The e-mail waits on ✅ Approvals and is
+        held while ⏸ Data-entry mode is on.
+     📣 Updates — to every invited sub, one trade or one sub: on the bid site (Messages) at once; the e-mail, when ticked,
+        waits on ✅ Approvals (held in ⏸ Data-entry mode).
+     💬 Q&A — the subs' questions; answer privately or publish the answer to all bidders (its e-mail waits on approval).
+     🗂 Activity — what was posted, when and by whom; which sub viewed or downloaded what; acknowledgements.
+   Only subs invited to the job (or every approved sub when it is public) see any of it; GrayCo prices never; customers never.
+   Server: netlify/functions/bid-hub.js (?manage=, ops plans / scope / addendum / post / answer / notice).
+   Console: _gcSys2.state()
+   ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SYS2__) return;
+window.__GC_PATCH_SYS2__ = true;
+var W = window, D = document;
+var later = function(f, ms){ return (W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout).call(W, f, ms); };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function when(t){ try { return t ? new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; } catch (e) { return ''; } }
+function today(){ return new Date().toISOString().slice(0, 10); }
+function warn(e){ try { console.warn('[GC SYS2]', e && e.message || e); } catch (x) {} }
+function toast(msg, bad){ if (W._gcSys && W._gcSys.toast) return W._gcSys.toast(msg, bad); }
+function fn(path, body){
+  return W.fetch('/.netlify/functions/' + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok || j.error) throw new Error(j.error || ('The server answered ' + r.status)); return j; }); });
+}
+function bidApi(body){ return fn('subportal', body); }
+
+function css(){
+  if (D.getElementById('gcsys2-css')) return;
+  var st = D.createElement('style'); st.id = 'gcsys2-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '#gcsys2-shade{position:fixed;inset:0;background:rgba(15,10,40,.35);z-index:100050}'
+    + '#gcsys2{position:fixed;top:0;right:0;bottom:0;width:min(820px,100vw);background:#fff;z-index:100060;box-shadow:-10px 0 34px rgba(0,0,0,.2);display:flex;flex-direction:column;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1640}'
+    + '#gcsys2 .hd{background:#241968;color:#fff;padding:14px 16px;display:flex;gap:10px;align-items:flex-start}#gcsys2 .hd h3{margin:0;font-size:17px;flex:1;min-width:0;word-break:break-word}#gcsys2 .hd .mut{color:#c9c3ea}#gcsys2 .hd button{background:transparent;border:0;color:#fff;font-size:22px;cursor:pointer;min-width:40px;min-height:40px}'
+    + '#gcsys2 .tabs{display:flex;gap:4px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid #eeeaf6;background:#faf9fe}#gcsys2 .tabs button{border:1px solid #e1dcef;background:#fff;border-radius:999px;padding:6px 11px;font:600 13px system-ui;cursor:pointer;color:#1b1640}#gcsys2 .tabs button.on{background:#241968;color:#fff;border-color:#241968}'
+    + '#gcsys2 .bd{flex:1;overflow:auto;padding:14px 16px 40px}#gcsys2 h4{margin:14px 0 6px;font-size:15px}#gcsys2 .mut{color:#6b6787;font-size:12px}'
+    + '#gcsys2 .b{border:1px solid #d6d1e6;background:#fff;color:#1b1640;border-radius:8px;padding:6px 11px;font-weight:600;cursor:pointer;font-size:13px}#gcsys2 .b.pri{background:#241968;color:#fff;border-color:#241968}#gcsys2 .b.red{color:#b91c1c}#gcsys2 .b[disabled]{opacity:.5;cursor:default}'
+    + '#gcsys2 input[type=text],#gcsys2 input[type=date],#gcsys2 input[type=url],#gcsys2 select,#gcsys2 textarea{border:1px solid #d6d1e6;border-radius:8px;padding:7px 9px;font:13px system-ui;max-width:100%;box-sizing:border-box}#gcsys2 textarea{width:100%;min-height:90px}'
+    + '#gcsys2 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}#gcsys2 .card{border:1px solid #e7e3f2;border-radius:10px;padding:10px 12px;margin:8px 0;background:#fff}'
+    + '#gcsys2 .drop{border:2px dashed #c9c3ea;border-radius:12px;padding:18px;text-align:center;background:#faf9fe;cursor:pointer}#gcsys2 .drop.over{background:#efeaff;border-color:#241968}'
+    + '#gcsys2 .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}#gcsys2 .ok{background:#dcfce7;color:#166534}#gcsys2 .warn{background:#fef3c7;color:#92400e}#gcsys2 .grey{background:#f3f4f6;color:#4b5563}'
+    + '#gcsys2 .paused{background:#fef3c7;border:1px solid #fcd34d;color:#78350f;padding:8px 12px;border-radius:10px;margin:0 0 10px;font-weight:600}'
+    + '#gcsys2 table{width:100%;border-collapse:collapse;table-layout:fixed}#gcsys2 td,#gcsys2 th{padding:6px;border-bottom:1px solid #f0edf7;text-align:left;vertical-align:top;overflow:hidden;text-overflow:ellipsis;font-size:13px}';
+  D.head.appendChild(st);
+}
+
+var M = { jobId: '', data: null, tab: 'plans', busy: false, err: '', ts: null };
+function job(){ return (M.data && M.data.job) || {}; }
+function open(jobId, tab){
+  if (!jobId) return;
+  css(); M = { jobId: jobId, data: null, tab: tab || 'plans', busy: false, err: '', ts: null };
+  var sh = D.getElementById('gcsys2-shade'); if (!sh) { sh = D.createElement('div'); sh.id = 'gcsys2-shade'; sh.setAttribute('data-gc-keep', '1'); sh.onclick = close; D.body.appendChild(sh); }
+  var d = D.getElementById('gcsys2');
+  if (!d) {
+    d = D.createElement('div'); d.id = 'gcsys2'; d.setAttribute('data-gc-keep', '1'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Manage bid job');
+    d.addEventListener('click', onClick); d.addEventListener('change', onChange);
+    d.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') close(); });
+    ['dragover', 'dragenter'].forEach(function(k){ d.addEventListener(k, function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) { ev.preventDefault(); z.classList.add('over'); } }); });
+    d.addEventListener('dragleave', function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (z) z.classList.remove('over'); });
+    d.addEventListener('drop', function(ev){ var z = ev.target.closest && ev.target.closest('.drop'); if (!z) return; ev.preventDefault(); z.classList.remove('over'); var fs = Array.prototype.slice.call((ev.dataTransfer && ev.dataTransfer.files) || []); if (z.getAttribute('data-for') === 'plans') uploadPlans(fs); else addFiles(fs); });
+    D.body.appendChild(d);
+  }
+  draw(); load();
+}
+function close(){ ['gcsys2', 'gcsys2-shade'].forEach(function(id){ var x = D.getElementById(id); if (x) x.remove(); }); M.jobId = ''; }
+function load(){
+  var id = M.jobId; M.busy = true;
+  return fn('bid-hub?manage=' + encodeURIComponent(id)).then(function(r){ if (M.jobId !== id) return; M.data = r; M.err = ''; if (!M.ts) M.ts = arr(r.job.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode || 'manual' }; }); },
+    function(e){ M.err = e.message; }).then(function(){ M.busy = false; draw(); });
+}
+function keepInputs(f){   /* a redraw keeps what is being typed */
+  var d = D.getElementById('gcsys2'), keep = {};
+  if (d) Array.prototype.forEach.call(d.querySelectorAll('[data-k]'), function(x){ keep[x.getAttribute('data-k')] = x.type === 'checkbox' ? x.checked : x.value; });
+  f();
+  d = D.getElementById('gcsys2');
+  if (d) Array.prototype.forEach.call(d.querySelectorAll('[data-k]'), function(x){ var k = x.getAttribute('data-k'); if (k in keep) { if (x.type === 'checkbox') x.checked = keep[k]; else x.value = keep[k]; } });
+}
+var TABS = [['plans', '📐 Plans & specs'], ['scope', '📝 Scope'], ['addenda', '📎 Addenda'], ['updates', '📣 Updates'], ['qa', '💬 Q&A'], ['log', '🗂 Activity']];
+function draw(){
+  var d = D.getElementById('gcsys2'); if (!d) return;
+  keepInputs(function(){
+    var j = job(), r = M.data;
+    var vis = j.visibility === 'public' ? '🌐 Public — every approved sub' : j.visibility === 'draft' ? '📝 Draft — staff only' : '🔒 Private — invited subs only';
+    d.innerHTML = '<div class="hd"><div style="flex:1;min-width:0"><h3>📂 ' + esc(j.title || 'Bid job') + '</h3><div class="mut">' + esc([j.address, j.po, j.due ? 'Bid due ' + j.due + (j.dueTime ? ' ' + j.dueTime : '') : ''].filter(Boolean).join(' · ')) + '</div>'
+      + (r ? '<div class="mut">' + vis + ' · ' + arr(r.audience).length + ' sub' + (arr(r.audience).length === 1 ? '' : 's') + ' can see what you post</div>' : '') + '</div><button type="button" data-a="close" aria-label="Close">✕</button></div>'
+      + '<div class="tabs" role="tablist">' + TABS.map(function(t){ return '<button type="button" role="tab" data-a="tab" data-t="' + t[0] + '"' + (M.tab === t[0] ? ' class="on"' : '') + '>' + t[1] + (t[0] === 'qa' && r ? ' (' + arr(r.questions).length + ')' : t[0] === 'addenda' && r ? ' (' + arr(j.addenda).length + ')' : '') + '</button>'; }).join('') + '</div>'
+      + '<div class="bd" data-tab="' + M.tab + '">' + (r && r.paused ? '<div class="paused">⏸ Data-entry mode is on: what you post shows on the bid site, but no e-mail goes to a sub (it is held; send it after the pause).</div>' : '')
+      + (M.err && !r ? '<div style="color:#b91c1c">' + esc(M.err) + '</div>' : !r ? '<div class="mut">Loading…</div>' : body()) + '</div>';
+  });
+}
+function body(){
+  if (M.tab === 'plans') return plansHtml();
+  if (M.tab === 'scope') return scopeHtml();
+  if (M.tab === 'addenda') return addendaHtml();
+  if (M.tab === 'updates') return updatesHtml();
+  if (M.tab === 'qa') return qaHtml();
+  return logHtml();
+}
+function noticeTag(n){
+  n = n || {}; var st = s(n.status);
+  if (st === 'sent') return '<span class="pill ok">✉️ e-mailed ' + (n.n || '') + '</span>';
+  if (st === 'waiting') return '<span class="pill warn">⏳ e-mail waits on ✅ Approvals</span>';
+  if (st === 'held') return '<span class="pill warn">⏸ e-mail held — data-entry mode</span>';
+  if (st === 'nobody') return '<span class="pill grey">nobody to e-mail yet</span>';
+  if (st === 'portal only') return '<span class="pill grey">bid site only</span>';
+  return st ? '<span class="pill grey">' + esc(st) + '</span>' : '';
+}
+
+/* ── 📐 plans & specs ── */
+function plansHtml(){
+  var r = M.data, ps = arr(r.plans), ls = arr(job().plansLinks);
+  return '<div class="drop" data-for="plans" data-a="pick" tabindex="0">⬆ <b>Drop plans and specs here</b>, or tap to pick (several at once)<div class="mut">PDF, DWG / DXF, pictures, or a ZIP (unpacked into its sheets) — up to 50 MB a file. They go to the bid site; invited subs download them there.</div></div>'
+    + '<div class="row"><label>Category <select data-k="pcat"><option>Plans</option><option>Specs</option><option>Addenda</option><option>Photos</option></select></label><label>Version <input type="text" data-k="pver" placeholder="Rev 2 / IFC / 100% CD" style="width:150px"></label><label>Date <input type="date" data-k="pdate"></label></div>'
+    + '<h4>Files on the job (' + ps.length + ')</h4>'
+    + (ps.length ? '<table><colgroup><col><col style="width:110px"><col style="width:130px"><col style="width:150px"></colgroup><tbody>' + ps.map(function(p){
+      return '<tr data-plan="' + esc(p.fileRef) + '"><td title="' + esc(p.name) + '"><b>' + esc(p.name) + '</b>' + (p.current ? ' <span class="pill ok">⭐ current</span>' : '') + '<div class="mut">' + esc([p.category, p.size ? Math.round(p.size / 1024) + ' KB' : '', p.at ? 'added ' + when(p.at) : ''].filter(Boolean).join(' · ')) + '</div></td>'
+        + '<td><input type="text" value="' + esc(p.version) + '" placeholder="Version" data-pa="version" data-ref="' + esc(p.fileRef) + '" style="width:100%"></td>'
+        + '<td><input type="date" value="' + esc(p.date) + '" data-pa="date" data-ref="' + esc(p.fileRef) + '" style="width:100%"></td>'
+        + '<td><button type="button" class="b" data-a="current" data-ref="' + esc(p.fileRef) + '"' + (p.current ? ' disabled' : '') + '>⭐ Current</button> <button type="button" class="b red" data-a="rmplan" data-ref="' + esc(p.fileRef) + '" aria-label="Remove">🗑</button></td></tr>';
+    }).join('') + '</tbody></table>' : '<div class="mut">No files yet.</div>')
+    + '<h4>🔗 Plan-room links</h4>' + (ls.length ? ls.map(function(l){ return '<div class="card" data-link="' + esc(l.id) + '"><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + ' ↗</a> <span class="mut">' + esc([l.version, l.date].filter(Boolean).join(' · ')) + '</span> <button type="button" class="b red" data-a="rmlink" data-ref="' + esc(l.id) + '">🗑</button></div>'; }).join('') : '<div class="mut">No links.</div>')
+    + '<div class="row"><input type="url" data-k="lurl" placeholder="https://plan room or shared folder" style="flex:1;min-width:220px"><input type="text" data-k="llabel" placeholder="Label (Plan room)" style="width:160px"><button type="button" class="b pri" data-a="addlink">+ Add link</button></div>';
+}
+function pickFiles(cb, accept){
+  var inp = D.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.accept = accept || '.zip,.pdf,.png,.jpg,.jpeg,.webp,.gif,.tif,.tiff,.heic,.dwg,.dxf'; inp.style.display = 'none'; inp.id = 'gcsys2-file';
+  inp.onchange = function(){ var fs = Array.prototype.slice.call(inp.files || []); inp.remove(); cb(fs); };
+  D.body.appendChild(inp); inp.click();
+}
+async function putFile(f){   /* a signed upload straight into the bid site's bucket */
+  var up = await bidApi({ action: 'upload', name: f.name, type: f.type || 'application/octet-stream', size: f.size });
+  var k = ''; try { k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+  var put = await W.fetch(up.url, { method: 'PUT', headers: Object.assign({ 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'false' }, k ? { apikey: k } : {}), body: f }).catch(function(){ return null; });
+  if (!put || !put.ok) throw new Error('Could not upload ' + f.name);
+  return up.path;
+}
+function val(k){ var x = D.querySelector('#gcsys2 [data-k="' + k + '"]'); return x ? (x.type === 'checkbox' ? x.checked : s(x.value)) : ''; }
+async function uploadPlans(files){
+  var ok = /\.(zip|pdf|png|jpe?g|webp|gif|tiff?|heic|dwg|dxf)$/i, added = 0, left = [], cat = val('pcat') || 'Plans', ver = val('pver'), dt = val('pdate');
+  if (!files.length) return;
+  toast('Uploading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…');
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (!ok.test(f.name)) { left.push(f.name); continue; }
+    if (f.size > 50 * 1024 * 1024) { left.push(f.name + ' (over 50 MB)'); continue; }
+    try {
+      var ref = await putFile(f);
+      var r = await bidApi({ action: 'plans-import', jobId: M.jobId, fileRef: ref, name: f.name, size: f.size, category: cat });
+      added += arr(r.added).length;
+      if ((ver || dt) && arr(r.added).length === 1 && !/\.zip$/i.test(f.name)) await fn('bid-hub', { op: 'plans', jobId: M.jobId, ref: ref, version: ver, date: dt });
+    } catch (e) { toast(e.message, true); left.push(f.name); }
+  }
+  toast(added + ' file' + (added === 1 ? '' : 's') + ' on the bid site' + (left.length ? ' · left out: ' + left.slice(0, 3).join(', ') : ''), !added);
+  load();
+}
+
+/* ── 📝 scope per trade ── */
+function scopeHtml(){
+  var ts = M.ts || [];
+  return '<p class="mut">One scope per trade. A sub sees only the scopes of their own trades. Made from an estimate (or Claude), every price is removed — here and again on the server. GrayCo prices never reach a sub.</p>'
+    + ts.map(function(x, i){ return '<div class="card" data-ts="' + i + '"><div class="row"><input type="text" data-ti="trade" data-i="' + i + '" value="' + esc(x.trade) + '" placeholder="Trade (Roofing, Electrical…)" style="width:220px"><span class="pill grey">' + (x.mode === 'estimate' ? '📐 from estimate · no prices' : x.mode === 'claude' ? '✨ Claude · no prices' : '✍️ typed') + '</span><button type="button" class="b red" data-a="rmts" data-i="' + i + '">🗑</button></div>'
+      + '<textarea data-ti="scope" data-i="' + i + '" placeholder="Scope of work for this trade (no prices)">' + esc(x.scope) + '</textarea></div>'; }).join('')
+    + '<div class="row"><button type="button" class="b" data-a="addts">+ Add a trade</button><button type="button" class="b" data-a="fromest">📐 From an estimate (prices removed)</button><button type="button" class="b pri" data-a="savets">💾 Save & publish scopes</button></div>';
+}
+function estimates(){ var l = arr((W._crm || {}).estimates); return l.filter(function(e){ return e && !e.deleted && arr(e.lines || e.lineItems || e.items).length; }); }
+function fromEstimate(){
+  var es = estimates(), j = job();
+  if (!es.length) return toast('No estimate with line items on this computer yet.', true);
+  var lead = s(j.leadId).replace(/^crm:/, '');
+  es.sort(function(a, b){ return (s(b.leadId) === lead) - (s(a.leadId) === lead) || s(b.updatedAt || b.date).localeCompare(s(a.updatedAt || a.date)); });
+  var pick = W.prompt('Make the scopes from which estimate? Type its number:\n\n' + es.slice(0, 15).map(function(e, i){ return (i + 1) + '. ' + s(e.name || e.title || e.client || 'Estimate') + (s(e.leadId) === lead && lead ? '  (this lead)' : ''); }).join('\n'), '1');
+  var e = es[(parseInt(pick, 10) || 0) - 1]; if (!e) return;
+  var lines = arr(e.lines || e.lineItems || e.items), mk = W._gcScopeFromLines, strip = W._gcStripPrices || function(x){ return x; };
+  if (typeof mk !== 'function') return toast('The scope helper is not loaded yet.', true);
+  var trades = s(j.trades).split(/[,;\/]/).map(s).filter(Boolean);
+  var byTrade = {}; lines.forEach(function(x){ var t = s(x && (x.trade || x.cat || x.category)); if (t) byTrade[low(t)] = t; });
+  var list = trades.length ? trades : Object.keys(byTrade).map(function(k){ return byTrade[k]; });
+  var out = list.map(function(t){ var sc = mk(lines, { trade: t, stripPrices: true }); return { trade: t, scope: strip(sc), mode: 'estimate' }; }).filter(function(x){ return x.scope; });
+  if (!out.length) out = [{ trade: '', scope: strip(mk(lines, { stripPrices: true })), mode: 'estimate' }];
+  M.ts = (M.ts || []).concat(out); draw();
+}
+
+/* ── 📎 addenda ── */
+var AF = [];   /* the files picked for the next addendum */
+function addFiles(fs){
+  if (!fs.length) return;
+  toast('Uploading ' + fs.length + ' file' + (fs.length === 1 ? '' : 's') + '…');
+  Promise.all(fs.map(function(f){ return putFile(f).then(function(ref){ return { name: f.name, size: f.size, type: f.type || '', fileRef: ref }; }, function(e){ toast(e.message, true); return null; }); }))
+    .then(function(l){ AF = AF.concat(l.filter(Boolean)); draw(); });
+}
+function audienceAcks(num){
+  var r = M.data, ack = arr(r.acks).filter(function(k){ return Number(k.num) === Number(num); });
+  var by = {}; ack.forEach(function(k){ by[low(k.userEmail)] = k; });
+  var not = arr(r.audience).filter(function(x){ return !by[low(x.email)]; });
+  return '<div class="mut" data-acks="' + num + '">✍️ Acknowledged by ' + (ack.length ? ack.map(function(k){ return '<b>' + esc(k.userCompany || k.userName) + '</b> ' + esc(when(k.at)); }).join(', ') : 'nobody yet')
+    + (not.length ? ' · <span>not yet: ' + not.slice(0, 12).map(function(x){ return esc(x.company || x.name || x.email); }).join(', ') + (not.length > 12 ? '…' : '') + '</span>' : '') + '</div>';
+}
+function addendaHtml(){
+  var ad = arr(job().addenda).slice().sort(function(a, b){ return b.num - a.num; }), next = ad.length ? Math.max.apply(null, ad.map(function(a){ return +a.num || 0; })) + 1 : 1;
+  return ad.map(function(a){ return '<div class="card" data-addendum="' + a.num + '"><div class="row"><b>Addendum #' + a.num + (a.title ? ' — ' + esc(a.title) : '') + '</b><span class="mut">' + esc(a.date) + '</span>' + noticeTag(a.notice)
+      + (a.notice && a.notice.status === 'held' && !M.data.paused ? '<button type="button" class="b" data-a="resend" data-w="addendum" data-ref="' + a.num + '">✉️ Send the e-mail now (Approvals)</button>' : '') + '</div>'
+      + (a.dueTo ? '<div style="color:#b91c1c;font-weight:700">⏰ Bid due changed to ' + esc(a.dueTo) + (a.dueFrom ? ' (was ' + esc(a.dueFrom) + ')' : '') + '</div>' : '')
+      + (a.text ? '<div style="white-space:pre-wrap">' + esc(a.text) + '</div>' : '') + (arr(a.files).length ? '<div class="mut">📎 ' + arr(a.files).map(function(f){ return esc(f.name); }).join(', ') + '</div>' : '') + audienceAcks(a.num) + '</div>'; }).join('')
+    + '<h4>New addendum — #' + next + '</h4>'
+    + '<div class="row"><input type="text" data-k="atitle" placeholder="What it is (Revised roof plan, RFI #3 answer…)" style="flex:1;min-width:220px"><label>Date <input type="date" data-k="adate" value="' + today() + '"></label></div>'
+    + '<textarea data-k="atext" placeholder="What changed — the subs read this on the bid site"></textarea>'
+    + '<div class="drop" data-for="addenda" data-a="apick" tabindex="0" style="padding:10px">📎 Drop the addendum files here, or tap to pick' + (AF.length ? '<div class="mut">' + AF.map(function(f){ return esc(f.name); }).join(', ') + '</div>' : '') + '</div>'
+    + '<div class="row"><label>New bid due date (optional) <input type="date" data-k="adue"></label><label><input type="checkbox" data-k="anotify" checked> E-mail the subs who can see this job (waits on ✅ Approvals)</label></div>'
+    + '<div class="row"><button type="button" class="b pri" data-a="postadd">📎 Post addendum #' + next + '</button></div>';
+}
+
+/* ── 📣 updates ── */
+function updatesHtml(){
+  var r = M.data, ps = arr(job().posts).slice().reverse(), trades = {};
+  arr(r.audience).forEach(function(x){ arr(x.trades).forEach(function(t){ trades[low(t)] = t; }); });
+  return '<div class="row"><label>To <select data-k="utarget"><option value="all">Every sub who can see this job (' + arr(r.audience).length + ')</option>'
+    + Object.keys(trades).sort().map(function(k){ return '<option value="trade:' + esc(trades[k]) + '">The ' + esc(trades[k]) + ' subs</option>'; }).join('')
+    + arr(r.audience).map(function(x){ return '<option value="sub:' + esc(x.email) + '">' + esc(x.company || x.name || x.email) + (x.account ? '' : ' (no bid-site account — e-mail only)') + '</option>'; }).join('') + '</select></label></div>'
+    + '<textarea data-k="ubody" placeholder="The update (site walk moved, plans revised, questions due…)"></textarea>'
+    + '<div class="row"><label><input type="checkbox" data-k="uemail"> Also e-mail it (waits on ✅ Approvals)</label><button type="button" class="b pri" data-a="post">📣 Post update</button></div>'
+    + '<h4>Posted</h4>' + (ps.length ? ps.map(function(p){ var tg = p.target || {}; return '<div class="card" data-post="' + esc(p.id) + '"><div class="row"><b>' + esc(tg.kind === 'trade' ? 'The ' + tg.trade + ' subs' : tg.kind === 'sub' ? tg.email : 'Every sub') + '</b><span class="mut">' + esc(when(p.at)) + ' · ' + esc(p.by) + ' · ' + (p.inPortal || 0) + ' on the bid site</span>' + noticeTag(p.notice)
+      + (p.notice && p.notice.status === 'held' && !r.paused ? '<button type="button" class="b" data-a="resend" data-w="post" data-ref="' + esc(p.id) + '">✉️ Send the e-mail now (Approvals)</button>' : '') + '</div><div style="white-space:pre-wrap">' + esc(p.body) + '</div></div>'; }).join('') : '<div class="mut">Nothing posted yet.</div>');
+}
+
+/* ── 💬 Q&A ── */
+function qaHtml(){
+  var qs = arr(M.data.questions);
+  if (!qs.length) return '<div class="mut">No questions from the subs yet. They ask on the bid site (Questions); you answer here.</div>';
+  return qs.map(function(q){ return '<div class="card" data-q="' + esc(q.id) + '"><div class="row"><b>' + esc(q.userCompany || q.userName) + '</b><span class="mut">' + esc(when(q.at)) + '</span>' + (q.visibility === 'public' ? '<span class="pill ok">Q' + esc(q.num || '') + ' · answered to all bidders</span>' : s(q.answer) ? '<span class="pill grey">answered privately</span>' : '<span class="pill warn">waiting for an answer</span>')
+    + (q.noticeStatus === 'waiting' ? '<span class="pill warn">e-mail to bidders waits on approval</span>' : q.noticeStatus === 'sent' ? '<span class="pill ok">e-mailed to bidders</span>' : '') + '</div>'
+    + '<div style="white-space:pre-wrap">' + esc(q.body) + '</div>'
+    + '<textarea data-k="qa_' + esc(q.id) + '" placeholder="Your answer">' + esc(q.answer) + '</textarea>'
+    + '<div class="row"><button type="button" class="b" data-a="answer" data-id="' + esc(q.id) + '">↩ Reply privately</button><button type="button" class="b pri" data-a="answerall" data-id="' + esc(q.id) + '">📣 Publish answer to all bidders</button></div></div>'; }).join('');
+}
+
+/* ── 🗂 activity ── */
+function logHtml(){
+  var r = M.data, l = arr(job().log).map(function(x){ return { at: x.at, t: x.what, by: x.by }; })
+    .concat(arr(r.activity).map(function(a){ return { at: a.at, t: (a.kind === 'download' ? '⬇ downloaded ' : '👁 viewed ') + s(a.planName || 'the job'), by: a.userCompany || a.userName } }))
+    .concat(arr(r.acks).map(function(k){ return { at: k.at, t: '✍️ acknowledged addendum #' + k.num, by: k.userCompany || k.userName }; }))
+    .sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); });
+  return l.length ? '<table><colgroup><col style="width:140px"><col><col style="width:200px"></colgroup><tbody>' + l.slice(0, 300).map(function(x){ return '<tr><td class="mut">' + esc(when(x.at)) + '</td><td>' + esc(x.t) + '</td><td class="mut">' + esc(x.by) + '</td></tr>'; }).join('') + '</tbody></table>' : '<div class="mut">Nothing yet.</div>';
+}
+
+/* ── clicks ── */
+function busy(b, on){ if (b) b.disabled = !!on; }
+function post(body, btn, ok){
+  busy(btn, true);
+  return fn('bid-hub', Object.assign({ jobId: M.jobId }, body)).then(function(r){ if (ok) ok(r); load(); return r; }, function(e){ toast(e.message, true); busy(btn, false); });
+}
+function onChange(ev){
+  var t = ev.target, pa = t.getAttribute('data-pa'), ti = t.getAttribute('data-ti');
+  if (pa) post({ op: 'plans', ref: t.getAttribute('data-ref'), version: pa === 'version' ? t.value : undefined, date: pa === 'date' ? t.value : undefined }, null, function(){ toast('Saved'); });
+  if (ti && M.ts) { var i = +t.getAttribute('data-i'); if (M.ts[i]) M.ts[i][ti] = t.value; }
+}
+function onClick(ev){
+  var t = ev.target.closest && ev.target.closest('[data-a]'); if (!t) return;
+  var a = t.getAttribute('data-a');
+  if (a === 'close') return close();
+  if (a === 'tab') { M.tab = t.getAttribute('data-t'); return draw(); }
+  if (a === 'pick') return pickFiles(uploadPlans);
+  if (a === 'apick') return pickFiles(addFiles, '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.doc,.docx,.xls,.xlsx,.zip');
+  if (a === 'current') return post({ op: 'plans', ref: t.getAttribute('data-ref'), current: true }, t, function(){ toast('⭐ Marked current'); });
+  if (a === 'rmplan') { if (!W.confirm('Take this file off the bid job? Subs will no longer see it.')) return; return post({ op: 'plans', ref: t.getAttribute('data-ref'), remove: true }, t); }
+  if (a === 'rmlink') return post({ op: 'plans', ref: t.getAttribute('data-ref'), remove: true }, t);
+  if (a === 'addlink') return post({ op: 'plans', addLink: { url: val('lurl'), label: val('llabel'), version: val('pver'), date: val('pdate') } }, t, function(){ toast('🔗 Link added'); var x = D.querySelector('#gcsys2 [data-k=lurl]'); if (x) x.value = ''; });
+  if (a === 'addts') { M.ts = (M.ts || []).concat([{ trade: '', scope: '', mode: 'manual' }]); return draw(); }
+  if (a === 'rmts') { M.ts.splice(+t.getAttribute('data-i'), 1); return draw(); }
+  if (a === 'fromest') return fromEstimate();
+  if (a === 'savets') return post({ op: 'scope', tradeScopes: M.ts || [] }, t, function(r){ M.ts = arr(r.tradeScopes).map(function(x){ return { id: x.id, trade: x.trade, scope: x.scope, mode: x.mode }; }); toast('📝 Scopes on the bid site'); });
+  if (a === 'postadd') {
+    var nd = val('adue'), msg = 'Post addendum' + (val('atitle') ? ' "' + val('atitle') + '"' : '') + ' to the bid site?' + (nd ? '\n\nThe bid due date changes to ' + nd + '.' : '') + (val('anotify') ? '\n\nThe e-mail to the subs waits on ✅ Approvals.' : '');
+    if (!W.confirm(msg)) return;
+    return post({ op: 'addendum', title: val('atitle'), date: val('adate'), text: val('atext'), newDue: nd, files: AF, notify: !!val('anotify') }, t, function(r){ AF = []; ['atitle', 'atext', 'adue'].forEach(function(k){ var x = D.querySelector('#gcsys2 [data-k=' + k + ']'); if (x) x.value = ''; }); toast('📎 Addendum #' + r.num + ' posted' + (r.notice && r.notice.status === 'held' ? ' — e-mail held (data-entry mode)' : r.notice && r.notice.status === 'waiting' ? ' — e-mail waits on Approvals' : '')); });
+  }
+  if (a === 'post') {
+    var tg = val('utarget') || 'all', k = tg.split(':')[0], v = tg.slice(k.length + 1);
+    return post({ op: 'post', body: val('ubody'), email: !!val('uemail'), target: { kind: k, trade: k === 'trade' ? v : '', email: k === 'sub' ? v : '' } }, t, function(r){ var x = D.querySelector('#gcsys2 [data-k=ubody]'); if (x) x.value = ''; toast('📣 Posted to ' + r.n + ' sub' + (r.n === 1 ? '' : 's')); });
+  }
+  if (a === 'answer' || a === 'answerall') { var id = t.getAttribute('data-id'); return post({ op: 'answer', id: id, answer: val('qa_' + id), publish: a === 'answerall' }, t, function(){ toast(a === 'answerall' ? '📣 Answer published to all bidders (its e-mail waits on approval)' : '↩ Answered privately'); }); }
+  if (a === 'resend') return post({ op: 'notice', what: t.getAttribute('data-w'), ref: t.getAttribute('data-ref') }, t, function(r){ toast(r.notice && r.notice.status === 'waiting' ? '✉️ The e-mail waits on ✅ Approvals' : 'Still held'); });
+}
+
+W._gcSys2 = { open: open, close: close, reload: load, state: function(){ return { jobId: M.jobId, tab: M.tab, loaded: !!M.data, err: M.err, files: AF.length }; } };
+try { console.log('[GC] patch SYS2: 📂 Manage a bid job — plans, scopes, addenda, updates, Q&A, activity; 🗑 Delete / ↩ Restore on the Bid portal tab — _gcSys2.state()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-qa">
