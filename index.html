@@ -168278,3 +168278,369 @@ try { console.log('[GC] 🧹 No duplicates (patch DEDUP): _gcDedupe'); } catch (
 })();
 
 </script>
+<script id="gc-patch-rso">
+/* __GC_PATCH_RSO__ — 🛰 OUTREACH (RoofScout) IN THE LEADS TAB (owner 10/22: "is my lead outreach app in the Leads tab so
+   I can keep up with my outreach from the admin and office profiles?").
+   RoofScout (roofscout/, roofscout.grayco-cs.com) keeps its leads in its own tables (rs_leads, rs_activity —
+   docs/roofscout-setup.sql), read and written here with the CRM sign-in, exactly the way RoofScout itself does:
+     • Leads → "🛰 Outreach" (next to Board · List · Calendar · Map · Bid boards): KPIs (traced leads, contacted this
+       week, follow-ups due today / overdue, appointments, proposals out, won, weighted pipeline), "Follow-ups due"
+       (overdue first) with 📞 Call (tel:) · 📱 Text · ✉️ E-mail and the call outcome (No answer · Left voicemail ·
+       Talked · Appointment set · Not interested) saved on the RoofScout lead (lastCall, stage) + its rs_activity row;
+       the pipeline by RoofScout stage (click a stage for its leads); "Open in RoofScout ↗"; "Convert to CRM lead"
+       (the RSL link: one LEAD_RS_<id> lead, never a second one; already in the CRM → opens that lead).
+     • Do-Not-Call / do-not-contact leads: no call, text, e-mail or outcome buttons. Data-entry mode: no text / e-mail.
+     • Texts go out through the CRM's texting (_gcTexts.send), e-mail through the CRM compose (_gcCompose).
+     • Everyone on the staff list sees it (RoofScout's own rule); the Marketing Manager does not.
+     • RoofScout not set up (no tables) → a plain note to run docs/roofscout-setup.sql. Draws only when something changed.
+   API: window._gcRSO = { state(), refresh(), open(), close(), logOutcome(id, outcome), convert(id) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_RSO__) return; window.__GC_PATCH_RSO__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var SB = 'https://ieeonhpfahmwwecizdut.supabase.co';
+var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
+var RS_URL = 'https://roofscout.grayco-cs.com/';
+var STAGES = ['New', 'Contacted', 'Quoted', 'Won', 'Lost'];
+var PROB = { New: 0.10, Contacted: 0.30, Quoted: 0.60, Won: 1, Lost: 0 };
+var OUTCOMES = ['No answer', 'Left voicemail', 'Talked', 'Appointment set', 'Not interested'];
+var DAY = 864e5;
+var DEF_TYPES = [
+  { id: 'tpo', name: 'TPO (single-ply)', mat: 3.50, labor: 3.00, perSquare: 1000 }, { id: 'roll', name: 'Roll roofing / Mod-bit', mat: 2.25, labor: 2.25, perSquare: 0 },
+  { id: 'metal', name: 'Metal', mat: 5.00, labor: 3.50, perSquare: 1400 }, { id: 'epdm', name: 'EPDM (rubber)', mat: 3.00, labor: 2.75, perSquare: 0 },
+  { id: 'bur', name: 'Built-up (BUR)', mat: 3.50, labor: 3.50, perSquare: 0 }, { id: 'shingle', name: 'Asphalt shingle', mat: 2.25, labor: 2.25, perSquare: 375 }];
+
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function num(v){ var x = parseFloat(String(v == null ? '' : v).replace(/[$,]/g, '')); return isFinite(x) ? x : 0; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(n){ n = Math.round(num(n)); return n >= 1e6 ? '$' + (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? '$' + Math.round(n / 1e3) + 'K' : '$' + n.toLocaleString('en-US'); }
+function view(){ try { return low(localStorage.getItem('grayco_view')); } catch (e) { return ''; } }
+function ssGet(k){ try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+function ssSet(k, v){ try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) {} }
+function myEmail(){ try { var A = W.__GC_AUTH__; var e = A && A.email && A.email(); if (e) return low(e); } catch (e) {} return ''; }
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:' + (bad ? '#b91c1c' : '#0f766e') + ';color:#fff;padding:11px 18px;border-radius:10px;z-index:2147483000;font:700 14px Inter,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:90vw';
+    D.body.appendChild(t); later(function(){ t.remove(); }, 3600); } catch (e) {}
+}
+function uuid(){ try { if (W.crypto && W.crypto.randomUUID) return W.crypto.randomUUID(); } catch (e) {}
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){ var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }); }
+
+/* ── who sees it: RoofScout's rule is "everyone on the staff list"; the Marketing Manager is not staff ── */
+function role(){ try { var m = W._gcMeNow; if (typeof W._gcRoleOf === 'function') return s(W._gcRoleOf(m)); return s(m && m.role); } catch (e) { return ''; } }
+function allowed(){
+  if (!myEmail()) return false;
+  try { if (typeof W._gcIsMM === 'function' && W._gcIsMM()) return false; } catch (e) {}
+  return !/marketing/i.test(role());
+}
+
+/* ── the database, with the CRM sign-in (the same calls RoofScout makes) ── */
+function token(){
+  var A = W.__GC_AUTH__;
+  if (!A || typeof A.fresh !== 'function') return Promise.reject(err('Not signed in.', 'auth'));
+  return Promise.resolve(A.fresh()).then(function(x){ if (!x || !x.access_token) throw err('Not signed in.', 'auth'); return x.access_token; });
+}
+function err(m, code){ var e = new Error(m); e.code = code; return e; }
+function rest(method, path, body, prefer){
+  return token().then(function(t){
+    var h = { apikey: ANON, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }; if (prefer) h.Prefer = prefer;
+    return fetch(SB + '/rest/v1/' + path, { method: method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) })
+      .then(null, function(){ throw err('Could not reach the GrayCo database.', 'offline'); })
+      .then(function(r){
+        return r.text().then(function(tx){
+          var j = null; try { j = tx ? JSON.parse(tx) : null; } catch (e) {}
+          if (r.ok) return j;
+          var c = (j && j.code) || '';
+          if (r.status === 404 || c === '42P01' || c === 'PGRST205') throw err('RoofScout is not set up yet.', 'no-tables');
+          if (r.status === 401 || r.status === 403 || c === '42501') throw err('No permission for RoofScout.', 'denied');
+          if (r.status === 503) throw err('RoofScout will refresh in a moment (the CRM is resting its background syncs).', 'busy');
+          throw err((j && (j.message || j.hint)) || ('Database error ' + r.status), 'error');
+        });
+      });
+  });
+}
+function rowToLead(r){ var l = Object.assign({}, r.data || {}); l.id = r.id; l._ver = r.updated_at; l.updatedAt = Date.parse(r.updated_at) || 0; l.createdAt = Date.parse(r.created_at) || l.createdAt || 0; return l; }
+var META = ['id', 'updatedAt', 'updatedBy', 'createdAt', 'createdBy', '_ver'];
+function leadData(l){ var d = {}; Object.keys(l).forEach(function(k){ if (META.indexOf(k) < 0 && l[k] !== undefined) d[k] = l[k]; }); return d; }
+
+/* ── state ── */
+var S = { leads: [], settings: null, err: '', errCode: '', loadedAt: 0, loading: null, busy: {} };
+var UI = { on: ssGet('gc_rso_on') === '1', stage: '' };
+var SIG = '';
+
+function load(){
+  if (S.loading) return S.loading;
+  if (!allowed()) return Promise.resolve(null);
+  var rows = [];
+  function page(from){
+    return rest('GET', 'rs_leads?select=id,data,created_at,updated_at&order=updated_at.desc&limit=1000&offset=' + from).then(function(p){
+      p = Array.isArray(p) ? p : []; rows = rows.concat(p);
+      return p.length === 1000 && from < 20000 ? page(from + 1000) : rows;
+    });
+  }
+  S.loading = Promise.all([page(0), rest('GET', 'rs_settings?id=eq.main&select=data').then(null, function(){ return []; })]).then(function(r){
+    S.leads = r[0].map(rowToLead).filter(function(l){ return !isDemo(l); });
+    S.settings = r[1] && r[1][0] ? r[1][0].data : null;
+    S.err = ''; S.errCode = ''; S.loadedAt = Date.now(); S.loading = null; CRMLIST = null; paint();
+    return S.leads;
+  }, function(e){ S.err = s(e && e.message) || 'Could not read RoofScout.'; S.errCode = s(e && e.code); S.loadedAt = Date.now(); S.loading = null; paint(); return null; });
+  return S.loading;
+}
+
+/* ── the numbers ── */
+function isDemo(l){ return !!l && (l.demo === true || /^DEMO\s/.test(s(l.name))); }
+function blocked(l){ return !!l && (l.dnc === true || l.doNotContact === true); }
+function isOpen(l){ return l && l.stage !== 'Won' && l.stage !== 'Lost'; }
+function owner(l){ return l.owner || {}; }
+function priceOf(l){
+  if (l._pricing && isFinite(num(l._pricing.price)) && num(l._pricing.price) > 0) return num(l._pricing.price);
+  var st = S.settings || {}, types = Array.isArray(st.roofTypes) && st.roofTypes.length ? st.roofTypes : DEF_TYPES;
+  var rt = types.filter(function(t){ return t && t.id === l.roofType; })[0] || types[0] || {};
+  var area = num(l.areaSqft), per = num(rt.perSquare), cost = area * (num(rt.mat) + num(rt.labor)), m = (st.margin != null ? num(st.margin) : 35) / 100;
+  return per > 0 ? area / 100 * per : (m >= 0 && m < 1 ? cost / (1 - m) : cost);
+}
+function startOfDay(t){ var d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
+/* when the next call is due: never called → now; no answer / voicemail → 3 days later (RoofScout's call list
+   drops a called lead for 3 days); talked → 7 days; appointment / not interested → nothing due. A lead's own
+   followUp date (if RoofScout or someone set one) wins. */
+function dueAt(l){
+  if (!isOpen(l) || blocked(l)) return 0;
+  if (l.followUp) { var f = Date.parse(l.followUp); if (f) return f; }
+  var c = l.lastCall;
+  if (!c || !c.ts) return Math.max(l.createdAt || 0, 1);
+  if (/appointment|not interested/i.test(s(c.outcome))) return 0;
+  return num(c.ts) + (/talked/i.test(s(c.outcome)) ? 7 : 3) * DAY;
+}
+function model(now){
+  now = now || Date.now();
+  var t0 = startOfDay(now), t1 = t0 + DAY, wk = now - 7 * DAY;
+  var leads = S.leads, open = leads.filter(isOpen), due = [];
+  open.forEach(function(l){ var d = dueAt(l); if (d && d < t1) due.push({ l: l, at: d, overdue: d < t0 }); });
+  due.sort(function(a, b){ return a.at - b.at || priceOf(b.l) - priceOf(a.l); });
+  var by = {}; STAGES.forEach(function(st){ by[st] = { n: 0, v: 0 }; });
+  leads.forEach(function(l){ var st = STAGES.indexOf(l.stage) >= 0 ? l.stage : 'New'; by[st].n++; by[st].v += priceOf(l); });
+  return {
+    traced: leads.length,
+    contactedWeek: leads.filter(function(l){ return l.lastCall && num(l.lastCall.ts) >= wk; }).length,
+    dueToday: due.filter(function(x){ return !x.overdue; }).length,
+    overdue: due.filter(function(x){ return x.overdue; }).length,
+    appts: open.filter(function(l){ return l.lastCall && /appointment/i.test(s(l.lastCall.outcome)); }).length,
+    quoted: by.Quoted.n,
+    won: by.Won.n,
+    weighted: open.reduce(function(t, l){ return t + priceOf(l) * (PROB[l.stage] || 0); }, 0),
+    due: due, byStage: by
+  };
+}
+
+/* ── CRM lead for a RoofScout lead (patch RSL: LEAD_RS_<id>, or the same address already in the CRM) ── */
+var CRMLIST = null, CRMAT = 0;
+function crmLeadsFresh(){ CRMAT = Date.now(); try { if (W._gcRoofScout && W._gcRoofScout.leads) return W._gcRoofScout.leads() || []; } catch (e) {} return []; }
+function crmLeads(){ if (!CRMLIST) CRMLIST = crmLeadsFresh(); return CRMLIST; }
+function crmLeadFor(l){
+  var list = crmLeads(), key = '';
+  var hit = list.filter(function(x){ return x && (x.rsLeadId === l.id || x.id === 'LEAD_RS_' + l.id); })[0];
+  if (hit) return hit;
+  try { key = W._gcRoofScout && W._gcRoofScout.addrKey ? W._gcRoofScout.addrKey(l.address) : ''; } catch (e) {}
+  if (!key) return null;
+  return list.filter(function(x){ try { return x && W._gcRoofScout.addrKey(x.address || x.jobAddress || '') === key; } catch (e) { return false; } })[0] || null;
+}
+function convert(id){
+  var l = S.leads.filter(function(x){ return x.id === id; })[0]; if (!l) return Promise.resolve({ ok: false, error: 'not found' });
+  CRMLIST = crmLeadsFresh();
+  var have = crmLeadFor(l);
+  if (have) { openCrm(have.id); return Promise.resolve({ ok: true, existing: true, id: have.id }); }
+  if (blocked(l)) { toast('This owner is Do-Not-Call / do-not-contact — not brought into the CRM.', true); return Promise.resolve({ ok: false, error: 'dnc' }); }
+  if (!W._gcRoofScout || typeof W._gcRoofScout.upsertLeads !== 'function') { toast('The CRM link to RoofScout is still loading — try again in a moment.', true); return Promise.resolve({ ok: false, error: 'loading' }); }
+  var c = JSON.parse(JSON.stringify(l)); c._pricing = c._pricing || { price: priceOf(l), approx: Math.round(priceOf(l) / 100) * 100 };
+  return Promise.resolve(W._gcRoofScout.upsertLeads([c], { settings: S.settings })).then(function(){
+    CRMLIST = crmLeadsFresh(); SIG = '';
+    var now = crmLeadFor(l);
+    if (now) { toast('✅ In the CRM as a GrayCo lead (RoofScout).'); openCrm(now.id); return { ok: true, id: now.id }; }
+    toast('Saved — the CRM lead shows in Leads in a moment.'); return { ok: true, pending: true };
+  }, function(e){ toast(s(e && e.message) || 'Could not add it to the CRM.', true); return { ok: false }; });
+}
+function openCrm(id){ try { if (W._gcOpenLead) { close(); W._gcOpenLead(id); } } catch (e) {} }
+
+/* ── a call outcome → the RoofScout lead (lastCall, stage) + an rs_activity row, the way RoofScout logs it ── */
+function logOutcome(id, outcome){
+  var l = S.leads.filter(function(x){ return x.id === id; })[0];
+  if (!l) return Promise.resolve({ ok: false, error: 'not found' });
+  if (l.dnc === true) { toast('This number is marked Do-Not-Call.', true); return Promise.resolve({ ok: false, error: 'dnc' }); }
+  if (l.doNotContact === true) { toast('This owner asked not to be contacted.', true); return Promise.resolve({ ok: false, error: 'dnc' }); }
+  if (OUTCOMES.indexOf(outcome) < 0) return Promise.resolve({ ok: false, error: 'outcome' });
+  if (S.busy[id]) return Promise.resolve({ ok: false, error: 'busy' });
+  var next = JSON.parse(JSON.stringify(l)), detail = outcome, me = myEmail();
+  next.lastCall = { ts: Date.now(), outcome: outcome, user: me };
+  if (!next.assignedTo) next.assignedTo = me;
+  if ((outcome === 'Talked' || outcome === 'Appointment set') && next.stage === 'New') { next.stage = 'Contacted'; detail += ' → Contacted'; }
+  if (outcome === 'Not interested') { next.stage = 'Lost'; detail += ' → Lost'; }
+  next.touched = true;
+  S.busy[id] = 1; paint();
+  var path = 'rs_leads?id=eq.' + encodeURIComponent(id) + (l._ver ? '&updated_at=eq.' + encodeURIComponent(l._ver) : '');
+  return rest('PATCH', path, { data: leadData(next) }, 'return=representation').then(function(rows){
+    if (!rows || !rows[0]) { delete S.busy[id]; toast('Someone changed this lead in RoofScout just now — reloaded, please log it again.', true); return load().then(function(){ return { ok: false, error: 'conflict' }; }); }
+    var fresh = rowToLead(rows[0]);
+    S.leads = S.leads.map(function(x){ return x.id === id ? fresh : x; });
+    delete S.busy[id];
+    return rest('POST', 'rs_activity', { id: uuid(), lead_id: id, action: 'call', detail: detail.slice(0, 500) }, 'return=minimal').then(null, function(){}).then(function(){
+      toast('Logged: ' + detail); paint(); return { ok: true, detail: detail };
+    });
+  }, function(e){ delete S.busy[id]; toast(s(e && e.message) || 'Not saved.', true); paint(); return { ok: false, error: s(e && e.code) }; });
+}
+
+/* ── call · text · e-mail ── */
+function paused(){ try { return !!(W._gcPause && W._gcPause.state && W._gcPause.state().paused); } catch (e) { return false; } }
+function textLead(l){
+  if (blocked(l)) { toast('Do-Not-Call / do-not-contact: no texts.', true); return; }
+  if (paused()) { toast('Data-entry mode is on — nothing is sent to customers.', true); return; }
+  var ph = s(owner(l).phone); if (!ph) { toast('No phone on file — find the owner in RoofScout first.', true); return; }
+  if (!W._gcTexts || !W._gcTexts.send) { toast('Texting is not set up in the CRM yet.', true); return; }
+  var tx = prompt('Text ' + ph + ' from the GrayCo number:', ''); if (!s(tx)) return;
+  W._gcTexts.send(ph, tx, '').then(function(o){ if (o && o.ok) toast('📱 Text sent.'); else toast(s(o && o.error) || 'Not sent.', true); });
+}
+function emailLead(l){
+  if (blocked(l)) { toast('Do-Not-Call / do-not-contact: no e-mail.', true); return; }
+  if (paused()) { toast('Data-entry mode is on — nothing is sent to customers.', true); return; }
+  var em = s(owner(l).email); if (!em) { toast('No e-mail on file.', true); return; }
+  if (typeof W._gcCompose === 'function') { W._gcCompose({ to: em, subject: 'Your roof at ' + s(l.address), body: '' }); return; }
+  toast('E-mail is not available on this computer.', true);
+}
+
+/* ── drawing ── */
+function css(){
+  if (D.getElementById('gc-rso-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-rso-css';
+  st.textContent = 'body.gcrso-on #gc-leads-hub{display:none!important}' +
+    '#gc-rso{font-family:Inter,-apple-system,Arial,sans-serif;color:#0f172a;margin:0 0 16px}' +
+    '#gc-rso .r-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}#gc-rso h2{margin:0;font-size:22px;color:#241968;flex:1}' +
+    '#gc-rso .r-btn{border:1px solid #cbd5e1;background:#fff;color:#241968;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer;font-size:14px;text-decoration:none;display:inline-block}' +
+    '#gc-rso .r-btn.pri{background:#241968;color:#fff;border-color:#241968}#gc-rso .r-btn:disabled{opacity:.5;cursor:default}' +
+    '#gc-rso .r-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}' +
+    '#gc-rso .r-k{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px}#gc-rso .r-k b{display:block;font-size:24px;color:#0f172a}#gc-rso .r-k span{font-size:12.5px;color:#475569}' +
+    '#gc-rso .r-k.bad{border-color:#fca5a5;background:#fef2f2}' +
+    '#gc-rso .r-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;margin-bottom:14px}#gc-rso h3{margin:0 0 8px;font-size:16px}' +
+    '#gc-rso .r-row{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;padding:9px 0;border-top:1px solid #f1f5f9}#gc-rso .r-row:first-of-type{border-top:0}' +
+    '#gc-rso .r-main{flex:1;min-width:220px}#gc-rso .r-name{font-weight:800}#gc-rso .r-sub{font-size:12.5px;color:#475569}' +
+    '#gc-rso .r-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}#gc-rso .r-out{font-size:12.5px;padding:5px 8px}' +
+    '#gc-rso .chip{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:6px}' +
+    '#gc-rso .chip.od{background:#fee2e2;color:#b91c1c}#gc-rso .chip.td{background:#fef3c7;color:#92400e}#gc-rso .chip.dnc{background:#fee2e2;color:#b91c1c}' +
+    '#gc-rso .r-stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}' +
+    '#gc-rso .r-st{border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fafc;cursor:pointer;text-align:left;font:inherit}#gc-rso .r-st.on{border-color:#241968;background:#eef2ff}' +
+    '#gc-rso .r-st b{display:block;font-size:18px}#gc-rso .r-note{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:12px;padding:14px;font-size:14px}' +
+    '#gc-rso-tab.on{background:#241968;color:#fff}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function leadRow(l, extra){
+  var o = owner(l), b = blocked(l), busy = !!S.busy[l.id], ph = s(o.phone), em = s(o.email);
+  var who = [o.name, o.company].filter(Boolean).join(', ');
+  var acts = b ? '<span class="chip dnc">' + (l.doNotContact ? 'Do not contact' : 'Do-Not-Call') + '</span>' :
+    (ph ? '<a class="r-btn" data-rso-call="' + esc(l.id) + '" href="tel:' + esc(ph.replace(/[^\d+]/g, '')) + '">📞 Call</a>' : '') +
+    (ph ? '<button type="button" class="r-btn" data-rso-text="' + esc(l.id) + '">📱 Text</button>' : '') +
+    (em ? '<button type="button" class="r-btn" data-rso-mail="' + esc(l.id) + '">✉️ E-mail</button>' : '') +
+    (!ph && !em ? '<span class="r-sub">No phone or e-mail yet — find the owner in RoofScout</span>' : '');
+  var outs = b ? '' : '<div class="r-acts" style="margin-top:6px">' + OUTCOMES.map(function(o2){ return '<button type="button" class="r-btn r-out" data-rso-out="' + esc(o2) + '" data-rso-id="' + esc(l.id) + '"' + (busy ? ' disabled' : '') + '>' + esc(o2) + '</button>'; }).join('') + '</div>';
+  var last = l.lastCall && l.lastCall.ts ? 'Last: ' + esc(l.lastCall.outcome) + ' · ' + new Date(num(l.lastCall.ts)).toLocaleDateString() : 'Not called yet';
+  var inCrm = crmLeadFor(l);
+  return '<div class="r-row" data-rso-lead="' + esc(l.id) + '"><div class="r-main"><div class="r-name">' + esc(l.name || l.address || 'Lead') + (extra || '') + '</div>' +
+    '<div class="r-sub">' + esc(l.address) + ' · ' + esc(l.stage || 'New') + ' · ' + money(priceOf(l)) + (who ? ' · ' + esc(who) : '') + (ph ? ' · ' + esc(ph) : '') + '</div>' +
+    '<div class="r-sub">' + last + '</div>' + outs + '</div>' +
+    '<div class="r-acts">' + acts +
+      '<a class="r-btn" target="_blank" rel="noopener" href="' + RS_URL + '#lead=' + encodeURIComponent(l.id) + '">Open in RoofScout ↗</a>' +
+      '<button type="button" class="r-btn" data-rso-conv="' + esc(l.id) + '">' + (inCrm ? 'Open CRM lead' : 'Convert to CRM lead') + '</button></div></div>';
+}
+function html(){
+  var head = '<div class="r-top"><h2>🛰 Outreach · RoofScout</h2>' +
+    '<button type="button" class="r-btn" data-rso-back="1">◈ Back to Leads</button>' +
+    '<button type="button" class="r-btn" data-rso-reload="1">↻ Refresh</button>' +
+    '<a class="r-btn pri" target="_blank" rel="noopener" href="' + RS_URL + '">Open RoofScout ↗ (map · scan)</a></div>';
+  if (S.errCode === 'no-tables') return head + '<div class="r-note"><b>RoofScout isn\'t set up yet.</b> An admin runs <b>docs/roofscout-setup.sql</b> once in Supabase → SQL Editor (see docs/ROOFSCOUT-SETUP.md). Then outreach shows here.</div>';
+  if (S.err && !S.leads.length) return head + '<div class="r-note">' + esc(S.err) + '</div>';
+  if (!S.loadedAt) return head + '<div class="r-note">Loading RoofScout outreach…</div>';
+  var m = model();
+  var k = function(n, l, bad){ return '<div class="r-k' + (bad ? ' bad' : '') + '"><b>' + n + '</b><span>' + l + '</span></div>'; };
+  var out = head + '<div class="r-kpis">' +
+    k(m.traced, 'Traced leads') + k(m.contactedWeek, 'Contacted this week') + k(m.dueToday, 'Follow-ups due today') +
+    k(m.overdue, 'Overdue follow-ups', m.overdue > 0) + k(m.appts, 'Appointments set') + k(m.quoted, 'Proposals out') +
+    k(m.won, 'Won') + k(money(m.weighted), 'Weighted pipeline') + '</div>';
+  out += '<div class="r-card"><h3>Follow-ups due (' + m.due.length + ')</h3>' +
+    (m.due.length ? m.due.slice(0, 60).map(function(x){ return leadRow(x.l, x.overdue ? '<span class="chip od">overdue</span>' : '<span class="chip td">today</span>'); }).join('') :
+      '<div class="r-sub">Nothing due today. 🎉</div>') + '</div>';
+  out += '<div class="r-card"><h3>Pipeline by RoofScout stage</h3><div class="r-stages">' + STAGES.map(function(st){
+    var b = m.byStage[st]; return '<button type="button" class="r-st' + (UI.stage === st ? ' on' : '') + '" data-rso-stage="' + st + '"><b>' + b.n + '</b>' + st + ' · ' + money(b.v) + '</button>';
+  }).join('') + '</div>' +
+  (UI.stage ? '<div style="margin-top:10px">' + (S.leads.filter(function(l){ return (l.stage || 'New') === UI.stage; }).sort(function(a, b){ return priceOf(b) - priceOf(a); }).slice(0, 80).map(function(l){ return leadRow(l, ''); }).join('') || '<div class="r-sub">None.</div>') + '</div>' : '') + '</div>';
+  if (S.err) out += '<div class="r-sub">Last refresh: ' + esc(S.err) + '</div>';
+  return out;
+}
+
+/* ── where it sits: the tab next to the hub's views; the panel takes the hub's place ── */
+function hub(){ return D.getElementById('gc-leads-hub'); }
+function tabButton(){
+  var h = hub(); if (!h) return;
+  var tabs = h.querySelector('.gcl-tabs'); if (!tabs) return;
+  var b = tabs.querySelector('#gc-rso-tab');
+  if (!b) { b = D.createElement('button'); b.type = 'button'; b.id = 'gc-rso-tab'; b.setAttribute('role', 'tab'); b.textContent = '🛰 Outreach'; if (UI.on) b.className = 'on'; tabs.appendChild(b); }
+}
+function panel(){
+  var h = hub(); if (!h || !h.parentElement) return null;
+  var p = D.getElementById('gc-rso');
+  if (p && p.parentElement === h.parentElement) return p;      /* already beside the hub: leave it where it is */
+  if (p) p.remove();
+  p = D.createElement('div'); p.id = 'gc-rso'; p.setAttribute('data-gc-keep', '1');
+  h.parentElement.insertBefore(p, h); SIG = '';
+  return p;
+}
+function paint(){
+  var on = UI.on && view() === 'leads' && allowed() && !!hub();
+  D.body.classList.toggle('gcrso-on', !!on);
+  if (!on) { var old = D.getElementById('gc-rso'); if (old) old.remove(); SIG = ''; return; }
+  css();
+  var p = panel(); if (!p) return;
+  var ae = D.activeElement; if (ae && p.contains(ae) && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
+  if (!CRMLIST || Date.now() - CRMAT > 60000) CRMLIST = crmLeadsFresh();   /* (reading it pokes the screen's state: not every tick) */
+  var m = S.loadedAt ? model() : null;
+  var sig = JSON.stringify([UI.stage, S.err, S.errCode, S.loadedAt ? 1 : 0, Object.keys(S.busy), S.leads.map(function(l){ return [l.id, l._ver]; }), crmLeads().length,
+    m ? [m.dueToday, m.overdue] : 0, new Date().toDateString()]);
+  if (sig === SIG) return;
+  SIG = sig;
+  p.innerHTML = html();
+}
+function tabState(){ var tb = D.getElementById('gc-rso-tab'); if (tb && tb.classList.contains('on') !== !!UI.on) tb.classList.toggle('on', !!UI.on); }
+function open(){ UI.on = true; ssSet('gc_rso_on', '1'); tabState(); paint(); if (!S.loadedAt || Date.now() - S.loadedAt > 60000) load(); }
+function close(){ UI.on = false; ssSet('gc_rso_on', null); tabState(); paint(); }
+
+D.addEventListener('click', function(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('#gc-rso-tab,[data-rso-back],[data-rso-reload],[data-rso-stage],[data-rso-out],[data-rso-text],[data-rso-mail],[data-rso-conv],[data-rso-call]') : null;
+  if (!t) return;
+  if (t.id === 'gc-rso-tab') { ev.preventDefault(); if (UI.on) close(); else open(); return; }
+  if (t.hasAttribute('data-rso-call')) return;                     /* the tel: link does it */
+  ev.preventDefault();
+  var lead = function(id){ return S.leads.filter(function(x){ return x.id === id; })[0]; };
+  if (t.hasAttribute('data-rso-back')) close();
+  else if (t.hasAttribute('data-rso-reload')) load();
+  else if (t.hasAttribute('data-rso-stage')) { var st = t.getAttribute('data-rso-stage'); UI.stage = UI.stage === st ? '' : st; paint(); }
+  else if (t.hasAttribute('data-rso-out')) logOutcome(t.getAttribute('data-rso-id'), t.getAttribute('data-rso-out'));
+  else if (t.hasAttribute('data-rso-text')) { var a = lead(t.getAttribute('data-rso-text')); if (a) textLead(a); }
+  else if (t.hasAttribute('data-rso-mail')) { var b = lead(t.getAttribute('data-rso-mail')); if (b) emailLead(b); }
+  else if (t.hasAttribute('data-rso-conv')) convert(t.getAttribute('data-rso-conv'));
+}, true);
+
+/* the hub redraws its own innerHTML when its data changes: put the tab back then; keep the panel beside it */
+RI.call(W, function(){
+  if (view() !== 'leads') { if (D.getElementById('gc-rso') || D.body.classList.contains('gcrso-on')) paint(); return; }
+  if (!allowed()) { var x = D.querySelector('#gc-rso-tab'); if (x) x.remove(); if (D.getElementById('gc-rso')) paint(); return; }
+  tabButton();
+  tabState();
+  if (UI.on) { if (!S.loadedAt && !S.loading) load(); paint(); }
+}, 1500);
+RI.call(W, function(){ if (UI.on && view() === 'leads' && !D.hidden && Date.now() - S.loadedAt > 120000) load(); }, 30000);
+
+W._gcRSO = { state: function(){ return { on: UI.on, stage: UI.stage, err: S.err, errCode: S.errCode, leads: S.leads.length, model: S.loadedAt ? (function(m){ return { traced: m.traced, contactedWeek: m.contactedWeek, dueToday: m.dueToday, overdue: m.overdue, appts: m.appts, quoted: m.quoted, won: m.won, weighted: Math.round(m.weighted), due: m.due.map(function(x){ return x.l.id; }) }; })(model()) : null }; },
+  refresh: load, open: open, close: close, logOutcome: logOutcome, convert: convert, _allowed: allowed };
+try { console.log('[GC] 🛰 Outreach (RoofScout) in Leads (patch RSO) — _gcRSO'); } catch (e) {}
+})();
+</script>
