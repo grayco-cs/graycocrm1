@@ -1119,8 +1119,17 @@ function invoiceMailHtml(doc, pmPhone){
 }
 /* a client invoice made in the CRM (not a draft, not paid, not a QuickBooks copy, made since AP2 went in) */
 const INV_MAIL_SINCE = '2026-10-21';
+/* patch LCLEAN (owner 10/23, back-entering 2025): history is a record, never mail — an invoice imported or entered as
+   history (importedHistory / noSend / historyOnly), or one whose own date is before AP2 went in */
+function isHistoryInvoice(r){
+  if (!r) return false;
+  if (r.importedHistory === true || r.noSend === true || r.historyOnly === true) return true;
+  const d = s(r.date || r.invoiceDate || r.invDate).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && d < INV_MAIL_SINCE;
+}
 function invMailWanted(r){
   if (!isCustomerInvoice(r) || invPaid(r) || invBalance(r) <= 0) return false;
+  if (isHistoryInvoice(r)) return false;   /* patch LCLEAN */
   if (/pending|ready_for_review/.test(low(r.status)) || r._autoDrafted === true && /draft/.test(low(r.status))) return false;
   if (/quickbooks|^qb/i.test(s(r.source)) || r.qbId || r.qbKey) return false;
   const made = s(r.createdAt || r.created || r.savedAt || r.date).slice(0, 10);
@@ -1616,9 +1625,9 @@ async function runReminders(opts){
   for (const p of projects) {
     const pid = s(p.id);
     if (/lost|dead|cancel/.test(low(p.status))) continue;
-    const finals = invs.filter(function(r){ return pidOf(r) === pid && isCustomerInvoice(r) && invFinal(r) && invBalance(r) > 0; });
+    const finals = invs.filter(function(r){ return pidOf(r) === pid && isCustomerInvoice(r) && invFinal(r) && invBalance(r) > 0 && !(r.importedHistory === true || r.noSend === true || r.historyOnly === true); });   /* patch LCLEAN: an invoice imported / entered as history is never e-mailed or reminded */
     if (!finals.length) continue;
-    if (p.portalRemindersPaused === true) { report.paused++; continue; }
+    if (p.portalRemindersPaused === true || (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) { report.paused++; continue; }   /* patch LCLEAN-H: a history job is never reminded */
     if (!jaAllows(data, p, 'finalReminders')) { report.off = (report.off || 0) + 1; continue; }   /* patch JA: off for this job */
     for (const inv of finals) {
       const invId = s(inv.id); if (!invId) continue;
@@ -2217,6 +2226,7 @@ Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, ins
 /* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */
 Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
+Object.assign(exports._core, { isHistoryInvoice: isHistoryInvoice });   /* patch LCLEAN */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
 /* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */
 Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,

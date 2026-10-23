@@ -184,6 +184,7 @@ function warrDue(data, state, t){
   const seen = {}, out = [];
   arr(data.projects).forEach(function(p){
     if (!p.id || p.deleted === true || dead[s(p.id)] || !isDone(p)) return;
+    if (p.importedHistory === true || p.noSend === true || p.historyOnly === true) return;   /* patch LCLEAN-H: no warranty outreach for a job back-entered as history */
     if (/commercial|government|tenant|\bti\b|new construction/i.test(s(p.type)) || p.gcJob === true || p.hiredByGc === true) return;
     if (p.doNotContact || p.dnc || p.doNotEmail) return;
     const email = low(p.clientEmail || p.customerEmail || p.email); if (!okEmail(email) || seen[email]) return;

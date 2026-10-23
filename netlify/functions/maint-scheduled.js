@@ -29,6 +29,7 @@ async function run(now){
   for (const c of A.list) {
     if (c.status !== 'signed') continue;
     const p = C.findProject(A.data, c.pid); if (!p) continue;
+    if ((p.importedHistory === true || p.noSend === true || p.historyOnly === true) || c.importedHistory === true) continue;   /* patch LCLEAN-H: no maintenance visits / invoices for history */
     const pm = C.pmOf(A.data, p), job = s(p.name) || 'the job';
     /* the visit, 21 days ahead */
     if (c.nextVisit && Date.parse(c.nextVisit + 'T12:00:00Z') - now <= 21 * 864e5 && Date.parse(c.nextVisit + 'T12:00:00Z') - now > -30 * 864e5) {
@@ -65,6 +66,7 @@ async function run(now){
   const has = {}; A.list.forEach(function(c){ if (!/^(cancelled)$/.test(s(c.status))) has[s(c.pid)] = 1; });
   for (const p of arr(A.data.projects)) {
     if (!p || !p.id || has[s(p.id)] || !DONE.test(s(p.status)) || !M.eligible(p, A.settings)) continue;
+    if (p.importedHistory === true || p.noSend === true || p.historyOnly === true) continue;   /* patch LCLEAN-H: no maintenance-plan offer for a history job */
     const at = Date.parse(p.completedAt || p.completionDate || p.endDate || p.closedAt || p.updatedAt || ''); if (!isFinite(at) || now - at > 45 * 864e5 || at > now + 864e5) continue;
     const pm = C.pmOf(A.data, p);
     const ok = await C.officeTodo('maint_offer_' + p.id, '🛠 Offer a maintenance plan — ' + s(p.name) + (pm ? ' (' + pm.name + ')' : ''),

@@ -72,6 +72,7 @@ function effective(p, admin){
   const out = defaultsFor(groupOf(p), admin);
   const own = p && p.auto && typeof p.auto === 'object' ? p.auto : null;
   if (own) KEYS.forEach(function(k){ if (!LOCKED[k] && typeof own[k] === 'boolean') out[k] = own[k]; });
+  if (p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) OPTS.forEach(function(o){ if (!LOCKED[o[0]] && /^(email|docs|portal)$/.test(o[1])) out[o[0]] = false; });   /* patch LCLEAN-H: a job imported / back-entered as history sends nothing */
   return out;
 }
 function allows(p, key, admin){

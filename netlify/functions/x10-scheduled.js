@@ -68,7 +68,7 @@ function statementHtml(g, today){
     '<p style="font-size:13px;color:#55626F">Already paid? Thank you — payments can take a few days to show. Questions? Call GrayCo at 901-585-0944.</p>';
 }
 async function statementsMonthly(data){
-  const today = X.wall(now()).day, invs = arr(data.invs).concat(arr(data.invoices)).filter(C().isCustomerInvoice);
+  const today = X.wall(now()).day, invs = arr(data.invs).concat(arr(data.invoices)).filter(C().isCustomerInvoice).filter(function(r){ return !(r && (r.importedHistory === true || r.noSend === true || r.historyOnly === true)); });   /* patch LCLEAN: history is never on a statement */
   const seen = {}, rows = [];
   invs.forEach(function(r){ const id = s(r.id); if (id && seen[id]) return; if (id) seen[id] = 1;
     const pid = s(r.pid || r.projectId || r.jobId || r.project_id), p = C().findProject(data, pid); if (!p || p.deleted === true) return;

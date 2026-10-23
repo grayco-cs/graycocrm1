@@ -374,6 +374,7 @@ function make(d){
   const RESULTS_DAYS = 7;
   function resultsWanted(l, t){
     if (!l || !l.id || !isBid(l) || l.deleted || l._deleted || l.converted || l.notBidding || l.noBid) return false;
+    if (l.importedHistory === true || l.noSend === true || l.historyOnly === true || l.archived === true) return false;   /* patch LCLEAN-H: history / archived bids get no "Bid results?" e-mail */
     if (/^(won|lost|no\s*bid|not\s*bidding|dead|deleted|converted|declined|archived|cancell?ed|closed|dismissed)$/i.test(s(l.bidStatus))) return false;
     if (/^(won|lost|dead|deleted|converted|declined|archived|closed|dismissed)$/i.test(s(l.stage)) || /^(won|lost)$/i.test(s(l.status))) return false;
     if (!(/^submitted$/i.test(s(l.bidStatus)) || s(l.submittedAt))) return false;   /* only a bid GrayCo actually sent in */

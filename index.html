@@ -7972,7 +7972,7 @@ var _contact=(fullIdx>=0?(r[fullIdx]||""):"").replace(/^"|"$/g,"").trim();
 var _isCommercial=name.toLowerCase().includes("llc")||name.toLowerCase().includes("inc")||name.toLowerCase().includes("construction")||name.toLowerCase().includes("corp")||name.toLowerCase().includes("enterprise")||name.toLowerCase().includes("holdings")||name.toLowerCase().includes("bank")||name.toLowerCase().includes("medical")||name.toLowerCase().includes("school")||name.toLowerCase().includes("roofing")||name.toLowerCase().includes("restoration")||name.toLowerCase().includes("flooring")||name.toLowerCase().includes("packaging");
 var _type=_isCommercial?"commercial":"homeowner";
 var _jobType=_isCommercial?"Commercial TI":"Residential Reno";
-Wn(function(prev){return[].concat(prev,[{id:Date.now()+"_"+Math.random().toString(36).slice(2,6),name:name,client:name,phone:_phone,clientPhone:_phone,clientEmail:_email,address:_type==="homeowner"?_addr:"",company:_isCommercial?name:"",contract:balIdx>=0?(r[balIdx]||"").replace(/[$,]/g,""):"",status:"Active",autoPO:PO,type:_jobType,pm:"",subs:[],created:new Date().toISOString().slice(0,10),source:"QuickBooks",photos:[],checklist:[],contactName:_contact}])});
+Wn(function(prev){return[].concat(prev,[{id:Date.now()+"_"+Math.random().toString(36).slice(2,6),name:name,client:name,phone:_phone,clientPhone:_phone,clientEmail:_email,address:_type==="homeowner"?_addr:"",company:_isCommercial?name:"",contract:balIdx>=0?(r[balIdx]||"").replace(/[$,]/g,""):"",status:"Active",autoPO:PO,type:_jobType,pm:"",subs:[],created:new Date().toISOString().slice(0,10),source:"QuickBooks",importedHistory:window._gcQbHistoryMode!==false,noSend:window._gcQbHistoryMode!==false,portalRemindersPaused:window._gcQbHistoryMode!==false,photos:[],checklist:[],contactName:_contact}])});
 added++}
 }
 se(added+" customers/jobs imported from QuickBooks. "+rows.length+" rows processed.")
@@ -7995,7 +7995,7 @@ if(!prj){
 var _letters2="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 var _ep=Wt.map(function(p){return p.autoPO});
 var _po;do{_po=_letters2[Math.floor(Math.random()*26)]+String(Math.floor(100+Math.random()*900))}while(_ep.includes(_po));
-var _newP={id:Date.now()+"_"+Math.random().toString(36).slice(2,8),name:cust,client:cust,phone:"",clientPhone:"",clientEmail:"",address:"",status:"Active",autoPO:_po,type:"Residential Reno",pm:"",subs:[],created:new Date().toISOString().slice(0,10),source:"QuickBooks",photos:[],checklist:[]};
+var _newP={id:Date.now()+"_"+Math.random().toString(36).slice(2,8),name:cust,client:cust,phone:"",clientPhone:"",clientEmail:"",address:"",status:"Active",autoPO:_po,type:"Residential Reno",pm:"",subs:[],created:new Date().toISOString().slice(0,10),source:"QuickBooks",importedHistory:window._gcQbHistoryMode!==false,noSend:window._gcQbHistoryMode!==false,portalRemindersPaused:window._gcQbHistoryMode!==false,photos:[],checklist:[]};   /* patch LCLEAN-H */
 Wn(function(prev){return[].concat(prev,[_newP])});
 prj=_newP;
 }Oa(function(prev){return[].concat(prev,[{id:Date.now()+"_"+Math.random().toString(36).slice(2,6),pid:prj?prj.id:"",type:"client",sub:"",po:prj?prj.autoPO||"":"",amt:amt,desc:"QB #"+(invNum||"")+(desc?" — "+desc:"")+" — "+cust,recvDate:invDate,dueDate:dueDate,status:isPaid?"paid":"received",by:"QuickBooks",client:cust,openBalance:bal,files:[]}])});added++;}se(added+" invoices imported. Paid: "+lines.slice(headerIdx+1).filter(function(l){var p=[];var iq=false;var cu="";for(var ci=0;ci<l.length;ci++){var ch=l[ci];if(ch==='"'){iq=!iq}else if(ch===","&&!iq){p.push(cu.trim());cu=""}else{cu+=ch}}p.push(cu.trim());p=p.map(function(x){return x.replace(/^"|"$/g,"")});return balIdx>=0&&p[balIdx]&&parseFloat(p[balIdx].replace(/[$,]/g,""))===0}).length+", Outstanding: "+lines.slice(headerIdx+1).filter(function(l){var p=[];var iq=false;var cu="";for(var ci=0;ci<l.length;ci++){var ch=l[ci];if(ch==='"'){iq=!iq}else if(ch===","&&!iq){p.push(cu.trim());cu=""}else{cu+=ch}}p.push(cu.trim());p=p.map(function(x){return x.replace(/^"|"$/g,"")});return balIdx>=0&&p[balIdx]&&parseFloat(p[balIdx].replace(/[$,]/g,""))>0}).length)}catch(err){se("Error: "+err.message)}
@@ -14689,6 +14689,7 @@ function getAlerts(){
     var _7dAgoInv = new Date(); _7dAgoInv.setDate(_7dAgoInv.getDate()-7); var _7dInvStr = _7dAgoInv.toISOString().slice(0,10);
     invoices.forEach(function(inv){
       if(inv.status === 'paid' || inv.type !== 'client') return;
+      if(inv.importedHistory === true || inv.noSend === true || inv.noAutoReminders === true) return;   /* patch LCLEAN-H */
       if(inv.due && inv.due < _7dInvStr){
         var days = Math.round((new Date()-new Date(inv.due))/86400000);
         alerts.push({type:'inv_overdue_critical',icon:'🔴',title:'Invoice '+days+' days overdue: $'+(parseFloat(inv.amt)||0).toLocaleString(),sub:(inv.client||'Client')+' — due '+inv.due,priority:1,pid:inv.pid});
@@ -51967,6 +51968,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     var out=[];
     invs.forEach(function(iv){
       if(!iv) return;
+      if(iv.importedHistory===true || iv.noSend===true || iv.historyOnly===true || iv.noAutoReminders===true) return;   /* patch LCLEAN-H */
       var st=((iv.status||'')+'').toLowerCase();
       if(st==='paid'||st==='void'||st==='draft') return;
       if(iv.type==='sub') return;
@@ -54766,6 +54768,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     var t=today();
     return ((crm().invoices)||[]).filter(function(i){
       if(!i || i.type==='payment') return false;
+      if(i.importedHistory===true || i.noSend===true || i.historyOnly===true || i.noAutoReminders===true) return false;   /* patch LCLEAN-H */
       var st=String(i.status||'').toLowerCase();
       if(st==='paid') return false;
       if(st!=='sent') return false;
@@ -115698,6 +115701,8 @@ window._gcQbCsvPlan = async function(text){
   var I=await getList('invs'), E=await getList('expenses'), C=await getList('customers'), V=await getList('vendors');
   var T=tasksRaw(), taskKeys={}; T.forEach(function(t){ if(t && t.qbKey) taskKeys[t.qbKey]=t; });
   var plan={ kind:P.kind, label:P.label, mapping:P.mapping, rows:[], counts:{ matched:0, updated:0, newUnassigned:0, todo:0, already:0, newCustomers:0, newVendors:0 } };
+  /* patch LCLEAN: a file whose dated rows are all before today is history — imported as a record, never sent */
+  (function(){ var td=today(), dated=P.recs.filter(function(r){ return r && r.date; }); plan.history = dated.length===0 || dated.every(function(r){ return s(r.date)<td; }); })();
   var seenKey={};
   function hasKey(list, key){ return list.find(function(x){ return x && (x.qbKey===key || (Array.isArray(x.qbKeys) && x.qbKeys.indexOf(key)>=0)); }); }
   P.recs.forEach(function(r){
@@ -115797,11 +115802,16 @@ function candText(c){ return (isClientLike(c)||isSubInv(c)) ? ((invNo(c)?'#'+inv
 window._gcQbCsvApply = async function(plan){
   var I=await getList('invs'), E=await getList('expenses'), C=await getList('customers'), V=await getList('vendors'), T=tasksRaw();
   var ch={ invs:false, expenses:false, customers:false, vendors:false, tasks:false }, who=me().name||'';
+  var HIST = plan.history!==false, histHome = 0;   /* patch LCLEAN: history = recorded, not sent; no per-row to-dos */
+  function histMark(rec){ if(!HIST||!rec) return rec; rec.importedHistory=true; rec.noSend=true; rec.sendState='recorded'; rec.sentNote='Imported from QuickBooks as history '+today()+' — not sent'; rec.noAutoReminders=true; rec.remindersPaused=true; rec.noReminders=true; rec.sent='recorded'; rec.remindLog=(rec.remindLog||[]); return rec; }   /* patch LCLEAN-H, LCLEAN-Q */
+  /* patch LCLEAN-Q: the customer's ONE job (the same name, not a loose match) — else no job (the office places it) */
+  function histJobFor(name){ var n=nk(name); if(!n) return null; var js=projects().filter(function(p){ return p && !p.deleted && !/^(lost|cancelled|canceled|declined|dead|rejected)$/i.test(s(p.status)) && (nk(p.client||p.customer)===n || nk(p.name)===n); }); return js.length===1 ? js[0] : null; }
   var findIn=function(list, t){ return list.find(function(x){ return x && t && (x.id===t.id); }); };
   function addTodo(row, recId){
     var r=row.rec; if(T.some(function(t){ return t && t.qbKey===r.key; })) return;
+    if(HIST && recId){ var _hr=I.find(function(x){ return x && x.id===recId; }); if(_hr && _hr.pid) return; histHome++; }   /* patch LCLEAN-Q: linked to its job → nothing to do; no job → the office places it ("needs a home"), recorded, never sent */
     T.unshift({ id:'TQB'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), kind:'qb_home', qbKey:r.key, cat:'QuickBooks import — needs a home',
-      label:(r.qbType||r.kind)+(r.num?' #'+r.num:'')+' — '+(r.name||'?')+' — '+money(r.amount)+(r.date?' — '+r.date:''),
+      label:(HIST?'📜 History (recorded, not sent) — ':'')+(r.qbType||r.kind)+(r.num?' #'+r.num:'')+' — '+(r.name||'?')+' — '+money(r.amount)+(r.date?' — '+r.date:''),
       note:row.why+(row.candidates&&row.candidates.length?(' · best candidate(s): '+row.candidates.slice(0,3).map(candText).join(' | ')):''),
       qb:{ kind:r.kind, qbType:r.qbType, num:r.num, name:r.name, amount:r.amount, date:r.date, due:r.due, open:r.open, memo:r.memo }, recordId:recId||'', candidates:(row.candidates||[]).slice(0,5).map(function(c){ return { id:c.id, text:candText(c), job:!!c.autoPO||(c.status!==undefined&&c.client!==undefined&&!c.type) }; }),
       addedBy:'QuickBooks import', addedAt:nowISO(), updatedAt:nowISO(), done:false });
@@ -115809,6 +115819,7 @@ window._gcQbCsvApply = async function(plan){
   }
   plan.rows.forEach(function(row){
     var r=row.rec;
+    if(HIST && row.action==='todo' && /^(invoice|salesreceipt|bill)$/.test(r.kind) && /^no (customer|vendor)\b/.test(s(row.why))){ row.action='createUnassigned'; row.why+=' — history: recorded with the name as QuickBooks has it'; }   /* patch LCLEAN */
     /* QuickBooks matched the REAL invoice with this number: say so on the review-only copy (it stays in review for a person) */
     if(row.reviewTwins && row.reviewTwins.length){
       row.reviewTwins.forEach(function(rv){ var x=findIn(I,rv); if(!x) return; var h='QuickBooks import '+today()+': #'+r.num+' is '+money(r.amount)+' in QuickBooks = invoice '+(row.target&&row.target.id||'')+', already counted — this review copy ('+money(amtOf(x))+') is probably a duplicate'; if(x.reviewHint!==h){ x.reviewHint=h; x.updatedAt=nowISO(); ch.invs=true; } });
@@ -115837,12 +115848,38 @@ window._gcQbCsvApply = async function(plan){
       var rec;
       if(r.kind==='bill'){ var ve=findVendor(r.name)||{}; rec={ id:uid('INV'), type:'sub', pid:'', sub:ve.name||r.name, subId:ve.id||'', invNum:r.num||'', amt:r.amount, desc:'QuickBooks bill'+(r.num?' #'+r.num:'')+(r.memo?' — '+r.memo:''), recvDate:r.date||today(), date:r.date||today(), status:'received', source:'quickbooks', qbKey:r.key, by:'QuickBooks import' }; }
       else { var cu=findCustomer(r.name)||{name:r.name}; var paid=r.open===0; rec={ id:uid('INV'), type:'client', pid:'', client:cu.name, invNum:r.num||'', qbNum:r.num||'', amt:r.amount, desc:'QuickBooks invoice'+(r.num?' #'+r.num:'')+(r.memo?' — '+r.memo:''), date:r.date||'', recvDate:r.date||'', dueDate:r.due||'', status:paid?'paid':(r.due&&r.due<today()?'overdue':'sent'), paid:paid||undefined, openBalance:r.open!=null?r.open:undefined, source:'quickbooks', qbKey:r.key, by:'QuickBooks import' }; }
+      histMark(rec);
+      if(HIST && rec.type==='client'){   /* patch LCLEAN-Q: on its job when the customer has one; partial payments kept */
+        var _hj=histJobFor(r.name); if(_hj){ rec.pid=_hj.id; rec.po=_hj.autoPO||''; rec.linkedBy='QuickBooks history import (the customer\'s only job)'; } else rec.qbNeedsHome=true;
+        if(r.open!=null && r.open>0 && r.open<r.amount){ rec.status='partial'; rec.amountPaid=Math.round((r.amount-r.open)*100)/100; }
+      }
       I.push(rec); ch.invs=true;
       addTodo(row, rec.id);
       return;
     }
     if(row.action==='todo') addTodo(row, '');
   });
+  /* patch LCLEAN: history — matched invoices are marked recorded-not-sent; a 2025 job whose client invoices are all paid
+     (and none dated this year) is marked Complete with the last invoice date; one summary to-do for rows with no job */
+  var jobsDone=0;
+  if(HIST){
+    plan.rows.forEach(function(row){ if((row.action==='match'||row.action==='update'||row.action==='already') && row.target){ var x=findIn(I,row.target); if(x && x.qbKey===row.rec.key && !x.importedHistory && /quickbooks/i.test(s(x.source))){ histMark(x); ch.invs=true; } } });
+    try{
+      var Pj=await getList('projects'), chP=false, Y0='2026-01-01';
+      Pj.forEach(function(p){
+        if(!p || p.deleted || /^(complete|completed|closed|rejected|lost|cancell?ed|dead)$/i.test(s(p.status))) return;
+        var mine=I.filter(function(x){ return x && x.pid===p.id && /client|customer|draw|progress|final|invoice/i.test(s(x.type)||'client') && !/void|deleted|draft/i.test(s(x.status)); });
+        if(!mine.length || !mine.some(function(x){ return /quickbooks/i.test(s(x.source)) || x.qbKey; })) return;
+        var allPaid=mine.every(function(x){ return x.paid===true || /^paid$/i.test(s(x.status)) || x.openBalance===0; });
+        var last=mine.map(function(x){ return ymd(x.date||x.recvDate||''); }).filter(Boolean).sort().pop()||'';
+        if(!allPaid || !last || last>=Y0) return;
+        p.statusBeforeHistory=s(p.status); p.status='Complete'; p.completionDate=p.completionDate||last; p.completedAt=p.completedAt||(last+'T12:00:00.000Z'); p.completedBy='QuickBooks history import'; p.importedHistory=true; p.noSend=true; p.portalRemindersPaused=true;   /* patch LCLEAN-H */ p.updatedAt=nowISO(); chP=true; jobsDone++;
+      });
+      if(chP) await saveList('projects', Pj, 'QuickBooks history import');
+    }catch(e){}
+    if(false && histHome){ T.unshift({ id:'TQBH'+Date.now().toString(36), kind:'qb_history_summary', cat:'QuickBooks import — needs a home', label:'QuickBooks history import '+today()+': '+histHome+' row(s) with no job', note:'Imported as history (nothing was sent). They are in Invoices / Expenses with no job — give them a job when you have time, or leave them as history.', addedBy:'QuickBooks import', addedAt:nowISO(), updatedAt:nowISO(), done:false }); ch.tasks=true; }
+  }
+  plan.counts.history=HIST; plan.counts.jobsComplete=jobsDone; plan.counts.historyNoHome=histHome;
   if(ch.invs) await saveList('invs', I, 'QuickBooks import');
   if(ch.expenses) await saveList('expenses', E, 'QuickBooks import');
   if(ch.customers) await saveList('customers', C, 'QuickBooks import');
@@ -115868,10 +115905,11 @@ window._gcQbCsvOpen = async function(text, name){
   if(plan.error){ alert('QuickBooks import: '+plan.error); return plan; }
   window._gcQbLastPlan=plan;
   var ov=overlay('_gcQbImpOv','<div style="font-size:18px;font-weight:800">Import from QuickBooks (CSV) — '+esc(name||'')+'</div><div style="font-size:12px;color:#64748b;margin:4px 0 10px">Nothing is written until you press OK. Every row finds its home by the same rules that stop duplicates; rows that do not fit go to the top of the Office To-Do.</div>'+planSummary(plan)
+    +'<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px"><input type="checkbox" id="_jQbHist"'+(plan.history!==false?' checked':'')+' style="width:18px;height:18px"><span><b>Import as history (no sending)</b> — invoices are recorded, never e-mailed or reminded; old jobs whose invoices are all paid are marked Complete; rows with no job make one summary to-do instead of one each.'+(plan.history!==false?' On by itself: every dated row is before today.':'')+'</span></label>'
     +'<div style="margin-top:12px;display:flex;gap:8px"><button id="_jQbOk" style="'+BTN+'background:#166534;color:#fff;padding:9px 18px">OK — import</button><button id="_jQbCancel" style="'+BTN+'background:#e5e7eb;padding:9px 18px">Cancel</button></div>');
   return new Promise(function(res){
     ov.querySelector('#_jQbCancel').onclick=function(){ ov.remove(); res({ cancelled:true, plan:plan }); };
-    ov.querySelector('#_jQbOk').onclick=async function(){ this.disabled=true; this.textContent='Importing…'; var r=await window._gcQbCsvApply(plan); ov.remove(); try{ alert('QuickBooks import done: '+plan.counts.matched+' matched, '+plan.counts.newUnassigned+' new with no job, '+plan.counts.todo+' office to-do(s), '+plan.counts.already+' already in the CRM.'); }catch(e){} res(r); };
+    ov.querySelector('#_jQbOk').onclick=async function(){ this.disabled=true; this.textContent='Importing…'; try{ var hb=ov.querySelector('#_jQbHist'); if(hb) plan.history=!!hb.checked; }catch(e){} var r=await window._gcQbCsvApply(plan); ov.remove(); try{ alert('QuickBooks import done: '+plan.counts.matched+' matched, '+plan.counts.newUnassigned+' new with no job, '+plan.counts.todo+' office to-do(s), '+plan.counts.already+' already in the CRM.'); }catch(e){} res(r); };
   });
 };
 window._gcOpenQbCsvImport = function(){
@@ -144165,6 +144203,7 @@ function effective(p){
   var own = p && p.auto && typeof p.auto === 'object' ? p.auto : null;
   if (own) KEYS.forEach(function(k){ if (!LOCKED[k] && typeof own[k] === 'boolean') out[k] = own[k]; });
   if (p && typeof p.portalShowCarrier === 'boolean') out.showCarrier = p.portalShowCarrier;   /* the insurance card's switch is the same switch */
+  if (p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) OPTS.forEach(function(o){ if (!LOCKED[o[0]] && /^(email|docs|portal)$/.test(o[1])) out[o[0]] = false; });   /* patch LCLEAN-H: a history job sends nothing */
   return out;
 }
 function allows(pOrId, key){
@@ -158130,6 +158169,7 @@ function setLeadRole(kind, key){
   return setTeam({ leadRoles: lr }).then(function(ok){ return { ok: ok, label: r.label, name: u ? s(u.name) : '', error: ok ? '' : 'The cloud did not answer — try again.' }; });
 }
 W._gcLeadRoles = {
+  text: lrText,   /* patch LCLEAN: the lead's words, for the Leads hub's type filter */
   ROLES: LR_ROLES, classify: lrClassify, coRole: lrCoRole, isRoofing: lrIsRoofing, holder: lrHolder, state: lrState, set: setLeadRole,
   /* a lead whose person is the role holder its type routes to — an automatic assignment, not an "Assign this lead" */
   autoOk: function(l){ var k = lrClassify(l), h = k ? lrHolder(k) : null; if (!h || !l) return false; return low(k === 'bid' ? l.estimator : l.pm) === low(h.name) && !(k === 'bid' && s(l.pm)); },
@@ -161836,7 +161876,7 @@ function pullLeads(){
 }
 var LEADS_SIG = '';
 function rawLeads(){ if (view() === 'leads') pullLeads(); var c = arr(crm().leads); return LEADS_NOW && (LEADS_NOW.length >= c.length || !c.length) ? LEADS_NOW : c; }
-function leads(){ return rawLeads().filter(function(l){ return !dead(l); }); }
+function leads(){ return rawLeads().filter(function(l){ return !dead(l) && !archivedL(l); }); }   /* patch LCLEAN: archived leads leave every list */
 function inboxItems(){ var k = lsGet('gc_ldi_cache_v2', null); return arr(k && k.items); }
 function inboxOf(l){ var id = s(l && l.inboxId); if (!id) return null; return inboxItems().filter(function(x){ return x && x.id === id; })[0] || null; }
 var STAGES = ['New Lead', 'Contacted', 'Site Visit', 'Estimate Sent', 'Negotiating', 'Won', 'Lost'];
@@ -161889,7 +161929,60 @@ function typeOf(l){ var t = low(l.leadKind || l.type); if (/gov/.test(t)) return
 var TYPE_IC = { residential: '🏠', commercial: '🏢', government: '🏛', insurance: '🛡', mitigation: '💧' };
 function srcOf(l){ return s(l.source || l.leadSource) || 'Other'; }
 function srcIc(l){ var x = low(srcOf(l)); if (/website|leads@|web/.test(x)) return '🌐'; if (/referr/.test(x)) return '🎁'; if (/partner|api|realtor|agent/.test(x)) return '🔌'; if (/missed|call|phone/.test(x)) return '📞'; if (/roofscout/.test(x)) return '🛰'; if (/google|lsa|facebook|ad/.test(x)) return '📣'; if (/bid|county|city|state|mscs|mscaa|board|buildingconnected|planhub|sam/.test(x)) return '🏗'; return '•'; }
-function value(l){ return num(l.value || l.estValue || l.amount || l.estimate); }
+/* patch LCLEAN: the pipeline counts the estimated value (else the value), and only real numbers — text like
+   "3 bids, 0 awarded" no longer turns into $30 */
+/* patch LCLEAN: one source list — the standard sources, then any other source found on a lead ("website" = "Website") */
+var SRC_STD = ['Website', 'Google / Google Business', 'Google LSA', 'Google Ads', 'Google organic', 'Facebook', 'Instagram', 'Facebook/Instagram Ads', 'TikTok', 'LinkedIn', 'Nextdoor', 'Referral', 'Partner', 'Repeat customer',
+  'Door hanger', 'Yard sign', 'Event', 'Phone call', 'Walk-in', 'BuildingConnected', 'PlanHub', 'iSqFt / ConstructConnect', 'Bid invitation (GC direct)', 'Government', 'RoofScout', 'Roofing Ignite',
+  'CompanyCam (PM\'s own)', 'QuickBooks (imported)', 'Lead Inbox (leads@)', 'Other'];
+var SRC_ALIAS = { 'web': 'Website', 'website form': 'Website', 'web form': 'Website', 'site': 'Website', 'google': 'Google / Google Business', 'google business': 'Google / Google Business', 'google business profile': 'Google / Google Business', 'gbp': 'Google / Google Business', 'google maps': 'Google / Google Business',
+  'lsa': 'Google LSA', 'local services': 'Google LSA', 'local services ads': 'Google LSA', 'google local services': 'Google LSA', 'google guaranteed': 'Google LSA', 'fb': 'Facebook', 'ig': 'Instagram', 'referred': 'Referral', 'referral program': 'Referral',
+  'partner api': 'Partner', 'repeat': 'Repeat customer', 'past customer': 'Repeat customer', 'door hangers': 'Door hanger', 'door hanger / postcard': 'Door hanger', 'neighborhood hanger': 'Door hanger', 'phone': 'Phone call', 'call': 'Phone call', 'missed call': 'Phone call',
+  'walk in': 'Walk-in', 'building connected': 'BuildingConnected', 'isqft': 'iSqFt / ConstructConnect', 'constructconnect': 'iSqFt / ConstructConnect', 'construct connect': 'iSqFt / ConstructConnect', 'bid invitation': 'Bid invitation (GC direct)', 'gc direct': 'Bid invitation (GC direct)', 'bid invite': 'Bid invitation (GC direct)',
+  'gov': 'Government', 'roofignite': 'Roofing Ignite', 'companycam': 'CompanyCam (PM\'s own)', 'quickbooks': 'QuickBooks (imported)', 'lead inbox': 'Lead Inbox (leads@)', 'leads@': 'Lead Inbox (leads@)', 'leads@grayco-cs.com': 'Lead Inbox (leads@)', 'email': 'Lead Inbox (leads@)', 'e-mail': 'Lead Inbox (leads@)' };
+function srcKey(v){ return low(v).replace(/\s+/g, ' ').trim(); }
+var SRC_BYKEY = {}; SRC_STD.forEach(function(x){ SRC_BYKEY[srcKey(x)] = x; }); Object.keys(SRC_ALIAS).forEach(function(k){ SRC_BYKEY[k] = SRC_ALIAS[k]; });
+var SRC_RAW = null, SRC_CUS = [];
+function srcCustom(){ try { var raw = localStorage.getItem('gc_lead_sources_v1') || '[]'; if (raw !== SRC_RAW) { SRC_RAW = raw; SRC_CUS = arr(JSON.parse(raw)); } return SRC_CUS; } catch (e) { return []; } }
+function srcLabel(v){ var k = srcKey(v); if (!k) return 'Other'; if (SRC_BYKEY[k]) return SRC_BYKEY[k]; var c = srcCustom().filter(function(x){ return srcKey(x) === k; })[0]; return c || s(v).trim().replace(/\s+/g, ' '); }
+function srcCanon(l){ return srcLabel(srcOf(l)); }
+function sourceList(list){ var out = SRC_STD.slice(), seen = {}; out.forEach(function(x){ seen[srcKey(x)] = 1; }); srcCustom().concat(arr(list).map(function(l){ return srcCanon(l); })).forEach(function(x){ var k = srcKey(x); if (k && !seen[k] && !SRC_BYKEY[k]) { seen[k] = 1; out.push(srcLabel(x)); } }); return out; }
+/* patch LCLEAN: the type list (Roofing first); a lead can be several (a storm roof: Roofing + Restoration – Storm) — read through the lead-roles
+   classifier (window._gcLeadRoles), so the filter and the routing agree */
+var LEAD_TYPES = ['Roofing', 'Restoration – Water', 'Restoration – Fire', 'Restoration – Storm', 'Insurance claim', 'Mitigation', 'Remodel', 'Residential', 'Commercial', 'Government', 'Bid invitation', 'Other'];
+var TYPE_OLD = { residential: 'Residential', commercial: 'Commercial', government: 'Government', insurance: 'Insurance claim', mitigation: 'Mitigation' };
+var TYPES_MEMO = {};   /* the same lead, unchanged → the same answer (the hub redraws often) */
+function typesOf(l){ var k = s(l && l.id) + '|' + s(l && (l.updatedAt || l.savedAt)) + '|' + s(l && (l.type || l.leadKind)); if (TYPES_MEMO[k]) return TYPES_MEMO[k]; var r = typesOf0(l); if (Object.keys(TYPES_MEMO).length > 5000) TYPES_MEMO = {}; TYPES_MEMO[k] = r; return r; }
+function typesOf0(l){
+  var R = W._gcLeadRoles || {}, kind = '', roof = false, tx = '';
+  try { kind = R.classify ? R.classify(l) : ''; roof = R.isRoofing ? !!R.isRoofing(l) : false; tx = R.text ? s(R.text(l)) : ''; } catch (e) {}
+  var typ = low(l.leadKind || l.type), all = (typ + ' | ' + tx).toLowerCase(), out = [];
+  if (roof || /roof|shingle/.test(typ)) out.push('Roofing');
+  var resto = kind === 'insurance' || /insur|claim|mitig|restor|water|fire|mold|storm/.test(typ);
+  if (resto && /\b(water|flood\w*|leak\w*|mold|mould|burst|pipe|mitigation)\b/.test(all)) out.push('Restoration – Water');
+  if (resto && /\b(fire|smoke|soot)\b/.test(all)) out.push('Restoration – Fire');
+  if (resto && /\b(storm|hail|wind|tree)\b/.test(all)) out.push('Restoration – Storm');
+  if (l.isInsurance || l.claimId || l.claimNumber || /insur|claim/.test(typ) || (resto && /\b(insurance|insured|claims?|adjuster|xactimate)\b/.test(all))) out.push('Insurance claim');
+  if (/mitig/.test(all)) out.push('Mitigation');
+  if (!resto && /remodel|renovat|reno\b|kitchen|bath|addition|basement/.test(all) && !/commerc|gov/.test(typ)) out.push('Remodel');   /* a water loss in the basement is restoration, not a remodel */
+  if (/commerc/.test(typ)) out.push('Commercial');
+  if (/gov/.test(typ)) out.push('Government');
+  if (kind === 'bid' || isBidL(l)) out.push('Bid invitation');
+  if (!/commerc|gov/.test(typ) && kind !== 'bid' && (/resid|home|house|reno/.test(typ) || !typ)) out.push('Residential');
+  if (!out.length) out.push('Other');
+  return out.filter(function(x, i){ return out.indexOf(x) === i; });
+}
+W._gcLeadSources = { list: function(){ return sourceList(rawLeads()); }, label: srcLabel, canon: srcCanon, key: srcKey, std: SRC_STD.slice(), custom: srcCustom };
+W._gcLeadTypes = { list: LEAD_TYPES.slice(), of: typesOf };
+function money2(v){ if (typeof v === 'number') return isFinite(v) ? v : 0; var x = s(v).trim(); if (!/^\(?-?\$?\s*-?[\d,]*\.?\d+\s*\)?$/.test(x)) return 0; var n = +x.replace(/[^0-9.\-]/g, ''); return isFinite(n) ? n : 0; }
+function value(l){ var e = money2(l.estValue); return e > 0 ? e : money2(l.value); }
+/* patch LCLEAN: 📦 a QuickBooks customer / CompanyCam project filed as a lead (LQB_ / LCC_ / LCCR_) that never became an
+   inquiry — kept out of the New / Sources / pipeline counts and the board unless "📦 Imported" is on; 🗄 archived leads
+   (cleanup) leave every list unless "🗄 Archived" is on */
+function hasInquiry(l){ return !!(s(l.inboxId) || l.leadExtra || s(l.referredById) || s(l.refMember) || s(l.contactedAt) || s(l.lastContact) || s(l.estimateId) || s(l.estId) || arr(l.estimates).length || s(l.bidDue)
+  || arr(l.activity).some(function(a){ return a && !/^(priority|system|import|archive|restore|merge|assign)$/.test(s(a.type)); }) || stageOf(l) !== 'New Lead' || value(l) > 0); }
+function importedL(l){ if (!l || l.imported === false) return false; if (!/^(LQB_|LCC_|LCCR_)/.test(s(l.id)) && l.importedOnly !== true) return false; return !hasInquiry(l); }
+function archivedL(l){ return !!l && (l.archived === true || /^archived$/i.test(s(l.status))); }
 function born(l){ var t = Date.parse(s(l.createdAt || l.receivedAt || l.created || l.dateAdded || l.date)); return isFinite(t) ? t : 0; }
 function dueMs(l){ var d = s(l.bidDue); if (!d) return NaN; return Date.parse(d.length === 10 ? d + 'T17:00:00' : d); }
 function dueChip(l){
@@ -161966,17 +162059,18 @@ W._gcLeadsUnassigned = unassignedCount;
 
 function filtered(){
   var q = low(UI.q), now = Date.now();
-  return leads().filter(function(l){
+  return (UI.arch ? rawLeads().filter(function(l){ return !dead(l) && archivedL(l); }) : leads()).filter(function(l){   /* patch LCLEAN: 🗄 Archived */
+    if (!UI.arch && !!UI.imp !== importedL(l)) return false;   /* patch LCLEAN: 📦 Imported only when asked for */
     if (UI.exp) { if (!expired(l)) return false; }   /* patch HOT2: ⌛ Expired chip */
-    else if (!UI.closed && shut(l) && UI.stage !== 'Won' && UI.stage !== 'Lost') return false;   /* patch HOT2: closed hidden by default, in every view */
+    else if (!UI.closed && !UI.arch && shut(l) && UI.stage !== 'Won' && UI.stage !== 'Lost') return false;   /* patch HOT2: closed hidden by default, in every view */
     if (UI.preset === 'bids' && !isBidL(l)) return false;   /* patch HOT2: 📐 Bids */
     if (UI.un && assignee(l)) return false;
     if (UI.prio) { var pp = prioOf(l); if (UI.prio === 'none' ? pp : UI.prio === 'hi' ? pp < 8 : UI.prio === 'md' ? (pp < 5 || pp > 7) : (pp < 1 || pp > 4)) return false; }   /* patch HOT2: priority */
     if (UI.who === '__me' && low(assignee(l)) !== low(myName()) && !isCo(l)) return false;   /* patch HOT2: + the second person on a lead */
     if (UI.who === '__mybids' && (low(assignee(l)) !== low(myName()) || !isBidL(l))) return false;
     if (UI.who && UI.who.indexOf('__') !== 0 && low(assignee(l)) !== low(UI.who)) return false;
-    if (UI.src && srcOf(l) !== UI.src) return false;
-    if (UI.type && typeOf(l) !== UI.type) return false;
+    if (UI.src && srcCanon(l) !== srcLabel(UI.src)) return false;   /* patch LCLEAN: "website" = "Website" */
+    if (UI.type && typesOf(l).indexOf(TYPE_OLD[UI.type] || UI.type) < 0) return false;   /* patch LCLEAN: Roofing, restoration kinds … */
     if (UI.stage && stageOf(l) !== UI.stage) return false;
     if (UI.due) { var t = dueMs(l); if (!isFinite(t)) return false; var d = (t - now) / 864e5; if (UI.due === 'past' ? d >= 0 : UI.due === '7' ? (d < 0 || d > 7) : (d < 0 || d > 30)) return false; }
     if (q && low([l.name, l.title, l.client, l.contact, l.email, l.phone, l.address, l.city, srcOf(l), assignee(l), l.gc, l.dueToCompany, l.bidNumber].join(' ')).indexOf(q) < 0) return false;
@@ -162040,7 +162134,7 @@ function anchor(){
   return pipelineWrap();
 }
 function kpis0(){
-  var all = leads().filter(function(l){ return UI.preset !== 'bids' || isBidL(l); }), open = all.filter(function(l){ return !shut(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);   /* patch HOT2 */
+  var all = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), open = all.filter(function(l){ return !shut(l); }), now = Date.now(), day0 = new Date(); day0.setHours(0, 0, 0, 0);   /* patch HOT2; patch LCLEAN: 📦 imported not counted */
   var wk = now - 7 * 864e5, q90 = now - 90 * 864e5;
   var un = unassignedCount();
   var today = all.filter(function(l){ return born(l) >= day0.getTime(); }).length, week = all.filter(function(l){ return born(l) >= wk; }).length;
@@ -162049,7 +162143,7 @@ function kpis0(){
   var recent = all.filter(function(l){ var t = Date.parse(s(l.stageChangedAt || l.updatedAt)); return isFinite(t) && t >= q90; });
   var won = recent.filter(function(l){ return stageOf(l) === 'Won'; }).length, lost = recent.filter(function(l){ return stageOf(l) === 'Lost'; }).length;
   var pipe = open.reduce(function(t, l){ return t + value(l); }, 0);
-  var by = {}; all.filter(function(l){ return born(l) >= now - 30 * 864e5; }).forEach(function(l){ by[srcOf(l)] = (by[srcOf(l)] || 0) + 1; });
+  var by = {}; all.filter(function(l){ return born(l) >= now - 30 * 864e5; }).forEach(function(l){ var k = srcCanon(l); by[k] = (by[k] || 0) + 1; });   /* patch LCLEAN */
   var top = Object.keys(by).sort(function(a, b){ return by[b] - by[a]; }).slice(0, 3).map(function(k){ return k + ' ' + by[k]; }).join(' · ') || '—';
   return [
     { k: 'un', n: un, l: 'Unassigned', c: un ? 'alert' : '', t: 'Leads with nobody assigned — click to see them' },
@@ -162063,7 +162157,7 @@ function kpis0(){
 }
 function kpis(){   /* patch HOT2: + "Needs priority" for admins */
   var k = kpis0(); if (!isAdmin()) return k;
-  var n = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && needsPrio(l); }).length;
+  var n = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && needsPrio(l) && !importedL(l); }).length;   /* patch LCLEAN */
   k.splice(1, 0, { k: 'noprio', n: n, l: 'Needs priority', c: n ? 'alert' : '', t: 'Open leads nobody has given a 1–10 priority yet — click to see them' });
   return k;
 }
@@ -162076,7 +162170,12 @@ function people(){
 }
 function hubHtml(){
   var ks = kpis();
-  var src = []; leads().forEach(function(l){ if (src.indexOf(srcOf(l)) < 0) src.push(srcOf(l)); }); src.sort();
+  /* patch LCLEAN: every standard source + any found on a lead, each with its count; every type with its count */
+  var base0 = leads().filter(function(l){ return !importedL(l) || UI.imp; }), sc = {}, tc = {};
+  base0.forEach(function(l){ var k = srcCanon(l); sc[k] = (sc[k] || 0) + 1; typesOf(l).forEach(function(x){ tc[x] = (tc[x] || 0) + 1; }); });
+  var src = sourceList(rawLeads()).map(function(x){ return { v: x, t: x + ' (' + (sc[x] || 0) + ')' }; });
+  if (UI.type && TYPE_OLD[UI.type]) UI.type = TYPE_OLD[UI.type];
+  if (UI.src) UI.src = srcLabel(UI.src);
   var who = [{ v: '__me', t: 'Mine' }, { v: '__mybids', t: '📐 My bids (estimator)' }].concat(people().map(function(n){ return { v: n, t: n }; }));
   var tabs = [['board', '🗂 Board'], ['list', '📋 List'], ['cal', '📅 Calendar'], ['map', '🗺 Map'], ['boards', '🔎 Bid boards']];
   return '<div class="gcl-top"><h2>◈ Leads</h2><div class="gcl-tabs" role="tablist">' + tabs.map(function(t){ return '<button type="button" role="tab" data-gcl-v="' + t[0] + '" class="' + (UI.v === t[0] ? 'on' : '') + '" aria-selected="' + (UI.v === t[0]) + '">' + t[1] + '</button>'; }).join('') + '</div>'
@@ -162086,14 +162185,20 @@ function hubHtml(){
       + '<input type="search" placeholder="Search leads, people, addresses, bid #…" data-gcl-f="q" value="' + esc(UI.q) + '">'
       + '<select data-gcl-f="who" aria-label="Assignee">' + optionsFor(who, UI.who, 'Everyone') + '</select>'
       + '<select data-gcl-f="src" aria-label="Source">' + optionsFor(src, UI.src, 'All sources') + '</select>'
-      + '<select data-gcl-f="type" aria-label="Type">' + optionsFor(['residential', 'commercial', 'government', 'insurance', 'mitigation'].map(function(t){ return { v: t, t: TYPE_IC[t] + ' ' + t }; }), UI.type, 'All types') + '</select>'
+      + '<select data-gcl-f="type" aria-label="Type">' + optionsFor(LEAD_TYPES.map(function(t){ return { v: t, t: t + ' (' + (tc[t] || 0) + ')' }; }), UI.type, 'All types') + '</select>'
       + (UI.v === 'board' ? '' : '<select data-gcl-f="stage" aria-label="Stage">' + optionsFor(STAGES, UI.stage, 'All stages') + '</select>')
       + '<select data-gcl-f="due" aria-label="Bid due">' + optionsFor([{ v: '7', t: 'Due in 7 days' }, { v: '30', t: 'Due in 30 days' }, { v: 'past', t: 'Past due' }], UI.due, 'Any due date') + '</select>'
       + '<select data-gcl-f="prio" aria-label="Priority">' + optionsFor([{ v: 'hi', t: '⭐ 8–10 (high)' }, { v: 'md', t: '⭐ 5–7' }, { v: 'lo', t: '⭐ 1–4' }, { v: 'none', t: 'No priority yet' }], UI.prio, 'Any priority') + '</select>'
       + '<label><input type="checkbox" data-gcl-f="un"' + (UI.un ? ' checked' : '') + '> Unassigned only</label>'
-      + (function(){ var base = leads().filter(function(l){ return UI.preset !== 'bids' || isBidL(l); }), nShut = base.filter(shut).length, nExp = base.filter(expired).length;   /* patch HOT2 */
+      + (function(){ var base = leads().filter(function(l){ return (UI.preset !== 'bids' || isBidL(l)) && !importedL(l); }), nShut = base.filter(shut).length, nExp = base.filter(expired).length;   /* patch HOT2; patch LCLEAN */
           return '<label><input type="checkbox" data-gcl-f="closed"' + (UI.closed ? ' checked' : '') + '> Show lost / closed (' + nShut + ')</label>'
-            + '<button type="button" class="gcl-mv gcl-exp' + (UI.exp ? ' on' : '') + '" data-gcl-exp aria-pressed="' + UI.exp + '" title="Bids whose due date went by more than a week ago and were never submitted">⌛ Expired (' + nExp + ')</button>'; })()
+            + '<button type="button" class="gcl-mv gcl-exp' + (UI.exp ? ' on' : '') + '" data-gcl-exp aria-pressed="' + UI.exp + '" title="Bids whose due date went by more than a week ago and were never submitted">⌛ Expired (' + nExp + ')</button>'
+            + (function(){ /* patch LCLEAN: 📦 Imported · 🗄 Archived · 🧹 Clean up (admins) */
+                var all0 = rawLeads().filter(function(l){ return !dead(l); }), nImp = all0.filter(function(l){ return !archivedL(l) && importedL(l) && (UI.preset !== 'bids' || isBidL(l)); }).length, nArch = all0.filter(archivedL).length;
+                var nCl = 0; if (isAdmin()) { try { nCl = W._gcLeadClean ? W._gcLeadClean.count() : 0; } catch (e) {} }
+                return (nImp || UI.imp ? '<button type="button" class="gcl-mv' + (UI.imp ? ' on' : '') + '" data-gcl-impf aria-pressed="' + !!UI.imp + '" title="QuickBooks customers and CompanyCam projects filed as leads that never became an inquiry — not counted as new">📦 Imported (' + nImp + ')</button>' : '')
+                  + (nArch || UI.arch ? '<button type="button" class="gcl-mv' + (UI.arch ? ' on' : '') + '" data-gcl-arch aria-pressed="' + !!UI.arch + '" title="Leads archived by the cleanup — open one to restore it">🗄 Archived (' + nArch + ')</button>' : '')
+                  + (isAdmin() ? '<button type="button" class="gcl-mv" data-gcl-clean title="Duplicates, imported, stale and already-a-job leads — merge, archive, mark lost or link (nothing is sent; undo for 7 days)">🧹 Clean up (' + nCl + ')</button>' : ''); })(); })()
       + '</div>')
     + '<div class="gcl-body">' + bodyHtml() + '</div>'
     + (isAdmin() ? '<div class="gcl-classic" style="justify-content:flex-end;margin-top:8px"><button type="button" data-gcl-classic style="border:0;background:none;color:#888;font:12px Arial;text-decoration:underline;cursor:pointer;padding:2px">' + (D.documentElement.classList.contains('gcl-classic-ok') ? 'hide the old table' : 'old table (admin)') + '</button></div>' : '')   /* patch HOT2b */;
@@ -162668,7 +162773,11 @@ W._gcLeadsAudit = function(){
   try { console.table(Object.keys(out.bySource).map(function(k){ var x = out.bySource[k]; return { source: k, leads: x.n, open: x.open, last7days: x.last7, last30days: x.last30, noInquiry: x.noInquiry, dates: JSON.stringify(x.dateField) }; })); console.log('[GC] Leads audit (read-only):', out); } catch (e) {}
   return out;
 };
-W._gcLeadsHub = { redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
+W._gcLeadsHubKit = { all: function(){ return rawLeads().filter(function(l){ return !dead(l); }); },
+  setLeads: function(mut){ return setLeads(function(list){ var n = mut(list); if (Array.isArray(n)) { LEADS_NOW = n; LEADS_SIG = ''; } return n; }); },   /* as patchLead: the hub's own copy follows at once (a later full-list push never carries the old list) */
+  imported: importedL, archived: archivedL, shut: shut, stageOf: stageOf, value: value, isAdmin: isAdmin,
+  me: function(){ return myName() || myEmail(); }, receivedMs: function(l){ return receivedMs(l) || born(l); }, typeOf: typeOf };   /* patch LCLEAN */
+W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
 var n0 = 0;
 function tick(){ try { if (D.hidden) return; css(); mount(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
 /* patch HOT2: the head-estimator backfill keeps its own 3-second timeout loop — the interval governors hold tick()
@@ -166516,5 +166625,468 @@ function mount(){
 RI.call(W, function(){ if (!D.hidden) mount(); }, 700);
 W._gcMailCenter = { url: url, entries: entries, mailboxOf: mailboxOf, render: function(){ LAST = ''; paint(); }, load: load, loadLog: loadLog, _state: function(){ return { data: DATA, log: LOG, ui: UI }; } };
 try { console.log('[GC] 📧 Email Center: mailboxes + aliases by address, real Gmail searches, 📥 All company mail (patch MAILC) — _gcMailCenter'); } catch (e) {}
+})();
+</script>
+<script>
+/* __GC_PATCH_LCLEAN__ — 🧹 LEAD CLEANUP (owner 10/23: "I have a lot of duplicate leads and they are very old").
+   Admins only, from the Leads hub ("🧹 Clean up (n)"):
+     • Duplicates — the same phone, e-mail, street address (number + street), lead name, or the same CompanyCam /
+       QuickBooks / Lead Inbox id; the most complete record (then the oldest) is suggested as the one to keep;
+     • 📦 Imported, never an inquiry — the LQB_ / LCC_ / LCCR_ filings with no activity, inbox item or estimate;
+     • Stale — open leads nobody touched in 90+ days (60 / 90 / 180 / 365);
+     • Already a job — a lead at the address (or for the homeowner) of an existing job.
+   Actions: Merge into the keeper (notes, activity, files, contacts, the earliest received date; the others are
+   archived with mergedInto — never deleted) · Archive (restorable, "🗄 Archived" filter) · Mark lost ("old / stale") ·
+   Link to job. Every action asks first with the count, and "Undo last cleanup" works for 7 days (the before-state is
+   kept in gc_kv gc_lead_cleanup_log). Nothing is ever sent: no e-mail, text, alert or approval.
+   API: window._gcLeadClean = { analyze, merge, archive, lost, link, apply, undo, open, norm } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_LCLEAN__) return; window.__GC_PATCH_LCLEAN__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var SB = 'https://ieeonhpfahmwwecizdut.supabase.co', LOG_KEY = 'gc_lead_cleanup_log', KEEP_MS = 7 * 864e5;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v); }
+function low(v){ return s(v).trim().toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function hub(){ return W._gcLeadsHub || null; }
+function kit(){ var h = hub(); return (h && h.kit) || null; }
+function isAdmin(){ var k = kit(); try { return !!(k && k.isAdmin()); } catch (e) { return false; } }
+function who(){ var k = kit(); try { return (k && k.me()) || ''; } catch (e) { return ''; } }
+function toast(msg){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.className = 'gcl-toast'; t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Arial;z-index:2147483300;max-width:90vw'; D.body.appendChild(t); later(function(){ t.remove(); }, 4500); } catch (e) {} }
+function tms(v){ var t = Date.parse(s(v)); return isFinite(t) ? t : 0; }
+
+/* ── normalising ──────────────────────────────────────────────────────────── */
+var ABBR = { street: 'st', st: 'st', road: 'rd', rd: 'rd', avenue: 'ave', av: 'ave', ave: 'ave', drive: 'dr', dr: 'dr', lane: 'ln', ln: 'ln', boulevard: 'blvd', blvd: 'blvd',
+  court: 'ct', ct: 'ct', place: 'pl', pl: 'pl', parkway: 'pkwy', pkwy: 'pkwy', highway: 'hwy', hwy: 'hwy', circle: 'cir', cir: 'cir', cove: 'cv', cv: 'cv', terrace: 'ter', trail: 'trl', way: 'way',
+  north: 'n', south: 's', east: 'e', west: 'w', n: 'n', s: 's', e: 'e', w: 'w' };
+function normPhone(v){ var d = s(v).replace(/\D+/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d.length === 10 && !/^(\d)\1{9}$/.test(d) ? d : ''; }
+function normEmail(v){ var e = low(v); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e) && !/^(no|none|na|n\/a|test|noreply|no-reply)@/.test(e) ? e : ''; }
+function normAddr(v){
+  var t = low(v).split(',')[0];
+  t = t.replace(/#\s*[\w-]+/g, ' ').replace(/\b(apt|apartment|suite|ste|unit|bldg|building|fl|floor|rm|room|lot|space|spc)\b\.?\s*[\w-]*.*$/, ' ');
+  t = t.replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!/^\d+[a-z]?\s+\S+/.test(t)) return '';
+  return t.split(' ').map(function(w){ return ABBR[w] || w; }).join(' ');
+}
+var GENERIC = /^(roof|roofs|roofing|reroof|re|repair|repairs|replacement|replace|leak|leaks|water|damage|fire|smoke|storm|hail|wind|mitigation|remodel|remodeling|reno|renovation|kitchen|bath|bathroom|deck|fence|gutter|gutters|siding|paint|painting|estimate|inspection|new|lead|leads|job|project|quote|bid|rfq|rfp|website|web|form|inquiry|customer|quickbooks|companycam|the|and|for|of|at|in|on|to|a|an|llc|inc|co|company|corp|home|house|residence|commercial|residential|insurance|claim|services|service|construction)$/;
+function normName(v){
+  var t = low(v).replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(llc|inc|co|corp|company|the)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  if (t.length < 5) return '';
+  var real = t.split(' ').filter(function(w){ return w.length >= 3 && !GENERIC.test(w) && !/^\d+$/.test(w); });
+  return real.length ? t : '';
+}
+function leadName(l){ return s(l.name || l.title || l.company || l.client); }
+function leadAddr(l){ return s(l.address || l.jobAddress || l.siteAddress || (l.leadExtra && l.leadExtra.address)); }
+
+/* ── what kind of lead ────────────────────────────────────────────────────── */
+function K(){ return kit() || { imported: function(){ return false; }, archived: function(l){ return !!(l && l.archived); }, shut: function(){ return false; }, stageOf: function(l){ return s(l.stage) || 'New Lead'; }, receivedMs: function(l){ return tms(l.receivedAt || l.createdAt || l.created); }, typeOf: function(){ return ''; } }; }
+function imported(l){ try { return !!K().imported(l); } catch (e) { return false; } }
+function archived(l){ try { return !!K().archived(l); } catch (e) { return !!(l && l.archived); } }
+function shut(l){ try { return !!K().shut(l); } catch (e) { return false; } }
+function received(l){ var t = 0; try { t = K().receivedMs(l); } catch (e) {} return t || tms(l.createdAt || l.created || l.dateAdded || l.date); }
+function lastTouch(l){
+  var t = Math.max(received(l), tms(l.contactedAt), tms(l.lastContact), tms(l.stageChangedAt), tms(l.prioritySetAt));
+  arr(l.activity).forEach(function(a){ t = Math.max(t, tms(a && a.at)); });
+  return t;
+}
+function filled(l){
+  var n = 0; ['name', 'title', 'company', 'client', 'contact', 'phone', 'email', 'address', 'city', 'bidDue', 'pm', 'estimator', 'notes', 'note', 'gc', 'projectType', 'leadKind', 'type'].forEach(function(f){ if (s(l[f]).trim()) n++; });
+  n += Math.min(10, arr(l.activity).length) * 2 + arr(l.files).length + arr(l.plansLinks).length;
+  if (s(l.estimateId) || s(l.estId) || arr(l.estimates).length) n += 6;
+  if (s(l.inboxId)) n += 4;
+  if (+l.estValue > 0 || +l.value > 0) n += 2;
+  return n;
+}
+
+/* ── analyse (pure: leads + jobs in, the four lists out) ──────────────────── */
+function analyze(list, jobs, opts){
+  opts = opts || {}; var now = opts.now || Date.now(), days = +opts.days || 90;
+  var live = arr(list).filter(function(l){ return l && l.id && !l.deleted && !l._deleted && !archived(l) && !l.mergedInto; });
+  /* duplicates — union-find on the shared keys */
+  var parent = {}, why = {};
+  function find(x){ while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a, b){ a = find(a); b = find(b); if (a !== b) parent[b] = a; }
+  live.forEach(function(l){ parent[l.id] = l.id; });
+  var seen = {};
+  live.forEach(function(l){
+    var keys = [];
+    var p = normPhone(l.phone || l.clientPhone); if (p) keys.push(['phone', 'p:' + p]);
+    var e = normEmail(l.email || l.clientEmail); if (e) keys.push(['e-mail', 'e:' + e]);
+    var a = normAddr(leadAddr(l)); if (a) keys.push(['address', 'a:' + a]);
+    var n = normName(leadName(l)); if (n) keys.push(['name', 'n:' + n]);
+    if (s(l.ccamId)) keys.push(['CompanyCam', 'cc:' + s(l.ccamId)]);
+    if (s(l.qbId)) keys.push(['QuickBooks', 'qb:' + s(l.qbId)]);
+    if (s(l.fromProjectId)) keys.push(['same job record', 'pj:' + s(l.fromProjectId)]);
+    if (s(l.inboxId)) keys.push(['Lead Inbox', 'ib:' + s(l.inboxId)]);
+    keys.forEach(function(k){
+      if (seen[k[1]]) { union(seen[k[1]], l.id); (why[l.id] = why[l.id] || {})[k[0]] = 1; (why[seen[k[1]]] = why[seen[k[1]]] || {})[k[0]] = 1; }
+      else seen[k[1]] = l.id;
+    });
+  });
+  var groups = {};
+  live.forEach(function(l){ var r = find(l.id); (groups[r] = groups[r] || []).push(l); });
+  var dups = Object.keys(groups).map(function(r){ return groups[r]; }).filter(function(g){ return g.length > 1; }).map(function(g){
+    var ranked = g.slice().sort(function(a, b){ return ((imported(a) ? 1 : 0) - (imported(b) ? 1 : 0)) || (filled(b) - filled(a)) || ((received(a) || 9e15) - (received(b) || 9e15)); });
+    var reasons = {}; g.forEach(function(l){ Object.keys(why[l.id] || {}).forEach(function(k){ reasons[k] = 1; }); });
+    return { keeper: ranked[0].id, ids: ranked.map(function(l){ return l.id; }), reasons: Object.keys(reasons), leads: ranked };
+  }).sort(function(a, b){ return b.ids.length - a.ids.length; });
+  var inDup = {}; dups.forEach(function(g){ g.ids.forEach(function(id){ inDup[id] = 1; }); });
+  /* imported, never an inquiry */
+  var imp = live.filter(function(l){ return imported(l); });
+  /* stale */
+  var cut = now - days * 864e5;
+  var stale = live.filter(function(l){ return !imported(l) && !shut(l) && lastTouch(l) && lastTouch(l) < cut; })
+    .sort(function(a, b){ return lastTouch(a) - lastTouch(b); });
+  /* already a job */
+  var byAddr = {}, byName = {};
+  arr(jobs).forEach(function(p){
+    if (!p || p.deleted || p._deleted) return;
+    var a = normAddr(p.address || p.jobAddress || p.siteAddress); if (a && !byAddr[a]) byAddr[a] = p;
+    var n = normName(p.client || p.customer); if (n && !byName[n]) byName[n] = p;
+  });
+  var asJob = [];
+  live.forEach(function(l){
+    if (l.converted || /converted/i.test(s(l.status)) || s(l.convertedTo) || s(l.projectId)) return;
+    var a = normAddr(leadAddr(l)), p = a && byAddr[a], how = 'address';
+    if (!p) { var t = ''; try { t = K().typeOf(l); } catch (e) {} if (!/commercial|government/.test(t)) { var n = normName(l.client || l.contact || l.company); p = n && byName[n]; how = 'customer'; } }
+    if (p) asJob.push({ id: l.id, lead: l, job: { id: s(p.id), name: s(p.name), po: s(p.autoPO || p.po), status: s(p.status), address: s(p.address) }, how: how });
+  });
+  return { dups: dups, imported: imp, stale: stale, asJob: asJob, days: days, inDup: inDup,
+    count: dups.reduce(function(t, g){ return t + g.ids.length - 1; }, 0) + imp.length + stale.length + asJob.length };
+}
+
+/* ── the changes (pure on a copy of the list; the caller saves) ───────────── */
+function stamp(l, type, text, by, at){ var a = arr(l.activity).slice(); a.push({ type: type, text: s(text).slice(0, 500), at: at, by: by }); l.activity = a.slice(-200); }
+function uniqBy(list, keyf){ var seen = {}, out = []; list.forEach(function(x){ if (x == null) return; var k = keyf(x); if (seen[k]) return; seen[k] = 1; out.push(x); }); return out; }
+function mergeInto(list, keeperId, ids, by, at){
+  at = at || nowIso(); by = by || who();
+  var byId = {}; list.forEach(function(l, i){ if (l && l.id) byId[l.id] = i; });
+  if (byId[keeperId] == null) return { list: list, changed: [] };
+  var keep = Object.assign({}, list[byId[keeperId]]), others = ids.filter(function(id){ return id !== keeperId && byId[id] != null; }).map(function(id){ return list[byId[id]]; });
+  if (!others.length) return { list: list, changed: [] };
+  var earliest = received(keep) || 9e15;
+  var notes = [s(keep.notes || keep.note).trim()].filter(Boolean);
+  others.forEach(function(o){
+    ['name', 'title', 'company', 'client', 'contact', 'phone', 'email', 'address', 'city', 'state', 'zip', 'bidDue', 'bidNumber', 'gc', 'dueToCompany', 'projectType', 'leadKind', 'type', 'pm', 'estimator', 'apm',
+      'ccamId', 'ccamUrl', 'qbId', 'inboxId', 'source', 'plansLink', 'estimateId', 'estId'].forEach(function(f){ if (!s(keep[f]).trim() && s(o[f]).trim()) keep[f] = o[f]; });
+    if (!(+keep.estValue > 0) && +o.estValue > 0) keep.estValue = o.estValue;
+    if (!(+keep.priority >= 1) && +o.priority >= 1) keep.priority = o.priority;
+    var on = s(o.notes || o.note).trim(); if (on && notes.indexOf(on) < 0) notes.push('— merged from ' + (leadName(o) || o.id) + ': ' + on);
+    var r = received(o); if (r && r < earliest) earliest = r;
+  });
+  if (notes.length) { if ('notes' in keep || !('note' in keep)) keep.notes = notes.join('\n'); else keep.note = notes.join('\n'); }
+  var all = [keep].concat(others);
+  keep.activity = uniqBy([].concat.apply([], all.map(function(l){ return arr(l.activity); })), function(a){ return s(a.at) + '|' + s(a.type) + '|' + s(a.text); }).sort(function(a, b){ return tms(a.at) - tms(b.at); }).slice(-200);
+  ['files', 'plansLinks', 'contacts', 'estimates', 'stageHistory', 'coAssignees'].forEach(function(f){
+    var merged = uniqBy([].concat.apply([], all.map(function(l){ return arr(l[f]); })), function(x){ return typeof x === 'object' ? s(x.ref || x.url || x.id || x.email || x.name) || JSON.stringify(x) : s(x); });
+    if (merged.length) keep[f] = merged;
+  });
+  if (earliest < 9e15 && earliest < (received(keep) || 9e15)) { var iso = new Date(earliest).toISOString(); keep.receivedAt = iso; keep.createdAt = iso; }
+  keep.mergedFrom = uniqBy(arr(keep.mergedFrom).concat(others.map(function(o){ return o.id; })), function(x){ return x; });
+  stamp(keep, 'merge', '🧹 Merged ' + others.length + ' duplicate(s) into this lead: ' + others.map(function(o){ return leadName(o) || o.id; }).join(', '), by, at);
+  keep.updatedAt = at;
+  var out = list.slice(); out[byId[keeperId]] = keep;
+  var changed = [keeperId];
+  others.forEach(function(o){
+    var x = Object.assign({}, o); x.archived = true; x.archivedAt = at; x.archivedBy = by; x.archivedWhy = 'merged'; x.mergedInto = keeperId; x.status = 'archived'; x.dismissed = true; x.updatedAt = at;
+    stamp(x, 'merge', '🧹 Merged into ' + (leadName(keep) || keeperId) + ' (archived — nothing deleted)', by, at);
+    out[byId[o.id]] = x; changed.push(o.id);
+  });
+  return { list: out, changed: changed };
+}
+function editEach(list, ids, f){
+  var want = {}; ids.forEach(function(id){ want[id] = 1; });
+  var changed = [], out = list.map(function(l){ if (!l || !want[l.id]) return l; var x = Object.assign({}, l); if (f(x) === false) return l; changed.push(l.id); return x; });
+  return { list: out, changed: changed };
+}
+function archiveIds(list, ids, by, at, why){
+  at = at || nowIso(); by = by || who();
+  return editEach(list, ids, function(x){ if (x.archived) return false; x.archived = true; x.archivedAt = at; x.archivedBy = by; x.archivedWhy = why || 'cleanup'; x.statusBeforeArchive = s(x.status); x.status = 'archived'; x.dismissed = true; x.updatedAt = at; stamp(x, 'archive', '🧹 Archived (' + (why || 'cleanup') + ') — restorable', by, at); });
+}
+function restoreIds(list, ids, by, at){
+  at = at || nowIso(); by = by || who();
+  return editEach(list, ids, function(x){ if (!x.archived) return false; x.archived = false; x.status = s(x.statusBeforeArchive) || 'new'; delete x.statusBeforeArchive; x.dismissed = false; delete x.mergedInto; x.updatedAt = at; stamp(x, 'restore', '↩ Restored from the archive', by, at); });
+}
+function lostIds(list, ids, by, at){
+  at = at || nowIso(); by = by || who();
+  return editEach(list, ids, function(x){ var from = s(x.stage) || 'New Lead'; if (from === 'Lost') return false; x.stage = 'Lost'; x.stageChangedAt = at; x.lostReason = 'old / stale'; x.lostAt = at; var h = arr(x.stageHistory).slice(); h.push({ from: from, to: 'Lost', at: at, by: by }); x.stageHistory = h.slice(-60); x.updatedAt = at; stamp(x, 'stage', '🧹 Marked lost — old / stale', by, at); });
+}
+function linkIds(list, pairs, by, at){
+  at = at || nowIso(); by = by || who();
+  var map = {}; pairs.forEach(function(p){ map[p.id] = p; });
+  return editEach(list, Object.keys(map), function(x){ var p = map[x.id]; if (!p || !p.jobId) return false; x.converted = true; x.convertedTo = p.jobId; x.projectId = p.jobId; x.status = 'converted'; x.convertedAt = at; x.updatedAt = at; stamp(x, 'convert', '🧹 Linked to job ' + (p.jobName || p.jobId) + ' (it was already a job)', by, at); });
+}
+
+/* ── the undo log (gc_kv gc_lead_cleanup_log: the before-state, 7 days) ──── */
+function kvGet(key){
+  return W.fetch(SB + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('read ' + r.status)); })
+    .then(function(rows){ var v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; });
+}
+function kvPut(key, value){
+  return W.fetch(SB + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ return r.ok; }, function(){ return false; });
+}
+var LOG = null;
+function readLog(){ return kvGet(LOG_KEY).then(function(v){ LOG = arr(v && v.entries ? v.entries : v); return LOG; }, function(){ LOG = LOG || []; return LOG; }); }
+function pushLog(entry){
+  return readLog().then(function(list){
+    var now = Date.now(); list = list.filter(function(e){ return e && now - tms(e.at) < KEEP_MS && !e.undone; }).concat([entry]).slice(-20);
+    LOG = list; try { localStorage.setItem('gc_lead_cleanup_last', JSON.stringify({ id: entry.id, at: entry.at, what: entry.what })); } catch (e) {}
+    return kvPut(LOG_KEY, { entries: list, updatedAt: nowIso() });
+  });
+}
+function lastUndoable(){ var now = Date.now(); return arr(LOG).filter(function(e){ return e && !e.undone && now - tms(e.at) < KEEP_MS; }).slice(-1)[0] || null; }
+
+/* ── apply: one action, saved through the Leads hub, logged for undo ──────── */
+function save(mut){ var k = kit(); if (!k || typeof k.setLeads !== 'function') return Promise.resolve(false); return k.setLeads(mut); }
+function apply(kind, arg, what){
+  if (!isAdmin()) { toast('Only an admin can clean up leads'); return Promise.resolve(false); }
+  var before = [], changedIds = [], by = who(), at = nowIso();
+  return save(function(list){
+    var r;
+    if (kind === 'merge') { r = { list: list, changed: [] }; arg.forEach(function(g){ var x = mergeInto(r.list, g.keeper, g.ids, by, at); r = { list: x.list, changed: r.changed.concat(x.changed) }; }); }
+    else if (kind === 'archive') r = archiveIds(list, arg, by, at, 'cleanup');
+    else if (kind === 'lost') r = lostIds(list, arg, by, at);
+    else if (kind === 'link') r = linkIds(list, arg, by, at);
+    else if (kind === 'restore') r = restoreIds(list, arg, by, at);
+    else return null;
+    if (!r.changed.length) return null;
+    var want = {}; r.changed.forEach(function(id){ want[id] = 1; });
+    before = list.filter(function(l){ return l && want[l.id]; }).map(function(l){ return JSON.parse(JSON.stringify(l)); });
+    changedIds = r.changed.slice();
+    return r.list;
+  }).then(function(ok){
+    if (!ok || !changedIds.length) { toast('Nothing changed'); return false; }
+    var entry = { id: 'lc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: at, by: by, kind: kind, what: what || kind, ids: changedIds, before: before };
+    return pushLog(entry).then(function(){ toast('🧹 Done: ' + (what || kind) + ' — "Undo last cleanup" works for 7 days'); try { hub().redraw(); } catch (e) {} return true; });
+  });
+}
+function undo(){
+  if (!isAdmin()) return Promise.resolve(false);
+  return readLog().then(function(){
+    var e = lastUndoable(); if (!e) { toast('Nothing to undo (the last 7 days)'); return false; }
+    var at = nowIso(), byId = {}; arr(e.before).forEach(function(l){ if (l && l.id) byId[l.id] = l; });
+    return save(function(list){
+      var n = 0, out = list.map(function(l){ if (l && byId[l.id]) { n++; var x = JSON.parse(JSON.stringify(byId[l.id])); x.updatedAt = at; return x; } return l; });
+      return n ? out : null;
+    }).then(function(ok){
+      if (!ok) { toast('Could not undo — try again'); return false; }
+      LOG = LOG.map(function(x){ return x.id === e.id ? Object.assign({}, x, { undone: at, undoneBy: who() }) : x; });
+      return kvPut(LOG_KEY, { entries: LOG, updatedAt: at }).then(function(){ toast('↩ Undone: ' + e.what); try { hub().redraw(); } catch (x) {} return true; });
+    });
+  });
+}
+
+/* ── the window ───────────────────────────────────────────────────────────── */
+var VIEW = { tab: 'dups', days: 90 }, CNT = { sig: '', n: 0 };   /* the hub's "🧹 Clean up (n)" asks often: worked out again only when the leads change */
+function jobs(){ return arr((W._crm || {}).projects); }
+function all(){ var k = kit(); try { return k ? arr(k.all()) : arr((W._crm || {}).leads); } catch (e) { return []; } }
+function rowLabel(l){
+  var bits = [esc(leadName(l) || l.id)];
+  var a = leadAddr(l); if (a) bits.push('<span class="m">' + esc(a) + '</span>');
+  var c = [s(l.contact), s(l.phone), s(l.email)].filter(Boolean).join(' · '); if (c) bits.push('<span class="m">' + esc(c) + '</span>');
+  var r = received(l); bits.push('<span class="m">' + (r ? 'in ' + new Date(r).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'no date') + ' · ' + esc(s(l.source) || '—') + (imported(l) ? ' · 📦 imported' : '') + '</span>');
+  return bits.join('<br>');
+}
+function css(){
+  if (D.getElementById('gc-lclean-css')) return;
+  var c = D.createElement('style'); c.id = 'gc-lclean-css';
+  c.textContent = '#gc-lclean{position:fixed;inset:0;z-index:100150;background:rgba(15,10,40,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 10px;font:14px Arial,sans-serif;color:#1b1640}'
+    + '#gc-lclean .box{background:#fff;border-radius:12px;max-width:980px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}'
+    + '#gc-lclean .hd{display:flex;gap:8px;align-items:center;background:#241968;color:#fff;padding:12px 16px;border-radius:12px 12px 0 0}#gc-lclean .hd h3{margin:0;flex:1;font-size:17px}'
+    + '#gc-lclean .hd button{background:transparent;border:0;color:#fff;font-size:22px;cursor:pointer;min-width:40px;min-height:40px}'
+    + '#gc-lclean .tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #eee}#gc-lclean .tabs button{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:7px 12px;font:700 13px Arial;color:#241968;cursor:pointer;min-height:36px}#gc-lclean .tabs button.on{background:#241968;color:#fff}'
+    + '#gc-lclean .bd{padding:10px 16px 16px}#gc-lclean .note{font-size:12.5px;color:#555;margin:4px 0 10px}#gc-lclean .grp{border:1px solid #e3e1f0;border-radius:10px;padding:8px 10px;margin:0 0 8px}'
+    + '#gc-lclean .grp h5{margin:0 0 6px;font-size:13px;display:flex;gap:8px;align-items:center}#gc-lclean .row{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px solid #f3f2f8;font-size:13px}#gc-lclean .row:first-of-type{border-top:0}'
+    + '#gc-lclean .m{color:#666;font-size:12px}#gc-lclean .act{display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:sticky;bottom:0;background:#fff;padding:10px 0 2px;border-top:1px solid #eee;margin-top:8px}'
+    + '#gc-lclean .act button{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:8px 12px;font:700 13px Arial;color:#241968;cursor:pointer;min-height:38px}#gc-lclean .act button.pri{background:#241968;color:#fff;border-color:#241968}#gc-lclean .act button.bad{background:#fee2e2;color:#991b1b;border-color:#fecaca}'
+    + '#gc-lclean input[type=checkbox],#gc-lclean input[type=radio]{width:18px;height:18px;margin-top:2px}#gc-lclean .chip{display:inline-block;border-radius:999px;padding:1px 7px;font:700 11px Arial;background:#eef;color:#241968}';
+  (D.head || D.documentElement).appendChild(c);
+}
+function bodyHtml(R){
+  var t = VIEW.tab, h = '';
+  if (t === 'dups') {
+    h += '<div class="note">' + R.dups.length + ' group(s) of the same lead (same phone, e-mail, street address, name, or CompanyCam / QuickBooks / Inbox id). The ★ one is kept; the others are merged into it and archived — nothing is deleted.</div>';
+    h += R.dups.map(function(g, gi){
+      return '<div class="grp"><h5><input type="checkbox" data-lc-g="' + gi + '" checked aria-label="Merge this group"> ' + g.ids.length + ' records · same ' + esc(g.reasons.join(', ')) + '</h5>'
+        + g.leads.map(function(l){ return '<label class="row"><input type="radio" name="lck' + gi + '" data-lc-keep="' + gi + '" value="' + esc(l.id) + '"' + (l.id === g.keeper ? ' checked' : '') + '><span>' + (l.id === g.keeper ? '★ ' : '') + rowLabel(l) + '</span></label>'; }).join('') + '</div>';
+    }).join('') || '<div class="note">No duplicates found. 👍</div>';
+    if (R.dups.length) h += '<div class="act"><button type="button" class="pri" data-lc-do="merge">Merge the ticked groups</button><button type="button" data-lc-all="g">Tick all / none</button></div>';
+  } else {
+    var list = t === 'imp' ? R.imported : t === 'stale' ? R.stale : R.asJob.map(function(x){ return x.lead; });
+    var intro = t === 'imp' ? 'QuickBooks customers and CompanyCam projects that were filed as leads, never an inquiry (no activity, inbox item or estimate). They are already kept out of the "new" counts; archive them to clear them out.'
+      : t === 'stale' ? 'Open leads nobody has touched in ' + R.days + '+ days. <select data-lc-days aria-label="Days">' + [60, 90, 180, 365].map(function(d){ return '<option value="' + d + '"' + (d === R.days ? ' selected' : '') + '>' + d + ' days</option>'; }).join('') + '</select>'
+      : 'Leads at the address (or for the homeowner) of a job that already exists. Linking marks the lead converted to that job.';
+    h += '<div class="note">' + intro + '</div>';
+    h += list.map(function(l, i){
+      var j = t === 'job' ? R.asJob[i].job : null;
+      return '<label class="row"><input type="checkbox" data-lc-id="' + esc(l.id) + '" checked><span>' + rowLabel(l) + (j ? '<br><span class="chip">→ job ' + esc((j.po ? '[' + j.po + '] ' : '') + j.name) + ' · ' + esc(R.asJob[i].how) + '</span>' : '')
+        + (t === 'stale' ? '<br><span class="m">last touched ' + esc(new Date(lastTouch(l)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span>' : '') + '</span></label>';
+    }).join('') || '<div class="note">Nothing here. 👍</div>';
+    if (list.length) h += '<div class="act">' + (t === 'job' ? '<button type="button" class="pri" data-lc-do="link">Link the ticked to their jobs</button>' : '<button type="button" class="pri" data-lc-do="archive">Archive the ticked</button>')
+      + (t === 'stale' ? '<button type="button" class="bad" data-lc-do="lost">Mark the ticked lost (old / stale)</button>' : '') + '<button type="button" data-lc-all="i">Tick all / none</button></div>';
+  }
+  return h;
+}
+function render(){
+  var ov = D.getElementById('gc-lclean'); if (!ov) return;
+  var R = analyze(all(), jobs(), { days: VIEW.days }); ov.__R = R;
+  var u = lastUndoable();
+  var tabs = [['dups', '👯 Duplicates (' + R.dups.reduce(function(t, g){ return t + g.ids.length - 1; }, 0) + ')'], ['imp', '📦 Imported (' + R.imported.length + ')'], ['stale', '💤 Stale (' + R.stale.length + ')'], ['job', '🏗 Already a job (' + R.asJob.length + ')']];
+  ov.innerHTML = '<div class="box" role="dialog" aria-modal="true" aria-label="Lead cleanup"><div class="hd"><h3>🧹 Lead cleanup</h3>' + (u ? '<button type="button" data-lc-undo title="Undo: ' + esc(u.what) + '" style="font:700 13px Arial;border:1px solid rgba(255,255,255,.5);border-radius:8px;padding:6px 10px">↩ Undo last cleanup</button>' : '') + '<button type="button" data-lc-x aria-label="Close">✕</button></div>'
+    + '<div class="tabs" role="tablist">' + tabs.map(function(x){ return '<button type="button" role="tab" data-lc-tab="' + x[0] + '" class="' + (VIEW.tab === x[0] ? 'on' : '') + '" aria-selected="' + (VIEW.tab === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>'
+    + '<div class="bd">' + bodyHtml(R) + '<div class="note" style="margin-top:10px">Nothing is sent — no e-mail, text, alert or approval. Archived leads are under "🗄 Archived" in the Leads filters and can be restored.</div></div></div>';
+}
+function ticked(ov, sel){ return Array.prototype.filter.call(ov.querySelectorAll(sel), function(x){ return x.checked; }); }
+function onClick(ev){
+  var ov = D.getElementById('gc-lclean'); if (!ov) return;
+  var t = ev.target;
+  if (t === ov || (t.closest && t.closest('[data-lc-x]'))) { close(); return; }
+  var b = t.closest && t.closest('button'); if (!b || !ov.contains(b)) return;
+  var R = ov.__R || analyze(all(), jobs(), { days: VIEW.days });
+  if (b.hasAttribute('data-lc-tab')) { VIEW.tab = b.getAttribute('data-lc-tab'); render(); return; }
+  if (b.hasAttribute('data-lc-undo')) { if (W.confirm('Undo the last cleanup?')) undo().then(function(){ render(); }); return; }
+  if (b.hasAttribute('data-lc-all')) { var boxes = ov.querySelectorAll(b.getAttribute('data-lc-all') === 'g' ? '[data-lc-g]' : '[data-lc-id]'), on = Array.prototype.some.call(boxes, function(x){ return !x.checked; }); Array.prototype.forEach.call(boxes, function(x){ x.checked = on; }); return; }
+  var act = b.getAttribute('data-lc-do'); if (!act) return;
+  if (act === 'merge') {
+    var gs = ticked(ov, '[data-lc-g]').map(function(x){ var gi = +x.getAttribute('data-lc-g'), g = R.dups[gi]; var k = ov.querySelector('input[name="lck' + gi + '"]:checked'); return { keeper: k ? k.value : g.keeper, ids: g.ids }; });
+    var n = gs.reduce(function(t, g){ return t + g.ids.length - 1; }, 0);
+    if (!gs.length) return toast('Tick a group first');
+    if (!W.confirm('Merge ' + gs.length + ' group(s)? ' + n + ' duplicate lead(s) will be merged into the ★ one and archived (nothing deleted, nothing sent). You can undo for 7 days.')) return;
+    apply('merge', gs, 'merged ' + n + ' duplicate lead(s) in ' + gs.length + ' group(s)').then(render); return;
+  }
+  var ids = ticked(ov, '[data-lc-id]').map(function(x){ return x.getAttribute('data-lc-id'); });
+  if (!ids.length) return toast('Tick at least one lead');
+  if (act === 'archive') { if (!W.confirm('Archive ' + ids.length + ' lead(s)? They leave every list (restorable under "🗄 Archived"). Nothing is sent. Undo works for 7 days.')) return; apply('archive', ids, 'archived ' + ids.length + ' lead(s)').then(render); return; }
+  if (act === 'lost') { if (!W.confirm('Mark ' + ids.length + ' lead(s) lost — "old / stale"? Nothing is sent. Undo works for 7 days.')) return; apply('lost', ids, 'marked ' + ids.length + ' old lead(s) lost').then(render); return; }
+  if (act === 'link') {
+    var pairs = R.asJob.filter(function(x){ return ids.indexOf(x.id) >= 0; }).map(function(x){ return { id: x.id, jobId: x.job.id, jobName: x.job.name }; });
+    if (!W.confirm('Link ' + pairs.length + ' lead(s) to their existing jobs (marked converted)? Nothing is sent. Undo works for 7 days.')) return;
+    apply('link', pairs, 'linked ' + pairs.length + ' lead(s) to their jobs').then(render); return;
+  }
+}
+function onChange(ev){ var t = ev.target; if (t && t.hasAttribute && t.hasAttribute('data-lc-days')) { VIEW.days = +t.value || 90; render(); } }
+function onKey(ev){ if (ev.key === 'Escape' && D.getElementById('gc-lclean')) close(); }
+function open(tab){
+  if (!isAdmin()) { toast('Only an admin can clean up leads'); return; }
+  css(); close();
+  if (tab) VIEW.tab = tab;
+  var ov = D.createElement('div'); ov.id = 'gc-lclean'; ov.setAttribute('data-gc-keep', '1');
+  ov.addEventListener('click', onClick); ov.addEventListener('change', onChange);
+  D.body.appendChild(ov); D.addEventListener('keydown', onKey, true);
+  render(); readLog().then(function(){ if (D.getElementById('gc-lclean')) render(); });
+}
+function close(){ var ov = D.getElementById('gc-lclean'); if (ov) ov.remove(); D.removeEventListener('keydown', onKey, true); }
+
+/* the hub's buttons (🧹 Clean up · 📦 Imported · 🗄 Archived) — delegated, so the hub's own redraws never lose them */
+D.addEventListener('click', function(ev){
+  var b = ev.target && ev.target.closest ? ev.target.closest('[data-gcl-clean],[data-gcl-impf],[data-gcl-arch]') : null;
+  if (!b || !b.closest('#gc-leads-hub')) return;
+  ev.preventDefault();
+  if (b.hasAttribute('data-gcl-clean')) { open(); return; }
+  var h = hub(); if (!h || typeof h.ui !== 'function') return;
+  var U = h.ui();
+  if (b.hasAttribute('data-gcl-impf')) { U.imp = !U.imp; if (U.imp) U.arch = false; }
+  else { U.arch = !U.arch; if (U.arch) { U.imp = false; } }
+  try { h.redraw(); } catch (e) {}
+}, true);
+
+/* the lead form's "How did you hear about us?" — the Leads hub's source list (every standard source + every source on a
+   lead, "website" = "Website") and "＋ Add new source…" (kept on this computer and in gc_kv gc_lead_sources for everyone) */
+var NEW_SRC = '__gc_new_source__', SRC_LS = 'gc_lead_sources_v1', SRC_KV = 'gc_lead_sources';
+function customSources(){ try { return arr(JSON.parse(localStorage.getItem(SRC_LS) || '[]')); } catch (e) { return []; } }
+function saveCustomSources(list){ try { localStorage.setItem(SRC_LS, JSON.stringify(list)); } catch (e) {} return kvPut(SRC_KV, { list: list, updatedAt: nowIso() }); }
+kvGet(SRC_KV).then(function(v){ var got = arr(v && v.list), mine = customSources(), seen = {}, all0 = [];
+  got.concat(mine).forEach(function(x){ var k = low(x).replace(/\s+/g, ' '); if (k && !seen[k]) { seen[k] = 1; all0.push(s(x).trim().replace(/\s+/g, ' ')); } });
+  try { localStorage.setItem(SRC_LS, JSON.stringify(all0)); } catch (e) {} }, function(){});
+var prevSrcOpts = W._gcMktSourceOpts;
+W._gcMktSourceOpts = function(items){
+  var base = []; try { base = typeof prevSrcOpts === 'function' ? arr(prevSrcOpts(items)) : []; } catch (e) {}
+  var L = W._gcLeadSources, out = [{ v: '', l: '— choose one —' }], have = {};
+  function add(v, l){ v = s(v); if (!v || have[v]) return; have[v] = 1; out.push({ v: v, l: l || v }); }
+  if (L) { try { L.list().forEach(function(x){ add(x); }); } catch (e) {} }
+  base.forEach(function(o){ var v = o && typeof o === 'object' ? s(o.v) : s(o); if (v && !have[v]) add(v, (L && L.label(v) !== v) ? v + ' (as recorded)' : v); });   /* what old leads hold stays selectable */
+  arr(items).forEach(function(l){ var v = s(l && l.source); if (v && !have[v]) add(v, v + ' (as recorded)'); });
+  out.push({ v: NEW_SRC, l: '＋ Add new source…' });
+  return out;
+};
+function setSelect(el, v){ try { var d = Object.getOwnPropertyDescriptor(W.HTMLSelectElement.prototype, 'value'); d.set.call(el, v); } catch (e) { el.value = v; } el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+D.addEventListener('change', function(ev){
+  var t = ev.target; if (!t || t.tagName !== 'SELECT' || t.value !== NEW_SRC) return;
+  ev.stopImmediatePropagation(); ev.preventDefault();
+  var name = s(W.prompt('New lead source (for example "Home show 2026"):', '')).trim().replace(/\s+/g, ' ');
+  if (!name) { setSelect(t, ''); return; }
+  var L = W._gcLeadSources, lab = L ? L.label(name) : name, list = customSources();
+  if (!list.some(function(x){ return low(x) === low(lab); }) && !(L && L.std.some(function(x){ return low(x) === low(lab); }))) { list.push(lab); saveCustomSources(list); }
+  if (!Array.prototype.some.call(t.options, function(o){ return o.value === lab; })) { var o = D.createElement('option'); o.value = lab; o.textContent = lab; t.insertBefore(o, t.options[t.options.length - 1] || null); }
+  setSelect(t, lab);
+  toast('Source "' + lab + '" added — it is in the list for everyone now');
+}, true);
+
+W._gcLeadClean = { analyze: analyze, merge: mergeInto, archive: archiveIds, restore: restoreIds, lost: lostIds, link: linkIds, apply: apply, undo: undo, open: open, close: close,
+  norm: { phone: normPhone, email: normEmail, addr: normAddr, name: normName }, log: function(){ return readLog(); }, count: function(){ try { var L = all(), J = jobs(), sig = L.length + '|' + J.length + '|' + VIEW.days + '|' + L.reduce(function(m, l){ var u = s(l && (l.updatedAt || l.savedAt)); return u > m ? u : m; }, ''); if (CNT.sig !== sig) { CNT.sig = sig; CNT.n = analyze(L, J, { days: VIEW.days }).count; } return CNT.n; } catch (e) { return 0; } } };
+try { console.log('[GC] 🧹 Lead cleanup (patch LCLEAN) — _gcLeadClean.open()'); } catch (e) {}
+})();
+</script>
+<script>
+/* __GC_PATCH_LCLEAN_Q__ — QuickBooks history invoices find their job (owner 10/23: "all jobs I'm entering from QuickBooks
+   should create an invoice — the invoices that were created for that job — automatically, without approval. I don't want
+   to be sending customers old invoices because I'm importing data").
+   A QuickBooks invoice imported as history with no job yet (qbNeedsHome) is linked by itself the moment its customer has
+   exactly ONE job in the CRM with the same name — the job the office just entered — so it shows on the job's Invoices &
+   Payments and stat strip. It stays history: recorded, never sent, never reminded, no approval. Its "needs a home" to-do
+   closes itself. Two or more jobs for that customer: the office places it (the to-do stays).
+   API: window._gcQbHistLink.run() → { linked } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_LCLEAN_Q__) return; window.__GC_PATCH_LCLEAN_Q__ = true;
+var W = window, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var TASKK = 'gc_office_tasks';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function nk(v){ return s(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function crm(){ return W._crm || {}; }
+function invs(){ var c = crm(); return arr(c.invs && c.invs.length ? c.invs : c.invoices); }
+function isHist(i){ return !!i && (i.importedHistory === true || i.noSend === true) && /client|customer|draw|progress|final|invoice/i.test(s(i.type) || 'client'); }
+function jobFor(name){
+  var n = nk(name); if (!n) return null;
+  var js = arr(crm().projects).filter(function(p){ return p && !p.deleted && !/^(lost|cancelled|canceled|declined|dead|rejected)$/i.test(s(p.status)) && (nk(p.client || p.customer) === n || nk(p.name) === n); });
+  return js.length === 1 ? js[0] : null;
+}
+var SIG = '';
+function run(){
+  var list = invs(), projects = arr(crm().projects);
+  var sig = list.length + '|' + projects.length + '|' + projects.map(function(p){ return p && (p.id + ':' + s(p.client)); }).join(',').length;
+  var want = list.filter(function(i){ return isHist(i) && !s(i.pid) && (i.qbNeedsHome || /quickbooks/i.test(s(i.source))); });
+  if (!want.length || sig === SIG) { SIG = sig; return Promise.resolve({ linked: 0 }); }
+  SIG = sig;
+  var now = new Date().toISOString(), linked = [];
+  var out = list.map(function(i){
+    if (want.indexOf(i) < 0) return i;
+    var p = jobFor(i.client || i.customer || i.name); if (!p) return i;
+    var x = Object.assign({}, i); x.pid = p.id; x.po = s(p.autoPO); x.qbNeedsHome = false; x.linkedBy = 'auto: the job was entered (QuickBooks history)'; x.linkedAt = now; x.updatedAt = now;
+    linked.push({ id: x.id, pid: p.id }); return x;
+  });
+  if (!linked.length) return Promise.resolve({ linked: 0 });
+  try { if (typeof W._gcManualNow === 'function') W._gcManualNow('QuickBooks history: linked to the job'); } catch (e) {}
+  return Promise.resolve(typeof W.idbSet === 'function' ? W.idbSet('invs', out) : null).catch(function(){}).then(function(){
+    try { if (typeof W._setInvoices === 'function') W._setInvoices(out.slice()); } catch (e) {}
+    try { if (typeof W._supaUpsert === 'function') W._supaUpsert('invs', out); } catch (e) {}
+    /* its "needs a home" to-do closes itself */
+    try {
+      var T = JSON.parse(localStorage.getItem(TASKK) || '[]'), ids = {}, ch = false; linked.forEach(function(l){ ids[l.id] = l.pid; });
+      T.forEach(function(t){ if (t && !t.done && t.kind === 'qb_home' && ids[s(t.recordId)]) { t.done = true; t.doneAt = now; t.updatedAt = now; t.resolution = 'linked to its job by itself (history, not sent)'; ch = true; } });
+      if (ch) { localStorage.setItem(TASKK, JSON.stringify(T)); try { if (W._gcApplySync) W._gcApplySync(TASKK, T); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} }
+    } catch (e) {}
+    return { linked: linked.length, items: linked };
+  });
+}
+RI.call(W, function(){ try { if (!document.hidden) run(); } catch (e) {} }, 5000);
+W._gcQbHistLink = { run: function(){ SIG = ''; return run(); }, jobFor: jobFor };
+try { console.log('[GC] QuickBooks history invoices find their job (patch LCLEAN-Q) — _gcQbHistLink.run()'); } catch (e) {}
 })();
 </script>
