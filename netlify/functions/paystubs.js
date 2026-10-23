@@ -129,6 +129,7 @@ function cleanStub(st, who){
     hours: r2(st.hours), otHours: r2(st.otHours), rate: r2(st.rate), filing: s(st.filing).slice(0, 12),
     earnings: cleanLines(st.earnings), taxes: cleanLines(st.taxes), deductions: cleanLines(st.deductions),
     gross: r2(st.gross), net: r2(st.net), reimbursement: r2(st.reimbursement), dedShort: r2(st.dedShort),
+    withholdState: s(st.withholdState).toUpperCase().slice(0, 2), stateTaxVerified: st.stateTaxVerified === true,   /* patch PAY2 */
     company: { name: s(st.company && st.company.name).slice(0, 120), address: s(st.company && st.company.address).slice(0, 200),
                phone: s(st.company && st.company.phone).slice(0, 40), ein: s(st.company && st.company.ein).slice(0, 20) },
     issuedAt: new Date().toISOString(), issuedBy: who.email
@@ -164,6 +165,7 @@ function stubHtml(st){
     + '<div style="text-align:center;border-bottom:3px solid #0f2440;padding-bottom:8px;margin-bottom:12px"><b style="font-size:18px">' + e(st.company.name || 'GrayCo Construction Services') + '</b><br>'
     + '<span style="font-size:12px;color:#555">' + e(st.company.address) + (st.company.phone ? ' · ' + e(st.company.phone) : '') + '</span></div>'
     + '<p><b>Pay stub — ' + e(st.name) + '</b>' + (st.ssn4 ? ' · SSN ***-**-' + e(st.ssn4) : '') + '<br>Pay period ' + e(st.periodFrom) + ' → ' + e(st.periodTo) + ' · Paid ' + e(st.payDate) + (st.checkNo ? ' · Check #' + e(st.checkNo) : '') + (st.adjusts ? '<br><b>ADJUSTED</b> — replaces stub ' + e(st.adjusts) : '') + '</p>'
+    + (st.withholdState === 'MS' && !st.stateTaxVerified ? '<p style="background:#fef3c7;padding:8px;border-radius:6px"><b>Mississippi withholding rates not yet verified by our CPA.</b></p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th style="text-align:left">Earnings</th><th style="text-align:right">This check</th><th style="text-align:right">YTD</th></tr>' + rows(st.earnings)
     + '<tr><th style="text-align:left">Taxes</th><th></th><th></th></tr>' + rows(st.taxes, true)
     + ((st.deductions || []).length ? '<tr><th style="text-align:left">Deductions</th><th></th><th></th></tr>' + rows(st.deductions, true) : '')

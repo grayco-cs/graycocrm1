@@ -81031,7 +81031,15 @@ var SET_DEFAULT = {
   companyName: 'GrayCo Construction Services',
   companyAddr: '',
   ein: '',
-  payrollAccountSplit: true                     // also draw net pay from the payroll account
+  payrollAccountSplit: true,                    // also draw net pay from the payroll account
+  /* patch PAY2: state income tax tables an admin can check and correct (Payroll → State tax settings) */
+  stateTax: { MS: { rates: { 2024: 0.047, 2025: 0.044, 2026: 0.040, 2027: 0.0375, 2028: 0.035, 2029: 0.0325, 2030: 0.030 },
+                    zeroBand: 10000, dependent: 1500,
+                    exempt: { single: 6000, married: 12000, married_sep: 6000, head: 9500 },
+                    std:    { single: 2300, married: 4600, married_sep: 2300, head: 3400 },
+                    verified: false, verifiedBy: '', verifiedAt: '' } },
+  /* unemployment by the state the work is reported to; TN uses sutaRate / sutaWageBase above */
+  suta: { MS: { rate: 0.010, base: 14000, verified: false } }
 };
 var _set=null;
 async function settings(){
@@ -81225,7 +81233,7 @@ window._gcPayrollHours = hoursFor;
 async function runs(){ var l=await get(K_RUNS); return Array.isArray(l)?l:[]; }
 async function saveRuns(l){ await put(K_RUNS, l); }
 function ytdFor(allRuns, empKey, year, beforeDate){
-  var t={gross:0,fed:0,ss:0,med:0,addlMed:0,state:0,other:0,net:0,ssWages:0,medWages:0,bonus:0,reimbursement:0,hours:0,checks:0};   /* patch PAY */
+  var t={gross:0,fed:0,ss:0,med:0,addlMed:0,state:0,other:0,net:0,ssWages:0,medWages:0,bonus:0,reimbursement:0,hours:0,checks:0,stateBy:{},sutaBy:{}};   /* patch PAY, PAY2 */
   (allRuns||[]).forEach(function(run){
     if(!run || ['approved','paid'].indexOf(run.status)<0) return;
     if(yearOf(run.payDate)!==String(year)) return;
@@ -81237,10 +81245,12 @@ function ytdFor(allRuns, empKey, year, beforeDate){
       t.addlMed+=n2(L.addlMed); t.state+=n2(L.state); t.other+=n2(L.otherDed);
       t.net+=n2(L.net); t.ssWages+=n2(L.ssWages!=null?L.ssWages:L.gross);
       t.medWages+=n2(L.medWages!=null?L.medWages:(L.taxable!=null?L.taxable:L.gross)); t.bonus+=n2(L.bonus); t.reimbursement+=n2(L.reimbursement);   /* patch PAY */
+      var wsK = String(L.withholdState||L.stateName||'TN'); t.stateBy[wsK] = r2(n2(t.stateBy[wsK]) + n2(L.state));   /* patch PAY2 */
+      if(L.sutaState){ t.sutaBy[L.sutaState] = r2(n2(t.sutaBy[L.sutaState]) + n2(L.taxable!=null?L.taxable:L.gross)); }
       t.hours+=n2(L.hours)+n2(L.otHours); t.checks++;
     });
   });
-  Object.keys(t).forEach(function(k){ if(k!=='checks') t[k]=r2(t[k]); });
+  Object.keys(t).forEach(function(k){ if(k!=='checks' && k!=='stateBy' && k!=='sutaBy') t[k]=r2(t[k]); });
   return t;
 }
 window._gcPayrollYTD = ytdFor;
@@ -81402,32 +81412,39 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
      lives in, the tax is worked out properly, here, now, from the real
      withholding tables. */
   var state = 0, stateHow = '';
-  var storedRate = (prof.stateRate===''||prof.stateRate==null) ? null : n2(prof.stateRate);
+  /* patch PAY2: which state withholds — Mississippi when the person LIVES there or WORKS there (Tennessee has no
+     income tax, so a TN resident working an MS job owes MS on those wages). A rate the sync wrote by itself
+     (stateAuto) is an average and is not used; the table below is. A rate typed in by hand still wins. */
+  var resSt = String(prof.state||'TN').toUpperCase().trim(), workSt = String(prof.workState||resSt).toUpperCase().trim();
+  var whSt = (resSt==='MS' || workSt==='MS') ? 'MS' : resSt;
+  var stTbl = (set.stateTax||{})[whSt] || null;
+  var storedRate = (prof.stateRate===''||prof.stateRate==null||prof.stateAuto===true) ? null : n2(prof.stateRate);
   if(storedRate !== null && storedRate > 0){
     state = r2(taxable * storedRate/100);
     stateHow = money(taxable)+' × '+storedRate+'%';
-  } else if(prof.state && window._gcStateWithholding){
+  } else if(whSt && window._gcStateWithholding){
     try{
       var ppyNow = PERIODS[prof.period] || 26;
       var calcSt = window._gcStateWithholding({
-        state: String(prof.state).toUpperCase(),
-        grossPerCheck: gross, taxable: taxable, periodsPerYear: ppyNow,
-        filing: prof.filing||'single',
+        state: whSt, table: stTbl, exemptionClaimed: prof.msExemption,   /* patch PAY2 */
+        grossPerCheck: taxable, taxable: taxable, periodsPerYear: ppyNow,
+        filing: prof.msFiling||prof.filing||'single',
         dependents: n2(prof.stateDependents||prof.dependents),
         age65: !!prof.age65, blind: !!prof.blind,
         year: parseInt(String(set.taxYear||new Date().getFullYear()),10)
       });
       state = r2(n2(calcSt && calcSt.amount));
       stateHow = (calcSt && calcSt.known===false)
-        ? (String(prof.state).toUpperCase()+' — no table on file, nothing withheld')
-        : ('worked out from the '+String(prof.state).toUpperCase()+' tables');
+        ? (whSt+' — no table on file, nothing withheld')
+        : ('worked out from the '+whSt+' tables'+(whSt!==resSt?(' (works in '+workSt+', lives in '+resSt+')'):'')
+           +(whSt==='MS' && !(stTbl && stTbl.verified) ? ' — RATES NOT YET VERIFIED by your CPA (Payroll → State tax settings)' : ''));
     }catch(e){ state = 0; stateHow = 'could not work out '+prof.state; }
   }
   state = r2(state + n2(prof.stateExtra));
-  if(state>0 || n2(prof.stateExtra)>0){
-    T('State income tax ('+(prof.state||'—')+')', stateHow+(n2(prof.stateExtra)?(' + '+money(prof.stateExtra)+' extra'):''), state);
+  if(state>0 || n2(prof.stateExtra)>0 || whSt==='MS'){
+    T('State income tax ('+whSt+')', stateHow+(n2(prof.stateExtra)?(' + '+money(prof.stateExtra)+' extra'):''), state);
   } else {
-    T('State income tax ('+(prof.state||'TN')+')', (String(prof.state||'TN').toUpperCase()==='TN' ? 'Tennessee has no state income tax' : 'No rate set for this state'), 0);
+    T('State income tax ('+whSt+')', (whSt==='TN' ? 'Tennessee has no state income tax' : 'No rate set for this state'), 0);
   }
 
   if(postTax>0) T('Other deductions', otherList.filter(function(d){return !d.pretax;}).map(function(d){return d.label+' '+money(d.amount);}).join(', '), -postTax);
@@ -81462,8 +81479,12 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
     erMed = r2(taxable * n2(set.medRate));
     var futaRoom = Math.max(0, n2(set.futaWageBase) - n2(ytd.gross));
     futa = r2(Math.min(taxable, futaRoom) * n2(set.futaRate));
-    var sutaRoom = Math.max(0, n2(set.sutaWageBase) - n2(ytd.gross));
-    suta = r2(Math.min(taxable, sutaRoom) * n2(set.sutaRate));
+    /* patch PAY2: unemployment goes to the state the work is reported to (sutaState, else the work state) */
+    var sutaSt = String(prof.sutaState||workSt||'TN').toUpperCase(), sutaT = (set.suta||{})[sutaSt];
+    var sutaRate = (sutaT && sutaSt!=='TN') ? n2(sutaT.rate) : n2(set.sutaRate), sutaBase = (sutaT && sutaSt!=='TN') ? n2(sutaT.base) : n2(set.sutaWageBase);
+    var sutaYtd = (ytd.sutaBy && ytd.sutaBy[sutaSt]!=null) ? n2(ytd.sutaBy[sutaSt]) : n2(ytd.gross);
+    var sutaRoom = Math.max(0, sutaBase - sutaYtd);
+    suta = r2(Math.min(taxable, sutaRoom) * sutaRate);
   }
 
   return {
@@ -81476,8 +81497,9 @@ async function computeLine(prof, from, to, set, ytd, manualGross, extras){
        shows "other deductions" next to "pre-tax" means by it. */
     otherDed: r2(postTax), allDeductions: r2(preTax+postTax), dedShort: dedShort, bonus: bonus, reimbursement: reimb, medWages: taxable, multipleJobs: !!prof.multipleJobs,   /* patch PAY */
     otherList: otherList, taxable: taxable, ssWages: r2(ssWages),
-    ss: ss, med: med, addlMed: addlMed, fed: fed, state: state, stateName: prof.state||'TN',
+    ss: ss, med: med, addlMed: addlMed, fed: fed, state: state, stateName: whSt,
     net: net, employerSS: erSS, employerMed: erMed, futa: futa, suta: suta,
+    withholdState: whSt, workState: workSt, residentState: resSt, sutaState: (pt!=='contractor_1099' ? sutaSt : ''), stateTaxVerified: !!(stTbl && stTbl.verified),   /* patch PAY2 */
     filing: prof.filing, trace: trace, zeroFedReason: zeroFedReason, taxYear: set.taxYear,
     status: 'pending', checkNo: ''
   };
@@ -82252,7 +82274,12 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
         +fld('Step 4(b) deductions ($/yr)','<input data-p="deductions" value="'+esc(p.deductions)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Step 4(c) extra per check','<input data-p="extra" value="'+esc(p.extra)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Claims exempt','<select data-p="exemptFed" style="'+CSS.inp+'width:100%;"><option value="no"'+(!p.exemptFed?' selected':'')+'>No</option><option value="yes"'+(p.exemptFed?' selected':'')+'>Yes — withhold no federal</option></select>')
-        +fld('State','<input data-p="state" value="'+esc(p.state||'TN')+'" style="'+CSS.inp+'width:100%;">')
+        +fld('Resident state (lives in)','<select data-p="state" style="'+CSS.inp+'width:100%;">'+['TN','MS','AR','AL','GA','KY','MO','LA'].map(function(v){ return '<option'+(String(p.state||'TN').toUpperCase()===v?' selected':'')+'>'+v+'</option>'; }).join('')+'</select>')   /* patch PAY2 */
+        +fld('Work state','<select data-p="workState" style="'+CSS.inp+'width:100%;">'+['','TN','MS','AR','AL','GA','KY','MO','LA'].map(function(v){ return '<option value="'+v+'"'+(String(p.workState||'').toUpperCase()===v?' selected':'')+'>'+(v||'Same as resident')+'</option>'; }).join('')+'</select>')
+        +fld('Unemployment (SUTA) state','<select data-p="sutaState" style="'+CSS.inp+'width:100%;">'+['','TN','MS'].map(function(v){ return '<option value="'+v+'"'+(String(p.sutaState||'').toUpperCase()===v?' selected':'')+'>'+(v||'Same as work state')+'</option>'; }).join('')+'</select>')
+        +fld('MS 89-350 filing status','<select data-p="msFiling" style="'+CSS.inp+'width:100%;">'+[['','Same as federal'],['single','Single'],['married','Married (spouse not employed)'],['married_sep','Married (spouse employed)'],['head','Head of family']].map(function(v){ return '<option value="'+v[0]+'"'+((p.msFiling||'')===v[0]?' selected':'')+'>'+v[1]+'</option>'; }).join('')+'</select>')
+        +fld('MS 89-350 exemption claimed ($/yr)','<input data-p="msExemption" value="'+esc(p.msExemption||'')+'" placeholder="blank = figured" style="'+CSS.inp+'width:100%;">')
+        +fld('MS dependents','<input data-p="stateDependents" value="'+esc(p.stateDependents||'')+'" style="'+CSS.inp+'width:100%;">')
         +fld('State income tax rate (%)','<input data-p="stateRate" value="'+esc(p.stateRate)+'" style="'+CSS.inp+'width:100%;">')
         +fld('State extra per check','<input data-p="stateExtra" value="'+esc(p.stateExtra)+'" style="'+CSS.inp+'width:100%;">')
         +fld('Last 4 of SSN','<input data-p="ssn4" value="'+esc(p.ssn4||'')+'" maxlength="4" style="'+CSS.inp+'width:100%;">')
@@ -82340,7 +82367,9 @@ window._gcRenderEmployeeProfile = async function(body, S, render){
       if(k==='active')        p.active = (v==='yes');
       else if(k==='exemptFed')p.exemptFed = (v==='yes');
       else if(k==='multipleJobs')p.multipleJobs = (v==='yes');   /* patch PAY */
-      else if(['payType','period','filing','state','hireDate','ssn4'].indexOf(k)>=0) p[k]=v;
+      else if(['payType','period','filing','state','hireDate','ssn4','workState','sutaState','msFiling'].indexOf(k)>=0) p[k]=v;   /* patch PAY2 */
+      else if(k==='msExemption') p[k] = (String(v).trim()==='' ? '' : n2(v));
+      else if(k==='stateRate'){ p.stateRate=n2(v); if(n2(v)>0) p.stateAuto=false; }
       else p[k]=n2(v);
     });
     p.otherDeductions=readDed(body);
@@ -96547,25 +96576,29 @@ window._gcMSWithholding = function(o){
   if(!MS_EXEMPT[filing]) filing='single';
   var year=parseInt(o.year,10)||new Date().getFullYear();
   var rate=msRate(year);
+  var TB=o.table||null;   /* patch PAY2: the admin's table (Payroll → State tax settings) wins */
+  if(TB && TB.rates && TB.rates[year]!=null) rate=n2(TB.rates[year]);
+  var EX=(TB&&TB.exempt)||MS_EXEMPT, SD=(TB&&TB.std)||MS_STD, ZB=(TB&&TB.zeroBand!=null)?n2(TB.zeroBand):MS_ZERO_BAND, DEP=(TB&&TB.dependent!=null)?n2(TB.dependent):1500;
 
   var why=[];
   var annual=r2(gross*ppy);
   why.push({step:'Annual wage', detail:money(gross)+' × '+ppy+' pay periods', amount:annual});
 
-  var exempt=MS_EXEMPT[filing] + 1500*Math.max(0, n2(o.dependents))
-           + 1500*(o.age65?1:0) + 1500*(o.blind?1:0);
+  var exempt=(o.exemptionClaimed!==''&&o.exemptionClaimed!=null&&isFinite(parseFloat(o.exemptionClaimed)))
+           ? n2(o.exemptionClaimed)   /* patch PAY2: the total on the employee's MS 89-350 */
+           : n2(EX[filing]) + DEP*Math.max(0, n2(o.dependents)) + DEP*(o.age65?1:0) + DEP*(o.blind?1:0);
   why.push({step:'Personal exemption', detail:filing.replace('_',' ')
       +(n2(o.dependents)?(' + '+n2(o.dependents)+' dependent(s) × $1,500'):'')
       +(o.age65?' + age 65':'')+(o.blind?' + blind':''), amount:-exempt});
 
-  var std=MS_STD[filing];
+  var std=n2(SD[filing]);
   why.push({step:'Standard deduction', detail:filing.replace('_',' '), amount:-std});
 
   var taxable=Math.max(0, r2(annual-exempt-std));
   why.push({step:'Mississippi taxable income', detail:'what the rate applies to', amount:taxable});
 
-  var over=Math.max(0, taxable-MS_ZERO_BAND);
-  why.push({step:'First $10,000 is taxed at 0%', detail:'Mississippi charges nothing on it', amount:0});
+  var over=Math.max(0, taxable-ZB);
+  why.push({step:'First '+money(ZB)+' is taxed at 0%', detail:'Mississippi charges nothing on it', amount:0});
 
   var annualTax=r2(over*rate);
   why.push({step:'Mississippi income tax for the year',
@@ -167413,13 +167446,16 @@ function stubFromLine(run, L, set, profs){
   if (!earn.length) earn = [{ label: 'Gross pay', amount: r2(L.gross) }];
   if (n2(L.reimbursement) > 0) earn.push({ label: 'Reimbursement (not taxed)', amount: r2(L.reimbursement) });
   var taxes = [{ label: 'Federal income tax', amount: r2(L.fed) }, { label: 'Social Security', amount: r2(L.ss) }, { label: 'Medicare', amount: r2(n2(L.med) + n2(L.addlMed)) }];
-  if (n2(L.state) > 0) taxes.push({ label: 'State income tax (' + s(L.stateName) + ')', amount: r2(L.state) });
+  var wst = s(L.withholdState || L.stateName);   /* patch PAY2: stub */
+  if (wst === 'MS') taxes.push({ label: 'MS income tax', amount: r2(L.state) });
+  else if (n2(L.state) > 0) taxes.push({ label: 'State income tax (' + wst + ')', amount: r2(L.state) });
   var ded = (L.otherList || []).map(function(d){ return { label: d.label, amount: r2(d.amount), pretax: !!d.pretax }; });
   return {
     empKey: s(L.empId || L.name), name: s(L.name), email: emailFor(L, profs), ssn4: ssn4For(L, profs),
     payType: s(L.payType), periodFrom: s(run.from), periodTo: s(run.to), payDate: s(run.payDate), checkNo: s(L.checkNo), runId: s(run.id),
     hours: r2(L.hours), otHours: r2(L.otHours), rate: r2(L.rate), filing: s(L.filing),
     earnings: earn, taxes: taxes, deductions: ded, gross: r2(L.gross), net: r2(L.net), reimbursement: r2(L.reimbursement), dedShort: r2(L.dedShort),
+    withholdState: wst, stateTaxVerified: !!L.stateTaxVerified,
     company: companyBlock(set)
   };
 }
@@ -167479,6 +167515,7 @@ function stubHtml(st){
     + '<div><div class="y" style="font-size:10px">PAY DATE</div>' + esc(st.payDate) + (st.checkNo ? ' · Check #' + esc(st.checkNo) : '') + '</div>'
     + ((n2(st.hours) + n2(st.otHours)) > 0 ? '<div><div class="y" style="font-size:10px">HOURS</div>' + n2(st.hours).toFixed(2) + (n2(st.otHours) ? ' + ' + n2(st.otHours).toFixed(2) + ' OT' : '') + '</div>' : '')
     + '</div>'
+    + (st.withholdState === 'MS' && !st.stateTaxVerified ? '<div class="box" style="background:#fef3c7;color:#92400e"><b>⚠ Mississippi withholding rates not yet verified by our CPA.</b> The MS amount may change once they are confirmed.</div>' : '')
     + (st.adjusts ? '<div class="box" style="background:#fff7ed">This stub corrects stub ' + esc(st.adjusts) + (st.note ? ': ' + esc(st.note) : '') + '</div>' : '')
     + '<div class="box"><table><tr><th>Earnings</th><th class="r">This check</th><th class="r">YTD</th></tr>' + rows(st.earnings) + '<tr><td><b>Gross pay</b></td><td class="r"><b>' + money(st.gross) + '</b></td><td class="r y"><b>' + money(st.ytd && st.ytd.gross) + '</b></td></tr></table></div>'
     + '<div class="box"><table><tr><th>Taxes</th><th class="r">This check</th><th class="r">YTD</th></tr>' + rows(st.taxes, true) + '</table></div>'
@@ -168891,5 +168928,80 @@ RI.call(W, function(){ if (UI.on && view() === 'leads' && !D.hidden && Date.now(
 W._gcRSO = { state: function(){ return { on: UI.on, stage: UI.stage, err: S.err, errCode: S.errCode, leads: S.leads.length, model: S.loadedAt ? (function(m){ return { traced: m.traced, contactedWeek: m.contactedWeek, dueToday: m.dueToday, overdue: m.overdue, appts: m.appts, quoted: m.quoted, won: m.won, weighted: Math.round(m.weighted), due: m.due.map(function(x){ return x.l.id; }) }; })(model()) : null }; },
   refresh: load, open: open, close: close, logOutcome: logOutcome, convert: convert, _allowed: allowed };
 try { console.log('[GC] 🛰 Outreach (RoofScout) in Leads (patch RSO) — _gcRSO'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-pay2">
+/* __GC_PATCH_PAY2__ — STATE TAX SETTINGS (owner 10/23: "one of the PMs is from MS, so have his tax for MS, but the others
+   are from TN"). Payroll → 🏛 State tax settings: the Mississippi withholding table (rate by year, the $10,000 0% band,
+   exemptions, standard deduction) and unemployment (TN rate + $7,000 base, MS rate + $14,000 base). Admins edit; until
+   an admin ticks "Verified with our CPA", every MS check and stub says the rates are not verified yet.
+   Each employee's resident / work / unemployment state and MS 89-350 fields are on their payroll profile. */
+(function(){
+'use strict';
+if (window.__GC_PATCH_PAY2__) return; window.__GC_PATCH_PAY2__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function n2(v){ var x = parseFloat(v); return isFinite(x) ? x : 0; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function P(){ return W.__GC_PAY || null; }
+var YEARS = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
+function inp(k, v, w){ return '<input data-st="' + k + '" value="' + esc(v) + '" style="width:' + (w || 80) + 'px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px">'; }
+function html(set, admin){
+  var ms = ((set.stateTax || {}).MS) || {}, su = ((set.suta || {}).MS) || {};
+  var ver = !!ms.verified;
+  return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><b style="font-size:15px">🏛 State tax settings</b>'
+    + (ver ? '<span style="color:#15803d;font-weight:700;font-size:12px">✓ Mississippi rates verified by ' + esc(ms.verifiedBy) + ' ' + esc(s(ms.verifiedAt).slice(0, 10)) + '</span>'
+           : '<span style="background:#fef3c7;color:#92400e;font-weight:700;font-size:12px;padding:4px 8px;border-radius:6px">⚠ Mississippi rates NOT yet verified — check them with your CPA</span>') + '</div>'
+    + '<div style="font-size:12px;color:#64748b;margin:4px 0 10px">Tennessee has no income tax. Mississippi withholding = (yearly pay − exemption − standard deduction − the 0% band) × the year\'s rate ÷ pay periods. These are the best-known values (MS DOR Pub 89-700 / Build Up Mississippi Act); confirm them before relying on them.</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">'
+    + '<div><b style="font-size:13px">Mississippi rate by year (%)</b><div style="display:grid;grid-template-columns:repeat(4,auto);gap:6px;margin-top:6px;font-size:12px">'
+      + YEARS.map(function(y){ return '<label>' + y + ' ' + inp('rate_' + y, ms.rates && ms.rates[y] != null ? (n2(ms.rates[y]) * 100).toFixed(2) : '', 60) + '</label>'; }).join('') + '</div>'
+      + '<div style="margin-top:8px;font-size:12px">0% band (first $ of taxable) ' + inp('zeroBand', ms.zeroBand) + '</div></div>'
+    + '<div><b style="font-size:13px">Mississippi exemptions / standard deduction ($/yr)</b><table style="font-size:12px;margin-top:6px"><tr><td></td><td>Exemption</td><td>Std. deduction</td></tr>'
+      + [['single', 'Single'], ['married', 'Married'], ['married_sep', 'Married, spouse works'], ['head', 'Head of family']].map(function(f){ return '<tr><td>' + f[1] + '</td><td>' + inp('ex_' + f[0], (ms.exempt || {})[f[0]]) + '</td><td>' + inp('sd_' + f[0], (ms.std || {})[f[0]]) + '</td></tr>'; }).join('')
+      + '<tr><td>Each dependent</td><td>' + inp('dependent', ms.dependent) + '</td><td></td></tr></table></div>'
+    + '<div><b style="font-size:13px">Unemployment (employer pays)</b><table style="font-size:12px;margin-top:6px"><tr><td></td><td>Rate %</td><td>Wage base $</td></tr>'
+      + '<tr><td>Tennessee</td><td>' + inp('tn_rate', (n2(set.sutaRate) * 100).toFixed(2), 60) + '</td><td>' + inp('tn_base', set.sutaWageBase) + '</td></tr>'
+      + '<tr><td>Mississippi (MDES)</td><td>' + inp('ms_rate', (n2(su.rate) * 100).toFixed(2), 60) + '</td><td>' + inp('ms_base', su.base) + '</td></tr></table>'
+      + '<div style="font-size:11px;color:#64748b;margin-top:4px">Unemployment goes to the state where the work is done (the "Unemployment state" on each profile).</div></div>'
+    + '</div>'
+    + (admin ? '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label style="font-size:13px;font-weight:700"><input type="checkbox" data-st="verified"' + (ver ? ' checked' : '') + '> Verified with our CPA</label>'
+      + '<button data-st-save style="padding:7px 16px;border-radius:8px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save state tax settings</button></div>'
+      : '<div style="font-size:12px;color:#64748b;margin-top:8px">Only an admin can change these.</div>');
+}
+function save(card){
+  var pp = P(); if (!pp) return;
+  pp.settings().then(function(set){
+    var v = function(k){ var e = card.querySelector('[data-st="' + k + '"]'); return e ? e.value : ''; };
+    var ms = JSON.parse(JSON.stringify(((set.stateTax || {}).MS) || {}));
+    ms.rates = {}; YEARS.forEach(function(y){ var x = v('rate_' + y); if (s(x) !== '') ms.rates[y] = Math.round(n2(x) * 100) / 10000; });
+    ms.zeroBand = n2(v('zeroBand')); ms.dependent = n2(v('dependent'));
+    ms.exempt = {}; ms.std = {}; ['single', 'married', 'married_sep', 'head'].forEach(function(f){ ms.exempt[f] = n2(v('ex_' + f)); ms.std[f] = n2(v('sd_' + f)); });
+    var wasVer = !!ms.verified, nowVer = !!(card.querySelector('[data-st="verified"]') || {}).checked;
+    ms.verified = nowVer;
+    if (nowVer && !wasVer) { ms.verifiedBy = (pp.me && pp.me()) || ''; ms.verifiedAt = new Date().toISOString(); }
+    if (!nowVer) { ms.verifiedBy = ''; ms.verifiedAt = ''; }
+    var next = Object.assign({}, set, { stateTax: Object.assign({}, set.stateTax || {}, { MS: ms }),
+      suta: Object.assign({}, set.suta || {}, { MS: { rate: Math.round(n2(v('ms_rate')) * 100) / 10000, base: n2(v('ms_base')) } }),
+      sutaRate: Math.round(n2(v('tn_rate')) * 100) / 10000, sutaWageBase: n2(v('tn_base')) });
+    return pp.saveSettings(next).then(function(){ card.innerHTML = html(next, true); wire(card); try { if (W._supaUpsertNow) W._supaUpsertNow('payrollSettings', next); } catch (e) {} });
+  });
+}
+function wire(card){ var b = card.querySelector('[data-st-save]'); if (b) b.onclick = function(){ b.disabled = true; b.textContent = 'Saving…'; save(card); }; }
+function tick(){
+  try {
+    var pp = P(), m = D.getElementById('gc-payroll-mount'), have = D.getElementById('gc-pay2-state');
+    if (!m || !pp || !pp.canSee || !pp.canSee()) { if (have) have.remove(); return; }
+    if (have && have.isConnected) return;
+    var c = D.createElement('div'); c.id = 'gc-pay2-state'; c.setAttribute('data-gc-keep', '1');
+    c.style.cssText = 'background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin:12px 0;font-family:Inter,-apple-system,Arial,sans-serif';
+    c.innerHTML = '<div style="color:#64748b;font-size:13px">Loading state tax settings…</div>';
+    var after = D.getElementById('gc-pay-allstubs') || m; after.parentNode.insertBefore(c, after.nextSibling);
+    pp.settings().then(function(set){ c.innerHTML = html(set, !!(pp.isAdmin && pp.isAdmin())); wire(c); });
+  } catch (e) {}
+}
+tick(); RI.call(W, tick, 1500);
+try { console.log('[GC] 🏛 State tax settings — Mississippi table + unemployment by state (patch PAY2)'); } catch (e) {}
 })();
 </script>
