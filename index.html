@@ -1304,6 +1304,7 @@ function baseKey(k){ return String(k).replace(/__(chunk[0-9]+|manifest)$/, ''); 
 function cls(k){
   if (k == null) return 'staff';
   k = String(k);
+  if (k.indexOf('gcal_token_') === 0) return 'server';             /* patch GTOK: a person's Google sign-in — the server only */
   if (k.indexOf('users__') === 0 || k.indexOf('gc_dailybackup_') === 0) return 'admin';
   var b = baseKey(k);
   if (IS_ADMIN[b]) return 'admin';
@@ -1312,7 +1313,7 @@ function cls(k){
   if (k === 'users') return 'users';
   return 'staff';
 }
-function protectedKey(k){ var c = cls(k); return c === 'admin' || c === 'payroll'; }
+function protectedKey(k){ var c = cls(k); return c === 'admin' || c === 'payroll' || c === 'server'; }
 
 /* ── who is this (the server said so) ───────────────────────────────────────────────── */
 var rawGet = Storage.prototype.getItem, rawSet = Storage.prototype.setItem, rawRemove = Storage.prototype.removeItem;
@@ -1343,6 +1344,7 @@ function can(k, op, a){
   a = a || access();
   var c = cls(k);
   if (c === 'staff') return true;
+  if (c === 'server') return false;                /* patch GTOK: nobody's browser, not even an admin's */
   if (!a.known) return false;
   if (a.admin) return true;
   if (op === 'read') return c === 'payroll' ? a.payroll : c !== 'admin';
@@ -1507,7 +1509,7 @@ var PROT_RE = null;
 function protRe(){
   if (PROT_RE) return PROT_RE;
   var names = ADMIN.concat(PAYROLL).map(function(k){ return k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|');
-  PROT_RE = new RegExp('"key"\\s*:\\s*"(users__[^"]*|gc_dailybackup_[^"]*|(' + names + ')(__chunk[0-9]+|__manifest)?)"');
+  PROT_RE = new RegExp('"key"\\s*:\\s*"(users__[^"]*|gc_dailybackup_[^"]*|gcal_token_[^"]*|(' + names + ')(__chunk[0-9]+|__manifest)?)"');
   return PROT_RE;
 }
 /* whatever the server still sends that this person may not have is dropped here (before the SQL
@@ -8436,7 +8438,7 @@ var _u=localStorage.getItem("grayco_sb_url"),_k=localStorage.getItem("grayco_sb_
 if(_u&&_k){
 var _res=await fetch(_u.replace(/\/$/,"")+"/rest/v1/gc_kv?select=key,value",{headers:{apikey:_k,Authorization:"Bearer "+_k}});
 var _rows=await _res.json();
-if(Array.isArray(_rows))_rows.forEach(function(_r){data[_r.key]=_r.value;});
+if(Array.isArray(_rows))_rows.forEach(function(_r){if(/^gcal_token_/.test(String(_r.key)))return;/* patch GTOK: never a Google sign-in in a file */data[_r.key]=_r.value;});
 }else{
 var db=await openDB();
 for(var i=0;i<ALL_KEYS.length;i++){
@@ -121783,7 +121785,7 @@ async function dryRun(progress){
     var k = r.key, m = DAILY.exec(k), why = '';
     if (IS_SECRET_ROW[k]) why = 'secret copy (key/token) — belongs only in Netlify settings or on the one computer';
     else if (k === 'user') why = 'one computer\'s signed-in person (with its password hash) — never shared data';
-    else if (/^gcal_token_/.test(k)) { plan.serverOnly.push({ key: k, why: 'Google sign-in (refresh token) for one person — move to the server-only table with docs/cleanup.sql' }); return; }
+    else if (/^gcal_token_/.test(k)) { plan.serverOnly.push({ key: k, why: 'Google sign-in (refresh token) for one person — the server moves it to its own table on the next Google sync; docs/google-tokens.sql moves the rest' }); return; }
     else if (m && daysAgo(m[1]) > KEEP_DAYS) why = 'in-cloud daily backup older than ' + KEEP_DAYS + ' days (the server keeps its own 30 nights)';
     else if (m && !m[3]) { cand.push({ key: k, kind: 'scrub' }); return; }
     else if (m) return;
@@ -174216,6 +174218,7 @@ function paint(msg){
   if (S.err) h += '<div style="margin-top:10px;color:#b91c1c">' + esc(S.err) + '</div>';
   if (st) {
     var pp = arr(st.people), conn = pp.filter(function(p){ return p.ok; }).length;
+    if (adm && st.tokens && st.tokens.needsSql) h += '<div style="margin-top:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px"><b>🔒 One step left for the Google sign-ins.</b> ' + (st.tokens.safe ? (st.tokens.oldCopies + ' sign-in(s) are still in the shared table') : 'The server-only table is missing') + '. Supabase → SQL Editor → run <code>docs/google-tokens.sql</code> (after email-all.sql). Every line says OK; nobody has to reconnect.</div>';   /* patch GTOK */
     if (!st.workspace && !conn) h += '<div style="margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px"><b>Not connected to Google yet.</b> An admin turns this on once for everyone (docs/GDOCS.md): in Google Admin, add the scope <code>https://www.googleapis.com/auth/drive.readonly</code> to the CRM\'s service account (the same one as 🌐 All GrayCo e-mail) and turn on the Google Drive API. Until then, anyone can use <b>Connect Google</b> to bring in their own docs.</div>';
     h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" data-gd-sync style="background:#0f172a;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer">⟳ Sync now</button>'
       + (adm ? '<button type="button" data-gd-back style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer">Bring in older docs (review first)</button>' : '')

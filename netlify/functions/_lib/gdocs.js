@@ -7,7 +7,7 @@
      1. Google Workspace domain-wide delegation (the same service account as 🌐 All GrayCo e-mail, docs/EMAIL-ALL.md) with
         ONE more scope, https://www.googleapis.com/auth/drive.readonly. The CRM reads every active staff member's Drive
         (gc_staff) — nobody has to click anything.
-     2. A person's own "Connect my Google Drive" (gcal-oauth: gc_kv gcal_token_<name>, drive.readonly) — used for anyone the
+     2. A person's own "Connect my Google Drive" (gcal-oauth: server-only gcal_token_<name>, drive.readonly) — used for anyone the
         service account cannot read.
    What is kept: only BUSINESS papers (proposal / quote / estimate, invoice, change order, contract, scope of work). For
    anything else (a personal doc, a letter, notes) only "<file id> ignored" is recorded — never its name or its words.
@@ -86,12 +86,11 @@ async function saToken(email){
   return { ok: true, t: j.access_token, via: 'workspace' };
 }
 /* gcal-oauth stores { access_token, refresh_token, expiry }; the older reader looked for access / refresh (never matched) */
+const GTOK = require('./gtok');
 async function ownToken(person){
   const keys = [person.name, person.email].filter(Boolean).map(k => 'gcal_token_' + k);
   for (const key of keys) {
-    let tok = null;
-    try { const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value&key=eq.' + encodeURIComponent(key), { headers: svcH() }); if (r.ok) { tok = ((await r.json()) || [])[0]; tok = tok && tok.value; } } catch (e) {}
-    if (typeof tok === 'string') { try { tok = JSON.parse(tok); } catch (e) { tok = null; } }
+    let tok = await GTOK.get(key.slice(GTOK.PFX.length));   /* patch GTOK: server-only table (an old gc_kv copy is moved there) */
     if (!tok || typeof tok !== 'object') continue;
     const access = s(tok.access_token || tok.access), refresh = s(tok.refresh_token || tok.refresh), exp = Number(tok.expiry) || 0;
     if (access && exp - 60000 > Date.now()) return { ok: true, t: access, via: 'own' };
@@ -326,7 +325,8 @@ async function saveSettings(patch, who){
 }
 async function status(){
   const set = await getSettings(), st = (await IDX.get(STATE_KEY)) || {}, team = await people(), items = await inbox();
-  return { ok: true, workspace: G.account().ok, scope: SCOPE, clientId: s(process.env.GOOGLE_CLIENT_ID),   /* the OAuth client id is public (it is in every Google sign-in link) */
+  const tokens = await GTOK.status().catch(() => null);   /* patch GTOK: the admin sees if google-tokens.sql still has to run */
+  return { ok: true, tokens: tokens, workspace: G.account().ok, scope: SCOPE, clientId: s(process.env.GOOGLE_CLIENT_ID),   /* the OAuth client id is public (it is in every Google sign-in link) */
     settings: set, state: st,
     people: team.map(p => Object.assign({ email: p.email, name: p.name, role: p.crmRole || p.role, off: !!(set.people[p.email] && set.people[p.email].off) }, (st.people || {})[p.email] || {})),
     counts: { waiting: items.filter(x => x.state === 'new').length, review: items.filter(x => x.state === 'review').length, done: items.filter(x => x.state === 'applied').length } };

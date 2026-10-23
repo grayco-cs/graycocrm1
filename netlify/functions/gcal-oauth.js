@@ -2,27 +2,15 @@
 // Env vars needed (set AFTER you create the Google Cloud OAuth project):
 //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, SUPABASE_URL, SUPABASE_SERVICE_KEY
 // Flow: user clicks Connect -> Google login -> Google redirects here with ?code=...&state=USERNAME
-//       we exchange code for tokens, store {access, refresh, expiry} in Supabase keyed by user.
+//       we exchange code for tokens, store {access, refresh, expiry} in the server-only table keyed by user (_lib/gtok.js).
 
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
+const GTOK = require('./_lib/gtok');   /* patch GTOK: the sign-in is kept where no browser can read it */
 async function saveTokens(user, tokens){
-  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_KEY;
-  if(!url || !key) return false;
-  const rowKey = 'gcal_token_' + user;
-  const body = JSON.stringify({ key: rowKey, value: tokens });
-  // upsert into gc_kv
-  const resp = await fetch(url.replace(/\/$/,'') + '/rest/v1/gc_kv?on_conflict=key', {
-    method: 'POST',
-    headers: {
-      apikey: key, Authorization: 'Bearer '+key,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates'
-    },
-    body
-  });
-  return resp.ok;
+  if(!process.env.SUPABASE_SERVICE_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY) return false;
+  return GTOK.set(user, tokens);
 }
 
 exports.handler = async function(event){

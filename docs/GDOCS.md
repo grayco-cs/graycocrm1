@@ -82,3 +82,14 @@ screen).
 - `index.html`, tail GDOCS: the matching and placing, the panel, and the To-Do rows.
 - `netlify/functions/portal.js`: a proposal with its PDF shows the PDF (a private Google Doc does not open for the
   customer). Papers from Google Docs are not announced by e-mail unless that is turned on.
+
+## Where the Google sign-ins live (patch GTOK)
+
+Each person's own connection (**Connect Google**: Calendar + Drive, read only) leaves a Google refresh token. Those are
+kept ONLY in the server-only table `gc_lead_inbox_kv` (`netlify/functions/_lib/gtok.js`), never in `gc_kv`, which every
+signed-in browser can read. Older copies in `gc_kv` (`gcal_token_<name>`, from before this fix) are moved there and
+deleted the first time the server reads them (Google Docs sync, Calendar sync, or opening the Google Docs panel).
+
+Run **`docs/google-tokens.sql`** once, AFTER `docs/email-all.sql`: it moves any copy that is left, and gives
+`gcal_token_*` in `gc_kv` the class "server", so no browser (not even an admin's) can read or write one again.
+The Google Docs panel shows an admin a red line until that is done. Nobody has to reconnect Google.

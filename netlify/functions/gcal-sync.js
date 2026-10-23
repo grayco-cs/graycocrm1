@@ -93,10 +93,9 @@ async function sbSet(rowKey, value){
     body: JSON.stringify({ key: rowKey, value: value })
   });
 }
+const GTOK = require('./_lib/gtok');   /* patch GTOK: Google sign-ins live in the server-only table, never in gc_kv */
 async function listTokenKeys(){
-  const r = await fetch(sbUrl('/rest/v1/gc_kv?key=like.gcal_token_*&select=key,value'), { headers: sbHeaders() });
-  if(!r.ok) return [];
-  return await r.json();
+  return (await GTOK.list()).map(function(r){ return { key: r.key, value: r.value }; });
 }
 
 async function refreshToken(tok){
@@ -115,7 +114,7 @@ async function refreshToken(tok){
   if(j.access_token){
     tok.access_token = j.access_token;
     tok.expiry = Date.now() + ((j.expires_in||3600)*1000);
-    await sbSet('gcal_token_'+tok.user, tok);
+    await GTOK.set(tok.user, tok);
   }
   return tok;
 }
