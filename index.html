@@ -90185,6 +90185,14 @@ window._gcNormalizeInvoice = function(inv){
   // it off the pay list.
   var ty=String(inv.type||'').toLowerCase();
   if(ty==='sub' || ty==='supplier' || ty==='vendor' || ty==='bill') return false;
+  /* patch ACCT-7: QuickBooks history — sent (by QuickBooks) on its own date, paid on its own date, never a draft */
+  if(inv.importedHistory===true || inv.noSend===true || inv.historyOnly===true){
+    var _hd=String(inv.date||inv.recvDate||inv.invoiceDate||'').slice(0,10);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(_hd)){
+      if(!inv.sentDate && !inv.sentOn && !inv.dateSent) inv.sentDate=_hd;
+      if(!inv.paidDate && (inv.paid===true || String(inv.status||'').toLowerCase()==='paid')) inv.paidDate=_hd;
+    }
+  }
 
   var before = inv.status+'|'+inv.due+'|'+inv.dueDate+'|'+inv.sentDate;
   var st=String(inv.status||'').toLowerCase();
@@ -115974,7 +115982,7 @@ function findVendor(name){ var n=nk(name); if(!n) return null; return vendorsAll
 window._gcQbCsvPlan = async function(text){
   var P=parseQb(text); if(P.error) return P;
   var I=await getList('invs'), E=await getList('expenses'), C=await getList('customers'), V=await getList('vendors');
-  var T=tasksRaw(), taskKeys={}; T.forEach(function(t){ if(t && t.qbKey) taskKeys[t.qbKey]=t; });
+  var T=tasksRaw(), taskKeys={}; T.forEach(function(t){ if(t && t.qbKey) taskKeys[t.qbKey]=t; if(t && Array.isArray(t.qbKeys)) t.qbKeys.forEach(function(k){ taskKeys[k]=t; }); });   /* patch ACCT-3: rows already in a history summary are 'already' on a re-import */
   var plan={ kind:P.kind, label:P.label, mapping:P.mapping, rows:[], counts:{ matched:0, updated:0, newUnassigned:0, todo:0, already:0, newCustomers:0, newVendors:0 } };
   /* patch LCLEAN: a file whose dated rows are all before today is history — imported as a record, never sent */
   (function(){ var td=today(), dated=P.recs.filter(function(r){ return r && r.date; }); plan.history = dated.length===0 || dated.every(function(r){ return s(r.date)<td; }); })();
@@ -116077,8 +116085,8 @@ function candText(c){ return (isClientLike(c)||isSubInv(c)) ? ((invNo(c)?'#'+inv
 window._gcQbCsvApply = async function(plan){
   var I=await getList('invs'), E=await getList('expenses'), C=await getList('customers'), V=await getList('vendors'), T=tasksRaw();
   var ch={ invs:false, expenses:false, customers:false, vendors:false, tasks:false }, who=me().name||'';
-  var HIST = plan.history!==false, histHome = 0;   /* patch LCLEAN: history = recorded, not sent; no per-row to-dos */
-  function histMark(rec){ if(!HIST||!rec) return rec; rec.importedHistory=true; rec.noSend=true; rec.sendState='recorded'; rec.sentNote='Imported from QuickBooks as history '+today()+' — not sent'; rec.noAutoReminders=true; rec.remindersPaused=true; rec.noReminders=true; rec.sent='recorded'; rec.remindLog=(rec.remindLog||[]); return rec; }   /* patch LCLEAN-H, LCLEAN-Q */
+  var HIST = plan.history!==false, histHome = 0, acctPays = [], acctCost = 0, acctPayLeft = 0, acctKeys = [];   /* patch ACCT-3 */   /* patch LCLEAN: history = recorded, not sent; no per-row to-dos */
+  function histMark(rec){ if(!HIST||!rec) return rec; rec.importedHistory=true; rec.noSend=true; rec.sendState='recorded'; rec.sentNote='Imported from QuickBooks as history '+today()+' — not sent'; rec.noAutoReminders=true; rec.remindersPaused=true; rec.noReminders=true; rec.sent='recorded'; rec.remindLog=(rec.remindLog||[]); var _d0=String(rec.date||rec.recvDate||'').slice(0,10); if(_d0 && !rec.sentDate) rec.sentDate=_d0; if(_d0 && !rec.paidDate && (rec.paid===true || /^paid$/i.test(String(rec.status||'')))) rec.paidDate=_d0; return rec; }   /* patch ACCT-7 */   /* patch LCLEAN-H, LCLEAN-Q */
   /* patch LCLEAN-Q: the customer's ONE job (the same name, not a loose match) — else no job (the office places it) */
   function histJobFor(name){ var n=nk(name); if(!n) return null; var js=projects().filter(function(p){ return p && !p.deleted && !/^(lost|cancelled|canceled|declined|dead|rejected)$/i.test(s(p.status)) && (nk(p.client||p.customer)===n || nk(p.name)===n); }); return js.length===1 ? js[0] : null; }
   var findIn=function(list, t){ return list.find(function(x){ return x && t && (x.id===t.id); }); };
@@ -116132,8 +116140,36 @@ window._gcQbCsvApply = async function(plan){
       addTodo(row, rec.id);
       return;
     }
-    if(row.action==='todo') addTodo(row, '');
+    if(row.action==='todo'){
+      if(HIST && /^(payment|billpayment)$/.test(r.kind)){ acctPays.push(row); return; }   /* patch ACCT-3: tried against this file's new invoices below */
+      if(HIST && /^(expense|check|deposit|journal|vendorcredit|refund|creditmemo|unknown)$/.test(r.kind)){ acctCost++; acctKeys.push(r.key); return; }   /* patch ACCT-3: one summary, not one each */
+      addTodo(row, '');
+    }
   });
+  /* patch ACCT-3: in-file payments → this import's invoices of the same customer (by number, else the one open invoice of
+     that amount, else the customer's only open invoice); several payments on one invoice add up (partial → paid) */
+  var runKeys={}; plan.rows.forEach(function(row){ if(row.action==='createUnassigned' && row.rec) runKeys[row.rec.key]=1; });
+  if(HIST && acctPays.length){
+    acctPays.forEach(function(row){
+      var r=row.rec, isBill=r.kind==='billpayment', mineNew=I.filter(function(x){ return x && x.qbKey && /quickbooks/i.test(s(x.source)) && (isBill?isSubInv(x):isClientLike(x)) && sameParty(party(x), r.name) && !/^paid$/i.test(s(x.status)); });
+      var openOf=function(x){ return num(amtOf(x))-num(x.amountPaid||0); }, run=mineNew.filter(function(x){ return runKeys[x.qbKey] && (!r.date || !x.date || s(x.date)<=r.date); });
+      var hit=(r.num?mineNew.filter(function(x){ return invNo(x)===r.num; }):[]);
+      if(hit.length!==1) hit=mineNew.filter(function(x){ return Math.abs(cents(openOf(x))-cents(r.amount))<=1; });
+      if(hit.length!==1) hit=run.filter(function(x){ return Math.abs(cents(openOf(x))-cents(r.amount))<=1; });
+      if(hit.length!==1){ var lessR=run.filter(function(x){ return cents(r.amount)<cents(openOf(x)); }); if(lessR.length===1) hit=lessR; }   /* the one invoice of this file a smaller payment can belong to */
+      if(hit.length!==1 && mineNew.length===1 && cents(r.amount)<cents(openOf(mineNew[0]))) hit=mineNew;
+      if(hit.length!==1){ acctPayLeft++; acctKeys.push(r.key); return; }   /* history: counted in the one summary, not a to-do each */
+      var x=hit[0], amt=num(amtOf(x)), pd=Math.round((num(x.amountPaid||0)+num(r.amount))*100)/100;
+      if(pd>=amt-0.005){ x.status='paid'; x.paid=true; x.amountPaid=amt; x.openBalance=0; x.paidDate=r.date||x.paidDate||''; }
+      else { x.status='partial'; x.amountPaid=pd; x.openBalance=Math.round((amt-pd)*100)/100; }
+      x.qbKeys=(x.qbKeys||[]); if(x.qbKeys.indexOf(r.key)<0) x.qbKeys.push(r.key); x.updatedAt=nowISO(); ch.invs=true;
+    });
+  }
+  if(HIST && (acctCost || acctPayLeft) && !T.some(function(t){ return t && t.kind==='qb_history_costs' && !t.done && t.label.indexOf(today())>=0; })){
+    T.unshift({ id:'TQBC'+Date.now().toString(36), kind:'qb_history_costs', cat:'QuickBooks import — needs a home', label:'QuickBooks history import '+today()+': '+acctCost+' cost row(s) (expenses, checks, deposits …) and '+acctPayLeft+' payment(s) with no invoice of theirs in this file were not put on jobs here', qbKeys:acctKeys.slice(0, 5000), note:'Costs come in through 📥 Expense inbox (To-Do → 💳 / 📥): export Transaction Detail by Account or P&L Detail from QuickBooks and drop it there, then put each row on its job. For 2025 invoices use the Invoice List export: its Open Balance column carries every payment. Nothing was sent.', addedBy:'QuickBooks import', addedAt:nowISO(), updatedAt:nowISO(), done:false });
+    ch.tasks=true;
+  } else if(HIST && acctKeys.length){ var _st=T.find(function(t){ return t && t.kind==='qb_history_costs' && !t.done && t.label.indexOf(today())>=0; }); if(_st){ var _have={}; (_st.qbKeys||[]).forEach(function(k){ _have[k]=1; }); _st.qbKeys=(_st.qbKeys||[]).concat(acctKeys.filter(function(k){ return !_have[k]; })).slice(0, 5000); ch.tasks=true; } }
+  plan.counts.historyCostRows=acctCost; plan.counts.historyPaymentsLeft=acctPayLeft;
   /* patch LCLEAN: history — matched invoices are marked recorded-not-sent; a 2025 job whose client invoices are all paid
      (and none dated this year) is marked Complete with the last invoice date; one summary to-do for rows with no job */
   var jobsDone=0;
@@ -116447,6 +116483,9 @@ var RULES = {
     var a=amtOf(iv), p=iv.payments||[];
     if(p.length) return p.reduce(function(s,x){ return s+n2(x.amount!=null?x.amount:x.amt); },0);
     if(low(iv.status)==='paid' || iv.paid===true) return a;
+    /* patch ACCT-4: a partial payment kept on the invoice itself (amountPaid / QuickBooks open balance) */
+    var pd=n2(iv.amountPaid); if(pd>0) return Math.min(pd, a);
+    if(iv.openBalance!=null && iv.openBalance!=='' && /partial/.test(low(iv.status))){ var ob=n2(iv.openBalance); if(ob>=0 && ob<a) return r2(a-ob); }
     return 0;
   },
   /* payments with their dates (cash basis) */
@@ -170259,17 +170298,18 @@ function parseQB(text){
   function col(){ for (var a = 0; a < arguments.length; a++) { if (H[arguments[a]] != null) return H[arguments[a]]; } return -1; }
   var cD = col('date'), cA = col('amount', 'debit', 'total'), cN = col('name', 'vendor', 'payee'), cM = col('memo/description', 'memo', 'description'), cR = col('num', 'no.', 'ref no.', 'doc num'),
     cAcc = col('account', 'split', 'distribution account'), cT = col('transaction type', 'type'), cC = col('customer', 'customer/project', 'customer full name', 'class');
-  var sect = '', out = [], skipped = 0;
+  var sect = '', out = [], skipped = 0, inc = false, income = 0;   /* patch ACCT-1 */
   rows.slice(hi + 1).forEach(function(r){
     var first = s(r.filter(function(x){ return s(x); })[0]);
     var d = isoDate(r[cD]), a = num(r[cA]);
-    if (!d) { if (first && !/^total/i.test(first)) sect = first; return; }   /* a vendor / account section heading */
+    if (!d) { if (first && !/^total/i.test(first)) { sect = first; if (/^(income|other income|revenue|sales income)$/i.test(first)) inc = true; else if (/^(cost of goods sold|cogs|cost of sales|expenses?|other expenses?|job costs?)$/i.test(first)) inc = false; } return; }   /* a vendor / account section heading (patch ACCT-1: remembers the Income section) */
+    if (inc || /^(invoice|payment|receive payment|sales receipt|deposit|credit memo|refund|refund receipt|estimate|transfer|statement charge)$/i.test(s(cT >= 0 ? r[cT] : ''))) { income++; return; }   /* patch ACCT-1: money in is never a cost */
     if (isNaN(a) || a === 0) return;
     if (a < 0) { skipped++; return; }   /* refunds / credits are not costs */
     var vendor = s(cN >= 0 ? r[cN] : '') || sect;
     out.push({ date: d, amount: Math.round(a * 100) / 100, vendor: vendor, memo: s(cM >= 0 ? r[cM] : ''), ref: s(cR >= 0 ? r[cR] : ''), account: s(cAcc >= 0 ? r[cAcc] : ''), type: s(cT >= 0 ? r[cT] : ''), customer: s(cC >= 0 ? r[cC] : '') });
   });
-  return { rows: out, credits: skipped };
+  return { rows: out, credits: skipped, income: income };   /* patch ACCT-1 */
 }
 
 /* ── 📥 the expense inbox (gc_kv gc_expense_inbox) ── */
@@ -170280,14 +170320,16 @@ function saveInbox(list){ IN.list = list; try { localStorage.setItem('gc_expense
 function pullInbox(){ return kvGet('gc_expense_inbox').then(function(v){ if (Array.isArray(v)) { var loc = inboxLocal(), seen = {}; v.forEach(function(x){ seen[x.id] = 1; }); IN.list = v.concat(loc.filter(function(x){ return !seen[x.id]; })); try { localStorage.setItem('gc_expense_inbox', JSON.stringify(IN.list)); } catch (e) {} } return inbox(); }); }
 function dkey(d, a, v, r){ return [s(d), (+a || 0).toFixed(2), low(v).replace(/[^a-z0-9]/g, '').slice(0, 24), low(r)].join('|'); }
 function importRows(rows){
-  var cur = inbox(), have = {}, n = 0, dup = 0;
-  cur.forEach(function(x){ have[dkey(x.date, x.amount, x.vendor, x.ref)] = 1; });
-  expenses().forEach(function(e){ have[dkey(e.date, e.amt, e.vendor || e.desc, e.qbRef || '')] = 1; if (e.qbRef) have[dkey(e.date, e.amt, e.vendor || e.desc, e.qbRef)] = 1; });
+  var cur = inbox(), have = {}, n = 0, dup = 0;   /* patch ACCT-6: have[key] = how many copies are already here */
+  var bump = function(k){ have[k] = (have[k] || 0) + 1; };
+  cur.forEach(function(x){ if (x.status === 'assigned' && x.expenseId) return; bump(dkey(x.date, x.amount, x.vendor, x.ref)); });   /* an assigned row is counted once, through its expense below */
+  expenses().forEach(function(e){ bump(dkey(e.date, e.amt, e.vendor || e.desc, e.qbRef || '')); });
   var add = [];
   rows.forEach(function(r){
     var k = dkey(r.date, r.amount, r.vendor, r.ref), k0 = dkey(r.date, r.amount, r.vendor, '');
-    if (have[k] || have[k0]) { dup++; return; }
-    have[k] = 1; n++;
+    var hk = have[k] ? k : (have[k0] ? k0 : '');   /* a hand-typed expense (no QuickBooks number) still counts as the same cost */
+    if (hk) { have[hk]--; dup++; return; }   /* one already-imported copy used up */
+    n++;
     add.push(Object.assign({ id: uid('XI'), status: 'new', source: 'QuickBooks import', importedHistory: true, noAutomations: true, importedAt: new Date().toISOString(), importedBy: s(me().name) }, r));
   });
   if (add.length) saveInbox(add.concat(cur));
@@ -170380,7 +170422,12 @@ function jobPL(pid){
   expenses().forEach(function(y){ if (y.pid !== pid || !spentRow(y)) return; var a = parseFloat(y.amt) || 0; spent += a; var c = s(y.category || y.cat) || 'Other'; byCat[c] = (byCat[c] || 0) + a; });
   var inv = invoices().filter(function(x){ return x.pid === pid && (x.type || 'client') === 'client'; });
   var invoiced = inv.reduce(function(a, x){ return a + (parseFloat(x.amt) || 0); }, 0), paid = inv.filter(function(x){ return low(x.status) === 'paid'; }).reduce(function(a, x){ return a + (parseFloat(x.amt) || 0); }, 0);
-  var profit = contract - spent;
+  /* patch ACCT-2: the same billed total as the strip (identity, no draft / void / review copies); partial payments count */
+  try { if (typeof W._gcJobBilled === 'function') invoiced = +W._gcJobBilled(pid) || 0; } catch (e) {}
+  paid = inv.filter(function(x){ return !/^(draft|void|voided|denied|rejected|cancell?ed|deleted)$/.test(low(x.status)); }).reduce(function(a, x){ var amt = parseFloat(x.amt != null ? x.amt : x.amount) || 0; if (low(x.status) === 'paid' || x.paid === true) return a + amt; var pd = parseFloat(x.amountPaid); if (!isNaN(pd) && pd > 0) return a + Math.min(pd, amt); var ob = parseFloat(x.openBalance); if (!isNaN(ob) && ob >= 0 && ob < amt && /partial/.test(low(x.status))) return a + (amt - ob); return a; }, 0);
+  invoiced = Math.round(invoiced * 100) / 100; paid = Math.round(paid * 100) / 100;
+  spent = Math.round(spent * 100) / 100; Object.keys(byCat).forEach(function(k){ byCat[k] = Math.round(byCat[k] * 100) / 100; });   /* patch ACCT-2: cents */
+  var profit = Math.round((contract - spent) * 100) / 100;
   return { contract: contract, cos: cos, spent: spent, byCat: byCat, invoiced: invoiced, paid: paid, profit: profit, margin: contract ? Math.round(profit / contract * 1000) / 10 : 0 };
 }
 function plHtml(pid){
@@ -170788,5 +170835,53 @@ try { console.log('[GC] ☁ Cloud saves (patch SYNCQ): _gcSyncQ.state(), _gcSync
     s.innerHTML = window._excJobOpts; s.value = v;
   }
   ['pointerdown', 'mousedown', 'touchstart', 'focusin', 'mouseover', 'keydown'].forEach(function(ev){ document.addEventListener(ev, fill, true); });
+})();
+</script>
+<script id="gc-patch-acct">
+/* __GC_PATCH_ACCT__ — overnight accounting audit (owner 10/23: "make sure all accounting … QuickBooks data imports …
+   P&Ls need to be checked again"; office back-enters 2025 from QuickBooks).
+   ACCT-5: a 2025 job brought in as history is never paid commission again by itself. Its invoices arrive paid from
+   QuickBooks; once the office puts its expenses on it, "paid in full → commission" (every 2 min) would have worked out a
+   split and scheduled a check for money already paid in 2025. A job flagged history (importedHistory / noSend /
+   historyOnly), or one whose collected client invoices are ALL QuickBooks history, is held with a reason; an admin can
+   still work it out on purpose with { force:true } (the existing override). */
+(function(){
+'use strict';
+if (window.__GC_PATCH_ACCT__) return; window.__GC_PATCH_ACCT__ = true;
+var W = window, RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function hist(x){ return !!(x && (x.importedHistory === true || x.noSend === true || x.historyOnly === true)); }
+function invs(){ var c = W._crm || {}; var a = Array.isArray(c.invs) && c.invs.length ? c.invs : (Array.isArray(c.invoices) ? c.invoices : []); return a; }
+function historyJob(pid){
+  var c = W._crm || {}, p = (c.projects || []).filter(function(x){ return x && x.id === pid; })[0];
+  if (hist(p)) return 'this job was brought in as 2025 history';
+  var mine = invs().filter(function(v){ return v && v.pid === pid && low(v.type || 'client') === 'client' && !/^(draft|void|voided|denied|cancell?ed|deleted)$/.test(low(v.status)); });
+  var got = mine.filter(function(v){ return v.paid === true || low(v.status) === 'paid' || (+v.amountPaid || 0) > 0; });
+  if (got.length && got.every(hist)) return 'every payment on this job is 2025 QuickBooks history';
+  return '';
+}
+W._gcAcctHistoryJob = historyJob;
+function wrap(){
+  var f = W._gcQueueCommissionForJob;
+  if (typeof f !== 'function' || f.__acctHist) return;
+  var w = async function(pid, opts){
+    if (!(opts && opts.force)) { var why = ''; try { why = historyJob(pid); } catch (e) {} if (why) return { ok: false, history: true, why: why + ' — commission for it was settled in 2025; it is not worked out again by itself (an admin can still do it on purpose)' }; }
+    return await f.apply(this, arguments);
+  };
+  Object.keys(f).forEach(function(k){ try { w[k] = f[k]; } catch (e) {} });
+  w.__acctHist = true; w.__acctOrig = f;
+  W._gcQueueCommissionForJob = w;
+}
+wrap(); RI.call(W, wrap, 1500);   /* a later patch that wraps it again is wrapped again */
+/* ACCT-7b: a history invoice never waits on the internal "approve this invoice before it goes out" list */
+function wrapAppr(){
+  var f = W._gcQueueInvoiceApproval;
+  if (typeof f !== 'function' || f.__acctHist) return;
+  var w = function(inv){ if (hist(inv)) return null; return f.apply(this, arguments); };
+  w.__acctHist = true; W._gcQueueInvoiceApproval = w;
+}
+wrapAppr(); RI.call(W, wrapAppr, 1500);
+try { console.log('[GC] accounting audit guards (patch ACCT) — _gcAcctHistoryJob'); } catch (e) {}
 })();
 </script>
