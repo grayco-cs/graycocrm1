@@ -73,7 +73,7 @@ function siteBase(){
   return b.replace(/\/$/, '');
 }
 function logoUrl(){ return siteBase() + BRAND.logoPath; }
-function directLines(){ return String(process.env.DOC_DIRECT_LINES || '').trim() === '1'; }   /* patch LOGOALL */
+function directLines(){ return String(process.env.DOC_DIRECT_LINES || '').trim() !== '0'; }   /* patch LOGOALL2: on unless DOC_DIRECT_LINES=0 */
 function isShelled(html){ return /data-gc-shell=/.test(String(html || '')); }
 function telHref(p){ const d = s(p).replace(/\D/g, ''); return d.length === 10 ? 'tel:+1' + d : (d.length === 11 ? 'tel:+' + d : ''); }
 function niceTel(p){ const d = s(p).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(p); }
@@ -92,8 +92,10 @@ function signatureHtml(sender){
   const lines = ['<b style="font-size:15px;color:' + BRAND.ink + '">' + esc(x.name) + '</b>', '<span style="color:#55626F">' + esc(x.title) + ' · ' + BRAND.name + '</span>'];
   /* patch LOGOALL (owner 10/23): a staff member's own cell never goes on customer mail; the office line does. Netlify
      DOC_DIRECT_LINES=1 turns direct lines on. */
-  const tel = directLines() && x.phone ? x.phone : BRAND.phone;
-  lines.push('<a href="' + esc(telHref(tel)) + '" style="color:' + BRAND.navy + ';text-decoration:none">' + (tel === BRAND.phone ? '☎ Office ' : '📱 ') + esc(tel) + '</a>');
+  /* patch LOGOALL2 (owner: "we can have 'this is your project manager's number'"): the sender's own line names them, so
+     their phone may show (DOC_DIRECT_LINES=0 hides it); the company line is always the office */
+  if (directLines() && x.phone && x.phone.replace(/\D/g, '') !== BRAND.phone.replace(/\D/g, '')) lines.push('<a href="' + esc(telHref(x.phone)) + '" style="color:' + BRAND.navy + ';text-decoration:none">📱 ' + esc(x.phone) + ' (direct)</a>');
+  lines.push('<a href="' + esc(telHref(BRAND.phone)) + '" style="color:' + BRAND.navy + ';text-decoration:none">☎ Office ' + esc(BRAND.phone) + '</a>');
   if (x.email) lines.push('<a href="mailto:' + esc(x.email) + '" style="color:' + BRAND.navy + ';text-decoration:none">' + esc(x.email) + '</a>');
   return '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-top:1px solid #E5E0D3;padding-top:16px;width:100%"><tr>' + ph +
     '<td style="vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55">' + lines.join('<br>') + '</td></tr></table>';
