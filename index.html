@@ -125761,7 +125761,7 @@ window._gcUnassignedLeadCount = function(){ try { return assignList().length; } 
       els = []; var c = document.querySelectorAll('aside nav button, nav button, aside button, [role=navigation] button');
       for (var i = 0; i < c.length; i++) { if (c[i].closest('#gc-ldi, #gc-bw-sec')) continue; if (/^Leads$/.test(s(c[i].textContent).replace(/(\s*\d+\+?)+$/, '').replace(/^[^A-Za-z]+/, ''))) els.push(c[i]); }
     }
-    var n = isAdmin() ? window._gcUnassignedLeadCount() : 0;
+    var n = isAdmin() && !(window._gcVAS && window._gcVAS.active()) ? window._gcUnassignedLeadCount() : 0;   /* patch VAS4 */
     els.forEach(function(nav){
       var b = nav.querySelector('.gc-bw-unas');
       if (!n) { if (b) b.remove(); return; }
@@ -131845,27 +131845,83 @@ function dashHtml(person){
       + '<td class="acts"><button type="button" data-la="open">Open lead</button><button type="button" data-la="plans"' + (plans ? '' : ' disabled title="No plans on this lead yet"') + '>Plans</button><button type="button" data-la="est">Estimate</button>' + (st === 'Submitted' ? '' : '<button type="button" data-la="sub" class="pri">Submitted</button>') + '</td></tr>';
   };
   var tile = function(v, l, cls){ return '<div class="tile' + (cls ? ' ' + cls : '') + '"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; };
-  return '<div class="hd"><b>📐 ' + (me ? 'What I\'m estimating' : 'What ' + esc(person) + ' is estimating') + '</b>' + sel + '<span class="cnt">' + open.length + ' open</span></div>'
+  return '<div class="hd"><b>📐 ' + (me ? 'My estimating' : esc(person) + ' — estimating') + '</b>' + sel + '<span class="cnt">' + open.length + ' open</span></div>'
     + '<div class="tiles">' + tile(S2.month + ' / ' + S2.year, 'Bids this month / year') + tile(S2.onTime + ' / ' + S2.late, 'Submitted on time / late', S2.late ? 'warn' : '')
     + tile(S2.winRate == null ? '—' : S2.winRate + '%', 'Win rate (' + S2.won + ' of ' + (S2.won + S2.lost) + ')') + tile(S2.winRateAmt == null ? '—' : S2.winRateAmt + '%', 'Win rate in $')
     + tile(money(S2.bidAmt), 'Total $ bid') + tile(money(S2.wonAmt), 'Total $ won') + tile(S2.avgDays == null ? '—' : S2.avgDays + ' d', 'Avg. received → submitted') + tile(S2.week, 'Due this week', S2.week ? 'hot' : '') + '</div>'
     + (open.length ? '<div class="tw"><table><thead><tr><th>Bid</th><th>Due</th><th>Due to</th><th>Status</th><th></th></tr></thead><tbody>' + open.map(row).join('') + '</tbody></table></div>'
       : '<div class="empty">No open bids assigned' + (me ? ' to you' : '') + ' right now.</div>');
 }
+/* patch VAS4 */
+/* ── 👥 Team dashboards: the admin's look at each person, at the very bottom of the admin's dashboard ── */
+var TEAM_OPEN = {}; try { TEAM_OPEN = JSON.parse(localStorage.getItem('gc_team_open') || '{}') || {}; } catch (e) { TEAM_OPEN = {}; }
+function teamPeople(){
+  return users().filter(function(u){ return u && u.active !== false && !u.tombstoned && !u.departed && s(u.role) !== 'Admin' && low(u.payType) !== 'owner' && /project manager|assistant|apm|insurance|mitigation|office|superintendent|estimat/i.test(s(u.role)); })
+    .sort(function(a, b){ var o = function(u){ return /estimat/i.test(u.role) ? 0 : /project manager|assistant|apm/i.test(u.role) ? 1 : /insurance|mitigation/i.test(u.role) ? 2 : /superintendent/i.test(u.role) ? 3 : 4; }; return o(a) - o(b) || low(a.name).localeCompare(low(b.name)); });
+}
+function personNums(u){
+  var nm = low(u.name), ps = arr(W._crm && W._crm.projects).filter(function(p){ return p && !/complete|closed|lost|dead|cancel/i.test(s(p.status)) && (low(p.pm) === nm || low(p.apm) === nm || low(p.superintendent) === nm || low(p.estimator) === nm); });
+  var ls = arr(W._crm && W._crm.leads).filter(function(l){ return l && !/won|lost|dead|converted|closed/i.test(s(l.stage) + ' ' + s(l.status)) && (low(l.pm) === nm || low(l.estimator) === nm); });
+  var contract = ps.reduce(function(a, p){ var v = parseFloat(String(p.contract || p.contractAmount || 0).replace(/[^0-9.\-]/g, '')); return a + (isFinite(v) ? v : 0); }, 0);
+  return { jobs: ps.length, contract: contract, leads: ls.length, bids: bidsOf(u.name).filter(function(l){ return !closed(l); }).length };
+}
+function teamSection(host){
+  var sec = document.getElementById('gc-team-dash');
+  if (!sec || sec.parentElement !== host) {
+    if (sec) sec.remove();
+    sec = document.createElement('section'); sec.id = 'gc-team-dash'; sec.setAttribute('data-gc-keep', '1'); sec.setAttribute('aria-label', 'Team dashboards');
+    sec.innerHTML = '<h3 class="gc-team-h">👥 Team dashboards</h3><div class="gc-team-sub">Each person\'s numbers. Open a card, or open their full dashboard.</div><details class="gc-team-card gc-team-estc" data-k="est"><summary><b>📐 Estimating</b> <span class="gc-team-m"></span></summary><div class="gc-team-est"></div></details><div class="gc-team-people"></div>';
+    sec.addEventListener('toggle', function(ev){ var d = ev.target; if (!d || d.tagName !== 'DETAILS') return; TEAM_OPEN[d.getAttribute('data-k')] = d.open; try { localStorage.setItem('gc_team_open', JSON.stringify(TEAM_OPEN)); } catch (e) {} }, true);
+    sec.addEventListener('click', function(ev){
+      var b = ev.target.closest && ev.target.closest('[data-team-open]'); if (!b) return;
+      var sel = Array.prototype.filter.call(document.querySelectorAll('#root select'), function(x){ return /View a person/.test(x.textContent); })[0];
+      if (!sel) return;
+      var set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(sel, b.getAttribute('data-team-open'));
+      sel.dispatchEvent(new Event('change', { bubbles: true })); try { window.scrollTo(0, 0); } catch (e) {}
+    });
+    host.appendChild(sec);
+  }
+  if (sec !== host.lastElementChild) host.appendChild(sec);   /* always last */
+  var est = sec.querySelector('.gc-team-estc'); if (TEAM_OPEN.est && !est.open) est.open = true;
+  var en = estimators(), m = sec.querySelector('.gc-team-estc .gc-team-m'), mt = en.length ? en.length + ' estimator' + (en.length === 1 ? '' : 's') + ' · ' + en.map(function(n){ return esc(n) + ' ' + bidsOf(n).filter(function(l){ return !closed(l); }).length + ' open bids'; }).join(' · ') : 'no estimator yet';
+  if (m.innerHTML !== mt) m.innerHTML = mt;
+  var ppl = teamPeople().filter(function(u){ return !/estimat/i.test(s(u.role)); });
+  var html = ppl.map(function(u){
+    var n = personNums(u), k = 'p:' + (u.id || u.name);
+    return '<details class="gc-team-card" data-k="' + esc(k) + '"' + (TEAM_OPEN[k] ? ' open' : '') + '><summary><b>' + esc(u.name) + '</b> <span class="gc-team-m">' + esc(u.role) + ' · ' + n.jobs + ' open job' + (n.jobs === 1 ? '' : 's') + (n.leads ? ' · ' + n.leads + ' lead' + (n.leads === 1 ? '' : 's') : '') + '</span></summary>' +
+      '<div class="gc-team-tiles"><div><b>' + n.jobs + '</b><span>open jobs</span></div><div><b>' + money(n.contract) + '</b><span>contract on open jobs</span></div><div><b>' + n.leads + '</b><span>open leads</span></div>' + (n.bids ? '<div><b>' + n.bids + '</b><span>open bids</span></div>' : '') + '</div>' +
+      '<button type="button" class="gc-team-btn" data-team-open="' + esc(u.id) + '">Open ' + esc(s(u.name).split(' ')[0]) + '\'s full dashboard →</button></details>';
+  }).join('');
+  var box = sec.querySelector('.gc-team-people');
+  if (box.getAttribute('data-sig') !== html) { box.innerHTML = html; box.setAttribute('data-sig', html); }
+  if (!document.getElementById('gc-team-css')) {
+    var st = document.createElement('style'); st.id = 'gc-team-css';
+    st.textContent = '#gc-team-dash{margin:18px 0 8px}#gc-team-dash .gc-team-h{font-size:15px;font-weight:800;color:#14202e;margin:0 0 2px}#gc-team-dash .gc-team-sub{font-size:12px;color:#64748b;margin-bottom:8px}'
+      + '#gc-team-dash .gc-team-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;margin:6px 0;padding:0}#gc-team-dash summary{cursor:pointer;padding:10px 12px;list-style-position:inside;color:#14202e}#gc-team-dash .gc-team-m{color:#64748b;font-size:12px;font-weight:500}'
+      + '#gc-team-dash .gc-team-est{padding:0 8px 8px}#gc-team-dash .gc-team-tiles{display:flex;flex-wrap:wrap;gap:8px;padding:0 12px 8px}#gc-team-dash .gc-team-tiles div{min-width:110px;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px}#gc-team-dash .gc-team-tiles b{display:block;font-size:16px;color:#14202e}#gc-team-dash .gc-team-tiles span{font-size:11px;color:#64748b}'
+      + '#gc-team-dash .gc-team-btn{margin:0 12px 10px;border:1px solid #241968;background:#241968;color:#fff;border-radius:8px;padding:6px 12px;font:600 12px Inter,sans-serif;cursor:pointer}';
+    document.head.appendChild(st);
+  }
+  return sec;
+}
 function dashShown(){
   if (view() !== 'dashboard') return '';
   var person = dashPerson(); if (!person) return '';
   if (isAdmin() && !/'s Dashboard$/.test(s((document.querySelector('#root h1') || {}).textContent))) return person;   /* admins: any estimator */
-  if (/estimat/i.test(myRole()) || bidsOf(person).length) return person;
+  if (isAdmin()) return estimators().indexOf(person) >= 0 || bidsOf(person).length ? person : '';   /* patch VAS4: an admin looking at one person's dashboard */
+  if (/estimat/i.test(myRole())) return person;   /* patch VAS4: only an estimator has an estimating panel, his own */
   return '';
 }
 function mountDash(){
   var cur = document.getElementById('gc-la-dash'), person = dashShown();
-  if (!person) { if (cur) cur.remove(); return; }
+  if (!person) { if (cur) cur.remove(); var tdx = document.getElementById('gc-team-dash'); if (tdx) tdx.remove(); return; }   /* patch VAS4 */
   var h = document.querySelector('#root h1'); if (!h) return;
   var head = h.parentElement && h.parentElement.parentElement, host = head && head.parentElement; if (!host) return;
   ensureCss();
-  if (!cur || cur.parentElement !== host) { if (cur) cur.remove(); cur = document.createElement('section'); cur.id = 'gc-la-dash'; cur.setAttribute('data-gc-keep', '1'); cur.setAttribute('aria-label', 'Estimating'); host.insertBefore(cur, head.nextSibling); }
+  var team = isAdmin() && !/'s Dashboard$/.test(s(h.textContent)) ? teamSection(host) : null;   /* patch VAS4: the admin's own dashboard → at the bottom */
+  var slot = team ? team.querySelector('.gc-team-est') : host;
+  if (!team) { var old = document.getElementById('gc-team-dash'); if (old) old.remove(); }
+  if (!cur || cur.parentElement !== slot) { if (cur) cur.remove(); cur = document.createElement('section'); cur.id = 'gc-la-dash'; cur.setAttribute('data-gc-keep', '1'); cur.setAttribute('aria-label', 'Estimating'); if (team) slot.appendChild(cur); else host.insertBefore(cur, head.nextSibling); }
   var a = document.activeElement; if (a && cur.contains(a) && a.tagName === 'SELECT') return;   /* someone is choosing */
   var html = dashHtml(person);
   if (cur.getAttribute('data-sig') !== html) { cur.innerHTML = html; cur.setAttribute('data-sig', html); cur.setAttribute('data-person', person); }
@@ -150761,10 +150817,11 @@ W._gcRoleOf = function(u){ try { if (isMe(u)) return effRole(u); } catch (e) {} 
 function rerender(){ try { var m = me(); if (m && typeof W._gcSetMeUser === 'function') W._gcSetMeUser(Object.assign({}, m)); } catch (e) { warn(e); } }
 
 /* ── a PM's own claims (patch BB2) ── */
-function samePM(p){ var m = (viewAs() && vasPerson()) || me() || {};   /* patch VAS */ try { if (typeof W._gcSamePM === 'function') return !!W._gcSamePM(p.pm, m, p); } catch (e) {} return !!p && low(p.pm) === low(m.name); }
+function vasClaimsPerson(){ var p = viewAs() && vasPerson(); if (!p && viewAs() === 'Assistant PM') p = arr(W._crm && W._crm.users).filter(function(u){ return u && u.active !== false && s(u.role) === 'Project Manager'; })[0] || null; return p; }   /* patch VAS4 */
+function samePM(p){ var m = vasClaimsPerson() || me() || {};   /* patch VAS */ try { if (typeof W._gcSamePM === 'function') return !!W._gcSamePM(p.pm, m, p); } catch (e) {} return !!p && low(p.pm) === low(m.name); }
 W._gcInsVisible = function(c, p){
   if (effRole() !== 'Project Manager') return true;
-  return (!!p && samePM(p)) || (!!s(c.pm) && low(c.pm) === low((viewAs() && vasPerson() || {}).name || myName()));
+  return (!!p && samePM(p)) || (!!s(c.pm) && low(c.pm) === low((vasClaimsPerson() || {}).name || myName()));   /* patch VAS4 */
 };
 function claimsVisible(){ try { return W._gcClaims && W._gcClaims.visible ? W._gcClaims.visible() : []; } catch (e) { return []; } }
 function pmHas(kind){ var l = claimsVisible(); if (kind === 'mit') { var f = W._gcClaims && W._gcClaims.mit && W._gcClaims.mit.isMit; return l.some(function(c){ return f ? f(c) : true; }); } return l.length > 0; }
@@ -151680,7 +151737,7 @@ try { console.log('[GC] 👁 View as… in the 💎 menu (patch VAS)'); } catch 
     } catch (e) {}
     try { arr(window._gcExpenseApprovalsFor && window._gcExpenseApprovalsFor()).forEach(function(a){ g.expense.push({ id: 'exp:' + (a.id || a.expId || ''), title: s(a.vendor || a.desc) }); }); } catch (e) {}
     try {
-      var items = st ? st.items : (window._gcTD2 && window._gcTD2.__lastItems) || [];
+      var items = st ? st.items : (window._gcVAS && window._gcVAS.active() && window._gcTD2 && window._gcTD2.state ? window._gcTD2.state().items : (window._gcTD2 && window._gcTD2.__lastItems) || []);   /* patch VAS4 */
       arr(items).forEach(function(x){
         if (!x || x.cat !== 'appr' || x.waiting || x.roll === 'subappr' || x.covers === 'subappr' || COVERED.test(x.title)) return;
         g.other.push({ id: 'td:' + x.key, title: s(x.title), sub: s(x.sub), act: x.act || null });
