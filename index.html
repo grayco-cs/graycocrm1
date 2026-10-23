@@ -130203,6 +130203,7 @@ function titleOf(x){
 function lastStep(x){ return isAdmin() || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1; }
 function card(x){
   var id = esc(x.id), b = busy[x.id], last = lastStep(x);
+  var done = !b && kept[x.id] && /^(\u2705|\u2716)/.test(notes[x.id] || '');   /* patch APDONE: owner tapped Don't approve and "nothing happened" — the card looked the same */
   var who = x.step === 'admin' ? 'Needs an admin (Wesley or Nick)' : 'Needs the PM' + (x.pm ? ' — ' + esc(x.pm) : '');
   var chain = (x.steps || []).length > 1 ? ' · ' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') : '';
   return '<div class="_ap2Card" data-id="' + id + '" style="background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-left:5px solid #16a34a;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;font-family:Inter,-apple-system,Arial,sans-serif">' +
@@ -130212,8 +130213,8 @@ function card(x){
     ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
     (x.lastError ? '<div style="font-size:12px;color:#b91c1c;margin-top:2px">Last try: ' + esc(x.lastError) + '</div>' : '') +
     (x.editedBy ? '<div style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:2px">' + esc(editedLine(x)) + '</div>' : '') +
-    (notes[x.id] ? '<div class="_ap2Note" style="font-size:13px;font-weight:700;margin-top:6px;color:#0f766e">' + esc(notes[x.id]) + '</div>' : '') +
-    '<div style="display:flex;gap:8px;margin-top:10px">' +
+    (notes[x.id] ? '<div class="_ap2Note" style="font-size:' + (done ? '15px' : '13px') + ';font-weight:800;margin-top:6px;color:' + (/^\u2716/.test(notes[x.id]) ? '#b91c1c' : '#0f766e') + '">' + esc(notes[x.id]) + (done ? ' <span style="font-weight:600;color:#64748b;font-size:12px">\u00b7 off your list</span>' : '') + '</div>' : '') +
+    '<div style="display:' + (done ? 'none' : 'flex') + ';gap:8px;margin-top:10px">' +
       '<button type="button" class="_ap2Yes" ' + (b ? 'disabled ' : '') + 'style="flex:1;min-height:48px;padding:12px 8px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:16px;cursor:pointer">✅ Approve</button>' +
       '<button type="button" class="_ap2No" ' + (b ? 'disabled ' : '') + 'style="flex:1;min-height:48px;padding:12px 8px;border:2px solid #dc2626;border-radius:10px;background:#fff;color:#dc2626;font-weight:800;font-size:16px;cursor:pointer">✖ Don\'t approve</button>' +
     '</div>' +
@@ -130241,7 +130242,7 @@ function shown(){
   var list = items().slice(), have = {}, c = C(), all = (c && c.all) || [], now = Date.now();
   list.forEach(function(x){ have[x.id] = 1; });
   Object.keys(kept).forEach(function(id){
-    if(now - kept[id] > 20000){ delete kept[id]; return; }
+    if(now - kept[id] > 5000){ delete kept[id]; return; }   /* patch APDONE: 20 s → 5 s */
     if(have[id]) return;
     var x = all.filter(function(y){ return y.id === id; })[0]; if(x) list.push(x);
   });
