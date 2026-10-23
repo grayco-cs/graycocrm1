@@ -149607,7 +149607,8 @@ function App(root, opts){
     if (!force && typing()) { A.pend = true; return; }
     A.pend = false;
     var y = root.scrollTop, wy = window.scrollY;
-    root.innerHTML = view();
+    var h4s = view(); if (!force && h4s === A.__h4 && root.childNodes.length) return;   /* INS4-still */
+    A.__h4 = h4s; root.innerHTML = h4s;
     root.scrollTop = y; if (Math.abs(window.scrollY - wy) > 2) window.scrollTo(window.scrollX, wy);
     Object.keys(A.S.drafts).forEach(function(k){ var el = root.querySelector('[data-draft="' + k + '"]'); if (el && el.value !== A.S.drafts[k]) el.value = A.S.drafts[k]; });
   };
@@ -149768,6 +149769,8 @@ function App(root, opts){
     if (sc === 'claim' && !c) sc = A.S.screen = 'board';
     if (sc === 'claim' && A.S.easy && c) return EXT_VIEW.easy(A, c);
     if (sc === 'approvals' || sc === 'mailmatch') return EXT_VIEW[sc](A);
+    if (sc === 'ins4rep' && window._gcIns4) return head('Claim reports', 'Insurance', 'board') + '<div class="gcbb-main">' + errBox() + window._gcIns4.reports(A) + '</div>';   /* INS4-view */
+    if (sc === 'board' && A.opts.mode !== 'mitigation' && window._gcIns4) { var h4 = window._gcIns4.home(A); if (h4) return head('', '', null) + '<div class="gcbb-main">' + errBox() + h4 + '</div>'; }
     if (EXT_VIEW[sc]) { if (!c) { A.S.screen = 'board'; return boardView(); } return EXT_VIEW[sc](A, c); }
     return (sc === 'board' ? (A.opts.mode === 'mitigation' ? mitBoardHtml(A) : boardView()) : sc === 'new' ? newView() : sc === 'settings' ? settingsView() : claimView(c));
   }
@@ -149776,6 +149779,7 @@ function App(root, opts){
     if (back) h += '<button class="gcbb-back" data-a="' + back + '" aria-label="Back">‹</button>';
     h += '<span class="gcbb-brand"><img src="' + LOGO_WHITE + '" alt="GrayCo Construction Services"><b>INSURANCE</b></span>';
     if (inner) h += '<span class="gcbb-ttl"><b>' + esc(inner) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</span>'; else h += '<span class="gcbb-sp"></span>';
+    if (!inner && window._gcIns4 && A.opts.mode !== 'mitigation') h += window._gcIns4.headBtns(A);   /* INS4-head */
     if (!inner) h += '<button class="gcbb-btn dk sm" data-a="settings">⚙ Integrations</button><button class="gcbb-btn pri" data-a="new">+ New claim</button>';
     if (A.opts.onClose) h += '<button class="gcbb-btn dk sm" data-a="close" aria-label="Close">✕</button>';
     return h + '</div>';
@@ -149870,7 +149874,7 @@ function App(root, opts){
       '</div><div class="gcbb-bar" style="margin-top:14px"><button class="gcbb-btn pri" data-a="create">Open claim</button>' + (A.opts.projectId ? '' : '<button class="gcbb-btn" data-a="board">Cancel</button>') + '</div></div></div>';
   }
   function claimView(c){
-    var p = proj(c.projectId) || {}, m = calc(c), tabs = [['overview', 'Overview'], ['activity', '📝 Activity' /* INS3-tabs */], ['mail', '✉️ E-mail'], ['xact', '📐 Xactimate'], ['gallery', '📸 All photos'], ['estimate', 'Estimate' + (m.versions ? ' (v' + m.versions + ')' : '')], ['notes', 'Notes (' + arr(c.notes).length + ')'], ['docs', 'Documents (' + arr(c.docs).filter(function(d){ return !d.deleted; }).length + ')'],
+    var p = proj(c.projectId) || {}, m = calc(c), tabs = [['cc', '🧭 Summary' /* INS4-tab */], ['overview', 'Overview'], ['activity', '📝 Activity' /* INS3-tabs */], ['mail', '✉️ E-mail'], ['xact', '📐 Xactimate'], ['gallery', '📸 All photos'], ['estimate', 'Estimate' + (m.versions ? ' (v' + m.versions + ')' : '')], ['notes', 'Notes (' + arr(c.notes).length + ')'], ['docs', 'Documents (' + arr(c.docs).filter(function(d){ return !d.deleted; }).length + ')'],
       ['checklist', 'Checklist ' + checklist(c).filter(function(x){ return x.done; }).length + '/' + checklist(c).length], ['drying', 'Drying'], ['rooms', 'Job type & rooms'], ['photos', 'Required photos' /* INS3-req */], ['contents', 'Contents'], ['papers', 'Papers & money'], ['closeout', '🏁 Closeout' /* AUTO7-tab */], ['sync', 'Sync ' + syncTag(c)]];
     var i = phaseIdx(c.phase);
     var steps = '<div class="gcbb-steps" role="list" aria-label="Claim phase">' + PHASES.map(function(ph, k){ return '<button role="listitem" class="gcbb-step' + (k < i ? ' done' : k === i ? ' on' : '') + '" data-a="step" data-v="' + esc(ph) + '"' + (k === i ? ' aria-current="step"' : '') + '>' + (k + 1) + '. ' + esc(ph) + '</button>'; }).join('') + '</div>';
@@ -171891,4 +171895,787 @@ try { console.log('[GC] To-Do keeps up; To-Do count in the menu; exact badge num
   (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { early(); } catch (e) {} check(); }, 250);
   try { console.log('[GC] Job page rows arrive together and stay put (patch JOBSTILL)'); } catch (e) {}
 })();
+</script>
+<script id="gc-patch-ins4">
+/* __GC_PATCH_INS4__ ═══════════════════════════════════════════════════════════
+   GrayCo — 🛡 INSURANCE: CLAIMS COMMAND CENTER (patch INS4)
+
+   Owner (10/23): "this insurance tab isn't very good like Dash or detailed, needs reworked and to do more and
+   help more for insurance claims." Water, fire and storm restoration is the company's top focus.
+
+   On top of patch BB / BB2 / AUTO7 / INS3 (nothing of theirs is removed):
+   📊 THE TAB'S HOME = a claims dashboard
+      · money tiles: open claims · $ approved (RCV) · $ collected · outstanding by bucket (ACV checks pending,
+        depreciation to recover, supplements pending, deductible to collect, mortgage checks waiting) ·
+        average days FNOL → approval · claims stuck more than 7 days in a stage
+      · "Needs action today": adjuster follow-ups due, adjusters not answered in 48 h, supplements unanswered
+        7 days, checks to endorse, missing documents, depreciation to request, drafts ready
+      · a 12-stage pipeline (New loss / FNOL → … → Closed): drag a card, or pick its stage; filters for loss
+        type, PM, adjuster and aging. Each stage keeps the old BB phase in step (movePhase), so everything
+        built on the phases keeps working. "🗂 Phase board" shows the old board.
+   🧭 A CLAIM'S SUMMARY TAB (first tab of the full claim view): the claim facts (carrier: staff only, never the
+      customer), adjuster / desk adjuster with 📞 / ✉️ / 💬 logged on the claim, "waiting on the adjuster",
+      the money ledger (RCV, O&P, depreciation, ACV, deductible, supplements, every check), the documentation
+      checklist with progress, the timeline of everything, the supplement builder (+ suggested lines from
+      "compare carrier vs ours"), and a plain-language homeowner update.
+   📈 REPORTS: carrier / adjuster turnaround (staff only), supplement win rate, average claim by loss type,
+      insurance A/R aging.
+   🤖 HELP, NEVER AUTO-SENT: stage to-dos (the claim's PM + the Senior Insurance PM, or the admins) in the
+      To-Do (window._gcTodoExt) · adjuster nudge drafts after N days · depreciation reminder when the work is
+      done · homeowner updates go to ✅ Approvals (kind progress_update, the job's own customer e-mail; no
+      carrier name). Adjuster e-mails go through the claim's own approval outbox (PM, then owner). In
+      data-entry mode (patch PAUSE) nothing is queued or sent — the draft stays.
+   DATA: claim.ins4 = { stage, stageAt, log[], waitAdj, adjLast }; supplements / payments / notes stay where
+   patch BB keeps them (claim.supplements, claim.payments, claim.notes). Nothing is migrated.
+   Console: _gcIns4.status() · _gcIns4.core.{stageOf, kpis, needs, ledger, docs, timeline, reports}
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_INS4__) return; W.__GC_PATCH_INS4__ = true;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function num(v){ if (typeof v === 'number') return isFinite(v) ? v : 0; var x = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, '')); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money0(v){ var n = Math.round(num(v)), neg = n < 0; n = Math.abs(n); return (neg ? '−$' : '$') + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function money(v){ var n = r2(v), neg = n < 0; n = Math.abs(n); return (neg ? '−$' : '$') + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function nowIso(){ return new Date().toISOString(); }
+function ymd(v){ var t = s(v); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); var d = new Date(t); return isNaN(d) ? '' : d.toISOString().slice(0, 10); }
+function today(){ return ymd(nowIso()); }
+function daysBetween(a, b){ var x = Date.parse(a), y = Date.parse(b || nowIso()); return isFinite(x) && isFinite(y) ? (y - x) / 864e5 : null; }
+function dayInt(a, b){ var d = daysBetween(a, b); return d == null ? null : Math.max(0, Math.floor(d)); }
+var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function md(v){ var t = ymd(v); if (!t) return ''; var d = new Date(t + 'T12:00:00'); return MON[d.getMonth()] + ' ' + d.getDate() + (d.getFullYear() !== new Date().getFullYear() ? ', ' + d.getFullYear() : ''); }
+function uid(p){ return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function warn(e){ try { console.warn('[GC INS4]', e); } catch (x) {} }
+function G(){ return W._gcClaims || null; }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return p && p.id && p.deleted !== true; }); }
+function proj(id){ id = s(id); return projects().filter(function(p){ return s(p.id) === id; })[0] || null; }
+function users(){ return arr(crm().users).filter(function(u){ return u && u.active !== false; }); }
+function myEmail(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.email()) return low(W.__GC_AUTH__.email()); } catch (e) {} return ''; }
+function myName(){ var e = myEmail(), u = users().filter(function(x){ return e && low(x.email) === e; })[0]; if (u && u.name) return s(u.name); return e ? e.split('@')[0] : 'Me'; }
+function effRole(){ try { return s(W._gcRP && W._gcRP.role && W._gcRP.role()); } catch (e) { return ''; } }
+function paused(){ try { return !!(W._gcPause && W._gcPause.state && W._gcPause.state().on); } catch (e) { return false; } }
+
+/* who may see money and the carrier (the existing rule + the insurance / mitigation / office profiles) */
+function canMoney(){
+  var r = effRole();
+  if (/^(Project Manager|Estimator|Superintendent|Marketing Manager|Field)/i.test(r)) return false;   /* "View as" a PM shows what a PM sees */
+  if (/^(Admin|Office|Insurance|Mitigation)$/i.test(r)) return true;
+  try { if (typeof W._gcCanSeeMoney === 'function' && W._gcCanSeeMoney()) return true; } catch (e) {}
+  try { var h = W._gcLeadRoles && W._gcLeadRoles.holder && W._gcLeadRoles.holder('insurance'); if (h && myEmail() && low(h.email) === myEmail()) return true; } catch (e) {}
+  return false;
+}
+
+/* ══ STAGES: 12 stages, each tied to one of patch BB's 10 phases ══════════════════════════════════ */
+var STAGES = [
+  { k: 'fnol', l: 'New loss / FNOL', ph: 'New loss', days: 1, todo: 'Call the insured and set the inspection' },
+  { k: 'insp', l: 'Inspection scheduled', ph: 'Inspection', days: 2, todo: 'Inspect: photos, measurements, cause of loss, signed work authorization' },
+  { k: 'mit', l: 'Mitigation', ph: 'Inspection', days: 1, todo: 'Mitigation: moisture readings and the equipment log today' },
+  { k: 'est', l: 'Estimate submitted', ph: 'Submitted to carrier', days: 3, todo: 'Make sure the adjuster has the estimate and photos' },
+  { k: 'review', l: 'Adjuster review', ph: 'Submitted to carrier', days: 5, todo: 'Follow up with the adjuster on the estimate' },
+  { k: 'supp', l: 'Supplement sent', ph: 'Supplement', days: 7, todo: 'Get an answer on the supplement' },
+  { k: 'appr', l: 'Approved', ph: 'Approved', days: 7, todo: 'Collect the ACV check and the deductible; schedule the work' },
+  { k: 'acv', l: 'ACV received', ph: 'Approved', days: 7, todo: 'Schedule the work; endorse / deposit the check' },
+  { k: 'wip', l: 'Work in progress', ph: 'Work', days: 14, todo: 'Finish the work; get the certificate of satisfaction signed' },
+  { k: 'depreq', l: 'Depreciation requested', ph: 'Final invoice', days: 10, todo: 'Follow up: release the recoverable depreciation' },
+  { k: 'deprec', l: 'Depreciation received', ph: 'Depreciation released', days: 5, todo: 'Close out: final payment, warranty letter, review request' },
+  { k: 'closed', l: 'Closed', ph: 'Closed', days: 0, todo: '' }
+];
+var SK = {}; STAGES.forEach(function(x, i){ x.i = i; SK[x.k] = x; });
+var STAGE_COLOR = ['#8C90A6', '#0E7490', '#0284C7', '#2563EB', '#7C3AED', '#E08A00', '#1F9D55', '#15803D', '#B45309', '#B4236B', '#0F766E', '#3A2DB0'];
+var LOSS = [['water', 'Water'], ['fire', 'Fire / smoke'], ['storm', 'Storm'], ['hail', 'Hail'], ['wind', 'Wind'], ['mold', 'Mold'], ['other', 'Other']];
+var LOSSN = {}; LOSS.forEach(function(x){ LOSSN[x[0]] = x[1]; });
+
+function calcOf(c){ try { return G().core.calc(c); } catch (e) { return {}; } }
+function phaseAt(c, name){ var h = arr(c.phaseHistory).filter(function(x){ return x && x.phase === name; }).sort(function(a, b){ return s(a.at) < s(b.at) ? -1 : 1; })[0]; return h ? s(h.at) : ''; }
+function lastPhaseAt(c){ var h = arr(c.phaseHistory).filter(function(x){ return x && x.phase === c.phase; }).sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; })[0]; return h ? s(h.at) : ''; }
+function livePays(c){ return arr(c.payments).filter(function(p){ return p && p.deleted !== true && !/void/i.test(s(p.status)); }); }
+function liveSupps(c){ return arr(c.supplements).filter(function(x){ return x && x.deleted !== true; }); }
+function liveDocs(c){ return arr(c.docs).filter(function(d){ return d && d.deleted !== true; }); }
+function hasDoc(c, kinds){ return liveDocs(c).some(function(d){ return kinds.indexOf(d.kind) >= 0; }); }
+function isMit(c){ try { return !!(G().mit && G().mit.isMit(c)); } catch (e) { return false; } }
+function lossOf(c){
+  var t = low(c.causeOfLoss) + ' ' + low(c.jobType);
+  if (/fire|smoke|soot/.test(t)) return 'fire';
+  if (/mold/.test(t)) return 'mold';
+  if (/hail/.test(t)) return 'hail';
+  if (/water|flood|pipe|leak|sewage/.test(t)) return 'water';
+  if (/wind/.test(t)) return 'wind';
+  if (/storm|tree|lightning|tornado/.test(t)) return 'storm';
+  return 'other';
+}
+/* the stage: the one picked on the board while it still agrees with the claim's phase, else read from the phase */
+function derivedStage(c){
+  var ph = s(c.phase), m = null;
+  if (ph === 'New loss') return 'fnol';
+  if (ph === 'Inspection') return isMit(c) && arr(c.equipment).some(function(e){ return e && !e.deleted && !e.removedAt; }) ? 'mit' : 'insp';
+  if (ph === 'Estimate written' || ph === 'Submitted to carrier') return 'est';
+  if (ph === 'Supplement') return 'supp';
+  if (ph === 'Approved') { return livePays(c).some(function(p){ return /carrier|mortgage|insur/i.test(s(p.from)) && !/deprec|supp/i.test(s(p.kind)); }) ? 'acv' : 'appr'; }
+  if (ph === 'Work') return 'wip';
+  if (ph === 'Final invoice') return 'depreq';
+  if (ph === 'Depreciation released') return 'deprec';
+  if (ph === 'Closed') return 'closed';
+  return m || 'fnol';
+}
+function stageOf(c){
+  var x = c && c.ins4, k = x && x.stage;
+  if (k && SK[k] && SK[k].ph === s(c.phase)) return k;
+  if (k && SK[k] && s(c.phase) === 'Estimate written' && (k === 'est' || k === 'review')) return k;
+  return derivedStage(c || {});
+}
+function stageSince(c){
+  var x = c.ins4 || {}, k = stageOf(c);
+  if (x.stage === k && x.stageAt) return s(x.stageAt);
+  return lastPhaseAt(c) || s(c.createdAt);
+}
+function daysInStage(c){ var d = dayInt(stageSince(c)); return d == null ? 0 : d; }
+function fnolAt(c){ return s((c.ins4 || {}).fnolAt) || phaseAt(c, 'New loss') || s(c.createdAt); }
+
+/* ══ MONEY: the ledger of one claim, the buckets of all ═════════════════════════════════════════════ */
+function ledger(c){
+  var m = calcOf(c), pays = livePays(c), supps = liveSupps(c);
+  var carrierPays = pays.filter(function(p){ return /carrier|mortgage|insur/i.test(s(p.from)); });
+  var acvPaid = r2(carrierPays.filter(function(p){ return !/deprec|supp/i.test(s(p.kind)); }).reduce(function(t, p){ return t + num(p.amount); }, 0));
+  var suppPaid = r2(carrierPays.filter(function(p){ return /supp/i.test(s(p.kind)); }).reduce(function(t, p){ return t + num(p.amount); }, 0));
+  var sp = { requested: 0, approved: 0, pending: 0, denied: 0, nPending: 0, nApproved: 0, nDenied: 0 };
+  supps.forEach(function(x){
+    var amt = num(x.total != null ? x.total : (x.requested != null ? x.requested : x.amount));
+    sp.requested += amt;
+    var st = low(x.status);
+    if (/approv|paid|partial/.test(st)) { sp.approved += num(x.approved != null ? x.approved : amt); sp.nApproved++; }
+    else if (/den|reject/.test(st)) { sp.denied += amt; sp.nDenied++; }
+    else { sp.pending += amt; sp.nPending++; }
+  });
+  Object.keys(sp).forEach(function(k){ sp[k] = r2(sp[k]); });
+  var rcv = num(m.rcv), dep = num(m.dep), recDep = num(m.recDep), nonRec = num(m.nonRecDep), acv = r2(rcv - dep), ded = num(m.deductible);
+  return {
+    hasEstimate: !!m.hasEstimate, rcv: r2(rcv), op: r2(m.op), dep: r2(dep), recDep: r2(recDep), nonRecDep: r2(nonRec), acv: acv, deductible: r2(ded),
+    firstCheck: r2(Math.max(0, acv - ded)), acvPaid: acvPaid, acvPending: r2(Math.max(0, acv - ded - acvPaid)),
+    depReleased: r2(m.depReleased), depOutstanding: r2(m.depOutstanding), suppPaid: suppPaid, supp: sp,
+    paidCarrier: r2(m.paidCarrier), paidOwner: r2(m.paidOwner), paidToDate: r2(m.paidToDate), mortgageHeld: r2(m.mortgageHeld),
+    carrierOwes: r2(m.carrierOwes), ownerOwes: r2(m.ownerOwes), payments: pays, supplements: supps
+  };
+}
+function approvedOrLater(c){ var k = stageOf(c); return SK[k].i >= SK.appr.i; }
+function kpis(list){
+  var open = list.filter(function(c){ return stageOf(c) !== 'closed'; });
+  var K = { open: open.length, total: list.length, approvedRcv: 0, nApproved: 0, collected: 0, acvPending: 0, depToRecover: 0, suppPending: 0, nSuppPending: 0, deductible: 0, mortgage: 0, nMortgage: 0, stuck: 0, avgFnolToApproval: null };
+  list.forEach(function(c){ var L = ledger(c); K.collected += L.paidToDate; if (approvedOrLater(c)) { K.approvedRcv += L.rcv; K.nApproved++; } });
+  open.forEach(function(c){
+    var L = ledger(c);
+    if (approvedOrLater(c)) { K.acvPending += L.acvPending; K.depToRecover += L.depOutstanding; K.deductible += L.ownerOwes; }
+    K.suppPending += L.supp.pending; K.nSuppPending += L.supp.nPending;
+    if (L.mortgageHeld > 0) { K.mortgage += L.mortgageHeld; K.nMortgage++; }
+    if (stuck(c)) K.stuck++;
+  });
+  var ds = list.map(function(c){ var a = phaseAt(c, 'Approved'); return a ? daysBetween(fnolAt(c), a) : null; }).filter(function(x){ return x != null && x >= 0; });
+  K.avgFnolToApproval = ds.length ? Math.round(ds.reduce(function(t, x){ return t + x; }, 0) / ds.length * 10) / 10 : null;
+  ['approvedRcv', 'collected', 'acvPending', 'depToRecover', 'suppPending', 'deductible', 'mortgage'].forEach(function(k){ K[k] = r2(K[k]); });
+  K.outstanding = r2(K.acvPending + K.depToRecover + K.suppPending + K.deductible);
+  return K;
+}
+function stuck(c){ var k = stageOf(c); return k !== 'closed' && daysInStage(c) > 7; }
+
+/* ══ DOCUMENTS: what a claim needs, by where it is ═════════════════════════════════════════════════ */
+function photoCount(c){
+  var n = num(c.photoCount) + liveDocs(c).filter(function(d){ return d.kind === 'photos'; }).length;
+  try { var P = W._gcPhotos; if (P && typeof P.records === 'function') n += arr(P.records()).filter(function(r){ return r && !r.deleted && s(r.jobId) === s(c.projectId); }).length; } catch (e) {}
+  return n;
+}
+function docs(c){
+  var k = stageOf(c), i = SK[k].i, L = ledger(c), out = [], mit = isMit(c), loss = lossOf(c);
+  var eq = arr(c.equipment).filter(function(e){ return e && !e.deleted; });
+  var mo = arr(c.moisture).filter(function(x){ return x && !x.deleted; });
+  var moDays = {}; mo.forEach(function(x){ moDays[ymd(x.date || x.at)] = 1; });
+  var eqDays = 0; try { var T = G().p2.equipTotals(c); Object.keys(T.days || {}).forEach(function(t){ eqDays += num(T.days[t]); }); } catch (e) {}
+  function add(key, l, done, need, tab, note){ out.push({ k: key, l: l, done: !!done, need: !!need, tab: tab, note: note || '' }); }
+  add('auth', 'Signed work authorization / direction to pay', hasDoc(c, ['workauth', 'dtp', 'aob']) || !!((c.checks || {}).workauth || {}).done, i >= SK.insp.i, 'papers');
+  add('photos', 'Photos (GrayCo Photos / CompanyCam)', photoCount(c) > 0, i >= SK.insp.i, 'gallery', photoCount(c) ? photoCount(c) + ' photo(s)' : '');
+  if (mit || loss === 'water' || loss === 'mold') {
+    add('moist', 'Moisture readings + drying log (to the dry goal)', mo.length > 0 && Object.keys(moDays).length >= 1, i >= SK.insp.i, 'drying', mo.length ? Object.keys(moDays).length + ' day(s) logged' : '');
+    add('equip', 'Equipment log (dehus / air movers, days on site)', eq.length > 0, i >= SK.insp.i, 'drying', eqDays ? eqDays + ' billable equipment-day(s)' : '');
+  }
+  if (loss === 'fire' || loss === 'water' || arr(c.contents).length) add('contents', 'Contents inventory', arr(c.contents).filter(function(x){ return x && !x.deleted; }).length > 0, i >= SK.est.i && (loss === 'fire' || arr(c.contents).length > 0), 'contents');
+  add('xact', 'Xactimate estimate uploaded', L.hasEstimate, i >= SK.est.i, 'xact');
+  add('coc', 'Certificate of satisfaction (signed)', hasDoc(c, ['coc']), i >= SK.depreq.i, 'papers');
+  add('final', 'Final invoice', hasDoc(c, ['invoice']) || i >= SK.depreq.i && !!phaseAt(c, 'Final invoice'), i >= SK.depreq.i, 'closeout');
+  var appl = out.filter(function(x){ return x.need || x.done; });
+  return { items: out, done: appl.filter(function(x){ return x.done; }).length, total: appl.length, missing: out.filter(function(x){ return x.need && !x.done; }) };
+}
+
+/* ══ TIMELINE: every event of a claim, newest first ═════════════════════════════════════════════════ */
+function timeline(c){
+  var ev = [];
+  function push(at, ic, text, who){ if (s(at)) ev.push({ at: s(at), ic: ic, text: s(text), by: s(who) }); }
+  arr(c.phaseHistory).forEach(function(h){ if (h) push(h.at, '➜', 'Phase: ' + h.phase, h.by); });
+  arr((c.ins4 || {}).log).forEach(function(x){ if (x) push(x.at, x.ic || '•', x.text, x.by); });
+  arr(c.notes).forEach(function(n){ if (n && !n.deleted) push(n.at, '📝', n.text, n.by); });
+  livePays(c).forEach(function(p){ push(p.at || p.date, '💵', money(p.amount) + ' ' + (s(p.kind) || 'payment') + ' from ' + (s(p.from) || '?') + (s(p.checkNo) ? ' · check #' + s(p.checkNo) : '') + (s(p.status) ? ' · ' + s(p.status) : ''), p.by); });
+  liveDocs(c).forEach(function(d){ push(d.at, '📄', 'Document: ' + (s(d.name) || s(d.kind)), d.by); });
+  arr(c.estimates).filter(function(e){ return e && !e.deleted; }).forEach(function(e){ push(e.importedAt, '📐', 'Estimate v' + (e.version || 1) + (e.side ? ' (' + (e.side === 'grayco' ? 'GrayCo' : 'carrier') + ')' : '') + (e.totals ? ' · RCV ' + money(e.totals.rcv) : ''), e.by); });
+  liveSupps(c).forEach(function(x){ push(x.at, '➕', 'Supplement ' + (s(x.status) || 'draft') + ' · ' + money(x.total != null ? x.total : x.amount), x.by); });
+  arr(c.followups).forEach(function(f){ if (f) push(f.at, '📞', 'Followed up with the adjuster', f.by); });
+  return ev.sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+}
+
+/* ══ NEEDS ACTION TODAY ═════════════════════════════════════════════════════════════════════════════ */
+function cfg(){ var o = {}; try { o = (G().settings() || {}).ins4 || {}; } catch (e) {} return { nudgeDays: num(o.nudgeDays) || 5, waitHours: num(o.waitHours) || 48, suppDays: num(o.suppDays) || 7 }; }
+function lastAdjContact(c){
+  var x = c.ins4 || {}, l = [s(x.adjLast), phaseAt(c, 'Submitted to carrier')].concat(arr(c.followups).map(function(f){ return s(f && f.at); })).filter(Boolean).sort();
+  return l.pop() || '';
+}
+function needs(c){
+  var out = [], k = stageOf(c), x = c.ins4 || {}, C = cfg(), L = ledger(c);
+  if (k === 'closed') return out;
+  var title = claimTitle(c);
+  function add(kind, prio, text, btn, act, v){ out.push({ claimId: c.id, title: title, kind: kind, prio: prio, text: text, btn: btn, act: act, v: v || c.id }); }
+  /* the adjuster */
+  if (x.waitAdj && x.waitAdj.since && daysBetween(x.waitAdj.since) * 24 >= C.waitHours) add('adjwait', 'high', 'Adjuster has not answered in ' + Math.floor(daysBetween(x.waitAdj.since) * 24) + ' h', '✉️ Nudge draft', 'ins4draft', c.id + '|nudge');
+  else if (/^(est|review|supp)$/.test(k)) {
+    var lc = lastAdjContact(c), dd = lc ? daysBetween(lc) : daysInStage(c);
+    if (dd != null && dd >= C.nudgeDays) add('followup', 'med', 'Follow up with the adjuster — last contact ' + Math.floor(dd) + ' day(s) ago', '✉️ Nudge draft', 'ins4draft', c.id + '|nudge');
+  }
+  /* supplements waiting on an answer */
+  L.supplements.forEach(function(sp){ var st = low(sp.status); if (/approv|paid|partial|den|reject/.test(st)) return; var since = s(sp.sentAt || sp.updatedAt || sp.at); var d = daysBetween(since); if (/sent|prepared/.test(st) && d != null && d >= C.suppDays) add('supp', 'high', 'Supplement ' + money0(sp.total) + ' unanswered for ' + Math.floor(d) + ' days', '📋 Open', 'ins4open', c.id); });
+  /* checks */
+  L.payments.forEach(function(p){ if (/endorse|held|pending/i.test(s(p.status))) add('check', 'high', 'Check ' + (s(p.checkNo) ? '#' + s(p.checkNo) + ' ' : '') + money0(p.amount) + ' waiting: ' + s(p.status) + (s(c.mortgageCo) ? ' (' + s(c.mortgageCo) + ')' : ''), '✓ Endorsed', 'ins4paystat', c.id + '|' + p.id + '|endorsed'); });
+  /* paperwork */
+  docs(c).missing.forEach(function(m){ add('doc', 'med', 'Missing: ' + m.l, 'Open', 'ins4tab', c.id + '|' + m.tab); });
+  /* depreciation, once the work is done */
+  if ((k === 'wip' && (hasDoc(c, ['coc']) || !!c.workDoneAt)) || (k === 'depreq' && !c.depRequestedAt)) { if (L.recDep > 0 && L.depOutstanding > 0 && !c.depRequestedAt) add('dep', 'high', 'Request the recoverable depreciation (' + money0(L.depOutstanding) + ')', '🏁 Closeout', 'ins4tab', c.id + '|closeout'); }
+  if (k === 'depreq' && c.depRequestedAt && daysBetween(c.depRequestedAt) >= C.nudgeDays && L.depOutstanding > 0) add('dep', 'med', 'Depreciation requested ' + Math.floor(daysBetween(c.depRequestedAt)) + ' days ago — not received', '✉️ Nudge draft', 'ins4draft', c.id + '|dep');
+  /* overdue BB follow-ups / SLAs */
+  /* patch BB's late SLAs only while the claim is still at the start (later they are history, not a to-do) */
+  if (SK[k].i <= SK.mit.i) { try { G().more.late(c).filter(function(m){ return m.k !== 'followup'; }).slice(0, 1).forEach(function(m){ add('sla', 'high', 'Late: ' + s(m.l).replace(/ \(.*\)$/, ''), 'Open', 'ins4open', c.id); }); } catch (e) {} }
+  return out;
+}
+function needsAll(list){
+  var R = { high: 0, med: 1, low: 2 };
+  return [].concat.apply([], list.map(needs)).sort(function(a, b){ return R[a.prio] - R[b.prio] || (a.title < b.title ? -1 : 1); });
+}
+
+/* ══ REPORTS ════════════════════════════════════════════════════════════════════════════════════════ */
+function reports(list){
+  var byCarrier = {}, byLoss = {}, sp = { n: 0, won: 0, lost: 0, req: 0, ok: 0 }, aging = { a30: 0, a60: 0, a90: 0, a90p: 0 };
+  list.forEach(function(c){
+    var L = ledger(c), car = s(c.carrier) || 'Carrier not set', sub = phaseAt(c, 'Submitted to carrier'), ap = phaseAt(c, 'Approved');
+    var b = byCarrier[car] = byCarrier[car] || { carrier: car, claims: 0, turn: [], adjResp: [] };
+    b.claims++;
+    if (sub && ap) { var d = daysBetween(sub, ap); if (d != null && d >= 0) b.turn.push(d); }
+    arr((c.ins4 || {}).waitLog).forEach(function(w){ var d2 = daysBetween(w.since, w.answered); if (d2 != null && d2 >= 0) b.adjResp.push(d2 * 24); });
+    var lt = lossOf(c), g = byLoss[lt] = byLoss[lt] || { loss: lt, label: LOSSN[lt], claims: 0, rcv: 0 };
+    if (L.hasEstimate) { g.claims++; g.rcv += L.rcv; }
+    L.supplements.forEach(function(x){ var st = low(x.status), amt = num(x.total != null ? x.total : x.amount); sp.n++; sp.req += amt; if (/approv|paid|partial/.test(st)) { sp.won++; sp.ok += num(x.approved != null ? x.approved : amt); } else if (/den|reject/.test(st)) sp.lost++; });
+    if (stageOf(c) !== 'closed' && approvedOrLater(c)) {
+      var owed = r2(L.acvPending + L.depOutstanding + L.ownerOwes), age = dayInt(phaseAt(c, 'Approved') || stageSince(c));
+      if (owed > 0) { if (age <= 30) aging.a30 += owed; else if (age <= 60) aging.a60 += owed; else if (age <= 90) aging.a90 += owed; else aging.a90p += owed; }
+    }
+  });
+  function avg(l){ return l.length ? Math.round(l.reduce(function(t, x){ return t + x; }, 0) / l.length * 10) / 10 : null; }
+  return {
+    carriers: Object.keys(byCarrier).map(function(k){ var b = byCarrier[k]; return { carrier: b.carrier, claims: b.claims, avgDays: avg(b.turn), adjHours: avg(b.adjResp) }; }).sort(function(a, b){ return b.claims - a.claims; }),
+    supp: { count: sp.n, won: sp.won, lost: sp.lost, decided: sp.won + sp.lost, rate: sp.won + sp.lost ? Math.round(sp.won / (sp.won + sp.lost) * 100) : null, requested: r2(sp.req), approved: r2(sp.ok) },
+    byLoss: Object.keys(byLoss).map(function(k){ var g = byLoss[k]; return { loss: g.loss, label: g.label, claims: g.claims, avg: g.claims ? r2(g.rcv / g.claims) : 0 }; }).sort(function(a, b){ return b.avg - a.avg; }),
+    aging: { a30: r2(aging.a30), a60: r2(aging.a60), a90: r2(aging.a90), a90p: r2(aging.a90p), total: r2(aging.a30 + aging.a60 + aging.a90 + aging.a90p) }
+  };
+}
+
+/* ══ DRAFTS (never sent by themselves) ═════════════════════════════════════════════════════════════ */
+function claimTitle(c){ try { return G().ext.claimTitle(c); } catch (e) { var p = proj(c.projectId); return s(p && p.name) || s(c.insured) || 'Claim'; } }
+var OFFICE_PHONE = '(901) 585-0944';
+function officePhone(){ try { if (W.GC_BRAND && W.GC_BRAND.phone) return s(W.GC_BRAND.phone); } catch (e) {} return OFFICE_PHONE; }
+function adjOf(c){ var d = c.deskAdjuster || {}, a = c.adjuster || {}; return { name: s(d.name || a.name), email: s(d.email || a.email), phone: s(d.phone || a.phone) }; }
+function nudgeText(c, kind){
+  var a = adjOf(c), first = s(a.name).split(/\s+/)[0] || 'there', L = ledger(c), k = stageOf(c), me = myName();
+  var ref = [s(c.claimNumber) ? 'claim #' + s(c.claimNumber) : '', s(c.insured), s(c.address || (proj(c.projectId) || {}).address)].filter(Boolean).join(' · ');
+  var body;
+  if (kind === 'dep') body = 'Hi ' + first + ',\n\nFollowing up on the recoverable depreciation for ' + ref + '. The work is complete and the certificate of satisfaction and final invoice were sent on ' + (md(c.depRequestedAt) || 'request') + '. The recoverable depreciation outstanding is ' + money(L.depOutstanding) + '.\n\nCould you let me know when it will be released, or if you need anything else from us?\n\nThank you,\n' + me + '\nGrayCo Construction Services · ' + officePhone();
+  else if (k === 'supp') body = 'Hi ' + first + ',\n\nFollowing up on the supplement we sent for ' + ref + ' (' + money(L.supp.pending) + ' requested). Could you let me know where it stands, or if you need more photos or documentation?\n\nThank you,\n' + me + '\nGrayCo Construction Services · ' + officePhone();
+  else body = 'Hi ' + first + ',\n\nFollowing up on our estimate for ' + ref + '. Could you let me know where your review stands and if you need anything else from us — photos, measurements or a re-inspection?\n\nThank you,\n' + me + '\nGrayCo Construction Services · ' + officePhone();
+  var subj = (kind === 'dep' ? 'Depreciation release' : k === 'supp' ? 'Supplement follow-up' : 'Estimate follow-up') + (s(c.claimNumber) ? ' — claim #' + s(c.claimNumber) : '') + ' — ' + (s(c.insured) || claimTitle(c));
+  return { to: a.email, subject: subj, body: body };
+}
+/* the homeowner's update: plain words, NEVER the carrier / adjusting company / policy */
+var HO_TEXT = {
+  fnol: 'We have your claim and are setting up the inspection. We will call you to pick a time.',
+  insp: 'Your inspection is scheduled. We will document the damage with photos and measurements.',
+  mit: 'Drying is under way. We check the moisture readings and the equipment every day until everything is dry.',
+  est: 'We sent our detailed estimate with photos to your insurance company and are waiting on their review.',
+  review: 'Your insurance company is reviewing our estimate. We follow up with them regularly so it keeps moving.',
+  supp: 'We found items that were missed and asked your insurance company to add them. We are waiting on their answer.',
+  appr: 'Your claim is approved. Next is the first insurance check and scheduling the work.',
+  acv: 'The first insurance payment is in. We are scheduling the work.',
+  wip: 'The work is under way. Your project manager will keep you posted.',
+  depreq: 'The work is done. We asked your insurance company to release the final payment (the held-back depreciation).',
+  deprec: 'The final insurance payment was released. We are closing out your project.',
+  closed: 'Your project is complete. Thank you for choosing GrayCo.'
+};
+function homeownerUpdate(c){
+  var p = proj(c.projectId) || {}, k = stageOf(c), name = s(p.client || c.insured).split(/\s+/)[0] || 'there';
+  var pm = s(p.pm), addr = s(p.address || c.address);
+  var text = 'Hi ' + name + ',\n\nHere is where your project' + (addr ? ' at ' + addr : '') + ' stands: ' + HO_TEXT[k] + '\n\nIf you have any questions, call our office at ' + officePhone() + (pm ? ' and ask for ' + pm : '') + '.\n\nThank you,\nGrayCo Construction Services';
+  /* the carrier's name, adjuster company and policy number are never in it (owner rule) */
+  [s(c.carrier), s((c.adjuster || {}).company), s((c.deskAdjuster || {}).company), s(c.policyNumber), s(c.program && !/^none/i.test(c.program) ? c.program : '')].filter(function(x){ return x.length > 2; }).forEach(function(w){ text = text.split(w).join('your insurance company'); });
+  var html = '<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">' + esc(text).replace(/\n/g, '<br>') + '</div>';
+  return { subject: 'Project update — ' + (s(p.name) || 'your project'), text: text, html: html };
+}
+
+/* ══ WRITES ═════════════════════════════════════════════════════════════════════════════════════════ */
+function mutate(id, fn){ return G().update(id, fn); }
+function logOn(x, ic, text){ x.ins4 = x.ins4 || {}; x.ins4.log = arr(x.ins4.log).concat([{ id: uid('L4'), at: nowIso(), by: myName(), ic: ic, text: text }]).slice(-200); }
+function moveStage(id, k){
+  var st = SK[k], c = G().get(id); if (!st || !c) return Promise.resolve(null);
+  var from = stageOf(c);
+  if (from === k) return Promise.resolve(c);
+  return mutate(id, function(x){
+    x.ins4 = x.ins4 || {}; x.ins4.stage = k; x.ins4.stageAt = nowIso();
+    if (k === 'depreq' && !x.depRequestedAt) x.depRequestedAt = nowIso();
+    if (k === 'wip' && from === 'wip') x.workDoneAt = x.workDoneAt || '';
+    logOn(x, '➜', 'Stage: ' + SK[from].l + ' → ' + st.l);
+  }).then(function(){ var c2 = G().get(id); if (c2 && s(c2.phase) !== st.ph) return G().move(id, st.ph); return c2; });
+}
+function contactLog(id, how, who){
+  return mutate(id, function(x){
+    x.ins4 = x.ins4 || {}; x.ins4.adjLast = nowIso();
+    logOn(x, how === 'call' ? '📞' : how === 'text' ? '💬' : '✉️', (how === 'call' ? 'Called' : how === 'text' ? 'Texted' : 'E-mailed') + ' ' + (who || 'the adjuster'));
+  });
+}
+function setWaiting(id, on){
+  return mutate(id, function(x){
+    x.ins4 = x.ins4 || {};
+    if (on) { x.ins4.waitAdj = { since: nowIso(), by: myName() }; logOn(x, '⏳', 'Waiting on the adjuster'); }
+    else { var w = x.ins4.waitAdj; if (w && w.since) x.ins4.waitLog = arr(x.ins4.waitLog).concat([{ since: w.since, answered: nowIso() }]).slice(-50); x.ins4.waitAdj = null; x.ins4.adjLast = nowIso(); logOn(x, '✅', 'The adjuster answered'); }
+  });
+}
+function addPayment(id, f){
+  var p = { id: uid('PAY'), amount: r2(f.amount), from: s(f.from) || 'carrier', kind: s(f.kind) || 'ACV', status: s(f.status) || 'received', checkNo: s(f.checkNo), payer: s(f.payer), at: f.date ? f.date + 'T12:00:00Z' : nowIso(), by: myName(), updatedAt: nowIso() };
+  if (!(p.amount > 0)) return Promise.reject(new Error('Enter the amount of the check.'));
+  return mutate(id, function(x){ x.payments = arr(x.payments).concat([p]); logOn(x, '💵', 'Recorded ' + money(p.amount) + ' ' + p.kind + ' from ' + p.from); });
+}
+function payStatus(id, pid, st){ return mutate(id, function(x){ var p = arr(x.payments).filter(function(y){ return y && y.id === pid; })[0]; if (p) { p.status = st; p.updatedAt = nowIso(); logOn(x, '💵', 'Check ' + (s(p.checkNo) ? '#' + s(p.checkNo) + ' ' : '') + money(p.amount) + ': ' + st); } }); }
+function suppStatus(id, sid, st, approved){ return mutate(id, function(x){ var y = arr(x.supplements).filter(function(z){ return z && z.id === sid; })[0]; if (y) { y.status = st; y.updatedAt = nowIso(); if (/sent/.test(st) && !y.sentAt) y.sentAt = nowIso(); if (approved != null) y.approved = r2(approved); logOn(x, '➕', 'Supplement ' + money(y.total) + ': ' + st); } }); }
+
+/* the supplement builder (kept per claim on this screen until saved) */
+var DRAFT = {};
+function suppDraft(id){ return DRAFT[id] = DRAFT[id] || { items: [] }; }
+function suggestions(c){
+  try {
+    var ests = arr(c.estimates).filter(function(e){ return e && !e.deleted; });
+    var carrier = ests.filter(function(e){ return e.side !== 'grayco'; }).slice(-1)[0], ours = ests.filter(function(e){ return e.side === 'grayco'; }).slice(-1)[0];
+    if (!ours) { var be = arr(crm().estimates).filter(function(e){ return e && s(e.pid || e.projectId) === s(c.projectId); }).slice(-1)[0]; if (be && G().cmp && G().cmp.builderToEstimate) ours = G().cmp.builderToEstimate(be); }
+    if (!carrier || !ours) return { ready: false, why: !carrier ? 'Import the carrier estimate (📐 Xactimate) first.' : 'Add GrayCo’s estimate (📐 Xactimate or the Estimate Builder) first.', items: [], cats: [] };
+    var d = G().core.diffEstimates(carrier, ours), items = [];
+    d.added.forEach(function(a){ var l = a.line; items.push({ room: l.room, desc: l.desc, qty: l.qty, unit: l.unit, amount: r2(l.rcv), reason: 'Not in the carrier estimate' }); });
+    d.changed.forEach(function(ch){ if (ch.delta > 0.5) items.push({ room: ch.to.room, desc: ch.to.desc, qty: r2(ch.dqty), unit: ch.to.unit, amount: r2(ch.delta), reason: 'Carrier quantity / price is lower (' + ch.from.qty + ' → ' + ch.to.qty + ' ' + ch.to.unit + ')' }); });
+    var cats = {}; carrier.lines.forEach(function(l){ var k = l.cat || '—'; cats[k] = cats[k] || { cat: k, carrier: 0, ours: 0 }; cats[k].carrier += num(l.rcv); });
+    ours.lines.forEach(function(l){ var k = l.cat || '—'; cats[k] = cats[k] || { cat: k, carrier: 0, ours: 0 }; cats[k].ours += num(l.rcv); });
+    return { ready: true, items: items, cats: Object.keys(cats).map(function(k){ var x = cats[k]; return { cat: k, carrier: r2(x.carrier), ours: r2(x.ours), diff: r2(x.ours - x.carrier) }; }).filter(function(x){ return Math.abs(x.diff) > 0.5; }).sort(function(a, b){ return b.diff - a.diff; }) };
+  } catch (e) { warn(e); return { ready: false, why: 'Could not compare: ' + s(e && e.message), items: [], cats: [] }; }
+}
+function suppBlocks(c, items, total){
+  var a = adjOf(c), lic = ''; try { lic = s(G().ext.LICENSE_LINE); } catch (e) {}
+  return { title: 'Supplement request', subtitle: [s(c.claimNumber) ? 'Claim #' + s(c.claimNumber) : '', claimTitle(c)].filter(Boolean).join(' · '), blocks: [
+    { kv: [['Date', md(nowIso()) + ', ' + new Date().getFullYear()], ['To', [a.name, a.email].filter(Boolean).join(' · ') || 'The adjuster'], ['Claim #', s(c.claimNumber) || '—'], ['Insured', s(c.insured) || '—'], ['Loss address', s(c.address || (proj(c.projectId) || {}).address) || '—']] },
+    { gap: 4 },
+    { p: 'Please review the following items for addition to the estimate. Photos and measurements are available on request and in the claim file.' },
+    { h: 'Requested items' },
+    { table: { cols: [{ l: '#', w: 22 }, { l: 'Room', w: 80 }, { l: 'Item', w: 230 }, { l: 'Qty', w: 60, align: 'right' }, { l: 'Amount', w: 80, align: 'right' }],
+      rows: items.map(function(x, i){ var sub = []; if (s(x.reason)) sub.push('Reason: ' + s(x.reason)); if (s(x.photo)) sub.push('Photo: ' + s(x.photo)); return { cells: [String(i + 1), s(x.room) || '—', s(x.desc), (num(x.qty) ? r2(x.qty) + ' ' + s(x.unit) : ''), money(x.amount)], sub: sub }; }) } },
+    { total: ['Total requested (' + items.length + ' item' + (items.length === 1 ? '' : 's') + ')', money(total)] },
+    { gap: 10 }, { p: 'Thank you,' }, { p: myName() + ', GrayCo Construction Services', bold: true }, { p: officePhone() + (lic ? ' · ' + lic : ''), size: 9, color: '#5B5F75' }
+  ], total: total };
+}
+function saveSupplement(c){
+  var dft = suppDraft(c.id), items = dft.items.filter(function(x){ return s(x.desc) && num(x.amount) > 0; });
+  if (!items.length) return Promise.reject(new Error('Add at least one item with an amount.'));
+  var total = r2(items.reduce(function(t, x){ return t + num(x.amount); }, 0)), at = nowIso(), id = uid('SUP'), docId = uid('D');
+  var name = 'Supplement request — ' + claimTitle(c) + ' — ' + at.slice(0, 10) + '.pdf', E = G().ext, L = suppBlocks(c, items, total);
+  var mk = Promise.resolve(null);
+  try { if (E && E.pdfReport && E.logoJpeg) mk = E.logoJpeg().then(function(logo){ return E.pdfReport(L, logo); }, function(){ return E.pdfReport(L, null); }); } catch (e) { warn(e); }
+  return mk.then(function(bytes){
+    var file = bytes && E.bytesToFile ? E.bytesToFile(bytes, name) : null;
+    var store = file && typeof W._gcStoreFile === 'function' ? W._gcStoreFile(file, { kind: 'doc', pid: c.projectId, name: name }).then(function(m){ return (m && m.ref) || ''; }, function(){ return ''; }) : Promise.resolve('');
+    return store.then(function(ref){
+      var sp = { id: id, at: at, by: myName(), items: items.map(function(x){ return { room: s(x.room), desc: s(x.desc), qty: r2(x.qty), unit: s(x.unit), unitPrice: 0, amount: r2(x.amount), reason: s(x.reason), photos: s(x.photo) ? [s(x.photo)] : [], what: '', notes: [] }; }), total: total, docId: docId, ref: ref, name: name, size: bytes ? bytes.length : 0, status: 'review', ins4: true };
+      return mutate(c.id, function(x){
+        x.supplements = arr(x.supplements).concat([sp]);
+        x.docs = arr(x.docs).concat([{ id: docId, kind: 'supplement', name: name, ref: ref, type: 'application/pdf', size: sp.size, at: at, by: myName(), internal: true, supplementId: id }]);
+        logOn(x, '➕', 'Supplement request made: ' + items.length + ' item(s), ' + money(total));
+      }).then(function(){ DRAFT[c.id] = { items: [] }; return sp; });
+    });
+  });
+}
+/* "Send for approval": the claim's own outbox (PM, then an owner) — the e-mail goes only after that */
+function sendSupplement(c, sid){
+  if (paused()) return Promise.reject(new Error('⏸ Data-entry mode is on — nothing is sent. The supplement stays saved.'));
+  var a = adjOf(c);
+  return G().compare.prepare(c.id, sid, a.email, true).then(function(){ return mutate(c.id, function(x){ logOn(x, '📋', 'Supplement sent for approval → ' + a.email); }); });
+}
+function queueNudge(c, kind, o){
+  if (paused()) return Promise.reject(new Error('⏸ Data-entry mode is on — nothing is sent. The draft stays here.'));
+  if (!/@/.test(s(o.to))) return Promise.reject(new Error('Put the adjuster’s e-mail on the claim first.'));
+  var E = G().ext, st = {}; try { st = G().settings(); } catch (e) {}
+  var ref = 'N4' + Date.now().toString(36), text = s(o.subject) + '\n\n' + s(o.body);
+  if (st.programs && st.programs.email && st.programs.email.on && E && E.enqueue) {
+    var what = kind === 'dep' ? 'Depreciation follow-up' : 'Adjuster follow-up';
+    var made = E.enqueue(c, 'note', ref, text, null, { only: ['email'], manual: true, selfApprove: true, what: what, item: { to: s(o.to), what: what, subject: s(o.subject) } });
+    return mutate(c.id, function(x){ x.ins4 = x.ins4 || {}; x.ins4.adjLast = nowIso(); x.followups = arr(x.followups).concat([{ id: uid('FU'), at: nowIso(), by: myName() }]); logOn(x, '✉️', 'Follow-up to ' + s(o.to) + ' sent for approval'); }).then(function(){ return { queued: (made || []).length, via: 'approvals' }; });
+  }
+  /* no "Email to program": a draft in the office Outbox (sent by a person from Gmail) */
+  if (typeof W._gcDraftMessage === 'function') { W._gcDraftMessage({ to: o.to, subject: o.subject, body: o.body, type: 'Insurance', project: claimTitle(c) }); return mutate(c.id, function(x){ logOn(x, '✉️', 'Follow-up draft put in the Outbox for ' + s(o.to)); }).then(function(){ return { queued: 1, via: 'outbox' }; }); }
+  return Promise.reject(new Error('Switch on “Email to program” in ⚙ Integrations, or use your e-mail.'));
+}
+var PORTAL_FN = '/.netlify/functions/portal';
+function queueHomeowner(c, o){
+  if (paused()) return Promise.reject(new Error('⏸ Data-entry mode is on — nothing is sent. The update was not queued.'));
+  var body = { action: 'approval', op: 'queue', kind: 'progress_update', projectId: s(c.projectId), ref: 'ins4-' + today(), subject: s(o.subject), html: o.html, title: '🛡 Insurance update — ' + claimTitle(c) };
+  return W.fetch(PORTAL_FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
+    .then(function(j){ if (j && j.ok === false && j.error) throw new Error(j.error); return mutate(c.id, function(x){ logOn(x, '🏠', 'Homeowner update sent to ✅ Approvals'); }).then(function(){ return j; }); });
+}
+
+/* ══ UI ═════════════════════════════════════════════════════════════════════════════════════════════ */
+var PREF = 'gc_ins4_home';
+function pref(){ try { return localStorage.getItem(PREF) || 'dash'; } catch (e) { return 'dash'; } }
+function setPref(v){ try { localStorage.setItem(PREF, v); } catch (e) {} }
+var CSS = '.ins4 .ins4-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 12px}.ins4-dash{display:flex;flex-direction:column}' +
+  '.ins4-kpi{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-height:64px}' +
+  '.ins4-kpi span{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b}.ins4-kpi b{font-size:21px;color:#0f172a}.ins4-kpi small{font-size:11.5px;color:#64748b}' +
+  '.ins4-kpi.big{background:#1B1452;border-color:#1B1452}.ins4-kpi.big span,.ins4-kpi.big small{color:#d8d4f5}.ins4-kpi.big b{color:#fff}.ins4-kpi.bad b{color:#b91c1c}.ins4-kpi.warn b{color:#b45309}' +
+  '.ins4-sec{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin:0 0 12px}.ins4-sec h3{margin:0 0 8px;font-size:15px;color:#1B1452;display:flex;gap:8px;align-items:center;flex-wrap:wrap}' +
+  '.ins4-need{display:flex;gap:10px;align-items:center;padding:8px 4px;border-top:1px solid #f1f5f9}.ins4-need:first-of-type{border-top:0}.ins4-need .t{flex:1;min-width:0}.ins4-need .t b{display:block;font-size:13.5px;color:#0f172a}.ins4-need .t span{font-size:12.5px;color:#475569}' +
+  '.ins4-dot{width:9px;height:9px;border-radius:50%;flex:none}.ins4-dot.high{background:#dc2626}.ins4-dot.med{background:#f59e0b}.ins4-dot.low{background:#94a3b8}' +
+  '.ins4-pipe{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}.ins4-col{flex:0 0 220px;background:#f1f5f9;border-radius:10px;padding:8px;min-height:120px}.ins4-col.over{outline:2px dashed #2563eb}' +
+  '.ins4-colh{font-size:12px;font-weight:800;color:#1e293b;display:flex;align-items:center;gap:6px;margin-bottom:6px}.ins4-colh i{width:8px;height:8px;border-radius:50%;display:inline-block}.ins4-colh em{margin-left:auto;font-style:normal;color:#64748b}' +
+  '.ins4-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer;font-size:12.5px;display:flex;flex-direction:column;gap:3px}' +
+  '.ins4-card b{font-size:13px;color:#0f172a}.ins4-card .m{color:#475569}.ins4-card select{font-size:12px;padding:3px;border:1px solid #cbd5e1;border-radius:6px;max-width:100%}' +
+  '.ins4-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3730a3;margin:1px 2px 1px 0}.ins4-chip.bad{background:#fee2e2;color:#991b1b}.ins4-chip.warn{background:#fef3c7;color:#92400e}.ins4-chip.ok{background:#dcfce7;color:#166534}' +
+  '.ins4-filters{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px}.ins4-filters select{padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;background:#fff}' +
+  '.ins4-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.ins4-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 12px;font-size:13px}.ins4-facts div span{display:block;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase}' +
+  '.ins4-led td{padding:4px 6px;border-top:1px solid #f1f5f9;font-size:13px}.ins4-led td:last-child{text-align:right;font-variant-numeric:tabular-nums}.ins4-led tr.tot td{font-weight:800;border-top:2px solid #cbd5e1}' +
+  '.ins4-bar{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin:4px 0 8px}.ins4-bar i{display:block;height:100%;background:#16a34a}' +
+  '.ins4-doc{display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px;border-top:1px solid #f1f5f9}.ins4-doc .ck{width:20px;text-align:center}.ins4-doc .l{flex:1}' +
+  '.ins4-tl{max-height:360px;overflow:auto}.ins4-tl div{display:flex;gap:8px;padding:5px 0;border-top:1px solid #f1f5f9;font-size:12.5px}.ins4-tl div em{font-style:normal;color:#64748b;white-space:nowrap}' +
+  '.ins4-btn{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:6px 10px;font-weight:700;font-size:12.5px;cursor:pointer;color:#1B1452;white-space:nowrap}.ins4-btn.pri{background:#1B1452;color:#fff;border-color:#1B1452}.ins4-btn.gold{background:#F2A51A;border-color:#F2A51A;color:#1B1452}' +
+  '.ins4-in{padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;min-width:0}.ins4-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0}' +
+  '.ins4-tbl{width:100%;border-collapse:collapse;font-size:13px}.ins4-tbl th{text-align:left;font-size:11px;text-transform:uppercase;color:#64748b;padding:4px 6px}.ins4-tbl td{padding:5px 6px;border-top:1px solid #f1f5f9}' +
+  '.ins4-warnbar{background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:700;margin:0 0 10px}' +
+  '.ins4-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1000060;display:flex;align-items:center;justify-content:center;padding:14px}.ins4-modal>div{background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:92vh;overflow:auto;padding:16px;font-family:Inter,Arial,sans-serif}' +
+  '.ins4-modal textarea{width:100%;min-height:220px;box-sizing:border-box;font:13px/1.45 Inter,Arial,sans-serif;padding:8px;border:1px solid #cbd5e1;border-radius:8px}.ins4-modal input{width:100%;box-sizing:border-box}' +
+  '@media (max-width:640px){.ins4-col{flex-basis:78vw}.ins4 .ins4-kpis{grid-template-columns:repeat(2,1fr);gap:6px}.ins4-kpi{padding:7px 9px;min-height:0}.ins4-kpi b{font-size:17px}.ins4-kpi small{display:none}.ins4-dash [data-ins4="needs"]{order:-1}.ins4-tbl{display:block;overflow-x:auto;white-space:nowrap}.ins4-need .t b{font-size:13px}}';
+function ensureCss(){ if (D.getElementById('gc-ins4-css')) return; var st = D.createElement('style'); st.id = 'gc-ins4-css'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
+
+function visible(){ try { return G().visible(); } catch (e) { return []; } }
+function pmOf(c){ var p = proj(c.projectId) || {}; return s(p.pm || p.projectManager || c.pm); }
+function filtered(A, list){
+  var F = A.S.f4 || {}, q = low(A.S.q);
+  return list.filter(function(c){
+    if (F.loss && lossOf(c) !== F.loss) return false;
+    if (F.pm && low(pmOf(c)) !== low(F.pm)) return false;
+    if (F.adj && low(adjOf(c).name) !== low(F.adj)) return false;
+    if (F.age === '7' && daysInStage(c) <= 7) return false;
+    if (F.age === '30' && daysInStage(c) <= 30) return false;
+    if (q) { var p = proj(c.projectId) || {}; if (low([claimTitle(c), c.insured, c.address, canMoney() ? c.carrier : '', c.claimNumber, p.client, p.address, adjOf(c).name].join(' ')).indexOf(q) < 0) return false; }
+    return true;
+  });
+}
+function kpiTile(cls, label, val, sub, key){ return '<div class="ins4-kpi ' + (cls || '') + '"' + (key ? ' data-ins4kpi="' + key + '"' : '') + '><span>' + esc(label) + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>'; }
+function card(c, money_){
+  var k = stageOf(c), L = ledger(c), d = daysInStage(c), chips = [];
+  chips.push('<span class="ins4-chip">' + esc(LOSSN[lossOf(c)]) + '</span>');
+  if (d > 7) chips.push('<span class="ins4-chip bad">' + d + ' d in stage</span>'); else chips.push('<span class="ins4-chip">' + d + ' d</span>');
+  if (money_ && L.hasEstimate) chips.push('<span class="ins4-chip ok">RCV ' + money0(L.rcv) + '</span>');
+  if (money_ && L.mortgageHeld) chips.push('<span class="ins4-chip warn">🏦 ' + money0(L.mortgageHeld) + ' to endorse</span>');
+  if (L.supp.nPending) chips.push('<span class="ins4-chip warn">supp. ' + (money_ ? money0(L.supp.pending) : L.supp.nPending) + '</span>');
+  if ((c.ins4 || {}).waitAdj) chips.push('<span class="ins4-chip warn">⏳ adjuster</span>');
+  var opts = STAGES.map(function(x){ return '<option value="' + x.k + '"' + (x.k === k ? ' selected' : '') + '>' + esc(x.l) + '</option>'; }).join('');
+  var p = proj(c.projectId) || {};
+  return '<div class="ins4-card" draggable="true" data-claim="' + esc(c.id) + '" data-a="ins4open" data-v="' + esc(c.id) + '" style="border-left-color:' + STAGE_COLOR[SK[k].i] + '" tabindex="0">' +
+    '<b>' + esc(claimTitle(c)) + '</b><span class="m">' + esc([s(c.insured || p.client), s(c.address || p.address)].filter(Boolean).join(' · ')) + '</span>' +
+    '<span class="m">' + esc([money_ ? s(c.carrier) : '', s(c.claimNumber) ? '#' + s(c.claimNumber) : '', pmOf(c) ? 'PM ' + pmOf(c) : ''].filter(Boolean).join(' · ')) + '</span>' +
+    '<span>' + chips.join('') + '</span>' +
+    '<label class="m" data-a="noop">Stage <select data-a="ins4stage" data-id="' + esc(c.id) + '" aria-label="Stage of ' + esc(claimTitle(c)) + '">' + opts + '</select></label></div>';
+}
+function pipeInner(list, M){
+  var by = {}; STAGES.forEach(function(x){ by[x.k] = []; }); list.forEach(function(c){ by[stageOf(c)].push(c); });
+  STAGES.forEach(function(x){ by[x.k].sort(function(a, b){ return daysInStage(b) - daysInStage(a) || (s(a.id) < s(b.id) ? -1 : 1); }); });
+  return STAGES.map(function(x){ return '<div class="ins4-col" data-ins4col="' + x.k + '"><div class="ins4-colh"><i style="background:' + STAGE_COLOR[x.i] + '"></i>' + esc(x.l) + '<em>' + by[x.k].length + '</em></div>' + by[x.k].map(function(c){ return card(c, M); }).join('') + '</div>'; }).join('');
+}
+function headBtns(A){
+  var v = pref();
+  return '<button class="gcbb-btn dk sm" data-a="ins4view" data-v="' + (v === 'dash' ? 'phases' : 'dash') + '">' + (v === 'dash' ? '🗂 Phase board' : '📊 Dashboard') + '</button>' +
+    '<button class="gcbb-btn dk sm" data-a="ins4rep">📈 Reports</button>';
+}
+function home(A){
+  if (A.opts && (A.opts.mode === 'mitigation' || A.opts.projectId)) return '';
+  if (pref() !== 'dash') return '';
+  ensureCss(); dragOn(A);
+  var all = visible(), list = filtered(A, all), K = kpis(all), M = canMoney(), F = A.S.f4 = A.S.f4 || {};
+  if (!all.length) return '<div class="ins4"><div class="gcbb-empty"><b>No insurance claims yet.</b><br>Open one with “+ New claim” — or from an insurance job in Projects (its 🛡 Claim tab). The dashboard fills in as claims come in.</div></div>';
+  function dd(v){ return v == null ? '—' : v + ' d'; }
+  var tiles = '<div class="ins4-kpis">' +
+    kpiTile('big', 'Open claims', String(K.open), K.total - K.open ? (K.total - K.open) + ' closed' : '', 'open') +
+    (M ? kpiTile('', '$ Approved (RCV)', money0(K.approvedRcv), K.nApproved + ' claim(s)', 'approved') + kpiTile('', '$ Collected', money0(K.collected), '', 'collected') +
+      kpiTile(K.outstanding ? 'warn' : '', '$ Outstanding', money0(K.outstanding), 'everything below', 'outstanding') : '') +
+    kpiTile('', 'FNOL → approval', dd(K.avgFnolToApproval), 'average days', 'fnol') +
+    kpiTile(K.stuck ? 'bad' : '', 'Stuck > 7 days', String(K.stuck), 'in one stage', 'stuck') + '</div>' +
+    (M ? '<div class="ins4-kpis">' +
+      kpiTile('', 'ACV checks pending', money0(K.acvPending), '', 'acv') + kpiTile('', 'Depreciation to recover', money0(K.depToRecover), '', 'dep') +
+      kpiTile('', 'Supplements pending', money0(K.suppPending), K.nSuppPending + ' open', 'supp') + kpiTile('', 'Deductibles to collect', money0(K.deductible), '', 'ded') +
+      kpiTile(K.nMortgage ? 'warn' : '', 'Mortgage checks waiting', money0(K.mortgage), K.nMortgage + ' check(s)', 'mortgage') + '</div>' : '');
+  var N = needsAll(all);
+  var needHtml = '<div class="ins4-sec" data-ins4="needs"><h3>⚡ Needs action today <span class="ins4-chip ' + (N.length ? 'bad' : 'ok') + '">' + N.length + '</span></h3>' +
+    (N.length ? N.slice(0, 30).map(function(n){ return '<div class="ins4-need" data-need="' + esc(n.kind) + '"><i class="ins4-dot ' + n.prio + '"></i><div class="t"><b>' + esc(n.title) + '</b><span>' + esc(n.text) + '</span></div><button class="ins4-btn" data-a="' + n.act + '" data-v="' + esc(n.v) + '">' + esc(n.btn) + '</button></div>'; }).join('') + (N.length > 30 ? '<div class="ins4-need"><span>+' + (N.length - 30) + ' more</span></div>' : '')
+      : '<div style="color:#166534;font-weight:700;font-size:13px">✓ Nothing waiting. Every claim is on track.</div>') + '</div>';
+  var pms = {}, adjs = {}; all.forEach(function(c){ if (pmOf(c)) pms[pmOf(c)] = 1; if (adjOf(c).name) adjs[adjOf(c).name] = 1; });
+  function sel(k, label, opts){ return '<select data-a="ins4f" data-k="' + k + '" aria-label="' + esc(label) + '"><option value="">' + esc(label) + '</option>' + opts.map(function(o){ return '<option value="' + esc(o[0]) + '"' + (s(F[k]) === s(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>'; }
+  var filters = '<div class="ins4-filters">' + sel('loss', 'Every loss type', LOSS) + sel('pm', 'Every PM', Object.keys(pms).sort().map(function(x){ return [x, x]; })) + sel('adj', 'Every adjuster', Object.keys(adjs).sort().map(function(x){ return [x, x]; })) +
+    sel('age', 'Any age', [['7', 'In stage > 7 days'], ['30', 'In stage > 30 days']]) +
+    '<input class="ins4-in" data-a="q" type="search" placeholder="Search claim #, insured, address, adjuster" value="' + esc(A.S.q) + '" aria-label="Search claims" style="flex:1;min-width:180px"></div>';
+  var pipe = '<div class="ins4-sec"><h3>🧭 Claims pipeline <span class="ins4-chip" data-ins4n="1">' + list.length + '</span><span style="font-weight:400;font-size:12px;color:#64748b">drag a card, or pick its stage</span></h3>' + filters +
+    '<div class="ins4-pipe" aria-label="Claims pipeline">' + pipeInner(list, M) + '</div></div>';
+  return (paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — nothing goes to adjusters or homeowners until it is turned off.</div>' : '') +
+    '<div class="ins4 ins4-dash">' + tiles + needHtml + pipe + '</div>';
+}
+function reportsView(A){
+  ensureCss();
+  var R = reports(visible()), M = canMoney();
+  function dd(v){ return v == null ? '—' : v; }
+  return '<div class="ins4"><div class="ins4-row" style="margin-bottom:10px"><button class="ins4-btn" data-a="board">‹ Back to the dashboard</button></div>' +
+    (M ? '<div class="ins4-sec" data-ins4="carriers"><h3>🏁 Carrier / adjuster turnaround <span class="ins4-chip warn">staff only — never shown to customers</span></h3><table class="ins4-tbl"><thead><tr><th>Carrier</th><th>Claims</th><th>Submitted → approved (avg days)</th><th>Adjuster answers (avg hours)</th></tr></thead><tbody>' +
+      R.carriers.map(function(x){ return '<tr><td>' + esc(x.carrier) + '</td><td>' + x.claims + '</td><td>' + dd(x.avgDays) + '</td><td>' + dd(x.adjHours) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '') +
+    '<div class="ins4-sec" data-ins4="supp"><h3>➕ Supplement win rate</h3><div class="ins4-kpis">' + kpiTile('big', 'Win rate', R.supp.rate == null ? '—' : R.supp.rate + '%', R.supp.won + ' won · ' + R.supp.lost + ' denied', 'winrate') +
+      kpiTile('', 'Supplements', String(R.supp.count), (R.supp.count - R.supp.decided) + ' waiting', '') + (M ? kpiTile('', 'Requested', money0(R.supp.requested), '', '') + kpiTile('', 'Approved', money0(R.supp.approved), '', '') : '') + '</div></div>' +
+    (M ? '<div class="ins4-sec" data-ins4="loss"><h3>💧🔥🌪 Average claim value by loss type</h3><table class="ins4-tbl"><thead><tr><th>Loss type</th><th>Claims with an estimate</th><th>Average RCV</th></tr></thead><tbody>' +
+      R.byLoss.map(function(x){ return '<tr><td>' + esc(x.label) + '</td><td>' + x.claims + '</td><td>' + money0(x.avg) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+    '<div class="ins4-sec" data-ins4="aging"><h3>⏱ Insurance A/R aging <span style="font-weight:400;font-size:12px;color:#64748b">ACV still due + depreciation + deductibles, by days since approval</span></h3><div class="ins4-kpis">' +
+      kpiTile('', '0–30 days', money0(R.aging.a30)) + kpiTile('', '31–60 days', money0(R.aging.a60)) + kpiTile(R.aging.a90 ? 'warn' : '', '61–90 days', money0(R.aging.a90)) + kpiTile(R.aging.a90p ? 'bad' : '', '90+ days', money0(R.aging.a90p)) + kpiTile('big', 'Total', money0(R.aging.total)) + '</div></div>' : '') +
+    (M ? '<div class="ins4-sec" data-ins4="cfg"><h3>⚙ Claim automation</h3><div class="ins4-row">Nudge the adjuster after <input class="ins4-in" type="number" min="1" max="30" style="width:64px" data-ins4cfg="nudgeDays" value="' + cfg().nudgeDays + '"> days · "not answered" after <input class="ins4-in" type="number" min="12" max="240" style="width:64px" data-ins4cfg="waitHours" value="' + cfg().waitHours + '"> hours · supplements after <input class="ins4-in" type="number" min="1" max="60" style="width:64px" data-ins4cfg="suppDays" value="' + cfg().suppDays + '"> days <button class="ins4-btn" data-a="ins4cfgsave">Save</button></div><div style="font-size:12px;color:#64748b">Drafts are only prepared — a person always approves before anything goes out.</div></div>' : '') +
+    '</div>';
+}
+
+/* the claim's 🧭 Summary tab */
+function factsHtml(c){
+  var p = proj(c.projectId) || {}, a = c.adjuster || {}, dk = c.deskAdjuster || {}, M = canMoney(), x = c.ins4 || {};
+  function f(l, v){ return '<div><span>' + esc(l) + '</span>' + (s(v) ? esc(v) : '<i style="color:#94a3b8">—</i>') + '</div>'; }
+  function person(role, o, key){
+    if (!s(o.name) && !s(o.email) && !s(o.phone)) return '';
+    var ph = s(o.phone).replace(/[^\d+]/g, '');
+    return '<div class="ins4-row" data-ins4person="' + key + '"><b>' + esc(role) + ':</b> ' + esc(s(o.name) || '—') + (M && s(o.company) ? ' · ' + esc(o.company) : '') +
+      (ph ? ' <button type="button" class="ins4-btn" data-href="tel:' + esc(ph) + '" data-a="ins4contact" data-v="call|' + key + '">📞 Call</button> <button type="button" class="ins4-btn" data-href="sms:' + esc(ph) + '" data-a="ins4contact" data-v="text|' + key + '">💬 Text</button>' : '') +
+      (s(o.email) ? ' <button type="button" class="ins4-btn" data-href="mailto:' + esc(o.email) + '" data-a="ins4contact" data-v="email|' + key + '">✉️ E-mail</button>' : '') + '</div>';
+  }
+  var k = stageOf(c), opts = STAGES.map(function(y){ return '<option value="' + y.k + '"' + (y.k === k ? ' selected' : '') + '>' + esc(y.l) + '</option>'; }).join('');
+  return '<div class="ins4-sec" data-ins4="facts"><h3>🛡 Claim <span class="ins4-chip" style="background:' + STAGE_COLOR[SK[k].i] + '22;color:' + STAGE_COLOR[SK[k].i] + '">' + esc(SK[k].l) + ' · ' + daysInStage(c) + ' d</span>' +
+    '<label style="margin-left:auto;font-size:12px;font-weight:600">Stage <select data-a="ins4stage" data-id="' + esc(c.id) + '">' + opts + '</select></label></h3>' +
+    '<div class="ins4-facts">' + f('Claim #', c.claimNumber) + f('Policy #', M ? c.policyNumber : (s(c.policyNumber) ? '•••' : '')) + f('Date of loss', md(c.dateOfLoss)) + f('Loss type', LOSSN[lossOf(c)]) + f('Cause', c.causeOfLoss) +
+      (M ? f('Carrier (staff only)', c.carrier) : '') + f('IA firm', M ? s(a.company) : '') + f('Mortgage company', c.mortgageCo) + f('Deductible', M && num(c.deductible) ? money(c.deductible) : (num(c.deductible) ? '•••' : '')) + f('PM', pmOf(c)) + f('Insured', s(c.insured || p.client)) + f('Loss address', s(c.address || p.address)) + '</div>' +
+    '<div style="margin-top:8px">' + person('Field adjuster', a, 'adj') + person('Desk adjuster', dk, 'desk') +
+      '<div class="ins4-row">' + (x.waitAdj ? '<span class="ins4-chip warn">⏳ Waiting on the adjuster since ' + esc(md(x.waitAdj.since)) + '</span><button class="ins4-btn" data-a="ins4wait" data-v="off">✓ The adjuster answered</button>' : '<button class="ins4-btn" data-a="ins4wait" data-v="on">⏳ Waiting on the adjuster</button>') +
+      '<button class="ins4-btn" data-a="ins4draft" data-v="' + esc(c.id) + '|nudge">✉️ Adjuster follow-up</button><button class="ins4-btn" data-a="ins4draft" data-v="' + esc(c.id) + '|home">🏠 Homeowner update</button>' + (lastAdjContact(c) ? '<span style="font-size:12px;color:#64748b">last adjuster contact ' + esc(md(lastAdjContact(c))) + '</span>' : '') + '</div></div></div>';
+}
+function ledgerHtml(c){
+  if (!canMoney()) return '';
+  var L = ledger(c);
+  function row(l, v, cls){ return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + l + '</td><td>' + v + '</td></tr>'; }
+  var supps = L.supplements.map(function(x){ var st = s(x.status) || 'draft', opts = ['review', 'prepared', 'sent', 'approved', 'partial', 'denied'].map(function(o){ return '<option' + (o === st ? ' selected' : '') + '>' + o + '</option>'; }).join('');
+    return '<tr><td>' + esc(md(x.at)) + ' · ' + arr(x.items).length + ' item(s)' + (x.ins4 ? '' : '') + '</td><td>' + money(x.total != null ? x.total : x.amount) + '</td><td><select data-a="ins4suppst" data-id="' + esc(x.id) + '">' + opts + '</select></td><td>' + (/review|draft/.test(st) || !st ? '<button class="ins4-btn" data-a="ins4suppsend" data-v="' + esc(x.id) + '">📋 Send for approval</button>' : '') + '</td></tr>'; }).join('');
+  var pays = L.payments.map(function(p){ return '<tr><td>' + esc(md(p.at || p.date)) + '</td><td>' + esc(s(p.kind) || '—') + '</td><td>' + esc(s(p.from)) + (s(p.payer) ? ' · ' + esc(p.payer) : '') + (s(p.checkNo) ? ' · #' + esc(p.checkNo) : '') + '</td><td>' + money(p.amount) + '</td><td>' +
+    '<select data-a="ins4paystat" data-id="' + esc(p.id) + '">' + ['received', 'held for endorsement', 'endorsed', 'deposited'].concat(/^(received|held for endorsement|endorsed|deposited)$/.test(s(p.status)) ? [] : [s(p.status)]).filter(Boolean).map(function(o){ return '<option' + (o === s(p.status) ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></td></tr>'; }).join('');
+  return '<div class="ins4-sec" data-ins4="ledger"><h3>💵 Money ledger</h3>' +
+    (L.hasEstimate ? '' : '<div class="ins4-warnbar" style="background:#eef2ff;border-color:#c7d2fe;color:#3730a3">No carrier estimate yet — import it in 📐 Xactimate to fill RCV / ACV / depreciation.</div>') +
+    '<table class="ins4-led" style="width:100%;border-collapse:collapse">' +
+      row('RCV (replacement cost)', money(L.rcv)) + row('&nbsp;&nbsp;incl. O&amp;P', money(L.op)) + row('− Recoverable depreciation', money(L.recDep)) + row('− Non-recoverable depreciation', money(L.nonRecDep)) +
+      row('= ACV', money(L.acv), 'tot') + row('− Deductible (homeowner pays)', money(L.deductible)) + row('= First (ACV) check', money(L.firstCheck), 'tot') +
+      row('Supplements requested · approved · pending', money(L.supp.requested) + ' · ' + money(L.supp.approved) + ' · ' + money(L.supp.pending)) +
+      row('Paid by the carrier', money(L.paidCarrier)) + row('Paid by the homeowner', money(L.paidOwner)) +
+      row('Depreciation released · still to recover', money(L.depReleased) + ' · ' + money(L.depOutstanding)) +
+      row('Checks waiting on the mortgage company', money(L.mortgageHeld)) +
+      row('<b>Carrier still owes</b>', '<b data-ins4="carrierOwes">' + money(L.carrierOwes) + '</b>', 'tot') + row('<b>Homeowner still owes</b>', '<b data-ins4="ownerOwes">' + money(L.ownerOwes) + '</b>', 'tot') +
+    '</table>' +
+    '<h3 style="margin-top:12px">Checks & payments</h3>' + (pays ? '<table class="ins4-tbl"><thead><tr><th>Date</th><th>Kind</th><th>From · check</th><th>Amount</th><th>Status</th></tr></thead><tbody>' + pays + '</tbody></table>' : '<div style="font-size:13px;color:#64748b">No checks recorded yet.</div>') +
+    '<div class="ins4-row ins4-payform" style="margin-top:8px"><input class="ins4-in" name="i4amt" inputmode="decimal" placeholder="Amount" style="width:110px"><select class="ins4-in" name="i4kind"><option>ACV</option><option>depreciation</option><option>supplement</option><option>deductible</option><option>other</option></select>' +
+      '<select class="ins4-in" name="i4from"><option value="carrier">carrier</option><option value="mortgage">mortgage co.</option><option value="owner">homeowner</option></select><input class="ins4-in" name="i4check" placeholder="Check #" style="width:90px"><input class="ins4-in" name="i4payer" placeholder="Payable to / payer" style="width:150px">' +
+      '<select class="ins4-in" name="i4stat"><option>received</option><option>held for endorsement</option><option>endorsed</option><option>deposited</option></select><input class="ins4-in" name="i4date" type="date" value="' + today() + '"><button class="ins4-btn pri" data-a="ins4pay">+ Record check</button></div>' +
+    (supps ? '<h3 style="margin-top:12px">Supplements</h3><table class="ins4-tbl"><thead><tr><th>Made</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>' + supps + '</tbody></table>' : '') + '</div>';
+}
+function docsHtml(c){
+  var Dd = docs(c), pct = Dd.total ? Math.round(Dd.done / Dd.total * 100) : 0;
+  return '<div class="ins4-sec" data-ins4="docs"><h3>📋 Documentation <span class="ins4-chip ' + (pct === 100 ? 'ok' : Dd.missing.length ? 'warn' : '') + '">' + Dd.done + ' / ' + Dd.total + '</span></h3><div class="ins4-bar"><i style="width:' + pct + '%"></i></div>' +
+    Dd.items.map(function(it){ return '<div class="ins4-doc" data-doc="' + it.k + '"><span class="ck">' + (it.done ? '✅' : it.need ? '⬜' : '◻️') + '</span><span class="l">' + esc(it.l) + (it.note ? ' <small style="color:#64748b">· ' + esc(it.note) + '</small>' : '') + (!it.need && !it.done ? ' <small style="color:#94a3b8">· later</small>' : '') + '</span>' +
+      (it.done ? '' : '<button class="ins4-btn" data-a="ins4tab" data-v="' + esc(c.id) + '|' + it.tab + '">' + (it.k === 'auth' ? 'Make / upload' : 'Open') + '</button>') + '</div>'; }).join('') + '</div>';
+}
+function timelineHtml(c){
+  var T = timeline(c);
+  return '<div class="ins4-sec" data-ins4="timeline"><h3>🕑 Timeline <span class="ins4-chip">' + T.length + '</span></h3>' +
+    '<div class="ins4-row"><input class="ins4-in" name="i4note" placeholder="Add a note to the claim (staff only)…" style="flex:1"><button class="ins4-btn" data-a="ins4note">Add</button></div>' +
+    '<div class="ins4-tl">' + T.slice(0, 60).map(function(e){ return '<div><em>' + esc(md(e.at)) + '</em><span>' + esc(e.ic) + '</span><span style="flex:1">' + esc(e.text) + (e.by ? ' <small style="color:#94a3b8">— ' + esc(e.by) + '</small>' : '') + '</span></div>'; }).join('') + '</div></div>';
+}
+function suppBuilderHtml(c){
+  if (!canMoney() && !/^(Project Manager)$/.test(effRole())) return '';
+  var dft = suppDraft(c.id), S = suggestions(c), total = r2(dft.items.reduce(function(t, x){ return t + num(x.amount); }, 0));
+  var rows = dft.items.map(function(x, i){ return '<tr data-i4row="' + i + '"><td><input class="ins4-in" data-i4s="room" data-i="' + i + '" value="' + esc(x.room) + '" style="width:90px"></td><td><input class="ins4-in" data-i4s="desc" data-i="' + i + '" value="' + esc(x.desc) + '" style="width:100%"></td><td><input class="ins4-in" data-i4s="qty" data-i="' + i + '" value="' + esc(x.qty) + '" style="width:60px"> <input class="ins4-in" data-i4s="unit" data-i="' + i + '" value="' + esc(x.unit) + '" style="width:44px"></td><td><input class="ins4-in" data-i4s="amount" data-i="' + i + '" value="' + esc(x.amount) + '" inputmode="decimal" style="width:90px"></td><td><input class="ins4-in" data-i4s="photo" data-i="' + i + '" value="' + esc(x.photo) + '" placeholder="photo #" style="width:80px"></td><td><button class="ins4-btn" data-a="ins4srm" data-v="' + i + '" aria-label="Remove">✕</button></td></tr>'; }).join('');
+  return '<div class="ins4-sec" data-ins4="supp"><h3>➕ Supplement builder</h3>' +
+    (S.ready ? '<div style="font-size:12.5px;color:#475569;margin-bottom:6px">⚖ Carrier vs ours by category: ' + (S.cats.length ? S.cats.slice(0, 8).map(function(x){ return '<span class="ins4-chip ' + (x.diff > 0 ? 'warn' : 'ok') + '">' + esc(x.cat) + ' ' + (x.diff > 0 ? '+' : '') + money0(x.diff) + '</span>'; }).join('') : 'no differences') +
+      (S.items.length ? ' <button class="ins4-btn gold" data-a="ins4ssug">✨ Add ' + S.items.length + ' suggested line(s)</button>' : '') + '</div>' : '<div style="font-size:12.5px;color:#64748b;margin-bottom:6px">' + esc(S.why) + '</div>') +
+    '<table class="ins4-tbl"><thead><tr><th>Room</th><th>Item (missed / added)</th><th>Qty</th><th>Amount</th><th>Photo</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="ins4-row"><button class="ins4-btn" data-a="ins4sadd">+ Line</button><b style="margin-left:auto">Total ' + money(total) + '</b><button class="ins4-btn pri" data-a="ins4ssave"' + (dft.items.length ? '' : ' disabled') + '>📄 Make the supplement letter</button></div>' +
+    '<div style="font-size:12px;color:#64748b">The letter has the GrayCo letterhead and the office phone. It is saved on the claim; “Send for approval” (in the ledger) sends it to the adjuster only after the PM and an owner approve.</div></div>';
+}
+function summaryTab(A, c){
+  ensureCss();
+  return '<div class="ins4">' + (paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — nothing goes to adjusters or homeowners.</div>' : '') +
+    factsHtml(c) + '<div class="ins4-grid">' + ledgerHtml(c) + docsHtml(c) + '</div>' + suppBuilderHtml(c) + timelineHtml(c) + '</div>';
+}
+
+/* ── drafts dialog ── */
+function modal(html, wire){
+  var ov = D.createElement('div'); ov.className = 'ins4-modal'; ov.setAttribute('data-gc-keep', '1'); ov.innerHTML = '<div role="dialog" aria-modal="true">' + html + '</div>';
+  ov.addEventListener('click', function(ev){ if (ev.target === ov || (ev.target.closest && ev.target.closest('[data-i4close]'))) ov.remove(); });
+  D.body.appendChild(ov); try { wire(ov); } catch (e) { warn(e); } return ov;
+}
+function toastA(A, msg){ try { A.toast(msg, 3200); } catch (e) {} }
+function openDraft(A, id, kind){
+  var c = G().get(id); if (!c) return;
+  ensureCss();
+  if (kind === 'home') {
+    var H = homeownerUpdate(c), p = proj(c.projectId) || {};
+    return modal('<h3 style="margin:0 0 6px">🏠 Homeowner update — ' + esc(claimTitle(c)) + '</h3><div style="font-size:12.5px;color:#475569;margin-bottom:8px">To ' + esc(s(p.clientEmail) || 'the customer’s e-mail on the job') + '. It goes to ✅ Approvals (the PM, then an admin) — nothing is sent from here. The insurance company’s name is never in it.</div>' +
+      (paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — it can’t be queued now.</div>' : '') +
+      '<label style="font-size:12px;font-weight:700">Subject<input class="ins4-in" data-i4m="subject" value="' + esc(H.subject) + '"></label><label style="font-size:12px;font-weight:700">Message<textarea data-i4m="text">' + esc(H.text) + '</textarea></label>' +
+      '<div class="ins4-row" style="justify-content:flex-end"><button class="ins4-btn" data-i4close="1">Close</button><button class="ins4-btn pri" data-i4go="1">Send for approval</button></div>', function(ov){
+      ov.querySelector('[data-i4go]').onclick = function(){
+        var subj = ov.querySelector('[data-i4m="subject"]').value, txt = ov.querySelector('[data-i4m="text"]').value;
+        var H2 = homeownerUpdate(c); /* re-scrub what the person typed */
+        [s(c.carrier), s((c.adjuster || {}).company), s(c.policyNumber)].filter(function(w){ return w.length > 2; }).forEach(function(w){ txt = txt.split(w).join('your insurance company'); subj = subj.split(w).join('your insurance company'); });
+        queueHomeowner(c, { subject: subj, html: '<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#0f172a">' + esc(txt).replace(/\n/g, '<br>') + '</div>' }).then(function(){ ov.remove(); toastA(A, '✓ In ✅ Approvals — the PM, then an admin'); }, function(e){ toastA(A, s(e && e.message)); });
+      };
+    });
+  }
+  var N = nudgeText(c, kind === 'dep' ? 'dep' : 'nudge');
+  return modal('<h3 style="margin:0 0 6px">✉️ ' + (kind === 'dep' ? 'Depreciation follow-up' : 'Adjuster follow-up') + ' — ' + esc(claimTitle(c)) + '</h3><div style="font-size:12.5px;color:#475569;margin-bottom:8px">A draft. “Send for approval” puts it on the claim’s 📋 Approvals (the PM, then an owner); nothing goes out until then.</div>' +
+    (paused() ? '<div class="ins4-warnbar">⏸ Data-entry mode is on — it can’t be queued now.</div>' : '') +
+    '<label style="font-size:12px;font-weight:700">To<input class="ins4-in" data-i4m="to" value="' + esc(N.to) + '"></label><label style="font-size:12px;font-weight:700">Subject<input class="ins4-in" data-i4m="subject" value="' + esc(N.subject) + '"></label><label style="font-size:12px;font-weight:700">Message<textarea data-i4m="body">' + esc(N.body) + '</textarea></label>' +
+    '<div class="ins4-row" style="justify-content:flex-end"><button class="ins4-btn" data-i4close="1">Close</button><button class="ins4-btn pri" data-i4go="1">Send for approval</button></div>', function(ov){
+    ov.querySelector('[data-i4go]').onclick = function(){
+      var o = { to: ov.querySelector('[data-i4m="to"]').value, subject: ov.querySelector('[data-i4m="subject"]').value, body: ov.querySelector('[data-i4m="body"]').value };
+      queueNudge(c, kind, o).then(function(r){ ov.remove(); toastA(A, r && r.via === 'outbox' ? '✓ Draft in the Outbox' : '✓ Waiting for approval'); }, function(e){ toastA(A, s(e && e.message)); });
+    };
+  });
+}
+
+/* ── actions (patch BB's EXT_ACT) ── */
+function goTab(A, id, tab){ A.S.screen = 'claim'; A.S.claimId = id; A.S.easy = false; A.S.tab = tab || 'cc'; try { A.root.scrollTop = 0; } catch (e) {} return A.render(true); }
+function wireActions(){
+  var X = G() && G().ext && G().ext.EXT_ACT; if (!X || X.ins4open) return !!X;
+  X.ins4open = function(A, v){ return goTab(A, v, 'cc'); };
+  X.ins4tab = function(A, v){ var p = s(v).split('|'); return goTab(A, p[0], p[1] || 'cc'); };
+  X.ins4view = function(A, v){ setPref(v === 'phases' ? 'phases' : 'dash'); A.S.screen = 'board'; return A.render(true); };
+  X.ins4rep = function(A){ A.S.screen = 'ins4rep'; return A.render(true); };
+  X.ins4f = function(A, v, t){ A.S.f4 = A.S.f4 || {}; A.S.f4[t.getAttribute('data-k')] = v; return A.render(true); };
+  X.ins4stage = function(A, v, t, ev){ if (ev) ev.stopPropagation(); var id = t.getAttribute('data-id'); return moveStage(id, v).then(function(){ toastA(A, 'Moved to ' + SK[v].l); }, function(e){ A.fail(e); }); };
+  X.ins4contact = function(A, v, t, ev, c){
+    var p = s(v).split('|'), o = (p[1] === 'desk' ? c.deskAdjuster : c.adjuster) || {}, who = s(o.name) || (p[1] === 'desk' ? 'the desk adjuster' : 'the adjuster'), href = t && t.getAttribute('data-href');
+    try {
+      if (p[0] === 'email' && typeof W._gcCompose === 'function') W._gcCompose({ to: s(o.email), subject: (s(c.claimNumber) ? 'Claim #' + s(c.claimNumber) + ' — ' : '') + (s(c.insured) || claimTitle(c)), pid: s(c.projectId), projectId: s(c.projectId) });   /* the CRM's compose: logged on the job */
+      else if (href) W.open(href, '_self');
+    } catch (e) { warn(e); }
+    return contactLog(c.id, p[0], who).then(function(){ toastA(A, 'Logged on the claim'); });
+  };
+  X.ins4wait = function(A, v, t, ev, c){ return setWaiting(c.id, v === 'on').then(function(){ toastA(A, v === 'on' ? 'Marked: waiting on the adjuster' : 'Logged: the adjuster answered'); }); };
+  X.ins4draft = function(A, v){ var p = s(v).split('|'); return openDraft(A, p[0], p[1]); };
+  X.ins4paystat = function(A, v, t, ev, c){
+    if (t.tagName === 'SELECT') return payStatus(c.id, t.getAttribute('data-id'), v);
+    var p = s(v).split('|'); return payStatus(p[0], p[1], p[2] || 'endorsed').then(function(){ toastA(A, 'Check marked ' + (p[2] || 'endorsed')); });
+  };
+  X.ins4pay = function(A, v, t, ev, c){ var q = function(n){ var el = A.root.querySelector('.ins4-payform [name="' + n + '"]'); return el ? el.value : ''; };
+    return addPayment(c.id, { amount: q('i4amt'), kind: q('i4kind'), from: q('i4from'), checkNo: q('i4check'), payer: q('i4payer'), status: q('i4stat'), date: q('i4date') }).then(function(){ toastA(A, 'Check recorded'); }, function(e){ A.fail(e); }); };
+  X.ins4suppst = function(A, v, t, ev, c){ var ap = null; if (v === 'partial') { var x = W.prompt('Approved amount?', ''); if (x == null) return A.render(true); ap = num(x); } return suppStatus(c.id, t.getAttribute('data-id'), v, ap); };
+  X.ins4suppsend = function(A, v, t, ev, c){ return sendSupplement(c, v).then(function(){ toastA(A, 'Waiting for approval (PM, then owner)'); }, function(e){ A.fail(e); }); };
+  X.ins4note = function(A, v, t, ev, c){ var el = A.root.querySelector('[name="i4note"]'), tx = el ? s(el.value) : ''; if (!tx) return; return G().note(c.id, tx, { internal: true }).then(function(){ toastA(A, 'Note added'); }); };
+  X.ins4sadd = function(A, v, t, ev, c){ suppDraft(c.id).items.push({ room: '', desc: '', qty: '', unit: '', amount: '', photo: '' }); return A.render(true); };
+  X.ins4srm = function(A, v, t, ev, c){ suppDraft(c.id).items.splice(num(v), 1); return A.render(true); };
+  X.ins4ssug = function(A, v, t, ev, c){ var S = suggestions(c), d = suppDraft(c.id); S.items.forEach(function(x){ if (!d.items.some(function(y){ return low(y.desc) === low(x.desc) && low(y.room) === low(x.room); })) d.items.push({ room: x.room, desc: x.desc, qty: x.qty, unit: x.unit, amount: x.amount, reason: x.reason, photo: '' }); }); return A.render(true); };
+  X.ins4ssave = function(A, v, t, ev, c){ A.busy('Making the supplement letter…'); return saveSupplement(c).then(function(){ A.busy(''); toastA(A, '✓ Supplement letter saved on the claim'); }, function(e){ A.fail(e); }); };
+  X.ins4cfgsave = function(A){ var o = {}; Array.prototype.forEach.call(A.root.querySelectorAll('[data-ins4cfg]'), function(el){ o[el.getAttribute('data-ins4cfg')] = num(el.value); }); var st = G().settings(); st.ins4 = Object.assign({}, st.ins4 || {}, o); return G().saveSettings(st).then(function(){ toastA(A, 'Saved'); }); };
+  X.noop = X.noop || function(){};
+  return true;
+}
+/* the supplement builder's inputs (kept on this screen) */
+D.addEventListener('input', function(ev){
+  var t = ev.target, f = t && t.getAttribute && t.getAttribute('data-i4s'); if (!f) return;
+  var root = t.closest('[data-gcbb]'); if (!root) return;
+  var id = null; try { var apps = G()._test.apps(); for (var i = 0; i < apps.length; i++) if (apps[i].root === root) { var cc = apps[i].cur(); id = cc && cc.id; } } catch (e) {}
+  if (!id) return;
+  var row = suppDraft(id).items[num(t.getAttribute('data-i'))]; if (row) row[f] = t.value;
+}, true);
+/* the search box filters the pipeline as you type (patch BB sets A.S.q first) */
+D.addEventListener('input', function(ev){
+  var t = ev.target; if (!t || !t.getAttribute || t.getAttribute('data-a') !== 'q') return;
+  var root = t.closest('[data-gcbb]'), pipe = root && root.querySelector('.ins4-pipe'); if (!pipe) return;
+  var A = null; try { G()._test.apps().forEach(function(a){ if (a.root === root) A = a; }); } catch (e) {}
+  if (!A) return; A.S.q = t.value;
+  var list = filtered(A, visible()); pipe.innerHTML = pipeInner(list, canMoney());
+  var n = root.querySelector('[data-ins4n]'); if (n) n.textContent = String(list.length);
+});
+/* drag a card to a stage column */
+function dragOn(A){
+  if (A.__ins4drag) return; A.__ins4drag = true;
+  var r = A.root;
+  r.addEventListener('dragover', function(ev){ var col = ev.target.closest && ev.target.closest('[data-ins4col]'); if (col) { ev.preventDefault(); col.classList.add('over'); } });
+  r.addEventListener('dragleave', function(ev){ var col = ev.target.closest && ev.target.closest('[data-ins4col]'); if (col) col.classList.remove('over'); });
+  r.addEventListener('drop', function(ev){ var col = ev.target.closest && ev.target.closest('[data-ins4col]'); if (!col) return; ev.preventDefault(); col.classList.remove('over'); var id = ev.dataTransfer.getData('text/plain'), k = col.getAttribute('data-ins4col'); if (id && SK[k]) moveStage(id, k).then(function(){ toastA(A, 'Moved to ' + SK[k].l); }); });
+}
+
+/* ══ TO-DO (patch TD2 reads window._gcTodoExt): one line per claim that needs its stage's step ═══════ */
+function holderName(){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder && W._gcLeadRoles.holder('insurance'); return h ? s(h.name) : ''; } catch (e) { return ''; } }
+function todoItems(){
+  if (!G() || !G().visible) return [];
+  var out = [], hold = holderName();
+  visible().forEach(function(c){
+    var k = stageOf(c), st = SK[k]; if (k === 'closed' || !st.todo) return;
+    var since = stageSince(c), due = ymd(new Date((Date.parse(since) || Date.now()) + st.days * 864e5).toISOString());
+    var n = needs(c), pm = pmOf(c), who = [pm, hold].filter(Boolean);
+    var late = due < today();
+    if (!late && !n.some(function(x){ return x.prio === 'high'; })) return;          /* only what is due or urgent — not every open claim */
+    var top = n.filter(function(x){ return x.prio === 'high'; })[0];
+    out.push({ key: 'ins4:' + c.id + ':' + k, thing: 'ins4|' + c.id, cat: 'jobs', prio: late || top ? 'high' : 'med', pid: s(c.projectId), due: due,
+      title: '🛡 ' + claimTitle(c) + ' — ' + (top ? top.text : st.todo), sub: st.l + ' · ' + daysInStage(c) + ' day(s) in this stage', who: who, vis: who.length ? 'who' : 'company',
+      act: { l: '🛡 Open claim', f: function(){ try { var A = G().open({ claimId: c.id }); if (A && A.S) goTab(A, c.id, 'cc'); } catch (e) { warn(e); } } } });
+  });
+  return out;
+}
+W._gcTodoExt = arr(W._gcTodoExt); W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
+
+/* ══ HOOK UP ═════════════════════════════════════════════════════════════════════════════════════════ */
+function hook(){
+  var g = G(); if (!g || !g.ext || !g.ext.P2TABS) return false;
+  if (!g.ext.P2TABS.cc) g.ext.P2TABS.cc = summaryTab;
+  return wireActions();
+}
+var hooked = false;
+(function tryHook(n){ if (hook()) { hooked = true; return; } if (n < 200) later(function(){ tryHook(n + 1); }, 300); })(0);
+
+W._gcIns4 = {
+  home: function(A){ try { return home(A); } catch (e) { warn(e); return ''; } },
+  reports: function(A){ try { return reportsView(A); } catch (e) { warn(e); return '<div class="gcbb-err">' + esc(e && e.message) + '</div>'; } },
+  headBtns: function(A){ try { return headBtns(A); } catch (e) { return ''; } },
+  open: function(id, tab){ var A = G().open({ claimId: id }); if (A && A.S) goTab(A, id, tab || 'cc'); return A; },
+  moveStage: moveStage, setWaiting: setWaiting, contact: contactLog, addPayment: addPayment, payStatus: payStatus, suppStatus: suppStatus,
+  saveSupplement: saveSupplement, sendSupplement: sendSupplement, queueNudge: queueNudge, queueHomeowner: queueHomeowner, draft: suppDraft,
+  core: { STAGES: STAGES, stageOf: stageOf, derivedStage: derivedStage, kpis: kpis, needs: needs, needsAll: needsAll, ledger: ledger, docs: docs, timeline: timeline, reports: reports,
+    nudgeText: nudgeText, homeownerUpdate: homeownerUpdate, suggestions: suggestions, lossOf: lossOf, daysInStage: daysInStage, canMoney: canMoney, todoItems: todoItems },
+  status: function(){ return { hooked: hooked, pref: pref(), claims: visible().length, paused: paused() }; }
+};
+try { console.log('[GC] 🛡 Insurance claims command center (patch INS4) — _gcIns4.status()'); } catch (e) {}
+})();
+
 </script>
