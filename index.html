@@ -165861,3 +165861,201 @@ W._gcDocLib = { builtins: builtins, render: render, seed: seed, open: preview, e
 try { console.log('[GC] 📚 Built-in document library (patch DOCLIB): ' + L.length + ' documents — _gcDocLib'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-doclib2">
+/* __GC_PATCH_DOCLIB2__ — each job's own document set (owner 10/23: "make sure PM can select which documents they
+   want — some are default, some are by customer").
+     • 📋 Documents for this Job is a checklist of EVERY document; the job's set is ticked. A job with no saved set
+       starts from: the job-type defaults (Admin: 📚 Company Documents → ⚙ Defaults) ∪ that customer's / GC's
+       defaults (👤 customer profile → 📄 "Documents this customer always gets") ∪ the required ones.
+     • the PM (admin, office) ticks / unticks and saves → the job's docSet { ids, src: { id: default|customer|pm|required },
+       at, by }, synced like any edit of the job (_gcxPatchJob). A REQUIRED document cannot be unticked by a PM; an
+       admin can. Each tick shows where it came from: default · customer · added by PM · required.
+     • gc_kv gc_doc_defaults { types: { residential, commercial, insurance }, required } (admins write);
+       gc_kv gc_doc_customer_defaults { map: { <customer / GC name, normalized>: { name, ids } } }.
+   API: window._gcDocSet = { forJob(pid) → Promise<{ ids, src, saved }>, save(pid, ids), defaults(), customerDefaults(name),
+        setDefaults(obj), setCustomer(name, ids), openDefaults(), openCustomer(name) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_DOCLIB2__) return; window.__GC_PATCH_DOCLIB2__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var DEF = 'gc_doc_defaults', CUST = 'gc_doc_customer_defaults';
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function isObj(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+function me(){ try { return JSON.parse(localStorage.getItem('grayco_user') || '{}') || {}; } catch (e) { return {}; } }
+function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = me(); return /admin|owner/i.test(s(u.role)) || s(u.payType).toLowerCase() === 'owner'; }
+function sb(k){ try { return Promise.resolve(W._ehSb ? W._ehSb(k) : null).then(function(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }); } catch (e) { return Promise.resolve(null); } }
+function put(k, v){ try { var f = W._supaUpsertNow || W._supaUpsert; return Promise.resolve(f ? f(k, v) : null); } catch (e) { return Promise.resolve(null); } }
+function toast(m, bad){ try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000020;background:' + (bad ? '#7f1d1d' : '#0f1d2f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,Arial,sans-serif;max-width:90vw'; D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {} }
+function norm(n){ return s(n).toLowerCase().replace(/&/g, ' and ').replace(/[.,'"()]/g, ' ').replace(/\b(inc|llc|l l c|co|corp|corporation|company|ltd)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function job(pid){ return (((W._crm || {}).projects) || []).filter(function(x){ return x && String(x.id) === String(pid); })[0] || null; }
+function typeOf(pj){ return W._jobTypeKey ? W._jobTypeKey(pj && pj.type) : 'residential'; }
+function namesOf(pj){ var o = []; [pj && (pj.client || pj.customer || pj.customerName || pj.clientName), pj && (pj.gc || pj.gcName || pj.generalContractor)].forEach(function(n){ n = s(n); if (n && o.indexOf(n) < 0) o.push(n); }); return o; }
+
+/* the starting defaults until an admin sets them */
+var BASE = {
+  residential: ['contract', 'scope', 'change_order', 'selections', 'site_policy', 'payment_terms', 'walkthrough', 'completion', 'warranty'],
+  commercial: ['contract', 'scope', 'change_order', 'sov', 'coi_request', 'lien_cond_progress', 'lien_cond_final', 'payment_terms', 'walkthrough', 'completion', 'warranty'],
+  insurance: ['work_auth', 'direction_to_pay', 'mitigation', 'mold', 'drying_log', 'scope', 'change_order', 'payment_terms', 'satisfaction', 'completion', 'warranty']
+};
+function baseDefaults(){ var t = {}; Object.keys(BASE).forEach(function(k){ t[k] = BASE[k].map(function(x){ return 'gcb_' + x; }); }); return { types: t, required: [] }; }
+function defaults(){ return sb(DEF).then(function(v){ var b = baseDefaults(); if (!isObj(v) || !isObj(v.types)) return b; var t = {}; Object.keys(b.types).forEach(function(k){ t[k] = Array.isArray(v.types[k]) ? v.types[k].slice() : b.types[k]; }); return { types: t, required: arr(v.required).slice(), at: v.at, by: v.by }; }); }
+function custMap(){ return sb(CUST).then(function(v){ return isObj(v) && isObj(v.map) ? v.map : {}; }); }
+function customerDefaults(name){ return custMap().then(function(m){ var e = m[norm(name)]; return e ? arr(e.ids).slice() : []; }); }
+
+/* the job's set: saved, or proposed (type ∪ customer ∪ required) */
+function forJob(pid){
+  var pj = job(pid);
+  return Promise.all([defaults(), custMap()]).then(function(a){
+    var df = a[0], cm = a[1], req = df.required, src = {}, ids = [];
+    function add(id, why){ if (ids.indexOf(id) < 0) ids.push(id); if (!src[id] || why === 'required') src[id] = why; }
+    var saved = pj && isObj(pj.docSet) && Array.isArray(pj.docSet.ids);
+    if (saved) { pj.docSet.ids.forEach(function(id){ add(id, (pj.docSet.src || {})[id] || 'pm'); }); }
+    else {
+      arr(df.types[typeOf(pj)]).forEach(function(id){ add(id, 'default'); });
+      namesOf(pj).forEach(function(n){ var e = cm[norm(n)]; if (e) arr(e.ids).forEach(function(id){ add(id, 'customer'); }); });
+    }
+    var waived = saved ? arr(pj.docSet.waived) : [];   /* an admin took a required one off this job */
+    req.forEach(function(id){ if (waived.indexOf(id) < 0) add(id, 'required'); });
+    return { ids: ids, src: src, saved: !!saved, required: req.slice(), waived: waived.slice(), type: typeOf(pj) };
+  });
+}
+function save(pid, ids){
+  var pj = job(pid); if (!pj) return Promise.resolve({ ok: false, error: 'job not found' });
+  return forJob(pid).then(function(cur){
+    var admin = isAdmin(), out = [], src = {};
+    var prop = cur;   /* where each tick came from */
+    ids.forEach(function(id){ if (out.indexOf(id) < 0) { out.push(id); src[id] = prop.src[id] && prop.ids.indexOf(id) >= 0 ? prop.src[id] : 'pm'; } });
+    if (!admin) cur.required.forEach(function(id){ if (out.indexOf(id) < 0) { out.push(id); src[id] = 'required'; } });   /* a PM cannot drop a required one */
+    var waived = admin ? cur.required.filter(function(id){ return out.indexOf(id) < 0; }) : arr(cur.waived).filter(function(id){ return out.indexOf(id) < 0; });
+    var docSet = { ids: out, src: src, waived: waived, at: new Date().toISOString(), by: s(me().name || me().email) };
+    var fn = W._gcxPatchJob;
+    var p = fn ? Promise.resolve(fn(pid, { docSet: docSet }, 'document set')) : Promise.resolve(false);
+    return p.then(function(ok){
+      if (!ok) { try { pj.docSet = docSet; } catch (e) {} }
+      return { ok: true, docSet: docSet, synced: !!ok };
+    });
+  });
+}
+
+/* ── 📋 Documents for this Job: every document, the job's set ticked, where each came from ── */
+var BADGE = { 'default': ['default', '#475569', '#f1f5f9'], customer: ['customer', '#1d4ed8', '#eff6ff'], pm: ['added by PM', '#7c3aed', '#f5f3ff'], required: ['required', '#b91c1c', '#fef2f2'] };
+function badge(k){ var b = BADGE[k]; return b ? '<span data-src="' + k + '" style="font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:999px;color:' + b[1] + ';background:' + b[2] + ';margin-left:6px">' + b[0] + '</span>' : ''; }
+function btn(label, act, id, primary){ return '<button type="button" data-dl-act="' + act + '" data-dl-id="' + esc(id) + '" style="padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;' + (primary ? 'background:#0f1d2f;color:#fff;border:none' : 'background:#fff;color:#1e3a5f;border:1px solid #cbd5e1') + '">' + label + '</button>'; }
+var lib = W._gcDocLib || {};
+function isBuiltin(id){ try { return (lib.builtins ? lib.builtins() : []).some(function(t){ return t.id === id; }); } catch (e) { return false; } }
+W._jobDocPack = function(pid){
+  if (!pid) { alert('Open a job first.'); return; }
+  var pj = job(pid) || { id: pid, name: '', type: '' }, key = typeOf(pj);
+  var ov = D.getElementById('_jdpOv');
+  if (!ov) { ov = D.createElement('div'); ov.id = '_jdpOv'; ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000008;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;padding:16px'; ov.onclick = function(e){ if (e.target === ov) ov.remove(); }; D.body.appendChild(ov); }
+  var lab = (W._jdpLabel || {})[key] || key;
+  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:680px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)"><div style="background:#0f1d2f;color:#fff;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:1"><div><div style="font-weight:800;font-size:15px">📋 Documents for this Job</div><div style="font-size:11px;color:#9bb3d1">' + esc(pj.name || pid) + ' · <b style="color:#c4a469">' + esc(lab) + '</b>' + (namesOf(pj).length ? ' · ' + esc(namesOf(pj).join(' / ')) : '') + '</div></div><button type="button" onclick="document.getElementById(\'_jdpOv\').remove()" style="background:none;border:none;color:#9bb3d1;font-size:20px;cursor:pointer">✕</button></div><div id="_jdpBody" style="padding:16px 18px"><div style="color:#6b8ab5">Loading…</div></div></div>';
+  W._jdpPid = pid; W._jdpKey = key;
+  try { if (lib.seed) lib.seed(); } catch (e) {}
+  Promise.all([W._fetchDocIndex(), forJob(pid)]).then(function(a){
+    var idx = a[0] || [], set = a[1], admin = isAdmin();
+    var b = D.getElementById('_jdpBody'); if (!b) return;
+    var hh = '<div style="font-size:12.5px;color:#334;line-height:1.6;margin-bottom:8px">Tick the papers <b>this job</b> uses, then <b>💾 Save this job\'s set</b>. ' + (set.saved ? 'This job has its own saved set.' : 'Started from the <b>' + esc(lab) + '</b> defaults' + (namesOf(pj).length ? ' and this customer\'s documents' : '') + '.') + ' <span style="color:#64748b">👁 preview · 🖨 print · 💾 save to Files &amp; Docs · 📧 send (waits in ✅ Approvals)</span></div>';
+    var groups = {}, order = [];
+    idx.slice().sort(function(x, y){ var a1 = set.ids.indexOf(x.id) >= 0 ? 0 : 1, b1 = set.ids.indexOf(y.id) >= 0 ? 0 : 1; return a1 - b1; }).forEach(function(d){ var c = set.ids.indexOf(d.id) >= 0 ? '✅ This job\'s documents' : 'Other documents · ' + (d.category || 'Other'); if (!groups[c]) { groups[c] = []; order.push(c); } groups[c].push(d); });
+    order.sort(function(x, y){ return (x[0] === '✅' ? 0 : 1) - (y[0] === '✅' ? 0 : 1); });
+    order.forEach(function(cat){
+      hh += '<div style="font-size:11px;font-weight:800;color:#1e3a5f;text-transform:uppercase;letter-spacing:.4px;margin:12px 0 5px">' + esc(cat) + '</div>';
+      groups[cat].forEach(function(d){
+        var on = set.ids.indexOf(d.id) >= 0, req = set.required.indexOf(d.id) >= 0, lockIt = req && !admin, html = d.kind === 'html' || isBuiltin(d.id);
+        hh += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;border:1px solid ' + (on ? '#bbf7d0' : '#eef2f7') + ';background:' + (on ? '#f0fdf4' : '#fff') + ';border-radius:8px;margin-bottom:5px;flex-wrap:wrap">' +
+          '<label style="display:flex;align-items:center;gap:8px;cursor:' + (lockIt ? 'not-allowed' : 'pointer') + ';flex:1;min-width:200px"><input type="checkbox" data-id="' + esc(d.id) + '"' + (on ? ' checked' : '') + (lockIt ? ' disabled title="Required by the office — only an admin can remove it"' : '') + ' style="width:16px;height:16px"><span style="font-size:13px;color:#0f1d2f">' + esc(d.name) + (d.clientFacing ? ' <span style="font-size:9px;color:#2563eb;font-weight:700">CLIENT</span>' : '') + (on ? badge(set.src[d.id] || 'pm') : '') + (req && set.src[d.id] !== 'required' ? badge('required') : '') + '</span></label>' +
+          '<span style="display:flex;gap:5px;flex-wrap:wrap">' + (html ? btn('👁', 'prev', d.id, true) + btn('🖨', 'print', d.id) : btn('↓ Open', 'open', d.id, true)) + btn('💾', 'save', d.id) + (d.clientFacing && html ? btn('📧', 'send', d.id) : '') + '</span></div>';
+      });
+    });
+    hh += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" data-dl-act="saveset" style="flex:1;min-width:200px;padding:11px;background:#0f1d2f;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Save this job\'s set</button><button type="button" data-dl-act="addsel" style="flex:1;min-width:200px;padding:11px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">📁 Put the ticked papers in Files &amp; Docs</button></div><div id="_jdpMsg" style="font-size:12px;color:#16a34a;font-weight:700;margin-top:8px"></div>';
+    b.innerHTML = hh;
+  });
+};
+D.addEventListener('click', function(e){
+  var el = e.target && e.target.closest ? e.target.closest('[data-dl-act="saveset"]') : null; if (!el) return;
+  var ov = el.closest('#_jdpOv'); if (!ov) return;
+  var ids = [].slice.call(ov.querySelectorAll('input[type=checkbox][data-id]')).filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-id'); });
+  var msg = D.getElementById('_jdpMsg'); if (msg) msg.textContent = 'Saving…';
+  save(W._jdpPid, ids).then(function(r){ if (msg) msg.textContent = r.ok ? '✓ Saved — ' + r.docSet.ids.length + ' document(s) for this job.' : '⚠ ' + (r.error || 'Not saved'); if (r.ok) later(function(){ W._jobDocPack(W._jdpPid); }, 300); });
+}, true);
+
+/* ── modal helper ── */
+function modal(title, inner){
+  var ov = D.createElement('div'); ov.setAttribute('data-gc-keep', '1'); ov.className = 'gc-ds-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,15,28,.75);z-index:1000014;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,sans-serif';
+  ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:760px;width:100%;max-height:92vh;overflow:auto;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + title + '</b><button type="button" data-x="1" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button></div>' + inner + '</div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.getAttribute && e.target.getAttribute('data-x'))) ov.remove(); });
+  D.body.appendChild(ov); return ov;
+}
+
+/* ── ⚙ Defaults (admins): per job type + required ── */
+function openDefaults(){
+  if (!isAdmin()) { toast('Only an admin can change the document defaults.', true); return; }
+  Promise.all([W._fetchDocIndex(), defaults()]).then(function(a){
+    var idx = a[0], df = a[1], T = ['residential', 'commercial', 'insurance'];
+    var rows = idx.map(function(d){ return '<tr><td style="padding:5px;border-bottom:1px solid #eef2f7;font-size:12.5px">' + esc(d.name) + '</td>' + T.map(function(t){ return '<td style="text-align:center;border-bottom:1px solid #eef2f7"><input type="checkbox" data-t="' + t + '" data-id="' + esc(d.id) + '"' + (arr(df.types[t]).indexOf(d.id) >= 0 ? ' checked' : '') + '></td>'; }).join('') + '<td style="text-align:center;border-bottom:1px solid #eef2f7"><input type="checkbox" data-t="required" data-id="' + esc(d.id) + '"' + (df.required.indexOf(d.id) >= 0 ? ' checked' : '') + '></td></tr>'; }).join('');
+    var ov = modal('⚙ Document defaults', '<div style="font-size:12px;color:#475569;margin-bottom:8px">Ticked papers start ticked on every new job of that kind. <b>Required</b> ones are on every job and only an admin can take them off. A customer\'s own list (👤 customer → 📄 Documents this customer always gets) is added on top.</div><table style="width:100%;border-collapse:collapse"><tr><th style="text-align:left;font-size:11px">Document</th><th style="font-size:11px">Residential</th><th style="font-size:11px">Commercial</th><th style="font-size:11px">Insurance</th><th style="font-size:11px;color:#b91c1c">Required</th></tr>' + rows + '</table><button type="button" data-ds-save="1" style="margin-top:12px;padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Save defaults</button>');
+    ov.querySelector('[data-ds-save]').onclick = function(){
+      var out = { types: { residential: [], commercial: [], insurance: [] }, required: [], at: new Date().toISOString(), by: s(me().name || me().email) };
+      [].slice.call(ov.querySelectorAll('input[data-t]')).forEach(function(c){ if (!c.checked) return; var t = c.getAttribute('data-t'), id = c.getAttribute('data-id'); if (t === 'required') out.required.push(id); else out.types[t].push(id); });
+      put(DEF, out).then(function(){ toast('✓ Document defaults saved'); ov.remove(); });
+    };
+  });
+}
+function setDefaults(o){ if (!isAdmin()) return Promise.resolve({ ok: false, error: 'admins only' }); return put(DEF, Object.assign({ at: new Date().toISOString(), by: s(me().name || me().email) }, o)).then(function(){ return { ok: true }; }); }
+
+/* ── 📄 Documents this customer always gets ── */
+function setCustomer(name, ids){
+  if (!s(name)) return Promise.resolve({ ok: false });
+  return sb(CUST).then(function(v){ var o = isObj(v) && isObj(v.map) ? v : { map: {} }; o.map[norm(name)] = { name: s(name), ids: arr(ids).slice(), at: new Date().toISOString(), by: s(me().name || me().email) }; return put(CUST, o).then(function(){ return { ok: true }; }); });
+}
+function openCustomer(name){
+  Promise.all([W._fetchDocIndex(), customerDefaults(name)]).then(function(a){
+    var idx = a[0], have = a[1];
+    var ov = modal('📄 Documents ' + esc(name) + ' always gets', '<div style="font-size:12px;color:#475569;margin-bottom:8px">Ticked papers start ticked on every new job for this customer / GC, on top of the job-type defaults. The PM can still untick them on a job.</div>' + idx.map(function(d){ return '<label style="display:flex;gap:8px;align-items:center;padding:5px 7px;border:1px solid #eef2f7;border-radius:7px;margin-bottom:4px;font-size:12.5px"><input type="checkbox" data-id="' + esc(d.id) + '"' + (have.indexOf(d.id) >= 0 ? ' checked' : '') + '> ' + esc(d.name) + '</label>'; }).join('') + '<button type="button" data-cs-save="1" style="margin-top:10px;padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Save for ' + esc(name) + '</button>');
+    ov.querySelector('[data-cs-save]').onclick = function(){
+      var ids = [].slice.call(ov.querySelectorAll('input[data-id]')).filter(function(c){ return c.checked; }).map(function(c){ return c.getAttribute('data-id'); });
+      setCustomer(name, ids).then(function(){ toast('✓ Saved ' + ids.length + ' document(s) for ' + name); ov.remove(); decorate360(); });
+    };
+  });
+}
+/* the button on the customer profile (👤 Customer 360 → its 📄 section) */
+function decorate360(){
+  var cards = D.querySelectorAll('.gcd1-card[data-sec="docs"]');
+  [].forEach.call(cards, function(cd){
+    if (cd.querySelector('[data-gc-docset]')) return;
+    var root = cd.closest('.gcd1-pn') || D;
+    var hEl = root.querySelector ? root.querySelector('.gcd1-hd h2') : null;
+    var name = s(hEl && hEl.textContent).replace(/^👤\s*/, '');
+    if (!name) return;
+    var b = D.createElement('button'); b.type = 'button'; b.className = 'gcd1-btn'; b.setAttribute('data-gc-docset', name);
+    b.textContent = '📄 Documents this customer always gets'; b.style.marginTop = '6px';
+    b.onclick = function(){ openCustomer(name); };
+    cd.appendChild(b);
+  });
+}
+var o360 = W._gcCustomer360;
+if (typeof o360 === 'function') W._gcCustomer360 = function(){ var r = o360.apply(this, arguments); Promise.resolve(r).then(function(){ later(decorate360, 50); later(decorate360, 600); }); return r; };
+
+/* ── ⚙ Defaults button in 📚 Company Documents (admins) ── */
+var oLib = W._docLibrary;
+W._docLibrary = function(){ var r = oLib ? oLib.apply(this, arguments) : null; addDefBtn(0); return r; };
+function addDefBtn(n){
+  var body = D.getElementById('_docLibBody');
+  if (!body || !body.querySelector('#_tplJobSel')) { if (n < 40) later(function(){ addDefBtn(n + 1); }, 150); return; }
+  if (!isAdmin() || body.querySelector('[data-ds-open]')) return;
+  var b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-ds-open', '1'); b.textContent = '⚙ Defaults';
+  b.style.cssText = 'padding:8px 10px;background:#fff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer';
+  b.onclick = openDefaults;
+  var sel = body.querySelector('#_tplJobSel'); if (sel && sel.parentElement) sel.parentElement.appendChild(b);
+}
+
+W._gcDocSet = { forJob: forJob, save: save, defaults: defaults, customerDefaults: customerDefaults, setDefaults: setDefaults, setCustomer: setCustomer, openDefaults: openDefaults, openCustomer: openCustomer, norm: norm };
+try { console.log('[GC] 📋 Each job\'s document set (patch DOCLIB2): _gcDocSet'); } catch (e) {}
+})();
+</script>
