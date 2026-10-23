@@ -146195,7 +146195,8 @@ function paintMic(){
     if (!myEmail() || D.getElementById('gc-auth-email')) { var x = D.getElementById('_gcMicBtn'); if (x) x.remove(); return; }
     var b = D.getElementById('_gcMicBtn');
     if (!b) { b = D.createElement('button'); b.id = '_gcMicBtn'; b.setAttribute('data-gc-keep', '1'); b.setAttribute('aria-label', 'Voice note'); b.title = 'Voice note: say it, pick the job and where it goes'; b.textContent = '🎤';
-      b.onclick = function(){ openMic(); }; D.body.appendChild(b); }
+      b.onclick = function(){ openMic(); }; D.body.appendChild(b);
+      try { if (W._gcMakeDraggable) W._gcMakeDraggable(b, 'gc_pos_mic'); if (W._gcKeepPut) W._gcKeepPut(b, 'gc_pos_mic'); } catch (e) {} }   /* patch MICDRAG: owner drags the red mic anywhere; the spot is remembered */
     var cls = isField() ? 'field' : 'desk'; if (b.className !== cls) b.className = cls;
     var old = D.getElementById('_voiceBtn'); if (old && old.style.display !== 'none') old.style.display = 'none';
   } catch (e) {}
