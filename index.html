@@ -166059,3 +166059,243 @@ W._gcDocSet = { forJob: forJob, save: save, defaults: defaults, customerDefaults
 try { console.log('[GC] 📋 Each job\'s document set (patch DOCLIB2): _gcDocSet'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-txt">
+/* __GC_PATCH_TXT__ — 💬 TEXT US (owner 10/23: "can customers text the number for advice — texts go to our e-mails, or
+   replies etc. … basic answers for different questions"). Texts IN: netlify/functions/missed-call.js?event=sms +
+   _lib/sms.js (matched to the job → Job Messages; unknown number → a lead; e-mailed to the staff relay list; one approved
+   automatic answer). This page part:
+     • Job Messages: a "📱 Text them" bar on every job's thread (the customer's phone, or the number that texted in) —
+       the text goes out from the GrayCo number (texts.js?send=1) and lands on the thread;
+     • 📥 Unsorted: a texted-in message gets "📱 Text back";
+     • the e-mail's "Reply in the CRM" link (?jobmsg=<job id>) opens that job's thread;
+     • Admin → 💬 Text auto-answers (admins): on/off, when, the relay list, every answer's keywords + wording, "try a text",
+       and the "Text us" line for the website / marketing.
+   API: window._gcTexts = { status(), send(to, text, pid), textUsLine(), open(pid) } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_TXT__) return; window.__GC_PATCH_TXT__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/texts';
+var STATUS = null, STATUS_AT = 0;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function projects(){ try { return arr((W._crm || {}).projects); } catch (e) { return []; } }
+function msgs(){ try { return arr(JSON.parse(localStorage.getItem('gc_job_messages') || '[]')); } catch (e) { return []; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100260;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function status(force){
+  if (!signedIn()) return Promise.resolve(null);
+  if (!force && STATUS && Date.now() - STATUS_AT < 120000) return Promise.resolve(STATUS);
+  return j(FN + '?status=1').then(function(o){ if (o && o.ok) { STATUS = o; STATUS_AT = Date.now(); } return STATUS; });
+}
+function send(to, text, pid){
+  return j(FN + '?send=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: to, text: text, pid: pid || '' }) }).then(function(o){
+    if (o && o.ok && o.message) { try { var l = msgs(); if (!l.some(function(m){ return m && m.id === o.message.id; })) { l.push(o.message); localStorage.setItem('gc_job_messages', JSON.stringify(l)); } } catch (e) {} }
+    return o;
+  });
+}
+function textUsLine(){ return STATUS && STATUS.number ? 'Text us: ' + STATUS.number : ''; }
+
+/* the number for a job's thread: the last number that texted in on this job, else the customer's phone */
+function phoneFor(pid){
+  var m = msgs().filter(function(x){ return x && x.pid === pid && x.smsFrom; }).sort(function(a, b){ return s(b.at).localeCompare(s(a.at)); })[0];
+  if (m) return d10(m.smsFrom);
+  var p = projects().filter(function(x){ return x && x.id === pid; })[0] || {};
+  var ph = d10(p.clientPhone || p.phone || p.customerPhone || p.contactPhone || p.cell || '');
+  return ph.length === 10 ? ph : '';
+}
+
+/* ── Job Messages: the "📱 Text them" bar ── */
+var DRAFT = { pid: '', to: '', text: '' };
+function bar(ov, pid){
+  if (!ov || ov.querySelector('.gctx-bar')) return;
+  var card = ov.firstElementChild; if (!card) return;
+  var ph = phoneFor(pid);
+  if (DRAFT.pid !== pid) DRAFT = { pid: pid, to: ph ? tidy(ph) : '', text: '' };
+  var b = D.createElement('div'); b.className = 'gctx-bar'; b.setAttribute('data-gc-keep', '1');
+  b.style.cssText = 'background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;padding:8px 10px;margin:8px 10px;font:13px Inter,sans-serif;color:#0f2440';
+  b.innerHTML = '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>📱 Text them</b>'
+    + '<input class="gctx-to" inputmode="tel" placeholder="Phone" value="' + esc(DRAFT.to) + '" style="width:140px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">'
+    + '<input class="gctx-msg" maxlength="600" placeholder="Text from the GrayCo number…" value="' + esc(DRAFT.text) + '" style="flex:1 1 200px;min-width:0;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">'
+    + '<button type="button" class="gctx-send" style="padding:7px 12px;border:0;border-radius:6px;background:#0e7490;color:#fff;font-weight:700;cursor:pointer">Send text</button></div>'
+    + '<div class="gctx-note" style="font-size:11px;color:#475569;margin-top:4px">Goes out from the GrayCo texting number and shows on this thread. Customers can text that number too — their texts land here.</div>';
+  var thr = card.querySelector('#_jmThread');
+  if (thr && thr.parentNode === card) card.insertBefore(b, thr); else card.insertBefore(b, card.children[1] || null);
+  b.addEventListener('input', function(){ DRAFT.to = b.querySelector('.gctx-to').value; DRAFT.text = b.querySelector('.gctx-msg').value; });
+  status().then(function(st){
+    var n = b.querySelector('.gctx-note'); if (!n || !st) return;
+    if (!st.ready) n.textContent = 'Texting is not set up yet (Netlify TWILIO_* — see docs/TEXT-MESSAGES.md).';
+    else if (st.paused) n.textContent = '⏸ Data-entry mode is on — no texts go out until an admin turns it off.';
+    else if (st.number) n.textContent = 'Goes out from ' + st.number + ' and shows on this thread. Customers can text that number too — their texts land here.';
+  });
+  b.querySelector('.gctx-send').onclick = function(){
+    var to = d10(b.querySelector('.gctx-to').value), tx = s(b.querySelector('.gctx-msg').value), btn = this;
+    if (to.length !== 10) { toast('Type a 10-digit phone number.', true); return; }
+    if (!tx) { toast('Type the text first.', true); return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    send(to, tx, pid).then(function(o){
+      btn.disabled = false; btn.textContent = 'Send text';
+      if (o && o.ok) { DRAFT.text = ''; toast('📱 Text sent to ' + tidy(to)); try { ov.remove(); } catch (e) {} if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); }
+      else toast(s(o && o.error) || 'Not sent.', true);
+    });
+  };
+}
+function wrapOpen(){
+  var f = W._gcOpenJobMessages; if (typeof f !== 'function' || f.__gcTxt) return !!f;
+  var w = function(pid){
+    var r = f.apply(this, arguments);
+    /* the thread redraws itself (ov.innerHTML) when it loads and after a team message: the bar goes back in each time,
+       with what was typed in it */
+    var ov = D.getElementById('_gcJobMsgOv');
+    if (ov && pid && !ov.__gctxObs) {
+      ov.setAttribute('data-gctx-pid', pid); bar(ov, pid);
+      try { var mo = new MutationObserver(function(){ if (!ov.isConnected) { mo.disconnect(); return; } if (!ov.querySelector('.gctx-bar')) bar(ov, pid); }); mo.observe(ov, { childList: true }); ov.__gctxObs = mo; } catch (e) {}
+    }
+    return r;
+  };
+  w.__gcTxt = true; W._gcOpenJobMessages = w; return true;
+}
+if (!wrapOpen()) { var tries = 0, iv = RI.call(W, function(){ if (wrapOpen() || ++tries > 120) clearInterval(iv); }, 500); }
+
+/* ── 📥 Unsorted: "📱 Text back" on a texted-in message ── */
+function decorateUnsorted(){
+  var box = D.querySelector('.gc-qa-unsorted'); if (!box) return;
+  var by = {}; msgs().forEach(function(m){ if (m && m.id) by[m.id] = m; });
+  Array.prototype.forEach.call(box.querySelectorAll('.gc-qa-urow'), function(row){
+    if (row.querySelector('.gctx-back')) return;
+    var sel = row.querySelector('[data-qa-pick]'), m = sel && by[sel.getAttribute('data-qa-pick')];
+    if (!m || !m.smsFrom) return;
+    var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'gctx-back'; bt.textContent = '📱 Text back';
+    bt.style.cssText = 'padding:6px 10px;border:0;border-radius:6px;background:#0e7490;color:#fff;font-weight:700;cursor:pointer';
+    bt.onclick = function(ev){
+      ev.preventDefault(); ev.stopPropagation();
+      var tx = prompt('Text ' + tidy(m.smsFrom) + ' from the GrayCo number:', ''); if (!s(tx)) return;
+      send(m.smsFrom, tx, '').then(function(o){ if (o && o.ok) toast('📱 Text sent to ' + tidy(m.smsFrom)); else toast(s(o && o.error) || 'Not sent.', true); });
+    };
+    row.appendChild(bt);
+  });
+}
+
+/* ── the e-mail's "Reply in the CRM" link ── */
+function deepLink(){
+  var q = ''; try { q = new URLSearchParams(location.search).get('jobmsg') || ''; } catch (e) {}
+  if (!q) return;
+  var n = 0, iv = RI.call(W, function(){
+    n++;
+    if (q === 'unsorted' ? typeof W._gcPickJobForMessages === 'function' : (typeof W._gcOpenJobMessages === 'function' && projects().length)) {
+      clearInterval(iv);
+      try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+      if (q === 'unsorted') W._gcPickJobForMessages(); else W._gcOpenJobMessages(q);
+    } else if (n > 60) clearInterval(iv);
+  }, 1000);
+}
+
+/* ── Admin → 💬 Text auto-answers ── */
+var SET = null;
+function rulesHtml(rules){
+  return rules.map(function(r, i){
+    return '<div class="gctx-rule" data-i="' + i + '" style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin:8px 0;background:' + (r.on ? '#fff' : '#f8fafc') + '">'
+      + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label style="display:inline-flex;gap:6px;align-items:center;font-weight:700"><input type="checkbox" data-f="on"' + (r.on ? ' checked' : '') + '> '
+      + '<input data-f="label" value="' + esc(r.label) + '" style="font-weight:700;border:1px solid #e2e8f0;border-radius:6px;padding:4px 6px;min-width:220px"></label>'
+      + (r.alert ? '<span style="font-size:11px;background:#fee2e2;color:#991b1b;border-radius:999px;padding:2px 8px">alerts staff</span>' : '')
+      + (r.lead ? '<span style="font-size:11px;background:#e0f2fe;color:#075985;border-radius:999px;padding:2px 8px">makes a lead</span>' : '')
+      + (r.needsJob ? '<span style="font-size:11px;background:#f1f5f9;color:#334155;border-radius:999px;padding:2px 8px">customers on a job only</span>' : '') + '</div>'
+      + '<div style="font-size:11px;color:#64748b;margin-top:6px">Keywords (comma-separated words or phrases)</div><input data-f="keywords" value="' + esc(r.keywords) + '" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px">'
+      + '<div style="font-size:11px;color:#64748b;margin-top:6px">Answer — ' + (r.id === 'status' ? 'built from the job\'s schedule ({next_visit})' : 'fill-ins: {office_phone} {address} {billing_email} {first} {job} {pm}') + '</div>'
+      + '<textarea data-f="answer" rows="2" maxlength="480" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif">' + esc(r.answer) + '</textarea></div>';
+  }).join('');
+}
+function readForm(box){
+  var o = JSON.parse(JSON.stringify(SET || {}));
+  o.autoOn = !!box.querySelector('[data-g="autoOn"]').checked;
+  o.fallbackOn = !!box.querySelector('[data-g="fallbackOn"]').checked;
+  o.aiClassify = !!box.querySelector('[data-g="aiClassify"]').checked;
+  o.relayAdmins = !!box.querySelector('[data-g="relayAdmins"]').checked;
+  o.when = box.querySelector('[data-g="when"]').value;
+  o.maxPerDay = parseInt(box.querySelector('[data-g="maxPerDay"]').value, 10) || 4;
+  o.relayTo = s(box.querySelector('[data-g="relayTo"]').value).split(/[\s,;]+/).filter(Boolean);
+  o.rules = Array.prototype.map.call(box.querySelectorAll('.gctx-rule'), function(el){
+    var r = (SET.rules || [])[+el.getAttribute('data-i')] || {};
+    return Object.assign({}, r, { on: !!el.querySelector('[data-f="on"]').checked, label: el.querySelector('[data-f="label"]').value,
+      keywords: el.querySelector('[data-f="keywords"]').value, answer: el.querySelector('[data-f="answer"]').value });
+  });
+  return o;
+}
+function renderAdmin(box){
+  if (!isAdmin()) { box.innerHTML = '<div style="color:#64748b">Only an admin can change the automatic text answers.</div>'; return; }
+  box.innerHTML = '<div style="color:#64748b">Loading…</div>';
+  Promise.all([j(FN + '?settings=1'), status(true)]).then(function(res){
+    var o = res[0], st = res[1] || {};
+    if (!o || !o.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((o && o.error) || 'Could not load.') + '</div>'; return; }
+    SET = o.settings;
+    var line = st.number ? 'Text us: ' + st.number : '';
+    box.innerHTML = '<div style="font:13px Inter,sans-serif;color:#0f172a">'
+      + '<div style="background:' + (st.ready ? '#f0fdf4' : '#fff7ed') + ';border:1px solid ' + (st.ready ? '#bbf7d0' : '#fed7aa') + ';border-radius:10px;padding:10px;margin-bottom:10px">'
+      + (st.ready ? '✅ Texting is on — GrayCo number <b>' + esc(st.number) + '</b>.' : '⚠ Texting is not set up yet: Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM (docs/TEXT-MESSAGES.md).')
+      + (st.paused ? '<br>⏸ Data-entry mode is on — texts are logged and e-mailed to staff, but no automatic answer goes out.' : '')
+      + '<br><span style="color:#475569">Twilio → Phone Numbers → the number → "A message comes in": <code>' + esc(st.webhook || '') + '</code> (HTTP POST). US business texting also needs A2P 10DLC registration in Twilio.</span>'
+      + (line ? '<div style="margin-top:6px">For the website and marketing: <b class="gctx-line">' + esc(line) + '</b> <button type="button" data-g="copy" style="border:0;border-radius:6px;padding:3px 8px;background:#e2e8f0;cursor:pointer">Copy</button></div>' : '') + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">'
+      + '<label><input type="checkbox" data-g="autoOn"' + (SET.autoOn ? ' checked' : '') + '> Send automatic answers</label>'
+      + '<label>When <select data-g="when"><option value="always"' + (SET.when === 'always' ? ' selected' : '') + '>any time</option><option value="after_hours"' + (SET.when === 'after_hours' ? ' selected' : '') + '>only after hours</option><option value="business_hours"' + (SET.when === 'business_hours' ? ' selected' : '') + '>only business hours</option></select></label>'
+      + '<label><input type="checkbox" data-g="fallbackOn"' + (SET.fallbackOn ? ' checked' : '') + '> "We\'ll text you back" when nothing fits</label>'
+      + '<label><input type="checkbox" data-g="aiClassify"' + (SET.aiClassify ? ' checked' : '') + '> Let Claude pick the closest answer (it never writes its own)</label>'
+      + '<label>Max per number a day <input data-g="maxPerDay" type="number" min="1" max="10" value="' + esc(SET.maxPerDay) + '" style="width:54px"></label></div>'
+      + '<div style="margin-top:10px">E-mail every text to (GrayCo addresses only): <input data-g="relayTo" value="' + esc(arr(SET.relayTo).join(', ')) + '" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px">'
+      + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="relayAdmins"' + (SET.relayAdmins ? ' checked' : '') + '> also the admins · the job\'s PM always · emergencies also the Senior Insurance PM</label></div>'
+      + '<div style="margin-top:12px;font-weight:800">Answers (first match wins, top to bottom). Emergency and HELP always answer; STOP always stops.</div>'
+      + rulesHtml(SET.rules || [])
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div>'
+      + '<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:10px"><b>Try a text</b> (nothing is sent): <input data-g="try" placeholder="e.g. water is coming through my ceiling" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;margin-top:4px">'
+      + '<button type="button" data-g="tryBtn" style="margin-top:6px;border:0;border-radius:6px;padding:6px 12px;background:#0e7490;color:#fff;font-weight:700;cursor:pointer">See the answer</button><div data-g="tryOut" style="margin-top:6px;color:#334155"></div></div></div>';
+    box.onclick = function(ev){
+      var g = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g');
+      if (g === 'copy') { try { navigator.clipboard.writeText(line); toast('Copied: ' + line); } catch (e) {} }
+      if (g === 'save') {
+        var v = readForm(box); ev.target.disabled = true;
+        j(FN + '?settings=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: v }) }).then(function(r){
+          ev.target.disabled = false;
+          if (r && r.ok) { SET = r.settings; toast('✅ Text answers saved.'); } else toast('Not saved: ' + s(r && r.error), true);
+        });
+      }
+      if (g === 'tryBtn') {
+        var tx = s(box.querySelector('[data-g="try"]').value), outEl = box.querySelector('[data-g="tryOut"]'); if (!tx) return;
+        outEl.textContent = '…';
+        j(FN + '?try=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: tx, settings: readForm(box) }) }).then(function(r){
+          if (!r || !r.ok) { outEl.textContent = s(r && r.error) || 'Could not check.'; return; }
+          outEl.innerHTML = (r.rule ? '<b>' + esc(r.label) + '</b>' : '<b>No answer fits</b>') + (r.alert ? ' · 🚨 staff alerted' : '') + (r.lead ? ' · makes a lead (new numbers)' : '') + '<br>' + (r.reply ? '→ <i>' + esc(r.reply) + '</i>' : '(no automatic answer)');
+        });
+      }
+    };
+  });
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'texts', after: 'pause', ic: '💬', t: 'Text auto-answers', d: 'Customers text the GrayCo number: who gets the e-mail, the automatic answers, the "Text us" line',
+    render: renderAdmin, count: function(){ return STATUS ? (STATUS.ready ? (STATUS.autoOn ? 'on' : 'off') : 'not set up') : ''; } });
+  return true;
+}
+if (!addSection()) { var tries2 = 0, iv2 = RI.call(W, function(){ if (addSection() || ++tries2 > 120) clearInterval(iv2); }, 500); }
+
+RI.call(W, function(){ if (!D.hidden) decorateUnsorted(); }, 2000);
+later(deepLink, 1500);
+later(function(){ status(); }, 4000);
+W._gcTexts = { status: status, send: send, textUsLine: textUsLine, open: function(pid){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); }, _phoneFor: phoneFor, _decorate: decorateUnsorted };
+try { console.log('[GC] 💬 Text us: Job Messages "📱 Text them", Unsorted "📱 Text back", Admin → 💬 Text auto-answers (patch TXT) — _gcTexts'); } catch (e) {}
+})();
+</script>

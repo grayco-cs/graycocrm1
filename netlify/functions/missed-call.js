@@ -23,10 +23,13 @@
        "📞 Missed call — auto-text sent", and the speed-to-lead reminders apply, as for a website lead);
      · an EXISTING customer (same phone on a job or a customer record) → no lead: a "📞 Call back" to-do on THAT
        job for its PM (the shared Office To-Do when the job has no PM), and the admins + PM are e-mailed.
-   A text in:
+   A text in (patch TXT, _lib/sms.js — "text us" for customers):
      · STOP / STOPALL / UNSUBSCRIBE / CANCEL / END / QUIT → never texted from here again (START / UNSTOP undoes it;
-       Twilio's own opt-out also blocks every GrayCo text to that number);
-     · anything else → attached to that caller's lead (or call-back to-do) and e-mailed to the admins (+ PM).
+       Twilio's own opt-out also blocks every GrayCo text to that number); HELP → the standard help answer;
+     · anything else → matched to the sender's job (Job Messages + the job's 💬 timeline; no job → 📥 Unsorted), a
+       new number becomes a lead (source "Text message", routed by the lead roles), the staff relay list (+ PM) is
+       e-mailed, and ONE approved automatic answer may go back (Admin → 💬 Text auto-answers; never while data-entry
+       mode is on). A missed-call lead / call-back to-do the number already has gets the text too.
    State (service-only, gc_lead_inbox_kv "gc_sms_state"): calls handled, last text per number, opt-outs, the
    lead / to-do each number belongs to.
    ========================================================================== */
@@ -91,6 +94,10 @@ function loadState(v){
   /* forget handled calls after 7 days */
   const cut = new Date(now() - 7 * 86400000).toISOString();
   Object.keys(st.calls).forEach(k => { if (s(st.calls[k]) < cut) delete st.calls[k]; });
+  /* patch TXT: texts already handled (Twilio retries) and the automatic answers per number — kept 3 days */
+  const cut3 = new Date(now() - 3 * 86400000).toISOString();
+  if (st.seen && typeof st.seen === 'object') Object.keys(st.seen).forEach(k => { if (s(st.seen[k]) < cut3) delete st.seen[k]; });
+  if (st.auto && typeof st.auto === 'object') Object.keys(st.auto).forEach(k => { const l = Array.isArray(st.auto[k]) ? st.auto[k].filter(x => x && s(x.at) >= cut3) : []; if (l.length) st.auto[k] = l; else delete st.auto[k]; });
   return st;
 }
 async function stateGet(){ return loadState(await L().kvGet(KS)); }
@@ -191,15 +198,58 @@ async function missed(p, how){
   return out;
 }
 
-/* ── a text in ── */
+/* ── a text in (patch TXT: matched to the job, on Job Messages, e-mailed to the relay list, one approved answer) ── */
+function SMS(){ return require('./_lib/sms.js'); }
+function arrL(v){ return Array.isArray(v) ? v : []; }
+function jobLabelOf(p){ if (!p) return ''; const st = s(p.address || p.jobAddress || p.street).split(',')[0].trim(); const po = s(p.autoPO || p.poNumber || p.po); return [po ? 'PO ' + po : '', s(p.name), st && low(p.name).indexOf(low(st)) < 0 ? st : ''].filter(Boolean).join(' · '); }
+async function postJobMsg(msg){
+  const has = l => l.some(m => m && s(m.id) === msg.id);
+  try { return await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) { return { ok: false, error: s(e && e.message) }; }
+}
+async function commsAdd(pid, o){ if (!pid) return; try { await require('./_lib/comms.js').addMessage(pid, o); } catch (e) {} }
+async function relayMail(set, extra, subject, html, text){
+  const key = env('RESEND_API_KEY'); if (!key) return { ok: false, why: 'RESEND_API_KEY is not set' };
+  let to = SMS().staffOnly(set.relayTo).concat(arrL(extra).map(low).filter(Boolean));
+  if (set.relayAdmins) { try { to = to.concat(await L().alertsApi().recipients([])); } catch (e) {} }
+  to = Array.from(new Set(to.map(low).filter(Boolean)));
+  if (!to.length) return { ok: false, why: 'nobody to tell' };
+  try {
+    const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: env('SMS_RELAY_FROM') || 'GrayCo Texts <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Messages'), html, text, headers: { 'X-GrayCo-CRM': 'sms-relay' } }) });
+    return { ok: r.ok, to };
+  } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
+}
+const INS_WORDS = /\b(water|flood|leak|fire|smoke|storm|hail|wind|tree|mold|insurance|claim|adjuster|emergency|burst|sewage)\b/i;
+
 async function inboundSms(p){
   const ph = phone10(p.From), body = s(p.Body), at = nowIso();
+  const sid = s(p.MessageSid || p.SmsSid) || crypto.createHash('sha256').update(ph + '|' + body + '|' + at.slice(0, 16)).digest('hex').slice(0, 24);
   if (ph.length !== 10) return { skipped: 'no number' };
   if (STOP.test(body)) { await stateCas(st => { st.optout[ph] = at; return true; }); return { optout: true }; }
   if (START.test(body)) { await stateCas(st => { delete st.optout[ph]; return true; }); return { optin: true }; }
-  const st = await stateGet(), own = st.owner[ph] || {};
+  /* Twilio retries a webhook it thinks failed: the same message is handled once */
+  let fresh = false;
+  await stateCas(st => { st.seen = st.seen && typeof st.seen === 'object' ? st.seen : {}; if (st.seen[sid]) return undefined; st.seen[sid] = at; fresh = true; return true; });
+  if (!fresh) return { skipped: 'already handled' };
+  const S = SMS(); let set = S.settings(null);
+  try { set = S.settings(await L().kvGet(S.SETTINGS_KEY)); } catch (e) {}
+  const st0 = await stateGet(), own = st0.owner[ph] || {}, optedOut = !!st0.optout[ph];
+  const out = { sid };
+  /* HELP: the standard answer, nothing else */
+  if (S.HELP.test(body)) { out.help = optedOut ? { skipped: 'opted out' } : await sendSms(ph, S.HELP_TEXT); return out; }
+  let data = {};
+  try { data = await core().kvRead(['projects', 'customers', 'subs', 'vendors', 'leads', 'schedule', 'users', 'gc_deleted_projects', 'gc_team_settings']); } catch (e) {}
+  let who = S.match(data, ph);
+  if (!who && own.pid) { const p0 = arrL(data.projects).find(x => x && s(x.id) === s(own.pid)); if (p0) who = { kind: 'customer', pid: s(p0.id), name: s(p0.client), job: p0 }; }
+  const job = who && who.job ? who.job : null, pid = who && who.pid ? who.pid : '';
+  const name = s(who && who.name);
+  const label = jobLabelOf(job);
+  const shown = (name || tidy(ph)) + (who && who.kind === 'sub' ? ' (sub)' : '');
+  /* 1) Job Messages (by job; no job → 📥 Unsorted) + the job's 💬 Communication timeline */
+  out.msg = await postJobMsg({ id: 'SMS_' + sid, pid, authorId: 'sms:' + ph, authorName: '📱 ' + shown + ' (text)', text: clip(body, 1600), tags: [], at, source: 'sms', channel: 'sms', dir: 'in', smsFrom: ph });
+  await commsAdd(pid, { id: 'sms_' + sid, kind: 'text', dir: 'in', at, from: tidy(ph), fromName: name, text: body });
+  /* 2) a missed-call lead / call-back to-do this number already has: the text is added there too (patch AUTO6) */
   const line = '📱 Text from ' + tidy(ph) + ' (' + at.slice(0, 16).replace('T', ' ') + ' UTC): ' + clip(body, 1000);
-  const out = {};
   if (own.lead) {
     try {
       await L().kvCas(L().KV, v => {
@@ -215,11 +265,76 @@ async function inboundSms(p){
       out.todo = own.todo;
     } catch (e) { out.error = s(e && e.message); }
   }
-  let pmMail = [];
-  if (own.pm) { try { const pm = await core().pmByName(own.pm); if (pm && pm.email) pmMail = [pm.email]; } catch (e) {} }
-  const subj = '📱 Text reply from ' + tidy(ph) + (own.lead || own.todo ? '' : ' (not on a lead yet)');
-  out.mail = await mailStaff(pmMail, subj, box('GrayCo — a text came in', '<p><b>' + esc(tidy(ph)) + '</b> wrote:</p><blockquote style="border-left:3px solid #d4a017;margin:0;padding:6px 12px;white-space:pre-wrap">' + esc(clip(body, 1600)) + '</blockquote>'
-    + '<p>' + (own.lead ? 'It is on their lead (Leads → 📥 Lead Inbox).' : own.todo ? 'It is on their “📞 Call back” to-do.' : 'Answer it from the GrayCo Twilio number, or call them back.') + '</p>'), subj + '\n\n' + body);
+  /* 3) which approved answer fits */
+  let rule = S.pickRule(body, set, { pid });
+  if (!rule) rule = await S.aiPick(body, set, { pid }, require('./_lib/ai.js'));
+  out.rule = rule ? rule.id : '';
+  /* 4) a new number (or a known person without a job asking for an estimate / with an emergency) → a lead, routed by the lead roles */
+  const wantLead = !own.lead && !own.todo && (!who || (rule && rule.lead && who.kind !== 'sub' && !pid));
+  if (wantLead) {
+    const f = { type: INS_WORDS.test(body) ? 'storm' : 'estimate', name: name || 'Texter ' + tidy(ph), email: '', phone: ph, address: '', city: '', state: '', zip: '',
+      message: 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200), company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '',
+      project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: rule && rule.id === 'emergency' ? 'Emergency' : '' };
+    try {
+      const lsid = crypto.createHash('sha256').update('text|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
+      const r = await WI().fileLead(f, { sid: lsid, source: 'Text message', how: 'a text message to the GrayCo number', formLabel: 'Text message',
+        title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph } });
+      out.newLead = r.id; out.action = r.action;
+      await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
+      out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
+    } catch (e) { out.leadError = s(e && e.message); }
+  }
+  /* 5) the job's PM hears too */
+  let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
+  /* 6) one automatic answer — never while data-entry mode is on, never to an opted-out number, limited per number */
+  let reply = '', why = '';
+  let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
+  if (optedOut) why = 'opted out';
+  else if (paused) why = 'data-entry mode is on';
+  else if (!set.autoOn) why = 'automatic answers are off';
+  else if (!S.whenAllows(set, now(), rule)) why = 'outside the hours set for automatic answers';
+  else if (who && who.kind === 'sub') why = 'a sub (staff answer subs)';
+  else {
+    const B = require('./_lib/brand.js');
+    const ctx = { address: B.companyAddress(), billing: (function(){ try { return B.billingEmail(); } catch (e) { return 'billing@grayco-cs.com'; } })(),
+      first: S.firstName(name), job: job ? s(job.name) : '', pm: pm && pm.name ? pm.name : '', visit: pid ? S.nextVisit(data, pid, at) : null };
+    ctx.nextVisit = S.nextVisitText(ctx);
+    const key = rule ? rule.id : '_fallback';
+    let ok = false;
+    await stateCas(st => {
+      st.auto = st.auto && typeof st.auto === 'object' ? st.auto : {};
+      const list = (Array.isArray(st.auto[ph]) ? st.auto[ph] : []).filter(x => x && now() - Date.parse(x.at) < 86400000);
+      const sameRule = list.some(x => x.rule === key && now() - Date.parse(x.at) < (key === '_fallback' ? 12 : 24) * 3600000);
+      if (list.length >= set.maxPerDay || (sameRule && key !== 'emergency')) { st.auto[ph] = list; return true; }
+      list.push({ at, rule: key }); st.auto[ph] = list; ok = true; return true;
+    });
+    if (!ok) why = 'already answered this number recently';
+    else if (rule) reply = S.safe(rule.id === 'status' ? ctx.nextVisit : S.fill(rule.answer, ctx));
+    else if (set.fallbackOn) reply = S.FALLBACK;
+    else why = 'no answer fits';
+  }
+  if (reply) {
+    out.reply = await sendSms(ph, reply);
+    if (out.reply.ok) {
+      const rid = 'SMSA_' + sid;
+      await postJobMsg({ id: rid, pid, authorId: 'sms:auto', authorName: '🤖 GrayCo auto-answer (text)', text: reply, tags: [], at: nowIso(), source: 'sms', channel: 'sms', dir: 'out', smsTo: ph });
+      await commsAdd(pid, { id: 'sms_' + rid, kind: 'text', dir: 'out', at: nowIso(), from: 'GrayCo (auto-answer)', fromName: 'GrayCo', to: [tidy(ph)], text: reply });
+    }
+  } else out.noReply = why;
+  /* 7) the e-mail relay (staff only) — an emergency says so in the subject and also goes to the Senior Insurance PM */
+  const extra = [];
+  if (pm && pm.email) extra.push(pm.email);
+  if (rule && rule.alert) { try { const h = require('./_lib/lead-roles.js').holder('insurance', data.gc_team_settings, data.users); if (h && h.email) extra.push(h.email); } catch (e) {} }
+  const emerg = !!(rule && rule.alert);
+  const subj = (emerg ? '🚨 EMERGENCY text from ' : '📱 Text from ') + shown + (label ? ' — ' + label : (out.newLead ? ' — new lead' : ''));
+  const link = site() + (pid ? '/?jobmsg=' + encodeURIComponent(pid) : '/?jobmsg=unsorted');
+  const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (emerg ? '#b91c1c' : '#241968') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(emerg ? '🚨 Emergency text — call them now' : '📱 A text came in') + '</div><div style="padding:6px 18px 18px">'
+    + '<p><b>' + esc(shown) + '</b> · ' + esc(tidy(ph)) + (label ? '<br>Job: <b>' + esc(label) + '</b>' + (pm && pm.name ? ' — PM ' + esc(pm.name) : '') : (out.newLead ? '<br>New lead in Leads → 📥 Lead Inbox (source "Text message").' : '<br>Not on a job — it is in Job Messages → 📥 Unsorted.')) + '</p>'
+    + '<blockquote style="border-left:3px solid #d4a017;margin:0;padding:6px 12px;white-space:pre-wrap">' + esc(clip(body, 1600)) + '</blockquote>'
+    + (reply ? '<p style="color:#475569">Automatic answer sent: <i>' + esc(reply) + '</i></p>' : '<p style="color:#475569">No automatic answer (' + esc(why || 'none') + ') — please text them back.</p>')
+    + '<p style="margin-top:18px"><a href="' + esc(link) + '" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Reply in the CRM</a></p>'
+    + '<p style="font-size:12px;color:#64748b">Replying to this e-mail does not reach them — answer from the CRM (Job Messages → 📱 Text them) so it goes out from the GrayCo number.</p></div></div>';
+  out.mail = await relayMail(set, extra, subj, html, subj + '\n\n' + body + '\n\n' + (reply ? 'Auto-answer: ' + reply + '\n\n' : '') + 'Reply in the CRM: ' + link);
   return out;
 }
 
@@ -260,4 +375,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { sigFor, signed, params, missed, inboundSms, loadState, ready, TEXT, STOP, START, KS };
+exports._test = { sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
