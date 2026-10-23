@@ -3229,6 +3229,30 @@ window.__GC_LIVE=function(key, v){
   console.log('[GC] Performance governor active (observers debounced, timers throttled while busy).');
 })();
 </script>
+<script id="gc-patch-todoperf-early">
+/* patch TODOPERF: "lagging, can't use" (owner, 10/22, To-Do). Measured with 270 approvals, 150 office to-dos and the
+   real job list, 4x CPU: 72 long tasks in 20 s of doing nothing (~10 s of a 20 s window busy). Dozens of background
+   loops re-scanned the whole page every 0.6-1.5 s whether anything had changed or not. One counter says whether the
+   page changed (any DOM change, click, key, scroll, resize); a loop that finds it unchanged skips its scan, and still
+   runs at least every few seconds. */
+(function(){
+  if (window._gcIdleSkip) return;
+  var seq = 0;
+  function bump(){ seq++; window.__GC_DOMSEQ__ = seq; }
+  window.__GC_DOMSEQ__ = 0;
+  try { new MutationObserver(bump).observe(document.documentElement, { childList: true, subtree: true, characterData: true }); } catch (e) {}
+  ['click', 'keydown', 'input', 'change', 'scroll', 'wheel', 'touchstart'].forEach(function(ev){ try { document.addEventListener(ev, bump, { capture: true, passive: true }); } catch (e) {} });
+  try { window.addEventListener('resize', bump); } catch (e) {}
+  window._gcPageSeq = function(){ return seq; };
+  /* true = nothing changed since this loop last ran and it ran less than maxMs ago: skip this tick */
+  window._gcIdleSkip = function(st, maxMs){
+    if (!st) return false;
+    var n = Date.now();
+    if (st.seq === seq && n - (st.at || 0) < (maxMs || 5000)) return true;
+    st.seq = seq; st.at = n; return false;
+  };
+})();
+</script>
 <script>
 (function(){
   var _t=null;
@@ -47749,20 +47773,22 @@ function _applyOrQueue(key, val){
       var _byId={};
       // Cloud first, then local, so an equal-timestamp tie resolves to THIS
       // machine — the copy belonging to the person who just clicked.
-      _incoming.forEach(function(r){ if(r&&r.id) _byId[r.id]=r; });
+      function _kid(r){ return r && (r.id || (r.invId!=null && r.invId!=='' ? 'invId:'+r.invId : '') || (r.expId ? 'expId:'+r.expId : '')) || ''; }   /* patch TODOPERF */
+      _incoming.forEach(function(r){ var k=_kid(r); if(k) _byId[k]=r; });
       _local.forEach(function(r){
-        if(!r||!r.id) return;
-        var _prev=_byId[r.id];
-        if(!_prev){ _byId[r.id]=r; return; }
+        var _k=_kid(r); if(!_k) return;
+        var _prev=_byId[_k];
+        if(!_prev){ _byId[_k]=r; return; }
         // A decided record always beats an undecided one of the same age.
         var _rDecided = !!(r.done||r.status&&r.status!=='pending'||r.decidedBy);
         var _pDecided = !!(_prev.done||_prev.status&&_prev.status!=='pending'||_prev.decidedBy);
-        if(_rDecided && !_pDecided){ _byId[r.id]=r; return; }
+        if(_rDecided && !_pDecided){ _byId[_k]=r; return; }
         if(_pDecided && !_rDecided){ return; }
-        _byId[r.id] = (_rt(r) >= _rt(_prev)) ? r : _prev;
+        _byId[_k] = (_rt(r) >= _rt(_prev)) ? r : _prev;
       });
       var _merged=Object.keys(_byId).map(function(k2){ return _byId[k2]; });
-      localStorage.setItem(key, JSON.stringify(_merged));
+      if(key==='gc_sub_approvals' && typeof window._gcFoldSubApprovals==='function'){ try{ _merged = window._gcFoldSubApprovals(_merged); }catch(_fe){} }   /* patch TODOPERF */
+      var _mj = JSON.stringify(_merged); if(localStorage.getItem(key) !== _mj) localStorage.setItem(key, _mj);   /* patch TODOPERF: an unchanged merge is not a change */
     }catch(e){
       try{ localStorage.setItem(key, (typeof val==='string')?val:JSON.stringify(val)); }catch(_e){}
     }
@@ -74801,7 +74827,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var badge=document.getElementById('_gcAlertsBadge');
     if(badge){
       if(n>0){
-        badge.textContent=n>999?'999+':String(n);
+        badge.textContent=String(n);
         badge.style.cssText='position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;';
         b.style.borderColor='#dc2626';
       } else {
@@ -74847,7 +74873,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var badge=document.getElementById('_gcApprBadge');
     if(badge){
       if(n>0){
-        badge.textContent=n>999?'999+':String(n);
+        badge.textContent=String(n);
         badge.style.cssText='position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;';
       } else {
         badge.textContent=''; badge.style.cssText='display:none;';
@@ -92474,6 +92500,7 @@ function nagPill(){
   var have=readLocal();
   var p=document.getElementById('_gcCCNag');
   if(have && have.length>=12){ if(p) p.remove(); return; }
+  if(window._gcCCHealth) return;   /* patch TODOPERF: the key-health prompt below decides; the two used to add and remove it in turn */
   if(p) return;
   p=document.createElement('button');
   p.id='_gcCCNag';
@@ -103239,7 +103266,10 @@ function fieldFocused(){
    notes drawer (380px wide) are not windows and no longer pretend to be.
 
    Only the direct children of <body>: a handful of nodes, not a page scan. */
-function panelOpen(){
+function panelOpen(){   /* patch TODOPERF: the same answer while the page has not changed */
+  return _gcMemoPO();
+}
+function panelOpen0(){
   try{
     var kids = document.body ? document.body.children : null;
     if(!kids) return false;
@@ -103284,6 +103314,13 @@ function whichView(){
   try{ return localStorage.getItem('grayco_view') || ''; }catch(e){ return ''; }
 }
 function fieldsOnScreen(){
+  return _gcMemoFS();
+}
+var _gcPOm = null, _gcFSm = null;
+function _gcMemo(m, f){ var n = Date.now(), s = window.__GC_DOMSEQ__; if (m && ((m.s === s && n - m.t < 3000) || n - m.t < 150)) return m; return { t: n, s: s, v: f() }; }
+function _gcMemoPO(){ _gcPOm = _gcMemo(_gcPOm, panelOpen0); return _gcPOm.v; }
+function _gcMemoFS(){ _gcFSm = _gcMemo(_gcFSm, fieldsOnScreen0); return _gcFSm.v; }
+function fieldsOnScreen0(){
   try{
     var root = document.getElementById('root') || document.body;
     if(!root) return 0;
@@ -108488,7 +108525,7 @@ function el_(){
   if(el) return el;
   if(!document.body) return null;
   el=document.createElement('div');
-  el.id='_v';
+  el.id='_v'; el.setAttribute('data-gc-keep','1');   /* patch TODOPERF: not swept away and re-added */
   el.style.cssText='position:fixed;bottom:2px;right:4px;font-size:8px;color:#94a3b8;'
     +'font-family:monospace;z-index:1;pointer-events:none;opacity:.75;user-select:none';
   document.body.appendChild(el);
@@ -113503,7 +113540,7 @@ function mergeVal(key, local, inc){
 }
 window._gcMergeValue = mergeVal;
 function lsRead(k){ var raw = null; try{ raw = localStorage.getItem(k); }catch(e){} if(raw==null) return undefined; try{ return JSON.parse(raw); }catch(e){ return raw; } }
-function lsWrite(k, v){ try{ localStorage.setItem(k, typeof v==='string' ? v : JSON.stringify(v)); }catch(e){} }
+function lsWrite(k, v){ try{ if(k==='gc_sub_approvals' && Array.isArray(v) && typeof window._gcFoldSubApprovals==='function') v = window._gcFoldSubApprovals(v); var _s = typeof v==='string' ? v : JSON.stringify(v); if(localStorage.getItem(k) !== _s) localStorage.setItem(k, _s); }catch(e){} }   /* patch TODOPERF */
 window._gcPullMerge = async function(key, inc, idbLocal){
   if(PULL_PASS[key] || PULL_SKIP[key]) return inc;
   var lsKey = LS_BACKED[key] || (lsRead(key) !== undefined && (idbLocal === null || idbLocal === undefined));
@@ -115069,7 +115106,7 @@ function badge(host, id, n, css){
   var b = document.getElementById(id);
   if (!n) { if (b) b.remove(); return; }
   if (!b) { b = document.createElement('span'); b.id = id; b.setAttribute('data-gc-keep', '1'); host.appendChild(b); }
-  b.style.cssText = css; b.textContent = n > 99 ? '99+' : String(n);
+  b.style.cssText = css; b.textContent = String(n);
   b.title = n + ' new CompanyCam project' + (n === 1 ? '' : 's') + ' to review';
 }
 function paintBadges(){
@@ -123150,8 +123187,8 @@ function coversAt(b, dx, dy){
   var r = b.getBoundingClientRect(), ox = (b.__gcDodge || [0, 0]);
   var L = r.left - ox[0] + dx, T = r.top - ox[1] + dy, W = r.width, H = r.height;
   if (T < safeTop() + 4 || T + H > innerHeight - 4 || L < 0 || L + W > innerWidth) return true;
-  for (var i = 0; i < 5; i++) for (var j = 0; j < 5; j++) {
-    var x = L + 1 + (W - 2) * i / 4, y = T + 1 + (H - 2) * j / 4;
+  for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) {   /* patch TODOPERF: 9 points, not 25 */
+    var x = L + 1 + (W - 2) * i / 2, y = T + 1 + (H - 2) * j / 2;
     var st = D.elementsFromPoint(x, y) || [];
     for (var k = 0; k < st.length; k++) {
       var e = st[k]; if (e === b || b.contains(e) || e === D.body || e === D.documentElement) continue;
@@ -123223,7 +123260,9 @@ var q = false;
 function soon(){ if (q) return; q = true; RT(function(){ q = false; try { sync(); } catch (e) {} }, 60); }
 try { new MutationObserver(soon).observe(D.body, { childList: true }); } catch (e) {}
 try { new MutationObserver(soon).observe(D.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
-RI(function(){ try { sync(); } catch (e) {} try { ensureTabs(); } catch (e) {} try { unclipActions(); } catch (e) {} try { dodgeAll(); } catch (e) {} }, 700);
+var _gcNavIdle = {};   /* patch TODOPERF: nothing changed on the page: nothing to re-measure */
+var _gcNavHeavy = 0;
+RI(function(){ if (W._gcIdleSkip && W._gcIdleSkip(_gcNavIdle, 5000)) return; try { sync(); } catch (e) {} try { ensureTabs(); } catch (e) {} if (Date.now() - _gcNavHeavy < 4000) return; _gcNavHeavy = Date.now(); try { unclipActions(); } catch (e) {} try { dodgeAll(); } catch (e) {} }, 700);
 W.addEventListener('resize', soon);
 RT(sync, 300);
 try { console.log('[GC] Back from every screen (patch NAV): _gcNavBack()'); } catch (e) {}
@@ -125403,7 +125442,7 @@ function paint(list, n, title){
     var b = el.querySelector('.gc-ldi-badge');
     if (!n) { if (b) b.remove(); return; }
     if (!b) { b = document.createElement('span'); b.className = 'gc-ldi-badge'; el.appendChild(b); }
-    var v = n > 99 ? '99+' : String(n);
+    var v = String(n);
     if (b.textContent !== v) b.textContent = v;
     b.title = title;
   });
@@ -125726,7 +125765,7 @@ window._gcUnassignedLeadCount = function(){ try { return assignList().length; } 
       var b = nav.querySelector('.gc-bw-unas');
       if (!n) { if (b) b.remove(); return; }
       if (!b) { bwCss(); b = document.createElement('span'); b.className = 'gc-bw-unas'; nav.appendChild(b); }
-      var v = n > 99 ? '99+' : String(n); if (b.textContent !== v) b.textContent = v;
+      var v = String(n); if (b.textContent !== v) b.textContent = v;
       b.title = n + ' lead' + (n === 1 ? '' : 's') + ' not assigned to anyone yet';
     });
   }
@@ -128981,7 +129020,9 @@ var ticks = 0, tickErr = '', paints = 0;
 var lastRetry = 0;
 function tick(){ ticks++; deadlines();
   if ((LIB.pending || CH.pending) && navigator.onLine !== false && Date.now() - lastRetry > 15000 && signedIn()) { lastRetry = Date.now(); try { retry(); } catch (e) {} }
-  if (document.hidden) return; try { strips(); } catch (e) { tickErr = String(e); } try { prodBar(); } catch (e) { tickErr = String(e); } }
+  if (document.hidden) return; if (window._gcIdleSkip && window._gcIdleSkip(SELIDLE, 10000)) return;   /* patch TODOPERF */
+  try { strips(); } catch (e) { tickErr = String(e); } try { prodBar(); } catch (e) { tickErr = String(e); } }
+var SELIDLE = {};
 nSI.call(window, tick, 1000);
 /* the CRM's timer governors skip slow ticks while people work; a frame-driven check (every 600 ms, nothing when the tab is hidden) keeps the chips and the Products sub-tab prompt */
 var lastF = 0; function frame(t){ if (t - lastF > 600) { lastF = t; tick(); } try { window.requestAnimationFrame(frame); } catch (e) {} }
@@ -130634,13 +130675,15 @@ function shown(){
   });
   return list;
 }
+var AP2LIM = 20;
 function sectionHtml(dark){
   var list = shown(), n = items().length;
   if(!list.length) return '';
   return '<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 8px;gap:8px">' +
       '<div style="font-size:14px;font-weight:800;letter-spacing:.02em;color:' + (dark ? '#86efac' : '#14532d') + '">✅ Approvals waiting on you (' + n + ')</div>' +
       '<button type="button" class="_ap2All" style="background:none;border:none;color:' + (dark ? '#93c5fd' : '#2563eb') + ';font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline">History</button></div>' +
-    list.map(card).join('');
+    list.slice(0, AP2LIM).map(card).join('') +   /* patch TODOPERF */
+    (list.length > AP2LIM ? '<button type="button" class="_ap2More" style="width:100%;margin-top:4px;padding:10px;border-radius:10px;border:1px dashed #86efac;background:transparent;color:inherit;font-weight:700;cursor:pointer">Show more (' + (list.length - AP2LIM) + ')</button>' : '');
 }
 function wire(root){
   root.querySelectorAll('._ap2Card').forEach(function(c){
@@ -130652,6 +130695,7 @@ function wire(root){
     c.style.cursor = 'pointer';
     c.onclick = function(e){ if(e.target.closest('button')) return; e.stopPropagation(); openPreview(id); };   /* tap the item: open it */
   });
+  var mo = root.querySelector('._ap2More'); if(mo) mo.onclick = function(e){ e.stopPropagation(); AP2LIM += 40; paintAll(true); };
   var a = root.querySelector('._ap2All'); if(a) a.onclick = function(e){ e.stopPropagation(); if(window._gcOpenApprovals) window._gcOpenApprovals(); };
 }
 /* put (or refresh) the section inside host, before ref (or first) */
@@ -130724,7 +130768,7 @@ function green(){
   var want = n > 0 ? 'flex' : 'none';
   if(b.style.display !== want) b.style.display = want;
   var badge = document.getElementById('_gcApprBadge'); if(!badge) return;
-  var t = n > 0 ? (n > 999 ? '999+' : String(n)) : '';
+  var t = n > 0 ? String(n) : '';
   if(badge.textContent !== t){
     badge.textContent = t;
     badge.style.cssText = n > 0 ? 'position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #0a1628;' : 'display:none;';
@@ -131475,7 +131519,7 @@ function badge(){
     var b = el.querySelector('.gc-la-badge');
     if (!n) { if (b) b.remove(); return; }
     if (!b) { b = document.createElement('span'); b.className = 'gc-la-badge'; b.setAttribute('aria-live', 'polite'); el.appendChild(b); }
-    var v = n > 99 ? '99+' : String(n); if (b.textContent !== v) b.textContent = v;
+    var v = String(n); if (b.textContent !== v) b.textContent = v;
     b.title = n + ' new lead' + (n === 1 ? '' : 's') + ' you have not seen yet'; b.setAttribute('aria-label', b.title);
   });
 }
@@ -136707,6 +136751,7 @@ function counts(st){
     if (g.mine) c.mine++;
   });
   try { var _set = W._gcApprovalSet ? W._gcApprovalSet(st) : null; if (_set) { c.appr = _set.total; c.apprSet = _set; } } catch (e) {}
+  c.apprRows = apprRows; c.todos = Math.max(0, c.total - apprRows);   /* patch TODOPERF: the menu badge */
   c.now = c.appr + c.over + c.today;
   return c;
 }
@@ -136887,13 +136932,13 @@ function ensureRoot(host, kind){
 }
 function paintRoot(root, st){
   var kind = root.getAttribute('data-td2-host');
-  root.classList.toggle('compact', kind === 'field' || (root.clientWidth && root.clientWidth < 560));
-  root.className = root.className.replace(/\s*\b[fvg]-\w+/g, '').trim() + (UI.filter ? ' f-' + UI.filter : '') + ' v-' + UI.view + (UI.view === 'everything' && UI.groupBy === 'job' ? ' g-job' : '');
+  var _cmp = !!(kind === 'field' || (root.clientWidth && root.clientWidth < 560)); if (root.classList.contains('compact') !== _cmp) root.classList.toggle('compact', _cmp);   /* patch TODOPERF: write only a change */
+  var _cn = root.className.replace(/\s*\b[fvg]-\w+/g, '').trim() + (UI.filter ? ' f-' + UI.filter : '') + ' v-' + UI.view + (UI.view === 'everything' && UI.groupBy === 'job' ? ' g-job' : ''); if (root.className !== _cn) root.className = _cn;
   var head = root.children[0], tools = root.querySelector('.td2-tools'), body = root.querySelector('.td2-body');
   if (!head || !tools || !body) return;
   var hh = headHtml(kind, st); if (head.__h !== hh) { head.__h = hh; head.innerHTML = hh; }
   var sh = stripHtml(st), strip = tools.querySelector('.td2-strip'); if (strip && strip.__h !== sh) { strip.__h = sh; strip.innerHTML = sh; }
-  var gb = tools.querySelector('.td2-gb'); if (gb) { gb.hidden = UI.view !== 'everything' || !!UI.filter && UI.view !== 'everything'; gb.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-g') === UI.groupBy); }); }
+  var gb = tools.querySelector('.td2-gb'); if (gb) { var _gh = UI.view !== 'everything' || !!UI.filter && UI.view !== 'everything'; if (gb.hidden !== _gh) gb.hidden = _gh; gb.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-g') === UI.groupBy); }); }
   if (kind === 'field') {
     var fa = root.querySelector('.td2-fappr'), n = st.ap2;
     if (n && !fa) { fa = D.createElement('button'); fa.type = 'button'; fa.className = 'td2-fappr'; fa.setAttribute('data-td2', 'fappr'); root.insertBefore(fa, root.querySelector('.td2-anchor')); }
@@ -151531,7 +151576,7 @@ try { console.log('[GC] Role profiles (patch RP): _gcRP.status()'); } catch (e) 
     wrapCount();
     var b = document.getElementById('_gcApprovalsBtn'); if (!b) return;
     var set; try { set = current(); } catch (e) { return; }
-    var n = set.total, t = n > 0 ? (n > 999 ? '999+' : String(n)) : '';
+    var n = set.total, t = n > 0 ? String(n) : '';
     var want = n > 0 ? 'flex' : 'none'; if (b.style.display !== want) b.style.display = want;
     var bd = document.getElementById('_gcApprBadge');
     if (bd && bd.textContent !== t) { bd.textContent = t; if (n > 0 && !/position/.test(bd.style.cssText)) bd.style.cssText = 'position:absolute;top:-6px;right:-6px;background:#dc2626;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px;'; if (!n) bd.style.cssText = 'display:none;'; }
@@ -152003,6 +152048,13 @@ console.log('[GC] Jobs stay put: a failed cloud read changes nothing, 5xx backs 
     return 0;
   }
   function when(a){ return +(a && (a.pmDecidedAt || a.matchedAt || a.updatedAt || a.createdAt)) || 0; }
+  function fold(q){   /* patch TODOPERF: the same fold, for the cloud merge */
+    if (!Array.isArray(q) || q.length < 2) return q;
+    var best = {}, order = [];
+    q.forEach(function(a, i){ var k = a && a.invId != null ? 'i:' + a.invId : 'x:' + i; if (!(k in best)) { best[k] = a; order.push(k); return; } var b = best[k]; if (rank(a) > rank(b) || (rank(a) === rank(b) && when(a) > when(b))) best[k] = a; });
+    return order.length === q.length ? q : order.map(function(k){ return best[k]; });
+  }
+  window._gcFoldSubApprovals = fold;
   function dedupe(){
     var q; try { q = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return 0; }
     if (!Array.isArray(q) || q.length < 2) return 0;
@@ -156553,7 +156605,8 @@ function tabHtml(){
     + '<select data-apx="kind">' + opt('', 'Every kind', UI.kind) + Object.keys(kinds).sort().map(function(k){ return opt(k, k, UI.kind); }).join('') + '</select>'
     + (sc.kind === 'admin' ? '<select data-apx="pm">' + opt('', 'Every PM', UI.pm) + Object.keys(pms).sort().map(function(k){ return opt(k, k, UI.pm); }).join('') + '</select>' : '')
     + (UI.job || UI.kind || UI.pm ? '<button type="button" class="apx-b op" data-apx-clear="1">Clear</button>' : '') + '</div>';
-  h += list.length ? '<div class="apx-list">' + list.map(function(r){ return rowHtml(r, now, 'tab'); }).join('') + '</div>'
+  var lim = UI.lim || 25;   /* patch TODOPERF: the first 25, then "Show more" */
+  h += list.length ? '<div class="apx-list">' + list.slice(0, lim).map(function(r){ return rowHtml(r, now, 'tab'); }).join('') + '</div>' + (list.length > lim ? '<button type="button" class="apx-more" data-apx-more="1">Show more (' + (list.length - lim) + ')</button>' : '')
     : '<div class="apx-empty">' + (!UI.f ? '✓ Nothing is waiting on ' + (sc.preview ? 'them' : 'you') + ' right now.' : 'Nothing here.') + '</div>';
   var rec = recent(sc, now);
   h += '<div class="apx-rh">🕘 Recently approved <span>(14 days — who approved each step, and when)</span></div>'
@@ -156582,7 +156635,8 @@ D.addEventListener('click', function(ev){
   var a = t.closest('[data-apx-act]');
   if (a) { ev.preventDefault(); ev.stopPropagation(); var f = ACTS[a.getAttribute('data-apx-act')] || PIN_ACTS[a.getAttribute('data-apx-act')]; if (f) { try { f(); } catch (e) { warn(e); } } if (/\|approve$/.test(a.getAttribute('data-apx-act'))) later(paintSoon, 400); return; }
   var c = t.closest('[data-apx-f]'); if (c) { ev.preventDefault(); var v = c.getAttribute('data-apx-f'); UI.f = UI.f === v && v ? '' : v; drawTab(true); return; }
-  if (t.closest('[data-apx-clear]')) { UI.job = UI.kind = UI.pm = ''; drawTab(true); return; }
+  if (t.closest('[data-apx-more]')) { ev.preventDefault(); UI.lim = (UI.lim || 25) + 50; drawTab(true); return; }
+  if (t.closest('[data-apx-clear]')) { UI.job = UI.kind = UI.pm = ''; UI.lim = 25; drawTab(true); return; }
   if (t.closest('[data-apx-go]')) { ev.preventDefault(); ev.stopPropagation(); open(''); return; }
   var l = t.closest('[data-apx-link]');
   if (l) { ev.preventDefault(); ev.stopPropagation(); var id = l.getAttribute('data-id'), x = queue().filter(function(y){ return s(y.id) === id; })[0]; if (!x) return; var r = rowQueue(x, false, Date.now()); if (l.getAttribute('data-apx-link') === 'job') openJob(r.pid); else if (r.doc) r.doc.f(); return; }
@@ -156673,7 +156727,7 @@ function navBadge(){
     var b = el.querySelector('.apx-nb');
     if (!n) { if (b) b.remove(); return; }
     if (!b) { b = D.createElement('span'); b.className = 'apx-nb'; el.appendChild(b); }
-    var v = n > 99 ? '99+' : String(n); if (b.textContent !== v) b.textContent = v;
+    var v = String(n); if (b.textContent !== v) b.textContent = v;
     var _tt = n + ' approval' + (n === 1 ? '' : 's') + ' waiting on you'; if (b.title !== _tt) b.title = _tt;   /* patch SWEEP2 */
   });
 }
@@ -156687,9 +156741,11 @@ function wrapMore(){
 
 var soon = 0;
 function paintSoon(){ if (soon) return; soon = 1; later(function(){ soon = 0; fresh(); tick(true); }, 250); }
+var APXIDLE = {};
 function tick(force){
   try {
     if (D.hidden) return;
+    if (!force && W._gcIdleSkip && W._gcIdleSkip(APXIDLE, 5000)) return;   /* patch TODOPERF */
     wrapMore();
     if (view() === 'approvals') drawTab(!!force);
     pinRoots(); navBadge();
@@ -163187,7 +163243,7 @@ function navBadge(){
     var b = el.querySelector('.gcl-nb');
     if (!n) { if (b) b.remove(); return; }
     if (!b) { b = D.createElement('span'); b.className = 'gcl-nb'; el.appendChild(b); }
-    var v = n > 99 ? '99+' : String(n); if (b.textContent !== v) b.textContent = v;
+    var v = String(n); if (b.textContent !== v) b.textContent = v;
     b.title = n + ' lead' + (n === 1 ? '' : 's') + ' not assigned yet';
   });
 }
@@ -171009,5 +171065,64 @@ function wrapAppr(){
 }
 wrapAppr(); RI.call(W, wrapAppr, 1500);
 try { console.log('[GC] accounting audit guards (patch ACCT) — _gcAcctHistoryJob'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-todoperf">
+/* ═══ patch TODOPERF (__GC_PATCH_TODOPERF__) — the To-Do keeps up; a number on the To-Do menu item ════════════════
+   Owner (10/22): "lagging, can't use" (To-Do) · "shouldn't To-Do have notification numbers too?" · "don't say 99+,
+   actually have the right number".
+   • The page-changed counter (gc-patch-todoperf-early) lets the background loops skip their whole-page scans when
+     nothing changed: NAV (every 0.7 s), AP3 (1.5 s), SEL (0.6 s), APX (1 s), the CompanyCam view check (2 s, a scan
+     whose answer was not used), the form check every sync asks (measured each box on the page). The To-Do list itself
+     re-renders only when its data or view changed; Approvals shows 25 rows then "Show more", the green customer
+     e-mail cards 20.
+   • ✅ To-Do in the left menu and the phone tabs shows this person's open to-dos + the approvals waiting on them
+     (the tooltip says "12 to-dos · 5 approvals"); it reads the To-Do's own cached counts (no extra scan).
+   • Every badge shows the real number — no "99+". */
+(function(){
+'use strict';
+if (window.__GC_PATCH_TODOPERF__) return; window.__GC_PATCH_TODOPERF__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval, ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+var css = D.createElement('style'); css.id = 'gc-todoperf-css';
+css.textContent = '.gc-td-nb{display:inline-block;margin-left:auto;min-width:20px;height:20px;line-height:20px;padding:0 6px;border-radius:10px;background:#2563eb;color:#fff;font:800 11px Inter,Arial,sans-serif;text-align:center;box-sizing:border-box;white-space:nowrap}'
+  + '#gc-mobile-bottom-nav .gc-td-nb,#_gcAppTabs .gc-td-nb{position:absolute;top:2px;right:8px;margin:0;min-width:18px;height:18px;line-height:18px;font-size:10.5px;padding:0 5px}'
+  + '.apx-more{display:block;width:100%;margin:8px 0;padding:10px;border-radius:10px;border:1px dashed #94a3b8;background:#fff;color:#1e293b;font-weight:700;cursor:pointer}';
+(D.head || D.documentElement).appendChild(css);
+function label(el){ return String(el.textContent || '').replace(/\s*\d+\s*$/, '').replace(/^[^A-Za-z]+/, '').trim(); }
+var els = [];
+function findEls(){
+  return Array.prototype.filter.call(D.querySelectorAll('aside button, aside a, nav button, nav a, [role=navigation] button, #gc-mobile-bottom-nav button, #gc-mobile-bottom-nav a, #_gcAppTabs button, #_gcAppTabs a'), function(el){
+    return /^To-?Do$/i.test(label(el)) && !el.closest('.td2');
+  });
+}
+var last = '';
+function counts(){
+  var T = W._gcTD2; if (!T || typeof T.counts !== 'function') return null;
+  var c; try { c = T.counts(); } catch (e) { return null; } if (!c) return null;
+  var appr = Math.max(0, c.appr || 0), todos = c.todos != null ? c.todos : Math.max(0, (c.total || 0) - (c.apprRows || 0));
+  return { n: todos + appr, todos: todos, appr: appr };
+}
+function tick(){
+  try {
+    if (D.hidden) return;
+    var k = counts(); if (!k) return;
+    if (!els.length || els.some(function(e){ return !e.isConnected; })) els = findEls();
+    var tt = k.todos + ' to-do' + (k.todos === 1 ? '' : 's') + ' · ' + k.appr + ' approval' + (k.appr === 1 ? '' : 's');
+    els.forEach(function(el){
+      var b = el.querySelector('.gc-td-nb');
+      if (!k.n) { if (b) b.remove(); return; }
+      if (!b) { b = D.createElement('span'); b.className = 'gc-td-nb'; b.setAttribute('data-gc-keep', '1'); el.appendChild(b); if (getComputedStyle(el).position === 'static' && el.closest('#gc-mobile-bottom-nav,#_gcAppTabs')) el.style.position = 'relative'; }
+      var v = String(k.n); if (b.textContent !== v) b.textContent = v;
+      if (b.title !== tt) b.title = tt;
+      if (el.title !== tt) el.title = tt;
+    });
+    last = k.n + '|' + tt;
+  } catch (e) {}
+}
+RI.call(W, tick, 2000); ST.call(W, tick, 2500);
+try { D.addEventListener('change', function(e){ if (e.target && e.target.closest && e.target.closest('.td2')) ST.call(W, tick, 400); }, true); } catch (e) {}
+W._gcTodoBadge = { tick: tick, counts: counts, last: function(){ return last; } };
+try { console.log('[GC] To-Do keeps up; To-Do count in the menu; exact badge numbers (patch TODOPERF)'); } catch (e) {}
 })();
 </script>
