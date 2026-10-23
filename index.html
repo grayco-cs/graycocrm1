@@ -54362,6 +54362,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     if(!sel || sel.tagName!=='SELECT') return;
     if(sel.options.length < MIN_OPTIONS) return;   // short lists keep native behavior
     if(sel.disabled) return;
+    if(window.__gcSelPopV2) return;   /* patch SELPOP: the newer dark picker handles it; two lists opened at once */
     e.preventDefault();      // stop the native dropdown
     buildPicker(sel);
   }
@@ -74700,12 +74701,20 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     sel.dispatchEvent(new Event('change', {bubbles:true}));
   }
 
+  var openSel = null, lastClosedSel = null, lastClosedAt = 0;   /* patch SELPOP: the owner could not get the list to close */
+  window.__gcSelPopV2 = true;
   function closePopup(){
-    if(openPopup){ try{ openPopup.remove(); }catch(e){} openPopup=null; }
+    if(openPopup){ try{ openPopup.remove(); }catch(e){} openPopup=null; lastClosedSel=openSel; lastClosedAt=Date.now(); }
+    openSel=null;
     document.removeEventListener('mousedown', onDocDown, true);
+    document.removeEventListener('touchstart', onDocDown, true);
     document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('scroll', onScroll, true);
+    window.removeEventListener('resize', closePopup, true);
+    window.removeEventListener('blur', closePopup);
   }
   function onDocDown(e){ if(openPopup && !openPopup.contains(e.target)) closePopup(); }
+  function onScroll(e){ if(openPopup && !(e.target && e.target.nodeType===1 && openPopup.contains(e.target))) closePopup(); }   /* patch SELPOP: the page moved; a fixed list would float over other things */
   function onKey(e){ if(e.key==='Escape') closePopup(); }
 
   function buildPopup(sel){
@@ -74729,8 +74738,12 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var search = document.createElement('input');
     search.type = 'text';
     search.placeholder = 'Type to search\u2026';
-    search.style.cssText = 'width:100%;box-sizing:border-box;padding:11px 12px;border:none;border-bottom:1px solid #1e3a5f;background:#0a1628;color:#fff;font-size:14px;outline:none;';
+    search.style.cssText = 'width:100%;box-sizing:border-box;padding:11px 44px 11px 12px;border:none;border-bottom:1px solid #1e3a5f;background:#0a1628;color:#fff;font-size:14px;outline:none;';
     pop.appendChild(search);
+    var xb = document.createElement('button'); xb.type='button'; xb.textContent='\u2715'; xb.title='Close'; xb.setAttribute('aria-label','Close');   /* patch SELPOP */
+    xb.style.cssText = 'position:absolute;top:4px;right:6px;width:34px;height:34px;border:none;border-radius:8px;background:transparent;color:#cbd5e1;font-size:18px;cursor:pointer;';
+    xb.onclick = function(ev){ ev.preventDefault(); ev.stopPropagation(); closePopup(); };
+    pop.appendChild(xb);
 
     var list = document.createElement('div');
     list.style.cssText = 'max-height:268px;overflow-y:auto;-webkit-overflow-scrolling:touch;';
@@ -74770,10 +74783,12 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     };
 
     document.body.appendChild(pop);
-    openPopup = pop;
+    openPopup = pop; openSel = sel;
     setTimeout(function(){ search.focus(); }, 30);
     document.addEventListener('mousedown', onDocDown, true);
+    document.addEventListener('touchstart', onDocDown, true);
     document.addEventListener('keydown', onKey, true);
+    setTimeout(function(){ if(openPopup===pop){ window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', closePopup, true); window.addEventListener('blur', closePopup); } }, 60);   /* patch SELPOP */
   }
 
   // Intercept opening of long selects
@@ -74784,6 +74799,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     if(sel.options.length <= MIN_OPTIONS) return;   // short lists keep the native dropdown
     e.preventDefault();
     e.stopPropagation();
+    if(openSel === sel){ closePopup(); return; }   /* patch SELPOP: tapping the box again closes it */
     buildPopup(sel);
   }, true);
 
