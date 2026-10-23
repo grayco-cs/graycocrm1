@@ -114093,7 +114093,7 @@ window.__gcCCAllow = function(u, init){
     if (url.indexOf('api.companycam.com') >= 0) return false;
     if (url.indexOf('companycam-webhook') < 0) return false;
     if (hdrGet(init && init.headers, 'x-gc-cc') !== '1') return false;   /* an old code path */
-    if (/[?&]proxy=status\b/.test(url)) return true;                     /* the one question */
+    if (/[?&]proxy=(status|sync)\b/.test(url)) return true;              /* the one question (+ patch CCS: what the sync recorded) */
     return on();
   } catch (e) { return false; }
 };
@@ -164954,5 +164954,150 @@ W._gcPdfHeaderCentered = function(doc, opts){
   return ry + 24;
 };
 try { console.log('[GC] Job messages by job: _gcJobTag(p), _gcMsgUnsorted(), _gcMsgMove(id, pid) (patch QA)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-ccs">
+/* __GC_PATCH_CCS__ — CompanyCam sync status you can see (owner 10/23: "no CompanyCam photos are in GrayCo Photos and no
+   new CompanyCam jobs reach the CRM"). The 15-minute companycam-sync now records every run (gc_kv gc_cc_sync_health:
+   at / ok / skipped / error / httpStatus / read / made — never the key); companycam-webhook ?proxy=sync hands it to
+   staff. This tail shows ONE line about it:
+     • 🧭 GrayCo Systems → the CompanyCam tile: a green / red dot + the line;
+     • every CompanyCam bar (the one with "Test Connection") and Admin's CompanyCam setup: the line;
+     • 📸 GrayCo Photos: a banner when CompanyCam is not working (its photos come back empty without a working key).
+   "Test Connection" also refreshes the line. Not for the Marketing Manager. API: window._gcCCSync = { state(), poll(), text() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_CCS__) return; window.__GC_PATCH_CCS__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/companycam-webhook?proxy=sync';
+var EVERY = 5 * 60e3, STALE = 60 * 60e3;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
+function isMM(){ try { return !!(W._gcIsMM && W._gcIsMM()); } catch (e) { return false; } }
+function signedIn(){ try { var A = W.__GC_AUTH__; if (!A) return true; return !!A.email() && A.mode() !== 'none'; } catch (e) { return false; } }
+function when(iso){
+  var t = Date.parse(iso); if (!t) return '';
+  try { return new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return new Date(t).toISOString(); }
+}
+var HOW = 'Netlify → Site configuration → Environment variables → COMPANYCAM_TOKEN, then Deploys → Trigger deploy';
+
+/* ── the server's answer ── */
+var H = { data: null, at: 0, err: '', busy: false };
+function poll(force){
+  if (H.busy || isMM() || !signedIn()) return Promise.resolve(H);
+  if (!force && H.at && Date.now() - H.at < EVERY) return Promise.resolve(H);
+  H.busy = true;
+  return W.fetch(FN, { headers: { 'x-gc-cc': '1' }, cache: 'no-store' }).then(function(r){
+    return r.text().then(function(t){
+      var j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (r.ok && j && typeof j === 'object' && !Array.isArray(j) && 'tokenSet' in j) { H.data = j; H.err = ''; }
+      else H.err = r.status === 404 ? 'the CompanyCam connector is not on the site (404)' : r.status === 401 || r.status === 403 ? 'the server did not accept this sign-in (' + r.status + ')' : 'could not ask the server' + (r.status ? ' (' + r.status + ')' : '');
+    });
+  }, function(){ H.err = 'could not reach the server'; }).then(function(){ H.at = Date.now(); H.busy = false; paint(); return H; });
+}
+
+/* ── one line: { ok, text } ── */
+function judge(){
+  var d = H.data, h = d && d.health, key = (W._gcCCStatus && W._gcCCStatus().state) || null;
+  if (!d) return H.err ? { ok: false, text: '⚠ CompanyCam sync status unknown — ' + H.err } : { ok: null, text: 'CompanyCam sync: checking…' };
+  if (!d.tokenSet && (!h || /COMPANYCAM_TOKEN/.test(s(h.skipped)) || !h.ok))
+    return { ok: false, text: '⚠ CompanyCam token not set in Netlify — nothing syncs and GrayCo Photos stays empty. Add it: ' + HOW + '.' };
+  if (!h) {
+    if (d.serviceKey === false) return { ok: false, text: '⚠ No CompanyCam sync run recorded — SUPABASE_SERVICE_KEY is not set in Netlify, so the 15-minute sync cannot run.' };
+    return { ok: false, text: '⚠ No CompanyCam sync run recorded yet — it runs every 15 minutes after a deploy (Netlify → Deploys → Trigger deploy if it never has).' };
+  }
+  var age = Date.now() - (Date.parse(h.at) || 0), at = when(h.at);
+  if (/COMPANYCAM_TOKEN/.test(s(h.skipped))) return { ok: false, text: '⚠ Last sync ' + at + ': the token was not set then. It is set now — the next 15-minute run will pick it up (or Trigger deploy).' };
+  if (h.skipped) return { ok: false, text: '⚠ Last sync ' + at + ' skipped: ' + s(h.skipped) + ' (Netlify environment variables).' };
+  if (h.httpStatus === 401 || h.httpStatus === 403 || (key && key.reason === 'refused'))
+    return { ok: false, text: '⚠ CompanyCam refused the token (' + (h.httpStatus || 401) + '): make a new token in CompanyCam (Settings → Access tokens) and paste it into ' + HOW + '.' };
+  if (h.error) return { ok: false, text: '⚠ Last sync ' + at + ' failed: ' + s(h.error) };
+  if (age > STALE) return { ok: false, text: '⚠ No CompanyCam sync in the last hour (last run ' + at + ') — check Netlify → Logs → Functions → companycam-sync.' };
+  return { ok: true, text: 'Last sync: ' + at + ' — OK, ' + (+h.read || 0) + ' project' + (+h.read === 1 ? '' : 's') + ' read, ' + (+h.made || 0) + ' job' + (+h.made === 1 ? '' : 's') + ' made' };
+}
+
+/* ── painting: only when something changed (no idle churn) ── */
+function css(){
+  if (D.getElementById('gc-ccs-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-ccs-css'; st.setAttribute('data-gc-keep', '1');
+  st.textContent = '.gc-ccs-line{display:block;font-size:12px;line-height:1.35;margin-top:6px;color:#14532d;font-weight:600}.gc-ccs-line.bad{color:#b91c1c}.gc-ccs-line.wait{color:#64748b;font-weight:500}'
+    + '.gc-ccs-bar{flex-basis:100%;width:100%;padding:6px 10px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0}.gc-ccs-bar.bad{background:#fef2f2;border-color:#fecaca}.gc-ccs-bar.wait{background:#f8fafc;border-color:#e2e8f0}'
+    + '.gc-ccs-dot{position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;background:#94a3b8}.gc-ccs-dot.ok{background:#16a34a}.gc-ccs-dot.bad{background:#dc2626}'
+    + '#gc-ccs-photos{margin:8px 0 12px;padding:10px 14px;border-radius:10px;background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;font-size:13px;font-weight:600}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function cls(j){ return j.ok === true ? '' : j.ok === false ? 'bad' : 'wait'; }
+function setLine(el, j, extra){
+  var c = 'gc-ccs-line ' + cls(j) + (extra ? ' ' + extra : '');
+  if (el.className !== c) el.className = c;
+  if (el.textContent !== j.text) el.textContent = j.text;
+}
+function lineIn(parent, j, extra, first){
+  var el = parent.querySelector(':scope > .gc-ccs-line');
+  if (!el) { el = D.createElement('span'); el.setAttribute('data-gc-keep', '1'); if (first) parent.insertBefore(el, parent.firstChild); else parent.appendChild(el); }
+  setLine(el, j, extra);
+}
+function visible(el){ return !!el && el.offsetParent !== null; }
+function paint(){
+  if (isMM() || !signedIn()) return;
+  css();
+  var j = judge();
+  /* 🧭 GrayCo Systems: the CompanyCam tile */
+  var sys = D.getElementById('gc-sys-sys-mount'), tile = sys && sys.querySelector('[data-k="companycam"]');
+  if (tile) {
+    if (getComputedStyle(tile).position === 'static') tile.style.position = 'relative';
+    var dot = tile.querySelector(':scope > .gc-ccs-dot');
+    if (!dot) { dot = D.createElement('span'); dot.setAttribute('data-gc-keep', '1'); tile.appendChild(dot); }
+    var dc = 'gc-ccs-dot' + (j.ok === true ? ' ok' : j.ok === false ? ' bad' : '');
+    if (dot.className !== dc) dot.className = dc;
+    if (dot.title !== j.text) dot.title = j.text;
+    lineIn(tile, j);
+  }
+  /* every visible CompanyCam bar with "Test Connection" */
+  Array.prototype.forEach.call(D.querySelectorAll('button'), function(b){
+    if (!/Test Connection/.test(b.textContent || '') || !visible(b)) return;
+    var bar = b.parentElement; if (!bar || bar.closest('#gc-sys-sys-mount')) return;
+    lineIn(bar, j, 'gc-ccs-bar');
+    if (!b.__ccs) { b.__ccs = true; b.addEventListener('click', function(){ later(function(){ poll(true); }, 1500); later(function(){ poll(true); }, 6000); }); }
+  });
+  /* Admin's CompanyCam setup panel */
+  ['gc-cc-setup', 'gcx-cc-diag'].forEach(function(id){ var p = D.getElementById(id); if (p && visible(p)) lineIn(p, j, 'gc-ccs-bar', true); });
+  /* 📸 GrayCo Photos: a banner only when CompanyCam is not working */
+  var ban = D.getElementById('gc-ccs-photos');
+  if (view() === 'allphotos' && j.ok === false) {
+    var host = D.getElementById('gcu-tabhost');   /* the GrayCo Photos tab's own mount: the banner goes right above it */
+    if (host && host.parentElement) {
+      if (!ban) { ban = D.createElement('div'); ban.id = 'gc-ccs-photos'; ban.setAttribute('data-gc-keep', '1'); }
+      if (ban.nextElementSibling !== host) host.parentElement.insertBefore(ban, host);
+      var bt = '📷 CompanyCam photos can\'t come in right now. ' + j.text.replace(/^⚠\s*/, '');
+      if (ban.textContent !== bt) ban.textContent = bt;
+    }
+  } else if (ban) ban.remove();
+}
+
+/* "Test Connection" in the old integration object refreshes the line too */
+function wrapTest(){
+  var I = W.gcCCIntegration;
+  if (!I || typeof I.testConnection !== 'function' || I.testConnection.__ccs) return;
+  var f = I.testConnection, w = function(){ var r = f.apply(this, arguments); later(function(){ poll(true); }, 1500); return r; };
+  w.__ccs = true; I.testConnection = w;
+}
+
+function tick(){
+  try {
+    if (D.hidden || isMM() || !signedIn()) return;
+    wrapTest();
+    var v = view();
+    if (/^(systems|admin|allphotos|leads|photos)$/.test(v)) poll(false);
+    paint();
+  } catch (e) { try { console.warn('[GC] patch CCS', e); } catch (x) {} }
+}
+RI.call(W, tick, 1500); later(tick, 4000);
+W._gcCCSync = { state: function(){ return JSON.parse(JSON.stringify({ data: H.data, at: H.at, err: H.err })); }, poll: function(){ return poll(true); }, text: function(){ return judge(); }, _judgeFor: function(data, err){ var o = H.data, e = H.err; H.data = data; H.err = err || ''; try { return judge(); } finally { H.data = o; H.err = e; } } };
+try { console.log('[GC] CompanyCam sync status line (patch CCS) — _gcCCSync.state()'); } catch (e) {}
 })();
 </script>

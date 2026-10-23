@@ -51,6 +51,24 @@ in green.
 Nothing has to be typed into the CRM, and no console command is needed on any
 computer.
 
+**Is the 15-minute sync running? (patch CCS)** Every run of `companycam-sync` now
+leaves one small record (gc_kv `gc_cc_sync_health`: time, OK / skipped / error,
+CompanyCam's HTTP status, projects read, jobs made; never the key). The CRM shows it
+as one line in **🧭 GrayCo Systems → CompanyCam** (green / red dot), under every
+CompanyCam bar with **Test Connection**, and in Admin's CompanyCam setup:
+
+| Line | What to do |
+|---|---|
+| Last sync: … — OK, n projects read, n jobs made | Nothing. |
+| ⚠ CompanyCam token not set in Netlify | Steps 1–2 above, then Trigger deploy. |
+| ⚠ CompanyCam refused the token (401) | Make a new token in CompanyCam, paste it into `COMPANYCAM_TOKEN`, Trigger deploy. |
+| ⚠ No CompanyCam sync run recorded (yet) | `SUPABASE_SERVICE_KEY` missing, or no deploy since the change: Trigger deploy. |
+| ⚠ No CompanyCam sync in the last hour | Netlify → Logs → Functions → `companycam-sync`. |
+
+**📸 GrayCo Photos** shows a red banner above the photos while CompanyCam is not
+working. Without a working key its CompanyCam photos come back empty, so this
+banner is the reason the page looks empty.
+
 ### 4. Remove the old key from the cloud (one line, once)
 
 Earlier builds copied the old (dead) key into the company database. The CRM no

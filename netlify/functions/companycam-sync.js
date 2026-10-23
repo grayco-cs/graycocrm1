@@ -325,16 +325,39 @@ async function run(opts){
   return R;
 }
 
+/* patch CCS: every run leaves one small record the CRM shows (Admin, GrayCo Systems, GrayCo Photos), so a missing or
+   refused CompanyCam key is seen in the CRM, not only in Netlify's function log. Never the key, never a secret. */
+const HEALTH_KEY = 'gc_cc_sync_health';
+function healthOf(r, err){
+  const h = { at: new Date().toISOString(), ok: false };
+  if (err) {
+    h.error = String(err && err.message || err).replace(/Bearer\s+\S+/gi, 'Bearer ...').slice(0, 200);
+    if (err && +err.status) h.httpStatus = +err.status;
+    else { const m = /CompanyCam answered (\d{3})/.exec(h.error); if (m) h.httpStatus = +m[1]; }
+    return h;
+  }
+  r = r || {};
+  if (r.skipped) { h.skipped = String(r.skipped); h.tokenSet = !/COMPANYCAM_TOKEN/.test(h.skipped); return h; }
+  h.ok = r.ok !== false; h.read = +r.read || 0; h.made = (r.made || []).length; h.pmFixed = (r.pmFixed || []).length; h.complete = r.complete !== false;
+  return h;
+}
+async function saveHealth(h){
+  const e = sbEnv(); if (!e.url || !e.key) return false;   /* no service key: nothing can be written (the CRM then says "no run recorded") */
+  try { await kvWrite([{ key: HEALTH_KEY, value: h }]); return true; } catch (err) { return false; }
+}
+
 exports.handler = async function(event){
   /* scheduled only: Netlify calls it on the schedule in netlify.toml (a scheduled function has no public URL) */
   try {
     const r = await run();
+    await saveHealth(healthOf(r));   /* patch CCS */
     try { console.log('[companycam-sync] ' + JSON.stringify({ read: r.read, complete: r.complete, skipped: r.skipped, made: (r.made || []).length, pmFixed: (r.pmFixed || []).length, ask: r.ask,
       first: (r.made || []).slice(0, 10).map(x => x.cc + ' ' + x.name + ' → ' + (x.pm || 'no PM')) })); } catch (e) {}
     return { statusCode: 200, body: JSON.stringify({ ok: r.ok, skipped: r.skipped, made: (r.made || []).length, pmFixed: (r.pmFixed || []).length, read: r.read, complete: r.complete }) };
   } catch (e) {
     console.log('[companycam-sync] failed: ' + (e && e.message || e));
+    await saveHealth(healthOf(null, e));   /* patch CCS: a failed run is recorded too */
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) };
   }
 };
-exports._t = { run, compact, decide, knownIndex, pmFinder, listChanged, rsNear, CUT };
+exports._t = { run, compact, decide, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, HEALTH_KEY };

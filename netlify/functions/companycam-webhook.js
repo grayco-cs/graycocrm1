@@ -219,6 +219,21 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers, body: JSON.stringify(out) };
   }
 
+  // GET ?proxy=sync — patch CCS: what the 15-minute companycam-sync recorded on its last run (gc_kv gc_cc_sync_health)
+  // and whether COMPANYCAM_TOKEN is set here. Never the key. No CompanyCam call.
+  if(event.httpMethod === 'GET' && qs.proxy === 'sync'){
+    const out = { ok: true, tokenSet: !!String(process.env.COMPANYCAM_TOKEN || '').trim(), health: null, checkedAt: new Date().toISOString() };
+    const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+    const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if(!svc){ out.serviceKey = false; return { statusCode: 200, headers, body: JSON.stringify(out) }; }
+    try{
+      const r = await fetch(url + '/rest/v1/gc_kv?select=value&key=eq.gc_cc_sync_health', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      if(r.ok){ const rows = await r.json(); let v = Array.isArray(rows) && rows[0] ? rows[0].value : null; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } } out.health = v && typeof v === 'object' ? v : null; }
+      else out.readError = r.status;
+    }catch(err){ out.readError = 'unreachable'; }
+    return { statusCode: 200, headers, body: JSON.stringify(out) };
+  }
+
   // GET ?proxy=recent&days=N — every ACTIVE project changed in the last N days, all pages, small shape
   if(event.httpMethod === 'GET' && qs.proxy === 'recent'){
     const token = ccTokenFor(event).token;
