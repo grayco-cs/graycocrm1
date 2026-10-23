@@ -67507,28 +67507,27 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         return;
       }
     }catch(e){}
-    if(!clientId){
-      alert('Google Calendar sync is built and ready, but the Google Cloud connection isn\u2019t set up yet.\n\nOnce you create the Google Cloud OAuth project and add the Client ID, this button will connect each PM\u2019s calendar. Ask Claude to walk you through the Google Cloud setup when you\u2019re ready.');
-      return;
-    }
-    var redirectUri = 'https://graycocrm1.netlify.app/.netlify/functions/gcal-oauth';
-    var scope = encodeURIComponent('https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/drive.readonly');
-    var url = 'https://accounts.google.com/o/oauth2/v2/auth'+
-      '?client_id='+encodeURIComponent(clientId)+
-      '&redirect_uri='+encodeURIComponent(redirectUri)+
-      '&response_type=code'+
-      '&access_type=offline'+
-      '&prompt=consent'+
-      '&scope='+scope+
-      '&state='+encodeURIComponent(myName);
-    // Record that THIS user has initiated/connected Google, so we stop prompting them.
-    try{
-      var _gc=JSON.parse(localStorage.getItem('gc_google_connected')||'{}');
-      var _who=(function(){try{return localStorage.getItem('grayco_user')||'';}catch(e){return myName;}})();
-      _gc[_who]=new Date().toISOString();
-      localStorage.setItem('gc_google_connected', JSON.stringify(_gc));
-    }catch(e){}
-    window.open(url, '_blank');
+    /* patch GTOK: the server signs the Google link for the person signed in here (their name is never taken from this
+       page); the window opens at once (so it is not blocked) and goes to Google when the link is back */
+    var win = null; try { win = window.open('', '_blank'); } catch(e){}
+    fetch('/.netlify/functions/gcal-oauth?op=start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'The server did not answer (' + r.status + ').' }; }); })
+      .then(function(o){
+        if (!o || !o.ok || !o.url) {
+          try { if (win) win.close(); } catch(e){}
+          if (o && o.notConfigured) alert('Google Calendar sync is built and ready, but the Google Cloud connection isn\u2019t set up yet.\n\nOnce you create the Google Cloud OAuth project and add the Client ID, this button will connect each PM\u2019s calendar. Ask Claude to walk you through the Google Cloud setup when you\u2019re ready.');
+          else alert('Google could not be connected: ' + ((o && o.error) || 'please try again.'));
+          return;
+        }
+        // Record that THIS user has initiated/connected Google, so we stop prompting them.
+        try{
+          var _gc=JSON.parse(localStorage.getItem('gc_google_connected')||'{}');
+          var _who=(function(){try{return localStorage.getItem('grayco_user')||'';}catch(e){return myName;}})();
+          _gc[_who]=new Date().toISOString();
+          localStorage.setItem('gc_google_connected', JSON.stringify(_gc));
+        }catch(e){}
+        if (win && !win.closed) win.location.href = o.url; else window.open(o.url, '_blank');
+      }, function(){ try { if (win) win.close(); } catch(e){} alert('Google could not be connected: no connection to the CRM server. Please try again.'); });
   };
   console.log('[GC] Google Calendar connect loaded.');
 })();
