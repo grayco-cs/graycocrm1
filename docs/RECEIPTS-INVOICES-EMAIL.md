@@ -9,20 +9,15 @@ Anyone can e-mail a receipt photo or PDF to **receipts@grayco-cs.com**. A sub ca
 - **Sub invoices** go on ▥ Invoices as a *received* sub invoice with the PDF, matched to the job by its PO when the subject or file name carries it. Approve them as usual.
 - Nothing is sent to anyone. Data-entry mode makes no difference here.
 
-## Setup (once, about 10 minutes)
+## Setup (the groups receipts@ and invoices@ already exist)
 
-1. **admin.google.com → Directory → Groups → Create group:**
-   - `receipts@grayco-cs.com`
-   - `invoices@grayco-cs.com`
-
-   For each one, set **Access settings → Who can post: Anyone on the web** (subs and stores are outside GrayCo).
-2. **Add the CRM's copy address as a member of each group:**
-   - receipts@ → `receipts@in.grayco-cs.com`
-   - invoices@ → `invoices@in.grayco-cs.com`
-
-   Add office@ too if the office wants its own copy.
-3. **Resend:** nothing new. `in.grayco-cs.com` already delivers to the CRM's mail webhook, the same one as bids@, leads@ and orders@. It has to show **Verified** in Resend → Domains.
-4. **Test:** e-mail a receipt photo to receipts@grayco-cs.com. Within a minute it is on the To-Do under 📧 Receipts e-mailed in, and the 🔧 Owner setup step ticks itself.
+1. **Resend → Domains → in.grayco-cs.com must show Verified** first.
+2. **admin.google.com → Groups → receipts@ → Group settings:** turn ON **Allow members outside your organization**.
+   - If it is greyed out: Apps → Google Workspace → Groups for Business → **Sharing settings** → tick **Group owners can allow external members**, then try again.
+3. **receipts@ → Members → Add members:** `receipts@in.grayco-cs.com`.
+4. Do the same for **invoices@**, with the member `invoices@in.grayco-cs.com`.
+5. billing@ is an alias on office@: it needs no group.
+6. **Test:** e-mail a receipt photo to receipts@grayco-cs.com. Within a minute it is on the To-Do under 📧 Receipts e-mailed in, and the 🔧 Owner setup step ticks itself.
 
 Files:
 - `netlify/functions/_lib/money-mail.js`: keeps the e-mail and its files in gc_kv `gc_mail_money`.

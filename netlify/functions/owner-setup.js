@@ -34,10 +34,11 @@ async function inbound(){
 async function moneyMail(){ let v = null; try { v = await D.kvGet('gc_mail_money'); } catch (e) {} if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return Array.isArray(v) && v.length ? true : null; }
 async function checks(){
   const c = {};
-  const [pay, mail, tok, mkt, store, cc, inb, mm] = await Promise.all([klass('payrollStubs_2026'), klass('gc_mail_x'), klass('gcal_token_x'), rpcExists('gc_is_marketing'), rpcExists('gc_storage_usage'), companyCam(), inbound(), moneyMail()]);
+  const [pay, mail, tok, mkt, store, cc, inb, mm, trn] = await Promise.all([klass('payrollStubs_2026'), klass('gc_mail_x'), klass('gcal_token_x'), rpcExists('gc_is_marketing'), rpcExists('gc_storage_usage'), companyCam(), inbound(), moneyMail(), klass('gc_train_items')]);
   c.sql_payroll = pay == null ? null : pay === 'payroll';
   c.sql_emailall = mail == null ? null : mail === 'admin';
   c.sql_gtok = tok == null ? null : tok === 'server';
+  c.sql_training = trn == null ? null : trn === 'adminwrite';   /* docs/training.sql (patch TRAIN2) */
   c.sql_marketing = mkt;
   c.sql_storage = store;
   c.companycam = cc;
@@ -47,6 +48,7 @@ async function checks(){
   c.google_sa = has('GOOGLE_SA_EMAIL') && has('GOOGLE_SA_KEY');
   c.vapid = has('VAPID_PUBLIC_KEY') && has('VAPID_PRIVATE_KEY');
   c.anthropic = has('ANTHROPIC_API_KEY');
+  c.resend_events = has('RESEND_EVENTS_SECRET');   /* patch SENTLOG: delivered / bounced webhook */
   return c;
 }
 exports.handler = async function(event){
