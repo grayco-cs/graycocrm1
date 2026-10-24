@@ -541,8 +541,18 @@ async function gateGet(data, force){
   if (G.ok) { GATE_LAST = G; GATE_AT = Date.now(); }
   return G;
 }
+/* owner exception (10/24): on an insurance-claim job the Work Authorization goes in the portal by itself when the job is
+   made (patch PM3 posts it) — never gated. Tagged kind / docType / tmpl / template 'work_auth', or named "Work Authorization". */
+function gateExempt(p, key, rec){
+  if (!rec || key.slice(0, 2) !== 'd:') return false;
+  const tag = low([rec.kind, rec.docType, rec.tmpl, rec.template, rec.genKind, rec.portalAuto].filter(function(v){ return typeof v === 'string'; }).join(' '));
+  const isWa = /\bwork_auth\b/.test(tag) || /work[\s_-]*auth/i.test(s(rec.name) + ' ' + s(rec.cat));
+  if (!isWa) return false;
+  return !!(p && (isInsJob(p) || p.isInsurance === true || s(p.claimId) || s(p.claimNumber) || s(p.claimNo)));
+}
 /* may this thing be on the job's portal page? (sync: the gate read last; buildView / notices read it first) */
 function gateAllows(G, p, key, rec, pending, info){
+  if (gateExempt(p, key, rec)) return true;   /* the insurance Work Authorization (owner, 10/24) */
   G = G || GATE_LAST;
   if (!G || !G.ok) return false;
   const e = G.map[key];

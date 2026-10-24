@@ -174721,19 +174721,21 @@ var sigs = typeof WeakMap === 'function' ? new WeakMap() : null;
 function paintCard(card){
   var pid = s(card.getAttribute('data-pid'));
   var items = pendingFor(pid);
-  var have = card.querySelector(':scope > .gcao-wait');
+  var nx = card.nextElementSibling, have = nx && nx.classList && nx.classList.contains('gcao-wait') ? nx : null;   /* beside the card: its own repaints never wipe it */
   var sig = items.map(function(x){ return x.id + ':' + x.status + ':' + x.step + ':' + s(x.title); }).join(',');
   if (!items.length) { if (have) have.remove(); return; }
   if (have && sigs && sigs.get(card) === sig) return;
   if (sigs) sigs.set(card, sig);
   var h = '<b>⏳ Waiting for approval — not in portal:</b> ' + items.slice(0, 6).map(function(x){ return esc(s(x.title).replace(/^📄 Put in the customer portal — /, '')); }).join(' · ') + (items.length > 6 ? ' · +' + (items.length - 6) + ' more' : '') +
     '<button type="button" class="gcao-go">Open Approvals</button>';
-  if (!have) { have = D.createElement('div'); have.className = 'gcao-wait'; have.setAttribute('data-gc-keep', '1'); card.appendChild(have); }
+  if (!have) { have = D.createElement('div'); have.className = 'gcao-wait'; have.setAttribute('data-gc-keep', '1'); have.setAttribute('data-pid', pid); card.parentNode.insertBefore(have, card.nextSibling); }
   if (have.innerHTML !== h) have.innerHTML = h;
   var go = have.querySelector('.gcao-go'); if (go) go.onclick = function(){ try { if (W._setView) W._setView('approvals'); else if (W._gcOpenApprovals) W._gcOpenApprovals(); } catch (e) {} };
 }
 /* the 🏠 Portal cards on screen (patch Q: .gcq-card[data-pid]) — a cheap look every 2 s, a write only when what waits changed */
-RI.call(W, function(){ try { if (D.hidden) return; var cs = D.querySelectorAll('.gcq-card[data-pid]'); for (var i = 0; i < cs.length; i++) paintCard(cs[i]); } catch (e) {} }, 2000);
+RI.call(W, function(){ try { if (D.hidden) return; var cs = D.querySelectorAll('.gcq-card[data-pid]'); for (var i = 0; i < cs.length; i++) paintCard(cs[i]);
+  var ws = D.querySelectorAll('.gcao-wait'); for (var j = 0; j < ws.length; j++) { var pv = ws[j].previousElementSibling; if (!pv || !pv.classList.contains('gcq-card') || pv.getAttribute('data-pid') !== ws[j].getAttribute('data-pid')) ws[j].remove(); }   /* its card is gone */
+} catch (e) {} }, 2000);
 try { console.log('[GC] Approvals in order of importance, newest first; portal approvals (patches APPRORDER + PORTALGATE)'); } catch (e) {}
 })();
 </script>
