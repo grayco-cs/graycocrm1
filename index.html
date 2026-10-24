@@ -58707,6 +58707,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     });
   }
 
+  window._gcJobMsgAdd = addMsg;   /* patch FIELD */
   window._gcOpenJobMessages = function(pid){
     if(!pid){ alert('Open this from a specific job.'); return; }
     var proj=projects().find(function(p){return p&&p.id===pid;})||{};
@@ -151943,7 +151944,15 @@ var SB = (function(){
       b('📒', 'Site Book', 'every job', 'sitebook') + b('◧', 'Schedule', '', 'schedule') + b('☐', 'Punch List', '', 'punchlist') + b('📸', 'Photos', '', 'allphotos') + b('💬', 'Messages', '', 'messages') + b('✅', 'To-Do', '', 'todo') + '</div>';
   }
   function open(pid, sec){ st.job = pid; st.sec = sec || 'today'; st.logDate = ''; go('sitebook'); later(function(){ draw(true); }, 300); }
-  return { draw: draw, open: open, todayHtml: todayHtml, fieldHtml: fieldHtml, rec: function(pid){ return JSON.parse(JSON.stringify(rec(pid))); }, all: function(){ return JSON.parse(JSON.stringify(map)); }, push: push, pull: pull, state: function(){ return { job: st.job, sec: st.sec, dirty: dirty, err: err }; }, QC: QC };
+  /* patch FIELD: GrayCo Field's day — Start day opens (or starts) today's ONE log, a line goes on it, End day signs it */
+  function dayLog(pid){ var p = proj(pid); if (!p) return null; var d = today(), lg = logFor(p, rec(pid), d); if (lg) return lg; lg = autofill(p, rec(pid), d); addTo(pid, 'logs', lg); weatherFor(p, d).then(function(x){ if (x && x.text) setIn(pid, 'logs', lg.id, function(y){ if (!s(y.weather)) y.weather = s(x.text); }); }); return lg; }
+  var DAY = {
+    today: function(pid){ var p = proj(pid); var lg = p ? logFor(p, rec(pid), today()) : null; return lg ? JSON.parse(JSON.stringify(lg)) : null; },
+    start: function(pid, o){ o = o || {}; var lg = dayLog(pid); if (!lg) return null; setIn(pid, 'logs', lg.id, function(x){ if (!x.startAt) { x.startAt = nowIso(); x.startBy = s(o.by) || myName(); } if (o.crew && !arr(x.manpower).length) x.manpower = [{ id: 'MP' + Date.now().toString(36), company: 'GrayCo', headcount: +o.crew || 0, hours: (+o.crew || 0) * 8 }]; }); return lg.id; },
+    end: function(pid, o){ o = o || {}; var lg = dayLog(pid); if (!lg) return null; setIn(pid, 'logs', lg.id, function(x){ x.endAt = nowIso(); x.endBy = myName(); if (o.sign && !x.signedAt) { x.signedBy = myName(); x.signedEmail = myEmail(); x.signedAt = nowIso(); } }); return lg.id; },
+    line: function(pid, field, text){ if (!/^(work|delays|deliveries|equipment|visitors|safety)$/.test(field)) field = 'work'; var lg = dayLog(pid); if (!lg) return null; setIn(pid, 'logs', lg.id, function(x){ x[field] = (s(x[field]) ? s(x[field]) + '\n' : '') + s(text); }); return lg.id; }
+  };
+  return { day: DAY, draw: draw, open: open, todayHtml: todayHtml, fieldHtml: fieldHtml, rec: function(pid){ return JSON.parse(JSON.stringify(rec(pid))); }, all: function(){ return JSON.parse(JSON.stringify(map)); }, push: push, pull: pull, state: function(){ return { job: st.job, sec: st.sec, dirty: dirty, err: err }; }, QC: QC };
 })();
 
 /* ══ the loop ══════════════════════════════════════════════════════════════════ */
@@ -177576,5 +177585,1267 @@ RI.call(W, function(){
 }, 2000);
 W._gcSentLog = { open: open, refresh: function(){ return loadFu(true); }, state: function(){ return S; }, _level: level };
 try { console.log('[GC] 📤 Sent by the CRM · 📬 Waiting on a reply (patch SENTLOG) — _gcSentLog'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-field">
+/* __GC_PATCH_FIELD__ — GrayCo Field: THE phone app (owner 10/24: "field view … that approval button needs to be an
+   important one … very useful for updating your jobs in the field, the most important"; then: everyone on a phone
+   opens into GrayCo Field, desk view only from ☰ More → ⚙ Settings; photos built in; built to grow; no automatic
+   customer posts from Start / End day; nothing required but the tap; ＋ Add job in the app; 📐 Estimate every way).
+   On a PHONE (the screen's short side ≤ 500 px) every role opens in GrayCo Field. Tablets and desks are unchanged.
+   The home (#_gcJobPick, light look, the GrayCo logo):
+     • tiles: 📸 GrayCo Photos · ＋ Add job;
+     • today's jobs for the person's role (PM / APM: their jobs; superintendent: the jobs they run; estimator: theirs;
+       admin / office / others: what is on the company schedule today), each card built from the FIELD TOOLS
+       REGISTRY — window._gcFieldTools.register({ id, icon, label, group: 'arrive'|'big'|'small', roles, needsSigned,
+       run(p, ctx), href(p), order }) — so a new tool is one register() call, no layout change;
+       a job whose contract is not signed (window._gcJobSigned, patch PM3) shows 🔒 and only the tools that do not
+       need a signature work;
+     • My approvals (priority order: window._gcApprovalSort when present), each opening its own approval screen;
+     • Estimates to build (PM / estimator), and the PM's commission line when the payroll engine gives one.
+   🟢 Start day / 🏁 End day: one tap each; crew comes from the schedule, weather is automatic, notes / photos are
+   optional; today's ONE daily log (Site Book) is started, filled as the day goes (problem, materials, punch,
+   progress lines) and signed at End day. Nothing goes to the customer unless "📣 Also tell the customer" is ticked.
+   ＋ Add job: customer (type-ahead on customers and leads), 📍 address from the phone's location, job type, scope,
+   photos → window._gcCreateJobFromSource('field', data) (patch PM3 owns it; a minimal one is here until it lands)
+   → the photos into GrayCo Photos (its own storage) → optionally the matching CompanyCam project.
+   The bottom bar: Home · Jobs · ✅ Approvals (big, red count) · Messages · More. Saves go through the existing save
+   paths (the SYNCQ queue for projects, the Site Book's own sync); the header says "Saved on phone, will send" until
+   they are sent. No polling: the home repaints only when the CRM's data object is rebuilt, the phone goes on / off
+   line, or after an action, and only when what it shows changed. API: window._gcField, window._gcFieldTools */
+(function(){
+'use strict';
+if (window.__GC_PATCH_FIELD__) return; window.__GC_PATCH_FIELD__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function C(){ return W._crm || {}; }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function nowIso(){ return new Date().toISOString(); }
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function inField(){ return D.documentElement.classList.contains('_fieldmode'); }
+/* a phone: the screen's short side (tablets and desks keep their layout) */
+function phoneDevice(){ var sw = (W.screen && Math.min(W.screen.width || 9999, W.screen.height || 9999)) || 9999; return sw <= 500 || Math.min(W.innerWidth || 9999, W.innerHeight || 9999) <= 500; }
+var DESK_KEY = 'gc_phone_desk';
+function deskPref(){ return lsGet(DESK_KEY) === '1'; }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function role(){ try { return W._gcRP && W._gcRP.role ? s(W._gcRP.role()) : ''; } catch (e) { return ''; } }
+function isAdmin(){ try { if (W._gcVAS && W._gcVAS.active()) return /admin/i.test(role()); } catch (e) {} try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function holderIs(k){ try { var h = W._gcLeadRoles && W._gcLeadRoles.holder ? W._gcLeadRoles.holder(k) : null; return !!h && low(h.name) === low(myName()); } catch (e) { return false; } }
+/* the person's app: mitigation · insurance · roofing PM · residential PM · estimator · superintendent / crew · office · marketing · admin
+   (an unknown role gets the residential PM's app) */
+function rk(){
+  var r = role();
+  if (/superintendent|crew|foreman|laborer/i.test(r)) return 'super';
+  if (/mitigation/i.test(r)) return 'mit';
+  if (/insurance/i.test(r)) return 'ins';
+  if (/estimat/i.test(r)) return 'est';
+  if (/^office/i.test(r)) return 'office';
+  if (/marketing/i.test(r)) return 'mkt';
+  if (r === 'Project Manager') { if (holderIs('insurance')) return 'ins'; if (holderIs('roofing') || /roof/i.test(s((meU() || {}).title))) return 'roof'; return 'pm'; }
+  if (/admin/i.test(r) || isAdmin()) return 'admin';
+  return 'pm';
+}
+function isSuper(){ return rk() === 'super'; }
+function isPM(){ var k = rk(); return k === 'pm' || k === 'roof'; }
+function eligible(){ return inField() && phoneDevice(); }
+function meU(){
+  try { if (W._gcVAS && W._gcVAS.active()) { var p = W._gcVAS.person(); if (p) return p; } } catch (e) {}
+  try { var m = low(lsGet('grayco_user')); return arr(C().users).filter(function(u){ return u && (low(u.email) === m || low(u.name) === m); })[0] || null; } catch (e) { return null; }
+}
+function myName(){ var u = meU(); return s(u && u.name) || s(lsGet('grayco_user')); }
+function uid(u){ return u ? (u.id || u.email || u.name) : ''; }
+function proj(pid){ return arr(C().projects).filter(function(p){ return p && s(p.id) === s(pid); })[0] || null; }
+function pctOf(p){ var v = [p.pct, p.ccProgressPct, p.progress].map(function(x){ return parseFloat(x); }).filter(function(x){ return !isNaN(x); })[0]; return Math.max(0, Math.min(100, Math.round(v || 0))); }
+function active(p){ return !!p && !p.deleted && !/(complete|closed|lost|cancel|archiv|history)/i.test(s(p.status)) && !p.history && !p.recordOnly; }
+function SBd(){ try { var sb = W._gcRP && W._gcRP.site && W._gcRP.site(); return sb && sb.day ? sb.day : null; } catch (e) { return null; } }
+function toast(t, ms){
+  var el = D.getElementById('gc-fh-toast'); if (!el) { el = D.createElement('div'); el.id = 'gc-fh-toast'; el.setAttribute('data-gcnav-ignore', '1'); D.body.appendChild(el); }
+  el.textContent = t; el.style.display = 'block'; clearTimeout(el.__t); el.__t = later(function(){ el.style.display = 'none'; }, ms || 3500);
+}
+function fn(name, body){
+  return fetch('/.netlify/functions/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'HTTP ' + r.status }; }); }, function(e){ return { ok: false, error: 'offline', offline: true }; });
+}
+
+/* ── field settings (admin): gc_kv gc_field_settings, cached on the phone ── */
+var FSK = 'gc_field_settings';
+function fset(){ try { return JSON.parse(lsGet(FSK) || '{}') || {}; } catch (e) { return {}; } }
+function ccOn(){ return fset().companycam !== false; }   /* "Also create in CompanyCam": on while CompanyCam is in use */
+function saveFset(patch){ var v = Object.assign({}, fset(), patch, { updatedAt: nowIso(), by: myName() }); lsSet(FSK, JSON.stringify(v)); try { if (W._supaUpsert) W._supaUpsert(FSK, v); } catch (e) {} return v; }
+var fsetPulled = false;
+function pullFset(){ if (fsetPulled || typeof W._gcCloudGet !== 'function') return; fsetPulled = true; Promise.resolve(W._gcCloudGet(FSK)).then(function(v){ if (v && typeof v === 'object') lsSet(FSK, JSON.stringify(Object.assign({}, fset(), v))); }).catch(function(){}); }
+
+/* ── which jobs ── */
+function mine(p){
+  var n = low(myName()), k = rk(); if (!n) return false;
+  if (k === 'super') return [p.superintendent, p.superName, p.super].some(function(x){ return low(x) === n; });
+  if (k === 'est') return [p.estimator, p.soldBy].some(function(x){ return low(x) === n; });
+  if (k === 'mit') return [p.mitTech, p.tech, p.superintendent, p.pm].some(function(x){ return low(x) === n; });
+  return [p.pm, p.apm, p.assistantPm].some(function(x){ return low(x) === n; });
+}
+function schedToday(p){
+  var t = today();
+  return arr(C().schedule).filter(function(x){
+    if (!x || x.deleted || s(x.pid || x.projectId || x.jobId) !== s(p.id)) return false;
+    var d = s(x.date), a = s(x.start || x.startDate) || d, b = s(x.end || x.endDate) || a;
+    return d ? d === t : (a && a <= t && t <= b);
+  });
+}
+function myJobs(){
+  var k = rk(), all = arr(C().projects).filter(active);
+  if (k === 'pm' || k === 'roof' || k === 'super' || k === 'est' || k === 'mit' || k === 'ins') {
+    var m = all.filter(mine), t = m.filter(function(p){ return schedToday(p).length > 0; });
+    return { today: t.length > 0, company: false, list: t.length ? t : m };
+  }
+  var c = all.filter(function(p){ return schedToday(p).length > 0; });   /* admin / office / others: the company's day */
+  return { today: true, company: true, list: c };
+}
+
+/* ── contract signed? (patch PM3 owns the rule; this only reads it) ── */
+function signed(p){
+  try { if (typeof W._gcJobSigned === 'function') { var r = W._gcJobSigned(p.id); if (r && typeof r === 'object') return !!(r.signed || r.override); return !!r; } } catch (e) {}
+  if (p.history || p.recordOnly) return true;
+  if (p.contractSigned === false || /^unsigned$/i.test(s(p.contractStatus || p.signatureStatus))) return false;
+  return true;   /* until PM3 is there, nothing is locked that was not marked unsigned */
+}
+
+/* ── today's log (patch RP's Site Book) ── */
+function logToday(pid){ var d = SBd(); try { return d ? d.today(pid) : null; } catch (e) { return null; } }
+function dayState(pid){ var lg = logToday(pid); return { started: !!(lg && lg.startAt), ended: !!(lg && lg.endAt), signed: !!(lg && lg.signedAt), lines: lg ? (s(lg.work) ? s(lg.work).split('\n').length : 0) + (s(lg.delays) ? s(lg.delays).split('\n').length : 0) : 0, start: lg && lg.startAt }; }
+function logLine(pid, field, text){ var d = SBd(); if (!d) return false; try { d.line(pid, field, text); return true; } catch (e) { return false; } }
+
+/* ── approvals ── */
+var KIND_OPEN = {
+  email: function(){ if (W._gcOpenApprovals) W._gcOpenApprovals(); else openAllAppr(); },
+  subinv: function(){ if (W._gcOpenSubApprovals) W._gcOpenSubApprovals(); else openAllAppr(); },
+  invsign: function(){ if (W._gcOpenInvoiceApprovals) W._gcOpenInvoiceApprovals(); else openAllAppr(); },
+  expense: function(){ if (W._gcOpenExpenseApprovals) W._gcOpenExpenseApprovals(); else openAllAppr(); }
+};
+function openAllAppr(){ if (W._gcOpenPmApprovals) W._gcOpenPmApprovals(); else if (W._setView) W._setView('approvals'); }
+function apprCount(){ try { return typeof W._gcApprovalCount === 'function' ? (+W._gcApprovalCount() || 0) : 0; } catch (e) { return 0; } }
+function apprItems(){
+  var set = null; try { set = typeof W._gcApprovalSet === 'function' ? W._gcApprovalSet() : null; } catch (e) {}
+  var out = [];
+  var GL = { email: 'Customer e-mail', subinv: 'Sub invoice', invsign: 'Invoice to sign off', expense: 'Expense' };
+  if (set && set.groups) Object.keys(set.groups).forEach(function(g){ arr(set.groups[g]).forEach(function(x){ var t = s(x.title) || g; out.push({ id: s(x.id), g: g, title: GL[g] && t.indexOf(GL[g]) !== 0 ? GL[g] + ' · ' + t : t, sub: s(x.sub), at: s(x.at || x.createdAt), urgency: s(x.urgency), act: x.act || null }); }); });
+  /* patch APPRORDER's one order (ASAP · Soon · Routine, newest first): each row in its shape, our tier chip from its why */
+  try {
+    if (typeof W._gcApprovalSort === 'function' && typeof W._gcApprovalTier === 'function') {
+      var SRC = { sub: 'sub', inv: 'inv', eq: 'queue', ap2: 'queue' };
+      var rows = out.map(function(x){ var m = /^([a-z0-9]+):(.*)$/.exec(x.id) || [], src = SRC[m[1]] || '', r = { src: src, id: src ? m[2] : x.id, kind: x.g, title: x.title, at: x.at, createdAt: x.at, __x: x };
+        if (/^mat:/.test(x.id)) r.__raw = { urgent: true, title: x.title, createdAt: x.at };   /* work is waiting on materials */
+        else if (!src) r.__raw = { title: x.title, urgency: x.urgency, createdAt: x.at };
+        var tr = W._gcApprovalTier(r) || {}; x.tier = tr.t != null ? tr.t : 2; x.why = s(tr.why); return r; });
+      var sorted = W._gcApprovalSort(rows);
+      if (Array.isArray(sorted)) return sorted.map(function(r){ return r.__x; });
+    }
+  } catch (e) {}
+  var tierOf = function(x){ if (/asap|urgent/i.test(x.urgency) || /overdue|past due|final|urgent|today/i.test(x.title + ' ' + x.sub) || /^mat:/.test(x.id)) return 0; if (x.g === 'invsign' || x.g === 'email' || /portal|proposal|invoice/i.test(x.title)) return 1; return 2; };
+  out.forEach(function(x){ x.tier = x.tier != null ? x.tier : tierOf(x); });
+  out.sort(function(a, b){ return (a.tier - b.tier) || (b.at < a.at ? -1 : b.at > a.at ? 1 : 0); });
+  return out;
+}
+function tierChip(x){
+  var t = x.tier; if (t == null) t = /asap/i.test(x.urgency) ? 0 : /soon/i.test(x.urgency) ? 1 : 2;
+  var why = x.why ? ' title="' + esc(x.why) + '"' : '';
+  return t === 0 ? '<span class="fh-chip r"' + why + '>ASAP</span>' : t === 1 ? '<span class="fh-chip o"' + why + '>Soon</span>' : '<span class="fh-chip w"' + why + '>Routine</span>';
+}
+function openAppr(id){
+  var x = apprItems().filter(function(y){ return y.id === id; })[0]; if (!x) { openAllAppr(); return; }
+  if (/^mat:/.test(x.id)) { matSheet(x.id.slice(4)); return; }
+  if (typeof x.act === 'function') { try { x.act(); return; } catch (e) {} }
+  (KIND_OPEN[x.g] || openAllAppr)();
+}
+
+/* ── material requests: saved on the job (projects list → the SYNCQ queue), approved by the PM ── */
+function saveProject(pid, fn){
+  var put = function(p){ var q = Object.assign({}, p); fn(q); q.updatedAt = nowIso(); q.savedAt = q.updatedAt; return q; };
+  try { W.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+  return Promise.resolve(typeof W._gcProjectsRaw === 'function' ? W._gcProjectsRaw() : (W.idbGet ? W.idbGet('projects') : null)).then(function(all){
+    var next = Array.isArray(all) ? all.map(function(p){ return p && s(p.id) === s(pid) ? put(p) : p; }) : null;
+    /* a job made a moment ago may not be in the stored list yet: take it from the screen's copy */
+    if (next && !all.some(function(p){ return p && s(p.id) === s(pid); })) { var cur = proj(pid); if (cur) next = next.concat([put(cur)]); }
+    try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && s(p.id) === s(pid) ? put(p) : p; }) : prev; }); } catch (e) {}
+    var w = next && W.idbSet ? W.idbSet('projects', next) : Promise.resolve();
+    return Promise.resolve(w).then(function(){ try { if (next && W._supaUpsert) W._supaUpsert('projects', next); } catch (e) {} paintSync(); });
+  });
+}
+function matPending(){
+  var out = [], adm = false; try { adm = !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) {}
+  var n = low(myName());
+  arr(C().projects).forEach(function(p){ if (!p) return; arr(p.materialRequests).forEach(function(m){ if (m && m.status === 'pending_pm' && (adm || low(p.pm) === n || low(p.apm) === n)) out.push({ p: p, m: m }); }); });
+  return out;
+}
+function hookApprovals(){
+  var prev = W._gcHot1Approvals; if (prev && prev.__gcField) return;
+  var w = function(){
+    var base = []; try { base = typeof prev === 'function' ? arr(prev.apply(this, arguments)) : []; } catch (e) {}
+    matPending().forEach(function(o){ base.push({ id: 'mat:' + o.m.id, title: '📦 Materials: ' + s(o.m.item) + ' — ' + s(o.p.name), sub: (o.m.qty ? 'Qty ' + s(o.m.qty) + ' · ' : '') + 'asked by ' + s(o.m.by), at: s(o.m.at), urgency: 'asap' }); });
+    return base;
+  };
+  w.__gcField = true; W._gcHot1Approvals = w;
+}
+
+/* ── the sync pill: only this app's own saves (projects, the Site Book, office to-dos) ── */
+function syncState(){
+  var waiting = 0; try { waiting = W._gcSyncQ ? arr(W._gcSyncQ.waiting()).filter(function(x){ return x && /^(projects|gc_sitebook|gc_office_tasks)$/.test(x.key); }).length : 0; } catch (e) {}
+  var sbDirty = false; try { sbDirty = !!(W._gcRP && W._gcRP.site && W._gcRP.site().state().dirty); } catch (e) {}
+  if (!navigator.onLine) return { k: 'off', t: '📴 Saved on phone, will send' };
+  if (waiting || sbDirty) return { k: 'wait', t: '⏳ Saved on phone, sending…' };
+  return { k: 'ok', t: '✓ All sent' };
+}
+function paintSync(){ var el = D.getElementById('gc-fh-sync'); if (!el) return; var st = syncState(); if (el.textContent !== st.t) el.textContent = st.t; if (el.getAttribute('data-k') !== st.k) el.setAttribute('data-k', st.k); if (st.k !== 'ok') later(paintSync, 2500); }
+
+/* ── the look ── */
+function css(){
+  if (D.getElementById('gc-fh-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-fh-css';
+  st.textContent = [
+    '#_gcJobPick.gc-fh{position:fixed;inset:0;z-index:99980;background:#f3f5f8;color:#1f2a37;overflow-y:auto;-webkit-overflow-scrolling:touch;font:15px/1.35 Inter,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}',
+    '.gc-fh .fh-top{background:#fff;border-bottom:1px solid #e5e7eb;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;z-index:2}',
+    '.gc-fh .fh-brand{display:flex;align-items:center;gap:10px;min-width:0}.gc-fh .fh-logo{width:38px;height:38px;border-radius:8px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;flex:0 0 auto}',
+    '.gc-fh .fh-h{font-size:19px;font-weight:800;line-height:1.1}.gc-fh .fh-s{color:#6b7280;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.gc-fh #gc-fh-sync{font-size:11.5px;border-radius:999px;padding:4px 8px;white-space:nowrap;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0}',
+    '.gc-fh #gc-fh-sync[data-k="wait"]{color:#92400e;background:#fffbeb;border-color:#fcd34d}.gc-fh #gc-fh-sync[data-k="off"]{color:#9a3412;background:#fff7ed;border-color:#fdba74}',
+    '.gc-fh .fh-wrap{padding:10px 12px}',
+    '.gc-fh .fh-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 4px}',
+    '.gc-fh .fh-tile{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;font-weight:800;font-size:14.5px;color:#1f2a37;cursor:pointer;min-height:58px;font-family:inherit;text-align:left}',
+    '.gc-fh .fh-tile .e{font-size:24px}.gc-fh .fh-tile.ph{background:#eef2ff;border-color:#c7d2fe;color:#3730a3}.gc-fh .fh-tile.add{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}',
+    '.gc-fh .fh-sec{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin:14px 4px 8px;display:flex;justify-content:space-between;align-items:center}',
+    '.gc-fh .fh-sec button{background:none;border:none;color:#2563eb;font-weight:800;font-size:12px;letter-spacing:.04em;min-height:0!important;padding:4px}',
+    '.gc-fh .fh-job{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px;margin-bottom:12px}',
+    '.gc-fh .fh-n{font-weight:800;font-size:16.5px;background:none;border:none;padding:0;text-align:left;color:#111827;min-height:0!important;cursor:pointer}',
+    '.gc-fh .fh-a{color:#4b5563;font-size:13px;margin-top:2px}',
+    '.gc-fh .fh-prog{display:flex;align-items:center;gap:8px;margin:10px 0 8px}.gc-fh .fh-bar{flex:1;height:10px;background:#e5e7eb;border-radius:99px;overflow:hidden}.gc-fh .fh-bar i{display:block;height:100%;background:#2563eb}',
+    '.gc-fh .fh-pct{font-weight:800;font-size:15px;min-width:44px;text-align:right}',
+    '.gc-fh .fh-today{font-size:12.5px;color:#374151;background:#f9fafb;border-radius:8px;padding:6px 8px;margin-bottom:8px}',
+    '.gc-fh .fh-lbl{font-size:11px;color:#9ca3af;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin:6px 2px}',
+    '.gc-fh .fh-g3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}',
+    '.gc-fh .fh-g4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.gc-fh .fh-g4 .fh-b{min-height:60px;font-size:11px;border-radius:10px}.gc-fh .fh-g4 .fh-b .e{font-size:18px}',
+    '.gc-fh .fh-tiles{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}',
+    '.gc-fh .fh-b{border:1px solid #d1d5db;background:#fff;color:#1f2a37;border-radius:12px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:12px;gap:3px;text-align:center;text-decoration:none;padding:4px;cursor:pointer;font-family:inherit}',
+    '.gc-fh .fh-b .e{font-size:19px;line-height:1}',
+    '.gc-fh .fh-big .fh-b{min-height:76px;font-size:13.5px}.gc-fh .fh-big .fh-b .e{font-size:24px}',
+    '.gc-fh .fh-b.pri{background:#2563eb;color:#fff;border-color:#2563eb}.gc-fh .fh-b.go{background:#16a34a;color:#fff;border-color:#16a34a}.gc-fh .fh-b.end{background:#0f766e;color:#fff;border-color:#0f766e}',
+    '.gc-fh .fh-b.warn{border-color:#f59e0b;color:#92400e;background:#fffbeb}',
+    '.gc-fh .fh-b[disabled]{opacity:.38;cursor:not-allowed}',
+    '.gc-fh .fh-lock{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:10px;padding:8px 10px;font-weight:700;font-size:13px;margin:8px 0}',
+    '.gc-fh .fh-ap{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;gap:10px;align-items:center}',
+    '.gc-fh .fh-chip{font-size:11px;font-weight:800;border-radius:999px;padding:2px 7px;white-space:nowrap}.gc-fh .fh-chip.r{background:#fee2e2;color:#b91c1c}.gc-fh .fh-chip.o{background:#ffedd5;color:#c2410c}.gc-fh .fh-chip.w{background:#f3f4f6;color:#4b5563}',
+    '.gc-fh .fh-ap .t{flex:1;min-width:0;font-size:13.5px}.gc-fh .fh-ap .t b{display:block;font-size:14px;overflow-wrap:anywhere}.gc-fh .fh-ap .t span{color:#6b7280;font-size:12px}',
+    '.gc-fh .fh-ok{background:#16a34a;color:#fff;border:none;border-radius:10px;padding:8px 12px;font-weight:800;font-size:13px;min-height:0!important;cursor:pointer}',
+    '.gc-fh .fh-est{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px}',
+    '.gc-fh .fh-sm{border:1px solid #2563eb;color:#2563eb;background:#fff;border-radius:10px;padding:6px 10px;font-weight:700;font-size:12.5px;min-height:0!important;cursor:pointer;white-space:nowrap}',
+    '.gc-fh .fh-empty{background:#fff;border:1px dashed #d1d5db;border-radius:12px;padding:14px;color:#6b7280;font-size:13.5px;text-align:center}',
+    '.gc-fh .fh-comm{font-size:12.5px;color:#374151;padding:6px}',
+    /* the role sections replace patch RP's dark profile card (Drying today / Estimating / Claims) — one of each, light */
+    '#_gcJobPick.gc-fh #gc-rp-fcard{display:none!important}',
+    'html.gc-fh-on #_gcAppTabs,html.gc-fh-on #_gcApprovalsBtn,html.gc-fh-on #_gcDeskBtn,html.gc-fh-on #_jpDesk,html.gc-fh-on #_fhDesk,html.gc-fh-on ._fmToggleBtn{display:none!important}',
+    'html:has(#_gcJobPick.gc-fh) #gcu-pick-btn,html:has(#_gcJobPick.gc-fh) #gcb-fieldbtn,html:has(#_gcJobPick.gc-fh) #gc-br-settings{display:none!important}',
+    '#gc-fh-tabs{display:none;position:fixed;left:0;right:0;bottom:0;z-index:100050;background:#fff;border-top:1px solid #e5e7eb;padding:6px 4px calc(8px + env(safe-area-inset-bottom,0px));justify-content:space-around;align-items:flex-end;font-family:Inter,-apple-system,sans-serif}',
+    'html.gc-fh-on #gc-fh-tabs{display:flex}',
+    '#gc-fh-tabs button{background:none;border:none;color:#6b7280;font-size:11.5px;font-weight:700;width:68px;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0!important;padding:4px 0;cursor:pointer}',
+    '#gc-fh-tabs button .e{font-size:21px;line-height:1}#gc-fh-tabs button.on{color:#2563eb}',
+    '#gc-fh-tabs button.ap{position:relative;top:-14px;width:86px;color:#dc2626}',
+    '#gc-fh-tabs button.ap .c{width:64px;height:64px;border-radius:50%;background:#dc2626;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;box-shadow:0 4px 14px rgba(220,38,38,.35);border:4px solid #fff;position:relative}',
+    '.gc-fh-badge{position:absolute;top:-4px;right:-6px;background:#111827;color:#fff;border-radius:999px;font-size:12px;font-weight:800;padding:1px 6px;border:2px solid #fff;line-height:1.3}',
+    '#gc-fh-backfield{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:100060;background:#2563eb;color:#fff;border:none;border-radius:999px;padding:11px 18px;font:800 14px Inter,sans-serif;box-shadow:0 6px 18px rgba(37,99,235,.35);cursor:pointer;white-space:nowrap}',
+    '#gc-fh-toast{display:none;position:fixed;left:16px;right:16px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:100090;background:#111827;color:#fff;border-radius:12px;padding:12px 14px;font:600 14px Inter,sans-serif;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.25);pointer-events:none}',
+    '.gc-fh-sheet{position:fixed;inset:0;z-index:100080;background:rgba(17,24,39,.45);display:flex;align-items:flex-end;font-family:Inter,-apple-system,sans-serif}',
+    '.gc-fh-sheet .in{background:#fff;color:#1f2a37;width:100%;border-radius:18px 18px 0 0;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:90vh;overflow-y:auto;box-sizing:border-box}',
+    '.gc-fh-sheet h3{margin:0 0 4px;font-size:18px}.gc-fh-sheet .note{color:#6b7280;font-size:13px;margin-bottom:10px}',
+    '.gc-fh-sheet label{display:block;font-size:13px;font-weight:700;margin:10px 0 4px}.gc-fh-sheet .opt{font-weight:500;color:#9ca3af}',
+    '.gc-fh-sheet input,.gc-fh-sheet textarea,.gc-fh-sheet select{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:10px;padding:10px;font:16px Inter,sans-serif;background:#fff;color:#111827}',
+    '.gc-fh-sheet .chips{display:flex;flex-wrap:wrap;gap:6px}.gc-fh-sheet .chips button{border:1px solid #d1d5db;background:#fff;border-radius:999px;padding:7px 11px;font-weight:700;font-size:13px;min-height:0!important;color:#1f2a37}',
+    '.gc-fh-sheet .chips button.on{background:#2563eb;color:#fff;border-color:#2563eb}',
+    '.gc-fh-sheet .acts{display:flex;gap:8px;margin-top:14px}.gc-fh-sheet .acts button{flex:1;border-radius:12px;padding:12px;font-weight:800;font-size:15px;border:1px solid #d1d5db;background:#fff;color:#1f2a37}',
+    '.gc-fh-sheet .acts button.pri{background:#2563eb;color:#fff;border-color:#2563eb}.gc-fh-sheet .acts button.go{background:#16a34a;color:#fff;border-color:#16a34a}',
+    '.gc-fh-sheet .chk{display:flex;gap:8px;align-items:center;font-weight:600;font-size:14px;margin-top:10px}.gc-fh-sheet .chk input{width:auto}',
+    '.gc-fh-sheet .row{display:flex;gap:8px;align-items:center}.gc-fh-sheet .row input{flex:1}.gc-fh-sheet .row button{flex:0 0 auto;border:1px solid #2563eb;background:#fff;color:#2563eb;border-radius:10px;padding:9px 10px;font-weight:800;font-size:13px}',
+    '.gc-fh-sheet .pick{display:flex;flex-direction:column;gap:8px}.gc-fh-sheet .pick button{display:flex;align-items:center;gap:12px;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:12px;padding:12px;font-weight:800;font-size:15px;color:#1f2a37}',
+    '.gc-fh-sheet .pick button small{display:block;font-weight:500;color:#6b7280;font-size:12px}.gc-fh-sheet .pick .e{font-size:24px}',
+    '.gc-fh-sheet .logbox{font-size:13px;background:#f9fafb;border-radius:8px;padding:8px;white-space:pre-wrap;max-height:200px;overflow-y:auto}',
+    '.gc-fh-sheet .match{border:1px solid #e5e7eb;border-radius:10px;margin-top:4px;overflow:hidden}.gc-fh-sheet .match button{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid #f3f4f6;background:#fff;padding:9px 10px;font-size:14px;color:#1f2a37}',
+    '.gc-fh-sheet .matched{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;margin-top:6px}'
+  ].join('');
+  D.head.appendChild(st);
+}
+
+/* ═════ the field tools registry ═════ */
+var TOOLS = [];
+var Tools = {
+  register: function(t){
+    if (!t || !t.id || typeof (t.run || t.href) !== 'function') return false;
+    TOOLS = TOOLS.filter(function(x){ return x.id !== t.id; }).concat([Object.assign({ group: 'small', order: 100, roles: [], needsSigned: true }, t)]);
+    TOOLS.sort(function(a, b){ return (a.order || 0) - (b.order || 0); });
+    lastSig = ''; soon(); return true;
+  },
+  unregister: function(id){ TOOLS = TOOLS.filter(function(x){ return x.id !== id; }); lastSig = ''; soon(); },
+  run: function(id, pid){ var t = TOOLS.filter(function(x){ return x.id === id; })[0], p = proj(pid); if (!t || !p || typeof t.run !== 'function') return false; t.run(p, { day: dayState(p.id), signed: signed(p), role: rk() }); return true; },
+  list: function(){ return TOOLS.map(function(t){ return { id: t.id, label: typeof t.label === 'function' ? '(dynamic)' : t.label, group: t.group, roles: t.roles, needsSigned: t.needsSigned }; }); }
+};
+function forRole(t){ return !arr(t.roles).length || arr(t.roles).indexOf(rk()) >= 0; }
+function val(v, p, ctx){ return typeof v === 'function' ? v(p, ctx) : v; }
+function toolBtn(t, p, ctx, off){
+  var lab = s(val(t.label, p, ctx)), ic = s(val(t.icon, p, ctx)), cls = off ? '' : s(val(t.cls, p, ctx));
+  var inner = '<span class="e">' + esc(ic) + '</span>' + esc(lab);
+  if (!off && typeof t.href === 'function') { var u = s(t.href(p, ctx)); if (u) return '<a class="fh-b ' + esc(cls) + '" data-fa="' + esc(t.id) + '" data-pid="' + esc(p.id) + '" href="' + esc(u) + '"' + (/^https?:/.test(u) ? ' target="_blank" rel="noopener"' : '') + '>' + inner + '</a>'; }
+  return '<button type="button" class="fh-b ' + esc(cls) + '" data-fa="' + esc(t.id) + '" data-pid="' + esc(p.id) + '"' + (off ? ' disabled aria-disabled="true"' : '') + '>' + inner + '</button>';
+}
+function groupOf(t, ok){ if (ok) return t.group; return t.unsignedGroup !== undefined ? t.unsignedGroup : t.group; }
+function phoneOf(p){ var ph = s(p.clientPhone || p.phone || p.customerPhone); if (!ph) { var cn = low(p.client); var c = arr(C().customers).filter(function(x){ return x && low(x.name) === cn; })[0]; ph = s(c && (c.phone || c.mobile)); } return ph.replace(/[^0-9+]/g, ''); }
+
+/* ═════ each role's app: its tools (in order) and its home ═════
+   arrive = Navigate / Job info / Call; then the first three of the role's tools are the big buttons, the rest small.
+   Admin → ⚙ Admin settings → 📱 GrayCo Field turns tools on / off and reorders them per role (gc_field_settings.roles). */
+var ROLE_TOOLS = {
+  pm:     ['nav', 'info', 'call', 'day', 'photos', 'progress', 'problem', 'mat', 'punch', 'co', 'sign', 'walk', 'dump', 'insp', 'measure', 'receipt', 'plans', 'est', 'voice'],
+  roof:   ['nav', 'info', 'call', 'day', 'photos', 'progress', 'measure', 'est', 'sign', 'problem', 'mat', 'punch', 'co', 'walk', 'dump', 'insp', 'receipt', 'plans', 'voice'],
+  est:    ['nav', 'info', 'call', 'photos', 'measure', 'est', 'receipt', 'plans', 'voice'],
+  super:  ['nav', 'info', 'call', 'day', 'photos', 'onsite', 'safety', 'problem', 'mat', 'punch', 'dump', 'insp', 'receipt', 'plans', 'voice'],
+  mit:    ['nav', 'info', 'call', 'day', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],
+  ins:    ['nav', 'info', 'call', 'photos', 'xact', 'sign', 'measure', 'est', 'problem', 'receipt', 'voice'],
+  office: ['nav', 'info', 'call', 'photos', 'msgs', 'receipt', 'problem', 'voice'],
+  mkt:    ['nav', 'info', 'photos', 'msgs'],
+  admin:  ['nav', 'info', 'call', 'day', 'photos', 'progress', 'problem', 'mat', 'punch', 'co', 'sign', 'walk', 'dump', 'insp', 'measure', 'receipt', 'plans', 'est', 'voice']
+};
+var LAYOUT = {
+  pm:     { tiles: ['photos', 'addjob'], sections: ['jobs', 'approvals', 'estimates', 'commission'] },
+  roof:   { tiles: ['measure', 'roofscout', 'addjob', 'photos'], sections: ['bids', 'jobs', 'approvals', 'estimates', 'commission'] },
+  est:    { tiles: ['measure', 'addjob', 'photos'], sections: ['bids', 'approvals', 'jobs'] },
+  super:  { tiles: ['photos', 'safety'], sections: ['jobs', 'approvals'] },
+  mit:    { tiles: ['readings', 'oncall', 'photos', 'addjob'], sections: ['dry', 'jobs', 'approvals'] },
+  ins:    { tiles: ['xact', 'photos', 'addjob'], sections: ['claims', 'approvals', 'jobs'] },
+  office: { tiles: ['receipt', 'msgs', 'todo', 'photos'], sections: ['approvals', 'todos', 'jobs'] },
+  mkt:    { tiles: ['marketing', 'photos', 'msgs', 'todo'], sections: ['approvals', 'todos'] },
+  admin:  { tiles: ['viewas', 'photos', 'addjob', 'receipt'], sections: ['approvals', 'scorecard', 'jobs'] }
+};
+var ROLE_NAMES = { pm: 'Residential PM', roof: 'Roofing PM', est: 'Estimator', super: 'Superintendent / crew', mit: 'Mitigation', ins: 'Insurance', office: 'Office', mkt: 'Marketing', admin: 'Admin' };
+function roleCfg(k){ var r = (fset().roles || {})[k]; return r && typeof r === 'object' ? r : null; }
+function toolIds(k){
+  k = ROLE_TOOLS[k] ? k : 'pm';
+  var cfg = roleCfg(k), base = cfg && Array.isArray(cfg.tools) ? cfg.tools.slice() : ROLE_TOOLS[k].slice(), off = cfg && Array.isArray(cfg.off) ? cfg.off : [];
+  TOOLS.forEach(function(t){ if (base.indexOf(t.id) < 0 && !t.builtIn && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0)) base.push(t.id); });   /* a tool registered later: its roles, or everyone */
+  return base.filter(function(id){ return off.indexOf(id) < 0 && TOOLS.some(function(t){ return t.id === id; }); });
+}
+function roleTools(k){ return toolIds(k).map(function(id){ return TOOLS.filter(function(t){ return t.id === id; })[0]; }).filter(Boolean); }
+
+/* the tools that come with the app — the same register() a later tool uses */
+function builtIns(){
+  var R = function(t){ t.builtIn = true; return Tools.register(t); };
+  R({ id: 'nav', icon: '🧭', label: 'Navigate', group: 'arrive', needsSigned: false, href: function(p){ return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(s(p.address || p.jobAddress)); } });
+  R({ id: 'info', icon: '📄', label: 'Job info', group: 'arrive', needsSigned: false, run: function(p){ if (W._gcOpenJobProfile) W._gcOpenJobProfile(p.id); } });
+  R({ id: 'call', icon: '📞', label: 'Call', group: 'arrive', needsSigned: false, href: function(p){ var ph = phoneOf(p); return ph ? 'tel:' + ph : ''; }, run: function(){ toast('No phone number on this job yet.'); } });
+  R({ id: 'sendsign', icon: '✍️', label: 'Send for signature', cls: 'pri', needsSigned: false, run: function(p){ if (W._gcJobDashboard) W._gcJobDashboard(p.id); later(function(){ var b = Array.prototype.filter.call(D.querySelectorAll('#_gcJobDash button'), function(x){ return /Signatures/.test(x.textContent); })[0]; if (b) b.click(); }, 700); } });
+  R({ id: 'day', icon: function(p, c){ return c.day.ended ? '✅' : c.day.started ? '🏁' : '🟢'; }, label: function(p, c){ return c.day.ended ? 'Day ended ✓' : c.day.started ? 'End day' : 'Start day'; }, cls: function(p, c){ return c.day.ended ? '' : c.day.started ? 'end' : 'go'; },
+    run: function(p, c){ if (c.day.ended) { closeHome(); try { W._gcRP.site().open(p.id, 'log'); } catch (e) {} return; } if (c.day.started) endDay(p); else startDay(p); } });
+  R({ id: 'photos', icon: '📸', label: 'Photos', needsSigned: false, run: function(p){ openPhotos(p.id); } });
+  R({ id: 'msgs', icon: '💬', label: 'Messages', needsSigned: false, run: function(p){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(p.id); } });
+  R({ id: 'progress', icon: '📈', label: 'Progress', cls: 'pri', run: function(p){ if (W._gcOpenFieldProgress) W._gcOpenFieldProgress(p.id); } });
+  R({ id: 'problem', icon: '⚠️', label: 'Problem / delay', cls: 'warn', hideUnsigned: true, run: function(p){ problemSheet(p); } });
+  R({ id: 'mat', icon: '📦', label: 'Need materials', run: function(p){ matAskSheet(p); } });
+  R({ id: 'punch', icon: '☐', label: 'Punch', run: function(p){ punchSheet(p); } });
+  R({ id: 'co', icon: '🔁', label: 'Change order', run: function(p){ if (W.gcAddCO && W.gcAddCO.open) W.gcAddCO.open(p.id, p.name, p.autoPO || p.po, p.client, p.pm); } });
+  R({ id: 'est', icon: '📐', label: 'Estimate', needsSigned: false, run: function(p){ estPicker({ pid: p.id, name: p.name }); } });
+  R({ id: 'voice', icon: '🎤', label: 'Voice note', hideUnsigned: true, run: function(){ var vb = D.getElementById('_voiceBtn') || D.getElementById('_gcMicBtn'); if (vb) vb.click(); else toast('The 🎤 voice note is not on this phone yet.'); } });
+  /* owner 10/24 — the field tools (yes list) */
+  R({ id: 'readings', icon: '💧', label: 'Readings & equipment', roles: ['mit'], needsSigned: false, run: function(p){ openDrying(p.id); } });
+  R({ id: 'sign', icon: '✍️', label: 'Sign on phone', needsSigned: false, run: function(p){ signSheet(p); } });
+  R({ id: 'walk', icon: '🏁', label: 'Final walkthrough', run: function(p){ try { if (W._gcA8 && W._gcA8.wt && W._gcA8.wt.open) { W._gcA8.wt.open(p.id); return; } } catch (e) {} toast('The final walkthrough is not on this phone yet.'); } });
+  R({ id: 'dump', icon: '🚛', label: 'Dumpster / equipment', run: function(p){ try { if (W._gcA8 && W._gcA8.equipment) { W._gcA8.equipment(p.id); return; } } catch (e) {} toast('The dumpster tracker is not on this phone yet.'); } });
+  R({ id: 'safety', icon: '🦺', label: 'Safety', needsSigned: false, run: function(p){ safetySheet(p); } });
+  R({ id: 'insp', icon: '📋', label: 'Inspections & permits', run: function(p){ inspSheet(p); } });
+  R({ id: 'measure', icon: '📏', label: 'Measure', needsSigned: false, run: function(p){ measure({ pid: p.id }); } });
+  R({ id: 'receipt', icon: '🧾', label: 'Snap a receipt', needsSigned: false, run: function(p){ receipt(p); } });
+  R({ id: 'onsite', icon: '👷', label: 'Who\'s on site', roles: ['super'], needsSigned: false, run: function(p){ onsiteSheet(p); } });
+  R({ id: 'plans', icon: '🗺', label: 'Plans & markup', needsSigned: false, show: function(p){ return plansOf(p).length > 0; }, run: function(p){ plansSheet(p); } });
+  R({ id: 'xact', icon: '📎', label: 'Xactimate', roles: ['ins'], needsSigned: false, run: function(p){ openClaimFor(p.id); } });
+}
+function openPhotos(pid){ try { if (W._gcPhotos && W._gcPhotos.open) { W._gcPhotos.open(pid); return; } } catch (e) {} if (W._setView) W._setView('allphotos'); }
+function claimsApi(){ return W._gcClaims && typeof W._gcClaims.list === 'function' ? W._gcClaims : null; }
+function openClaimFor(pid, mode){ var A = claimsApi(); if (!A) { toast('Claims are not on this phone yet.'); return; } var c = A.forProject ? A.forProject(pid) : null; A.open(c ? { claimId: c.id, mode: mode } : { projectId: pid, mode: mode }); }
+function openClaim(id){ var A = claimsApi(); if (A) A.open({ claimId: id }); }
+function openDrying(pid){ var A = claimsApi(); if (!A) { toast('Mitigation is not on this phone yet.'); return; } var c = pid && A.forProject ? A.forProject(pid) : null; A.open(c ? { claimId: c.id, mode: 'mitigation', screen: 'drying' } : { mode: 'mitigation' }); }
+
+/* ── ✍️ the customer signs on the phone, on site (work authorization before the contract; a change order after) ── */
+function padCanvas(box){
+  var cv = D.createElement('canvas'); cv.width = 640; cv.height = 220; cv.style.cssText = 'width:100%;height:150px;border:1px dashed #9ca3af;border-radius:10px;background:#fff;touch-action:none';
+  box.appendChild(cv); var g = cv.getContext('2d'); g.lineWidth = 3; g.lineCap = 'round'; g.strokeStyle = '#111827'; var down = false, inked = false;
+  function pt(e){ var r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return { x: (t.clientX - r.left) * cv.width / r.width, y: (t.clientY - r.top) * cv.height / r.height }; }
+  function st(e){ down = true; var q = pt(e); g.beginPath(); g.moveTo(q.x, q.y); e.preventDefault(); }
+  function mv(e){ if (!down) return; var q = pt(e); g.lineTo(q.x, q.y); g.stroke(); inked = true; e.preventDefault(); }
+  function en(){ down = false; }
+  ['mousedown', 'touchstart', 'pointerdown'].forEach(function(n){ cv.addEventListener(n, st); }); ['mousemove', 'touchmove', 'pointermove'].forEach(function(n){ cv.addEventListener(n, mv); }); ['mouseup', 'touchend', 'pointerup', 'mouseleave'].forEach(function(n){ cv.addEventListener(n, en); });
+  return { canvas: cv, inked: function(){ return inked; }, clear: function(){ g.clearRect(0, 0, cv.width, cv.height); inked = false; } };
+}
+var PAPERS = [
+  { k: 'wa', l: 'Work authorization', needsSigned: false, text: function(p){ return 'I authorize GrayCo Construction Services (TN license #85034) to perform the work at ' + s(p.address) + '. I understand the work, its scope and price are confirmed in writing before work beyond emergency services begins.'; } },
+  { k: 'co', l: 'Change order', needsSigned: true, text: function(p, co){ return co ? 'Change order: ' + s(co.desc || co.title) + ' — $' + (+co.amt || 0).toFixed(2) + '. I approve this change to the contract for ' + s(p.name) + '.' : ''; } },
+  { k: 'sel', l: 'Selections', needsSigned: true, text: function(p){ return 'I confirm the selections chosen for ' + s(p.name) + ' as shown to me today.'; } }
+];
+function signSheet(p){
+  var ok = signed(p), k = rk(), cos = arr(C().changeOrders).filter(function(c){ return c && c.pid === p.id && !/approved|void|declined/i.test(s(c.status)); });
+  var choices = PAPERS.filter(function(x){ return !(k === 'mit' || k === 'ins') || x.k === 'wa'; });
+  var o = sheet('<h3>✍️ Sign on the phone — ' + esc(p.name) + '</h3><div class="note">The customer reads it and signs with a finger. The signed copy goes on the job.</div>' +
+    '<label>What is being signed?</label><div class="chips">' + choices.map(function(x, i){ var dis = x.needsSigned && !ok; return '<button type="button" data-pp="' + x.k + '"' + (i === 0 ? ' class="on"' : '') + (dis ? ' disabled title="The contract must be signed first"' : '') + '>' + esc(x.l) + (dis ? ' 🔒' : '') + '</button>'; }).join('') + '</div>' +
+    '<div id="gc-sg-co" hidden><label for="gc-sg-cosel">Which change order</label><select id="gc-sg-cosel">' + cos.map(function(c){ return '<option value="' + esc(c.id) + '">' + esc(s(c.desc || c.title) + ' — $' + (+c.amt || 0).toFixed(2)) + '</option>'; }).join('') + '</select></div>' +
+    '<div class="logbox" id="gc-sg-text"></div>' +
+    '<label for="gc-sg-name">Customer name</label><input id="gc-sg-name" value="' + esc(p.client) + '">' +
+    '<label>Signature</label><div id="gc-sg-pad"></div><div style="text-align:right"><button type="button" id="gc-sg-clear" style="background:none;border:none;color:#2563eb;font-weight:700">Clear</button></div>' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="go" data-go>Save signed copy</button></div>');
+  var kind = choices[0].k, pad = padCanvas(o.querySelector('#gc-sg-pad'));
+  function paint(){ var x = PAPERS.filter(function(y){ return y.k === kind; })[0], co = cos.filter(function(c){ return c.id === (o.querySelector('#gc-sg-cosel') || {}).value; })[0]; o.querySelector('#gc-sg-co').hidden = kind !== 'co'; o.querySelector('#gc-sg-text').textContent = x.text(p, co) || 'No open change order on this job.'; }
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pp]'), function(b){ b.onclick = function(){ if (b.disabled) return; kind = b.getAttribute('data-pp'); Array.prototype.forEach.call(o.querySelectorAll('[data-pp]'), function(x){ x.classList.toggle('on', x === b); }); paint(); }; });
+  var cs = o.querySelector('#gc-sg-cosel'); if (cs) cs.onchange = paint; paint();
+  o.querySelector('#gc-sg-clear').onclick = function(){ pad.clear(); };
+  o.querySelector('[data-go]').onclick = function(){
+    var name = s(o.querySelector('#gc-sg-name').value), x = PAPERS.filter(function(y){ return y.k === kind; })[0];
+    if (x.needsSigned && !ok) { toast('🔒 The contract must be signed first.'); return; }
+    if (!name || !pad.inked()) { toast('The customer\'s name and signature, please.'); return; }
+    var coId = kind === 'co' ? s((o.querySelector('#gc-sg-cosel') || {}).value) : ''; if (kind === 'co' && !coId) { toast('No open change order to sign.'); return; }
+    this.disabled = true; this.textContent = 'Saving…';
+    var text = o.querySelector('#gc-sg-text').textContent;
+    new Promise(function(res){ try { pad.canvas.toBlob(res, 'image/png'); } catch (e) { res(null); } }).then(function(blob){
+      return blob && typeof W._gcStoreFile === 'function' ? Promise.resolve(W._gcStoreFile(blob, { kind: 'signature', pid: p.id, name: x.l + ' signature.png' })).catch(function(){ return null; }) : null;
+    }).then(function(meta){
+      var rec = { id: 'SG' + Date.now().toString(36), kind: kind, label: x.l, text: text, coId: coId, name: name, ref: s(meta && meta.ref), at: nowIso(), by: myName(), via: 'GrayCo Field', updatedAt: nowIso() };
+      if (!rec.ref) { try { rec.png = pad.canvas.toDataURL('image/png'); } catch (e) {} }
+      var w = saveProject(p.id, function(q){ q.onsiteSignatures = arr(q.onsiteSignatures).concat([rec]); if (kind === 'wa') { q.workAuthSigned = true; q.workAuthSignedAt = rec.at; } });
+      if (kind === 'co' && typeof W._gcSetCOs === 'function') { try { W._gcSetCOs(function(prev){ return arr(prev).map(function(c){ return c && c.id === coId ? Object.assign({}, c, { status: 'Approved', customerSigned: true, signedBy: name, signedAt: rec.at, signedVia: 'GrayCo Field', updatedAt: rec.at }) : c; }); }); } catch (e) {} }
+      return w.then(function(){ logLine(p.id, 'work', '✍️ ' + x.l + ' signed on site by ' + name + ' — ' + myName()); o.remove(); toast('✍️ Signed — the copy is on the job.'); lastSig = ''; render(true); });
+    });
+  };
+}
+
+/* ── 🦺 safety: toolbox talk (patch AUTO8's sign-in) and an incident report ── */
+function safetySheet(p){
+  var o = sheet('<h3>🦺 Safety' + (p ? ' — ' + esc(p.name) : '') + '</h3><div class="pick">' +
+    '<button type="button" data-sf="talk"><span class="e">🗣</span><span>Toolbox talk & sign-in<small>Today\'s topic; each person signs</small></span></button>' +
+    '<button type="button" data-sf="inc"><span class="e">🚑</span><span>Report an incident<small>Injury, near miss, damage — the PM and the office are told</small></span></button>' +
+    '</div><div class="acts"><button type="button" data-x>Close</button></div>');
+  o.querySelector('[data-sf="talk"]').onclick = function(){ o.remove(); if (W._gcA8 && W._gcA8.safety) W._gcA8.safety(p ? p.id : undefined); else toast('The toolbox talk is not on this phone yet.'); };
+  o.querySelector('[data-sf="inc"]').onclick = function(){ o.remove(); incidentSheet(p); };
+}
+function pickJob(cb){
+  var J = myJobs().list; if (J.length === 1) { cb(J[0]); return; }
+  var o = sheet('<h3>Which job?</h3><div class="pick">' + J.map(function(p){ return '<button type="button" data-j="' + esc(p.id) + '"><span class="e">🏗</span><span>' + esc(p.name) + '<small>' + esc(p.address) + '</small></span></button>'; }).join('') + '</div><div class="acts"><button type="button" data-x>Cancel</button></div>');
+  Array.prototype.forEach.call(o.querySelectorAll('[data-j]'), function(b){ b.onclick = function(){ o.remove(); cb(proj(b.getAttribute('data-j'))); }; });
+}
+function incidentSheet(p){
+  if (!p) { pickJob(incidentSheet); return; }
+  var o = sheet('<h3>🚑 Incident — ' + esc(p.name) + '</h3><div class="note">Call 911 first for an emergency.</div>' +
+    '<label>What happened?</label><div class="chips">' + ['Injury', 'Near miss', 'Property damage', 'Vehicle', 'Other'].map(function(t, i){ return '<button type="button" data-ty="' + t + '"' + (i === 0 ? ' class="on"' : '') + '>' + t + '</button>'; }).join('') + '</div>' +
+    '<label for="gc-in-who">Who was involved <span class="opt">(optional)</span></label><input id="gc-in-who">' +
+    '<label for="gc-in-what">Describe it</label><textarea id="gc-in-what" rows="3"></textarea>' +
+    '<label for="gc-in-ph">Photo <span class="opt">(optional)</span></label><input id="gc-in-ph" type="file" accept="image/*" capture="environment">' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>Report</button></div>');
+  var ty = 'Injury'; Array.prototype.forEach.call(o.querySelectorAll('[data-ty]'), function(b){ b.onclick = function(){ ty = b.getAttribute('data-ty'); Array.prototype.forEach.call(o.querySelectorAll('[data-ty]'), function(x){ x.classList.toggle('on', x === b); }); }; });
+  o.querySelector('[data-go]').onclick = function(){
+    var what = s(o.querySelector('#gc-in-what').value); if (!what) { toast('Describe what happened.'); return; }
+    this.disabled = true;
+    var rec = { id: 'IN' + Date.now().toString(36), type: ty, who: s(o.querySelector('#gc-in-who').value), what: what, at: nowIso(), by: myName(), updatedAt: nowIso() };
+    photoTo(p, o.querySelector('#gc-in-ph').files[0] || null, 'Damage').then(function(){ return saveProject(p.id, function(q){ q.incidents = arr(q.incidents).concat([rec]); }); }).then(function(){
+      logLine(p.id, 'safety', '🚑 ' + ty + ': ' + what + (rec.who ? ' (' + rec.who + ')' : '') + ' — ' + myName());
+      notifyTeam(p, '🚑 SAFETY INCIDENT on ' + s(p.name) + ' — ' + ty + ': ' + what);
+      o.remove(); toast('🚑 Reported to the PM and the office.');
+    });
+  };
+}
+
+/* ── 📋 inspections & permits: the permit card photo, the inspection date, pass / fail ── */
+function inspSheet(p){
+  var list = arr(p.fieldInspections);
+  var o = sheet('<h3>📋 Inspections & permits — ' + esc(p.name) + '</h3>' +
+    (list.length ? '<div class="logbox">' + list.slice(-5).map(function(x){ return esc((x.date || '') + ' · ' + x.type + ' · ' + (x.result || 'scheduled')); }).join('\n') + '</div>' : '') +
+    '<label for="gc-ip-type">Inspection / permit</label><input id="gc-ip-type" placeholder="e.g. Framing, Electrical rough, Final">' +
+    '<label for="gc-ip-date">Date</label><input id="gc-ip-date" type="date" value="' + esc(today()) + '">' +
+    '<label>Result</label><div class="chips">' + ['Scheduled', 'Passed', 'Failed'].map(function(t, i){ return '<button type="button" data-rs="' + t + '"' + (i === 0 ? ' class="on"' : '') + '>' + t + '</button>'; }).join('') + '</div>' +
+    '<label for="gc-ip-ph">Permit card / inspection photo <span class="opt">(optional)</span></label><input id="gc-ip-ph" type="file" accept="image/*" capture="environment">' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>Save</button></div>');
+  var rs = 'Scheduled'; Array.prototype.forEach.call(o.querySelectorAll('[data-rs]'), function(b){ b.onclick = function(){ rs = b.getAttribute('data-rs'); Array.prototype.forEach.call(o.querySelectorAll('[data-rs]'), function(x){ x.classList.toggle('on', x === b); }); }; });
+  o.querySelector('[data-go]').onclick = function(){
+    var type = s(o.querySelector('#gc-ip-type').value); if (!type) { toast('Which inspection or permit?'); return; }
+    this.disabled = true;
+    var rec = { id: 'IP' + Date.now().toString(36), type: type, date: s(o.querySelector('#gc-ip-date').value), result: rs === 'Scheduled' ? '' : rs, at: nowIso(), by: myName(), updatedAt: nowIso() };
+    photoTo(p, o.querySelector('#gc-ip-ph').files[0] || null, 'During').then(function(){ return saveProject(p.id, function(q){ q.fieldInspections = arr(q.fieldInspections).concat([rec]); }); }).then(function(){
+      logLine(p.id, 'visitors', '📋 ' + type + (rec.result ? ' — ' + rec.result : ' — scheduled ' + rec.date));
+      if (rs === 'Failed') notifyTeam(p, '📋 INSPECTION FAILED on ' + s(p.name) + ': ' + type);
+      o.remove(); toast('📋 Saved on the job.');
+    });
+  };
+}
+
+/* ── 📏 measure: rooms (L×W×H → floor sq ft and wall area) and roofs (squares); saved with the notes on the job or lead
+   (target.measurements) — the estimate's "📏 Measurements & notes" and ✨ Draft estimate read them, nothing retyped ── */
+function measTargets(){
+  var J = myJobs().list.map(function(p){ return { k: 'p', id: p.id, l: p.name }; });
+  var L = allLeads().filter(function(l){ return l && !l.deleted && !/won|lost|dead/i.test(s(l.stage)) && (!W._gcLeadScope || W._gcLeadScope.has(l)); }).slice(0, 30).map(function(l){ return { k: 'l', id: l.id, l: 'Lead: ' + s(l.client || l.name) }; });
+  return J.concat(L);
+}
+function measure(t){
+  t = t || {};
+  var tg = measTargets(), pre = t.pid ? 'p:' + t.pid : t.leadId ? 'l:' + t.leadId : '';
+  var o = sheet('<h3>📏 Measure</h3><div class="note">Saved with your notes on the job or lead. The estimate reads it — nothing typed twice.</div>' +
+    '<label for="gc-ms-tg">For</label><select id="gc-ms-tg">' + tg.map(function(x){ var v = x.k + ':' + x.id; return '<option value="' + esc(v) + '"' + (v === pre ? ' selected' : '') + '>' + esc(x.l) + '</option>'; }).join('') + '</select>' +
+    '<label>Rooms <span class="opt">(feet)</span></label><div id="gc-ms-rooms"></div><button type="button" id="gc-ms-add" class="fh-sm" style="margin-top:6px;border:1px solid #2563eb;color:#2563eb;background:#fff;border-radius:10px;padding:7px 10px;font-weight:700">＋ Room</button>' +
+    '<label>Roof <span class="opt">(squares = sq ft ÷ 100 × pitch factor)</span></label><div class="row"><input id="gc-ms-rsf" inputmode="decimal" placeholder="Roof area sq ft"><select id="gc-ms-pitch" style="max-width:120px">' + [['1', 'Flat / ≤3:12'], ['1.054', '4:12'], ['1.083', '5:12'], ['1.118', '6:12'], ['1.158', '7:12'], ['1.202', '8:12'], ['1.25', '9:12'], ['1.302', '10:12'], ['1.414', '12:12']].map(function(x){ return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') + '</select></div><div id="gc-ms-sq" class="note" style="margin-top:4px"></div>' +
+    '<label for="gc-ms-notes">Notes from the visit</label><textarea id="gc-ms-notes" rows="3" placeholder="Tap 🎤 on the keyboard to talk"></textarea>' +
+    '<div id="gc-ms-tot" class="logbox" style="margin-top:8px"></div>' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>Save</button></div>');
+  var rooms = o.querySelector('#gc-ms-rooms');
+  function addRoom(){ var d = D.createElement('div'); d.className = 'row'; d.style.marginTop = '6px'; d.innerHTML = '<input data-r="n" placeholder="Room" style="flex:2"><input data-r="l" inputmode="decimal" placeholder="L"><input data-r="w" inputmode="decimal" placeholder="W"><input data-r="h" inputmode="decimal" placeholder="H" value="8">'; rooms.appendChild(d); }
+  addRoom(); o.querySelector('#gc-ms-add').onclick = addRoom;
+  function calc(){
+    var R = Array.prototype.map.call(rooms.children, function(d){ var g = function(k){ return parseFloat(d.querySelector('[data-r="' + k + '"]').value) || 0; }; var l = g('l'), w = g('w'), h = g('h'); return { name: s(d.querySelector('[data-r="n"]').value), l: l, w: w, h: h, floor: Math.round(l * w * 10) / 10, walls: Math.round(2 * (l + w) * h * 10) / 10 }; }).filter(function(r){ return r.l && r.w; });
+    var rsf = parseFloat(o.querySelector('#gc-ms-rsf').value) || 0, pf = parseFloat(o.querySelector('#gc-ms-pitch').value) || 1, sq = Math.round(rsf / 100 * pf * 100) / 100;
+    o.querySelector('#gc-ms-sq').textContent = rsf ? sq + ' squares' : '';
+    var fl = R.reduce(function(a, r){ return a + r.floor; }, 0), wl = R.reduce(function(a, r){ return a + r.walls; }, 0);
+    o.querySelector('#gc-ms-tot').textContent = (R.length ? R.length + ' room(s): ' + Math.round(fl) + ' sq ft floor · ' + Math.round(wl) + ' sq ft walls' : 'No rooms yet') + (rsf ? '\nRoof: ' + sq + ' squares' : '');
+    return { rooms: R, floor: Math.round(fl * 10) / 10, walls: Math.round(wl * 10) / 10, roof: rsf ? { sqft: rsf, pitchFactor: pf, squares: sq } : null };
+  }
+  o.addEventListener('input', calc); o.addEventListener('change', calc); calc();
+  o.querySelector('[data-go]').onclick = function(){
+    var v = s(o.querySelector('#gc-ms-tg').value), m = calc(), notes = s(o.querySelector('#gc-ms-notes').value);
+    if (!v) { toast('Pick the job or lead.'); return; }
+    if (!m.rooms.length && !m.roof && !notes) { toast('Add a room, the roof or a note.'); return; }
+    this.disabled = true;
+    var rec = Object.assign({ id: 'MS' + Date.now().toString(36), at: nowIso(), by: myName(), notes: notes, updatedAt: nowIso() }, m);
+    var k = v.slice(0, 1), id = v.slice(2);
+    var w = k === 'p' ? saveProject(id, function(q){ q.measurements = arr(q.measurements).concat([rec]); }) : saveLead(id, function(q){ q.measurements = arr(q.measurements).concat([rec]); });
+    Promise.resolve(w).then(function(){ if (k === 'p') logLine(id, 'work', '📏 Measured: ' + (m.rooms.length ? Math.round(m.floor) + ' sq ft floor, ' + Math.round(m.walls) + ' sq ft walls' : '') + (m.roof ? ' roof ' + m.roof.squares + ' sq' : '') + ' — ' + myName()); o.remove(); toast('📏 Saved — the estimate will read it.'); });
+  };
+}
+function saveLead(id, fn){
+  var put = function(l){ var q = Object.assign({}, l); fn(q); q.updatedAt = nowIso(); return q; };
+  try { W.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+  try { if (typeof W._setLeads === 'function') { W._setLeads(function(prev){ return arr(prev).map(function(l){ return l && s(l.id) === s(id) ? put(l) : l; }); }); return Promise.resolve(true); } } catch (e) {}
+  try { var L = JSON.parse(lsGet('grayco_leads') || '[]').map(function(l){ return l && s(l.id) === s(id) ? put(l) : l; }); lsSet('grayco_leads', JSON.stringify(L)); if (W._supaUpsert) W._supaUpsert('leads', L); } catch (e) {}
+  return Promise.resolve(true);
+}
+function measurementsOf(id){ var p = proj(id); if (p) return arr(p.measurements); var l = lead(id); return l ? arr(l.measurements) : []; }
+
+/* ── 🧾 snap a receipt: the photo becomes a draft expense on the job; the office confirms it (the 💳 Enter expenses reader) ── */
+function receipt(p){ if (typeof W._gcFieldLogExpense === 'function') { W._gcFieldLogExpense(p || undefined); return; } toast('The receipt reader is not on this phone yet.'); }
+
+/* ── 👷 who's on site (superintendent): today's schedule — who is expected, who confirmed, who checked in ── */
+function onsiteSheet(p){
+  var rows = schedToday(p);
+  var subOf = function(name){ var n = low(name); return arr(C().subs).filter(function(x){ return x && (low(x.name) === n || low(x.company) === n); })[0] || null; };
+  var o = sheet('<h3>👷 Who\'s on site — ' + esc(p.name) + '</h3>' + (rows.length ? '<div class="pick">' + rows.map(function(x){
+    var who = s(x.sub || x.crew || x.assignee || x.title), sb = subOf(who), ph = s(sb && (sb.phone || sb.mobile)).replace(/[^0-9+]/g, '');
+    var st = x.checkedInAt || x.checkinAt ? '🟢 checked in ' + s(x.checkedInAt || x.checkinAt).slice(11, 16) : x.confirmed || x.subConfirmed || x.confirmedAt ? '✓ confirmed' : x.declined ? '✖ declined' : '… not confirmed';
+    return '<div style="display:flex;align-items:center;gap:10px;border:1px solid #e5e7eb;border-radius:12px;padding:10px"><span style="font-size:22px">👷</span><span style="flex:1"><b>' + esc(who || 'Crew') + '</b><small style="display:block;color:#6b7280">' + esc(s(x.title || x.name)) + ' · ' + esc(st) + '</small></span>' + (ph ? '<a href="tel:' + esc(ph) + '" style="font-size:20px;text-decoration:none">📞</a><a href="sms:' + esc(ph) + '" style="font-size:20px;text-decoration:none">💬</a>' : '') + '</div>';
+  }).join('') + '</div>' : '<div class="logbox">Nobody is on the schedule for this job today.</div>') + '<div class="acts"><button type="button" data-x>Close</button></div>');
+  return o;
+}
+
+/* ── 📐 plans & markup: only when the job has plans; draw on a sheet, save the marked-up copy, tell the PM ── */
+var PLAN_DOCS = { at: 0, list: [] };
+function loadPlanDocs(){
+  if (Date.now() - PLAN_DOCS.at < 60e3 || !W.idbGet) return;
+  PLAN_DOCS.at = Date.now();
+  Promise.resolve(W.idbGet('projectDocs')).then(function(v){ PLAN_DOCS.list = arr(v).filter(function(d){ return d && /plan|drawing/i.test(s(d.cat)); }).map(function(d){ return { pid: s(d.pid || d.projectId), id: s(d.id), name: s(d.fileName || d.name), type: s(d.type), data: d.data, url: s(d.url || d.ref) }; }); lastSig = ''; soon(); }).catch(function(){});
+}
+function plansOf(p){
+  var a = arr(p.files).filter(function(f){ return f && (/plan|drawing/i.test(s(f.cat)) || /plan|drawing|sheet|\.dwg$/i.test(s(f.name))); }).map(function(f){ return { pid: p.id, id: s(f.id), name: s(f.name), type: s(f.type), data: f.data, url: s(f.url || f.ref) }; });
+  PLAN_DOCS.list.forEach(function(d){ if (d.pid === s(p.id) && !a.some(function(x){ return x.id === d.id; })) a.push(d); });
+  return a;
+}
+function plansSheet(p){
+  var L = plansOf(p);
+  var o = sheet('<h3>📐 Plans — ' + esc(p.name) + '</h3><div class="pick">' + L.map(function(f, i){ return '<button type="button" data-pl="' + i + '"><span class="e">📐</span><span>' + esc(f.name || 'Plan') + '<small>Open and mark up</small></span></button>'; }).join('') + '</div><div class="acts"><button type="button" data-x>Close</button></div>');
+  Array.prototype.forEach.call(o.querySelectorAll('[data-pl]'), function(b){ b.onclick = function(){ o.remove(); markup(p, L[+b.getAttribute('data-pl')]); }; });
+}
+function srcOf(f){ if (f.data) return Promise.resolve(f.data); if (/^sb:/.test(f.url) && typeof W._gcFileUrl === 'function') return Promise.resolve(W._gcFileUrl(f.url)); return Promise.resolve(f.url); }
+function markup(p, f){
+  var o = sheet('<h3>📐 ' + esc(f.name) + '</h3><div class="note">Draw or circle with your finger. Save puts a marked-up copy on the job and tells the PM.</div>' +
+    '<div id="gc-mk-box" style="position:relative;overflow:auto;max-height:55vh;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb"></div>' +
+    '<div class="chips" style="margin-top:8px"><button type="button" class="on" data-c="#dc2626">Red</button><button type="button" data-c="#2563eb">Blue</button><button type="button" data-c="#111827">Black</button><button type="button" data-undo>Clear marks</button></div>' +
+    '<label for="gc-mk-note">Note for the PM <span class="opt">(optional)</span></label><input id="gc-mk-note">' +
+    '<div class="acts"><button type="button" data-x>Close</button><button type="button" class="pri" data-go>Save marked-up copy</button></div>');
+  var box = o.querySelector('#gc-mk-box'), cv = D.createElement('canvas'), g = cv.getContext('2d'), base = null, color = '#dc2626', strokes = [];
+  cv.style.cssText = 'display:block;width:100%;touch-action:none'; box.appendChild(cv);
+  function redraw(){ g.clearRect(0, 0, cv.width, cv.height); if (base) g.drawImage(base, 0, 0, cv.width, cv.height); strokes.forEach(function(st){ g.strokeStyle = st.c; g.lineWidth = Math.max(3, cv.width / 300); g.lineCap = 'round'; g.beginPath(); st.p.forEach(function(q, i){ if (i) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); }); g.stroke(); }); }
+  function pt(e){ var r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return { x: (t.clientX - r.left) * cv.width / r.width, y: (t.clientY - r.top) * cv.height / r.height }; }
+  var cur = null;
+  cv.addEventListener('pointerdown', function(e){ cur = { c: color, p: [pt(e)] }; strokes.push(cur); e.preventDefault(); });
+  cv.addEventListener('pointermove', function(e){ if (!cur) return; cur.p.push(pt(e)); redraw(); e.preventDefault(); });
+  ['pointerup', 'pointerleave'].forEach(function(n){ cv.addEventListener(n, function(){ cur = null; }); });
+  Array.prototype.forEach.call(o.querySelectorAll('[data-c]'), function(b){ b.onclick = function(){ color = b.getAttribute('data-c'); Array.prototype.forEach.call(o.querySelectorAll('[data-c]'), function(x){ x.classList.toggle('on', x === b); }); }; });
+  o.querySelector('[data-undo]').onclick = function(){ strokes = []; redraw(); };
+  srcOf(f).then(function(src){
+    var isPdf = /pdf/i.test(f.type) || /\.pdf($|\?)/i.test(f.name) || /^data:application\/pdf/.test(s(src));
+    if (isPdf) {
+      if (!W.pdfjsLib) { cv.width = 1200; cv.height = 800; redraw(); toast('This plan is a PDF — open it, or mark up on the blank sheet.', 5000); return; }
+      return W.pdfjsLib.getDocument(src).promise.then(function(doc){ return doc.getPage(1); }).then(function(pg){ var vp = pg.getViewport({ scale: 2 }), tmp = D.createElement('canvas'); tmp.width = vp.width; tmp.height = vp.height; return pg.render({ canvasContext: tmp.getContext('2d'), viewport: vp }).promise.then(function(){ base = tmp; cv.width = tmp.width; cv.height = tmp.height; redraw(); }); });
+    }
+    var img = new Image(); img.onload = function(){ base = img; cv.width = img.naturalWidth || 1200; cv.height = img.naturalHeight || 800; redraw(); }; img.onerror = function(){ cv.width = 1200; cv.height = 800; redraw(); }; img.src = src;
+  }).catch(function(){ cv.width = 1200; cv.height = 800; redraw(); });
+  o.querySelector('[data-go]').onclick = function(){
+    if (!strokes.length) { toast('Draw on the plan first.'); return; }
+    var b = this; b.disabled = true; b.textContent = 'Saving…';
+    var note = s(o.querySelector('#gc-mk-note').value), name = 'Markup — ' + s(f.name).replace(/\.[a-z0-9]+$/i, '') + ' — ' + today() + '.png';
+    new Promise(function(res){ try { cv.toBlob(res, 'image/png'); } catch (e) { res(null); } }).then(function(blob){
+      return blob && typeof W._gcStoreFile === 'function' ? Promise.resolve(W._gcStoreFile(blob, { kind: 'plan-markup', pid: p.id, name: name })).catch(function(){ return null; }) : null;
+    }).then(function(meta){
+      var rec = { id: 'MK' + Date.now().toString(36), name: name, cat: 'Plans/Drawings', type: 'image/png', ref: s(meta && meta.ref), markupOf: f.id, note: note, date: today(), by: myName(), at: nowIso(), updatedAt: nowIso() };
+      if (!rec.ref) { try { rec.data = cv.toDataURL('image/png', 0.8); } catch (e) {} }
+      return saveProject(p.id, function(q){ q.files = arr(q.files).concat([rec]); q.planMarkups = arr(q.planMarkups).concat([{ id: rec.id, of: f.id, name: name, ref: rec.ref, note: note, at: rec.at, by: rec.by }]); }).then(function(){
+        notifyTeam(p, '📐 PLAN MARKUP on ' + s(p.name) + ': ' + s(f.name) + (note ? ' — ' + note : ''));
+        o.remove(); toast('📐 Saved on the job — the PM was told.');
+      });
+    });
+  };
+}
+function jobCard(p){
+  var ok = signed(p), ds = dayState(p.id), sc = schedToday(p)[0], ctx = { day: ds, signed: ok, role: rk() };
+  var mine = roleTools(rk()).filter(function(t){ return (!arr(t.roles).length || arr(t.roles).indexOf(rk()) >= 0) && (typeof t.show !== 'function' || t.show(p, ctx)); });
+  var arrive = mine.filter(function(t){ return t.group === 'arrive'; }), rest = mine.filter(function(t){ return t.group !== 'arrive'; }), big, small;
+  if (ok) { big = rest.slice(0, 3); small = rest.slice(3); }
+  else {   /* unsigned: send for signature, photos, messages up front; the rest locked where they need the contract */
+    var front = ['sendsign', 'photos', 'msgs'].map(function(id){ return TOOLS.filter(function(t){ return t.id === id; })[0]; }).filter(Boolean);
+    big = front; small = rest.filter(function(t){ return front.indexOf(t) < 0 && !t.hideUnsigned; });
+  }
+  var B = function(l){ return l.map(function(t){ return toolBtn(t, p, ctx, !ok && t.needsSigned); }).join(''); };
+  var h = '<div class="fh-job" data-job="' + esc(p.id) + '"><button type="button" class="fh-n" data-fa="open" data-pid="' + esc(p.id) + '">' + esc(p.name) + '</button><div class="fh-a">' + esc([p.address, p.client].filter(Boolean).join(' · ')) + '</div>';
+  if (!ok) h += '<div class="fh-lock">🔒 Contract not signed — work can\'t start</div>';
+  else {
+    var todayTxt = [sc ? s(sc.title || sc.name) + (sc.sub ? ' · ' + s(sc.sub) : '') : '', ds.started ? (ds.ended ? 'day ended' : 'day started ' + s(ds.start).slice(11, 16)) : '', ds.lines ? 'log: ' + ds.lines + ' line' + (ds.lines === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
+    var pg = pctOf(p);
+    if (rk() !== 'est') h += '<div class="fh-prog"><div class="fh-bar"><i style="width:' + pg + '%"></i></div><div class="fh-pct">' + pg + '%</div></div>';
+    if (todayTxt) h += '<div class="fh-today">Today: ' + esc(todayTxt) + '</div>';
+  }
+  if (arrive.length) h += (ok ? '<div class="fh-lbl">Arriving</div>' : '') + '<div class="fh-g3">' + B(arrive) + '</div>';
+  if (big.length) h += (ok ? '<div class="fh-lbl">Working</div>' : '') + '<div class="fh-g3 fh-big">' + B(big) + '</div>';
+  if (small.length) h += '<div class="fh-g4">' + B(small) + '</div>';
+  return h + '</div>';
+}
+function allLeads(){ try { if (typeof W._gcLaLeads === 'function') return arr(W._gcLaLeads()); } catch (e) {} try { return arr(JSON.parse(lsGet('grayco_leads') || '[]')); } catch (e) { return []; } }
+function lead(id){ return allLeads().filter(function(x){ return x && s(x.id) === s(id); })[0] || null; }
+function estToBuild(){
+  var k = rk(); if (k !== 'pm' && k !== 'roof' && k !== 'est') return [];
+  var n = low(myName());
+  return allLeads().filter(function(l){ return l && !l.deleted && !l.converted && !l.notBidding && [l.assignedTo, l.pm, l.estimator, l.owner].some(function(x){ return low(x) === n; }) && !/won|lost|dead|declined|converted|estimate sent|negotiat|submitted/i.test(s(l.stage) + ' ' + s(l.status)); }).slice(0, 5);
+}
+function commissionLine(){
+  if (!isPM()) return '';
+  try { if (typeof W._gcMyCommissionLine === 'function') { var t = s(W._gcMyCommissionLine()); if (t) return '<div class="fh-comm">💵 ' + esc(t) + '</div>'; } } catch (e) {}
+  var r = payDate(); if (!r || !r.payDate) return '';
+  return '<div class="fh-comm">💵 Commission turned in today is paid <b>' + esc(niceDay(r.payDate)) + '</b>' + (r.madeCutoff === false ? ' (after Wednesday\'s cut-off)' : ' — turn in by Wednesday 11:59 PM') + '</div>';
+}
+/* the payroll engine's own rule (patch AUTO-PAY: Wednesday cut-off, the Friday of the following week) — never recomputed here */
+var PAYC = { k: '', v: null };
+function payDate(){
+  var f = W._gcCommissionPayDate; if (typeof f !== 'function') return null;
+  var k = today() + '|' + myName(); if (PAYC.k === k) return PAYC.v;
+  PAYC.k = k; PAYC.v = null;
+  try {
+    var r = f(today(), myName());
+    if (r && typeof r.then === 'function') r.then(function(v){ if (PAYC.k === k && v && v.payDate) { PAYC.v = v; lastSig = ''; soon(); } }, function(){});
+    else if (r && r.payDate) PAYC.v = r;
+  } catch (e) {}
+  return PAYC.v;
+}
+function niceDay(iso){ var d = new Date(s(iso).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? s(iso) : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+
+/* ═════ the home ═════ */
+var lastSig = '', progSeen = {};
+function layout(){ var k = rk(); return LAYOUT[k] || LAYOUT.pm; }
+function model(){ var L = layout(), has = function(x){ return L.sections.indexOf(x) >= 0; }; return { L: L, J: myJobs(), ap: apprItems(), est: has('estimates') ? estToBuild() : [], n: apprCount(), bids: has('bids') ? bidRows() : [], claims: has('claims') ? claimRows() : null, dry: has('dry') ? dryRows() : null, score: has('scorecard') ? scoreNums() : null, todo: has('todos') ? todoCounts() : null }; }
+function sigOf(m){
+  return JSON.stringify([rk(), myName(), JSON.stringify(fset().roles || {}), PLAN_DOCS.list.length, m.J.today, m.J.company, TOOLS.map(function(t){ return t.id; }), m.J.list.map(function(p){ var d = dayState(p.id); return [p.id, p.name, p.address, p.client, pctOf(p), signed(p), d.started, d.ended, d.lines, phoneOf(p), (schedToday(p)[0] || {}).title, plansOf(p).length]; }), m.ap.slice(0, 5).map(function(x){ return [x.id, x.title, x.sub, x.tier]; }), m.n, m.est.map(function(l){ return l.id; }), m.bids.map(function(b){ return [b.id, b.due, b.name]; }), m.claims, m.dry, m.score, m.todo, commissionLine()]);
+}
+function progressLines(m){
+  m.J.list.forEach(function(p){
+    var v = pctOf(p), was = progSeen[p.id];
+    if (was != null && was !== v && dayState(p.id).started) logLine(p.id, 'work', '📈 Progress ' + was + '% → ' + v + '% (' + new Date().toTimeString().slice(0, 5) + ', ' + myName() + ')');
+    progSeen[p.id] = v;
+  });
+}
+/* the role sections */
+function dueOf(l){ var d = s(l.bidDue); if (!d) return NaN; return Date.parse(d.length === 10 ? d + 'T17:00:00' : d); }
+function bidRows(){
+  var k = rk();
+  var L = allLeads().filter(function(l){ return l && !l.deleted && !l.converted && !l.notBidding && !/won|lost|dead|declined|converted/i.test(s(l.stage) + ' ' + s(l.status)) && (!W._gcLeadScope || W._gcLeadScope.has(l)); });
+  if (k === 'roof') L = L.filter(function(l){ try { return W._gcLeadRoles ? W._gcLeadRoles.classify(l) === 'roofing' || W._gcLeadRoles.isRoofing(l) : /roof|storm/i.test(s(l.type)); } catch (e) { return /roof|storm/i.test(s(l.type)); } });
+  return L.map(function(l){ return { id: s(l.id), name: s(l.client || l.name), type: s(l.type || ''), due: dueOf(l), l: l }; })
+    .sort(function(a, b){ var x = isFinite(a.due) ? a.due : 9e15, y = isFinite(b.due) ? b.due : 9e15; return x - y; }).slice(0, 10);
+}
+function dueChip(b){
+  if (!isFinite(b.due)) return /bid|commercial|government/i.test(b.type) ? '<span class="fh-chip o">Due: not set</span>' : '';
+  var hrs = (b.due - Date.now()) / 36e5, d = new Date(b.due);
+  if (hrs < 0) return '<span class="fh-chip r">Past due</span>';
+  if (s(new Date(b.due).toISOString()).slice(0, 10) === today() || hrs < 24) return '<span class="fh-chip r">Due ' + (hrs < 24 && s(d.toISOString()).slice(0, 10) === today() ? 'today ' : 'in ' + Math.round(hrs) + ' h · ') + d.toTimeString().slice(0, 5) + '</span>';
+  if (hrs < 72) return '<span class="fh-chip o">Due ' + d.toLocaleDateString(undefined, { weekday: 'short' }) + '</span>';
+  return '<span class="fh-chip w">Due ' + d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>';
+}
+function claimRows(){
+  var A = claimsApi(); if (!A) return [];
+  var n = low(myName()), all = arr(A.list()).filter(function(c){ return c && !/closed/i.test(s(c.phase)) && (isAdmin() || holderIs('insurance') || low(c.pm) === n || low(c.owner) === n || (function(p){ return !!p && [p.pm, p.apm, p.insurancePm].some(function(x){ return low(x) === n; }); })(proj(c.projectId))); });
+  return all.slice(0, 12).map(function(c){ var p = proj(c.projectId) || {}; var adj = arr(c.adjusters)[0] || {}; return { id: s(c.id), t: s(c.title) || s(p.name) || s(c.insured), phase: s(c.phase), next: s(c.nextStep || c.next || ''), adjPhone: s(c.adjusterPhone || adj.phone).replace(/[^0-9+]/g, ''), supp: /supplement/i.test(s(c.phase)) || arr(c.supplements).some(function(x){ return x && !/approved|closed/i.test(s(x.status)); }), mort: arr(c.mortgageChecks || c.checks).some(function(x){ return x && !/released|deposited/i.test(s(x.status || x.stage)); }) }; });
+}
+function dryRows(){
+  var A = claimsApi(); if (!A) return [];
+  var n = low(myName());
+  var isMit = A.mit && typeof A.mit.isMit === 'function' ? A.mit.isMit : null;
+  return arr(A.list()).filter(function(c){ return c && !/closed/i.test(s(c.phase)) && ((isMit && isMit(c)) || /mitig|water|dry/i.test(s(c.type) + ' ' + s(c.lossType) + ' ' + s(c.cause)) || arr(c.drying || c.readings).length || c.mitigation); })
+    .filter(function(c){ return isAdmin() || !c.tech || low(c.tech) === n || low(c.pm) === n || true; }).slice(0, 12)
+    .map(function(c){ var p = proj(c.projectId) || {}; var pts = arr(c.drying && c.drying.points || c.points || c.readings); var due = pts.filter(function(x){ return x && s(x.lastReadAt || x.at).slice(0, 10) !== today(); }).length; return { id: s(c.id), t: s(c.title) || s(p.name) || s(c.insured), due: due, eq: arr(c.equipment).filter(function(x){ return x && !x.removedAt; }).length }; });
+}
+function scoreNums(){ try { var v = W._gcA8 && W._gcA8.tvNumbers ? W._gcA8.tvNumbers() : null; return v ? { newWeek: v.newWeek, close: v.close, jobs: v.jobs, collected: Math.round(v.collected || 0), ar: Math.round(v.ar || 0), bids: v.bidsWeek, appr: v.appr } : null; } catch (e) { return null; } }
+function todoCounts(){ try { var c = W._gcTodoBadge && W._gcTodoBadge.counts ? W._gcTodoBadge.counts() : null; return c ? { n: +(c.n || c.total || c.todo || 0) || 0, a: +(c.appr || c.approvals || 0) || 0 } : null; } catch (e) { return null; } }
+var TILES = {
+  photos: ['📸', 'GrayCo Photos', 'ph'], addjob: ['＋', 'Add job', 'add'], measure: ['📏', 'Measure', ''], roofscout: ['🏠', 'RoofScout', ''], safety: ['🦺', 'Safety', ''],
+  readings: ['💧', 'Drying jobs', ''], oncall: ['📟', 'On call', ''], xact: ['📎', 'Xactimate upload', ''], receipt: ['🧾', 'Snap a receipt', ''], msgs: ['💬', 'Messages & texts', ''], todo: ['✅', 'To-Do', ''], marketing: ['📣', 'Marketing', ''], viewas: ['👁', 'View as…', '']
+};
+function runTile(k){
+  if (k === 'photos') return openPhotos();
+  if (k === 'addjob') return addJobSheet();
+  if (k === 'measure') return measure({});
+  if (k === 'marketing') { closeHome(); if (W._setView) W._setView('marketing'); return; }
+  if (k === 'roofscout') { closeHome(); if (W._setView) W._setView('roofscout'); return; }
+  if (k === 'safety') return safetySheet(null);
+  if (k === 'readings') return openDrying();
+  if (k === 'oncall') { if (W._gcX10 && W._gcX10.oncall) W._gcX10.oncall(); else toast('On call is not on this phone yet.'); return; }
+  if (k === 'xact') { var A = claimsApi(); if (A) A.open({}); else toast('Claims are not on this phone yet.'); return; }
+  if (k === 'receipt') return receipt(null);
+  if (k === 'msgs') { if (W._gcPickJobForMessages) W._gcPickJobForMessages(); return; }
+  if (k === 'todo') { closeHome(); if (W._setView) W._setView('todo'); return; }
+  if (k === 'viewas') { if (W._gcVASOpen) W._gcVASOpen(); return; }
+}
+function render(force){
+  var el = D.getElementById('_gcJobPick'); if (!el || !el.classList.contains('gc-fh')) return;
+  loadPlanDocs();
+  var m = model(); progressLines(m);
+  var sig = sigOf(m); if (!force && sig === lastSig) { paintSync(); paintTabs(m.n); return; }
+  lastSig = sig;
+  var k = rk(), dt = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  var h = '<div class="fh-top"><div class="fh-brand"><img class="fh-logo" src="grayco-logo.jpg" alt="GrayCo"><div style="min-width:0"><div class="fh-h">GrayCo Field</div><div class="fh-s">' + esc(myName()) + ' · ' + esc(ROLE_NAMES[k] || '') + ' · ' + esc(dt) + '</div></div></div><span id="gc-fh-sync" data-k="ok">✓ All sent</span></div><div class="fh-wrap">';
+  h += '<div class="fh-tiles">' + m.L.tiles.map(function(t){ var x = TILES[t]; return x ? '<button type="button" class="fh-tile ' + x[2] + '" data-fa="tile" data-tile="' + t + '"><span class="e">' + x[0] + '</span>' + esc(x[1]) + '</button>' : ''; }).join('') + '</div>';
+  m.L.sections.forEach(function(sec){
+    if (sec === 'jobs') {
+      var title = m.J.company ? 'Today on the schedule' : (m.J.today ? 'My jobs today' : 'My active jobs');
+      h += '<div class="fh-sec"><span>' + title + ' (' + m.J.list.length + ')</span><button type="button" data-fa="alljobs">All jobs ›</button></div>';
+      h += m.J.list.length ? m.J.list.map(jobCard).join('') : '<div class="fh-empty">' + (m.J.company ? 'Nothing is on the schedule today. Tap <b>All jobs</b> to find a job.' : 'No jobs assigned to you yet. Tap <b>All jobs</b> to find one.') + '</div>';
+    } else if (sec === 'approvals') {
+      if (k === 'super' && !m.ap.length) return;
+      h += '<div class="fh-sec"><span>My approvals (' + m.ap.length + ')</span><button type="button" data-fa="allappr">See all ›</button></div>';
+      h += m.ap.length ? m.ap.slice(0, 5).map(function(x){ return '<div class="fh-ap" data-ap="' + esc(x.id) + '">' + tierChip(x) + '<div class="t"><b>' + esc(x.title) + '</b>' + (x.sub ? '<span>' + esc(x.sub) + '</span>' : '') + '</div><button type="button" class="fh-ok" data-fa="appr" data-id="' + esc(x.id) + '">Review</button></div>'; }).join('') : '<div class="fh-empty">✓ Nothing is waiting on you.</div>';
+    } else if (sec === 'estimates') {
+      h += '<div class="fh-sec"><span>Estimates to build (' + m.est.length + ')</span></div>';
+      h += m.est.length ? m.est.map(function(l){ return '<div class="fh-est"><div><b>' + esc(l.client || l.name) + '</b> · ' + esc(l.type || l.name || 'lead') + '</div><button type="button" class="fh-sm" data-fa="estlead" data-lead="' + esc(l.id) + '">📐 Estimate</button></div>'; }).join('') : '<div class="fh-empty">No leads waiting on an estimate.</div>';
+    } else if (sec === 'commission') { h += commissionLine();
+    } else if (sec === 'bids') {
+      var dueToday = m.bids.filter(function(b){ return isFinite(b.due) && new Date(b.due).toISOString().slice(0, 10) === today(); }).length;
+      h += '<div class="fh-sec"><span>' + (k === 'roof' ? 'Roofing leads & storm' : 'Leads & bids') + ' (' + m.bids.length + ')' + (dueToday ? ' · ' + dueToday + ' due today' : '') + '</span><button type="button" data-fa="leadsall">All leads ›</button></div>';
+      h += m.bids.length ? m.bids.map(function(b){ return '<div class="fh-est" data-bid="' + esc(b.id) + '"><div style="min-width:0"><b>' + esc(b.name) + '</b> · ' + esc(b.type || 'lead') + ' ' + dueChip(b) + '</div><div style="display:flex;gap:6px"><button type="button" class="fh-sm" data-fa="measure" data-lead="' + esc(b.id) + '">📏</button><button type="button" class="fh-sm" data-fa="estlead" data-lead="' + esc(b.id) + '">📐 Estimate</button></div></div>'; }).join('') : '<div class="fh-empty">No open leads for you.</div>';
+    } else if (sec === 'claims') {
+      var C2 = m.claims || [], supp = C2.filter(function(c){ return c.supp; }).length, mort = C2.filter(function(c){ return c.mort; }).length;
+      h += '<div class="fh-sec"><span>My claims (' + C2.length + ')' + (supp ? ' · ' + supp + ' supplement' + (supp === 1 ? '' : 's') : '') + (mort ? ' · ' + mort + ' mortgage check' + (mort === 1 ? '' : 's') : '') + '</span></div>';
+      h += C2.length ? C2.map(function(c){ return '<div class="fh-est"><div style="min-width:0"><b>' + esc(c.t) + '</b><span style="display:block;color:#6b7280;font-size:12px">' + esc(c.phase) + (c.next ? ' · next: ' + esc(c.next) : '') + '</span></div><div style="display:flex;gap:6px">' + (c.adjPhone ? '<a class="fh-sm" style="text-decoration:none" href="tel:' + esc(c.adjPhone) + '">📞 Adjuster</a>' : '') + '<button type="button" class="fh-sm" data-fa="claim" data-id="' + esc(c.id) + '">Open</button></div></div>'; }).join('') : '<div class="fh-empty">No open claims.</div>';
+    } else if (sec === 'dry') {
+      var R = m.dry || [];
+      h += '<div class="fh-sec"><span>Drying jobs (' + R.length + ')</span></div>';
+      h += R.length ? R.map(function(c){ return '<div class="fh-est"><div style="min-width:0"><b>' + esc(c.t) + '</b><span style="display:block;color:#6b7280;font-size:12px">' + (c.due ? '💧 ' + c.due + ' reading' + (c.due === 1 ? '' : 's') + ' due today' : '✓ readings done') + (c.eq ? ' · ' + c.eq + ' equipment out' : '') + '</span></div><button type="button" class="fh-sm" data-fa="claim" data-id="' + esc(c.id) + '">💧 Readings</button></div>'; }).join('') : '<div class="fh-empty">No drying jobs right now.</div>';
+    } else if (sec === 'scorecard' && m.score) {
+      var S = m.score, cell = function(l, v){ return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:10px"><div style="font-size:11px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em">' + l + '</div><div style="font-size:19px;font-weight:800">' + esc(v) + '</div></div>'; };
+      h += '<div class="fh-sec"><span>This week</span></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">' + cell('New leads', S.newWeek) + cell('Close rate', S.close == null ? '—' : S.close + '%') + cell('Jobs going', S.jobs) + cell('Collected', '$' + (S.collected || 0).toLocaleString()) + cell('Owed to us', '$' + (S.ar || 0).toLocaleString()) + cell('Bids due 7d', S.bids) + '</div>';
+    } else if (sec === 'todos' && m.todo) {
+      h += '<div class="fh-sec"><span>To-Do</span></div><div class="fh-est"><div><b>' + m.todo.n + '</b> to-do' + (m.todo.n === 1 ? '' : 's') + (m.todo.a ? ' · <b>' + m.todo.a + '</b> approvals' : '') + '</div><button type="button" class="fh-sm" data-fa="tile" data-tile="todo">Open</button></div>';
+    }
+  });
+  h += '</div>';
+  el.innerHTML = h; paintSync(); paintTabs(m.n);
+}
+var orig = null;
+function openHome(){
+  css();
+  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDash,#_gcJobPick'), function(o){ o.remove(); });
+  W._gcCurrentJob = null;
+  var ov = D.createElement('div'); ov.id = '_gcJobPick'; ov.className = 'gc-fh'; D.body.appendChild(ov);
+  ov.addEventListener('click', onClick);
+  lastSig = ''; render(true); tabs(); setOn(); pullFset();
+  return ov;
+}
+function closeHome(){ var el = D.getElementById('_gcJobPick'); if (el && el.classList.contains('gc-fh')) el.remove(); }
+function wrapPicker(){
+  var cur = W._gcJobPicker; if (!cur || cur.__gcField) return;
+  orig = cur;
+  var w = function(){
+    if (eligible() && !W.__gcFhAll) return openHome();
+    W.__gcFhAll = false;
+    return orig.apply(this, arguments);
+  };
+  w.__gcField = true; w.__orig = orig; W._gcJobPicker = w;
+}
+function onClick(ev){
+  var t = ev.target.closest('[data-fa]'); if (!t) return;
+  var a = t.getAttribute('data-fa'), pid = t.getAttribute('data-pid'), p = pid ? proj(pid) : null;
+  if (t.hasAttribute('disabled')) { ev.preventDefault(); toast('🔒 The contract isn\'t signed yet — work can\'t start.'); return; }
+  if (t.tagName === 'A') return;   /* Navigate / Call: the link does it */
+  ev.preventDefault();
+  if (a === 'alljobs') { W.__gcFhAll = true; if (W._gcJobPicker) W._gcJobPicker(); return; }
+  if (a === 'allappr') { openAllAppr(); return; }
+  if (a === 'appr') { openAppr(t.getAttribute('data-id')); return; }
+  if (a === 'tile') { runTile(t.getAttribute('data-tile')); return; }
+  if (a === 'claim') { openClaim(t.getAttribute('data-id')); return; }
+  if (a === 'measure') { measure({ leadId: t.getAttribute('data-lead') }); return; }
+  if (a === 'leadsall') { closeHome(); if (W._setView) W._setView('leads'); return; }
+  if (a === 'estlead') { var l = lead(t.getAttribute('data-lead')); estPicker({ leadId: l && l.id, name: l ? s(l.client || l.name) : '', lead: l }); return; }
+  if (!p) return;
+  W._gcCurrentJob = p; lsSet('grayco_openpid', s(p.id));
+  if (a === 'open') { if (W._gcJobDashboard) W._gcJobDashboard(p.id); return; }
+  var tool = TOOLS.filter(function(x){ return x.id === a; })[0]; if (!tool) return;
+  var ctx = { day: dayState(p.id), signed: signed(p), role: rk() };
+  try { (tool.run || function(){})(p, ctx); } catch (e) { toast('That did not open: ' + (e && e.message || e)); }
+}
+
+/* ═════ sheets ═════ */
+function sheet(html){
+  css();
+  var o = D.createElement('div'); o.className = 'gc-fh-sheet'; o.setAttribute('data-gc-keep', '1');
+  o.innerHTML = '<div class="in">' + html + '</div>'; D.body.appendChild(o);
+  o.addEventListener('click', function(e){ if (e.target === o || (e.target.closest && e.target.closest('[data-x]'))) o.remove(); });
+  return o;
+}
+function crewGuess(p){ var c = 0; schedToday(p).forEach(function(x){ c += +(x.crew || x.headcount || 0) || 0; }); return c || ''; }
+function tellBlock(id, msg){ return '<label class="chk"><input type="checkbox" id="' + id + '"> 📣 Also tell the customer</label><textarea id="' + id + '-m" rows="2" hidden>' + esc(msg) + '</textarea>'; }
+function wireTell(o, id){ var c = o.querySelector('#' + id), m = o.querySelector('#' + id + '-m'); c.addEventListener('change', function(){ m.hidden = !c.checked; }); return function(){ return c.checked ? s(m.value) : ''; }; }
+function photoTo(p, f, tag){ if (!f) return Promise.resolve(null); try { if (W._gcPhotos && W._gcPhotos.capture) return Promise.resolve(W._gcPhotos.capture(p.id, [f], tag || 'During')).catch(function(){ return null; }); } catch (e) {} return Promise.resolve(null); }
+function portalPost(p, text, kind){
+  /* only when the person ticked "📣 Also tell the customer": their own words, on the job's portal page */
+  var post = { id: 'FD' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: nowIso(), by: myName(), text: s(text), src: 'field-' + kind };
+  return saveProject(p.id, function(q){ q.portalPosts = arr(q.portalPosts).concat([post]); });
+}
+function startDay(p){
+  var o = sheet('<h3>🟢 Start day — ' + esc(p.name) + '</h3><div class="note">One tap checks you in and starts today\'s daily log. Everything below is optional.</div>' +
+    '<label for="gc-fh-crew">Crew on site <span class="opt">(from the schedule)</span></label><input id="gc-fh-crew" type="number" inputmode="numeric" min="0" value="' + esc(crewGuess(p)) + '">' +
+    '<label for="gc-fh-sn">Note <span class="opt">(optional)</span></label><textarea id="gc-fh-sn" rows="2"></textarea>' +
+    '<label for="gc-fh-ph">Photo <span class="opt">(optional)</span></label><input id="gc-fh-ph" type="file" accept="image/*" capture="environment">' +
+    '<label class="chk"><input id="gc-fh-safe" type="checkbox"> 🦺 Do the safety sign-in now</label>' +
+    tellBlock('gc-fh-tell', 'Our crew has arrived and started work for the day.') +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="go" data-go>Start day</button></div>');
+  var tell = wireTell(o, 'gc-fh-tell');
+  o.querySelector('[data-go]').onclick = function(){
+    this.disabled = true; this.textContent = 'Starting…';
+    var crew = +o.querySelector('#gc-fh-crew').value || 0, note = s(o.querySelector('#gc-fh-sn').value), f = o.querySelector('#gc-fh-ph').files[0] || null, safe = o.querySelector('#gc-fh-safe').checked, msg = tell();
+    var d = SBd(); if (d) { try { d.start(p.id, { crew: crew, by: myName() }); } catch (e) {} }
+    if (note) logLine(p.id, 'work', '📝 ' + note + ' — ' + myName());
+    Promise.all([photoTo(p, f, 'During'), msg ? portalPost(p, msg, 'start') : null]).then(function(){
+      o.remove(); toast('🟢 Day started' + (msg ? ' — the customer was told.' : '.')); lastSig = ''; render(true);
+      if (safe && W._gcA8 && W._gcA8.safety) W._gcA8.safety(p.id);
+    });
+  };
+}
+function logText(lg){
+  if (!lg) return 'Nothing on today\'s log yet.';
+  var crew = arr(lg.manpower).reduce(function(a, m){ return a + (+m.headcount || 0); }, 0);
+  return [lg.startAt ? 'Started ' + s(lg.startAt).slice(11, 16) : '', crew ? 'Crew ' + crew : '', s(lg.weather) ? 'Weather: ' + s(lg.weather) : '', arr(lg.photos).length ? arr(lg.photos).length + ' photo(s)' : ''].filter(Boolean).join(' · ') + '\n' + [s(lg.work), s(lg.delays)].filter(Boolean).join('\n');
+}
+function endDay(p){
+  var lg = logToday(p.id);
+  var o = sheet('<h3>🏁 End day — ' + esc(p.name) + '</h3><div class="note">Today\'s log, filled in for you. One tap signs it.</div>' +
+    '<div class="logbox">' + esc(logText(lg)) + '</div>' +
+    '<label for="gc-fh-en">Add a note <span class="opt">(optional)</span></label><textarea id="gc-fh-en" rows="2"></textarea>' +
+    '<label for="gc-fh-ph2">Photo <span class="opt">(optional)</span></label><input id="gc-fh-ph2" type="file" accept="image/*" capture="environment">' +
+    tellBlock('gc-fh-tell2', 'We wrapped up for the day. Thank you!') +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>End day & sign log</button></div>' +
+    '<div style="text-align:center;margin-top:10px"><button type="button" data-full style="background:none;border:none;color:#2563eb;font-weight:700;font-size:13px">Open the full log</button></div>');
+  var tell = wireTell(o, 'gc-fh-tell2');
+  o.querySelector('[data-full]').onclick = function(){ o.remove(); closeHome(); try { W._gcRP.site().open(p.id, 'log'); } catch (e) {} };
+  o.querySelector('[data-go]').onclick = function(){
+    this.disabled = true; this.textContent = 'Signing…';
+    var note = s(o.querySelector('#gc-fh-en').value), f = o.querySelector('#gc-fh-ph2').files[0] || null, msg = tell();
+    if (note) logLine(p.id, 'work', '📝 ' + note + ' — ' + myName());
+    var d = SBd(); if (d) { try { d.end(p.id, { sign: true }); } catch (e) {} }
+    Promise.all([photoTo(p, f, 'During'), msg ? portalPost(p, msg, 'end') : null]).then(function(){
+      o.remove(); toast('🏁 Day ended — log signed' + (msg ? ', the customer was told.' : '.')); lastSig = ''; render(true);
+    });
+  };
+}
+var PTYPES = ['Weather', 'Damage found', 'Waiting on materials', 'Customer issue', 'Safety', 'Other'];
+function officeIds(){ return arr(C().users).filter(function(u){ return u && u.active !== false && (/office/i.test(s(u.role) + ' ' + s(u.profile))); }); }
+function notifyTeam(p, text){
+  var pm = arr(C().users).filter(function(u){ return u && low(u.name) === low(p.pm); })[0];
+  var tags = [uid(pm)].concat(officeIds().map(uid)).filter(Boolean);
+  try { if (typeof W._gcJobMsgAdd === 'function') W._gcJobMsgAdd(p.id, text, tags); } catch (e) {}
+  try {
+    var list = JSON.parse(lsGet('gc_office_tasks') || '[]');
+    list.push({ id: 'T' + Date.now(), label: text.split('\n')[0].slice(0, 140), note: s(p.name) + (p.autoPO || p.po ? ' · PO ' + s(p.autoPO || p.po) : ''), addedBy: myName(), addedAt: nowIso(), done: false, pid: p.id, src: 'field' });
+    lsSet('gc_office_tasks', JSON.stringify(list));
+    if (W._gcOfficeTasksPush) W._gcOfficeTasksPush();
+  } catch (e) {}
+}
+function problemSheet(p){
+  var o = sheet('<h3>⚠️ Problem / delay — ' + esc(p.name) + '</h3><div class="note">The PM and the office hear about it right away, and it goes on today\'s log.</div>' +
+    '<label>What kind?</label><div class="chips">' + PTYPES.map(function(t, i){ return '<button type="button" data-ty="' + esc(t) + '"' + (i === 0 ? ' class="on"' : '') + '>' + esc(t) + '</button>'; }).join('') + '</div>' +
+    '<label for="gc-fh-pn">What happened?</label><textarea id="gc-fh-pn" rows="3" placeholder="Tap 🎤 on the keyboard to talk"></textarea>' +
+    '<label for="gc-fh-pp">Photo <span class="opt">(optional)</span></label><input id="gc-fh-pp" type="file" accept="image/*" capture="environment">' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>Send</button></div>');
+  var ty = PTYPES[0];
+  Array.prototype.forEach.call(o.querySelectorAll('[data-ty]'), function(b){ b.onclick = function(){ ty = b.getAttribute('data-ty'); Array.prototype.forEach.call(o.querySelectorAll('[data-ty]'), function(x){ x.classList.toggle('on', x === b); }); }; });
+  o.querySelector('[data-go]').onclick = function(){
+    var note = s(o.querySelector('#gc-fh-pn').value), f = o.querySelector('#gc-fh-pp').files[0] || null;
+    if (!note && !f) { toast('Add a few words or a photo.'); return; }
+    this.disabled = true;
+    photoTo(p, f, 'Damage').then(function(){
+      logLine(p.id, 'delays', '⚠️ ' + ty + ': ' + (note || '(photo)') + ' — ' + myName() + ', ' + new Date().toTimeString().slice(0, 5));
+      notifyTeam(p, '⚠️ PROBLEM / DELAY on ' + s(p.name) + ' — ' + ty + ': ' + (note || 'see photo'));
+      o.remove(); toast('⚠️ Sent to the PM and the office. Added to today\'s log.'); lastSig = ''; render(true);
+    });
+  };
+}
+function matAskSheet(p){
+  var o = sheet('<h3>📦 Need materials — ' + esc(p.name) + '</h3><div class="note">Goes to the PM to approve as an order. Nothing is ordered until it is approved.</div>' +
+    '<label for="gc-fh-mi">What do you need?</label><input id="gc-fh-mi" placeholder="e.g. 10 sheets 1/2&quot; drywall">' +
+    '<label for="gc-fh-mq">How many <span class="opt">(optional)</span></label><input id="gc-fh-mq" inputmode="numeric">' +
+    '<label for="gc-fh-md">Needed by</label><input id="gc-fh-md" type="date" value="' + esc(today()) + '">' +
+    '<label for="gc-fh-mn">Note <span class="opt">(optional)</span></label><textarea id="gc-fh-mn" rows="2"></textarea>' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>Ask the PM</button></div>');
+  o.querySelector('[data-go]').onclick = function(){
+    var item = s(o.querySelector('#gc-fh-mi').value); if (!item) { toast('Say what you need.'); return; }
+    this.disabled = true;
+    var m = { id: 'MR' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), item: item, qty: s(o.querySelector('#gc-fh-mq').value), neededBy: s(o.querySelector('#gc-fh-md').value), note: s(o.querySelector('#gc-fh-mn').value), by: myName(), at: nowIso(), status: 'pending_pm', updatedAt: nowIso() };
+    saveProject(p.id, function(q){ q.materialRequests = arr(q.materialRequests).concat([m]); }).then(function(){
+      logLine(p.id, 'work', '📦 Materials needed: ' + item + (m.qty ? ' × ' + m.qty : '') + (m.neededBy ? ' by ' + m.neededBy : '') + ' — ' + myName());
+      notifyTeam(p, '📦 MATERIALS NEEDED on ' + s(p.name) + ': ' + item + (m.qty ? ' × ' + m.qty : '') + ' (waiting for the PM\'s approval)');
+      o.remove(); toast('📦 Sent to the PM to approve.'); lastSig = ''; render(true);
+    });
+  };
+}
+function matSheet(mid){
+  var hit = null; arr(C().projects).some(function(p){ var m = arr(p && p.materialRequests).filter(function(x){ return x && x.id === mid; })[0]; if (m) { hit = { p: p, m: m }; return true; } return false; });
+  if (!hit) { toast('That request is gone.'); return; }
+  var p = hit.p, m = hit.m;
+  var o = sheet('<h3>📦 Materials for ' + esc(p.name) + '</h3><div class="note">Asked by ' + esc(m.by) + ' · ' + esc(s(m.at).slice(0, 16).replace('T', ' ')) + '</div>' +
+    '<div class="logbox"><b>' + esc(m.item) + '</b>' + (m.qty ? ' × ' + esc(m.qty) : '') + (m.neededBy ? '\nNeeded by ' + esc(m.neededBy) : '') + (m.note ? '\n' + esc(m.note) : '') + '</div>' +
+    '<div class="acts"><button type="button" data-no>Don\'t approve</button><button type="button" class="go" data-ok>Approve order</button></div>');
+  function set(st){ return saveProject(p.id, function(q){ q.materialRequests = arr(q.materialRequests).map(function(x){ return x && x.id === mid ? Object.assign({}, x, { status: st, decidedBy: myName(), decidedAt: nowIso(), updatedAt: nowIso() }) : x; }); }); }
+  o.querySelector('[data-ok]').onclick = function(){
+    this.disabled = true;
+    set('approved').then(function(){
+      try { if (typeof W._gcSupplierOrderDraft === 'function') W._gcSupplierOrderDraft({ pid: p.id, lines: [{ desc: m.item, qty: m.qty }], neededBy: m.neededBy, source: 'field request' }); else notifyTeam(p, '🛒 ORDER (approved by ' + myName() + '): ' + m.item + (m.qty ? ' × ' + m.qty : '') + (m.neededBy ? ' — needed by ' + m.neededBy : '')); } catch (e) {}
+      o.remove(); toast('✅ Approved — the order is on its way to the office.'); lastSig = ''; render(true);
+    });
+  };
+  o.querySelector('[data-no]').onclick = function(){ this.disabled = true; set('declined').then(function(){ o.remove(); toast('Not approved.'); lastSig = ''; render(true); }); };
+}
+function punchSheet(p){
+  var o = sheet('<h3>☐ Punch item — ' + esc(p.name) + '</h3>' +
+    '<label for="gc-fh-pi">What needs fixing?</label><input id="gc-fh-pi" placeholder="e.g. touch up paint by back door">' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="pri" data-go>Add</button></div>');
+  o.querySelector('[data-go]').onclick = function(){
+    var t = s(o.querySelector('#gc-fh-pi').value); if (!t) { toast('Type the punch item.'); return; }
+    var n = 0; try { n = W._gcPunch2 && W._gcPunch2.add ? W._gcPunch2.add(p.id, [t]) : 0; } catch (e) {}
+    logLine(p.id, 'work', '☐ Punch: ' + t + ' — ' + myName());
+    o.remove(); toast(n ? '☐ Added to the punch list.' : '☐ Already on the punch list.');
+  };
+}
+
+/* ═════ 📐 Estimate — every way GrayCo makes one; all end as one CRM estimate (patch ESTIN's intake when it is there) ═════ */
+function estPicker(t){
+  t = t || {};
+  var o = sheet('<h3>📐 Estimate' + (t.name ? ' — ' + esc(t.name) : '') + '</h3><div class="note">However you make it, it ends as one CRM estimate. The proposal waits for approval before the customer sees it.</div><div class="pick">' +
+    '<button type="button" data-e="draft"><span class="e">✨</span><span>Draft estimate<small>From the price book and your measurements</small></span></button>' +
+    '<button type="button" data-e="builder"><span class="e">🧮</span><span>Estimate builder<small>Line by line, on the phone</small></span></button>' +
+    '<button type="button" data-e="gdoc"><span class="e">📝</span><span>New Google Doc<small>A copy of the GrayCo estimate template in your Drive</small></span></button>' +
+    '<button type="button" data-e="upload"><span class="e">📎</span><span>Upload Word / PDF / photo<small>An estimate made somewhere else</small></span></button>' +
+    '</div><div class="acts"><button type="button" data-x>Cancel</button></div>');
+  Array.prototype.forEach.call(o.querySelectorAll('[data-e]'), function(b){ b.onclick = function(){ var k = b.getAttribute('data-e'); o.remove(); estGo(k, t); }; });
+}
+/* the four ways all end as one CRM estimate through patch ESTIN's intake (window._gcEstimateIntake); the older
+   screens are the fallback when it is not on the page */
+function intake(){ return W._gcEstimateIntake && typeof W._gcEstimateIntake === 'object' ? W._gcEstimateIntake : null; }
+function estGo(k, t){
+  var ctx = { pid: t.pid || '', leadId: t.leadId || '', lead: t.lead || null, project: t.pid ? proj(t.pid) : null }, I = intake();
+  if (k === 'draft') {
+    if (I && typeof I.draft === 'function') {
+      Promise.resolve(I.draft({ pid: ctx.pid, jobId: ctx.pid, leadId: ctx.leadId })).then(function(r){
+        if (r && r.ok) { toast('✨ Draft estimate made from your measurements — check it, then it goes for approval.', 5000); closeHome(); try { if (r.openBuilder) r.openBuilder(); } catch (e) {} return; }
+        toast(s(r && r.error) || 'Measure first (📏), then draft.', 5000); estGo('builder', t);
+      });
+      return;
+    }
+    if (typeof W._gcDraftEstimate === 'function') { W._gcDraftEstimate(ctx); return; }
+    return estGo('builder', t);
+  }
+  if (k === 'upload') {
+    if (I && typeof I.upload === 'function') {
+      var inp = D.createElement('input'); inp.type = 'file'; inp.accept = '.pdf,.doc,.docx,image/*'; inp.style.display = 'none'; D.body.appendChild(inp);
+      inp.onchange = function(){
+        var f = inp.files && inp.files[0]; inp.remove(); if (!f) return;
+        toast('📎 Reading the estimate…', 8000);
+        Promise.resolve(I.upload(f, { pid: ctx.pid, jobId: ctx.pid, leadId: ctx.leadId })).then(function(r){
+          if (!r || !r.ok) { toast('Could not read it: ' + s(r && r.error || 'no answer') + '.', 7000); return; }
+          toast(r.duplicate ? '📎 That estimate is already in the CRM.' : r.review ? '📎 Saved — the office will check it (' + s(r.why) + ').' : '📎 Saved as an estimate — the proposal goes for approval next.', 6000);
+        }, function(){ toast('Could not read it.', 5000); });
+      };
+      inp.click(); return;
+    }
+    if (typeof W._gcEstimateUpload === 'function') { W._gcEstimateUpload(ctx); return; }
+    if (typeof W._importEstimate === 'function') { W._importEstimate(); return; }
+    toast('Upload is not on this phone yet.'); return;
+  }
+  if (k === 'builder') {
+    if (typeof W._gcOpenEstimateBuilder === 'function') { W._gcOpenEstimateBuilder(ctx); return; }
+    closeHome();
+    if (W._setView) W._setView('estimates');
+    later(function(){ var b = D.querySelector('#gc-est3-list [data-l="new"]'); if (b) b.click(); }, 900);
+    return;
+  }
+  if (k === 'gdoc') {
+    toast('📝 Making your Google Doc from the GrayCo estimate template…', 6000);
+    var go = I && typeof I.newGoogleDoc === 'function'
+      ? Promise.resolve(I.newGoogleDoc({ pid: ctx.pid, jobId: ctx.pid, leadId: ctx.leadId }))
+      : fn('gdocs-sync', { op: 'newdoc', name: 'Estimate — ' + (t.name || 'new job') + ' — ' + today(), pid: ctx.pid, leadId: ctx.leadId }).then(function(r){ if (r && r.ok && r.url) { try { W.open(r.url, '_blank'); } catch (e) {} } return r; });
+    go.then(function(r){
+      if (r && r.ok) { toast('📝 Opened in Google Docs. The CRM reads it back as your estimate.', 5000); return; }
+      toast('Could not make the Google Doc: ' + s(r && (r.error || r.why) || 'no answer') + (r && r.needsSetup ? ' — the owner has a one-time Google step (☰ More → To-Do).' : '.'), 8000);
+    }, function(){ toast('Could not reach Google Docs.', 5000); });
+  }
+}
+
+/* ═════ ＋ Add job — one form, everything from the field; the job is made the one way jobs are made ═════ */
+var TYPES = ['Residential Reno', 'Roofing', 'Restoration – Water', 'Restoration – Fire', 'Restoration – Storm', 'Insurance', 'Commercial', 'Gutters', 'Other'];
+function people(){
+  var out = [], seen = {};
+  arr(C().customers).forEach(function(c){ if (!c || !s(c.name)) return; var k = 'c:' + low(c.name); if (seen[k]) return; seen[k] = 1; out.push({ kind: 'customer', id: s(c.id || c.name), name: s(c.name), phone: s(c.phone || c.mobile), email: s(c.email), address: s(c.address) }); });
+  allLeads().forEach(function(l){ if (!l || l.deleted || /lost|dead/i.test(s(l.stage))) return; var nm = s(l.client || l.customer || l.name); if (!nm) return; out.push({ kind: 'lead', id: s(l.id), name: nm, phone: s(l.phone || l.clientPhone), email: s(l.email || l.clientEmail), address: s(l.address), type: s(l.type), lead: l }); });
+  return out;
+}
+function digits(v){ return s(v).replace(/\D/g, '').slice(-10); }
+function addJobSheet(){
+  var o = sheet('<h3>＋ Add job</h3><div class="note">Type it once. Customers and leads already in the CRM come up as you type.</div>' +
+    '<label for="gc-aj-name">Customer name</label><input id="gc-aj-name" autocomplete="off" placeholder="e.g. Sample Homeowner"><div class="match" id="gc-aj-match" hidden></div><div class="matched" id="gc-aj-matched" hidden></div>' +
+    '<label for="gc-aj-phone">Phone</label><input id="gc-aj-phone" type="tel" inputmode="tel">' +
+    '<label for="gc-aj-email">E-mail <span class="opt">(optional)</span></label><input id="gc-aj-email" type="email" inputmode="email">' +
+    '<label for="gc-aj-addr">Job address</label><div class="row"><input id="gc-aj-addr"><button type="button" id="gc-aj-gps">📍 Use my location</button></div>' +
+    '<label for="gc-aj-type">Job type</label><select id="gc-aj-type">' + TYPES.map(function(t){ return '<option>' + esc(t) + '</option>'; }).join('') + '</select>' +
+    '<label for="gc-aj-scope">What\'s the job? <span class="opt">(tap 🎤 on the keyboard to talk)</span></label><textarea id="gc-aj-scope" rows="3"></textarea>' +
+    '<label for="gc-aj-photos">Photos <span class="opt">(optional)</span></label><input id="gc-aj-photos" type="file" accept="image/*" capture="environment" multiple>' +
+    '<div class="acts"><button type="button" data-x>Cancel</button><button type="button" class="go" data-go>Add job</button></div>');
+  var picked = null, P = people();
+  var nm = o.querySelector('#gc-aj-name'), mt = o.querySelector('#gc-aj-match'), md = o.querySelector('#gc-aj-matched');
+  function fill(x){
+    picked = x; mt.hidden = true; nm.value = x.name;
+    if (x.phone) o.querySelector('#gc-aj-phone').value = x.phone; if (x.email) o.querySelector('#gc-aj-email').value = x.email; if (x.address) o.querySelector('#gc-aj-addr').value = x.address;
+    if (x.type) { var sel = o.querySelector('#gc-aj-type'); var hit = TYPES.filter(function(t){ return low(t).indexOf(low(x.type).split(/[\s–-]/)[0]) === 0; })[0]; if (hit) sel.value = hit; }
+    md.hidden = false; md.textContent = '✓ Using the existing ' + (x.kind === 'lead' ? 'lead' : 'customer') + ': ' + x.name + ' — nothing typed twice.';
+  }
+  nm.addEventListener('input', function(){
+    picked = null; md.hidden = true;
+    var q = low(nm.value); if (q.length < 2) { mt.hidden = true; return; }
+    var hits = P.filter(function(x){ return low(x.name).indexOf(q) >= 0 || (digits(q).length >= 4 && digits(x.phone).indexOf(digits(q)) >= 0); }).slice(0, 6);
+    if (!hits.length) { mt.hidden = true; return; }
+    mt.innerHTML = hits.map(function(x, i){ return '<button type="button" data-i="' + i + '">' + esc(x.name) + ' <span style="color:#6b7280;font-size:12px">· ' + (x.kind === 'lead' ? 'lead' : 'customer') + (x.address ? ' · ' + esc(x.address) : '') + '</span></button>'; }).join('');
+    mt.hidden = false;
+    Array.prototype.forEach.call(mt.querySelectorAll('[data-i]'), function(b){ b.onclick = function(){ fill(hits[+b.getAttribute('data-i')]); }; });
+  });
+  o.querySelector('#gc-aj-gps').onclick = function(){
+    var b = this; if (!navigator.geolocation) { toast('This phone did not give a location.'); return; }
+    b.disabled = true; b.textContent = '📍 Finding…';
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var lat = pos.coords.latitude, lng = pos.coords.longitude; o.__geo = { lat: lat, lng: lng };
+      fn('geocode', { reverse: { lat: lat, lng: lng } }).then(function(r){
+        b.disabled = false; b.textContent = '📍 Use my location';
+        var a = o.querySelector('#gc-aj-addr');
+        if (r && r.ok && r.address) a.value = r.address; else { a.value = a.value || ('📍 ' + lat.toFixed(5) + ', ' + lng.toFixed(5)); toast('Got the spot; check the street address.'); }
+      });
+    }, function(){ b.disabled = false; b.textContent = '📍 Use my location'; toast('Location is off for this site — type the address.'); }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  };
+  o.querySelector('[data-go]').onclick = function(){
+    var d = { client: s(nm.value), phone: s(o.querySelector('#gc-aj-phone').value), email: s(o.querySelector('#gc-aj-email').value), address: s(o.querySelector('#gc-aj-addr').value), type: s(o.querySelector('#gc-aj-type').value), scope: s(o.querySelector('#gc-aj-scope').value), geo: o.__geo || null, by: myName(), byEmail: s(lsGet('grayco_user')) };
+    if (!d.client && !d.address) { toast('Add the customer or the address.'); return; }
+    if (picked && picked.kind === 'lead') d.leadId = picked.id; if (picked && picked.kind === 'customer') d.customerId = picked.id;
+    var files = Array.prototype.slice.call(o.querySelector('#gc-aj-photos').files || []);
+    var b = this; b.disabled = true; b.textContent = 'Adding…';
+    Promise.resolve(createJob('field', d)).then(function(p){
+      if (!p) { b.disabled = false; b.textContent = 'Add job'; toast('The job was not made — try again.'); return; }
+      var ph = files.length && W._gcPhotos && W._gcPhotos.capture ? Promise.resolve(W._gcPhotos.capture(p.id, files, 'Before')).catch(function(){ return null; }) : Promise.resolve(null);
+      return ph.then(function(){ return ccCreate(p); }).then(function(){
+        o.remove(); toast('＋ ' + s(p.name) + ' added' + (p.__existing ? ' (it was already in the CRM — nothing doubled)' : '') + (files.length ? ' with ' + files.length + ' photo' + (files.length === 1 ? '' : 's') : '') + '.', 5000);
+        lastSig = ''; render(true);
+      });
+    });
+  };
+}
+function createJob(source, d){
+  if (typeof W._gcCreateJobFromSource === 'function') return W._gcCreateJobFromSource(source, d);
+  return Promise.resolve(null);
+}
+/* the minimal job maker until patch PM3's _gcCreateJobFromSource lands (PM3 owns it; this steps aside when it is there) */
+function fieldCreate(source, d){
+  d = d || {};
+  var key = function(a, c){ return low(s(a).replace(/[^a-z0-9 ]/gi, '').replace(/\s+/g, ' ')) + '|' + low(c); };
+  var dupe = arr(C().projects).filter(function(p){ return p && !p.deleted && d.address && key(p.address, p.client) === key(d.address, d.client); })[0];
+  if (dupe) return Promise.resolve(Object.assign({}, dupe, { __existing: true }));
+  var l = d.leadId ? lead(d.leadId) : null, nmClient = s(d.client || (l && (l.client || l.name)));
+  var p = { id: 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), name: [nmClient, s(d.type)].filter(Boolean).join(' – ') || s(d.address), client: nmClient, clientPhone: s(d.phone), clientEmail: s(d.email), address: s(d.address),
+    type: s(d.type) || 'Residential Reno', status: 'Bidding', stage: 'Bidding', contract: 0, pct: 0, scope: s(d.scope), source: source, createdFrom: source === 'field' ? 'GrayCo Field ＋ Add job' : source, created: today(), startDate: '', endDate: '',
+    pm: isPM() ? myName() : s(l && l.pm), createdBy: s(d.by || myName()), leadId: s(d.leadId), customerId: s(d.customerId), contractSigned: false, geoLat: d.geo ? d.geo.lat : undefined, geoLng: d.geo ? d.geo.lng : undefined, createdAt: nowIso(), updatedAt: nowIso(), ccPending: ccOn() };
+  try { W.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+  return Promise.resolve(typeof W._gcProjectsRaw === 'function' ? W._gcProjectsRaw() : (W.idbGet ? W.idbGet('projects') : null)).then(function(all){
+    var next = (Array.isArray(all) ? all : arr(C().projects)).concat([p]);
+    try { if (W._setProjects) W._setProjects(function(prev){ return (Array.isArray(prev) ? prev : []).concat([p]); }); } catch (e) {}
+    var w = W.idbSet ? W.idbSet('projects', next) : Promise.resolve();
+    return Promise.resolve(w).then(function(){ try { if (W._supaUpsert) W._supaUpsert('projects', next); } catch (e) {} try { if (typeof W._gcEnsurePOs === 'function') W._gcEnsurePOs(); } catch (e) {} paintSync(); return p; });
+  });
+}
+fieldCreate.__gcFieldFallback = true;
+if (typeof W._gcCreateJobFromSource !== 'function') W._gcCreateJobFromSource = fieldCreate;
+/* the matching CompanyCam project (admin switch "Also create in CompanyCam"); offline → done when back online */
+function ccCreate(p){
+  if (!p || p.__existing || !ccOn() || p.ccId) return Promise.resolve(null);
+  if (!navigator.onLine) return Promise.resolve(null);
+  /* x-gc-cc: our own CompanyCam call — the CompanyCam gate (patch CCS2) lets it through only while the server's key works */
+  return fetch('/.netlify/functions/companycam-webhook?proxy=create', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gc-cc': '1' }, body: JSON.stringify({ name: s(p.name), address: s(p.address), lat: p.geoLat, lng: p.geoLng }) })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return {}; })
+    .then(function(j){ if (j && j.ok && j.id) return saveProject(p.id, function(q){ q.ccId = s(j.id); q.companycamId = s(j.id); q.ccPending = false; }).then(function(){ return j; }); return null; });
+}
+var ccBusy = false;
+function ccRetry(){
+  if (ccBusy || !navigator.onLine || !ccOn()) return;
+  var me = low(myName()), list = arr(C().projects).filter(function(p){ return p && p.ccPending && !p.ccId && low(p.createdBy) === me; });
+  if (!list.length) return;
+  ccBusy = true; list.reduce(function(pr, p){ return pr.then(function(){ return ccCreate(p); }); }, Promise.resolve()).then(function(){ ccBusy = false; }, function(){ ccBusy = false; });
+}
+
+/* ═════ ☰ More and ⚙ Settings ═════ */
+function moreSheet(){
+  var o = sheet('<h3>☰ More</h3><div class="pick">' +
+    '<button type="button" data-m="search"><span class="e">🔍</span><span>Search<small>Jobs, customers, subs</small></span></button>' +
+    '<button type="button" data-m="photos"><span class="e">📸</span><span>GrayCo Photos</span></button>' +
+    '<button type="button" data-m="tools"><span class="e">🧰</span><span>Other tools<small>Docs, schedule, subs, my pay…</small></span></button>' +
+    '<button type="button" data-m="settings"><span class="e">⚙</span><span>Settings</span></button>' +
+    '</div><div class="acts"><button type="button" data-x>Close</button></div>');
+  Array.prototype.forEach.call(o.querySelectorAll('[data-m]'), function(b){ b.onclick = function(){
+    var k = b.getAttribute('data-m'); o.remove();
+    if (k === 'search') { if (W._gcUniversalSearch) W._gcUniversalSearch(); }
+    else if (k === 'photos') openPhotos();
+    else if (k === 'tools') { var m = D.querySelector('#_gcAppTabs [data-tab="more"]'); if (m) m.click(); }
+    else if (k === 'settings') settingsSheet();
+  }; });
+}
+function settingsSheet(){
+  var adm = isAdmin(), fs = fset();
+  var o = sheet('<h3>⚙ Settings</h3>' +
+    '<div class="pick"><button type="button" data-s="desk"><span class="e">🖥</span><span>Use desk view on this phone<small>Only this phone. Come back any time with "Back to GrayCo Field".</small></span></button></div>' +
+    (adm ? '<label class="chk"><input type="checkbox" id="gc-fs-cc"' + (fs.companycam !== false ? ' checked' : '') + '> Also create new jobs in CompanyCam</label>' +
+      '<div class="pick" style="margin-top:10px"><button type="button" data-s="apps"><span class="e">📱</span><span>Apps by role<small>Each role\'s tools, on / off and in order</small></span></button></div>' : '') +
+    '<div class="acts"><button type="button" data-x>Close</button>' + (adm ? '<button type="button" class="pri" data-s="save">Save</button>' : '') + '</div>');
+  o.querySelector('[data-s="desk"]').onclick = function(){ o.remove(); lsSet(DESK_KEY, '1'); closeHome(); if (W._gcSetFieldMode) W._gcSetFieldMode(false); setOn(); backField(); };
+  var ap = o.querySelector('[data-s="apps"]'); if (ap) ap.onclick = function(){ o.remove(); var o2 = sheet('<h3>📱 Apps by role</h3><div id="gc-fh-roles"></div><div class="acts"><button type="button" data-x>Close</button></div>'); roleEditor(o2.querySelector('#gc-fh-roles'), rk()); };
+  var sv = o.querySelector('[data-s="save"]');
+  if (sv) sv.onclick = function(){
+    saveFset({ companycam: o.querySelector('#gc-fs-cc').checked });
+    o.remove(); toast('⚙ Saved.');
+  };
+}
+
+/* ═════ Admin → ⚙ Admin settings → 📱 GrayCo Field: each role's tools, on / off and in order ═════ */
+function allowedFor(k){ return TOOLS.filter(function(t){ return t.id !== 'sendsign' && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0); }); }
+function roleEditor(box, k0){
+  var k = k0 || 'pm';
+  function draw(){
+    var cfg = roleCfg(k) || {}, order = toolIds(k), off = arr(cfg.off);
+    var all = allowedFor(k), list = order.concat(all.map(function(t){ return t.id; }).filter(function(id){ return order.indexOf(id) < 0; }));
+    var lab = function(id){ var t = TOOLS.filter(function(x){ return x.id === id; })[0]; if (!t) return id; var l = typeof t.label === 'function' ? (id === 'day' ? 'Start / End day' : id) : t.label, ic = typeof t.icon === 'function' ? '🟢' : t.icon; return ic + ' ' + l; };
+    box.innerHTML = '<div style="font:14px Inter,sans-serif;color:#0f172a"><div style="margin-bottom:8px">Each person\'s phone app. Pick a role, turn tools on or off, move them up or down. The first three after Navigate / Job info / Call are the big buttons.</div>' +
+      '<select data-fr="role" style="padding:8px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;margin-bottom:8px">' + Object.keys(ROLE_TOOLS).map(function(r){ return '<option value="' + r + '"' + (r === k ? ' selected' : '') + '>' + esc(ROLE_NAMES[r]) + '</option>'; }).join('') + '</select>' +
+      '<div data-fr="list">' + list.map(function(id, i){ var on = order.indexOf(id) >= 0 && off.indexOf(id) < 0; return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #eef2f7"><label style="flex:1;display:flex;gap:8px;align-items:center"><input type="checkbox" data-fr-on="' + esc(id) + '"' + (on ? ' checked' : '') + '>' + esc(lab(id)) + '</label><button type="button" data-fr-up="' + i + '" style="border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:2px 8px">▲</button><button type="button" data-fr-dn="' + i + '" style="border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:2px 8px">▼</button></div>'; }).join('') + '</div>' +
+      '<div style="margin-top:10px;display:flex;gap:8px"><button type="button" data-fr="save" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700">Save</button><button type="button" data-fr="reset" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 14px">Back to the default</button></div></div>';
+    box.__list = list;
+  }
+  box.onclick = function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    var L = box.__list, up = b.getAttribute('data-fr-up'), dn = b.getAttribute('data-fr-dn');
+    if (up != null || dn != null) { var i = +(up != null ? up : dn), j = up != null ? i - 1 : i + 1; if (j < 0 || j >= L.length) return; var on = {}; Array.prototype.forEach.call(box.querySelectorAll('[data-fr-on]'), function(c){ on[c.getAttribute('data-fr-on')] = c.checked; }); var tmp = L[i]; L[i] = L[j]; L[j] = tmp; var roles = Object.assign({}, fset().roles || {}); roles[k] = { tools: L.filter(function(id){ return on[id]; }), off: L.filter(function(id){ return !on[id]; }) }; saveFset({ roles: roles }); draw(); return; }
+    if (b.getAttribute('data-fr') === 'save') { var tools = [], off = []; Array.prototype.forEach.call(box.querySelectorAll('[data-fr-on]'), function(c){ (c.checked ? tools : off).push(c.getAttribute('data-fr-on')); }); var roles2 = Object.assign({}, fset().roles || {}); roles2[k] = { tools: tools, off: off }; saveFset({ roles: roles2 }); lastSig = ''; soon(); b.textContent = 'Saved ✓'; return; }
+    if (b.getAttribute('data-fr') === 'reset') { var roles3 = Object.assign({}, fset().roles || {}); delete roles3[k]; saveFset({ roles: roles3 }); lastSig = ''; soon(); draw(); }
+  };
+  box.onchange = function(e){ if (e.target.getAttribute('data-fr') === 'role') { k = e.target.value; draw(); } };
+  draw();
+}
+var admAdded = false;
+function admSection(){
+  if (admAdded || typeof W._gcAdmAddSection !== 'function') return;
+  admAdded = W._gcAdmAddSection({ id: 'field', after: 'syncq', ic: '📱', t: 'GrayCo Field', d: 'Each role\'s phone app: tools on / off and their order', render: function(box){ pullFset(); roleEditor(box); } }) || true;
+}
+/* desk view on a phone: a way back */
+function backField(){
+  var want = phoneDevice() && !inField() && signedIn();
+  var b = D.getElementById('gc-fh-backfield');
+  if (!want) { if (b) b.remove(); return; }
+  if (b) return;
+  css();
+  b = D.createElement('button'); b.type = 'button'; b.id = 'gc-fh-backfield'; b.setAttribute('data-gcnav-ignore', '1'); b.setAttribute('data-gc-keep', '1');
+  b.textContent = '📱 Back to GrayCo Field';
+  b.onclick = function(){ lsSet(DESK_KEY, null); b.remove(); if (W._gcSetFieldMode) W._gcSetFieldMode(true); };
+  D.body.appendChild(b);
+}
+
+/* ═════ the bottom bar ═════ */
+function tabs(){
+  css();
+  var t = D.getElementById('gc-fh-tabs'); if (t) return t;
+  t = D.createElement('div'); t.id = 'gc-fh-tabs'; t.setAttribute('data-gcnav-ignore', '1'); t.setAttribute('data-gc-keep', '1');
+  t.innerHTML = '<button type="button" data-t="home" class="on"><span class="e">▣</span>Home</button><button type="button" data-t="jobs"><span class="e">◫</span>Jobs</button>' +
+    '<button type="button" data-t="appr" class="ap" aria-label="Approvals"><span class="c">✅<span class="gc-fh-badge" id="gc-fh-badge" style="display:none"></span></span>Approvals</button>' +
+    '<button type="button" data-t="msgs"><span class="e">💬</span>Messages</button><button type="button" data-t="more"><span class="e">☰</span>More</button>';
+  t.addEventListener('click', function(ev){
+    var b = ev.target.closest('[data-t]'); if (!b) return; var k = b.getAttribute('data-t');
+    Array.prototype.forEach.call(t.querySelectorAll('[data-t]'), function(x){ x.classList.toggle('on', x === b && k !== 'appr' && k !== 'more'); });
+    if (k === 'home') { openHome(); return; }
+    if (k === 'jobs') { W.__gcFhAll = true; if (W._gcJobPicker) W._gcJobPicker(); return; }
+    if (k === 'appr') { openAllAppr(); return; }
+    if (k === 'msgs') { if (W._gcPickJobForMessages) W._gcPickJobForMessages(); return; }
+    if (k === 'more') moreSheet();
+  });
+  D.body.appendChild(t);
+  return t;
+}
+function paintTabs(n){
+  if (n == null) n = apprCount();
+  var b = D.getElementById('gc-fh-badge'), tx = n > 0 ? String(n) : '';
+  if (b) { if (b.textContent !== tx) b.textContent = tx; var want = n > 0 ? 'inline-block' : 'none'; if (b.style.display !== want) b.style.display = want; }
+}
+function setOn(){
+  var on = eligible();
+  if (D.documentElement.classList.contains('gc-fh-on') !== on) D.documentElement.classList.toggle('gc-fh-on', on);
+  if (on) tabs();
+}
+/* a phone opens in GrayCo Field (once per load; "Use desk view on this phone" is the way out) */
+var autoDone = false;
+function autoField(){
+  if (autoDone || !phoneDevice() || !signedIn() || typeof W._gcSetFieldMode !== 'function') return;
+  autoDone = true;
+  if (deskPref()) { backField(); return; }
+  if (!inField()) W._gcSetFieldMode(true);
+}
+
+/* ── when to look again: the CRM's data object is rebuilt (React), on / offline, back to the app, a closing panel ── */
+var pend = null;
+function soon(){ if (pend) return; pend = later(function(){ pend = null; try { admSection(); wrapPicker(); hookApprovals(); autoField(); setOn(); backField(); if (inField()) { render(false); paintTabs(); } ccRetry(); } catch (e) {} }, 350); }
+(function(){
+  var prev = W.__gcCrmBox;
+  W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; soon(); return r; };
+})();
+W.addEventListener('online', soon); W.addEventListener('offline', soon);
+D.addEventListener('visibilitychange', function(){ if (!D.hidden) soon(); });
+W.addEventListener('resize', soon);
+D.addEventListener('click', function(ev){ if (ev.target && ev.target.closest && ev.target.closest('#_gcJobPick.gc-fh')) return; later(soon, 600); }, true);
+W.addEventListener('storage', soon);
+builtIns(); wrapPicker(); hookApprovals(); later(soon, 1200);
+W._gcFieldTools = Tools;
+W._gcField = { open: openHome, render: function(){ lastSig = ''; render(true); }, eligible: eligible, phone: phoneDevice, jobs: function(){ return myJobs(); }, approvals: apprItems, sync: syncState, signed: function(pid){ var p = proj(pid); return p ? signed(p) : null; }, day: dayState,
+  mat: { pending: matPending, open: matSheet }, addJob: addJobSheet, measure: measure, measurements: measurementsOf, roleTools: function(k){ return toolIds(k || rk()); }, layout: function(k){ return LAYOUT[k || rk()] || LAYOUT.pm; }, roleEditor: roleEditor, estimate: estPicker, settings: settingsSheet, more: moreSheet, createJob: fieldCreate, ccCreate: ccCreate,
+  state: function(){ return { eligible: eligible(), phone: phoneDevice(), desk: deskPref(), role: role(), rk: rk(), me: myName(), home: !!D.querySelector('#_gcJobPick.gc-fh'), tools: TOOLS.length, sig: lastSig.length }; } };
+try { console.log('[GC] 📱 GrayCo Field — the phone app (patch FIELD) — _gcField.state(), _gcFieldTools.register()'); } catch (e) {}
 })();
 </script>

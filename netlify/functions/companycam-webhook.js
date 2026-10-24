@@ -201,6 +201,25 @@ exports.handler = async function(event, context) {
     if(!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ error: who.error }) };
   }
 
+  // POST ?proxy=create {name, address, lat, lng} — patch FIELD: the matching CompanyCam project for a job added in
+  // GrayCo Field (admin switch "Also create in CompanyCam"). Staff only (checked above). Answers {ok, id} — never the key.
+  if(event.httpMethod === 'POST' && qs.proxy === 'create'){
+    const k = ccTokenFor(event);
+    if(!k.token) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, reason: 'no_key' }) };
+    let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { b = {}; }
+    const name = String(b.name || '').trim().slice(0, 200), addr = String(b.address || '').trim().slice(0, 300);
+    if(!name) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'name required' }) };
+    const m = /^(.+?),\s*([^,]+?),\s*([A-Za-z]{2})\s*(\d{5})?/.exec(addr) || [];
+    const body = { name: name, address: { street_address_1: m[1] || addr, city: m[2] || '', state: m[3] || '', postal_code: m[4] || '', country: 'US' } };
+    if(isFinite(+b.lat) && isFinite(+b.lng) && b.lat != null && b.lng != null) body.coordinates = { lat: +b.lat, lon: +b.lng };
+    try {
+      const r = await fetch(CC_API + '/projects', { method: 'POST', headers: { Authorization: 'Bearer ' + k.token, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json().catch(function(){ return {}; });
+      if(r.ok && j && j.id) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: String(j.id) }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status, reason: 'companycam_' + r.status }) };
+    } catch (e) { return { statusCode: 200, headers, body: JSON.stringify({ ok: false, reason: 'unreachable' }) }; }
+  }
+
   // GET ?proxy=status — one cheap question to CompanyCam: does the key work?
   if(event.httpMethod === 'GET' && qs.proxy === 'status'){
     const k = ccTokenFor(event);
