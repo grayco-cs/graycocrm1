@@ -156,6 +156,13 @@
   status = 404
   force = true
 
+# patch TRAIN2: the training videos are staff-only (function training-video); the old public address answers 404
+[[redirects]]
+  from = "/training/*"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
 [[redirects]]
   from = "/README.md"
   to = "/404-not-public"
@@ -339,3 +346,7 @@
 # customer, sub or GC without an approval; data-entry mode pauses it.
 [functions."auto-wins"]
   schedule = "19 * * * *"
+
+# patch TRAIN2: the built-in training videos ship with this function (staff only, signed links, Range)
+[functions."training-video"]
+  included_files = ["netlify/functions/_assets/training/*.mp4"]

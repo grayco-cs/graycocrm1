@@ -3,7 +3,7 @@
 -- Supabase → SQL Editor → New query → paste ALL of this → Run.
 --
 -- What it does:
---   • creates the PRIVATE file bucket "crm-files" (nothing in it is public; 25 MB per file;
+--   • creates the PRIVATE file bucket "crm-files" (nothing in it is public; 50 MB per file;
 --     only document / picture / office / text / video types)
 --   • signed-in GrayCo staff (public.gc_is_staff(), from security-prepare.sql) may READ files
 --     and ADD files — nobody else, and never the public key
@@ -26,7 +26,7 @@ end $$;
 
 -- 1. the private bucket ------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('crm-files', 'crm-files', false, 26214400, array[
+values ('crm-files', 'crm-files', false, 52428800, array[   -- 50 MB per file (patch TRAIN2; was 25 MB)
   'application/pdf',
   'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp', 'image/heic', 'image/heif', 'image/tiff', 'image/svg+xml',
   'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
