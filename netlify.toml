@@ -333,3 +333,9 @@
 # patch SUBTXT: 📱 schedule texts for subs (6 PM the evening before, ~1 hour before each start, "hasn't confirmed" to the PM)
 [functions."sub-texts-scheduled"]
   schedule = "2,17,32,47 * * * *"
+
+# Automation quick wins (patches AUTO-AR, AUTO-PAY, AUTO-LIEN, AUTO-DIGEST, AUTO-SCORE; docs/AUTO-WINS.md): every hour at :19.
+# Each part acts only at its own Central time and once (past-due reminders after 7 AM, …). Nothing it does sends to a
+# customer, sub or GC without an approval; data-entry mode pauses it.
+[functions."auto-wins"]
+  schedule = "19 * * * *"
