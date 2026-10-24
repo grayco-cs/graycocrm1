@@ -172656,7 +172656,16 @@ function todoItems(){
   });
   return out;
 }
-W._gcTodoExt = arr(W._gcTodoExt); W._gcTodoExt.push(function(){ try { return todoItems(); } catch (e) { warn(e); return []; } });
+/* the To-Do asks on every tab: answer from the last result until a claim, the role, the settings or the hour changes */
+var TODO_C = { sig: null, v: [] };
+function claimsSig(){
+  var l = [], m = ''; try { l = G() ? G().list() : []; } catch (e) {}
+  for (var i = 0; i < l.length; i++) { var u = s(l[i] && l[i].updatedAt); if (u > m) m = u; }
+  var st = ''; try { st = JSON.stringify((G().settings() || {}).ins4 || {}); } catch (e) {}
+  return l.length + '|' + m + '|' + effRole() + '|' + paused() + '|' + holderName() + '|' + st + '|' + nowIso().slice(0, 13);
+}
+W._gcTodoExt = arr(W._gcTodoExt); W._gcTodoExt.push(function(){ try { var sg = claimsSig(); if (sg !== TODO_C.sig) TODO_C = { sig: sg, v: todoItems() }; return TODO_C.v; } catch (e) { warn(e); return []; } });
+W._gcIns4ClaimsSig = claimsSig;
 
 /* ══ HOOK UP ═════════════════════════════════════════════════════════════════════════════════════════ */
 function hook(){
@@ -173392,10 +173401,13 @@ function setPm(ids, name){
   });
 }
 /* the To-Do: claim tasks with a person on them */
+var TASKS_C = { sig: null, v: [] };   /* same cache rule as patch INS4's To-Do lines */
 W._gcTodoExt = arr(W._gcTodoExt); W._gcTodoExt.push(function(){
   try {
+    var sg = typeof W._gcIns4ClaimsSig === 'function' ? W._gcIns4ClaimsSig() + '|' + myName() : null; if (sg && sg === TASKS_C.sig) return TASKS_C.v;
     var out = [], me = low(myName());
     (I().visible ? I().visible() : []).forEach(function(c){ arr(c.tasks).forEach(function(t){ if (!t || t.done || t.deleted || !s(t.text)) return; out.push({ key: 'ins4t:' + t.id, thing: 'ins4t|' + t.id, cat: 'jobs', prio: t.due && t.due <= today() ? 'high' : 'med', pid: s(c.projectId), due: s(t.due), title: '🛡 ' + I().claimTitle(c) + ' — ' + s(t.text), who: t.who ? [t.who] : [], vis: t.who ? 'who' : 'company', act: { l: '🛡 Open claim', f: function(){ try { var A = G().open({ claimId: c.id }); if (A && A.S) I().goTab(A, c.id, 'tk4'); } catch (e) { warn(e); } } } }); }); });
+    TASKS_C = { sig: sg, v: out };
     return out;
   } catch (e) { warn(e); return []; }
 });
