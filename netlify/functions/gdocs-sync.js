@@ -111,6 +111,8 @@ exports.handler = async function(event){
       return J(200, { ok: false, error: 'Could not read that doc (is Google connected?).' }, _cors);
     }
     const op = String(qp.op || body.op || (event.httpMethod === 'POST' ? 'sync' : 'status'));
+    /* patch ESTIN: any staff member (a PM in the field) may start a new Doc from the GrayCo estimate template in their own Drive */
+    if (op === 'newdoc') { if (event.httpMethod !== 'POST') return J(405, { ok: false, error: 'POST' }, _cors); return J(200, await GD.createDoc({ email: who.email, name: who.name || '' }, String(body.title || ''), String(body.html || '')), _cors); }
     if (!office) return J(403, { ok: false, error: 'Only an admin or the office can see the Google Docs import.' }, _cors);
     if (op === 'status') return J(200, Object.assign(await GD.status(), { admin: admin }), _cors);
     if (op === 'inbox') {

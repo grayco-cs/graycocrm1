@@ -338,6 +338,19 @@ function recipients(mail, data){
 function leadAddrs(){ return (env('LEAD_INBOX_TO') || 'leads@in.grayco-cs.com,leads@grayco-cs.com').split(',').map(low).filter(Boolean); }
 function forLeads(mail, data){ return forBids(mail, data, leadAddrs()); }
 /* patch AUTO7: orders@ — supplier order confirmations (Google routing copies them from office@) */
+/* patch ESTIN: estimates@ — kept in gc_kv gc_estin_inbox (the files in crm-files); an admin / office computer makes the estimates */
+function estimateAddrs(){ return (env('ESTIMATE_INBOX_TO') || 'estimates@in.grayco-cs.com,estimates@grayco-cs.com').split(',').map(low).filter(Boolean); }
+function forEstimates(mail, data){ return forBids(mail, data, estimateAddrs()); }
+async function estimateMail(mail){
+  const id = 'eml_' + itemId('estimate|' + (mail.messageId || mail.id || (mail.from.email + mail.subject + mail.date)));
+  const have = arr(await kvGet('gc_estin_inbox'));
+  if (have.some(x => x && x.id === id)) return { ok: true, already: true, id };
+  const files = [];
+  for (const f of (mail.files || [])) { if (!/\.(pdf|docx|xlsx|csv|txt)$/i.test(s(f.name))) continue; const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref }); }
+  const rec = { id, at: nowIso(), from: mail.from.email, fromName: s(mail.from.name), subject: s(mail.subject).slice(0, 240), text: s(mail.text).slice(0, 6000), files };
+  await kvCas('gc_estin_inbox', v => arr(v).filter(x => x && x.id !== id).concat([rec]).slice(-300));
+  return { ok: true, id, files: files.length };
+}
 function orderAddrs(){ return (env('ORDER_INBOX_TO') || 'orders@in.grayco-cs.com,orders@grayco-cs.com').split(',').map(low).filter(Boolean); }
 function forOrders(mail, data){ return forBids(mail, data, orderAddrs()); }
 function forBids(mail, data, addrs){
@@ -782,6 +795,13 @@ async function processEventCore(evt, opts){
     const ok = await alertsApi().kvAppendResult({ id: 'ans_' + (mail.id || itemId(mail.from.email + mail.subject + mail.date)), kind: 'answer', lead: low(resHit[1]), at: nowIso(),
       from: mail.from.email, fromName: mail.from.name, subject: s(mail.subject).slice(0, 200), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 1500) }).catch(() => false);
     return ok ? { status: 200, body: { ok: true, results: true } } : { status: 503, body: { ok: false, error: 'GrayCo could not store the bid results yet — retry.' } };
+  }
+  /* patch ESTIN: an estimate e-mailed to estimates@ (Word / PDF / Excel / CSV, from a GrayCo address) → the CRM reads it */
+  if (forEstimates(mail, data)) {
+    if (ownOrAuto(mail)) return { status: 200, body: { ok: true, ignored: ownOrAuto(mail) } };
+    if (!/@grayco-cs\.com$/i.test(mail.from.email)) return { status: 200, body: { ok: true, ignored: 'estimates@ takes estimates from GrayCo addresses only' } };
+    if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+    return { status: 200, body: Object.assign({ inbox: 'estimates' }, await estimateMail(mail)) };
   }
   /* patch X9: a copy for the job's e-mail history (the Google routing rule → mail@in.grayco-cs.com): kept on its job,
      or thrown away — never a lead or a bid, even when it was addressed to bids@ / leads@ */
@@ -1339,4 +1359,5 @@ exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, k
 exports._test = { bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
-exports._test.processEvent = processEvent;   /* patch MAILC: tests */
+exports._test.processEvent = processEvent;
+exports._test.estimateMail = estimateMail; exports._test.forEstimates = forEstimates;   /* patch ESTIN: tests */   /* patch MAILC: tests */

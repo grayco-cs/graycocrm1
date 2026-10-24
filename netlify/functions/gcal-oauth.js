@@ -13,7 +13,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const crypto = require('crypto');
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/drive.readonly';
+const SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file';   /* patch ESTIN: drive.file — the CRM may make (only) its own Docs: a new estimate from the GrayCo template */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 const GTOK = require('./_lib/gtok');   /* patch GTOK: the sign-in is kept where no browser can read it */

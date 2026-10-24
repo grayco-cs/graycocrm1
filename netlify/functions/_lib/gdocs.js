@@ -68,10 +68,10 @@ async function people(){
 
 /* ── Google access: the service account (as that person), else their own connection ── */
 const TOK = {};
-function saJwt(acc, sub){
+function saJwt(acc, sub, scope){
   const iat = Math.floor(Date.now() / 1000);
   const head = b64u(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const body = b64u(JSON.stringify({ iss: acc.email, scope: SCOPE, aud: G.TOKEN_URL, sub: low(sub), iat, exp: iat + 3600 }));
+  const body = b64u(JSON.stringify({ iss: acc.email, scope: scope || SCOPE, aud: G.TOKEN_URL, sub: low(sub), iat, exp: iat + 3600 }));
   const sig = crypto.createSign('RSA-SHA256').update(head + '.' + body).sign(acc.key);
   return head + '.' + body + '.' + b64u(sig);
 }
@@ -332,5 +332,28 @@ async function status(){
     counts: { waiting: items.filter(x => x.state === 'new').length, review: items.filter(x => x.state === 'review').length, done: items.filter(x => x.state === 'applied').length } };
 }
 
+/* patch ESTIN: a new Google Doc (the GrayCo estimate template) in this person's Drive. drive.file lets the CRM touch only
+   the files it makes itself. The Workspace account (domain-wide delegation, + the drive.file scope), else their own
+   Connect Google (gcal-oauth asks for drive.file now). Google Docs → CRM (above) reads it back like any other Doc. */
+const SCOPE_FILE = 'https://www.googleapis.com/auth/drive.file';
+async function createDoc(person, title, html){
+  let t = '';
+  const acc = G.account();
+  if (acc.ok) {
+    try { const r = await fetch(G.TOKEN_URL, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + encodeURIComponent(saJwt(acc, person.email, SCOPE_FILE)) });
+      const j = await r.json().catch(() => ({})); if (r.ok && j.access_token) t = j.access_token; } catch (e) {}
+  }
+  if (!t) { const o = await ownToken(person); if (o.ok) t = o.t; }
+  if (!t) return { ok: false, needsSetup: true, error: 'Google is not connected for ' + (person.email || 'you') + ' with permission to make Docs.' };
+  const b = 'gcestin' + Date.now().toString(36);
+  const meta = JSON.stringify({ name: s(title).slice(0, 180) || 'GrayCo Estimate', mimeType: 'application/vnd.google-apps.document' });
+  const body = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n--' + b + '\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n' + String(html || '').slice(0, 400000) + '\r\n--' + b + '--';
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'multipart/related; boundary=' + b }, body: body });
+  if (r.status === 401 || r.status === 403) return { ok: false, needsSetup: true, error: 'Google did not let the CRM make a Doc (' + r.status + ') — the drive.file permission is missing.' };
+  if (!r.ok) return { ok: false, error: 'Google Drive answered ' + r.status };
+  const j = await r.json().catch(() => ({}));
+  return { ok: !!j.id, id: s(j.id), url: s(j.webViewLink) || ('https://docs.google.com/document/d/' + s(j.id) + '/edit') };
+}
 module.exports = { SCOPE, SET_KEY, STATE_KEY, INBOX_KEY, settings, people, classify, parse, readPaper, run, inbox, mark, saveSettings, status, tokenFor, itemId, trim,
+  createDoc, SCOPE_FILE,   /* patch ESTIN */
   _t: { reset: () => { Object.keys(TOK).forEach(k => delete TOK[k]); } } };

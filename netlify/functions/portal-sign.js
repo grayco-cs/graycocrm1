@@ -252,7 +252,9 @@ async function request(body, who){
   if (!r) return { status: 200, out: { ok: true, nothing: true } };
   if (!made) return { status: 200, out: { ok: true, id: r.id, already: true, status: r.status } };
   /* the e-mail asking the customer to sign → ✅ Approvals (owner rule) */
-  const pm = pmFull(data, p), to = custEmail(p), label = KINDS[kind];
+  let pm = pmFull(data, p); const to = custEmail(p), label = KINDS[kind];
+  /* patch ESTIN: a GrayCo-template proposal goes to the job's (or its lead's) PM; no PM → the estimator who owns it; else the admins */
+  if (body.estin === true && !pm) { const ld = arr(data.leads).find(function(x){ return s(x.id) && s(x.id) === s(p.leadId || p.fromLeadId); }) || {}; pm = pmFull(data, { pm: ld.pm }) || pmFull(data, { pm: p.estimator || ld.estimator || body.owner }); }
   if (!okEmail(to)) {
     await core().officeTodo('portal_sign_' + r.id, '✍️ Ask ' + (s(p.client) || 'the customer') + ' to sign: ' + label.toLowerCase() + ' — ' + T(p.name),
       'No customer e-mail on file. “' + title + '” waits for their signature in their GrayCo Portal (Home → ✍️ Papers to sign). Call or text them the portal link.');
@@ -263,8 +265,8 @@ async function request(body, who){
     '<p>Please look it over and sign it in your GrayCo Portal — it takes a minute, on your phone or computer.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Review and sign</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(pm ? pm.name : 'us') + (pm && pm.phone ? ' at ' + esc(pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '. You get a copy of what you sign.</p>';
-  const q = await core().queueApproval({ id: apprId(r), kind: kind === 'estimate' || kind === 'contract' ? 'sign_contract' : 'sign_' + kind, pid: pid, jobName: T(p.name), pm: pm ? { name: pm.name, email: pm.email } : null, to: to,
-    title: '✍️ ' + label + ' to sign — ' + T(title),
+  const q = await core().queueApproval({ id: apprId(r), kind: body.estin === true ? 'proposal_send' : (kind === 'estimate' || kind === 'contract' ? 'sign_contract' : 'sign_' + kind), priority: s(body.priority), pid: pid, jobName: T(p.name), pm: pm ? { name: pm.name, email: pm.email } : null, to: to,
+    title: body.estin === true && s(body.apprTitle) ? T(clip(body.apprTitle, 120)) : '✍️ ' + label + ' to sign — ' + T(title),
     subject: 'Please review and sign: ' + T(title), html: html, attachments: [{ name: label + ' (in the customer portal)', kind: 'portal' }],
     meta: { signRequestId: r.id, kind: kind, amount: r.amount, refId: refId, fromPm: true, by: who.email } });
   return { status: q ? 200 : 502, out: { ok: !!q, id: r.id, queued: !!q } };

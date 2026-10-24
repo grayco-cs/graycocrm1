@@ -445,6 +445,17 @@ function scrub(obj, words){
   return obj;
 }
 function streetKey(a){ const m = /^\s*(\d+)\s+([A-Za-z]+)/.exec(s(a)); return m ? (m[1] + ' ' + m[2]).toLowerCase() : ''; }
+/* patch ESTIN (owner, 10/24): no estimate or proposal reaches the customer portal by itself. From this build on, an
+   estimate shows only once the customer signed / accepted it or a person shared it; a proposal / estimate paper the CRM
+   filed by itself (Google Docs, the GrayCo template, an upload) only once approved (the paper-to-sign comes in through
+   portal-sign.js when its e-mail is approved). Older estimates and papers keep the rules they had. */
+const ESTIN_BOOT = '2026-10-24';
+function estinNew(x){ const t = s(x && (x.createdAt || x.created || x.uploadedAt || x.savedAt || x.uploaded || x.date)).slice(0, 10); return !!t && t >= ESTIN_BOOT; }
+function estinEstHidden(e){ return estinNew(e) && e.portalShare !== true && !/signed|accept|won|contract/.test(low(e.status)); }
+function estinDocHidden(d){
+  if (!estinNew(d) || d.portalShare === true || d.signedAt || s(d.source) === 'portal-signature') return false;
+  return /^(estin|estin-source|gdoc|proposal|estimate)$/.test(s(d.source)) || !!s(d.estimateId) || d.estinWaiting === true;
+}
 function proposalShown(e, pid, p){
   if (!e || e.portalHide === true) return false;
   let linked = pidOf(e) === pid || (s(e.id) && (s(e.id) === s(p.estimateId) || s(e.id) === s(p._lastEstId)));
@@ -453,6 +464,7 @@ function proposalShown(e, pid, p){
     if ((cl && cl.length >= 4 && (low(e.client) === cl || low(e.name).indexOf(cl) >= 0)) || (st && low(e.name + ' ' + e.address).indexOf(st) >= 0)) linked = true;
   }
   if (!linked) return false;
+  if (estinEstHidden(e)) return false;   /* patch ESTIN */
   if (e.portalShare === true) return true;
   if (/sent|sign|approv|accept|final|won|contract/.test(low(e.status))) return true;
   return !!gdocInfo(e.gdocUrl);   /* a Google Doc proposal linked to the job (gdocs-sync) */
@@ -460,6 +472,7 @@ function proposalShown(e, pid, p){
 function docShown(d, pid, shownEst){
   if (!d || pidOf(d) !== pid) return false;
   if (d.needsReview === true || d.deleted === true) return false;
+  if (estinDocHidden(d)) return false;   /* patch ESTIN */
   if (d.portalShare === true) return true;
   if (d.portalShare === false) return false;
   if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
@@ -857,6 +870,7 @@ function insGroupOf(d){
 function insDocShown(d, pid, shownEst){
   if (!d || pidOf(d) !== pid || d.needsReview === true || d.deleted === true) return false;
   if (insInternal(d)) return false;
+  if (estinDocHidden(d)) return false;   /* patch ESTIN */
   if (d.portalShare === true) return true;
   if (d.portalShare === false) return false;
   if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
@@ -1473,6 +1487,9 @@ async function queueApproval(o){
   if (o.officeOk === true) item.officeOk = true;   /* patch SOC: the marketing approval stage — the office may approve this one */
   if (o.mmOk === true) item.mmOk = true;   /* patch MM: the Marketing Manager may approve this one (stage 2+, not flagged, never paid ads) */
   if (Array.isArray(o.flags) && o.flags.length) item.flags = o.flags.slice(0, 8);
+  /* patch ESTIN: every item carries its importance (✅ Approvals sorts urgent first, then the newest) */
+  if (!item.priority) item.priority = /^(urgent|high|normal|low)$/.test(s(o.priority)) ? s(o.priority) : 'normal';
+  if (!item.urgency) item.urgency = /^(urgent|high|normal|low)$/.test(s(o.urgency)) ? s(o.urgency) : item.priority;
   if (item.step === 'admin') item.adminSince = now;   /* patch AP4: when it reached the admin step */
   const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
   const r = await kvListUpdate(AQ_KEY, function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
@@ -1604,6 +1621,24 @@ function applyEdit(x, edit, me){
   x.edits = (x.edits || []).concat([{ by: me.by, email: me.email, at: me.at, step: x.step, fields: ch }]).slice(-20);
   return ch;
 }
+/* patch ESTIN: a supplier's purchase order (drafted after the estimate / contract was signed) waits here for the PM.
+   The address must be a supplier on the Vendors list (never the customer, never one the page made up). */
+async function supplierPoQueue(body, who){
+  const pid = s(body.projectId), poId = clip(body.poId, 90).replace(/[^A-Za-z0-9_.:-]/g, '');
+  if (!pid || !poId) return { status: 400, out: { ok: false, error: 'A job and a PO are needed.' } };
+  const data = await crmData(true); const p = findProject(data, pid);
+  if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
+  const to = low(body.to);
+  if (!/^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No e-mail for this supplier — add it in Vendors.' } };
+  if (to === low(p.clientEmail || p.customerEmail || p.email)) return { status: 400, out: { ok: false, error: 'That is the customer, not a supplier.' } };
+  let vend = []; try { const v = await kvRead(['vendors', 'subs']); vend = arr(v.vendors).concat(arr(v.subs)); } catch (e) {}
+  if (!vend.some(function(x){ return [x.email, x.orderEmail, x.contactEmail].some(function(e){ return low(e) === to; }); })) return { status: 400, out: { ok: false, error: 'That address is not on the Vendors list.' } };
+  const qid = 'appr_supplier_po_' + pid + '_' + poId;
+  const ok = await queueApproval({ id: qid, kind: 'supplier_po', title: clip(body.title, 120) || ('\uD83D\uDE9A Purchase order \u2014 ' + clip(body.supplier, 60)), pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
+    subject: clip(body.subject, 200) || 'Purchase order', html: String(body.html || '').slice(0, 60000), attachments: [], priority: body.priority,
+    meta: { by: who.email, poId: poId, supplier: clip(body.supplier, 80), fromPm: true } });
+  return { status: ok ? 200 : 502, out: { ok: !!ok, id: qid, queued: !!ok } };
+}
 /* approve / reject / edit-then-approve, from the CRM. who = the signed-in person (gcStaffAuth). */
 async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
@@ -1618,6 +1653,7 @@ async function approvalAction(body, who){
        The recipient is the job's own customer e-mail (never one the page sends). */
     if (mktLib().isMktKind(body.kind)) return mktLib().queueForApproval(body, who, { queueApproval: queueApproval, officeTodo: officeTodo });   /* patch MKT */
     if (s(body.kind) === 'invoice') return queueInvoiceMail(s(body.invoiceId), who);   /* patch AP2 */
+    if (s(body.kind) === 'supplier_po') return supplierPoQueue(body, who);   /* patch ESTIN */
     if (s(body.kind) === 'portal_post' || s(body.kind) === 'announcement') return autaiQueue(body, who);   /* patch AUTAI */
     if (require('./_lib/auto-queue.js').handles(body.kind)) return require('./_lib/auto-queue.js').queue(body, who, { crmData: crmData, findProject: findProject, pmOf: pmOf, queueApproval: queueApproval, kvListRead: kvListRead, kvListUpdate: kvListUpdate, aqSend: aqSend, AQ_KEY: AQ_KEY });   /* patch AUT2 */
     if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you and invoice e-mails are queued from the CRM.' } };
@@ -2443,3 +2479,4 @@ Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvL
 Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,
   ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
   pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });
+exports._estin = { estinEstHidden: estinEstHidden, estinDocHidden: estinDocHidden, proposalShown: proposalShown, docShown: docShown, insDocShown: insDocShown };   /* patch ESTIN: tests */
