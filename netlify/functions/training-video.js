@@ -1,6 +1,6 @@
 // GrayCo CRM — the built-in 🎓 Training videos, for signed-in staff only (patch TRAIN2)
 // The videos are NOT on the public site any more: they ship with this function (netlify.toml included_files:
-// netlify/functions/_assets/training/*.mp4, and /netlify/* answers 404 on the site).
+// the .mp4 files in netlify/functions/_assets/training/, and everything under /netlify/ answers 404 on the site).
 //   POST ?op=sign           (the CRM, signed in: Authorization: Bearer <Supabase token>, added by the CRM's fetch)
 //        → checks the staff sign-in (the same check as every staff function) → { ok, exp, urls: { '01': '/.netlify/functions/training-video?v=01&t=…' } }
 //        Each link carries a token signed here (HMAC-SHA256, key derived from SUPABASE_SERVICE_KEY) naming the person
@@ -8,6 +8,7 @@
 //   GET / HEAD ?v=01&t=…    → the mp4, with Range support (206 + Content-Range) so seeking works; at most 4 MB per answer
 //        (a function answer is limited to 6 MB). No / bad / expired token → 401. Unknown video → 404.
 //        Cache-Control: private, max-age=14400 — the browser keeps it; nothing in between does.
+require('./_lib/pause').install();   // patch PAUSE: data-entry mode — every outbound send is checked here first
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
