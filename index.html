@@ -117423,19 +117423,20 @@ function drawIn(m){
 function drawOut(m){
   var o=m.out;
   var rows=o.all.filter(function(x){ return matches({a:x.who,b:x.job,c:x.num,d:String(x.amount),e:x.pay}); });
+  var _asap = window._gcAsap ? rows.filter(function(x){ return x.kind==='sub' && window._gcAsap.isAsapId(x.id); }) : [];   /* patch AUTO-ASAP: ⚡ Pay ASAP bills first */
   var h='<div class="gck-tiles">'
     +'<div class="gck-tile"><div class="v '+(o.totals.late?'gck-neg':'')+'">'+money(o.totals.late)+'</div><div class="l">Past its pay date</div></div>'
     +'<div class="gck-tile"><div class="v" id="gck-out-this">'+money(o.totals.thisFri)+'</div><div class="l">This Friday · '+fmtDay(o.thisFri)+'</div></div>'
     +'<div class="gck-tile"><div class="v" id="gck-out-next">'+money(o.totals.nextFri)+'</div><div class="l">Next Friday · '+fmtDay(o.nextFri)+'</div></div>'
     +'<div class="gck-tile"><div class="v">'+money(o.totals.later)+'</div><div class="l">Later</div></div></div>';
-  var groups=[['late','Past its pay date — not paid yet'],['thisFri','This Friday · '+fmtDay(o.thisFri)],['nextFri','Next Friday · '+fmtDay(o.nextFri)],['later','Later']];
+  var groups=[['asap','⚡ Pay ASAP — skips the Wednesday cut-off (still needs its approval)'],['late','Past its pay date — not paid yet'],['thisFri','This Friday · '+fmtDay(o.thisFri)],['nextFri','Next Friday · '+fmtDay(o.nextFri)],['later','Later']];
   groups.forEach(function(g){
-    var gr=rows.filter(function(x){ return x.when===g[0]; }); if(!gr.length) return;
+    var gr=g[0]==='asap' ? _asap : rows.filter(function(x){ return x.when===g[0] && _asap.indexOf(x)<0; }); if(!gr.length) return;   /* patch AUTO-ASAP */
     h+='<div class="gck-sec"><div class="gck-sech"><h2>'+esc(g[1])+'</h2><div class="r"><b>'+money(sum(gr))+'</b></div></div>'
       +table('out_'+g[0],[
         {h:'Pay date', v:function(x){ return x.pay; }, f:function(x){ return fmtDay(x.pay); }},
         {h:'What', v:function(x){ return x.kind; }, f:function(x){ return '<span class="gck-tag">'+(x.kind==='sub'?'Sub bill':x.kind==='card'?'Card':'Payroll')+'</span>'; }},
-        {h:'Who', v:function(x){ return x.who; }, f:function(x){ return esc(x.who)+(x.always?' <span class="gck-tag" title="Always paid this Friday">always this Friday</span>':'')+(x.held?' <span class="gck-flag">'+esc(x.held)+'</span>':''); }},
+        {h:'Who', v:function(x){ return x.who; }, f:function(x){ return esc(x.who)+(x.always?' <span class="gck-tag" title="Always paid this Friday">always this Friday</span>':'')+(x.held?' <span class="gck-flag">'+esc(x.held)+'</span>':'')+(window._gcAsap?window._gcAsap.btn(x):''); }},   /* patch AUTO-ASAP */
         {h:'Job', m:1, v:function(x){ return x.job||''; }, f:function(x){ return x.kind==='sub'?jobLink(x.pid, x.job):'<span class="gck-note" style="padding:0">'+esc(x.note||'')+'</span>'; }},
         {h:'Received', m:1, v:function(x){ return x.recv||''; }, f:function(x){ return x.recv?fmtDay(x.recv):''; }},
         {h:'Amount', n:1, v:function(x){ return x.amount; }, f:function(x){ return x.kind==='sub' ? '<button class="gck-a" data-act="inv:'+esc(x.id)+'">'+money(x.amount)+'</button>' : x.kind==='payroll' ? '<button class="gck-a" data-act="payroll">'+money(x.amount)+'</button>' : '<button class="gck-a" data-act="cards">'+money(x.amount)+'</button>'; }}
@@ -175673,5 +175674,117 @@ function paintButtons(){
 RI.call(W, function(){ if (D.hidden) return; try { tryOpen(); paintButtons(); } catch (e) {} }, 2000);
 W._gcAutoDigest = { routine: routine, ROUTINE: ROUTINE, tryOpen: tryOpen, confirmAll: confirmAll };
 try { console.log('[GC] ✅ Approvals digest links + Approve all routine armed (patch AUTO-DIGEST)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-auto-asap">
+/* __GC_PATCH_AUTO_ASAP__ — ⚡ PAY ASAP (owner 10/24: "some have to get paid ASAP"). The sub pay rule itself is unchanged
+   (in by Wednesday → the Friday of the following week; Thursday–Sunday → the Friday after that).
+     • ⚡ Pay ASAP on a sub bill (Accounting → ⬆ Money Out, each sub bill): the bill skips the Wednesday cut-off and goes
+       on the very next pay list (this Friday — today when it is Friday). Tap again to put it back on the rule.
+     • ⚡ Pay ASAP for a sub (the same button → "Always pay this sub ASAP", stored on the sub): every open bill of that sub
+       is marked by itself.
+     • An ASAP bill carries urgency: 'asap' (on the invoice and on its sub-invoice approval), so the approvals sort it in
+       the 🔴 ASAP tier, and Money Out lists it first under "⚡ Pay ASAP".
+     • Nothing is paid without the normal approval: the pay list still holds a bill until it is approved.
+   API: window._gcAsap = { mark(invId, on), setSub(subName, on), isAsapId(id), isSubAsap(name), stamp(), nextPayList() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTO_ASAP__) return; window.__GC_PATCH_AUTO_ASAP__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RULE = '⚡ Pay ASAP — skips the Wednesday cut-off';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function crm(){ return W._crm || {}; }
+function invs(){ var l = crm().invoices || crm().invs || []; return arr(l); }
+function subs(){ return arr(crm().subs).concat(arr(crm().vendors)); }
+function iso(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function nextPayList(now){ var d = now ? new Date(now) : new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7)); return iso(d); }
+function me(){ var e = ''; try { e = low(localStorage.getItem('grayco_user') || ''); } catch (x) {} return arr(crm().users).filter(function(u){ return low(u.email) === e || low(u.name) === e; })[0] || null; }
+function canSet(){ var u = me(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner' || /office/i.test(s(u.role)))); }
+function who(){ var u = me(); return (u && u.name) || 'the office'; }
+function open(iv){ return iv && /sub/.test(low(iv.type)) && !/^(paid|rejected|void|deleted)$/.test(low(iv.status)) && !iv.deleted; }
+function isAsapId(id){ var iv = invs().filter(function(x){ return s(x.id) === s(id); })[0]; return !!(iv && (iv.payAsap === true || low(iv.urgency) === 'asap')); }
+function subRec(name){ var n = low(name); return subs().filter(function(x){ return n && (low(x.name) === n || low(x.company) === n); })[0] || null; }
+function isSubAsap(name){ var r = subRec(name); return !!(r && r.payAsap === true); }
+/* the sub-invoice approval carries the same urgency (the approvals sort by it) */
+function tagApproval(invId, on){
+  var q = []; try { q = JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]'); } catch (e) {}
+  if (!Array.isArray(q)) return;
+  var ch = false;
+  q.forEach(function(a){ if (a && s(a.invId) === s(invId)) { if (on && a.urgency !== 'asap') { a.urgency = 'asap'; ch = true; } else if (!on && a.urgency === 'asap') { delete a.urgency; ch = true; } } });
+  if (!ch) return;
+  try { localStorage.setItem('gc_sub_approvals', JSON.stringify(q)); } catch (e) {}
+  try { if (W.idbSet) W.idbSet('gc_sub_approvals', q); } catch (e) {}
+  try { if (W._supaUpsert) W._supaUpsert('gc_sub_approvals', q); } catch (e) {}
+}
+function mark(invId, on, why){
+  on = on !== false;
+  if (!W._setInvoices) return false;
+  var day = nextPayList(), by = why || ('by ' + who());
+  W._setInvoices(function(prev){
+    var next = (Array.isArray(prev) ? prev : []).map(function(p){
+      if (!p || s(p.id) !== s(invId)) return p;
+      if (on) return Object.assign({}, p, { payAsap: true, urgency: 'asap', asapBy: by, asapAt: new Date().toISOString(),
+        payDateBeforeAsap: p.payAsap ? p.payDateBeforeAsap : (p.payDateOverride || ''), payDateOverride: day, payDate: day, payDateRule: RULE + ' (' + by + ')' });
+      var q = Object.assign({}, p, { payAsap: false, payDateOverride: s(p.payDateBeforeAsap), payDateRule: s(p.payDateBeforeAsap) ? 'set by hand' : 'on the Wednesday rule' });
+      delete q.urgency; delete q.payDateBeforeAsap; if (!q.payDateOverride) { delete q.payDateOverride; if (W._gcPayDateFor) q.payDate = W._gcPayDateFor(q.recvDate || q.date || iso(new Date())).payDate; }
+      return q;
+    });
+    try { if (W.idbSet) W.idbSet('invs', next); } catch (e) {}
+    try { if (W._supaUpsert) W._supaUpsert('invs', next); } catch (e) {}
+    return next;
+  });
+  tagApproval(invId, on);
+  try { if (W._gcRefreshCheckRun) W._gcRefreshCheckRun(); } catch (e) {}
+  return true;
+}
+function setSub(name, on){
+  var r = subRec(name); if (!r || !W._setSubs) return false;
+  W._setSubs(function(prev){ return (prev || []).map(function(x){ return x && s(x.id) === s(r.id) && low(x.name) === low(r.name) ? Object.assign({}, x, { payAsap: !!on, payAsapBy: who(), payAsapAt: new Date().toISOString() }) : x; }); });
+  try { r.payAsap = !!on; } catch (e) {}
+  if (on) stamp(); else invs().forEach(function(iv){ if (open(iv) && low(iv.sub) === low(name) && /per-sub setting/.test(s(iv.asapBy))) mark(iv.id, false); });
+  return true;
+}
+/* every open bill of an ASAP sub is marked by itself */
+function stamp(){
+  var n = 0;
+  invs().forEach(function(iv){ if (open(iv) && iv.payAsap !== true && isSubAsap(iv.sub)) { mark(iv.id, true, 'per-sub setting'); n++; } });
+  return n;
+}
+function toast(t){ var d = D.createElement('div'); d.textContent = t; d.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0f2440;color:#fff;padding:10px 16px;border-radius:10px;z-index:2147483600;font:600 14px Arial;max-width:90vw'; D.body.appendChild(d); ST.call(W, function(){ d.remove(); }, 4500); }
+/* the button on a Money Out sub bill */
+function btn(x){
+  if (!x || x.kind !== 'sub' || !canSet()) return '';
+  var on = isAsapId(x.id);
+  return ' <button type="button" class="gck-a" data-gcasap="' + esc(x.id) + '" title="' + (on ? 'Put it back on the Wednesday rule' : 'Skip the Wednesday cut-off: next pay list') + '" style="' + (on ? 'color:#b91c1c;font-weight:800' : '') + '">' + (on ? '⚡ ASAP ✓' : '⚡ Pay ASAP') + '</button>';
+}
+function ask(invId){
+  var iv = invs().filter(function(x){ return s(x.id) === s(invId); })[0]; if (!iv) return;
+  var on = isAsapId(invId), subOn = isSubAsap(iv.sub);
+  var ov = D.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(6,12,20,.6);z-index:2147483605;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:12px;max-width:440px;width:100%;padding:16px;font:14px Arial"><b>' + (on ? 'Put this bill back on the Wednesday rule?' : '⚡ Pay ' + esc(iv.sub || 'this sub') + ' ASAP?') + '</b>' +
+    '<div style="margin:6px 0 10px;color:#475569">' + (on ? 'It goes back to its normal Friday.' : 'This bill goes on the next pay list (' + nextPayList() + '). It still needs the normal approval before a check is written.') + '</div>' +
+    '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-alw' + (subOn ? ' checked' : '') + '> Always pay ' + esc(iv.sub || 'this sub') + ' ASAP</label>' +
+    '<div style="display:flex;gap:8px;margin-top:14px"><button data-y style="flex:1;padding:10px;border:none;border-radius:8px;background:#b91c1c;color:#fff;font-weight:800;cursor:pointer">' + (on ? 'Back to the rule' : '⚡ Pay ASAP') + '</button><button data-n style="flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-weight:700;cursor:pointer">Cancel</button></div></div>';
+  D.body.appendChild(ov);
+  ov.querySelector('[data-n]').onclick = function(){ ov.remove(); };
+  ov.querySelector('[data-y]').onclick = function(){
+    var alw = ov.querySelector('[data-alw]').checked; ov.remove();
+    if (alw !== subOn) setSub(iv.sub, alw);
+    mark(invId, !on);
+    toast(on ? 'Back on the Wednesday rule' : '⚡ ' + (iv.sub || 'Bill') + ' goes on the ' + nextPayList() + ' pay list — still needs its approval');
+  };
+}
+D.addEventListener('click', function(ev){ var t = ev.target && ev.target.closest ? ev.target.closest('[data-gcasap]') : null; if (!t) return; ev.preventDefault(); ev.stopPropagation(); ask(t.getAttribute('data-gcasap')); }, true);
+/* Money Out: the ASAP bills first */
+function sortOut(rows){ return (rows || []).slice().sort(function(a, b){ return (isAsapId(b.id) ? 1 : 0) - (isAsapId(a.id) ? 1 : 0); }); }
+W._gcAsap = { mark: mark, setSub: setSub, isAsapId: isAsapId, isSubAsap: isSubAsap, stamp: stamp, nextPayList: nextPayList, btn: btn, sortOut: sortOut, ask: ask, RULE: RULE };
+ST.call(W, function(){ try { stamp(); } catch (e) {} }, 15000);
+RI.call(W, function(){ if (!D.hidden && canSet()) { try { stamp(); } catch (e) {} } }, 90e3);
+try { console.log('[GC] ⚡ Pay ASAP for sub bills armed (patch AUTO-ASAP)'); } catch (e) {}
 })();
 </script>
