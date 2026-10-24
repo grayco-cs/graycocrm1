@@ -96,7 +96,7 @@ function availSheet(){
     }
     body.appendChild(grid);
     var list = (D.sched || []).slice(0, 30);
-    if (list.length) body.appendChild(card(t('scheduled'), list.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })]); })));
+    if (list.length) body.appendChild(card(t('scheduled'), list.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); })));
   }
   api('p-avail').then(function(r){ D = r; paint(); }, function(e){ body.innerHTML = ''; body.appendChild(h('div', { class: 'muted', text: e.message || t('loadFail') })); });
   return sh;
@@ -137,6 +137,30 @@ function card(title, kids, cls){ return h('section', { class: 'card' + (cls ? ' 
 function pill(text, cls){ return h('span', { class: 'pill ' + (cls || 'now'), text: text }); }
 function toast(msg, bad){ var x = h('div', { class: 'toast' + (bad ? ' bad' : ''), role: 'status', text: msg }); document.body.appendChild(x); setTimeout(function(){ if (x.parentNode) x.parentNode.removeChild(x); }, 3800); }
 function statusWord(s){ var k = String(s || '').toLowerCase(); if (/progress/.test(k)) return t('inprogress'); if (/complete/.test(k)) return t('complete'); if (/bid/.test(k)) return t('bidding'); return t('awarded'); }
+/* patch SUBTXT: "Can't make it / running late" under each of my coming days — it goes straight to my PM (and the office) */
+Object.assign(L.en, { late: '⚠️ Can’t make it / running late', lateCant: 'Can’t make it', lateLate: 'Running late', lateOther: 'Something else', lateText: 'What is going on? Your PM gets this right away.', lateSend: 'Send to my PM', lateSent: 'Sent — your PM has it', lateNeed: 'Pick one or type a note.' });
+Object.assign(L.es, { late: '⚠️ No puedo ir / voy tarde', lateCant: 'No puedo ir', lateLate: 'Voy tarde', lateOther: 'Otra cosa', lateText: '¿Qué pasa? Su PM lo recibe enseguida.', lateSend: 'Enviar a mi PM', lateSent: 'Enviado — su PM ya lo tiene', lateNeed: 'Elija una opción o escriba una nota.' });
+function todayYmd(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function lateRow(x, line){
+  if (!x || !x.pid || !x.date || x.date < todayYmd()) return line;
+  var kind = '', wrap = h('div', { class: 'late-wrap' }), form = null;
+  var btn = h('button', { type: 'button', class: 'btn late-btn', 'data-late': x.pid + '|' + x.date, text: t('late'), on: { click: function(){
+    if (form) { form.remove(); form = null; return; }
+    var ta = h('textarea', { rows: '3', 'aria-label': t('lateText'), placeholder: t('lateText'), class: 'late-ta' });
+    var pick = function(k, el){ kind = k; Array.prototype.forEach.call(form.querySelectorAll('.late-k'), function(b){ b.setAttribute('aria-pressed', b === el ? 'true' : 'false'); }); };
+    var kb = function(k, label){ var b = h('button', { type: 'button', class: 'btn late-k', 'aria-pressed': 'false', text: label, on: { click: function(){ pick(k, b); } } }); return b; };
+    var send = h('button', { type: 'button', class: 'btn gold', text: t('lateSend'), on: { click: function(){
+      var txt = ta.value.trim(); if (!kind && !txt) { toast(t('lateNeed'), true); return; }
+      send.disabled = true;
+      api('p-late', { projectId: x.pid, day: x.date, time: x.time || '', title: x.title || '', kind: kind || 'other', text: txt }).then(function(){ toast(t('lateSent')); if (form) { form.remove(); form = null; } btn.textContent = '✓ ' + t('lateSent'); })
+        .catch(function(e){ send.disabled = false; toast(e.message || 'Error', true); });
+    } } });
+    form = h('div', { class: 'late-form' }, [h('div', { class: 'late-ks' }, [kb('cant', t('lateCant')), kb('late', t('lateLate')), kb('other', t('lateOther'))]), ta, send]);
+    wrap.appendChild(form);
+  } } });
+  wrap.insertBefore(line, null); wrap.appendChild(btn);
+  return wrap;
+}
 
 /* ── the server ── */
 function api(action, body){
@@ -240,7 +264,7 @@ function home(){
     h('div', null, [h('span', { class: 'muted', text: t('approvedM') }), h('b', { text: usd(m.approved) })]),
     h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') })]));
   var wk = v.week || [];
-  out.push(card(t('week'), wk.length ? wk.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })]); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
   out.push(card(t('yourJobs'), (v.jobs || []).length ? v.jobs.map(jobRow) : [h('div', { class: 'empty', text: t('noJobs') })]));
   var bc = bidsCard(v.bids); if (bc) out.push(bc);
@@ -356,7 +380,7 @@ function overview(){
   out.push(contactCard(t('pm'), pm.name, pm.phone, pm.email));
   if (j.customer) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
   var sch = JOB.schedule || [];
-  out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })]); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));

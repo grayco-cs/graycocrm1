@@ -134,6 +134,7 @@ function page(code, title, lines){
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   return { statusCode: code, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     body: '<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;background:#0f2440;color:#fff;text-align:center;padding:60px 20px;">' +
+          '<div style="background:#fff;display:inline-block;padding:12px 18px;border-radius:12px;margin-bottom:20px"><img src="/portal-logo.png" alt="GrayCo Construction Services" width="160" style="width:160px;max-width:60vw;height:auto;display:block"></div>' +   /* patch PORTALLOGO */
           '<h2>' + esc(title) + '</h2>' + lines.map(l => '<p>' + esc(l) + '</p>').join('') + '</body></html>' };
 }
 const TRY_AGAIN = ['Go back to the GrayCo CRM and press Connect Google again.', 'You can close this window.'];

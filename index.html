@@ -174737,3 +174737,100 @@ RI.call(W, function(){ try { if (D.hidden) return; var cs = D.querySelectorAll('
 try { console.log('[GC] Approvals in order of importance, newest first; portal approvals (patches APPRORDER + PORTALGATE)'); } catch (e) {}
 })();
 </script>
+<script>
+/* patch SUBTXT (owner 10/24): "let them text back our text message … I want text messages turned on or off for a sub,
+   to know if they are at job or not — anything other than Y, the PM gets what they say".
+   Subs tab → the picked sub's card gets "📱 Schedule texts" (on / off + the mobile number texts go to); the panel gets
+   "📱 Sub confirmations — today & tomorrow" (✓ Confirmed / waiting / ⚠ what they said). window._gcSubConfirmFor(pid)
+   gives other screens (field view, the job's schedule) the same rows. The texts, the replies and the PM alerts are on
+   the server: netlify/functions/sub-texts.js, sub-texts-scheduled.js, missed-call.js (replies). */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_SUBTXT__) return; W.__GC_SUBTXT__ = 1;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var FN = '/.netlify/functions/sub-texts';
+var C = { list: null, listAt: 0, conf: null, confAt: 0, busy: {} };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email()); } catch (e) { return false; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function loadList(force){
+  if (!force && C.list && Date.now() - C.listAt < 60000) return Promise.resolve(C.list);
+  if (C.busy.list) return C.busy.list;
+  return (C.busy.list = j(FN + '?list=1').then(function(o){ C.busy.list = null; if (o.ok) { C.list = o; C.listAt = Date.now(); } return C.list; }));
+}
+function loadConf(force){
+  if (!force && C.conf && Date.now() - C.confAt < 60000) return Promise.resolve(C.conf);
+  if (C.busy.conf) return C.busy.conf;
+  return (C.busy.conf = j(FN + '?confirm=1').then(function(o){ C.busy.conf = null; if (o.ok) { C.conf = arr(o.rows); C.confAt = Date.now(); } return C.conf || []; }));
+}
+W._gcSubConfirmFor = function(pid){ return loadConf(false).then(function(rows){ return arr(rows).filter(function(r){ return !pid || r.pid === s(pid); }); }); };
+function chip(r){
+  if (r.status === 'confirmed') return '<span class="gcst-chip ok">✓ Confirmed</span>';
+  if (r.status === 'issue') return '<span class="gcst-chip bad">⚠ ' + esc(r.reply || 'Problem') + '</span>';
+  return '<span class="gcst-chip wait">' + (r.noReply ? '⏰ No answer yet' : '… Waiting for Y') + '</span>';
+}
+function confHtml(rows){
+  rows = arr(rows).slice().sort(function(a, b){ var w = function(x){ return x.status === 'issue' ? 0 : x.noReply ? 1 : x.status === 'sent' ? 2 : 3; }; return w(a) - w(b) || (a.day + a.time).localeCompare(b.day + b.time); });
+  return '<b>📱 Sub confirmations — today &amp; tomorrow</b>' + (rows.length ? rows.map(function(r){
+    return '<div class="gcst-r"><span><b>' + esc(r.sub) + '</b> · ' + esc(r.job) + ' <span class="gcsub-muted">' + esc(r.day) + ' ' + esc(r.time) + (r.title ? ' · ' + esc(r.title) : '') + '</span></span>' + chip(r) + '</div>';
+  }).join('') : '<div class="gcsub-muted">No schedule texts out for today or tomorrow. Turn them on for a sub on its card below.</div>');
+}
+function subRowHtml(sb, ready){
+  return '<div class="gcst-set" data-gcst="' + esc(sb.id) + '"><label class="gcst-l"><input type="checkbox" data-gcst-on' + (sb.on ? ' checked' : '') + '> <b>📱 Schedule texts</b></label>' +
+    '<input type="tel" data-gcst-ph value="' + esc(sb.phone ? tidy(sb.phone) : '') + '" placeholder="Mobile number" aria-label="Mobile number for schedule texts">' +
+    '<button type="button" class="gcsub-btn" data-gcst-save>Save</button>' +
+    '<div class="gcsub-muted gcst-help">On: the evening before their first day (6 PM) and about an hour before each start they get a text. "Y" marks them ✓ Confirmed; anything else goes to the job\'s PM right away.' + (ready ? '' : ' <b>Texting (Twilio) is not set up yet — nothing goes out until it is.</b>') + '</div></div>';
+}
+function decorate(){
+  var panel = D.querySelector('.gcsub-panel'); if (!panel || !signedIn()) return;
+  if (!panel.querySelector('.gcst-conf')) {
+    var cc = D.createElement('div'); cc.className = 'gcsub-card gcst-conf'; cc.innerHTML = '<b>📱 Sub confirmations</b> <span class="gcsub-muted">loading…</span>';
+    var pick = panel.querySelector('[data-sec="pick"]'); panel.insertBefore(cc, pick || null);
+    loadConf(false).then(function(rows){ if (cc.isConnected) cc.innerHTML = confHtml(rows); });
+  }
+  var card = panel.querySelector('.gcsub-card[data-sub]'); if (!card) return;
+  var id = card.getAttribute('data-sub'); if (card.querySelector('.gcst-set[data-gcst="' + id + '"]')) return;
+  if (card.__gcstLoading === id) return; card.__gcstLoading = id;
+  loadList(false).then(function(L){
+    card.__gcstLoading = '';
+    if (!L || !card.isConnected || card.querySelector('.gcst-set')) return;
+    var sb = arr(L.subs).filter(function(x){ return x.id === id; })[0] || { id: id, on: false, phone: '' };
+    var box = D.createElement('div'); box.innerHTML = subRowHtml(sb, L.ready); card.appendChild(box.firstChild);
+  });
+}
+D.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-gcst-save]'); if (!b) return;
+  var row = b.closest('.gcst-set'), id = row.getAttribute('data-gcst'), on = row.querySelector('[data-gcst-on]').checked, ph = d10(row.querySelector('[data-gcst-ph]').value);
+  if (on && ph.length !== 10) { alertBox(row, 'Type the sub\'s 10-digit mobile number first.'); return; }
+  b.disabled = true; b.textContent = 'Saving…';
+  j(FN + '?set=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subId: id, on: on, phone: ph }) }).then(function(o){
+    b.disabled = false; b.textContent = o.ok ? 'Saved ✓' : 'Save';
+    if (!o.ok) return alertBox(row, o.error || 'Could not save.');
+    C.listAt = 0; ST.call(W, function(){ if (b.isConnected) b.textContent = 'Save'; }, 2500);
+  });
+}, true);
+function alertBox(row, msg){ var m = row.querySelector('.gcst-err'); if (!m) { m = D.createElement('div'); m.className = 'gcst-err'; m.setAttribute('role', 'alert'); row.appendChild(m); } m.textContent = msg; }
+function tick(){
+  var view = ''; try { view = localStorage.getItem('grayco_view') || ''; } catch (e) {}
+  if (!D.hidden && view === 'subs') { try { decorate(); } catch (e) {} }
+  ST.call(W, tick, view === 'subs' ? 1200 : 2500);
+}
+var css = D.createElement('style');
+css.textContent = '.gcst-set{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0}' +
+  '.gcst-set input[type=tel]{padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;min-width:150px}.gcst-l{display:flex;gap:6px;align-items:center}.gcst-help{flex-basis:100%;font-size:12px}' +
+  '.gcst-err{flex-basis:100%;color:#b91c1c;font-size:13px}.gcst-r{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:6px 0;border-top:1px solid #eef2f7;flex-wrap:wrap}' +
+  '.gcst-chip{font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}.gcst-chip.ok{background:#dcfce7;color:#166534}.gcst-chip.bad{background:#fee2e2;color:#991b1b}.gcst-chip.wait{background:#fef3c7;color:#92400e}';
+(D.head || D.documentElement).appendChild(css);
+ST.call(W, tick, 1500);
+W._gcSubTexts = { loadList: loadList, loadConf: loadConf, decorate: decorate };
+try { console.log('[GC] 📱 Sub schedule texts: Subs tab switch + confirmations (patch SUBTXT)'); } catch (e) {}
+})();
+</script>

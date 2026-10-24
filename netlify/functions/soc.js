@@ -94,6 +94,7 @@ function page(title, msg, ok){
   return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     body: '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + title + '</title></head>' +
       '<body style="font-family:Arial,sans-serif;background:#F5F7FB;margin:0;padding:40px 16px"><div style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #dce3ee;border-radius:12px;padding:22px">' +
+      '<div style="text-align:center;margin:0 0 16px"><img src="/portal-logo.png" alt="GrayCo Construction Services" width="170" style="width:170px;max-width:60%;height:auto;display:inline-block"></div>' +   /* patch PORTALLOGO */
       '<h2 style="color:' + (ok ? '#166534' : '#9a3412') + ';margin-top:0">' + (ok ? '✓ ' : '') + title + '</h2><p>' + String(msg).replace(/[<>&]/g, '') + '</p>' +
       '<p><a href="/" style="color:#1E2060;font-weight:bold">Back to the GrayCo CRM → Marketing → 🔌 Connections</a></p></div></body></html>' };
 }

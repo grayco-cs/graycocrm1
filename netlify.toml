@@ -329,3 +329,7 @@
 # patch GDOCS: the team's new Google Docs (proposals, invoices …) read every 15 minutes (read only; docs/GDOCS.md)
 [functions."gdocs-scheduled"]
   schedule = "8,23,38,53 * * * *"
+
+# patch SUBTXT: 📱 schedule texts for subs (6 PM the evening before, ~1 hour before each start, "hasn't confirmed" to the PM)
+[functions."sub-texts-scheduled"]
+  schedule = "2,17,32,47 * * * *"

@@ -237,6 +237,8 @@ async function inboundSms(p){
   const out = { sid };
   /* HELP: the standard answer, nothing else */
   if (S.HELP.test(body)) { out.help = optedOut ? { skipped: 'opted out' } : await sendSms(ph, S.HELP_TEXT); return out; }
+  /* patch SUBTXT: an answer to a sub's schedule text — Y → ✓ Confirmed; anything else → the job's PM at once (push, 🔴 To-Do, e-mail) */
+  try { const sh = await require('./sub-texts.js')._lib.handleReply(ph, body, at); if (sh && sh.handled) { out.subText = { confirmed: !!sh.confirmed, issue: !!sh.issue, key: sh.key }; return out; } } catch (e) { out.subTextError = s(e && e.message); }
   let data = {};
   try { data = await core().kvRead(['projects', 'customers', 'subs', 'vendors', 'leads', 'schedule', 'users', 'gc_deleted_projects', 'gc_team_settings']); } catch (e) {}
   let who = S.match(data, ph);

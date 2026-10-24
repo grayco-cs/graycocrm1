@@ -835,7 +835,7 @@ function punchIsSub(x, sub){ return s(x.subId) ? s(x.subId) === s(sub.id) : rowI
 function schedFor(data, jobs, sub){
   const pids = new Set(jobs.map(function(p){ return s(p.id); })), nm = jobs.reduce(function(m, p){ m[s(p.id)] = s(p.name); return m; }, {});
   return arr(data.schedule).filter(function(x){ return pids.has(s(x.pid)) && (s(x.subId) === s(sub.id) || rowIsSub({ name: x.vendor || x.sub || x.assignee }, sub)); })
-    .map(function(x){ return { date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(x.title, 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })
+    .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(x.title, 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })   /* patch SUBTXT: + id */
     .filter(function(x){ return x.date; }).sort(function(a, b){ return (a.date + a.time).localeCompare(b.date + b.time); });
 }
 async function pJob(ctx, pid){
@@ -1006,6 +1006,13 @@ async function partnerAction(action, body, ctx){
     if (!text && !files.length) throw Fail(400, 'Type a message.');
     const m = await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), text, files);
     return { ok: true, id: m };
+  }
+  if (action === 'p-late') {   /* patch SUBTXT: "Can't make it / running late" → the job's PM at once (push, 🔴 To-Do, e-mail) + this thread */
+    const p = jobOf(ctx, body.projectId);
+    const r = await require('./sub-texts.js')._lib.portalLate(sub, p, body || {});
+    if (!r.ok) throw Fail(400, r.error || 'Type what is going on.');
+    await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), '⚠️ ' + r.words, []);
+    return { ok: true };
   }
   if (action === 'p-lang') {
     await addEvent('lang', sub, null, { lang: lang(body.lang) });
@@ -1364,4 +1371,5 @@ exports.handler = async function (event) {
     return reply(500, { ok: false, error: 'Something went wrong. Try again, or call GrayCo ' + OFFICE_PHONE + '.' });
   }
 };
-exports._core = { _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
+exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments); },   /* patch SUBTXT */
+  _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
