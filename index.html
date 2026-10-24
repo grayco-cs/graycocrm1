@@ -171605,6 +171605,7 @@ function closeout(pid){
     { k: 'war', t: 'Warranty certificate', ok: !!docs.warranty, why: 'made when the final payment is in' },
     { k: 'thx', t: 'Thank-you + review request', ok: !!ty && /sent|approved/i.test(s(ty.status)), why: ty ? 'waiting for approval' : 'goes to approvals at completion' }
   ];
+  try { var _lw = W._gcLien && W._gcLien.status(pid); if (_lw) steps.push({ k: 'lien', t: 'Lien waivers from the subs', ok: _lw.ok, why: 'waiting on ' + _lw.missing.join(', ') + ' (📝 Sub lien waivers, below)' }); } catch (e) {}   /* patch AUTO-LIEN: only when waivers are ON for the job or a sub */
   return { pid: pid, imported: imported(p), complete: num(p.pct) >= 100 || s(p.jobStage) === 'complete', steps: steps, done: steps.every(function(x){ return x.ok; }) };
 }
 function cancelDrafts(p){
@@ -171660,7 +171661,7 @@ function html(p, tab){
   if (c && c.complete && (tab === 'overview' || tab === 'punch')) {
     out += '<div style="border:1px solid ' + (c.imported ? '#cbd5e1' : '#86efac') + ';background:' + (c.imported ? '#f8fafc' : '#f0fdf4') + ';border-radius:10px;padding:10px 12px;margin-bottom:8px">' +
       '<b>' + (c.imported ? '📦 Imported history — no closeout automations run for this job' : '✅ Job complete — closeout checklist') + '</b>' +
-      (c.imported ? '' : '<div style="margin-top:4px;font-size:12.5px">' + c.steps.map(function(x){ return '<div>' + (x.ok ? '✅' : '⬜') + ' ' + esc(x.t) + (x.ok ? '' : ' <span style="color:#64748b">— ' + esc(x.why) + '</span>') + '</div>'; }).join('') + '</div>') + '</div>';
+      (c.imported ? '' : '<div style="margin-top:4px;font-size:12.5px">' + c.steps.map(function(x){ return '<div>' + (x.ok ? '✅' : '⬜') + ' ' + esc(x.t) + (x.ok ? '' : ' <span style="color:#64748b">— ' + esc(x.why) + '</span>') + '</div>'; }).join('') + '</div>') + '</div>' + (c.imported || !W._gcLien ? '' : W._gcLien.panel(p));   /* patch AUTO-LIEN */
   }
   if (tab === 'punch' && pm) {
     var sug = (p.punchSuggest && p.punchSuggest.items) ? p.punchSuggest.items : (num(p.pct) >= 90 || /substantial|complete/.test(s(p.jobStage)) ? suggest(p.id) : []);
@@ -175469,5 +175470,140 @@ RI.call(W, function(){
   draft(false).catch(function(){});
 }, 5 * 60e3);
 try { console.log('[GC] 💵 Thursday payroll draft armed (patch AUTO-PAY)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-auto-lien">
+/* __GC_PATCH_AUTO_LIEN__ — SUB LIEN WAIVERS, OPTIONAL (owner 10/24: "most subs do not have to sign lien waivers").
+   Default OFF for every sub and every job. Nothing is required unless a sub or a job is turned ON.
+     • 📝 Request lien waiver: on each sub check on the Friday pay list (🖊 Checks to write), and at closeout on the job
+       (one per sub on the job, a final waiver). The sub gets a private link to sign online or upload their own. The
+       first request to a sub waits on the approvals list; later ones go by themselves. Data-entry mode sends nothing.
+     • Lien waivers ON (admin / office): "Always ask this sub" (per sub) and "Every sub on this job" (per job), in the
+       job's closeout panel. When ON, approved invoices of that sub / on that job ask for a waiver by themselves, the pay
+       list shows "⚠ no lien waiver yet" on that sub's check, and the closeout checklist gets a "Lien waivers" line
+       (Wesley or Nick can close the job without them).
+   API: window._gcLien = { load(), status(pid), panel(job), request(o), toggle(kind, key, on), state() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTO_LIEN__) return; window.__GC_PATCH_AUTO_LIEN__ = true;
+var W = window, D = document, FN = '/.netlify/functions/lien';
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var S = { waivers: [], settings: { subs: {}, jobs: {} }, at: 0, busy: false, since: '2026-10-24' };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function money(n){ var x = parseFloat(n) || 0; return '$' + x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function crm(){ return W._crm || {}; }
+function me(){ var e = ''; try { e = low(localStorage.getItem('grayco_user') || ''); } catch (x) {} return arr(crm().users).filter(function(u){ return low(u.email) === e || low(u.name) === e; })[0] || null; }
+function isAdmin(){ var u = me(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner')); }
+function isOffice(){ var u = me(); return !!(u && /office/i.test(s(u.role))); }
+function subKey(subId, name){ return s(subId) ? 'id:' + s(subId) : 'n:' + low(name).replace(/\s+/g, ' '); }
+function post(b){
+  return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })
+    .then(function(r){ return r.json().catch(function(){ return { ok: false, error: 'No answer (' + r.status + ')' }; }); }, function(e){ return { ok: false, error: 'No internet' }; });
+}
+function load(force){
+  if (S.busy || (!force && Date.now() - S.at < 120e3)) return Promise.resolve(S);
+  S.busy = true;
+  return post({ action: 'list' }).then(function(j){ S.busy = false; if (j && j.ok) { S.waivers = arr(j.waivers); S.settings = j.settings || S.settings; S.since = j.since || S.since; S.at = Date.now(); } return S; }, function(){ S.busy = false; return S; });
+}
+function subInvs(pid){
+  var appr = {}; try { arr(JSON.parse(localStorage.getItem('gc_sub_approvals') || '[]')).forEach(function(a){ if (a.invId) appr[a.invId] = a; }); } catch (e) {}
+  return arr(crm().invoices).filter(function(r){
+    if (!(/sub/.test(low(r.type)) || (!s(r.type) && (r.sub || r.subId)))) return false;
+    if (pid && s(r.pid) !== s(pid)) return false;
+    if (r.deleted || r._pmDenied || /denied|void|deleted|cancel|declin/.test(low(r.status))) return false;
+    var a = appr[r.id]; return r._pmApproved === true || /approved|paid|scheduled|written/.test(low(r.status)) || !!(a && /approved|paid/.test(low(a.status)));
+  });
+}
+function onFor(subId, name, pid){ var st = S.settings || {}; return !!((st.jobs || {})[s(pid)] || (st.subs || {})[subKey(subId, name)] || (name && (st.subs || {})[subKey('', name)])); }
+function wFor(id){ return S.waivers.filter(function(w){ return s(w.id) === id; })[0] || null; }
+function finalId(pid, subId, name){ return 'LWf_' + s(pid) + '_' + subKey(subId, name).replace(/[^A-Za-z0-9_.:-]/g, '_'); }
+var LABEL = { 'new': 'not sent yet', waiting_approval: 'waiting on approval (first one to this sub)', sent: 'sent — waiting for the sub', signed: '✅ signed', uploaded: '✅ signed copy uploaded', no_email: 'no e-mail on file' };
+function done(w){ return !!(w && /^(signed|uploaded)$/.test(s(w.status))); }
+/* the closeout line — only when waivers are ON for this job or one of its subs */
+function status(pid){
+  var subs = {}, on = false;
+  subInvs(pid).forEach(function(r){ var k = subKey(r.subId, r.sub); if (!subs[k]) subs[k] = { sub: s(r.sub), subId: s(r.subId) }; });
+  var missing = [];
+  Object.keys(subs).forEach(function(k){ var b = subs[k]; if (!onFor(b.subId, b.sub, pid)) return; on = true; if (!done(wFor(finalId(pid, b.subId, b.sub)))) missing.push(b.sub || 'a sub'); });
+  var ovr = wFor('LWo_' + s(pid));
+  if (!on) return null;
+  return { ok: !missing.length || !!ovr, missing: missing, override: ovr };
+}
+function panel(p){
+  if (!p || !(isAdmin() || isOffice())) return '';
+  var subs = {};
+  subInvs(p.id).forEach(function(r){ var k = subKey(r.subId, r.sub); var b = subs[k] || (subs[k] = { sub: s(r.sub), subId: s(r.subId), amount: 0 }); b.amount += parseFloat(r.amt != null ? r.amt : r.amount) || 0; });
+  var keys = Object.keys(subs); if (!keys.length) return '';
+  var jobOn = !!((S.settings.jobs || {})[s(p.id)]);
+  var st = status(p.id);
+  var rows = keys.map(function(k){
+    var b = subs[k], w = wFor(finalId(p.id, b.subId, b.sub)), subOn = !!((S.settings.subs || {})[k]);
+    return '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px">' +
+      '<b>' + esc(b.sub || 'Sub') + '</b> <span style="color:#64748b">' + money(b.amount) + ' · ' + esc(w ? (LABEL[w.status] || w.status) : 'no waiver asked') + '</span>' +
+      (done(w) ? '' : ' <button type="button" data-gclien-req="final" data-pid="' + esc(p.id) + '" data-sub="' + esc(b.sub) + '" data-subid="' + esc(b.subId) + '" data-amt="' + b.amount + '" style="border:1px solid #0f766e;background:#fff;color:#0f766e;border-radius:8px;padding:3px 9px;font-weight:700;cursor:pointer">📝 Request lien waiver</button>') +
+      ' <label style="font-size:12px;cursor:pointer"><input type="checkbox" data-gclien-tog="sub" data-key="' + esc(k) + '"' + (subOn ? ' checked' : '') + '> Always ask this sub</label></div>';
+  }).join('');
+  return '<div data-gclien-panel style="border:1px solid #99f6e4;background:#f0fdfa;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12.5px">' +
+    '<b>📝 Sub lien waivers</b> <span style="color:#475569">— optional; off unless you turn it on</span>' +
+    '<div style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" data-gclien-tog="job" data-key="' + esc(p.id) + '"' + (jobOn ? ' checked' : '') + '> Every sub on this job must sign one</label></div>' + rows +
+    (st && !st.ok && isAdmin() ? '<div style="margin-top:6px"><button type="button" data-gclien-ovr="' + esc(p.id) + '" style="border:1px solid #b45309;background:#fff;color:#92400e;border-radius:8px;padding:3px 9px;font-weight:700;cursor:pointer">Close the job without them</button></div>' : '') +
+    (st && st.override ? '<div style="margin-top:4px;color:#92400e">Closed without waivers by ' + esc(st.override.by) + ' (' + esc(s(st.override.at).slice(0, 10)) + ')</div>' : '') + '</div>';
+}
+function toast(t){ try { if (W._gcToast) return W._gcToast(t); } catch (e) {} var d = D.createElement('div'); d.textContent = t; d.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0f2440;color:#fff;padding:10px 16px;border-radius:10px;z-index:2147483600;font:600 14px Arial'; D.body.appendChild(d); ST.call(W, function(){ d.remove(); }, 4500); }
+function confirmBox(text, yes){
+  var ov = D.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(6,12,20,.6);z-index:2147483605;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:12px;max-width:420px;width:100%;padding:16px;font:14px Arial"><div style="white-space:pre-wrap">' + esc(text) + '</div><div style="display:flex;gap:8px;margin-top:14px"><button data-y style="flex:1;padding:10px;border:none;border-radius:8px;background:#0f766e;color:#fff;font-weight:700;cursor:pointer">Yes</button><button data-n style="flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-weight:700;cursor:pointer">Cancel</button></div></div>';
+  D.body.appendChild(ov);
+  ov.querySelector('[data-n]').onclick = function(){ ov.remove(); };
+  ov.querySelector('[data-y]').onclick = function(){ ov.remove(); yes(); };
+}
+function request(o){
+  return post(Object.assign({ action: 'request' }, o)).then(function(j){
+    toast(j.ok ? (j.queued ? '📝 Waiver request is on the approvals list (first one to this sub)' : j.sent ? '📝 Waiver request sent' : j.already ? 'Already asked — ' + (LABEL[(j.waiver || {}).status] || '') : '📝 Done') : '⚠ ' + (j.error || 'Not sent'));
+    return load(true).then(function(){ return j; });
+  });
+}
+function toggle(kind, key, on){ return post({ action: 'toggle', kind: kind, key: key, on: !!on }).then(function(j){ if (j.ok) { S.settings = j.settings; toast(on ? 'Lien waivers turned ON' : 'Lien waivers turned off'); } else toast('⚠ ' + (j.error || 'Not saved')); return j; }); }
+D.addEventListener('click', function(ev){
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-gclien-req],[data-gclien-ovr]') : null; if (!t) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (t.hasAttribute('data-gclien-ovr')) { var pid = t.getAttribute('data-gclien-ovr'); confirmBox('Close this job without the missing lien waivers?\n\nIt is recorded with your name.', function(){ post({ action: 'override', pid: pid, reason: 'closed without waivers' }).then(function(){ load(true); }); }); return; }
+  var kind = t.getAttribute('data-gclien-req');
+  var o = kind === 'inv' ? { invId: t.getAttribute('data-inv') } : { pid: t.getAttribute('data-pid'), sub: t.getAttribute('data-sub'), subId: t.getAttribute('data-subid'), amount: parseFloat(t.getAttribute('data-amt')) || 0, final: true };
+  confirmBox('Ask ' + (t.getAttribute('data-sub') || 'this sub') + ' for a ' + (kind === 'inv' ? 'conditional (this payment)' : 'final') + ' lien waiver?\n\nThe first request to a sub waits on the approvals list.', function(){ t.disabled = true; t.textContent = 'Asking…'; request(o); });
+}, true);
+D.addEventListener('change', function(ev){ var t = ev.target; if (!t || !t.hasAttribute || !t.hasAttribute('data-gclien-tog')) return; toggle(t.getAttribute('data-gclien-tog'), t.getAttribute('data-key'), t.checked); }, true);
+/* the Friday pay list: a request button on each sub check; "⚠ no lien waiver yet" only when ON */
+function decorateChecks(){
+  var invs = {}; arr(crm().invoices).forEach(function(r){ invs[r.id] = r; });
+  [].slice.call(D.querySelectorAll('button[data-paid]')).forEach(function(b){
+    var td = b.parentElement; if (!td || td.querySelector('[data-gclien-req]')) return;
+    var r = invs[b.getAttribute('data-paid')] || {}, w = wFor('LWc_' + s(r.id || b.getAttribute('data-paid')));
+    var on = onFor(r.subId, r.sub, r.pid), tag = '';
+    if (done(w)) tag = '<span style="font-size:11px;color:#15803d;margin-left:6px">✅ lien waiver</span>';
+    else if (w) tag = '<span style="font-size:11px;color:#64748b;margin-left:6px">waiver ' + esc(LABEL[w.status] || w.status) + '</span>';
+    else if (on) tag = '<span style="font-size:11px;color:#b45309;font-weight:700;margin-left:6px">⚠ no lien waiver yet</span>';
+    var span = D.createElement('span');
+    span.innerHTML = tag + (done(w) ? '' : ' <button type="button" data-gclien-req="inv" data-inv="' + esc(r.id || b.getAttribute('data-paid')) + '" data-sub="' + esc(r.sub || '') + '" style="background:#fff;border:1px solid #0f766e;color:#0f766e;border-radius:6px;padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📝 Lien waiver</button>');
+    td.appendChild(span);
+  });
+}
+(function hook(){
+  var tries = 0, iv = RI.call(W, function(){
+    if (tries++ > 120) { clearInterval(iv); return; }
+    var f = W._gcOpenCheckRun; if (typeof f !== 'function' || f.__lien) return;
+    var w = function(){ var self = this, args = arguments; return load(false).then(function(){ return f.apply(self, args); }).then(function(x){ try { decorateChecks(); } catch (e) {} return x; }); };
+    try { Object.keys(f).forEach(function(k){ if (/^__/.test(k)) w[k] = f[k]; }); } catch (e) {}   /* keep the other wrappers' marks, so nobody wraps twice */
+    w.__lien = true; try { W._gcOpenCheckRun = w; } catch (e) {}
+  }, 1500);
+})();
+W._gcLien = { load: load, status: status, panel: panel, request: request, toggle: toggle, state: function(){ return S; }, _t: { subInvs: subInvs, onFor: onFor, decorateChecks: decorateChecks, finalId: finalId } };
+ST.call(W, function(){ if (isAdmin() || isOffice()) load(true); }, 9000);
+RI.call(W, function(){ if (!D.hidden && (isAdmin() || isOffice())) load(false); }, 180e3);
+try { console.log('[GC] 📝 Sub lien waivers (optional, default off) armed (patch AUTO-LIEN)'); } catch (e) {}
 })();
 </script>

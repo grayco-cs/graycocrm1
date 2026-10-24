@@ -2,6 +2,7 @@
 //   Each part acts only at its own time (Central) and claims that morning's marker first, so it runs once:
 //     AUTO-AR      past-due reminders → the approvals list            every day, first run after 7 AM
 //     AUTO-PAY     payroll draft check: is Friday's draft there? (the CRM makes it from 6 AM)   Thursday 10 AM
+//     AUTO-LIEN    sub lien waivers, only for subs / jobs turned ON (default off)              every run
 //   (more parts are added below as they are built). Nothing here sends to a customer, sub or GC by itself.
 // A signed-in admin may call it to run one part now: POST { part: 'ar', force: true }.
 'use strict';
@@ -9,7 +10,8 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const A = require('./_lib/auto-common.js');
 const PARTS = [
   { key: 'ar', lib: './_lib/auto-ar.js', when: function(c){ return c.hour >= 7 && c.hour < 13; }, marker: function(c){ return 'ar:' + c.ymd; } },
-  { key: 'pay', lib: './_lib/auto-pay.js', when: function(c){ return c.wd === 'Thu' && c.hour >= 10 && c.hour < 16; }, marker: function(c){ return 'pay:' + c.ymd; } }
+  { key: 'pay', lib: './_lib/auto-pay.js', when: function(c){ return c.wd === 'Thu' && c.hour >= 10 && c.hour < 16; }, marker: function(c){ return 'pay:' + c.ymd; } },
+  { key: 'lien', lib: './_lib/lien.js', when: function(){ return true; }, marker: null }
   /* AUTO-PARTS */
 ];
 function isScheduled(event){ try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; } }
