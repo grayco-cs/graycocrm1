@@ -151591,9 +151591,12 @@ function mountField(){
 function setViewAs(v){
   if (!realAdmin()) v = '';   /* patch VAS: never more than admin */
   ssSet(viewAsKey(), v || '');
+  try { W.__GC_LAST_INPUT_AT__ = Date.now(); } catch (e) {}   /* patch VASFIX: switching View as is the admin at the computer. Without this a switch made after a
+     minute without mouse or keys (SYNCPERF's 30 s idle pace) left the PREVIOUS profile's dashboard panels on screen for up to 30 s. */
   rerender();
   try { if (typeof W._setView === 'function') W._setView('dashboard'); } catch (e) {}
   later(paintViewAs, 50); later(rerender, 400);
+  later(function(){ try { mountDash(); } catch (e) { warn(e); } try { mountField(); } catch (e) { warn(e); } try { paintViewAs(); } catch (e) { warn(e); } }, 700);   /* patch VASFIX */
 }
 function paintViewAs(){
   var admin = realAdmin(), aside = D.querySelector('aside'), box = D.getElementById('gc-rp-viewas'), va = viewAs();
