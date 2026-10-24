@@ -175607,3 +175607,71 @@ RI.call(W, function(){ if (!D.hidden && (isAdmin() || isOffice())) load(false); 
 try { console.log('[GC] 📝 Sub lien waivers (optional, default off) armed (patch AUTO-LIEN)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-auto-digest">
+/* __GC_PATCH_AUTO_DIGEST__ — THE 7 AM APPROVALS DIGEST, the CRM side.
+     • A link in the morning e-mail or phone push (crm.grayco-cs.com/#appr=<id>) opens that exact approval after the
+       usual sign-in — the same card as on the To-Do, with ✅ Approve / ✖ Don't approve / Preview. Nothing is approved
+       from the e-mail itself.
+     • ✅ Approve all routine (N): next to the approvals heading. Routine = payment reminders, the final-invoice
+       reminders, appointment confirmations / reminders, waiver requests to subs. A confirm lists every one first; each
+       is then approved the normal way (your name on it), and anything you may not approve is left for the right person. */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTO_DIGEST__) return; window.__GC_PATCH_AUTO_DIGEST__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var ROUTINE = { payment_reminder: 1, final_reminder: 1, appt_confirm: 1, appt_reminder: 1, sub_lien_request: 1 };
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+function mine(){ try { return W._gcAp2Items ? W._gcAp2Items() : []; } catch (e) { return []; } }
+function routine(){ return mine().filter(function(x){ return x && ROUTINE[x.kind] && x.status === 'waiting'; }); }
+function toast(t){ var d = D.createElement('div'); d.textContent = t; d.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0f2440;color:#fff;padding:10px 16px;border-radius:10px;z-index:2147483600;font:600 14px Arial;max-width:90vw'; D.body.appendChild(d); ST.call(W, function(){ d.remove(); }, 5000); }
+/* 1. the deep link */
+var WANT = '', since = 0;
+function readHash(){ var m = /[#&]appr=([^&]+)/.exec(location.hash || ''); if (m) { WANT = decodeURIComponent(m[1]); since = Date.now(); } }
+readHash(); W.addEventListener('hashchange', readHash);
+function tryOpen(){
+  if (!WANT) return;
+  if (Date.now() - since > 90e3) { toast('That approval is done already, or it is waiting on someone else.'); WANT = ''; return; }
+  var it = mine().filter(function(x){ return s(x.id) === WANT; })[0];
+  if (!it || !W._gcAp2Preview) { try { if (W._gcAp2Refresh && Date.now() - since > 4000 && !tryOpen._r) { tryOpen._r = 1; W._gcAp2Refresh(); } } catch (e) {} return; }
+  var id = WANT; WANT = '';
+  try { history.replaceState(history.state, '', location.pathname + location.search); } catch (e) {}
+  try { W._gcAp2Preview(id); } catch (e) {}
+}
+/* 2. approve all routine */
+function confirmAll(list){
+  var ov = D.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:rgba(6,12,20,.62);z-index:2147483605;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:12px;max-width:520px;width:100%;max-height:80vh;overflow:auto;padding:16px;font:14px Arial">' +
+    '<b style="font-size:16px">Approve these ' + list.length + ' routine item' + (list.length === 1 ? '' : 's') + '?</b>' +
+    '<div style="font-size:12px;color:#475569;margin:4px 0 8px">Each one is approved with your name, as if you tapped ✅ on it. It goes out now if you are the last step.</div>' +
+    '<ul style="padding-left:18px;margin:0">' + list.map(function(x){ return '<li style="margin:3px 0">' + esc(x.title || x.kind) + (x.to ? ' <span style="color:#64748b">→ ' + esc(x.to) + '</span>' : '') + '</li>'; }).join('') + '</ul>' +
+    '<div style="display:flex;gap:8px;margin-top:14px"><button data-y style="flex:1;padding:11px;border:none;border-radius:9px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">✅ Approve all ' + list.length + '</button><button data-n style="flex:1;padding:11px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;font-weight:700;cursor:pointer">Cancel</button></div></div>';
+  D.body.appendChild(ov);
+  ov.querySelector('[data-n]').onclick = function(){ ov.remove(); };
+  ov.querySelector('[data-y]').onclick = function(){
+    var b = this; b.disabled = true; b.textContent = 'Approving…';
+    var okN = 0, left = 0;
+    list.reduce(function(p, x){ return p.then(function(){ return Promise.resolve(W._gcApprovalAct ? W._gcApprovalAct(x.id, 'approve') : null).then(function(j){ if (j && j.ok) okN++; else left++; }, function(){ left++; }); }); }, Promise.resolve())
+      .then(function(){ ov.remove(); toast('✅ Approved ' + okN + (left ? ' · ' + left + ' left for someone else (or try again)' : '')); try { if (W._gcAp2Refresh) W._gcAp2Refresh(); } catch (e) {} });
+  };
+}
+function paintButtons(){
+  var n = routine().length;
+  [].slice.call(D.querySelectorAll('._ap2All')).forEach(function(h){
+    var b = h.parentElement && h.parentElement.querySelector('[data-gc-routine]');
+    if (!n) { if (b) b.remove(); return; }
+    if (b) { if (b.getAttribute('data-n') !== String(n)) { b.setAttribute('data-n', String(n)); b.textContent = '✅ Approve all routine (' + n + ')'; } return; }
+    b = D.createElement('button'); b.type = 'button'; b.setAttribute('data-gc-routine', '1'); b.setAttribute('data-n', String(n));
+    b.textContent = '✅ Approve all routine (' + n + ')';
+    b.style.cssText = 'margin-left:auto;margin-right:8px;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer';
+    b.onclick = function(e){ e.stopPropagation(); var l = routine(); if (l.length) confirmAll(l); };
+    h.parentElement.insertBefore(b, h);
+  });
+}
+RI.call(W, function(){ if (D.hidden) return; try { tryOpen(); paintButtons(); } catch (e) {} }, 2000);
+W._gcAutoDigest = { routine: routine, ROUTINE: ROUTINE, tryOpen: tryOpen, confirmAll: confirmAll };
+try { console.log('[GC] ✅ Approvals digest links + Approve all routine armed (patch AUTO-DIGEST)'); } catch (e) {}
+})();
+</script>
