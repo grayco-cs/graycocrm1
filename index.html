@@ -174362,6 +174362,7 @@ var ITEMS = [
   { id: 'cpa', g: 'now', t: 'Payroll: CPA checks', how: 'Have the CPA check one 2026 paycheck against IRS Pub 15-T, and the Mississippi withholding account and rates for the PM who lives there. Then 💵 Payroll → State tax settings → tick "Verified with our CPA".' },
   { id: 'google_sa', g: 'soon', t: 'Google service account (All GrayCo e-mail + Google Docs)', how: 'Google Cloud Console → new project → enable Gmail API and Google Drive API → Service account → Keys → JSON key. admin.google.com → Security → API controls → Domain Wide Delegation → Add its client ID with scopes https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/drive.readonly. Netlify: GOOGLE_SA_EMAIL, GOOGLE_SA_KEY, GMAIL_DOMAIN=grayco-cs.com → Trigger deploy. (docs/EMAIL-ALL.md, docs/GDOCS.md)', auto: 'google_sa' },
   { id: 'twilio', g: 'soon', t: 'Twilio texting', how: 'Sign up at twilio.com with replies@grayco-cs.com, upgrade to paid, buy a 901 number (Voice + SMS). Netlify: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM → Trigger deploy. Twilio → the number → "A message comes in" → Webhook POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=sms. Register A2P 10DLC (brand with the EIN + a "Customer care" campaign); it takes a few days.', auto: 'twilio' },
+  { id: 'twilio_numbers', g: 'soon', t: 'Buy separate Twilio numbers: Subs, Customers, Marketing / leads (+1–2 spare later)', how: 'In Twilio buy a 901 number for each. Register them under A2P: "Customer care" for the subs and customers numbers, "Marketing" for the marketing number. Then enter each number with its purpose in ⚙ Admin settings → 💬 Texting → Our numbers.', auto: 'sms_numbers' },
   { id: 'twilio_num', g: 'soon', t: 'Send Claude the Twilio number', how: 'Paste the new 901 number in the chat with Claude. The website\'s "Text us" button needs it.' },
   { id: 'groups_copy', g: 'soon', t: 'Add the CRM\'s copy address to each group', how: 'admin.google.com → Groups → leads@ → Members → Add: leads@in.grayco-cs.com. claims@ → Add: claims@in.grayco-cs.com.' },
   { id: 'bids_group', g: 'soon', t: 'Make bids@ a group: Glenn, Wesley, Nick, office', how: 'admin.google.com → Groups → bids@grayco-cs.com with Glenn, Wesley, Nick, office@ and bids@in.grayco-cs.com as members.' },
@@ -174385,9 +174386,18 @@ function refresh(force){
   if (OS.loading || (!force && Date.now() - OS.at < 600000)) return Promise.resolve(OS);
   OS.loading = true;
   var a = kvGet('gc_owner_setup').then(function(v){ OS.done = obj(v); });
+  /* the texting numbers live in the CRM (⚙ Admin settings → 💬 Texting → Our numbers, gc_kv "gc_sms_numbers"): done when a Subs and a Customers number are saved */
+  var c = (typeof W._gcSmsNumbers === 'function' ? Promise.resolve(W._gcSmsNumbers()) : kvGet('gc_sms_numbers')).then(function(v){ OS.sms = smsDone(v); }, function(){});
   var b = (W._gcOT_status ? Promise.resolve(W._gcOT_status()) : W.fetch('/.netlify/functions/owner-setup', { cache: 'no-store' }).then(function(r){ return r.json(); }, function(){ return {}; }))
     .then(function(j){ if (j && j.ok) OS.checks = obj(j.checks); }, function(){});
-  return Promise.all([a, b]).then(function(){ OS.loading = false; OS.at = Date.now(); OS.sig = ''; paint(); return OS; }, function(){ OS.loading = false; return OS; });
+  return Promise.all([a, b, c]).then(function(){ if (OS.sms != null) OS.checks.sms_numbers = OS.sms; OS.loading = false; OS.at = Date.now(); OS.sig = ''; paint(); return OS; }, function(){ OS.loading = false; return OS; });
+}
+function smsDone(v){
+  if (v && typeof v === 'object' && !Array.isArray(v)) v = v.numbers || v.list || Object.keys(v).map(function(k){ var x = v[k]; return x && typeof x === 'object' ? Object.assign({ purpose: k }, x) : { purpose: k, number: x }; });
+  var L = arr(v).filter(function(x){ return s(x.number || x.phone || x.e164) && !x.deleted && x.active !== false; });
+  if (!L.length) return v == null ? null : false;
+  var p = function(re){ return L.some(function(x){ return re.test(low(x.purpose || x.use || x.role || x.kind || x.label)); }); };
+  return p(/sub/) && p(/cust|client|homeowner/);
 }
 function stateOf(it){
   var m = OS.done[it.id];
