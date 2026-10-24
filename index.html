@@ -175376,3 +175376,98 @@ W._gcTrain = { open: open_, decorate: decorate, modules: modules, progress: func
 try { console.log('[GC] 🎓 Training tab (patch TRAIN): _gcTrain'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-auto-pay">
+/* __GC_PATCH_AUTO_PAY__ — PAYROLL DRAFTS ITSELF ON THURSDAY (owner 10/24: "payroll should be made on Thursday",
+   ready for Friday pay day). Nothing is ever paid without an admin approving it.
+     • Every Thursday from 6 AM Central, the first admin or office computer that has the CRM open calculates the run
+       for the pay period that ends on Friday's payday, with the SAME engine and the same numbers as pressing
+       💵 Payroll → Calculate payroll (hours from Timesheets, salary, commission by the Wednesday cut-off rule,
+       Mississippi tax, bonuses), and sends it for approval ("pending" — Payroll → Approvals, the red alert).
+     • Pay periods are the CRM's own (every two weeks, ending on a payday Friday: _gcPayPeriodFor). On a Thursday
+       whose Friday is not a payday nothing is made.
+     • Never twice: a run already made for that payday or that period (by hand or by another computer) means nothing
+       is made; the auto run has one id per payday (PRauto_<payday>), so two computers write the same run.
+     • It waits 4 minutes after the CRM opens so the cloud copy of the runs has arrived first.
+     • The server checks at 10 AM Thursday (auto-wins.js, patch AUTO-PAY) and tells the office and the admins if no
+       draft exists yet (no CRM computer was open).
+   Console: _gcAutoPayDraft(true) makes it now (admin / office; still only for a payday tomorrow). */
+(function(){
+'use strict';
+if (window.__GC_PATCH_AUTO_PAY__) return; window.__GC_PATCH_AUTO_PAY__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var BOOT = Date.now(), WAIT = 4 * 60e3, busy = false, lastTry = '';
+function n2(v){ var x = parseFloat(v); return isFinite(x) ? x : 0; }
+function r2(v){ return Math.round(n2(v) * 100) / 100; }
+function central(now){
+  var parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now == null ? Date.now() : now));
+  var o = {}; parts.forEach(function(p){ o[p.type] = p.value; });
+  return { wd: o.weekday, hour: parseInt(o.hour, 10) % 24, ymd: o.year + '-' + o.month + '-' + o.day };
+}
+function addDays(day, n){ var d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+/* the same sums as Payroll → Run Payroll (totalsOf) */
+function totals(lines){
+  var t = { gross:0, fed:0, ss:0, med:0, addlMed:0, state:0, otherDed:0, net:0, employerSS:0, employerMed:0, futa:0, suta:0, hours:0 };
+  (lines || []).forEach(function(L){
+    if (L.status === 'denied') return;
+    ['gross','fed','ss','med','addlMed','state','otherDed','net','employerSS','employerMed','futa','suta'].forEach(function(k){ t[k] += n2(L[k]); });
+    t.hours += n2(L.hours) + n2(L.otHours);
+  });
+  Object.keys(t).forEach(function(k){ t[k] = r2(t[k]); });
+  t.irs941 = r2(t.fed + t.ss * 2 + t.med * 2 + t.addlMed);
+  t.employerTotal = r2(t.employerSS + t.employerMed + t.futa + t.suta);
+  t.totalCost = r2(t.gross + t.employerTotal);
+  return t;
+}
+function periodFor(payday){
+  var p = null; try { p = W._gcPayPeriodFor ? W._gcPayPeriodFor(payday) : null; } catch (e) {}
+  return p && p.payday === payday ? p : null;
+}
+function exists(all, payday, per){
+  return (all || []).some(function(r){ return r && !/denied|void|deleted|cancel/i.test(String(r.status || '')) && (String(r.payDate || '').slice(0, 10) === payday || (r.from === per.start && r.to === per.end)); });
+}
+async function draft(force, now){
+  var P = W.__GC_PAY; if (!P || busy) return { skipped: 'payroll is not ready on this computer' };
+  if (!(P.isAdmin() || P.isOffice())) return { skipped: 'only an admin or office computer makes the draft' };
+  var c = central(now);
+  if (c.wd !== 'Thu' || c.hour < 6) return { skipped: 'only on Thursday from 6 AM' };
+  var payday = addDays(c.ymd, 1), per = periodFor(payday);
+  if (!per) return { skipped: 'tomorrow (' + payday + ') is not a payday' };
+  busy = true;
+  try {
+    var all = await P.runs();
+    if (exists(all, payday, per)) return { skipped: 'a run for ' + payday + ' is already there' };
+    var set = await P.settings(), year = payday.slice(0, 4), lines = [];
+    var profs = (await P.profiles()).filter(function(p){ return p && p.active !== false; });
+    for (var i = 0; i < profs.length; i++) {
+      var pr = profs[i], key = pr.userId || pr.name;
+      var ytd = P.ytdFor(all, key, year, payday);
+      var L = await P.computeLine(pr, per.start, per.end, set, ytd, null, (W.__GC_PAY_EXTRAS || {})[key]);
+      L.ytdBefore = ytd;
+      if (n2(L.gross) > 0) lines.push(L);
+    }
+    if (!lines.length) return { skipped: 'nobody has pay in ' + per.start + ' → ' + per.end };
+    all = await P.runs();   /* once more, right before saving */
+    if (exists(all, payday, per)) return { skipped: 'a run for ' + payday + ' arrived meanwhile' };
+    var now2 = new Date().toISOString(), who = 'CRM (Thursday auto-draft)';
+    var run = { id: 'PRauto_' + payday, createdBy: who, createdAt: now2, from: per.start, to: per.end, payDate: payday, lines: lines, totals: totals(lines),
+      status: 'pending', submittedBy: who, submittedAt: now2, auto: true,
+      autoNote: 'Made by itself on Thursday ' + c.ymd + ' for Friday ' + payday + '. Commission follows the Wednesday cut-off; hours are the ones clocked by the time it ran. Check it, then approve each check.' };
+    all.push(run);
+    await P.saveRuns(all);
+    try { if (W._gcPayrollNotify) W._gcPayrollNotify(run); } catch (e) {}
+    try { console.log('[GC] 💵 Payroll draft for ' + payday + ' made and sent for approval (' + lines.length + ' checks, net ' + P.money(run.totals.net) + ')'); } catch (e) {}
+    return { ok: true, run: run };
+  } finally { busy = false; }
+}
+W._gcAutoPayDraft = function(force){ return draft(!!force); };
+W._gcAutoPayDraft._t = { draft: draft, totals: totals, central: central, periodFor: periodFor, exists: exists };
+RI.call(W, function(){
+  if (D.hidden || Date.now() - BOOT < WAIT) return;
+  var c = central(); if (c.wd !== 'Thu' || c.hour < 6) return;
+  var k = c.ymd + ':' + c.hour; if (k === lastTry) return; lastTry = k;   /* at most one try an hour */
+  draft(false).catch(function(){});
+}, 5 * 60e3);
+try { console.log('[GC] 💵 Thursday payroll draft armed (patch AUTO-PAY)'); } catch (e) {}
+})();
+</script>
