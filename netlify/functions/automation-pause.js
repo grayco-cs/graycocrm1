@@ -43,11 +43,18 @@ async function gcStaffAuth(event){
   const url = (process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
   const anon = process.env.SUPABASE_ANON_KEY || GC_SB_DEFAULT_ANON;
   let user = null;
-  try {
-    const r = await fetch(url + '/auth/v1/user', { headers: { apikey: anon, Authorization: 'Bearer ' + token } });
-    if (r.ok) user = await r.json();
-  } catch (e) {
-    return { ok: false, statusCode: 503, error: 'Could not reach the sign-in service. Try again.' };
+  /* patch PAUSEFIX: a throw or a 5xx from the sign-in service is tried once more before giving up (and a 5xx is "could not
+     reach", not "your sign-in expired"). */
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let busy = false;
+    try {
+      const r = await fetch(url + '/auth/v1/user', { headers: { apikey: anon, Authorization: 'Bearer ' + token } });
+      if (r.ok) user = await r.json();
+      else if (r.status >= 500 || r.status === 429) busy = true;
+    } catch (e) { busy = true; }
+    if (!busy) break;
+    if (attempt === 1) return { ok: false, statusCode: 503, error: 'Could not reach the sign-in service. Try again.' };
+    await new Promise(function(res){ setTimeout(res, 400); });
   }
   const email = String((user && user.email) || '').trim().toLowerCase();
   if (!email) return { ok: false, statusCode: 401, error: 'Your sign-in has expired. Sign in again.' };

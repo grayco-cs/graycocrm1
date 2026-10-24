@@ -430,6 +430,9 @@ function gcFetch(input, init){
 }
 gcFetch.__gcAuth = true;
 window.fetch = gcFetch;
+/* patch PAUSEFIX: the sign-in layer itself, for the few admin actions that must never be silenced by a later guard
+   (the 'stop asking a failing endpoint for 30 minutes' guard, the offline 503) — the Data-entry toggle. */
+window.__GC_AUTH_FETCH__ = gcFetch;
 
 /* supabase-js: every client for OUR project uses the person's token (REST and
    realtime). It is wrapped the moment the library puts itself on window. */
@@ -166934,9 +166937,34 @@ function toast(msg, bad){
     t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100200;background:' + (bad ? '#7f1d1d' : '#78350f') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3);max-width:90vw';
     D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
 }
-function j(path, opts){
-  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
-    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+/* patch PAUSEFIX: "Could not change it: 503". The 503 never came from the server (its errors always carry words): it was the
+   CRM's own guard that stops calling an endpoint for 30 minutes after 3 failures in a row (the minute-by-minute state check
+   had failed 3 times while the sign-in service was slow), or the offline guard. So these calls go straight through the
+   sign-in layer, under those guards, and the admin actions (turn on / off, record-only) try up to 3 more times
+   (0.8 s, 2 s, 4 s) when the connection is busy, then say so in plain words. */
+var PF_DELAYS = [800, 2000, 4000];
+function pfFetch(){ return (typeof W.__GC_AUTH_FETCH__ === 'function') ? W.__GC_AUTH_FETCH__ : W.fetch; }
+function pfBusy(st){ return st === 0 || st === 429 || st === 502 || st === 503 || st === 504; }
+function j(path, opts, critical){
+  var told = false;
+  function once(){
+    var p; try { p = pfFetch().call(W, path, opts); } catch (e) { p = Promise.reject(e); }
+    return Promise.resolve(p).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+      function(e){ return { error: '', __status: 0, __net: s(e && e.message) }; });
+  }
+  function attempt(n){
+    return once().then(function(o){
+      if (critical && pfBusy(o.__status) && n < PF_DELAYS.length) {
+        if (!told) { told = true; toast('The CRM\u2019s connection is busy \u2014 trying again\u2026'); }
+        return new Promise(function(res){ later(res, PF_DELAYS[n]); }).then(function(){ return attempt(n + 1); });
+      }
+      if (pfBusy(o.__status) && !s(o.error)) o.error = critical
+        ? 'The CRM could not reach the server after 4 tries. Check the internet connection and try again in a minute.'
+        : 'Cannot reach the server right now.';
+      return o;
+    });
+  }
+  return attempt(0);
 }
 
 /* ── the state (everyone reads it; the server's own answer, including "fail closed") ── */
@@ -166948,7 +166976,7 @@ function refresh(){
   });
 }
 function setOn(on, note){
-  return j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: !!on, note: s(note) }) }).then(function(o){
+  return j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: !!on, note: s(note) }) }, true).then(function(o){
     if (o && o.ok) { toast(on ? '⏸ Data-entry mode is ON — nothing goes to customers, subs or GCs.' : '▶ Data-entry mode is OFF — the CRM sends again.'); return refresh().then(function(){ return o; }); }
     toast('Could not change it: ' + (o.error || o.__status), true); return o;
   });
@@ -167038,7 +167066,7 @@ function recordAll(opts){
   function next(i){
     if (i >= list.length) return Promise.resolve();
     var x = list[i];
-    return j(PORTAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'approval', op: 'record', id: x.id }) }).then(function(o){
+    return j(PORTAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'approval', op: 'record', id: x.id }) }, true).then(function(o){
       if (o && o.ok && o.recorded) done++; else { failed++; if (errors.length < 5) errors.push(s(x.title || x.subject || x.id) + ': ' + s(o && (o.error || o.__status))); }
       onProgress(done + failed, list.length); return next(i + 1);
     });
