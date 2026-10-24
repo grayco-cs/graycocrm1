@@ -124773,7 +124773,7 @@ function isPmPerson(){
   return (((window._crm||{}).projects)||[]).some(function(p){ return p && low(p.pm || p.projectManager) === n; });
 }
 function showButton(){ if(!myEmail()) return false; return isAdmin() || isPmPerson() || list.some(pmIsMe); }
-function mine(){ return list.filter(waitingOnMe); }
+function mine(){ var m = list.filter(waitingOnMe); try { if (window._gcApprovalSortItems) return window._gcApprovalSortItems(m); } catch (e) {} return m; }   /* patch APPRORDER */
 window._gcCustApprovals = function(){ return { all: list.slice(), mine: mine(), count: mine().length, admin: isAdmin(), name: myName(), loadedAt: loadedAt }; };
 
 /* ── read the list (text or list), merged with what this page saw ── */
@@ -124845,7 +124845,7 @@ function markInvoiceSent(invId){
 window._gcApprovalAct = act;
 
 /* ── the list screen ── */
-var KIND = { invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
+var KIND = { portal_publish:'Put in customer portal', invoice:'Invoice e-mail (PDF)', portal_link:'Portal link (new job)', portal_docs:'New papers notice', final_invoice:'Final invoice', final_reminder:'Final invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead' };
 function kindOf(x){ return KIND[x.kind] || s(x.kind).replace(/_/g, ' '); }
 function preview(x){ return esc(s(x.text)).split(esc(PH)).join('<span style="color:#2563eb;text-decoration:underline">[portal link]</span>'); }
 function stepLabel(x){
@@ -124893,7 +124893,7 @@ function render(ov){
   if(sig && ov.__sig === sig) return;          /* nothing new: leave the screen (and anything being typed) alone */
   ov.__sig = sig;
   var keep = {}; body.querySelectorAll('._apCard').forEach(function(c){ var e = c.querySelector('._apEdit'), r = c.querySelector('._apRej'); keep[c.getAttribute('data-id')] = { e: e && e.style.display !== 'none' ? { s: c.querySelector('._apSubj').value, t: c.querySelector('._apText').value } : null, r: r && r.style.display !== 'none' ? c.querySelector('._apReason').value : null }; });
-  var vis = list.filter(visible).sort(function(a, b){ return s(b.createdAt).localeCompare(s(a.createdAt)); });
+  var vis = list.filter(visible).sort(function(a, b){ return s(b.createdAt).localeCompare(s(a.createdAt)); }); try { if (window._gcApprovalSortItems) vis = window._gcApprovalSortItems(vis); } catch (e) {}   /* patch APPRORDER */
   var me = vis.filter(waitingOnMe), rest = vis.filter(function(x){ return !waitingOnMe(x) && (x.status === 'waiting' || x.status === 'sending'); }), fin = vis.filter(function(x){ return done(x.status); }).slice(0, 30);
   var h = section('Waiting on you', me, 'Nothing is waiting on you.');
   if(isAdmin()) h += section('Waiting on the PM', rest, 'Nothing else is waiting.');
@@ -130936,8 +130936,8 @@ function post(body){
 window._gcAp2Items = function(){ return items().slice(); };
 
 /* ── the cards ── */
-var KIND = { portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign', pay_app:'Pay application', offer_letter:'Offer letter', walkthrough_sign:'Final walkthrough to sign' };
-var ICON = { invoice:'🧾', final_invoice:'🧾', final_reminder:'⏰', thank_you:'🎉', portal_link:'🔗', portal_docs:'📄', lien_waiver:'📜', contract:'✍️', selection_sign:'🎨', pay_app:'🏗', offer_letter:'🤝', walkthrough_sign:'🏁' };
+var KIND = { portal_publish:'Put in customer portal', portal_link:'Portal link', portal_docs:'New papers notice', final_invoice:'Final invoice e-mail', final_reminder:'Invoice reminder', lien_waiver:'Lien waiver', contract:'Contract', thank_you:'Thank-you e-mail', lead_first_contact:'First e-mail to a new lead', invoice:'Invoice e-mail', selection_sign:'Selections to sign', pay_app:'Pay application', offer_letter:'Offer letter', walkthrough_sign:'Final walkthrough to sign' };
+var ICON = { portal_publish:'📄', invoice:'🧾', final_invoice:'🧾', final_reminder:'⏰', thank_you:'🎉', portal_link:'🔗', portal_docs:'📄', lien_waiver:'📜', contract:'✍️', selection_sign:'🎨', pay_app:'🏗', offer_letter:'🤝', walkthrough_sign:'🏁' };
 function titleOf(x){
   if(x.title) return x.title;
   return (KIND[x.kind] || s(x.kind).replace(/_/g, ' ')) + ' — ' + (x.jobName || x.jobId || '') + (x.to ? ' to ' + x.to : '');
@@ -130949,8 +130949,9 @@ function card(x){
   var who = x.step === 'admin' ? 'Needs an admin (Wesley or Nick)' : 'Needs the PM' + (x.pm ? ' — ' + esc(x.pm) : '');
   var chain = (x.steps || []).length > 1 ? ' · ' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') : '';
   return '<div class="_ap2Card" data-id="' + id + '" style="background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-left:5px solid #16a34a;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;font-family:Inter,-apple-system,Arial,sans-serif">' +
+    (window._gcApprovalChip ? window._gcApprovalChip({ src: 'queue', id: x.id, kind: x.kind, title: x.title, escalated: x.escalated, __raw: x }) : '') +   /* patch APPRORDER */
     '<div style="font-weight:800;font-size:15px;line-height:1.3">' + (ICON[x.kind] || '✉️') + ' ' + esc(titleOf(x)) + '</div>' +
-    '<div style="font-size:12px;color:#475569;margin-top:3px">' + esc(KIND[x.kind] || x.kind) + (x.jobName ? ' · ' + esc(x.jobName) : '') + ' · ' + (x.channel === 'sms' ? '💬 text' : '✉️ ' + esc(x.to)) + '</div>' +
+    '<div style="font-size:12px;color:#475569;margin-top:3px">' + esc(KIND[x.kind] || x.kind) + (x.jobName ? ' · ' + esc(x.jobName) : '') + ' · ' + (x.channel === 'sms' ? '💬 text' : x.channel === 'portal' ? '📄 customer portal — no e-mail' : '✉️ ' + esc(x.to)) + '</div>' +
     '<div style="font-size:12px;color:#92400e;margin-top:2px">' + who + esc(chain) + '</div>' +
     ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
     (x.lastError ? '<div style="font-size:12px;color:#b91c1c;margin-top:2px">Last try: ' + esc(x.lastError) + '</div>' : '') +
@@ -130962,7 +130963,7 @@ function card(x){
     '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px">' +
       '<button type="button" class="_ap2Prev" style="background:none;border:none;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;padding:4px 0;text-decoration:underline">Preview / Edit</button>' +
-      '<span style="font-size:11px;color:#64748b">' + (last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +
+      '<span style="font-size:11px;color:#64748b">' + (x.kind === 'portal_publish' ? 'Approve puts it in the customer’s portal' : last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +
     '</div></div>';
 }
 function act(id, op, extra){
@@ -130971,7 +130972,7 @@ function act(id, op, extra){
   return Promise.resolve(window._gcApprovalAct(id, op, extra)).then(function(j){
     delete busy[id]; kept[id] = Date.now();
     j = j || {};
-    if(j.ok) notes[id] = j.sent ? '✅ Sent to ' + s(j.item && j.item.to) : (op === 'reject' ? '✖ Not approved — it will not be sent.' : (j.next === 'admin' ? '✅ Approved — now waiting on Wesley or Nick.' : '✅ Done.'));
+    if(j.ok) notes[id] = j.sent ? (j.item && j.item.kind === 'portal_publish' ? '✅ Approved — now in the customer’s portal' : '✅ Sent to ' + s(j.item && j.item.to)) : (op === 'reject' ? '✖ Not approved — it will not be sent.' : (j.next === 'admin' ? '✅ Approved — now waiting on Wesley or Nick.' : '✅ Done.'));
     else notes[id] = '⚠ ' + (j.error || 'Try again.');
     paintAll(true);
     try{ if(window._gcApprovalsRefresh) window._gcApprovalsRefresh().then(function(){ paintAll(true); }); }catch(e){}
@@ -156946,11 +156947,11 @@ function invSignList(){
 function samePerson(a, b){ return !!s(a) && low(a) === low(b); }
 function escalatedQ(x, now){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || (now - Date.parse(x.adminSince || x.updatedAt || x.createdAt || 0)) >= ESC_MS)); }
 
-var KIND = { portal_link: 'Portal link', portal_docs: 'New papers notice', final_invoice: 'Final invoice e-mail', final_reminder: 'Invoice reminder',
+var KIND = { portal_publish: 'Put in customer portal', portal_link: 'Portal link', portal_docs: 'New papers notice', final_invoice: 'Final invoice e-mail', final_reminder: 'Invoice reminder',
   lien_waiver: 'Lien waiver', contract: 'Contract', thank_you: 'Thank-you e-mail', lead_first_contact: 'First e-mail to a new lead', invoice: 'Invoice e-mail',
   selection_sign: 'Selections to sign', co: 'Change order', change_order: 'Change order', portal_post: 'Portal post', announcement: 'Announcement',
   weekly_update: 'Weekly update', receipt: 'Payment receipt', review_request: 'Review request', maintenance: 'Maintenance tips' };
-var ICON = { invoice: '🧾', final_invoice: '🧾', final_reminder: '⏰', thank_you: '🎉', portal_link: '🔗', portal_docs: '📄', lien_waiver: '📜', contract: '✍️',
+var ICON = { portal_publish: '📄', invoice: '🧾', final_invoice: '🧾', final_reminder: '⏰', thank_you: '🎉', portal_link: '🔗', portal_docs: '📄', lien_waiver: '📜', contract: '✍️',
   selection_sign: '🎨', co: '📝', change_order: '📝', portal_post: '📸', announcement: '📣' };
 function kindLabel(k){ k = s(k); return KIND[k] || (/^mkt|social|post/i.test(k) ? 'Marketing post' : k.replace(/_/g, ' ').replace(/^\w/, function(c){ return c.toUpperCase(); })) || 'Approval'; }
 
@@ -156969,7 +156970,7 @@ function rowQueue(x, mine, now){
   return { key: 'ap2:' + x.id, id: s(x.id), src: 'queue', kind: s(x.kind), kindL: kindLabel(x.kind), icon: ICON[x.kind] || (x.channel === 'sms' ? '💬' : '✉️'),
     title: s(x.title) || (kindLabel(x.kind) + (x.to ? ' to ' + s(x.to) : '')), pid: s(x.jobId || x.pid), job: jobLine(p, x.jobName), pm: s(x.pm) || s(p && p.pm),
     step: step, waits: waits, since: since, clock: clock, amount: amt, mine: mine, escalated: step === 'office', chain: chain,
-    approve: x.status === 'waiting' && (mine || realAdmin()) ? { l: (realAdmin() || lastStep) ? '✅ Approve & send' : '✅ Approve → Wesley / Nick', f: function(){ return approveQueue(x.id); } } : null,
+    approve: x.status === 'waiting' && (mine || realAdmin()) ? { l: x.kind === 'portal_publish' ? '✅ Approve — put in portal' : (realAdmin() || lastStep) ? '✅ Approve & send' : '✅ Approve → Wesley / Nick', f: function(){ return approveQueue(x.id); } } : null,
     open: { l: 'Open / Edit', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } },
     doc: invId ? { l: '🧾 Invoice PDF', f: function(){ call('_gcViewInvoicePDF', invId, s(x.jobId || x.pid)); } } : { l: x.channel === 'sms' ? '💬 The text' : '✉️ The e-mail', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } } };
 }
@@ -157136,6 +157137,7 @@ function btns(r, where){
 }
 function rowHtml(r, now, where){
   return '<div class="apx-row' + (r.escalated ? ' esc' : '') + (r.mine ? ' mine' : '') + '" data-k="' + esc(r.key) + '">'
+    + (W._gcApprovalChip ? W._gcApprovalChip(r) : '')   /* patch APPRORDER */
     + '<div class="apx-t">' + r.icon + ' <span class="apx-kl">' + esc(r.kindL) + '</span> · ' + esc(r.title) + '</div>'
     + (r.job ? '<div class="apx-j">🏗 ' + esc(r.job) + '</div>' : '')
     + '<div class="apx-m"><span class="apx-w ' + esc(r.step) + '">Waits on: ' + esc(r.mine ? 'you' + (r.step !== 'me' && r.waits ? ' (' + r.waits + ')' : '') : r.waits) + '</span>'
@@ -157150,7 +157152,7 @@ function openJob(pid){
   try { localStorage.setItem('grayco_openpid', pid); } catch (e) {}
   try { if (W._setView) W._setView('projects'); } catch (e) {}
 }
-function sortRows(l){ return l.slice().sort(function(a, b){ return (b.escalated - a.escalated) || ((a.since || 9e15) - (b.since || 9e15)); }); }
+function sortRows(l){ if (W._gcApprovalSort) { try { return W._gcApprovalSort(l); } catch (e) { warn(e); } } return l.slice().sort(function(a, b){ return (b.escalated - a.escalated) || ((a.since || 9e15) - (b.since || 9e15)); }); }   /* patch APPRORDER */
 
 function chipsFor(sc, rows){
   var me = rows.filter(function(r){ return r.mine; }).length;
@@ -157178,6 +157180,7 @@ function filtered(sc, rows){
 function opt(v, l, cur){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; }
 function tabHtml(){
   ACTS = {};
+  try { if (W._gcApprovalSeenTick) W._gcApprovalSeenTick(); } catch (e) {}   /* patch APPRORDER: 🆕 = in since you last opened it */
   var B = build(), sc = B.scope, rows = B.rows, now = B.now;
   if (sc.kind === 'none') return '<div class="apx"><div class="apx-h"><h2>📋 Approvals</h2></div><div class="apx-pv">👁 Viewing as <b>' + esc(sc.role) + '</b> — nothing waits on this profile. Approvals go to the job’s PM, then Wesley or Nick (the office after 24 hours).</div></div>';
   var chips = chipsFor(sc, rows), list = filtered(sc, rows);
@@ -174583,5 +174586,154 @@ RI.call(W, loop, 1500); later(loop, 3000);
 W._gcOwnerSetup = { items: ITEMS, groups: GROUPS, state: function(){ return { done: OS.done, checks: OS.checks, left: left() }; }, stateOf: stateOf, refresh: refresh, tick: tick, paint: function(){ OS.sig = ''; paint(); } };
 W._gcMoneyMail = { pull: pull, receipts: receipts, invoicesMade: function(){ return MM.made; }, makeInvoices: makeInvoices, open: openReceipts, state: function(){ return MM; } };
 try { console.log('[GC] 🔧 Owner setup on the admins\' To-Do · 📧 receipts@ / invoices@ (patch OWNERTODO)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-approrder">
+/* __GC_PATCH_APPRORDER__ ═════════════════════════════════════════════════════
+   GrayCo — Approvals in order of importance, newest first; portal items (patches APPRORDER + PORTALGATE, owner 10/24).
+
+   Owner: "approvals for everyone need to be in order of importance, things that require asap attention need to always
+   be at top and most recent things put into approvals need to show at top as well."
+
+   ONE ORDER, everywhere approvals are listed (📋 Approvals tab, the To-Do pin "Approvals waiting on you", the green
+   customer cards, the APPROVE overlay): window._gcApprovalSort(rows) / _gcApprovalSortItems(queueItems).
+     🔴 ASAP     — marked urgent · overdue · a bid due within 24 h · a contract / signature that work is waiting on ·
+                   money stuck (a payment to match, a final invoice, a check to sign) · an insurance / safety deadline
+                   within 4 h · a customer waiting on a reply for 4+ work hours · escalated (24 h at Wesley / Nick)
+     🟠 Soon     — due within 3 days · anything that goes to a customer (e-mail, text, portal, proposal, invoice) ·
+                   a sub invoice (pay list closes Wednesday)
+     ⚪ Routine  — the rest
+   Inside a tier: the newest first. Each row shows its tier chip with a short why ("Bid due in 6 h") and 🆕 when it
+   came in after you last opened 📋 Approvals. An item may carry urgency ('asap' | 'soon') and dueAt in its meta.
+
+   PORTALGATE in the CRM: a "Put in the customer portal" approval (kind portal_publish) reads as such (no e-mail),
+   and each 🏠 Portal card (.gcq-card) shows "⏳ Waiting for approval — not in portal: …" for its job's pending items.
+   Console: _gcApprovalTier(row), _gcApprovalSort(rows)
+   ═════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_APPRORDER__) return; window.__GC_PATCH_APPRORDER__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var H = 3600e3, DAY = 24 * H;
+function s(v){ return (v == null ? '' : String(v)).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function ms(v){ if (typeof v === 'number') return v > 1e11 ? v : 0; var t = Date.parse(s(v)); return isFinite(t) ? t : 0; }
+function lsList(k){ try { var v = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function day(t){ try { return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch (e) { return ''; } }
+function hrs(x){ x = Math.max(0, x); return x >= 48 * H ? Math.round(x / DAY) + ' days' : Math.max(1, Math.round(x / H)) + ' h'; }
+/* work hours (Mon–Fri, 8 AM – 5 PM, this computer's clock) between two times, capped at 200 */
+function workHours(a, b){
+  if (!a || !b || b <= a) return 0;
+  var n = 0, t = a; if (b - a > 40 * DAY) t = b - 40 * DAY;
+  while (t < b && n < 200) { var d = new Date(t), wd = d.getDay(), h = d.getHours(); if (wd > 0 && wd < 6 && h >= 8 && h < 17) n += Math.min(1, (b - t) / H); t += H; }
+  return n;
+}
+function queueAll(){ try { var c = W._gcCustApprovals ? W._gcCustApprovals() : null; return arr(c && c.all); } catch (e) { return []; } }
+function invById(id){ var l = arr((W._crm || {}).invoices); for (var i = 0; i < l.length; i++) if (l[i] && s(l[i].id) === s(id)) return l[i]; return null; }
+function rawFor(r){
+  if (!r) return null;
+  if (r.__raw) return r.__raw;
+  var id = s(r.id);
+  if (r.src === 'queue') return queueAll().filter(function(x){ return s(x.id) === id; })[0] || null;
+  if (r.src === 'sub') return lsList('gc_sub_approvals').filter(function(x){ return s(x.id) === id || s(x.invId) === id; })[0] || null;
+  if (r.src === 'inv') return invById(id);
+  if (r.src === 'exp') { try { return arr(W._gcExpenseApprovalsFor && W._gcExpenseApprovalsFor()).filter(function(x){ return s(x.id || x.expId) === id; })[0] || null; } catch (e) { return null; } }
+  return null;
+}
+function createdOf(r, x){ x = x || {}; return ms(x.createdAt) || ms(x.submittedAt) || ms(x.created) || ms(x.enteredAt) || ms(x.queuedAt) || ms(x.at) || ms(x.date) || (r && r.since > 1420070400000 ? r.since : 0); }
+var CUST = /portal|proposal|invoice|estimate|^sign_|selection|thank|final|reminder|receipt|welcome|lead_first|weekly_update|review_request|warranty|winback|walkthrough|cneeds|maint/;
+var STAFF_ONLY = /announcement|^mkt|social|news/;
+/* { t: 0 ASAP | 1 Soon | 2 Routine, why } */
+function tierOf(r){
+  r = r || {}; var now = Date.now(), x = rawFor(r) || {}, m = x.meta || {}, kind = low(r.kind || x.kind), title = s(r.title || x.title);
+  var urg = low(m.urgency || x.urgency);
+  if (urg === 'asap' || m.urgent === true || x.urgent === true || arr(x.flags).some(function(f){ return /urgent/i.test(s(f)); })) return { t: 0, why: 'Marked urgent' };
+  if (r.escalated || x.escalated) return { t: 0, why: 'Waiting over 24 h — the office can take it' };
+  var inv = m.invoiceId ? invById(m.invoiceId) : (r.src === 'inv' ? x : null);
+  var due = ms(m.dueAt) || ms(m.dueDate) || ms(x.dueAt) || ms(x.dueDate) || ms(x.due) || (inv ? ms(inv.dueDate || inv.due) : 0);
+  if (due && due < now - H) return { t: 0, why: 'Overdue since ' + day(due) };
+  var bid = ms(m.bidDue) || ms(m.bidDueAt) || ms(x.bidDue) || ms(x.bidDueAt);
+  if (bid && bid > now && bid - now <= DAY) return { t: 0, why: 'Bid due in ' + hrs(bid - now) };
+  if (/sign_contract|^contract|contract_override|blocks?_?start/.test(kind) || m.blocksStart === true || /work can.?t start|contract (not )?signed|override/i.test(title)) return { t: 0, why: 'Work can’t start until this is done' };
+  if (/final_invoice|payment_match|match_payment|deposit_match|check_sign|sign_check/.test(kind) || /payment (received|to match)|check(s)? to sign|match (the )?payment/i.test(title)) return { t: 0, why: 'Money waiting' };
+  var sla = ms(m.slaAt) || ms(x.slaAt);
+  if (/sla|safety|mitig|claim|ins_/.test(kind) && sla && sla - now <= 4 * H) return { t: 0, why: sla < now ? 'Insurance / safety deadline passed' : 'Insurance / safety deadline in ' + hrs(sla - now) };
+  var made = createdOf(r, x);
+  if (/reply|lead_first_contact|customer_message|cust_reply/.test(kind) && made && workHours(made, now) >= 4) return { t: 0, why: 'Customer waiting ' + Math.round(workHours(made, now)) + ' work hours' };
+  if (urg === 'soon' && kind !== 'portal_publish') return { t: 1, why: 'Needs a look soon' };
+  if (due && due - now <= 3 * DAY) return { t: 1, why: 'Due ' + day(due) };
+  if (kind === 'portal_publish') return { t: 1, why: 'Goes in the customer’s portal' };
+  if (r.src === 'sub' || kind === 'sub_invoice') return { t: 1, why: 'Sub pay list closes Wednesday' };
+  if (r.src === 'inv' || kind === 'invoice_signoff') return { t: 1, why: 'Invoice for the customer' };
+  if ((r.src === 'queue' || x.kind) && !STAFF_ONLY.test(kind) && (CUST.test(kind) || r.src === 'queue')) return { t: 1, why: x.channel === 'sms' ? 'Text to the customer' : 'Goes to the customer' };
+  return { t: 2, why: '' };
+}
+function sortRows(l){
+  var dec = arr(l).map(function(r, i){ var t = tierOf(r); return { r: r, t: t.t, c: createdOf(r, rawFor(r)), i: i }; });
+  dec.sort(function(a, b){ return (a.t - b.t) || ((b.c || 0) - (a.c || 0)) || (a.i - b.i); });
+  return dec.map(function(d){ return d.r; });
+}
+function sortItems(l){ return sortRows(arr(l).map(function(x){ return { src: 'queue', id: x.id, kind: x.kind, title: x.title, escalated: x.escalated, __raw: x, __item: x }; })).map(function(r){ return r.__item; }); }
+W._gcApprovalTier = tierOf;
+W._gcApprovalSort = sortRows;
+W._gcApprovalSortItems = sortItems;
+
+/* 🆕: in after you last opened 📋 Approvals (the time it was opened before this visit) */
+function me(){ try { var A = W.__GC_AUTH__; return low(A && A.email && A.email()) || low(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+var seenPrev = null, lastTick = 0;
+function seenKey(){ return 'gc_appr_seen_' + me(); }
+W._gcApprovalSeenTick = function(){
+  var now = Date.now();
+  if (seenPrev === null || now - lastTick > 120e3) {
+    var v = 0; try { v = +localStorage.getItem(seenKey()) || 0; } catch (e) {}
+    seenPrev = v || (now - DAY);
+    try { localStorage.setItem(seenKey(), String(now)); } catch (e) {}
+  }
+  lastTick = now;
+};
+function isNew(r){ var prev = seenPrev; if (prev === null) { try { prev = +localStorage.getItem(seenKey()) || (Date.now() - DAY); } catch (e) { prev = Date.now() - DAY; } } var c = createdOf(r, rawFor(r)); return !!(c && c > prev); }
+W._gcApprovalIsNew = isNew;
+var TIER = [['t0', '🔴 ASAP'], ['t1', '🟠 Soon'], ['t2', '⚪ Routine']];
+W._gcApprovalChip = function(r){
+  var t = tierOf(r), T = TIER[t.t];
+  return '<div class="gcao-line"><span class="gcao-chip ' + T[0] + '">' + T[1] + (t.why ? ' · ' + esc(t.why) : '') + '</span>' + (isNew(r) ? '<span class="gcao-new">🆕 new</span>' : '') + '</div>';
+};
+try {
+  var st = D.createElement('style'); st.id = 'gcao-css';
+  st.textContent = '.gcao-line{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 4px}' +
+    '.gcao-chip{display:inline-block;font:700 11.5px/1.3 Inter,-apple-system,Arial,sans-serif;border-radius:999px;padding:2px 8px;border:1px solid transparent}' +
+    '.gcao-chip.t0{background:#fee2e2;color:#991b1b;border-color:#fecaca}.gcao-chip.t1{background:#ffedd5;color:#9a3412;border-color:#fed7aa}.gcao-chip.t2{background:#f1f5f9;color:#475569;border-color:#e2e8f0}' +
+    '.gcao-new{font:800 11px/1.3 Inter,-apple-system,Arial,sans-serif;background:#dbeafe;color:#1e40af;border-radius:999px;padding:2px 7px}' +
+    '.gcao-wait{margin-top:8px;padding:8px 10px;border:1px dashed #f59e0b;background:#fffbeb;border-radius:10px;font-size:12.5px;color:#78350f;line-height:1.4}' +
+    '.gcao-wait b{color:#92400e}.gcao-wait button{margin-left:6px;border:1px solid #d97706;background:#fff;color:#92400e;border-radius:8px;font-weight:700;font-size:12px;padding:3px 8px;cursor:pointer}';
+  (D.head || D.documentElement).appendChild(st);
+} catch (e) {}
+
+/* ⏳ the job's 🏠 Portal card: what waits for an approval before the customer sees it (no server call: the queue) */
+function pendingFor(pid){
+  pid = s(pid); if (!pid) return [];
+  return queueAll().filter(function(x){ return x && x.kind === 'portal_publish' && s(x.jobId) === pid && (x.status === 'waiting' || x.status === 'sending'); });
+}
+var sigs = typeof WeakMap === 'function' ? new WeakMap() : null;
+function paintCard(card){
+  var pid = s(card.getAttribute('data-pid'));
+  var items = pendingFor(pid);
+  var have = card.querySelector(':scope > .gcao-wait');
+  var sig = items.map(function(x){ return x.id + ':' + x.status + ':' + x.step + ':' + s(x.title); }).join(',');
+  if (!items.length) { if (have) have.remove(); return; }
+  if (have && sigs && sigs.get(card) === sig) return;
+  if (sigs) sigs.set(card, sig);
+  var h = '<b>⏳ Waiting for approval — not in portal:</b> ' + items.slice(0, 6).map(function(x){ return esc(s(x.title).replace(/^📄 Put in the customer portal — /, '')); }).join(' · ') + (items.length > 6 ? ' · +' + (items.length - 6) + ' more' : '') +
+    '<button type="button" class="gcao-go">Open Approvals</button>';
+  if (!have) { have = D.createElement('div'); have.className = 'gcao-wait'; have.setAttribute('data-gc-keep', '1'); card.appendChild(have); }
+  if (have.innerHTML !== h) have.innerHTML = h;
+  var go = have.querySelector('.gcao-go'); if (go) go.onclick = function(){ try { if (W._setView) W._setView('approvals'); else if (W._gcOpenApprovals) W._gcOpenApprovals(); } catch (e) {} };
+}
+/* the 🏠 Portal cards on screen (patch Q: .gcq-card[data-pid]) — a cheap look every 2 s, a write only when what waits changed */
+RI.call(W, function(){ try { if (D.hidden) return; var cs = D.querySelectorAll('.gcq-card[data-pid]'); for (var i = 0; i < cs.length; i++) paintCard(cs[i]); } catch (e) {} }, 2000);
+try { console.log('[GC] Approvals in order of importance, newest first; portal approvals (patches APPRORDER + PORTALGATE)'); } catch (e) {}
 })();
 </script>
