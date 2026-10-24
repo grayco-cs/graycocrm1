@@ -167829,8 +167829,10 @@ function status(force){
   if (!force && STATUS && Date.now() - STATUS_AT < 120000) return Promise.resolve(STATUS);
   return j(FN + '?status=1').then(function(o){ if (o && o.ok) { STATUS = o; STATUS_AT = Date.now(); } return STATUS; });
 }
-function send(to, text, pid){
-  return j(FN + '?send=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: to, text: text, pid: pid || '' }) }).then(function(o){
+function send(to, text, pid, anyway){
+  return j(FN + '?send=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: to, text: text, pid: pid || '', checkQuiet: !anyway }) }).then(function(o){
+    /* patch SMSROUTE: after 8 PM the CRM asks before texting */
+    if (o && o.quiet && !anyway) { var yes = false; try { yes = W.confirm('It is after 8 PM (or before 7 AM). Texts normally wait until morning. Send it now anyway?'); } catch (e) {} if (yes) return send(to, text, pid, true); }
     if (o && o.ok && o.message) { try { var l = msgs(); if (!l.some(function(m){ return m && m.id === o.message.id; })) { l.push(o.message); localStorage.setItem('gc_job_messages', JSON.stringify(l)); } } catch (e) {} }
     return o;
   });
@@ -167954,6 +167956,27 @@ function rulesHtml(rules){
       + '<textarea data-f="answer" rows="2" maxlength="480" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif">' + esc(r.answer) + '</textarea></div>';
   }).join('');
 }
+/* patch SMSROUTE: 📱 Our numbers & who gets each text */
+var PURP = [['subs', 'Subs'], ['customers', 'Customers'], ['leads', 'Marketing / leads'], ['billing', 'Billing'], ['insurance', 'Insurance'], ['other', 'Other']];
+function numRow(n){
+  n = n || {};
+  return '<div class="gcsr-num" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0"><input data-n="number" placeholder="(901) 555-0100" value="' + esc(n.number ? '(' + n.number.slice(0, 3) + ') ' + n.number.slice(3, 6) + '-' + n.number.slice(6) : '') + '" style="width:140px;border:1px solid #cbd5e1;border-radius:6px;padding:5px">'
+    + '<select data-n="purpose" style="border:1px solid #cbd5e1;border-radius:6px;padding:5px">' + PURP.map(function(p){ return '<option value="' + p[0] + '"' + (n.purpose === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select>'
+    + '<input data-n="label" placeholder="Name (optional)" value="' + esc(n.label || '') + '" style="width:150px;border:1px solid #cbd5e1;border-radius:6px;padding:5px">'
+    + '<button type="button" data-g="numDel" style="border:0;background:#fee2e2;color:#991b1b;border-radius:6px;padding:4px 8px;cursor:pointer">✕</button></div>';
+}
+function numbersHtml(set, st){
+  var env = arr(st && st.numbers).filter(function(x){ return x.from === 'netlify'; });
+  return '<div style="margin-top:14px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fafc"><div style="font-weight:800">📱 Our numbers &amp; who gets each text</div>'
+    + '<div style="font-size:12px;color:#475569;margin:4px 0 8px">Each line has its own number: subs text the Subs number, customers the Customers number, leads and marketing the Marketing number. Texts are routed first by the number they came in on, then by who sent them. Texts we send go out from the matching number. With only one number, everything still works through it. '
+    + 'Every number needs the same Twilio webhook and its own A2P campaign.</div>'
+    + (env.length ? '<div style="font-size:12px;margin-bottom:6px">From Netlify: ' + env.map(function(x){ return '<b>(' + x.number.slice(0, 3) + ') ' + x.number.slice(3, 6) + '-' + x.number.slice(6) + '</b> — ' + esc(x.label); }).join(' · ') + '</div>' : '')
+    + '<div data-g="numList">' + arr(set.numbers).map(numRow).join('') + '</div>'
+    + '<button type="button" data-g="numAdd" style="border:0;border-radius:6px;padding:5px 10px;background:#e2e8f0;cursor:pointer;margin-top:4px">＋ Add a number</button>'
+    + '<div style="margin-top:8px">Leads &amp; marketing person (gets texts from leads with no owner): <input data-g="leadsPerson" value="' + esc(set.leadsPerson || '') + '" placeholder="name@grayco-cs.com" style="width:240px;border:1px solid #cbd5e1;border-radius:6px;padding:5px"></div>'
+    + '<div style="font-size:12px;color:#334155;margin-top:8px;line-height:1.5"><b>Who gets a text:</b> Subs line → the PM of the job that sub is on today / next (unknown number → the office) · Customers line → the customer\'s job PM · Marketing line → the lead\'s owner, a new number becomes a lead · Billing line → the office · Insurance line → the Senior Insurance PM · plus whoever texted them last (2 weeks); unknown → the office.<br>'
+    + '<b>On top:</b> invoice / payment words → the office too · claim / adjuster → the Senior Insurance PM · leak / flood / fire / emergency → 🔴 ASAP to the person on call and the PM. Each one gets a phone alert, the text is tagged for them in 💬 Messages, and a "Text back" to-do when nobody answered automatically.</div></div>';
+}
 function readForm(box){
   var o = JSON.parse(JSON.stringify(SET || {}));
   o.autoOn = !!box.querySelector('[data-g="autoOn"]').checked;
@@ -167963,6 +167986,9 @@ function readForm(box){
   o.when = box.querySelector('[data-g="when"]').value;
   o.maxPerDay = parseInt(box.querySelector('[data-g="maxPerDay"]').value, 10) || 4;
   o.relayTo = s(box.querySelector('[data-g="relayTo"]').value).split(/[\s,;]+/).filter(Boolean);
+  /* patch SMSROUTE: our numbers + the leads & marketing person */
+  o.numbers = Array.prototype.map.call(box.querySelectorAll('.gcsr-num'), function(el){ return { number: s(el.querySelector('[data-n="number"]').value), purpose: el.querySelector('[data-n="purpose"]').value, label: s(el.querySelector('[data-n="label"]').value) }; }).filter(function(x){ return x.number; });
+  o.leadsPerson = s((box.querySelector('[data-g="leadsPerson"]') || {}).value);
   o.rules = Array.prototype.map.call(box.querySelectorAll('.gctx-rule'), function(el){
     var r = (SET.rules || [])[+el.getAttribute('data-i')] || {};
     return Object.assign({}, r, { on: !!el.querySelector('[data-f="on"]').checked, label: el.querySelector('[data-f="label"]').value,
@@ -167985,13 +168011,14 @@ function renderAdmin(box){
       + '<br><span style="color:#475569">Twilio → Phone Numbers → the number → "A message comes in": <code>' + esc(st.webhook || '') + '</code> (HTTP POST). US business texting also needs A2P 10DLC registration in Twilio.</span>'
       + (line ? '<div style="margin-top:6px">For the website and marketing: <b class="gctx-line">' + esc(line) + '</b> <button type="button" data-g="copy" style="border:0;border-radius:6px;padding:3px 8px;background:#e2e8f0;cursor:pointer">Copy</button></div>' : '') + '</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">'
-      + '<label><input type="checkbox" data-g="autoOn"' + (SET.autoOn ? ' checked' : '') + '> Send automatic answers</label>'
+      + '<label><input type="checkbox" data-g="autoOn"' + (SET.autoOn ? ' checked' : '') + '> Automatic text answers: on <span style="color:#64748b">(the 1–5 menu for customers + the approved answers)</span></label>'
       + '<label>When <select data-g="when"><option value="always"' + (SET.when === 'always' ? ' selected' : '') + '>any time</option><option value="after_hours"' + (SET.when === 'after_hours' ? ' selected' : '') + '>only after hours</option><option value="business_hours"' + (SET.when === 'business_hours' ? ' selected' : '') + '>only business hours</option></select></label>'
       + '<label><input type="checkbox" data-g="fallbackOn"' + (SET.fallbackOn ? ' checked' : '') + '> "We\'ll text you back" when nothing fits</label>'
       + '<label><input type="checkbox" data-g="aiClassify"' + (SET.aiClassify ? ' checked' : '') + '> Let Claude pick the closest answer (it never writes its own)</label>'
       + '<label>Max per number a day <input data-g="maxPerDay" type="number" min="1" max="10" value="' + esc(SET.maxPerDay) + '" style="width:54px"></label></div>'
       + '<div style="margin-top:10px">E-mail every text to (GrayCo addresses only): <input data-g="relayTo" value="' + esc(arr(SET.relayTo).join(', ')) + '" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px">'
       + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="relayAdmins"' + (SET.relayAdmins ? ' checked' : '') + '> also the admins · the job\'s PM always · emergencies also the Senior Insurance PM</label></div>'
+      + numbersHtml(SET, st)
       + '<div style="margin-top:12px;font-weight:800">Answers (first match wins, top to bottom). Emergency and HELP always answer; STOP always stops.</div>'
       + rulesHtml(SET.rules || [])
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div>'
@@ -168000,6 +168027,8 @@ function renderAdmin(box){
     box.onclick = function(ev){
       var g = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g');
       if (g === 'copy') { try { navigator.clipboard.writeText(line); toast('Copied: ' + line); } catch (e) {} }
+      if (g === 'numAdd') { var nl = box.querySelector('[data-g="numList"]'); if (nl) nl.insertAdjacentHTML('beforeend', numRow({ purpose: 'customers' })); }
+      if (g === 'numDel') { var row = ev.target.closest('.gcsr-num'); if (row) row.remove(); }
       if (g === 'save') {
         var v = readForm(box); ev.target.disabled = true;
         j(FN + '?settings=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: v }) }).then(function(r){
@@ -168029,6 +168058,12 @@ if (!addSection()) { var tries2 = 0, iv2 = RI.call(W, function(){ if (addSection
 RI.call(W, function(){ if (!D.hidden) decorateUnsorted(); }, 2000);
 later(deepLink, 1500);
 later(function(){ status(); }, 4000);
+/* patch SMSROUTE: our numbers [{ number, purpose: subs | customers | marketing | billing | insurance | other }] */
+function pubNums(l){ var hasC = l.some(function(x){ return x.purpose === 'customers'; }); return l.map(function(x){ return { number: x.number, purpose: x.purpose === 'leads' ? 'marketing' : x.purpose === 'main' ? (hasC ? 'other' : 'customers') : x.purpose }; }); }
+W._gcSmsNumbers = function(){   /* an array once the texting status is loaded, else a promise of it */
+  if (STATUS && Array.isArray(STATUS.numbers)) return pubNums(STATUS.numbers);
+  return status().then(function(st){ return st && Array.isArray(st.numbers) ? pubNums(st.numbers) : []; }, function(){ return []; });
+};
 W._gcTexts = { status: status, send: send, textUsLine: textUsLine, open: function(pid){ if (W._gcOpenJobMessages) W._gcOpenJobMessages(pid); }, _phoneFor: phoneFor, _decorate: decorateUnsorted };
 try { console.log('[GC] 💬 Text us: Job Messages "📱 Text them", Unsorted "📱 Text back", Admin → 💬 Text auto-answers (patch TXT) — _gcTexts'); } catch (e) {}
 })();

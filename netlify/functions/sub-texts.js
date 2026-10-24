@@ -94,7 +94,9 @@ async function run(opts){
     let mine = false;
     await patchState(st2 => { const r = st2.rows[d.key] = Object.assign({}, d.rec, st2.rows[d.key] || {}); const f = d.kind === 'evening' ? 'eveAt' : 'mornAt'; if (r[f]) return undefined; r[f] = nowIso(); if (!r.status || r.status === 'sent') r.status = 'sent'; mine = true; return true; });
     if (!mine) continue;
-    const r = await MC().sendSms(d.rec.phone, d.text);
+    /* patch SMSROUTE: from the Subs number (TWILIO_FROM_SUBS / Admin → 💬 Our numbers), else the default */
+    let subFrom = ''; try { const S0 = require('./_lib/sms.js'); subFrom = require('./_lib/smsroute.js').fromFor('subs', S0.settings(await L().kvGet(S0.SETTINGS_KEY)), env); } catch (e) {}
+    const r = await MC().sendSms(d.rec.phone, d.text, subFrom);
     if (r.ok) {
       out.sent++;
       const mid = 'SUBTO_' + crypto.createHash('sha1').update(d.key + '|' + d.kind).digest('hex').slice(0, 16), has = l => l.some(x => x && s(x.id) === mid);

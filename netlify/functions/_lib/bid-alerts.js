@@ -227,6 +227,50 @@ function make(d){
   /* ── 1. new leads ──────────────────────────────────────────────────────────── */
   /* items: leads just stored. o.group: one message for all of them (one e-mail that brought several bids);
      otherwise one message per lead. Each lead id is alerted once, ever. */
+  /* patch EMERG (owner 10/24): an emergency lead from ANY source → the on-call PM (else the Senior Insurance PM) + every admin +
+     the office, every time: a 🚨 e-mail + phone push, a 🔴 ASAP to-do, and the lead assigned to the on-call PM when nobody
+     picked it (or the lead roles only gave it to the Senior Insurance PM). Once per lead. */
+  async function gcKvVal(k){ try { const r = await sb('gc_kv?select=value&key=eq.' + encodeURIComponent(k)); if (!r.ok) return null; let v = (arr(await r.json())[0] || {}).value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; } catch (e) { return null; } }
+  async function emergency(mine, raw){
+    const E = require('./emergency.js'), X = require('./x10.js');
+    const em = mine.filter(x => E.isEmergency(Object.assign({}, raw[x.id] || {}, x)));
+    if (!em.length) return { n: 0 };
+    let oncall = null; try { const c = X.oncallCfg(await kvGet('gc_x10_oncall')); if (c.on && c.rotation.length) oncall = X.onCallNow(now(), c); } catch (e) {}
+    let users = await gcKvVal('users'); if (users && !Array.isArray(users) && Array.isArray(users.v)) users = users.v; users = arr(users);
+    const team = await gcKvVal('gc_team_settings');
+    let ins = null; try { const h = require('./lead-roles.js').holder('insurance', team, users); if (h && (h.email || h.name)) ins = { name: s(h.name), email: low(h.email) || emailOf(h.name) }; } catch (e) {}
+    const plan = E.people({ oncall, insurance: ins, admins: await recipients([]), office: E.officeOf(users) });
+    const out = { n: 0, to: plan.to, lead: plan.lead };
+    for (const x of em) {
+      let claim = false;
+      await kvCas(KA, v => { const st = loadState(v); st.emerg = st.emerg && typeof st.emerg === 'object' ? st.emerg : {}; if (st.emerg[x.id]) return undefined; st.emerg[x.id] = nowIso();
+        const ks = Object.keys(st.emerg); if (ks.length > 600) ks.sort((a, b) => s(st.emerg[a]).localeCompare(s(st.emerg[b]))).slice(0, ks.length - 600).forEach(k => { delete st.emerg[k]; }); claim = true; return st; }).catch(() => { claim = true; });
+      if (!claim) continue;
+      const c = x.contact || {}, who = plan.lead ? plan.lead.name || plan.lead.email : 'the office';
+      const m = mailNew([x]);
+      m.subject = ('🚨 EMERGENCY lead — call now: ' + x.title).slice(0, 250);
+      m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; admins and the office are told too.', rowHtml(x), 'Every emergency lead (water, leak, flood, fire, smoke, a tree on the house, storm damage) goes to the on-call PM, the admins and the office.');
+      m.text = m.subject + '\n\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads';
+      m.push = { title: ('🚨 Emergency: ' + x.title).slice(0, 100), body: ([c.name, c.phone].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '')).slice(0, 180) || 'Call them now', tag: 'lead-emerg-' + x.id };
+      m.area = 'area:Leads';
+      const r = await deliver(m, null, plan.to.concat([x.assigneeEmail].concat(x.coEmails || [])).filter(Boolean));   /* + whoever the lead roles gave it to */
+      /* the 🔴 ASAP to-do (the on-call PM + the shared office list) */
+      try {
+        const tid = 'EMERG_' + s(x.key || x.id).replace(/[^A-Za-z0-9_:-]/g, '').slice(0, 80), at = nowIso();
+        await require('../portal.js')._core.kvListUpdate('gc_office_tasks', l => l.some(t => t && t.id === tid) ? null : { list: l.concat([{ id: tid, label: '🚨 Emergency — call now: ' + x.title,
+          note: [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '') + (x.source ? ' (' + x.source + ')' : ''), phone: s(c.phone), leadKey: x.key,
+          assignees: plan.lead && plan.lead.name ? [plan.lead.name] : [], office: true, prio: 'urgent', urgency: 'asap', kind: 'emergency_lead', due: at.slice(0, 10), addedBy: 'Emergency lead', addedAt: at, createdAt: at, updatedAt: at, done: false }]), check: l2 => l2.some(t => t && t.id === tid) });
+      } catch (e) {}
+      /* the lead itself: to the on-call PM when nobody picked it, or the lead roles only gave it to the Senior Insurance PM */
+      if (plan.lead && plan.lead.why === 'on call') {
+        try { await kvCas('gc_lead_inbox', v => { const l = arr(v), it = l.find(y => y && s(y.id) === s(x.id)); if (!it) return undefined;
+          if (it.pm && !(ins && low(it.pmEmail) === ins.email) && low(it.pmEmail) !== plan.lead.email) return undefined; if (low(it.pmEmail) === plan.lead.email) return undefined;
+          it.pm = plan.lead.name; it.pmEmail = plan.lead.email; it.assignedBy = 'Auto · on call (emergency)'; it.assignedAt = nowIso(); it.emergency = true; return l; }); } catch (e) {}
+      }
+      out.n++; out.sent = (out.sent || 0) + (r.ok ? 1 : 0); out.pushed = (out.pushed || 0) + (r.pushed || 0);
+    }
+    return out;
+  }
   async function notifyNew(items, o){
     o = o || {};
     if (off()) return { sent: 0, off: true };
@@ -243,7 +287,11 @@ function make(d){
       return st;
     });
     if (!mine.length) return { sent: 0, already: fresh.length };
-    const groups = o.group ? [mine] : mine.map(x => [x]);
+    /* patch EMERG: an emergency lead gets the 🚨 alert (on call + admins + office + its assignee) INSTEAD of the normal one */
+    const raw0 = {}; arr(items).forEach(it => { if (it && it.id) raw0[s(it.id)] = it; });
+    const isEm = x => { if (env('EMERG_OFF') === '1') return false; try { return require('./emergency.js').isEmergency(Object.assign({}, raw0[x.id] || {}, x)); } catch (e) { return false; } };
+    const urgentL = mine.filter(isEm), normalL = mine.filter(x => !isEm(x));
+    const groups = !normalL.length ? [] : o.group ? [normalL] : normalL.map(x => [x]);
     const out = { sent: 0, messages: 0, failed: 0, to: [] };
     for (const g of groups) {
       const r = await deliver(mailNew(g), [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || []))));   /* patch HOT2: + coAssignees */
@@ -260,6 +308,7 @@ function make(d){
         return st;
       }).catch(() => {});
     }
+    if (urgentL.length) { try { out.emergency = await emergency(urgentL, raw0); out.sent += out.emergency.sent || 0; } catch (e) { out.emergency = { error: s(e && e.message) }; } }   /* patch EMERG */
     /* patch X10: an after-hours emergency (water / fire) pages the person on call (_lib/oncall.js) — never blocks the alert */
     if (env('ONCALL_OFF') !== '1') { try { out.oncall = await require('./oncall.js').make({ env: env, kvGet: kvGet, kvCas: kvCas, now: now, push: push }).maybePage(mine); } catch (e) { out.oncall = { error: s(e && e.message) }; } }
     return out;
@@ -685,7 +734,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }

@@ -26,10 +26,20 @@ function cors(event){
   return { 'Access-Control-Allow-Origin': allowed.indexOf(origin) > -1 ? origin : allowed[0], Vary: 'Origin', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 }
 function number(){ const d = S.phone10(env('TWILIO_FROM')); return d.length === 10 ? S.tidy(d) : ''; }
+/* patch SMSROUTE: our numbers for the rest of the CRM (OWNERTODO ticks the Twilio step from it) — gc_kv "gc_sms_numbers" */
+async function publishNumbers(set){
+  try { const list = require('./_lib/smsroute.js').publicList(set, env), same = l => JSON.stringify(l) === JSON.stringify(list);
+    return await core().kvListUpdate('gc_sms_numbers', l => same(l) ? null : { list: list, check: same }); } catch (e) { return { ok: false }; }
+}
 async function getSettings(){ try { return S.settings(await L().kvGet(S.SETTINGS_KEY)); } catch (e) { return S.settings(null); } }
 
 async function send(who, b){
-  const to = S.phone10(b.to), text = s(b.text).slice(0, 600), pid = s(b.pid).slice(0, 80);
+  const to = S.phone10(b.to), pid = s(b.pid).slice(0, 80);
+  /* patch SMSROUTE: signed with the sender's first name ("— Mike, GrayCo"); sent from the number for the purpose */
+  const RT = require('./_lib/smsroute.js');
+  const text = (b.noSign ? s(b.text) : RT.sign(s(b.text), who.name || '')).slice(0, 600);
+  let purpose = s(b.purpose) ? RT.normPurpose(b.purpose) : '';
+  if (!purpose) { try { purpose = RT.purposeFor(await core().kvRead(['subs', 'vendors', 'projects', 'customers', 'leads']), to); } catch (e) { purpose = 'customers'; } }   /* a sub → the subs number, a customer → the customers number */
   if (to.length !== 10) return { code: 400, body: { ok: false, error: 'A 10-digit phone number is needed.' } };
   if (!text) return { code: 400, body: { ok: false, error: 'Type the text first.' } };
   if (pid && !/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return { code: 400, body: { ok: false, error: 'Bad job id.' } };
@@ -38,10 +48,13 @@ async function send(who, b){
   if (paused) return { code: 409, body: { ok: false, paused: true, error: '⏸ Data-entry mode is on — no texts go out until an admin turns it off.' } };
   const st = await MC().stateGet();
   if (st.optout[to]) return { code: 409, body: { ok: false, error: 'This number texted STOP — GrayCo cannot text it until they text START.' } };
-  const r = await MC().sendSms(to, text);
+  if (b.checkQuiet === true && RT.quiet(typeof exports._now === 'function' ? exports._now() : Date.now())) return { code: 409, body: { ok: false, quiet: true, error: 'It is after 8 PM (or before 7 AM) — texts wait until morning. Send anyway only for something urgent.' } };
+  const set = await getSettings(), from = RT.fromFor(purpose, set, env);
+  const r = await MC().sendSms(to, text, from);
   if (!r.ok) return { code: 502, body: { ok: false, error: 'Twilio did not send it' + (r.status ? ' (' + r.status + ')' : r.why ? ' (' + r.why + ')' : '') + '.' } };
   const at = nowIso(), id = 'SMSO_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const msg = { id, pid, authorId: low(who.email), authorName: s(who.name || who.email) + ' 📱 (text to ' + S.tidy(to) + ')', text, tags: [], at, source: 'sms', channel: 'sms', dir: 'out', smsTo: to };
+  const msg = { id, pid, authorId: low(who.email), authorName: s(who.name || who.email) + ' 📱 (text to ' + S.tidy(to) + ')', text, tags: [], at, source: 'sms', channel: 'sms', dir: 'out', smsTo: to, smsFromNum: RT.phone10(from), purpose };
+  try { await MC().stateCas(x => { x.lastOut = x.lastOut && typeof x.lastOut === 'object' ? x.lastOut : {}; x.lastOut[to] = { email: low(who.email), name: s(who.name), pid, at }; return true; }); } catch (e) {}   /* patch SMSROUTE: their reply comes back to this employee */
   const has = l => l.some(m => m && s(m.id) === id);
   try { await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) {}
   if (pid) { try { await require('./_lib/comms.js').addMessage(pid, { id: 'sms_' + id, kind: 'text', dir: 'out', at, from: s(who.email), fromName: s(who.name), to: [S.tidy(to)], text }); } catch (e) {} }
@@ -57,7 +70,8 @@ exports.handler = async function(event){
   try {
     if (m === 'GET' && qs.status) {
       const set = await getSettings(); let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) {}
-      return J(200, { ok: true, ready: MC().ready(), number: number(), autoOn: set.autoOn, paused, webhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=sms' }, C);
+      if (who.admin) await publishNumbers(set);   /* patch SMSROUTE: Netlify numbers show up without a save */
+      return J(200, { ok: true, ready: MC().ready(), number: number(), numbers: require('./_lib/smsroute.js').numbers(set, env), autoOn: set.autoOn, paused, webhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=sms' }, C);
     }
     if (m === 'POST' && qs.send) {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
@@ -71,6 +85,7 @@ exports.handler = async function(event){
         const v = S.settings(b.settings || b);   /* cleaned: staff-only relay list, known fields only */
         v.by = low(who.email); v.at = nowIso();
         await L().kvCas(S.SETTINGS_KEY, () => v);
+        await publishNumbers(v);   /* patch SMSROUTE */
         return J(200, { ok: true, settings: v }, C);
       }
       if (m === 'POST' && qs.try) {

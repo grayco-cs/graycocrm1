@@ -96,6 +96,9 @@ function loadState(v){
   Object.keys(st.calls).forEach(k => { if (s(st.calls[k]) < cut) delete st.calls[k]; });
   /* patch TXT: texts already handled (Twilio retries) and the automatic answers per number — kept 3 days */
   const cut3 = new Date(now() - 3 * 86400000).toISOString();
+  /* patch SMSROUTE: who texted each number last (the reply goes back to them) — kept 30 days */
+  const cut30 = new Date(now() - 30 * 86400000).toISOString();
+  if (st.lastOut && typeof st.lastOut === 'object') Object.keys(st.lastOut).forEach(k => { if (!st.lastOut[k] || s(st.lastOut[k].at) < cut30) delete st.lastOut[k]; });
   if (st.seen && typeof st.seen === 'object') Object.keys(st.seen).forEach(k => { if (s(st.seen[k]) < cut3) delete st.seen[k]; });
   if (st.auto && typeof st.auto === 'object') Object.keys(st.auto).forEach(k => { const l = Array.isArray(st.auto[k]) ? st.auto[k].filter(x => x && s(x.at) >= cut3) : []; if (l.length) st.auto[k] = l; else delete st.auto[k]; });
   return st;
@@ -104,13 +107,13 @@ async function stateGet(){ return loadState(await L().kvGet(KS)); }
 async function stateCas(fn){ return L().kvCas(KS, v => { const st = loadState(v); const r = fn(st); return r === undefined ? undefined : st; }); }
 
 /* ── Twilio REST: one text ── */
-async function sendSms(to10, body){
+async function sendSms(to10, body, from){   /* patch SMSROUTE: from = one of our numbers (default TWILIO_FROM) */
   if (!ready()) return { ok: false, why: 'not set up' };
   const sid = env('TWILIO_ACCOUNT_SID');
   try {
     const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',
       headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + env('TWILIO_AUTH_TOKEN')).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ To: '+1' + to10, From: env('TWILIO_FROM'), Body: clip(body, 600) }).toString() });
+      body: new URLSearchParams({ To: '+1' + to10, From: s(from) || env('TWILIO_FROM'), Body: clip(body, 600) }).toString() });
     return { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false, why: 'Twilio unreachable' }; }
 }
@@ -236,19 +239,33 @@ async function inboundSms(p){
   const st0 = await stateGet(), own = st0.owner[ph] || {}, optedOut = !!st0.optout[ph];
   const out = { sid };
   /* HELP: the standard answer, nothing else */
-  if (S.HELP.test(body)) { out.help = optedOut ? { skipped: 'opted out' } : await sendSms(ph, S.HELP_TEXT); return out; }
+  /* patch SMSMENU: on the Customers / default number HELP opens the 1–5 menu (with the STOP line) further down */
+  const menuLine0 = ['customers', 'main'].indexOf(require('./_lib/smsroute.js').purposeOf(phone10(p.To), set, env)) >= 0;
+  if (S.HELP.test(body) && !menuLine0) { out.help = optedOut ? { skipped: 'opted out' } : await sendSms(ph, S.HELP_TEXT); return out; }
   /* patch SUBTXT: an answer to a sub's schedule text — Y → ✓ Confirmed; anything else → the job's PM at once (push, 🔴 To-Do, e-mail) */
   try { const sh = await require('./sub-texts.js')._lib.handleReply(ph, body, at); if (sh && sh.handled) { out.subText = { confirmed: !!sh.confirmed, issue: !!sh.issue, key: sh.key }; return out; } } catch (e) { out.subTextError = s(e && e.message); }
   let data = {};
-  try { data = await core().kvRead(['projects', 'customers', 'subs', 'vendors', 'leads', 'schedule', 'users', 'gc_deleted_projects', 'gc_team_settings']); } catch (e) {}
+  try { data = await core().kvRead(['projects', 'customers', 'subs', 'vendors', 'leads', 'schedule', 'users', 'gc_deleted_projects', 'gc_team_settings', 'invs', 'invoices']); } catch (e) {}
   let who = S.match(data, ph);
   if (!who && own.pid) { const p0 = arrL(data.projects).find(x => x && s(x.id) === s(own.pid)); if (p0) who = { kind: 'customer', pid: s(p0.id), name: s(p0.client), job: p0 }; }
-  const job = who && who.job ? who.job : null, pid = who && who.pid ? who.pid : '';
+  let job = who && who.job ? who.job : null, pid = who && who.pid ? who.pid : '';
+  /* patch SMSROUTE: who gets this text — the employee who texted them last, the sub's / customer's PM, the lead's owner,
+     billing → office, insurance → Senior Insurance PM, emergency → on call; nobody → the office */
+  const RT = require('./_lib/smsroute.js'), toNum = phone10(p.To), purpose = RT.purposeOf(toNum, set, env);
+  if (!who) { const su = arrL(data.users).find(u => [u.phone, u.cell, u.mobile].map(phone10).indexOf(ph) >= 0); if (su) who = { kind: 'staff', pid: '', name: s(su.name), email: low(su.email) }; }
+  if (who && who.kind === 'sub') who.sub = arrL(data.subs).concat(arrL(data.vendors)).find(x => x && s(x.id) === s(who.subId)) || null;
+  let insP = null; try { const h = require('./_lib/lead-roles.js').holder('insurance', data.gc_team_settings, data.users); if (h && (h.email || h.name)) insP = { name: s(h.name), email: low(h.email) }; } catch (e) {}
+  let onP = null; try { const X = require('./_lib/x10.js'); const o = X.onCallNow(now(), X.oncallCfg(await L().kvGet('gc_x10_oncall'))); if (o) onP = { name: s(o.name), email: low(o.email), phone: s(o.phone) }; } catch (e) {}
+  const rt = RT.route({ data, who, purpose, body, last: (st0.lastOut || {})[ph], pmOf: j => { try { return core().pmOf(data, j); } catch (e) { return null; } },
+    insurance: insP, oncall: onP, leadsPerson: set.leadsPerson ? { name: '', email: set.leadsPerson } : null });
+  if (rt.pid && !pid) { pid = rt.pid; job = rt.job || job; }
+  out.route = { purpose, to: rt.to.map(x => x.email || x.name), office: rt.office, urgent: rt.urgent, why: rt.why };
   const name = s(who && who.name);
   const label = jobLabelOf(job);
   const shown = (name || tidy(ph)) + (who && who.kind === 'sub' ? ' (sub)' : '');
   /* 1) Job Messages (by job; no job → 📥 Unsorted) + the job's 💬 Communication timeline */
-  out.msg = await postJobMsg({ id: 'SMS_' + sid, pid, authorId: 'sms:' + ph, authorName: '📱 ' + shown + ' (text)', text: clip(body, 1600), tags: [], at, source: 'sms', channel: 'sms', dir: 'in', smsFrom: ph });
+  out.msg = await postJobMsg({ id: 'SMS_' + sid, pid, authorId: 'sms:' + ph, authorName: '📱 ' + shown + ' (text)', text: clip(body, 1600), tags: RT.tagsFor(rt.to, data.users), at, source: 'sms', channel: 'sms', dir: 'in', smsFrom: ph,
+    smsTo: toNum, purpose, routedTo: rt.to.map(x => ({ name: s(x.name), email: s(x.email), why: s(x.why) })), office: !!rt.office, urgent: !!rt.urgent, urgency: rt.urgent ? 'asap' : '' });
   await commsAdd(pid, { id: 'sms_' + sid, kind: 'text', dir: 'in', at, from: tidy(ph), fromName: name, text: body });
   /* 2) a missed-call lead / call-back to-do this number already has: the text is added there too (patch AUTO6) */
   const line = '📱 Text from ' + tidy(ph) + ' (' + at.slice(0, 16).replace('T', ' ') + ' UTC): ' + clip(body, 1000);
@@ -272,7 +289,8 @@ async function inboundSms(p){
   if (!rule) rule = await S.aiPick(body, set, { pid }, require('./_lib/ai.js'));
   out.rule = rule ? rule.id : '';
   /* 4) a new number (or a known person without a job asking for an estimate / with an emergency) → a lead, routed by the lead roles */
-  const wantLead = !own.lead && !own.todo && (!who || (rule && rule.lead && who.kind !== 'sub' && !pid));
+  /* patch SMSROUTE: a new number on the leads line is always a lead; on the main line only when it asks for work (an estimate / an emergency) */
+  const wantLead = !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || (!who && (!!(rule && rule.lead) || rt.urgent)) || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
   if (wantLead) {
     const f = { type: INS_WORDS.test(body) ? 'storm' : 'estimate', name: name || 'Texter ' + tidy(ph), email: '', phone: ph, address: '', city: '', state: '', zip: '',
       message: 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200), company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '',
@@ -291,11 +309,50 @@ async function inboundSms(p){
   /* 6) one automatic answer — never while data-entry mode is on, never to an opted-out number, limited per number */
   let reply = '', why = '';
   let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
-  if (optedOut) why = 'opted out';
+  /* patch SMSMENU: customers (and unknown numbers) on the Customers / default number get the 1–5 menu, answered from the CRM;
+     1–3 and the warranty only for the phone on file; 4 → the PM calls back; 5 → on call + the PM, ASAP; anything else → the PM */
+  const MN = require('./_lib/smsmenu.js'), menu = { done: false };
+  const menuLine = ['customers', 'main'].indexOf(purpose) >= 0 && !(who && (who.kind === 'sub' || who.kind === 'staff' || who.kind === 'lead'));
+  if (menuLine && set.autoOn && !optedOut && !paused) {
+    const onFile = !!(who && who.kind === 'customer');
+    const isMenuWord = MN.MENU_WORD.test(body) || S.HELP.test(body);
+    let c = isMenuWord ? 'menu' : (MN.choice(body) || MN.intent(body));
+    if (!c && rule && MN.RULE_TO[rule.id]) c = MN.RULE_TO[rule.id];   /* one of the approved answers matched (keywords, or the small model only classifying) */
+    const useApproved = !c && !!rule;   /* hours, address, services, an estimate request … → the approved answer below, as before */
+    if (!c && !useApproved && !(st0.menu && st0.menu[ph])) c = 'menu';   /* their first text */
+    if (!useApproved) {
+    const pmFirst = S.firstName(pm && pm.name);
+    let link = '';
+    if (onFile && job && ['1', '2', '3', 'w'].indexOf(c) >= 0) {
+      try { if (core().jaAllows(data, job, 'portalLink')) { const row = await core().activeFor(s(job.id)); const tok = row ? row.token : await core().createFor(s(job.id), 'text menu'); if (tok) link = core().linkFor(null, tok); } } catch (e) {}
+    }
+    let bal = { balance: null, openCount: 0 };
+    if (c === '3' && onFile && job) { try { const C0 = core(); bal = MN.balanceOf(C0.listOf(data, ['invs', 'invoices']), job, C0.isCustomerInvoice, C0.invBalance); } catch (e) {} }
+    const nv = pid ? S.nextVisit(data, pid, at) : null;
+    const mctx = { first: S.firstName(name), pmFirst, job: onFile ? job : null, jobName: job ? s(job.name) : '', onFile, visitDate: nv ? s(nv.date || nv.start || nv.startDate) : '', link, balance: bal.balance, openCount: bal.openCount };
+    if (c === 'menu') menu.reply = MN.menuText(mctx.first, S.HELP.test(body));
+    else if (c) menu.reply = MN.answer(c, mctx);
+    else { menu.reply = MN.forwarded(pmFirst); menu.needHuman = true; }
+    if (c === '4') { menu.needHuman = true; menu.callback = true; rt.urgent = true; }
+    if (c === '5') { menu.needHuman = true; rt.urgent = true; if (onP && !rt.to.some(x => low(x.email) === low(onP.email))) rt.to.push(Object.assign({ why: 'on call (emergency)' }, onP)); if (!job) rt.office = true; }
+    if (!onFile && ['1', '2', '3', 'w'].indexOf(c) >= 0) { menu.needHuman = true; rt.office = true; }
+    /* a runaway loop (an auto-responder texting back) gets at most 12 menu answers a day */
+    let allowed = false;
+    await stateCas(x => { x.menu = x.menu && typeof x.menu === 'object' ? x.menu : {}; x.menuN = x.menuN && typeof x.menuN === 'object' ? x.menuN : {};
+      const l = (Array.isArray(x.menuN[ph]) ? x.menuN[ph] : []).filter(a => now() - Date.parse(a) < 86400000);
+      if (l.length < 12 || c === '5') { l.push(at); allowed = true; } x.menuN[ph] = l; if (!x.menu[ph]) x.menu[ph] = at; return true; }).catch(() => { allowed = true; });
+    menu.choice = c || 'forward'; out.menu = menu.choice;
+    if (allowed && !c) { await stateCas(x => { x.fwd = x.fwd && typeof x.fwd === 'object' ? x.fwd : {}; if (now() - Date.parse(x.fwd[ph] || 0) < 12 * 3600000) { allowed = false; return undefined; } x.fwd[ph] = at; return true; }).catch(() => {}); }   /* "has your message" once per 12 h */
+    if (allowed) { menu.reply = S.safe(menu.reply); menu.done = true; } else { menu.done = true; menu.reply = ''; menu.why = c ? 'menu limit reached for this number today' : 'they were told a person will answer'; menu.needHuman = true; }
+    }
+  }
+  if (menu.done) { reply = menu.reply; why = menu.why || ''; }
+  else if (optedOut) why = 'opted out';
   else if (paused) why = 'data-entry mode is on';
   else if (!set.autoOn) why = 'automatic answers are off';
   else if (!S.whenAllows(set, now(), rule)) why = 'outside the hours set for automatic answers';
   else if (who && who.kind === 'sub') why = 'a sub (staff answer subs)';
+  else if (who && who.kind === 'staff') why = 'a GrayCo employee';   /* patch SMSROUTE */
   else {
     const B = require('./_lib/brand.js');
     const ctx = { address: B.companyAddress(), billing: (function(){ try { return B.billingEmail(); } catch (e) { return 'billing@grayco-cs.com'; } })(),
@@ -316,18 +373,42 @@ async function inboundSms(p){
     else why = 'no answer fits';
   }
   if (reply) {
-    out.reply = await sendSms(ph, reply);
+    out.reply = await sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : '');   /* patch SMSROUTE: answered from the number they texted */
     if (out.reply.ok) {
       const rid = 'SMSA_' + sid;
       await postJobMsg({ id: rid, pid, authorId: 'sms:auto', authorName: '🤖 GrayCo auto-answer (text)', text: reply, tags: [], at: nowIso(), source: 'sms', channel: 'sms', dir: 'out', smsTo: ph });
       await commsAdd(pid, { id: 'sms_' + rid, kind: 'text', dir: 'out', at: nowIso(), from: 'GrayCo (auto-answer)', fromName: 'GrayCo', to: [tidy(ph)], text: reply });
     }
   } else out.noReply = why;
+  /* patch SMSROUTE: the people it is routed to hear at once (phone push), and a "reply to this text" to-do when a person must answer */
+  if (!(who && who.kind === 'staff') && !(rt.urgent && out.newLead && out.action === 'added')) {   /* patch EMERG: a new emergency lead is alerted by the lead path (once) */
+    let offEmails = []; if (rt.office) { try { offEmails = core().officeEmails(data); } catch (e) {} }
+    if (rt.urgent) { try { offEmails = offEmails.concat(await L().alertsApi().recipients([])); } catch (e) {} if (!offEmails.length) offEmails = ['office@grayco-cs.com']; }   /* patch EMERG: + every admin */
+    const pushList = Array.from(new Set(rt.to.map(x => low(x.email)).concat(offEmails).filter(Boolean)));
+    if (pushList.length) { try { out.push = await core().pushTo(pushList, { title: (rt.urgent ? '🚨 ' : '📱 ') + 'Text from ' + clip(shown, 60), body: clip(body, 160), tag: 'sms-' + ph, url: '/?jobmsg=' + encodeURIComponent(pid || 'unsorted') }); } catch (e) { out.push = { ok: false }; } }
+    if (rt.urgent || !reply || menu.needHuman) {   /* patch SMSMENU: a menu answer that still needs a person counts too */
+      const tid = 'SMSR_' + ph, names = rt.to.map(x => s(x.name)).filter(Boolean);
+      const tline = at.slice(0, 16).replace('T', ' ') + ' UTC — ' + clip(body, 600) + (rt.why ? '  [' + rt.why + ']' : '');
+      try {
+        out.replyTodo = await core().kvListUpdate('gc_office_tasks', function(l){
+          const t = l.find(x => x && s(x.id) === tid && !x.done);
+          if (t) { if (s(t.note).indexOf(sid) >= 0) return null; t.note = clip(s(t.note) + '\n' + tline + ' [' + sid + ']', 2000); t.updatedAt = at; if (rt.urgent) { t.prio = 'urgent'; t.urgency = 'asap'; } names.forEach(n => { if ((t.assignees || []).indexOf(n) < 0) t.assignees = (t.assignees || []).concat([n]); }); return { list: l, check: () => true }; }
+          const item = { id: tid, label: (menu.callback ? '📞 Call back ' : rt.urgent ? '🚨 Text back ' : '📱 Text back ') + (name || tidy(ph)) + (label ? ' — ' + label : ''), note: tline + ' [' + sid + ']', pid: pid || '', phone: tidy(ph),
+            assignees: names, office: !names.length || !!rt.office, prio: rt.urgent ? 'urgent' : 'high', urgency: rt.urgent ? 'asap' : 'soon', due: at.slice(0, 10), kind: 'sms_reply', addedBy: 'Text message (Twilio)', addedAt: at, updatedAt: at, createdAt: at, done: false };
+          l = l.filter(x => !(x && s(x.id) === tid && x.done));
+          return { list: l.concat([item]), check: l2 => l2.some(x => x && s(x.id) === tid) };
+        });
+      } catch (e) { out.replyTodo = { ok: false }; }
+    }
+  }
   /* 7) the e-mail relay (staff only) — an emergency says so in the subject and also goes to the Senior Insurance PM */
   const extra = [];
+  rt.to.forEach(x => { if (x.email) extra.push(x.email); });   /* patch SMSROUTE */
+  if (rt.office) { try { core().officeEmails(data).forEach(e => extra.push(e)); } catch (e) {} }
   if (pm && pm.email) extra.push(pm.email);
-  if (rule && rule.alert) { try { const h = require('./_lib/lead-roles.js').holder('insurance', data.gc_team_settings, data.users); if (h && h.email) extra.push(h.email); } catch (e) {} }
-  const emerg = !!(rule && rule.alert);
+  /* patch EMERG: an emergency text → on call (else the Senior Insurance PM, via the routing) + the admins + the office; no longer the Senior Insurance PM only */
+  if (rt.urgent) { try { (await L().alertsApi().recipients([])).forEach(e => extra.push(e)); } catch (e) {} try { core().officeEmails(data).forEach(e => extra.push(e)); } catch (e) {} }
+  const emerg = !!(rule && rule.alert) || !!rt.urgent;   /* patch SMSROUTE: emergency words count too */
   const subj = (emerg ? '🚨 EMERGENCY text from ' : '📱 Text from ') + shown + (label ? ' — ' + label : (out.newLead ? ' — new lead' : ''));
   const link = site() + (pid ? '/?jobmsg=' + encodeURIComponent(pid) : '/?jobmsg=unsorted');
   const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (emerg ? '#b91c1c' : '#241968') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(emerg ? '🚨 Emergency text — call them now' : '📱 A text came in') + '</div><div style="padding:6px 18px 18px">'

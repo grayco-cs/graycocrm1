@@ -93,6 +93,9 @@ function settings(v){
   out.when = /^(always|after_hours|business_hours)$/.test(s(o.when)) ? s(o.when) : 'always';
   out.maxPerDay = Math.max(1, Math.min(10, parseInt(o.maxPerDay, 10) || DEFAULTS.maxPerDay));
   out.relayTo = staffOnly(Array.isArray(o.relayTo) ? o.relayTo : DEFAULTS.relayTo);
+  /* patch SMSROUTE: our numbers (each with a purpose) and the leads & marketing person */
+  out.numbers = require('./smsroute.js').cleanNumbers(o.numbers);
+  out.leadsPerson = staffOnly([o.leadsPerson])[0] || '';
   const saved = arr(o.rules), byId = {};
   saved.forEach(r => { if (s(r.id)) byId[s(r.id)] = r; });
   const rules = DEFAULT_RULES.map(d => cleanRule(byId[d.id] || {}, d));
