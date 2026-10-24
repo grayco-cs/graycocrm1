@@ -48,7 +48,7 @@ function isJournal(mail, data, recipients){
 /* the CRM's ✉️ / Gmail buttons BCC mail@in.grayco-cs.com (until the routing rule is on): a BCC is in no header, so a
    message that reached the receiving domain and is for none of its inboxes (bids@, leads@, claims@, bills@, orders@, …)
    is that copy. Safe either way: anything that is not a job's e-mail is thrown away. */
-const INBOXES = /^(bids|leads|claims|bills|billing|orders|news|portal|replies|noreply|office)@(in\.)?grayco-cs\.com$/i;
+const INBOXES = /^(bids|leads|claims|bills|billing|orders|receipts|invoices|news|portal|replies|noreply|office)@(in\.)?grayco-cs\.com$/i;   /* + receipts@ / invoices@ (patch OWNERTODO) */
 function isBccCopy(recipients, forAnInbox){
   if (forAnInbox) return false;
   const r = arr(recipients).map(low).filter(Boolean);

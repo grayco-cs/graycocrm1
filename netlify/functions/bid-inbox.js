@@ -790,6 +790,14 @@ async function processEventCore(evt, opts){
     let br = null; if (!/@(in\.)?grayco-cs\.com$/i.test(mail.from.email) && !ownOrAuto(mail)) br = await repliesApi().handle(mail, { via: 'e-mail history', isSub: await knownSubs() });
     return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail), br ? { bidReply: br } : {}) }; } }
   catch (e) { return { status: 503, body: { ok: false, error: 'The e-mail history could not store this yet (' + (e && e.message) + ') — retry.' } }; }
+  /* patch OWNERTODO: receipts@ / invoices@ — a receipt or a sub's invoice for the CRM (never a lead, a bid or an order) */
+  { const MM = require('./_lib/money-mail.js'), mk = MM.kindOf(recipients(mail, data), mail.headers);
+    if (mk) {
+      const own0 = ownOrAuto(mail); if (own0) return { status: 200, body: { ok: true, ignored: own0 } };
+      if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+      try { const r = await MM.fromEmail(mail, mk, { storeFile: storeFile, kvListUpdate: function(k, f){ return require('./portal.js')._core.kvListUpdate(k, f); } }); return { status: 200, body: Object.assign({ inbox: mk === 'receipt' ? 'receipts' : 'sub-invoices' }, r) }; }
+      catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this ' + (mk === 'receipt' ? 'receipt' : 'invoice') + ' yet (' + (e && e.message) + ') — retry.' } }; }
+    } }
   /* patch EST4: leads@ carries bid invitations too (they take the bid path below); bids@ is only for subcontractors'
      bids (unless it is plainly an old-style invitation still sent to bids@) */
   const SB = require('./_lib/subbids.js');
