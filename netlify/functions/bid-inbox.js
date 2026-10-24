@@ -776,6 +776,7 @@ async function subBidFromEmail(mail){
 async function processEvent(evt, opts){
   const r = await processEventCore(evt, opts);
   try { await require('./_lib/mailcenter.js').log(evt, r, { kvCas }); } catch (e) {}
+  try { await require('./_lib/sentlog.js').onInboundEvent(evt); } catch (e) {}   /* patch SENTLOG: a reply answers a waiting request */
   return r;
 }
 async function processEventCore(evt, opts){

@@ -94,7 +94,9 @@ function clean(r){
     from: emails(r.from)[0] || '', fromName: s(r.fromName).slice(0, 80), to: emails(r.to).slice(0, 20), cc: emails(r.cc).slice(0, 20),
     subject: s(r.subject).slice(0, 250), snippet: s(r.snippet).slice(0, 220), labels: arr(r.labels).map(s).slice(0, 20), att: !!r.att,
     dir: r.dir === 'out' ? 'out' : 'in', src: /^(gmail|crm|sms)$/.test(s(r.src)) ? s(r.src) : 'gmail', kind: s(r.kind).slice(0, 60), status: s(r.status).slice(0, 20),
-    pid: s(r.pid).slice(0, 80), cust: s(r.cust).slice(0, 80), lead: s(r.lead).slice(0, 80) };
+    pid: s(r.pid).slice(0, 80), cust: s(r.cust).slice(0, 80), lead: s(r.lead).slice(0, 80),
+    /* patch SENTLOG: the e-mail's type, the CRM sender's tag (X-GrayCo-CRM) and Resend's delivery status */
+    type: s(r.type).slice(0, 40), via: s(r.via).slice(0, 40), dlv: s(r.dlv).slice(0, 20), dlvAt: s(r.dlvAt).slice(0, 40) };
 }
 /* add rows to a list key: newest first by date, unique by id, capped */
 function merge(list, rows, max){

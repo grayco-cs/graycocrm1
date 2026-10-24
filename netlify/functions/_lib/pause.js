@@ -144,11 +144,13 @@ async function logSend(kind, opts, status, res){
     const X = require('./mailidx.js');
     let ids = [];
     try { const r = res && typeof res.clone === 'function' ? res.clone() : null; const j = r ? await r.json() : null; if (j) ids = j.sid ? [j.sid] : j.id ? [j.id] : Array.isArray(j.data) ? j.data.map(function(x){ return x && x.id; }) : []; } catch (e) {}
-    let rows = [];
-    if (kind === 'sms') { const p = {}; try { new URLSearchParams(bodyText(opts)).forEach(function(v, k){ p[k] = v; }); } catch (e) {} rows = [X.crmRow('sms', '', p, status, ids[0])]; }
-    else if (kind === 'batch') { rows = (bodyJson(opts) || []).map(function(m, i){ return X.crmRow('email', '', m, status, ids[i]); }); }
-    else rows = [X.crmRow('email', '', bodyJson(opts) || {}, status, ids[0])];
-    await Promise.race([X.logCrmSend(rows), new Promise(function(r){ setTimeout(r, 800); })]);
+    let rows = [], payloads = [];
+    if (kind === 'sms') { const p = {}; try { new URLSearchParams(bodyText(opts)).forEach(function(v, k){ p[k] = v; }); } catch (e) {} rows = [X.crmRow('sms', '', p, status, ids[0])]; payloads = [null]; }
+    else if (kind === 'batch') { payloads = bodyJson(opts) || []; rows = payloads.map(function(m, i){ return X.crmRow('email', '', m, status, ids[i]); }); }
+    else { payloads = [bodyJson(opts) || {}]; rows = [X.crmRow('email', '', payloads[0], status, ids[0])]; }
+    /* patch SENTLOG: each e-mail's type, its body kept (we wrote it) and — when it asks for something — its follow-up */
+    let SL = null; try { SL = require('./sentlog.js'); SL.decorate(rows, payloads); } catch (e) { SL = null; }
+    await Promise.race([Promise.all([X.logCrmSend(rows), SL ? SL.onSent(rows, payloads).catch(function(){}) : null]), new Promise(function(r){ setTimeout(r, 1500); })]);
   } catch (e) {}
 }
 async function guardedFetch(raw, url, opts){

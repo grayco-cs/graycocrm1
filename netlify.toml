@@ -341,6 +341,10 @@
 [functions."sub-texts-scheduled"]
   schedule = "2,17,32,47 * * * *"
 
+# patch SENTLOG: 📬 e-mails that asked for something and have no answer → the Office To-Do (hourly; sends nothing)
+[functions."mail-followup-scheduled"]
+  schedule = "11 * * * *"
+
 # Automation quick wins (patches AUTO-AR, AUTO-PAY, AUTO-LIEN, AUTO-DIGEST, AUTO-SCORE; docs/AUTO-WINS.md): every hour at :19.
 # Each part acts only at its own Central time and once (past-due reminders after 7 AM, …). Nothing it does sends to a
 # customer, sub or GC without an approval; data-entry mode pauses it.

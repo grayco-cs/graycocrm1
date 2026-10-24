@@ -70,6 +70,8 @@ async function syncBox(box, state, match, deadline){
   const rows = (await G.pool(ids, 5, async id => { if (Date.now() > deadline) return null; return G.meta(box, id); })).filter(r => r && !r.error && r.id);
   rows.forEach(r => Object.assign(r, match(r)));
   if (rows.length) await X.addRows(X.boxKey(box), rows, X.MAX_BOX);
+  /* patch SENTLOG: a reply in any GrayCo mailbox answers a waiting request */
+  try { const inb = rows.filter(r => r.dir === 'in'); if (inb.length) await require('./_lib/sentlog.js').onInbound(inb); } catch (e) {}
   st.at = new Date().toISOString(); st.n = rows.length; st.err = rows.length < ids.length && Date.now() > deadline ? 'time ran out — the rest next run' : '';
   if (rows.length < ids.length && Date.now() > deadline) st.historyId = hid || '';   /* not all read: keep the old point so nothing is skipped */
   return st;

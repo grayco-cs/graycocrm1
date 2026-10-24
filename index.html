@@ -177274,3 +177274,301 @@ var tries = 0;
 try { console.log('[GC] video-run fixes (patch BUGV)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-sentlog">
+/* __GC_PATCH_SENTLOG__ — 📤 SENT BY THE CRM + 📬 WAITING ON A REPLY (owner 10/24: "I want to be able to see my auto and
+   resend e-mails — I sent one to Alec about a COI, I like that — I would like office and admin to see those e-mails so
+   they can follow up on them if someone ignores, say, an insurance request").
+   • Every e-mail the CRM sent — automatic or from someone's "send" — with its type (COI request, W-9 request, insurance
+     request, customer document request, lien waiver, signature, bid results, invoice, reminder, portal link, bid…), to,
+     job, who sent it, when, and its status (sent / ⏸ paused / failed / delivered / bounced). A row opens the e-mail as it
+     was sent. Office and admins see all of it; a PM sees only his own jobs'. Filters: type, status, job, waiting on a reply.
+   • 📬 Waiting on a reply (office + admins): every e-mail that asked for something and has no answer yet (a reply, or
+     the thing showing up in the CRM). Past its days: 📨 Resend reminder (customer / insurance reminders wait on
+     ✅ Approvals, like the first e-mail) · 📞 Call · ✓ Mark resolved. After 2 reminders the admins see it too.
+   Where: the Email Center (Gmail tab), the 🏢 Office Manager Dashboard, and the To-Do ("📬 Waiting on a reply (N)").
+   The server (netlify/functions/mail-sent.js, _lib/sentlog.js) checks who may see what on every call.
+   API: window._gcSentLog = { open({ tab, pid, type, waiting }), refresh(), state() } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SENTLOG__) return; window.__GC_PATCH_SENTLOG__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/mail-sent';
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function when(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return s(iso); } }
+function day(iso){ var t = Date.parse(iso || ''); if (!t) return ''; try { return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch (e) { return s(iso).slice(0, 10); } }
+function me(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u) return u; } } catch (e) {} return {}; }
+function realAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} return /^admin$/i.test(s(me().role)) || low(me().payType) === 'owner'; }
+function isMM(){ try { return !!(W._gcIsMM && W._gcIsMM()); } catch (e) { return false; } }
+function officeRole(){ var u = me(), r = s(u.role) + ' ' + s(u.profile); try { if (W._gcRP && W._gcRP.role) r += ' ' + s(W._gcRP.role()); } catch (e) {} return /office/i.test(r); }
+/* what this person may see (the server decides for real) */
+function level(){ if (isMM()) return 'none'; if (realAdmin()) return 'admin'; if (officeRole()) return 'office'; return me().email || me().name ? 'pm' : 'none'; }
+function wide(){ var l = level(); return l === 'admin' || l === 'office'; }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + s(e && e.message) + ').', __status: 0 }; });
+}
+function post(op, body){ return j(FN + '?op=' + op, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); }
+function projects(){ return arr((W._crm || {}).projects).filter(function(p){ return p && p.id && !p.deleted; }); }
+
+var S = { fu: null, fuAt: 0, fuLoading: false, types: null, set: null, list: { rows: [], total: 0, counts: {}, at: 0, err: '', loading: false, f: { type: '', status: '', pid: '', waiting: false, q: '' }, offset: 0 } };
+function loadFu(force){
+  if (!wide() || S.fuLoading) return Promise.resolve(S.fu);
+  if (!force && S.fu && Date.now() - S.fuAt < 180000) return Promise.resolve(S.fu);
+  S.fuLoading = true;
+  return j(FN + '?op=followups').then(function(o){ S.fuLoading = false; S.fuAt = Date.now(); if (o && o.ok) S.fu = o; else if (!S.fu) S.fu = { rows: [], counts: { waiting: 0, overdue: 0, escalated: 0 }, err: s(o && o.error) }; paintMounts(); return S.fu; });
+}
+function loadList(append){
+  var f = S.list.f; S.list.loading = true;
+  var q = ['op=list', 'limit=100', 'offset=' + (append ? S.list.offset : 0), 'months=3'];
+  ['type', 'status', 'pid', 'q'].forEach(function(k){ if (f[k]) q.push(k + '=' + encodeURIComponent(f[k])); });
+  if (f.waiting) q.push('waiting=1');
+  return j(FN + '?' + q.join('&')).then(function(o){
+    S.list.loading = false; S.list.at = Date.now();
+    if (o && o.ok) { S.list.rows = append ? S.list.rows.concat(arr(o.rows)) : arr(o.rows); S.list.total = o.total || 0; S.list.counts = o.counts || {}; S.list.offset = (append ? S.list.offset : 0) + arr(o.rows).length; S.types = o.types || S.types; S.list.err = ''; }
+    else S.list.err = s(o && o.error) || 'Could not load.';
+  });
+}
+
+/* ── look ── */
+function css(){
+  if (D.getElementById('gc-sl-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-sl-css';
+  st.textContent = '.gc-sl-ov{position:fixed;inset:0;z-index:2147482990;background:rgba(15,23,42,.45);display:flex;justify-content:center;align-items:flex-start;padding:max(12px,env(safe-area-inset-top)) 10px 12px;overflow:auto;font:14px Inter,Arial,sans-serif}'
+    + '.gc-sl-p{background:#fff;color:#14202e;width:100%;max-width:980px;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.25);padding:14px 16px;box-sizing:border-box}'
+    + '.gc-sl-h{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.gc-sl-h b{font-size:17px}'
+    + '.gc-sl-tabs{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap}.gc-sl-tab{border:1px solid #d6dbe1;background:#f8fafc;border-radius:999px;padding:6px 12px;font-weight:700;cursor:pointer;color:#334155}.gc-sl-tab.on{background:#14202e;color:#fff;border-color:#14202e}'
+    + '.gc-sl-f{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}.gc-sl-f select,.gc-sl-f input[type=search]{border:1px solid #d6dbe1;border-radius:8px;padding:6px 8px;font:13px Inter,sans-serif;max-width:100%}'
+    + '.gc-sl-row{border:1px solid #e5e8ec;border-radius:10px;padding:9px 11px;margin:6px 0;cursor:pointer;background:#fff}.gc-sl-row:hover{border-color:#94a3b8}'
+    + '.gc-sl-m{font-size:12px;color:#64748b}.gc-sl-sub{font-weight:700;overflow-wrap:anywhere}'
+    + '.gc-sl-c{display:inline-block;border-radius:999px;padding:1px 8px;font:700 11px Inter,sans-serif;margin-right:4px;background:#eef2f7;color:#334155;white-space:nowrap}'
+    + '.gc-sl-c.ok{background:#dcfce7;color:#166534}.gc-sl-c.bad{background:#fee2e2;color:#991b1b}.gc-sl-c.warn{background:#fef3c7;color:#92400e}.gc-sl-c.wait{background:#e0f2fe;color:#075985}.gc-sl-c.asap{background:#dc2626;color:#fff}.gc-sl-c.soon{background:#f59e0b;color:#fff}'
+    + '.gc-sl-b{border:1px solid #cbd5e1;background:#fff;color:#14202e;border-radius:8px;padding:6px 10px;font:700 13px Inter,sans-serif;cursor:pointer;text-decoration:none;display:inline-block}'
+    + '.gc-sl-b.pri{background:#2563eb;border-color:#2563eb;color:#fff}.gc-sl-b.go{background:#16a34a;border-color:#16a34a;color:#fff}'
+    + '.gc-sl-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}'
+    + '.gc-sl-frame{width:100%;min-height:360px;border:1px solid #e5e8ec;border-radius:10px;background:#fff}'
+    + '.gc-sl-om{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:10px 12px;margin:10px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}'
+    + '@media (max-width:600px){.gc-sl-p{padding:12px}.gc-sl-frame{min-height:300px}}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function statusChip(r){
+  if (r.dlv === 'bounced' || r.dlv === 'complained') return '<span class="gc-sl-c bad">' + (r.dlv === 'bounced' ? 'Bounced' : 'Marked spam') + '</span>';
+  if (r.status === 'paused') return '<span class="gc-sl-c warn">⏸ Paused</span>';
+  if (r.status === 'failed') return '<span class="gc-sl-c bad">Failed</span>';
+  if (r.dlv === 'delivered') return '<span class="gc-sl-c ok">Delivered</span>';
+  if (r.dlv === 'delayed') return '<span class="gc-sl-c warn">Delayed</span>';
+  return '<span class="gc-sl-c ok">Sent</span>';
+}
+function waitChip(w){
+  if (!w) return '';
+  if (w.status === 'answered') return '<span class="gc-sl-c ok">✓ Answered</span>';
+  if (w.status === 'resolved') return '<span class="gc-sl-c ok">✓ Resolved</span>';
+  if (w.esc === 'asap') return '<span class="gc-sl-c asap">🔴 ASAP — no reply</span>';
+  if (w.esc === 'soon') return '<span class="gc-sl-c soon">🟠 No reply after ' + (w.n || 2) + ' reminders</span>';
+  if (w.bounced) return '<span class="gc-sl-c bad">📬 Bounced</span>';
+  if (w.overdue) return '<span class="gc-sl-c warn">📬 No reply' + (w.n ? ' · ' + w.n + ' reminder' + (w.n > 1 ? 's' : '') : '') + '</span>';
+  return '<span class="gc-sl-c wait">⏳ Waiting on reply · until ' + esc(day(w.due)) + '</span>';
+}
+
+/* ── the window ── */
+var OV = null, VIEW = { tab: 'waiting', detail: null, confirm: '', note: {}, msg: {} };
+function close(){ if (OV) { OV.remove(); OV = null; } VIEW.detail = null; }
+function open(o){
+  o = o || {}; css();
+  var l = level(); if (l === 'none') return;
+  VIEW.tab = o.tab === 'sent' || !wide() ? 'sent' : 'waiting'; VIEW.detail = null; VIEW.confirm = '';
+  if (o.pid != null) S.list.f.pid = s(o.pid); if (o.type != null) S.list.f.type = s(o.type); if (o.waiting != null) S.list.f.waiting = !!o.waiting;
+  if (!OV) { OV = D.createElement('div'); OV.className = 'gc-sl-ov'; OV.setAttribute('data-gc-keep', '1'); OV.setAttribute('data-gc-linked', '1'); D.body.appendChild(OV); bind(); }
+  paint();
+  if (VIEW.tab === 'waiting') loadFu(true).then(paint); else loadList().then(paint);
+  if (wide() && !S.set) j(FN + '?op=settings').then(function(x){ if (x && x.ok) { S.set = x.settings; S.types = x.types || S.types; if (OV && !VIEW.detail) paint(); } });
+}
+function typeOptions(sel){
+  var T = S.types || {}; var keys = Object.keys(T);
+  return '<option value="">All types</option>' + keys.map(function(k){ return '<option value="' + esc(k) + '"' + (k === sel ? ' selected' : '') + '>' + esc(T[k].label) + (S.list.counts[k] ? ' (' + S.list.counts[k] + ')' : '') + '</option>'; }).join('');
+}
+function jobOptions(sel){
+  return '<option value="">All jobs</option>' + projects().slice().sort(function(a, b){ return s(a.name).localeCompare(s(b.name)); }).map(function(p){ return '<option value="' + esc(p.id) + '"' + (s(p.id) === sel ? ' selected' : '') + '>' + esc(s(p.name || p.address || p.id).slice(0, 60)) + '</option>'; }).join('');
+}
+function fuCard(f){
+  var who = f.who && f.who !== arr(f.to)[0] ? f.who + ' · ' + arr(f.to).join(', ') : arr(f.to).join(', ');
+  var conf = VIEW.confirm === 'resend:' + f.id, rconf = VIEW.confirm === 'resolve:' + f.id, msg = VIEW.msg[f.id] || '';
+  var acts = f.status === 'waiting' ? '<div class="gc-sl-acts">'
+      + (conf ? '<button type="button" class="gc-sl-b go" data-sl-resend-yes="' + esc(f.id) + '">Yes — send the reminder</button><button type="button" class="gc-sl-b" data-sl-cancel>Cancel</button>'
+              : '<button type="button" class="gc-sl-b pri" data-sl-resend="' + esc(f.id) + '">📨 Resend reminder</button>')
+      + (f.phone ? '<a class="gc-sl-b" href="tel:' + esc(f.phone.replace(/[^0-9+]/g, '')) + '">📞 Call ' + esc(f.phone) + '</a>' : '<span class="gc-sl-c">📞 no phone on file</span>')
+      + (rconf ? '<input type="text" data-sl-note="' + esc(f.id) + '" placeholder="What happened? (optional)" style="border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;min-width:180px"><button type="button" class="gc-sl-b go" data-sl-resolve-yes="' + esc(f.id) + '">✓ Resolved</button><button type="button" class="gc-sl-b" data-sl-cancel>Cancel</button>'
+               : '<button type="button" class="gc-sl-b" data-sl-resolve="' + esc(f.id) + '">✓ Mark resolved</button>')
+      + '<button type="button" class="gc-sl-b" data-sl-open="' + esc(f.id) + '">Open the e-mail</button></div>'
+    : '<div class="gc-sl-m" style="margin-top:4px">' + esc(f.status === 'answered' && f.answer ? 'Reply from ' + f.answer.from + ' on ' + day(f.answer.at) + (f.answer.subject ? ': “' + f.answer.subject + '”' : '') : f.why || 'Resolved') + '</div>';
+  return '<div class="gc-sl-row" style="cursor:default" data-fu="' + esc(f.id) + '"><div>' + waitChip(f) + '<span class="gc-sl-c">' + esc(f.label || f.type) + '</span></div>'
+    + '<div class="gc-sl-sub" style="margin-top:4px">' + esc(f.subject) + '</div>'
+    + '<div class="gc-sl-m">To ' + esc(who) + ' · sent ' + esc(when(f.at)) + (f.fromName ? ' by ' + esc(f.fromName) : '') + (f.n ? ' · ' + f.n + ' reminder' + (f.n > 1 ? 's' : '') + ' sent' : '') + '</div>'
+    + acts + (msg ? '<div class="gc-sl-m" style="margin-top:6px;color:#1d4ed8;font-weight:600">' + esc(msg) + '</div>' : '') + '</div>';
+}
+function waitingHtml(){
+  if (!S.fu) return '<div class="gc-sl-m">Loading…</div>';
+  if (S.fu.err) return '<div class="gc-sl-c bad">' + esc(S.fu.err) + '</div>';
+  var rows = arr(S.fu.rows), w = rows.filter(function(f){ return f.status === 'waiting'; }), done = rows.filter(function(f){ return f.status !== 'waiting'; });
+  var h = '<div class="gc-sl-m" style="margin-bottom:6px">E-mails that asked for something (COI, W-9, insurance papers, signatures, documents, lien waivers, bid results) and have no answer yet. A reply, or the thing showing up in the CRM, closes them by itself.</div>';
+  h += w.length ? w.map(fuCard).join('') : '<div style="padding:14px;text-align:center;color:#16a34a;font-weight:700">Nothing waiting on a reply. ✅</div>';
+  if (done.length) h += '<div style="font-weight:800;margin-top:14px">Answered or resolved (last 14 days)</div>' + done.slice(0, 40).map(fuCard).join('');
+  if (level() === 'admin' && S.set && S.types) {
+    h += '<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700">⚙ Which e-mails wait on a reply, and for how long</summary><div style="margin-top:8px">'
+      + Object.keys(S.set.track).map(function(k){ return '<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" data-sl-tr="' + esc(k) + '"' + (S.set.track[k] ? ' checked' : '') + '> <span style="min-width:200px">' + esc((S.types[k] || {}).label || k) + '</span> follow up after <input type="number" min="1" max="30" data-sl-dy="' + esc(k) + '" value="' + esc(S.set.days[k]) + '" style="width:56px;border:1px solid #cbd5e1;border-radius:6px;padding:3px 5px"> work days</label>'; }).join('')
+      + '<button type="button" class="gc-sl-b pri" data-sl-save>Save</button> <span data-sl-savemsg class="gc-sl-m"></span></div></details>';
+  }
+  return h;
+}
+function sentHtml(){
+  var L = S.list, f = L.f;
+  var h = '<div class="gc-sl-f"><select data-sl-f="type" aria-label="Type">' + typeOptions(f.type) + '</select>'
+    + '<select data-sl-f="status" aria-label="Status">' + [['', 'Any status'], ['sent', 'Sent'], ['delivered', 'Delivered'], ['bounced', 'Bounced'], ['paused', '⏸ Paused'], ['failed', 'Failed']].map(function(x){ return '<option value="' + x[0] + '"' + (x[0] === f.status ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>'
+    + '<select data-sl-f="pid" aria-label="Job" style="max-width:220px">' + jobOptions(f.pid) + '</select>'
+    + (wide() ? '<label style="display:flex;gap:4px;align-items:center;font-size:13px"><input type="checkbox" data-sl-f="waiting"' + (f.waiting ? ' checked' : '') + '> Waiting on a reply</label>' : '')
+    + '<form data-sl-q style="display:inline-flex;gap:4px"><input type="search" name="q" value="' + esc(f.q) + '" placeholder="To, subject, job…"><button class="gc-sl-b" type="submit">Search</button></form></div>';
+  if (L.err) return h + '<div class="gc-sl-c bad">' + esc(L.err) + '</div>';
+  if (!L.at) return h + '<div class="gc-sl-m">Loading…</div>';
+  h += '<div class="gc-sl-m">' + L.total + ' e-mail' + (L.total === 1 ? '' : 's') + (level() === 'pm' ? ' about your jobs' : '') + ' · the last 3 months</div>';
+  h += L.rows.map(function(r){
+    return '<div class="gc-sl-row" data-sl-row="' + esc(r.id) + '"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div>' + statusChip(r) + '<span class="gc-sl-c">' + esc(r.typeLabel) + '</span>' + waitChip(r.wait) + '</div><div class="gc-sl-m">' + esc(when(r.at)) + '</div></div>'
+      + '<div class="gc-sl-sub" style="margin-top:3px">' + esc(r.subject || '(no subject)') + '</div>'
+      + '<div class="gc-sl-m">To ' + esc(arr(r.to).join(', ') || '—') + (r.job ? ' · 🏗 ' + esc(r.job) : '') + ' · ' + esc(r.by) + '</div></div>';
+  }).join('') || '<div class="gc-sl-m" style="padding:10px">Nothing matches.</div>';
+  if (L.rows.length < L.total) h += '<button type="button" class="gc-sl-b" data-sl-more style="margin-top:8px">Show more</button>';
+  return h;
+}
+function detailHtml(d){
+  if (!d) return '';
+  if (d.loading) return '<div class="gc-sl-m">Loading…</div>';
+  if (d.err) return '<div class="gc-sl-c bad">' + esc(d.err) + '</div>';
+  var r = d.row, b = d.body;
+  var h = '<button type="button" class="gc-sl-b" data-sl-back>‹ Back</button>'
+    + '<div style="margin-top:8px">' + statusChip(r) + '<span class="gc-sl-c">' + esc(r.typeLabel) + '</span>' + waitChip(r.wait) + '</div>'
+    + '<div class="gc-sl-sub" style="font-size:16px;margin-top:6px">' + esc(r.subject) + '</div>'
+    + '<div class="gc-sl-m">From ' + esc((b && b.from) || r.fromName || r.from) + ' · to ' + esc(arr(r.to).join(', ')) + (arr(r.cc).length ? ' · cc ' + esc(arr(r.cc).join(', ')) : '') + '<br>' + esc(when(r.at)) + ' · ' + esc(r.by) + (r.job ? ' · 🏗 ' + esc(r.job) : '') + (r.dlvAt ? ' · ' + esc(r.dlv) + ' ' + esc(when(r.dlvAt)) : '') + '</div>';
+  if (d.followup) h += fuCard(d.followup);
+  h += b ? '<iframe class="gc-sl-frame" sandbox="" referrerpolicy="no-referrer" title="The e-mail as sent" data-sl-frame style="margin-top:10px"></iframe>'
+         : '<div class="gc-sl-m" style="margin-top:10px">' + esc(r.snippet || '') + '<br><i>The full text was not kept for this one (sent before the CRM started keeping copies, or a text message).</i></div>';
+  return h;
+}
+function paint(){
+  if (!OV) return;
+  var w = wide(), c = S.fu && S.fu.counts || {};
+  var h = '<div class="gc-sl-p" role="dialog" aria-label="E-mail the CRM sent"><div class="gc-sl-h"><b>📤 E-mail the CRM sent</b><button type="button" class="gc-sl-b" data-sl-x aria-label="Close">✕</button></div>';
+  if (VIEW.detail) h += detailHtml(VIEW.detail);
+  else {
+    h += '<div class="gc-sl-tabs">' + (w ? '<button type="button" class="gc-sl-tab' + (VIEW.tab === 'waiting' ? ' on' : '') + '" data-sl-tab="waiting">📬 Waiting on a reply' + (c.waiting ? ' (' + c.waiting + ')' : '') + '</button>' : '')
+      + '<button type="button" class="gc-sl-tab' + (VIEW.tab === 'sent' ? ' on' : '') + '" data-sl-tab="sent">📤 Everything sent</button></div>';
+    h += VIEW.tab === 'waiting' && w ? waitingHtml() : sentHtml();
+  }
+  h += '</div>';
+  OV.innerHTML = h;
+  var fr = OV.querySelector('[data-sl-frame]');
+  if (fr && VIEW.detail && VIEW.detail.body) {
+    var b = VIEW.detail.body;
+    fr.srcdoc = s(b.html) ? '<!doctype html><meta charset=utf8><base target="_blank">' + s(b.html) : '<!doctype html><meta charset=utf8><pre style="white-space:pre-wrap;font:14px Arial,sans-serif">' + esc(b.text) + '</pre>';
+  }
+}
+function openDetail(id){
+  VIEW.detail = { loading: true }; paint();
+  j(FN + '?op=get&id=' + encodeURIComponent(id)).then(function(o){ VIEW.detail = o && o.ok ? { row: o.row, body: o.body, followup: o.followup } : { err: s(o && o.error) || 'Could not open it.' }; paint(); });
+}
+function afterAction(id, o, okMsg){
+  VIEW.confirm = '';
+  VIEW.msg[id] = o && o.ok ? (o.paused ? o.note : okMsg(o)) : 'Not done: ' + s(o && o.error);
+  return loadFu(true).then(function(){ if (VIEW.detail && VIEW.detail.row && VIEW.detail.row.id === id) openDetail(id); else paint(); });
+}
+function bind(){
+  OV.addEventListener('click', function(ev){
+    var t = ev.target; if (!t || !t.closest) return;
+    if (t === OV || t.closest('[data-sl-x]')) { close(); return; }
+    var x;
+    if ((x = t.closest('[data-sl-tab]'))) { VIEW.tab = x.getAttribute('data-sl-tab'); paint(); if (VIEW.tab === 'sent' && !S.list.at) loadList().then(paint); else if (VIEW.tab === 'waiting') loadFu(true).then(paint); return; }
+    if (t.closest('[data-sl-back]')) { VIEW.detail = null; paint(); return; }
+    if (t.closest('[data-sl-more]')) { loadList(true).then(paint); return; }
+    if (t.closest('[data-sl-cancel]')) { VIEW.confirm = ''; paint(); return; }
+    if ((x = t.closest('[data-sl-row]'))) { openDetail(x.getAttribute('data-sl-row')); return; }
+    if ((x = t.closest('[data-sl-open]'))) { openDetail(x.getAttribute('data-sl-open')); return; }
+    if ((x = t.closest('[data-sl-resend]'))) { VIEW.confirm = 'resend:' + x.getAttribute('data-sl-resend'); paint(); return; }
+    if ((x = t.closest('[data-sl-resolve]'))) { VIEW.confirm = 'resolve:' + x.getAttribute('data-sl-resolve'); paint(); return; }
+    if ((x = t.closest('[data-sl-resend-yes]'))) { var id = x.getAttribute('data-sl-resend-yes'); x.disabled = true; x.textContent = 'Sending…';
+      post('resend', { id: id }).then(function(o){ return afterAction(id, o, function(r){ return r.queued ? '📨 The reminder is waiting on ✅ Approvals (the same rule as the first e-mail).' : '📨 Reminder sent.'; }); }); return; }
+    if ((x = t.closest('[data-sl-resolve-yes]'))) { var id2 = x.getAttribute('data-sl-resolve-yes'), n = OV.querySelector('[data-sl-note="' + id2.replace(/"/g, '') + '"]'); x.disabled = true;
+      post('resolve', { id: id2, note: n ? n.value : '' }).then(function(o){ return afterAction(id2, o, function(){ return '✓ Marked resolved.'; }); }); return; }
+    if (t.closest('[data-sl-save]')) {
+      var b = { track: {}, days: {} };
+      Array.prototype.forEach.call(OV.querySelectorAll('[data-sl-tr]'), function(i){ b.track[i.getAttribute('data-sl-tr')] = i.checked; });
+      Array.prototype.forEach.call(OV.querySelectorAll('[data-sl-dy]'), function(i){ b.days[i.getAttribute('data-sl-dy')] = parseInt(i.value, 10); });
+      var m = OV.querySelector('[data-sl-savemsg]'); if (m) m.textContent = 'Saving…';
+      post('settings', b).then(function(o){ if (o && o.ok) S.set = o.settings; if (m) m.textContent = o && o.ok ? 'Saved ✓' : 'Not saved: ' + s(o && o.error); });
+      return;
+    }
+  });
+  OV.addEventListener('change', function(ev){
+    var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-sl-f'); if (!k) return;
+    S.list.f[k] = t.type === 'checkbox' ? t.checked : t.value; S.list.at = 0; paint(); loadList().then(paint);
+  });
+  OV.addEventListener('submit', function(ev){ var f = ev.target; if (!f.hasAttribute('data-sl-q')) return; ev.preventDefault(); S.list.f.q = s(f.q.value); S.list.at = 0; paint(); loadList().then(paint); });
+  D.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && OV) close(); });
+}
+
+/* ── the three places it shows ── */
+function countsText(){ var c = S.fu && S.fu.counts || {}; return c.waiting ? c.waiting + ' waiting on a reply' + (c.overdue ? ' · ' + c.overdue + ' need a follow-up' : '') : 'nothing waiting on a reply'; }
+var EC = null;
+function emailCenterCard(root){
+  var l = level(); if (l === 'none' || !root) return;
+  if (!EC) { EC = D.createElement('div'); EC.className = 'gcm-card'; EC.setAttribute('data-gc-sl-card', '1');
+    EC.addEventListener('click', function(ev){ var b = ev.target.closest && ev.target.closest('[data-sl-go]'); if (b) open({ tab: b.getAttribute('data-sl-go') }); }); }
+  var html = '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><div><div style="font-weight:800;font-size:15px">📤 Sent by the CRM</div>'
+    + '<div class="gcm-mut">' + (wide() ? 'Every e-mail the CRM sent — automatic or from a "send" button — with its status, and ' + esc(countsText()) + '.' : 'The e-mail the CRM sent about your jobs.') + '</div></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">' + (wide() ? '<button type="button" class="gcm-btn gold" data-sl-go="waiting">📬 Waiting on a reply' + (S.fu && S.fu.counts && S.fu.counts.waiting ? ' (' + S.fu.counts.waiting + ')' : '') + '</button>' : '')
+    + '<button type="button" class="gcm-btn" data-sl-go="sent">📤 Everything sent</button></div></div>';
+  if (EC.__slSig !== html) { EC.__slSig = html; EC.innerHTML = html; }
+  var before = root.querySelector('[data-gcm-log]');
+  if (before) { if (EC.parentElement !== before.parentElement || EC.nextElementSibling !== before) before.parentElement.insertBefore(EC, before); }
+  else if (EC.parentElement !== root) root.appendChild(EC);
+  loadFu(false);
+}
+var prevSlot = W._gcMailAllSlot;
+W._gcMailAllSlot = function(root){ try { if (prevSlot) prevSlot(root); } catch (e) {} try { emailCenterCard(root); } catch (e) {} };
+function omStrip(){
+  var page = D.getElementById('gc-om-page'), body = D.getElementById('om-body'), host = D.getElementById('gc-sl-om');
+  if (!page || !body || !wide()) { if (host) host.remove(); return; }
+  if (!host) { host = D.createElement('div'); host.id = 'gc-sl-om'; host.className = 'gc-sl-om'; host.setAttribute('data-gc-keep', '1');
+    host.addEventListener('click', function(ev){ var b = ev.target.closest && ev.target.closest('[data-sl-go]'); if (b) open({ tab: b.getAttribute('data-sl-go') }); }); }
+  var c = S.fu && S.fu.counts || {};
+  var html = '<b style="margin-right:4px">📬 E-mail follow-ups</b><span style="font-size:13px;color:' + (c.overdue ? '#b45309' : '#475569') + '">' + esc(countsText()) + '</span>'
+    + '<span style="flex:1"></span><button type="button" class="gc-sl-b pri" data-sl-go="waiting">📬 Waiting on a reply' + (c.waiting ? ' (' + c.waiting + ')' : '') + '</button><button type="button" class="gc-sl-b" data-sl-go="sent">📤 Sent by the CRM</button>';
+  if (host.__slSig !== html) { host.__slSig = html; host.innerHTML = html; }
+  if (host.parentElement !== body.parentElement || host.nextElementSibling !== body) body.parentElement.insertBefore(host, body);
+}
+function todoChip(){
+  var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-sl-todo');
+  var c = S.fu && S.fu.counts || {};
+  if (!mount || !wide() || !c.waiting) { if (host) host.remove(); return; }
+  if (!host) { host = D.createElement('div'); host.id = 'gc-sl-todo'; host.setAttribute('data-gc-keep', '1'); host.setAttribute('data-gc-linked', '1'); host.style.cssText = 'margin:6px 0';
+    host.addEventListener('click', function(ev){ if (ev.target.closest && ev.target.closest('[data-sl-go]')) open({ tab: 'waiting' }); }); }
+  var html = '<button type="button" data-sl-go style="border:1px solid ' + (c.overdue ? '#b45309' : '#0369a1') + ';background:' + (c.overdue ? '#b45309' : '#0369a1') + ';color:#fff;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">📬 Waiting on a reply (' + c.waiting + (c.overdue ? ' · ' + c.overdue + ' to follow up' : '') + ')</button>';
+  if (host.__slSig !== html) { host.__slSig = html; host.innerHTML = html; }
+  var anchor = D.getElementById('gc-mm') || D.getElementById('gc-exp2-todo');
+  var before = anchor && anchor.parentElement === mount.parentElement ? anchor : mount;
+  if (host.parentElement !== mount.parentElement || host.nextElementSibling !== before) mount.parentElement.insertBefore(host, before);
+}
+function paintMounts(){ try { omStrip(); } catch (e) {} try { todoChip(); } catch (e) {} try { if (EC && EC.isConnected) emailCenterCard(EC.parentElement.closest('.gcm-root') || EC.parentElement); } catch (e) {} }
+/* one light tick: only when a place it shows is on screen; the follow-ups are read when one opens and every 3 minutes */
+RI.call(W, function(){
+  if (D.hidden || !wide()) return;
+  var on = D.getElementById('_todoMount') || D.getElementById('gc-om-page');
+  if (!on) return;
+  if (!S.fu || Date.now() - S.fuAt > 180000) loadFu(false); else paintMounts();
+}, 2000);
+W._gcSentLog = { open: open, refresh: function(){ return loadFu(true); }, state: function(){ return S; }, _level: level };
+try { console.log('[GC] 📤 Sent by the CRM · 📬 Waiting on a reply (patch SENTLOG) — _gcSentLog'); } catch (e) {}
+})();
+</script>
