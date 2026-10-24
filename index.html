@@ -123562,6 +123562,7 @@ function unclipActions(){
 /* ── the field app's sheets scroll (More: "Customers" and "Switch to Desk View" were below the screen at 390 px)
       and clear the bottom tab bar ── */
 css.textContent += 'td[data-gc-unclip]{white-space:normal!important;min-width:150px}';   /* patch JOBSTILL */
+css.textContent += 'main table td:has(> button + button){white-space:normal!important}';   /* patch FLAKEFIX: action cells wrap from the first paint (EDIT never cut off) */
 css.textContent +=
   'html._fieldmode ._gcSheet{overflow-y:auto!important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;max-height:calc(100% - 8px - env(safe-area-inset-top,0px))!important;padding-bottom:20px!important;box-sizing:border-box}' +
   /* the sheet ends above the bottom tab bar, so its last row is never under it */
@@ -135084,7 +135085,9 @@ function paintHub(){
         + (r.w ? '<div class="w">' + esc(r.w) + '</div>' : '') + (r.kind === 'embed' ? embedHtml(r) : '') + '</div>' + btn + '</div>';
     }).join('') + '</div>';
   }
+  if (!cur) h = '<div id="gc-adm-todo-slot"></div>' + h;   /* patch FLAKEFIX: "📌 To-dos for you" goes here, under the team */
   m.innerHTML = h;
+  if (!cur) try { if (window._gcAdmPaintTodos) window._gcAdmPaintTodos(true); } catch (e) {}
   if (cur) wireEmbeds(m);
   if (cur && cur.render) { var box = m.querySelector('[data-adm-custom]'); try { cur.render(box); } catch (e) { box.textContent = 'Could not draw this section: ' + (e && e.message || e); } }
 }
@@ -135692,6 +135695,7 @@ D.addEventListener('change', function(e){
   if (t.hasAttribute('data-adm-sub')) { var p = t.getAttribute('data-adm-sub').split('|'); setTask(p[0], p[1], t.checked); }
 }, true);
 D.addEventListener('click', function(e){ var a = e.target && e.target.closest && e.target.closest('[data-adm-alltodo]'); if (a) { e.preventDefault(); go('todo'); } }, true);
+window._gcAdmPaintTodos = function(f){ paintTodos(f); };   /* patch FLAKEFIX: paintHub (another closure) refills the slot */
 function paintTodos(force){
   var html = tasksHtml(false), sig = html.length + ':' + html.slice(0, 200) + html.slice(-200);
   var mount = D.getElementById('_todoMount');
@@ -135702,8 +135706,8 @@ function paintTodos(force){
     if (force || box.getAttribute('data-sig') !== sig) { box.innerHTML = html; box.setAttribute('data-sig', sig); }
   } else if (box && (!mount || !html)) box.remove();
   var at = D.getElementById('gc-adm-top');
-  if (at) { var c = at.querySelector('#gc-adm-todos'); var ch = tasksHtml(true);
-    if (!c && ch) { c = D.createElement('div'); c.id = 'gc-adm-todos'; at.appendChild(c); }
+  if (at) { var c = D.getElementById('gc-adm-todos'); var ch = tasksHtml(true);   /* patch FLAKEFIX: the slot under the team (paintHub) */
+    if (!c && ch) { var slot = D.getElementById('gc-adm-todo-slot'); c = D.createElement('div'); c.id = 'gc-adm-todos'; (slot || at).appendChild(c); }
     if (c && (force || c.getAttribute('data-sig') !== ch)) { c.innerHTML = ch; c.setAttribute('data-sig', ch); } }
 }
 
@@ -137222,6 +137226,18 @@ function section(id, title, n, inner, collapsedDefault, extra){
   return '<div class="td2-sec' + (col ? ' col' : '') + '" data-s="' + esc(id) + '"><button type="button" class="td2-sh" data-td2="sec" data-s="' + esc(id) + '"><span class="td2-car">▾</span><span class="td2-st">' + title + '</span><span class="td2-n">' + n + '</span>' + (extra || '') + '</button><div class="td2-sbody">' + inner + '</div></div>';
 }
 var LIMIT = 10;
+/* patch FLAKEFIX: "✓ Done today" — what a person (or the CRM, on paid / signed) finished comes first, newest first;
+   lines that only "cleared on their own" come after; the same line twice is shown once (×N); 40 shown, then "Show all" */
+function doneRows(list){
+  var g = {}, out = [];
+  (list || []).forEach(function(x){ if (!x) return; var k = (x.title || '') + '|' + (x.by || ''); if (g[k]) { g[k].n++; if ((x.at || '') > (g[k].at || '')) g[k].at = x.at; return; } g[k] = { title: x.title, by: x.by, at: x.at, n: 1 }; out.push(g[k]); });
+  var rk = function(x){ return /^fixed — cleared on its own$/.test(x.by || '') ? 1 : 0; };
+  out.sort(function(a, b){ return rk(a) - rk(b) || String(b.at || '').localeCompare(String(a.at || '')); });
+  var all = !!UI.open['more:done'], show = all ? out : out.slice(0, 40);
+  var h = show.map(function(x){ return '<div class="td2-row done"><span class="td2-ckd">✓</span><div class="td2-tt"><span class="td2-ti">' + esc(x.title) + (x.n > 1 ? ' <span class="td2-sub">×' + x.n + '</span>' : '') + '</span><span class="td2-sub">' + esc(x.by || '') + '</span></div></div>'; }).join('');
+  if (out.length > show.length) h += '<button type="button" class="td2-moreRows" data-td2="morerows" data-s="done">Show all ' + out.length + ' ›</button>';
+  return h;
+}
 function rows(list, id){
   list = sortItems(list);
   var all = !!UI.open['more:' + id], h = (all ? list : list.slice(0, LIMIT)).map(function(x){ return rowHtml(x, 0); }).join('');
@@ -137264,7 +137280,7 @@ function tailSections(st){
   var h = '', wait = st.items.filter(function(x){ return x.waiting; });
   if (wait.length) h += section('wait', '⏳ Waiting on others', wait.length, rows(wait, 'wait'), true);
   if (st.snoozed.length) h += section('snz', '💤 Snoozed', st.snoozed.length, sortItems(st.snoozed).map(function(x){ ITEMS[x.key] = x; return '<div class="td2-row p-low snz" data-k="' + esc(x.key) + '"><span class="td2-dot"></span><div class="td2-tt"><span class="td2-ti">' + esc(x.title) + '</span><span class="td2-sub">until ' + esc(dueLabel(x.snoozedTo)) + '</span></div><button type="button" class="td2-act" data-td2="unsnooze">Wake up</button></div>'; }).join(''), true);
-  if (st.doneToday.length) h += section('done', '✓ Done today', st.doneToday.length, st.doneToday.slice(0, 40).map(function(x){ return '<div class="td2-row done"><span class="td2-ckd">✓</span><div class="td2-tt"><span class="td2-ti">' + esc(x.title) + '</span><span class="td2-sub">' + esc(x.by || '') + '</span></div></div>'; }).join(''), true);
+  if (st.doneToday.length) h += section('done', '✓ Done today', st.doneToday.length, doneRows(st.doneToday), true);   /* patch FLAKEFIX */
   return h;
 }
 function bodyHtml(st, host){
