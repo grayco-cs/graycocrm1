@@ -475,16 +475,199 @@ function customerFacing(d){
   return CUSTOMER_DOC.test(t);
 }
 
+/* ── patch PORTALGATE (owner, 10/24): "it should be approved for customer portal … even in crm you still have to
+   approve in your approvals to put it in the portal for them … it has to go through channels."
+   Nothing NEW reaches a customer's portal page without an approval: a proposal / estimate (the estimate builder's,
+   a Google Doc's, a Word / PDF upload's — the job's PM approves it; the APM only when "APMs may approve" is on;
+   admins always), a document marked for the customer (Docs / Files, Google Docs papers, the default job papers,
+   the closeout papers, the warranty), a Google Doc or link on the job. INVOICES ARE NOT GATED (owner, 10/24):
+   they go into the portal as before. Each gated thing has a key (e:<estimate> d:<doc> l:<link> g:<job>:<doc url>); gc_kv "gc_portal_gate" (a JSON list) holds
+     · one "_meta" row: when the gate started, and the keys every job already showed then (gf) — those stay;
+     · one row per key a person decided: approved / rejected / recorded (record-only: never shown) / pending.
+   A key the page would show that is neither in gf nor approved is hidden and goes on ✅ Approvals as a
+   "portal_publish" item for the job's PM (an admin can approve anything). Approving it shows it in the portal.
+   An approved "please sign" e-mail for an estimate / paper approves that key too.
+   Not gated (they already need a person): the PM's own 📣 posts and the 🟢 Crew arrived / 🏁 Done for today
+   posts, the change orders and papers the customer signs (their e-mails wait on Approvals), payments.
+   History / record-only jobs and records (importedHistory / noSend / historyOnly) never go up and never make
+   an approval. Data-entry mode: an approval cannot put anything in a portal (use "Approve as record-only").
+   Unreadable gate → fail closed: nothing new is shown. ── */
+const GATE_KEY = 'gc_portal_gate';
+const GATE_TTL = 15e3;
+let GATE_LAST = null, GATE_AT = 0;
+function gHash(v){ return crypto.createHash('sha256').update(s(v)).digest('hex').slice(0, 12); }
+function gateKeyOf(type, x, p){
+  if (type === 'g') return 'g:' + s(p && p.id) + ':' + gHash(p && p.gdocUrl);
+  if (type === 'l') return 'l:' + (s(x && x.id) || gHash(x && x.url));
+  return type + ':' + s(x && x.id);
+}
+function historyJob(p){ return !!(p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)); }
+function historyRec(r){ return !!(r && (r.importedHistory === true || r.noSend === true || r.historyOnly === true || r.recordOnly === true)); }
+function gateParse(list){
+  const meta = list.find(function(x){ return x && x.id === '_meta'; }) || null;
+  const map = {};
+  list.forEach(function(x){ if (x && x.id && x.id !== '_meta') map[s(x.id)] = x; });
+  const gf = {};
+  if (meta && meta.gf && typeof meta.gf === 'object') Object.keys(meta.gf).forEach(function(pid){ const o = {}; (Array.isArray(meta.gf[pid]) ? meta.gf[pid] : []).forEach(function(k){ o[s(k)] = 1; }); gf[pid] = o; });
+  return { ok: !!meta, since: meta ? s(meta.since) : '', map: map, gf: gf };
+}
+/* what a job's portal page would show WITHOUT the gate (the keys) — the snapshot the gate starts from */
+function gateRawKeys(data, p){
+  const pid = s(p.id), out = [];
+  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; out.push(gateKeyOf('e', e)); });
+  const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));
+  arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){ out.push(gateKeyOf('d', d)); });
+  if (gdocInfo(p.gdocUrl)) out.push(gateKeyOf('g', null, p));
+  arr(p.portalLinks).forEach(function(l){ if (l && l.hidden !== true && httpsUrl(l.url)) out.push(gateKeyOf('l', l)); });
+  return out;
+}
+async function gateGet(data, force){
+  if (!force && GATE_LAST && Date.now() - GATE_AT < GATE_TTL) return GATE_LAST;
+  let cur = null; try { cur = await kvListRead(GATE_KEY); } catch (e) { cur = null; }
+  if (!cur) { return GATE_LAST && Date.now() - GATE_AT < 10 * 60e3 ? GATE_LAST : { ok: false, map: {}, gf: {}, since: '' }; }   /* unreadable: the last good copy (10 min), else closed */
+  let G = gateParse(cur.list);
+  if (!G.ok) {   /* the first look: everything every job shows today stays; from now on new things wait for an approval */
+    try {
+      const d = data || await crmData(true);
+      const gf = {};
+      arr(d.projects).forEach(function(p){ if (p && p.id != null && findProject(d, p.id)) { const k = gateRawKeys(d, p); if (k.length) gf[s(p.id)] = k; } });
+      const meta = { id: '_meta', since: new Date().toISOString(), gf: gf, v: 1 };
+      const w = await kvListUpdate(GATE_KEY, function(l){ return l.some(function(x){ return x && x.id === '_meta'; }) ? null : { list: [meta].concat(l), check: function(l2){ return l2.some(function(x){ return x && x.id === '_meta'; }); } }; });
+      const again = await kvListRead(GATE_KEY);
+      G = again ? gateParse(again.list) : (w.ok ? gateParse([meta]) : G);
+    } catch (e) { try { console.log('[portal-gate] start failed: ' + (e && e.message || e)); } catch (x) {} }
+  }
+  if (G.ok) { GATE_LAST = G; GATE_AT = Date.now(); }
+  return G;
+}
+/* may this thing be on the job's portal page? (sync: the gate read last; buildView / notices read it first) */
+function gateAllows(G, p, key, rec, pending, info){
+  G = G || GATE_LAST;
+  if (!G || !G.ok) return false;
+  const e = G.map[key];
+  if (e && e.st === 'approved') return true;
+  if (G.gf[s(p.id)] && G.gf[s(p.id)][key]) return true;
+  if (e) return false;                                           /* pending / rejected / recorded */
+  if (historyJob(p) || historyRec(rec)) return false;           /* history never goes up and never asks */
+  if (pending && info) pending.push(Object.assign({ key: key }, info));
+  return false;
+}
+function gateLabel(t){ return { e: 'Proposal / estimate', d: 'Document', l: 'Link', g: 'Google Doc' }[t] || 'Document'; }
+/* a new thing → "pending" on the gate + one approval for the job's PM (idempotent by key) */
+async function gateQueue(data, p, pending){
+  if (!pending || !pending.length) return 0;
+  const now = new Date().toISOString(), pid = s(p.id);
+  const add = pending.filter(function(x, i, a){ return a.findIndex(function(y){ return y.key === x.key; }) === i; }).slice(0, 25);
+  const r = await kvListUpdate(GATE_KEY, function(l){
+    const have = {}; l.forEach(function(x){ if (x && x.id) have[s(x.id)] = 1; });
+    const nw = add.filter(function(x){ return !have[x.key]; }).map(function(x){ return { id: x.key, pid: pid, type: x.type, title: clip(x.title, 120), refId: s(x.refId), st: 'pending', at: now, aq: 'aq_gate_' + gHash(x.key) }; });
+    if (!nw.length) return null;
+    return { list: l.concat(nw), check: function(l2){ return nw.every(function(n){ return l2.some(function(y){ return y && y.id === n.id; }); }); }, result: nw };
+  });
+  const made = (r && r.ok && Array.isArray(r.result)) ? r.result : [];
+  if (made.length) GATE_AT = 0;
+  const pm = pmOf(data, p), cust = s(p.client || p.customer || p.clientName) || 'the customer';
+  let n = 0;
+  for (const g of made) {
+    const label = gateLabel(g.type);
+    const html = '<p><b>' + esc(label) + ':</b> ' + esc(g.title || label) + '</p><p>Job: ' + esc(jobTag(p) || s(p.name)) + '</p>' +
+      '<p>Approve to show it on ' + esc(cust) + '’s GrayCo Portal page. Nothing is e-mailed by this approval. Until then it stays in the CRM only (⏳ Waiting for approval — not in portal).</p>';
+    const ok = await queueApproval({ id: g.aq, kind: 'portal_publish', pid: pid, jobName: s(p.name), pm: pm, to: '', channel: 'portal',
+      title: '📄 Put in the customer portal — ' + label + ': ' + clip(g.title || label, 90),
+      subject: 'Show in ' + cust + '’s portal: ' + clip(g.title || label, 120), html: html, attachments: [],
+      meta: { gateKey: g.id, type: g.type, refId: g.refId, urgency: 'soon' } });
+    if (ok) n++;
+  }
+  return n;
+}
+/* set a key's decision (approved / rejected / recorded); approved also closes its own waiting approval item */
+async function gateSet(key, st, me, why){
+  key = s(key); if (!key) return false;
+  const now = new Date().toISOString();
+  const r = await kvListUpdate(GATE_KEY, function(l){
+    const x = l.find(function(y){ return y && y.id === key; });
+    if (x && x.st === st) return null;
+    const row = Object.assign({}, x || { id: key, at: now }, { st: st, by: s(me && me.by), byEmail: s(me && me.email), decidedAt: now, why: clip(why, 120) });
+    const nl = x ? l.map(function(y){ return y && y.id === key ? row : y; }) : l.concat([row]);
+    return { list: nl, check: function(l2){ return l2.some(function(y){ return y && y.id === key && y.st === st; }); }, result: row };
+  });
+  GATE_AT = 0;
+  if (st === 'approved') {   /* its own "Put in the portal" item, if one waits, is done */
+    try { await kvListUpdate(AQ_KEY, function(l){ const it = l.find(function(y){ return y && y.kind === 'portal_publish' && (y.meta || {}).gateKey === key && (y.status === 'waiting' || y.status === 'sending'); }); if (!it) return null;
+      it.status = 'sent'; it.sentAt = now; it.sentBy = s(me && me.by) || 'GrayCo'; it.updatedAt = now; it.note = 'Approved with ' + clip(why || 'another approval', 80);
+      return { list: l, check: function(l2){ return l2.some(function(y){ return y && y.id === it.id && y.status === 'sent'; }); } }; }); } catch (e) {}
+  }
+  return !!(r && r.ok);
+}
+async function gateOnApproved(item, now){
+  const m = item.meta || {}, key = s(m.gateKey);
+  if (!key) return { ok: false, error: 'This approval has no portal item.' };
+  let paused = false; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = false; }
+  if (paused) return { ok: false, error: 'Data-entry mode is on: nothing goes to customers, so it was not put in the portal. Use “Approve as record-only”, or approve again after ▶ Resume sending.' };
+  const ap = (item.approvals || []).slice(-1)[0] || {};
+  const ok = await gateSet(key, 'approved', { by: ap.by, email: ap.email }, 'its approval');
+  return ok ? { ok: true, posted: true } : { ok: false, error: 'Could not save it just now — try again.' };
+}
+/* another approved e-mail that carries the same thing (an invoice e-mail, a "please sign" e-mail) approves it too */
+async function gateFromMail(item, me){
+  try {
+    const m = item.meta || {}, k = s(item.kind);
+    if (/^sign_/.test(k) && m.refId) await gateSet((/contract|estimate/.test(k + ' ' + s(m.kind)) ? 'e:' : 'd:') + s(m.refId), 'approved', me, 'the signature e-mail');
+  } catch (e) {}
+}
+/* the 15-minute run (approval-escalate.js) and the CRM ("gate-scan" for one job): every job's new things → Approvals */
+async function gateScan(opts){
+  opts = opts || {};
+  const data = await crmData(true);
+  const G = await gateGet(data, true);
+  if (!G.ok) return { ok: false, error: 'The portal gate could not be read.' };
+  let queued = 0, jobs = 0;
+  for (const p of arr(data.projects)) {
+    if (!p || p.id == null || !findProject(data, p.id)) continue;
+    if (opts.pid && s(p.id) !== s(opts.pid)) continue;
+    if (historyJob(p)) continue;
+    const pending = [];
+    gateCandidates(data, p).forEach(function(c){ gateAllows(G, p, c.key, c.rec, pending, c.info); });
+    if (pending.length) { jobs++; queued += await gateQueue(data, p, pending); }
+  }
+  return { ok: true, queued: queued, jobs: jobs };
+}
+function gateCandidates(data, p){
+  const pid = s(p.id), out = [];
+  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; out.push({ key: gateKeyOf('e', e), rec: e, info: { type: 'e', title: s(e.name) || 'Proposal', refId: s(e.id) } }); });
+  const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));
+  arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){ if (d.estimateId && shownEst[s(d.estimateId)]) return;   /* an estimate's own PDF follows the estimate's approval */
+    out.push({ key: gateKeyOf('d', d), rec: d, info: { type: 'd', title: s(d.name) || 'Document', refId: s(d.id) } }); });
+  if (gdocInfo(p.gdocUrl)) out.push({ key: gateKeyOf('g', null, p), rec: p, info: { type: 'g', title: 'Proposal (Google Doc)', refId: '' } });
+  arr(p.portalLinks).forEach(function(l){ if (l && l.hidden !== true && httpsUrl(l.url)) out.push({ key: gateKeyOf('l', l), rec: l, info: { type: 'l', title: s(l.title) || 'Link', refId: s(l.id) } }); });
+  return out;
+}
+/* what is waiting on the gate (the CRM shows "⏳ Waiting for approval — not in portal") */
+async function gateState(pid){
+  const G = await gateGet(null, true);
+  if (!G.ok) return { ok: false, error: 'The portal gate could not be read.' };
+  const items = Object.keys(G.map).map(function(k){ return G.map[k]; }).filter(function(x){ return !pid || s(x.pid) === s(pid); })
+    .map(function(x){ return { key: x.id, pid: x.pid, type: x.type, title: x.title, refId: x.refId, st: x.st, at: x.at, by: x.by || '', decidedAt: x.decidedAt || '' }; });
+  return { ok: true, since: G.since, items: items };
+}
+
 async function buildView(data, p, opts){
   opts = opts || {};
   const pid = s(p.id);
+  const G = await gateGet(data), gatePend = [];   /* patch PORTALGATE */
   const users = arr(data.users), customers = arr(data.customers);
-  const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return invOfProject(r, p) && isCustomerInvoice(r); });
+  const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return invOfProject(r, p) && isCustomerInvoice(r); });   /* invoices: not gated (owner, 10/24) */
   const cos = listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; });
-  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const rawEsts = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const rawEst = {}; rawEsts.forEach(function(e){ rawEst[s(e.id)] = 1; });
+  const ests = rawEsts.filter(function(e){ return gateAllows(G, p, gateKeyOf('e', e), e, gatePend, { type: 'e', title: s(e.name) || 'Proposal', refId: s(e.id) }); });   /* patch PORTALGATE */
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
   const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));   /* patch INSP; patch BB2: a job with a claim (gc_claims) is an insurance job */
-  const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); });
+  const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, rawEst) : docShown(d, pid, rawEst); })
+    .filter(function(d){ const ek = s(d.estimateId); if (ek && rawEst[ek]) return !!shownEst[ek] || gateAllows(G, p, gateKeyOf('d', d), d, null, null);   /* an estimate's own PDF follows the estimate's approval */
+      return gateAllows(G, p, gateKeyOf('d', d), d, gatePend, { type: 'd', title: s(d.name) || 'Document', refId: s(d.id) }); });
   const openPunch = arr(data.punch).some(function(x){ return pidOf(x) === pid && !/complete|done|closed/.test(low(x.status)); });
   const lead = arr(data.leads).find(function(l){ return s(l.fromProjectId) === pid || pidOf(l) === pid; }) || null;
 
@@ -518,11 +701,13 @@ async function buildView(data, p, opts){
       url: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) || (g ? g.url : ''), preview: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) ? '' : (g ? g.preview : '') });   /* patch GDOCS: the PDF first — a private Google Doc does not open for the customer */
   });
   const pg = gdocInfo(p.gdocUrl);
-  if (pg) addDoc({ kind: 'gdoc', title: 'Your proposal (Google Doc)', date: '', url: pg.url, preview: pg.preview });
+  const pgOk = !!pg && gateAllows(G, p, gateKeyOf('g', null, p), p, gatePend, { type: 'g', title: 'Proposal (Google Doc)', refId: '' });   /* patch PORTALGATE */
+  if (pgOk) addDoc({ kind: 'gdoc', title: 'Your proposal (Google Doc)', date: '', url: pg.url, preview: pg.preview });
   arr(p.portalLinks).forEach(function(l){
     if (l.hidden === true) return;
     const g = gdocInfo(l.url), u = httpsUrl(l.url);
     if (!u) return;
+    if (!gateAllows(G, p, gateKeyOf('l', l), l, gatePend, { type: 'l', title: s(l.title) || 'Link', refId: s(l.id) })) return;   /* patch PORTALGATE */
     addDoc({ kind: g ? 'gdoc' : 'link', title: clip(l.title || (g ? 'Google Doc' : 'Document'), 90), date: ymd(l.at), url: u, preview: g ? g.preview : '' });
   });
   function fileType(ty){ ty = low(ty); return /pdf/.test(ty) ? 'pdf' : (/word|\.docx?\b|msword|rtf/.test(ty) ? 'word' : (/image|jpe?g|png|heic|webp/.test(ty) ? 'image' : 'file')); }
@@ -536,6 +721,7 @@ async function buildView(data, p, opts){
   cos.forEach(function(c){ arr(c.files).forEach(function(f, i){ const u = signed[f.ref]; if (u) addDoc({ kind: 'file', title: clip('Change order — ' + (c.desc || c.title || '') , 90), date: ymd(c.date || c.savedAt), type: fileType(f.type + ' ' + f.name), url: u }); }); });
   invoices.forEach(function(r){ arr(r.files).concat(arr(r._files)).forEach(function(f){ const u = signed[f.ref]; if (u && r.needsReview !== true) addDoc({ kind: 'file', title: clip((invFinal(r) ? 'Final invoice ' : 'Invoice ') + s(r.invNum || r.num || ''), 90), date: ymd(r.date || r.sentDate || r.savedAt), type: fileType(f.type + ' ' + f.name), url: u }); }); });
 
+  if (gatePend.length && opts.noGateQueue !== true) { try { await gateQueue(data, p, gatePend); } catch (e) {} }   /* patch PORTALGATE: new things → ✅ Approvals */
   /* money */
   const contract = money(num(p.contractAmount) || num(p.contract) || num(p.contractAmt));
   const invOut = invoices.map(function(r){
@@ -556,7 +742,7 @@ async function buildView(data, p, opts){
   const paid = money(payments.reduce(function(t, x){ return t + x.amount; }, 0));
   const due = money(invOut.reduce(function(t, x){ return t + x.balance; }, 0));
 
-  const stage = stageOf(p, { invoices: invoices, openPunch: openPunch, proposals: ests.length + (pg ? 1 : 0), leadStage: lead && (lead.stage || lead.status) });
+  const stage = stageOf(p, { invoices: invoices, openPunch: openPunch, proposals: ests.length + (pgOk ? 1 : 0), leadStage: lead && (lead.stage || lead.status) });
   const ccId = ccIdOf(p);
   const view = {
     ok: true,
@@ -1292,6 +1478,7 @@ async function aqSend(item, now){
     const jp = d && findProject(d, item.jobId), k = jp ? JA.blockedKind(jp, item.kind, jaAdmin(d)) : '';
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
+  if (s(item.kind) === 'portal_publish') return gateOnApproved(item, now);   /* patch PORTALGATE: approved → it shows in the portal (no e-mail) */
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
   if (s(item.kind) === 'bp_notice') return require('./_lib/bp-notice.js').onApproved(item, now);   /* patch SYS2: a bid-job addendum / update to the invited subs */
   if (/^gcp_/.test(s(item.kind))) return require('./_lib/gcp.js').onApproved(item, now);   /* patch GCP: GC pay apps / change orders / company COI / inspection offers */
@@ -1464,6 +1651,7 @@ async function approvalAction(body, who){
     if (!r.ok || !r.result || r.result.status !== 'rejected') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
     const m = it0.meta || {};
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
+    if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }   /* patch PORTALGATE: not approved → never in the portal */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
@@ -1484,6 +1672,7 @@ async function approvalAction(body, who){
     const m = it0.meta || {};
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'recorded' });
+      if (s(it0.kind) === 'portal_publish' && m.gateKey) await gateSet(m.gateKey, 'recorded', me, 'record-only');   /* patch PORTALGATE: recorded, never shown */
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'recorded' }) });
     } catch (e) {}
     return { status: 200, out: { ok: true, recorded: true, sent: false, item: r.result } };
@@ -1518,6 +1707,7 @@ async function approvalAction(body, who){
     else { x.status = 'waiting'; x.lastError = sent.error; }
   }, function(z){ return z.status === (sent.ok ? 'sent' : 'waiting'); });
   const item = r.result || it0;
+  if (sent.ok && s(item.kind) !== 'portal_publish') { try { await gateFromMail(item, me); } catch (e) {} }   /* patch PORTALGATE */
   if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
   return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
 }
@@ -1818,20 +2008,20 @@ const QUIET = 3 * 60e3, MAXWAIT = 10 * 60e3, OLD = 14 * DAY;
 const NOTIFY_DOC = /proposal|contract|change.?order|completion|warrant|customer portal|estimate|quote/i;
 function noticeItems(data, p){
   const pid = s(p.id), out = [];
-  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p) && gateAllows(null, p, gateKeyOf('e', e), e); });   /* patch PORTALGATE: only what the portal shows */
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
   ests.forEach(function(e){ if (e.noNotice === true) return;   /* patch GDOCS: brought in from Google Docs — no e-mail unless the admin turned it on */
     out.push({ key: 'est:' + s(e.id), title: s(e.name) || 'Your proposal', kind: 'proposal', at: ymd(e.sentDate || e.finalizedDate || e.date || e.updatedAt) }); });
   const insJ = isInsJob(p);   /* patch INSP */
-  arr(data.projectDocs).filter(function(d){ return insJ ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){
+  arr(data.projectDocs).filter(function(d){ return (insJ ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst)) && gateAllows(null, p, gateKeyOf('d', d), d); }).forEach(function(d){   /* patch PORTALGATE */
     if (d.estimateId && shownEst[s(d.estimateId)]) return;               /* the estimate already counts */
     if (d.noNotice === true) return;                                       /* patch GDOCS */
     if (/final invoice|\binvoice/i.test(s(d.name) + ' ' + s(d.cat)) && !/proposal/i.test(s(d.cat))) return;
     if (!(d.portalShare === true && /customer portal/i.test(s(d.cat))) && !NOTIFY_DOC.test(s(d.cat) + ' ' + s(d.name)) && !(insJ && insGroupOf(d))) return;
     out.push({ key: 'doc:' + s(d.id), title: s(d.name) || 'Document', kind: 'doc', at: ymd(d.uploadedAt || d.uploaded || d.savedAt) });
   });
-  arr(p.portalLinks).forEach(function(l){ if (l.hidden !== true && httpsUrl(l.url)) out.push({ key: 'link:' + s(l.id), title: s(l.title) || 'Document', kind: 'doc', at: ymd(l.at) }); });
-  if (gdocInfo(p.gdocUrl)) out.push({ key: 'pgdoc:' + s(p.gdocUrl).slice(-40), title: 'Your proposal', kind: 'proposal', at: ymd(p.updatedAt) });
+  arr(p.portalLinks).forEach(function(l){ if (l.hidden !== true && httpsUrl(l.url) && gateAllows(null, p, gateKeyOf('l', l), l)) out.push({ key: 'link:' + s(l.id), title: s(l.title) || 'Document', kind: 'doc', at: ymd(l.at) }); });
+  if (gdocInfo(p.gdocUrl) && gateAllows(null, p, gateKeyOf('g', null, p), p)) out.push({ key: 'pgdoc:' + s(p.gdocUrl).slice(-40), title: 'Your proposal', kind: 'proposal', at: ymd(p.updatedAt) });
   listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; })
     .forEach(function(c){ out.push({ key: 'co:' + s(c.id), title: 'Change order — ' + clip(c.desc || c.title || '', 60), kind: 'co', at: ymd(c.approvedDate || c.date || c.savedAt) }); });
   if (insJ) { const w = insWords(data, p); out.forEach(function(x){ x.title = scrub({ t: s(x.title) }, w).t; }); }   /* patch INSP */
@@ -1845,6 +2035,7 @@ async function notifyDocs(pid, event, opts){
   if (!p) return { ok: false, retry: true, error: 'The job is not in the cloud yet.' };
   if (/lost|dead|cancel/.test(low(p.status))) return { ok: true, skipped: 'lost job' };
   if (!jaAllows(data, p, 'docsNotice')) return { ok: true, skipped: 'the new-papers notice is turned off for this job', off: 'docsNotice' };   /* patch JA */
+  await gateGet(data);   /* patch PORTALGATE: the notice lists only what the portal shows */
   const items = noticeItems(data, p).filter(function(x){   /* patch JA: a paper the job does not send by itself is not announced */
     const t = low(x.title);
     if (x.kind === 'co' && !jaAllows(data, p, 'coSign')) return false;
@@ -2089,7 +2280,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -2108,6 +2299,12 @@ exports.handler = async function (event) {
         const rows = await r.json();
         return reply(200, headers, { ok: true, links: (Array.isArray(rows) ? rows : []).map(function(x){ return { projectId: x.project_id, createdAt: x.created_at, lastViewedAt: x.last_viewed_at, revoked: !!x.revoked, sentAt: x.sent_at }; }) });
       } catch (e) { return reply(500, headers, { ok: false, error: 'The portal server hit a problem: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'gate') {   /* patch PORTALGATE: what waits to go in a portal (op state), or look for new things now (op scan) */
+      try {
+        if (s(body.op) === 'scan') return reply(200, headers, await gateScan({ pid: s(body.projectId) }));
+        return reply(200, headers, await gateState(s(body.projectId)));
+      } catch (e) { return reply(502, headers, { ok: false, error: 'The portal gate hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'approval') {
       try { const a = await approvalAction(body, who); return reply(a.status, headers, a.out); }
@@ -2217,9 +2414,9 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
   newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
-  queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
+  queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */

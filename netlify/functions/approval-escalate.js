@@ -45,6 +45,7 @@ exports.handler = async function (event) {
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   try {
     const out = await portal._core.escalateDue({});
+    try { out.portalGate = await portal._core.gateScan({}); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals */
     try { console.log('[approval-escalate]', JSON.stringify({ escalated: out.escalated || 0 })); } catch (e) {}
     return { statusCode: out.ok ? 200 : 502, headers, body: JSON.stringify(out) };
   } catch (e) {
