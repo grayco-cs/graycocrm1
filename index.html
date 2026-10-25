@@ -126777,7 +126777,7 @@ function localUrl(id, kind){
 }
 
 /* ── CompanyCam: an optional extra, only through the server proxy while its key works ── */
-var ccCache = {}, ccBusy = {};
+var ccCache = {}, ccBusy = {}, ccAsked = {}, ccErr = {};   /* patch CCSYNC (photos) */
 function ccOn(){ try { var st = typeof window._gcCCStatus === 'function' ? window._gcCCStatus() : null; return !!(st && st.on); } catch (e) { return false; } }
 function ccIdFromAny(v){ if (v == null || v === '') return ''; var t = String(v), m = t.match(/companycam\.com\/projects\/(\d+)/) || t.match(/^PRJcc_(\d+)$/) || t.match(/^cc:(\d+)$/); if (m) return m[1]; return /^\d{3,}$/.test(t.trim()) ? t.trim() : ''; }
 function ccIdOf(p){ if (!p) return ''; var f = ['ccProjectId', 'companyCamId', 'companycamId', 'ccamId', 'ccId', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'ccProjectUrl', 'id']; for (var i = 0; i < f.length; i++) { var id = ccIdFromAny(p[f[i]]); if (id) return id; } return ''; }
@@ -126801,23 +126801,34 @@ function ccMap(jobId, ph){
 }
 function ccLoad(jobId, force){
   var it = itemById(jobId), id = it ? (it.ccId || ccIdOf(it.raw)) : '';
-  if (!id || !ccOn()) return Promise.resolve([]);
+  if (!id) return Promise.resolve([]);
+  /* patch CCSYNC (photos): the key's state not known yet on this page → ask once, then load (it used to give up silently) */
+  if (!ccOn()) {
+    if (ccAsked[jobId] || typeof window._gcCCCheckStatus !== 'function') return Promise.resolve([]);
+    ccAsked[jobId] = 1;
+    var fresh = Date.now() - (ccAsked.__at || 0) > 5 * 60e3; if (fresh) ccAsked.__at = Date.now();   /* a stale "doesn't work" answer is asked again (at most every 5 minutes) */
+    return Promise.resolve(window._gcCCCheckStatus(fresh)).then(function(){ return ccOn() ? ccLoad(jobId, force) : []; }, function(){ return []; });
+  }
   var c = ccCache[jobId];
   if (c && !force && Date.now() - c.at < 5 * 60e3) return Promise.resolve(c.list);
   if (ccBusy[jobId]) return ccBusy[jobId];
   /* the CompanyCam proxy (patch CCX): the key stays on the server, never in this browser */
   function page(n, acc){
     return window.fetch(FN_CC + '?proxy=api&raw=1&per_page=100&page=' + n + '&endpoint=' + encodeURIComponent('projects/' + id + '/photos'), { headers: { 'x-gc-cc': '1' } }).then(function(r){
-      return r.ok ? r.json().catch(function(){ return null; }) : null;
-    }, function(){ return null; }).then(function(j){
+      if (!r.ok) { ccErr[jobId] = 'CompanyCam photos answered ' + r.status; return null; }
+      return r.json().catch(function(){ ccErr[jobId] = 'CompanyCam photos: unreadable answer'; return null; });
+    }, function(){ ccErr[jobId] = 'Could not reach the server'; return null; }).then(function(j){
+      if (j && !Array.isArray(j)) j = j.photos || j.data || j.results || j.items || null;   /* patch CCSYNC (photos): a wrapped list */
       var l = Array.isArray(j) ? j : []; acc = acc.concat(l);
       return l.length >= 100 && n < 10 ? page(n + 1, acc) : acc;
     });
   }
-  ccBusy[jobId] = page(1, []).then(function(j){
+  ccErr[jobId] = ''; ccBusy[jobId] = page(1, []).then(function(j){
     var list = (Array.isArray(j) ? j : []).map(function(ph){ return ccMap(jobId, ph); }).filter(Boolean)
       .sort(function(a, b){ return a.at < b.at ? 1 : -1; });
-    ccCache[jobId] = { at: Date.now(), list: list };
+    if (!ccErr[jobId] || list.length) ccCache[jobId] = { at: Date.now(), list: list };   /* a failed read is tried again next time, not remembered as "no photos" */
+    else { try { console.warn('[GC] CompanyCam photos for ' + jobId + ': ' + ccErr[jobId]); } catch (e) {} }
+    window._gcCCPhotoErr = function(id){ return ccErr[id] || ''; };
     delete ccBusy[jobId]; emit('cc');
     return list;
   });
