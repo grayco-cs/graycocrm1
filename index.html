@@ -66648,10 +66648,11 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var _nb=document.getElementById('_ccl-notes'); if(_nb) _nb.onclick = function(){ var s=document.getElementById('gc-cc-sync-status'); if(window._gcAutoReadAllCCNotes) window._gcAutoReadAllCCNotes(function(m){ if(s){s.style.color='#c4b5fd'; s.textContent=m;} }); };
     console.log('[GC] CompanyCam bar added to Leads tab.');
   }
-  var obs = new MutationObserver(function(){ build(); });
-  obs.observe(document.body, {childList:true, subtree:false});
+  /* patch CCSYNC: the CompanyCam bar is no longer on Leads (owner 10/24) — Test / Sync / Pull Documents / Read Job Notes are in
+     Admin → ⚙ Admin settings → 📸 CompanyCam sync status and on GrayCo Photos. No page-wide observer any more. */
+  build = function(){ _ccRemoveLeadsBar(); };
   setTimeout(build, 2000);
-  console.log('[GC] CompanyCam leads-bar module loaded.');
+  console.log('[GC] CompanyCam leads-bar module: moved to the CompanyCam sync status window.');
 })();
 </script>
 <script>
@@ -114811,7 +114812,7 @@ window.__gcCCAllow = function(u, init){
     if (url.indexOf('api.companycam.com') >= 0) return false;
     if (url.indexOf('companycam-webhook') < 0) return false;
     if (hdrGet(init && init.headers, 'x-gc-cc') !== '1') return false;   /* an old code path */
-    if (/[?&]proxy=(status|sync)\b/.test(url)) return true;              /* the one question (+ patch CCS: what the sync recorded) */
+    if (/[?&]proxy=(status|sync|syncnow|review)\b/.test(url)) return true;   /* the one question (+ patch CCS: what the sync recorded; + patch CCSYNC: the status window's answers) */
     return on();
   } catch (e) { return false; }
 };
@@ -166941,6 +166942,221 @@ function tick(){
 RI.call(W, tick, 1500); later(tick, 4000);
 W._gcCCSync = { state: function(){ return JSON.parse(JSON.stringify({ data: H.data, at: H.at, err: H.err })); }, poll: function(){ return poll(true); }, text: function(){ return judge(); }, _judgeFor: function(data, err){ var o = H.data, e = H.err; H.data = data; H.err = err || ''; try { return judge(); } finally { H.data = o; H.err = e; } } };
 try { console.log('[GC] CompanyCam sync status line (patch CCS) — _gcCCSync.state()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-ccsync">
+/* __GC_PATCH_CCSYNC__ — 📸 CompanyCam sync status + review list (owner 10/24: "CompanyCam should be syncing all of the newer
+   jobs we've added and hasn't"). The 15-minute companycam-sync now never skips a project silently: a project that looks
+   like an existing job by name / address but can't be tied to ONE open job, one that matches only a finished job, and a
+   job given to the Senior PM because its CompanyCam creator isn't mapped all land on gc_kv gc_cc_review. This tail shows:
+     • a "📸 CompanyCam sync status" window (last run, counts, token check, skipped + why, ⟳ Sync all now, the review list
+       with Make it a job / Not a job / Done);
+     • "📸 CompanyCam: N to review" on the admin / office To-Do (opens the window);
+     • "📸 CompanyCam sync isn't working" on the admin / office To-Do while the last run failed or was skipped;
+     • a "📸 CompanyCam sync status" button next to each CompanyCam "Test Connection" bar.
+   The CompanyCam controls (Test Connection / Sync Jobs → Leads / Pull Documents / Read Job Notes) moved here from Leads.
+   Where: Admin → ⚙ Admin settings → 📸 CompanyCam sync status, a button on 📸 GrayCo Photos, and the To-Do lines.
+   Admin + office only. No polling: it asks the server when the window opens, and at most every 10 minutes for the To-Do.
+   API: window._gcCCSyncPanel() */
+(function(){
+'use strict';
+if (window.__GC_PATCH_CCSYNC__) return; window.__GC_PATCH_CCSYNC__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/companycam-webhook';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function isOffice(){ try { if (W._gcRP && typeof W._gcRP.role === 'function' && /office/i.test(s(W._gcRP.role()))) return true; } catch (e) {} try { return /office/i.test(s(W._gcMeNow && (W._gcMeNow.role || W._gcMeNow.title))); } catch (e) { return false; } }
+function allowed(){ return isAdmin() || isOffice(); }
+function when(iso){ var t = Date.parse(iso); if (!t) return '—'; try { return new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return iso; } }
+
+var S = { data: null, at: 0, busy: null, err: '', msg: '' };
+function load(force){
+  if (!allowed()) return Promise.resolve(S);
+  if (S.busy) return S.busy;
+  if (!force && S.at && Date.now() - S.at < 10 * 60e3) return Promise.resolve(S);
+  S.busy = W.fetch(FN + '?proxy=sync', { headers: { 'x-gc-cc': '1' }, cache: 'no-store' }).then(function(r){
+    return r.text().then(function(t){ var j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (r.ok && j && typeof j === 'object') { S.data = j; S.err = ''; } else S.err = 'The server answered ' + r.status + '.'; });
+  }, function(){ S.err = 'Could not reach the server.'; }).then(function(){ S.at = Date.now(); S.busy = null; try { if (W._gcBustTodoCache) W._gcBustTodoCache(); } catch (e) {} return S; });
+  return S.busy;
+}
+function post(q, body){
+  return W.fetch(FN + '?proxy=' + q, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gc-cc': '1' }, body: JSON.stringify(body || {}) })
+    .then(function(r){ return r.text().then(function(t){ var j = {}; try { j = JSON.parse(t); } catch (e) { j = { ok: false, error: t.slice(0, 160) }; } if (!r.ok && !j.error) j.error = 'The server answered ' + r.status + '.'; return j; }); },
+      function(){ return { ok: false, error: 'Could not reach the server.' }; });
+}
+function review(){ return arr(S.data && S.data.review); }
+
+function ctl(k, label){ return '<button type="button" data-ccs-ctl="' + k + '" style="padding:7px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">' + esc(label) + '</button>'; }
+function runCtl(k){
+  var I = W.gcCCIntegration, st = D.getElementById('gc-cc-sync-status');
+  if (k === 'test') { if (I && I.testConnection) I.testConnection(); load(true).then(paint); return; }
+  if (k === 'sync') { if (I && I.sync) I.sync(); return; }
+  if (k === 'docs') { if (I && I.syncDocuments) I.syncDocuments(); return; }
+  if (k === 'notes') { if (W._gcAutoReadAllCCNotes) W._gcAutoReadAllCCNotes(function(m){ if (st) st.textContent = m; }); return; }
+}
+var KIND = { match: 'Looks like an existing job', ask: 'Same address as a finished job', pm: 'Given to the Senior PM' };
+function plainLine(){
+  var d = S.data, h = d && d.health;
+  if (!d) { try { if (W._gcCCSync && typeof W._gcCCSync.text === 'function') { var t = W._gcCCSync.text(); t = t && typeof t === 'object' ? t.text : t; if (t) return String(t); } } catch (e) {} return S.err || 'Checking…'; }
+  if (!d.tokenSet) return '⚠ CompanyCam token not set in Netlify — nothing syncs. Add COMPANYCAM_TOKEN in Netlify → Environment variables, then Trigger deploy.';
+  if (d.serviceKey === false) return '⚠ SUPABASE_SERVICE_KEY is not set in Netlify, so the 15-minute sync cannot run.';
+  if (!h) return '⚠ No CompanyCam sync run recorded yet (it runs every 15 minutes after a deploy).';
+  if (h.error) return '⚠ Last sync ' + when(h.at) + ' failed: ' + s(h.error);
+  if (h.skipped) return '⚠ Last sync ' + when(h.at) + ' skipped: ' + s(h.skipped);
+  return 'Last sync ' + when(h.at) + ' — OK';
+}
+function tokenLine(){
+  try { if (W._gcCCTruthNow) return s(W._gcCCTruthNow().text); } catch (e) {}
+  var w = S.data && S.data.whoami; if (!w) return '⚠ Not checked yet';
+  return w.accepted === true ? '✅ Token accepted' : w.accepted === false ? '❌ Token not accepted (' + (w.status || '?') + ') — make a new token in CompanyCam and paste it in Netlify' : '⚠ Not checked yet';
+}
+function body(){
+  var d = S.data || {}, h = d.health || {}, rq = d.request || {}, rv = review();
+  var n = function(k){ return +h[k] || 0; };
+  var rows = [
+    ['Last run', when(h.at) + (h.full ? ' (full re-read)' : '')],
+    ['CompanyCam token', tokenLine()],
+    ['Last request', (h.request || '—') + (h.rawFirstPage != null ? ' → CompanyCam returned ' + h.rawFirstPage + ' on page 1' : '') + (h.check ? ' · newest page without the date filter: ' + h.check.newestPage + (h.check.missed ? ' (' + h.check.missed + ' the filter missed — read newest-first instead)' : '') : '')],
+    ['Projects read', n('read') + (n('pages') ? ' (' + n('pages') + ' page' + (n('pages') === 1 ? '' : 's') + ')' : '') + (h.complete === false ? ' — not all pages came back; it tries again in 15 minutes' : '')],
+    ['New jobs made', n('made')],
+    ['Already in the CRM', n('linked') + (n('attached') ? ' · ' + n('attached') + ' tied to their job just now' : '')],
+    ['Waiting for a person', n('review') || rv.length],
+    ['Left out on purpose', 'made before 2026: ' + n('old') + ' · archived in CompanyCam: ' + n('archived') + ' · marked "not a job": ' + n('ignored') + ' · job deleted in the CRM: ' + n('deleted')]
+  ];
+  var h1 = '<div style="font-weight:800;font-size:18px;margin-bottom:6px">📸 CompanyCam sync status</div>'
+    + '<div style="margin:6px 0 10px;padding:8px 10px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;font-weight:600">' + esc(plainLine()) + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:13px">' + rows.map(function(r){ return '<tr><td style="padding:4px 8px 4px 0;color:#475569;white-space:nowrap;vertical-align:top">' + esc(r[0]) + '</td><td style="padding:4px 0">' + esc(String(r[1])) + '</td></tr>'; }).join('') + '</table>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px">'
+    + '<button type="button" data-ccs-full style="padding:8px 14px;border-radius:8px;border:0;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">⟳ Sync all now</button>'
+    + '<button type="button" data-ccs-refresh style="padding:8px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">Refresh</button>'
+    + (rq.at ? '<span style="align-self:center;color:#64748b;font-size:12px">Full re-read asked ' + esc(when(rq.at)) + (rq.by ? ' by ' + esc(rq.by) : '') + ' — runs within 15 minutes</span>' : '') + '</div>'
+    + (S.msg ? '<div style="color:#166534;font-weight:600;margin:4px 0">' + esc(S.msg) + '</div>' : '')
+    + '<div style="font-weight:700;margin:10px 0 4px">CompanyCam tools (they used to be on Leads)</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + ctl('test', '🔌 Test Connection') + ctl('sync', '🔄 Sync Jobs → Leads') + ctl('docs', '📄 Pull Documents') + ctl('notes', '🧠 Read Job Notes') + '</div>'
+    + '<div id="gc-cc-sync-status" style="font-size:12px;color:#475569;margin-top:4px"></div>'
+    + '<div style="color:#64748b;font-size:12px;margin:4px 0 10px">New projects also come in right away when CompanyCam\'s webhook is set: CompanyCam → Settings → Integrations → Webhooks → https://crm.grayco-cs.com/.netlify/functions/companycam-webhook (project.created, photo.created).</div>'
+    + '<div style="font-weight:800;margin-top:6px">Waiting for a person (' + rv.length + ')</div>';
+  if (!rv.length) h1 += '<div style="color:#64748b;margin-top:4px">Nothing waiting.</div>';
+  rv.forEach(function(x){
+    h1 += '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-top:8px">'
+      + '<div style="font-weight:700">' + esc(x.name || ('CompanyCam ' + x.cc)) + '</div>'
+      + '<div style="font-size:12px;color:#475569">' + esc(x.address || '') + (x.creator ? ' · made by ' + esc(x.creator) : '') + (x.created ? ' · ' + esc(x.created) : '') + '</div>'
+      + '<div style="font-size:13px;margin-top:4px"><b>' + esc(KIND[x.kind] || 'Check') + ':</b> ' + esc(x.why || '') + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
+      + (x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;text-decoration:none;color:#0f172a">Open in CompanyCam</a>' : '')
+      + (x.kind === 'pm' ? '<button type="button" data-ccs-act="done" data-cc="' + esc(x.cc) + '" data-kind="pm" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">✓ Done</button>'
+        : '<button type="button" data-ccs-act="make" data-cc="' + esc(x.cc) + '" data-kind="' + esc(x.kind) + '" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">＋ Make it a new job</button>'
+          + '<button type="button" data-ccs-act="dismiss" data-cc="' + esc(x.cc) + '" data-kind="' + esc(x.kind) + '" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">Not a new job (it\'s already here)</button>')
+      + '</div></div>';
+  });
+  return h1;
+}
+var OV = null, ADM = null;
+function close(){ if (OV) { OV.remove(); OV = null; } }
+function paint(){
+  if (ADM && !ADM.isConnected) ADM = null;
+  if (ADM && !OV) ADM.innerHTML = body();
+  if (!OV) return; var box = OV.querySelector('[data-ccs-box]'); if (box) box.innerHTML = body() + '<div style="text-align:right;margin-top:12px"><button type="button" data-ccs-close style="padding:8px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">Close</button></div>'; }
+function open(){
+  if (!allowed()) return;
+  if (!OV) {
+    OV = D.createElement('div'); OV.id = 'gc-ccsync-ov'; OV.setAttribute('data-gc-keep', '1');
+    OV.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px';
+    OV.innerHTML = '<div data-ccs-box style="background:#fff;color:#0f172a;max-width:720px;width:100%;border-radius:14px;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.25)"></div>';
+    OV.addEventListener('click', onClick);
+    D.body.appendChild(OV);
+  }
+  S.msg = ''; paint();
+  load(true).then(paint);
+}
+function onClick(e){
+  var t = e.target;
+  if ((OV && t === OV) || t.closest('[data-ccs-close]')) { close(); paint(); return; }
+  var c = t.closest('[data-ccs-ctl]'); if (c) { runCtl(c.getAttribute('data-ccs-ctl')); return; }
+  if (t.closest('[data-ccs-refresh]')) { load(true).then(paint); return; }
+  if (t.closest('[data-ccs-full]')) { S.msg = 'Asking…'; paint(); post('syncnow').then(function(r){ S.msg = r.ok ? (r.message || 'Asked — runs within 15 minutes.') : ('Could not ask: ' + s(r.error)); return load(true); }).then(paint); return; }
+  var b = t.closest('[data-ccs-act]');
+  if (b) {
+    var act = b.getAttribute('data-ccs-act'), cc = b.getAttribute('data-cc'), kind = b.getAttribute('data-kind');
+    b.disabled = true;
+    post('review', { cc: cc, act: act, kind: act === 'make' ? '' : kind }).then(function(r){
+      S.msg = r.ok ? (act === 'make' ? 'It becomes a job on the next sync (within 15 minutes).' : act === 'dismiss' ? 'Marked "not a new job" — it won\'t come back.' : 'Done.') : ('Could not save: ' + s(r.error));
+      return load(true);
+    }).then(paint);
+  }
+}
+W._gcCCSyncPanel = open;
+
+/* Admin → ⚙ Admin settings → 📸 CompanyCam sync status */
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'ccsync', after: 'syncq', ic: '📸', t: 'CompanyCam sync status', d: 'Last sync, what came in, what waits for a person · ⟳ Sync all now · Test / Pull Documents / Read Job Notes',
+    render: function(box){ ADM = box; box.onclick = onClick; box.innerHTML = body(); load(true).then(paint); },
+    count: function(){ var n = review().length; return n ? n + ' to review' : ''; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv0 = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv0); }, 500); }
+/* 📸 GrayCo Photos: a button above the tab (added when the tab mounts — no observer) */
+try {
+  var GP = W._gcPhotos;
+  if (GP && typeof GP.mountTab === 'function' && !GP.mountTab.__ccsync) {
+    var mt = GP.mountTab;
+    GP.mountTab = function(el){
+      var r = mt.apply(this, arguments);
+      try {
+        if (allowed() && el && el.parentElement && !el.parentElement.querySelector('[data-ccs-photos]')) {
+          var bb = D.createElement('div'); bb.setAttribute('data-ccs-photos', '1'); bb.setAttribute('data-gc-keep', '1'); bb.style.cssText = 'margin:0 0 8px';
+          bb.innerHTML = '<button type="button" style="padding:6px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">📸 CompanyCam sync status</button>';
+          bb.firstChild.addEventListener('click', open);
+          el.parentElement.insertBefore(bb, el);
+        }
+      } catch (e) {}
+      return r;
+    };
+    GP.mountTab.__ccsync = true;
+  }
+} catch (e) {}
+
+/* the admin / office To-Do: one line while anything waits */
+(function wrapTodo(){
+  var n = 0, iv = RI.call(W, function(){
+    var f = W._gcJOfficeTasks; if (typeof f !== 'function') { if (n++ > 120) clearInterval(iv); return; }
+    if (f.__ccsync) { clearInterval(iv); return; } clearInterval(iv);
+    var w = function(){
+      var out = []; try { out = f.apply(this, arguments) || []; } catch (e) {}
+      if (allowed()) {
+        load(false);
+        var rv = review(), d = S.data, h = d && d.health;
+        if (d && (!d.tokenSet || d.serviceKey === false || !h || h.error || h.skipped || (h.at && Date.now() - Date.parse(h.at) > 2 * 3600e3)))
+          out.push({ id: 'ccsync_broken', cat: 'CompanyCam', label: '📸 CompanyCam sync isn\'t working', sub: plainLine(), color: '#dc2626', action: open });
+        if (rv.length) out.push({ id: 'ccsync_review', cat: 'CompanyCam', label: '📸 CompanyCam: ' + rv.length + ' project' + (rv.length === 1 ? '' : 's') + ' to review',
+          sub: 'New CompanyCam projects that need a person (look-alike jobs, a finished job at the same address, or the Senior PM got them).', color: '#0ea5e9', action: open });
+      }
+      return out;
+    };
+    Object.keys(f).forEach(function(k){ try { w[k] = f[k]; } catch (e) {} });
+    w.__ccsync = true; W._gcJOfficeTasks = w;
+  }, 1000);
+})();
+
+/* a button beside every CompanyCam "Test Connection" bar — added when the user clicks there
+   (no observer, no loop): one delegated listener */
+D.addEventListener('click', function(e){
+  if (!allowed()) return;
+  var b = e.target && e.target.closest && e.target.closest('button');
+  if (!b || !/Test Connection/.test(b.textContent || '')) return;
+  if (b.closest('[data-ccs-box]') || b.hasAttribute('data-ccs-ctl')) return;   /* our own window */
+  var bar = b.parentElement; if (!bar || bar.querySelector('[data-ccs-open]')) return;
+  var x = D.createElement('button'); x.type = 'button'; x.setAttribute('data-ccs-open', '1'); x.setAttribute('data-gc-keep', '1');
+  x.textContent = '📸 CompanyCam sync status'; x.style.cssText = 'margin-left:6px;padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer';
+  x.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); open(); });
+  bar.appendChild(x);
+}, true);
+try { console.log('[GC] CompanyCam sync status + review list (patch CCSYNC)'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-pause">

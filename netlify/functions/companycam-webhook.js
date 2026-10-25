@@ -68,8 +68,10 @@ async function gcStaffAuth(event){
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
 // ---- Supabase persistence for pending CompanyCam leads (survives across function instances) ----
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+/* patch CCSYNC: the default project URL like every other function (without it a webhook project lived in memory only and
+   was lost when the function went cold), and the SERVICE_ROLE spelling too */
+const SUPABASE_URL = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 function sb(path, opts){
   return fetch(SUPABASE_URL + '/rest/v1/' + path, Object.assign({
     headers: {
@@ -196,8 +198,9 @@ exports.handler = async function(event, context) {
   // Everything the CRM calls (the ?proxy= calls and the GET that drains pending
   // leads) is staff only. The plain webhook POST from CompanyCam is not a staff
   // call and stays as it was: it can only put a lead on the review list.
+  let who = null;   /* patch CCSYNC: kept for the admin / office checks below */
   if(event.httpMethod === 'GET' || qs.proxy){
-    const who = await gcStaffAuth(event);
+    who = await gcStaffAuth(event);
     if(!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ error: who.error }) };
   }
 
@@ -242,6 +245,41 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers, body: JSON.stringify(out) };
   }
 
+  // POST ?proxy=syncnow — patch CCSYNC: an admin / the office ask for a full CompanyCam re-read ("⟳ Sync all now"); the
+  // 15-minute companycam-sync does it on its next run (gc_kv gc_cc_sync_request). POST ?proxy=review {cc, act, kind} —
+  // a person's answer on the review list: make (a new job on the next run) · dismiss (not a new job, never again) · done.
+  if(event.httpMethod === 'POST' && (qs.proxy === 'syncnow' || qs.proxy === 'review')){
+    const role = String(who && who.role || '').toLowerCase();
+    if(!/^(admin|owner|office)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
+    const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+    const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if(!svc) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY is not set in Netlify.' }) };
+    const SH = { apikey: svc, Authorization: 'Bearer ' + svc, 'Content-Type': 'application/json' };
+    const rd = async function(keys){ const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(' + keys.map(function(k){ return '%22' + k + '%22'; }).join(',') + ')', { headers: SH });
+      const o = {}; if(r.ok){ const rows = await r.json(); (Array.isArray(rows) ? rows : []).forEach(function(x){ let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){} } if(x && x.key) o[x.key] = v; }); } else throw new Error('read ' + r.status); return o; };
+    const wr = async function(rows){ const r = await fetch(url + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ Prefer: 'resolution=merge-duplicates,return=minimal' }, SH),
+      body: JSON.stringify(rows.map(function(x){ return { key: x.key, value: x.value, updated_at: new Date().toISOString() }; })) }); return r.ok; };
+    const isObj = function(v){ return !!v && typeof v === 'object' && !Array.isArray(v); };
+    try{
+      const cur = await rd(['gc_cc_sync_request', 'gc_cc_review', 'gc_cc_dismissed']);
+      const req = Object.assign({}, isObj(cur.gc_cc_sync_request) ? cur.gc_cc_sync_request : {}), at = new Date().toISOString();
+      if(qs.proxy === 'syncnow'){
+        Object.assign(req, { full: true, at: at, by: who.email || '' });
+        const ok = await wr([{ key: 'gc_cc_sync_request', value: req }]);
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: ok, message: ok ? 'Full CompanyCam sync asked for — it runs within 15 minutes.' : 'Could not save the request.' }) };
+      }
+      let b = {}; try{ b = JSON.parse(event.body || '{}') || {}; }catch(e){ b = {}; }
+      const cc = String(b.cc || '').trim(), act = String(b.act || ''), kind = String(b.kind || '');
+      if(!/^\d{1,20}$/.test(cc) || !/^(dismiss|make|done)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'cc and act (make | dismiss | done) are required' }) };
+      const list = Array.isArray(cur.gc_cc_review) ? cur.gc_cc_review : [];
+      const rows = [{ key: 'gc_cc_review', value: list.filter(function(x){ return !(x && String(x.cc) === cc && (!kind || x.kind === kind)); }) }];
+      if(act === 'dismiss'){ const dis = Object.assign({}, isObj(cur.gc_cc_dismissed) ? cur.gc_cc_dismissed : {}); dis['id:' + cc] = { at: at, by: who.email || '', why: 'CompanyCam review list: not a new job' }; rows.push({ key: 'gc_cc_dismissed', value: dis }); }
+      if(act === 'make'){ req.make = Object.assign({}, isObj(req.make) ? req.make : {}); req.make[cc] = at; Object.assign(req, { full: true, at: at, by: who.email || '' }); rows.push({ key: 'gc_cc_sync_request', value: req }); }
+      const ok = await wr(rows);
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: ok }) };
+    }catch(err){ return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not reach the CRM database. Try again.' }) }; }
+  }
+
   // GET ?proxy=sync — patch CCS: what the 15-minute companycam-sync recorded on its last run (gc_kv gc_cc_sync_health)
   // and whether COMPANYCAM_TOKEN is set here. Never the key. No CompanyCam call.
   if(event.httpMethod === 'GET' && qs.proxy === 'sync'){
@@ -251,13 +289,14 @@ exports.handler = async function(event, context) {
     if(!svc){ out.serviceKey = false; return { statusCode: 200, headers, body: JSON.stringify(out) }; }
     try{
       /* + patch CCS2 (one truth): gc_cc_whoami, the last real GET /company check, with its time */
-      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22,%22gc_cc_review%22,%22gc_cc_sync_request%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
       if(r.ok){
         const rows = await r.json();
         (Array.isArray(rows) ? rows : []).forEach(function(x){
           let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
           if(!v || typeof v !== 'object') return;
           if(x.key === 'gc_cc_sync_health') out.health = v; else if(x.key === 'gc_cc_whoami') out.whoami = v;
+          else if(x.key === 'gc_cc_review') out.review = Array.isArray(v) ? v.slice(0, 100) : []; else if(x.key === 'gc_cc_sync_request') out.request = { at: v.at || '', by: v.by || '' };   /* patch CCSYNC */
         });
       }
       else out.readError = r.status;
