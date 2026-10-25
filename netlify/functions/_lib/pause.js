@@ -29,7 +29,8 @@ const ALLOW_WRITE_HOSTS = [
   /(^|\.)companycam\.com$/i, /^developer\.api\.autodesk\.com$/i, /(^|\.)tracerfy\.com$/i,
   /^challenges\.cloudflare\.com$/i, /^oauth2\.googleapis\.com$/i, /^accounts\.google\.com$/i, /^www\.googleapis\.com$/i,
   /^solar\.googleapis\.com$/i, /^tile\.googleapis\.com$/i, /^maps\.googleapis\.com$/i, /^oauth\.platform\.intuit\.com$/i,
-  /^www\.linkedin\.com$/i, /^tools\.brightlocal\.com$/i, /^localhost$/i, /^127\.0\.0\.1$/i
+  /^www\.linkedin\.com$/i, /^tools\.brightlocal\.com$/i, /^api\.bls\.gov$/i,   /* patch PRICEUP: BLS price index — a POST that only reads */
+  /^localhost$/i, /^127\.0\.0\.1$/i
 ];
 let state = { at: 0, paused: null, why: '' };
 

@@ -318,6 +318,11 @@
 [functions."est-price-watch"]
   schedule = "20 12 * * *"
 
+# patch PRICEUP: monthly automatic price update from the BLS Producer Price Index (the 3rd, 12:00 UTC = 7 AM Central in summer,
+# 6 AM in winter). A series that moves more than 15% in a month is held back and the admins are e-mailed.
+[functions."price-index-monthly"]
+  schedule = "0 12 3 * *"
+
 # patch X12: AI photo tags (stage / damage / materials) for new GrayCo Photos + CompanyCam photos.
 # Dormant without ANTHROPIC_API_KEY; at most PHOTO_TAG_DAILY_MAX a day (default 300).
 [functions."photo-tag"]
