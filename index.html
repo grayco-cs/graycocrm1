@@ -1,6 +1,42 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+<script id="gc-patch-perfclick-watch">
+/* patch PERFCLICK: the speed watchdog. Times every timer, interval and page-watcher callback (two clock reads each) and
+   notes any that hold the screen for more than 200 ms, plus every long task the browser reports, in a small log on this
+   computer (Admin → ⚡ Speed log). Nothing is sent anywhere; it only names what made the CRM stall, so it can be fixed. */
+(function(){
+'use strict';
+var W = window; if (W.__gcSpeedWatch) return; W.__gcSpeedWatch = 1;
+var LIM = 200, MAX = 120, LOG = [], LT = { n: 0, over200: 0, over1000: 0, worst: 0 }, dirty = false;
+var now = function(){ return W.performance && performance.now ? performance.now() : Date.now(); };
+function what(fn, made){
+  var t = ''; try { t = (fn && (fn.__gcLabel || fn.name)) || ''; if (!t) t = String(fn).replace(/\s+/g, ' ').slice(0, 90); } catch (e) {}
+  return (made ? made + ' · ' : '') + t;
+}
+function note(kind, ms, fn, made){
+  try { LOG.push({ at: Date.now(), kind: kind, ms: Math.round(ms), what: what(fn, made) }); if (LOG.length > MAX) LOG.splice(0, LOG.length - MAX); dirty = true; } catch (e) {}
+}
+function site(){ try { var s = (new Error().stack || '').split('\n'); for (var i = 3; i < s.length; i++) { var m = /index\.html[^:]*:(\d+)/.exec(s[i]); if (m) return 'line ' + m[1]; } } catch (e) {} return ''; }
+function timed(fn, kind, made){
+  if (typeof fn !== 'function') return fn;
+  var w = function(){ var t0 = now(); try { return fn.apply(this, arguments); } finally { var d = now() - t0; if (d > LIM) note(kind, d, fn, made); } };
+  try { w.__gcLabel = fn.__gcLabel || fn.name; } catch (e) {}
+  return w;
+}
+var sI = W.setInterval, sT = W.setTimeout;
+W.setInterval = function(fn, ms){ var a = Array.prototype.slice.call(arguments); a[0] = timed(fn, 'interval', site()); return sI.apply(W, a); };
+W.setTimeout = function(fn, ms){ var a = Array.prototype.slice.call(arguments); a[0] = timed(fn, 'timer'); return sT.apply(W, a); };
+if (W.requestIdleCallback) { var rIC = W.requestIdleCallback; W.requestIdleCallback = function(fn, o){ return rIC.call(W, timed(fn, 'idle work'), o); }; }
+var NMO = W.MutationObserver;
+if (NMO) { try { W.MutationObserver = class extends NMO { constructor(cb){ super(timed(cb, 'page watcher', site())); } }; } catch (e) {} }
+try { new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){ LT.n++; if (e.duration > LIM) { LT.over200++; if (e.duration > 1000) LT.over1000++; if (e.duration > LT.worst) LT.worst = Math.round(e.duration); note('long task', e.duration, null, (document.hidden ? 'tab hidden' : 'screen: ' + (localStorage.getItem('grayco_view') || '?'))); } }); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
+function save(){ if (!dirty) return; dirty = false; try { localStorage.setItem('gc_speedlog_v1', JSON.stringify({ at: Date.now(), lt: LT, log: LOG.slice(-MAX) })); } catch (e) {} }
+sI.call(W, save, 10000);
+try { var old = JSON.parse(localStorage.getItem('gc_speedlog_v1') || 'null'); if (old && Array.isArray(old.log)) LOG = old.log.slice(-MAX); } catch (e) {}
+W._gcSpeedLog = { list: function(){ return LOG.slice().reverse(); }, stats: function(){ return Object.assign({}, LT); }, clear: function(){ LOG = []; LT = { n: 0, over200: 0, over1000: 0, worst: 0 }; dirty = true; save(); }, limit: LIM };
+})();
+</script>
 <style id="gc-hot2b-css">
 /* patch HOT2b: on the Leads tab the hub is the only view — the classic Lead Pipeline never paints (html.gcl-leads is set
    before React draws). html.gcl-classic-ok (an admin's "old table" link, or the hub failing to appear) shows it again. */
@@ -179559,5 +179595,30 @@ function tick(){
 }
 SI.call(W, tick, 1500);
 W._gcSaveNote = { tick: tick, text: function(){ return last; } };
+})();
+</script>
+<script id="gc-patch-perfclick-speedlog">
+/* patch PERFCLICK: Admin → ⚡ Speed log — what made the CRM stall on this computer (from the speed watchdog). */
+(function(){
+'use strict';
+var W = window, D = document; if (W.__gcSpeedLogUI) return; W.__gcSpeedLogUI = 1;
+var SI = W.__GC_REAL_SETINTERVAL__ || W.setInterval;
+function esc(x){ return String(x == null ? '' : x).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function render(box){
+  var L = W._gcSpeedLog; if (!L) { box.textContent = 'The speed watchdog is not running on this computer.'; return; }
+  var st = L.stats(), rows = L.list().slice(0, 60);
+  box.innerHTML = '<div style="font-size:13px;margin-bottom:8px">Anything that held the screen for more than ' + L.limit + ' ms on <b>this computer</b> since it was last cleared. ' +
+    'Long tasks: <b>' + st.n + '</b> · over ' + L.limit + ' ms: <b>' + st.over200 + '</b> · over 1 s: <b>' + st.over1000 + '</b> · worst: <b>' + st.worst + ' ms</b>.</div>' +
+    '<button type="button" id="gc-speedlog-clear" style="margin-bottom:8px;padding:5px 12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer">Clear the log</button>' +
+    (rows.length ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;padding:4px 6px">When</th><th style="text-align:right;padding:4px 6px">ms</th><th style="text-align:left;padding:4px 6px">Kind</th><th style="text-align:left;padding:4px 6px">What</th></tr></thead><tbody>' +
+      rows.map(function(r){ return '<tr style="border-top:1px solid #e5e7eb"><td style="padding:4px 6px;white-space:nowrap">' + esc(new Date(r.at).toLocaleString()) + '</td><td style="padding:4px 6px;text-align:right;font-weight:600;color:' + (r.ms > 1000 ? '#b91c1c' : '#92400e') + '">' + r.ms + '</td><td style="padding:4px 6px">' + esc(r.kind) + '</td><td style="padding:4px 6px;font-family:ui-monospace,monospace;word-break:break-all">' + esc(r.what) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+      : '<div style="color:#065f46">Nothing slow recorded. 👍</div>');
+  var b = D.getElementById('gc-speedlog-clear'); if (b) b.onclick = function(){ L.clear(); render(box); };
+}
+var n = 0, t = SI.call(W, function(){
+  try { if (typeof W._gcAdmAddSection === 'function') { W._gcAdmAddSection({ id: 'speedlog', after: 'crmhealth', ic: '⚡', t: 'Speed log', d: 'What made the CRM stall on this computer, and for how long', render: render }); clearInterval(t); return; } } catch (e) {}
+  if (++n > 90) clearInterval(t);
+}, 1000);
+W._gcSpeedLogRender = render;
 })();
 </script>
