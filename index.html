@@ -18109,10 +18109,7 @@ if (!localStorage.getItem("_helpShown")) {
     function refreshAlertBar(){
       try {
         if (alertBarDismissed) return;
-        var tab = GC.getActiveTab();
-        var isAdminUser = GC.isAdmin();
-        var isAdminTab = (tab === "admin");
-        var bar = mkAlertBar();
+        var bar = mkAlertBar();   /* patch PERFCLICK: the bar is off, so no page-wide tab detection (it read every button's style) */
         // Top red alert bar disabled — alerts now live only in the bottom-right Alerts button.
         bar.style.display = "none";
         document.body.style.paddingTop = "";
@@ -21609,6 +21606,8 @@ function lineCharge(line){
 // Works on static AND dynamically rendered selects
 function makeSearchable(sel){
   if(!sel||sel.dataset.srch)return;
+  /* patch PERFCLICK: only the Estimate Builder's calculators get the search box (never the CRM's own React pulldowns) */
+  try{ if(!sel.closest || !sel.closest('#gc-est-overlay')) return; }catch(e){ return; }
   sel.dataset.srch='1';
   // Build datalist from options
   const dlId='dl-'+Math.random().toString(36).slice(2);
@@ -21648,6 +21647,15 @@ function makeSearchable(sel){
     const c2=sel.options[sel.selectedIndex]; if(c2)inp.value=c2.text;
   });
   obs.observe(sel,{childList:true});
+  /* patch PERFCLICK: remember it, so a redrawn calculator's old pulldown lets go of its watcher */
+  try{ (window.__gcSrchReg = window.__gcSrchReg || []).push({ sel: sel, inp: inp, dl: dl, obs: obs }); }catch(e){}
+}
+/* patch PERFCLICK: drop the watchers (and stray boxes) of pulldowns that are gone from the page */
+function _gcSrchSweep(){
+  try{ var R = window.__gcSrchReg; if(!R || !R.length) return; var keep = [];
+    for(var i=0;i<R.length;i++){ var e = R[i]; if(e.sel && e.sel.isConnected){ keep.push(e); continue; }
+      try{ e.obs.disconnect(); }catch(x){} try{ if(e.inp && e.inp.isConnected) e.inp.remove(); }catch(x){} try{ if(e.dl && e.dl.isConnected) e.dl.remove(); }catch(x){} }
+    window.__gcSrchReg = keep; }catch(e){}
 }
 // Quick-add a material to the rate book straight from any calculator. A value
 // typed into a calculator material field that is not on the list can be added
@@ -21769,23 +21777,26 @@ function _gcInjectAddMaterialBtn(){
 setInterval(function(){ if(!window.__GC_IS_TYPING__) _gcInjectAddMaterialBtn(); }, 15000);
 
 function makeAllSearchable(){
-  document.querySelectorAll('select:not([data-srch]):not([data-no-search])').forEach(makeSearchable);
+  _gcSrchSweep();
+  document.querySelectorAll('#gc-est-overlay select:not([data-srch]):not([data-no-search])').forEach(makeSearchable);   /* patch PERFCLICK */
 }
 // Keep every calculator material pulldown searchable, even after re-renders.
 // Runs only while a calculator is on screen, and only touches selects not yet made searchable.
 setInterval(function(){
   try{
     if(window.__GC_IS_TYPING__) return;
-    var onCalc = !!document.querySelector('#act-res, #con-yds, [id^="fr-"], #ap-desc, #rb-tbody, [id^="dw-"], [id^="ins-"], [id^="pt-"]');
+    _gcSrchSweep();   /* patch PERFCLICK */
+    var _ov = document.getElementById('gc-est-overlay'); if(!_ov || getComputedStyle(_ov).display === 'none') return;
+    var onCalc = !!_ov.querySelector('#act-res, #con-yds, [id^="fr-"], #ap-desc, #rb-tbody, [id^="dw-"], [id^="ins-"], [id^="pt-"]');
     if(!onCalc) return;
-    var pending = document.querySelectorAll('select:not([data-srch]):not([data-no-search])');
+    var pending = _ov.querySelectorAll('select:not([data-srch]):not([data-no-search])');
     if(pending.length){ Array.prototype.forEach.call(pending, makeSearchable); }
   }catch(e){}
 }, 1200);
 // Re-run after any dynamic render
 function refreshSearchable(container){
   const el=container?document.getElementById(container):document;
-  if(el)el.querySelectorAll('select:not([data-srch]):not([data-no-search])').forEach(makeSearchable);
+  if(el)el.querySelectorAll('select:not([data-srch]):not([data-no-search])').forEach(makeSearchable);   /* makeSearchable itself keeps to the builder (patch PERFCLICK) */
 }
 // ── RECEIPT / INVOICE READER ─────────────────────────────────────────────────
 let diParsedItems = [];
@@ -22292,7 +22303,16 @@ async function init(){
 let _slTimer=null;
 function setSL(t){qs('sync-lbl').textContent=t;if(_slTimer)clearTimeout(_slTimer);if(t)_slTimer=setTimeout(()=>{qs('sync-lbl').textContent='';},3000);}
 async function saveRatesDBNoBridge(){try{await window.storage.set(RK,JSON.stringify(rates),true);}catch(e){}}
-async function saveRatesDB(){try{await window.storage.set(RK,JSON.stringify(rates),true);}catch(e){console.warn('saveRatesDB failed',e);} try{ if(window._gcAddToPriceList && Array.isArray(rates)){ rates.forEach(function(r){ if(r&&r.desc&&(r.type==='material'||!r.type)){ var _u=(r.unit||'ea').replace(/^per\s+/i,''); window._gcAddToPriceList(r.desc, r.cost, _u, r.cat||'Misc'); } }); } }catch(_e){} }
+async function saveRatesDB(){try{await window.storage.set(RK,JSON.stringify(rates),true);}catch(e){console.warn('saveRatesDB failed',e);} try{ if(window._gcAddToPriceList && Array.isArray(rates)){
+  /* patch PERFCLICK: push only what is new or different (one name index per save, not a full scan per material) */
+  var _nz=function(x){return String(x==null?'':x).toLowerCase().replace(/\s+/g,' ').trim();};
+  var _idx=null; try{ var _pl=window._gcGetProducts&&window._gcGetProducts(); if(Array.isArray(_pl)){ _idx=new Map(); for(var _k=0;_k<_pl.length;_k++){ var _p=_pl[_k]; if(_p&&_p.name) _idx.set(_nz(_p.name), _p); } } }catch(_x){ _idx=null; }
+  var _seen=window.__gcRateSyncSig||(window.__gcRateSyncSig=new Map());
+  rates.forEach(function(r){ if(r&&r.desc&&(r.type==='material'||!r.type)){ var _u=(r.unit||'ea').replace(/^per\s+/i,'');
+    var _n=_nz(r.desc), _c=parseFloat(r.cost)||0, _sig=_c+'|'+_u+'|'+(r.cat||'Misc');
+    if(_seen.get(_n)===_sig) return;
+    var _ex=_idx&&_idx.get(_n); if(_ex && (parseFloat(_ex.cost)||0)===_c){ _seen.set(_n,_sig); return; }
+    _seen.set(_n,_sig); window._gcAddToPriceList(r.desc, r.cost, _u, r.cat||'Misc'); } }); } }catch(_e){} }
 window._gcCopyEstimateAsDraft = function(){
   try{
     // Make a NEW separate draft from the current estimate. New id, new slot record.
@@ -123591,11 +123611,17 @@ W._gcNavDodge = dodgeAll;
 
 /* ── action buttons pushed out of sight: a table wider than its box hides its last column (Employees: "EDIT"
       sat past the right edge on every row that also had "View App"). Its no-wrap action cells may wrap instead. ── */
+var _gcUnclipSeen = (typeof WeakMap === 'function') ? new WeakMap() : null;   /* patch PERFCLICK */
 function unclipActions(){
   Array.prototype.forEach.call(D.querySelectorAll('main table'), function(tb){
     var box = tb.parentElement; if (!box) return;
+    var _rows = tb.rows || [], _n = _rows.length;   /* patch PERFCLICK: a table is looked at again only when its rows change */
+    if (_gcUnclipSeen && _gcUnclipSeen.get(tb) === _n) return;
+    if (_gcUnclipSeen) _gcUnclipSeen.set(tb, _n);
     if (tb.scrollWidth <= box.clientWidth + 2) return;
-    Array.prototype.forEach.call(tb.querySelectorAll('td'), function(td){
+    var _cells = []; for (var _r = 0; _r < _n && _r < 60; _r++) { var _cs = _rows[_r].cells; for (var _c = 0; _c < _cs.length; _c++) _cells.push(_cs[_c]); }
+    Array.prototype.forEach.call(_cells, function(td){
+      if (td.tagName !== 'TD') return;
       if (td.querySelectorAll('button,a').length >= 2 && !td.hasAttribute('data-gc-unclip') && getComputedStyle(td).whiteSpace === 'nowrap') td.setAttribute('data-gc-unclip', '');   /* patch JOBSTILL: a data attribute, not inline style / class the render fights */
     });
   });
