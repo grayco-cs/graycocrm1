@@ -43,6 +43,7 @@ async function crewText(body, who){
   const C = core(), data = await C.crmData(true), p = C.findProject(data, pid);
   if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
   if (!C.jaAllows(data, p, 'scheduleUpdates')) return { status: 200, out: { ok: true, sms: false, why: 'Schedule updates are turned off for this job (⚙ Automations).' } };
+  try { if (await require('./_lib/smsconsent.js').live(p.clientPhone || p.phone || p.customerPhone) === 'no') return { status: 200, out: { ok: true, sms: false, why: 'This customer declined texts on their contract.' } }; } catch (e) {}   /* patch SMSCONSENT */
   if (p.textOptOut === true || p.smsOptOut === true) return { status: 200, out: { ok: true, sms: false, why: 'The customer asked for no texts.' } };
   const to = e164(p.clientPhone || p.phone || p.customerPhone);
   if (!to) return { status: 200, out: { ok: true, sms: false, why: 'No customer mobile number on this job.' } };

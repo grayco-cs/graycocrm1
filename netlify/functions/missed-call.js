@@ -90,7 +90,7 @@ const sayBye = () => twiml('<Say voice="Polly.Joanna">' + esc(SAY) + '</Say><Han
 /* ── state ── */
 function loadState(v){
   const st = Object.assign({ calls: {}, texted: {}, optout: {}, owner: {} }, v && typeof v === 'object' ? v : {});
-  ['calls', 'texted', 'optout', 'owner'].forEach(k => { if (!st[k] || typeof st[k] !== 'object') st[k] = {}; });
+  ['calls', 'texted', 'optout', 'owner', 'consent', 'welcomed'].forEach(k => { if (!st[k] || typeof st[k] !== 'object') st[k] = {}; });
   /* forget handled calls after 7 days */
   const cut = new Date(now() - 7 * 86400000).toISOString();
   Object.keys(st.calls).forEach(k => { if (s(st.calls[k]) < cut) delete st.calls[k]; });
@@ -175,6 +175,9 @@ async function missed(p, how){
   });
   if (!first) return { skipped: 'already handled' };
   const out = { how };
+  /* patch SMSCONSENT: a customer who declined texts on their contract gets no automatic text (STOP is already handled above) */
+  if (textIt) { try { const SC = require('./_lib/smsconsent.js'), D0 = await core().kvRead(['customers', 'projects', 'leads']), s0 = await stateGet();
+    if (SC.statusFor(D0, ph, s0.consent) === 'no') { textIt = false; out.consent = 'declined'; } } catch (e) {} }
   if (textIt) {
     out.text = await sendSms(ph, TEXT);
     if (!out.text.ok) await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
@@ -306,6 +309,21 @@ async function inboundSms(p){
   }
   /* 5) the job's PM hears too */
   let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
+  /* patch SMSCONSENT: texting us first is consent (via 'text') — only when nothing is recorded yet, never over STOP, never for subs / staff;
+     the first reply to that number carries the subscription notice, once (prepended to the automatic answer, never a second text) */
+  let noticeNow = false;
+  try {
+    const SC = require('./_lib/smsconsent.js'), dataOk = Array.isArray(data.customers) || Array.isArray(data.projects);
+    if (dataOk && !optedOut && !(who && (who.kind === 'sub' || who.kind === 'staff'))) {
+      let rec = SC.recordFor(data, ph, st0.consent);
+      if (!rec) {
+        const mine = { status: 'yes', at, via: 'text', phone: ph }; rec = mine;
+        await stateCas(st => { st.consent = st.consent && typeof st.consent === 'object' ? st.consent : {}; if (st.consent[ph]) { rec = st.consent[ph]; return undefined; } st.consent[ph] = mine; return true; });
+        out.consent = 'yes (texted first)';
+      }
+      noticeNow = !!rec && rec.status === 'yes' && rec.via === 'text' && !(st0.welcomed && st0.welcomed[ph]);
+    }
+  } catch (e) { out.consentError = s(e && e.message); }
   /* 6) one automatic answer — never while data-entry mode is on, never to an opted-out number, limited per number */
   let reply = '', why = '';
   let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = true; }
@@ -372,8 +390,11 @@ async function inboundSms(p){
     else if (set.fallbackOn) reply = S.FALLBACK;
     else why = 'no answer fits';
   }
+  if (noticeNow && !paused && !optedOut) reply = reply ? SMS().NOTICE_PREFIX + ' ' + reply : SMS().NOTICE_PREFIX;   /* patch SMSCONSENT */
+  else noticeNow = false;
   if (reply) {
     out.reply = await sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : '');   /* patch SMSROUTE: answered from the number they texted */
+    if (out.reply.ok && noticeNow) { out.notice = true; await stateCas(st => { st.welcomed = st.welcomed && typeof st.welcomed === 'object' ? st.welcomed : {}; st.welcomed[ph] = at; return true; }).catch(() => {}); }   /* patch SMSCONSENT */
     if (out.reply.ok) {
       const rid = 'SMSA_' + sid;
       await postJobMsg({ id: rid, pid, authorId: 'sms:auto', authorName: '🤖 GrayCo auto-answer (text)', text: reply, tags: [], at: nowIso(), source: 'sms', channel: 'sms', dir: 'out', smsTo: ph });

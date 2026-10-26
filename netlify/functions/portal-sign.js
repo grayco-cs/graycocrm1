@@ -305,7 +305,8 @@ async function view(pid){
     return { id: s(x.id), kind: x.kind, label: KINDS[x.kind] || 'Document', title: T(x.title), amount: x.amount != null ? money(x.amount) : null,
       lines: arr(x.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }), doc: signed[x.docRef] || (x.url && !refPath(x.docRef) ? x.url : ''),
       status: x.status, at: s(x.createdAt), signed: x.status === 'signed' && x.signed ? { name: clip(x.signed.name, 80), at: s(x.signed.at), url: signed[x.signed.docRef] || '' } : null,
-      declined: x.status === 'declined' && x.declined ? { at: s(x.declined.at) } : null };
+      declined: x.status === 'declined' && x.declined ? { at: s(x.declined.at) } : null,
+      sms: (x.kind === 'contract' || x.kind === 'estimate') && x.status === 'pending' ? { phone: require('./_lib/sms.js').tidy(p.clientPhone || p.phone || p.customerPhone || '') } : null };   /* patch SMSCONSENT */
   });
   return { ok: true, job: { name: T(p.name) }, items: items, pm: { name: clip(pm.name, 60), phone: clip(pm.phone, 40) }, office: OFFICE_PHONE };
 }
@@ -324,6 +325,11 @@ function signedCopyPdf(o){
     : o.kind === 'doc' ? 'I reviewed this document and I sign it.'
     : 'I accept this ' + o.label.toLowerCase() + ' for the work and the price shown above, and I authorize GrayCo Construction Services to schedule and do the work. I understand a change to the scope or the price needs a signed change order.' });
   b.push({ t: 'p', text: 'Warranty: 5 years on roofing and insurance work, 1 year on all other work, from substantial completion, as stated on the warranty certificate.', size: 9, muted: true });
+  if (o.sms) {   /* patch SMSCONSENT */
+    b.push({ t: 'gap', h: 6 }, { t: 'h', text: 'Text messages' }, { t: 'p', text: 'Mobile number for texts: ' + (o.sms.phone ? require('./_lib/sms.js').tidy(o.sms.phone) : '(none given)') },
+      { t: 'p', text: (o.sms.status === 'yes' ? '[X]  ' : '[  ]  ') + require('./_lib/smsconsent.js').CONSENT_TEXT, size: 9 },
+      { t: 'p', text: o.sms.status === 'yes' ? 'The customer ticked this box themselves.' : 'The customer did not tick this box — GrayCo will not send them text messages.', size: 9, muted: true });
+  }
   b.push({ t: 'gap', h: 6 }, { t: 'h', text: 'Signature' }, { t: 'sig', strokes: o.strokes, name: o.name });
   b.push({ t: 'p', text: 'Signed by: ' + o.name + (o.strokes && o.strokes.length ? ' (typed name and drawn signature)' : ' (typed name — accepted electronically)') });
   b.push({ t: 'p', text: 'Date and time: ' + central(o.at) }, { t: 'p', text: 'Signed in the GrayCo customer portal from address ' + o.ip + ' · reference ' + o.ref, size: 9, muted: true });
@@ -359,13 +365,21 @@ async function sign(event, pid, body){
   const r = l.find(function(x){ return s(x.id) === id && s(x.pid) === pid && visible(x, aq); });
   if (!r) return { status: 404, out: { ok: false, error: 'That paper is not on your job.' } };
   if (r.status !== 'pending') return { status: 409, out: { ok: false, error: r.status === 'signed' ? 'You already signed this one.' : 'This paper does not need your signature any more.' } };
+  /* patch SMSCONSENT: the text-message box on a contract / estimate — its own tick, never part of the agreement */
+  const SC = require('./_lib/smsconsent.js'); let smsC = null;
+  if ((r.kind === 'contract' || r.kind === 'estimate') && body.smsConsent && typeof body.smsConsent === 'object') {
+    const ph = SC.phone10(body.smsConsent.phone), yes = body.smsConsent.agree === true;
+    if (yes && ph.length !== 10) return { status: 400, out: { ok: false, error: 'Please enter the 10-digit mobile number for texts, or leave the text-message box unticked.' } };
+    smsC = { status: yes ? 'yes' : 'no', at: new Date().toISOString(), via: 'contract', phone: ph.length === 10 ? ph : '' };
+  }
   const T = scrubber(p), ip = ipOf(event), at = new Date().toISOString(), sigId = 'ps_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   const label = KINDS[r.kind] || 'Document', customer = s(p.client || p.clientName || p.customer) || name;
   const pdf = signedCopyPdf({ kind: r.kind, label: label, job: T(p.name), address: s(p.address), po: s(p.autoPO || p.po), customer: customer, title: T(r.title), lines: arr(r.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }),
-    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId });
+    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId, sms: smsC });
   const docRef = await uploadPdf(pdf);
   const docName = 'Signed ' + label.toLowerCase() + ' — ' + clip(T(r.title), 60).replace(/[\\/:*?"<>|]+/g, '-') + ' — ' + at.slice(0, 10) + '.pdf';
   const signedRec = { name: name, at: at, ip: clip(ip, 60), ua: clip(gcHeader(event, 'user-agent'), 160), drawn: cs.strokes.length > 0, docRef: docRef, docName: docName, sigId: sigId };
+  if (smsC) signedRec.smsConsent = smsC;   /* patch SMSCONSENT */
   const res = await core().kvListUpdate(KEY, function(cur){
     const x = cur.find(function(y){ return s(y.id) === id; });
     if (!x || x.status !== 'pending') return { list: null, result: 'conflict' };
@@ -373,6 +387,8 @@ async function sign(event, pid, body){
   });
   if (!res.ok) return { status: 503, out: { ok: false, error: 'We could not save it just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' } };
   if (res.result === 'conflict') return { status: 409, out: { ok: false, error: 'This was already done — reload the page.' } };
+  /* patch SMSCONSENT: the answer is enforced at once (the SMS state); the CRM also writes it onto the job and the customer when it applies this signature */
+  if (smsC) { try { await SC.record(smsC, [p.clientPhone, p.phone, p.customerPhone]); } catch (e) {} }
   /* tell the people: the office (a to-do), the PM (an e-mail), the customer (their copy, at once — owner rule) */
   const pm = pmFull(data, p), jobName = T(p.name) || 'the job';
   try { await core().officeTodo('portal_signed_' + sigId, '✍️ ' + name + ' signed the ' + label.toLowerCase() + ' — ' + jobName,

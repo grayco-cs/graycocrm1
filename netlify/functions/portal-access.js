@@ -1277,7 +1277,8 @@ async function staffAction(action, body, who){
       const firstName = s(p.client).split(/\s+/)[0];
       const msg = 'Hi ' + (firstName || 'there') + ', this is GrayCo. Your project page: ' + link + ' — or sign in at ' + portalBase().replace(/^https:\/\//, '') + ' · ' + (phone && !email ? 'Phone: ' + phone : 'E-mail: ' + email) + ' · Password: your first name';
       out.message = msg;
-      if (phone && textReady() && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; }
+      let smsNo = false; try { const SC = require('./_lib/smsconsent.js'); smsNo = SC.statusFor({ projects: [p] }, phone, await SC.registry()) === 'no' || (await SC.live(phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: declined → the PM sends it from their own phone */
+      if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; }
       if (!out.sent && phone) out.sms = 'sms:' + phone + '?body=' + encodeURIComponent(msg);
     }
     return out;

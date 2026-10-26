@@ -1284,11 +1284,20 @@ function itemBox(x){
   box.appendChild(pad.el);
   box.appendChild(h('button', { type: 'button', class: 'btn sel-clear', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
   box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: x.kind === 'change_order' ? ' I approve this change order and the change to my contract price.' : x.kind === 'doc' ? ' I reviewed this paper and I sign it.' : ' I accept this ' + x.label.toLowerCase() + ' for the work and the price shown.' })]));
+  /* patch SMSCONSENT: contract / estimate — the mobile number for texts (prefilled) and its OWN checkbox, unchecked by default */
+  var smsPh = null, smsBox = null;
+  if (x.sms) {
+    smsPh = kept(h('input', { type: 'tel', class: 'sel-name', maxlength: '30', autocomplete: 'tel', placeholder: 'Mobile number for texts', 'aria-label': 'Mobile number for texts', id: 'gcesign-smsphone-' + x.id }), 'p_' + x.id);
+    if (keep['p_' + x.id] === undefined) { smsPh.value = x.sms.phone || ''; keep['p_' + x.id] = smsPh.value; }
+    smsBox = kept(h('input', { type: 'checkbox', id: 'gcesign-sms-' + x.id, 'data-gc-sms': '1' }), 's_' + x.id, true);
+    box.appendChild(h('label', { class: 'muted', text: 'Mobile number for texts' })); box.appendChild(smsPh);
+    box.appendChild(h('label', { class: 'sel-agree' }, [smsBox, h('span', { text: ' I agree to receive text messages from GrayCo Construction Services about my job (scheduling, updates, estimates, invoices) and occasional service offers. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.' })]));
+  }
   box.appendChild(h('div', { class: 'es-btns' }, [go, no])); box.appendChild(msg);
   go.addEventListener('click', function(){
     if (busy) return; if (!nm.value.trim()) { msg.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { msg.textContent = 'Please tick the box to agree.'; return; }
     busy = true; go.disabled = true; msg.textContent = 'Signing…';
-    api({ action: 'sign', id: x.id, name: nm.value, agree: true, strokes: pad.strokes() }).then(function(r){
+    api({ action: 'sign', id: x.id, name: nm.value, agree: true, strokes: pad.strokes(), smsConsent: smsBox ? { agree: !!smsBox.checked, phone: smsPh.value } : undefined }).then(function(r){
       busy = false;
       if (r.data && r.data.ok) { keep['a_' + x.id] = false; note[x.id] = ''; note._top = '✓ Thank you — signed. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); pad.clear(); return load(); }
       msg.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; go.disabled = false;

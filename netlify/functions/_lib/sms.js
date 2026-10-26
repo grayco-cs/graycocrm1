@@ -31,6 +31,8 @@ const OFFICE_PHONE = '(901) 585-0944';
 const FALLBACK = 'Thanks for texting GrayCo Construction Services! Someone from our team will text you back shortly. For an emergency call ' + OFFICE_PHONE + ' — 24/7.';
 const HELP_TEXT = 'GrayCo Construction Services: text your question here or call ' + OFFICE_PHONE + '. Msg & data rates may apply. Reply STOP to opt out.';
 const HELP = /^\s*(help|info)\s*[.!?]*\s*$/i;
+/* patch SMSCONSENT: the one-time subscription notice for a brand-new texter (prepended to the first reply) */
+const NOTICE_PREFIX = "GrayCo Construction Services: you're subscribed to job texts. Msg freq varies. Msg&data rates may apply. Reply HELP for help, STOP to opt out.";
 
 /* the approved answers — admins edit the wording, keywords and on/off in Admin → 💬 Text auto-answers.
    Order is priority: the first rule whose keywords match answers. {office_phone} {address} {billing_email} {portal}
@@ -222,5 +224,5 @@ function nextVisitText(ctx){
 /* nothing a customer reads may name a sub portal or a sub's details */
 function safe(text){ return s(text).replace(/sub(contractor)?\s*portal/gi, 'our team').slice(0, 600); }
 
-module.exports = { SETTINGS_KEY, DEFAULTS, DEFAULT_RULES, FALLBACK, HELP_TEXT, HELP, OFFICE_PHONE, settings, staffOnly, pickRule, aiPick, hits, businessHours, whenAllows,
+module.exports = { NOTICE_PREFIX, SETTINGS_KEY, DEFAULTS, DEFAULT_RULES, FALLBACK, HELP_TEXT, HELP, OFFICE_PHONE, settings, staffOnly, pickRule, aiPick, hits, businessHours, whenAllows,
   match, nextVisit, nextVisitText, fill, firstName, safe, phone10, tidy, clip };

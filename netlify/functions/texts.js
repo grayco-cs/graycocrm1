@@ -39,7 +39,8 @@ async function send(who, b){
   const RT = require('./_lib/smsroute.js');
   const text = (b.noSign ? s(b.text) : RT.sign(s(b.text), who.name || '')).slice(0, 600);
   let purpose = s(b.purpose) ? RT.normPurpose(b.purpose) : '';
-  if (!purpose) { try { purpose = RT.purposeFor(await core().kvRead(['subs', 'vendors', 'projects', 'customers', 'leads']), to); } catch (e) { purpose = 'customers'; } }   /* a sub → the subs number, a customer → the customers number */
+  let CD = null; try { CD = await core().kvRead(['subs', 'vendors', 'projects', 'customers', 'leads']); } catch (e) {}   /* patch SMSCONSENT: read once — the line and the consent check both use it */
+  if (!purpose) { try { purpose = CD ? RT.purposeFor(CD, to) : 'customers'; } catch (e) { purpose = 'customers'; } }   /* a sub → the subs number, a customer → the customers number */
   if (to.length !== 10) return { code: 400, body: { ok: false, error: 'A 10-digit phone number is needed.' } };
   if (!text) return { code: 400, body: { ok: false, error: 'Type the text first.' } };
   if (pid && !/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return { code: 400, body: { ok: false, error: 'Bad job id.' } };
@@ -47,6 +48,12 @@ async function send(who, b){
   let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) {}
   if (paused) return { code: 409, body: { ok: false, paused: true, error: '⏸ Data-entry mode is on — no texts go out until an admin turns it off.' } };
   const st = await MC().stateGet();
+  /* patch SMSCONSENT: STOP (below) wins over everything; then a customer who declined on the contract is refused; marketing needs Yes; subs are not customers */
+  if (!st.optout[to]) {
+    const SC = require('./_lib/smsconsent.js'), marketing = b.marketing === true || (!!s(b.purpose) && RT.normPurpose(b.purpose) === 'leads');
+    let isSub = false; try { isSub = !!CD && RT.purposeFor(CD, to) === 'subs'; } catch (e) {}
+    if (!isSub) { const cst = SC.statusFor(CD || {}, to, st.consent), why = SC.refusal(cst, marketing); if (why) return { code: 409, body: { ok: false, consent: cst || 'unknown', error: why } }; }
+  }
   if (st.optout[to]) return { code: 409, body: { ok: false, error: 'This number texted STOP — GrayCo cannot text it until they text START.' } };
   if (b.checkQuiet === true && RT.quiet(typeof exports._now === 'function' ? exports._now() : Date.now())) return { code: 409, body: { ok: false, quiet: true, error: 'It is after 8 PM (or before 7 AM) — texts wait until morning. Send anyway only for something urgent.' } };
   const set = await getSettings(), from = RT.fromFor(purpose, set, env);

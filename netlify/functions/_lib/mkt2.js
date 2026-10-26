@@ -749,7 +749,8 @@ async function eventReminders(){
         const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>', reply_to: low(ev.pmEmail) || 'replies@grayco-cs.com', to: [su.email], subject: 'Reminder: your free roof check tomorrow at ' + slotLabel(su.slot), html: html }) }).catch(function(){ return { ok: false }; });
         ok = !!(r && r.ok);
       }
-      if (env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM') && require('../website-intake.js')._lib.phone10(su.phone).length === 10) {
+      let smsNo = false; try { smsNo = (await require('./smsconsent.js').live(su.phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: a declined number gets no text reminder */
+      if (!smsNo && env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM') && require('../website-intake.js')._lib.phone10(su.phone).length === 10) {
         try {
           const to = '+1' + require('../website-intake.js')._lib.phone10(su.phone);
           const r2 = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + env('TWILIO_ACCOUNT_SID') + '/Messages.json', { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(env('TWILIO_ACCOUNT_SID') + ':' + env('TWILIO_AUTH_TOKEN')).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
