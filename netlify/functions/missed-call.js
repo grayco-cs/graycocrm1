@@ -90,7 +90,8 @@ const sayBye = () => twiml('<Say voice="Polly.Joanna">' + esc(SAY) + '</Say><Han
 /* ── state ── */
 function loadState(v){
   const st = Object.assign({ calls: {}, texted: {}, optout: {}, owner: {} }, v && typeof v === 'object' ? v : {});
-  ['calls', 'texted', 'optout', 'owner', 'consent', 'welcomed'].forEach(k => { if (!st[k] || typeof st[k] !== 'object') st[k] = {}; });
+  /* patch SMSC2: marketing consent by phone — written only by the e-sign function / staff, NEVER by an inbound text */
+  ['calls', 'texted', 'optout', 'owner', 'consent', 'welcomed', 'marketing'].forEach(k => { if (!st[k] || typeof st[k] !== 'object') st[k] = {}; });
   /* forget handled calls after 7 days */
   const cut = new Date(now() - 7 * 86400000).toISOString();
   Object.keys(st.calls).forEach(k => { if (s(st.calls[k]) < cut) delete st.calls[k]; });

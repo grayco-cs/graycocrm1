@@ -52,7 +52,9 @@ async function send(who, b){
   if (!st.optout[to]) {
     const SC = require('./_lib/smsconsent.js'), marketing = b.marketing === true || (!!s(b.purpose) && RT.normPurpose(b.purpose) === 'leads');
     let isSub = false; try { isSub = !!CD && RT.purposeFor(CD, to) === 'subs'; } catch (e) {}
-    if (!isSub) { const cst = SC.statusFor(CD || {}, to, st.consent), why = SC.refusal(cst, marketing); if (why) return { code: 409, body: { ok: false, consent: cst || 'unknown', error: why } }; }
+    /* patch SMSC2: a marketing / promotional send needs the SEPARATE smsMarketing = yes (job-text yes is not enough) */
+    if (!isSub) { const cst = SC.statusFor(CD || {}, to, st.consent), mst = SC.marketingStatusFor(CD || {}, to, st.marketing), why = SC.refusal(cst, marketing, mst);
+      if (why) return { code: 409, body: { ok: false, consent: cst || 'unknown', marketingConsent: mst || 'unknown', error: why } }; }
   }
   if (st.optout[to]) return { code: 409, body: { ok: false, error: 'This number texted STOP — GrayCo cannot text it until they text START.' } };
   if (b.checkQuiet === true && RT.quiet(typeof exports._now === 'function' ? exports._now() : Date.now())) return { code: 409, body: { ok: false, quiet: true, error: 'It is after 8 PM (or before 7 AM) — texts wait until morning. Send anyway only for something urgent.' } };
