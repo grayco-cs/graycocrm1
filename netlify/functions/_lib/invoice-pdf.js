@@ -135,7 +135,7 @@ function build(doc){
   text(L, y, 'Questions about this invoice? ' + EMAIL + '  \xb7  ' + PHONE + (doc.pmPhone ? ' (or ' + (doc.pm || 'your PM') + ' at ' + doc.pmPhone + ')' : '') + '.', 10, false, MUTED);   /* patch BILL */
   /* patch LEGAL3: the one late-fee wording (same as the contract, the print invoices, both proposals and the past-due e-mails) */
   y -= 15;
-  wrap('Payment terms: net 30 days from the invoice date. Balances unpaid after 30 days accrue a late charge of 1.5% per month (18% annual percentage rate) on the past-due balance, or the maximum rate allowed by law, whichever is less. If GrayCo retains an attorney or collection agency to collect amounts due under this invoice, or prevails in any action or proceeding arising out of this invoice or the contract, the customer shall pay GrayCo\'s reasonable attorney fees, collection costs and court costs, in addition to any other relief.', 8.5, R - L)   /* FEES-patch */
+  wrap('Payment terms: net 30 days from the invoice date. Balances unpaid after 30 days accrue a late charge of 1.5% per month (18% annual percentage rate) on the past-due balance, or the maximum rate allowed by law, whichever is less. In any action or proceeding arising out of or relating to this invoice or the contract, including collection of amounts due, the prevailing party shall be entitled to recover its reasonable attorney fees, collection costs and court costs from the other party.', 8.5, R - L)   /* FEES-patch */
     .forEach(function(t){ text(L, y, t, 8.5, false, MUTED); y -= 11; });
   text(L, 40, 'Thank you for choosing ' + COMPANY + '.', 9, false, MUTED);
   newPage();
