@@ -1,0 +1,174 @@
+/* LEADSUX: the Leads / Bids screens and the lead side panel. White page, 12-16px radius, #e6e8ec borders (like GrayCo Photos).
+   Brand: navy --k-acc #0f2440, gold --k-gold #d4a017. Everything is scoped to #gc-lux, #gc-lux-bids, html.lux-on #gcl-drawer. */
+#gc-lux,#gc-lux-bids,html.lux-on #gcl-drawer,#lux-modal{--k-acc:#0f2440;--k-acc2:#1b3a63;--k-gold:#d4a017;--k-goldbg:#fbf3dc;--k-bd:#e6e8ec;--k-tx:#0f172a;--k-mut:#64708a;--k-soft:#f6f7f9;--k-red:#b42318;--k-redbg:#fdecea;--k-grn:#1e7a46;--k-grnbg:#e8f5ed}
+/* the tab bar: Leads · Bids · Website & ads */
+html.lux-on #gc-leads-tabs{border-bottom:0!important;gap:4px!important;margin:0 0 10px!important;padding:2px 0;flex-wrap:wrap}
+html.lux-on #gc-leads-tabs button{border:0!important;background:none!important;border-radius:999px!important;padding:9px 16px!important;color:#64708a!important;font:600 15px -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif!important;margin:0!important;cursor:pointer}
+html.lux-on #gc-leads-tabs button[aria-selected="true"],html.lux-on #gc-leads-tabs[data-tab="leads"] button[data-gc-tab="leads"],html.lux-on #gc-leads-tabs[data-tab="bidboard"] button[data-gc-tab="bidboard"],html.lux-on #gc-leads-tabs[data-tab="website"] button[data-gc-tab="website"]{background:#0f2440!important;color:#fff!important}
+/* the classic page content never paints under the new screens (the classic table: ⋯ → Old table) */
+html.lux-on:not(.lux-classic) #gc-leads-tabs:not([data-tab="website"]) ~ *:not(.lux-keep):not(#gc-rso):not(#gc-ol):not(#gc-bw-watch.lux-open):not(#gc-ldi.lux-open):not(#gcl-settings){display:none!important}
+html.lux-on:not(.lux-classic) #gc-leads-tabs[data-tab="leads"] ~ #gc-ldi{display:none!important}
+body.gcrso-on #gc-lux{display:none!important}
+html.lux-classic #gc-lux .lux-nonclassic{display:none!important}
+/* ── page ── */
+#gc-lux,#gc-lux-bids{font:15px/1.4 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--k-tx);background:#fff;max-width:1100px;margin:0 auto;padding:14px 8px 60px;box-sizing:border-box}
+#gc-lux *,#gc-lux-bids *{box-sizing:border-box}
+#gc-lux button,#gc-lux-bids button,#gc-lux select,#gc-lux input{font:inherit}
+#gc-lux button,#gc-lux-bids button{cursor:pointer}
+#gc-lux.lux-pad,#gc-lux-bids.lux-pad{margin-right:470px}
+#gc-lux .lux-top,#gc-lux-bids .lux-top{display:flex;align-items:flex-start;gap:12px;flex-wrap:nowrap}
+#gc-lux .lux-top>div,#gc-lux-bids .lux-top>div{min-width:0;flex:1}
+#gc-lux .lux-new,#gc-lux-bids .lux-new{white-space:nowrap;flex:none}
+#gc-lux .lux-h1,#gc-lux-bids .lux-h1{font-size:30px;margin:0 0 4px;color:var(--k-acc);letter-spacing:-.5px;line-height:1.15;font-weight:800}
+#gc-lux .lux-sub,#gc-lux-bids .lux-sub{color:var(--k-mut);margin:0 0 20px;font-size:16px}
+.lux-btn{border:0;border-radius:10px;padding:10px 18px;font-weight:700;background:var(--k-acc);color:#fff}
+.lux-btn.gold{background:var(--k-gold);color:#241a00}
+.lux-btn.ghost{background:#fff;border:1px solid var(--k-bd);color:var(--k-acc)}
+
+#gc-lux .lux-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+#gc-lux .lux-chip{border:1px solid var(--k-bd);background:#fff;border-radius:14px;padding:14px 16px;text-align:left;display:flex;flex-direction:column;gap:2px;color:var(--k-acc)}
+#gc-lux .lux-chip b{font-size:28px;line-height:1.1;color:var(--k-acc)}
+#gc-lux .lux-chip span{color:var(--k-mut);font-size:13.5px}
+#gc-lux .lux-chip.hot b{color:var(--k-red)}
+#gc-lux .lux-chip.on{border-color:var(--k-gold);box-shadow:0 0 0 2px var(--k-goldbg);background:#fffdf6}
+#gc-lux .lux-bar,#gc-lux-bids .lux-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+#gc-lux .lux-search,#gc-lux-bids .lux-search{flex:1;min-width:200px;border:1px solid var(--k-bd);border-radius:999px;padding:10px 16px;background:var(--k-soft);color:var(--k-tx)}
+.lux-pill{appearance:none;-webkit-appearance:none;border:1px solid var(--k-bd);background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364708a' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 12px center;border-radius:999px;padding:9px 30px 9px 14px;color:var(--k-tx);font-size:14px}
+.lux-pill.on{border-color:var(--k-acc);color:var(--k-acc);font-weight:700}
+#gc-lux .lux-more,#gc-lux-bids .lux-more{background:none;border:0;color:var(--k-acc2);text-decoration:underline;font-size:14px;padding:6px}
+#gc-lux .lux-seg{display:flex;border:1px solid var(--k-bd);border-radius:10px;overflow:hidden;margin-left:auto}
+#gc-lux .lux-seg button{border:0;background:#fff;padding:8px 12px;color:var(--k-mut);font-size:16px;line-height:1}
+#gc-lux .lux-seg button.on{background:var(--k-acc);color:#fff}
+.lux-menu{position:relative}
+.lux-dots{width:40px;height:40px;border-radius:10px;border:1px solid var(--k-bd);background:#fff;font-size:18px;color:var(--k-acc);line-height:1}
+.lux-dd{position:absolute;right:0;top:44px;background:#fff;border:1px solid var(--k-bd);border-radius:12px;box-shadow:0 8px 24px #0f24401f;padding:6px;min-width:230px;z-index:30}
+.lux-dd[hidden]{display:none}
+.lux-dd button{display:flex;width:100%;justify-content:space-between;gap:10px;border:0;background:none;text-align:left;padding:9px 12px;border-radius:8px;font-size:14px;color:var(--k-tx)}
+.lux-dd button:hover{background:var(--k-soft)}
+.lux-dd hr{border:0;border-top:1px solid var(--k-bd);margin:4px 0}
+.lux-dd small{color:var(--k-mut)}
+#gc-lux .lux-filters{border:1px solid var(--k-bd);border-radius:14px;padding:14px;margin:8px 0 6px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;background:#fff}
+#gc-lux .lux-filters label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--k-mut);text-transform:uppercase;letter-spacing:.5px}
+#gc-lux .lux-filters select{border:1px solid var(--k-bd);border-radius:10px;padding:8px 10px;font-size:14px;text-transform:none;letter-spacing:0;font-weight:400;color:var(--k-tx);background:#fff}
+#gc-lux .lux-filters .lux-cb{flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--k-tx);font-size:14px}
+#gc-lux .lux-filters .lux-tg{border:1px solid var(--k-bd);background:#fff;border-radius:999px;padding:7px 12px;font-size:13px;color:var(--k-acc);align-self:end}
+#gc-lux .lux-filters .lux-tg.on{background:var(--k-acc);color:#fff;border-color:var(--k-acc)}
+/* groups + cards */
+.lux-grp{margin-top:26px}
+.lux-gh{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--k-acc);font-size:17px;margin-bottom:12px}
+.lux-gh i{font-style:normal;background:var(--k-soft);color:var(--k-mut);font-size:13px;border-radius:999px;padding:1px 10px;font-weight:600}
+.lux-gh.red i{background:var(--k-redbg);color:var(--k-red)}
+.lux-gh button.lux-tg2{margin-left:auto;border:0;background:none;color:var(--k-mut);font-size:13px;font-weight:500}
+.lux-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+.lux-card{border:1px solid var(--k-bd);border-radius:14px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:10px;cursor:pointer;transition:box-shadow .15s,border-color .15s;position:relative}
+.lux-card:hover{box-shadow:0 6px 18px #0f244014;border-color:#d3d7de}
+.lux-card.sel{border-color:var(--k-gold);box-shadow:0 0 0 2px var(--k-goldbg)}
+.lux-r1{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.lux-nm{font-weight:700;font-size:16px;color:var(--k-tx);word-break:break-word}
+.lux-ad{color:var(--k-mut);font-size:14px}
+.lux-badge{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap;background:#eef;color:#134a8a}
+.lux-b-Residential{background:#e6f0fb;color:#134a8a}.lux-b-Commercial{background:#eeeafc;color:#4a2fa0}.lux-b-Insurance{background:#e4f5f0;color:#0b6650}.lux-b-Bid{background:var(--k-goldbg);color:#7a5600}
+.lux-meta{display:flex;gap:8px;align-items:center;color:var(--k-mut);font-size:13px;flex-wrap:wrap}
+.lux-dot{width:3px;height:3px;border-radius:9px;background:#b9c0cc}
+.lux-due{color:var(--k-red);font-weight:600}
+.lux-r3{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:2px}
+.lux-who{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--k-tx);min-width:0}
+.lux-av{width:28px;height:28px;border-radius:50%;background:var(--k-acc);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none}
+.lux-un{color:var(--k-red);font-weight:600}
+.lux-av.un{background:var(--k-redbg);color:var(--k-red);border:1px dashed var(--k-red)}
+.lux-act{border:0;border-radius:10px;padding:9px 16px;font-weight:700;background:var(--k-acc);color:#fff;font-size:14px;text-decoration:none;display:inline-block;white-space:nowrap}
+.lux-act.assign{background:var(--k-gold);color:#241a00}
+.lux-act.alt{background:#fff;color:var(--k-acc);border:1px solid var(--k-acc)}
+.lux-pick{position:absolute;top:12px;right:12px}
+.lux-empty{padding:40px;text-align:center;color:var(--k-mut);border:1px dashed var(--k-bd);border-radius:14px;margin-top:20px}
+.lux-showmore{display:block;width:100%;margin:12px 0 0;border:1px solid var(--k-bd);background:#fff;border-radius:12px;padding:10px;color:var(--k-acc);font-weight:600}
+#gc-lux .lux-viewbody{margin-top:14px}
+#gc-lux .lux-classicbar{margin:12px 0;padding:12px 16px;border:1px solid var(--k-bd);border-radius:14px;display:flex;gap:12px;align-items:center}
+/* ── Bids ── */
+#gc-lux-bids .lux-tbl{border:1px solid var(--k-bd);border-radius:14px;overflow:hidden;margin-top:8px}
+#gc-lux-bids .lux-bh,#gc-lux-bids .lux-br{display:grid;grid-template-columns:120px 1fr 220px 170px 130px;gap:16px;align-items:center;padding:14px 18px}
+#gc-lux-bids .lux-bh{background:var(--k-soft);font-size:12px;font-weight:700;color:var(--k-mut);text-transform:uppercase;letter-spacing:.5px}
+#gc-lux-bids .lux-br{border-top:1px solid var(--k-bd);cursor:pointer}
+#gc-lux-bids .lux-br:hover{background:#fafbfc}
+#gc-lux-bids .lux-dd2{font-weight:700;color:var(--k-acc)}
+#gc-lux-bids .lux-dd2 small{display:block;font-weight:500;color:var(--k-mut);font-size:12.5px}
+#gc-lux-bids .lux-dd2.soon{color:var(--k-red)}
+#gc-lux-bids .lux-t{font-weight:600;word-break:break-word}
+#gc-lux-bids .lux-t small{display:block;font-weight:400;color:var(--k-mut)}
+#gc-lux-bids .lux-foot2{color:var(--k-mut);font-size:13px;margin-top:12px}
+#gc-lux-bids .lux-foot2 button{border:0;background:none;color:var(--k-tx);text-decoration:underline;padding:0}
+/* the Watched boards card / classic inbox, shown as a dialog from the Bids ⋯ menu */
+#gc-bw-watch.lux-open,#gc-ldi.lux-open{position:fixed!important;left:50%;top:7vh;transform:translateX(-50%);width:min(960px,94vw);max-height:84vh;overflow:auto;z-index:100300;background:#fff;box-shadow:0 20px 60px #0f24405c;margin:0!important}
+#lux-back{position:fixed;inset:0;background:rgba(15,36,64,.4);z-index:100290}
+#lux-modal{position:fixed;left:50%;top:6vh;transform:translateX(-50%);width:min(560px,94vw);max-height:86vh;overflow:auto;background:#fff;border-radius:16px;z-index:100300;padding:20px;box-shadow:0 20px 60px #0f24405c;font:14px/1.45 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--k-tx)}
+#lux-modal h3{margin:0 0 8px;color:var(--k-acc)}
+/* ── the lead side panel (the old drawer element, so every add-on that decorates it keeps working) ── */
+html.lux-on #gcl-shade{display:none!important}
+html.lux-on #gcl-drawer{width:450px;max-width:100vw;background:#fff;border-left:1px solid var(--k-bd);box-shadow:-6px 0 24px #0f24401a;font:14px/1.4 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--k-tx);padding:0}
+html.lux-on #gcl-drawer .lux-ph{padding:22px 24px 6px;position:relative}
+html.lux-on #gcl-drawer .lux-ph h3{margin:6px 0 2px;font-size:22px;color:var(--k-acc);padding-right:44px;word-break:break-word}
+html.lux-on #gcl-drawer .lux-ph .lux-x{position:absolute;right:20px;top:18px;width:34px;height:34px;border-radius:50%;border:0;background:var(--k-soft);font-size:16px;color:var(--k-tx);cursor:pointer;min-height:0}
+html.lux-on #gcl-drawer .lux-ph .lux-ad{font-size:14px}
+html.lux-on #gcl-drawer .lux-pb{padding:0 24px 40px}
+html.lux-on #gcl-drawer .lux-steps{display:flex;margin:16px 0 4px}
+html.lux-on #gcl-drawer .lux-st{flex:1;text-align:center;font-size:12.5px;color:var(--k-mut);font-weight:600;border:0;background:none;padding:0;cursor:pointer;min-height:0}
+html.lux-on #gcl-drawer .lux-st:before{content:"";display:block;height:6px;background:var(--k-bd);margin-bottom:8px}
+html.lux-on #gcl-drawer .lux-st:first-child:before{border-radius:6px 0 0 6px}
+html.lux-on #gcl-drawer .lux-st:last-child:before{border-radius:0 6px 6px 0}
+html.lux-on #gcl-drawer .lux-st.done:before{background:var(--k-acc)}
+html.lux-on #gcl-drawer .lux-st.cur:before{background:var(--k-gold)}
+html.lux-on #gcl-drawer .lux-st.cur,html.lux-on #gcl-drawer .lux-st.done{color:var(--k-acc)}
+html.lux-on #gcl-drawer .lux-st.lost:before{background:var(--k-red)}
+html.lux-on #gcl-drawer .lux-hint{font-size:13px;color:var(--k-mut);margin-bottom:14px}
+html.lux-on #gcl-drawer .lux-pa{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0 18px}
+html.lux-on #gcl-drawer .lux-pa a,html.lux-on #gcl-drawer .lux-pa span{border:1px solid var(--k-bd);background:#fff;border-radius:12px;padding:12px;font-weight:600;color:var(--k-acc);text-align:center;text-decoration:none}
+html.lux-on #gcl-drawer .lux-pa a:first-child,html.lux-on #gcl-drawer .lux-pa span:first-child.on{background:var(--k-acc);color:#fff;border-color:var(--k-acc)}
+html.lux-on #gcl-drawer .lux-pa span{opacity:.45}
+html.lux-on #gcl-drawer .lux-lbl{font-size:12px;font-weight:700;color:var(--k-mut);text-transform:uppercase;letter-spacing:.6px;margin:18px 0 6px}
+html.lux-on #gcl-drawer section{padding:0;border:0;margin:0}
+html.lux-on #gcl-drawer .lux-assign section h4{font-size:12px;font-weight:700;color:var(--k-mut);text-transform:uppercase;letter-spacing:.6px;margin:18px 0 6px}
+html.lux-on #gcl-drawer select,html.lux-on #gcl-drawer input[type=text],html.lux-on #gcl-drawer input[type=date],html.lux-on #gcl-drawer input[type=datetime-local],html.lux-on #gcl-drawer textarea{border:1px solid var(--k-bd);border-radius:10px;padding:10px 12px;font:inherit;background:#fff;max-width:100%}
+html.lux-on #gcl-drawer .lux-assign select{width:100%}
+html.lux-on #gcl-drawer textarea{min-height:84px;width:100%;resize:vertical}
+html.lux-on #gcl-drawer .lux-kvs{border:1px solid var(--k-bd);border-radius:12px;padding:4px 14px}
+html.lux-on #gcl-drawer .lux-kv{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--k-bd);font-size:14px}
+html.lux-on #gcl-drawer .lux-kv:last-child{border:0}
+html.lux-on #gcl-drawer .lux-kv span{color:var(--k-mut)}html.lux-on #gcl-drawer .lux-kv b{text-align:right;word-break:break-word}
+html.lux-on #gcl-drawer .lux-note{background:var(--k-soft);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:8px;white-space:pre-wrap;word-break:break-word}
+html.lux-on #gcl-drawer .lux-note small{color:var(--k-mut);display:block;white-space:normal}
+html.lux-on #gcl-drawer .lux-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+html.lux-on #gcl-drawer .lux-prim{display:flex;gap:10px;margin-top:20px}
+html.lux-on #gcl-drawer .lux-prim button{border-radius:10px;padding:12px;font-weight:700;border:1px solid var(--k-bd);background:#fff;color:var(--k-acc);cursor:pointer;min-height:0;font:inherit;font-weight:700}
+html.lux-on #gcl-drawer .lux-prim .go{flex:1;background:var(--k-acc);color:#fff;border-color:var(--k-acc)}
+html.lux-on #gcl-drawer .lux-prim .lostbtn{color:var(--k-red);border-color:#f1c5c0}
+html.lux-on #gcl-drawer .lux-foot{display:flex;justify-content:space-between;margin-top:20px;font-size:13px}
+html.lux-on #gcl-drawer .lux-foot a{color:var(--k-mut);text-decoration:underline;cursor:pointer}
+html.lux-on #gcl-drawer .lux-bidbox{border:1px solid var(--k-bd);border-radius:12px;padding:10px 14px;background:#fffdf6;margin-top:6px}
+html.lux-on #gcl-drawer .lux-bidbox section h4{display:none}
+html.lux-on #gcl-drawer details.lux-moredet{margin-top:22px;border-top:1px solid var(--k-bd);padding-top:12px}
+html.lux-on #gcl-drawer details.lux-moredet>summary{cursor:pointer;font-weight:700;color:var(--k-acc);padding:6px 0;list-style:none}
+html.lux-on #gcl-drawer details.lux-moredet>summary:before{content:"▸ "}
+html.lux-on #gcl-drawer details.lux-moredet[open]>summary:before{content:"▾ "}
+html.lux-on #gcl-drawer details.lux-moredet section{padding:12px 0;border-bottom:1px solid var(--k-bd)}
+html.lux-on #gcl-drawer details.lux-moredet section h4{margin:0 0 8px;font-size:14px;color:var(--k-acc)}
+html.lux-on #gcl-drawer button.b{border-radius:10px}
+html.lux-on #gcl-drawer .gcl-pb.on{background:var(--k-acc);border-color:var(--k-acc)}
+html.lux-on #gcl-drawer .lux-pri{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+/* the shared Lead settings drawer keeps its own look; a short row of extra shortcuts sits on top of it */
+#gcl-settings .lux-setrow{display:flex;gap:8px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #e7e3f5;background:#fbfaff}
+#gcl-settings .lux-setrow button{border:1px solid #cfc8ea;background:#fff;color:#241968;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-size:13px}
+@media (max-width:1180px){#gc-lux.lux-pad,#gc-lux-bids.lux-pad{margin-right:auto}}
+@media (max-width:900px){
+  #gc-lux .lux-chips{grid-template-columns:1fr 1fr}
+  #gc-lux .lux-cards{grid-template-columns:1fr}
+  #gc-lux-bids .lux-bh{display:none}
+  #gc-lux-bids .lux-br{grid-template-columns:1fr auto;gap:4px 10px}
+  #gc-lux-bids .lux-br>*:nth-child(1){grid-column:1;order:0}
+  #gc-lux-bids .lux-br .lux-t{grid-column:1/-1;order:2}
+  #gc-lux-bids .lux-br>*:nth-child(3){order:3;grid-column:1/-1;font-size:13.5px}
+  #gc-lux-bids .lux-br>*:nth-child(4){order:4;grid-column:1;font-size:13.5px}
+  #gc-lux-bids .lux-br>*:nth-child(5){order:1;grid-column:2;justify-self:end}
+  html.lux-on #gcl-drawer{width:100vw;border-left:0}
+}
+@media (max-width:500px){#gc-lux .lux-h1,#gc-lux-bids .lux-h1{font-size:25px}#gc-lux .lux-seg{margin-left:0}#gc-lux .lux-search,#gc-lux-bids .lux-search{flex-basis:100%}#gc-lux .lux-new{margin-left:0}}
+#gc-lux [hidden],#gc-lux-bids [hidden],#gc-lux .lux-dd[hidden]{display:none!important}
