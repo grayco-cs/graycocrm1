@@ -103884,19 +103884,44 @@ function jobHasMoney(p){
 
 window.__GC_JOB_REVIEW__ = [];      /* jobs that look like copies but hold money */
 
+/* patch LEADFREEZE-7: the first kept row that samePerson() would match, found without comparing against every kept row.
+   samePerson(k, r): same name key; or (either has no name) same e-mail or same 10-digit phone. */
+function personIndex(){
+  var K=[], N={}, E={}, P={}, U=[];
+  function put(m, key, i){ (m[key]||(m[key]=[])).push(i); }
+  function drop(m, key, i){ var a=m[key]; if(!a) return; var j=a.indexOf(i); if(j>=0) a.splice(j,1); }
+  return {
+    add: function(i, r){ var n=nameKey(r), e=emailKey(r), p=phoneKey(r); K[i]=[n,e,p]; if(n) put(N,n,i); else U.push(i); if(e) put(E,e,i); if(p) put(P,p,i); },
+    remove: function(i){ var k=K[i]; if(!k) return; if(k[0]) drop(N,k[0],i); else { var j=U.indexOf(i); if(j>=0) U.splice(j,1); } if(k[1]) drop(E,k[1],i); if(k[2]) drop(P,k[2],i); K[i]=null; },
+    find: function(r){
+      var n=nameKey(r), e=emailKey(r), p=phoneKey(r), best=-1, a, x;
+      if(n){
+        a=N[n]; if(a) for(x=0;x<a.length;x++) if(best<0||a[x]<best) best=a[x];
+        if(e && (a=E[e])) for(x=0;x<a.length;x++) if(!K[a[x]][0] && (best<0||a[x]<best)) best=a[x];
+        if(p && (a=P[p])) for(x=0;x<a.length;x++) if(!K[a[x]][0] && (best<0||a[x]<best)) best=a[x];
+      } else {
+        if(e && (a=E[e])) for(x=0;x<a.length;x++) if(best<0||a[x]<best) best=a[x];
+        if(p && (a=P[p])) for(x=0;x<a.length;x++) if(best<0||a[x]<best) best=a[x];
+      }
+      return best;
+    }
+  };
+}
 function collapse(rows, L){
   if(!Array.isArray(rows) || rows.length<2) return null;
   var keepers=[], dropped=[], review=[];
+  var IX = (L.same===samePerson && !L.careful) ? personIndex() : null;   /* patch LEADFREEZE-7 */
 
   for(var i=0;i<rows.length;i++){
     var r=rows[i];
     if(!r || typeof r!=='object'){ dropped.push(r); continue; }   /* a hole is not a record */
     var hit=-1;
-    for(var k=0;k<keepers.length;k++){
+    if(IX){ try{ hit = IX.find(r); }catch(e){ hit=-1; } }
+    else for(var k=0;k<keepers.length;k++){
       var ok=false; try{ ok = L.same(keepers[k], r); }catch(e){ ok=false; }
       if(ok){ hit=k; break; }
     }
-    if(hit<0){ keepers.push(r); continue; }
+    if(hit<0){ keepers.push(r); if(IX) IX.add(keepers.length-1, r); continue; }
 
     if(L.careful && (jobHasMoney(rows[i]) && jobHasMoney(keepers[hit]))){
       /* two jobs that BOTH carry money. Never silently. */
@@ -103907,9 +103932,9 @@ function collapse(rows, L){
     }
     /* the fuller of the two survives, and takes what the other knew */
     if(L.careful ? (String(r.id) < String(keepers[hit].id)) : (fullness(r) > fullness(keepers[hit]))){   /* patch PJX: the same survivor on every computer */
-      absorbAll(r, keepers[hit]); dropped.push(keepers[hit]); keepers[hit]=r;
+      absorbAll(r, keepers[hit]); dropped.push(keepers[hit]); keepers[hit]=r; if(IX){ IX.remove(hit); IX.add(hit, r); }
     }else{
-      absorbAll(keepers[hit], r); dropped.push(r);
+      absorbAll(keepers[hit], r); dropped.push(r); if(IX){ IX.remove(hit); IX.add(hit, keepers[hit]); }
     }
   }
 
@@ -125266,8 +125291,11 @@ function card(l){
     + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
     + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
 }
+var LDI_DIRTY = true, LDI_DRAWN = false, LDI_FORCE = false, LDI_LIM = 40;   /* patch LEADFREEZE-2: 40 cards at a time; nothing drawn while another Leads tab is showing */
 function render(){
   var root = document.getElementById('gc-ldi'); if (!root || !root.isConnected) return;
+  var tb0 = document.getElementById('gc-leads-tabs'); if (!LDI_FORCE && LDI_DRAWN && tb0 && tb0.getAttribute('data-tab') !== 'bidboard') { LDI_DIRTY = true; return; }   /* hidden: drawn when the Bids tab opens */
+  LDI_DIRTY = false; LDI_DRAWN = true; LDI_FORCE = false;
   var list = filtered(), n = newCount(), w = S.watch && S.watch.lastRun;
   var h = '<div class="hd"><b>📥 Lead Inbox</b>' + (n ? '<span class="cnt">' + n + ' new</span>' : '') + '<span class="sp"></span>'
     + '<small>' + (busy ? 'Checking…' : S.at ? 'Checked ' + new Date(S.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Not checked yet') + (w ? ' · public bids looked at ' + new Date(w.at).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '') + '</small>'
@@ -125280,7 +125308,7 @@ function render(){
       + '<select data-f="src">' + opt('', 'All sources', UI.src) + SRC_LIST.map(function(x){ return opt(x, x, UI.src); }).join('') + '</select>'
       + '<select data-f="type">' + opt('', 'All types', UI.type) + ['Commercial', 'Insurance', 'Residential', 'Government'].map(function(x){ return opt(x, x, UI.type); }).join('') + '</select>'
       + '<select data-f="due">' + opt('', 'Any due date', UI.due) + opt('3', 'Due in 3 days', UI.due) + opt('7', 'Due in 7 days', UI.due) + opt('14', 'Due in 14 days', UI.due) + opt('past', 'Past due', UI.due) + opt('none', 'No date', UI.due) + '</select></div>';
-    h += list.length ? '<div class="grid">' + list.map(card).join('') + '</div>'
+    h += list.length ? '<div class="grid">' + list.slice(0, LDI_LIM).map(card).join('') + '</div>' + (list.length > LDI_LIM ? '<div style="padding:0 12px 12px"><button class="b pri" data-a="more">Show ' + Math.min(40, list.length - LDI_LIM) + ' more (' + (list.length - LDI_LIM) + ' not shown)</button></div>' : '')
       : '<div class="empty">' + (UI.show === 'new' ? 'No new leads right now. New ones arrive from leads@grayco-cs.com, the public bid sites and RoofScout — they show up here when the CRM is opened, and admins get an e-mail.' : 'Nothing matches these filters.') + '</div>';
   }
   root.innerHTML = h;
@@ -125697,9 +125725,10 @@ window.__GC_LDI_SOURCES__ = [
 function onClick(e){
   var b = e.target.closest('[data-a]'); if (!b) return;
   var a = b.getAttribute('data-a'), cardEl = b.closest('.card'), id = cardEl && cardEl.getAttribute('data-id');
-  e.preventDefault(); e.stopPropagation();
+  e.preventDefault(); e.stopPropagation(); LDI_FORCE = true;   /* patch LEADFREEZE-2: a person's own action always draws */
   if (a === 'refresh') return pull(true);
   if (a === 'fold') { UI.open = !UI.open; lsSet(K_UI, UI); return render(); }
+  if (a === 'more') { LDI_LIM += 40; return render(); }   /* patch LEADFREEZE-2 */
   if (a === 'settings') return dlgSettings();
   if (a === 'takeoff') return openTakeoff(b.getAttribute('data-ref'), b.getAttribute('data-name'), b.getAttribute('data-type'));
   if (a === 'assign') return dlgAssign(id);
@@ -125709,7 +125738,7 @@ function onClick(e){
   if (a === 'openjob') { var l = findLead(id); if (l && l.pid) openJob(l.pid); return; }
   if (a === 'publish') return dlgPublish(id);
 }
-function onChange(e){ var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (!f) return; UI[f] = e.target.value; lsSet(K_UI, UI); render(); }
+function onChange(e){ var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (!f) return; UI[f] = e.target.value; lsSet(K_UI, UI); LDI_LIM = 40; LDI_FORCE = true; render(); }
 function dropHandlers(root, onFiles){
   root.addEventListener('dragover', function(e){ var d = e.target.closest && e.target.closest('.drop'); if (!d) return; e.preventDefault(); d.classList.add('on'); });
   root.addEventListener('dragleave', function(e){ var d = e.target.closest && e.target.closest('.drop'); if (d) d.classList.remove('on'); });
@@ -125727,7 +125756,7 @@ function mountInbox(){
   var bar = leadsBar(), cur = document.getElementById('gc-ldi');
   if (!bar) { if (cur && !cur.isConnected) cur = null; return; }
   try { if (window._gcBidWatchCard) window._gcBidWatchCard(); } catch (e) {}   /* LEADSCON: the Watched boards card (Bids tab) */
-  if (cur && cur.previousElementSibling === bar) return;   /* LEADSCON: the inbox sits right under the tab bar (shown on Bids only) */   /* patch HOT2d: the Website strip sits between, leave both where they are */
+  if (cur && cur.previousElementSibling === bar) { if (LDI_DIRTY && bar.getAttribute('data-tab') === 'bidboard') render(); return; }   /* patch LEADFREEZE-2 */   /* LEADSCON: the inbox sits right under the tab bar (shown on Bids only) */   /* patch HOT2d: the Website strip sits between, leave both where they are */
   ensureCss();
   if (!cur) {
     cur = document.createElement('div'); cur.id = 'gc-ldi';
@@ -160867,7 +160896,7 @@ function decorate(){
   if (adm) {
     var emails = {}; people().forEach(function(u){ emails[low(u.email)] = 1; });
     D.querySelectorAll('button').forEach(function(b){
-      if (b.__gca || !b.offsetParent || !/^\s*EDIT\s*$/.test(b.textContent || '')) return;
+      if (b.__gca || !/^\s*EDIT\s*$/.test(b.textContent || '') || !b.offsetParent) return;   /* patch LEADFREEZE-3: text first - offsetParent forced a layout for every button on the page */
       var row = b.closest('tr') || b.parentNode && b.parentNode.parentNode; if (!row) return;
       var m = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/i.exec(row.textContent || ''); if (!m || !emails[low(m[0])]) return;
       b.__gca = 1; css();
@@ -164358,7 +164387,7 @@ function bodyHtml(){
     var withAddr = list.filter(function(l){ return s(l.address || l.city); });
     var sel = withAddr.filter(function(l){ return l.id === UI.mapSel; })[0] || withAddr[0];
     var q = sel ? encodeURIComponent([sel.address, sel.city, sel.state, sel.zip].filter(Boolean).join(', ')) : encodeURIComponent('Bartlett, TN');
-    return '<div class="gcl-map"><ul>' + withAddr.slice(0, 300).map(function(l){ return '<li data-gcl-map="' + esc(l.id) + '" class="' + (sel && sel.id === l.id ? 'on' : '') + '"><b>' + srcIc(l) + ' ' + esc(s(l.name) || 'Lead') + '</b><br><span style="color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</span> ' + dueChip(l) + '</li>'; }).join('') + (withAddr.length ? '' : '<li>No leads with an address match the filters.</li>') + '</ul>'
+    return '<div class="gcl-map"><ul>' + withAddr.slice(0, lim('map', 50)).map(function(l){ return '<li data-gcl-map="' + esc(l.id) + '" class="' + (sel && sel.id === l.id ? 'on' : '') + '"><b>' + srcIc(l) + ' ' + esc(s(l.name) || 'Lead') + '</b><br><span style="color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</span> ' + dueChip(l) + '</li>'; }).join('') + (withAddr.length ? '' : '<li>No leads with an address match the filters.</li>') + (withAddr.length > lim('map', 50) ? '<li>' + moreBtn('map', withAddr.length, 50) + '</li>' : '') + '</ul>'
       + '<div><iframe title="Map" loading="lazy" referrerpolicy="no-referrer" src="https://maps.google.com/maps?q=' + q + '&output=embed"></iframe>' + (sel ? '<div class="row" style="margin-top:6px"><button type="button" class="gcl-mv" data-gcl-id="' + esc(sel.id) + '">Open lead</button> <a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=' + q + '">Directions ↗</a></div>' : '') + '</div></div>';
   }
   return '';
@@ -164461,7 +164490,8 @@ function bind(hub){
     if (f === 'q') return qNow(t);
     UI[f] = t.type === 'checkbox' ? t.checked : t.value; saveUI(); redraw();
   });
-  function qNow(t){ if (UI.q === t.value) return; UI.q = t.value; redraw(); }   /* at once: a few hundred leads draw in a few ms */
+  var QT = null;
+  function qNow(t){ if (UI.q === t.value) return; UI.q = t.value; MORE.list = 0; try { if (QT) W.clearTimeout(QT); } catch (e) {} QT = later(function(){ QT = null; redraw(); }, 250); }   /* patch LEADFREEZE-4: 250 ms after the last key, not one full draw per key */
   hub.addEventListener('input', function(ev){ if (ev.target.getAttribute && ev.target.getAttribute('data-gcl-f') === 'q') qNow(ev.target); }, true);
   hub.addEventListener('keyup', function(ev){ if (ev.target.getAttribute && ev.target.getAttribute('data-gcl-f') === 'q' && ev.target.value !== UI.q) qNow(ev.target); }, true);
   hub.addEventListener('dragstart', function(ev){ var c = ev.target.closest && ev.target.closest('.gcl-card'); if (!c) return; dragId = c.getAttribute('data-gcl-id'); try { ev.dataTransfer.setData('text/plain', dragId); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {} });
@@ -164868,17 +164898,21 @@ function coOf(l){
   return arr(l.coAssignees).some(function(c){ return c && (low(c.email) === low(p.email) || low(c.name) === low(p.name)); }) ? null : p;
 }
 function isCo(l){ var me = low(myName()), em = myEmail(); return ((W._gcLeadRoles && W._gcLeadRoles.coList) ? W._gcLeadRoles.coList(l) : arr(l && l.coAssignees)).some(   /* patch SPAMROLE */function(c){ return c && ((me && low(c.name) === me) || (em && low(c.email) === em)); }); }
+var AUTO_SCAN = { ref: null, min: 0, none: false };
 function autoAssignBids(force){
   if (AUTO_BUSY) return Promise.resolve(0);
   if (!(isAdmin() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.amHolder && W._gcLeadRoles.amHolder()))) { AUTO_LAST = { why: 'not admin / estimator / role holder' }; return Promise.resolve(0); }
   if (typeof W._setLeads !== 'function' || view() !== 'leads') { AUTO_LAST = { why: 'Leads not open' }; AUTO_OPEN = 0; return Promise.resolve(0); }
   if (!AUTO_OPEN) AUTO_OPEN = Date.now(); if (!force && Date.now() - AUTO_OPEN < 5000) { AUTO_LAST = { why: 'waiting for the leads to load' }; return Promise.resolve(0); }
   var plan = {}, n = 0, key = [];
+  var scanRef = rawLeads(), scanMin = Math.floor(Date.now() / 30000);   /* patch LEADFREEZE-5: the same list that gave nobody to route 30 s ago gives nobody now */
+  if (!force && AUTO_SCAN.ref === scanRef && AUTO_SCAN.min === scanMin && AUTO_SCAN.none) return Promise.resolve(0);
   leads().forEach(function(l){
     if (shut(l) || (!force && (AUTO_TRIES[l.id] || 0) >= 3)) return;
     var r = assignee(l) ? null : routeOf(l), y = r ? Object.assign({}, l, (function(o){ o[r.field] = r.name; return o; })({})) : l, co = coOf(y);
     if (r || co) { plan[l.id] = { r: r, co: co }; n++; key.push(l.id); }
   });
+  AUTO_SCAN = { ref: scanRef, min: scanMin, none: !n };
   AUTO_LAST = { why: 'candidates', ids: key.slice(0, 20), at: nowIso() };
   if (!n || (!force && Date.now() - AUTO_AT < 4000)) return Promise.resolve(0);   /* a few seconds apart; a lead that will not stay assigned is tried 3 times a session */
   AUTO_AT = Date.now(); key.forEach(function(id){ AUTO_TRIES[id] = (AUTO_TRIES[id] || 0) + 1; });
@@ -172639,6 +172673,7 @@ function rowHtml(it){
     (it.inZone ? ' <span class="ol-chip near">≤100 mi</span>' : '') + ' <span class="ol-chip st">' + esc(it.status) + '</span>' +
     (s(it.next) ? ' <span class="ol-chip ' + (od ? 'od' : due ? 'td' : '') + '">' + (od ? 'overdue ' : due ? 'today ' : 'follow up ') + esc(it.next) + '</span>' : '') +
     (it.person || it.city ? '<span class="ol-sub"> ' + esc([it.person, it.city].filter(Boolean).join(' · ')) + '</span>' : '') + '</summary>';
+  if (!open) return '<details class="ol-it" data-ol-id="' + esc(it.id) + '" data-ol-lazy="1">' + sum + '</details>';   /* patch LEADFREEZE-6: the form is built when the row is opened */
   var f = function(k, l, v, ty){ return '<label>' + l + '<input data-ol-f="' + k + '" type="' + (ty || 'text') + '" value="' + esc(v) + '"></label>'; };
   var sel = function(k, l, opts, v){ return '<label>' + l + '<select data-ol-f="' + k + '">' + opts.map(function(o){ return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(v) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></label>'; };
   var lnk = [];
@@ -172663,7 +172698,8 @@ function rowHtml(it){
 function listHtml(){
   var list = visible();
   if (!list.length) return '<div class="ol-empty">' + (ST.items.length ? 'Nothing matches these filters in this group.' : 'No companies yet. ' + (isAdmin() ? 'Use <b>Import list (JSON)</b>, or ' : '') + '<b>＋ Add</b> one.') + '</div>';
-  return list.slice(0, 300).map(rowHtml).join('') + (list.length > 300 ? '<div class="ol-sub">Showing 300 of ' + list.length + ' — narrow it with the filters.</div>' : '');
+  var lm = ST.ui.lim || 50;   /* patch LEADFREEZE-6 */
+  return list.slice(0, lm).map(rowHtml).join('') + (list.length > lm ? '<button type="button" class="ol-btn" data-ol-more="1" style="margin:8px 0">Show ' + Math.min(100, list.length - lm) + ' more (' + (list.length - lm) + ' not shown)</button>' : '');
 }
 function headHtml(){
   var c = counts(), u = ST.ui;
@@ -172697,6 +172733,7 @@ function olCss(){
 function drawList(){ var el = D.getElementById('gc-ol-list'); if (el) el.innerHTML = listHtml(); }
 function redraw(){
   var el = D.getElementById('gc-ol'); if (!el) return;
+  if (!D.body.classList.contains('gcrso-on')) { el.__drawn = false; return; }   /* patch LEADFREEZE-6: drawn when the Outreach view opens */
   var ae = D.activeElement; if (ae && el.contains(ae) && /INPUT|TEXTAREA|SELECT/.test(ae.tagName) && !el.__force) return;
   el.__force = false;
   el.innerHTML = '<div id="gc-ol-head">' + headHtml() + '</div><div id="gc-ol-list">' + listHtml() + '</div>';
@@ -172743,12 +172780,13 @@ function exportJson(){
 }
 function bind(el){
   el.addEventListener('click', function(ev){
-    var t = ev.target && ev.target.closest ? ev.target.closest('[data-ol-g],[data-ol-new],[data-ol-imp],[data-ol-exp],[data-ol-all],[data-ol-addlog]') : null; if (!t) return;
-    if (t.hasAttribute('data-ol-g')) { ST.ui.g = t.getAttribute('data-ol-g'); el.__force = true; redraw(); }
+    var t = ev.target && ev.target.closest ? ev.target.closest('[data-ol-g],[data-ol-new],[data-ol-imp],[data-ol-exp],[data-ol-all],[data-ol-addlog],[data-ol-more]') : null; if (!t) return;
+    if (t.hasAttribute('data-ol-more')) { ST.ui.lim = (ST.ui.lim || 50) + 100; drawList(); return; }   /* patch LEADFREEZE-6 */
+    if (t.hasAttribute('data-ol-g')) { ST.ui.g = t.getAttribute('data-ol-g'); ST.ui.lim = 50; el.__force = true; redraw(); }
     else if (t.hasAttribute('data-ol-new')) {
       var name = s(W.prompt('Company or portal name:', '')); if (!name) return;
       var id = 'OL-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      var it = fromImport({ id: id, phase: ST.ui.g === 'reg' ? 1 : 2, company: name, pri: 2 }); it.updatedAt = nowIso(); ST.items.push(it); ST.ui.open[id] = true; persist(); el.__force = true; redraw();
+      var it = fromImport({ id: id, phase: ST.ui.g === 'reg' ? 1 : 2, company: name, pri: 2 }); it.updatedAt = nowIso(); ST.items.push(it); ST.ui.open[id] = true; ST.ui.lim = Math.max(ST.ui.lim || 50, ST.items.length); persist(); el.__force = true; redraw();
     }
     else if (t.hasAttribute('data-ol-imp')) importBox();
     else if (t.hasAttribute('data-ol-exp')) exportJson();
@@ -172757,16 +172795,17 @@ function bind(el){
   });
   el.addEventListener('change', function(ev){
     var t = ev.target; if (!t || !t.getAttribute) return;
-    if (t.hasAttribute('data-ol-fs')) { ST.ui.st = t.value; drawList(); return; }
+    if (t.hasAttribute('data-ol-fs')) { ST.ui.st = t.value; ST.ui.lim = 50; drawList(); return; }
     if (t.hasAttribute('data-ol-fp')) { ST.ui.pri = t.value; drawList(); return; }
     if (t.hasAttribute('data-ol-near')) { ST.ui.near = !!t.checked; drawList(); return; }
     var f = t.getAttribute('data-ol-f'); if (!f) return;
     var row = t.closest('[data-ol-id]'); if (!row) return;
     setField(row.getAttribute('data-ol-id'), f, f === 'inZone' ? t.checked : t.value);
   });
-  el.addEventListener('input', function(ev){ var t = ev.target; if (t && t.hasAttribute && t.hasAttribute('data-ol-q')) { ST.ui.q = t.value; drawList(); } });
+  el.addEventListener('input', function(ev){ var t = ev.target; if (t && t.hasAttribute && t.hasAttribute('data-ol-q')) { ST.ui.q = t.value; ST.ui.lim = 50; try { if (el.__qt) W.clearTimeout(el.__qt); } catch (e) {} el.__qt = NST.call(W, function(){ el.__qt = 0; drawList(); }, 250); } });   /* patch LEADFREEZE-6: 250 ms after the last key */
   el.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.hasAttribute && t.hasAttribute('data-ol-logtxt')) { ev.preventDefault(); addLog(t.getAttribute('data-ol-logtxt'), t.value); } });
-  el.addEventListener('toggle', function(ev){ var d = ev.target; if (d && d.getAttribute && d.getAttribute('data-ol-id')) { if (d.open) ST.ui.open[d.getAttribute('data-ol-id')] = true; else delete ST.ui.open[d.getAttribute('data-ol-id')]; } }, true);
+  el.addEventListener('toggle', function(ev){ var d = ev.target; if (d && d.getAttribute && d.getAttribute('data-ol-id')) { if (d.open) ST.ui.open[d.getAttribute('data-ol-id')] = true; else delete ST.ui.open[d.getAttribute('data-ol-id')];
+    if (d.open && d.hasAttribute('data-ol-lazy')) { var it0 = byId(d.getAttribute('data-ol-id')); if (it0) { var tmp = D.createElement('div'); tmp.innerHTML = rowHtml(it0); var bd = tmp.querySelector('.ol-body'); if (bd) { d.appendChild(bd); d.removeAttribute('data-ol-lazy'); } } } } }, true);   /* patch LEADFREEZE-6 */
 }
 /* patch RSO calls this on each of its ticks, with its own panel: ours sits just above it */
 W._gcOutreachMount = function(p){
