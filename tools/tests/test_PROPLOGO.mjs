@@ -94,6 +94,9 @@ for (const [type, label] of TYPES) for (const st of ['TN', 'MS', 'AR']) {
     ok(name + ' [' + med + '] — header logo centered (' + (q && q.rows[0] && q.rows[0].cx) + ' vs ' + (q && q.vw) + ')', q && q.rows.length && q.rows.filter(x => x.hdr).every(x => Math.abs(x.cx - q.vw) <= 20) && q.rows.some(x => x.hdr), q);
     ok(name + ' [' + med + '] — exactly ONE header (one [data-gc-logo], one address line, one license line, one logo in print)', q && q.nHdr === 1 && q.idc.addr === 1 && q.idc.lic === 1 && (med === 'screen' || q.rows.filter(x => x.h >= 50).length === 1), q);
   }
+  { await r.pop.emulateMedia({ media: 'print' }); await sleep(250);
+    const w = await r.pop.evaluate(() => { const el = [...document.querySelectorAll('.page div')].find(e => e.children.length === 0 && /^(PROPOSAL|RESTORATION)$/.test((e.textContent || '').trim())); if (!el) return null; const cs = getComputedStyle(el); return { fill: cs.webkitTextFillColor, bg: cs.backgroundImage }; });
+    ok(name + ' [print] — cover word PROPOSAL/RESTORATION is visible (solid navy fill, no gradient)', w && w.fill === 'rgb(15, 36, 64)' && w.bg === 'none', w); await r.pop.emulateMedia({ media: 'screen' }); }
   if ((label === 'Residential' && st === 'TN') || (label === 'Insurance Roof' && st === 'AR')) { const f = OUT + '/prop_' + label.replace(/ /g, '_') + '_' + st + '.png'; await r.pop.emulateMedia({ media: 'print' }); await sleep(400); await shot(A, r.pop, f); shots.push(f); await r.pop.emulateMedia({ media: 'screen' }); }
   await r.pop.close().catch(() => {});
 }
