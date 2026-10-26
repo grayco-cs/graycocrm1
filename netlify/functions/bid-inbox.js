@@ -376,6 +376,7 @@ function ownOrAuto(mail){
   const a = low(H['auto-submitted']); if (a && a !== 'no' && !/auto-generated/.test(a)) return 'automatic reply';
   if (/^(out of office|automatic reply|auto(matic)?[- ]?reply|undeliverable|delivery status notification|mail delivery)/i.test(mail.subject)) return 'automatic reply';
   if (/^(mailer-daemon|postmaster)@/.test(mail.from.email)) return 'bounce';
+  if (/^(noreply|no-reply)@groups\.google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email) && /^(noreply|no-reply)/.test(mail.from.email)) return 'Google Groups notice';   /* owner 10/26: the group's own 'added to group' / admin notices are not leads */
   return '';
 }
 
