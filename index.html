@@ -125932,7 +125932,7 @@ function iall(store){ return op(store, 'readonly', function(st){ return st.getAl
 var subs = [];
 function on(fn){ subs.push(fn); }
 var emitT = null, emitKeys = {}, emitAt = 0;
-function emit(k){ emitKeys[k || 'any'] = 1; if (emitT && Date.now() - emitAt < 1500) return; if (emitT) clearTimeout(emitT); emitAt = Date.now(); emitT = later(function(){ var ks = emitKeys; emitKeys = {}; emitT = null; subs.forEach(function(f){ try { f(ks); } catch (e) { try { console.warn('[GC Photos]', e); } catch (x) {} } }); }, 120); }
+function emit(k){ pvVer++; emitKeys[k || 'any'] = 1; if (emitT && Date.now() - emitAt < 1500) return; if (emitT) clearTimeout(emitT); emitAt = Date.now(); emitT = later(function(){ var ks = emitKeys; emitKeys = {}; emitT = null; subs.forEach(function(f){ try { f(ks); } catch (e) { try { console.warn('[GC Photos]', e); } catch (x) {} } }); }, 120); }
 
 /* ── a synced id-keyed list in gc_kv: union on every push and pull ───────── */
 function stampOf(r){ return s(r && (r.updatedAt || r.at)); }
@@ -126064,7 +126064,7 @@ function visiblePhotos(jobId){
     });
   return out.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : s(a.at) > s(b.at) ? -1 : 0; });
 }
-function photoById(id){ if (PH.map[id]) return PH.map[id]; for (var k in ccCache) { var l = ccCache[k].list || []; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; } return null; }
+function photoById(id){ if (PH.map[id]) return PH.map[id]; if (ccFeed.map[id]) return ccFeed.map[id]; for (var k in ccCache) { var l = ccCache[k].list || []; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; } return null; }
 
 /* ── fingerprints ───────────────────────────────────────────────────────── */
 function hex(buf){ var a = new Uint8Array(buf), o = ''; for (var i = 0; i < a.length; i++) o += (a[i] < 16 ? '0' : '') + a[i].toString(16); return o; }
@@ -126689,9 +126689,9 @@ var CSS = [
 /* while Photos is open the CRM, its banners and pop-ups underneath are hidden (not removed); the sign-in
    gate, the fresh-start screens and the screen-hold notice stay on top as always */
 'html.gcu-open body>:not(#gcuOv):not([id^="gc-auth"]):not([id^="gc-fresh"]):not([id^="gc-epoch"]):not([id^="_gcHold"]):not([id^="gc-hold"]):not(script):not(style):not(link){visibility:hidden!important}'
-].join('\n');
+].join('\n') + pvCss();
 
-var S = { open: false, tab: false, screen: 'projects', from: 'projects', section: 'Active', q: '', jobId: '', jobTab: 'photos', filter: 'All', photoId: '', tag: 'During', shots: [], dm: '', sel: null, more: 30, mapPick: '', reportId: '' };
+var S = { open: false, tab: false, screen: 'projects', from: 'projects', section: 'Active', q: '', jobId: '', jobTab: 'photos', filter: 'All', photoId: '', tag: 'During', shots: [], dm: '', sel: null, more: 30, pm: 24, fm: 40, feedAll: false, psort: 'recent', mapPick: '', reportId: '' };
 var root = null, mainEl = null, io = null, deferMain = false, stream = null;
 
 function el(id){ return root ? root.querySelector('#' + id) : null; }
@@ -126762,7 +126762,7 @@ function syncPill(compact){
   return '<span class="gcu-pill" id="gcu-sync">All synced</span>';
 }
 function meBtn(){ var n = unreadMentions() + unreadDmsTotal(); return '<button class="gcu-me" data-a="mentions" aria-label="Messages and mentions for you' + (n ? ' (' + n + ' new)' : '') + '">' + av(myName(), 34, GOLD, INDIGO) + (n ? '<span class="gcu-bd" id="gcu-mebd">' + n + '</span>' : '') + '</button>'; }
-function headHtml(){
+function headHtmlOld(){
   var right = syncPill(inner()) + meBtn() + (inner() ? '' : '<button class="gcu-ib" data-a="settings" aria-label="GrayCo Photos settings">⚙</button>' + (S.tab ? '' : '<button class="gcu-ib" data-a="close" aria-label="Close GrayCo Photos">✕</button>'));
   if (!inner()) {
     var h = '<div class="gcu-row">' + (S.tab && tabCanBack() ? '<button class="gcu-ib" data-a="tabback" aria-label="Back">' + BACK_SVG + '</button>' : '') + '<span class="gcu-wm"><img src="' + LOGO_WHITE + '" alt="GrayCo Construction Services"><b>PHOTOS</b></span>' + right + '</div>';
@@ -126810,6 +126810,8 @@ function composeUpdate(){
 function render(){
   if (!root) return;
   stopCamIfLeft();
+  var pvLt = ['projects', 'map', 'activity', 'team', 'job'].indexOf(S.screen) >= 0;
+  root.classList.toggle('gcu-lt', pvLt); root.querySelector('.gcu-hd').classList.toggle('lt', pvLt);
   setHTML(root.querySelector('.gcu-hd'), headHtml());
   setHTML(root.querySelector('.gcu-nav'), navHtml());
   var fab = root.querySelector('.gcu-fab'); fab.style.display = showFab() ? 'flex' : 'none';
@@ -126844,7 +126846,7 @@ function go(screen, extra){
   if (screen !== S.screen && !inner()) S.from = S.screen;
   if (['projects', 'map', 'activity', 'team'].indexOf(screen) >= 0) S.entry = null;   /* moved around inside the app: ‹ goes up again */
   Object.assign(S, extra || {}, { screen: screen });
-  if (screen === 'job' && S.jobId) { ccLoad(S.jobId); }
+  if (screen === 'job' && S.jobId) { ccLoad(S.jobId); pvMarkViewed(S.jobId); }
   if (mainEl) mainEl.scrollTop = 0;
   render();
 }
@@ -126879,7 +126881,7 @@ function lastOf(it, list){
   if (!best && it.created) best = { by: it.kind === 'lead' ? 'New lead' : '', at: it.created };
   return best;
 }
-function cardHtml(it, idx){
+function cardHtmlOld(it, idx){
   var list = idx[it.id] || [], cover = list[0], cnt = list.length || (it.kind === 'cc' && it.raw.photo_count) || 0;
   var un = it.kind === 'cc' ? 0 : unreadIn(threadJob(it.id));
   var team = {}; if (it.pm) team[low(it.pm)] = it.pm; list.slice(0, 40).forEach(function(r){ if (r.by && Object.keys(team).length < 4) team[low(r.by)] = r.by; });
@@ -126895,7 +126897,172 @@ function cardHtml(it, idx){
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;gap:8px"><div class="gcu-team">' + Object.keys(team).map(function(k){ return av(team[k], 26); }).join('') + '</div>' +
     '<span class="gcu-sm" style="font-size:13px;text-align:right">' + (last ? esc((last.by ? short(last.by) + ' · ' : '') + ago(last.at)) : esc(it.status)) + '</span></div></div></button>';
 }
+/* ══ PHOTOS2 (__GC_PATCH_PHOTOS2__): CompanyCam-style home — greeting, Jump Back In, Live Photo Feed, All projects ══
+   Everything here is derived data, memoized on pvVer (bumped by emit()); no timers, no observers, no polling.
+   Visibility is unchanged: only projects that items() returns (the CRM's own list for this person) are used. */
+var pvVer = 0, pvMemo = null, pvView = null, pvReady = false, pvLM = { k: '', v: null };
+var ccFeed = { at: 0, list: [], map: {}, busy: false };
+var PV_PIN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>';
+var PV_IMG = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><circle cx="9" cy="10" r="1.8"></circle><path d="M21 16l-5-5-8 9"></path></svg>';
+function pvBoot(){
+  if (pvBoot.done) return; pvBoot.done = true;
+  try { PH.load().then(function(){ pvReady = true; pvVer++; emit('any'); }, function(){ pvReady = true; }); } catch (e) { pvReady = true; }
+}
+function pvCss(){ return '\n' + "/* PHOTOS2: CompanyCam-style light home. Only active under #gcuOv.gcu-lt; camera / photo / report stay dark. */\n#gcuOv.gcu-lt{background:#fff}\n#gcuOv.gcu-lt .gcu-main{background:#fff}\n.gcu-hd.lt{background:#fff;color:#171A2B;border-bottom:1px solid #e6e8ec;gap:12px}\n.gcu-hd.lt .gcu-ib{background:#f3f4f6;color:#1B1452;border-radius:12px}\n.gcu-hd.lt .gcu-wm b{border-left-color:#e6e8ec;color:#1B1452;font-weight:700;letter-spacing:.01em}\n.gcu-hd.lt .gcu-tt span{color:#5B5F75}\n.gcu-hd.lt .gcu-search{background:#f3f4f6;color:#171A2B;border:1px solid #e6e8ec;border-radius:12px;height:42px}\n.gcu-hd.lt .gcu-search::placeholder{color:#8a8fa3}\n.pv-sr{gap:10px}.pv-sr .gcu-search{flex:1 1 auto;min-width:0}\n.pv-new{flex:0 0 auto;height:42px;padding:0 16px;border:0;border-radius:12px;background:#1B1452;color:#fff;font-weight:700;font-size:15px;cursor:pointer;white-space:nowrap}\n.pv-new:hover{background:#241968}\n#gcuOv.gcu-lt .gcu-pad{max-width:1240px;padding:24px 20px 110px;gap:32px}\n.pv{font-family:inherit}\n.pv-hi{margin:0;font:700 34px/1.15 Archivo,'Source Sans 3',Inter,sans-serif;color:#171A2B;letter-spacing:-.01em}\n.pv-hi small{display:block;margin-top:6px;font:400 16px/1.4 'Source Sans 3',Inter,sans-serif;color:#6b7083;letter-spacing:0}\n.pv-sec{display:flex;flex-direction:column;gap:14px;min-width:0}\n.pv-h{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.pv-h h2{margin:0;font:700 21px/1.2 Archivo,'Source Sans 3',Inter,sans-serif;color:#171A2B}\n.pv-h .pv-ct{font-size:14px;color:#6b7083;font-weight:600}\n.pv-tools{display:flex;align-items:center;gap:8px}\n.pv-arr{width:34px;height:34px;border-radius:50%;border:1px solid #e6e8ec;background:#fff;color:#1B1452;font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0 0 3px}\n.pv-arr:hover{background:#f3f4f6}\n.pv-link{border:0;background:none;color:#1B1452;font-weight:700;font-size:15px;cursor:pointer;padding:6px 8px;border-radius:8px;text-decoration:underline;text-decoration-color:#F2A51A;text-underline-offset:4px;text-decoration-thickness:2px}\n.pv-link:hover{background:#f3f4f6}\n.pv-rail{display:flex;gap:20px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 2px 10px;margin:0 -2px;overscroll-behavior-x:contain}\n.pv-rail::-webkit-scrollbar{display:none}\n.pv-rail>*{scroll-snap-align:start}\n.pv-card{display:flex;flex-direction:column;text-align:left;border:1px solid #e6e8ec;padding:0;background:#fff;border-radius:16px;cursor:pointer;color:inherit;font:inherit;min-width:0;transition:box-shadow .15s,transform .15s;position:relative}\n.pv-card:hover{box-shadow:0 8px 24px rgba(16,24,40,.10);transform:translateY(-1px)}\n.pv-rail .pv-card{flex:0 0 calc((100% - 60px)/4)}\n.pv-cover{position:relative;width:100%;aspect-ratio:16/10}\n.pv-img{position:absolute;inset:0;border-radius:15px 15px 0 0;overflow:hidden;background:linear-gradient(135deg,#e9ebf1,#f6f7fa)}\n.pv-img img{width:100%;height:100%;object-fit:cover;display:block}\n.pv-nophoto{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b3b8c8}\n.pv-pin{position:absolute;left:14px;bottom:-15px;width:32px;height:32px;border-radius:50%;background:#1B1452;color:#fff;border:3px solid #fff;display:flex;align-items:center;justify-content:center;z-index:2}\n.pv-pin svg{display:block}\n.pv-cb{padding:22px 16px 16px;display:flex;flex-direction:column;gap:3px;min-width:0}\n.pv-nm{font:700 16px/1.25 Archivo,'Source Sans 3',Inter,sans-serif;color:#171A2B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.pv-sub{font-size:14px;color:#6b7083;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.pv-chip{position:absolute;z-index:1;font-size:12px;font-weight:700;color:#fff;background:rgba(17,20,40,.72);padding:3px 9px;border-radius:999px;display:flex;align-items:center;gap:6px}\n.pv-chip i{width:8px;height:8px;border-radius:50%;display:inline-block}\n.pv-panel{border:1px solid #e6e8ec;border-radius:16px;padding:18px 18px 12px;background:#fff;display:flex;flex-direction:column;gap:14px;min-width:0}\n.pv-feed{gap:16px}\n.pv-ft{flex:0 0 150px;width:150px;display:flex;flex-direction:column;gap:6px;min-width:0}\n.pv-feed .pv-ft{flex:0 0 150px}\n.pv-t{border-radius:14px!important;border:1px solid #e6e8ec!important;background:#eceef3;transition:box-shadow .15s}\n.pv-t:hover{box-shadow:0 6px 18px rgba(16,24,40,.14)}\n.pv-t .gcu-av{left:8px!important;bottom:8px!important;border:2px solid #fff!important;box-shadow:0 1px 3px rgba(0,0,0,.2)}\n.pv-time{position:absolute;right:8px;top:8px;background:rgba(17,20,40,.78);color:#fff;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;line-height:1.5}\n.pv-t .gcu-cm{right:auto;left:8px;top:8px}\n.pv-t .gcu-ccb,.pv-t .gcu-gcb,.pv-t .gcu-subb{right:8px;bottom:8px;border-radius:5px}\n.pv-t .gcu-lock{left:auto;right:34px;bottom:8px}\n.pv-by{font-size:14px;color:#6b7083;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.pv-pj{font-size:12px;color:#8a8fa3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:-4px}\n.pv-more{align-self:center;min-width:180px;height:44px;border-radius:12px;border:1px solid #e6e8ec;background:#fff;color:#1B1452;font-weight:700;font-size:15px;cursor:pointer}\n.pv-more:hover{background:#f3f4f6}\n.pv-fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px 16px}\n.pv-fgrid .pv-ft{width:auto;flex:none}\n.pv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:24px 20px}\n.pv-grid .pv-card{width:100%}\n.pv-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}\n.pv-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;max-width:100%}.pv-chips::-webkit-scrollbar{display:none}\n.pv-fc{flex:0 0 auto;height:36px;padding:0 14px;border-radius:999px;border:1px solid #e6e8ec;background:#fff;color:#3b3f55;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px}\n.pv-fc i{width:8px;height:8px;border-radius:50%;display:inline-block}.pv-fc em{font-style:normal;color:#8a8fa3}\n.pv-fc.on{background:#1B1452;border-color:#1B1452;color:#fff}.pv-fc.on em{color:#cfcaf0}\n.pv-sort{height:36px;border-radius:10px;border:1px solid #e6e8ec;background:#fff;color:#3b3f55;font:600 14px inherit;padding:0 10px}\n.pv-empty{border:1px dashed #d5d8e2;border-radius:16px;padding:36px 20px;text-align:center;color:#6b7083;display:flex;flex-direction:column;align-items:center;gap:10px;background:#fafbfc}\n.pv-empty b{font:700 18px Archivo,'Source Sans 3',sans-serif;color:#171A2B}\n.pv-empty .pv-ic{width:52px;height:52px;border-radius:50%;background:#f0f1f6;color:#8a8fa3;display:flex;align-items:center;justify-content:center}\n.pv-cta{height:42px;padding:0 18px;border:0;border-radius:12px;background:#F2A51A;color:#1B1452;font-weight:800;font-size:15px;cursor:pointer}\n.pv-back{align-self:flex-start;border:0;background:none;color:#1B1452;font-weight:700;font-size:15px;cursor:pointer;padding:6px 10px 6px 0;display:flex;align-items:center;gap:4px}\n@keyframes pvsh{0%{background-position:100% 0}100%{background-position:-100% 0}}\n.pv-sk{background:linear-gradient(90deg,#eef0f4 25%,#f7f8fa 50%,#eef0f4 75%);background-size:200% 100%;animation:pvsh 1.4s linear infinite;border-radius:12px}\n.pv-skc{flex:0 0 calc((100% - 60px)/4);border:1px solid #e6e8ec;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;gap:10px;padding-bottom:16px}\n.pv-skc .pv-sk:first-child{aspect-ratio:16/10;border-radius:0}\n.pv-skc .pv-sk:not(:first-child){height:14px;margin:0 16px;width:60%}\n.pv-skt{flex:0 0 150px;aspect-ratio:1/1;border-radius:14px}\n@media(prefers-reduced-motion:reduce){.pv-sk{animation:none}.pv-card,.pv-t{transition:none}.pv-card:hover{transform:none}}\n/* inside a project */\n.gcu-lt .gcu-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}\n@media(min-width:700px){.gcu-lt .gcu-grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:14px}}\n.gcu-lt .gcu-t{border-radius:14px;border:1px solid #e6e8ec}\n.gcu-lt .gcu-day b{font:700 17px Archivo,'Source Sans 3',Inter,sans-serif;color:#171A2B}\n.gcu-lt .gcu-act{border-bottom:1px solid #e6e8ec;gap:10px;padding:14px 20px}\n.gcu-lt .gcu-act button,.gcu-lt .gcu-act a{border-radius:12px;border-color:#e6e8ec}\n.gcu-lt .gcu-jt{border-bottom:1px solid #e6e8ec}\n.gcu-lt .gcu-chip{border-color:#e6e8ec;height:36px}\n.gcu-lt .gcu-chip.on{background:#1B1452;border-color:#1B1452}\n.gcu-lt .gcu-box{box-shadow:none;border:1px solid #e6e8ec;border-radius:14px}\n.gcu-lt .gcu-nav{border-top:1px solid #e6e8ec}\n@media(max-width:899px){.pv-rail .pv-card{flex:0 0 calc((100% - 40px)/3)}.pv-skc{flex:0 0 calc((100% - 40px)/3)}}\n@media(max-width:620px){\n  .gcu-hd.lt .gcu-wm b,.pv-nl{display:none}\n  .gcu-hd.lt .gcu-pill{font-size:10px;padding:3px 7px}\n  #gcuOv.gcu-lt .gcu-pad{padding:18px 16px 110px;gap:26px}\n  .pv-hi{font-size:27px}\n  .pv-rail{gap:14px}\n  .pv-rail .pv-card,.pv-skc{flex:0 0 72%}\n  .pv-ft,.pv-feed .pv-ft,.pv-skt{flex:0 0 128px;width:128px}\n  .pv-panel{padding:14px 14px 8px}\n  .pv-grid{grid-template-columns:minmax(0,1fr);gap:20px}\n  .pv-h h2{font-size:19px}\n  .pv-fgrid{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .pv-arr{display:none}\n  .gcu-lt .gcu-act{padding:12px 16px}\n}\n@media(min-width:900px){#gcuOv.gcu-lt .gcu-hd,#gcuOv.gcu-lt .gcu-nav{padding-left:max(20px,calc(50% - 620px));padding-right:max(20px,calc(50% - 620px))}}"; }
+function pvViewKey(){ return 'gcu_viewed:' + (myKey() || 'me'); }
+function pvViewed(){ if (!pvView) pvView = jGet(pvViewKey(), {}) || {}; return pvView; }
+function pvMarkViewed(id){
+  if (!id) return; var m = pvViewed(); m[String(id)] = nowIso();
+  var ks = Object.keys(m); if (ks.length > 40) { ks.sort(function(a, b){ return m[a] < m[b] ? 1 : -1; }); ks.slice(40).forEach(function(k){ delete m[k]; }); }
+  jSet(pvViewKey(), m); pvVer++;
+}
+function pvShort(iso){
+  var t = Date.parse(iso); if (!t) return '';
+  var m = Math.max(0, Math.round((Date.now() - t) / 60000)); if (m < 1) return 'now'; if (m < 60) return m + 'm';
+  var h = Math.round(m / 60); if (h < 24) return h + 'h';
+  var d = Math.round(h / 24); if (d < 14) return d + 'd'; if (d < 60) return Math.round(d / 7) + 'w'; return Math.round(d / 30) + 'mo';
+}
+function pvAgo(iso){
+  var t = Date.parse(iso); if (!t) return '';
+  var m = Math.max(0, Math.round((Date.now() - t) / 60000)); if (m < 2) return 'just now'; if (m < 60) return m + ' min ago';
+  var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+  var d = Math.round(h / 24); if (d < 31) return d + (d === 1 ? ' day ago' : ' days ago');
+  return md(iso);
+}
+function pvGreeting(){ var h = new Date().getHours(); return (h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + (first(myName()) ? ', ' + first(myName()) : ''); }
+
+/* newest photos across all projects (one fetch, cached 5 min); a photo is kept only when its project is one this person can see */
+function pvFeedLoad(){
+  if (!ccOn() || !online() || ccFeed.busy || Date.now() - ccFeed.at < 5 * 60e3) return;
+  ccFeed.busy = true; ccFeed.at = Date.now();
+  window.fetch(FN_CC + '?proxy=api&raw=1&per_page=40&endpoint=photos', { headers: { 'x-gc-cc': '1' } }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
+    if (j && !Array.isArray(j)) j = j.photos || j.data || j.results || j.items || null;
+    if (!Array.isArray(j)) return;
+    var byCc = {}; items().forEach(function(it){ if (it.ccId) byCc[String(it.ccId)] = it.id; });
+    var list = [], map = {};
+    j.forEach(function(ph){ var jid = byCc[String(ph.project_id || (ph.project && ph.project.id) || '')]; if (!jid) return; var r = ccMap(jid, ph); if (r) { list.push(r); map[r.id] = r; } });
+    ccFeed.list = list; ccFeed.map = map; pvVer++; emit('cc');
+  }).catch(function(){}).then(function(){ ccFeed.busy = false; });
+}
+function pvData(){
+  var its = items(), k = pvVer + '|' + its.length;
+  if (pvMemo && pvMemo.k === k) return pvMemo;
+  var ids = {}; its.forEach(function(it){ ids[it.id] = it; });
+  var by = photoIndex(), idx = {}, feed = [], seen = {}, mine = {}, last = {};
+  Object.keys(by).forEach(function(j){
+    if (!ids[j]) return;
+    var l = by[j]; idx[j] = l;
+    for (var i = 0; i < l.length && i < 60; i++) if (!seen[l[i].id]) { seen[l[i].id] = 1; feed.push(l[i]); }
+    for (var m = 0; m < l.length; m++) { var r = l[m]; if (isMe(r.byKey || r.by)) { var a = s(r.addedAt && r.source !== 'companycam' ? r.addedAt : r.at); if (a > (mine[j] || '')) mine[j] = a; } }
+  });
+  ccFeed.list.forEach(function(r){ if (ids[r.jobId] && !seen[r.id]) { seen[r.id] = 1; feed.push(r); } });
+  feed.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : s(a.at) > s(b.at) ? -1 : 0; });
+  its.forEach(function(it){ last[it.id] = lastOf(it, idx[it.id]); });
+  pvMemo = { k: k, ids: ids, items: its, idx: idx, feed: feed.slice(0, 240), mine: mine, last: last };
+  return pvMemo;
+}
+function pvJump(d){
+  var v = pvViewed(), sc = {};
+  d.items.forEach(function(it){ var a = s(v[it.id]), b = s(d.mine[it.id]); var m = a > b ? a : b; if (m) sc[it.id] = m; });
+  var ids = Object.keys(sc).sort(function(a, b){ return sc[a] < sc[b] ? 1 : -1; });
+  var out = ids.slice(0, 12).map(function(i){ return d.ids[i]; });
+  if (out.length < 8) {
+    var have = {}; out.forEach(function(it){ have[it.id] = 1; });
+    d.items.filter(function(it){ return !have[it.id] && d.last[it.id] && it.section !== 'Completed'; })
+      .sort(function(a, b){ return s(d.last[a.id].at) < s(d.last[b.id].at) ? 1 : -1; }).slice(0, 8 - out.length).forEach(function(it){ out.push(it); });
+  }
+  return out;
+}
+function pvImg(r){ var t = imgTag(r); return t.indexOf('loading=') < 0 ? t.replace('<img ', '<img loading="lazy" ') : t; }
+function pvCard(it, d, jump){
+  var list = d.idx[it.id] || [], cover = list[0], last = d.last[it.id], cnt = list.length || (it.kind === 'cc' && it.raw && it.raw.photo_count) || 0;
+  var when = last ? pvAgo(last.at) : '';
+  var un = (!jump && it.kind !== 'cc') ? unreadIn(threadJob(it.id)) : 0;
+  return '<button class="pv-card" data-a="job" data-id="' + esc(it.id) + '" data-sec="' + esc(it.section) + '">' +
+    '<div class="pv-cover"><div class="pv-img">' + (cover ? pvImg(cover) : '<span class="pv-nophoto">' + PV_IMG + '</span>') + '</div>' +
+    (jump ? '' : '<span class="pv-chip" style="left:10px;top:10px"><i style="background:' + (SEC_COLOR[it.section] || '#8C90A6') + '"></i>' + esc(it.section) + '</span><span class="pv-chip" style="right:10px;top:10px">' + cnt + ' photo' + (cnt === 1 ? '' : 's') + '</span>') +
+    (un ? '<span class="gcu-tagp" data-unread="' + un + '" style="right:10px;bottom:10px;background:' + GOLD + ';color:' + INDIGO + '">' + un + ' new</span>' : '') +
+    '<span class="pv-pin">' + PV_PIN + '</span></div>' +
+    '<div class="pv-cb"><span class="pv-nm">' + esc(it.name) + '</span>' +
+    (jump ? '<span class="pv-sub">' + esc(when || it.address || it.status) + '</span>' : '<span class="pv-sub">' + esc(it.address || it.client || it.status) + '</span><span class="pv-sub">' + (cnt ? cnt + ' photo' + (cnt === 1 ? '' : 's') + (when ? ' · ' + esc(when) : '') : esc(when || 'No photos yet')) + '</span>') +
+    '</div></button>';
+}
+function pvTile(r, mode){
+  var cc = r.source === 'companycam', n = mode === 'job' ? commentCount(r.id) : 0, it = mode === 'feed' ? itemById(r.jobId) : null;
+  var t = '<button class="gcu-t pv-t" data-a="photo" data-id="' + esc(r.id) + '" data-job="' + esc(r.jobId) + '" data-tag="' + esc(r.tag || '') + '" data-src-kind="' + (cc ? 'cc' : 'gc') + '" aria-label="' + esc((r.tag || 'Photo') + ' by ' + r.by + ', ' + (cc ? 'from CompanyCam' : 'GrayCo Photos')) + '">' +
+    pvImg(r) + '<span class="pv-time">' + (mode === 'job' ? esc(hm(r.at).replace(' ', '').replace(/M$/, '').toLowerCase()) : esc(pvShort(r.at))) + '</span>' + av(dispName(r), 26) +
+    (n ? '<span class="gcu-cm">' + n + ' 💬</span>' : '') + (cc ? '<span class="gcu-ccb">CC</span>' : r.source === 'sub' ? '<span class="gcu-subb">SUB</span>' : '') +
+    (r._local || (!cc && !r.ref) ? '<span class="gcu-wait" title="Waiting to upload">⏳</span>' : '') + (!sharedOf(r) ? '<span class="gcu-lock" title="' + (subsOf(r) ? 'Hidden from the customer' : 'Internal only') + '">🔒</span>' : '') + '</button>';
+  if (mode !== 'feed') return t;
+  return '<div class="pv-ft">' + t + '<span class="pv-by">' + esc(short(dispName(r))) + '</span>' + (it ? '<span class="pv-pj">' + esc(it.name) + '</span>' : '') + '</div>';
+}
+function pvSkeleton(){
+  var c = '', t = ''; for (var i = 0; i < 4; i++) c += '<div class="pv-skc"><div class="pv-sk"></div><div class="pv-sk"></div><div class="pv-sk" style="width:35%"></div></div>';
+  for (var j = 0; j < 7; j++) t += '<div class="pv-sk pv-skt"></div>';
+  return '<div class="gcu-pad pv" aria-busy="true"><h1 class="pv-hi">' + esc(pvGreeting()) + '</h1><div class="pv-sec"><div class="pv-h"><h2>Jump Back In</h2></div><div class="pv-rail">' + c + '</div></div>' +
+    '<div class="pv-panel"><div class="pv-h"><h2>Live Photo Feed</h2></div><div class="pv-rail pv-feed">' + t + '</div></div></div>';
+}
+function pvEmpty(title, sub, cta){
+  return '<div class="pv-empty"><span class="pv-ic">' + PV_IMG + '</span><b>' + esc(title) + '</b><span>' + esc(sub) + '</span>' + (cta || '') + '</div>';
+}
+function pvArrows(id){ return '<button class="pv-arr" data-a="rail" data-v="' + id + '" data-d="-1" aria-label="Previous">‹</button><button class="pv-arr" data-a="rail" data-v="' + id + '" data-d="1" aria-label="Next">›</button>'; }
+function pvAll(d, q){
+  var key = d.k + '|' + S.section + '|' + q + '|' + S.psort, list;
+  if (pvLM.k === key) list = pvLM.v;
+  else {
+    list = d.items.filter(function(it){ return (S.section === 'All' || it.section === S.section) && matches(it, q, d.idx); });
+    var at = function(it){ var l = d.last[it.id]; return l ? s(l.at) : ''; };
+    list.sort(function(a, b){
+      if (S.psort === 'az') return low(a.name) < low(b.name) ? -1 : 1;
+      if (S.psort === 'photos') { var x = (d.idx[a.id] || []).length, y = (d.idx[b.id] || []).length; if (x !== y) return y - x; }
+      var p = at(a), r = at(b); return p < r ? 1 : p > r ? -1 : (a.name < b.name ? -1 : 1);
+    });
+    pvLM = { k: key, v: list };
+  }
+  var cnt = { All: 0, Leads: 0, Bidding: 0, Active: 0, Completed: 0 };
+  d.items.forEach(function(it){ cnt.All++; cnt[it.section]++; });
+  var shown = list.slice(0, S.pm);
+  var h = '<div class="pv-sec"><div class="pv-h"><h2>' + (q ? 'Results' : 'All projects') + '</h2><span class="pv-ct">' + list.length + ' project' + (list.length === 1 ? '' : 's') + '</span></div>' +
+    '<div class="pv-bar"><div class="pv-chips" role="tablist">' + SECTIONS.map(function(x){ return '<button class="pv-fc' + (S.section === x ? ' on' : '') + '" data-a="sec" data-v="' + x + '" role="tab" aria-selected="' + (S.section === x) + '"><i style="background:' + (SEC_COLOR[x] || '#cfd2dd') + '"></i>' + x + ' <em>' + cnt[x] + '</em></button>'; }).join('') + '</div>' +
+    '<select class="pv-sort" data-psort="1" aria-label="Sort projects"><option value="recent"' + (S.psort === 'recent' ? ' selected' : '') + '>Recently active</option><option value="az"' + (S.psort === 'az' ? ' selected' : '') + '>Name A–Z</option><option value="photos"' + (S.psort === 'photos' ? ' selected' : '') + '>Most photos</option></select></div>';
+  if (!list.length) h += pvEmpty(q ? 'Nothing matches “' + S.q + '”' : 'No projects in ' + S.section, q ? 'Try a project name, an address or a person.' : 'Pick another group above, or start a new project.', '');
+  else h += '<div class="pv-grid">' + shown.map(function(it){ return pvCard(it, d, false); }).join('') + '</div>' +
+    (list.length > shown.length ? '<button class="pv-more" data-a="more">Load more (' + (list.length - shown.length) + ')</button>' : '');
+  return h + '</div>';
+}
+function pvFeedAll(d){
+  var shown = d.feed.slice(0, S.fm);
+  return '<div class="gcu-pad pv"><div class="pv-sec"><button class="pv-back" data-a="feedback">‹ Back</button><div class="pv-h"><h2>Live Photo Feed</h2><span class="pv-ct">Newest first</span></div>' +
+    (shown.length ? '<div class="pv-fgrid">' + shown.map(function(r){ return pvTile(r, 'feed'); }).join('') + '</div>' + (d.feed.length > shown.length ? '<button class="pv-more" data-a="fmore">Load more</button>' : '')
+      : pvEmpty('No photos yet', 'Photos from every project show up here as soon as they are taken.', '<button class="pv-cta" data-a="camera">Take a photo</button>')) + '</div></div>';
+}
 function vProjects(){
+  if (!pvReady || !Array.isArray(crm().projects)) return pvSkeleton();
+  var d = pvData(), q = low(S.q);
+  if (S.feedAll && !q) return pvFeedAll(d);
+  var h = '<div class="gcu-pad pv">';
+  if (!q) {
+    var jump = pvJump(d);
+    h += '<h1 class="pv-hi">' + esc(pvGreeting()) + '<small>Here is what is happening across your projects.</small></h1>';
+    h += '<div class="pv-sec"><div class="pv-h"><h2>Jump Back In</h2><span class="pv-tools">' + (jump.length > 1 ? pvArrows('pv-jb') : '') + '</span></div>' +
+      (jump.length ? '<div class="pv-rail" id="pv-jb">' + jump.map(function(it){ return pvCard(it, d, true); }).join('') + '</div>'
+        : pvEmpty('Nothing here yet', 'Open a project or add a photo and it will be waiting for you here.', '<button class="pv-cta" data-a="newproj">New project</button>')) + '</div>';
+    var rail = d.feed.slice(0, 24);
+    h += '<div class="pv-panel"><div class="pv-h"><h2>Live Photo Feed</h2><span class="pv-tools">' + (d.feed.length ? '<button class="pv-link" data-a="feedall">View All</button>' : '') + (rail.length > 3 ? pvArrows('pv-fd') : '') + '</span></div>' +
+      (rail.length ? '<div class="pv-rail pv-feed" id="pv-fd">' + rail.map(function(r){ return pvTile(r, 'feed'); }).join('') + '</div>'
+        : pvEmpty('No photos yet', 'Take the first photo and it will show up here for the whole team.', '<button class="pv-cta" data-a="camera">Take a photo</button>')) + '</div>';
+  }
+  return h + pvAll(d, q) + '</div>';
+}
+function tileHtml(r){ return pvTile(r, 'job'); }
+function headHtml(){
+  if (inner()) return headHtmlOld();
+  var right = syncPill(false) + meBtn() + '<button class="gcu-ib" data-a="settings" aria-label="GrayCo Photos settings">⚙</button>' + (S.tab ? '' : '<button class="gcu-ib" data-a="close" aria-label="Close GrayCo Photos">✕</button>');
+  var h = '<div class="gcu-row">' + (S.tab && tabCanBack() ? '<button class="gcu-ib" data-a="tabback" aria-label="Back">' + BACK_SVG + '</button>' : '') + '<span class="gcu-wm"><img src="' + LOGO_NAVY + '" alt="GrayCo Construction Services"><b>Photos</b></span>' + right + '</div>';
+  if (S.screen === 'projects') h += '<div class="gcu-row pv-sr"><input id="gcu-q" class="gcu-search" type="text" inputmode="search" placeholder="Search projects" aria-label="Find a project, address or person" value="' + esc(S.q) + '" autocomplete="off"><button type="button" class="pv-new" data-a="newproj">＋ New<span class="pv-nl"> project</span></button>';
+  return h;
+}
+function vProjectsOld(){
   var idx = photoIndex(), q = low(S.q);
   var list = items().filter(function(it){ return (S.section === 'All' || it.section === S.section) && matches(it, q, idx); });
   var lastAt = {}; list.forEach(function(it){ var l = lastOf(it, idx[it.id]); lastAt[it.id] = l ? s(l.at) : ''; });
@@ -127034,7 +127201,7 @@ function vJob(){
   });
   return h + '</div></div>';
 }
-function tileHtml(r){
+function tileHtmlOld(r){
   var cc = r.source === 'companycam', n = commentCount(r.id);
   return '<button class="gcu-t" data-a="photo" data-id="' + esc(r.id) + '" data-tag="' + esc(r.tag || '') + '" data-src-kind="' + (cc ? 'cc' : 'gc') + '" aria-label="' + esc((r.tag || 'Photo') + ' by ' + r.by + ', ' + (cc ? 'from CompanyCam' : 'GrayCo Photos')) + '">' +
     imgTag(r) + av(dispName(r), 22) + (n ? '<span class="gcu-cm">' + n + ' 💬</span>' : '') + (cc ? '<span class="gcu-ccb">CC</span>' : r.source === 'sub' ? '<span class="gcu-subb">SUB</span>' : '') +
@@ -127477,10 +127644,14 @@ function onClick(ev){
     case 'gpsset': closeLayer(); try { localStorage.setItem('gcu_gps', v); } catch (e) {} if (v === 'on') gpsStart(); else gpsStop(); toast(v === 'on' ? 'Location is added to new photos.' : 'Location is not added to new photos.'); return;
     case 'back': return back();
     case 'closelayer': return closeLayer();
-    case 'tab': S.more = 30; return go(v);
+    case 'tab': S.more = 30; S.pm = 24; S.fm = 40; S.feedAll = false; return go(v);
     case 'newproj': if (window._gcSelfNewJob) window._gcSelfNewJob({ via: 'GrayCo Photos', done: function(j){ itemsMemo = null; setTimeout(function(){ itemsMemo = null; go('job', { jobId: j.id, jobTab: 'photos', filter: 'All', sel: null }); }, 700); } }); return;   /* patch CC2 */
-    case 'sec': S.section = v; S.more = 30; setHTML(root.querySelector('.gcu-hd'), headHtml()); bindHead(); return renderMain();
-    case 'more': S.more += 30; return renderMain();
+    case 'sec': S.section = v; S.more = 30; S.pm = 24; setHTML(root.querySelector('.gcu-hd'), headHtml()); bindHead(); return renderMain();
+    case 'more': S.more += 30; S.pm += 24; return renderMain();
+    case 'fmore': S.fm += 40; return renderMain();
+    case 'feedall': S.feedAll = true; S.fm = 40; renderMain(); if (mainEl) mainEl.scrollTop = 0; return;
+    case 'feedback': S.feedAll = false; renderMain(); if (mainEl) mainEl.scrollTop = 0; return;
+    case 'rail': var rl = root.querySelector('#' + v); if (rl) rl.scrollBy({ left: (+b.getAttribute('data-d') || 1) * Math.max(160, rl.clientWidth * 0.85), behavior: 'smooth' }); return;
     case 'job': closeLayer(); return go('job', { jobId: id, jobTab: b.getAttribute('data-tab') || 'photos', filter: 'All', sel: null });
     case 'jtab': S.jobTab = v; return render();
     case 'filter': S.filter = v; return renderMain();
@@ -127541,6 +127712,7 @@ function onClick(ev){
 }
 function onChange(ev){
   var t = ev.target; if (!t || !root.contains(t)) return;
+  if (t.hasAttribute && t.hasAttribute('data-psort')) { S.psort = t.value; S.pm = 24; t.blur(); return renderMain(); }
   if (t.id === 'gcu-capf' || t.id === 'gcu-libf') { var fl = Array.prototype.slice.call(t.files || []); t.value = ''; if (fl.length) camFiles(fl); return; }
   if (t.id === 'gcu-camjob') { S.jobId = t.value; t.blur(); S.camPick = true; var vv = el('gcu-video'); renderHeaderOnly(); var ov = root.querySelector('.gcu-view .gcu-ov'); if (ov) { var it = itemById(S.jobId); ov.textContent = it ? it.name : 'Pick the job below'; } camRefresh(); return; }
   if (t.id === 'gcu-attf') { pendingAtt = Array.prototype.slice.call(t.files || []).slice(0, 6); t.value = ''; var l = el('gcu-attl'); if (l) l.textContent = pendingAtt.length ? pendingAtt.length + ' photo' + (pendingAtt.length > 1 ? 's' : '') + ' attached' : ''; return; }
@@ -127549,7 +127721,7 @@ function onChange(ev){
 }
 function onInput(ev){
   var t = ev.target;
-  if (t.id === 'gcu-q') { if (S.q === t.value) return; S.q = t.value; S.more = 30; renderMain(); return; }   /* no timer: cheap (30 cards at a time) */
+  if (t.id === 'gcu-q') { if (S.q === t.value) return; S.q = t.value; S.more = 30; S.pm = 24; renderMain(); return; }   /* no timer: cheap (30 cards at a time) */
   if (t.id === 'gcu-msg') {
     var m = /@([A-Za-z0-9._'-]*)$/.exec(t.value), sg = el('gcu-sug'); if (!sg) return;
     if (!m) { sg.hidden = true; return; }
@@ -127656,11 +127828,11 @@ function open(jobId, opts){
   S.entry = jobId ? { jobId: String(jobId), screen: opts.camera ? 'camera' : 'job' } : null;
   /* opened from the field job screen: closing comes back to that job screen (the field code may redraw its home meanwhile) */
   try { var dj = document.getElementById('_gcJobDash') && window._gcCurrentJob; S.fromDash = dj && dj.id ? String(dj.id) : ''; } catch (e) { S.fromDash = ''; }
-  if (jobId) { S.from = S.from || 'projects'; Object.assign(S, { screen: opts.camera ? 'camera' : 'job', jobId: String(jobId), jobTab: opts.tab || 'photos', filter: 'All', shots: [], camPick: false }); ccLoad(String(jobId)); }
+  if (jobId) { S.from = S.from || 'projects'; Object.assign(S, { screen: opts.camera ? 'camera' : 'job', jobId: String(jobId), jobTab: opts.tab || 'photos', filter: 'All', shots: [], camPick: false }); ccLoad(String(jobId)); pvMarkViewed(jobId); }
   else if (!inner()) S.screen = S.screen || 'projects';
   else S.screen = 'projects';
-  render();
-  pullSoon(300); ccProjectsRefresh(); rtConnect();
+  pvBoot(); render();
+  pullSoon(300); ccProjectsRefresh(); pvFeedLoad(); rtConnect();
   return true;
 }
 function close(){
@@ -127683,7 +127855,7 @@ function mountTab(host){
   build(host); S.tab = true;
   PH.load(); CH.load();
   if (fresh) { S.screen = 'projects'; S.from = 'projects'; S.jobId = ''; }
-  render(); pullSoon(300); ccProjectsRefresh(); rtConnect();
+  pvBoot(); render(); pullSoon(300); ccProjectsRefresh(); pvFeedLoad(); rtConnect();
   return true;
 }
 function tabGone(){ if (S.tab && (!root || !root.isConnected || !tabHost || !tabHost.isConnected)) { S.tab = false; tabHost = null; if (root && !S.open) teardown(); } }
