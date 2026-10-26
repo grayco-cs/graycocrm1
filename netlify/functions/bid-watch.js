@@ -38,6 +38,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const crypto = require('crypto');
 const L = require('./bid-inbox.js')._lib;
 const BD = require('./_lib/bid-due.js');
+const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER */
 const { env, s, low, arr, nowIso, sha256, sb, kvGet, kvCas, kvPut, upsert, itemId, isoDay, decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET } = L;
 
 const UA = 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; leads@grayco-cs.com; GrayCo Construction Services, Bartlett TN)';
@@ -263,12 +264,16 @@ function parseCivicBids(html, base){
 
 /* ── the keyword filter ─────────────────────────────────────────────────────── */
 function wordRe(w){ return w.indexOf(' ') >= 0 || /[^a-z0-9]/.test(w) ? new RegExp(w.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'i') : new RegExp('\\b' + w, 'i'); }
-function matchWords(text, settings){
+function matchWords(text, settings, desc){
   const st = Object.assign({}, DEFAULT_SETTINGS, settings || {});
   const hits = arr(st.keywords).filter(w => w && wordRe(low(w)).test(text));
   const bad = arr(st.exclude).filter(w => w && wordRe(low(w)).test(text));
-  if (st.allBids) return { ok: !bad.length, hits: hits.length ? hits : ['all public bids'], bad };   /* patch BW: "All public bids (no keyword filter)" */
-  return { ok: hits.length > 0 && !bad.length, hits, bad };
+  /* patch BIDFILTER: the construction gate is ALWAYS on. "All public bids" now means all CONSTRUCTION bids, any trade:
+     it lifts the keyword requirement, never the gate (equipment, vehicles, supplies and services are skipped) */
+  const g = BF.check(text, desc, BF.optsFrom(st));
+  if (!g.ok) return { ok: false, hits: [], bad: bad.concat(g.hit ? [g.hit] : []), gate: g };
+  if (st.allBids) return { ok: true, hits: hits.length ? hits : [g.hit || 'construction'], bad: [], gate: g };
+  return { ok: hits.length > 0, hits, bad: [], gate: g };
 }
 function expired(due){ if (!due) return false; const d = Date.parse(s(due).slice(0, 10) + 'T23:59:59'); return isFinite(d) && d < Date.now() - 86400000; }
 
@@ -396,7 +401,7 @@ async function testRead(b, opts){
   if (/<input[^>]+type=["']?password/i.test(page.text) && (page.text.match(/<a\b/gi) || []).length < 15) return { ok: false, robots: true, http: 200, why: 'That page is a log-in page. Choose "E-mail alerts only".' };
   const items = src.kind === 'rss' ? parseRss(page.text) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow, docs: src.docs });
   const settings = Object.assign({}, DEFAULT_SETTINGS, opts.settings || {});
-  const out = items.slice(0, 40).map(it => { const mw = matchWords(it.title + ' ' + (it.context || ''), settings); return { title: it.title, number: it.number, due: it.due, url: it.url, closed: it.status === 'closed' || expired(it.due), matched: mw.ok, words: mw.hits.slice(0, 4) }; });
+  const out = items.slice(0, 40).map(it => { const mw = matchWords(it.title, settings, it.context); return { title: it.title, number: it.number, due: it.due, url: it.url, closed: it.status === 'closed' || expired(it.due), matched: mw.ok, words: mw.hits.slice(0, 4) }; });
   return { ok: true, http: 200, robots: true, parsed: items.length, matched: out.filter(x => x.matched && !x.closed).length, items: out,
     why: items.length ? '' : 'The page was read but no bids were recognised on it. Try the page that lists the bids itself, a link pattern, or "every row with a PDF and a date".' };
 }
@@ -475,7 +480,7 @@ async function samRun(settings, prev, opts){
       out.parsed++;
       if (!o || !s(o.noticeId) || seenId[o.noticeId] || low(o.active) === 'no' || !SAM_TYPES.test(s(o.type))) return;
       const n = s(o.naicsCode).replace(/\D/g, ''); if (!cfg.naics.some(w => n.indexOf(w) === 0)) return;
-      if (arr(st.exclude).some(w => w && wordRe(low(w)).test(s(o.title)))) return;
+      if (!BF.check(s(o.title), 'NAICS ' + n, BF.optsFrom(st)).ok) return;   /* patch BIDFILTER: the construction gate (replaces the bare exclude list) */
       const rec = samRecord(o); if (expired(rec.bidDue)) return;
       seenId[o.noticeId] = 1; out.records.push(rec);
     });
@@ -530,7 +535,7 @@ async function runAll(opts){
         const isNew = !mine[it.id];
         mine[it.id] = mine[it.id] || nowIso().slice(0, 10);
         if (!isNew || it.status === 'closed' || expired(it.due)) return;
-        const mw = matchWords(it.title + ' ' + (it.context || ''), settings);
+        const mw = matchWords(it.title, settings, it.context);
         if (!mw.ok) return;
         st.matched++;
         records.push(toRecord(src, it, mw.hits));
@@ -595,4 +600,4 @@ exports.runAll = runAll;
 exports.SOURCES = SOURCES;
 /* patch BW */
 exports.testRead = testRead; exports.samKey = samKey; exports.samKeySet = samKeySet; exports.samTest = samTest; exports.cleanCustom = cleanCustom; exports.customSources = customSources; exports.samSettings = samSettings; exports.SAM_DEFAULT = SAM_DEFAULT; exports.urlOk = urlOk;
-exports._test = { parseAccordion, samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };
+exports._test = { BF, parseAccordion, samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };

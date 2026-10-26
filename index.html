@@ -125489,8 +125489,9 @@ function bwRender(el){
     body.innerHTML = (src.error ? '<div class="src" style="color:#991b1b">' + esc(src.error) + '</div>' : '')
       + '<div class="src"><b>Set-up</b><br>' + [['E-mail signature', p.signed], ['Resend API', p.resendApi], ['Claude', p.ai], ['Database', p.database], ['Bid portal', p.bidPortal], ['Admin e-mail alerts', p.adminAlerts], ['Phone push', p.phonePush], ['BuildingConnected API', p.buildingConnectedApi], ['SAM.gov', p.samApi]].map(function(x){ return (x[1] ? '✅ ' : '⬜ ') + x[0]; }).join(' · ')
       + '<div class="mini">Forward bid e-mails to <b>leads@grayco-cs.com</b>. Admin alerts: one e-mail (+ phone push) the moment a new lead arrives, and one 1 hour before its bid is due' + (al.retrying ? ' (' + al.retrying + ' waiting to be re-sent)' : '') + '.</div></div>'
-      + '<div class="src"><label style="flex-direction:row;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="bw-all"' + (allOn ? ' checked' : '') + '> <b>All public bids (no keyword filter)</b></label>'
-      + '<div class="mini">On: every bid on the boards comes in, except the "leave out" words below (supplies, software, vehicles, food, medical…). Off: only bids that mention one of the keywords.</div></div>'
+      + '<div class="src"><label style="flex-direction:row;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="bw-all"' + (allOn ? ' checked' : '') + '> <b>All construction bids, any trade</b></label>'
+      + '<div class="mini">On: any construction bid comes in, whatever the trade. Off: only bids that mention one of the keywords. <b>Only construction work becomes a lead. Equipment, vehicles, supplies and services are skipped.</b> Add your own words to either list below (the built-in words always apply).</div>'
+      + '<div class="row" style="margin-top:6px"><button type="button" class="hb" data-bw="hidepreview">Hide non-construction bids</button><span class="mini">hides the bids already in the Lead Inbox that are not construction (nothing is deleted) · <!-- __GC_PATCH_BIDFILTER__ --></span></div><div id="bw-hide-out" class="mini" style="margin-top:4px"></div></div>'
       + '<label>Keywords' + (allOn ? ' (used when the switch is off, and to tag each bid)' : ' (a public bid must mention one)') + '<textarea id="ldi-kw" rows="4">' + esc(arr(st.keywords).join(', ')) + '</textarea></label>'
       + (src.defaults ? '<div class="row"><button type="button" class="hb" data-bw="kwdef">＋ Add the recommended construction keywords</button><span class="mini">(' + arr(src.defaults.keywords).length + ' words: new construction, remodel, addition, bathroom, kitchen, framing, concrete, ADA, build-out, mitigation …)</span></div>' : '')
       + '<label>Leave out bids that mention<textarea id="ldi-ex" rows="3">' + esc(arr(st.exclude).join(', ')) + '</textarea></label>'
@@ -125534,6 +125535,38 @@ function bwRender(el){
   root.addEventListener('click', function(e){
     var b = e.target.closest('[data-bw]'); if (!b || !root.contains(b)) return;
     e.preventDefault(); var a = b.getAttribute('data-bw'), id = b.getAttribute('data-id');
+    if (a === 'hidepreview') {   /* patch BIDFILTER: preview, then confirm */
+      var ho = body.querySelector('#bw-hide-out'); ho.textContent = 'Checking the bids already in the Lead Inbox…';
+      return busy(b, api('GET', 'cleanup=1').then(function(r){
+        var n = (r && r.count) || 0;
+        ho.innerHTML = n ? '<b>' + n + ' bid' + (n === 1 ? '' : 's') + ' will be hidden</b> (marked closed / lost, "Not construction (auto)"; nothing is deleted)'
+          + arr(r.items).slice(0, 15).map(function(x){ return '<div style="margin-top:2px">▫️ ' + esc(x.title) + (x.city ? ' · ' + esc(x.city) : '') + (x.why ? ' <span style="color:#6b7280">— ' + esc(x.why) + '</span>' : '') + '</div>'; }).join('')
+          + (n > 15 ? '<div>… and ' + (n - 15) + ' more</div>' : '')
+          + '<div style="margin-top:6px"><button type="button" class="hb pri" data-bw="hidego">Hide ' + n + ' bid' + (n === 1 ? '' : 's') + '</button></div>'
+          : 'Nothing to hide: every bid in the Lead Inbox looks like construction work.';
+      }, function(err){ ho.textContent = 'Could not check: ' + s(err && err.message); }));
+    }
+    if (a === 'hidego') {
+      var ho2 = body.querySelector('#bw-hide-out');
+      return busy(b, api('POST', 'cleanup=1', { confirm: true }).then(function(r){
+        var ids = {}; arr(r && r.ids).forEach(function(i){ ids[i] = 1; });
+        var at = nowIso(), why = (r && r.reason) || 'Not construction (auto)', n = 0;
+        return setLeads(function(list){
+          var ch = false;
+          list.forEach(function(l, i){
+            if (!l || !l.inboxId || !ids[l.inboxId] || l.stage === 'Lost' || l.stage === 'Won' || l.pid || l.jobId || l.converted) return;
+            var x = Object.assign({}, l), from = x.stage || 'New Lead';
+            x.stage = 'Lost'; x.stageChangedAt = at; x.lostReason = why; x.lostAt = at; x.stageHistory = arr(x.stageHistory).concat([{ from: from, to: 'Lost', at: at, by: 'Auto (not construction)' }]).slice(-60);
+            list[i] = stamp(x); ch = true; n++;
+          });
+          return ch ? list : null;
+        }).then(function(){
+          S.items.forEach(function(x){ if (x && ids[x.id]) x.status = 'dismissed'; });
+          ho2.innerHTML = '✅ ' + ((r && r.hidden) || 0) + ' bids hidden' + (n ? ' (' + n + ' lead' + (n === 1 ? '' : 's') + ' marked closed / lost)' : '') + '.';
+          toast((r && r.hidden || 0) + ' non-construction bids hidden'); emit('dismissed'); later(function(){ pull(true); }, 1500);
+        });
+      }));
+    }
     if (a === 'savecfg') return busy(b, saveCfg());
     if (a === 'runall') return busy(b, api('POST', 'watch=1', {}).then(function(r){ toast(r && r.started ? 'The public bid watcher is running — new bids show in the Lead Inbox in a few minutes (press ↻).' : 'Public bids checked: ' + ((r && r.added) || 0) + ' new.'); later(function(){ pull(true); }, 4000); later(load, 1500); }));
     if (a === 'run') return busy(b, api('POST', 'watch=1', { source: id }).then(function(r){ toast(r && r.started ? 'Checking — results in a minute.' : 'Checked: ' + ((r && r.added) || 0) + ' new.'); later(load, r && r.started ? 30000 : 500); later(function(){ pull(true); }, 3000); }));

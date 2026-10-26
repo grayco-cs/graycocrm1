@@ -94,6 +94,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 
 const crypto = require('crypto');
 const BD = require('./_lib/bid-due.js');
+const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER: the always-on construction gate */
 
 const KV = 'gc_lead_inbox', KV_SET = 'gc_lead_inbox_settings', KV_NOTE = 'gc_lead_inbox_notices';
 const KEEP_ACTIVE = 600, KEEP_DISMISSED = 3000;
@@ -862,6 +863,9 @@ async function processEventCore(evt, opts){
   const ai = await extract(mail, links, hint, opts.inline ? 18000 : 0);
   const pdfs = mail.files.filter(f => f.type === 'application/pdf').length;
   if (ai.ok && (low(ai.kind) === 'not_a_lead' || !ai.leads.length) && !pdfs) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity' } };
+  /* patch BIDFILTER: a bid NOTICE (a public solicitation / a bid board telling of new projects) is held to the same construction
+     gate as the public bid watcher; a GC's own invitation to bid (invitation, gc_direct, addendum …) is always construction */
+  if (ai.ok) { const g = noticeGate(ai, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (g.dropped) { ai.leads = g.leads; if (!ai.leads.length) return { status: 200, body: { ok: true, ignored: 'not construction work', skipped: g.dropped } }; } }
   if (!ai.ok && !pdfs && !hint && !BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 2000))) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity (not read by the AI)' } };
   /* the files, then the e-mail itself as a text document */
   const stored = [];
@@ -1116,16 +1120,16 @@ function applyAct(items, b, who){
   return { items: trim(items), item: it };
 }
 const DEFAULT_SETTINGS = {
-  keywords: ['roof', 'roofing', 'reroof', 're-roof', 'roof replacement', 'roof repair', 'roof coating', 'shingle', 'tpo', 'epdm', 'metal roof', 'modified bitumen', 'built-up roof',
+  keywords: BF.merge(['roof', 'roofing', 'reroof', 're-roof', 'roof replacement', 'roof repair', 'roof coating', 'shingle', 'tpo', 'epdm', 'metal roof', 'modified bitumen', 'built-up roof',
     'building', 'construction', 'new construction', 'general construction', 'general contractor', 'renovation', 'remodel', 'addition', 'alteration', 'build-out', 'buildout', 'finish-out',
     'tenant improvement', 'interior improvements', 'improvements', 'facility improvements', 'facility', 'building repairs', 'repair', 'maintenance', 'restoration',
     'bathroom', 'restroom', 'kitchen', 'flooring', 'floor', 'carpet', 'tile', 'painting', 'paint', 'drywall', 'framing', 'carpentry', 'ceiling', 'siding', 'gutter', 'gutters',
     'windows', 'window', 'doors', 'door', 'storefront', 'canopy', 'envelope', 'waterproofing', 'masonry', 'concrete', 'sidewalk', 'demolition', 'abatement',
-    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation'],
-  exclude: ['vehicle', 'truck', 'automobile', 'software', 'hardware', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
+    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation'], BF.INCLUDE),
+  exclude: BF.merge(['vehicle', 'truck', 'automobile', 'software', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
     'fuel', 'lobbying', 'audit', 'consultant', 'consulting services', 'legal services', 'staffing', 'insurance broker', 'printing services', 'printing', 'mowing', 'lawn care',
-    'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'supplies', 'textbook', 'furniture', 'elevator', 'bus', 'tires', 'ammunition', 'firearms'],
-  allBids: true,   /* patch BW: "All public bids (no keyword filter)" — every solicitation from the boards except the excluded words */
+    'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'textbook', 'furniture', 'bus', 'tires', 'ammunition', 'firearms'], BF.EXCLUDE),
+  allBids: true,   /* patch BW + BIDFILTER: "All construction bids, any trade" — no keyword needed, but the construction gate (_lib/bid-filter.js) always applies */
   sources: {},
   /* LA / EST4: "Senior Estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
   estimator: { name: '', email: '' },
@@ -1133,7 +1137,7 @@ const DEFAULT_SETTINGS = {
   claimsTo: { name: '', email: '' }
 };
 function cleanSettings(b, cur){
-  const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 120);
+  const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 500);   /* patch BIDFILTER: room for the built-in lists */
   const out = Object.assign({}, DEFAULT_SETTINGS, cur || {});
   if (b.keywords) out.keywords = words(b.keywords);
   if (b.exclude) out.exclude = words(b.exclude);
@@ -1176,6 +1180,26 @@ async function signupTodo(src, who){
   return !!(r && r.ok !== false);
 }
 
+/* patch BIDFILTER: the bids already in the inbox that the construction gate would have refused: from the public bid
+   watcher (origin "watch"), still open, not yet a job. → { count, ids, items:[{id,title,source,city,why}] } */
+const CLEANUP_REASON = 'Not construction (auto)';
+function cleanupPick(items, settings, withItems){
+  const o = BF.optsFrom(settings), ids = [], list = [];
+  arr(items).forEach(it => {
+    if (!it || it.stub || s(it.origin) !== 'watch' || /^(dismissed|merged)$/.test(s(it.status)) || it.pid) return;
+    const g = BF.checkItem(it, o); if (g.ok) return;
+    ids.push(it.id); if (withItems && list.length < 300) list.push({ id: it.id, title: s(it.title).slice(0, 160), source: s(it.source), city: s(it.city), leadId: s(it.leadId), why: g.why || '' });
+  });
+  return { count: ids.length, ids, items: list };
+}
+
+function noticeGate(ai, saved){
+  if (!/^(public_bid|planroom_notice)$/.test(low(ai && ai.kind))) return { dropped: 0, leads: arr(ai && ai.leads) };
+  const o = BF.optsFrom(Object.assign({}, DEFAULT_SETTINGS, saved || {})), keep = [];
+  arr(ai.leads).forEach(l => { const g = BF.check(s(l.project_name), [l.scope_summary, arr(l.trades).join(' '), l.notes].filter(Boolean).join(' '), o); if (g.ok) keep.push(l); });
+  return { dropped: arr(ai.leads).length - keep.length, leads: keep };
+}
+
 /* ── handlers ──────────────────────────────────────────────────────────────── */
 exports.handler = async function(event){
   const qs = event.queryStringParameters || {};
@@ -1200,6 +1224,24 @@ exports.handler = async function(event){
       return J(200, out, C);
     } catch (e) { return J(502, { error: 'Could not read the lead inbox.' }, C); }
   }
+  /* patch BIDFILTER: "Hide non-construction bids" — GET = the preview (how many, which), POST {confirm:true} = hide them
+     (status dismissed, reason "Not construction (auto)"; nothing is deleted, a dismissed bid is never re-imported or e-mailed) */
+  if (qs.cleanup && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!who.admin) return J(403, { error: 'Only an admin can hide bids.' }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    try {
+      const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
+      if (event.httpMethod === 'GET') return J(200, Object.assign({ ok: true }, cleanupPick(arr(await kvGet(KV)), settings, true)), C);
+      let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+      if (b.confirm !== true) return J(400, { error: 'Preview first, then confirm.' }, C);
+      let hid = [];
+      await kvCas(KV, v => { const list = arr(v), pick = cleanupPick(list, settings, false), want = {}; pick.ids.forEach(i => { want[i] = 1; }); hid = [];
+        const t = nowIso(); list.forEach(x => { if (x && want[x.id]) { x.status = 'dismissed'; x.reason = CLEANUP_REASON; x.by = who.email; x.dismissedAt = t; x.autoHidden = true; x.rev = (x.rev || 1) + 1; x.updatedAt = t; hid.push({ id: x.id, leadId: s(x.leadId) }); } });
+        return hid.length ? list : undefined; });
+      return J(200, { ok: true, hidden: hid.length, ids: hid.map(x => x.id), reason: CLEANUP_REASON }, C);
+    } catch (e) { return J(502, { error: 'Could not hide the bids: ' + s(e && e.message) }, C); }
+  }
   /* patch BW: 🔎 Bid boards — the built-in boards, the admins' own, their last run and SAM.gov */
   if (event.httpMethod === 'GET' && qs.sources) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
@@ -1208,8 +1250,8 @@ exports.handler = async function(event){
     const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
     const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local, unverified: !!x.unverified });
     const sk = await BW.samKey().catch(() => ({ key: '' }));   /* the key itself never leaves the server: where it came from + its last 4 */
-    return J(200, { ok: true, builtins: BW.SOURCES.map(pub), custom: arr(settings.custom), settings: { keywords: settings.keywords, exclude: settings.exclude, allBids: settings.allBids !== false, sources: settings.sources || {} },
-      defaults: { keywords: DEFAULT_SETTINGS.keywords, exclude: DEFAULT_SETTINGS.exclude },
+    return J(200, { ok: true, builtins: BW.SOURCES.map(pub), custom: arr(settings.custom), settings: { keywords: BF.mergedLists(settings).keywords, exclude: BF.mergedLists(settings).exclude, allBids: settings.allBids !== false, sources: settings.sources || {} },
+      defaults: { keywords: DEFAULT_SETTINGS.keywords, exclude: DEFAULT_SETTINGS.exclude }, cleanup: true,
       sam: { ready: !!sk.key, from: sk.from || '', last4: sk.key ? sk.last4 : '', settings: BW.samSettings(settings) }, watch: (await kvGet('gc_bid_watch_status')) || null }, C);
   }
   /* patch EST4: sub bids that came by e-mail to bids@ — the estimator's list (GET), pick the job / mark handled (POST) */
@@ -1364,7 +1406,7 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
 exports._test.processEvent = processEvent;
