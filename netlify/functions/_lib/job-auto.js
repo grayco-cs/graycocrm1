@@ -44,32 +44,72 @@ const KIND_KEY = {
 };
 
 function s(v){ return v == null ? '' : String(v).trim(); }
-function groupOf(p){
+/* patch AUTOCOM (owner 10/26): commercial jobs and jobs from bids (GCs, BuildingConnected / PlanHub, public bid sites,
+   bid leads) start with what a GC wants — no customer portal, no welcome / marketing / review mail, no invoice e-mails
+   (pay apps go through the GC). Residential, insurance, roof, program and every other type keep the old all-on table.
+   The CRM page (patch JA + AUTOCOM) carries the same code; test_AUTOCOM checks the two agree. */
+const AUTOCOM_V = 2;
+const COMM = { gdoc: false, portalLink: false, portalInvite: false, showCarrier: false, portalSelections: false,
+  welcome: false, scheduleUpdates: false, apptAuto: false, progressPosts: false, docsNotice: false, invoiceEmail: false,
+  paymentReminders: false, finalReminders: false, thankYou: false, reviewRequest: false, yearlyCheckup: false,
+  contractSign: false, faqPacket: false, newsletter: false };
+/* a bid board / GC / public-bid source (patch HOT2's list, without the words that are also people's names) */
+const BID_SRC = /\bbids?\b|bidding|\bitb\b|\brfp\b|\brfq\b|solicit|invitation to bid|county|city of|state of|\bmscs\b|mscaa|mlgw|bid ?board|buildingconnected|building connected|planhub|plan hub|plan ?room|sam\.gov|isqft|construct ?connect|procurement|tn stream|arbuy|ion ?wave|opengov|central bidding|bidnet|bonfire|periscope|public works|general contractor|\bgc\b/i;
+const CO_RX = /\b(LLC|L\.L\.C|Inc|Incorporated|Corp|Corporation|Company|Co|Ltd|LP|LLP|PLLC|Construction|Constructors|Contracting|Contractors?|Builders|General Contractors?|Development|Developers|Properties|Holdings|Management|Partners|Group|Enterprises|Hospitality|Church|School|University|District|County|City of|Authority|Bank|Hotels?)\b/i;
+/* the job came from a bid: Bids → Won, a bid lead (Lead Inbox / public-bid watcher / BuildingConnected / PlanHub), a bid date or number */
+function isBidJob(p, h){
+  p = p || {};
+  if (p.fromBid === true || p.bidJob === true || s(p.bidId) || s(p.bidNumber) || s(p.bidDue) || s(p.preBid)) return true;
+  if (h && h.bidLead) return true;
+  if (/^(email|watch|api|partner-bid)$/.test(s(p.leadOrigin))) return true;
+  return BID_SRC.test([p.leadSource, p.source, p.subSource, p.leadOrigin].map(s).join(' '));
+}
+/* the customer is a GC / a company (the customer record's type when the page knows it, the job's company, the name) */
+function isCompany(p, h){
+  if (h && /\b(gc|general|commercial|business|company|government|gov)\b/i.test(s(h.custType))) return true;
+  if (s(p.company) && !/^(n\/a|none|-+)$/i.test(s(p.company))) return true;
+  return CO_RX.test(s(p.client)) || CO_RX.test(s(p.gc));
+}
+function groupOf(p, h){
   p = p || {};
   const t = s(p.type) + ' ' + s(p.jobType);
   if (p.isInsurance === true || (p.isInsurance !== false && /insurance|claim|fire damage|water damage|storm|restoration|mitigation/i.test(t))) return 'insurance';
   if (/program/i.test(t)) return 'program';
-  if (/commercial|\bTI\b|tenant|church|school/i.test(t)) return 'commercial';
+  const t2 = t + ' ' + [p.category, p.projectType, p.leadType, p.leadKind].map(s).join(' ');
+  if (/commercial|\bTI\b|tenant|church|school|government|municipal/i.test(t2)) return 'commercial';
+  if (isBidJob(p, h)) return 'commercial';                                   /* a bid is commercial work, whatever its type says */
+  if (/resid|home|house|kitchen|bath|addition|roof|deck|fence/i.test(t2)) return 'residential';   /* a homeowner's kind of job stays residential */
+  if (isCompany(p, h)) return 'commercial';                                  /* New Construction / Other / no type, for a GC or a company */
   return 'residential';
 }
-function builtin(group){
+/* legacy === true: a job made before AUTOCOM with no choices of its own keeps doing what it did (the old table) */
+function builtin(group, legacy){
   const out = {};
   OPTS.forEach(function(o){
     const d = o[2];
     out[o[0]] = (d && typeof d === 'object') ? (group in d ? !!d[group] : !!d.other) : !!d;
   });
+  if (group === 'commercial' && legacy !== true) Object.keys(COMM).forEach(function(k){ out[k] = COMM[k]; });
   return out;
 }
+/* the admin's saved map for a type. A commercial map saved before AUTOCOM (no commercialV) is what the old commercial
+   jobs do, not what a new one starts with; once saved after AUTOCOM the earlier one is kept as commercialPre. */
+function adminFor(group, admin, legacy){
+  if (!admin || typeof admin !== 'object') return null;
+  if (group !== 'commercial') return admin[group];
+  if (+admin.commercialV >= AUTOCOM_V) return legacy === true ? admin.commercialPre : admin.commercial;
+  return legacy === true ? admin.commercial : null;
+}
 /* the company defaults for one job type: the built-in ones, then what the admin set */
-function defaultsFor(group, admin){
-  const out = builtin(group);
-  const a = admin && typeof admin === 'object' ? admin[group] : null;
+function defaultsFor(group, admin, legacy){
+  const out = builtin(group, legacy);
+  const a = adminFor(group, admin, legacy);
   if (a && typeof a === 'object') KEYS.forEach(function(k){ if (!LOCKED[k] && typeof a[k] === 'boolean') out[k] = a[k]; });
   return out;
 }
 /* what this job does: its own choices, else the defaults for its type */
 function effective(p, admin){
-  const out = defaultsFor(groupOf(p), admin);
+  const out = defaultsFor(groupOf(p), admin, !(p && p.auto && typeof p.auto === 'object'));
   const own = p && p.auto && typeof p.auto === 'object' ? p.auto : null;
   if (own) KEYS.forEach(function(k){ if (!LOCKED[k] && typeof own[k] === 'boolean') out[k] = own[k]; });
   if (p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) OPTS.forEach(function(o){ if (!LOCKED[o[0]] && /^(email|docs|portal)$/.test(o[1])) out[o[0]] = false; });   /* patch LCLEAN-H: a job imported / back-entered as history sends nothing */
@@ -93,4 +133,5 @@ function parseAdmin(v){
 }
 
 module.exports = { OPTS: OPTS, KEYS: KEYS, LOCKED: LOCKED, GROUPS: GROUPS, KIND_KEY: KIND_KEY, groupOf: groupOf, builtin: builtin,
-  defaultsFor: defaultsFor, effective: effective, allows: allows, blockedKind: blockedKind, parseAdmin: parseAdmin, KV_KEY: 'jobAutoDefaults' };
+  defaultsFor: defaultsFor, effective: effective, allows: allows, blockedKind: blockedKind, parseAdmin: parseAdmin, KV_KEY: 'jobAutoDefaults',
+  isBidJob: isBidJob, isCompany: isCompany, COMM: COMM, AUTOCOM_V: AUTOCOM_V };

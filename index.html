@@ -145071,17 +145071,66 @@ var KIND_KEY = { invoice: 'invoiceEmail', thank_you: 'thankYou', portal_link: 'p
   checkup: 'yearlyCheckup', contract: 'contractSign', faq_packet: 'faqPacket', warranty: 'warrantyCert', lien_waiver: 'lienWaivers', w9: 'w9', change_order: 'coSign' };
 var NOT_ALL = { showCarrier: 1, apptAuto: 1 };   /* a privacy switch and an approval bypass, not automations: All on / All off leave them */
 
-function groupOf(p){
+/* patch AUTOCOM v1 */
+/* patch AUTOCOM (owner 10/26): commercial jobs and jobs from bids start with what a GC wants (no portal, no welcome /
+   marketing / review mail, no invoice e-mails); every other type keeps the all-on table. Same code as
+   netlify/functions/_lib/job-auto.js. */
+var AUTOCOM_V = 2;
+var COMM = { gdoc: false, portalLink: false, portalInvite: false, showCarrier: false, portalSelections: false,
+  welcome: false, scheduleUpdates: false, apptAuto: false, progressPosts: false, docsNotice: false, invoiceEmail: false,
+  paymentReminders: false, finalReminders: false, thankYou: false, reviewRequest: false, yearlyCheckup: false,
+  contractSign: false, faqPacket: false, newsletter: false };
+var BID_SRC = /\bbids?\b|bidding|\bitb\b|\brfp\b|\brfq\b|solicit|invitation to bid|county|city of|state of|\bmscs\b|mscaa|mlgw|bid ?board|buildingconnected|building connected|planhub|plan hub|plan ?room|sam\.gov|isqft|construct ?connect|procurement|tn stream|arbuy|ion ?wave|opengov|central bidding|bidnet|bonfire|periscope|public works|general contractor|\bgc\b/i;
+var CO_RX = /\b(LLC|L\.L\.C|Inc|Incorporated|Corp|Corporation|Company|Co|Ltd|LP|LLP|PLLC|Construction|Constructors|Contracting|Contractors?|Builders|General Contractors?|Development|Developers|Properties|Holdings|Management|Partners|Group|Enterprises|Hospitality|Church|School|University|District|County|City of|Authority|Bank|Hotels?)\b/i;
+function isBidJob(p, h){
+  p = p || {};
+  if (p.fromBid === true || p.bidJob === true || s(p.bidId) || s(p.bidNumber) || s(p.bidDue) || s(p.preBid)) return true;
+  if (h && h.bidLead) return true;
+  if (/^(email|watch|api|partner-bid)$/.test(s(p.leadOrigin))) return true;
+  return BID_SRC.test([p.leadSource, p.source, p.subSource, p.leadOrigin].map(s).join(' '));
+}
+function isCompany(p, h){
+  if (h && /\b(gc|general|commercial|business|company|government|gov)\b/i.test(s(h.custType))) return true;
+  if (s(p.company) && !/^(n\/a|none|-+)$/i.test(s(p.company))) return true;
+  return CO_RX.test(s(p.client)) || CO_RX.test(s(p.gc));
+}
+function groupCore(p, h){
   p = p || {};
   var t = s(p.type) + ' ' + s(p.jobType);
   if (p.isInsurance === true || (p.isInsurance !== false && /insurance|claim|fire damage|water damage|storm|restoration|mitigation/i.test(t))) return 'insurance';
   if (/program/i.test(t)) return 'program';
-  if (/commercial|\bTI\b|tenant|church|school/i.test(t)) return 'commercial';
+  var t2 = t + ' ' + [p.category, p.projectType, p.leadType, p.leadKind].map(s).join(' ');
+  if (/commercial|\bTI\b|tenant|church|school|government|municipal/i.test(t2)) return 'commercial';
+  if (isBidJob(p, h)) return 'commercial';
+  if (/resid|home|house|kitchen|bath|addition|roof|deck|fence/i.test(t2)) return 'residential';
+  if (isCompany(p, h)) return 'commercial';
   return 'residential';
 }
-function builtin(g){
+/* what only the page knows: the customer record's type, and whether the job's lead is a bid (patch HOT2's rule) */
+var HM = {}, HMAt = 0;
+function hintsFor(p){
+  if (!p || (!p.client && !p.leadId)) return null;
+  var n = Date.now(); if (n - HMAt > 15000) { HM = {}; HMAt = n; }
+  var key = s(p.id) + '|' + low(p.client) + '|' + s(p.leadId);
+  if (Object.prototype.hasOwnProperty.call(HM, key)) return HM[key];
+  var h = null;
+  try {
+    var c = low(p.client);
+    if (c) { var cu = arr(W._crm && W._crm.customers).filter(function(x){ return x && low(x.name) === c; })[0]; if (cu && s(cu.type)) h = { custType: s(cu.type) }; }
+    if (p.leadId && typeof W._gcIsBidLead === 'function') {
+      var ls = arr(W._crm && W._crm.leads); try { if (typeof W._gcLaLeads === 'function') ls = ls.concat(arr(W._gcLaLeads())); } catch (e) {}
+      var l = ls.filter(function(x){ return x && String(x.id) === String(p.leadId); })[0];
+      if (l && W._gcIsBidLead(l)) (h = h || {}).bidLead = true;
+    }
+  } catch (e) {}
+  HM[key] = h; return h;
+}
+function groupOf(p){ return groupCore(p, hintsFor(p)); }
+/* legacy === true: a job made before AUTOCOM with no choices of its own keeps doing what it did */
+function builtin(g, legacy){
   var out = {};
   OPTS.forEach(function(o){ var d = o[4]; out[o[0]] = (d && typeof d === 'object') ? (g in d ? !!d[g] : !!d.other) : !!d; });
+  if (g === 'commercial' && legacy !== true) Object.keys(COMM).forEach(function(k){ out[k] = COMM[k]; });
   return out;
 }
 
@@ -145104,13 +145153,21 @@ function takeAdmin(v){
   ADMIN = v; lsSet(LSK, JSON.stringify(v)); return true;
 }
 function pullAdmin(){ return kvGet(DKEY).then(function(v){ if (takeAdmin(v)) repaintAll(); return ADMIN; }, function(){ return ADMIN; }); }
-function defaultsFor(g){
-  var out = builtin(g), a = ADMIN && ADMIN[g];
+function adminFor(g, legacy){   /* patch AUTOCOM */
+  var A = ADMIN; if (!A || typeof A !== 'object') return null;
+  if (g !== 'commercial') return A[g];
+  if (+A.commercialV >= AUTOCOM_V) return legacy === true ? A.commercialPre : A.commercial;
+  return legacy === true ? A.commercial : null;   /* saved before AUTOCOM: what the old commercial jobs do, not what a new one starts with */
+}
+function defaultsFor(g, legacy){
+  var out = builtin(g, legacy), a = adminFor(g, legacy);
   if (a && typeof a === 'object') KEYS.forEach(function(k){ if (!LOCKED[k] && typeof a[k] === 'boolean') out[k] = a[k]; });
   return out;
 }
 function setDefaults(g, map){
   var next = Object.assign({}, ADMIN || {});
+  var comm = (g && typeof g === 'object') ? !!g.commercial : g === 'commercial';   /* patch AUTOCOM */
+  if (comm && !(+next.commercialV >= AUTOCOM_V)) { if (next.commercial) next.commercialPre = next.commercial; else delete next.commercialPre; next.commercialV = AUTOCOM_V; }
   if (g && typeof g === 'object') { GROUPS.forEach(function(x){ if (g[x]) next[x] = clean(g[x]); }); }
   else if (GROUPS.indexOf(g) >= 0) next[g] = clean(map);
   else return Promise.reject(new Error('type is one of ' + GROUPS.join(', ')));
@@ -145123,7 +145180,7 @@ function clean(v){ var o = {}; KEYS.forEach(function(k){ if (typeof (v || {})[k]
 /* what a job does: its own choices, else the defaults for its type */
 function effective(p){
   if (p && typeof p !== 'object') p = proj(p);
-  var out = defaultsFor(groupOf(p || {}));
+  var out = defaultsFor(groupOf(p || {}), !(p && p.auto && typeof p.auto === 'object'));   /* patch AUTOCOM */
   var own = p && p.auto && typeof p.auto === 'object' ? p.auto : null;
   if (own) KEYS.forEach(function(k){ if (!LOCKED[k] && typeof own[k] === 'boolean') out[k] = own[k]; });
   if (p && typeof p.portalShowCarrier === 'boolean') out.showCarrier = p.portalShowCarrier;   /* the insurance card's switch is the same switch */
@@ -145281,6 +145338,7 @@ var lastInput = 0;
 function stamp(p, ctx){
   if (!p || typeof p !== 'object') return p;
   if (p.auto && typeof p.auto === 'object' && p.auto.updatedAt) return p;
+  if (ctx === 'bid' && p.fromBid !== true) p.fromBid = true;   /* patch AUTOCOM: a bid is commercial work */
   var g = groupOf(p), dr = DR[ctx], hadBox = !!(dr && dr.seen);
   var vals = dr && dr.touched ? dr.vals : defaultsFor(g);
   delete DR[ctx];
@@ -145378,7 +145436,7 @@ function open(pid, o){
       : had ? 'Chosen for this job' + (p.auto.by ? ' by ' + esc(p.auto.by) : '') + (p.auto.updatedAt ? ' · ' + esc(new Date(p.auto.updatedAt).toLocaleString()) : '') + '.'
       : 'This job follows the ' + GNAME[g] + ' defaults. Save to keep your own choices on it.') + '</div>' +
     '<div class="gcja-host"></div><div class="gcja-act"><button type="button" class="gcja-save">Save for this job</button><button type="button" class="gcja-cancel">' + (o.fresh ? 'Keep the defaults' : 'Cancel') + '</button></div>';
-  var st = { group: g, vals: vals, mode: 'job', title: '⚡ What this job does by itself', sub: GNAME[g] + ' job', onChange: function(v){ st.vals = v; } };
+  var st = { group: g, vals: vals, mode: 'job', title: '⚡ What this job does by itself', sub: GNAME[g] + ' job' + (g === 'commercial' && isBidJob(p, hintsFor(p)) ? ' · from a bid' : ''), onChange: function(v){ st.vals = v; } };
   renderBox(sh.querySelector('.gcja-host'), st);
   sh.querySelector('.gcja-cancel').onclick = function(){
     if (o.fresh) setJobAuto(pid, st.vals);
@@ -145514,6 +145572,7 @@ function guards(){
 W._gcJA = {
   stamp: stamp, legacy: legacy, open: open, openDefaults: openDefaults, effective: effective, allows: allows, blockedKind: blockedKind,
   groupOf: groupOf, defaultsFor: defaultsFor, builtin: builtin, set: setJobAuto, renderBox: renderBox,
+  isBidJob: function(p){ return isBidJob(p, hintsFor(p)); }, COMM: COMM, AUTOCOM_V: AUTOCOM_V,   /* patch AUTOCOM */
   options: function(){ return OPTS.map(function(o){ return { key: o[0], section: o[1], label: o[2], desc: o[3], locked: !!o[5], approval: o[6] || '' }; }); },
   sections: function(){ return SECS.map(function(x){ return { key: x[0], label: x[1], desc: x[2] }; }); },
   KEYS: KEYS, KIND_KEY: KIND_KEY, GROUPS: GROUPS,
