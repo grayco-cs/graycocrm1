@@ -8,7 +8,7 @@ The owner's setup steps (exact clicks) are in the scratchpad's `wLD2/SETUP.md`, 
 
 GrayCo never signs in to someone else's site with a robot. Every source is reached one of these ways:
 
-- **E-mail.** Sites behind a login send their notices to **leads@grayco-cs.com** (patch EST4; bids@ is only for subs' bids): BuildingConnected, PlanHub, A&B Planroom, RKA Planroom, Central Bidding, Ion Wave, OpenGov, MLGW, Edison, ARBuy and MAGIC.
+- **E-mail.** Sites behind a login send their notices to **leads@grayco-cs.com** (patch EST4; every bid site, plan room, bid board and GC invitation list signs up with leads@, never with bids@, which is only for our own bids going out and GCs' replies to them): BuildingConnected, PlanHub, A&B Planroom, RKA Planroom, Central Bidding, Ion Wave, OpenGov, MLGW, Edison, ARBuy and MAGIC.
 - **Public pages and RSS.** Public government bid lists are read on a schedule, and robots.txt is obeyed:
   - Shelby County
   - City of Memphis

@@ -1,8 +1,14 @@
 # Lead Inbox + bid portal: owner setup (about 45 minutes, once)
 
+> **Process rule: leads@grayco-cs.com is for all incoming leads and bid invitations.** Every bid site, plan room (BuildingConnected, PlanHub and
+> others), city, county and school bid board, and GC invitation list gets signed up with leads@grayco-cs.com. GCs are told: "send invitations to
+> leads@grayco-cs.com". Website, Facebook and Google lead forms also send to leads@. The CRM reads leads@ and turns each e-mail into a lead or bid
+> lead in Leads → 📥 Lead Inbox / Bids automatically. **bids@grayco-cs.com is only for our own bids going out (sent from the CRM) and GCs' replies
+> to them. Never sign up for notices with bids@.**
+>
 > **Changed 10/22 (patch EST4): bid notices go to leads@grayco-cs.com.** BuildingConnected, PlanHub, the planrooms, GCs and the
-> agencies send their invitations to **leads@**; the CRM tells a bid invitation from a customer by itself. **bids@grayco-cs.com is now only
-> for subcontractors sending their bids to GrayCo**: each one is matched to its bid job and the estimator is told (Leads → 📨 Sub bids).
+> agencies send their invitations to **leads@**; the CRM tells a bid invitation from a customer by itself. (Subcontractors' prices e-mailed
+> to bids@ are still matched to their bid job and the estimator is told: Leads → 📨 Sub bids.)
 > Make bids@ a Google Group whose members are the estimator and `bids@in.grayco-cs.com`. Invitations that still arrive at bids@ (old sign-ups)
 > are recognised and still become bids. <!-- patch EST4 -->
 
