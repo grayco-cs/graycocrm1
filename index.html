@@ -30593,32 +30593,51 @@ setTimeout(async function(){
   }catch(e){ console.warn('[GC] lost-job sweep failed', e); }
 }, 7000);
 
-window._gcAddToRegister = async function(exp){
-  try{
-    if(!exp) return;
-    // BACKSTOP: never write a $0 / blank / non-numeric money row to the accounting register.
-    // Accounting must be exact — a phantom $0 row is worse than a missing one.
-    var _chkAmt = parseFloat(exp.amt);
-    if(!isFinite(_chkAmt) || _chkAmt === 0){
-      console.warn('[GC Acct] Rejected a $0/blank register write:', exp && exp.desc);
-      return;
-    }
-    var rows = (await _gcAc(EXP_KEY)) || [];
-    var key = exp.srcInvId || exp.id;
-    var projs = (window._crm && window._crm.projects) || [];
-    var p = exp.pid ? projs.find(function(x){ return x.id === exp.pid; }) : null;
-    var row = Object.assign({}, exp, {
-      _id: exp._id || ('EXP' + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
-      pid: exp.pid || '',
-      projName: p ? (p.name||'') : (exp.projName||''),
-      projPO:   p ? (p.autoPO||'') : (exp.projPO||''),
-      projAddr: p ? (p.address||'') : (exp.projAddr||'')
-    });
-    var idx = rows.findIndex(function(r){ return r && ((r.srcInvId && r.srcInvId===key) || r._id===row._id); });
-    if(idx >= 0){ var _keepId = rows[idx]._id || row._id; rows[idx] = Object.assign({}, rows[idx], row, {_id:_keepId, id:(rows[idx].id||_keepId)}); }
-    else rows.push(row);
-    await _gcAcW(EXP_KEY, rows);
-  }catch(e){ console.warn('[GC] _gcAddToRegister failed', e); }
+/* patch STEADY: calls made together are applied in ONE read and (only if something changed) ONE write of the register —
+   a reconcile pass over 150 records used to read and rewrite the whole register 150 times. Each caller's promise
+   settles after the write that holds its row; passes run one after another, never two at once. */
+var _gcRegQ = [], _gcRegNext = null, _gcRegChain = Promise.resolve();
+function _gcRegUpsert(rows, exp, projs){
+  var key = exp.srcInvId || exp.id;
+  var p = exp.pid ? projs.find(function(x){ return x.id === exp.pid; }) : null;
+  var row = Object.assign({}, exp, {
+    _id: exp._id || ('EXP' + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+    pid: exp.pid || '',
+    projName: p ? (p.name||'') : (exp.projName||''),
+    projPO:   p ? (p.autoPO||'') : (exp.projPO||''),
+    projAddr: p ? (p.address||'') : (exp.projAddr||'')
+  });
+  var idx = rows.findIndex(function(r){ return r && ((r.srcInvId && r.srcInvId===key) || r._id===row._id); });
+  if(idx >= 0){
+    var _keepId = rows[idx]._id || row._id, was = rows[idx];
+    rows[idx] = Object.assign({}, rows[idx], row, {_id:_keepId, id:(rows[idx].id||_keepId)});
+    try{ return JSON.stringify(rows[idx]) !== JSON.stringify(was); }catch(e){ return true; }
+  }
+  rows.push(row); return true;
+}
+function _gcRegFlush(list){
+  return (_gcRegChain = _gcRegChain.then(async function(){
+    try{
+      var rows = (await _gcAc(EXP_KEY)) || [], projs = (window._crm && window._crm.projects) || [], changed = false;
+      for(var i = 0; i < list.length; i++){ try{ if(_gcRegUpsert(rows, list[i], projs)) changed = true; }catch(e){ console.warn('[GC] _gcAddToRegister failed', e); } }
+      if(changed) await _gcAcW(EXP_KEY, rows);
+    }catch(e){ console.warn('[GC] _gcAddToRegister failed', e); }
+  }));
+}
+window._gcAddToRegister = function(exp){
+  if(!exp) return Promise.resolve();
+  // BACKSTOP: never write a $0 / blank / non-numeric money row to the accounting register.
+  // Accounting must be exact — a phantom $0 row is worse than a missing one.
+  var _chkAmt = parseFloat(exp.amt);
+  if(!isFinite(_chkAmt) || _chkAmt === 0){
+    console.warn('[GC Acct] Rejected a $0/blank register write:', exp && exp.desc);
+    return Promise.resolve();
+  }
+  _gcRegQ.push(exp);
+  if(!_gcRegNext) _gcRegNext = new Promise(function(res){
+    (window.__GC_NATIVE_SETTIMEOUT__ || setTimeout)(function(){ var q = _gcRegQ; _gcRegQ = []; _gcRegNext = null; _gcRegFlush(q).then(res, res); }, 0);
+  });
+  return _gcRegNext;
 };
 var _excProjs = [], _excImportRows = [];
 
@@ -31669,6 +31688,15 @@ window.gcExpCenter = {
     this.renderStats();
   },
   renderRegister: async function(){
+    /* patch REGFAST: not drawn while the tab is hidden or the register is not on screen — drawn the moment it shows */
+    var _tb0 = document.getElementById('gc-exc-reg-tbody');
+    if(_tb0 && (document.hidden || !_tb0.getClientRects().length)){
+      window.__gcRegDirty = true;
+      if(!_tb0.__gcRegIO && window.IntersectionObserver){ try{ _tb0.__gcRegIO = new IntersectionObserver(function(es){ if(window.__gcRegDirty && !document.hidden && es.some(function(e){ return e.isIntersecting; })) window.gcExpCenter.renderRegister(); }); _tb0.__gcRegIO.observe(_tb0); }catch(_e){} }
+      if(!window.__gcRegVis){ window.__gcRegVis = 1; document.addEventListener('visibilitychange', function(){ if(!document.hidden && window.__gcRegDirty){ try{ window.gcExpCenter.renderRegister(); }catch(_e){} } }); }
+      return;
+    }
+    window.__gcRegDirty = false;
     var rows = await _gcAc(EXP_KEY) || [];
     var s = (document.getElementById('gc-exc-reg-search')||{}).value||'';
     var jf = (document.getElementById('gc-exc-reg-job')||{}).value||'';
@@ -31697,9 +31725,11 @@ window.gcExpCenter = {
       return '<option value="'+p.id+'">'+lbl+'</option>';
     }).join('');
     window._excJobOpts = jobOpts;   /* patch SWEEP2: rows hold only their own job until the box is used */
+    var _gcOptLbl = Object.create(null); (jobOpts.match(/<option value="[^"]*">[^<]*<\/option>/g)||[]).forEach(function(o){ var m=/^<option value="([^"]*)">([^<]*)<\/option>$/.exec(o); if(m && _gcOptLbl[m[1]] === undefined) _gcOptLbl[m[1]] = m[2]; });
+    var _gcRegAll = shown.length, _gcRegLim = window.__gcRegLim || 300; if(_gcRegAll > _gcRegLim) shown = shown.slice(0, _gcRegLim);   /* patch REGFAST */
     tb.innerHTML = shown.map(function(r){
       var _selPid = (window._gcIsOverheadExpense && window._gcIsOverheadExpense(r)) ? '__overhead__' : r.pid;
-      var thisJobOpts = jobOpts.replace('value="'+_selPid+'"', 'value="'+_selPid+'" selected');
+      var thisJobOpts = (_gcOptLbl[String(_selPid)] !== undefined) ? '<option value="'+_selPid+'" selected>'+_gcOptLbl[String(_selPid)]+'</option>' : '';   /* patch REGFAST: a map, not a search of the whole job list per row */
       var jobLabel = r.pid ? ((r.projPO?'['+r.projPO+'] ':'')+( r.projAddr||r.projName||'')) : '— Overhead —';
       var methIcons={cc:'💳',cash:'💵',check:'🏦',venmo:'📱',zelle:'⚡',cashapp:'💰',wire:'🔌',ach:'🏛',other:'📋'};
       var methTip = r.source==='cc'?'💳 Card':r.source==='check'?'🏦 Check'+(r.checkNum?' #'+r.checkNum:''):((methIcons[r.method]||'✏️')+' '+(r.methodLabel||r.method||'Manual'));
@@ -31709,7 +31739,7 @@ window.gcExpCenter = {
         '<td><select onchange="gcExpCenter.reassignJob(\''+r._id+'\',this.value)" style="background:'+(r.pid?'#1a2a3a':'#2a1a1a')+';border:1px solid '+(r.pid?'#3498db':'#e67e22')+';color:#14202e;border-radius:4px;padding:4px 6px;font-size:11px;width:100%;max-width:160px;cursor:pointer;" data-gc-lazy="1">'+((thisJobOpts.match(/<option value="[^"]*" selected>[^<]*<\/option>/)||['<option value="">— Select Job —</option>'])[0])+'</select></td>'+
         '<td style="font-weight:700;color:'+((window._gcIsIncome&&window._gcIsIncome(r))?'#16a34a':'#e74c3c')+';white-space:nowrap;">'+((window._gcIsIncome&&window._gcIsIncome(r))?'+ ':'- ')+_gcAcFmt$(r.amount)+'</td>'+
         '<td style="white-space:nowrap;"><button onclick="gcExpCenter.editExpense(\''+r._id+'\')" style="background:none;border:1px solid #e2e8f0;color:#334155;border-radius:4px;padding:3px 6px;cursor:pointer;font-size:10px;">Edit</button> <button onclick="gcExpCenter.deleteRow(\''+r._id+'\')" title="Delete this transaction" style="background:none;border:1px solid #7f1d1d;color:#8b5b5b;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;font-weight:800;">\u2715</button></td></tr>';
-    }).join('');
+    }).join('') + (_gcRegAll > shown.length ? '<tr id="gc-reg-more"><td colspan="8" style="text-align:center;padding:10px"><button type="button" onclick="window.__gcRegLim=(window.__gcRegLim||300)+500;gcExpCenter.renderRegister()" style="padding:7px 16px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer;font-weight:700">Show 500 more (' + shown.length + ' of ' + _gcRegAll + ' shown)</button></td></tr>' : '');
   },
   reassignJob: async function(id, pid){
     var rows = await _gcAc(EXP_KEY) || [];
@@ -112351,7 +112381,9 @@ function readHook(key, out){
         var folded=rows.filter(function(x){ return x&&x._dupOf; });
         var ids={}; folded.forEach(function(x){ ids[idOf(x)]=1; });
         /* rows are drawn with the _id in their buttons: drop the folded ones from the table */
-        Array.prototype.slice.call(tb.querySelectorAll('tr')).forEach(function(tr){ var h=tr.innerHTML||''; Object.keys(ids).forEach(function(id){ if(id && h.indexOf("'"+id+"'")>=0) tr.remove(); }); });
+        if(folded.length) Array.prototype.slice.call(tb.querySelectorAll('tr')).forEach(function(tr){   /* patch REGFAST: one look per row (was every folded id × every row's HTML) */
+          var hit=false; Array.prototype.forEach.call(tr.querySelectorAll('[onclick],[onchange]'), function(el){ if(hit) return; ['onclick','onchange'].forEach(function(a){ var v=el.getAttribute(a)||'', m=v.match(/'[^']*'/g); if(m) m.forEach(function(q){ var id=q.slice(1,-1); if(id && ids[id]) hit=true; }); }); });
+          if(hit) tr.remove(); });
         var note=document.getElementById('gc-reg-fold-note');
         if(folded.length){
           if(!note){ note=document.createElement('div'); note.id='gc-reg-fold-note'; note.style.cssText='font-size:11px;color:#9ab;padding:6px 2px'; tb.parentNode.parentNode.insertBefore(note, tb.parentNode); }
@@ -180735,15 +180767,22 @@ async function run(opts){
   finally { running = false; }
 }
 W._gcRegDupMigrate = run;
-var n = 0;
-ST.call(W, function(){
-  SI.call(W, function(){
-    if (lsGet(FLAG) || ++n > 60) return;
-    if (W.__GC_IS_TYPING__ || !isAdmin()) return;
-    run();
-  }, 30000);
-  run();
-}, 25000);
+/* patch REGFAST: once per page — a minute after it opens, only while nobody is clicking or typing and the tab shows;
+   never again on a timer (every 30 s it re-read, re-wrote and re-drew the whole register while the reconcile pass put
+   rows back). After one real attempt the flag is set, whatever it found. */
+var lastIn = 0, waits = 0;
+['pointerdown', 'keydown', 'wheel'].forEach(function(t){ try { W.addEventListener(t, function(){ lastIn = Date.now(); }, { capture: true, passive: true }); } catch (e) {} });
+function once(){
+  if (lsGet(FLAG)) return;
+  if (W.__GC_IS_TYPING__ || W.__GC_IS_ACTIVE__ || document.hidden || Date.now() - lastIn < 8000) { if (++waits < 40) ST.call(W, once, 15000); return; }
+  if (!isAdmin()) return;
+  var go = function(){ run().then(function(r){
+    if (r && r.skipped === 'register not loaded yet') { if (++waits < 40) ST.call(W, once, 60000); return; }
+    if (r && !r.skipped && !lsGet(FLAG)) lsSet(FLAG, new Date().toISOString() + ' once ' + (r.deleted || 0) + (r.error ? ' error' : ''));
+  }); };
+  if (W.requestIdleCallback) W.requestIdleCallback(go, { timeout: 10000 }); else ST.call(W, go, 0);
+}
+ST.call(W, once, 60000);
 try { console.log('[GC] Register clean-up ready (patch REGDUP): _gcRegDupMigrate({dry:true}) shows the plan.'); } catch (e) {}
 })();
 </script>
