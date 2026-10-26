@@ -125830,6 +125830,16 @@ function start(){
   later(function(){ pull(false); }, 7000);
   document.addEventListener('visibilitychange', function(){ if (!document.hidden && Date.now() - lastPull > 180000) pull(false); });
   window.addEventListener('online', function(){ later(function(){ pull(true); }, 2000); });
+  /* patch INBOXLEAD */   /* a CRM left open collects new inbox items (website / leads@ / claims@ …) within about a minute */
+  var IV = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
+  IV.call(window, function(){
+    try {
+      if (document.hidden || navigator.onLine === false || busy) return;
+      var A = window.__GC_AUTH__; if (!A || !A.email || !A.email()) return;
+      var fast = isAdmin(); if (!fast) { try { var sc = window._gcLeadScope && window._gcLeadScope.of(); fast = !!(sc && sc.kind && sc.kind !== 'mine'); } catch (e) {} }
+      if (Date.now() - lastPull > (fast ? 25000 : 300000)) pull(true);
+    } catch (e) { warn(e); }
+  }, 10000);
 }
 
 /* ── the public face ──────────────────────────────────────────────────────── */
