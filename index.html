@@ -117728,6 +117728,10 @@ var SETTER = { projects:'_setProjects', invs:'_setInvoices', expenses:'_setExpen
 var CRMPROP = { invs:'invoices' };
 var toApply = {}, applyT = null, appliedSig = {};
 function scheduleApply(ms){ if(applyT) return; applyT = ST.call(window, applyNow, ms); }
+document.addEventListener('visibilitychange', function(){   /* patch PERFMULTI: shown again — lay over what was gathered now */
+  if(document.hidden || !Object.keys(toApply).length) return;
+  _gcHidFrom = 0; if(applyT){ try{ clearTimeout(applyT); }catch(e){} applyT = null; } scheduleApply(50);
+});
 function fieldApp(){ try{ return document.documentElement.classList.contains('_fieldmode'); }catch(e){ return false; } }
 function inputFocused(){ try{ var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !a.readOnly && !/^(button|checkbox|radio|submit|reset|file|range|color)$/i.test(a.type||'')); }catch(e){ return false; } }
 function held(){
@@ -117784,9 +117788,14 @@ async function applyLS(k){
   try{ if(typeof window._gcApplyOrQueue === 'function') window._gcApplyOrQueue(k, inc); }catch(e){}
   try{ if(typeof window._gcRefreshAlerts === 'function') window._gcRefreshAlerts(); }catch(e){}
 }
+var _gcHidFrom = 0;
 async function applyNow(){
   applyT = null;
   var ks = Object.keys(toApply); if(!ks.length) return;
+  /* patch PERFMULTI: a hidden tab gathers other computers' saves (the newest value of each list is kept) and lays them
+     over once a minute, or the moment it is shown again — not a redraw per save that nobody can see */
+  if(document.hidden){ if(!_gcHidFrom) _gcHidFrom = Date.now(); if(Date.now() - _gcHidFrom < 60000){ applyT = ST.call(window, applyNow, 5000); return; } }
+  _gcHidFrom = 0;
   /* the office lists only change storage (their screens redraw when she clicks): never held */
   for(var j=0;j<ks.length;j++){ if(lsBacked(ks[j])){ var kk = ks[j]; delete toApply[kk]; try{ await applyLS(kk); }catch(e){} } }
   ks = Object.keys(toApply); if(!ks.length) return;
