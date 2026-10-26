@@ -45,7 +45,7 @@
    patch ALERTTO (owner 10/26: "I only want notifications and bids going to leads and then office"): the new-lead / new-bid,
    bid-due and 4 h / 24 h assign messages go to Leads ⚙ "Lead & bid alert e-mails go to:" (default office@grayco-cs.com), plus
    the assigned estimator / PM. They no longer go to every admin / OWNER_EMAILS / BID_ALERT_TO. The 🚨 emergency alert is
-   unchanged (on-call PM + admins + office).
+   changed by patch OWNER4: general emergency = on-call PM + office setting (+ the CRM lead); mitigation emergency (water / fire) = office + "Mitigation emergencies also go to:" (default Nick + Wesley) + mitigation manager + on-call PM.
    ========================================================================== */
 'use strict';
 
@@ -109,11 +109,23 @@ function make(d){
     const l = v && Array.isArray(v.alertTo) ? v.alertTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
     return Array.from(new Set(l.length ? l : ['office@grayco-cs.com']));
   }
+  /* patch OWNER4: Leads ⚙ "Mitigation emergencies also go to:" (gc_lead_inbox_settings.mitigationTo) — default Nick + Wesley; the admin adds the mitigation manager */
+  async function mitigationList(){
+    let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.mitigationTo && !v.alertTo) v = v.v;
+    const l = v && Array.isArray(v.mitigationTo) ? v.mitigationTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
+    return Array.from(new Set(l.length ? l : require('./emergency.js').MIT_DEFAULT));
+  }
+  /* patch OWNER4: Leads ⚙ "Emergencies also go to:" (gc_lead_inbox_settings.emergenciesTo) — default EMPTY; every emergency (general and mitigation) also goes to these */
+  async function emergencyList(){
+    let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.emergenciesTo && !v.alertTo) v = v.v;
+    const l = v && Array.isArray(v.emergenciesTo) ? v.emergenciesTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
+    return Array.from(new Set(l));
+  }
   /* new-lead / bid-due / assign-reminder messages: the setting (+ the assigned people in `extra`) */
   async function recipients(extra){
     return Array.from(new Set((await alertList()).concat(arr(extra).map(low).filter(x => EMAIL_RE.test(x)))));
   }
-  /* the OLD list (every active admin + OWNER_EMAILS + BID_ALERT_TO): kept ONLY for the 🚨 emergency alert */
+  /* the OLD list (every active admin + OWNER_EMAILS + BID_ALERT_TO). patch OWNER4: NO LONGER used by the 🚨 emergency alert; kept exported for other callers */
   async function adminRecipients(extra){
     const out = [];
     try {
@@ -255,21 +267,28 @@ function make(d){
     let users = await gcKvVal('users'); if (users && !Array.isArray(users) && Array.isArray(users.v)) users = users.v; users = arr(users);
     const team = await gcKvVal('gc_team_settings');
     let ins = null; try { const h = require('./lead-roles.js').holder('insurance', team, users); if (h && (h.email || h.name)) ins = { name: s(h.name), email: low(h.email) || emailOf(h.name) }; } catch (e) {}
-    const plan = E.people({ oncall, insurance: ins, admins: await adminRecipients([]), office: E.officeOf(users) });
-    const out = { n: 0, to: plan.to, lead: plan.lead };
+    /* patch OWNER4 (owner 10/26): GENERAL emergency → the on-call PM + the office ("Lead & bid alert e-mails go to:", default office@) [+ the CRM lead, already in the Lead Inbox];
+       MITIGATION emergency (water / flood / leak / burst pipe / sewage / mold / fire / smoke / storm-damage dry-out — E.isMitigation; a tree alone is general) →
+       the office + the "Mitigation emergencies also go to:" setting (default Nick + Wesley) + the mitigation manager (role / title) + the on-call PM. No longer every admin / OWNER_EMAILS. */
+    const officeTo = (await alertList()).concat(await emergencyList());   /* office + the "Emergencies also go to:" list (empty by default) */
+    const mitTo = (await mitigationList()).concat(E.mitigationMgrs(users));
+    const planFor = x => E.people({ oncall, insurance: ins, office: officeTo, mitigation: E.isMitigation(Object.assign({}, raw[x.id] || {}, x)) ? mitTo : null });
+    const plan = E.people({ oncall, insurance: ins, office: officeTo });
+    const out = { n: 0, to: plan.to, lead: plan.lead, byLead: {} };
     for (const x of em) {
       let claim = false;
       await kvCas(KA, v => { const st = loadState(v); st.emerg = st.emerg && typeof st.emerg === 'object' ? st.emerg : {}; if (st.emerg[x.id]) return undefined; st.emerg[x.id] = nowIso();
         const ks = Object.keys(st.emerg); if (ks.length > 600) ks.sort((a, b) => s(st.emerg[a]).localeCompare(s(st.emerg[b]))).slice(0, ks.length - 600).forEach(k => { delete st.emerg[k]; }); claim = true; return st; }).catch(() => { claim = true; });
       if (!claim) continue;
+      const px = planFor(x); out.byLead[x.id] = px.to;
       const c = x.contact || {}, who = plan.lead ? plan.lead.name || plan.lead.email : 'the office';
       const m = mailNew([x]);
       m.subject = ('🚨 EMERGENCY lead — call now: ' + x.title).slice(0, 250);
-      m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; admins and the office are told too.', rowHtml(x), 'Every emergency lead (water, leak, flood, fire, smoke, a tree on the house, storm damage) goes to the on-call PM, the admins and the office.');
+      m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; ' + (px.mitigation ? 'this is a mitigation emergency (water / fire): the office, Nick, Wesley and the mitigation manager are told too.' : 'the office is told too.'), rowHtml(x), px.mitigation ? 'Mitigation emergencies (water, leak, flood, burst pipe, sewage, mold, fire, smoke, storm-damage dry-out) go to the on-call PM, the office, Nick, Wesley and the mitigation manager.' : 'General emergencies go to the on-call PM and the office; the lead is in the Lead Inbox.');
       m.text = m.subject + '\n\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads';
       m.push = { title: ('🚨 Emergency: ' + x.title).slice(0, 100), body: ([c.name, c.phone].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '')).slice(0, 180) || 'Call them now', tag: 'lead-emerg-' + x.id };
       m.area = 'area:Leads';
-      const r = await deliver(m, null, plan.to.concat([x.assigneeEmail].concat(x.coEmails || [])).filter(Boolean));   /* + whoever the lead roles gave it to */
+      const r = await deliver(m, null, px.to.concat([x.assigneeEmail].concat(x.coEmails || [])).filter(Boolean));   /* + whoever the lead roles gave it to */
       /* the 🔴 ASAP to-do (the on-call PM + the shared office list) */
       try {
         const tid = 'EMERG_' + s(x.key || x.id).replace(/[^A-Za-z0-9_:-]/g, '').slice(0, 80), at = nowIso();
@@ -303,7 +322,7 @@ function make(d){
       return st;
     });
     if (!mine.length) return { sent: 0, already: fresh.length };
-    /* patch EMERG: an emergency lead gets the 🚨 alert (on call + admins + office + its assignee) INSTEAD of the normal one */
+    /* patch EMERG: an emergency lead gets the 🚨 alert (on call + office [+ mitigation people], patch OWNER4) + its assignee INSTEAD of the normal one */
     const raw0 = {}; arr(items).forEach(it => { if (it && it.id) raw0[s(it.id)] = it; });
     const isEm = x => { if (env('EMERG_OFF') === '1') return false; try { return require('./emergency.js').isEmergency(Object.assign({}, raw0[x.id] || {}, x)); } catch (e) { return false; } };
     const urgentL = mine.filter(isEm), normalL = mine.filter(x => !isEm(x));
@@ -750,7 +769,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { _emergency: emergency, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }

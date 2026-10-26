@@ -27,16 +27,39 @@ function isEmergency(it){
   if (NOT.test(t) && !/emergenc|house\s*fire|fire\s*damage|smoke\s*damage|water\s*damage/i.test(t)) return false;
   return X.isEmergency(it) || MORE.test(t);
 }
-/* who hears: the on-call PM (else the Senior Insurance PM) + every admin + the office */
+/* patch OWNER4 (owner 10/26) — which emergencies are MITIGATION emergencies.
+   Mitigation = water, flood, leak, burst pipe, sewage, mold, fire / smoke / soot, and storm-damage dry-out (water that got in).
+   A fallen tree or storm / hail / wind damage ON ITS OWN is a GENERAL emergency; it becomes mitigation only when the text also
+   says water came in (a leak, water coming in, a wet ceiling, a dry-out ...). Anything else that is an emergency is general. */
+const MIT_WATER = /(water\s*damage|water\s*(is\s*)?(coming|pouring|everywhere|running|leaking|intrusion|inside|in\s*(my|the|our))|\bflood(ed|ing|s)?\b|\bburst\b|broken\s*pipe|pipe\s*(burst|broke|leak)|\bsewage\b|sewer\s*(back|overflow)|standing\s*water|\bleak(s|ing|ed|y)?\b|dry[\s-]*out|\bmou?ld\b|\bmitigation\b|ceiling\s*(is\s*)?(leak|drip|collaps|fall|sagg|wet)|wet\s*(carpet|drywall|insulation|floor|ceiling|attic)|\bwater\b.*\b(roof|ceiling|attic|wall|floor|house|home|basement)\b|\b(roof|ceiling|attic|wall|floor|basement)\b.*\bwater\b|\bplumbing\s*(leak|burst|break))/i;
+const MIT_FIRE = /(\bfire\b|\bsmoke\b|\bsoot\b|house\s*fire|burn(ed|t)\s*(down|out)?)/i;
+function isMitigation(it){
+  if (!it || !isEmergency(it)) return false;
+  const t = textOf(it) + ' ' + s(it.jobType) + ' ' + s(it.causeOfLoss);
+  if (/^(water|fire|mold|mitigation)$/i.test(s(it.jobType))) return true;
+  const fireOk = MIT_FIRE.test(t) && !(NOT.test(t) && !/house\s*fire|fire\s*damage|smoke\s*damage/i.test(t));
+  return MIT_WATER.test(t) || fireOk;
+}
+/* who hears (patch OWNER4): the on-call PM (else the Senior Insurance PM) + the office (the "Lead & bid alert e-mails go to:" setting);
+   a MITIGATION emergency also goes to the "Mitigation emergencies also go to:" setting (default Nick + Wesley) and the mitigation
+   manager(s). NOT every admin / OWNER_EMAILS. The CRM lead itself is the Lead Inbox record (already created). */
 function people(o){
   o = o || {};
   const lead = o.oncall && o.oncall.email ? { name: s(o.oncall.name), email: low(o.oncall.email), why: 'on call' }
     : o.insurance && o.insurance.email ? { name: s(o.insurance.name), email: low(o.insurance.email), why: 'Senior Insurance PM (nobody on call)' } : null;
   const office = (o.office || []).map(low).filter(Boolean);
-  const to = Array.from(new Set([lead && lead.email].concat((o.admins || []).map(low), office.length ? office : ['office@grayco-cs.com']).filter(e => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e || ''))));
-  return { lead, to };
+  const mit = o.mitigation ? (o.mitigation || []).map(low).filter(Boolean) : [];
+  const ok = e => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e || '');
+  const to = Array.from(new Set([lead && lead.email].concat(office.length ? office : ['office@grayco-cs.com'], mit).filter(ok)));
+  return { lead, to, mitigation: !!o.mitigation };
+}
+const MIT_DEFAULT = ['nthomas@grayco-cs.com', 'wjohnson@grayco-cs.com'];
+/* the mitigation manager from the user list: an active person whose role / title / profile says mitigation + manager / lead */
+function mitigationMgrs(users){
+  return (Array.isArray(users) ? users : []).filter(u => u && u.email && u.active !== false && !/disabled|inactive|offboard/i.test(s(u.status))
+    && /mitig/i.test([u.role, u.title, u.profile, u.position].map(s).join(' ')) && /manag|lead|supervis|director|chief/i.test([u.role, u.title, u.profile, u.position].map(s).join(' '))).map(u => low(u.email));
 }
 function officeOf(users){
   return (Array.isArray(users) ? users : []).filter(u => u && u.email && /office/i.test(s(u.role)) && !/^admin$/i.test(s(u.role)) && u.active !== false && !/disabled|inactive|offboard/i.test(s(u.status))).map(u => low(u.email));
 }
-module.exports = { isEmergency, people, officeOf, MORE };
+module.exports = { isEmergency, isMitigation, people, officeOf, mitigationMgrs, MIT_DEFAULT, MORE };

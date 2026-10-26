@@ -59,7 +59,7 @@ def clause(state, kind):
     else:
         ins = ("If any part of this Agreement is to be paid from an insurance claim and the insurance company tells Owner in writing that all or part of the claim or work is not covered, Owner may also cancel before midnight of the third business day after Owner receives that notice. ")
     if kind == 'insurance':
-        ins += ("If Owner cancels because the insurance company denies the claim, Owner owes GrayCo only for emergency services Owner asked for in writing and that were already performed, and for any work Owner approved in writing after the denial. ")
+        ins += ("If Owner cancels because the insurance company denies the claim, Owner remains responsible for payment for all emergency and mitigation services GrayCo performed at Owner's written request (for example water extraction, drying, board-up, tarping) regardless of insurance coverage or the outcome of the claim, at the rates in this Agreement or, if none, GrayCo's standard rates, and for any work Owner approved in writing after the denial. This does not waive the right to cancel the remaining repair work. ")
     tail = ("An emergency waiver of this right is valid only if Owner signs a separate, dated, handwritten statement describing the emergency. This clause controls over any other cancellation provision in this Agreement or its attachments. "
             "Any liquidated-damages or overhead-and-profit provision applies only after these cancellation rights have expired.")
     return base + ins + tail

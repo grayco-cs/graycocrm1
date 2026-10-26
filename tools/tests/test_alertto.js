@@ -39,11 +39,11 @@ const toOf = sent => sent.map(b => b.to).reduce((a, b) => a.concat(b), []);
   await r.A.notifyNew([{ id: 'bc3', title: 'Another', source: 'BuildingConnected', type: 'bid', bidDue: '2026-11-05T14:00' }]);
   assert.deepStrictEqual(r.sent[0].to.slice().sort(), ['leads@grayco-cs.com', 'office@grayco-cs.com']);
   assert.ok(!toOf(r.sent).some(x => /wjohnson|nthomas/.test(x)));
-  /* 4. emergency: on-call + admins + office, unchanged */
-  r = rig({ users: [{ name: 'Olive Office', email: 'olive@grayco-cs.com', role: 'Office', active: true }] });
+  /* 4. emergency (patch OWNER4): general = office + CRM only; the full routing tests are in test_owner4.js */
+  r = rig();
   await r.A.notifyNew([{ id: 'em1', title: 'Roof leaking into kitchen', source: 'Website', origin: 'website', detail: 'water leak emergency, flood', contact: { name: 'Zed', phone: '555' } }]);
   const em = r.sent.filter(b => /EMERGENCY/.test(b.subject));
   assert.strictEqual(em.length, 1, 'emergency e-mail sent');
-  ['wjohnson@grayco-cs.com', 'nthomas@grayco-cs.com', 'olive@grayco-cs.com'].forEach(e => assert.ok(em[0].to.includes(e), 'emergency includes ' + e));
+  assert.ok(em[0].to.includes('office@grayco-cs.com'));
   console.log('alertto tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

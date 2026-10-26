@@ -1136,7 +1136,11 @@ const DEFAULT_SETTINGS = {
   /* patch CLAIMLEAD: Leads ⚙ "Insurance claims go to:" — empty: the Senior Insurance PM of the lead roles (_lib/claim-lead.js) */
   claimsTo: { name: '', email: '' },
   /* patch ALERTTO: Leads ⚙ "Lead & bid alert e-mails go to:" — new-lead / bid-due / assign-reminder e-mails (_lib/bid-alerts.js) */
-  alertTo: ['office@grayco-cs.com']
+  alertTo: ['office@grayco-cs.com'],
+  /* patch OWNER4: Leads ⚙ "Mitigation emergencies also go to:" — a water / fire emergency also goes to these (the office + the on-call PM too); the admin adds the mitigation manager */
+  mitigationTo: ['nthomas@grayco-cs.com', 'wjohnson@grayco-cs.com'],
+  /* patch OWNER4: Leads ⚙ "Emergencies also go to:" — every emergency also goes to these; empty = on-call + office + the CRM lead only */
+  emergenciesTo: []
 };
 function cleanSettings(b, cur){
   const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 500);   /* patch BIDFILTER: room for the built-in lists */
@@ -1160,6 +1164,19 @@ function cleanSettings(b, cur){
     if (bad.length) throw new Error('The alert e-mail "' + bad[0] + '" does not look right.');
     out.alertTo = Array.from(new Set(l)).slice(0, 12);
     if (!out.alertTo.length) out.alertTo = ['office@grayco-cs.com'];
+  }
+  if (b.emergenciesTo != null) {   /* patch OWNER4 */
+    const l = (Array.isArray(b.emergenciesTo) ? b.emergenciesTo : s(b.emergenciesTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
+    if (bad.length) throw new Error('The emergency e-mail "' + bad[0] + '" does not look right.');
+    out.emergenciesTo = Array.from(new Set(l)).slice(0, 12);
+  }
+  if (b.mitigationTo != null) {   /* patch OWNER4 */
+    const l = (Array.isArray(b.mitigationTo) ? b.mitigationTo : s(b.mitigationTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
+    if (bad.length) throw new Error('The mitigation e-mail "' + bad[0] + '" does not look right.');
+    out.mitigationTo = Array.from(new Set(l)).slice(0, 12);
+    if (!out.mitigationTo.length) out.mitigationTo = DEFAULT_SETTINGS.mitigationTo.slice();
   }
   if (b.sam && typeof b.sam === 'object') out.sam = { on: b.sam.on !== false, states: arr(b.sam.states).map(x => s(x).toUpperCase()).filter(x => /^[A-Z]{2}$/.test(x)).slice(0, 6), naics: arr(b.sam.naics).map(x => s(x).replace(/\D/g, '')).filter(x => /^\d{2,6}$/.test(x)).slice(0, 20) };   /* patch BW */
   if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 150).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }
