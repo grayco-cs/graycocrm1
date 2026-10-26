@@ -259,7 +259,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
   <main id="main">
     <div class="skel"></div><div class="skel"></div><div class="skel"></div>
   </main>
-  <footer class="lic" data-gc-brand="1"><b>GrayCo Construction Services, LLC</b> &middot; <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span><br><a href="tel:9015850944">(901) 585-0944</a> &middot; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769<br><span data-gc-legal-links="1" style="font-size:12px"><a href="/portal-terms.html" target="_blank" rel="noopener">Customer Portal Terms of Use</a> &middot; <a href="/sub-terms.html" target="_blank" rel="noopener">Sub Portal Terms of Use</a> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a> &middot; <a href="/sub-privacy.html" target="_blank" rel="noopener">Sub Portal Privacy Notice</a> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a></span><br><span style="font-size:11px">Form rev. 10/26/2026</span></footer>
+  <footer class="lic" data-gc-brand="1"><b>GrayCo Construction Services, LLC</b> &middot; <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span><br><a href="tel:9015850944">(901) 585-0944</a> &middot; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769<br><span data-gc-legal-links="1" style="font-size:12px"><a href="/portal-terms.html" target="_blank" rel="noopener">Customer Portal Terms of Use</a><span data-sub-only="1" hidden> &middot; <a href="/sub-terms.html" target="_blank" rel="noopener">Sub Portal Terms of Use</a></span> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a><span data-sub-only="1" hidden> &middot; <a href="/sub-privacy.html" target="_blank" rel="noopener">Sub Portal Privacy Notice</a></span> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a></span><br><span style="font-size:11px">Form rev. 10/26/2026</span></footer>
 </div>
 <script>
 (function(){
@@ -2093,5 +2093,8 @@ cStart();
 window._gcPortalGCP = { reload: cLoad, data: function(){ return CU.d; }, offer: offer };
 })();
 </script>
+<script>/* patch SUBHIDE: the Sub Portal legal links show only in the sub portal (window.GCPartner) — customers and GCs never see that subs have a portal */
+(function(){ var n = 0; function show(){ if (window.GCPartner) { Array.prototype.forEach.call(document.querySelectorAll('[data-sub-only]'), function(x){ x.hidden = false; }); return true; } return false; }
+  var iv = setInterval(function(){ if (show() || ++n > 120) clearInterval(iv); }, 1000); })();</script>
 </body>
 </html>
