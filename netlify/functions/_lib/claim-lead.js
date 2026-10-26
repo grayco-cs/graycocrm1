@@ -148,7 +148,9 @@ function findDup(items, c){
 async function newClaimLead(env, inp){
   const { mail, facts, match } = inp;
   const H = mail.headers || {};
-  if (H['list-unsubscribe'] || /^(bulk|list|junk)$/i.test(s(H.precedence))) return { made: false, why: 'bulk / list mail' };
+  /* patch LEADMAIL: claims@ is our own Google Group — it adds List-Unsubscribe / Precedence: list to every message; that is not bulk mail */
+  const ownGroup = /\.grayco-cs\.com/i.test(s(H['list-id'])) || /@grayco-cs\.com/i.test(s(H['list-unsubscribe']));
+  if (!ownGroup && (H['list-unsubscribe'] || /^(bulk|list|junk)$/i.test(s(H.precedence)))) return { made: false, why: 'bulk / list mail' };
   const why = existingJob(mail, facts, match, inp.claims, inp.projects);
   if (why) return { made: false, why: 'existing claim — ' + why };
   const nw = looksNew(mail, facts);
