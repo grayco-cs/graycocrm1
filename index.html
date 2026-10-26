@@ -124876,6 +124876,7 @@ function fromItem(it, prev){
   l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
   l.inboxId = it.id; l.inboxRev = it.rev || 1; l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
+  try { if (typeof window._gcBidToMerge === 'function') { var _bt = window._gcBidToMerge(l, it); if (_bt) l.bidTo = _bt; } } catch (e) {}   /* patch BIDTO: every GC that invited us */
   if (it.estimator) { l.estimator = s(it.estimator); l.estimatorEmail = s(it.estimatorEmail); }
   l.gc = s(it.gc); l.owner = s(it.owner); l.city = s(it.city); l.state = s(it.state); l.trades = arr(it.trades).slice(0, 12); l.scope = s(it.scope);
   l.plansLinks = arr(it.plansLinks).map(function(x){ return { url: x.url, label: x.label, board: x.board }; }).slice(0, 25);
@@ -165748,26 +165749,74 @@ function fromLead(l){
   return [{ id: 'b1', company: s(l.dueToCompany), contact: s(l.dueToContact), email: low(l.dueToEmail), phone: s(l.dueToPhone), due: s(l.bidDue), method: s(l.submitMethod) || 'email',
     status: /^submitted$/i.test(s(l.bidStatus)) || s(l.submittedAt) ? 'sent' : 'not sent', notes: '', price: '', log: [], fromLead: true }];
 }
+/* __GC_PATCH_BIDTO__ — every GC that invited us to this bid (owner 10/26: "account for every email and company we need to send
+   it to when we get the invite"). bid-inbox.js keeps one row per inviting GC on the Lead Inbox item (bidTo); the import puts
+   them on lead.bidTo; here they join the "Bidding to" list. Same GC = same e-mail, else the same company. A GC someone removed
+   stays removed (rec.removed / lead.bidToRemoved). */
+function gcNormCo(c){ return low(c).replace(/&/g, ' and ').replace(/\b(inc|llc|l l c|co|corp|corporation|company|ltd|lp|llp|pllc|group|the)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function gcKey(b){ var e = low(b && b.email); if (EMAIL_RE.test(e)) return 'e:' + e; var c = gcNormCo(b && b.company); return c ? 'c:' + c : ''; }
+function sameGc(a, b){ if (!a || !b) return false; var x = low(a.email), y = low(b.email); if (EMAIL_RE.test(x) && EMAIL_RE.test(y)) return x === y; var p = gcNormCo(a.company), q = gcNormCo(b.company); return !!p && p === q; }
+function findGc(list, g){ return list.filter(function(x){ return sameGc(x, g); })[0] || (EMAIL_RE.test(low(g.email)) && list.filter(function(x){ return !EMAIL_RE.test(low(x.email)) && gcNormCo(x.company) && gcNormCo(x.company) === gcNormCo(g.company); })[0]) || null; }
+function removedKeys(l, rec){ return arr(rec && rec.removed).concat(arr(l && l.bidToRemoved)); }
+var GC_FILL = ['company', 'contact', 'email', 'phone', 'due', 'source', 'inviteLink', 'receivedAt'];
+/* the lead's GC rows on the "Bidding to" list */
+function withInvites(list, l, rec){
+  var rm = removedKeys(l, rec);
+  arr(l && l.bidTo).forEach(function(g){
+    if (!g || !(s(g.company) || s(g.email)) || rm.indexOf(gcKey(g)) >= 0) return;
+    var b = findGc(list, g);
+    if (b) { GC_FILL.forEach(function(f){ if (!s(b[f]) && s(g[f])) b[f] = f === 'email' ? low(g[f]) : s(g[f]); }); return; }
+    list.push({ id: bidId(list), company: s(g.company), contact: s(g.contact), email: low(g.email), phone: s(g.phone), due: s(g.due) || s(l.bidDue), method: s(g.method) || s(l.submitMethod) || 'email',
+      status: STATUSES.indexOf(s(g.status)) >= 0 ? s(g.status) : 'not sent', sentAt: s(g.sentAt) || undefined, sentBy: s(g.sentBy) || undefined, notes: '', price: '', log: [],
+      source: s(g.source), inviteLink: s(g.inviteLink), receivedAt: s(g.receivedAt), fromInvite: true });
+  });
+  return list;
+}
+/* what the lead keeps of each row (lead.bidTo): who, when it is due, and whether / when it was sent — never a price */
+function leadRow(b){ var o = {}; ['company', 'contact', 'email', 'phone', 'due', 'method', 'status', 'sentAt', 'sentBy', 'source', 'inviteLink', 'receivedAt', 'emailId'].forEach(function(f){ if (s(b[f])) o[f] = f === 'email' ? low(b[f]) : s(b[f]); }); return o; }
+function dueKey(d){ d = s(d); return d.length > 10 ? d.slice(0, 16) : d ? d + 'T23:59' : '9999'; }
+function earliestRow(list){ return arr(list).filter(function(b){ return s(b.due) && !/^(won|lost)$/.test(b.status) && (s(b.company) || s(b.email)); }).sort(function(a, b){ return dueKey(a.due) < dueKey(b.due) ? -1 : dueKey(a.due) > dueKey(b.due) ? 1 : 0; })[0] || null; }
+/* the Lead Inbox import: lead l (already has the item's fields) + the item's GC rows → the lead's rows */
+W._gcBidToMerge = function(l, it){
+  var cur = arr(l.bidTo).map(function(g){ return Object.assign({}, g); });
+  if (!cur.length && (s(l.dueToCompany) || s(l.dueToEmail))) cur.push(leadRow({ company: l.dueToCompany, contact: l.dueToContact, email: l.dueToEmail, phone: l.dueToPhone, due: l.bidDue, source: l.source }));
+  var rm = arr(l.bidToRemoved);
+  arr(it && it.bidTo).forEach(function(g){
+    if (!g || !(s(g.company) || s(g.email)) || rm.indexOf(gcKey(g)) >= 0) return;
+    var b = findGc(cur, g);
+    if (b) { GC_FILL.concat(['board', 'emailId']).forEach(function(f){ if (!s(b[f]) && s(g[f])) b[f] = s(g[f]); }); return; }
+    cur.push(leadRow(g));
+  });
+  return cur.length ? cur.slice(0, 40) : null;
+};
 function listFor(key){
   var c = ctxOf(key); var k = c ? c.key : key;
   var rec = S.bidders[k], list = arr(rec && rec.list);
-  if (!list.length && c && c.lead) list = fromLead(c.lead);
+  if (c && c.lead) list = withInvites(list.length ? JSON.parse(JSON.stringify(list)) : fromLead(c.lead), c.lead, rec);   /* patch BIDTO */
   if (!list.length && c && !c.lead && c.ests[0]) { var e = c.ests[0]; if (s(e.gc || e.customer)) list = [{ id: 'b1', company: s(e.gc || e.customer), contact: '', email: '', phone: '', due: '', method: 'email', status: 'not sent', notes: '', price: '', log: [] }]; }
   return JSON.parse(JSON.stringify(list));
 }
 function setList(key, list){
   var c = ctxOf(key), k = c ? c.key : key;
-  list = arr(list).map(function(b){ var o = Object.assign({}, b); delete o.fromLead; o.email = low(o.email); o.status = STATUSES.indexOf(o.status) >= 0 ? o.status : 'not sent'; return o; });
-  return putMap('bidders', k, { list: list }).then(function(){ return c && c.lead ? mirrorToLead(c.lead.id, list) : true; });
+  /* patch BIDTO: a GC taken off the list stays off (an invite e-mail does not bring it back); one put back is welcome again */
+  var prev = listFor(key), rm = arr((S.bidders[k] || {}).removed).slice();
+  list = arr(list).map(function(b){ var o = Object.assign({}, b); delete o.fromLead; delete o.fromInvite; o.email = low(o.email); o.status = STATUSES.indexOf(o.status) >= 0 ? o.status : 'not sent'; return o; });
+  prev.forEach(function(b){ if (!list.some(function(x){ return x.id === b.id || sameGc(x, b); })) { var kk = gcKey(b); if (kk && rm.indexOf(kk) < 0) rm.push(kk); } });
+  list.forEach(function(b){ var i = rm.indexOf(gcKey(b)); if (i >= 0) rm.splice(i, 1); });
+  rm = rm.slice(-100);
+  return putMap('bidders', k, { list: list, removed: rm }).then(function(){ return c && c.lead ? mirrorToLead(c.lead.id, list, rm) : true; });
 }
 /* the first row and the earliest open due date back on the lead (the reminders and the old screens read them) */
-function mirrorToLead(id, list){
-  var first = list[0]; if (!first) return Promise.resolve(true);
-  var open = list.filter(function(b){ return s(b.due) && !/^(won|lost)$/.test(b.status); }).map(function(b){ return s(b.due); }).sort();
+function mirrorToLead(id, list, rm){
+  var first = earliestRow(list) || list[0];   /* patch BIDTO: the earliest-due GC (was: the first row) */
+  var open = list.filter(function(b){ return s(b.due) && !/^(won|lost)$/.test(b.status); }).map(function(b){ return s(b.due); }).sort(function(a, b){ return dueKey(a) < dueKey(b) ? -1 : dueKey(a) > dueKey(b) ? 1 : 0; });
+  var rows = list.map(leadRow);
   return patchLead(id, function(l){
     var ch = false;
-    [['dueToCompany', first.company], ['dueToContact', first.contact], ['dueToEmail', first.email], ['dueToPhone', first.phone], ['submitMethod', first.method]].forEach(function(p){ if (s(p[1]) && s(l[p[0]]) !== s(p[1])) { l[p[0]] = p[1]; ch = true; } });
+    if (first) [['dueToCompany', first.company], ['dueToContact', first.contact], ['dueToEmail', first.email], ['dueToPhone', first.phone], ['submitMethod', first.method]].forEach(function(p){ if (s(p[1]) && s(l[p[0]]) !== s(p[1])) { l[p[0]] = p[1]; ch = true; } });
     if (open[0] && s(l.bidDue) !== open[0]) { l.bidDue = open[0]; ch = true; }
+    if (JSON.stringify(arr(l.bidTo)) !== JSON.stringify(rows)) { l.bidTo = rows; ch = true; }   /* patch BIDTO: each GC, its status and when it was sent */
+    if (rm && JSON.stringify(arr(l.bidToRemoved)) !== JSON.stringify(rm)) { l.bidToRemoved = rm; ch = true; }
     return ch ? undefined : false;
   });
 }
@@ -166128,7 +166177,7 @@ function openSend(key, pre){
         : '<div class="err">No estimate is linked to this lead yet — open Estimates, make or link one, then send.</div>')
       + list.map(function(b){
         var d = drafts[b.id], bad = problems(d.subject + '\n' + d.body, list, b), ok = EMAIL_RE.test(s(b.email));
-        return '<div class="gc" data-gc="' + esc(b.id) + '"><div class="row"><label style="flex-direction:row;align-items:center;gap:6px;font-size:14px;color:#1b1640"><input type="checkbox" data-pick' + (pick.indexOf(b.id) >= 0 ? ' checked' : '') + (ok ? '' : ' disabled') + '> <b>' + esc(s(b.company) || 'GC') + '</b></label> ' + stChip(b.status)
+        return '<div class="gc" data-gc="' + esc(b.id) + '"><div class="row"><label style="flex-direction:row;align-items:center;gap:6px;font-size:14px;color:#1b1640"><input type="checkbox" data-pick' + (pick.indexOf(b.id) >= 0 ? ' checked' : '') + (ok ? '' : ' disabled') + '> <b>' + esc(s(b.company) || 'GC') + '</b></label> ' + stChip(b.status) + (b.sentAt ? '<span class="note" style="color:#166534;font-weight:700">✓ sent ' + esc(whenTxt(b.sentAt)) + (b.sentBy ? ' by ' + esc(b.sentBy) : '') + '</span>' : '')
           + '<span class="note">' + (ok ? esc(s(b.contact) ? b.contact + ' · ' : '') + esc(b.email) : '<span class="err">no e-mail — add it on Bidding to</span>') + ' · due ' + esc(fmtDue(b.due)) + (num(b.price) ? ' · price ' + money(num(b.price)) : '') + '</span></div>'
           + '<label>Subject<input data-d="subject" value="' + esc(d.subject) + '"></label><label>Message<textarea data-d="body">' + esc(d.body) + '</textarea></label>'
           + (bad.length ? '<div class="err">⚠️ ' + esc(bad.join('; ')) + '</div>' : '')
@@ -166136,6 +166185,7 @@ function openSend(key, pre){
           + (ok ? '<button type="button" class="b" data-gm="' + esc(b.id) + '">Open in Gmail instead</button>' + (needAppr ? '' : '<button type="button" class="b pri" data-one="' + esc(b.id) + '">📤 Send to ' + esc(s(b.company) || 'this GC') + '</button>') : '') + '</div>'
           + '<div class="note" data-res="' + esc(b.id) + '"></div></div>';
       }).join('')
+      + (list.filter(function(b){ return EMAIL_RE.test(s(b.email)); }).length > 1 ? '<div class="row" data-gcbt-gm><span class="note">Or open in Gmail instead — one compose per GC (never one e-mail to all):</span>' + list.filter(function(b){ return EMAIL_RE.test(s(b.email)); }).map(function(b){ return '<button type="button" class="b" data-gm="' + esc(b.id) + '">✉️ ' + esc(s(b.company) || b.email) + '</button>'; }).join('') + '</div>' : '')   /* patch BIDTO */
       + '<div class="row"><span style="flex:1"></span>' + (needAppr ? '<span class="note">Bid e-mails need an admin\'s approval (Admin → 📤 Bid e-mails).</span><button type="button" class="b gold" data-ask>Ask an admin to approve</button>' : '<button type="button" class="b gold" data-all>📤 Send all (one e-mail per GC)</button>') + '</div>');
     var bd = o.querySelector('.bd');
     function sync(){
@@ -166177,13 +166227,29 @@ function openSend(key, pre){
 
 /* the lead drawer: a "🏢 Bidding to" section after "⏰ Bid" */
 function drawerLeadId(){ try { var u = W._gcLeadsHub && W._gcLeadsHub.ui && W._gcLeadsHub.ui(); return s(u && u.open); } catch (e) { return ''; } }
+/* patch BIDTO: which GCs 📤 Send bid goes to (the side panel's checkboxes; default: every GC not sent yet that has an e-mail) */
+var PICK = {};
+function pickedOn(lid, b){ var p = PICK[lid] || {}; return EMAIL_RE.test(s(b.email)) && (p[b.id] != null ? !!p[b.id] : b.status === 'not sent'); }
+function picked(lid){ return listFor('lead:' + lid).filter(function(b){ return pickedOn(lid, b); }).map(function(b){ return b.id; }); }
+function whenTxt(v){ v = s(v); if (!v) return ''; var d = new Date(v); return isFinite(d) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : v.slice(0, 16).replace('T', ' '); }
+function btCss(){ if (D.getElementById('gcbt-css')) return; var st = D.createElement('style'); st.id = 'gcbt-css'; st.textContent = '.gcbt-row{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid #eee;font-size:13px}.gcbt-row label{display:flex;align-items:center;gap:6px;cursor:pointer;min-height:32px}.gcbt-row input[type=checkbox]{width:18px;height:18px}.gcbt-row .d{color:#555;font-size:12px;overflow-wrap:anywhere}.gcbt-row .ok{color:#166534;font-weight:700;font-size:12px}.gcbt-row .no{color:#b45309;font-size:12px}'; D.head.appendChild(st); }
 function sectionHtml(l){
-  var key = 'lead:' + l.id, list = listFor(key), chg = changesFor(l.id);
-  return '<h4>🏢 Bidding to (' + list.length + ')' + (chg.length ? ' <span class="gcbs-chg">Bid change</span>' : '') + '</h4>'
-    + (list.length ? list.map(function(b){ var n = repliesFor(l.id, b.id).filter(openChange).length; return '<div class="kv">' + stChip(b.status) + ' <b>' + esc(s(b.company) || '—') + '</b>' + (s(b.contact) ? ' · ' + esc(b.contact) : '') + (s(b.due) ? ' · due ' + esc(fmtDue(b.due)) : '') + (n ? ' <span class="gcbs-chg">Bid change</span>' : '') + '</div>'; }).join('') : '<div class="note">No GC yet.</div>')
+  try { css(); btCss(); } catch (e) {}
+  var key = 'lead:' + l.id, list = listFor(key), chg = changesFor(l.id), nSent = list.filter(function(b){ return b.status !== 'not sent'; }).length, nPick = list.filter(function(b){ return pickedOn(l.id, b); }).length;
+  return '<h4>🏢 Bidding to (' + list.length + ' GC' + (list.length === 1 ? '' : 's') + ')' + (nSent ? ' · ' + nSent + ' sent' : '') + (chg.length ? ' <span class="gcbs-chg">Bid change</span>' : '') + '</h4>'
+    + (list.length ? list.map(function(b){ var n = repliesFor(l.id, b.id).filter(openChange).length, ok = EMAIL_RE.test(s(b.email));
+      return '<div class="kv gcbt-row" data-gcbt="' + esc(b.id) + '"><label><input type="checkbox" data-gcbt-pick="' + esc(b.id) + '"' + (pickedOn(l.id, b) ? ' checked' : '') + (ok ? '' : ' disabled') + ' aria-label="Send the bid to ' + esc(s(b.company) || 'this GC') + '"> ' + stChip(b.status) + ' <b>' + esc(s(b.company) || '—') + '</b></label>'
+        + '<span class="d">' + esc([s(b.contact), s(b.email), s(b.phone)].filter(Boolean).join(' · ')) + (s(b.due) ? ' · due ' + esc(fmtDue(b.due)) : '') + (s(b.source) && s(b.source) !== s(l.source) ? ' · via ' + esc(b.source) : '') + '</span>'
+        + (b.sentAt ? '<span class="ok">✓ sent to ' + esc(s(b.company) || s(b.email)) + ' ' + esc(whenTxt(b.sentAt)) + (b.sentBy ? ' by ' + esc(b.sentBy) : '') + '</span>' : '')
+        + (ok ? '' : '<span class="no">no e-mail yet — ✏️ add it</span>') + (n ? ' <span class="gcbs-chg">Bid change</span>' : '') + '</div>'; }).join('') : '<div class="note">No GC yet.</div>')
     + (chg.length ? chg.slice(0, 3).map(function(r){ return '<div class="kv" style="color:#b91c1c">⚠️ ' + esc(s(r.gc) || s(r.from)) + ': ' + esc(s(r.summary).slice(0, 120)) + (r.dueChange && !seen(r).applied ? ' — <b>📨 Due date changed to ' + esc(fmtDue(r.dueChange.to)) + '</b>' : '') + '</div>'; }).join('') : '')
-    + '<div class="row"><button type="button" class="b" data-gcbs-list>✏️ Bidding to</button><button type="button" class="b gold" data-gcbs-send>📤 Send bid</button>' + (chg.length ? '<button type="button" class="b red" data-gcbs-list>Review bid change</button>' : '') + '</div>';
+    + '<div class="row"><button type="button" class="b" data-gcbs-list>✏️ Edit / ＋ add GC</button><button type="button" class="b gold" data-gcbs-send>📤 Send bid' + (list.length > 1 ? ' to ' + nPick + ' checked' : '') + '</button>' + (chg.length ? '<button type="button" class="b red" data-gcbs-list>Review bid change</button>' : '') + '</div>';
 }
+D.addEventListener('change', function(ev){   /* patch BIDTO: the side panel's checkboxes */
+  var t = ev.target; if (!t || !t.getAttribute || !t.hasAttribute('data-gcbt-pick')) return;
+  var sec = t.closest && t.closest('section[data-gcbs]'); var lid = sec && sec.getAttribute('data-lead'); if (!lid) return;
+  (PICK[lid] = PICK[lid] || {})[t.getAttribute('data-gcbt-pick')] = !!t.checked; sec.__h = ''; try { paintDrawer(); } catch (e) { warn(e); }
+}, true);
 function paintDrawer(){
   var dr = D.getElementById('gcl-drawer'); if (!dr) return;
   var id = drawerLeadId(), l = id && leadById(id); if (!l) return;
@@ -166192,7 +166258,7 @@ function paintDrawer(){
     sec = D.createElement('section'); sec.setAttribute('data-gcbs', '1');
     var after = null; Array.prototype.forEach.call(dr.querySelectorAll('section > h4'), function(h4){ if (!after && /⏰ Bid/.test(h4.textContent)) after = h4.parentNode; });
     if (after && after.nextSibling) after.parentNode.insertBefore(sec, after.nextSibling); else (after ? after.parentNode : dr).appendChild(sec);
-    sec.addEventListener('click', function(ev){ var t = ev.target.closest && ev.target.closest('button'); if (!t) return; var lid = sec.getAttribute('data-lead'); if (t.hasAttribute('data-gcbs-list')) openList('lead:' + lid); if (t.hasAttribute('data-gcbs-send')) openSend('lead:' + lid); });
+    sec.addEventListener('click', function(ev){ var t = ev.target.closest && ev.target.closest('button'); if (!t) return; var lid = sec.getAttribute('data-lead'); if (t.hasAttribute('data-gcbs-list')) openList('lead:' + lid); if (t.hasAttribute('data-gcbs-send')) { var ids = picked(lid); openSend('lead:' + lid, ids.length ? { ids: ids } : {}); } });
   }
   sec.setAttribute('data-lead', l.id);
   if (sec.__h !== h) { sec.__h = h; sec.innerHTML = h; }
@@ -166331,7 +166397,7 @@ W._gcBidSend = { pullLeads: function(){ return pullLeads(true); }, state: functi
   pdf: function(key, id, estId){ var c = ctxOf(key); var b = listFor(key).filter(function(x){ return x.id === id; })[0]; var e = (estId && estById(estId)) || (c && c.ests[0]); return c && b && e ? buildPdf(c, e, b) : Promise.reject(new Error('nothing to build')); },
   html: function(key, id, estId){ var c = ctxOf(key); var b = listFor(key).filter(function(x){ return x.id === id; })[0]; var e = (estId && estById(estId)) || (c && c.ests[0]); return c && b && e ? proposalHtml(e, b) : ''; },
   gmail: function(key, id){ var c = ctxOf(key); var b = listFor(key).filter(function(x){ return x.id === id; })[0]; return c && b ? gmailUrl(b, draftFor(c, b)) : ''; },
-  replies: function(leadId){ return repliesFor(leadId); }, people: bidsPeople, unsorted: function(){ UNS.at = 0; unsortedCount(); return UNS; }, changes: changesFor, review: review, applyDue: applyDue, problems: problems, keyForEst: keyForEst, ctx: ctxOf, request: requestApproval, approve: approveReq, paint: paintAll, _S: S, _textPdf: textPdf };
+  replies: function(leadId){ return repliesFor(leadId); }, people: bidsPeople, picked: picked, pick: function(lid, id, on){ (PICK[lid] = PICK[lid] || {})[id] = !!on; }, sameGc: sameGc, gcKey: gcKey,   /* patch BIDTO */ unsorted: function(){ UNS.at = 0; unsortedCount(); return UNS; }, changes: changesFor, review: review, applyDue: applyDue, problems: problems, keyForEst: keyForEst, ctx: ctxOf, request: requestApproval, approve: approveReq, paint: paintAll, _S: S, _textPdf: textPdf };
 try { console.log('[GC] Our bids, one GC at a time: 🏢 Bidding to · 📤 Send bid · GC replies (patch BIDSEND) — _gcBidSend.state()'); } catch (e) {}
 })();
 

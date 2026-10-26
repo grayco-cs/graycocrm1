@@ -25,6 +25,24 @@ Words used on screen: **Leads** = every new opportunity coming in (bid invitatio
 Each send is logged on the lead's activity, on the GC's row (who sent it, when, which estimate and version) and in
 gc_kv `gc_bid_send_log`. When every GC with an e-mail address has been sent the bid, the lead becomes **Submitted**.
 
+## Several GCs invite us to the same project (patch BIDTO)
+
+Owner, 10/26: *"make sure when commercial bids come through they account for every email and company we need to send it
+to when we get the invite."*
+
+- Every invitation that lands on a bid lead (leads@ / bids@, BuildingConnected, PlanHub, a GC writing directly, a GrayCo
+  forward) adds **its** GC to the lead: company, person, e-mail, phone, that GC's own due date, the board, the invite link,
+  when it came and which e-mail. One row per GC: the same e-mail, else the same company, is one row. A GrayCo address,
+  a bid platform's own or no-reply address (team@buildingconnected.com …) and GrayCo itself are never a GC.
+- On BuildingConnected / PlanHub mail the AI reads the GC's company, person, e-mail and phone from the body.
+- The lead's "due to" and bid due stay the **earliest-due** GC (the old screens read them).
+- A GC added this way sends one short alert, **"➕ Also invited by <GC>: <project>"**, to the lead-alert list (Leads ⚙,
+  default office@) and the lead's estimator / PM.
+- The lead's side panel shows **🏢 Bidding to (N GCs)**: each GC with a checkbox (ticked: every GC not sent yet that has an
+  e-mail), and "✓ sent to <GC> <time>" once sent. **✏️ Edit / ＋ add GC** adds, edits or removes one; a GC removed by hand
+  is not brought back by a later invite. **📤 Send bid** sends to the ticked GCs, one separate e-mail each.
+- The bid-due reminders use the earliest due date of the GCs not sent yet and say "Not sent yet to: …".
+
 ## How the e-mail goes out
 
 - **From:** `<the estimator's own name> <bids@grayco-cs.com>`
