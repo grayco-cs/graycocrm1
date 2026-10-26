@@ -385,9 +385,17 @@ function spHash(str){   /* 53-bit string hash (cyrb53) + length: what is kept pe
    merge the same records list them in their own order, and each re-sent "its" order to the other,
    back and forth, forever. Only the outer list — an order kept inside a record still counts. */
 function spIsRec(x){ return !!x && typeof x === 'object' && !Array.isArray(x) && (typeof x.id === 'string' || typeof x.id === 'number' || typeof x.invId === 'string' || typeof x.expId === 'string'); }
+/* patch SPEED3 */
+var SP_RC = new Map(), SP_RCN = 0;
+function spCanonRec(r){ /* patch SPEED3: an unchanged record is not re-sorted and re-joined each time */
+  var t; try { t = JSON.stringify(r); } catch (e) { return spCanon(r); }
+  if (typeof t !== 'string') return spCanon(r);
+  var c = SP_RC.get(t); if (c !== undefined) return c;
+  c = spCanon(r); if (SP_RCN > 12e6) { SP_RC.clear(); SP_RCN = 0; } SP_RC.set(t, c); SP_RCN += t.length + c.length; return c;
+}
 function spSig(v){
   try {
-    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanon).sort().join(',') + ']');
+    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanonRec).sort().join(',') + ']');
     return spHash(spCanon(v));
   } catch (e) { return null; }
 }
@@ -1151,7 +1159,7 @@ window._gcAdminOnlyKeys = KEYS.slice();
 var SB = 'https://ieeonhpfahmwwecizdut.supabase.co';
 var NOT_IN = 'not.in.(' + KEYS.map(function(k){ return '"' + k + '"'; }).join(',') + ')';
 
-var rawSet = Storage.prototype.setItem, rawRemove = Storage.prototype.removeItem;
+var rawSet = Storage.prototype.setItem, rawRemove = Storage.prototype.removeItem, rawGet = Storage.prototype.getItem;
 function sess(){ try { return JSON.parse(localStorage.getItem('gc_auth_v1') || 'null'); } catch (e) { return null; } }
 /* 'admin' | 'staff' (the database said so at sign-in) | 'unknown' */
 function roleState(){ var s = sess(); if (s && s.roleKnown) return s.role === 'admin' ? 'admin' : 'staff'; return 'unknown'; }
@@ -1169,6 +1177,7 @@ Storage.prototype.setItem = function(k, v){
     pushAdmin(k);                                                       /* an owner's change goes up to gc_admin_kv */
     return r;
   }
+  try{ if(this === window.localStorage && typeof v === 'string' && v.length > 50000 && rawGet.call(this, k) === v) return; }catch(e){}   /* patch SPEED3: the same big text again */
   return rawSet.call(this, k, v);
 };
 /* write-through for the owners: the app's own cloud push is gated to tab changes and never carried
@@ -3429,13 +3438,23 @@ window.__GC_LIVE=function(key, v){
              coming back to the window puts them straight back on their own pace. Changes from other computers
              still arrive on the live feed and are put on the screen as they come; this only slows the polish. */
           var _n=Date.now();
-          if(!(_ms >= 29000) && _n-(window.__GC_LAST_INPUT_AT__||0) > 60000 && _n-_lastRun < 29000) return;   /* a loop slower than that keeps its own pace */
+          if(!(_ms >= 29000) && _n-(window.__GC_LAST_INPUT_AT__||0) > 20000 && _n-_lastRun < 29000) return;   /* patch SPEED3: 20 s, was 60 s */   /* a loop slower than that keeps its own pace */
           _lastRun=_n;
           if(typeof fn==='function') fn();
         }catch(e){}
       };
       // Leave very fast timers (<600ms, e.g. UI animations) unguarded so nothing feels sluggish.
-      if(typeof _ms==='number' && _ms<600){ return _setInt(fn, _ms); }
+      if(typeof _ms==='number' && _ms<600){
+        if(typeof fn!=='function') return _setInt(fn, _ms);
+        var _src=''; try{ _src=Function.prototype.toString.call(fn); }catch(e){}
+        if(/sync|Sync|push|Push|pull|Pull|backup|Backup|snapshot|Snapshot|save|Save|recover|Recover|flush|Flush/.test(_src)) return _setInt(fn, _ms);
+        var _fl=0;   /* patch SPEED3: a screen-polish timer waits while the tab is hidden, and runs once a second when nobody is at the computer */
+        return _setInt(function(){
+          if(document.hidden) return;
+          var _n=Date.now(); if(_n-(window.__GC_LAST_INPUT_AT__||_n) > 20000 && _n-_fl < 950) return;
+          _fl=_n; return fn.apply(this, arguments);
+        }, _ms);
+      }
       return _setInt(guarded, _ms);
     };
   }catch(e){}
@@ -65091,6 +65110,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // unified idb helpers with fallbacks so the backup never silently no-ops
   async function _idbGet(k){ if(window.idbGet) return await window.idbGet(k); if(window._gcRecIDBget) return await window._gcRecIDBget(k); return null; }
   async function _idbSet(k,v){ if(window.idbSet) return await window.idbSet(k,v); if(window._gcRecIDBput) return await window._gcRecIDBput(k,v); throw new Error('no IndexedDB writer available'); }
+  function _bkIdle(ms){ return new Promise(function(res){ try{ if(window.requestIdleCallback) window.requestIdleCallback(function(){ res(); }, { timeout: ms || 1500 }); else setTimeout(res, 30); }catch(e){ setTimeout(res, 30); } }); }   /* patch SPEED3 */
   async function snapshotToday(){
     try{
       var data={ date:today(), savedAt:new Date().toISOString(), lists:{}, counts:{} };
@@ -65100,6 +65120,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       var _u=(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), _k=localStorage.getItem('grayco_sb_key');
       for(var i=0;i<CORE.length;i++){
         var k=CORE[i];
+        if(i) await _bkIdle(1500);   /* patch SPEED3: one list per idle slice */
         try{
           var v=await _idbGet(k);
           if(_u && _k){
@@ -65118,7 +65139,12 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       data.local={};
       try{ for(var j=0;j<localStorage.length;j++){ var lk=localStorage.key(j); if(lk && lk!=='grayco_sb_key' && !/^(grayco_ccam_key|gc_cc_token|gc_cc_token_backup|gc_cc_key_mirror)$/.test(lk) && lk.indexOf(PREFIX)!==0) data.local[lk]=localStorage.getItem(lk); } }catch(e){}
       // Save LOCALLY first — this must always succeed regardless of network.
+      await _bkIdle(2000);   /* patch SPEED3 */
+      var _bs = null; try{ if(typeof spHash==='function') _bs = spHash(JSON.stringify([data.lists, data.local])); }catch(e){}
+      var _bl = window.__gcBkSig;
+      if(_bs && _bl && _bl.d===today() && _bl.s===_bs && Date.now()-_bl.at < 3*3600e3){ console.log('[GC] Daily backup: nothing changed since the last copy, not saved again.'); return data; }
       await _idbSet(keyFor(today()), data);
+      if(_bs) window.__gcBkSig = { d: today(), s: _bs, at: Date.now() };
       try{ await pruneOld(); }catch(e){}
       // Then push to the company cloud (best-effort; a network error can't undo the local save).
       try{ await pushDayToCloud(today(), data); }catch(e){ console.warn('[GC] daily cloud push failed (local copy is safe):', e); }
@@ -65337,7 +65363,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   window._gcAutoRecoverNow = autoRecover;
 
   // Snapshot shortly after load (so a backup always exists once the app is open).
-  setTimeout(snapshotToday, 12000);
+  setTimeout(function(){ _bkIdle(30000).then(function(){ snapshotToday(); }); }, 12000);   /* patch SPEED3: idle time */
   // Keep a gentle periodic snapshot as a fallback (updates today's copy).
   setInterval(snapshotToday, 3*60*60*1000);
   // AND schedule a precise snapshot at 12:00 AM every day, so each day is frozen
@@ -84654,6 +84680,8 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
 
     async function afterEstimateSave(json){
       try{
+        if(typeof json==='string' && json.length>200000 && window.__gcAesLast===json && Date.now()-(window.__gcAesAt||0)<10000) return;   /* patch SPEED3: the same estimates again within 10 s */
+        window.__gcAesLast=json; window.__gcAesAt=Date.now();
         var arr=[];
         try{ arr = JSON.parse(json); }catch(e){}
         if(!Array.isArray(arr)) return;
@@ -95799,7 +95827,7 @@ document.addEventListener('click', function(ev){
     var el=ev.target;
     var badge=null, hop=0;
     while(el && hop++<4){
-      if(el===document.body||el===document.documentElement||el.tagName==='MAIN'||el.id==='root'||el.id==='_gcJobPick'||el.id==='_gcJobDash') break;   /* 33.144 (patch N) */
+      if(el===document.body||el===document.documentElement||el.tagName==='MAIN'||el.id==='root'||el.id==='_gcJobPick'||el.id==='_gcJobDash'||el.childElementCount>=50) break;   /* 33.144 (patch N) */ /* patch SPEED3: big container */
       var t=(el.textContent||'').trim();
       if(/^📎\s*Upload$/.test(t) || /^📧\s*Gmail$/.test(t)){ badge=el; break; }
       el=el.parentElement;
@@ -98781,7 +98809,7 @@ document.addEventListener('click', function(e){
     var el=e.target;
     var hop=0, txt='';
     while(el && hop++<4){
-      if(el===document.body||el===document.documentElement||el.tagName==='MAIN'||el.id==='root'||el.id==='_gcJobPick'||el.id==='_gcJobDash'){ el=null; txt=''; break; }   /* 33.144 (patch N) */
+      if(el===document.body||el===document.documentElement||el.tagName==='MAIN'||el.id==='root'||el.id==='_gcJobPick'||el.id==='_gcJobDash'||el.childElementCount>=50){ el=null; txt=''; break; }   /* 33.144 (patch N) */ /* patch SPEED3: big container */
       txt=keyOf(el.textContent||'');
       if(txt && txt.length<=24 && MENU.indexOf(txt)>=0) break;
       txt=''; el=el.parentElement;
@@ -102520,9 +102548,10 @@ async function doSweep(quiet){
       if((!Array.isArray(rows) || !rows.length) && K.live && window._crm && Array.isArray(window._crm[K.live]))
         rows=window._crm[K.live];
       if(!Array.isArray(rows) || rows.length<2) continue;
+      var _sw2=null; try{ _sw2=JSON.stringify(rows); window.__GC_SWEEP_CLEAN__=window.__GC_SWEEP_CLEAN__||{}; if(window.__GC_SWEEP_CLEAN__['m:'+K.idb]===_sw2) continue; }catch(e){}   /* patch SPEED3 */
 
       var res=collapse(rows, K.label);
-      if(!res) continue;
+      if(!res){ try{ window.__GC_SWEEP_CLEAN__['m:'+K.idb]=_sw2; }catch(e){} continue; }
       total+=res.dropped; per[K.label]=res.dropped;
 
       /* a merge is not data loss — tell the keep-everything guard so it does
@@ -103968,9 +103997,10 @@ async function doSweep(quiet){
       var rows=null;
       try{ rows=await window.idbGet(L.key); }catch(e){}
       if(!Array.isArray(rows) || rows.length<2) continue;
+      var _sw2=null; try{ _sw2=JSON.stringify(rows); window.__GC_SWEEP_CLEAN__=window.__GC_SWEEP_CLEAN__||{}; if(window.__GC_SWEEP_CLEAN__['l:'+L.key]===_sw2) continue; }catch(e){}   /* patch SPEED3 */
 
       var res=collapse(rows, L);
-      if(!res) continue;
+      if(!res){ try{ window.__GC_SWEEP_CLEAN__['l:'+L.key]=_sw2; }catch(e){} continue; }
       try{ var dsig=(res.dropped_rows||[]).map(function(r){ return String(r&&(r.id||r._id)); }).sort().join(',') + '|' + rows.length;   /* patch LEADPERF-1b: the same duplicates as last time are not written again */
         window.__GC_SWEEP_SIG__ = window.__GC_SWEEP_SIG__ || {}; if(window.__GC_SWEEP_SIG__[L.key]===dsig) continue; window.__GC_SWEEP_SIG__[L.key]=dsig; }catch(e){}
       total+=res.dropped; per[L.label]=(per[L.label]||0)+res.dropped;
@@ -117517,11 +117547,13 @@ var seenRec = {};      /* key -> { id -> {sig:1} } */
 var seenVal = {};      /* key -> { sig:1 } (values that are not record lists) */
 var STAMP = /^(updatedAt|updated_at|savedAt|lastSeen|modified|modifiedAt|lastModified|_\w*UpdatedAt)$/;
 var _rsigStep = null;   /* patch X: per-object signatures, kept only for one synchronous push step */
+var RS_MEMO = new Map(), RS_N = 0;   /* patch SPEED3: a record's signature is remembered by its text */
+function rsMemoSet(t, g){ if(RS_N > 12e6){ RS_MEMO.clear(); RS_N = 0; } RS_MEMO.set(t, g); RS_N += t.length; }
 /* patch SYNCFIX: fields in sorted order — a merge (Object.assign) that only moved a field made the record look edited, so
    the write stamp gave every vendor a new updatedAt on each pull while someone was at the computer, and the other
    computer did the same back */
 function _rsigRep(k, v){ return (k && STAMP.test(k)) ? undefined : v; }
-function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
+function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g, _mt; try{ if(r && typeof r==='object' && !Array.isArray(r)){ try{ _mt = JSON.stringify(r); }catch(e){} if(typeof _mt==='string' && (_g = RS_MEMO.get(_mt)) !== undefined){} else { var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); if(typeof _mt==='string') rsMemoSet(_mt, _g); } } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
 var ownStamp = {};   /* stamps this computer wrote */
 function recIdOf(r){ return (r && typeof r==='object' && !Array.isArray(r)) ? (r.id!=null && r.id!=='' ? String(r.id) : (r._id!=null && r._id!=='' ? String(r._id) : null)) : null; }
 function isRecList(a){ return Array.isArray(a) && a.length && a.every(function(x){ return x==null || (typeof x==='object' && !Array.isArray(x)); }); }
@@ -175460,7 +175492,8 @@ function tick(){
     last = k.n + '|' + tt;
   } catch (e) {}
 }
-RI.call(W, tick, 2000); ST.call(W, tick, 2500);
+var _tkSt = {}, _tkAt = 0; function tickT(){ var n = Date.now(); if (W._gcIdleSkip && W._gcIdleSkip(_tkSt, 5000)) return; if (W._gcIdle && W._gcIdle() && n - _tkAt < 60000) return; _tkAt = n; tick(); }   /* patch SPEED3 */
+RI.call(W, tickT, 2000); ST.call(W, tick, 2500);
 try { D.addEventListener('change', function(e){ if (e.target && e.target.closest && e.target.closest('.td2')) ST.call(W, tick, 400); }, true); } catch (e) {}
 W._gcTodoBadge = { tick: tick, counts: counts, last: function(){ return last; } };
 try { console.log('[GC] To-Do keeps up; To-Do count in the menu; exact badge numbers (patch TODOPERF)'); } catch (e) {}
