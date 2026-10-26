@@ -33,6 +33,15 @@ once("    if (document.getElementById('gc-leads-hub')) {\n      since = 0;",
 once("  SI.call(W, sync, 250);",
      "  SI.call(W, sync, 5000); W._gcHot2bSync = sync;   /* LEADSUX: 5 s (was 250 ms); the grayco_view hook and the new screen call sync() when it matters */", 'hot2b interval')
 
+once("try { if (k === 'grayco_view') sync(); } catch (e) {}",
+     "try { if (k === 'grayco_view') { sync(); if (W._gcLux && W._gcLux.mount) { ST.call(W, W._gcLux.mount, 0); ST.call(W, W._gcLux.mount, 250); } } } catch (e) {}   /* LEADSUX: the new screens follow the view (this is the storage hook that sees every change) */", 'hot2b view hook')
+
+# deep links (#lead=ID, To-Do "Open", the daily plan) open the lead through the hub: the new screens count as the hub being there
+once("  if (H && !D.getElementById('gc-leads-hub')) {   /* Leads opened on another sub-tab (Lead Inbox …): the pipeline holds the hub */",
+     "  if (H && !(D.getElementById('gc-leads-hub') || D.getElementById('gc-lux') || D.getElementById('gc-lux-bids'))) {   /* LEADSUX: the new screens are the hub */", 'hot1 openLead 1')
+once("  if (!H || !D.getElementById('gc-leads-hub')) return false;",
+     "  if (!H || !(D.getElementById('gc-leads-hub') || D.getElementById('gc-lux') || D.getElementById('gc-lux-bids'))) return false;   /* LEADSUX */", 'hot1 openLead 2')
+
 # ───────────── 1. the hub script (gc-patch-leads): switches, hooks, the engine export
 once("if (window.__GC_PATCH_LEADS__) return; window.__GC_PATCH_LEADS__ = true;\nvar W = window, D = document, ST = W.setTimeout, RI = W.setInterval;",
      "if (window.__GC_PATCH_LEADS__) return; window.__GC_PATCH_LEADS__ = true;\nvar W = window, D = document, ST = W.setTimeout, RI = W.setInterval;\nfunction LUXON(){ return !!W.__GC_LUX__ && !W.__GC_LUX_FAIL__; }   /* patch LEADSUX: the new Leads screen draws; this hub does not */", 'hub head')
@@ -71,7 +80,7 @@ once("W._gcLeadsHub.tick = tick;   /* patch LEADPERF-2: the perf gate times the 
      "  stageOf: stageOf, closed: closed, shut: shut, expired: expired, contacted: contacted, isBidL: isBidL, assignee: assignee, dueMs: dueMs, born: born, receivedMs: receivedMs,\n"
      "  typesOf: typesOf, typeOf: typeOf, srcOf: srcOf, srcCanon: srcCanon, importedL: importedL, archivedL: archivedL, dead: dead, value: value, money: money, initials: initials,\n"
      "  canAssignAll: canAssignAll, isAdmin: isAdmin, amEstimator: amEstimator, myScope: myScope, myName: myName, myEmail: myEmail, mineL: mineL, people: people, loadOf: loadOf, openPicker: openPicker,\n"
-     "  newLead: newLead, openSettings: openSettings, closeSettings: closeSettings, inboxOf: inboxOf, prioChip: prioChip, prioPicker: prioPicker, canPrio: canPrio, classicRow: classicRow };",
+     "  newLead: newLead, openSettings: openSettings, closeSettings: closeSettings, inboxOf: inboxOf, prioChip: prioChip, prioPicker: prioPicker, canPrio: canPrio, classicRow: classicRow, focusForm: focusForm, kpis: kpis };",
      'engine export')
 
 # ───────────── 2. the Lead Inbox script (LD2): no MutationObserver on <body> while Leads is the view
@@ -107,6 +116,26 @@ once('xt=[{id:"leads",l:"Leads"},{id:"bidboard",l:"Bids ("+st.length+")"},{id:"w
 #               re-armed it), on every search box once typed in: one re-send per real keystroke is enough
 once('        el.addEventListener("input", function handler(ev) {\n          if (_debounceTimers[el.placeholder]) {',
      '        el.addEventListener("input", function handler(ev) {\n          if (ev && ev.isTrusted === false) return;   /* LEADSUX: its own re-sent event must not re-arm it (it looped every 150 ms for ever) */\n          if (_debounceTimers[el.placeholder]) {', 'search debouncer loop')
+
+# ───────────── 5c. the hidden classic Lead Pipeline table drew EVERY lead (18,000 DOM nodes) while CSS hid it: it now draws only the rows
+#               asked for (window._gcLuxRows: all of them for the admin's "Old table", else one lead's row while Edit / Delete is used)
+once('e.jsx("tbody",{children:M.map((Ee,Je)=>e.jsxs("tr",{draggable:true,onDragStart:function(){_setDragIdx(Je)}',
+     'e.jsx("tbody",{children:(Q==="LEAD"&&window._gcLuxRows?M.filter(function(_r){return window._gcLuxRows(_r)}):M).map((Ee,Je)=>e.jsxs("tr",{draggable:true,onDragStart:function(){_setDragIdx(Je)}', 'classic table rows')
+
+# ───────────── 5d. three page-wide click handlers read target.textContent: a click landing on <html>/<body>/a big container read megabytes of text
+GUARD = 'if(t===document.documentElement||t===document.body||t.childElementCount>12) return;   /* LEADSUX: never read a page-sized textContent */\n'
+once("    var t=e.target; if(!t) return;\n    var txt=((t.textContent||'')+'').toLowerCase();\n    if(/\\b(save|update|add|create|submit|post|done)\\b/",
+     "    var t=e.target; if(!t) return;\n    " + GUARD + "    var txt=((t.textContent||'')+'').toLowerCase();\n    if(/\\b(save|update|add|create|submit|post|done)\\b/", 'click guard 1')
+once("      var t=e.target; if(!t) return;\n      var txt=(t.textContent||'').toLowerCase();\n      if(txt.indexOf('save token')<0) return;",
+     "      var t=e.target; if(!t) return;\n      " + GUARD + "      var txt=(t.textContent||'').toLowerCase();\n      if(txt.indexOf('save token')<0) return;", 'click guard 2')
+once("  try{\n    var t=e.target; if(!t||!t.textContent) return;\n    var w=t.textContent.trim().toLowerCase();",
+     "  try{\n    var t=e.target; if(!t||!t.textContent) return;\n    " + GUARD + "    var w=t.textContent.trim().toLowerCase();", 'click guard 3')
+
+# ───────────── 5e. patch AP3's page-wide text scan read the 16 MB of inline script text on every pass (it was 40% of the idle time on Leads)
+once("{ acceptNode: function(n){ var v = n.nodeValue; return v && v.length < 140",
+     "{ acceptNode: function(n){ var pn = n.parentNode; if (pn && (pn.nodeName === 'SCRIPT' || pn.nodeName === 'STYLE')) return NodeFilter.FILTER_REJECT; /* LEADSUX: never read script text */ var v = n.nodeValue; return v && v.length < 140", 'ap3 scanText skip script')
+
+once("var SKIP = '#_gcComposeOv,#_gcAp2Prev,", "var SKIP = '#gc-lux,#gc-lux-bids,#_gcComposeOv,#_gcAp2Prev,", 'ap3 skip new screens')   # no mail icon is stuck on every card name (each one cost a layout read per scan)
 
 # ───────────── 6. the new screen itself
 anchor = '<script id="gc-patch-pay2">'

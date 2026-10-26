@@ -32,7 +32,8 @@ function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch
 function pad2(n){ return ('0' + n).slice(-2); }
 function ymd(d){ return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function digits(v){ return s(v).replace(/\D/g, ''); }
-function monthDay(ms){ return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+var MD = {}, MDN = 0;
+function monthDay(ms){ var k = Math.floor(ms / 36e5); if (MD[k]) return MD[k]; if (++MDN > 3000) { MD = {}; MDN = 0; } return (MD[k] = new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); }
 function ago(ms){ if (!ms) return ''; var m = Math.max(0, (Date.now() - ms) / 60000); return m < 1 ? 'just now' : m < 60 ? Math.round(m) + 'm ago' : m < 2880 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago'; }
 function toast(msg){ var e = E(); if (e) e.toast(msg); }
 
@@ -45,7 +46,11 @@ var LUX = { on: true, active: false, root: null, bids: null, tab: '', disabled: 
   'patch LD2 Lead Inbox MutationObserver on document.body + the click/popstate schedule() — disconnected while Leads is the view',
   'patch CLAIMLEAD / ALERTTO / MITTO / EMERGTO 1000 ms interval each — gone; their bars are mounted when Lead settings opens',
   'patch RSO 1500 ms interval -> 6000 ms (outreach opens from the ⋯ menu)',
-  'old hub KPI strip, view tabs, filter bar, per-card selects, "Classic table" fold — replaced by this screen'
+  'old hub KPI strip, view tabs, filter bar, per-card selects, "Classic table" fold — replaced by this screen',
+  'classic React Lead Pipeline table: draws no rows unless the admin opens "Old table" (one row while Edit / Delete is used) — was ~18,000 hidden DOM nodes',
+  'patch AP3 text scan: skips <script>/<style> text and this screen (no mail icon on every card name)',
+  'page-wide search-box debouncer: no longer re-sends its own input event every 150 ms for ever',
+  'page-wide click handlers (3): skip <html>/<body>/page-sized targets before reading textContent'
 ] };
 var UX = { chip: '', v: 'cards', more: { na: 30, ip: 30, bd: 30, cl: 30 }, closedOpen: false, bulk: false, filters: false, menu: false, bq: '', bMine: false, bdue: '', bShowHidden: false, bMore: 50 };
 var DV = 0, LAST_RAW = null, LAST_SIG = '', LAST_KEY = '', RQ = 0, PEND = false, FORCE = false;
@@ -145,6 +150,20 @@ function groups(){
   GM = { k: key, g: g }; return g;
 }
 
+/* the classic React table draws only the rows asked for: every row for the admin's "Old table", else just the lead being edited / deleted */
+var ALLOW = {};
+function classicOn(){ var e = E(); return !!e && e.isAdmin() && ssGet('gcl_classic_ok') === '1'; }
+W._gcLuxRows = function(r){ if (!W.__GC_LUX__ || W.__GC_LUX_FAIL__ || classicOn()) return true; return !!(r && ALLOW[r.id]); };
+function rerenderClassic(){   /* the page redraws the table when its tab is shown again */
+  var bar = tabBar(), a = bar && bar.querySelector('[data-gc-tab="website"]'), b = bar && bar.querySelector('[data-gc-tab="leads"]');
+  if (a && b) { a.click(); b.click(); }
+}
+function withRow(id, then){
+  ALLOW[id] = 1; var e = E();
+  if (e.classicRow(id)) return then();
+  rerenderClassic(); var n = 0;
+  (function wait(){ if (e.classicRow(id)) return then(); if (++n < 40) later(wait, 100); else toast('Not ready yet — try again in a moment.'); })();
+}
 /* ── the Leads screen ── */
 function greet(){ var h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
 function myFirst(){ var e = E(), n = first(e.myName()); if (!n) { n = s(e.myEmail()).split('@')[0].replace(/[._-].*$/, ''); } return n ? n.charAt(0).toUpperCase() + n.slice(1) : 'there'; }
@@ -207,6 +226,7 @@ function menuHtml(){
   if (adm && W._gcLeadClean) h += item('clean', 'Clean up', nCl ? String(nCl) : '');
   h += item('imported', 'Imported', (u.imp ? 'showing · ' : '') + nImp);
   if (e.canAssignAll()) h += item('bulk', UX.bulk ? 'Bulk assign: on' : 'Bulk assign', '');
+  h += item('numbers', 'Pipeline numbers');
   if (adm) { h += '<hr>' + item('classic', 'Old table (admin)'); }
   return h;
 }
@@ -316,8 +336,14 @@ function menuAct(a){
   else if (a === 'archived') { u.arch = !u.arch; if (u.arch) u.imp = false; e.saveUI(); }
   else if (a === 'expired') { u.exp = !u.exp; e.saveUI(); }
   else if (a === 'bulk') { UX.bulk = !UX.bulk; }
-  else if (a === 'classic') { if (e.isAdmin() && typeof W._gcLeadsClassic === 'function') { W._gcLeadsClassic(true); } }
-  else if (a === 'classic-off') { if (typeof W._gcLeadsClassic === 'function') W._gcLeadsClassic(false); }
+  else if (a === 'classic') { if (e.isAdmin() && typeof W._gcLeadsClassic === 'function') { W._gcLeadsClassic(true); later(rerenderClassic, 60); } }
+  else if (a === 'classic-off') { if (typeof W._gcLeadsClassic === 'function') { W._gcLeadsClassic(false); later(rerenderClassic, 60); } }
+  else if (a === 'numbers') {
+    var ks = []; try { ks = e.kpis(); } catch (x) { warn(x); }
+    var m = modal('<h3>Pipeline numbers</h3><div class="lux-hint" style="color:#64708a;margin-bottom:10px">What the old Leads strip showed: unassigned, new today / this week, bids due in 7 days, not contacted over 4 h, win rate (90 days), open pipeline, sources (30 days).</div>'
+      + ks.map(function(k){ return '<div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid #e6e8ec"><span>' + esc(k.l) + '</span><b>' + esc(k.n) + '</b></div>'; }).join('')
+      + '<div style="text-align:right;margin-top:14px"><button type="button" class="lux-btn ghost" data-lux-x>Close</button></div>');
+  }
   else if (a === 'new') { e.newLead(); }
   else if (a === 'filters') { UX.filters = !UX.filters; }
   else if (a === 'menu') { UX.menu = true; }
@@ -387,7 +413,7 @@ function panel(l, old){
   var notes = []; s(l.notes).split(/\n+/).forEach(function(x){ x = x.trim(); if (x) notes.push({ t: x, at: '' }); });
   arr(l.activity).forEach(function(h){ if (h && h.type === 'note' && s(h.text) && !notes.some(function(n){ return n.t === s(h.text); })) notes.push({ t: s(h.text), at: h.at }); });
   var noteHtml = notes.slice(-6).map(function(n){ return '<div class="lux-note">' + esc(n.t) + (n.at ? '<small>Added ' + esc(ago(Date.parse(n.at))) + '</small>' : '') + '</div>'; }).join('') || '<div class="lux-hint">No notes yet.</div>';
-  var cus = typeof W._gcCustomer360 === 'function', vis = typeof W._gcVisitNotes === 'function', haveRow = !!e.classicRow(l.id);
+  var cus = typeof W._gcCustomer360 === 'function', vis = typeof W._gcVisitNotes === 'function', haveRow = true;
   var canC = !e.closed(l) && st === 'New Lead' && !s(l.contactedAt);
   var moreHtml = '<section><h4>Details</h4><div class="lux-kvs">'
     + '<div class="lux-kv"><span>Value</span><b>' + (e.value(l) ? e.money(e.value(l)) : '—') + '</b></div>'
@@ -411,13 +437,21 @@ function panel(l, old){
     + '<div class="lux-lbl">Follow up on</div><div class="lux-row"><input type="date" data-lux-p="fu" value="' + esc(fuOf(l)) + '" aria-label="Follow-up date"></div>'
     + (bid ? '<div class="lux-lbl">Bid</div><div class="lux-bidbox">' + (S.by.bid || '') + '</div>' : '')
     + '<div class="lux-prim">' + (canC ? '<button type="button" class="go" data-d="contacted">Mark contacted</button>' : '<span style="flex:1"></span>') + (e.closed(l) ? '' : '<button type="button" class="lostbtn" data-d="lost">Mark lost</button>') + '</div>'
-    + '<div class="lux-foot">' + (haveRow ? '<a data-d="editfull" role="button" tabindex="0">Edit details</a><a data-d="delfull" role="button" tabindex="0">Delete</a>' : '<span></span><span></span>') + '</div>'
+    + '<div class="lux-foot">' + '<a data-d="editfull" role="button" tabindex="0">Edit details</a><a data-d="delfull" role="button" tabindex="0">Delete</a>' + '</div>'
     + (l.lostReason ? '<div class="lux-hint" style="margin-top:12px">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '<details class="lux-moredet"' + (LUX.moreOpen ? ' open' : '') + '><summary>More</summary>' + moreHtml + '</details></div>';
 }
 function bindPanel(d){
   if (d.__lux) return; d.__lux = true;
   d.addEventListener('toggle', function(ev){ if (ev.target.classList && ev.target.classList.contains('lux-moredet')) LUX.moreOpen = ev.target.open; }, true);
+  d.addEventListener('click', function(ev){
+    var ed = ev.target.closest ? ev.target.closest('[data-d="editfull"],[data-d="delfull"]') : null;
+    if (ed) {
+      ev.stopPropagation(); var e0 = E(), id0 = e0.ui().open, edit = ed.getAttribute('data-d') === 'editfull'; if (!id0) return;
+      withRow(id0, function(){ var rb = e0.classicRow(id0, edit ? /✏/ : /🗑/); if (!rb) { toast('Not available for this lead.'); return; } e0.closeDrawer(); rb.click(); if (edit) later(function(){ e0.focusForm(); }, 250); });
+      return;
+    }
+  }, true);
   d.addEventListener('click', function(ev){
     var e = E(), t = ev.target.closest ? ev.target.closest('[data-lux-stage],[data-lux-p]') : null; if (!t) return;
     var id = e.ui().open; if (!id) return;
@@ -444,7 +478,7 @@ function afterOpen(l){
   Array.prototype.forEach.call(LUX.root.querySelectorAll('.lux-card.sel'), function(c){ c.classList.remove('sel'); });
   var c = LUX.root.querySelector('.lux-card[data-gcl-id="' + String(l.id).replace(/["\\]/g, '') + '"]'); if (c) c.classList.add('sel');
 }
-function afterClose(){ padPanel(); if (LUX.root) Array.prototype.forEach.call(LUX.root.querySelectorAll('.lux-card.sel'), function(c){ c.classList.remove('sel'); }); }
+function afterClose(){ ALLOW = {}; padPanel(); if (LUX.root) Array.prototype.forEach.call(LUX.root.querySelectorAll('.lux-card.sel'), function(c){ c.classList.remove('sel'); }); }
 function padPanel(){ var has = !!D.getElementById('gcl-drawer'); [LUX.root, LUX.bids].forEach(function(r){ if (r) r.classList.toggle('lux-pad', has); }); }
 
 /* ── Bids ── */
@@ -538,7 +572,7 @@ function showInbox(){
 }
 
 /* ── mounting: only the screen of the tab that is open; nothing is watched ── */
-var BEAT = 0, TRIES = 0;
+var BEAT = 0, TRIES = 0, BEATS = 0, LAST_CRM = null;
 function tabBar(){ return D.getElementById('gc-leads-tabs'); }
 function unmount(){
   if (LUX.root) { LUX.root.remove(); LUX.root = null; } if (LUX.bids) { LUX.bids.remove(); LUX.bids = null; }
@@ -563,18 +597,20 @@ function ensure(){
     var tab = bar.getAttribute('data-tab') || 'leads';
     if (!LUX.active) { uxLoad(); e.css(); roleDefaults(e, bar); }
     if (tab !== 'bidboard' && LUX.bClassic) { LUX.bClassic = false; H.classList.remove('lux-classic'); }
-    if (tab !== 'leads' && tab !== 'bidboard') { if (LUX.root) { LUX.root.remove(); LUX.root = null; } if (LUX.bids) { LUX.bids.remove(); LUX.bids = null; } LUX.active = false; LUX.tab = ''; H.classList.remove('lux-on'); closeModal(); return; }
+    if (tab !== 'leads' && tab !== 'bidboard') { if (LUX.root) { LUX.root.remove(); LUX.root = null; } if (LUX.bids) { LUX.bids.remove(); LUX.bids = null; } LUX.active = false; LUX.tab = ''; H.classList.remove('lux-on'); closeModal();
+      if (tab === 'website') { try { if (W._gcLeadInbox && W._gcLeadInbox.mountNow) W._gcLeadInbox.mountNow(); } catch (y) {} }   /* the website strip hangs off the inbox container */
+      return; }
     if (tab === 'bidboard' && LUX.root) { LUX.root.remove(); LUX.root = null; }
     if (tab === 'leads' && LUX.bids) { LUX.bids.remove(); LUX.bids = null; }
     LUX.active = true; LUX.tab = tab; H.classList.add('lux-on');
     if (tab === 'leads') {
-      if (!LUX.root || !LUX.root.isConnected || LUX.root.previousElementSibling !== bar) {
+      if (!LUX.root || !LUX.root.isConnected || LUX.root.parentElement !== bar.parentElement || !(bar.compareDocumentPosition(LUX.root) & 4)) {
         if (LUX.root) LUX.root.remove();
         var r = D.createElement('div'); r.id = 'gc-lux'; r.className = 'lux-keep'; r.setAttribute('data-gc-keep', '1'); r.innerHTML = skeleton();
         bar.parentElement.insertBefore(r, bar.nextSibling); LUX.root = r; bindLeads(r); LAST_KEY = '';
       }
     } else {
-      if (!LUX.bids || !LUX.bids.isConnected || LUX.bids.previousElementSibling !== bar) {
+      if (!LUX.bids || !LUX.bids.isConnected || LUX.bids.parentElement !== bar.parentElement || !(bar.compareDocumentPosition(LUX.bids) & 4)) {
         if (LUX.bids) LUX.bids.remove();
         var b = D.createElement('div'); b.id = 'gc-lux-bids'; b.className = 'lux-keep'; b.setAttribute('data-gc-keep', '1'); b.innerHTML = bidsSkeleton();
         bar.parentElement.insertBefore(b, bar.nextSibling); LUX.bids = b; bindBids(b); LAST_KEY = '';
@@ -593,7 +629,11 @@ function beat(){
   if (!LUX.active || view() !== 'leads') return;
   BEAT = 1; later(beat, 6000);
   if (D.hidden) return;
-  try { var e = E(); if (e) e.pull(); ensure(); if (LUX.active) dirty('beat'); } catch (x) { warn(x); }
+  try {
+    var e = E(), cl = W._crm && W._crm.leads; BEATS++;
+    if (e && (cl !== LAST_CRM || BEATS % 10 === 0)) { LAST_CRM = cl; e.pull(); }   /* the saved copy is read when the page's list changed (a sync arrived), else once a minute - never every beat */
+    ensure(); if (LUX.active) dirty('beat');
+  } catch (x) { warn(x); }
 }
 
 /* what wakes it up: a view change, a click on the tab bar, the tab becoming visible (no observers) */
