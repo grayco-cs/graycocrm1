@@ -1134,7 +1134,9 @@ const DEFAULT_SETTINGS = {
   /* LA / EST4: "Senior Estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
   estimator: { name: '', email: '' },
   /* patch CLAIMLEAD: Leads ⚙ "Insurance claims go to:" — empty: the Senior Insurance PM of the lead roles (_lib/claim-lead.js) */
-  claimsTo: { name: '', email: '' }
+  claimsTo: { name: '', email: '' },
+  /* patch ALERTTO: Leads ⚙ "Lead & bid alert e-mails go to:" — new-lead / bid-due / assign-reminder e-mails (_lib/bid-alerts.js) */
+  alertTo: ['office@grayco-cs.com']
 };
 function cleanSettings(b, cur){
   const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 500);   /* patch BIDFILTER: room for the built-in lists */
@@ -1151,6 +1153,13 @@ function cleanSettings(b, cur){
     const em = low(b.claimsTo.email);
     if (em && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(em)) throw new Error('The claims assignee e-mail does not look right.');
     out.claimsTo = { name: s(b.claimsTo.name).slice(0, 80), email: em };
+  }
+  if (b.alertTo != null) {   /* patch ALERTTO */
+    const l = (Array.isArray(b.alertTo) ? b.alertTo : s(b.alertTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
+    if (bad.length) throw new Error('The alert e-mail "' + bad[0] + '" does not look right.');
+    out.alertTo = Array.from(new Set(l)).slice(0, 12);
+    if (!out.alertTo.length) out.alertTo = ['office@grayco-cs.com'];
   }
   if (b.sam && typeof b.sam === 'object') out.sam = { on: b.sam.on !== false, states: arr(b.sam.states).map(x => s(x).toUpperCase()).filter(x => /^[A-Z]{2}$/.test(x)).slice(0, 6), naics: arr(b.sam.naics).map(x => s(x).replace(/\D/g, '')).filter(x => /^\d{2,6}$/.test(x)).slice(0, 20) };   /* patch BW */
   if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 150).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }

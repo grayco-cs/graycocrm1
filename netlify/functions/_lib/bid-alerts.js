@@ -41,7 +41,11 @@
         contactedAt), or a call / follow-up / comment logged on it. Each reminder once per lead (and per PM). Quiet
         hours: nothing between 9 PM and 7 AM Central — what came due overnight goes at 7 AM. Leads more than 7 days
         old, and those already waiting when this started, are left alone.
-   Nothing here ever writes to a customer or a sub. It sends only to GrayCo admins.
+   Nothing here ever writes to a customer or a sub. It sends only to GrayCo staff.
+   patch ALERTTO (owner 10/26: "I only want notifications and bids going to leads and then office"): the new-lead / new-bid,
+   bid-due and 4 h / 24 h assign messages go to Leads ⚙ "Lead & bid alert e-mails go to:" (default office@grayco-cs.com), plus
+   the assigned estimator / PM. They no longer go to every admin / OWNER_EMAILS / BID_ALERT_TO. The 🚨 emergency alert is
+   unchanged (on-call PM + admins + office).
    ========================================================================== */
 'use strict';
 
@@ -98,7 +102,19 @@ function make(d){
     return st;
   }
 
+  /* patch ALERTTO: Leads ⚙ "Lead & bid alert e-mails go to:" (gc_lead_inbox_settings.alertTo) — default office@ only */
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/;
+  async function alertList(){
+    let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.alertTo) v = v.v;
+    const l = v && Array.isArray(v.alertTo) ? v.alertTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
+    return Array.from(new Set(l.length ? l : ['office@grayco-cs.com']));
+  }
+  /* new-lead / bid-due / assign-reminder messages: the setting (+ the assigned people in `extra`) */
   async function recipients(extra){
+    return Array.from(new Set((await alertList()).concat(arr(extra).map(low).filter(x => EMAIL_RE.test(x)))));
+  }
+  /* the OLD list (every active admin + OWNER_EMAILS + BID_ALERT_TO): kept ONLY for the 🚨 emergency alert */
+  async function adminRecipients(extra){
     const out = [];
     try {
       const r = await sb('gc_staff?select=email,name,role,active&role=eq.admin');
@@ -147,7 +163,7 @@ function make(d){
       + '<p style="margin-top:18px"><a href="' + esc(site()) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Leads in the CRM</a></p>'
       + '<p style="color:#777;font-size:12px">' + foot + '</p></div></div>';
   }
-  const FOOT = 'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
+  const FOOT = 'Sent to the lead-alert address list (Leads ⚙ settings): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
   function soonest(list){ return list.filter(x => x.bidDue).sort((a, b) => BD.wallToEpoch(a.bidDue) - BD.wallToEpoch(b.bidDue))[0]; }
   function mailNew(list){
     if (list.length && list.every(x => x.website)) return mailWeb(list);   /* patch WEB */
@@ -173,7 +189,7 @@ function make(d){
 
   async function sendMail(to, m){
     const key = env('RESEND_API_KEY'); if (!key) return { ok: false, why: 'RESEND_API_KEY is not set' };
-    if (!to.length) return { ok: false, why: 'no admin e-mail addresses' };
+    if (!to.length) return { ok: false, why: 'no alert e-mail addresses' };
     try {
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./mailtag.js').tag(m.subject, to, m.area || 'bid lead'), html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }, /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(m.replyTo)) ? { reply_to: s(m.replyTo) } : {})) });
@@ -202,7 +218,7 @@ function make(d){
     if (list.every(x => x.form === 'Missed call')) {   /* patch AUTO6: the missed-call text-back */
       const subj = (n === 1 ? '📞 Missed call — auto-text sent: ' + list[0].title : '📞 ' + n + ' missed calls — auto-texts sent').slice(0, 250);
       const h = frame('GrayCo — missed call', (n === 1 ? 'Someone called GrayCo and nobody answered' : n + ' calls were not answered') + '. They got the automatic text ("Sorry we missed your call…"). It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM and call them back.', list.map(rowHtml).join(''),
-        'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every missed call that is not an existing customer.');
+        'Sent to the lead-alert address list (Leads ⚙ settings) for every missed call that is not an existing customer.');
       const t = subj + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
       return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
     }
@@ -210,7 +226,7 @@ function make(d){
     const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
       : (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · '))).slice(0, 250);
     const html = frame('GrayCo — new ' + (api ? 'lead' : 'website lead') + (n === 1 ? '' : 's'), (api ? esc(from) + ' sent ' + (n === 1 ? 'a lead' : n + ' leads') + ' through the GrayCo partner API' : n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
-      'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
+      'Sent to the lead-alert address list (Leads ⚙ settings) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
     const text = subject + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
     return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
@@ -239,7 +255,7 @@ function make(d){
     let users = await gcKvVal('users'); if (users && !Array.isArray(users) && Array.isArray(users.v)) users = users.v; users = arr(users);
     const team = await gcKvVal('gc_team_settings');
     let ins = null; try { const h = require('./lead-roles.js').holder('insurance', team, users); if (h && (h.email || h.name)) ins = { name: s(h.name), email: low(h.email) || emailOf(h.name) }; } catch (e) {}
-    const plan = E.people({ oncall, insurance: ins, admins: await recipients([]), office: E.officeOf(users) });
+    const plan = E.people({ oncall, insurance: ins, admins: await adminRecipients([]), office: E.officeOf(users) });
     const out = { n: 0, to: plan.to, lead: plan.lead };
     for (const x of em) {
       let claim = false;
@@ -734,7 +750,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { _emergency: emergency, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }
