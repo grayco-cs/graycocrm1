@@ -5532,7 +5532,7 @@ body{background:#ffffff !important;color:#000000 !important;}
         
         <div style="font-size:32px;font-weight:800;letter-spacing:0.12em;margin-bottom:2px;">GRAYCO</div>
         <div style="font-size:13px;font-weight:700;color:#c4a469;letter-spacing:0.28em;margin-bottom:6px;">CONSTRUCTION SERVICES LLC</div>
-        <div style="font-size:9px;color:#8fa8c4;letter-spacing:0.08em;margin-bottom:6px;">GrayCo Construction Services LLC</div>
+        <div style="font-size:9px;color:#8fa8c4;letter-spacing:0.08em;margin-bottom:6px;">GrayCo Construction Services, LLC</div>
         <div style="font-size:10px;color:#6b8ab5;font-style:italic;margin-bottom:30px;">Building Excellence. Delivering Trust.</div>
         
         <div class="gcanim gcd1" style="width:70px;height:3px;background:linear-gradient(90deg,#3b82f6,#22d3ee,#8b5cf6);margin:0 auto 30px;border-radius:2px;transform-origin:center;animation:gcup .7s ease forwards,gcgrow .9s cubic-bezier(.2,.7,.2,1) forwards;"></div>
@@ -13192,7 +13192,7 @@ window._sendSubForm=function(_target){
   loadJsPDF().then(function(jsPDF){
     var doc=new jsPDF({unit:'pt',format:'letter'});
     var W=doc.internal.pageSize.getWidth(), m=48, y=46;
-    try{ if(window.GC_pdfHeader) y=window.GC_pdfHeader(doc,{m:m,y:y}); else { doc.setFontSize(18); doc.text('GrayCo Construction Services LLC', m, y); y+=24; } }catch(e){ y=100; }
+    try{ if(window.GC_pdfHeader) y=window.GC_pdfHeader(doc,{m:m,y:y}); else { doc.setFontSize(18); doc.text('GrayCo Construction Services, LLC', m, y); y+=24; } }catch(e){ y=100; }
     y+=14;
     doc.setFontSize(15); doc.setFont(undefined,'bold');
     doc.text('Subcontractor Onboarding & Compliance Form', m, y); y+=22;
@@ -13228,8 +13228,7 @@ window._sendSubForm=function(_target){
     field('Date:');
 
     doc.setFontSize(8); doc.setTextColor(120);
-    doc.text('GrayCo Construction Services LLC  |  office@grayco-cs.com', m, doc.internal.pageSize.getHeight()-40);
-    doc.text('TN License #85034 BCB · AR License #0486990627 · MS License #27769', m, doc.internal.pageSize.getHeight()-30);
+    doc.text('GrayCo Construction Services, LLC  |  office@grayco-cs.com', m, doc.internal.pageSize.getHeight()-40);
 
     doc.save('GrayCo_Subcontractor_Onboarding_Form.pdf');
 
@@ -32981,7 +32980,7 @@ function renderTax(){
     '</div>',
 
     '<div class="gc-da-card" style="border-left:3px solid #d4a017;">',
-      '<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;">🏛 GrayCo Construction Services LLC — '+year+' Partnership Summary</div>',
+      '<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;">🏛 GrayCo Construction Services, LLC — '+year+' Partnership Summary</div>',
       '<div style="font-size:11px;color:#888;margin-bottom:14px;">Per operating agreement: 50/50 ownership (Wesley Johnson / Nick Thomas). Net profit flows through to each partner\'s K-1, not taxed at the company level.</div>',
       '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;">',
         '<div class="gc-da-stat"><div class="gc-da-statl">Gross Revenue (Billed)</div><div class="gc-da-statv" style="color:#3498db;">'+_gcDAFmt$(grossRevenue)+'</div></div>',
@@ -39498,8 +39497,6 @@ window._gcViewInvoicePDF = function(invId, pid){
         '<div class="head">',
           '<div class="anim d1" style="align-self:stretch">'+(window._gcDocHeader?window._gcDocHeader({dual:true,email:'billing@grayco-cs.com'}):'')+'</div>',
           '<div class="right anim d1"><div class="word">INVOICE</div><div class="num">'+invNum+'</div>',
-            '<div class="fromblock"><div class="flabel">From</div><div class="fname">GrayCo Construction Services LLC</div>',
-            '<div class="fline">' + window._gcCompanyAddress() + '<br>(901) 585-0944 &middot; office@grayco-cs.com<br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769</div></div>',
           '</div>',
         '</div>',
         '<div class="summary">',
@@ -39522,8 +39519,8 @@ window._gcViewInvoicePDF = function(invId, pid){
         '</div>',
         (_achShow?('<div style="margin:0 40px 8px;padding:18px 20px;background:#0b1f42;border:1px solid #1e3a5f;border-radius:14px;"><div style="color:#22d3ee;font-weight:800;font-size:14px;margin-bottom:8px;">\uD83C\uDFE6 Pay by Bank Transfer (ACH) \u2014 no fees</div><table style="width:100%;font-size:13px;color:#cfe0ff;border-collapse:collapse;">'+(_ach.bankName?('<tr><td style="padding:3px 0;color:#8fa8c4;">Bank</td><td style="text-align:right;font-weight:700;">'+_ach.bankName+'</td></tr>'):'')+(_ach.accountName?('<tr><td style="padding:3px 0;color:#8fa8c4;">Account name</td><td style="text-align:right;font-weight:700;">'+_ach.accountName+'</td></tr>'):'')+(_ach.routing?('<tr><td style="padding:3px 0;color:#8fa8c4;">Routing #</td><td style="text-align:right;font-weight:700;">'+_ach.routing+'</td></tr>'):'')+(_ach.account?('<tr><td style="padding:3px 0;color:#8fa8c4;">Account #</td><td style="text-align:right;font-weight:700;">'+_ach.account+'</td></tr>'):'')+'</table>'+(_ach.instructions?('<div style="margin-top:8px;color:#8fa8c4;font-size:12px;">'+_ach.instructions+'</div>'):'')+'<div style="margin-top:8px;color:#94a3b8;font-size:11.5px;">Please include invoice '+invNum+' in the memo.</div></div>'):''),
         (_gcReviewUrl?('<div class="review anim d5"><h3>Happy with our work?</h3><div class="stars"><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span><span>&#9733;</span></div><p>A quick Google review means the world to a local business like ours.</p><a href="'+_gcReviewUrl+'" target="_blank">Leave us a Google Review &rarr;</a></div>'):''),
-        '<div class="pay anim d6"><b>Payment:</b> Make checks payable to GrayCo Construction Services LLC, mailed to the address above.<br><b>Bank transfer (ACH):</b> Available on request &mdash; contact us for routing details.<br><b>Terms:</b> '+(_acct.terms||'Net 30')+' &mdash; please remit by the due date. Questions? Reply to this email or call (901) 585-0944.</div>',
-        '<div class="foot anim d6">GrayCo Construction Services LLC &middot; grayco-cs.com<br>Thank you for your business.</div>',
+        '<div class="pay anim d6"><b>Payment:</b> Make checks payable to GrayCo Construction Services, LLC, mailed to the address above.<br><b>Bank transfer (ACH):</b> Available on request &mdash; contact us for routing details.<br><b>Terms:</b> '+(_acct.terms||'Net 30')+' &mdash; please remit by the due date. Questions? Reply to this email or call (901) 585-0944.</div>',
+        '<div class="foot anim d6">Thank you for your business.</div>',   /* patch LOGO2: the company line is in the header */
         (proj.ccamUrl?('<div style="text-align:center;margin-top:4px;"></div>'):'')+'<div class="actions">'+(_ccUrl?('<a class="act-btn act-cc" href="'+_ccUrl+'" target="_blank">\uD83D\uDCF7 View Job Photos</a>'):'')+'<button class="act-btn act-pdf" onclick="window.print()">\u2B07\uFE0F Download PDF</button>'+'</div>',
         '</div>',
         '<script>function countUp(el,t){var s=null,d=1100;function step(ts){if(!s)s=ts;var p=Math.min((ts-s)/d,1);var e=1-Math.pow(1-p,3);el.textContent="$"+(t*e).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});if(p<1)requestAnimationFrame(step);}requestAnimationFrame(step);}window.addEventListener("load",function(){try{fetch("https://graycocrm1.netlify.app/.netlify/functions/invoice-track?hit='+encodeURIComponent(invId)+'",{mode:"no-cors"});}catch(e){}setTimeout(function(){var g=document.getElementById("grandTotal");if(g)countUp(g,'+ _grandAmt +');},700);setTimeout(function(){var t=document.getElementById("topTotal");if(t)countUp(t,'+ _topAmt +');},500);});<\/script>',
@@ -39620,7 +39617,7 @@ window.gcProjInvoices = {
       var _a = window._gcAccountFor ? window._gcAccountFor(proj) : {};
       var email = _a.apEmail || proj.clientEmail || (/@/.test(proj.client||'') ? proj.client : '') || '';
       var subject = encodeURIComponent('Invoice — '+(proj.name||'GrayCo'));
-      var body = encodeURIComponent('Hi '+(proj.client||'')+',\\n\\nPlease find your invoice attached for '+(proj.name||'your project')+'.\\n\\nThank you,\\nGrayCo Construction Services LLC\\n(901) 585-0944 · '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com'));   /* patch BILL */
+      var body = encodeURIComponent('Hi '+(proj.client||'')+',\\n\\nPlease find your invoice attached for '+(proj.name||'your project')+'.\\n\\nThank you,\\nGrayCo Construction Services, LLC\\n(901) 585-0944 · '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com'));   /* patch BILL */
       if(email){ window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&cc='+encodeURIComponent((window.GC_BILLING_EMAIL||'billing@grayco-cs.com'))+'&su='+subject+'&body='+body,'_blank'); }
       else { alert('No customer email on file for this job — add one in the project to email invoices.'); }
     }catch(e){}
@@ -39996,7 +39993,7 @@ function header(title, subtitle){
 }
 
 function gcContact(){
-  return GC.email+' &nbsp;│&nbsp; '+GC.phone+' &nbsp;│&nbsp; '+GC.addr;
+  return GC.email+' &nbsp;│&nbsp; '+GC.phone;   /* patch LOGO2: the address and the licenses are in the one header */
 }
 
 function row2(l1,v1,l2,v2){
@@ -40242,7 +40239,7 @@ function generateHTML(docId, filled){
       (window.GCLegal&&window.GCLegal.groupOf(j)!=='commercial'?'<div class="hdr">19 — NOTICE OF RIGHT TO CANCEL</div><p style="font-size:11px;">'+window.GCLegal.clause(window.GCLegal.stateOf(j),window.GCLegal.groupOf(j))+'</p><p style="font-size:11px;font-weight:700;border:1.5px solid #000;padding:6px">'+window.GCLegal.data.accept+'</p>':''),
       '<div style="margin-top:20px;">'+sig2('CLIENT / OWNER — Signature, Printed Name, Date','GRAYCO CONSTRUCTION SERVICES — Authorized Representative, Printed Name, Date')+'</div>',
       (window.gcPortalBox?window.gcPortalBox({info:true,size:'10px',css:'margin-top:14px'}):''),
-      '<p style="font-size:9px;text-align:center;margin-top:8px;">'+gcContact()+' &nbsp;|&nbsp; '+GC.lic+'</p>',
+      '<p style="font-size:9px;text-align:center;margin-top:8px;">'+gcContact()+'</p>',
       (window.GCLegal&&window.GCLegal.groupOf(j)!=='commercial'?'<div style="page-break-before:always">'+window.GCLegal.noticeHtml(window.GCLegal.stateOf(j),{po:jPO,address:jAddr,customer:jClient})+'<p style="font:8pt Arial;color:#777;text-align:right">'+window.GCLegal.REV+'</p></div>':'<p style="font:8pt Arial;color:#777;text-align:right">'+(window.GCLegal?window.GCLegal.REV:'')+'</p>'),
     ].join(''), 'Client Contract');
 
@@ -40330,7 +40327,7 @@ function generateHTML(docId, filled){
         '<tr><td><b>How do I file a warranty claim?</b></td><td>Email '+GC.email+' or call '+GC.phone+'. We respond within 24 hours.</td></tr>'+
       '</table>',
       (window.gcPortalBox?window.gcPortalBox({size:'10.5px',css:'margin-top:12px'}):''),
-      '<p style="background:#f0f4f8;padding:10px;font-size:10px;margin-top:12px;"><b>Questions?</b> Call or text us anytime: '+GC.phone+' &nbsp;|&nbsp; '+GC.email+' &nbsp;|&nbsp; '+GC.addr+'</p>',
+      '<p style="background:#f0f4f8;padding:10px;font-size:10px;margin-top:12px;"><b>Questions?</b> Call or text us anytime: '+GC.phone+' &nbsp;|&nbsp; '+GC.email+'</p>',
     ].join(''), 'Welcome & FAQ Packet');
 
   case 'change_order':
@@ -40364,7 +40361,7 @@ function generateHTML(docId, filled){
       '<p style="font-size:10px;background:#fff3cd;padding:8px;border:1px solid #ffc107"><b>This Change Order, once signed by both parties, is a legally binding amendment to the original contract. Work described above shall NOT commence until this form is fully executed.</b></p>',
       sig2('CLIENT / OWNER','GRAYCO CONSTRUCTION SERVICES'),
       (window.gcPortalBox?window.gcPortalBox({kind:'short',info:true,size:'9.5px'}):''),
-      '<p style="font-size:9px;text-align:center;margin-top:8px;">'+gcContact()+' &nbsp;│&nbsp; '+GC.lic+'</p>',
+      '<p style="font-size:9px;text-align:center;margin-top:8px;">'+gcContact()+'</p>',
     ].join(''), 'Change Order');
 
   case 'warranty_res':
@@ -40495,7 +40492,7 @@ function generateHTML(docId, filled){
         '<p>Please provide your best pricing by <b>[DEADLINE DATE]</b>. Send your bid to '+GC.email+' or reply directly to this email.</p>'+
         '<p>If you have any questions or need to visit the site before pricing, contact me directly:</p>'+
         '<p>'+jPM+'<br>GrayCo Construction Services<br>'+GC.phone+'<br>'+GC.email+'</p>'+
-        '<p>Thank you,<br>'+jPM+'<br>GrayCo Construction Services<br>'+GC.lic+'</p>'+
+        '<p>Thank you,<br>'+jPM+'<br>GrayCo Construction Services</p>'+
       '</td></tr></table>',
     ].join(''), 'Sub Scope Email Template');
 
@@ -43152,8 +43149,8 @@ function hookDocLib(){
             '<div style="font-weight:700;color:#0c1e2b;font-size:11pt;margin-bottom:6px">💳 Check</div>',
             '<div style="font-size:10pt;line-height:1.8;color:#333">',
               'Payable to:<br>',
-              '<b>GrayCo Construction Services LLC</b><br>',
-              '' + window._gcCompanyStreet() + '<br>Bartlett, TN 38135<br>',
+              '<b>GrayCo Construction Services, LLC</b><br>',
+              'Mail to the address at the top of this invoice<br>',   /* patch LOGO2: the address is in the header */
               '<span style="font-size:9pt;color:#888">Include invoice # '+invNum+' on memo</span>',
             '</div>',
           '</div>',
@@ -43180,8 +43177,7 @@ function hookDocLib(){
         // ── FOOTER ────────────────────────────────────────────────────────
         '<div class="gold-bar"></div>',
         '<div class="inv-footer">',
-          '<div style="font-size:10pt;font-weight:700;color:#d4a017;letter-spacing:1px;margin-bottom:4px">GrayCo Construction Services LLC</div>',
-          '<div>(901) 585-0944 &nbsp;|&nbsp; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a> &nbsp;|&nbsp; <a href="https://grayco-cs.com">grayco-cs.com</a> &nbsp;|&nbsp; TN License #85034 BCB · AR License #0486990627 · MS License #27769</div>',
+          '<div style="font-size:10pt;font-weight:700;color:#d4a017;letter-spacing:1px">Thank you for your business</div>',   /* patch LOGO2: the company block is in the header */
           '<div class="watermark" style="margin-top:6px">',
             '<a href="https://g.page/r/GrayCoConstructionServices/review" style="color:#d4a017">⭐ Leave us a Google Review — it means everything to us</a>',
           '</div>',
@@ -43207,7 +43203,7 @@ function hookDocLib(){
           '}',
           'function gcInvEmail(){',
             'var subj=encodeURIComponent("Invoice #'+invNum+' — GrayCo Construction Services — '+esc(j.name)+'");',
-            'var body=encodeURIComponent("Hi '+esc(j.client||'[Client]')+'\\n\\nPlease find attached Invoice #'+invNum+' for '+esc(j.name)+' in the amount of '+invAmt+'.\\n\\nPayment is due by '+dueDate+'. Pay by check (GrayCo Construction Services LLC) or call (901) 585-0944 for ACH details.\\n\\nThank you,\\nGrayCo Construction Services\\n(901) 585-0944 | billing@grayco-cs.com");',   /* patch BILL */
+            'var body=encodeURIComponent("Hi '+esc(j.client||'[Client]')+'\\n\\nPlease find attached Invoice #'+invNum+' for '+esc(j.name)+' in the amount of '+invAmt+'.\\n\\nPayment is due by '+dueDate+'. Pay by check (GrayCo Construction Services, LLC) or call (901) 585-0944 for ACH details.\\n\\nThank you,\\nGrayCo Construction Services\\n(901) 585-0944 | billing@grayco-cs.com");',   /* patch BILL */
             'window.open("mailto:'+esc(j.email||'')+'?cc=billing@grayco-cs.com&subject="+subj+"&body="+body,"_blank");',
           '}',
           'function gcInvText(){',
@@ -43216,7 +43212,7 @@ function hookDocLib(){
           '}',
           'function gcInvGmail(){',
             'if(window.opener&&window.opener.gcEmailQueue){',
-              'window.opener.gcEmailQueue.queue({to:"'+esc(j.email||'')+'",subject:"Invoice #'+invNum+' — GrayCo — '+esc(j.name)+'",body:"Hi '+esc(j.client||'[Client]')+'\\n\\nInvoice #'+invNum+' for '+esc(j.name)+' — Amount: '+invAmt+' — Due: '+dueDate+'\\n\\nPay by check to GrayCo Construction Services LLC or call (901) 585-0944 for ACH.\\n\\nGrayCo Construction Services\\n(901) 585-0944 | grayco-cs.com",type:"Invoice",project:"'+esc(j.name)+'"});',
+              'window.opener.gcEmailQueue.queue({to:"'+esc(j.email||'')+'",subject:"Invoice #'+invNum+' — GrayCo — '+esc(j.name)+'",body:"Hi '+esc(j.client||'[Client]')+'\\n\\nInvoice #'+invNum+' for '+esc(j.name)+' — Amount: '+invAmt+' — Due: '+dueDate+'\\n\\nPay by check to GrayCo Construction Services, LLC or call (901) 585-0944 for ACH.\\n\\nGrayCo Construction Services\\n(901) 585-0944 | grayco-cs.com",type:"Invoice",project:"'+esc(j.name)+'"});',
               'alert("Email queued for admin approval in the CRM Email Queue.");',
             '}else{',
               'alert("Open this invoice from the CRM to use Gmail queue. Use Email button instead.");',
@@ -43248,12 +43244,12 @@ function hookDocLib(){
         '<p style="background:#fef2f2;border:1px solid #dc2626;padding:8px;font-size:10px"><b>IMPORTANT:</b> On Arkansas residential projects (1–4 units), this notice must be delivered to the property owner <b>before construction begins</b>. Deliver it in person and have the owner sign, or send by certified mail with return receipt. Keep the signed copy or the return receipt.</p>',
         '<table>'+row2('Property Owner',filled?j.client:'','Date',filled?fmtDate(today()):'')+'</table>',
         '<table>'+row1('Project Address',filled?j.address:'')+'</table>',
-        '<table>'+row2('Contractor','GrayCo Construction Services LLC','AR License #','0486990627')+'</table>',
+        '<table>'+row2('Contractor','GrayCo Construction Services, LLC','AR License #','0486990627')+'</table>',
         '<div class="hdr">IMPORTANT NOTICE TO OWNER</div>',
         '<table><tr><td style="font-size:10pt;line-height:1.7">',
           '<b>This notice is provided to you under Arkansas Code § 18-44-115.</b><br><br>',
           'YOU MAY BE SUBJECT TO LOSS OF YOUR PROPERTY OR OTHER FINANCIAL LOSS IF YOU FAIL TO PAY, OR IF A CONTRACTOR OR SUPPLIER WHO FURNISHES LABOR OR MATERIALS FOR THE IMPROVEMENT OF YOUR PROPERTY IS NOT PAID.<br><br>',
-          'Under Arkansas law, GrayCo Construction Services LLC and any subcontractors or material suppliers who furnish labor or materials for the improvement of your property may have the right to file a lien against your property if they are not paid, even if you have paid your contractor in full. To protect yourself, you should:<br>',
+          'Under Arkansas law, GrayCo Construction Services, LLC and any subcontractors or material suppliers who furnish labor or materials for the improvement of your property may have the right to file a lien against your property if they are not paid, even if you have paid your contractor in full. To protect yourself, you should:<br>',
           '• Require GrayCo to furnish signed lien waivers or releases for each payment you make;<br>',
           '• Make payments in a manner that ensures those who performed work or supplied materials are paid; and<br>',
           '• Keep records of all payments and documents related to the project.<br><br>',
@@ -43262,14 +43258,14 @@ function hookDocLib(){
         '<div class="hdr">ACKNOWLEDGMENT OF RECEIPT</div>',
         '<p style="font-size:10pt">By signing below, the property owner acknowledges receiving this notice <b>before</b> the commencement of work.</p>',
         sigRow('Property Owner','GrayCo Construction Services — Representative'),
-        '<p style="font-size:10px;color:#666;margin-top:10px;">office@grayco-cs.com &nbsp;│&nbsp; (901) 585-0944 &nbsp;│&nbsp; ' + window._gcCompanyAddress() + '</p>',
+        '<p style="font-size:10px;color:#666;margin-top:10px;">office@grayco-cs.com &nbsp;│&nbsp; (901) 585-0944</p>',   /* patch LOGO2 */
       ].join(''), 'Arkansas Pre-Construction Notice');
 
     case 'work_auth': {
       printDoc([
         gcLogoBar('WORK AUTHORIZATION FORM'),
         '<div style="background:#e8f0fb;border:1px solid #1a3a5f;padding:10px;margin-bottom:10px;font-size:10pt">',
-          '<b>INSURANCE CLAIM AUTHORIZATION</b> — This form authorizes GrayCo Construction Services LLC to perform all work necessary to restore your property and to work directly with your insurance carrier on your behalf.',
+          '<b>INSURANCE CLAIM AUTHORIZATION</b> — This form authorizes GrayCo Construction Services, LLC to perform all work necessary to restore your property and to work directly with your insurance carrier on your behalf.',
         '</div>',
         '<div class="hdr">PROPERTY OWNER INFORMATION</div>',
         '<table>',
@@ -43288,7 +43284,7 @@ function hookDocLib(){
         '<table><tr><td style="min-height:80px">'+(filled&&j.scope?esc(j.scope):'<br>')+'</td></tr></table>',
         '<div class="hdr">AUTHORIZATION & AGREEMENT</div>',
         '<table><tr><td style="font-size:10pt;line-height:1.7">',
-          'By signing below, I/we authorize GrayCo Construction Services LLC ("GrayCo") to:<br>',
+          'By signing below, I/we authorize GrayCo Construction Services, LLC ("GrayCo") to:<br>',
           '1. Perform all labor and materials necessary to restore the damaged property described above.<br>',
           '2. Communicate directly with my/our insurance carrier and adjuster about the scope and price of GrayCo\'s work, and submit estimates, supplements and documents (GrayCo does not adjust, negotiate or settle my/our claim and is not a public adjuster).<br>',
           '3. Receive insurance payments for GrayCo\'s covered work, made payable to me/us and GrayCo together under my/our Direction to Pay (not an assignment of benefits; an optional Assignment of Benefits form is available).<br>',
@@ -43308,7 +43304,7 @@ function hookDocLib(){
         sigRow('Property Owner / Authorized Signer','GrayCo Construction Services — Representative'),
         (window.gcPortalBox?window.gcPortalBox({info:true,size:'9.5pt'}):''),
         '<table><tr><td style="background:#e8f8f0;font-size:9pt;text-align:center">',
-          'GrayCo Construction Services LLC &nbsp;|&nbsp; ' + window._gcCompanyAddress() + ' &nbsp;|&nbsp; (901) 585-0944 &nbsp;|&nbsp; office@grayco-cs.com &nbsp;|&nbsp; TN License #85034 BCB · AR License #0486990627 · MS License #27769 &nbsp;|&nbsp; IICRC WRT Certified',
+          'IICRC WRT Certified',   /* patch LOGO2: the company block is in the header */
         '</td></tr></table>',
       ].join(''), 'Work Authorization — '+j.name);
       return;
@@ -43329,7 +43325,7 @@ function hookDocLib(){
         '</table>',
         '<div class="hdr">NOTICE FROM</div>',
         '<table>',
-          row2('Company','GrayCo Construction Services LLC','Phone','(901) 585-0944'),
+          row2('Company','GrayCo Construction Services, LLC','Phone','(901) 585-0944'),
           row2('Address','' + window._gcCompanyAddress() + '','Email','office@grayco-cs.com'),
           row2('Licenses','TN #85034 BCB · AR #0486990627 · MS #27769','Role','General Contractor / Subcontractor'),
         '</table>',
@@ -43337,7 +43333,7 @@ function hookDocLib(){
         '<table><tr><td style="font-size:10pt;line-height:1.8">',
           'Under the laws of the State of Tennessee, those who provide labor, services, or materials for the improvement of real property and are not paid have a right to enforce a lien against the improved property. ',
           'This right to a lien may extend to subcontractors and material suppliers even if you have paid your general contractor in full.<br>',
-          '<b>GrayCo Construction Services LLC hereby provides notice that it intends to furnish labor, materials, and/or services</b> for the improvement of the above-described property. ',
+          '<b>GrayCo Construction Services, LLC hereby provides notice that it intends to furnish labor, materials, and/or services</b> for the improvement of the above-described property. ',
           'This notice is provided as required by Tennessee law and does not imply that any dispute exists or that payment has been withheld.<br>',
           'To protect your property from potential lien claims:<br>',
           '• Require your contractor to provide lien waivers from all subs and suppliers upon each payment<br>',
@@ -43349,7 +43345,7 @@ function hookDocLib(){
           '<b>Type of work:</b> '+(j.type||'Construction / Renovation')+'<br>',
           '<b>Anticipated start:</b> '+(j.start?fmtDate(j.start):'To be determined'),
         '</td></tr></table>',
-        sigRow('GrayCo Construction Services LLC — Authorized Rep','Owner / Owner\'s Representative Acknowledgment'),
+        sigRow('GrayCo Construction Services, LLC — Authorized Rep','Owner / Owner\'s Representative Acknowledgment'),
       ].join(''), 'Notice to Owner — '+j.name);
       return;
     }
@@ -43360,7 +43356,7 @@ function hookDocLib(){
         gcLogoBar('SUBCONTRACTOR AGREEMENT'),
         '<div class="hdr">PARTIES</div>',
         '<table>',
-          row2('General Contractor','GrayCo Construction Services LLC','Date',filled?fmtDate(today()):''),
+          row2('General Contractor','GrayCo Construction Services, LLC','Date',filled?fmtDate(today()):''),
           row2('GC Address','' + window._gcCompanyAddress() + '','GC Phone','(901) 585-0944'),
           row2('Subcontractor Company','','Sub Phone',''),
           row2('Sub Address','','Sub Email',''),
@@ -43385,7 +43381,7 @@ function hookDocLib(){
           '<b>7. W-9 / 1099:</b> Sub shall provide a completed IRS Form W-9 prior to first payment. GrayCo will issue Form 1099 as required by law.<br>',
           '<b>8. Attorney\'s Fees:</b> In any dispute arising from this agreement, the prevailing party shall recover all reasonable attorney\'s fees, costs, and expenses from the non-prevailing party.',
         '</td></tr></table>',
-        sigRow('Subcontractor — Signature, Printed Name, Date','GrayCo Construction Services LLC — Authorized Rep, Date'),
+        sigRow('Subcontractor — Signature, Printed Name, Date','GrayCo Construction Services, LLC — Authorized Rep, Date'),
       ].join(''), 'Sub Agreement — '+j.name);
       return;
     }
@@ -43413,7 +43409,7 @@ function hookDocLib(){
           '<td style="width:50%;padding:8px"><b>Action Taken:</b><br></td>',
         '</tr></table>',
         sigRow('PM / Field Supervisor — Signature, Date','Driver / Delivery Rep — Signature, Date (if applicable)'),
-        '<div class="watermark">File in project Docs tab under "Receipts" — GrayCo Construction Services LLC</div>',
+        '<div class="watermark">File in project Docs tab under "Receipts" — GrayCo Construction Services, LLC</div>',
       ].join(''), 'Material Receipt — '+j.name);
       return;
     }
@@ -43443,7 +43439,7 @@ function hookDocLib(){
         '<table><tr><td style="background:#fff3cd;font-size:10pt">',
           'Owner understands that final payment releases GrayCo from all claims related to the contracted scope of work. Warranty rights as specified in the GrayCo Warranty Certificate are unaffected by this sign-off.',
         '</td></tr></table>',
-        sigRow('Owner / Authorized Rep — Signature, Printed Name, Date','GrayCo Construction Services LLC — PM / Rep, Date'),
+        sigRow('Owner / Authorized Rep — Signature, Printed Name, Date','GrayCo Construction Services, LLC — PM / Rep, Date'),
         (window.gcPortalBox?window.gcPortalBox({kind:'after',size:'9.5pt'}):''),
       ].join(''), 'Final Inspection — '+j.name);
       return;
@@ -43476,9 +43472,9 @@ function hookDocLib(){
         '</table>',
         '<div class="hdr">OUTSTANDING PUNCH LIST ITEMS</div>',
         '<table><tr><td><br>(Attach punch list if applicable)<br></td></tr></table>',
-        sigRow('Owner / Authorized Rep — Signature, Printed Name, Date','GrayCo Construction Services LLC — Authorized Rep, Date'),
+        sigRow('Owner / Authorized Rep — Signature, Printed Name, Date','GrayCo Construction Services, LLC — Authorized Rep, Date'),
         (window.gcPortalBox?window.gcPortalBox({kind:'after',size:'9.5pt'}):''),
-        '<div class="watermark" style="text-align:center;margin-top:8px">GrayCo Construction Services LLC &nbsp;|&nbsp; TN License #85034 BCB · AR License #0486990627 · MS License #27769 &nbsp;|&nbsp; IICRC WRT Certified</div>',
+        '<div class="watermark" style="text-align:center;margin-top:8px">IICRC WRT Certified</div>',   /* patch LOGO2 */
       ].join(''), 'Certificate of Completion — '+j.name);
       return;
     }
@@ -43575,14 +43571,14 @@ function hookDocLib(){
         '<table>',
           row2('Date',filled?fmtDate(today()):'','To (Owner / GC)',''),
           row2('Project',j.name,'PO / Contract #',j.po),
-          row2('Project Address',j.address,'From','GrayCo Construction Services LLC'),
+          row2('Project Address',j.address,'From','GrayCo Construction Services, LLC'),
           row2('Original Contract',fmt$(j.contract),'Final Contract (w/ COs)',''),
           row2('Total Previously Invoiced','','Retainage Held',''),
           row2('Retainage %','','Retainage Amount Requested',''),
         '</table>',
         '<div class="hdr">BASIS FOR RELEASE</div>',
         '<table><tr><td style="font-size:10pt;line-height:1.8">',
-          'GrayCo Construction Services LLC hereby requests release of all retainage held under the above-referenced contract based on the following:<br>',
+          'GrayCo Construction Services, LLC hereby requests release of all retainage held under the above-referenced contract based on the following:<br>',
           '☐ &nbsp; Substantial Completion has been achieved as certified on: _______________<br>',
           '☐ &nbsp; Final inspection has been completed and accepted<br>',
           '☐ &nbsp; All punch list items have been resolved<br>',
@@ -43600,11 +43596,11 @@ function hookDocLib(){
         '</td></tr></table>',
         '<div class="hdr">PAYMENT INSTRUCTIONS</div>',
         '<table><tr><td style="font-size:10pt">',
-          'Pay by Check: Payable to <b>GrayCo Construction Services LLC</b> — ' + window._gcCompanyAddress() + '<br>',
+          'Pay by Check: Payable to <b>GrayCo Construction Services, LLC</b> — ' + window._gcCompanyAddress() + '<br>',
           'Pay by ACH: Contact (901) 585-0944 or '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' for routing information<br>Questions about this invoice? '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com')+' &middot; (901) 585-0944<br>',   /* patch BILL */
           '<b>Requested payment within 15 days per contract terms.</b>',
         '</td></tr></table>',
-        sigRow('GrayCo Construction Services LLC — Authorized Rep, Date','Owner / GC Approval — Signature, Printed Name, Date'),
+        sigRow('GrayCo Construction Services, LLC — Authorized Rep, Date','Owner / GC Approval — Signature, Printed Name, Date'),
       ].join(''), 'Retainage Release — '+j.name);
       return;
     }
@@ -43691,7 +43687,7 @@ function hookDocLib(){
         '<div class="hdr">VISITORS / INSPECTIONS</div>',
         '<table><tr><td><br></td></tr></table>',
         sigRow('PM / Superintendent — Signature, Date','Owner / GC Representative (if present) — Signature, Date'),
-        '<div class="watermark">File in project Docs tab under "Internal" — GrayCo Construction Services LLC</div>',
+        '<div class="watermark">File in project Docs tab under "Internal" — GrayCo Construction Services, LLC</div>',
       ].join(''), 'Daily Report — '+j.name+' — '+today());
       return;
     }
@@ -44175,7 +44171,7 @@ window.gcSubEmail = {
       'Office:         (901) 585-0944 | office@grayco-cs.com',
       '',
       'Thank you,',
-      'GrayCo Construction Services LLC',
+      'GrayCo Construction Services, LLC',
       '' + window._gcCompanyAddress() + '',
       'TN License #85034 BCB · AR License #0486990627 · MS License #27769',
     ].filter(function(l){ return l!==undefined; }).join('\n');
@@ -45283,7 +45279,7 @@ function buildEstPDFHTML(est, projName, projAddr){
     // Footer
     '<div class="gold-bar"></div>',
     '<div class="footer">',
-      'GrayCo Construction Services LLC | (901) 585-0944 | office@grayco-cs.com | <a href="https://grayco-cs.com">grayco-cs.com</a> | TN License #85034 BCB · AR License #0486990627 · MS License #27769<br>',
+      'Thank you for the opportunity to earn your business<br>',   /* patch LOGO2: the company block is in the header */
       '<a href="https://g.page/r/GrayCoConstructionServices/review">⭐ Leave us a Google Review</a>',
     '</div>',
 
@@ -46430,7 +46426,7 @@ window.gcOpenInvoicePDF = async function(invId){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0;border-top:1px solid #dde">',
       '<div style="padding:14px 20px;border-right:1px solid #dde">',
         '<div style="font-size:9pt;font-weight:700;color:#0c1e2b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">💵 Check</div>',
-        '<div style="font-size:10pt;line-height:1.8">Payable to:<br><b>GrayCo Construction Services LLC</b><br>' + window._gcCompanyAddress() + '</div>',
+        '<div style="font-size:10pt;line-height:1.8">Payable to:<br><b>GrayCo Construction Services, LLC</b><br>Mail to the address at the top of this invoice</div>',   /* patch LOGO2 */
       '</div>',
       '<div style="padding:14px 20px">',
         '<div style="font-size:9pt;font-weight:700;color:#0c1e2b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">🏦 ACH / Bank Transfer</div>',
@@ -46445,8 +46441,7 @@ window.gcOpenInvoicePDF = async function(invId){
     '</div>',
     '<div class="gold-bar"></div>',
     '<div class="footer">',
-      'GrayCo Construction Services LLC · (901) 585-0944 · office@grayco-cs.com · ',
-      '<a href="https://grayco-cs.com">grayco-cs.com</a> · TN License #85034 BCB · AR License #0486990627 · MS License #27769<br>',
+      'Thank you for your business<br>',   /* patch LOGO2: the company block is in the header */
       '<a href="https://g.page/r/GrayCoConstructionServices/review">⭐ Leave us a Google Review</a>',
     '</div>',
     '</body></html>'
@@ -46578,7 +46573,7 @@ window.gcCreateInvoice = async function(preselJobId){
     }
     if(doEmail){
       var subject=encodeURIComponent('Invoice — '+(p.name||'GrayCo')+' — Draw #'+draw);
-      var body=encodeURIComponent('Hi '+(p.client||'')+',\n\nPlease find attached invoice for Draw #'+draw+' in the amount of $'+amt.toLocaleString()+' for '+(p.name||'your project')+'.\n\nUse the Print / Save as PDF button on the invoice that just opened, then attach the saved PDF to this email before sending.\n\nThank you,\nGrayCo Construction Services LLC\n(901) 585-0944 · '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com'));   /* patch BILL */
+      var body=encodeURIComponent('Hi '+(p.client||'')+',\n\nPlease find attached invoice for Draw #'+draw+' in the amount of $'+amt.toLocaleString()+' for '+(p.name||'your project')+'.\n\nUse the Print / Save as PDF button on the invoice that just opened, then attach the saved PDF to this email before sending.\n\nThank you,\nGrayCo Construction Services, LLC\n(901) 585-0944 · '+(window.GC_BILLING_EMAIL||'billing@grayco-cs.com'));   /* patch BILL */
       if(email){
         window.open('https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&cc='+encodeURIComponent((window.GC_BILLING_EMAIL||'billing@grayco-cs.com'))+'&su='+subject+'&body='+body,'_blank');
       } else {
@@ -49898,10 +49893,6 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     '<div style="text-align:center;margin:0 0 20px;padding:16px;background:#faf6e9;border-radius:10px;">' +
       '<div style="font-size:14px;color:#33475b;margin-bottom:10px;">Loved working with us? A quick review means the world:</div>' +
       '<a href="'+REVIEW_URL+'" style="display:inline-block;background:#f0c451;color:#1e1b52;font-weight:700;font-size:15px;padding:11px 24px;border-radius:8px;text-decoration:none;">Leave us a Google review</a>' +
-    '</div>' +
-    '<div style="border-top:1px solid #e0e0e0;padding-top:14px;text-align:center;">' +
-      '<div style="font-size:13px;color:#1e1b52;font-weight:600;">GrayCo Construction Services LLC</div>' +
-      '<div style="font-size:12px;color:#8598a8;margin-top:3px;">(901) 585-0944 &middot; office@grayco-cs.com</div><div style="font-size:11px;color:#8598a8;margin-top:2px;">TN License #85034 BCB · AR License #0486990627 · MS License #27769</div>' +
     '</div>' +
   '</div>' +
 '</div>';
@@ -54354,7 +54345,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
     card.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:2px;">\uD83C\uDFE6 Bank / ACH details</div>'+
       '<div style="color:#8fa8c4;font-size:12px;margin-bottom:8px;">Shown on invoices so customers can pay by bank transfer (no processor fee).</div>'+
       row('Bank name','_achBank',d.bankName,'e.g. First Horizon')+
-      row('Account name','_achAcctName',d.accountName,'GrayCo Construction Services LLC')+
+      row('Account name','_achAcctName',d.accountName,'GrayCo Construction Services, LLC')+
       row('Routing number','_achRouting',d.routing,'9 digits')+
       row('Account number','_achAcct',d.account,'')+
       row('Extra instructions (optional)','_achNote',d.instructions,'e.g. Zelle to billing@grayco-cs.com')+
@@ -62418,7 +62409,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       return '<li style="margin:4px 0"><b>'+esc(l.label)+'</b>'+(l.total? (' - <b>$'+money(l.total)+'</b>') : '')+'</li>';
     }).join('');
 
-    var css = 'body{font-family:\"Times New Roman\",Georgia,serif;color:#111;font-size:12pt;line-height:1.5;margin:0;padding:40px 54px;max-width:8.5in}'
+    var css = 'body{font-family:\"Times New Roman\",Georgia,serif;color:#111;font-size:12pt;line-height:1.5;margin:0 auto;padding:40px 54px;max-width:8.5in}'
       +'.hdr{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin-bottom:8px}'
       +'.co{font-size:15pt;font-weight:700;text-align:center}'
       +'.coinfo{font-size:9pt;color:#444;text-align:center;line-height:1.4}'
@@ -71124,7 +71115,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   window.GC_pdfFooter = function(doc){
     var W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
     doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(150,150,150);
-    var _a='GrayCo Construction Services, LLC  \u2022  '+(window.GC_ADDR||''), _b=(window.GC_LICENSE||''), _one=_a+'  \u2022  '+_b, _fit=false;
+    var _a='GrayCo Construction Services, LLC  \u2022  grayco-cs.com', _b='', _one=_a, _fit=false;   /* patch LOGO2: the address and licenses are in the header */
     try{ _fit = doc.getTextWidth(_one) <= W-96; }catch(_e){}
     if(_fit) doc.text(_one, 48, H-24); else { doc.text(_a, 48, H-34); doc.text(_b, 48, H-24); }
   };
@@ -134803,7 +134794,7 @@ function SECTIONS(){ return withCustom([
   { id: 'company', ic: '🏢', t: 'Company info', d: 'Name, address, EIN, licenses, W-9, logo, contract', rows: [
     { t: 'GrayCo\u2019s signed W-9', d: 'Our own W-9 with the new address (' + window._gcCompanyAddress.config().next + '), signed — the copy GCs and the portal get. Kept in Company Documents (the blank IRS form ships with the CRM).', w: 'Company Documents → W-9', kind: 'embed', embed: 'w9' },
     { t: 'Company licenses & insurance', d: 'Every license, bond and policy with its number, issuer / carrier, expiry date and the document. Saved for everyone (the 60-day reminders come next).', w: 'Admin → Company info', kind: 'embed', embed: 'compliance' },
-    info('Company address', 'GrayCo Construction Services LLC, ' + window._gcCompanyAddress() + ' — on documents, invoices, the portal and the newsletter footer.', 'Built in'),
+    info('Company address', 'GrayCo Construction Services, LLC, ' + window._gcCompanyAddress() + ' — on documents, invoices, the portal and the newsletter footer.', 'Built in'),
     row('Name, address and EIN', 'Printed on pay stubs and checks.', 'Payroll → Settings', F('_gcOpenPayrollTab', 'settings'), 'view'),
     row('Licenses, W-9 and insurance certificates', 'The company documents customers and GCs ask for — kept up to date and flagged when they run out.', '💎 → Company documents', F('_gcOpenCompanyDocuments')),
     row('Contract template', 'The contract used by the Forms library (upload your own or use the built-in one).', '⚙ → Data → Contract Template', F('gcSettings.open')),
@@ -135920,7 +135911,7 @@ function shell(html, sender){
   var sg = sender && sender.name ? '<div style="margin-top:20px;border-top:1px solid #E5E0D3;padding-top:14px;font-size:13px;line-height:1.55">' + (sender.photo && /^https:/.test(sender.photo) ? '<img src="' + esc(sender.photo) + '" width="52" height="52" style="border-radius:26px;float:left;margin-right:12px" alt="">' : '') +
     '<b>' + esc(sender.name) + '</b><br>' + esc(sender.title || 'Project Manager') + ' · ' + B.name + (sender.phone ? '<br>📱 ' + esc(sender.phone) : '') + (sender.email ? '<br>' + esc(sender.email) : '') + '<div style="clear:both"></div></div>' : '';
   return '<div data-gc-shell="1" style="background:#F5F1E8;padding:16px 8px"><div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #E5E0D3;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#14202E">' +
-    '<div style="padding:14px 22px;border-bottom:4px solid ' + B.gold + ';display:flex;align-items:center;gap:14px"><img src="https://crm.grayco-cs.com/grayco-logo-wide.jpg" alt="' + B.name + '" width="111" height="67" style="width:111px;height:67px;display:block"><div style="line-height:1.4"><div style="font-size:17px;font-weight:bold;color:' + B.navy + '">' + B.name + '</div><div style="font-size:12px;color:#55626F">' + B.phone + ' · grayco-cs.com</div><div style="font-size:11px;color:#6B7785">' + B.licenses + '</div></div></div>' +   /* patch LOGO */
+    '<div style="padding:14px 22px 10px;border-bottom:4px solid ' + B.gold + ';text-align:center"><img src="https://crm.grayco-cs.com/grayco-logo-wide.jpg" alt="' + B.name + '" width="111" height="67" style="width:111px;height:67px;display:block;margin:0 auto 6px"><div style="line-height:1.4"><div style="font-size:17px;font-weight:bold;color:' + B.navy + '">' + B.name + '</div><div style="font-size:12px;color:#55626F">' + B.phone + ' · grayco-cs.com</div><div style="font-size:11px;color:#6B7785">' + B.licenses + '</div></div></div>' +   /* patch LOGO */
     '<div style="padding:20px 22px;font-size:15px;line-height:1.55">' + html + sg + '</div>' +
     '<div style="background:' + B.navy + ';color:#C9D3E0;padding:12px 22px;font-size:12px;line-height:1.6"><b style="color:#fff">' + B.legalName + '</b><br>' + B.address + ' · ' + B.phone + ' · ' + B.email + '<br><span style="color:' + B.gold + '">' + B.licenses + '</span></div></div></div>';
 }
@@ -167631,7 +167622,7 @@ try { console.log('[GC] Logo letterhead everywhere; office phone unless direct l
    Test hooks: _gcLogoEnsure(win), _gcLogoStats(). */
 (function(){
 'use strict';
-if (window.__GC_PATCH_LOGO__) return; window.__GC_PATCH_LOGO__ = true;
+if (window.__GC_PATCH_LOGO__) return; window.__GC_PATCH_LOGO__ = true; window.__GC_PATCH_LOGO2__ = true;   /* patch LOGO2: centered headers, one header per document */
 var W = window, D = document;
 var NAME = 'GrayCo Construction Services', PHONE = '901-585-0944', WEB = 'grayco-cs.com', LIC = 'TN #85034 BCB · AR #0486990627 · MS #27769';
 var LOGO_RATIO = 420 / 254;                       /* GC_LOGO_PRINT: the colour logo, 420 x 254 */
@@ -167668,19 +167659,18 @@ function htmlHasLogo(h){
 W._gcDocHeader = function(o){
   o = o || {};
   var a = o.address === false ? '' : coAddr(), dual = !!o.dual, dk = !!o.dark || dual;
-  var line2 = [a, PHONE, s(o.email), WEB].filter(Boolean).map(esc).join(' \u00B7 ');
+  var line2 = [a, PHONE, s(o.email), WEB].filter(Boolean).map(esc).join(' · ');
   var lw = Math.round(67 * (dk ? 340 / 192 : LOGO_RATIO)), lc = Math.round(67 * LOGO_RATIO);
-  var tdn = 'border:none;padding:0;background:none;vertical-align:middle;text-align:left;';
-  var img = function(src, cls, w){ return '<img data-gc-logo-img="1" class="' + cls + '" src="' + esc(src) + '" alt="' + NAME + '" width="' + w + '" height="67" style="height:0.7in;width:auto;margin:0;border:0' + (dual ? '' : ';display:block') + '">'; };
-  /* a table (not flex) so Word, e-mail and every browser lay it out the same;
+  var img = function(src, cls, w){ return '<img data-gc-logo-img="1" class="' + cls + '" src="' + esc(src) + '" alt="' + NAME + '" width="' + w + '" height="67" style="height:0.7in;width:auto;margin:0 auto 4px;border:0' + (dual ? '' : ';display:block') + '">'; };
+  /* patch LOGO2 (owner 10/26, the CRM's 10/22 rule "always center the headers"): the logo centered at the top, 0.7 in tall, the company name,
+     the address . phone . web line and the license line centered under it.  Plain divs (no table) so Word, e-mail and every browser center it the same;
      dual: a dark screen page whose print version is white (white logo on screen, colour logo on paper) */
   return (dual ? '<style>.gc-dual img{display:block}.gc-dual .gc-p{display:none}@media print{.gc-dual .gc-d{display:none!important}.gc-dual .gc-p{display:block!important}.gc-dual .gc-t1{color:#0f2440!important;-webkit-text-fill-color:#0f2440!important}.gc-dual .gc-t2{color:#333!important}.gc-dual .gc-t3{color:#555!important}}</style>' : '')
-    + '<div data-gc-logo="1" class="gc-doc-head' + (dual ? ' gc-dual' : '') + '" style="font-family:Arial,Helvetica,sans-serif;' + (dk ? 'margin:0;padding:0;' : 'border-bottom:2px solid #241968;padding:0 0 10px;margin:0 0 14px;') + 'page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
-    + '<table style="border:none;border-collapse:collapse;width:auto;margin:0;background:none"><tr>'
-    + '<td style="' + tdn + 'width:1%;padding-right:14px;white-space:nowrap">' + (dual ? img(W.GC_LOGO_WHITE, 'gc-d', lw) + img(logoSrc(), 'gc-p', lc) : img(dk ? W.GC_LOGO_WHITE : logoSrc(), '', lw)) + '</td>'
-    + '<td style="' + tdn + 'line-height:1.4"><div class="gc-t1" style="font-size:15pt;font-weight:800;color:' + (dk ? '#fff' : '#0f2440') + ';letter-spacing:.3px">' + NAME + '</div>'
-    + '<div class="gc-t2" style="font-size:9.5pt;font-weight:400;color:' + (dk ? '#cfd8e6' : '#333') + '">' + line2 + '</div>'
-    + (o.noLicense ? '' : '<div class="gc-t3" style="font-size:8.5pt;font-weight:400;color:' + (dk ? '#9fb0c8' : '#555') + '">' + LIC + '</div>') + '</td></tr></table></div>';
+    + '<div data-gc-logo="1" class="gc-doc-head' + (dual ? ' gc-dual' : '') + '" style="font-family:Arial,Helvetica,sans-serif;text-align:center;' + (dk ? 'margin:0;padding:0;' : 'border-bottom:2px solid #241968;padding:0 0 8px;margin:0 0 12px;') + 'page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact">'
+    + (dual ? img(W.GC_LOGO_WHITE, 'gc-d', lw) + img(logoSrc(), 'gc-p', lc) : img(dk ? W.GC_LOGO_WHITE : logoSrc(), '', lw))
+    + '<div class="gc-t1" style="font-size:15pt;font-weight:800;line-height:1.3;text-align:center;color:' + (dk ? '#fff' : '#0f2440') + ';letter-spacing:.3px">' + NAME + '</div>'
+    + '<div class="gc-t2" style="font-size:9.5pt;font-weight:400;line-height:1.4;text-align:center;color:' + (dk ? '#cfd8e6' : '#333') + '">' + line2 + '</div>'
+    + (o.noLicense ? '' : '<div class="gc-t3" style="font-size:8.5pt;font-weight:400;line-height:1.4;text-align:center;color:' + (dk ? '#9fb0c8' : '#555') + '">' + LIC + '</div>') + '</div>';
 };
 /* the older helpers all become the one header */
 W._gcPrintHead = function(o){ return W._gcDocHeader(o); };
@@ -167705,21 +167695,21 @@ function drawLogo(doc, x, y, h){
 }
 W._gcPdfLogo = function(doc, opts){
   opts = opts || {};
-  var PW = doc.internal.pageSize.getWidth(), m = opts.m || 48, y = opts.y || 40, lh = 50;   /* 50 pt = 0.7 in */
-  var lw = drawLogo(doc, m, y, lh); if (lw) STATS.pdfLogos++;
+  /* patch LOGO2: centered (the 10/22 rule): the logo at the top centre (50 pt = 0.7 in), the name, the address . phone . web line and the license line under it */
+  var PW = doc.internal.pageSize.getWidth(), m = opts.m || 48, y = opts.y || 30, lh = 50, cx = PW / 2, maxW = PW - 2 * m;
+  var lw = drawLogo(doc, cx - (lh * LOGO_RATIO) / 2, y, lh); if (lw) STATS.pdfLogos++;
   try { doc.__gcLogoPages = doc.__gcLogoPages || {}; doc.__gcLogoPages[doc.internal.getCurrentPageInfo().pageNumber] = true; } catch (e) {}
-  var tx = m + (lw ? lw + 12 : 0), maxW = PW - m - tx - (opts.rightW == null ? 0 : opts.rightW);
-  function fit(txt, size, bold){ doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); try { while (size > 6 && doc.getTextWidth(txt) > maxW) { size -= 0.25; doc.setFontSize(size); } } catch (e) {} doc.text(txt, tx, 0); }
   function line(txt, size, bold, color, ty){ doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(color[0], color[1], color[2]);
-    try { while (size > 6 && doc.getTextWidth(txt) > maxW) { size -= 0.25; doc.setFontSize(size); } } catch (e) {} doc.text(txt, tx, ty); }
-  line(NAME, 16, true, [15, 36, 64], y + 16);
+    try { while (size > 6 && doc.getTextWidth(txt) > maxW) { size -= 0.25; doc.setFontSize(size); } } catch (e) {} doc.text(txt, cx, ty, { align: 'center' }); }
+  var ty = y + (lw ? lh + 14 : 14);
+  line(NAME, 15, true, [15, 36, 64], ty);
   var l2 = [s(W.GC_ADDR) || coAddr(), PHONE, s(opts.email), WEB].filter(Boolean).join('  •  ');
-  line(l2, 8.5, false, [60, 70, 85], y + 30);
-  if (!opts.noLicense) line(LIC, 8, false, [90, 100, 115], y + 42);
-  var ry = y + lh + 6;
+  line(l2, 8.5, false, [60, 70, 85], ty + 12);
+  if (!opts.noLicense) line(LIC, 8, false, [90, 100, 115], ty + 23);
+  var ry = ty + (opts.noLicense ? 12 : 23) + 7;
   doc.setDrawColor(36, 25, 104); doc.setLineWidth(1.5); doc.line(m, ry, PW - m, ry);
   doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  return ry + 24;
+  return ry + 22;
 };
 W._gcPdfHeaderCentered = W._gcPdfLogo;          /* GC_pdfHeader and the estimate PDFs call this name */
 
@@ -167735,8 +167725,8 @@ function finalizePdf(doc){
     doc.__gcLogoPages = doc.__gcLogoPages || {}; doc.__gcFooterPages = doc.__gcFooterPages || {};
     if (!doc.__gcLogoPages[1] && !doc.__gcNoLogo && !doc.__gcFooterOnly) {
       doc.setPage(1);
-      var lw = drawLogo(doc, 36, 8, 26);
-      if (lw) { doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(15, 36, 64); doc.text(NAME, 36 + lw + 8, 21); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(90, 100, 115); doc.text(PHONE, 36 + lw + 8, 31); doc.__gcLogoPages[1] = true; STATS.pdfLogos++; }
+      var lw = drawLogo(doc, (PW - 24 * LOGO_RATIO) / 2, 5, 24);   /* patch LOGO2: centered, the line under it */
+      if (lw) { doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(15, 36, 64); doc.text(NAME + '  \u00B7  ' + PHONE, PW / 2, 37, { align: 'center' }); doc.__gcLogoPages[1] = true; STATS.pdfLogos++; }
     }
     for (var p = 2; p <= n; p++) {
       if (doc.__gcFooterPages[p]) continue;

@@ -315,14 +315,14 @@ function buildPdf(blocks){
   function textC(t, size, bold, color){ text(t, size, bold, Math.max(M, (W - textW(t, size, bold)) / 2).toFixed(1), color); }
   blocks.forEach(function(b){
     if (b.t === 'title') {
-      /* patch LOGO: the logo at the left (50 pt = 0.7 in), the name, address · phone and licenses beside it */
-      const lh = LOGO ? 50 : 0, lw = LOGO ? Math.round(lh * LOGO.w / LOGO.h) : 0; need(lh + 30); const top = y, tx = (M + (lw ? lw + 12 : 0)).toFixed(1);
-      if (LOGO) ops.push('q ' + lw + ' 0 0 ' + lh + ' ' + M + ' ' + (top - lh).toFixed(1) + ' cm /Im1 Do Q');
-      y = top - 16; text(b.text, 16, true, tx);
+      /* patch LOGO2 (the 10/22 rule "always center the headers"): the logo centered (50 pt = 0.7 in), the name, address . phone . web and the licenses centered under it */
+      const lh = LOGO ? 50 : 0, lw = LOGO ? Math.round(lh * LOGO.w / LOGO.h) : 0; need(lh + 60); const top = y;
+      if (LOGO) ops.push('q ' + lw + ' 0 0 ' + lh + ' ' + ((W - lw) / 2).toFixed(1) + ' ' + (top - lh).toFixed(1) + ' cm /Im1 Do Q');
+      y = top - lh - 14; textC(b.text, 15, true);
       let addr = ''; try { addr = require('./_lib/brand.js').companyAddress(); } catch (e) {}
-      y -= 14; text([addr, OFFICE_PHONE, 'grayco-cs.com'].filter(Boolean).join(' \u00B7 '), 8.5, false, tx, '0.33 0.38 0.44');
-      y -= 11; text('TN #85034 BCB \u00B7 AR #0486990627 \u00B7 MS #27769', 8, false, tx, '0.42 0.46 0.52');
-      y = Math.min(y, top - lh) - 8; ops.push('0.14 0.10 0.41 RG 1.5 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 14; return;
+      y -= 12; textC([addr, OFFICE_PHONE, 'grayco-cs.com'].filter(Boolean).join(' \u00B7 '), 8.5, false, '0.33 0.38 0.44');
+      y -= 11; textC('TN #85034 BCB \u00B7 AR #0486990627 \u00B7 MS #27769', 8, false, '0.42 0.46 0.52');
+      y -= 8; ops.push('0.14 0.10 0.41 RG 1.5 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 14; return;
     }
     if (b.t === 'h') { need(26); y -= 14; text(b.text, 12, true); y -= 6; return; }
     if (b.t === 'gap') { y -= b.h || 8; return; }

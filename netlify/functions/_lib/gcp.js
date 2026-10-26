@@ -537,7 +537,7 @@ function pdfText(t){ return '(' + String(t == null ? '' : t).replace(/[‘’]/g
 function wrapLine(t, max){ const out = []; let cur = ''; String(t || '').split(/\s+/).forEach(function(w){ if ((cur + ' ' + w).trim().length > max) { if (cur) out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }); if (cur) out.push(cur); return out.length ? out : ['']; }
 function simplePdf(lines){
   /* lines: [{ t, size, bold, gap }] → one or more Letter pages */
-  const pages = []; let ops = [], y = 668;   /* patch LOGO: page 1 starts below the logo header */
+  const pages = []; let ops = [], y = 640;   /* patch LOGO2: page 1 starts below the centered logo header */
   lines.forEach(function(l){
     const size = l.size || 11, max = Math.floor(470 / (size * 0.5));
     wrapLine(l.t, max).forEach(function(row){
@@ -556,11 +556,13 @@ function simplePdf(lines){
   /* patch LOGO: the colour logo at the left (50 pt = 0.7 in), name / address · phone / licenses beside it, a rule under it; pages 2+ carry the company name at the foot */
   const LG = require('./logo-wide.js'), logoBin = Buffer.from(LG.b64, 'base64').toString('latin1'), BRd = require('./brand.js').BRAND;
   const logoObj = add('<< /Type /XObject /Subtype /Image /Width ' + LG.w + ' /Height ' + LG.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + logoBin.length + ' >>\nstream\n' + logoBin + '\nendstream');
-  const head1 = ['q 83 0 0 50 64 718 cm /Im1 Do Q',
-    'BT /F2 16 Tf 0.06 0.14 0.25 rg 159 750 Td ' + pdfText(BRd.name) + ' Tj ET',
-    'BT /F1 8.5 Tf 0.33 0.38 0.44 rg 159 737 Td ' + pdfText(BRd.address + '  ·  ' + BRd.phone + '  ·  grayco-cs.com') + ' Tj ET',
-    'BT /F1 8 Tf 0.42 0.46 0.52 rg 159 725 Td ' + pdfText(BRd.licenses) + ' Tj ET',
-    '0.14 0.10 0.41 RG 1.5 w 64 708 m 548 708 l S', '0 0 0 rg'];
+  /* patch LOGO2: centered (the 10/22 rule): the logo at the top centre, the name, address . phone . web and the licenses centered under it */
+  const WD = require('./invoice-pdf.js').width, ctr = function(t, size, bold, yy, col){ return 'BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + col + ' rg ' + ((612 - WD(t, size, bold)) / 2).toFixed(1) + ' ' + yy + ' Td ' + pdfText(t) + ' Tj ET'; };
+  const head1 = ['q 83 0 0 50 264.5 718 cm /Im1 Do Q',
+    ctr(BRd.name, 15, true, 702, '0.06 0.14 0.25'),
+    ctr(BRd.address + '  ·  ' + BRd.phone + '  ·  grayco-cs.com', 8.5, false, 690, '0.33 0.38 0.44'),
+    ctr(BRd.licenses, 8, false, 679, '0.42 0.46 0.52'),
+    '0.14 0.10 0.41 RG 1.5 w 64 670 m 548 670 l S', '0 0 0 rg'];
   pages.forEach(function(o, pi){
     const foot = pi === 0 ? [] : ['0.83 0.63 0.09 rg 0 784 612 8 re f', 'BT /F1 7.5 Tf 0.42 0.46 0.52 rg 170 24 Td ' + pdfText(BRd.name + '  ·  ' + BRd.phone + '  ·  page ' + (pi + 1) + ' of ' + pages.length) + ' Tj ET'];
     const stream = (pi === 0 ? head1 : ['0 0 0 rg']).concat(o, foot).join('\n');
@@ -577,12 +579,12 @@ function simplePdf(lines){
 }
 async function registryPdf(data, p){
   const C = core(), view = await C.buildView(data, p), w = view.warranty || {}, mfr = mfrOf(p), BR = require('./brand.js').BRAND;
-  const L2 = [{ t: ' ', size: 8, gap: 26 }, { t: 'WARRANTY REGISTRY', size: 18, bold: true, gap: 2 }, { t: BR.legalName + ' · ' + BR.address + ' · ' + BR.phone, size: 9, gap: 14 },
+  const L2 = [{ t: 'WARRANTY REGISTRY', size: 18, bold: true, gap: 14 },
     { t: 'Customer: ' + (view.customer.name || ''), bold: true }, { t: 'Property: ' + (view.job.address || view.customer.address || '') }, { t: 'Project: ' + (view.job.name || '') + (view.job.po ? '   ·   PO ' + view.job.po : ''), gap: 12 },
     { t: 'GrayCo workmanship warranty', size: 13, bold: true }, { t: (w.title || '') + '.' }, { t: 'Starts: ' + (w.start || 'on completion') + '     Ends: ' + (w.end || '—'), gap: 6 },
     { t: 'GrayCo warrants its workmanship on this project for the period above: 5 years on all roofing and on insurance / restoration work, 1 year on all other work. If something we did is not right, call us at ' + BR.phone + ' or use "Report an issue" in your GrayCo portal.', size: 10, gap: 12 }];
   if (mfr) L2.push({ t: 'Manufacturer warranty', size: 13, bold: true }, { t: 'Manufacturer: ' + mfr.name + (mfr.product ? ' — ' + mfr.product : '') }, { t: 'Registration: ' + (mfr.status === 'registered' ? 'registered' + (mfr.number ? ' #' + mfr.number : '') : 'being registered by GrayCo') + (mfr.years ? '   ·   Term: ' + mfr.years : ''), gap: 12 });
-  L2.push({ t: 'Keep this page with your home records. A future buyer of the home: call GrayCo to transfer what can be transferred.', size: 9, gap: 4 }, { t: BR.licenses, size: 8 }, { t: 'Issued ' + new Date(now()).toISOString().slice(0, 10), size: 8 });
+  L2.push({ t: 'Keep this page with your home records. A future buyer of the home: call GrayCo to transfer what can be transferred.', size: 9, gap: 4 }, { t: 'Issued ' + new Date(now()).toISOString().slice(0, 10), size: 8 });
   return simplePdf(L2);
 }
 

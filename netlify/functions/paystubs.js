@@ -180,8 +180,6 @@ function stubHtml(st){
   const e = function(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   const rows = function(list, neg){ return (list || []).map(function(L){ return '<tr><td style="padding:4px 8px">' + e(L.label) + '</td><td style="padding:4px 8px;text-align:right">' + (neg ? '-' : '') + m(L.amount) + '</td><td style="padding:4px 8px;text-align:right;color:#666">' + m(L.ytd) + '</td></tr>'; }).join(''); };
   return '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">'
-    + '<div style="text-align:center;border-bottom:3px solid #0f2440;padding-bottom:8px;margin-bottom:12px"><b style="font-size:18px">' + e(st.company.name || 'GrayCo Construction Services') + '</b><br>'
-    + '<span style="font-size:12px;color:#555">' + e(st.company.address) + (st.company.phone ? ' · ' + e(st.company.phone) : '') + '</span></div>'
     + '<p><b>Pay stub — ' + e(st.name) + '</b>' + ' · SSN ' + (st.ssn4 ? '***-**-' + e(st.ssn4) : '—') + '<br>Pay period ' + e(st.periodFrom) + ' → ' + e(st.periodTo) + ' · Paid ' + e(st.payDate) + (st.checkNo ? ' · Check #' + e(st.checkNo) : '') + (st.adjusts ? '<br><b>ADJUSTED</b> — replaces stub ' + e(st.adjusts) : '') + '</p>'
     + (st.withholdState === 'MS' && !st.stateTaxVerified ? '<p style="background:#fef3c7;padding:8px;border-radius:6px"><b>Mississippi withholding rates not yet verified by our CPA.</b></p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th style="text-align:left">Earnings</th><th style="text-align:right">This check</th><th style="text-align:right">YTD</th></tr>' + rows(st.earnings)

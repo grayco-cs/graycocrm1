@@ -340,7 +340,7 @@ function signedCopyPdf(o){
   b.push({ t: 'gap', h: 6 }, { t: 'h', text: 'Signature' }, { t: 'sig', strokes: o.strokes, name: o.name });
   b.push({ t: 'p', text: 'Signed by: ' + o.name + (o.strokes && o.strokes.length ? ' (typed name and drawn signature)' : ' (typed name — accepted electronically)') });
   b.push({ t: 'p', text: 'Date and time: ' + central(o.at) }, { t: 'p', text: 'Signed in the GrayCo customer portal from address ' + o.ip + ' · reference ' + o.ref, size: 9, muted: true });
-  b.push({ t: 'gap', h: 10 }, { t: 'p', text: 'GrayCo Construction Services · ' + require('./_lib/brand.js').companyAddress() + ' · ' + OFFICE_PHONE + ' · portal.grayco-cs.com', size: 9, muted: true });
+  b.push({ t: 'gap', h: 10 }, { t: 'p', text: 'GrayCo customer portal · portal.grayco-cs.com', size: 9, muted: true } /* patch LOGO2: the company block is in the header */);
   return sel().buildPdf(b.filter(Boolean));
 }
 async function resend(o){

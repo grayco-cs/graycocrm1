@@ -67,25 +67,22 @@ function build(doc){
   function textR(x, y, t, size, bold, color){ text(x - width(clean(t), size, bold), y, t, size, bold, color); }
   function rect(x, y, w, h, color){ ops.push(color + ' rg ' + x + ' ' + y + ' ' + w + ' ' + h + ' re f'); }
   function line(x1, y1, x2, y2, color, wd){ ops.push((color || MUTED) + ' RG ' + (wd || 0.6) + ' w ' + x1 + ' ' + y1 + ' m ' + x2 + ' ' + y2 + ' l S'); }
-  /* every page: the company line and the licenses at the foot */
-  function foot(){ text(L, 22, BR.legalName + '  \xb7  ' + ADDRESS + '  \xb7  ' + LICENSES, 7.5, false, MUTED); }
+  /* patch LOGO2: pages 2+ carry the company name, phone and page number at the foot (page 1 has the one header) */
+  function foot(){ if (pages.length) text(L, 22, COMPANY + '  \xb7  ' + PHONE + '  \xb7  page ' + (pages.length + 1), 7.5, false, MUTED); }
   function newPage(){ if (ops.length) { foot(); pages.push(ops.join('\n')); } ops = []; }
 
-  /* header band: the logo on a white tile, name, address / phone / e-mail, licenses */
-  rect(0, PH - 96, PW, 96, NAVY);
-  rect(0, PH - 100, PW, 4, GOLD);
-  rect(L - 4, PH - 82, 91, 58, '1 1 1');   /* patch LOGO: the logo is 50 pt = 0.7 in tall at the left */
-  ops.push('q 83 0 0 50 ' + L + ' ' + (PH - 78) + ' cm /Im1 Do Q');
-  const TX = L + 101;
-  text(TX, PH - 40, COMPANY, 16.5, true, '1 1 1');
-  text(TX, PH - 56, ADDRESS + '  \xb7  ' + PHONE, 9, false, '0.80 0.85 0.92');
-  text(TX, PH - 68, EMAIL, 9, false, '0.80 0.85 0.92');
-  text(TX, PH - 81, LICENSES, 8, false, '0.97 0.80 0.30');
-  textR(R, PH - 48, doc.isFinal ? 'FINAL INVOICE' : 'INVOICE', doc.isFinal ? 18 : 22, true, '1 1 1');
-  textR(R, PH - 66, 'Invoice #' + (doc.number || ''), 10, true, '0.97 0.80 0.30');
+  /* patch LOGO2 (the 10/22 rule "always center the headers"): the ONE company header, centered - the logo 50 pt = 0.7 in tall, the name,
+     address . phone . e-mail and the licenses under it, a gold rule, then the title */
+  function centered(yy, t, size, bold, color){ text((PW - width(clean(t), size, bold)) / 2, yy, t, size, bold, color); }
+  ops.push('q 83 0 0 50 ' + ((PW - 83) / 2).toFixed(1) + ' ' + (PH - 80) + ' cm /Im1 Do Q');
+  centered(PH - 97, COMPANY, 15, true, NAVY);
+  centered(PH - 110, ADDRESS + '  \xb7  ' + PHONE + '  \xb7  ' + EMAIL, 8.5, false, MUTED);
+  centered(PH - 122, LICENSES, 8, false, MUTED);
+  line(L, PH - 130, R, PH - 130, GOLD, 1.5);
+  centered(PH - 152, (doc.isFinal ? 'FINAL INVOICE' : 'INVOICE'), 15, true, NAVY);
 
   /* bill to + facts */
-  let y = PH - 132;
+  let y = PH - 182;
   text(L, y, 'BILL TO', 8, true, MUTED);
   text(330, y, 'INVOICE DETAILS', 8, true, MUTED);
   y -= 15;
@@ -173,4 +170,4 @@ function build(doc){
   put(Buffer.from(out, 'latin1'));
   return Buffer.concat(parts);
 }
-module.exports = { build: build, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE, LICENSES: LICENSES };
+module.exports = { build: build, width: width, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE, LICENSES: LICENSES };
