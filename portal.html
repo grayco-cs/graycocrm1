@@ -216,6 +216,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 .rf input,.rf textarea{width:100%;min-height:46px;border:1px solid #C9C2B2;border-radius:10px;padding:8px 12px;font-size:16px;font-family:inherit;box-sizing:border-box}.rf textarea{min-height:70px}
 /* patch SUBTXT */.late-wrap{display:flex;flex-direction:column;gap:6px}.late-btn{min-height:38px;font-size:13px;border-color:#b45309;color:#9a3412;align-self:flex-start;padding:0 12px}.late-form{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:#fffaf0}.late-ks{display:flex;gap:6px;flex-wrap:wrap}.late-ks .btn{min-height:38px;font-size:13px;padding:0 10px}.late-k[aria-pressed=true]{background:var(--navy2);color:#fff}.late-ta{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--rule);border-radius:8px}
 </style>
+<script src="/legal2.js"></script>   <!-- LEGAL2-patch: in the head so it is loaded before the signing code runs -->
 </head>
 <body>
 <div class="wrap">
@@ -244,7 +245,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
   <main id="main">
     <div class="skel"></div><div class="skel"></div><div class="skel"></div>
   </main>
-  <footer class="lic" data-gc-brand="1"><b>GrayCo Construction Services, LLC</b> &middot; <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span><br><a href="tel:9015850944">(901) 585-0944</a> &middot; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769</footer>
+  <footer class="lic" data-gc-brand="1"><b>GrayCo Construction Services, LLC</b> &middot; <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span><br><a href="tel:9015850944">(901) 585-0944</a> &middot; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769<br><span data-gc-legal-links="1" style="font-size:12px"><a href="/portal-terms.html" target="_blank" rel="noopener">Customer Portal Terms of Use</a> &middot; <a href="/sub-terms.html" target="_blank" rel="noopener">Sub Portal Terms of Use</a> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a> &middot; <a href="/sub-privacy.html" target="_blank" rel="noopener">Sub Portal Privacy Notice</a> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a></span><br><span style="font-size:11px">Form rev. 10/26/2026</span></footer>
 </div>
 <script>
 (function(){
@@ -1288,6 +1289,10 @@ function itemBox(x){
   var go = h('button', { type: 'button', class: 'btn gold es-sign', text: 'Sign' });
   var no = h('button', { type: 'button', class: 'btn es-dec', text: 'I will not sign this' });
   go.disabled = PREVIEW; no.disabled = PREVIEW;
+  /* LEGAL2-patch: the E-SIGN / UETA consent comes BEFORE any signature; residential contracts also show the Notice of Cancellation */
+  var esg = window.GCLegal ? window.GCLegal.esignBox({ base: '' }) : null, cnc = null;
+  if (esg) box.appendChild(esg.el);
+  if (window.GCLegal && (x.kind === 'contract' || x.kind === 'estimate') && !(D && D.job && D.job.group === 'commercial')) { cnc = window.GCLegal.cancelBox((D && D.job && D.job.state) || 'TN', { base: '', address: (D && D.job && D.job.address) || '', po: '' }); box.appendChild(cnc.el); }
   box.appendChild(h('label', { class: 'muted', text: 'Your full name' })); box.appendChild(nm);
   box.appendChild(h('div', { class: 'muted', text: 'Draw your signature (or leave it blank and tap Sign to accept with your typed name):' }));
   box.appendChild(pad.el);
@@ -1308,9 +1313,10 @@ function itemBox(x){
   }
   box.appendChild(h('div', { class: 'es-btns' }, [go, no])); box.appendChild(msg);
   go.addEventListener('click', function(){
-    if (busy) return; if (!nm.value.trim()) { msg.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { msg.textContent = 'Please tick the box to agree.'; return; } if (opAck && !opAck.checked) { msg.textContent = 'Please tick the box to acknowledge the Cancellation / Overhead & Profit paragraph.'; return; }
+    if (busy) return; if (!esg) { msg.textContent = 'The consent form did not load. Please refresh this page.'; return; } if (!esg.ok()) { msg.textContent = 'Please tick the box to agree to do business electronically.'; esg.el.scrollIntoView({ block: 'center' }); return; } if (cnc && !cnc.ok()) { msg.textContent = 'Please tick the box to confirm you received the Notice of Cancellation.'; cnc.el.scrollIntoView({ block: 'center' }); return; }
+    if (!nm.value.trim()) { msg.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { msg.textContent = 'Please tick the box to agree.'; return; } if (opAck && !opAck.checked) { msg.textContent = 'Please tick the box to acknowledge the Cancellation / Overhead & Profit paragraph.'; return; }
     busy = true; go.disabled = true; msg.textContent = 'Signing…';
-    api({ action: 'sign', id: x.id, name: nm.value, agree: true, strokes: pad.strokes(), smsConsent: smsBox ? { agree: !!smsBox.checked, phone: smsPh.value } : undefined, smsMarketing: mktBox ? { agree: !!mktBox.checked, phone: smsPh.value } : undefined }).then(function(r){
+    api({ action: 'sign', id: x.id, name: nm.value, agree: true, esignConsent: esg.record(), cancelNotice: cnc ? { ack: true, state: (D && D.job && D.job.state) || 'TN' } : undefined, strokes: pad.strokes(), smsConsent: smsBox ? { agree: !!smsBox.checked, phone: smsPh.value } : undefined, smsMarketing: mktBox ? { agree: !!mktBox.checked, phone: smsPh.value } : undefined }).then(function(r){
       busy = false;
       if (r.data && r.data.ok) { keep['a_' + x.id] = false; note[x.id] = ''; note._top = '✓ Thank you — signed. Your copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); pad.clear(); return load(); }
       msg.textContent = (r.data && r.data.error) || 'That did not work — please call GrayCo ' + OFFICE + '.'; go.disabled = false;
@@ -1514,6 +1520,7 @@ window._gcPortalWt = { reload: load, data: function(){ return D; } };
 })();
 </script>
 =======
+<script>document.addEventListener("DOMContentLoaded",function(){try{window.GCLegal&&window.GCLegal.boot({base:""})}catch(e){}});</script>   <!-- LEGAL2-patch -->
 <script src="/portal-plus.js" defer></script>
 <script src="/portal-home.js" defer></script>
 <script src="/portal-needs.js" defer></script>

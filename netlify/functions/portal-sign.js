@@ -293,6 +293,8 @@ async function voidReq(id, who){
 }
 
 /* ── PUBLIC: the customer's view ── */
+/* LEGAL2-patch: the job's state (TN default, MS / AR from the address) so the portal shows the right Notice of Cancellation */
+function legalState(p){ const a = s(p && (p.state || p.address)); let m; if ((m = /\b(MS|AR|TN)\b\.?,?\s*\d{5}/.exec(a)) || (m = /,\s*(MS|AR|TN)\b/.exec(a))) return m[1]; if (/mississippi/i.test(a)) return 'MS'; if (/arkansas/i.test(a)) return 'AR'; return 'TN'; }
 async function view(pid){
   const data = await jobData(false), p = core().findProject(data, pid);
   if (!p) return null;
@@ -308,7 +310,7 @@ async function view(pid){
       declined: x.status === 'declined' && x.declined ? { at: s(x.declined.at) } : null,
       sms: (x.kind === 'contract' || x.kind === 'estimate') && x.status === 'pending' ? { phone: require('./_lib/sms.js').tidy(p.clientPhone || p.phone || p.customerPhone || '') } : null };   /* patch SMSCONSENT */
   });
-  return { ok: true, job: { name: T(p.name) }, items: items, pm: { name: clip(pm.name, 60), phone: clip(pm.phone, 40) }, office: OFFICE_PHONE };
+  return { ok: true, job: { name: T(p.name), state: legalState(p), group: /commercial|tenant|government|bid/i.test(s(p.type || p.jobType)) ? 'commercial' : 'residential', address: s(p.address) }, items: items,   /* LEGAL2-patch */ pm: { name: clip(pm.name, 60), phone: clip(pm.phone, 40) }, office: OFFICE_PHONE };
 }
 
 /* ── the signed copy ── */
@@ -325,6 +327,8 @@ function signedCopyPdf(o){
     : o.kind === 'doc' ? 'I reviewed this document and I sign it.'
     : 'I accept this ' + o.label.toLowerCase() + ' for the work and the price shown above, and I authorize GrayCo Construction Services to schedule and do the work. I understand a change to the scope or the price needs a signed change order.' });
   b.push({ t: 'p', text: 'Warranty: 5 years on roofing and insurance work, 1 year on all other work, from substantial completion, as stated on the warranty certificate.', size: 9, muted: true });
+  if (o.esign) b.push({ t: 'p', text: 'Electronic records: the signer agreed to do business electronically (E-SIGN / UETA disclosure, version ' + (o.esign.version || '') + ') before signing.', size: 9, muted: true });   /* LEGAL2-patch */
+  if (o.cancel) b.push({ t: 'p', text: 'Notice of Cancellation: the signer confirmed receiving the Notice of Cancellation (' + o.cancel.state + ') and the explanation of the right to cancel. Form rev. 10/26/2026.', size: 9, muted: true });
   if (o.sms || o.smsM) {   /* patch SMSCONSENT + SMSC2: two separate boxes, each shown ticked or not */
     const SCx = require('./_lib/smsconsent.js'), so = o.sms || o.smsM;
     b.push({ t: 'gap', h: 6 }, { t: 'h', text: 'Text messages' }, { t: 'p', text: 'Mobile number for texts: ' + (so.phone ? require('./_lib/sms.js').tidy(so.phone) : '(none given)') });
@@ -360,6 +364,10 @@ async function sign(event, pid, body){
   const name = sel().cleanName(body.name);
   if (!name) return { status: 400, out: { ok: false, error: 'Please type your full name (letters only) to sign.' } };
   if (body.agree !== true) return { status: 400, out: { ok: false, error: 'Please tick the box to agree.' } };
+  /* LEGAL2-patch: E-SIGN / UETA — nothing is signed until the customer agreed to do business electronically */
+  if (!body.esignConsent || body.esignConsent.agree !== true) return { status: 400, out: { ok: false, error: 'Please tick the box to agree to do business electronically, then sign.' } };
+  const esignC = { agree: true, at: new Date().toISOString(), version: clip(body.esignConsent.version, 20), consentAt: clip(body.esignConsent.at, 40) };
+  const cancelC = body.cancelNotice && body.cancelNotice.ack === true ? { ack: true, state: clip(body.cancelNotice.state, 2) } : null;
   const cs = sel().cleanStrokes(body.strokes); if (!cs.ok) return { status: 400, out: { ok: false, error: 'The drawn signature could not be read — clear it and sign again.' } };
   const data = await jobData(true), p = core().findProject(data, pid);
   if (!p) return { status: 404, out: { ok: false, error: NOT_ACTIVE } };
@@ -385,10 +393,11 @@ async function sign(event, pid, body){
   const T = scrubber(p), ip = ipOf(event), at = new Date().toISOString(), sigId = 'ps_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   const label = KINDS[r.kind] || 'Document', customer = s(p.client || p.clientName || p.customer) || name;
   const pdf = signedCopyPdf({ kind: r.kind, label: label, job: T(p.name), address: s(p.address), po: s(p.autoPO || p.po), customer: customer, title: T(r.title), lines: arr(r.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }),
-    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId, sms: smsC, smsM: smsM });
+    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId, sms: smsC, smsM: smsM, esign: esignC, cancel: cancelC });
   const docRef = await uploadPdf(pdf);
   const docName = 'Signed ' + label.toLowerCase() + ' — ' + clip(T(r.title), 60).replace(/[\\/:*?"<>|]+/g, '-') + ' — ' + at.slice(0, 10) + '.pdf';
   const signedRec = { name: name, at: at, ip: clip(ip, 60), ua: clip(gcHeader(event, 'user-agent'), 160), drawn: cs.strokes.length > 0, docRef: docRef, docName: docName, sigId: sigId };
+  signedRec.esign = esignC; if (cancelC) signedRec.cancelNotice = cancelC;   /* LEGAL2-patch */
   if (smsC) signedRec.smsConsent = smsC;   /* patch SMSCONSENT */
   if (smsM) signedRec.smsMarketing = smsM;   /* patch SMSC2 */
   const res = await core().kvListUpdate(KEY, function(cur){
@@ -614,3 +623,5 @@ exports.handler = async function(event){
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
 exports._ps = { runFollowups: runFollowups, visible: visible, signedCopyPdf: signedCopyPdf, KEY: KEY, FU_KEY: FU_KEY, FU_DAYS: FU_DAYS, KINDS: KINDS, _reset: function(){ hits.clear(); writes.clear(); } };
+
+/* LEGAL2-patch */

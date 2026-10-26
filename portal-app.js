@@ -5,7 +5,7 @@
 (function(){
 'use strict';
 var FN = '/.netlify/functions/portal-access';
-var OFFICE = '901-585-0944';
+var OFFICE = '901-585-0944';   /* LEGAL2-patch */
 var L = {
   en: {
     hi: 'Welcome', portal: 'GrayCo Portal', home: 'Home', jobs: 'Jobs', pay: 'Pay', papers: 'Papers', back: '‹ Back', close: 'Close',
@@ -429,16 +429,18 @@ function signSheet(x){
   var msg = h('div', { class: 'muted', id: 'signMsg', role: 'status' });
   var go = h('button', { type: 'button', class: 'btn gold', id: 'signGo', text: t('signBtn') });
   var agreeTxt = t(x.kind === 'co' ? 'signAgreeCo' : 'signAgreeScope', { amt: usd(x.total), v: x.version });
+  var esg = window.GCLegal ? window.GCLegal.esignBox({ base: '' }) : null;   /* LEGAL2-patch: E-SIGN consent before the signature */
   var sh = sheet(t('signTitle') + ' — ' + (x.title || t(x.kind === 'co' ? 'cos' : 'scope')), [
     h('div', { class: 'row total' }, [h('span', { class: 'muted', text: x.kind === 'co' ? t('coTotal') : t('yourTotal') }), h('b', { text: usd(x.total) })]),
-    field(t('signName'), nm), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
+    (esg ? esg.el : null), field(t('signName'), nm), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
     h('button', { type: 'button', class: 'btn', text: t('signClear'), on: { click: function(){ pad.clear(); } } }),
     h('label', { class: 'fld', style: 'display:flex;gap:8px;align-items:flex-start' }, [ag, h('span', { text: agreeTxt })]), go, msg]);
   go.addEventListener('click', function(){
+    if (!esg) { msg.textContent = 'The consent form did not load. Please refresh this page.'; return; } if (!esg.ok()) { msg.textContent = 'Tick the box to agree to do business electronically.'; esg.el.scrollIntoView({ block: 'center' }); return; }
     if (nm.value.trim().length < 3) { msg.textContent = t('signNeedName'); nm.focus(); return; }
     if (!ag.checked) { msg.textContent = t('signNeedAgree'); return; }
     busy(go, true); msg.textContent = t('signing');
-    api('p-scope', { id: x.id, op: 'sign', version: x.version, signName: nm.value, agree: true, strokes: pad.strokes() }).then(function(){ sh.close(); toast('✍️ ' + t('accepted')); openJob(JOB.job.id, JTAB); reloadHome(); }, function(e){ busy(go, false); msg.textContent = e.message; toast(e.message, true); });
+    api('p-scope', { id: x.id, op: 'sign', version: x.version, signName: nm.value, agree: true, esignConsent: esg.record(), strokes: pad.strokes() }).then(function(){ sh.close(); toast('✍️ ' + t('accepted')); openJob(JOB.job.id, JTAB); reloadHome(); }, function(e){ busy(go, false); msg.textContent = e.message; toast(e.message, true); });
   });
   return sh;
 }

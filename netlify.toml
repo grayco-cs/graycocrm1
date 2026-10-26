@@ -275,6 +275,67 @@
   status = 200
   force = true
 
+# LEGAL2-patch: the legal pages and the shared legal runtime are served on the portal host too
+[[redirects]]
+  from = "https://portal.grayco-cs.com/legal2.js"
+  to = "/legal2.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-terms.html"
+  to = "/portal-terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/sub-terms.html"
+  to = "/sub-terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/sub-privacy.html"
+  to = "/sub-privacy.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/esign-consent.html"
+  to = "/esign-consent.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/cancel-notice.html"
+  to = "/cancel-notice.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/privacy.html"
+  to = "/privacy.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/terms.html"
+  to = "/terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/sms-consent.html"
+  to = "/sms-consent.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/mkt-pages.css"
+  to = "/mkt-pages.css"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"

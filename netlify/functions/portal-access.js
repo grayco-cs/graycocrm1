@@ -932,8 +932,10 @@ async function partnerAction(action, body, ctx){
       const signName = clip(String(body.signName == null ? '' : body.signName).replace(/\s+/g, ' '), 80);
       if (signName.length < 3 || !/[A-Za-z\u00C0-\u024F]{2}/.test(signName)) throw Fail(400, 'Type your full name to sign.');
       if (body.agree !== true) throw Fail(400, 'Tick the box to agree, then sign.');
+      /* LEGAL2-patch: E-SIGN / UETA consent before the signature */
+      if (!body.esignConsent || body.esignConsent.agree !== true) throw Fail(400, 'Tick the box to agree to do business electronically, then sign.');
       const strokes = cleanStrokes(body.strokes);
-      const sig = { name: signName, strokes: strokes, at: now, ip: clip(ctx.ip || 'unknown', 60), ua: clip(ctx.ua || '', 200), version: Number(x.version), total: money(x.total), title: clip(x.title, 160), by: s(sub.id) };
+      const sig = { esign: { agree: true, at: now, version: clip(body.esignConsent.version, 20) }, name: signName, strokes: strokes, at: now, ip: clip(ctx.ip || 'unknown', 60), ua: clip(ctx.ua || '', 200), version: Number(x.version), total: money(x.total), title: clip(x.title, 160), by: s(sub.id) };
       const d = Object.assign({}, x.data || {}, { signature: sig });
       const done = await dbPatch('gc_sub_scope', 'id=' + eq(x.id) + '&version=eq.' + Number(x.version), { status: 'accepted', accepted_at: now, accepted_version: x.version, data: d, updated_at: now }, true);
       if (Array.isArray(done) && !done.length) throw Fail(409, 'GrayCo changed this a moment ago. Look it over again, then sign.');
@@ -1374,3 +1376,5 @@ exports.handler = async function (event) {
 };
 exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments); },   /* patch SUBTXT */
   _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
+
+/* LEGAL2-patch */
