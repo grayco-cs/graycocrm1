@@ -4,7 +4,7 @@
 body{margin:0;background:#F5F7FB;color:#14202E;font:16px/1.5 Inter,-apple-system,"Segoe UI",Arial,sans-serif}
 a{color:#1E2060}
 .gp-head{background:#0F1D2F;color:#fff;display:flex;gap:12px;align-items:center;padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top,0px))}
-.gp-head img{height:42px;background:#fff;border-radius:6px;padding:2px}
+.gp-head img{height:42px}
 .gp-head b{display:block;font-size:18px}.gp-head span{font-size:12px;color:#9fb2cc}
 .gp-gold{height:4px;background:#D4A017}
 .gp-main{max-width:640px;margin:0 auto;padding:16px}
