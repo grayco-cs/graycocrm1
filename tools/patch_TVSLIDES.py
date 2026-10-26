@@ -226,7 +226,7 @@ TVD.jobs = function(sc){
 TVD.pipe = function(sc, n){
   var now = Date.now(), wk = now - 7 * 864e5, t0 = today(), end = addDays(t0, 14), by = {}, wkN = 0, seen = {}, bids = [], open = 0, openVal = 0;
   var L = leads().filter(function(l){ return l && l.id && !l.deleted && tvMineLead(l, sc); });
-  L.forEach(function(l){ var t = tvLeadT(l); if (isFinite(t) && t >= wk && !/quickbooks|companycam|import/i.test(String(l.source || l.leadSource || ''))) { wkN++;   /* TVSRC: synced/imported records are not new leads */ var k = tvSrc2(l.source || l.leadSource); by[k] = (by[k] || 0) + 1; } });
+  L.forEach(function(l){ var t = tvLeadT(l); if (isFinite(t) && t >= wk && !/quickbooks|import/i.test(String(l.source || l.leadSource || ''))) { wkN++;   /* TVSRC: QuickBooks/imported records are not new leads; CompanyCam projects ARE new leads (owner 10/26) */ var k = tvSrc2(l.source || l.leadSource); by[k] = (by[k] || 0) + 1; } });
   var src = Object.keys(by).map(function(k){ return { k: k, n: by[k] }; }).sort(function(a, b){ return b.n - a.n; });
   var closed = /won|lost|cancel|declin|no.?bid|dead/i;
   L.concat(arr(crm().bidLists).filter(function(l){ return l && tvMineLead(l, sc); })).forEach(function(l){
