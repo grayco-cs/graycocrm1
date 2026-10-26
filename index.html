@@ -163769,16 +163769,17 @@ function renderHealth(box){
   box.innerHTML = (W._gcSpeedSummary ? '<div id="gc-speed-summary" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#f1f5f9;color:#0f172a;font-size:13px;font-weight:600">⚡ ' + esc(W._gcSpeedSummary()) + '</div>' : '') +   /* patch BOOT */
     '<p style="color:#55626F">The same short report the admins get by e-mail on the 1st of each month.</p><div data-h>Checking…</div><div style="margin-top:10px"><button type="button" data-send style="' + BTNP + '">📨 Send it to the admins now</button><button type="button" data-re style="' + BTN + '">↻ Check again</button></div>';
   var DOTS = { green: '🟢', amber: '🟡', red: '🔴' };
+  function chAuth(){ var h = {}; try { var s = JSON.parse(W.localStorage.getItem('gc_auth_v1') || 'null'); if (s && s.access_token) h.Authorization = 'Bearer ' + s.access_token; } catch (e) {} return h; }   /* patch SPEED2 */
   function load(){
     var el = box.querySelector('[data-h]'); el.textContent = 'Checking…';
-    W.fetch('/.netlify/functions/crm-health', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){
+    W.fetch('/.netlify/functions/crm-health', { cache: 'no-store', headers: chAuth() }).then(function(r){ return r.text().then(function(t){ var j = null; try { j = JSON.parse(t); } catch (e) {} if (!r.ok && !(j && j.error)) j = { ok: false, error: 'The server answered ' + r.status + (t ? ': ' + t.slice(0, 160) : '.') }; return j; }); }).then(function(j){   /* patch SPEED2 */
       if (!j || !j.ok) { el.textContent = (j && j.error) || 'Could not check.'; return; }
       el.innerHTML = '<table style="width:100%;border-collapse:collapse">' + arr(j.items).map(function(x){ return '<tr><td style="padding:6px;border-bottom:1px solid #eee;white-space:nowrap">' + (DOTS[x.status] || '') + ' <b>' + esc(x.label) + '</b></td><td style="padding:6px;border-bottom:1px solid #eee">' + esc(x.text) + '</td></tr>'; }).join('') + '</table>';
     }, function(){ el.textContent = 'Could not reach the server.'; });
   }
   box.querySelector('[data-re]').onclick = load;
   box.querySelector('[data-send]').onclick = function(ev){ var b = ev.currentTarget; b.disabled = true;
-    W.fetch('/.netlify/functions/crm-health', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ act: 'send' }) }).then(function(r){ return r.json(); }).then(function(j){ b.disabled = false; toast(j && j.ok ? '📨 Sent to ' + arr(j.to).join(', ') : (j && j.error) || 'Not sent', !(j && j.ok)); }, function(){ b.disabled = false; toast('Not sent', true); }); };
+    W.fetch('/.netlify/functions/crm-health', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, chAuth()), body: JSON.stringify({ act: 'send' }) }).then(function(r){ return r.text().then(function(t){ var j = null; try { j = JSON.parse(t); } catch (e) {} if (!r.ok && !(j && j.error)) j = { ok: false, error: 'The server answered ' + r.status + (t ? ': ' + t.slice(0, 160) : '.') }; return j; }); }).then(function(j){ b.disabled = false; toast(j && j.ok ? '📨 Sent to ' + arr(j.to).join(', ') : (j && j.error) || 'Not sent', !(j && j.ok)); }, function(){ b.disabled = false; toast('Not sent', true); }); };
   load();
 }
 function renderTpl(box){
