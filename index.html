@@ -155216,11 +155216,56 @@ function css(){
     '.gc-a8-signer{border:1px solid #e2e8f0;border-radius:10px;padding:8px;margin:6px 0}',
     '#gc-a8-gc{margin:12px 0;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;font:13px Arial,sans-serif;color:#0f172a}#gc-a8-gc table{width:100%;border-collapse:collapse}#gc-a8-gc th,#gc-a8-gc td{border-bottom:1px solid #eef2f7;padding:5px 6px;text-align:left}#gc-a8-gc .n{text-align:right}',
     '#gc-a8-gc .ans{background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px;margin:6px 0}#gc-a8-gc button{border:1px solid #0f1d2f;background:#fff;border-radius:6px;padding:4px 8px;font:700 12px Arial,sans-serif;cursor:pointer;margin-right:4px}',
-    '.gc-a8-tv{position:fixed;inset:0;z-index:2147483200;background:#0b1320;color:#f8fafc;font-family:Arial,sans-serif;display:flex;flex-direction:column;padding:2.5vw}',
-    '.gc-a8-tv .hd{display:flex;align-items:center;gap:16px;font-size:2.2vw;font-weight:700}.gc-a8-tv .hd .sp{flex:1}.gc-a8-tv .hd button{font-size:1.1vw;padding:.5vw 1vw;border-radius:8px;border:1px solid #475569;background:#1e293b;color:#fff;cursor:pointer}',
-    '.gc-a8-tv .g{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1.6vw;margin-top:2vw}.gc-a8-tv .t{background:#14213a;border-radius:1.2vw;padding:1.6vw;display:flex;flex-direction:column;justify-content:center;border:2px solid #1f2f4d}',
-    '.gc-a8-tv .t .v{font-size:5.4vw;font-weight:800;color:#f0c451;line-height:1.05}.gc-a8-tv .t .l{font-size:1.5vw;color:#cbd5e1;margin-top:.6vw}.gc-a8-tv .t.hot{border-color:#ef4444}.gc-a8-tv .t.hot .v{color:#fca5a5}.gc-a8-tv .ft{font-size:1vw;color:#94a3b8;margin-top:1vw}',
-    '@media (max-width:700px){.gc-a8-tv .g{grid-template-columns:repeat(2,1fr)}.gc-a8-tv .t .v{font-size:9vw}.gc-a8-tv .t .l{font-size:3.4vw}.gc-a8-tv .hd{font-size:5vw}}'
+    '.gc-a8-tv{position:fixed;inset:0;z-index:2147483200;color:#f8fafc;font-family:"Segoe UI",Roboto,Arial,sans-serif;font-size:min(1vw,1.78vh);display:flex;flex-direction:column;padding:1.5em 2em 1.2em;overflow:hidden;box-sizing:border-box;background:radial-gradient(60em 40em at 85% -10%,rgba(56,150,255,.35),transparent 60%),radial-gradient(50em 36em at -5% 110%,rgba(30,90,200,.35),transparent 60%),repeating-linear-gradient(45deg,rgba(255,255,255,.028) 0 2px,transparent 2px 16px),linear-gradient(135deg,#06182f 0%,#0a2f63 52%,#0f58b0 100%)}',
+    '.gc-a8-tv *{box-sizing:border-box}',
+    '.gc-a8-tv .hd{display:flex;align-items:center;gap:1.4em;min-height:5.4em}',
+    '.gc-a8-tv .logo{height:4.8em;width:auto;display:block;filter:drop-shadow(0 .2em .5em rgba(0,0,0,.35))}',
+    '.gc-a8-tv .brand{display:flex;flex-direction:column;gap:.25em;padding-left:1.4em;border-left:2px solid rgba(255,255,255,.25)}',
+    '.gc-a8-tv .brand b{font-size:1.9em;font-weight:800;letter-spacing:.02em;line-height:1}',
+    '.gc-a8-tv .brand span{font-size:1.05em;letter-spacing:.28em;text-transform:uppercase;color:#9cc4f5;font-weight:600}',
+    '.gc-a8-tv .sp{flex:1}',
+    '.gc-a8-tv .live{display:flex;align-items:center;gap:.55em;font-size:1.05em;font-weight:700;letter-spacing:.18em;color:#bfe3ff}',
+    '.gc-a8-tv .dot{width:.75em;height:.75em;border-radius:50%;background:#34d399;box-shadow:0 0 0 0 rgba(52,211,153,.7);animation:gcTvPulse 2s ease-out infinite}',
+    '@keyframes gcTvPulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.65);opacity:1}70%{box-shadow:0 0 0 .8em rgba(52,211,153,0);opacity:.75}100%{box-shadow:0 0 0 0 rgba(52,211,153,0);opacity:1}}',
+    '.gc-a8-tv .clock{text-align:right;line-height:1}',
+    '.gc-a8-tv .clock .time{font-size:4.6em;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums;text-shadow:0 .05em .4em rgba(0,0,0,.35)}',
+    '.gc-a8-tv .clock .time small{font-size:.42em;font-weight:700;margin-left:.3em;color:#9cc4f5;letter-spacing:.06em}',
+    '.gc-a8-tv .clock .date{font-size:1.5em;font-weight:600;color:#cfe3fb;margin-top:.3em}',
+    '.gc-a8-tv .btns{display:flex;flex-direction:column;gap:.4em;opacity:.35;transition:opacity .2s}',
+    '.gc-a8-tv:hover .btns{opacity:1}',
+    '.gc-a8-tv .btns button{font:600 .85em inherit;font-family:inherit;padding:.4em .9em;border-radius:.5em;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:#fff;cursor:pointer}',
+    '.gc-a8-tv .btns button:hover{background:rgba(255,255,255,.22)}',
+    '.gc-a8-tv .tvg{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(2,minmax(0,1fr));gap:1.1em;margin:1.1em 0}',
+    '.gc-a8-tv .t{--ac:#60a5fa;position:relative;overflow:hidden;min-width:0;border-radius:1em;padding:1.1em 1.3em 1em 1.5em;display:flex;flex-direction:column;justify-content:center;background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.16);box-shadow:0 .6em 1.8em rgba(0,12,36,.38)}',
+    '.gc-a8-tv .t .bar{position:absolute;left:0;top:0;bottom:0;width:.55em;background:linear-gradient(180deg,var(--ac),color-mix(in srgb,var(--ac) 45%,transparent));box-shadow:0 0 1.2em var(--ac)}',
+    '.gc-a8-tv .t .ic{position:absolute;right:.9em;top:.8em;width:2.5em;height:2.5em;border-radius:.7em;display:flex;align-items:center;justify-content:center;font-size:1.5em;background:color-mix(in srgb,var(--ac) 22%,transparent);border:1px solid color-mix(in srgb,var(--ac) 55%,transparent)}',
+    '.gc-a8-tv .t .l{font-size:1.4em;font-weight:700;color:#dbeafe;letter-spacing:.01em;padding-right:3.4em;line-height:1.15}',
+    '.gc-a8-tv .t .v{font-size:5.6em;font-weight:800;line-height:1.05;margin:.12em 0 .05em;font-variant-numeric:tabular-nums;white-space:nowrap;color:#fff;text-shadow:0 .04em .35em color-mix(in srgb,var(--ac) 55%,transparent)}',
+    '.gc-a8-tv .t .v.m{font-size:4.5em}.gc-a8-tv .t .v.xl{font-size:3.7em}',
+    '.gc-a8-tv .t .sub{font-size:1.3em;font-weight:600;color:color-mix(in srgb,var(--ac) 70%,#fff);min-height:1.3em}',
+    '.gc-a8-tv .t.s-green{--ac:#34d399!important}.gc-a8-tv .t.s-amber{--ac:#fbbf24!important}.gc-a8-tv .t.s-red{--ac:#f87171!important}',
+    '.gc-a8-tv .t.s-red{border-color:rgba(248,113,113,.55)}',
+    '.gc-a8-tv .t.s-red .v{color:#fecaca}',
+    '.gc-a8-tv .nogoal .t.goal{display:none}.gc-a8-tv .nogoal .t.last{grid-column:span 2}',
+    '.gc-a8-tv .t.goal{--ac:#fbbf24;align-items:center;text-align:center;padding-left:1.3em}',
+    '.gc-a8-tv .t.goal .l{padding-right:0}',
+    '.gc-a8-tv .ring{position:relative;width:min(10.5em,100%);aspect-ratio:1;margin:.3em auto .2em;flex:0 1 auto;min-height:0}',
+    '.gc-a8-tv .ring svg{width:100%;height:100%;transform:rotate(-90deg)}',
+    '.gc-a8-tv .ring .trk{fill:none;stroke:rgba(255,255,255,.14);stroke-width:9}',
+    '.gc-a8-tv .ring .arc{fill:none;stroke:var(--ac);stroke-width:9;stroke-linecap:round;stroke-dasharray:276.46;stroke-dashoffset:276.46;transition:stroke-dashoffset 1.8s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 .25em var(--ac))}',
+    '.gc-a8-tv .ring .pc{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2.6em;font-weight:800;font-variant-numeric:tabular-nums}',
+    '.gc-a8-tv .t.goal .gl{font-size:1.2em;font-weight:700;color:#fff}.gc-a8-tv .t.goal .sub{min-height:0}',
+    '.gc-a8-tv .t.goal.hint{border-style:dashed;border-color:rgba(251,191,36,.55)}',
+    '.gc-a8-tv .t.goal.hint .gh{font-size:1.9em;font-weight:800;margin:.3em 0 .2em}.gc-a8-tv .t.goal.hint .sub{font-size:1.2em}',
+    '.gc-a8-tv .tk{display:flex;align-items:center;gap:1.2em;height:3.4em;padding:0 1.3em;border-radius:.9em;background:rgba(3,14,34,.55);border:1px solid rgba(255,255,255,.14)}',
+    '.gc-a8-tv .tk .lab{font-size:.95em;font-weight:800;letter-spacing:.2em;color:#06182f;background:#fbbf24;border-radius:.4em;padding:.3em .7em}',
+    '.gc-a8-tv .tkw{flex:1;min-width:0;overflow:hidden;white-space:nowrap}',
+    '.gc-a8-tv .tki{font-size:1.55em;font-weight:600;color:#f1f7ff;text-overflow:ellipsis;overflow:hidden}',
+    '.gc-a8-tv .tki.in{animation:gcTvIn .7s ease-out}',
+    '@keyframes gcTvIn{from{opacity:0;transform:translateY(.6em)}to{opacity:1;transform:none}}',
+    '.gc-a8-tv .tk .note{font-size:.8em;color:#8fb3de;white-space:nowrap}',
+    '@media (prefers-reduced-motion:reduce){.gc-a8-tv .dot,.gc-a8-tv .tki.in{animation:none}.gc-a8-tv .ring .arc{transition:none}}',
+    '@media (max-width:760px){.gc-a8-tv{font-size:2.6vw;overflow:auto}.gc-a8-tv .hd{flex-wrap:wrap}.gc-a8-tv .tvg{grid-template-columns:repeat(2,1fr);grid-template-rows:none;flex:none}.gc-a8-tv .tk .note{display:none}.gc-a8-tv .nogoal .t.last{grid-column:span 2}}' /* patch TVSCORE */
   ].join('\n');
   (D.head || D.documentElement).appendChild(c);
 }
@@ -155975,35 +156020,144 @@ function tvNumbers(){
   var won = 0, lost = 0;
   L.forEach(function(l){ var st = bidSt(l), at = Date.parse(l.wonAt || l.lostAt || l.updatedAt || ''); if (isFinite(at) && at < q) return; if (st === 'Won') won++; else if (st === 'Lost') lost++; });
   var jobs = projects().filter(function(p){ return activeJob(p) && !/bid|estimat|lead|pending/i.test(s(p.status)); }).length;
-  var collected = 0, ar = 0;
+  var collected = 0, ar = 0, ar60 = 0;
   invs().forEach(function(iv){
     if (!iv || iv.deleted || iv.type === 'sub' || iv.sub || /void|draft|cancel/i.test(s(iv.status))) return;
     arr(iv.payments).forEach(function(p){ if (s(p && (p.date || p.paidDate)).slice(0, 7) === mo) collected += num(p.amt || p.amount); });
     if (!arr(iv.payments).length && s(iv.paidDate).slice(0, 7) === mo) collected += paidOf(iv);
-    var bal = num(iv.amt || iv.amount || iv.total) - paidOf(iv); if (bal > 0.01) ar += bal;
+    var bal = num(iv.amt || iv.amount || iv.total) - paidOf(iv); if (bal > 0.01) { ar += bal; var idt = Date.parse(s(iv.date || iv.sentDate || iv.issueDate || iv.created).slice(0, 10) + 'T12:00:00'); if (isFinite(idt) && now - idt > 60 * 864e5) ar60 += bal; }
   });
   var bidsWeek = L.filter(function(l){ var d = s(l.bidDue).slice(0, 10); return d && d >= today() && d <= addDays(today(), 7) && bidSt(l) !== 'Won' && bidSt(l) !== 'Lost'; }).length;
   var appr = 0; try { appr = typeof W._gcApprovalCount === 'function' ? num(W._gcApprovalCount()) : 0; } catch (e) {}
-  return { newWeek: newWeek, close: won + lost ? Math.round(won / (won + lost) * 100) : null, won: won, lost: lost, jobs: jobs, collected: collected, ar: ar, bidsWeek: bidsWeek, appr: appr };
+  return { newWeek: newWeek, close: won + lost ? Math.round(won / (won + lost) * 100) : null, won: won, lost: lost, jobs: jobs, collected: collected, ar: ar, ar60: ar60, bidsWeek: bidsWeek, appr: appr };
 }
+/* patch TVSCORE: the 📺 brand screen — navy gradient, logo, big count-up numbers, goal ring, clock, ticker. Animation is CSS + one
+   rAF burst per change, a 1-s clock and a 6.5-s ticker timer — all stopped (and verified) by close(). */
 var TV = null;
+function tvSource(src){
+  var x = low(src), m = [[/google/, 'Google'], [/website|grayco-cs\.com|web form|online form/, 'our website'], [/referr/, 'a referral'], [/facebook|instagram|social/, 'social media'],
+    [/yelp/, 'Yelp'], [/nextdoor/, 'Nextdoor'], [/angi|homeadvisor|thumbtack|porch/, 'an online marketplace'], [/insur|carrier|adjuster|claim/, 'an insurance referral'],
+    [/repeat|past customer|returning/, 'a repeat customer'], [/bid platform|gc network|buildingconnected|planhub/, 'a bid platform'], [/phone|call/, 'a phone call'], [/yard sign|truck|signage/, 'a yard sign']];
+  for (var i = 0; i < m.length; i++) if (m[i][0].test(x)) return m[i][1];
+  return null;     /* anything else could be a person's name — never shown */
+}
+function tvTicker(n){
+  var out = [], now = Date.now(), wk = now - 7 * 864e5, fort = now - 14 * 864e5, L = leads().filter(function(l){ return l && l.id && !l.deleted; });
+  var day = function(t){ var d = new Date(t), td = new Date(); return d.toDateString() === td.toDateString() ? 'today' : 'on ' + d.toLocaleDateString('en-US', { weekday: 'long' }); };
+  L.forEach(function(l){ if (bidSt(l) !== 'Won') return; var t = Date.parse(l.wonAt || ''); if (isFinite(t) && t >= fort && out.length < 4) out.push('🏆 New job won ' + day(t)); });
+  if (n.won > 0) out.push('🏆 ' + n.won + ' job' + (n.won === 1 ? '' : 's') + ' won in the last 90 days');
+  var seen = {};
+  L.forEach(function(l){ var t = Date.parse(l.createdAt || l.receivedAt || (s(l.date) ? s(l.date) + 'T12:00:00' : '')); if (!isFinite(t) || t < wk) return; var src = tvSource(l.source || l.leadSource); if (src && !seen[src] && Object.keys(seen).length < 4) { seen[src] = 1; out.push('📞 Lead from ' + src); } });
+  if (n.newWeek > 0) out.push('📈 ' + n.newWeek + ' new lead' + (n.newWeek === 1 ? '' : 's') + ' this week');
+  var pays = 0, wkD = addDays(today(), -7);
+  invs().forEach(function(iv){ if (!iv || iv.deleted || iv.type === 'sub' || iv.sub) return; arr(iv.payments).forEach(function(p){ if (s(p && (p.date || p.paidDate)).slice(0, 10) >= wkD) pays++; }); });
+  if (pays > 0) out.push('💵 ' + pays + ' payment' + (pays === 1 ? '' : 's') + ' received this week');
+  var done = 0; projects().forEach(function(p){ var t = Date.parse(p.completedAt || p.completeDate || p.completed || ''); if (isFinite(t) && t >= now - 30 * 864e5) done++; });
+  if (done > 0) out.push('✅ ' + done + ' job' + (done === 1 ? '' : 's') + ' completed this month');
+  if (n.jobs > 0) out.push('🏗️ ' + n.jobs + ' jobs in progress right now');
+  if (n.appr === 0) out.push('✅ Approvals are all caught up');
+  out.push('🦺 Safety first — every job, every day', '🏗️ GrayCo Construction Services — building it right');
+  return out;
+}
 function tv(){
   css();
-  if (TV) { TV.remove(); TV = null; }
+  if (TV) { try { TV.__close(); } catch (e) { TV.remove(); } TV = null; }
+  var T = { iv: 0, clk: 0, tick: 0, raf: 0 }, alive = true, prev = {}, anims = [], items = [], ti = 0, last = {};
   var el = D.createElement('div'); el.className = 'gc-a8-tv'; el.id = 'gc-a8-tv'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Office scoreboard');
-  function paint(){
-    var n = tvNumbers(), t = function(v, l, hot){ return '<div class="t' + (hot ? ' hot' : '') + '"><div class="v">' + v + '</div><div class="l">' + l + '</div></div>'; };
-    el.innerHTML = '<div class="hd"><span>🏗️ GrayCo Construction — scoreboard</span><span class="sp"></span><span style="font-size:1.4vw;color:#cbd5e1">' + esc(new Date().toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '</span><button type="button" data-tv="fs">Full screen</button><button type="button" data-tv="x">Close</button></div>' +
-      '<div class="g">' + t(n.newWeek, 'New leads this week') + t(n.close == null ? '—' : n.close + '%', 'Close rate (90 days · ' + n.won + ' won / ' + n.lost + ' lost)') + t(n.jobs, 'Jobs in progress') + t(money0(n.collected), 'Collected this month') +
-      t(money0(n.ar), 'Accounts receivable', n.ar > 150000) + t(n.bidsWeek, 'Bids due this week', n.bidsWeek > 0) + t(n.appr, 'Approvals waiting', n.appr > 0) + t(new Date().toLocaleDateString('en-US', { month: 'long' }), 'Keep it up, team!') + '</div>' +
-      '<div class="ft">Updates every minute · numbers only, no customer names</div>';
+  var DEFS = [
+    { k: 'newWeek', ic: '📈', l: 'New leads this week' }, { k: 'close', ic: '🎯', l: 'Close rate (90 days · won/lost)' }, { k: 'jobs', ic: '🏗️', l: 'Jobs in progress' },
+    { k: 'collected', ic: '💵', l: 'Collected this month' }, { k: 'ar', ic: '🧾', l: 'Accounts receivable' }, { k: 'bidsWeek', ic: '📐', l: 'Bids due this week' }, { k: 'appr', ic: '✅', l: 'Approvals waiting', last: 1 }];
+  var ACC = { newWeek: '#38bdf8', jobs: '#60a5fa', collected: '#f0c451', bidsWeek: '#a78bfa', close: '#60a5fa', ar: '#60a5fa', appr: '#60a5fa' };
+  var tiles = DEFS.map(function(d){ return '<div class="t' + (d.last ? ' last' : '') + '" data-k="' + d.k + '" style="--ac:' + ACC[d.k] + '"><i class="bar"></i><div class="ic">' + d.ic + '</div><div class="l">' + d.l + '</div><div class="v" data-v>0</div><div class="sub" data-sub>&nbsp;</div></div>'; }).join('');
+  var goalCell = '<div class="t goal" data-k="goal"><i class="bar"></i><div class="ic">🎯</div><div class="l">Company goal</div><div data-gbody></div></div>';
+  el.innerHTML = '<div class="hd"><img class="logo" alt="GrayCo Construction Services" src="/portal-logo.png"><div class="brand"><b>GrayCo Construction</b><span>Team scoreboard</span></div><span class="sp"></span>' +
+    '<div class="live"><i class="dot"></i>LIVE</div><div class="clock"><div class="time" data-time></div><div class="date" data-date></div></div><div class="btns"><button type="button" data-tv="fs">Full screen</button><button type="button" data-tv="x">Close</button></div></div>' +
+    '<div class="tvg nogoal">' + tiles + goalCell + '</div>' +
+    '<div class="tk"><span class="lab">LATEST</span><div class="tkw"><div class="tki" data-tki></div></div><span class="note">Updates every minute · numbers only, no customer names</span></div>';
+  var $ = function(q, r){ return (r || el).querySelector(q); };
+  var logo = $('.logo'), tried = 0;
+  logo.addEventListener('error', function(){ if (tried++ === 0) logo.src = '/img/grayco-logo-white.png'; else logo.style.display = 'none'; });
+
+  var FMT = { int: function(v){ return String(Math.round(v)); }, pct: function(v){ return Math.round(v) + '%'; }, usd: function(v){ return money0(v); }, pc1: function(v){ return (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, '') + '%'; } };
+  var reduce = false; try { reduce = !!(W.matchMedia && W.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
+  function frame(now){
+    T.raf = 0; var more = false;
+    anims.forEach(function(a){ var p = Math.min(1, (now - a.t0) / a.dur), e = 1 - Math.pow(1 - p, 3); a.node.textContent = a.f(a.from + (a.to - a.from) * e); if (p < 1) more = true; else a.done = true; });
+    anims = anims.filter(function(a){ return !a.done; });
+    if (more && alive && !D.hidden) T.raf = W.requestAnimationFrame(frame); else { anims.forEach(function(a){ a.node.textContent = a.f(a.to); }); anims = []; }
   }
-  el.addEventListener('click', function(e){ var k = e.target && e.target.getAttribute && e.target.getAttribute('data-tv'); if (k === 'x') { close(); } if (k === 'fs') { try { (el.requestFullscreen || el.webkitRequestFullscreen).call(el); } catch (x) {} } });
-  var iv = every(function(){ if (!D.body.contains(el)) return; paint(); }, 60000);
-  function close(){ try { clearInterval(iv); } catch (e) {} try { if (D.fullscreenElement) D.exitFullscreen(); } catch (e) {} el.remove(); TV = null; D.removeEventListener('keydown', onKey); }
+  function setNum(node, key, to, fmt){
+    var f = FMT[fmt]; if (prev[key] === to) return;
+    var from = typeof prev[key] === 'number' ? prev[key] : 0; prev[key] = to;
+    anims = anims.filter(function(a){ return a.node !== node; });
+    var txt = f(to); node.className = node.className.replace(/\s*\b(m|xl)\b/g, ''); if (fmt === 'usd') node.className += ' m'; if (txt.length > 7) node.className += ' xl';
+    if (reduce || D.hidden || from === to) { node.textContent = txt; return; }
+    anims.push({ node: node, from: from, to: to, f: f, t0: W.performance.now(), dur: 1400 });
+    if (!T.raf) T.raf = W.requestAnimationFrame(frame);
+  }
+  function tile(k, o){
+    var t = $('[data-k="' + k + '"]'); if (!t) return;
+    t.className = 't' + (t.className.indexOf('last') > -1 ? ' last' : '') + (o.st ? ' s-' + o.st : '');
+    var v = $('[data-v]', t);
+    if (o.num == null) { prev[k] = null; anims = anims.filter(function(a){ return a.node !== v; }); v.textContent = o.text || '—'; v.className = 'v'; }
+    else setNum(v, k, o.num, o.fmt);
+    $('[data-sub]', t).textContent = o.sub || ' ';
+  }
+  function paintGoal(p, adm){
+    var g = $('.tvg'), cell = $('.t.goal'), b = $('[data-gbody]', cell);
+    if (!p && !adm) { g.className = 'tvg nogoal'; return; }
+    g.className = 'tvg';
+    if (!p) { cell.className = 't goal hint'; b.innerHTML = '<div class="gh">Set a company goal</div><div class="sub">⚙ Admin → 🎯 Company goal</div>'; return; }
+    cell.className = 't goal ' + (p.ahead >= 0 ? 's-green' : 's-amber');
+    if (!$('.ring', b)) { b.innerHTML = '<div class="ring"><svg viewBox="0 0 100 100"><circle class="trk" cx="50" cy="50" r="44"/><circle class="arc" cx="50" cy="50" r="44"/></svg><div class="pc" data-pc>0%</div></div><div class="gl" data-gl></div><div class="sub" data-gs></div>'; }
+    $('[data-gl]', b).textContent = money0(p.ytd) + ' of ' + money0(p.goal) + ' this year';
+    $('[data-gs]', b).textContent = (p.ahead >= 0 ? money0(p.ahead) + ' ahead of pace' : money0(-p.ahead) + ' behind pace');
+    var arc = $('.arc', b), off = 276.46 * (1 - Math.max(0, Math.min(1, p.pct / 100)));
+    if (reduce || D.hidden) arc.style.strokeDashoffset = off; else T.tick2 = later(function(){ if (alive) arc.style.strokeDashoffset = off; }, 60);
+    setNum($('[data-pc]', b), 'goal', p.pct, 'pc1');
+  }
+  function paint(){
+    if (!alive || D.hidden) return;
+    var n = tvNumbers(); last = n;
+    tile('newWeek', { num: n.newWeek, fmt: 'int', sub: 'new inquiries, last 7 days' });
+    var cs = n.close == null ? '' : n.won + n.lost >= 5 && n.close < 30 ? 'red' : n.close >= 50 ? 'green' : n.close < 50 && n.close >= 30 ? 'amber' : '';
+    tile('close', { num: n.close, fmt: 'pct', text: '—', st: cs, sub: n.won + ' won · ' + n.lost + ' lost' });
+    tile('jobs', { num: n.jobs, fmt: 'int', sub: 'active right now' });
+    tile('collected', { num: n.collected, fmt: 'usd', sub: 'payments received' });
+    tile('ar', { num: n.ar, fmt: 'usd', st: n.ar60 > 0 ? 'red' : 'green', sub: n.ar60 > 0 ? money0(n.ar60) + ' over 60 days' : n.ar > 0 ? 'nothing over 60 days' : 'nothing outstanding' });
+    tile('bidsWeek', { num: n.bidsWeek, fmt: 'int', sub: n.bidsWeek ? 'due in the next 7 days' : 'none due this week' });
+    tile('appr', { num: n.appr, fmt: 'int', st: n.appr > 0 ? 'amber' : 'green', sub: n.appr > 0 ? 'waiting on someone' : 'all caught up' });
+    items = tvTicker(n); if (ti >= items.length) ti = 0;
+    var adm = isAdmin();
+    var X = W._gcX10; (X && typeof X.goal2 === 'function' ? X.goal2() : Promise.resolve(null)).then(function(r){ if (alive) paintGoal(r && r.p || null, adm); }, function(){ if (alive) paintGoal(null, adm); });
+  }
+  function clk(){
+    var d = new Date(), hm = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), key = hm + d.getDate();
+    if (key === clk.k) return; clk.k = key;
+    var m = hm.match(/^(.*?)\s*([AP]M)$/i); $('[data-time]').innerHTML = m ? esc(m[1]) + '<small>' + esc(m[2]) + '</small>' : esc(hm);
+    $('[data-date]').textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+  function nextTick(){
+    if (!alive) return;
+    var node = $('[data-tki]'); if (items.length) { node.textContent = items[ti % items.length]; ti++; node.classList.remove('in'); void node.offsetWidth; if (!reduce) node.classList.add('in'); }
+    T.tick = later(nextTick, 6500);
+  }
   function onKey(e){ if (e.key === 'Escape') close(); }
-  D.addEventListener('keydown', onKey);
-  paint(); D.body.appendChild(el); TV = el;
+  function onVis(){ if (alive && !D.hidden) { clk.k = ''; clk(); paint(); } }
+  function close(){
+    alive = false; try { clearInterval(T.iv); clearInterval(T.clk); clearTimeout(T.tick); clearTimeout(T.tick2); W.cancelAnimationFrame(T.raf); } catch (e) {}
+    T.iv = T.clk = T.tick = T.tick2 = T.raf = 0; anims = [];
+    try { if (D.fullscreenElement) D.exitFullscreen(); } catch (e) {}
+    D.removeEventListener('keydown', onKey); D.removeEventListener('visibilitychange', onVis);
+    el.remove(); if (TV === el) TV = null;
+  }
+  el.__close = close; el.__timers = function(){ return { iv: T.iv, clk: T.clk, tick: T.tick, raf: T.raf, tick2: T.tick2 || 0, alive: alive }; };
+  el.addEventListener('click', function(e){ var k = e.target && e.target.getAttribute && e.target.getAttribute('data-tv'); if (k === 'x') close(); if (k === 'fs') { try { (el.requestFullscreen || el.webkitRequestFullscreen).call(el); } catch (x) {} } });
+  D.addEventListener('keydown', onKey); D.addEventListener('visibilitychange', onVis);
+  D.body.appendChild(el); TV = el;
+  clk(); paint(); nextTick();
+  T.clk = every(clk, 1000);
+  T.iv = every(function(){ if (!D.body.contains(el)) { close(); return; } paint(); }, 60000);
   return el;
 }
 
@@ -158266,7 +158420,7 @@ function watchConflicts(){
   });
 }
 
-W._gcX10 = { oncall: openOncall, home: openHome, codes: openCodes, insp: openInsp, mydata: function(e){ var c = D.getElementById('gc-x10-mydata'); if (c) loadMy(c, e); }, fleet: openFleet, goal: openGoal, testimonials: openTestis, conflicts: conflicts, pace: pace, _oc: function(){ return OC.data; } };
+W._gcX10 = { oncall: openOncall, home: openHome, codes: openCodes, insp: openInsp, mydata: function(e){ var c = D.getElementById('gc-x10-mydata'); if (c) loadMy(c, e); }, fleet: openFleet, goal: openGoal, testimonials: openTestis, conflicts: conflicts, pace: pace, goal2: function(){ return pullGoal().then(function(g){ return { g: g, p: pace(g) }; }); }, _oc: function(){ return OC.data; } };
 SI(function(){ try { wrapDash(); wrapLeadCell(); deskBar(); fieldBar(); mitStrip(); mktCard(); myDataPanel(); adminCards(); tvGoal(); } catch (e) {} }, 900);
 SI(function(){ try { watchConflicts(); } catch (e) {} }, 60e3);
 SI(function(){ if (!D.hidden && (D.querySelector('[data-a="mitnew"]') || D.querySelector('.gcx10-oc'))) pullOncall(false); }, 125e3);
