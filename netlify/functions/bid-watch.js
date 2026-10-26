@@ -42,7 +42,7 @@ const { env, s, low, arr, nowIso, sha256, sb, kvGet, kvCas, kvPut, upsert, itemI
 
 const UA = 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; leads@grayco-cs.com; GrayCo Construction Services, Bartlett TN)';
 const KV_SEEN = 'gc_bid_watch_seen', KV_STATUS = 'gc_bid_watch_status';
-const PAUSE_MS = 1500, TIMEOUT_MS = 20000, MAX_PAGE = 3 * 1024 * 1024;
+const PAUSE_MS = 1500, TIMEOUT_MS = 10000, MAX_PAGE = 3 * 1024 * 1024, CONCURRENCY = 4;   /* patch BW2: 10 s per page; sources on different sites are read 4 at a time, the same site never twice at once */
 
 /* ── the sources ──────────────────────────────────────────────────────────────
    auto:true  → read here (public page / feed, no login).
@@ -65,6 +65,43 @@ const SOURCES = [
     auto: true, kind: 'links', url: 'https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/invitations-to-bid--itb-.html' },
   { id: 'arkansas-osp', name: 'State of Arkansas — current solicitations', label: 'State of AR', owner: 'State of Arkansas (Office of State Procurement)', city: '', state: 'AR',
     auto: true, kind: 'links', url: 'https://www.arkansas.gov/dfa/procurement/bids/index.php' },
+  /* patch BW2: more public buyers on CivicPlus "Bid Postings" pages (Bids.aspx?bidID=n). These addresses follow the CivicPlus pattern
+     DeSoto County uses but could NOT be fetched from the build container (outbound network blocked), so they are marked unverified:
+     the Bids screen shows the first real result for each (bids read, or "unreachable" / "no solicitations found"). */
+  { id: 'gmsd', name: 'Germantown Municipal School District — bids', label: 'Germantown Schools', owner: 'Germantown Municipal School District', city: 'Germantown', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.gmsdk12.org/Bids.aspx', unverified: true },
+  { id: 'collierville-schools', name: 'Collierville Schools — bids', label: 'Collierville Schools', owner: 'Collierville Schools', city: 'Collierville', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.colliervilleschools.org/Bids.aspx', unverified: true },
+  { id: 'bartlett-schools', name: 'Bartlett City Schools — bids', label: 'Bartlett City Schools', owner: 'Bartlett City Schools', city: 'Bartlett', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.bartlettschools.org/Bids.aspx', unverified: true },
+  { id: 'arlington-schools', name: 'Arlington Community Schools — bids', label: 'Arlington Schools', owner: 'Arlington Community Schools', city: 'Arlington', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.acsk12.org/Bids.aspx', unverified: true },
+  { id: 'millington-schools', name: 'Millington Municipal Schools — bids', label: 'Millington Schools', owner: 'Millington Municipal Schools', city: 'Millington', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.millingtonmunicipalschools.org/Bids.aspx', unverified: true },
+  { id: 'lakeland-schools', name: 'Lakeland School System — bids', label: 'Lakeland Schools', owner: 'Lakeland School System', city: 'Lakeland', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.lakelandschools.org/Bids.aspx', unverified: true },
+  { id: 'desoto-schools', name: 'DeSoto County Schools — bids', label: 'DeSoto County Schools', owner: 'DeSoto County Schools', city: 'Hernando', state: 'MS',
+    auto: true, kind: 'civic', url: 'https://www.desotocountyschools.org/Bids.aspx', unverified: true },
+  { id: 'bartlett', name: 'City of Bartlett — bids', label: 'City of Bartlett', owner: 'City of Bartlett', city: 'Bartlett', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.cityofbartlett.org/Bids.aspx', unverified: true },
+  { id: 'germantown', name: 'City of Germantown — bids', label: 'City of Germantown', owner: 'City of Germantown', city: 'Germantown', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.germantown-tn.gov/Bids.aspx', unverified: true },
+  { id: 'collierville', name: 'Town of Collierville — bids', label: 'Town of Collierville', owner: 'Town of Collierville', city: 'Collierville', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.colliervilletn.gov/Bids.aspx', unverified: true },
+  { id: 'arlington', name: 'Town of Arlington — bids', label: 'Town of Arlington', owner: 'Town of Arlington', city: 'Arlington', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.arlingtontn.gov/Bids.aspx', unverified: true },
+  { id: 'lakeland', name: 'City of Lakeland — bids', label: 'City of Lakeland', owner: 'City of Lakeland', city: 'Lakeland', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.lakelandtn.gov/Bids.aspx', unverified: true },
+  { id: 'millington', name: 'City of Millington — bids', label: 'City of Millington', owner: 'City of Millington', city: 'Millington', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.millingtontn.gov/Bids.aspx', unverified: true },
+  { id: 'olive-branch-bids', name: 'City of Olive Branch — bids', label: 'Olive Branch', owner: 'City of Olive Branch', city: 'Olive Branch', state: 'MS',
+    auto: true, kind: 'civic', url: 'https://www.obms.us/Bids.aspx', unverified: true },
+  { id: 'horn-lake', name: 'City of Horn Lake — bids', label: 'Horn Lake', owner: 'City of Horn Lake', city: 'Horn Lake', state: 'MS',
+    auto: true, kind: 'civic', url: 'https://www.hornlake.org/Bids.aspx', unverified: true },
+  { id: 'hernando', name: 'City of Hernando — bids', label: 'Hernando', owner: 'City of Hernando', city: 'Hernando', state: 'MS',
+    auto: true, kind: 'civic', url: 'https://www.hernandoms.org/Bids.aspx', unverified: true },
+  { id: 'tipton-county', name: 'Tipton County — bids', label: 'Tipton County', owner: 'Tipton County Government', city: 'Covington', state: 'TN',
+    auto: true, kind: 'civic', url: 'https://www.tiptonco.com/Bids.aspx', unverified: true },
   /* e-mail alerts only */
   { id: 'mlgw', name: 'MLGW — Bid Notification System / iSupplier', label: 'MLGW', auto: false, how: 'Register in MLGW\'s Bid Notification System (contracted services) and iSupplier Portal (materials); use leads@grayco-cs.com as the contact e-mail.' },
   { id: 'southaven', name: 'City of Southaven — Central Bidding', label: 'Southaven', auto: false, how: 'Free vendor account on Central Bidding (centralbidding.com), follow City of Southaven, notification e-mail leads@grayco-cs.com.' },
@@ -393,7 +430,7 @@ async function samTest(key, opts){
     return { ok: false, why: r.status === 401 || r.status === 403 ? 'SAM.gov refused this key.' : r.status === 429 ? 'SAM.gov says today\'s limit is used up (the key itself may be fine).' : 'SAM.gov answered ' + r.status + '.' };
   } catch (e) { return { ok: false, why: 'SAM.gov could not be reached.' }; }
 }
-const SAM_DEFAULT = { on: true, states: ['TN', 'MS', 'AR'], naics: ['236220', '238160', '236118', '238310', '238390', '562910'] };
+const SAM_DEFAULT = { on: true, states: ['TN', 'MS', 'AR'], naics: ['236', '237', '238', '562910'] };   /* patch BW2: all construction NAICS 236xxx-238xxx */
 function samSettings(settings){
   const x = Object.assign({}, SAM_DEFAULT, (settings && settings.sam) || {});
   x.states = arr(x.states).map(v => s(v).toUpperCase()).filter(v => /^[A-Z]{2}$/.test(v)).slice(0, 6);
@@ -452,31 +489,37 @@ async function runAll(opts){
   status.sources = status.sources || {};
   const robots = {}, records = [], summary = [];
   const list = SOURCES.filter(x => x.auto).concat(customSources(settings).filter(x => x.auto)).filter(x => !opts.only || x.id === opts.only);   /* patch BW: + the admins' own boards */
-  for (const src0 of list) {
-    if (Date.now() - t0 > budget) { summary.push({ id: src0.id, skipped: 'out of time this run' }); continue; }
+  const hostChain = {};   /* one request at a time per site, with a pause */
+  const one = async (src0) => {
+    if (Date.now() - t0 > budget) { summary.push({ id: src0.id, skipped: 'out of time this run' }); return; }
     const cfg = (settings.sources || {})[src0.id] || {};
     const prev = status.sources[src0.id] || {};
-    if (cfg.on === false || src0.on === false) { status.sources[src0.id] = Object.assign({}, prev, { off: true }); continue; }
+    if (cfg.on === false || src0.on === false) { status.sources[src0.id] = Object.assign({}, prev, { off: true }); return; }
     const src = Object.assign({}, src0, cfg.url && !src0.custom ? { url: cfg.url } : {});
-    if (src.custom && !urlOk(src.url)) { status.sources[src.id] = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: 'not a public https address — edit it in 🔎 Bid boards' }; continue; }
-    const st = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: '' };
+    if (src.custom && !urlOk(src.url)) { status.sources[src.id] = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: 'not a public https address — edit it in 🔎 Bid boards' }; return; }
+    const st = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: '', ok: false, unverified: !!src.unverified };
+    let host = ''; try { host = new URL(src.url).host; } catch (e) {}
+    const prevLink = hostChain[host] || Promise.resolve();
+    let release; hostChain[host] = new Promise(r => { release = r; });
+    await prevLink;
     try {
       const u = new URL(src.url);
       if (robots[u.host] === undefined) { const rb = await get(u.origin + '/robots.txt', {}, f); robots[u.host] = rb.status === 200 ? rb.text : ''; }
-      if (!robotsAllows(robots[u.host], u.pathname + u.search)) { st.why = 'robots.txt asks robots not to read this page — use its e-mail alerts'; status.sources[src.id] = st; summary.push({ id: src.id, why: st.why }); continue; }
+      if (!robotsAllows(robots[u.host], u.pathname + u.search)) { st.why = 'robots.txt asks robots not to read this page — use its e-mail alerts'; return; }
       const cond = {}; if (prev.etag && prev.url === src.url) cond['If-None-Match'] = prev.etag; if (prev.lastModified && prev.url === src.url) cond['If-Modified-Since'] = prev.lastModified;
-      let page = await get(src.url, cond, f);
+      const page = await get(src.url, cond, f);
       let items = [];
       st.http = page.status;
-      if (page.status === 304) { st.why = 'no change since the last look'; st.parsed = prev.parsed || 0; st.etag = prev.etag; st.lastModified = prev.lastModified; }
+      if (page.status === 304) { st.why = 'no change since the last look'; st.parsed = prev.parsed || 0; st.etag = prev.etag; st.lastModified = prev.lastModified; st.ok = true; }
       else if (page.status === 200) {
-        items = src.kind === 'rss' ? parseRss(page.text) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow });
+        items = src.kind === 'rss' ? parseRss(page.text) : src.kind === 'civic' ? parseCivicBids(page.text, src.url) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow });
+        if (src.kind === 'civic' && !items.length) items = parseLinks(page.text, src.url, {});   /* a CivicPlus page laid out differently */
         if (!items.length && src.kind === 'rss' && src.html) {   /* feed empty or switched off: the listing page */
           await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
           const p2 = await get(src.html, {}, f); if (p2.status === 200) items = parseCivicBids(p2.text, src.html);
         }
         st.etag = page.etag; st.lastModified = page.lastModified;
-        st.parsed = items.length;
+        st.parsed = items.length; st.ok = true;
         if (!items.length) st.why = 'the page was read but no solicitations were found on it — it may have changed (check the link)';
       } else st.why = page.why || ('the site answered ' + page.status);
       const mine = seen[src.id] = seen[src.id] || {};
@@ -490,9 +533,16 @@ async function runAll(opts){
         records.push(toRecord(src, it, mw.hits));
       });
     } catch (e) { st.why = 'could not read: ' + s(e && e.message); }
-    status.sources[src.id] = st; summary.push({ id: src.id, http: st.http, parsed: st.parsed, matched: st.matched, why: st.why });
-    await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
-  }
+    finally {
+      status.sources[src.id] = st; summary.push({ id: src.id, http: st.http, parsed: st.parsed, matched: st.matched, why: st.why });
+      setTimeout(release, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS);
+    }
+  };
+  /* limited concurrency: one failing source never stops the others (each has its own try/catch) */
+  let nextIdx = 0;
+  await Promise.all(Array.from({ length: Math.min(opts.concurrency || CONCURRENCY, list.length) }, async () => {
+    while (nextIdx < list.length) { const src0 = list[nextIdx++]; try { await one(src0); } catch (e) { summary.push({ id: src0.id, why: 'error: ' + s(e && e.message) }); } }
+  }));
   /* patch BW: SAM.gov once a day (Central), or now when asked for by name; the key from the CRM, else env SAM_API_KEY */
   const samK = (!opts.only || opts.only === 'sam-gov') ? await samKey().catch(() => ({ key: '' })) : { key: '' };
   if (samK.key && samSettings(settings).on !== false) {

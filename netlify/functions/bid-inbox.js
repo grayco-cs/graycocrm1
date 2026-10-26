@@ -1199,7 +1199,7 @@ exports.handler = async function(event){
     if (!who.admin) return J(403, { error: 'Only an admin sees the bid boards.' }, C);
     const BW = require('./bid-watch.js');
     const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
-    const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local });
+    const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local, unverified: !!x.unverified });
     const sk = await BW.samKey().catch(() => ({ key: '' }));   /* the key itself never leaves the server: where it came from + its last 4 */
     return J(200, { ok: true, builtins: BW.SOURCES.map(pub), custom: arr(settings.custom), settings: { keywords: settings.keywords, exclude: settings.exclude, allBids: settings.allBids !== false, sources: settings.sources || {} },
       defaults: { keywords: DEFAULT_SETTINGS.keywords, exclude: DEFAULT_SETTINGS.exclude },
