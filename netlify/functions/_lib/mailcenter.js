@@ -28,9 +28,11 @@ function emails(v){
 /* the company's addresses: data, edited in the Email Center (admins). mailbox = the Google account that receives it
    ("" = each person's own mailbox — a group they are in); crm = a copy reaches the CRM (in.grayco-cs.com). */
 const DEFAULT_ALIASES = [
-  { address: 'leads@grayco-cs.com', kind: 'group', mailbox: '', crm: true, note: 'Customer leads and bid invitations — copy to leads@in.grayco-cs.com' },
-  { address: 'bids@grayco-cs.com', kind: 'group', mailbox: '', crm: true, note: 'Sub bids and GC replies to our bids — copy to bids@in.grayco-cs.com' },
-  { address: 'billing@grayco-cs.com', kind: 'alias', mailbox: 'office@grayco-cs.com', crm: false, note: 'Invoices and payments (alias on office@)' },
+  { address: 'leads@grayco-cs.com', kind: 'group', mailbox: '', crm: true, note: 'Every lead and every bid invitation or bid-board notice — copy to leads@in.grayco-cs.com' },
+  { address: 'bids@grayco-cs.com', kind: 'group', mailbox: '', crm: true, note: 'Only our own bids going out, GC replies and subs\' prices for our bids — copy to bids@in.grayco-cs.com' },
+  { address: 'billing@grayco-cs.com', kind: 'alias', mailbox: 'office@grayco-cs.com', crm: false, note: 'Customer invoices, statements and pay apps go out from here; customers reply here (alias on office@)' },
+  { address: 'invoices@grayco-cs.com', kind: 'group', mailbox: '', crm: true, note: 'Sub and supplier bills — copy to invoices@in.grayco-cs.com' },
+  { address: 'receipts@grayco-cs.com', kind: 'group', mailbox: '', crm: true, note: 'Receipt photos and PDFs from staff — copy to receipts@in.grayco-cs.com' },
   { address: 'news@grayco-cs.com', kind: 'alias', mailbox: 'office@grayco-cs.com', crm: false, note: 'Newsletter (alias on office@)' },
   { address: 'portal@grayco-cs.com', kind: 'alias', mailbox: 'office@grayco-cs.com', crm: false, note: 'Customer portal mail (alias on office@)' },
   { address: 'replies@grayco-cs.com', kind: 'group', mailbox: '', crm: false, note: 'Replies to the CRM\'s automatic e-mails' },

@@ -78,7 +78,8 @@ function requestHtml(w, link){
     '<p>Hello ' + esc(w.sub || '') + ',</p>' +
     '<p>GrayCo Construction Services asks for a <b>' + (w.kind === 'final' ? 'final' : 'conditional') + ' lien waiver</b> for <b>' + esc(w.jobName) + '</b>' + (w.jobAddress ? ' (' + esc(w.jobAddress) + ')' : '') + ', amount <b>' + usd(w.amount) + '</b>' + (w.invNum ? ', your invoice ' + esc(w.invNum) : '') + '. It only takes effect once you have been paid.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block">Review and sign</a></p>' +
-    '<p>You can sign it online, or upload your own signed waiver on the same page. Questions? Reply to this e-mail or call the office at 901-585-0944.</p></div>';
+    '<p>You can sign it online, or upload your own signed waiver on the same page. Questions? Reply to this e-mail or call the office at 901-585-0944.</p>' +
+    '<p style="font-size:13px;color:#55626F">Send all invoices and pay requests to <b>invoices@grayco-cs.com</b> (include the job name/PO).</p></div>';
 }
 async function contacted(email){
   const l = await list() || [];
@@ -242,4 +243,4 @@ async function override(pid, who, reason){
   const r = await A.core().kvListUpdate(KEY, function(l){ const rest = l.filter(function(x){ return s(x.id) !== id; }); return { list: rest.concat([{ id: id, kind: 'override', pid: s(pid), status: 'override', by: s(who && (who.name || who.email)), at: now, reason: clip(reason, 300) }]), check: function(l2){ return l2.some(function(x){ return s(x.id) === id && x.at === now; }); } }; });
   return r.ok;
 }
-module.exports = { run, request, onApproved, sign, upload, byToken, forCrm, override, toggle, settings, waiverText, subKey, onFor, approvedAt, closedAt, KEY, SKEY, KIND, SINCE, hash, strip };
+module.exports = { requestHtml, run, request, onApproved, sign, upload, byToken, forCrm, override, toggle, settings, waiverText, subKey, onFor, approvedAt, closedAt, KEY, SKEY, KIND, SINCE, hash, strip };

@@ -16,7 +16,7 @@ Your company addresses: **office@**, **billing@**, **portal@**, **news@** and **
 | Address | The CRM sends from it | People can email it | Where replies and mail land |
 |---|---|---|---|
 | office@grayco-cs.com | everyday CRM email | yes, it's Brittany's mailbox | Brittany |
-| billing@grayco-cs.com | final invoices and payment reminders | yes, once you add the alias below; **suppliers send bills here** | Brittany (and the CRM, once the bill inbox ships) |
+| billing@grayco-cs.com | customer invoices, statements and payment reminders go out from here; customers reply here | yes, once you add the alias below; **suppliers and subs send bills to invoices@, not here** | Brittany (and the CRM, once the bill inbox ships) |
 | portal@grayco-cs.com | portal links and "new papers in your portal" | yes, once you add the alias below | Brittany |
 
 **Sending already works.** ✅ The domain is verified in Resend. Resend can send from **any** @grayco-cs.com name without creating it, which is why you don't see portal@ or billing@ listed in Resend. That's normal.
@@ -42,7 +42,7 @@ Your company addresses: **office@**, **billing@**, **portal@**, **news@** and **
 | Address | Used for | How to make it |
 |---|---|---|
 | office@ | everyday mail; Brittany's mailbox | ✅ exists |
-| billing@ | final invoices and reminders go out from it; supplier bills come in to it | alias on office@ |
+| billing@ | customer invoices and reminders go out from it; customer payment questions come in to it (supplier and sub bills go to invoices@) | alias on office@ |
 | portal@ | customer portal emails | alias on office@ |
 | news@ | newsletters and marketing | alias on office@ |
 | claims@ | insurance adjusters and carriers | Google Group: you + office + the insurance PM |
@@ -57,7 +57,7 @@ Each person's own address (wjohnson@, nthomas@, sbiffle@, gmiller@) already exis
 
 ## 2. Supplier bills into the CRM automatically ⏳ (when Claude says the bill inbox is ready)
 
-1. Tell suppliers to email bills to **billing@grayco-cs.com**. You can start this today; the bills land in Brittany's inbox.
+1. Tell suppliers and subcontractors to email bills to **invoices@grayco-cs.com** (the CRM files them under Invoices; billing@ is for customers). You can start this today; the bills land in Brittany's inbox.
 2. When the bill inbox ships, Claude gives you these steps:
    - **Resend → Domains → grayco-cs.com → Enable Receiving.** It uses a **separate sub-address**, so your Google email isn't touched.
    - **Netlify → DNS → grayco-cs.com:** add the one MX record Resend shows, for that sub-address only.
@@ -125,3 +125,27 @@ Each person's own address (wjohnson@, nthomas@, sbiffle@, gmiller@) already exis
 - [ ] **Bank and cards:** decide on QuickBooks bank feeds, or Plaid or Teller.
 - [ ] **Google Ads:** account ID and API developer token, when we get to Marketing.
 - [ ] **Two-step login** for admins.
+
+## E-mail addresses: what goes where
+
+| Address | What goes there | What the CRM does |
+|---|---|---|
+| **leads@grayco-cs.com** | Every lead and every bid invitation or bid-board notice: BuildingConnected, PlanHub, plan rooms, public bid sites, GC invitation lists, and the website, Facebook and Google forms. Sign up for every bid site with leads@. | Read into Leads → 📥 Lead Inbox. Alerts go to the office. |
+| **bids@grayco-cs.com** | Only our own bids going out, GC replies to them, and subcontractors' prices for bids we are pricing. | GC replies are filed on the bid; sub prices land in Leads → 📨 Sub bids. |
+| **claims@grayco-cs.com** | Insurance carriers, TPAs and adjusters: claim correspondence and new assignments. Copy claims@ on insurance e-mail. | Filed on the claim. A new assignment becomes an insurance lead. |
+| **invoices@grayco-cs.com** | Subcontractor and supplier bills and invoices. Forward any invoice you get to invoices@. | Filed under Invoices, waiting for approval. |
+| **receipts@grayco-cs.com** | Staff e-mail receipt photos and PDFs. | Shows on the To-Do as "Receipts e-mailed in". Someone confirms it. |
+| **billing@grayco-cs.com** | Customer invoices, statements and pay apps are sent from here. Customers reply here about payments. | Lands in office@ (Brittany). |
+| **office@grayco-cs.com** | The main office mailbox. | Brittany reads it. |
+| **orders@grayco-cs.com** | Supplier order confirmations. | Linked to the job: delivery, schedule, Materials arriving. |
+| **estimates@grayco-cs.com** | Estimators e-mail a takeoff or estimate (Word, PDF, Excel) to the CRM. | Stored for the office to build the estimate. |
+| **replies@ · portal@ · news@** | Send-only. The CRM sends from them (portal links, newsletters); replies@ is the Reply-To of automatic e-mails. | Nothing reads them by machine; people answer replies@. |
+
+- Never sign up for bid sites with bids@ or your personal e-mail. Use leads@grayco-cs.com.
+- Forward any invoice you get to invoices@grayco-cs.com.
+- Forward receipts (photo or PDF) to receipts@grayco-cs.com.
+- Insurance correspondence: copy claims@grayco-cs.com.
+- Tell subcontractors: invoices and pay requests go to invoices@, their prices for our bids go to bids@.
+- Tell customers: payments and billing go to billing@, insurance claims go to claims@. Texts go to (901) 582-8255; the office line is (901) 585-0944.
+
+Phone and text: text (901) 582-8255; office line (901) 585-0944. Tell subcontractors: send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO). Send your price for our bids to bids@grayco-cs.com.

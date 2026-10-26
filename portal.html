@@ -568,12 +568,20 @@ function pmCard(){
       TAB === 'msgs' ? h('a', { class: 'btn', href: 'mailto:' + (email || 'office@grayco-cs.com'), text: 'E-mail' }) : h('button', { type: 'button', class: 'btn', text: tr('msgs'), on: { click: function(){ go('msgs'); } } })])
   ]);
 }
+function reachBlock(){
+  var es = LANG === 'es';
+  return h('div', { class: 'muted', id: 'gcReach', style: 'margin-top:10px' }, [h('b', { text: es ? 'Cómo comunicarse con nosotros' : 'How to reach us' }), h('br'),
+    es ? 'Preguntas o citas: oficina (901) 585-0944, texto (901) 582-8255 o su Portal GrayCo.' : 'Questions or scheduling: office (901) 585-0944, text (901) 582-8255, or your GrayCo Portal.', h('br'),
+    es ? 'Pagos y facturación: ' : 'Payments and billing: ', h('a', { href: 'mailto:billing@grayco-cs.com', text: 'billing@grayco-cs.com' }), h('br'),
+    es ? 'Reclamos de seguro: ' : 'Insurance claims: ', h('a', { href: 'mailto:claims@grayco-cs.com', text: 'claims@grayco-cs.com' }), h('br'),
+    es ? 'Emergencia (agua, fuego): llame al (901) 585-0944.' : 'Emergency (water, fire): call (901) 585-0944.']);
+}   /* EMAILMAP-patch */
 function infoCard(){
   var c = V.customer || {};
   return card('Your info', [
     h('dl', { class: 'info' }, [h('dt', { text: 'Name' }), h('dd', { text: c.name || '—' }), h('dt', { text: 'Address' }), h('dd', { text: c.address || '—' }),
       h('dt', { text: 'Phone' }), h('dd', { text: c.phone || '—' }), h('dt', { text: 'Email' }), h('dd', { text: c.email || '—' })]),
-    h('div', { class: 'muted' }, ['Something wrong? ', h('a', { href: 'tel:9015850944', text: 'Call us to change it' }), ' — ' + OFFICE + '.'])]);
+    h('div', { class: 'muted' }, ['Something wrong? ', h('a', { href: 'tel:9015850944', text: 'Call us to change it' }), ' — ' + OFFICE + '.']), reachBlock()]);
 }
 function photosButton(){
   return h('button', { type: 'button', class: 'cc btn navy', id: 'gp-open', style: 'justify-content:flex-start;min-height:56px', on: { click: function(){ go('photos'); } } }, [
@@ -833,7 +841,7 @@ function insHome(){
   if (c.mortgage || (m.checksToEndorse || []).length) tips.push(h('li', { text: 'If you have a mortgage, your mortgage company' + (c.mortgage ? ' (' + c.mortgage + ')' : '') + ' may be on the check too. They must sign it before it can be cashed. Call their "loss draft" or "insurance claims" department early — they may ask for an inspection or papers from us, and we help with that.' }));
   tips.push(h('li', { text: 'Depreciation is money your insurance company holds back until the work is done. We send them the papers to release it.' }));
   var help = card('What happens next', [h('p', { class: 'nextp', text: INS_NEXT[I.now] || '' }), h('h3', { text: 'Good to know' }), h('ul', { class: 'tips' }, tips),
-    h('div', { class: 'muted' }, ['Questions about your claim? ', h('a', { href: 'tel:9015850944', text: 'Call us — ' + OFFICE }), '.'])]);
+    h('div', { class: 'muted' }, ['Questions about your claim? ', h('a', { href: 'tel:9015850944', text: 'Call us — ' + OFFICE }), ' or e-mail ', h('a', { href: 'mailto:claims@grayco-cs.com', text: 'claims@grayco-cs.com' }), '.'])]);
   help.id = 'insNext';
   return [box, track, help];
 }

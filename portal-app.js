@@ -25,7 +25,7 @@ var L = {
     pct: '% done', postProgress: 'Post progress', progressNote: 'What got done today', noProgress: 'No progress posted yet.',
     noPunch: 'No punch items for you on this job.', markDone: 'Mark done with a photo', isDone: 'Done', due: 'due',
     newInvoice: '🧾 Send an invoice', amount: 'Amount', invNum: 'Your invoice #', againstScope: 'For', whole: 'This job', invFile: 'Invoice (PDF or photo)', invNote: 'Note (optional)',
-    payRule: 'Invoices in by Wednesday are paid the following Friday.', stSubmitted: 'Submitted', stApproved: 'Approved', stScheduled: 'Scheduled for Friday pay', stPaid: 'Paid', stDeclined: 'Not approved — call the office', noInvoices: 'No invoices yet.', payOn: 'pay date', paidOn: 'paid',
+    payRule: 'Invoices in by Wednesday are paid the following Friday. Send invoices to invoices@grayco-cs.com (include the job name/PO).', stSubmitted: 'Submitted', stApproved: 'Approved', stScheduled: 'Scheduled for Friday pay', stPaid: 'Paid', stDeclined: 'Not approved — call the office', noInvoices: 'No invoices yet.', payOn: 'pay date', paidOn: 'paid',
     lien: 'A signed lien waiver is required for this job. Upload it under Papers.',
     msgPh: 'Write a message', noMsgs: 'No messages yet. Write to your Project Manager here.', read: 'Read', sentM: 'Sent', attach: '📎 Photo / file',
     w9: 'W-9', coi: 'Insurance certificate (COI)', agreement: 'Agreement with GrayCo', lienW: 'Lien waivers', onFile: 'On file', missing: 'Not on file', sentFile: 'Sent — GrayCo is filing it', expires: 'Expires', expired: 'Expired', upload: 'Upload', uploadNew: 'Upload new', expDate: 'Date it runs out', language: 'Language', score: 'Your GrayCo scorecard', scoreShow: 'Show my scorecard', scoreHide: 'Hide', scoreTips: 'How to raise it', scoreNote: 'From your on-time work, punch items, callbacks, paperwork and your PM\u2019s rating. Only you and GrayCo see it.',
@@ -52,7 +52,7 @@ var L = {
     pct: '% hecho', postProgress: 'Publicar avance', progressNote: 'Lo que se hizo hoy', noProgress: 'Todavía no hay avance publicado.',
     noPunch: 'No tiene pendientes en este trabajo.', markDone: 'Marcar hecho con una foto', isDone: 'Hecho', due: 'para el',
     newInvoice: '🧾 Enviar una factura', amount: 'Monto', invNum: 'Su factura #', againstScope: 'Por', whole: 'Este trabajo', invFile: 'Factura (PDF o foto)', invNote: 'Nota (opcional)',
-    payRule: 'Las facturas recibidas antes del miércoles se pagan el viernes de la semana siguiente.', stSubmitted: 'Enviada', stApproved: 'Aprobada', stScheduled: 'Programada para el pago del viernes', stPaid: 'Pagada', stDeclined: 'No aprobada — llame a la oficina', noInvoices: 'Todavía no hay facturas.', payOn: 'fecha de pago', paidOn: 'pagada',
+    payRule: 'Las facturas recibidas antes del miércoles se pagan el viernes de la semana siguiente. Envíe las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', stSubmitted: 'Enviada', stApproved: 'Aprobada', stScheduled: 'Programada para el pago del viernes', stPaid: 'Pagada', stDeclined: 'No aprobada — llame a la oficina', noInvoices: 'Todavía no hay facturas.', payOn: 'fecha de pago', paidOn: 'pagada',
     lien: 'Este trabajo requiere una renuncia de gravamen (lien waiver) firmada. Súbala en Papeles.',
     msgPh: 'Escriba un mensaje', noMsgs: 'Todavía no hay mensajes. Escríbale a su Gerente de Proyecto aquí.', read: 'Leído', sentM: 'Enviado', attach: '📎 Foto / archivo',
     w9: 'W-9', coi: 'Certificado de seguro (COI)', agreement: 'Acuerdo con GrayCo', lienW: 'Renuncias de gravamen', onFile: 'En archivo', missing: 'No está en archivo', sentFile: 'Enviado — GrayCo lo está archivando', expires: 'Vence', expired: 'Vencido', upload: 'Subir', uploadNew: 'Subir nuevo', expDate: 'Fecha en que vence', language: 'Idioma', score: 'Su calificación con GrayCo', scoreShow: 'Ver mi calificación', scoreHide: 'Ocultar', scoreTips: 'Cómo subirla', scoreNote: 'Según trabajos a tiempo, pendientes, llamadas de garantía, papeles y la calificación de su gerente. Solo usted y GrayCo la ven.',
@@ -262,7 +262,7 @@ function home(){
   out.push(card(t('money'), [h('div', { class: 'money3' }, [
     h('div', null, [h('span', { class: 'muted', text: t('submitted') }), h('b', { text: usd(m.submitted) })]),
     h('div', null, [h('span', { class: 'muted', text: t('approvedM') }), h('b', { text: usd(m.approved) })]),
-    h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') })]));
+    h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') }), h('div', { class: 'muted' }, [h('a', { href: 'mailto:invoices@grayco-cs.com', text: 'invoices@grayco-cs.com' })])]));   /* EMAILMAP-patch */
   var wk = v.week || [];
   out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */

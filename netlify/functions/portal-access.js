@@ -286,16 +286,16 @@ function noteBad(ip, kind){ const h = hits.get((kind || 'pub') + '|' + ip); if (
 const MAIL = {
   en: {
     codeSubj: 'Your GrayCo Portal code', codeHead: 'Your sign-in code', codeBody: 'Enter this code on the GrayCo Portal. It works for 10 minutes. If you did not ask for it, ignore this e-mail.',
-    linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail.',
-    linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question.', scopeBtn: 'Review and sign',
+    linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).',
+    linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).', scopeBtn: 'Review and sign',
     coSignSubj: 'Change order to sign — ', coSignBody: 'GrayCo sent you a change order to your scope on this job. Open your portal to review it and sign it, or ask a question.',
     approvedSubj: 'You can now sign in at bids.grayco-cs.com', approvedBody: 'GrayCo approved your company for the GrayCo bid site. Sign in with the e-mail and password you chose.', approvedBtn: 'Open the bid site',
     foot: 'Questions? Call GrayCo at ' + OFFICE_PHONE + '.'
   },
   es: {
     codeSubj: 'Su código del Portal GrayCo', codeHead: 'Su código para entrar', codeBody: 'Escriba este código en el Portal GrayCo. Sirve por 10 minutos. Si usted no lo pidió, ignore este correo.',
-    linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo.',
-    linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta.', scopeBtn: 'Revisar y firmar',
+    linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).',
+    linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', scopeBtn: 'Revisar y firmar',
     coSignSubj: 'Orden de cambio para firmar — ', coSignBody: 'GrayCo le envió una orden de cambio a su alcance en este trabajo. Abra su portal para revisarla y firmarla, o hacer una pregunta.',
     approvedSubj: 'Ya puede entrar en bids.grayco-cs.com', approvedBody: 'GrayCo aprobó a su compañía para el sitio de licitaciones de GrayCo. Entre con el correo y la contraseña que escogió.', approvedBtn: 'Abrir el sitio de licitaciones',
     foot: '¿Preguntas? Llame a GrayCo al ' + OFFICE_PHONE + '.'

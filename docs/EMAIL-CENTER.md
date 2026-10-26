@@ -73,3 +73,27 @@ It's doable, but it means granting the CRM read access to everyone's mail, so it
 - `netlify/functions/mail-center.js`: staff only. `?settings=1` (GET; POST by admins) and `?log=1&addr=&q=`.
 - `index.html` `gc-patch-mailc`: the page, drawn into `#gmail-mount`. The old frame is no longer injected there.
 - Storage, in the service-only `gc_lead_inbox_kv`: `gc_email_center` and `gc_mail_log` (newest 3000).
+
+## E-mail addresses: what goes where
+
+| Address | What goes there | What the CRM does |
+|---|---|---|
+| **leads@grayco-cs.com** | Every lead and every bid invitation or bid-board notice: BuildingConnected, PlanHub, plan rooms, public bid sites, GC invitation lists, and the website, Facebook and Google forms. Sign up for every bid site with leads@. | Read into Leads → 📥 Lead Inbox. Alerts go to the office. |
+| **bids@grayco-cs.com** | Only our own bids going out, GC replies to them, and subcontractors' prices for bids we are pricing. | GC replies are filed on the bid; sub prices land in Leads → 📨 Sub bids. |
+| **claims@grayco-cs.com** | Insurance carriers, TPAs and adjusters: claim correspondence and new assignments. Copy claims@ on insurance e-mail. | Filed on the claim. A new assignment becomes an insurance lead. |
+| **invoices@grayco-cs.com** | Subcontractor and supplier bills and invoices. Forward any invoice you get to invoices@. | Filed under Invoices, waiting for approval. |
+| **receipts@grayco-cs.com** | Staff e-mail receipt photos and PDFs. | Shows on the To-Do as "Receipts e-mailed in". Someone confirms it. |
+| **billing@grayco-cs.com** | Customer invoices, statements and pay apps are sent from here. Customers reply here about payments. | Lands in office@ (Brittany). |
+| **office@grayco-cs.com** | The main office mailbox. | Brittany reads it. |
+| **orders@grayco-cs.com** | Supplier order confirmations. | Linked to the job: delivery, schedule, Materials arriving. |
+| **estimates@grayco-cs.com** | Estimators e-mail a takeoff or estimate (Word, PDF, Excel) to the CRM. | Stored for the office to build the estimate. |
+| **replies@ · portal@ · news@** | Send-only. The CRM sends from them (portal links, newsletters); replies@ is the Reply-To of automatic e-mails. | Nothing reads them by machine; people answer replies@. |
+
+- Never sign up for bid sites with bids@ or your personal e-mail. Use leads@grayco-cs.com.
+- Forward any invoice you get to invoices@grayco-cs.com.
+- Forward receipts (photo or PDF) to receipts@grayco-cs.com.
+- Insurance correspondence: copy claims@grayco-cs.com.
+- Tell subcontractors: invoices and pay requests go to invoices@, their prices for our bids go to bids@.
+- Tell customers: payments and billing go to billing@, insurance claims go to claims@. Texts go to (901) 582-8255; the office line is (901) 585-0944.
+
+Phone and text: text (901) 582-8255; office line (901) 585-0944. Tell subcontractors: send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO). Send your price for our bids to bids@grayco-cs.com.
