@@ -65,7 +65,7 @@
 # (12:17, 15:17, 18:17, 21:17, 23:17 UTC). One polite look at each public bid listing; new ones go to the
 # Lead Inbox, become CRM leads and draft bid-portal jobs, and each new one is e-mailed to the admins at once.
 [functions."bid-watch"]
-  schedule = "17 12,15,18,21,23 * * 1-5"
+  schedule = "17 12 * * *"   # owner 10/26: once every morning (~7:17 AM Central in CDT, 6:17 AM in CST); "Check now" still runs it on demand
 
 # Leads (patch LA): every 10 minutes — "⏰ Bid due in 1 hour" (and "Bid due TODAY" at 8 AM Central when only
 # the date is known), new RoofScout leads, a new-lead e-mail that failed, and the bid-portal drafts that waited
