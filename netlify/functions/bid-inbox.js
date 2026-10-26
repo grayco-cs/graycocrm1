@@ -825,7 +825,11 @@ async function processEventCore(evt, opts){
      bids (unless it is plainly an old-style invitation still sent to bids@) */
   const SB = require('./_lib/subbids.js');
   const toBids = forBids(mail, data), toLeads = forLeads(mail, data);
-  const leadMail = !toBids && toLeads && !SB.isBidInvite(mail, boardOf).bid;
+  /* patch LEADROUTE: an e-mail addressed to BOTH leads@ and bids@ is a lead when it reached us through leads@ (the webhook's
+     own recipient) — before, being on bids@ too sent a homeowner's request down the bid path, where it was dropped */
+  const envTo = list(data.to).map(x => low(x.email)), envLeads = envTo.some(x => leadAddrs().indexOf(x) >= 0), envBids = envTo.some(x => inboxAddrs().indexOf(x) >= 0);
+  const viaLeads = toLeads && (!toBids || envLeads || !envBids);
+  const leadMail = viaLeads && !SB.isBidInvite(mail, boardOf).bid;
   let subBidMail = false;   /* patch BIDSEND: bids@ is sorted below (a GC's reply · a sub bid · an invitation · unsorted) */
   /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
   const orderMail = !leadMail && !toBids && !toLeads && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));
@@ -838,7 +842,7 @@ async function processEventCore(evt, opts){
     return { status: 200, body: { ok: true, notice: true } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
-  if (toBids && !toLeads) {   /* patch BIDSEND */
+  if (toBids && !viaLeads) {   /* patch BIDSEND (+ LEADROUTE) */
     let k;
     try { k = await bidsKind(mail); } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not sort this bids@ e-mail yet (' + (e && e.message) + ') — retry.' } }; }
     if (k.kind === 'reply') return { status: 200, body: Object.assign({ inbox: 'bid-replies' }, k.r) };
