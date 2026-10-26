@@ -3340,7 +3340,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.152-2026-10-23-r4 -->
+<!-- GrayCo CRM Build: 33.152-2026-10-26-r1 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4005,7 +4005,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.152-2026-10-23-r4");
+  console.log("[GC] Build 33.152-2026-10-26-r1");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4053,7 +4053,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.152-2026-10-23-r4"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.152-2026-10-26-r1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -167121,7 +167121,7 @@ function body(){
       + '<div style="font-size:12px;color:#475569">' + esc(x.address || '') + (x.creator ? ' · made by ' + esc(x.creator) : '') + (x.created ? ' · ' + esc(x.created) : '') + '</div>'
       + '<div style="font-size:13px;margin-top:4px"><b>' + esc(KIND[x.kind] || 'Check') + ':</b> ' + esc(x.why || '') + '</div>'
       + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'
-      + (x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;text-decoration:none;color:#0f172a">Open in CompanyCam</a>' : '')
+      + ''
       + (x.kind === 'pm' ? '<button type="button" data-ccs-act="done" data-cc="' + esc(x.cc) + '" data-kind="pm" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">✓ Done</button>'
         : '<button type="button" data-ccs-act="make" data-cc="' + esc(x.cc) + '" data-kind="' + esc(x.kind) + '" style="padding:6px 10px;border-radius:8px;border:0;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">＋ Make it a new job</button>'
           + '<button type="button" data-ccs-act="dismiss" data-cc="' + esc(x.cc) + '" data-kind="' + esc(x.kind) + '" style="padding:6px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer">Not a new job (it\'s already here)</button>')
