@@ -15,7 +15,8 @@ const BRAND = {
   email: 'office@grayco-cs.com',
   web: 'https://grayco-cs.com',
   licenses: 'TN #85034 BCB · AR #0486990627 · MS #27769',
-  logoPath: '/portal-logo.png',
+  logoPath: '/portal-logo.png',                 /* white logo: for dark bands */
+  logoColorPath: '/grayco-logo-wide.jpg',       /* patch LOGO: the colour logo (420 x 254), for white e-mail headers */
   reviewUrl: 'https://share.google/quDuhdlL0ckxPLLY3',
   navy: '#0F1D2F', gold: '#D4A017', ink: '#14202E', cream: '#F5F1E8'
 };
@@ -73,6 +74,7 @@ function siteBase(){
   return b.replace(/\/$/, '');
 }
 function logoUrl(){ return siteBase() + BRAND.logoPath; }
+function logoColorUrl(){ return siteBase() + BRAND.logoColorPath; }   /* patch LOGO: absolute https://crm.grayco-cs.com/grayco-logo-wide.jpg */
 function directLines(){ return String(process.env.DOC_DIRECT_LINES || '').trim() !== '0'; }   /* patch LOGOALL2: on unless DOC_DIRECT_LINES=0 */
 function isShelled(html){ return /data-gc-shell=/.test(String(html || '')); }
 function telHref(p){ const d = s(p).replace(/\D/g, ''); return d.length === 10 ? 'tel:+1' + d : (d.length === 11 ? 'tel:+' + d : ''); }
@@ -123,7 +125,11 @@ function shell(html, o){
   const inner = bodyOf(html);
   const hasLogo = /portal-logo\.png|grayco-logo/i.test(inner);
   /* patch LOGOALL (owner 10/23: "should have our logo on it"): the logo header is centered, like every printed paper */
-  const head = hasLogo ? '' : '<tr><td align="center" style="background:#ffffff;padding:18px 24px;border-bottom:4px solid ' + BRAND.gold + ';text-align:center"><img src="' + esc(o.logoUrl || logoUrl()) + '" alt="' + BRAND.name + '" width="150" style="display:block;margin:0 auto;width:150px;max-width:60%;height:auto;border:0"></td></tr>';
+  /* patch LOGO: (owner 10/26: every document carries the logo): the colour logo at the LEFT, 0.7 in tall, GrayCo Construction Services · phone · licenses beside it, on white */
+  const head = hasLogo ? '' : '<tr><td style="background:#ffffff;padding:14px 24px;border-bottom:4px solid ' + BRAND.gold + ';text-align:left"><table role="presentation" cellpadding="0" cellspacing="0" style="border:0"><tr>' +
+    '<td style="padding:0 14px 0 0;vertical-align:middle"><img src="' + esc(o.logoUrl || logoColorUrl()) + '" alt="' + BRAND.name + '" width="111" height="67" style="display:block;width:111px;height:67px;border:0"></td>' +
+    '<td style="vertical-align:middle;font-family:Arial,Helvetica,sans-serif;line-height:1.4"><div style="font-size:17px;font-weight:bold;color:' + BRAND.navy + '">' + BRAND.name + '</div>' +
+    '<div style="font-size:12px;color:#55626F">' + BRAND.phone + ' · grayco-cs.com</div><div style="font-size:11px;color:#6B7785">' + BRAND.licenses + '</div></td></tr></table></td></tr>';
   const sig = o.sender === false ? '' : signatureHtml(o.sender);
   const portal = o.portalUrl ? '<p style="margin:20px 0 0"><a href="' + esc(o.portalUrl) + '" style="display:inline-block;background:' + BRAND.navy + ';color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">Open my GrayCo project page</a></p>' : '';
   const pre = o.preheader ? '<div style="display:none;max-height:0;overflow:hidden;opacity:0">' + esc(o.preheader) + '</div>' : '';
@@ -200,6 +206,6 @@ function installResend(){
   g.fetch = w;
 }
 module.exports = { BRAND: BRAND, installResend: installResend, legalText: legalText, legalFooterHtml: legalFooterHtml, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
-  logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
+  logoUrl: logoUrl, logoColorUrl: logoColorUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
   billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind, directLines: directLines,
   _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };

@@ -91,7 +91,7 @@ async function sendNow(w, html){
   const key = s(process.env.RESEND_API_KEY); if (!key || s(process.env.PORTAL_MAIL_OFF) === '1') return { ok: false, error: 'E-mail is not set up (RESEND_API_KEY).' };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: OFFICE_FROM, reply_to: 'office@grayco-cs.com', to: [w.subEmail], subject: clip('Lien waiver to sign — ' + (w.jobName || 'GrayCo job') + ' (' + usd(w.amount) + ')', 200), html: html }) });
+      body: JSON.stringify({ from: OFFICE_FROM, reply_to: 'office@grayco-cs.com', to: [w.subEmail], subject: clip('Lien waiver to sign — ' + (w.jobName || 'GrayCo job') + ' (' + usd(w.amount) + ')', 200), html: require('./brand.js').shell(html, { sender: false }) }) });   /* patch LOGO: the logo header */
     return r.ok ? { ok: true } : { ok: false, error: 'The e-mail did not go out (' + r.status + ').' };
   } catch (e) { return { ok: false, error: 'The e-mail did not go out (no answer).' }; }
 }

@@ -8,7 +8,7 @@
 'use strict';
 /* patch AUT2 (audit #4): name, address, phone, licenses and the logo come from the ONE brand file */
 const BR = require('./brand.js').BRAND;
-const LOGO = require('./brand-logo.js');
+const LOGO = require('./logo-wide.js');   /* patch LOGO: 420 x 254, cropped to the art */
 const COMPANY = BR.name;
 const ADDRESS = BR.address;
 const PHONE = BR.phone;
@@ -74,10 +74,10 @@ function build(doc){
   /* header band: the logo on a white tile, name, address / phone / e-mail, licenses */
   rect(0, PH - 96, PW, 96, NAVY);
   rect(0, PH - 100, PW, 4, GOLD);
-  rect(L - 4, PH - 88, 76, 76, '1 1 1');
-  ops.push('q 68 0 0 68 ' + L + ' ' + (PH - 84) + ' cm /Im1 Do Q');
-  const TX = L + 84;
-  text(TX, PH - 40, COMPANY, 18, true, '1 1 1');
+  rect(L - 4, PH - 82, 91, 58, '1 1 1');   /* patch LOGO: the logo is 50 pt = 0.7 in tall at the left */
+  ops.push('q 83 0 0 50 ' + L + ' ' + (PH - 78) + ' cm /Im1 Do Q');
+  const TX = L + 101;
+  text(TX, PH - 40, COMPANY, 16.5, true, '1 1 1');
   text(TX, PH - 56, ADDRESS + '  \xb7  ' + PHONE, 9, false, '0.80 0.85 0.92');
   text(TX, PH - 68, EMAIL, 9, false, '0.80 0.85 0.92');
   text(TX, PH - 81, LICENSES, 8, false, '0.97 0.80 0.30');

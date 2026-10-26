@@ -537,7 +537,7 @@ function pdfText(t){ return '(' + String(t == null ? '' : t).replace(/[‘’]/g
 function wrapLine(t, max){ const out = []; let cur = ''; String(t || '').split(/\s+/).forEach(function(w){ if ((cur + ' ' + w).trim().length > max) { if (cur) out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }); if (cur) out.push(cur); return out.length ? out : ['']; }
 function simplePdf(lines){
   /* lines: [{ t, size, bold, gap }] → one or more Letter pages */
-  const pages = []; let ops = [], y = 740;
+  const pages = []; let ops = [], y = 668;   /* patch LOGO: page 1 starts below the logo header */
   lines.forEach(function(l){
     const size = l.size || 11, max = Math.floor(470 / (size * 0.5));
     wrapLine(l.t, max).forEach(function(row){
@@ -553,10 +553,19 @@ function simplePdf(lines){
   const f2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
   const pagesId = objs.length + 1; objs.push(null);
   const kids = [];
-  pages.forEach(function(o){
-    const stream = ['0.06 0.11 0.18 rg 0 752 612 40 re f', '0.83 0.63 0.09 rg 0 748 612 4 re f', '0 0 0 rg'].concat(o).join('\n');
+  /* patch LOGO: the colour logo at the left (50 pt = 0.7 in), name / address · phone / licenses beside it, a rule under it; pages 2+ carry the company name at the foot */
+  const LG = require('./logo-wide.js'), logoBin = Buffer.from(LG.b64, 'base64').toString('latin1'), BRd = require('./brand.js').BRAND;
+  const logoObj = add('<< /Type /XObject /Subtype /Image /Width ' + LG.w + ' /Height ' + LG.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + logoBin.length + ' >>\nstream\n' + logoBin + '\nendstream');
+  const head1 = ['q 83 0 0 50 64 718 cm /Im1 Do Q',
+    'BT /F2 16 Tf 0.06 0.14 0.25 rg 159 750 Td ' + pdfText(BRd.name) + ' Tj ET',
+    'BT /F1 8.5 Tf 0.33 0.38 0.44 rg 159 737 Td ' + pdfText(BRd.address + '  ·  ' + BRd.phone + '  ·  grayco-cs.com') + ' Tj ET',
+    'BT /F1 8 Tf 0.42 0.46 0.52 rg 159 725 Td ' + pdfText(BRd.licenses) + ' Tj ET',
+    '0.14 0.10 0.41 RG 1.5 w 64 708 m 548 708 l S', '0 0 0 rg'];
+  pages.forEach(function(o, pi){
+    const foot = pi === 0 ? [] : ['0.83 0.63 0.09 rg 0 784 612 8 re f', 'BT /F1 7.5 Tf 0.42 0.46 0.52 rg 170 24 Td ' + pdfText(BRd.name + '  ·  ' + BRd.phone + '  ·  page ' + (pi + 1) + ' of ' + pages.length) + ' Tj ET'];
+    const stream = (pi === 0 ? head1 : ['0 0 0 rg']).concat(o, foot).join('\n');
     const c = add('<< /Length ' + Buffer.byteLength(stream, 'latin1') + ' >>\nstream\n' + stream + '\nendstream');
-    kids.push(add('<< /Type /Page /Parent ' + pagesId + ' 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R >> >> /Contents ' + c + ' 0 R >>'));
+    kids.push(add('<< /Type /Page /Parent ' + pagesId + ' 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R >>' + (pi === 0 ? ' /XObject << /Im1 ' + logoObj + ' 0 R >>' : '') + ' >> /Contents ' + c + ' 0 R >>'));
   });
   objs[pagesId - 1] = '<< /Type /Pages /Kids [' + kids.map(function(k){ return k + ' 0 R'; }).join(' ') + '] /Count ' + kids.length + ' >>';
   const cat = add('<< /Type /Catalog /Pages ' + pagesId + ' 0 R >>');

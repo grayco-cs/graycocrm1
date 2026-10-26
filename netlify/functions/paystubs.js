@@ -257,7 +257,7 @@ exports.handler = async function(event){
     const key = process.env.RESEND_API_KEY;
     if (!key) return J(500, { error: 'E-mail is not set up (RESEND_API_KEY).' });
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Payroll <noreply@grayco-cs.com>', to: [st.email], subject: 'Your pay stub — ' + st.payDate, html: stubHtml(st) }) });
+      body: JSON.stringify({ from: 'GrayCo Payroll <noreply@grayco-cs.com>', to: [st.email], subject: 'Your pay stub — ' + st.payDate, html: require('./_lib/brand.js').shell(stubHtml(st), { sender: false, legal: false }) }) });   /* patch LOGO: the logo header */
     let j = {}; try { j = await r.json(); } catch (e) {}
     if (!r.ok) return J(502, { error: 'E-mail did not send (' + r.status + ').' });
     return J(200, { ok: true, paused: !!j.paused });

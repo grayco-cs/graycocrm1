@@ -431,6 +431,7 @@ function signSheet(x){
   var agreeTxt = t(x.kind === 'co' ? 'signAgreeCo' : 'signAgreeScope', { amt: usd(x.total), v: x.version });
   var esg = window.GCLegal ? window.GCLegal.esignBox({ base: '' }) : null;   /* LEGAL2-patch: E-SIGN consent before the signature */
   var sh = sheet(t('signTitle') + ' — ' + (x.title || t(x.kind === 'co' ? 'cos' : 'scope')), [
+    window.gcDocHead ? window.gcDocHead() : null,   /* patch LOGO */
     h('div', { class: 'row total' }, [h('span', { class: 'muted', text: x.kind === 'co' ? t('coTotal') : t('yourTotal') }), h('b', { text: usd(x.total) })]),
     (esg ? esg.el : null), field(t('signName'), nm), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
     h('button', { type: 'button', class: 'btn', text: t('signClear'), on: { click: function(){ pad.clear(); } } }),
@@ -598,7 +599,7 @@ function lightbox(list, i){
 }
 function viewer(f){
   if (/pdf/.test(f.type)) {
-    var sh = sheet(f.name, [h('iframe', { class: 'pdf', src: f.url, title: f.name }), h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]);
+    var sh = sheet(f.name, [window.gcDocHead ? window.gcDocHead() : null, h('iframe', { class: 'pdf', src: f.url, title: f.name }),   /* patch LOGO */ h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]);
     sh.el.classList.add('wide'); return;
   }
   lightbox([{ f: f.url }], 0);

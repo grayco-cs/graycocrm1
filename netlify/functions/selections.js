@@ -290,7 +290,7 @@ function wrap(t, max){
   words.forEach(function(w){ while (w.length > max) { if (cur) { out.push(cur); cur = ''; } out.push(w.slice(0, max)); w = w.slice(max); } if ((cur + ' ' + w).trim().length > max) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); });
   if (cur) out.push(cur); return out.length ? out : [''];
 }
-const LOGO = (function(){ try { const L = require('./_lib/logo-jpg.js'); return { w: L.w, h: L.h, bin: Buffer.from(L.b64, 'base64').toString('latin1') }; } catch (e) { return null; } })();   /* patch HOT3 */
+const LOGO = (function(){ try { const L = require('./_lib/logo-wide.js');   /* patch LOGO */ return { w: L.w, h: L.h, bin: Buffer.from(L.b64, 'base64').toString('latin1') }; } catch (e) { return null; } })();   /* patch HOT3 */
 /* Helvetica / Helvetica-Bold advance widths (per 1000 em) for centering; close enough for one line of text */
 function textW(t, size, bold){
   let w = 0;
@@ -315,12 +315,14 @@ function buildPdf(blocks){
   function textC(t, size, bold, color){ text(t, size, bold, Math.max(M, (W - textW(t, size, bold)) / 2).toFixed(1), color); }
   blocks.forEach(function(b){
     if (b.t === 'title') {
-      const lh = LOGO ? 52 : 0, lw = LOGO ? Math.round(lh * LOGO.w / LOGO.h) : 0; need(lh + 52); const top = y;
-      if (LOGO) ops.push('q ' + lw + ' 0 0 ' + lh + ' ' + ((W - lw) / 2).toFixed(1) + ' ' + (top - lh).toFixed(1) + ' cm /Im1 Do Q');
-      y = top - lh - 20; textC(b.text, 18, true);
+      /* patch LOGO: the logo at the left (50 pt = 0.7 in), the name, address · phone and licenses beside it */
+      const lh = LOGO ? 50 : 0, lw = LOGO ? Math.round(lh * LOGO.w / LOGO.h) : 0; need(lh + 30); const top = y, tx = (M + (lw ? lw + 12 : 0)).toFixed(1);
+      if (LOGO) ops.push('q ' + lw + ' 0 0 ' + lh + ' ' + M + ' ' + (top - lh).toFixed(1) + ' cm /Im1 Do Q');
+      y = top - 16; text(b.text, 16, true, tx);
       let addr = ''; try { addr = require('./_lib/brand.js').companyAddress(); } catch (e) {}
-      y -= 13; textC([addr, OFFICE_PHONE, 'grayco-cs.com'].filter(Boolean).join(' · '), 9, false, '0.33 0.38 0.44');
-      y -= 9; ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return;
+      y -= 14; text([addr, OFFICE_PHONE, 'grayco-cs.com'].filter(Boolean).join(' \u00B7 '), 8.5, false, tx, '0.33 0.38 0.44');
+      y -= 11; text('TN #85034 BCB \u00B7 AR #0486990627 \u00B7 MS #27769', 8, false, tx, '0.42 0.46 0.52');
+      y = Math.min(y, top - lh) - 8; ops.push('0.14 0.10 0.41 RG 1.5 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 14; return;
     }
     if (b.t === 'h') { need(26); y -= 14; text(b.text, 12, true); y -= 6; return; }
     if (b.t === 'gap') { y -= b.h || 8; return; }
@@ -342,6 +344,11 @@ function buildPdf(blocks){
     }
   });
   page();
+  pages.forEach(function(c, i){   /* patch LOGO: pages 2+ carry the company name at the foot */
+    if (i === 0) return;
+    const ft = 'GrayCo Construction Services \u00B7 ' + OFFICE_PHONE + ' \u00B7 page ' + (i + 1) + ' of ' + pages.length;
+    pages[i] = c + '\nBT /F1 7.5 Tf 0.42 0.46 0.52 rg ' + ((W - textW(ft, 7.5, false)) / 2).toFixed(1) + ' 24 Td ' + pdfStr(ft) + ' Tj ET';
+  });
   const objs = [];
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
   const kids = []; let n = 6;
