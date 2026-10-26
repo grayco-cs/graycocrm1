@@ -133,6 +133,10 @@ function build(doc){
     .forEach(function(t){ text(L, y, t, 10); y -= 13; });
   y -= 6;
   text(L, y, 'Questions about this invoice? ' + EMAIL + '  \xb7  ' + PHONE + (doc.pmPhone ? ' (or ' + (doc.pm || 'your PM') + ' at ' + doc.pmPhone + ')' : '') + '.', 10, false, MUTED);   /* patch BILL */
+  /* patch LEGAL3: the one late-fee wording (same as the contract, the print invoices, both proposals and the past-due e-mails) */
+  y -= 15;
+  wrap('Payment terms: net 30 days from the invoice date. Balances unpaid after 30 days accrue a late charge of 1.5% per month (18% annual percentage rate) on the past-due balance, or the maximum rate allowed by law, whichever is less. In a collection action the prevailing party recovers its reasonable attorneys\' fees and costs.', 8.5, R - L)
+    .forEach(function(t){ text(L, y, t, 8.5, false, MUTED); y -= 11; });
   text(L, 40, 'Thank you for choosing ' + COMPANY + '.', 9, false, MUTED);
   newPage();
 

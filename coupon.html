@@ -4,10 +4,10 @@
 <title>$100 off GrayCo — claim your coupon</title>
 <link rel="stylesheet" href="mkt-pages.css">
 </head><body>
-<header class="gp-head"><img src="img/grayco-logo-white.png" alt="GrayCo Construction Services"><div><b>GrayCo Construction Services</b><span>Licensed TN general contractor · Bartlett, TN</span></div></header>
+<header class="gp-head"><img src="img/grayco-logo-white.png" alt="GrayCo Construction Services"><div><b>GrayCo Construction Services</b><span>Licensed general contractor · TN · MS · AR · Bartlett, TN</span></div></header>
 <div class="gp-gold"></div>
 <main class="gp-main">
-  <div class="gp-card gp-hero"><div class="big">$100 OFF</div><h1>GrayCo work</h1><p id="who">Roofing, repairs, remodeling, storm and water damage — licensed, local, right here in Bartlett.</p><p class="gp-muted" style="color:#c9d4e3">On projects over $1,000. One coupon per household.</p></div>
+  <div class="gp-card gp-hero"><div class="big">$100 OFF</div><h1>GrayCo work</h1><p id="who">Roofing, repairs, remodeling, storm and water damage — licensed, local, right here in Bartlett.</p><p class="gp-muted" style="color:#c9d4e3">On projects over $1,000. One coupon per household. <span id="expnote">Expires 90 days after you claim it.</span></p></div>
   <div class="gp-card" id="form"><h2>Claim your coupon</h2>
     <label>Your name</label><input id="f-name" autocomplete="name">
     <label>E-mail</label><input id="f-email" type="email" autocomplete="email">
@@ -16,7 +16,18 @@
     <input id="hp" class="gp-hp" tabindex="-1" autocomplete="off">
     <button id="go" class="gp-btn">Get my $100 coupon</button><p id="out"></p>
   </div>
-  <div class="gp-card gp-rules"><b>The fine print:</b> $100 off GrayCo Construction Services work on projects over $1,000. One coupon per household (e-mail, phone or address), used once. Not combined with other coupons; GrayCo referral credit is OK. No cash value. Give the code to your GrayCo project manager before your estimate or invoice.</div>
+  <div class="gp-card gp-rules" id="terms"><b>Coupon terms:</b>
+    <ul style="margin:6px 0 0 18px;padding:0;line-height:1.5">
+      <li><b>Value:</b> $100 off the price of GrayCo Construction Services work on projects over $1,000.</li>
+      <li><b>Expires <span id="expdays">90</span> days after it is issued.</b> The expiration date is shown on your coupon and in the e-mail we send you. An expired coupon has no value.</li>
+      <li><b>One per household</b> (same e-mail, phone or address), and one use per coupon.</li>
+      <li><b>Not combinable</b> with any other coupon, discount or offer. GrayCo referral credit may be used with it.</li>
+      <li><b>No cash value.</b> No change is given. Not valid toward an insurance deductible or on work an insurance company pays for.</li>
+      <li>Not transferable or for sale; a copied, altered or sold coupon is void. GrayCo may verify any code.</li>
+      <li>Give the code to your GrayCo project manager before your estimate or invoice is final, on or before the expiration date.</li>
+      <li><b>Void where prohibited.</b> GrayCo may end or change the offer, but honors coupons already issued until they expire.</li>
+    </ul>
+    <p class="gp-muted" style="margin-top:8px">Claiming a coupon lets GrayCo contact you about your project. It is not consent to marketing texts.</p></div>
 </main>
 <footer class="gp-foot">GrayCo Construction Services · <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span> · <a href="tel:+19015850944">(901) 585-0944</a></footer>
 <script>
@@ -25,13 +36,13 @@
 (function(){
   var API = '/.netlify/functions/mkt-public', src = new URLSearchParams(location.search).get('s') || '';
   function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  fetch(API + '?coupon=' + encodeURIComponent(src)).then(function(r){ return r.json(); }).then(function(j){ if (j && j.name) document.getElementById('who').textContent = 'Thanks for supporting ' + j.name + '! ' + document.getElementById('who').textContent; }).catch(function(){});
+  fetch(API + '?coupon=' + encodeURIComponent(src)).then(function(r){ return r.json(); }).then(function(j){ if (j && j.name) document.getElementById('who').textContent = 'Thanks for supporting ' + j.name + '! ' + document.getElementById('who').textContent; if (j && j.days) { document.getElementById('expdays').textContent = j.days; document.getElementById('expnote').textContent = 'Expires ' + j.days + ' days after you claim it.'; } }).catch(function(){});
   document.getElementById('go').onclick = function(){
     var b = this, g = function(k){ return document.getElementById(k).value; }, out = document.getElementById('out'); b.disabled = true;
     fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'coupon_claim', s: src, name: g('f-name'), email: g('f-email'), phone: g('f-phone'), address: g('f-address'), website: g('hp') }) })
       .then(function(r){ return r.json(); }).then(function(j){
         b.disabled = false;
-        if (j.ok && j.code) { document.getElementById('form').innerHTML = '<h2>Your coupon</h2><div class="gp-coupon">' + esc(j.code) + '</div><p>' + esc(j.message) + '</p><p>Save a screenshot. Call <a href="tel:+19015850944">(901) 585-0944</a> to book your free estimate.</p>'; return; }
+        if (j.ok && j.code) { document.getElementById('form').innerHTML = '<h2>Your coupon</h2><div class="gp-coupon">' + esc(j.code) + '</div>' + (j.expiresText ? '<p><b>Expires ' + esc(j.expiresText) + '</b></p>' : '') + '<p>' + esc(j.message) + '</p><p>Save a screenshot. Call <a href="tel:+19015850944">(901) 585-0944</a> to book your free estimate.</p>'; return; }
         out.innerHTML = j.ok ? '<div class="gp-ok">' + esc(j.message) + '</div>' : '<span class="gp-err">' + esc(j.error || 'Not claimed — call (901) 585-0944.') + '</span>';
       }, function(){ b.disabled = false; out.innerHTML = '<span class="gp-err">No connection — call (901) 585-0944.</span>'; });
   };

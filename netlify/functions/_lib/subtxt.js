@@ -116,7 +116,7 @@ function due(data, set, st, nowMs){
     if (first === tomorrow && c.min >= 18 * 60 && c.min < 19 * 60) {
       const key = rowKey(x) + '|' + first, rec = st.rows[key] || {};
       if (!rec.eveAt) out.push({ kind: 'evening', key, rec: Object.assign({}, base, { day: first }),
-        text: 'GrayCo: you\'re scheduled at ' + (base.address || base.job) + ' tomorrow ' + hhmm(startMin) + ' for ' + base.title + '. Reply Y to confirm, or text us if anything changes.' });
+        text: 'GrayCo: you\'re scheduled at ' + (base.address || base.job) + ' tomorrow ' + hhmm(startMin) + ' for ' + base.title + '. Reply Y to confirm, or text us if anything changes. Reply STOP to opt out.' });   /* patch LEGAL3: STOP wording on every schedule text */
     }
     /* every scheduled day: the morning check about an hour before the start, then the no-reply alert at the start */
     if (today >= first && today <= last) {
@@ -124,7 +124,7 @@ function due(data, set, st, nowMs){
       const sendAt = startMin - MORNING_LEAD_MIN;
       if (!rec.mornAt && rec.status !== 'confirmed' && rec.status !== 'issue' && c.min >= sendAt && c.min < startMin)
         out.push({ kind: 'morning', key, rec: Object.assign({}, base, { day: today }),
-          text: 'GrayCo: ' + (base.address || base.job) + ' today at ' + hhmm(startMin) + '. Are you on your way / at the job? Reply Y.' });
+          text: 'GrayCo: ' + (base.address || base.job) + ' today at ' + hhmm(startMin) + '. Are you on your way / at the job? Reply Y. Reply STOP to opt out.' });   /* patch LEGAL3 */
       if ((rec.mornAt || rec.eveAt) && rec.status === 'sent' && !rec.noReplyAt && c.min >= startMin && c.min < startMin + 120)
         out.push({ kind: 'noreply', key, rec: Object.assign({}, base, rec, { day: today }) });
     }

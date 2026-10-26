@@ -25,9 +25,15 @@ var CSS = ':host{all:initial;display:block;font-family:-apple-system,BlinkMacSys
  + '.err{color:#b91c1c;font-size:14px;margin:8px 0 0;min-height:1em}.fine{font-size:12px;color:#6b6688;margin-top:10px;line-height:1.45}'
  + '.ok{text-align:center;padding:26px 10px}.ok .big{font-size:42px}.ok b{display:block;font-size:20px;margin:8px 0}.price{font-size:30px;font-weight:900;color:' + NAVY + ';margin:6px 0 4px}'
  + '.meas{display:inline-block;background:#f4f2fb;border-radius:8px;padding:8px 12px;font-size:13px;color:#3b3563;margin-top:8px}.hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}'
+ + '.chk{display:flex;gap:9px;align-items:flex-start;font-weight:400;font-size:12.5px;line-height:1.4;color:#3b3563;margin:0 0 10px}.chk input{width:auto;margin:2px 0 0;flex:none}.chk span{display:block;margin:0}'
  + '.spin{display:inline-block;width:18px;height:18px;border:3px solid #e3e1ee;border-top-color:' + NAVY + ';border-radius:50%;animation:r 1s linear infinite;vertical-align:-4px;margin-right:8px}@keyframes r{to{transform:rotate(360deg)}}';
 var TYPES = { estimate: 'Free estimate request', storm: 'Storm / insurance damage', commercial: 'Commercial bid inquiry', maintenance: 'Maintenance plan sign-up', problem: 'Report a problem (existing customer)', careers: 'Job application (careers)' };
 var HEARD = ['Google', 'Facebook', 'A friend or neighbor (referral)', 'Yard sign', 'Our truck', 'Repeat customer', 'Insurance company', 'Other'];   /* patch X9 */
+/* patch LEGAL3 (counsel review): the roof-price form no longer implies text consent. Two SEPARATE, UNCHECKED boxes, the same wording the CRM uses (patch SMSC2). */
+var SMS_JOB = 'I agree to receive text messages from GrayCo Construction Services about my job (appointment and crew scheduling, job updates, estimates and invoices). Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.';
+var SMS_MKT = 'I also agree to receive occasional promotional text messages from GrayCo Construction Services (seasonal service offers, up to 4 per month). Msg & data rates may apply. Reply STOP to opt out, HELP for help. Consent is not a condition of purchase.';
+function smsBoxes(){ return '<label class="chk"><input type="checkbox" name="sms_job" value="yes"><span><b>Job texts:</b> ' + esc(SMS_JOB) + '</span></label>'
+  + '<label class="chk"><input type="checkbox" name="sms_offers" value="yes"><span><b>Offers (optional, separate):</b> ' + esc(SMS_MKT) + '</span></label>'; }
 var POS = ['Project Manager', 'Superintendent', 'Estimator', 'Carpenter', 'Roofer', 'Laborer', 'Office / Admin', 'Other'];
 function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function F(name, label, o){
@@ -71,12 +77,12 @@ function mount(host){
     : '<div class="hd"><b>' + (TYPES[want] ? esc(TYPES[want]) : 'Contact GrayCo Construction') + '</b><small>GrayCo Construction Services \u00b7 Bartlett, TN \u00b7 901-585-0944</small></div>'; }
   function form(){
     var picker = !roof && !TYPES[want] ? '<div class="types">' + Object.keys(TYPES).map(function(k){ return '<button type="button" data-t="' + k + '" class="' + (k === type ? 'on' : '') + '">' + esc(TYPES[k]) + '</button>'; }).join('') + '</div>' : '';
-    var body = roof ? '<p class="fine" style="margin:0 0 12px;font-size:14px">We measure your roof from satellite imagery. Tell us where to send your price:</p>' + addr('Home address') + '<div class="row">' + F('name', 'Your name', { req: true, ac: 'name' }) + F('phone', 'Phone', { type: 'tel', ac: 'tel', req: true }) + '</div>' + F('email', 'E-mail', { type: 'email', ac: 'email', req: true })
+    var body = roof ? '<p class="fine" style="margin:0 0 12px;font-size:14px">We measure your roof from satellite imagery. Tell us where to send your price:</p>' + addr('Home address') + '<div class="row">' + F('name', 'Your name', { req: true, ac: 'name' }) + F('phone', 'Phone', { type: 'tel', ac: 'tel', req: true }) + '</div>' + F('email', 'E-mail', { type: 'email', ac: 'email', req: true }) + smsBoxes()
       : fields(type) + (type !== 'careers' ? F('howHeard', 'How did you hear about us?', { type: 'select', opts: HEARD }) : '');   /* patch X9 */
     return '<style>' + CSS + '</style><div class="w">' + head() + '<form class="bd" novalidate>' + picker + body
       + '<div class="hp" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div><slot name="ts"></slot>'
       + '<button class="go" type="submit">' + (roof ? 'Show my price' : type === 'careers' ? 'Send my application' : 'Send') + '</button><div class="err" role="alert"></div>'
-      + '<div class="fine">' + (roof ? 'By asking for a price you agree GrayCo may call, text or e-mail you about your roof. The price is a ballpark \u2014 the final price comes after a free inspection.' : 'We reply within one business day. Your information is only used by GrayCo Construction Services.') + '</div></form></div>';
+      + '<div class="fine">' + (roof ? 'By asking for a price you agree GrayCo may call or e-mail you about your roof. GrayCo sends text messages only if you tick a box above. The price is a ballpark \u2014 the final price comes after a free inspection.' : 'We reply within one business day. Your information is only used by GrayCo Construction Services.') + '</div></form></div>';
   }
   function draw(){
     root.innerHTML = form();
@@ -91,7 +97,7 @@ function mount(host){
     var miss = Array.prototype.filter.call(fm.querySelectorAll('[required]'), function(x){ return !String(x.value || '').trim(); })[0];
     if (miss) { err.textContent = 'Please fill in ' + (miss.closest('label').querySelector('span').textContent.replace('*', '').trim()) + '.'; miss.focus(); return; }
     var body = { type: roof ? 'roofprice' : type, page: location.href.slice(0, 300) };
-    Array.prototype.forEach.call(fm.elements, function(x){ if (x.name && x.type !== 'file') body[x.name] = x.value; });
+    Array.prototype.forEach.call(fm.elements, function(x){ if (!x.name || x.type === 'file') return; if (x.type === 'checkbox') { if (x.checked) body[x.name] = 'yes'; return; } body[x.name] = x.value; });   /* patch LEGAL3: a box counts only when ticked */
     var file = fm.querySelector('input[type=file]'), f = file && file.files && file.files[0];
     if (f && f.size > 4 * 1024 * 1024) { err.textContent = 'That file is larger than 4 MB \u2014 please attach a smaller one.'; return; }
     go.disabled = true; err.textContent = ''; go.innerHTML = '<span class="spin"></span>' + (roof ? 'Measuring your roof\u2026' : 'Sending\u2026');

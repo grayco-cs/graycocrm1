@@ -2474,6 +2474,7 @@ Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, ins
 Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
 Object.assign(exports._core, { isHistoryInvoice: isHistoryInvoice });   /* patch LCLEAN */
+Object.assign(exports._core, { invoiceMailHtml: invoiceMailHtml });   /* patch LEGAL3: the invoice e-mail body, so the legal-footer test can render a real one */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
 /* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */
 Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,

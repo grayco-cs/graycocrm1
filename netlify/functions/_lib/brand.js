@@ -100,6 +100,17 @@ function signatureHtml(sender){
   return '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-top:1px solid #E5E0D3;padding-top:16px;width:100%"><tr>' + ph +
     '<td style="vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55">' + lines.join('<br>') + '</td></tr></table>';
 }
+/* patch LEGAL3 (counsel review F2: job e-mails carried no legal footer): ONE short confidentiality / accuracy footer, added here so every
+   invoice, portal link, signed paper and proposal e-mail that goes through the shell carries it. shell(html, { legal: false }) leaves it off
+   (GrayCo News has its own footer and unsubscribe line). The plain-text version is legalText(). DRAFT wording pending attorney review. */
+function legalText(){
+  return 'This email and any attachments are intended only for the named recipient and may contain confidential or privileged information. If you received it in error, please tell us and delete it. '
+    + 'Amounts, dates and scope in this email are summaries and are subject to your signed agreement and our written invoices; an email alone does not change a signed agreement. '
+    + BRAND.name + ' \u00b7 licensed GC ' + BRAND.licenses;
+}
+function legalFooterHtml(){
+  return '<tr><td data-gc-legal="1" style="background:' + BRAND.cream + ';padding:12px 24px 16px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#6B7785">' + esc(legalText()) + '</td></tr>';
+}
 function bodyOf(html){
   const t = String(html || '');
   const m = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(t);
@@ -123,7 +134,7 @@ function shell(html, o){
     '<tr><td style="padding:22px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:' + BRAND.ink + '">' + inner + portal + sig + '</td></tr>' +
     '<tr><td style="background:' + BRAND.navy + ';padding:14px 24px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#C9D3E0">' +
     '<b style="color:#ffffff">' + BRAND.legalName + '</b><br>' + BRAND.address + ' · <a href="' + telHref(BRAND.phone) + '" style="color:#C9D3E0;text-decoration:none">' + BRAND.phone + '</a> · <a href="mailto:' + BRAND.email + '" style="color:#C9D3E0;text-decoration:none">' + BRAND.email + '</a><br>' +
-    '<span style="color:' + BRAND.gold + '">' + BRAND.licenses + '</span></td></tr></table></td></tr></table></body></html>';
+    '<span style="color:' + BRAND.gold + '">' + BRAND.licenses + '</span></td></tr>' + (o.legal === false ? '' : legalFooterHtml()) + '</table></td></tr></table></body></html>';
 }
 
 /* the CRM's users (gc_kv "users"), read with the service key, kept 5 minutes */
@@ -178,6 +189,7 @@ function installResend(){
         const to = [].concat(b.to || []).map(low);
         if (b.html && !isShelled(b.html) && to.length && !to.every(function(x){ return /@grayco-cs\.com$/.test(x); })) {
           b.html = shell(b.html, { sender: { name: 'The GrayCo Office', title: 'Office', phone: BRAND.phone, email: BRAND.email } });
+          if (typeof b.text === 'string' && b.text && b.text.indexOf(legalText()) < 0) b.text = b.text + '\n\n--\n' + legalText();   /* patch LEGAL3: plain-text part too */
           init = Object.assign({}, init, { body: JSON.stringify(b) });
         }
       }
@@ -187,7 +199,7 @@ function installResend(){
   w.__gcBrand = true; w.__orig = orig;
   g.fetch = w;
 }
-module.exports = { BRAND: BRAND, installResend: installResend, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
+module.exports = { BRAND: BRAND, installResend: installResend, legalText: legalText, legalFooterHtml: legalFooterHtml, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
   logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
   billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind, directLines: directLines,
   _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };

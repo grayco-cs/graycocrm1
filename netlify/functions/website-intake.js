@@ -220,7 +220,9 @@ function readForm(b){
       address: clip(pick(b, ['referred_address', 'friend_address']), 200), note: clip(pick(b, ['referred_note', 'friend_note', 'referral_note']), 600) },
     /* patch MKT2: where the visitor came from (the website keeps the UTM tags, the ad click ids, a tracked-link code and a partner code) */
     attrib: (function(){ const a = {}; ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid', 'gc', 'ref'].forEach(k => { const v = s(b[k] || (b.attrib && b.attrib[k])).slice(0, 120); if (v && /^[\w .:\/+-]+$/.test(v)) a[k] = v; }); return a; })(),
-    guide: clip(b.guide, 60), partnerType: clip(b.partner_type || b.partnerType, 40)
+    guide: clip(b.guide, 60), partnerType: clip(b.partner_type || b.partnerType, 40),
+    /* patch LEGAL3: the roof-price form's two SEPARATE, unchecked text-consent boxes (job texts / offers); only a ticked box arrives */
+    smsJob: /^(yes|true|on|1)$/i.test(s(b.sms_job)), smsOffers: /^(yes|true|on|1)$/i.test(s(b.sms_offers))
   };
   if (!f.address && (f.city || f.zip)) f.address = '';
   ['name', 'company', 'project', 'service', 'property', 'position', 'carrier'].forEach(k => { f[k] = clip(f[k], 120); });
@@ -567,7 +569,13 @@ exports.handler = async function(event){
       const priceText = rq.priced ? money(rq.low) + ' – ' + money(rq.high) : '';
       const notes = [rq.measured ? ('Roof measured from satellite (Google Solar' + (rq.imageryDate ? ', imagery ' + rq.imageryDate : '') + '): ' + rq.areaSqft.toLocaleString('en-US') + ' sq ft, main pitch ' + (rq.pitch == null ? '?' : rq.pitch + '/12') + ', ' + rq.squares + ' squares with waste' + (rq.tier ? ' — ' + rq.tier : '') + '.') : ('Roof NOT measured automatically (' + rq.why + ') — measure it.'),
         rq.priced ? 'Range shown to the customer: ' + priceText + '.' : 'No price was shown to the customer' + (rq.measured ? ' (roof prices are not set yet: Leads → 🌐 Website → Roof prices)' : '') + ' — call with a price.'];
-      const lead = await fileLead(f, Object.assign({}, refExtra, { roofQuote: rq, notes: notes.concat(refExtra.notes || []) }));
+      /* patch LEGAL3: texts only with the ticked boxes (same records the CRM contract / intake use: smsConsent = job texts, smsMarketing = offers) */
+      const ph10 = phone10(f.phone), smsPatch = {}, smsAt = nowIso();
+      if (f.smsJob && ph10.length === 10) smsPatch.smsConsent = { status: 'yes', at: smsAt, via: 'intake', phone: ph10 };
+      if (f.smsOffers && ph10.length === 10) smsPatch.smsMarketing = { status: 'yes', at: smsAt, via: 'intake', phone: ph10 };
+      notes.push('Texts: job texts ' + (smsPatch.smsConsent ? 'YES (ticked on the roof-price form)' : 'not agreed') + '; offers ' + (smsPatch.smsMarketing ? 'YES (ticked)' : 'not agreed') + '.');
+      const lead = await fileLead(f, Object.assign({}, refExtra, { roofQuote: rq, notes: notes.concat(refExtra.notes || []), patch: smsPatch }));
+      try { const SC = require('./_lib/smsconsent.js'); if (smsPatch.smsConsent) await SC.record(smsPatch.smsConsent, [f.phone]); if (smsPatch.smsMarketing) await SC.record(smsPatch.smsMarketing, [f.phone], 'marketing'); } catch (e) {}
       await refNote(lead);
       await Promise.all([alertLead(lead.rec), autoReply(f, lead.id, { priceText })]);
       return J(event, 200, { ok: true, received: true, kind: 'roofprice', leadId: lead.id, measured: rq.measured, priced: rq.priced,

@@ -13,8 +13,8 @@ CRM → **Subs** tab → pick the sub → **📱 Schedule texts** → tick it, t
 
 | When | Text |
 |---|---|
-| 6 PM the evening before their first day on a schedule row | "GrayCo: you're scheduled at 100 Demo St tomorrow 8 AM for Tear-off. Reply Y to confirm, or text us if anything changes." |
-| About an hour before the start time, each scheduled day | "GrayCo: 100 Demo St today at 8 AM. Are you on your way / at the job? Reply Y." |
+| 6 PM the evening before their first day on a schedule row | "GrayCo: you're scheduled at 100 Demo St tomorrow 8 AM for Tear-off. Reply Y to confirm, or text us if anything changes. Reply STOP to opt out." |
+| About an hour before the start time, each scheduled day | "GrayCo: 100 Demo St today at 8 AM. Are you on your way / at the job? Reply Y. Reply STOP to opt out." |
 
 A row with no time is treated as 8 AM. A sub who already answered Y the evening before does not get the morning check that day.
 

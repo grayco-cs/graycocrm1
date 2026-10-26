@@ -35,7 +35,8 @@ function letter(stage, o){
     '<p style="font-size:15px;line-height:1.5"><b>Balance due: ' + usd(o.balance) + '</b>' + (o.paid > 0 ? ' (thank you for the ' + usd(o.paid) + ' already paid)' : '') + '</p>' +
     '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b>, handed to ' + esc(o.pm || 'your Project Manager') + '. The invoice is attached and is always in your portal.</p>' +
     '<p style="text-align:center;margin:20px 0"><a href="{{PORTAL_LINK}}" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block">See my invoices</a></p>' +
-    '<p style="font-size:13px;color:#55626F">Questions? Call us at 901-585-0944.</p>';
+    '<p style="font-size:13px;color:#55626F">Questions? Call us at 901-585-0944.</p>' +
+    '<p style="font-size:12px;color:#55626F" data-gc-latefee="1">Payment terms: net 30 days from the invoice date. Balances unpaid after 30 days may accrue a late charge of 1.5% per month (18% annual percentage rate) on the past-due balance, or the maximum rate allowed by law, whichever is less (see your contract).</p>';   /* patch LEGAL3: the one late-fee wording */
 }
 /* opts: { now } (tests). Returns a report. */
 async function run(opts){

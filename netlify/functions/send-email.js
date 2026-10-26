@@ -111,7 +111,7 @@ async function shellOut(html, who, body){
   try {
     const B = require('./_lib/brand.js');
     const sd = body && body.sender && typeof body.sender === 'object' ? body.sender : null;
-    return await B.shellFor(html, { email: (sd && sd.email) || who.email, name: (sd && sd.name) || who.name, portalUrl: body && /^https:\/\//.test(String(body.portalUrl || '')) ? body.portalUrl : '' });
+    return await B.shellFor(html, { email: (sd && sd.email) || who.email, name: (sd && sd.name) || who.name, portalUrl: body && /^https:\/\//.test(String(body.portalUrl || '')) ? body.portalUrl : '', legal: body && body.legal === false ? false : undefined });   /* patch LEGAL3 */
   } catch (e) { return html; }
 }
 
@@ -340,7 +340,7 @@ exports.handler = async function (event) {
   if (/<news@grayco-cs\.com>$/i.test(from)) {
     const list = Array.isArray(to) ? to : [to];
     if (list.length !== 1 || body.cc) return { statusCode: 400, headers, body: JSON.stringify({ error: 'GrayCo News goes to one customer per e-mail (each gets their own unsubscribe link).' }) };
-    const res = await require('./_lib/news.js').sendNews({ to: list[0], subject: subject, html: await shellOut(html, who, body), text: body.text });
+    const res = await require('./_lib/news.js').sendNews({ to: list[0], subject: subject, html: await shellOut(html, who, Object.assign({}, body, { legal: false })), text: body.text });   /* patch LEGAL3: GrayCo News has its own footer */
     if (res.skipped) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: res.skipped }) };
     if (!res.ok) return { statusCode: res.status || 502, headers, body: JSON.stringify({ error: res.error || 'Send failed' }) };
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
