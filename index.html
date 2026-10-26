@@ -3340,7 +3340,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.152-2026-10-26-r1 -->
+<!-- GrayCo CRM Build: 33.152-2026-10-26-r2 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4005,7 +4005,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.152-2026-10-26-r1");
+  console.log("[GC] Build 33.152-2026-10-26-r2");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4053,7 +4053,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.152-2026-10-26-r1"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.152-2026-10-26-r2"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -163327,6 +163327,7 @@ function logAct(l, type, text){ var a = arr(l.activity).slice(); a.push({ type: 
 function uiKey(){ return 'gc_leads_ui_v2:' + (myEmail() || 'me') + ':' + (amEstimator() ? 'est' : 'all'); }
 function loadUI(){
   var k = uiKey(), est = amEstimator(), U = lsGet(k, null);
+  if (U && !est) U = Object.assign({}, U, { who: '', src: '', type: '', stage: '', due: '', un: false, closed: false, preset: 'all', prio: '' });   /* LEADSCON: Leads always opens on ALL leads, no filter left over from last time */
   if (!U) { U = est ? { v: 'list', sort: 'born', dir: -1, preset: 'bids' } : (lsGet('gc_leads_ui_v1', null) || {}); U.closed = false; if (!est) U.preset = U.preset === 'bids' ? 'bids' : 'all'; }
   return { _k: k, v: U.v || (est ? 'list' : 'board'), who: U.who || '', src: U.src || '', type: U.type || '', stage: U.stage || '', due: U.due || '', un: !!U.un, q: '', sort: U.sort || 'born', dir: U.dir || -1, open: '', cal: U.cal || '', classic: false,   /* patch HOT2b: the hub only (the old table: an admin's small link, html.gcl-classic-ok) */ closed: !!U.closed, preset: U.preset === 'bids' ? 'bids' : 'all', exp: !!U.exp, prio: /^(hi|md|lo|none)$/.test(U.prio) ? U.prio : '' };
 }
