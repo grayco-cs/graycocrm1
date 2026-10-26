@@ -46,7 +46,7 @@ const EXP_G = { hyatt: 'commercial', bidWon: 'commercial', bc: 'commercial', ph:
 for (const k in FIX) ok('server group ' + k + ' → ' + EXP_G[k], JA.groupOf(FIX[k]) === EXP_G[k], JA.groupOf(FIX[k]));
 ok('server: new commercial defaults = the commercial table', same(JA.defaultsFor('commercial', null), COMM_EXPECT), diff(JA.defaultsFor('commercial', null), COMM_EXPECT));
 for (const g of ['residential', 'insurance', 'program']) ok('server: ' + g + ' defaults unchanged', same(JA.defaultsFor(g, null), oldFor(g)), diff(JA.defaultsFor(g, null), oldFor(g)));
-ok('server: residential is all-on (but the switches that were off)', JA.KEYS.filter(k => !JA.defaultsFor('residential', null)[k]).sort().join() === ['apptAuto', 'claimFile', 'equipment', 'showCarrier', 'teamAlert', 'w9'].sort().join());
+ok('server: residential is all-on (but the switches that were off)', JA.KEYS.filter(k => !JA.defaultsFor('residential', null)[k]).sort().join() === ['apptAuto', 'claimFile', 'equipment', 'gcPortalInvite', 'gcPortalLink', 'showCarrier', 'teamAlert', 'w9'].sort().join());
 const OLDADM = { residential: Object.assign({}, oldFor('residential'), { welcome: false }), commercial: oldFor('commercial'), updatedAt: ago(100), by: 'Wesley' };
 ok('server: an old saved residential map still applies', JA.defaultsFor('residential', OLDADM).welcome === false);
 ok('server: an old saved commercial map does not reach new commercial jobs', same(JA.defaultsFor('commercial', OLDADM), COMM_EXPECT));

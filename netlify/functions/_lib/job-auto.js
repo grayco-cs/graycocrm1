@@ -19,6 +19,7 @@ const OPTS = [
   ['photos', 'create', true], ['gdoc', 'create', true], ['calendar', 'create', true], ['checklist', 'create', true],
   ['subScopes', 'create', true], ['claimFile', 'create', { insurance: true, other: false }],
   ['portalLink', 'portal', true], ['portalInvite', 'portal', true], ['showCarrier', 'portal', false], ['portalSelections', 'portal', true],
+  ['gcPortalLink', 'portal', { commercial: true, other: false }], ['gcPortalInvite', 'portal', { commercial: true, other: false }],   /* patch COMMCO: the GC portal (commercial) */
   ['welcome', 'email', true], ['scheduleUpdates', 'email', true], ['apptAuto', 'email', false], ['progressPosts', 'email', true], ['docsNotice', 'email', true],
   ['invoiceEmail', 'email', true], ['paymentReminders', 'email', true], ['finalReminders', 'email', true],
   ['thankYou', 'email', { commercial: false, other: true }], ['reviewRequest', 'email', { commercial: false, other: true }],

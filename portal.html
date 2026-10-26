@@ -1689,6 +1689,122 @@ start();
 window._gcPortalRef = { reload: load, data: function(){ return D; } };
 })();
 </script>
+<script id="gc-portal-commco">
+/* patch COMMCO — the GC portal for COMMERCIAL jobs: the red hold banner while a change order waits for the GC's signature;
+   the MATERIALS APPROVAL (the GC superintendent initials each material, signs once, optional photo of the labels — a
+   signed PDF comes back by e-mail); SUBMITTALS (approve / approve as noted / revise & resubmit / reject, comments, a
+   marked-up file); APPROVAL REQUESTS (approve / decline / answer); the signed documents. Server: gc-portal (gc-*). */
+(function(){
+'use strict';
+if (window.GCCommco) return;
+var DEC = [['approved', 'Approved'], ['approved_as_noted', 'Approved as noted'], ['revise', 'Revise & resubmit'], ['rejected', 'Rejected']];
+var SL = { submitted: 'Waiting for your review', approved: 'Approved', approved_as_noted: 'Approved as noted', revise: 'Revise & resubmit', rejected: 'Rejected' };
+var X = { pad: null, ini: {}, strokes: [], f: {} };   /* kept across redraws: the initials typed, the signature drawn, the fields */
+function pad(h){
+  var c = h('canvas', { width: '600', height: '200', style: 'width:100%;max-width:600px;height:auto;aspect-ratio:3/1;border:1px solid #C9D3DF;border-radius:10px;background:#fff;touch-action:none', 'aria-label': 'Signature box' });
+  var strokes = X.strokes, cur = null, ctx = c.getContext('2d');
+  function repaint(){ ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#0F1D2F'; strokes.forEach(function(st){ ctx.beginPath(); st.forEach(function(q, i){ if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.stroke(); }); }
+  repaint();
+  function pt(e){ var r = c.getBoundingClientRect(); return [Math.round((e.clientX - r.left) * 600 / r.width), Math.round((e.clientY - r.top) * 200 / r.height)]; }
+  c.addEventListener('pointerdown', function(e){ e.preventDefault(); cur = [pt(e)]; strokes.push(cur); try { c.setPointerCapture(e.pointerId); } catch (x) {} });
+  c.addEventListener('pointermove', function(e){ if (!cur) return; var q = pt(e), l = cur[cur.length - 1]; cur.push(q); ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.strokeStyle = '#0F1D2F'; ctx.beginPath(); ctx.moveTo(l[0], l[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function(n){ c.addEventListener(n, function(){ cur = null; }); });
+  return { el: c, strokes: function(){ return strokes.filter(function(x){ return x.length; }); }, clear: function(){ strokes.length = 0; ctx.clearRect(0, 0, 600, 200); } };
+}
+function fileToB64(f){ return new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(String(r.result).replace(/^data:[^,]*,/, '')); }; r.onerror = rej; r.readAsDataURL(f); }); }
+function draw(main, v, K){
+  var h = K.h, card = K.card, dt = K.dt;
+  if (v.hold && v.hold.on) main.insertBefore(h('section', { class: 'card', role: 'alert', id: 'gcc-hold', style: 'background:#FDE2E2;border:2px solid #B91C1C;color:#7F1D1D' }, [h('b', { style: 'font-size:17px', text: v.hold.text }), h('div', { text: 'GrayCo stops the added work until the change order is signed below. Sign it and the job continues.' })]), main.firstChild);
+  /* materials approval */
+  var m = v.mats;
+  if (m && m.lines && m.lines.length) {
+    var mc = card('🧱 Materials approval', [h('div', { class: 'muted', text: m.pending ? 'Superintendent: please initial each material we will install (' + m.pending + ' waiting), then sign at the bottom.' : 'Every material is initialed' + (m.signedAt ? ' and signed (' + dt(m.signedAt) + ').' : '.') })], 'gcp-mats');
+    mc.setAttribute('data-gcp-id', 'mats');
+    var boxes = {};
+    m.lines.forEach(function(l, i){
+      var row = h('div', { class: 'gcp-item' + (l.ok ? '' : ' hl'), 'data-gcc-line': l.id }, [h('div', { class: 'gcp-row' }, [h('b', { text: (i + 1) + '. ' + l.product }), l.ok ? h('span', { class: 'pill ok', text: '✓ ' + l.init.initials + ' · ' + dt(l.init.at) }) : h('span', { class: 'pill now', text: 'Initials needed' })]),
+        h('div', { class: 'muted', text: [l.spec, l.qty ? 'Qty ' + l.qty : '', l.where].filter(Boolean).join(' · ') })]);
+      if (!l.ok) { var b = h('input', { class: 'gcp-in', type: 'text', maxlength: '5', autocapitalize: 'characters', placeholder: 'Your initials', 'aria-label': 'Initials for ' + l.product, style: 'max-width:160px;text-transform:uppercase', 'data-gcc-init': l.id }); b.value = X.ini[l.id] || ''; b.addEventListener('input', function(){ X.ini[l.id] = b.value; }); boxes[l.id] = b; row.appendChild(b); }
+      mc.appendChild(row);
+    });
+    if (m.pending) {
+      var nm = K.nameIn('gcc-m-n'), ti = h('input', { class: 'gcp-in', type: 'text', maxlength: '60', placeholder: 'Title (e.g. Superintendent)' }), co = h('input', { class: 'gcp-in', type: 'text', maxlength: '80', placeholder: 'Company' }), em = h('input', { class: 'gcp-in', type: 'email', maxlength: '120', placeholder: 'Your e-mail (we send you the signed copy)' });
+      co.value = X.f.co != null ? X.f.co : (v.company || ''); ti.value = X.f.ti || ''; em.value = X.f.em || '';
+      [[ti, 'ti'], [co, 'co'], [em, 'em']].forEach(function(z){ z[0].addEventListener('input', function(){ X.f[z[1]] = z[0].value; }); });
+      X.pad = pad(h);
+      var ph = h('input', { type: 'file', accept: 'image/*', capture: 'environment' });
+      mc.appendChild(h('div', { class: 'gcp-item' }, [nm, ti, co, em, h('div', { class: 'muted', text: 'Sign here:' }), X.pad.el, h('button', { type: 'button', class: 'btn', text: 'Clear signature', on: { click: function(){ X.pad.clear(); } } }),
+        h('label', { class: 'muted' }, ['Photo of the material labels (optional): ', ph]),
+        h('button', { type: 'button', class: 'btn gold', id: 'gcc-m-sign', text: '✍️ Initial & sign the materials', on: { click: function(){
+          var ini = {}; Object.keys(boxes).forEach(function(id){ ini[id] = boxes[id].value.trim(); });
+          var miss = Object.keys(boxes).filter(function(id){ return ini[id].replace(/[^A-Za-z]/g, '').length < 2; });
+          if (miss.length) { K.msg.mats = '!Put your initials on every material (' + miss.length + ' left).'; return K.redraw(); }
+          if (nm.value.trim().length < 2) { K.msg.mats = '!Type your name.'; return K.redraw(); }
+          if (!X.pad.strokes().length) { K.msg.mats = '!Sign in the box.'; return K.redraw(); }
+          var body = { action: 'gc-mats-sign', initials: ini, name: nm.value, title: ti.value, company: co.value, email: em.value, strokes: X.pad.strokes() };
+          K.act('mats', body, '✓ Signed — thank you. Your signed copy is on its way by e-mail.');
+        } } })]));
+    }
+    mc.appendChild(K.msgEl('mats'));
+    (m.signoffs || []).forEach(function(x){ if (x.hasPdf) mc.appendChild(h('div', { class: 'gcp-row' }, [h('span', { class: 'muted', text: 'Signed by ' + x.name + (x.title ? ', ' + x.title : '') + ' — ' + dt(x.at) + ' (' + x.lines + ' material' + (x.lines === 1 ? '' : 's') + ')' }), h('button', { type: 'button', class: 'btn', text: '📄 PDF', on: { click: function(){ K.openFile('gc-file', x.id); } } })])); });
+    main.appendChild(mc);
+  }
+  /* submittals */
+  if ((v.subm || []).length) {
+    var sc = card('📑 Submittals', [], 'gcp-subm');
+    v.subm.slice().reverse().forEach(function(x){
+      var k = 'sub' + x.id, it = h('div', { class: 'gcp-item', 'data-gcp-id': x.id });
+      it.appendChild(h('div', { class: 'gcp-row' }, [h('b', { text: '#' + x.number + (x.rev ? ' rev ' + x.rev : '') + ' — ' + x.item }), h('span', { class: 'pill ' + (x.status === 'submitted' ? 'now' : 'ok'), text: (x.superseded ? 'Superseded · ' : '') + (SL[x.status] || x.status) })]));
+      it.appendChild(h('div', { class: 'muted', text: [x.spec ? 'Spec ' + x.spec : '', x.submittedAt ? 'submitted ' + dt(x.submittedAt) : '', x.due ? 'review by ' + dt(x.due) : '', x.returnedAt ? 'returned ' + dt(x.returnedAt) + (x.reviewer ? ' by ' + x.reviewer : '') : ''].filter(Boolean).join(' · ') }));
+      if (x.desc) it.appendChild(h('div', { style: 'white-space:pre-wrap', text: x.desc }));
+      if (x.comments) it.appendChild(h('div', { class: 'muted', style: 'white-space:pre-wrap', text: 'Comments: ' + x.comments }));
+      var fl = (x.files || []).concat(x.markup ? [x.markup] : []);
+      if (fl.length) it.appendChild(h('div', { class: 'gcp-acts' }, fl.map(function(f){ return h('button', { type: 'button', class: 'btn', text: '📄 ' + f.name, on: { click: function(){ K.openFile('gc-file', f.id); } } }); })));
+      if (x.status === 'submitted') {
+        var sel = h('select', { class: 'gcp-in', 'data-gcc-dec': x.id }, [h('option', { value: '', text: 'Your decision…' })].concat(DEC.map(function(d){ return h('option', { value: d[0], text: d[1] }); })));
+        var cm = h('textarea', { class: 'gcp-in', maxlength: '3000', placeholder: 'Comments (needed unless approved)' }), nm2 = K.nameIn('gcc-s-n-' + x.id), up = h('input', { type: 'file', accept: 'application/pdf,image/*' });
+        it.appendChild(sel); it.appendChild(cm); it.appendChild(h('label', { class: 'muted' }, ['Marked-up copy (optional): ', up])); it.appendChild(nm2);
+        it.appendChild(h('button', { type: 'button', class: 'btn gold', text: 'Send my review', on: { click: function(){
+          if (!sel.value) { K.msg[k] = '!Pick a decision.'; return K.redraw(); }
+          if (sel.value !== 'approved' && !cm.value.trim()) { K.msg[k] = '!Add your comments.'; return K.redraw(); }
+          var body = { action: 'gc-sub-review', id: x.id, decision: sel.value, comment: cm.value, name: nm2.value };
+          var f = up.files && up.files[0];
+          if (f && f.size > 4.5 * 1024 * 1024) { K.msg[k] = '!That file is too big here — e-mail it to GrayCo.'; return K.redraw(); }
+          (f ? fileToB64(f).then(function(b64){ body.file = { name: f.name, type: f.type, data: b64 }; }) : Promise.resolve()).then(function(){ K.act(k, body, '✓ Thank you — GrayCo has your review.'); });
+        } } }));
+      }
+      it.appendChild(K.msgEl(k)); sc.appendChild(it);
+    });
+    main.appendChild(sc);
+  }
+  /* approval requests */
+  if ((v.apprs || []).length) {
+    var ac = card('✅ Approval requests', [], 'gcp-apprs');
+    v.apprs.slice().reverse().forEach(function(x){
+      var k = 'ap' + x.id, it = h('div', { class: 'gcp-item', 'data-gcp-id': x.id });
+      it.appendChild(h('div', { class: 'gcp-row' }, [h('b', { text: '#' + x.number + ' — ' + x.subject }), h('span', { class: 'pill ' + (x.status === 'open' ? 'now' : 'ok'), text: x.status === 'open' ? (x.due ? 'Needed by ' + dt(x.due) : 'Waiting for you') : x.status === 'approved' ? 'Approved' : x.status === 'declined' ? 'Declined' : 'Answered' })]));
+      it.appendChild(h('div', { style: 'white-space:pre-wrap', text: x.question }));
+      if ((x.files || []).length) it.appendChild(h('div', { class: 'gcp-acts' }, x.files.map(function(f){ return h('button', { type: 'button', class: 'btn', text: '📄 ' + f.name, on: { click: function(){ K.openFile('gc-file', f.id); } } }); })));
+      if (x.answer) it.appendChild(h('div', { class: 'muted', style: 'white-space:pre-wrap', text: 'Answer (' + x.answeredBy + ', ' + dt(x.answeredAt) + '): ' + x.answer }));
+      if (x.status === 'open') {
+        var an = h('textarea', { class: 'gcp-in', maxlength: '4000', placeholder: 'Your answer / conditions (optional when you approve)' }), nm3 = K.nameIn('gcc-a-n-' + x.id);
+        it.appendChild(an); it.appendChild(nm3);
+        var go = function(dec){ return function(){ if (nm3.value.trim().length < 2) { K.msg[k] = '!Type your name.'; return K.redraw(); } if (dec !== 'approved' && !an.value.trim()) { K.msg[k] = '!Type your answer.'; return K.redraw(); } K.act(k, { action: 'gc-appr-answer', id: x.id, decision: dec, answer: an.value, name: nm3.value }, '✓ Thank you — GrayCo has your answer.'); }; };
+        it.appendChild(h('div', { class: 'gcp-acts' }, [h('button', { type: 'button', class: 'btn gold', text: '✅ Approve', on: { click: go('approved') } }), h('button', { type: 'button', class: 'btn', text: 'Decline', on: { click: go('declined') } }), h('button', { type: 'button', class: 'btn', text: 'Send answer', on: { click: go('answered') } })]));
+      }
+      it.appendChild(K.msgEl(k)); ac.appendChild(it);
+    });
+    main.appendChild(ac);
+  }
+  if ((v.signedDocs || []).length) {
+    var dc = card('🗂 Signed documents', [], 'gcp-signed');
+    v.signedDocs.forEach(function(d){ dc.appendChild(h('div', { class: 'gcp-row gcp-item' }, [h('span', { text: d.title + ' — ' + dt(d.at) }), d.id ? h('button', { type: 'button', class: 'btn', text: '📄 PDF', on: { click: function(){ K.openFile('gc-file', d.id); } } }) : null])); });
+    main.appendChild(dc);
+  }
+}
+window.GCCommco = { draw: draw };
+})();
+</script>
 <script id="gc-portal-gcp">
 /* patch GCP — (1) the portal works like an app on the phone (manifest + a safe service worker + "Add to Home Screen");
    (2) the GC / OWNER PORTAL: a GC's link portal.grayco-cs.com/#g=<code> opens their project page — schedule, updates,
@@ -1761,7 +1877,7 @@ function gcStart(){
   css();
   var m = /(?:^#|&)g=([A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash || '');
   G.tok = m ? m[1] : ls('gc_portal_g');
-  var f = /(?:^#|&)(pa|co|rfi)=([A-Za-z0-9_-]{1,60})/.exec(location.hash || ''); G.focus = f ? f[2] : '';
+  var f = /(?:^#|&)(pa|co|rfi|sub|ap|mats)=([A-Za-z0-9_-]{1,60})/.exec(location.hash || ''); G.focus = f ? (f[1] === 'mats' ? 'mats' : f[2]) : '';   /* patch COMMCO: + submittals, approvals, materials */
   if (!G.tok) return gcStop();
   if (m && !PREVIEW_ANY) ls('gc_portal_g', G.tok);
   document.title = 'GrayCo — Project page';
@@ -1805,6 +1921,8 @@ function gcDraw(){
   main.appendChild(card('Your GrayCo contact', [h('div', { text: pm.name || 'GrayCo Construction Services' }),
     h('div', { class: 'gcp-acts' }, [h('a', { class: 'btn', href: 'tel:' + String(pm.phone || OFFICE).replace(/[^0-9+]/g, ''), text: '📞 Call' }), pm.email ? h('a', { class: 'btn', href: 'mailto:' + pm.email, text: '✉️ E-mail' }) : null]),
     v.job.stageName ? h('div', { class: 'muted', text: 'Status: ' + v.job.stageName }) : null]));
+  /* patch COMMCO: the hold, the materials approval, submittals, approval requests, signed documents */
+  try { if (window.GCCommco) window.GCCommco.draw(main, v, { api: gcApi, act: act, msgEl: msgEl, nameIn: nameIn, card: card, h: h, dt: dt, msg: G.msg, redraw: gcDraw, preview: PREVIEW_ANY, openFile: openFile }); } catch (e) {}
   /* pay apps */
   if (v.payapps.length) {
     var pc = card('💵 Pay applications', [], 'gcp-pay');

@@ -37,8 +37,12 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 function reply(code, headers, obj){ return { statusCode: code, headers: headers, body: JSON.stringify(obj) }; }
 const STAFF = ['gcp-state', 'gcp-link', 'gcp-send-link', 'gcp-payapp-add', 'gcp-payapp-status', 'gcp-co-price', 'gcp-co-void', 'gcp-signed', 'gcp-co-imported', 'gcp-rfi-new', 'gcp-rfi-answer',
-  'docs-list', 'docs-url', 'docs-add', 'docs-remove', 'gcp-contacts-all'];
-const GCPUB = ['gc-view', 'gc-photos', 'gc-doc', 'gc-payapp-file', 'gc-approve-pay', 'gc-co-request', 'gc-co-sign', 'gc-rfi-answer'];
+  'docs-list', 'docs-url', 'docs-add', 'docs-remove', 'gcp-contacts-all',
+  /* patch COMMCO: commercial jobs — materials approval, submittals, approval requests, change orders through the GC portal */
+  'cc-mats-save', 'cc-mats-send', 'cc-mats-sign', 'cc-sub-save', 'cc-sub-submit', 'cc-sub-resubmit', 'cc-appr-new', 'cc-appr-answer', 'cc-co-push', 'cc-pull', 'cc-filed', 'cc-file', 'cc-remind'];
+const GCPUB = ['gc-view', 'gc-photos', 'gc-doc', 'gc-payapp-file', 'gc-approve-pay', 'gc-co-request', 'gc-co-sign', 'gc-rfi-answer',
+  'gc-mats-sign', 'gc-sub-review', 'gc-appr-answer', 'gc-file'];   /* patch COMMCO */
+const CC = require('./_lib/commco.js');
 const CUST = ['cust-extras', 'cust-checkin', 'cust-registry'];
 
 function inspectPage(code){
@@ -87,9 +91,11 @@ exports.handler = async function(event){
       if (action === 'docs-url') { const d = (await G.companyDocs(true)).find(function(x){ return x.id === s(b.id); }); if (!d) return reply(404, headers, { ok: false, error: 'No such document.' }); return reply(200, headers, { ok: true, url: await G.docSigned(d.ref), name: d.name }); }
       if (action === 'gcp-contacts-all') return reply(200, headers, { ok: true, contacts: G.activeGcContacts(data) });
       if (action === 'gcp-signed') {
-        const all = {}; const st = await (async function(){ const out = []; const jobs = await require('./bid-inbox.js')._lib.kvGet(G.K_JOBS); Object.keys(jobs || {}).forEach(function(pid){ (jobs[pid].cos || []).forEach(function(c){ if (c.status === 'signed' && !c.importedAt) out.push(Object.assign({ pid: pid }, G.coOut(c), { amount: c.amount })); }); }); return out; })();
+        const all = {}; const st = await (async function(){ const out = []; const jobs = await require('./bid-inbox.js')._lib.kvGet(G.K_JOBS); Object.keys(jobs || {}).forEach(function(pid){ (jobs[pid].cos || []).forEach(function(c){ if (c.status === 'signed' && !c.importedAt) out.push(Object.assign({ pid: pid }, G.coOut(c), { amount: c.amount, crmId: c.crmId || '' })); }); }); return out; })();   /* patch COMMCO: crmId */
         return reply(200, headers, { ok: true, signed: st });
       }
+      if (action === 'cc-pull') return reply(200, headers, { ok: true, jobs: await CC.pull(data, Array.isArray(b.pids) ? b.pids : []) });   /* patch COMMCO */
+      if (action === 'cc-remind') { if (!admin) return reply(403, headers, { ok: false, error: 'Admins only.' }); return reply(200, headers, Object.assign({ ok: true }, await CC.reminders({ force: b.force === true }))); }
       if (action === 'docs-add' || action === 'docs-remove') {
         if (!admin) return reply(403, headers, { ok: false, error: 'Only an admin can change the company documents.' });
         const r = action === 'docs-add' ? await G.docAdd(data, b, who) : await G.docRemove(b, who);
@@ -126,7 +132,15 @@ exports.handler = async function(event){
       }
       const fn = { 'gcp-payapp-add': function(){ return G.payappAdd(data, p, b, who); }, 'gcp-payapp-status': function(){ return G.payappStatus(p, b, who); }, 'gcp-co-price': function(){ return G.coPrice(data, p, b, who); },
         'gcp-co-void': function(){ return G.coVoid(p, b, who); }, 'gcp-co-imported': function(){ return G.coImported(p, b, who); }, 'gcp-rfi-new': function(){ return G.rfiNew(data, p, b, who); },
-        'gcp-rfi-answer': function(){ return G.rfiAnswer(p, b, (who.name || who.email) + ' (typed in by GrayCo)', 'staff'); } }[action];
+        'gcp-rfi-answer': function(){ return G.rfiAnswer(p, b, (who.name || who.email) + ' (typed in by GrayCo)', 'staff'); },
+        /* patch COMMCO */
+        'cc-mats-save': function(){ return CC.matsSave(data, p, b, who); }, 'cc-mats-send': function(){ return CC.matsSend(data, p, b, who); },
+        'cc-mats-sign': function(){ return CC.matsSign(data, p, b, 'onsite', who.email, ''); },
+        'cc-sub-save': function(){ return CC.submSave(data, p, b, who); }, 'cc-sub-submit': function(){ return CC.submSubmit(data, p, b, who); }, 'cc-sub-resubmit': function(){ return CC.submResubmit(data, p, b, who); },
+        'cc-appr-new': function(){ return CC.apprNew(data, p, b, who); }, 'cc-appr-answer': function(){ return CC.apprAnswer(data, p, b, (who.name || who.email) + ' (typed in by GrayCo)', 'staff'); },
+        'cc-co-push': function(){ return CC.coPush(data, p, b, who); },
+        'cc-filed': async function(){ return { code: 200, out: { ok: true, marked: (await CC.filed(pid, b.ids)) || 0 } }; },
+        'cc-file': async function(){ const f = CC.fileOf(await CC.state(pid), b.id); if (!f) return { code: 404, out: { ok: false, error: 'No such file.' } }; return { code: 200, out: { ok: true, url: await G.docSigned(f.ref), name: f.name } }; } }[action];
       const r = await fn();
       return reply(r.code, headers, r.out);
     }
@@ -156,6 +170,11 @@ exports.handler = async function(event){
         if (!pa) return reply(404, headers, { ok: false, error: 'That pay app has no PDF.' });
         return reply(200, headers, { ok: true, url: await G.docSigned(pa.ref), name: pa.fileName || ('Pay app ' + pa.number + '.pdf') });
       }
+      /* patch COMMCO: the GC's super initials the materials, the GC reviews submittals / answers approval requests, opens their files */
+      if (action === 'gc-mats-sign') { if (b.preview === true) return reply(200, headers, { ok: true, preview: true }); const r2 = await CC.matsSign(data, p, b, 'link', 'GC link', ip); if (r2.out) { delete r2.out.raw; } return reply(r2.code, headers, r2.out); }
+      if (action === 'gc-sub-review') { const r2 = await CC.gcSubmReview(data, p, b, ip); return reply(r2.code, headers, r2.out); }
+      if (action === 'gc-appr-answer') { const nm = clip(s(b.name).replace(/[<>]/g, ''), 80); const r2 = await CC.apprAnswer(data, p, b, nm ? nm + ' (GC)' : '', 'portal'); return reply(r2.code, headers, r2.out); }
+      if (action === 'gc-file') { const f = CC.fileOf(await CC.state(p.id), b.id); if (!f) return reply(404, headers, { ok: false, error: 'That file is not available.' }); return reply(200, headers, { ok: true, url: await G.docSigned(f.ref), name: f.name }); }
       const r = action === 'gc-approve-pay' ? await G.gcApprovePay(data, p, b, ip) : action === 'gc-co-request' ? await G.gcRequestCo(data, p, b) : action === 'gc-co-sign' ? await G.gcSignCo(data, p, b, ip)
         : await G.rfiAnswer(p, b, clip(s(b.name).replace(/[<>]/g, ''), 80) ? clip(s(b.name).replace(/[<>]/g, ''), 80) + ' (GC)' : 'The GC', 'portal');
       if (action === 'gc-rfi-answer' && r.code === 200) {
