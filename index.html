@@ -124656,7 +124656,7 @@ function fromItem(it, prev){
   var fresh = !prev;
   l.id = prev ? prev.id : leadIdOf(it);
   if (fresh) {
-    l.name = s(it.title); l.stage = 'New Lead'; l.pm = s(it.pm) || s(it.estimator); l.pmEmail = s(it.estimatorEmail); if (l.pm) { l.assignedAt = nowIso(); l.assignedBy = 'Lead Inbox (Senior Estimator)'; } l.bidStatus = 'Reviewing'; l.date = today(); l.createdAt = nowIso(); l.createdBy = 'Lead Inbox';
+    l.name = s(it.title); l.stage = 'New Lead'; var _br = window._gcBidRole; if (_br && _br.itemIsBid(it) && (!s(it.pm) || _br.isEst(it.pm, it.estimator))) { l.estimator = s(it.estimator) || s(it.pm); l.estimatorEmail = s(it.estimatorEmail); if (l.estimator) { l.assignedAt = nowIso(); l.assignedBy = 'Lead Inbox (Senior Estimator)'; } } else { l.pm = s(it.pm) || s(it.estimator); l.pmEmail = s(it.estimatorEmail); if (l.pm) { l.assignedAt = nowIso(); l.assignedBy = 'Lead Inbox (Senior Estimator)'; } }   /* patch BIDROLE */ l.bidStatus = 'Reviewing'; l.date = today(); l.createdAt = nowIso(); l.createdBy = 'Lead Inbox';
     l.phone = s(it.contact && it.contact.phone); l.email = s(it.contact && it.contact.email); l.contactName = s(it.contact && it.contact.name);
     l.type = PIPE_TYPE[low(it.type)] || 'Commercial Reno'; l.estVal = it.estValue || ''; l.address = fullAddr(it); l.inboxState = 'new';
     l.notes = notesOf(it);
@@ -124821,8 +124821,8 @@ function reminders(o){
     });
   };
   var withJob = {};
-  projects().forEach(function(p){ if (p && p.status === 'bidding' && p.bidDue) { withJob[p.leadId || ''] = 1; add(p.leadSource, p.name, p.pm, p.bidDue, p.leadId, p.id); } });
-  inboxLeads().forEach(function(l){ if (!withJob[l.id] && !l.pid) add(srcOf(l), l.name, l.pm, l.bidDue, l.id, ''); });
+  projects().forEach(function(p){ if (p && p.status === 'bidding' && p.bidDue) { withJob[p.leadId || ''] = 1; add(p.leadSource, p.name, p.pm || p.estimator, p.bidDue, p.leadId, p.id);   /* patch BIDROLE */ } });
+  inboxLeads().forEach(function(l){ if (!withJob[l.id] && !l.pid) add(srcOf(l), l.name, l.pm || l.estimator, l.bidDue, l.id, '');   /* patch BIDROLE */ });
   return out.filter(function(x){ return !o.pm || x.pm === o.pm; });
 }
 
@@ -124841,11 +124841,12 @@ function assign(id, pm){
   if (!isAdmin()) return Promise.reject(new Error('Only an owner or admin assigns leads.'));
   if (!s(pm)) return Promise.reject(new Error('Pick a PM.'));
   var l = findLead(id); if (!l) return Promise.reject(new Error('Lead not found.'));
+  var _asEst = !!(window._gcBidRole && window._gcBidRole.isBid(l));   /* patch BIDROLE: on a bid the pick is the estimator */
   return Promise.resolve(l).then(function(lead){
-    return patchLead(lead.id, function(x){ x.pm = pm; x.inboxState = x.pid ? 'job' : 'assigned'; x.assignedAt = nowIso(); x.assignedBy = myName(); x.inboxFlagNew = false; });
+    return patchLead(lead.id, function(x){ if (_asEst) { x.estimator = pm; x.estimatorEmail = window._gcBidRole.emailOf(pm); if (x.pm && window._gcBidRole.isEst(x.pm, '')) { x.pm = ''; x.pmEmail = ''; } } else x.pm = pm; x.inboxState = x.pid ? 'job' : 'assigned'; x.assignedAt = nowIso(); x.assignedBy = myName(); x.inboxFlagNew = false; });
   }).then(function(lead){
-    if (lead.inboxId) act({ id: lead.inboxId, op: 'assigned', pm: pm, leadId: lead.id });
-    if (lead.pid) setList('_setProjects', function(list){ return list.map(function(p){ return p && p.id === lead.pid && !p.pm ? stamp(Object.assign({}, p, { pm: pm })) : p; }); });
+    if (lead.inboxId) act({ id: lead.inboxId, op: 'assigned', pm: pm, leadId: lead.id, as: _asEst ? 'estimator' : '', email: _asEst ? window._gcBidRole.emailOf(pm) : '' });   /* patch BIDROLE */
+    if (lead.pid && !_asEst) setList('_setProjects', function(list){ return list.map(function(p){ return p && p.id === lead.pid && !p.pm ? stamp(Object.assign({}, p, { pm: pm })) : p; }); });
     try {
       if (typeof window._gcNotify === 'function') window._gcNotify(pm, { kind: 'lead', link: '#leads', title: '📥 New lead assigned to you: ' + lead.name + (lead.bidDue ? ' — bid due ' + fmtWhen(lead.bidDue) : ''),
         body: [kindOf(lead) + ' · ' + srcOf(lead), lead.address, lead.gc ? 'GC: ' + lead.gc : ''].filter(Boolean).join('\n') });
@@ -124908,7 +124909,7 @@ function createJob(id){
     if (lead.pid && projects().some(function(p){ return p && p.id === lead.pid; })) return { ok: true, pid: lead.pid, existed: true, lead: lead };
     var kind = kindOf(lead), pid = rid('PRJ');
     var p = stamp({ id: pid, name: lead.name, client: lead.gc || lead.owner || lead.contactName || lead.name, clientPhone: lead.phone || '', clientEmail: lead.email || '', address: lead.address || '',
-      type: kind === 'Insurance' ? 'Insurance Claim' : kind === 'Residential' ? (lead.type || 'Roofing') : 'Commercial Reno', status: 'bidding', pm: lead.pm || '', contract: 0, estId: '',
+      type: kind === 'Insurance' ? 'Insurance Claim' : kind === 'Residential' ? (lead.type || 'Roofing') : 'Commercial Reno', status: 'bidding', pm: lead.pm || '', estimator: lead.estimator || '', contract: 0, estId: '',   /* patch BIDROLE */
       startDate: '', endDate: '', scope: lead.scope || '', autoPO: autoPO(), subs: [], created: today(), createdAt: nowIso(), isInsurance: kind === 'Insurance',
       leadId: lead.id, leadSource: srcOf(lead), bidDue: lead.bidDue || '', preBid: lead.preBid || '', bidNumber: lead.bidNumber || '', plansLinks: arr(lead.plansLinks),
       notes: 'Bid job from the Lead Inbox (' + (lead.source || 'lead') + ').' + (lead.bidDue ? ' Bid due ' + fmtWhen(lead.bidDue) + '.' : '') + (lead.notes ? '\n' + lead.notes : '') });
@@ -125116,10 +125117,10 @@ function card(l){
     + '<div class="docs">' + docLinks(l) + '</div>'
     + (boardOnly(l) ? '<div class="note">Plans are behind the board\'s sign-in, so they can\'t be fetched automatically. Open the board and download them, then drop them below — or forward the plans e-mail to leads@grayco-cs.com.</div>' : '')
     + (arr(l.matchNotes).length ? '<div class="note">' + esc(arr(l.matchNotes).join('\n')) + '</div>' : '')
-    + (l.pm ? '<div class="sub">PM: <b>' + esc(l.pm) + '</b>' + (l.pid ? ' · bid job created' : '') + '</div>' : (sg.name ? '<div class="sub">Suggested PM: ' + esc(sg.why) + '</div>' : ''))
+    + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.cardLine(l) : (l.pm ? '<div class="sub">PM: <b>' + esc(l.pm) + '</b>' + (l.pid ? ' · bid job created' : '') + '</div>' : (sg.name ? '<div class="sub">Suggested PM: ' + esc(sg.why) + '</div>' : '')))   /* patch BIDROLE */
     + (rem ? '<div class="rem">⏰ To-do for ' + esc(rem.pm) + ': ' + esc(rem.title) + '</div>' : '')
     + '<div class="drop" data-drop="lead">Drop plan files here</div>'
-    + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (l.pm ? 'Change PM' : 'Assign PM') + '</button>' : '')
+    + '<div class="acts">' + (admin ? '<button class="b gold" data-a="assign">' + (window._gcBidRole ? window._gcBidRole.btn(l) : (l.pm ? 'Change PM' : 'Assign PM')) + '</button>' : '')   /* patch BIDROLE */
     + (l.pid ? '<button class="b pri" data-a="openjob">Open bid job</button>' : '<button class="b pri" data-a="job">Create bid job</button>')
     + (admin && l.inboxId && !l.websiteLead && !(portalOf(l) && /published|removed/.test(portalOf(l).state)) ? '<button class="b bp" data-a="publish" title="Approved subs see it on bids.grayco-cs.com and can bid">Publish to bid portal</button>' : '')
     + (admin ? '<button class="b" data-a="merge">Merge with…</button><button class="b no" data-a="dismiss">Not interested</button>' : '') + '</div></div>';
@@ -125197,8 +125198,9 @@ function dialog(title, body, buttons){
 function dlgAssign(id){
   var l = findLead(id); if (!l) return;
   var sg = suggestPm(l);
-  dialog('Assign a PM — ' + l.name,
-    '<label>Project manager<select id="ldi-pm">' + opt('', 'Pick…', '') + pmNames().map(function(n){ return opt(n, n, sg.name === n && !l.pm ? n : l.pm); }).join('') + '</select></label>'
+  var _bidA = (window._gcBidRole && window._gcBidRole.isBid(l));   /* patch BIDROLE */
+  dialog((_bidA ? 'Assign the estimator — ' : 'Assign a PM — ') + l.name,
+    '<label>' + (_bidA ? 'Estimator (the PM is picked when the bid is won)' : 'Project manager') + '<select id="ldi-pm">' + opt('', 'Pick…', '') + pmNames().map(function(n){ var _c = _bidA ? s(l.estimator) : l.pm; return opt(n, n, sg.name === n && !_c ? n : _c); }).join('') + '</select></label>'
     + (sg.why ? '<div class="mini">Suggested: ' + esc(sg.why) + '. You choose — nothing is assigned automatically.</div>' : '<div class="mini">You choose — nothing is assigned automatically.</div>')
     + '<div class="mini">The PM gets a to-do 3 days and 1 day before the bid is due.</div>',
     [{ label: 'Assign', pri: true, run: function(ov){ var pm = ov.querySelector('#ldi-pm').value; if (!pm) { toast('Pick a PM first.', true); return false; } return assign(id, pm).then(function(){ toast('Assigned to ' + pm); }); } }]);
@@ -131453,7 +131455,7 @@ function formOk(z, prev, say){
     if (z.dueToEmail) z.dueToEmail = low(z.dueToEmail);
     var at = nowIso(), who = myName() || myEmail() || 'GrayCo';
     if (due !== s(prev && prev.bidDue)) { if (prev && prev.inboxId && !prev.bidDueManual) z.bidDueInboxWas = s(prev.bidDue); z.bidDueManual = true; z.bidDueBy = who; z.bidDueAt = at; }
-    if (!s(z.pm) && !s(prev && prev.pm) && !webLead && isCommercialLead(z) && !(typeof W._gcSelfOwns === 'function' && W._gcSelfOwns())) {   /* patch CC2: theirs when a PM enters it */ var est = estimator(); if (est.name || est.email) { z.pm = est.name || est.email; z.pmEmail = est.email; z.estimator = est.name; z.estimatorEmail = est.email; } }
+    if (!s(z.pm) && !s(prev && prev.pm) && !webLead && isCommercialLead(z) && !(typeof W._gcSelfOwns === 'function' && W._gcSelfOwns())) {   /* patch CC2: theirs when a PM enters it */ var est = estimator(); if (est.name || est.email) { z.estimator = est.name || est.email; z.estimatorEmail = est.email; z.assignedBy = 'Auto · Senior Estimator'; z.assignedAt = at; } }   /* patch BIDROLE: the PM is picked when won */
     if (s(z.pm) && s(z.pm) !== s(prev && prev.pm)) { z.assignedBy = who; z.assignedAt = at; z.pmEmail = z.pmEmail || emailOfName(z.pm) || (low(z.pm) === low(estimator().name) ? estimator().email : ''); }
     if (!prev && isBid(z) && !z.bidStatus) z.bidStatus = 'Reviewing';
     if (!prev && !z.createdAt) z.createdAt = at;
@@ -163179,7 +163181,7 @@ function cardHtml(l){
     + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
     + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
     + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
-    + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + (assignee(l) ? 'Reassign' : 'Assign to PM') + '</button>' : '')   /* patch LROLEVIEW */
+    + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? (assignee(l) ? 'Change estimator' : 'Assign estimator') : (assignee(l) ? 'Reassign' : 'Assign to PM')) + '</button>' : '')   /* patch LROLEVIEW; BIDROLE */
     + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
     + '</div>';
 }
@@ -163205,7 +163207,7 @@ function bodyHtml(){
     var npk = Object.keys(PICK).filter(function(id){ return PICK[id] && list.some(function(l){ return l.id === id; }); }).length;   /* patch LROLEVIEW: bulk assign */
     return (canAssignAll() ? '<div class="gcl-fil" style="margin:0 0 6px"><button type="button" class="gcl-mv" data-gcl-pickall>☑ Select all shown / none</button><button type="button" class="gcl-mv gcl-asg" data-gcl-bulkasg' + (npk ? '' : ' disabled') + '>👤 Assign selected (' + npk + ')…</button></div>' : '')
       + '<div class="gcl-wrap"><table class="gcl-list"><thead><tr>' + cols.map(function(c){ return '<th data-gcl-sort="' + c[0] + '">' + c[1] + (UI.sort === c[0] ? (UI.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
-      + list.slice(0, lim('list')).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>') + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
+      + list.slice(0, lim('list')).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.rowCell(l) : (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>')) + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
       + '</tbody></table></div>' + moreBtn('list', list.length) + (list.length ? '' : '<p style="color:#666">No leads match.</p>');   /* patch LEADPERF-2 */
   }
   if (UI.v === 'cal') {
@@ -163348,7 +163350,7 @@ function moveStage(id, st, reason){
     if (st === 'Lost') { l.lostReason = s(reason).slice(0, 300); l.lostAt = at; }
     if (st === 'Won') l.wonAt = at;
     var h = arr(l.stageHistory).slice(); h.push({ from: from, to: st, at: at, by: myName() }); l.stageHistory = h.slice(-60);
-  }).then(function(ok){ toast(ok ? 'Moved to ' + st : 'Could not save — try again'); redraw(); if (UI.open === id) openDrawer(id); return ok; });
+  }).then(function(ok){ toast(ok ? 'Moved to ' + st : 'Could not save — try again'); redraw(); if (UI.open === id) openDrawer(id); if (ok && st === 'Won' && W._gcBidRole) { try { W._gcBidRole.wonAsk(id); } catch (e) {} }   /* patch BIDROLE */ return ok; });
 }
 function markContacted(id){
   var at = nowIso();
@@ -163357,7 +163359,7 @@ function markContacted(id){
 }
 function assign(id, name){
   var at = nowIso();
-  return patchLead(id, function(l){ var commercial = isBidL(l); if (commercial && !l.pm) l.estimator = name; else l.pm = name; if (commercial) delete l.autoAssignedAt;   /* patch HOT2 */ l.assignedAt = at; l.assignedBy = myName(); logAct(l, 'assign', 'Assigned to ' + name); })
+  return patchLead(id, function(l){ var commercial = isBidL(l); if (commercial && ((!l.pm && !/won/i.test(s(l.stage))) || !(W._gcBidRole && W._gcBidRole.admin()))) l.estimator = name; else l.pm = name;   /* patch BIDROLE: on a bid only an admin sets the PM (after Won) */ if (commercial) delete l.autoAssignedAt;   /* patch HOT2 */ l.assignedAt = at; l.assignedBy = myName(); logAct(l, 'assign', 'Assigned to ' + name); })
     .then(function(ok){
       toast(ok ? 'Assigned to ' + name : 'Could not save — try again');
       if (ok) { var l = leads().filter(function(x){ return x.id === id; })[0]; if (l) fn('bid-inbox?notify=1', { body: { lead: l } }).catch(function(){}); }
@@ -163574,7 +163576,7 @@ function drawerHtml(l){
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     /* assign */
-    + '<section><h4>👤 Assigned to</h4>' + ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
+    + '<section><h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? '📐 Estimator' : '👤 Assigned to') + '</h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.drawerNote(l) : '') +   /* patch BIDROLE */ ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
     /* contact */
     + '<section><h4>Contact</h4><div class="kv">' + esc(c.name || '—') + (c.phone ? ' · ' + esc(c.phone) : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div><div class="row">'
     + (c.phone ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="call" href="tel:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a><a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="text" href="sms:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">💬 Text</a>' : '')
@@ -163686,6 +163688,7 @@ function drawerClick(ev){
   if (k === 'openest') { var es = estimateFor(l); if (es && typeof W._gcOpenEstimate === 'function') { try { W._gcOpenEstimate(es.id); return; } catch (x) {} } goView('estimates'); return; }
   if (k === 'estimates') { goView('estimates'); return; }
   if (k === 'convert') {
+    if (W._gcBidRole && W._gcBidRole.needPm(l) && !t.__gcPmAsked) { t.__gcPmAsked = 1; W._gcBidRole.askPm(l.id, function(){ later(function(){ try { t.click(); } catch (e) {} t.__gcPmAsked = 0; }, 120); }, { skipLabel: 'Skip — pick on Launch Job' }); return; }   /* patch BIDROLE */
     closeDrawer(); goView('launchjob');
     var it = inboxOf(l) || {}, fill = { name: s(l.name || l.title), client: s(l.client || l.contactName), address: [l.address, l.city, l.state, l.zip].filter(Boolean).join(', '), clientPhone: s(l.phone || l.clientPhone), clientEmail: s(l.email || l.clientEmail), scope: s(l.subScope || l.scope || it.scope), source: srcOf(l), notes: 'From lead ' + s(l.name) + ' (' + srcOf(l) + ').' };
     try { if (typeof W._gcLeadLaunchExtra === 'function') fill = Object.assign(fill, W._gcLeadLaunchExtra(l, estimateFor(l))); W.__gcX12LaunchLead = l.id; } catch (e) {}   /* patch BUGV: the lead's type, PM, amount and link carry over */
@@ -179908,5 +179911,189 @@ SI.call(W, function(){ try { stampTick(); } catch (e) {} }, 1500);
 
 W._gcPriceUp = { preview: preview, apply: apply, state: function(){ return ST; }, loadState: loadState, runNow: runNow, open: openSheet, tick: tick };
 try { console.log('[GC] Products: price sheet upload + national index line ready (patch PRICEUP)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-bidrole">
+/* ============================================================================================================
+   GrayCo — A BID HAS AN ESTIMATOR, NOT A PM, UNTIL IT IS WON   (patch BIDROLE)   __GC_PATCH_BIDROLE__
+   Owner (10/24): "Glenn is the estimator, no PM assigned until job won."
+   • A commercial / government bid (W._gcIsBidLead) carries `estimator` (default: the Senior Estimator). Its `pm`
+     stays empty; cards, rows and the lead drawer say "Estimator: <name> · PM: — (assigned when won)".
+   • Old bid leads whose PM was really the estimator (the Senior Estimator, the lead's own estimator, or anyone
+     with the Estimator role) get that name in `estimator`; every screen reads the PM through pmOf(), so an
+     estimator in the old `pm` field never shows or counts as the PM. A real PM somebody picked stays. Bid jobs too.
+   • Won / Convert to job on a bid with no PM → "Pick the PM for this job"; the estimator stays as Estimated by.
+   window._gcBidRole → { isBid, itemIsBid, isEst, emailOf, cardLine, rowCell, drawerNote, btn, needPm, askPm,
+                         wonAsk, migrateLeads, migrateProjects, run }
+   ============================================================================================================ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W._gcBidRole) return;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+function users(){ try { return arr(W._crm && W._crm.users); } catch (e) { return []; } }
+function isAdmin(){ try { if (W._gcVAS && W._gcVAS.active && W._gcVAS.active()) return false; } catch (e) {} try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} try { var me = W._gcMeNow || {}; return me.role === 'Admin' || low(me.payType) === 'owner'; } catch (e) { return false; } }
+function myName(){ try { return s((W._gcMeNow || {}).name); } catch (e) { return ''; } }
+function head(){ try { var d = typeof W._gcDefEst === 'function' ? W._gcDefEst() : null; if (d && (s(d.name) || s(d.email))) return { name: s(d.name), email: low(d.email) }; } catch (e) {} return { name: '', email: '' }; }
+function roleOf(u){ return s(u && u.role) + ' ' + s(u && u.profile); }
+function userByName(n){ n = low(n); if (!n) return null; return users().filter(function(u){ return u && low(u.name) === n; })[0] || null; }
+function emailOf(n){ var u = userByName(n); return u && u.email ? low(u.email) : (low(n) === low(head().name) ? head().email : ''); }
+function same(a, b){ a = low(a); b = low(b); return !!a && !!b && a === b; }
+function isBid(l){ try { return !!(l && typeof W._gcIsBidLead === 'function' && W._gcIsBidLead(l)); } catch (e) { return false; } }
+/* a Lead Inbox item (server shape) is a bid when its kind is commercial / government, or it has none */
+function itemIsBid(it){
+  if (!it) return false;
+  var t = low(it.type || it.leadKind);
+  if (/insur|resid|roof|home|storm|claim|mitig/.test(t)) return false;
+  if (it.websiteLead || (it.leadExtra && it.leadExtra.websiteLead)) return /commerc|gov/.test(t);
+  return true;
+}
+/* is this name the estimator (the lead's own, the Senior Estimator, or a person with the Estimator role)? */
+function isEst(name, leadEst){
+  name = s(name); if (!name) return false;
+  if (same(name, leadEst)) return true;
+  var h = head(); if (same(name, h.name) || same(name, h.email)) return true;
+  var u = userByName(name); if (u && /estimat/i.test(roleOf(u)) && !/project manager|^pm$|admin/i.test(roleOf(u))) return true;
+  return false;
+}
+function allLeads(){ var L = []; try { L = arr((W._crm || {}).leads); } catch (e) {} if (!L.length) { try { if (typeof W._gcLaLeads === 'function') L = arr(W._gcLaLeads()); } catch (e) {} } return L; }
+function closed(l){ return /won|lost|dead|converted|declined|closed/i.test(s(l && l.stage) + ' ' + s(l && l.status)) || !!(l && l.converted); }
+function estOf(l){ return s(l && l.estimator) || (l && l.pm && isEst(l.pm, l.estimator) ? s(l.pm) : ''); }
+function pmOf(l){ return l && l.pm && !isEst(l.pm, l.estimator) ? s(l.pm) : ''; }
+function cardLine(l){
+  var e = estOf(l), p = pmOf(l);
+  return '<div class="sub">📐 Estimator: <b>' + (e ? esc(e) : '— not set') + '</b> · PM: ' + (p ? '<b>' + esc(p) + '</b>' : '— <span style="color:#6b6591">not assigned (admin assigns)</span>') + (l && l.pid ? ' · bid job created' : '') + '</div>';
+}
+function rowCell(l){
+  var e = estOf(l), p = pmOf(l);
+  return (e ? '<span title="Estimator">📐 ' + esc(e) + '</span>' : '<span class="gcl-chip warn">No estimator</span>') + '<div style="font-size:11px;color:#666">PM: ' + (p ? esc(p) : '— not assigned') + '</div>';
+}
+function drawerNote(l){
+  var p = pmOf(l);
+  return '<div class="note" style="margin:0 0 6px">' + (p ? 'PM: <b>' + esc(p) + '</b>' : 'PM: — not assigned (admin assigns).') + ' The estimator works the bid; an admin picks the PM when it is won.</div>';
+}
+function btn(l){ if (!isBid(l)) return l && l.pm ? 'Change PM' : 'Assign PM'; return estOf(l) ? 'Change estimator' : 'Assign estimator'; }
+function needPm(l){ return isBid(l) && !pmOf(l); }
+
+/* ── save on the lead list ── */
+function setLeads(fn){
+  if (typeof W._setLeads !== 'function') return false;
+  try { W._setLeads(function(list){ var out = fn(arr(list)); return out || list; }); return true; } catch (e) { return false; }
+}
+function stamp(x){ var at = nowIso(); x.updatedAt = at; x.savedAt = at; return x; }
+
+/* ── migration: an estimator sitting in `pm` on an open bid → `estimator` ── */
+function fixLead(l){
+  if (!l || !isBid(l) || !s(l.pm)) return null;
+  if (closed(l) && !/won/i.test(s(l.stage))) return null;            /* lost / dead: leave as is */
+  if (/won/i.test(s(l.stage)) || l.converted) return null;              /* won: its PM is real */
+  if (!isEst(l.pm, l.estimator)) return null;                            /* a real PM someone picked stays */
+  if (s(l.estimator)) return null;                                        /* already has its estimator */
+  /* the estimator name goes in `estimator`; the old `pm` value is left alone (the sync never blanks a field) —
+     every screen reads it through pmOf(), which does not count the estimator as the PM */
+  var x = Object.assign({}, l);
+  x.estimator = s(x.pm); x.estimatorEmail = s(x.pmEmail) || emailOf(x.pm); x.bidRoleMovedAt = nowIso();
+  return stamp(x);
+}
+function migrateLeads(list){
+  var n = 0, out = arr(list).map(function(l){ var f = fixLead(l); if (f) { n++; return f; } return l; });
+  return { list: out, n: n };
+}
+function migrateProjects(list, leads){
+  var byId = {}; arr(leads).forEach(function(l){ if (l && l.id) byId[l.id] = l; });
+  var n = 0, out = arr(list).map(function(p){
+    if (!p || low(p.status) !== 'bidding' || !s(p.pm)) return p;
+    var l = byId[p.leadId];
+    var bid = l ? isBid(l) : /commerc|gov/i.test(s(p.type));
+    if (!bid || s(p.estimator) || !isEst(p.pm, (l && l.estimator) || p.estimator)) return p;
+    n++; var x = Object.assign({}, p); x.estimator = s(x.pm); x.bidRoleMovedAt = nowIso(); return stamp(x);
+  });
+  return { list: out, n: n };
+}
+var ran = 0;
+function run(){
+  try {
+    var crm = W._crm || {}, L = allLeads();
+    if (!L.length || !users().length) return false;
+    if (migrateLeads(L).n && !setLeads(function(list){ var r = migrateLeads(list); return r.n ? r.list : null; })) return false;
+    if (migrateProjects(arr(crm.projects), L).n) {
+      if (typeof W._setProjects !== 'function') return false;
+      try { W._setProjects(function(list){ var r = migrateProjects(list, allLeads()); return r.n ? r.list : list; }); } catch (e) {}
+    }
+    ran++; return true;
+  } catch (e) { return false; }
+}
+
+/* ── Won / Convert: "Pick the PM for this job" ── */
+function pmChoices(){
+  var seen = {}, out = [];
+  users().forEach(function(u){
+    if (!u || !s(u.name) || u.active === false || seen[low(u.name)]) return;
+    var r = roleOf(u);
+    if ((/estimat/i.test(r) || same(u.name, head().name)) && !/project manager|\bpm\b|admin/i.test(r)) return;   /* the estimator is not the PM */
+    if (/market|office|mitig|super/i.test(r) && !/project manager|\bpm\b|admin/i.test(r)) return;
+    seen[low(u.name)] = 1; out.push(s(u.name));
+  });
+  return out.sort();
+}
+function leadById(id){ return allLeads().filter(function(x){ return x && x.id === id; })[0] || null; }
+function askPm(id, done, opt){
+  opt = opt || {};
+  if (!isAdmin()) { try { if (typeof W._gcToast === 'function') W._gcToast('An admin picks the PM on a won bid.'); } catch (e) {} if (done) done(''); return; }
+  var l = leadById(id); if (!l) { if (done) done(''); return; }
+  var old = D.getElementById('gc-bidrole-dlg'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gc-bidrole-dlg';
+  ov.setAttribute('style', 'position:fixed;inset:0;background:rgba(20,16,50,.45);z-index:100050;display:flex;align-items:center;justify-content:center;padding:16px');
+  var names = pmChoices();
+  ov.innerHTML = '<div role="dialog" aria-modal="true" aria-labelledby="gc-bidrole-h" style="background:#fff;color:#1b1640;border-radius:12px;max-width:420px;width:100%;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25);font:14px/1.45 Arial,sans-serif">'
+    + '<h3 id="gc-bidrole-h" style="margin:0 0 6px;font-size:17px">🏆 Pick the PM for this job</h3>'
+    + '<div style="font-size:13px;color:#57527a;margin-bottom:10px">' + esc(s(l.name || l.title)) + (estOf(l) ? ' · estimated by <b>' + esc(estOf(l)) + '</b> (stays on the job)' : '') + '</div>'
+    + '<label for="gc-bidrole-pm" style="font-weight:700;font-size:12px">Project manager</label>'
+    + '<select id="gc-bidrole-pm" style="width:100%;margin:4px 0 12px;padding:9px;border:1px solid #cfc8ea;border-radius:8px;font-size:14px"><option value="">Pick…</option>' + names.map(function(n){ return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') + '</select>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button type="button" data-b="skip" style="padding:9px 14px;border-radius:8px;border:1px solid #cfc8ea;background:#fff;font-weight:700;cursor:pointer">' + (opt.skipLabel || 'Later') + '</button>'
+    + '<button type="button" data-b="ok" style="padding:9px 14px;border-radius:8px;border:1px solid #241968;background:#241968;color:#fff;font-weight:800;cursor:pointer">Set PM</button></div></div>';
+  D.body.appendChild(ov);
+  var finish = function(v){ ov.remove(); if (done) done(v); };
+  ov.addEventListener('click', function(ev){
+    var b = ev.target.closest ? ev.target.closest('[data-b]') : null;
+    if (ev.target === ov) return finish('');
+    if (!b) return;
+    if (b.getAttribute('data-b') === 'skip') return finish('');
+    var pm = s(ov.querySelector('#gc-bidrole-pm').value);
+    if (!pm) { ov.querySelector('#gc-bidrole-pm').focus(); return; }
+    setPm(id, pm); finish(pm);
+  });
+  ov.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') finish(''); });
+  try { ov.querySelector('#gc-bidrole-pm').focus(); } catch (e) {}
+}
+function setPm(id, pm){
+  if (!isAdmin()) return false;
+  var at = nowIso(), em = emailOf(pm), me = myName();
+  setLeads(function(list){
+    var ch = false, out = list.map(function(l){
+      if (!l || l.id !== id) return l;
+      ch = true; var x = Object.assign({}, l);
+      if (!s(x.estimator) && x.pm && isEst(x.pm, '')) { x.estimator = s(x.pm); x.estimatorEmail = s(x.pmEmail); }
+      x.pm = pm; x.pmEmail = em; x.pmPickedAt = at; x.pmPickedBy = me; x.assignedAt = at; x.assignedBy = me;
+      var h = arr(x.activity).slice(); h.push({ at: at, type: 'assign', text: 'PM picked for the won bid: ' + pm, by: me }); x.activity = h.slice(-80);
+      return stamp(x);
+    });
+    return ch ? out : null;
+  });
+  try { if (typeof W._gcNotify === 'function') { var l = leadById(id); W._gcNotify(pm, { kind: 'lead', link: '#leads', title: '🏆 You are the PM on a won bid: ' + s(l && (l.name || l.title)), body: estOf(l) ? 'Estimated by ' + estOf(l) : '' }); } } catch (e) {}
+}
+function wonAsk(id){ var l = leadById(id); if (!l || !needPm(l) || !isAdmin()) return; askPm(id, null, { skipLabel: 'Pick later (on Convert to job)' }); }
+
+W._gcBidRole = { admin: isAdmin, isBid: isBid, itemIsBid: itemIsBid, isEst: isEst, emailOf: emailOf, estOf: estOf, pmOf: pmOf, cardLine: cardLine, rowCell: rowCell, drawerNote: drawerNote, btn: btn,
+  needPm: needPm, askPm: askPm, setPm: setPm, wonAsk: wonAsk, migrateLeads: migrateLeads, migrateProjects: migrateProjects, fixLead: fixLead, run: run, pmChoices: pmChoices, state: function(){ return { ran: ran }; } };
+
+/* run once the people and leads are loaded, then every 10 minutes (a lead synced in from an older computer) */
+var tries = 0;
+(function boot(){ if (run() || ++tries > 90) { setTimeout(run, 30000); setInterval(function(){ if (!D.hidden) run(); }, 600000); return; } setTimeout(boot, 2000); })();
+try { console.log('[GC] 📐 Bids have an estimator, the PM comes when won (patch BIDROLE) — _gcBidRole'); } catch (e) {}
 })();
 </script>

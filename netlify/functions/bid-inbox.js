@@ -1086,7 +1086,7 @@ function applyAct(items, b, who){
   let it = items.find(x => x && x.id === id);
   if (!it) return { err: 'no such lead in the inbox' };
   if (op === 'imported') { if (it.status === 'new') it.status = 'imported'; it.leadId = s(b.leadId) || it.leadId; it.importedAt = it.importedAt || t; it.importedRev = it.rev; }
-  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; }
+  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; if (s(b.as) === 'estimator') { it.estimator = s(b.pm).slice(0, 80); it.estimatorEmail = low(b.email).slice(0, 120); if (it.pm && low(it.pm) === low(it.estimator)) { it.pm = ''; it.pmEmail = ''; } } else it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; }   /* patch BIDROLE: on a bid the pick is the estimator */
   else if (op === 'job') { it.pid = s(b.pid); it.jobAt = t; if (it.status === 'new') it.status = 'imported'; }
   else if (op === 'dismissed') { it.status = 'dismissed'; it.reason = s(b.reason).slice(0, 300) || 'Not interested'; it.by = who.email; it.dismissedAt = t; }
   else if (op === 'merged') {
