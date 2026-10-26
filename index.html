@@ -4765,6 +4765,7 @@ function fields(){
     var e=all[i];
     var t=(e.type||'').toLowerCase();
     if(t==='hidden') continue;
+    if(e.closest && e.closest('#gc-lux [data-lux=filters]')) continue;   /* patch LUXFIX: the Leads screen's More filters are not a form */
     if(vis(e)) out.push(e);
   }
   return out;
@@ -103396,6 +103397,7 @@ function fieldsOnScreen0(){
     for(var i=0;i<all.length;i++){
       var e = all[i];
       if(e.id === 'gc-navsearch') continue;          /* the search bar is always there */
+      if(e.closest && e.closest('#gc-lux [data-lux=filters]')) continue;   /* patch LUXFIX: the Leads screen's More filters are not a form (the hands-off hold too) */
       if(e.type === 'hidden') continue;
       var r = e.getBoundingClientRect();
       if(r.width < 40 || r.height < 10) continue;    /* not something she can type in */
@@ -173666,7 +173668,8 @@ html.lux-on #gc-leads-tabs{border-bottom:0!important;gap:4px!important;margin:0 
 html.lux-on #gc-leads-tabs button{border:0!important;background:none!important;border-radius:999px!important;padding:9px 16px!important;color:#64708a!important;font:600 15px -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif!important;margin:0!important;cursor:pointer}
 html.lux-on #gc-leads-tabs button[aria-selected="true"],html.lux-on #gc-leads-tabs[data-tab="leads"] button[data-gc-tab="leads"],html.lux-on #gc-leads-tabs[data-tab="bidboard"] button[data-gc-tab="bidboard"],html.lux-on #gc-leads-tabs[data-tab="website"] button[data-gc-tab="website"]{background:#0f2440!important;color:#fff!important}
 /* the classic page content never paints under the new screens (the classic table: ⋯ → Old table) */
-html.lux-on:not(.lux-classic) #gc-leads-tabs:not([data-tab="website"]) ~ *:not(.lux-keep):not(#gc-rso):not(#gc-ol):not(#gc-bw-watch.lux-open):not(#gc-ldi.lux-open):not(#gcl-settings){display:none!important}
+html.lux-on:not(.lux-classic) #gc-leads-tabs:not([data-tab="website"]) ~ *:not(.lux-keep):not(#gc-rso):not(#gc-ol):not(#gc-bw-watch.lux-open):not(#gc-ldi.lux-open):not(#gcl-settings):not(.lux-formhost){display:none!important}
+html.lux-on:not(.lux-classic):not(.lux-form) #gc-leads-tabs:not([data-tab="website"]) ~ .lux-formhost{display:none!important}   /* patch LUXFIX: the classic add / edit form shows while it is open */
 html.lux-on:not(.lux-classic) #gc-leads-tabs[data-tab="leads"] ~ #gc-ldi{display:none!important}
 body.gcrso-on #gc-lux{display:none!important}
 html.lux-classic #gc-lux .lux-nonclassic{display:none!important}
@@ -173981,6 +173984,7 @@ function groups(){
   g.na.sort(function(a, b){ var x = e.isBidL(a) ? 0 : 1, y = e.isBidL(b) ? 0 : 1; return x - y || (x === 0 ? dueAsc(a, b) : byBorn(a, b)); });
   g.ip.sort(function(a, b){ return s(b.updatedAt).localeCompare(s(a.updatedAt)); });
   g.bd.sort(dueAsc);
+  var IMP = luxImp(); if (IMP) { g.na.sort(IMP); g.ip.sort(IMP); g.bd.sort(IMP); }   /* patch LUXFIX: Most important first */
   g.cl.sort(function(a, b){ return s(b.stageChangedAt || b.updatedAt).localeCompare(s(a.stageChangedAt || a.updatedAt)); });
   g.total = g.na.length + g.ip.length + g.bd.length + g.cl.length;
   GM = { k: key, g: g }; return g;
@@ -173990,14 +173994,24 @@ function groups(){
 var ALLOW = {};
 function classicOn(){ var e = E(); return !!e && e.isAdmin() && ssGet('gcl_classic_ok') === '1'; }
 W._gcLuxRows = function(r){ if (!W.__GC_LUX__ || W.__GC_LUX_FAIL__ || classicOn()) return true; return !!(r && ALLOW[r.id]); };
+/* patch LUXFIX: the classic block (its title, search, add / edit form and table) and its form */
+function formHost(){ var bar = tabBar(), p = bar && bar.parentElement, i = p && p.querySelector('input[name="gc-projsearch"]'), h = i; if (!h) return null;
+  while (h && h.parentElement !== p) h = h.parentElement; if (h && !h.classList.contains('lux-formhost')) h.classList.add('lux-formhost'); return h; }
+function formOpen(){ var h = formHost(); return !!h && Array.prototype.some.call(h.querySelectorAll('input,select,textarea'), function(i){ return !!i.offsetParent && i.type !== 'checkbox' && i.name !== 'gc-projsearch' && !i.closest('table'); }); }
+function formWatch(){ if (!H.classList.contains('lux-form')) return; if (view() !== 'leads' || !formOpen()) { H.classList.remove('lux-form'); return; } later(formWatch, 1500); }
+function formMode(){ formHost(); H.classList.add('lux-form'); later(formWatch, 1200); }
+function poke(v){ var h = formHost(), i = h && h.querySelector('input[name="gc-projsearch"]'); if (!i) return false;   /* the classic table's own search box: a change redraws the table */
+  try { Object.getOwnPropertyDescriptor(W.HTMLInputElement.prototype, 'value').set.call(i, v); i.dispatchEvent(new Event('input', { bubbles: true })); return true; } catch (x) { warn(x); return false; } }
 function rerenderClassic(){   /* the page redraws the table when its tab is shown again */
+  var h = formHost(), i = h && h.querySelector('input[name="gc-projsearch"]'); if (i && !i.value && poke('\u0001')) { poke(''); return; }   /* patch LUXFIX: clicking the tabs alone did not redraw it */
   var bar = tabBar(), a = bar && bar.querySelector('[data-gc-tab="website"]'), b = bar && bar.querySelector('[data-gc-tab="leads"]');
   if (a && b) { a.click(); b.click(); }
 }
 function withRow(id, then){
   ALLOW[id] = 1; var e = E();
   if (e.classicRow(id)) return then();
-  rerenderClassic(); var n = 0;
+  var poked = poke(String(id)) || (rerenderClassic(), false), n = 0;   /* patch LUXFIX: the search box finds the lead by its id, so the table draws that row */
+  var then0 = then; then = function(){ var r = then0(); if (poked) later(function(){ poke(''); }, 60); return r; };
   (function wait(){ if (e.classicRow(id)) return then(); if (++n < 40) later(wait, 100); else toast('Not ready yet — try again in a moment.'); })();
 }
 /* ── the Leads screen ── */
@@ -174021,6 +174035,8 @@ function skeleton(){
 function q1(sel, el){ return (el || LUX.root).querySelector(sel); }
 function setHtml(el, h){ if (el && el.__h !== h) { el.__h = h; el.innerHTML = h; } }
 function setText(el, t){ if (el && el.textContent !== t) el.textContent = t; }
+function setAttr(el, k, v){ if (el && el.getAttribute(k) !== v) el.setAttribute(k, v); }   /* patch LUXFIX */
+function setHidden(el, h){ if (el && el.hidden !== !!h) el.hidden = !!h; }
 function chipsHtml(){
   var c = counts(), items = [['new', 'New (not contacted)', 'hot'], ['bids', 'Bids due this week', 'hot'], ['un', 'Unassigned', ''], ['fu', 'Follow-ups today', '']];
   return items.map(function(x){ return '<button type="button" class="lux-chip ' + (c[x[0]] && x[2] ? x[2] : '') + (UX.chip === x[0] ? ' on' : '') + '" data-lux-chip="' + x[0] + '" aria-pressed="' + (UX.chip === x[0]) + '"><b>' + c[x[0]] + '</b><span>' + x[1] + '</span></button>'; }).join('');
@@ -174040,10 +174056,14 @@ function filtersHtml(){
   var e = E(), u = e.ui(), srcs = W._gcLeadSources ? W._gcLeadSources.list() : [];
   var opt = function(list, sel, all){ return '<option value="">' + esc(all) + '</option>' + list.map(function(x){ var v = typeof x === 'string' ? x : x.v, t = typeof x === 'string' ? x : x.t; return '<option value="' + esc(v) + '"' + (v === sel ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join(''); };
   var base = e.scoped().filter(function(l){ return !e.importedL(l); }), nShut = base.filter(e.shut).length, nExp = base.filter(e.expired).length;
+  var sc = {}, tc = {}, KT = (W._gcLeadTypes && W._gcLeadTypes.list) || [];   /* patch LUXFIX: counts per source / kind, as the old hub showed */
+  e.scoped().forEach(function(l){ if (e.importedL(l) && !u.imp) return; var k = e.srcCanon(l); sc[k] = (sc[k] || 0) + 1; e.typesOf(l).forEach(function(x){ tc[x] = (tc[x] || 0) + 1; }); });
+  srcs = srcs.map(function(x){ return { v: x, t: x + ' (' + (sc[x] || 0) + ')' }; });
   var all0 = e.rawLeads().filter(function(l){ return !e.dead(l); }), nImp = all0.filter(function(l){ return !e.archivedL(l) && e.importedL(l); }).length, nArch = all0.filter(e.archivedL).length;
   var who = [{ v: '__me', t: 'Mine' }, { v: '__mybids', t: 'My bids (estimator)' }].concat(e.people().map(function(n){ return { v: n, t: n }; }));
   return '<label>Assignee<select data-gcl-f="who">' + opt(who, u.who, 'Everyone') + '</select></label>'
     + '<label>Source<select data-gcl-f="src">' + opt(srcs, u.src, 'All sources') + '</select></label>'
+    + '<label>Kind<select data-gcl-f="type">' + opt(KT.map(function(t){ return { v: t, t: t + ' (' + (tc[t] || 0) + ')' }; }), u.type, 'All kinds') + '</select></label>'   /* patch LUXFIX */
     + '<label>Priority<select data-gcl-f="prio">' + opt([{ v: 'hi', t: '8–10 (high)' }, { v: 'md', t: '5–7' }, { v: 'lo', t: '1–4' }, { v: 'none', t: 'No priority yet' }], u.prio, 'Any priority') + '</select></label>'
     + '<label>Bid due date<select data-gcl-f="due">' + opt([{ v: '7', t: 'Due in 7 days' }, { v: '30', t: 'Due in 30 days' }, { v: 'past', t: 'Past due' }], u.due, 'Any due date') + '</select></label>'
     + '<label class="lux-cb"><input type="checkbox" data-gcl-f="un"' + (u.un ? ' checked' : '') + '> Unassigned only</label>'
@@ -174062,10 +174082,13 @@ function menuHtml(){
   if (adm && W._gcLeadClean) h += item('clean', 'Clean up', nCl ? String(nCl) : '');
   h += item('imported', 'Imported', (u.imp ? 'showing · ' : '') + nImp);
   if (e.canAssignAll()) h += item('bulk', UX.bulk ? 'Bulk assign: on' : 'Bulk assign', '');
+  h += item('prio', u.sort === 'prio' ? 'Most important first: on' : 'Most important first', '');   /* patch LUXFIX */
   h += item('numbers', 'Pipeline numbers');
   if (adm) { h += '<hr>' + item('classic', 'Old table (admin)'); }
   return h;
 }
+function luxPrio(l){ try { var P = W._gcLeadPriority; return P && P.of(l) ? P.chip(l) : ''; } catch (x) { return ''; } }   /* patch LUXFIX */
+function luxImp(){ var P = W._gcLeadPriority, e = E(); return !!(P && P.importance && e && e.ui().sort === 'prio') ? P.importance : null; }
 function cardHtml(l, g){
   var e = E(), a = e.assignee(l), bid = e.isBidL(l), c = contactOf(l), tl = typeLabel(l), due = bid ? bidDueTxt(l) : '', fu = fuOf(l), cx = ctx(), adm = e.canAssignAll();
   var addr = s(l.address || l.city), srcTxt = e.srcCanon(l), when = ago(e.receivedMs(l));
@@ -174083,7 +174106,7 @@ function cardHtml(l, g){
   var pick = UX.bulk && adm ? '<input type="checkbox" class="lux-pick" data-gcl-pick="' + esc(l.id) + '"' + (e.pick()[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign">' : '';
   return '<article class="lux-card' + (e.ui().open === l.id ? ' sel' : '') + '" data-gcl-id="' + esc(l.id) + '" tabindex="0">' + pick
     + '<div class="lux-r1"><div><div class="lux-nm">' + esc(s(l.name || l.title) || 'Lead') + '</div>' + (addr ? '<div class="lux-ad">' + esc(addr) + '</div>' : '') + '</div><span class="lux-badge lux-b-' + tl + '">' + tl + '</span></div>'
-    + '<div class="lux-meta">' + meta + '</div><div class="lux-r3"><div class="lux-who">' + who + '</div>' + btn + '</div></article>';
+    + '<div class="lux-meta">' + luxPrio(l) + meta + '</div><div class="lux-r3"><div class="lux-who">' + who + '</div>' + btn + '</div></article>';
 }
 function groupHtml(key, title, list, red, collapsible){
   if (!list.length) return '';
@@ -174115,11 +174138,11 @@ function update(){
   var ts = q1('[data-lux-sel=type]'), to = typeOptions(u); if (ts.__h !== to.html) { ts.__h = to.html; ts.innerHTML = to.html; } ts.value = to.val; ts.classList.toggle('on', !!u.type);
   var ss = q1('[data-lux-sel=stage]'); ss.value = u.stage || ''; ss.classList.toggle('on', !!u.stage);
   var qi = q1('[data-lux=q]'); if (D.activeElement !== qi && qi.value !== u.q) qi.value = u.q;
-  Array.prototype.forEach.call(r.querySelectorAll('[data-lux-view]'), function(b){ b.classList.toggle('on', b.getAttribute('data-lux-view') === UX.v); b.setAttribute('aria-pressed', String(b.getAttribute('data-lux-view') === UX.v)); });
-  var fb = q1('[data-lux-act=filters]'); fb.setAttribute('aria-expanded', String(UX.filters)); fb.textContent = UX.filters ? 'Hide filters' : 'More filters';
+  Array.prototype.forEach.call(r.querySelectorAll('[data-lux-view]'), function(b){ b.classList.toggle('on', b.getAttribute('data-lux-view') === UX.v); setAttr(b, 'aria-pressed', String(b.getAttribute('data-lux-view') === UX.v)); });
+  var fb = q1('[data-lux-act=filters]'); setAttr(fb, 'aria-expanded', String(UX.filters)); setText(fb, UX.filters ? 'Hide filters' : 'More filters');
   var ff = q1('[data-lux=filters]'); if (ff.hidden !== !UX.filters) ff.hidden = !UX.filters;
   if (UX.filters && !(D.activeElement && ff.contains(D.activeElement) && /SELECT|INPUT/.test(D.activeElement.tagName))) setHtml(ff, filtersHtml());
-  var dd = q1('[data-lux=dd]'); dd.hidden = !UX.menu; if (UX.menu) setHtml(dd, menuHtml());
+  var dd = q1('[data-lux=dd]'); setHidden(dd, !UX.menu); if (UX.menu) setHtml(dd, menuHtml());
   var body = q1('[data-lux=body]');
   if (UX.v === 'cards') setHtml(body, listHtml());
   else { u.v = UX.v; var h = '<div class="lux-viewbody">' + e.bodyHtml() + '</div>'; setHtml(body, h); }
@@ -174131,7 +174154,8 @@ function render(){
   PEND = false;
   try {
     e.syncUI(); version();
-    var key = fsig() + '|' + UX.filters + '|' + UX.menu + '|' + UX.closedOpen + '|' + UX.bulk + '|' + JSON.stringify(UX.more) + '|' + ssGet('gcl_classic_ok') + '|' + ymd(new Date());
+    var key = fsig() + '|' + UX.filters + '|' + UX.menu + '|' + UX.closedOpen + '|' + UX.bulk + '|' + JSON.stringify(UX.more) + '|' + ssGet('gcl_classic_ok') + '|' + ymd(new Date())
+      + '|' + LUX.tab + '|' + JSON.stringify([UX.bq, UX.bMine, UX.bdue, UX.bShowHidden, UX.bMore, !!LUX.bClassic]);   /* patch LUXFIX */
     if (key === LAST_KEY && !FORCE) return;
     LAST_KEY = key; FORCE = false;
     if (LUX.tab === 'leads') update(); else if (LUX.tab === 'bidboard') updateBids();
@@ -174174,13 +174198,14 @@ function menuAct(a){
   else if (a === 'bulk') { UX.bulk = !UX.bulk; }
   else if (a === 'classic') { if (e.isAdmin() && typeof W._gcLeadsClassic === 'function') { W._gcLeadsClassic(true); later(rerenderClassic, 60); } }
   else if (a === 'classic-off') { if (typeof W._gcLeadsClassic === 'function') { W._gcLeadsClassic(false); later(rerenderClassic, 60); } }
+  else if (a === 'prio') { u.sort = u.sort === 'prio' ? 'born' : 'prio'; u.dir = -1; e.saveUI(); }   /* patch LUXFIX */
   else if (a === 'numbers') {
     var ks = []; try { ks = e.kpis(); } catch (x) { warn(x); }
     var m = modal('<h3>Pipeline numbers</h3><div class="lux-hint" style="color:#64708a;margin-bottom:10px">What the old Leads strip showed: unassigned, new today / this week, bids due in 7 days, not contacted over 4 h, win rate (90 days), open pipeline, sources (30 days).</div>'
       + ks.map(function(k){ return '<div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid #e6e8ec"><span>' + esc(k.l) + '</span><b>' + esc(k.n) + '</b></div>'; }).join('')
       + '<div style="text-align:right;margin-top:14px"><button type="button" class="lux-btn ghost" data-lux-x>Close</button></div>');
   }
-  else if (a === 'new') { e.newLead(); }
+  else if (a === 'new') { formMode(); e.newLead(); }   /* patch LUXFIX */
   else if (a === 'filters') { UX.filters = !UX.filters; }
   else if (a === 'menu') { UX.menu = true; }
   FORCE = true; dirty(a);
@@ -174284,7 +174309,8 @@ function bindPanel(d){
     var ed = ev.target.closest ? ev.target.closest('[data-d="editfull"],[data-d="delfull"]') : null;
     if (ed) {
       ev.stopPropagation(); var e0 = E(), id0 = e0.ui().open, edit = ed.getAttribute('data-d') === 'editfull'; if (!id0) return;
-      withRow(id0, function(){ var rb = e0.classicRow(id0, edit ? /✏/ : /🗑/); if (!rb) { toast('Not available for this lead.'); return; } e0.closeDrawer(); rb.click(); if (edit) later(function(){ e0.focusForm(); }, 250); });
+      withRow(id0, function(){ var rb = e0.classicRow(id0, edit ? /✏/ : /🗑/); if (!rb) { toast('Not available for this lead.'); return; } e0.closeDrawer(); formMode(); rb.click();   /* patch LUXFIX */
+      if (edit) later(function(){ e0.focusForm(); }, 250); });
       return;
     }
   }, true);
@@ -174338,6 +174364,7 @@ function bidList(){
     list.push(l);
   });
   list.sort(function(a, b){ var x = e.dueMs(a), y = e.dueMs(b); x = isFinite(x) ? x : 9e15; y = isFinite(y) ? y : 9e15; return x - y || e.receivedMs(b) - e.receivedMs(a); });
+  var IMP = luxImp(); if (IMP) list.sort(IMP);   /* patch LUXFIX: Most important first */
   return { list: list, hidden: hidden };
 }
 function bidsHtml(){
@@ -174348,7 +174375,7 @@ function bidsHtml(){
     var agency = s(l.dueToCompany || l.gc || l.agency || l.owner || l.client) || e.srcCanon(l);
     var who = a ? '<span class="lux-av">' + esc(e.initials(a)) + '</span><span>' + esc(shortName(a)) + '</span>' : '<span class="lux-av un">?</span><span class="lux-un">Unassigned</span>';
     var act = !a && adm ? '<button type="button" class="lux-act assign" data-gcl-asg="' + esc(l.id) + '">Assign</button>' : '<button type="button" class="lux-act alt">Open bid</button>';
-    return '<div class="lux-br" data-lux-open="' + esc(l.id) + '" tabindex="0">' + due + '<div class="lux-t">' + esc(s(l.name || l.title) || 'Bid') + '<small>' + esc(s(l.city || l.address)) + '</small></div><div>' + esc(agency) + '</div><div class="lux-who">' + who + '</div><div>' + act + '</div></div>';
+    return '<div class="lux-br" data-lux-open="' + esc(l.id) + '" tabindex="0">' + due + '<div class="lux-t">' + esc(s(l.name || l.title) || 'Bid') + (luxPrio(l) ? ' ' + luxPrio(l) : '') + '<small>' + esc(s(l.city || l.address)) + '</small></div><div>' + esc(agency) + '</div><div class="lux-who">' + who + '</div><div>' + act + '</div></div>';
   }).join('');
   var more = r.list.length > UX.bMore ? '<button type="button" class="lux-showmore" data-lux-bact="more">Show ' + Math.min(50, r.list.length - UX.bMore) + ' more (' + (r.list.length - UX.bMore) + ' not shown)</button>' : '';
   return (r.list.length ? '<div class="lux-tbl"><div class="lux-bh"><div>Due</div><div>Title</div><div>Owner / agency</div><div>Estimator</div><div></div></div>' + rows + '</div>' + more : '<div class="lux-empty">No bids match.</div>')
@@ -174359,9 +174386,9 @@ function updateBids(){
   setText(b.querySelector('[data-lux=bsub]'), 'Construction bids only, soonest due first.');
   var ms = b.querySelector('[data-lux-bsel=mine]'); ms.value = UX.bMine ? '1' : ''; ms.classList.toggle('on', UX.bMine);
   var ds = b.querySelector('[data-lux-bsel=due]'); ds.value = UX.bdue; ds.classList.toggle('on', !!UX.bdue);
-  var dd = b.querySelector('[data-lux=bdd]'); dd.hidden = !UX.menu;
+  var dd = b.querySelector('[data-lux=bdd]'); setHidden(dd, !UX.menu);
   if (UX.menu) { var adm = e.isAdmin(), item = function(a, l){ return '<button type="button" data-lux-bact="' + a + '">' + l + '</button>'; };
-    setHtml(dd, (adm ? item('settings', 'Lead settings') + item('cleanup', 'Hide non-construction bids') : '') + item('watch', 'Watched boards') + item('inbox', 'Full Lead Inbox (classic cards)') + (adm ? '<hr>' + item('classic', 'Classic bid board (switch tabs to come back)') : '')); }
+    setHtml(dd, (adm ? item('settings', 'Lead settings') + item('cleanup', 'Hide non-construction bids') : '') + item('prio', e.ui().sort === 'prio' ? 'Most important first: on' : 'Most important first') + item('watch', 'Watched boards') + item('inbox', 'Full Lead Inbox (classic cards)') + (adm ? '<hr>' + item('classic', 'Classic bid board (switch tabs to come back)') : '')); }
   setHtml(b.querySelector('[data-lux=bbody]'), bidsHtml());
 }
 var BQT = 0, BQV = '';
@@ -174372,11 +174399,12 @@ function bindBids(b){
     if (a) {
       ev.stopPropagation(); var k = a.getAttribute('data-lux-bact'); UX.menu = false;
       if (k === 'menu') UX.menu = true;
-      else if (k === 'new') e.newLead();
+      else if (k === 'new') { formMode(); e.newLead(); }   /* patch LUXFIX */
       else if (k === 'more') UX.bMore += 50;
       else if (k === 'hidden') UX.bShowHidden = !UX.bShowHidden;
       else if (k === 'settings') openSettings();
       else if (k === 'cleanup') openSettings({ cleanup: true });
+      else if (k === 'prio') { var u0 = e.ui(); u0.sort = u0.sort === 'prio' ? 'born' : 'prio'; u0.dir = -1; e.saveUI(); }   /* patch LUXFIX */
       else if (k === 'watch') showWatch();
       else if (k === 'inbox') showInbox();
       else if (k === 'classic') { LUX.bClassic = true; H.classList.add('lux-classic'); b.hidden = true; }
@@ -174412,7 +174440,7 @@ var BEAT = 0, TRIES = 0, BEATS = 0, LAST_CRM = null;
 function tabBar(){ return D.getElementById('gc-leads-tabs'); }
 function unmount(){
   if (LUX.root) { LUX.root.remove(); LUX.root = null; } if (LUX.bids) { LUX.bids.remove(); LUX.bids = null; }
-  LUX.active = false; LUX.tab = ''; LUX.bClassic = false; H.classList.remove('lux-on'); H.classList.remove('lux-classic'); closeModal();
+  LUX.active = false; LUX.tab = ''; LUX.bClassic = false; H.classList.remove('lux-on'); H.classList.remove('lux-classic'); H.classList.remove('lux-form'); closeModal();   /* patch LUXFIX */
   try { if (W._gcLeadInbox && W._gcLeadInbox.wake) W._gcLeadInbox.wake(); } catch (x) {}
   var d = D.getElementById('gcl-drawer'); if (d && view() !== 'leads') { var e = E(); if (e) e.closeDrawer(); }
 }
@@ -174420,7 +174448,7 @@ function roleDefaults(e, bar){
   var key = 'gc_lux_init_v1:' + (e.myEmail() || 'me'); if (ssGet(key)) return; ssSet(key, '1');
   var sc = e.myScope();
   if (sc.kind === 'bids' && e.amEstimator()) { var b = bar.querySelector('[data-gc-tab="bidboard"]'); if (b && bar.getAttribute('data-tab') === 'leads') { later(function(){ b.click(); }, 0); } }
-  else if (sc.kind !== 'all') { var u = e.ui(); u.who = '__me'; e.saveUI(); }
+  else if (sc.kind === 'mine') { var u = e.ui(); u.who = '__me'; e.saveUI(); }   /* patch LUXFIX: insurance / roofing / ... specialists keep their whole scope */
 }
 function ensure(){
   var e = E();
@@ -174453,7 +174481,7 @@ function ensure(){
       }
       LUX.bids.hidden = !!LUX.bClassic;
     }
-    version(); FORCE = true; render();
+    version(); render();   /* patch LUXFIX: no forced redraw (a new mount resets LAST_KEY, so it still draws; an unchanged screen is not redrawn) */
     if (!BEAT) { BEAT = 1; later(beat, 6000); }
   } catch (x) {
     warn(x); W.__GC_LUX_FAIL__ = true; try { unmount(); H.classList.remove('lux-on'); if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (y) {}
