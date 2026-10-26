@@ -95,9 +95,10 @@ function body(p){ return p.replace(/^\s*\d+\.\s*/, ''); }
 function contract(ct, g){
   if (!ct || typeof ct !== 'string') return ct;
   var st = stateOf(g), kind = groupOf(g), cty = countyOf(g, st), venue;
-  var out = [];
+  var out = [], op = [];
   para(ct).forEach(function(p){
     var b = body(p), n = numOf(p);
+    if (/^CANCELLATION \/ OVERHEAD/.test(b)) { op.push(b); return; }   /* CONSIST-patch: keep the 20% overhead & profit clause */
     if (/^(CANCELLATION|NOTICE OF RIGHT TO CANCEL|RIGHT TO CANCEL)\b/.test(b)) return;                       /* replaced by the state clause below */
     if (/^DISPUTE RESOLUTION/.test(b)) {
       venue = DATA.venue[st]; var v = st === 'TN' ? (cty ? cty + ' County, Tennessee' : 'Shelby County, Tennessee') : (cty ? cty + ' County, ' + (st === 'MS' ? 'Mississippi' : 'Arkansas') : 'the county where the project is located, ' + (st === 'MS' ? 'Mississippi' : 'Arkansas'));
@@ -108,6 +109,7 @@ function contract(ct, g){
     if (/^CONTRACT PRICE/.test(b) && DATA.tax[st] && !/Contractor’s Tax|Sales\/Use Tax/.test(ct)) out.push('   ' + DATA.tax[st]);
   });
   out.push('90. ' + clause(st, kind));
+  op.forEach(function(b, i){ out.push((91 + i) + '. ' + b.replace('described below', 'described above')); });   /* CONSIST-patch: after the cancellation clause */
   return out.join('\n\n');
 }
 
