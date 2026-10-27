@@ -77,7 +77,6 @@ function make(d){
       dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: GONE[low(assignee)] || (assigneeEmail && GONE[assigneeEmail]) ? '' : (assigneeEmail || emailOf(assignee)), assignedBy: s(it.assignedBy),   /* patch PMG: never to someone who has left */
       coEmails: require('./lead-roles.js').coList(it).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead; patch SPAMROLE: the Senior Roofing PM only on a roofing bid */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
-      bidTo: gcRows(it),   /* patch BIDTO: every GC this bid goes to */
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
       website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
   }
@@ -139,13 +138,6 @@ function make(d){
   }
 
   /* ── the messages ─────────────────────────────────────────────────────────── */
-  /* patch BIDTO: the lead's GC rows (lead.bidTo, mirrored by the CRM's "Bidding to"; the Lead Inbox item's bidTo) */
-  function gcRows(it){ return arr(it && it.bidTo).filter(g => g && (s(g.company) || s(g.email))).map(g => ({ company: s(g.company), contact: s(g.contact), email: low(g.email), due: s(g.due), status: s(g.status) || (g.sentAt ? 'sent' : 'not sent'), sentAt: s(g.sentAt) })); }
-  function openGc(g){ return !/^(sent|opened|won|lost)$/i.test(s(g.status)) && !g.sentAt; }
-  /* the earliest due date across the GCs not sent yet (else the lead's own) */
-  function earliestDue(x){ const d = arr(x.bidTo).filter(g => openGc(g) && /^\d{4}-\d{2}-\d{2}/.test(g.due)).map(g => g.due).sort((a, b) => BD.wallToEpoch(a.length > 10 ? a : a + 'T23:59') - BD.wallToEpoch(b.length > 10 ? b : b + 'T23:59'))[0]; return d || s(x.bidDue); }
-  function gcName(g){ return s(g.company) || s(g.email); }
-  function notSentLine(x){ const all = arr(x.bidTo), open = all.filter(openGc); if (all.length < 2 || !open.length) return ''; return 'Not sent yet to: ' + open.map(gcName).join(', ') + (open.length < all.length ? ' (sent to ' + all.filter(g => !openGc(g)).map(gcName).join(', ') + ')' : ''); }
   function rowHtml(x){
     if (x.website) return webRowHtml(x);   /* patch WEB */
     const late = x.bidDue && BD.wallToEpoch(x.bidDue.length === 10 ? x.bidDue + 'T23:59' : x.bidDue) - now() < 72 * 3600000;
@@ -153,7 +145,6 @@ function make(d){
       + esc([cap(x.type), 'from ' + (x.source || 'the Lead Inbox'), [x.city, x.state].filter(Boolean).join(', '), x.gc && 'GC ' + x.gc].filter(Boolean).join(' · ')) + '</span>'
       + (x.detail ? '<br><span style="color:#555;font-size:13px">' + esc(x.detail) + '</span>' : '')
       + '<br><span style="font-size:13px;color:' + (x.dueToCompany ? '#1b1640' : '#b45309') + '"><b>Due to:</b> ' + (x.dueToCompany ? esc([x.dueToCompany, x.dueToContact, x.dueToEmail, x.dueToPhone].filter(Boolean).join(' · ')) + (x.submitMethod ? ' — ' + esc([METHOD[x.submitMethod] || x.submitMethod, x.submitWhere].filter(Boolean).join(': ')) : '') : 'NOT FOUND — add it') + '</span>'
-      + (arr(x.bidTo).length > 1 ? '<br><span style="font-size:13px;color:#1b1640"><b>Bidding to ' + x.bidTo.length + ' GCs:</b> ' + esc(x.bidTo.map(g => gcName(g) + (g.due && g.due !== x.bidDue ? ' (due ' + fmtDue(g.due) + ')' : '') + (openGc(g) ? '' : ' ✓ sent')).join(' · ')) + '</span>' : '')   /* patch BIDTO */
       + (x.assignee ? '<br><span style="font-size:13px;color:#555"><b>Assigned to:</b> ' + esc(x.assignee) + '</span>' : '')
       + (x.link ? '<br><a href="' + esc(x.link) + '" style="font-size:13px;color:#241968">Plans / details</a>' : '') + '</td>'
       + '<td style="padding:8px 10px;border-bottom:1px solid #eee;white-space:nowrap;font-weight:700;color:' + (!x.bidDue ? '#b45309' : late ? '#b91c1c' : '#333') + '">'
@@ -203,9 +194,8 @@ function make(d){
     const clock = fmtDue(x.bidDue).replace(/^\w+ \w+ \d+ /, ''), to = x.dueToCompany ? ' to ' + x.dueToCompany : '';
     const when = kind === 'today' ? 'today (' + fmtDue(x.bidDue) + ', no time given)' : kind === 'eve' ? 'tomorrow, ' + fmtDue(x.bidDue) + (x.bidDue.length > 10 ? ' Central' : '') : 'at ' + clock + ' Central (' + fmtDue(x.bidDue) + ')';
     const subject = (kind === 'today' ? '⏰ Bid due TODAY: ' + x.title + to : kind === 'eve' ? '⏰ Bid due tomorrow: ' + x.title + ' — ' + fmtDue(x.bidDue) + to : '⏰ Bid due in 1 hour: ' + x.title + ' — ' + clock + to).slice(0, 250);
-    const ns = notSentLine(x);   /* patch BIDTO */
-    const html = frame('GrayCo — bid due ' + (kind === 'today' ? 'today' : kind === 'eve' ? 'tomorrow' : 'in 1 hour'), 'The bid for this lead is due <b>' + esc(when) + '</b>' + (to ? ' <b>' + esc(to) + '</b>' : '') + '.' + (ns ? ' <b style="color:#b91c1c">' + esc(ns) + '.</b>' : ''), rowHtml(x), FOOT);
-    const text = subject + '\n\n' + x.title + ' — bid due ' + when + (ns ? '\n' + ns : '') + (x.source ? '\nFrom ' + x.source : '') + (x.link ? '\n' + x.link : '') + '\n\nOpen Leads: ' + site() + '/#leads';
+    const html = frame('GrayCo — bid due ' + (kind === 'today' ? 'today' : kind === 'eve' ? 'tomorrow' : 'in 1 hour'), 'The bid for this lead is due <b>' + esc(when) + '</b>' + (to ? ' <b>' + esc(to) + '</b>' : '') + '.', rowHtml(x), FOOT);
+    const text = subject + '\n\n' + x.title + ' — bid due ' + when + (x.source ? '\nFrom ' + x.source : '') + (x.link ? '\n' + x.link : '') + '\n\nOpen Leads: ' + site() + '/#leads';
     return { subject, html, text, leadKey: x.key, push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueTxt(x.bidDue)).slice(0, 180), tag: 'lead-due-' + x.key } };
   }
 
@@ -407,52 +397,15 @@ function make(d){
     const out = [], have = {}, haveInbox = {};
     arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
     arr(leads).forEach(l => {
-      if (!l || !l.id || closed(l)) return;
-      const x = atEarliest(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })));   /* patch BIDTO */
-      if (s(x.bidDue)) out.push(x);
+      if (!l || !l.id || !s(l.bidDue) || closed(l)) return;
+      out.push(entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type })));
     });
     arr(items).forEach(it => {
       if (!it || it.stub || !s(it.bidDue) || haveInbox[it.id]) return;
       const lid = 'LEADIN-' + s(it.id).replace(/^LI-/, '');
       if (have[lid] || (tombs && tombs['leads:' + lid]) || closed(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
-      out.push(atEarliest(entry(Object.assign({}, it, { key: lid }))));   /* patch BIDTO */
+      out.push(entry(Object.assign({}, it, { key: lid })));
     });
-    return out;
-  }
-  /* patch BIDTO: a bid going to several GCs is reminded for the earliest due date of the GCs not sent yet, "to" that GC */
-  function atEarliest(x){
-    const d = earliestDue(x); if (!d || d === x.bidDue) return x;
-    const g = arr(x.bidTo).filter(y => openGc(y) && y.due === d)[0];
-    return Object.assign({}, x, { bidDue: d }, g ? { dueToCompany: g.company, dueToContact: g.contact, dueToEmail: g.email } : {});
-  }
-  /* patch BIDTO: another GC invited us to a bid already on the Leads list — one short alert, "Also invited by <GC>", to the
-     lead-alert list (Leads ⚙, default office@) + the lead's estimator / PM. Once per lead and GC. list: [{ it, gcs }] */
-  function mailAlso(x, gcs){
-    const names = gcs.map(gcName).join(', ');
-    const subject = ('➕ Also invited by ' + names + ': ' + x.title).slice(0, 250);
-    const line = gcs.map(g => [gcName(g), s(g.contact), s(g.email), s(g.phone), g.due ? 'due ' + fmtDue(g.due) : ''].filter(Boolean).join(' · ')).join('; ');
-    const n = arr(x.bidTo).length;
-    const html = frame('GrayCo — also invited by ' + names, 'Also invited by <b>' + esc(line) + '</b> — added to the lead\'s 🏢 Bidding to list' + (n ? ' (now ' + n + ' GC' + (n === 1 ? '' : 's') + ')' : '') + '.', rowHtml(x), 'Sent to the lead-alert address list (Leads ⚙ settings) when another GC invites GrayCo to a bid already on the Leads list. 📤 Send bid sends each GC its own e-mail.');
-    const text = subject + '\n\nAlso invited by ' + line + ' — added to the lead\'s Bidding to list' + (n ? ' (now ' + n + ' GCs)' : '') + '.\n' + x.title + ' — ' + dueLine(x) + '\n\nOpen Leads: ' + site() + '/#leads';
-    return { subject, html, text, leadKey: x.key, push: { title: subject.slice(0, 100), body: (x.title + ' — ' + dueTxt(x.bidDue)).slice(0, 180), tag: 'lead-also-' + x.key } };
-  }
-  async function notifyAlso(list){
-    if (off()) return { sent: 0, off: true };
-    const want = arr(list).filter(y => y && y.it && y.it.id && arr(y.gcs).length);
-    if (!want.length) return { sent: 0 };
-    let mine = [];
-    await kvCas(KA, v => {
-      const st = loadState(v); mine = [];
-      want.forEach(y => { const gcs = y.gcs.filter(g => { const k = 'also|' + s(y.it.id) + '|' + (low(g.email) || low(g.company)); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); if (gcs.length) mine.push({ it: y.it, gcs }); });
-      return mine.length ? st : undefined;
-    });
-    const out = { sent: 0, failed: 0 };
-    for (const y of mine) {
-      const x = entry(y.it);
-      const r = await deliver(mailAlso(x, y.gcs), [x.assigneeEmail].concat(x.coEmails || []));
-      if (r.ok) out.sent++; else { out.failed++; out.why = r.why; }
-      out.to = r.to;
-    }
     return out;
   }
   async function remind(src){
@@ -816,7 +769,7 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifyAlso, mailAlso, entry, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }

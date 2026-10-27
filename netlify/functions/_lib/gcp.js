@@ -91,11 +91,6 @@ function contactsOf(data, p){
   if (g.billingEmail) add(g.billingContact || (c && (c.name || c.company)), g.billingEmail, 'billing');
   if (p.gcEmail) add(p.gcContact || p.gc, p.gcEmail, 'pm');
   if (c && low(c.type) === 'gc' && c.email) add(c.contact || c.name, c.email, 'other');
-  /* patch COMMCO: the bid's GC contact (lead.bidTo — one row per GC that invited us): only the GC the job is with */
-  const ld = arr(data && data.leads).find(function(x){ return x && s(x.id) && s(x.id) === s(p.leadId || p.fromLeadId); });
-  const norm = function(v){ return low(v).replace(/[^a-z0-9]+/g, ' ').replace(/\b(llc|inc|co|corp|company|the)\b/g, '').replace(/\s+/g, ' ').trim(); };
-  const gcN = norm(p.gc || p.gcCompany || p.company || p.client);
-  if (ld && gcN) arr(ld.bidTo).forEach(function(x){ const n = norm(x && x.company); if (x && n && (n === gcN || n.indexOf(gcN) >= 0 || gcN.indexOf(n) >= 0)) add(x.contact || x.name, x.email, low(x.role) || 'pm'); });
   return out;
 }
 function billingOf(list){ return list.find(function(x){ return x.role === 'billing'; }) || list[0] || null; }
@@ -178,7 +173,6 @@ async function gcView(data, p, opts){
     rfis: arr(st.rfis).filter(function(x){ return x.status !== 'void' && x.status !== 'draft'; }).map(rfiOut),
     docs: docs
   };
-  try { Object.assign(out, await require('./commco.js').viewExtra(data, p, st)); } catch (e) {}   /* patch COMMCO: hold, materials approval, submittals, approvals */
   if (opts.staff) { out.staff = true; out.state = st; out.contacts = contactsOf(data, p); }
   return out;
 }
@@ -278,14 +272,11 @@ async function coPrice(data, p, b, who){
   const C = core(), pm = C.pmOf(data, p), list = contactsOf(data, p);
   const amount = money(b.amount), title = clip(b.title, 120), desc = clip(b.description, 3000);
   if (!title) return { code: 400, out: { ok: false, error: 'Give the change order a title.' } };
-  if (!amount && b.allowZero !== true) return { code: 400, out: { ok: false, error: 'Enter the price.' } };
+  if (!amount) return { code: 400, out: { ok: false, error: 'Enter the price.' } };
   const co = await mutateJob(p.id, function(st){
     let x = s(b.id) ? st.cos.find(function(y){ return y.id === s(b.id); }) : null;
     if (x && /signed/.test(x.status)) throw new Error('That change order is already signed.');
-    /* patch COMMCO: a job change order (crmId) keeps its number on the job when that number is free */
-    const want = s(b.number), free = /^\d{1,4}$/.test(want) && !st.cos.some(function(y){ return s(y.number) === want; });
-    if (!x) { const nn = free ? want : String((st.seq.co || 0) + 1); st.seq.co = Math.max(st.seq.co || 0, parseInt(nn, 10) || 0); x = { id: uid('GCO'), number: nn, requestedBy: 'GrayCo (' + (who.name || who.email) + ')', requestedAt: nowIso(), status: 'pricing' }; st.cos.push(x); }
-    if (s(b.crmId)) x.crmId = clip(b.crmId, 90);
+    if (!x) { st.seq.co = (st.seq.co || 0) + 1; x = { id: uid('GCO'), number: String(st.seq.co), requestedBy: 'GrayCo (' + (who.name || who.email) + ')', requestedAt: nowIso(), status: 'pricing' }; st.cos.push(x); }
     Object.assign(x, { title: title, description: desc, amount: amount, pricedBy: who.email, pricedAt: nowIso(), status: 'pricing' });
     logLine(st, who.email, 'CO #' + x.number + ' priced ' + usd(amount) + ' — waiting on approval to send');
     return Object.assign({}, x);
@@ -295,8 +286,7 @@ async function coPrice(data, p, b, who){
   const tok = await createLink(p.id, 'change order ' + co.number);
   const ok = await C.queueApproval({ id: 'appr_gcp_co_' + co.id + '_' + Date.parse(co.pricedAt), kind: 'gcp_co_contract', title: '🏗 Change order #' + co.number + ' ' + usd(amount) + ' → ' + (gcCompany(data, p) || 'the GC') + ' to sign',
     pid: p.id, jobName: p.name, pm: pm, to: to, channel: 'email', subject: 'Change order #' + co.number + ' to sign — ' + (p.name || 'your project'),
-    html: coMail(p, co, gcCompany(data, p), gcLink(tok, 'co=' + co.id)), meta: { gcp: 'co', pid: p.id, coId: co.id, crmId: s(co.crmId),
-      cc: list.filter(function(x){ return x.email !== to && x.role !== 'billing'; }).map(function(x){ return x.email; }).slice(0, 3).concat([require('./commco.js').officeEmail()]) } });   /* patch COMMCO: office@ copied */
+    html: coMail(p, co, gcCompany(data, p), gcLink(tok, 'co=' + co.id)), meta: { gcp: 'co', pid: p.id, coId: co.id } });
   return { code: 200, out: { ok: true, co: co, queued: !!ok } };
 }
 async function coVoid(p, b, who){
@@ -371,7 +361,6 @@ async function gcSignCo(data, p, b, ip){
   const x = await mutateJob(p.id, function(st){ const c = st.cos.find(function(y){ return y.id === s(b.id); }); if (!c || c.status !== 'sent') return null; c.status = 'signed'; c.signedBy = name; c.signedAt = nowIso(); c.signedIp = clip(ip, 60); c.signedTitle = clip(b.title, 60); logLine(st, name + ' (GC)', 'CO #' + c.number + ' signed ' + usd(c.amount)); return Object.assign({}, c); });
   if (!x) return { code: 409, out: { ok: false, error: 'That change order is not waiting for a signature.' } };
   await tellPm(data, p, '✍️ GC signed change order #' + x.number + ' (' + usd(x.amount) + ') — ' + (p.name || ''), para('<b>' + esc(name) + '</b> signed change order <b>#' + esc(x.number) + '</b> “' + esc(x.title) + '” for ' + usd(x.amount) + ' on ' + esc(p.name) + '.') + para('It is added to the job’s change orders (approved) the next time the CRM is open, so it goes into the next pay app.'));
-  try { await require('./commco.js').onCoSigned(data, p, x); } catch (e) {}   /* patch COMMCO: "CO #N signed — job can continue" to the PM + office@ */
   return { code: 200, out: { ok: true, co: coOut(x) } };
 }
 

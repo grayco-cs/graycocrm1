@@ -104,7 +104,6 @@ function contract(ct, g){
   });
   out.push('90. ' + clause(st, kind));
   op.forEach(function(b, i){ out.push((91 + i) + '. ' + b.replace('described below', 'described above')); });   /* CONSIST-patch: after the cancellation clause */
-  if (kind === 'commercial') out.push((91 + op.length) + '. CHANGE ORDERS AND MATERIALS (COMMERCIAL): No added or changed work proceeds without a signed change order, whatever the amount; materials are reviewed and initialed by the GC\u2019s superintendent before installation. GrayCo Construction Services, LLC stops the added or changed work until the change order is signed.');   /* patch COMMCO */
   return out.join('\n\n');
 }
 

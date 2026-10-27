@@ -441,13 +441,8 @@ const LEAD_TOOL = {
         addendum_number: { type: ['integer', 'null'] },
         plans_links: { type: 'array', items: { type: 'object', properties: { url: { type: 'string' }, label: { type: 'string' } } } },
         contact_name: { type: 'string' }, contact_email: { type: 'string' }, contact_phone: { type: 'string' },
-        /* patch BIDTO: the GC who sent THIS invitation (one project is often invited by several GCs) */
-        invited_by_company: { type: 'string', description: 'the general contractor (company) that invited GrayCo to bid in THIS e-mail. On a BuildingConnected / PlanHub / planroom invitation the platform sends the e-mail: the GC is named in the body ("<GC> has invited you to bid", "Invited by", the estimator\'s signature). Never GrayCo, never the platform itself' },
-        invited_by_contact: { type: 'string', description: 'the person at that GC who sent the invitation (the GC\'s estimator / project manager)' },
-        invited_by_email: { type: 'string', description: 'that person\'s own e-mail address as written in the e-mail. Never a grayco-cs.com address, never a platform / no-reply address (team@buildingconnected.com, noreply@planhub.com …); empty if only those are given' },
-        invited_by_phone: { type: 'string' },
-        submit_to_company: { type: 'string', description: 'who the bid is due TO: the GC / company / agency that receives it (on a GC\'s invitation: that GC)' },
-        submit_to_contact: { type: 'string', description: 'the person the bid goes to' }, submit_to_email: { type: 'string', description: 'the e-mail address the bid goes to — never a grayco-cs.com or a platform no-reply address' }, submit_to_phone: { type: 'string' },
+        submit_to_company: { type: 'string', description: 'who the bid is due TO: the GC / company / agency that receives it' },
+        submit_to_contact: { type: 'string', description: 'the person the bid goes to' }, submit_to_email: { type: 'string' }, submit_to_phone: { type: 'string' },
         submit_method: { type: 'string', enum: ['email', 'portal', 'sealed', 'in_person', 'other', ''], description: 'how the bid is submitted: e-mail, an online portal / bid board, a sealed bid delivered, in person' },
         submit_where: { type: 'string', description: 'the e-mail address, the portal name / link, or the delivery address' },
         bond_required: { type: 'boolean' }, prevailing_wage: { type: 'boolean' }, estimated_value: { type: ['number', 'null'] },
@@ -464,8 +459,7 @@ function aiPrompt(mail, links, hint){
     + 'notice, a public bid notice, a GC writing directly, an addendum, a reminder, or not a lead at all.\n'
     + 'Call the record_bid_leads tool exactly once with what you find. One entry per project (a digest listing three projects gives three entries). '
     + 'Use only what is written in the e-mail and its attachments: leave a field empty rather than guess. GrayCo is never the GC or the owner. '
-    + 'Dates as YYYY-MM-DD, times as 24-hour HH:MM local time. Always give the bid due date and who the bid is due to (submit_to_*) and how it is submitted when written. '
-    + 'Always give the GC who invited GrayCo in this e-mail (invited_by_company, invited_by_contact, invited_by_email, invited_by_phone): on BuildingConnected / PlanHub mail the sender is the platform, so read the GC\'s company, person, e-mail and phone from the body; never use a GrayCo address or the platform\'s own / no-reply address. For an addendum, set addendum_number. For something that is not a bid opportunity, use kind "not_a_lead" and an empty leads list.\n\n'
+    + 'Dates as YYYY-MM-DD, times as 24-hour HH:MM local time. Always give the bid due date and who the bid is due to (submit_to_*) and how it is submitted when written. For an addendum, set addendum_number. For something that is not a bid opportunity, use kind "not_a_lead" and an empty leads list.\n\n'
     + 'From: ' + (mail.from.name ? mail.from.name + ' ' : '') + '<' + mail.from.email + '>' + (hint ? ' (looks like: ' + hint + ')' : '') + '\nSubject: ' + mail.subject + '\n'
     + 'Attachments: ' + (mail.files.length ? mail.files.map((f, i) => i + ': ' + f.name + ' (' + f.type + ')').join(', ') : 'none') + '\n'
     + 'Links found: ' + (links.length ? links.slice(0, 15).map(l => l.url + (l.label ? ' [' + l.label + ']' : '')).join('\n  ') : 'none') + '\n\n'
@@ -564,48 +558,6 @@ function findMatch(items, rec){
   }
   return best;
 }
-/* patch BIDTO (owner 10/26: "make sure when commercial bids come through they account for every email and company we need to send it
-   to when we get the invite"): the same project is often invited by several GCs. Each invite that lands on a bid lead adds its GC to
-   item.bidTo [{ company, contact, email, phone, due, source, board, inviteLink, receivedAt, emailId }] — one row per GC (the same
-   e-mail, else the same company, is one row). Never a GrayCo address, a bid platform's own / no-reply address, or GrayCo itself.
-   dueTo* stay = the earliest-due GC (the old screens and the reminders read them). */
-const ROBOT_LOCAL = /^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|mailer|mailer-daemon|postmaster|bounces?|auto-?confirm|system)([+._-].*)?$/i;
-const RELAY_DOM = /(^|\.)(sendgrid\.net|mailgun\.org|amazonses\.com|mandrillapp\.com|mcsv\.net|mailchimp\.com|ccsend\.com|constantcontact\.com|hubspotemail\.net|bounce\.[a-z.]+)$/i;
-function gcEmail(v){
-  const e = low(v).replace(/^mailto:/, '');
-  if (!/^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/.test(e)) return '';
-  const loc = e.split('@')[0], dom = e.split('@')[1], b = boardOf(dom);
-  if (/(^|\.)grayco-cs\.com$/.test(dom) || ROBOT_LOCAL.test(loc) || RELAY_DOM.test(dom) || (b && b !== 'Government')) return '';
-  return e;
-}
-function gcCompany(v){ const c = s(v).replace(/\s+/g, ' ').slice(0, 160); if (!c || /\bgray\s*co\b|grayco/i.test(c) || /^(buildingconnected|building connected|planhub|plan hub|procore|smartbid(net)?|isqft|constructconnect|bid platform|other|n\/?a|unknown)$/i.test(c)) return ''; return c; }
-function normCo(c){ return low(c).replace(/&/g, ' and ').replace(/\b(inc|llc|l l c|co|corp|corporation|company|ltd|lp|llp|pllc|group|the)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim(); }
-function sameGc(a, b){ if (!a || !b) return false; if (a.email && b.email) return a.email === b.email; const x = normCo(a.company), y = normCo(b.company); return !!x && x === y; }
-function dueMs(v){ v = s(v); if (!/^\d{4}-\d{2}-\d{2}/.test(v)) return Infinity; const t = Date.parse(v.length > 10 ? v.slice(0, 16) + ':00Z' : v + 'T23:59:00Z'); return isFinite(t) ? t : Infinity; }
-function gcRow(o){
-  const company = gcCompany(o.company), email = gcEmail(o.email);
-  if (!company && !email) return null;
-  return { company, contact: s(o.contact).slice(0, 120), email, phone: s(o.phone).slice(0, 40), due: s(o.due), source: s(o.source), board: s(o.board), inviteLink: s(o.inviteLink).slice(0, 600), receivedAt: s(o.receivedAt) || nowIso(), emailId: s(o.emailId) };
-}
-/* the GC rows of an item / record (an old one without bidTo: its dueTo* fields become the first row) */
-function bidToOf(it){
-  if (!it || it.origin === 'website' || it.origin === 'brain') return [];
-  if (Array.isArray(it.bidTo)) return it.bidTo.filter(g => g && (g.company || g.email));
-  const g = gcRow({ company: it.dueToCompany, contact: it.dueToContact, email: it.dueToEmail, phone: it.dueToPhone, due: it.bidDue, source: it.source, receivedAt: it.receivedAt, emailId: arr(it.emailIds)[0] });
-  return g ? [g] : [];
-}
-/* adds the rows of `add` that are not in `list` yet (fills a known row's empty fields); → the rows added */
-function mergeBidTo(list, add){
-  const out = [];
-  arr(add).forEach(g => {
-    if (!g || !(g.company || g.email)) return;
-    const hit = list.find(x => sameGc(x, g)) || (g.email && list.find(x => !x.email && normCo(x.company) && normCo(x.company) === normCo(g.company)));
-    if (hit) { ['company', 'contact', 'email', 'phone', 'due', 'inviteLink', 'board'].forEach(f => { if (!s(hit[f]) && s(g[f])) hit[f] = g[f]; }); return; }
-    const row = Object.assign({}, g); list.push(row); out.push(row);
-  });
-  return out;
-}
-function earliestGc(list){ return arr(list).filter(g => g && g.due).sort((a, b) => dueMs(a.due) - dueMs(b.due))[0] || null; }
 function uniqBy(list, key){ const seen = {}, out = []; list.forEach(x => { const k = key(x); if (!k || seen[k]) return; seen[k] = 1; out.push(x); }); return out; }
 function fill(dst, src, fields){ fields.forEach(f => { if ((dst[f] == null || dst[f] === '' || (Array.isArray(dst[f]) && !dst[f].length)) && src[f] != null && src[f] !== '') dst[f] = src[f]; }); }
 /* put one record into the list; returns { items, action, id } */
@@ -617,7 +569,6 @@ function upsert(items, rec){
   if (!hit) {
     const it = Object.assign({}, rec, { status: 'new', rev: 1, receivedAt: t, updatedAt: t, sources: rec.sources || [{ name: rec.source, at: t, ref: rec.sourceRef || '' }] });
     delete it.addendum; delete it.sourceRef;
-    if (rec.origin !== 'website' && rec.origin !== 'brain') { it.bidTo = []; mergeBidTo(it.bidTo, bidToOf(Object.assign({}, rec, { receivedAt: t }))); }   /* patch BIDTO */
     if (rec.addendum) { it.addenda = [{ n: rec.addendum, at: t, subject: rec.sourceRef || '' }]; it.addendumCount = rec.addendum; it.flag = 'Addendum #' + rec.addendum + ' received'; }
     items.push(it);
     return { items: trim(items), action: 'added', id: it.id };
@@ -626,9 +577,6 @@ function upsert(items, rec){
     hit.repeats = (hit.repeats || 0) + 1; hit.lastSeenAt = t;
     return { items: trim(items), action: 'dismissed-repeat', id: hit.id };
   }
-  /* patch BIDTO: an old item gets its rows from its dueTo* fields first (not a change on its own) */
-  const bidLead = hit.origin !== 'website' && hit.origin !== 'brain';
-  if (bidLead && !Array.isArray(hit.bidTo)) hit.bidTo = bidToOf(hit).map(g => Object.assign({}, g));
   const before = JSON.stringify(hit);
   const srcs = arr(hit.sources);
   if (!srcs.some(x => low(x.name) === low(rec.source))) srcs.push({ name: rec.source, at: t, ref: rec.sourceRef || '' });
@@ -650,20 +598,9 @@ function upsert(items, rec){
     'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere']);
   if (rec.contact && hit.contact && !s(hit.contact.email) && s(rec.contact.email)) hit.contact = rec.contact;
   hit.notes = uniqBy(arr(hit.notes).concat(arr(rec.notes)), x => x).slice(-20);
-  /* patch BIDTO: this invite's GC on the list; a GC with an earlier due date becomes "due to" and the lead's bid due */
-  let newGc = [];
-  if (bidLead) {
-    const had = hit.bidTo.length;
-    newGc = mergeBidTo(hit.bidTo, bidToOf(Object.assign({}, rec, { receivedAt: t })));
-    hit.bidTo = hit.bidTo.slice(0, 40);
-    const e = earliestGc(hit.bidTo), cur = hit.bidTo.find(g => sameGc(g, { company: s(hit.dueToCompany), email: low(hit.dueToEmail) }));
-    if (e && newGc.indexOf(e) >= 0 && (!cur || dueMs(e.due) < dueMs(cur.due || hit.bidDue))) { hit.dueToCompany = e.company; hit.dueToContact = e.contact; hit.dueToEmail = e.email; hit.dueToPhone = e.phone; }
-    if (e && newGc.indexOf(e) >= 0 && !rec.addendum && !hit.bidDueManual && hit.bidDue && dueMs(e.due) < dueMs(hit.bidDue)) { hit.bidDueWas = hit.bidDue; hit.bidDue = e.due; }
-    if (!had) newGc = [];   /* the first GC is the new-lead alert's, not "also invited" */
-  }
   if (JSON.stringify(hit) === before) return { items: trim(items), action: 'same', id: hit.id };
   hit.rev = (hit.rev || 1) + 1; hit.updatedAt = t;
-  return Object.assign({ items: trim(items), action: rec.addendum ? 'addendum' : 'merged', id: hit.id }, newGc.length ? { newGc: newGc.map(g => Object.assign({}, g)) } : {});
+  return { items: trim(items), action: rec.addendum ? 'addendum' : 'merged', id: hit.id };
 }
 /* keep the list small: oldest finished items go first; dismissed ones shrink to a stub (enough to never re-import) */
 function stub(it){ return { id: it.id, status: it.status, title: it.title, city: it.city, bidDue: it.bidDue, bidNumber: it.bidNumber, source: it.source, watchKeys: it.watchKeys, portal: it.portal, emailIds: arr(it.emailIds).slice(-5), reason: it.reason, by: it.by, mergedInto: it.mergedInto, updatedAt: it.updatedAt, stub: true }; }
@@ -711,13 +648,8 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
     const bidDue = BD.merge(aiDue, tx);
     /* LA: who the bid is due to, and how it is submitted */
     const sub = BD.findSubmit(allText), board = SOURCES.indexOf(source) >= 0 && /BuildingConnected|PlanHub|Planroom/.test(source) ? source : '';
-    /* patch BIDTO: the GC who invited us in THIS e-mail — never GrayCo, never the platform's own / no-reply address; a GC writing
-       directly is its own sender */
-    const direct = !boardOf(mail.from.domain) && gcEmail(mail.from.email) ? mail.from : null;
-    const coIn = gcCompany(s(L.submit_to_company)) || gcCompany(s(L.invited_by_company)) || gcCompany(s(L.gc_name)) || gcCompany(s(L.owner));
-    const emIn = gcEmail(L.submit_to_email) || gcEmail(sub.email) || gcEmail(L.invited_by_email) || gcEmail(L.contact_email) || (direct ? low(direct.email) : '');
-    const dueTo = { company: coIn, contact: s(L.submit_to_contact) || s(L.invited_by_contact) || s(L.contact_name) || (direct && emIn === low(direct.email) ? s(direct.name) : ''), email: emIn,
-      phone: phone(s(L.submit_to_phone) || s(L.invited_by_phone) || s(L.contact_phone)), method: /^(email|portal|sealed|in_person|other)$/.test(s(L.submit_method)) ? s(L.submit_method) : (sub.method || (board ? 'portal' : '')),
+    const dueTo = { company: s(L.submit_to_company) || s(L.gc_name) || s(L.owner), contact: s(L.submit_to_contact) || s(L.contact_name), email: low(L.submit_to_email) || sub.email || low(L.contact_email),
+      phone: phone(s(L.submit_to_phone) || s(L.contact_phone)), method: /^(email|portal|sealed|in_person|other)$/.test(s(L.submit_method)) ? s(L.submit_method) : (sub.method || (board ? 'portal' : '')),
       where: s(L.submit_where) || sub.where || board };
     if (!dueTo.company) notes.push('Bid due TO: NOT FOUND in the e-mail — add the GC / company on the lead.');
     if (bidDue && bidDue !== aiDue) notes.push('Bid due read from the e-mail text: "' + s(tx.label) + ' ' + s(tx.written) + '".');
@@ -741,10 +673,6 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
       emails: [emailRow], emailIds: mail.id ? [mail.id] : [], rawRef, notes, addendum: isAdd ? (parseInt(addN, 10) || 1) : 0,
       needsReview: !ai.ok, aiConfidence: L.confidence != null ? +L.confidence : null, origin: 'email'
     };
-    /* patch BIDTO: this invite's GC row */
-    const g = gcRow({ company: dueTo.company, contact: dueTo.contact, email: dueTo.email, phone: dueTo.phone, due: bidDue, source, board, emailId: mail.id, receivedAt: mail.date ? (isFinite(Date.parse(mail.date)) ? new Date(Date.parse(mail.date)).toISOString() : '') : '',
-      inviteLink: s((plansLinks.find(l => l.board && l.board !== 'File share') || plansLinks[0] || {}).url) });
-    rec.bidTo = g ? [g] : [];
     if (!rec.contact.email && mail.from.domain && !/grayco-cs\.com$/.test(mail.from.domain) && !boardOf(mail.from.domain)) rec.contact = { name: rec.contact.name || mail.from.name, email: mail.from.email, phone: rec.contact.phone };
     return rec;
   });
@@ -951,7 +879,7 @@ async function processEventCore(evt, opts){
   const recs = recordsFrom(mail, ai, links, hint, stored, raw.ref);
   const results = []; let stored2 = [];
   try {
-    await kvCas(KV, v => { let items = arr(v); results.length = 0; recs.forEach(r => { const o = upsert(items, r); items = o.items; results.push({ action: o.action, id: o.id, title: r.title, newGc: o.newGc }); }); stored2 = items; return items; });
+    await kvCas(KV, v => { let items = arr(v); results.length = 0; recs.forEach(r => { const o = upsert(items, r); items = o.items; results.push({ action: o.action, id: o.id, title: r.title }); }); stored2 = items; return items; });
   } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this yet (' + (e && e.message) + ') — retry.' } }; }
   const after = await afterStore(results, stored2, { group: true });   /* one e-mail → one alert, listing every new lead it brought */
   return { status: 200, body: { ok: true, leads: results, read: ai.ok, files: stored.length, skipped: mail.skipped, portal: after.portal, alerts: after.alerts } };
@@ -1039,11 +967,6 @@ async function afterStore(results, items, opt){
     }
   } catch (e) { out.private = { error: s(e && e.message) }; }
   try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
-  /* patch BIDTO: another GC invited us to a bid we already have → "Also invited by <GC>" (the same alert list) */
-  try {
-    const also = arr(results).filter(r => r && r.action !== 'added' && arr(r.newGc).length && byId[r.id]).map(r => ({ it: byId[r.id], gcs: r.newGc }));
-    if (also.length) out.also = await alertsApi().notifyAlso(also);
-  } catch (e) { out.also = { error: s(e && e.message) }; }
   return out;
 }
 const PLAN_FILE_RE = /\.(pdf|zip|dwg|dxf|png|jpe?g|tiff?|docx?|xlsx?)(\?|#|$)/i, PLAN_MAX = 25 * 1024 * 1024;
@@ -1186,7 +1109,6 @@ function applyAct(items, b, who){
     tgt.emailIds = uniqBy(arr(tgt.emailIds).concat(arr(it.emailIds)), x => x);
     tgt.watchKeys = uniqBy(arr(tgt.watchKeys).concat(arr(it.watchKeys)), x => x);
     fill(tgt, it, ['owner', 'gc', 'address', 'city', 'state', 'bidDue', 'preBid', 'bidNumber', 'scope']);
-    tgt.bidTo = bidToOf(tgt).map(g => Object.assign({}, g)); mergeBidTo(tgt.bidTo, bidToOf(it)); tgt.bidTo = tgt.bidTo.slice(0, 40);   /* patch BIDTO */
     tgt.rev = (tgt.rev || 1) + 1; tgt.updatedAt = t;
     it.status = 'merged'; it.mergedInto = tgt.id; it.by = who.email;
   }
@@ -1515,7 +1437,7 @@ exports.backgroundHandler = async function(event){
 /* shared with bid-watch.js, and the test harness */
 exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { gcEmail, gcCompany, bidToOf, mergeBidTo, earliestGc, noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
 exports._test.processEvent = processEvent;

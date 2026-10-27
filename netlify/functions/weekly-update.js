@@ -64,12 +64,16 @@ function central(d){
 function isRunTime(d){ const c = central(d); return c.wd === 'Fri' && c.hour === 14; }
 
 /* ── the job's switches (patch JA's table, read the same way; weeklyUpdate is new and ON by default) ── */
-const JA = require('./_lib/job-auto.js');   /* patch AUTOCOM: one job-type rule (commercial / bid jobs) */
-function groupOf(p){ return JA.groupOf(p); }
+function groupOf(p){
+  const t = s(p.type) + ' ' + s(p.jobType);
+  if (p.isInsurance === true || (p.isInsurance !== false && /insurance|claim|fire damage|water damage|storm|restoration|mitigation/i.test(t))) return 'insurance';
+  if (/program/i.test(t)) return 'program';
+  if (/commercial|\bTI\b|tenant|church|school/i.test(t)) return 'commercial';
+  return 'residential';
+}
 function sw(p, key, defs, dflt){
   const own = p.auto && typeof p.auto === 'object' ? p.auto : null;
   if (own && typeof own[key] === 'boolean') return own[key];
-  if (JA.KEYS.indexOf(key) >= 0) return JA.effective(p, JA.parseAdmin(defs))[key] !== false;
   const g = defs && defs[groupOf(p)];
   if (g && typeof g[key] === 'boolean') return g[key];
   return dflt;

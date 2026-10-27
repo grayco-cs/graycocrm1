@@ -223,7 +223,6 @@ function needRow(n){
 }
 function jobRow(j){
   var tags = [];
-  if (j.hold && j.hold.on) tags.push(pill('⛔ ' + (LANG === 'es' ? 'En espera' : 'On hold'), 'due'));   /* patch COMMCO */
   if (j.newScope) tags.push(pill(t('newScope')));
   if (j.unread) tags.push(pill(j.unread + ' ' + t(j.unread === 1 ? 'unread' : 'unreads'), 'due'));
   if (!tags.length) tags.push(pill(statusWord(j.status), 'ok'));
@@ -573,7 +572,6 @@ function drawJob(){
   var wide = window.matchMedia('(min-width: 1000px)').matches;
   var bar = h('div', { class: 'jobbar' }, [h('button', { type: 'button', class: 'back', id: 'jobBack', text: t('back'), on: { click: function(){ JOB = null; draw(); } } }), h('b', { text: JOB.job.name })]);
   main.appendChild(bar);
-  if (JOB.hold && JOB.hold.on) main.appendChild(h('div', { class: 'card', role: 'alert', id: 'jobHold', style: 'background:#FDE2E2;border:2px solid #B91C1C;color:#7F1D1D;font-weight:700;font-size:16px', text: '⛔ ' + (LANG === 'es' && JOB.hold.es ? JOB.hold.es : JOB.hold.text) }));   /* patch COMMCO */
   if (wide) {
     if (JTAB === 'overview') JTAB = 'scope';
     var left = h('aside', { class: 'col-l' }, overview());

@@ -90,16 +90,7 @@ const NOT_ACTIVE = 'This link is not active — call GrayCo ' + OFFICE_PHONE;
 const SESSION_DAYS = 30, CODE_MIN = 10, CODE_TRIES = 5, MIN_FAIL_MS = 250, SIGN_SECS = 3600;
 const MAX_UPLOAD = 4.5 * 1024 * 1024;
 const KV_KEYS = ['gc_senior_pm', 'projects', 'subs', 'vendors', 'users', 'invs', 'invoices', 'punch', 'schedule', 'projectDocs', 'customers',
-                 'gc_tombstones', 'gc_deleted_projects', 'gc_deleted_subs', 'gc_deleted_vendors', 'gc_deleted_invs', 'gc_sub_portal_settings',
-                 'cos', 'changeOrders', 'leads'];   /* patch COMMCO: a commercial job on hold until its change order is signed */
-/* patch COMMCO: "Stop — job on hold until the change order is signed" for the sub (never a price) */
-async function subHolds(data, jobs){
-  const out = {}; if (!jobs.length) return out;
-  let st = {}; try { st = (await require('./bid-inbox.js')._lib.kvGet(require('./_lib/gcp.js').K_JOBS)) || {}; } catch (e) { st = {}; }
-  const CC = require('./_lib/commco.js');
-  jobs.forEach(function(p){ try { const h = CC.holdFor(data, p, st[String(p.id)] || {}); if (h.on) out[String(p.id)] = { on: true, text: CC.holdSubText(h), es: 'Alto: no empiece el trabajo adicional — obra en espera hasta que se firme la orden de cambio (' + h.cos.map(function(c){ return 'OC #' + c.number; }).join(', ') + ').' }; } catch (e) {} });
-  return out;
-}
+                 'gc_tombstones', 'gc_deleted_projects', 'gc_deleted_subs', 'gc_deleted_vendors', 'gc_deleted_invs', 'gc_sub_portal_settings'];
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
 function s(v){ return v == null ? '' : String(v).trim(); }
@@ -783,7 +774,6 @@ async function pHome(ctx){
   const scopes = ctx.scopes.map(function(x){ return scopeOut(x, {}); });
   const inv = await partnerInvoices(ctx), mon = today.slice(0, 7);
   const papers = papersOf(sub, events);
-  const holds = await subHolds(data, ctx.jobs);   /* patch COMMCO */
   const needs = [];
   scopes.filter(function(x){ return x.status === 'new'; }).forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(ctx.scopes.find(function(y){ return s(y.id) === x.id; }).project_id); }) || {}; needs.push({ kind: x.kind === 'co' ? 'co' : 'scope', pid: s(p.id), job: s(p.name), title: x.title }); });
   punch.forEach(function(x){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(x.pid); }) || {}; needs.push({ kind: 'punch', pid: s(p.id), job: s(p.name), title: clip(x.item, 160) }); });
@@ -796,7 +786,7 @@ async function pHome(ctx){
     office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
     jobs: ctx.jobs.map(function(p){ const r = rowFor(p, sub); const pm = pmOf(data, p);
       return { id: s(p.id), name: s(p.name), address: s(p.address), status: s(r.status) || 'Awarded', start: ymd(r.startDate || p.startDate), end: ymd(r.endDate || p.endDate),
-        pct: num(r.pct), unread: unread[s(p.id)] || 0, hold: holds[s(p.id)] || null, newScope: scopes.some(function(x){ return x.status === 'new' && s((ctx.scopes.find(function(y){ return s(y.id) === x.id; }) || {}).project_id) === s(p.id); }), pm: pm }; }),
+        pct: num(r.pct), unread: unread[s(p.id)] || 0, newScope: scopes.some(function(x){ return x.status === 'new' && s((ctx.scopes.find(function(y){ return s(y.id) === x.id; }) || {}).project_id) === s(p.id); }), pm: pm }; }),
     needs: needs, week: sched,
     money: { submitted: money(inv.filter(function(x){ return x.state === 'submitted'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
              approved: money(inv.filter(function(x){ return x.state === 'approved'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
@@ -883,7 +873,6 @@ async function pJob(ctx, pid){
     files: events.filter(function(e){ return e.kind === 'photos'; }).slice(0, 60).map(function(e){ return { at: e.created_at, note: clip((e.data || {}).note, 500),
       files: arr((e.data || {}).files).map(function(f){ return fileOut(f, signed); }).filter(Boolean) }; }),
     invoices: inv, unread: (await unreadFor([s(p.id)], 's:' + sub.id))[s(p.id)] || 0,
-    hold: (await subHolds(data, [p]))[s(p.id)] || { on: false },   /* patch COMMCO */
     lien: { required: sub.lien === true || p.lienRequired === true }
   };
   return out;
@@ -1385,7 +1374,6 @@ exports.handler = async function (event) {
     return reply(500, { ok: false, error: 'Something went wrong. Try again, or call GrayCo ' + OFFICE_PHONE + '.' });
   }
 };
-exports._commco = { subHolds: subHolds };   /* patch COMMCO (tests) */
 exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments); },   /* patch SUBTXT */
   _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
 
