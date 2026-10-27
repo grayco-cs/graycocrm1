@@ -61,7 +61,7 @@ footer h4{color:#fff;margin:0 0 8px;font-size:14px;text-transform:uppercase;lett
 `;
 
 export function render(p, ctx) {
-  const { site, phone, phoneHref, address, all, projectsFor, crmIntake } = ctx;
+  const { site, phone, phoneHref, address, all, projectsFor, ePhone, eHref } = ctx;
   const url = site + '/' + p.slug;
   const projs = projectsFor(p.projects);
   const isTown = p.kind === 'town';
@@ -109,11 +109,11 @@ ${ld.map(jsonLd).join('\n')}
 <div class="kick">${esc(isTown ? 'Licensed general contractor · ' + p.town + ', ' + p.state : p.kicker)}</div>
 <h1>${esc(p.h1)}</h1>
 <p class="lead">${esc(p.intro)}</p>
-<div class="btns"><a class="btn o" href="tel:${phoneHref}">${p.emergency ? 'Call 24/7: ' : 'Call '}${esc(phone)}</a><a class="btn g" href="#estimate">Get a free estimate</a></div>
-<ul class="trust">${p.emergency || isTown ? '<li><b>24/7 water emergencies</b></li>' : ''}<li>TN General Contractor #85034</li><li>Licensed in TN, AR &amp; MS</li><li>BBB A+ rating</li><li>IICRC WRT-certified owner</li><li>1-year workmanship warranty in writing</li></ul>
+<div class="btns">${p.emergency ? `<a class="btn o" href="tel:${eHref}">Call 24/7: ${esc(ePhone)}</a>` : `<a class="btn o" href="tel:${phoneHref}">Call ${esc(phone)}</a>`}<a class="btn g" href="#estimate">Get a free estimate</a></div>
+<ul class="trust">${p.emergency || isTown ? `<li><b>24/7 water emergencies: <a href="tel:${eHref}" style="color:#fff">${esc(ePhone)}</a></b></li>` : ''}<li>TN General Contractor #85034</li><li>Licensed in TN, AR &amp; MS</li><li>BBB A+ rating</li><li>IICRC WRT-certified owner</li><li>1-year workmanship warranty in writing</li></ul>
 </div>
 <form class="form" id="estimate" data-gc-form data-type="${esc(isTown ? 'estimate' : p.type)}" data-need="${esc(needLabel)}" novalidate>
-<h2>Free estimate</h2><p class="sm">${p.emergency ? '<b>Water coming in right now? Call — we answer 24/7.</b> ' : ''}We reply within one business day. In a hurry? Call <a href="tel:${phoneHref}">${esc(phone)}</a>.</p>
+<h2>Free estimate</h2><p class="sm">${p.emergency ? `<b>Water coming in right now? Call <a href="tel:${eHref}">${esc(ePhone)}</a> — we answer 24/7.</b> ` : ''}We reply within one business day. In a hurry? Call <a href="tel:${phoneHref}">${esc(phone)}</a>.</p>
 <label for="f-name">Name</label><input id="f-name" name="name" autocomplete="name" required>
 <div class="two"><div><label for="f-phone">Phone</label><input id="f-phone" name="phone" type="tel" autocomplete="tel"></div><div><label for="f-email">Email</label><input id="f-email" name="email" type="email" autocomplete="email"></div></div>
 <label for="f-addr">Address or ZIP</label><input id="f-addr" name="address" autocomplete="street-address"${isTown ? ` placeholder="${esc(p.town)}, ${esc(p.state)}"` : ''}>
@@ -137,11 +137,11 @@ ${faqs.length ? `<section><div class="w"><h2 class="s">Questions we hear</h2>${f
 <section class="cta"><div class="w"><h2 class="s">${isTown ? 'Working on something in ' + esc(p.town) + '?' : 'Talk to a GrayCo project manager today'}</h2><div class="btns" style="justify-content:center"><a class="btn o" href="tel:${phoneHref}">Call ${esc(phone)}</a><a class="btn g" href="#estimate">Get a free estimate</a></div></div></section>
 </main>
 <footer><div class="w cols">
-<div><h4>GrayCo Construction Services</h4><p style="margin:0">${esc(address)}<br><a href="tel:${phoneHref}">${esc(phone)}</a> · <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>Office: Mon – Fri, 7:00 AM – 5:00 PM<br><b>Water emergencies: 24/7</b><br>Licensed General Contractor in Tennessee (#85034), Arkansas &amp; Mississippi</p></div>
+<div><h4>GrayCo Construction Services</h4><p style="margin:0">${esc(address)}<br><a href="tel:${phoneHref}">${esc(phone)}</a> · <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>Office: Mon – Fri, 7:00 AM – 5:00 PM<br><b>Water emergencies 24/7: <a href="tel:${eHref}">${esc(ePhone)}</a></b><br>Licensed General Contractor in Tennessee (#85034), Arkansas &amp; Mississippi</p></div>
 <div><h4>Services</h4><ul>${all.filter(x => x.kind !== 'town').map(x => `<li><a href="/${x.slug}">${esc(x.serviceType)}</a></li>`).join('')}</ul></div>
 <div><h4>Areas we serve</h4><ul>${all.filter(x => x.kind === 'town').map(x => `<li><a href="/${x.slug}">${esc(x.town)}, ${esc(x.state)}</a></li>`).join('')}</ul></div>
 </div></footer>
-<div class="bar"><a href="tel:${phoneHref}">📞 ${p.emergency ? 'Call 24/7' : 'Call now'}</a><a href="#estimate">Free estimate</a></div>
+<div class="bar"><a href="tel:${p.emergency ? eHref : phoneHref}">📞 ${p.emergency ? 'Call 24/7' : 'Call now'}</a><a href="#estimate">Free estimate</a></div>
 </body></html>
 `;
 }

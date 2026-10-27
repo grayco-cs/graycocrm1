@@ -9,6 +9,11 @@
 //
 // type: what the form sends to the CRM (website-intake: estimate · storm · commercial · problem · maintenance)
 
+// The 24/7 water emergency line: GrayCo's Twilio number. A call rings this week's on-call person, then the insurance
+// manager, then the admins (the CRM: netlify/functions/_lib/callchain.js, docs/EMERGENCY-LINE.md). The office number
+// (contact.phone in index.html) stays on everything else.
+export const EMERGENCY_PHONE = '(901) 582-8255';
+
 export const SERVICES = [
   {
     slug: 'water-damage-restoration',

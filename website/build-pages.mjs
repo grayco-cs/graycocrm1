@@ -40,7 +40,7 @@ for (const p of Object.keys(TITLES)) {
 }
 
 /* ── landing pages (landing/pages.mjs → l/<slug>.html at /<slug>), the addresses (_redirects) and sitemap.xml ── */
-const { SERVICES, TOWNS } = await import('./landing/pages.mjs');
+const { SERVICES, TOWNS, EMERGENCY_PHONE } = await import('./landing/pages.mjs');
 const { render } = await import('./landing/template.mjs');
 const dcAt = html.indexOf('const DEFAULT_CONTENT = ') + 'const DEFAULT_CONTENT = '.length;
 const CONTENT = (() => { let depth = 0, i = dcAt, inStr = false, q = '';   /* the JSON object literal right after DEFAULT_CONTENT = */
@@ -58,7 +58,8 @@ const all = SERVICES.map(x => Object.assign({ kind: 'service' }, x)).concat(TOWN
 const slugs = new Set(Object.keys(TITLES));
 all.forEach(p => { if (!/^[a-z0-9-]+$/.test(p.slug) || slugs.has(p.slug)) throw new Error('bad or duplicate landing slug: ' + p.slug); slugs.add(p.slug);
   (p.related || p.near || []).concat(p.services || []).forEach(r => { if (!all.some(x => x.slug === r)) throw new Error(p.slug + ' links to unknown page ' + r); }); });
-const ctx = { site: SITE_URL, phone: CONTENT.contact.phone, phoneHref: '+1' + CONTENT.contact.phone.replace(/\D/g, ''), address: CONTENT.contact.address, all, projectsFor };
+const ctx = { site: SITE_URL, phone: CONTENT.contact.phone, phoneHref: '+1' + CONTENT.contact.phone.replace(/\D/g, ''), address: CONTENT.contact.address, all, projectsFor,
+  ePhone: EMERGENCY_PHONE, eHref: '+1' + EMERGENCY_PHONE.replace(/\D/g, '') };
 mkdirSync('l', { recursive: true });
 for (const p of all) { writeFileSync(`l/${p.slug}.html`, render(p, ctx)); console.log('wrote l/' + p.slug + '.html'); }
 
