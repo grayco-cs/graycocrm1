@@ -25,7 +25,7 @@ code; who rings comes from the people list and the on-call rotation.
    - `TWILIO_CALL_CHAIN` = `1`
    - `CALL_CHAIN_LAST` = `nthomas@grayco-cs.com,wjohnson@grayco-cs.com` (the admins, in order)
    - optional `TWILIO_CHAIN_SECONDS` = how long each phone rings (10–45, default 20)
-   - already set: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` (+19015828255)
+   - already set: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` (the GrayCo texting number)
 3. **Twilio console → Phone Numbers → (901) 582-8255 → "A call comes in":** Webhook, POST,
    `https://crm.grayco-cs.com/.netlify/functions/missed-call?event=voice` (it is probably already set: the missed-call
    text-back uses the same address).
