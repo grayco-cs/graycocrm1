@@ -129541,7 +129541,7 @@ function tick(){ ticks++; deadlines();
 var SELIDLE = {};
 nSI.call(window, tick, 1000);
 /* the CRM's timer governors skip slow ticks while people work; a frame-driven check (every 600 ms, nothing when the tab is hidden) keeps the chips and the Products sub-tab prompt */
-var lastF = 0; function frame(t){ if (t - lastF > ((window._gcIdle && window._gcIdle()) ? 30000 : 600)) { lastF = t; tick(); }   /* patch SYNCPERF: every 30 s when nobody has touched the computer for a minute */ try { window.requestAnimationFrame(frame); } catch (e) {} }
+var lastF = 0; function frame(t){ if (t - lastF > ((window._gcIdle && window._gcIdle()) ? 30000 : 600)) { lastF = t; tick(); }   /* patch SYNCPERF: every 30 s when nobody has touched the computer for a minute */ /* patch IDLEFRAME */ nST(function(){ frame(performance.now()); }, document.hidden ? 5000 : 300); }
 try { window.requestAnimationFrame(frame); } catch (e) {}
 CH.local().then(function(){ try { strips(); } catch (e) {} });
 var lastPull = 0;
@@ -155622,7 +155622,7 @@ function adminBar(){
 }
 
 /* ── start ── */
-var lastF = 0; function frame(t){ if (t - lastF > 800) { lastF = t; try { strips(); } catch (e) {} } try { W.requestAnimationFrame(frame); } catch (e) {} }
+var lastF = 0; function frame(t){ if (t - lastF > 800) { lastF = t; if (!D.hidden) { try { strips(); } catch (e) {} } } ST.call(W, function(){ frame(performance.now()); }, 400); }   /* patch IDLEFRAME */
 try { W.requestAnimationFrame(frame); } catch (e) {}
 SI(function(){ try { strips(); } catch (e) {} try { adminBar(); } catch (e) {} }, 1200);
 ST(function(){ pull(); SI(function(){ if (!D.hidden) pull(); }, 60000); }, 9000);
