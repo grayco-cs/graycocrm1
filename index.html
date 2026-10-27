@@ -180089,7 +180089,8 @@ function vendors(){ return arr(crm().vendors).concat(arr(jget('vendors', []))); 
 function estById(id){ id = s(id); return estList().filter(function(e){ return s(e.id) === id; })[0] || null; }
 function jobOf(e){
   if (!e) return null;
-  return proj(e.pid) || projects().filter(function(p){ return s(p.estimateId) === s(e.id) || s(p._lastEstId) === s(e.id); })[0] || null;
+  var fxp = proj(e.pid); if (fxp && fxBare(fxp) && startedAt(e) >= FX_BOOT) fxp = null;   /* patch FIELDFIX: a new estimate pointed at a bare customer row gets a job of its own */
+  return fxp || projects().filter(function(p){ return s(p.estimateId) === s(e.id) || s(p._lastEstId) === s(e.id); })[0] || null;
 }
 function leadOf(e){ return lead(e && (e.gdocLeadId || e.leadId || e.estinLeadId)) || null; }
 
@@ -180226,15 +180227,55 @@ function canRun(e){
 }
 
 /* a bidding job for an estimate that has none (from its lead when it has one) — a PO the CRM's way */
+/* patch FIELDFIX — an estimate gets its job the moment it is made, however it came in (📐 builder save, 📤 upload on a
+   lead / job / the Estimates screen, a PDF dropped or attached on a lead or bid, estimates@ e-mail, Google Docs).
+   The job: "<customer> — <project / job-site street>", the JOB SITE address (never a P.O. Box billing address, never
+   "United States of America"), status bidding, the CRM's next PO, PM and estimator. No second job: the lead's job, a
+   job already made for that lead, or an open job for the same customer at the same street is used instead. An
+   estimate made from now on that was pointed at a bare QuickBooks customer row ("EAN Holdings", no job site, no scope)
+   gets a real job of its own; the customer row is left as it is. */
+var FX_BOOT = '2026-10-27';
+function fxSite(a){
+  var t = s(a).replace(/\s+/g, ' ').replace(/[,\s]*(United States of America|United States|U\.S\.A\.?|USA)\s*$/i, '').trim();
+  return /^(p\.?\s*o\.?\s*box|post office box|pob\b)/i.test(t) ? '' : t;
+}
+function fxBare(p){
+  if (!p) return false;
+  var n = low(p.name), named = !n || n === low(p.client) || n === low(p.company) || n === low(p.qbClient);
+  return named && !fxSite(p.address) && !s(p.scope) && !(num(p.contract) > 0) && !s(p.startDate);
+}
+function fxJobName(client, estName, site){
+  var nm = s(estName).replace(/\s+[—-]\s+final quote$/i, ''), street = s(site).split(',')[0].trim();
+  if (nm && low(nm) !== low(client) && !/^estimate$/i.test(nm)) return (!client || low(nm).indexOf(low(client)) >= 0) ? nm : client + ' — ' + nm;
+  return client ? client + (street ? ' — ' + street : '') : (street || nm || 'Estimate');
+}
+function fxStaff(v){
+  v = s(v); if (!v) return '';
+  var lv = low(v), us = arr(crm().users).filter(function(u){ return u && u.name && u.active !== false; });
+  var hit = us.filter(function(u){ return low(u.name) === lv; })[0] || us.filter(function(u){ return low(u.name).split(' ')[0] === lv.split(' ')[0] && lv.split(' ')[0].length > 2; })[0];
+  return hit ? s(hit.name) : v;
+}
+/* the job the estimate already has — or, for a lead / customer that already has one at that address, that job */
+function fxExisting(e, l){
+  var lj = l ? proj(l.projectId || l.pid || l.convertedTo || l.jobId) : null;
+  if (!lj && l) lj = projects().filter(function(x){ return x && !x.deleted && (s(x.leadId) === s(l.id) || s(x.fromLeadId) === s(l.id)); })[0] || null;
+  if (lj && !fxBare(lj)) return lj;
+  var site = fxSite(s(e.address) || s(l && l.address)), sk = streetKey(site), cl = low(s(e.client) || s(l && (l.contact || l.name || l.company)));
+  if (!sk) return null;
+  return projects().filter(function(x){ return x && !x.deleted && !/lost|dead|cancel|complete|closed/i.test(s(x.status)) && streetKey(fxSite(x.address)) === sk && (!cl || low(x.client) === cl || low(x.company) === cl || (l && s(x.leadId) === s(l.id))); })[0] || null;
+}
 function ensureJob(e){
   var p = jobOf(e); if (p) return p;
-  var l = leadOf(e), list = projects().slice();
+  var l = leadOf(e), had = fxExisting(e, l); if (had) { fxLeadNote(l, e, had); return had; }
+  var list = projects().slice();
   var pos = list.map(function(x){ return x && (x.autoPO || x.po); }).filter(Boolean), po = '';
   try { po = W.nextPO ? W.nextPO(pos) : ''; } catch (x) {} if (!po) po = 'PO-' + Date.now().toString().slice(-6);
-  p = { id: 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), name: s(e.name) || s(l && (l.name || l.company)) || 'Estimate', client: s(e.client) || s(l && (l.contact || l.name)),
-    address: s(e.address) || s(l && l.address), autoPO: po, status: 'bidding', type: s(e.jobType || e.type) || s(l && l.projectType) || 'Construction', contract: 0, estimateId: s(e.id), _lastEstId: s(e.id),
-    pm: s(e.pm) || s(l && l.pm) || s(e.by || e.estimator), estimator: s(l && l.estimator), clientEmail: s(e.clientEmail || e.email) || s(l && l.email), clientPhone: s(e.clientPhone || e.phone) || s(l && l.phone),
-    leadId: l ? l.id : '', fromLeadId: l ? l.id : '', source: 'grayco', graycoOrigin: true, created: today(), createdAt: nowIso(), createdFrom: 'estimate (ESTIN)', createdBy: meName() };
+  var client = s(e.client) || s(l && (l.contact || l.name || l.company)), site = fxSite(s(e.address) || s(l && l.address));
+  p = { id: 'PRJ' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase(), name: fxJobName(client, s(e.name) || s(l && (l.name || l.company)), site), client: client,
+    address: site, autoPO: po, status: 'bidding', type: s(e.jobType || e.type) || s(l && l.projectType) || 'Construction', contract: 0, estimateId: s(e.id), _lastEstId: s(e.id),
+    pm: s(e.pm) || s(l && l.pm) || s(e.by || e.estimator), estimator: fxStaff(e.estimator || e.by) || s(l && l.estimator), clientEmail: s(e.clientEmail || e.email) || s(l && l.email), clientPhone: s(e.clientPhone || e.phone) || s(l && l.phone),
+    leadId: l ? l.id : '', fromLeadId: l ? l.id : '', source: 'grayco', graycoOrigin: true, created: today(), createdAt: nowIso(), createdFrom: 'estimate (' + (s(e.source) || 'estimate') + ')', createdBy: meName() };
+  if (!site && s(e.address)) p.billingAddress = s(e.address);
   try { if (W._gcJA && W._gcJA.stamp) W._gcJA.stamp(p, 'estbuilder'); } catch (x) {}
   manual('a bidding job for an estimate');
   try { if (W._crm) W._crm.projects = [p].concat(projects()); } catch (x) {}
@@ -180243,7 +180284,39 @@ function ensureJob(e){
   try { if (W._supaUpsert) W._supaUpsert('projects', projects()); } catch (x) {}
   if (l) patchLead(l.id, { projectId: p.id, pid: p.id, stage: /^(new lead|new|lead|contacted|site visit|)$/i.test(s(l.stage)) ? 'Estimate Sent' : l.stage, estimateId: e.id });
   note('Bidding job ' + p.autoPO + ' made for "' + p.name + '"');
+  fxLeadNote(l, e, p);
   return p;
+}
+function fxLinkable(e){
+  if (!e || !s(e.id) || e.deleted === true) return false;
+  if (e.isTemplate || /^TMP/.test(s(e.id)) || /template/i.test(s(e.status))) return false;
+  if (e._isDraft === true || e.supersededBy || e.portalHide === true) return false;
+  if (e.recordOnly === true || e.history === true || e.importHistory === true) return false;
+  if (startedAt(e) < BOOT) return false;
+  if (/lost|declin|dead|void|cancel|archiv/i.test(s(e.status))) return false;
+  return !!(s(e.client) || fxSite(e.address) || leadOf(e) || s(e.pid));
+}
+function fxLeadNote(l, e, p){
+  if (!l || !p || !/upload|email|gdoc/i.test(s(e.source))) return;
+  var src = /email/i.test(s(e.source)) ? 'the e-mailed ' : (/gdoc/i.test(s(e.source)) ? 'the Google Doc ' : 'the ');
+  var txt = '📐 Estimate "' + s(e.name) + '"' + (totalOf(e) ? ' (' + money(totalOf(e)) + ')' : '') + ' was created from ' + src + (s(e.sourceName) ? 'file "' + s(e.sourceName) + '"' : 'PDF') + ' — job ' + s(p.autoPO) + ' "' + s(p.name) + '" linked';
+  var h = { type: 'note', at: nowIso(), by: meName() || 'CRM', text: txt, estId: s(e.id) };
+  leadsSave(function(list){ return arr(list).map(function(x){ return x && s(x.id) === s(l.id) && !arr(x.activity).some(function(a){ return a && s(a.estId) === s(e.id); }) ? Object.assign({}, x, { activity: arr(x.activity).concat([h]), updatedAt: nowIso() }) : x; }); });
+}
+/* every new estimate with no job: its job now (no proposal, no wait for the 10 quiet minutes) */
+function fxLinkAll(list){
+  if (paused() || viewingAs()) return 0;
+  var n = 0;
+  arr(list).forEach(function(e){
+    if (n >= 6 || !fxLinkable(e) || jobOf(e) || !canRun(e) || S.busy[e.id]) return;
+    n++;
+    try {
+      var p = ensureJob(e);
+      setEst(e.id, { pid: p.id, autoPO: e.autoPO || p.autoPO, jobLinkedAt: nowIso() });
+      if (s(e.sourceRef) && !docs().some(function(d){ return d.id === 'DESRC_' + e.id; })) upsertDoc({ id: 'DESRC_' + e.id, pid: p.id, projectId: p.id, estimateId: e.id, cat: 'Estimates', name: 'Estimate source — ' + (s(e.sourceName) || 'file'), ref: e.sourceRef, type: s(e.sourceType), uploadedAt: nowIso(), uploaded: today(), by: s(e.by) || 'Upload', source: 'estin-source', portalShare: false, noNotice: true, confirmed: true });
+    } catch (x) { note('Job for "' + s(e.name) + '" could not be made: ' + s(x && x.message || x)); }
+  });
+  return n;
 }
 function scopeWords(e){
   var sc = e.scope && typeof e.scope === 'object' ? e.scope : {}, out = [];
@@ -180617,6 +180690,7 @@ function whoIn(text){
   f.customer = pick(/(?:customer|client|prepared for|homeowner|owner|bill to|insured|sold to)(?: name)?\s*[:\-]\s*([^\n]{2,80})/i);
   f.project = pick(/(?:project|job)\s*(?:name)?\s*[:\-]\s*([^\n]{2,100})/i);
   f.address = pick(/(?:location|address|job site|site|property|loss location)(?: address)?\s*[:\-]\s*([^\n]{5,120})/i);
+  f.estimator = pick(/(?:estimator|estimated by|prepared by)\s*[:\-]\s*([^\n]{2,60})/i);   /* patch FIELDFIX */
   /* an insurance carrier's name never rides along into the estimate (or the customer's proposal) */
   var car = pick(/(?:insurance company|insurance carrier|carrier|insurer)\s*[:\-]\s*([^\n]{2,80})/i);
   if (car) ['customer', 'project', 'address'].forEach(function(k){ if (f[k] && low(f[k]).indexOf(low(car)) > -1) f[k] = s(f[k].slice(0, low(f[k]).indexOf(low(car))).replace(/(insurance company|carrier|insurer)\s*[:\-]?\s*$/i, '')); });
@@ -180683,7 +180757,7 @@ function estimateFrom(rd, o){
   var lines = rd.lines.map(function(x){ return { desc: s(x.desc), cat: s(x.cat) || 'General', qty: num(x.qty) || 1, unit: s(x.unit), cost: num(x.cost), charge: num(x.charge), type: s(x.type) || 'sub', supplier: s(x.supplier) }; });
   var est = { id: id, name: s(o.title) || s(rd.f.project) || s(p && p.name) || s(l && l.name) || s(o.name).replace(/\.[a-z0-9]+$/i, '') || 'Estimate', client: s(p && p.client) || s(l && (l.contact || l.name)) || s(rd.f.customer),
     address: s(p && p.address) || s(l && l.address) || s(rd.f.address), clientEmail: s(rd.f.email), clientPhone: s(rd.f.phone), pid: p ? p.id : '', leadId: l ? l.id : '', estinLeadId: l ? l.id : '',
-    lines: lines, totalCharge: r2(rd.total), quoteTotal: r2(rd.total), status: 'sent', date: today(), created: today(), createdAt: nowIso(), savedAt: nowIso(), by: s(o.by) || meName(), estimator: s(o.by) || meName(),
+    lines: lines, totalCharge: r2(rd.total), quoteTotal: r2(rd.total), status: 'sent', date: today(), created: today(), createdAt: nowIso(), savedAt: nowIso(), by: s(o.by) || meName(), estimator: fxStaff(rd.f.estimator) || s(o.by) || meName(),
     source: s(o.source) || 'upload', sourceName: s(o.name), sourceRef: s(o.ref), sourceType: s(o.type), estinConf: rd.conf, estinWhy: rd.why, estinReview: rd.conf === 'low' || rd.fromScan === true, jobState: rd.isMS ? 'MS' : 'TN' };
   if (!est.pid && !est.leadId) est.estinReview = true, est.estinWhy = (est.estinWhy ? est.estinWhy + ' · ' : '') + 'No job or lead matched';
   return est;
@@ -181076,6 +181150,7 @@ function scan(){
   if (!signedIn() || D.hidden) return Promise.resolve();
   return loadLists().then(function(){
     var list = estList(), jobs = [];
+    fxLinkAll(list);   /* patch FIELDFIX: its job the moment it is made */
     list.forEach(function(e){
       if (!e || startedAt(e) < BOOT) return;
       if (e.estin && e.estin.sig === sigOf(e) && e.estin.state && e.estin.state !== 'error' && !(signedEstimate(e) && !e.estinPO)) return;
@@ -181204,7 +181279,7 @@ function intakeNewDoc(o){
 W._gcEstimateIntake = { upload: intakeUpload, draft: intakeDraft, newGoogleDoc: intakeNewDoc, tasks: function(){ return Object.keys(TASKS).map(function(k){ return { key: k, label: TASKS[k].label, inputs: TASKS[k].inputs.map(function(x){ return { key: x[0], label: x[1] }; }) }; }); },
   prefill: function(task, o){ o = o || {}; return prefill(task, lead(o.leadId), proj(o.jobId || o.pid)); }, openBuilder: function(estId){ var e = estById(estId); try { if (e && W._gcOpenEstimateInBuilder) W._gcOpenEstimateInBuilder(e); } catch (x) {} return !!e; } };
 
-W._gcEstin = { measure: measureFor, saveMeasure: saveMeasure, open: open, scan: scan, process: process, upload: uploadUi, draft: draftUi, draftLines: draftLines, draftSave: draftSave, proposalHtml: proposalHtml, template: tpl, saveTemplate: saveTpl, pos: function(pid){ return S.pos.filter(function(x){ return !pid || x.pid === pid; }); },
+W._gcEstin = { ensureJob: ensureJob, linkJobs: function(){ return loadLists().then(function(){ return fxLinkAll(estList()); }); }, measure: measureFor, saveMeasure: saveMeasure, open: open, scan: scan, process: process, upload: uploadUi, draft: draftUi, draftLines: draftLines, draftSave: draftSave, proposalHtml: proposalHtml, template: tpl, saveTemplate: saveTpl, pos: function(pid){ return S.pos.filter(function(x){ return !pid || x.pid === pid; }); },
   makePOs: makePOs, pullInbox: pullInbox, state: function(){ return { runs: S.runs, made: S.made, errors: S.errors, last: S.last, log: S.log.slice(0, 20), pos: S.pos.length, inbox: S.inbox.length }; },
   _t: { readEstimate: readEstimate, fromText: fromText, fromRows: fromRows, csvRows: csvRows, docxText: docxText, xlsxRows: xlsxRows, simplePdfText: simplePdfText, fileText: fileText, ingest: ingest, estimateFrom: estimateFrom, eligible: eligible, sigOf: sigOf, sellLines: sellLines, applyTpl: applyTpl, matchTarget: matchTarget, mailOne: mailOne, stateOf: stateOf, loadLists: loadLists, BOOT: BOOT } };
 try { console.log('[GC] Estimates → CRM → GrayCo proposal (waits for approval) armed (patch ESTIN)'); } catch (e) {}
@@ -181708,7 +181783,7 @@ function rk(){
 }
 function isSuper(){ return rk() === 'super'; }
 function isPM(){ var k = rk(); return k === 'pm' || k === 'roof'; }
-function eligible(){ return inField() && phoneDevice(); }
+function eligible(){ return inField(); }   /* patch FIELDFIX: every device (a desk's field view too); the phone still opens in it by itself */
 function meU(){
   try { if (W._gcVAS && W._gcVAS.active()) { var p = W._gcVAS.person(); if (p) return p; } } catch (e) {}
   try { var m = low(lsGet('grayco_user')); return arr(C().users).filter(function(u){ return u && (low(u.email) === m || low(u.name) === m); })[0] || null; } catch (e) { return null; }
@@ -181928,7 +182003,7 @@ function css(){
     '.gc-fh-sheet .logbox{font-size:13px;background:#f9fafb;border-radius:8px;padding:8px;white-space:pre-wrap;max-height:200px;overflow-y:auto}',
     '.gc-fh-sheet .match{border:1px solid #e5e7eb;border-radius:10px;margin-top:4px;overflow:hidden}.gc-fh-sheet .match button{display:block;width:100%;text-align:left;border:none;border-bottom:1px solid #f3f4f6;background:#fff;padding:9px 10px;font-size:14px;color:#1f2a37}',
     '.gc-fh-sheet .matched{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;border-radius:10px;padding:8px 10px;font-size:13px;font-weight:700;margin-top:6px}'
-  ].join('');
+  ].concat(FX_CSS).join('');
   D.head.appendChild(st);
 }
 
@@ -182270,7 +182345,7 @@ function jobCard(p){
     big = front; small = rest.filter(function(t){ return front.indexOf(t) < 0 && !t.hideUnsigned; });
   }
   var B = function(l){ return l.map(function(t){ return toolBtn(t, p, ctx, !ok && t.needsSigned); }).join(''); };
-  var h = '<div class="fh-job" data-job="' + esc(p.id) + '"><button type="button" class="fh-n" data-fa="open" data-pid="' + esc(p.id) + '">' + esc(p.name) + '</button><div class="fh-a">' + esc([p.address, p.client].filter(Boolean).join(' · ')) + '</div>';
+  var h = '<div class="fh-job" data-job="' + esc(p.id) + '"><button type="button" class="fh-n" data-fa="open" data-pid="' + esc(p.id) + '">' + esc(fxView(p).name) + '</button><div class="fh-a">' + fxSub(p) + '</div>';
   if (!ok) h += '<div class="fh-lock">🔒 Contract not signed — work can\'t start</div>';
   else {
     var todayTxt = [sc ? s(sc.title || sc.name) + (sc.sub ? ' · ' + s(sc.sub) : '') : '', ds.started ? (ds.ended ? 'day ended' : 'day started ' + s(ds.start).slice(11, 16)) : '', ds.lines ? 'log: ' + ds.lines + ' line' + (ds.lines === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
@@ -182383,7 +182458,7 @@ function render(force){
   var sig = sigOf(m); if (!force && sig === lastSig) { paintSync(); paintTabs(m.n); return; }
   lastSig = sig;
   var k = rk(), dt = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  var h = '<div class="fh-top"><div class="fh-brand"><img class="fh-logo" src="grayco-logo.jpg" alt="GrayCo"><div style="min-width:0"><div class="fh-h">GrayCo Field</div><div class="fh-s">' + esc(myName()) + ' · ' + esc(ROLE_NAMES[k] || '') + ' · ' + esc(dt) + '</div></div></div><span id="gc-fh-sync" data-k="ok">✓ All sent</span></div><div class="fh-wrap">';
+  var h = '<div class="fh-top fx-top">' + (phoneDevice() ? '' : '<button type="button" class="fx-desk" data-fa="desk">🖥 Desk</button>') + '<div class="fx-logo"><img class="fh-logo" src="grayco-logo.jpg" alt="GrayCo"></div><div class="fh-h">GrayCo Field</div><div class="fh-s">' + esc(myName()) + ' · ' + esc(ROLE_NAMES[k] || '') + ' · ' + esc(dt) + '</div><span id="gc-fh-sync" data-k="ok">✓ All sent</span></div><div class="fh-wrap">';   /* patch FIELDFIX: GrayCo navy / gold, the logo centred */
   h += '<div class="fh-tiles">' + m.L.tiles.map(function(t){ var x = TILES[t]; return x ? '<button type="button" class="fh-tile ' + x[2] + '" data-fa="tile" data-tile="' + t + '"><span class="e">' + x[0] + '</span>' + esc(x[1]) + '</button>' : ''; }).join('') + '</div>';
   m.L.sections.forEach(function(sec){
     if (sec === 'jobs') {
@@ -182420,10 +182495,143 @@ function render(force){
   h += '</div>';
   el.innerHTML = h; paintSync(); paintTabs(m.n);
 }
+/* ═════ patch FIELDFIX (owner 10/27: "thought we fixed the aesthetic of this field app") ═════
+   GrayCo Field is THE field app on every device: a desk computer's 🖥 / Field toggle opened the old dark
+   "Pick a Job" list (eligible() asked for a phone), and Jobs / All jobs › on a phone went to that list too.
+   Now: Home and All jobs are both drawn here (GrayCo navy / gold, the logo centred); the old list is used only
+   when this one fails to draw. Job cards read like jobs: job name, PO, the JOB SITE address (a P.O. Box billing
+   address and "United States of America" are never shown), stage, PM and the customer underneath (never the same
+   name twice). A QuickBooks customer row with no job details yet is kept, in its own fold at the bottom. */
+function fxSite(a){
+  var t = s(a).replace(/\s+/g, ' ').replace(/[,\s]*(United States of America|United States|U\.S\.A\.?|USA)\s*$/i, '').trim();
+  return /^(p\.?\s*o\.?\s*box|post office box|pob\b)/i.test(t) ? '' : t;
+}
+function fxEsts(p){
+  var id = s(p.id), eid = s(p.estimateId || p._lastEstId);
+  var all = Array.isArray(W._gcEstimatesState) && W._gcEstimatesState.length ? W._gcEstimatesState : arr(C().estimates);
+  return all.filter(function(e){ return e && !e.deleted && !e.isTemplate && (s(e.pid) === id || (eid && s(e.id) === eid)); })
+    .sort(function(a, b){ return s(b.updatedAt || b.savedAt || b.date).localeCompare(s(a.updatedAt || a.savedAt || a.date)); });
+}
+function fxCust(p){ return s(p.client || p.company || p.qbClient); }
+function fxNamed(p){ var n = low(p.name); return !n || n === low(p.client) || n === low(p.company) || n === low(p.qbClient); }
+function fxImported(p){ return /^QB_/.test(s(p.id)) || /quickbooks/i.test(s(p.source)); }
+function fxStage(p, e, bare){
+  var st = low(p.status), es = e && e.estin ? s(e.estin.state) : '';
+  if (bare) return ['Customer record', 'w'];
+  if (/lost|cancel/.test(st)) return ['Lost', 'w'];
+  if (/complete|closed/.test(st)) return ['Completed', 'w'];
+  if (/hold/.test(st)) return ['On hold', 'o'];
+  var importDefault = fxImported(p) && st === 'active' && !(parseFloat(p.contract) > 0) && !s(p.startDate);   /* QuickBooks marks every customer "Active" */
+  if (!importDefault) {
+    if (/approv|won|sold|signed|contract/.test(st) || es === 'signed') return ['Won', 'g'];
+    if (/active|progress|start/.test(st)) return ['In progress', 'g'];
+  }
+  if (es === 'waiting' || es === 'needs-email' || /sent/.test(low(e && e.status))) return ['Bid sent', 'b'];
+  if (e) return ['Estimate', 'b'];
+  return [/bid/.test(st) || importDefault ? 'Bidding' : (s(p.status) || 'Open'), 'b'];
+}
+function fxView(p){
+  var e = fxEsts(p)[0] || null, cust = fxCust(p), name = s(p.name), site = fxSite(p.address);
+  if (fxNamed(p) && e) {
+    var en = s(e.name).replace(/\s+[—-]\s+final quote$/i, ''), es = fxSite(e.address);
+    if (en && low(en) !== low(cust)) name = (!cust || low(en).indexOf(low(cust)) >= 0) ? en : cust + ' — ' + en;
+    else if (es) name = (cust ? cust + ' — ' : '') + es.split(',')[0];
+  }
+  if (!site && e) site = fxSite(e.address);
+  var bare = fxNamed(p) && !site && !s(p.scope) && !(parseFloat(p.contract) > 0) && !e;
+  name = name || cust || 'Job';
+  return { p: p, e: e, name: name, site: site, cust: cust && low(name).indexOf(low(cust)) < 0 ? cust : '', bare: bare, po: s(p.autoPO || p.po), pm: s(p.pm), stage: fxStage(p, e, bare) };
+}
+function fxSub(p){ var v = fxView(p); return esc([v.po ? 'PO ' + v.po : '', v.site, v.cust].filter(Boolean).join(' · ')); }
+function fxCard(v){
+  return '<button type="button" class="fx-card' + (v.bare ? ' bare' : '') + '" data-fx="open" data-pid="' + esc(v.p.id) + '"><span class="fx-r1"><b>' + esc(v.name) + '</b>' + (v.po ? '<span class="fx-po">' + esc(v.po) + '</span>' : '') + '</span>' +
+    (v.site ? '<span class="fx-ad">📍 ' + esc(v.site) + '</span>' : (v.bare ? '<span class="fx-ad fx-mut">No job site yet — open it to add the address, or make its estimate</span>' : '')) +
+    '<span class="fx-r3"><span class="fx-st ' + v.stage[1] + '">' + esc(v.stage[0]) + '</span>' + (v.cust ? '<span>' + esc(v.cust) + '</span>' : '') + (v.pm ? '<span>PM: ' + esc(v.pm) + '</span>' : '') + '</span></button>';
+}
+var FX = { q: '', f: '' };
+function fxAdm(){ var k = rk(); return isAdmin() || k === 'admin' || k === 'office'; }
+function fxJobs(){
+  var all = arr(C().projects).filter(active), adm = fxAdm(), f = FX.f || (adm ? 'all' : 'mine');
+  if (f === 'mine') all = all.filter(mine);
+  var vs = all.map(fxView);
+  if (f === 'bid') vs = vs.filter(function(v){ return /Bidding|Estimate|Bid sent/.test(v.stage[0]); });
+  if (f === 'go') vs = vs.filter(function(v){ return /In progress|Won|On hold/.test(v.stage[0]); });
+  var q = low(FX.q);
+  if (q) vs = vs.filter(function(v){ return low([v.name, v.site, fxCust(v.p), v.po, v.pm, v.stage[0], v.p.scope].join(' ')).indexOf(q) >= 0; });
+  var ord = { 'In progress': 0, 'Won': 1, 'On hold': 2, 'Bid sent': 3, 'Estimate': 4, 'Bidding': 5 }, o = function(v){ var x = ord[v.stage[0]]; return x == null ? 6 : x; };
+  vs.sort(function(a, b){ return o(a) - o(b) || a.name.localeCompare(b.name); });
+  return { f: f, adm: adm, jobs: vs.filter(function(v){ return !v.bare; }), bare: vs.filter(function(v){ return v.bare; }) };
+}
+function fxPaint(){
+  var ov = D.getElementById('_gcFhAll'); if (!ov) return;
+  var m = fxJobs(), chips = [['all', 'All open'], ['go', 'In progress'], ['bid', 'Bidding']];
+  if (!m.adm) chips.unshift(['mine', 'Mine']);
+  ov.querySelector('[data-fx-chips]').innerHTML = chips.map(function(c){ return '<button type="button" data-fx="f" data-v="' + c[0] + '"' + (m.f === c[0] ? ' class="on"' : '') + '>' + c[1] + '</button>'; }).join('');
+  ov.querySelector('[data-fx-list]').innerHTML = (m.jobs.length ? m.jobs.map(fxCard).join('') : '<div class="fh-empty">No jobs match.</div>') +
+    (m.bare.length ? '<details class="fx-bare"><summary>📇 Customer records — no job details yet (' + m.bare.length + ')</summary><div class="fx-note">Customers from QuickBooks that sit on the job list with no job site, scope or estimate. Open one to add its job site, or make its estimate — the job is filled from it.</div>' + m.bare.map(fxCard).join('') + '</details>' : '');
+  var n = ov.querySelector('[data-fx-n]'); if (n) n.textContent = m.jobs.length + ' job' + (m.jobs.length === 1 ? '' : 's') + (m.f === 'mine' ? ' · mine' : '');
+}
+function fxTab(k){ var t = D.getElementById('gc-fh-tabs'); if (t) Array.prototype.forEach.call(t.querySelectorAll('[data-t]'), function(x){ x.classList.toggle('on', x.getAttribute('data-t') === k); }); }
+function fxOpenAll(){
+  css();
+  var ov = D.getElementById('_gcFhAll');
+  if (!ov) {
+    ov = D.createElement('div'); ov.id = '_gcFhAll'; ov.className = 'gc-fh fx-all'; D.body.appendChild(ov);
+    ov.addEventListener('click', fxClick);
+    ov.addEventListener('input', function(ev){ if (ev.target && ev.target.getAttribute('data-fx') === 'q') { FX.q = ev.target.value; fxPaint(); } });
+  }
+  ov.innerHTML = '<div class="fx-col"><div class="fh-top fx-top"><button type="button" class="fx-back" data-fx="back">‹ Home</button><div class="fx-logo"><img class="fh-logo" src="grayco-logo.jpg" alt="GrayCo"></div><div class="fh-h">All jobs</div><div class="fh-s" data-fx-n></div></div>' +
+    '<div class="fh-wrap fx-body"><input type="search" class="fx-q" data-fx="q" placeholder="🔍 Search job, customer, address, PO, PM" autocomplete="off" value="' + esc(FX.q) + '"><div class="fx-chips" data-fx-chips></div><div data-fx-list></div></div></div>';
+  fxPaint(); fxTab('jobs');
+  return ov;
+}
+function openAll(){
+  try { return fxOpenAll(); }
+  catch (e) {
+    try { console.warn('[GC] GrayCo Field All jobs could not draw — the old job list', e); } catch (x) {}
+    fxClose();
+    if (orig) { var h = D.getElementById('_gcJobPick'); if (h) h.remove(); return orig.apply(W, []); }
+  }
+}
+function fxClose(){ var o = D.getElementById('_gcFhAll'); if (o) o.remove(); }
+function fxClick(ev){
+  var t = ev.target.closest('[data-fx]'); if (!t) return;
+  var a = t.getAttribute('data-fx'); if (a === 'q') return;
+  ev.preventDefault();
+  if (a === 'back') { fxClose(); if (!D.getElementById('_gcJobPick')) openHome(); fxTab('home'); return; }
+  if (a === 'f') { FX.f = t.getAttribute('data-v'); fxPaint(); return; }
+  if (a === 'open') { var p = proj(t.getAttribute('data-pid')); if (!p) return; W._gcCurrentJob = p; lsSet('grayco_openpid', s(p.id)); fxClose(); if (W._gcJobDashboard) W._gcJobDashboard(p.id); }
+}
+function fxDesk(){ fxClose(); closeHome(); if (W._gcSetFieldMode) W._gcSetFieldMode(false); setOn(); }
+var FX_CSS = [
+  /* the GrayCo header: navy, the gold line, the logo in the middle */
+  '.gc-fh .fh-top.fx-top{background:linear-gradient(180deg,#0a1628,#0f2440);border-bottom:3px solid #d4a017;color:#fff;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:3px;padding:calc(12px + env(safe-area-inset-top,0px)) 70px 10px;position:sticky;top:0}',
+  '.gc-fh .fx-top .fh-logo{width:54px;height:54px;border-radius:12px;border:2px solid #d4a017;background:#fff;object-fit:contain}',
+  '.gc-fh .fx-top .fh-h{color:#f0c451;font-size:20px;letter-spacing:.02em}.gc-fh .fx-top .fh-s{color:#cbd5e1;max-width:100%}',
+  '.gc-fh .fx-top #gc-fh-sync{margin-top:3px}',
+  '.gc-fh .fx-desk,.gc-fh .fx-back{position:absolute;left:10px;top:calc(12px + env(safe-area-inset-top,0px));background:#1e3a5f;color:#f0c451;border:1px solid #d4a017;border-radius:999px;padding:7px 12px;font:800 13px Inter,-apple-system,sans-serif;cursor:pointer;min-height:0!important}',
+  '.gc-fh .fh-sec{color:#0f2440}.gc-fh .fh-sec button{color:#a16207}',
+  '.gc-fh .fh-bar i{background:#d4a017}.gc-fh .fh-b.pri{background:#0f2440;border-color:#0f2440}.gc-fh .fh-sm{border-color:#0f2440;color:#0f2440}',
+  '.gc-fh .fh-job{border-left:4px solid #d4a017}.gc-fh .fh-n{color:#0f2440}',
+  '#gc-fh-tabs{background:#0a1628;border-top:2px solid #d4a017}#gc-fh-tabs button{color:#8fa8c4}#gc-fh-tabs button.on{color:#f0c451}#gc-fh-tabs button.ap{color:#fca5a5}#gc-fh-tabs button.ap .c{border-color:#0a1628}.gc-fh-badge{border-color:#0a1628;background:#d4a017;color:#0a1628}',
+  /* All jobs */
+  '#_gcFhAll{position:fixed;inset:0;z-index:99985;background:#f3f5f8;color:#1f2a37;overflow-y:auto;-webkit-overflow-scrolling:touch;font:15px/1.35 Inter,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}',
+  '#_gcFhAll .fx-q{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;padding:12px 14px;font:16px Inter,sans-serif;background:#fff;color:#0f2440;margin:2px 0 8px}',
+  '#_gcFhAll .fx-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}#_gcFhAll .fx-chips button{border:1px solid #cbd5e1;background:#fff;color:#0f2440;border-radius:999px;padding:7px 12px;font-weight:700;font-size:13px;min-height:0!important;cursor:pointer}#_gcFhAll .fx-chips button.on{background:#0f2440;color:#f0c451;border-color:#0f2440}',
+  '.gc-fh .fx-card{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-left:4px solid #d4a017;border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer;font-family:inherit;color:#1f2a37;min-height:0!important}',
+  '.gc-fh .fx-card.bare{border-left-color:#cbd5e1}.gc-fh .fx-r1{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.gc-fh .fx-r1 b{flex:1;min-width:0;font-size:16px;color:#0f2440;overflow-wrap:anywhere}.gc-fh .fx-r1 .__gcListMsgBtn{flex:0 0 auto;margin-left:2px!important}',
+  '.gc-fh .fx-po{flex:0 0 auto;font-size:11.5px;font-weight:800;color:#0f2440;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:1px 6px}',
+  '.gc-fh .fx-ad{font-size:13px;color:#374151}.gc-fh .fx-mut{color:#9ca3af;font-style:italic}',
+  '.gc-fh .fx-r3{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:12.5px;color:#6b7280}',
+  '.gc-fh .fx-st{font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px}.gc-fh .fx-st.g{background:#dcfce7;color:#166534}.gc-fh .fx-st.b{background:#dbeafe;color:#1e40af}.gc-fh .fx-st.o{background:#ffedd5;color:#c2410c}.gc-fh .fx-st.w{background:#f3f4f6;color:#4b5563}',
+  '.gc-fh .fx-bare{margin-top:14px}.gc-fh .fx-bare summary{cursor:pointer;font-weight:800;color:#475569;font-size:13px;padding:8px 4px}.gc-fh .fx-note{font-size:12.5px;color:#6b7280;margin:0 4px 8px}',
+  /* a desk screen: the same 430 px phone column the field app uses there (min-width 820 px), the tab bar under it */
+  '@media (min-width:820px){html._fieldmode #_gcFhAll{left:50%!important;right:auto!important;width:430px!important;max-width:430px!important;transform:translateX(-50%)!important;border-left:1px solid #1e3a5f;border-right:1px solid #1e3a5f;box-shadow:0 0 60px rgba(0,0,0,.6)}#gc-fh-tabs{left:50%;right:auto;width:430px;transform:translateX(-50%);box-sizing:border-box}}'
+];
 var orig = null;
 function openHome(){
   css();
-  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDash,#_gcJobPick'), function(o){ o.remove(); });
+  Array.prototype.forEach.call(D.querySelectorAll('._gcSheetOv,#_gcJobDash,#_gcJobPick,#_gcFhAll'), function(o){ o.remove(); });
   W._gcCurrentJob = null;
   var ov = D.createElement('div'); ov.id = '_gcJobPick'; ov.className = 'gc-fh'; D.body.appendChild(ov);
   ov.addEventListener('click', onClick);
@@ -182435,8 +182643,11 @@ function wrapPicker(){
   var cur = W._gcJobPicker; if (!cur || cur.__gcField) return;
   orig = cur;
   var w = function(){
-    if (eligible() && !W.__gcFhAll) return openHome();
-    W.__gcFhAll = false;
+    var all = !!W.__gcFhAll; W.__gcFhAll = false;   /* patch FIELDFIX: the old list only when this app cannot draw */
+    if (eligible()) {
+      try { return all ? openAll() : openHome(); }
+      catch (e) { try { console.warn('[GC] GrayCo Field could not draw — the old job list', e); } catch (x) {} var h = D.getElementById('_gcJobPick'); if (h) h.remove(); }
+    }
     return orig.apply(this, arguments);
   };
   w.__gcField = true; w.__orig = orig; W._gcJobPicker = w;
@@ -182447,7 +182658,8 @@ function onClick(ev){
   if (t.hasAttribute('disabled')) { ev.preventDefault(); toast('🔒 The contract isn\'t signed yet — work can\'t start.'); return; }
   if (t.tagName === 'A') return;   /* Navigate / Call: the link does it */
   ev.preventDefault();
-  if (a === 'alljobs') { W.__gcFhAll = true; if (W._gcJobPicker) W._gcJobPicker(); return; }
+  if (a === 'alljobs') { openAll(); return; }   /* patch FIELDFIX */
+  if (a === 'desk') { fxDesk(); return; }
   if (a === 'allappr') { openAllAppr(); return; }
   if (a === 'appr') { openAppr(t.getAttribute('data-id')); return; }
   if (a === 'apprnow') { var _ai = t.getAttribute('data-id'); if (W._gcApproveInPlace && W._gcApproveInPlace(_ai)) { t.disabled = true; t.textContent = '✓ Approved'; later(function(){ lastSig = ''; render(true); }, 5600); } else openAppr(_ai); return; }   /* patch INLINEAPPR */
@@ -182859,8 +183071,8 @@ function tabs(){
   t.addEventListener('click', function(ev){
     var b = ev.target.closest('[data-t]'); if (!b) return; var k = b.getAttribute('data-t');
     Array.prototype.forEach.call(t.querySelectorAll('[data-t]'), function(x){ x.classList.toggle('on', x === b && k !== 'appr' && k !== 'more'); });
-    if (k === 'home') { openHome(); return; }
-    if (k === 'jobs') { W.__gcFhAll = true; if (W._gcJobPicker) W._gcJobPicker(); return; }
+    if (k === 'home') { fxClose(); openHome(); return; }
+    if (k === 'jobs') { openAll(); return; }   /* patch FIELDFIX */
     if (k === 'appr') { openAllAppr(); return; }
     if (k === 'msgs') { if (W._gcPickJobForMessages) W._gcPickJobForMessages(); return; }
     if (k === 'more') moreSheet();
@@ -182874,7 +183086,7 @@ function paintTabs(n){
   if (b) { if (b.textContent !== tx) b.textContent = tx; var want = n > 0 ? 'inline-block' : 'none'; if (b.style.display !== want) b.style.display = want; }
 }
 function setOn(){
-  var on = eligible();
+  var on = eligible(); if (!on) fxClose();
   if (D.documentElement.classList.contains('gc-fh-on') !== on) D.documentElement.classList.toggle('gc-fh-on', on);
   if (on) tabs();
 }
@@ -182901,10 +183113,203 @@ D.addEventListener('click', function(ev){ if (ev.target && ev.target.closest && 
 W.addEventListener('storage', soon);
 builtIns(); wrapPicker(); hookApprovals(); later(soon, 1200);
 W._gcFieldTools = Tools;
-W._gcField = { open: openHome, render: function(){ lastSig = ''; render(true); }, eligible: eligible, phone: phoneDevice, jobs: function(){ return myJobs(); }, approvals: apprItems, sync: syncState, signed: function(pid){ var p = proj(pid); return p ? signed(p) : null; }, day: dayState,
+W._gcField = { all: openAll, view: function(pid){ var p = proj(pid); return p ? fxView(p) : null; }, open: openHome, render: function(){ lastSig = ''; render(true); }, eligible: eligible, phone: phoneDevice, jobs: function(){ return myJobs(); }, approvals: apprItems, sync: syncState, signed: function(pid){ var p = proj(pid); return p ? signed(p) : null; }, day: dayState,
   mat: { pending: matPending, open: matSheet }, addJob: addJobSheet, measure: measure, measurements: measurementsOf, roleTools: function(k){ return toolIds(k || rk()); }, layout: function(k){ return LAYOUT[k || rk()] || LAYOUT.pm; }, roleEditor: roleEditor, estimate: estPicker, settings: settingsSheet, more: moreSheet, createJob: fieldCreate, ccCreate: ccCreate,
   state: function(){ return { eligible: eligible(), phone: phoneDevice(), desk: deskPref(), role: role(), rk: rk(), me: myName(), home: !!D.querySelector('#_gcJobPick.gc-fh'), tools: TOOLS.length, sig: lastSig.length }; } };
 try { console.log('[GC] 📱 GrayCo Field — the phone app (patch FIELD) — _gcField.state(), _gcFieldTools.register()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-fieldfix">
+/* __GC_PATCH_FIELDFIX__ ═════════════════════════════════════════════════════════════════════════════════
+   GrayCo — estimate PDFs on leads / bids / the pipeline become estimates with their job; bare job rows filled once.
+   (patch FIELDFIX, with its parts inside patch FIELD and patch ESTIN)
+
+   1. A PDF or Word estimate / proposal (often made in Google Docs or Claude) put on a LEAD, a BID or a bidding job —
+      chosen in a file box on that lead / bid / job, or dropped on its card in the Leads screen, the Bids list or
+      the pipeline — goes through the one estimate door (window._gcEstimateIntake.upload, patch ESTIN): read in the
+      browser (job name, job-site address, customer, amount, estimator), the estimate made and linked, its bidding
+      job made (or the lead's / customer's existing job at that address used), the PDF kept on the estimate and in
+      the job's documents, and a note on the lead. The same file twice is recognised and not made again. In a file
+      box the file name has to say estimate / proposal / quote / bid (a photo or a plan is left alone); a file
+      dropped on a card is always read.
+   2. ONE-TIME FILL (admin computer, once — flag gc_kv "gc_fieldfix_mig_v1"): a job row that is only a customer's
+      name (the name is the customer, no job site — e.g. a QuickBooks customer "EAN Holdings" an estimate was made
+      against) and has an estimate pointing at it gets, from that estimate: the job name, the job-site address (a
+      P.O. Box billing address moves to billingAddress), estimator, PM, estimateId — empty / placeholder fields only,
+      nothing deleted. Every change is logged in gc_kv "gc_fieldfix_mig_log".
+        _gcFieldFixMigrate()            shows what would change, changes nothing
+        _gcFieldFixMigrate({ yes:true }) does it (admin only)
+   ═══════════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+if (window.__GC_PATCH_FIELDFIX__) return; window.__GC_PATCH_FIELDFIX__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function nowIso(){ return new Date().toISOString(); }
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function C(){ return W._crm || {}; }
+function lsGet(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function viewingAs(){ try { return !!(W._gcRP && W._gcRP.status && W._gcRP.status().viewAs); } catch (e) { return false; } }
+function paused(){ try { var st = W._gcPause && W._gcPause.state && W._gcPause.state(); return !!(st && st.paused); } catch (e) { return false; } }
+function me(){ try { var u = W._gcMeNow; if (u && u.name) return s(u.name); } catch (e) {} return s(lsGet('grayco_user')); }
+function site(a){
+  var t = s(a).replace(/\s+/g, ' ').replace(/[,\s]*(United States of America|United States|U\.S\.A\.?|USA)\s*$/i, '').trim();
+  return /^(p\.?\s*o\.?\s*box|post office box|pob\b)/i.test(t) ? '' : t;
+}
+function toast(t, bad){
+  var el = D.getElementById('gc-fx-toast');
+  if (!el) { el = D.createElement('div'); el.id = 'gc-fx-toast'; el.setAttribute('data-gcnav-ignore', '1'); el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:90px;z-index:100095;max-width:min(92vw,520px);border-radius:12px;padding:12px 16px;font:600 14px Inter,-apple-system,sans-serif;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,.3);pointer-events:none'; D.body.appendChild(el); }
+  el.style.background = bad ? '#991b1b' : '#0f2440'; el.style.borderBottom = '3px solid ' + (bad ? '#fca5a5' : '#d4a017');
+  el.textContent = t; el.style.display = 'block'; clearTimeout(el.__t); el.__t = later(function(){ el.style.display = 'none'; }, 6000);
+}
+
+/* ── 1. estimate PDFs put on a lead / bid / bidding job ── */
+var LEAD_ATTRS = ['data-lead', 'data-lead-id', 'data-gcl-id', 'data-lux-open', 'data-rso-id', 'data-lc-id'], BID_ATTRS = ['data-bid', 'data-sys-bid'];
+var EST_NAME = /(estimat|proposal|quot(e|ation)|(^|[^a-z])bid([^a-z]|$)|scope of work)/i, EST_FILE = /\.(pdf|docx?)$/i;
+function leadsAll(){ var ls = arr(C().leads); try { if (typeof W._gcLaLeads === 'function') ls = ls.concat(arr(W._gcLaLeads())); } catch (e) {} return ls; }
+function resolve(id){
+  id = s(id); if (!id) return null;
+  if (leadsAll().some(function(x){ return x && s(x.id) === id; })) return { leadId: id };
+  var p = arr(C().projects).filter(function(x){ return x && s(x.id) === id; })[0];
+  if (p) return /lost|complete|closed|cancel/i.test(s(p.status)) ? null : { pid: id, bidding: /bid|estimat|lead|pending|prospect/i.test(s(p.status)) || !s(p.status) };
+  var b = arr(C().bidLists).filter(function(x){ return x && s(x.id) === id; })[0];
+  if (b) return s(b.leadId) ? { leadId: s(b.leadId) } : (s(b.pid) ? { pid: s(b.pid), bidding: true } : null);
+  return null;
+}
+function ctxOf(el, drop){
+  for (var n = el; n && n.nodeType === 1 && n !== D.body; n = n.parentElement) {
+    var a, i, r;
+    for (i = 0; i < LEAD_ATTRS.length; i++) if ((a = n.getAttribute(LEAD_ATTRS[i])) && (r = resolve(a))) return r;
+    for (i = 0; i < BID_ATTRS.length; i++) if ((a = n.getAttribute(BID_ATTRS[i])) && (r = resolve(a))) return r;
+    if (drop) continue;   /* a drop goes on a card that says which lead / bid it is */
+    var ups = n.querySelectorAll ? n.querySelectorAll('[data-estin="upload"][data-lead],[data-estin="upload"][data-pid]') : [];
+    if (ups.length) {
+      var ids = {}; Array.prototype.forEach.call(ups, function(b){ ids[(b.getAttribute('data-lead') ? 'l:' + b.getAttribute('data-lead') : 'p:' + b.getAttribute('data-pid'))] = 1; });
+      var k = Object.keys(ids); if (k.length !== 1) return null;
+      return k[0][0] === 'l' ? resolve(k[0].slice(2)) : resolve(k[0].slice(2));
+    }
+  }
+  return null;
+}
+function intake(){ return W._gcEstimateIntake && typeof W._gcEstimateIntake.upload === 'function' ? W._gcEstimateIntake : null; }
+var SEEN = {};
+function take(file, ctx, how){
+  var I = intake(); if (!I || !file) return;
+  var key = [file.name, file.size, file.lastModified, ctx.leadId || ctx.pid].join('|'); if (SEEN[key]) return; SEEN[key] = 1;
+  toast('📐 Reading the estimate "' + file.name + '"…');
+  Promise.resolve(I.upload(file, ctx.leadId ? { leadId: ctx.leadId, via: how } : { pid: ctx.pid, via: how })).then(function(r){
+    r = r || {};
+    if (!r.ok) { toast('The estimate "' + file.name + '" could not be read: ' + s(r.error || 'unknown'), true); return; }
+    var e = r.estimate || {};
+    toast(r.duplicate ? '📐 "' + file.name + '" is already in the CRM as "' + s(e.name) + '"' : '📐 Estimate "' + s(e.name) + '" made from the PDF' + (r.review ? ' — it needs a look (📨 Proposals)' : '') + '; its job is linked');
+    try { if (W._gcEstin && W._gcEstin.scan) later(function(){ W._gcEstin.scan(); }, 1500); } catch (x) {}
+  }, function(err){ toast('The estimate "' + file.name + '" could not be read: ' + s(err && err.message || err), true); });
+}
+/* a file chosen in a lead's / bid's / bidding job's own file box */
+D.addEventListener('change', function(ev){
+  var t = ev.target;
+  if (!t || t.tagName !== 'INPUT' || t.type !== 'file' || !t.files || !t.files.length) return;
+  if (t.hasAttribute('data-es') || t.hasAttribute('data-estin') || (t.closest && t.closest('.gces-ov,#_gcEstPanel,.gc-fh-sheet,#_gcJobPick,#_gcFhAll'))) return;   /* the estimate door's own boxes, the builder, the field app */
+  var files = Array.prototype.filter.call(t.files, function(f){ return EST_FILE.test(s(f.name)) && EST_NAME.test(s(f.name)); });
+  if (!files.length) return;
+  var ctx = ctxOf(t, false); if (!ctx || (ctx.pid && !ctx.bidding)) return;
+  files.forEach(function(f){ take(f, ctx, 'attach'); });
+}, true);
+/* a PDF dropped on a lead / bid card */
+function dropCard(ev){ var t = ev.target; if (!t || !t.closest) return null; var sel = LEAD_ATTRS.concat(BID_ATTRS).map(function(a){ return '[' + a + ']'; }).join(','); var c = t.closest(sel); return c && !c.closest('#_gcJobPick,#_gcFhAll,.gces-ov') ? c : null; }
+function hasFiles(ev){ var dt = ev.dataTransfer; return !!(dt && dt.types && Array.prototype.indexOf.call(dt.types, 'Files') >= 0); }
+var HL = null;
+function hl(c){ if (HL && HL !== c) { HL.style.outline = HL.__fxOl || ''; HL = null; } if (c && HL !== c) { c.__fxOl = c.style.outline; c.style.outline = '3px dashed #d4a017'; HL = c; } }
+D.addEventListener('dragover', function(ev){ if (!hasFiles(ev)) return; var c = dropCard(ev); if (!c || !ctxOf(c, true)) { hl(null); return; } ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'copy'; } catch (e) {} hl(c); }, true);
+D.addEventListener('dragleave', function(ev){ if (HL && !HL.contains(ev.relatedTarget)) hl(null); }, true);
+D.addEventListener('drop', function(ev){
+  if (!hasFiles(ev)) return; var c = dropCard(ev); hl(null); if (!c) return;
+  var ctx = ctxOf(c, true); if (!ctx) return;
+  ev.preventDefault(); ev.stopPropagation();
+  var files = Array.prototype.filter.call(ev.dataTransfer.files || [], function(f){ return EST_FILE.test(s(f.name)); });
+  if (!files.length) { toast('Drop a PDF or Word estimate here.', true); return; }
+  files.forEach(function(f){ take(f, ctx, 'drop'); });
+}, true);
+
+/* ── 2. the one-time fill of bare job rows from their estimates ── */
+var FLAG = 'gc_fieldfix_mig_v1', LOG = 'gc_fieldfix_mig_log';
+function named(p){ var n = low(p.name); return !n || n === low(p.client) || n === low(p.company) || n === low(p.qbClient); }
+function jobName(client, estName, st){
+  var nm = s(estName).replace(/\s+[—-]\s+final quote$/i, ''), street = s(st).split(',')[0].trim();
+  if (nm && low(nm) !== low(client) && !/^estimate$/i.test(nm)) return (!client || low(nm).indexOf(low(client)) >= 0) ? nm : client + ' — ' + nm;
+  return client ? client + (street ? ' — ' + street : '') : street;
+}
+function rawProjects(){ try { return Promise.resolve(typeof W._gcProjectsRaw === 'function' ? W._gcProjectsRaw() : (W.idbGet ? W.idbGet('projects') : null)).then(function(v){ return Array.isArray(v) && v.length ? v : arr(C().projects); }, function(){ return arr(C().projects); }); } catch (e) { return Promise.resolve(arr(C().projects)); } }
+function allEstimates(){
+  var mem = Array.isArray(W._gcEstimatesState) && W._gcEstimatesState.length ? W._gcEstimatesState : arr(C().estimates);
+  try { return Promise.resolve(W.idbGet ? W.idbGet('estimates') : null).then(function(v){ var by = {}; arr(v).concat(mem).forEach(function(e){ if (e && e.id) by[e.id] = e; }); return Object.keys(by).map(function(k){ return by[k]; }); }, function(){ return mem; }); } catch (e) { return Promise.resolve(mem); }
+}
+function plan(projects, ests){
+  var out = [];
+  projects.forEach(function(p){
+    if (!p || !p.id || p.deleted || /lost|complete|closed|cancel/i.test(s(p.status))) return;
+    var nm = named(p), noSite = !site(p.address);
+    if (!nm && !noSite) return;
+    var eid = s(p.estimateId || p._lastEstId);
+    var es = ests.filter(function(e){ return e && !e.deleted && !e.isTemplate && e._isDraft !== true && (s(e.pid) === s(p.id) || (eid && s(e.id) === eid)); })
+      .sort(function(a, b){ return s(b.updatedAt || b.savedAt || b.date).localeCompare(s(a.updatedAt || a.savedAt || a.date)); });
+    if (!es.length) return;
+    var e = es[0], cust = s(p.client || p.company || p.qbClient), ch = {}, was = {};
+    if (nm) { var jn = jobName(cust, e.name, site(e.address)); if (jn && low(jn) !== low(p.name)) { ch.name = jn; was.name = s(p.name); } }
+    if (noSite && site(e.address)) {
+      ch.address = site(e.address); was.address = s(p.address);
+      if (s(p.address)) { if (!s(p.billingAddress)) ch.billingAddress = s(p.address); else if (low(p.billingAddress) !== low(p.address)) ch._fxOldAddress = s(p.address); }
+    }
+    if (!s(p.estimator) && s(e.estimator || e.by)) { ch.estimator = s(e.estimator || e.by); was.estimator = ''; }
+    if (!s(p.pm) && s(e.pm)) { ch.pm = s(e.pm); was.pm = ''; }
+    if (!s(p.estimateId)) { ch.estimateId = s(e.id); was.estimateId = ''; }
+    if (Object.keys(ch).length) out.push({ pid: s(p.id), po: s(p.autoPO), before: was, set: ch, estimateId: s(e.id), estimateName: s(e.name), otherEstimates: es.slice(1).map(function(x){ return { id: s(x.id), name: s(x.name), address: s(x.address) }; }) });
+  });
+  return out;
+}
+function migrate(o){
+  o = o || {};
+  return Promise.all([rawProjects(), allEstimates()]).then(function(v){
+    var all = v[0], changes = plan(all, v[1]);
+    if (!o.yes) return { dryRun: true, changes: changes };
+    if (!isAdmin()) return { ok: false, error: 'admin only', changes: changes };
+    if (viewingAs() || paused()) return { ok: false, error: 'not while viewing as someone or in data-entry mode', changes: changes };
+    var at = nowIso(), by = me(), map = {};
+    changes.forEach(function(c){ map[c.pid] = c; });
+    var put = function(p){ var c = p && map[s(p.id)]; return c ? Object.assign({}, p, c.set, { updatedAt: at, savedAt: at, _fxFilledAt: at }) : p; };
+    var next = all.map(put), done = { at: at, by: by, changed: changes.length, auto: !!o.auto };
+    try { W.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+    if (changes.length) {
+      try { if (W._setProjects) W._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(put) : prev; }); } catch (e) {}
+      try { if (W._crm && Array.isArray(W._crm.projects)) W._crm.projects = W._crm.projects.map(put); } catch (e) {}
+    }
+    return Promise.resolve(changes.length && W.idbSet ? W.idbSet('projects', next) : null).then(function(){
+      try { if (changes.length && W._supaUpsert) W._supaUpsert('projects', next); } catch (e) {}
+      var log = []; try { log = arr(JSON.parse(lsGet(LOG) || '[]')); } catch (e) {}
+      log = log.concat([{ at: at, by: by, auto: !!o.auto, changes: changes }]).slice(-20);
+      lsSet(LOG, JSON.stringify(log)); lsSet(FLAG, JSON.stringify(done));
+      try { if (W._supaUpsert) { W._supaUpsert(LOG, log); W._supaUpsert(FLAG, done); } } catch (e) {}
+      try { console.log('[GC] FIELDFIX one-time fill: ' + changes.length + ' job row(s) filled from their estimates', changes); } catch (e) {}
+      return { ok: true, changes: changes };
+    });
+  });
+}
+W._gcFieldFixMigrate = migrate;
+W._gcFieldFixPlan = function(){ return migrate({}); };
+/* once, on an admin's computer, a minute after sign-in (the cloud flag stops a second computer) */
+function auto(){
+  if (lsGet(FLAG) || !isAdmin() || viewingAs() || paused() || D.hidden) return;
+  if (!arr(C().projects).length) { later(auto, 60e3); return; }
+  var get = typeof W._gcCloudGet === 'function' ? Promise.resolve(W._gcCloudGet(FLAG)).catch(function(){ return null; }) : Promise.resolve(null);
+  get.then(function(v){ if (v && typeof v === 'object' && v.at) { lsSet(FLAG, JSON.stringify(v)); return; } return migrate({ yes: true, auto: true }); }).catch(function(){});
+}
+later(auto, 60e3);
+try { console.log('[GC] 📐 estimate PDFs on leads / bids → estimate + job · one-time job-row fill (patch FIELDFIX)'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-PRODSRC">
