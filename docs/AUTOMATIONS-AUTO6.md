@@ -28,7 +28,7 @@ What happens next depends on who called:
 
 The same steps are under Admin → the "📞 Missed-call text-back is waiting on Twilio" warning → Setup steps.
 
-1. Sign up at twilio.com with accounts@grayco-cs.com (company service accounts use accounts@) and upgrade the account.
+1. Sign up at twilio.com with replies@grayco-cs.com and upgrade the account.
 2. Phone Numbers → Buy a number: a 901 number with Voice and SMS.
 3. Messaging → Regulatory compliance → **A2P 10DLC**: register the brand (GrayCo Construction Services) and a "Customer care" campaign. US carriers block business texts until this is approved.
 4. On the number, under Voice → **A call comes in** → Webhook, HTTP POST:

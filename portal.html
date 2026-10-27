@@ -259,7 +259,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
   <main id="main">
     <div class="skel"></div><div class="skel"></div><div class="skel"></div>
   </main>
-  <footer class="lic" data-gc-brand="1"><b>GrayCo Construction Services, LLC</b> &middot; <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span><br><a href="tel:9015850944">(901) 585-0944</a> &middot; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769<br><span data-gc-legal-links="1" style="font-size:12px"><a href="/portal-terms.html" target="_blank" rel="noopener">Customer Portal Terms of Use</a> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a></span><br><span style="font-size:11px">Form rev. 10/26/2026</span></footer>
+  <footer class="lic" data-gc-brand="1"><b>GrayCo Construction Services, LLC</b> &middot; <span data-gc-addr>4007 Broadway Rd, Bartlett, TN 38135</span><br><a href="tel:9015850944">(901) 585-0944</a> &middot; <a href="mailto:office@grayco-cs.com">office@grayco-cs.com</a><br>TN #85034 BCB &middot; AR #0486990627 &middot; MS #27769<br><span data-gc-legal-links="1" style="font-size:12px"><a href="/portal-terms.html" target="_blank" rel="noopener">Customer Portal Terms of Use</a> &middot; <a href="/sub-terms.html" target="_blank" rel="noopener">Sub Portal Terms of Use</a> &middot; <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a> &middot; <a href="/sub-privacy.html" target="_blank" rel="noopener">Sub Portal Privacy Notice</a> &middot; <a href="/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a></span><br><span style="font-size:11px">Form rev. 10/26/2026</span></footer>
 </div>
 <script>
 (function(){
@@ -1687,102 +1687,6 @@ try {
 } catch (e) {}
 start();
 window._gcPortalRef = { reload: load, data: function(){ return D; } };
-})();
-</script>
-<script id="gc-portal-crew">
-/* patch SUBCONTACT — the customer's "Your crew" card (Home, right under the Project Manager card).
-   Owner: "all customer portals can have subcontractors' information for communication if requested and approved by
-   the PM." Before anything is shared the card is one small button, "Request your trade contacts" (it goes to the
-   PM to approve). Once approved it lists ONLY what the PM shared: the trade's company name, its trade, and the
-   contact person / phone / e-mail the PM ticked. The PM can take it back at any time (the card goes away).
-   Everything comes from /.netlify/functions/portal (action "crew") with the same link code or session. */
-(function(){
-'use strict';
-if (window.__GC_PCREW__) return; window.__GC_PCREW__ = true;
-var FN = '/.netlify/functions/portal', OFFICE = '901-585-0944';
-var token = '';
-try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (m) token = m[1]; } catch (e) {}
-try { if (!token) token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
-var PREVIEW = /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');
-function es(){ try { return localStorage.getItem('gc_lang') === 'es'; } catch (e) { return false; } }
-function sess(){ try { return token ? '' : (localStorage.getItem('gc_portal_s') || ''); } catch (e) { return ''; } }
-function pid(){ try { return String(window.PID || ''); } catch (e) { return ''; } }
-var D = null, card = null, busy = false, msg = { text: '', bad: false }, started = false, lastPid = '';
-function h(tag, attrs, kids){
-  var el = document.createElement(tag);
-  if (attrs) Object.keys(attrs).forEach(function(k){
-    var v = attrs[k]; if (v == null || v === false) return;
-    if (k === 'text') el.textContent = v;
-    else if (k === 'on') Object.keys(v).forEach(function(e){ el.addEventListener(e, v[e]); });
-    else if (k === 'href' && !/^(tel:|sms:|mailto:)/i.test(String(v))) return;
-    else el.setAttribute(k, v === true ? '' : String(v));
-  });
-  (kids || []).forEach(function(c){ if (c == null || c === false) return; el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
-  return el;
-}
-function dt(s){ var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString(es() ? 'es-US' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-function digits(p){ return String(p || '').replace(/[^0-9+]/g, ''); }
-function api(body){
-  return fetch(FN, { method: 'POST', headers: sess() ? { 'Content-Type': 'application/json', 'x-portal-session': sess() } : { 'Content-Type': 'application/json', 'x-portal-token': token },
-    body: JSON.stringify(Object.assign({ action: 'crew' }, PREVIEW ? { preview: true } : {}, sess() ? { projectId: pid() || undefined } : {}, body)), cache: 'no-store', credentials: 'omit' })
-    .then(function(r){ return r.json().catch(function(){ return null; }).then(function(j){ return { status: r.status, data: j || {} }; }); }, function(){ return { status: 0, data: { error: es() ? 'Sin conexión — revise su señal e intente otra vez.' : 'No connection — check your signal and try again.' } }; });
-}
-function load(){ return api({ op: 'state' }).then(function(r){ if (r.data && r.data.ok) { D = r.data; msg = { text: '', bad: false }; paint(); } }); }
-function ask(){
-  if (busy) return; busy = true; msg = { text: '', bad: false }; paint();
-  api({ op: 'request' }).then(function(r){
-    busy = false;
-    if (r.data && (r.data.ok || r.data.done)) { if (Array.isArray(r.data.crew)) D = r.data; msg = { text: r.data.done || r.data.error || '', bad: !r.data.ok && !r.data.done }; }
-    else msg = { text: (r.data && r.data.error) || ('That did not work — please try again, or call GrayCo ' + OFFICE + '.'), bad: true };
-    paint();
-  });
-}
-function person(c){
-  var kids = [h('div', { style: 'display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap' }, [
-    h('b', { style: 'font-size:15px', text: c.company }), c.trade ? h('span', { class: 'pill', text: c.trade }) : null])];
-  if (c.contact) kids.push(h('div', { class: 'muted', text: c.contact }));
-  var links = [];
-  if (c.phone) links.push(h('a', { class: 'btn', href: 'tel:' + digits(c.phone), text: (es() ? 'Llamar ' : 'Call ') + c.phone }), h('a', { class: 'btn', href: 'sms:' + digits(c.phone), text: es() ? 'Texto' : 'Text' }));
-  if (c.email) links.push(h('a', { class: 'btn', href: 'mailto:' + c.email, text: c.email }));
-  if (links.length) kids.push(h('div', { class: 'btns', style: 'flex-wrap:wrap' }, links));
-  return h('div', { class: 'gc-crew-row', style: 'border-top:1px solid #E6E0D2;padding-top:10px;display:flex;flex-direction:column;gap:6px' }, kids);
-}
-function paint(){
-  if (!D) return;
-  var crew = D.crew || [], c;
-  if (crew.length) {
-    c = h('section', { class: 'card', id: 'gcCrewCard' }, [h('h2', { text: es() ? 'Su equipo de trabajo' : 'Your crew' }),
-      h('div', { class: 'muted', text: es() ? 'Los oficios que trabajan en su proyecto. Su Gerente de Proyecto sigue siendo su contacto principal para horarios y preguntas.' : 'The trades working on your job. Your Project Manager is still your main contact for scheduling and questions.' })]
-      .concat(crew.map(person)));
-  } else if (D.canAsk || D.asked || msg.text) {
-    c = h('section', { class: 'card', id: 'gcCrewCard' }, [h('h2', { text: es() ? 'Hable con el equipo directamente' : 'Talk to the crew directly' }),
-      D.asked ? h('div', { class: 'muted', text: (es() ? 'Lo pidió el ' : 'You asked on ') + dt(D.asked.at) + (es() ? ' — su Gerente de Proyecto agregará aquí los contactos de su equipo.' : ' — your Project Manager will add your crew’s contacts here.') })
-              : h('div', { class: 'muted', text: es() ? '¿Quiere los teléfonos de los oficios que trabajan en su proyecto? Pídalos — su Gerente de Proyecto los aprueba.' : 'Want the phone numbers of the trades working on your job? Ask — your Project Manager approves it.' }),
-      D.canAsk ? h('button', { type: 'button', class: 'btn gold', id: 'gcCrewAsk', disabled: busy || undefined, text: busy ? (es() ? 'Un momento…' : 'One moment…') : (es() ? 'Pedir los contactos de los oficios' : 'Request your trade contacts'), on: { click: ask } }) : null]);
-  } else c = null;
-  if (c && msg.text) c.appendChild(h('div', { role: 'status', style: 'font-size:14px;font-weight:600;color:' + (msg.bad ? '#8a1c1c' : '#1D5E2C'), text: msg.text }));
-  if (card && card.parentNode) { if (c) card.parentNode.replaceChild(c, card); else card.parentNode.removeChild(card); }
-  card = c; place();
-}
-function pmCardEl(main){ var pm = main.querySelector('.pm'); return pm ? pm.closest('section.card') : null; }
-function place(){
-  var main = document.getElementById('main'); if (!main) return;
-  var t = document.getElementById('tabs'), anchor = (t && !t.hidden) ? pmCardEl(main) : null;
-  if (!card || !anchor) { if (card && card.parentNode) card.parentNode.removeChild(card); return; }
-  if (anchor.nextElementSibling !== card) anchor.parentNode.insertBefore(card, anchor.nextSibling);
-}
-function start(){
-  if (window.GCPartner || window.__GCG_WANT__) return;   /* only the customer's own job page */
-  if (started && sess() && pid() !== lastPid) { lastPid = pid(); D = null; msg = { text: '', bad: false }; if (card && card.parentNode) card.parentNode.removeChild(card); card = null; load(); return; }
-  if (started || !(token || sess())) return; var t = document.getElementById('tabs'); if (!t || t.hidden) return;
-  started = true; lastPid = pid(); load();
-}
-try {
-  new MutationObserver(function(){ start(); place(); }).observe(document.getElementById('main'), { childList: true, subtree: true });
-  var tb = document.getElementById('tabs'); if (tb) new MutationObserver(function(){ start(); place(); }).observe(tb, { attributes: true, subtree: true, attributeFilter: ['hidden', 'aria-selected'] });
-} catch (e) {}
-start();
-window._gcPortalCrew = { reload: load, data: function(){ return D; } };
 })();
 </script>
 <script id="gc-portal-gcp">
