@@ -131308,7 +131308,7 @@ function paintAll(force){
   try{
     var sig = ''; try{ sig = JSON.stringify([shown().map(function(x){ return [x.id, x.status, x.step, x.updatedAt]; }), notes, busy, isAdmin()]); }catch(e){}
     if(force || sig !== lastSig){ lastSig = sig; document.querySelectorAll('.' + SEC).forEach(function(x){ x.__h = ''; }); }
-    hostTodoTab(); hostOfficeTodo(); hostOfficeStatus(); hostGreen(); green();
+    /* patch TODONOAPPR: not in the To-Do tab / Office To-Do (the Approvals tab has them) */ hostOfficeStatus(); hostGreen(); green();
     var pv = document.getElementById(PREV); if(pv && pv.__id && !items().some(function(x){ return x.id === pv.__id; }) && !busy[pv.__id]) { var nt = pv.querySelector('._ap2PvNote'); if(nt && notes[pv.__id]) nt.textContent = notes[pv.__id]; pv.querySelectorAll('._ap2PvAct').forEach(function(b){ b.disabled = true; }); }
   }catch(e){}
 }
@@ -137526,7 +137526,7 @@ function teamHtml(st){
 function stripHtml(st){
   var c = st.counts, f = UI.filter;
   function chip(k, label, n, cls){ return '<button type="button" class="td2-chip ' + cls + (f === k ? ' on' : '') + (n ? '' : ' zero') + '" data-td2="chip" data-f="' + k + '"' + (k === 'appr' && c.apprSet ? ' title="' + esc(c.apprSet.tip) + '"' : '') + '><b>' + n + '</b><span>' + label + '</span></button>'; }
-  return chip('appr', 'Needs approval', c.appr, 'g') + chip('over', 'Overdue', c.over, 'r') + chip('today', 'Due today', c.today, 'a') + chip('week', 'This week', c.week, 'b') + chip('wait', 'Waiting on others', c.wait, 'n');
+  return /* patch TODONOAPPR: no "Needs approval" chip */ chip('over', 'Overdue', c.over, 'r') + chip('today', 'Due today', c.today, 'a') + chip('week', 'This week', c.week, 'b') + chip('wait', 'Waiting on others', c.wait, 'n');
 }
 function headHtml(host, st){
   var who = myName() + (isOffice() ? ' (office)' : isAdmin() ? ' (admin)' : '');
@@ -137586,13 +137586,27 @@ function hosts(){
   var f = D.getElementById('_gcTD2Ov'); if (f) out.push([f, 'field']);
   return out;
 }
+/* patch TODONOAPPR: the To-Do shows no approvals (they are on the Approvals tab); a view of the state, the data untouched */
+var NAV = null;
+function noAppr(st){
+  if (!st || !Array.isArray(st.items)) return st;
+  if (NAV && NAV.src === st) return NAV.v;
+  function keep(x){ return !(x && x.cat === 'appr'); }
+  var v = Object.assign({}, st); v.items = st.items.filter(keep);
+  if (Array.isArray(st.all)) v.all = st.all.filter(keep);
+  if (Array.isArray(st.snoozed)) v.snoozed = st.snoozed.filter(keep);
+  var c = Object.assign({}, st.counts || {}); c.over = c.today = c.week = c.wait = c.total = c.mine = 0;
+  v.items.forEach(function(g){ if (g.waiting) { c.wait++; return; } c.total++; if (g.dueCls === 'over') c.over++; else if (g.dueCls === 'today') c.today++; else if (g.dueCls === 'week') c.week++; if (g.mine) c.mine++; });
+  c.apprRows = 0; c.todos = c.total; c.now = c.over + c.today; v.counts = c;
+  NAV = { src: st, v: v }; return v;
+}
 var painting = false;
 function paint(force){
   if (painting) return; painting = true;
   try {
     var hs = hosts(); if (!hs.length) return;
     if (force) dirty = true;
-    var st = state();
+    var st = noAppr(state());   /* patch TODONOAPPR */
     hs.forEach(function(h){ try { var r = ensureRoot(h[0], h[1]); paintRoot(r, st); } catch (e) { warn(e); } });
   } catch (e) { warn(e); } finally { painting = false; }
 }
@@ -158808,8 +158822,9 @@ function pinRoots(){
     if (!pin) { pin = D.createElement('div'); pin.className = 'apx-pin'; root.insertBefore(pin, head.nextSibling); }
     else if (pin.previousElementSibling !== head) root.insertBefore(pin, head.nextSibling);
     var sec = root.querySelector(':scope > ._gcAp2Sec');
+    if (sec) { sec.remove(); sec = null; }   /* patch TODONOAPPR: the customer e-mail cards are on the Approvals tab */
     var saved = ACTS; ACTS = {};
-    var P = pinHtml(!sec);
+    var P = pinLine();
     Object.keys(ACTS).forEach(function(k){ PIN_ACTS[k] = ACTS[k]; }); ACTS = saved;
     var ae = D.activeElement, typing = !!(ae && pin.contains(ae) && ae.tagName === 'INPUT');   /* patch INLINEAPPR: never redraw under a box being typed in */
     if (pin.__h !== P.h && !typing) { pin.__h = P.h; pin.innerHTML = P.h; }
@@ -158822,6 +158837,12 @@ function pinRoots(){
   decorateAp2();
 }
 function ACTS_PIN_RESET(){ PIN_ACTS = {}; }
+/* patch TODONOAPPR: the To-Do's one line — the same N as the Approvals badge */
+function pinLine(){
+  var n = 0; try { n = typeof W._gcApprovalCount === 'function' ? W._gcApprovalCount() : ((theSet() || {}).total || 0); } catch (e) {}
+  n = Math.max(0, (+n || 0) - pendCount());
+  return { n: n, h: '<button type="button" class="apx-pin-1" data-apx-go="1">' + (n ? '✅ ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting → <u>Open Approvals</u>' : '✅ No approvals waiting · <u>Approvals tab</u>') + '</button>' };
+}
 /* the To-Do's own approval lines are in the pin: not shown a second time below */
 function hideTwins(root){
   var keys = {}; td2Items().forEach(function(x){ if (x && x.cat === 'appr' && !x.waiting) keys[x.key] = 1; });
@@ -158916,6 +158937,7 @@ css.textContent = ''
   + '.apx-more{display:block;width:100%;border:1px dashed #16a34a;background:#fff;color:#14532d;border-radius:10px;padding:10px;font-weight:800;font-size:14px;cursor:pointer;margin:0 0 6px;min-height:44px}'
   + '.apx-pin .apx-row{padding:9px 10px;margin:0 0 8px}.apx-pin .apx-b{padding:7px 10px;min-height:36px}.apx-pin .apx-bs{margin-top:7px}'
   + '.apx-pin-n{font-size:13px;font-weight:700;color:#166534;margin:2px 0 0}'
+  + '.td2 > .apx-pin{padding:0;border:0;background:none;margin:0 0 8px}.apx-pin-1{display:block;width:100%;text-align:left;border:1px solid #86efac;background:#f0fdf4;color:#14532d;border-radius:10px;padding:8px 12px;font:700 14px Inter,-apple-system,Arial,sans-serif;cursor:pointer}.apx-pin-1:hover{background:#dcfce7}.td2 > .apx-pin.empty .apx-pin-1{border-color:#bbf7d0;color:#166534;font-weight:600;font-size:13px}'   /* patch TODONOAPPR */
   + '.apx-lnk{background:none;border:none;color:#2563eb;font-weight:700;font-size:13px;text-decoration:underline;cursor:pointer;padding:4px}'
   + '.apx-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.apx-links button{border:1px solid #cbd5e1;background:#f8fafc;color:#1e3a8a;border-radius:8px;padding:7px 10px;font-weight:700;font-size:12px;cursor:pointer;min-height:36px}'
   + '.apx-nb{margin-left:auto;background:#16a34a;color:#fff;font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}'
@@ -175593,14 +175615,14 @@ function counts(){
   var T = W._gcTD2; if (!T || typeof T.counts !== 'function') return null;
   var c; try { c = T.counts(); } catch (e) { return null; } if (!c) return null;
   var appr = Math.max(0, c.appr || 0), todos = c.todos != null ? c.todos : Math.max(0, (c.total || 0) - (c.apprRows || 0));
-  return { n: todos + appr, todos: todos, appr: appr };
+  return { n: todos, todos: todos, appr: appr };   /* patch TODONOAPPR: approvals have their own badge */
 }
 function tick(){
   try {
     if (D.hidden) return;
     var k = counts(); if (!k) return;
     if (!els.length || els.some(function(e){ return !e.isConnected; })) els = findEls();
-    var tt = k.todos + ' to-do' + (k.todos === 1 ? '' : 's') + ' · ' + k.appr + ' approval' + (k.appr === 1 ? '' : 's');
+    var tt = k.todos + ' to-do' + (k.todos === 1 ? '' : 's');   /* patch TODONOAPPR */
     els.forEach(function(el){
       var b = el.querySelector('.gc-td-nb');
       if (!k.n) { if (b) b.remove(); return; }
@@ -178660,13 +178682,25 @@ function workHours(a, b){
   return n;
 }
 function queueAll(){ try { var c = W._gcCustApprovals ? W._gcCustApprovals() : null; return arr(c && c.all); } catch (e) { return []; } }
-function invById(id){ var l = arr((W._crm || {}).invoices); for (var i = 0; i < l.length; i++) if (l[i] && s(l[i].id) === s(id)) return l[i]; return null; }
+/* patch APPRFAST: one index of the queue / sub approvals / invoices per paint (300 ms), the first match wins as before */
+var IDX = null;
+function idx(){
+  var now = Date.now(), inv = (W._crm || {}).invoices;
+  if (IDX && now - IDX.at < 300 && IDX.invL === inv) return IDX;
+  var q = {}, sub = {}, iv = {};
+  queueAll().forEach(function(x){ var k = s(x && x.id); if (!(k in q)) q[k] = x; });
+  lsList('gc_sub_approvals').forEach(function(x){ if (!x) return; var a = s(x.id), b = s(x.invId); if (!(a in sub)) sub[a] = x; if (!(b in sub)) sub[b] = x; });
+  arr(inv).forEach(function(x){ if (!x) return; var k = s(x.id); if (!(k in iv)) iv[k] = x; });
+  IDX = { at: now, invL: inv, q: q, sub: sub, inv: iv };
+  return IDX;
+}
+function invById(id){ return idx().inv[s(id)] || null; }
 function rawFor(r){
   if (!r) return null;
   if (r.__raw) return r.__raw;
   var id = s(r.id);
-  if (r.src === 'queue') return queueAll().filter(function(x){ return s(x.id) === id; })[0] || null;
-  if (r.src === 'sub') return lsList('gc_sub_approvals').filter(function(x){ return s(x.id) === id || s(x.invId) === id; })[0] || null;
+  if (r.src === 'queue') return idx().q[id] || null;
+  if (r.src === 'sub') return idx().sub[id] || null;
   if (r.src === 'inv') return invById(id);
   if (r.src === 'exp') { try { return arr(W._gcExpenseApprovalsFor && W._gcExpenseApprovalsFor()).filter(function(x){ return s(x.id || x.expId) === id; })[0] || null; } catch (e) { return null; } }
   return null;
