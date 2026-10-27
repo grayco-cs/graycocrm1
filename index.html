@@ -124862,6 +124862,9 @@ function pull(force){
     lsSet(K_CACHE, { items: S.items.filter(function(x){ return x.status === 'new' || x.status === 'imported'; }).slice(-120).map(function(x){ return { id: x.id, status: x.status, title: x.title, bidDue: x.bidDue, type: x.type, source: x.source, portal: x.portal, receivedAt: x.receivedAt, rev: x.rev }; }),
       watch: S.watch, settings: S.settings, notices: [], portal: S.portal, alerts: null, at: S.at, me: S.me });
     lastErr = '';
+    /* patch INBOXCHEAP */ var sig = S.items.map(function(x){ return x ? (x.id + ':' + x.status + ':' + (x.updatedAt || x.receivedAt || '')) : ''; }).join('|');
+    if (sig === pull._sig && pull._sigAt && Date.now() - pull._sigAt < 600000) return null;   /* nothing changed on the server: no import, no re-save */
+    pull._sig = sig; pull._sigAt = Date.now();
     return hydrated().then(importItems).then(function(){ return readList('_setLeads'); });
   }).catch(function(e){ lastErr = s(e && e.message) || 'could not reach the lead inbox'; }).then(function(){ busy = false; render(); badge(); alertNew(); return true; });
 }
@@ -125837,7 +125840,7 @@ function start(){
       if (document.hidden || navigator.onLine === false || busy) return;
       var A = window.__GC_AUTH__; if (!A || !A.email || !A.email()) return;
       var fast = isAdmin(); if (!fast) { try { var sc = window._gcLeadScope && window._gcLeadScope.of(); fast = !!(sc && sc.kind && sc.kind !== 'mine'); } catch (e) {} }
-      if (Date.now() - lastPull > (fast ? 25000 : 300000)) pull(true);
+      if (Date.now() - lastPull > 7200000) pull(true);   /* patch INBOXCHEAP: owner 10/27 — check the lead list every 2 hours, not every 25 s */
     } catch (e) { warn(e); }
   }, 10000);
 }
