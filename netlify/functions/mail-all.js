@@ -72,6 +72,8 @@ async function syncBox(box, state, match, deadline){
   if (rows.length) await X.addRows(X.boxKey(box), rows, X.MAX_BOX);
   /* patch SENTLOG: a reply in any GrayCo mailbox answers a waiting request */
   try { const inb = rows.filter(r => r.dir === 'in'); if (inb.length) await require('./_lib/sentlog.js').onInbound(inb); } catch (e) {}
+  /* patch SUBINV: invoices / receipts / orders in the office@ mailbox → queued for the money readers */
+  try { st.money = await require('./_lib/money-box.js').queue(box, rows); } catch (e) {}
   st.at = new Date().toISOString(); st.n = rows.length; st.err = rows.length < ids.length && Date.now() > deadline ? 'time ran out — the rest next run' : '';
   if (rows.length < ids.length && Date.now() > deadline) st.historyId = hid || '';   /* not all read: keep the old point so nothing is skipped */
   return st;
@@ -92,7 +94,16 @@ async function runSync(opts){
     catch (e) { done[box] = Object.assign({}, state[box] || {}, { at: new Date().toISOString(), err: s(e && e.message).slice(0, 200) }); }
   }
   await X.cas(X.STATE_KEY, v => Object.assign({}, v || {}, done));
-  return { ok: true, synced: Object.keys(done).length, boxes: boxes.length, errors: Object.keys(done).filter(k => done[k].err).length };
+  /* patch SUBINV: the queued office@ invoices are read in the background (15 minutes allowed); inline only when that is not there */
+  let money = 0; Object.keys(done).forEach(k => { money += done[k].money || 0; });
+  try {
+    const MB = require('./_lib/money-box.js'), q = await require('./portal.js')._core.kvListRead(MB.QKEY);
+    if (q && q.list.some(x => x && !x.done)) {
+      const bg = await require('./bid-inbox.js')._lib.handOffJson({ type: 'money.pull' });
+      if (!bg && deadline - Date.now() > 4000) await MB.drain({ budgetMs: deadline - Date.now() - 2000, max: 3 });
+    }
+  } catch (e) {}
+  return { ok: true, synced: Object.keys(done).length, boxes: boxes.length, errors: Object.keys(done).filter(k => done[k].err).length, moneyQueued: money };
 }
 
 /* links an admin made + the PM rule */

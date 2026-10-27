@@ -3,7 +3,8 @@
    one phone push listing them. Each line is a link that opens that exact item in the CRM (#appr=<id>) — the CRM asks for
    the usual sign-in, and the approval is given there, never from the e-mail. Who gets what is the approvals list's
    own rule (and in its order: 🔴 ASAP, 🟠 Soon, ⚪ Routine, newest first — _lib/appr-order.js): the job's PM for a PM step; Wesley and Nick for an admin step (and the office too when the item lets the
-   office approve, or it waited 24 hours); sub invoices waiting on a PM; payroll runs waiting on an admin.
+   office approve, or it waited 24 hours); JOB COSTS (sub invoices, job expenses) to the job's PM, then the office after 24 h
+   (or at once with no PM) — an admin only as that job's PM (patch SUBINV); payroll runs waiting on an admin.
    Staff only (every address @grayco-cs.com), so data-entry mode lets it through. */
 'use strict';
 const A = require('./auto-common.js');
@@ -21,7 +22,7 @@ async function run(opts){
   if (c.wd === 'Sun') return { ok: true, skipped: 'Sunday' };
   const data = await C.crmData(true);
   const cur = await C.kvListRead(C.AQ_KEY);
-  const extra = await C.kvRead(['gc_sub_approvals', 'payrollRuns']);
+  const extra = await C.kvRead(['gc_sub_approvals', 'gc_expense_approvals', 'payrollRuns']);
   const admins = C.adminEmails(data).filter(staffEmail), office = C.officeEmails(data).filter(staffEmail);
   const users = arr(data.users), byName = {};
   users.forEach(function(u){ if (u && u.name && staffEmail(u.email)) byName[low(u.name)] = low(u.email); });
@@ -37,10 +38,23 @@ async function run(opts){
     const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= 24 * 3600e3);
     if (x.officeOk === true || esc24) office.forEach(function(e){ add(e, it); });
   });
+  /* patch SUBINV (owner 10/27): JOB COSTS (sub invoices, job expenses / receipts) go to the job's PM; after 24 hours without
+     the PM — or at once when the job has no PM — to the OFFICE. An admin gets one only as that job's PM — never as the extra / default approver. */
+  const DAY = 24 * 3600e3;
+  const jobCost = function(pmName, since, it){
+    const e = byName[low(pmName)], late = since && now - since >= DAY;
+    if (e) add(e, it);
+    if (!e || late) office.forEach(function(x){ add(x, it); });
+  };
   arr(extra.gc_sub_approvals).forEach(function(a){
     if (!a || a.status !== 'pending_pm') return;
     const it = { title: '👷 Sub invoice ' + usd(a.amt) + ' from ' + (s(a.sub) || 'a sub'), sub: s(a.jobName || a.pmName), link: base + '/#todo', raw: { kind: 'sub_invoice', urgency: a.urgency, createdAt: a.createdAt } };
-    const e = byName[low(a.pmName)]; if (e) add(e, it); else admins.forEach(function(x){ add(x, it); });
+    jobCost(a.pmName, +a.createdAt || Date.parse(a.createdAt) || 0, it);
+  });
+  arr(extra.gc_expense_approvals).forEach(function(a){
+    if (!a || (a.status !== 'pending_pm' && a.status !== 'escalated')) return;
+    const it = { title: '🧾 Job expense ' + usd(a.amount) + (a.payee ? ' — ' + s(a.payee) : ''), sub: s(a.desc || a.pm), link: base + '/#todo', raw: { kind: 'expense', createdAt: a.enteredAt } };
+    jobCost(a.status === 'escalated' ? '' : a.pm, Date.parse(a.enteredAt) || 0, it);
   });
   arr(extra.payrollRuns).forEach(function(r){
     if (!r || r.status !== 'pending') return;
