@@ -77520,6 +77520,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   /*PJ*/var _gcLastInput=0; ['pointerdown','keydown','wheel','touchstart'].forEach(function(ev){ try{ window.addEventListener(ev,function(){ _gcLastInput=window.__gcLastInput=Date.now(); },{capture:true,passive:true}); }catch(e){} });
   window._gcMaybeMorningGreeting = function(){
     if(_greetShownThisSession) return;         // never twice in one page load
+    /* patch NOGREETFIELD */ try{ if(document.documentElement.classList.contains('_fieldmode')) return; }catch(e){}
     var s=state();
     if(s.greeted) return;
     if(typeof isAdminLike==='function' && !isAdminLike()) return;
