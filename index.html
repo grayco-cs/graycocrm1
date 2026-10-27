@@ -133,7 +133,7 @@ html.gcl-leads:not(.gcl-classic-ok) #gcx-ldel-bar { display: none !important; }
    Static pages: <span data-gc-addr>…</span> / <span data-gc-street>…</span> are filled in. */
 (function(){
   if (window._gcCompanyAddress) return;
-  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' };
+  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
   var LK = 'gc_company_address';
   function s(v){ return v == null ? '' : String(v).trim(); }
   function merge(v){
@@ -144241,7 +144241,7 @@ function plat(v){ return SC.plat(v) || { v: v, l: v, ic: '' }; }
 function proj(id){ return X.projects().filter(function(p){ return s(p.id) === s(id); })[0] || null; }
 function permOk(pid){ var r = MK.get('perms', 'job_' + pid), p = proj(pid); return !!((r && r.marketing === true) || (p && (p.marketingOk === true || p.mktPhotoOk === true))); }
 function centralToday(){ try { return W._gcCompanyAddress.centralDay(new Date()); } catch (e) { return X.today(); } }
-function addrCfg(){ try { return W._gcCompanyAddress.config(); } catch (e) { return { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' }; } }
+function addrCfg(){ try { return W._gcCompanyAddress.config(); } catch (e) { return { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' }; } }
 var STATE = { st: null, lib: null, wk: '', tab: {}, sel: {}, f: { q: '', job: '', type: '', tag: '', perm: '', best: false, from: '', to: '' }, busy: '' };
 function loadStatus(force){ if (STATE.st && !force && Date.now() - STATE.st.at < 60000) return; api('soc', { op: 'status' }).then(function(j){ STATE.st = Object.assign({ at: Date.now() }, j && j.ok ? j : { err: (j && j.error) || 'not reachable', platforms: {} }); if (/^(socweek|connect|mktsettings|home)$/.test(UI.sec)) draw(); }); }
 function loadLib(force){ if (STATE.lib && !force) return; STATE.lib = { tags: {}, testimonials: [], loading: true }; api('soc', { op: 'library' }).then(function(j){ STATE.lib = j && j.ok ? j : { tags: {}, testimonials: [], err: j && j.error }; if (UI.sec === 'media' || UI.sec === 'socweek') draw(); }); }
