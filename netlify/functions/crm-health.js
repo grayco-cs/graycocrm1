@@ -42,7 +42,7 @@ exports.handler = async function(event){
     if (isScheduled(event)) { const out = await daily(); try { console.log('[crm-health]', JSON.stringify(out)); } catch (e) {} return reply(200, headers, Object.assign({ ok: true }, out)); }
     const who = await require('./bid-inbox.js')._test.staffAuth(event);
     if (!who.ok) return reply(who.code || 401, headers, { ok: false, error: who.error });
-    if (!who.admin) return reply(403, headers, { ok: false, error: 'Only an owner or admin can see the CRM health.' });
+    if (!who.admin && !/^owner$/i.test(String(who.role || ''))) return reply(403, headers, { ok: false, error: 'Only an owner or admin can see the CRM health (signed in as ' + (who.email || '?') + ', role ' + (who.role || '?') + ').' });
     if (event.httpMethod === 'POST') {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
       if (b.act !== 'send') return reply(400, headers, { ok: false, error: 'Unknown request.' });
