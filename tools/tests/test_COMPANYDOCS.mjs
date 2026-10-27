@@ -183,8 +183,8 @@ console.log('B1. admin');
   ok(c.errs.filter(e => /COMPANYDOCS|_gcCompanyLib|gc-cl/.test(e)).length === 0, 'no page errors from the library');
   if (outDir) {   /* the deliverable copies: blanks unfilled (the test values above are cleared first) */
     SRV.cfg = {}; await p.evaluate(() => window._gcCompanyLib.refresh()); await sleep(500);
-    /* the files are kept for a while: print them with the address the company uses from the move on (Admin → Company address) */
-    if (process.env.GC_ADDR_NEXT !== '0') await p.evaluate(() => { const a = window._gcCompanyAddress, c = a.config(); if (c.next) a.set({ current: c.next, switchOn: '' }); });
+    /* the address follows the company-address setting; GC_ADDR_NEXT=1 prints with the scheduled next address instead */
+    if (process.env.GC_ADDR_NEXT === '1') await p.evaluate(() => { const a = window._gcCompanyAddress, c = a.config(); if (c.next) a.set({ current: c.next, switchOn: '' }); });
     fs.mkdirSync(outDir, { recursive: true });
     const pg = await c.ctx.newPage();
     for (const [id, file] of [['safety_program', 'GrayCo Construction Safety Program (DRAFT).pdf'], ['toolbox_all', 'GrayCo Toolbox Talks (12).pdf']]) {

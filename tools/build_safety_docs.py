@@ -2,7 +2,7 @@
 """COMPANYDOCS: the Construction Safety Program (DRAFT) and the 12 toolbox talks as Word files, from the same text the CRM uses
 (tools/companydocs_safety.py).
 
-    python3 tools/build_safety_docs.py <out dir> [--address "4014 Broadway Rd, Bartlett, TN 38135"]
+    python3 tools/build_safety_docs.py <out dir> [--address "4007 Broadway Rd, Bartlett, TN 38135"]
 
 Writes "GrayCo Construction Safety Program (DRAFT).docx" and "GrayCo Toolbox Talks (12).docx". The PDFs come from the CRM itself
 (node tools/tests/test_COMPANYDOCS.mjs <build> --out <dir>), so they carry exactly what the CRM prints.
@@ -21,7 +21,7 @@ import companydocs_safety as S
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 out = sys.argv[1] if len(sys.argv) > 1 else '.'
-ADDR = sys.argv[sys.argv.index('--address') + 1] if '--address' in sys.argv else '4014 Broadway Rd, Bartlett, TN 38135'
+ADDR = sys.argv[sys.argv.index('--address') + 1] if '--address' in sys.argv else '4007 Broadway Rd, Bartlett, TN 38135'
 LABEL = dict(S.FIELDS)
 NAVY = RGBColor(0x0F, 0x24, 0x40)
 RED = RGBColor(0xB9, 0x1C, 0x1C)
