@@ -6,7 +6,7 @@ Anyone can e-mail a receipt photo or PDF to **receipts@grayco-cs.com**. A sub ca
   - **🔍 Read the receipt** fills in the vendor, amount and date. If the subject has a job's PO, the job is picked too.
   - Check the job, then tap **✅ Confirm**. The expense is saved on the job with the receipt file.
   - **Not an expense** clears it.
-- **Sub invoices** go on ▥ Invoices as a *received* sub invoice with the PDF, matched to the job by its PO when the subject or file name carries it. Approve them as usual.
+- **Sub invoices** are read and booked by themselves on the job their address matches (Word, PDF, photo, Excel, Google link or typed in the e-mail) — or wait in ✅ Approvals as *Match this invoice*. See **docs/SUBINV-SETUP.md** (patch SUBINV), which also covers office@.
 - Nothing is sent to anyone. Data-entry mode makes no difference here.
 
 ## Setup (the groups receipts@ and invoices@ already exist)

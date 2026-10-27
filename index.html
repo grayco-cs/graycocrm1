@@ -133,7 +133,7 @@ html.gcl-leads:not(.gcl-classic-ok) #gcx-ldel-bar { display: none !important; }
    Static pages: <span data-gc-addr>…</span> / <span data-gc-street>…</span> are filled in. */
 (function(){
   if (window._gcCompanyAddress) return;
-  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' };
+  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
   var LK = 'gc_company_address';
   function s(v){ return v == null ? '' : String(v).trim(); }
   function merge(v){
@@ -19258,6 +19258,7 @@ if (!localStorage.getItem("_helpShown")) {
         { icon: "🏦", label: "Bank / ACH details", fn: function(){ window._gcEditACHDetails && window._gcEditACHDetails(); } },
         { icon: "💾", label: "Import / Export Data", fn: function(){ window.gcImportExport && window.gcImportExport(); } },
         { icon: "🎓", label: "Guided Tour", fn: function(){ window.gcGuidedTour && window.gcGuidedTour(); } },
+        { icon: "🖨", label: "Print pack", fn: function(){ if (window._gcOpenPrintPack) window._gcOpenPrintPack(); else alert("Still loading, try again in a moment."); } },   /* patch PRINTPACK */
         { icon: "❓", label: "Help Center", fn: function(){ window._gcOpenHelp && window._gcOpenHelp(); } },
         { icon: "🎓", label: "Training", fn: function(){ if (window._gcTrain) window._gcTrain.open(); else alert("Still loading, try again in a moment."); } },   /* patch TRAIN */
         { icon: "🎛", label: "Reset Button Positions", fn: function(){
@@ -19292,7 +19293,7 @@ if (!localStorage.getItem("_helpShown")) {
         var _isOwner = !!(_u && (String(_u.payType||'').toLowerCase()==='owner' || _u.role==='Admin' || /office/i.test(_u.role||'')));
         if(!_isOwner){ items = items.filter(function(it){ return !it.adminOnly; }); }
       })();
-      var _hubGroups = {"Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
+      var _hubGroups = {"Print pack": "Help & Tools", "Job Profile": "Daily Work", "Upload Documents": "Daily Work", "Search Everything": "Daily Work", "Find a Sub": "Daily Work", "Sub Sign-Up": "Daily Work", "Sub Details": "Daily Work", "Contract & Doc Templates": "Daily Work", "Approvals": "Daily Work", "Review Queue": "Daily Work", "Alerts": "Daily Work", "Notifications": "Daily Work", "Recover Approvals": "Daily Work", "Import CompanyCam Jobs": "Daily Work", "Owner Inbox": "Daily Work", "My Daily Digest": "Daily Work", "Project Payments": "Money & Invoices", "All Company Invoices": "Money & Invoices", "Financials": "Money & Invoices", "Cash Position": "Money & Invoices", "Cash Flow": "Money & Invoices", "P&L (auto)": "Money & Invoices", "Overdue Reminders": "Money & Invoices", "Merge Draw Invoices": "Money & Invoices", "Statement Reconcile": "Money & Invoices", "Credit Cards": "Money & Invoices", "Match to Jobs": "Money & Invoices", "Bank Accounts": "Money & Invoices", "Monthly Bank Check": "Money & Invoices", "Bank / ACH details": "Money & Invoices", "Employee Pay": "Pay & Commissions", "1099 Reports": "Pay & Commissions", "PM Commission Setup": "Pay & Commissions", "Set Flat Commission": "Pay & Commissions", "Job Source (commission)": "Pay & Commissions", "Pay Structures": "Pay & Commissions", "Move Job Schedule": "Schedule", "Print Schedule": "Schedule", "Add to iPhone Calendar": "Schedule", "Edit Schedule": "Schedule", "Fix Schedule Items (no job)": "Schedule", "Recover Schedule": "Schedule", "Download Schedule PDF": "Schedule", "Run the Office (Automation)": "Automation", "Automation Inbox": "Automation", "Business Brain (issues)": "Automation", "Rate Category Check": "Automation", "Team Status": "Data & Setup", "Sync my Google Docs": "Data & Setup", "Import Google Docs": "Data & Setup", "Merge Records": "Data & Setup", "Merge Projects": "Data & Setup", "Merge Customers": "Data & Setup", "Contract Overrides": "Data & Setup", "Project CRMs": "Data & Setup", "Cloud Backups": "Data & Setup", "Restore from Backup": "Data & Setup", "Download Backup": "Data & Setup", "Import / Export Data": "Data & Setup", "Explain Mode (help)": "Help & Tools", "Guided Tour": "Help & Tools", "Help Center": "Help & Tools", "Training": "Help & Tools", "Test the CRM": "Help & Tools", "System Health Check": "Help & Tools", "Reset Button Positions": "Help & Tools", "Purge Test Data": "Help & Tools", "Force-Clean Cloud": "Help & Tools"};
       var _hubOrder = ['Daily Work','Money & Invoices','Pay & Commissions','Schedule','Automation','Data & Setup','Help & Tools'];
       // Group items, then render each section with a header.
       var _bySec = {}; items.forEach(function(it){ var g=_hubGroups[it.label]||'More'; (_bySec[g]=_bySec[g]||[]).push(it); });
@@ -142571,7 +142572,7 @@ VIEWS.brand = function(){
   var links = cfg().printLinks || {}, portal = 'https://portal.grayco-cs.com/', web = utm(B.web, 'qr', 'print', 'brand'), rl = reviewLink();
   var h = '<div class="gmt-two"><div class="gmt-card"><h2>🖨 Print pack</h2><div class="gmt-muted">The GrayCo Print Pack (OFFICE versions print on a desk printer; PRINTSHOP versions have bleed + crop marks). Paste where each folder lives (Company Docs / Google Drive) once.</div>' +
     PRINT_PACK.map(function(p, i){ var u = s(links[p[1]]); return '<div class="gmt-check"><div style="flex:1"><b>' + esc(p[0]) + '</b><div class="gmt-muted">' + esc(p[1]) + '</div>' + (full() ? '<div class="gmt-row"><input data-pl="' + esc(p[1]) + '" value="' + esc(u) + '" placeholder="https://… link to the folder" style="flex:1;min-width:180px"><button class="gmt-btn o" data-a="pl-save" data-k="' + esc(p[1]) + '">Save</button>' + (u ? '<button class="gmt-btn" data-a="open" data-url="' + esc(u) + '">Open</button>' : '') + '</div>' : '') + '</div></div>'; }).join('') +
-    '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn o" data-a="go-docs">Company Docs</button></div></div>';
+    '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn" data-a="pp-open">🖨 Open the Print pack (PDFs + links)</button><button class="gmt-btn o" data-a="go-docs">Company Docs</button></div></div>';
   h += '<div class="gmt-card"><h2>🎨 Logos & colors</h2><div class="gmt-row" style="align-items:center"><img src="grayco-logo.jpg" alt="GrayCo logo" style="height:70px;border:1px solid #dce3ee;border-radius:6px"><div style="background:' + B.navy2 + ';padding:10px;border-radius:6px"><img src="img/grayco-logo-white.png" alt="GrayCo white logo" style="height:50px"></div></div>' +
     '<div class="gmt-row" style="margin-top:8px"><a class="gmt-btn o" style="text-decoration:none" href="grayco-logo.jpg" download>⬇ Logo (JPG)</a><a class="gmt-btn o" style="text-decoration:none" href="img/grayco-logo-white.png" download>⬇ White logo (PNG)</a><a class="gmt-btn o" style="text-decoration:none" href="portal-logo.png" download>⬇ Portal logo</a></div>' +
     '<div class="gmt-row" style="margin-top:10px">' + [['Navy', B.navy], ['Dark navy', B.navy2], ['Gold', B.gold], ['Ink', B.ink], ['Light', B.soft]].map(function(c){ return '<div style="text-align:center;font-size:11px"><div style="width:64px;height:40px;border-radius:6px;border:1px solid #ccc;background:' + c[1] + '"></div>' + c[0] + '<br><code>' + c[1] + '</code></div>'; }).join('') + '</div>' +
@@ -142732,6 +142733,125 @@ W._gcOpenMarketing = open;
 try { console.log('[GC] 📣 Marketing ready (patch MKT): _gcMkt.open(section)'); } catch (e) {}
 })();
 </script><!-- /MKT -->
+<script id="gc-patch-printpack">
+/* __GC_PATCH_PRINTPACK__ — 🖨 PRINT PACK (patch PRINTPACK)
+   Owner: "make sure all my print pack, brochures, pamphlets etc are in my CRM and I can send the link to print front and back
+   to someone and it prints correctly with each document."
+   Marketing → 🖨 Print pack (also 💎 → Print pack): one card per piece with front/back preview, Print (opens the PDF), Copy link,
+   E-mail link (your own @grayco-cs.com composer, person to person) and Text link, and the print settings for that piece.
+   The PDFs are static files in /print/ (built by tools/printpack/, see tools/patch_PRINTPACK.py); /print/ is a public page
+   a print shop can open. OFFICE = desk printer on Letter paper; PRINTSHOP = 0.125 in bleed + crop marks. No customer data. */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_PRINTPACK__) return; W.__GC_PATCH_PRINTPACK__ = true;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var PIECES = [{"slug": "brochure-general", "kind": "Brochure", "title": "General brochure (all services)", "pages": 2, "use": "Everything GrayCo does — events, walk-ins, any lead", "thumbs": ["brochure-general-1.jpg", "brochure-general-2.jpg"], "size": "Tri-fold · Letter 11 × 8.5 in landscape · 2 pages (outside, inside)", "office": "Letter paper · Landscape · Double-sided, flip on SHORT edge · 100% / Actual size (no “Fit to page”) · fold in thirds: inside panels in, cover on top", "shop": "11.25 × 8.75 in incl. 0.125 in bleed + crop marks → trims to 11 × 8.5 in · 2-sided: page 1 = outside, page 2 = inside, turn on the SHORT edge · 100 lb gloss text · letter (roll) fold; the left outside panel is the 1/16 in narrower fold-in flap"}, {"slug": "brochure-roofing", "kind": "Brochure", "title": "Roofing brochure", "pages": 2, "use": "Roofing leads and roof proposals", "thumbs": ["brochure-roofing-1.jpg", "brochure-roofing-2.jpg"], "size": "Tri-fold · Letter 11 × 8.5 in landscape · 2 pages (outside, inside)", "office": "Letter paper · Landscape · Double-sided, flip on SHORT edge · 100% / Actual size (no “Fit to page”) · fold in thirds: inside panels in, cover on top", "shop": "11.25 × 8.75 in incl. 0.125 in bleed + crop marks → trims to 11 × 8.5 in · 2-sided: page 1 = outside, page 2 = inside, turn on the SHORT edge · 100 lb gloss text · letter (roll) fold; the left outside panel is the 1/16 in narrower fold-in flap"}, {"slug": "brochure-insurance-restoration", "kind": "Brochure", "title": "Insurance claims & restoration brochure", "pages": 2, "use": "Insurance, water, fire and storm leads", "thumbs": ["brochure-insurance-restoration-1.jpg", "brochure-insurance-restoration-2.jpg"], "size": "Tri-fold · Letter 11 × 8.5 in landscape · 2 pages (outside, inside)", "office": "Letter paper · Landscape · Double-sided, flip on SHORT edge · 100% / Actual size (no “Fit to page”) · fold in thirds: inside panels in, cover on top", "shop": "11.25 × 8.75 in incl. 0.125 in bleed + crop marks → trims to 11 × 8.5 in · 2-sided: page 1 = outside, page 2 = inside, turn on the SHORT edge · 100 lb gloss text · letter (roll) fold; the left outside panel is the 1/16 in narrower fold-in flap"}, {"slug": "brochure-residential", "kind": "Brochure", "title": "Residential remodeling brochure", "pages": 2, "use": "Remodel, kitchen, bath and addition leads", "thumbs": ["brochure-residential-1.jpg", "brochure-residential-2.jpg"], "size": "Tri-fold · Letter 11 × 8.5 in landscape · 2 pages (outside, inside)", "office": "Letter paper · Landscape · Double-sided, flip on SHORT edge · 100% / Actual size (no “Fit to page”) · fold in thirds: inside panels in, cover on top", "shop": "11.25 × 8.75 in incl. 0.125 in bleed + crop marks → trims to 11 × 8.5 in · 2-sided: page 1 = outside, page 2 = inside, turn on the SHORT edge · 100 lb gloss text · letter (roll) fold; the left outside panel is the 1/16 in narrower fold-in flap"}, {"slug": "brochure-commercial", "kind": "Brochure", "title": "Commercial build-outs brochure", "pages": 2, "use": "Commercial TI, build-out and renovation bids", "thumbs": ["brochure-commercial-1.jpg", "brochure-commercial-2.jpg"], "size": "Tri-fold · Letter 11 × 8.5 in landscape · 2 pages (outside, inside)", "office": "Letter paper · Landscape · Double-sided, flip on SHORT edge · 100% / Actual size (no “Fit to page”) · fold in thirds: inside panels in, cover on top", "shop": "11.25 × 8.75 in incl. 0.125 in bleed + crop marks → trims to 11 × 8.5 in · 2-sided: page 1 = outside, page 2 = inside, turn on the SHORT edge · 100 lb gloss text · letter (roll) fold; the left outside panel is the 1/16 in narrower fold-in flap"}, {"slug": "flyer-general", "kind": "Flyer", "title": "Half-page flyer (general)", "pages": 2, "use": "Counters, events, leave-behinds, mailers", "thumbs": ["flyer-general-1.jpg", "flyer-general-2.jpg"], "size": "5.5 × 8.5 in, front + back · OFFICE: 2 per Letter sheet", "office": "Letter paper · Landscape · Double-sided, flip on SHORT edge · 100% / Actual size (no “Fit to page”) · cut down the middle → two 5.5 × 8.5 in flyers", "shop": "5.75 × 8.75 in incl. 0.125 in bleed + crop marks → trims to 5.5 × 8.5 in · page 1 = front, page 2 = back, flip on the LONG edge · 100 lb gloss text or 14 pt card"}, {"slug": "door-hanger", "kind": "Door hanger", "title": "Door hanger — “We were here today”", "pages": 1, "use": "Job-site daily check the PM fills in and hangs on the door", "thumbs": ["door-hanger-1.jpg"], "size": "4.25 × 11 in, single-sided (a fill-in form) · OFFICE: 2 per Letter sheet", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”) · cut down the middle, cut out the circle", "shop": "4.5 × 11.25 in incl. 0.125 in bleed + crop marks → trims to 4.25 × 11 in · single-sided · 14 pt card with a writable (matte/uncoated) finish · die-cut door hole at the top"}, {"slug": "expect-first-day", "kind": "Customer guide", "title": "What to expect — your first day on site", "pages": 1, "use": "Send with the signed contract / work authorization", "thumbs": ["expect-first-day-1.jpg"], "size": "Letter 8.5 × 11 in portrait · 1 page", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”)", "shop": null}, {"slug": "expect-insurance-claim-timeline", "kind": "Customer guide", "title": "What to expect — insurance claim timeline", "pages": 1, "use": "Send with the insurance work authorization", "thumbs": ["expect-insurance-claim-timeline-1.jpg"], "size": "Letter 8.5 × 11 in portrait · 1 page", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”)", "shop": null}, {"slug": "expect-after-your-project", "kind": "Customer guide", "title": "What to expect — after your project", "pages": 1, "use": "Closeout packet, with the warranty certificate", "thumbs": ["expect-after-your-project-1.jpg"], "size": "Letter 8.5 × 11 in portrait · 1 page", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”)", "shop": null}, {"slug": "scorecard-customer", "kind": "Form", "title": "Customer scorecard — “How did we do?”", "pages": 1, "use": "Left with the customer at closeout", "thumbs": ["scorecard-customer-1.jpg"], "size": "Letter 8.5 × 11 in portrait · 1 page", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”)", "shop": null}, {"slug": "scorecard-closeout-pm", "kind": "Form", "title": "Closeout scorecard (PM + customer)", "pages": 1, "use": "Filled in together at the final walkthrough", "thumbs": ["scorecard-closeout-pm-1.jpg"], "size": "Letter 8.5 × 11 in portrait · 1 page", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”)", "shop": null}, {"slug": "checks-and-balances-sheet", "kind": "Form", "title": "Checks & Balances sheet", "pages": 1, "use": "Posted on site from day 1 to closeout", "thumbs": ["checks-and-balances-sheet-1.jpg"], "size": "Letter 8.5 × 11 in portrait · 1 page", "office": "Letter paper · Portrait · Single-sided · 100% / Actual size (no “Fit to page”)", "shop": null}];
+var BASE = 'https://crm.grayco-cs.com/print/';
+var ZIP_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+var ZIP_SRI = 'sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHvegtg==';
+var PP = { prev: '', zip: '' };
+function abs(file){ return BASE + file; }
+function rel(file){ return 'print/' + file; }
+function piece(slug){ return PIECES.filter(function(p){ return p.slug === slug; })[0] || null; }
+function variant(p, v){ return v === 'shop' && p.shop ? { file: p.slug + '-printshop.pdf', how: p.shop, label: 'PRINTSHOP' } : { file: p.slug + '.pdf', how: p.office, label: 'OFFICE' }; }
+
+var X = null, tries = 0;
+function boot(){ X = W._gcMktExt; if (!X) { if (tries++ < 120) nST(boot, 500); return; } install(); }
+nST(boot, 0);
+
+function install(){
+var SECS = X.SECS, VIEWS = X.VIEWS, ACT = X.ACT, esc = X.esc, s = X.s, toast = X.toast;
+if (!SECS.some(function(y){ return y.id === 'printpack'; })) {
+  var at = -1; SECS.forEach(function(y, i){ if (y.id === 'brand') at = i; });
+  SECS.splice(at >= 0 ? at : SECS.length, 0, { id: 'printpack', ic: '🖨', l: 'Print pack', d: 'Brochures, flyers, door hangers, customer guides — print, or send the link to a print shop' });
+}
+if (X.PM_SECS.indexOf('printpack') < 0) X.PM_SECS.push('printpack');   /* PMs print hangers and forms too; nothing here is private */
+
+function btn(a, label, attrs, cls){ return '<button class="gmt-btn ' + (cls || 'o') + '" data-a="' + a + '"' + (attrs || '') + '>' + label + '</button>'; }
+function sendRow(file, slug, v){
+  var at = ' data-f="' + esc(file) + '" data-s="' + esc(slug) + '" data-v="' + v + '"';
+  return btn('pp-print', '🖨 Print', at, '') + btn('pp-copy', '🔗 Copy link', at) + btn('pp-mail', '✉️ E-mail link', at) + btn('pp-text', '📱 Text link', at);
+}
+VIEWS.printpack = function(){
+  var h = '<div class="gmt-card"><h2>🖨 Print pack</h2><div>Every GrayCo brochure, flyer, door hanger and customer guide as a print-ready PDF. <b>Page 1 is the front, page 2 is the back</b> — print double-sided with the setting shown on each card, at <b>100% / Actual size</b> (never “Fit to page”).</div>' +
+    '<div class="gmt-muted" style="margin-top:6px"><b>OFFICE</b> = Letter paper on the office printer. <b>PRINTSHOP</b> = the same piece with 0.125 in bleed + crop marks for a print shop. Send a shop one link to the whole pack: <a href="' + BASE + '" target="_blank" rel="noopener">' + BASE + '</a></div>' +
+    '<div class="gmt-row" style="margin-top:8px">' + btn('pp-copy', '🔗 Copy the print-shop page link', ' data-f="" data-s="" data-v="all"') + btn('pp-mail', '✉️ E-mail it', ' data-f="" data-s="" data-v="all"') + btn('pp-text', '📱 Text it', ' data-f="" data-s="" data-v="all"') +
+    btn('pp-zip', PP.zip ? esc(PP.zip) : '⬇ Download all (zip)', PP.zip ? ' disabled' : '') + '</div></div>';
+  if (PP.prev) {
+    var q = piece(PP.prev);
+    if (q) h += '<div class="gmt-card" data-pp-preview="' + esc(q.slug) + '"><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">' + esc(q.title) + '</h2>' + btn('pp-prev', '✕ Close preview', ' data-s=""') + '</div>' +
+      '<div class="gmt-row" style="align-items:flex-start;margin-top:8px">' + q.thumbs.map(function(t, i){ return '<figure style="margin:0;flex:1;min-width:220px;max-width:520px"><img src="' + rel('thumbs/' + t) + '" alt="' + esc(q.title) + ' page ' + (i + 1) + '" style="width:100%;border:1px solid #dce3ee;border-radius:6px;background:#fff"><figcaption class="gmt-muted">Page ' + (i + 1) + (q.thumbs.length > 1 ? (i ? ' — back' : ' — front') : '') + '</figcaption></figure>'; }).join('') + '</div></div>';
+  }
+  h += '<div class="gmt-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">' + PIECES.map(function(p){
+    var o = variant(p, 'office'), sh = p.shop ? variant(p, 'shop') : null;
+    return '<div class="gmt-card" style="margin:0" data-pp="' + esc(p.slug) + '"><div class="gmt-row" style="align-items:flex-start;flex-wrap:nowrap">' +
+      '<img src="' + rel('thumbs/' + p.thumbs[0]) + '" alt="" loading="lazy" data-a="pp-prev" data-s="' + esc(p.slug) + '" style="width:110px;flex:none;border:1px solid #dce3ee;border-radius:6px;cursor:zoom-in;background:#fff">' +
+      '<div style="min-width:0"><span class="gmt-chip">' + esc(p.kind) + '</span><b style="display:block;margin:4px 0 2px">' + esc(p.title) + '</b><div class="gmt-muted">' + esc(p.size) + '</div><div class="gmt-muted">' + esc(p.use) + '</div>' +
+      '<div style="margin-top:6px">' + btn('pp-prev', '👁 Preview', ' data-s="' + esc(p.slug) + '"') + '</div></div></div>' +
+      '<div style="margin-top:8px;font-size:12px"><b>OFFICE</b> · ' + esc(o.how) + '</div><div class="gmt-row" style="margin-top:4px">' + sendRow(o.file, p.slug, 'office') + '</div>' +
+      (sh ? '<div style="margin-top:8px;font-size:12px"><b>PRINTSHOP</b> · ' + esc(sh.how) + '</div><div class="gmt-row" style="margin-top:4px">' + sendRow(sh.file, p.slug, 'shop') + '</div>' : '') + '</div>';
+  }).join('') + '</div>';
+  h += '<div class="gmt-card"><h2>Made in the CRM per job (not in this pack)</h2><div class="gmt-muted">Neighborhood flyers and door hangers with a job’s street and tracked QR (🏡 Neighborhood / flyer maker), lunch-and-learn invites, coupon art and QR codes (🖨 Print & brand kit) are built on the spot, so they print from their own screens.</div></div>';
+  return h;
+};
+function linkFor(b){ var v = b.getAttribute('data-v'), f = b.getAttribute('data-f'); return v === 'all' ? BASE : abs(f); }
+function textFor(b){
+  var v = b.getAttribute('data-v'), p = piece(b.getAttribute('data-s'));
+  if (v === 'all' || !p) return { subj: 'GrayCo print pack', body: 'All GrayCo print pieces with the print settings for each one:\n' + BASE + '\n\nPage 1 = front, page 2 = back. Print at 100% (no “fit to page”).' };
+  var x = variant(p, v);
+  return { subj: 'Please print: GrayCo ' + p.title + ' (' + x.label + ')', body: 'Please print: GrayCo ' + p.title + ' (' + x.label + ')\n' + abs(x.file) + '\n\nSettings: ' + x.how + '\nPage 1 = front' + (p.pages > 1 ? ', page 2 = back.' : ' (single-sided).') };
+}
+ACT['pp-prev'] = function(b){ PP.prev = b.getAttribute('data-s') || ''; X.draw(); if (PP.prev) nST(function(){ var n = D.querySelector('[data-pp-preview]'); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 60); };
+ACT['pp-print'] = function(b){ var w = W.open(rel(b.getAttribute('data-f')), '_blank'); if (!w) toast('Allow pop-ups to open the PDF.', true); };
+ACT['pp-copy'] = function(b){ var u = linkFor(b); X.copyText(u).then(function(){ toast('Link copied: ' + u); }, function(){ toast(u); }); };
+ACT['pp-mail'] = function(b){
+  var t = textFor(b), me = ''; try { me = s(X.myName()); } catch (e) {}
+  var body = 'Hi,\n\n' + t.body + '\n\nThank you,\n' + (me ? me + '\n' : '') + 'GrayCo Construction Services, LLC · (901) 585-0944';
+  if (typeof W._gcCompose === 'function') { if (W._gcCompose({ to: '', subject: t.subj, body: body, about: 'print' }) !== null) return; }
+  X.openUrl('mailto:?subject=' + encodeURIComponent(t.subj) + '&body=' + encodeURIComponent(body));
+};
+ACT['pp-text'] = function(b){
+  var t = textFor(b), msg = 'GrayCo Construction Services: ' + t.body;
+  var to = s(W.prompt('Text the link to which number? (e.g. the print shop)', '') || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  if (!to) return;
+  if (to.length !== 10) { toast('That is not a 10-digit phone number.', true); return; }
+  if (W._gcTexts && typeof W._gcTexts.send === 'function') {
+    if (!W.confirm('Text this to ' + to + '?\n\n' + msg)) return;
+    W._gcTexts.send(to, msg, '').then(function(o){ if (o && o.ok) toast('Text sent.'); else toast('Not sent: ' + ((o && o.error) || 'try again') + ' — the link is copied instead.', true), X.copyText(linkFor(b)); }, function(){ toast('Not sent — the link is copied instead.', true); X.copyText(linkFor(b)); });
+    return;
+  }
+  X.openUrl('sms:' + to + '?&body=' + encodeURIComponent(msg));
+};
+function loadZip(){
+  if (W.JSZip) return Promise.resolve(W.JSZip);
+  return new Promise(function(res, rej){
+    var sc = D.createElement('script'); sc.src = ZIP_URL; sc.integrity = ZIP_SRI; sc.crossOrigin = 'anonymous'; sc.async = true;
+    sc.onload = function(){ W.JSZip ? res(W.JSZip) : rej(new Error('ZIP tool missing')); };
+    sc.onerror = function(){ try { sc.remove(); } catch (e) {} rej(new Error('Could not load the ZIP tool (are you online?)')); };
+    D.head.appendChild(sc);
+  });
+}
+ACT['pp-zip'] = function(){
+  if (PP.zip) return;
+  var files = []; PIECES.forEach(function(p){ files.push(['OFFICE/' + p.slug + '.pdf', p.slug + '.pdf']); if (p.shop) files.push(['PRINTSHOP/' + p.slug + '-printshop.pdf', p.slug + '-printshop.pdf']); });
+  var readme = 'GrayCo print pack — page 1 = front, page 2 = back. Print at 100% / Actual size (no "Fit to page").\r\n\r\n' + PIECES.map(function(p){ return p.title + '\r\n  OFFICE: ' + p.office + (p.shop ? '\r\n  PRINTSHOP: ' + p.shop : ''); }).join('\r\n\r\n') + '\r\n\r\nOnline: ' + BASE + '\r\n';
+  var done = 0; PP.zip = 'Preparing…'; X.draw();
+  loadZip().then(function(JSZip){
+    var z = new JSZip(); z.file('PRINT-SETTINGS.txt', readme);
+    return Promise.all(files.map(function(f){ return fetch(rel(f[1]), { cache: 'no-store' }).then(function(r){ if (!r.ok) throw new Error(f[1] + ': ' + r.status); return r.blob(); }).then(function(bl){ z.file(f[0], bl); done++; PP.zip = 'Downloading ' + done + '/' + files.length + '…'; X.draw(); }); }))
+      .then(function(){ return z.generateAsync({ type: 'blob' }); });
+  }).then(function(blob){
+    var a = D.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'GrayCo-print-pack.zip'; D.body.appendChild(a); a.click(); nST(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    PP.zip = ''; X.draw(); toast('Print pack downloaded (' + files.length + ' PDFs + PRINT-SETTINGS.txt).');
+  }, function(e){ PP.zip = ''; X.draw(); toast('ZIP failed: ' + (e && e.message || e), true); });
+};
+ACT['pp-open'] = function(){ X.go('printpack'); };
+W._gcOpenPrintPack = function(){ if (W._gcMkt && W._gcMkt.open) W._gcMkt.open('printpack'); };
+W._gcPrintPack = { pieces: PIECES, base: BASE };
+}
+})();
+</script><!-- /PRINTPACK -->
 <script id="gc-patch-mkt2">
 /* ==========================================================================
    GrayCo CRM — patch MKT2 __GC_PATCH_MKT2__ : Marketing, part 2 (inside the 📣 Marketing tab)
@@ -144275,7 +144395,7 @@ function plat(v){ return SC.plat(v) || { v: v, l: v, ic: '' }; }
 function proj(id){ return X.projects().filter(function(p){ return s(p.id) === s(id); })[0] || null; }
 function permOk(pid){ var r = MK.get('perms', 'job_' + pid), p = proj(pid); return !!((r && r.marketing === true) || (p && (p.marketingOk === true || p.mktPhotoOk === true))); }
 function centralToday(){ try { return W._gcCompanyAddress.centralDay(new Date()); } catch (e) { return X.today(); } }
-function addrCfg(){ try { return W._gcCompanyAddress.config(); } catch (e) { return { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' }; } }
+function addrCfg(){ try { return W._gcCompanyAddress.config(); } catch (e) { return { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' }; } }
 var STATE = { st: null, lib: null, wk: '', tab: {}, sel: {}, f: { q: '', job: '', type: '', tag: '', perm: '', best: false, from: '', to: '' }, busy: '' };
 function loadStatus(force){ if (STATE.st && !force && Date.now() - STATE.st.at < 60000) return; api('soc', { op: 'status' }).then(function(j){ STATE.st = Object.assign({ at: Date.now() }, j && j.ok ? j : { err: (j && j.error) || 'not reachable', platforms: {} }); if (/^(socweek|connect|mktsettings|home)$/.test(UI.sec)) draw(); }); }
 function loadLib(force){ if (STATE.lib && !force) return; STATE.lib = { tags: {}, testimonials: [], loading: true }; api('soc', { op: 'library' }).then(function(j){ STATE.lib = j && j.ok ? j : { tags: {}, testimonials: [], err: j && j.error }; if (UI.sec === 'media' || UI.sec === 'socweek') draw(); }); }
@@ -177015,6 +177135,261 @@ W._gcGdocs = { open: open, sync: function(backfill){ return api('sync', { backfi
 try { console.log('[GC] Google Docs → CRM armed (patch GDOCS)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-subinv">
+/* __GC_PATCH_SUBINV__ — A SUB'S INVOICE E-MAILED IN, BOOKED BY ITSELF (owner 10/27)
+   "when there's an invoice like this in office@ or invoices@: read the PDF, enter it into the job that its address matches,
+   calculate the expense on the job's P&L, and create the invoice to pay — when it says we pay — automatically."
+   The server reads each e-mailed invoice (Word, PDF, photo, Excel / CSV, Google link, typed in the e-mail) and decides
+   (netlify/functions/_lib/subinv.js → gc_kv "gc_mail_money" rec.si). Here, with the CRM's own records:
+     · route book  → ▥ Invoices: a received sub invoice on the job (type sub, status received, the file attached, the pay
+                     date by the sub pay rule or the invoice's later terms, retainage per the subcontract) + ONE pending job
+                     cost row (subInvId — the P&L never counts it twice) → the sub-invoice approval queue (the job's PM);
+                     on approval the check is drafted for the pay date. Nothing is paid without approval.
+     · match / dup / link / review → ✅ Approvals "🧾 Match this invoice" (top 3 jobs + a picker), "Possible duplicate",
+                     "🔗 Open this invoice link" — the office books it or sets it aside. Done ones: gc_kv "gc_mail_money_done".
+   JOB-COST APPROVAL ROUTING (owner 10/27): sub invoices and job expenses are asked of the job's PM; after 24 hours without
+   the PM (or at once when the job has no PM) of the OFFICE. An admin is asked only when he is that job's PM (owner: "some job
+   costs are definitely me or Nick because we will be the PM"), never as the extra / default approver; he can still approve any.
+   patch OWNERTODO's makeInvoices calls take() / post(). API: window._gcSubInv = { take, post, load, items, place, dismiss,
+   open, route } */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SUBINV__) return; window.__GC_PATCH_SUBINV__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function obj(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return {}; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function r2(v){ return Math.round(num(v) * 100) / 100; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function money(v){ return '$' + r2(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function nowIso(){ return new Date().toISOString(); }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return !p.deleted; }); }
+function proj(pid){ return projects().filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
+function me(){ try { if (typeof W._gcMeUser === 'function') { var u = W._gcMeUser(); if (u) return u; } } catch (e) {} return {}; }
+function myName(){ var u = me(); return s(u.name) || s(u.email).split('@')[0]; }
+function isOffice(){ return /^office/i.test(s(me().role)) || /^office/i.test(s(me().profile)); }
+function isAdminOnly(){ var u = me(); return !isOffice() && (/^admin$/i.test(s(u.role)) || low(u.payType) === 'owner'); }
+function noOfficeUser(){ return !arr(crm().users).some(function(u){ return u.active !== false && /^office/i.test(s(u.role)); }); }
+var DAY = 24 * 3600e3;
+
+/* ── the cloud (gc_kv) — the same small reader / writer as patch OWNERTODO ── */
+function lsGet(k){ try { return W.localStorage.getItem(k); } catch (e) { return null; } }
+function sbBase(){ return s(lsGet('grayco_sb_url') || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); }
+function kvGet(key){
+  if (W._gcOT_kv) return Promise.resolve(W._gcOT_kv.get(key));
+  var k = s(lsGet('grayco_sb_key')); if (!k) return Promise.resolve(undefined);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: { apikey: k }, cache: 'no-store' })
+    .then(function(r){ return r && r.ok ? r.json() : undefined; }).then(function(rows){ if (!Array.isArray(rows)) return undefined; var v = rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; }, function(){ return undefined; });
+}
+function kvPut(key, value){
+  if (W._gcOT_kv) { W._gcOT_kv.put(key, value); return Promise.resolve(true); }
+  var k = s(lsGet('grayco_sb_key')); if (!k) return Promise.resolve(false);
+  return W.fetch(sbBase() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key: key, value: value, updated_at: nowIso() }) }).then(function(r){ return !!(r && r.ok); }, function(){ return false; });
+}
+function markDone(id, val){
+  S.done[id] = val;
+  return kvGet('gc_mail_money_done').then(function(cur){ var m = obj(cur), x = m[id]; if (!x || s(val.at) >= s(x.at)) m[id] = val; return kvPut('gc_mail_money_done', m); });
+}
+
+var S = { list: [], done: {}, held: {} };
+function load(list, done){ S.list = arr(list); S.done = obj(done); return S; }
+function invIdOf(rec){ return 'INVM-' + s(rec.id).replace(/^MM-/, ''); }
+function invNo(v){ return low(v).replace(/[^a-z0-9]/g, '').replace(/^0+/, ''); }
+
+/* the received sub invoice for one e-mail (the same record shape as 📎 Upload Invoice / the sub portal) */
+function makeInv(rec, o){
+  var si = rec.si || {}, r = si.read || {}, f = arr(rec.files)[0] || {}, p = proj(o.pid) || {};
+  var amt = r2(o.amt != null ? o.amt : r.total), retPct = num(o.retainagePct != null ? o.retainagePct : si.retainagePct);
+  var ret = o.pid === (si.job && si.job.pid) && si.retainage ? r2(si.retainage) : (retPct ? r2(amt * retPct / 100) : 0);
+  var recv = s(si.recvDate) || s(rec.at).slice(0, 10);
+  var inv = { id: invIdOf(rec), mailId: rec.id, type: 'sub', pid: s(o.pid), sub: s(o.sub) || s(si.sub && si.sub.name) || rec.fromName || rec.from, subId: s(o.subId),
+    po: s(p.autoPO || p.po) || s(r.po), amt: amt, invNum: s(r.invoiceNumber), recvDate: recv, date: s(r.invoiceDate) || recv, dueDate: s(r.dueDate), terms: s(r.terms),
+    desc: 'Sub invoice' + (r.invoiceNumber ? ' #' + r.invoiceNumber : '') + ' — ' + (s(r.jobAddress) || s(p.name) || s(rec.subject)) + ' (e-mailed ' + (si.src === 'email body' ? 'in the e-mail' : s(si.src) || 'file') + ', read by the CRM)',
+    lines: arr(r.lines), subtotal: r2(r.subtotal), tax: r2(r.tax), address: s(r.jobAddress) || s(p.address),
+    status: 'received', source: 'email:' + (s(rec.via) || 'invoices@'), fileName: f.name || '', fileData: f.ref || '', files: arr(rec.files).map(function(z){ return { name: z.name, ref: z.ref, type: z.type }; }),
+    fileLink: s(si.file && si.file.link), fromEmail: s(rec.from), forwardedBy: s(rec.forwardedBy), by: (s(rec.via) || 'invoices@') + ' (automatic)',
+    payDate: s(si.payDate), payDateAuto: s(si.ruleDate || si.payDate), payDateRule: s(si.payRule), late: new Date(recv + 'T12:00:00').getDay() > 3 || new Date(recv + 'T12:00:00').getDay() === 0,
+    retainagePct: retPct, retainage: ret, netPayable: r2(amt - ret), readBy: 'SUBINV', matchWhy: s(si.job && si.job.why), _jobConf: num(si.job && si.job.conf),
+    subinv: true, at: nowIso(), createdAt: nowIso() };
+  if (si.byTerms && si.payDate) { inv.payDateOverride = si.payDate; inv.payDateWhy = s(si.payRule); }   /* the invoice's own terms are later than the rule: keep them */
+  return inv;
+}
+function inCrm(rec, invoices){
+  var id = invIdOf(rec);
+  return arr(invoices).some(function(i){ return s(i.id) === id || (i.mailId && s(i.mailId) === s(rec.id)); });
+}
+/* the same sub + invoice # already in ▥ Invoices (made by hand meanwhile) */
+function crmDup(inv, invoices){
+  var k = invNo(inv.invNum);
+  var hit = arr(invoices).filter(function(i){ return i.type === 'sub' && !/void|rejected|cancel/i.test(s(i.status)) && s(i.id) !== inv.id && ((k && invNo(i.invNum || i.invNo) === k && (s(i.subId) === inv.subId || low(i.sub) === low(inv.sub)))); })[0];
+  if (hit) return hit;
+  try { if (W._gcSubInvoiceExists && W._gcSubInvoiceExists(inv, inv.id)) return { id: '?' }; } catch (e) {}
+  return null;
+}
+/* OWNERTODO's makeInvoices asks for each invoices@ e-mail: { inv } to add · { hold } for ✅ Approvals · { skip } · null (old way) */
+function take(rec, ctx){
+  if (!rec || rec.kind !== 'sub_invoice' || !rec.si) return null;
+  var si = rec.si, inv;
+  ctx = ctx || {};
+  if (S.done[rec.id] && S.done[rec.id].done) return { skip: 'done' };
+  if (inCrm(rec, ctx.invoices)) return { skip: 'already' };
+  if (si.route !== 'book' || !si.job || !proj(si.job.pid)) { S.held[rec.id] = si.route === 'book' ? 'match' : si.route; return { hold: true }; }
+  inv = makeInv(rec, { pid: si.job.pid, sub: si.sub && si.sub.name, subId: si.sub && si.sub.id });
+  inv._jobCertain = true;
+  var d = crmDup(inv, ctx.invoices);
+  if (d) { S.held[rec.id] = 'dup'; S.dupOf = S.dupOf || {}; S.dupOf[rec.id] = s(d.id); return { hold: true }; }
+  return { inv: inv };
+}
+/* the PENDING job cost for each booked invoice — once: an existing row for this bill is linked, never a second one */
+function post(invs){
+  invs = arr(invs).filter(function(i){ return i.type === 'sub' && i.pid && i.subinv; });
+  if (!invs.length || typeof W._setExpenses !== 'function') return 0;
+  var made = 0;
+  W._setExpenses(function(prev){
+    var l = Array.isArray(prev) ? prev.slice() : [];
+    invs.forEach(function(iv){
+      if (l.some(function(e){ return e && s(e.subInvId) === iv.id; })) return;
+      var c = null; try { c = W._gcCostRowFor ? W._gcCostRowFor(l, iv) : null; } catch (e) {}
+      if (c) { l = l.map(function(x){ return x === c ? Object.assign({}, x, { subInvId: iv.id, _fromSub: true, updatedAt: nowIso() }) : x; }); made++; return; }
+      l.push({ id: 'EXPM-' + iv.id, pid: iv.pid, subInvId: iv.id, _fromSub: true, type: 'expense', vendor: iv.sub, desc: 'Sub Invoice: ' + iv.desc, po: iv.po, amt: iv.amt,
+        category: 'Subcontractor', status: 'pending', date: iv.date, by: iv.by, source: iv.source, enteredAt: nowIso() });
+      made++;
+    });
+    return l;
+  });
+  invs.forEach(function(iv){
+    try { if (W._gcAddToRegister) W._gcAddToRegister({ srcInvId: iv.id, pid: iv.pid, payee: iv.sub, desc: 'Sub Invoice: ' + iv.desc, po: iv.po, amount: iv.amt, amt: iv.amt, category: 'Subcontractor', date: iv.date, source: 'subinvoice', method: 'invoice', direction: 'out', isIncome: false, status: 'pending' }); } catch (e) {}
+  });
+  return made;
+}
+function addInvoice(inv){
+  if (typeof W._setInvoices !== 'function') return false;
+  W._setInvoices(function(list){ var l = Array.isArray(list) ? list : []; return l.some(function(i){ return s(i.id) === inv.id; }) ? l : l.concat([inv]); });
+  post([inv]);
+  try { if (W._gcPushAll) (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ W._gcPushAll(); }, 900); } catch (e) {}
+  return true;
+}
+/* the office picks the job (and the sub) → booked like a certain one */
+function place(id, o){
+  var rec = S.list.filter(function(x){ return s(x.id) === s(id); })[0]; if (!rec || !rec.si || !o || !o.pid || !proj(o.pid)) return null;
+  var subRec = arr(crm().subs).filter(function(x){ return s(x.id) === s(o.subId) || (o.sub && low(x.name) === low(o.sub)); })[0];
+  var inv = makeInv(rec, { pid: o.pid, sub: subRec ? subRec.name : o.sub, subId: subRec ? subRec.id : '', amt: o.amt });
+  if (!(inv.amt > 0)) return null;
+  inv._jobCertain = true; inv._matchConfirmed = true; inv.matchedBy = myName(); inv.matchedAt = nowIso();
+  if (!addInvoice(inv)) return null;
+  markDone(rec.id, { done: true, invId: inv.id, at: nowIso(), by: myName() });
+  return inv;
+}
+function dismiss(id, why){ delete S.held[id]; return markDone(id, { done: true, skip: true, why: s(why) || 'not a sub invoice', at: nowIso(), by: myName() }); }
+
+/* ── ✅ Approvals: the held ones (the office's; the admins are not asked unless there is no office person) ── */
+var TITLES = { match: '🧾 Match this invoice', review: '🧾 Match this invoice (does it say we owe it?)', dup: '⚠️ Possible duplicate invoice', link: '🔗 Open this invoice link' };
+function items(){
+  if (!(isOffice() || (isAdminOnly() && noOfficeUser()))) return [];
+  return S.list.filter(function(x){ return x && x.kind === 'sub_invoice' && x.si && !(S.done[x.id] && S.done[x.id].done) && (x.si.route !== 'book' || S.held[x.id]) && !inCrm(x, crm().invoices); }).map(function(x){
+    var si = x.si, r = si.read || {}, k = S.held[x.id] || si.route;
+    return { id: 'subinv:' + x.id, title: (TITLES[k] || TITLES.match) + ': ' + (s(si.sub && si.sub.name) || x.fromName || x.from) + (r.total ? ' ' + money(r.total) : ''),
+      sub: s(si.why) || (k === 'dup' ? 'already in ▥ Invoices' : ''), at: s(x.at), urgency: 'soon', act: { l: k === 'link' ? '🔗 Open' : '🧾 Match', f: function(){ open(x.id); } } };
+  });
+}
+function hookItems(){
+  var prev = W._gcHot1Approvals; if (prev && prev.__gcSubinv) return;
+  var w = function(){ var base = []; try { base = typeof prev === 'function' ? arr(prev.apply(this, arguments)) : []; } catch (e) {} try { return base.concat(items()); } catch (e) { return base; } };
+  try { if (prev) Object.keys(prev).forEach(function(k){ w[k] = prev[k]; }); } catch (e) {}
+  w.__gcSubinv = true; W._gcHot1Approvals = w;
+}
+
+/* the picker */
+function open(id){
+  var x = S.list.filter(function(y){ return s(y.id) === s(id); })[0]; if (!x) return;
+  var si = x.si || {}, r = si.read || {}, f = arr(x.files)[0] || {}, k = S.held[x.id] || si.route;
+  var top = arr(si.top).filter(function(j){ return proj(j.pid); });
+  var ov = D.createElement('div'); ov.className = 'gc-si-ov'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gc-linked', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.6);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;font-family:inherit';
+  var others = projects().filter(function(p){ return !/^(lost|dead|cancel+ed|archived)$/i.test(s(p.status)); });
+  var subs = arr(crm().subs).filter(function(z){ return z.name; });
+  var subPick = s(si.sub && si.sub.id);
+  ov.innerHTML = '<div style="background:#fff;color:#0f172a;border-radius:12px;width:min(560px,100%);padding:18px;margin-top:20px">' +
+    '<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:16px">' + esc(TITLES[k] || TITLES.match) + '</b><button type="button" data-si="x" aria-label="Close" style="border:none;background:none;font-size:18px;cursor:pointer">✕</button></div>' +
+    '<div style="font-size:12.5px;color:#475569;margin:4px 0 10px">From ' + esc(x.fromName || x.from) + (x.forwardedBy ? ' (forwarded by ' + esc(x.forwardedBy) + ')' : '') + ' · ' + esc(s(x.at).slice(0, 10)) + ' · ' + esc(x.subject) + '</div>' +
+    (si.why ? '<div style="background:#fef3c7;border-radius:8px;padding:8px;font-size:13px;margin-bottom:8px">Why it waits: ' + esc(si.why) + '</div>' : '') +
+    '<div style="font-size:13px;line-height:1.6">' + (r.vendor ? 'Vendor: <b>' + esc(r.vendor) + '</b><br>' : '') + (r.invoiceNumber ? 'Invoice #: ' + esc(r.invoiceNumber) + '<br>' : '') + (r.jobAddress ? 'Job address on it: ' + esc(r.jobAddress) + '<br>' : '') + (r.dueDate ? 'Due: ' + esc(r.dueDate) + '<br>' : '') + (si.payDate ? 'Pays: ' + esc(si.payDate) + ' (' + esc(si.payRule) + ')<br>' : '') + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">' + (f.ref ? '<button type="button" data-si="file" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer">📄 Open the invoice</button>' : '') +
+      arr(si.links).map(function(l){ return '<a href="' + esc(l.url) + '" target="_blank" rel="noopener" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;text-decoration:none;color:#1d4ed8">🔗 Open the link</a>'; }).join('') + '</div>' +
+    (top.length ? '<div style="font-weight:700;font-size:13px;margin-top:6px">Best matches</div>' + top.map(function(j, i){ return '<label style="display:block;border:1px solid #e2e8f0;border-radius:8px;padding:7px;margin:4px 0;font-size:13px"><input type="radio" name="gcsi-j" value="' + esc(j.pid) + '"' + (i === 0 ? ' checked' : '') + '> <b>' + esc(j.name) + '</b> · ' + esc(j.address) + ' <span style="color:#64748b">(' + esc(j.conf) + '% — ' + esc(j.why) + ')</span></label>'; }).join('') : '') +
+    '<label style="display:block;font-size:13px;margin-top:6px">Or another job<select data-si="job" style="display:block;width:100%;padding:8px;margin-top:3px"><option value="">—</option>' + others.map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((p.autoPO ? p.autoPO + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address) : '')) + '</option>'; }).join('') + '</select></label>' +
+    '<label style="display:block;font-size:13px;margin-top:6px">Sub<select data-si="sub" style="display:block;width:100%;padding:8px;margin-top:3px"><option value="">' + esc(r.vendor || x.fromName || x.from) + ' (not on the sub list)</option>' + subs.map(function(z){ return '<option value="' + esc(z.id) + '"' + (s(z.id) === subPick ? ' selected' : '') + '>' + esc(z.name) + '</option>'; }).join('') + '</select></label>' +
+    '<label style="display:block;font-size:13px;margin-top:6px">Amount to pay<input data-si="amt" inputmode="decimal" value="' + esc(r.total ? r2(r.total).toFixed(2) : '') + '" style="display:block;width:100%;padding:8px;margin-top:3px"></label>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" data-si="ok" style="flex:1;padding:10px;border:none;border-radius:8px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">' + (k === 'dup' ? 'It is new — book it' : 'Book it on this job') + '</button>' +
+    '<button type="button" data-si="no" style="padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer">' + (k === 'dup' ? 'Duplicate — set aside' : 'Not a sub invoice') + '</button></div><div data-si="msg" style="font-size:12.5px;margin-top:6px"></div></div>';
+  D.body.appendChild(ov);
+  function q(n){ return ov.querySelector('[data-si="' + n + '"]'); }
+  ov.addEventListener('click', function(ev){
+    var t = ev.target; var b = t && t.closest ? t.closest('[data-si]') : null; var a = b ? b.getAttribute('data-si') : '';
+    if (t === ov || a === 'x') { ov.remove(); return; }
+    if (a === 'file') { try { if (W._gcOpenRef) W._gcOpenRef(f.ref, f.name); } catch (e) {} return; }
+    if (a === 'no') { dismiss(x.id, k === 'dup' ? 'duplicate' : 'not a sub invoice'); ov.remove(); return; }
+    if (a === 'ok') {
+      var radio = ov.querySelector('input[name="gcsi-j"]:checked'), pid = s(q('job').value) || (radio ? radio.value : '');
+      var amt = num(q('amt').value), sid = s(q('sub').value);
+      if (!pid) { q('msg').textContent = 'Pick the job first.'; return; }
+      if (!(amt > 0)) { q('msg').textContent = 'Type the amount first.'; return; }
+      var inv = place(x.id, { pid: pid, subId: sid, sub: sid ? '' : (r.vendor || x.fromName || x.from), amt: amt });
+      if (!inv) { q('msg').textContent = 'The CRM is still loading — try again in a moment.'; return; }
+      ov.innerHTML = '<div style="background:#fff;border-radius:12px;padding:18px;margin-top:20px;color:#15803d;font-weight:700">✓ Booked on ' + esc((proj(pid) || {}).name) + ' — ' + money(inv.amt) + ', pays ' + esc(inv.payDate) + ' after approval. <button type="button" data-si="x" style="margin-left:8px">Close</button></div>';
+    }
+  });
+}
+
+/* ── JOB-COST APPROVAL ROUTING: PM → office after 24 h (or no PM) (an admin only as the job's PM) ── */
+function since(v){ var n = +v; if (n) return n; var t = Date.parse(v || ''); return isNaN(t) ? 0 : t; }
+function lsList(k){ return arr(lsGet(k)); }
+function subCostExp(id){ var e = arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0]; return !!(e && (e._fromSub === true || e.subInvId)); }
+function routeGroups(g){
+  var mn = low(myName()), off = isOffice(), now = Date.now();
+  g.subinv = lsList('gc_sub_approvals').filter(function(a){
+    if (a.status !== 'pending_pm') return false;
+    var pm = low(a.pmName), mine = pm && pm === mn;
+    return mine || (off && (!pm || now - since(a.createdAt) >= DAY));
+  }).map(function(a){ return { id: 'sub:' + s(a.invId || a.id), title: s(a.sub || a.subName) }; });
+  g.expense = lsList('gc_expense_approvals').filter(function(a){
+    if (a.status !== 'pending_pm' && a.status !== 'escalated') return false;
+    if (subCostExp(a.expId)) return false;   /* a sub invoice's cost row: approved with the sub invoice */
+    var pm = low(a.pm), mine = pm && pm === mn && a.status === 'pending_pm';
+    return mine || (off && (!pm || a.status === 'escalated' || now - since(a.enteredAt) >= DAY));
+  }).map(function(a){ return { id: 'exp:' + s(a.expId), title: s(a.payee || a.desc) }; });
+  return g;
+}
+var LBL = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
+function route(){
+  var f = W._gcApprovalSet; if (typeof f !== 'function' || f.__gcSubinvRoute) return;
+  var w = function(){
+    var r = f.apply(this, arguments);
+    try {
+      if (!r || !r.groups) return r;
+      if (W._gcVAS && W._gcVAS.active && W._gcVAS.active()) return r;   /* View as: the original rule */
+      routeGroups(r.groups);
+      var total = 0, parts = [];
+      Object.keys(r.groups).forEach(function(k){ var n = arr(r.groups[k]).length; total += n; if (n && LBL[k]) parts.push(n + ' ' + (n === 1 ? LBL[k][0] : LBL[k][1])); });
+      r.total = total; r.tip = parts.join(' · ');
+    } catch (e) {}
+    return r;
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcSubinvRoute = true; W._gcApprovalSet = w;
+}
+
+function tick(){ try { hookItems(); route(); } catch (e) {} }
+tick(); RI.call(W, tick, 2000);
+W._gcSubInv = { take: take, post: post, load: load, items: items, place: place, dismiss: dismiss, open: open, route: route, routeGroups: routeGroups, state: function(){ return S; } };
+try { console.log('[GC] 🧾 Sub invoices e-mailed in are booked by themselves; job-cost approvals: PM → office after 24 h (patch SUBINV)'); } catch (e) {}
+})();
+</script>
 <script id="gc-patch-ownertodo">
 /* __GC_PATCH_OWNERTODO__ — THE OWNER'S SETUP STEPS ON THE ADMINS' TO-DO, AND RECEIPTS / SUB INVOICES BY E-MAIL
    Owner (10/24): "don't i have owner setup to do? should show those in wesley and nicks todo also" ·
@@ -177227,9 +177602,11 @@ function makeInvoices(){
   if (!moneyPerson() || typeof W._setInvoices !== 'function') return 0;
   var have = {}; arr(crm().invoices).forEach(function(i){ if (i.mailId) have[i.mailId] = 1; have[s(i.id)] = 1; });
   var add = [];
+  try { if (W._gcSubInv) W._gcSubInv.load(MM.list, MM.done); } catch (e) {}   /* patch SUBINV */
   MM.list.filter(function(x){ return x.kind === 'sub_invoice'; }).forEach(function(x){
     var id = 'INVM-' + x.id.replace(/^MM-/, '');
     if (have[x.mailId || x.id] || have[id]) return;
+    if (x.si && W._gcSubInv && W._gcSubInv.take) { var tk = null; try { tk = W._gcSubInv.take(x, { invoices: arr(crm().invoices), expenses: arr(crm().expenses) }); } catch (e) { tk = { hold: true }; } if (tk) { if (tk.inv) add.push(tk.inv); return; } }   /* patch SUBINV: read + placed by the server */
     var f = arr(x.files)[0] || {};
     var p = poMatch(x.subject + ' ' + arr(x.files).map(function(z){ return z.name; }).join(' ') + ' ' + x.text);
     var inv = { id: id, mailId: x.id, type: 'sub', pid: p ? p.id : '', sub: x.fromName || x.from, po: p ? s(p.autoPO || p.po) : '', amt: '', desc: 'E-mailed to invoices@: ' + (x.subject || f.name || 'invoice'),
@@ -177241,6 +177618,7 @@ function makeInvoices(){
   if (!add.length) return 0;
   W._setInvoices(function(list){ var l = Array.isArray(list) ? list : []; var ids = {}; l.forEach(function(i){ ids[s(i.id)] = 1; }); return l.concat(add.filter(function(i){ return !ids[i.id]; })); });
   MM.made += add.length;
+  try { if (W._gcSubInv) W._gcSubInv.post(add); } catch (e) {}   /* patch SUBINV: the pending job cost, once */
   try { if (W._gcPushAll) later(function(){ W._gcPushAll(); }, 900); } catch (e) {}
   return add.length;
 }
