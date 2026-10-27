@@ -23,7 +23,10 @@
 //   gcp-payapp-status {projectId, id, status:paid|void|approved, amount} · gcp-co-price {projectId, id?, title, description, amount}
 //   gcp-co-void {projectId, id} · gcp-signed {} (signed GC change orders the CRM has not taken in yet) · gcp-co-imported {projectId, ids, map}
 //   gcp-rfi-new {projectId, subject, question, due, to} · gcp-rfi-answer {projectId, id, answer}
-//   docs-list · docs-url {id} · docs-add {kind, title, ref, name, type, expires, replaces, sendToGcs} (admins) · docs-remove {id} (admins)
+//   docs-list · docs-url {id} · docs-add {kind, title, ref, name, type, expires, replaces, sendToGcs, folder, slot, access, shareGc, gen, genRev} (admins + office)
+//   docs-flags {id, access:'all'|'office', shareGc, expires, title} (admins + office) · docs-remove {id} (admins + office)
+//   docs-cfg {gen:{<id>:{access, shareGc}}, safety:{fields:{…}, adopted}} (admins + office) — the library's settings (docs-list returns them as cfg)
+//   patch COMPANYDOCS: a document marked access 'office' (the W-9 by default) is listed / opened for admins + office only; GCs get only "share with GCs" ones
 //   gcp-contacts-all {} → every active GC contact (for Admin)
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
@@ -37,7 +40,7 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 function reply(code, headers, obj){ return { statusCode: code, headers: headers, body: JSON.stringify(obj) }; }
 const STAFF = ['gcp-state', 'gcp-link', 'gcp-send-link', 'gcp-payapp-add', 'gcp-payapp-status', 'gcp-co-price', 'gcp-co-void', 'gcp-signed', 'gcp-co-imported', 'gcp-rfi-new', 'gcp-rfi-answer',
-  'docs-list', 'docs-url', 'docs-add', 'docs-remove', 'gcp-contacts-all'];
+  'docs-list', 'docs-url', 'docs-add', 'docs-remove', 'docs-flags', 'docs-cfg', 'gcp-contacts-all'];
 const GCPUB = ['gc-view', 'gc-photos', 'gc-doc', 'gc-payapp-file', 'gc-approve-pay', 'gc-co-request', 'gc-co-sign', 'gc-rfi-answer'];
 const CUST = ['cust-extras', 'cust-checkin', 'cust-registry'];
 
@@ -51,6 +54,15 @@ function inspectPage(code){
     + '<button id="b" type="button">Yes — schedule my free inspection</button><p class="m">Or call us: <a href="tel:9015850944">(901) 585-0944</a></p></div></main>'
     + '<script>(function(){var b=document.getElementById("b");b.onclick=function(){b.disabled=true;b.textContent="Sending…";fetch(location.pathname,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"inspect-accept",code:' + JSON.stringify(code) + ',note:document.getElementById("n").value})}).then(function(r){return r.json();}).then(function(j){document.getElementById("c").innerHTML=j.ok?"<h1>Thank you"+(j.first?", "+j.first.replace(/[<>&]/g,""):"")+"!</h1><p>We got it. Your Project Manager will call you soon to set a time.</p>":"<h1>Hmm</h1><p>"+String(j.error||"That did not work.").replace(/[<>&]/g,"")+" Please call us at <a href=\\"tel:9015850944\\">(901) 585-0944</a>.</p>";},function(){b.disabled=false;b.textContent="Try again";});};})();</script></body></html>';
 }
+
+/* patch COMPANYDOCS: the office (Office profile / role on the staff list or the CRM's Employees, or the office sign-in) */
+async function isOffice(who, data){
+  if (low(who.email) === 'office@grayco-cs.com' || /office/.test(low(who.role))) return true;
+  try { const u = (Array.isArray(data && data.users) ? data.users : []).find(function(x){ return x && low(x.email) === low(who.email) && x.active !== false; }); if (u && /office/i.test(s(u.role) + ' ' + s(u.profile))) return true; } catch (e) {}
+  try { const L = require('./bid-inbox.js')._lib; const r = await L.sb('gc_staff?select=profile,role&email=eq.' + encodeURIComponent(low(who.email))); if (r && r.ok) { const row = (await r.json())[0]; if (row && /office/i.test(s(row.profile) + ' ' + s(row.role))) return true; } } catch (e) {}
+  return false;
+}
+exports._isOffice = isOffice;
 
 exports.handler = async function(event){
   event = event || {};
@@ -83,16 +95,17 @@ exports.handler = async function(event){
       if (!who.ok) return reply(who.statusCode || 401, headers, { ok: false, error: who.error });
       const admin = low(who.role) === 'admin';
       const data = await C.crmData(true);
-      if (action === 'docs-list') return reply(200, headers, { ok: true, docs: (await G.companyDocs(admin)).map(function(d){ return Object.assign(G.docOut(d), { current: d.current !== false && !d.removed, removed: !!d.removed, by: d.by, name: d.name }); }), kinds: G.DOC_KINDS });
-      if (action === 'docs-url') { const d = (await G.companyDocs(true)).find(function(x){ return x.id === s(b.id); }); if (!d) return reply(404, headers, { ok: false, error: 'No such document.' }); return reply(200, headers, { ok: true, url: await G.docSigned(d.ref), name: d.name }); }
+      const lvl = !/^docs-/.test(action) ? '' : admin ? 'admin' : (await isOffice(who, data)) ? 'office' : 'staff';   /* patch COMPANYDOCS */
+      if (action === 'docs-list') return reply(200, headers, { ok: true, level: lvl, docs: G.docsForStaff(await G.companyDocs(lvl !== 'staff'), lvl), kinds: G.DOC_KINDS, folders: G.DOC_FOLDERS, cfg: await G.libCfg() });
+      if (action === 'docs-url') { const d = (await G.companyDocs(lvl !== 'staff')).find(function(x){ return x.id === s(b.id); }); if (!d || !G.docVisible(d, lvl)) return reply(404, headers, { ok: false, error: 'No such document.' }); return reply(200, headers, { ok: true, url: await G.docSigned(d.ref), name: d.name }); }
       if (action === 'gcp-contacts-all') return reply(200, headers, { ok: true, contacts: G.activeGcContacts(data) });
       if (action === 'gcp-signed') {
         const all = {}; const st = await (async function(){ const out = []; const jobs = await require('./bid-inbox.js')._lib.kvGet(G.K_JOBS); Object.keys(jobs || {}).forEach(function(pid){ (jobs[pid].cos || []).forEach(function(c){ if (c.status === 'signed' && !c.importedAt) out.push(Object.assign({ pid: pid }, G.coOut(c), { amount: c.amount })); }); }); return out; })();
         return reply(200, headers, { ok: true, signed: st });
       }
-      if (action === 'docs-add' || action === 'docs-remove') {
-        if (!admin) return reply(403, headers, { ok: false, error: 'Only an admin can change the company documents.' });
-        const r = action === 'docs-add' ? await G.docAdd(data, b, who) : await G.docRemove(b, who);
+      if (action === 'docs-add' || action === 'docs-remove' || action === 'docs-flags' || action === 'docs-cfg') {
+        if (lvl === 'staff') return reply(403, headers, { ok: false, error: 'Only an admin or the office can change the company documents.' });
+        const r = action === 'docs-add' ? await G.docAdd(data, b, who) : action === 'docs-flags' ? await G.docFlags(b, who) : action === 'docs-cfg' ? await G.libCfgSet(b, who) : await G.docRemove(b, who);
         return reply(r.code, headers, r.out);
       }
       const pid = s(b.projectId);
@@ -148,7 +161,7 @@ exports.handler = async function(event){
       }
       if (action === 'gc-doc') {
         const d = (await G.companyDocs()).find(function(x){ return x.id === s(b.id); });
-        if (!d) return reply(404, headers, { ok: false, error: 'That document is not available.' });
+        if (!d || !G.docShared(d)) return reply(404, headers, { ok: false, error: 'That document is not available.' });   /* patch COMPANYDOCS: only "share with GCs" */
         return reply(200, headers, { ok: true, url: await G.docSigned(d.ref), name: d.name || d.title });
       }
       if (action === 'gc-payapp-file') {
