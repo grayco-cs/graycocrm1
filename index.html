@@ -124694,6 +124694,240 @@ try{ console.log('[GC] Thank-you e-mail waits on ✅ Approvals (patch APPR2).');
 })();
 
 </script>
+<script id="gc-patch-primesub">
+/* __GC_PATCH_PRIMESUB__ (patch PRIMESUB) — netlify/functions/_lib/bid-role.js, inlined word for word: */
+/* PRIMESUB-CORE-BEGIN */
+/* ============================================================================
+   bid-role.js: PRIME or SUB on a bid (patch PRIMESUB)
+
+   Owner: "on leads i want jobs as a subcontractor and prime opportunities to be shown so cities schools etc
+   from city government school website bids etc are prime, building connected planhub a and b and other plan
+   rooms are typically as a sub"
+
+     🏛 PRIME  we bid straight to the owner: a city, county, state, school district, university, MLGW / MSCAA-type
+               public agency, SAM.gov / federal, a public procurement site, an owner who invites us directly
+     🔧 SUB    we bid to a general contractor: BuildingConnected, PlanHub, A&B Planroom, RKA Planroom,
+               iSqFt / ConstructConnect, Dodge, any other plan room, a GC's own invitation
+     ''        not a bid (residential, insurance, website homeowner), or not sure. No badge: never a guess.
+
+   ONE rule for the server (bid-inbox upsert stamps item.bidRole; lead-intake) and the CRM page (patch PRIMESUB
+   inlines THIS FILE, word for word, as window._gcBidRoleCore). Works on a Lead Inbox item or a CRM lead.
+
+   Order, first answer wins:
+     0. a person's choice on the lead (bidRoleManual + bidRole 'prime' | 'sub' | 'none')
+     1. not a bid: residential / insurance / restoration type, a website homeowner, a claim         → ''
+     2. the source is a plan room or a GC (BuildingConnected, PlanHub, A&B, RKA, iSqFt, Dodge, "GC direct"),
+        or the BuildingConnected API                                                                   → sub
+     3. the source is public (Government, SAM.gov, a city / county / state / school / MLGW / MSCAA board),
+        the public bid watcher, or a public-bid notice                                                 → prime
+     4. who sent it: a plan room's address → sub; a .gov / .edu / .k12 / .us / public agency address → prime
+     5. who the bid goes to: a GC named on it, or a contractor as the "due to" company → sub;
+        a public body as the "due to" company (or as the owner with no GC) → prime
+     6. a GC's e-mail: the sender is a construction company and the subject is an invitation to bid → sub
+     7. the plans links: only plan rooms → sub; only public boards → prime
+     8. the lead's kind is Government (and nothing above said sub)                                     → prime
+     9. nothing sure                                                                                   → ''
+   ============================================================================ */
+(function(root){
+'use strict';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+
+var SUB_SRC = /buildingconnected|building\s*connected|plan\s*hub|a\s*&\s*b\s*plan|aandb|\brka\b|plan\s*-?rooms?|isqft|construct\s*connect|constructconnect|\bdodge\b|bidclerk|smart\s*bid\s*net|smartbidnet|pipeline\s*suite|pipelinesuite|procore|bid\s*platform|gc\s*direct|general\s*contractor|\bgc\b/i;
+var PRIME_SRC = /^government$|^gov$|sam\.gov|\bfederal\b|\bcounty\b|\bcity\s+of\b|\btown\s+of\b|\bstate\s+of\b|\bschools?\b|\bmscs\b|\bmscaa\b|\bmlgw\b|\bairport\b|housing\s+authority|universit|\bcollege\b|municipal|public\s+works|procurement|\bpublic\b|\bstream\b|\b(tn|ar|ms)\s*\((cpo|stream|building|bureau)/i;
+/* a public body's name */
+var PUB = /\b(city|town|village|county|parish|state|commonwealth)\s+of\b|\bcounty\b|\bschools?\b|\bschool\s+(district|system|board)\b|board\s+of\s+education|\bisd\b|universit(y|ies)\b|\bcollege\b|\bmlgw\b|\bmscaa\b|\bmscs\b|\b(airport|housing|port|transit|water|utility|park|parks)\s+(authority|district|commission)\b|utility\s+district|public\s+(works|utilit\w*|library|schools)|\bmunicipal\b|\bfederal\b|\bdepartment\s+of\b|\bdept\.?\s+of\b|\bu\.?\s?s\.?\s+(army|navy|air\s+force|department)\b|corps\s+of\s+engineers|general\s+services\s+administration|\bgsa\b|veterans\s+affairs|\bsam\.gov\b|\bgovernment\b|\bprocurement\b|purchasing\s+(dept|department|division|office)/i;
+/* a company's name (a contractor) */
+var CO = /\b(llc|l\.l\.c|inc|incorporated|corp|corporation|company|ltd|construction|constructors?|builders?|building\s+(group|company|co)|contracting|contractors?|general\s+contractors?|\bgc\b|enterprises|group|partners|associates|roofing|restoration|developers?|development)\b\.?/i;
+var SUB_DOM = /(^|\.)(buildingconnected|planhub|aandbplanroom|rkaplanroom|isqft|constructconnect|bidclerk|cmdgroup|dodge|construction|smartbidnet|pipelinesuite|procore|bidmail|bidplanroom)\.(com|net)$/;
+var PUB_DOM = /\.(gov|mil|edu)$|\.k12\.|\.us$|(^|\.)(mlgw|scsk12|flymemphis|memphistn|shelbycountytn|shelbycountybids|desotocountyms|southaven|olivebranchms|cityofsouthaven|hernandoms|ionwave|bidnetdirect|centralbidding|demandstar|bonfirehub|opengov|periscopeholdings|bidsync|questcdn)\.(com|org|net|gov|us)$/;
+var OWN_DOM = /(^|\.)grayco-cs\.com$/;
+var INVITE = /invitation\s+to\s+(bid|quote|propose)|\binvite\s+to\s+bid\b|\bbid\s+invit\w*|\bitb\b|\brfq\b|\brfp\b|request\s+for\s+(bids?|quotes?|proposals?|pricing)|\bbid\s+request|\bpricing\s+request|\bbidding\s+(opportunity|invitation)|\bplease\s+bid\b/i;
+var NOT_BID_TYPE = /resid|home|house|kitchen|bath|insur|claim|storm|mitig|restor|water|fire|mold|careers|partner/;
+
+function out(role, why){ return { role: role, why: why }; }
+function pub(name){ name = s(name); return !!name && PUB.test(name) && !CO.test(name.replace(PUB, ' ')); }
+function company(name){ name = s(name); return !!name && !pub(name) && CO.test(name); }
+function domOf(addr){ var m = /@([a-z0-9.-]+)/i.exec(s(addr)); return m ? low(m[1]).replace(/\.$/, '') : ''; }
+function hostOf(u){ var m = /^https?:\/\/([^/?#:]+)/i.exec(s(u)); return m ? low(m[1]) : ''; }
+function srcText(x){ return [x.source, x.leadSource, x.subSource].map(s).filter(Boolean).join(' | '); }
+function srcName(x){ return s(x.source || x.leadSource) || 'its source'; }
+
+function roleOf(x){
+  if (!x || typeof x !== 'object') return out('', 'nothing to read');
+  /* 0. a person's choice */
+  var set = low(x.bidRole);
+  if (x.bidRoleManual && (set === 'prime' || set === 'sub')) return out(set, 'set by ' + (s(x.bidRoleBy) || 'a person'));
+  if (x.bidRoleManual && set === 'none') return out('', 'no badge (set by ' + (s(x.bidRoleBy) || 'a person') + ')');
+  /* 1. not a bid */
+  var typ = low(x.leadKind || x.type), ex = x.leadExtra || {};
+  var web = !!(x.websiteLead || ex.websiteLead || low(x.origin) === 'website');
+  if (web && !/commerc|gov/.test(typ)) return out('', 'a website lead, not a bid');
+  if (x.isInsurance || x.claimId || x.claimNumber) return out('', 'an insurance claim, not a bid');
+  if (NOT_BID_TYPE.test(typ) && !/commerc|gov/.test(typ)) return out('', 'a ' + typ + ' lead, not a bid');
+  /* 2. / 3. the source */
+  var st = srcText(x), org = low(x.origin), kind = low(x.sourceKind);
+  if (SUB_SRC.test(st)) return out('sub', 'came from ' + srcName(x) + ' (a plan room / GC)');
+  if (org === 'api') return out('sub', 'came from the BuildingConnected bid board');
+  if (PRIME_SRC.test(st)) return out('prime', 'came from ' + srcName(x) + ' (a public owner)');
+  if (org === 'watch') return out('prime', 'found by the public bid watcher on ' + srcName(x));
+  if (kind === 'public_bid') return out('prime', 'a public bid notice');
+  if (kind === 'planroom_notice') return out('sub', 'a plan room notice');
+  /* 4. who sent it */
+  var mails = arr(x.emails), subD = '', pubD = '';
+  mails.forEach(function(m){ if (!m) return; var d = domOf(m.from); if (!d || OWN_DOM.test(d)) return; if (SUB_DOM.test(d)) subD = subD || d; else if (PUB_DOM.test(d)) pubD = pubD || d; });
+  [x.email, x.contact && x.contact.email, x.dueToEmail].forEach(function(a){ var d = domOf(a); if (d && !OWN_DOM.test(d) && PUB_DOM.test(d)) pubD = pubD || d; });
+  if (subD && !pubD) return out('sub', 'sent from ' + subD + ' (a plan room)');
+  if (pubD && !subD) return out('prime', 'from a public agency (' + pubD + ')');
+  /* 5. who the bid goes to */
+  var gc = s(x.gc), due = s(x.dueToCompany), owner = s(x.owner);
+  if (gc && !pub(gc)) return out('sub', 'the GC is ' + gc);
+  if (due && company(due) && low(due) !== low(owner)) return out('sub', 'the bid goes to ' + due + ' (a contractor)');
+  if (due && pub(due)) return out('prime', 'the bid goes to ' + due + ' (the owner)');
+  if (owner && pub(owner) && !gc && (!due || low(due) === low(owner))) return out('prime', 'the owner is ' + owner + ', no GC');
+  /* 6. a GC's own e-mail */
+  for (var i = 0; i < mails.length; i++) {
+    var m = mails[i] || {}, who = s(m.fromName), subj = s(m.subject), d = domOf(m.from);
+    if (/buildingconnected|planhub|plan\s*room|planroom|isqft|constructconnect/i.test(who + ' ' + subj)) return out('sub', 'a plan room e-mail');
+    if (INVITE.test(subj) && d && !OWN_DOM.test(d) && (CO.test(who) || /construct|build|contract|gc\b/i.test(d.split('.')[0]))) return out('sub', 'an invitation to bid from ' + (who || d) + ' (a GC)');
+  }
+  /* 7. the plans links */
+  var bs = {}, ln = arr(x.plansLinks);
+  ln.forEach(function(l){ if (!l) return; var b = s(l.board), h = low(l.host) || hostOf(l.url); if (SUB_SRC.test(b) || SUB_DOM.test(h)) bs.sub = 1; else if (/^government$/i.test(b) || PUB_DOM.test(h)) bs.prime = 1; });
+  if (bs.sub && !bs.prime) return out('sub', 'the plans are on a plan room');
+  if (bs.prime && !bs.sub) return out('prime', 'the plans are on a public bid site');
+  /* 8. a government lead */
+  if (/gov|public|municipal|federal/.test(typ)) return out('prime', 'a government bid');
+  return out('', 'not sure: no plan room, GC or public owner found');
+}
+function role(x){ return roleOf(x).role; }
+var API = { roleOf: roleOf, role: role, isPublic: pub, isCompany: company, V: 1 };
+if (typeof module !== 'undefined' && module.exports) module.exports = API;
+else root._gcBidRoleCore = API;
+})(this);
+/* PRIMESUB-CORE-END */
+/* patch PRIMESUB: the page side. window._gcPrimeSub = { of(lead) → 'prime' | 'sub' | '', info(lead) → { role, why },
+   badge(lead, opt) → html, can() → may this person change it, set(id, role) → Promise, menu(el, id) }.
+   of() is remembered per lead id + updatedAt (+ the fields it reads), so a redraw costs a look-up, not a re-read. */
+(function(){
+'use strict';
+var W = window, D = document, C = W._gcBidRoleCore;
+if (!C || W._gcPrimeSub) return;
+var NST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+var M = {}, N = 0;
+function key(l){ return [l.id, l.updatedAt || l.savedAt, l.bidRole, l.bidRoleManual ? 1 : 0, l.source, l.leadKind, l.type, l.inboxRev, l.gc, l.owner].join('|'); }
+function calc(l){
+  if (l.bidRoleManual) return C.roleOf(l);
+  var st = low(l.bidRole);
+  if (st === 'prime' || st === 'sub') { var c = C.roleOf({ type: l.type, leadKind: l.leadKind, websiteLead: l.websiteLead, origin: l.origin, leadExtra: l.leadExtra, isInsurance: l.isInsurance, claimId: l.claimId, claimNumber: l.claimNumber });
+    if (/not a bid/.test(c.why)) return c;   /* stored when it came in, but the lead is now a homeowner / insurance lead */
+    return { role: st, why: s(l.bidRoleWhy) || 'decided when it came in' }; }
+  return C.roleOf(l);
+}
+function info(l){
+  if (!l || typeof l !== 'object') return { role: '', why: '' };
+  if (!l.id) return calc(l);
+  var k = key(l), v = M[k]; if (v) return v;
+  if (++N > 5000) { M = {}; N = 0; }
+  return (M[k] = calc(l));
+}
+function of(l){ return info(l).role; }
+function isBid(l){ try { return typeof W._gcIsBidLead === 'function' && !!W._gcIsBidLead(l); } catch (e) { return false; } }
+var CAN = { at: 0, v: false };
+function can(){ if (Date.now() - CAN.at < 2000) return CAN.v; CAN.v = can0(); CAN.at = Date.now(); return CAN.v; }   /* asked once per badge: looked up at most every 2 s */
+function can0(){
+  try { if (W._gcVAS && W._gcVAS.active()) { var r0 = s(W._gcRP && W._gcRP.role && W._gcRP.role()); return /admin|estimat/i.test(r0); } } catch (e) {}
+  try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+  try { if (W._gcRP && typeof W._gcRP.role === 'function' && /admin|estimat/i.test(s(W._gcRP.role()))) return true; } catch (e) {}
+  try { var u = (typeof W._gcMeUser === 'function' && W._gcMeUser()) || W._gcMeNow || {}; return u.role === 'Admin' || low(u.payType) === 'owner' || /estimat/i.test(s(u.role) + ' ' + s(u.profile)); } catch (e) { return false; }
+}
+var LABEL = { prime: '🏛 PRIME', sub: '🔧 SUB' };
+var SAYS = { prime: 'PRIME: we bid straight to the owner', sub: 'SUB: we bid to a general contractor' };
+function css(){
+  if (D.getElementById('gc-role-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-role-css';
+  st.textContent = '.gc-role{display:inline-flex;align-items:center;gap:2px;border-radius:999px;padding:1px 8px;margin:0 4px 2px 0;font:800 11px/18px Arial,sans-serif;letter-spacing:.3px;white-space:nowrap;border:1px solid;vertical-align:middle;user-select:none}'
+    + '.gc-role-prime{background:#e3edff;color:#123d8a;border-color:#8fb0ec}.gc-role-sub{background:#fff0d9;color:#8a4600;border-color:#eebd6e}'
+    + '.gc-role-unset{background:transparent;color:#6b7280;border:1px dashed #b6bfcc;font-weight:700}.gc-role[data-can="1"]{cursor:pointer}.gc-role[data-can="1"]:hover{filter:brightness(.95)}'
+    + '#gc-role-menu{position:fixed;z-index:2147483200;background:#fff;color:#1b1640;border:1px solid #cfc8ea;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:8px;width:260px;max-width:calc(100vw - 24px);font:13px Arial,sans-serif}'
+    + '#gc-role-menu .h{font-weight:800;margin:2px 4px 6px}#gc-role-menu button{display:block;width:100%;text-align:left;border:1px solid #e5e1f5;background:#fff;color:#1b1640;border-radius:7px;padding:8px 10px;margin:0 0 5px;font:700 13px Arial,sans-serif;cursor:pointer;min-height:36px}'
+    + '#gc-role-menu button.on{background:#1b1640;color:#fff;border-color:#1b1640}#gc-role-menu button:hover{border-color:#8f86c9}#gc-role-menu .w{color:#6b7280;font-size:11px;margin:2px 4px 0}';
+  (D.head || D.documentElement).appendChild(st);
+}
+/* opt.always: draw the "＋ Prime / Sub" chip on any lead a person may mark (the lead's own page) */
+function badge(l, opt){
+  if (!l) return '';
+  var i = info(l), r = i.role, c = can() ? '1' : '0'; css();
+  if (r) return '<span class="gc-role gc-role-' + r + '" data-gc-role="' + esc(l.id) + '" data-can="' + c + '" title="' + esc(SAYS[r] + ' (' + i.why + ')' + (c === '1' ? '. Tap to change.' : '')) + '">' + LABEL[r] + '</span>';
+  if (c !== '1' || !l.id || /not a bid/.test(i.why) || !((opt && opt.always) || isBid(l))) return '';
+  return '<span class="gc-role gc-role-unset" data-gc-role="' + esc(l.id) + '" data-can="1" title="Prime or sub not known (' + esc(i.why) + '). Tap to mark it.">＋ Prime / Sub</span>';
+}
+function leadList(){ try { if (W._gcLeadsHubKit) return W._gcLeadsHubKit.all(); } catch (e) {} try { return (W._crm && W._crm.leads) || []; } catch (e) { return []; } }
+function find(id){ var L = leadList(); for (var i = 0; i < L.length; i++) if (L[i] && L[i].id === id) return L[i]; return null; }
+function me(){ try { if (W._gcLeadsHubKit) return s(W._gcLeadsHubKit.me()); } catch (e) {} try { return s((W._gcMeNow && W._gcMeNow.name) || ''); } catch (e) { return ''; } }
+function toast(msg){ try { var t = D.createElement('div'); t.setAttribute('role', 'status'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;font:14px Arial;z-index:2147483300;max-width:90vw'; D.body.appendChild(t); NST.call(W, function(){ try { t.remove(); } catch (e) {} }, 3000); } catch (e) {} }
+/* role: 'prime' | 'sub' | 'none' (no badge) | 'auto' (the CRM decides again) — saved on that one lead */
+function set(id, role){
+  if (!can()) { toast('Only an admin or an estimator marks prime / sub'); return Promise.resolve(false); }
+  if (!/^(prime|sub|none|auto)$/.test(role)) return Promise.resolve(false);
+  var kit = W._gcLeadsHubKit, at = new Date().toISOString(), who = me(), pushed = null;
+  var mut = function(list){
+    var i = -1; for (var k = 0; k < list.length; k++) if (list[k] && list[k].id === id) { i = k; break; }
+    if (i < 0) return null;
+    var x = Object.assign({}, list[i]), was = info(list[i]).role || 'none';
+    if (role === 'auto') { x.bidRole = ''; x.bidRoleManual = false; x.bidRoleWhy = ''; }
+    else { x.bidRole = role; x.bidRoleManual = true; x.bidRoleWhy = ''; }
+    x.bidRoleBy = who; x.bidRoleAt = at; x.updatedAt = at;
+    var a = Array.isArray(x.activity) ? x.activity.slice() : [];
+    a.push({ type: 'role', text: 'Prime / sub: ' + ({ prime: '🏛 Prime', sub: '🔧 Sub', none: 'no badge', auto: 'automatic' }[role]) + ' (was ' + (was === 'none' ? 'not marked' : was) + ')', at: at, by: who });
+    x.activity = a.slice(-200);
+    list[i] = x; pushed = list; return list;
+  };
+  var p = kit && kit.setLeads ? kit.setLeads(mut) : new Promise(function(res){ try { W._setLeads(function(prev){ var n = mut((prev || []).slice()); if (!n) { res(false); return prev; } res(true); try { W.idbSet && W.idbSet('leads', n); W._supaUpsert && W._supaUpsert('leads', n); } catch (e) {} return n; }); } catch (e) { res(false); } });
+  return Promise.resolve(p).then(function(ok){
+    if (!ok) { toast('Could not save — try again'); return false; }
+    toast(role === 'prime' ? '🏛 Marked PRIME' : role === 'sub' ? '🔧 Marked SUB' : role === 'none' ? 'No prime / sub badge' : 'Prime / sub: automatic');
+    try { if (Array.isArray(pushed) && typeof W._supaUpsertNow === 'function') NST.call(W, function(){ W._supaUpsertNow('leads', pushed); }, 300); } catch (e) {}   /* one tap: to the cloud now */
+    repaint(id);
+    return true;
+  });
+}
+function repaint(id){
+  try { if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {}
+  try { if (W._gcLeadInbox && W._gcLeadInbox.repaint) W._gcLeadInbox.repaint(); } catch (e) {}
+  try { var u = W._gcLeadsHub && W._gcLeadsHub.ui && W._gcLeadsHub.ui(); if (u && u.open === id && D.getElementById('gcl-drawer') && W._gcLeadsHub.open) W._gcLeadsHub.open(id); } catch (e) {}
+}
+var menuEl = null;
+function closeMenu(){ if (!menuEl) return; try { menuEl.remove(); } catch (e) {} menuEl = null; D.removeEventListener('mousedown', outside, true); D.removeEventListener('touchstart', outside, true); D.removeEventListener('keydown', onKey, true); }
+function outside(e){ if (menuEl && !menuEl.contains(e.target) && !(e.target.closest && e.target.closest('[data-gc-role]'))) closeMenu(); }
+function onKey(e){ if (e.key === 'Escape') { e.stopPropagation(); closeMenu(); } }
+function menu(el, id){
+  closeMenu(); css();
+  var l = find(id) || {}, i = info(l), cur = l.bidRoleManual ? (low(l.bidRole) || 'none') : 'auto';
+  var m = D.createElement('div'); m.id = 'gc-role-menu'; m.setAttribute('role', 'menu'); m.setAttribute('data-gc-keep', '1');
+  var b = function(r, t){ return '<button type="button" role="menuitemradio" aria-checked="' + (cur === r) + '" data-r="' + r + '" class="' + (cur === r ? 'on' : '') + '">' + t + '</button>'; };
+  m.innerHTML = '<div class="h">' + esc(s(l.name || l.title) || 'This lead') + '</div>'
+    + b('prime', '🏛 Prime: we bid to the owner') + b('sub', '🔧 Sub: we bid to a GC') + b('none', 'No badge') + b('auto', '↺ Automatic')
+    + '<div class="w">Now: ' + (i.role ? LABEL[i.role] : 'no badge') + ' (' + esc(i.why) + ')</div>';
+  D.body.appendChild(m); menuEl = m;
+  try { var r = el.getBoundingClientRect(), mw = m.offsetWidth || 260, mh = m.offsetHeight || 220; var x = Math.max(12, Math.min(r.left, W.innerWidth - mw - 12)), y = r.bottom + 6; if (y + mh > W.innerHeight - 8) y = Math.max(8, r.top - mh - 6); m.style.left = x + 'px'; m.style.top = y + 'px'; } catch (e) {}
+  m.addEventListener('click', function(e){ var t = e.target.closest && e.target.closest('[data-r]'); if (!t) return; e.preventDefault(); e.stopPropagation(); var r2 = t.getAttribute('data-r'); closeMenu(); set(id, r2); });
+  D.addEventListener('mousedown', outside, true); D.addEventListener('touchstart', outside, true); D.addEventListener('keydown', onKey, true);
+  try { var f = m.querySelector('button.on') || m.querySelector('button'); f.focus(); } catch (e) {}
+}
+/* one listener for every badge (Leads board / list, the lead's page, the Bids tab): a tap opens the menu instead of the lead */
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-gc-role]') : null; if (!t || t.getAttribute('data-can') !== '1') return;
+  if (!can()) return;
+  e.preventDefault(); e.stopPropagation(); menu(t, t.getAttribute('data-gc-role'));
+}, true);
+W._gcPrimeSub = { of: of, info: info, badge: badge, can: can, set: set, menu: menu, core: C, _memo: function(){ return N; } };
+})();
+</script>
 <script id="gc-patch-ld2">
 /* __GC_PATCH_LD2__ ════════════════════════════════════════════════════════════
    GrayCo — 📥 LEAD INBOX, connected to the bid portal (patch LD2: LD re-anchored on the current CRM).
@@ -124887,7 +125121,7 @@ function flushOut(){
 
 /* ── state ─────────────────────────────────────────────────────────────────── */
 var S = lsGet(K_CACHE, null) || { items: [], watch: null, settings: null, notices: [], portal: null, alerts: null, at: '', me: {} };
-var UI = Object.assign({ src: '', type: '', due: '', show: 'new', open: true }, lsGet(K_UI, {}));
+var UI = Object.assign({ src: '', type: '', due: '', show: 'new', open: true, role: '' }, lsGet(K_UI, {}));   /* patch PRIMESUB: role */
 var busy = false, lastPull = 0, lastErr = '';
 
 /* a lead's kind and how the Lead Pipeline names it */
@@ -124926,6 +125160,7 @@ function fromItem(it, prev){
     if (it.flag && it.flag !== prev.inboxFlag) l.inboxFlagNew = true;
   }
   l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
+  if (it.bidRole && !l.bidRoleManual) { l.bidRole = s(it.bidRole); l.bidRoleWhy = s(it.bidRoleWhy); }   /* patch PRIMESUB: the server's prime / sub (a person's choice stays) */
   l.inboxId = it.id; l.inboxRev = it.rev || 1; l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
   if (it.estimator) { l.estimator = s(it.estimator); l.estimatorEmail = s(it.estimatorEmail); }
@@ -124933,7 +125168,7 @@ function fromItem(it, prev){
   l.plansLinks = arr(it.plansLinks).map(function(x){ return { url: x.url, label: x.label, board: x.board }; }).slice(0, 25);
   var mineDocs = arr(prev && prev.docs).filter(function(d){ return d && d.addedBy; });   /* files a person dropped on the lead stay */
   l.docs = arr(it.files).filter(function(f){ return f && f.ref; }).map(function(f){ return { ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: f.addendum }; }).concat(mineDocs);
-  l.rawEmailRef = s(it.rawRef); l.emails = arr(it.emails).map(function(e){ return { subject: e.subject, from: e.from, date: e.date, rawRef: e.rawRef }; }).slice(-10);
+  l.rawEmailRef = s(it.rawRef); l.emails = arr(it.emails).map(function(e){ return { subject: e.subject, from: e.from, fromName: e.fromName, date: e.date, rawRef: e.rawRef }; }).slice(-10);   /* patch PRIMESUB: + who sent it */
   l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
   l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin);
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
@@ -125063,6 +125298,7 @@ function filtered(){
   var all = list;
   if (UI.src) all = all.filter(function(l){ return UI.src === 'Government' ? (l.leadKind === 'Government' && !/^(BuildingConnected|PlanHub|A&B Planroom|RKA Planroom|GC direct|RoofScout)$/.test(srcOf(l))) : srcOf(l) === UI.src; });
   if (UI.type) all = all.filter(function(l){ return kindOf(l) === UI.type; });
+  if (UI.role && window._gcPrimeSub) all = all.filter(function(l){ var r = window._gcPrimeSub.of(l); return UI.role === 'unset' ? !r && !isRs(l) && typeof window._gcIsBidLead === 'function' && !!window._gcIsBidLead(l) : r === UI.role; });   /* patch PRIMESUB */
   if (UI.due) all = all.filter(function(l){ var n = daysLeft(l.bidDue); if (UI.due === 'none') return n == null; if (UI.due === 'past') return n != null && n < 0; return n != null && n >= 0 && n <= +UI.due; });
   all.sort(function(a, b){ var x = dueMs(a.bidDue), y = dueMs(b.bidDue); x = isFinite(x) && x >= Date.now() - 86400000 ? x : 9e15; y = isFinite(y) && y >= Date.now() - 86400000 ? y : 9e15; return x - y || s(b.createdAt).localeCompare(s(a.createdAt)); });
   return all;
@@ -125368,7 +125604,7 @@ function card(l){
   var c = countdown(l.bidDue), k = kindOf(l), sg = suggestPm(l), rem = reminders().filter(function(x){ return x.leadId === l.id; })[0];
   var where = [l.gc && 'GC: ' + l.gc, l.owner && l.owner !== l.gc && 'Owner: ' + l.owner, l.address || [l.city, l.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
   return '<div class="card ' + (c.cls === 'hot' ? 'hot' : c.cls === 'warm' ? 'warm' : '') + '" data-id="' + esc(l.id) + '">'
-    + '<div class="tags"><span class="tg t-src">' + esc(srcOf(l)) + '</span><span class="tg t-' + k + '">' + k + '</span>' + portalTag(l)
+    + '<div class="tags">' + (window._gcPrimeSub ? window._gcPrimeSub.badge(l) : '') + '<span class="tg t-src">' + esc(srcOf(l)) + '</span><span class="tg t-' + k + '">' + k + '</span>' + portalTag(l)
     + (l.inboxFlag ? '<span class="tg t-flag">' + esc(l.inboxFlag) + '</span>' : '') + (arr(l.alsoOn).length ? '<span class="tg t-also">also on ' + esc(l.alsoOn.join(', ')) + '</span>' : '')
     + (l.needsReview ? '<span class="tg t-flag">needs a look</span>' : '') + '</div>'
     + '<div class="ttl">' + esc(l.name) + '</div>' + (where ? '<div class="sub">' + esc(where) + '</div>' : '')
@@ -125403,6 +125639,8 @@ function render(){
     h += '<div class="fl"><select data-f="show">' + opt('new', 'New', UI.show) + opt('open', 'All open', UI.show) + opt('assigned', 'Assigned', UI.show) + '</select>'
       + '<select data-f="src">' + opt('', 'All sources', UI.src) + SRC_LIST.map(function(x){ return opt(x, x, UI.src); }).join('') + '</select>'
       + '<select data-f="type">' + opt('', 'All types', UI.type) + ['Commercial', 'Insurance', 'Residential', 'Government'].map(function(x){ return opt(x, x, UI.type); }).join('') + '</select>'
+      + (window._gcPrimeSub ? (function(){ var rc = { prime: 0, sub: 0, unset: 0 }, P = window._gcPrimeSub; inboxLeads().forEach(function(l){ if (UI.show === 'new' ? !isNew(l) : UI.show === 'assigned' ? isNew(l) : false) return; var r = P.of(l); if (r) rc[r]++; else if (!isRs(l) && typeof window._gcIsBidLead === 'function' && window._gcIsBidLead(l)) rc.unset++; });   /* patch PRIMESUB */
+          return '<select data-f="role" aria-label="Prime or sub">' + opt('', 'Prime & sub', UI.role) + opt('prime', '🏛 Prime: to the owner (' + rc.prime + ')', UI.role) + opt('sub', '🔧 Sub: to a GC (' + rc.sub + ')', UI.role) + opt('unset', '❔ Not marked (' + rc.unset + ')', UI.role) + '</select>'; })() : '')
       + '<select data-f="due">' + opt('', 'Any due date', UI.due) + opt('3', 'Due in 3 days', UI.due) + opt('7', 'Due in 7 days', UI.due) + opt('14', 'Due in 14 days', UI.due) + opt('past', 'Past due', UI.due) + opt('none', 'No date', UI.due) + '</select></div>';
     h += list.length ? '<div class="grid">' + list.slice(0, LDI_LIM).map(card).join('') + '</div>' + (list.length > LDI_LIM ? '<div style="padding:0 12px 12px"><button class="b pri" data-a="more">Show ' + Math.min(40, list.length - LDI_LIM) + ' more (' + (list.length - LDI_LIM) + ' not shown)</button></div>' : '')
       : '<div class="empty">' + (UI.show === 'new' ? 'No new leads right now. New ones arrive from leads@grayco-cs.com, the public bid sites and RoofScout — they show up here when the CRM is opened, and admins get an e-mail.' : 'Nothing matches these filters.') + '</div>';
@@ -125956,6 +126194,7 @@ window._gcLeadInbox = {
   list: listOut, assignList: assignList,
   assign: assign, dismiss: dismiss, merge: merge, createJob: createJob, openTakeoff: openTakeoff, publish: publish,
   reminders: reminders, count: newCount, refresh: function(){ return pull(true); },
+  repaint: function(){ return readList('_setLeads').then(function(){ LDI_FORCE = true; render(); }); },   /* patch PRIMESUB: after a prime / sub tap */
   open: function(){ try { if (window._setView) window._setView('leads'); } catch (e) {} },
   status: function(){ return { at: S.at, items: S.items.length, newCount: newCount(), portal: S.portal, alerts: S.alerts, outbox: lsGet(K_OUT, []).length, error: lastErr, busy: busy, admin: isAdmin(), alerts: alertLog.slice(-10), toasts: toastLog.slice() }; },
   _test: { dbg: function(){ return { mt: !!mt, mtAge: mtAt ? Date.now() - mtAt : 0, observed: moBody === document.body, bar: !!leadsBar(), el: !!document.getElementById('gc-ldi') }; }, tick: tick, fromItem: fromItem, importItems: importItems, state: function(){ return S; }, peek: peek, render: render, mountPlans: mountPlans, filtered: filtered, alertNew: alertNew }
@@ -164597,6 +164836,9 @@ function dueSort(l){ var t = dueMs(l); return isFinite(t) ? t : 9e15; }
 /* "Most important first": priority 10 → 1 (none last), the same priority by bid due date (soonest first, none last), then the newest */
 function importance(a, b){ return (prioOf(b) || -1) - (prioOf(a) || -1) || dueSort(a) - dueSort(b) || receivedMs(b) - receivedMs(a); }
 function needsPrio(l){ return !shut(l) && !prioOf(l); }
+/* patch PRIMESUB: 🏛 PRIME / 🔧 SUB (window._gcPrimeSub: remembered per lead id + updatedAt) */
+function roleOfL(l){ try { return W._gcPrimeSub ? W._gcPrimeSub.of(l) : ''; } catch (e) { return ''; } }
+function roleChip(l, o){ try { return W._gcPrimeSub ? W._gcPrimeSub.badge(l, o) : ''; } catch (e) { return ''; } }
 W._gcLeadPriority = {
   of: prioOf, set: setPriority, importance: importance,
   can: function(id){ var l = leads().filter(function(x){ return x.id === id; })[0]; return !!l && canPrio(l); },
@@ -164760,13 +165002,13 @@ function logAct(l, type, text){ var a = arr(l.activity).slice(); a.push({ type: 
 function uiKey(){ return 'gc_leads_ui_v2:' + (myEmail() || 'me') + ':' + (amEstimator() ? 'est' : 'all'); }
 function loadUI(){
   var k = uiKey(), est = amEstimator(), U = lsGet(k, null);
-  if (U && !est) U = Object.assign({}, U, { who: '', src: '', type: '', stage: '', due: '', un: false, closed: false, preset: 'all', prio: '' });   /* LEADSCON: Leads always opens on ALL leads, no filter left over from last time */
+  if (U && !est) U = Object.assign({}, U, { who: '', src: '', type: '', stage: '', due: '', un: false, closed: false, preset: 'all', prio: '', role: '' });   /* LEADSCON: Leads always opens on ALL leads, no filter left over from last time */
   if (!U) { U = est ? { v: 'list', sort: 'born', dir: -1, preset: 'bids' } : (lsGet('gc_leads_ui_v1', null) || {}); U.closed = false; if (!est) U.preset = U.preset === 'bids' ? 'bids' : 'all'; }
-  return { _k: k, v: U.v || (est ? 'list' : 'board'), who: U.who || '', src: U.src || '', type: U.type || '', stage: U.stage || '', due: U.due || '', un: !!U.un, q: '', sort: U.sort || 'born', dir: U.dir || -1, open: '', cal: U.cal || '', classic: false,   /* patch HOT2b: the hub only (the old table: an admin's small link, html.gcl-classic-ok) */ closed: !!U.closed, preset: U.preset === 'bids' ? 'bids' : 'all', exp: !!U.exp, prio: /^(hi|md|lo|none)$/.test(U.prio) ? U.prio : '' };
+  return { _k: k, v: U.v || (est ? 'list' : 'board'), who: U.who || '', src: U.src || '', type: U.type || '', stage: U.stage || '', due: U.due || '', un: !!U.un, q: '', sort: U.sort || 'born', dir: U.dir || -1, open: '', cal: U.cal || '', classic: false,   /* patch HOT2b: the hub only (the old table: an admin's small link, html.gcl-classic-ok) */ closed: !!U.closed, preset: U.preset === 'bids' ? 'bids' : 'all', exp: !!U.exp, prio: /^(hi|md|lo|none)$/.test(U.prio) ? U.prio : '', role: /^(prime|sub|unset)$/.test(U.role) ? U.role : '' };
 }
 var UI = loadUI();
 function syncUI(){ if (UI._k !== uiKey()) { UI = loadUI(); HUB_SIG = ''; } }
-function saveUI(){ lsSet(UI._k || uiKey(), { v: UI.v, who: UI.who, src: UI.src, type: UI.type, stage: UI.stage, due: UI.due, un: UI.un, sort: UI.sort, dir: UI.dir, cal: UI.cal, classic: UI.classic, closed: UI.closed, preset: UI.preset, exp: UI.exp, prio: UI.prio }); }
+function saveUI(){ lsSet(UI._k || uiKey(), { v: UI.v, who: UI.who, src: UI.src, type: UI.type, stage: UI.stage, due: UI.due, un: UI.un, sort: UI.sort, dir: UI.dir, cal: UI.cal, classic: UI.classic, closed: UI.closed, preset: UI.preset, exp: UI.exp, prio: UI.prio, role: UI.role }); }   /* patch PRIMESUB: role */
 
 function unassignedCount(){
   if (myScope().kind === 'all' && typeof W._gcUnassignedLeadCount === 'function') { try { var n = W._gcUnassignedLeadCount(); if (typeof n === 'number') return n; } catch (e) {} }   /* patch LROLEVIEW: the inbox count is everyone's */
@@ -164787,7 +165029,8 @@ function filtered(){
     if (UI.who === '__mybids' && (low(assignee(l)) !== low(myName()) || !isBidL(l))) return false;
     if (UI.who && UI.who.indexOf('__') !== 0 && low(assignee(l)) !== low(UI.who)) return false;
     if (UI.src && srcCanon(l) !== srcLabel(UI.src)) return false;   /* patch LCLEAN: "website" = "Website" */
-    if (UI.type && typesOf(l).indexOf(TYPE_OLD[UI.type] || UI.type) < 0) return false;   /* patch LCLEAN: Roofing, restoration kinds … */
+    if (UI.type && typesOf(l).indexOf(TYPE_OLD[UI.type] || UI.type) < 0) return false;
+    if (UI.role) { var rr = roleOfL(l); if (UI.role === 'unset' ? (rr || !isBidL(l)) : rr !== UI.role) return false; }   /* patch PRIMESUB */   /* patch LCLEAN: Roofing, restoration kinds … */
     if (UI.stage && stageOf(l) !== UI.stage) return false;
     if (UI.due) { var t = dueMs(l); if (!isFinite(t)) return false; var d = (t - now) / 864e5; if (UI.due === 'past' ? d >= 0 : UI.due === '7' ? (d < 0 || d > 7) : (d < 0 || d > 30)) return false; }
     if (q && low([l.name, l.title, l.client, l.contact, l.email, l.phone, l.address, l.city, srcOf(l), assignee(l), l.gc, l.dueToCompany, l.bidNumber].join(' ')).indexOf(q) < 0) return false;
@@ -164889,7 +165132,8 @@ function hubHtml(){
   var ks = kpis();
   /* patch LCLEAN: every standard source + any found on a lead, each with its count; every type with its count */
   var base0 = scoped().filter(function(l){ return !importedL(l) || UI.imp; }), sc = {}, tc = {};   /* patch LROLEVIEW */
-  base0.forEach(function(l){ var k = srcCanon(l); sc[k] = (sc[k] || 0) + 1; typesOf(l).forEach(function(x){ tc[x] = (tc[x] || 0) + 1; }); });
+  var rc = { prime: 0, sub: 0, unset: 0 };   /* patch PRIMESUB */
+  base0.forEach(function(l){ var k = srcCanon(l); sc[k] = (sc[k] || 0) + 1; typesOf(l).forEach(function(x){ tc[x] = (tc[x] || 0) + 1; }); var r0 = roleOfL(l); if (r0) rc[r0]++; else if (isBidL(l)) rc.unset++; });
   var src = sourceList(rawLeads()).map(function(x){ return { v: x, t: x + ' (' + (sc[x] || 0) + ')' }; });
   if (UI.type && TYPE_OLD[UI.type]) UI.type = TYPE_OLD[UI.type];
   if (UI.src) UI.src = srcLabel(UI.src);
@@ -164903,6 +165147,7 @@ function hubHtml(){
       + '<select data-gcl-f="who" aria-label="Assignee">' + optionsFor(who, UI.who, 'Everyone') + '</select>'
       + '<select data-gcl-f="src" aria-label="Source">' + optionsFor(src, UI.src, 'All sources') + '</select>'
       + '<select data-gcl-f="type" aria-label="Type">' + optionsFor(LEAD_TYPES.map(function(t){ return { v: t, t: t + ' (' + (tc[t] || 0) + ')' }; }), UI.type, 'All types') + '</select>'
+      + '<select data-gcl-f="role" aria-label="Prime or sub" title="🏛 Prime: we bid to the owner (city, county, school, state, federal). 🔧 Sub: we bid to a GC (BuildingConnected, PlanHub, plan rooms).">' + optionsFor([{ v: 'prime', t: '🏛 Prime: to the owner (' + rc.prime + ')' }, { v: 'sub', t: '🔧 Sub: to a GC (' + rc.sub + ')' }, { v: 'unset', t: '❔ Bid, not marked (' + rc.unset + ')' }], UI.role, 'Prime & sub') + '</select>'   /* patch PRIMESUB */
       + (UI.v === 'board' ? '' : '<select data-gcl-f="stage" aria-label="Stage">' + optionsFor(STAGES, UI.stage, 'All stages') + '</select>')
       + '<select data-gcl-f="due" aria-label="Bid due">' + optionsFor([{ v: '7', t: 'Due in 7 days' }, { v: '30', t: 'Due in 30 days' }, { v: 'past', t: 'Past due' }], UI.due, 'Any due date') + '</select>'
       + '<select data-gcl-f="prio" aria-label="Priority">' + optionsFor([{ v: 'hi', t: '⭐ 8–10 (high)' }, { v: 'md', t: '⭐ 5–7' }, { v: 'lo', t: '⭐ 1–4' }, { v: 'none', t: 'No priority yet' }], UI.prio, 'Any priority') + '</select>'
@@ -164928,7 +165173,7 @@ function cardHtml(l){
     + '<div class="m">' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + (value(l) ? ' · <b>' + money(value(l)) + '</b>' : '') + '</div>'
     + '<div class="m" title="When it came in and where from">📥 ' + esc(shortDay(receivedMs(l)) || '—') + ' · ' + esc(srcOf(l)) + '</div>'   /* patch HOT2 */
     + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
-    + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
+    + roleChip(l) + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
     + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
     + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? (assignee(l) ? 'Change estimator' : 'Assign estimator') : (assignee(l) ? 'Reassign' : 'Assign to PM')) + '</button>' : '')   /* patch LROLEVIEW; BIDROLE */
     + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
@@ -164956,7 +165201,7 @@ function bodyHtml(){
     var npk = Object.keys(PICK).filter(function(id){ return PICK[id] && list.some(function(l){ return l.id === id; }); }).length;   /* patch LROLEVIEW: bulk assign */
     return (canAssignAll() ? '<div class="gcl-fil" style="margin:0 0 6px"><button type="button" class="gcl-mv" data-gcl-pickall>☑ Select all shown / none</button><button type="button" class="gcl-mv gcl-asg" data-gcl-bulkasg' + (npk ? '' : ' disabled') + '>👤 Assign selected (' + npk + ')…</button></div>' : '')
       + '<div class="gcl-wrap"><table class="gcl-list"><thead><tr>' + cols.map(function(c){ return '<th data-gcl-sort="' + c[0] + '">' + c[1] + (UI.sort === c[0] ? (UI.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + '</tr></thead><tbody>'
-      + list.slice(0, lim('list')).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b><div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.rowCell(l) : (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>')) + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
+      + list.slice(0, lim('list')).map(function(l){ return '<tr data-gcl-id="' + esc(l.id) + '"><td>' + (canAssignAll() ? '<input type="checkbox" data-gcl-pick="' + esc(l.id) + '"' + (PICK[l.id] ? ' checked' : '') + ' aria-label="Select for bulk assign" style="margin-right:6px"> ' : '') + '<b>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</b> ' + roleChip(l) + '<div style="font-size:11px;color:#666">' + esc([l.address, l.city].filter(Boolean).join(', ')) + '</div></td><td>' + prioChip(l) + '</td><td>' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' ' + speedChip(l) + '</td><td>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.rowCell(l) : (assignee(l) ? esc(assignee(l)) : '<span class="gcl-chip warn">Unassigned</span>')) + (canAssignAll() ? ' <button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '">👤 ' + (assignee(l) ? 'Reassign' : 'Assign') + '</button>' : '') + '</td><td>' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + '</td><td>' + esc(srcOf(l)) + '</td><td>' + (value(l) ? money(value(l)) : '') + '</td><td>' + dueChip(l) + '</td><td>' + (receivedMs(l) ? new Date(receivedMs(l)).toLocaleDateString() : '') + '</td></tr>'; }).join('')
       + '</tbody></table></div>' + moreBtn('list', list.length) + (list.length ? '' : '<p style="color:#666">No leads match.</p>');   /* patch LEADPERF-2 */
   }
   if (UI.v === 'cal') {
@@ -165323,6 +165568,8 @@ function drawerHtml(l){
     + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '')
     + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button>' + (classicRow(l.id) ? '<button type="button" class="b" data-d="editfull" title="Name, phone, e-mail, address, type, value … — the full lead form">✏️ Edit details</button><button type="button" class="b red" data-d="delfull">🗑 Delete…</button>' : '') + '</div>'   /* patch HOT2b */
     + '<div class="row gcl-prio-row"><span class="kv"><span>⭐ Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'   /* patch HOT2 */
+    + (function(){ var rcp = roleChip(l, { always: isBidL(l) }); if (!rcp) return ''; var inf = W._gcPrimeSub.info(l);   /* patch PRIMESUB: the lead's page */
+        return '<div class="row gcl-role-row"><span class="kv"><span>Prime / sub:</span></span> ' + rcp + ' <span class="note">' + esc(inf.role ? inf.why : 'not marked yet') + (W._gcPrimeSub.can() ? ' · tap to change' : '') + '</span></div>'; })()
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     /* assign */
