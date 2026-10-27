@@ -10,7 +10,7 @@
    Static pages: <span data-gc-addr>…</span> / <span data-gc-street>…</span> are filled in. */
 (function(){
   if (window._gcCompanyAddress) return;
-  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '2026-10-29' };
+  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
   var LK = 'gc_company_address';
   function s(v){ return v == null ? '' : String(v).trim(); }
   function merge(v){

@@ -818,7 +818,13 @@ async function processEventCore(evt, opts){
     if (mk) {
       const own0 = ownOrAuto(mail); if (own0) return { status: 200, body: { ok: true, ignored: own0 } };
       if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
-      try { const r = await MM.fromEmail(mail, mk, { storeFile: storeFile, kvListUpdate: function(k, f){ return require('./portal.js')._core.kvListUpdate(k, f); } }); return { status: 200, body: Object.assign({ inbox: mk === 'receipt' ? 'receipts' : 'sub-invoices' }, r) }; }
+      /* patch SUBINV: Gmail's "confirm forwarding" e-mail (the office@ filter → invoices@in): the code goes on the office To-Do */
+      if (/^forwarding-noreply@google\.com$/.test(mail.from.email)) {
+        try { await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== mail.id).concat([{ id: mail.id || itemId(mail.subject + mail.date), at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20)); } catch (e) {}
+        try { await require('./portal.js')._core.officeTodo('gmail_fwd_' + itemId(mail.subject), '📧 Gmail forwarding code for invoices@: ' + s(mail.subject).slice(0, 140), 'Gmail asked to confirm forwarding to invoices@in.grayco-cs.com. In that mailbox: Settings → Forwarding and POP/IMAP → Verify → type the number shown in this to-do (docs/SUBINV-SETUP.md).'); } catch (e) {}
+        return { status: 200, body: { ok: true, notice: true, inbox: 'sub-invoices' } };
+      }
+      try { const r = await MM.fromEmail(mail, mk, require('./_lib/money-box.js').moneyDeps(storeFile, { via: mk === 'receipt' ? 'receipts@' : 'invoices@' })); return { status: 200, body: Object.assign({ inbox: mk === 'receipt' ? 'receipts' : 'sub-invoices' }, r) }; }
       catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this ' + (mk === 'receipt' ? 'receipt' : 'invoice') + ' yet (' + (e && e.message) + ') — retry.' } }; }
     } }
   /* patch EST4: leads@ carries bid invitations too (they take the bid path below); bids@ is only for subcontractors'
@@ -1428,6 +1434,7 @@ exports.backgroundHandler = async function(event){
   const raw = rawBody(event);
   if (!handoffOk(event, raw)) return J(401, { error: 'Not from the bid inbox.' });
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
+  if (evt && evt.type === 'money.pull') { try { const out = await require('./_lib/money-box.js').drain({ budgetMs: 780000 }); return J(200, out); } catch (e) { console.error('[bid-inbox] office@ mailbox read failed: ' + (e && e.message)); return J(500, { error: 'mailbox read failed' }); } }   /* patch SUBINV */
   if (evt && evt.type === 'watch.run') { try { const out = await require('./bid-watch.js').runAll({ only: s(evt.source), by: s(evt.by) }); return J(200, out); } catch (e) { console.error('[bid-inbox] watcher failed: ' + (e && e.message)); return J(500, { error: 'watcher failed' }); } }
   const r = await processEvent(evt);
   if (r.status >= 500) console.error('[bid-inbox] could not store: ' + JSON.stringify(r.body));
@@ -1440,5 +1447,6 @@ exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, k
 exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
+exports._lib.handOffJson = function(obj){ return handOff(JSON.stringify(obj)); };   /* patch SUBINV: mail-all-sync → the office@ mailbox reader in the background */
 exports._test.processEvent = processEvent;
 exports._test.estimateMail = estimateMail; exports._test.forEstimates = forEstimates;   /* patch ESTIN: tests */   /* patch MAILC: tests */
