@@ -45,16 +45,34 @@ function addressConfig(){
   if (s(v.next)) c.next = s(v.next);
   if (/^\d{4}-\d{2}-\d{2}$/.test(s(v.switchOn))) c.switchOn = s(v.switchOn);
   if (v.switchOn === '') c.switchOn = '';
+  c.history = cleanHistory(v.history);
   return c;
+}
+/* patch ADDRALL: the addresses GrayCo used before, each with the moment it stopped ({ address, until: ISO }), written by
+   ⚙ Admin → 🏢 Company address when the address changes. A paper dated before `until` keeps that address. */
+function cleanHistory(h){
+  return (Array.isArray(h) ? h : []).filter(function(x){ return x && s(x.address) && isFinite(Date.parse(s(x.until))); })
+    .map(function(x){ return { address: s(x.address), until: s(x.until) }; }).sort(function(a, b){ return Date.parse(a.until) - Date.parse(b.until); }).slice(-30);
 }
 /* the address on a given moment (default now) */
 function companyAddress(when){
   if (!addrBusy && Date.now() - addrAt > 120e3) refreshAddress();
   const c = addressConfig();
+  if (when && c.history.length) { const t = new Date(when).getTime(); if (isFinite(t)) { const h = c.history.find(function(x){ return Date.parse(x.until) > t; }); if (h) return h.address; } }
   if (!c.next || !c.switchOn) return c.current;
   return centralDay(when ? new Date(when) : new Date()) >= c.switchOn ? c.next : c.current;
 }
 function companyStreet(when){ return companyAddress(when).split(',')[0].trim(); }
+/* patch ADDRALL: a function that is about to make a document / e-mail waits (at most 1.5 s) for the saved setting, so a
+   cold start never prints the built-in default after an admin changed the address. */
+function addressReady(ms){
+  if (addrSetting && Date.now() - addrAt <= 120e3) return Promise.resolve(addressConfig());
+  const p = addrBusy || refreshAddress();
+  return Promise.race([p, new Promise(function(res){ setTimeout(res, ms || 1500); })]).then(function(){ return addressConfig(); }, function(){ return addressConfig(); });
+}
+/* every address GrayCo has used (the setting's current + next, and the built-in ones) — the privacy filters keep these */
+function companyAddresses(){ const c = addressConfig(); const l = [c.current, c.next, ADDRESS_DEFAULTS.current, ADDRESS_DEFAULTS.next].concat(c.history.map(function(x){ return x.address; })).filter(Boolean); return l.filter(function(x, i){ return l.indexOf(x) === i; }); }
+function isCompanyStreet(text){ const v = low(text).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim(); if (!v) return false; return companyAddresses().some(function(a){ const st = low(a.split(',')[0]).replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim(); const m = /^(\d+[a-z]?)\s+(\S+)/.exec(st); return !!m && v.indexOf(m[1] + ' ' + m[2]) === 0; }); }
 function refreshAddress(){
   const svc = s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!svc || typeof fetch !== 'function') { addrAt = Date.now(); return Promise.resolve(addressConfig()); }
@@ -207,6 +225,6 @@ function installResend(){
   g.fetch = w;
 }
 module.exports = { BRAND: BRAND, installResend: installResend, legalText: legalText, legalFooterHtml: legalFooterHtml, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
-  logoUrl: logoUrl, logoColorUrl: logoColorUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
+  logoUrl: logoUrl, logoColorUrl: logoColorUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressReady: addressReady, companyAddresses: companyAddresses, isCompanyStreet: isCompanyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
   billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind, directLines: directLines,
   _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };

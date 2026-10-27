@@ -55,7 +55,8 @@ function guard(text, extra){
   var t = s(text), out = [];
   if (!t) return out;
   var m = HOUSE_RE.exec(t);
-  if (m && !/^(4007|4014) broadway/.test(low(m[0])) && low(m[0]).indexOf('12060 donelson') < 0) out.push({ k: 'address', l: 'Shows a street address (“' + m[0] + '”). Customer addresses never go public — say the street name or the neighborhood only.' });
+  if (m && !(function(x){ try { return require('./brand.js').isCompanyStreet(x); } catch (e) { return /^(4007|4014)\s+broadway/i.test(String(x).trim()); } })(m[0]) && low(m[0]).indexOf('12060 donelson') < 0)   /* patch ADDRALL: the company address (setting) is not a customer's */
+  out.push({ k: 'address', l: 'Shows a street address (“' + m[0] + '”). Customer addresses never go public — say the street name or the neighborhood only.' });
   var c = CARRIER_RE.exec(t);
   if (c) out.push({ k: 'carrier', l: 'Names an insurance company (“' + c[0] + '”). We never name carriers — say “your insurance company”.' });
   arr(extra).forEach(function(x){
@@ -78,7 +79,7 @@ function scrub(text, extra){
     t = t.split(a).join(city).split(first).join(city);
     if (street.length >= 6) t = t.replace(new RegExp(street.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), city); });
   var re = new RegExp(HOUSE_RE.source, 'gi');
-  t = t.replace(re, function(m){ if (/^(4007 broadway|4014 broadway|12060 donelson)/i.test(m)) return m; return m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); });
+  t = t.replace(re, function(m){ if (/^12060 donelson/i.test(m) || (function(x){ try { return require('./brand.js').isCompanyStreet(x); } catch (e) { return /^(4007|4014)\s+broadway/i.test(String(x).trim()); } })(m)) return m; return m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); });
   t = t.replace(new RegExp(CARRIER_RE.source, 'gi'), 'the insurance company');
   return t;
 }

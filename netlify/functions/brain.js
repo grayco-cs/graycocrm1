@@ -282,6 +282,7 @@ async function execute(who, prop){
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 exports.handler = async function (event) {
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   const headers = Object.assign(gcCors(event, 'GET, POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   const out = (code, body) => ({ statusCode: code, headers, body: JSON.stringify(body) });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };

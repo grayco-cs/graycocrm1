@@ -106,6 +106,11 @@ footer{text-align:center;color:var(--muted);font-size:12px;padding:10px 16px 30p
 </ul></div>
 @@CARDS@@
 </main>
+<div class="how" id="gcpp-stale" hidden style="border-left-color:#B45309"><b>New company address.</b> The PDFs are being rebuilt with it. Until then every link below opens the HTML print version, which prints the same pages with the new address (print at 100% / Actual size).</div>
+<script src="../gc-address.js"></script>
+<script>/* patch ADDRALL: the PDFs carry the address they were built with (manifest.json); when the company address changed, the links open the HTML print versions */
+(function(){var A=window._gcCompanyAddress;if(!A||!window.fetch)return;Promise.all([fetch('manifest.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),A.ready||Promise.resolve()]).then(function(x){var m=x[0];if(!m||!m.address)return;var cur=String(A()||'').trim();if(!cur||cur===String(m.address).trim())return;
+var n=document.getElementById('gcpp-stale');if(n)n.hidden=false;document.querySelectorAll('main a[href$=".pdf"]').forEach(function(a){var f=a.getAttribute('href');a.setAttribute('href',f.replace(/\\.pdf$/,'.html'));a.textContent=a.textContent.replace(/\\.pdf$/,'.html (new address)');});});})();</script>
 <footer>Questions about a file: (901) 585-0944 · office@grayco-cs.com</footer>
 </body></html>
 '''.replace('@@CARDS@@', '\n'.join(cards))

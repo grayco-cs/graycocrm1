@@ -463,6 +463,7 @@ async function listApps(){ return (await appsAll()).filter(a => a && a.status ==
 
 /* ── the handler ─────────────────────────────────────────────────────────── */
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const m = event.httpMethod || 'GET', qs = event.queryStringParameters || {}, h = hdrs(event);
   if (m === 'OPTIONS') return { statusCode: 204, headers: cors(event), body: '' };

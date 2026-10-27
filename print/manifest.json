@@ -1,0 +1,166 @@
+{
+ "pieces": {
+  "brochure-general": {
+   "pdf": "brochure-general.pdf",
+   "html": "brochure-general.html",
+   "pages": 2,
+   "width_in": 11,
+   "height_in": 8.5,
+   "mode": "office"
+  },
+  "brochure-general-printshop": {
+   "pdf": "brochure-general-printshop.pdf",
+   "html": "brochure-general-printshop.html",
+   "pages": 2,
+   "width_in": 11.25,
+   "height_in": 8.75,
+   "mode": "bleed"
+  },
+  "brochure-roofing": {
+   "pdf": "brochure-roofing.pdf",
+   "html": "brochure-roofing.html",
+   "pages": 2,
+   "width_in": 11,
+   "height_in": 8.5,
+   "mode": "office"
+  },
+  "brochure-roofing-printshop": {
+   "pdf": "brochure-roofing-printshop.pdf",
+   "html": "brochure-roofing-printshop.html",
+   "pages": 2,
+   "width_in": 11.25,
+   "height_in": 8.75,
+   "mode": "bleed"
+  },
+  "brochure-residential": {
+   "pdf": "brochure-residential.pdf",
+   "html": "brochure-residential.html",
+   "pages": 2,
+   "width_in": 11,
+   "height_in": 8.5,
+   "mode": "office"
+  },
+  "brochure-residential-printshop": {
+   "pdf": "brochure-residential-printshop.pdf",
+   "html": "brochure-residential-printshop.html",
+   "pages": 2,
+   "width_in": 11.25,
+   "height_in": 8.75,
+   "mode": "bleed"
+  },
+  "brochure-commercial": {
+   "pdf": "brochure-commercial.pdf",
+   "html": "brochure-commercial.html",
+   "pages": 2,
+   "width_in": 11,
+   "height_in": 8.5,
+   "mode": "office"
+  },
+  "brochure-commercial-printshop": {
+   "pdf": "brochure-commercial-printshop.pdf",
+   "html": "brochure-commercial-printshop.html",
+   "pages": 2,
+   "width_in": 11.25,
+   "height_in": 8.75,
+   "mode": "bleed"
+  },
+  "brochure-insurance-restoration": {
+   "pdf": "brochure-insurance-restoration.pdf",
+   "html": "brochure-insurance-restoration.html",
+   "pages": 2,
+   "width_in": 11,
+   "height_in": 8.5,
+   "mode": "office"
+  },
+  "brochure-insurance-restoration-printshop": {
+   "pdf": "brochure-insurance-restoration-printshop.pdf",
+   "html": "brochure-insurance-restoration-printshop.html",
+   "pages": 2,
+   "width_in": 11.25,
+   "height_in": 8.75,
+   "mode": "bleed"
+  },
+  "flyer-general": {
+   "pdf": "flyer-general.pdf",
+   "html": "flyer-general.html",
+   "pages": 2,
+   "width_in": 11,
+   "height_in": 8.5,
+   "mode": "office"
+  },
+  "flyer-general-printshop": {
+   "pdf": "flyer-general-printshop.pdf",
+   "html": "flyer-general-printshop.html",
+   "pages": 2,
+   "width_in": 5.75,
+   "height_in": 8.75,
+   "mode": "bleed"
+  },
+  "door-hanger": {
+   "pdf": "door-hanger.pdf",
+   "html": "door-hanger.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  },
+  "door-hanger-printshop": {
+   "pdf": "door-hanger-printshop.pdf",
+   "html": "door-hanger-printshop.html",
+   "pages": 1,
+   "width_in": 4.5,
+   "height_in": 11.25,
+   "mode": "bleed"
+  },
+  "expect-first-day": {
+   "pdf": "expect-first-day.pdf",
+   "html": "expect-first-day.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  },
+  "expect-insurance-claim-timeline": {
+   "pdf": "expect-insurance-claim-timeline.pdf",
+   "html": "expect-insurance-claim-timeline.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  },
+  "expect-after-your-project": {
+   "pdf": "expect-after-your-project.pdf",
+   "html": "expect-after-your-project.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  },
+  "scorecard-customer": {
+   "pdf": "scorecard-customer.pdf",
+   "html": "scorecard-customer.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  },
+  "scorecard-closeout-pm": {
+   "pdf": "scorecard-closeout-pm.pdf",
+   "html": "scorecard-closeout-pm.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  },
+  "checks-and-balances-sheet": {
+   "pdf": "checks-and-balances-sheet.pdf",
+   "html": "checks-and-balances-sheet.html",
+   "pages": 1,
+   "width_in": 8.5,
+   "height_in": 11,
+   "mode": "office"
+  }
+ },
+ "address": "4007 Broadway Rd, Bartlett, TN 38135",
+ "builtAt": "2026-10-27T03:14:11.549Z"
+}

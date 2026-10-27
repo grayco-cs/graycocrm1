@@ -1299,7 +1299,9 @@ function invoiceDoc(data, p, r){
     status: invCustStatus(r, bal), client: clip(clientName || cust.name, 80), address: clip(p.address || p.jobAddress || cust.address, 160),
     email: clip(p.clientEmail || p.customerEmail || p.email || cust.email, 120), job: clip(p.name, 90), jobAddress: clip(p.address || p.jobAddress, 160),
     po: clip(p.autoPO || r.po || p.po, 20), lines: lines, total: total, paid: money(Math.max(0, total - bal)), balance: bal, isFinal: invFinal(r),
-    pm: clip(pmName, 60), pmPhone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40) };
+    pm: clip(pmName, 60), pmPhone: clip(pmUser.phone || pmUser.cell || pmUser.mobile || '', 40),
+    /* patch ADDRALL: an invoice keeps the company address it was sent with (the setting's history by its date) */
+    companyAddress: s(r.companyAddress) || require('./_lib/brand.js').companyAddress(r.sentDate || r.sentAt || r.date || r.created || r.savedAt || undefined) };
 }
 function invoicePdf(data, p, r){
   const doc = invoiceDoc(data, p, r);
@@ -2310,6 +2312,7 @@ async function notActive(headers, t0){
 }
 
 exports.handler = async function (event) {
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const t0 = Date.now();
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS', 'x-portal-token, x-portal-session'), {

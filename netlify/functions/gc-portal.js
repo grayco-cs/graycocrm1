@@ -53,6 +53,7 @@ function inspectPage(code){
 }
 
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const C = core(), t0 = Date.now();
   const headers = Object.assign(C.gcCors(event, 'GET, POST, OPTIONS', 'x-gc-token, x-portal-token, x-portal-session'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer' });

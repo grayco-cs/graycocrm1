@@ -1,0 +1,167 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GrayCo Insurance Claim Timeline</title><meta name="description" content="Insurance claim timeline: what the homeowner, GrayCo and the insurer each do."><style>
+:root{
+  --navy:#0F1D2F; --navy2:#1A3A5F; --indigo:#130564;
+  --gold:#C4A469; --gold2:#B8902F; --goldlt:#F3EBD9;
+  --ink:#1D2532; --muted:#586374; --line:#DAD3C3; --line2:#E7E2D6;
+  --tint:#F7F4EE; --tint2:#EEF2F7; --paper:#FFFFFF;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--paper);color:var(--ink);
+  font-family:Inter,"Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  font-size:8.6pt;line-height:1.38;font-feature-settings:"ss01","cv11";}
+@media screen{html,body{background:#DEDAD2}.sheet{margin:24px auto;box-shadow:0 6px 30px rgba(15,29,47,.25)}}
+.sheet{position:relative;overflow:hidden;background:var(--paper);break-after:page;page-break-after:always}
+.sheet:last-child{break-after:auto;page-break-after:auto}
+.ic{display:inline-block;vertical-align:-0.14em;flex:none}
+.ph{background:#FFF1A8;outline:1px dashed #A07800;outline-offset:0;color:#5E4500;
+    font-weight:700;padding:0 2px;border-radius:2px;font-style:normal;letter-spacing:0;text-transform:none}
+h1,h2,h3,h4{font-weight:800;color:var(--navy);letter-spacing:-.01em;line-height:1.15}
+.kicker{font-size:7pt;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold2)}
+.rule{width:36px;height:3px;background:var(--gold);border-radius:2px;margin:5px 0 8px}
+p+p{margin-top:5px}
+b,strong{font-weight:700;color:var(--navy)}
+ul.checks{list-style:none}
+ul.checks li{position:relative;padding-left:15px;margin:3px 0}
+ul.checks li .ic{position:absolute;left:0;top:.18em;width:10px;height:10px}
+ul.dots{list-style:none}
+ul.dots li{position:relative;padding-left:11px;margin:2px 0}
+ul.dots li:before{content:"";position:absolute;left:1px;top:.55em;width:4px;height:4px;border-radius:50%;background:var(--gold)}
+.box{display:inline-block;width:10px;height:10px;border:1.3px solid var(--navy2);border-radius:2px;vertical-align:-1px;background:#fff}
+.field{display:flex;align-items:flex-end;gap:6px;min-width:0}
+.field label{font-size:6.8pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.field .ln{flex:1;border-bottom:1px solid #9AA3AF;height:15px;min-width:20px}
+.qr{background:#fff;padding:3px;border-radius:6px;line-height:0}
+.qr svg{display:block;width:100%;height:auto}
+.small{font-size:7.2pt;color:var(--muted)}
+.foot-lic{font-size:6.8pt;color:var(--muted);letter-spacing:.02em}
+@page{size:8.5in 11in;margin:0}.sheet{width:8.5in;height:11in}
+.pg{padding:.45in .5in .0in;height:100%;display:flex;flex-direction:column}
+.hdr{display:flex;flex-direction:column;align-items:center;text-align:center;gap:0;padding-bottom:6px;border-bottom:2.5px solid var(--gold)}
+.hdr img{width:.85in;height:auto;flex:none}
+.hdr h1{font-size:16pt!important}.hdr p{margin-top:2px!important;font-size:8pt!important;line-height:1.25!important}
+.pg{padding-top:.3in!important}
+.hdr .t{flex:1}
+.hdr h1{font-size:21pt;line-height:1.05;margin-top:2px}
+.hdr p{font-size:9pt;color:var(--muted);margin-top:4px;line-height:1.35}
+.ftr{margin:auto -.5in 0;background:var(--navy);color:#DCE3EC;padding:9px .5in;display:flex;justify-content:space-between;align-items:center;font-size:7.8pt;gap:10px}
+.ftr b{color:#fff}
+.ftr .ic{width:11px;height:11px;margin-right:3px}
+.ftr .lic{color:#9FB0C4;font-size:6.9pt;text-align:right}
+h2.sec{font-size:11pt;margin:12px 0 5px;display:flex;align-items:center;gap:8px}
+h2.sec .n{width:18px;height:18px;border-radius:50%;background:var(--navy);color:#fff;font-size:8pt;display:inline-flex;align-items:center;justify-content:center}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:9px 22px;margin-top:11px}
+.fields .wide{grid-column:1 / -1}
+.typebox{font-size:8.4pt;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.typebox label{font-size:6.8pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+/* rating table */
+table.rate{width:100%;border-collapse:collapse;margin-top:4px}
+table.rate th{font-size:6.8pt;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;padding:3px 2px;text-align:center}
+table.rate th:first-child{text-align:left}
+table.rate td{border-top:1px solid var(--line2);padding:4.6px 2px;vertical-align:middle;text-align:center}
+table.rate td:first-child{text-align:left}
+table.rate td b{font-size:9.6pt;display:block}
+table.rate td span.q{font-size:8pt;color:var(--muted)}
+.bub{display:inline-flex;width:17px;height:17px;border:1.4px solid var(--navy2);border-radius:50%;align-items:center;justify-content:center;font-size:7pt;color:#8C96A3;font-weight:700}
+.nps{display:flex;gap:4px;margin-top:6px;align-items:center}
+.nps .b{width:26px;height:22px;border:1.4px solid var(--navy2);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8.4pt;font-weight:700;color:var(--navy2)}
+.nps .lab{font-size:7pt;color:var(--muted);width:46px;line-height:1.1}
+.lines .l{border-bottom:1px solid #A9B1BC;height:21px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.opt{font-size:8.6pt;margin-top:4px;display:flex;gap:18px;flex-wrap:wrap}
+.opt span{display:flex;gap:6px;align-items:center}
+/* review band */
+.review{margin-top:12px;border:2px solid var(--gold);border-radius:10px;padding:12px 14px;display:flex;gap:16px;align-items:center;background:var(--tint)}
+.review .big{width:1.35in;flex:none}
+.review .txt{flex:1}
+.review h3{font-size:13pt}
+.review p{font-size:8.6pt;margin-top:3px}
+.review .stars{color:var(--gold2);margin-bottom:2px}
+.review .stars .ic{width:13px;height:13px;margin-right:1px}
+.review .small2{display:flex;gap:10px;flex:none}
+.review .small2 .q{width:.92in;text-align:center;font-size:6.8pt;font-weight:700;color:var(--navy);line-height:1.2}
+.review .small2 .qr{border:1px solid var(--line);margin-bottom:3px}
+.findus{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:8pt;color:var(--navy)}
+.findus span{display:flex;gap:4px;align-items:center}
+.findus .ic{width:12px;height:12px}
+.note{font-size:7.8pt;color:var(--muted);margin-top:6px}
+/* checklist grid */
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:3px 18px;margin-top:2px}
+.cgrid div{font-size:8.4pt;display:flex;gap:7px;align-items:flex-start;line-height:1.3;padding:2px 0}
+.cgrid .box{margin-top:1px;flex:none}
+table.fu{width:100%;border-collapse:collapse;font-size:8pt}
+table.fu th{font-size:6.8pt;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:2px 4px;border-bottom:1.4px solid var(--navy2)}
+table.fu td{border-bottom:1px solid #B9C0CA;height:21px;padding:0 4px}
+.sigs{display:grid;grid-template-columns:1.2fr 1.2fr 1fr;gap:16px;margin-top:14px}
+.sig .ln{border-bottom:1px solid #6B7480;height:24px}
+.sig div.c{font-size:6.8pt;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+/* checks & balances table */
+table.cb{width:100%;border-collapse:collapse;margin-top:8px}
+table.cb th{font-size:6.6pt;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;padding:2px 4px;text-align:center}
+table.cb th.l{text-align:left}
+table.cb tr.stage td{background:var(--navy);color:#fff;padding:4px 8px;font-size:8.6pt;font-weight:800;letter-spacing:.02em}
+table.cb tr.stage td span{font-weight:500;color:#C9D3DF;font-size:7.6pt;margin-left:6px}
+table.cb tr.stage td em{font-style:normal;color:var(--gold);margin-right:6px}
+table.cb td{border-bottom:1px solid var(--line2);padding:2.8px 4px;font-size:8.4pt;vertical-align:middle}
+table.cb td.c{text-align:center;width:22px}
+table.cb td.d,table.cb td.i{border-left:1px solid var(--line2)}
+table.cb td.d{width:.8in}
+table.cb td.i{width:.55in}
+table.cb tr:nth-child(even):not(.stage) td{background:#FBFAF7}
+.callbox{margin-top:10px;display:grid;grid-template-columns:1.35fr 1fr;gap:14px;align-items:stretch}
+.callbox .a{border:1.5px solid var(--navy2);border-radius:8px;padding:9px 12px}
+.callbox .b{background:var(--goldlt);border-radius:8px;padding:9px 12px;font-size:8.4pt;color:var(--navy)}
+.callbox h3{font-size:10pt;margin-bottom:5px}
+.callbox .field{margin-top:6px}
+/* one-pagers */
+.intro{font-size:10pt;line-height:1.45;margin-top:11px;color:var(--ink)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:6px}
+.card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff}
+.card.t{background:var(--tint);border-color:var(--tint)}
+.card.n{background:var(--navy);border-color:var(--navy);color:#DCE3EC}
+.card.n h3{color:#fff}.card.n b{color:#fff}
+.card h3{font-size:10.6pt;margin-bottom:5px;display:flex;gap:7px;align-items:center}
+.card h3 .ic{width:15px;height:15px}
+.card ul.checks li{font-size:8.9pt;margin:4px 0}
+.card ul.dots li{font-size:8.9pt;margin:3.5px 0}
+.card p{font-size:8.9pt}
+.tl{position:relative}
+.tl .s{position:relative;padding-left:28px;margin-bottom:8px}
+.tl .s .n{position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;font-weight:800;font-size:8.4pt;display:flex;align-items:center;justify-content:center}
+.tl .s:not(:last-child):after{content:"";position:absolute;left:9.5px;top:22px;bottom:-8px;width:1.2px;background:var(--gold)}
+.tl .s h4{font-size:9.8pt}
+.tl .s p{font-size:8.8pt;margin-top:1px}
+table.lanes{width:100%;border-collapse:separate;border-spacing:0;margin-top:8px}
+table.lanes th{background:var(--navy);color:#fff;font-size:7.6pt;letter-spacing:.07em;text-transform:uppercase;padding:6px 7px;text-align:left}
+table.lanes th:first-child{border-top-left-radius:6px}
+table.lanes th:last-child{border-top-right-radius:6px}
+table.lanes th.you{background:#2B4C74}
+table.lanes th.gc{background:#7A5B12}
+table.lanes td{font-size:8.6pt;line-height:1.32;padding:5.5px 7px;border-bottom:1px solid var(--line2);vertical-align:top}
+table.lanes td.ph1{width:1.45in}
+table.lanes td.ph1 b{display:block;font-size:9pt}
+table.lanes td.ph1 span{font-size:7.3pt;color:var(--gold2);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+table.lanes td.you{background:#F1F5FA}
+table.lanes td.gc{background:#FBF7EE}
+.k3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:10px}
+.wt{width:100%;border-collapse:collapse;margin-top:4px}
+.wt td{font-size:8.8pt;padding:4px 6px;border-bottom:1px solid var(--line2)}
+.wt td:first-child{width:42%}.wt td:last-child{font-weight:700;color:var(--navy)}
+</style><style id="gcpp-fonts">@font-face{font-family:Inter;font-style:normal;font-weight:400;font-display:block;src:url(assets/fonts/Inter-Regular.woff) format("woff")}@font-face{font-family:Inter;font-style:normal;font-weight:500;font-display:block;src:url(assets/fonts/Inter-Medium.woff) format("woff")}@font-face{font-family:Inter;font-style:normal;font-weight:600;font-display:block;src:url(assets/fonts/Inter-SemiBold.woff) format("woff")}@font-face{font-family:Inter;font-style:normal;font-weight:700;font-display:block;src:url(assets/fonts/Inter-Bold.woff) format("woff")}@font-face{font-family:Inter;font-style:normal;font-weight:800;font-display:block;src:url(assets/fonts/Inter-ExtraBold.woff) format("woff")}@font-face{font-family:Inter;font-style:normal;font-weight:900;font-display:block;src:url(assets/fonts/Inter-Black.woff) format("woff")}</style><style id="gcpp-print">@page{size:8.5in 11in;margin:0}.gcpp-bar{position:sticky;top:0;z-index:9;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#0F1D2F;color:#fff;font:13px/1.4 Arial,sans-serif;padding:8px 14px}.gcpp-bar b{color:#C4A469}.gcpp-bar button{background:#C4A469;color:#0F1D2F;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer}@media print{.gcpp-bar{display:none!important}}</style><meta name="robots" content="noindex"><meta name="gc-print-piece" content="expect-insurance-claim-timeline"></head><body><div class="gcpp-bar" data-gcpp-bar="1"><b>GrayCo print pack</b><span>OFFICE · 8.5 × 11 in · print at 100% / Actual size · page 1 = front, page 2 = back</span><span>Address: <span data-gc-addr></span></span><button type="button" onclick="window.print()">🖨 Print</button></div><div class="sheet" style="background: rgb(255, 255, 255);"><div class="pg" style="transform: scale(0.95); transform-origin: 50% 50%;">
+<div class="hdr"><img src="assets/logo-navy.png" alt="GrayCo Construction Services"><div class="t"><div class="kicker">What to expect · Insurance claims</div><h1>Your insurance claim timeline</h1><p>Who does what — from the day damage happens to your final walkthrough. Every claim is different; your PM will tell you where you are at each step.</p></div></div>
+<table class="lanes"><tbody><tr><th>Step</th><th class="you">You</th><th class="gc">GrayCo</th><th>Your insurance company</th></tr><tr><td class="ph1"><span>Day 1</span><b>Protect the property</b></td><td class="you" data-label="You">Keep everyone safe. Call us for emergency help.</td><td class="gc" data-label="GrayCo">Board-up, tarping or water extraction to stop further damage (24/7).</td><td class="ins empty" data-label="Your insurer">—</td></tr><tr><td class="ph1"><span>Day 1–2</span><b>Report the claim</b></td><td class="you" data-label="You">Report the loss; get a claim number. Keep receipts for emergency costs.</td><td class="gc" data-label="GrayCo">Help you gather photos and details for the report.</td><td class="ins" data-label="Your insurer">Opens the claim; assigns an adjuster.</td></tr><tr><td class="ph1"><span>First days</span><b>Inspect &amp; document</b></td><td class="you" data-label="You">Share your claim #, adjuster contact and policy paperwork.</td><td class="gc" data-label="GrayCo">Photograph and document all damage; prepare our own independent estimate.</td><td class="ins empty" data-label="Your insurer">—</td></tr><tr><td class="ph1"><span>Before work</span><b>Authorize the work</b></td><td class="you" data-label="You">Sign the Work Authorization. You may cancel within 3 business days.</td><td class="gc" data-label="GrayCo">Explain the form and what GrayCo will do on your behalf.</td><td class="ins empty" data-label="Your insurer">—</td></tr><tr><td class="ph1"><span>Per insurer</span><b>Adjuster inspection</b></td><td class="you" data-label="You">Be available if possible.</td><td class="gc" data-label="GrayCo">Meet the adjuster on site with our photos, measurements and estimate.</td><td class="ins" data-label="Your insurer">Inspects and writes the scope of loss.</td></tr><tr><td class="ph1"><span>After inspection</span><b>Approved scope</b></td><td class="you" data-label="You">Review the scope with us. Pay your deductible as your policy requires.</td><td class="gc" data-label="GrayCo">Walk you through the scope line by line; schedule the work.</td><td class="ins" data-label="Your insurer">Issues payment, less the deductible and any held-back depreciation.</td></tr><tr><td class="ph1"><span>Water / fire</span><b>Mitigation &amp; drying</b></td><td class="you" data-label="You">Allow access for daily monitoring.</td><td class="gc" data-label="GrayCo">Water: extraction, drying with daily moisture readings. Fire: smoke/soot removal, odor treatment, demo.</td><td class="ins empty" data-label="Your insurer">—</td></tr><tr><td class="ph1"><span>Per scope</span><b>Rebuild &amp; supplements</b></td><td class="you" data-label="You">Approve any work outside the insurance scope in writing.</td><td class="gc" data-label="GrayCo">Restore to pre-loss condition. Hidden damage is photographed and submitted as a supplement.</td><td class="ins" data-label="Your insurer">Reviews and approves supplements.</td></tr><tr><td class="ph1"><span>End of job</span><b>Completion &amp; sign-off</b></td><td class="you" data-label="You">Walk the finished work; sign the Certificate of Completion &amp; Satisfaction.</td><td class="gc" data-label="GrayCo">Final walkthrough, punch list, final clean-up.</td><td class="ins" data-label="Your insurer">Receives completion documents.</td></tr><tr><td class="ph1"><span>Closeout</span><b>Final funds &amp; warranty</b></td><td class="you" data-label="You">Keep your closeout documents.</td><td class="gc" data-label="GrayCo">Issue your written warranty and final lien waiver after final payment.</td><td class="ins" data-label="Your insurer">Releases final / recoverable depreciation.</td></tr></tbody></table>
+<div class="k3">
+ <div class="card t"><h3><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="#1A3A5F" stroke-width="2"></circle><path d="M12 7v5l3.5 2" fill="none" stroke="#1A3A5F" stroke-width="2" stroke-linecap="round"></path></svg> Typical durations</h3><ul class="dots">
+  <li><b>Water:</b> emergency mitigation 1–3 days; structural drying 3–5 days (monitored daily until dry standards are met); rebuild per approved scope.</li>
+  <li><b>Fire:</b> board-up Day 1; mitigation weeks 1–2; engineer review if needed weeks 2–3; then rebuild.</li>
+  <li>Supplements for hidden damage can extend the timeline.</li></ul></div>
+ <div class="card n"><h3><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z" fill="#C4A469"></path><path d="M8 12l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg> Honest about your deductible</h3>
+  <p><b>We never ask you to inflate or skip your deductible</b> — and we never offer to “cover” it. Your out-of-pocket cost is limited to your deductible unless you approve extra work in writing.</p></div>
+ <div class="card"><h3><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M6 2h8l5 5v15H6z" fill="none" stroke="#1A3A5F" stroke-width="2" stroke-linejoin="round"></path><path d="M14 2v5h5M9 12h7M9 16h7" fill="none" stroke="#1A3A5F" stroke-width="2"></path></svg> Paperwork you’ll see</h3><ul class="dots">
+  <li>Work Authorization (3-day right to cancel)</li><li>Our estimate &amp; the insurer’s scope</li><li>Supplements, with photos</li>
+  <li>Change Orders for out-of-scope work</li><li>Certificate of Completion &amp; Satisfaction</li><li>Warranty certificate &amp; lien waiver</li></ul></div>
+</div>
+<p class="note" style="margin-top:8px">Your insurance company decides what your policy covers. GrayCo documents the damage, communicates with your adjuster and keeps you informed — you will receive copies of what we submit.</p>
+<div class="ftr"><div><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z" fill="#C4A469"></path></svg><b>(901) 585-0944</b> &nbsp;&nbsp; <svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="#C4A469" stroke-width="2"></rect><path d="M3.5 6.5l8.5 6.5 8.5-6.5" fill="none" stroke="#C4A469" stroke-width="2"></path></svg>office@grayco-cs.com &nbsp;&nbsp; <svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="#C4A469" stroke-width="2"></circle><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18" fill="none" stroke="#C4A469" stroke-width="1.6"></path></svg>grayco-cs.com</div><div class="lic">GrayCo Construction Services, LLC · <span data-gc-addr="">4007 Broadway Rd, Bartlett, TN 38135</span><br>TN&nbsp;License&nbsp;#85034&nbsp;BCB · AR&nbsp;License&nbsp;#0486990627 · MS&nbsp;License&nbsp;#27769</div></div>
+</div></div>
+<script src="../gc-address.js"></script><script>(function(){var A=window._gcCompanyAddress;if(A&&A.fill)A.fill();if(/[?&]print=1\b/.test(location.search)){var go=function(){(document.fonts&&document.fonts.ready||Promise.resolve()).then(function(){setTimeout(function(){window.print();},300);});};if(A&&A.ready)A.ready.then(go,go);else go();}})();</script></body></html>

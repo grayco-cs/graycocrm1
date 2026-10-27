@@ -130,7 +130,8 @@ async function run(){
   }
   return out;
 }
-exports.handler = async function(){ const r = await run(); return { statusCode: 200, body: JSON.stringify(r) }; };
+exports.handler = async function(){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */ const r = await run(); return { statusCode: 200, body: JSON.stringify(r) }; };
 exports._test = { run: run, statementsMonthly: statementsMonthly, fleetDaily: fleetDaily, codesWipe: codesWipe, myDataMonthly: myDataMonthly, statementHtml: statementHtml };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
    straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */

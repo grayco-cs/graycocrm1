@@ -71,6 +71,7 @@ async function send(who, b){
 }
 
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const C = cors(event), qs = event.queryStringParameters || {}, m = s(event.httpMethod).toUpperCase();
   if (m === 'OPTIONS') return J(200, {}, C);

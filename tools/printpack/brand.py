@@ -15,8 +15,11 @@ BUILD = os.path.join(HERE, '_build')
 CO = {
     'name': 'GrayCo Construction Services',
     'legal': 'GrayCo Construction Services, LLC',
-    'addr1': '4007 Broadway Rd',  # owner 10/27: print pieces keep the current address
-    'addr2': 'Bartlett, TN 38135',
+    # patch ADDRALL: the company address follows the ONE setting (gc_kv gc_company_address). The build bakes in
+    # GC_ADDRESS (rebuild.sh passes the live setting) or the built-in default; every printed copy of it is a
+    # <span data-gc-addr> so the HTML print versions (print/<slug>.html) fill in today's address at load.
+    'addr1': (os.environ.get('GC_ADDRESS') or '4007 Broadway Rd, Bartlett, TN 38135').split(',', 1)[0].strip(),
+    'addr2': ((os.environ.get('GC_ADDRESS') or '4007 Broadway Rd, Bartlett, TN 38135').split(',', 1) + [''])[1].strip(),
     'phone': '(901) 585-0944',
     'phone_tel': '+19015850944',
     'emergency': '(901) 692-7255',          # FAQ packet + warranty docs "EMERGENCY"
@@ -164,10 +167,18 @@ def contact_lines(dark=False, compact=False):
         (icon('phone', c), '<b class="big">%s</b>' % CO['phone']),
         (icon('mail', c), CO['email']),
         (icon('globe', c), CO['web']),
-        (icon('pin', c), '%s, %s' % (CO['addr1'], CO['addr2'])),
+        (icon('pin', c), addr_html()),
     ]
     return '<div class="contact%s">%s</div>' % (' dark' if dark else '', ''.join(
         '<div class="crow">%s<span>%s</span></div>' % r for r in rows))
+
+
+def addr_text():
+    return ', '.join(x for x in (CO['addr1'], CO['addr2']) if x)
+
+
+def addr_html():
+    return '<span data-gc-addr>%s</span>' % addr_text()
 
 
 def lic_line(sep=' &nbsp;·&nbsp; '):

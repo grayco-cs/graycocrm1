@@ -113,8 +113,9 @@ Updated 2026-10-15. Anything marked **YOU** is waiting on you, Wesley. Claude re
 - Clean data reviewed with you: bogus jobs removed, lost invoices recovered, your decisions on each disputed invoice
 
 ## Company address move (patch ADDR2)
-- GrayCo is at **4007 Broadway Rd, Bartlett, TN 38135** until the switch date, then **4014 Broadway Rd**.
-  One setting: ⚙ Admin → 🏢 Company address (current, new, switch date; default 2026-10-29, Central time).
+- GrayCo is at **4007 Broadway Rd, Bartlett, TN 38135** (the scheduled switch to 4014 is off).
+  One setting: ⚙ Admin → 🏢 Company address (current, new, switch date, Central time). Saving a new one shows what
+  changes, keeps the old address for papers made before, and adds the outside To-Dos (patch ADDRALL).
   E-mails, PDFs, the portal, website forms, flyers, marketing copy and the CRM switch by themselves that day.
 - **Printed materials** (cards, yard signs, truck wraps, letterhead, the print pack in docs/): print them
   **after the move date**; the files in docs/ already show the new address.

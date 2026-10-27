@@ -39,6 +39,7 @@ function page(w, t){
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:16px;border-radius:0 0 12px 12px;line-height:1.5">' + body + '</div></div>' + js + '</body></html>';
 }
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   if (!s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return J(500, { ok: false, error: 'SUPABASE_SERVICE_KEY not set.' });
   const qs = event.queryStringParameters || {};

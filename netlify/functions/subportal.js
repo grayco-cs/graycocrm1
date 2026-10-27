@@ -1242,6 +1242,7 @@ function limited(ip, max){
 }
 
 exports.handler = async function (event) {
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   const headers = gcCors(event);
   const J = function(code, body){ return { statusCode: code, headers: headers, body: JSON.stringify(body) }; };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };

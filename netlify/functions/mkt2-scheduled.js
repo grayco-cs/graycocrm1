@@ -8,6 +8,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const X = require('./_lib/mkt2.js');
 function ctHour(){ return +new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }) % 24; }
 exports.handler = async function(){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   const out = {};
   try {
     const st = await X.adsStatus(), h = ctHour();

@@ -146,7 +146,10 @@ async function storePdf(buf){
 }
 
 /* ── reading a paper ───────────────────────────────────────────────────────── */
-const GRAYCO = /gray\s*co\b|grayco|grayco-cs\.com|85034|585[\s.-]?0944|4007 broadway|4014 broadway/i;
+const GRAYCO_RE = /gray\s*co\b|grayco|grayco-cs\.com|85034|585[\s.-]?0944|4007 broadway|4014 broadway/i;
+/* patch ADDRALL: GrayCo's own lines also match the company address from the setting */
+function coStreet(x){ if (/4007 broadway|4014 broadway/i.test(x)) return true; try { return require('./brand.js').companyAddresses().some(function(a){ const st = String(a.split(',')[0]).trim().toLowerCase(); return st.length > 4 && String(x).toLowerCase().indexOf(st) >= 0; }); } catch (e) { return false; } }
+const GRAYCO = { test: function(x){ return GRAYCO_RE.test(x) || coStreet(x); } };
 function money(v){ const n = parseFloat(s(v).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? Math.round(n * 100) / 100 : 0; }
 function ymdOf(v){
   const t = s(v); let m = /(\d{4})-(\d{2})-(\d{2})/.exec(t); if (m) return m[1] + '-' + m[2] + '-' + m[3];
@@ -196,7 +199,7 @@ function parse(name, text){
   const addr = labelled(lines, /\b(job (site|address|location)|project (address|location)|property( address)?|site address|service address|location|address)\b\s*[:\-]?/i);
   const street = /\b\d{2,6}\s+[A-Za-z0-9.' ]{2,40}\b(st|street|rd|road|ave|avenue|dr|drive|ln|lane|blvd|cv|cove|ct|court|pkwy|parkway|hwy|highway|way|pl|place|cir|circle|trl|trail|loop|pike)\b\.?[^\n]{0,60}/i;
   let a = street.exec(addr) || null;
-  if (!a) { for (const ln of lines) { if (/4007 broadway|4014 broadway/i.test(ln)) continue; const m = street.exec(ln); if (m) { a = m; break; } } }
+  if (!a) { for (const ln of lines) { if (coStreet(ln)) continue; const m = street.exec(ln); if (m) { a = m; break; } } }
   f.address = a ? s(a[0]).replace(/\s+/g, ' ').slice(0, 140) : '';
   const totalLine = labelled(lines, /\b(grand total|total (amount )?due|amount due|balance due|total contract( price| amount)?|contract (price|amount|sum)|total investment|total price|proposal total|estimate total|total)\b\s*[:\-]?/i);
   const tm = /\$?\s?(\d[\d,]*(?:\.\d{2})?)/.exec(totalLine);

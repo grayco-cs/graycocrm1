@@ -32,7 +32,7 @@ The owner asked (10/23): "Can customers text the number for advice? Texts go to 
    | 📝 Free estimate | asks for the address and a good time (a lead for a new number) |
    | 🏠 What we do | restoration first, roofing, remodel, commercial |
    | 🕘 Hours | Mon–Fri 8–5, emergencies 24/7 |
-   | 📍 Address | the office address (switches to 4014 Broadway Rd on 2026-10-29 by itself) |
+   | 📍 Address | the office address (⚙ Admin → 🏢 Company address — the ONE setting) |
 
    If nothing fits: "Someone from GrayCo will text you back shortly", at most once every 12 hours per number.
    - With `ANTHROPIC_API_KEY` set, a small Claude model may **pick** the closest approved answer. It never writes its own words.

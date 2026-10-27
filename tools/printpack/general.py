@@ -1,7 +1,7 @@
 """General GrayCo pamphlet for festivals, trade shows and events: tri-fold, 5.5x8.5 flyer (+2-up), web."""
 import brochures
 from brochures import steps, svc
-from brand import CO, icon, qr_svg, roofline, doc, lic_line, LOGO_NAVY, LOGO_WHITE
+from brand import CO, icon, qr_svg, roofline, doc, lic_line, LOGO_NAVY, LOGO_WHITE, addr_html
 
 # ------------------------------------------------------------------ shared content
 SERVICES = [
@@ -214,7 +214,7 @@ def flyer_front():
   <div class="fwho"><h3>Who we are</h3><p>{STORY}</p></div>
   <div class="fcta"><div class="kicker">Call for a free estimate</div><div class="n">{CO['phone']}</div>
    <div class="m">{CO['email']} · {CO['web']}</div>
-   <div class="l">{CO['addr1']}, {CO['addr2']} · Serving {CO['area']}</div></div></div>
+   <div class="l">{addr_html()} · Serving {CO['area']}</div></div></div>
 </div>'''
 
 
@@ -235,7 +235,7 @@ def flyer_back():
   </div>
   <div class="fnavy"><b class="t">Your project, online</b>
    <p>Every GrayCo job gets its own online project page with <b>photos, documents and invoices</b> — see your project any time.</p>
-   <div class="flic">{CO['legal']} · {CO['addr1']}, {CO['addr2']} · 8 years in business — built through two previous companies, now one company: GrayCo · {lic_line(' · ')} · Fully insured — general liability &amp; workers’ comp</div></div>
+   <div class="flic">{CO['legal']} · {addr_html()} · 8 years in business — built through two previous companies, now one company: GrayCo · {lic_line(' · ')} · Fully insured — general liability &amp; workers’ comp</div></div>
  </div>
 </div>'''
 

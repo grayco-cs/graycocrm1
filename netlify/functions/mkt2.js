@@ -97,6 +97,7 @@ function page(title, msg, ok){
       '<p><a href="/" style="color:#1E2060;font-weight:bold">Back to the GrayCo CRM → Marketing → 📈 Ads hub</a></p></div></body></html>' };
 }
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   const q = event.queryStringParameters || {};
   if (event.httpMethod === 'GET' && q.callback === '1') {
     try { const r = await X.callback(q); return r.ok ? page(r.platform + ' is connected', 'The CRM pulls your ad numbers every morning. You can close this tab.', true) : page('Not connected', r.error, false); }

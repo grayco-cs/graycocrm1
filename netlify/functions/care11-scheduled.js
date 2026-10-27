@@ -8,6 +8,7 @@ function isScheduled(event){
   try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
 }
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const qs = event.queryStringParameters || {};

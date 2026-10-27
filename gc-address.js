@@ -7,7 +7,9 @@
      window._gcCompanyAddress(when?)  → "4007 Broadway Rd, Bartlett, TN 38135"
      window._gcCompanyStreet(when?)   → "4007 Broadway Rd"
      window._gcCompanyAddress.config() → { current, next, switchOn }
-   Static pages: <span data-gc-addr>…</span> / <span data-gc-street>…</span> are filled in. */
+   Static pages: <span data-gc-addr>…</span> / <span data-gc-street>…</span> are filled in.
+   patch ADDRALL: window._gcCompanyAddress.ready → a Promise that settles once the saved setting was read (or after 4 s);
+   a change fires the window event "gc:company-address" ({ detail: config }). */
 (function(){
   if (window._gcCompanyAddress) return;
   var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
@@ -20,6 +22,9 @@
       if (s(v.next)) c.next = s(v.next);
       if (/^\d{4}-\d{2}-\d{2}$/.test(s(v.switchOn))) c.switchOn = s(v.switchOn); else if (v.switchOn === '') c.switchOn = '';
     }
+    /* patch ADDRALL: the addresses used before ({ address, until }); a paper dated before `until` keeps that one */
+    c.history = (v && Array.isArray(v.history) ? v.history : []).filter(function(x){ return x && s(x.address) && !isNaN(Date.parse(s(x.until))); })
+      .map(function(x){ return { address: s(x.address), until: s(x.until) }; }).sort(function(a, b){ return Date.parse(a.until) - Date.parse(b.until); }).slice(-30);
     return c;
   }
   function stored(){ try { return JSON.parse(localStorage.getItem(LK) || 'null'); } catch (e) { return null; } }
@@ -29,8 +34,9 @@
     catch (e) { return new Date(d.getTime() - 6 * 3600e3).toISOString().slice(0, 10); }
   }
   function addr(when){
-    var c = cfg(); if (!c.next || !c.switchOn) return c.current;
-    var d = when ? new Date(when) : new Date(); if (isNaN(d.getTime())) d = new Date();
+    var c = cfg(), d = when ? new Date(when) : new Date(); if (isNaN(d.getTime())) d = new Date();
+    if (when && c.history.length) { for (var i = 0; i < c.history.length; i++) if (Date.parse(c.history[i].until) > d.getTime()) return c.history[i].address; }
+    if (!c.next || !c.switchOn) return c.current;
     return centralDay(d) >= c.switchOn ? c.next : c.current;
   }
   function street(when){ return addr(when).split(',')[0].trim(); }
@@ -42,14 +48,20 @@
     } catch (e) {}
   }
   addr.config = cfg; addr.defaults = DEF; addr.street = street; addr.fill = fill; addr.centralDay = centralDay; addr.merge = merge;
-  addr.set = function(v){ var c = merge(v); try { localStorage.setItem(LK, JSON.stringify(c)); } catch (e) {} fill(); return c; };
+  addr.set = function(v){
+    var before = JSON.stringify(cfg()), c = merge(v); try { localStorage.setItem(LK, JSON.stringify(c)); } catch (e) {} fill();
+    if (JSON.stringify(c) !== before) { try { window.dispatchEvent(new CustomEvent('gc:company-address', { detail: c })); } catch (e) {} }
+    return c;
+  };
+  var settle = null; addr.ready = new Promise(function(res){ settle = res; });
+  setTimeout(function(){ settle(cfg()); }, 4000);
   window._gcCompanyAddress = addr; window._gcCompanyStreet = street;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fill); else fill();
   /* the saved setting, through the CRM's public door (the CRM page itself reads gc_kv instead) */
-  if (window.__GC_ADDR_NO_FETCH__ || !window.fetch || !/^https?:$/.test(location.protocol)) return;
+  if (window.__GC_ADDR_NO_FETCH__ || !window.fetch || !/^https?:$/.test(location.protocol)) { settle(cfg()); return; }
   try {
     fetch('/.netlify/functions/mkt-public?company=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
       if (j && j.ok && j.config) { addr.set(j.config); }
-    }).catch(function(){});
-  } catch (e) {}
+    }).catch(function(){}).then(function(){ settle(cfg()); });
+  } catch (e) { settle(cfg()); }
 })();

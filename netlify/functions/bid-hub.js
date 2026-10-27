@@ -450,6 +450,7 @@ async function noticeAgain(who, b){   /* "Send now" after ⏸ ended: queue the h
 }
 
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {}; const C = cors(event); const q = event.queryStringParameters || {};
   if (event.httpMethod === 'OPTIONS') return J(200, {}, C);
   if (event.httpMethod === 'GET' && q.ping === '1') return J(200, { ok: true, service: 'GrayCo bid portal (CRM)' }, C);

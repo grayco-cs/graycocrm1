@@ -1,5 +1,5 @@
 """Scorecards, Checks & Balances sheet, door hanger and What-to-Expect one-pagers."""
-from brand import CO, ph, lic_line, icon, qr_svg, roofline, doc, LOGO_NAVY, LOGO_WHITE
+from brand import CO, ph, lic_line, icon, qr_svg, roofline, doc, LOGO_NAVY, LOGO_WHITE, addr_html
 
 CSS = r"""
 .pg{padding:.45in .5in .0in;height:100%;display:flex;flex-direction:column}
@@ -124,7 +124,7 @@ def header(kicker, title, sub=''):
 def footer():
     return (f'<div class="ftr"><div>{icon("phone", "#C4A469")}<b>{CO["phone"]}</b> &nbsp;&nbsp; '
             f'{icon("mail", "#C4A469")}{CO["email"]} &nbsp;&nbsp; {icon("globe", "#C4A469")}{CO["web"]}</div>'
-            f'<div class="lic">{CO["legal"]} · {CO["addr1"]}, {CO["addr2"]}<br>{lic_line(" · ")}</div></div>')
+            f'<div class="lic">{CO["legal"]} · {addr_html()}<br>{lic_line(" · ")}</div></div>')
 
 
 FILL_KEYS = {'Your name': 'client', 'Customer': 'client', 'Date': 'date', 'Project address': 'address',
@@ -203,7 +203,7 @@ def scorecard_customer():
 </div>
 <div class="opt" style="margin-top:9px"><span><span class="box"></span> You may share my comments (first name &amp; city only)</span><span><span class="box"></span> Please call me — I have a question or concern</span></div>
 {review_band()}
-<p class="note">Hand this card to your Project Manager, mail it to {CO['addr1']}, {CO['addr2']}, or email a photo of it to {CO['email']}. Concerns are reviewed by the office, not just the crew.</p>
+<p class="note">Hand this card to your Project Manager, mail it to {addr_html()}, or email a photo of it to {CO['email']}. Concerns are reviewed by the office, not just the crew.</p>
 {footer()}
 </div></div>'''
     return doc('GrayCo Customer Scorecard', body, CSS, 8.5, 11, 'One-page customer scorecard with Google review QR.')
@@ -357,7 +357,7 @@ def hanger():
     {field('PM phone')}
     <div class="who"><div class="qr">{qr_svg(CO['web_url'])}</div>
       <div class="t">Questions or concerns? Call the office directly:<br><b class="ph1">{CO['phone']}</b><br>{CO['email']}<br>{CO['web']}</div></div>
-    <div class="lic">{CO['legal']} · {CO['addr1']}, {CO['addr2']}<br>{lic_line(' · ')}</div>
+    <div class="lic">{CO['legal']} · {addr_html()}<br>{lic_line(' · ')}</div>
   </div>
 </div>'''
 

@@ -592,6 +592,7 @@ async function runAll(opts){
 }
 
 exports.handler = async function(){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   if (!L.dbReady()) return { statusCode: 500, body: JSON.stringify({ error: 'Supabase is not configured on Netlify.' }) };
   try { const out = await runAll({}); console.log('[bid-watch] ' + JSON.stringify({ found: out.found, added: out.added })); return { statusCode: 200, body: JSON.stringify(out) }; }
   catch (e) { console.error('[bid-watch] ' + (e && e.message)); return { statusCode: 500, body: JSON.stringify({ error: s(e && e.message) }) }; }

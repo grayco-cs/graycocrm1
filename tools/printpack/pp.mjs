@@ -1,6 +1,11 @@
 // node pp.mjs <srcdir> <outdir>  — renders the GrayCo print pack PDFs (OFFICE + PRINTSHOP variants)
+// patch ADDRALL: with HTML_OUT=<dir> it also writes the HTML print version of every PDF (<dir>/<slug>.html: the same
+// pages, @page size, page order and bleed / crop marks, with the company address as <span data-gc-addr> filled in at
+// load by /gc-address.js), and with MANIFEST=<file> it records what each PDF holds (pages, size, the address baked in).
 const { chromium } = await import(process.env.PLAYWRIGHT_MJS || 'playwright');
 import path from 'path';
+import fs from 'fs';
+import { printHtml } from './printhtml.mjs';
 const [src, out] = process.argv.slice(2);
 // [output slug, source html, mode, trim w, trim h]
 const JOBS = [];
@@ -16,6 +21,9 @@ for (const f of ['expect-first-day', 'expect-insurance-claim-timeline', 'expect-
   JOBS.push([f, f, 'office', 8.5, 11, 0.95]);
 
 const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
+const HTML_OUT = process.env.HTML_OUT || '', MANIFEST = process.env.MANIFEST || '';
+const manifest = { pieces: {} };
+if (MANIFEST) { try { Object.assign(manifest, JSON.parse(fs.readFileSync(MANIFEST, 'utf8'))); } catch (e) {} }
 const browser = await chromium.launch();
 const page = await browser.newPage();
 for (const [slug, file, mode, w, h, scale] of JOBS) {
@@ -84,9 +92,14 @@ for (const [slug, file, mode, w, h, scale] of JOBS) {
     return notes;
   }, { mode, w, h, scale });
   const pw = mode === 'bleed' ? w + 0.25 : w, ph = mode === 'bleed' ? h + 0.25 : h;
+  const baked = await page.evaluate(() => { const e = document.querySelector('[data-gc-addr]'); return e ? e.textContent.trim() : ''; });
+  if (HTML_OUT) { fs.mkdirSync(HTML_OUT, { recursive: true }); fs.writeFileSync(path.join(HTML_OUT, slug + '.html'), printHtml(await page.content(), { slug, w: pw, h: ph, mode })); }
   const o = path.join(out, slug + '.pdf');
   await page.pdf({ path: o, width: pw + 'in', height: ph + 'in', printBackground: true, preferCSSPageSize: true });
   const n = await page.evaluate(() => document.querySelectorAll('.sheet').length);
+  manifest.pieces[slug] = { pdf: slug + '.pdf', html: slug + '.html', pages: n, width_in: pw, height_in: ph, mode };
+  if (baked) manifest.address = baked;
   console.log(slug, mode, pw + 'x' + ph, 'sheets=' + n, rep.length ? 'NOTES: ' + [...new Set(rep)].slice(0, 8).join(' | ') : 'ok');
 }
 await browser.close();
+if (MANIFEST) { manifest.builtAt = new Date().toISOString(); fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 1) + '\n'); }

@@ -46,6 +46,7 @@ function J(event, code, body){
 }
 
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const m = event.httpMethod, qs = event.queryStringParameters || {};
   /* the hourly run (Netlify calls a scheduled function with no HTTP method) */

@@ -48,6 +48,7 @@ function formOf(event){
 }
 
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL */
   event = event || {};
   const ip = hdr(event, 'x-nf-client-connection-ip') || hdr(event, 'x-forwarded-for').split(',')[0] || 'x';
   if (limited(ip)) return page(429, 'Too many tries', '<p>Please wait a few minutes and try again.</p>');

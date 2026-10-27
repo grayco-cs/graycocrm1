@@ -444,6 +444,7 @@ async function inboundSms(p){
 }
 
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   const m = s(event.httpMethod).toUpperCase(), qs = event.queryStringParameters || {};
   if (m === 'GET' && qs.ping === '1') {
     return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: env('TWILIO_RING_TO') ? 'ring the office first' : 'office line forwards missed calls',

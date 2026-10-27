@@ -96,6 +96,7 @@ async function queueDoc(body, who){
 
 function reply(statusCode, headers, obj){ return { statusCode: statusCode, headers: headers, body: JSON.stringify(obj) }; }
 exports.handler = async function(event){
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const headers = Object.assign(SEL.gcCors(event, 'POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };

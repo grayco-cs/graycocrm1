@@ -94,7 +94,6 @@ Follow the coach's LSA steps and document checklist. In LSA → Settings → Not
 - Customer referral credits are repeatable and stack.
 - Giveaway entry never requires a like, share, tag or follow.
 - Warranty: 5 years on roofing and insurance work, 1 year on other work.
-- Address: 4014 Broadway Rd, Bartlett, TN 38135.
-  The move is scheduled (patch ADDR2): until 2026-10-29 every output shows 4007 Broadway Rd, from that day 4014
-  (Admin → 🏢 Company address). **Print cards, signs, flyers and the print pack after the move date**, so the
-  paper copies carry the new address.
+- Address: the ONE setting, ⚙ Admin → 🏢 Company address (today 4007 Broadway Rd, Bartlett, TN 38135; the
+  automatic switch to 4014 is off). Every output follows it (patch ADDRALL); the print pack switches to its HTML
+  print versions until the PDFs are rebuilt (tools/printpack/rebuild.sh).

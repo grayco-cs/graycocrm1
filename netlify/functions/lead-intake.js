@@ -299,6 +299,7 @@ async function alertAdmins(record){
 
 /* ── the handler ─────────────────────────────────────────────────────────── */
 exports.handler = async function (event) {
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   if (event.httpMethod === 'OPTIONS') return J(200, {});
 
   const h = {};

@@ -10,7 +10,6 @@
 const BR = require('./brand.js').BRAND;
 const LOGO = require('./logo-wide.js');   /* patch LOGO: 420 x 254, cropped to the art */
 const COMPANY = BR.name;
-const ADDRESS = BR.address;
 const PHONE = BR.phone;
 const EMAIL = require('./brand.js').billingEmail();   /* patch BILL: an invoice shows billing@ as its contact */
 const LICENSES = BR.licenses;
@@ -76,7 +75,7 @@ function build(doc){
   function centered(yy, t, size, bold, color){ text((PW - width(clean(t), size, bold)) / 2, yy, t, size, bold, color); }
   ops.push('q 83 0 0 50 ' + ((PW - 83) / 2).toFixed(1) + ' ' + (PH - 80) + ' cm /Im1 Do Q');
   centered(PH - 97, COMPANY, 15, true, NAVY);
-  centered(PH - 110, ADDRESS + '  \xb7  ' + PHONE + '  \xb7  ' + EMAIL, 8.5, false, MUTED);
+  centered(PH - 110, (String(doc.companyAddress || '').trim() || BR.address) + '  \xb7  ' + PHONE   /* patch ADDRALL: the address on the invoice's own date (portal.js), else today's */ + '  \xb7  ' + EMAIL, 8.5, false, MUTED);
   centered(PH - 122, LICENSES, 8, false, MUTED);
   line(L, PH - 130, R, PH - 130, GOLD, 1.5);
   centered(PH - 152, (doc.isFinal ? 'FINAL INVOICE' : 'INVOICE'), 15, true, NAVY);
@@ -170,4 +169,5 @@ function build(doc){
   put(Buffer.from(out, 'latin1'));
   return Buffer.concat(parts);
 }
-module.exports = { build: build, width: width, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE, LICENSES: LICENSES };
+module.exports = { build: build, width: width, usd: usd, clean: clean, COMPANY: COMPANY, get ADDRESS(){ return BR.address; },   /* patch ADDRALL: today's, not the one at load */
+  PHONE: PHONE, LICENSES: LICENSES };

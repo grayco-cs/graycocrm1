@@ -32,7 +32,7 @@ exports.handler = async function(event){
       if (q.site === '1') return J(event, 200, await X.siteData(), { 'Cache-Control': 'public, max-age=600' });
       if (q.giveaway != null) return J(event, 200, await X.giveawayCurrent());
       if (q.news != null) { const r = await X.newsPosts(q.news === '1' || q.news === '' ? '' : String(q.news).slice(0, 80)); return r ? J(event, 200, r, { 'Cache-Control': 'public, max-age=300' }) : J(event, 404, { ok: false, error: 'Not found.' }); }
-      if (q.company != null) { const B = require('./_lib/brand.js'); await B.refreshAddress(); const c = B.addressConfig(); return J(event, 200, { ok: true, address: B.companyAddress(), config: { current: c.current, next: c.next, switchOn: c.switchOn } }, { 'Cache-Control': 'public, max-age=300' }); }
+      if (q.company != null) { const B = require('./_lib/brand.js'); await B.refreshAddress(); const c = B.addressConfig(); return J(event, 200, { ok: true, address: B.companyAddress(), config: { current: c.current, next: c.next, switchOn: c.switchOn, history: c.history } }, { 'Cache-Control': 'public, max-age=300' }); }
       if (q.event) { const e = await X.eventPublic(q.event); return e ? J(event, 200, e) : J(event, 404, { ok: false, error: 'This event is not open.' }); }
       if (q.coupon != null) { const doc = await require('./_lib/mkt.js').readDoc(); const sp = doc.sponsors && doc.sponsors[X.cleanCode(q.coupon)]; let days = X.COUPON_DAYS; try { const st = ((doc.cfg && doc.cfg.main) || {}).coupons || {}; days = X.couponDays(st); } catch (e) {}   /* patch LEGAL3: the page says how long a coupon lasts */
       return J(event, 200, { ok: true, name: sp && !sp.del ? s(sp.publicName || '') : '', value: X.COUPON_VALUE, min: X.COUPON_MIN, days: days }); }

@@ -42,6 +42,14 @@ def plain(html):
     return (t.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&nbsp;', ' ').replace('&#39;', "'").replace('&quot;', '"'))
 
 # ---------------------------------------------------------------- static public page
+# patch ADDRALL: a public page shows the company address from the ONE setting — every ADDR is a <span data-gc-addr>
+# (ADDR stays as the text if the script cannot load) and /gc-address.js fills it in.
+def addr_live(html):
+    html = html.replace(ADDR, '<span data-gc-addr>' + ADDR + '</span>')
+    if '/gc-address.js' not in html:
+        html = html.replace('</head>', '<script src="/gc-address.js" defer></script>\n</head>', 1)
+    return html
+
 PAGE_CSS = 'mkt-pages.css'
 def static_page(title, h1, blocks, updated='October 26, 2026', sub='Licensed general contractor · TN · MS · AR'):
     body = []
@@ -51,7 +59,7 @@ def static_page(title, h1, blocks, updated='October 26, 2026', sub='Licensed gen
         elif k == 'p': body.append('<p>' + b[1] + '</p>')
         elif k == 'li': body.append('<ul>' + ''.join('<li>' + x + '</li>' for x in b[1]) + '</ul>')
         elif k == 'box': body.append('<p style="border:1px solid #c9a24b;background:#fffbeb;padding:10px 12px;border-radius:8px">' + b[1] + '</p>')
-    return ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+    return addr_live('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
             '<title>' + title + ' — GrayCo Construction Services</title>\n<link rel="stylesheet" href="mkt-pages.css">\n'
             '<style>.gp-card h2{margin-top:18px}.gp-card p,.gp-card li{line-height:1.55}.gc-formrev{margin-top:22px;font-size:11px;color:#6b7280}</style>\n</head><body>\n'
             '<header class="gp-head"><img src="img/grayco-logo-white.png" alt="GrayCo Construction Services"><div><b>GrayCo Construction Services</b><span>' + sub + '</span></div></header>\n'

@@ -197,6 +197,7 @@ async function run(opts){
 }
 
 exports.handler = async function (event) {
+ try { await require('./_lib/brand.js').addressReady(); } catch (e) {}   /* patch ADDRALL: the saved company address before anything is made */
   event = event || {};
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   const b = scheduledBody(event);

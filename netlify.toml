@@ -336,6 +336,13 @@
   status = 200
   force = true
 
+# patch ADDRALL: the company-address helper (portal footer, legal pages, legal2.js) on the portal host too
+[[redirects]]
+  from = "https://portal.grayco-cs.com/gc-address.js"
+  to = "/gc-address.js"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"
