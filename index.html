@@ -164509,6 +164509,7 @@ function persist(list){
   try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._gcManualNow === 'function') W._gcManualNow('lead edited'); } catch (e) {}
   try { if (typeof W.idbSet === 'function') W.idbSet('leads', list); } catch (e) {}
   try { if (typeof W._supaUpsert === 'function') W._supaUpsert('leads', list); } catch (e) {}
+  luxPush();   /* patch LUXSYNC */
   later(function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500);
 }
 function setLeads(mut){
@@ -164523,7 +164524,24 @@ function setLeads(mut){
     }, 2500);
   });
 }
+/* patch LUXSYNC: an assign / stage change / contacted is in the cloud within about a second (other computers see it in a few
+   seconds), not with the next regular sync. The live push (patch N) reads the cloud row and writes the union, so it goes
+   through the SCALE20 compare-and-set; a burst of saves (a bulk assign) is one push. */
+var LPT = 0;
+function luxPush(){ try { if (LPT) W.clearTimeout(LPT); } catch (e) {} LPT = later(function(){ LPT = 0; try { if (typeof W._gcLivePush === 'function') W._gcLivePush('leads'); } catch (e) {} }, 250); }
+/* patch LUXSYNC: every patchLead() made inside run() is saved in ONE write (a bulk assign: one save, one push) */
+var LUXB = null;
+function patchMany(run){
+  var b = LUXB = []; try { run(); } finally { LUXB = null; }
+  if (!b.length) return Promise.resolve(0);
+  return setLeads(function(list){
+    var at = {}, any = false; list.forEach(function(l, k){ if (l && l.id != null) at[String(l.id)] = k; });
+    b.forEach(function(x){ x.ok = false; var i = at[String(x.id)]; if (i == null) return; var l = Object.assign({}, list[i]); if (x.fn2(l) === false) return; l.updatedAt = nowIso(); list[i] = l; x.ok = any = true; });
+    if (!any) return null; LEADS_NOW = list; LEADS_SIG = ''; return list;
+  }).then(function(ok){ var n = 0; b.forEach(function(x){ var y = !!(ok && x.ok); if (y) n++; x.res(y); }); return n; });
+}
 function patchLead(id, fn2){
+  if (LUXB) return new Promise(function(res){ LUXB.push({ id: id, fn2: fn2, res: res }); });   /* patch LUXSYNC */
   return setLeads(function(list){
     var i = -1; list.forEach(function(l, k){ if (l && l.id === id) i = k; }); if (i < 0) return null;
     var l = Object.assign({}, list[i]); if (fn2(l) === false) return null; l.updatedAt = nowIso(); list[i] = l; LEADS_NOW = list; LEADS_SIG = ''; return list;
@@ -164914,7 +164932,8 @@ function openPicker(ids, anchorEl){
     if (b.hasAttribute('data-asg-x')) return closePicker();
     var to = b.getAttribute('data-asg-to'); if (!to) return;
     closePicker();
-    ids.reduce(function(pr, id){ return pr.then(function(n){ return assign(id, to).then(function(ok){ return n + (ok ? 1 : 0); }); }); }, Promise.resolve(0))
+    (ids.length > 1 ? (function(){ var ps = []; patchMany(function(){ ids.forEach(function(id){ ps.push(assign(id, to)); }); }); return Promise.all(ps).then(function(r){ return r.filter(Boolean).length; }); })()   /* patch LUXSYNC */
+      : ids.reduce(function(pr, id){ return pr.then(function(n){ return assign(id, to).then(function(ok){ return n + (ok ? 1 : 0); }); }); }, Promise.resolve(0)))
       .then(function(n){ ids.forEach(function(id){ delete PICK[id]; }); if (ids.length > 1) toast('👤 Assigned ' + n + ' of ' + ids.length + ' leads to ' + to); redraw(); });
   });
 }
@@ -173744,6 +173763,11 @@ html.lux-classic #gc-lux .lux-nonclassic{display:none!important}
 .lux-act.alt{background:#fff;color:var(--k-acc);border:1px solid var(--k-acc)}
 .lux-pick{position:absolute;top:12px;right:12px}
 .lux-empty{padding:40px;text-align:center;color:var(--k-mut);border:1px dashed var(--k-bd);border-radius:14px;margin-top:20px}
+.lux-fon{display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:fit-content;max-width:100%;margin:10px 0 0;padding:6px 12px;border-radius:999px;border:1px solid var(--k-acc);background:var(--k-soft);color:var(--k-tx);font-size:13px}   /* patch LUXSYNC */
+.lux-fon[hidden]{display:none}
+.lux-fon b{color:var(--k-acc)}
+.lux-fon small{color:var(--k-mut);font-size:12px}
+.lux-fon button,.lux-empty button{border:0;background:none;color:var(--k-acc2);text-decoration:underline;font:inherit;font-weight:700;cursor:pointer;padding:2px 4px;min-height:32px}
 .lux-showmore{display:block;width:100%;margin:12px 0 0;border:1px solid var(--k-bd);background:#fff;border-radius:12px;padding:10px;color:var(--k-acc);font-weight:600}
 #gc-lux .lux-viewbody{margin-top:14px}
 #gc-lux .lux-classicbar{margin:12px 0;padding:12px 16px;border:1px solid var(--k-bd);border-radius:14px;display:flex;gap:12px;align-items:center}
@@ -174030,6 +174054,7 @@ function skeleton(){
     + '<button type="button" class="lux-more" data-lux-act="filters" aria-expanded="false">More filters</button>'
     + '<div class="lux-seg" data-lux="views" role="group" aria-label="View"><button type="button" data-lux-view="cards" title="List" aria-label="List">☰</button><button type="button" data-lux-view="board" title="Board" aria-label="Board">▥</button><button type="button" data-lux-view="map" title="Map" aria-label="Map">⌖</button><button type="button" data-lux-view="cal" title="Calendar" aria-label="Calendar">▦</button></div>'
     + '<div class="lux-menu"><button type="button" class="lux-dots" data-lux-act="menu" aria-label="More actions" aria-haspopup="true">⋯</button><div class="lux-dd" data-lux="dd" hidden></div></div></div>'
+    + '<div class="lux-fon" data-lux="fon" role="status" hidden></div>'   /* patch LUXSYNC */
     + '<div class="lux-filters" data-lux="filters" hidden></div><div data-lux="body"></div></div>';
 }
 function q1(sel, el){ return (el || LUX.root).querySelector(sel); }
@@ -174072,6 +174097,39 @@ function filtersHtml(){
     + '<button type="button" class="lux-tg' + (u.imp ? ' on' : '') + '" data-lux-act="imported" aria-pressed="' + !!u.imp + '">Imported (' + nImp + ')</button>'
     + (nArch || u.arch ? '<button type="button" class="lux-tg' + (u.arch ? ' on' : '') + '" data-lux-act="archived" aria-pressed="' + !!u.arch + '">Archived (' + nArch + ')</button>' : '');
 }
+/* patch LUXSYNC: which filters are on (not the role's default), the chip that says so, and Clear all */
+function whoDefault(e){ return e.myScope().kind === 'mine' ? '__me' : ''; }   /* the role's own start (patch LUXFIX roleDefaults) */
+function activeFilters(){
+  var e = E(); if (!e) return []; var u = e.ui(), f = [], CHN = { 'new': 'New', 'bids': 'Bids due this week', 'un': 'Unassigned', 'fu': 'Follow-ups today' };
+  var DUE = { '7': 'Due in 7 days', '30': 'Due in 30 days', past: 'Past due' }, PR = { hi: 'Priority 8–10', md: 'Priority 5–7', lo: 'Priority 1–4', none: 'No priority' };
+  if (UX.chip) f.push(CHN[UX.chip] || UX.chip);
+  if (s(u.q).trim()) f.push('Search “' + s(u.q).trim().slice(0, 24) + '”');
+  if (u.who && u.who !== whoDefault(e)) f.push(u.who === '__me' ? 'Mine' : u.who === '__mybids' ? 'My bids' : 'Assignee: ' + u.who);
+  if (u.type) f.push('Type: ' + u.type);
+  if (u.stage) f.push('Stage: ' + u.stage);
+  if (u.src) f.push('Source: ' + u.src);
+  if (u.prio) f.push(PR[u.prio] || 'Priority');
+  if (u.due) f.push(DUE[u.due] || 'Bid due date');
+  if (u.un) f.push('Unassigned only');
+  if (u.closed) f.push('Lost / closed shown');
+  if (u.exp) f.push('Expired');
+  if (u.imp) f.push('Imported');
+  if (u.arch) f.push('Archived');
+  if (u.preset === 'bids' && !e.amEstimator()) f.push('Bids only');
+  return f;
+}
+function fonHtml(f){ return '<b>Filters on (' + f.length + ')</b><small>' + esc(f.join(' · ')) + '</small><span aria-hidden="true">·</span><button type="button" data-lux-act="clearf">Clear all</button>'; }
+function clearFilters(){
+  var e = E(); if (!e) return; var u = e.ui();
+  UX.chip = ''; uxSave();
+  u.q = ''; QV = ''; if (QT) { try { W.clearTimeout(QT); } catch (x) {} QT = 0; } var qi = LUX.root && q1('[data-lux=q]'); if (qi) qi.value = '';
+  u.who = whoDefault(e); u.type = ''; u.stage = ''; u.src = ''; u.prio = ''; u.due = ''; u.un = false; u.closed = false; u.exp = false; u.imp = false; u.arch = false;
+  if (!e.amEstimator() && u.preset === 'bids') u.preset = 'all';
+  UX.more = { na: 30, ip: 30, bd: 30, cl: 30 };
+  e.saveUI(); toast('Filters cleared');
+}
+function bidFilters(){ var f = []; if (s(UX.bq).trim()) f.push('Search “' + s(UX.bq).trim().slice(0, 24) + '”'); if (UX.bMine) f.push('Mine'); if (UX.bdue) f.push({ '7': 'Due in 7 days', '30': 'Due in 30 days', past: 'Past due' }[UX.bdue] || 'Due date'); return f; }
+function clearBidFilters(){ UX.bq = ''; BQV = ''; if (BQT) { try { W.clearTimeout(BQT); } catch (x) {} BQT = 0; } UX.bMine = false; UX.bdue = ''; UX.bMore = 50; var i = LUX.bids && LUX.bids.querySelector('[data-lux=bq]'); if (i) i.value = ''; }
 function menuHtml(){
   var e = E(), u = e.ui(), adm = e.isAdmin(), h = '';
   var all0 = e.rawLeads().filter(function(l){ return !e.dead(l); }), nImp = all0.filter(function(l){ return !e.archivedL(l) && e.importedL(l); }).length;
@@ -174123,7 +174181,8 @@ function listHtml(){
     h += '<div class="lux-bar" style="margin-top:12px"><button type="button" class="lux-btn ghost" data-gcl-pickall>Select all shown / none</button><button type="button" class="lux-btn" data-gcl-bulkasg' + (n ? '' : ' disabled') + '>Assign selected (' + n + ')…</button><button type="button" class="lux-btn ghost" data-lux-act="bulk">Done</button></div>';
   }
   h += groupHtml('na', 'Needs action now', g.na, true) + groupHtml('ip', 'In progress', g.ip) + groupHtml('bd', 'Bids', g.bd) + groupHtml('cl', 'Recently closed', g.cl, false, true);
-  if (!g.total) h += '<div class="lux-empty">No leads match. Clear a filter or a chip to see more.</div>';
+  if (!g.total) h += activeFilters().length ? '<div class="lux-empty">No leads match your filters — <button type="button" data-lux-act="clearf">Clear filters</button></div>'   /* patch LUXSYNC */
+    : '<div class="lux-empty">No leads to show.</div>';
   return h;
 }
 function update(){
@@ -174134,6 +174193,7 @@ function update(){
   var cb = q1('[data-lux=cbar]'); if (cb.hidden !== !classic) cb.hidden = !classic;
   r.classList.toggle('lux-classicmode', classic); H.classList.toggle('lux-classic', classic);
   setHtml(q1('[data-lux=chips]'), chipsHtml());
+  var fo = q1('[data-lux=fon]'), af = activeFilters(); setHidden(fo, !af.length); if (af.length) setHtml(fo, fonHtml(af));   /* patch LUXSYNC */
   var ws = q1('[data-lux-sel=who]'), wh = whoOptions(u); if (ws.__h !== wh) { ws.__h = wh; ws.innerHTML = wh; } ws.value = u.who || ''; ws.classList.toggle('on', !!u.who);
   var ts = q1('[data-lux-sel=type]'), to = typeOptions(u); if (ts.__h !== to.html) { ts.__h = to.html; ts.innerHTML = to.html; } ts.value = to.val; ts.classList.toggle('on', !!u.type);
   var ss = q1('[data-lux-sel=stage]'); ss.value = u.stage || ''; ss.classList.toggle('on', !!u.stage);
@@ -174208,6 +174268,7 @@ function menuAct(a){
   else if (a === 'new') { formMode(); e.newLead(); }   /* patch LUXFIX */
   else if (a === 'filters') { UX.filters = !UX.filters; }
   else if (a === 'menu') { UX.menu = true; }
+  else if (a === 'clearf') { clearFilters(); }   /* patch LUXSYNC */
   FORCE = true; dirty(a);
 }
 
@@ -174350,6 +174411,7 @@ function bidsSkeleton(){
     + '<select class="lux-pill" data-lux-bsel="mine" aria-label="Mine or all"><option value="">All</option><option value="1">Mine</option></select>'
     + '<select class="lux-pill" data-lux-bsel="due" aria-label="Due date"><option value="">Due date</option><option value="7">Due in 7 days</option><option value="30">Due in 30 days</option><option value="past">Past due</option></select>'
     + '<div class="lux-menu"><button type="button" class="lux-dots" data-lux-bact="menu" aria-label="More actions" aria-haspopup="true">⋯</button><div class="lux-dd" data-lux="bdd" hidden></div></div></div>'
+    + '<div class="lux-fon" data-lux="bfon" role="status" hidden></div>'   /* patch LUXSYNC */
     + '<div data-lux="bbody"></div>';
 }
 function bidList(){
@@ -174378,7 +174440,7 @@ function bidsHtml(){
     return '<div class="lux-br" data-lux-open="' + esc(l.id) + '" tabindex="0">' + due + '<div class="lux-t">' + esc(s(l.name || l.title) || 'Bid') + (luxPrio(l) ? ' ' + luxPrio(l) : '') + '<small>' + esc(s(l.city || l.address)) + '</small></div><div>' + esc(agency) + '</div><div class="lux-who">' + who + '</div><div>' + act + '</div></div>';
   }).join('');
   var more = r.list.length > UX.bMore ? '<button type="button" class="lux-showmore" data-lux-bact="more">Show ' + Math.min(50, r.list.length - UX.bMore) + ' more (' + (r.list.length - UX.bMore) + ' not shown)</button>' : '';
-  return (r.list.length ? '<div class="lux-tbl"><div class="lux-bh"><div>Due</div><div>Title</div><div>Owner / agency</div><div>Estimator</div><div></div></div>' + rows + '</div>' + more : '<div class="lux-empty">No bids match.</div>')
+  return (r.list.length ? '<div class="lux-tbl"><div class="lux-bh"><div>Due</div><div>Title</div><div>Owner / agency</div><div>Estimator</div><div></div></div>' + rows + '</div>' + more : bidFilters().length ? '<div class="lux-empty">No bids match your filters — <button type="button" data-lux-bact="clearf">Clear filters</button></div>' : '<div class="lux-empty">No bids to show.</div>')   /* patch LUXSYNC */
     + '<div class="lux-foot2">Non-construction bids (supplies, janitorial, IT) are hidden automatically. ' + (r.hidden || UX.bShowHidden ? '<button type="button" data-lux-bact="hidden">' + (UX.bShowHidden ? 'Hide closed / hidden' : 'Show hidden (' + r.hidden + ')') + '</button>' : '') + '</div>';
 }
 function updateBids(){
@@ -174389,6 +174451,7 @@ function updateBids(){
   var dd = b.querySelector('[data-lux=bdd]'); setHidden(dd, !UX.menu);
   if (UX.menu) { var adm = e.isAdmin(), item = function(a, l){ return '<button type="button" data-lux-bact="' + a + '">' + l + '</button>'; };
     setHtml(dd, (adm ? item('settings', 'Lead settings') + item('cleanup', 'Hide non-construction bids') : '') + item('prio', e.ui().sort === 'prio' ? 'Most important first: on' : 'Most important first') + item('watch', 'Watched boards') + item('inbox', 'Full Lead Inbox (classic cards)') + (adm ? '<hr>' + item('classic', 'Classic bid board (switch tabs to come back)') : '')); }
+  var bfo = b.querySelector('[data-lux=bfon]'), bf = bidFilters(); setHidden(bfo, !bf.length); if (bf.length) setHtml(bfo, '<b>Filters on (' + bf.length + ')</b><small>' + esc(bf.join(' · ')) + '</small><span aria-hidden="true">·</span><button type="button" data-lux-bact="clearf">Clear all</button>');   /* patch LUXSYNC */
   setHtml(b.querySelector('[data-lux=bbody]'), bidsHtml());
 }
 var BQT = 0, BQV = '';
@@ -174401,6 +174464,7 @@ function bindBids(b){
       if (k === 'menu') UX.menu = true;
       else if (k === 'new') { formMode(); e.newLead(); }   /* patch LUXFIX */
       else if (k === 'more') UX.bMore += 50;
+      else if (k === 'clearf') clearBidFilters();   /* patch LUXSYNC */
       else if (k === 'hidden') UX.bShowHidden = !UX.bShowHidden;
       else if (k === 'settings') openSettings();
       else if (k === 'cleanup') openSettings({ cleanup: true });
