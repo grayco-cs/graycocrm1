@@ -2481,3 +2481,4 @@ Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJ
   ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
   pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });
 exports._estin = { estinEstHidden: estinEstHidden, estinDocHidden: estinDocHidden, proposalShown: proposalShown, docShown: docShown, insDocShown: insDocShown };   /* patch ESTIN: tests */
+exports._sched = { portalSteps: portalSteps };   /* patch VOICESCHED: tests */
