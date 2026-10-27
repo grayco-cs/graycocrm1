@@ -1132,6 +1132,7 @@ function staffName(data, who){ const u = arr(data.users).find(function(x){ retur
 function isAdmin(who){ return /admin|owner/.test(low(who.role)); }
 function canApproveFor(data, who, pid){
   if (isAdmin(who)) return true;
+  if (require('./_lib/office-appr.js').isOfficeUser(data && data.users, who)) return true;   /* patch OFFICEAPPR: the office approves everything except payroll */
   const p = arr(data.projects).find(function(x){ return s(x.id) === s(pid); });
   return !!(p && low(p.pm || p.projectManager) && low(p.pm || p.projectManager) === low(staffName(data, who)));
 }
@@ -1205,7 +1206,7 @@ async function staffAction(action, body, who){
     const rows = await dbGet('gc_sub_scope', 'select=*&id=' + eq(body.id));
     const x = rows[0]; if (!x) throw Fail(404, 'That scope is gone.');
     if (x.status !== 'waiting') throw Fail(409, 'That scope is not waiting for approval.');
-    if (!canApproveFor(data, who, x.project_id)) throw Fail(403, "Only the job's PM (or an admin) approves a scope going to a sub.");
+    if (!canApproveFor(data, who, x.project_id)) throw Fail(403, "Only the job's PM, the office or an admin approves a scope going to a sub.");
     const now = new Date().toISOString();
     const done = await dbPatch('gc_sub_scope', 'id=' + eq(x.id) + '&status=eq.waiting', { status: 'published', approved_by: me, approved_at: now, updated_at: now }, true);
     if (!Array.isArray(done) || done.length !== 1) throw Fail(409, 'Someone else just approved it.');
@@ -1254,7 +1255,7 @@ async function staffAction(action, body, who){
     return { ok: true, acked: ids.length };
   }
   if (action === 's-bids-approve') {
-    if (!isAdmin(who)) throw Fail(403, 'Only an owner (Wesley or Nick) approves the bid site.');
+    if (!isAdmin(who) && !require('./_lib/office-appr.js').isOfficeUser(data && data.users, who)) throw Fail(403, 'Only an owner (Wesley or Nick) or the office approves the bid site.');   /* patch OFFICEAPPR */
     const rows = await dbGet('sp_rows', 'select=key,id,data&collection=eq.users&id=' + eq(body.id));
     const r = rows[0]; if (!r || (r.data || {}).role !== 'sub') throw Fail(404, 'That request is gone.');
     const ok = body.approve !== false, now = new Date().toISOString();

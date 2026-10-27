@@ -1688,10 +1688,14 @@ async function approvalAction(body, who){
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
   const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
   if (who && who.marketing === true && !mmOk) return { status: 403, out: { ok: false, error: 'This one needs an admin.' } };
-  const office = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
-  if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
+  /* patch OFFICEAPPR (owner, 10/27): "the office can approve everything except payroll" — at any step, like an admin
+     (approving at the PM step counts as the PM step done); payroll stays Wesley / Nick only, for everyone */
+  const OA = require('./_lib/office-appr.js'), payroll = OA.isPayrollItem(it0);
+  if (payroll && !admin && op !== 'list') return { status: 403, out: { ok: false, payroll: true, error: 'Payroll is approved by Wesley or Nick only.' } };
+  const office = mmOk || (!admin && !payroll && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) — patch OFFICEAPPR: any step now */
+  if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley, Nick or the office.' : 'Only the job\'s PM (' + (it0.pm || 'none') + '), the office or an admin can approve this.' } };
   const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
-  if (office && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }
+  if (office && !mmOk && it0.step === 'admin' && !it0.escalated && !it0.officeOk && escalatedOrDue(it0, Date.now())) { try { await escalateDue({ only: id }); } catch (e) {} }   /* patch OFFICEAPPR: only a real 24-hour case is marked escalated */
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
     const r = await upd(function(x){ if (x.status !== 'waiting' && !stale) return false; x.status = 'rejected'; x.rejectedBy = me.by; x.rejectedEmail = me.email; x.rejectedAt = now; x.reason = clip(body.reason, 500); }, function(z){ return z.status === 'rejected'; });
