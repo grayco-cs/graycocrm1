@@ -33,37 +33,55 @@
    Until then, BuildingConnected's invitation e-mails to leads@ cover it.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 const crypto = require('crypto');
 const L = require('./bid-inbox.js')._lib;
 const BD = require('./_lib/bid-due.js');
+const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER */
 const { env, s, low, arr, nowIso, sha256, sb, kvGet, kvCas, kvPut, upsert, itemId, isoDay, decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET } = L;
 
 const UA = 'GrayCoBidWatch/1.0 (+https://crm.grayco-cs.com; leads@grayco-cs.com; GrayCo Construction Services, Bartlett TN)';
 const KV_SEEN = 'gc_bid_watch_seen', KV_STATUS = 'gc_bid_watch_status';
-const PAUSE_MS = 1500, TIMEOUT_MS = 20000, MAX_PAGE = 3 * 1024 * 1024;
+const PAUSE_MS = 1500, TIMEOUT_MS = 10000, MAX_PAGE = 3 * 1024 * 1024, CONCURRENCY = 4;   /* patch BW2: 10 s per page; sources on different sites are read 4 at a time, the same site never twice at once */
 
 /* ── the sources ──────────────────────────────────────────────────────────────
    auto:true  → read here (public page / feed, no login).
    auto:false → e-mail alerts to leads@ (login needed, or automated reading not allowed);
                 listed so the CRM can show how to sign up.                         */
+/* West Tennessee counties / towns within about 100 miles of Memphis (STREAM lists the whole state) */
+const TN_WEST = /\b(Shelby|Fayette|Tipton|Lauderdale|Haywood|Hardeman|Madison|Crockett|Dyer|Gibson|Chester|Henderson|McNairy|Obion|Weakley|Hardin|Memphis|Millington|Bartlett|Germantown|Collierville|Covington|Somerville|Union City|Dyersburg)\b/;
 const SOURCES = [
   { id: 'shelby-county', name: 'Shelby County Government — bid postings', label: 'Shelby County', owner: 'Shelby County Government', city: 'Memphis', state: 'TN',
     auto: true, kind: 'links', url: 'https://bids.shelbycountytn.gov/', hrefRe: /\/node\/\d+/, listing: 'https://www.shelbycountytn.gov/3243/Bids-Listing' },
   { id: 'city-of-memphis', name: 'City of Memphis — RFPs & RFQs', label: 'City of Memphis', owner: 'City of Memphis', city: 'Memphis', state: 'TN',
-    auto: true, kind: 'links', url: 'https://www.memphistn.gov/business/rfps-rfqs/' },
+    auto: true, kind: 'links', url: 'https://memphistn.gov/rfp-rfq/', docs: true },
   { id: 'mscs', name: 'Memphis-Shelby County Schools — bids', label: 'MSCS', owner: 'Memphis-Shelby County Schools', city: 'Memphis', state: 'TN',
     auto: true, kind: 'links', url: 'https://www.scsk12.org/procurement/bids' },
   { id: 'mscaa', name: 'Memphis-Shelby County Airport Authority — RFPs/RFQs', label: 'Memphis Airport (MSCAA)', owner: 'Memphis-Shelby County Airport Authority', city: 'Memphis', state: 'TN',
     auto: true, kind: 'links', url: 'https://flymemphis.com/rfps-rfqs/' },
   { id: 'desoto-county', name: 'DeSoto County MS — bid postings', label: 'DeSoto County', owner: 'DeSoto County Board of Supervisors', city: 'Hernando', state: 'MS',
     auto: true, kind: 'rss', url: 'https://www.desotocountyms.gov/RSSFeed.aspx?ModID=76&CID=All-bids.xml', html: 'https://www.desotocountyms.gov/Bids.aspx' },
-  { id: 'tn-stream', name: 'State of Tennessee — STREAM construction bid list', label: 'State of TN (STREAM)', owner: 'State of Tennessee (STREAM)', city: '', state: 'TN',
-    auto: true, kind: 'links', url: 'https://www.tn.gov/generalservices/real-estate-/redirect-stream/contractors/construction-bid-list.html', anyRow: true },
+  { id: 'tn-stream', name: 'State of Tennessee — STREAM construction bid list (West TN projects)', label: 'State of TN (STREAM)', owner: 'State of Tennessee (STREAM)', city: '', state: 'TN',
+    auto: true, kind: 'stream', near: TN_WEST, url: 'https://www.tn.gov/generalservices/stream/stream/contractors/construction-bid-list.html' },
   { id: 'tn-cpo', name: 'State of Tennessee — Central Procurement Office invitations to bid', label: 'State of TN (CPO)', owner: 'State of Tennessee (Central Procurement Office)', city: '', state: 'TN',
     auto: true, kind: 'links', url: 'https://www.tn.gov/generalservices/procurement/central-procurement-office--cpo-/supplier-information/invitations-to-bid--itb-.html' },
   { id: 'arkansas-osp', name: 'State of Arkansas — current solicitations', label: 'State of AR', owner: 'State of Arkansas (Office of State Procurement)', city: '', state: 'AR',
     auto: true, kind: 'links', url: 'https://www.arkansas.gov/dfa/procurement/bids/index.php' },
+  /* patch BW2: more public buyers, each address fetched and read from the build container on 2026-10-26.
+     'civic' = CivicPlus "Bid Postings" (Bids.aspx?bidID=n); 'docs' = only linked PDF/DOC solicitations count. */
+  { id: 'bartlett', name: 'City of Bartlett — bid postings', label: 'City of Bartlett', owner: 'City of Bartlett', city: 'Bartlett', state: 'TN', auto: true, kind: 'civic', url: 'https://www.cityofbartlett.org/bids.aspx' },
+  { id: 'millington', name: 'City of Millington — bid postings', label: 'City of Millington', owner: 'City of Millington', city: 'Millington', state: 'TN', auto: true, kind: 'civic', url: 'https://www.millingtontn.gov/bids.aspx' },
+  { id: 'olive-branch-bids', name: 'City of Olive Branch — bid postings', label: 'Olive Branch', owner: 'City of Olive Branch', city: 'Olive Branch', state: 'MS', auto: true, kind: 'civic', url: 'https://www.obms.us/bids.aspx' },
+  { id: 'southaven-bids', name: 'City of Southaven — bid postings', label: 'Southaven', owner: 'City of Southaven', city: 'Southaven', state: 'MS', auto: true, kind: 'civic', url: 'https://www.southaven.org/bids.aspx' },
+  { id: 'collierville-schools', name: 'Collierville Schools — bid & RFP opportunities', label: 'Collierville Schools', owner: 'Collierville Schools', city: 'Collierville', state: 'TN', auto: true, kind: 'links', docs: true, url: 'https://www.colliervilleschools.org/bidopportunities' },
+  { id: 'bartlett-schools', name: 'Bartlett City Schools — bid & RFP opportunities', label: 'Bartlett City Schools', owner: 'Bartlett City Schools', city: 'Bartlett', state: 'TN', auto: true, kind: 'links', docs: true, url: 'https://www.bartlettschools.org/departments/purchasing/bid-rfp-opportunities' },
+  { id: 'millington-schools', name: 'Millington Municipal Schools — bid & RFP opportunities', label: 'Millington Schools', owner: 'Millington Municipal Schools', city: 'Millington', state: 'TN', auto: true, kind: 'links', docs: true, url: 'https://www.millingtonschools.org/16897_4' },
+  { id: 'lakeland-schools', name: 'Lakeland School System — bids & RFPs', label: 'Lakeland Schools', owner: 'Lakeland School System', city: 'Lakeland', state: 'TN', auto: true, kind: 'links', url: 'https://www.lakelandschools.org/community/bids_and_rfp.php' },
+  { id: 'fayette-schools', name: 'Fayette County Public Schools — bids & RFPs', label: 'Fayette Schools', owner: 'Fayette County Public Schools', city: 'Somerville', state: 'TN', auto: true, kind: 'links', docs: true, url: 'https://www.fcsk12.net/apps/pages/index.jsp?uREC_ID=1650948&type=d' },
+  { id: 'mha', name: 'Memphis Housing Authority — procurement solicitations', label: 'Memphis Housing Authority', owner: 'Memphis Housing Authority', city: 'Memphis', state: 'TN', auto: true, kind: 'links', docs: true, url: 'https://www.mha-tn.org/Procurement.aspx' },
+  { id: 'ms-bob', name: 'Mississippi DFA Bureau of Building — construction solicitations', label: 'State of MS (Bureau of Building)', owner: 'Mississippi DFA, Bureau of Building, Grounds & Real Property Mgmt', city: 'Jackson', state: 'MS', auto: true, kind: 'links', hrefRe: /\/Bids\/[^"]*\.pdf/i, url: 'https://www.dfa.ms.gov/construction-solicitations-bid-tabs' },
+  { id: 'ar-dba', name: 'Arkansas Division of Building Authority — bid announcements', label: 'State of AR (Building Authority)', owner: 'Arkansas Division of Building Authority', city: 'Little Rock', state: 'AR', auto: true, kind: 'links', hrefRe: /Advertisement-[^\/]*\.(doc|docx|pdf)/i, url: 'https://sas.arkansas.gov/building-authority/bid-announcements/' },
   /* e-mail alerts only */
   { id: 'mlgw', name: 'MLGW — Bid Notification System / iSupplier', label: 'MLGW', auto: false, how: 'Register in MLGW\'s Bid Notification System (contracted services) and iSupplier Portal (materials); use leads@grayco-cs.com as the contact e-mail.' },
   { id: 'southaven', name: 'City of Southaven — Central Bidding', label: 'Southaven', auto: false, how: 'Free vendor account on Central Bidding (centralbidding.com), follow City of Southaven, notification e-mail leads@grayco-cs.com.' },
@@ -102,7 +120,13 @@ const SOURCES = [
 ];
 
 /* ── fetching, politely ─────────────────────────────────────────────────────── */
-async function get(url, extra, fetchImpl){
+async function get(url, extra, fetchImpl, noRetry){
+  const r1 = await get1(url, extra, fetchImpl);
+  /* some state sites (tn.gov) answer a random 403 / 5xx / reset to polite robots; one more try after a breath */
+  if (!noRetry && (r1.status === 0 || r1.status === 403 || r1.status === 429 || r1.status >= 500)) { await new Promise(r => setTimeout(r, 1200)); const r2 = await get1(url, extra, fetchImpl); if (r2.status === 200 || r1.status === 0) return r2; }
+  return r1;
+}
+async function get1(url, extra, fetchImpl){
   const f = fetchImpl || fetch;
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
@@ -140,8 +164,8 @@ function robotsAllows(txt, path){
 const DATE_RE = /\b(?:\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})\b/ig;
 const NUM_RE = /\b(RFP|RFQ|RFB|IFB|ITB|RFI|RFS|SOQ|NTB|SBC|SB-?I?|Bid|Solicitation|Contract|Project|Event)\s*(?:No\.?|Number|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/.]{2,30})/i;
 const SOLICIT_RE = /\b(RFP|RFQ|RFB|IFB|ITB|RFI|RFS|SOQ|NTB|invitation (?:to|for) bid|request for (?:proposals?|qualifications?|quotes?|bids?)|notice to (?:bidders|contractors)|sealed bids?|solicitation|bid (?:no|number|#)|advertisement for bids?|bid opportunit)/i;
-const NAV_RE = /^(home|contact|login|log in|sign in|register|faq|help|search|back|next|previous|more|menu|bid results|bid tabulations?|awards?|archive|closed bids|vendor registration|how to do business.*|doing business.*|become a (supplier|vendor)|supplier (portal|registration)|subscribe|notify me|rss)$/i;
-const GENERIC = /^(click here|here|download|view|view (bid|details|document|more)|pdf|details|more info|read more|documents?|link|open)$/i;
+const NAV_RE = /^(home|contact|login|log in|sign in|register|faq|help|search|back|next|previous|more|menu|bid results|bid tabulations?|awards?|archive|closed bids|vendor registration|how to do business.*|doing business.*|become a (supplier|vendor)|supplier (portal|registration)|subscribe|notify me|rss|bids?( (&|&amp;|and) rfps?)?( opportunities)?|bid (&|and) rfp opportunities|bids? (and|&) rfps?|rfp (&|and) rfqs?|rfps?|rfqs?|invitations? (to|for) bids?|request for proposals?|amendments?.*)$/i;
+const GENERIC = /^(click here|here|download|view|view (bid|details|document|more)|pdf|details|more info|read more|documents?|link|open|bid info(rmation)?|bid packet|advertisement|ad|[\d\-\s.]{3,14})$/i;
 const CLOSED_RE = /\b(closed|awarded|cancel+ed|rescinded|bid results?|tabulation|intent to award)\b/i;
 function absUrl(href, base){ try { return new URL(decodeEntities(href), base).href; } catch (e) { return ''; } }
 function firstDue(ctx){
@@ -177,13 +201,16 @@ function parseLinks(html, base, opt){
     const ctx = htmlToText(blockAround(H, m.index, re.lastIndex)).replace(/\s+/g, ' ').trim().slice(0, 1200);
     /* the link itself names a solicitation, or it opens a document in a row that does */
     const isDoc = /\.(pdf|docx?)(\?|$)/i.test(href);
-    const isSol = opt.hrefRe ? opt.hrefRe.test(href) : (SOLICIT_RE.test(text) || (isDoc && SOLICIT_RE.test(ctx)) || (opt.anyRow && isDoc && DATE_RE.test(ctx)));
+    const isSol = opt.hrefRe ? opt.hrefRe.test(href) : opt.docs ? (isDoc && (SOLICIT_RE.test(text) || SOLICIT_RE.test(ctx)) && !CLOSED_RE.test(text)) : (SOLICIT_RE.test(text) || (isDoc && SOLICIT_RE.test(ctx)) || (opt.anyRow && isDoc && DATE_RE.test(ctx)));
     DATE_RE.lastIndex = 0;
     if (!isSol) continue;
+    /* patch BW2: a plain page-to-page link with no number, no date and no document is the site's own menu, not a solicitation */
+    if (!opt.hrefRe && !opt.docs && !isDoc && !/\d/.test(text) && !numberOf(ctx) && !firstDue(ctx)) { let sameHost = true; try { sameHost = new URL(href).host === new URL(base).host; } catch (e) {} if (sameHost) continue; }
     let title = GENERIC.test(text) || text.length < 6 ? ctx.replace(text, '').trim().slice(0, 180) : text.slice(0, 180);
+    const pt = /Project Title:\s*(.+?)\s+(?:Using Agency|Professional|Date|Location):/i.exec(ctx); if (pt && (GENERIC.test(text) || /^GS\b/i.test(title))) title = pt[1].slice(0, 180);
     title = title.replace(/\.pdf$/i, '').replace(/\s*[-–|]\s*$/, '').trim();
     if (!title) continue;
-    const number = numberOf(text) || numberOf(ctx);
+    const number = numberOf(text) || numberOf(ctx) || (/^\d{3}-\d{3}$/.test(text) ? 'GS ' + text : '');
     const id = number ? low(number).replace(/[^a-z0-9]+/g, '') : sha256(href.replace(/[#?].*$/, '')).slice(0, 16);
     if (seen[id]) continue; seen[id] = 1;
     out.push({ id, title, number, due: firstDue(ctx) || firstDue(text), url: href, context: ctx.slice(0, 600), status: CLOSED_RE.test(ctx.replace(/closing/ig, '')) ? 'closed' : '' });
@@ -204,6 +231,21 @@ function parseRss(xml){
   }
   return out;
 }
+/* Tennessee STREAM "Construction Bid List": one accordion item per project (SBC number - title; table with Project / Designer / Pre-Bid / Bid Opening) */
+function parseAccordion(html, base, opt){
+  const H = String(html || ''), out = [], parts = H.split(/<div class="accordion-item"/i); opt = opt || {};
+  parts.slice(1).forEach(seg => {
+    const tm = /<button[^>]*accordion-button[^>]*>([\s\S]*?)<\/button>/i.exec(seg); if (!tm) return;
+    const head = htmlToText(tm[1]).replace(/\s+/g, ' ').trim(); if (!head) return;
+    const ctx = htmlToText(seg).replace(/\s+/g, ' ').trim().slice(0, 1200);
+    if (opt.near && !opt.near.test(ctx)) return;
+    const nm = /^(\d{3}\/\d{3}-\d{2}-\d{4})\s*[-–]\s*(.*)$/.exec(head);
+    const number = nm ? nm[1] : '', title = (nm ? nm[2] : head).slice(0, 180);
+    const bo = /bid opening[\s\S]{0,200}/i.exec(ctx);
+    out.push({ id: number ? low(number).replace(/[^a-z0-9]+/g, '') : sha256(head).slice(0, 16), title, number: number ? 'SBC ' + number : '', due: firstDue(bo ? bo[0] : ctx), url: absUrl('#' + encodeURIComponent(number || title.slice(0, 40)), base), context: ctx.slice(0, 600), status: '' });
+  });
+  return out;
+}
 /* CivicPlus "Bid Postings" page (Bids.aspx): each bid is a link to bids.aspx?bidID=n with Bid No., Status, Closes */
 function parseCivicBids(html, base){
   const H = String(html || ''), out = [], seen = {};
@@ -222,12 +264,16 @@ function parseCivicBids(html, base){
 
 /* ── the keyword filter ─────────────────────────────────────────────────────── */
 function wordRe(w){ return w.indexOf(' ') >= 0 || /[^a-z0-9]/.test(w) ? new RegExp(w.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'i') : new RegExp('\\b' + w, 'i'); }
-function matchWords(text, settings){
+function matchWords(text, settings, desc){
   const st = Object.assign({}, DEFAULT_SETTINGS, settings || {});
   const hits = arr(st.keywords).filter(w => w && wordRe(low(w)).test(text));
   const bad = arr(st.exclude).filter(w => w && wordRe(low(w)).test(text));
-  if (st.allBids) return { ok: !bad.length, hits: hits.length ? hits : ['all public bids'], bad };   /* patch BW: "All public bids (no keyword filter)" */
-  return { ok: hits.length > 0 && !bad.length, hits, bad };
+  /* patch BIDFILTER: the construction gate is ALWAYS on. "All public bids" now means all CONSTRUCTION bids, any trade:
+     it lifts the keyword requirement, never the gate (equipment, vehicles, supplies and services are skipped) */
+  const g = BF.check(text, desc, BF.optsFrom(st));
+  if (!g.ok) return { ok: false, hits: [], bad: bad.concat(g.hit ? [g.hit] : []), gate: g };
+  if (st.allBids) return { ok: true, hits: hits.length ? hits : [g.hit || 'construction'], bad: [], gate: g };
+  return { ok: hits.length > 0, hits, bad: [], gate: g };
 }
 function expired(due){ if (!due) return false; const d = Date.parse(s(due).slice(0, 10) + 'T23:59:59'); return isFinite(d) && d < Date.now() - 86400000; }
 
@@ -348,14 +394,14 @@ async function testRead(b, opts){
   const src = customSources({ custom: [c.src] })[0];
   if (!src.auto) return { ok: false, why: 'E-mail-alert boards are not read — nothing to test.' };
   const u = new URL(src.url);
-  const rb = await get(u.origin + '/robots.txt', {}, f);
+  const rb = await get(u.origin + '/robots.txt', {}, f, true);
   if (!robotsAllows(rb.status === 200 ? rb.text : '', u.pathname + u.search)) return { ok: false, robots: false, why: 'This site\'s robots.txt asks robots not to read that page. Choose "E-mail alerts only" and sign up there instead.' };
   const page = await get(src.url, {}, f);
   if (page.status !== 200) return { ok: false, robots: true, http: page.status, why: page.why || ('The site answered ' + page.status + (page.status === 401 || page.status === 403 ? ' — it needs a log-in. Choose "E-mail alerts only".' : '.')) };
   if (/<input[^>]+type=["']?password/i.test(page.text) && (page.text.match(/<a\b/gi) || []).length < 15) return { ok: false, robots: true, http: 200, why: 'That page is a log-in page. Choose "E-mail alerts only".' };
-  const items = src.kind === 'rss' ? parseRss(page.text) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow });
+  const items = src.kind === 'rss' ? parseRss(page.text) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow, docs: src.docs });
   const settings = Object.assign({}, DEFAULT_SETTINGS, opts.settings || {});
-  const out = items.slice(0, 40).map(it => { const mw = matchWords(it.title + ' ' + (it.context || ''), settings); return { title: it.title, number: it.number, due: it.due, url: it.url, closed: it.status === 'closed' || expired(it.due), matched: mw.ok, words: mw.hits.slice(0, 4) }; });
+  const out = items.slice(0, 40).map(it => { const mw = matchWords(it.title, settings, it.context); return { title: it.title, number: it.number, due: it.due, url: it.url, closed: it.status === 'closed' || expired(it.due), matched: mw.ok, words: mw.hits.slice(0, 4) }; });
   return { ok: true, http: 200, robots: true, parsed: items.length, matched: out.filter(x => x.matched && !x.closed).length, items: out,
     why: items.length ? '' : 'The page was read but no bids were recognised on it. Try the page that lists the bids itself, a link pattern, or "every row with a PDF and a date".' };
 }
@@ -392,7 +438,7 @@ async function samTest(key, opts){
     return { ok: false, why: r.status === 401 || r.status === 403 ? 'SAM.gov refused this key.' : r.status === 429 ? 'SAM.gov says today\'s limit is used up (the key itself may be fine).' : 'SAM.gov answered ' + r.status + '.' };
   } catch (e) { return { ok: false, why: 'SAM.gov could not be reached.' }; }
 }
-const SAM_DEFAULT = { on: true, states: ['TN', 'MS', 'AR'], naics: ['236220', '238160', '236118', '238310', '238390', '562910'] };
+const SAM_DEFAULT = { on: true, states: ['TN', 'MS', 'AR'], naics: ['236', '237', '238', '562910'] };   /* patch BW2: all construction NAICS 236xxx-238xxx */
 function samSettings(settings){
   const x = Object.assign({}, SAM_DEFAULT, (settings && settings.sam) || {});
   x.states = arr(x.states).map(v => s(v).toUpperCase()).filter(v => /^[A-Z]{2}$/.test(v)).slice(0, 6);
@@ -434,7 +480,7 @@ async function samRun(settings, prev, opts){
       out.parsed++;
       if (!o || !s(o.noticeId) || seenId[o.noticeId] || low(o.active) === 'no' || !SAM_TYPES.test(s(o.type))) return;
       const n = s(o.naicsCode).replace(/\D/g, ''); if (!cfg.naics.some(w => n.indexOf(w) === 0)) return;
-      if (arr(st.exclude).some(w => w && wordRe(low(w)).test(s(o.title)))) return;
+      if (!BF.check(s(o.title), 'NAICS ' + n, BF.optsFrom(st)).ok) return;   /* patch BIDFILTER: the construction gate (replaces the bare exclude list) */
       const rec = samRecord(o); if (expired(rec.bidDue)) return;
       seenId[o.noticeId] = 1; out.records.push(rec);
     });
@@ -451,31 +497,37 @@ async function runAll(opts){
   status.sources = status.sources || {};
   const robots = {}, records = [], summary = [];
   const list = SOURCES.filter(x => x.auto).concat(customSources(settings).filter(x => x.auto)).filter(x => !opts.only || x.id === opts.only);   /* patch BW: + the admins' own boards */
-  for (const src0 of list) {
-    if (Date.now() - t0 > budget) { summary.push({ id: src0.id, skipped: 'out of time this run' }); continue; }
+  const hostChain = {};   /* one request at a time per site, with a pause */
+  const one = async (src0) => {
+    if (Date.now() - t0 > budget) { summary.push({ id: src0.id, skipped: 'out of time this run' }); return; }
     const cfg = (settings.sources || {})[src0.id] || {};
     const prev = status.sources[src0.id] || {};
-    if (cfg.on === false || src0.on === false) { status.sources[src0.id] = Object.assign({}, prev, { off: true }); continue; }
+    if (cfg.on === false || src0.on === false) { status.sources[src0.id] = Object.assign({}, prev, { off: true }); return; }
     const src = Object.assign({}, src0, cfg.url && !src0.custom ? { url: cfg.url } : {});
-    if (src.custom && !urlOk(src.url)) { status.sources[src.id] = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: 'not a public https address — edit it in 🔎 Bid boards' }; continue; }
-    const st = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: '' };
+    if (src.custom && !urlOk(src.url)) { status.sources[src.id] = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: 'not a public https address — edit it in 🔎 Bid boards' }; return; }
+    const st = { at: nowIso(), url: src.url, http: 0, parsed: 0, matched: 0, added: 0, why: '', ok: false, unverified: !!src.unverified };
+    let host = ''; try { host = new URL(src.url).host; } catch (e) {}
+    const prevLink = hostChain[host] || Promise.resolve();
+    let release; hostChain[host] = new Promise(r => { release = r; });
+    await prevLink;
     try {
       const u = new URL(src.url);
-      if (robots[u.host] === undefined) { const rb = await get(u.origin + '/robots.txt', {}, f); robots[u.host] = rb.status === 200 ? rb.text : ''; }
-      if (!robotsAllows(robots[u.host], u.pathname + u.search)) { st.why = 'robots.txt asks robots not to read this page — use its e-mail alerts'; status.sources[src.id] = st; summary.push({ id: src.id, why: st.why }); continue; }
+      if (robots[u.host] === undefined) { const rb = await get(u.origin + '/robots.txt', {}, f, true); robots[u.host] = rb.status === 200 ? rb.text : ''; }
+      if (!robotsAllows(robots[u.host], u.pathname + u.search)) { st.why = 'robots.txt asks robots not to read this page — use its e-mail alerts'; return; }
       const cond = {}; if (prev.etag && prev.url === src.url) cond['If-None-Match'] = prev.etag; if (prev.lastModified && prev.url === src.url) cond['If-Modified-Since'] = prev.lastModified;
-      let page = await get(src.url, cond, f);
+      const page = await get(src.url, cond, f);
       let items = [];
       st.http = page.status;
-      if (page.status === 304) { st.why = 'no change since the last look'; st.parsed = prev.parsed || 0; st.etag = prev.etag; st.lastModified = prev.lastModified; }
+      if (page.status === 304) { st.why = 'no change since the last look'; st.parsed = prev.parsed || 0; st.etag = prev.etag; st.lastModified = prev.lastModified; st.ok = true; }
       else if (page.status === 200) {
-        items = src.kind === 'rss' ? parseRss(page.text) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow });
+        items = src.kind === 'rss' ? parseRss(page.text) : src.kind === 'civic' ? parseCivicBids(page.text, src.url) : src.kind === 'stream' ? parseAccordion(page.text, src.url, { near: src.near }) : parseLinks(page.text, src.url, { hrefRe: src.hrefRe, anyRow: src.anyRow, docs: src.docs });
+        if (src.kind === 'civic' && !items.length) items = parseLinks(page.text, src.url, {});   /* a CivicPlus page laid out differently */
         if (!items.length && src.kind === 'rss' && src.html) {   /* feed empty or switched off: the listing page */
           await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
           const p2 = await get(src.html, {}, f); if (p2.status === 200) items = parseCivicBids(p2.text, src.html);
         }
         st.etag = page.etag; st.lastModified = page.lastModified;
-        st.parsed = items.length;
+        st.parsed = items.length; st.ok = true;
         if (!items.length) st.why = 'the page was read but no solicitations were found on it — it may have changed (check the link)';
       } else st.why = page.why || ('the site answered ' + page.status);
       const mine = seen[src.id] = seen[src.id] || {};
@@ -483,15 +535,22 @@ async function runAll(opts){
         const isNew = !mine[it.id];
         mine[it.id] = mine[it.id] || nowIso().slice(0, 10);
         if (!isNew || it.status === 'closed' || expired(it.due)) return;
-        const mw = matchWords(it.title + ' ' + (it.context || ''), settings);
+        const mw = matchWords(it.title, settings, it.context);
         if (!mw.ok) return;
         st.matched++;
         records.push(toRecord(src, it, mw.hits));
       });
     } catch (e) { st.why = 'could not read: ' + s(e && e.message); }
-    status.sources[src.id] = st; summary.push({ id: src.id, http: st.http, parsed: st.parsed, matched: st.matched, why: st.why });
-    await new Promise(r => setTimeout(r, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS));
-  }
+    finally {
+      status.sources[src.id] = st; summary.push({ id: src.id, http: st.http, parsed: st.parsed, matched: st.matched, why: st.why });
+      setTimeout(release, opts.pauseMs != null ? opts.pauseMs : PAUSE_MS);
+    }
+  };
+  /* limited concurrency: one failing source never stops the others (each has its own try/catch) */
+  let nextIdx = 0;
+  await Promise.all(Array.from({ length: Math.min(opts.concurrency || CONCURRENCY, list.length) }, async () => {
+    while (nextIdx < list.length) { const src0 = list[nextIdx++]; try { await one(src0); } catch (e) { summary.push({ id: src0.id, why: 'error: ' + s(e && e.message) }); } }
+  }));
   /* patch BW: SAM.gov once a day (Central), or now when asked for by name; the key from the CRM, else env SAM_API_KEY */
   const samK = (!opts.only || opts.only === 'sam-gov') ? await samKey().catch(() => ({ key: '' })) : { key: '' };
   if (samK.key && samSettings(settings).on !== false) {
@@ -541,4 +600,4 @@ exports.runAll = runAll;
 exports.SOURCES = SOURCES;
 /* patch BW */
 exports.testRead = testRead; exports.samKey = samKey; exports.samKeySet = samKeySet; exports.samTest = samTest; exports.cleanCustom = cleanCustom; exports.customSources = customSources; exports.samSettings = samSettings; exports.SAM_DEFAULT = SAM_DEFAULT; exports.urlOk = urlOk;
-exports._test = { samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };
+exports._test = { BF, parseAccordion, samRun, samRecord, safeRe, urlOk, testRead, cleanCustom, customSources, chiDay, parseLinks, parseRss, parseCivicBids, robotsAllows, matchWords, toRecord, firstDue, numberOf, bcRecord, bcRun, seal, unseal, expired, UA };

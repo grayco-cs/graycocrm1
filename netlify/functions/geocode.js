@@ -13,6 +13,7 @@
    once — and the STAFF_EMAILS variable only before that table exists.
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -131,6 +132,16 @@ exports.handler = async function(event){
   const who = await gcStaffAuth(event);
   if (!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ ok: false, error: who.error }) };
   let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad request' }) }; }
+  if (b.reverse && isFinite(+b.reverse.lat) && isFinite(+b.reverse.lng)) {   /* patch FIELD: the street address of where the phone is */
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=' + (+b.reverse.lat).toFixed(6) + '&lon=' + (+b.reverse.lng).toFixed(6), { headers: { 'User-Agent': 'GrayCo-CRM/1.0 (crm.grayco-cs.com)', Accept: 'application/json' } });
+      const j = r.ok ? await r.json() : null, a = (j && j.address) || {};
+      const street = [a.house_number, a.road].filter(Boolean).join(' '), city = a.city || a.town || a.village || a.hamlet || '';
+      const st = String(a['ISO3166-2-lvl4'] || '').replace(/^US-/, '') || a.state || '';
+      const out = [street, city, [st, a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: !!out, address: out }) };
+    } catch (e) { return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'unreachable' }) }; }
+  }
   const list = (Array.isArray(b.addresses) ? b.addresses : [b.address]).slice(0, 20);
   const results = [];
   const fn = b.geo ? geoOne : one;   /* patch AUT1 */

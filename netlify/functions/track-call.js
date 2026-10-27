@@ -5,6 +5,7 @@
 //   else is refused. Does nothing until TWILIO_AUTH_TOKEN is set on Netlify.
 //   Twilio console → the number → "A call comes in" → Webhook, POST: https://crm.grayco-cs.com/.netlify/functions/track-call
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const X = require('./_lib/mkt2.js');
 function s(v){ return v == null ? '' : String(v).trim(); }

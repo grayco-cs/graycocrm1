@@ -45,6 +45,7 @@
 //   GET  /.netlify/functions/lead-intake?drain=1 header x-crm-token: <token>
 //   GET  /.netlify/functions/lead-intake?ping=1  (no auth — says it is alive)
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -442,3 +443,6 @@ exports.handler = async function (event) {
   });
 };
 exports._t = { firstEmail, contactFor };   /* tests (patch PMG) */
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}

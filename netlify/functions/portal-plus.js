@@ -23,6 +23,7 @@
 // The yearly invoice: maint-scheduled.js queues it on ✅ Approvals (kind maint_invoice: the PM, then an admin);
 // portal.js aqSend → maintInvoiceSend() here sends it once approved.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const M = require('./_lib/maint.js');
 try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */
@@ -191,7 +192,7 @@ function planPdf(o){
     { t: 'gap', h: 6 }, { t: 'h', text: 'Signature' }, { t: 'sig', strokes: o.strokes, name: o.name },
     { t: 'p', text: 'Signed by: ' + o.name + (o.strokes && o.strokes.length ? ' (typed name and drawn signature)' : ' (typed name — accepted electronically)') },
     { t: 'p', text: 'Date and time: ' + central(o.at) }, { t: 'p', text: 'Signed in the GrayCo customer portal from address ' + o.ip + ' · reference ' + o.ref, size: 9, muted: true },
-    { t: 'gap', h: 10 }, { t: 'p', text: 'GrayCo Construction Services · ' + require('./_lib/brand.js').companyAddress() + ' · ' + OFFICE_PHONE + ' · portal.grayco-cs.com', size: 9, muted: true }];
+    { t: 'gap', h: 10 }, { t: 'p', text: 'GrayCo customer portal · portal.grayco-cs.com', size: 9, muted: true } /* patch LOGO2: the company block is in the header */];
   return S.buildPdf(b.filter(Boolean));
 }
 async function sign(event, row, body, A, p){
@@ -312,7 +313,7 @@ async function maintInvoiceSend(item, now){
   const key = s(process.env.RESEND_API_KEY); if (!key) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
   let subj = s(item.subject); try { subj = subj.indexOf('PO ') >= 0 ? subj : subj + ' — ' + jobTag(p); } catch (e) {}
-  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: s(process.env.REPLY_TO_ADMIN) || 'replies@grayco-cs.com', to: [to], subject: subj, html: html,
+  const payload = { from: require('./_lib/brand.js').billingFrom(), reply_to: require('./_lib/brand.js').billingEmail(), to: [to], subject: subj,   /* patch BILL */ html: html,
     attachments: [{ filename: 'GrayCo Invoice ' + number + '.pdf', content: pdf.toString('base64') }], headers: { 'X-GrayCo-CRM': 'maint-invoice' } };
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);
   let r; try { r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); } catch (e) { return { ok: false, error: 'The e-mail service did not answer.' }; }

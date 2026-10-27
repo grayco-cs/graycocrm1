@@ -7,6 +7,7 @@
    once — and the STAFF_EMAILS variable only before that table exists.
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -67,8 +68,10 @@ async function gcStaffAuth(event){
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
 // ---- Supabase persistence for pending CompanyCam leads (survives across function instances) ----
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+/* patch CCSYNC: the default project URL like every other function (without it a webhook project lived in memory only and
+   was lost when the function went cold), and the SERVICE_ROLE spelling too */
+const SUPABASE_URL = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 function sb(path, opts){
   return fetch(SUPABASE_URL + '/rest/v1/' + path, Object.assign({
     headers: {
@@ -108,7 +111,7 @@ async function drainPendingLeads(){
    only while that variable is not set (the old way, kept as a fallback). No answer
    from this function ever contains the key. */
 function ccTokenFor(event){
-  const env = String(process.env.COMPANYCAM_TOKEN || '').trim();
+  const env = require('./_lib/cc-api.js').cleanToken(process.env.COMPANYCAM_TOKEN).token;   /* patch CCS2: spaces / quotes / "Bearer " cleaned */
   if (env) return { token: env, source: 'env' };
   const sent = gcHeader(event, 'x-cc-token').trim();
   if (sent) return { token: sent, source: 'browser' };
@@ -172,6 +175,63 @@ async function ackPendingLeads(ids){
   }catch(e){ return 0; }
 }
 
+/* patch PHOTODL: GET ?proxy=img&url=<CompanyCam image link> — a signed-in, staff-only fetch of ONE CompanyCam picture, for
+   browsers whose direct fetch of the image CDN is refused (CORS). It is not an open proxy: https only, no credentials or odd
+   ports, host must be a CompanyCam image host (checked again on every redirect), the answer must be an image, 15 MB at most. */
+const CC_IMG_MAX = 15 * 1024 * 1024;
+function ccImgHostOk(h){
+  h = String(h || '').toLowerCase();
+  if(h === 'api.companycam.com' || h === 'app.companycam.com') return false;
+  return /^([a-z0-9-]+\.)+companycam\.com$/.test(h) || /^companycam[a-z0-9.-]*\.s3[a-z0-9.-]*\.amazonaws\.com$/.test(h);
+}
+function ccImgParse(raw){
+  try{
+    raw = String(raw || ''); if(!raw || raw.length > 2048) return null;
+    const u = new URL(raw);
+    if(u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443')) return null;
+    return ccImgHostOk(u.hostname) ? u : null;
+  }catch(e){ return null; }
+}
+async function ccImgProxy(raw, headers){
+  const J = function(code, msg){ return { statusCode: code, headers, body: JSON.stringify({ error: msg }) }; };
+  let u = ccImgParse(raw);
+  if(!u) return J(400, 'Only CompanyCam image links can be fetched.');
+  let r = null;
+  try{
+    for(let hop = 0; hop < 4; hop++){
+      r = await fetch(u.toString(), { redirect: 'manual', headers: { Accept: 'image/*' } });
+      const loc = r.status >= 300 && r.status < 400 ? r.headers.get('location') : '';
+      if(!loc) break;
+      u = ccImgParse(new URL(loc, u).toString());
+      if(!u) return J(400, 'Only CompanyCam image links can be fetched.');
+      r = null;
+    }
+  }catch(e){ return J(502, 'Could not fetch the photo.'); }
+  if(!r) return J(502, 'Too many redirects.');
+  if(!r.ok) return J(r.status === 404 ? 404 : 502, 'CompanyCam answered ' + r.status);
+  const ct = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if(!/^image\/(jpeg|jpg|png|webp|gif|heic|heif)$/.test(ct)) return J(415, 'That link is not a picture.');
+  if((parseInt(r.headers.get('content-length') || '0', 10) || 0) > CC_IMG_MAX) return J(413, 'That photo is larger than 15 MB.');
+  const chunks = []; let n = 0;
+  try{
+    if(r.body && typeof r.body.getReader === 'function'){
+      const rd = r.body.getReader();
+      for(;;){
+        const x = await rd.read(); if(x.done) break;
+        n += x.value.length;
+        if(n > CC_IMG_MAX){ try{ await rd.cancel(); }catch(e){} return J(413, 'That photo is larger than 15 MB.'); }
+        chunks.push(Buffer.from(x.value));
+      }
+    } else {
+      const b = Buffer.from(await r.arrayBuffer()); n = b.length;
+      if(n > CC_IMG_MAX) return J(413, 'That photo is larger than 15 MB.');
+      chunks.push(b);
+    }
+  }catch(e){ return J(502, 'The photo download was cut off.'); }
+  return { statusCode: 200, isBase64Encoded: true, body: Buffer.concat(chunks).toString('base64'),
+    headers: Object.assign({}, headers, { 'Content-Type': ct, 'Cache-Control': 'private, max-age=600', 'X-Content-Type-Options': 'nosniff' }) };
+}
+
 // Netlify function — CompanyCam integration:
 // 1. GET  ?proxy=api&endpoint=... : proxy CompanyCam READ calls (avoids CORS)
 // 2. GET  ?proxy=find&name=..&address=.. : search existing CompanyCam projects for a match
@@ -180,6 +240,7 @@ async function ackPendingLeads(ids){
 // 5. GET  (no proxy): poll for pending webhook leads (drains them — kept for old pages)
 // 6. GET  ?proxy=status : is the CompanyCam key working? {ok, reason, source} — never the key
 // 7. GET  ?proxy=recent&days=N|since=<unix> : every active project changed since then (all pages), small shape
+// 9. GET  ?proxy=img&url=<CompanyCam image link> : one picture, staff only (patch PHOTODL)
 // 8. GET  ?proxy=pending : the webhook's waiting projects WITHOUT removing them; POST ?proxy=ack {ids} removes them
 
 exports.handler = async function(event, context) {
@@ -195,9 +256,29 @@ exports.handler = async function(event, context) {
   // Everything the CRM calls (the ?proxy= calls and the GET that drains pending
   // leads) is staff only. The plain webhook POST from CompanyCam is not a staff
   // call and stays as it was: it can only put a lead on the review list.
+  let who = null;   /* patch CCSYNC: kept for the admin / office checks below */
   if(event.httpMethod === 'GET' || qs.proxy){
-    const who = await gcStaffAuth(event);
+    who = await gcStaffAuth(event);
     if(!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ error: who.error }) };
+  }
+
+  // POST ?proxy=create {name, address, lat, lng} — patch FIELD: the matching CompanyCam project for a job added in
+  // GrayCo Field (admin switch "Also create in CompanyCam"). Staff only (checked above). Answers {ok, id} — never the key.
+  if(event.httpMethod === 'POST' && qs.proxy === 'create'){
+    const k = ccTokenFor(event);
+    if(!k.token) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, reason: 'no_key' }) };
+    let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { b = {}; }
+    const name = String(b.name || '').trim().slice(0, 200), addr = String(b.address || '').trim().slice(0, 300);
+    if(!name) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'name required' }) };
+    const m = /^(.+?),\s*([^,]+?),\s*([A-Za-z]{2})\s*(\d{5})?/.exec(addr) || [];
+    const body = { name: name, address: { street_address_1: m[1] || addr, city: m[2] || '', state: m[3] || '', postal_code: m[4] || '', country: 'US' } };
+    if(isFinite(+b.lat) && isFinite(+b.lng) && b.lat != null && b.lng != null) body.coordinates = { lat: +b.lat, lon: +b.lng };
+    try {
+      const r = await fetch(CC_API + '/projects', { method: 'POST', headers: { Authorization: 'Bearer ' + k.token, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json().catch(function(){ return {}; });
+      if(r.ok && j && j.id) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: String(j.id) }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status, reason: 'companycam_' + r.status }) };
+    } catch (e) { return { statusCode: 200, headers, body: JSON.stringify({ ok: false, reason: 'unreachable' }) }; }
   }
 
   // GET ?proxy=status — one cheap question to CompanyCam: does the key work?
@@ -209,13 +290,75 @@ exports.handler = async function(event, context) {
       out.message = 'No CompanyCam key is set. Add COMPANYCAM_TOKEN on Netlify (Environment variables) and deploy again.';
       return { statusCode: 200, headers, body: JSON.stringify(out) };
     }
+    /* patch CCS2 — the one truth: a fresh authenticated GET /v2/company that answers 200 WITH a company object.
+       Recorded with its time (gc_kv gc_cc_whoami). The projects list can fail on its own (see ?proxy=sync). */
+    const CCA = require('./_lib/cc-api.js');
+    const w = await CCA.whoami(k.token);
+    out.status = w.status; out.verified = w.accepted === true; out.checkedAt = w.at;
+    if(w.accepted === true){ out.ok = true; out.reason = 'ok'; out.message = 'Token accepted'; }
+    else if(w.accepted === false){ out.reason = 'refused'; out.message = 'Token not accepted (' + w.status + ')'; }
+    else if(w.status === 0){ out.reason = 'unreachable'; out.message = 'Could not reach CompanyCam from the server.'; }
+    else { out.reason = 'companycam_' + w.status; out.message = 'CompanyCam answered ' + w.status + (w.status === 200 ? ' without the company record' : '') + '. Try again later.'; }
+    if(k.source === 'env') await CCA.saveWhoami(w);   /* only the Netlify key's check is the company's record */
+    return { statusCode: 200, headers, body: JSON.stringify(out) };
+  }
+
+  // POST ?proxy=syncnow — patch CCSYNC: an admin / the office ask for a full CompanyCam re-read ("⟳ Sync all now"); the
+  // 15-minute companycam-sync does it on its next run (gc_kv gc_cc_sync_request). POST ?proxy=review {cc, act, kind} —
+  // a person's answer on the review list: make (a new job on the next run) · dismiss (not a new job, never again) · done.
+  if(event.httpMethod === 'POST' && (qs.proxy === 'syncnow' || qs.proxy === 'review')){
+    const role = String(who && who.role || '').toLowerCase();
+    if(!/^(admin|owner|office)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
+    const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+    const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if(!svc) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY is not set in Netlify.' }) };
+    const SH = { apikey: svc, Authorization: 'Bearer ' + svc, 'Content-Type': 'application/json' };
+    const rd = async function(keys){ const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(' + keys.map(function(k){ return '%22' + k + '%22'; }).join(',') + ')', { headers: SH });
+      const o = {}; if(r.ok){ const rows = await r.json(); (Array.isArray(rows) ? rows : []).forEach(function(x){ let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){} } if(x && x.key) o[x.key] = v; }); } else throw new Error('read ' + r.status); return o; };
+    const wr = async function(rows){ const r = await fetch(url + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ Prefer: 'resolution=merge-duplicates,return=minimal' }, SH),
+      body: JSON.stringify(rows.map(function(x){ return { key: x.key, value: x.value, updated_at: new Date().toISOString() }; })) }); return r.ok; };
+    const isObj = function(v){ return !!v && typeof v === 'object' && !Array.isArray(v); };
     try{
-      const r = await fetch(CC_API + '/projects?per_page=1', { headers: ccHeaders(k.token) });
-      out.status = r.status;
-      if(r.ok){ out.ok = true; out.reason = 'ok'; out.message = 'CompanyCam answered — the key works.'; }
-      else if(r.status === 401 || r.status === 403){ out.reason = 'refused'; out.message = 'CompanyCam refused the key (' + r.status + '). It needs replacing.'; }
-      else { out.reason = 'companycam_' + r.status; out.message = 'CompanyCam answered ' + r.status + '. Try again later.'; }
-    }catch(err){ out.reason = 'unreachable'; out.message = 'Could not reach CompanyCam from the server.'; }
+      const cur = await rd(['gc_cc_sync_request', 'gc_cc_review', 'gc_cc_dismissed']);
+      const req = Object.assign({}, isObj(cur.gc_cc_sync_request) ? cur.gc_cc_sync_request : {}), at = new Date().toISOString();
+      if(qs.proxy === 'syncnow'){
+        Object.assign(req, { full: true, at: at, by: who.email || '' });
+        const ok = await wr([{ key: 'gc_cc_sync_request', value: req }]);
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: ok, message: ok ? 'Full CompanyCam sync asked for — it runs within 15 minutes.' : 'Could not save the request.' }) };
+      }
+      let b = {}; try{ b = JSON.parse(event.body || '{}') || {}; }catch(e){ b = {}; }
+      const cc = String(b.cc || '').trim(), act = String(b.act || ''), kind = String(b.kind || '');
+      if(!/^\d{1,20}$/.test(cc) || !/^(dismiss|make|done)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'cc and act (make | dismiss | done) are required' }) };
+      const list = Array.isArray(cur.gc_cc_review) ? cur.gc_cc_review : [];
+      const rows = [{ key: 'gc_cc_review', value: list.filter(function(x){ return !(x && String(x.cc) === cc && (!kind || x.kind === kind)); }) }];
+      if(act === 'dismiss'){ const dis = Object.assign({}, isObj(cur.gc_cc_dismissed) ? cur.gc_cc_dismissed : {}); dis['id:' + cc] = { at: at, by: who.email || '', why: 'CompanyCam review list: not a new job' }; rows.push({ key: 'gc_cc_dismissed', value: dis }); }
+      if(act === 'make'){ req.make = Object.assign({}, isObj(req.make) ? req.make : {}); req.make[cc] = at; Object.assign(req, { full: true, at: at, by: who.email || '' }); rows.push({ key: 'gc_cc_sync_request', value: req }); }
+      const ok = await wr(rows);
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: ok }) };
+    }catch(err){ return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not reach the CRM database. Try again.' }) }; }
+  }
+
+  // GET ?proxy=sync — patch CCS: what the 15-minute companycam-sync recorded on its last run (gc_kv gc_cc_sync_health)
+  // and whether COMPANYCAM_TOKEN is set here. Never the key. No CompanyCam call.
+  if(event.httpMethod === 'GET' && qs.proxy === 'sync'){
+    const out = { ok: true, tokenSet: !!String(process.env.COMPANYCAM_TOKEN || '').trim(), health: null, checkedAt: new Date().toISOString() };
+    const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+    const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if(!svc){ out.serviceKey = false; return { statusCode: 200, headers, body: JSON.stringify(out) }; }
+    try{
+      /* + patch CCS2 (one truth): gc_cc_whoami, the last real GET /company check, with its time */
+      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22,%22gc_cc_review%22,%22gc_cc_sync_request%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      if(r.ok){
+        const rows = await r.json();
+        (Array.isArray(rows) ? rows : []).forEach(function(x){
+          let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
+          if(!v || typeof v !== 'object') return;
+          if(x.key === 'gc_cc_sync_health') out.health = v; else if(x.key === 'gc_cc_whoami') out.whoami = v;
+          else if(x.key === 'gc_cc_review') out.review = Array.isArray(v) ? v.slice(0, 100) : []; else if(x.key === 'gc_cc_sync_request') out.request = { at: v.at || '', by: v.by || '' };   /* patch CCSYNC */
+        });
+      }
+      else out.readError = r.status;
+    }catch(err){ out.readError = 'unreachable'; }
     return { statusCode: 200, headers, body: JSON.stringify(out) };
   }
 
@@ -227,23 +370,30 @@ exports.handler = async function(event, context) {
     let since = Math.floor(Date.now() / 1000) - days * 86400;
     const sinceQ = parseInt(qs.since, 10); if(sinceQ > 0 && sinceQ < Math.floor(Date.now() / 1000)) since = sinceQ;   // ?since=<unix> wins
     const out = []; let pages = 0, truncated = false;
+    /* patch CCS2: modified_since is ISO8601 per CompanyCam's v2 spec (was unix seconds); a 5xx is retried once,
+       then the same list without the filter (newest first; stop at the first page with nothing changed since) */
+    const CCA = require('./_lib/cc-api.js'), iso = CCA.isoOf(since);
     try{
+      let filter = true;
       for(let page = 1; page <= 40; page++){
-        const r = await fetch(CC_API + '/projects?per_page=50&page=' + page + '&status=active&modified_since=' + since, { headers: ccHeaders(token) });
-        if(!r.ok){
-          if(page === 1) return { statusCode: r.status, headers, body: JSON.stringify({ error: 'CompanyCam ' + r.status }) };
+        const g = await CCA.getRetry(CC_API + '/projects?per_page=50&page=' + page + '&status=active' + (filter ? '&modified_since=' + encodeURIComponent(iso) : ''), token);
+        if(!g.r){
+          if(page === 1 && filter && (g.status >= 500 || g.status === 400 || g.status === 422 || g.status === 0)){ filter = false; page = 0; continue; }
+          if(page === 1) return { statusCode: g.status || 502, headers, body: JSON.stringify({ error: 'CompanyCam ' + g.status, detail: g.body || '' }) };
           truncated = true; break;
         }
-        const chunk = await r.json();
+        const chunk = await g.r.json();
         pages = page;
         if(!Array.isArray(chunk) || !chunk.length) break;
+        let fresh = 0;
         chunk.forEach(function(p){
           if(!p || p.id == null) return;
           const c = ccCompact(p);
           if(c.status && c.status !== 'active') return;
           if(Math.max(c.created_at, c.updated_at) && Math.max(c.created_at, c.updated_at) < since) return;
-          out.push(c);
+          out.push(c); fresh++;
         });
+        if(!filter && !fresh) break;
         if(chunk.length < 50) break;
         if(page === 40) truncated = true;
       }
@@ -262,6 +412,11 @@ exports.handler = async function(event, context) {
     const ids = (Array.isArray(b.ids) ? b.ids : []).map(function(x){ return String(x); }).filter(function(x){ return /^[A-Za-z0-9_-]{1,64}$/.test(x); });
     const n = await ackPendingLeads(ids);
     return { statusCode: 200, headers, body: JSON.stringify({ removed: n }) };
+  }
+
+  // GET ?proxy=img — patch PHOTODL: one CompanyCam picture for the download button (staff check ran above)
+  if(event.httpMethod === 'GET' && qs.proxy === 'img'){
+    return await ccImgProxy(qs.url, headers);
   }
 
   // GET ?proxy=api — proxy CompanyCam read calls from the browser
@@ -294,11 +449,11 @@ exports.handler = async function(event, context) {
         // pass on only these CompanyCam list parameters (the Photos tab searches by name and pages through photos)
         const pq = new URLSearchParams({ per_page: String(Math.min(parseInt(qs.per_page, 10) || 100, 100)) });
         ['query', 'page', 'status'].forEach(function(k){ if (qs[k] != null && String(qs[k]).length < 200) pq.set(k, String(qs[k])); });
-        const rr = await fetch(`https://api.companycam.com/v2/${String(endpoint).replace(/^\/+/, '')}?${pq.toString()}`, {
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-        });
-        const rd = await rr.json();
-        return { statusCode: rr.status, headers, body: JSON.stringify(rd) };
+        /* patch CCS2: a CompanyCam 5xx (photos, notes, searches) is retried once before it reaches the page */
+        const gg = await require('./_lib/cc-api.js').getRetry(`https://api.companycam.com/v2/${String(endpoint).replace(/^\/+/, '')}?${pq.toString()}`, token);
+        if(!gg.r) return { statusCode: gg.status || 502, headers, body: JSON.stringify({ error: 'CompanyCam ' + gg.status, detail: gg.body || '' }) };
+        const rd = await gg.r.json();
+        return { statusCode: gg.status, headers, body: JSON.stringify(rd) };
       }
       const ccResp = await fetch(`https://api.companycam.com/v2/${endpoint}?per_page=50&status=${status}`, {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }

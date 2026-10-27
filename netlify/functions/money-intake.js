@@ -58,6 +58,7 @@
        The CRM's review screen is where a person says yes.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 const crypto = require('crypto');
 

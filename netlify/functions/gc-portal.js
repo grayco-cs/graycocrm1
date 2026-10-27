@@ -26,6 +26,7 @@
 //   docs-list · docs-url {id} · docs-add {kind, title, ref, name, type, expires, replaces, sendToGcs} (admins) · docs-remove {id} (admins)
 //   gcp-contacts-all {} → every active GC contact (for Admin)
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const G = require('./_lib/gcp.js');
 let CORE = null;
 function core(){ if (!CORE) CORE = require('./portal.js')._core; return CORE; }
@@ -189,3 +190,6 @@ exports.handler = async function(event){
   }
 };
 exports._G = G;
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}

@@ -1,11 +1,41 @@
 # Lead Inbox + bid portal: owner setup (about 45 minutes, once)
 
+> **Process rule: leads@grayco-cs.com is for all incoming leads and bid invitations.** Every bid site, plan room (BuildingConnected, PlanHub and
+> others), city, county and school bid board, and GC invitation list gets signed up with leads@grayco-cs.com. GCs are told: "send invitations to
+> leads@grayco-cs.com". Website, Facebook and Google lead forms also send to leads@. The CRM reads leads@ and turns each e-mail into a lead or bid
+> lead in Leads → 📥 Lead Inbox / Bids automatically. **bids@grayco-cs.com is only for our own bids going out (sent from the CRM) and GCs' replies
+> to them. Never sign up for notices with bids@.**
+>
 > **Changed 10/22 (patch EST4): bid notices go to leads@grayco-cs.com.** BuildingConnected, PlanHub, the planrooms, GCs and the
-> agencies send their invitations to **leads@**; the CRM tells a bid invitation from a customer by itself. **bids@grayco-cs.com is now only
-> for subcontractors sending their bids to GrayCo**: each one is matched to its bid job and the estimator is told (Leads → 📨 Sub bids).
+> agencies send their invitations to **leads@**; the CRM tells a bid invitation from a customer by itself. (Subcontractors' prices e-mailed
+> to bids@ are still matched to their bid job and the estimator is told: Leads → 📨 Sub bids.)
 > Make bids@ a Google Group whose members are the estimator and `bids@in.grayco-cs.com`. Invitations that still arrive at bids@ (old sign-ups)
 > are recognised and still become bids. <!-- patch EST4 -->
 
+
+## E-mail addresses: what goes where
+
+| Address | What goes there | What the CRM does |
+|---|---|---|
+| **leads@grayco-cs.com** | Every lead and every bid invitation or bid-board notice: BuildingConnected, PlanHub, plan rooms, public bid sites, GC invitation lists, and the website, Facebook and Google forms. Sign up for every bid site with leads@. | Read into Leads → 📥 Lead Inbox. Alerts go to the office. |
+| **bids@grayco-cs.com** | Only our own bids going out, GC replies to them, and subcontractors' prices for bids we are pricing. | GC replies are filed on the bid; sub prices land in Leads → 📨 Sub bids. |
+| **claims@grayco-cs.com** | Insurance carriers, TPAs and adjusters: claim correspondence and new assignments. Copy claims@ on insurance e-mail. | Filed on the claim. A new assignment becomes an insurance lead. |
+| **invoices@grayco-cs.com** | Subcontractor and supplier bills and invoices. Forward any invoice you get to invoices@. | Filed under Invoices, waiting for approval. |
+| **receipts@grayco-cs.com** | Staff e-mail receipt photos and PDFs. | Shows on the To-Do as "Receipts e-mailed in". Someone confirms it. |
+| **billing@grayco-cs.com** | Customer invoices, statements and pay apps are sent from here. Customers reply here about payments. | Lands in office@ (Brittany). |
+| **office@grayco-cs.com** | The main office mailbox. | Brittany reads it. |
+| **orders@grayco-cs.com** | Supplier order confirmations. | Linked to the job: delivery, schedule, Materials arriving. |
+| **estimates@grayco-cs.com** | Estimators e-mail a takeoff or estimate (Word, PDF, Excel) to the CRM. | Stored for the office to build the estimate. |
+| **replies@ · portal@ · news@** | Send-only. The CRM sends from them (portal links, newsletters); replies@ is the Reply-To of automatic e-mails. | Nothing reads them by machine; people answer replies@. |
+
+- Never sign up for bid sites with bids@ or your personal e-mail. Use leads@grayco-cs.com.
+- Forward any invoice you get to invoices@grayco-cs.com.
+- Forward receipts (photo or PDF) to receipts@grayco-cs.com.
+- Insurance correspondence: copy claims@grayco-cs.com.
+- Tell subcontractors: invoices and pay requests go to invoices@, their prices for our bids go to bids@.
+- Tell customers: payments and billing go to billing@, insurance claims go to claims@. Texts go to (901) 582-8255; the office line is (901) 585-0944.
+
+Phone and text: text (901) 582-8255; office line (901) 585-0944. Tell subcontractors: send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO). Send your price for our bids to bids@grayco-cs.com.
 
 **What you get.** Every bid opportunity reaches GrayCo in one of three ways:
 

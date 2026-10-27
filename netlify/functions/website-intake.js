@@ -13,7 +13,7 @@
    Every lead:   one item in the 📥 Lead Inbox (gc_lead_inbox, bid-inbox.js) with source "Website (grayco-cs.com)",
                  NO PM, owner GrayCo (commission source "grayco"); the CRM makes it a lead on the Lead Pipeline
                  (patch LD2 + WEB). The admins get the new-lead e-mail at once (patch LA, _lib/bid-alerts.js).
-                 No bid-portal draft, no default estimator.
+                 No bid-portal draft, no Senior Estimator.
                  An existing customer (same e-mail, or the same phone number) → the lead says so and the CRM puts a
                  note on that customer's job.
                  The optional instant reply to the customer goes on ✅ Approvals (owner rule: nothing goes to a
@@ -41,6 +41,7 @@
    WEBSITE_MIN_SECONDS (3), WEBSITE_RATE (5 forms per IP per 10 min), WEBSITE_ROOF_RATE (4 roof prices per IP per day).
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 
 const SOURCE = 'Website (grayco-cs.com)';
@@ -191,7 +192,7 @@ function readForm(b){
   const first = pick(b, ['first_name', 'firstname', 'fname']), last = pick(b, ['last_name', 'lastname', 'lname']);
   const f = {
     type: typeOf(pick(b, ['type', 'form', 'formtype', 'inquiry', 'inquirytype', 'subject', 'reason', 'service_type']), b),
-    name: pick(b, ['name', 'full_name', 'fullname', 'your_name', 'contact_name']) || [first, last].filter(Boolean).join(' '),
+    name: pick(b, ['name', 'full_name', 'fullname', 'your_name', 'contact_name', 'customer', 'customer_name', 'client', 'client_name', 'homeowner', 'insured']) || [first, last].filter(Boolean).join(' '),
     email: low(pick(b, ['email', 'email_address', 'emailaddress', 'your_email'])),
     phone: pick(b, ['phone', 'phone_number', 'phonenumber', 'mobile', 'cell', 'telephone']),
     address: pick(b, ['address', 'street', 'street_address', 'address1', 'property_address', 'job_address']),
@@ -219,7 +220,9 @@ function readForm(b){
       address: clip(pick(b, ['referred_address', 'friend_address']), 200), note: clip(pick(b, ['referred_note', 'friend_note', 'referral_note']), 600) },
     /* patch MKT2: where the visitor came from (the website keeps the UTM tags, the ad click ids, a tracked-link code and a partner code) */
     attrib: (function(){ const a = {}; ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid', 'gc', 'ref'].forEach(k => { const v = s(b[k] || (b.attrib && b.attrib[k])).slice(0, 120); if (v && /^[\w .:\/+-]+$/.test(v)) a[k] = v; }); return a; })(),
-    guide: clip(b.guide, 60), partnerType: clip(b.partner_type || b.partnerType, 40)
+    guide: clip(b.guide, 60), partnerType: clip(b.partner_type || b.partnerType, 40),
+    /* patch LEGAL3: the roof-price form's two SEPARATE, unchecked text-consent boxes (job texts / offers); only a ticked box arrives */
+    smsJob: /^(yes|true|on|1)$/i.test(s(b.sms_job)), smsOffers: /^(yes|true|on|1)$/i.test(s(b.sms_offers))
   };
   if (!f.address && (f.city || f.zip)) f.address = '';
   ['name', 'company', 'project', 'service', 'property', 'position', 'carrier'].forEach(k => { f[k] = clip(f[k], 120); });
@@ -302,6 +305,7 @@ async function fileLead(f, extra){
   if (extra.patch) Object.assign(rec, extra.patch);   /* patch AUTO5: a referral is not a website lead */
   let action = '';
   await L().kvCas(L().KV, v => { const o = L().upsert(arr(v), rec); action = o.action; return o.items; });
+  if (action === 'added') { try { const p = await L().routeLead(id); if (p) Object.assign(rec, p); } catch (e) {} }   /* patch HOT2: routed by its type (lead roles) */
   return { id, rec, action, customer: cust };
 }
 /* patch LA's new-lead alert (admins, e-mail + push) — never holds up the visitor's answer */
@@ -565,7 +569,13 @@ exports.handler = async function(event){
       const priceText = rq.priced ? money(rq.low) + ' – ' + money(rq.high) : '';
       const notes = [rq.measured ? ('Roof measured from satellite (Google Solar' + (rq.imageryDate ? ', imagery ' + rq.imageryDate : '') + '): ' + rq.areaSqft.toLocaleString('en-US') + ' sq ft, main pitch ' + (rq.pitch == null ? '?' : rq.pitch + '/12') + ', ' + rq.squares + ' squares with waste' + (rq.tier ? ' — ' + rq.tier : '') + '.') : ('Roof NOT measured automatically (' + rq.why + ') — measure it.'),
         rq.priced ? 'Range shown to the customer: ' + priceText + '.' : 'No price was shown to the customer' + (rq.measured ? ' (roof prices are not set yet: Leads → 🌐 Website → Roof prices)' : '') + ' — call with a price.'];
-      const lead = await fileLead(f, Object.assign({}, refExtra, { roofQuote: rq, notes: notes.concat(refExtra.notes || []) }));
+      /* patch LEGAL3: texts only with the ticked boxes (same records the CRM contract / intake use: smsConsent = job texts, smsMarketing = offers) */
+      const ph10 = phone10(f.phone), smsPatch = {}, smsAt = nowIso();
+      if (f.smsJob && ph10.length === 10) smsPatch.smsConsent = { status: 'yes', at: smsAt, via: 'intake', phone: ph10 };
+      if (f.smsOffers && ph10.length === 10) smsPatch.smsMarketing = { status: 'yes', at: smsAt, via: 'intake', phone: ph10 };
+      notes.push('Texts: job texts ' + (smsPatch.smsConsent ? 'YES (ticked on the roof-price form)' : 'not agreed') + '; offers ' + (smsPatch.smsMarketing ? 'YES (ticked)' : 'not agreed') + '.');
+      const lead = await fileLead(f, Object.assign({}, refExtra, { roofQuote: rq, notes: notes.concat(refExtra.notes || []), patch: smsPatch }));
+      try { const SC = require('./_lib/smsconsent.js'); if (smsPatch.smsConsent) await SC.record(smsPatch.smsConsent, [f.phone]); if (smsPatch.smsMarketing) await SC.record(smsPatch.smsMarketing, [f.phone], 'marketing'); } catch (e) {}
       await refNote(lead);
       await Promise.all([alertLead(lead.rec), autoReply(f, lead.id, { priceText })]);
       return J(event, 200, { ok: true, received: true, kind: 'roofprice', leadId: lead.id, measured: rq.measured, priced: rq.priced,
@@ -603,14 +613,16 @@ const MAIL_SOURCE = 'Website / leads@ e-mail';
 const LABEL = /^([A-Za-z][A-Za-z0-9 ?'\/()&.#-]{0,48}?)\s*:\s*(.*)$/;
 const MULTI = /^(address|street|street_address|property_address|job_address|message|comments|notes|details|description|how_can_we_help|project_details)$/;
 /* "Name: Jane Doe" lines (a Squarespace form notification, or a forwarded form) → { name, email, … } */
+const DASH_LABEL = /^(name|full name|customer|customer name|client|homeowner|insured|phone|phone number|cell|mobile|address|property address|job address|email|e-mail|message|notes|details|city|zip)\s*[-\u2013\u2014]\s*(.+)$/i;   /* patch LEADMAIL */
 function fieldsOf(text){
   const b = {}; let key = '', n = 0;
   String(text || '').split(/\r?\n/).map(x => x.replace(/ /g, ' ').trim()).forEach(line => {
-    const m = LABEL.exec(line);
+    const m = LABEL.exec(line) || DASH_LABEL.exec(line);   /* patch LEADMAIL: "Phone - 901…" typed by hand counts too */
     if (m && !/^https?$/i.test(m[1])) {
       key = low(m[1]).replace(/[?()'.#&]/g, '').replace(/[\s\/-]+/g, '_').replace(/^_+|_+$/g, '');
       if (!key || /^(sent|from|to|date|subject_line|cc|reply_to|sent_via_form_submission_from)$/.test(key)) { key = ''; return; }
       if (b[key] == null) { b[key] = s(m[2]); n++; } else key = '';
+      if (!LABEL.test(line) && b[key]) key = '';   /* patch LEADMAIL: a hand-typed "Address - …" line is one line; the next line is the message */
       return;
     }
     if (!line) { if (key && !MULTI.test(key)) key = ''; return; }
@@ -627,7 +639,17 @@ function splitAddress(b){
 }
 function bulk(mail){
   const H = mail.headers || {};
+  /* patch LEADMAIL: our own Google Group (leads@ / claims@ …) relays every e-mail with List-Unsubscribe and Precedence: list —
+     that is the group, not a mailing list; only the sender's own address can make it bulk then */
+  const ownGroup = /\.grayco-cs\.com/i.test(s(H['list-id'])) || /@grayco-cs\.com/i.test(s(H['list-unsubscribe']));
+  if (ownGroup) return /^(no-?reply|newsletter|marketing|news|notifications?)@/i.test(s(mail.from && mail.from.email));
   return !!(H['list-unsubscribe'] || /^(bulk|list|junk)$/i.test(s(H.precedence)) || /^(no-?reply|newsletter|marketing|news|notifications?|info|hello|team|support|billing)@/i.test(s(mail.from && mail.from.email)));
+}
+/* patch LEADMAIL: a GrayCo person forwarding or typing a lead to leads@ — the customer is in the body (a forwarded
+   "From: Name <e-mail>" line, or a phone number), not the sender */
+function staffLead(mail, text){
+  if (!/@grayco-cs\.com$/i.test(s(mail.from && mail.from.email))) return false;
+  return /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(text) || /^\s*from:\s*[^\n]*<[^>@\s]+@[^>\s]+>/im.test(text);
 }
 const NOT_CUSTOMER = /@(grayco-cs\.com|in\.grayco-cs\.com|squarespace\.(com|info)|wix\.com|googlegroups\.com|google\.com)$/i;
 exports.fromEmail = async function(mail){
@@ -638,11 +660,17 @@ exports.fromEmail = async function(mail){
   if (lsa) { if (!b.phone) { const m = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(text); if (m) b.phone = m[1] + m[2] + m[3]; } if (!b.name) { const n = /(?:^|\n)\s*(?:customer|name|lead)\s*[:\-]\s*([A-Za-z][A-Za-z .'-]{1,60})/i.exec(text); if (n) b.name = n[1].trim(); } if (!b.message) b.message = clip(text, 1500); }
   const replyTo = low(s(H['reply-to']).replace(/^.*<([^>]+)>.*$/, '$1'));
   const sender = [low(b.email || b.email_address), replyTo, low(from.email)].find(x => isEmail(x) && !NOT_CUSTOMER.test(x)) || '';
+  if (!sender && !b.email && /@grayco-cs\.com$/i.test(s(from.email))) { const fw = /^\s*from:\s*([^<\n]*)<([^>@\s]+@[^>\s]+)>/im.exec(text); if (fw && !NOT_CUSTOMER.test(low(fw[2]))) { b.email = low(fw[2]); if (!b.name && s(fw[1]).replace(/"/g, '').trim()) b.name = s(fw[1]).replace(/"/g, '').trim(); } }   /* patch LEADMAIL */
   if (got.n < 2 && !(lsa && (b.phone || b.name))) {   /* a person writing in (or junk): no form fields */
-    if (bulk(mail) || !sender) return { ok: true, ignored: 'not a lead (no form, no customer address)' };
+    if (bulk(mail) || (!sender && !staffLead(mail, text))) return { ok: true, ignored: 'not a lead (no form, no customer address)' };
     b.message = clip((s(mail.subject) ? s(mail.subject) + '\n\n' : '') + text, 3000);
+    if (!b.phone && staffLead(mail, text)) { const pm = /(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/.exec(text); if (pm) b.phone = pm[1] + pm[2] + pm[3]; }   /* patch LEADMAIL */
     b.type = s(mail.subject);
-  } else if (!b.type && !b.form && !b.inquiry && !b.subject) b.type = s(mail.subject).replace(/^(fwd?|re):\s*/i, '').replace(/^form submission\s*-?\s*/i, '');
+  } else {
+    /* patch LEADMAIL: no message field — keep the lines that are not "Label: value" (a hand-typed lead's description) */
+    if (!b.message && !b.comments && !b.notes && !b.details && !b.description) { const rest = text.split(/\r?\n/).map(x => x.trim()).filter(x => x && !LABEL.test(x) && !DASH_LABEL.test(x) && !/^--+$/.test(x) && !/google groups|unsubscribe|groups\.google\.com|^to view this discussion/i.test(x)).join('\n'); if (rest) b.message = clip(rest, 3000); }
+    if (!b.type && !b.form && !b.inquiry && !b.subject) b.type = s(mail.subject).replace(/^(fwd?|re):\s*/i, '').replace(/^form submission\s*-?\s*/i, '');
+  }
   if (!s(b.name || b.full_name || b.first_name) && s(from.name) && !NOT_CUSTOMER.test(low(from.email))) b.name = s(from.name);
   if (sender && !b.email && !b.email_address) b.email = sender;
   const f = readForm(b);
@@ -679,5 +707,8 @@ exports.fromReferral = async function(o){
   return { ok: true, id: r.id, action: r.action };
 };
 
-exports._test = { fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
+exports._test = { bulk, staffLead, fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
   reset: () => { HITS.clear(); } };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}

@@ -14,6 +14,7 @@
 //   POST {action:'needs-kinds'}                  → the pick-list
 //   POST {action:'warranty-stats'}               → Marketing → 🛡 Warranty check-ups
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const portal = require('./portal.js');
 const CARE = require('./_lib/care11.js');
@@ -76,7 +77,7 @@ function page(title, body, ok){
     body: '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(title) + '</title>' +
       '<style>body{margin:0;font:16px Arial,Helvetica,sans-serif;background:#F5F1E8;color:#14202E}.c{max-width:520px;margin:32px auto;background:#fff;border:1px solid #E2DCCD;border-radius:14px;padding:22px 20px}h1{font-size:22px;margin:0 0 10px}' +
       'button{background:#D4A017;color:#0F1D2F;font-weight:bold;border:0;border-radius:10px;padding:14px 22px;font-size:16px;min-height:48px;cursor:pointer}textarea{width:100%;box-sizing:border-box;border:1px solid #cfc8b6;border-radius:8px;padding:10px;font:15px Arial;min-height:70px;margin:8px 0 14px}.m{color:#55626F;font-size:14px}</style></head>' +
-      '<body><div class="c"><div style="font-weight:800;color:#0F1D2F;margin-bottom:12px">GrayCo Construction Services</div>' + body + '</div></body></html>' };
+      '<body><div class="c"><div style="text-align:center;margin:0 0 16px"><img src="/portal-logo.png" alt="GrayCo Construction Services" width="170" style="width:170px;max-width:60%;height:auto;display:inline-block"></div>' + body + '<p style="text-align:center;font-size:13px;color:#55626F;margin:18px 0 0">GrayCo Construction Services · <a href="tel:9015850944" style="color:inherit">(901) 585-0944</a></p></div></body></html>' };   /* patch PORTALLOGO */
 }
 async function wcheckPage(code){
   const o = await CARE.warrOffer(code);

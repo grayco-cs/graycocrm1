@@ -27,7 +27,7 @@ Roofing Ignite and the other lead companies set up earlier with Netlify keys (`L
 | They send | Where it lands |
 |---|---|
 | **lead** | Leads → 📥 Lead Inbox, source = the partner, **nobody assigned**. You and Nick get the "🔌 New lead from …" e-mail at once. The 4-hour / 24-hour "assign / reach out" reminders apply, and the ✅ Contacted button shows on it. |
-| **bid** | Leads → 📥 Lead Inbox as a bid. **Bid due and due-to are required.** Commercial bids go to the default estimator (Glenn). The new-lead e-mail and the "⏰ Bid due" reminders apply. |
+| **bid** | Leads → 📥 Lead Inbox as a bid. **Bid due and due-to are required.** Commercial bids go to the Senior Estimator (Glenn). The new-lead e-mail and the "⏰ Bid due" reminders apply. |
 | **job** | **Not a live job** (a job carries money). It becomes **🚀 New job from …** under ✅ Needs approval on the To-Do of you and Nick; the office sees it as waiting on you. You also get an e-mail. **✅ Approve** opens **Launch Job** filled in (name, customer, address, phone, e-mail, scope, contract, start date). Check it, pick the PM, launch: the job gets its PO the normal way, and the approval clears itself. |
 | **note** | Matched to the job by its **PO number**. It goes on the job's message board (the PM tagged) and becomes a to-do for that PM. |
 

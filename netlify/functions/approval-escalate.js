@@ -5,6 +5,7 @@
 // office are told once (office to-do, CRM notice, phone push). PM-step items are never escalated.
 // Netlify does not let anyone call a scheduled function by its URL in production; as a second lock any call that
 // is not the scheduler must come from a signed-in admin.
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
@@ -44,6 +45,7 @@ exports.handler = async function (event) {
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   try {
     const out = await portal._core.escalateDue({});
+    try { out.portalGate = await portal._core.gateScan({}); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals */
     try { console.log('[approval-escalate]', JSON.stringify({ escalated: out.escalated || 0 })); } catch (e) {}
     return { statusCode: out.ok ? 200 : 502, headers, body: JSON.stringify(out) };
   } catch (e) {

@@ -19,6 +19,7 @@
 //   POST {action:'request-sign', projectId}  → the e-mail asking the customer to sign waits on ✅ Approvals
 //                                             (kind walkthrough_sign — the job's PM approves it)
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const SEL = require('./selections.js')._sel;
 const RESP_KEY = 'walkthroughResponses';

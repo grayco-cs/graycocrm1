@@ -26,7 +26,7 @@
    There is NO hourly digest any more.
      3. WHO IT IS DUE TO, AND WHO DOES IT (owner, later on 10/21): every message says when the bid is due AND who it
         is due to (the GC / company / agency, contact, how to submit). The lead's assigned estimator / PM (pm, or the
-        default estimator for commercial bids — the Estimator role / Leads ⚙) gets the new-lead message, the 1-hour /
+        Senior Estimator for commercial bids — the Estimator role / Leads ⚙) gets the new-lead message, the 1-hour /
         "today" reminder, "⏰ Bid due tomorrow" at 8 AM the day before, "Assigned to you" when a lead is given to
         them (notifyAssigned: the CRM's ?notify=1, and the 10-minute sweep), and once a day "⚠️ Missing due info"
         for bids assigned to them marked "Unknown yet".
@@ -41,7 +41,11 @@
         contactedAt), or a call / follow-up / comment logged on it. Each reminder once per lead (and per PM). Quiet
         hours: nothing between 9 PM and 7 AM Central — what came due overnight goes at 7 AM. Leads more than 7 days
         old, and those already waiting when this started, are left alone.
-   Nothing here ever writes to a customer or a sub. It sends only to GrayCo admins.
+   Nothing here ever writes to a customer or a sub. It sends only to GrayCo staff.
+   patch ALERTTO (owner 10/26: "I only want notifications and bids going to leads and then office"): the new-lead / new-bid,
+   bid-due and 4 h / 24 h assign messages go to Leads ⚙ "Lead & bid alert e-mails go to:" (default office@grayco-cs.com), plus
+   the assigned estimator / PM. They no longer go to every admin / OWNER_EMAILS / BID_ALERT_TO. The 🚨 emergency alert is
+   changed by patch OWNER4: general emergency = on-call PM + office setting (+ the CRM lead); mitigation emergency (water / fire) = office + "Mitigation emergencies also go to:" (default Nick + Wesley) + mitigation manager + on-call PM.
    ========================================================================== */
 'use strict';
 
@@ -71,6 +75,7 @@ function make(d){
       bidDue: s(it.bidDue), city: s(it.city), state: s(it.state), gc: s(it.gc), detail: s(it.detail).slice(0, 300),
       dueToCompany: s(it.dueToCompany), dueToContact: s(it.dueToContact), dueToEmail: s(it.dueToEmail), dueToPhone: s(it.dueToPhone), submitMethod: s(it.submitMethod), submitWhere: s(it.submitWhere),
       dueUnknown: !!it.dueUnknown, assignee, assigneeEmail: GONE[low(assignee)] || (assigneeEmail && GONE[assigneeEmail]) ? '' : (assigneeEmail || emailOf(assignee)), assignedBy: s(it.assignedBy),   /* patch PMG: never to someone who has left */
+      coEmails: require('./lead-roles.js').coList(it).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead; patch SPAMROLE: the Senior Roofing PM only on a roofing bid */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
       website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
@@ -97,7 +102,31 @@ function make(d){
     return st;
   }
 
+  /* patch ALERTTO: Leads ⚙ "Lead & bid alert e-mails go to:" (gc_lead_inbox_settings.alertTo) — default office@ only */
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/;
+  async function alertList(){
+    let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.alertTo) v = v.v;
+    const l = v && Array.isArray(v.alertTo) ? v.alertTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
+    return Array.from(new Set(l.length ? l : ['office@grayco-cs.com']));
+  }
+  /* patch OWNER4: Leads ⚙ "Mitigation emergencies also go to:" (gc_lead_inbox_settings.mitigationTo) — default Nick + Wesley; the admin adds the mitigation manager */
+  async function mitigationList(){
+    let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.mitigationTo && !v.alertTo) v = v.v;
+    const l = v && Array.isArray(v.mitigationTo) ? v.mitigationTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
+    return Array.from(new Set(l.length ? l : require('./emergency.js').MIT_DEFAULT));
+  }
+  /* patch OWNER4: Leads ⚙ "Emergencies also go to:" (gc_lead_inbox_settings.emergenciesTo) — default EMPTY; every emergency (general and mitigation) also goes to these */
+  async function emergencyList(){
+    let v = await gcKvVal('gc_lead_inbox_settings'); if (v && !Array.isArray(v) && v.v && typeof v.v === 'object' && !v.emergenciesTo && !v.alertTo) v = v.v;
+    const l = v && Array.isArray(v.emergenciesTo) ? v.emergenciesTo.map(x => low(x && typeof x === 'object' ? x.email : x)).filter(x => EMAIL_RE.test(x)) : [];
+    return Array.from(new Set(l));
+  }
+  /* new-lead / bid-due / assign-reminder messages: the setting (+ the assigned people in `extra`) */
   async function recipients(extra){
+    return Array.from(new Set((await alertList()).concat(arr(extra).map(low).filter(x => EMAIL_RE.test(x)))));
+  }
+  /* the OLD list (every active admin + OWNER_EMAILS + BID_ALERT_TO). patch OWNER4: NO LONGER used by the 🚨 emergency alert; kept exported for other callers */
+  async function adminRecipients(extra){
     const out = [];
     try {
       const r = await sb('gc_staff?select=email,name,role,active&role=eq.admin');
@@ -146,7 +175,7 @@ function make(d){
       + '<p style="margin-top:18px"><a href="' + esc(site()) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Leads in the CRM</a></p>'
       + '<p style="color:#777;font-size:12px">' + foot + '</p></div></div>';
   }
-  const FOOT = 'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
+  const FOOT = 'Sent to the lead-alert address list (Leads ⚙ settings): one e-mail when a new lead arrives, and one an hour before its bid is due (8 AM Central on the day when only the date is known). The bid due date can be changed on the lead in the CRM (Leads → Bid due).';
   function soonest(list){ return list.filter(x => x.bidDue).sort((a, b) => BD.wallToEpoch(a.bidDue) - BD.wallToEpoch(b.bidDue))[0]; }
   function mailNew(list){
     if (list.length && list.every(x => x.website)) return mailWeb(list);   /* patch WEB */
@@ -172,7 +201,7 @@ function make(d){
 
   async function sendMail(to, m){
     const key = env('RESEND_API_KEY'); if (!key) return { ok: false, why: 'RESEND_API_KEY is not set' };
-    if (!to.length) return { ok: false, why: 'no admin e-mail addresses' };
+    if (!to.length) return { ok: false, why: 'no alert e-mail addresses' };
     try {
       const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./mailtag.js').tag(m.subject, to, m.area || 'bid lead'), html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'lead-alert' } }, /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(m.replyTo)) ? { reply_to: s(m.replyTo) } : {})) });
@@ -201,7 +230,7 @@ function make(d){
     if (list.every(x => x.form === 'Missed call')) {   /* patch AUTO6: the missed-call text-back */
       const subj = (n === 1 ? '📞 Missed call — auto-text sent: ' + list[0].title : '📞 ' + n + ' missed calls — auto-texts sent').slice(0, 250);
       const h = frame('GrayCo — missed call', (n === 1 ? 'Someone called GrayCo and nobody answered' : n + ' calls were not answered') + '. They got the automatic text ("Sorry we missed your call…"). It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM and call them back.', list.map(rowHtml).join(''),
-        'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every missed call that is not an existing customer.');
+        'Sent to the lead-alert address list (Leads ⚙ settings) for every missed call that is not an existing customer.');
       const t = subj + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
       return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
     }
@@ -209,7 +238,7 @@ function make(d){
     const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
       : (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · '))).slice(0, 250);
     const html = frame('GrayCo — new ' + (api ? 'lead' : 'website lead') + (n === 1 ? '' : 's'), (api ? esc(from) + ' sent ' + (n === 1 ? 'a lead' : n + ' leads') + ' through the GrayCo partner API' : n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
-      'Sent to GrayCo admins only (gc_staff admins and OWNER_EMAILS) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
+      'Sent to the lead-alert address list (Leads ⚙ settings) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
     const text = subject + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
     return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
@@ -226,6 +255,57 @@ function make(d){
   /* ── 1. new leads ──────────────────────────────────────────────────────────── */
   /* items: leads just stored. o.group: one message for all of them (one e-mail that brought several bids);
      otherwise one message per lead. Each lead id is alerted once, ever. */
+  /* patch EMERG (owner 10/24): an emergency lead from ANY source → the on-call PM (else the Senior Insurance PM) + every admin +
+     the office, every time: a 🚨 e-mail + phone push, a 🔴 ASAP to-do, and the lead assigned to the on-call PM when nobody
+     picked it (or the lead roles only gave it to the Senior Insurance PM). Once per lead. */
+  async function gcKvVal(k){ try { const r = await sb('gc_kv?select=value&key=eq.' + encodeURIComponent(k)); if (!r.ok) return null; let v = (arr(await r.json())[0] || {}).value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; } catch (e) { return null; } }
+  async function emergency(mine, raw){
+    const E = require('./emergency.js'), X = require('./x10.js');
+    const em = mine.filter(x => E.isEmergency(Object.assign({}, raw[x.id] || {}, x)));
+    if (!em.length) return { n: 0 };
+    let oncall = null; try { const c = X.oncallCfg(await kvGet('gc_x10_oncall')); if (c.on && c.rotation.length) oncall = X.onCallNow(now(), c); } catch (e) {}
+    let users = await gcKvVal('users'); if (users && !Array.isArray(users) && Array.isArray(users.v)) users = users.v; users = arr(users);
+    const team = await gcKvVal('gc_team_settings');
+    let ins = null; try { const h = require('./lead-roles.js').holder('insurance', team, users); if (h && (h.email || h.name)) ins = { name: s(h.name), email: low(h.email) || emailOf(h.name) }; } catch (e) {}
+    /* patch OWNER4 (owner 10/26): GENERAL emergency → the on-call PM + the office ("Lead & bid alert e-mails go to:", default office@) [+ the CRM lead, already in the Lead Inbox];
+       MITIGATION emergency (water / flood / leak / burst pipe / sewage / mold / fire / smoke / storm-damage dry-out — E.isMitigation; a tree alone is general) →
+       the office + the "Mitigation emergencies also go to:" setting (default Nick + Wesley) + the mitigation manager (role / title) + the on-call PM. No longer every admin / OWNER_EMAILS. */
+    const officeTo = (await alertList()).concat(await emergencyList());   /* office + the "Emergencies also go to:" list (empty by default) */
+    const mitTo = (await mitigationList()).concat(E.mitigationMgrs(users));
+    const planFor = x => E.people({ oncall, insurance: ins, office: officeTo, mitigation: E.isMitigation(Object.assign({}, raw[x.id] || {}, x)) ? mitTo : null });
+    const plan = E.people({ oncall, insurance: ins, office: officeTo });
+    const out = { n: 0, to: plan.to, lead: plan.lead, byLead: {} };
+    for (const x of em) {
+      let claim = false;
+      await kvCas(KA, v => { const st = loadState(v); st.emerg = st.emerg && typeof st.emerg === 'object' ? st.emerg : {}; if (st.emerg[x.id]) return undefined; st.emerg[x.id] = nowIso();
+        const ks = Object.keys(st.emerg); if (ks.length > 600) ks.sort((a, b) => s(st.emerg[a]).localeCompare(s(st.emerg[b]))).slice(0, ks.length - 600).forEach(k => { delete st.emerg[k]; }); claim = true; return st; }).catch(() => { claim = true; });
+      if (!claim) continue;
+      const px = planFor(x); out.byLead[x.id] = px.to;
+      const c = x.contact || {}, who = plan.lead ? plan.lead.name || plan.lead.email : 'the office';
+      const m = mailNew([x]);
+      m.subject = ('🚨 EMERGENCY lead — call now: ' + x.title).slice(0, 250);
+      m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; ' + (px.mitigation ? 'this is a mitigation emergency (water / fire): the office, Nick, Wesley and the mitigation manager are told too.' : 'the office is told too.'), rowHtml(x), px.mitigation ? 'Mitigation emergencies (water, leak, flood, burst pipe, sewage, mold, fire, smoke, storm-damage dry-out) go to the on-call PM, the office, Nick, Wesley and the mitigation manager.' : 'General emergencies go to the on-call PM and the office; the lead is in the Lead Inbox.');
+      m.text = m.subject + '\n\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads';
+      m.push = { title: ('🚨 Emergency: ' + x.title).slice(0, 100), body: ([c.name, c.phone].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '')).slice(0, 180) || 'Call them now', tag: 'lead-emerg-' + x.id };
+      m.area = 'area:Leads';
+      const r = await deliver(m, null, px.to.concat([x.assigneeEmail].concat(x.coEmails || [])).filter(Boolean));   /* + whoever the lead roles gave it to */
+      /* the 🔴 ASAP to-do (the on-call PM + the shared office list) */
+      try {
+        const tid = 'EMERG_' + s(x.key || x.id).replace(/[^A-Za-z0-9_:-]/g, '').slice(0, 80), at = nowIso();
+        await require('../portal.js')._core.kvListUpdate('gc_office_tasks', l => l.some(t => t && t.id === tid) ? null : { list: l.concat([{ id: tid, label: '🚨 Emergency — call now: ' + x.title,
+          note: [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '') + (x.source ? ' (' + x.source + ')' : ''), phone: s(c.phone), leadKey: x.key,
+          assignees: plan.lead && plan.lead.name ? [plan.lead.name] : [], office: true, prio: 'urgent', urgency: 'asap', kind: 'emergency_lead', due: at.slice(0, 10), addedBy: 'Emergency lead', addedAt: at, createdAt: at, updatedAt: at, done: false }]), check: l2 => l2.some(t => t && t.id === tid) });
+      } catch (e) {}
+      /* the lead itself: to the on-call PM when nobody picked it, or the lead roles only gave it to the Senior Insurance PM */
+      if (plan.lead && plan.lead.why === 'on call') {
+        try { await kvCas('gc_lead_inbox', v => { const l = arr(v), it = l.find(y => y && s(y.id) === s(x.id)); if (!it) return undefined;
+          if (it.pm && !(ins && low(it.pmEmail) === ins.email) && low(it.pmEmail) !== plan.lead.email) return undefined; if (low(it.pmEmail) === plan.lead.email) return undefined;
+          it.pm = plan.lead.name; it.pmEmail = plan.lead.email; it.assignedBy = 'Auto · on call (emergency)'; it.assignedAt = nowIso(); it.emergency = true; return l; }); } catch (e) {}
+      }
+      out.n++; out.sent = (out.sent || 0) + (r.ok ? 1 : 0); out.pushed = (out.pushed || 0) + (r.pushed || 0);
+    }
+    return out;
+  }
   async function notifyNew(items, o){
     o = o || {};
     if (off()) return { sent: 0, off: true };
@@ -242,10 +322,14 @@ function make(d){
       return st;
     });
     if (!mine.length) return { sent: 0, already: fresh.length };
-    const groups = o.group ? [mine] : mine.map(x => [x]);
+    /* patch EMERG: an emergency lead gets the 🚨 alert (on call + office [+ mitigation people], patch OWNER4) + its assignee INSTEAD of the normal one */
+    const raw0 = {}; arr(items).forEach(it => { if (it && it.id) raw0[s(it.id)] = it; });
+    const isEm = x => { if (env('EMERG_OFF') === '1') return false; try { return require('./emergency.js').isEmergency(Object.assign({}, raw0[x.id] || {}, x)); } catch (e) { return false; } };
+    const urgentL = mine.filter(isEm), normalL = mine.filter(x => !isEm(x));
+    const groups = !normalL.length ? [] : o.group ? [normalL] : normalL.map(x => [x]);
     const out = { sent: 0, messages: 0, failed: 0, to: [] };
     for (const g of groups) {
-      const r = await deliver(mailNew(g), g.map(x => x.assigneeEmail));
+      const r = await deliver(mailNew(g), [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || []))));   /* patch HOT2: + coAssignees */
       out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;
       if (r.ok) out.sent += g.length; else { out.failed += g.length; out.why = r.why; }
       const at = nowIso();
@@ -259,6 +343,7 @@ function make(d){
         return st;
       }).catch(() => {});
     }
+    if (urgentL.length) { try { out.emergency = await emergency(urgentL, raw0); out.sent += out.emergency.sent || 0; } catch (e) { out.emergency = { error: s(e && e.message) }; } }   /* patch EMERG */
     /* patch X10: an after-hours emergency (water / fire) pages the person on call (_lib/oncall.js) — never blocks the alert */
     if (env('ONCALL_OFF') !== '1') { try { out.oncall = await require('./oncall.js').make({ env: env, kvGet: kvGet, kvCas: kvCas, now: now, push: push }).maybePage(mine); } catch (e) { out.oncall = { error: s(e && e.message) }; } }
     return out;
@@ -330,7 +415,7 @@ function make(d){
     await loadPeople(src.users);
     const want = [];
     candidates(src.leads, src.items, src.tombs).forEach(x => reminderKinds(x.bidDue, t).forEach(k => {
-      if (k === 'eve' && !x.assigneeEmail) return;   /* the day-before reminder is the assigned person's */
+      if (k === 'eve' && !x.assigneeEmail && !(x.coEmails || []).length) return;   /* the day-before reminder is the assigned person's */
       want.push(Object.assign({}, x, { kind: k }));
     }));
     let mine = [];
@@ -344,7 +429,8 @@ function make(d){
     const out = { sent: 0, failed: 0, list: [] };
     for (const x of mine) {
       /* 1 hour / today: the admins and the assigned person; the day before: the assigned person */
-      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, [x.assigneeEmail]) : await deliver(mailRemind(x, x.kind), [x.assigneeEmail]);
+      const who = [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean);   /* patch HOT2: + coAssignees */
+      const r = x.kind === 'eve' ? await deliver(mailRemind(x, x.kind), null, who) : await deliver(mailRemind(x, x.kind), who);
       out.list.push({ key: x.key, kind: x.kind, ok: r.ok, why: r.why || '', to: r.to });
       if (r.ok) out.sent++; else out.failed++;
       await kvCas(KA, v => {
@@ -363,7 +449,7 @@ function make(d){
   }
 
   /* ── patch AUTO8: "Bid results?" — 7 days after a SUBMITTED bid's due date, still not won / lost: one e-mail from
-     the estimator (BID_RESULTS_FROM, else the default estimator — EST4, the Estimator role) to whoever the bid was due
+     the estimator (BID_RESULTS_FROM, else the Senior Estimator — EST4, the Estimator role) to whoever the bid was due
      to (dueToEmail), asking how it came out. The estimator gets a copy (bcc); replies go to them AND to
      results+<lead>@in.grayco-cs.com, where bid-inbox.js files the answer for the CRM (gc_kv gc_bid_results → the lead
      and the estimator's dashboard). A staff member's own e-mail
@@ -372,6 +458,7 @@ function make(d){
   const RESULTS_DAYS = 7;
   function resultsWanted(l, t){
     if (!l || !l.id || !isBid(l) || l.deleted || l._deleted || l.converted || l.notBidding || l.noBid) return false;
+    if (l.importedHistory === true || l.noSend === true || l.historyOnly === true || l.archived === true) return false;   /* patch LCLEAN-H: history / archived bids get no "Bid results?" e-mail */
     if (/^(won|lost|no\s*bid|not\s*bidding|dead|deleted|converted|declined|archived|cancell?ed|closed|dismissed)$/i.test(s(l.bidStatus))) return false;
     if (/^(won|lost|dead|deleted|converted|declined|archived|closed|dismissed)$/i.test(s(l.stage)) || /^(won|lost)$/i.test(s(l.status))) return false;
     if (!(/^submitted$/i.test(s(l.bidStatus)) || s(l.submittedAt))) return false;   /* only a bid GrayCo actually sent in */
@@ -393,16 +480,38 @@ function make(d){
     const text = 'Hi ' + (who || 'there') + ',\n\nThank you for the chance to bid ' + title + ' (bid due ' + due + '). When you have a moment, could you share the bid results — was it awarded, and if so, where did GrayCo Construction Services land? Any feedback on our number helps us sharpen our next bid for you.\n\nThanks again — we appreciate being on your bid list.\n\n' + fromName + '\nEstimator · GrayCo Construction Services\n' + require('./brand.js').companyAddress() + ' · 901-585-0944';
     return { subject: ('Bid results — ' + title).slice(0, 200), html, text };
   }
+  /* patch BIDSEND: a lead with a "Bidding to" list (gc_kv gc_bid_bidders, the CRM's 📤 Send bid) is asked PER GC —
+     one e-mail to each GC the bid was sent to, 7 days after THAT GC's due date, naming only that GC's contact and due
+     date; From "<the estimator's own name> <bids@grayco-cs.com>", Reply-To bids@ (the Google Group: the estimator, the
+     admins, the office and the CRM — _lib/bid-replies.js files the answer). Leads without a list: as before. */
+  function biddersFor(src, l){ const m = src && src.bidders && typeof src.bidders === 'object' ? src.bidders : {}; const r = m['lead:' + s(l && l.id)]; return arr(r && r.list).filter(b => b && b.id); }
+  function gcWanted(l, b, t){
+    if (!l || !l.id || !b || l.deleted || l._deleted || l.converted || l.notBidding || l.noBid) return false;
+    if (/^(won|lost|no\s*bid|not\s*bidding|dead|deleted|converted|declined|archived|cancell?ed|closed|dismissed)$/i.test(s(l.bidStatus))) return false;
+    if (/^(won|lost|dead|deleted|converted|declined|archived|closed|dismissed)$/i.test(s(l.stage)) || /^(won|lost)$/i.test(s(l.status))) return false;
+    if (!/^(sent|opened)$/i.test(s(b.status))) return false;
+    const due = s(b.due) || s(l.bidDue); if (!/^\d{4}-\d{2}-\d{2}/.test(due)) return false;
+    const dueAt = BD.wallToEpoch(due.length > 10 ? due : due + 'T17:00');
+    if (!isFinite(dueAt) || t - dueAt < RESULTS_DAYS * 86400000 || t - dueAt > 60 * 86400000) return false;
+    return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s(b.email));
+  }
   async function resultsAsk(src, t){
     if (off() || env('BID_RESULTS_OFF') === '1') return { sent: 0, off: true };
     const w = BD.epochToWall(t), wd = new Date(w.slice(0, 10) + 'T12:00:00Z').getUTCDay(), hm = w.slice(11, 16);
     if (wd === 0 || wd === 6 || hm < '09:00' || hm >= '16:00') return { sent: 0, quiet: true };
-    const want = arr(src.leads).filter(l => resultsWanted(l, t) && !(src.tombs && src.tombs['leads:' + l.id]));
-    if (!want.length) return { sent: 0 };
-    let mine = [];
-    await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); return mine.length ? st : undefined; });
+    src = src || {};
+    if (src.bidders == null) { try { const r = await sb('gc_kv?select=value&key=eq.gc_bid_bidders'); if (r.ok) { const rows = await r.json(); let v = rows && rows[0] ? rows[0].value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } src = Object.assign({}, src, { bidders: v && typeof v === 'object' ? v : {} }); } } catch (e) {} }
+    const live = arr(src.leads).filter(l => l && l.id && !(src.tombs && src.tombs['leads:' + l.id]));
+    const gcs = [];
+    live.forEach(l => { biddersFor(src, l).forEach(b => { if (gcWanted(l, b, t)) gcs.push({ l, b, due: s(b.due) || s(l.bidDue) }); }); });
+    const want = live.filter(l => !biddersFor(src, l).length && resultsWanted(l, t));
+    if (!want.length && !gcs.length) return { sent: 0 };
+    let mine = [], mineGc = [];
+    const gk = x => 'results|' + x.l.id + '|' + x.b.id + '|' + x.due;
+    await kvCas(KA, v => { const st = loadState(v); mine = want.filter(l => { const k = 'results|' + l.id + '|' + s(l.bidDue); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; });
+      mineGc = gcs.filter(x => { if (st.reminded[gk(x)]) return false; st.reminded[gk(x)] = nowIso(); return true; }); return mine.length || mineGc.length ? st : undefined; });
     const key = env('RESEND_API_KEY'); const out = { sent: 0, failed: 0, list: [] };
-    /* patch EST4: from the default estimator (the Estimator role / Leads ⚙), never a name in the code */
+    /* patch EST4: from the Senior Estimator (the Estimator role / Leads ⚙), never a name in the code */
     let est = { name: '', email: '' }; try { if (typeof d.estimatorOf === 'function') est = (await d.estimatorOf()) || est; } catch (e) {}
     const fromEmail = low(env('BID_RESULTS_FROM') || est.email || 'leads@grayco-cs.com');
     const fromName = s(env('BID_RESULTS_NAME')) || (est.email && low(est.email) === fromEmail && s(est.name)) || (Object.keys(PEOPLE).filter(n => PEOPLE[n] === fromEmail)[0] || 'GrayCo Estimating').replace(/\b\w/g, c => c.toUpperCase());
@@ -420,6 +529,23 @@ function make(d){
       out.list.push({ id: l.id, ok });
       if (ok) out.sent++; else { out.failed++; await kvCas(KA, v => { const st = loadState(v); delete st.reminded['results|' + l.id + '|' + s(l.bidDue)]; return st; }).catch(() => {}); }
       if (ok) await kvAppendResult({ id: 'ask_' + resultsToken(l.id) + '_' + s(l.bidDue).slice(0, 10), kind: 'asked', leadId: s(l.id), at: nowIso(), to: low(l.dueToEmail), by: fromEmail }).catch(() => {});
+    }
+    /* patch BIDSEND: one per GC — only that GC's contact and due date, never another GC or how many bid */
+    const bidsFrom = low(env('BID_SEND_FROM') || 'bids@grayco-cs.com');
+    for (const x of mineGc.slice(0, 20)) {
+      const m = resultsMail(Object.assign({}, x.l, { dueToContact: s(x.b.contact), bidDue: x.due }), fromName);
+      let ok = false;
+      if (key) {
+        try {
+          const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: fromName.replace(/[<>"|,;]/g, ' ').trim() + ' <' + bidsFrom + '>', to: [low(x.b.email)], bcc: /@grayco-cs\.com$/.test(fromEmail) && fromEmail !== bidsFrom ? [fromEmail] : undefined,
+              reply_to: bidsFrom, subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'bid-results' } }) });
+          ok = r.ok;
+        } catch (e) {}
+      }
+      out.list.push({ id: x.l.id, gc: x.b.id, ok });
+      if (ok) out.sent++; else { out.failed++; await kvCas(KA, v => { const st = loadState(v); delete st.reminded[gk(x)]; return st; }).catch(() => {}); }
+      if (ok) await kvAppendResult({ id: 'ask_' + resultsToken(x.l.id) + '_' + s(x.b.id) + '_' + x.due.slice(0, 10), kind: 'asked', leadId: s(x.l.id), bidderId: s(x.b.id), gc: s(x.b.company), at: nowIso(), to: low(x.b.email), by: fromEmail }).catch(() => {});
     }
     return out;
   }
@@ -643,8 +769,11 @@ function make(d){
     return { mode: 'instant', retrying: st.retry.length, reminders: Object.keys(st.reminded).length, last: st.last || null, remindMinutes: [REMIND_EARLY, REMIND_LATE], todayAt: TODAY_AT };
   }
 
-  return { notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
+  return { _emergency: emergency, mitigationList, emergencyList, notifyNew, notifyAssigned, sweepAssigned, nag, retry, remind, sweepRoofScout, speedToLead, resultsAsk, resultsWanted, gcWanted, kvAppendResult, speedKinds, speedCandidates, contacted, inbound, recipients, adminRecipients, alertList, state, candidates, reminderKind, reminderKinds, closed, loadPeople, _mailNew: mailNew, _mailRemind: mailRemind, KA,
     /* LD2's name for "a new opportunity was stored": now one message per call (bid-inbox: one e-mail) */
     enqueue: (items, o) => notifyNew(items, o) };
 }
 module.exports = { make, KA };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./brand.js').installResend(); } catch (e) {}

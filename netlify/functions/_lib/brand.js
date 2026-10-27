@@ -15,10 +15,18 @@ const BRAND = {
   email: 'office@grayco-cs.com',
   web: 'https://grayco-cs.com',
   licenses: 'TN #85034 BCB · AR #0486990627 · MS #27769',
-  logoPath: '/portal-logo.png',
+  logoPath: '/portal-logo.png',                 /* white logo: for dark bands */
+  logoColorPath: '/grayco-logo-wide.jpg',       /* patch LOGO: the colour logo (420 x 254), for white e-mail headers */
   reviewUrl: 'https://share.google/quDuhdlL0ckxPLLY3',
   navy: '#0F1D2F', gold: '#D4A017', ink: '#14202E', cream: '#F5F1E8'
 };
+/* patch BILL (owner 10/23: "invoices should come from billing@, that's what should be on invoices too"): every
+   customer / GC money e-mail (invoices, pay apps, statements, reminders, receipts) goes From and Reply-To billing@,
+   and money documents show billing@ as the contact. One place: Netlify BILLING_EMAIL overrides the default. */
+function billingEmail(){ const v = String(process.env.BILLING_EMAIL || '').trim().toLowerCase(); return /^[^@\s<>"]+@[^@\s<>"]+\.[a-z]{2,}$/.test(v) ? v : 'billing@grayco-cs.com'; }
+function billingFrom(){ return 'GrayCo Construction Services Billing <' + billingEmail() + '>'; }
+/* a money kind: final_invoice, final_reminder, invoice, invoice_statement, pay_app, gcp_payapp_invoice, maint_invoice, receipt, … */
+function isMoneyKind(kind){ return /(^|_)(final|invoice|pay_?app|payapp|receipt|payment|deposit|statement|lien|dunning|balance)(_|$)/i.test(String(kind || '')); }
 function s(v){ return v == null ? '' : String(v).trim(); }
 /* patch ADDR2 — the company address moves on a date (owner 10/21: "we are at 4007 Broadway for 1 more week, then we move
    to 4014"). ONE setting, gc_kv "gc_company_address" { current, next, switchOn (YYYY-MM-DD, Central) }, edited in
@@ -66,6 +74,8 @@ function siteBase(){
   return b.replace(/\/$/, '');
 }
 function logoUrl(){ return siteBase() + BRAND.logoPath; }
+function logoColorUrl(){ return siteBase() + BRAND.logoColorPath; }   /* patch LOGO: absolute https://crm.grayco-cs.com/grayco-logo-wide.jpg */
+function directLines(){ return String(process.env.DOC_DIRECT_LINES || '').trim() !== '0'; }   /* patch LOGOALL2: on unless DOC_DIRECT_LINES=0 */
 function isShelled(html){ return /data-gc-shell=/.test(String(html || '')); }
 function telHref(p){ const d = s(p).replace(/\D/g, ''); return d.length === 10 ? 'tel:+1' + d : (d.length === 11 ? 'tel:+' + d : ''); }
 function niceTel(p){ const d = s(p).replace(/\D/g, '').replace(/^1(?=\d{10}$)/, ''); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(p); }
@@ -82,10 +92,26 @@ function signatureHtml(sender){
   if (!x || !x.name) return '';
   const ph = x.photo ? '<td style="padding:0 14px 0 0;vertical-align:top"><img src="' + esc(x.photo) + '" width="56" height="56" alt="" style="display:block;width:56px;height:56px;border-radius:28px;object-fit:cover"></td>' : '';
   const lines = ['<b style="font-size:15px;color:' + BRAND.ink + '">' + esc(x.name) + '</b>', '<span style="color:#55626F">' + esc(x.title) + ' · ' + BRAND.name + '</span>'];
-  if (x.phone) lines.push('<a href="' + esc(telHref(x.phone)) + '" style="color:' + BRAND.navy + ';text-decoration:none">📱 ' + esc(x.phone) + '</a>');
+  /* patch LOGOALL (owner 10/23): a staff member's own cell never goes on customer mail; the office line does. Netlify
+     DOC_DIRECT_LINES=1 turns direct lines on. */
+  /* patch LOGOALL2 (owner: "we can have 'this is your project manager's number'"): the sender's own line names them, so
+     their phone may show (DOC_DIRECT_LINES=0 hides it); the company line is always the office */
+  if (directLines() && x.phone && x.phone.replace(/\D/g, '') !== BRAND.phone.replace(/\D/g, '')) lines.push('<a href="' + esc(telHref(x.phone)) + '" style="color:' + BRAND.navy + ';text-decoration:none">📱 ' + esc(x.phone) + ' (direct)</a>');
+  lines.push('<a href="' + esc(telHref(BRAND.phone)) + '" style="color:' + BRAND.navy + ';text-decoration:none">☎ Office ' + esc(BRAND.phone) + '</a>');
   if (x.email) lines.push('<a href="mailto:' + esc(x.email) + '" style="color:' + BRAND.navy + ';text-decoration:none">' + esc(x.email) + '</a>');
   return '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 0;border-top:1px solid #E5E0D3;padding-top:16px;width:100%"><tr>' + ph +
     '<td style="vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.55">' + lines.join('<br>') + '</td></tr></table>';
+}
+/* patch LEGAL3 (counsel review F2: job e-mails carried no legal footer): ONE short confidentiality / accuracy footer, added here so every
+   invoice, portal link, signed paper and proposal e-mail that goes through the shell carries it. shell(html, { legal: false }) leaves it off
+   (GrayCo News has its own footer and unsubscribe line). The plain-text version is legalText(). DRAFT wording pending attorney review. */
+function legalText(){
+  return 'This email and any attachments are intended only for the named recipient and may contain confidential or privileged information. If you received it in error, please tell us and delete it. '
+    + 'Amounts, dates and scope in this email are summaries and are subject to your signed agreement and our written invoices; an email alone does not change a signed agreement. '
+    + BRAND.name + ' \u00b7 licensed GC ' + BRAND.licenses;
+}
+function legalFooterHtml(){
+  return '<tr><td data-gc-legal="1" style="background:' + BRAND.cream + ';padding:12px 24px 16px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.5;color:#6B7785">' + esc(legalText()) + '</td></tr>';
 }
 function bodyOf(html){
   const t = String(html || '');
@@ -98,7 +124,13 @@ function shell(html, o){
   if (isShelled(html)) return String(html);
   const inner = bodyOf(html);
   const hasLogo = /portal-logo\.png|grayco-logo/i.test(inner);
-  const head = hasLogo ? '' : '<tr><td style="background:#ffffff;padding:18px 24px;border-bottom:4px solid ' + BRAND.gold + '"><img src="' + esc(o.logoUrl || logoUrl()) + '" alt="' + BRAND.name + '" width="150" style="display:block;width:150px;max-width:60%;height:auto;border:0"></td></tr>';
+  /* patch LOGOALL (owner 10/23: "should have our logo on it"): the logo header is centered, like every printed paper */
+  /* patch LOGO: (owner 10/26: every document carries the logo): the colour logo at the LEFT, 0.7 in tall, GrayCo Construction Services · phone · licenses beside it, on white */
+  /* patch LOGO2 (the 10/22 rule "always center the headers"): the colour logo centered, 0.7 in tall, the name / phone / licenses centered under it */
+  const head = hasLogo ? '' : '<tr><td align="center" style="background:#ffffff;padding:14px 24px 10px;border-bottom:4px solid ' + BRAND.gold + ';text-align:center">' +
+    '<img src="' + esc(o.logoUrl || logoColorUrl()) + '" alt="' + BRAND.name + '" width="111" height="67" style="display:block;margin:0 auto 6px;width:111px;height:67px;border:0">' +
+    '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.4;text-align:center"><div style="font-size:17px;font-weight:bold;color:' + BRAND.navy + '">' + BRAND.name + '</div>' +
+    '<div style="font-size:12px;color:#55626F">' + BRAND.phone + ' · grayco-cs.com</div><div style="font-size:11px;color:#6B7785">' + BRAND.licenses + '</div></div></td></tr>';
   const sig = o.sender === false ? '' : signatureHtml(o.sender);
   const portal = o.portalUrl ? '<p style="margin:20px 0 0"><a href="' + esc(o.portalUrl) + '" style="display:inline-block;background:' + BRAND.navy + ';color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:8px">Open my GrayCo project page</a></p>' : '';
   const pre = o.preheader ? '<div style="display:none;max-height:0;overflow:hidden;opacity:0">' + esc(o.preheader) + '</div>' : '';
@@ -109,7 +141,7 @@ function shell(html, o){
     '<tr><td style="padding:22px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:' + BRAND.ink + '">' + inner + portal + sig + '</td></tr>' +
     '<tr><td style="background:' + BRAND.navy + ';padding:14px 24px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#C9D3E0">' +
     '<b style="color:#ffffff">' + BRAND.legalName + '</b><br>' + BRAND.address + ' · <a href="' + telHref(BRAND.phone) + '" style="color:#C9D3E0;text-decoration:none">' + BRAND.phone + '</a> · <a href="mailto:' + BRAND.email + '" style="color:#C9D3E0;text-decoration:none">' + BRAND.email + '</a><br>' +
-    '<span style="color:' + BRAND.gold + '">' + BRAND.licenses + '</span></td></tr></table></td></tr></table></body></html>';
+    '<span style="color:' + BRAND.gold + '">' + BRAND.licenses + '</span></td></tr>' + (o.legal === false ? '' : legalFooterHtml()) + '</table></td></tr></table></body></html>';
 }
 
 /* the CRM's users (gc_kv "users"), read with the service key, kept 5 minutes */
@@ -164,6 +196,7 @@ function installResend(){
         const to = [].concat(b.to || []).map(low);
         if (b.html && !isShelled(b.html) && to.length && !to.every(function(x){ return /@grayco-cs\.com$/.test(x); })) {
           b.html = shell(b.html, { sender: { name: 'The GrayCo Office', title: 'Office', phone: BRAND.phone, email: BRAND.email } });
+          if (typeof b.text === 'string' && b.text && b.text.indexOf(legalText()) < 0) b.text = b.text + '\n\n--\n' + legalText();   /* patch LEGAL3: plain-text part too */
           init = Object.assign({}, init, { body: JSON.stringify(b) });
         }
       }
@@ -173,6 +206,7 @@ function installResend(){
   w.__gcBrand = true; w.__orig = orig;
   g.fetch = w;
 }
-module.exports = { BRAND: BRAND, installResend: installResend, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
-  logoUrl: logoUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
+module.exports = { BRAND: BRAND, installResend: installResend, legalText: legalText, legalFooterHtml: legalFooterHtml, shell: shell, shellFor: shellFor, isShelled: isShelled, signatureHtml: signatureHtml, senderFor: senderFor, senderFromUsers: senderFromUsers, cleanSender: cleanSender,
+  logoUrl: logoUrl, logoColorUrl: logoColorUrl, siteBase: siteBase, niceTel: niceTel, companyAddress: companyAddress, companyStreet: companyStreet, addressConfig: addressConfig, refreshAddress: refreshAddress, ADDRESS_DEFAULTS: ADDRESS_DEFAULTS,
+  billingEmail: billingEmail, billingFrom: billingFrom, isMoneyKind: isMoneyKind, directLines: directLines,
   _setAddress: function(v){ addrSetting = v; addrAt = Date.now(); }, _reset: function(){ usersCache = null; addrSetting = null; addrAt = 0; } };

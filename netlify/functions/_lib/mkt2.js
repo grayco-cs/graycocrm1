@@ -749,7 +749,8 @@ async function eventReminders(){
         const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>', reply_to: low(ev.pmEmail) || 'replies@grayco-cs.com', to: [su.email], subject: 'Reminder: your free roof check tomorrow at ' + slotLabel(su.slot), html: html }) }).catch(function(){ return { ok: false }; });
         ok = !!(r && r.ok);
       }
-      if (env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM') && require('../website-intake.js')._lib.phone10(su.phone).length === 10) {
+      let smsNo = false; try { smsNo = (await require('./smsconsent.js').live(su.phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: a declined number gets no text reminder */
+      if (!smsNo && env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM') && require('../website-intake.js')._lib.phone10(su.phone).length === 10) {
         try {
           const to = '+1' + require('../website-intake.js')._lib.phone10(su.phone);
           const r2 = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + env('TWILIO_ACCOUNT_SID') + '/Messages.json', { method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(env('TWILIO_ACCOUNT_SID') + ':' + env('TWILIO_AUTH_TOKEN')).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -768,6 +769,16 @@ async function eventReminders(){
    (one per e-mail / phone / household address). Only a hash + the last 4 are kept (service-only "gc_coupons").
    Redeemed once, on work over $1,000 (server-checked). Each claim is a lead tagged with the source. */
 const COUPON_VALUE = 100, COUPON_MIN = 1000;
+/* patch LEGAL3 (counsel review F2: "coupon expiration — NOT FOUND"): every new coupon carries an expiration date (default 90 days after it is
+   issued; Admin setting cfg.main.coupons.days, 1-730). It is shown on the coupon page and in the coupon e-mail, and redeeming after it is
+   refused. Coupons claimed before this change have no date and stay valid. DRAFT wording pending attorney review. */
+const COUPON_DAYS = 90;
+const MONTHS_L = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function centralYmd(ms){ try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms)); } catch (e) { return new Date(ms - 6 * 3600e3).toISOString().slice(0, 10); } }
+function couponDays(setts){ const n = Math.round(num(setts && setts.days)); return n >= 1 && n <= 730 ? n : COUPON_DAYS; }
+function couponExpiry(issuedMs, days){ return centralYmd(issuedMs + days * 864e5); }
+function longDate(ymd){ const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s(ymd)); return m ? MONTHS_L[+m[2] - 1] + ' ' + (+m[3]) + ', ' + m[1] : ''; }
+async function couponSettings(){ try { const doc = await M().readDoc(); return cfg(doc).coupons || {}; } catch (e) { return {}; } }
 function couponHash(code){ return crypto.createHash('sha256').update('gc-coupon:' + s(code).toUpperCase().replace(/[^A-Z0-9]/g, '')).digest('hex'); }
 function newCoupon(){ const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const b = crypto.randomBytes(8); let x = ''; for (let i = 0; i < 8; i++) x += A[b[i] % A.length]; return 'GC100-' + x.slice(0, 4) + '-' + x.slice(4); }
 function addrKey(a){ return low(a).replace(/[^a-z0-9]/g, '').slice(0, 24); }
@@ -779,19 +790,20 @@ async function couponClaim(srcCode, b){
   if (!name) return { ok: false, status: 400, error: 'Please add your name.', field: 'name' };
   if (!okEmail(email) && W.phone10(phone).length !== 10) return { ok: false, status: 400, error: 'Please add your e-mail or phone number.', field: 'email' };
   const ph = W.phone10(phone), ak = addrKey(address);
-  let code = '', dup = '';
+  const days = couponDays(await couponSettings()), issuedMs = nowFn(), expires = couponExpiry(issuedMs, days);   /* patch LEGAL3 */
+  let code = '', dup = '', dupExp = '';
   await L().kvCas('gc_coupons', function(v){
     v = v && typeof v === 'object' ? v : {}; v.list = v.list || {};
     const hit = Object.keys(v.list).map(function(k){ return v.list[k]; }).find(function(c){ return (email && c.email === email) || (ph.length === 10 && c.phone10 === ph) || (ak.length >= 8 && c.addr === ak); });
-    if (hit) { dup = hit.last4; return undefined; }
+    if (hit) { dup = hit.last4; dupExp = s(hit.expires); return undefined; }
     code = newCoupon(); const h = couponHash(code);
-    v.list[h] = { last4: code.slice(-4), source: sp ? sp.id : cleanCode(srcCode) || 'unknown', sourceName: sp ? s(sp.name) : '', name: name, email: email, phone10: ph, addr: ak, at: nowIso() };
+    v.list[h] = { last4: code.slice(-4), source: sp ? sp.id : cleanCode(srcCode) || 'unknown', sourceName: sp ? s(sp.name) : '', name: name, email: email, phone10: ph, addr: ak, at: nowIso(), expires: expires };   /* patch LEGAL3 */
     return v;
   });
-  if (dup) return { ok: true, already: true, message: 'This household already has a GrayCo $100 coupon (ending ' + dup + '). It works once — mention it when you call (901) 585-0944.' };
+  if (dup) return { ok: true, already: true, message: 'This household already has a GrayCo $100 coupon (ending ' + dup + '). It works once' + (dupExp ? ' and expires ' + longDate(dupExp) : '') + ' — mention it when you call (901) 585-0944.' };
   const f = { type: 'estimate', name: name, email: email, phone: phone, address: address, city: '', state: '', zip: '', message: 'Claimed a $100-off coupon (ending ' + code.slice(-4) + ')' + (sp ? ' from ' + s(sp.name) : '') + '.', company: '', service: '' };
   try {
-    const r = await W.fileLead(f, { source: 'Coupon QR — ' + (sp ? s(sp.name) : cleanCode(srcCode) || 'unknown'), how: 'claimed a $100-off coupon by QR', notes: ['COUPON: $100 off work over $1,000, code ending ' + code.slice(-4) + ' (one time — redeem it in Marketing → 🎟 Coupons).'],
+    const r = await W.fileLead(f, { source: 'Coupon QR — ' + (sp ? s(sp.name) : cleanCode(srcCode) || 'unknown'), how: 'claimed a $100-off coupon by QR', notes: ['COUPON: $100 off work over $1,000, code ending ' + code.slice(-4) + ', expires ' + longDate(expires) + ' (one time — redeem it in Marketing → 🎟 Coupons).'],
       leadExtra: { websiteLead: true, websiteForm: 'Coupon QR', couponLast4: code.slice(-4), couponSource: sp ? sp.id : cleanCode(srcCode), trackCode: sp ? s(sp.linkCode) : '', mkSource: sp && /truck|shirt|uniform|sign/i.test(s(sp.kind)) ? 'Yard sign' : 'Event' } });
     await L().kvCas('gc_coupons', function(v){ const x = v && v.list && v.list[couponHash(code)]; if (!x) return undefined; x.leadId = r.id; return v; }).catch(function(){});
     if (r.action === 'added') { try { await W.alertLead(r.rec); } catch (e) {} }
@@ -799,15 +811,15 @@ async function couponClaim(srcCode, b){
   const key = env('RESEND_API_KEY');
   if (key && okEmail(email)) {
     await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <portal@grayco-cs.com>', reply_to: 'replies@grayco-cs.com', to: [email],
-      subject: 'Your GrayCo $100 coupon: ' + code, html: '<p>Hi ' + esc(name.split(/\s+/)[0]) + ',</p><p>Here is your coupon: <b style="font-size:20px;letter-spacing:1px">' + esc(code) + '</b></p><p><b>$100 off GrayCo work</b> on projects over $1,000. One-time use, one per household; not combined with other coupons (GrayCo referral credit is OK). Give the code to your GrayCo project manager before your estimate or invoice.</p><p>Call (901) 585-0944 to book a free estimate.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>' }) }).catch(function(){});
+      subject: 'Your GrayCo $100 coupon: ' + code, html: '<p>Hi ' + esc(name.split(/\s+/)[0]) + ',</p><p>Here is your coupon: <b style="font-size:20px;letter-spacing:1px">' + esc(code) + '</b></p><p><b>$100 off GrayCo work</b> on projects over $1,000.</p><p style="font-size:15px"><b>Expires ' + esc(longDate(expires)) + '</b> (' + days + ' days after it was issued).</p><p style="font-size:13px;color:#55626F">Terms: one coupon per household and one use per coupon; not combined with other coupons or discounts (GrayCo referral credit is OK); no cash value; not valid toward an insurance deductible or on insurance-paid work; not transferable or for sale; void where prohibited. Give the code to your GrayCo project manager before your estimate or invoice is final, on or before the expiration date.</p><p>Call (901) 585-0944 to book a free estimate.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>' }) }).catch(function(){});
   }
-  return { ok: true, code: code, message: 'Your coupon: ' + code + ' — $100 off GrayCo work on projects over $1,000. We also e-mailed it to you.' };
+  return { ok: true, code: code, expires: expires, expiresText: longDate(expires), message: 'Your coupon: ' + code + ' — $100 off GrayCo work on projects over $1,000. Expires ' + longDate(expires) + '. We also e-mailed it to you.' };
 }
 /* staff: look up / redeem. o = { code, amount (the estimate / invoice total), jobId, jobName, ref (estimate or invoice #), other coupons on it, by } */
 async function couponCheck(code){
   const v = (await L().kvGet('gc_coupons')) || {}, c = v.list && v.list[couponHash(code)];
   if (!c) return { ok: false, error: 'No such coupon code.' };
-  return { ok: true, last4: c.last4, name: c.name, source: c.sourceName || c.source, claimedAt: c.at, redeemed: c.redeemed || null };
+  return { ok: true, last4: c.last4, name: c.name, source: c.sourceName || c.source, claimedAt: c.at, redeemed: c.redeemed || null, expires: s(c.expires), expired: !!(c.expires && centralYmd(nowFn()) > s(c.expires)) };   /* patch LEGAL3 */
 }
 async function couponRedeem(code, o, setts){
   o = o || {}; setts = setts || {};
@@ -818,6 +830,7 @@ async function couponRedeem(code, o, setts){
   await L().kvCas('gc_coupons', function(v){
     const c = v && v.list && v.list[h];
     if (!c) { res = { ok: false, error: 'No such coupon code.' }; return undefined; }
+    if (c.expires && centralYmd(nowFn()) > s(c.expires) && !c.redeemed) { res = { ok: false, expired: true, error: 'This coupon expired on ' + longDate(c.expires) + '.' }; return undefined; }   /* patch LEGAL3 */
     if (c.redeemed) { res = { ok: false, error: 'This coupon was already used on ' + s(c.redeemed.at).slice(0, 10) + (c.redeemed.jobName ? ' (' + c.redeemed.jobName + ')' : '') + '.' }; return undefined; }
     c.redeemed = { at: nowIso(), by: low(o.by), jobId: s(o.jobId), jobName: s(o.jobName).slice(0, 120), ref: s(o.ref).slice(0, 60), amount: amount };
     res = { ok: true, value: COUPON_VALUE, last4: c.last4, source: c.source };
@@ -837,12 +850,17 @@ async function couponStats(){
    Entries (service-only "gc_giveaway_entries" { gwId: [ { id, name, email, phone, zip, src, at } ] }): one per person per
    month (e-mail or phone); every entrant joins GrayCo News (unsubscribe any time) and is a soft lead. */
 const DEFAULT_PRIZE = 'a FREE handyman hour';
+/* patch LEGAL3: eligibility is TN, MS and AR residents; the ZIP prefix is a sanity check (age and residence are self-certified on the entry form) */
+function giveawayZipOk(zip){ const n = +s(zip).slice(0, 3); return (n >= 370 && n <= 385) || (n >= 386 && n <= 397) || (n >= 716 && n <= 729) || n === 755; }
 function gwId(month){ return 'gw_' + s(month || nowIso().slice(0, 7)).replace('-', ''); }
 async function giveawayCurrent(){
   const doc = await M().readDoc(), id = gwId(), g = rec(doc, 'giveaways', id);
   if (g && g.status === 'closed') return { ok: true, open: false };
   const month = nowIso().slice(0, 7), m = +month.slice(5, 7);
-  return { ok: true, open: !g || g.status === 'open', id: id, month: month, monthName: MONTHS[m - 1] + ' ' + month.slice(0, 4), prize: s(g && g.prize) || DEFAULT_PRIZE, rulesUrl: site() + '/giveaway.html#rules', rules: s(g && g.rules) };
+  /* patch LEGAL3: the entry period and prize value are fields the owner sets (Marketing → Giveaway); the rules text uses [START DATE] / [END DATE] / [PRIZE] / [PRIZE VALUE] */
+  const ymd = function(v){ return /^\d{4}-\d{2}-\d{2}$/.test(s(v)) ? s(v) : ''; }, last = new Date(Date.UTC(+month.slice(0, 4), m, 0)).getUTCDate();
+  return { ok: true, open: !g || g.status === 'open', id: id, month: month, monthName: MONTHS[m - 1] + ' ' + month.slice(0, 4), prize: s(g && g.prize) || DEFAULT_PRIZE, rulesUrl: site() + '/giveaway.html#rules', rules: s(g && g.rules),
+    startDate: ymd(g && g.startDate) || month + '-01', endDate: ymd(g && g.endDate) || month + '-' + String(last).padStart(2, '0'), prizeValue: s(g && g.prizeValue).slice(0, 40) };
 }
 async function giveawayEnter(b){
   const cur = await giveawayCurrent(); if (!cur.open) return { ok: false, status: 409, error: 'This month\'s giveaway is closed — check back next month!' };
@@ -850,22 +868,24 @@ async function giveawayEnter(b){
   const name = s(b.name).slice(0, 100), email = low(b.email), phone = s(b.phone).slice(0, 30), zip = s(b.zip).replace(/\D/g, '').slice(0, 5);
   if (!name) return { ok: false, status: 400, error: 'Please add your name.', field: 'name' };
   if (!okEmail(email)) return { ok: false, status: 400, error: 'Please add your e-mail — that is how we tell the winner.', field: 'email' };
-  if (b.agree !== true && b.agree !== 'true' && b.agree !== 'on') return { ok: false, status: 400, error: 'Please tick that you agree to the official rules.', field: 'agree' };
+  if (b.agree !== true && b.agree !== 'true' && b.agree !== 'on') return { ok: false, status: 400, error: 'Please tick that you are 18 or older, live in Tennessee, Mississippi or Arkansas, and agree to the official rules.', field: 'agree' };
+  if (zip.length === 5 && !giveawayZipOk(zip)) return { ok: false, status: 400, error: 'This giveaway is open to residents of Tennessee, Mississippi and Arkansas (18 or older).', field: 'zip' };   /* patch LEGAL3: eligibility */
   const ph = W.phone10(phone); let dup = false, me = null;
+  const wantsNews = b.newsletter === true || b.newsletter === 'true' || b.newsletter === 'on';   /* patch LEGAL3: the newsletter box is an opt-in (unchecked by default) */
   await L().kvCas('gc_giveaway_entries', function(v){
     v = v && typeof v === 'object' ? v : {}; const list = arr(v[cur.id]);
     if (list.some(function(x){ return low(x.email) === email || (ph.length === 10 && W.phone10(x.phone) === ph); })) { dup = true; return undefined; }
-    me = { id: 'en_' + crypto.randomBytes(5).toString('hex'), name: name, email: email, phone: phone, zip: zip, src: s(b.src || b.gc).slice(0, 40), news: b.newsletter !== false && b.newsletter !== 'false', at: nowIso() };
+    me = { id: 'en_' + crypto.randomBytes(5).toString('hex'), name: name, email: email, phone: phone, zip: zip, src: s(b.src || b.gc).slice(0, 40), news: wantsNews, at: nowIso() };
     list.push(me); v[cur.id] = list.slice(-20000); return v;
   });
   if (dup) return { ok: true, already: true, message: 'You are already entered for ' + cur.monthName + ' — one entry per person per month. Good luck!' };
-  if (b.newsletter !== false && b.newsletter !== 'false') await addSignup({ email: email, name: name, source: 'giveaway:' + cur.month, zip: zip });   /* owner: "Join our newsletter" is an optional box */
+  if (wantsNews) await addSignup({ email: email, name: name, source: 'giveaway:' + cur.month, zip: zip });   /* owner: "Join our newsletter" is an optional box (patch LEGAL3: opt-in, never pre-ticked) */
   try {
     await W.fileLead({ type: 'estimate', name: name, email: email, phone: phone, address: '', city: '', state: '', zip: zip, message: 'Entered the ' + cur.monthName + ' giveaway (' + cur.prize + ').', company: '', service: '' },
-      { title: ('Giveaway entry — ' + name + ' (' + cur.monthName + ')').slice(0, 200), how: 'entered the monthly giveaway', source: 'Monthly giveaway', notes: ['Soft lead: entered the monthly giveaway and joined GrayCo News (they can unsubscribe any time). No reach-out clock.'],
+      { title: ('Giveaway entry — ' + name + ' (' + cur.monthName + ')').slice(0, 200), how: 'entered the monthly giveaway', source: 'Monthly giveaway', notes: ['Soft lead: entered the monthly giveaway' + (wantsNews ? ' and ticked the optional box to join GrayCo News (they can unsubscribe any time)' : ' (did not join GrayCo News)') + '. No reach-out clock.'],
         leadExtra: { softLead: true, websiteForm: 'Monthly giveaway', giveaway: cur.id, mkSource: /^fb|facebook/i.test(s(b.gc)) ? 'Facebook/Instagram Ads' : 'Event', trackCode: s(b.gc).slice(0, 40) } });
   } catch (e) {}
-  return { ok: true, id: me.id, message: 'You are entered! We draw the winner at the end of ' + cur.monthName + ' and e-mail them. You will also get GrayCo News — unsubscribe any time.' };
+  return { ok: true, id: me.id, message: 'You are entered! We draw the winner at the end of ' + cur.monthName + ' and e-mail them. ' + (wantsNews ? ' You will also get GrayCo News — unsubscribe any time.' : '') };
 }
 async function giveawayEntries(id){ try { const v = await L().kvGet('gc_giveaway_entries'); return arr(v && v[id]); } catch (e) { return []; } }
 /* the draw: a random seed, logged; the pick is HMAC(seed, the sorted entry ids) — anyone can re-check it from the log */
@@ -887,7 +907,7 @@ async function giveawayDraw(id, by){
 }
 async function sendWinner(g){
   const key = env('RESEND_API_KEY'), w = g && g.winner; if (!key || !w || !okEmail(w.email)) return { ok: false };
-  const html = '<p>Hi ' + esc(s(w.name).split(/\s+/)[0]) + ',</p><p><b>Congratulations — you won the GrayCo ' + esc(s(g.monthName || g.month)) + ' giveaway: ' + esc(s(g.prize) || DEFAULT_PRIZE) + '!</b></p><p>Reply to this e-mail or call (901) 585-0944 and we will set up a time. ' + esc(s(g.claimNote) || 'Please claim your prize within 30 days.') + '</p><p>Thank you for following GrayCo Construction Services.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>';
+  const html = '<p>Hi ' + esc(s(w.name).split(/\s+/)[0]) + ',</p><p><b>Congratulations — you won the GrayCo ' + esc(s(g.monthName || g.month)) + ' giveaway: ' + esc(s(g.prize) || DEFAULT_PRIZE) + '!</b></p><p>Reply to this e-mail or call (901) 585-0944 and we will set up a time. ' + esc(s(g.claimNote) || 'Please reply within 14 days and return the signed Affidavit of Eligibility and Liability / Publicity Release we will send you (the Official Rules explain). If we do not hear from you in time, another winner may be drawn.') + '</p><p>Thank you for following GrayCo Construction Services.</p><p style="color:#55626F;font-size:12px">GrayCo Construction Services · ' + require('./brand.js').companyAddress() + '</p>';
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'GrayCo Construction Services <news@grayco-cs.com>', reply_to: 'replies@grayco-cs.com', to: [low(w.email)], subject: 'You won the GrayCo giveaway!', html: html }) }).catch(function(){ return { ok: false }; });
   return { ok: !!(r && r.ok) };
 }
@@ -936,7 +956,7 @@ module.exports = {
   thankYous,
   DEFAULT_PRIZE, gwId, giveawayCurrent, giveawayEnter, giveawayEntries, giveawayDraw, pickIndex, sendWinner, enrollPartner,
   slotLabel, dayLabel, eventPublic, eventSignup, eventReminders, eventSignups,
-  couponHash, newCoupon, couponClaim, couponCheck, couponRedeem, couponStats, COUPON_VALUE, COUPON_MIN,
+  couponHash, newCoupon, couponClaim, couponCheck, couponRedeem, couponStats, COUPON_VALUE, COUPON_MIN, COUPON_DAYS, couponDays, couponExpiry, longDate,
   cleanCode, withParams, linkTarget, countClick, clicks, e164, trackNumber, forwardTo, logCall, calls,
   adsStatus, authUrl, callback, syncAds, applyChange, draftCopy, toRecords, forget, googleCustomers, metaAccounts, LIMITS,
   siteData, CITIES, cityKey, kindKey,

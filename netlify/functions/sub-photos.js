@@ -30,6 +30,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, COMPANYCAM_TOKEN (optional), SUB_PORTAL_ORIGIN (default
 // https://portal.grayco-cs.com, comma list; the CRM's own origins are always allowed).
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 const GC_DEFAULT_ORIGINS = 'https://graycocrm1.netlify.app,https://crm.grayco-cs.com';

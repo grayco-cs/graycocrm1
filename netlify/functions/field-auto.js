@@ -19,6 +19,7 @@
 // Netlify does not let anyone call a scheduled function by its URL in production; any other call must be an admin
 // ({ run: 'dispatch' | 'closeout' | 'mortgage' | 'tickets' | 'anniversary', force: true }).
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 const FA = require('./_lib/fa-core.js');
 const C = portal._core;
@@ -143,6 +144,7 @@ async function runCloseout(o){
   for (const c of arr(data.gc_claims)) {
     if (!c || c.deleted) continue;
     const p = C.findProject(data, c.projectId) || {}, co = c.closeout || {};
+    if (c.importedHistory === true || c.noSend === true || c.historyOnly === true || p.importedHistory === true || p.noSend === true) { rep.skipped.push({ claim: c.id, why: 'history (back-entered) — never followed up' }); continue; }   /* patch LCLEAN */
     const depSent = sentAt(outbox, c.id, function(x){ return x.kind === 'final'; }) || s((co.dep || {}).sentAt);
     const suppSent = sentAt(outbox, c.id, function(x){ return x.kind === 'supplement'; }) || s((co.supp || {}).sentAt);
     const st = FA.closeoutState(Object.assign({}, c, { closeout: Object.assign({}, co, { dep: Object.assign({}, co.dep || {}, { sentAt: depSent }), supp: Object.assign({}, co.supp || {}, { sentAt: suppSent }) }) }), p,
@@ -158,7 +160,7 @@ async function runCloseout(o){
       const subject = 'Claim #' + s(c.claimNumber || '—') + ' — ' + (kind === 'dep' ? 'depreciation release' : 'supplement request') + ' follow-up' + (n > 1 ? ' (' + n + ')' : '') + ' — ' + clip(c.address || p.address || c.insured, 80);
       let html = followHtml(c, p, kind, n, pmU && pmU.name);
       try { html = await require('./_lib/brand.js').shellFor(html, { email: pmU && pmU.email, name: pmU && pmU.name }); } catch (e) {}
-      const r = await D.mail({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: C.replyToFor(pmU && pmU.email, 'claim'), to: [to], subject: subject, html: html, headers: { 'X-GrayCo-CRM': 'ins-followup' } });
+      const r = await D.mail({ from: require('./_lib/brand.js').billingFrom(), reply_to: C.replyToFor(pmU && pmU.email, 'claim'), to: [to], subject: subject, html: html, headers: { 'X-GrayCo-CRM': 'ins-followup' } });
       if (!r.ok) { await unclaim(k); continue; }
       await followPut(c.id, function(x){ x[kind] = arr(x[kind]).concat([{ at: new Date(now).toISOString(), to: to, n: n }]); });
       rep[kind]++;
@@ -229,7 +231,7 @@ async function runAnniversary(o){
   if (!o.force && c0.hour !== 10) return { notNow: true };
   const data = await C.crmData(true), more = await C.kvRead([TIPS]);
   const tips = more[TIPS] && typeof more[TIPS] === 'object' ? more[TIPS] : {};
-  const due = FA.annivDue(arr(data.projects), c0.ymd);
+  const due = FA.annivDue(arr(data.projects).filter(function(p){ return !(p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)); }), c0.ymd);   /* patch LCLEAN-H: no one-year note for history */
   if (!due.length) return { due: 0 };
   /* has one been approved and sent already? then they go by themselves */
   const q = await C.kvListRead(C.AQ_KEY), st = await stateGet();

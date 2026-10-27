@@ -5,7 +5,7 @@
 (function(){
 'use strict';
 var FN = '/.netlify/functions/portal-access';
-var OFFICE = '901-585-0944';
+var OFFICE = '901-585-0944';   /* LEGAL2-patch */
 var L = {
   en: {
     hi: 'Welcome', portal: 'GrayCo Portal', home: 'Home', jobs: 'Jobs', pay: 'Pay', papers: 'Papers', back: '‹ Back', close: 'Close',
@@ -25,7 +25,7 @@ var L = {
     pct: '% done', postProgress: 'Post progress', progressNote: 'What got done today', noProgress: 'No progress posted yet.',
     noPunch: 'No punch items for you on this job.', markDone: 'Mark done with a photo', isDone: 'Done', due: 'due',
     newInvoice: '🧾 Send an invoice', amount: 'Amount', invNum: 'Your invoice #', againstScope: 'For', whole: 'This job', invFile: 'Invoice (PDF or photo)', invNote: 'Note (optional)',
-    payRule: 'Invoices in by Wednesday are paid the following Friday.', stSubmitted: 'Submitted', stApproved: 'Approved', stScheduled: 'Scheduled for Friday pay', stPaid: 'Paid', stDeclined: 'Not approved — call the office', noInvoices: 'No invoices yet.', payOn: 'pay date', paidOn: 'paid',
+    payRule: 'Invoices in by Wednesday are paid the Friday of the following week; later invoices are paid the Friday after that. GrayCo may mark an invoice Pay ASAP. Send invoices to invoices@grayco-cs.com (include the job name/PO).', stSubmitted: 'Submitted', stApproved: 'Approved', stScheduled: 'Scheduled for Friday pay', stPaid: 'Paid', stDeclined: 'Not approved — call the office', noInvoices: 'No invoices yet.', payOn: 'pay date', paidOn: 'paid',
     lien: 'A signed lien waiver is required for this job. Upload it under Papers.',
     msgPh: 'Write a message', noMsgs: 'No messages yet. Write to your Project Manager here.', read: 'Read', sentM: 'Sent', attach: '📎 Photo / file',
     w9: 'W-9', coi: 'Insurance certificate (COI)', agreement: 'Agreement with GrayCo', lienW: 'Lien waivers', onFile: 'On file', missing: 'Not on file', sentFile: 'Sent — GrayCo is filing it', expires: 'Expires', expired: 'Expired', upload: 'Upload', uploadNew: 'Upload new', expDate: 'Date it runs out', language: 'Language', score: 'Your GrayCo scorecard', scoreShow: 'Show my scorecard', scoreHide: 'Hide', scoreTips: 'How to raise it', scoreNote: 'From your on-time work, punch items, callbacks, paperwork and your PM\u2019s rating. Only you and GrayCo see it.',
@@ -52,7 +52,7 @@ var L = {
     pct: '% hecho', postProgress: 'Publicar avance', progressNote: 'Lo que se hizo hoy', noProgress: 'Todavía no hay avance publicado.',
     noPunch: 'No tiene pendientes en este trabajo.', markDone: 'Marcar hecho con una foto', isDone: 'Hecho', due: 'para el',
     newInvoice: '🧾 Enviar una factura', amount: 'Monto', invNum: 'Su factura #', againstScope: 'Por', whole: 'Este trabajo', invFile: 'Factura (PDF o foto)', invNote: 'Nota (opcional)',
-    payRule: 'Las facturas recibidas antes del miércoles se pagan el viernes de la semana siguiente.', stSubmitted: 'Enviada', stApproved: 'Aprobada', stScheduled: 'Programada para el pago del viernes', stPaid: 'Pagada', stDeclined: 'No aprobada — llame a la oficina', noInvoices: 'Todavía no hay facturas.', payOn: 'fecha de pago', paidOn: 'pagada',
+    payRule: 'Las facturas recibidas antes del miércoles se pagan el viernes de la semana siguiente; las demás, el viernes posterior. GrayCo puede marcar una factura como Pay ASAP. Envíe las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', stSubmitted: 'Enviada', stApproved: 'Aprobada', stScheduled: 'Programada para el pago del viernes', stPaid: 'Pagada', stDeclined: 'No aprobada — llame a la oficina', noInvoices: 'Todavía no hay facturas.', payOn: 'fecha de pago', paidOn: 'pagada',
     lien: 'Este trabajo requiere una renuncia de gravamen (lien waiver) firmada. Súbala en Papeles.',
     msgPh: 'Escriba un mensaje', noMsgs: 'Todavía no hay mensajes. Escríbale a su Gerente de Proyecto aquí.', read: 'Leído', sentM: 'Enviado', attach: '📎 Foto / archivo',
     w9: 'W-9', coi: 'Certificado de seguro (COI)', agreement: 'Acuerdo con GrayCo', lienW: 'Renuncias de gravamen', onFile: 'En archivo', missing: 'No está en archivo', sentFile: 'Enviado — GrayCo lo está archivando', expires: 'Vence', expired: 'Vencido', upload: 'Subir', uploadNew: 'Subir nuevo', expDate: 'Fecha en que vence', language: 'Idioma', score: 'Su calificación con GrayCo', scoreShow: 'Ver mi calificación', scoreHide: 'Ocultar', scoreTips: 'Cómo subirla', scoreNote: 'Según trabajos a tiempo, pendientes, llamadas de garantía, papeles y la calificación de su gerente. Solo usted y GrayCo la ven.',
@@ -96,7 +96,7 @@ function availSheet(){
     }
     body.appendChild(grid);
     var list = (D.sched || []).slice(0, 30);
-    if (list.length) body.appendChild(card(t('scheduled'), list.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })]); })));
+    if (list.length) body.appendChild(card(t('scheduled'), list.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); })));
   }
   api('p-avail').then(function(r){ D = r; paint(); }, function(e){ body.innerHTML = ''; body.appendChild(h('div', { class: 'muted', text: e.message || t('loadFail') })); });
   return sh;
@@ -137,6 +137,30 @@ function card(title, kids, cls){ return h('section', { class: 'card' + (cls ? ' 
 function pill(text, cls){ return h('span', { class: 'pill ' + (cls || 'now'), text: text }); }
 function toast(msg, bad){ var x = h('div', { class: 'toast' + (bad ? ' bad' : ''), role: 'status', text: msg }); document.body.appendChild(x); setTimeout(function(){ if (x.parentNode) x.parentNode.removeChild(x); }, 3800); }
 function statusWord(s){ var k = String(s || '').toLowerCase(); if (/progress/.test(k)) return t('inprogress'); if (/complete/.test(k)) return t('complete'); if (/bid/.test(k)) return t('bidding'); return t('awarded'); }
+/* patch SUBTXT: "Can't make it / running late" under each of my coming days — it goes straight to my PM (and the office) */
+Object.assign(L.en, { late: '⚠️ Can’t make it / running late', lateCant: 'Can’t make it', lateLate: 'Running late', lateOther: 'Something else', lateText: 'What is going on? Your PM gets this right away.', lateSend: 'Send to my PM', lateSent: 'Sent — your PM has it', lateNeed: 'Pick one or type a note.' });
+Object.assign(L.es, { late: '⚠️ No puedo ir / voy tarde', lateCant: 'No puedo ir', lateLate: 'Voy tarde', lateOther: 'Otra cosa', lateText: '¿Qué pasa? Su PM lo recibe enseguida.', lateSend: 'Enviar a mi PM', lateSent: 'Enviado — su PM ya lo tiene', lateNeed: 'Elija una opción o escriba una nota.' });
+function todayYmd(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function lateRow(x, line){
+  if (!x || !x.pid || !x.date || x.date < todayYmd()) return line;
+  var kind = '', wrap = h('div', { class: 'late-wrap' }), form = null;
+  var btn = h('button', { type: 'button', class: 'btn late-btn', 'data-late': x.pid + '|' + x.date, text: t('late'), on: { click: function(){
+    if (form) { form.remove(); form = null; return; }
+    var ta = h('textarea', { rows: '3', 'aria-label': t('lateText'), placeholder: t('lateText'), class: 'late-ta' });
+    var pick = function(k, el){ kind = k; Array.prototype.forEach.call(form.querySelectorAll('.late-k'), function(b){ b.setAttribute('aria-pressed', b === el ? 'true' : 'false'); }); };
+    var kb = function(k, label){ var b = h('button', { type: 'button', class: 'btn late-k', 'aria-pressed': 'false', text: label, on: { click: function(){ pick(k, b); } } }); return b; };
+    var send = h('button', { type: 'button', class: 'btn gold', text: t('lateSend'), on: { click: function(){
+      var txt = ta.value.trim(); if (!kind && !txt) { toast(t('lateNeed'), true); return; }
+      send.disabled = true;
+      api('p-late', { projectId: x.pid, day: x.date, time: x.time || '', title: x.title || '', kind: kind || 'other', text: txt }).then(function(){ toast(t('lateSent')); if (form) { form.remove(); form = null; } btn.textContent = '✓ ' + t('lateSent'); })
+        .catch(function(e){ send.disabled = false; toast(e.message || 'Error', true); });
+    } } });
+    form = h('div', { class: 'late-form' }, [h('div', { class: 'late-ks' }, [kb('cant', t('lateCant')), kb('late', t('lateLate')), kb('other', t('lateOther'))]), ta, send]);
+    wrap.appendChild(form);
+  } } });
+  wrap.insertBefore(line, null); wrap.appendChild(btn);
+  return wrap;
+}
 
 /* ── the server ── */
 function api(action, body){
@@ -238,9 +262,9 @@ function home(){
   out.push(card(t('money'), [h('div', { class: 'money3' }, [
     h('div', null, [h('span', { class: 'muted', text: t('submitted') }), h('b', { text: usd(m.submitted) })]),
     h('div', null, [h('span', { class: 'muted', text: t('approvedM') }), h('b', { text: usd(m.approved) })]),
-    h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') })]));
+    h('div', null, [h('span', { class: 'muted', text: t('paidMonth') }), h('b', { text: usd(m.paidMonth) })])]), h('div', { class: 'muted', text: t('payRule') }), h('div', { class: 'muted' }, [h('a', { href: 'mailto:invoices@grayco-cs.com', text: 'invoices@grayco-cs.com' })])]));   /* EMAILMAP-patch */
   var wk = v.week || [];
-  out.push(card(t('week'), wk.length ? wk.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })]); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  out.push(card(t('week'), wk.length ? wk.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) + (x.time ? ' · ' + x.time : '') }), h('span', { text: x.job + (x.title ? ' — ' + x.title : '') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   out.push(card(t('avail'), [h('button', { type: 'button', class: 'btn', text: '📅 ' + t('availBtn'), on: { click: availSheet } })]));   /* patch X10 */
   out.push(card(t('yourJobs'), (v.jobs || []).length ? v.jobs.map(jobRow) : [h('div', { class: 'empty', text: t('noJobs') })]));
   var bc = bidsCard(v.bids); if (bc) out.push(bc);
@@ -356,7 +380,7 @@ function overview(){
   out.push(contactCard(t('pm'), pm.name, pm.phone, pm.email));
   if (j.customer) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
   var sch = JOB.schedule || [];
-  out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })]); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
+  out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));
@@ -405,16 +429,19 @@ function signSheet(x){
   var msg = h('div', { class: 'muted', id: 'signMsg', role: 'status' });
   var go = h('button', { type: 'button', class: 'btn gold', id: 'signGo', text: t('signBtn') });
   var agreeTxt = t(x.kind === 'co' ? 'signAgreeCo' : 'signAgreeScope', { amt: usd(x.total), v: x.version });
+  var esg = window.GCLegal ? window.GCLegal.esignBox({ base: '' }) : null;   /* LEGAL2-patch: E-SIGN consent before the signature */
   var sh = sheet(t('signTitle') + ' — ' + (x.title || t(x.kind === 'co' ? 'cos' : 'scope')), [
+    window.gcDocHead ? window.gcDocHead() : null,   /* patch LOGO */
     h('div', { class: 'row total' }, [h('span', { class: 'muted', text: x.kind === 'co' ? t('coTotal') : t('yourTotal') }), h('b', { text: usd(x.total) })]),
-    field(t('signName'), nm), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
+    (esg ? esg.el : null), field(t('signName'), nm), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
     h('button', { type: 'button', class: 'btn', text: t('signClear'), on: { click: function(){ pad.clear(); } } }),
     h('label', { class: 'fld', style: 'display:flex;gap:8px;align-items:flex-start' }, [ag, h('span', { text: agreeTxt })]), go, msg]);
   go.addEventListener('click', function(){
+    if (!esg) { msg.textContent = 'The consent form did not load. Please refresh this page.'; return; } if (!esg.ok()) { msg.textContent = 'Tick the box to agree to do business electronically.'; esg.el.scrollIntoView({ block: 'center' }); return; }
     if (nm.value.trim().length < 3) { msg.textContent = t('signNeedName'); nm.focus(); return; }
     if (!ag.checked) { msg.textContent = t('signNeedAgree'); return; }
     busy(go, true); msg.textContent = t('signing');
-    api('p-scope', { id: x.id, op: 'sign', version: x.version, signName: nm.value, agree: true, strokes: pad.strokes() }).then(function(){ sh.close(); toast('✍️ ' + t('accepted')); openJob(JOB.job.id, JTAB); reloadHome(); }, function(e){ busy(go, false); msg.textContent = e.message; toast(e.message, true); });
+    api('p-scope', { id: x.id, op: 'sign', version: x.version, signName: nm.value, agree: true, esignConsent: esg.record(), strokes: pad.strokes() }).then(function(){ sh.close(); toast('✍️ ' + t('accepted')); openJob(JOB.job.id, JTAB); reloadHome(); }, function(e){ busy(go, false); msg.textContent = e.message; toast(e.message, true); });
   });
   return sh;
 }
@@ -572,7 +599,7 @@ function lightbox(list, i){
 }
 function viewer(f){
   if (/pdf/.test(f.type)) {
-    var sh = sheet(f.name, [h('iframe', { class: 'pdf', src: f.url, title: f.name }), h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]);
+    var sh = sheet(f.name, [window.gcDocHead ? window.gcDocHead() : null, h('iframe', { class: 'pdf', src: f.url, title: f.name }),   /* patch LOGO */ h('a', { class: 'btn', href: f.url, target: '_blank', rel: 'noopener', text: t('open') })]);
     sh.el.classList.add('wide'); return;
   }
   lightbox([{ f: f.url }], 0);

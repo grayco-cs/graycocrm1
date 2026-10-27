@@ -4,11 +4,11 @@
    Owner (10/22): "When I say go to Glenn I mean go to estimator. I don't want Glenn in the code for the CRM;
    I want it to be estimator and default to the 1 estimator we have."
 
-   The default estimator is worked out from DATA, never a name in the code:
+   The Senior Estimator is worked out from DATA, never a name in the code:
      1. the active people whose role or profile says Estimator (gc_staff role / profile, and the CRM's own
         people list gc_kv "users" role) — exactly one of them → that person;
-     2. several → the Leads ⚙ "Default estimator" setting (gc_lead_inbox_settings.estimator, an e-mail kept as
-        data) when it is one of them; otherwise it is ambiguous (Admin warns "Pick a default estimator");
+     2. several → the Leads ⚙ "Senior Estimator" setting (gc_lead_inbox_settings.estimator, an e-mail kept as
+        data) when it is one of them; otherwise it is ambiguous (Admin warns "Pick a Senior Estimator");
      3. none with the role → the setting, when it names an active person (so a saved choice keeps working while
         that person's role is not set yet); otherwise nobody → the admins get it (Admin warns).
    A deactivated person never counts. Adding or removing an estimator needs no code change.
@@ -53,11 +53,11 @@ function decide(people, setting){
   if (ests.length > 1) {
     if (setPerson && isEst(setPerson)) return pick(setPerson, 'setting');
     return { name: '', email: '', found: false, source: 'admins', ambiguous: true, none: false, candidates: ests.map(x => ({ name: x.name, email: x.email })), admins,
-      warning: 'Pick a default estimator: ' + ests.length + ' people have the Estimator role (Leads ⚙ Default estimator).' };
+      warning: 'Pick a Senior Estimator: ' + ests.length + ' people have the Estimator role (Leads ⚙ Senior Estimator).' };
   }
   if (setPerson) { const r = pick(setPerson, 'setting'); r.found = !setPerson.unlisted; r.warning = (setPerson.name || setPerson.email) + (setPerson.unlisted ? ' gets commercial bids but is not on the staff list.' : ' gets commercial bids but does not have the Estimator role.'); return r; }
   return { name: '', email: '', found: false, source: 'admins', ambiguous: false, none: true, candidates: [], admins,
-    warning: 'Pick a default estimator: nobody has the Estimator role, so commercial bids go to the admins.' };
+    warning: 'Pick a Senior Estimator: nobody has the Estimator role, so commercial bids go to the admins.' };
 }
 
 /* sb(path, opts) → fetch Response against Supabase REST with the service key (bid-inbox.js / subportal.js helpers) */

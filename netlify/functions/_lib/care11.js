@@ -184,6 +184,7 @@ function warrDue(data, state, t){
   const seen = {}, out = [];
   arr(data.projects).forEach(function(p){
     if (!p.id || p.deleted === true || dead[s(p.id)] || !isDone(p)) return;
+    if (p.importedHistory === true || p.noSend === true || p.historyOnly === true) return;   /* patch LCLEAN-H: no warranty outreach for a job back-entered as history */
     if (/commercial|government|tenant|\bti\b|new construction/i.test(s(p.type)) || p.gcJob === true || p.hiredByGc === true) return;
     if (p.doNotContact || p.dnc || p.doNotEmail) return;
     const email = low(p.clientEmail || p.customerEmail || p.email); if (!okEmail(email) || seen[email]) return;
@@ -427,3 +428,6 @@ async function onApproved(item){
 
 module.exports = { K, NEED_KINDS, COI_STAGES, WARR_DAYS, TOKEN_RE, setCore, coiDue, coiMail, coiRun, coiExpOf, warrDue, warrMessage, fillWarr, warrRun, warrSend, warrOffer, warrAccept, warrStats,
   needsAll, needsFor, needsRequest, needsUpdate, needsAnswer, codeToVault, needsNotifyPm, needsMail, needsRun, needsApproved, needOut, onApproved, daysUntil, todayCentral };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./brand.js').installResend(); } catch (e) {}

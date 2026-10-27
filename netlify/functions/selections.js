@@ -27,6 +27,7 @@
 // Env: the portal's (SUPABASE_URL, SUPABASE_SERVICE_KEY, RESEND_API_KEY, PORTAL_MAIL_OFF, PORTAL_BASE_URL).
 
 /* ── GrayCo staff check (the same inline copy every function carries) ───────── */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
 const GC_DEFAULT_ORIGINS = 'https://graycocrm1.netlify.app,https://crm.grayco-cs.com';
@@ -289,16 +290,40 @@ function wrap(t, max){
   words.forEach(function(w){ while (w.length > max) { if (cur) { out.push(cur); cur = ''; } out.push(w.slice(0, max)); w = w.slice(max); } if ((cur + ' ' + w).trim().length > max) { out.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); });
   if (cur) out.push(cur); return out.length ? out : [''];
 }
-const LOGO = (function(){ try { const L = require('./_lib/logo-jpg.js'); return { w: L.w, h: L.h, bin: Buffer.from(L.b64, 'base64').toString('latin1') }; } catch (e) { return null; } })();   /* patch HOT3 */
+const LOGO = (function(){ try { const L = require('./_lib/logo-wide.js');   /* patch LOGO */ return { w: L.w, h: L.h, bin: Buffer.from(L.b64, 'base64').toString('latin1') }; } catch (e) { return null; } })();   /* patch HOT3 */
+/* Helvetica / Helvetica-Bold advance widths (per 1000 em) for centering; close enough for one line of text */
+function textW(t, size, bold){
+  let w = 0;
+  latin(t).split('').forEach(function(c){
+    let k;
+    if (c === ' ') k = 278; else if (/[0-9]/.test(c)) k = 556;
+    else if (/[ijl]/.test(c)) k = bold ? 278 : 222; else if (/[ftI]/.test(c)) k = bold ? 333 : 278; else if (c === 'r') k = bold ? 389 : 333;
+    else if (/[mM]/.test(c)) k = 833; else if (/[wW]/.test(c)) k = c === 'W' ? 944 : (bold ? 778 : 722);
+    else if (/[a-z]/.test(c)) k = bold ? 611 : 556; else if (/[A-Z]/.test(c)) k = bold ? 722 : 667;
+    else if (/[.,:;'·]/.test(c)) k = 278; else if (/[-()]/.test(c)) k = 333; else k = 556;
+    w += k;
+  });
+  return w * size / 1000;
+}
 function buildPdf(blocks){
   const W = 612, Hh = 792, M = 54, pages = []; let ops = [], y = Hh - M;
   function page(){ if (ops.length) pages.push(ops.join('\n')); ops = []; y = Hh - M; }
   function need(h){ if (y - h < M) page(); }
   function text(t, size, bold, x, color){ ops.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + (color || '0.08 0.13 0.18') + ' rg ' + (x || M) + ' ' + y.toFixed(1) + ' Td ' + pdfStr(t) + ' Tj ET'); }
+  /* the letterhead is centered (owner 10/22: "always center the headers with company name and logos"):
+     logo, company name, address · phone · website — then the document's own lines below it */
+  function textC(t, size, bold, color){ text(t, size, bold, Math.max(M, (W - textW(t, size, bold)) / 2).toFixed(1), color); }
   blocks.forEach(function(b){
-    if (b.t === 'title' && LOGO) { need(64); const top = y; ops.push('q 52 0 0 52 ' + M + ' ' + (top - 52).toFixed(1) + ' cm /Im1 Do Q'); y -= 32; text(b.text, 18, true, M + 62); y = top - 60;   /* patch HOT3: the logo */
-      ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return; }
-    if (b.t === 'title') { need(30); y -= 18; text(b.text, 18, true); y -= 8; ops.push('0.83 0.63 0.09 RG 2 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 12; return; }
+    if (b.t === 'title') {
+      /* patch LOGO2 (the 10/22 rule "always center the headers"): the logo centered (50 pt = 0.7 in), the name, address . phone . web and the licenses centered under it */
+      const lh = LOGO ? 50 : 0, lw = LOGO ? Math.round(lh * LOGO.w / LOGO.h) : 0; need(lh + 60); const top = y;
+      if (LOGO) ops.push('q ' + lw + ' 0 0 ' + lh + ' ' + ((W - lw) / 2).toFixed(1) + ' ' + (top - lh).toFixed(1) + ' cm /Im1 Do Q');
+      y = top - lh - 14; textC(b.text, 15, true);
+      let addr = ''; try { addr = require('./_lib/brand.js').companyAddress(); } catch (e) {}
+      y -= 12; textC([addr, OFFICE_PHONE, 'grayco-cs.com'].filter(Boolean).join(' \u00B7 '), 8.5, false, '0.33 0.38 0.44');
+      y -= 11; textC('TN #85034 BCB \u00B7 AR #0486990627 \u00B7 MS #27769', 8, false, '0.42 0.46 0.52');
+      y -= 8; ops.push('0.14 0.10 0.41 RG 1.5 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); y -= 14; return;
+    }
     if (b.t === 'h') { need(26); y -= 14; text(b.text, 12, true); y -= 6; return; }
     if (b.t === 'gap') { y -= b.h || 8; return; }
     if (b.t === 'row') {
@@ -319,6 +344,11 @@ function buildPdf(blocks){
     }
   });
   page();
+  pages.forEach(function(c, i){   /* patch LOGO: pages 2+ carry the company name at the foot */
+    if (i === 0) return;
+    const ft = 'GrayCo Construction Services \u00B7 ' + OFFICE_PHONE + ' \u00B7 page ' + (i + 1) + ' of ' + pages.length;
+    pages[i] = c + '\nBT /F1 7.5 Tf 0.42 0.46 0.52 rg ' + ((W - textW(ft, 7.5, false)) / 2).toFixed(1) + ' 24 Td ' + pdfStr(ft) + ' Tj ET';
+  });
   const objs = [];
   objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
   const kids = []; let n = 6;

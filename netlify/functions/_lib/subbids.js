@@ -5,11 +5,21 @@
    when a sub sends a bid in, and it should go to the estimator."
 
    leads@  → bid invitations (ITB / RFP / RFQ / BuildingConnected / PlanHub / planroom / agency notices, plan
-             links, a bid date) take the BID path (Lead Inbox bid, due date, default estimator, alerts, private
+             links, a bid date) take the BID path (Lead Inbox bid, due date, Senior Estimator, alerts, private
              bid-portal draft); everything else (homeowners, website forms, people writing in) the customer-lead
              path (website-intake.js fromEmail).                                       → isBidInvite(mail)
-   bids@   → a SUBCONTRACTOR's bid / proposal / quote for one of our bid jobs. It is matched to the bid-portal
-             job, its files are kept, the job's estimator (else the default estimator, else the admins) is told
+   bids@   → (patch BIDSEND, owner 10/22: our bids now go out FROM bids@ and replies come back to it — bids@ is a Google
+             Group: the estimator, the admins, the office and bids@in.grayco-cs.com) THREE kinds, sorted in this order:
+             (a) a GC's REPLY to one of OUR bids — In-Reply-To names the bid we sent, the sender is a contact on a lead's
+                 "Bidding to" list, or "Re: <the project / the GC's bid #>" from someone who is not a sub → filed on that
+                 lead's GC row
+                 (_lib/bid-replies.js: urgency, the estimator alerted);
+             (b) a SUBCONTRACTOR's bid (a SUB BID) — a sub we know (invited on the sub portal / on the subs list) or
+                 "our price / our bid is attached" wording → the sub-bid path below;
+             (c) an INVITATION to bid still sent to bids@ → the bid path (isInviteForBids);
+             anything else waits in "Unsorted bids@ mail" for the estimator to say what it is.
+   bids@ (b) → a SUBCONTRACTOR's bid / proposal / quote for one of our bid jobs. It is matched to the bid-portal
+             job, its files are kept, the job's estimator (else the Senior Estimator, else the admins) is told
              "Sub bid received: <sub> — <project>". Unmatched ones wait in "Unmatched sub bids". Never a customer
              lead. An old-style bid INVITATION still sent to bids@ (sign-ups made before the switch) is
              recognised and handled on the bid path, so nothing is lost.                → isInviteForBids(mail)
@@ -92,4 +102,6 @@ function subName(mail){
   return { name: s(f.name) || s(f.email), company, email: low(f.email) };
 }
 
-module.exports = { isBidInvite, isInviteForBids, matchJob, subName, words, streetKey, INVITE, HOMEOWNER };
+/* patch BIDSEND: a sub sending its own number ("our price is attached") */
+function isSubBid(mail){ return SUB_BID.test(s(mail && mail.subject) + '\n' + s(mail && mail.text).slice(0, 1500)); }
+module.exports = { isBidInvite, isInviteForBids, isSubBid, matchJob, subName, words, streetKey, INVITE, HOMEOWNER };

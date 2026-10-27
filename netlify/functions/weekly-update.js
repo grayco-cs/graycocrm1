@@ -18,6 +18,7 @@
 // Netlify does not let anyone call a scheduled function by its URL in production; as a second lock any call that is
 // not the scheduler must come from a signed-in admin ({ force: true } runs it now, { projectId } one job).
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const portal = require('./portal.js');
 const AI = require('./_lib/ai.js');
 

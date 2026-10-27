@@ -26,7 +26,7 @@
 import { api } from './auth.js';
 import { SB_ANON } from './config.js';
 
-export const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions'];
+export const COLLECTIONS = ['users', 'jobs', 'bids', 'estimates', 'activity', 'messages', 'invites', 'links', 'questions', 'acks'];   // patch SYS2: acks = "I acknowledge addendum #n"
 
 const baselines = new Map();   // list key → Map(id → JSON of the saved form)
 const lastSingle = new Map();  // single-record key → JSON last saved / loaded

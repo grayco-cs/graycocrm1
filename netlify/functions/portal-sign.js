@@ -32,6 +32,7 @@
 // PORTAL_AUTO_EMAIL), optional EST_FOLLOWUPS_OFF=1.
 
 /* ── GrayCo staff check (the same inline copy every function carries) ───────── */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
 const GC_DEFAULT_ORIGINS = 'https://graycocrm1.netlify.app,https://crm.grayco-cs.com';
@@ -251,7 +252,9 @@ async function request(body, who){
   if (!r) return { status: 200, out: { ok: true, nothing: true } };
   if (!made) return { status: 200, out: { ok: true, id: r.id, already: true, status: r.status } };
   /* the e-mail asking the customer to sign → ✅ Approvals (owner rule) */
-  const pm = pmFull(data, p), to = custEmail(p), label = KINDS[kind];
+  let pm = pmFull(data, p); const to = custEmail(p), label = KINDS[kind];
+  /* patch ESTIN: a GrayCo-template proposal goes to the job's (or its lead's) PM; no PM → the estimator who owns it; else the admins */
+  if (body.estin === true && !pm) { const ld = arr(data.leads).find(function(x){ return s(x.id) && s(x.id) === s(p.leadId || p.fromLeadId); }) || {}; pm = pmFull(data, { pm: ld.pm }) || pmFull(data, { pm: p.estimator || ld.estimator || body.owner }); }
   if (!okEmail(to)) {
     await core().officeTodo('portal_sign_' + r.id, '✍️ Ask ' + (s(p.client) || 'the customer') + ' to sign: ' + label.toLowerCase() + ' — ' + T(p.name),
       'No customer e-mail on file. “' + title + '” waits for their signature in their GrayCo Portal (Home → ✍️ Papers to sign). Call or text them the portal link.');
@@ -262,8 +265,8 @@ async function request(body, who){
     '<p>Please look it over and sign it in your GrayCo Portal — it takes a minute, on your phone or computer.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">Review and sign</a></p>' +
     '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(pm ? pm.name : 'us') + (pm && pm.phone ? ' at ' + esc(pm.phone) : '') + ' or the office at ' + OFFICE_PHONE + '. You get a copy of what you sign.</p>';
-  const q = await core().queueApproval({ id: apprId(r), kind: kind === 'estimate' || kind === 'contract' ? 'sign_contract' : 'sign_' + kind, pid: pid, jobName: T(p.name), pm: pm ? { name: pm.name, email: pm.email } : null, to: to,
-    title: '✍️ ' + label + ' to sign — ' + T(title),
+  const q = await core().queueApproval({ id: apprId(r), kind: body.estin === true ? 'proposal_send' : (kind === 'estimate' || kind === 'contract' ? 'sign_contract' : 'sign_' + kind), priority: s(body.priority), pid: pid, jobName: T(p.name), pm: pm ? { name: pm.name, email: pm.email } : null, to: to,
+    title: body.estin === true && s(body.apprTitle) ? T(clip(body.apprTitle, 120)) : '✍️ ' + label + ' to sign — ' + T(title),
     subject: 'Please review and sign: ' + T(title), html: html, attachments: [{ name: label + ' (in the customer portal)', kind: 'portal' }],
     meta: { signRequestId: r.id, kind: kind, amount: r.amount, refId: refId, fromPm: true, by: who.email } });
   return { status: q ? 200 : 502, out: { ok: !!q, id: r.id, queued: !!q } };
@@ -290,6 +293,8 @@ async function voidReq(id, who){
 }
 
 /* ── PUBLIC: the customer's view ── */
+/* LEGAL2-patch: the job's state (TN default, MS / AR from the address) so the portal shows the right Notice of Cancellation */
+function legalState(p){ const a = s(p && (p.state || p.address)); let m; if ((m = /\b(MS|AR|TN)\b\.?,?\s*\d{5}/.exec(a)) || (m = /,\s*(MS|AR|TN)\b/.exec(a))) return m[1]; if (/mississippi/i.test(a)) return 'MS'; if (/arkansas/i.test(a)) return 'AR'; return 'TN'; }
 async function view(pid){
   const data = await jobData(false), p = core().findProject(data, pid);
   if (!p) return null;
@@ -302,9 +307,10 @@ async function view(pid){
     return { id: s(x.id), kind: x.kind, label: KINDS[x.kind] || 'Document', title: T(x.title), amount: x.amount != null ? money(x.amount) : null,
       lines: arr(x.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }), doc: signed[x.docRef] || (x.url && !refPath(x.docRef) ? x.url : ''),
       status: x.status, at: s(x.createdAt), signed: x.status === 'signed' && x.signed ? { name: clip(x.signed.name, 80), at: s(x.signed.at), url: signed[x.signed.docRef] || '' } : null,
-      declined: x.status === 'declined' && x.declined ? { at: s(x.declined.at) } : null };
+      declined: x.status === 'declined' && x.declined ? { at: s(x.declined.at) } : null,
+      sms: (x.kind === 'contract' || x.kind === 'estimate') && x.status === 'pending' ? { phone: require('./_lib/sms.js').tidy(p.clientPhone || p.phone || p.customerPhone || '') } : null };   /* patch SMSCONSENT */
   });
-  return { ok: true, job: { name: T(p.name) }, items: items, pm: { name: clip(pm.name, 60), phone: clip(pm.phone, 40) }, office: OFFICE_PHONE };
+  return { ok: true, job: { name: T(p.name), state: legalState(p), group: /commercial|tenant|government|bid/i.test(s(p.type || p.jobType)) ? 'commercial' : 'residential', address: s(p.address) }, items: items,   /* LEGAL2-patch */ pm: { name: clip(pm.name, 60), phone: clip(pm.phone, 40) }, office: OFFICE_PHONE };
 }
 
 /* ── the signed copy ── */
@@ -321,10 +327,20 @@ function signedCopyPdf(o){
     : o.kind === 'doc' ? 'I reviewed this document and I sign it.'
     : 'I accept this ' + o.label.toLowerCase() + ' for the work and the price shown above, and I authorize GrayCo Construction Services to schedule and do the work. I understand a change to the scope or the price needs a signed change order.' });
   b.push({ t: 'p', text: 'Warranty: 5 years on roofing and insurance work, 1 year on all other work, from substantial completion, as stated on the warranty certificate.', size: 9, muted: true });
+  if (o.esign) b.push({ t: 'p', text: 'Electronic records: the signer agreed to do business electronically (E-SIGN / UETA disclosure, version ' + (o.esign.version || '') + ') before signing.', size: 9, muted: true });   /* LEGAL2-patch */
+  if (o.cancel) b.push({ t: 'p', text: 'Notice of Cancellation: the signer confirmed receiving the Notice of Cancellation (' + o.cancel.state + ') and the explanation of the right to cancel. Form rev. 10/26/2026.', size: 9, muted: true });
+  if (o.sms || o.smsM) {   /* patch SMSCONSENT + SMSC2: two separate boxes, each shown ticked or not */
+    const SCx = require('./_lib/smsconsent.js'), so = o.sms || o.smsM;
+    b.push({ t: 'gap', h: 6 }, { t: 'h', text: 'Text messages' }, { t: 'p', text: 'Mobile number for texts: ' + (so.phone ? require('./_lib/sms.js').tidy(so.phone) : '(none given)') });
+    if (o.sms) b.push({ t: 'p', text: (o.sms.status === 'yes' ? '[X]  ' : '[  ]  ') + 'Job texts: ' + SCx.CONSENT_TEXT, size: 9 },
+      { t: 'p', text: o.sms.status === 'yes' ? 'The customer ticked this box themselves.' : 'The customer did not tick this box — GrayCo will not send them job text messages.', size: 9, muted: true });
+    if (o.smsM) b.push({ t: 'p', text: (o.smsM.status === 'yes' ? '[X]  ' : '[  ]  ') + 'Offers (optional, separate): ' + SCx.MARKETING_TEXT, size: 9 },
+      { t: 'p', text: o.smsM.status === 'yes' ? 'The customer ticked this box themselves.' : 'The customer did not tick this box — GrayCo will not send them promotional text messages.', size: 9, muted: true });
+  }
   b.push({ t: 'gap', h: 6 }, { t: 'h', text: 'Signature' }, { t: 'sig', strokes: o.strokes, name: o.name });
   b.push({ t: 'p', text: 'Signed by: ' + o.name + (o.strokes && o.strokes.length ? ' (typed name and drawn signature)' : ' (typed name — accepted electronically)') });
   b.push({ t: 'p', text: 'Date and time: ' + central(o.at) }, { t: 'p', text: 'Signed in the GrayCo customer portal from address ' + o.ip + ' · reference ' + o.ref, size: 9, muted: true });
-  b.push({ t: 'gap', h: 10 }, { t: 'p', text: 'GrayCo Construction Services · ' + require('./_lib/brand.js').companyAddress() + ' · ' + OFFICE_PHONE + ' · portal.grayco-cs.com', size: 9, muted: true });
+  b.push({ t: 'gap', h: 10 }, { t: 'p', text: 'GrayCo customer portal · portal.grayco-cs.com', size: 9, muted: true } /* patch LOGO2: the company block is in the header */);
   return sel().buildPdf(b.filter(Boolean));
 }
 async function resend(o){
@@ -348,6 +364,10 @@ async function sign(event, pid, body){
   const name = sel().cleanName(body.name);
   if (!name) return { status: 400, out: { ok: false, error: 'Please type your full name (letters only) to sign.' } };
   if (body.agree !== true) return { status: 400, out: { ok: false, error: 'Please tick the box to agree.' } };
+  /* LEGAL2-patch: E-SIGN / UETA — nothing is signed until the customer agreed to do business electronically */
+  if (!body.esignConsent || body.esignConsent.agree !== true) return { status: 400, out: { ok: false, error: 'Please tick the box to agree to do business electronically, then sign.' } };
+  const esignC = { agree: true, at: new Date().toISOString(), version: clip(body.esignConsent.version, 20), consentAt: clip(body.esignConsent.at, 40) };
+  const cancelC = body.cancelNotice && body.cancelNotice.ack === true ? { ack: true, state: clip(body.cancelNotice.state, 2) } : null;
   const cs = sel().cleanStrokes(body.strokes); if (!cs.ok) return { status: 400, out: { ok: false, error: 'The drawn signature could not be read — clear it and sign again.' } };
   const data = await jobData(true), p = core().findProject(data, pid);
   if (!p) return { status: 404, out: { ok: false, error: NOT_ACTIVE } };
@@ -356,13 +376,30 @@ async function sign(event, pid, body){
   const r = l.find(function(x){ return s(x.id) === id && s(x.pid) === pid && visible(x, aq); });
   if (!r) return { status: 404, out: { ok: false, error: 'That paper is not on your job.' } };
   if (r.status !== 'pending') return { status: 409, out: { ok: false, error: r.status === 'signed' ? 'You already signed this one.' : 'This paper does not need your signature any more.' } };
+  /* patch SMSCONSENT: the text-message box on a contract / estimate — its own tick, never part of the agreement */
+  const SC = require('./_lib/smsconsent.js'); let smsC = null;
+  if ((r.kind === 'contract' || r.kind === 'estimate') && body.smsConsent && typeof body.smsConsent === 'object') {
+    const ph = SC.phone10(body.smsConsent.phone), yes = body.smsConsent.agree === true;
+    if (yes && ph.length !== 10) return { status: 400, out: { ok: false, error: 'Please enter the 10-digit mobile number for texts, or leave the text-message box unticked.' } };
+    smsC = { status: yes ? 'yes' : 'no', at: new Date().toISOString(), via: 'contract', phone: ph.length === 10 ? ph : '' };
+  }
+  /* patch SMSC2: the separate, optional OFFERS box (promotional texts) — its own tick, its own record (smsMarketing) */
+  let smsM = null;
+  if ((r.kind === 'contract' || r.kind === 'estimate') && body.smsMarketing && typeof body.smsMarketing === 'object') {
+    const ph = SC.phone10(body.smsMarketing.phone), yes = body.smsMarketing.agree === true;
+    if (yes && ph.length !== 10) return { status: 400, out: { ok: false, error: 'Please enter the 10-digit mobile number for texts, or leave the offers box unticked.' } };
+    smsM = { status: yes ? 'yes' : 'no', at: new Date().toISOString(), via: 'contract', phone: ph.length === 10 ? ph : '' };
+  }
   const T = scrubber(p), ip = ipOf(event), at = new Date().toISOString(), sigId = 'ps_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   const label = KINDS[r.kind] || 'Document', customer = s(p.client || p.clientName || p.customer) || name;
   const pdf = signedCopyPdf({ kind: r.kind, label: label, job: T(p.name), address: s(p.address), po: s(p.autoPO || p.po), customer: customer, title: T(r.title), lines: arr(r.lines).map(function(y){ return { l: T(y.l), r: T(y.r) }; }),
-    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId });
+    amount: r.amount, docName: T(r.docName), name: name, strokes: cs.strokes, at: at, ip: ip, ref: sigId, sms: smsC, smsM: smsM, esign: esignC, cancel: cancelC });
   const docRef = await uploadPdf(pdf);
   const docName = 'Signed ' + label.toLowerCase() + ' — ' + clip(T(r.title), 60).replace(/[\\/:*?"<>|]+/g, '-') + ' — ' + at.slice(0, 10) + '.pdf';
   const signedRec = { name: name, at: at, ip: clip(ip, 60), ua: clip(gcHeader(event, 'user-agent'), 160), drawn: cs.strokes.length > 0, docRef: docRef, docName: docName, sigId: sigId };
+  signedRec.esign = esignC; if (cancelC) signedRec.cancelNotice = cancelC;   /* LEGAL2-patch */
+  if (smsC) signedRec.smsConsent = smsC;   /* patch SMSCONSENT */
+  if (smsM) signedRec.smsMarketing = smsM;   /* patch SMSC2 */
   const res = await core().kvListUpdate(KEY, function(cur){
     const x = cur.find(function(y){ return s(y.id) === id; });
     if (!x || x.status !== 'pending') return { list: null, result: 'conflict' };
@@ -370,6 +407,9 @@ async function sign(event, pid, body){
   });
   if (!res.ok) return { status: 503, out: { ok: false, error: 'We could not save it just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' } };
   if (res.result === 'conflict') return { status: 409, out: { ok: false, error: 'This was already done — reload the page.' } };
+  /* patch SMSCONSENT: the answer is enforced at once (the SMS state); the CRM also writes it onto the job and the customer when it applies this signature */
+  if (smsC) { try { await SC.record(smsC, [p.clientPhone, p.phone, p.customerPhone]); } catch (e) {} }
+  if (smsM) { try { await SC.record(smsM, [p.clientPhone, p.phone, p.customerPhone], 'marketing'); } catch (e) {} }   /* patch SMSC2 */
   /* tell the people: the office (a to-do), the PM (an e-mail), the customer (their copy, at once — owner rule) */
   const pm = pmFull(data, p), jobName = T(p.name) || 'the job';
   try { await core().officeTodo('portal_signed_' + sigId, '✍️ ' + name + ' signed the ' + label.toLowerCase() + ' — ' + jobName,
@@ -583,3 +623,5 @@ exports.handler = async function(event){
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
 exports._ps = { runFollowups: runFollowups, visible: visible, signedCopyPdf: signedCopyPdf, KEY: KEY, FU_KEY: FU_KEY, FU_DAYS: FU_DAYS, KINDS: KINDS, _reset: function(){ hits.clear(); writes.clear(); } };
+
+/* LEGAL2-patch */

@@ -32,6 +32,7 @@
 // bid-site requests), PORTAL_TEXT_PROVIDER (texting — not connected yet), PORTAL_MAIL_OFF=1.
 
 /* ── GrayCo staff check (same as portal.js; kept inline: each function is bundled alone) ── */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -285,16 +286,16 @@ function noteBad(ip, kind){ const h = hits.get((kind || 'pub') + '|' + ip); if (
 const MAIL = {
   en: {
     codeSubj: 'Your GrayCo Portal code', codeHead: 'Your sign-in code', codeBody: 'Enter this code on the GrayCo Portal. It works for 10 minutes. If you did not ask for it, ignore this e-mail.',
-    linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail.',
-    linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question.', scopeBtn: 'Review and sign',
+    linkSubj: 'Your GrayCo Portal', linkHead: 'Your own GrayCo page', linkBody: 'This is your private GrayCo Portal: your jobs with GrayCo, scopes, messages with your Project Manager, photos, invoices and payments, and your paperwork. No password needed — keep this e-mail. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).',
+    linkBtn: 'Open my GrayCo Portal', scopeSubj: 'Sub agreement to sign — ', scopeBody: 'GrayCo sent you a sub agreement: the scope of work and what you will be paid on this job. Open your portal to review it and sign it, or ask a question. Send all invoices and pay requests to invoices@grayco-cs.com (include the job name/PO).', scopeBtn: 'Review and sign',
     coSignSubj: 'Change order to sign — ', coSignBody: 'GrayCo sent you a change order to your scope on this job. Open your portal to review it and sign it, or ask a question.',
     approvedSubj: 'You can now sign in at bids.grayco-cs.com', approvedBody: 'GrayCo approved your company for the GrayCo bid site. Sign in with the e-mail and password you chose.', approvedBtn: 'Open the bid site',
     foot: 'Questions? Call GrayCo at ' + OFFICE_PHONE + '.'
   },
   es: {
     codeSubj: 'Su código del Portal GrayCo', codeHead: 'Su código para entrar', codeBody: 'Escriba este código en el Portal GrayCo. Sirve por 10 minutos. Si usted no lo pidió, ignore este correo.',
-    linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo.',
-    linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta.', scopeBtn: 'Revisar y firmar',
+    linkSubj: 'Su Portal GrayCo', linkHead: 'Su propia página de GrayCo', linkBody: 'Este es su Portal GrayCo privado: sus trabajos con GrayCo, alcances, mensajes con su Gerente de Proyecto, fotos, facturas y pagos, y sus papeles. No necesita contraseña — guarde este correo. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).',
+    linkBtn: 'Abrir mi Portal GrayCo', scopeSubj: 'Acuerdo de subcontrato para firmar — ', scopeBody: 'GrayCo le envió un acuerdo de subcontrato: el alcance del trabajo y lo que se le pagará en este trabajo. Abra su portal para revisarlo y firmarlo, o hacer una pregunta. Envíe todas las facturas a invoices@grayco-cs.com (con el nombre del trabajo y el PO).', scopeBtn: 'Revisar y firmar',
     coSignSubj: 'Orden de cambio para firmar — ', coSignBody: 'GrayCo le envió una orden de cambio a su alcance en este trabajo. Abra su portal para revisarla y firmarla, o hacer una pregunta.',
     approvedSubj: 'Ya puede entrar en bids.grayco-cs.com', approvedBody: 'GrayCo aprobó a su compañía para el sitio de licitaciones de GrayCo. Entre con el correo y la contraseña que escogió.', approvedBtn: 'Abrir el sitio de licitaciones',
     foot: '¿Preguntas? Llame a GrayCo al ' + OFFICE_PHONE + '.'
@@ -834,7 +835,7 @@ function punchIsSub(x, sub){ return s(x.subId) ? s(x.subId) === s(sub.id) : rowI
 function schedFor(data, jobs, sub){
   const pids = new Set(jobs.map(function(p){ return s(p.id); })), nm = jobs.reduce(function(m, p){ m[s(p.id)] = s(p.name); return m; }, {});
   return arr(data.schedule).filter(function(x){ return pids.has(s(x.pid)) && (s(x.subId) === s(sub.id) || rowIsSub({ name: x.vendor || x.sub || x.assignee }, sub)); })
-    .map(function(x){ return { date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(x.title, 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })
+    .map(function(x){ return { id: clip(x.id, 90), date: ymd(x.date), time: clip(x.time, 10), endTime: clip(x.endTime, 10), title: clip(x.title, 160), pid: s(x.pid), job: nm[s(x.pid)] || '' }; })   /* patch SUBTXT: + id */
     .filter(function(x){ return x.date; }).sort(function(a, b){ return (a.date + a.time).localeCompare(b.date + b.time); });
 }
 async function pJob(ctx, pid){
@@ -931,8 +932,10 @@ async function partnerAction(action, body, ctx){
       const signName = clip(String(body.signName == null ? '' : body.signName).replace(/\s+/g, ' '), 80);
       if (signName.length < 3 || !/[A-Za-z\u00C0-\u024F]{2}/.test(signName)) throw Fail(400, 'Type your full name to sign.');
       if (body.agree !== true) throw Fail(400, 'Tick the box to agree, then sign.');
+      /* LEGAL2-patch: E-SIGN / UETA consent before the signature */
+      if (!body.esignConsent || body.esignConsent.agree !== true) throw Fail(400, 'Tick the box to agree to do business electronically, then sign.');
       const strokes = cleanStrokes(body.strokes);
-      const sig = { name: signName, strokes: strokes, at: now, ip: clip(ctx.ip || 'unknown', 60), ua: clip(ctx.ua || '', 200), version: Number(x.version), total: money(x.total), title: clip(x.title, 160), by: s(sub.id) };
+      const sig = { esign: { agree: true, at: now, version: clip(body.esignConsent.version, 20) }, name: signName, strokes: strokes, at: now, ip: clip(ctx.ip || 'unknown', 60), ua: clip(ctx.ua || '', 200), version: Number(x.version), total: money(x.total), title: clip(x.title, 160), by: s(sub.id) };
       const d = Object.assign({}, x.data || {}, { signature: sig });
       const done = await dbPatch('gc_sub_scope', 'id=' + eq(x.id) + '&version=eq.' + Number(x.version), { status: 'accepted', accepted_at: now, accepted_version: x.version, data: d, updated_at: now }, true);
       if (Array.isArray(done) && !done.length) throw Fail(409, 'GrayCo changed this a moment ago. Look it over again, then sign.');
@@ -1005,6 +1008,13 @@ async function partnerAction(action, body, ctx){
     if (!text && !files.length) throw Fail(400, 'Type a message.');
     const m = await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), text, files);
     return { ok: true, id: m };
+  }
+  if (action === 'p-late') {   /* patch SUBTXT: "Can't make it / running late" → the job's PM at once (push, 🔴 To-Do, e-mail) + this thread */
+    const p = jobOf(ctx, body.projectId);
+    const r = await require('./sub-texts.js')._lib.portalLate(sub, p, body || {});
+    if (!r.ok) throw Fail(400, r.error || 'Type what is going on.');
+    await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), '⚠️ ' + r.words, []);
+    return { ok: true };
   }
   if (action === 'p-lang') {
     await addEvent('lang', sub, null, { lang: lang(body.lang) });
@@ -1269,7 +1279,8 @@ async function staffAction(action, body, who){
       const firstName = s(p.client).split(/\s+/)[0];
       const msg = 'Hi ' + (firstName || 'there') + ', this is GrayCo. Your project page: ' + link + ' — or sign in at ' + portalBase().replace(/^https:\/\//, '') + ' · ' + (phone && !email ? 'Phone: ' + phone : 'E-mail: ' + email) + ' · Password: your first name';
       out.message = msg;
-      if (phone && textReady() && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; }
+      let smsNo = false; try { const SC = require('./_lib/smsconsent.js'); smsNo = SC.statusFor({ projects: [p] }, phone, await SC.registry()) === 'no' || (await SC.live(phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: declined → the PM sends it from their own phone */
+      if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; }
       if (!out.sent && phone) out.sms = 'sms:' + phone + '?body=' + encodeURIComponent(msg);
     }
     return out;
@@ -1363,4 +1374,7 @@ exports.handler = async function (event) {
     return reply(500, { ok: false, error: 'Something went wrong. Try again, or call GrayCo ' + OFFICE_PHONE + '.' });
   }
 };
-exports._core = { _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
+exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments); },   /* patch SUBTXT */
+  _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
+
+/* LEGAL2-patch */

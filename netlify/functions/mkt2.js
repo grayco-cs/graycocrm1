@@ -7,6 +7,7 @@
    once — and the STAFF_EMAILS variable only before that table exists.
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -85,11 +86,13 @@ async function gcStaffAuth(event){
 'use strict';
 const X = require('./_lib/mkt2.js');
 function mk(){ return require('./_lib/mkt.js'); }
-function reply(code, headers, o){ return { statusCode: code, headers: headers, body: JSON.stringify(o) }; }
+const MMH = new WeakSet();   /* patch MM: answers to the Marketing Manager are redacted (no customer e-mail / phone / address) */
+function reply(code, headers, o){ return { statusCode: code, headers: headers, body: JSON.stringify(MMH.has(headers) ? require('./_lib/mm.js').redact(o) : o) }; }
 function page(title, msg, ok){
   return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
     body: '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + title + '</title></head>' +
       '<body style="font-family:Arial,sans-serif;background:#F5F7FB;margin:0;padding:40px 16px"><div style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #dce3ee;border-radius:12px;padding:22px">' +
+      '<div style="text-align:center;margin:0 0 16px"><img src="/portal-logo.png" alt="GrayCo Construction Services" width="170" style="width:170px;max-width:60%;height:auto;display:inline-block"></div>' +   /* patch PORTALLOGO */
       '<h2 style="color:' + (ok ? '#166534' : '#9a3412') + ';margin-top:0">' + (ok ? '✓ ' : '') + title + '</h2><p>' + String(msg).replace(/[<>&]/g, '') + '</p>' +
       '<p><a href="/" style="color:#1E2060;font-weight:bold">Back to the GrayCo CRM → Marketing → 📈 Ads hub</a></p></div></body></html>' };
 }
@@ -102,15 +105,21 @@ exports.handler = async function(event){
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
   if (event.httpMethod !== 'POST') return reply(405, headers, { ok: false, error: 'Method not allowed' });
-  const who = await gcStaffAuth(event);
+  const who = await require('./_lib/mm.js').orStaff(await gcStaffAuth(event), event);   /* patch MM: or the Marketing Manager (answers redacted) */
   if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
+  if (who.marketing) MMH.add(headers);
   let body = {}; try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
   const op = String(body.op || '');
   let data = {}; try { data = await mk().crmData(['users']); } catch (e) {}
   const role = mk().roleOf(who, data), admin = role === 'admin', office = admin || role === 'office';
   try {
     if (op === 'ads_status') return reply(200, headers, Object.assign({ ok: true, role: role }, await X.adsStatus()));
-    if (op === 'ad_copy') return reply(200, headers, await X.draftCopy(body));
+    if (op === 'ad_copy') {   /* patch SOC: paid ads only for the services in the Ads focus (default: restoration — water, fire, storm) */
+      const SC = require('./_lib/soc-content.js'), d0 = await require('./_lib/mkt.js').readDoc(), af = ((d0.cfg && d0.cfg.main) || {}).adsFocus;
+      if (!String(body.service || '').trim()) body.service = 'Water damage restoration';
+      if (!SC.adsAllowed(af, String(body.service))) return reply(400, headers, { ok: false, error: 'Ads focus: paid ads are restoration only right now (water, fire, storm). Change it in Marketing → ⚙️ Focus & approvals.' });
+      return reply(200, headers, await X.draftCopy(body));
+    }
     if (op === 'link_stats') { const c = await X.calls(); return reply(200, headers, { ok: true, clicks: await X.clicks(), calls: c.slice(-500).map(function(x){ return Object.assign({}, x, { from: office ? x.from : String(x.from || '').slice(-4) }); }) }); }
     if (op === 'newsletter') { if (!office) return reply(403, headers, { ok: false, error: 'Only the office or an admin can do that.' }); return reply(200, headers, await X.ensureNewsletter({ month: /^\d{4}-\d{2}$/.test(String(body.month || '')) ? body.month : '', force: body.force === true })); }
     if (op === 'coupon_check') return reply(200, headers, await X.couponCheck(String(body.code || '')));

@@ -109,20 +109,33 @@ async function postAyrshare(caption, imageUrl, networks){
   return out;
 }
 
-/* post = { caption, imageUrl, networks:[facebook|instagram|gbp], link, extra:[job addresses] } → { facebook:{ok,id,url}|{ok:false,error}, … } */
+/* post = { caption, captions: { network: its own caption } (patch SOC), imageUrl, networks:[facebook|instagram|gbp|tiktok|linkedin], link,
+   extra:[job addresses], names:[customer names], nameOk } → { facebook:{ok,id,url}|{ok:false,error}, … }
+   patch SOC: every platform posts ITS version (the week plan writes one per platform); TikTok and LinkedIn go through _lib/soc.js. */
+const SOC_NET = { tiktok: 1, linkedin: 1 };
 async function publish(post){
-  const caption = s(post && post.caption), nets = (post && post.networks || []).filter(function(n){ return AYR_NET[n]; });
-  if (!caption) return { _error: 'No caption.' };
-  const problems = C.guard(caption, post.extra || []);
-  if (problems.length) return { _error: 'Not posted: ' + problems.map(function(p){ return p.l; }).join(' ') };
-  const st = status(), out = {};
+  post = post || {};
+  const nets = (post.networks || []).filter(function(n){ return AYR_NET[n] || SOC_NET[n]; });
+  const capOf = function(n){ return s((post.captions && post.captions[n]) || post.caption); };
   if (!nets.length) return { _error: 'No network picked.' };
-  if (env('AYRSHARE_API_KEY')) return postAyrshare(caption, s(post.imageUrl), nets);
-  for (const n of nets) {
-    if (n === 'facebook') out.facebook = st.direct.facebook ? await postFacebook(caption, s(post.imageUrl), s(post.link)) : { ok: false, error: 'Facebook is not connected (META_PAGE_ID / META_PAGE_TOKEN).' };
-    if (n === 'instagram') out.instagram = st.direct.instagram ? await postInstagram(caption, s(post.imageUrl)) : { ok: false, error: 'Instagram is not connected (META_IG_USER_ID).' };
-    if (n === 'gbp') out.gbp = st.direct.gbp ? await postGbp(caption, s(post.imageUrl), s(post.link)) : { ok: false, error: 'Google Business is not connected (GBP_* keys).' };
+  if (!nets.some(function(n){ return capOf(n); })) return { _error: 'No caption.' };
+  const SC = require('./soc-content.js'), rules = { addresses: post.extra || [], names: post.names || [], nameOk: !!post.nameOk };
+  const problems = []; nets.forEach(function(n){ C.guard(capOf(n), post.extra || []).concat(SC.problems(capOf(n), rules)).forEach(function(p){ if (problems.indexOf(p.l) < 0) problems.push(p.l); }); });
+  if (problems.length) return { _error: 'Not posted: ' + problems.join(' ') };
+  const st = status(), out = {};
+  const meta = nets.filter(function(n){ return AYR_NET[n]; });
+  if (meta.length && env('AYRSHARE_API_KEY')) {
+    const groups = {}; meta.forEach(function(n){ (groups[capOf(n)] = groups[capOf(n)] || []).push(n); });
+    for (const cap of Object.keys(groups)) Object.assign(out, await postAyrshare(cap, s(post.imageUrl), groups[cap]));
+  } else {
+    for (const n of meta) {
+      const caption = capOf(n);
+      if (n === 'facebook') out.facebook = st.direct.facebook ? await postFacebook(caption, s(post.imageUrl), s(post.link)) : { ok: false, error: 'Facebook is not connected (META_PAGE_ID / META_PAGE_TOKEN).' };
+      if (n === 'instagram') out.instagram = st.direct.instagram ? await postInstagram(caption, s(post.imageUrl)) : { ok: false, error: 'Instagram is not connected (META_IG_USER_ID).' };
+      if (n === 'gbp') out.gbp = st.direct.gbp ? await postGbp(caption, s(post.imageUrl), s(post.link)) : { ok: false, error: 'Google Business is not connected (GBP_* keys).' };
+    }
   }
+  for (const n of nets.filter(function(x){ return SOC_NET[x]; })) out[n] = await require('./soc.js').publishTo(n, capOf(n), s(post.imageUrl), post);
   return out;
 }
 

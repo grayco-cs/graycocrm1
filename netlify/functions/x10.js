@@ -15,6 +15,7 @@
 // PUBLIC: GET ?accept=<pageId>&e=<email>&s=<sig> → accepts the on-call page (HMAC-signed link from the page e-mail).
 // Everything is kept in the service-only lead-inbox table (never synced to a browser): gc_x10_*.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/x10.js');
 const OC = require('./_lib/oncall.js');
 function inbox(){ return require('./bid-inbox.js'); }
@@ -48,7 +49,7 @@ async function acceptPage(event){
   const q = event.queryStringParameters || {};
   const r = await oc().accept(s(q.accept), low(q.e), s(q.s));
   const page = function(title, body, ok){ return { statusCode: ok ? 200 : 400, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' },
-    body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GrayCo on call</title><div style="font:17px Arial;max-width:520px;margin:30px auto;padding:0 16px;color:#1b1640"><h2>' + esc(title) + '</h2>' + body + '</div>' }; };
+    body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GrayCo on call</title><div style="font:17px Arial;max-width:520px;margin:30px auto;padding:0 16px;color:#1b1640"><div style="text-align:center;margin:0 0 16px"><img src="/portal-logo.png" alt="GrayCo Construction Services" width="170" style="width:170px;max-width:60%;height:auto;display:inline-block"></div><h2>' + esc(title) + '</h2>' + body + '<p style="text-align:center;font-size:13px;color:#55626F;margin:18px 0 0">GrayCo Construction Services · <a href="tel:9015850944" style="color:inherit">(901) 585-0944</a></p></div>' }; };   /* patch PORTALLOGO */
   if (!r.ok) return page('This link does not work', '<p>It may be old or cut off. Open the CRM → 💧 Mitigation → 📟 On call.</p>', false);
   const p = r.page, c = p.contact || {}, mine = low(p.acceptedBy) === low(q.e);
   return page(mine ? '✅ You have it' : 'Already taken', (mine ? '<p>Thanks — it is logged on the lead. Nobody else will be paged.</p>' : '<p>' + esc(p.acceptedName || p.acceptedBy) + ' accepted it at ' + esc(new Date(p.acceptedAt).toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' })) + '.</p>') +

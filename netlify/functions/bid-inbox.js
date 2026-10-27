@@ -7,9 +7,13 @@
 
    patch EST4 (owner 10/22): bid NOTICES now go to leads@grayco-cs.com (a Google Group whose member
    leads@in.grayco-cs.com is a Resend receiving address on this webhook); an invitation that reaches leads@
-   takes the bid path below, a customer the lead path (website-intake.js). bids@grayco-cs.com is only for
-   SUBCONTRACTORS' bids: they are matched to the bid-portal job and the estimator is told (subBidFromEmail).
-   An old-style invitation still sent to bids@ is recognised and handled as a bid, so nothing is lost.
+   takes the bid path below, a customer the lead path (website-intake.js).
+   patch BIDSEND (owner 10/22): OUR bids go out FROM bids@grayco-cs.com (send-email.js mode 'bid') and GCs reply to
+   it, so mail for bids@ is one of THREE kinds (bidsKind, _lib/subbids.js): (a) a GC's REPLY to one of our bids → filed
+   on that lead's GC row, urgent ones alert the estimator (_lib/bid-replies.js); (b) a SUBCONTRACTOR's bid (a sub
+   bid) → matched to the bid-portal job, the estimator is told (subBidFromEmail); (c) an INVITATION to bid → the bid
+   path, so nothing is lost; anything else → "Unsorted bids@ mail" (the estimator says what it is). A GC's reply
+   that reaches the e-mail history (mail@in, X9) is filed on its lead as well (the same e-mail once).
 
    For every e-mail this function:
      1. checks Resend's signature (Svix, RESEND_INBOUND_SECRET), or ?token=BID_INBOX_TOKEN;
@@ -86,9 +90,11 @@
                BID_ALERTS_OFF=1 / BID_ALERT_FROM / CRM_URL (the admins' alerts)
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 
 const crypto = require('crypto');
 const BD = require('./_lib/bid-due.js');
+const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER: the always-on construction gate */
 
 const KV = 'gc_lead_inbox', KV_SET = 'gc_lead_inbox_settings', KV_NOTE = 'gc_lead_inbox_notices';
 const KEEP_ACTIVE = 600, KEEP_DISMISSED = 3000;
@@ -333,6 +339,19 @@ function recipients(mail, data){
 function leadAddrs(){ return (env('LEAD_INBOX_TO') || 'leads@in.grayco-cs.com,leads@grayco-cs.com').split(',').map(low).filter(Boolean); }
 function forLeads(mail, data){ return forBids(mail, data, leadAddrs()); }
 /* patch AUTO7: orders@ — supplier order confirmations (Google routing copies them from office@) */
+/* patch ESTIN: estimates@ — kept in gc_kv gc_estin_inbox (the files in crm-files); an admin / office computer makes the estimates */
+function estimateAddrs(){ return (env('ESTIMATE_INBOX_TO') || 'estimates@in.grayco-cs.com,estimates@grayco-cs.com').split(',').map(low).filter(Boolean); }
+function forEstimates(mail, data){ return forBids(mail, data, estimateAddrs()); }
+async function estimateMail(mail){
+  const id = 'eml_' + itemId('estimate|' + (mail.messageId || mail.id || (mail.from.email + mail.subject + mail.date)));
+  const have = arr(await kvGet('gc_estin_inbox'));
+  if (have.some(x => x && x.id === id)) return { ok: true, already: true, id };
+  const files = [];
+  for (const f of (mail.files || [])) { if (!/\.(pdf|docx|xlsx|csv|txt)$/i.test(s(f.name))) continue; const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref }); }
+  const rec = { id, at: nowIso(), from: mail.from.email, fromName: s(mail.from.name), subject: s(mail.subject).slice(0, 240), text: s(mail.text).slice(0, 6000), files };
+  await kvCas('gc_estin_inbox', v => arr(v).filter(x => x && x.id !== id).concat([rec]).slice(-300));
+  return { ok: true, id, files: files.length };
+}
 function orderAddrs(){ return (env('ORDER_INBOX_TO') || 'orders@in.grayco-cs.com,orders@grayco-cs.com').split(',').map(low).filter(Boolean); }
 function forOrders(mail, data){ return forBids(mail, data, orderAddrs()); }
 function forBids(mail, data, addrs){
@@ -357,6 +376,7 @@ function ownOrAuto(mail){
   const a = low(H['auto-submitted']); if (a && a !== 'no' && !/auto-generated/.test(a)) return 'automatic reply';
   if (/^(out of office|automatic reply|auto(matic)?[- ]?reply|undeliverable|delivery status notification|mail delivery)/i.test(mail.subject)) return 'automatic reply';
   if (/^(mailer-daemon|postmaster)@/.test(mail.from.email)) return 'bounce';
+  if (/^(noreply|no-reply)@groups\.google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email) && /^(noreply|no-reply)/.test(mail.from.email)) return 'Google Groups notice';   /* owner 10/26: the group's own 'added to group' / admin notices are not leads */
   return '';
 }
 
@@ -668,7 +688,7 @@ const BID_WORDS = /\b(bid|bids|bidding|rfp|rfq|itb|ifb|invitation|addend(um|a)|p
 /* ── the whole job for one e-mail ──────────────────────────────────────────── */
 /* ── patch EST4: a subcontractor's bid e-mailed to bids@ ───────────────────────
    Matched to the bid-portal job (PO, street address, the sub's invitation, the project title), its files kept
-   (crm-files), the job's estimator told (else the default estimator, else the admins). Unmatched ones wait in
+   (crm-files), the job's estimator told (else the Senior Estimator, else the admins). Unmatched ones wait in
    "Unmatched sub bids" (gc_sub_bids_email, service-only) for the estimator. Never a customer lead. */
 const KV_SUBBIDS = 'gc_sub_bids_email';
 async function portalJobs(){
@@ -678,9 +698,9 @@ async function portalJobs(){
   return jobs.map(r => { const d = (r && r.data) || {}; return { id: s(r.job_id || d.id), title: s(d.title), po: s(d.poNumber || d.po), address: s(d.address), leadId: s(d.leadInbox && d.leadInbox.id), invited: inv[r.job_id] || [], status: s(d.status) }; })
     .filter(j => j.id && !/^(deleted|archived)$/i.test(j.status));
 }
-async function subBidMailTo(rec, est){
+async function subBidMailTo(rec, est, head){
   const key = env('RESEND_API_KEY'); if (!key) return { ok: false, why: 'RESEND_API_KEY is not set' };
-  let to = est && est.email ? [est.email] : [];
+  let to = Array.from(new Set([head && head.email, est && est.email].map(low).filter(Boolean)));   /* patch BIDSEND: the Lead Estimator always */
   if (!to.length) { try { to = await alertsApi().recipients([]); } catch (e) {} }
   if (!to.length) return { ok: false, why: 'nobody to tell' };
   const site = (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '');
@@ -692,12 +712,44 @@ async function subBidMailTo(rec, est){
     + '<p style="color:#555">Subject: ' + esc(rec.subject) + '<br>' + (rec.files.length ? rec.files.length + ' file(s): ' + rec.files.map(f => esc(f.name)).join(', ') : 'No files attached') + '</p>'
     + (rec.text ? '<blockquote style="border-left:3px solid #ddd;margin:8px 0;padding:4px 10px;color:#333">' + esc(rec.text.slice(0, 1200)).replace(/\n/g, '<br>') + '</blockquote>' : '')
     + '<p><a href="' + esc(site) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Sub bids in the CRM</a></p>'
-    + '<p style="color:#777;font-size:12px">Hit Reply to answer the sub. Sent to the estimator (the Estimator role / Leads ⚙ Default estimator).</p></div></div>';
+    + '<p style="color:#777;font-size:12px">Hit Reply to answer the sub. Sent to the estimator (the Estimator role / Leads ⚙ Senior Estimator).</p></div></div>';
   try {
     const r = await (exports._fetch || fetch)('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from: env('SUB_BID_FROM') || 'GrayCo Bids <bids@grayco-cs.com>', to, reply_to: rec.sub.email || undefined, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Bids'), html, headers: { 'X-GrayCo-CRM': 'sub-bid' } }) });
     return { ok: r.ok, to, why: r.ok ? '' : 'Resend answered ' + r.status };
   } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
+}
+/* ── patch BIDSEND: what a bids@ e-mail is ──────────────────────────────────────
+   (a) a GC's reply to one of our bids (a "Bidding to" contact / our subject) · (b) a sub bid (a sub we know, or "our
+   price is attached") · (c) an invitation to bid · else unsorted (the estimator decides in the CRM). */
+function repliesApi(){ return require('./_lib/bid-replies.js').make({ env, s, low, arr, nowIso, sb, storeFile, callClaude, estimatorOf: () => estimatorOf(), webPush: exports._webPush, now: exports._now, fetch: exports._fetch,
+  recipients: x => alertsApi().recipients(x), kvAppendResult: x => alertsApi().kvAppendResult(x) }); }
+async function knownSubs(){
+  const set = {};
+  try { (await portalJobs()).forEach(j => arr(j.invited).forEach(e => { if (e) set[low(e)] = 1; })); } catch (e) {}
+  try { const r = await sb('gc_kv?select=value&key=eq.subs'); if (r.ok) { const rows = await r.json(); (JSON.stringify(rows && rows[0] ? rows[0].value : '').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || []).forEach(e => { set[low(e)] = 1; }); } } catch (e) {}
+  return e => !!set[low(e)];
+}
+async function bidsKind(mail){
+  const SB = require('./_lib/subbids.js'), R = repliesApi();
+  const isSub = await knownSubs(), ctx = await R.context();
+  if (R.match(mail, ctx, { isSub })) { const r = await R.handle(mail, { via: 'bids@', ctx, isSub }); if (r) return { kind: 'reply', r }; }
+  if (isSub(mail.from.email)) return { kind: 'sub' };
+  if (SB.isInviteForBids(mail, boardOf)) return { kind: 'invite' };
+  if (SB.isSubBid(mail)) return { kind: 'sub' };
+  return { kind: 'unsorted' };
+}
+async function unsortedBidsMail(mail){
+  const SB = require('./_lib/subbids.js');
+  const id = 'sbu_' + itemId('unsorted|' + (mail.messageId || mail.id || (mail.from.email + mail.subject + mail.date)));
+  if (arr(await kvGet(KV_SUBBIDS)).some(x => x && x.id === id)) return { ok: true, already: true, id };
+  const files = [];
+  for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref, stored: st.stored }); }
+  const rec = { id, at: nowIso(), kind: 'unsorted', status: 'unsorted', sub: SB.subName(mail), subject: s(mail.subject).slice(0, 240), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 3000),
+    files, jobId: '', jobTitle: '', leadId: '', match: '', estimator: '' };
+  try { const d = await estimatorOf(); if (d.email) rec.estimator = low(d.email); } catch (e) {}   /* the unsorted list belongs to the Lead Estimator */
+  await kvCas(KV_SUBBIDS, v => arr(v).filter(x => x && x.id !== id).concat([rec]).slice(-500));
+  return { ok: true, id, unsorted: true };
 }
 async function subBidFromEmail(mail){
   const SB = require('./_lib/subbids.js');
@@ -708,19 +760,28 @@ async function subBidFromEmail(mail){
   const m = SB.matchJob(mail, jobs);
   const files = [];
   for (const f of mail.files) { const st = await storeFile(f.buf, f.type, f.name); files.push({ name: f.name, type: f.type, size: f.size, ref: st.ref, stored: st.stored }); }
-  /* the job's own estimator (its Lead Inbox item), else the default estimator */
+  /* the job's own estimator (its Lead Inbox item), else the Senior Estimator */
   let est = null;
   if (m && m.job.leadId) { const it = arr(await kvGet(KV)).find(x => x && x.id === m.job.leadId); if (it && low(it.estimatorEmail)) est = { name: s(it.estimator), email: low(it.estimatorEmail) }; }
-  if (!est) { const d = await estimatorOf(); if (d.email) est = { name: d.name, email: d.email }; }
+  let head = null; try { const d = await estimatorOf(); if (d.email) head = { name: d.name, email: low(d.email) }; } catch (e) {}   /* patch BIDSEND: the Lead Estimator */
+  if (!est) est = head;
   const rec = { id, at: nowIso(), sub: SB.subName(mail), subject: s(mail.subject).slice(0, 240), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 3000),
     files, jobId: m ? m.job.id : '', jobTitle: m ? m.job.title : '', leadId: m ? m.job.leadId : '', match: m ? m.why.join(', ') : '', estimator: est ? est.email : '', status: m ? 'matched' : 'unmatched' };
   await kvCas(KV_SUBBIDS, v => arr(v).filter(x => x && x.id !== id).concat([rec]).slice(-500));
-  const told = await subBidMailTo(rec, est);
+  const told = await subBidMailTo(rec, est, head);
   try { await kvCas(KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === id); if (!x) return undefined; x.told = { ok: told.ok, to: told.to || [], why: told.why || '' }; return l; }); } catch (e) {}
   return { ok: true, id, matched: !!m, jobId: rec.jobId, files: files.length, told: told.ok };
 }
 
+/* patch MAILC: every e-mail this webhook gets is noted for the Email Center's "📥 All company mail" (who, to which
+   address, the subject, what the CRM did — never the body). The note never holds up or changes the result. */
 async function processEvent(evt, opts){
+  const r = await processEventCore(evt, opts);
+  try { await require('./_lib/mailcenter.js').log(evt, r, { kvCas }); } catch (e) {}
+  try { await require('./_lib/sentlog.js').onInboundEvent(evt); } catch (e) {}   /* patch SENTLOG: a reply answers a waiting request */
+  return r;
+}
+async function processEventCore(evt, opts){
   opts = opts || {};
   const type = s(evt && evt.type);
   if (type && type !== 'email.received') return { status: 200, body: { ok: true, ignored: 'event ' + type } };
@@ -738,16 +799,38 @@ async function processEvent(evt, opts){
       from: mail.from.email, fromName: mail.from.name, subject: s(mail.subject).slice(0, 200), text: s(mail.text).replace(/\n>.*$/s, '').slice(0, 1500) }).catch(() => false);
     return ok ? { status: 200, body: { ok: true, results: true } } : { status: 503, body: { ok: false, error: 'GrayCo could not store the bid results yet — retry.' } };
   }
+  /* patch ESTIN: an estimate e-mailed to estimates@ (Word / PDF / Excel / CSV, from a GrayCo address) → the CRM reads it */
+  if (forEstimates(mail, data)) {
+    if (ownOrAuto(mail)) return { status: 200, body: { ok: true, ignored: ownOrAuto(mail) } };
+    if (!/@grayco-cs\.com$/i.test(mail.from.email)) return { status: 200, body: { ok: true, ignored: 'estimates@ takes estimates from GrayCo addresses only' } };
+    if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+    return { status: 200, body: Object.assign({ inbox: 'estimates' }, await estimateMail(mail)) };
+  }
   /* patch X9: a copy for the job's e-mail history (the Google routing rule → mail@in.grayco-cs.com): kept on its job,
      or thrown away — never a lead or a bid, even when it was addressed to bids@ / leads@ */
-  try { const CM = require('./_lib/comms.js'); if (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } }; return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail)) }; } }
+  try { const CM = require('./_lib/comms.js'); if (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+    /* patch BIDSEND: a GC's answer to one of our bids that came by the routing rule is filed on its lead too */
+    let br = null; if (!/@(in\.)?grayco-cs\.com$/i.test(mail.from.email) && !ownOrAuto(mail)) br = await repliesApi().handle(mail, { via: 'e-mail history', isSub: await knownSubs() });
+    return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail), br ? { bidReply: br } : {}) }; } }
   catch (e) { return { status: 503, body: { ok: false, error: 'The e-mail history could not store this yet (' + (e && e.message) + ') — retry.' } }; }
+  /* patch OWNERTODO: receipts@ / invoices@ — a receipt or a sub's invoice for the CRM (never a lead, a bid or an order) */
+  { const MM = require('./_lib/money-mail.js'), mk = MM.kindOf(recipients(mail, data), mail.headers);
+    if (mk) {
+      const own0 = ownOrAuto(mail); if (own0) return { status: 200, body: { ok: true, ignored: own0 } };
+      if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+      try { const r = await MM.fromEmail(mail, mk, { storeFile: storeFile, kvListUpdate: function(k, f){ return require('./portal.js')._core.kvListUpdate(k, f); } }); return { status: 200, body: Object.assign({ inbox: mk === 'receipt' ? 'receipts' : 'sub-invoices' }, r) }; }
+      catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this ' + (mk === 'receipt' ? 'receipt' : 'invoice') + ' yet (' + (e && e.message) + ') — retry.' } }; }
+    } }
   /* patch EST4: leads@ carries bid invitations too (they take the bid path below); bids@ is only for subcontractors'
      bids (unless it is plainly an old-style invitation still sent to bids@) */
   const SB = require('./_lib/subbids.js');
   const toBids = forBids(mail, data), toLeads = forLeads(mail, data);
-  const leadMail = !toBids && toLeads && !SB.isBidInvite(mail, boardOf).bid;
-  const subBidMail = toBids && !toLeads && !SB.isInviteForBids(mail, boardOf);
+  /* patch LEADROUTE: an e-mail addressed to BOTH leads@ and bids@ is a lead when it reached us through leads@ (the webhook's
+     own recipient) — before, being on bids@ too sent a homeowner's request down the bid path, where it was dropped */
+  const envTo = list(data.to).map(x => low(x.email)), envLeads = envTo.some(x => leadAddrs().indexOf(x) >= 0), envBids = envTo.some(x => inboxAddrs().indexOf(x) >= 0);
+  const viaLeads = toLeads && (!toBids || envLeads || !envBids);
+  const leadMail = viaLeads && !SB.isBidInvite(mail, boardOf).bid;
+  let subBidMail = false;   /* patch BIDSEND: bids@ is sorted below (a GC's reply · a sub bid · an invitation · unsorted) */
   /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
   const orderMail = !leadMail && !toBids && !toLeads && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));
   if (!leadMail && !orderMail && !toBids && !toLeads) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
@@ -759,6 +842,16 @@ async function processEvent(evt, opts){
     return { status: 200, body: { ok: true, notice: true } };
   }
   if (!mail.files.length && !mail.text) return { status: 200, body: { ok: true, ignored: 'empty e-mail' } };
+  if (toBids && !viaLeads) {   /* patch BIDSEND (+ LEADROUTE) */
+    let k;
+    try { k = await bidsKind(mail); } catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not sort this bids@ e-mail yet (' + (e && e.message) + ') — retry.' } }; }
+    if (k.kind === 'reply') return { status: 200, body: Object.assign({ inbox: 'bid-replies' }, k.r) };
+    if (k.kind === 'sub') subBidMail = true;
+    else if (k.kind === 'unsorted') {
+      try { return { status: 200, body: Object.assign({ inbox: 'unsorted' }, await unsortedBidsMail(mail)) }; }
+      catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this bids@ e-mail yet (' + (e && e.message) + ') — retry.' } }; }
+    }
+  }
   if (orderMail) {   /* patch AUTO7 */
     try { const r = await require('./_lib/fa-orders.js').fromEmail(mail); return { status: 200, body: Object.assign({ inbox: 'orders' }, r) }; }
     catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not store this order yet (' + (e && e.message) + ') — retry.' } }; }
@@ -775,6 +868,9 @@ async function processEvent(evt, opts){
   const ai = await extract(mail, links, hint, opts.inline ? 18000 : 0);
   const pdfs = mail.files.filter(f => f.type === 'application/pdf').length;
   if (ai.ok && (low(ai.kind) === 'not_a_lead' || !ai.leads.length) && !pdfs) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity' } };
+  /* patch BIDFILTER: a bid NOTICE (a public solicitation / a bid board telling of new projects) is held to the same construction
+     gate as the public bid watcher; a GC's own invitation to bid (invitation, gc_direct, addendum …) is always construction */
+  if (ai.ok) { const g = noticeGate(ai, dbReady() ? await kvGet(KV_SET).catch(() => null) : null); if (g.dropped) { ai.leads = g.leads; if (!ai.leads.length) return { status: 200, body: { ok: true, ignored: 'not construction work', skipped: g.dropped } }; } }
   if (!ai.ok && !pdfs && !hint && !BID_WORDS.test(mail.subject + ' ' + mail.text.slice(0, 2000))) return { status: 200, body: { ok: true, ignored: 'not a bid opportunity (not read by the AI)' } };
   /* the files, then the e-mail itself as a text document */
   const stored = [];
@@ -816,17 +912,60 @@ async function afterStore(results, items, opt){
   if (Object.keys(marks).length) {
     try { await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && marks[x.id]) { x.portal = Object.assign({}, x.portal || {}, marks[x.id]); ch = true; } }); return ch ? list : undefined; }); } catch (e) {}
   }
-  /* LA: commercial / government / bid-board bids go to the default estimator (EST4: the Estimator role / Leads ⚙), unless assigned */
+  /* LA: commercial / government / bid-board bids go to the Senior Estimator (EST4: the Estimator role / Leads ⚙), unless assigned */
   const added = touched.filter(t => t.action === 'added').map(t => t.it);
   try {
     const est = await estimatorOf();
     const mine = added.filter(it => !it.pm && !it.estimator && est.email && isCommercial(it));
     if (mine.length) {
-      const ids = {}; mine.forEach(it => { ids[it.id] = 1; it.estimator = est.name; it.estimatorEmail = est.email; });
-      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { x.estimator = est.name; x.estimatorEmail = est.email; ch = true; } }); return ch ? list : undefined; });
+      const ids = {}, at = nowIso(); mine.forEach(it => { ids[it.id] = 1; it.estimator = est.name; it.estimatorEmail = est.email; it.assignedBy = 'Auto · Senior Estimator'; it.assignedAt = at; it.autoAssignedAt = at; it.leadRole = 'bid'; });   /* patch HOT2: logged as automatic */
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { x.estimator = est.name; x.estimatorEmail = est.email; x.assignedBy = 'Auto · Senior Estimator'; x.assignedAt = at; x.autoAssignedAt = at; x.leadRole = 'bid'; ch = true; } }); return ch ? list : undefined; });
       out.estimator = { name: est.name, email: est.email, n: mine.length };
     }
   } catch (e) { out.estimator = { error: s(e && e.message) }; }
+  /* patch HOT2 (owner 10/22): the other lead roles, by type (Admin → 👥 Team roles; _lib/lead-roles.js) — insurance /
+     restoration → the Senior Insurance PM, roofing → the Senior Roofing PM; a commercial ROOFING bid stays the Senior
+     Estimator's and gets the Senior Roofing PM as a second person (coAssignees: the alerts and due reminders too).
+     A role not set, or its person turned off → nobody (an admin assigns it). */
+  try {
+    const LR = require('./_lib/lead-roles.js');
+    const team = await kvGet(LR.TEAM_KEY), users = arr(await kvGet('users')), at = nowIso(), set = {};
+    const roofer = LR.holder('roofing', team, users);
+    added.forEach(it => {
+      if (!it) return;
+      if (!it) return;
+      const k = LR.classify(it, isCommercial);
+      if (!it.pm && !it.estimator && (k === 'insurance' || k === 'roofing')) {
+        const h = LR.holder(k, team, users);
+        if (h) { Object.assign(it, { pm: h.name, pmEmail: h.email, assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k }); set[it.id] = it; }
+      }
+      /* the Senior Roofing PM as the second person: a commercial roofing bid, a storm / water lead about a roof */
+      const prim = low(it.pmEmail || it.estimatorEmail);
+      if (LR.coRole(it, k) === 'roofing' && roofer && roofer.email !== prim && !arr(it.coAssignees).some(c => c && low(c.email) === roofer.email)) {
+        it.coAssignees = arr(it.coAssignees).concat([{ name: roofer.name, email: roofer.email, role: 'roofing', label: roofer.label, at }]); set[it.id] = it;
+      }
+    });
+    if (Object.keys(set).length) {
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { const y = x && set[x.id]; if (!y) return;
+        if (y.coAssignees && !arr(x.coAssignees).length) { x.coAssignees = y.coAssignees; ch = true; }
+        if (y.leadRole && y.leadRole !== 'bid' && y.pm && !x.pm && !x.estimator) { Object.assign(x, { pm: y.pm, pmEmail: y.pmEmail, assignedBy: y.assignedBy, assignedAt: y.assignedAt, autoAssignedAt: y.autoAssignedAt, leadRole: y.leadRole }); ch = true; } });
+        return ch ? list : undefined; });
+      out.leadRoles = { n: Object.keys(set).length };
+    }
+  } catch (e) { out.leadRoles = { error: s(e && e.message) }; }
+  /* patch SYS: every estimator lead (commercial / government / bid board, or one with an estimator) is a PRIVATE bid
+     job at once: invited subs only, until an admin or estimator makes it public. Never downgrades a public job. */
+  try {
+    const priv = added.filter(it => it && (it.estimatorEmail || it.estimator || isCommercial(it)) && marks[it.id] && /^(draft|updated|unchanged)$/.test(s(marks[it.id].state)));
+    const pm = {};
+    for (const it of priv.slice(0, 25)) {
+      try { const r = await BP.setPortal(it, { mode: 'private', auto: true }, { email: 'auto' }); if (r && r.ok) pm[it.id] = { jobId: r.jobId, state: r.state, at: nowIso() }; } catch (e) {}
+    }
+    if (Object.keys(pm).length) {
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && pm[x.id]) { x.portal = Object.assign({}, x.portal || {}, pm[x.id]); ch = true; } }); return ch ? list : undefined; });
+      out.private = Object.keys(pm).length;
+    }
+  } catch (e) { out.private = { error: s(e && e.message) }; }
   try { out.alerts = await alertsApi().notifyNew(added, { group: !!(opt && opt.group) }); } catch (e) { out.alerts = { error: s(e && e.message) }; }
   return out;
 }
@@ -872,13 +1011,35 @@ async function fetchPlans(items){
   }
   return { stored, changes };
 }
-/* LA: what counts as a commercial bid (default estimator): commercial (large and small), government, and anything
+/* LA: what counts as a commercial bid (Senior Estimator): commercial (large and small), government, and anything
    from a bid board / planroom (BuildingConnected, PlanHub, A&B, RKA, ConstructConnect, the public bid sites) */
 function isCommercial(it){
-  return /^(commercial|government)$/.test(low(it && it.type)) || /buildingconnected|planhub|planroom|constructconnect|dodge|government|county|city of|mscs|mscaa|stream|osp/i.test(s(it && it.source)) || s(it && it.origin) === 'watch';
+  if (!it || /^(referral|partner)$/.test(s(it.origin))) return false;   /* patch HOT2: homeowner leads never */
+  if (it.websiteLead || s(it.origin) === 'website') return /^(commercial|government)$/.test(low(it.type));   /* the website's "Commercial bid inquiry" form is a bid */
+  if (/resid|home|insur|storm|claim|mitig/i.test(s(it.type))) return false;
+  return /^(commercial|government)$/.test(low(it.type)) || /buildingconnected|building connected|planhub|plan hub|planroom|constructconnect|dodge|isqft|government|county|city of|state of|mscs|mscaa|mlgw|stream|osp|sam\.gov|\bsam\b|bid ?board|procurement/i.test(s(it.source))
+    || /^(watch|api|email|partner-bid)$/.test(s(it.origin));   /* patch HOT2: every bid source — bid e-mail (bids@ / leads@ bid path), public boards, the BuildingConnected API, SAM.gov, partner bids */
 }
-/* the default estimator (patch EST4): worked out from the people's roles (_lib/estimator.js) — the one active
-   Estimator; with several, the Leads ⚙ "Default estimator" setting (an e-mail kept as data); none → the admins */
+/* patch HOT2 (lead roles): one stored Lead Inbox item, routed by its type — for the paths that file a lead without
+   afterStore (website-intake fileLead: website forms, missed calls, referrals; the partner API's leads). Only a lead
+   nobody is on; a role nobody holds routes nothing. → the fields set, or null */
+async function routeLead(id){
+  const LR = require('./_lib/lead-roles.js');
+  const it = arr(await kvGet(KV)).find(x => x && x.id === id); if (!it || it.pm || it.estimator) return null;
+  const k = LR.classify(it, isCommercial); let h = null, field = 'pm', team = null, users = null;
+  const roles = async () => { if (!users) { team = await kvGet(LR.TEAM_KEY); users = arr(await kvGet('users')); } };
+  if (k === 'bid') { const est = await estimatorOf(); if (est.email) { h = { name: est.name, email: est.email, label: 'Senior Estimator' }; field = 'estimator'; } }
+  else if (k === 'insurance' || k === 'roofing') { await roles(); h = LR.holder(k, team, users); }
+  const at = nowIso(), patch = h ? { assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k } : {};
+  if (h) { patch[field] = h.name; patch[field + 'Email'] = h.email; }
+  if (LR.coRole(it, k) === 'roofing') { await roles(); const r = LR.holder('roofing', team, users); if (r && r.email !== low(h ? h.email : '')) patch.coAssignees = [{ name: r.name, email: r.email, role: 'roofing', label: r.label, at }]; }   /* the Senior Roofing PM too: a commercial roofing bid, a storm / water lead about a roof */
+  let done = false;
+  if (!Object.keys(patch).length) return null;
+  await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === id); if (!x || x.pm || x.estimator) return undefined; Object.assign(x, patch); done = true; return list; });
+  return done ? patch : null;
+}
+/* the Senior Estimator (patch EST4): worked out from the people's roles (_lib/estimator.js) — the one active
+   Estimator; with several, the Leads ⚙ "Senior Estimator" setting (an e-mail kept as data); none → the admins */
 async function estimatorOf(settings){
   const st = Object.assign({}, DEFAULT_SETTINGS, settings || (await kvGet(KV_SET)) || {});
   const r = await require('./_lib/estimator.js').resolve({ sb, settings: st, fresh: !!settings });
@@ -934,7 +1095,7 @@ function applyAct(items, b, who){
   let it = items.find(x => x && x.id === id);
   if (!it) return { err: 'no such lead in the inbox' };
   if (op === 'imported') { if (it.status === 'new') it.status = 'imported'; it.leadId = s(b.leadId) || it.leadId; it.importedAt = it.importedAt || t; it.importedRev = it.rev; }
-  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; }
+  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; if (s(b.as) === 'estimator') { it.estimator = s(b.pm).slice(0, 80); it.estimatorEmail = low(b.email).slice(0, 120); if (it.pm && low(it.pm) === low(it.estimator)) { it.pm = ''; it.pmEmail = ''; } } else it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; }   /* patch BIDROLE: on a bid the pick is the estimator */
   else if (op === 'job') { it.pid = s(b.pid); it.jobAt = t; if (it.status === 'new') it.status = 'imported'; }
   else if (op === 'dismissed') { it.status = 'dismissed'; it.reason = s(b.reason).slice(0, 300) || 'Not interested'; it.by = who.email; it.dismissedAt = t; }
   else if (op === 'merged') {
@@ -964,22 +1125,30 @@ function applyAct(items, b, who){
   return { items: trim(items), item: it };
 }
 const DEFAULT_SETTINGS = {
-  keywords: ['roof', 'roofing', 'reroof', 're-roof', 'roof replacement', 'roof repair', 'roof coating', 'shingle', 'tpo', 'epdm', 'metal roof', 'modified bitumen', 'built-up roof',
+  keywords: BF.merge(['roof', 'roofing', 'reroof', 're-roof', 'roof replacement', 'roof repair', 'roof coating', 'shingle', 'tpo', 'epdm', 'metal roof', 'modified bitumen', 'built-up roof',
     'building', 'construction', 'new construction', 'general construction', 'general contractor', 'renovation', 'remodel', 'addition', 'alteration', 'build-out', 'buildout', 'finish-out',
     'tenant improvement', 'interior improvements', 'improvements', 'facility improvements', 'facility', 'building repairs', 'repair', 'maintenance', 'restoration',
     'bathroom', 'restroom', 'kitchen', 'flooring', 'floor', 'carpet', 'tile', 'painting', 'paint', 'drywall', 'framing', 'carpentry', 'ceiling', 'siding', 'gutter', 'gutters',
     'windows', 'window', 'doors', 'door', 'storefront', 'canopy', 'envelope', 'waterproofing', 'masonry', 'concrete', 'sidewalk', 'demolition', 'abatement',
-    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation'],
-  exclude: ['vehicle', 'truck', 'automobile', 'software', 'hardware', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
+    'water damage', 'fire damage', 'storm damage', 'mold', 'mitigation', 'remediation', 'ada', 'accessibility', 'hvac', 'mechanical', 'plumbing', 'electrical upgrades', 'insulation'], BF.INCLUDE),
+  exclude: BF.merge(['vehicle', 'truck', 'automobile', 'software', 'laptop', 'computer', 'it services', 'telecommunication', 'janitorial', 'custodial', 'uniform', 'food', 'catering',
     'fuel', 'lobbying', 'audit', 'consultant', 'consulting services', 'legal services', 'staffing', 'insurance broker', 'printing services', 'printing', 'mowing', 'lawn care',
-    'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'supplies', 'textbook', 'furniture', 'elevator', 'bus', 'tires', 'ammunition', 'firearms'],
-  allBids: true,   /* patch BW: "All public bids (no keyword filter)" — every solicitation from the boards except the excluded words */
+    'medical', 'pharmaceutical', 'pharmacy', 'office supplies', 'textbook', 'furniture', 'bus', 'tires', 'ammunition', 'firearms'], BF.EXCLUDE),
+  allBids: true,   /* patch BW + BIDFILTER: "All construction bids, any trade" — no keyword needed, but the construction gate (_lib/bid-filter.js) always applies */
   sources: {},
-  /* LA / EST4: "Default estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
-  estimator: { name: '', email: '' }
+  /* LA / EST4: "Senior Estimator" (Leads ⚙) — empty: the one person with the Estimator role (_lib/estimator.js) */
+  estimator: { name: '', email: '' },
+  /* patch CLAIMLEAD: Leads ⚙ "Insurance claims go to:" — empty: the Senior Insurance PM of the lead roles (_lib/claim-lead.js) */
+  claimsTo: { name: '', email: '' },
+  /* patch ALERTTO: Leads ⚙ "Lead & bid alert e-mails go to:" — new-lead / bid-due / assign-reminder e-mails (_lib/bid-alerts.js) */
+  alertTo: ['office@grayco-cs.com'],
+  /* patch OWNER4: Leads ⚙ "Mitigation emergencies also go to:" — a water / fire emergency also goes to these (the office + the on-call PM too); the admin adds the mitigation manager */
+  mitigationTo: ['nthomas@grayco-cs.com', 'wjohnson@grayco-cs.com'],
+  /* patch OWNER4: Leads ⚙ "Emergencies also go to:" — every emergency also goes to these; empty = on-call + office + the CRM lead only */
+  emergenciesTo: []
 };
 function cleanSettings(b, cur){
-  const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 120);
+  const words = v => arr(v).map(x => low(x).slice(0, 40)).filter(Boolean).slice(0, 500);   /* patch BIDFILTER: room for the built-in lists */
   const out = Object.assign({}, DEFAULT_SETTINGS, cur || {});
   if (b.keywords) out.keywords = words(b.keywords);
   if (b.exclude) out.exclude = words(b.exclude);
@@ -988,6 +1157,31 @@ function cleanSettings(b, cur){
     const em = low(b.estimator.email);
     if (em && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(em)) throw new Error('The estimator e-mail does not look right.');
     out.estimator = { name: s(b.estimator.name).slice(0, 80), email: em };
+  }
+  if (b.claimsTo && typeof b.claimsTo === 'object') {   /* patch CLAIMLEAD */
+    const em = low(b.claimsTo.email);
+    if (em && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(em)) throw new Error('The claims assignee e-mail does not look right.');
+    out.claimsTo = { name: s(b.claimsTo.name).slice(0, 80), email: em };
+  }
+  if (b.alertTo != null) {   /* patch ALERTTO */
+    const l = (Array.isArray(b.alertTo) ? b.alertTo : s(b.alertTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
+    if (bad.length) throw new Error('The alert e-mail "' + bad[0] + '" does not look right.');
+    out.alertTo = Array.from(new Set(l)).slice(0, 12);
+    if (!out.alertTo.length) out.alertTo = ['office@grayco-cs.com'];
+  }
+  if (b.emergenciesTo != null) {   /* patch OWNER4 */
+    const l = (Array.isArray(b.emergenciesTo) ? b.emergenciesTo : s(b.emergenciesTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
+    if (bad.length) throw new Error('The emergency e-mail "' + bad[0] + '" does not look right.');
+    out.emergenciesTo = Array.from(new Set(l)).slice(0, 12);
+  }
+  if (b.mitigationTo != null) {   /* patch OWNER4 */
+    const l = (Array.isArray(b.mitigationTo) ? b.mitigationTo : s(b.mitigationTo).split(/[,;\s]+/)).map(x => low(x && typeof x === 'object' ? x.email : x)).filter(Boolean);
+    const bad = l.filter(x => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(x));
+    if (bad.length) throw new Error('The mitigation e-mail "' + bad[0] + '" does not look right.');
+    out.mitigationTo = Array.from(new Set(l)).slice(0, 12);
+    if (!out.mitigationTo.length) out.mitigationTo = DEFAULT_SETTINGS.mitigationTo.slice();
   }
   if (b.sam && typeof b.sam === 'object') out.sam = { on: b.sam.on !== false, states: arr(b.sam.states).map(x => s(x).toUpperCase()).filter(x => /^[A-Z]{2}$/.test(x)).slice(0, 6), naics: arr(b.sam.naics).map(x => s(x).replace(/\D/g, '')).filter(x => /^\d{2,6}$/.test(x)).slice(0, 20) };   /* patch BW */
   if (b.sources && typeof b.sources === 'object') { out.sources = Object.assign({}, out.sources || {}); Object.keys(b.sources).slice(0, 150).forEach(k => { const v = b.sources[k] || {}; out.sources[k.replace(/[^a-z0-9-]/g, '')] = { on: v.on !== false, url: /^https:\/\//.test(s(v.url)) ? s(v.url).slice(0, 400) : '' }; }); }
@@ -1017,6 +1211,26 @@ async function signupTodo(src, who){
   return !!(r && r.ok !== false);
 }
 
+/* patch BIDFILTER: the bids already in the inbox that the construction gate would have refused: from the public bid
+   watcher (origin "watch"), still open, not yet a job. → { count, ids, items:[{id,title,source,city,why}] } */
+const CLEANUP_REASON = 'Not construction (auto)';
+function cleanupPick(items, settings, withItems){
+  const o = BF.optsFrom(settings), ids = [], list = [];
+  arr(items).forEach(it => {
+    if (!it || it.stub || s(it.origin) !== 'watch' || /^(dismissed|merged)$/.test(s(it.status)) || it.pid) return;
+    const g = BF.checkItem(it, o); if (g.ok) return;
+    ids.push(it.id); if (withItems && list.length < 300) list.push({ id: it.id, title: s(it.title).slice(0, 160), source: s(it.source), city: s(it.city), leadId: s(it.leadId), why: g.why || '' });
+  });
+  return { count: ids.length, ids, items: list };
+}
+
+function noticeGate(ai, saved){
+  if (!/^(public_bid|planroom_notice)$/.test(low(ai && ai.kind))) return { dropped: 0, leads: arr(ai && ai.leads) };
+  const o = BF.optsFrom(Object.assign({}, DEFAULT_SETTINGS, saved || {})), keep = [];
+  arr(ai.leads).forEach(l => { const g = BF.check(s(l.project_name), [l.scope_summary, arr(l.trades).join(' '), l.notes].filter(Boolean).join(' '), o); if (g.ok) keep.push(l); });
+  return { dropped: arr(ai.leads).length - keep.length, leads: keep };
+}
+
 /* ── handlers ──────────────────────────────────────────────────────────────── */
 exports.handler = async function(event){
   const qs = event.queryStringParameters || {};
@@ -1041,16 +1255,34 @@ exports.handler = async function(event){
       return J(200, out, C);
     } catch (e) { return J(502, { error: 'Could not read the lead inbox.' }, C); }
   }
+  /* patch BIDFILTER: "Hide non-construction bids" — GET = the preview (how many, which), POST {confirm:true} = hide them
+     (status dismissed, reason "Not construction (auto)"; nothing is deleted, a dismissed bid is never re-imported or e-mailed) */
+  if (qs.cleanup && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!who.admin) return J(403, { error: 'Only an admin can hide bids.' }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    try {
+      const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
+      if (event.httpMethod === 'GET') return J(200, Object.assign({ ok: true }, cleanupPick(arr(await kvGet(KV)), settings, true)), C);
+      let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+      if (b.confirm !== true) return J(400, { error: 'Preview first, then confirm.' }, C);
+      let hid = [];
+      await kvCas(KV, v => { const list = arr(v), pick = cleanupPick(list, settings, false), want = {}; pick.ids.forEach(i => { want[i] = 1; }); hid = [];
+        const t = nowIso(); list.forEach(x => { if (x && want[x.id]) { x.status = 'dismissed'; x.reason = CLEANUP_REASON; x.by = who.email; x.dismissedAt = t; x.autoHidden = true; x.rev = (x.rev || 1) + 1; x.updatedAt = t; hid.push({ id: x.id, leadId: s(x.leadId) }); } });
+        return hid.length ? list : undefined; });
+      return J(200, { ok: true, hidden: hid.length, ids: hid.map(x => x.id), reason: CLEANUP_REASON }, C);
+    } catch (e) { return J(502, { error: 'Could not hide the bids: ' + s(e && e.message) }, C); }
+  }
   /* patch BW: 🔎 Bid boards — the built-in boards, the admins' own, their last run and SAM.gov */
   if (event.httpMethod === 'GET' && qs.sources) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
     if (!who.admin) return J(403, { error: 'Only an admin sees the bid boards.' }, C);
     const BW = require('./bid-watch.js');
     const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
-    const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local });
+    const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local, unverified: !!x.unverified });
     const sk = await BW.samKey().catch(() => ({ key: '' }));   /* the key itself never leaves the server: where it came from + its last 4 */
-    return J(200, { ok: true, builtins: BW.SOURCES.map(pub), custom: arr(settings.custom), settings: { keywords: settings.keywords, exclude: settings.exclude, allBids: settings.allBids !== false, sources: settings.sources || {} },
-      defaults: { keywords: DEFAULT_SETTINGS.keywords, exclude: DEFAULT_SETTINGS.exclude },
+    return J(200, { ok: true, builtins: BW.SOURCES.map(pub), custom: arr(settings.custom), settings: { keywords: BF.mergedLists(settings).keywords, exclude: BF.mergedLists(settings).exclude, allBids: settings.allBids !== false, sources: settings.sources || {} },
+      defaults: { keywords: DEFAULT_SETTINGS.keywords, exclude: DEFAULT_SETTINGS.exclude }, cleanup: true,
       sam: { ready: !!sk.key, from: sk.from || '', last4: sk.key ? sk.last4 : '', settings: BW.samSettings(settings) }, watch: (await kvGet('gc_bid_watch_status')) || null }, C);
   }
   /* patch EST4: sub bids that came by e-mail to bids@ — the estimator's list (GET), pick the job / mark handled (POST) */
@@ -1059,13 +1291,23 @@ exports.handler = async function(event){
     if (event.httpMethod === 'GET') {
       const list = arr(await kvGet(KV_SUBBIDS)).slice(-200).reverse();
       let jobs = []; try { jobs = (await portalJobs()).map(j => ({ id: j.id, title: j.title, po: j.po })); } catch (e) {}
-      return J(200, { ok: true, items: list, jobs, unmatched: list.filter(x => x && x.status === 'unmatched').length }, C);
+      return J(200, { ok: true, items: list, jobs, unmatched: list.filter(x => x && x.status === 'unmatched').length, unsorted: list.filter(x => x && x.status === 'unsorted').length }, C);
     }
     let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
     const op = s(b.op); let out = null, err = '';
+    /* patch BIDSEND: an unsorted bids@ e-mail is a GC's reply to our bid on this lead (and GC row) */
+    if (op === 'reply') {
+      const x = arr(await kvGet(KV_SUBBIDS)).find(y => y && y.id === s(b.id)); if (!x) return J(400, { error: 'No such e-mail.' }, C);
+      const fake = { id: x.id, messageId: x.id, from: { email: low(x.sub && x.sub.email), name: s(x.sub && x.sub.name) }, subject: x.subject, text: x.text, date: x.at, files: arr(x.files).filter(f => f && f.ref) };
+      let r; try { r = await repliesApi().handle(fake, { force: { leadId: s(b.leadId), bidderId: s(b.bidderId) }, via: 'bids@ (sorted by ' + who.email + ')' }); } catch (e) { return J(503, { error: s(e && e.message) }, C); }
+      if (!r || r.ok === false) return J(400, { error: (r && r.why) || 'That lead was not found.' }, C);
+      await kvCas(KV_SUBBIDS, v => { const l = arr(v); const y = l.find(z => z && z.id === x.id); if (!y) return undefined; y.status = 'handled'; y.kind = 'reply'; y.leadId = s(b.leadId); y.handledBy = who.email; y.handledAt = nowIso(); out = y; return l; });
+      return J(200, { ok: true, item: out, reply: r }, C);
+    }
     await kvCas(KV_SUBBIDS, v => { const l = arr(v); const x = l.find(y => y && y.id === s(b.id)); if (!x) { err = 'No such sub bid.'; return undefined; }
       if (op === 'assign') { x.jobId = s(b.jobId).slice(0, 80); x.jobTitle = s(b.jobTitle).slice(0, 200); x.status = x.jobId ? 'matched' : 'unmatched'; x.match = 'picked by ' + who.email; }
       else if (op === 'done') { x.status = 'handled'; x.handledBy = who.email; x.handledAt = nowIso(); }
+      else if (op === 'sub') { x.kind = 'sub'; x.status = x.jobId ? 'matched' : 'unmatched'; x.match = 'sorted by ' + who.email; }   /* patch BIDSEND: "it is a sub bid" */
       else { err = 'Unknown action.'; return undefined; }
       out = x; return l; });
     return err ? J(400, { error: err }, C) : J(200, { ok: true, item: out }, C);
@@ -1145,7 +1387,8 @@ exports.handler = async function(event){
       if (s(b.id)) { const items = arr(await kvGet(KV)); it = items.find(x => x && x.id === s(b.id)); if (it) it = liveTarget(items, it); if (!it || it.status === 'dismissed') return J(404, { error: 'No such lead in the inbox.' }, C); }
       else if (b.lead && s(b.lead.id)) it = leadItem(b.lead);
       else return J(400, { error: 'No lead.' }, C);
-      let pr; try { pr = await portalApi().setPortal(it, { mode, scope: b.scope, scopeMode: b.scopeMode, sharedNotes: b.sharedNotes, plansLinks: b.plansLinks || it.plansLinks }, who); } catch (e) { return J(502, { error: 'The sub bid portal could not be reached: ' + s(e && e.message) }, C); }
+      const auto = mode === 'draft' && isCommercial(it);   /* patch SYS: an estimator lead's bid job is PRIVATE at once (never downgrades a public one) */
+      let pr; try { pr = await portalApi().setPortal(it, { mode: auto ? 'private' : mode, auto, scope: b.scope, scopeMode: b.scopeMode, sharedNotes: b.sharedNotes, plansLinks: b.plansLinks || it.plansLinks }, who); } catch (e) { return J(502, { error: 'The sub bid portal could not be reached: ' + s(e && e.message) }, C); }
       if (!pr.ok) return J(pr.code || 502, { error: pr.error }, C);
       const mark = { jobId: pr.jobId, state: pr.state, visibility: pr.visibility, at: nowIso(), by: who.email };
       if (s(b.id)) { try { await kvCas(KV, v => { const list = arr(v); const x = list.find(y => y && y.id === it.id); if (!x) return undefined; x.portal = Object.assign({}, x.portal || {}, mark); x.updatedAt = nowIso(); return list; }); } catch (e) {} }
@@ -1174,7 +1417,7 @@ exports.handler = async function(event){
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
   if (s(evt.type) && s(evt.type) !== 'email.received') return J(200, { ok: true, ignored: 'event ' + evt.type });
   /* cheap routing before the hand-off: mail plainly for bills@ / claims@ is not touched */
-  if (otherInbox(evt.data || evt)) return J(200, { ok: true, ignored: 'not addressed to the bid inbox' });
+  if (otherInbox(evt.data || evt)) { try { await require('./_lib/mailcenter.js').log(evt, { status: 200, body: { ok: true, ignored: 'for bills@ / claims@ (their own inbox handles it)' } }, { kvCas }); } catch (e) {} return J(200, { ok: true, ignored: 'not addressed to the bid inbox' }); }
   if (await handOff(raw)) return J(200, { ok: true, accepted: true, how: v.how });
   const r = await processEvent(evt, { inline: true });
   return J(r.status, r.body);
@@ -1192,8 +1435,10 @@ exports.backgroundHandler = async function(event){
 };
 
 /* shared with bid-watch.js, and the test harness */
-exports._lib = { env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
+exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
-exports._test = { fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
+exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
 exports._lib.storeFile = storeFile;
+exports._test.processEvent = processEvent;
+exports._test.estimateMail = estimateMail; exports._test.forEstimates = forEstimates;   /* patch ESTIN: tests */   /* patch MAILC: tests */

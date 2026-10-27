@@ -7,6 +7,7 @@
    once — and the STAFF_EMAILS variable only before that table exists.
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -110,7 +111,7 @@ async function shellOut(html, who, body){
   try {
     const B = require('./_lib/brand.js');
     const sd = body && body.sender && typeof body.sender === 'object' ? body.sender : null;
-    return await B.shellFor(html, { email: (sd && sd.email) || who.email, name: (sd && sd.name) || who.name, portalUrl: body && /^https:\/\//.test(String(body.portalUrl || '')) ? body.portalUrl : '' });
+    return await B.shellFor(html, { email: (sd && sd.email) || who.email, name: (sd && sd.name) || who.name, portalUrl: body && /^https:\/\//.test(String(body.portalUrl || '')) ? body.portalUrl : '', legal: body && body.legal === false ? false : undefined });   /* patch LEGAL3 */
   } catch (e) { return html; }
 }
 
@@ -119,7 +120,7 @@ async function shellOut(html, who, body){
 const FROM = {
   office:  'GrayCo Construction Services <office@grayco-cs.com>',
   news:    'GrayCo Construction Services <news@grayco-cs.com>',
-  billing: 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
+  billing: require('./_lib/brand.js').billingFrom()   /* patch BILL: Netlify BILLING_EMAIL overrides */
 };
 const ALLOWED_DOMAIN = 'grayco-cs.com';
 // Resolve the sender: a named shortcut, a full "Name <addr>" string, or a bare
@@ -244,6 +245,60 @@ async function sendPersonal(body, who, key, headers){
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, logged: logged, entry: entry }) };
 }
 
+/* patch BIDSEND — "📤 Send bid" (owner 10/22: "I never want to say submitted to multiple contractors … always
+   personalize"; "outgoing bids are sent through Glenn but FROM bids@"):
+   { mode:'bid', to: <ONE GC contact>, subject, html, attachments?, gc, avoid: [the other GCs' names], pid?, about? }
+   owner: "our outbound bids have the project / name of the job as the subject, not GrayCo bids" — the subject is the
+   CRM's (the project as the GC knows it + the GC's bid #), the From name is the sender's own:
+   From "<the signed-in estimator's name> <bids@grayco-cs.com>", Reply-To bids@ (a Google Group: the estimator,
+   the admins, the office and the CRM — replies are filed on the lead, _lib/bid-replies.js), a BCC to the sender, the
+   sender's own signature (name, direct phone, e-mail). Never a CC: each GC gets its own e-mail. Refused when the
+   e-mail names another GC on the list, or says "multiple contractors" / "other bidders". Logged (gc_email_log). */
+function bidFromAddr(){ return String(process.env.BID_SEND_FROM || 'bids@grayco-cs.com').trim().toLowerCase(); }
+const BID_MULTI = /\bmultiple\s+(?:general\s+)?(?:contractors|gcs|bidders)\b|\bother\s+(?:bidders|general\s+contractors|contractors|gcs)\b|\ball\s+(?:bidders|gcs)\b|\bseveral\s+(?:contractors|gcs|bidders)\b/i;
+async function sendBid(body, who, key, headers){
+  const me = String(who.email || '').toLowerCase(), bidsAt = bidFromAddr();
+  if (!/@grayco-cs\.com$/.test(me)) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Your sign-in (' + me + ') is not a @grayco-cs.com address.' }) };
+  const to = emails(body.to);
+  if (to.length !== 1 || !EMAIL_RE.test(to[0])) return { statusCode: 400, headers, body: JSON.stringify({ error: 'A bid goes to ONE GC contact per e-mail — check the "To" address.' }) };
+  if (emails(body.cc).length || emails(body.bcc).length) return { statusCode: 400, headers, body: JSON.stringify({ error: 'A bid is never copied to anyone else — each GC gets its own e-mail.' }) };
+  const subject = String(body.subject || '').trim().slice(0, 250), html = String(body.html || '');
+  if (!subject || !html.trim()) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Add a subject and a message.' }) };
+  const plain = (subject + ' ' + html.replace(/<[^>]+>/g, ' ')).replace(/&amp;/g, '&').replace(/\s+/g, ' ');
+  if (BID_MULTI.test(plain)) return { statusCode: 400, headers, body: JSON.stringify({ error: 'This e-mail mentions other contractors / bidders — each GC gets a bid written only for them.' }) };
+  const gc = String(body.gc || '').trim().toLowerCase();
+  const other = (Array.isArray(body.avoid) ? body.avoid : []).map(function(x){ return String(x || '').trim(); }).filter(function(x){ return x.length >= 3 && gc.indexOf(x.toLowerCase()) < 0; })
+    .find(function(x){ return plain.toLowerCase().indexOf(x.toLowerCase()) >= 0; });
+  if (other) return { statusCode: 400, headers, body: JSON.stringify({ error: 'This e-mail names another GC (' + other + ') — each GC gets only its own bid.' }) };
+  const att = await readAttachments(body.attachments);
+  if (!att.ok) return { statusCode: 400, headers, body: JSON.stringify({ error: att.error }) };
+  const name = (cleanName(who.name) || cleanName(body.fromName) || me.split('@')[0]).replace(/\|/g, ' ').trim();
+  /* our own Message-ID (lead + GC in it): the GC's reply names it in In-Reply-To, so bid-inbox.js files it on that GC's row */
+  const tok = function(v){ return String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) || 'x'; };
+  const messageId = '<bid.' + tok(body.pid) + '.' + tok(body.gcId).slice(0, 20) + '.' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '@grayco-cs.com>';
+  const payload = { from: name.replace(/[,;]/g, ' ').trim() + ' <' + bidsAt + '>', reply_to: bidsAt, to: to, subject: subject, html: await shellOut(html, who, body), headers: { 'X-GrayCo-CRM': 'bid-send', 'Message-ID': messageId } };
+  if (me !== bidsAt) payload.bcc = [me];
+  if (att.files.length) payload.attachments = att.files;
+  let data = {}, resp, ownId = true;
+  try {
+    resp = await fetch(RESEND_URL, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    data = await resp.json().catch(function(){ return {}; });
+    /* the service would not take our Message-ID: send without it (the reply is still matched by contact and project) */
+    if (!resp.ok && (resp.status === 400 || resp.status === 422) && /header|message-?id/i.test(String(data && data.message))) {
+      delete payload.headers['Message-ID']; ownId = false;
+      resp = await fetch(RESEND_URL, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      data = await resp.json().catch(function(){ return {}; });
+    }
+  } catch (e) { return { statusCode: 502, headers, body: JSON.stringify({ error: 'The e-mail service did not answer.' }) }; }
+  if (!resp.ok) return { statusCode: resp.status, headers, body: JSON.stringify({ error: (data && data.message) || 'Send failed' }) };
+  const entry = { id: 'em_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: new Date().toISOString(), kind: 'bid',
+    by: name, from: bidsAt, sender: me, to: to, cc: [], subject: subject, text: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+    pid: String(body.pid || '').slice(0, 80), customer: String(body.gc || '').slice(0, 120), about: 'bid', messageId: ownId ? messageId : '',
+    attachments: att.files.map(function(f){ return f.filename; }), resendId: data && data.id || '' };
+  let logged = false; try { logged = await logSent(entry); } catch (e) {}
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, id: data && data.id, from: payload.from, replyTo: bidsAt, messageId: ownId ? messageId : '', logged: logged, entry: entry }) };
+}
+
 exports.handler = async function (event) {
   const headers = Object.assign(gcCors(event, 'POST, OPTIONS'), { 'Content-Type': 'application/json' });
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
@@ -261,6 +316,7 @@ exports.handler = async function (event) {
   catch { return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
   if (body.mode === 'personal') return sendPersonal(body, who, key, headers);   /* patch AP2 */
+  if (body.mode === 'bid') return sendBid(body, who, key, headers);             /* patch BIDSEND */
 
   const to = body.to;
   const subject = body.subject;
@@ -284,7 +340,7 @@ exports.handler = async function (event) {
   if (/<news@grayco-cs\.com>$/i.test(from)) {
     const list = Array.isArray(to) ? to : [to];
     if (list.length !== 1 || body.cc) return { statusCode: 400, headers, body: JSON.stringify({ error: 'GrayCo News goes to one customer per e-mail (each gets their own unsubscribe link).' }) };
-    const res = await require('./_lib/news.js').sendNews({ to: list[0], subject: subject, html: await shellOut(html, who, body), text: body.text });
+    const res = await require('./_lib/news.js').sendNews({ to: list[0], subject: subject, html: await shellOut(html, who, Object.assign({}, body, { legal: false })), text: body.text });   /* patch LEGAL3: GrayCo News has its own footer */
     if (res.skipped) return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: res.skipped }) };
     if (!res.ok) return { statusCode: res.status || 502, headers, body: JSON.stringify({ error: res.error || 'Send failed' }) };
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
@@ -297,6 +353,7 @@ exports.handler = async function (event) {
     html: await shellOut(html, who, body)
   };
   if (body.replyTo) payload.reply_to = body.replyTo;
+  else if (/<billing@|^billing@/i.test(String(from || ''))) payload.reply_to = require('./_lib/brand.js').billingEmail();   /* patch BILL: billing mail is answered at billing@ */
   if (body.cc) payload.cc = Array.isArray(body.cc) ? body.cc : [body.cc];
   const att = await readAttachments(body.attachments);
   if (!att.ok) return { statusCode: 400, headers, body: JSON.stringify({ error: att.error }) };

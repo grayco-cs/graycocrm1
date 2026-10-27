@@ -3,6 +3,7 @@
    Scheduled in netlify.toml (about 9:35 AM Central). GET ?ping=1 → alive. Anything that is not Netlify's scheduled call
    (body { next_run }) is refused. COI_REQUESTS_OFF=1 / WARRANTY_CHECK_OFF=1 / CUST_NEEDS_REMIND_OFF=1 switch a part off. */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 function isScheduled(event){
   try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
 }

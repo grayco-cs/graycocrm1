@@ -18,6 +18,7 @@
 //   POST {action:'order-assign', id, pid}              → an unmatched order gets its job (+ the Site Book delivery)
 //   POST {action:'rate-sub', pid, subId, subName, rating 1-5, note}  → gc_sub_ratings (the sub scorecard)
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const portal = require('./portal.js');
 const FA = require('./_lib/fa-core.js');
@@ -202,3 +203,6 @@ exports.handler = async function(event){
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + C.OFFICE_PHONE + '.' }); }
 };
 exports._test = { custTicket: custTicket, storeImage: storeImage, TICKETS: TICKETS, RATINGS: RATINGS };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}

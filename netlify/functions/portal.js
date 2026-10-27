@@ -36,6 +36,7 @@
    once — and the STAFF_EMAILS variable only before that table exists.
    No token / bad token → 401.  Signed in but not staff → 403.
    (Kept inline in every function on purpose: each function is bundled alone.) */
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const GC_SB_DEFAULT_URL = 'https://ieeonhpfahmwwecizdut.supabase.co';
 /* the PUBLIC anon key (it is already in index.html — not a secret) */
 const GC_SB_DEFAULT_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
@@ -444,6 +445,17 @@ function scrub(obj, words){
   return obj;
 }
 function streetKey(a){ const m = /^\s*(\d+)\s+([A-Za-z]+)/.exec(s(a)); return m ? (m[1] + ' ' + m[2]).toLowerCase() : ''; }
+/* patch ESTIN (owner, 10/24): no estimate or proposal reaches the customer portal by itself. From this build on, an
+   estimate shows only once the customer signed / accepted it or a person shared it; a proposal / estimate paper the CRM
+   filed by itself (Google Docs, the GrayCo template, an upload) only once approved (the paper-to-sign comes in through
+   portal-sign.js when its e-mail is approved). Older estimates and papers keep the rules they had. */
+const ESTIN_BOOT = '2026-10-24';
+function estinNew(x){ const t = s(x && (x.createdAt || x.created || x.uploadedAt || x.savedAt || x.uploaded || x.date)).slice(0, 10); return !!t && t >= ESTIN_BOOT; }
+function estinEstHidden(e){ return estinNew(e) && e.portalShare !== true && !/signed|accept|won|contract/.test(low(e.status)); }
+function estinDocHidden(d){
+  if (!estinNew(d) || d.portalShare === true || d.signedAt || s(d.source) === 'portal-signature') return false;
+  return /^(estin|estin-source|gdoc|proposal|estimate)$/.test(s(d.source)) || !!s(d.estimateId) || d.estinWaiting === true;
+}
 function proposalShown(e, pid, p){
   if (!e || e.portalHide === true) return false;
   let linked = pidOf(e) === pid || (s(e.id) && (s(e.id) === s(p.estimateId) || s(e.id) === s(p._lastEstId)));
@@ -452,6 +464,7 @@ function proposalShown(e, pid, p){
     if ((cl && cl.length >= 4 && (low(e.client) === cl || low(e.name).indexOf(cl) >= 0)) || (st && low(e.name + ' ' + e.address).indexOf(st) >= 0)) linked = true;
   }
   if (!linked) return false;
+  if (estinEstHidden(e)) return false;   /* patch ESTIN */
   if (e.portalShare === true) return true;
   if (/sent|sign|approv|accept|final|won|contract/.test(low(e.status))) return true;
   return !!gdocInfo(e.gdocUrl);   /* a Google Doc proposal linked to the job (gdocs-sync) */
@@ -459,6 +472,7 @@ function proposalShown(e, pid, p){
 function docShown(d, pid, shownEst){
   if (!d || pidOf(d) !== pid) return false;
   if (d.needsReview === true || d.deleted === true) return false;
+  if (estinDocHidden(d)) return false;   /* patch ESTIN */
   if (d.portalShare === true) return true;
   if (d.portalShare === false) return false;
   if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
@@ -474,16 +488,209 @@ function customerFacing(d){
   return CUSTOMER_DOC.test(t);
 }
 
+/* ── patch PORTALGATE (owner, 10/24): "it should be approved for customer portal … even in crm you still have to
+   approve in your approvals to put it in the portal for them … it has to go through channels."
+   Nothing NEW reaches a customer's portal page without an approval: a proposal / estimate (the estimate builder's,
+   a Google Doc's, a Word / PDF upload's — the job's PM approves it; the APM only when "APMs may approve" is on;
+   admins always), a document marked for the customer (Docs / Files, Google Docs papers, the default job papers,
+   the closeout papers, the warranty), a Google Doc or link on the job. INVOICES ARE NOT GATED (owner, 10/24):
+   they go into the portal as before. Each gated thing has a key (e:<estimate> d:<doc> l:<link> g:<job>:<doc url>); gc_kv "gc_portal_gate" (a JSON list) holds
+     · one "_meta" row: when the gate started, and the keys every job already showed then (gf) — those stay;
+     · one row per key a person decided: approved / rejected / recorded (record-only: never shown) / pending.
+   A key the page would show that is neither in gf nor approved is hidden and goes on ✅ Approvals as a
+   "portal_publish" item for the job's PM (an admin can approve anything). Approving it shows it in the portal.
+   An approved "please sign" e-mail for an estimate / paper approves that key too.
+   Not gated (they already need a person): the PM's own 📣 posts and the 🟢 Crew arrived / 🏁 Done for today
+   posts, the change orders and papers the customer signs (their e-mails wait on Approvals), payments.
+   History / record-only jobs and records (importedHistory / noSend / historyOnly) never go up and never make
+   an approval. Data-entry mode: an approval cannot put anything in a portal (use "Approve as record-only").
+   Unreadable gate → fail closed: nothing new is shown. ── */
+const GATE_KEY = 'gc_portal_gate';
+const GATE_TTL = 15e3;
+let GATE_LAST = null, GATE_AT = 0;
+function gHash(v){ return crypto.createHash('sha256').update(s(v)).digest('hex').slice(0, 12); }
+function gateKeyOf(type, x, p){
+  if (type === 'g') return 'g:' + s(p && p.id) + ':' + gHash(p && p.gdocUrl);
+  if (type === 'l') return 'l:' + (s(x && x.id) || gHash(x && x.url));
+  return type + ':' + s(x && x.id);
+}
+function historyJob(p){ return !!(p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)); }
+function historyRec(r){ return !!(r && (r.importedHistory === true || r.noSend === true || r.historyOnly === true || r.recordOnly === true)); }
+function gateParse(list){
+  const meta = list.find(function(x){ return x && x.id === '_meta'; }) || null;
+  const map = {};
+  list.forEach(function(x){ if (x && x.id && x.id !== '_meta') map[s(x.id)] = x; });
+  const gf = {};
+  if (meta && meta.gf && typeof meta.gf === 'object') Object.keys(meta.gf).forEach(function(pid){ const o = {}; (Array.isArray(meta.gf[pid]) ? meta.gf[pid] : []).forEach(function(k){ o[s(k)] = 1; }); gf[pid] = o; });
+  return { ok: !!meta, since: meta ? s(meta.since) : '', map: map, gf: gf };
+}
+/* what a job's portal page would show WITHOUT the gate (the keys) — the snapshot the gate starts from */
+function gateRawKeys(data, p){
+  const pid = s(p.id), out = [];
+  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; out.push(gateKeyOf('e', e)); });
+  const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));
+  arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){ out.push(gateKeyOf('d', d)); });
+  if (gdocInfo(p.gdocUrl)) out.push(gateKeyOf('g', null, p));
+  arr(p.portalLinks).forEach(function(l){ if (l && l.hidden !== true && httpsUrl(l.url)) out.push(gateKeyOf('l', l)); });
+  return out;
+}
+async function gateGet(data, force){
+  if (!force && GATE_LAST && Date.now() - GATE_AT < GATE_TTL) return GATE_LAST;
+  let cur = null; try { cur = await kvListRead(GATE_KEY); } catch (e) { cur = null; }
+  if (!cur) { return GATE_LAST && Date.now() - GATE_AT < 10 * 60e3 ? GATE_LAST : { ok: false, map: {}, gf: {}, since: '' }; }   /* unreadable: the last good copy (10 min), else closed */
+  let G = gateParse(cur.list);
+  if (!G.ok) {   /* the first look: everything every job shows today stays; from now on new things wait for an approval */
+    try {
+      const d = data || await crmData(true);
+      const gf = {};
+      arr(d.projects).forEach(function(p){ if (p && p.id != null && findProject(d, p.id)) { const k = gateRawKeys(d, p); if (k.length) gf[s(p.id)] = k; } });
+      const meta = { id: '_meta', since: new Date().toISOString(), gf: gf, v: 1 };
+      const w = await kvListUpdate(GATE_KEY, function(l){ return l.some(function(x){ return x && x.id === '_meta'; }) ? null : { list: [meta].concat(l), check: function(l2){ return l2.some(function(x){ return x && x.id === '_meta'; }); } }; });
+      const again = await kvListRead(GATE_KEY);
+      G = again ? gateParse(again.list) : (w.ok ? gateParse([meta]) : G);
+    } catch (e) { try { console.log('[portal-gate] start failed: ' + (e && e.message || e)); } catch (x) {} }
+  }
+  if (G.ok) { GATE_LAST = G; GATE_AT = Date.now(); }
+  return G;
+}
+/* owner exception (10/24): on an insurance-claim job the Work Authorization goes in the portal by itself when the job is
+   made (patch PM3 posts it) — never gated. Tagged kind / docType / tmpl / template 'work_auth', or named "Work Authorization". */
+function gateExempt(p, key, rec){
+  if (!rec || key.slice(0, 2) !== 'd:') return false;
+  const tag = low([rec.kind, rec.docType, rec.tmpl, rec.template, rec.genKind, rec.portalAuto].filter(function(v){ return typeof v === 'string'; }).join(' '));
+  const isWa = /\bwork_auth\b/.test(tag) || /work[\s_-]*auth/i.test(s(rec.name) + ' ' + s(rec.cat));
+  if (!isWa) return false;
+  return !!(p && (isInsJob(p) || p.isInsurance === true || s(p.claimId) || s(p.claimNumber) || s(p.claimNo)));
+}
+/* may this thing be on the job's portal page? (sync: the gate read last; buildView / notices read it first) */
+function gateAllows(G, p, key, rec, pending, info){
+  if (gateExempt(p, key, rec)) return true;   /* the insurance Work Authorization (owner, 10/24) */
+  G = G || GATE_LAST;
+  if (!G || !G.ok) return false;
+  const e = G.map[key];
+  if (e && e.st === 'approved') return true;
+  if (G.gf[s(p.id)] && G.gf[s(p.id)][key]) return true;
+  if (e) return false;                                           /* pending / rejected / recorded */
+  if (historyJob(p) || historyRec(rec)) return false;           /* history never goes up and never asks */
+  if (pending && info) pending.push(Object.assign({ key: key }, info));
+  return false;
+}
+function gateLabel(t){ return { e: 'Proposal / estimate', d: 'Document', l: 'Link', g: 'Google Doc' }[t] || 'Document'; }
+/* a new thing → "pending" on the gate + one approval for the job's PM (idempotent by key) */
+async function gateQueue(data, p, pending){
+  if (!pending || !pending.length) return 0;
+  const now = new Date().toISOString(), pid = s(p.id);
+  const add = pending.filter(function(x, i, a){ return a.findIndex(function(y){ return y.key === x.key; }) === i; }).slice(0, 25);
+  const r = await kvListUpdate(GATE_KEY, function(l){
+    const have = {}; l.forEach(function(x){ if (x && x.id) have[s(x.id)] = 1; });
+    const nw = add.filter(function(x){ return !have[x.key]; }).map(function(x){ return { id: x.key, pid: pid, type: x.type, title: clip(x.title, 120), refId: s(x.refId), st: 'pending', at: now, aq: 'aq_gate_' + gHash(x.key) }; });
+    if (!nw.length) return null;
+    return { list: l.concat(nw), check: function(l2){ return nw.every(function(n){ return l2.some(function(y){ return y && y.id === n.id; }); }); }, result: nw };
+  });
+  const made = (r && r.ok && Array.isArray(r.result)) ? r.result : [];
+  if (made.length) GATE_AT = 0;
+  const pm = pmOf(data, p), cust = s(p.client || p.customer || p.clientName) || 'the customer';
+  let n = 0;
+  for (const g of made) {
+    const label = gateLabel(g.type);
+    const html = '<p><b>' + esc(label) + ':</b> ' + esc(g.title || label) + '</p><p>Job: ' + esc(jobTag(p) || s(p.name)) + '</p>' +
+      '<p>Approve to show it on ' + esc(cust) + '’s GrayCo Portal page. Nothing is e-mailed by this approval. Until then it stays in the CRM only (⏳ Waiting for approval — not in portal).</p>';
+    const ok = await queueApproval({ id: g.aq, kind: 'portal_publish', pid: pid, jobName: s(p.name), pm: pm, to: '', channel: 'portal',
+      title: '📄 Put in the customer portal — ' + label + ': ' + clip(g.title || label, 90),
+      subject: 'Show in ' + cust + '’s portal: ' + clip(g.title || label, 120), html: html, attachments: [],
+      meta: { gateKey: g.id, type: g.type, refId: g.refId, urgency: 'soon' } });
+    if (ok) n++;
+  }
+  return n;
+}
+/* set a key's decision (approved / rejected / recorded); approved also closes its own waiting approval item */
+async function gateSet(key, st, me, why){
+  key = s(key); if (!key) return false;
+  const now = new Date().toISOString();
+  const r = await kvListUpdate(GATE_KEY, function(l){
+    const x = l.find(function(y){ return y && y.id === key; });
+    if (x && x.st === st) return null;
+    const row = Object.assign({}, x || { id: key, at: now }, { st: st, by: s(me && me.by), byEmail: s(me && me.email), decidedAt: now, why: clip(why, 120) });
+    const nl = x ? l.map(function(y){ return y && y.id === key ? row : y; }) : l.concat([row]);
+    return { list: nl, check: function(l2){ return l2.some(function(y){ return y && y.id === key && y.st === st; }); }, result: row };
+  });
+  GATE_AT = 0;
+  if (st === 'approved') {   /* its own "Put in the portal" item, if one waits, is done */
+    try { await kvListUpdate(AQ_KEY, function(l){ const it = l.find(function(y){ return y && y.kind === 'portal_publish' && (y.meta || {}).gateKey === key && (y.status === 'waiting' || y.status === 'sending'); }); if (!it) return null;
+      it.status = 'sent'; it.sentAt = now; it.sentBy = s(me && me.by) || 'GrayCo'; it.updatedAt = now; it.note = 'Approved with ' + clip(why || 'another approval', 80);
+      return { list: l, check: function(l2){ return l2.some(function(y){ return y && y.id === it.id && y.status === 'sent'; }); } }; }); } catch (e) {}
+  }
+  return !!(r && r.ok);
+}
+async function gateOnApproved(item, now){
+  const m = item.meta || {}, key = s(m.gateKey);
+  if (!key) return { ok: false, error: 'This approval has no portal item.' };
+  let paused = false; try { paused = await require('./_lib/pause').isPaused(); } catch (e) { paused = false; }
+  if (paused) return { ok: false, error: 'Data-entry mode is on: nothing goes to customers, so it was not put in the portal. Use “Approve as record-only”, or approve again after ▶ Resume sending.' };
+  const ap = (item.approvals || []).slice(-1)[0] || {};
+  const ok = await gateSet(key, 'approved', { by: ap.by, email: ap.email }, 'its approval');
+  return ok ? { ok: true, posted: true } : { ok: false, error: 'Could not save it just now — try again.' };
+}
+/* another approved e-mail that carries the same thing (an invoice e-mail, a "please sign" e-mail) approves it too */
+async function gateFromMail(item, me){
+  try {
+    const m = item.meta || {}, k = s(item.kind);
+    if (/^sign_/.test(k) && m.refId) await gateSet((/contract|estimate/.test(k + ' ' + s(m.kind)) ? 'e:' : 'd:') + s(m.refId), 'approved', me, 'the signature e-mail');
+  } catch (e) {}
+}
+/* the 15-minute run (approval-escalate.js) and the CRM ("gate-scan" for one job): every job's new things → Approvals */
+async function gateScan(opts){
+  opts = opts || {};
+  const data = await crmData(true);
+  const G = await gateGet(data, true);
+  if (!G.ok) return { ok: false, error: 'The portal gate could not be read.' };
+  let queued = 0, jobs = 0;
+  for (const p of arr(data.projects)) {
+    if (!p || p.id == null || !findProject(data, p.id)) continue;
+    if (opts.pid && s(p.id) !== s(opts.pid)) continue;
+    if (historyJob(p)) continue;
+    const pending = [];
+    gateCandidates(data, p).forEach(function(c){ gateAllows(G, p, c.key, c.rec, pending, c.info); });
+    if (pending.length) { jobs++; queued += await gateQueue(data, p, pending); }
+  }
+  return { ok: true, queued: queued, jobs: jobs };
+}
+function gateCandidates(data, p){
+  const pid = s(p.id), out = [];
+  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; out.push({ key: gateKeyOf('e', e), rec: e, info: { type: 'e', title: s(e.name) || 'Proposal', refId: s(e.id) } }); });
+  const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));
+  arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){ if (d.estimateId && shownEst[s(d.estimateId)]) return;   /* an estimate's own PDF follows the estimate's approval */
+    out.push({ key: gateKeyOf('d', d), rec: d, info: { type: 'd', title: s(d.name) || 'Document', refId: s(d.id) } }); });
+  if (gdocInfo(p.gdocUrl)) out.push({ key: gateKeyOf('g', null, p), rec: p, info: { type: 'g', title: 'Proposal (Google Doc)', refId: '' } });
+  arr(p.portalLinks).forEach(function(l){ if (l && l.hidden !== true && httpsUrl(l.url)) out.push({ key: gateKeyOf('l', l), rec: l, info: { type: 'l', title: s(l.title) || 'Link', refId: s(l.id) } }); });
+  return out;
+}
+/* what is waiting on the gate (the CRM shows "⏳ Waiting for approval — not in portal") */
+async function gateState(pid){
+  const G = await gateGet(null, true);
+  if (!G.ok) return { ok: false, error: 'The portal gate could not be read.' };
+  const items = Object.keys(G.map).map(function(k){ return G.map[k]; }).filter(function(x){ return !pid || s(x.pid) === s(pid); })
+    .map(function(x){ return { key: x.id, pid: x.pid, type: x.type, title: x.title, refId: x.refId, st: x.st, at: x.at, by: x.by || '', decidedAt: x.decidedAt || '' }; });
+  return { ok: true, since: G.since, items: items };
+}
+
 async function buildView(data, p, opts){
   opts = opts || {};
   const pid = s(p.id);
+  const G = await gateGet(data), gatePend = [];   /* patch PORTALGATE */
   const users = arr(data.users), customers = arr(data.customers);
-  const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return invOfProject(r, p) && isCustomerInvoice(r); });
+  const invoices = listOf(data, ['invs', 'invoices']).filter(function(r){ return invOfProject(r, p) && isCustomerInvoice(r); });   /* invoices: not gated (owner, 10/24) */
   const cos = listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; });
-  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const rawEsts = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const rawEst = {}; rawEsts.forEach(function(e){ rawEst[s(e.id)] = 1; });
+  const ests = rawEsts.filter(function(e){ return gateAllows(G, p, gateKeyOf('e', e), e, gatePend, { type: 'e', title: s(e.name) || 'Proposal', refId: s(e.id) }); });   /* patch PORTALGATE */
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
   const ins = isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, pid));   /* patch INSP; patch BB2: a job with a claim (gc_claims) is an insurance job */
-  const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); });
+  const pdocs = arr(data.projectDocs).filter(function(d){ return ins ? insDocShown(d, pid, rawEst) : docShown(d, pid, rawEst); })
+    .filter(function(d){ const ek = s(d.estimateId); if (ek && rawEst[ek]) return !!shownEst[ek] || gateAllows(G, p, gateKeyOf('d', d), d, null, null);   /* an estimate's own PDF follows the estimate's approval */
+      return gateAllows(G, p, gateKeyOf('d', d), d, gatePend, { type: 'd', title: s(d.name) || 'Document', refId: s(d.id) }); });
   const openPunch = arr(data.punch).some(function(x){ return pidOf(x) === pid && !/complete|done|closed/.test(low(x.status)); });
   const lead = arr(data.leads).find(function(l){ return s(l.fromProjectId) === pid || pidOf(l) === pid; }) || null;
 
@@ -514,14 +721,16 @@ async function buildView(data, p, opts){
     addDoc({ kind: 'proposal', title: clip(e.name || 'Your proposal', 90), date: ymd(e.sentDate || e.date || e.updatedAt),
       total: total > 0 ? money(total) : null,
       status: /sign|approv|accept|won|contract/.test(low(e.status)) ? 'Signed' : 'Sent',
-      url: g ? g.url : (pdf ? (signed[pdf.ref] || httpsUrl(pdf.url)) : ''), preview: g ? g.preview : '' });
+      url: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) || (g ? g.url : ''), preview: (pdf && (signed[pdf.ref] || httpsUrl(pdf.url))) ? '' : (g ? g.preview : '') });   /* patch GDOCS: the PDF first — a private Google Doc does not open for the customer */
   });
   const pg = gdocInfo(p.gdocUrl);
-  if (pg) addDoc({ kind: 'gdoc', title: 'Your proposal (Google Doc)', date: '', url: pg.url, preview: pg.preview });
+  const pgOk = !!pg && gateAllows(G, p, gateKeyOf('g', null, p), p, gatePend, { type: 'g', title: 'Proposal (Google Doc)', refId: '' });   /* patch PORTALGATE */
+  if (pgOk) addDoc({ kind: 'gdoc', title: 'Your proposal (Google Doc)', date: '', url: pg.url, preview: pg.preview });
   arr(p.portalLinks).forEach(function(l){
     if (l.hidden === true) return;
     const g = gdocInfo(l.url), u = httpsUrl(l.url);
     if (!u) return;
+    if (!gateAllows(G, p, gateKeyOf('l', l), l, gatePend, { type: 'l', title: s(l.title) || 'Link', refId: s(l.id) })) return;   /* patch PORTALGATE */
     addDoc({ kind: g ? 'gdoc' : 'link', title: clip(l.title || (g ? 'Google Doc' : 'Document'), 90), date: ymd(l.at), url: u, preview: g ? g.preview : '' });
   });
   function fileType(ty){ ty = low(ty); return /pdf/.test(ty) ? 'pdf' : (/word|\.docx?\b|msword|rtf/.test(ty) ? 'word' : (/image|jpe?g|png|heic|webp/.test(ty) ? 'image' : 'file')); }
@@ -535,6 +744,7 @@ async function buildView(data, p, opts){
   cos.forEach(function(c){ arr(c.files).forEach(function(f, i){ const u = signed[f.ref]; if (u) addDoc({ kind: 'file', title: clip('Change order — ' + (c.desc || c.title || '') , 90), date: ymd(c.date || c.savedAt), type: fileType(f.type + ' ' + f.name), url: u }); }); });
   invoices.forEach(function(r){ arr(r.files).concat(arr(r._files)).forEach(function(f){ const u = signed[f.ref]; if (u && r.needsReview !== true) addDoc({ kind: 'file', title: clip((invFinal(r) ? 'Final invoice ' : 'Invoice ') + s(r.invNum || r.num || ''), 90), date: ymd(r.date || r.sentDate || r.savedAt), type: fileType(f.type + ' ' + f.name), url: u }); }); });
 
+  if (gatePend.length && opts.noGateQueue !== true) { try { await gateQueue(data, p, gatePend); } catch (e) {} }   /* patch PORTALGATE: new things → ✅ Approvals */
   /* money */
   const contract = money(num(p.contractAmount) || num(p.contract) || num(p.contractAmt));
   const invOut = invoices.map(function(r){
@@ -555,7 +765,7 @@ async function buildView(data, p, opts){
   const paid = money(payments.reduce(function(t, x){ return t + x.amount; }, 0));
   const due = money(invOut.reduce(function(t, x){ return t + x.balance; }, 0));
 
-  const stage = stageOf(p, { invoices: invoices, openPunch: openPunch, proposals: ests.length + (pg ? 1 : 0), leadStage: lead && (lead.stage || lead.status) });
+  const stage = stageOf(p, { invoices: invoices, openPunch: openPunch, proposals: ests.length + (pgOk ? 1 : 0), leadStage: lead && (lead.stage || lead.status) });
   const ccId = ccIdOf(p);
   const view = {
     ok: true,
@@ -660,6 +870,7 @@ function insGroupOf(d){
 function insDocShown(d, pid, shownEst){
   if (!d || pidOf(d) !== pid || d.needsReview === true || d.deleted === true) return false;
   if (insInternal(d)) return false;
+  if (estinDocHidden(d)) return false;   /* patch ESTIN */
   if (d.portalShare === true) return true;
   if (d.portalShare === false) return false;
   if (/companycam/i.test(s(d.cat) + s(d.source))) return false;
@@ -985,14 +1196,14 @@ function mailHtml(kind, v, link){
     '<p style="font-size:15px;line-height:1.5"><b>Amount due: ' + usd(v.money.due) + '</b>' + (inv.number ? ' (invoice ' + esc(inv.number) + ')' : '') + '</p>' +
     '<p style="font-size:15px;line-height:1.5">How to pay: a <b>check</b> made out to GrayCo Construction Services, or <b>cash</b> — hand it to ' + esc(pmName) + '. Every payment shows on your final invoice.</p>' +
     '<p style="text-align:center;margin:22px 0"><a href="' + esc(link) + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See your invoice in my GrayCo Portal</a></p>' +
-    '<p style="font-size:13px;color:#55626F">Questions? Call us at ' + OFFICE_PHONE + (v.pm.phone ? ' or ' + esc(pmName) + ' at ' + esc(v.pm.phone) : '') + '.</p>' +
+    '<p style="font-size:13px;color:#55626F">Questions about this invoice? ' + esc(billingEmail()) + ' · ' + OFFICE_PHONE + (v.pm.phone ? ' (or ' + esc(pmName) + ' at ' + esc(v.pm.phone) + ')' : '') + '.</p>' +   /* patch BILL */
     '</div></div>';
 }
 async function sendMail(to, subject, html){
   const key = s(process.env.RESEND_API_KEY);
   if (!key || mailOff()) return { ok: false, skipped: 'no-key' };
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [to], subject: subject, html: html }) });
+    body: JSON.stringify({ from: billingFrom(), reply_to: billingEmail(), to: [to], subject: subject, html: html }) });   /* patch BILL */
   return { ok: r.ok, status: r.status };
 }
 async function mailRows(){
@@ -1118,8 +1329,17 @@ function invoiceMailHtml(doc, pmPhone){
 }
 /* a client invoice made in the CRM (not a draft, not paid, not a QuickBooks copy, made since AP2 went in) */
 const INV_MAIL_SINCE = '2026-10-21';
+/* patch LCLEAN (owner 10/23, back-entering 2025): history is a record, never mail — an invoice imported or entered as
+   history (importedHistory / noSend / historyOnly), or one whose own date is before AP2 went in */
+function isHistoryInvoice(r){
+  if (!r) return false;
+  if (r.importedHistory === true || r.noSend === true || r.historyOnly === true) return true;
+  const d = s(r.date || r.invoiceDate || r.invDate).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && d < INV_MAIL_SINCE;
+}
 function invMailWanted(r){
   if (!isCustomerInvoice(r) || invPaid(r) || invBalance(r) <= 0) return false;
+  if (isHistoryInvoice(r)) return false;   /* patch LCLEAN */
   if (/pending|ready_for_review/.test(low(r.status)) || r._autoDrafted === true && /draft/.test(low(r.status))) return false;
   if (/quickbooks|^qb/i.test(s(r.source)) || r.qbId || r.qbKey) return false;
   const made = s(r.createdAt || r.created || r.savedAt || r.date).slice(0, 10);
@@ -1217,7 +1437,12 @@ function PEOPLE(){ return require('./_lib/people.js'); }
    newsletter and anything without a PM go to the shared replies box (REPLY_TO_ADMIN, default replies@grayco-cs.com).
    Never office@. */
 function adminReplyTo(){ const v = low(process.env.REPLY_TO_ADMIN || ''); return /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(v) ? v : 'replies@grayco-cs.com'; }
+/* patch BILL: money e-mails go From and Reply-To billing@ (brand.js billingEmail, Netlify BILLING_EMAIL overrides) */
+function billingEmail(){ try { return require('./_lib/brand.js').billingEmail(); } catch (e) { return 'billing@grayco-cs.com'; } }
+function billingFrom(){ return 'GrayCo Construction Services Billing <' + billingEmail() + '>'; }
+function isMoneyKind(kind){ try { return require('./_lib/brand.js').isMoneyKind(kind); } catch (e) { return /final|invoice|pay_app|receipt/.test(s(kind)); } }
 function replyToFor(pmEmail, kind){
+  if (isMoneyKind(kind)) return billingEmail();   /* patch BILL */
   if (/final|invoice|receipt|payment|billing|news|thank|pay_app|offer_letter/i.test(s(kind))) return adminReplyTo();
   const e = low(pmEmail || ''); return /@grayco-cs\.com$/.test(e) && !/^office@/.test(e) ? e : adminReplyTo();
 }
@@ -1259,6 +1484,12 @@ async function queueApproval(o){
   const item = { id: s(o.id), kind: o.kind, title: s(o.title), jobId: s(o.pid), jobName: s(o.jobName), pm: o.pm ? o.pm.name : '', pmEmail: o.pm ? o.pm.email : '', channel: o.channel || 'email',
     to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
     status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
+  if (o.officeOk === true) item.officeOk = true;   /* patch SOC: the marketing approval stage — the office may approve this one */
+  if (o.mmOk === true) item.mmOk = true;   /* patch MM: the Marketing Manager may approve this one (stage 2+, not flagged, never paid ads) */
+  if (Array.isArray(o.flags) && o.flags.length) item.flags = o.flags.slice(0, 8);
+  /* patch ESTIN: every item carries its importance (✅ Approvals sorts urgent first, then the newest) */
+  if (!item.priority) item.priority = /^(urgent|high|normal|low)$/.test(s(o.priority)) ? s(o.priority) : 'normal';
+  if (!item.urgency) item.urgency = /^(urgent|high|normal|low)$/.test(s(o.urgency)) ? s(o.urgency) : item.priority;
   if (item.step === 'admin') item.adminSince = now;   /* patch AP4: when it reached the admin step */
   const has = function(l){ return l.some(function(x){ return s(x.id) === item.id; }); };
   const r = await kvListUpdate(AQ_KEY, function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
@@ -1274,8 +1505,11 @@ async function aqSend(item, now){
     const jp = d && findProject(d, item.jobId), k = jp ? JA.blockedKind(jp, item.kind, jaAdmin(d)) : '';
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
+  if (s(item.kind) === 'portal_publish') return gateOnApproved(item, now);   /* patch PORTALGATE: approved → it shows in the portal (no e-mail) */
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
+  if (s(item.kind) === 'bp_notice') return require('./_lib/bp-notice.js').onApproved(item, now);   /* patch SYS2: a bid-job addendum / update to the invited subs */
   if (/^gcp_/.test(s(item.kind))) return require('./_lib/gcp.js').onApproved(item, now);   /* patch GCP: GC pay apps / change orders / company COI / inspection offers */
+  if (s(item.kind) === 'sub_lien_request') return require('./_lib/lien.js').onApproved(item, now);   /* patch AUTO-LIEN: the first lien-waiver request to a sub */
   if (item.kind === 'refcredit' || item.kind === 'refgift') return require('./_lib/referral.js').onApproved(item, now);   /* patch REF: approved → credit on the member's balance / a one-time gift code (only its hash kept) */
   if (item.kind === 'warranty_check') return require('./_lib/care11.js').onApproved(item, now);   /* patch AUTO11: warranty check-up offers, one e-mail each from news@ */
   if (item.kind === 'cneeds_remind') { try { await require('./_lib/care11.js').needsApproved(item); } catch (e) {} }   /* patch AUTO11: the first "We need from you" reminder was approved — it goes out below; day 7 then goes by itself */
@@ -1298,11 +1532,11 @@ async function aqSend(item, now){
     try { token = await createFor(item.jobId, 'approved: ' + item.kind); } catch (e) { return { ok: false, error: 'Could not make the portal link.' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
-  if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch AUT2: the GrayCo shell + the PM's signature */
-  let from = /final|invoice|pay_app/.test(item.kind) ? 'GrayCo Construction Services Billing <billing@grayco-cs.com>'
+  if (item.channel !== 'sms') { try { html = await require('./_lib/brand.js').shellFor(html, isMoneyKind(item.kind) ? { email: billingEmail(), name: 'GrayCo Billing' } : { email: item.pmEmail, name: item.pm }); } catch (e) {} }   /* patch BILL: money mail signs as Billing */   /* patch AUT2: the GrayCo shell + the PM's signature */
+  let from = (isMoneyKind(item.kind) || /final|invoice|pay_app/.test(item.kind)) ? billingFrom()   /* patch BILL */
     : (/thank_you|lead|offer_letter/.test(item.kind) ? 'GrayCo Construction Services <office@grayco-cs.com>' : 'GrayCo Construction Services Portal <portal@grayco-cs.com>');
   /* patch AUTO5: a signature request / an estimate follow-up goes out from the job's PM (replies go to the PM) */
-  if (item.meta && item.meta.fromPm === true && /^[^@\s<>"]+@grayco-cs\.com$/i.test(s(item.pmEmail)) && !/^office@/i.test(s(item.pmEmail))) from = s(item.pm).replace(/[<>"]/g, '') + ' \u2014 GrayCo Construction Services <' + low(item.pmEmail) + '>';
+  if (!isMoneyKind(item.kind) && item.meta && item.meta.fromPm === true && /^[^@\s<>"]+@grayco-cs\.com$/i.test(s(item.pmEmail)) && !/^office@/i.test(s(item.pmEmail))) from = s(item.pm).replace(/[<>"]/g, '') + ' \u2014 GrayCo Construction Services <' + low(item.pmEmail) + '>';
   let subj = item.subject; if (item.jobId) { try { const dj = await crmData(false); subj = withJob(subj, findProject(dj, item.jobId)); } catch (e) {} }
   const payload = { from: from, reply_to: replyToFor(item.pmEmail, item.kind), to: [item.to], subject: subj, html: html };
   if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);   /* patch AP2: an approver's CC */
@@ -1387,6 +1621,24 @@ function applyEdit(x, edit, me){
   x.edits = (x.edits || []).concat([{ by: me.by, email: me.email, at: me.at, step: x.step, fields: ch }]).slice(-20);
   return ch;
 }
+/* patch ESTIN: a supplier's purchase order (drafted after the estimate / contract was signed) waits here for the PM.
+   The address must be a supplier on the Vendors list (never the customer, never one the page made up). */
+async function supplierPoQueue(body, who){
+  const pid = s(body.projectId), poId = clip(body.poId, 90).replace(/[^A-Za-z0-9_.:-]/g, '');
+  if (!pid || !poId) return { status: 400, out: { ok: false, error: 'A job and a PO are needed.' } };
+  const data = await crmData(true); const p = findProject(data, pid);
+  if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet.' } };
+  const to = low(body.to);
+  if (!/^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No e-mail for this supplier — add it in Vendors.' } };
+  if (to === low(p.clientEmail || p.customerEmail || p.email)) return { status: 400, out: { ok: false, error: 'That is the customer, not a supplier.' } };
+  let vend = []; try { const v = await kvRead(['vendors', 'subs']); vend = arr(v.vendors).concat(arr(v.subs)); } catch (e) {}
+  if (!vend.some(function(x){ return [x.email, x.orderEmail, x.contactEmail].some(function(e){ return low(e) === to; }); })) return { status: 400, out: { ok: false, error: 'That address is not on the Vendors list.' } };
+  const qid = 'appr_supplier_po_' + pid + '_' + poId;
+  const ok = await queueApproval({ id: qid, kind: 'supplier_po', title: clip(body.title, 120) || ('\uD83D\uDE9A Purchase order \u2014 ' + clip(body.supplier, 60)), pid: pid, jobName: p.name, pm: pmOf(data, p), to: to,
+    subject: clip(body.subject, 200) || 'Purchase order', html: String(body.html || '').slice(0, 60000), attachments: [], priority: body.priority,
+    meta: { by: who.email, poId: poId, supplier: clip(body.supplier, 80), fromPm: true } });
+  return { status: ok ? 200 : 502, out: { ok: !!ok, id: qid, queued: !!ok } };
+}
 /* approve / reject / edit-then-approve, from the CRM. who = the signed-in person (gcStaffAuth). */
 async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
@@ -1401,6 +1653,7 @@ async function approvalAction(body, who){
        The recipient is the job's own customer e-mail (never one the page sends). */
     if (mktLib().isMktKind(body.kind)) return mktLib().queueForApproval(body, who, { queueApproval: queueApproval, officeTodo: officeTodo });   /* patch MKT */
     if (s(body.kind) === 'invoice') return queueInvoiceMail(s(body.invoiceId), who);   /* patch AP2 */
+    if (s(body.kind) === 'supplier_po') return supplierPoQueue(body, who);   /* patch ESTIN */
     if (s(body.kind) === 'portal_post' || s(body.kind) === 'announcement') return autaiQueue(body, who);   /* patch AUTAI */
     if (require('./_lib/auto-queue.js').handles(body.kind)) return require('./_lib/auto-queue.js').queue(body, who, { crmData: crmData, findProject: findProject, pmOf: pmOf, queueApproval: queueApproval, kvListRead: kvListRead, kvListUpdate: kvListUpdate, aqSend: aqSend, AQ_KEY: AQ_KEY });   /* patch AUT2 */
     if (s(body.kind) !== 'thank_you') return { status: 400, out: { ok: false, error: 'Only the thank-you and invoice e-mails are queued from the CRM.' } };
@@ -1433,21 +1686,43 @@ async function approvalAction(body, who){
   const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
   if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
-  const office = !admin && it0.step === 'admin' && escalatedOrDue(it0, Date.now()) && await isOffice(who);
+  const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
+  if (who && who.marketing === true && !mmOk) return { status: 403, out: { ok: false, error: 'This one needs an admin.' } };
+  const office = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
   if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
-  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
-  if (office && !it0.escalated) { try { await escalateDue({ only: id }); } catch (e) {} }
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
+  if (office && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
     const r = await upd(function(x){ if (x.status !== 'waiting' && !stale) return false; x.status = 'rejected'; x.rejectedBy = me.by; x.rejectedEmail = me.email; x.rejectedAt = now; x.reason = clip(body.reason, 500); }, function(z){ return z.status === 'rejected'; });
     if (!r.ok || !r.result || r.result.status !== 'rejected') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
     const m = it0.meta || {};
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
+    if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }   /* patch PORTALGATE: not approved → never in the portal */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
     } catch (e) {}
     return { status: 200, out: { ok: true, item: r.result } };
+  }
+  /* patch PAUSE: "✅ Approve as record-only" — admins back-entering old work. The item is closed as handled
+     (status "recorded"), the approval is kept on it, and NOTHING is sent — on or off data-entry mode. A final
+     invoice's mail row is stamped like a "don't approve" so the automatic run does not send it later either. */
+  if (op === 'record') {
+    if (!admin) return { status: 403, out: { ok: false, error: 'Only an admin can record an approval without sending it.' } };
+    const r = await upd(function(x){
+      if (x.status !== 'waiting' && !stale) return false;
+      x.status = 'recorded'; x.recordOnly = true; x.recordedBy = me.by; x.recordedEmail = me.email; x.recordedAt = now;
+      x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step, recordOnly: true }, me)]);
+    }, function(z){ return z.status === 'recorded' && z.recordedAt === now; });
+    if (!r.ok || !r.result || r.result.status !== 'recorded') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
+    const m = it0.meta || {};
+    try {
+      if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'recorded' });
+      if (s(it0.kind) === 'portal_publish' && m.gateKey) await gateSet(m.gateKey, 'recorded', me, 'record-only');   /* patch PORTALGATE: recorded, never shown */
+      if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'recorded' }) });
+    } catch (e) {}
+    return { status: 200, out: { ok: true, recorded: true, sent: false, item: r.result } };
   }
   const edit = body.edit && typeof body.edit === 'object' ? body.edit : null;
   /* patch AP2: whoever must act now can open it, change To / CC / subject / body (a text: the message) and save it
@@ -1479,6 +1754,7 @@ async function approvalAction(body, who){
     else { x.status = 'waiting'; x.lastError = sent.error; }
   }, function(z){ return z.status === (sent.ok ? 'sent' : 'waiting'); });
   const item = r.result || it0;
+  if (sent.ok && s(item.kind) !== 'portal_publish') { try { await gateFromMail(item, me); } catch (e) {} }   /* patch PORTALGATE */
   if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
   return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
 }
@@ -1566,7 +1842,7 @@ async function sendApprovedReminder(tpl, pid){
     let token; try { token = await createFor(pid, 'auto: approved reminder'); } catch (e) { return { ok: false, error: 'no link' }; }
     html = html.split(LINK_PH).join(esc(linkFor(null, token)));
   }
-  const payload = { from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [tpl.to], subject: await (async function(){ try { return withJob(tpl.subject, findProject(await crmData(false), pid)); } catch (e) { return tpl.subject; } })(), html: html };
+  const payload = { from: billingFrom(), reply_to: billingEmail(), to: [tpl.to], subject: await (async function(){ try { return withJob(tpl.subject, findProject(await crmData(false), pid)); } catch (e) { return tpl.subject; } })(), html: html };
   if (Array.isArray(tpl.cc) && tpl.cc.length) payload.cc = tpl.cc.slice(0, 5);
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -1587,9 +1863,9 @@ async function runReminders(opts){
   for (const p of projects) {
     const pid = s(p.id);
     if (/lost|dead|cancel/.test(low(p.status))) continue;
-    const finals = invs.filter(function(r){ return pidOf(r) === pid && isCustomerInvoice(r) && invFinal(r) && invBalance(r) > 0; });
+    const finals = invs.filter(function(r){ return pidOf(r) === pid && isCustomerInvoice(r) && invFinal(r) && invBalance(r) > 0 && !(r.importedHistory === true || r.noSend === true || r.historyOnly === true); });   /* patch LCLEAN: an invoice imported / entered as history is never e-mailed or reminded */
     if (!finals.length) continue;
-    if (p.portalRemindersPaused === true) { report.paused++; continue; }
+    if (p.portalRemindersPaused === true || (p.importedHistory === true || p.noSend === true || p.historyOnly === true)) { report.paused++; continue; }   /* patch LCLEAN-H: a history job is never reminded */
     if (!jaAllows(data, p, 'finalReminders')) { report.off = (report.off || 0) + 1; continue; }   /* patch JA: off for this job */
     for (const inv of finals) {
       const invId = s(inv.id); if (!invId) continue;
@@ -1779,18 +2055,20 @@ const QUIET = 3 * 60e3, MAXWAIT = 10 * 60e3, OLD = 14 * DAY;
 const NOTIFY_DOC = /proposal|contract|change.?order|completion|warrant|customer portal|estimate|quote/i;
 function noticeItems(data, p){
   const pid = s(p.id), out = [];
-  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p); });
+  const ests = arr(data.estimates).filter(function(e){ return proposalShown(e, pid, p) && gateAllows(null, p, gateKeyOf('e', e), e); });   /* patch PORTALGATE: only what the portal shows */
   const shownEst = {}; ests.forEach(function(e){ shownEst[s(e.id)] = 1; });
-  ests.forEach(function(e){ out.push({ key: 'est:' + s(e.id), title: s(e.name) || 'Your proposal', kind: 'proposal', at: ymd(e.sentDate || e.finalizedDate || e.date || e.updatedAt) }); });
+  ests.forEach(function(e){ if (e.noNotice === true) return;   /* patch GDOCS: brought in from Google Docs — no e-mail unless the admin turned it on */
+    out.push({ key: 'est:' + s(e.id), title: s(e.name) || 'Your proposal', kind: 'proposal', at: ymd(e.sentDate || e.finalizedDate || e.date || e.updatedAt) }); });
   const insJ = isInsJob(p);   /* patch INSP */
-  arr(data.projectDocs).filter(function(d){ return insJ ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst); }).forEach(function(d){
+  arr(data.projectDocs).filter(function(d){ return (insJ ? insDocShown(d, pid, shownEst) : docShown(d, pid, shownEst)) && gateAllows(null, p, gateKeyOf('d', d), d); }).forEach(function(d){   /* patch PORTALGATE */
     if (d.estimateId && shownEst[s(d.estimateId)]) return;               /* the estimate already counts */
+    if (d.noNotice === true) return;                                       /* patch GDOCS */
     if (/final invoice|\binvoice/i.test(s(d.name) + ' ' + s(d.cat)) && !/proposal/i.test(s(d.cat))) return;
     if (!(d.portalShare === true && /customer portal/i.test(s(d.cat))) && !NOTIFY_DOC.test(s(d.cat) + ' ' + s(d.name)) && !(insJ && insGroupOf(d))) return;
     out.push({ key: 'doc:' + s(d.id), title: s(d.name) || 'Document', kind: 'doc', at: ymd(d.uploadedAt || d.uploaded || d.savedAt) });
   });
-  arr(p.portalLinks).forEach(function(l){ if (l.hidden !== true && httpsUrl(l.url)) out.push({ key: 'link:' + s(l.id), title: s(l.title) || 'Document', kind: 'doc', at: ymd(l.at) }); });
-  if (gdocInfo(p.gdocUrl)) out.push({ key: 'pgdoc:' + s(p.gdocUrl).slice(-40), title: 'Your proposal', kind: 'proposal', at: ymd(p.updatedAt) });
+  arr(p.portalLinks).forEach(function(l){ if (l.hidden !== true && httpsUrl(l.url) && gateAllows(null, p, gateKeyOf('l', l), l)) out.push({ key: 'link:' + s(l.id), title: s(l.title) || 'Document', kind: 'doc', at: ymd(l.at) }); });
+  if (gdocInfo(p.gdocUrl) && gateAllows(null, p, gateKeyOf('g', null, p), p)) out.push({ key: 'pgdoc:' + s(p.gdocUrl).slice(-40), title: 'Your proposal', kind: 'proposal', at: ymd(p.updatedAt) });
   listOf(data, ['cos', 'changeOrders']).filter(function(r){ return pidOf(r) === pid && /approv|sign|accept/.test(low(r.status)) && r.deleted !== true; })
     .forEach(function(c){ out.push({ key: 'co:' + s(c.id), title: 'Change order — ' + clip(c.desc || c.title || '', 60), kind: 'co', at: ymd(c.approvedDate || c.date || c.savedAt) }); });
   if (insJ) { const w = insWords(data, p); out.forEach(function(x){ x.title = scrub({ t: s(x.title) }, w).t; }); }   /* patch INSP */
@@ -1804,6 +2082,7 @@ async function notifyDocs(pid, event, opts){
   if (!p) return { ok: false, retry: true, error: 'The job is not in the cloud yet.' };
   if (/lost|dead|cancel/.test(low(p.status))) return { ok: true, skipped: 'lost job' };
   if (!jaAllows(data, p, 'docsNotice')) return { ok: true, skipped: 'the new-papers notice is turned off for this job', off: 'docsNotice' };   /* patch JA */
+  await gateGet(data);   /* patch PORTALGATE: the notice lists only what the portal shows */
   const items = noticeItems(data, p).filter(function(x){   /* patch JA: a paper the job does not send by itself is not announced */
     const t = low(x.title);
     if (x.kind === 'co' && !jaAllows(data, p, 'coSign')) return false;
@@ -2008,10 +2287,10 @@ async function autaiReceipt(body, who){
   if (!s(process.env.RESEND_API_KEY) || mailOff()) return { status: 200, out: { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' } };
   let token = ''; try { token = await createFor(s(ij.p.id), 'receipt'); } catch (e) {}
   let html = autaiReceiptHtml(doc, amt, ymd(body.date), clip(body.method, 40)).split(LINK_PH).join(token ? esc(linkFor(null, token)) : esc(baseUrl({}) + '/portal.html'));
-  try { html = await require('./_lib/brand.js').shellFor(html, { email: 'billing@grayco-cs.com', name: 'GrayCo Billing' }); } catch (e) {}
+  try { html = await require('./_lib/brand.js').shellFor(html, { email: billingEmail(), name: 'GrayCo Billing' }); } catch (e) {}
   const subject = withJob('Payment received — ' + clip(doc.job, 80) + ' (invoice #' + doc.number + ')', ij.p);
   const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'GrayCo Construction Services Billing <billing@grayco-cs.com>', reply_to: adminReplyTo(), to: [to], subject: subject, html: html }) });
+    body: JSON.stringify({ from: billingFrom(), reply_to: billingEmail(), to: [to], subject: subject, html: html }) });   /* patch BILL */
   if (!r.ok) return { status: 502, out: { ok: false, error: 'The receipt did not go out (' + r.status + ').' } };
   const now = new Date().toISOString();
   const item = { id: rid, kind: 'receipt', title: '🧾 Payment receipt — ' + clip(doc.job, 80), jobId: s(ij.p.id), jobName: s(ij.p.name), pm: '', pmEmail: '', channel: 'email', to: to, subject: subject,
@@ -2048,7 +2327,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -2067,6 +2346,12 @@ exports.handler = async function (event) {
         const rows = await r.json();
         return reply(200, headers, { ok: true, links: (Array.isArray(rows) ? rows : []).map(function(x){ return { projectId: x.project_id, createdAt: x.created_at, lastViewedAt: x.last_viewed_at, revoked: !!x.revoked, sentAt: x.sent_at }; }) });
       } catch (e) { return reply(500, headers, { ok: false, error: 'The portal server hit a problem: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'gate') {   /* patch PORTALGATE: what waits to go in a portal (op state), or look for new things now (op scan) */
+      try {
+        if (s(body.op) === 'scan') return reply(200, headers, await gateScan({ pid: s(body.projectId) }));
+        return reply(200, headers, await gateState(s(body.projectId)));
+      } catch (e) { return reply(502, headers, { ok: false, error: 'The portal gate hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'approval') {
       try { const a = await approvalAction(body, who); return reply(a.status, headers, a.out); }
@@ -2176,9 +2461,9 @@ exports.handler = async function (event) {
 };
 
 /* for portal-reminders.js and the tests */
-exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
-  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
-  queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); } };
+exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmData(true); } catch (e) {} return PEOPLE().seniorPm(d.users, d.gc_senior_pm); }, people: PEOPLE, JA: JA, jaAllows: jaAllows, pmByName: async function(name){ const n = s(name); if (!n) return null; let d = {}; try { d = await crmData(true); } catch (e) {} return pmOf(d, { pm: n }); }, officeTodo: officeTodo, taskListOf: taskListOf, kvListUpdate: kvListUpdate, queueApproval: queueApproval, gateScan: gateScan, gateState: gateState, gateGet: gateGet, gateAllows: gateAllows, gateKeyOf: gateKeyOf, gateSet: gateSet, GATE_KEY: GATE_KEY, _gateReset: function(){ GATE_LAST = null; GATE_AT = 0; }, approvalAction: approvalAction, aqMerge: aqMerge, AQ_KEY: AQ_KEY, LINK_PH: LINK_PH, notifyDocs: notifyDocs, notifyAll: notifyAll, noticeItems: noticeItems, sendLink: sendLink, settingsGet: settingsGet, warrantyOf: warrantyOf, buildView: buildView, runReminders: runReminders, stageOf: stageOf, gdocInfo: gdocInfo, ccIdOf: ccIdOf,
+  newToken: newToken, grayCoPhotos: grayCoPhotos, escalateDue: escalateDue, escalatedOrDue: escalatedOrDue, ESC_MS: ESC_MS, approvedReminder: approvedReminder, aqSend: aqSend, replyToFor: replyToFor, invoiceDoc: invoiceDoc, invoicePdf: invoicePdf, invNumber: invNumber, invCustStatus: invCustStatus,
+  queueInvoiceMail: queueInvoiceMail, queueNewInvoices: queueNewInvoices, invMailWanted: invMailWanted, news: function(){ return newsLib(); }, STAGES: STAGES, NOT_ACTIVE: NOT_ACTIVE, _reset: function(){ kvCache = null; photoCache.clear(); hits.clear(); GATE_LAST = null; GATE_AT = 0; } };
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */
@@ -2188,8 +2473,11 @@ Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, ins
 /* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */
 Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
+Object.assign(exports._core, { isHistoryInvoice: isHistoryInvoice });   /* patch LCLEAN */
+Object.assign(exports._core, { invoiceMailHtml: invoiceMailHtml });   /* patch LEGAL3: the invoice e-mail body, so the legal-footer test can render a real one */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
 /* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */
 Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,
   ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
   pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });
+exports._estin = { estinEstHidden: estinEstHidden, estinDocHidden: estinDocHidden, proposalShown: proposalShown, docShown: docShown, insDocShown: insDocShown };   /* patch ESTIN: tests */

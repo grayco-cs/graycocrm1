@@ -67,7 +67,7 @@
 # (12:17, 15:17, 18:17, 21:17, 23:17 UTC). One polite look at each public bid listing; new ones go to the
 # Lead Inbox, become CRM leads and draft bid-portal jobs, and each new one is e-mailed to the admins at once.
 [functions."bid-watch"]
-  schedule = "17 12,15,18,21,23 * * 1-5"
+  schedule = "17 12 * * *"   # owner 10/26: once every morning (~7:17 AM Central in CDT, 6:17 AM in CST); "Check now" still runs it on demand
 
 # Leads (patch LA): every 10 minutes — "⏰ Bid due in 1 hour" (and "Bid due TODAY" at 8 AM Central when only
 # the date is known), new RoofScout leads, a new-lead e-mail that failed, and the bid-portal drafts that waited
@@ -167,6 +167,13 @@
 # point there). Put these rules ABOVE the RoofScout rules. /.netlify/functions/* is never redirected.
 [[redirects]]
   from = "/docs/*"
+  to = "/404-not-public"
+  status = 404
+  force = true
+
+# patch TRAIN2: the training videos are staff-only (function training-video); the old public address answers 404
+[[redirects]]
+  from = "/training/*"
   to = "/404-not-public"
   status = 404
   force = true
@@ -289,6 +296,67 @@
   status = 200
   force = true
 
+# LEGAL2-patch: the legal pages and the shared legal runtime are served on the portal host too
+[[redirects]]
+  from = "https://portal.grayco-cs.com/legal2.js"
+  to = "/legal2.js"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-terms.html"
+  to = "/portal-terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/sub-terms.html"
+  to = "/sub-terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/sub-privacy.html"
+  to = "/sub-privacy.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/esign-consent.html"
+  to = "/esign-consent.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/cancel-notice.html"
+  to = "/cancel-notice.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/privacy.html"
+  to = "/privacy.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/terms.html"
+  to = "/terms.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/sms-consent.html"
+  to = "/sms-consent.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://portal.grayco-cs.com/mkt-pages.css"
+  to = "/mkt-pages.css"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"
@@ -332,7 +400,44 @@
 [functions."est-price-watch"]
   schedule = "20 12 * * *"
 
+# patch PRICEUP: monthly automatic price update from the BLS Producer Price Index (the 3rd, 12:00 UTC = 7 AM Central in summer,
+# 6 AM in winter). A series that moves more than 15% in a month is held back and the admins are e-mailed.
+[functions."price-index-monthly"]
+  schedule = "0 12 3 * *"
+
 # patch X12: AI photo tags (stage / damage / materials) for new GrayCo Photos + CompanyCam photos.
 # Dormant without ANTHROPIC_API_KEY; at most PHOTO_TAG_DAILY_MAX a day (default 300).
 [functions."photo-tag"]
   schedule = "*/20 * * * *"
+
+# patch PLAN: the nightly "📅 Today's plan" on everyone's To-Do (acts only when it is 2 AM Central; 6 AM Central = the
+# optional e-mail). plan-nightly (no schedule) answers the Admin "Run now" / preview calls.
+[functions."plan-scheduled"]
+  schedule = "0 7,8,11,12 * * *"
+
+# patch MAILALL: "🌐 All GrayCo e-mail" (docs/EMAIL-ALL.md) — every 15 minutes, the new e-mail in every GrayCo mailbox
+# (Gmail, read-only, metadata only) into the admins' index. Does nothing until GOOGLE_SA_EMAIL / GOOGLE_SA_KEY are set.
+[functions."mail-all-sync"]
+  schedule = "*/15 * * * *"
+
+# patch GDOCS: the team's new Google Docs (proposals, invoices …) read every 15 minutes (read only; docs/GDOCS.md)
+[functions."gdocs-scheduled"]
+  schedule = "8,23,38,53 * * * *"
+
+# patch SUBTXT: 📱 schedule texts for subs (6 PM the evening before, ~1 hour before each start, "hasn't confirmed" to the PM)
+[functions."sub-texts-scheduled"]
+  schedule = "2,17,32,47 * * * *"
+
+# patch SENTLOG: 📬 e-mails that asked for something and have no answer → the Office To-Do (hourly; sends nothing)
+[functions."mail-followup-scheduled"]
+  schedule = "11 * * * *"
+
+# Automation quick wins (patches AUTO-AR, AUTO-PAY, AUTO-LIEN, AUTO-DIGEST, AUTO-SCORE; docs/AUTO-WINS.md): every hour at :19.
+# Each part acts only at its own Central time and once (past-due reminders after 7 AM, …). Nothing it does sends to a
+# customer, sub or GC without an approval; data-entry mode pauses it.
+[functions."auto-wins"]
+  schedule = "19 * * * *"
+
+# patch TRAIN2: the built-in training videos ship with this function (staff only, signed links, Range)
+[functions."training-video"]
+  included_files = ["netlify/functions/_assets/training/*.mp4"]

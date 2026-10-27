@@ -17,9 +17,13 @@
      6. appends it to gc_kv "gc_claim_inbox". The CRM (tail_BB) puts a matched e-mail on the claim's
         journal, imports a Xactimate PDF / ESX as a carrier version and runs the compare; a weak match
         waits in "Claim mail to match". Money fields only change after a person taps a suggestion.
-   It never sends e-mail, so it cannot loop.
+   patch CLAIMLEAD: a mail that matches no claim or job and is a NEW assignment / first notice of loss / request for
+   service is also filed as an Insurance lead in the Lead Inbox (_lib/claim-lead.js), pre-assigned to the senior
+   insurance PM; it is not left in "Claim mail to match" (status 'lead'). CLAIM_LEAD_OFF=1 turns that off.
+   It never sends e-mail (the admins' new-lead alert comes from the shared lead path), so it cannot loop.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 const KV_KEY = 'gc_claim_inbox', KEEP = 300, MAX_BYTES = 15 * 1024 * 1024, MAX_FILES = 8, AUTO = 0.8;
 const OK_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/heic': 'heic', 'application/zip': 'esx', 'application/x-zip-compressed': 'esx', 'application/octet-stream': 'bin' };
@@ -154,13 +158,18 @@ const TOOL = { name: 'record_claim_mail', description: 'Key facts from an insura
   rcv: { type: ['number', 'null'] }, acv: { type: ['number', 'null'] }, deductible: { type: ['number', 'null'] },
   supplement_decision: { type: 'string', enum: ['', 'approved', 'denied', 'partial'], description: 'the carrier\'s decision on a supplement, if this e-mail gives one' }, supplement_amount: { type: ['number', 'null'] },
   payment_is_depreciation: { type: 'boolean', description: 'true when the payment issued is the recoverable depreciation' },
+  /* patch CLAIMLEAD: is this a NEW claim / assignment (then it also becomes a Lead Inbox lead)? and the insured's own details */
+  mail_kind: { type: 'string', enum: ['new_assignment', 'first_notice_of_loss', 'service_request', 'existing_claim_update', 'other'], description: 'new_assignment = a TPA / network / carrier assigns a NEW claim or loss to the contractor; first_notice_of_loss = an insured or adjuster reports a new loss; service_request = an insured / adjuster asks the contractor for service; existing_claim_update = news about a claim already under way (estimate, payment, supplement, request for documents, schedule); other = anything else' },
+  insured_name: { type: 'string', description: 'the insured / policyholder / homeowner, if stated' }, insured_phone: { type: 'string' }, insured_email: { type: 'string' },
+  loss_address: { type: 'string', description: 'the address of the loss / property, one line' }, loss_type: { type: 'string', description: 'water, fire, wind / hail, roof, mold … if stated' },
+  tpa: { type: 'string', description: 'the TPA or contractor network that sent it (Contractor Connection, Sedgwick, Accuserve, Alacrity / Altimeter, Westhill …), if any' },
   attachments: { type: 'array', items: { type: 'object', properties: { index: { type: 'integer' }, kind: { type: 'string', enum: ['xactimate_estimate', 'photo', 'letter', 'invoice', 'other'] } }, required: ['index', 'kind'] } }
 }, required: ['summary', 'attachments'] } };
 async function readFacts(mail){
   const key = env('ANTHROPIC_API_KEY'); if (!key) return { ok: false, why: 'ANTHROPIC_API_KEY is not set' };
   const content = []; let bytes = 0;
   mail.files.forEach((f, i) => { if (f.type === 'application/pdf' && bytes + f.size < 20e6) { bytes += f.size; content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.buf.toString('base64') } }); } });
-  content.push({ type: 'text', text: 'An e-mail about an insurance claim, received by GrayCo Construction Services (the contractor). Record the key facts with record_claim_mail. Use only what is written; leave out anything not stated. Attachments: ' + (mail.files.map((f, i) => i + ': ' + f.name + ' (' + f.type + ')').join(', ') || 'none') + '\n\nFrom: ' + mail.from.email + '\nSubject: ' + mail.subject + '\n\n' + mail.text.slice(0, 12000) });
+  content.push({ type: 'text', text: 'An e-mail about an insurance claim, received by GrayCo Construction Services (the contractor). Record the key facts with record_claim_mail, including mail_kind (is this a NEW claim or request for service, or news about a claim already under way?). Use only what is written; leave out anything not stated. Attachments: ' + (mail.files.map((f, i) => i + ': ' + f.name + ' (' + f.type + ')').join(', ') || 'none') + '\n\nFrom: ' + mail.from.email + '\nSubject: ' + mail.subject + '\n\n' + mail.text.slice(0, 12000) });
   const body = { model: env('CLAIM_AI_MODEL') || env('XACT_MODEL') || 'claude-sonnet-5-5', max_tokens: 1500, tools: [TOOL], tool_choice: { type: 'tool', name: 'record_claim_mail' }, messages: [{ role: 'user', content }] };
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), parseInt(env('CLAIM_AI_TIMEOUT_MS') || '60000', 10));
   try {
@@ -169,6 +178,7 @@ async function readFacts(mail){
     const t = (j.content || []).find(b => b && b.type === 'tool_use'); return t ? Object.assign({ ok: true, model: body.model }, t.input) : { ok: false, why: 'no answer' };
   } catch (e) { return { ok: false, why: e && e.name === 'AbortError' ? 'AI timed out' : 'AI unreachable' }; } finally { clearTimeout(timer); }
 }
+async function staffRows(){ try { const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=email,name,role,profile,active', { headers: { apikey: sbKey(), Authorization: 'Bearer ' + sbKey() } }); return r.ok ? await r.json() : []; } catch (e) { return []; } }   /* patch CLAIMLEAD */
 /* what each file is: the AI's word, else the file name / type */
 function classify(f, i, facts){
   if (/\.esx$/i.test(f.name)) return 'esx';
@@ -198,10 +208,20 @@ async function processEvent(evt){
   files.forEach((f, i) => { f.kind = classify(mail.files[i], i, facts); });
   const [claims, projects] = [await kvGet('gc_claims'), await kvGet('projects')];
   const match = matchClaim(mail, claims, projects);
-  const item = { id, at: new Date().toISOString(), updatedAt: new Date().toISOString(), from: mail.from, to: mail.to.map(x => x.email), subject: mail.subject, text: mail.text.slice(0, 8000), date: mail.date, files, skipped: mail.skipped, facts: facts.ok ? facts : { ok: false, why: facts.why }, match, status: match.claimId ? 'matched' : 'to-match' };
+  /* patch CLAIMLEAD: a claims@ e-mail that is a NEW claim (not any claim or job we have) is also a lead in the Lead Inbox. Never sends mail. */
+  let leadRes = null;
+  if (!match.claimId && env('CLAIM_LEAD_OFF') !== '1') {
+    try {
+      leadRes = await require('./_lib/claim-lead.js').newClaimLead({ L: require('./bid-inbox.js')._lib, WI: require('./website-intake.js')._lib, kv: kvGet, staff: staffRows },
+        { mail, facts, match, files, claims, projects, inboxId: id });
+    } catch (e) { leadRes = { made: false, error: s(e && e.message).slice(0, 200) }; }
+  }
+  const leadId = leadRes && (leadRes.id || ''), isLead = !!(leadRes && (leadRes.made || leadRes.duplicate));
+  const item = { id, at: new Date().toISOString(), updatedAt: new Date().toISOString(), from: mail.from, to: mail.to.map(x => x.email), subject: mail.subject, text: mail.text.slice(0, 8000), date: mail.date, files, skipped: mail.skipped, facts: facts.ok ? facts : { ok: false, why: facts.why }, match, status: match.claimId ? 'matched' : isLead ? 'lead' : 'to-match' };
+  if (leadRes) item.lead = { id: leadId || '', made: !!leadRes.made, duplicate: !!leadRes.duplicate, why: s(leadRes.why).slice(0, 200), assignedTo: leadRes.assignedTo || null, error: leadRes.error || '' };
   const fresh = await kvGet(KV_KEY), next = (Array.isArray(fresh) ? fresh : list0).filter(x => x && x.id !== id).concat([item]).slice(-KEEP);
   if (!(await kvPut(KV_KEY, next))) return { status: 503, body: { ok: false, error: 'could not store — retry' } };
-  return { status: 200, body: { ok: true, id, claimId: match.claimId, conf: match.conf, files: files.length, read: !!facts.ok } };
+  return { status: 200, body: { ok: true, id, claimId: match.claimId, conf: match.conf, files: files.length, read: !!facts.ok, lead: leadRes ? { id: leadId || '', made: !!leadRes.made, duplicate: !!leadRes.duplicate, assignedTo: leadRes.assignedTo || null, why: leadRes.why || '' } : undefined } };
 }
 function handoffSig(ts, body){ return crypto.createHmac('sha256', 'claim-handoff:' + (env('RESEND_INBOUND_SECRET') || env('CLAIM_INBOX_TOKEN'))).update(ts + '.' + body, 'utf8').digest('hex'); }
 async function handOff(raw){

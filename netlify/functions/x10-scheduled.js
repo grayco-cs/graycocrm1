@@ -7,6 +7,7 @@
 //     📊 each person's own "My data" statement by e-mail
 // X10_OFF=1 stops all of it.
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const X = require('./_lib/x10.js');
 const OC = require('./_lib/oncall.js');
 function L(){ return require('./bid-inbox.js')._lib; }
@@ -67,7 +68,7 @@ function statementHtml(g, today){
     '<p style="font-size:13px;color:#55626F">Already paid? Thank you — payments can take a few days to show. Questions? Call GrayCo at 901-585-0944.</p>';
 }
 async function statementsMonthly(data){
-  const today = X.wall(now()).day, invs = arr(data.invs).concat(arr(data.invoices)).filter(C().isCustomerInvoice);
+  const today = X.wall(now()).day, invs = arr(data.invs).concat(arr(data.invoices)).filter(C().isCustomerInvoice).filter(function(r){ return !(r && (r.importedHistory === true || r.noSend === true || r.historyOnly === true)); });   /* patch LCLEAN: history is never on a statement */
   const seen = {}, rows = [];
   invs.forEach(function(r){ const id = s(r.id); if (id && seen[id]) return; if (id) seen[id] = 1;
     const pid = s(r.pid || r.projectId || r.jobId || r.project_id), p = C().findProject(data, pid); if (!p || p.deleted === true) return;
@@ -131,3 +132,6 @@ async function run(){
 }
 exports.handler = async function(){ const r = await run(); return { statusCode: 200, body: JSON.stringify(r) }; };
 exports._test = { run: run, statementsMonthly: statementsMonthly, fleetDaily: fleetDaily, codesWipe: codesWipe, myDataMonthly: myDataMonthly, statementHtml: statementHtml };
+/* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends
+   straight to Resend gets the GrayCo shell (centered logo, office line, licenses). Internal @grayco-cs.com mail is untouched. */
+try { require('./_lib/brand.js').installResend(); } catch (e) {}

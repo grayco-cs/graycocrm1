@@ -23,19 +23,20 @@
    A scheduled function cannot be called by its URL in production.
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./bid-inbox.js')._lib;
 
 function parse(v){ if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { return JSON.parse(v); } catch (e) {} } return v; }
 /* the CRM's lead list and its delete marks (gc_kv, written by the CRM's sync) */
 async function crmLeads(){
   try {
-    const r = await L.sb('gc_kv?select=key,value&key=in.(leads,gc_tombstones,users)');
+    const r = await L.sb('gc_kv?select=key,value&key=in.(leads,gc_tombstones,users,gc_bid_bidders)');
     if (!r.ok) return { leads: [], tombs: {}, why: 'gc_kv answered ' + r.status };
     const rows = await r.json(); const o = {};
     (Array.isArray(rows) ? rows : []).forEach(x => { o[x.key] = parse(x.value); });
     let leads = o.leads; if (leads && !Array.isArray(leads) && Array.isArray(leads.v)) leads = leads.v;
     let users = o.users; if (users && !Array.isArray(users) && Array.isArray(users.v)) users = users.v;
-    return { leads: Array.isArray(leads) ? leads : [], tombs: o.gc_tombstones && typeof o.gc_tombstones === 'object' ? o.gc_tombstones : {}, users: Array.isArray(users) ? users : [] };
+    return { leads: Array.isArray(leads) ? leads : [], tombs: o.gc_tombstones && typeof o.gc_tombstones === 'object' ? o.gc_tombstones : {}, users: Array.isArray(users) ? users : [], bidders: o.gc_bid_bidders && typeof o.gc_bid_bidders === 'object' ? o.gc_bid_bidders : {} };   /* patch BIDSEND */
   } catch (e) { return { leads: [], tombs: {}, why: 'gc_kv unreachable' }; }
 }
 async function run(){
@@ -43,7 +44,7 @@ async function run(){
   const A = L.alertsApi();
   try {
     const crm = await crmLeads(), items = await L.kvGet(L.KV);
-    out.remind = await A.remind({ leads: crm.leads, items: Array.isArray(items) ? items : [], tombs: crm.tombs, users: crm.users });
+    out.remind = await A.remind({ leads: crm.leads, items: Array.isArray(items) ? items : [], tombs: crm.tombs, users: crm.users, bidders: crm.bidders });
     if (crm.why) out.remind.crmWhy = crm.why;
   } catch (e) { out.remind = { error: L.s(e && e.message) }; }
   try { out.roofscout = await A.sweepRoofScout(); } catch (e) { out.roofscout = { error: L.s(e && e.message) }; }

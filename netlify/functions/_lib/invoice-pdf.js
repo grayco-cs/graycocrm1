@@ -8,11 +8,11 @@
 'use strict';
 /* patch AUT2 (audit #4): name, address, phone, licenses and the logo come from the ONE brand file */
 const BR = require('./brand.js').BRAND;
-const LOGO = require('./brand-logo.js');
+const LOGO = require('./logo-wide.js');   /* patch LOGO: 420 x 254, cropped to the art */
 const COMPANY = BR.name;
 const ADDRESS = BR.address;
 const PHONE = BR.phone;
-const EMAIL = BR.email;
+const EMAIL = require('./brand.js').billingEmail();   /* patch BILL: an invoice shows billing@ as its contact */
 const LICENSES = BR.licenses;
 
 /* Helvetica advance widths (1/1000 em) for the characters an invoice uses; others ~ 556 */
@@ -67,25 +67,22 @@ function build(doc){
   function textR(x, y, t, size, bold, color){ text(x - width(clean(t), size, bold), y, t, size, bold, color); }
   function rect(x, y, w, h, color){ ops.push(color + ' rg ' + x + ' ' + y + ' ' + w + ' ' + h + ' re f'); }
   function line(x1, y1, x2, y2, color, wd){ ops.push((color || MUTED) + ' RG ' + (wd || 0.6) + ' w ' + x1 + ' ' + y1 + ' m ' + x2 + ' ' + y2 + ' l S'); }
-  /* every page: the company line and the licenses at the foot */
-  function foot(){ text(L, 22, BR.legalName + '  \xb7  ' + ADDRESS + '  \xb7  ' + LICENSES, 7.5, false, MUTED); }
+  /* patch LOGO2: pages 2+ carry the company name, phone and page number at the foot (page 1 has the one header) */
+  function foot(){ if (pages.length) text(L, 22, COMPANY + '  \xb7  ' + PHONE + '  \xb7  page ' + (pages.length + 1), 7.5, false, MUTED); }
   function newPage(){ if (ops.length) { foot(); pages.push(ops.join('\n')); } ops = []; }
 
-  /* header band: the logo on a white tile, name, address / phone / e-mail, licenses */
-  rect(0, PH - 96, PW, 96, NAVY);
-  rect(0, PH - 100, PW, 4, GOLD);
-  rect(L - 4, PH - 88, 76, 76, '1 1 1');
-  ops.push('q 68 0 0 68 ' + L + ' ' + (PH - 84) + ' cm /Im1 Do Q');
-  const TX = L + 84;
-  text(TX, PH - 40, COMPANY, 18, true, '1 1 1');
-  text(TX, PH - 56, ADDRESS + '  \xb7  ' + PHONE, 9, false, '0.80 0.85 0.92');
-  text(TX, PH - 68, EMAIL, 9, false, '0.80 0.85 0.92');
-  text(TX, PH - 81, LICENSES, 8, false, '0.97 0.80 0.30');
-  textR(R, PH - 48, doc.isFinal ? 'FINAL INVOICE' : 'INVOICE', doc.isFinal ? 18 : 22, true, '1 1 1');
-  textR(R, PH - 66, 'Invoice #' + (doc.number || ''), 10, true, '0.97 0.80 0.30');
+  /* patch LOGO2 (the 10/22 rule "always center the headers"): the ONE company header, centered - the logo 50 pt = 0.7 in tall, the name,
+     address . phone . e-mail and the licenses under it, a gold rule, then the title */
+  function centered(yy, t, size, bold, color){ text((PW - width(clean(t), size, bold)) / 2, yy, t, size, bold, color); }
+  ops.push('q 83 0 0 50 ' + ((PW - 83) / 2).toFixed(1) + ' ' + (PH - 80) + ' cm /Im1 Do Q');
+  centered(PH - 97, COMPANY, 15, true, NAVY);
+  centered(PH - 110, ADDRESS + '  \xb7  ' + PHONE + '  \xb7  ' + EMAIL, 8.5, false, MUTED);
+  centered(PH - 122, LICENSES, 8, false, MUTED);
+  line(L, PH - 130, R, PH - 130, GOLD, 1.5);
+  centered(PH - 152, (doc.isFinal ? 'FINAL INVOICE' : 'INVOICE'), 15, true, NAVY);
 
   /* bill to + facts */
-  let y = PH - 132;
+  let y = PH - 182;
   text(L, y, 'BILL TO', 8, true, MUTED);
   text(330, y, 'INVOICE DETAILS', 8, true, MUTED);
   y -= 15;
@@ -132,7 +129,11 @@ function build(doc){
   wrap('Pay by check made out to ' + COMPANY + ', or cash handed to your Project Manager' + (doc.pm ? ' (' + doc.pm + ')' : '') + '. Every payment shows on your invoice in your GrayCo Portal.', 10, R - L)
     .forEach(function(t){ text(L, y, t, 10); y -= 13; });
   y -= 6;
-  text(L, y, 'Questions? Call ' + PHONE + (doc.pmPhone ? ' or ' + (doc.pm || 'your PM') + ' at ' + doc.pmPhone : '') + '.', 10, false, MUTED);
+  text(L, y, 'Questions about this invoice? ' + EMAIL + '  \xb7  ' + PHONE + (doc.pmPhone ? ' (or ' + (doc.pm || 'your PM') + ' at ' + doc.pmPhone + ')' : '') + '.', 10, false, MUTED);   /* patch BILL */
+  /* patch LEGAL3: the one late-fee wording (same as the contract, the print invoices, both proposals and the past-due e-mails) */
+  y -= 15;
+  wrap('Payment terms: net 30 days from the invoice date. Balances unpaid after 30 days accrue a late charge of 1.5% per month (18% annual percentage rate) on the past-due balance, or the maximum rate allowed by law, whichever is less. In any action or proceeding arising out of or relating to this invoice or the contract, including collection of amounts due, the prevailing party shall be entitled to recover its reasonable attorney fees, collection costs and court costs from the other party.', 8.5, R - L)   /* FEES-patch */
+    .forEach(function(t){ text(L, y, t, 8.5, false, MUTED); y -= 11; });
   text(L, 40, 'Thank you for choosing ' + COMPANY + '.', 9, false, MUTED);
   newPage();
 
@@ -169,4 +170,4 @@ function build(doc){
   put(Buffer.from(out, 'latin1'));
   return Buffer.concat(parts);
 }
-module.exports = { build: build, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE, LICENSES: LICENSES };
+module.exports = { build: build, width: width, usd: usd, clean: clean, COMPANY: COMPANY, ADDRESS: ADDRESS, PHONE: PHONE, LICENSES: LICENSES };

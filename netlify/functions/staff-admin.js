@@ -19,6 +19,7 @@
 // Nothing here is saved in the app: a temporary password is returned to the admin
 // once and lives only in Supabase Auth (hashed).
 
+require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const crypto = require('crypto');
 /* ── GrayCo staff check (security build) ──────────────────────────────────────
    A call from the CRM must carry the signed-in person's Supabase token:
@@ -107,18 +108,28 @@ function cleanEmail(e){ return String(e || '').trim().toLowerCase(); }
 function okEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
 /* patch RP: the job profile on gc_staff (docs/role-profiles.sql). Only these; '' = from the role in Admin → Employees. */
-const PROFILES = ['', 'estimator', 'insurance', 'mitigation', 'super', 'pm', 'apm', 'office', 'field'];   /* patch PMG: + apm (Assistant PM) */
+const PROFILES = ['', 'estimator', 'insurance', 'mitigation', 'super', 'pm', 'apm', 'office', 'field', 'marketing'];   /* patch PMG: + apm (Assistant PM) · patch MM: + marketing */
 function cleanProfile(p){ const v = String(p == null ? '' : p).trim().toLowerCase(); return PROFILES.indexOf(v) > -1 ? v : null; }
 async function listStaff(){
   /* select=* so the list works before and after docs/role-profiles.sql (the profile column) */
   const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=*&order=email.asc', { headers: svcHeaders() });
   if (!r.ok) throw new Error('Could not read gc_staff (' + r.status + '). Has docs/security-lockdown.sql been run?');
   const rows = await r.json();
-  return (Array.isArray(rows) ? rows : []).map(function(x){ return { email: x.email, name: x.name, role: x.role, active: x.active, added_by: x.added_by, added_at: x.added_at, profile: x.profile || '' }; });
+  return (Array.isArray(rows) ? rows : []).map(function(x){ return { email: x.email, name: x.name, role: x.role, active: x.active, added_by: x.added_by, added_at: x.added_at, profile: x.profile || '', mkt_active: x.mkt_active === true }; });
 }
+/* patch MM: the Marketing Manager profile is NEVER active staff (docs/marketing-role.sql): active = false, mkt_active = true, role staff.
+   Every staff rule in the database and the functions refuses him by construction; only the marketing calls let him in.
+   Moving someone off the marketing profile makes them ordinary active staff again. */
+async function staffRow(email){ try { const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=*&email=eq.' + encodeURIComponent(email), { headers: svcHeaders() }); if (!r.ok) return null; return (await r.json())[0] || null; } catch (e) { return null; } }
 async function setProfile(email, profile){
+  const row = await staffRow(email), body = { profile: profile || null };
+  if (profile === 'marketing') {
+    if (!row || !('mkt_active' in row)) return { ok: false, status: 409, error: 'Run docs/marketing-role.sql in Supabase first (it adds the Marketing Manager profile).' };
+    if (String(row.role).toLowerCase() === 'admin') return { ok: false, status: 400, error: 'An admin cannot have the Marketing Manager profile.' };
+    Object.assign(body, { active: false, mkt_active: true, role: 'staff' }); if ('payroll' in row) body.payroll = false;
+  } else if (row && String(row.profile || '').toLowerCase() === 'marketing') Object.assign(body, { active: row.mkt_active === true, mkt_active: false });
   const r = await fetch(sbUrl() + '/rest/v1/gc_staff?email=eq.' + encodeURIComponent(email), {
-    method: 'PATCH', headers: svcHeaders({ Prefer: 'return=representation' }), body: JSON.stringify({ profile: profile || null })
+    method: 'PATCH', headers: svcHeaders({ Prefer: 'return=representation' }), body: JSON.stringify(body)
   });
   const txt = await r.text();
   if (!r.ok) return { ok: false, status: r.status, error: /profile/.test(txt) ? 'Run docs/role-profiles.sql in Supabase first (it adds the Profile column).' : 'Could not save the profile (' + r.status + '): ' + txt.slice(0, 200) };
@@ -204,12 +215,13 @@ exports.handler = async function (event) {
     if (action === 'add') {
       const role = String(body.role || 'staff').toLowerCase() === 'admin' ? 'admin' : 'staff';
       const profile = cleanProfile(body.profile);
+      if (profile === 'marketing' && role === 'admin') return J(400, { error: 'An admin cannot have the Marketing Manager profile.' });
       const name = String(body.name || '').trim().slice(0, 80);
       // 1. on the list (this is what RLS and the functions check)
       const up = await fetch(sbUrl() + '/rest/v1/gc_staff?on_conflict=email', {
         method: 'POST',
         headers: svcHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify({ email: email, name: name, role: role, active: true, added_by: who.email })
+        body: JSON.stringify(Object.assign({ email: email, name: name, role: role, active: profile !== 'marketing', added_by: who.email }, profile === 'marketing' ? { profile: 'marketing', mkt_active: true } : {}))   /* patch MM: never active staff */
       });
       if (!up.ok) return J(502, { error: 'Could not add to gc_staff (' + up.status + '): ' + (await up.text()).slice(0, 200) });
       // 2. a sign-in for them
