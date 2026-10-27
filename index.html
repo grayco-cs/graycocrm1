@@ -181772,7 +181772,7 @@ function css(){
   if (D.getElementById('gc-fh-css')) return;
   var st = D.createElement('style'); st.id = 'gc-fh-css';
   st.textContent = [
-    '#_gcJobPick.gc-fh{position:fixed;inset:0;z-index:99980;background:#f3f5f8;color:#1f2a37;overflow-y:auto;-webkit-overflow-scrolling:touch;font:15px/1.35 Inter,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}',
+    'html._fieldmode #gc-addco-overlay{z-index:100060 !important}' + '#_gcJobPick.gc-fh{position:fixed;inset:0;z-index:99980;background:#f3f5f8;color:#1f2a37;overflow-y:auto;-webkit-overflow-scrolling:touch;font:15px/1.35 Inter,-apple-system,Segoe UI,Roboto,sans-serif;padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}',
     '.gc-fh .fh-top{background:#fff;border-bottom:1px solid #e5e7eb;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;z-index:2}',
     '.gc-fh .fh-brand{display:flex;align-items:center;gap:10px;min-width:0}.gc-fh .fh-logo{width:38px;height:38px;border-radius:8px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;flex:0 0 auto}',
     '.gc-fh .fh-h{font-size:19px;font-weight:800;line-height:1.1}.gc-fh .fh-s{color:#6b7280;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -181939,7 +181939,7 @@ function builtIns(){
   R({ id: 'punch', icon: '☐', label: 'Punch', run: function(p){ punchSheet(p); } });
   R({ id: 'co', icon: '🔁', label: 'Change order', run: function(p){ if (W.gcAddCO && W.gcAddCO.open) W.gcAddCO.open(p.id, p.name, p.autoPO || p.po, p.client, p.pm); } });
   R({ id: 'est', icon: '📐', label: 'Estimate', needsSigned: false, run: function(p){ estPicker({ pid: p.id, name: p.name }); } });
-  R({ id: 'voice', icon: '🎤', label: 'Voice note', hideUnsigned: true, run: function(){ var vb = D.getElementById('_voiceBtn') || D.getElementById('_gcMicBtn'); if (vb) vb.click(); else toast('The 🎤 voice note is not on this phone yet.'); } });
+  R({ id: 'voice', icon: '🎤', label: 'Voice note', hideUnsigned: true, run: function(p){ /* patch FIELDLAYER */ if (W._gcAUTAI && typeof W._gcAUTAI.mic === 'function') { try { W._gcAUTAI.mic(p && p.id); return; } catch (e) {} } var vb = D.getElementById('_gcMicBtn') || D.getElementById('_voiceBtn'); if (vb) vb.click(); else toast('The 🎤 voice note is not on this phone yet.'); } });
   /* owner 10/24 — the field tools (yes list) */
   R({ id: 'readings', icon: '💧', label: 'Readings & equipment', roles: ['mit'], needsSigned: false, run: function(p){ openDrying(p.id); } });
   R({ id: 'sign', icon: '✍️', label: 'Sign on phone', needsSigned: false, run: function(p){ signSheet(p); } });
