@@ -31,7 +31,9 @@
   # roofscout/PROJECT-BRIEF.md, and on the contact e-mail in roofscout-scan.js.
   # 33.151: BIDS_URL (https://bids.grayco-cs.com) and SUBPORTAL_NOTIFY (an e-mail) are public too; they are defaults in subportal.js /
   # portal-access.js. (TWILIO_* and every key stay scanned: none of them is in any file.)
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL,BIDS_URL,SUBPORTAL_NOTIFY"
+  # patch AGY / CHAIN: AGENCY_EMAILS / MKT_REPORT_TO / CALL_CHAIN_LAST (e-mail lists), TWILIO_CALL_CHAIN / TWILIO_CHAIN_SECONDS (switches) and the website's ADMIN_EMAILS are addresses, not secrets; the
+  # agency's addresses appear in docs/AGENCY-PORTAL.md and website/README.md as examples.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL,BIDS_URL,SUBPORTAL_NOTIFY,AGENCY_EMAILS,MKT_REPORT_TO,ADMIN_EMAILS,CALL_CHAIN_LAST,TWILIO_CALL_CHAIN,TWILIO_CHAIN_SECONDS"
 
 [functions]
   node_bundler = "esbuild"
@@ -128,6 +130,12 @@
   schedule = "35 14 * * *"
 
 # patch AUTO13: CRM health e-mail (the 1st, Central) + mitigation equipment-on-site reminder (daily)
+# Monthly marketing report (patch AGY, docs/AGENCY-PORTAL.md): the 1st at 8 AM Central (13:05 / 14:05 UTC, only the
+# run that is 8 AM in Memphis sends). Last month's leads, jobs won and spend by source, to the admins, the agency and
+# the report list. Sent once per month.
+[functions."mkt-report"]
+  schedule = "5 13,14 1 * *"
+
 [functions."crm-health"]
   schedule = "5 15 * * *"
 
@@ -138,6 +146,13 @@
 
 # Tracked links (patch MKT2): crm.grayco-cs.com/go/<code> → the go function (it counts the click and sends the
 # visitor on with the UTM tags). Only this path; everything else is untouched.
+# The marketing agency portal (patch AGY, docs/AGENCY-PORTAL.md)
+[[redirects]]
+  from = "/agency"
+  to = "/agency.html"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/go/*"
   to = "/.netlify/functions/go?c=:splat"
@@ -207,6 +222,12 @@
   status = 200
   force = true
 
+# The public website's source (website/, its own Netlify site) is not served from the CRM.
+[[redirects]]
+  from = "/website/*"
+  to = "/404-not-public"
+  status = 404
+  force = true
 [[redirects]]
   from = "/subportal-app/*"
   to = "/404-not-public"

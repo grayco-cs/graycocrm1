@@ -1,0 +1,78 @@
+[build]
+  publish = "."
+  command = "npm install && node build-pages.mjs"
+
+[build.environment]
+  # ADMIN_EMAILS is a list of addresses (examples appear in README.md), not a secret
+  SECRETS_SCAN_OMIT_KEYS = "ADMIN_EMAILS"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Each page has its own address so Google and Bing index it (see build-pages.mjs).
+[[redirects]]
+  from = "/company"
+  to = "/pages/company.html"
+  status = 200
+[[redirects]]
+  from = "/services"
+  to = "/pages/services.html"
+  status = 200
+[[redirects]]
+  from = "/projects"
+  to = "/pages/projects.html"
+  status = 200
+[[redirects]]
+  from = "/news"
+  to = "/pages/news.html"
+  status = 200
+[[redirects]]
+  from = "/careers"
+  to = "/pages/careers.html"
+  status = 200
+[[redirects]]
+  from = "/contact"
+  to = "/pages/contact.html"
+  status = 200
+
+[[redirects]]
+  from = "/README.md"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/SEO-SETUP.md"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/build-pages.mjs"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package.json"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/ADS-PLAN.md"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/landing/*"
+  to = "/404.html"
+  status = 404
+  force = true
