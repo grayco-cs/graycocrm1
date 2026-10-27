@@ -1,0 +1,507 @@
+[
+ {
+  "find": "\"Photo documentation throughout the project via CompanyCam\"",
+  "new": "\"Photo documentation throughout the project via GrayCo Photos\"",
+  "count": 1
+ },
+ {
+  "find": "\"Progress documentation via CompanyCam with daily photo logs\"",
+  "new": "\"Progress documentation via GrayCo Photos with daily photo logs\"",
+  "count": 1
+ },
+ {
+  "find": "\"Complete photo documentation via CompanyCam for your records and insurance\"",
+  "new": "\"Complete photo documentation via GrayCo Photos for your records and insurance\"",
+  "count": 1
+ },
+ {
+  "find": "\"Complete photo documentation via CompanyCam\"",
+  "new": "\"Complete photo documentation via GrayCo Photos\"",
+  "count": 2
+ },
+ {
+  "find": "\"CompanyCam not loaded\"",
+  "new": "\"GrayCo Photos not loaded\"",
+  "count": 1
+ },
+ {
+  "find": "\"Syncing from CompanyCam...\"",
+  "new": "\"Syncing from GrayCo Photos...\"",
+  "count": 1
+ },
+ {
+  "find": "\"No photos found in CompanyCam for \"",
+  "new": "\"No photos found in GrayCo Photos for \"",
+  "count": 1
+ },
+ {
+  "find": "\" new photos from CompanyCam (\"",
+  "new": "\" new photos from GrayCo Photos (\"",
+  "count": 1
+ },
+ {
+  "find": "\"📷 Sync CompanyCam\"",
+  "new": "\"📷 Sync GrayCo Photos\"",
+  "count": 1
+ },
+ {
+  "find": "\"Paste CompanyCam project or photo URL:\"",
+  "new": "\"Paste GrayCo Photos project or photo URL:\"",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam Estimate\"",
+  "new": "\"GrayCo Photos Estimate\"",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam linked — add materials & labor in editor\"",
+  "new": "\"GrayCo Photos linked — add materials & labor in editor\"",
+  "count": 1
+ },
+ {
+  "find": "\"📸 From CompanyCam\"",
+  "new": "\"📸 From GrayCo Photos\"",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam URL (optional)\"",
+  "new": "\"GrayCo Photos URL (optional)\"",
+  "count": 1
+ },
+ {
+  "find": "`${L} — CompanyCam linked`",
+  "new": "`${L} — GrayCo Photos linked`",
+  "count": 1
+ },
+ {
+  "find": "`New project launched in GrayCo Hub:\n\nProject: ${L}\nPO #: ${y}\nClient: ${Le.client||\"TBD\"}\nAddress: ${Le.address||\"TBD\"}\nType: ${Le.type}\nPM: ${Le.pm||\"TBD\"}\nStart: ${Le.startDate||\"TBD\"}\n\nScope:\n${Le.scope||\"[To be defined]\"}\n\nGoogle Doc created — paste content from clipboard.\nCompanyCam: ${Le.ccamUrl||\"Not linked\"}\n\nGrayCo Construction\noffice\\x40grayco-cs.com\n901-585-0944`",
+  "new": "`New project launched in GrayCo Hub:\n\nProject: ${L}\nPO #: ${y}\nClient: ${Le.client||\"TBD\"}\nAddress: ${Le.address||\"TBD\"}\nType: ${Le.type}\nPM: ${Le.pm||\"TBD\"}\nStart: ${Le.startDate||\"TBD\"}\n\nScope:\n${Le.scope||\"[To be defined]\"}\n\nGoogle Doc created — paste content from clipboard.\nGrayCo Photos: ${Le.ccamUrl||\"Not linked\"}\n\nGrayCo Construction\noffice\\x40grayco-cs.com\n901-585-0944`",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam URL\"",
+  "new": "\"GrayCo Photos URL\"",
+  "count": 1
+ },
+ {
+  "find": "\"Tip: add address for Google Maps & CompanyCam\"",
+  "new": "\"Tip: add address for Google Maps & GrayCo Photos\"",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam Link\"",
+  "new": "\"GrayCo Photos Link\"",
+  "count": 1
+ },
+ {
+  "find": "\"📷 CompanyCam Linked\"",
+  "new": "\"📷 GrayCo Photos Linked\"",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam checklist items with photos — builds your scope document\"",
+  "new": "\"GrayCo Photos checklist items with photos — builds your scope document\"",
+  "count": 1
+ },
+ {
+  "find": "\"No scope sections yet. Click + Add Section to build your scope from CompanyCam walkthrough checklist items.\"",
+  "new": "\"No scope sections yet. Click + Add Section to build your scope from GrayCo Photos walkthrough checklist items.\"",
+  "count": 1
+ },
+ {
+  "find": "\"Attach CompanyCam or uploaded photos to send with this scope\"",
+  "new": "\"Attach GrayCo Photos or uploaded photos to send with this scope\"",
+  "count": 1
+ },
+ {
+  "find": "\"No photos yet — upload photos above or sync CompanyCam from the project Photos tab first\"",
+  "new": "\"No photos yet — upload photos above or sync GrayCo Photos from the project Photos tab first\"",
+  "count": 1
+ },
+ {
+  "find": "\"All subs added to CompanyCam\"",
+  "new": "\"All subs added to GrayCo Photos\"",
+  "count": 1
+ },
+ {
+  "find": "\"CompanyCam project created \\u2014 all parties added\"",
+  "new": "\"GrayCo Photos project created \\u2014 all parties added\"",
+  "count": 1
+ },
+ {
+  "find": "\"No matching CompanyCam project found for: \"",
+  "new": "\"No matching GrayCo Photos project found for: \"",
+  "count": 1
+ },
+ {
+  "find": "\" CompanyCam Lead\"",
+  "new": "\" GrayCo Photos Lead\"",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam lead'",
+  "new": "'GrayCo Photos lead'",
+  "count": 3
+ },
+ {
+  "find": "\"📷 CompanyCam Leads\"",
+  "new": "\"📷 GrayCo Photos Leads\"",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam project'",
+  "new": "'GrayCo Photos project'",
+  "count": 5
+ },
+ {
+  "find": "'📷 CompanyCam Leads'",
+  "new": "'📷 GrayCo Photos Leads'",
+  "count": 1
+ },
+ {
+  "find": "'Job hit 100% \\u2014 confirm CompanyCam, materials, fees & all expenses are on this job.'",
+  "new": "'Job hit 100% \\u2014 confirm GrayCo Photos, materials, fees & all expenses are on this job.'",
+  "count": 1
+ },
+ {
+  "find": "'<div><div class=\"gc-set-label\">CompanyCam</div>'",
+  "new": "'<div><div class=\"gc-set-label\">GrayCo Photos</div>'",
+  "count": 1
+ },
+ {
+  "find": "'<div class=\"gc-set-sub\">Open your CompanyCam projects</div></div>'",
+  "new": "'<div class=\"gc-set-sub\">Open your GrayCo Photos projects</div></div>'",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam Project'",
+  "new": "'GrayCo Photos Project'",
+  "count": 2
+ },
+ {
+  "find": "'Auto-created from CompanyCam. Project URL: '",
+  "new": "'Auto-created from GrayCo Photos. Project URL: '",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam document'",
+  "new": "'GrayCo Photos document'",
+  "count": 1
+ },
+ {
+  "find": "'Fetching from CompanyCam...'",
+  "new": "'Fetching from GrayCo Photos...'",
+  "count": 1
+ },
+ {
+  "find": "'Synced from CompanyCam.'",
+  "new": "'Synced from GrayCo Photos.'",
+  "count": 1
+ },
+ {
+  "find": "'\" to its existing CompanyCam project.'",
+  "new": "'\" to its existing GrayCo Photos project.'",
+  "count": 1
+ },
+ {
+  "find": "'\" in CompanyCam.'",
+  "new": "'\" in GrayCo Photos.'",
+  "count": 1
+ },
+ {
+  "find": "'Auto-imported from CompanyCam \\u2014 created in Bidding (entered in CompanyCam directly)'",
+  "new": "'Auto-imported from GrayCo Photos \\u2014 created in Bidding (entered in GrayCo Photos directly)'",
+  "count": 1
+ },
+ {
+  "find": "'Imported from CompanyCam ('",
+  "new": "'Imported from GrayCo Photos ('",
+  "count": 1
+ },
+ {
+  "find": "'<p style=\"font-size:11px;color:#64748b;margin:0 0 12px\">Set each PM\\u2019s rates independently. When a job is theirs (auto-detected from CompanyCam / who added it, or overridden on the job), the CRM uses their \\u201Cbring in\\u201D rate; GrayCo-fed jobs use the standard rate.</p>'",
+  "new": "'<p style=\"font-size:11px;color:#64748b;margin:0 0 12px\">Set each PM\\u2019s rates independently. When a job is theirs (auto-detected from GrayCo Photos / who added it, or overridden on the job), the CRM uses their \\u201Cbring in\\u201D rate; GrayCo-fed jobs use the standard rate.</p>'",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam job'",
+  "new": "'GrayCo Photos job'",
+  "count": 1
+ },
+ {
+  "find": "' new CompanyCam job'",
+  "new": "' new GrayCo Photos job'",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam: '",
+  "new": "'GrayCo Photos: '",
+  "count": 4
+ },
+ {
+  "find": "'<span style=\"color:#9fc4e8;font-size:13px;font-weight:700;\">\\uD83D\\uDCF7 CompanyCam:</span>'",
+  "new": "'<span style=\"color:#9fc4e8;font-size:13px;font-weight:700;\">\\uD83D\\uDCF7 GrayCo Photos:</span>'",
+  "count": 1
+ },
+ {
+  "find": "'Verify all job costs first (CompanyCam, materials, fees, subs). Open the \"Verify all costs\" to-do for this job.'",
+  "new": "'Verify all job costs first (GrayCo Photos, materials, fees, subs). Open the \"Verify all costs\" to-do for this job.'",
+  "count": 1
+ },
+ {
+  "find": "'<div style=\"color:#cbd5e1;font-size:12px;line-height:1.9;\">\\u2022 All CompanyCam expenses pulled in<br>\\u2022 All material orders/receipts entered<br>\\u2022 Permit, dump, fuel & misc fees added<br>\\u2022 All sub invoices received & approved<br>\\u2022 Every cost tagged to THIS job</div>'",
+  "new": "'<div style=\"color:#cbd5e1;font-size:12px;line-height:1.9;\">\\u2022 All GrayCo Photos expenses pulled in<br>\\u2022 All material orders/receipts entered<br>\\u2022 Permit, dump, fuel & misc fees added<br>\\u2022 All sub invoices received & approved<br>\\u2022 Every cost tagged to THIS job</div>'",
+  "count": 1
+ },
+ {
+  "find": "'<div style=\"color:#8fa8c4;font-size:12px;margin-bottom:8px;\">Photos live in GrayCo Photos \\u2014 CompanyCam photos show there too.</div>'",
+  "new": "'<div style=\"color:#8fa8c4;font-size:12px;margin-bottom:8px;\">Photos live in GrayCo Photos.</div>'",
+  "count": 1
+ },
+ {
+  "find": "'<div style=\"font-size:13px;color:#55626F;margin-bottom:10px\">Proposals, contracts, change orders, invoices, warranty, welcome packet, completion papers and lien waivers show by themselves. Internal papers never do. Turn any file on or off. All CompanyCam photos always show.</div>'",
+  "new": "'<div style=\"font-size:13px;color:#55626F;margin-bottom:10px\">Proposals, contracts, change orders, invoices, warranty, welcome packet, completion papers and lien waivers show by themselves. Internal papers never do. Turn any file on or off. All GrayCo Photos photos always show.</div>'",
+  "count": 1
+ },
+ {
+  "find": "' from CompanyCam to'",
+  "new": "' from GrayCo Photos to'",
+  "count": 1
+ },
+ {
+  "find": "'from CompanyCam'",
+  "new": "'from GrayCo Photos'",
+  "count": 2
+ },
+ {
+  "find": "'<span class=\"gcu-sm\" style=\"color:#92400e\">CompanyCam photos could not be loaded just now, so only the photos shown here are included.</span>'",
+  "new": "'<span class=\"gcu-sm\" style=\"color:#92400e\">Photos could not be loaded just now, so only the photos shown here are included.</span>'",
+  "count": 1
+ },
+ {
+  "find": "'<span class=\"gcu-sm\">CompanyCam photos keep the tags from CompanyCam.</span>'",
+  "new": "'<span class=\"gcu-sm\">These photos keep their tags.</span>'",
+  "count": 1
+ },
+ {
+  "find": "'A photo project for the crew (CompanyCam keeps syncing in the background).'",
+  "new": "'A photo project for the crew in GrayCo Photos.'",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam / GrayCo Photos'",
+  "new": "'GrayCo Photos'",
+  "count": 1
+ },
+ {
+  "find": "'<div style=\"color:var(--muted,#666);margin-top:8px\">No photos for this job yet. Photos taken in GrayCo Photos (CompanyCam) on this job show here.</div>'",
+  "new": "'<div style=\"color:var(--muted,#666);margin-top:8px\">No photos for this job yet. Photos taken in GrayCo Photos on this job show here.</div>'",
+  "count": 1
+ },
+ {
+  "find": "'<div style=\"background:#F4F3FA;border-radius:8px;padding:10px;margin:12px 0;font-size:13px\"><b>How it works:</b> job photos stay in GrayCo Photos (CompanyCam) and use none of this space. Photos uploaded into the CRM or the portals are shrunk first (long side 1600 px, about 150–400 KB). PDFs are 1–5 MB. The same file stored twice is kept once. The Pro plan includes 100 GB of files and 8 GB of database — many years of room. <b>Nothing has to be deleted each year</b>; the 🗄 Year-end archive keeps one download per year.</div>'",
+  "new": "'<div style=\"background:#F4F3FA;border-radius:8px;padding:10px;margin:12px 0;font-size:13px\"><b>How it works:</b> job photos stay in GrayCo Photos and use none of this space. Photos uploaded into the CRM or the portals are shrunk first (long side 1600 px, about 150–400 KB). PDFs are 1–5 MB. The same file stored twice is kept once. The Pro plan includes 100 GB of files and 8 GB of database — many years of room. <b>Nothing has to be deleted each year</b>; the 🗄 Year-end archive keeps one download per year.</div>'",
+  "count": 1
+ },
+ {
+  "find": "'\" title=\"QuickBooks customers and CompanyCam projects filed as leads that never became an inquiry — not counted as new\">📦 Imported ('",
+  "new": "'\" title=\"QuickBooks customers and GrayCo Photos projects filed as leads that never became an inquiry — not counted as new\">📦 Imported ('",
+  "count": 1
+ },
+ {
+  "find": "'GrayCo Photos (CompanyCam)'",
+  "new": "'GrayCo Photos'",
+  "count": 1
+ },
+ {
+  "find": "'🧭 CompanyCam status'",
+  "new": "'🧭 GrayCo Photos status'",
+  "count": 1
+ },
+ {
+  "find": "'Photos (GrayCo Photos / CompanyCam)'",
+  "new": "'Photos (GrayCo Photos)'",
+  "count": 1
+ },
+ {
+  "find": "'> Also create new jobs in CompanyCam</label>'",
+  "new": "'> Also create new jobs in GrayCo Photos</label>'",
+  "count": 1
+ },
+ {
+  "find": "g.ccamUrl&&e.jsx(\"a\",{href:g.ccamUrl,target:\"_blank\",rel:\"noreferrer\",style:{fontSize:11,color:\"#ff6b00\",fontWeight:600,textDecoration:\"none\"},children:\"📸 CompanyCam ↗\"}),",
+  "new": "",
+  "count": 1
+ },
+ {
+  "find": "((window._gcCompanyCamUrl&&window._gcCompanyCamUrl(j))?('<button onclick=\"window.open(\\''+window._gcCompanyCamUrl(j)+'\\',\\'_blank\\')\" style=\"background:#0891b2;color:#fff;border:none;font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;\">\\uD83D\\uDCF7 CompanyCam</button>'):'')",
+  "new": "''",
+  "count": 1
+ },
+ {
+  "find": "'<span><b>CompanyCam</b> ' + (ccOn() ? (it.ccId ? 'linked (project ' + esc(it.ccId) + ') · <a href=\"https://app.companycam.com/projects/' + esc(it.ccId) + '\" target=\"_blank\" rel=\"noopener\" style=\"font-size:13px\">CompanyCam ↗</a>' : 'not linked to this job') : 'not connected — GrayCo Photos works on its own') + '</span>'",
+  "new": "'<span><b>Photo sync</b> ' + (ccOn() ? (it.ccId ? 'on for this job' : 'not linked to this job') : 'off — GrayCo Photos works on its own') + '</span>'",
+  "count": 1
+ },
+ {
+  "find": "{n:\"CompanyCam\",url:\"https://app.companycam.com\",d:\"Project photos from the field\",color:\"#f97316\",ic:\"📸\"},",
+  "new": "",
+  "count": 1
+ },
+ {
+  "find": "{n:\"CompanyCam\",url:\"https://app.companycam.com/projects\",d:\"Photo documentation for projects\",color:\"#f97316\",ic:\"📸\"},",
+  "new": "",
+  "count": 1
+ },
+ {
+  "find": "{n:\"CompanyCam\",d:\"Sync project photos from field to office\"",
+  "new": "{n:\"Photo sync (CompanyCam)\",d:\"Sync project photos from field to office\"",
+  "count": 1
+ },
+ {
+  "find": "H(\"companycam\",\"📸 CompanyCam\",\"#f59e0b\")",
+  "new": "H(\"companycam\",\"📸 Photo sync (CompanyCam)\",\"#f59e0b\")",
+  "count": 1
+ },
+ {
+  "find": "(it.kind === 'cc' ? '<span class=\"gcu-tagp\" style=\"left:10px;bottom:10px;background:' + CCBLUE + '\">CompanyCam</span>' : '')",
+  "new": "''",
+  "count": 1
+ },
+ {
+  "find": "(cc ? '<span class=\"gcu-pc\" style=\"background:' + CCBLUE + ';display:flex;align-items:center\">CompanyCam</span>' : '')",
+  "new": "''",
+  "count": 1
+ },
+ {
+  "find": "<span><span class=\"gcu-ccb\" style=\"position:static\">CC</span> From CompanyCam</span>' + (ccOn() ? '<span>· both in one place</span>' : '') + '</div>'",
+  "new": "' + '</div>'",
+  "count": 1
+ },
+ {
+  "find": "(r.source === 'companycam' ? '<span class=\"gcu-ccb\">CC</span>' : '')",
+  "new": "(r.source === 'companycam' ? '<span class=\"gcu-gcb\">GC</span>' : '')",
+  "count": 1
+ },
+ {
+  "find": "(ccOn() && it.ccId ? ' · CompanyCam + GrayCo' : '')",
+  "new": "''",
+  "count": 1
+ },
+ {
+  "find": "source === 'companycam' ? 'CompanyCam' : 'GrayCo P",
+  "new": "source === 'companycam' ? 'GrayCo Photos' : 'GrayCo P",
+  "count": 3
+ },
+ {
+  "find": "'CompanyCam photos: unreadable answer'",
+  "new": "'Photos: unreadable answer'",
+  "count": 1
+ },
+ {
+  "find": "throw new Error('CompanyCam photo ' + rp.status",
+  "new": "throw new Error('Photo download ' + rp.status",
+  "count": 1
+ },
+ {
+  "find": "throw new Error('CompanyCam photo')",
+  "new": "throw new Error('Photo download failed')",
+  "count": 1
+ },
+ {
+  "find": "'New lead added by ' + (a.by||'CompanyCam')",
+  "new": "'New lead added by ' + (a.by||'GrayCo Photos')",
+  "count": 1
+ },
+ {
+  "find": "if (/companycam/.test(x)) return 'CompanyCam';",
+  "new": "if (/companycam/.test(x)) return 'GrayCo Photos';",
+  "count": 1
+ },
+ {
+  "find": "if(/companycam|cc|photo/.test(c))return 'CompanyCam';",
+  "new": "if(/companycam|cc|photo/.test(c))return 'GrayCo Photos';",
+  "count": 1
+ },
+ {
+  "find": "e.jsx(\"b\",{children:\"CompanyCam\"})",
+  "new": "e.jsx(\"b\",{children:\"GrayCo Photos\"})",
+  "count": 1
+ },
+ {
+  "find": "companycam:{label:'Came in from CompanyCam'",
+  "new": "companycam:{label:'Came in from GrayCo Photos'",
+  "count": 1
+ },
+ {
+  "find": "'CompanyCam (PM\\'s own)'",
+  "new": "'GrayCo Photos (PM\\'s own)'",
+  "count": 2
+ },
+ {
+  "find": "'gov': 'Government', 'roofignite': 'Roofing Ignite',",
+  "new": "'gov': 'Government', 'companycam (pm\\'s own)': 'GrayCo Photos (PM\\'s own)', 'grayco photos': 'GrayCo Photos (PM\\'s own)', 'roofignite': 'Roofing Ignite',",
+  "count": 1
+ },
+ {
+  "find": "{id:'dom:companycam',l:'CompanyCam',ic:'⊕'}",
+  "new": "{id:'dom:companycam',l:'Photo sync',ic:'⊕'}",
+  "count": 1
+ },
+ {
+  "find": "if(c.nodeType===3 && String(c.nodeValue).trim()){ c.nodeValue='CompanyCam'; return true; }",
+  "new": "if(c.nodeType===3 && String(c.nodeValue).trim()){ c.nodeValue='Photo sync'; return true; }",
+  "count": 1
+ },
+ {
+  "find": "})(mine) || (mine.textContent='CompanyCam');",
+  "new": "})(mine) || (mine.textContent='Photo sync');",
+  "count": 1
+ },
+ {
+  "find": "{ g: 'Field & photos', k: 'companycam', ic: '📷', b: 'CompanyCam', d: 'app.companycam.com' }",
+  "new": "{ g: 'Field & photos', k: 'companycam', ic: '📷', b: 'Photo sync', d: 'GrayCo Photos sync' }",
+  "count": 1
+ },
+ {
+  "find": "['companycam', 'CompanyCam']",
+  "new": "['companycam', 'Photo sync (CompanyCam)']",
+  "count": 1
+ },
+ {
+  "find": "label: \"CompanyCam\", fn: function(){ if(window._gcOpenCompanyCamTab)",
+  "new": "label: \"Photo sync\", fn: function(){ if(window._gcOpenCompanyCamTab)",
+  "count": 1
+ },
+ {
+  "find": "\"title\": \"Photos (GrayCo Photos and CompanyCam)\", \"body\": \"- Every job has a GrayCo Photos project; CompanyCam keeps syncing in the background.\\n",
+  "new": "\"title\": \"Photos (GrayCo Photos)\", \"body\": \"- Every job has a GrayCo Photos project.\\n",
+  "count": 1
+ },
+ {
+  "find": "such as unmapped CompanyCam jobs and jobs of people who left",
+  "new": "such as unmapped GrayCo Photos jobs and jobs of people who left",
+  "count": 1
+ },
+ {
+  "find": "each person's name as it appears in CompanyCam.",
+  "new": "each person's name as it appears in GrayCo Photos.",
+  "count": 1
+ },
+ {
+  "find": "label: '📸 CompanyCam sync isn\\'t working', sub: plainLine(),",
+  "new": "label: '📸 Photo sync isn\\'t working', sub: String(plainLine() || '').replace(/CompanyCam/g, 'photo sync'),",
+  "count": 1
+ },
+ {
+  "find": "label: '📸 CompanyCam: ' + rv.length + ' project'",
+  "new": "label: '📸 GrayCo Photos: ' + rv.length + ' project'",
+  "count": 1
+ },
+ {
+  "find": "sub: 'New CompanyCam projects that need a person (look-alike jobs, a finished job at the same address, or the Senior PM got them).'",
+  "new": "sub: 'New GrayCo Photos projects that need a person (look-alike jobs, a finished job at the same address, or the Senior PM got them).'",
+  "count": 1
+ }
+]

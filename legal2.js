@@ -173,18 +173,20 @@ function linksHtml(base, which){
     : [['Customer Portal Terms of Use', '/portal-terms.html'], ['Sub Portal Terms of Use', '/sub-terms.html'], ['Privacy', '/privacy.html'], ['Sub Portal Privacy Notice', '/sub-privacy.html'], ['E-SIGN Disclosure', '/esign-consent.html']];
   return L.map(function(x){ return '<a href="' + base + x[1] + '" target="_blank" rel="noopener">' + x[0] + '</a>'; }).join(' &middot; ');
 }
-function signinNote(base){
+function signinNote(base, sub){   /* patch QA1027 (SUBHIDE): customers and GCs never see the sub portal's documents (the old
+     .replace(' &middot; …') never matched the <a> links, so the customer note listed every document) */
   var p = D.createElement('p'); p.setAttribute('data-gc-legal-note', '1'); p.style.cssText = 'font:12.5px/1.45 Arial,sans-serif;color:#475569;margin:10px 0 0;text-align:center';
-  p.innerHTML = 'By signing in you agree to the ' + linksHtml(base, 'all').replace(' &middot; Sub Portal Privacy Notice', '').replace(' &middot; E-SIGN Disclosure', '') + '. Documents may be signed electronically after you agree to the <a href="' + (base || '') + '/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a>.';
+  var L2 = sub ? [['Sub Portal Terms of Use', '/sub-terms.html'], ['Sub Portal Privacy Notice', '/sub-privacy.html']] : [['Customer Portal Terms of Use', '/portal-terms.html'], ['Privacy', '/privacy.html']];
+  p.innerHTML = 'By signing in you agree to the ' + L2.map(function(x){ return '<a href="' + (base || '') + x[1] + '" target="_blank" rel="noopener">' + x[0] + '</a>'; }).join(' &middot; ') + '. Documents may be signed electronically after you agree to the <a href="' + (base || '') + '/esign-consent.html" target="_blank" rel="noopener">E-SIGN Disclosure</a>.';
   return p;
 }
 function boot(o){
   o = o || {}; var base = o.base || '';
   function paint(){
     var tgt = D.getElementById('signinBox') || D.getElementById('deviceBox');
-    if (tgt && !tgt.querySelector('[data-gc-legal-note]')) tgt.appendChild(signinNote(base));
+    if (tgt && !tgt.querySelector('[data-gc-legal-note]')) tgt.appendChild(signinNote(base, !!(o.bid || W.GCPartner)));
     if (o.bid) { var pw = D.querySelector('input[type=password]'); var host = pw && (pw.closest('form') || pw.parentElement && pw.parentElement.parentElement);
-      if (host && !host.querySelector('[data-gc-legal-note]')) { var n = signinNote(base); host.appendChild(n); } }
+      if (host && !host.querySelector('[data-gc-legal-note]')) { var n = signinNote(base, true); host.appendChild(n); } }
     if (o.bid && !D.querySelector('[data-gc-legal-footer]')) { var f = D.createElement('div'); f.setAttribute('data-gc-legal-footer', '1'); f.style.cssText = 'text-align:center;font:12px/1.5 Arial,sans-serif;color:#64748b;padding:12px 8px'; f.innerHTML = linksHtml(base, 'sub'); if (D.body) D.body.appendChild(f); }
   }
   try { new W.MutationObserver(function(){ paint(); }).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) {}

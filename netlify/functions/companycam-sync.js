@@ -263,12 +263,12 @@ function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10);
 function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm }; }
 function jobFor(p, pm, note, nowIso, senior){
   const c = p.contact || {}, iso = new Date(p.created_at * 1000).toISOString();
-  const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
+  const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('GrayCo Photos ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
     address: p.address || '', type: 'Residential Reno', status: 'bidding', contract: 0, source: 'companycam',
     ccamId: p.id, ccProjectId: p.id, ccamUrl: p.url, companyCamUrl: p.url, ccCreator: p.creator || '', ccCreatorId: p.creatorId || '',
     created: ymd(p.created_at), createdAt: iso, keepAsJob: true, _ccAuto: true, _ccServer: true, savedAt: nowIso, updatedAt: nowIso };
   if (pm) Object.assign(j, selfFields(pm)); else { j.createdBy = 'CompanyCam' + (p.creator ? ' (' + p.creator + ')' : ''); if (senior) { j.pm = senior; j.pmBy = 'senior-pm'; } }   /* patch PMG: nobody mapped → the Senior PM runs it (not their own lead) */
-  if (note) j.notes = 'Made in CompanyCam' + (p.creator ? ' by ' + p.creator : '') + ' — ' + note + '.';
+  if (note) j.notes = 'Made in GrayCo Photos' + (p.creator ? ' by ' + p.creator : '') + ' — ' + note + '.';
   return j;
 }
 

@@ -116,7 +116,8 @@ if (!noBrowser) {
     /* a third GC comes in through the Lead Inbox import */
     const merged = await A.ev(async () => window._gcBidToMerge(((await window.idbGet('leads')) || []).find(l => l.id === 'L_hp'), { bidTo: [{ company: 'Keystone General Contractors', contact: 'Kim Ortega', email: 'kortega@keystonegc.com', phone: '901 555 0303', due: '2026-11-07T10:00' }, { company: 'Summit Ridge Construction, LLC', email: 'mlopez@summitridgecc.com' }] }));
     ok('Lead Inbox import: the new GC joins lead.bidTo, the known one is not doubled', merged && merged.length === 3 && merged[2].company === 'Keystone General Contractors', merged);
-    await A.ev(m => { window._setLeads(p => p.map(l => l.id === 'L_hp' ? Object.assign({}, l, { bidTo: m }) : l)); }, merged); await sleep(1500);
+    /* saved the way the CRM saves a lead (the Leads engine: state + this computer's copy + the cloud), not a bare React setter that nothing persists */
+    await A.ev(m => window._gcLeadsEngine.patchLead('L_hp', x => { x.bidTo = m; }), merged); await sleep(1500);
     await A.ev(() => window._gcBidSend.pullLeads()); await sleep(500);
     const list = await A.ev(() => window._gcBidSend.list('lead:L_hp'));
     ok('Bidding to: the saved GC + both invited GCs = 3 rows, one each', list.length === 3 && list.map(b => b.company).join('|') === 'Pathway Builders|Summit Ridge Construction|Keystone General Contractors' && new Set(list.map(b => b.id)).size === 3, list.map(b => b.id + ':' + b.company));

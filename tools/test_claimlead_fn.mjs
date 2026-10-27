@@ -82,7 +82,7 @@ ok(l.files && l.files.length === 1 && /^sb:crm-files\/[0-9a-f]{64}\.pdf$/.test(l
 ok(l.status === 'new', 'it shows in the Lead Inbox as new (admins can reassign)', l.status);
 const item = inbox()[0] || {};
 ok(item.status === 'lead' && item.lead && item.lead.id === l.id, 'the claim inbox item points at the lead and is not left in "Claim mail to match"', item.status);
-const alerts = SENT.filter(x => /owner@grayco-cs\.com/.test(JSON.stringify(x.to)));
+const alerts = SENT.filter(x => /office@grayco-cs\.com/.test(JSON.stringify(x.to)));   /* patch ALERTTO: lead alerts go to office@ (the alert list), not each admin */
 ok(alerts.length >= 1, 'the shared lead path sent the admins\' new-lead alert (not claim-inbox itself)', SENT.map(x => x.subject));
 ok(SENT.every(x => !JSON.stringify(x.to).includes('cc-network.test')), 'nothing was sent to the sender (no auto-reply)', SENT.map(x => x.to));
 

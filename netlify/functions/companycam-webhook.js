@@ -585,7 +585,7 @@ exports.handler = async function(event, context) {
     await pushPendingLead({
       type: 'new_project',
       ccId: String(proj.id || proj.public_id || ''),
-      name: proj.name || addr || 'New CompanyCam Project',
+      name: proj.name || addr || 'New GrayCo Photos Project',
       address: addr,
       url: proj.url || ('https://app.companycam.com/projects/' + (proj.id||'')),
       createdAt: proj.created_at || proj.updated_at || '',   // no date → the CRM treats it as made before 2026 (never imported)
