@@ -449,7 +449,236 @@ function spForget(u, init){
   } catch (e) {}
   SP_KNOWN = {};
 }
+/* patch SPEED4 */
+/* ── READ CACHE (patch SPEED4) ─────────────────────────────────────────────────────────────────────────────────
+   Reads of gc_kv rows (one key, or a few with key=in.(…), columns key / value / updated_at only) are answered here
+   when this computer already knows what the cloud holds:
+   - A. the same read already on its way is shared (every tab and engine asks for the same rows at once);
+   - B. what the live feed delivered (key, value, timestamp) in the last 20 s while it stayed connected — the
+        re-read every other computer used to make right after each save;
+   - C. only with the gc_kv_touch trigger (docs/scale-20.sql) confirmed by the probe below: a kept copy whose
+        timestamp the cloud confirms unchanged, asked AFTER the read was (one tiny key+updated_at question for all
+        the reads asked in the same 25 ms): a save's re-reads and the once-a-minute readers no longer download
+        their whole list again when it did not change.
+   A save of a key (sent, answered or refused), a live-feed change of it, or a dropped live connection forgets its
+   copy at once; a read that started before a save is not kept. Nothing here writes. localStorage gc_rc_off = '1'
+   turns it off; _gcReadCache() says what it did. */
+var RC_E = {}, RC_G = {}, RC_W = {}, RC_VS = {}, RC_IN = {}, RC_RTOK = false, RC_SOCK = 0;
+var RC_S = { hits: 0, rtHits: 0, stampHits: 0, shared: 0, net: 0, partial: 0, stampAsks: 0, stampKeys: 0, inval: 0, trigger: 'unknown', kbSaved: 0, why: {} };
+var RC_RTTL = 20000, RC_MAXTXT = 8e6;
+var RC_SKIPK = /(__manifest)$|^(gc_dailybackup_|users$|users__|gc_epoch$|__healthcheck__|gc_kv_probe)/;
+var RC_ON = (function(){ try { return localStorage.getItem('gc_rc_off') !== '1'; } catch (e) { return true; } })();
+var RC_TRIG = (function(){ try { var j = JSON.parse(localStorage.getItem('gc_kv_touch_ok') || 'null'); return !!(j && j.ok && Date.now() - j.at < 864e5); } catch (e) { return false; } })();
+if (RC_TRIG) RC_S.trigger = 'confirmed (remembered)';
+function rcReq(u, input, init){
+  if (methodOf(input, init) !== 'GET') return null;
+  var x; try { x = new URL(u, location.href); } catch (e) { return null; }
+  if (x.host !== SB_HOST || x.pathname !== '/rest/v1/gc_kv') return null;
+  var no = function(w){ RC_S.why[w] = (RC_S.why[w] || 0) + 1; return null; };
+  if (input && typeof input === 'object' && !(input instanceof URL)) return no('request');   /* a Request object: not ours */
+  if (init && init.signal) return no('signal');
+  var kq = null, sel = null, bad = false, not = [];
+  /* key=not.in.(…) is added by the accounts layer (keys that never leave it): those keys are left to the cloud */
+  x.searchParams.forEach(function(v, k){ var mn = k === 'key' && /^not\.in\.\((.*)\)$/.exec(v); if (mn) not = not.concat(mn[1].split(',').map(function(z){ return z.replace(/^"|"$/g, ''); })); else if (k === 'key' && kq === null) kq = v; else if (k === 'select' && sel === null) sel = v; else bad = k; });
+  if (bad || !kq || !sel) return no('param:' + (bad || (!kq ? 'nokey' : 'nosel')));
+  var f = sel.split(','), want = {};
+  for (var i = 0; i < f.length; i++) { var s = f[i].trim(); if (!/^(key|value|updated_at)$/.test(s)) return no('col'); want[s] = 1; }
+  var keys, one = /^eq\./.test(kq);
+  if (one) keys = [kq.slice(3)];
+  else {
+    var m = /^in\.\((.*)\)$/.exec(kq); if (!m || !want.key) return null;
+    keys = m[1].split(',').map(function(k){ return k.replace(/^"|"$/g, ''); });
+    if (!keys.length || keys.length > 200) return no('many');
+  }
+  for (var j = 0; j < keys.length; j++) if (!keys[j] || not.indexOf(keys[j]) >= 0 || RC_SKIPK.test(keys[j]) || /[",()*\\]/.test(keys[j])) return no('skipkey');
+  RC_S.why.ok = (RC_S.why.ok || 0) + 1;
+  return { x: x, keys: keys, one: one, val: !!want.value, norm: (want.key ? 'key,' : '') + (want.value ? 'value,' : '') + 'updated_at' };
+}
+function rcWriteKeys(u, input, init){
+  var m = methodOf(input, init); if (m === 'GET' || m === 'HEAD') return null;
+  var x; try { x = new URL(u, location.href); } catch (e) { return null; }
+  if (x.host !== SB_HOST || x.pathname !== '/rest/v1/gc_kv') return null;
+  var kq = x.searchParams.get('key') || '';
+  if (/^eq\./.test(kq)) return [kq.slice(3)];
+  var mi = /^in\.\((.*)\)$/.exec(kq); if (mi) return mi[1].split(',').map(function(k){ return k.replace(/^"|"$/g, ''); });
+  var b = init && typeof init.body === 'string' ? init.body : '';
+  var one = /^\s*\{\s*"key"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(b);
+  if (one) { try { return [JSON.parse('"' + one[1] + '"')]; } catch (e) {} }
+  return ['*'];
+}
+function rcInval(keys){
+  var t = now();
+  keys.forEach(function(k){
+    if (k === '*') { Object.keys(RC_E).forEach(function(z){ RC_G[z] = (RC_G[z] || 0) + 1; RC_W[z] = t; }); RC_E = {}; RC_G['*'] = (RC_G['*'] || 0) + 1; RC_W['*'] = t; return; }
+    RC_G[k] = (RC_G[k] || 0) + 1; RC_W[k] = t; delete RC_E[k];
+  });
+  RC_S.inval++;
+}
+function rcGen(k){ return (RC_G[k] || 0) + ':' + (RC_G['*'] || 0); }
+/* tq: when this read was asked. A copy from the cloud counts only if the cloud confirmed its timestamp AFTER that
+   (so a read is never older than the read it replaces); a live-feed copy while the feed stays connected. */
+function rcValid(k, e, t, tq){
+  if (!e) return false;
+  if (e.src === 'rt') return RC_RTOK && t - e.t < RC_RTTL;
+  var v = RC_VS[k];
+  return !!(RC_TRIG && e.at && v && v.at === e.at && v.t >= tq);
+}
+/* a row's text ({…}, no brackets), '' when the cloud has no such row, null when not known in this shape */
+function rcRow(k, e, norm){
+  if (!e) return null;
+  if (e.txt && Object.prototype.hasOwnProperty.call(e.txt, norm)) return e.txt[norm];
+  if (e.src !== 'rt' || !e.at) return null;
+  var parts = [];
+  if (norm.indexOf('key,') === 0) parts.push('"key":' + JSON.stringify(k));
+  if (norm.indexOf('value') >= 0) {
+    if (e.vs == null) { try { e.vs = JSON.stringify(e.val === undefined ? null : e.val); } catch (er) { return null; } }
+    parts.push('"value":' + e.vs);
+  }
+  parts.push('"updated_at":' + JSON.stringify(e.at));
+  return '{' + parts.join(',') + '}';
+}
+function rcResp(body){ return new Response(body, { status: 200, statusText: 'OK', headers: { 'Content-Type': 'application/json; charset=utf-8' } }); }
+function rcUrl(q, keys){
+  return 'https://' + SB_HOST + '/rest/v1/gc_kv?key=' + (q.one && keys.length === 1 ? 'eq.' + encodeURIComponent(keys[0]) : 'in.(' + keys.map(function(k){ return encodeURIComponent('"' + k + '"'); }).join(',') + ')') + '&select=' + q.norm;
+}
+/* the cloud's answer for these keys (one request, shared with the same request already on its way) */
+function rcNet(q, keys, input, init){
+  var id = q.norm + '|' + (q.one ? '=' : '') + keys.slice().sort().join(',');
+  var inf = RC_IN[id];
+  if (inf) { RC_S.shared++; return inf; }
+  var t0 = now(), gens = {}; keys.forEach(function(k){ gens[k] = rcGen(k); });
+  var url = rcUrl(q, keys);
+  RC_S.net++;
+  var p = nativeFetch(url, withAuth(url, init, true)).then(function(res){
+    if (!res || !res.ok) return { res: res };
+    return res.text().then(function(txt){
+      var tt = txt.trim();
+      if (tt.charAt(0) !== '[' || tt.charAt(tt.length - 1) !== ']') return { res: new Response(txt, { status: res.status, statusText: res.statusText, headers: res.headers }) };
+      var inner = tt.slice(1, -1).trim();
+      try {
+        if (q.one && keys.length === 1 && q.val && tt.length < RC_MAXTXT && rcGen(keys[0]) === gens[keys[0]]) {
+          var k = keys[0], at = null;
+          if (inner) { var i2 = inner.lastIndexOf('"updated_at":"'); if (i2 > 0) at = inner.slice(i2 + 14, inner.indexOf('"', i2 + 14)); }
+          var e = RC_E[k];
+          if (!e || e.src !== 'net' || e.at !== at) e = RC_E[k] = { src: 'net', t: t0, at: at, txt: {} };
+          e.t = t0; e.txt[q.norm] = inner;
+          if (at) RC_VS[k] = { at: at, t: t0 };
+        } else if (!q.val && tt.length < 400000) {
+          var rows = JSON.parse(tt), seen = {};
+          if (Array.isArray(rows)) {
+            rows.forEach(function(r){ var rk = r && typeof r.key === 'string' ? r.key : (q.one ? keys[0] : null); if (rk && r.updated_at) { seen[rk] = 1; if (rcGen(rk) === gens[rk]) RC_VS[rk] = { at: String(r.updated_at), t: t0 }; } });
+            keys.forEach(function(k){ if (!seen[k] && rcGen(k) === gens[k]) RC_VS[k] = { at: null, t: t0 }; });
+          }
+        }
+      } catch (e2) {}
+      return { inner: inner };
+    });
+  });
+  RC_IN[id] = p;
+  var clr = function(){ if (RC_IN[id] === p) delete RC_IN[id]; };
+  p.then(clr, clr);
+  return p;
+}
+/* the batched "which of these changed?" question (C: only with the trigger) */
+var RC_SQ = null;
+function rcStamps(keys){
+  if (!RC_SQ) {
+    RC_SQ = { keys: {}, p: null };
+    var sq = RC_SQ;
+    sq.p = new Promise(function(res){
+      nST(function(){
+        RC_SQ = null;
+        var t = now(), ks = Object.keys(sq.keys);
+        /* (one question for every read asked in the same moment — a save's two or three re-reads, the minute readers that fire together) */
+        var gens = {}; ks.forEach(function(k){ gens[k] = rcGen(k); });
+        var url = 'https://' + SB_HOST + '/rest/v1/gc_kv?key=in.(' + ks.map(function(k){ return encodeURIComponent('"' + k + '"'); }).join(',') + ')&select=key,updated_at';
+        RC_S.stampAsks++; RC_S.stampKeys += ks.length;
+        nativeFetch(url, withAuth(url, { headers: {} }, true)).then(function(r){ return r && r.ok ? r.json() : null; }).then(function(rows){
+          if (Array.isArray(rows)) {
+            var seen = {};
+            rows.forEach(function(r){ if (r && typeof r.key === 'string') { seen[r.key] = 1; if (rcGen(r.key) === gens[r.key]) RC_VS[r.key] = { at: r.updated_at ? String(r.updated_at) : null, t: t }; } });
+            ks.forEach(function(k){ if (!seen[k] && rcGen(k) === gens[k]) RC_VS[k] = { at: null, t: t }; });
+          }
+        }, function(){}).then(res, res);
+      }, 25);
+    });
+  }
+  keys.forEach(function(k){ RC_SQ.keys[k] = 1; });
+  return RC_SQ.p;
+}
+function rcGet(q, input, init){
+  var t = now(), tq = t, miss = [];
+  q.keys.forEach(function(k){ if (!(rcValid(k, RC_E[k], t, tq) && rcRow(k, RC_E[k], q.norm) !== null)) miss.push(k); });
+  var answer = function(net, how){
+    var parts = [], kb = 0;
+    if (net && net.inner) parts.push(net.inner);
+    var netKeys = net ? net.keys : {};
+    q.keys.forEach(function(k){ if (netKeys[k]) return; var e = RC_E[k], r = rcRow(k, e, q.norm); if (e) e.u = now(); if (r) { parts.push(r); kb += r.length; } });
+    if (how) { RC_S[how]++; RC_S.kbSaved += Math.round(kb / 1024); }
+    return rcResp('[' + parts.join(',') + ']');
+  };
+  if (!miss.length) { var rtOnly = q.keys.every(function(k){ return RC_E[k] && RC_E[k].src === 'rt'; }); return Promise.resolve(answer(null, rtOnly ? 'rtHits' : 'hits')); }
+  var stampable = RC_TRIG ? miss.filter(function(k){ var e = RC_E[k]; return e && e.src === 'net' && e.at && e.txt && Object.prototype.hasOwnProperty.call(e.txt, q.norm); }) : [];
+  var pre = stampable.length ? rcStamps(stampable) : Promise.resolve();
+  return pre.then(function(){
+    var t2 = now(), miss2 = q.keys.filter(function(k){ return !(rcValid(k, RC_E[k], t2, tq) && rcRow(k, RC_E[k], q.norm) !== null); });
+    if (!miss2.length) return answer(null, 'stampHits');
+    return rcNet(q, miss2, input, init).then(function(r){
+      if (r.res) return r.res;   /* refused / an error: as the cloud said it */
+      var nk = {}; miss2.forEach(function(k){ nk[k] = 1; });
+      return answer({ inner: r.inner, keys: nk }, miss2.length < q.keys.length ? 'partial' : null);
+    });
+  });
+}
+/* the live feed: what the cloud now holds */
+function rcEvent(dd, len){
+  var rec = dd.record || {}, old = dd.old_record || {}, k = rec.key || old.key; if (!k) return;
+  k = String(k); RC_G[k] = (RC_G[k] || 0) + 1;
+  var t = now();
+  if (dd.type === 'DELETE' || !('value' in rec) || !rec.updated_at || (dd.errors && dd.errors.length) || len > RC_MAXTXT
+      || !RC_RTOK || RC_SKIPK.test(k) || t - (RC_W[k] || 0) < 3000 || t - (RC_W['*'] || 0) < 3000) { delete RC_E[k]; delete RC_VS[k]; return; }
+  RC_E[k] = { src: 'rt', t: t, at: String(rec.updated_at), val: rec.value, vs: null, txt: null };
+}
+function rcRtLost(){ RC_RTOK = false; Object.keys(RC_E).forEach(function(k){ if (RC_E[k].src === 'rt') delete RC_E[k]; }); }
+/* does the server move updated_at on every change (docs/scale-20.sql gc_kv_touch)? A probe row is written with an
+   old timestamp, then changed without one: if the timestamp moved, the trigger is there. */
+var RC_PROBE_AT = 0;
+function rcProbe(){
+  if (!RC_ON) return;
+  if (!S || mode !== 'online') { nST(rcProbe, 60e3); return; }
+  RC_PROBE_AT = now();
+  var K = 'gc_kv_probe_touch', H = { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' };
+  var up = function(row){ return window.fetch(SB_URL + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H, body: JSON.stringify(row) }).then(function(r){ if (!r || !r.ok) throw new Error('HTTP ' + (r && r.status)); }); };
+  var OLD = '2001-01-01T00:00:00+00:00';
+  up({ key: K, value: { n: Math.random() }, updated_at: OLD }).then(function(){
+    return up({ key: K, value: { n: Math.random(), by: 'SPEED4 probe' } });
+  }).then(function(){
+    var url = SB_URL + '/rest/v1/gc_kv?key=eq.' + K + '&select=updated_at';
+    return nativeFetch(url, withAuth(url, { headers: {} }, true)).then(function(r){ return r && r.ok ? r.json() : null; });
+  }).then(function(rows){
+    if (!Array.isArray(rows) || !rows[0]) throw new Error('no probe row');
+    var at = String(rows[0].updated_at || ''), ok = !!at && at.slice(0, 4) > '2001';
+    RC_TRIG = ok; RC_S.trigger = ok ? 'confirmed' : 'not there (run docs/scale-20.sql)';
+    try { localStorage.setItem('gc_kv_touch_ok', JSON.stringify({ ok: ok, at: now() })); } catch (e) {}
+    nST(rcProbe, ok ? 6 * 3600e3 : 3600e3);
+  }).catch(function(e){ RC_S.trigger = 'unknown (' + String(e && e.message || e).slice(0, 60) + ')'; nST(rcProbe, 10 * 60e3); });
+}
+nST(rcProbe, 25000);
+nSI(function(){ var t = now(); Object.keys(RC_E).forEach(function(k){ var e = RC_E[k]; if (t - (e.u || e.t) > 600000) delete RC_E[k]; }); Object.keys(RC_VS).forEach(function(k){ if (t - RC_VS[k].t > 600000) delete RC_VS[k]; }); }, 120000);   /* a copy nobody asked for in 10 minutes is let go */
+window._gcReadCache = function(){ return Object.assign({ on: RC_ON, live: RC_RTOK, kept: Object.keys(RC_E).length, triggerOn: RC_TRIG }, RC_S); };
 function spSend(input, init){
+  if (RC_ON) {
+    var u0 = urlOf(input);
+    try {
+      var rq = rcReq(u0, input, init);
+      if (rq) return rcGet(rq, input, init);
+      var wk = rcWriteKeys(u0, input, init);
+      if (wk) { rcInval(wk); var pw = spSend0(input, init); pw.then(function(){ rcInval(wk); }, function(){ rcInval(wk); }); return pw; }
+    } catch (e) {}
+  }
+  return spSend0(input, init);
+}
+function spSend0(input, init){
   var u = urlOf(input), rows = spRows(u, init), t = now();
   if (rows && rows.every(function(r){ var k = SP_KNOWN[r.key]; if (k && k.s === undefined) { k.s = spSig(k.v); k.v = null; } return k && k.s && k.s === r.sig && (t - k.at) < SP_TTL; })) {
     window._gcSyncSkipped++;
@@ -471,11 +700,17 @@ try {
     var SPW = function(u, pr){
       var ws = pr === undefined ? new SPWS(u) : new SPWS(u, pr);
       try {
+        if (String(u).indexOf(SB_HOST) >= 0) {   /* patch SPEED4: the read cache trusts the live feed only while it is connected */
+          ws.addEventListener('open', function(){ RC_SOCK++; RC_RTOK = true; });
+          ws.addEventListener('close', function(){ RC_SOCK = Math.max(0, RC_SOCK - 1); rcRtLost(); });
+          ws.addEventListener('error', rcRtLost);
+        }
         if (String(u).indexOf(SB_HOST) >= 0) ws.addEventListener('message', function(ev){
           try {
             var d = ev.data; if (typeof d !== 'string' || d.indexOf('postgres_changes') < 0 || d.indexOf('gc_kv') < 0) return;
             var j = JSON.parse(d), dd = j && j.payload && j.payload.data; if (!dd) return;
             var rec = dd.record, old = dd.old_record, kk = (rec && rec.key) || (old && old.key); if (kk) SP_EV[kk] = (SP_EV[kk] || 0) + 1;
+            try { rcEvent(dd, d.length); } catch (eRc) {}   /* patch SPEED4 */
             if (dd.type === 'DELETE') { if (old && old.key) spKnown(String(old.key), null); return; }
             if (rec && typeof rec.key === 'string') { if ('value' in rec && d.length <= SP_MAXLEN) SP_KNOWN[rec.key] = { v: rec.value, s: undefined, at: now() }; else spKnown(rec.key, null);   /* signed only if this computer goes to save that key */ }
           } catch (e) {}
@@ -4877,7 +5112,33 @@ function look(){
   }catch(e){ window.__GC_FORM_OPEN__=false; }
 }
 
+/* patch SPEED4: looked at right AFTER the next frame is painted (one at a time): the page's layout is fresh then, so
+   measuring the boxes costs next to nothing and never holds up what a click changed on screen */
+var _fhRaf = 0, _fhWait = 0;
+function lookInFrame(){
+  if (_fhRaf || _fhWait) return;
+  if (document.hidden || typeof requestAnimationFrame !== 'function') { look(); return; }
+  _fhRaf = requestAnimationFrame(function(){ _fhRaf = 0; _fhWait = setTimeout(function(){ _fhWait = 0; look(); }, 0); });
+  setTimeout(function(){ if (_fhRaf) { try { cancelAnimationFrame(_fhRaf); } catch (e) {} _fhRaf = 0; look(); } }, 1000);   /* frames held up: look anyway */
+}
 window._gcFormOpen = function(){ return !!window.__GC_FORM_OPEN__; };
+/* patch SPEED4: click to next paint over 150 ms (the last 60), with what was pressed and on which screen */
+(function(){
+  var L = [];
+  try {
+    new PerformanceObserver(function(list){
+      list.getEntries().forEach(function(e){
+        if (!/^(click|pointerup|keydown)$/.test(e.name) || e.duration < 150) return;
+        var t = e.target, d = '';
+        try { if (t && t.nodeType === 1) { d = t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.getElementsByTagName('*').length <= 40 ? ' "' + String(t.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40) + '"' : ''); } } catch (x) {}
+        var v = ''; try { v = localStorage.getItem('grayco_view') || ''; } catch (x) {}
+        L.push({ at: new Date().toISOString().slice(11, 19), ms: Math.round(e.duration), wait: Math.round(e.processingStart - e.startTime), work: Math.round(e.processingEnd - e.processingStart), what: e.name, on: d, view: v });
+        if (L.length > 60) L.shift();
+      });
+    }).observe({ type: 'event', durationThreshold: 150 });
+  } catch (e) {}
+  window._gcSlowClicks = function(){ var o = L.slice().sort(function(a, b){ return b.ms - a.ms; }); try { console.table(o); } catch (e) {} return o; };
+})();
 window._gcFormHoldWhy = function(){
   var c=fields().length;
   console.log('%c[GC] form hold','background:#0f2440;color:#fff;padding:2px 6px;font-weight:bold');
@@ -4919,7 +5180,7 @@ var lastActivity = 0;
 (function schedule(){
   var RSI = window.__GC_RAW_SETTIMEOUT__ || setTimeout;
   var step = function(){
-    try{ look(); }catch(e){}
+    try{ lookInFrame(); }catch(e){}   /* patch SPEED4 */
     var busyNow = (Date.now() - lastActivity) < BURST;
     RSI.call(window, step, busyNow ? FAST : ((window._gcIdle && window._gcIdle()) ? 10000 : SLOW));   /* patch SYNCPERF: nobody here for a minute: every 10 s (a click or key still looks at once) */
   };
@@ -4930,7 +5191,7 @@ look();
 /* the moment she clicks or focuses something, check straight away rather than
    waiting for the next look */
 ['pointerdown','focusin','keydown'].forEach(function(ev){
-  document.addEventListener(ev, function(){ setTimeout(look, 30); }, true);
+  document.addEventListener(ev, function(){ setTimeout(lookInFrame, 30); }, true);   /* patch SPEED4 */
 });
 
 /* ── WHY THIS NO LONGER WRAPS THE STATE SETTERS ─────────────────────────── */
@@ -35244,11 +35505,15 @@ function buildTodoItems(){
 
   // Estimates expiring (30+ days old, still draft)
   try{
-    var ests = JSON.parse(localStorage.getItem('gc_ests_v2')||'[]');
     var thirtyAgoD = new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10);
-    (Array.isArray(ests)?ests:[]).filter(function(e){
-      return (e.status==='draft'||!e.status) && e.date && e.date < thirtyAgoD;
-    }).forEach(function(e){
+    var _er = localStorage.getItem('gc_ests_v2')||'[]', _em = window.__gcExpEstMemo;   /* patch SPEED4 */
+    if(!_em || _em.d!==thirtyAgoD || _em.raw!==_er){
+      var ests = JSON.parse(_er);
+      _em = window.__gcExpEstMemo = { d:thirtyAgoD, raw:_er, list:(Array.isArray(ests)?ests:[]).filter(function(e){
+        return e && (e.status==='draft'||!e.status) && e.date && e.date < thirtyAgoD;
+      }).map(function(e){ return { name:e.name, date:e.date }; }) };
+    }
+    _em.list.forEach(function(e){
       items.push({priority:'low', icon:'📋', text:'Estimate expiring: '+(e.name||'Draft'), sub:'Created: '+e.date, tag:'Estimate', action:"if(window._setView)window._setView('estimates')"});
     });
   }catch(e){}
@@ -54015,7 +54280,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
   // when the user clicks a Save/Update/Add button, wipe drafts shortly after (data is committed).
   document.addEventListener('click', function(e){
     var t=e.target; if(!t) return;
-    if(t===document.documentElement||t===document.body||t.childElementCount>12) return;   /* LEADSUX: never read a page-sized textContent */
+    if(t===document.documentElement||t===document.body||t.childElementCount>12||t.getElementsByTagName('*').length>40) return;   /* patch SPEED4: never read a page-sized text */
     var txt=((t.textContent||'')+'').toLowerCase();
     if(/\b(save|update|add|create|submit|post|done)\b/.test(txt) && txt.length<40){
       setTimeout(function(){ try{ localStorage.setItem(STORE,'{}'); }catch(_e){} }, 1500);
@@ -85800,7 +86065,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   document.addEventListener('click', function(e){
     try{
       var t=e.target; if(!t) return;
-      if(t===document.documentElement||t===document.body||t.childElementCount>12) return;   /* LEADSUX: never read a page-sized textContent */
+      if(t===document.documentElement||t===document.body||t.childElementCount>12||t.getElementsByTagName('*').length>40) return;   /* patch SPEED4: never read a page-sized text */
       var txt=(t.textContent||'').toLowerCase();
       if(txt.indexOf('save token')<0) return;
       var inp=document.getElementById('gc-cc-token-inp');
@@ -90456,9 +90721,9 @@ window._gcFixInvoiceDueDates = window._gcFixInvoiceDates;
 /* ── react as soon as a status button is clicked ────────────────────────── */
 document.addEventListener('click', function(e){
   try{
-    var t=e.target; if(!t||!t.textContent) return;
-    if(t===document.documentElement||t===document.body||t.childElementCount>12) return;   /* LEADSUX: never read a page-sized textContent */
-    var w=t.textContent.trim().toLowerCase();
+    var t=e.target; if(!t) return;
+    if(t===document.documentElement||t===document.body||t.childElementCount>12||t.getElementsByTagName('*').length>40) return;   /* patch SPEED4: never read a page-sized text */
+    var w=(t.textContent||'').trim().toLowerCase();
     if(['paid','not paid','draft','sent','overdue','✓ paid'].indexOf(w)<0) return;
     if(window._gcManualNow) window._gcManualNow('invoice status: '+w);
     setTimeout(function(){ window._gcFixInvoiceDates(true); }, 350);
@@ -102793,10 +103058,32 @@ function runSweep(quiet){
 window._gcNoDupesSweep = function(quiet){ return runSweep(quiet); };
 
 var running=false;
+/* patch SPEED4: which of the three lists was written since the last clean pass */
+var _swGen = 0, _swClean = -1, _swFullAt = 0;
+(function(){
+  try{
+    var PR = IDBObjectStore.prototype;
+    ['put','add','delete','clear'].forEach(function(n){
+      var o = PR[n]; if(!o || o.__gcSW4) return;
+      var w = function(a, b){
+        try{
+          if(this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
+            var kk = (n === 'put' || n === 'add') ? b : a;
+            if(n === 'clear' || typeof kk !== 'string' || /^(invs|invoices|expenses|gcAcctRegister)$/.test(kk)) _swGen++;
+          }
+        }catch(e){ _swGen++; }
+        return o.apply(this, arguments);
+      };
+      w.__gcSW4 = true; try{ Object.keys(o).forEach(function(p){ w[p] = o[p]; }); }catch(e){}
+      PR[n] = w;
+    });
+  }catch(e){ _swGen = NaN; }
+})();
 async function doSweep(quiet){
   if(running) return {skipped:true};
+  if(_swClean === _swGen && Date.now() - _swFullAt < 120000) return {removed:0, per:{}, unchanged:true};   /* patch SPEED4: nothing written since a clean pass */
   running=true;
-  var total=0, per={};
+  var total=0, per={}, _g0 = _swGen;
   try{
     for(var i=0;i<KEYS.length;i++){
       var K=KEYS[i];
@@ -102845,6 +103132,8 @@ async function doSweep(quiet){
       }catch(e){}
     }
   } finally { running=false; }
+  if(!total && _g0 === _g0){ _swClean = _g0; _swFullAt = Date.now(); }   /* patch SPEED4: a clean pass (NaN: never) */
+  else _swClean = -1;
 
   if(total && !quiet){
     try{ console.log('%c[GC] '+total+' duplicate money row(s) merged away','background:#7c2d12;color:#fff;padding:2px 6px;font-weight:bold');
@@ -123354,7 +123643,7 @@ W.addEventListener('popstate', function(ev){
   armedAt = Date.now(); toast('Press Back again to leave GrayCo'); guard();
 });
 /* the guard goes in on a real tap (Chrome skips history entries made without one) */
-D.addEventListener('pointerdown', guard, true);
+D.addEventListener('pointerdown', function(){ RT(guard, 0); }, true);   /* patch SPEED4: after the press, not inside it (still a user gesture) */
 
 /* ── floating buttons never sit on a button you need ──
    The 💎 hub (fixed bottom:152 right:18) sat on the Employees "EDIT" links and other right-column actions; the green
@@ -129717,7 +130006,9 @@ function stripHtml(pid){
 function strips(){
   Array.prototype.forEach.call(document.querySelectorAll('.gcq-card'), function(card){
     var pid = card.getAttribute('data-pid'); if (!pid) return;
-    var have = card.querySelector(':scope > .gcch-strip:not(.gcau5-strip)'), html = stripHtml(pid);   /* patch JOBSTILL: not the Signatures strip */
+    var _sm = window.__gcStripMemo || (window.__gcStripMemo = {}), _sn = Date.now(), _se = _sm[pid];   /* patch SPEED4 */
+    var html = (_se && _sn - _se.at < 3000) ? _se.h : (_sm[pid] = { h: stripHtml(pid), at: _sn }).h;
+    var have = card.querySelector(':scope > .gcch-strip:not(.gcau5-strip)');   /* patch JOBSTILL: not the Signatures strip */
     if (have && have.__h === html && have.getAttribute('data-pid') === pid) return;
     if (!have) { have = document.createElement('div'); have.className = 'gcch-strip'; card.appendChild(have); }
     have.setAttribute('data-pid', pid); have.innerHTML = html; have.__h = html;
@@ -153143,6 +153434,11 @@ if(nf0 && !nf0.__gcPJX){
         if(res.ok) BO.n = Math.max(0, BO.n - 1);
         if(isKv && m === 'GET' && res.ok){
           return res.clone().text().then(function(t){
+            /* patch SPEED4C */ /* patch SPEED4: a list answer ([ … ]) is not taken apart just to see that it is a list — only when the job
+               list is in it (its record of what the cloud holds) or the answer is not a list */
+            var t0s = t.trim(), isList = t0s.charAt(0) === '[' && t0s.charAt(t0s.length - 1) === ']';
+            var ukq = isList ? ((/[?&]key=(?:eq|in|like)\.([^&]+)/.exec(decodeURIComponent(url)) || [])[1] || '') : '';
+            if(isList && !/projects/.test(ukq) && !(!ukq && /"key"\s*:\s*"projects/.test(t0s))) return res;
             var j; try{ j = JSON.parse(t); }catch(e){ S.failedReads++; throw busyErr('the cloud\'s answer could not be read'); }
             if(!Array.isArray(j) && (j == null || typeof j !== 'object' || 'error' in j || ('message' in j && ('code' in j || 'hint' in j || 'details' in j)))){ S.failedReads++; throw busyErr('the cloud answered with an error, not data'); }
             if(!Array.isArray(j)) return res;
