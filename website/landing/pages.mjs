@@ -5,31 +5,34 @@
 // Editing: change the words here and push — the next deploy rebuilds every page, the sitemap and the addresses.
 // `projects` names projects by their title in the website's Projects (DEFAULT_CONTENT in index.html): the photo
 // and the description come from there, so a project edited there is edited here too. Keep every claim true —
-// no "24/7", no prices, no review counts unless they are real.
+// water emergencies are answered 24/7 (owner, 10/27); no prices, no review counts unless they are real.
 //
 // type: what the form sends to the CRM (website-intake: estimate · storm · commercial · problem · maintenance)
 
 export const SERVICES = [
   {
     slug: 'water-damage-restoration',
-    title: 'Water Damage Restoration Memphis | GrayCo Construction',
-    desc: 'Burst pipe, water heater or appliance leak? GrayCo dries it out, documents it for your insurance and rebuilds it — Memphis, Bartlett, Collierville, Cordova.',
-    kicker: 'Water mitigation · Dry-out · Rebuild',
-    h1: 'Water damage restoration in Memphis and the suburbs',
-    intro: 'A frozen pipe, a failed water heater, a refrigerator line that leaked for a week. We stop the damage, dry the structure with professional equipment, document everything for your adjuster, and then rebuild — floors, cabinets, drywall and paint — with one crew from the first call to the last coat.',
+    title: '24/7 Water Damage Restoration Memphis | GrayCo',
+    desc: 'Water emergency? GrayCo answers 24/7. We stop the damage, dry it out, document it for your insurance and rebuild it — Memphis, Bartlett, Collierville, Cordova.',
+    kicker: '24/7 emergency water response · Dry-out · Rebuild',
+    emergency: true,
+    h1: '24/7 water damage restoration in Memphis and the suburbs',
+    intro: 'Water emergencies do not wait for business hours, and neither do we — call any time, day or night, weekends and holidays. A frozen pipe, a failed water heater, a refrigerator line that leaked for a week. We stop the damage, dry the structure with professional equipment, document everything for your adjuster, and then rebuild — floors, cabinets, drywall and paint — with one crew from the first call to the last coat.',
     type: 'storm', need: 'Water damage',
     serviceType: 'Water damage restoration',
     bullets: [
+      ['24/7 emergency response', 'Call (901) 585-0944 any hour, any day. We come out, stop the water damage and start drying.'],
       ['Mitigation and dry-out', 'Demolition of wet materials, air movers and dehumidifiers, moisture readings until the structure is dry.'],
       ['Burst and frozen pipes', 'We find every leak — on one Collierville home a winter freeze left 20 pinhole leaks upstairs.'],
       ['Water heater, fridge and dishwasher leaks', 'The slow leaks that ruin subfloors and cabinets before anyone sees them.'],
       ['Insurance paperwork', 'Photos, moisture logs and a line-item scope your adjuster can approve.'],
       ['The rebuild', 'Hardwood and LVP floors, cabinets, countertops, drywall, trim and paint — back to pre-loss condition.'],
-      ['Commercial water losses', 'We dried out a 15,000 SF Cordova hotel in four days.']
+      ['Commercial water losses', 'Day or night — we dried out a 15,000 SF Cordova hotel in four days.']
     ],
     projects: ['Winter Storm Restoration', 'Water Damage Restoration & Interior Rebuild', 'Hotel mitigation', 'Water heater damage home', 'Fridge leak', 'Kitchen water damage'],
-    steps: [['Call us', 'Tell us what happened. Shut the water off at the main if you can.'], ['We stop the damage', 'Wet materials out, drying equipment in, readings every visit.'], ['Insurance', 'We document the loss and work directly with your adjuster.'], ['We rebuild', 'One crew puts it back — and a one-year workmanship warranty in writing.']],
+    steps: [['Call us — 24/7', 'Day or night. Shut the water off at the main if you can, then call.'], ['We stop the damage', 'Wet materials out, drying equipment in, readings every visit.'], ['Insurance', 'We document the loss and work directly with your adjuster.'], ['We rebuild', 'One crew puts it back — and a one-year workmanship warranty in writing.']],
     faqs: [
+      ['Do you answer water emergencies at night and on weekends?', 'Yes — 24/7, every day of the year. Call (901) 585-0944. The sooner the drying starts, the less has to be torn out.'],
       ['Do you work with my insurance company?', 'Yes. We work directly with adjusters and carriers every week: we document the loss with photos and moisture readings and write a line-item scope for the claim. You choose your contractor — your insurance company does not.'],
       ['How long does drying take?', 'Most homes are dry in three to five days, depending on how long the water sat and what it soaked into. We take moisture readings until the numbers say it is dry — not until a calendar says so. A 15,000 SF hotel in Cordova took four days.'],
       ['Who is doing the work?', 'GrayCo — a licensed Tennessee general contractor (#85034) with IICRC WRT-certified water restoration training on the ownership team. The same company does the mitigation and the rebuild, so nothing falls between two contractors.'],
@@ -70,7 +73,7 @@ export const SERVICES = [
     desc: 'Storm, tornado, fire, water or a car through the garage: GrayCo works with your adjuster from first inspection to final walk-through. TN GC #85034.',
     kicker: 'Storm · Tornado · Impact · Claims',
     h1: 'Insurance restoration — we handle the claim and the rebuild',
-    intro: 'When a storm, a tornado or a car takes out part of your home, you need one contractor who can secure it tonight, talk to your adjuster tomorrow, and rebuild it right. GrayCo works full-scope insurance restoration from the first assessment to the final walk-through.',
+    intro: 'When a storm, a tornado or a car takes out part of your home, you need one contractor who can secure it tonight — we take emergency calls 24/7 — talk to your adjuster tomorrow, and rebuild it right. GrayCo works full-scope insurance restoration from the first assessment to the final walk-through.',
     type: 'storm', need: 'Insurance claim',
     serviceType: 'Insurance restoration',
     bullets: [
@@ -153,7 +156,7 @@ export const TOWNS = [
     title: 'General Contractor Memphis TN | Restoration & Remodeling | GrayCo',
     desc: 'Memphis general contractor for water and fire damage restoration, insurance claims, remodels and commercial finish-outs. Licensed TN GC #85034.',
     h1: 'General contractor in Memphis, TN',
-    intro: 'Memphis is where most of our drawings come from. From a home the City of Memphis had condemned — brought back to a finished house we are proud of — to commercial finish-outs and water losses, GrayCo builds and restores across the city with crews who live here.',
+    intro: 'Memphis is where most of our drawings come from. From a home the City of Memphis had condemned — brought back to a finished house we are proud of — to commercial finish-outs and water losses, GrayCo builds and restores across the city with crews who live here — and for a water emergency we answer 24/7.',
     projects: ['Condemned Home Fire Rebuild', 'Commercial Tenant Finish-Out', 'Kitchen fire', 'Water heater damage home'],
     services: ['water-damage-restoration', 'fire-damage-restoration', 'insurance-restoration', 'commercial-construction', 'home-remodeling'],
     near: ['bartlett', 'cordova', 'germantown', 'collierville']
@@ -163,7 +166,7 @@ export const TOWNS = [
     title: 'Bartlett TN Contractor | Remodeling & Restoration | GrayCo',
     desc: 'GrayCo is headquartered on Broadway Road in Bartlett: home remodeling, water and fire damage restoration, insurance claims and commercial work. TN GC #85034.',
     h1: 'Your Bartlett contractor — headquartered on Broadway Road',
-    intro: 'GrayCo is based at 4007 Broadway Road in Bartlett, and one of our owners grew up here. When a Bartlett family wanted their kitchen opened up, we removed a load-bearing wall, installed a beam, remodeled both bathrooms and put on a new roof — 1,900 square feet, top to bottom.',
+    intro: 'GrayCo is based at 4007 Broadway Road in Bartlett, and one of our owners grew up here, and we answer water emergencies 24/7. When a Bartlett family wanted their kitchen opened up, we removed a load-bearing wall, installed a beam, remodeled both bathrooms and put on a new roof — 1,900 square feet, top to bottom.',
     projects: ['Whole-Home Renovation & Kitchen Remodel', 'Custom remodel', 'Kitchen and Bathroom remodels', 'Attic-to-Living Space Conversion'],
     services: ['home-remodeling', 'water-damage-restoration', 'fire-damage-restoration', 'insurance-restoration', 'commercial-construction'],
     near: ['memphis', 'cordova', 'germantown', 'collierville']
@@ -171,9 +174,9 @@ export const TOWNS = [
   {
     slug: 'collierville', town: 'Collierville', state: 'TN',
     title: 'Water Damage & Remodeling Collierville TN | GrayCo',
-    desc: 'Collierville water damage restoration, frozen-pipe repairs, insurance claims and remodels. One crew from dry-out to the last coat of paint. TN GC #85034.',
+    desc: '24/7 Collierville water damage restoration, frozen-pipe repairs, insurance claims and remodels. One crew from dry-out to the last coat of paint. TN GC #85034.',
     h1: 'Restoration and remodeling in Collierville',
-    intro: 'When a winter freeze left 20 pinhole leaks in the upstairs plumbing of a Collierville home, we found every one, dried the structure and rebuilt the interior. Another Collierville water loss got new hardwood floors, cabinets, drywall and paint — back to pre-loss condition.',
+    intro: 'When a winter freeze left 20 pinhole leaks in the upstairs plumbing of a Collierville home, we found every one, dried the structure and rebuilt the interior. Another Collierville water loss got new hardwood floors, cabinets, drywall and paint — back to pre-loss condition. Water emergency? We answer 24/7.',
     projects: ['Winter Storm Restoration', 'Water Damage Restoration & Interior Rebuild', 'Kitchen water damage', 'Fridge leak'],
     services: ['water-damage-restoration', 'insurance-restoration', 'home-remodeling', 'fire-damage-restoration'],
     near: ['germantown', 'cordova', 'memphis', 'bartlett']
@@ -181,9 +184,9 @@ export const TOWNS = [
   {
     slug: 'cordova', town: 'Cordova', state: 'TN',
     title: 'Cordova TN Fire & Water Damage Restoration | GrayCo',
-    desc: 'Cordova fire and water damage restoration, commercial mitigation and rebuilds. We dried out a 15,000 SF Cordova hotel in four days. Licensed TN GC #85034.',
+    desc: '24/7 Cordova water damage, fire damage restoration, commercial mitigation and rebuilds. We dried out a 15,000 SF Cordova hotel in four days. Licensed TN GC #85034.',
     h1: 'Fire and water damage restoration in Cordova',
-    intro: 'After a kitchen fire in a Cordova home we restored it from the framing out — smoke-sealed, new drywall and new hardwood floors. When water hit a 15,000 square foot Cordova hotel, our crew had it dried out in four days so the restoration could start.',
+    intro: 'After a kitchen fire in a Cordova home we restored it from the framing out — smoke-sealed, new drywall and new hardwood floors. When water hit a 15,000 square foot Cordova hotel, our crew had it dried out in four days so the restoration could start. Water emergencies: we answer 24/7.',
     projects: ['Kitchen fire', 'Hotel mitigation', 'Water heater damage home', 'Fridge leak'],
     services: ['water-damage-restoration', 'fire-damage-restoration', 'insurance-restoration', 'commercial-construction', 'home-remodeling'],
     near: ['bartlett', 'memphis', 'germantown', 'collierville']
@@ -193,7 +196,7 @@ export const TOWNS = [
     title: 'Germantown TN Remodeling & Restoration Contractor | GrayCo',
     desc: 'Kitchen and bath remodels, water and fire damage restoration and insurance claims in Germantown, from our Bartlett office. Licensed TN GC #85034.',
     h1: 'Remodeling and restoration in Germantown',
-    intro: 'Germantown is a short drive from our Bartlett office, between the Collierville and Cordova neighborhoods where much of our restoration work happens. Kitchens and baths, a water heater that let go, an insurance claim after a storm — one licensed contractor handles it from the first visit to the final walk-through.',
+    intro: 'Germantown is a short drive from our Bartlett office, between the Collierville and Cordova neighborhoods where much of our restoration work happens. Kitchens and baths, a water heater that let go, an insurance claim after a storm — one licensed contractor handles it from the first visit to the final walk-through. Water emergencies get an answer 24/7.',
     projects: ['Kitchen and Bathroom remodels', 'Custom remodel', 'Winter Storm Restoration', 'Kitchen fire'],
     services: ['home-remodeling', 'water-damage-restoration', 'insurance-restoration', 'fire-damage-restoration'],
     near: ['collierville', 'cordova', 'memphis', 'bartlett']

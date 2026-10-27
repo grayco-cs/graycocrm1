@@ -2,7 +2,7 @@
 
 For Malcolm and the GrayCo team. Every ad group sends people to the page written for it, so the ad's promise and
 the page's headline match. Ad text below is already inside Google's limits (headlines ≤ 30 characters,
-descriptions ≤ 90). Keep every claim true: no "24/7" and no prices unless GrayCo confirms them.
+descriptions ≤ 90). Keep every claim true. Water emergencies ARE answered 24/7 (owner, 10/27) — use it in the water ads; no prices.
 
 ## Before the first dollar
 
@@ -36,6 +36,7 @@ Landing page: `https://grayco-cs.com/water-damage-restoration`
 Keywords (phrase match to start): "water damage restoration memphis", "water damage repair memphis", "water mitigation memphis", "burst pipe repair memphis", "water damage contractor near me", "water heater leak damage repair", "flooded house repair memphis"
 
 Headlines:
+- 24/7 Water Damage Response (26)
 - Water Damage Restoration (24)
 - Memphis Water Damage Repair (27)
 - Dry-Out & Full Rebuild (22)
@@ -50,6 +51,7 @@ Headlines:
 - 1-Year Warranty in Writing (26)
 
 Descriptions:
+- Water emergency? We answer 24/7. We stop the damage, dry it out and rebuild it. (79)
 - Burst pipe or water heater leak? We dry it out, document it and rebuild it. Call now. (85)
 - We work with your adjuster: photos, moisture logs and a line-item scope. Free estimate. (87)
 - Licensed TN general contractor #85034. Mitigation and rebuild from one company. (79)
