@@ -22797,7 +22797,8 @@ window._gcDefaultMargin=function(type,total){
   return 0.30;
 };
 function _gcLargeRate(){return window._gcDefaultMargin('Commercial',GC_LARGE_COM_TOTAL+1);}
-function _gcRuleTotal(){var c=0;try{lines.forEach(function(l){c+=lineBaseCost(l)||0;});}catch(e){}return c/(1-_gcLargeRate());}
+var GC_SMALL_COM_RATE=0.25; /* __GC_PATCH_MARGINFIX__ large = price at the 25% default over $500k = cost over $375k */
+function _gcRuleTotal(){var c=0;try{lines.forEach(function(l){c+=lineBaseCost(l)||0;});}catch(e){}return c/(1-GC_SMALL_COM_RATE);}
 function _gcComPct(){return Math.round(window._gcDefaultMargin('Commercial',_gcRuleTotal())*1000)/10;}
 function _gcMultOfPct(p){return Math.round(1e4/(1-p/100))/1e4;}
 function _gcComMult(){return _gcMultOfPct(_gcComPct());}
@@ -22817,9 +22818,39 @@ function _gcLargeHint(b){
   if(!big){if(h)h.style.display='none';return;}
   if(!h){h=document.createElement('span');h.id='ej-large-hint';h.style.cssText='margin-left:6px;padding:1px 7px;border-radius:9px;background:#e0f2fe;color:#075985;font-weight:700;font-size:10px';b.parentNode.appendChild(h);}
   var lg=_gcMultOfPct(_gcLargeRate()*100),onDef=Math.abs(parseFloat(jobMult)-lg)<1e-9;
-  h.textContent='Large commercial (over $500k): default margin '+Math.round(_gcLargeRate()*100)+'%'+(onDef?'':' (your margin is kept)')+' · judged by cost over $'+Math.round(GC_LARGE_COM_TOTAL*(1-_gcLargeRate())/1000)+'k (price over $500k at '+Math.round(_gcLargeRate()*100)+'%)';
+  h.textContent='Large commercial (over $500k): default margin '+Math.round(_gcLargeRate()*100)+'%'+(onDef?'':' (your margin is kept)')+' · judged by cost over $'+Math.round(GC_LARGE_COM_TOTAL*(1-GC_SMALL_COM_RATE)/1000)+'k (price over $500k at '+Math.round(GC_SMALL_COM_RATE*100)+'%)';
   h.style.display='';
 }
+/* __GC_PATCH_MARGINFIX__ default-margin rule line + suggestion banner (saved commercial estimates). Never automatic. */
+function _gcMfRec(){var s=openSlots[activeSlot];if(!s||!s._savedEstId)return null;return estimates.find(function(e){return e&&e.id===s._savedEstId;})||null;}
+function _gcMfLocked(e){var re=/submitted|won|lost|sent|signed|accepted/i;if(re.test(String((qs('ej-status')||{}).value||''))||re.test(String((e&&e.status)||'')))return true;return !!(e&&(e.sentAt||e.signedAt||e.submittedAt||e.contractSignedAt||e.acceptedAt));}
+function _gcMfLegacyHang(l){return !!l&&/^Drywall hang labor/.test(String(l.desc||''))&&String(l.mult)==='1.6';}
+function _gcMfOff(e,id){if(e&&e.marginHintOff)return true;try{return !!JSON.parse(localStorage.getItem('gc_margin_hint_off')||'{}')[id];}catch(x){return false;}}
+function _gcMfRule(){var t=(qs('ej-type')||{}).value||'Residential';
+  if(t==='Commercial'){var big=_gcRuleTotal()>GC_LARGE_COM_TOTAL;return {type:t,big:big,pct:_gcComPct(),label:big?'Commercial over $500k':'Commercial $500k or less'};}
+  var p=Math.round(window._gcDefaultMargin(t,0)*1000)/10;return {type:t,big:false,pct:p,label:t==='Insurance'?'Insurance':'Residential'};}
+window._gcMarginRuleHTML=function(tc,tch){try{
+  var r=_gcMfRule(),s=openSlots[activeSlot],out='';
+  if(r.type==='Commercial'&&s&&s._savedEstId&&lines.length){var e=_gcMfRec();
+    if(!_gcMfOff(e,s._savedEstId)){
+      var m=_gcMultOfPct(r.pct),onDef=!useOvr&&Math.abs(parseFloat(jobMult)-m)<1e-9&&!lines.some(_gcMfLegacyHang);
+      if(!onDef){var cur=tch?((tch-tc)/tch*100).toFixed(1):'0',head=(r.big?'Large commercial (over $500k)':'Commercial ($500k or less)')+': default margin is '+r.pct+'%',bs='margin-left:6px;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;';
+        out='<div id="ej-margin-banner" style="background:#e0f2fe;border:.5px solid #7dd3fc;color:#075985;border-radius:var(--r);padding:.45rem .7rem;margin-bottom:.5rem;font-size:11px">'+head+' — this estimate is at '+cur+'%'
+          +(_gcMfLocked(e)?' (already sent — not changed).':'. <button type="button" id="ej-margin-apply" onclick="_gcApplyRuleMargin()" style="'+bs+'background:#0369a1;color:#fff;border:0">Apply '+r.pct+'%</button>')
+          +'<button type="button" id="ej-margin-keep" onclick="_gcDismissRuleMargin()" style="'+bs+'background:transparent;color:#075985;border:.5px solid #7dd3fc">Keep my margin</button></div>';}}}
+  return out+'<div id="ej-margin-rule" style="font-size:11px;color:var(--text2);margin-bottom:.35rem">Default margin: '+r.label+' → '+r.pct+'%</div>';
+}catch(x){return '';}};
+window._gcApplyRuleMargin=function(){try{var s=openSlots[activeSlot];if(!s||!s._savedEstId)return false;var e=_gcMfRec();if(_gcMfLocked(e))return false;
+  var r=_gcMfRule();if(r.type!=='Commercial')return false;var m=_gcMultOfPct(r.pct);
+  lines.forEach(function(l){if(_gcMfLegacyHang(l))l.mult='type';}); /* old forced x1.6 only; explicit per-line margins are kept */
+  useOvr=false;s.useOvr=false;try{var oc=qs('ovr-chk');if(oc)oc.checked=false;var ob=qs('ovr-mb');if(ob)ob.style.display='none';}catch(x){}
+  jobMult=m;s.jobMult=m;s._pinned=false;s._marginRule=r.pct;s.lines=[...lines];
+  try{updJM();}catch(x){}renderLines();renderSummary();try{_gcSaveSlotsDebounced();}catch(x){}
+  var g=qs('save-msg');if(g){g.textContent='Margin set to the '+r.pct+'% default — press Save to keep it.';g.style.color='var(--green)';setTimeout(function(){g.textContent='';g.style.color='';},6000);}
+  return true;}catch(x){console.warn('apply margin',x);return false;}};
+window._gcDismissRuleMargin=function(){try{var s=openSlots[activeSlot];if(!s||!s._savedEstId)return;
+  try{var k='gc_margin_hint_off',o=JSON.parse(localStorage.getItem(k)||'{}');o[s._savedEstId]=1;localStorage.setItem(k,JSON.stringify(o));}catch(x){}
+  var e=_gcMfRec();if(e){e.marginHintOff=true;try{saveEstLocal();}catch(x){}}renderSummary();}catch(x){}};
 function _gcSavedMult(e,ls){try{var tch=parseFloat(e&&e.totalCharge);if(!(tch>0))return null;var fixed=0,base=0;(ls||[]).forEach(function(l){var t=l.type||'labor';if(t==='mh'){fixed+=(parseFloat(l.qty)||0)*(settings.mhCharge||75);return;}var b=lineBaseCost(l);if(l.mult&&l.mult!=='type'&&parseFloat(l.mult)>0)fixed+=b*parseFloat(l.mult);else base+=b;});if(!(base>0))return null;var r=(tch-fixed)/base;if(!isFinite(r)||r<0.5||r>10)return null;return Math.round(r*10000)/10000;}catch(x){return null;}}
 function _gcTypeBadge(){var el=qs('ej-type');if(!el)return;var s=openSlots[activeSlot]||{};
   if(!s._typeSet&&!s._savedEstId){var p=_gcLinkedProject();var t=p?((function(){try{return (window._gcJobIsInsurance&&window._gcJobIsInsurance(p))||(window._gcIsInsuranceJob&&window._gcIsInsuranceJob(p))||p.isInsurance||p.claimNumber;}catch(e){return false;}})()?'Insurance':_gcJobTypeOf(p.type)):'';if(t){s._typeSet=true;setTimeout(function(){window._gcSetJobType(t,false);},0);}}
@@ -22874,7 +22905,7 @@ function renderSummary(){try{try{_gcAutoComMargin();}catch(_e){}try{_gcTypeBadge
     <span style="color:var(--text2)">${unpriced.slice(0,5).map(l=>l.desc.substring(0,35)+(l.desc.length>35?'...':'')).join(' · ')}${unpriced.length>5?' · +'+(unpriced.length-5)+' more':''}</span>
   </div>`:'')
   +`<div style="border-top:.5px solid var(--bdr);padding-top:.75rem;margin-top:.5rem">
-    <div class="sect">By category</div>${rows}
+    ${window._gcMarginRuleHTML?window._gcMarginRuleHTML(tc,tch):''}<div class="sect">By category</div>${rows}
     ${typeBreakdown}
     <div class="sr tot" style="margin-top:.375rem"><span>Total charge to customer</span><span style="color:var(--green)">${fmt(tch)}</span></div>
     <div class="mets" style="margin-top:8px;margin-bottom:0">
@@ -23701,7 +23732,7 @@ function calcDw(){try{
     }
 
     // ── Hang labor ────────────────────────────────────────────────────────────
-    if(labor>0)allLines.push({desc:`Drywall hang labor${typeTag} ${sz.label}${areaTag}`,cost:laborCost/(sheets||1),qty:sheets,unit:'sheet',cat:'Drywall',type:'labor',mult:zMult==='type'?'1.6':zMult,calcNote:`$${labor}/sheet`});
+    if(labor>0)allLines.push({desc:`Drywall hang labor${typeTag} ${sz.label}${areaTag}`,cost:laborCost/(sheets||1),qty:sheets,unit:'sheet',cat:'Drywall',type:'labor',mult:zMult,calcNote:`$${labor}/sheet`});
   });
 
   if(!allLines.length){r.innerHTML='<span style="color:var(--text2)">Enter SF in at least one zone.</span>';cc2.dw=null;return;}
