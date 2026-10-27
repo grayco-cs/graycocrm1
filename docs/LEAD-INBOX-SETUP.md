@@ -28,7 +28,7 @@
 | **estimates@grayco-cs.com** | Estimators e-mail a takeoff or estimate (Word, PDF, Excel) to the CRM. | Stored for the office to build the estimate. |
 | **replies@ · portal@ · news@** | Send-only. The CRM sends from them (portal links, newsletters); replies@ is the Reply-To of automatic e-mails. | Nothing reads them by machine; people answer replies@. |
 
-- Never sign up for bid sites with bids@ or your personal e-mail. Use leads@grayco-cs.com.
+- Never sign up for bid sites with bids@ or your personal e-mail. Use leads@grayco-cs.com. Company service accounts (Twilio, Netlify, Resend, Supabase, Google Cloud, Meta, CompanyCam) are signed up with accounts@grayco-cs.com; replies@ is only the Reply-To of the CRM's e-mails.
 - Forward any invoice you get to invoices@grayco-cs.com.
 - Forward receipts (photo or PDF) to receipts@grayco-cs.com.
 - Insurance correspondence: copy claims@grayco-cs.com.

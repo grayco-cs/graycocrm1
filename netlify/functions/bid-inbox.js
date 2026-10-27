@@ -95,6 +95,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const crypto = require('crypto');
 const BD = require('./_lib/bid-due.js');
 const BF = require('./_lib/bid-filter.js');   /* patch BIDFILTER: the always-on construction gate */
+const BR = require('./_lib/bid-role.js');   /* patch PRIMESUB: 🏛 prime (to the owner) or 🔧 sub (to a GC) */
 
 const KV = 'gc_lead_inbox', KV_SET = 'gc_lead_inbox_settings', KV_NOTE = 'gc_lead_inbox_notices';
 const KEEP_ACTIVE = 600, KEEP_DISMISSED = 3000;
@@ -569,6 +570,7 @@ function upsert(items, rec){
   if (!hit) {
     const it = Object.assign({}, rec, { status: 'new', rev: 1, receivedAt: t, updatedAt: t, sources: rec.sources || [{ name: rec.source, at: t, ref: rec.sourceRef || '' }] });
     delete it.addendum; delete it.sourceRef;
+    { const br = BR.roleOf(it); if (br.role) { it.bidRole = br.role; it.bidRoleWhy = br.why; } }   /* patch PRIMESUB: stored on the item, copied to its lead */
     if (rec.addendum) { it.addenda = [{ n: rec.addendum, at: t, subject: rec.sourceRef || '' }]; it.addendumCount = rec.addendum; it.flag = 'Addendum #' + rec.addendum + ' received'; }
     items.push(it);
     return { items: trim(items), action: 'added', id: it.id };
@@ -577,6 +579,7 @@ function upsert(items, rec){
     hit.repeats = (hit.repeats || 0) + 1; hit.lastSeenAt = t;
     return { items: trim(items), action: 'dismissed-repeat', id: hit.id };
   }
+  if (!hit.bidRole) { const br = BR.roleOf(Object.assign({}, rec, hit)); if (br.role) { hit.bidRole = br.role; hit.bidRoleWhy = br.why; } }   /* patch PRIMESUB: an older item gets it when the project comes in again (quietly: no new revision, no re-draft for this alone) */
   const before = JSON.stringify(hit);
   const srcs = arr(hit.sources);
   if (!srcs.some(x => low(x.name) === low(rec.source))) srcs.push({ name: rec.source, at: t, ref: rec.sourceRef || '' });
