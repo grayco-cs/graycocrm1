@@ -183811,3 +183811,20 @@ window._gcBidDelSweep = sweep;
 console.log('[GC] BIDDEL: a bid taken off the Bid Board stays off on every computer.');
 })();
 </script>
+<script id="gc-proftop">
+/* patch PROFTOP — the extra My Profile cards are added right under the "My Profile" heading by other patches;
+   move them to the end of the page so the person's own card (photo, name, tabs) is on top. Cheap: one check per 1.5 s,
+   only while My Profile is open, and only when a card is out of place. */
+(function(){
+var IDS = ['gc-pay-mystubs', 'gc-plan-prof', 'gc-x10-mydata'];
+function h1(){ var hs = document.querySelectorAll('main h1'); for (var i = 0; i < hs.length; i++) if ((hs[i].textContent || '').trim() === 'My Profile') return hs[i]; return null; }
+function fix(){
+  var h = h1(); if (!h) return; var par = h.parentNode; if (!par) return;
+  IDS.forEach(function(id){ var c = document.getElementById(id); if (!c || c.parentNode !== par) return;
+    var n = c.nextSibling, tail = true; while (n) { if (n.nodeType === 1 && IDS.indexOf(n.id) < 0) { tail = false; break; } n = n.nextSibling; }
+    if (!tail) par.appendChild(c); });
+}
+setInterval(fix, 1500); window._gcProfTop = fix;
+console.log('[GC] PROFTOP: My Profile shows your profile card first.');
+})();
+</script>
