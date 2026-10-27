@@ -31,9 +31,9 @@
   # roofscout/PROJECT-BRIEF.md, and on the contact e-mail in roofscout-scan.js.
   # 33.151: BIDS_URL (https://bids.grayco-cs.com) and SUBPORTAL_NOTIFY (an e-mail) are public too; they are defaults in subportal.js /
   # portal-access.js. (TWILIO_* and every key stay scanned: none of them is in any file.)
-  # patch AGY: AGENCY_EMAILS / MKT_REPORT_TO (e-mail lists) and the website's ADMIN_EMAILS are addresses, not secrets; the
+  # patch AGY / CHAIN: AGENCY_EMAILS / MKT_REPORT_TO / CALL_CHAIN_LAST (e-mail lists), TWILIO_CALL_CHAIN / TWILIO_CHAIN_SECONDS (switches) and the website's ADMIN_EMAILS are addresses, not secrets; the
   # agency's addresses appear in docs/AGENCY-PORTAL.md and website/README.md as examples.
-  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL,BIDS_URL,SUBPORTAL_NOTIFY,AGENCY_EMAILS,MKT_REPORT_TO,ADMIN_EMAILS"
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY,SITE_ORIGIN,STAFF_EMAILS,OWNER_EMAILS,PORTAL_BASE_URL,BIDS_URL,SUBPORTAL_NOTIFY,AGENCY_EMAILS,MKT_REPORT_TO,ADMIN_EMAILS,CALL_CHAIN_LAST,TWILIO_CALL_CHAIN,TWILIO_CHAIN_SECONDS"
 
 [functions]
   node_bundler = "esbuild"
