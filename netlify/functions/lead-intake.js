@@ -396,6 +396,8 @@ exports.handler = async function (event) {
     warnings,
     raw: lead.raw
   };
+  /* patch PRIMESUB: 🏛 prime / 🔧 sub when it is a bid (claims and homeowner leads never are: no badge) */
+  try { const br = require('./_lib/bid-role.js').roleOf({ source: source.name, type: lead.jobType, isInsurance: record.isInsurance, name: lead.name, email: lead.email }); if (br.role) { record.bidRole = br.role; record.bidRoleWhy = br.why; } } catch (e) {}
 
   /* reach out now — this is the five minutes */
   const email = await sendEmail(record);
