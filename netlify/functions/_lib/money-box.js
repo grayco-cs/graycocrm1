@@ -103,6 +103,7 @@ function moneyDeps(storeFile, extra){
     kvListUpdate: function(k, f){ return C.kvListUpdate(k, f); },
     kvListRead: function(k){ return C.kvListRead(k); },
     crmData: function(){ return C.kvRead(['projects', 'subs', 'vendors', 'invs', 'invoices', 'gc_deleted_projects']); },
+    doneRead: function(){ return C.kvRead(['gc_mail_money_done']).then(function(o){ const v = o && o.gc_mail_money_done; return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }); },   /* patch MAILFIX */
     ai: require('./ai.js'),
     driveExport: driveExporter(moneyBoxes())
   }, extra || {});

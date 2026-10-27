@@ -40,9 +40,11 @@ function invoiceFile(f){ const k = SI().kindOf(f.name, f.type); return !!k && (k
 function receiptFile(f){ return /^(application\/pdf|image\/)/i.test(s(f.type)) || /^(pdf|image)$/.test(SI().kindOf(f.name, f.type)); }
 function SI(){ return require('./subinv.js'); }
 /* the same file already came in (an invoices@ copy and the office@ mailbox, a re-forward): its SHA-256 */
-function seenFile(list, kind, hashes, id){
+/* patch MAILFIX: a copy the office SET ASIDE (gc_mail_money_done skip) never blocks the same file coming in again */
+function seenFile(list, kind, hashes, id, done){
   if (!hashes.length) return null;
-  return list.find(function(x){ return x && s(x.id) !== id && x.kind === kind && (x.files || []).some(function(f){ return f && f.sha && hashes.indexOf(f.sha) >= 0; }); }) || null;
+  done = done || {};
+  return list.find(function(x){ return x && s(x.id) !== id && x.kind === kind && !(done[x.id] && done[x.id].skip) && (x.files || []).some(function(f){ return f && f.sha && hashes.indexOf(f.sha) >= 0; }); }) || null;
 }
 
 /* bid-inbox.js (and the office@ mailbox reader) hands over the e-mail;
@@ -65,20 +67,22 @@ async function fromEmail(mail, kind, deps){
   let cur = null; try { cur = deps.kvListRead ? await deps.kvListRead(KEY) : null; } catch (e) { cur = null; }
   const list = cur && Array.isArray(cur.list) ? cur.list : [];
   if (list.some(function(x){ return x && s(x.id) === id; })) return { ok: true, kind: kind, id: id, already: true };
-  const same = seenFile(list, kind, files.map(function(f){ return f.sha; }), id);
+  let done = {}; try { done = deps.doneRead ? (await deps.doneRead()) || {} : {}; } catch (e) { done = {}; }
+  const same = deps.rerun ? null : seenFile(list, kind, files.map(function(f){ return f.sha; }), id, done);   /* a by-hand re-run: analyze's own duplicate check still flags a booked one */
   if (same) return { ok: true, kind: kind, id: id, already: true, sameFileAs: same.id };
   const rec = { id: id, kind: kind, at: new Date().toISOString(), from: low(mail.from && mail.from.email).slice(0, 120), fromName: s(mail.from && mail.from.name).slice(0, 120),
     subject: s(mail.subject).slice(0, 200), text: body.slice(0, 1500), files: files, skipped: (mail.skipped || []).slice(0, 8), via: s(deps.via) || (kind === 'receipt' ? 'receipts@' : 'invoices@') };
   if (kind === 'sub_invoice') {
     let data = {}; try { data = deps.crmData ? (await deps.crmData()) || {} : {}; } catch (e) { data = {}; }
-    try { rec.si = await SI().analyze(mail, keep, { data: data, mailList: list, selfId: id, ai: deps.ai, fetch: deps.fetch, driveExport: deps.driveExport, now: deps.now }); }
+    try { rec.si = await SI().analyze(mail, keep, { data: data, mailList: list.filter(function(x){ return !(x && done[x.id] && done[x.id].skip); }), selfId: id, ai: deps.ai, fetch: deps.fetch, driveExport: deps.driveExport, now: deps.now }); }
     catch (e) { rec.si = { v: 1, route: 'match', why: 'it could not be read (' + s(e && e.message).slice(0, 80) + ')', read: {}, top: [], at: rec.at }; }
     if (rec.si && rec.si.forwardedBy) { rec.forwardedBy = rec.si.forwardedBy; rec.from = rec.si.fromEmail || rec.from; rec.fromName = rec.si.fromName || rec.fromName; }
   }
   const has = function(l){ return l.some(function(x){ return x && s(x.id) === id; }); };
-  const w = await deps.kvListUpdate(KEY, function(l){ return has(l) || seenFile(l, kind, files.map(function(f){ return f.sha; }), id) ? null : { list: l.concat([rec]).slice(-KEEP), check: has }; });
+  const w = await deps.kvListUpdate(KEY, function(l){ return has(l) || (!deps.rerun && seenFile(l, kind, files.map(function(f){ return f.sha; }), id, done)) ? null : { list: l.concat([rec]).slice(-KEEP), check: has }; });
   if (!w.ok) throw new Error('could not save it (' + (w.error || 'busy') + ')');
-  return { ok: true, kind: kind, id: id, files: files.length, already: !!w.unchanged, route: rec.si ? rec.si.route : undefined, why: rec.si ? rec.si.why : undefined };
+  return { ok: true, kind: kind, id: id, files: files.length, already: !!w.unchanged, route: rec.si ? rec.si.route : undefined, why: rec.si ? rec.si.why : undefined,
+    jobId: rec.si && rec.si.job ? s(rec.si.job.pid) : undefined, job: rec.si && rec.si.job ? s(rec.si.job.name || rec.si.job.address).slice(0, 80) : undefined };
 }
 /* the office@ mailbox (patch SUBINV): which money inbox a mailbox e-mail belongs to ('' = none) */
 function kindFromWords(mail){
@@ -88,4 +92,4 @@ function kindFromWords(mail){
   if (/\b(invoice|amount\s+due|balance\s+due)\b/i.test(s(mail.text).slice(0, 3000)) && ((mail.files || []).length || /docs\.google\.com|drive\.google\.com/.test(s(mail.text)))) return 'sub_invoice';
   return '';
 }
-module.exports = { fromEmail, kindOf, mailId, receiptAddrs, invoiceAddrs, kindFromWords, KEY };
+module.exports = { fromEmail, seenFile, kindOf, mailId, receiptAddrs, invoiceAddrs, kindFromWords, KEY };

@@ -308,6 +308,15 @@ async function readMail(data){
     const al = await resendGet('/emails/receiving/' + encodeURIComponent(id) + '/attachments');
     const a2 = al && (Array.isArray(al.data) ? al.data : (Array.isArray(al) ? al : null));
     if (a2 && a2.length) { const by = {}; atts.forEach(a => { if (a && a.id) by[a.id] = a; }); atts = a2.map(a => Object.assign({}, by[a.id] || {}, a)); }
+    else {   /* patch MAILFIX: the list call failed — ask for each attachment the webhook named (its signed download_url) */
+      const one = [];
+      for (const a of atts.slice(0, MAX_FILES)) {
+        if (!a || !a.id || a.content || a.download_url) { one.push(a); continue; }
+        const g = await resendGet('/emails/receiving/' + encodeURIComponent(id) + '/attachments/' + encodeURIComponent(a.id));
+        one.push(Object.assign({}, a, (g && (g.data && !g.download_url ? g.data : g)) || {}));
+      }
+      atts = one.concat(atts.slice(MAX_FILES));
+    }
   } else if (full && arr(full.attachments).length) atts = full.attachments;
   const files = [], skipped = [];
   for (const a of atts) {
@@ -776,10 +785,62 @@ async function subBidFromEmail(mail){
   return { ok: true, id, matched: !!m, jobId: rec.jobId, files: files.length, told: told.ok };
 }
 
+/* ── patch MAILFIX: what happened to each e-mail, in words — one Netlify log line per run, and "📬 Mail received" ──
+   Owner 10/27: an invoice forwarded to invoices@ vanished (Resend 200, the slow half 1.4 s, no log line, nothing in the CRM).
+   Every e-mail to invoices@ / receipts@ / leads@ / bids@ (@in.grayco-cs.com or the group address) is noted in the inbox's own
+   private table, key "gc_mail_recv" (the newest 50: time, from, subject, the outcome — never the body); admins and the office
+   read it through this function (?mailrecv=1, signed in) and can run a dropped one again. */
+const KV_RECV = 'gc_mail_recv', RECV_MAX = 50;
+function recvKind(evt){
+  const d = (evt && (evt.data || evt)) || {};
+  const to = list(d.to).concat(list(d.cc)).map(x => x.email);
+  const hit = (name) => to.some(e => e === name + '@in.grayco-cs.com' || e === name + '@grayco-cs.com');
+  return ['invoices', 'receipts', 'leads', 'bids'].filter(hit)[0] || '';
+}
+function outcomeOf(r){
+  const b = (r && r.body) || {}, st = r ? r.status : 0;
+  if (st >= 500 || b.ok === false) return { stored: false, what: 'error: ' + s(b.error || 'status ' + st).slice(0, 160), retry: true };
+  if (b.ignored) return { stored: false, what: 'ignored: ' + s(b.ignored).slice(0, 140), retry: true };
+  if (b.inbox === 'history') return b.stored ? { stored: true, what: 'saved: job e-mail history' + (b.pid ? ' (job ' + s(b.pid) + ')' : '') } : { stored: false, what: 'ignored: taken for an e-mail-history copy and thrown away (' + s(b.why || 'not a job e-mail') + ')', retry: true };
+  if (b.inbox === 'sub-invoices' || b.inbox === 'receipts') {
+    if (b.notice) return { stored: true, what: 'saved: Gmail forwarding code (office To-Do)' };
+    if (b.already) return { stored: true, what: b.sameFileAs ? 'already in the CRM (the same file came in before: ' + s(b.sameFileAs) + ')' : 'already in the CRM (' + s(b.id) + ')' };
+    if (b.kind === 'receipt') return { stored: true, what: 'waiting for the office: receipt (📧 Receipts e-mailed in)' };
+    if (b.route === 'book') return { stored: true, what: 'saved: sub invoice on job ' + (s(b.job) || s(b.jobId) || '?') + ' (to approve)' };
+    return { stored: true, what: 'waiting to match: ' + (s(b.why) || s(b.route) || 'pick the job') + ' (✅ Approvals → 🧾 Match this invoice)' };
+  }
+  if (b.inbox === 'leads') return { stored: true, what: 'saved: lead' };
+  if (b.inbox) return { stored: true, what: 'saved: ' + s(b.inbox) };
+  if (b.results) return { stored: true, what: 'saved: bid results answer' };
+  if (b.notice) return { stored: true, what: 'saved: Google group notice' };
+  if (Array.isArray(b.leads)) return { stored: true, what: 'saved: ' + b.leads.length + ' bid lead(s)' };
+  return { stored: !!b.ok, what: b.ok ? 'received' : 'status ' + st };
+}
+function logLine(evt, r, ms){
+  const d = (evt && (evt.data || evt)) || {}, o = outcomeOf(r), b = (r && r.body) || {};
+  return '[bid-inbox] ' + JSON.stringify({ inbox: recvKind(evt) || s(b.inbox) || 'other', status: r ? r.status : 0, stored: o.stored, outcome: o.what, from: addr(d.from).email, subject: s(d.subject).slice(0, 120), email: s(d.email_id || d.id), ms: ms });
+}
+async function mailRecv(evt, r, opts){
+  const k = recvKind(evt); if (!k || !dbReady()) return null;
+  const d = (evt && (evt.data || evt)) || {}, o = outcomeOf(r), b = (r && r.body) || {};
+  const eid = s(d.email_id || d.id), id = eid || itemId(addr(d.from).email + '|' + s(d.subject) + '|' + s(d.created_at));
+  const row = { id, eid, at: s(d.created_at) && !isNaN(Date.parse(d.created_at)) ? new Date(d.created_at).toISOString() : nowIso(), inbox: k, from: addr(d.from).email, fromName: addr(d.from).name.slice(0, 80),
+    to: list(d.to).map(x => x.email).slice(0, 6), subject: s(d.subject).slice(0, 200), what: o.what, stored: o.stored, retry: !!o.retry && !!eid, jobId: s(b.jobId), mm: s(b.id && /^MM-/.test(b.id) ? b.id : ''), ran: nowIso(), reruns: 0 };
+  await kvCas(KV_RECV, v => {
+    const l = arr(v), i = l.findIndex(x => x && x.id === id);
+    if (i >= 0) { row.at = l[i].at; row.reruns = (l[i].reruns || 0) + (opts && opts.rerun ? 1 : 0); l.splice(i, 1); }
+    return l.concat([row]).slice(-RECV_MAX);
+  });
+  return row;
+}
+
 /* patch MAILC: every e-mail this webhook gets is noted for the Email Center's "📥 All company mail" (who, to which
    address, the subject, what the CRM did — never the body). The note never holds up or changes the result. */
 async function processEvent(evt, opts){
-  const r = await processEventCore(evt, opts);
+  let r;
+  try { r = await processEventCore(evt, opts); }
+  catch (e) { r = { status: 503, body: { ok: false, error: 'could not handle this e-mail yet (' + s(e && e.message).slice(0, 160) + ') — retry' } }; }   /* patch MAILFIX: a throw is an outcome too */
+  try { await mailRecv(evt, r, opts); } catch (e) {}   /* patch MAILFIX: 📬 Mail received */
   try { await require('./_lib/mailcenter.js').log(evt, r, { kvCas }); } catch (e) {}
   try { await require('./_lib/sentlog.js').onInboundEvent(evt); } catch (e) {}   /* patch SENTLOG: a reply answers a waiting request */
   return r;
@@ -811,13 +872,17 @@ async function processEventCore(evt, opts){
   }
   /* patch X9: a copy for the job's e-mail history (the Google routing rule → mail@in.grayco-cs.com): kept on its job,
      or thrown away — never a lead or a bid, even when it was addressed to bids@ / leads@ */
-  try { const CM = require('./_lib/comms.js'); if (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+  /* patch MAILFIX: an e-mail for receipts@ / invoices@ is that inbox's FIRST — Google's routing rule stamps X-GrayCo-Journal
+     on the whole message, so the copy the invoices@ group hands invoices@in.grayco-cs.com looked like a history copy and was
+     thrown away ("newsletter" / "not a job e-mail") with a 200 and no trace. The same e-mail twice is kept once (Message-ID). */
+  const mk = require('./_lib/money-mail.js').kindOf(recipients(mail, data), mail.headers);
+  try { const CM = require('./_lib/comms.js'); if (!mk && (CM.isJournal(mail, data, recipients(mail, data)) || CM.isBccCopy(recipients(mail, data), forBids(mail, data) || forLeads(mail, data)))) { if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
     /* patch BIDSEND: a GC's answer to one of our bids that came by the routing rule is filed on its lead too */
     let br = null; if (!/@(in\.)?grayco-cs\.com$/i.test(mail.from.email) && !ownOrAuto(mail)) br = await repliesApi().handle(mail, { via: 'e-mail history', isSub: await knownSubs() });
     return { status: 200, body: Object.assign({ inbox: 'history' }, await CM.fromJournal(mail), br ? { bidReply: br } : {}) }; } }
   catch (e) { return { status: 503, body: { ok: false, error: 'The e-mail history could not store this yet (' + (e && e.message) + ') — retry.' } }; }
   /* patch OWNERTODO: receipts@ / invoices@ — a receipt or a sub's invoice for the CRM (never a lead, a bid or an order) */
-  { const MM = require('./_lib/money-mail.js'), mk = MM.kindOf(recipients(mail, data), mail.headers);
+  { const MM = require('./_lib/money-mail.js');
     if (mk) {
       const own0 = ownOrAuto(mail); if (own0) return { status: 200, body: { ok: true, ignored: own0 } };
       if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
@@ -827,7 +892,7 @@ async function processEventCore(evt, opts){
         try { await require('./portal.js')._core.officeTodo('gmail_fwd_' + itemId(mail.subject), '📧 Gmail forwarding code for invoices@: ' + s(mail.subject).slice(0, 140), 'Gmail asked to confirm forwarding to invoices@in.grayco-cs.com. In that mailbox: Settings → Forwarding and POP/IMAP → Verify → type the number shown in this to-do (docs/SUBINV-SETUP.md).'); } catch (e) {}
         return { status: 200, body: { ok: true, notice: true, inbox: 'sub-invoices' } };
       }
-      try { const r = await MM.fromEmail(mail, mk, require('./_lib/money-box.js').moneyDeps(storeFile, { via: mk === 'receipt' ? 'receipts@' : 'invoices@' })); return { status: 200, body: Object.assign({ inbox: mk === 'receipt' ? 'receipts' : 'sub-invoices' }, r) }; }
+      try { const r = await MM.fromEmail(mail, mk, require('./_lib/money-box.js').moneyDeps(storeFile, { via: mk === 'receipt' ? 'receipts@' : 'invoices@', rerun: !!opts.rerun })); return { status: 200, body: Object.assign({ inbox: mk === 'receipt' ? 'receipts' : 'sub-invoices' }, r) }; }
       catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this ' + (mk === 'receipt' ? 'receipt' : 'invoice') + ' yet (' + (e && e.message) + ') — retry.' } }; }
     } }
   /* patch EST4: leads@ carries bid invitations too (they take the bid path below); bids@ is only for subcontractors'
@@ -1251,6 +1316,27 @@ exports.handler = async function(event){
       bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
       phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')) }, C);
 
+  /* patch MAILFIX: 📬 Mail received — the last 50 e-mails to invoices@ / receipts@ / leads@ / bids@ (GET), run one again (POST
+     { op: 'rerun', id }: Resend still holds it; a dropped invoice is read again, its file never blocked as "the same file") */
+  if (qs.mailrecv && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!(who.admin || /^office/.test(s(who.role)))) return J(403, { error: 'Only an admin or the office sees the mail received.' }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    if (event.httpMethod === 'GET') {
+      try { return J(200, { ok: true, rows: arr(await kvGet(KV_RECV)).slice().sort((a, b) => s(b.ran || b.at).localeCompare(s(a.ran || a.at))), at: nowIso() }, C); }
+      catch (e) { return J(502, { error: 'Could not read the mail received.' }, C); }
+    }
+    let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    if (s(b.op) !== 'rerun') return J(400, { error: 'Unknown op.' }, C);
+    const row = arr(await kvGet(KV_RECV)).find(x => x && x.id === s(b.id));
+    if (!row || !row.eid) return J(404, { error: 'That e-mail is not in the list (or Resend did not name it).' }, C);
+    const evt = { type: 'email.received', rerun: true, by: who.email, data: { email_id: row.eid, to: arr(row.to), from: row.fromName ? row.fromName + ' <' + row.from + '>' : row.from, subject: row.subject, created_at: row.at } };
+    const raw = JSON.stringify(evt);
+    if (await handOff(raw)) return J(200, { ok: true, queued: true }, C);
+    const t0 = Date.now(), r = await processEvent(evt, { inline: true, rerun: true });
+    console.log(logLine(evt, r, Date.now() - t0));
+    return J(200, { ok: r.status < 500, status: r.status, outcome: outcomeOf(r).what }, C);
+  }
   /* the CRM: the inbox list (+ the watcher's last run, the bid portal's state, the alert queue) */
   if (event.httpMethod === 'GET' && qs.list) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
@@ -1428,7 +1514,8 @@ exports.handler = async function(event){
   /* cheap routing before the hand-off: mail plainly for bills@ / claims@ is not touched */
   if (otherInbox(evt.data || evt)) { try { await require('./_lib/mailcenter.js').log(evt, { status: 200, body: { ok: true, ignored: 'for bills@ / claims@ (their own inbox handles it)' } }, { kvCas }); } catch (e) {} return J(200, { ok: true, ignored: 'not addressed to the bid inbox' }); }
   if (await handOff(raw)) return J(200, { ok: true, accepted: true, how: v.how });
-  const r = await processEvent(evt, { inline: true });
+  const t0 = Date.now(), r = await processEvent(evt, { inline: true });
+  (r.status >= 500 ? console.error : console.log)(logLine(evt, r, Date.now() - t0));   /* patch MAILFIX */
   return J(r.status, r.body);
 };
 
@@ -1437,10 +1524,10 @@ exports.backgroundHandler = async function(event){
   const raw = rawBody(event);
   if (!handoffOk(event, raw)) return J(401, { error: 'Not from the bid inbox.' });
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
-  if (evt && evt.type === 'money.pull') { try { const out = await require('./_lib/money-box.js').drain({ budgetMs: 780000 }); return J(200, out); } catch (e) { console.error('[bid-inbox] office@ mailbox read failed: ' + (e && e.message)); return J(500, { error: 'mailbox read failed' }); } }   /* patch SUBINV */
-  if (evt && evt.type === 'watch.run') { try { const out = await require('./bid-watch.js').runAll({ only: s(evt.source), by: s(evt.by) }); return J(200, out); } catch (e) { console.error('[bid-inbox] watcher failed: ' + (e && e.message)); return J(500, { error: 'watcher failed' }); } }
-  const r = await processEvent(evt);
-  if (r.status >= 500) console.error('[bid-inbox] could not store: ' + JSON.stringify(r.body));
+  if (evt && evt.type === 'money.pull') { try { const out = await require('./_lib/money-box.js').drain({ budgetMs: 780000 }); console.log('[bid-inbox] ' + JSON.stringify({ inbox: 'office@ mailbox', read: out.read || 0, filed: (out.filed || []).map(f => f.ignored ? 'ignored: ' + f.ignored : f.error ? 'error: ' + f.error : (f.kind || '?') + (f.route ? ' ' + f.route : '')).slice(0, 20), skipped: out.skipped || '' })); return J(200, out); } catch (e) { console.error('[bid-inbox] office@ mailbox read failed: ' + (e && e.message)); return J(500, { error: 'mailbox read failed' }); } }   /* patch SUBINV */
+  if (evt && evt.type === 'watch.run') { try { const out = await require('./bid-watch.js').runAll({ only: s(evt.source), by: s(evt.by) }); console.log('[bid-inbox] ' + JSON.stringify({ inbox: 'bid watcher', source: s(evt.source) || 'all', ok: !!(out && out.ok !== false) })); return J(200, out); } catch (e) { console.error('[bid-inbox] watcher failed: ' + (e && e.message)); return J(500, { error: 'watcher failed' }); } }
+  const t0 = Date.now(), r = await processEvent(evt, { rerun: !!(evt && evt.rerun) });
+  (r.status >= 500 ? console.error : console.log)(logLine(evt, r, Date.now() - t0));   /* patch MAILFIX: ONE line per e-mail, always — the outcome and why */
   return J(r.status, r.body);
 };
 
@@ -1452,4 +1539,5 @@ exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSu
 exports._lib.storeFile = storeFile;
 exports._lib.handOffJson = function(obj){ return handOff(JSON.stringify(obj)); };   /* patch SUBINV: mail-all-sync → the office@ mailbox reader in the background */
 exports._test.processEvent = processEvent;
+exports._test.outcomeOf = outcomeOf; exports._test.logLine = logLine; exports._test.KV_RECV = KV_RECV;   /* patch MAILFIX */
 exports._test.estimateMail = estimateMail; exports._test.forEstimates = forEstimates;   /* patch ESTIN: tests */   /* patch MAILC: tests */
