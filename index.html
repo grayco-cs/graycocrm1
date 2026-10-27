@@ -63875,7 +63875,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
           try{ if(window._supaUpsert) window._supaUpsert('schedule', out); }catch(e){}
           console.log('[GC] Filled job address on schedule items (safe, live state).');
         }
-        return out;
+        return touched ? out : prev;   /* patch SCHEDFILL: nothing filled = the same list, so nothing is redrawn or saved */
       });
     }catch(e){ console.warn('schedule address fill', e); }
   }
