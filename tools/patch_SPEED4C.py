@@ -8,7 +8,8 @@
  5. the dashboard to-do builder and the job cards' chips no longer re-read the 5 MB estimates copy / rebuild every
     card each pass;
  6. the no-duplicates money sweep skips a pass when invoices / expenses / register were not written since a clean one;
- 7. _gcSlowClicks(): the slowest presses on this computer (click to next paint), for a look from the console.
+ 7. Admin → Employees screens are kept between redraws (no rebuild of the open form); a new employee's form says "New Employee";
+ 8. _gcSlowClicks(): the slowest presses on this computer (click to next paint), for a look from the console.
 Each find-string must occur exactly once."""
 import sys
 path = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
@@ -167,6 +168,14 @@ sub("""  } finally { running=false; }
   else _swClean = -1;
 
   if(total && !quiet){""", 'sweep mark')
+
+# 3h. Admin → Employees: the employee screens were function components re-made on every redraw of the app, so React
+#     threw the whole screen (and the open form) away and built it again each time; they are kept now (__gcStable,
+#     as the P&L / invoices screens already are). A new employee's form says "New Employee", not "Edit Employee: undefined".
+sub("""At==="users"&&e.jsx(Ve,{}),At==="hiring"&&e.jsx(N,{}),At==="pmpay2"&&e.jsx(Ee,{})""",
+    """At==="users"&&e.jsx(__gcStable("admUsers",Ve),{}),At==="hiring"&&e.jsx(__gcStable("admHiring",N),{}),At==="pmpay2"&&e.jsx(__gcStable("admPmPay2",Ee),{})""", 'admin stable')
+sub("""children:["✏️ ",W?"Edit":"Add"," Employee",W?`: ${W.name}`:""]""",
+    """children:["✏️ ",(W&&W.id&&W.id!=="NEW")?"Edit":"New"," Employee",(W&&W.id&&W.id!=="NEW"&&W.name)?`: ${W.name}`:""]""", 'new employee heading')
 
 assert MARK in src
 open(path, 'w', encoding='utf-8').write(src)
