@@ -181867,18 +181867,18 @@ function groupOf(t, ok){ if (ok) return t.group; return t.unsignedGroup !== unde
 function phoneOf(p){ var ph = s(p.clientPhone || p.phone || p.customerPhone); if (!ph) { var cn = low(p.client); var c = arr(C().customers).filter(function(x){ return x && low(x.name) === cn; })[0]; ph = s(c && (c.phone || c.mobile)); } return ph.replace(/[^0-9+]/g, ''); }
 
 /* ═════ each role's app: its tools (in order) and its home ═════
-   arrive = Navigate / Job info / Call; then the first three of the role's tools are the big buttons, the rest small.
+   arrive = Navigate / Job info / Customer profile; then the first three of the role's tools are the big buttons, the rest small.
    Admin → ⚙ Admin settings → 📱 GrayCo Field turns tools on / off and reorders them per role (gc_field_settings.roles). */
 var ROLE_TOOLS = {
-  pm:     ['nav', 'info', 'call', 'day', 'photos', 'progress', 'problem', 'mat', 'punch', 'co', 'sign', 'walk', 'dump', 'insp', 'measure', 'receipt', 'plans', 'est', 'voice'],
-  roof:   ['nav', 'info', 'call', 'day', 'photos', 'progress', 'measure', 'est', 'sign', 'problem', 'mat', 'punch', 'co', 'walk', 'dump', 'insp', 'receipt', 'plans', 'voice'],
+  pm:     ['nav', 'info', 'call', 'photos', 'progress', 'problem', 'mat', 'punch', 'co', 'sign', 'walk', 'dump', 'insp', 'measure', 'receipt', 'plans', 'est', 'voice'],
+  roof:   ['nav', 'info', 'call', 'photos', 'progress', 'measure', 'est', 'sign', 'problem', 'mat', 'punch', 'co', 'walk', 'dump', 'insp', 'receipt', 'plans', 'voice'],
   est:    ['nav', 'info', 'call', 'photos', 'measure', 'est', 'receipt', 'plans', 'voice'],
-  super:  ['nav', 'info', 'call', 'day', 'photos', 'onsite', 'safety', 'problem', 'mat', 'punch', 'dump', 'insp', 'receipt', 'plans', 'voice'],
-  mit:    ['nav', 'info', 'call', 'day', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],
+  super:  ['nav', 'info', 'call', 'photos', 'onsite', 'safety', 'problem', 'mat', 'punch', 'dump', 'insp', 'receipt', 'plans', 'voice'],
+  mit:    ['nav', 'info', 'call', 'photos', 'readings', 'sign', 'safety', 'problem', 'mat', 'measure', 'receipt', 'voice'],
   ins:    ['nav', 'info', 'call', 'photos', 'xact', 'sign', 'measure', 'est', 'problem', 'receipt', 'voice'],
   office: ['nav', 'info', 'call', 'photos', 'msgs', 'receipt', 'problem', 'voice'],
   mkt:    ['nav', 'info', 'photos', 'msgs'],
-  admin:  ['nav', 'info', 'call', 'day', 'photos', 'progress', 'problem', 'mat', 'punch', 'co', 'sign', 'walk', 'dump', 'insp', 'measure', 'receipt', 'plans', 'est', 'voice']
+  admin:  ['nav', 'info', 'call', 'photos', 'progress', 'problem', 'mat', 'punch', 'co', 'sign', 'walk', 'dump', 'insp', 'measure', 'receipt', 'plans', 'est', 'voice']
 };
 var LAYOUT = {
   pm:     { tiles: ['photos', 'addjob'], sections: ['jobs', 'approvals', 'estimates', 'commission'] },
@@ -181897,16 +181897,37 @@ function toolIds(k){
   k = ROLE_TOOLS[k] ? k : 'pm';
   var cfg = roleCfg(k), base = cfg && Array.isArray(cfg.tools) ? cfg.tools.slice() : ROLE_TOOLS[k].slice(), off = cfg && Array.isArray(cfg.off) ? cfg.off : [];
   TOOLS.forEach(function(t){ if (base.indexOf(t.id) < 0 && !t.builtIn && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0)) base.push(t.id); });   /* a tool registered later: its roles, or everyone */
-  return base.filter(function(id){ return off.indexOf(id) < 0 && TOOLS.some(function(t){ return t.id === id; }); });
+  return base.filter(function(id){ return id !== 'day' && off.indexOf(id) < 0 && TOOLS.some(function(t){ return t.id === id; }); });   /* patch CUSTPROFILE */
 }
 function roleTools(k){ return toolIds(k).map(function(id){ return TOOLS.filter(function(t){ return t.id === id; })[0]; }).filter(Boolean); }
 
+/* patch CUSTPROFILE — the job card's 👤 Customer profile: the customer's record (jobs, contact, call / text) */
+function custProfile(p){
+  var cs = arr(C().customers), cn = low(p.client || p.customer), cid = s(p.customerId || p.custId);
+  var c = cs.filter(function(x){ return x && cid && s(x.id) === cid; })[0] || cs.filter(function(x){ return x && cn && (low(x.name) === cn || low(x.company) === cn); })[0];
+  var key = c ? (c.id != null ? c.id : (c.name || c.company)) : s(p.client || p.customer);
+  if (!key) { toast('No customer on this job yet.'); return; }
+  if (typeof W._gcOpenCustomerProfile !== 'function') { var ph0 = phoneOf(p); if (ph0) W.location.href = 'tel:' + ph0; else toast('The customer profile is not on this phone yet.'); return; }
+  try { W._gcOpenCustomerProfile(key); } catch (e) { toast('Could not open the customer profile.'); return; }
+  var ph = phoneOf(p);
+  if (!ph) return;
+  var put = function(){
+    var ovs = D.querySelectorAll('._gcSheetOv'), ov = ovs[ovs.length - 1];
+    if (!ov) return false; if (ov.querySelector('a[href^="tel:"]')) return true;
+    var a = D.createElement('a'); a.href = 'tel:' + ph; a.setAttribute('data-cp-call', '1');
+    a.style.cssText = 'display:block;margin:10px 16px;padding:13px;border-radius:12px;background:#16a34a;color:#fff;font:700 15px Inter,sans-serif;text-align:center;text-decoration:none';
+    a.textContent = '📞 Call ' + s(p.clientPhone || p.phone || p.customerPhone || ph);
+    var hd = ov.firstElementChild; if (hd && hd.nextSibling) ov.insertBefore(a, hd.nextSibling); else ov.appendChild(a);
+    return true;
+  };
+  if (!put()) later(put, 60);
+}
 /* the tools that come with the app — the same register() a later tool uses */
 function builtIns(){
   var R = function(t){ t.builtIn = true; return Tools.register(t); };
   R({ id: 'nav', icon: '🧭', label: 'Navigate', group: 'arrive', needsSigned: false, href: function(p){ return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(s(p.address || p.jobAddress)); } });
   R({ id: 'info', icon: '📄', label: 'Job info', group: 'arrive', needsSigned: false, run: function(p){ if (W._gcOpenJobProfile) W._gcOpenJobProfile(p.id); } });
-  R({ id: 'call', icon: '📞', label: 'Call', group: 'arrive', needsSigned: false, href: function(p){ var ph = phoneOf(p); return ph ? 'tel:' + ph : ''; }, run: function(){ toast('No phone number on this job yet.'); } });
+  R({ id: 'call', icon: '👤', label: 'Customer profile', group: 'arrive', needsSigned: false, run: function(p){ custProfile(p); } });
   R({ id: 'sendsign', icon: '✍️', label: 'Send for signature', cls: 'pri', needsSigned: false, run: function(p){ if (W._gcJobDashboard) W._gcJobDashboard(p.id); later(function(){ var b = Array.prototype.filter.call(D.querySelectorAll('#_gcJobDash button'), function(x){ return /Signatures/.test(x.textContent); })[0]; if (b) b.click(); }, 700); } });
   R({ id: 'day', icon: function(p, c){ return c.day.ended ? '✅' : c.day.started ? '🏁' : '🟢'; }, label: function(p, c){ return c.day.ended ? 'Day ended ✓' : c.day.started ? 'End day' : 'Start day'; }, cls: function(p, c){ return c.day.ended ? '' : c.day.started ? 'end' : 'go'; },
     run: function(p, c){ if (c.day.ended) { closeHome(); try { W._gcRP.site().open(p.id, 'log'); } catch (e) {} return; } if (c.day.started) endDay(p); else startDay(p); } });
@@ -182717,14 +182738,14 @@ function settingsSheet(){
 }
 
 /* ═════ Admin → ⚙ Admin settings → 📱 GrayCo Field: each role's tools, on / off and in order ═════ */
-function allowedFor(k){ return TOOLS.filter(function(t){ return t.id !== 'sendsign' && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0); }); }
+function allowedFor(k){ return TOOLS.filter(function(t){ return t.id !== 'sendsign' && t.id !== 'day' && (!arr(t.roles).length || arr(t.roles).indexOf(k) >= 0); }); }
 function roleEditor(box, k0){
   var k = k0 || 'pm';
   function draw(){
     var cfg = roleCfg(k) || {}, order = toolIds(k), off = arr(cfg.off);
     var all = allowedFor(k), list = order.concat(all.map(function(t){ return t.id; }).filter(function(id){ return order.indexOf(id) < 0; }));
     var lab = function(id){ var t = TOOLS.filter(function(x){ return x.id === id; })[0]; if (!t) return id; var l = typeof t.label === 'function' ? (id === 'day' ? 'Start / End day' : id) : t.label, ic = typeof t.icon === 'function' ? '🟢' : t.icon; return ic + ' ' + l; };
-    box.innerHTML = '<div style="font:14px Inter,sans-serif;color:#0f172a"><div style="margin-bottom:8px">Each person\'s phone app. Pick a role, turn tools on or off, move them up or down. The first three after Navigate / Job info / Call are the big buttons.</div>' +
+    box.innerHTML = '<div style="font:14px Inter,sans-serif;color:#0f172a"><div style="margin-bottom:8px">Each person\'s phone app. Pick a role, turn tools on or off, move them up or down. The first three after Navigate / Job info / Customer profile are the big buttons.</div>' +
       '<select data-fr="role" style="padding:8px;border-radius:8px;border:1px solid #cbd5e1;font-size:14px;margin-bottom:8px">' + Object.keys(ROLE_TOOLS).map(function(r){ return '<option value="' + r + '"' + (r === k ? ' selected' : '') + '>' + esc(ROLE_NAMES[r]) + '</option>'; }).join('') + '</select>' +
       '<div data-fr="list">' + list.map(function(id, i){ var on = order.indexOf(id) >= 0 && off.indexOf(id) < 0; return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #eef2f7"><label style="flex:1;display:flex;gap:8px;align-items:center"><input type="checkbox" data-fr-on="' + esc(id) + '"' + (on ? ' checked' : '') + '>' + esc(lab(id)) + '</label><button type="button" data-fr-up="' + i + '" style="border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:2px 8px">▲</button><button type="button" data-fr-dn="' + i + '" style="border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:2px 8px">▼</button></div>'; }).join('') + '</div>' +
       '<div style="margin-top:10px;display:flex;gap:8px"><button type="button" data-fr="save" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:700">Save</button><button type="button" data-fr="reset" style="background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 14px">Back to the default</button></div></div>';
