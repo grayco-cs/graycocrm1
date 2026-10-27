@@ -49,6 +49,26 @@ Who can sign in (Netlify → Site configuration → Environment variables, then 
 - Anyone with an `@grayco-cs.com` address, plus the addresses in `ADMIN_EMAILS`
   (comma list — e.g. the marketing agency: `malcolm@adventuresmedia.com`). Remove an address to lock them out.
 
+## Landing pages (search + Google Ads)
+
+One page per service and per town — `/water-damage-restoration`, `/fire-damage-restoration`,
+`/insurance-restoration`, `/commercial-construction`, `/home-remodeling`, `/memphis`, `/bartlett`,
+`/collierville`, `/cordova`, `/germantown`. Plain fast HTML (no editor needed to read them), each with a call
+button, the estimate form (straight to the CRM), real GrayCo projects, FAQs and search-engine data.
+
+- Words: `landing/pages.mjs` (edit, push, done). Projects are named by their title in the Projects section, so
+  photos and descriptions stay in step. Layout: `landing/template.mjs`.
+- `build-pages.mjs` builds them on every deploy, with `_redirects` (their addresses) and `sitemap.xml`.
+- The main site links to them from Services ("Learn more") and the footer (Services, Areas we serve).
+- Customer reviews appear on them when the CRM has testimonials the customer allowed.
+- The ad plan that uses them: `ADS-PLAN.md`.
+
+## Tracking (Google Analytics, Google Ads, Meta, CallRail)
+
+`gc-track.js`, on every page. Gear → Footer, Google & social links: Google Analytics ID, Google Ads tag ID,
+the two conversion labels (form sent, phone tap), Meta pixel ID, CallRail swap script. Any left empty falls back
+to the CRM's Marketing → 🌐 Website, pixels & guides. Nothing loads until an ID is set.
+
 ## Google Analytics
 
 Create a GA4 property at analytics.google.com, copy the Measurement ID
