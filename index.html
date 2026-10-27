@@ -4651,7 +4651,33 @@ function look(){
   }catch(e){ window.__GC_FORM_OPEN__=false; }
 }
 
+/* patch SPEED4: looked at right AFTER the next frame is painted (one at a time): the page's layout is fresh then, so
+   measuring the boxes costs next to nothing and never holds up what a click changed on screen */
+var _fhRaf = 0, _fhWait = 0;
+function lookInFrame(){
+  if (_fhRaf || _fhWait) return;
+  if (document.hidden || typeof requestAnimationFrame !== 'function') { look(); return; }
+  _fhRaf = requestAnimationFrame(function(){ _fhRaf = 0; _fhWait = setTimeout(function(){ _fhWait = 0; look(); }, 0); });
+  setTimeout(function(){ if (_fhRaf) { try { cancelAnimationFrame(_fhRaf); } catch (e) {} _fhRaf = 0; look(); } }, 1000);   /* frames held up: look anyway */
+}
 window._gcFormOpen = function(){ return !!window.__GC_FORM_OPEN__; };
+/* patch SPEED4: click to next paint over 150 ms (the last 60), with what was pressed and on which screen */
+(function(){
+  var L = [];
+  try {
+    new PerformanceObserver(function(list){
+      list.getEntries().forEach(function(e){
+        if (!/^(click|pointerup|keydown)$/.test(e.name) || e.duration < 150) return;
+        var t = e.target, d = '';
+        try { if (t && t.nodeType === 1) { d = t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.getElementsByTagName('*').length <= 40 ? ' "' + String(t.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40) + '"' : ''); } } catch (x) {}
+        var v = ''; try { v = localStorage.getItem('grayco_view') || ''; } catch (x) {}
+        L.push({ at: new Date().toISOString().slice(11, 19), ms: Math.round(e.duration), wait: Math.round(e.processingStart - e.startTime), work: Math.round(e.processingEnd - e.processingStart), what: e.name, on: d, view: v });
+        if (L.length > 60) L.shift();
+      });
+    }).observe({ type: 'event', durationThreshold: 150 });
+  } catch (e) {}
+  window._gcSlowClicks = function(){ var o = L.slice().sort(function(a, b){ return b.ms - a.ms; }); try { console.table(o); } catch (e) {} return o; };
+})();
 window._gcFormHoldWhy = function(){
   var c=fields().length;
   console.log('%c[GC] form hold','background:#0f2440;color:#fff;padding:2px 6px;font-weight:bold');
@@ -4693,7 +4719,7 @@ var lastActivity = 0;
 (function schedule(){
   var RSI = window.__GC_RAW_SETTIMEOUT__ || setTimeout;
   var step = function(){
-    try{ look(); }catch(e){}
+    try{ lookInFrame(); }catch(e){}   /* patch SPEED4 */
     var busyNow = (Date.now() - lastActivity) < BURST;
     RSI.call(window, step, busyNow ? FAST : ((window._gcIdle && window._gcIdle()) ? 10000 : SLOW));   /* patch SYNCPERF: nobody here for a minute: every 10 s (a click or key still looks at once) */
   };
@@ -4704,7 +4730,7 @@ look();
 /* the moment she clicks or focuses something, check straight away rather than
    waiting for the next look */
 ['pointerdown','focusin','keydown'].forEach(function(ev){
-  document.addEventListener(ev, function(){ setTimeout(look, 30); }, true);
+  document.addEventListener(ev, function(){ setTimeout(lookInFrame, 30); }, true);   /* patch SPEED4 */
 });
 
 /* ── WHY THIS NO LONGER WRAPS THE STATE SETTERS ─────────────────────────── */
@@ -34989,11 +35015,15 @@ function buildTodoItems(){
 
   // Estimates expiring (30+ days old, still draft)
   try{
-    var ests = JSON.parse(localStorage.getItem('gc_ests_v2')||'[]');
     var thirtyAgoD = new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10);
-    (Array.isArray(ests)?ests:[]).filter(function(e){
-      return (e.status==='draft'||!e.status) && e.date && e.date < thirtyAgoD;
-    }).forEach(function(e){
+    var _er = localStorage.getItem('gc_ests_v2')||'[]', _em = window.__gcExpEstMemo;   /* patch SPEED4 */
+    if(!_em || _em.d!==thirtyAgoD || _em.raw!==_er){
+      var ests = JSON.parse(_er);
+      _em = window.__gcExpEstMemo = { d:thirtyAgoD, raw:_er, list:(Array.isArray(ests)?ests:[]).filter(function(e){
+        return e && (e.status==='draft'||!e.status) && e.date && e.date < thirtyAgoD;
+      }).map(function(e){ return { name:e.name, date:e.date }; }) };
+    }
+    _em.list.forEach(function(e){
       items.push({priority:'low', icon:'📋', text:'Estimate expiring: '+(e.name||'Draft'), sub:'Created: '+e.date, tag:'Estimate', action:"if(window._setView)window._setView('estimates')"});
     });
   }catch(e){}
@@ -53752,6 +53782,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
   // when the user clicks a Save/Update/Add button, wipe drafts shortly after (data is committed).
   document.addEventListener('click', function(e){
     var t=e.target; if(!t) return;
+    if(t===document.documentElement||t===document.body||t.childElementCount>12||t.getElementsByTagName('*').length>40) return;   /* patch SPEED4: never read a page-sized text */
     var txt=((t.textContent||'')+'').toLowerCase();
     if(/\b(save|update|add|create|submit|post|done)\b/.test(txt) && txt.length<40){
       setTimeout(function(){ try{ localStorage.setItem(STORE,'{}'); }catch(_e){} }, 1500);
@@ -85510,6 +85541,7 @@ console.log('[GC] Approve sticks — one click, saved to device + cloud, invoice
   document.addEventListener('click', function(e){
     try{
       var t=e.target; if(!t) return;
+      if(t===document.documentElement||t===document.body||t.childElementCount>12||t.getElementsByTagName('*').length>40) return;   /* patch SPEED4: never read a page-sized text */
       var txt=(t.textContent||'').toLowerCase();
       if(txt.indexOf('save token')<0) return;
       var inp=document.getElementById('gc-cc-token-inp');
@@ -90166,8 +90198,9 @@ window._gcFixInvoiceDueDates = window._gcFixInvoiceDates;
 /* ── react as soon as a status button is clicked ────────────────────────── */
 document.addEventListener('click', function(e){
   try{
-    var t=e.target; if(!t||!t.textContent) return;
-    var w=t.textContent.trim().toLowerCase();
+    var t=e.target; if(!t) return;
+    if(t===document.documentElement||t===document.body||t.childElementCount>12||t.getElementsByTagName('*').length>40) return;   /* patch SPEED4: never read a page-sized text */
+    var w=(t.textContent||'').trim().toLowerCase();
     if(['paid','not paid','draft','sent','overdue','✓ paid'].indexOf(w)<0) return;
     if(window._gcManualNow) window._gcManualNow('invoice status: '+w);
     setTimeout(function(){ window._gcFixInvoiceDates(true); }, 350);
@@ -102497,10 +102530,32 @@ function runSweep(quiet){
 window._gcNoDupesSweep = function(quiet){ return runSweep(quiet); };
 
 var running=false;
+/* patch SPEED4: which of the three lists was written since the last clean pass */
+var _swGen = 0, _swClean = -1, _swFullAt = 0;
+(function(){
+  try{
+    var PR = IDBObjectStore.prototype;
+    ['put','add','delete','clear'].forEach(function(n){
+      var o = PR[n]; if(!o || o.__gcSW4) return;
+      var w = function(a, b){
+        try{
+          if(this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm'){
+            var kk = (n === 'put' || n === 'add') ? b : a;
+            if(n === 'clear' || typeof kk !== 'string' || /^(invs|invoices|expenses|gcAcctRegister)$/.test(kk)) _swGen++;
+          }
+        }catch(e){ _swGen++; }
+        return o.apply(this, arguments);
+      };
+      w.__gcSW4 = true; try{ Object.keys(o).forEach(function(p){ w[p] = o[p]; }); }catch(e){}
+      PR[n] = w;
+    });
+  }catch(e){ _swGen = NaN; }
+})();
 async function doSweep(quiet){
   if(running) return {skipped:true};
+  if(_swClean === _swGen && Date.now() - _swFullAt < 120000) return {removed:0, per:{}, unchanged:true};   /* patch SPEED4: nothing written since a clean pass */
   running=true;
-  var total=0, per={};
+  var total=0, per={}, _g0 = _swGen;
   try{
     for(var i=0;i<KEYS.length;i++){
       var K=KEYS[i];
@@ -102548,6 +102603,8 @@ async function doSweep(quiet){
       }catch(e){}
     }
   } finally { running=false; }
+  if(!total && _g0 === _g0){ _swClean = _g0; _swFullAt = Date.now(); }   /* patch SPEED4: a clean pass (NaN: never) */
+  else _swClean = -1;
 
   if(total && !quiet){
     try{ console.log('%c[GC] '+total+' duplicate money row(s) merged away','background:#7c2d12;color:#fff;padding:2px 6px;font-weight:bold');
@@ -123052,7 +123109,7 @@ W.addEventListener('popstate', function(ev){
   armedAt = Date.now(); toast('Press Back again to leave GrayCo'); guard();
 });
 /* the guard goes in on a real tap (Chrome skips history entries made without one) */
-D.addEventListener('pointerdown', guard, true);
+D.addEventListener('pointerdown', function(){ RT(guard, 0); }, true);   /* patch SPEED4: after the press, not inside it (still a user gesture) */
 
 /* ── floating buttons never sit on a button you need ──
    The 💎 hub (fixed bottom:152 right:18) sat on the Employees "EDIT" links and other right-column actions; the green
@@ -129414,7 +129471,9 @@ function stripHtml(pid){
 function strips(){
   Array.prototype.forEach.call(document.querySelectorAll('.gcq-card'), function(card){
     var pid = card.getAttribute('data-pid'); if (!pid) return;
-    var have = card.querySelector(':scope > .gcch-strip:not(.gcau5-strip)'), html = stripHtml(pid);   /* patch JOBSTILL: not the Signatures strip */
+    var _sm = window.__gcStripMemo || (window.__gcStripMemo = {}), _sn = Date.now(), _se = _sm[pid];   /* patch SPEED4 */
+    var html = (_se && _sn - _se.at < 3000) ? _se.h : (_sm[pid] = { h: stripHtml(pid), at: _sn }).h;
+    var have = card.querySelector(':scope > .gcch-strip:not(.gcau5-strip)');   /* patch JOBSTILL: not the Signatures strip */
     if (have && have.__h === html && have.getAttribute('data-pid') === pid) return;
     if (!have) { have = document.createElement('div'); have.className = 'gcch-strip'; card.appendChild(have); }
     have.setAttribute('data-pid', pid); have.innerHTML = html; have.__h = html;
@@ -152626,6 +152685,11 @@ if(nf0 && !nf0.__gcPJX){
         if(res.ok) BO.n = Math.max(0, BO.n - 1);
         if(isKv && m === 'GET' && res.ok){
           return res.clone().text().then(function(t){
+            /* patch SPEED4C */ /* patch SPEED4: a list answer ([ … ]) is not taken apart just to see that it is a list — only when the job
+               list is in it (its record of what the cloud holds) or the answer is not a list */
+            var t0s = t.trim(), isList = t0s.charAt(0) === '[' && t0s.charAt(t0s.length - 1) === ']';
+            var ukq = isList ? ((/[?&]key=(?:eq|in|like)\.([^&]+)/.exec(decodeURIComponent(url)) || [])[1] || '') : '';
+            if(isList && !/projects/.test(ukq) && !(!ukq && /"key"\s*:\s*"projects/.test(t0s))) return res;
             var j; try{ j = JSON.parse(t); }catch(e){ S.failedReads++; throw busyErr('the cloud\'s answer could not be read'); }
             if(!Array.isArray(j) && (j == null || typeof j !== 'object' || 'error' in j || ('message' in j && ('code' in j || 'hint' in j || 'details' in j)))){ S.failedReads++; throw busyErr('the cloud answered with an error, not data'); }
             if(!Array.isArray(j)) return res;
