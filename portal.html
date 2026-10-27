@@ -1886,7 +1886,7 @@ function gcDraw(){
   else phc.appendChild(h('div', { class: 'gcp-ph' }, G.photos.slice(0, 120).map(function(x){ return h('a', { href: x.f, target: '_blank', rel: 'noopener', style: x.stage ? 'position:relative;display:block' : '' }, [h('img', { src: x.t || x.f, alt: x.stage || x.tag || '', loading: 'lazy' })].concat(x.stage ? [h('span', { style: 'position:absolute;left:6px;bottom:6px;background:rgba(15,23,42,.78);color:#fff;font:700 11px Arial,sans-serif;border-radius:999px;padding:2px 8px' }, x.stage)] : []));   /* patch X12: stage label */ })));
   main.appendChild(phc);
   /* company documents */
-  var dc = card('📄 GrayCo documents', [h('div', { class: 'muted', text: 'Always the current certificate of insurance, W-9 and licenses — download any time.' })], 'gcp-docs');
+  var dc = card('📄 GrayCo documents', [h('div', { class: 'muted', text: 'Always the current certificate of insurance, W-9, licenses and safety program — download any time.' })], 'gcp-docs');
   if (!v.docs.length) dc.appendChild(h('div', { class: 'muted', text: 'Ask your GrayCo contact for our certificate of insurance and W-9.' }));
   v.docs.forEach(function(d){ dc.appendChild(h('div', { class: 'gcp-row gcp-item' }, [h('div', {}, [h('b', { text: d.title }), h('div', { class: 'muted', text: d.kindLabel + (d.expires ? ' · valid through ' + dt(d.expires) : '') })]), h('button', { type: 'button', class: 'btn', text: 'Download', on: { click: function(){ openFile('gc-doc', d.id); } } })])); });
   main.appendChild(dc);

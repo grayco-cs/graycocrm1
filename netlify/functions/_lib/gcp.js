@@ -39,7 +39,37 @@ const crypto = require('crypto');
 
 const K_LINKS = 'gc_gcp_links', K_JOBS = 'gc_gcp_jobs', K_DOCS = 'gc_company_docs', K_DOCST = 'gc_compdocs_state', K_CHECK = 'gc_checkins', K_INSP = 'gc_inspect';
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-const DOC_KINDS = { coi: 'Certificate of insurance (COI)', w9: 'W-9', license: 'License', safety: 'Safety program / records', lien: 'Lien information', other: 'Other' };
+const DOC_KINDS = { coi: 'Certificate of insurance (COI)', w9: 'W-9', license: 'License', safety: 'Safety program / records', lien: 'Lien information', hr: 'HR / policies', legal: 'Legal & contracts', marketing: 'Marketing', company: 'Company info', other: 'Other' };
+/* patch COMPANYDOCS: the one company library — folders, who may see a document (everyone on the staff / admin + office), and what GCs see */
+const DOC_FOLDERS = { insurance: 'Insurance', tax: 'Tax', licenses: 'Licenses', safety: 'Safety', hr: 'HR', legal: 'Legal & contracts', marketing: 'Marketing', company: 'Company info' };
+const KIND_FOLDER = { coi: 'insurance', w9: 'tax', license: 'licenses', safety: 'safety', lien: 'legal', hr: 'hr', legal: 'legal', marketing: 'marketing', company: 'company', other: 'company' };
+const GC_KINDS = { coi: 1, w9: 1, license: 1, safety: 1 };   /* shared with GCs unless someone turned it off */
+function docFolder(d){ return DOC_FOLDERS[s(d && d.folder)] ? s(d.folder) : (KIND_FOLDER[s(d && d.kind)] || 'company'); }
+function docAccess(d){ const a = s(d && d.access); return a === 'all' || a === 'office' ? a : (s(d && d.kind) === 'w9' ? 'office' : 'all'); }   /* the W-9 carries the tax ID: admin + office unless the owner opens it */
+function docShared(d){ return !!d && (typeof d.shareGc === 'boolean' ? d.shareGc : !!GC_KINDS[s(d.kind)]); }
+function docVisible(d, lvl){ return lvl === 'admin' || lvl === 'office' || docAccess(d) === 'all'; }
+function docStaffOut(d){ return Object.assign(docOut(d), { folder: docFolder(d), slot: s(d.slot), access: docAccess(d), shareGc: docShared(d), gen: s(d.gen), genRev: s(d.genRev), current: d.current !== false && !d.removed, removed: !!d.removed, by: s(d.by), name: s(d.name) }); }
+/* the list a staff member gets (lvl: admin | office | staff) */
+function docsForStaff(list, lvl){ return arr(list).filter(function(d){ return docVisible(d, lvl); }).map(docStaffOut); }
+/* what a GC link shows: current, marked "share with GCs", and not an expired COI */
+function docsForGc(list){ return arr(list).filter(function(d){ return docLive(d) && docShared(d) && (!docExpired(d) || d.kind !== 'coi'); }).map(docOut); }
+/* add one record to the list; a document in a "slot" (the COI, the W-9, each license, the generated safety program …) replaces the one before it */
+function docApplyAdd(l, rec, b){
+  const replaced = [];
+  const mark = function(d){ d.current = false; d.replacedBy = rec.id; d.replacedAt = rec.at; replaced.push(d.id); };
+  if (rec.slot) l.forEach(function(d){ if (docLive(d) && s(d.slot) === rec.slot) mark(d); });
+  else if (b.replaces !== false && (rec.kind === 'coi' || rec.kind === 'w9' || rec.kind === 'lien')) l.forEach(function(d){ if (docLive(d) && d.kind === rec.kind && !s(d.slot)) mark(d); });
+  if (b.replaces && typeof b.replaces === 'string') l.forEach(function(d){ if (d.id === b.replaces && docLive(d) && replaced.indexOf(d.id) < 0) mark(d); });
+  l.push(rec); return replaced;
+}
+/* change who sees it / GC sharing / expiry / title (admin + office) */
+function docApplyFlags(d, b){
+  if (b.access === 'all' || b.access === 'office') d.access = b.access;
+  if (typeof b.shareGc === 'boolean') d.shareGc = b.shareGc;
+  if (b.expires !== undefined) d.expires = ymd(b.expires);
+  if (b.title !== undefined && s(b.title)) d.title = clip(b.title, 120);
+  return d;
+}
 const OFFICE_PHONE = '901-585-0944';
 
 let CORE = null, LIB = null;
@@ -160,7 +190,7 @@ async function gcView(data, p, opts){
   const C = core();
   const v = await C.buildView(data, p);
   const st = await jobState(p.id);
-  const docs = (await companyDocs()).filter(function(d){ return !docExpired(d) || d.kind !== 'coi'; }).map(docOut);
+  const docs = docsForGc(await companyDocs());   /* patch COMPANYDOCS: only the ones marked "share with GCs" */
   const out = {
     ok: true, kind: 'gc', office: { phone: OFFICE_PHONE },
     company: gcCompany(data, p),
@@ -420,12 +450,17 @@ async function docAdd(data, b, who){
   const kind = DOC_KINDS[low(b.kind)] ? low(b.kind) : 'other';
   const ref = s(b.ref); if (!/^sb:crm-files\/[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(ref)) return { code: 400, out: { ok: false, error: 'Upload the file first.' } };
   const rec = { id: uid('CDOC'), kind: kind, title: clip(b.title, 120) || DOC_KINDS[kind], ref: ref, name: clip(b.name, 120), type: clip(b.type, 60), expires: ymd(b.expires), at: nowIso(), by: who.email, current: true };
+  /* patch COMPANYDOCS: folder, slot, who sees it, GC sharing, the generated document it was made from */
+  if (DOC_FOLDERS[s(b.folder)]) rec.folder = s(b.folder);
+  if (/^[a-z0-9_:.-]{1,60}$/i.test(s(b.slot))) rec.slot = s(b.slot);
+  if (b.access === 'all' || b.access === 'office') rec.access = b.access;
+  if (typeof b.shareGc === 'boolean') rec.shareGc = b.shareGc;
+  if (/^[a-z0-9_:.-]{1,60}$/i.test(s(b.gen))) { rec.gen = s(b.gen); rec.genRev = clip(b.genRev, 40); }
   let replaced = [];
   await cas(K_DOCS, function(v){
     const l = arr(v);
-    if (b.replaces !== false && kind !== 'other' && kind !== 'license') l.forEach(function(d){ if (docLive(d) && d.kind === kind) { d.current = false; d.replacedBy = rec.id; d.replacedAt = rec.at; replaced.push(d.id); } });
-    if (b.replaces && typeof b.replaces === 'string') l.forEach(function(d){ if (d.id === b.replaces && docLive(d)) { d.current = false; d.replacedBy = rec.id; d.replacedAt = rec.at; replaced.push(d.id); } });
-    l.push(rec); return l.slice(-500);
+    replaced = docApplyAdd(l, rec, b);
+    return l.slice(-500);
   });
   let queued = 0;
   if (kind === 'coi' && b.sendToGcs !== false) queued = await queueCoi(data, rec);
@@ -451,6 +486,36 @@ async function queueCoi(data, rec){
     meta: { gcp: 'coi', docId: rec.id, ref: rec.ref, fileName: rec.name || 'GrayCo certificate of insurance.pdf', recipients: people, note: 'Goes to ' + people.length + ' GC contacts on active jobs, one e-mail each, with the COI attached: ' + people.map(function(x){ return x.email; }).join(', ') } });
   return ok ? people.length : 0;
 }
+/* patch COMPANYDOCS: the library's own settings (generated documents: who sees them, shared with GCs; the safety program's
+   owner-filled blanks and "adopted") — kept here, not in the CRM's synced keys, so a fresh start never loses them */
+const K_LIBCFG = 'gc_company_lib_cfg';
+function cfgClean(v){
+  v = obj(v); const out = { gen: {}, safety: { fields: {}, adopted: !!obj(v.safety).adopted, adoptedAt: s(obj(v.safety).adoptedAt) }, at: s(v.at), by: s(v.by) };
+  Object.keys(obj(v.gen)).slice(0, 300).forEach(function(k){ if (!/^[a-z0-9_:.-]{1,60}$/i.test(k)) return; const g = obj(v.gen[k]), o = {};
+    if (g.access === 'all' || g.access === 'office') o.access = g.access; if (typeof g.shareGc === 'boolean') o.shareGc = g.shareGc; out.gen[k] = o; });
+  Object.keys(obj(obj(v.safety).fields)).slice(0, 40).forEach(function(k){ if (/^[a-z_]{1,40}$/.test(k)) out.safety.fields[k] = clip(obj(v.safety).fields[k], 300); });
+  return out;
+}
+async function libCfg(){ return cfgClean(await get(K_LIBCFG, {})); }
+async function libCfgSet(b, who){
+  let out = null;
+  await cas(K_LIBCFG, function(v){
+    const c = cfgClean(v);
+    Object.keys(obj(b.gen)).forEach(function(k){ c.gen[k] = Object.assign(c.gen[k] || {}, obj(b.gen[k])); });
+    if (b.safety && typeof b.safety === 'object') {
+      Object.keys(obj(b.safety.fields)).forEach(function(k){ c.safety.fields[k] = s(b.safety.fields[k]); });
+      if (typeof b.safety.adopted === 'boolean') { c.safety.adopted = b.safety.adopted; c.safety.adoptedAt = b.safety.adopted ? nowIso() : ''; }
+    }
+    c.at = nowIso(); c.by = s(who && who.email);
+    out = cfgClean(c); return out;
+  });
+  return { code: 200, out: { ok: true, cfg: out } };
+}
+async function docFlags(b, who){
+  let hit = null;
+  await cas(K_DOCS, function(v){ const l = arr(v); const d = l.find(function(x){ return x.id === s(b.id); }); if (!d || d.removed) return undefined; docApplyFlags(d, b); d.changedAt = nowIso(); d.changedBy = who.email; hit = d; return l; });
+  return hit ? { code: 200, out: { ok: true, doc: docStaffOut(hit) } } : { code: 404, out: { ok: false, error: 'No such document.' } };
+}
 async function docRemove(b, who){
   let hit = null;
   await cas(K_DOCS, function(v){ const l = arr(v); const d = l.find(function(x){ return x.id === s(b.id); }); if (!d || d.removed) return undefined; d.removed = true; d.removedAt = nowIso(); d.removedBy = who.email; hit = d; return l; });
@@ -473,7 +538,7 @@ async function complianceRun(data){
     due.push({ d: d, step: step, days: days });
   });
   if (!due.length) return { reminded: 0 };
-  const to = await staffEmails(data, 'admins');
+  const to = Array.from(new Set((await staffEmails(data, 'admins')).concat(await staffEmails(data, 'office'))));   /* patch COMPANYDOCS: admins + office */
   const rows = due.map(function(x){ return '<li><b>' + esc(x.d.title) + '</b> (' + esc(DOC_KINDS[x.d.kind] || 'document') + ') — ' + (x.days < 0 ? '<b style="color:#b91c1c">expired ' + esc(x.d.expires) + '</b>' : 'runs out <b>' + esc(x.d.expires) + '</b> (' + x.days + ' day' + (x.days === 1 ? '' : 's') + ')') + '</li>'; }).join('');
   const r = await mailStaff(to, '📄 Company document' + (due.length === 1 ? '' : 's') + ' to renew: ' + due.map(function(x){ return x.d.title; }).join(', '),
     para('These company documents are about to run out (or have). GCs see them on their project pages, so upload the renewed one in the CRM: <b>Admin → 📄 Company documents</b>. A renewed COI is then sent to every active GC contact (after your approval).') + '<ul>' + rows + '</ul>', 'compliance');
@@ -686,6 +751,6 @@ async function inspectAccept(code, b){
 
 module.exports = { T, K_LINKS, K_JOBS, K_DOCS, K_DOCST, K_CHECK, K_INSP, DOC_KINDS, TOKEN_RE,
   isGcJob, contactsOf, billingOf, gcCompany, linkFor, linkByToken, createLink, revokeLink, touchLink, gcLink, jobState, mutateJob,
-  companyDocs, docOut, docAdd, docRemove, docSigned, docExpired, gcView, payappAdd, payappStatus, coPrice, coVoid, coImported, rfiNew, rfiAnswer,
+  companyDocs, docOut, docAdd, docRemove, docFlags, DOC_FOLDERS, docFolder, docAccess, docShared, docVisible, docStaffOut, docsForStaff, docsForGc, docApplyAdd, docApplyFlags, docLive, K_LIBCFG, cfgClean, libCfg, libCfgSet, docSigned, docExpired, gcView, payappAdd, payappStatus, coPrice, coVoid, coImported, rfiNew, rfiAnswer,
   gcApprovePay, gcRequestCo, gcSignCo, onApproved, complianceRun, activeGcContacts, custExtras, custCheckin, registryPdf, simplePdf, midJob,
   seasonKey, inspectList, inspectRun, inspectSend, inspectAccept, payOut, coOut, rfiOut, scheduleOf, staffEmails };
