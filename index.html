@@ -114902,6 +114902,10 @@ function importerRow(p){
 }
 var outBusy = false;
 async function outbound(){
+  /* patch PHOTOLINK: off — it made a second, empty CompanyCam project for a CRM job (and, because the server's create
+     answers {ok, id} and this read {created, id}, never saved the link). The 15-minute companycam-sync ties a CRM job
+     to the PM's own CompanyCam project by its address instead; a person can tie one by hand on GrayCo Photos. */
+  if (!window.__GC_CC_OUTBOUND_ON__) return 0;
   if (outBusy || !on() || !idle()) return 0;
   var projs = (window._crm && window._crm.projects) || [];
   var done = jGet(OUTDONE, {}) || {}, now = Date.now(), n = 0;
@@ -114923,7 +114927,7 @@ async function outbound(){
       if (f.ok && f.data && f.data.matched && f.data.id) res = f.data;
       else if (f.ok) {
         var c = await call('?proxy=create', { method: 'POST', json: true, body: JSON.stringify({ name: name || addr, address: addr, city: p.city || '', state: p.state || '', zip: p.zip || '' }) });
-        if (c.ok && c.data && c.data.created && c.data.id) res = c.data;
+        if (c.ok && c.data && (c.data.created || c.data.ok) && c.data.id) res = c.data;   /* patch PHOTOLINK: the server answers {ok, id} */
       }
       if (res) { await saveJobLink(p.id, res.id, res.url || ('https://app.companycam.com/projects/' + res.id)); n++; }
       done[p.id] = { ok: !!res, at: Date.now() }; jSet(OUTDONE, done);
@@ -125964,6 +125968,43 @@ start();
 try { console.log('[GC] Lead Inbox (patch LD2) ready — window._gcLeadInbox'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-photolink">
+/* patch PHOTOLINK */ /* patch PHOTOLINK — photos and CompanyCam only while a photo screen is open (owner rule 10/27).
+   A photo screen: GrayCo Photos (#gcuOv, the tab or full screen), the CompanyCam sync status window or its Admin section,
+   the "New in CompanyCam" list. Anything else asking CompanyCam from this page gets the gate's empty answer (no request
+   leaves the computer). A new job's "Also create in CompanyCam" (a person pressing Save) still goes through. */
+(function(){
+'use strict';
+if (window.__GC_PHOTOLINK_GATE__) return; window.__GC_PHOTOLINK_GATE__ = true;
+var lastPress = 0;
+['pointerdown', 'keydown'].forEach(function(t){ document.addEventListener(t, function(e){ if (e.isTrusted !== false) lastPress = Date.now(); }, true); });
+function open(){ try { return !!document.querySelector('#gcuOv, #gc-ccsync-ov, #_gcCCRev, [data-gc-cc-screen]'); } catch (e) { return false; } }
+window.__gcPhotoGateOpen = open;
+function wrap(){
+  var a = window.__gcCCAllow;
+  if (typeof a === 'function' && !a.__photolink) {
+    var w = function(u, init){
+      if (open()) return a.apply(this, arguments);
+      try { if (/[?&]proxy=create\b/.test(String(u || '')) && String((init && init.method) || '').toUpperCase() === 'POST' && Date.now() - lastPress < 20000) return a.apply(this, arguments); } catch (e) {}
+      return false;
+    };
+    w.__photolink = true; window.__gcCCAllow = w;
+  }
+  var c = window._gcCCCheckStatus;
+  if (typeof c === 'function' && !c.__photolink) {
+    var wc = function(){ if (open()) return c.apply(this, arguments); var st = null; try { st = window._gcCCStatus().state; } catch (e) {} return Promise.resolve(st); };
+    wc.__photolink = true; window._gcCCCheckStatus = wc;
+  }
+  var r = window._gcCCReviewCheck;
+  if (typeof r === 'function' && !r.__photolink) {
+    var wr = function(){ if (open()) return r.apply(this, arguments); return Promise.resolve([]); };
+    wr.__photolink = true; window._gcCCReviewCheck = wr;
+  }
+}
+wrap();
+window._gcPhotoGateWrap = wrap;
+})();
+</script>
 <script id="gc-patch-u">
 /* ============================================================================
    GrayCo PHOTOS — a CompanyCam-style job photo app inside the CRM.   patch U2 (33.150)   __GC_PATCH_U__
@@ -126447,6 +126488,12 @@ var ccCache = {}, ccBusy = {}, ccAsked = {}, ccErr = {};   /* patch CCSYNC (phot
 function ccOn(){ try { var st = typeof window._gcCCStatus === 'function' ? window._gcCCStatus() : null; return !!(st && st.on); } catch (e) { return false; } }
 function ccIdFromAny(v){ if (v == null || v === '') return ''; var t = String(v), m = t.match(/companycam\.com\/projects\/(\d+)/) || t.match(/^PRJcc_(\d+)$/) || t.match(/^cc:(\d+)$/); if (m) return m[1]; return /^\d{3,}$/.test(t.trim()) ? t.trim() : ''; }
 function ccIdOf(p){ if (!p) return ''; var f = ['ccProjectId', 'companyCamId', 'companycamId', 'ccamId', 'ccId', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'ccProjectUrl', 'id']; for (var i = 0; i < f.length; i++) { var id = ccIdFromAny(p[f[i]]); if (id) return id; } return ''; }
+/* patch PHOTOLINK */ /* every photo project of a job: its link + the ones the sync (or a person) put beside it */
+function ccIdsOf(p){ var out = [], a = ccIdOf(p); if (a) out.push(a); arr(p && p.ccMoreIds).forEach(function(v){ var x = ccIdFromAny(v); if (x && out.indexOf(x) < 0) out.push(x); }); return out; }
+/* everything a photo screen fetched: aborted when the screen closes */
+var ccAbort = null;
+function ccSignal(){ try { if (!ccAbort && typeof AbortController === 'function') ccAbort = new AbortController(); } catch (e) {} return ccAbort ? ccAbort.signal : undefined; }
+function ccStopAll(){ try { if (ccAbort) ccAbort.abort(); } catch (e) {} ccAbort = null; }
 function httpsOnly(u){ var t = s(u); return /^https:\/\/[^\s"'<>]+$/i.test(t) ? t : ''; }
 function ccTag(ph){
   var words = arr(ph.tags).map(function(t){ return low(t && (t.display_value || t.value || t.name) || t); }).join(' ') + ' ' + low(ph.description);
@@ -126466,8 +126513,8 @@ function ccMap(jobId, ph){
     lat: co.lat != null ? +co.lat : null, lng: co.lon != null ? +co.lon : (co.lng != null ? +co.lng : null), shared: true };
 }
 function ccLoad(jobId, force){
-  var it = itemById(jobId), id = it ? (it.ccId || ccIdOf(it.raw)) : '';
-  if (!id) return Promise.resolve([]);
+  var it = itemById(jobId), ids = it ? (it.ccIds && it.ccIds.length ? it.ccIds : [it.ccId || ccIdOf(it.raw)].filter(Boolean)) : [];
+  if (!ids.length || !shown()) return Promise.resolve([]);   /* patch PHOTOLINK: only while GrayCo Photos is open */
   /* patch CCSYNC (photos): the key's state not known yet on this page → ask once, then load (it used to give up silently) */
   if (!ccOn()) {
     if (ccAsked[jobId] || typeof window._gcCCCheckStatus !== 'function') return Promise.resolve([]);
@@ -126476,22 +126523,27 @@ function ccLoad(jobId, force){
     return Promise.resolve(window._gcCCCheckStatus(fresh)).then(function(){ return ccOn() ? ccLoad(jobId, force) : []; }, function(){ return []; });
   }
   var c = ccCache[jobId];
-  if (c && !force && Date.now() - c.at < 5 * 60e3) return Promise.resolve(c.list);
   if (ccBusy[jobId]) return ccBusy[jobId];
+  if (c && !c.partial && !force && Date.now() - c.at < 5 * 60e3) return Promise.resolve(c.list);
+  var sig = ccSignal(), got = [];
+  /* patch PHOTOLINK: what has come in so far is on screen at once (a big job used to wait for every page) */
+  function show(l){ got = got.concat(l.map(function(ph){ return ccMap(jobId, ph); }).filter(Boolean)); ccCache[jobId] = { at: Date.now(), partial: true, list: got.slice().sort(function(a, b){ return a.at < b.at ? 1 : -1; }) }; emit('cc'); }
   /* the CompanyCam proxy (patch CCX): the key stays on the server, never in this browser */
-  function page(n, acc){
-    return window.fetch(FN_CC + '?proxy=api&raw=1&per_page=100&page=' + n + '&endpoint=' + encodeURIComponent('projects/' + id + '/photos'), { headers: { 'x-gc-cc': '1' } }).then(function(r){
+  function page(id, n, acc){
+    if (sig && sig.aborted) return Promise.resolve(acc);
+    return window.fetch(FN_CC + '?proxy=api&raw=1&per_page=50&page=' + n + '&endpoint=' + encodeURIComponent('projects/' + id + '/photos'), { headers: { 'x-gc-cc': '1' }, signal: sig }).then(function(r){
       if (!r.ok) { ccErr[jobId] = 'CompanyCam photos answered ' + r.status; return null; }
       return r.json().catch(function(){ ccErr[jobId] = 'CompanyCam photos: unreadable answer'; return null; });
     }, function(){ ccErr[jobId] = 'Could not reach the server'; return null; }).then(function(j){
       if (j && !Array.isArray(j)) j = j.photos || j.data || j.results || j.items || null;   /* patch CCSYNC (photos): a wrapped list */
-      var l = Array.isArray(j) ? j : []; acc = acc.concat(l);
-      return l.length >= 100 && n < 10 ? page(n + 1, acc) : acc;
-    });
+      var l = Array.isArray(j) ? j : []; acc = acc.concat(l); if (l.length) show(l);
+      return l.length >= 50 && n < 20 ? page(id, n + 1, acc) : acc;   /* 50 a page: the first ones show quickly */
+    }).then(null, function(){ return acc; });
   }
-  ccErr[jobId] = ''; ccBusy[jobId] = page(1, []).then(function(j){
-    var list = (Array.isArray(j) ? j : []).map(function(ph){ return ccMap(jobId, ph); }).filter(Boolean)
+  ccErr[jobId] = ''; ccBusy[jobId] = Promise.all(ids.map(function(id){ return page(id, 1, []); })).then(function(parts){
+    var seenP = {}, list = [].concat.apply([], parts).filter(function(ph){ if (!ph || seenP[ph.id]) return false; seenP[ph.id] = 1; return true; }).map(function(ph){ return ccMap(jobId, ph); }).filter(Boolean)
       .sort(function(a, b){ return a.at < b.at ? 1 : -1; });
+    if (sig && sig.aborted) { delete ccBusy[jobId]; delete ccCache[jobId]; return list; }
     if (!ccErr[jobId] || list.length) ccCache[jobId] = { at: Date.now(), list: list };   /* a failed read is tried again next time, not remembered as "no photos" */
     else { try { console.warn('[GC] CompanyCam photos for ' + jobId + ': ' + ccErr[jobId]); } catch (e) {} }
     window._gcCCPhotoErr = function(id){ return ccErr[id] || ''; };
@@ -126503,12 +126555,21 @@ function ccLoad(jobId, force){
 /* CompanyCam projects that are not a CRM job yet (patch I files 2026+ ones as PRJcc_<id>) */
 var ccExtra = {};
 function ccProjects(){ var c = jGet('gcu_ccprojects', null); return c && Array.isArray(c.list) ? c.list : []; }
+var ccProjMap = null;
+function ccProj(id){ if (!ccProjMap) { ccProjMap = {}; ccProjects().forEach(function(c){ if (c && c.id) ccProjMap[c.id] = c; }); } return ccProjMap[id] || null; }
+/* patch PHOTOLINK: a job card's cover + count before its photos were read: from its photo projects in the project list */
+function ccCover(it){
+  var ids = (it && it.ccIds) || [], n = 0, th = '', any = false;
+  ids.forEach(function(id){ var c = ccProj(id); if (!c) return; if (c.photos != null) { any = true; n += c.photos; } if (!th && c.thumb) th = c.thumb; });
+  return { n: any ? n : 0, cover: th ? { id: 'ccc_' + it.id, source: 'companycam', thumbUrl: th, fullUrl: th, at: '', by: '' } : null };
+}
 function ccProjectsRefresh(force){
-  if (!ccOn() || !online()) return;
+  if (!ccOn() || !online() || !shown()) return;   /* patch PHOTOLINK: only while open */
   var c = jGet('gcu_ccprojects', null); if (!force && c && Date.now() - c.at < 30 * 60e3) return;
-  window.fetch(FN_CC + '?proxy=recent&days=365', { headers: { 'x-gc-cc': '1' } }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
+  window.fetch(FN_CC + '?proxy=recent&days=365', { headers: { 'x-gc-cc': '1' }, signal: ccSignal() }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
     if (!j || !Array.isArray(j.projects)) return;
-    jSet('gcu_ccprojects', { at: Date.now(), list: j.projects.slice(0, 400).map(function(p){ return { id: s(p.id), name: s(p.name), address: s(p.address), status: s(p.status), updated: p.updated_at || p.created_at || 0, creator: s(p.creator) }; }) });
+    jSet('gcu_ccprojects', { at: Date.now(), list: j.projects.slice(0, 600).map(function(p){ return { id: s(p.id), name: s(p.name), address: s(p.address), status: s(p.status), updated: p.updated_at || p.created_at || 0, creator: s(p.creator), photos: p.photo_count != null ? +p.photo_count || 0 : null, thumb: httpsOnly(p.thumb) }; }) });   /* patch PHOTOLINK: + cover, count */
+    ccProjMap = null;
     itemsMemo = null; emit('cc');
   }).catch(function(){});
 }
@@ -126535,31 +126596,34 @@ function items(){
   var P = crm().projects, Lds = leadsList();
   var sig = arr(P).length + '|' + arr(Lds).length + '|' + ccProjects().length + '|' + Object.keys(ccExtra).length;
   if (itemsMemo && P === memoKeyP && Lds === memoKeyL && sig === memoSig && Date.now() - memoAt < 3000) return itemsMemo;
-  var out = [], have = {}, ccHave = {};
+  var out = [], have = {}, ccHave = {}, fromLead = {};
   arr(P).forEach(function(p){
+    if (p && (p.leadId || p.fromLeadId)) fromLead[String(p.leadId || p.fromLeadId)] = 1;   /* patch PHOTOLINK: one pass, not one per lead */
     if (excluded(p) || !p.id || !s(p.name)) return;
     have[p.id] = 1;
-    var cc = ccIdOf(p); if (cc) ccHave[cc] = 1;
+    var ccs = ccIdsOf(p), cc = ccs[0] || ''; ccs.forEach(function(x){ ccHave[x] = 1; });
     out.push({ id: String(p.id), kind: 'job', name: s(p.name), address: s(p.address || p.jobAddress), client: s(p.client || p.customer), pm: s(p.pm || p.projectManager),
-      po: s(p.po || p.autoPO), section: sectionOf(p), status: s(p.status), ccId: cc, created: s(p.createdAt || p.created), raw: p });
+      po: s(p.po || p.autoPO), section: sectionOf(p), status: s(p.status), ccId: cc, ccIds: ccs, created: s(p.createdAt || p.created), raw: p });
   });
   arr(Lds).forEach(function(l){
     if (!l || !l.id || excluded(l)) return;
     if (/won|convert|closed|job created/i.test(s(l.status) + ' ' + s(l.stage))) return;
     if (l.fromProjectId && have[l.fromProjectId]) return;
-    if (arr(P).some(function(p){ return p && String(p.leadId || p.fromLeadId || '') === String(l.id); })) return;
+    if (fromLead[String(l.id)]) return;
     out.push({ id: String(l.id), kind: 'lead', name: s(l.name || l.client || l.company || 'Lead'), address: s(l.address), client: s(l.name), pm: s(l.assignedTo || l.owner || l.pm),
       section: 'Leads', status: s(l.stage || l.status || 'New lead'), created: s(l.receivedAt || l.createdAt || l.date), raw: l });
   });
   ccProjects().concat(Object.keys(ccExtra).map(function(k){ return ccExtra[k]; })).forEach(function(c){
     if (!c.id || ccHave[c.id] || have['PRJcc_' + c.id]) return; ccHave[c.id] = 1;
-    out.push({ id: 'cc:' + c.id, kind: 'cc', name: c.name || 'CompanyCam project', address: c.address, client: '', pm: c.creator, ccId: c.id,
+    out.push({ id: 'cc:' + c.id, kind: 'cc', name: c.name || 'CompanyCam project', address: c.address, client: '', pm: c.creator, ccId: c.id, ccIds: [c.id],
       section: /archiv|complete/i.test(c.status) ? 'Completed' : 'Active', status: 'CompanyCam', created: c.updated ? new Date((+c.updated < 1e12 ? +c.updated * 1000 : +c.updated)).toISOString() : '', raw: c });
   });
   itemsMemo = out; memoKeyP = P; memoKeyL = Lds; memoSig = sig; memoAt = Date.now();
+  itemsMap = null;
   return out;
 }
-function itemById(id){ id = String(id); return items().find(function(x){ return x.id === id; }) || null; }
+var itemsMap = null, itemsMapOf = null;
+function itemById(id){ id = String(id); var l = items(); if (itemsMapOf !== l || !itemsMap) { itemsMap = {}; l.forEach(function(x){ itemsMap[x.id] = x; }); itemsMapOf = l; } return itemsMap[id] || null; }
 
 /* the stage a job is at (the same steps the customer portal shows) */
 function stageOf(it){
@@ -126800,7 +126864,7 @@ function rtConnect(){
     rt.channel = rt.client.channel('gc-photos-live');
     rt.channel.on('postgres_changes', { event: '*', schema: 'public', table: 'gc_kv', filter: 'key=in.(' + KEY_PH + ',' + KEY_CH + ')' }, function(ev){
       var k = ev && (ev.new || ev.record || {}).key;
-      if (k === KEY_CH) CH.pull(true); else if (k === KEY_PH) PH.pull(true); else { CH.pull(true); PH.pull(true); }
+      if (k === KEY_CH) CH.pull(true); else if (k === KEY_PH) { if (shown()) PH.pull(true); } else { CH.pull(true); if (shown()) PH.pull(true); }
     });
     rt.channel.subscribe(function(st){ rt.ok = st === 'SUBSCRIBED'; });
     return true;
@@ -127072,8 +127136,8 @@ function matches(it, q, idx){
   if (hay.indexOf(q) >= 0) return true;
   return (idx[it.id] || []).slice(0, 60).some(function(r){ return low(r.by).indexOf(q) >= 0; });
 }
-function lastOf(it, list){
-  var r = list && list[0]; var m = msgs(threadJob(it.id)).slice(-1)[0];
+function lastOf(it, list, lm){
+  var r = list && list[0]; var m = lm ? lm[threadJob(it.id)] : msgs(threadJob(it.id)).slice(-1)[0];   /* patch PHOTOLINK: lm = the last message per thread */
   var best = r ? { by: r.by, at: r.addedAt && r.source !== 'companycam' ? r.addedAt : r.at } : null;
   if (m && (!best || s(m.at) > s(best.at))) best = { by: m.by, at: m.at };
   if (!best && it.created) best = { by: it.kind === 'lead' ? 'New lead' : '', at: it.created };
@@ -127131,12 +127195,12 @@ function pvGreeting(){ var h = new Date().getHours(); return (h < 12 ? 'Good mor
 
 /* newest photos across all projects (one fetch, cached 5 min); a photo is kept only when its project is one this person can see */
 function pvFeedLoad(){
-  if (!ccOn() || !online() || ccFeed.busy || Date.now() - ccFeed.at < 5 * 60e3) return;
+  if (!ccOn() || !online() || !shown() || ccFeed.busy || Date.now() - ccFeed.at < 5 * 60e3) return;
   ccFeed.busy = true; ccFeed.at = Date.now();
-  window.fetch(FN_CC + '?proxy=api&raw=1&per_page=40&endpoint=photos', { headers: { 'x-gc-cc': '1' } }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
+  window.fetch(FN_CC + '?proxy=api&raw=1&per_page=40&endpoint=photos', { headers: { 'x-gc-cc': '1' }, signal: ccSignal() }).then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; }).then(function(j){
     if (j && !Array.isArray(j)) j = j.photos || j.data || j.results || j.items || null;
     if (!Array.isArray(j)) return;
-    var byCc = {}; items().forEach(function(it){ if (it.ccId) byCc[String(it.ccId)] = it.id; });
+    var byCc = {}; items().forEach(function(it){ (it.ccIds || (it.ccId ? [it.ccId] : [])).forEach(function(x){ if (!byCc[String(x)] || it.kind === 'job') byCc[String(x)] = it.id; }); });   /* patch PHOTOLINK */
     var list = [], map = {};
     j.forEach(function(ph){ var jid = byCc[String(ph.project_id || (ph.project && ph.project.id) || '')]; if (!jid) return; var r = ccMap(jid, ph); if (r) { list.push(r); map[r.id] = r; } });
     ccFeed.list = list; ccFeed.map = map; pvVer++; emit('cc');
@@ -127155,7 +127219,8 @@ function pvData(){
   });
   ccFeed.list.forEach(function(r){ if (ids[r.jobId] && !seen[r.id]) { seen[r.id] = 1; feed.push(r); } });
   feed.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : s(a.at) > s(b.at) ? -1 : 0; });
-  its.forEach(function(it){ last[it.id] = lastOf(it, idx[it.id]); });
+  var lm = {}; CH.all().forEach(function(m){ if (m && m.deleted !== true && m.thread && (!lm[m.thread] || s(m.at) >= s(lm[m.thread].at))) lm[m.thread] = m; });
+  its.forEach(function(it){ last[it.id] = lastOf(it, idx[it.id], lm); });
   pvMemo = { k: k, ids: ids, items: its, idx: idx, feed: feed.slice(0, 240), mine: mine, last: last };
   return pvMemo;
 }
@@ -127174,6 +127239,7 @@ function pvJump(d){
 function pvImg(r){ var t = imgTag(r); return t.indexOf('loading=') < 0 ? t.replace('<img ', '<img loading="lazy" ') : t; }
 function pvCard(it, d, jump){
   var list = d.idx[it.id] || [], cover = list[0], last = d.last[it.id], cnt = list.length || (it.kind === 'cc' && it.raw && it.raw.photo_count) || 0;
+  if (!list.length || !(ccCache[it.id] && !ccCache[it.id].partial)) { var cv = ccCover(it); if (!cover && cv.cover) cover = cv.cover; if (cv.n > cnt) cnt = cv.n; }   /* patch PHOTOLINK */
   var when = last ? pvAgo(last.at) : '';
   var un = (!jump && it.kind !== 'cc') ? unreadIn(threadJob(it.id)) : 0;
   return '<button class="pv-card" data-a="job" data-id="' + esc(it.id) + '" data-sec="' + esc(it.section) + '">' +
@@ -127234,11 +127300,79 @@ function pvFeedAll(d){
     (shown.length ? '<div class="pv-fgrid">' + shown.map(function(r){ return pvTile(r, 'feed'); }).join('') + '</div>' + (d.feed.length > shown.length ? '<button class="pv-more" data-a="fmore">Load more</button>' : '')
       : pvEmpty('No photos yet', 'Photos from every project show up here as soon as they are taken.', '<button class="pv-cta" data-a="camera">Take a photo</button>')) + '</div></div>';
 }
+/* patch PHOTOLINK: the photo projects the 15-minute sync could not tie to a job for sure (gc_kv gc_cc_review via ?proxy=sync) */
+var LK = { list: null, at: 0, busy: false, done: {}, msg: '' };
+function linkAllowed(){ if (isOffice()) return true; try { return !!(window._gcRP && typeof window._gcRP.role === 'function' && /office|admin|owner/i.test(s(window._gcRP.role()))); } catch (e) { return false; } }
+function linkLoad(force){
+  if (!shown() || !linkAllowed() || LK.busy || (!force && LK.at && Date.now() - LK.at < 5 * 60e3)) return;
+  LK.busy = true;
+  window.fetch(FN_CC + '?proxy=sync', { headers: { 'x-gc-cc': '1' }, cache: 'no-store', signal: ccSignal() }).then(function(r){ return r.ok && !(window._gcCCGated && window._gcCCGated(r)) ? r.json() : null; }).then(function(j){
+    if (j && typeof j === 'object' && !Array.isArray(j)) { LK.list = arr(j.review).filter(function(x){ return x && x.cc && x.kind !== 'pm'; }); LK.at = Date.now(); try { localStorage.setItem('gc_ccsync_last', JSON.stringify({ at: Date.now(), data: j })); } catch (e) {} emit('cc'); }
+  }).catch(function(){}).then(function(){ LK.busy = false; });
+}
+function linkJobsOf(x){
+  var out = arr(x.jobs).filter(function(j){ return j && j.id && itemById(j.id); });
+  if (!out.length) {   /* an older entry without its jobs: the jobs at the same address, here */
+    var a = low(x.address).split(',')[0].replace(/[^a-z0-9]/g, '');
+    if (a.length >= 6) items().forEach(function(it){ if (it.kind === 'job' && low(it.address).split(',')[0].replace(/[^a-z0-9]/g, '') === a) out.push({ id: it.id, name: it.name, address: it.address }); });
+  }
+  return out.slice(0, 5);
+}
+function linkHtml(){
+  if (!linkAllowed() || !LK.list) return '';
+  var l = LK.list.filter(function(x){ return !LK.done[x.cc] && !(x.jobs && x.jobs.length === 0 && x.kind === 'link'); });
+  if (!l.length) return LK.msg ? '<div class="pv-sec"><div class="pv-sub" role="status">' + esc(LK.msg) + '</div></div>' : '';
+  return '<div class="pv-sec" id="pv-link"><div class="pv-h"><h2>Link these photo projects</h2><span class="pv-ct">' + l.length + '</span></div>' +
+    '<div class="pv-sub" style="margin:0 0 8px">Photo projects that look like a job here. Link one and its photos show on that job.</div>' +
+    (LK.msg ? '<div class="pv-sub" role="status" style="margin:0 0 8px;font-weight:700">' + esc(LK.msg) + '</div>' : '') +
+    l.slice(0, 20).map(function(x){
+      var js = linkJobsOf(x);
+      return '<div class="pv-lk" style="border:1px solid #E3E5EE;border-radius:12px;padding:10px 12px;margin:0 0 8px;background:#fff">' +
+        '<div style="font-weight:800">' + esc(x.name || ('Photo project ' + x.cc)) + '</div>' +
+        '<div class="pv-sub">' + esc([x.address, x.creator ? 'by ' + x.creator : '', x.created].filter(Boolean).join(' · ')) + '</div>' +
+        (js.length ? js.map(function(j){
+          return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px"><span style="flex:1 1 180px;min-width:0">Job: <b>' + esc(j.name || j.id) + '</b>' + (j.address ? ' <span class="pv-sub">' + esc(j.address) + '</span>' : '') + '</span>' +
+            '<button class="pv-cta" style="min-height:40px;padding:0 16px" data-a="lklink" data-v="' + esc(x.cc) + '" data-id="' + esc(j.id) + '">Link</button>' +
+            '<button class="pv-link" style="min-height:40px;padding:0 12px" data-a="lkno" data-v="' + esc(x.cc) + '" data-id="' + esc(j.id) + '">Not this job</button></div>';
+        }).join('') : '<div class="pv-sub" style="margin-top:6px">No job here looks like it.</div>') +
+        '</div>';
+    }).join('') + '</div>';
+}
+/* Link: the job gets this photo project at once on this computer (never replacing its link: beside it), the server list drops it */
+function linkSave(pid, cc){
+  var now = nowIso();
+  function put(p){
+    var o = Object.assign({}, p), have = ccIdsOf(p);
+    if (have.indexOf(cc) >= 0) return p;
+    if (!ccIdOf(Object.assign({}, p, { id: '' }))) Object.assign(o, { ccProjectId: cc, ccamId: cc, ccamUrl: 'https://app.companycam.com/projects/' + cc, companyCamUrl: 'https://app.companycam.com/projects/' + cc });
+    else o.ccMoreIds = arr(p.ccMoreIds).concat([cc]);
+    return Object.assign(o, { ccLinkedBy: myName(), ccLinkedAt: now, savedAt: now, updatedAt: now });
+  }
+  try { window.__GC_MANUAL_SAVE__ = true; } catch (e) {}
+  try { if (window._setProjects) window._setProjects(function(prev){ return Array.isArray(prev) ? prev.map(function(p){ return p && String(p.id) === String(pid) ? put(p) : p; }) : prev; }); } catch (e) {}
+  return Promise.resolve(typeof window._gcProjectsRaw === 'function' ? window._gcProjectsRaw() : (window.idbGet ? window.idbGet('projects') : null)).then(function(all){
+    if (!Array.isArray(all)) return;
+    var next = all.map(function(p){ return p && String(p.id) === String(pid) ? put(p) : p; });
+    return Promise.resolve(window.idbSet ? window.idbSet('projects', next) : null).then(function(){ try { if (window._supaUpsert) window._supaUpsert('projects', next); } catch (e) {} });
+  }).catch(function(){}).then(function(){ later(function(){ try { window.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1500); itemsMemo = null; delete ccCache[pid]; });
+}
+function linkAct(act, cc, jobId){
+  if (!cc || !jobId) return;
+  LK.done[cc] = act === 'lklink' ? 1 : LK.done[cc];
+  var it = itemById(jobId);
+  var w = act === 'lklink' ? linkSave(jobId, cc) : Promise.resolve();
+  if (act === 'lkno') { LK.list = arr(LK.list).map(function(x){ return x.cc === cc ? Object.assign({}, x, { jobs: linkJobsOf(x).filter(function(j){ return String(j.id) !== String(jobId); }) }) : x; }); }
+  LK.msg = act === 'lklink' ? 'Linked to ' + (it ? it.name : jobId) + ' — its photos show on that job now.' : 'OK — that project will not be suggested for ' + (it ? it.name : jobId) + ' again.';
+  renderMain();
+  w.then(function(){ return window.fetch(FN_CC + '?proxy=review', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gc-cc': '1' }, body: JSON.stringify({ cc: cc, act: act === 'lklink' ? 'link' : 'notthis', job: String(jobId), kind: '' }) }); })
+    .then(function(r){ return r && r.json ? r.json() : null; }).then(function(j){ if (!j || !j.ok) toast(act === 'lklink' ? 'Linked here; the server list updates on the next sync.' : 'Saved here; the server list could not be updated — try again later.'); }, function(){})
+    .then(function(){ emit('cc'); });
+}
 function vProjects(){
   if (!pvReady || !Array.isArray(crm().projects)) return pvSkeleton();
   var d = pvData(), q = low(S.q);
   if (S.feedAll && !q) return pvFeedAll(d);
-  var h = '<div class="gcu-pad pv">';
+  var h = '<div class="gcu-pad pv">' + (q ? '' : linkHtml());
   if (!q) {
     var jump = pvJump(d);
     h += '<h1 class="pv-hi">' + esc(pvGreeting()) + '<small>Here is what is happening across your projects.</small></h1>';
@@ -128130,6 +128264,7 @@ function onClick(ev){
     case 'newproj': if (window._gcSelfNewJob) window._gcSelfNewJob({ via: 'GrayCo Photos', done: function(j){ itemsMemo = null; setTimeout(function(){ itemsMemo = null; go('job', { jobId: j.id, jobTab: 'photos', filter: 'All', sel: null }); }, 700); } }); return;   /* patch CC2 */
     case 'sec': S.section = v; S.more = 30; S.pm = 24; setHTML(root.querySelector('.gcu-hd'), headHtml()); bindHead(); return renderMain();
     case 'more': S.more += 30; S.pm += 24; return renderMain();
+    case 'lklink': case 'lkno': return linkAct(a, v, id);   /* patch PHOTOLINK */
     case 'fmore': S.fm += 40; return renderMain();
     case 'feedall': S.feedAll = true; S.fm = 40; renderMain(); if (mainEl) mainEl.scrollTop = 0; return;
     case 'feedback': S.feedAll = false; renderMain(); if (mainEl) mainEl.scrollTop = 0; return;
@@ -128300,7 +128435,22 @@ function shown(){ return !!(root && root.isConnected); }
 function teardown(){
   if (stream) { try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch (e) {} stream = null; }
   if (mapObj) { try { mapObj.remove(); } catch (e) {} mapObj = null; mapLayer = null; }
+  /* patch PHOTOLINK: leaving stops everything photo: reads in flight, the image queue, the live channel; the lists go */
+  ccStopAll();
+  if (io) { try { io.disconnect(); } catch (e) {} }
+  if (root) { try { Array.prototype.forEach.call(root.querySelectorAll('img'), function(im){ try { im.removeAttribute('src'); im.src = ''; } catch (e) {} }); } catch (e) {} }
   if (root) { try { root.remove(); } catch (e) {} } root = null; mainEl = null; io = null; imgQ = [];
+  Object.keys(ccCache).forEach(function(k){ delete ccCache[k]; }); Object.keys(ccBusy).forEach(function(k){ delete ccBusy[k]; });
+  ccFeed.list = []; ccFeed.map = {}; ccFeed.at = 0; ccFeed.busy = false; ccProjMap = null; pvMemo = null; pvLM = { k: '', v: null }; itemsMemo = null; itemsMap = null;
+  Object.keys(localUrls).forEach(function(k){ try { URL.revokeObjectURL(localUrls[k]); } catch (e) {} delete localUrls[k]; });
+  LK.list = null; LK.at = 0; LK.busy = false; LK.msg = '';
+  try { if (rt.client && rt.channel) rt.client.removeChannel(rt.channel); } catch (e) {} rt.channel = null; rt.ok = false;
+}
+/* opened: ask the server about CompanyCam now (never before), then the project list, the feed, the link list */
+function ccWake(){
+  if (!shown()) return;
+  var f = typeof window._gcCCCheckStatus === 'function' ? window._gcCCCheckStatus(false) : null;
+  Promise.resolve(f).then(function(){ if (!shown()) return; ccProjectsRefresh(); pvFeedLoad(); linkLoad(); if (S.screen === 'job' && S.jobId) ccLoad(S.jobId); }, function(){});
 }
 var tabHost = null;
 function build(host){
@@ -128329,7 +128479,7 @@ function open(jobId, opts){
   else if (!inner()) S.screen = S.screen || 'projects';
   else S.screen = 'projects';
   pvBoot(); render();
-  pullSoon(300); ccProjectsRefresh(); pvFeedLoad(); rtConnect();
+  pullSoon(300); ccWake(); rtConnect();   /* patch PHOTOLINK */
   return true;
 }
 function close(){
@@ -128352,7 +128502,7 @@ function mountTab(host){
   build(host); S.tab = true;
   PH.load(); CH.load();
   if (fresh) { S.screen = 'projects'; S.from = 'projects'; S.jobId = ''; }
-  pvBoot(); render(); pullSoon(300); ccProjectsRefresh(); pvFeedLoad(); rtConnect();
+  pvBoot(); render(); pullSoon(300); ccWake(); rtConnect();   /* patch PHOTOLINK */
   return true;
 }
 function tabGone(){ if (S.tab && (!root || !root.isConnected || !tabHost || !tabHost.isConnected)) { S.tab = false; tabHost = null; if (root && !S.open) teardown(); } }
@@ -128362,7 +128512,7 @@ function openRef(ref, name, addr, opts){
   if (itemById(r) && itemById(r).kind !== 'cc') return open(r, opts);
   var cc = ccIdFromAny(r);
   if (cc) {
-    var job = items().find(function(it){ return it.kind === 'job' && it.ccId === cc; });
+    var job = items().find(function(it){ return it.kind === 'job' && (it.ccId === cc || (it.ccIds || []).indexOf(cc) >= 0); });   /* patch PHOTOLINK */
     if (job) return open(job.id, opts);
     if (!itemById('cc:' + cc)) { ccExtra[cc] = { id: cc, name: s(name) || 'CompanyCam project', address: s(addr), status: 'active', updated: Date.now() / 1000, creator: '' }; itemsMemo = null; }
     return open('cc:' + cc, opts);
@@ -128489,14 +128639,14 @@ if (LAUNCH) launchWhenReady();
 
 /* ══ TIMERS (cheap; nothing runs while the page is hidden) ═══════════════════════════════════ */
 var pullT = null;
-function pullSoon(ms){ if (pullT) clearTimeout(pullT); pullT = later(function(){ pullT = null; PH.pull(); CH.pull(); }, ms || 0); }
+function pullSoon(ms){ if (pullT) clearTimeout(pullT); pullT = later(function(){ pullT = null; if (shown()) PH.pull(); CH.pull(); }, ms || 0); }   /* patch PHOTOLINK: photos only while open */
 var tick = 0, lastP = null, lastPn = -1;
 every(function(){
   if (document.hidden) return;
   tick++;
   var vis = shown(), chatOpen = vis && (S.screen === 'dm' || S.screen === 'photo' || (S.screen === 'job' && S.jobTab === 'chat'));
   var period = rt.ok ? (vis ? 12 : 60) : (chatOpen ? 1 : vis ? 6 : 24);   /* × 5 s */
-  if (tick % period === 0) { CH.pull(); if (tick % (period * 2) === 0 || vis) PH.pull(); }
+  if (tick % period === 0) { CH.pull(); if (vis) PH.pull(); }   /* patch PHOTOLINK: the photo list only while open */
   if (vis) { var P0 = crm().projects; if (P0 !== lastP || arr(P0).length !== lastPn) { lastP = P0; lastPn = arr(P0).length; emit('any'); } }   /* jobs changed in the CRM → redraw */
   if (vis && tick % 6 === 0) { ccProjectsRefresh(); if (S.screen === 'job' && S.jobId) ccLoad(S.jobId); }
   if (tick % 12 === 0) { stageWatch(); if (!rt.channel && vis) rtConnect(); }
@@ -128511,7 +128661,7 @@ function hookEntries(){ wrapFn('_gcJobPicker', pickerAfter); wrapFn('_gcJobDashb
 hookEntries(); later(hookEntries, 3000); later(hookEntries, 16000); later(hookEntries, 40000);
 PH.load(); CH.load();
 iall('queue').then(function(a){ qn = a.length; a.forEach(function(it){ if (it.kind === 'annot' && it.blob) annotPending[it.recId] = 1; }); if (a.length) kick(2500); emit('queue'); }).catch(function(){});
-later(function(){ PH.pull(); CH.pull(); stageWatch(); }, 6000);
+later(function(){ CH.pull(); stageWatch(); }, 6000);   /* patch PHOTOLINK: no photo list read at sign-in */
 
 window._gcPhotoStats = function(jobId){ return stats(String(jobId)); };
 window._gcPhotos = {
@@ -168768,7 +168918,8 @@ function load(force){
   if (!force && S.at && Date.now() - S.at < 10 * 60e3) return Promise.resolve(S);
   S.busy = W.fetch(FN + '?proxy=sync', { headers: { 'x-gc-cc': '1' }, cache: 'no-store' }).then(function(r){
     return r.text().then(function(t){ var j = null; try { j = JSON.parse(t); } catch (e) {}
-      if (r.ok && j && typeof j === 'object') { S.data = j; S.err = ''; } else S.err = 'The server answered ' + r.status + '.'; });
+      if (W._gcCCGated && W._gcCCGated(r)) return;   /* patch PHOTOLINK: the gate's empty answer is not the server's */
+      if (r.ok && j && typeof j === 'object' && !Array.isArray(j)) { S.data = j; S.err = ''; try { localStorage.setItem('gc_ccsync_last', JSON.stringify({ at: Date.now(), data: j })); } catch (e) {} } else S.err = 'The server answered ' + r.status + '.'; });
   }, function(){ S.err = 'Could not reach the server.'; }).then(function(){ S.at = Date.now(); S.busy = null; try { if (W._gcBustTodoCache) W._gcBustTodoCache(); } catch (e) {} return S; });
   return S.busy;
 }
@@ -168787,7 +168938,7 @@ function runCtl(k){
   if (k === 'docs') { if (I && I.syncDocuments) I.syncDocuments(); return; }
   if (k === 'notes') { if (W._gcAutoReadAllCCNotes) W._gcAutoReadAllCCNotes(function(m){ if (st) st.textContent = m; }); return; }
 }
-var KIND = { match: 'Looks like an existing job', ask: 'Same address as a finished job', pm: 'Given to the Senior PM' };
+var KIND = { match: 'Looks like an existing job', ask: 'Same address as a finished job', pm: 'Given to the Senior PM', link: 'Which job is it? (Link it on 📸 GrayCo Photos)' };   /* patch PHOTOLINK */
 function plainLine(){
   var d = S.data, h = d && d.health;
   if (!d) { try { if (W._gcCCSync && typeof W._gcCCSync.text === 'function') { var t = W._gcCCSync.text(); t = t && typeof t === 'object' ? t.text : t; if (t) return String(t); } } catch (e) {} return S.err || 'Checking…'; }
@@ -168884,7 +169035,7 @@ W._gcCCSyncPanel = open;
 function addSection(){
   if (typeof W._gcAdmAddSection !== 'function') return false;
   W._gcAdmAddSection({ id: 'ccsync', after: 'syncq', ic: '📸', t: 'CompanyCam sync status', d: 'Last sync, what came in, what waits for a person · ⟳ Sync all now · Test / Pull Documents / Read Job Notes',
-    render: function(box){ ADM = box; box.onclick = onClick; box.innerHTML = body(); load(true).then(paint); },
+    render: function(box){ ADM = box; box.setAttribute('data-gc-cc-screen', '1'); box.onclick = onClick; box.innerHTML = body(); load(true).then(paint); },   /* patch PHOTOLINK: a photo screen */
     count: function(){ var n = review().length; return n ? n + ' to review' : ''; } });
   return true;
 }
@@ -168918,7 +169069,8 @@ try {
     var w = function(){
       var out = []; try { out = f.apply(this, arguments) || []; } catch (e) {}
       if (allowed()) {
-        load(false);
+        /* patch PHOTOLINK: no CompanyCam fetch from the To-Do — the last answer seen here (status window / GrayCo Photos) */
+        if (!S.data) { try { var lc = JSON.parse(localStorage.getItem('gc_ccsync_last') || 'null'); if (lc && lc.data && typeof lc.data === 'object' && !Array.isArray(lc.data)) S.data = lc.data; } catch (e) {} }
         var rv = review(), d = S.data, h = d && d.health;
         if (d && (!d.tokenSet || d.serviceKey === false || !h || h.error || h.skipped || (h.at && Date.now() - Date.parse(h.at) > 2 * 3600e3)))
           out.push({ id: 'ccsync_broken', cat: 'CompanyCam', label: '📸 CompanyCam sync isn\'t working', sub: plainLine(), color: '#dc2626', action: open });

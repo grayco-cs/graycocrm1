@@ -213,15 +213,27 @@ the jobs it could be, and a link to open it in CompanyCam.
 
 ## Other changes
 
-### A new CRM job still gets its CompanyCam project
+### A CRM job and its CompanyCam project (PHOTOLINK, 10/27)
 
-When you add a job in the CRM, the CRM looks for a matching CompanyCam project
-and links it. If there isn't one, it creates the project in CompanyCam. This
-uses the key on Netlify.
+The CRM no longer makes CompanyCam projects from the browser in the
+background. (That made a second, empty project for every new CRM job, and a
+mismatch in the server's answer meant the link was never saved, so the job's
+photos never showed.)
 
-- It only does this for jobs added in the last 14 days. It never goes through
-  old jobs.
-- It runs about 2 minutes after a job is added, and during each 30-minute check.
+Instead, the 15-minute server sync ties each 2026 CompanyCam project to the
+CRM job at the same address (house number + street name; "Street"/"St",
+commas, city and ZIP written any way) or with the same name:
+
+- A job's existing link is never replaced. A second project at the same place
+  is added beside it, and the job shows photos from both.
+- Projects made before 1 January 2026 are never linked.
+- If it could be two jobs, has the same name but a different address, or
+  anything else is unsure, it goes on **📸 GrayCo Photos → "Link these photo
+  projects"** (admin and office). Tap **Link** and its photos show on that job
+  at once. Tap **Not this job** and that pair is never suggested again.
+
+Photos (and every CompanyCam call from the browser) load only while GrayCo
+Photos or a job's photos are open. Leaving the screen stops them.
 
 ### The old importers are off
 
