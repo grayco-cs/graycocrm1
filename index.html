@@ -77520,7 +77520,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   /*PJ*/var _gcLastInput=0; ['pointerdown','keydown','wheel','touchstart'].forEach(function(ev){ try{ window.addEventListener(ev,function(){ _gcLastInput=window.__gcLastInput=Date.now(); },{capture:true,passive:true}); }catch(e){} });
   window._gcMaybeMorningGreeting = function(){
     if(_greetShownThisSession) return;         // never twice in one page load
-    /* patch NOGREETFIELD */ try{ if(document.documentElement.classList.contains('_fieldmode')) return; }catch(e){}
+    /* patch NOGREETFIELD */ return;   /* owner 10/27: no greeting pop-up anywhere (desktop or field) — the To-Do button shows the count */
     var s=state();
     if(s.greeted) return;
     if(typeof isAdminLike==='function' && !isAdminLike()) return;
@@ -77557,6 +77557,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var done=false; try{ done=(_greetShownThisSession||state().greeted); }catch(e){}
       if(done || tries>15) clearInterval(iv);
     }, 15000);
+    clearInterval(iv);   /* patch NOGREETFIELD: greeting removed, so no 15 s checks */
   })();
 
   console.log('[GC] Fresh daily office to-do ready.');
