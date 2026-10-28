@@ -10,6 +10,9 @@
 //   POST {action:'photos'}  → that ONE job's photos the customer may see (patch U2): GrayCo Photos marked
 //                             "Customer sees it" (gc_kv gc_photos) + its CompanyCam photos (server key) unless
 //                             a person hid one — signed links that expire. Never a CompanyCam link.
+//   POST {action:'crew', op:'state'|'request'} → patch SUBCONTACT: the "Your crew" card — ONLY the subs the PM
+//                             approved for this job, only company / trade / the shared fields (_lib/subcontact.js);
+//                             "Request your trade contacts" → ✅ Approvals (the PM; the office after 24 h)
 //   A link code that is unknown or turned off gets the SAME answer every time:
 //   "This link is not active — call GrayCo 901-585-0944". Per-address rate limit.
 //
@@ -1284,7 +1287,8 @@ async function officeTodo(id, label, note){
 /* ── patch AP2: the invoice PDF (portal + e-mail attachment), the invoice e-mail approval, GrayCo News ── */
 function invPdfLib(){ return require('./_lib/invoice-pdf.js'); }
 function newsLib(){ return require('./_lib/news.js'); }
-function mktLib(){ return require('./_lib/mkt.js'); }   /* patch MKT: marketing e-mails, social posts, door hangers */
+function mktLib(){ return require('./_lib/mkt.js'); }
+function subcLib(){ return require('./_lib/subcontact.js'); }   /* patch SUBCONTACT: the customer's "Your crew" card */   /* patch MKT: marketing e-mails, social posts, door hangers */
 function invoiceDoc(data, p, r){
   const users = arr(data.users), customers = arr(data.customers);
   const clientName = s(p.client || p.customer || p.clientName || r.client || r.customer);
@@ -1485,7 +1489,8 @@ async function queueApproval(o){
     to: s(o.to), subject: s(o.subject), html: s(o.html), text: htmlText(o.html), attachments: o.attachments || [], steps: steps, step: steps[0], approvals: [],
     status: 'waiting', createdAt: now, updatedAt: now, meta: o.meta || {} };
   if (o.officeOk === true) item.officeOk = true;   /* patch SOC: the marketing approval stage — the office may approve this one */
-  if (o.mmOk === true) item.mmOk = true;   /* patch MM: the Marketing Manager may approve this one (stage 2+, not flagged, never paid ads) */
+  if (o.mmOk === true) item.mmOk = true;
+  if (o.pmEsc === true) item.pmEsc = true;   /* patch SUBCONTACT: at the PM step 24 h → the office (escalateDue) */   /* patch MM: the Marketing Manager may approve this one (stage 2+, not flagged, never paid ads) */
   if (Array.isArray(o.flags) && o.flags.length) item.flags = o.flags.slice(0, 8);
   /* patch ESTIN: every item carries its importance (✅ Approvals sorts urgent first, then the newest) */
   if (!item.priority) item.priority = /^(urgent|high|normal|low)$/.test(s(o.priority)) ? s(o.priority) : 'normal';
@@ -1505,7 +1510,8 @@ async function aqSend(item, now){
     const jp = d && findProject(d, item.jobId), k = jp ? JA.blockedKind(jp, item.kind, jaAdmin(d)) : '';
     if (k) return { ok: false, off: k, error: 'Turned off for this job (⚙ Automations) — not sent. Turn it back on on the job to send it.' };
   }
-  if (s(item.kind) === 'portal_publish') return gateOnApproved(item, now);   /* patch PORTALGATE: approved → it shows in the portal (no e-mail) */
+  if (s(item.kind) === 'portal_publish') return gateOnApproved(item, now);
+  if (s(item.kind) === 'sub_contact') return subcLib().onApproved(exports._core, item, now);   /* patch SUBCONTACT: the "Your crew" card — no e-mail */   /* patch PORTALGATE: approved → it shows in the portal (no e-mail) */
   if (mktLib().isMktKind(item.kind)) return mktLib().onApproved(item);
   if (s(item.kind) === 'bp_notice') return require('./_lib/bp-notice.js').onApproved(item, now);   /* patch SYS2: a bid-job addendum / update to the invited subs */
   if (/^gcp_/.test(s(item.kind))) return require('./_lib/gcp.js').onApproved(item, now);   /* patch GCP: GC pay apps / change orders / company COI / inspection offers */
@@ -1700,8 +1706,12 @@ async function approvalAction(body, who){
   const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
   if (who && who.marketing === true && !mmOk) return { status: 403, out: { ok: false, error: 'This one needs an admin.' } };
   const office = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
-  if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
-  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
+  /* patch APOFFICE (owner 10/28): "anything a PM can approve, the office can approve too" — an item waiting at the PM step is
+     the office's at once as well (approve / don't approve / edit). The office takes the PM's step only: a money / legal paper
+     still goes on to Wesley or Nick afterwards, exactly as after the PM. Whoever acts first wins (the claim below). */
+  const officePm = !admin && !office && !isPm && it0.step === 'pm' && await isOffice(who);
+  if (!admin && !office && !(it0.step === 'pm' && (isPm || officePm))) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + '), the office or an admin can approve this.' } };
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : ((office || officePm) ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
   if (office && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
@@ -1709,7 +1719,8 @@ async function approvalAction(body, who){
     if (!r.ok || !r.result || r.result.status !== 'rejected') return { status: 409, out: { ok: false, error: 'Could not record it — try again.', item: r.result } };
     const m = it0.meta || {};
     if (mktLib().isMktKind(it0.kind)) { try { await mktLib().onRejected(r.result, me); } catch (e) {} }   /* patch MKT */
-    if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }   /* patch PORTALGATE: not approved → never in the portal */
+    if (s(it0.kind) === 'portal_publish' && (it0.meta || {}).gateKey) { try { await gateSet(it0.meta.gateKey, 'rejected', me, clip(body.reason, 100)); } catch (e) {} }
+    if (s(it0.kind) === 'sub_contact') { try { await subcLib().onRejected(exports._core, it0, me); } catch (e) {} }   /* patch SUBCONTACT: nothing is shared */   /* patch PORTALGATE: not approved → never in the portal */
     try {
       if (/final/.test(it0.kind) && m.invoiceId) await patchMail(m.invoiceId, { last_reminder_at: now, last_result: 'rejected' });
       if (it0.kind === 'portal_docs' && m.batch) await fetch(sbUrl() + '/rest/v1/gc_portal_notice?batch_id=eq.' + encodeURIComponent(m.batch), { method: 'PATCH', headers: H({ Prefer: 'return=minimal' }), body: JSON.stringify({ result: 'rejected' }) });
@@ -1747,11 +1758,14 @@ async function approvalAction(body, who){
     return { status: 200, out: { ok: true, saved: true, item: re.result } };
   }
   if (op !== 'approve') return { status: 400, out: { ok: false, error: 'Bad request' } };
+  const subcSel = s(it0.kind) === 'sub_contact' ? subcLib().sanitizeSel(body.share) : null;   /* patch SUBCONTACT: approving = the picker's selection */
+  if (s(it0.kind) === 'sub_contact' && subcLib().selectionProblem(body.share)) return { status: 400, out: { ok: false, pick: true, error: subcLib().selectionProblem(body.share) } };
   const last = admin || office || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
   const claim = 'c' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
   let r = await upd(function(x){
     if (x.status !== 'waiting' && !(x.status === 'sending' && stale)) return false;
     if (edit) applyEdit(x, edit, me);
+    if (subcSel) x.meta = Object.assign({}, x.meta || {}, { share: subcSel });   /* patch SUBCONTACT */
     x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step }, me)]);
     if (last) { x.status = 'sending'; x.claim = claim; }
     else { x.step = x.steps[x.steps.indexOf(x.step) + 1]; if (x.step === 'admin') x.adminSince = now; }   /* patch AP4: the 24 hours start */
@@ -1773,7 +1787,7 @@ async function approvalAction(body, who){
    approve." An item at the ADMIN step (money / legal after the PM, or a job with no PM) that nobody approved or
    rejected within 24 hours of reaching that step is escalated: the office (gc_staff role office, or a CRM user whose
    role says Office) may then approve, edit or not approve it; the admins still can too — whoever acts first wins,
-   and the approval records who, with which role, and when. PM-step items are never escalated. Run every 15 minutes
+   and the approval records who, with which role, and when. PM-step items are not escalated: the office may take them at once (patch APOFFICE). Run every 15 minutes
    (approval-escalate.js) and whenever the CRM shows a list (op "escalate"). On escalation: once, an office to-do,
    a CRM notice for the office and for the admins (gc_kv "gc_appr_notices"), and a phone push to both. ── */
 const ESC_MS = 24 * 3600e3;
@@ -1812,8 +1826,10 @@ async function escalateDue(opts){
     fresh = [];
     l.forEach(function(x){
       if (!x || x.escalated || (opts.only && s(x.id) !== s(opts.only))) return;
-      if (!escalatedOrDue(x, nowMs)) return;
-      x.escalated = { at: at, why: 'Wesley and Nick did not answer in 24 hours' }; x.updatedAt = at; fresh.push(x);
+      const pmDue = x.pmEsc === true && x.status === 'waiting' && x.step === 'pm' && nowMs - Date.parse(x.createdAt || 0) >= ESC_MS;   /* patch SUBCONTACT: the PM did not answer → the office */
+      if (!pmDue && !escalatedOrDue(x, nowMs)) return;
+      if (pmDue) { x.step = 'admin'; x.adminSince = at; }
+      x.escalated = { at: at, why: pmDue ? 'The PM did not answer in 24 hours' : 'Wesley and Nick did not answer in 24 hours' }; x.updatedAt = at; fresh.push(x);
     });
     if (!fresh.length) return null;
     const ids = fresh.map(function(x){ return s(x.id); });
@@ -1826,8 +1842,9 @@ async function escalateDue(opts){
   const office = officeEmails(data), admins = adminEmails(data), notices = [];
   for (const x of fresh) {
     const title = s(x.title) || ((x.kind || '').replace(/_/g, ' ') + ' — ' + s(x.jobName));
-    await officeTodo('appr_esc_' + s(x.id), '⏫ Approve: ' + clip(title, 120), 'Wesley and Nick did not answer in 24 hours. You can approve, edit or not approve it now: ✅ Approvals in To-Do, or the green APPROVE button.');
-    notices.push({ id: 'esc_office_' + s(x.id), to: 'office', itemId: s(x.id), at: at, text: '⏫ For you to approve: ' + clip(title, 120) + ' — Wesley and Nick did not answer in 24 hours.' });
+    const why = s(x.escalated && x.escalated.why) || 'Wesley and Nick did not answer in 24 hours';   /* patch SUBCONTACT */
+    await officeTodo('appr_esc_' + s(x.id), '⏫ Approve: ' + clip(title, 120), why + '. You can approve, edit or not approve it now: ✅ Approvals in To-Do, or the green APPROVE button.');
+    notices.push({ id: 'esc_office_' + s(x.id), to: 'office', itemId: s(x.id), at: at, text: '⏫ For you to approve: ' + clip(title, 120) + ' — ' + why + '.' });
     notices.push({ id: 'esc_admins_' + s(x.id), to: 'admins', itemId: s(x.id), at: at, text: '⏫ Sent to the office after 24h: ' + clip(title, 120) + '. You can still approve it.' });
     await pushTo(office, { title: '⏫ Approval for the office', body: clip(title, 120) + ' — admins didn\'t answer in 24h', tag: 'appr-esc-' + s(x.id) });
     await pushTo(admins, { title: 'Sent to the office after 24h', body: clip(title, 120), tag: 'appr-esc-admin-' + s(x.id) });
@@ -2338,7 +2355,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -2363,6 +2380,10 @@ exports.handler = async function (event) {
         if (s(body.op) === 'scan') return reply(200, headers, await gateScan({ pid: s(body.projectId) }));
         return reply(200, headers, await gateState(s(body.projectId)));
       } catch (e) { return reply(502, headers, { ok: false, error: 'The portal gate hit a problem: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'subshare') {   /* patch SUBCONTACT: the job page's "Share contact with customer" (op get | set) */
+      try { const a = await subcLib().staff(exports._core, body, who); return reply(a.status, headers, a.out); }
+      catch (e) { return reply(500, headers, { ok: false, error: 'The trade contacts hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'approval') {
       try { const a = await approvalAction(body, who); return reply(a.status, headers, a.out); }
@@ -2421,7 +2442,7 @@ exports.handler = async function (event) {
   }
 
   /* PUBLIC */
-  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral') return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew') return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
@@ -2456,6 +2477,10 @@ exports.handler = async function (event) {
     const rr = await require('./_lib/referral.js').portal(data, p, body, { ip: ip });
     return reply(rr.code || 200, headers, rr.body);
   }
+  if (action === 'crew') {   /* patch SUBCONTACT: the "Your crew" card (op state) / "Request your trade contacts" (op request) */
+    try { const cr = await subcLib().portal(exports._core, data, p, body, {}); return reply(cr.code || 200, headers, cr.body); }
+    catch (e) { return reply(503, headers, { ok: false, error: 'We could not load that just now. Please try again, or call GrayCo ' + OFFICE_PHONE + '.' }); }
+  }
   if (action === 'invoice') {   /* patch AP2: one of this job's invoices as a PDF (never a draft, never another job's) */
     const r = listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(body.id) && invOfProject(x, p) && isCustomerInvoice(x); });
     if (!r) return reply(404, headers, { ok: false, error: 'That invoice is not in your portal.' });
@@ -2463,6 +2488,7 @@ exports.handler = async function (event) {
     return reply(200, headers, { ok: true, filename: f.filename, pdf: f.pdf.toString('base64') });
   }
   const view = await buildView(data, p);
+  try { const sa = await subcLib().readAll(exports._core); view.crew = subcLib().crewFor(p, sa.subs, subcLib().recOf(sa.list, p.id)); } catch (e) { view.crew = []; }   /* patch SUBCONTACT: only the approved subs' shared fields */
   /* when was it last opened (at most once every 10 minutes per link) */
   const last = row.last_viewed_at ? Date.parse(row.last_viewed_at) : 0;
   if (row.token && body.preview !== true && (!last || Date.now() - last > 10 * 60e3)) {   /* patch INSP: a staff preview is not a visit */
@@ -2480,6 +2506,7 @@ Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: acti
 /* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */
 Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
+Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
 /* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */
 Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });
@@ -2492,3 +2519,4 @@ Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJ
   ipOf: ipOf, limited: limited, noteBad: noteBad, sbUrl: sbUrl, svcKey: svcKey, keyHeaders: keyHeaders, H: H, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, NOT_ACTIVE: NOT_ACTIVE,
   pushTo: pushTo, adminEmails: adminEmails, officeEmails: officeEmails, REVIEW_URL: REVIEW_URL });
 exports._estin = { estinEstHidden: estinEstHidden, estinDocHidden: estinDocHidden, proposalShown: proposalShown, docShown: docShown, insDocShown: insDocShown };   /* patch ESTIN: tests */
+exports._sched = { portalSteps: portalSteps };   /* patch VOICESCHED: tests */

@@ -59,6 +59,13 @@ function ready(){ return !!(env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN'
 function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
 function hookUrl(ev){ return site() + '/.netlify/functions/missed-call?event=' + ev; }
 function L(){ return require('./bid-inbox.js')._lib; }
+/* patch CHAIN: the 24/7 emergency line — on call → insurance → admins (_lib/callchain.js) */
+let CC_ = null;
+function CC(){ return CC_ || (CC_ = require('./_lib/callchain.js').make({ env, now, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f), sb: (path, o) => L().sb(path, o) })); }
+function dialStep(i, chain){
+  return '<Dial timeout="' + CC().ringSecs() + '" answerOnBridge="true" action="' + esc(hookUrl('chain') + '&i=' + (i + 1)) + '" method="POST">'
+    + '<Number url="' + esc(hookUrl('screen') + '&i=' + i) + '" method="POST">+1' + chain[i].phone + '</Number></Dial>';
+}
 function WI(){ return require('./website-intake.js')._lib; }
 function core(){ return require('./portal.js')._core; }
 
@@ -456,6 +463,28 @@ exports.handler = async function(event){
   const ev = s(qs.event) || 'voice';
   try {
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
+    if (ev === 'voice' && CC().on()) {   /* patch CHAIN */
+      const chain = await CC().start(s(p.CallSid), p.From).catch(() => []);
+      if (chain.length) return twiml('<Say voice="Polly.Joanna">Thanks for calling GrayCo Construction Services. Please hold while we connect you.</Say>' + dialStep(0, chain));
+    }
+    if (ev === 'chain') {   /* one person's ring ended: done if someone took it, else the next one, else the text-back */
+      const c = await CC().get(s(p.CallSid)), i = parseInt(qs.i, 10) || 0;
+      if (c && c.took) return twiml('<Hangup/>');
+      if (c && i < c.chain.length) return twiml(dialStep(i, c.chain));
+      await missed(p, 'call chain: nobody took it');
+      return sayBye();
+    }
+    if (ev === 'screen') {   /* the person's phone answered: a voicemail must not take the call — press 1 */
+      const c = await CC().get(s(p.ParentCallSid)).catch(() => null);
+      const four = c && c.from ? c.from.split('').join(' ') : '';
+      return twiml('<Gather numDigits="1" timeout="8" action="' + esc(hookUrl('take') + '&i=' + (parseInt(qs.i, 10) || 0)) + '" method="POST"><Say voice="Polly.Joanna">GrayCo emergency line.'
+        + (four ? ' Caller ending in ' + four + '.' : '') + ' Press 1 to take this call.</Say></Gather><Hangup/>');
+    }
+    if (ev === 'take') {
+      if (s(p.Digits) !== '1') return twiml('<Hangup/>');
+      await CC().took(s(p.ParentCallSid), parseInt(qs.i, 10) || 0).catch(() => {});
+      return twiml('');   /* connects them to the caller */
+    }
     if (ev === 'voice') {
       const ring = phone10(env('TWILIO_RING_TO'));
       if (ring.length === 10) {
@@ -480,4 +509,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+exports._test = { dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };

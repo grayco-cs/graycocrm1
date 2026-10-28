@@ -16,9 +16,13 @@
         Admin → Employees), a user's ccUserId, the user's name, or the CompanyCam user's e-mail (a PM's own projects
         → that PM). A creator nobody is mapped to → the Senior PM (gc_senior_pm, Admin → Employees), not as their
         own lead (patch PMG). A creator who has left (turned off / offboarded) is never made PM;
-     4. a project with the name or address of a job already here is left alone (the CRM's own check links it or
-        asks about it), except that the same address as a FINISHED job is a new job when the project was made
-        after that job ended (a repeat customer);
+     4. (patch PHOTOLINK) a project at the address (house number + street name) or with the name of ONE job already
+        here is tied to that job — its CompanyCam id goes on the job, so the job's photos show in GrayCo Photos. A link
+        already on the job is never replaced (a second project at the same place is added beside it: ccMoreIds). Two
+        or more look-alike jobs, a name with a different address, a job made long after the project: the project
+        goes on the "Link these photo projects" list (gc_kv gc_cc_review, shown on GrayCo Photos) for one tap.
+        The same address as a FINISHED job is a new job when the project was made after that job ended (a repeat
+        customer). A person's "Not this job" (gc_kv gc_cc_link_no) is never suggested or linked again;
      5. an earlier CompanyCam job that came in without a PM gets its creator's PM (never over a person's edit).
    The jobs are written with the service key and the current fresh-start epoch, so a fresh start does not stop
    it; every computer picks them up through the normal sync (lists are unions there, deletes are tombstones).
@@ -31,6 +35,15 @@ const PER_PAGE = 50, MAX_PAGES = 400, OVERLAP = 3600;
 const STATE_KEY = 'gc_cc_sync_state';
 const ID_FIELDS = ['ccProjectId', 'companyCamId', 'companycamId', 'ccId', 'ccamId', 'ccProjectUrl', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'sourceUrl'];
 const CLOSED_JOB = /^(completed?|closed|lost|cancell?ed|done|archived|dead|declined)$/;
+const LINK_V = 2;   /* patch PHOTOLINK: a new linking rule reads every 2026 project again once */
+const CM = require('./_lib/cc-match.js');
+/* every CompanyCam id a CRM record carries (its own fields + the extra photo projects, patch PHOTOLINK) */
+function ccIdsOf(r){
+  const out = []; if (!r || typeof r !== 'object') return out;
+  ID_FIELDS.forEach(f => { const id = ccIdFromAny(r[f]); if (id && out.indexOf(id) < 0) out.push(id); });
+  arr(r.ccMoreIds).forEach(v => { const id = ccIdFromAny(v); if (id && out.indexOf(id) < 0) out.push(id); });
+  return out;
+}
 
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
@@ -228,39 +241,77 @@ function pmFinder(users, creatorMap){
   };
 }
 
-/* ── what the CRM already has ── */
+/* ── what the CRM already has ── (patch PHOTOLINK: address = house number + street name, see _lib/cc-match.js) */
 function knownIndex(projects, leads, customers){
-  const idx = { id: {}, addr: {}, name: {} };
+  const idx = { id: {}, addr: {}, name: {}, jobs: {} };
   function add(r, kind){
     if (!r || typeof r !== 'object' || r.deleted === true) return;
+    const own = /^PRJcc_\d+$/.test(s(r.id)) ? ccIdFromAny(r.id) : '';
+    const ids = ccIdsOf(r); if (own && ids.indexOf(own) < 0) ids.push(own);
+    const ap = kind === 'job' ? CM.addrParts(r.address || r.jobAddress || r.street || r.siteAddress || '') : null;
     const label = { kind, id: s(r.id), name: s(r.name || r.company || r.client), status: low(r.status), end: secOf(r.completionDate || r.endDate || r.closedAt || r.completedAt),
-      hasCc: ID_FIELDS.some(f => !!ccIdFromAny(r[f])) || /^PRJcc_\d+$/.test(s(r.id)) };   /* patch CCSYNC */
-    ID_FIELDS.forEach(f => { const id = ccIdFromAny(r[f]); if (id) idx.id[id] = label; });
-    const own = ccIdFromAny(r.id); if (/^PRJcc_/.test(s(r.id)) && own) idx.id[own] = label;
+      address: s(r.address || r.jobAddress || ''), ap: ap, created: secOf(r.createdAt || r.created || r.dateCreated),
+      auto: !!own || r._ccAuto === true, hasCc: ids.length > 0, ids: ids };   /* patch CCSYNC */
+    ids.forEach(id => { if (!idx.id[id]) idx.id[id] = label; });
     if (kind !== 'job') return;
-    const a = normAddr(r.address || r.jobAddress || r.street || r.siteAddress || ''); if (a.length >= 6) (idx.addr[a] = idx.addr[a] || []).push(label);
-    [r.name, r.company].forEach(n => { const k = normName(n); if (k.length >= 4) (idx.name[k] = idx.name[k] || []).push(label); });
+    idx.jobs[label.id] = label;
+    if (ap) { const k = ap.num + ' ' + ap.name; (idx.addr[k] = idx.addr[k] || []).push(label); }
+    [r.name, r.company].forEach(n => { const k = CM.normName(n); if (k && arr(idx.name[k]).indexOf(label) < 0) (idx.name[k] = idx.name[k] || []).push(label); });
   }
   arr(projects).forEach(r => add(r, 'job')); arr(leads).forEach(r => add(r, 'lead')); arr(customers).forEach(r => add(r, 'customer'));
   return idx;
 }
-/* 'linked' | 'ask' (a person decides on the CRM's review list) | 'new' */
-function decide(idx, p){
-  if (idx.id[p.id]) return { kind: 'linked', why: 'its CompanyCam id is on ' + idx.id[p.id].kind + ' ' + idx.id[p.id].id };
-  const hits = {};
-  const a = normAddr(p.street || p.address); if (a.length >= 6) arr(idx.addr[a]).forEach(l => { hits[l.id] = l; });
-  const n = normName(p.name); if (n.length >= 4) arr(idx.name[n]).forEach(l => { hits[l.id] = l; });
-  const jobs = Object.keys(hits).map(k => hits[k]);
-  if (!jobs.length) return { kind: 'new' };
-  const open = jobs.filter(j => !CLOSED_JOB.test(j.status));
-  if (open.length) return { kind: 'linked', by: 'match', jobs: open, why: 'same name/address as ' + open.map(j => j.name || j.id).join(', ') };   /* patch CCSYNC: by + jobs */
+/* the CRM jobs this project could be: [{ job, addr: same place, name: same name, conflict: both have an address and they differ }] */
+function candidates(idx, p, no){
+  const pa = CM.addrParts(p.street ? [p.street, p.address].join(', ') : p.address), hits = {};
+  if (pa) arr(idx.addr[pa.num + ' ' + pa.name]).forEach(j => { if (CM.sameAddr(pa, j.ap)) (hits[j.id] = hits[j.id] || { job: j }).addr = true; });
+  const n = CM.normName(p.name); if (n) arr(idx.name[n]).forEach(j => { (hits[j.id] = hits[j.id] || { job: j }).name = true; });
+  const all = Object.keys(hits).map(k => hits[k]), out = all.filter(h => !(no && no[p.id + '|' + h.job.id]));
+  const res = out.map(h => {
+    h.conflict = !h.addr && !!pa && !!h.job.ap && !CM.sameAddr(pa, h.job.ap);
+    return h;
+  });
+  res.rejected = all.length - out.length;
+  return res;
+}
+const DAY = 86400, EARLY = 30 * DAY;
+/* 'linked' (by its id; + attach: the one CRM-made job at the same place gets it as an extra photo project) |
+   'attach' (tie it to job: confident) | 'ask' (a person picks on the list: jobs) | 'new' */
+function decide(idx, p, no){
+  const cands = candidates(idx, p, no);
+  if (idx.id[p.id]) {
+    const l = idx.id[p.id];
+    /* a project the server made its own job for, while a job made in the CRM is at the same place: the CRM job gets its photos too */
+    if (l.auto) {
+      const crm = cands.filter(h => h.addr && !h.job.auto && h.job.id !== l.id && !CLOSED_JOB.test(h.job.status));
+      if (crm.length === 1) return { kind: 'linked', why: 'its CompanyCam id is on ' + l.kind + ' ' + l.id, attach: crm[0].job };
+    }
+    return { kind: 'linked', why: 'its CompanyCam id is on ' + l.kind + ' ' + l.id };
+  }
+  if (!cands.length) return cands.rejected ? { kind: 'ask', jobs: [], why: 'a person said it is not the job at this address — a new job, or not a job?' } : { kind: 'new' };
+  const open = cands.filter(h => !CLOSED_JOB.test(h.job.status));
+  if (open.length === 1) {
+    const h = open[0], j = h.job;
+    if (h.conflict) return { kind: 'ask', jobs: [j], why: 'same name as the job "' + (j.name || j.id) + '" but a different address' };
+    /* the job already shows another CompanyCam project: this one is added beside it when it was made while the job runs */
+    if (j.hasCc && !(j.created && p.created_at >= j.created - EARLY)) return { kind: 'ask', jobs: [j], why: 'same ' + (h.addr ? 'address' : 'name') + ' as "' + (j.name || j.id) + '", which already has its own CompanyCam project' };
+    return { kind: 'attach', job: j, by: h.addr && h.name ? 'address + name' : h.addr ? 'address' : 'name', why: 'same ' + (h.addr ? 'address' : 'name') + ' as "' + (j.name || j.id) + '"' };
+  }
+  if (open.length >= 2) return { kind: 'ask', jobs: open.map(h => h.job), why: 'looks like ' + open.length + ' jobs: ' + open.map(h => h.job.name || h.job.id).join(', ') };
   /* only finished jobs: a project made after every one of them ended is new work for a repeat customer */
-  if (jobs.every(j => j.end && p.created_at > j.end + 86400)) return { kind: 'new', note: 'same address as the finished job "' + jobs[0].name + '"' };
-  return { kind: 'ask', why: 'same name/address as the finished job "' + jobs[0].name + '"' };
+  const jobs = cands.map(h => h.job);
+  if (jobs.every(j => j.end && p.created_at > j.end + DAY)) return { kind: 'new', note: 'same address as the finished job "' + jobs[0].name + '"' };
+  /* one finished job at the same place, the project made before it ended: its own photos */
+  if (cands.length === 1 && cands[0].addr && !cands[0].job.hasCc && cands[0].job.end && p.created_at <= cands[0].job.end + DAY)
+    return { kind: 'attach', job: cands[0].job, by: 'address', why: 'same address as the finished job "' + cands[0].job.name + '"' };
+  return { kind: 'ask', jobs: jobs, why: 'same name/address as the finished job "' + jobs[0].name + '"' };
 }
 function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } }
 /* patch CC2: a project its creator made is their lead */
-function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm }; }
+/* patch LEADHOLD (owner 10/28: "any jobs initiated from GrayCo Photos for a PM is considered their own lead, paid under a
+   different structure"): the own-lead tags the pay reads (leadIsMine / ownLead / leadOwner; _lib/lead-hold.js ownFields) */
+function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm,
+  leadIsMine: true, ownLead: true, graycoOrigin: false, leadOwner: pm, leadSourceTag: 'PM’s own lead' }; }
 function jobFor(p, pm, note, nowIso, senior){
   const c = p.contact || {}, iso = new Date(p.created_at * 1000).toISOString();
   const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
@@ -283,7 +334,7 @@ async function run(opts){
   DIAG.whoami = await CCA.whoami(token);   /* is the token accepted at all (separate from the projects list)? */
   await CCA.saveWhoami(DIAG.whoami);
   const nowIso = new Date().toISOString();
-  const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', 'gc_senior_pm', 'gc_lead_inbox', STATE_KEY, 'gc_cc_sync_request', 'gc_cc_review']);
+  const kv = await kvRead(['leads', 'customers', 'users', 'gc_tombstones', 'gc_deleted_projects', 'gc_cc_dismissed', 'gc_cc_creator_map', 'gc_epoch', 'gc_senior_pm', 'gc_lead_inbox', STATE_KEY, 'gc_cc_sync_request', 'gc_cc_review', 'gc_cc_link_no']);
   const seniorU = require('./_lib/people.js').seniorPm(kv.users, kv.gc_senior_pm), senior = seniorU ? s(seniorU.name) : '';   /* patch PMG */
   const st = Object.assign({ cursor: 0, made: {}, creators: {} }, obj(kv[STATE_KEY]));
   st.made = obj(st.made); st.creators = obj(st.creators);
@@ -297,10 +348,13 @@ async function run(opts){
   const lastOk = Date.parse(s(st.lastOkAt)) || 0;
   const wantFull = !!(s(req.at) && s(req.at) !== s(st.fullDoneFor));
   const stale = !!((+st.cursor || 0) > 0 && lastOk && Date.now() - lastOk > 3 * 86400e3);
-  const full = wantFull || stale;
+  const relink = (+st.linkV || 0) !== LINK_V;   /* patch PHOTOLINK: the new linking rule looks at every 2026 project once */
+  const full = wantFull || stale || relink;
   const since = full ? CUT : Math.max(CUT, (+st.cursor || 0) - OVERLAP);
   const cc = await listChanged(token, since);
-  function revOf(p, kind, why){ return { cc: s(p.id), kind: kind, why: s(why).slice(0, 300), name: s(p.name), address: s(p.address), url: s(p.url), creator: s(p.creator), created: ymd(p.created_at), at: nowIso }; }
+  function revOf(p, kind, why, jobs){ const x = { cc: s(p.id), kind: kind, why: s(why).slice(0, 300), name: s(p.name), address: s(p.address), url: s(p.url), creator: s(p.creator), created: ymd(p.created_at), at: nowIso };
+    if (jobs && jobs.length) x.jobs = jobs.slice(0, 5).map(j => ({ id: j.id, name: s(j.name).slice(0, 120), address: s(j.address).slice(0, 160), status: s(j.status) }));   /* patch PHOTOLINK: the jobs to pick from */
+    return x; }
 
   const P = await readProjects();
   const tombs = obj(kv.gc_tombstones), dead = {};
@@ -308,6 +362,7 @@ async function run(opts){
   arr(kv.gc_deleted_projects).forEach(id => { dead[s(id)] = 1; });
   const dis = obj(kv.gc_cc_dismissed);
   const idx = knownIndex(P.list, kv.leads, kv.customers);
+  const linkNo = obj(kv.gc_cc_link_no);   /* patch PHOTOLINK: "Not this job" answers, 'cc|jobId' */
   const findPm = pmFinder(kv.users, kv.gc_cc_creator_map);
   /* patch SRC: GrayCo lead or the PM's own? (earliest record at the address wins; RoofScout counts) */
   const SRC = require('./_lib/leadsource.js');
@@ -335,27 +390,29 @@ async function run(opts){
   const R = { ok: true, read: cc.list.length, pages: cc.pages, complete: cc.complete, since, made: [], pmFixed: [], linked: 0, ask: [], ignored: 0, deleted: 0, old: 0, archived: 0,
     full: full, attached: [], review: [], senior: [] };   /* patch CCSYNC */
   const jobs = [], attach = {};
+  /* patch PHOTOLINK: attach[jobId] = the CompanyCam projects to tie to that job (never replacing a link it has) */
+  function attachTo(j, p, by){ if (!j || !p || !p.id || arr(j.ids).indexOf(String(p.id)) >= 0) return; const l = attach[j.id] = attach[j.id] || []; if (l.some(x => x.id === p.id)) return;
+    l.push(p); j.hasCc = true; if (!idx.id[p.id]) idx.id[p.id] = j; R.attached.push({ cc: p.id, job: j.id, name: j.name, by: by || '' }); }
+  /* a person's "Link" on the list (gc_cc_sync_request.link {cc: jobId}): applied once, whatever the address says */
+  const links = obj(req.link); st.linksDone = obj(st.linksDone);
+  Object.keys(links).forEach(cc => {
+    const jid = s(links[cc]), k = cc + '|' + jid; if (!/^\d+$/.test(cc) || !jid || st.linksDone[k]) return;
+    const j = idx.jobs[jid]; if (!j) return;
+    attachTo(j, { id: cc, url: 'https://app.companycam.com/projects/' + cc }, 'a person'); st.linksDone[k] = nowIso;
+  });
   for (const p of cc.list) {                              /* newest first */
     if (!p.id) continue;
     if (!p.created_at || p.created_at < CUT) { R.old++; continue; }
     if (p.status && p.status !== 'active') { R.archived++; continue; }
-    if (dis['id:' + p.id]) { R.ignored++; continue; }
     if (dead['PRJcc_' + p.id]) { R.deleted++; continue; }
-    let d = decide(idx, p);
+    let d = decide(idx, p, linkNo);
+    /* "not a new job (it's already here)" on the list: never a job, but its photos still go to the one job it clearly is */
+    if (dis['id:' + p.id]) { if (d.kind === 'attach') attachTo(d.job, p, d.by); else R.ignored++; continue; }
     /* patch CCSYNC: a person said "make it a new job" on the review list (never over a project already tied by its id) */
-    if (makeIds[p.id] && (d.kind !== 'linked' || d.by === 'match')) d = { kind: 'new', note: 'made from the CompanyCam review list' };
-    if (d.kind === 'linked') {
-      R.linked++;
-      /* patch CCSYNC: matched only by name / address → its CompanyCam id goes on that ONE open job that has none yet (its
-         photos then come in); anything less clear goes on the review list instead of being dropped */
-      if (d.by === 'match') {
-        const js = arr(d.jobs), free = js.filter(j => !j.hasCc);
-        if (js.length === 1 && free.length === 1 && js[0].kind === 'job' && !attach[js[0].id]) { attach[js[0].id] = p; js[0].hasCc = true; idx.id[p.id] = js[0]; R.attached.push({ cc: p.id, job: js[0].id, name: js[0].name }); }
-        else R.review.push(revOf(p, 'match', d.why + (free.length ? '' : ' — that job already has its own CompanyCam project, so this may be new work')));
-      }
-      continue;
-    }
-    if (d.kind === 'ask') { R.ask.push(p.id); R.review.push(revOf(p, 'ask', d.why)); continue; }
+    if (makeIds[p.id] && d.kind !== 'linked') d = { kind: 'new', note: 'made from the CompanyCam review list' };
+    if (d.kind === 'linked') { R.linked++; if (d.attach) attachTo(d.attach, p, 'address'); continue; }
+    if (d.kind === 'attach') { R.linked++; attachTo(d.job, p, d.by); continue; }
+    if (d.kind === 'ask') { R.ask.push(p.id); R.review.push(revOf(p, 'link', d.why, d.jobs)); continue; }
     const j = await srcFix(jobFor(p, await pmOf(p), d.note, nowIso, senior));
     if (!s(j.pm) || j.pmBy === 'senior-pm') { R.senior.push(p.id); R.review.push(revOf(p, 'pm', 'nobody at GrayCo is set up as CompanyCam user "' + (p.creator || p.creatorId || '?') + '"' + (s(j.pm) ? ' — ' + j.pm + ' (Senior PM) has the job' : ' and no Senior PM is set') + '. Set that person\'s GrayCo Photos name in Admin → Employees.')); }
     jobs.push(j); idx.id[p.id] = { kind: 'job', id: j.id };
@@ -380,7 +437,7 @@ async function run(opts){
     R.pmFixed.push({ job: r.id, pm: pm });
   }
   const back = Object.keys(st.made).filter(cid => { const id = st.made[cid].id; return !have[id] && !dead[id] && !jobs.some(j => j.id === id) && ccById[cid]; });
-  back.forEach(cid => { const p = ccById[cid]; if (p.created_at >= CUT && (!p.status || p.status === 'active') && !dis['id:' + cid]) jobs.push(jobFor(p, '', '', nowIso)); });
+  back.forEach(cid => { const p = ccById[cid]; if (p.created_at >= CUT && (!p.status || p.status === 'active') && !dis['id:' + cid] && !(idx.id[cid] && idx.id[cid].id !== st.made[cid].id)) jobs.push(jobFor(p, '', '', nowIso)); });
 
   if (jobs.length || Object.keys(fixes).length || Object.keys(attach).length) {
     /* read the list again right before writing (the CRM may have pushed meanwhile) and add to THAT */
@@ -389,9 +446,18 @@ async function run(opts){
     const add = jobs.filter(j => !has2[j.id]);
     for (const j of add) if (!j.pm) { const pm = await pmOf(ccById[j.ccProjectId] || { creator: j.ccCreator, creatorId: j.ccCreatorId }); if (pm) { Object.assign(j, selfFields(pm)); await srcFix(j); } }
     const fix0 = r => (r && fixes[r.id] && (!s(r.pm) || r.pmBy === 'senior-pm')) ? Object.assign({}, r, fixes[r.id], { pmBy: '' }) : r;
-    /* patch CCSYNC: the CompanyCam id onto the one matching job (only while it still has none) */
-    const fix = r => { r = fix0(r); const p = r && attach[r.id]; if (!p || ID_FIELDS.some(f => !!ccIdFromAny(r[f]))) return r;
-      return Object.assign({}, r, { ccProjectId: p.id, ccamId: p.id, ccamUrl: p.url, companyCamUrl: p.url, ccLinkedBy: 'companycam-sync', ccLinkedAt: nowIso, updatedAt: nowIso, savedAt: nowIso }); };
+    /* patch PHOTOLINK: the CompanyCam ids onto their job — the first one as its link when it has none, any other beside it
+       (ccMoreIds); a link already on the job is never replaced */
+    const fix = r => { r = fix0(r); const l = r && attach[r.id]; if (!l || !l.length) return r;
+      let out = r, changed = false;
+      l.forEach(p => {
+        const have = ccIdsOf(out); if (have.indexOf(String(p.id)) >= 0) return;
+        out = Object.assign({}, out);
+        if (!ID_FIELDS.some(f => !!ccIdFromAny(out[f]))) Object.assign(out, { ccProjectId: String(p.id), ccamId: String(p.id), ccamUrl: p.url, companyCamUrl: p.url });
+        else out.ccMoreIds = arr(out.ccMoreIds).concat([String(p.id)]);
+        changed = true;
+      });
+      return changed ? Object.assign(out, { ccLinkedBy: 'companycam-sync', ccLinkedAt: nowIso, updatedAt: nowIso, savedAt: nowIso }) : out; };
     if (P2.chunked) {
       const chunks = P2.chunks.map(c => c.map(fix));
       chunks[chunks.length - 1] = chunks[chunks.length - 1].concat(add);
@@ -401,7 +467,7 @@ async function run(opts){
     } else if (!opts.dry) await kvWrite([{ key: 'projects', value: P2.list.map(fix).concat(add) }], epoch);
     R.written = add.length;
   }
-  if (cc.complete) { st.cursor = Math.max(+st.cursor || 0, Math.floor(Date.now() / 1000) - 60); st.lastOkAt = nowIso; if (wantFull) st.fullDoneFor = s(req.at); if (full) st.lastFullAt = nowIso; }   /* patch CCSYNC */
+  if (cc.complete) { st.cursor = Math.max(+st.cursor || 0, Math.floor(Date.now() / 1000) - 60); st.lastOkAt = nowIso; if (wantFull) st.fullDoneFor = s(req.at); if (full) st.lastFullAt = nowIso; st.linkV = LINK_V; }   /* patch CCSYNC */
   st.lastRun = { at: nowIso, read: R.read, made: R.made.length, pmFixed: R.pmFixed.length, ask: R.ask.length, complete: cc.complete, full: full };
   /* patch CCSYNC: the review list (gc_kv gc_cc_review) — what a person must decide. A project that has since been tied to
      a job (its id) drops off; "not a new job" (gc_cc_dismissed) keeps it off; a Senior-PM job drops off once its PM is set. */
@@ -412,6 +478,8 @@ async function run(opts){
     if (dis['id:' + x.cc] || dead['PRJcc_' + x.cc]) return false;
     if (x.kind === 'pm') return !R.pmFixed.some(f => f.job === 'PRJcc_' + x.cc);
     if (!nowKeys[k] && idx.id[x.cc]) return false;
+    if (!nowKeys[k] && full && cc.complete) return false;   /* patch PHOTOLINK: a full read saw every project — what it did not list is settled */
+    if (x.jobs) x.jobs = x.jobs.filter(j => !linkNo[x.cc + '|' + j.id]);
     return true;
   }).sort((a, b) => (s(b.at) > s(a.at) ? 1 : s(b.at) < s(a.at) ? -1 : 0)).slice(0, 200);
   R.reviewCount = reviewList.length;
@@ -473,4 +541,4 @@ exports.handler = async function(event){
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) };
   }
 };
-exports._t = { run, compact, decide, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, HEALTH_KEY };
+exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, HEALTH_KEY };

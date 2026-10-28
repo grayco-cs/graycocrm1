@@ -143,7 +143,10 @@ async function send(rep){
   const m = mail(rep), f = D.fetch || fetch;
   const r = await f('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from: 'GrayCo CRM <noreply@grayco-cs.com>', to: to, subject: m.subject, html: m.html, text: m.text, headers: { 'X-GrayCo-CRM': 'crm-health' } }) });
-  return { ok: !!(r && r.ok), to: to, subject: m.subject };
+  if (r && r.ok) return { ok: true, to: to, subject: m.subject };
+  /* the e-mail service said no: say what it said (a 403 there is a key or sending-domain problem, not the CRM sign-in) */
+  let why = ''; try { why = String(await r.text()).slice(0, 240); } catch (e) {}
+  return { ok: false, to: to, subject: m.subject, status: r ? r.status : 0, error: 'The e-mail service (Resend) answered ' + (r ? r.status : 'nothing') + (why ? ': ' + why : '') + ' — check RESEND_API_KEY and the grayco-cs.com sending domain in Resend.' };
 }
 
 /* ── equipment on site too long (mitigation) ── */

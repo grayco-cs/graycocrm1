@@ -50,16 +50,22 @@ function addrOf(r){ return s(r && (r.address || r.jobAddress || r.siteAddress ||
    'company' (any company intake, a converted lead, the office/admin) */
 const INTAKE = /website|lead inbox|leads@|inbox|partner|referr|missed call|roof ?ignite|contractor connection|alacrity|sedgwick|homeadvisor|angi|thumbtack|google|facebook|bid|board|planhub|buildingconnected|sam\.gov|giveaway|roof ?check|event|coupon|news|marketing|roofscout|grayco/i;
 function isCcJob(j){ return !!j && (/^PRJcc_\d+$/.test(s(j.id)) || j._ccAuto === true || j._ccImported === true || low(j.source) === 'companycam'); }
+/* patch LEADHOLD (owner 10/28): RoofScout and anything the CRM / marketing made are ALWAYS GrayCo leads, even when a PM
+   clicked it; a job converted from a PM's own lead stays his; a job a PM entered by hand (createdByKind 'pm') is his */
+const MADE_BY_CRM = /roof ?scout|campaign|news ?letter|win-?back|maint(enance)? ?plan|review|social|\/go\/|tracked|door ?hanger|print ?pack|\bqr\b|renewal|from (an )?estimate|marketing|\blsa\b|local services|\bads?\b/i;
 function originOf(j){
   if (!j) return 'company';
+  if (j.rsLeadId || /^LEAD_RS_/.test(s(j.id)) || MADE_BY_CRM.test(s(j.source) + ' ' + s(j.leadSource) + ' ' + s(j.origin) + ' ' + s(j.createdVia))) return 'company';
+  if ((j.leadId || j.fromLead || j.fromLeadId || j.convertedFrom) && !j.inboxId && !j.leadInboxId && !j.partnerId && (j.ownLead === true || j.leadIsMine === true) && s(j.leadOwner)) return 'pm';
   if (j.leadId || j.fromLead || j.fromLeadId || j.inboxId || j.leadInboxId || j.convertedFrom || j.partnerId) return 'company';
   if (isCcJob(j)) return 'cc';
   const by = low(j.enteredBy || j.createdBy), pm = low(j.pm);
   if (pm && by && by === pm) return 'pm';
+  if (by && s(j.createdByKind) === 'pm' && s(j.leadOwner)) return 'pm';
   if (j.selfGenerated === true && !INTAKE.test(s(j.source) + ' ' + s(j.origin))) return 'pm';
   return 'company';
 }
-function pmOf(j){ return s(j && (j.broughtInBy || j.pm || j.owner)); }
+function pmOf(j){ return s(j && (j.leadOwner || j.broughtInBy || j.pm || j.owner)); }   /* patch LEADHOLD: leadOwner = who brought it in */
 /* real sign of a company intake on the job (a lead / inbox / partner link, or a named intake as its source);
    a bare "grayco" source is the CRM's default and says nothing */
 function hasIntake(j){
@@ -117,8 +123,8 @@ function classify(job, ctx){
    reports, graycoOrigin / leadIsMine for the pay-structure resolver) */
 function fieldsFor(c, at){
   const stamp = at || new Date().toISOString();
-  if (c.source === 'self') return { commissionSource: 'self', pmSourced: true, selfGenerated: true, broughtInBy: c.pm, leadSource: 'Self-generated (' + c.pm + ')', graycoOrigin: false, leadIsMine: true, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
-  return { commissionSource: 'company', pmSourced: false, selfGenerated: false, broughtInBy: '', leadSource: 'GrayCo', graycoOrigin: true, leadIsMine: false, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
+  if (c.source === 'self') return { commissionSource: 'self', pmSourced: true, selfGenerated: true, broughtInBy: c.pm, leadSource: 'Self-generated (' + c.pm + ')', graycoOrigin: false, leadIsMine: true, ownLead: true, leadOwner: c.pm, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
+  return { commissionSource: 'company', pmSourced: false, selfGenerated: false, broughtInBy: '', leadSource: 'GrayCo', graycoOrigin: true, leadIsMine: false, ownLead: false, leadOwner: '', leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };   /* patch LEADHOLD: + ownLead / leadOwner */
 }
 /* what the job says now: 'company' | 'self' | '' (nothing on it — the engines then read it as GrayCo).
    ov = the admins' per-job choice map (gc_kv gc_job_source: { jobId: 'self'|'company' }) */
