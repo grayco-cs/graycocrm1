@@ -3377,7 +3377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.155-2026-10-27-r10d -->
+<!-- GrayCo CRM Build: 33.155-2026-10-28-r10e -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4042,7 +4042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.155-2026-10-27-r10d");
+  console.log("[GC] Build 33.155-2026-10-28-r10e");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4090,7 +4090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.155-2026-10-27-r10d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.155-2026-10-28-r10e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -117557,16 +117557,49 @@ var _rsigStep = null;   /* patch X: per-object signatures, kept only for one syn
    the write stamp gave every vendor a new updatedAt on each pull while someone was at the computer, and the other
    computer did the same back */
 function _rsigRep(k, v){ return (k && STAMP.test(k)) ? undefined : v; }
-function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
+/* patch RTFAST: the signature of a row is remembered by the row's exact text without its stamps (same text, same signature) */
+var _rsC = new Map();
+function rsig(r){
+  if(r && typeof r==='object' && !Array.isArray(r) && typeof r.toJSON !== 'function'){
+    if(_rsigStep){ var _c0 = _rsigStep.get(r); if(_c0 !== undefined) return _c0; }
+    var _j = null; try{ _j = JSON.stringify(r, _rsigRep); }catch(e){ _j = null; }
+    if(typeof _j === 'string'){ var _h = _rsC.get(_j); if(_h === undefined){ _h = rsig0(r); if(_rsC.size >= 60000) _rsC.clear(); _rsC.set(_j, _h); } else if(_rsigStep) _rsigStep.set(r, _h); return _h; }
+  }
+  return rsig0(r);
+}
+function rsig0(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
 var ownStamp = {};   /* stamps this computer wrote */
 function recIdOf(r){ return (r && typeof r==='object' && !Array.isArray(r)) ? (r.id!=null && r.id!=='' ? String(r.id) : (r._id!=null && r._id!=='' ? String(r._id) : null)) : null; }
 function isRecList(a){ return Array.isArray(a) && a.length && a.every(function(x){ return x==null || (typeof x==='object' && !Array.isArray(x)); }); }
+/* patch RTFAST: a big list from the live feed is learnt in slices; learnDrain() finishes them (sync) before a read */
+var learnQ = [], learnT = null, learnWhole = {};
+function learnRow(m, r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; }
+function learnSlice(){
+  learnT = null; var t0 = Date.now();
+  while(learnQ.length && Date.now() - t0 < 25){
+    var q = learnQ[0], m = seenRec[q.k] || (seenRec[q.k] = {}), end = Math.min(q.v.length, q.i + 600);
+    try{ for(; q.i < end; q.i++) learnRow(m, q.v[q.i]); }catch(e){ q.i = q.v.length; }
+    if(q.i >= q.v.length) learnQ.shift();
+  }
+  if(learnQ.length) learnT = ST.call(window, learnSlice, 0);
+}
+function learnDrain(){
+  if(!learnQ.length) return;
+  if(learnT){ try{ clearTimeout(learnT); }catch(e){} learnT = null; }
+  while(learnQ.length){ var q = learnQ.shift(), m = seenRec[q.k] || (seenRec[q.k] = {}); try{ for(; q.i < q.v.length; q.i++) learnRow(m, q.v[q.i]); }catch(e){} }
+}
+function learnSoon(k, v, s){
+  if(s && learnWhole[k] === s) return;                                     /* this exact value was learnt already */
+  if(!(Array.isArray(v) && v.length > 1500 && isRecList(v))){ learn(k, v); if(s) learnWhole[k] = s; return; }
+  learnQ.push({ k:k, v:v, i:0 }); if(s) learnWhole[k] = s;
+  if(!learnT) learnT = ST.call(window, learnSlice, 0);
+}
 function learn(k, v){
   try{
     if(v === undefined || v === null) return;
     if(isRecList(v)){
       var m = seenRec[k] || (seenRec[k] = {});
-      v.forEach(function(r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; });
+      v.forEach(function(r){ learnRow(m, r); });
     } else {
       var sv = seenVal[k] || (seenVal[k] = {}); sv[rsig(v)] = 1; var kk = Object.keys(sv); if(kk.length > 12) delete sv[kk[0]];
     }
@@ -117584,6 +117617,7 @@ function deadFor(k){
    by a person: out on both sides. Never a replace. */
 var UL = {}; window.__gcUL = {};
 function union(k, cloud, local, now, editAt, prevSeen){
+  learnDrain();   /* patch RTFAST */
   UL = window.__gcUL[k] = { diff:[], seen:[], lost:[], edit:[], added:[], dropped:[], dupe:[], at: now };
   editAt = editAt || now;
   if(local === undefined || local === null) return cloud;
@@ -117689,6 +117723,7 @@ async function pushKey(k, cr){
   var cloud = (Array.isArray(rows) && rows.length) ? rows[0].value : undefined;
   var asText = false;
   if(typeof cloud === 'string' && /^\s*[\[{]/.test(cloud)){ try{ cloud = JSON.parse(cloud); asText = true; }catch(e){} }   /* some lists are kept as text in the cloud: merged as lists, sent back as text */
+  learnDrain();   /* patch RTFAST */
   var before = seenRec[k] ? JSON.parse(JSON.stringify(seenRec[k])) : {};
   var prevSeen = function(id, g){ return !!(before[id] && before[id][g]); };
   _rsigStep = (typeof WeakMap === 'function') ? new WeakMap() : null;   /* patch X */
@@ -117880,7 +117915,7 @@ function onEvent(payload){
     if(s && cloudSig[k] === s) return;                     /* already have it */
     if(s && ownPost[k] && ownPost[k].sig === s && Date.now() - ownPost[k].at < 60000){ stats.echoes++; return; }   /* this page sent it */
     if(s && window.__gcXSent && window.__gcXSent(k, s)){ stats.echoes++; return; }   /* patch X: sent as rewritten by the union-push */
-    if(v !== undefined) learn(k, v);   /* patch X: only for another computer's save — this page's own values are its own */
+    if(v !== undefined) learnSoon(k, v, s);   /* patch X: only for another computer's save — this page's own values are its own (patch RTFAST: big lists in slices) */
     /* two computers pushing the same list in the same second: the later write was a union with a copy read just
        before the earlier one landed, so the earlier one's addition can be missing. Whoever pushed this list in the
        last 15 s looks again (a union: if nothing of ours is missing, nothing is sent). */
@@ -117892,7 +117927,7 @@ function onEvent(payload){
     if(lsBacked(k) || typeof window[setterName] === 'function'){
       /* a list on the screen: laid over what is there straight away (no full pull needed) */
       if(!toApply[k]) toApply[k] = Date.now();
-      scheduleApply(150);
+      scheduleApply((Array.isArray(v) && v.length > 1500) ? 1200 : 150);   /* patch RTFAST: a burst of big-list updates is laid on once */
     } else {
       pendingPull = true; evKeys[k] = 1;
       if(!pullT) pullT = ST.call(window, runPull, 400);
@@ -117951,6 +117986,7 @@ function stampOfRec(r){ return String((r && (r.updatedAt || r.updated_at)) || ''
    at that moment, so a save made a moment ago is never replaced by an older list. */
 function overlay(k, prev, inc){
   if(!Array.isArray(prev) || !Array.isArray(inc)) return prev;
+  learnDrain();   /* patch RTFAST */
   var seenK = seenRec[k] || {};
   var dead = deadFor(k), at = {}, out = prev.slice(), changed = false;
   out.forEach(function(r, i){ var id = recIdOf(r); if(id!=null) at[id] = i; });
