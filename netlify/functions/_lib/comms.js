@@ -40,9 +40,21 @@ const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 /* ── is this e-mail a copy for the history? ── */
 function isJournal(mail, data, recipients){
   const want = journalAddrs(), H = mail.headers || {};
+  /* patch MAILFIX: Google's routing rule adds X-GrayCo-Journal: 1 to the MESSAGE, so the copy a Google Group (invoices@,
+     receipts@, leads@, bids@ …) hands its in.grayco-cs.com member carries it too. Resend's envelope recipient (the
+     webhook's to / cc) decides: delivered to one of our own inboxes = that inbox's mail, never a history copy. */
+  if (envInbox(data)) return false;
   if (recipients.some(function(x){ return want.indexOf(low(x)) >= 0; })) return true;
   if (low(H['x-grayco-journal'])) return true;
   return false;
+}
+
+/* the webhook's own recipient that is one of our inboxes (not the history address), or '' */
+function envInbox(data){
+  const d = data || {}, want = journalAddrs();
+  const to = [].concat(d.to || [], d.cc || []).map(function(x){ return low(x && typeof x === 'object' ? (x.email || x.address) : x); })
+    .map(function(x){ const m = /<([^>]+)>/.exec(x); return m ? m[1] : x; });
+  return to.filter(function(e){ return /@in\.grayco-cs\.com$/.test(e) && want.indexOf(e) < 0; })[0] || '';   /* with mail@in on the same delivery too: the inbox wins (the history copy is the lesser loss) */
 }
 
 /* the CRM's ✉️ / Gmail buttons BCC mail@in.grayco-cs.com (until the routing rule is on): a BCC is in no header, so a
@@ -196,4 +208,4 @@ async function addMessage(pid, o){
   return add(pid, entry);
 }
 
-module.exports = { isJournal, isBccCopy, fromJournal, addMessage, add, read, stripQuoted, buildIndex, match, parties, skip, poOf, journalAddrs, PREFIX, STATUS };
+module.exports = { isJournal, envInbox, isBccCopy, fromJournal, addMessage, add, read, stripQuoted, buildIndex, match, parties, skip, poOf, journalAddrs, PREFIX, STATUS };
