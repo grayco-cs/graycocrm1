@@ -162645,7 +162645,23 @@ function findCustomer(idOrName, pid, rec){
       if (!c) c = { name: s(p.client) || 'Customer', phone: s(p.clientPhone || p.customerPhone), email: s(p.clientEmail || p.customerEmail), address: s(p.address), _pseudo: true };
     }
   }
+  if (!c && looksId(k)) c = custFromId(k, list);
+  if (c && c._pseudo && looksId(c.name)) c = Object.assign({}, c, { name: 'Customer' });
   return c || { name: k || 'Customer', _pseudo: true };
+}
+/* patch CUSTNAME: an id (LCC_ / LQB_ / LGN_ / PRJ… / cust_…) is looked up, never shown as a name */
+function looksId(v){ v = s(v).trim(); return !!v && !/\s/.test(v) && (/^(LCC|LQB|LCCR|LGN|LDUP|LEAD|L)_/i.test(v) || /^PRJ[a-z0-9]{6,}$/i.test(v) || /^cust_?[0-9a-z]{6,}$/i.test(v) || /_PRJ[a-z0-9]{6,}$/i.test(v)); }
+function custFromId(k, list){
+  var pid = (k.match(/(PRJ[a-z0-9]+)$/i) || [])[1] || '';
+  var l = leads().filter(function(x){ return x && String(x.id) === k; })[0];
+  var p = projects().filter(function(x){ return x && (String(x.id) === k || (pid && String(x.id) === pid) || (l && l.fromProjectId && String(x.id) === String(l.fromProjectId))); })[0];
+  var nm = s(l && (l.contactName || l.client || (typeof l.contact === 'string' ? l.contact : '') || l.company)) || s(p && p.client) || s(l && l.name) || '';
+  if (looksId(nm) || /^(CompanyCam lead|QuickBooks customer)$/i.test(nm)) nm = s(p && p.client) || s(l && l.name) || '';
+  if (!nm && !p) return null;
+  var em = low((l && l.email) || (p && (p.clientEmail || p.customerEmail))), ph = digits((l && l.phone) || (p && (p.clientPhone || p.customerPhone)));
+  var hit = list.filter(function(x){ return x && ((nm && norm(x.name) === norm(nm)) || (em && low(x.email) === em) || (ph.length === 10 && digits(x.phone) === ph)); })[0];
+  if (hit) return hit;
+  return { name: nm || 'Customer', phone: s((l && l.phone) || (p && (p.clientPhone || p.customerPhone))), email: s((l && l.email) || (p && (p.clientEmail || p.customerEmail))), address: s((l && l.address) || (p && p.address)), _pseudo: true, _pid: p ? s(p.id) : '' };
 }
 function custKeys(c){
   var names = [c.name, c.company].concat(arr(c.contacts).map(function(x){ return x.name; })).map(norm).filter(Boolean);
@@ -162662,7 +162678,7 @@ function matchesCust(k, name, email, phone, cid){
 }
 function custData(c){
   var k = custKeys(c);
-  var jobs = projects().filter(function(p){ return matchesCust(k, p.client, p.clientEmail || p.customerEmail, p.clientPhone || p.customerPhone, p.customerId); });
+  var jobs = projects().filter(function(p){ return (c._pid && String(p.id) === c._pid) || matchesCust(k, p.client, p.clientEmail || p.customerEmail, p.clientPhone || p.customerPhone, p.customerId); });   /* patch CUSTNAME: + the job it was found from */
   var pids = {}; jobs.forEach(function(p){ pids[p.id] = 1; });
   var ests = estimates().filter(function(e){ var f = e.fields || {}; return (e.pid && pids[e.pid]) || matchesCust(k, e.client || e.customer || e.clientName || f.client || f.name, e.clientEmail || e.email || f.email, e.clientPhone || f.phone); });
   var lds = leads().filter(function(l){ return l && !l.deleted && matchesCust(k, l.contactName || l.client || l.name, l.email || (l.contact && l.contact.email), l.phone || (l.contact && l.contact.phone)); });
