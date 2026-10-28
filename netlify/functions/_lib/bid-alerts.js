@@ -50,6 +50,7 @@
 'use strict';
 
 const BD = require('./bid-due.js');
+function HOLD(){ return require('./lead-hold.js'); }   /* patch LEADHOLD */
 const KA = 'gc_lead_inbox_alerts';
 const RETRY_H = 24, REMIND_EARLY = 50, REMIND_LATE = 70, TODAY_AT = '08:00';
 const STL_FIRST_H = 4, STL_SECOND_H = 24, STL_MAX_DAYS = 7, QUIET_FROM = '21:00', QUIET_TO = '07:00';
@@ -681,14 +682,14 @@ function make(d){
     const out = [], haveInbox = {}, have = {};
     arr(leads).forEach(l => { if (l && l.id) { have[l.id] = 1; if (l.inboxId) haveInbox[l.inboxId] = 1; } });
     arr(leads).forEach(l => {
-      if (!l || !l.id || closed(l) || !inbound(l)) return;
+      if (!l || !l.id || closed(l) || !inbound(l) || HOLD().isHeld(l)) return;   /* patch LEADHOLD: held for an admin until 5 PM — not "unassigned" */
       const x = entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type }));
       if (x.assignee && low(l.createdBy) === low(x.assignee)) return;   /* a PM's own lead, typed in after talking to them */
       out.push(Object.assign(x, { born: bornAt(l), asgAt: ms(l.assignedAt), contacted: contacted(l), contactName: s(l.contactName), phone: s(l.phone), email: s(l.email), address: s(l.address) }));
     });
     /* a website lead no CRM has collected yet: it is unassigned all the same */
     arr(items).forEach(it => {
-      if (!it || it.stub || haveInbox[it.id] || !inbound(it) || closed(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
+      if (!it || it.stub || haveInbox[it.id] || !inbound(it) || closed(it) || HOLD().isHeld(it) || !/^(new|imported)$/.test(s(it.status) || 'new')) return;
       const lid = 'LEADIN-' + s(it.id).replace(/^LI-/, ''); if (have[lid] || (tombs && tombs['leads:' + lid])) return;
       const x = entry(Object.assign({}, it, { key: lid }));
       out.push(Object.assign(x, { born: bornAt(it), asgAt: ms(it.assignedAt), contacted: false, address: [s(it.address), s(it.city)].filter(Boolean).join(', ') }));

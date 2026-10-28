@@ -260,7 +260,10 @@ function decide(idx, p){
 }
 function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10); } catch (e) { return ''; } }
 /* patch CC2: a project its creator made is their lead */
-function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm }; }
+/* patch LEADHOLD (owner 10/28: "any jobs initiated from GrayCo Photos for a PM is considered their own lead, paid under a
+   different structure"): the own-lead tags the pay reads (leadIsMine / ownLead / leadOwner; _lib/lead-hold.js ownFields) */
+function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm,
+  leadIsMine: true, ownLead: true, graycoOrigin: false, leadOwner: pm, leadSourceTag: 'PM’s own lead' }; }
 function jobFor(p, pm, note, nowIso, senior){
   const c = p.contact || {}, iso = new Date(p.created_at * 1000).toISOString();
   const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),

@@ -114718,7 +114718,7 @@ function jobFor(p){
     created: ymd(sec), createdAt: iso, keepAsJob: true, _ccAuto: true, savedAt: iso, updatedAt: iso };
   var pm = ccPmName(p);
   if (!pm) { try { var _sp = window._gcPeople && window._gcPeople.senior && window._gcPeople.senior(); if (_sp) { j.pm = String(_sp.name); j.pmBy = 'senior-pm'; } } catch (e) {} }   /* patch PMG: nobody mapped → the Senior PM runs it (not their own lead) */
-  if (pm) { j.pm = pm; j.leadSource = 'Self-generated (' + pm + ')'; j.broughtInBy = pm; j.commissionSource = 'self'; j.pmSourced = true; j.selfGenerated = true; j.owner = pm; j.createdBy = pm; }   /* patch CC2 */
+  if (pm) { j.pm = pm; j.leadSource = 'Self-generated (' + pm + ')'; j.broughtInBy = pm; j.commissionSource = 'self'; j.pmSourced = true; j.selfGenerated = true; j.owner = pm; j.createdBy = pm; j.leadIsMine = true; j.ownLead = true; j.graycoOrigin = false; j.leadOwner = pm; j.leadSourceTag = 'PM’s own lead'; }   /* patch CC2; LEADHOLD: the own-lead tags the pay reads */
   return j;
 }
 async function makeJobs(items, byHand){
@@ -114850,6 +114850,10 @@ window._gcCCMakeLead = async function(id){
     ccamId: String(p.id), ccProjectId: String(p.id), ccamUrl: p.url, companyCamUrl: p.url,
     ccCreator: p.creator || '', addedBy: me(),
     note: 'From the "New in CompanyCam" review list' + (p.creator ? (' — made in CompanyCam by ' + p.creator) : '') + '.' };
+  /* patch LEADHOLD: a PM's own GrayCo Photos project is HIS lead — assigned to him now (never held), tagged as his own */
+  try { var LHk = window._gcLeadHoldCore, lpm = ccPmName(p);
+    if (LHk && lpm) { var dc = LHk.decideSource(lead, { ccPm: lpm, others: ((window._crm && window._crm.leads) || []).concat((window._crm && window._crm.projects) || []) });
+      Object.assign(lead, { pm: lpm, assignedBy: 'GrayCo Photos (' + lpm + ')', assignedAt: lead.createdAt, holdSkip: true }, dc && dc.source === 'company' ? LHk.companyFields(dc.why) : LHk.ownFields(lpm, dc ? dc.why : lpm + '’s own lead — started from their GrayCo Photos project')); } } catch (e) {}
   try { window.__GC_MANUAL_SAVE__ = true; if (window._gcManualNow) window._gcManualNow('companycam lead'); } catch (e) {}
   var done = false;
   try {
@@ -125183,6 +125187,7 @@ function fromItem(it, prev){
   l.sources = arr(it.sources).map(function(x){ return x.name; }); l.alsoOn = arr(it.alsoOn); l.inboxFlag = s(it.flag); l.addendumCount = it.addendumCount || 0;
   l.matchNotes = arr(it.notes).slice(-6); l.needsReview = !!it.needsReview; l.origin = s(it.origin);
   if (it.portal && it.portal.jobId) l.bidPortalJob = it.portal.jobId;
+  if (it.hold && window._gcLeadHold) { try { window._gcLeadHold.fromItem(l, it, fresh); } catch (e) {} }   /* patch LEADHOLD: the server's hold / its 5 PM release */
   if (fresh && it.leadExtra && typeof it.leadExtra === 'object') Object.keys(it.leadExtra).forEach(function(k){ if (/^[a-zA-Z][a-zA-Z0-9]{0,40}$/.test(k)) l[k] = it.leadExtra[k]; });   /* patch WEB: a new website / Brain lead's own fields (owner GrayCo, commission source…), set once */
   return stamp(l);
 }
@@ -133001,7 +133006,8 @@ function imported(r){
   if (!r) return true;
   if (IMPORT_ID.test(s(r.id))) return true;
   if (r.inboxId || r.rsLeadId || r.launchedFrom || r.intakeId || r._ccAuto || r._ccServer || r._ccImported || r.qbId || r.qbCustomerId || r.bidPortal || r.bidOppId || r.fromBid || r.fromLeadId || r.importedAt) return true;
-  return /quickbooks|companycam|buildingconnected|planhub|planroom|bid ?watch|lead inbox|website|roofscout|gmail scanner|ai scanner/i.test(s(r.source) + ' ' + s(r.leadSource) + ' ' + s(r.createdBy));
+  if (r.attrib || r.trackCode || r.mkSource || r.partnerCode || r.campaignId || r.winbackId || r.maintPlanId || r.renewalOf || r.fromEstimateId || r.websiteLead) return true;   /* patch LEADHOLD: made by the CRM / marketing → GrayCo's */
+  return /quickbooks|companycam|buildingconnected|planhub|planroom|bid ?watch|lead inbox|website|roofscout|gmail scanner|ai scanner|marketing|campaign|news ?letter|referr|win-?back|maint(enance)? ?plan|review|social|\/go\/|door ?hanger|print ?pack|renewal|partner|\blsa\b|local services/i.test(s(r.source) + ' ' + s(r.leadSource) + ' ' + s(r.createdBy));
 }
 function idMs(id){ var m = /^[A-Z]{2,4}([0-9a-z]{8,9})/.exec(s(id)); if (!m) return 0; var t = parseInt(m[1], 36); return t > 1.6e12 && t < 4e12 ? t : 0; }
 function fresh(r){
@@ -133016,13 +133022,26 @@ function stamp(r, kind, via, m){
   m = m || me(); if (!m.name) return r;
   var o = Object.assign({}, r), at = nowIso();
   o.createdBy = o.createdBy || m.name; o.createdByEmail = o.createdByEmail || m.email; o.createdAt = o.createdAt || at; o.createdVia = o.createdVia || via || '';
-  var keepRouting = kind === 'lead' && isCommercial(o) && (m.admin || m.office);   /* the office entering a bid: the Senior Estimator routing stays */
+  /* patch LEADHOLD (owner 10/28): what a PM enters by hand is HIS own lead (whoever runs it); what the office / an admin
+     enters is a GrayCo lead (a lead with nobody picked goes to the lead routing at once, never held); an earlier GrayCo
+     lead / job at the same address wins ("when we get it, it's ours") */
+  var LH = W._gcLeadHoldCore, adm = !!(m.admin || m.office);
+  o.createdByKind = o.createdByKind || (adm ? 'admin' : 'pm');
+  var first = !adm && LH ? LH.earlierCompany(o, arr(W._crm && W._crm.leads).concat(arr(W._crm && W._crm.projects))) : null;
+  var keepRouting = kind === 'lead' && adm;   /* the office entering a lead: the lead roles / Senior Estimator routing stays */
   if (!s(o.pm) && !keepRouting) o.pm = m.name;
-  if (low(o.pm) === low(m.name)) {
+  if (!adm && !first) {
     var label = 'Self-generated (' + m.name + ')';
     o.selfGenerated = true; o.leadSource = label; o.broughtInBy = o.broughtInBy || m.name; o.commissionSource = 'self'; o.pmSourced = true; o.owner = o.owner || m.name;
-    if (kind === 'lead') { o.addedBy = o.addedBy || m.name; o.source = s(o.source) || label; o.assignedTo = o.assignedTo || m.name; o.pmEmail = o.pmEmail || m.email; o.assignedBy = o.assignedBy || m.name; o.assignedAt = o.assignedAt || at; }
-  } else if (kind === 'lead') o.addedBy = o.addedBy || m.name;
+    o.leadIsMine = true; o.ownLead = true; o.graycoOrigin = false; o.leadOwner = o.leadOwner || m.name; o.leadSourceTag = 'PM’s own lead'; o.holdSkip = true;
+    o.leadSourceWhy = o.leadSourceWhy || (m.name + '’s own lead — entered by hand by ' + m.name);
+    if (kind === 'lead' && low(o.pm) === low(m.name)) { o.addedBy = o.addedBy || m.name; o.source = s(o.source) || label; o.assignedTo = o.assignedTo || m.name; o.pmEmail = o.pmEmail || m.email; o.assignedBy = o.assignedBy || m.name; o.assignedAt = o.assignedAt || at; }
+    else if (kind === 'lead') o.addedBy = o.addedBy || m.name;
+  } else {
+    if (LH) Object.assign(o, LH.companyFields(adm ? 'GrayCo lead — entered by the office / an admin (' + m.name + ')' : 'GrayCo lead — "' + (first.name || first.id) + '" was already in the CRM at that address (first in wins)', at));
+    o.leadSource = s(o.leadSource) || 'GrayCo';
+    if (kind === 'lead') { o.addedBy = o.addedBy || m.name; if (adm) o.holdSkip = true; }
+  }
   o.updatedAt = o.savedAt = at;
   return o;
 }
@@ -133058,6 +133077,15 @@ function tick(){
     if (nj && nj.length) {
       var ids = {}; nj.forEach(function(r){ if (want(r)) ids[r.id] = 1; });
       if (Object.keys(ids).length) { applyTo('_setProjects', ids, function(r){ return r.createdBy ? r : stamp(r, 'job', 'desk', m); }); stats.jobs += Object.keys(ids).length; LOG.push({ at: nowIso(), jobs: Object.keys(ids) }); }
+      /* patch LEADHOLD: a job made from a PM's own lead stays his own lead */
+      var LHc = W._gcLeadHoldCore;
+      if (LHc) { var ls0 = arr(W._crm && W._crm.leads), cids = {}, cby = {};
+        nj.forEach(function(r){ if (!r || r.leadSourceOverride || LHc.storedSource(r) === 'self' || LHc.companyWhy(r)) return; var lid = s(r.fromLeadId || r.leadId);
+          var ld = ls0.filter(function(x){ return x && ((lid && s(x.id) === lid) || (s(x.pid || x.jobId) && s(x.pid || x.jobId) === s(r.id))); })[0];
+          var own = ld && LHc.storedSource(ld) === 'self' && !LHc.companyWhy(ld) ? s(ld.leadOwner || ld.broughtInBy) : '';
+          if (own) { cids[r.id] = 1; cby[r.id] = own; } });
+        if (Object.keys(cids).length) applyTo('_setProjects', cids, function(r){ return Object.assign({}, r, LHc.ownFields(cby[r.id], cby[r.id] + '’s own lead — made from their own lead'), { updatedAt: nowIso(), savedAt: nowIso() }); });
+      }
     }
     /* leads (looked at through the setter, like the lead alerts do) */
     if (typeof W._setLeads === 'function') {
@@ -165219,7 +165247,7 @@ function cardHtml(l){
     + '<div class="m">' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + (value(l) ? ' · <b>' + money(value(l)) + '</b>' : '') + '</div>'
     + '<div class="m" title="When it came in and where from">📥 ' + esc(shortDay(receivedMs(l)) || '—') + ' · ' + esc(srcOf(l)) + '</div>'   /* patch HOT2 */
     + '<div class="m" style="margin-top:4px">' + '<span class="gcl-av' + (a ? '' : ' none') + '" title="' + esc(a || 'Unassigned') + '">' + esc(a ? initials(a) : '!') + '</span>'
-    + roleChip(l) + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
+    + roleChip(l) + (W._gcLeadHold ? W._gcLeadHold.chip(l) : '') /* patch LEADHOLD */ + prioChip(l) + dueChip(l) + speedChip(l) + (pl.files.length ? '<span class="gcl-chip" title="Plans stored in the CRM">📐 ' + pl.files.length + '</span>' : pl.links.length ? '<span class="gcl-chip warn" title="Plans by link">🔗 plans</span>' : '') + portalChip(l) + (bids ? '<span class="gcl-chip">' + esc(bids) + '</span>' : '') + '</div>'
     + '<div class="m" style="margin-top:5px">' + (!contacted(l) && !closed(l) ? '<button type="button" class="gcl-mv" data-gcl-contact="' + esc(l.id) + '">✅ Contacted</button>' : '')
     + (canAssignAll() ? '<button type="button" class="gcl-mv gcl-asg" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead to a PM / estimator">👤 ' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? (assignee(l) ? 'Change estimator' : 'Assign estimator') : (assignee(l) ? 'Reassign' : 'Assign to PM')) + '</button>' : '')   /* patch LROLEVIEW; BIDROLE */
     + '<select class="gcl-mv" data-gcl-move="' + esc(l.id) + '" aria-label="Move to stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select></div>'
@@ -166041,7 +166069,7 @@ function assign(id, name){
   return patchLead(id, function(l){ var commercial = isBidL(l); if (commercial && ((!l.pm && !/won/i.test(s(l.stage))) || !(W._gcBidRole && W._gcBidRole.admin()))) l.estimator = name; else l.pm = name;   /* patch BIDROLE: on a bid only an admin sets the PM (after Won) */ if (commercial) delete l.autoAssignedAt;   /* patch HOT2 */ l.assignedAt = at; l.assignedBy = myName(); logAct(l, 'assign', 'Assigned to ' + name); })
     .then(function(ok){
       toast(ok ? 'Assigned to ' + name : 'Could not save — try again');
-      if (ok) { var l = leads().filter(function(x){ return x.id === id; })[0]; if (l) fn('bid-inbox?notify=1', { body: { lead: l } }).catch(function(){}); }
+      if (ok) { var l = leads().filter(function(x){ return x.id === id; })[0]; if (l) fn('bid-inbox?notify=1', { body: { lead: l } }).catch(function(){}); if (W._gcLeadHold) W._gcLeadHold.picked(id, name); }   /* patch LEADHOLD */
       redraw(); return ok;
     });
 }
@@ -166257,7 +166285,7 @@ function drawerHtml0(l){
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     /* assign */
-    + '<section><h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? '📐 Estimator' : '👤 Assigned to') + '</h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.drawerNote(l) : '') +   /* patch BIDROLE */ ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
+    + '<section><h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? '📐 Estimator' : '👤 Assigned to') + '</h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.drawerNote(l) : '') + (W._gcLeadHold ? W._gcLeadHold.drawer(l) : '') /* patch LEADHOLD */ +   /* patch BIDROLE */ ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
     /* contact */
     + '<section><h4>Contact</h4><div class="kv">' + esc(c.name || '—') + (c.phone ? ' · ' + esc(c.phone) : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div><div class="row">'
     + (c.phone ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="call" href="tel:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a><a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="text" href="sms:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">💬 Text</a>' : '')
@@ -166428,7 +166456,10 @@ function autoAssignBids(force){
   if (!force && AUTO_SCAN.ref === scanRef && AUTO_SCAN.min === scanMin && AUTO_SCAN.none) return Promise.resolve(0);
   leads().forEach(function(l){
     if (shut(l) || (!force && (AUTO_TRIES[l.id] || 0) >= 3)) return;
-    var r = assignee(l) ? null : routeOf(l), y = r ? Object.assign({}, l, (function(o){ o[r.field] = r.name; return o; })({})) : l, co = coOf(y);
+    var r = assignee(l) ? null : routeOf(l), hd = null;
+    if (W._gcLeadHold) { var hp = W._gcLeadHold.plan(l, r); if (hp) { r = hp.r; hd = hp.hold || null; } }   /* patch LEADHOLD: hold a new one; release a held one at 5 PM */
+    if (hd) { plan[l.id] = { r: null, co: null, hold: hd }; n++; key.push(l.id); return; }
+    var y = r ? Object.assign({}, l, (function(o){ o[r.field] = r.name; return o; })({})) : l, co = coOf(y);
     if (r || co) { plan[l.id] = { r: r, co: co }; n++; key.push(l.id); }
   });
   AUTO_SCAN = { ref: scanRef, min: scanMin, none: !n };
@@ -166442,7 +166473,9 @@ function autoAssignBids(force){
     list.forEach(function(l, i){
       var p = l && plan[l.id]; if (!p || shut(l)) return;
       var x = null;
-      if (p.r && !assignee(l)) { x = Object.assign({}, l); x[p.r.field] = p.r.name; x[p.r.field + 'Email'] = p.r.email; Object.assign(x, { assignedAt: at, assignedBy: 'Auto · ' + p.r.label, autoAssignedAt: at, leadRole: p.r.k, updatedAt: at }); logAct(x, 'assign', 'Auto-assigned to the ' + p.r.label + ' ' + p.r.name); }
+      if (p.hold) { if (assignee(l) || (l.hold && l.hold.state)) return; x = Object.assign({}, l, { hold: p.hold, leadRole: p.hold.k || l.leadRole, updatedAt: at }); logAct(x, 'assign', 'Suggested: ' + p.hold.name + ' (' + p.hold.label + ') — assigns at 5:00 PM unless an admin changes it'); list[i] = x; ch++; done.push({ x: x, r: null, co: null }); return; }   /* patch LEADHOLD */
+      if (p.r && p.r.release) { if (assignee(l) || !(W._gcLeadHold && W._gcLeadHold.isHeld(l))) return; x = Object.assign({}, l, W._gcLeadHold.core.releaseFields(l, 'auto', '', Date.now()), { updatedAt: at }); logAct(x, 'assign', 'Auto-assigned to ' + p.r.name + ' — nobody changed the suggestion by 5:00 PM'); }
+      else if (p.r && !assignee(l)) { x = Object.assign({}, l); x[p.r.field] = p.r.name; x[p.r.field + 'Email'] = p.r.email; Object.assign(x, { assignedAt: at, assignedBy: 'Auto · ' + p.r.label, autoAssignedAt: at, leadRole: p.r.k, updatedAt: at }); logAct(x, 'assign', 'Auto-assigned to the ' + p.r.label + ' ' + p.r.name); }
       var co = p.co && coOf(x || l);
       if (co) { x = x || Object.assign({}, l); x.coAssignees = arr(l.coAssignees).concat([{ name: co.name, email: co.email, role: 'roofing', label: co.label, at: at }]); x.updatedAt = at; logAct(x, 'assign', 'Added the ' + co.label + ' ' + co.name + ' (roofing work)'); }
       if (x) { list[i] = x; ch++; done.push({ x: x, r: p.r, co: co }); }
@@ -166674,6 +166707,7 @@ function closed(l){
 var AUTO_BY = /lead inbox|Senior Estimator|system|auto|grayco crm|roofscout|website|server/i;
 /* nobody assigned — or only the automatic assignment that no person has confirmed yet */
 function needsAssign(l){
+  if (W._gcLeadHold && W._gcLeadHold.isHeld(l)) return false;   /* patch LEADHOLD: the one "⏳ N new leads waiting" card instead */
   if (closed(l)) return false;
   var who = s(l.pm || l.estimator || l.apm);
   if (!who) return true;
@@ -166771,8 +166805,9 @@ function seesThem(){
 /* straight into the one approval set (fix_3 calls this), so the chip, the badge, the panel and the Approvals tab
    all count the same items in the same second */
 W._gcHot1Approvals = function(){
-  if (!seesThem()) return [];
-  return todoItems().map(function(x){ return { id: 'td:' + x.key, title: x.title, sub: x.sub, act: x.act }; });
+  var hold = []; try { if (W._gcLeadHold) hold = W._gcLeadHold.approvals(); } catch (e) {}   /* patch LEADHOLD: one grouped card (admins) */
+  if (!seesThem()) return hold;
+  return hold.concat(todoItems().map(function(x){ return { id: 'td:' + x.key, title: x.title, sub: x.sub, act: x.act }; }));
 };
 
 /* picking someone in the drawer (the Leads hub's assign) records who assigned it — that clears the item */
@@ -166793,6 +166828,414 @@ function wrapGreen(){
 every(function(){ try { wrapGreen(); if (D.hidden) return; pull(); tickWant(); } catch (e) { warn(e); } }, 1500);
 later(pull, 500);
 try { console.log('[GC] Lead deep links + "Assign this lead" approvals (patch HOT1): _gcOpenLead(id), _gcLeadsToAssign()'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-leadhold">
+/* __GC_PATCH_LEADHOLD_TOOL__ */
+/* __GC_PATCH_LEADHOLD__ (patch LEADHOLD) — netlify/functions/_lib/lead-hold.js, inlined word for word: */
+/* LEADHOLD-CORE-BEGIN */
+/* ============================================================================
+   lead-hold.js: HOLD-THEN-ASSIGN for new leads, and the PM's OWN lead rule (patch LEADHOLD)
+
+   Owner (10/28): "before assigning automatically, give for the rest of the work day for admin to approve or assign
+   to someone else, then automatically goes to who is assigned. Remember any jobs initiated from GrayCo Photos for a
+   PM is considered their own lead, paid under a different structure."
+   Owner adds: "if a PM enters the job in New Project first, that also counts … when we get it (company channels)
+   it's ours" · "ALL RoofScout leads are GrayCo leads, and anything generated by the CRM or marketing is too."
+
+   1. HOLD. When the CRM's lead routing (lead roles / Senior Estimator) picks a person for a NEW lead, the lead is not
+      assigned yet: it carries  hold = { state: 'held', name, email, field, label, k, until, at }  and shows
+      "Suggested: <name> — assigns at 5:00 PM". The work day ends 5:00 PM Central, Monday–Friday; a lead that comes in
+      after 5 PM or on a weekend is held until 5:00 PM the next work day. During the hold an admin approves the
+      suggestion or picks someone else (assigns now); nobody acts → at the deadline it goes to the suggested person
+      (the 10-minute bid-alerts run on the server, so no browser has to be open) and they get the normal notice.
+      NOT held: emergencies / mitigation (water, fire, flood, smoke, mold, "EMERGENCY"), a bid due before the hold
+      ends (or the next day), a lead an admin made or assigned by hand (holdSkip), a PM's own lead.
+   2. OWN LEAD. A lead / job a PM (any staff who is not admin / office) enters by hand, or one started from their own
+      GrayCo Photos (CompanyCam) project, is THAT PM's own lead: assigned to them at once, never held, and tagged
+      (commissionSource 'self', leadIsMine, ownLead, leadOwner …) so the pay uses their own-lead structure. Company
+      channels and RoofScout / marketing always win (GrayCo lead), and so does an earlier company lead at the same
+      address ("first in wins"). An admin's own choice (leadSourceOverride) is never changed.
+   Pure: no I/O. The server (bid-inbox.js, bid-alerts.js) requires it; the CRM page carries the same file word for word.
+   ========================================================================== */
+(function(root){
+'use strict';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+
+var TZ = 'America/Chicago', END_H = 17, END_M = 0;
+var DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+/* the wall clock in Central time: { y, mo, d, h, mi, dow } */
+function ct(ms){
+  var o = {};
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' })
+      .formatToParts(new Date(ms)).forEach(function(p){ o[p.type] = p.value; });
+  } catch (e) { var d = new Date(ms - 6 * 3600e3); return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), dow: d.getUTCDay() }; }
+  return { y: +o.year, mo: +o.month, d: +o.day, h: (+o.hour) % 24, mi: +o.minute, dow: DOW[o.weekday] };
+}
+/* Central wall time → epoch ms (daylight saving or not) */
+function ctMs(y, mo, d, h, mi){
+  var guess = Date.UTC(y, mo - 1, d, h, mi);
+  for (var i = 0; i < 2; i++) { var w = ct(guess); guess += Date.UTC(y, mo - 1, d, h, mi) - Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi); }
+  return guess;
+}
+/* when a lead that came in at `now` stops being held: 5:00 PM Central today (a work day, before 5), else the next work day */
+function holdUntil(now){
+  var t = typeof now === 'number' ? now : Date.now(), w = ct(t), k = 0;
+  var workday = function(dow){ return dow >= 1 && dow <= 5; };
+  if (!(workday(w.dow) && w.h * 60 + w.mi < END_H * 60 + END_M)) {
+    k = 1; while (!workday((w.dow + k) % 7)) k++;
+  }
+  var day = new Date(Date.UTC(w.y, w.mo - 1, w.d + k));
+  return new Date(ctMs(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), END_H, END_M)).toISOString();
+}
+/* "5:00 PM today" / "5:00 PM Mon 11/2" (as seen from `now`) */
+function whenLabel(iso, now){
+  var t = Date.parse(iso); if (!isFinite(t)) return '5:00 PM';
+  var a = ct(t), b = ct(typeof now === 'number' ? now : Date.now());
+  var hh = a.h % 12 || 12, tm = hh + ':' + ('0' + a.mi).slice(-2) + ' ' + (a.h < 12 ? 'AM' : 'PM');
+  if (a.y === b.y && a.mo === b.mo && a.d === b.d) return tm + ' today';
+  return tm + ' ' + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][a.dow] + ' ' + a.mo + '/' + a.d;
+}
+
+/* ── what is never held ── */
+var EMERG = /\b(emergenc\w*|water|flood\w*|fire|smoke|soot|mitigation|mou?ld|leak\w*|burst|sewage|dry[\s-]*out|asap|urgent)\b/i;
+function textOf(l){
+  var c = l && l.contact && typeof l.contact === 'object' ? l.contact : {}, x = (l && l.leadExtra) || {};
+  return [l.type, l.leadKind, l.jobType, l.title, l.name, l.detail, l.websiteForm, l.form, l.service, l.subject, l.message, l.scope, l.urgency, l.causeOfLoss, c.message, x.message, x.websiteForm, x.urgency]
+    .concat(arr(l.notes).slice(0, 4)).map(s).join(' | ');
+}
+function isEmergency(l){
+  if (!l) return false;
+  if (l.emergency === true || l.isEmergency === true || (l.leadExtra && l.leadExtra.emergency === true) || /^emergency$/i.test(s(l.urgency))) return true;
+  if (/commercial|government|bid/i.test(s(l.type || l.leadKind)) && !/emergenc/i.test(s(l.title) + ' ' + s(l.name))) return false;   /* a bid that mentions water is not an emergency */
+  return EMERG.test(textOf(l));
+}
+function dueSoon(l, until){
+  var d = s(l && l.bidDue).slice(0, 10); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  var u = Date.parse(until); if (!isFinite(u)) return false;
+  return Date.parse(d + 'T00:00:00Z') <= u + 86400e3;   /* due by the day after the hold ends: the estimator needs it now */
+}
+/* the lead's person, if any */
+function assignee(l){ return s(l && (l.pm || l.estimator || l.apm)); }
+function isHeld(l){ return !!(l && l.hold && l.hold.state === 'held' && s(l.hold.name) && !assignee(l)); }
+function isDue(l, now){ return isHeld(l) && Date.parse(l.hold.until) <= (typeof now === 'number' ? now : Date.now()); }
+
+/* ── GrayCo lead or the PM's own? ── */
+/* company channels, RoofScout and anything the CRM / marketing made — these always win */
+var COMPANY = /roof ?scout|website|web ?form|marketing|campaign|news ?letter|referr|win-?back|maint(enance)? ?plan|review|social|facebook|instagram|nextdoor|google|\bads?\b|\bppc\b|\blsa\b|local services|\/go\/|tracked|door ?hanger|postcard|flyer|print ?pack|\bqr\b|partner|estimate|renewal|lead ?inbox|leads@|bids@|claims@|office@|missed call|phone call|\bphone\b|call ?rail|roof ?ignite|contractor connection|alacrity|sedgwick|home ?advisor|angi|thumbtack|bid ?board|building ?connected|planhub|plan ?room|sam\.gov|giveaway|event|coupon|grayco lead|text us|voicemail/i;
+function companyWhy(r){
+  if (!r) return '';
+  if (r.rsLeadId || /^LEAD_RS_/.test(s(r.id)) || /roof ?scout/i.test([r.source, r.leadSource, r.origin, r.createdVia].map(s).join(' '))) return 'a RoofScout lead (always GrayCo’s)';
+  if (r.inboxId || r.leadInboxId || r.websiteLead || r.grayCoLead === true || r.partnerCode || r.partnerId || r.attrib || r.trackCode || r.utmCampaign || r.mkSource || r.campaignId || r.winbackId || r.maintPlanId || r.renewalOf || r.fromEstimateId || r.intakeId)
+    return 'came in through a company channel';
+  if (/^(website|api|watch|email|partner|partner-bid|referral|phone|missed-call|sms|voice|marketing)$/i.test(s(r.origin))) return 'came in through ' + s(r.origin);
+  var src = [r.source, r.leadSource, r.sourceKind, r.howHeard, r.mkSource, r.origin].map(s).filter(function(v){ return v && !/^(grayco|self|self-generated.*|companycam|crm|manual|desk|field)$/i.test(v); }).join(' ');
+  if (COMPANY.test(src)) return 'GrayCo lead (' + src.slice(0, 60) + ')';
+  return '';
+}
+function ccWhy(r){
+  if (!r || r.ccLinkedBy) return '';
+  if (/^(PRJcc_|LCC_|LCCR_|LGN_)/.test(s(r.id)) || r._ccAuto || r._ccServer || low(r.source) === 'companycam' || ((r.ccamId || r.ccProjectId) && !r.inboxId)) return 'started from a GrayCo Photos project';
+  return '';
+}
+/* a person on the team list: 'admin' (owner / admin / office) or 'pm' (anyone else who works leads) */
+function personKind(u){
+  if (!u) return '';
+  var roles = u.roles || {}, x = low([u.role, u.profile, u.title].map(s).join(' '));
+  if (low(u.payType) === 'owner' || roles.admin || roles.office || /\b(admin|owner|office)\b/.test(x)) return 'admin';
+  return 'pm';
+}
+function normAddr(a){
+  var line = low(a).split(',')[0].replace(/[.#]/g, ' ').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!line || !/\d/.test(line)) return '';
+  var SUF = { street: 'st', road: 'rd', avenue: 'ave', av: 'ave', drive: 'dr', lane: 'ln', court: 'ct', boulevard: 'blvd', highway: 'hwy', place: 'pl', circle: 'cir', parkway: 'pkwy', cove: 'cv', terrace: 'ter', trail: 'trl', north: 'n', south: 's', east: 'e', west: 'w' };
+  return line.split(' ').map(function(w){ return SUF[w] || w; }).join('');
+}
+function bornMs(r){
+  var c = [r && r.createdAt, r && r.receivedAt, r && r.created, r && r.dateAdded].map(function(v){ var t = typeof v === 'number' ? v : Date.parse(s(v)); return isFinite(t) && t > 0 ? t : 0; }).filter(Boolean);
+  return c.length ? Math.min.apply(null, c) : 0;
+}
+function storedSource(r){
+  var cs = low(r && r.commissionSource);
+  if (cs === 'self') return 'self'; if (cs === 'company' || cs === 'grayco') return 'company';
+  if (r && (r.graycoOrigin === true || r.assignedByAdmin === true)) return 'company';
+  if (r && (r.ownLead === true || r.leadIsMine === true || r.pmSourced === true)) return 'self';
+  return '';
+}
+/* an earlier GrayCo (company) record at the same street address: "when we get it, it's ours" (first in wins) */
+function earlierCompany(r, others){
+  var a = normAddr(r && (r.address || r.jobAddress)); if (a.length < 6) return null;
+  var at = bornMs(r) || Date.now(), best = null;
+  arr(others).forEach(function(o){
+    if (!o || s(o.id) === s(r.id) || o.deleted || o._deleted) return;
+    if (normAddr(o.address || o.jobAddress) !== a) return;
+    var t = bornMs(o); if (!t || t >= at - 60000) return;
+    var company = !!companyWhy(o) || storedSource(o) === 'company';
+    if (!company) return;
+    if (!best || t < best.t) best = { t: t, id: s(o.id), name: s(o.name || o.title || o.company) };
+  });
+  return best;
+}
+/* → { source: 'self', pm, why } | { source: 'company', why } | null (leave it: an admin's choice, or nothing to go on)
+   ctx: { creator: { name, email, kind }, ccPm: '<the GrayCo Photos creator's PM>', others: [leads / jobs / inbox items] } */
+function decideSource(r, ctx){
+  ctx = ctx || {};
+  if (!r || (r.leadSourceOverride && r.leadSourceOverride.source) || r.ownLeadSetBy) return null;
+  var cw = companyWhy(r); if (cw) return { source: 'company', why: 'GrayCo lead — ' + cw };
+  var pm = '', why = '';
+  if (ccWhy(r)) { pm = s(ctx.ccPm); if (!pm) return { source: 'company', why: 'GrayCo lead — a GrayCo Photos project with no PM of its own' }; why = 'started from ' + pm + '’s GrayCo Photos project'; }
+  else if (ctx.creator && ctx.creator.kind === 'pm' && s(ctx.creator.name)) { pm = s(ctx.creator.name); why = 'entered by hand by ' + pm; }
+  else if (ctx.creator && ctx.creator.kind === 'admin') return { source: 'company', why: 'GrayCo lead — entered by the office / an admin' + (ctx.creator.name ? ' (' + s(ctx.creator.name) + ')' : '') };
+  else return null;
+  var e = earlierCompany(r, ctx.others);
+  if (e) return { source: 'company', why: 'GrayCo lead — "' + (e.name || e.id) + '" was already in the CRM at that address (first in wins)', evidence: e };
+  return { source: 'self', pm: pm, why: pm + '’s own lead — ' + why };
+}
+function ownFields(pm, why, at){
+  var label = 'Self-generated (' + pm + ')';
+  return { commissionSource: 'self', pmSourced: true, selfGenerated: true, leadIsMine: true, ownLead: true, graycoOrigin: false, broughtInBy: pm, leadOwner: pm,
+    leadSource: label, leadSourceTag: 'PM’s own lead', leadSourceWhy: s(why), leadSourceAt: at || new Date().toISOString(), leadSourceV: 1 };
+}
+function companyFields(why, at){
+  return { commissionSource: 'company', pmSourced: false, selfGenerated: false, leadIsMine: false, ownLead: false, graycoOrigin: true, leadSourceTag: 'GrayCo lead',
+    leadSourceWhy: s(why), leadSourceAt: at || new Date().toISOString(), leadSourceV: 1 };
+}
+
+/* ── the hold itself ── */
+/* should a new lead the routing gave to `pick` ({ field, name, email, label, k }) be held? → '' | why not */
+function noHoldWhy(l, now){
+  if (!l) return 'no lead';
+  if (l.holdSkip) return 'made or assigned by an admin';
+  if (l.hold && l.hold.state) return 'already handled';
+  if (ccWhy(l) || storedSource(l) === 'self') return 'a PM’s own lead';
+  if (isEmergency(l)) return 'emergency / mitigation';
+  if (dueSoon(l, holdUntil(now))) return 'the bid is due before the hold ends';
+  return '';
+}
+function holdFor(pick, now){
+  var t = typeof now === 'number' ? now : Date.now();
+  return { state: 'held', name: s(pick.name), email: low(pick.email), field: pick.field === 'estimator' ? 'estimator' : 'pm', label: s(pick.label), k: s(pick.k), until: holdUntil(t), at: new Date(t).toISOString() };
+}
+/* the fields that assign a held lead to its suggested person (the deadline passed, or an admin approved) */
+function releaseFields(l, how, by, now){
+  var h = l.hold || {}, at = new Date(typeof now === 'number' ? now : Date.now()).toISOString(), o = {};
+  o[h.field === 'estimator' ? 'estimator' : 'pm'] = h.name; o[(h.field === 'estimator' ? 'estimator' : 'pm') + 'Email'] = h.email;
+  o.assignedAt = at; o.leadRole = h.k || l.leadRole || '';
+  if (how === 'approved') { o.assignedBy = s(by) || 'Admin'; o.assignConfirmed = true; }
+  else { o.assignedBy = 'Auto · ' + (h.label || 'lead role') + ' (held until ' + whenLabel(h.until, Date.parse(h.until)).replace(/ today$/, '') + ', nobody changed it)'; o.autoAssignedAt = at; }
+  o.hold = Object.assign({}, h, { state: how === 'approved' ? 'approved' : 'auto', doneAt: at, doneBy: s(by) || (how === 'approved' ? '' : 'auto') });
+  return o;
+}
+/* the server's run (bid-alerts, every 10 minutes): which Lead Inbox items to assign now, and which to let go
+   (the CRM copy was assigned by a person meanwhile). crmLeads = gc_kv "leads" (read only). */
+function dueItems(items, crmLeads, now){
+  var t = typeof now === 'number' ? now : Date.now(), byInbox = {};
+  arr(crmLeads).forEach(function(l){ if (l && l.inboxId) byInbox[l.inboxId] = l; });
+  var assign = [], drop = [], crmOnly = [];
+  arr(items).forEach(function(it){
+    if (!it || !it.hold || it.hold.state !== 'held') return;
+    if (assignee(it) || /^(dismissed|merged)$/.test(s(it.status))) { drop.push({ id: it.id, why: assignee(it) ? 'assigned' : s(it.status) }); return; }
+    var c = byInbox[it.id];
+    if (c && (assignee(c) || (c.hold && c.hold.state && c.hold.state !== 'held'))) { drop.push({ id: it.id, why: 'changed in the CRM', crm: c }); return; }
+    if (Date.parse(it.hold.until) <= t) assign.push(it);
+  });
+  /* a lead the CRM held itself (no Lead Inbox item, e.g. Roof Ignite): the notice goes out from here, the CRM writes it */
+  arr(crmLeads).forEach(function(l){ if (l && !l.inboxId && isDue(l, t) && !l.deleted && !l._deleted) crmOnly.push(l); });
+  return { assign: assign, drop: drop, crmOnly: crmOnly };
+}
+
+var API = { V: 1, TZ: TZ, ct: ct, ctMs: ctMs, holdUntil: holdUntil, whenLabel: whenLabel, isEmergency: isEmergency, dueSoon: dueSoon, assignee: assignee, isHeld: isHeld, isDue: isDue,
+  companyWhy: companyWhy, ccWhy: ccWhy, personKind: personKind, normAddr: normAddr, earlierCompany: earlierCompany, decideSource: decideSource, storedSource: storedSource,
+  ownFields: ownFields, companyFields: companyFields, noHoldWhy: noHoldWhy, holdFor: holdFor, releaseFields: releaseFields, dueItems: dueItems };
+if (typeof module !== 'undefined' && module.exports) module.exports = API;
+else root._gcLeadHoldCore = API;
+})(this);
+/* LEADHOLD-CORE-END */
+/* ═══ patch LEADHOLD (__GC_PATCH_LEADHOLD__) — hold-then-assign for new leads; a PM's own lead ═══════════════════════
+   Owner (10/28): "before assigning automatically, give for the rest of the work day for admin to approve or assign to
+   someone else, then automatically goes to who is assigned."
+
+   • A NEW lead the routing (lead roles / Senior Estimator) gives to someone is HELD: "⏳ Suggested: <name> — assigns at
+     5:00 PM" on its card and in its panel (work day ends 5:00 PM Central, Mon–Fri; after 5 PM / weekends → 5:00 PM the
+     next work day). The rule is netlify/functions/_lib/lead-hold.js, inlined above word for word (window._gcLeadHoldCore).
+   • ✅ Approvals: ONE card for all of them — "⏳ N new leads waiting to be assigned" (admins) → a short list, each with
+     ✅ Approve (assigns to the suggested person now) or 👤 Pick someone (opens the lead at "Assigned to"; that assigns now).
+   • Nobody acts → at the deadline the server (bid-alerts, every 10 min) assigns it and sends the normal notice; the
+     Leads screen catches up any held lead whose deadline passed (no new timers: the Leads hub's own routing pass).
+   • Not held: emergencies / mitigation, a bid due before the hold ends, an admin's own lead, a PM's own lead.
+   • A PM's own lead (entered by hand by a PM, or from their own GrayCo Photos project) is theirs at once and tagged as
+     their own lead (ownFields: commissionSource 'self', leadIsMine, ownLead, leadOwner); RoofScout / marketing / company
+     channels and an earlier company lead at that address always make it a GrayCo lead.
+   Console: _gcLeadHold.state()   _gcLeadHold.held()   _gcLeadHold.open()
+   ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_LEADHOLD__) return; W.__GC_PATCH_LEADHOLD__ = true;
+var C = W._gcLeadHoldCore; if (!C) return;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function nowIso(){ return new Date().toISOString(); }
+var SINCE = Date.parse('2026-10-28T00:00:00Z');   /* leads already waiting before this release keep the old (immediate) routing */
+var LOG = [];
+function crm(){ return W._crm || {}; }
+function meUser(){
+  try { var em = low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()), me = low(localStorage.getItem('grayco_user') || '');
+    return arr(crm().users).filter(function(u){ return u && ((em && low(u.email) === em) || (me && (low(u.email) === me || low(u.name) === me))); })[0] || null; } catch (e) { return null; }
+}
+function myName(){ var u = meUser(); if (u && u.name) return s(u.name); try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
+function isAdmin(){
+  try { if (W._gcVAS && W._gcVAS.active()) return /admin|owner/i.test(s(W._gcVAS.role())); } catch (e) {}
+  try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+  var u = meUser(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner'));
+}
+function kit(){ return W._gcLeadsHubKit || null; }
+function all(){ var K = kit(); try { if (K && K.all) return arr(K.all()); } catch (e) {} return arr(crm().leads); }
+function byId(id){ return all().filter(function(l){ return l && s(l.id) === s(id); })[0] || null; }
+var CLOSED = /^(won|lost|dead|deleted|converted|declined|not\s*bidding|no\s*bid|archived|cancell?ed|closed|dismissed|merged)$/i;
+function closed(l){ return !l || l.deleted || l._deleted || l.converted || l.pid || l.jobId || [l.stage, l.status, l.inboxState].some(function(v){ return CLOSED.test(s(v)); }); }
+function born(l){ var t = Date.parse(s(l && (l.createdAt || l.receivedAt || l.created || l.dateAdded))); return isFinite(t) ? t : 0; }
+function fresh(l){ var t = born(l); return t >= SINCE && Date.now() - t < 7 * 864e5; }
+function fn(path, body){
+  return W.fetch('/.netlify/functions/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); }, function(){ return {}; });
+}
+function toast(t){
+  try { var n = D.createElement('div'); n.textContent = t; n.setAttribute('data-gc-keep', '1');
+    n.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1b1640;color:#fff;padding:10px 16px;border-radius:8px;z-index:2147483300;font:600 14px Arial;max-width:90vw;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+    D.body.appendChild(n); ST.call(W, function(){ n.remove(); }, 4500); } catch (e) {}
+}
+
+/* ── the Leads hub's routing pass asks this, per lead with nobody on it ──
+   null → the hub does what it always did · { r: null } → leave it alone (held, or a PM's own lead) ·
+   { r: { release: true … } } → the deadline passed: assign the suggestion · { hold } → hold it instead of assigning */
+function plan(l, r){
+  if (!l || C.assignee(l)) return null;
+  if (C.isHeld(l)) {   /* a Lead Inbox lead is released by the server (it sends the notice); the screen steps in only if that is 30 min late */
+    var late = l.inboxId ? 30 * 60e3 : 0;
+    return C.isDue(l, Date.now() - late) ? { r: { release: true, field: l.hold.field, name: l.hold.name, email: l.hold.email, label: l.hold.label, k: l.hold.k } } : { r: null };
+  }
+  if (C.ccWhy(l) || C.storedSource(l) === 'self') return { r: null };   /* a PM's own lead is never routed to someone else */
+  if (!r || (l.hold && l.hold.state) || !fresh(l) || C.noHoldWhy(l, Date.now())) return null;
+  return { r: null, hold: C.holdFor(r, Date.now()) };
+}
+
+/* ── the Lead Inbox import: the server's hold (and its release at 5 PM) onto the CRM lead ── */
+function fromItem(l, it, isNew){
+  var h = it && it.hold; if (!h || !h.state) return;
+  if (isNew) { l.hold = Object.assign({}, h); return; }
+  if (C.assignee(l)) { if (l.hold && l.hold.state === 'held') l.hold = Object.assign({}, l.hold, { state: 'manual' }); return; }
+  if (h.state === 'held') { if (!l.hold) l.hold = Object.assign({}, h); return; }
+  if (l.hold && l.hold.state !== 'held') return;   /* the CRM decided already */
+  l.hold = Object.assign({}, h);
+  var who = s(it.estimator) ? 'estimator' : 'pm', nm = s(it[who]);
+  if (nm) { l[who] = nm; l[who + 'Email'] = low(it[who + 'Email']) || s(h.email); l.assignedBy = s(it.assignedBy) || 'Auto'; l.assignedAt = s(it.assignedAt) || nowIso(); if (it.autoAssignedAt) l.autoAssignedAt = it.autoAssignedAt; if (l.inboxState === 'new') l.inboxState = 'assigned'; }
+}
+
+/* ── what people see ── */
+function label(l){ return C.whenLabel(l.hold.until, Date.now()); }
+function chip(l){
+  if (!l) return '';
+  if (C.isHeld(l)) return '<span class="gcl-chip warn" title="Held for an admin: approve it or pick someone else before then">⏳ Suggested: ' + esc(l.hold.name) + ' — assigns at ' + esc(label(l)) + '</span>';
+  if (C.storedSource(l) === 'self' && s(l.leadOwner || l.broughtInBy)) return '<span class="gcl-chip" style="background:#ede9fe;color:#5b21b6" title="' + esc(l.leadSourceWhy || 'Entered by the PM or started from their GrayCo Photos project') + '">👤 ' + esc(s(l.leadOwner || l.broughtInBy)) + '’s own lead</span>';
+  return '';
+}
+function drawer(l){
+  if (!C.isHeld(l)) return '';
+  return '<div class="note" data-gclh-box style="margin:0 0 8px;padding:8px 10px;border-radius:8px;background:#fff7ed;color:#7c2d12;border:1px solid #fed7aa">⏳ <b>Suggested: ' + esc(l.hold.name) + '</b>' + (l.hold.label ? ' (' + esc(l.hold.label) + ')' : '') + ' — assigns at <b>' + esc(label(l)) + '</b> unless an admin changes it.'
+    + (isAdmin() ? ' <button type="button" class="gcl-mv" data-gclh-approve="' + esc(l.id) + '" style="margin-left:6px">✅ Approve suggestion</button><br><span style="font-size:12px">Or pick someone else below — that assigns now.</span>' : '') + '</div>';
+}
+function held(){ return all().filter(function(l){ return C.isHeld(l) && !closed(l); }).sort(function(a, b){ return s(a.hold.until).localeCompare(s(b.hold.until)); }); }
+/* the one approval card (patch HOT1's approval set, so the chip, the badge and the Approvals tab count it once) */
+var MEMO = { ref: null, at: 0, items: [] };
+function approvals(){
+  if (!isAdmin()) return [];
+  var ref = all(); if (MEMO.ref === ref && Date.now() - MEMO.at < 30000) return MEMO.items;
+  var h = held(), items = [];
+  if (h.length) items.push({ id: 'td:leadhold', title: '⏳ ' + h.length + ' new lead' + (h.length === 1 ? '' : 's') + ' waiting to be assigned',
+    sub: 'Each goes to its suggested person at ' + label(h[0]) + ' unless you approve it or pick someone else', act: { l: '✅ Review', f: function(){ open(); } } });
+  MEMO = { ref: ref, at: Date.now(), items: items };
+  return items;
+}
+
+/* ── acting on it: one lead written, the Lead Inbox told, the person notified ── */
+function saveOne(id, fx){
+  var K = kit(); if (!K || !K.setLeads) return Promise.resolve(false);
+  var out = null;
+  return Promise.resolve(K.setLeads(function(list){ var i = -1; list.forEach(function(x, k){ if (x && s(x.id) === s(id)) i = k; }); if (i < 0) return null;
+    var x = Object.assign({}, list[i]); if (fx(x) === false) return null; x.updatedAt = nowIso(); list[i] = x; out = x; return list; })).then(function(ok){ return ok ? out : null; });
+}
+function tellInbox(l, name, field){
+  if (!l || !l.inboxId) return;
+  fn('bid-inbox?act=1', { op: 'assigned', id: l.inboxId, pm: name, leadId: l.id, as: field === 'estimator' ? 'estimator' : '', email: field === 'estimator' ? s(l.estimatorEmail || (l.hold && l.hold.email)) : '' });
+}
+function approve(id){
+  if (!isAdmin()) { toast('Only an admin approves a suggested lead.'); return Promise.resolve(false); }
+  var me = myName() || 'Admin';
+  return saveOne(id, function(x){ if (!C.isHeld(x)) return false; Object.assign(x, C.releaseFields(x, 'approved', me, Date.now()));
+    var a = arr(x.activity).slice(); a.push({ type: 'assign', text: 'Approved the suggestion: ' + s(x.pm || x.estimator), at: nowIso(), by: me }); x.activity = a.slice(-200); })
+    .then(function(x){
+      if (!x) { toast('That lead is not waiting any more.'); return false; }
+      LOG.push({ at: nowIso(), approved: id }); MEMO.ref = null;
+      tellInbox(x, s(x.hold.name), x.hold.field);
+      fn('bid-inbox?notify=1', { lead: x });
+      toast('✅ Assigned to ' + s(x.hold.name));
+      try { if (W._gcLeadsHub && W._gcLeadsHub.redraw) W._gcLeadsHub.redraw(); } catch (e) {}
+      return true;
+    });
+}
+/* the hub's own assign (the drawer / the picker) on a held lead: the server's hold ends too */
+function picked(id, name){
+  var l = byId(id); if (!l || !l.hold || l.hold.state !== 'held') return;
+  var field = (W._gcBidRole && W._gcBidRole.isBid && W._gcBidRole.isBid(l)) ? 'estimator' : 'pm';
+  tellInbox(l, name, field); MEMO.ref = null; LOG.push({ at: nowIso(), picked: id, name: name });
+}
+
+/* ── the short list behind the approval card ── */
+function open(){
+  var old = D.getElementById('gclh-ov'); if (old) old.remove();
+  var h = held(), adm = isAdmin();
+  var ov = D.createElement('div'); ov.id = 'gclh-ov'; ov.setAttribute('data-gc-keep', '1');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100300;background:rgba(6,12,20,.6);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto';
+  ov.innerHTML = '<div role="dialog" aria-modal="true" style="background:#fff;color:#0f172a;border-radius:14px;max-width:680px;width:100%;padding:16px 18px;font:14px Arial,sans-serif;box-sizing:border-box">'
+    + '<button type="button" data-gclh-x style="float:right;border:none;background:#e2e8f0;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;min-height:40px">✕</button>'
+    + '<h2 style="margin:0 0 4px;font-size:19px">⏳ New leads waiting to be assigned</h2>'
+    + '<div style="color:#64748b;font-size:12.5px;margin-bottom:8px">Each goes to its suggested person at the time shown unless you approve it now or pick someone else.</div>'
+    + (h.length ? h.map(function(l){ return '<div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin:8px 0">'
+        + '<b>' + esc(l.name || l.title || l.company || 'Lead') + '</b><div style="color:#475569;font-size:12.5px">' + esc([l.leadKind || l.type, l.source, s(l.address).split(',')[0]].filter(Boolean).join(' · ')) + '</div>'
+        + '<div style="margin:4px 0">Suggested: <b>' + esc(l.hold.name) + '</b>' + (l.hold.label ? ' (' + esc(l.hold.label) + ')' : '') + ' — assigns at <b>' + esc(label(l)) + '</b></div>'
+        + (adm ? '<button type="button" data-gclh-approve="' + esc(l.id) + '" style="padding:8px 14px;border-radius:8px;border:none;background:#0f766e;color:#fff;font-weight:700;cursor:pointer;min-height:40px;margin:4px 6px 0 0">✅ Approve</button>'
+          + '<button type="button" data-gclh-pick="' + esc(l.id) + '" style="padding:8px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;font-weight:700;cursor:pointer;min-height:40px;margin:4px 6px 0 0">👤 Pick someone else</button>' : '')
+        + '</div>'; }).join('') + (adm && h.length > 1 ? '<button type="button" data-gclh-all style="padding:8px 14px;border-radius:8px;border:none;background:#14532d;color:#fff;font-weight:700;cursor:pointer;min-height:40px;margin-top:6px">✅ Approve all ' + h.length + '</button>' : '')
+      : '<div style="padding:12px 0">Nothing is waiting.</div>')
+    + '</div>';
+  ov.addEventListener('click', function(e){ if (e.target === ov) ov.remove(); });
+  D.body.appendChild(ov);
+  return ov;
+}
+D.addEventListener('click', function(e){
+  var t = e.target && e.target.closest ? e.target.closest('[data-gclh-approve],[data-gclh-pick],[data-gclh-all],[data-gclh-x]') : null; if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  var ov = D.getElementById('gclh-ov');
+  if (t.hasAttribute('data-gclh-x')) { if (ov) ov.remove(); return; }
+  if (t.hasAttribute('data-gclh-pick')) { if (ov) ov.remove(); try { W._gcOpenLead(t.getAttribute('data-gclh-pick'), 'assign'); } catch (x) {} return; }
+  t.disabled = true;
+  var ids = t.hasAttribute('data-gclh-all') ? held().map(function(l){ return l.id; }) : [t.getAttribute('data-gclh-approve')];
+  ids.reduce(function(p, id){ return p.then(function(){ return approve(id); }); }, Promise.resolve()).then(function(){
+    if (ov && ov.isConnected) open();
+    try { var H = W._gcLeadsHub; if (H && H.ui && H.ui().open && H.open) H.open(H.ui().open); } catch (x) {}
+  });
+}, true);
+
+W._gcLeadHold = { core: C, plan: plan, fromItem: fromItem, chip: chip, drawer: drawer, isHeld: C.isHeld, held: held, approvals: approvals, approve: approve, picked: picked, open: open,
+  state: function(){ return { held: held().map(function(l){ return { id: l.id, name: l.name, suggested: l.hold.name, until: l.hold.until }; }), log: LOG.slice(-20) }; } };
+try { console.log('[GC] Hold-then-assign for new leads + PM own leads (patch LEADHOLD): _gcLeadHold.state()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-plan">
@@ -167811,16 +168254,22 @@ function addrOf(r){ return s(r && (r.address || r.jobAddress || r.siteAddress ||
    'company' (any company intake, a converted lead, the office/admin) */
 const INTAKE = /website|lead inbox|leads@|inbox|partner|referr|missed call|roof ?ignite|contractor connection|alacrity|sedgwick|homeadvisor|angi|thumbtack|google|facebook|bid|board|planhub|buildingconnected|sam\.gov|giveaway|roof ?check|event|coupon|news|marketing|roofscout|grayco/i;
 function isCcJob(j){ return !!j && (/^PRJcc_\d+$/.test(s(j.id)) || j._ccAuto === true || j._ccImported === true || low(j.source) === 'companycam'); }
+/* patch LEADHOLD (owner 10/28): RoofScout and anything the CRM / marketing made are ALWAYS GrayCo leads, even when a PM
+   clicked it; a job converted from a PM's own lead stays his; a job a PM entered by hand (createdByKind 'pm') is his */
+const MADE_BY_CRM = /roof ?scout|campaign|news ?letter|win-?back|maint(enance)? ?plan|review|social|\/go\/|tracked|door ?hanger|print ?pack|\bqr\b|renewal|from (an )?estimate|marketing|\blsa\b|local services|\bads?\b/i;
 function originOf(j){
   if (!j) return 'company';
+  if (j.rsLeadId || /^LEAD_RS_/.test(s(j.id)) || MADE_BY_CRM.test(s(j.source) + ' ' + s(j.leadSource) + ' ' + s(j.origin) + ' ' + s(j.createdVia))) return 'company';
+  if ((j.leadId || j.fromLead || j.fromLeadId || j.convertedFrom) && !j.inboxId && !j.leadInboxId && !j.partnerId && (j.ownLead === true || j.leadIsMine === true) && s(j.leadOwner)) return 'pm';
   if (j.leadId || j.fromLead || j.fromLeadId || j.inboxId || j.leadInboxId || j.convertedFrom || j.partnerId) return 'company';
   if (isCcJob(j)) return 'cc';
   const by = low(j.enteredBy || j.createdBy), pm = low(j.pm);
   if (pm && by && by === pm) return 'pm';
+  if (by && s(j.createdByKind) === 'pm' && s(j.leadOwner)) return 'pm';
   if (j.selfGenerated === true && !INTAKE.test(s(j.source) + ' ' + s(j.origin))) return 'pm';
   return 'company';
 }
-function pmOf(j){ return s(j && (j.broughtInBy || j.pm || j.owner)); }
+function pmOf(j){ return s(j && (j.leadOwner || j.broughtInBy || j.pm || j.owner)); }   /* patch LEADHOLD: leadOwner = who brought it in */
 /* real sign of a company intake on the job (a lead / inbox / partner link, or a named intake as its source);
    a bare "grayco" source is the CRM's default and says nothing */
 function hasIntake(j){
@@ -167878,8 +168327,8 @@ function classify(job, ctx){
    reports, graycoOrigin / leadIsMine for the pay-structure resolver) */
 function fieldsFor(c, at){
   const stamp = at || new Date().toISOString();
-  if (c.source === 'self') return { commissionSource: 'self', pmSourced: true, selfGenerated: true, broughtInBy: c.pm, leadSource: 'Self-generated (' + c.pm + ')', graycoOrigin: false, leadIsMine: true, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
-  return { commissionSource: 'company', pmSourced: false, selfGenerated: false, broughtInBy: '', leadSource: 'GrayCo', graycoOrigin: true, leadIsMine: false, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
+  if (c.source === 'self') return { commissionSource: 'self', pmSourced: true, selfGenerated: true, broughtInBy: c.pm, leadSource: 'Self-generated (' + c.pm + ')', graycoOrigin: false, leadIsMine: true, ownLead: true, leadOwner: c.pm, leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };
+  return { commissionSource: 'company', pmSourced: false, selfGenerated: false, broughtInBy: '', leadSource: 'GrayCo', graycoOrigin: true, leadIsMine: false, ownLead: false, leadOwner: '', leadSourceWhy: c.reason, leadSourceAt: stamp, leadSourceV: 1 };   /* patch LEADHOLD: + ownLead / leadOwner */
 }
 /* what the job says now: 'company' | 'self' | '' (nothing on it — the engines then read it as GrayCo).
    ov = the admins' per-job choice map (gc_kv gc_job_source: { jobId: 'self'|'company' }) */
