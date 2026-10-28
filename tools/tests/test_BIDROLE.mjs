@@ -131,6 +131,11 @@ try {
   await signIn(c, 'wjohnson@grayco-cs.com', 12000);
   const p = c.page();
   await p.evaluate(() => window._setView && window._setView('leads'));
+  /* patch LEADSUI: Leads opens on 📋 List; the board is 🗂 Board and the Prime & sub filter is under ⋯ More → More filters */
+  await waitFor(c, () => !!document.querySelector('#gc-leads-hub [data-gcl-v="board"]'), null, 60000);
+  await p.evaluate(() => document.querySelector('#gc-leads-hub [data-gcl-v="board"]').click()); await sleep(400);
+  await p.evaluate(() => document.querySelector('#gc-leads-hub [data-gclu-more]').click()); await sleep(300);
+  await p.evaluate(() => document.querySelector('#gc-leads-hub [data-gclu-adv]').click()); await sleep(400);
   const up = await waitFor(c, () => document.querySelectorAll('#gc-leads-hub .gcl-card').length >= 5 && !!window._gcPrimeSub, null, 60000);
   ok(!!up, 'Leads board drawn with the demo leads');
   const badges = () => p.evaluate(() => { const o = {}; document.querySelectorAll('#gc-leads-hub .gcl-card').forEach(c => { const b = c.querySelector('.gc-role'); o[c.getAttribute('data-gcl-id')] = b ? b.className.replace('gc-role ', '') + '|' + b.textContent : ''; }); return o; });
@@ -141,7 +146,7 @@ try {
   ok(/gc-role-unset/.test(B.L_unk), 'a bid nobody can place: no prime / sub, only a "＋ Prime / Sub" chip for the admin', B);
   const opts = await p.evaluate(() => Array.from(document.querySelectorAll('#gc-leads-hub select[data-gcl-f="role"] option')).map(o => o.value + '=' + o.textContent));
   ok(opts.length === 4 && /prime=.*\(2\)/.test(opts[1]) && /sub=.*\(2\)/.test(opts[2]) && /unset=.*\(1\)/.test(opts[3]), 'the Prime & sub filter, with counts, next to Source / Type', opts);
-  const srcAt = await p.evaluate(() => { const s = Array.from(document.querySelectorAll('#gc-leads-hub .gcl-fil select')).map(x => x.getAttribute('data-gcl-f')); return s.indexOf('role') - s.indexOf('type'); });
+  const srcAt = await p.evaluate(() => { const s = Array.from(document.querySelectorAll('#gc-leads-hub .gcl-fil select, #gc-leads-hub .gclu-adv select')).map(x => x.getAttribute('data-gcl-f')); return s.indexOf('role') - s.indexOf('type'); });
   ok(srcAt === 1, 'it sits right after the Type filter');
   await p.selectOption('#gc-leads-hub select[data-gcl-f="role"]', 'prime'); await sleep(800);
   let ids = await p.evaluate(() => Array.from(document.querySelectorAll('#gc-leads-hub .gcl-card')).map(c => c.getAttribute('data-gcl-id')).sort());
@@ -177,7 +182,7 @@ try {
   const others = ['L_city', 'L_school', 'L_bc', 'L_ph', 'L_res', 'L_ins'].map(lead).filter(l => l && 'bidRole' in l).map(l => l.id);
   ok(others.length === 0, 'worked out on screen: no other lead was re-saved with a bidRole', others);
   /* the Bids tab (Lead Inbox cards) */
-  await mclick(p, '#gc-leads-tabs [data-gc-tab="bidboard"]');
+  await p.evaluate(() => document.querySelector('#gc-leads-tabs [data-gc-tab="bidboard"]').click());   /* LEADSUI: the tab bar is hidden on Leads (⋯ More → Lead Inbox) */
   const ib = await waitFor(c, () => { const r = document.getElementById('gc-ldi'); if (!r || r.offsetParent === null) return null; const sel = r.querySelector('select[data-f="show"]'); if (sel && sel.value !== 'open') { sel.value = 'open'; sel.dispatchEvent(new Event('change', { bubbles: true })); return null; } const o = {}; r.querySelectorAll('.card[data-id]').forEach(c => { const b = c.querySelector('.gc-role'); o[c.getAttribute('data-id')] = b ? b.textContent : ''; }); return Object.keys(o).length >= 4 ? o : null; }, null, 30000, 500);
   ok(ib && ib.L_city === '🏛 PRIME' && ib.L_bc === '🔧 SUB' && ib.L_unk === '🏛 PRIME', 'Bids tab cards show the badge', ib);
   const io = await p.evaluate(() => Array.from(document.querySelectorAll('#gc-ldi select[data-f="role"] option')).map(o => o.value + '=' + o.textContent));
