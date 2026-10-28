@@ -158102,8 +158102,10 @@ function cssq(v){ return String(v).replace(/["\\]/g, '\\$&'); }
 
 /* everything this person may see (the tab), "mine" = exactly the one approval set */
 var buildMemo = null;
+var UIONLY = 0;   /* patch APXOPEN: a repaint for the deny box alone reuses the cards already built */
+function paintBox(){ UIONLY = 1; try { if (view() === 'approvals') drawTab(true); pinRoots(); } catch (e) { warn(e); } UIONLY = 0; }
 function build(){
-  if (buildMemo && Date.now() - buildMemo.at < 500) return buildMemo.v;
+  if (buildMemo && (UIONLY || Date.now() - buildMemo.at < 500)) return buildMemo.v;
   var v = build0(); buildMemo = { at: Date.now(), v: v }; return v;
 }
 function build0(){
@@ -158461,22 +158463,22 @@ function btns(r, where){
     return '<div class="apx-notebox" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #c7d2fe;border-radius:9px;background:#f5f7ff">'
       + '<b style="width:100%;font-size:13px;color:#3730a3">📝 Note — for the team only (never sent to the customer)</b>'
       + '<input type="text" data-apx-note-in="' + esc(r.key) + '" value="' + esc(NOTEDRAFT[r.key] || '') + '" placeholder="e.g. Checked the amount with the sub" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font:14px Arial">'
-      + b('notego', { l: '💾 Save note', f: function(){ saveApxNote(r); } }, 'go') + b('notex', { l: 'Cancel', f: function(){ delete NOTEBOX[r.key]; fresh(); paintSoon(); } }, 'op') + '</div>';
+      + b('notego', { l: '💾 Save note', f: function(){ saveApxNote(r); } }, 'go') + b('notex', { l: 'Cancel', f: function(){ delete NOTEBOX[r.key]; paintBox(); } }, 'op') + '</div>';
   }
   if (r.approve && DENYBOX[r.key]) {
     return '<div class="apx-deny" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #fca5a5;border-radius:9px;background:#fff5f5">'
       + '<b style="width:100%;font-size:13px;color:#991b1b">✕ Deny — why? (sent back to ' + esc(denyTo(r) || 'the PM') + ')</b>'
       + '<input type="text" data-apx-deny-in="' + esc(r.key) + '" value="' + esc(DREASON[r.key] || '') + '" placeholder="What needs fixing (the PM sees this)" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font:14px Arial">'
-      + b('denygo', { l: '✕ Deny & send back', f: function(){ doDeny(r); } }, 'dn') + b('denyx', { l: 'Cancel', f: function(){ delete DENYBOX[r.key]; fresh(); paintSoon(); } }, 'op')
+      + b('denygo', { l: '✕ Deny & send back', f: function(){ doDeny(r); } }, 'dn') + b('denyx', { l: 'Cancel', f: function(){ delete DENYBOX[r.key]; paintBox(); } }, 'op')
       + '<span style="width:100%;font-size:12px;color:#6b7280">Nothing is sent to the customer.</span></div>';
   }
   h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
-  h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'op');   /* patch APXNOTE */
-  if (r.approve && r.src !== 'pay' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ DENYBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'dn');
+  h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'op');   /* patch APXNOTE */
+  if (r.approve && r.src !== 'pay' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ DENYBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'dn');
   /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
   var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
   if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
-  else if (r.edit) { h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; fresh(); paintSoon(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
+  else if (r.edit) { h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; paintBox(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
     if (sendEdit) h += b('sendedit', { l: '✏️ Edit before sending', f: function(){ try { W._gcAp2Preview(r.id); } catch (e) { warn(e); } } }, 'ed'); }
   else h += b('open', r.open, 'op');
   if (r.pid && r.job) h += b('job', { l: '🏗 Open job', f: function(){ openJob(r.pid); } }, 'jb');
@@ -159295,8 +159297,11 @@ function openConflicts(){
 function watchConflicts(){
   if (D.hidden || !arr(crm().schedule).length) return;
   pullAvail().then(function(){
+    var nS = arr(crm().schedule).length; if (!AV.seeded && AV.nS !== nS) { AV.nS = nS; return; }   /* patch CONFTOAST: the first look once the schedule stopped growing */
     var c = conflicts(), first = !AV.seeded; AV.seeded = true;
-    c.forEach(function(x){ if (AV.warned[x.id]) return; AV.warned[x.id] = 1; if (first) return;
+    var fresh = c.filter(function(x){ if (AV.warned[x.id]) return false; AV.warned[x.id] = 1; return !first; });
+    if (fresh.length > 2) toast('⚠️ ' + fresh.length + ' new booking conflicts (a sub booked on a busy day, or twice the same day) — see 🗓 Sub availability. A warning only.', true);   /* patch CONFTOAST: one notice, not one per booking */
+    else fresh.forEach(function(x){
       toast('⚠️ ' + x.sub + ' — ' + day(x.date) + ': ' + (x.kind === 'busy' ? 'marked this day busy in the sub portal' : 'already booked on another job that day') + '. (A warning only.)', true); });
     var el = D.querySelector('#gc-x10-admin [data-conf]'); if (el) el.textContent = conflictLine();
   });
