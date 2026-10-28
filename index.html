@@ -162914,8 +162914,20 @@ function draw360(idOrName, opts){
   (function(){
     var el = bd.querySelector('[data-ref]'); if (!el) return;
     if (!isOffice()) { el.textContent = 'Referral details: office and admins.'; return; }
-    getJSON('/.netlify/functions/referral?list=1').then(function(j){
-      if (!j || !j.ok) { el.textContent = 'The referral program could not be reached.'; return; }
+    /* patch REFWHY: what is true, or why it could not look (+ ↻ Try again) */
+    var refLoad = function(){ el.textContent = 'Looking up referrals…';
+      var done = false, tm = setTimeout(function(){ if (done) return; done = true; refShow({ __st: 0, __timeout: true }); }, 15000);
+      W.fetch('/.netlify/functions/referral?list=1', { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.__st = r.status; return j; }); }, function(){ return { __st: 0 }; })
+        .then(function(j){ if (done) return; done = true; clearTimeout(tm); refShow(j); }); };
+    var refWhy = function(j){ var st = j && j.__st, e = s(j && j.error);
+      if (st === 401) return 'Your sign-in has expired — sign in again to see referrals.';
+      if (st === 403) return 'Referral details: office and admins.';
+      if (st === 503 && /not configured/i.test(e)) return 'The referral program is not set up yet — no referrals to show.';
+      if (j && j.__timeout) return 'The referral program did not answer in time.';
+      if (!st) return 'The referral program did not answer (no internet?).';
+      return 'The referral program did not answer right now' + (e ? ' (' + e + ')' : '') + '.'; };
+    var refShow = function(j){
+      if (!j || !j.ok) { el.innerHTML = '<div class="gcd1-row"><span class="gcd1-muted">' + esc(refWhy(j)) + '</span><span class="r"><button class="gcd1-btn s" data-ref-retry="1">↻ Try again</button></span></div>'; var rb = el.querySelector('[data-ref-retry]'); if (rb) rb.onclick = refLoad; return; }
       var ck = custKeys(c);
       var m = arr(j.members).filter(function(mm){ return matchesCust(ck, mm.name, mm.email, mm.phone); })[0];
       var refs = m ? arr(j.referrals).filter(function(r){ return r.memberId === m.id; }) : [];
@@ -162924,7 +162936,8 @@ function draw360(idOrName, opts){
         '<div class="gcd1-row"><span>Referrals made</span><span class="r"><b>' + refs.length + '</b>' + (m && m.hired ? ' · ' + m.hired + ' became jobs' : '') + '</span></div>' +
         refs.slice(0, 10).map(function(r){ return '<div class="gcd1-row"><span class="m">→ ' + esc(r.name || r.referredName || r.leadName || 'Referral') + '</span><span class="r"><span class="gcd1-chip">' + esc(r.status || 'new') + '</span></span></div>'; }).join('') +
         (made.length ? '<div class="gcd1-row"><span>They were referred by</span><span class="r">' + esc(made[0]) + '</span></div>' : '');
-    });
+    };
+    refLoad();   /* patch REFWHY */
   })();
 
   /* actions */
