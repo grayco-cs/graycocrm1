@@ -95,7 +95,7 @@ exports.handler = async function(event){
       let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
       const ours = [env('TWILIO_FROM')].concat(require('./_lib/smsroute.js').numbers(await getSettings(), env).map(x => x.number));
       let log = []; try { const lv = await L().kvGet(CC.LOG_KEY); log = (lv && Array.isArray(lv.calls) ? lv.calls : []).slice(-50).reverse().map(x => ({ at: s(x.at), from: CC.tidy(x.from), choice: s(x.choice), what: s(x.what), outcome: s(x.outcome), by: s(x.by) })); } catch (e) {}
-      const out = (cfg, saved) => J(200, { ok: true, saved, settings: cfg, people: CC.peopleWithPhones(data.users), preview: CC.preview(cfg, data, ours),
+      const out = (cfg, saved) => J(200, { ok: true, saved, settings: cfg, openNow: CC.isOpen(typeof exports._now === 'function' ? exports._now() : Date.now(), cfg),   /* patch AFTERHOURS */ people: CC.peopleWithPhones(data.users), preview: CC.preview(cfg, data, ours),
         senior: (function(){ try { const u = require('./_lib/people.js').seniorPm(data.users, data.gc_senior_pm); return u ? { name: s(u.name), phone: CC.tidy(CC.userPhone(u)) } : null; } catch (e) { return null; } })(),
         log,   /* patch CALLSCREEN: the last 50 calls */
         office: CC.tidy(CC.companyPhone()), ringToEnv: CC.tidy(env('TWILIO_RING_TO')), ready: MC().ready(),

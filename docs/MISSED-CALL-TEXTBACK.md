@@ -42,6 +42,31 @@ A caller may wait up to *(numbers that ring) × (ring seconds)* before the text 
 presses 1, so the next line rings. With it off, a voicemail picking up before the ring time ends counts as answered and
 the list stops there; then keep the ring time below the phones' voicemail pick-up (usually 20–25 s).
 
+## After hours (patch AFTERHOURS)
+
+Owner (10/28): *"after hours we do not get rings that goes to automatic texts immediately unless its an emergency claim
+and put into leads for the morning, if it is an emergency text or call we will get after hours mitigation manager, nick
+wesley, as order"*.
+
+- **Business hours** (card → 🕘): default Mon–Fri 7:00 AM–6:00 PM Central, Sat / Sun closed, editable per day, plus a
+  holidays list (closed all day). The card shows **Open now / After hours now**. `_lib/callorder.js` exports
+  `isOpen(now, settings)` — the SMS alerts' quiet hours can use the same hours.
+- **After hours** the caller hears (editable): *"Thanks for calling GrayCo Construction Services. Our office is closed. If
+  you have an emergency — water, fire, or storm or tree damage — press 1. For anything else, press 2 and we'll text you
+  and call you back in the morning. For sales, press 3."*
+  - **1 (emergency)** → *"In a few words, what happened?"* → the **🌙 after-hours emergency order** rings (default
+    **Mitigation manager** — the person whose role says Mitigation Manager, skipped while there is none — → **Nick** →
+    **Wesley**; editable, separate from the daytime order). Whoever answers hears *"GrayCo EMERGENCY call: <what they
+    said>. Press 1 to accept."* Nobody → the missed-call text + an **EMERGENCY lead** (so the 🚨 alerts and the
+    escalation calls apply).
+  - **2** → nobody is rung: at once the text *"Thanks for calling GrayCo — our office is closed. We got your call and will
+    call you back in the morning. Reply here with any details."* + a normal lead for the morning (e-mail alert only).
+  - **3**, no input, a blocked number or a failed caller-ID check → as by day (no ring, no text, no lead).
+  - With screening off, an after-hours call gets the "2" treatment (text + lead, no ring).
+- Day or night, when what the caller said sounds like an emergency (water / flood / leak / burst pipe / fire / smoke / a
+  tree on the house / storm damage), the missed-call lead is marked **EMERGENCY** too.
+- The 🚨 escalation calls (below) use on call → the after-hours order after hours, on call → the daytime order by day.
+
 ## Admin → ⚙ Admin settings → 📞 Call order (admins only)
 
 - **Ring in this order** on / off, **Ring each one … seconds** (8–60).

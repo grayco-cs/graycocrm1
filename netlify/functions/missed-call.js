@@ -202,7 +202,7 @@ async function missed(p, how, extra){
   if (textIt) { try { const SC = require('./_lib/smsconsent.js'), D0 = await core().kvRead(['customers', 'projects', 'leads']), s0 = await stateGet();
     if (SC.statusFor(D0, ph, s0.consent) === 'no') { textIt = false; out.consent = 'declined'; } } catch (e) {} }
   if (textIt) {
-    out.text = await sendSms(ph, TEXT);
+    out.text = await sendSms(ph, s(extra.text) || TEXT);   /* patch AFTERHOURS: the after-hours wording */
     if (!out.text.ok) await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
   } else out.text = { skipped: 'texted recently or opted out' };
   /* existing customer? */
@@ -219,8 +219,11 @@ async function missed(p, how, extra){
     message: 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (city ? ' (caller ID area: ' + city + ')' : '') + '. ' + (out.text.ok ? 'The automatic text went out.' : 'No automatic text (' + (out.text.skipped || out.text.why || 'not sent') + ').') + (s(extra.what) ? ' They said they need: “' + clip(extra.what, 300) + '”.' : ''),
     company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '', project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: '' };
   const sid = crypto.createHash('sha256').update('missed|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
+  /* patch AFTERHOURS: an after-hours "1", or what they said sounds like one (water / flood / leak / fire / smoke / tree / storm) → an EMERGENCY lead */
+  let emerg = !!extra.emergency; if (!emerg && s(extra.what)) { try { emerg = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
+  if (emerg) out.emergency = true;
   const r = await WI().fileLead(f, { sid, source: 'Missed call', how: 'a missed call to the GrayCo number', formLabel: 'Missed call', customer: null,
-    title: 'Missed call — ' + (who || tidy(ph)) + (city ? ' — ' + city : ''), leadExtra: Object.assign({ missedCall: true, callSid }, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
+    title: (emerg ? '🚨 EMERGENCY call — ' : 'Missed call — ') + (who || tidy(ph)) + (city ? ' — ' + city : ''), patch: emerg ? { emergency: true, urgency: 'Emergency' } : undefined, leadExtra: Object.assign({ missedCall: true, callSid }, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
   out.lead = r.id; out.action = r.action;
   await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
   out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
@@ -274,38 +277,49 @@ async function logPut(sid, patch){
   } catch (e) {}
   return row;
 }
-async function orderList(cfg, p, choice){
+async function orderList(cfg, p, choice, ah){
   let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
   let ours = [env('TWILIO_FROM')]; try { const set = SMS().settings(await L().kvGet(SMS().SETTINGS_KEY)); ours = ours.concat(require('./_lib/smsroute.js').numbers(set, env).map(x => x.number)); } catch (e) {}
   const c = JSON.parse(JSON.stringify(cfg));
   if (!c.on) c.slots = [];
-  if (choice === '2') {   /* a current customer: their job's PM first, when the caller's number is on a job */
+  if (ah) c.slots = c.night.slots;   /* patch AFTERHOURS: the after-hours emergency order (Mitigation manager → Nick → Wesley) */
+  else if (choice === '2') {   /* a current customer: their job's PM first, when the caller's number is on a job */
     try { const cust = await WI().findCustomer({ phone: phone10(p.From), email: '' }); const u = cust && cust.pm ? require('./_lib/people.js').findUser(data.users, cust.pm) : null;
       if (u && CO().userPhone(u).length === 10) c.slots.unshift({ id: 'jobpm', label: 'Job PM', on: true, kind: 'phone', phone: CO().userPhone(u), person: '' }); } catch (e) {}
   }
   return CO().resolve(c, data, CO().callCtx(p, ours)).list;
 }
-function menuTwiml(cfg, n){
-  return twiml('<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" hints="one, two, three, construction, customer, sales" actionOnEmptyResult="true" action="' + esc(hookUrl('menu', { try: n })) + '" method="POST">'
-    + SAYV + esc(cfg.screen.greeting) + '</Say></Gather><Redirect method="POST">' + esc(hookUrl('menu', { try: n })) + '</Redirect>');
+const AHQ = ah => ah ? { ah: 1 } : {};
+function menuTwiml(cfg, n, ah){
+  const u = hookUrl('menu', Object.assign({ try: n }, AHQ(ah)));
+  return twiml('<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" hints="one, two, three, emergency, construction, customer, sales" actionOnEmptyResult="true" action="' + esc(u) + '" method="POST">'
+    + SAYV + esc(ah ? cfg.night.greeting : cfg.screen.greeting) + '</Say></Gather><Redirect method="POST">' + esc(u) + '</Redirect>');
 }
-function dialTwiml(cfg, list, i, sid, sayText, c){   /* c = the menu answer, carried in the signed URL too (the log is the first source) */
+/* patch AFTERHOURS: "2" after hours — no ring: a text at once and a lead for the morning */
+const AH_TEXT = 'Thanks for calling GrayCo — our office is closed. We got your call and will call you back in the morning. Reply here with any details.';
+async function nightText(p, row){
+  await logPut(s(p.CallSid), { outcome: 'after hours — texted, lead for the morning' });
+  await missed(p, 'after hours (pressed 2): texted, lead for the morning', { text: AH_TEXT, what: s(row && row.what) });
+  return twiml(SAYV + "Thank you. We've sent you a text and will call you back in the morning. Goodbye.</Say><Hangup/>");
+}
+const isAh = (row, qs) => s(row && row.ah) === '1' || s(qs && qs.ah) === '1';
+function dialTwiml(cfg, list, i, sid, sayText, c, ah){   /* c = the menu answer, carried in the signed URL too (the log is the first source) */
   const x = list[i];
-  const num = cfg.screen.whisper ? '<Number url="' + esc(hookUrl('whisper', Object.assign({ step: i, p: sid }, c ? { c } : {}))) + '" method="POST">+1' + x.number + '</Number>' : '<Number>+1' + x.number + '</Number>';
-  return twiml((sayText ? SAYV + esc(sayText) + '</Say>' : '') + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', Object.assign({ step: i }, c ? { c } : {}))) + '" method="POST">' + num + '</Dial>');
+  const num = cfg.screen.whisper ? '<Number url="' + esc(hookUrl('whisper', Object.assign({ step: i, p: sid }, c ? { c } : {}, AHQ(ah)))) + '" method="POST">+1' + x.number + '</Number>' : '<Number>+1' + x.number + '</Number>';
+  return twiml((sayText ? SAYV + esc(sayText) + '</Say>' : '') + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', Object.assign({ step: i }, c ? { c } : {}, AHQ(ah)))) + '" method="POST">' + num + '</Dial>');
 }
-async function finishMissed(p, row, how){
+async function finishMissed(p, row, how, ah){
   const sid = s(p.CallSid);
   await logPut(sid, { outcome: 'missed' });
-  await missed(p, how, { what: s(row && row.what) });
+  await missed(p, how, { what: s(row && row.what), emergency: !!ah && s(row && row.choice) === '1' });   /* patch AFTERHOURS: an after-hours "1" is an emergency lead */
   return sayBye();
 }
-async function startRing(cfg, p, row, sayText, c){
+async function startRing(cfg, p, row, sayText, c, ah){
   c = s(row && row.choice) || s(c);
-  const list = await orderList(cfg, p, c);
-  if (!list.length) return finishMissed(p, row, 'call order: nobody to ring');
+  const list = await orderList(cfg, p, c, ah);
+  if (!list.length) return finishMissed(p, row || { choice: c }, 'call order: nobody to ring', ah);
   await logPut(s(p.CallSid), { outcome: 'ringing', step: 0 });
-  return dialTwiml(cfg, list, 0, s(p.CallSid), sayText, c);
+  return dialTwiml(cfg, list, 0, s(p.CallSid), sayText, c, ah);
 }
 /* → TwiML, or null when the call order and the screening are both off (the older paths below run) */
 async function callOrder(ev, p, qs){
@@ -318,35 +332,40 @@ async function callOrder(ev, p, qs){
       await logPut(sid, { from, choice: '3', outcome: CO().isBlocked(cfg, from) ? 'blocked number' : 'caller ID failed (STIR/SHAKEN ' + s(p.StirVerstat) + ')' });
       return twiml(SAYV + esc(SALES) + '</Say><Hangup/>');
     }
-    if (cfg.screen.on) { await logPut(sid, { from, choice: '', outcome: 'menu' }); return menuTwiml(cfg, 1); }
+    const ah = !CO().isOpen(now(), cfg);   /* patch AFTERHOURS */
+    if (cfg.screen.on) { await logPut(sid, { from, choice: '', outcome: 'menu', ah: ah ? '1' : '' }); return menuTwiml(cfg, 1, ah); }
+    if (ah) { const r0 = await logPut(sid, { from, choice: '2', ah: '1' }); return nightText(p, r0); }   /* no menu after hours: no ring, a text + a lead */
     const row = await logPut(sid, { from, choice: 'direct', outcome: 'ringing' });
     return startRing(cfg, p, row, HOLD, 'direct');
   }
   if (ev === 'menu') {
-    const c = CO().choiceOf(p), n = parseInt(qs.try, 10) || 1;
+    const c = CO().choiceOf(p), n = parseInt(qs.try, 10) || 1, ah = isAh(null, qs);
     if (!c) {
-      if (n < 2) return menuTwiml(cfg, 2);   /* once more */
+      if (n < 2) return menuTwiml(cfg, 2, ah);   /* once more */
       await logPut(sid, { from: phone10(p.From), outcome: 'no answer to menu (likely robocall)' });
       return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');
     }
     if (c === '3') { await logPut(sid, { from: phone10(p.From), choice: '3', outcome: 'sales / other (pressed 3)' }); return twiml(SAYV + esc(SALES) + '</Say><Hangup/>'); }
-    const row = await logPut(sid, { from: phone10(p.From), choice: c, outcome: c === '1' ? 'new work' : 'current customer' });
+    const row = await logPut(sid, { from: phone10(p.From), choice: c, ah: ah ? '1' : '', outcome: ah ? (c === '1' ? 'after hours — EMERGENCY' : 'after hours') : c === '1' ? 'new work' : 'current customer' });
+    if (ah && c === '2') return nightText(p, row || { choice: '2' });   /* patch AFTERHOURS */
     if (c === '1' && cfg.screen.askWhat) {
-      return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(hookUrl('what', { c })) + '" method="POST">' + SAYV + esc(ASK_WHAT) + '</Say></Gather>'
-        + '<Redirect method="POST">' + esc(hookUrl('what', { c })) + '</Redirect>');
+      const wu = hookUrl('what', Object.assign({ c }, AHQ(ah)));
+      return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(wu) + '" method="POST">' + SAYV + esc(ah ? 'In a few words, what happened?' : ASK_WHAT) + '</Say></Gather>'
+        + '<Redirect method="POST">' + esc(wu) + '</Redirect>');
     }
-    return startRing(cfg, p, row, HOLD2, c);
+    return startRing(cfg, p, row, HOLD2, c, ah);
   }
   if (ev === 'what') {
-    const row0 = await logGet(sid), c0 = s(row0 && row0.choice) || s(qs.c);
+    const row0 = await logGet(sid), c0 = s(row0 && row0.choice) || s(qs.c), ah = isAh(row0, qs);
     if (['1', '2', 'direct'].indexOf(c0) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
     const row = await logPut(sid, { what: clip(s(p.SpeechResult), 200) });
-    return startRing(cfg, p, row || { choice: c0, what: clip(s(p.SpeechResult), 200) }, HOLD2, c0);
+    return startRing(cfg, p, row || { choice: c0, what: clip(s(p.SpeechResult), 200) }, HOLD2, c0, ah);
   }
   if (ev === 'whisper') {   /* the person's phone answered: "GrayCo call: … press 1 to accept" (a voicemail does not press 1) */
     const parent = s(qs.p) || s(p.ParentCallSid), row = await logGet(parent), step = parseInt(qs.step, 10) || 0;
-    const what = s(row && row.what) || (row && row.choice === '2' ? 'a current customer' : 'a new project');
-    const line = SAYV + 'GrayCo call: ' + esc(clip(what, 140)) + '. Press 1 to accept.</Say>';
+    const ah = isAh(row, qs);
+    const what = s(row && row.what) || (ah ? 'an emergency' : row && row.choice === '2' ? 'a current customer' : 'a new project');
+    const line = SAYV + (ah ? 'GrayCo EMERGENCY call: ' : 'GrayCo call: ') + esc(clip(what, 140)) + '. Press 1 to accept.</Say>';
     return twiml('<Gather numDigits="1" timeout="6" action="' + esc(hookUrl('accept', { step, p: parent })) + '" method="POST">' + line + '<Pause length="1"/>' + line + '</Gather><Hangup/>');
   }
   if (ev === 'accept') {
@@ -356,15 +375,15 @@ async function callOrder(ev, p, qs){
     return twiml('');   /* connects them to the caller */
   }
   if (ev === 'dialdone' && qs.step != null && /^\d{1,3}$/.test(s(qs.step))) {
-    const row = await logGet(sid), step = parseInt(qs.step, 10), c = s(row && row.choice) || s(qs.c);
-    const list = await orderList(cfg, p, c), who = list[step];
+    const row = await logGet(sid), step = parseInt(qs.step, 10), c = s(row && row.choice) || s(qs.c), ah = isAh(row, qs);
+    const list = await orderList(cfg, p, c, ah), who = list[step];
     const answered = /^(completed|answered)$/i.test(s(p.DialCallStatus)) && (!cfg.screen.whisper || !!(row && row.accepted)
       || (!row && (parseInt(p.DialCallDuration, 10) || 0) >= 20));   /* the log unreachable: a 20 s+ conversation counts as answered */
     if (answered) { await logPut(sid, { outcome: 'answered', by: who ? who.label + (who.name ? ' — ' + who.name : '') : '' }); return twiml('<Hangup/>'); }
     if (['1', '2', 'direct'].indexOf(c) < 0) return twiml('<Hangup/>');   /* never text a caller who did not press 1 or 2 */
-    if (/^(completed|canceled)$/i.test(s(p.CallStatus))) return finishMissed(p, row, 'call order: the caller hung up while it rang');
-    if (step + 1 < list.length) { await logPut(sid, { step: step + 1 }); return dialTwiml(cfg, list, step + 1, sid, '', c); }
-    return finishMissed(p, row || { what: '' }, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')');
+    if (/^(completed|canceled)$/i.test(s(p.CallStatus))) return finishMissed(p, row || { choice: c }, 'call order: the caller hung up while it rang', ah);
+    if (step + 1 < list.length) { await logPut(sid, { step: step + 1 }); return dialTwiml(cfg, list, step + 1, sid, '', c, ah); }
+    return finishMissed(p, row || { what: '', choice: c }, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')', ah);
   }
   return null;
 }

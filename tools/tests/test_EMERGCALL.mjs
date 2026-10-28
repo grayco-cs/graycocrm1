@@ -48,17 +48,17 @@ global.fetch = async function(url, init = {}){
 const MC = require(path.join(SRC, 'missed-call.js'));
 const X10S = require(path.join(SRC, 'x10-scheduled.js'));
 const PAUSE = require(path.join(SRC, '_lib/pause.js'));
-const T0 = Date.parse('2026-10-28T02:00:00Z');   /* a weeknight, 9 PM Central — quiet hours must not matter */
-let T = T0; MC._now = () => T; X10S._now = () => T;
+const DAYT = Date.parse('2026-10-28T15:00:00Z'), NIGHTT = Date.parse('2026-10-28T02:00:00Z');   /* Wed 10 AM / Tue 9 PM Central */
+let T0 = DAYT, T = T0; MC._now = () => T; X10S._now = () => T;
 const min = n => { T = T0 + n * 60000; };
 
 const ONCALL = '9015559999', OFFICE = '9015850944', NICK = '9015551001', WES = '9015551002', SENIOR = '9015551003', CUST = '9015553333';
 function world(o = {}){
-  KV.clear(); CALLS.length = 0; SMS.length = 0; MAIL.length = 0; PAUSE.reset(); T = T0;
+  KV.clear(); CALLS.length = 0; SMS.length = 0; MAIL.length = 0; PAUSE.reset(); T0 = o.night ? NIGHTT : DAYT; T = T0;
   setKv('users', [
     { id: 'u1', name: 'Nick Thomas', email: 'nick@grayco-cs.com', role: 'Admin', phone: NICK, active: true },
     { id: 'u2', name: 'Wesley Johnson', email: 'wesley@grayco-cs.com', role: 'Admin', phone: WES, active: true },
-    { id: 'u3', name: 'Sam Senior', email: 'sam@grayco-cs.com', role: 'Project Manager', phone: SENIOR, active: true }]);
+    { id: 'u3', name: 'Sam Senior', email: 'sam@grayco-cs.com', role: 'Project Manager', phone: SENIOR, active: true }].concat(o.mit ? [{ id: 'u5', name: 'Mia Mitigation', email: 'mia@grayco-cs.com', role: 'Mitigation Manager', phone: '9015554444', active: true }] : []));
   setKv('gc_senior_pm', { email: 'sam@grayco-cs.com', id: 'u3' });
   setKv('gc_x10_oncall', { on: true, weekends: true, startDate: '2026-01-05', rotation: [{ email: 'olive@grayco-cs.com', name: 'Olive OnCall', phone: ONCALL }] });
   setKv('gc_lead_inbox', [{ id: 'LI-1', title: 'Water pouring through the ceiling', status: 'new', createdAt: new Date(T0).toISOString() }]);
@@ -157,6 +157,15 @@ console.log('EMERGCALL — nobody presses: once more after 10 min, then the admi
   ok(CALLS.length === 6 && rec().state === 'gaveup', 'round 2 done → gave up', rec());
   ok(MAIL.some(m => /Nobody answered the emergency calls/.test(m.subject)), 'the admins are e-mailed "nobody answered"', MAIL.map(m => m.subject));
   min(60); await tick(); ok(CALLS.length === 6, 'and nothing more');
+}
+console.log('EMERGCALL — after hours: on call, then Mitigation manager → Nick → Wesley (patch AFTERHOURS)');
+{
+  world({ night: true, mit: true }); await EC().register(lead); min(15); await tick();
+  const walk = async () => { for (let i = 0; i < 10; i++) { const c = CALLS[CALLS.length - 1], n = CALLS.length; await ended(c, 'no-answer'); if (CALLS.length === n) break; } };
+  await walk();
+  ok(CALLS.map(c => c.To.slice(2)).join() === [ONCALL, '9015554444', NICK, WES].join(), '9 PM: on call → Mitigation manager → Nick → Wesley (not the daytime order)', CALLS.map(c => c.To));
+  world({ night: true }); await EC().register(lead); min(15); await tick(); await walk();
+  ok(CALLS.map(c => c.To.slice(2)).join() === [ONCALL, NICK, WES].join(), 'no mitigation manager yet → skipped', CALLS.map(c => c.To));
 }
 console.log('EMERGCALL — signatures');
 {

@@ -31,18 +31,33 @@
    (likely a robocall); 3, a blocked number or a failed caller-ID attestation (STIR/SHAKEN) → "we don't take sales calls"
    and goodbye. Only 1 and 2 ring the call order; only they get the missed-call text and a lead. The person who
    answers hears "GrayCo call: <what they need>. Press 1 to accept" first, so a voicemail does not take the call.
+
+   patch AFTERHOURS (owner 10/28: "after hours we do not get rings that goes to automatic texts immediately unless its an
+   emergency claim and put into leads for the morning, if it is an emergency text or call we will get after hours
+   mitigation manager, nick wesley, as order"): business hours (default Mon–Fri 7 AM–6 PM Central, weekends closed,
+   holidays) — isOpen(now, settings), also for the SMS alerts' quiet hours. After hours the menu is 1 emergency (rings the
+   AFTER-HOURS order: Mitigation manager → Nick → Wesley, editable) · 2 anything else (no ring: a text at once and a lead
+   for the morning) · 3 sales.
    ========================================================================== */
 'use strict';
 const KEY = 'gc_call_order', LOG_KEY = 'gc_call_log';
 const SLOT_IDS = ['office', 'owner1', 'owner2', 'gm', 'leadpm'];
 const LABELS = { office: 'Office', owner1: 'Owner 1', owner2: 'Owner 2', gm: 'General Manager', leadpm: 'Lead PM' };
-const KINDS = ['company', 'phone', 'person', 'senior'];
+const KINDS = ['company', 'phone', 'person', 'senior', 'mitigation'];
 const MAX_SLOTS = 20;
 /* the owner's first order (10/28). Owner 1 / Owner 2 are looked up in the people list by name — an admin picks anyone else. */
 const GREETING = "Thanks for calling GrayCo Construction Services. If you need construction, remodeling, roofing, or water, fire or storm damage repair, press 1. If you're a current GrayCo customer, press 2. For anything else, including sales calls, press 3.";
 const SCREEN = { on: true, greeting: GREETING, askWhat: true, whisper: true, blocked: [] };
+const NIGHT_GREETING = "Thanks for calling GrayCo Construction Services. Our office is closed. If you have an emergency — water, fire, or storm or tree damage — press 1. For anything else, press 2 and we'll text you and call you back in the morning. For sales, press 3.";
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const HOURS = { tz: 'America/Chicago', days: { sun: { open: false, start: '07:00', end: '18:00' }, mon: { open: true, start: '07:00', end: '18:00' }, tue: { open: true, start: '07:00', end: '18:00' },
+  wed: { open: true, start: '07:00', end: '18:00' }, thu: { open: true, start: '07:00', end: '18:00' }, fri: { open: true, start: '07:00', end: '18:00' }, sat: { open: false, start: '07:00', end: '18:00' } }, holidays: [] };
+const NIGHT = { greeting: NIGHT_GREETING, slots: [
+  { id: 'n_mit', label: 'Mitigation manager', on: true, kind: 'mitigation', phone: '', person: '' },
+  { id: 'n_owner1', label: 'Nick', on: true, kind: 'person', phone: '', person: 'Nick Thomas' },
+  { id: 'n_owner2', label: 'Wesley', on: true, kind: 'person', phone: '', person: 'Wesley Johnson' }] };
 const DEFAULTS = {
-  on: true, ringSeconds: 15, screen: SCREEN,
+  on: true, ringSeconds: 15, screen: SCREEN, hours: HOURS, night: NIGHT,
   slots: [
     { id: 'office', on: true, kind: 'company', phone: '', person: '' },
     { id: 'owner1', on: true, kind: 'person', phone: '', person: 'Nick Thomas' },
@@ -63,6 +78,38 @@ function P(){ return require('./people.js'); }
 function companyPhone(){ try { return phone10(require('./brand.js').BRAND.phone); } catch (e) { return '9015850944'; } }
 
 /* a saved / posted value → the clean settings (each slot once, in the posted order; unknown fields dropped) */
+function cleanSlots(list){
+  const seen = {}, slots = [];
+  arr(list).forEach(x => {
+    if (!x || typeof x !== 'object' || slots.length >= MAX_SLOTS) return;
+    const id = s(x.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32); if (!id || seen[id]) return; seen[id] = 1;
+    const kind = KINDS.indexOf(s(x.kind)) >= 0 ? s(x.kind) : 'phone';
+    const ph = phone10(x.phone);
+    slots.push({ id, label: s(x.label).slice(0, 40) || LABELS[id] || 'Person', on: x.on !== false, kind, phone: ph.length === 10 ? ph : '', person: s(x.person).slice(0, 120) });
+  });
+  return slots;
+}
+const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+function cleanHours(h){
+  h = h && typeof h === 'object' ? h : {};
+  const days = {}, hd = h.days && typeof h.days === 'object' ? h.days : {};
+  DAYS.forEach(k => { const d = hd[k] && typeof hd[k] === 'object' ? hd[k] : HOURS.days[k], st = HM.test(s(d.start)) ? s(d.start) : HOURS.days[k].start, en = HM.test(s(d.end)) ? s(d.end) : HOURS.days[k].end;
+    days[k] = { open: hd[k] ? d.open !== false && st < en : HOURS.days[k].open, start: st, end: en }; });
+  const holidays = (Array.isArray(h.holidays) ? h.holidays : s(h.holidays).split(/[\s,;]+/)).map(s).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)).slice(0, 60);
+  return { tz: 'America/Chicago', days, holidays };
+}
+/* Central wall clock → { day: 'mon', date: 'YYYY-MM-DD', hm: 'HH:MM' } */
+function wall(t, tz){
+  const p = {}; new Intl.DateTimeFormat('en-US', { timeZone: tz || 'America/Chicago', weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date(t)).forEach(x => { p[x.type] = x.value; });
+  return { day: low(p.weekday).slice(0, 3), date: p.year + '-' + p.month + '-' + p.day, hm: p.hour + ':' + p.minute };
+}
+/* open for business right now? (settings: the saved call order, or just its hours) — the SMS alerts use this for quiet hours */
+function isOpen(t, settings){
+  const h = cleanHours(settings && settings.hours ? settings.hours : settings && settings.days ? settings : null), w = wall(t == null ? Date.now() : t, h.tz);
+  if (h.holidays.indexOf(w.date) >= 0) return false;
+  const d = h.days[w.day]; return !!(d && d.open && w.hm >= d.start && w.hm < d.end);
+}
 function clean(v){
   v = v && typeof v === 'object' ? v : {};
   const seen = {}, slots = [];
@@ -77,7 +124,9 @@ function clean(v){
   const blocked = []; (Array.isArray(sc.blocked) ? sc.blocked : s(sc.blocked).split(/[\s,;]+/)).forEach(x => { const d = phone10(x); if (d.length === 10 && blocked.indexOf(d) < 0 && blocked.length < 500) blocked.push(d); });
   const screen = { on: sc.on !== false, greeting: s(sc.greeting).slice(0, 600) || GREETING, askWhat: sc.askWhat !== false, whisper: sc.whisper !== false, blocked };
   const em = v.emerg && typeof v.emerg === 'object' ? v.emerg : {};   /* patch EMERGCALL: escalation calls after N minutes */
-  const out = { on: v.on !== false, ringSeconds: clampInt(v.ringSeconds, 8, 60, 15), slots, screen, emerg: { on: em.on !== false, minutes: clampInt(em.minutes, 5, 120, 15) } };
+  const nt = v.night && typeof v.night === 'object' ? v.night : {};   /* patch AFTERHOURS */
+  const night = { greeting: s(nt.greeting).slice(0, 600) || NIGHT_GREETING, slots: Array.isArray(nt.slots) ? cleanSlots(nt.slots) : cleanSlots(NIGHT.slots) };
+  const out = { on: v.on !== false, ringSeconds: clampInt(v.ringSeconds, 8, 60, 15), slots, screen, hours: cleanHours(v.hours), night, emerg: { on: em.on !== false, minutes: clampInt(em.minutes, 5, 120, 15) } };
   if (s(v.by)) out.by = low(v.by).slice(0, 120);
   if (s(v.at)) out.at = s(v.at).slice(0, 40);
   return out;
@@ -94,6 +143,7 @@ function peopleWithPhones(users){
 }
 /* the defaults' names → the person's id, so the picker shows them selected */
 function pinPeople(cfg, users){
+  if (cfg.night) cfg.night.slots.forEach(x => { if (x.kind === 'person' && x.person) { const u = P().findUser(users, x.person); if (u && s(u.id)) x.person = s(u.id); } });
   cfg.slots.forEach(x => { if (x.kind === 'person' && x.person) { const u = P().findUser(users, x.person); if (u && s(u.id)) x.person = s(u.id); } });
   return cfg;
 }
@@ -110,6 +160,10 @@ function slotNumber(x, data){
     if (!u) return { why: 'person not found' };
     if (!P().isActive(u)) return { why: 'no longer active', name: s(u.name) };
     const ph = userPhone(u); return ph.length === 10 ? { number: ph, name: s(u.name) } : { why: 'no phone on file', name: s(u.name) };
+  }
+  if (x.kind === 'mitigation') {   /* the mitigation manager: an active person whose role / title says mitigation + manager / lead */
+    const u = users.find(y => y && P().isActive(y) && userPhone(y).length === 10 && /mitig/i.test([y.role, y.title, y.profile, y.position, y.jobTitle].map(s).join(' ')) && /manag|lead|supervis|director|chief/i.test([y.role, y.title, y.profile, y.position, y.jobTitle].map(s).join(' ')));
+    return u ? { number: userPhone(u), name: s(u.name) } : { why: 'no mitigation manager yet' };
   }
   if (x.kind === 'senior') {
     const u = P().seniorPm(users, data && data.gc_senior_pm);
@@ -171,4 +225,4 @@ function choiceOf(p){
 function attestationFailed(p){ return /failed/i.test(s(p && p.StirVerstat)); }
 function isBlocked(cfg, from){ const d = phone10(from); return !!d && arr(cfg && cfg.screen && cfg.screen.blocked).indexOf(d) >= 0; }
 
-module.exports = { KEY, LOG_KEY, GREETING, SCREEN, choiceOf, attestationFailed, isBlocked, MAX_SLOTS, SLOT_IDS, LABELS, KINDS, DEFAULTS, clean, defaults, pinPeople, peopleWithPhones, userPhone, slotNumber, callCtx, resolve, preview, companyPhone, phone10, tidy };
+module.exports = { isOpen, wall, cleanHours, NIGHT_GREETING, DAYS, KEY, LOG_KEY, GREETING, SCREEN, choiceOf, attestationFailed, isBlocked, MAX_SLOTS, SLOT_IDS, LABELS, KINDS, DEFAULTS, clean, defaults, pinPeople, peopleWithPhones, userPhone, slotNumber, callCtx, resolve, preview, companyPhone, phone10, tidy };

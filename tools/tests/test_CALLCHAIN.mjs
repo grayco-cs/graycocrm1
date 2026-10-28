@@ -45,6 +45,8 @@ global.fetch = async function(url, init = {}){
 };
 const MC = require(path.join(SRC, 'missed-call.js'));
 const CC = require(path.join(SRC, '_lib/callorder.js'));
+const DAY = Date.parse('2026-10-28T15:00:00Z');   /* Wednesday 10 AM Central: open */
+let NOW = DAY; MC._now = () => NOW;
 
 const NICK = '9015551001', WES = '9015551002', SENIOR = '9015551003', PM2 = '9015551004', OFFICE = '9015850944', CALLER = '9015557777';
 function world(chain){
@@ -262,6 +264,47 @@ console.log('CALLCHAIN — Lead PM follows the Senior PM; settings; fallbacks');
   const wl = await walk(base(), { said: 'x' });
   ok(wl.rung.length === 13 && SMS.length === 1, 'a 13-number list is walked to the end, then one text', wl.rung.length);
 }
+console.log('AFTERHOURS — closed: 1 emergency rings the after-hours order, 2 texts at once, 3 / nothing as by day');
+{
+  const NIGHT = Date.parse('2026-10-29T02:00:00Z');   /* Wednesday 9 PM Central */
+  NOW = NIGHT; world(chain());
+  const p = base(), r0 = await post(VOICE, p);
+  ok(/Our office is closed\. If you have an emergency/.test(r0.body) && /ah=1/.test(r0.body) && !dials(r0.body).length, '9 PM: the after-hours menu (office closed, 1 emergency / 2 anything else / 3 sales)', r0.body);
+  NOW = NIGHT; world(chain());
+  const p1 = base(), w = await walk(p1, { said: 'water coming through the ceiling' });
+  ok(/what happened/.test(w.bodies[1]), '1 → "In a few words, what happened?"', w.bodies[1]);
+  ok(JSON.stringify(w.rung) === JSON.stringify([NICK, WES]), 'after hours 1 → the after-hours order: (Mitigation manager — none yet, skipped) → Nick → Wesley; not the daytime order', w.rung);
+  ok(SMS.length === 1 && leads().length === 1 && leads()[0].emergency === true && leads()[0].urgency === 'Emergency' && /EMERGENCY/.test(leads()[0].title), 'nobody accepts → one text + an EMERGENCY lead', leads().map(x => ({ t: x.title, e: x.emergency, u: x.urgency })));
+  NOW = NIGHT; world(chain());
+  setKv('users', getKv('users').concat([{ id: 'u5', name: 'Mia Mitigation', email: 'mia@grayco-cs.com', role: 'Mitigation Manager', phone: '9015554444', active: true }]));
+  const w2 = await walk(base(), { said: 'fire in the kitchen', answerAt: 0 });
+  ok(w2.rung[0] === '9015554444' && /GrayCo EMERGENCY call: fire in the kitchen\. Press 1 to accept/.test(w2.whispers[0]), 'a mitigation manager on file rings first and hears "GrayCo EMERGENCY call: fire in the kitchen"', { rung: w2.rung, w: w2.whispers[0] });
+  ok(SMS.length === 0 && leads().length === 0, 'accepted → no text, no lead');
+  NOW = NIGHT; world(chain());
+  const p2 = base(), w3 = await walk(p2, { press: '2' });
+  ok(w3.rung.length === 0 && /call you back in the morning/.test(w3.last.body) && /<Hangup\/>/.test(w3.last.body), 'after hours 2 → no ring, "we\'ll call you back in the morning"', w3.last.body);
+  ok(SMS.length === 1 && /our office is closed\. We got your call and will call you back in the morning/.test(SMS[0].Body) && leads().length === 1 && !leads()[0].emergency, '2 → the after-hours text at once + a normal lead for the morning', { sms: SMS.map(x => x.Body), leads: leads().length });
+  NOW = NIGHT; world(chain());
+  const w4 = await walk(base(), { press: '3' });
+  ok(w4.rung.length === 0 && /sales/.test(w4.last.body) && SMS.length === 0 && leads().length === 0, 'after hours 3 → sales message, nothing else');
+  NOW = NIGHT; world(chain());
+  const p5 = base(), r5 = await post(VOICE, p5), r6 = await post(attr(r5.body, 'Gather', 'action'), p5), r7 = await post(attr(r6.body, 'Gather', 'action'), p5);
+  ok(/ah=1/.test(r6.body) && /Goodbye/.test(r7.body) && SMS.length === 0, 'after hours, nothing pressed twice → goodbye, no text');
+  NOW = Date.parse('2026-10-31T15:00:00Z'); world(chain());   /* Saturday 10 AM */
+  ok(/Our office is closed/.test((await post(VOICE, base())).body), 'Saturday 10 AM (weekend closed by default) → the after-hours menu');
+  NOW = Date.parse('2026-10-31T15:00:00Z'); world(chain({ hours: { days: { sat: { open: true, start: '09:00', end: '12:00' } } } }));
+  ok(/press 2/.test((await post(VOICE, base())).body) && !/Our office is closed/.test((await post(VOICE, base())).body), 'hours edited (Saturday 9–12 open) → the daytime menu on Saturday 10 AM');
+  NOW = DAY; world(chain({ hours: { holidays: ['2026-10-28'] } }));
+  ok(/Our office is closed/.test((await post(VOICE, base())).body), 'a holiday → closed all day');
+  NOW = DAY; world(chain({ screen: { on: false } }));
+  NOW = NIGHT; const r8 = await post(VOICE, base());
+  ok(!dials(r8.body).length && /morning/.test(r8.body) && SMS.length === 1, 'screening off, after hours → no ring, the after-hours text + lead');
+  NOW = DAY; world(chain());
+  await walk(base(), { said: 'a pipe burst and the basement is flooding' });
+  ok(leads().length === 1 && leads()[0].emergency === true, 'daytime: what they said sounds like an emergency (pipe burst, flooding) → an EMERGENCY lead too', leads().map(x => x.title));
+  ok(CC.isOpen(DAY, CC.defaults()) && !CC.isOpen(NIGHT, CC.defaults()) && CC.isOpen(DAY, { hours: CC.defaults().hours }) && !CC.isOpen(Date.parse('2026-10-28T23:30:00Z'), {}), 'isOpen(now, settings) for the SMS alerts: Mon–Fri 7–6 Central by default (6:30 PM closed)');
+  NOW = DAY;
+}
 console.log('CALLCHAIN — Admin → 📞 Call order (texts.js ?callchain=1)');
 {
   world(undefined);
@@ -271,7 +314,9 @@ console.log('CALLCHAIN — Admin → 📞 Call order (texts.js ?callchain=1)');
   const call = (m, body) => TX.handler({ httpMethod: m, headers: { origin: 'https://crm.grayco-cs.com' }, queryStringParameters: { callchain: '1' }, body: body ? JSON.stringify(body) : '' }).then(r => Object.assign({ code: r.statusCode }, JSON.parse(r.body)));
   await walk(base(), { press: '3' });
   process.env.TWILIO_RING_SECONDS = '20';
+  TX._now = () => DAY;
   const g = await call('GET'); if (!g.ok) console.log(g);
+  ok(g.openNow === true && g.settings.night.slots.map(x => x.label).join() === 'Mitigation manager,Nick,Wesley' && g.settings.night.slots[1].person === 'u1' && g.settings.hours.days.sat.open === false, 'the card gets "open now", the after-hours order (Mitigation manager → Nick → Wesley) and the hours', { o: g.openNow, n: g.settings.night });
   ok(g.ok && g.saved === false && g.settings.ringSeconds === 20, 'nothing saved: ring seconds start at Netlify TWILIO_RING_SECONDS (20)', g.settings);
   ok(g.settings.slots[1].person === 'u1' && g.people.length === 4 && g.preview.list.length === 4 && g.preview.wait === 80, 'defaults pinned to people; 4 ring now (GM empty), a caller waits up to 80 s', g.preview);
   ok(Array.isArray(g.log) && g.log.length === 1 && g.log[0].choice === '3' && /pressed 3/.test(g.log[0].outcome), 'the call log comes back for the card (the sales call)', g.log);

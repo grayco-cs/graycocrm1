@@ -9,7 +9,8 @@
    ACKNOWLEDGED it within N minutes (Admin → 📞 Call order → "Emergency escalation calls after [15] min", default on),
    the CRM PHONES people, one at a time (Twilio REST Calls API, from TWILIO_FROM, ~25 s ring each):
      1. this week's on-call person (💧 Mitigation → 📟 On call), then
-     2. the 📞 Call order list, in order (anyone already called / with no phone is skipped).
+     2. the 📞 Call order list, in order (after hours: the after-hours order — Mitigation manager → Nick → Wesley;
+        anyone already called / with no phone is skipped).
    The call says "GrayCo emergency. A customer reported <water damage / a fire / a tree on the house> at <city>, <N>
    minutes ago, and nobody has answered yet. Press 1 to be connected to the customer now. Press 2 to accept and call them
    yourself." 1 → <Dial> the customer (caller ID = the GrayCo number); 2 → accepted, the details go to them by text.
@@ -117,6 +118,7 @@ function make(d){
     try { const X = require('./x10.js'), c = X.oncallCfg(await d.kvGet('gc_x10_oncall')); const o = c.on && c.rotation.length ? X.onCallNow(now(), c) : null;
       if (o) { let ph = o.phone; if (!phone10(ph)) { try { const u = arr(d.users ? await d.users() : []).find(x => low(x.email) === low(o.email)); if (u) ph = u.phone || u.cell || u.mobile; } catch (e) {} } add('On call', o.name || o.email, ph); } } catch (e) {}
     try { const CO = require('./callorder.js'); const raw = await d.kvGet(CO.KEY); const cfg = raw && typeof raw === 'object' ? CO.clean(raw) : CO.defaults();
+      if (!CO.isOpen(now(), cfg)) cfg.slots = cfg.night.slots;   /* patch AFTERHOURS: after hours → Mitigation manager → Nick → Wesley */
       const data = d.crm ? await d.crm() : {}; CO.resolve(cfg, data, { ours: [env('TWILIO_FROM')] }).list.forEach(x => add(x.label, x.name, x.number)); } catch (e) {}
     return out;
   }

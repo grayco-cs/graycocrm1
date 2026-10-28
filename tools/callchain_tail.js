@@ -11,6 +11,9 @@
      • patch CALLSCREEN (owner 10/28: "these leads need to be qualified … everything else we do not accept on this phone
        number"): 🛡 Screening on / off, the menu greeting (editable), the "what work do you need?" question on / off,
        blocked numbers, and the last 50 calls with what happened (pressed 1 / 2 / 3, no input, answered by, missed).
+     • patch AFTERHOURS (owner 10/28: "after hours we do not get rings … unless its an emergency … after hours mitigation
+       manager, nick wesley, as order"): 🕘 business hours per day (default Mon–Fri 7 AM–6 PM Central), holidays, "Open now /
+       After hours now", the after-hours greeting and the 🌙 after-hours emergency order (Mitigation manager → Nick → Wesley).
      • patch EMERGCALL (owner 10/28: "for emergency water or fire tree damages make sure you make a phone call to who is
        on call / order of call after 15 min of no answering a text"): 🚨 "Emergency escalation calls after [15] min" on / off.
    Phone numbers show to admins only, never to customers. */
@@ -20,7 +23,8 @@ var W = window, D = document;
 var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
 var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
 var FN = '/.netlify/functions/texts?callchain=1';
-var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['phone', 'Phone number']];
+var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['mitigation', 'Mitigation manager'], ['phone', 'Phone number']];
+var DAYN = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
 var ST8 = { cfg: null, people: [], senior: null, office: '', saved: false, preview: null };
 function later(f, ms){ return ST.call(W, f, ms || 0); }
 function s(v){ return v == null ? '' : String(v).trim(); }
@@ -46,20 +50,23 @@ function lineNumber(x){
   if (x.kind === 'company') return d10(ST8.office) || null;
   if (x.kind === 'phone') return d10(x.phone).length === 10 ? d10(x.phone) : null;
   if (x.kind === 'senior') return ST8.senior && d10(ST8.senior.phone).length === 10 ? d10(ST8.senior.phone) : null;
+  if (x.kind === 'mitigation') { var mm = mitMgr(); return mm ? d10(mm.phone) : null; }
   var p = personOf(x.person); return p ? d10(p.phone) : null;
 }
+function mitMgr(){ return ST8.people.filter(function(p){ return /mitig/i.test(p.role) && /manag|lead|supervis|director|chief/i.test(p.role); })[0] || null; }
 function whoText(x){
+  if (x.kind === 'mitigation') { var mm = mitMgr(); return mm ? esc(mm.name) + ' · ' + esc(mm.phone) : '<span style="color:#64748b">no mitigation manager yet (a person whose role says Mitigation Manager) — skipped</span>'; }
   if (x.kind === 'company') return ST8.office ? '☎ ' + esc(ST8.office) : '';
   if (x.kind === 'senior') return ST8.senior ? esc(ST8.senior.name) + (ST8.senior.phone ? ' · ' + esc(ST8.senior.phone) : ' · <span style="color:#b45309">no phone on file</span>') : '<span style="color:#b45309">no Senior PM set (👥 Team roles &amp; Senior PM)</span>';
   if (x.kind === 'person') { var p = personOf(x.person); return p ? esc(p.phone) : (x.person ? '<span style="color:#b45309">not in the people list / no phone</span>' : '<span style="color:#64748b">nobody yet — skipped</span>'); }
   return '';
 }
-function rowHtml(x, i, n){
+function rowHtml(x, i, n, L){
   var who = x.kind === 'person' ? '<select data-f="person" style="border:1px solid #cbd5e1;border-radius:6px;padding:5px;max-width:220px"><option value="">— Nobody yet (skipped) —</option>'
       + ST8.people.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === x.person ? ' selected' : '') + '>' + esc(p.name) + (p.role ? ' · ' + esc(p.role) : '') + '</option>'; }).join('') + '</select>'
     : x.kind === 'phone' ? '<input data-f="phone" placeholder="(901) 555-0100" value="' + esc(x.phone ? tidy(x.phone) : '') + '" style="width:140px;border:1px solid #cbd5e1;border-radius:6px;padding:5px">' : '';
   var rings = !!lineNumber(x);
-  return '<div class="gccc-row" draggable="true" data-i="' + i + '" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid #e2e8f0;border-radius:10px;padding:8px;margin:6px 0;background:' + (rings ? '#fff' : '#f8fafc') + '">'
+  return '<div class="gccc-row" draggable="true" data-l="' + (L || 'd') + '" data-i="' + i + '" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid #e2e8f0;border-radius:10px;padding:8px;margin:6px 0;background:' + (rings ? '#fff' : '#f8fafc') + '">'
     + '<span title="Drag to reorder" style="cursor:grab;color:#94a3b8;font-size:16px">⠿</span>'
     + '<b style="min-width:20px;color:#0e7490">' + (i + 1) + '.</b>'
     + '<input type="checkbox" data-f="on"' + (x.on ? ' checked' : '') + ' title="On / off">'
@@ -81,8 +88,13 @@ function readRows(box){
     c.screen.greeting = s(q('greeting').value); c.screen.blocked = s(q('blocked').value).split(/[\n,;]+/).map(d10).filter(function(d){ return d.length === 10; }); }
   c.on = !!(box.querySelector('[data-g="on"]') || {}).checked;
   c.ringSeconds = Math.max(8, Math.min(60, parseInt((box.querySelector('[data-g="secs"]') || {}).value, 10) || 15));
+  c.night = c.night || { slots: [] };
+  if (q('ngreet')) c.night.greeting = s(q('ngreet').value);
+  if (q('hours')) { c.hours = c.hours || { days: {} }; c.hours.days = c.hours.days || {};
+    DAYN.forEach(function(dn){ var el = box.querySelector('[data-day="' + dn[0] + '"]'); if (!el) return; c.hours.days[dn[0]] = { open: !!el.querySelector('[data-h="open"]').checked, start: el.querySelector('[data-h="start"]').value || '07:00', end: el.querySelector('[data-h="end"]').value || '18:00' }; });
+    c.hours.holidays = s(q('holidays').value).split(/[\s,;]+/).filter(function(x){ return /^\d{4}-\d{2}-\d{2}$/.test(x); }); }
   Array.prototype.forEach.call(box.querySelectorAll('.gccc-row'), function(el){
-    var x = c.slots[+el.getAttribute('data-i')]; if (!x) return;
+    var x = (el.getAttribute('data-l') === 'n' ? c.night.slots : c.slots)[+el.getAttribute('data-i')]; if (!x) return;
     x.on = !!el.querySelector('[data-f="on"]').checked; x.label = s(el.querySelector('[data-f="label"]').value) || x.label;
     x.kind = el.querySelector('[data-f="kind"]').value;
     var pe = el.querySelector('[data-f="person"]'), ph = el.querySelector('[data-f="phone"]');
@@ -113,6 +125,18 @@ function screenHtml(){
       + log.map(function(x){ var d = new Date(x.at); return '<tr style="border-top:1px solid #e2e8f0"><td style="padding:3px;white-space:nowrap">' + esc(isNaN(d) ? x.at : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '</td><td style="padding:3px;white-space:nowrap">' + esc(x.from) + '</td><td style="padding:3px">' + esc(x.choice === 'direct' ? '—' : x.choice ? 'pressed ' + x.choice : 'none') + '</td><td style="padding:3px">' + outcomeTag(x.outcome) + (x.by ? ' ' + esc(x.by) : '') + (x.what ? '<div style="color:#475569">“' + esc(x.what) + '”</div>' : '') + '</td></tr>'; }).join('') + '</table></div>'
       : '<div style="font-size:12px;color:#64748b;margin-top:4px">No calls yet.</div>') + '</div>';
 }
+function hoursHtml(){
+  var c = ST8.cfg, h = c.hours || { days: {} }, nt = c.night || { slots: [] };
+  return '<div style="margin:12px 0;border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fafc"><div style="font-weight:800">🕘 Business hours (Central) <span style="margin-left:6px;font-size:12px;border-radius:999px;padding:2px 9px;background:' + (ST8.openNow ? '#dcfce7;color:#166534">Open now' : '#e0e7ff;color:#3730a3">After hours now') + '</span></div>'
+    + '<div style="font-size:12px;color:#475569;margin:4px 0 8px">After hours nobody\'s phone rings unless it is an emergency: callers hear the after-hours menu — 1 emergency rings the 🌙 after-hours order below; 2 anything else gets a text right away and a lead for the morning; 3 sales hears the sales message.</div>'
+    + '<div data-g="hours" style="display:flex;flex-wrap:wrap;gap:6px 14px">' + DAYN.map(function(dn){ var d = (h.days || {})[dn[0]] || { open: false, start: '07:00', end: '18:00' };
+      return '<span data-day="' + dn[0] + '" style="display:inline-flex;gap:4px;align-items:center;white-space:nowrap"><label style="min-width:52px"><input type="checkbox" data-h="open"' + (d.open ? ' checked' : '') + '> ' + dn[1] + '</label><input type="time" data-h="start" value="' + esc(d.start) + '" style="border:1px solid #cbd5e1;border-radius:6px;padding:2px"> – <input type="time" data-h="end" value="' + esc(d.end) + '" style="border:1px solid #cbd5e1;border-radius:6px;padding:2px"></span>'; }).join('') + '</div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:6px">Holidays — closed all day (YYYY-MM-DD, one per line)</div><textarea data-g="holidays" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif" placeholder="2026-12-25">' + esc(arr(h.holidays).join('\n')) + '</textarea>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:6px">What callers hear after hours</div><textarea data-g="ngreet" rows="3" maxlength="600" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif">' + esc(nt.greeting || '') + '</textarea>'
+    + '<div style="font-weight:700;margin-top:8px">🌙 After-hours emergency order <span style="font-weight:400;font-size:12px;color:#475569">(after-hours 1 and the 🚨 escalation calls; whoever answers hears "GrayCo EMERGENCY call: …")</span></div>'
+    + nt.slots.map(function(x, i){ return rowHtml(x, i, nt.slots.length, 'n'); }).join('')
+    + '<button type="button" data-g="addN" style="border:0;border-radius:6px;padding:6px 12px;background:#e2e8f0;cursor:pointer;margin-top:4px">＋ Add person</button></div>';
+}
 function draw(box){
   var c = ST8.cfg;
   box.innerHTML = '<div style="font:13px Inter,sans-serif;color:#0f172a">'
@@ -121,6 +145,7 @@ function draw(box){
       : '⚠ Not saved yet — calls ' + (ST8.ringToEnv ? 'are screened, then ring ' + esc(ST8.ringToEnv) + ' only (Netlify TWILIO_RING_TO)' : 'are screened, then ring this default list') + '. Check it and press <b>Save</b>.')
     + (ST8.ready ? '' : '<br>⚠ Twilio is not set up yet (Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM).')
     + '<br><span style="color:#475569">Twilio → Phone Numbers → the number → Voice "A call comes in": Webhook <code>' + esc(ST8.voiceWebhook || '') + '</code> (HTTP POST). Nobody answers → the caller gets one text, a lead / call-back to-do is made.</span></div>'
+    + hoursHtml()
     + screenHtml()
     + '<div style="margin:12px 0;border:1px solid #fecaca;border-radius:10px;padding:10px;background:#fef2f2"><div style="font-weight:800">🚨 Emergency escalation calls</div>'
     + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="emOn"' + (!c.emerg || c.emerg.on !== false ? ' checked' : '') + '> Phone people about an emergency lead (water, fire, a tree on the house, storm damage) nobody has answered after <input data-g="emMin" type="number" min="5" max="120" value="' + esc((c.emerg && c.emerg.minutes) || 15) + '" style="width:52px"> min</label>'
@@ -129,7 +154,7 @@ function draw(box){
     + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"><label><input type="checkbox" data-g="on"' + (c.on ? ' checked' : '') + '> Ring in this order</label>'
     + '<label>Ring each one <input data-g="secs" type="number" min="8" max="60" value="' + esc(c.ringSeconds) + '" style="width:56px"> seconds</label></div>'
     + '<div data-g="sum" style="margin:8px 0;color:#334155">' + summary() + '</div>'
-    + '<div data-g="list">' + c.slots.map(function(x, i){ return rowHtml(x, i, c.slots.length); }).join('') + '</div>'
+    + '<div data-g="list">' + c.slots.map(function(x, i){ return rowHtml(x, i, c.slots.length, 'd'); }).join('') + '</div>'
     + '<button type="button" data-g="add" style="border:0;border-radius:6px;padding:6px 12px;background:#e2e8f0;cursor:pointer;margin-top:4px">＋ Add person</button>'
     + '<div style="font-size:12px;color:#475569;margin-top:8px;line-height:1.5">Skipped at call time: a line that is off or empty, the caller\'s own number, and the office line when the call was forwarded from it (no loop). Cell phones: with "press 1 to accept" on, a voicemail cannot take the call; with it off, keep the ring time shorter than your voicemail picks up (about 20–25 s).</div>'
     + '<div style="display:flex;gap:8px;margin-top:10px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div>'
@@ -141,10 +166,11 @@ function wire(box){
   var drag = -1;
   box.onclick = function(ev){
     var g = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g'); if (!g) return;
-    var row = ev.target.closest('.gccc-row'), i = row ? +row.getAttribute('data-i') : -1, sl = readRows(box).slots;
+    var row = ev.target.closest('.gccc-row'), i = row ? +row.getAttribute('data-i') : -1, c0 = readRows(box), sl = row && row.getAttribute('data-l') === 'n' ? c0.night.slots : g === 'addN' ? c0.night.slots : c0.slots;
     if (g === 'up' && i > 0) { sl.splice(i - 1, 0, sl.splice(i, 1)[0]); draw(box); }
     else if (g === 'down' && i >= 0 && i < sl.length - 1) { sl.splice(i + 1, 0, sl.splice(i, 1)[0]); draw(box); }
     else if (g === 'del' && i >= 0) { if (sl.length < 2) { toast('Keep at least one line (or turn the call order off).', true); return; } sl.splice(i, 1); draw(box); }
+    else if (g === 'addN') { sl.push({ id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: 'Person', on: true, kind: 'person', person: '', phone: '' }); draw(box); }
     else if (g === 'add') { var n = sl.filter(function(x){ return /^PM \d+$/.test(x.label); }).length + 2; sl.push({ id: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: 'PM ' + n, on: true, kind: 'person', person: '', phone: '' }); draw(box); }
     else if (g === 'save') {
       var v = readRows(box); ev.target.disabled = true;
@@ -154,12 +180,13 @@ function wire(box){
       });
     }
   };
-  box.onchange = function(ev){ var g0 = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g'); if (ev.target && ev.target.closest && (ev.target.closest('.gccc-row') || g0 === 'on' || g0 === 'secs' || g0 === 'scrOn' || g0 === 'askWhat' || g0 === 'whisper')) { readRows(box); draw(box); } };
-  box.ondragstart = function(ev){ var r = ev.target.closest && ev.target.closest('.gccc-row'); if (!r) return; drag = +r.getAttribute('data-i'); try { ev.dataTransfer.setData('text/plain', String(drag)); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {} };
+  box.onchange = function(ev){ var g0 = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g'); if (ev.target && ev.target.closest && (ev.target.closest('.gccc-row') || g0 === 'on' || g0 === 'secs' || g0 === 'scrOn' || g0 === 'askWhat' || g0 === 'whisper' || (ev.target.getAttribute && ev.target.getAttribute('data-h')))) { readRows(box); draw(box); } };
+  var dragL = 'd';
+  box.ondragstart = function(ev){ var r = ev.target.closest && ev.target.closest('.gccc-row'); if (!r) return; drag = +r.getAttribute('data-i'); dragL = r.getAttribute('data-l'); try { ev.dataTransfer.setData('text/plain', String(drag)); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {} };
   box.ondragover = function(ev){ if (drag >= 0 && ev.target.closest && ev.target.closest('.gccc-row')) ev.preventDefault(); };
-  box.ondrop = function(ev){ var r = ev.target.closest && ev.target.closest('.gccc-row'); if (!r || drag < 0) return; ev.preventDefault(); var to = +r.getAttribute('data-i'), sl = readRows(box).slots; if (to !== drag) { sl.splice(to, 0, sl.splice(drag, 1)[0]); draw(box); } drag = -1; };
+  box.ondrop = function(ev){ var r = ev.target.closest && ev.target.closest('.gccc-row'); if (!r || drag < 0) return; ev.preventDefault(); if (r.getAttribute('data-l') !== dragL) { drag = -1; return; } var to = +r.getAttribute('data-i'), c1 = readRows(box), sl = dragL === 'n' ? c1.night.slots : c1.slots; if (to !== drag) { sl.splice(to, 0, sl.splice(drag, 1)[0]); draw(box); } drag = -1; };
 }
-function take(o){ ST8.cfg = o.settings; ST8.people = arr(o.people); ST8.senior = o.senior || null; ST8.office = s(o.office); ST8.saved = !!o.saved; ST8.preview = o.saved ? o.preview : null; ST8.ringToEnv = s(o.ringToEnv); ST8.ready = !!o.ready; ST8.voiceWebhook = s(o.voiceWebhook); ST8.log = arr(o.log); }
+function take(o){ ST8.cfg = o.settings; ST8.people = arr(o.people); ST8.senior = o.senior || null; ST8.office = s(o.office); ST8.saved = !!o.saved; ST8.preview = o.saved ? o.preview : null; ST8.ringToEnv = s(o.ringToEnv); ST8.ready = !!o.ready; ST8.voiceWebhook = s(o.voiceWebhook); ST8.log = arr(o.log); ST8.openNow = !!o.openNow; }
 function renderAdmin(box){
   if (!isAdmin()) { box.innerHTML = '<div style="color:#64748b">Only an admin can change who the GrayCo number rings.</div>'; return; }
   box.innerHTML = '<div style="color:#64748b">Loading…</div>';
