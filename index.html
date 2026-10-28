@@ -60207,15 +60207,20 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{ localStorage.removeItem('gc_deleted_schedule'); }catch(e){}
   }
   // Rolling local backup of the schedule so we always have a full copy to restore from.
+  var _bkList=null, _bkLen=-1, _bkN=-1;   /* patch RTFEED: what this guardian last copied (the list, and the stored text's length) */
   function backupSchedule(){
     try{
       var sched=(window._crm&&window._crm.schedule)||[];
       if(!Array.isArray(sched)||!sched.length) return;
       var key='gc_sched_backup';
-      var prev=[]; try{ prev=JSON.parse(localStorage.getItem(key)||'[]'); }catch(e){}
+      var raw=localStorage.getItem(key)||'[]';
+      if(sched===_bkList && sched.length===_bkN && raw.length===_bkLen) return;   /* the same list, and the copy is the one written from it */
+      var prev=[]; try{ prev=JSON.parse(raw); }catch(e){}
       // only overwrite the backup if the current schedule is as big or bigger (never back up a shrunk one)
       if(sched.length>=prev.length){
-        localStorage.setItem(key, JSON.stringify(sched));
+        var _txt=JSON.stringify(sched);
+        localStorage.setItem(key, _txt);
+        _bkList=sched; _bkN=sched.length; _bkLen=_txt.length;
       }
     }catch(e){}
   }
@@ -117893,6 +117898,7 @@ var ownPost = {};
       var u = typeof input === 'string' ? input : (input && input.url) || '';
       if(init && init.body && typeof init.body === 'string' && /\/rest\/v1\/gc_kv/.test(u) && String(init.method||'').toUpperCase() === 'POST' && init.body.length < 6000000){
         var b = JSON.parse(init.body); (Array.isArray(b) ? b : [b]).forEach(function(r){
+          if(r && r.key === 'schedule__manifest' && r.value && typeof r.value === 'object' && r.value.gen) ownNote[r.value.gen] = 1;   /* patch RTFEED: this page's own note */
           if(!r || !r.key || !isShared(r.key)) return;
           var v = r.value; if(typeof v === 'string' && /^\s*[\[{]/.test(v)){ try{ v = JSON.parse(v); }catch(e){} }
           ownPost[r.key] = { at:Date.now(), sig:sigOf(JSON.stringify(v)) };
@@ -117927,10 +117933,40 @@ window.__gcLiveSkip = function(name, every){
 };
 
 var pendingPull = false, pullT = null, firstEventAt = 0, evKeys = {}, evVal = {};
+/* patch RTFEED: another computer saved the schedule's pieces: read them (one ~1.2 MB piece at a time) and lay
+   them over the screen through the same overlay the whole-row message used */
+var ownNote = {}, noteT = null, noteBusy = false, noteAgain = false;
+function schedOnNote(rec){
+  try{
+    var v = rec && rec.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
+    if(v && v.gen && ownNote[v.gen]) return;                       /* this computer's own save */
+    stats.events++; stats.lastEventAt = Date.now(); stats.evByKey = stats.evByKey || {}; stats.evByKey.schedule__manifest = (stats.evByKey.schedule__manifest||0) + 1;
+    healthy = true;
+    if(!noteT) noteT = ST.call(window, schedReadNote, 400);       /* notes that arrive together are read once */
+  }catch(e){}
+}
+async function schedReadNote(){
+  noteT = null;
+  if(noteBusy){ noteAgain = true; return; }
+  noteBusy = true;
+  try{
+    if(typeof window._gcSbReadChunked !== 'function') return;
+    var v = await window._gcSbReadChunked('schedule');
+    if(!Array.isArray(v) || !v.length || !isRecList(v)) return;
+    var k = 'schedule';
+    learnSoon(k, v, null);
+    if(!firstEventAt) firstEventAt = Date.now();
+    evVal[k] = v;
+    if(!toApply[k]) toApply[k] = Date.now();
+    scheduleApply(300);
+  }catch(e){}
+  finally{ noteBusy = false; if(noteAgain){ noteAgain = false; if(!noteT) noteT = ST.call(window, schedReadNote, 400); } }
+}
 function onEvent(payload){
   try{
     var rec = (payload && (payload['new'] || payload.record)) || {};
     var k = rec.key || (payload && payload.old && payload.old.key);
+    if(k === 'schedule__manifest'){ schedOnNote(rec); return; }   /* patch RTFEED */
     if(!k || !isShared(k)) return;
     stats.events++; stats.lastEventAt = Date.now(); stats.evByKey = stats.evByKey || {}; stats.evByKey[k] = (stats.evByKey[k]||0) + 1;
     healthy = true;
@@ -118086,7 +118122,9 @@ async function applyNow(){
 }
 
 function filters(){
-  var ks = Object.keys(keys()).filter(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }).sort();
+  /* patch RTFEED: the ~5 MB schedule row is not taken from the live feed (decoding it froze every other computer);
+     the small note the company sync writes after the schedule's pieces is taken instead (schedOnNote) */
+  var ks = Object.keys(keys()).filter(function(k){ return /^[A-Za-z0-9_]+$/.test(k) && k !== 'schedule'; }).concat(['schedule__manifest']).sort();
   var out = [];
   for(var i=0;i<ks.length;i+=90) out.push('key=in.(' + ks.slice(i, i+90).join(',') + ')');
   return out;
