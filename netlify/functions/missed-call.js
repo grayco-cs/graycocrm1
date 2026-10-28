@@ -15,6 +15,18 @@
      A call comes in   → POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=voice
      A message comes in → POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=sms
    Every POST must carry a valid X-Twilio-Signature (HMAC-SHA1 with TWILIO_AUTH_TOKEN) — anything else is 403.
+     C) patches CALLCHAIN + CALLSCREEN (owner 10/28: "call in order office, nick owner 1, wesley owner 2, general manager,
+        lead pm" · "these leads need to be qualified … everything else we do not accept on this phone number"): the
+        📞 Call order (Admin; _lib/callorder.js, gc_lead_inbox_kv "gc_call_order"). The caller first hears the menu
+        (1 work · 2 current customer · 3 anything else / sales); nothing twice → goodbye (likely a robocall); 3, a blocked
+        number or a failed STIR/SHAKEN attestation → "we don't take sales calls" — no ring, no text, no lead, logged only.
+        1 → "in a few words, what work do you need?" → the call order rings one at a time (<Dial answerOnBridge
+        action=…?event=dialdone&step=N>), each person first hears "GrayCo call: <what they said>. Press 1 to accept"
+        (<Number url=…?event=whisper>), so a voicemail does not take the call. 2 → the job's PM first (caller's number on a
+        job), then the call order. Nobody accepts → the missed call below (one text, lead / call-back to-do with what
+        they said). Every hop is a new signed webhook. Log: gc_lead_inbox_kv "gc_call_log" (Admin card: the last 50).
+        This runs before the rc-r13 24/7 emergency chain (patch CHAIN, TWILIO_CALL_CHAIN=1), which is only reached when
+        an admin turns both the call order and the screening off.
 
    A missed call:
      · the caller gets ONE text (not again within 12 hours, never after they texted STOP):
@@ -57,7 +69,7 @@ function now(){ return typeof exports._now === 'function' ? exports._now() : Dat
 
 function ready(){ return !!(env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM')); }
 function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
-function hookUrl(ev){ return site() + '/.netlify/functions/missed-call?event=' + ev; }
+function hookUrl(ev, q){ return site() + '/.netlify/functions/missed-call?event=' + ev + (q ? '&' + Object.keys(q).map(k => k + '=' + encodeURIComponent(String(q[k]))).join('&') : ''); }   /* patch CALLCHAIN: the exact URL Twilio calls back (and signs) */
 function L(){ return require('./bid-inbox.js')._lib; }
 /* patch CHAIN: the 24/7 emergency line — on call → insurance → admins (_lib/callchain.js) */
 let CC_ = null;
@@ -67,6 +79,9 @@ function dialStep(i, chain){
     + '<Number url="' + esc(hookUrl('screen') + '&i=' + i) + '" method="POST">+1' + chain[i].phone + '</Number></Dial>';
 }
 function WI(){ return require('./website-intake.js')._lib; }
+function SA(){ return require('./_lib/smsalert.js'); }   /* patch SMSALERT: text alerts to staff cell phones */
+function LM(){ return require('./_lib/leadmsg.js'); }
+function TL(){ return require('./_lib/textlead.js'); }   /* patch TEXTLEAD: texts build the lead (name / address / work), the conversation on the lead and the job */   /* patch LEADMAILMSG: what the customer said + call buttons in the e-mails */
 function core(){ return require('./portal.js')._core; }
 
 /* ── Twilio's signature: base64(HMAC-SHA1(token, url + every POST param name+value, sorted by name)) ── */
@@ -134,7 +149,7 @@ async function mailStaff(extra, subject, html, text){
   if (!to.length) return { ok: false, why: 'nobody to tell' };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Leads'), html, text, headers: { 'X-GrayCo-CRM': 'missed-call' } }) });
+      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Leads'), html: LM().telify(html), text, headers: { 'X-GrayCo-CRM': 'missed-call' } }) });
     return { ok: r.ok, to };
   } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
 }
@@ -144,12 +159,12 @@ function box(head, body){
 }
 
 /* ── an existing customer's missed call → a "📞 Call back" to-do on that job ── */
-async function callBackTodo(cust, ph, callSid, at){
+async function callBackTodo(cust, ph, callSid, at, what){
   const C = core();
   let pm = null; try { pm = cust.pm ? await C.pmByName(cust.pm) : null; } catch (e) {}
   const id = 'MISSED_' + phone10(ph) + '_' + at.slice(0, 10);
   const label = '📞 Call back ' + (cust.client || tidy(ph)) + ' — missed call' + (cust.job ? ' (' + cust.job + ')' : '');
-  const line = 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC from ' + tidy(ph) + ' — the automatic text went out.';
+  const line = 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC from ' + tidy(ph) + ' — the automatic text went out.' + (what ? ' They said: “' + clip(what, 200) + '”.' : '');   /* patch CALLSCREEN */
   let r = { ok: false };
   try {
     r = await C.kvListUpdate('gc_office_tasks', function(l){
@@ -161,16 +176,19 @@ async function callBackTodo(cust, ph, callSid, at){
     });
   } catch (e) { r = { ok: false, error: s(e && e.message) }; }
   const subj = '📞 Missed call from an existing customer: ' + (cust.client || tidy(ph)) + (cust.job ? ' — ' + cust.job : '');
-  const html = box('GrayCo — missed call (existing customer)', '<p><b>' + esc(cust.client || 'A customer') + '</b> called from <b>' + esc(tidy(ph)) + '</b> and nobody answered. They got the automatic text.</p>'
+  const html = box('GrayCo — missed call (existing customer)', LM().buttons({ phone: ph }) + LM().boxHtml(LM().textInfo({ name: cust.client, phone: ph, kind: 'customer', job: cust.job }), '📞 Who called') + '<p><b>' + esc(cust.client || 'A customer') + '</b> called from <b>' + esc(tidy(ph)) + '</b> and nobody answered. They got the automatic text.</p>'
     + (cust.job ? '<p>Their job: <b>' + esc(cust.job) + '</b>' + (cust.pm ? ' — PM <b>' + esc(cust.pm) + '</b>' : '') + '. A “📞 Call back” to-do is on that job' + (cust.pm ? ' for ' + esc(cust.pm) : ' (Office To-Do)') + '.</p>' : '<p>A “📞 Call back” to-do is on the Office To-Do.</p>'));
   const m = await mailStaff(pm && pm.email ? [pm.email] : [], subj, html, subj + '\n\nCall back: ' + tidy(ph) + '\n' + site());
   return { todo: id, saved: !!r.ok, mailed: m.ok };
 }
 
 /* ── one missed call ── */
-async function missed(p, how){
+async function missed(p, how, extra){
+  extra = extra || {};   /* patch CALLSCREEN: { what } — what the caller said they need */
   const ph = phone10(p.From), callSid = s(p.CallSid) || ('call-' + ph + '-' + nowIso().slice(0, 16)), at = nowIso();
   if (ph.length !== 10 || /^(anonymous|restricted|unknown|private)/i.test(s(p.From))) return { skipped: 'no caller id' };
+  /* patch CALLCHAIN: our own office line / Twilio number as the caller ID (a forward that shows the forwarding line) is no lead and gets no text */
+  if (ph === CO().companyPhone() || ph === phone10(env('TWILIO_FROM'))) return { skipped: 'our own number' };
   /* claim the call (a retry from Twilio or a second webhook for the same call does nothing) */
   let first = false, textIt = false;
   await stateCas(st => {
@@ -187,13 +205,14 @@ async function missed(p, how){
   if (textIt) { try { const SC = require('./_lib/smsconsent.js'), D0 = await core().kvRead(['customers', 'projects', 'leads']), s0 = await stateGet();
     if (SC.statusFor(D0, ph, s0.consent) === 'no') { textIt = false; out.consent = 'declined'; } } catch (e) {} }
   if (textIt) {
-    out.text = await sendSms(ph, TEXT);
+    out.text = await sendSms(ph, s(extra.text) || TEXT);   /* patch AFTERHOURS: the after-hours wording */
     if (!out.text.ok) await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
   } else out.text = { skipped: 'texted recently or opted out' };
   /* existing customer? */
   let cust = null; try { cust = await WI().findCustomer({ phone: ph, email: '' }); } catch (e) {}
+  try { out.cellAlerts = await SA().missedCall({ ph, name: cust ? cust.client : s(p.CallerName), job: cust ? cust.job : '', pid: cust ? cust.pid : '', said: s(extra && extra.what) }); } catch (e) {}   /* patch SMSALERT */
   if (cust && (cust.pid || cust.client)) {
-    out.customer = await callBackTodo(cust, ph, callSid, at);
+    out.customer = await callBackTodo(cust, ph, callSid, at, s(extra.what));
     await stateCas(st => { st.owner[ph] = { todo: out.customer.todo, pid: s(cust.pid), pm: s(cust.pm), at }; return true; }).catch(() => {});
     return out;
   }
@@ -201,15 +220,177 @@ async function missed(p, how){
   const who = s(p.CallerName) && !/^(wireless caller|unknown|anonymous)/i.test(s(p.CallerName)) ? s(p.CallerName).replace(/\b\w+/g, w => w[0].toUpperCase() + w.slice(1).toLowerCase()) : '';
   const city = [s(p.FromCity), s(p.FromState)].filter(Boolean).join(', ');
   const f = { type: 'estimate', name: who || 'Caller ' + tidy(ph), email: '', phone: ph, address: '', city: s(p.FromCity), state: s(p.FromState).slice(0, 2), zip: s(p.FromZip),
-    message: 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (city ? ' (caller ID area: ' + city + ')' : '') + '. ' + (out.text.ok ? 'The automatic text went out.' : 'No automatic text (' + (out.text.skipped || out.text.why || 'not sent') + ').'),
+    message: 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (city ? ' (caller ID area: ' + city + ')' : '') + '. ' + (out.text.ok ? 'The automatic text went out.' : 'No automatic text (' + (out.text.skipped || out.text.why || 'not sent') + ').') + (s(extra.what) ? ' They said they need: “' + clip(extra.what, 300) + '”.' : ''),
     company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '', project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: '' };
   const sid = crypto.createHash('sha256').update('missed|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
+  /* patch AFTERHOURS: an after-hours "1", or what they said sounds like one (water / flood / leak / fire / smoke / tree / storm) → an EMERGENCY lead */
+  let emerg = !!extra.emergency; if (!emerg && s(extra.what)) { try { emerg = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
+  if (emerg) out.emergency = true;
   const r = await WI().fileLead(f, { sid, source: 'Missed call', how: 'a missed call to the GrayCo number', formLabel: 'Missed call', customer: null,
-    title: 'Missed call — ' + (who || tidy(ph)) + (city ? ' — ' + city : ''), leadExtra: { missedCall: true, callSid } });
+    title: (emerg ? '🚨 EMERGENCY call — ' : 'Missed call — ') + (who || tidy(ph)) + (city ? ' — ' + city : ''), patch: emerg ? { emergency: true, urgency: 'Emergency' } : undefined, leadExtra: Object.assign({ missedCall: true, callSid }, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
   out.lead = r.id; out.action = r.action;
   await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
+  try { out.textLead = await TL().onMissed({ leadId: r.id, ph, said: s(extra && extra.what), autoText: out.text && out.text.ok ? TEXT : '', callSid, at }); } catch (e) {}   /* patch TEXTLEAD */
   out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
   return out;
+}
+
+/* ── patch EMERGCALL: the CRM's own escalation calls about an emergency nobody acknowledged (_lib/emergcall.js) ── */
+function EC(){
+  return require('./_lib/emergcall.js').make({ env, now, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f),
+    crm: () => core().kvRead(['users', 'gc_senior_pm']), users: async () => { try { return (await core().kvRead(['users'])).users; } catch (e) { return []; } },
+    sms: (ph, body) => sendSms(ph, body),
+    ackCtx: async () => {   /* what counts as "someone has it": the Lead Inbox item, the CRM lead, the on-call page, a staff text */
+      const o = { inbox: {}, leads: {}, pages: [], lastOut: {}, msgs: [] };
+      try { (await L().kvGet(L().KV) || []).forEach(x => { if (x && x.id) o.inbox[s(x.id)] = x; }); } catch (e) {}
+      try { const D0 = await core().kvRead(['leads', 'gc_job_messages']); (Array.isArray(D0.leads) ? D0.leads : []).forEach(l => { if (l) ['id', 'inboxId', 'key', 'leadKey'].forEach(f => { if (s(l[f])) o.leads[s(l[f])] = l; }); }); o.msgs = Array.isArray(D0.gc_job_messages) ? D0.gc_job_messages : []; } catch (e) {}
+      try { const v = await L().kvGet('gc_x10_pages'); o.pages = Array.isArray(v) ? v : (v && Array.isArray(v.list) ? v.list : []); } catch (e) {}
+      try { o.lastOut = (await stateGet()).lastOut || {}; } catch (e) {}
+      return o;
+    },
+    mailAdmins: (subject, r) => mailStaff([], subject, box('GrayCo — nobody answered the emergency calls', '<p><b>' + esc(r.title) + '</b>' + (r.contact && r.contact.phone ? ' · ' + esc(tidy(r.contact.phone)) : '') + '</p><p>The CRM called everyone on call and on the 📞 Call order twice and nobody pressed 1 or 2. Please call the customer now.</p>'), subject + '\n\n' + r.title) });
+}
+
+/* ── patches CALLCHAIN + CALLSCREEN: the menu, then the 📞 Call order one at a time ── */
+function CO(){ return require('./_lib/callorder.js'); }
+const SAYV = '<Say voice="Polly.Joanna">';
+const HOLD = 'Thanks for calling GrayCo Construction Services, please hold while we connect you.';
+const HOLD2 = 'Thank you. Please hold while we connect you.';
+const ASK_WHAT = 'In a few words, what work do you need?';
+const SALES = "We don't take sales calls on this line. Please e-mail office at grayco-cs.com. Goodbye.";
+const BYE_NOINPUT = 'Goodbye.';
+async function orderCfg(){
+  let raw = null; try { raw = await L().kvGet(CO().KEY); } catch (e) { raw = null; }
+  if (raw && typeof raw === 'object') return { cfg: CO().clean(raw), saved: true };
+  const d = CO().defaults(), ring = phone10(env('TWILIO_RING_TO'));   /* nothing saved: the owner's order, or TWILIO_RING_TO alone when set */
+  if (ring.length === 10) d.slots = [{ id: 'ringto', label: 'Office', on: true, kind: 'phone', phone: ring, person: '' }];
+  return { cfg: d, saved: false };
+}
+/* the call log (gc_lead_inbox_kv "gc_call_log"): one row per call, newest last, 200 kept */
+async function logGet(sid){ try { const v = await L().kvGet(CO().LOG_KEY); return (v && Array.isArray(v.calls) ? v.calls : []).find(x => x && x.sid === sid) || null; } catch (e) { return null; } }
+async function logPut(sid, patch){
+  if (!sid) return null;
+  let row = null;
+  try {
+    await L().kvCas(CO().LOG_KEY, v => {
+      v = v && typeof v === 'object' ? v : {}; const l = Array.isArray(v.calls) ? v.calls : [];
+      row = l.find(x => x && x.sid === sid);
+      if (!row) { row = { sid, at: nowIso() }; l.push(row); }
+      Object.assign(row, patch, { upd: nowIso() });
+      v.calls = l.slice(-200); return v;
+    });
+  } catch (e) {}
+  return row;
+}
+async function orderList(cfg, p, choice, ah){
+  let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
+  let ours = [env('TWILIO_FROM')]; try { const set = SMS().settings(await L().kvGet(SMS().SETTINGS_KEY)); ours = ours.concat(require('./_lib/smsroute.js').numbers(set, env).map(x => x.number)); } catch (e) {}
+  const c = JSON.parse(JSON.stringify(cfg));
+  if (!c.on) c.slots = [];
+  if (ah) c.slots = c.night.slots;   /* patch AFTERHOURS: the after-hours emergency order (Mitigation manager → Nick → Wesley) */
+  else if (choice === '2') {   /* a current customer: their job's PM first, when the caller's number is on a job */
+    try { const cust = await WI().findCustomer({ phone: phone10(p.From), email: '' }); const u = cust && cust.pm ? require('./_lib/people.js').findUser(data.users, cust.pm) : null;
+      if (u && CO().userPhone(u).length === 10) c.slots.unshift({ id: 'jobpm', label: 'Job PM', on: true, kind: 'phone', phone: CO().userPhone(u), person: '' }); } catch (e) {}
+  }
+  return CO().resolve(c, data, CO().callCtx(p, ours)).list;
+}
+const AHQ = ah => ah ? { ah: 1 } : {};
+function menuTwiml(cfg, n, ah){
+  const u = hookUrl('menu', Object.assign({ try: n }, AHQ(ah)));
+  return twiml('<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" hints="one, two, three, emergency, construction, customer, sales" actionOnEmptyResult="true" action="' + esc(u) + '" method="POST">'
+    + SAYV + esc(ah ? cfg.night.greeting : cfg.screen.greeting) + '</Say></Gather><Redirect method="POST">' + esc(u) + '</Redirect>');
+}
+/* patch AFTERHOURS: "2" after hours — no ring: a text at once and a lead for the morning */
+const AH_TEXT = 'Thanks for calling GrayCo — our office is closed. We got your call and will call you back in the morning. Reply here with any details.';
+async function nightText(p, row){
+  await logPut(s(p.CallSid), { outcome: 'after hours — texted, lead for the morning' });
+  await missed(p, 'after hours (pressed 2): texted, lead for the morning', { text: AH_TEXT, what: s(row && row.what) });
+  return twiml(SAYV + "Thank you. We've sent you a text and will call you back in the morning. Goodbye.</Say><Hangup/>");
+}
+const isAh = (row, qs) => s(row && row.ah) === '1' || s(qs && qs.ah) === '1';
+function dialTwiml(cfg, list, i, sid, sayText, c, ah){   /* c = the menu answer, carried in the signed URL too (the log is the first source) */
+  const x = list[i];
+  const num = cfg.screen.whisper ? '<Number url="' + esc(hookUrl('whisper', Object.assign({ step: i, p: sid }, c ? { c } : {}, AHQ(ah)))) + '" method="POST">+1' + x.number + '</Number>' : '<Number>+1' + x.number + '</Number>';
+  return twiml((sayText ? SAYV + esc(sayText) + '</Say>' : '') + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', Object.assign({ step: i }, c ? { c } : {}, AHQ(ah)))) + '" method="POST">' + num + '</Dial>');
+}
+async function finishMissed(p, row, how, ah){
+  const sid = s(p.CallSid);
+  await logPut(sid, { outcome: 'missed' });
+  await missed(p, how, { what: s(row && row.what), emergency: !!ah && s(row && row.choice) === '1' });   /* patch AFTERHOURS: an after-hours "1" is an emergency lead */
+  return sayBye();
+}
+async function startRing(cfg, p, row, sayText, c, ah){
+  c = s(row && row.choice) || s(c);
+  const list = await orderList(cfg, p, c, ah);
+  if (!list.length) return finishMissed(p, row || { choice: c }, 'call order: nobody to ring', ah);
+  await logPut(s(p.CallSid), { outcome: 'ringing', step: 0 });
+  return dialTwiml(cfg, list, 0, s(p.CallSid), sayText, c, ah);
+}
+/* → TwiML, or null when the call order and the screening are both off (the older paths below run) */
+async function callOrder(ev, p, qs){
+  const { cfg } = await orderCfg(), sid = s(p.CallSid);
+  const active = cfg.on || cfg.screen.on;
+  if (ev === 'voice') {
+    if (!active) return null;
+    const from = phone10(p.From);
+    if (CO().isBlocked(cfg, from) || CO().attestationFailed(p)) {   /* known spam: like "3" */
+      await logPut(sid, { from, choice: '3', outcome: CO().isBlocked(cfg, from) ? 'blocked number' : 'caller ID failed (STIR/SHAKEN ' + s(p.StirVerstat) + ')' });
+      return twiml(SAYV + esc(SALES) + '</Say><Hangup/>');
+    }
+    const ah = !CO().isOpen(now(), cfg);   /* patch AFTERHOURS */
+    if (cfg.screen.on) { await logPut(sid, { from, choice: '', outcome: 'menu', ah: ah ? '1' : '' }); return menuTwiml(cfg, 1, ah); }
+    if (ah) { const r0 = await logPut(sid, { from, choice: '2', ah: '1' }); return nightText(p, r0); }   /* no menu after hours: no ring, a text + a lead */
+    const row = await logPut(sid, { from, choice: 'direct', outcome: 'ringing' });
+    return startRing(cfg, p, row, HOLD, 'direct');
+  }
+  if (ev === 'menu') {
+    const c = CO().choiceOf(p), n = parseInt(qs.try, 10) || 1, ah = isAh(null, qs);
+    if (!c) {
+      if (n < 2) return menuTwiml(cfg, 2, ah);   /* once more */
+      await logPut(sid, { from: phone10(p.From), outcome: 'no answer to menu (likely robocall)' });
+      return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');
+    }
+    if (c === '3') { await logPut(sid, { from: phone10(p.From), choice: '3', outcome: 'sales / other (pressed 3)' }); return twiml(SAYV + esc(SALES) + '</Say><Hangup/>'); }
+    const row = await logPut(sid, { from: phone10(p.From), choice: c, ah: ah ? '1' : '', outcome: ah ? (c === '1' ? 'after hours — EMERGENCY' : 'after hours') : c === '1' ? 'new work' : 'current customer' });
+    if (ah && c === '2') return nightText(p, row || { choice: '2' });   /* patch AFTERHOURS */
+    if (c === '1' && cfg.screen.askWhat) {
+      const wu = hookUrl('what', Object.assign({ c }, AHQ(ah)));
+      return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(wu) + '" method="POST">' + SAYV + esc(ah ? 'In a few words, what happened?' : ASK_WHAT) + '</Say></Gather>'
+        + '<Redirect method="POST">' + esc(wu) + '</Redirect>');
+    }
+    return startRing(cfg, p, row, HOLD2, c, ah);
+  }
+  if (ev === 'what') {
+    const row0 = await logGet(sid), c0 = s(row0 && row0.choice) || s(qs.c), ah = isAh(row0, qs);
+    if (['1', '2', 'direct'].indexOf(c0) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
+    const row = await logPut(sid, { what: clip(s(p.SpeechResult), 200) });
+    return startRing(cfg, p, row || { choice: c0, what: clip(s(p.SpeechResult), 200) }, HOLD2, c0, ah);
+  }
+  if (ev === 'whisper') {   /* the person's phone answered: "GrayCo call: … press 1 to accept" (a voicemail does not press 1) */
+    const parent = s(qs.p) || s(p.ParentCallSid), row = await logGet(parent), step = parseInt(qs.step, 10) || 0;
+    const ah = isAh(row, qs);
+    const what = s(row && row.what) || (ah ? 'an emergency' : row && row.choice === '2' ? 'a current customer' : 'a new project');
+    const line = SAYV + (ah ? 'GrayCo EMERGENCY call: ' : 'GrayCo call: ') + esc(clip(what, 140)) + '. Press 1 to accept.</Say>';
+    return twiml('<Gather numDigits="1" timeout="6" action="' + esc(hookUrl('accept', { step, p: parent })) + '" method="POST">' + line + '<Pause length="1"/>' + line + '</Gather><Hangup/>');
+  }
+  if (ev === 'accept') {
+    const parent = s(qs.p) || s(p.ParentCallSid);
+    if (s(p.Digits) !== '1') return twiml('<Hangup/>');
+    await logPut(parent, { accepted: true, acceptedStep: parseInt(qs.step, 10) || 0, acceptedBy: phone10(p.To || p.Called) });
+    return twiml('');   /* connects them to the caller */
+  }
+  if (ev === 'dialdone' && qs.step != null && /^\d{1,3}$/.test(s(qs.step))) {
+    const row = await logGet(sid), step = parseInt(qs.step, 10), c = s(row && row.choice) || s(qs.c), ah = isAh(row, qs);
+    const list = await orderList(cfg, p, c, ah), who = list[step];
+    const answered = /^(completed|answered)$/i.test(s(p.DialCallStatus)) && (!cfg.screen.whisper || !!(row && row.accepted)
+      || (!row && (parseInt(p.DialCallDuration, 10) || 0) >= 20));   /* the log unreachable: a 20 s+ conversation counts as answered */
+    if (answered) { await logPut(sid, { outcome: 'answered', by: who ? who.label + (who.name ? ' — ' + who.name : '') : '' }); return twiml('<Hangup/>'); }
+    if (['1', '2', 'direct'].indexOf(c) < 0) return twiml('<Hangup/>');   /* never text a caller who did not press 1 or 2 */
+    if (/^(completed|canceled)$/i.test(s(p.CallStatus))) return finishMissed(p, row || { choice: c }, 'call order: the caller hung up while it rang', ah);
+    if (step + 1 < list.length) { await logPut(sid, { step: step + 1 }); return dialTwiml(cfg, list, step + 1, sid, '', c, ah); }
+    return finishMissed(p, row || { what: '', choice: c }, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')', ah);
+  }
+  return null;
 }
 
 /* ── a text in (patch TXT: matched to the job, on Job Messages, e-mailed to the relay list, one approved answer) ── */
@@ -240,6 +421,7 @@ async function inboundSms(p){
   const sid = s(p.MessageSid || p.SmsSid) || crypto.createHash('sha256').update(ph + '|' + body + '|' + at.slice(0, 16)).digest('hex').slice(0, 24);
   if (ph.length !== 10) return { skipped: 'no number' };
   if (STOP.test(body)) { await stateCas(st => { st.optout[ph] = at; return true; }); return { optout: true }; }
+  try { const sa = await SA().staffInbound(ph, body, s(p.MessageSid || p.SmsSid)); if (sa) return Object.assign({ cellAlerts: true }, sa); } catch (e) {}   /* patch SMSALERT: a staff cell in the alerts table — a reply to the last alert, never a lead */
   if (START.test(body)) { await stateCas(st => { delete st.optout[ph]; return true; }); return { optin: true }; }
   /* Twilio retries a webhook it thinks failed: the same message is handled once */
   let fresh = false;
@@ -284,10 +466,11 @@ async function inboundSms(p){
     try {
       await L().kvCas(L().KV, v => {
         const items = Array.isArray(v) ? v : []; const it = items.find(x => x && x.id === own.lead); if (!it) return undefined;
-        it.notes = (Array.isArray(it.notes) ? it.notes : []).concat([line]).slice(-60); it.scope = clip(s(it.scope) + '\n' + line, 1200); it.updatedAt = at; it.lastTextAt = at;
+        it.scope = clip(s(it.scope) + '\n' + line, 1200); it.updatedAt = at; it.lastTextAt = at;   /* patch TEXTLEAD: the notes line is the 💬 conversation line (below) */
         return items;
       });
       out.lead = own.lead;
+      try { out.textLead = await TL().onInbound({ leadId: own.lead, ph, body, at, id: sid }); } catch (e) {}   /* patch TEXTLEAD: + name / address / work from the text */
     } catch (e) { out.error = s(e && e.message); }
   } else if (own.todo) {
     try {
@@ -301,7 +484,7 @@ async function inboundSms(p){
   out.rule = rule ? rule.id : '';
   /* 4) a new number (or a known person without a job asking for an estimate / with an emergency) → a lead, routed by the lead roles */
   /* patch SMSROUTE: a new number on the leads line is always a lead; on the main line only when it asks for work (an estimate / an emergency) */
-  const wantLead = !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || (!who && (!!(rule && rule.lead) || rt.urgent)) || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
+  const wantLead = !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || !who || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
   if (wantLead) {
     const f = { type: INS_WORDS.test(body) ? 'storm' : 'estimate', name: name || 'Texter ' + tidy(ph), email: '', phone: ph, address: '', city: '', state: '', zip: '',
       message: 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200), company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '',
@@ -309,14 +492,19 @@ async function inboundSms(p){
     try {
       const lsid = crypto.createHash('sha256').update('text|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
       const r = await WI().fileLead(f, { sid: lsid, source: 'Text message', how: 'a text message to the GrayCo number', formLabel: 'Text message',
-        title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph } });
+        title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph, textBody: clip(body, 8000) } });   /* patch LEADMAILMSG: the full text */
       out.newLead = r.id; out.action = r.action;
       await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
+      try { out.textLead = await TL().onInbound({ leadId: r.id, ph, body, at, id: sid }); if (out.textLead && out.textLead.item && r.rec) ['title', 'contact', 'address', 'city', 'state', 'zip', 'notes', 'leadExtra'].forEach(k => { if (out.textLead.item[k] !== undefined) r.rec[k] = out.textLead.item[k]; }); } catch (e) {}   /* patch TEXTLEAD */
       out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
     } catch (e) { out.leadError = s(e && e.message); }
+  } else if (!own.lead && !(who && (who.kind === 'staff' || who.kind === 'sub'))) {
+    /* patch TEXTLEAD: a lead this number already has (website / CRM lead) gets the text too; a lead that became this customer's job → its history is copied to the job */
+    try { out.textLead = pid ? await TL().syncConverted({ ph }) : await TL().onInbound({ ph, body, at, id: sid }); } catch (e) {}
   }
   /* 5) the job's PM hears too */
   let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
+  try { out.cellAlerts = await SA().inboundText({ ph, body, who, pid, label, urgent: !!rt.urgent, mine: rt.to.map(x => x.email).concat(pm && pm.email ? [pm.email] : [], st0.lastOut && st0.lastOut[ph] ? [st0.lastOut[ph].email] : []) }); } catch (e) {}   /* patch SMSALERT */
   /* patch SMSCONSENT: texting us first is consent (via 'text') — only when nothing is recorded yet, never over STOP, never for subs / staff;
      the first reply to that number carries the subscription notice, once (prepended to the automatic answer, never a second text) */
   let noticeNow = false;
@@ -404,6 +592,7 @@ async function inboundSms(p){
     out.reply = await sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : '');   /* patch SMSROUTE: answered from the number they texted */
     if (out.reply.ok && noticeNow) { out.notice = true; await stateCas(st => { st.welcomed = st.welcomed && typeof st.welcomed === 'object' ? st.welcomed : {}; st.welcomed[ph] = at; return true; }).catch(() => {}); }   /* patch SMSCONSENT */
     if (out.reply.ok) {
+      try { await TL().onOutbound({ ph, text: reply, who: 'automatic answer', id: 'SMSA_' + sid, leadId: own.lead || out.newLead || '' }); } catch (e) {}   /* patch TEXTLEAD */
       const rid = 'SMSA_' + sid;
       await postJobMsg({ id: rid, pid, authorId: 'sms:auto', authorName: '🤖 GrayCo auto-answer (text)', text: reply, tags: [], at: nowIso(), source: 'sms', channel: 'sms', dir: 'out', smsTo: ph });
       await commsAdd(pid, { id: 'sms_' + rid, kind: 'text', dir: 'out', at: nowIso(), from: 'GrayCo (auto-answer)', fromName: 'GrayCo', to: [tidy(ph)], text: reply });
@@ -440,20 +629,21 @@ async function inboundSms(p){
   const emerg = !!(rule && rule.alert) || !!rt.urgent;   /* patch SMSROUTE: emergency words count too */
   const subj = (emerg ? '🚨 EMERGENCY text from ' : '📱 Text from ') + shown + (label ? ' — ' + label : (out.newLead ? ' — new lead' : ''));
   const link = site() + (pid ? '/?jobmsg=' + encodeURIComponent(pid) : '/?jobmsg=unsorted');
-  const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (emerg ? '#b91c1c' : '#241968') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(emerg ? '🚨 Emergency text — call them now' : '📱 A text came in') + '</div><div style="padding:6px 18px 18px">'
+  const convo = { html: '', text: '' }; try { const th = LM().threadOf(((await core().kvListRead('gc_job_messages')) || {}).list, ph, 10); convo.html = LM().threadHtml(th); convo.text = LM().threadText(th); } catch (e) {}   /* patch LEADMAILMSG */
+  const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (emerg ? '#b91c1c' : '#241968') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(emerg ? '🚨 Emergency text — call them now' : '📱 A text came in') + '</div><div style="padding:6px 18px 18px">' + LM().buttons({ phone: ph })
     + '<p><b>' + esc(shown) + '</b> · ' + esc(tidy(ph)) + (label ? '<br>Job: <b>' + esc(label) + '</b>' + (pm && pm.name ? ' — PM ' + esc(pm.name) : '') : (out.newLead ? '<br>New lead in Leads → 📥 Lead Inbox (source "Text message").' : '<br>Not on a job — it is in Job Messages → 📥 Unsorted.')) + '</p>'
-    + '<blockquote style="border-left:3px solid #d4a017;margin:0;padding:6px 12px;white-space:pre-wrap">' + esc(clip(body, 1600)) + '</blockquote>'
+    + LM().boxHtml(LM().textInfo({ body, name, phone: ph, kind: who && who.kind, job: label })) + convo.html   /* patch LEADMAILMSG: the full text + the conversation so far */
     + (reply ? '<p style="color:#475569">Automatic answer sent: <i>' + esc(reply) + '</i></p>' : '<p style="color:#475569">No automatic answer (' + esc(why || 'none') + ') — please text them back.</p>')
     + '<p style="margin-top:18px"><a href="' + esc(link) + '" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Reply in the CRM</a></p>'
     + '<p style="font-size:12px;color:#64748b">Replying to this e-mail does not reach them — answer from the CRM (Job Messages → 📱 Text them) so it goes out from the GrayCo number.</p></div></div>';
-  out.mail = await relayMail(set, extra, subj, html, subj + '\n\n' + body + '\n\n' + (reply ? 'Auto-answer: ' + reply + '\n\n' : '') + 'Reply in the CRM: ' + link);
+  out.mail = await relayMail(set, extra, subj, LM().telify(html), subj + '\n\n' + body + '\n\n' + (convo.text ? convo.text + '\n' : '') + (reply ? 'Auto-answer: ' + reply + '\n\n' : '') + 'Reply in the CRM: ' + link);
   return out;
 }
 
 exports.handler = async function(event){
   const m = s(event.httpMethod).toUpperCase(), qs = event.queryStringParameters || {};
   if (m === 'GET' && qs.ping === '1') {
-    return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: env('TWILIO_RING_TO') ? 'ring the office first' : 'office line forwards missed calls',
+    return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: 'menu (1 work · 2 customer · 3 other) → the 📞 Call order (Admin) → missed-call text',
       voiceWebhook: hookUrl('voice'), smsWebhook: hookUrl('sms'), email: !!env('RESEND_API_KEY') });
   }
   if (m !== 'POST') return J(405, { ok: false, error: 'Method not allowed' });
@@ -463,6 +653,10 @@ exports.handler = async function(event){
   const ev = s(qs.event) || 'voice';
   try {
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
+    if (ev === 'ecall') return twiml(await EC().twimlCall(s(qs.id), parseInt(qs.step, 10) || 0));   /* patch EMERGCALL: our outbound call answered */
+    if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
+    if (ev === 'ecallstatus') { if (/^(completed|no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await EC().advance(s(qs.id), parseInt(qs.step, 10) || 0); return twiml(''); }
+    if (/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
     if (ev === 'voice' && CC().on()) {   /* patch CHAIN */
       const chain = await CC().start(s(p.CallSid), p.From).catch(() => []);
       if (chain.length) return twiml('<Say voice="Polly.Joanna">Thanks for calling GrayCo Construction Services. Please hold while we connect you.</Say>' + dialStep(0, chain));
@@ -500,7 +694,10 @@ exports.handler = async function(event){
       return sayBye();
     }
     if (ev === 'status') {   /* a status callback: only an unanswered / busy / failed call counts */
-      if (/^(no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await missed(p, 'status ' + s(p.CallStatus));
+      if (/^(no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) {
+        const row = await logGet(s(p.CallSid));   /* patch CALLSCREEN: a screened call is texted only after a 1 / 2 */
+        if (!row || ['1', '2', 'direct'].indexOf(s(row.choice)) >= 0) await missed(p, 'status ' + s(p.CallStatus), { what: s(row && row.what) });
+      }
       return twiml('');
     }
     return twiml('');
@@ -509,4 +706,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+exports._test = { EC, callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };

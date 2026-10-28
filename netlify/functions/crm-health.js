@@ -28,6 +28,8 @@ async function daily(){
   if (!off('CRM_HEALTH_OFF') && day.slice(8, 10) === '01' && st.month !== month) {
     try { const r = await H.send(); out.health = r; if (r.ok) st.month = month; } catch (e) { out.health = { error: String(e && e.message || e).slice(0, 160) }; }
   }
+  /* patch SMSALERT: admin cells — a failure here, and overnight system alerts held through quiet hours */
+  try { const SA = require('./_lib/smsalert.js'); if (out.health && (out.health.error || out.health.ok === false)) await SA.system('health', 'the monthly CRM health e-mail failed (' + String(out.health.error || out.health.status || '').slice(0, 80) + ').'); if (out.equipment && out.equipment.error) await SA.system('equip', 'the equipment reminder failed (' + String(out.equipment.error).slice(0, 80) + ').'); out.cellHeld = await SA.flushHeld(); } catch (e) {}
   st.lastRun = new Date().toISOString(); st.last = out; if (out.health && out.health.error) st.error = out.health.error; else delete st.error;
   try { await LL().kvPut(KEY, st); } catch (e) {}
   return out;

@@ -7,7 +7,11 @@
 //                      💬 timeline. Refused while data-entry mode is on, to an opted-out number, or when Twilio is not set up.
 //   GET  ?settings=1 → admins: the automatic-answer settings (rules, hours, relay list)
 //   POST ?settings=1 → admins: save them
+//   GET/POST ?alerts=1 → admins: 📱 Text alerts to cell phones (patch SMSALERT; _lib/smsalert.js)
 //   POST ?try=1      → admins: { text, pid? } — which answer would go back (nothing is sent)
+//   GET  ?callchain=1 → admins: 📞 Call order (patch CALLCHAIN, _lib/callorder.js): the saved order (or the defaults), the
+//                      people with a phone, who would ring now, the last 50 calls (patch CALLSCREEN: menu answer, outcome);
+//                      POST ?callchain=1 { settings } → save it (order, ring seconds, screening, blocked numbers)
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const S = require('./_lib/sms.js');
@@ -66,6 +70,7 @@ async function send(who, b){
   try { await MC().stateCas(x => { x.lastOut = x.lastOut && typeof x.lastOut === 'object' ? x.lastOut : {}; x.lastOut[to] = { email: low(who.email), name: s(who.name), pid, at }; return true; }); } catch (e) {}   /* patch SMSROUTE: their reply comes back to this employee */
   const has = l => l.some(m => m && s(m.id) === id);
   try { await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) {}
+  try { await require('./_lib/textlead.js').onOutbound({ ph: to, text, who: s(who.name || who.email), id }); } catch (e) {}   /* patch TEXTLEAD: on the lead's conversation too */
   if (pid) { try { await require('./_lib/comms.js').addMessage(pid, { id: 'sms_' + id, kind: 'text', dir: 'out', at, from: s(who.email), fromName: s(who.name), to: [S.tidy(to)], text }); } catch (e) {} }
   return { code: 200, body: { ok: true, id, message: msg } };
 }
@@ -85,6 +90,46 @@ exports.handler = async function(event){
     if (m === 'POST' && qs.send) {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
       const r = await send(who, b); return J(r.code, r.body, C);
+    }
+    if (qs.callchain) {   /* patch CALLCHAIN */
+      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the call order.' }, C);
+      const CC = require('./_lib/callorder.js');
+      let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
+      const ours = [env('TWILIO_FROM')].concat(require('./_lib/smsroute.js').numbers(await getSettings(), env).map(x => x.number));
+      let log = []; try { const lv = await L().kvGet(CC.LOG_KEY); log = (lv && Array.isArray(lv.calls) ? lv.calls : []).slice(-50).reverse().map(x => ({ at: s(x.at), from: CC.tidy(x.from), choice: s(x.choice), what: s(x.what), outcome: s(x.outcome), by: s(x.by) })); } catch (e) {}
+      const out = (cfg, saved) => J(200, { ok: true, saved, settings: cfg, openNow: CC.isOpen(typeof exports._now === 'function' ? exports._now() : Date.now(), cfg),   /* patch AFTERHOURS */ people: CC.peopleWithPhones(data.users), preview: CC.preview(cfg, data, ours),
+        senior: (function(){ try { const u = require('./_lib/people.js').seniorPm(data.users, data.gc_senior_pm); return u ? { name: s(u.name), phone: CC.tidy(CC.userPhone(u)) } : null; } catch (e) { return null; } })(),
+        log,   /* patch CALLSCREEN: the last 50 calls */
+        office: CC.tidy(CC.companyPhone()), ringToEnv: CC.tidy(env('TWILIO_RING_TO')), ready: MC().ready(),
+        voiceWebhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=voice' }, C);
+      if (m === 'GET') {
+        const raw = await L().kvGet(CC.KEY);
+        return raw && typeof raw === 'object' ? out(CC.clean(raw), true) : out(CC.pinPeople(CC.defaults(), data.users), false);
+      }
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const v = CC.clean(b.settings || b);
+        if (!v.slots.length) return J(400, { ok: false, error: 'Keep at least one line in the call order (or turn it off).' }, C);
+        v.by = low(who.email); v.at = nowIso();
+        await L().kvCas(CC.KEY, () => v);
+        return out(v, true);
+      }
+    }
+    /* patch SMSALERT: Admin → 📱 Text alerts to cell phones (admins) — gc_lead_inbox_kv "gc_sms_alerts" */
+    if (qs.alerts) {
+      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the text alerts.' }, C);
+      const SA = require('./_lib/smsalert.js');
+      if (m === 'GET') {
+        const pp = await SA._D.people(), staff = SA.staffList(pp), set = await SA.load();
+        const roles = [{ key: SA.ROLE_MIT, name: 'Mitigation manager', holders: SA.mitigationHolders(pp).map(x => ({ name: x.name, email: x.email, phone: x.phone })) }];
+        let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) {}
+        return J(200, { ok: true, settings: set, staff, roles, types: SA.TYPES, ready: MC().ready(), from: S.tidy(env('TWILIO_FROM_ALERTS') || env('TWILIO_FROM')), paused, costCents: 1 }, C);
+      }
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const v = await SA.save(b.settings || b, who.email);
+        return J(200, { ok: true, settings: v }, C);
+      }
     }
     if (qs.settings || qs.try) {
       if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the automatic answers.' }, C);

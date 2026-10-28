@@ -1256,8 +1256,37 @@ if (window.__GC_PATCH_MM_EARLY__) return; window.__GC_PATCH_MM_EARLY__ = true;
 var W = window;
 function isMM(){ try { return !!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.marketing === 'function' && W.__GC_AUTH__.marketing()); } catch (e) { return false; } }
 W._gcIsMM = isMM;
+/* patch MMTABS: his left-menu tabs — each one is the Marketing screen opened at a section (sec), with the tab's other sections (also) */
+W._gcMMTabs = [
+  { id: 'mmt_todo', ic: '✅', l: 'My To-Do', sec: 'mytodo', also: [] },
+  { id: 'mmt_leads', ic: '📈', l: 'My leads', sec: 'myleads', also: ['website'] },
+  { id: 'mmt_appr', ic: '✔️', l: 'Marketing approvals', sec: 'mmappr', also: [] },
+  { id: 'mmt_email', ic: '✉️', l: 'E-mail & newsletter', sec: 'campaigns', also: ['newsletter'] },
+  { id: 'mmt_social', ic: '📱', l: 'Social posts / Week plan', sec: 'socweek', also: ['social'] },
+  { id: 'mmt_cal', ic: '🗓', l: 'Content calendar', sec: 'calendar', also: [] },
+  { id: 'mmt_reviews', ic: '⭐', l: 'Reviews & referrals', sec: 'reviews', also: ['refprog'] },
+  { id: 'mmt_ads', ic: '🎯', l: 'Ads', sec: 'adshub', also: ['adsrest', 'ads', 'library'] },
+  { id: 'mmt_media', ic: '🗂', l: 'Media library', sec: 'media', also: [] },
+  { id: 'mmt_ideas', ic: '💡', l: 'Ideas board', sec: 'experiments', also: ['ideas'] },
+  { id: 'mmt_logins', ic: '🔗', l: 'Marketing logins', sec: 'logins', also: [] }
+];
+/* patch MMTABS: the marketing sign-in pages (links only — never a password or key); soon = not set up yet */
+W._gcMktLogins = [
+  { k: 'ga', ic: '📊', l: 'Google Analytics', url: 'https://analytics.google.com/', d: 'Website visitors, where they came from, which pages turn into calls and form leads', soon: false },
+  { k: 'gsc', ic: '🔎', l: 'Google Search Console', url: 'https://search.google.com/search-console?resource_id=sc-domain:grayco-cs.com', d: 'How grayco-cs.com shows in Google search: queries, clicks, pages Google cannot read', soon: false },
+  { k: 'gads', ic: '🎯', l: 'Google Ads', url: 'https://ads.google.com/', d: 'Search ads and Local Services Ads: budgets, keywords, conversions (spend changes go through an admin)', soon: false },
+  { k: 'gbp', ic: '📍', l: 'Google Business Profile', url: 'https://business.google.com/', d: 'The Google Maps listing: posts, photos, hours, review replies', soon: false },
+  { k: 'gtag', ic: '🏷', l: 'Google Tag / Tag Assistant', url: 'https://tagassistant.google.com/', d: 'Check the website tags fire (Analytics, Ads conversions) before and after a change', soon: false },
+  { k: 'meta', ic: '📘', l: 'Meta Business Suite', url: 'https://business.facebook.com/', d: 'Facebook and Instagram pages: posts, inbox, ads', soon: false },
+  { k: 'metaev', ic: '📡', l: 'Meta Events Manager (pixel)', url: 'https://business.facebook.com/events_manager2/', d: 'The Facebook / Instagram pixel: website leads counted for the ads', soon: false },
+  { k: 'site', ic: '🌍', l: 'Website editor', url: 'https://grayco-cs.com/', d: 'Edit the website: open grayco-cs.com, then the gear button, bottom right', soon: false },
+  { k: 'review', ic: '⭐', l: 'Google review link', url: 'https://grayco-cs.com/review', d: 'The short link to send customers for a Google review (also on the QR codes)', soon: false },
+  { k: 'linkedin', ic: '💼', l: 'LinkedIn', url: 'https://www.linkedin.com/', d: 'The company page for commercial work and hiring posts', soon: true },
+  { k: 'instagram', ic: '📸', l: 'Instagram', url: 'https://www.instagram.com/', d: 'Reels and before / after photos', soon: true },
+  { k: 'callrail', ic: '📞', l: 'CallRail', url: 'https://app.callrail.com/', d: 'Call tracking: which ad or page made the phone ring', soon: true }
+];
 if (!isMM()) return;
-try { var v = localStorage.getItem('grayco_view'); if (v !== 'marketing') localStorage.setItem('grayco_view', 'marketing'); } catch (e) {}
+try { var v = localStorage.getItem('grayco_view'); if (v !== 'marketing' && !/^mmt_[a-z]+$/.test(v || '')) localStorage.setItem('grayco_view', 'marketing'); } catch (e) {}   /* patch MMTABS: or one of his tabs */
 var FN = '/.netlify/functions/soc';
 function call(body){
   return W.fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
@@ -3667,7 +3696,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.157-2026-10-28-r12 -->
+<!-- GrayCo CRM Build: 33.158-2026-10-28-r13 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4332,7 +4361,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.157-2026-10-28-r12");
+  console.log("[GC] Build 33.158-2026-10-28-r13");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4380,7 +4409,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.157-2026-10-28-r12"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.158-2026-10-28-r13"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -8725,7 +8754,7 @@ se("For full backup import, export all lists from QuickBooks as CSV and upload e
 ]})
 
 ]});
-case"allphotos":return e.jsx("div",{id:"gcu-tabhost","data-gcu-tab":"1",ref:function(el){try{if(el&&window._gcPhotos&&window._gcPhotos.mountTab)window._gcPhotos.mountTab(el)}catch(_x){}},style:{position:"relative",width:"100%",height:"calc(100vh - 60px)",minHeight:480}});case"invoices":return e.jsx(__gcStable("sh",sh),{});case"pnl":return e.jsx(__gcStable("bu",bu),{});case"payments":return e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:"0 0 4px"},children:"Payments"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:"0 0 14px"},children:"Active jobs and bidding jobs — payment tracking"}),e.jsxs("div",{style:{marginBottom:20},children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#22c55e",borderBottom:"2px solid #22c55e",paddingBottom:4},children:"Active Jobs"}),Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No active jobs"}):Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).map(function(p){var _inv=Ba.filter(function(i){return i.pid===p.id&&i.type==="client"});var _billed=_inv.reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _paid=_inv.filter(function(i){return i.status==="paid"}).reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _owed=(p.contract||0)-_paid;return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #22c55e",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.pm||"",p.client?" · "+p.client:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:_owed>0?"#f59e0b":"#22c55e"},children:ue(_owed>0?_owed:p.contract||0)}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:_owed>0?"owed":"contract"}),e.jsxs("div",{style:{fontSize:10,color:u.tx2},children:["Billed: "+ue(_billed)+" · Paid: "+ue(_paid)]})]})]})]})})]}),e.jsxs("div",{children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#f59e0b",borderBottom:"2px solid #f59e0b",paddingBottom:4},children:"Bidding / Pipeline"}),Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No jobs in bidding"}):Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).map(function(p){return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #f59e0b",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.client||"",p.type?" · "+p.type:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:"#f59e0b"},children:p.contract?ue(p.contract):"TBD"}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:p.status})]})]})]})})]})]});case"subpricing":return e.jsx("div",{id:"_subPriceMount",ref:function(_el){if(_el&&window._renderSubPricing)setTimeout(function(){window._renderSubPricing(_el)},0)}});case"todo":return e.jsx("div",{key:"gc-view-todo",id:"_todoMount",ref:function(_el){if(_el&&window._renderTodo&&!_el._gcTodoMounted){_el._gcTodoMounted=true;setTimeout(function(){window._renderTodo(_el)},0)}}});case"taxcenter":return e.jsx(__gcStable("Tc",Tc),{});case"reports":return e.jsx(__gcStable("wu",wu),{});case"changeorders":return e.jsx(__gcStable("nh",nh),{});case"schedule":return e.jsx(__gcStable("Su",Su),{});case"crewboard":return e.jsx(__gcStable("Pu",Pu),{});case"dailylogs":return e.jsx(__gcStable("ah",ah),{});case"punchlist":return e.jsx(__gcStable("ih",ih),{});case"subs":return e.jsx(__gcStable("Jf",Jf),{});case"vendors":return e.jsx(__gcStable("Cu",Cu),{});case"customers":return e.jsx(__gcStable("yu",yu),{});case"products":return e.jsx(__gcStable("Qf",Qf),{});case"quickadd":return e.jsx(__gcStable("Zf",Zf),{});case"launchjob":return rc();case"warranties":return e.jsx(__gcStable("od",od),{});case"mastercrm":return e.jsx("div",{id:"gc-mastercrm-mount",ref:function(el){if(el&&!el._mcInit){el._mcInit=true;window._busy=false;var _tryMC=function(n){try{if(window.gcMasterCRM&&window.gcMasterCRM.render){window.gcMasterCRM.render();}else if(n<40){setTimeout(function(){_tryMC(n+1);},100);}else{el.innerHTML='<div style="padding:40px;text-align:center;color:#6b8ab5;font-family:inherit"><div style="font-size:40px">🏗</div><div style="margin-top:8px;font-size:13px">Large Job CRMs is still loading. If this persists, hard-refresh the page (Ctrl+Shift+R).</div></div>';}}catch(err){el.innerHTML='<div style="padding:20px;color:#dc2626;font-size:12px;font-family:inherit">Large Job CRMs error: '+(err&&err.message?err.message:String(err))+'<br><button onclick="window.gcMasterCRM&&window.gcMasterCRM.render&&window.gcMasterCRM.render()" style="margin-top:8px;background:#1a3a5f;color:#d4a017;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;font-family:inherit">Retry</button></div>';}};_tryMC(0);}},style:{width:"100%",minHeight:"100vh",overflow:"auto"}});case"bidportal":return e.jsx("div",{key:"gc-view-bidportal",id:"gc-sys-bp-mount","data-gc-sys":"bidportal"});case"systems":return e.jsx("div",{key:"gc-view-systems",id:"gc-sys-sys-mount","data-gc-sys":"systems"});case"approvals":return e.jsx("div",{key:"gc-view-approvals",id:"gc-apx-mount","data-gc-apx":"approvals"});case"estbuilder":return e.jsx("div",{key:"gc-view-estbuilder",id:"gc-rp-estb-mount","data-gc-rp":"estbuilder"});case"messages":return e.jsx("div",{key:"gc-view-messages",id:"gc-rp-msg-mount","data-gc-rp":"messages"});case"sitebook":return e.jsx("div",{key:"gc-view-sitebook",id:"gc-rp-site-mount","data-gc-rp":"sitebook"});case"forms":return e.jsx("div",{id:"gc-forms-nav-mount",style:{width:"100%",minHeight:"100vh"}});case"docs":return e.jsx(__gcStable("oh",oh),{});case"myprofile":return e.jsx(__gcStable("lh",lh),{});case"cctrans":return e.jsx(__gcStable("yl",yl),{});case"integrations":return e.jsx(__gcStable("Eu",Eu),{});case"admin":return e.jsx(__gcStable("kl",kl),{});case"officemanager":return e.jsx("div",{key:"gc-view-office",id:"gc-om-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"marketing":return e.jsx("div",{key:"gc-view-marketing",id:"gc-mk-mount",ref:function(el){if(el&&window._gcMktMount)window._gcMktMount(el)},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"insurance":return e.jsx("div",{key:"gc-view-insurance",id:"gc-ins-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"mitigation":return e.jsx("div",{key:"gc-view-mitigation",id:"gc-mit-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"payroll":return e.jsx("div",{key:"gc-view-payroll",id:"gc-payroll-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});default:return e.jsx(__gcStable("vu",vu),{})}},Du=()=>{if(!("webkitSpeechRecognition"in window)&&!("SpeechRecognition"in window)){se("Voice not supported — use Chrome on your phone");return}const g=window.SpeechRecognition||window.webkitSpeechRecognition,te=new g;te.continuous=!1,te.interimResults=!0,te.lang="en-US",te.onresult=H=>{let _="";for(let Q=0;Q<H.results.length;Q++)_+=H.results[Q][0].transcript;mt(_)},te.onend=()=>{Ye(!1)},te.onerror=H=>{Ye(!1),H.error!=="no-speech"&&se("Mic error: "+H.error)},Ht.current=te,te.start(),Ye(!0),mt(""),Kt(null)},Sl=()=>{Ht.current&&(Ht.current.stop(),Ye(!1))},sc=async()=>{var g;if(!Be.trim()){se("Say something first");return}tn(!0),Kt(null);try{const te=Wt.map(L=>`${L.id}|${L.name}|${L.autoPO}|${L.address||""}`).join(`
+case"allphotos":return e.jsx("div",{id:"gcu-tabhost","data-gcu-tab":"1",ref:function(el){try{if(el&&window._gcPhotos&&window._gcPhotos.mountTab)window._gcPhotos.mountTab(el)}catch(_x){}},style:{position:"relative",width:"100%",height:"calc(100vh - 60px)",minHeight:480}});case"invoices":return e.jsx(__gcStable("sh",sh),{});case"pnl":return e.jsx(__gcStable("bu",bu),{});case"payments":return e.jsxs("div",{children:[e.jsx("h1",{style:{fontSize:18,fontWeight:700,margin:"0 0 4px"},children:"Payments"}),e.jsx("p",{style:{color:u.tx2,fontSize:12,margin:"0 0 14px"},children:"Active jobs and bidding jobs — payment tracking"}),e.jsxs("div",{style:{marginBottom:20},children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#22c55e",borderBottom:"2px solid #22c55e",paddingBottom:4},children:"Active Jobs"}),Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No active jobs"}):Wt.filter(function(p){return p.status==="active"||p.status==="approved"}).map(function(p){var _inv=Ba.filter(function(i){return i.pid===p.id&&i.type==="client"});var _billed=_inv.reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _paid=_inv.filter(function(i){return i.status==="paid"}).reduce(function(a,i){return a+(parseFloat(i.amt)||0)},0);var _owed=(p.contract||0)-_paid;return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #22c55e",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.pm||"",p.client?" · "+p.client:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:_owed>0?"#f59e0b":"#22c55e"},children:ue(_owed>0?_owed:p.contract||0)}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:_owed>0?"owed":"contract"}),e.jsxs("div",{style:{fontSize:10,color:u.tx2},children:["Billed: "+ue(_billed)+" · Paid: "+ue(_paid)]})]})]})]})})]}),e.jsxs("div",{children:[e.jsx("div",{style:{fontSize:14,fontWeight:700,marginBottom:8,color:"#f59e0b",borderBottom:"2px solid #f59e0b",paddingBottom:4},children:"Bidding / Pipeline"}),Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).length===0?e.jsx("div",{style:{color:u.tx3,fontSize:12,fontStyle:"italic",padding:10},children:"No jobs in bidding"}):Wt.filter(function(p){return p.status==="bidding"||p.status==="estimating"}).map(function(p){return e.jsxs("div",{key:p.id,style:{background:u.card||"#1a2e45",borderRadius:6,padding:"12px 14px",marginBottom:6,borderLeft:"3px solid #f59e0b",cursor:"pointer"},onClick:function(){Pe(p);D("projects")},children:[e.jsxs("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"},children:[e.jsxs("div",{children:[e.jsx("b",{style:{fontSize:13},children:p.name}),e.jsxs("div",{style:{fontSize:11,color:u.tx2},children:[p.autoPO?"PO: "+p.autoPO+" · ":"",p.client||"",p.type?" · "+p.type:""]})]}),e.jsxs("div",{style:{textAlign:"right"},children:[e.jsx("div",{style:{fontSize:16,fontWeight:800,color:"#f59e0b"},children:p.contract?ue(p.contract):"TBD"}),e.jsx("div",{style:{fontSize:10,color:u.tx2},children:p.status})]})]})]})})]})]});case"subpricing":return e.jsx("div",{id:"_subPriceMount",ref:function(_el){if(_el&&window._renderSubPricing)setTimeout(function(){window._renderSubPricing(_el)},0)}});case"todo":return e.jsx("div",{key:"gc-view-todo",id:"_todoMount",ref:function(_el){if(_el&&window._renderTodo&&!_el._gcTodoMounted){_el._gcTodoMounted=true;setTimeout(function(){window._renderTodo(_el)},0)}}});case"taxcenter":return e.jsx(__gcStable("Tc",Tc),{});case"reports":return e.jsx(__gcStable("wu",wu),{});case"changeorders":return e.jsx(__gcStable("nh",nh),{});case"schedule":return e.jsx(__gcStable("Su",Su),{});case"crewboard":return e.jsx(__gcStable("Pu",Pu),{});case"dailylogs":return e.jsx(__gcStable("ah",ah),{});case"punchlist":return e.jsx(__gcStable("ih",ih),{});case"subs":return e.jsx(__gcStable("Jf",Jf),{});case"vendors":return e.jsx(__gcStable("Cu",Cu),{});case"customers":return e.jsx(__gcStable("yu",yu),{});case"products":return e.jsx(__gcStable("Qf",Qf),{});case"quickadd":return e.jsx(__gcStable("Zf",Zf),{});case"launchjob":return rc();case"warranties":return e.jsx(__gcStable("od",od),{});case"mastercrm":return e.jsx("div",{id:"gc-mastercrm-mount",ref:function(el){if(el&&!el._mcInit){el._mcInit=true;window._busy=false;var _tryMC=function(n){try{if(window.gcMasterCRM&&window.gcMasterCRM.render){window.gcMasterCRM.render();}else if(n<40){setTimeout(function(){_tryMC(n+1);},100);}else{el.innerHTML='<div style="padding:40px;text-align:center;color:#6b8ab5;font-family:inherit"><div style="font-size:40px">🏗</div><div style="margin-top:8px;font-size:13px">Large Job CRMs is still loading. If this persists, hard-refresh the page (Ctrl+Shift+R).</div></div>';}}catch(err){el.innerHTML='<div style="padding:20px;color:#dc2626;font-size:12px;font-family:inherit">Large Job CRMs error: '+(err&&err.message?err.message:String(err))+'<br><button onclick="window.gcMasterCRM&&window.gcMasterCRM.render&&window.gcMasterCRM.render()" style="margin-top:8px;background:#1a3a5f;color:#d4a017;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;font-family:inherit">Retry</button></div>';}};_tryMC(0);}},style:{width:"100%",minHeight:"100vh",overflow:"auto"}});case"bidportal":return e.jsx("div",{key:"gc-view-bidportal",id:"gc-sys-bp-mount","data-gc-sys":"bidportal"});case"systems":return e.jsx("div",{key:"gc-view-systems",id:"gc-sys-sys-mount","data-gc-sys":"systems"});case"approvals":return e.jsx("div",{key:"gc-view-approvals",id:"gc-apx-mount","data-gc-apx":"approvals"});case"estbuilder":return e.jsx("div",{key:"gc-view-estbuilder",id:"gc-rp-estb-mount","data-gc-rp":"estbuilder"});case"messages":return e.jsx("div",{key:"gc-view-messages",id:"gc-rp-msg-mount","data-gc-rp":"messages"});case"sitebook":return e.jsx("div",{key:"gc-view-sitebook",id:"gc-rp-site-mount","data-gc-rp":"sitebook"});case"forms":return e.jsx("div",{id:"gc-forms-nav-mount",style:{width:"100%",minHeight:"100vh"}});case"docs":return e.jsx(__gcStable("oh",oh),{});case"myprofile":return e.jsx(__gcStable("lh",lh),{});case"cctrans":return e.jsx(__gcStable("yl",yl),{});case"integrations":return e.jsx(__gcStable("Eu",Eu),{});case"admin":return e.jsx(__gcStable("kl",kl),{});case"officemanager":return e.jsx("div",{key:"gc-view-office",id:"gc-om-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});case"mmt_todo":case"mmt_leads":case"mmt_appr":case"mmt_email":case"mmt_social":case"mmt_cal":case"mmt_reviews":case"mmt_ads":case"mmt_media":case"mmt_ideas":case"mmt_logins":case"marketing":return e.jsx("div",{key:"gc-view-marketing",id:"gc-mk-mount",ref:function(el){if(el&&window._gcMktMount)window._gcMktMount(el);if(el&&window._gcMMTabView)window._gcMMTabView(P,el)/* patch MMTABS */},style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"insurance":return e.jsx("div",{key:"gc-view-insurance",id:"gc-ins-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"mitigation":return e.jsx("div",{key:"gc-view-mitigation",id:"gc-mit-mount",style:{width:"100%",minHeight:"calc(100vh - 60px)"}});case"payroll":return e.jsx("div",{key:"gc-view-payroll",id:"gc-payroll-mount",style:{width:"100%",height:"calc(100vh - 60px)",overflow:"auto"}});default:return e.jsx(__gcStable("vu",vu),{})}},Du=()=>{if(!("webkitSpeechRecognition"in window)&&!("SpeechRecognition"in window)){se("Voice not supported — use Chrome on your phone");return}const g=window.SpeechRecognition||window.webkitSpeechRecognition,te=new g;te.continuous=!1,te.interimResults=!0,te.lang="en-US",te.onresult=H=>{let _="";for(let Q=0;Q<H.results.length;Q++)_+=H.results[Q][0].transcript;mt(_)},te.onend=()=>{Ye(!1)},te.onerror=H=>{Ye(!1),H.error!=="no-speech"&&se("Mic error: "+H.error)},Ht.current=te,te.start(),Ye(!0),mt(""),Kt(null)},Sl=()=>{Ht.current&&(Ht.current.stop(),Ye(!1))},sc=async()=>{var g;if(!Be.trim()){se("Say something first");return}tn(!0),Kt(null);try{const te=Wt.map(L=>`${L.id}|${L.name}|${L.autoPO}|${L.address||""}`).join(`
 `),y=(((g=(await(await fetch("/.netlify/functions/claude-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1500,messages:[{role:"user",content:`You are a construction CRM voice assistant for GrayCo Construction. Parse this voice command and return ONLY valid JSON (no markdown).
 
 PROJECTS:
@@ -54194,6 +54223,7 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
   }
 
   function showBanner(){
+    if(window._gcIsMM && window._gcIsMM()){ var _mx=document.getElementById('_gConnBar'); if(_mx) _mx.remove(); return; }   /* patch MMTABS: not for the Marketing Manager */
     if(connected() || dismissedRecently()) { var ex=document.getElementById('_gConnBar'); if(ex) ex.remove(); return; }
     if(document.getElementById('_gConnBar')) return;
     if(document.hidden) return;
@@ -137676,7 +137706,8 @@ function person(k){
   k = low(k); if (!k) return null;
   if (PK[k]) return PK[k];
   var u = users().filter(function(x){ return x && (low(x.email) === k || low(x.name) === k); })[0]
-       || users().filter(function(x){ return x && k.indexOf('@') < 0 && low(s(x.name).split(' ')[0]) === k; })[0];
+       || users().filter(function(x){ return x && k.indexOf('@') < 0 && low(s(x.name).split(' ')[0]) === k; })[0]
+       || mmPeople().filter(function(x){ return low(x.email) === k || low(x.name) === k; })[0];   /* patch MMTABS */
   var p;
   if (u) p = { key: low(u.email) || low(u.name), name: s(u.name) || s(u.email), email: low(u.email) };
   else if (k === 'office@grayco-cs.com' || k === 'office' || k === 'the office') p = { key: 'office@grayco-cs.com', name: 'Office', email: 'office@grayco-cs.com' };
@@ -137684,6 +137715,7 @@ function person(k){
   PK[k] = p; return p;
 }
 function pkey(k){ var p = person(k); return p ? p.key : ''; }
+function mmPeople(){ try { return typeof W._gcMMPeople === 'function' ? arr(W._gcMMPeople()) : []; } catch (e) { return []; } }   /* patch MMTABS: Marketing Managers {name, email} */
 function first(name){ return s(name).split(/\s+/)[0] || s(name); }
 function initials(n){ var w = s(n).split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
 var AVC = ['#2563eb', '#7c3aed', '#0d9488', '#d97706', '#db2777', '#4f46e5', '#059669', '#b45309'];
@@ -137694,6 +137726,7 @@ function team(){
     if (!u || (!u.email && !u.name) || u.active === false || u.departed || /disabled|inactive|terminated/i.test(s(u.status))) return;
     var p = person(u.email || u.name); if (!p || seen[p.key]) return; seen[p.key] = 1; out.push(p);
   });
+  mmPeople().forEach(function(u){ var p = person(u.email); if (!p || seen[p.key]) return; seen[p.key] = 1; out.push(p); });   /* patch MMTABS: the Marketing Manager (not active staff) */
   if (!seen['office@grayco-cs.com']) out.push(person('office@grayco-cs.com'));
   return out;
 }
@@ -138628,7 +138661,7 @@ function parse(text){
   t = t.replace(/\s@(\w[\w.\-']*)/g, function(m, n){
     if (/^(office|team|all|everyone|shared)$/i.test(n)) { if (/^office$/i.test(n)) out.who.push(person('office@grayco-cs.com')); else out.shared = true; return ' '; }
     var p = null, nl = low(n);
-    users().forEach(function(u){ if (p || !u) return; var full = low(u.name), f = low(first(u.name)), e = low(u.email).split('@')[0]; if (nl === f || nl === e || nl === full.replace(/\s+/g, '') || (nl.length >= 3 && f.indexOf(nl) === 0)) p = person(u.email || u.name); });
+    users().concat(mmPeople()).forEach(function(u){ if (p || !u) return; var full = low(u.name), f = low(first(u.name)), e = low(u.email).split('@')[0]; if (nl === f || nl === e || nl === full.replace(/\s+/g, '') || (nl.length >= 3 && f.indexOf(nl) === 0)) p = person(u.email || u.name); });
     if (p) { out.who.push(p); return ' '; }
     return m;
   });
@@ -138859,6 +138892,7 @@ function start(){
 }
 
 W._gcTD2 = {
+  addRec: function(rec){ if (!rec || !rec.id || !rec.label) return false; storeAdd(OT, rec); dirty = true; paint(true); return true; },   /* patch MMTABS: a ready record (📣 Marketing → ＋ Task for marketing) */
   state: function(){ return state(true); }, parse: parse, add: function(text){ var h = hosts()[0]; return quickAdd(h ? ensureRoot(h[0], h[1]) : null, text); },
   open: openOffice, openField: openField, openToday: openToday, mountTab: mountTab, paint: function(){ dirty = true; paint(true); },
   count: function(){ return state().counts.now + state().counts.mine; }, greetCount: function(){ var c = state().counts; return c.appr + c.over + c.today + c.mine; },
@@ -145849,7 +145883,7 @@ VIEWS.mytodo = function(){
     '<h3>Posting in the next 7 days</h3>' + (arr(p.posts).length ? arr(p.posts).map(function(x){ return '<div class="gmt-check"><div><b>' + esc(C.ctLabel(x.when)) + '</b> — ' + esc(x.title) + ' ' + X.chip(x.status) + '</div></div>'; }).join('') : '<div class="gmt-muted">Nothing scheduled.</div>') + '</div>';
   var open = arr(T.tasks).filter(function(t){ return !t.done; }), done = arr(T.tasks).filter(function(t){ return t.done; }).slice(0, 10);
   h += '<div class="gmt-card"><h2>My To-Do (' + open.length + ')</h2><div class="gmt-row"><input id="mm-task" placeholder="Add a to-do…" style="flex:1;min-width:220px"><input type="date" id="mm-task-due"><button class="gmt-btn" data-a="mm-task-add">Add</button></div>' +
-    open.map(function(t){ return '<div class="gmt-check"><input type="checkbox" data-a="mm-task-done" data-id="' + esc(t.id) + '"><div><b>' + esc(t.label) + '</b>' + (t.due ? ' <span class="gmt-muted">due ' + esc(t.due) + '</span>' : '') + (t.note ? '<div class="gmt-muted">' + esc(t.note).replace(/\n/g, '<br>') + '</div>' : '') +
+    open.map(function(t){ return '<div class="gmt-check"><input type="checkbox" data-a="mm-task-done" data-id="' + esc(t.id) + '"><div><b>' + esc(t.label) + '</b>' + (t.due ? ' <span class="gmt-muted">due ' + esc(t.due) + '</span>' : '') + (t.by && !t.self ? ' <span class="gmt-muted" data-mm-by>· from ' + esc(t.by) + '</span>' : '') /* patch MMTABS */ + (t.note ? '<div class="gmt-muted">' + esc(t.note).replace(/\n/g, '<br>') + '</div>' : '') +
       arr(t.items).map(function(i){ return '<div class="gmt-check" style="border:none;padding:2px 0"><input type="checkbox" data-a="mm-item-done" data-id="' + esc(t.id) + '" data-item="' + esc(i.id) + '"' + (i.done ? ' checked' : '') + '><div>' + esc(i.label) + '</div></div>'; }).join('') + '</div></div>'; }).join('') +
     (done.length ? '<h3>Done</h3>' + done.map(function(t){ return '<div class="gmt-muted">✓ ' + esc(t.label) + '</div>'; }).join('') : '') + '</div>';
   return h;
@@ -146008,11 +146042,11 @@ ACT['mm-set'] = function(b){ if (!admin()) return; var o = {}; o[b.getAttribute(
 
 if (mm) {
   /* only the marketing tools that are here now: a section another patch adds later (e.g. warranty check-ups, which lists customers) is not his */
-  var KEEP = {}; SECS.forEach(function(x){ KEEP[x.id] = 1; });
+  var KEEP = { logins: 1 }; SECS.forEach(function(x){ KEEP[x.id] = 1; });   /* patch MMTABS: + 🔗 Marketing logins */
   VIEWS.approvals = VIEWS.mmappr; VIEWS.dashboard = VIEWS.myleads;   /* the links that point there open his own views */
   (function prune(){ for (var i = SECS.length - 1; i >= 0; i--) if (!KEEP[SECS[i].id]) SECS.splice(i, 1); nST(prune, 1500); })();
   /* the app opens its dashboard after sign-in: his start screen is Marketing */
-  (function keepView(){ try { if (!/^(marketing|systems)$/.test(localStorage.getItem('grayco_view') || '') && typeof W._setView === 'function') W._setView('marketing');   /* Marketing, or the GrayCo Systems launcher (marketing systems only) */ } catch (e) {} nST(keepView, 1000); })();
+  (function keepView(){ try { if (!/^(marketing|systems|mmt_[a-z]+)$/.test(localStorage.getItem('grayco_view') || '')   /* patch MMTABS: or one of his tabs */ && typeof W._setView === 'function') W._setView('marketing');   /* Marketing, or the GrayCo Systems launcher (marketing systems only) */ } catch (e) {} nST(keepView, 1000); })();
 }
 if (mm) { api('soc', { op: 'mm_boot' }).then(function(j){ if (j && j.ok) ST.mm = Object.assign({ stage: j.stage }, j.mm || {}); }); W.addEventListener('gc-mm-data', function(){ if (UI.root && UI.root.isConnected && !UI.editing) X.redrawSoon(); }); }
 W._gcMM = { state: function(){ return { mm: isMM(), secs: SECS.map(function(x){ return x.id; }), leads: ST.leads && arr(ST.leads.rows).length, settings: ST.mm }; }, _ST: ST };
@@ -146020,6 +146054,187 @@ W._gcMM = { state: function(){ return { mm: isMM(), secs: SECS.map(function(x){ 
 })();
 
 </script><!-- /MM -->
+<script id="gc-patch-mmtabs">
+/* ==========================================================================
+   GrayCo CRM — patch MMTABS __GC_PATCH_MMTABS__ : the Marketing Manager's own left-menu tabs + admins' to-dos for him
+   Owner (28 Oct 2026): "make sure i can add things for marketing manager to do from admin also, give him a couple more
+   tabs than just 2 some ones hell use alot make them a tab like most of those i guess".
+   1. His left menu (only his; admins keep theirs): 📣 Marketing, ✅ My To-Do, 📈 My leads, ✔️ Marketing approvals, ✉️ E-mail &
+      newsletter, 📱 Social posts / Week plan, 🗓 Content calendar, ⭐ Reviews & referrals, 🎯 Ads, 🗂 Media library,
+      💡 Ideas board, 🔗 Marketing logins, 🧭 GrayCo Systems. Each tab is the Marketing screen opened at that section (the same renderers,
+      the same data through netlify/functions/soc.js — nothing new is visible to him). The tab ids are window._gcMMTabs
+      (patch MM early script); the app draws them with the Marketing mount. ‹ Back inside a tab returns to the tab.
+   2. Admins: ✅ To-Do "Give it to" / "@name" and 📣 Marketing → "＋ Task for marketing" can assign a to-do to him (he is
+      not active staff: he comes from the users list role "Marketing Manager" and the gc_staff profile "marketing").
+      He sees it in ✅ My To-Do (soc.js mm_tasks) and ticks it done there (soc.js mm_task — only tasks assigned to him).
+   3. 🔗 Marketing logins (window._gcMktLogins: Google Analytics, Search Console, Ads, Business Profile, Tag Assistant, Meta
+      Business Suite / Events Manager, website editor, review link, LinkedIn / Instagram / CallRail "set up soon"): a Marketing
+      section (him, admins, the office) and tiles in 🧭 GrayCo Systems → Website & marketing. Links only, no password or key.
+   Console: _gcMMTabs, _gcMMPeople(), _gcMMT.state()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MMTABS__) return; window.__GC_PATCH_MMTABS__ = true;
+var W = window, D = document;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout.bind(W);
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function isMM(){ try { return typeof W._gcIsMM === 'function' && W._gcIsMM(); } catch (e) { return false; } }
+function authAdmin(){ try { var A = W.__GC_AUTH__; return !!(A && typeof A.isAdmin === 'function' && A.isAdmin()); } catch (e) { return false; } }
+var TABS = {}; arr(W._gcMMTabs).forEach(function(t){ TABS[t.id] = t; });
+
+/* ── who is a Marketing Manager (for the admins' pickers): the users list role, and the gc_staff profile (admins) ── */
+var STAFF = { rows: null, at: 0, p: null };
+function loadStaff(){
+  if (isMM() || !authAdmin() || STAFF.p || (STAFF.rows && Date.now() - STAFF.at < 10 * 60e3)) return;
+  STAFF.p = W.fetch('/.netlify/functions/staff-admin?action=list').then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+    if (j && Array.isArray(j.staff)) { STAFF.rows = j.staff.filter(function(p){ return p && low(p.profile) === 'marketing' && p.mkt_active !== false && low(p.email); }).map(function(p){ return { name: s(p.name) || low(p.email).split('@')[0], email: low(p.email) }; }); STAFF.at = Date.now(); }
+  }).catch(function(){}).then(function(){ STAFF.p = null; });
+}
+function gone(u){ return !!(u && (u.departed || u.deleted || u.tombstoned || /^(inactive|disabled|terminated|offboarded)$/i.test(s(u.status)))); }
+W._gcMMPeople = function(){
+  if (isMM()) return [];
+  loadStaff();
+  var seen = {}, out = [];
+  arr((W._crm || {}).users).forEach(function(u){ if (!u || gone(u) || !/marketing\s*manager/i.test(s(u.role)) || !low(u.email) || seen[low(u.email)]) return; seen[low(u.email)] = 1; out.push({ name: s(u.name) || low(u.email), email: low(u.email) }); });
+  arr(STAFF.rows).forEach(function(p){ if (seen[p.email]) return; seen[p.email] = 1; var u = arr((W._crm || {}).users).filter(function(x){ return x && low(x.email) === p.email; })[0]; out.push({ name: s(u && u.name) || p.name, email: p.email }); });
+  return out;
+};
+nST(loadStaff, 4000);
+
+/* ── the tabs: the app calls this from the Marketing mount on every draw with the current view ── */
+var CUR = { v: '', el: null }, X = null, pending = null;
+W._gcMMTabView = function(v, el){ if (!X) { pending = [v, el]; return; } apply(v, el); };
+function inGroup(t, sec){ return !!t && (t.sec === sec || arr(t.also).indexOf(sec) >= 0); }
+function have(sec){ return !!X && X.SECS.some(function(x){ return x.id === sec; }) && typeof X.VIEWS[sec] === 'function'; }
+function groupOf(t){ return [t.sec].concat(arr(t.also)).filter(have); }
+function strip(t){
+  var g = groupOf(t); if (g.length < 2) return '';
+  return '<div class="gmt-row" data-mmt-strip="' + esc(t.id) + '" style="gap:6px;margin:0 0 10px;flex-wrap:wrap">' + g.map(function(sec){ var x = X.SECS.filter(function(y){ return y.id === sec; })[0] || { ic: '', l: sec }; var on = X.UI.sec === sec;
+    return '<button class="gmt-btn' + (on ? '' : ' o') + '" data-a="go" data-sec="' + esc(sec) + '"' + (on ? ' aria-current="page"' : '') + '>' + esc(x.ic + ' ' + x.l) + '</button>'; }).join('') + '</div>';
+}
+function wrapGroup(t){
+  groupOf(t).forEach(function(sec){
+    var f = X.VIEWS[sec]; if (!f || f.__mmt) return;
+    var w = function(){ var h = f.apply(this, arguments); var tt = TABS[CUR.v]; return tt && inGroup(tt, X.UI.sec) ? strip(tt) + h : h; };
+    w.__mmt = true; w.__orig = f; X.VIEWS[sec] = w;
+  });
+}
+function fresh(sec){   /* his lists come again from the server when he opens the tab */
+  try { var st = W._gcMM && W._gcMM._ST; if (!st) return; if (sec === 'mytodo') st.tasks = null; if (sec === 'mmappr') st.appr = null; } catch (e) {}
+}
+function apply(v, el){
+  var prev = CUR.v, prevEl = CUR.el; CUR.v = v; CUR.el = el || null;
+  if (v === prev && el === prevEl) return;
+  var t = TABS[v];
+  if (isMM()) { try { if (t) sessionStorage.setItem('gc_mmt_last', v); else if (v === 'marketing' && CUR.ready) sessionStorage.removeItem('gc_mmt_last'); } catch (e) {} }   /* a reload opens his tab again */
+  if (t) {
+    if (!have(t.sec)) return;
+    wrapGroup(t);
+    if (v !== prev || !inGroup(t, X.UI.sec)) { fresh(t.sec); X.go(t.sec); }
+  } else if (v === 'marketing' && TABS[prev] && X.UI.sec !== 'home') X.go('home');
+}
+/* ‹ Back inside a tab: from another section (or a chip of the tab) back to the tab; on the tab itself, to 📣 Marketing */
+D.addEventListener('click', function(ev){
+  var b = ev.target && ev.target.closest && ev.target.closest('[data-a="back"]'); if (!b || !X) return;
+  var m = b.closest('#gc-mk-mount'); if (!m || m !== X.UI.root || X.UI.overlay) return;
+  var t = TABS[CUR.v]; if (!t || X.UI.form) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (X.UI.sec !== t.sec) X.go(t.sec);
+  else if (typeof W._setView === 'function') W._setView('marketing');
+}, true);
+
+/* ── admins: "＋ Task for marketing" on 📣 Marketing, and his to-dos with their state ── */
+var F = { open: false, msg: '' };
+function adminNow(){ return !isMM() && !!X && X.role() === 'admin'; }
+function tasks(){ var l; try { l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); } catch (e) { l = []; } if (typeof l === 'string') { try { l = JSON.parse(l); } catch (e) { l = []; } } return arr(l).filter(function(t){ return t && typeof t === 'object' && !t.deleted; }); }
+function forHim(t, ems){ return arr(t.assignees).map(low).some(function(e){ return ems.indexOf(e) >= 0; }) || ems.indexOf(low(t.assigneeEmail)) >= 0; }
+function adminCard(){
+  var ppl = W._gcMMPeople(), ems = ppl.map(function(p){ return p.email; });
+  var mine = ems.length ? tasks().filter(function(t){ return forHim(t, ems); }) : [];
+  var open = mine.filter(function(t){ return !t.done; }), done = mine.filter(function(t){ return t.done; }).sort(function(a, b){ return s(b.doneAt) < s(a.doneAt) ? -1 : 1; }).slice(0, 8);
+  var h = '<div class="gmt-card" data-mmt-admin><div class="gmt-row" style="justify-content:space-between"><h2 style="margin:0">🧑‍💼 Marketing Manager — to-dos</h2>' +
+    (ppl.length ? '<button class="gmt-btn" data-a="mmt-task-new">＋ Task for marketing</button>' : '') + '</div>';
+  if (!ppl.length) return h + '<div class="gmt-muted">No Marketing Manager yet: ⚙ Admin → 👤 Employees → role "Marketing Manager", then 💎 → Team access → Profile "Marketing Manager".</div></div>';
+  if (F.open) {
+    h += '<div class="gmt-card" style="margin:8px 0" data-mmt-form><label>For</label><select id="mmt-f-who">' + ppl.map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>' +
+      '<label>To do</label><input id="mmt-f-label" placeholder="e.g. Post the Germantown before / after on Friday" style="width:100%">' +
+      '<label>Due (optional)</label><input type="date" id="mmt-f-due"><label>Detail (optional)</label><textarea id="mmt-f-note" rows="2" style="width:100%"></textarea>' +
+      '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn g" data-a="mmt-task-save">Add the to-do</button><button class="gmt-btn o" data-a="mmt-task-cancel">Cancel</button></div>' +
+      '<div class="gmt-muted">He sees it in ✅ My To-Do and ticks it there; it also shows on your ✅ To-Do (Team). Keep customer details out — he never sees jobs or customers.</div></div>';
+  }
+  h += '<div class="gmt-muted">' + esc(ppl.map(function(p){ return p.name; }).join(', ')) + ' · ' + open.length + ' open · ' + mine.filter(function(t){ return t.done; }).length + ' done</div>';
+  h += open.map(function(t){ return '<div class="gmt-check" data-mmt-task="' + esc(t.id) + '" data-done="0"><span>☐</span><div><b>' + esc(t.label) + '</b>' + (t.due ? ' <span class="gmt-muted">due ' + esc(t.due) + '</span>' : '') + (t.addedBy ? ' <span class="gmt-muted">· from ' + esc(t.addedBy) + '</span>' : '') + '</div></div>'; }).join('');
+  h += done.map(function(t){ return '<div class="gmt-check" data-mmt-task="' + esc(t.id) + '" data-done="1"><span>✅</span><div class="gmt-muted"><s>' + esc(t.label) + '</s>' + (t.doneBy ? ' — done by ' + esc(t.doneBy) : '') + (t.doneAt ? ' ' + esc(s(t.doneAt).slice(0, 10)) : '') + '</div></div>'; }).join('');
+  return h + '</div>';
+}
+function addTask(rec){
+  try { if (W._gcTD2 && typeof W._gcTD2.addRec === 'function') { W._gcTD2.addRec(rec); return true; } } catch (e) {}
+  var l = tasks(); l.push(rec);
+  try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) { return false; }
+  try { if (W._gcApplySync) W._gcApplySync('gc_office_tasks', l); } catch (e) {}
+  try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsertNow === 'function') W._supaUpsertNow('gc_office_tasks', JSON.stringify(l)); } catch (e) {}
+  return true;
+}
+W._gcMMTaskAdd = function(o){
+  o = o || {}; var em = low(o.email), label = s(o.label).slice(0, 200);
+  var p = W._gcMMPeople().filter(function(x){ return x.email === em; })[0];
+  if (!p || !label) return null;
+  var at = new Date().toISOString(), me = ''; try { me = X && X.myName ? X.myName() : ''; } catch (e) {}
+  var myE = ''; try { myE = X && X.myEmail ? X.myEmail() : ''; } catch (e) {}
+  var rec = { id: 'T' + Date.now() + Math.floor(Math.random() * 1000), label: label, note: s(o.note).slice(0, 600), due: /^\d{4}-\d{2}-\d{2}$/.test(s(o.due)) ? s(o.due) : '', addedBy: me || 'Admin', addedByEmail: low(myE), addedAt: at, updatedAt: at, done: false,
+    kind: 'assigned', assignees: [p.email], assignee: p.name, personal: true, shared: false, self: false, prio: 'med', forMarketing: true, source: 'marketing' };
+  return addTask(rec) ? rec : null;
+};
+
+/* ── 🔗 Marketing logins: the sign-in pages he and the admins use (links only — no password or key is kept anywhere) ── */
+function loginsHtml(){
+  var L = arr(W._gcMktLogins);
+  return '<div class="gmt-card" data-mkt-logins><div class="gmt-muted">Each opens the real sign-in page in a new tab. Sign in with your own GrayCo Google / Meta account — passwords and keys are never kept in the CRM. ' +
+    'Admin-only systems (Netlify, Supabase, Resend, Google Admin, Google Cloud) stay in 🧭 GrayCo Systems for admins.</div></div>' +
+    '<div class="gmt-gs">' + L.map(function(x){ return '<div class="gmt-card" data-login="' + esc(x.k) + '"><div class="gmt-row" style="justify-content:space-between"><b>' + esc(x.ic + ' ' + x.l) + '</b>' + (x.soon ? X.chip('set up soon') : '') + '</div>' +
+      '<div class="gmt-muted" style="margin:4px 0 8px">' + esc(x.d) + '</div><a class="gmt-btn' + (x.soon ? ' o' : '') + '" href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">Open ' + esc(x.l) + ' ↗</a></div>'; }).join('') + '</div>';
+}
+
+function install(){
+  var VIEWS = X.VIEWS, ACT = X.ACT;
+  (function addLogins(n){   /* the Marketing Manager, admins and the office (the role can arrive a moment later) */
+    if (!X.SECS.some(function(x){ return x.id === 'logins'; }) && (isMM() || X.role() === 'admin' || X.role() === 'office')) {
+      var gi = X.SECS.map(function(x){ return x.id; }).indexOf('google');
+      X.SECS.splice(gi >= 0 ? gi + 1 : Math.max(0, X.SECS.length - 1), 0, { id: 'logins', ic: '🔗', l: 'Marketing logins', d: 'Google Analytics, Search Console, Google Ads, Business Profile, Tag Assistant, Meta Business Suite & pixel, website editor, review link' });
+      if (X.UI.sec === 'home') X.redrawSoon();
+    }
+    if (n > 0) nST(function(){ addLogins(n - 1); }, 1000);
+  })(60);
+  VIEWS.logins = loginsHtml;
+  var home0 = VIEWS.home;
+  VIEWS.home = function(){ var h = home0.apply(this, arguments); return adminNow() ? adminCard() + h : h; };
+  ACT['mmt-task-new'] = function(){ F.open = !F.open; X.draw(); nST(function(){ var i = D.getElementById('mmt-f-label'); if (i) i.focus(); }, 50); };
+  ACT['mmt-task-cancel'] = function(){ F.open = false; X.draw(); };
+  ACT['mmt-task-save'] = function(){
+    if (!adminNow()) return;
+    var v = function(id){ var e = D.getElementById(id); return e ? e.value : ''; };
+    if (!s(v('mmt-f-label'))) { X.toast('Type the to-do first.', true); return; }
+    var r = W._gcMMTaskAdd({ email: v('mmt-f-who'), label: v('mmt-f-label'), due: v('mmt-f-due'), note: v('mmt-f-note') });
+    X.toast(r ? 'Added for ' + r.assignee + ': ' + r.label.slice(0, 60) : 'Not added.', !r);
+    if (r) { F.open = false; X.draw(); }
+  };
+  /* his to-dos change on another computer (he ticks one): the admin card follows */
+  var sig = '';
+  (function watch(){ try { if (adminNow() && X.UI.sec === 'home' && X.UI.root && X.UI.root.isConnected && !F.open) { var ems = W._gcMMPeople().map(function(p){ return p.email; }); var n = tasks().filter(function(t){ return forHim(t, ems); }).map(function(t){ return t.id + (t.done ? 1 : 0); }).join(); if (sig && n !== sig) X.redrawSoon(); sig = n; } } catch (e) {} nST(watch, 2500); })();
+  /* a reload: the app opens Marketing first — back to the tab he was on */
+  try { var last = isMM() && sessionStorage.getItem('gc_mmt_last'); if (TABS[last]) nST(function(){ try { if (localStorage.getItem('grayco_view') === 'marketing' && typeof W._setView === 'function') W._setView(last); } catch (e) {} CUR.ready = true; }, 1500); else CUR.ready = true; } catch (e) { CUR.ready = true; }
+  if (pending) { var p = pending; pending = null; apply(p[0], p[1]); }
+  else { try { var lv = localStorage.getItem('grayco_view') || ''; var m = D.getElementById('gc-mk-mount'); if (TABS[lv] && m) apply(lv, m); } catch (e) {} }
+}
+var tries = 0;
+(function boot(){ X = null; var x = W._gcMktExt; if (!x || !x.VIEWS || !x.VIEWS.home || !W._gcMM || (isMM() && !x.VIEWS.mytodo)) { if (tries++ < 200) nST(boot, 400); return; } X = x; install(); })();
+W._gcMMT = { state: function(){ return { view: CUR.v, sec: X && X.UI.sec, tabs: Object.keys(TABS), people: W._gcMMPeople(), staffLoaded: !!STAFF.rows }; } };
+try { console.log('[GC] patch MMTABS: the Marketing Manager\'s tabs + admins\' to-dos for him — _gcMMT.state()'); } catch (e) {}
+})();
+</script><!-- /MMTABS -->
 <script id="gc-fix-filehold">
 /* GATE fix_2 — the file-window hold ends when the person is back (no window focus event needed). */
 (function(){
@@ -152663,7 +152878,7 @@ function realAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && 
 function ux(){ return W._gcUx || {}; }
 
 var TAILORED = { Estimator: 1, Insurance: 1, Mitigation: 1, Superintendent: 1, 'Marketing Manager': 1 };
-var MM_TABS = { 'Marketing Manager': ['marketing', 'systems'] };   /* patch MM: Marketing only (+ the GrayCo Systems launcher when there is one) */
+var MM_TABS = { 'Marketing Manager': ['marketing', 'mmt_todo', 'mmt_leads', 'mmt_appr', 'mmt_email', 'mmt_social', 'mmt_cal', 'mmt_reviews', 'mmt_ads', 'mmt_media', 'mmt_ideas', 'mmt_logins', 'systems'] };   /* patch MMTABS: his own tabs (window._gcMMTabs) */   /* patch MM: Marketing only (+ the GrayCo Systems launcher when there is one) */
 var PROFILE_ROLE = { estimator: 'Estimator', insurance: 'Insurance', mitigation: 'Mitigation', super: 'Superintendent', pm: 'Project Manager', apm: 'Project Manager', office: 'Office', field: 'Field Supervisor', marketing: 'Marketing Manager' };   /* patch PMG: an APM works the PM screens; which jobs — _gcSamePM (the PM(s) they assist, jobs where they are APM) */
 var PROFILES = [['', '— from Admin → Employees (role) —'], ['estimator', 'Estimator'], ['insurance', 'Insurance restoration'], ['mitigation', 'Mitigation'], ['super', 'Superintendent'], ['pm', 'Project Manager'], ['apm', 'Assistant PM (APM)'], ['office', 'Office'], ['field', 'Field'], ['marketing', 'Marketing Manager']];
 var VIEWAS = [['', 'Admin — everything'], ['Estimator', 'Estimator'], ['Insurance', 'Insurance restoration'], ['Mitigation', 'Mitigation'], ['Superintendent', 'Superintendent'], ['Project Manager', 'Project Manager'], ['Assistant PM', 'Assistant PM (APM)'], ['Office', 'Office'], ['Marketing Manager', 'Marketing Manager']];
@@ -152754,6 +152969,7 @@ function menu(Uf, list){
     }
     if (TAILORED[role] && Array.isArray(order)) {
       var by = {}; arr(Uf).forEach(function(g){ by[g.id] = g; });
+      if (role === 'Marketing Manager') arr(W._gcMMTabs).forEach(function(g){ if (!by[g.id]) by[g.id] = { id: g.id, l: g.l, ic: g.ic }; });   /* patch MMTABS */
       return order.map(function(id){ return by[id]; }).filter(Boolean);   /* exactly the profile's tabs, in its order */
     }
     if (role === 'Project Manager') return list.filter(function(g){ return (g.id !== 'insurance' || pmHas('ins')) && (g.id !== 'mitigation' || pmHas('mit')); });
@@ -159896,7 +160112,9 @@ function ACTS_PIN_RESET(){ PIN_ACTS = {}; }
 function pinLine(){
   var n = 0; try { n = typeof W._gcApprovalCount === 'function' ? W._gcApprovalCount() : ((theSet() || {}).total || 0); } catch (e) {}
   n = Math.max(0, (+n || 0) - pendCount());
-  return { n: n, h: '<button type="button" class="apx-pin-1" data-apx-go="1">' + (n ? '✅ ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting → <u>Open Approvals</u>' : '✅ No approvals waiting · <u>Approvals tab</u>') + '</button>' };
+  var po = 0; try { var B = build(); if (B.scope.kind === 'office') po = pmOptN(B.rows); } catch (e) { warn(e); }   /* patch APOFFICE3: the office's optional PM approvals, under the line */
+  return { n: n, h: '<button type="button" class="apx-pin-1" data-apx-go="1">' + (n ? '✅ ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting → <u>Open Approvals</u>' : '✅ No approvals waiting · <u>Approvals tab</u>') + '</button>'
+    + (po ? '<button type="button" class="apx-pin-1 apx-pin-po" data-apx-pmopt="1" style="display:block;margin-top:4px;font-size:13px;opacity:.9">👷 PM approvals (' + po + ') — waiting on PMs, optional for you ›</button>' : '') };
 }
 /* the To-Do's own approval lines are in the pin: not shown a second time below */
 function hideTwins(root){
@@ -163866,6 +164084,7 @@ function fillFromLead(l){
 }
 function launchBar(){
   var main = D.querySelector('main'); if (!main) return;
+  try { if (typeof W._gcIsMM === 'function' && W._gcIsMM()) { var _mh = main.querySelector('.gcx12-launch'); if (_mh) _mh.remove(); return; } } catch (e) {}   /* patch MMTABS: never for the Marketing Manager (customer names) */
   var lv = ''; try { lv = localStorage.getItem('grayco_view') || ''; } catch (e) {}   /* patch JOBSTILL: Launch Job only (not Marketing's "🚀 Getting started") */
   var h = null; if (lv === 'launchjob') Array.prototype.some.call(main.querySelectorAll('h1,h2'), function(x){ if (/^\W*(launch (a )?job|new job)\b/i.test(s(x.textContent)) && x.offsetParent) { h = x; return true; } return false; });
   var have = main.querySelector('.gcx12-launch');
@@ -169901,6 +170120,7 @@ function TILES(){
     { g: 'The office', k: 'tv', ic: '📺', b: 'Office TV scoreboard', d: 'Big numbers for the office TV' },
     { g: 'The office', k: 'health', ic: '🩺', b: 'CRM health', d: 'Is everything running?', dot: 'health' }
   ];
+  t = t.concat(arr(W._gcMktLogins).map(function(x){ return { g: 'Website & marketing', k: 'ml_' + x.k, ic: x.ic, b: x.l + (x.soon ? ' (set up soon)' : ''), d: x.d }; }));   /* patch MMTABS: marketing logins */
   if (adm) t = t.concat([
     { g: 'Admin only', k: 'archive', ic: '🗄', b: 'Year-end archive', d: 'Every closed job of a year, in one file' },
     { g: 'Admin only', k: 'qb', ic: '📊', b: 'QuickBooks', d: 'Import / export (CRM)' },
@@ -169928,6 +170148,7 @@ function pickJob(title, list, onPick){
 function openJob(p){ try { if (typeof W._openJobDetail === 'function') W._openJobDetail(p.id); else go('projects'); } catch (e) { warn(e); } }
 function tile(k){
   if (VIEWS[k]) return go(VIEWS[k]);
+  if (/^ml_/.test(k)) { var _ml = arr(W._gcMktLogins).filter(function(x){ return 'ml_' + x.k === k; })[0]; if (_ml) return W.open(_ml.url, '_blank', 'noopener'); }   /* patch MMTABS */
   if (URLS[k]) return W.open(URLS[k], '_blank', 'noopener');
   if (k === 'custportal') return pickJob('🏠 Customer portal — pick a job', projects(), function(p){ if (s(p.portalUrl) && !p.portalOff) W.open(p.portalUrl, '_blank', 'noopener'); else { openJob(p); toast('This job has no customer portal link yet — make one on the job\'s Customer portal card.'); } });
   if (k === 'gcportal') return pickJob('🏢 GC portal — pick a GC job', projects().filter(function(p){ return p.gcJob || p.hiredByGc || /commerc|gov/i.test(s(p.type) + ' ' + s(p.jobType) + ' ' + s(p.leadKind)); }).concat(projects()).filter(function(p, i, a){ return a.indexOf(p) === i; }), function(p){ openJob(p); toast('The 🏗 GC portal bar is under the job header.'); });
@@ -173035,6 +173256,144 @@ W._gcTexts = { status: status, send: send, textUsLine: textUsLine, open: functio
 try { console.log('[GC] 💬 Text us: Job Messages "📱 Text them", Unsorted "📱 Text back", Admin → 💬 Text auto-answers (patch TXT) — _gcTexts'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-smsalert">
+/* __GC_PATCH_SMSALERT__ — 📱 TEXT ALERTS TO CELL PHONES (owner 10/28: "is there a way for our cell phones to get grayco
+   texts also, if so add that in something i can turn on for each person for each type of leads admin etc").
+     • ⚙ Admin settings → 📱 Text alerts to cell phones (right under 💬 Text auto-answers, admins): one row per staff person
+       (their cell, editable), a master on/off, one switch per alert type (customer texts: off / their jobs / all; new leads;
+       assigned to me; emergencies; missed calls; sub texts; approvals summary; admin / system — admins only) and quiet hours
+       (default 9 PM–7 AM Central; emergencies still go). Saved through texts.js ?alerts=1 (gc_lead_inbox_kv "gc_sms_alerts").
+     • Sending and replying from the cell: netlify/functions/_lib/smsalert.js. About 1¢ per alert text (Twilio). */
+(function(){
+'use strict';
+if (window.__GC_PATCH_SMSALERT__) return; window.__GC_PATCH_SMSALERT__ = true;
+var W = window, D = document;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var FN = '/.netlify/functions/texts?alerts=1';
+var DATA = null;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100260;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); ST.call(W, function(){ try { t.remove(); } catch (e) {} }, 4000); } catch (e) {}
+}
+var COLS = [
+  { id: 'cust', t: 'Customer texts', h: 'Texts customers send to the GrayCo number — their own jobs only, or all' },
+  { id: 'newAll', t: 'New leads (all)', h: 'Every new lead' },
+  { id: 'newMine', t: 'Assigned to me', h: 'New leads assigned to this person' },
+  { id: 'emerg', t: 'Emergency', h: 'Water / fire / storm emergency leads and emergency texts — ignores quiet hours' },
+  { id: 'missed', t: 'Missed calls', h: 'Screened callers nobody answered' },
+  { id: 'subs', t: 'Sub texts', h: 'Texts subs send to the GrayCo number' },
+  { id: 'approvals', t: 'Approvals', h: 'Approvals waiting for this person — one morning summary at most' },
+  { id: 'system', t: 'Admin / system', h: 'Backup / health failures — admins only', admin: true }
+];
+function hourOpts(sel){ var o = ''; for (var h = 0; h < 24; h++) { var lab = (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'); o += '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' + lab + '</option>'; } return o; }
+var CB = 'width:18px;height:18px;cursor:pointer';
+var TD = 'padding:6px 6px;border-bottom:1px solid #e2e8f0;text-align:center;vertical-align:middle';
+function row(x, p){
+  p = p || {};
+  var on = !!p.on, ph = p.phone || x.phone || '';
+  var cells = '<td style="' + TD + '"><input type="checkbox" data-k="on" title="Master on/off for ' + esc(x.name) + '" style="' + CB + '"' + (on ? ' checked' : '') + '></td>'
+    + '<td style="' + TD + ';text-align:left;white-space:nowrap"><b>' + esc(x.name) + '</b>' + (x.admin ? ' <span style="font-size:10px;background:#ede9fe;color:#5b21b6;border-radius:999px;padding:1px 6px">admin</span>' : '') + '<div style="font-size:11px;color:#64748b">' + esc(x.email) + '</div></td>'
+    + '<td style="' + TD + '"><input data-k="phone" data-orig="' + esc(x.phone || '') + '" inputmode="tel" placeholder="Cell" value="' + esc(ph ? tidy(ph) : '') + '" style="width:118px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></td>';
+  COLS.forEach(function(c){
+    if (c.id === 'cust') { var v = p.cust || 'off';
+      cells += '<td style="' + TD + '"><select data-k="cust" style="padding:4px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"><option value="off"' + (v === 'off' ? ' selected' : '') + '>Off</option><option value="mine"' + (v === 'mine' ? ' selected' : '') + '>Their jobs</option><option value="all"' + (v === 'all' ? ' selected' : '') + '>All</option></select></td>'; return; }
+    if (c.admin && !x.admin) { cells += '<td style="' + TD + ';color:#94a3b8;font-size:11px" title="Admins only">—</td>'; return; }
+    cells += '<td style="' + TD + '"><input type="checkbox" data-k="' + c.id + '" title="' + esc(c.t) + '" style="' + CB + '"' + (p[c.id] ? ' checked' : '') + '></td>';
+  });
+  var qf = p.qFrom == null ? 21 : p.qFrom, qt = p.qTo == null ? 7 : p.qTo;
+  cells += '<td style="' + TD + ';white-space:nowrap;font-size:12px"><label style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" data-k="qOn"' + (p.qOff ? '' : ' checked') + '> quiet</label> '
+    + '<select data-k="qFrom" style="font-size:12px;padding:3px">' + hourOpts(qf) + '</select>–<select data-k="qTo" style="font-size:12px;padding:3px">' + hourOpts(qt) + '</select></td>';
+  return '<tr class="gcsa-row" data-email="' + esc(x.email) + '" data-admin="' + (x.admin ? 1 : 0) + '" style="background:' + (on ? '#fff' : '#f8fafc') + '">' + cells + '</tr>';
+}
+/* the mitigation-manager role row: emergencies only, resolved to whoever holds the role */
+function roleRow(r, p){
+  p = p || {};
+  var on = !!p.on, h = arr(r.holders);
+  var who = h.length ? h.map(function(x){ return esc(x.name) + (x.phone ? ' · ' + esc(tidy(x.phone)) : ' · <span style="color:#b45309">no cell on file</span>'); }).join('<br>') : '<span style="color:#b45309">not hired yet — skipped until someone has the role</span>';
+  var cells = '<td style="' + TD + '"><input type="checkbox" data-k="on" style="' + CB + '"' + (on ? ' checked' : '') + '></td>'
+    + '<td style="' + TD + ';text-align:left"><b>' + esc(r.name) + '</b> <span style="font-size:10px;background:#e0f2fe;color:#075985;border-radius:999px;padding:1px 6px">role</span><div style="font-size:11px;color:#64748b">' + who + '</div></td>'
+    + '<td style="' + TD + ';font-size:11px;color:#64748b">from their record</td>';
+  COLS.forEach(function(c){
+    if (c.id === 'emerg') cells += '<td style="' + TD + '"><input type="checkbox" data-k="emerg" style="' + CB + '"' + (p.emerg ? ' checked' : '') + '></td>';
+    else cells += '<td style="' + TD + ';color:#94a3b8;font-size:11px">—</td>';
+  });
+  cells += '<td style="' + TD + ';font-size:12px;color:#64748b">emergencies only (any hour)</td>';
+  return '<tr class="gcsa-row" data-role="1" data-email="' + esc(r.key) + '" style="background:' + (on ? '#fff' : '#f8fafc') + '">' + cells + '</tr>';
+}
+function readForm(box){
+  var people = {};
+  Array.prototype.forEach.call(box.querySelectorAll('.gcsa-row'), function(tr){
+    var e = tr.getAttribute('data-email'), g = function(k){ return tr.querySelector('[data-k="' + k + '"]'); };
+    if (tr.getAttribute('data-role') === '1') { people[e] = { on: !!g('on').checked, emerg: !!g('emerg').checked, qOff: true, hasPhone: true, name: s((tr.querySelector('b') || {}).textContent) }; return; }
+    var pin = g('phone'), ph = pin ? d10(pin.value) : '';
+    if (pin && ph === d10(pin.getAttribute('data-orig'))) ph = '';   /* the same as their CRM record: keep following the record */
+    var p = { on: !!g('on').checked, phone: ph, hasPhone: !!(pin && d10(pin.value).length === 10) || tr.getAttribute('data-role') === '1', cust: g('cust').value, qOff: !g('qOn').checked, qFrom: +g('qFrom').value, qTo: +g('qTo').value,
+      name: s((tr.querySelector('b') || {}).textContent) };
+    COLS.forEach(function(c){ if (c.id !== 'cust') { var el = g(c.id); p[c.id] = !!(el && el.checked); } });
+    people[e] = p;
+  });
+  return { people: people };
+}
+function render(box){
+  if (!isAdmin()) { box.innerHTML = '<div style="color:#64748b">Only an admin can change the text alerts.</div>'; return; }
+  box.innerHTML = '<div style="color:#64748b">Loading…</div>';
+  j(FN).then(function(o){
+    if (!o || !o.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((o && o.error) || 'Could not load.') + '</div>'; return; }
+    DATA = o;
+    var set = o.settings || { people: {} }, staff = arr(o.staff);
+    var head = '<tr style="background:#f1f5f9;font-size:11px;color:#334155"><th style="' + TD + '">On</th><th style="' + TD + ';text-align:left">Person</th><th style="' + TD + '">Cell</th>'
+      + COLS.map(function(c){ return '<th style="' + TD + ';white-space:normal;line-height:1.2;width:78px;min-width:64px" title="' + esc(c.h) + '">' + esc(c.t) + '</th>'; }).join('') + '<th style="' + TD + '">Quiet hours (Central)</th></tr>';
+    box.innerHTML = '<div class="gcsa" style="font:13px Inter,sans-serif;color:#0f172a">'
+      + '<div style="background:' + (o.ready ? '#f0fdf4' : '#fff7ed') + ';border:1px solid ' + (o.ready ? '#bbf7d0' : '#fed7aa') + ';border-radius:10px;padding:10px;margin-bottom:10px;line-height:1.5">'
+      + (o.ready ? '✅ Alerts are texted from the GrayCo number <b>' + esc(o.from) + '</b>.' : '⚠ Texting is not set up yet (Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM) — nothing is texted until it is.')
+      + (o.paused ? '<br>⏸ Data-entry mode is on — no alert texts go out.' : '')
+      + '<br><b>💲 Cost:</b> each alert text costs about <b>1¢</b> (Twilio). Bursts are combined: at most 1 text a minute per person per conversation ("+3 more").'
+      + '<br><b>Reply from your phone:</b> answer an alert within 30 minutes and your text goes to that customer from the GrayCo number (signed with your first name) and shows on Job Messages. A staff phone never becomes a lead. Texting STOP stops your alerts.</div>'
+      + '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e2e8f0;border-radius:10px;max-width:100%"><table style="border-collapse:collapse;width:100%;min-width:980px;font-size:13px"><thead>' + head + '</thead><tbody>'
+      + (staff.length ? staff.map(function(x){ return row(x, set.people[x.email]); }).join('') : '<tr><td colspan="12" style="padding:12px;color:#64748b">No active staff with a @grayco-cs.com e-mail yet (⚙ Admin → Employees).</td></tr>')
+      + arr(o.roles).map(function(r){ return roleRow(r, set.people[r.key]); }).join('')
+      + '</tbody></table></div>'
+      + (set.defaults ? '<div style="font-size:12px;color:#075985;margin-top:6px">These are the starting settings (Nick and Wesley: emergencies + every new lead; the mitigation manager: emergencies). Change anything and press Save.</div>' : '')
+      + '<div style="font-size:12px;color:#475569;margin-top:8px">Customer texts: <b>Their jobs</b> = texts on jobs they manage or texts routed to them; <b>All</b> = every customer text. Emergencies ignore quiet hours. Outside business hours (📞 Call order hours) only emergencies are texted — other leads / texts are not texted later (the e-mail has them). Admin / system alerts that come in during quiet hours wait until the morning.</div>'
+      + '<div style="margin-top:10px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div></div>';
+    box.onchange = function(ev){ var tr = ev.target && ev.target.closest && ev.target.closest('.gcsa-row'); if (tr && ev.target.getAttribute('data-k') === 'on') tr.style.background = ev.target.checked ? '#fff' : '#f8fafc'; };
+    box.onclick = function(ev){
+      if (!(ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g') === 'save')) return;
+      var v = readForm(box), bad = Object.keys(v.people).filter(function(e){ var p = v.people[e]; return p.on && !p.hasPhone; });
+      Object.keys(v.people).forEach(function(e){ delete v.people[e].hasPhone; });
+      if (bad.length) { toast('Add a 10-digit cell for: ' + bad.join(', '), true); return; }
+      ev.target.disabled = true;
+      j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: v }) }).then(function(r){
+        ev.target.disabled = false;
+        if (r && r.ok) { if (DATA) DATA.settings = r.settings; toast('✅ Text alerts saved.'); } else toast('Not saved: ' + s(r && r.error), true);
+      });
+    };
+  });
+}
+function count(){ if (!DATA || !DATA.settings) return ''; var n = 0, ppl = DATA.settings.people || {}; Object.keys(ppl).forEach(function(e){ if (ppl[e].on) n++; }); return n ? n + ' on' : 'off'; }
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'smsalerts', after: 'texts', ic: '📱', t: 'Text alerts to cell phones', d: 'Staff cell phones get a text for new leads, customer texts, missed calls, emergencies, approvals — per person, per type',
+    render: render, count: count });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+W._gcSmsAlerts = { render: render, readForm: readForm, cols: COLS };
+try { console.log('[GC] 📱 Text alerts to cell phones: ⚙ Admin → 📱 Text alerts (patch SMSALERT) — _gcSmsAlerts'); } catch (e) {}
+})();
+</script>
 <script id="gc-patch-txttpl">
 /* __GC_PATCH_TXTTPL__ — 💬 TEXT TEMPLATES (owner: "admin should be able to add more sample messages for twilio").
      • Admin → ⚙ Admin settings → 💬 Text templates (right under 💬 Text auto-answers): admins add, edit, delete and reorder
@@ -173288,6 +173647,215 @@ later(function(){ if (signedIn()) load(); else { var n = 0, iv2 = RI.call(W, fun
 W._gcTextTemplates = { list: function(){ return clone(list()); }, fill: fill, count: count, warnings: warnings, setContext: function(c){ CTX = { pid: s(c && c.pid), invoice: c && c.invoice || null }; },
   copyAll: function(){ return copyText(allText(list())); }, reload: load, _decorate: decorate };
 try { console.log('[GC] 💬 Text templates: Admin settings → 💬 Text templates, "Templates ▾" in the Job Messages text bar (patch TXTTPL) — _gcTextTemplates'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-callchain">
+/* __GC_PATCH_CALLCHAIN__ — 📞 CALL ORDER (owner 10/28: "i want twilio to call in order office, nick owner 1, wesley owner 2,
+   general manager (we dont have one yet), lead pm" · "be able to setup twilio who gets calls in what order in admin" ·
+   "also add pm 2 pm 3 and so on for calls in order").
+     • Admin → ⚙ Admin settings → 📞 Call order (right by 💬 Text auto-answers, admins only): the GrayCo Twilio number rings
+       these one at a time, top to bottom. Each line: on / off, a name (editable), and who — the office line, a person
+       from the people list (their phone on file), the Senior PM (whoever it is at call time) or a typed number.
+       ↑ ↓ or drag to reorder, ✕ to remove, "+ Add person" for PM 2, PM 3 …; ring seconds per line; the card shows how
+       long a caller may wait before the text goes out. Empty lines (no General Manager yet) are skipped.
+     • Saved through texts.js ?callchain=1 (admin-checked) into the service-only gc_lead_inbox_kv "gc_call_chain";
+       missed-call.js reads it on every call (netlify/functions/_lib/callchain.js). Nothing saved → Netlify TWILIO_RING_TO.
+     • patch CALLSCREEN (owner 10/28: "these leads need to be qualified … everything else we do not accept on this phone
+       number"): 🛡 Screening on / off, the menu greeting (editable), the "what work do you need?" question on / off,
+       blocked numbers, and the last 50 calls with what happened (pressed 1 / 2 / 3, no input, answered by, missed).
+     • patch AFTERHOURS (owner 10/28: "after hours we do not get rings … unless its an emergency … after hours mitigation
+       manager, nick wesley, as order"): 🕘 business hours per day (default Mon–Fri 7 AM–6 PM Central), holidays, "Open now /
+       After hours now", the after-hours greeting and the 🌙 after-hours emergency order (Mitigation manager → Nick → Wesley).
+     • patch EMERGCALL (owner 10/28: "for emergency water or fire tree damages make sure you make a phone call to who is
+       on call / order of call after 15 min of no answering a text"): 🚨 "Emergency escalation calls after [15] min" on / off.
+   Phone numbers show to admins only, never to customers. */
+(function(){
+if (window.__GC_PATCH_CALLCHAIN__) return; window.__GC_PATCH_CALLCHAIN__ = true;
+var W = window, D = document;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var RI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var FN = '/.netlify/functions/texts?callchain=1';
+var KINDS = [['company', 'Office line'], ['person', 'Person'], ['senior', 'Senior PM (Lead PM)'], ['mitigation', 'Mitigation manager'], ['phone', 'Phone number']];
+var DAYN = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+var ST8 = { cfg: null, people: [], senior: null, office: '', saved: false, preview: null };
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function d10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+function tidy(v){ var d = d10(v); return d.length === 10 ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : s(v); }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function j(path, opts){
+  return W.fetch(path, opts).then(function(r){ return r.text().then(function(t){ var o = {}; try { o = JSON.parse(t); } catch (e) { o = { error: t.slice(0, 200) }; } o.__status = r.status; return o; }); },
+    function(e){ return { error: 'Cannot reach the server (' + e.message + ').', __status: 0 }; });
+}
+function toast(msg, bad){
+  try { var t = D.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:100260;background:' + (bad ? '#7f1d1d' : '#14532d') + ';color:#fff;padding:10px 16px;border-radius:10px;font:600 13px Inter,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:90vw';
+    D.body.appendChild(t); later(function(){ try { t.remove(); } catch (e) {} }, 4500); } catch (e) {}
+}
+function waitText(sec){ var m = Math.floor(sec / 60), r = sec % 60; return (m ? m + ' min' + (r ? ' ' : '') : '') + (r || !m ? r + ' s' : ''); }
+function personOf(id){ return ST8.people.filter(function(p){ return p.id === id; })[0] || null; }
+/* what one line rings right now (null = skipped) — the server decides at call time; this is the card's own estimate */
+function lineNumber(x){
+  if (!x.on) return null;
+  if (x.kind === 'company') return d10(ST8.office) || null;
+  if (x.kind === 'phone') return d10(x.phone).length === 10 ? d10(x.phone) : null;
+  if (x.kind === 'senior') return ST8.senior && d10(ST8.senior.phone).length === 10 ? d10(ST8.senior.phone) : null;
+  if (x.kind === 'mitigation') { var mm = mitMgr(); return mm ? d10(mm.phone) : null; }
+  var p = personOf(x.person); return p ? d10(p.phone) : null;
+}
+function mitMgr(){ return ST8.people.filter(function(p){ return /mitig/i.test(p.role) && /manag|lead|supervis|director|chief/i.test(p.role); })[0] || null; }
+function whoText(x){
+  if (x.kind === 'mitigation') { var mm = mitMgr(); return mm ? esc(mm.name) + ' · ' + esc(mm.phone) : '<span style="color:#64748b">no mitigation manager yet (a person whose role says Mitigation Manager) — skipped</span>'; }
+  if (x.kind === 'company') return ST8.office ? '☎ ' + esc(ST8.office) : '';
+  if (x.kind === 'senior') return ST8.senior ? esc(ST8.senior.name) + (ST8.senior.phone ? ' · ' + esc(ST8.senior.phone) : ' · <span style="color:#b45309">no phone on file</span>') : '<span style="color:#b45309">no Senior PM set (👥 Team roles &amp; Senior PM)</span>';
+  if (x.kind === 'person') { var p = personOf(x.person); return p ? esc(p.phone) : (x.person ? '<span style="color:#b45309">not in the people list / no phone</span>' : '<span style="color:#64748b">nobody yet — skipped</span>'); }
+  return '';
+}
+function rowHtml(x, i, n, L){
+  var who = x.kind === 'person' ? '<select data-f="person" style="border:1px solid #cbd5e1;border-radius:6px;padding:5px;max-width:220px"><option value="">— Nobody yet (skipped) —</option>'
+      + ST8.people.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === x.person ? ' selected' : '') + '>' + esc(p.name) + (p.role ? ' · ' + esc(p.role) : '') + '</option>'; }).join('') + '</select>'
+    : x.kind === 'phone' ? '<input data-f="phone" placeholder="(901) 555-0100" value="' + esc(x.phone ? tidy(x.phone) : '') + '" style="width:140px;border:1px solid #cbd5e1;border-radius:6px;padding:5px">' : '';
+  var rings = !!lineNumber(x);
+  return '<div class="gccc-row" draggable="true" data-l="' + (L || 'd') + '" data-i="' + i + '" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid #e2e8f0;border-radius:10px;padding:8px;margin:6px 0;background:' + (rings ? '#fff' : '#f8fafc') + '">'
+    + '<span title="Drag to reorder" style="cursor:grab;color:#94a3b8;font-size:16px">⠿</span>'
+    + '<b style="min-width:20px;color:#0e7490">' + (i + 1) + '.</b>'
+    + '<input type="checkbox" data-f="on"' + (x.on ? ' checked' : '') + ' title="On / off">'
+    + '<input data-f="label" value="' + esc(x.label) + '" maxlength="40" style="font-weight:700;width:140px;border:1px solid #e2e8f0;border-radius:6px;padding:5px">'
+    + '<select data-f="kind" style="border:1px solid #cbd5e1;border-radius:6px;padding:5px">' + KINDS.map(function(k){ return '<option value="' + k[0] + '"' + (x.kind === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>'
+    + who + '<span style="font-size:12px;color:#334155">' + whoText(x) + '</span>'
+    + (rings ? '' : '<span style="font-size:11px;background:#f1f5f9;color:#475569;border-radius:999px;padding:2px 8px">skipped</span>')
+    + '<span style="margin-left:auto;display:inline-flex;gap:4px">'
+    + '<button type="button" data-g="up" ' + (i ? '' : 'disabled ') + 'style="border:0;background:#e2e8f0;border-radius:6px;padding:4px 8px;cursor:pointer">↑</button>'
+    + '<button type="button" data-g="down" ' + (i < n - 1 ? '' : 'disabled ') + 'style="border:0;background:#e2e8f0;border-radius:6px;padding:4px 8px;cursor:pointer">↓</button>'
+    + '<button type="button" data-g="del" title="Remove" style="border:0;background:#fee2e2;color:#991b1b;border-radius:6px;padding:4px 8px;cursor:pointer">✕</button></span></div>';
+}
+function readRows(box){
+  var c = ST8.cfg;
+  c.screen = c.screen || {};
+  var q = function(g){ return box.querySelector('[data-g="' + g + '"]'); };
+  if (q('emOn')) { c.emerg = { on: !!q('emOn').checked, minutes: Math.max(5, Math.min(120, parseInt(q('emMin').value, 10) || 15)) }; }
+  if (q('scrOn')) { c.screen.on = !!q('scrOn').checked; c.screen.askWhat = !!q('askWhat').checked; c.screen.whisper = !!q('whisper').checked;
+    c.screen.greeting = s(q('greeting').value); c.screen.blocked = s(q('blocked').value).split(/[\n,;]+/).map(d10).filter(function(d){ return d.length === 10; }); }
+  c.on = !!(box.querySelector('[data-g="on"]') || {}).checked;
+  c.ringSeconds = Math.max(8, Math.min(60, parseInt((box.querySelector('[data-g="secs"]') || {}).value, 10) || 15));
+  c.night = c.night || { slots: [] };
+  if (q('ngreet')) c.night.greeting = s(q('ngreet').value);
+  if (q('hours')) { c.hours = c.hours || { days: {} }; c.hours.days = c.hours.days || {};
+    DAYN.forEach(function(dn){ var el = box.querySelector('[data-day="' + dn[0] + '"]'); if (!el) return; c.hours.days[dn[0]] = { open: !!el.querySelector('[data-h="open"]').checked, start: el.querySelector('[data-h="start"]').value || '07:00', end: el.querySelector('[data-h="end"]').value || '18:00' }; });
+    c.hours.holidays = s(q('holidays').value).split(/[\s,;]+/).filter(function(x){ return /^\d{4}-\d{2}-\d{2}$/.test(x); }); }
+  Array.prototype.forEach.call(box.querySelectorAll('.gccc-row'), function(el){
+    var x = (el.getAttribute('data-l') === 'n' ? c.night.slots : c.slots)[+el.getAttribute('data-i')]; if (!x) return;
+    x.on = !!el.querySelector('[data-f="on"]').checked; x.label = s(el.querySelector('[data-f="label"]').value) || x.label;
+    x.kind = el.querySelector('[data-f="kind"]').value;
+    var pe = el.querySelector('[data-f="person"]'), ph = el.querySelector('[data-f="phone"]');
+    if (pe) x.person = pe.value; if (ph) x.phone = d10(ph.value);
+  });
+  return c;
+}
+function summary(){
+  var c = ST8.cfg, seen = {}, n = 0;
+  c.slots.forEach(function(x){ var d = lineNumber(x); if (d && !seen[d]) { seen[d] = 1; n++; } });
+  var sec = n * c.ringSeconds;
+  return n ? n + ' number' + (n > 1 ? 's' : '') + ' ring, ' + c.ringSeconds + ' s each — <b>a caller may wait up to ' + waitText(sec) + ' before the text goes out</b> (plus the short hold message).' : '<b style="color:#b91c1c">Nobody would ring</b> — every call becomes a missed call.';
+}
+var OUTC = [[/robocall/, '#64748b', 'no input'], [/pressed 3|sales/, '#991b1b', 'sales / other'], [/blocked|STIR/, '#991b1b', 'blocked'], [/answered/, '#166534', 'answered'], [/missed/, '#b45309', 'missed'], [/ringing|new work|current customer|menu/, '#0e7490', 'in progress']];
+function outcomeTag(o){ var m = OUTC.filter(function(x){ return x[0].test(o); })[0]; return '<span style="font-size:11px;border-radius:999px;padding:1px 7px;background:#f1f5f9;color:' + (m ? m[1] : '#334155') + '">' + esc(o || '—') + '</span>'; }
+function screenHtml(){
+  var sc = ST8.cfg.screen || {}, log = arr(ST8.log);
+  var n3 = log.filter(function(x){ return /pressed 3|sales|blocked|STIR/.test(x.outcome); }).length, n0 = log.filter(function(x){ return /robocall/.test(x.outcome); }).length;
+  return '<div style="margin:12px 0;border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fafc"><div style="font-weight:800">🛡 Screening — before anyone\'s phone rings</div>'
+    + '<div style="font-size:12px;color:#475569;margin:4px 0 8px">Callers hear the menu first. <b>1</b> (construction / repair work) and <b>2</b> (current customer) ring the list below; <b>3</b> (anything else, sales) hears "we don\'t take sales calls … e-mail office@grayco-cs.com" — no ring, no text, no lead. Nothing pressed twice → goodbye (likely a robocall). Blocked numbers and callers whose caller ID fails the carrier check (STIR/SHAKEN) are treated like 3. Only 1 and 2 get the missed-call text and a lead.</div>'
+    + '<label><input type="checkbox" data-g="scrOn"' + (sc.on !== false ? ' checked' : '') + '> Screen calls with the menu</label>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:6px">What callers hear (say which key does what)</div><textarea data-g="greeting" rows="3" maxlength="600" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif">' + esc(sc.greeting || '') + '</textarea>'
+    + '<label style="display:block;margin-top:6px"><input type="checkbox" data-g="askWhat"' + (sc.askWhat !== false ? ' checked' : '') + '> After 1, ask "In a few words, what work do you need?" (goes on the lead and is said to whoever answers)</label>'
+    + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="whisper"' + (sc.whisper !== false ? ' checked' : '') + '> Whoever answers hears "GrayCo call: … press 1 to accept" first (a voicemail cannot take the call)</label>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:6px">Blocked numbers (one per line)</div><textarea data-g="blocked" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif" placeholder="(901) 555-0100">' + esc(arr(sc.blocked).map(tidy).join('\n')) + '</textarea>'
+    + '<div style="margin-top:10px;font-weight:700">Last calls' + (log.length ? ' <span style="font-weight:400;color:#475569;font-size:12px">— of the last ' + log.length + ': ' + n3 + ' sales / blocked, ' + n0 + ' no input (robocalls)</span>' : '') + '</div>'
+    + (log.length ? '<div style="max-height:260px;overflow:auto;margin-top:4px"><table style="width:100%;border-collapse:collapse;font-size:12px"><tr style="text-align:left;color:#64748b"><th style="padding:3px">When</th><th style="padding:3px">From</th><th style="padding:3px">Menu</th><th style="padding:3px">What happened</th></tr>'
+      + log.map(function(x){ var d = new Date(x.at); return '<tr style="border-top:1px solid #e2e8f0"><td style="padding:3px;white-space:nowrap">' + esc(isNaN(d) ? x.at : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '</td><td style="padding:3px;white-space:nowrap">' + esc(x.from) + '</td><td style="padding:3px">' + esc(x.choice === 'direct' ? '—' : x.choice ? 'pressed ' + x.choice : 'none') + '</td><td style="padding:3px">' + outcomeTag(x.outcome) + (x.by ? ' ' + esc(x.by) : '') + (x.what ? '<div style="color:#475569">“' + esc(x.what) + '”</div>' : '') + '</td></tr>'; }).join('') + '</table></div>'
+      : '<div style="font-size:12px;color:#64748b;margin-top:4px">No calls yet.</div>') + '</div>';
+}
+function hoursHtml(){
+  var c = ST8.cfg, h = c.hours || { days: {} }, nt = c.night || { slots: [] };
+  return '<div style="margin:12px 0;border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fafc"><div style="font-weight:800">🕘 Business hours (Central) <span style="margin-left:6px;font-size:12px;border-radius:999px;padding:2px 9px;background:' + (ST8.openNow ? '#dcfce7;color:#166534">Open now' : '#e0e7ff;color:#3730a3">After hours now') + '</span></div>'
+    + '<div style="font-size:12px;color:#475569;margin:4px 0 8px">After hours nobody\'s phone rings unless it is an emergency: callers hear the after-hours menu — 1 emergency rings the 🌙 after-hours order below; 2 anything else gets a text right away and a lead for the morning; 3 sales hears the sales message.</div>'
+    + '<div data-g="hours" style="display:flex;flex-wrap:wrap;gap:6px 14px">' + DAYN.map(function(dn){ var d = (h.days || {})[dn[0]] || { open: false, start: '07:00', end: '18:00' };
+      return '<span data-day="' + dn[0] + '" style="display:inline-flex;gap:4px;align-items:center;white-space:nowrap"><label style="min-width:52px"><input type="checkbox" data-h="open"' + (d.open ? ' checked' : '') + '> ' + dn[1] + '</label><input type="time" data-h="start" value="' + esc(d.start) + '" style="border:1px solid #cbd5e1;border-radius:6px;padding:2px"> – <input type="time" data-h="end" value="' + esc(d.end) + '" style="border:1px solid #cbd5e1;border-radius:6px;padding:2px"></span>'; }).join('') + '</div>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:6px">Holidays — closed all day (YYYY-MM-DD, one per line)</div><textarea data-g="holidays" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif" placeholder="2026-12-25">' + esc(arr(h.holidays).join('\n')) + '</textarea>'
+    + '<div style="font-size:11px;color:#64748b;margin-top:6px">What callers hear after hours</div><textarea data-g="ngreet" rows="3" maxlength="600" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:6px;font:13px Inter,sans-serif">' + esc(nt.greeting || '') + '</textarea>'
+    + '<div style="font-weight:700;margin-top:8px">🌙 After-hours emergency order <span style="font-weight:400;font-size:12px;color:#475569">(after-hours 1 and the 🚨 escalation calls; whoever answers hears "GrayCo EMERGENCY call: …")</span></div>'
+    + nt.slots.map(function(x, i){ return rowHtml(x, i, nt.slots.length, 'n'); }).join('')
+    + '<button type="button" data-g="addN" style="border:0;border-radius:6px;padding:6px 12px;background:#e2e8f0;cursor:pointer;margin-top:4px">＋ Add person</button></div>';
+}
+function draw(box){
+  var c = ST8.cfg;
+  box.innerHTML = '<div style="font:13px Inter,sans-serif;color:#0f172a">'
+    + '<div style="background:' + (ST8.saved && c.on ? '#f0fdf4' : '#fff7ed') + ';border:1px solid ' + (ST8.saved && c.on ? '#bbf7d0' : '#fed7aa') + ';border-radius:10px;padding:10px;margin-bottom:10px">'
+    + (ST8.saved ? (c.on ? '✅ Calls to the GrayCo number ' + (c.screen && c.screen.on !== false ? 'are screened, then ' : '') + 'ring this list, one at a time.' : '⏸ The call order is off — nobody is rung; callers who press 1 or 2 get the missed-call text.')
+      : '⚠ Not saved yet — calls ' + (ST8.ringToEnv ? 'are screened, then ring ' + esc(ST8.ringToEnv) + ' only (Netlify TWILIO_RING_TO)' : 'are screened, then ring this default list') + '. Check it and press <b>Save</b>.')
+    + (ST8.ready ? '' : '<br>⚠ Twilio is not set up yet (Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM).')
+    + '<br><span style="color:#475569">Twilio → Phone Numbers → the number → Voice "A call comes in": Webhook <code>' + esc(ST8.voiceWebhook || '') + '</code> (HTTP POST). Nobody answers → the caller gets one text, a lead / call-back to-do is made.</span></div>'
+    + hoursHtml()
+    + screenHtml()
+    + '<div style="margin:12px 0;border:1px solid #fecaca;border-radius:10px;padding:10px;background:#fef2f2"><div style="font-weight:800">🚨 Emergency escalation calls</div>'
+    + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="emOn"' + (!c.emerg || c.emerg.on !== false ? ' checked' : '') + '> Phone people about an emergency lead (water, fire, a tree on the house, storm damage) nobody has answered after <input data-g="emMin" type="number" min="5" max="120" value="' + esc((c.emerg && c.emerg.minutes) || 15) + '" style="width:52px"> min</label>'
+    + '<div style="font-size:12px;color:#475569;margin-top:4px">Calls this week\'s on-call person first, then the list below, one at a time (25 s each): "GrayCo emergency … press 1 to be connected to the customer, press 2 to accept and call them yourself." The first key stops it. Nobody → the whole list once more 10 minutes later, then the admins are e-mailed. It stops as soon as someone has it: ✅ Accept on the on-call page, the lead assigned / contacted / its stage moved, a text to the customer, or a reply to the alert text. Any hour; never while data-entry mode is on.</div></div>'
+    + '<div style="font-weight:800;margin-top:6px">📞 Who rings, in order</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"><label><input type="checkbox" data-g="on"' + (c.on ? ' checked' : '') + '> Ring in this order</label>'
+    + '<label>Ring each one <input data-g="secs" type="number" min="8" max="60" value="' + esc(c.ringSeconds) + '" style="width:56px"> seconds</label></div>'
+    + '<div data-g="sum" style="margin:8px 0;color:#334155">' + summary() + '</div>'
+    + '<div data-g="list">' + c.slots.map(function(x, i){ return rowHtml(x, i, c.slots.length, 'd'); }).join('') + '</div>'
+    + '<button type="button" data-g="add" style="border:0;border-radius:6px;padding:6px 12px;background:#e2e8f0;cursor:pointer;margin-top:4px">＋ Add person</button>'
+    + '<div style="font-size:12px;color:#475569;margin-top:8px;line-height:1.5">Skipped at call time: a line that is off or empty, the caller\'s own number, and the office line when the call was forwarded from it (no loop). Cell phones: with "press 1 to accept" on, a voicemail cannot take the call; with it off, keep the ring time shorter than your voicemail picks up (about 20–25 s).</div>'
+    + '<div style="display:flex;gap:8px;margin-top:10px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div>'
+    + (ST8.preview ? '<div style="margin-top:10px;font-size:12px;color:#334155"><b>Rings now (saved):</b> ' + (arr(ST8.preview.list).map(function(x, i){ return (i + 1) + '. ' + esc(x.label) + (x.name ? ' — ' + esc(x.name) : '') + ' ' + esc(x.phone); }).join(' · ') || 'nobody')
+      + (arr(ST8.preview.skipped).length ? '<br><b>Skipped:</b> ' + arr(ST8.preview.skipped).map(function(x){ return esc(x.label) + ' (' + esc(x.why) + ')'; }).join(' · ') : '') + '</div>' : '')
+    + '</div>';
+}
+function wire(box){
+  var drag = -1;
+  box.onclick = function(ev){
+    var g = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g'); if (!g) return;
+    var row = ev.target.closest('.gccc-row'), i = row ? +row.getAttribute('data-i') : -1, c0 = readRows(box), sl = row && row.getAttribute('data-l') === 'n' ? c0.night.slots : g === 'addN' ? c0.night.slots : c0.slots;
+    if (g === 'up' && i > 0) { sl.splice(i - 1, 0, sl.splice(i, 1)[0]); draw(box); }
+    else if (g === 'down' && i >= 0 && i < sl.length - 1) { sl.splice(i + 1, 0, sl.splice(i, 1)[0]); draw(box); }
+    else if (g === 'del' && i >= 0) { if (sl.length < 2) { toast('Keep at least one line (or turn the call order off).', true); return; } sl.splice(i, 1); draw(box); }
+    else if (g === 'addN') { sl.push({ id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: 'Person', on: true, kind: 'person', person: '', phone: '' }); draw(box); }
+    else if (g === 'add') { var n = sl.filter(function(x){ return /^PM \d+$/.test(x.label); }).length + 2; sl.push({ id: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: 'PM ' + n, on: true, kind: 'person', person: '', phone: '' }); draw(box); }
+    else if (g === 'save') {
+      var v = readRows(box); ev.target.disabled = true;
+      j(FN, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: v }) }).then(function(r){
+        ev.target.disabled = false;
+        if (r && r.ok) { take(r); draw(box); toast('✅ Call order saved.'); } else toast('Not saved: ' + s(r && r.error), true);
+      });
+    }
+  };
+  box.onchange = function(ev){ var g0 = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-g'); if (ev.target && ev.target.closest && (ev.target.closest('.gccc-row') || g0 === 'on' || g0 === 'secs' || g0 === 'scrOn' || g0 === 'askWhat' || g0 === 'whisper' || (ev.target.getAttribute && ev.target.getAttribute('data-h')))) { readRows(box); draw(box); } };
+  var dragL = 'd';
+  box.ondragstart = function(ev){ var r = ev.target.closest && ev.target.closest('.gccc-row'); if (!r) return; drag = +r.getAttribute('data-i'); dragL = r.getAttribute('data-l'); try { ev.dataTransfer.setData('text/plain', String(drag)); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {} };
+  box.ondragover = function(ev){ if (drag >= 0 && ev.target.closest && ev.target.closest('.gccc-row')) ev.preventDefault(); };
+  box.ondrop = function(ev){ var r = ev.target.closest && ev.target.closest('.gccc-row'); if (!r || drag < 0) return; ev.preventDefault(); if (r.getAttribute('data-l') !== dragL) { drag = -1; return; } var to = +r.getAttribute('data-i'), c1 = readRows(box), sl = dragL === 'n' ? c1.night.slots : c1.slots; if (to !== drag) { sl.splice(to, 0, sl.splice(drag, 1)[0]); draw(box); } drag = -1; };
+}
+function take(o){ ST8.cfg = o.settings; ST8.people = arr(o.people); ST8.senior = o.senior || null; ST8.office = s(o.office); ST8.saved = !!o.saved; ST8.preview = o.saved ? o.preview : null; ST8.ringToEnv = s(o.ringToEnv); ST8.ready = !!o.ready; ST8.voiceWebhook = s(o.voiceWebhook); ST8.log = arr(o.log); ST8.openNow = !!o.openNow; }
+function renderAdmin(box){
+  if (!isAdmin()) { box.innerHTML = '<div style="color:#64748b">Only an admin can change who the GrayCo number rings.</div>'; return; }
+  box.innerHTML = '<div style="color:#64748b">Loading…</div>';
+  j(FN).then(function(o){
+    if (!o || !o.ok) { box.innerHTML = '<div style="color:#b91c1c">' + esc((o && o.error) || 'Could not load.') + '</div>'; return; }
+    take(o); draw(box); wire(box);
+  });
+}
+function addSection(){
+  if (typeof W._gcAdmAddSection !== 'function') return false;
+  W._gcAdmAddSection({ id: 'callorder', after: 'texts', ic: '📞', t: 'Call order', d: 'Screen callers (1 work · 2 customer · 3 sales), then who the GrayCo number rings, one at a time · blocked numbers · call log',
+    render: renderAdmin, count: function(){ return ST8.cfg ? (ST8.saved ? (ST8.cfg.on ? ST8.cfg.slots.filter(function(x){ return x.on; }).length + ' on' : 'off') : 'not saved') : ''; } });
+  return true;
+}
+if (!addSection()) { var tries = 0, iv = RI.call(W, function(){ if (addSection() || ++tries > 120) clearInterval(iv); }, 500); }
+W._gcCallOrder = { render: renderAdmin, _state: ST8, _summary: summary };
+try { console.log('[GC] 📞 Call order: Admin settings → 📞 Call order (patch CALLCHAIN) — _gcCallOrder'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-mailc">

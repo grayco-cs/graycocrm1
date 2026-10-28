@@ -69,8 +69,13 @@ await OF.ev(() => window._setView && window._setView('todo')); await PM.ev(() =>
 const pinLink = await waitFor(OF, () => { var b = document.querySelector('[data-apx-pmopt]'); return b ? b.innerText : null; }, null, 30000);
 ok(pinLink && /PM approvals \(\d+\)/.test(pinLink), 'office To-Do: one-line link "' + pinLink + '"');
 ok(!(await OF.ev(() => !!document.querySelector('._ap2Card[data-id="apo1"]'))), 'office To-Do: no card for the PM-step item');
-ok(!!(await waitFor(PM, () => !!document.querySelector('._ap2Card[data-id="apo1"]'), null, 30000)), 'PM To-Do shows his card');
+/* the PM's To-Do: a card (older builds) or — rc-r13 (patch TODONOAPPR) — the one "N approvals waiting" line counting it, the item on his 📋 Approvals */
+const pmTodo = await waitFor(PM, () => { if (document.querySelector('._ap2Card[data-id="apo1"]')) return 'card'; var l = document.querySelector('.apx-pin-1[data-apx-go]'); var mine = window._gcAPX && window._gcAPX.rows().some(r => r.key === 'ap2:apo1' && r.mine); return l && /\d+ approvals? waiting/.test(l.innerText) && mine ? 'line: ' + l.innerText.trim() : null; }, null, 30000);
+ok(!!pmTodo, 'PM To-Do shows his approval (' + pmTodo + ')');
+ok(!(await PM.ev(() => !!document.querySelector('[data-apx-pmopt]'))), 'PM To-Do: no 👷 link');
 await shot(OF, '1_office_todo');
+await OF.page().locator('[data-apx-pmopt]').first().click({ timeout: 5000 }).catch(e => console.log('click link', e.message)); await sleep(2500);
+ok(await OF.ev(() => !!document.querySelector('.apx-chip.pmopt.on') && [...document.querySelectorAll('.apx-list .apx-row')].some(e => e.getAttribute('data-k') === 'ap2:apo1')), 'office: the To-Do link opens 📋 Approvals on the 👷 button');
 await OF.ev(() => window._gcAPX.open('')); await sleep(2500);
 const main = await OF.ev(() => ({ rows: [...document.querySelectorAll('.apx-list .apx-row')].map(e => e.getAttribute('data-k')), chip: (document.querySelector('.apx-chip.pmopt') || {}).innerText || '' }));
 ok(main.rows.includes('ap2:apo2') && !main.rows.includes('ap2:apo1') && /PM approvals/.test(main.chip), '📋 Approvals (office): her own first, PM-step item not in the main list; button "' + main.chip.replace(/\s+/g, ' ') + '"');
@@ -91,7 +96,7 @@ ok(SENT.length === 1 && SENT[0].to[0] === 'homeowner@example.test', 'sent ONCE (
 await PM.ev(() => window._gcApprovalsRefresh && window._gcApprovalsRefresh()); await sleep(2500);
 ok(await PM.ev(() => !window._gcCustApprovals().mine.some(x => x.id === 'apo1')), 'PM: gone from his list');
 await PM.ev(() => { window.__GC_REFRESH_UI__ && window.__GC_REFRESH_UI__(); }); await sleep(7000);
-ok(!(await PM.ev(() => !!document.querySelector('._ap2Card[data-id="apo1"]'))), 'PM: the card is gone from his To-Do');
+ok(!(await PM.ev(() => !!document.querySelector('._ap2Card[data-id="apo1"]') || (window._gcAPX && window._gcAPX.rows().some(r => r.key === 'ap2:apo1' && r.mine)))), 'PM: gone from his To-Do / 📋 Approvals');
 const late = await portal._core.approvalAction({ op: 'approve', id: 'apo1' }, { email: 'sbiffle@grayco-cs.com', role: 'staff', name: 'Sample PM' });
 ok(late.status === 409 && SENT.length === 1, 'PM late approve refused (409), still one send');
 ok(!OF.errs.length && !PM.errs.length, 'no page errors ' + JSON.stringify(OF.errs.concat(PM.errs).slice(0, 3)));
