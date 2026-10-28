@@ -3,8 +3,8 @@
    one phone push listing them. Each line is a link that opens that exact item in the CRM (#appr=<id>) — the CRM asks for
    the usual sign-in, and the approval is given there, never from the e-mail. Who gets what is the approvals list's
    own rule (and in its order: 🔴 ASAP, 🟠 Soon, ⚪ Routine, newest first — _lib/appr-order.js): the job's PM for a PM step; Wesley and Nick for an admin step (and the office too when the item lets the
-   office approve, or it waited 24 hours); JOB COSTS (sub invoices, job expenses) to the job's PM, then the office after 24 h
-   (or at once with no PM) — an admin only as that job's PM (patch SUBINV); payroll runs waiting on an admin.
+   office approve, or it waited 24 hours); the office also gets every PM-step item at once (patch APOFFICE); JOB COSTS (sub
+   invoices, job expenses) to the job's PM and the office at once (patch APOFFICE; it was after 24 h) — an admin only as that job's PM (patch SUBINV); payroll runs waiting on an admin.
    Staff only (every address @grayco-cs.com), so data-entry mode lets it through. */
 'use strict';
 const A = require('./auto-common.js');
@@ -28,23 +28,22 @@ async function run(opts){
   users.forEach(function(u){ if (u && u.name && staffEmail(u.email)) byName[low(u.name)] = low(u.email); });
   const nameOf = {}; users.forEach(function(u){ if (u && staffEmail(u.email)) nameOf[low(u.email)] = s(u.name); });
   const box = {};
-  const add = function(email, it){ email = low(email); if (!staffEmail(email)) return; (box[email] = box[email] || []).push(it); };
+  const add = function(email, it){ email = low(email); if (!staffEmail(email)) return; const l = (box[email] = box[email] || []); if (l.indexOf(it) < 0) l.push(it); };   /* patch APOFFICE: once per person */
   const base = A.crmBase();
   (cur ? cur.list : []).forEach(function(x){
     if (!x || x.status !== 'waiting') return;
     const it = { title: s(x.title) || s(x.kind), sub: s(x.jobName), link: base + '/#appr=' + encodeURIComponent(s(x.id)), raw: x };
-    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); return; }
+    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); office.forEach(function(e){ add(e, it); }); return; }   /* patch APOFFICE: the office may take the PM step at once */
     admins.forEach(function(e){ add(e, it); });
     const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= 24 * 3600e3);
     if (x.officeOk === true || esc24) office.forEach(function(e){ add(e, it); });
   });
   /* patch SUBINV (owner 10/27): JOB COSTS (sub invoices, job expenses / receipts) go to the job's PM; after 24 hours without
      the PM — or at once when the job has no PM — to the OFFICE. An admin gets one only as that job's PM — never as the extra / default approver. */
-  const DAY = 24 * 3600e3;
   const jobCost = function(pmName, since, it){
-    const e = byName[low(pmName)], late = since && now - since >= DAY;
+    const e = byName[low(pmName)];
     if (e) add(e, it);
-    if (!e || late) office.forEach(function(x){ add(x, it); });
+    office.forEach(function(x){ add(x, it); });   /* patch APOFFICE (owner 10/28): "anything a PM can approve, the office can approve too" — at once, not after 24 h */
   };
   arr(extra.gc_sub_approvals).forEach(function(a){
     if (!a || a.status !== 'pending_pm') return;

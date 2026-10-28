@@ -124503,13 +124503,15 @@ function isAdmin(){ try{ return !!(window.__GC_AUTH__ && window.__GC_AUTH__.isAd
 function myUser(){ var e = myEmail(); var us = ((window._crm||{}).users)||[]; return us.filter(function(u){ return u && low(u.email) === e; })[0] || null; }
 function myName(){ var u = myUser(); return s(u && u.name); }
 function pmIsMe(x){ var e = myEmail(), n = low(myName()); return !!((x.pmEmail && low(x.pmEmail) === e) || (x.pm && n && low(x.pm) === n)); }
+function officeMe(){ if(isAdmin()) return false; var u = myUser(); return myEmail() === 'office@grayco-cs.com' || !!(u && u.active !== false && /office/i.test(s(u.role))); }   /* patch APOFFICE: the office takes any PM step too */
+window._gcApOfficeMe = officeMe;
 function waitingOnMe(x){
   if(x.status !== 'waiting') return false;
   if(isAdmin()) return x.step === 'admin' || pmIsMe(x);
-  return x.step === 'pm' && pmIsMe(x);
+  return x.step === 'pm' && (pmIsMe(x) || officeMe());
 }
-function canAct(x){ return x.status === 'waiting' && (isAdmin() || (x.step === 'pm' && pmIsMe(x))); }
-function visible(x){ return isAdmin() || pmIsMe(x); }
+function canAct(x){ return x.status === 'waiting' && (isAdmin() || (x.step === 'pm' && (pmIsMe(x) || officeMe()))); }
+function visible(x){ return isAdmin() || pmIsMe(x) || officeMe(); }
 function isPmPerson(){
   var u = myUser(); if(u && /project\s*manager|\bpm\b/i.test(s(u.role))) return true;
   var n = low(myName()); if(!n) return false;
@@ -124595,7 +124597,7 @@ function stepLabel(x){
   if(x.status === 'sent') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-weight:700">Sent ' + esc(s(x.sentAt).slice(0, 16).replace('T', ' ')) + '</span>';
   if(x.status === 'rejected') return '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-weight:700">Rejected by ' + esc(x.rejectedBy) + (x.reason ? ' — ' + esc(x.reason) : '') + '</span>';
   if(x.status === 'sending') return '<span style="background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:10px;font-weight:700">Sending…</span>';
-  var who = x.step === 'admin' ? 'Admin (Wesley or Nick)' : 'PM — ' + esc(x.pm || '?');
+  var who = x.step === 'admin' ? 'Admin (Wesley or Nick)' : 'PM ' + esc(x.pm || '?') + ' or the office';   /* patch APOFFICE */
   return '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:700">Needs: ' + who + '</span>' + (x.steps && x.steps.length > 1 ? ' <span style="color:#64748b;font-size:12px">(' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') + ')</span>' : '');
 }
 function card(x){
@@ -131228,7 +131230,7 @@ function lastStep(x){ return isAdmin() || (x.steps || []).indexOf(x.step) >= (x.
 function card(x){
   var id = esc(x.id), b = busy[x.id], last = lastStep(x);
   var done = !b && kept[x.id] && /^(\u2705|\u2716)/.test(notes[x.id] || '');   /* patch APDONE: owner tapped Don't approve and "nothing happened" — the card looked the same */
-  var who = x.step === 'admin' ? 'Needs an admin (Wesley or Nick)' : 'Needs the PM' + (x.pm ? ' — ' + esc(x.pm) : '');
+  var who = x.step === 'admin' ? 'Needs an admin (Wesley or Nick)' : 'Needs PM ' + (x.pm ? esc(x.pm) + ' ' : '') + 'or the office';   /* patch APOFFICE */
   var chain = (x.steps || []).length > 1 ? ' · ' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') : '';
   return '<div class="_ap2Card" data-id="' + id + '" style="background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-left:5px solid #16a34a;border-radius:12px;padding:12px;margin-bottom:10px;text-align:left;font-family:Inter,-apple-system,Arial,sans-serif">' +
     (window._gcApprovalChip ? window._gcApprovalChip({ src: 'queue', id: x.id, kind: x.kind, title: x.title, escalated: x.escalated, __raw: x }) : '') +   /* patch APPRORDER */
@@ -133042,7 +133044,7 @@ try { console.log('[GC] patch CC2: jobs and leads a person makes are theirs (Sel
      on the green APPROVE button, labelled "⏫ Escalated — admins didn't
      answer in 24h", and can approve, edit or not approve it. The admins still
      can; whoever acts first wins (the server records who, as what, and when).
-   * PM-step items are never escalated.
+   * PM-step items are never escalated — the office has them at once anyway (patch APOFFICE).
    * The CRM notices the server leaves (gc_kv "gc_appr_notices": the office,
      and the admins "sent to the office after 24h") show once per person.
    Console: _gcAp4Due(), _gcAp4Check().
@@ -133077,7 +133079,7 @@ function wrapList(){
     try{
       if(r && isOffice()){
         var have = {}; (r.mine || []).forEach(function(x){ have[x.id] = 1; });
-        var add = (r.all || []).filter(function(x){ return due(x) && !have[x.id]; });
+        var add = (r.all || []).filter(function(x){ return (due(x) || (x && x.status === 'waiting' && x.step === 'pm')) && !have[x.id]; });   /* patch APOFFICE: the PM step is the office's at once */
         if(add.length){ r.mine = (r.mine || []).concat(add); r.count = r.mine.length; }
         r.office = true;
       }
@@ -157905,6 +157907,36 @@ W._gcRef = { fillMkt: fillMkt, renderAdmin: renderAdmin, applyPending: applyPend
 try { console.log('[GC] Referral program: stacking credit + one-time gift codes (patch REF) — _gcRef.state()'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-apoffice">
+/* patch APOFFICE (owner 10/28): "anything a PM can approve, the office can approve too" — the PM and the office see the same
+   approvals at once; whoever acts first wins. Here: a sub invoice (gc_sub_approvals) or a job expense (gc_expense_approvals)
+   that is already approved / not approved is not decided a second time (no second check draft, no second P&L post).
+   Console: _gcApOffice.state() */
+(function(){
+'use strict';
+if (window.__GC_PATCH_APOFFICE__) return; window.__GC_PATCH_APOFFICE__ = true;
+var W = window, RI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function ls(k){ try { var v = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function toast(m){ try { if (typeof W.showToast === 'function') { W.showToast(m); return; } } catch (e) {} try { var t = document.createElement('div'); t.setAttribute('data-gc-keep', '1'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483600;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 14px Inter,Arial,sans-serif'; document.body.appendChild(t); (W.__GC_NATIVE_SETTIMEOUT__ || setTimeout)(function(){ t.remove(); }, 4000); } catch (e) {} }
+var blocked = [];
+function subDone(id){ var a = ls('gc_sub_approvals').filter(function(x){ return x && (s(x.invId) === s(id) || s(x.id) === s(id)); })[0]; return a && /^(pm_approved|pm_denied|approved|paid)$/.test(s(a.status)) ? a : null; }
+function expDone(id){ var a = ls('gc_expense_approvals').filter(function(x){ return x && s(x.expId) === s(id); })[0]; return a && /^(approved|rejected)$/.test(s(a.status)) ? a : null; }
+function wrap(name, done){
+  var f = W[name]; if (typeof f !== 'function' || f.__gcApOff) return;
+  var w = function(id){
+    var d = done(id);
+    if (d) { blocked.push({ fn: name, id: s(id), status: s(d.status), at: Date.now() }); toast('Already ' + (/denied|rejected/.test(s(d.status)) ? 'not approved' : 'approved') + ((d.pmDecidedBy || d.decidedBy || d.approvedBy) ? ' by ' + s(d.pmDecidedBy || d.decidedBy || d.approvedBy) : '') + ' — nothing more to do.'); try { if (W.__GC_REFRESH_UI__) W.__GC_REFRESH_UI__(); } catch (e) {} return false; }
+    return f.apply(this, arguments);
+  };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcApOff = true; W[name] = w;
+}
+function tick(){ wrap('_gcPmDecideSub', subDone); wrap('_gcApproveExpense', expDone); wrap('_gcRejectExpense', expDone); }
+tick(); RI.call(W, tick, 2000);
+W._gcApOffice = { state: function(){ return { blocked: blocked.slice(-20), officeMe: typeof W._gcApOfficeMe === 'function' ? W._gcApOfficeMe() : null }; }, subDone: subDone, expDone: expDone };
+})();
+</script>
 <script id="gc-patch-apx">
 /* __GC_INLINEAPPR__ (patch INLINEAPPR applied to this script) */
 /* __GC_PATCH_APX__ ════════════════════════════════════════════════════════════
@@ -157927,7 +157959,7 @@ try { console.log('[GC] Referral program: stacking credit + one-time gift codes 
      Admin sees ALL: Waiting on me · Waiting on a PM · Escalated to office (AP4: Wesley / Nick did not answer in 24 h)
        · All — and Job / Kind / PM pickers.
      A PM sees his jobs: Waiting on me · Waiting on Wesley or Nick · All.
-     The office sees what is escalated to it plus the office items: Waiting on me · Escalated · All.
+     The office sees what is escalated to it, every PM step (patch APOFFICE) and the office items: Waiting on me · Escalated · All.
      Each row: kind, title, the job (PO · name · address), who it waits on, how long (and the 24-hour clock to the
      office at the admin step), the amount when there is money, and the buttons
        ✅ Approve (the existing flow: the portal function for queue items, _gcPmDecideSub, _gcApproveInvoice, the
@@ -158036,7 +158068,7 @@ function rowQueue(x, mine, now){
   var amt = num(m.amount || m.amt || m.total) || (inv ? num(inv.amt || inv.amount) : 0);
   var esc8 = escalatedQ(x, now), since = Date.parse((x.step === 'admin' ? x.adminSince : '') || x.createdAt || x.updatedAt || 0) || now;
   var step = x.status === 'sending' ? 'sending' : x.step === 'pm' ? 'pm' : esc8 ? 'office' : 'admin';
-  var waits = step === 'sending' ? 'Sending now…' : step === 'pm' ? 'PM — ' + (s(x.pm) || 'no PM') : step === 'office' ? 'Office — escalated (Wesley / Nick did not answer in 24 h)' : 'Wesley or Nick';
+  var waits = step === 'sending' ? 'Sending now…' : step === 'pm' ? 'PM ' + (s(x.pm) ? s(x.pm) + ' ' : '') + 'or the office' :   /* patch APOFFICE */ step === 'office' ? 'Office — escalated (Wesley / Nick did not answer in 24 h)' : 'Wesley or Nick';
   var clock = step === 'admin' ? (function(){ var left = ESC_MS - (now - (Date.parse(x.adminSince || '') || since)); return left > 0 ? 'goes to the office in ' + dur(left) : 'goes to the office now'; })() : '';
   var chain = arr(x.approvals).map(function(a){ return '✓ ' + (a.role === 'pm' || a.step === 'pm' ? 'PM ' : a.role === 'office' ? 'Office ' : '') + s(a.by); }).join(' → ');
   var steps = arr(x.steps), lastStep = steps.indexOf(x.step) >= steps.length - 1;
@@ -158051,7 +158083,7 @@ function rowSub(a, mine, now){
   var p = proj(a.pid), id = s(a.invId || a.id);
   var t = Date.parse(a.submittedAt || a.createdAt || a.at || a.date || 0) || num(a.queuedAt) || now;
   return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (s(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + s(a.desc).slice(0, 60) : ''),
-    pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM — ' + (s(a.pmName) || s(p && p.pm) || 'no PM'), since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
+    pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM ' + ((s(a.pmName) || s(p && p.pm)) ? (s(a.pmName) || s(p && p.pm)) + ' ' : '') + 'or the office',   /* patch APOFFICE */ since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
     escalated: false, chain: a.kickedBackToPm ? '↩ sent back by ' + s(a.deniedBy) : '',
     approve: mine || adminLike() ? { l: '✅ Approve', mode: (typeof W._gcSubPayBlocked === 'function' && W._gcSubPayBlocked(id)) ? undefined : 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',   /* patch PAYFAST: a stopped one opens the pay-check window at once */
     open: { l: 'Open / Edit', f: function(){ panelAt('[data-sub="' + cssq(id) + '"]'); } }, edit: { l: '✏️ Open sub invoice', form: 'sub' },
@@ -158077,7 +158109,7 @@ function rowEq(e, mine, now){
 function rowExp(a, mine, now){
   var pid = s(a.jobId || a.pid), p = proj(pid), id = s(a.id || a.expId);
   return { key: 'exp:' + id, id: id, src: 'exp', kind: 'expense', kindL: 'Expense', icon: '🧾', title: 'Expense — ' + (s(a.vendor || a.payee || a.desc) || 'expense'),
-    pid: pid, job: jobLine(p, ''), pm: s(a.pm) || s(p && p.pm), step: a.status === 'escalated' ? 'office' : 'pm', waits: a.status === 'escalated' ? 'Escalated — needs attention' : 'PM — ' + (s(a.pm) || 'no PM'),
+    pid: pid, job: jobLine(p, ''), pm: s(a.pm) || s(p && p.pm), step: a.status === 'escalated' ? 'office' : 'pm', waits: a.status === 'escalated' ? 'Escalated — needs attention' : 'PM ' + (s(a.pm) ? s(a.pm) + ' ' : '') + 'or the office',   /* patch APOFFICE */
     since: Date.parse(a.enteredAt || a.createdAt || a.at || 0) || 0, clock: '', amount: num(a.amount || a.amt), mine: mine, escalated: a.status === 'escalated', chain: '',
     approve: { l: '✅ Approve', mode: 'defer', f: function(){ var eid = s(a.expId || a.id), ok = call('_gcApproveExpense', eid); setExps(function(e){ return s(e.id) === eid && !e._posted ? Object.assign({}, e, { _posted: true, approved: true, postedHow: 'approved by ' + myName(), postedAt: new Date().toISOString() }) : e; }); return ok; } }, jobPick: 'exp', eid: s(a.expId || a.id),
     open: { l: 'Open / Edit', f: function(){ call('_gcOpenExpenseApprovals'); } }, edit: { l: '✏️ Open expense', form: 'exp' },
@@ -158131,9 +158163,9 @@ function build0(){
   function jobPm(pid){ var p = proj(pid); return s(p && (p.pm || p.projectManager)); }
   Q.forEach(function(x){
     if (!x || (x.status !== 'waiting' && x.status !== 'sending')) return;
-    var vis = sc.kind === 'admin' ? true : sc.kind === 'office' ? (escalatedQ(x, now) || x.status === 'sending') : sc.kind === 'pm' ? (samePerson(x.pm, who) || (!sc.preview && x.pmEmail && low(x.pmEmail) === myEmail()) || samePerson(jobPm(x.jobId), who)) : false;
+    var vis = sc.kind === 'admin' ? true : sc.kind === 'office' ? (escalatedQ(x, now) || x.status === 'sending' || x.step === 'pm') :   /* patch APOFFICE */ sc.kind === 'pm' ? (samePerson(x.pm, who) || (!sc.preview && x.pmEmail && low(x.pmEmail) === myEmail()) || samePerson(jobPm(x.jobId), who)) : false;
     if (!vis) return;
-    var mine = sc.preview ? (sc.kind === 'pm' ? x.step === 'pm' : escalatedQ(x, now)) : false;
+    var mine = sc.preview ? (sc.kind === 'pm' ? x.step === 'pm' : (escalatedQ(x, now) || (x.status === 'waiting' && x.step === 'pm'))) : false;   /* patch APOFFICE */
     add(rowQueue(x, mine, now));
   });
   S.forEach(function(a){
@@ -178155,7 +178187,7 @@ function open(id){
   });
 }
 
-/* ── JOB-COST APPROVAL ROUTING: PM → office after 24 h (or no PM) (an admin only as the job's PM) ── */
+/* ── JOB-COST APPROVAL ROUTING: the PM and the office at once (patch APOFFICE; was: office after 24 h) (an admin only as the job's PM) ── */
 function since(v){ var n = +v; if (n) return n; var t = Date.parse(v || ''); return isNaN(t) ? 0 : t; }
 function lsList(k){ return arr(lsGet(k)); }
 function subCostExp(id){ var e = arr(crm().expenses).filter(function(x){ return s(x.id) === s(id); })[0]; return !!(e && (e._fromSub === true || e.subInvId)); }
@@ -178164,13 +178196,13 @@ function routeGroups(g){
   g.subinv = lsList('gc_sub_approvals').filter(function(a){
     if (a.status !== 'pending_pm') return false;
     var pm = low(a.pmName), mine = pm && pm === mn;
-    return mine || (off && (!pm || now - since(a.createdAt) >= DAY));
+    return mine || off;   /* patch APOFFICE: "anything a PM can approve, the office can approve too" */
   }).map(function(a){ return { id: 'sub:' + s(a.invId || a.id), title: s(a.sub || a.subName) }; });
   g.expense = lsList('gc_expense_approvals').filter(function(a){
     if (a.status !== 'pending_pm' && a.status !== 'escalated') return false;
     if (subCostExp(a.expId)) return false;   /* a sub invoice's cost row: approved with the sub invoice */
     var pm = low(a.pm), mine = pm && pm === mn && a.status === 'pending_pm';
-    return mine || (off && (!pm || a.status === 'escalated' || now - since(a.enteredAt) >= DAY));
+    return mine || off;   /* patch APOFFICE */
   }).map(function(a){ return { id: 'exp:' + s(a.expId), title: s(a.payee || a.desc) }; });
   return g;
 }
@@ -178196,7 +178228,7 @@ function route(){
 function tick(){ try { hookItems(); route(); } catch (e) {} }
 tick(); RI.call(W, tick, 2000);
 W._gcSubInv = { take: take, post: post, load: load, items: items, place: place, dismiss: dismiss, open: open, route: route, routeGroups: routeGroups, state: function(){ return S; } };
-try { console.log('[GC] 🧾 Sub invoices e-mailed in are booked by themselves; job-cost approvals: PM → office after 24 h (patch SUBINV)'); } catch (e) {}
+try { console.log('[GC] 🧾 Sub invoices e-mailed in are booked by themselves; job-cost approvals: PM and office at once (patch SUBINV, APOFFICE)'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-ownertodo">
@@ -181663,6 +181695,7 @@ function saveProject(pid, fn){
 function matPending(){
   var out = [], adm = false; try { adm = !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) {}
   var n = low(myName());
+  if (/^office/i.test(role()) || low(lsGet('grayco_user')) === 'office@grayco-cs.com') adm = true;   /* patch APOFFICE: the office approves what a PM can */
   arr(C().projects).forEach(function(p){ if (!p) return; arr(p.materialRequests).forEach(function(m){ if (m && m.status === 'pending_pm' && (adm || low(p.pm) === n || low(p.apm) === n)) out.push({ p: p, m: m }); }); });
   return out;
 }
@@ -182414,14 +182447,16 @@ function matSheet(mid){
     '<div class="logbox"><b>' + esc(m.item) + '</b>' + (m.qty ? ' × ' + esc(m.qty) : '') + (m.neededBy ? '\nNeeded by ' + esc(m.neededBy) : '') + (m.note ? '\n' + esc(m.note) : '') + '</div>' +
     '<div class="acts"><button type="button" data-no>Don\'t approve</button><button type="button" class="go" data-ok>Approve order</button></div>');
   function set(st){ return saveProject(p.id, function(q){ q.materialRequests = arr(q.materialRequests).map(function(x){ return x && x.id === mid ? Object.assign({}, x, { status: st, decidedBy: myName(), decidedAt: nowIso(), updatedAt: nowIso() }) : x; }); }); }
+  function decided(){ var still = false; arr(C().projects).some(function(q){ var x = arr(q && q.materialRequests).filter(function(y){ return y && y.id === mid; })[0]; if (x) { still = x.status === 'pending_pm'; return true; } return false; }); if (still) return false; o.remove(); toast('Already decided by someone else.'); lastSig = ''; render(true); return true; }   /* patch APOFFICE: first one wins */
   o.querySelector('[data-ok]').onclick = function(){
+    if (decided()) return;
     this.disabled = true;
     set('approved').then(function(){
       try { if (typeof W._gcSupplierOrderDraft === 'function') W._gcSupplierOrderDraft({ pid: p.id, lines: [{ desc: m.item, qty: m.qty }], neededBy: m.neededBy, source: 'field request' }); else notifyTeam(p, '🛒 ORDER (approved by ' + myName() + '): ' + m.item + (m.qty ? ' × ' + m.qty : '') + (m.neededBy ? ' — needed by ' + m.neededBy : '')); } catch (e) {}
       o.remove(); toast('✅ Approved — the order is on its way to the office.'); lastSig = ''; render(true);
     });
   };
-  o.querySelector('[data-no]').onclick = function(){ this.disabled = true; set('declined').then(function(){ o.remove(); toast('Not approved.'); lastSig = ''; render(true); }); };
+  o.querySelector('[data-no]').onclick = function(){ if (decided()) return; this.disabled = true; set('declined').then(function(){ o.remove(); toast('Not approved.'); lastSig = ''; render(true); }); };
 }
 function punchSheet(p){
   var o = sheet('<h3>☐ Punch item — ' + esc(p.name) + '</h3>' +

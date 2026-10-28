@@ -1700,8 +1700,12 @@ async function approvalAction(body, who){
   const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
   if (who && who.marketing === true && !mmOk) return { status: 403, out: { ok: false, error: 'This one needs an admin.' } };
   const office = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
-  if (!admin && !office && !(it0.step === 'pm' && isPm)) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + ') or an admin can approve this.' } };
-  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : (office ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
+  /* patch APOFFICE (owner 10/28): "anything a PM can approve, the office can approve too" — an item waiting at the PM step is
+     the office's at once as well (approve / don't approve / edit). The office takes the PM's step only: a money / legal paper
+     still goes on to Wesley or Nick afterwards, exactly as after the PM. Whoever acts first wins (the claim below). */
+  const officePm = !admin && !office && !isPm && it0.step === 'pm' && await isOffice(who);
+  if (!admin && !office && !(it0.step === 'pm' && (isPm || officePm))) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + '), the office or an admin can approve this.' } };
+  const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : ((office || officePm) ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
   if (office && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
@@ -1773,7 +1777,7 @@ async function approvalAction(body, who){
    approve." An item at the ADMIN step (money / legal after the PM, or a job with no PM) that nobody approved or
    rejected within 24 hours of reaching that step is escalated: the office (gc_staff role office, or a CRM user whose
    role says Office) may then approve, edit or not approve it; the admins still can too — whoever acts first wins,
-   and the approval records who, with which role, and when. PM-step items are never escalated. Run every 15 minutes
+   and the approval records who, with which role, and when. PM-step items are not escalated: the office may take them at once (patch APOFFICE). Run every 15 minutes
    (approval-escalate.js) and whenever the CRM shows a list (op "escalate"). On escalation: once, an office to-do,
    a CRM notice for the office and for the admins (gc_kv "gc_appr_notices"), and a phone push to both. ── */
 const ESC_MS = 24 * 3600e3;
