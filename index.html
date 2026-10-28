@@ -131104,6 +131104,7 @@ function card(x){
     '<div style="font-weight:800;font-size:15px;line-height:1.3">' + (ICON[x.kind] || '✉️') + ' ' + esc(titleOf(x)) + '</div>' +
     '<div style="font-size:12px;color:#475569;margin-top:3px">' + esc(KIND[x.kind] || x.kind) + (x.jobName ? ' · ' + esc(x.jobName) : '') + ' · ' + (x.channel === 'sms' ? '💬 text' : x.channel === 'portal' ? '📄 customer portal — no e-mail' : '✉️ ' + esc(x.to)) + '</div>' +
     '<div style="font-size:12px;color:#92400e;margin-top:2px">' + who + esc(chain) + '</div>' +
+    (window._gcApprSay ? '<div style="font-size:13px;color:#0f172a;background:#f1f5f9;border-radius:8px;padding:6px 8px;margin-top:6px">' + esc(window._gcApprSay(x, last)) + '</div>' : '') +   /* patch APPTCONF */
     ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
     (x.lastError ? '<div style="font-size:12px;color:#b91c1c;margin-top:2px">Last try: ' + esc(x.lastError) + '</div>' : '') +
     (x.editedBy ? '<div style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:2px">' + esc(editedLine(x)) + '</div>' : '') +
@@ -131114,7 +131115,7 @@ function card(x){
     '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px">' +
       '<button type="button" class="_ap2Prev" style="background:none;border:none;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;padding:4px 0;text-decoration:underline">Preview / Edit</button>' +
-      '<span style="font-size:11px;color:#64748b">' + (x.kind === 'portal_publish' ? 'Approve puts it in the customer’s portal' : last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +
+      '<span style="font-size:11px;color:#64748b">' + (x.kind === 'portal_publish' ? 'Approve puts it in the customer’s portal' : last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +   /* patch APPTCONF: the plain sentence is above the buttons */
     '</div></div>';
 }
 function act(id, op, extra){
@@ -158296,6 +158297,7 @@ function rowHtml(r, now, where){
     + (W._gcApprovalChip ? W._gcApprovalChip(r) : '')   /* patch APPRORDER */
     + '<div class="apx-t">' + r.icon + ' <span class="apx-kl">' + esc(r.kindL) + '</span> · ' + esc(r.title) + '</div>'
     + (r.job ? '<div class="apx-j">🏗 ' + esc(r.job) + '</div>' : '')
+    + (r.src === 'queue' && W._gcApprSay && r.approve ? (function(){ var x = null; try { x = queue().filter(function(y){ return s(y.id) === s(r.id); })[0]; } catch (e) {} var t = x ? W._gcApprSay(x, /Approve & send|portal/.test(s(r.approve.l))) : ''; return t ? '<div class="apx-say" style="font-size:13px;color:#0f172a;background:#f1f5f9;border-radius:8px;padding:6px 8px;margin:4px 0">' + esc(t) + '</div>' : ''; })() : '')   /* patch APPTCONF */
     + (r.mine && !DONE[r.key] ? jobPickHtml(r) : '')
     + '<div class="apx-m"><span class="apx-w ' + esc(r.step) + '">Waits on: ' + esc(r.mine ? 'you' + (r.step !== 'me' && r.waits ? ' (' + r.waits + ')' : '') : r.waits) + '</span>'
     + (age(r, now) ? '<span>⏱ ' + esc(age(r, now)) + '</span>' : '')
@@ -183888,5 +183890,43 @@ D.addEventListener('click', function(e){
 }, true);
 W._gcAdmTabsFix = fix;
 try { console.log('[GC] ADMTABS: Admin setting cards under the settings hub, tab content right under the tabs'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-apptconf">
+/* __GC_PATCH_APPTCONF__ — what Approve does, in plain words; appointment confirmation duplicates taken off once */
+(function(){
+'use strict';
+if (window.__GC_PATCH_APPTCONF__) return; window.__GC_PATCH_APPTCONF__ = true;
+var W = window;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function proj(pid){ var l = (W._crm && W._crm.projects) || []; for (var i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === String(pid)) return l[i]; return null; }
+function firstLine(html){
+  var t = s(String(html || '').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'").replace(/&quot;/g, '"').replace(/[ \t]+/g, ' '));
+  var lines = t.split(/\n+/).map(s).filter(function(l){ return l && !/^(hi|hello|dear|good (morning|afternoon))\b/i.test(l); });
+  var l = (lines[0] || '').replace(/\s+([.,!?;:])/g, '$1').replace(/[.]+$/, ''); return l.length > 140 ? l.slice(0, 137) + '…' : l;
+}
+W._gcApprSay = function(x, last){
+  if (!x) return '';
+  var p = proj(x.jobId || x.pid), who = s(p && (p.client || p.customerName)) || s(x.jobName) || 'the customer';
+  var to = s(x.to), subj = s(x.subject), fl = firstLine(x.html || x.text || x.body);
+  var what = x.kind === 'portal_publish' ? 'puts it in ' + who + '’s customer portal (no e-mail)' : (x.channel === 'sms' ? 'texts ' + who + (to ? ' (' + to + ')' : '') : 'sends this e-mail to ' + who + (to ? ' (' + to + ')' : '')) + (subj ? ': “' + subj + '”' : '') + (fl ? ' — ' + fl : '');
+  return last ? 'Approve ' + what + '. Don’t approve: nothing is sent.' : 'Approve passes it to Wesley or Nick; when they approve, it ' + what.replace(/^sends/, 'sends').replace(/^puts/, 'goes') + '. Don’t approve: nothing is sent.';
+};
+/* duplicates already waiting: same job, day and recipient — the first stays, the others are taken off (rejected = never sent) */
+var tried = {};
+function day(x){ return s((x.meta || {}).day) || ((s(x.id).match(/_(\d{8})/) || [])[1] || ''); }
+function sweep(){
+  if (!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || typeof W._gcApprovalAct !== 'function' || typeof W._gcCustApprovals !== 'function') return;
+  var all = []; try { all = (W._gcCustApprovals() || {}).all || []; } catch (e) { return; }
+  var first = {};
+  all.filter(function(x){ return x && x.kind === 'appt_confirm' && /^(waiting|sending|sent)$/.test(s(x.status)) && day(x); })
+    .sort(function(a, b){ return (Date.parse(a.createdAt || 0) || 0) - (Date.parse(b.createdAt || 0) || 0); })
+    .forEach(function(x){ var k = s(x.jobId) + '|' + day(x) + '|' + s(x.to).toLowerCase(); if (!first[k]) { first[k] = x; return; }
+      if (x.status !== 'waiting' || tried[x.id]) return; tried[x.id] = 1;
+      try { Promise.resolve(W._gcApprovalAct(x.id, 'reject', { reason: 'Duplicate: one appointment confirmation per job and day (kept “' + s(first[k].title).slice(0, 80) + '”)' })).catch(function(){}); } catch (e) {} });
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { sweep(); } catch (e) {} }, 60000);
+(W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ try { sweep(); } catch (e) {} }, 20000);
+W._gcApptConf = { sweep: sweep, say: W._gcApprSay };
 })();
 </script>
