@@ -45,11 +45,19 @@ function J(event, code, body){
     'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' }, body: JSON.stringify(body) };
 }
 
+/* Netlify's scheduler: no HTTP method (older runtimes), or a POST with { next_run } and no Authorization header */
+function isScheduledCall(event){
+  if (!event.httpMethod) return true;
+  if (event.httpMethod !== 'POST') return false;
+  const h = event.headers || {}; if (s(h.authorization || h.Authorization)) return false;
+  try { const b = JSON.parse(event.body || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
+}
 exports.handler = async function(event){
   event = event || {};
   const m = event.httpMethod, qs = event.queryStringParameters || {};
-  /* the hourly run (Netlify calls a scheduled function with no HTTP method) */
-  if (!m) {
+  /* the hourly run. patch AUTOFIX-REF: Netlify calls a scheduled function as a POST whose body is { "next_run": … } (no
+     sign-in), not with "no HTTP method" — before, the hourly run fell through to the sign-in check (401) and never swept */
+  if (isScheduledCall(event)) {
     if (env('REFERRAL_OFF') === '1' || !L().dbReady()) return { statusCode: 200, body: JSON.stringify({ ok: true, off: true }) };
     try { const r = await R.sweep({}); return { statusCode: 200, body: JSON.stringify(Object.assign({ ok: true }, r)) }; }
     catch (e) { console.error('[referral] sweep failed: ' + (e && e.message)); return { statusCode: 500, body: JSON.stringify({ ok: false }) }; }
@@ -128,3 +136,4 @@ exports.handler = async function(event){
     return J(event, 503, { ok: false, error: 'The referral program could not do that right now — try again.' });
   }
 };
+exports._t = { isScheduledCall: isScheduledCall };
