@@ -15,6 +15,18 @@
      A call comes in   → POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=voice
      A message comes in → POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=sms
    Every POST must carry a valid X-Twilio-Signature (HMAC-SHA1 with TWILIO_AUTH_TOKEN) — anything else is 403.
+     C) patches CALLCHAIN + CALLSCREEN (owner 10/28: "call in order office, nick owner 1, wesley owner 2, general manager,
+        lead pm" · "these leads need to be qualified … everything else we do not accept on this phone number"): the
+        📞 Call order (Admin; _lib/callorder.js, gc_lead_inbox_kv "gc_call_order"). The caller first hears the menu
+        (1 work · 2 current customer · 3 anything else / sales); nothing twice → goodbye (likely a robocall); 3, a blocked
+        number or a failed STIR/SHAKEN attestation → "we don't take sales calls" — no ring, no text, no lead, logged only.
+        1 → "in a few words, what work do you need?" → the call order rings one at a time (<Dial answerOnBridge
+        action=…?event=dialdone&step=N>), each person first hears "GrayCo call: <what they said>. Press 1 to accept"
+        (<Number url=…?event=whisper>), so a voicemail does not take the call. 2 → the job's PM first (caller's number on a
+        job), then the call order. Nobody accepts → the missed call below (one text, lead / call-back to-do with what
+        they said). Every hop is a new signed webhook. Log: gc_lead_inbox_kv "gc_call_log" (Admin card: the last 50).
+        This runs before the rc-r13 24/7 emergency chain (patch CHAIN, TWILIO_CALL_CHAIN=1), which is only reached when
+        an admin turns both the call order and the screening off.
 
    A missed call:
      · the caller gets ONE text (not again within 12 hours, never after they texted STOP):
@@ -57,7 +69,7 @@ function now(){ return typeof exports._now === 'function' ? exports._now() : Dat
 
 function ready(){ return !!(env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM')); }
 function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
-function hookUrl(ev){ return site() + '/.netlify/functions/missed-call?event=' + ev; }
+function hookUrl(ev, q){ return site() + '/.netlify/functions/missed-call?event=' + ev + (q ? '&' + Object.keys(q).map(k => k + '=' + encodeURIComponent(String(q[k]))).join('&') : ''); }   /* patch CALLCHAIN: the exact URL Twilio calls back (and signs) */
 function L(){ return require('./bid-inbox.js')._lib; }
 /* patch CHAIN: the 24/7 emergency line — on call → insurance → admins (_lib/callchain.js) */
 let CC_ = null;
@@ -144,12 +156,12 @@ function box(head, body){
 }
 
 /* ── an existing customer's missed call → a "📞 Call back" to-do on that job ── */
-async function callBackTodo(cust, ph, callSid, at){
+async function callBackTodo(cust, ph, callSid, at, what){
   const C = core();
   let pm = null; try { pm = cust.pm ? await C.pmByName(cust.pm) : null; } catch (e) {}
   const id = 'MISSED_' + phone10(ph) + '_' + at.slice(0, 10);
   const label = '📞 Call back ' + (cust.client || tidy(ph)) + ' — missed call' + (cust.job ? ' (' + cust.job + ')' : '');
-  const line = 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC from ' + tidy(ph) + ' — the automatic text went out.';
+  const line = 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC from ' + tidy(ph) + ' — the automatic text went out.' + (what ? ' They said: “' + clip(what, 200) + '”.' : '');   /* patch CALLSCREEN */
   let r = { ok: false };
   try {
     r = await C.kvListUpdate('gc_office_tasks', function(l){
@@ -168,9 +180,12 @@ async function callBackTodo(cust, ph, callSid, at){
 }
 
 /* ── one missed call ── */
-async function missed(p, how){
+async function missed(p, how, extra){
+  extra = extra || {};   /* patch CALLSCREEN: { what } — what the caller said they need */
   const ph = phone10(p.From), callSid = s(p.CallSid) || ('call-' + ph + '-' + nowIso().slice(0, 16)), at = nowIso();
   if (ph.length !== 10 || /^(anonymous|restricted|unknown|private)/i.test(s(p.From))) return { skipped: 'no caller id' };
+  /* patch CALLCHAIN: our own office line / Twilio number as the caller ID (a forward that shows the forwarding line) is no lead and gets no text */
+  if (ph === CO().companyPhone() || ph === phone10(env('TWILIO_FROM'))) return { skipped: 'our own number' };
   /* claim the call (a retry from Twilio or a second webhook for the same call does nothing) */
   let first = false, textIt = false;
   await stateCas(st => {
@@ -193,7 +208,7 @@ async function missed(p, how){
   /* existing customer? */
   let cust = null; try { cust = await WI().findCustomer({ phone: ph, email: '' }); } catch (e) {}
   if (cust && (cust.pid || cust.client)) {
-    out.customer = await callBackTodo(cust, ph, callSid, at);
+    out.customer = await callBackTodo(cust, ph, callSid, at, s(extra.what));
     await stateCas(st => { st.owner[ph] = { todo: out.customer.todo, pid: s(cust.pid), pm: s(cust.pm), at }; return true; }).catch(() => {});
     return out;
   }
@@ -201,15 +216,139 @@ async function missed(p, how){
   const who = s(p.CallerName) && !/^(wireless caller|unknown|anonymous)/i.test(s(p.CallerName)) ? s(p.CallerName).replace(/\b\w+/g, w => w[0].toUpperCase() + w.slice(1).toLowerCase()) : '';
   const city = [s(p.FromCity), s(p.FromState)].filter(Boolean).join(', ');
   const f = { type: 'estimate', name: who || 'Caller ' + tidy(ph), email: '', phone: ph, address: '', city: s(p.FromCity), state: s(p.FromState).slice(0, 2), zip: s(p.FromZip),
-    message: 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (city ? ' (caller ID area: ' + city + ')' : '') + '. ' + (out.text.ok ? 'The automatic text went out.' : 'No automatic text (' + (out.text.skipped || out.text.why || 'not sent') + ').'),
+    message: 'Missed call ' + at.slice(0, 16).replace('T', ' ') + ' UTC' + (city ? ' (caller ID area: ' + city + ')' : '') + '. ' + (out.text.ok ? 'The automatic text went out.' : 'No automatic text (' + (out.text.skipped || out.text.why || 'not sent') + ').') + (s(extra.what) ? ' They said they need: “' + clip(extra.what, 300) + '”.' : ''),
     company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '', project: '', bidDue: '', plansLink: '', buildings: '', plan: '', urgency: '' };
   const sid = crypto.createHash('sha256').update('missed|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
   const r = await WI().fileLead(f, { sid, source: 'Missed call', how: 'a missed call to the GrayCo number', formLabel: 'Missed call', customer: null,
-    title: 'Missed call — ' + (who || tidy(ph)) + (city ? ' — ' + city : ''), leadExtra: { missedCall: true, callSid } });
+    title: 'Missed call — ' + (who || tidy(ph)) + (city ? ' — ' + city : ''), leadExtra: Object.assign({ missedCall: true, callSid }, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
   out.lead = r.id; out.action = r.action;
   await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
   out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
   return out;
+}
+
+/* ── patches CALLCHAIN + CALLSCREEN: the menu, then the 📞 Call order one at a time ── */
+function CO(){ return require('./_lib/callorder.js'); }
+const SAYV = '<Say voice="Polly.Joanna">';
+const HOLD = 'Thanks for calling GrayCo Construction Services, please hold while we connect you.';
+const HOLD2 = 'Thank you. Please hold while we connect you.';
+const ASK_WHAT = 'In a few words, what work do you need?';
+const SALES = "We don't take sales calls on this line. Please e-mail office at grayco-cs.com. Goodbye.";
+const BYE_NOINPUT = 'Goodbye.';
+async function orderCfg(){
+  let raw = null; try { raw = await L().kvGet(CO().KEY); } catch (e) { raw = null; }
+  if (raw && typeof raw === 'object') return { cfg: CO().clean(raw), saved: true };
+  const d = CO().defaults(), ring = phone10(env('TWILIO_RING_TO'));   /* nothing saved: the owner's order, or TWILIO_RING_TO alone when set */
+  if (ring.length === 10) d.slots = [{ id: 'ringto', label: 'Office', on: true, kind: 'phone', phone: ring, person: '' }];
+  return { cfg: d, saved: false };
+}
+/* the call log (gc_lead_inbox_kv "gc_call_log"): one row per call, newest last, 200 kept */
+async function logGet(sid){ try { const v = await L().kvGet(CO().LOG_KEY); return (v && Array.isArray(v.calls) ? v.calls : []).find(x => x && x.sid === sid) || null; } catch (e) { return null; } }
+async function logPut(sid, patch){
+  if (!sid) return null;
+  let row = null;
+  try {
+    await L().kvCas(CO().LOG_KEY, v => {
+      v = v && typeof v === 'object' ? v : {}; const l = Array.isArray(v.calls) ? v.calls : [];
+      row = l.find(x => x && x.sid === sid);
+      if (!row) { row = { sid, at: nowIso() }; l.push(row); }
+      Object.assign(row, patch, { upd: nowIso() });
+      v.calls = l.slice(-200); return v;
+    });
+  } catch (e) {}
+  return row;
+}
+async function orderList(cfg, p, choice){
+  let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
+  let ours = [env('TWILIO_FROM')]; try { const set = SMS().settings(await L().kvGet(SMS().SETTINGS_KEY)); ours = ours.concat(require('./_lib/smsroute.js').numbers(set, env).map(x => x.number)); } catch (e) {}
+  const c = JSON.parse(JSON.stringify(cfg));
+  if (!c.on) c.slots = [];
+  if (choice === '2') {   /* a current customer: their job's PM first, when the caller's number is on a job */
+    try { const cust = await WI().findCustomer({ phone: phone10(p.From), email: '' }); const u = cust && cust.pm ? require('./_lib/people.js').findUser(data.users, cust.pm) : null;
+      if (u && CO().userPhone(u).length === 10) c.slots.unshift({ id: 'jobpm', label: 'Job PM', on: true, kind: 'phone', phone: CO().userPhone(u), person: '' }); } catch (e) {}
+  }
+  return CO().resolve(c, data, CO().callCtx(p, ours)).list;
+}
+function menuTwiml(cfg, n){
+  return twiml('<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" hints="one, two, three, construction, customer, sales" actionOnEmptyResult="true" action="' + esc(hookUrl('menu', { try: n })) + '" method="POST">'
+    + SAYV + esc(cfg.screen.greeting) + '</Say></Gather><Redirect method="POST">' + esc(hookUrl('menu', { try: n })) + '</Redirect>');
+}
+function dialTwiml(cfg, list, i, sid, sayText){
+  const x = list[i];
+  const num = cfg.screen.whisper ? '<Number url="' + esc(hookUrl('whisper', { step: i, p: sid })) + '" method="POST">+1' + x.number + '</Number>' : '<Number>+1' + x.number + '</Number>';
+  return twiml((sayText ? SAYV + esc(sayText) + '</Say>' : '') + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', { step: i })) + '" method="POST">' + num + '</Dial>');
+}
+async function finishMissed(p, row, how){
+  const sid = s(p.CallSid);
+  await logPut(sid, { outcome: 'missed' });
+  await missed(p, how, { what: s(row && row.what) });
+  return sayBye();
+}
+async function startRing(cfg, p, row, sayText){
+  const list = await orderList(cfg, p, s(row && row.choice));
+  if (!list.length) return finishMissed(p, row, 'call order: nobody to ring');
+  await logPut(s(p.CallSid), { outcome: 'ringing', step: 0 });
+  return dialTwiml(cfg, list, 0, s(p.CallSid), sayText);
+}
+/* → TwiML, or null when the call order and the screening are both off (the older paths below run) */
+async function callOrder(ev, p, qs){
+  const { cfg } = await orderCfg(), sid = s(p.CallSid);
+  const active = cfg.on || cfg.screen.on;
+  if (ev === 'voice') {
+    if (!active) return null;
+    const from = phone10(p.From);
+    if (CO().isBlocked(cfg, from) || CO().attestationFailed(p)) {   /* known spam: like "3" */
+      await logPut(sid, { from, choice: '3', outcome: CO().isBlocked(cfg, from) ? 'blocked number' : 'caller ID failed (STIR/SHAKEN ' + s(p.StirVerstat) + ')' });
+      return twiml(SAYV + esc(SALES) + '</Say><Hangup/>');
+    }
+    if (cfg.screen.on) { await logPut(sid, { from, choice: '', outcome: 'menu' }); return menuTwiml(cfg, 1); }
+    const row = await logPut(sid, { from, choice: 'direct', outcome: 'ringing' });
+    return startRing(cfg, p, row, HOLD);
+  }
+  if (ev === 'menu') {
+    const c = CO().choiceOf(p), n = parseInt(qs.try, 10) || 1;
+    if (!c) {
+      if (n < 2) return menuTwiml(cfg, 2);   /* once more */
+      await logPut(sid, { from: phone10(p.From), outcome: 'no answer to menu (likely robocall)' });
+      return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');
+    }
+    if (c === '3') { await logPut(sid, { from: phone10(p.From), choice: '3', outcome: 'sales / other (pressed 3)' }); return twiml(SAYV + esc(SALES) + '</Say><Hangup/>'); }
+    const row = await logPut(sid, { from: phone10(p.From), choice: c, outcome: c === '1' ? 'new work' : 'current customer' });
+    if (c === '1' && cfg.screen.askWhat) {
+      return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(hookUrl('what')) + '" method="POST">' + SAYV + esc(ASK_WHAT) + '</Say></Gather>'
+        + '<Redirect method="POST">' + esc(hookUrl('what')) + '</Redirect>');
+    }
+    return startRing(cfg, p, row, HOLD2);
+  }
+  if (ev === 'what') {
+    const row0 = await logGet(sid);
+    if (!row0 || ['1', '2', 'direct'].indexOf(s(row0.choice)) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
+    const row = await logPut(sid, { what: clip(s(p.SpeechResult), 200) });
+    return startRing(cfg, p, row, HOLD2);
+  }
+  if (ev === 'whisper') {   /* the person's phone answered: "GrayCo call: … press 1 to accept" (a voicemail does not press 1) */
+    const parent = s(qs.p) || s(p.ParentCallSid), row = await logGet(parent), step = parseInt(qs.step, 10) || 0;
+    const what = s(row && row.what) || (row && row.choice === '2' ? 'a current customer' : 'a new project');
+    const line = SAYV + 'GrayCo call: ' + esc(clip(what, 140)) + '. Press 1 to accept.</Say>';
+    return twiml('<Gather numDigits="1" timeout="6" action="' + esc(hookUrl('accept', { step, p: parent })) + '" method="POST">' + line + '<Pause length="1"/>' + line + '</Gather><Hangup/>');
+  }
+  if (ev === 'accept') {
+    const parent = s(qs.p) || s(p.ParentCallSid);
+    if (s(p.Digits) !== '1') return twiml('<Hangup/>');
+    await logPut(parent, { accepted: true, acceptedStep: parseInt(qs.step, 10) || 0, acceptedBy: phone10(p.To || p.Called) });
+    return twiml('');   /* connects them to the caller */
+  }
+  if (ev === 'dialdone' && qs.step != null && /^\d{1,3}$/.test(s(qs.step))) {
+    const row = await logGet(sid), step = parseInt(qs.step, 10);
+    const list = await orderList(cfg, p, s(row && row.choice)), who = list[step];
+    const answered = /^(completed|answered)$/i.test(s(p.DialCallStatus)) && (!cfg.screen.whisper || !!(row && row.accepted));
+    if (answered) { await logPut(sid, { outcome: 'answered', by: who ? who.label + (who.name ? ' — ' + who.name : '') : '' }); return twiml('<Hangup/>'); }
+    if (!row || ['1', '2', 'direct'].indexOf(s(row.choice)) < 0) return twiml('<Hangup/>');   /* never text a caller who did not press 1 or 2 */
+    if (/^(completed|canceled)$/i.test(s(p.CallStatus))) return finishMissed(p, row, 'call order: the caller hung up while it rang');
+    if (step + 1 < list.length) { await logPut(sid, { step: step + 1 }); return dialTwiml(cfg, list, step + 1, sid, ''); }
+    return finishMissed(p, row, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')');
+  }
+  return null;
 }
 
 /* ── a text in (patch TXT: matched to the job, on Job Messages, e-mailed to the relay list, one approved answer) ── */
@@ -453,7 +592,7 @@ async function inboundSms(p){
 exports.handler = async function(event){
   const m = s(event.httpMethod).toUpperCase(), qs = event.queryStringParameters || {};
   if (m === 'GET' && qs.ping === '1') {
-    return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: env('TWILIO_RING_TO') ? 'ring the office first' : 'office line forwards missed calls',
+    return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: 'menu (1 work · 2 customer · 3 other) → the 📞 Call order (Admin) → missed-call text',
       voiceWebhook: hookUrl('voice'), smsWebhook: hookUrl('sms'), email: !!env('RESEND_API_KEY') });
   }
   if (m !== 'POST') return J(405, { ok: false, error: 'Method not allowed' });
@@ -463,6 +602,7 @@ exports.handler = async function(event){
   const ev = s(qs.event) || 'voice';
   try {
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
+    if (/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
     if (ev === 'voice' && CC().on()) {   /* patch CHAIN */
       const chain = await CC().start(s(p.CallSid), p.From).catch(() => []);
       if (chain.length) return twiml('<Say voice="Polly.Joanna">Thanks for calling GrayCo Construction Services. Please hold while we connect you.</Say>' + dialStep(0, chain));
@@ -500,7 +640,10 @@ exports.handler = async function(event){
       return sayBye();
     }
     if (ev === 'status') {   /* a status callback: only an unanswered / busy / failed call counts */
-      if (/^(no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await missed(p, 'status ' + s(p.CallStatus));
+      if (/^(no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) {
+        const row = await logGet(s(p.CallSid));   /* patch CALLSCREEN: a screened call is texted only after a 1 / 2 */
+        if (!row || ['1', '2', 'direct'].indexOf(s(row.choice)) >= 0) await missed(p, 'status ' + s(p.CallStatus), { what: s(row && row.what) });
+      }
       return twiml('');
     }
     return twiml('');
@@ -509,4 +652,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+exports._test = { callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };

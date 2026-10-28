@@ -8,6 +8,9 @@
 //   GET  ?settings=1 → admins: the automatic-answer settings (rules, hours, relay list)
 //   POST ?settings=1 → admins: save them
 //   POST ?try=1      → admins: { text, pid? } — which answer would go back (nothing is sent)
+//   GET  ?callchain=1 → admins: 📞 Call order (patch CALLCHAIN, _lib/callorder.js): the saved order (or the defaults), the
+//                      people with a phone, who would ring now, the last 50 calls (patch CALLSCREEN: menu answer, outcome);
+//                      POST ?callchain=1 { settings } → save it (order, ring seconds, screening, blocked numbers)
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const S = require('./_lib/sms.js');
@@ -85,6 +88,30 @@ exports.handler = async function(event){
     if (m === 'POST' && qs.send) {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
       const r = await send(who, b); return J(r.code, r.body, C);
+    }
+    if (qs.callchain) {   /* patch CALLCHAIN */
+      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the call order.' }, C);
+      const CC = require('./_lib/callorder.js');
+      let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
+      const ours = [env('TWILIO_FROM')].concat(require('./_lib/smsroute.js').numbers(await getSettings(), env).map(x => x.number));
+      let log = []; try { const lv = await L().kvGet(CC.LOG_KEY); log = (lv && Array.isArray(lv.calls) ? lv.calls : []).slice(-50).reverse().map(x => ({ at: s(x.at), from: CC.tidy(x.from), choice: s(x.choice), what: s(x.what), outcome: s(x.outcome), by: s(x.by) })); } catch (e) {}
+      const out = (cfg, saved) => J(200, { ok: true, saved, settings: cfg, people: CC.peopleWithPhones(data.users), preview: CC.preview(cfg, data, ours),
+        senior: (function(){ try { const u = require('./_lib/people.js').seniorPm(data.users, data.gc_senior_pm); return u ? { name: s(u.name), phone: CC.tidy(CC.userPhone(u)) } : null; } catch (e) { return null; } })(),
+        log,   /* patch CALLSCREEN: the last 50 calls */
+        office: CC.tidy(CC.companyPhone()), ringToEnv: CC.tidy(env('TWILIO_RING_TO')), ready: MC().ready(),
+        voiceWebhook: (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/.netlify/functions/missed-call?event=voice' }, C);
+      if (m === 'GET') {
+        const raw = await L().kvGet(CC.KEY);
+        return raw && typeof raw === 'object' ? out(CC.clean(raw), true) : out(CC.pinPeople(CC.defaults(), data.users), false);
+      }
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const v = CC.clean(b.settings || b);
+        if (!v.slots.length) return J(400, { ok: false, error: 'Keep at least one line in the call order (or turn it off).' }, C);
+        v.by = low(who.email); v.at = nowIso();
+        await L().kvCas(CC.KEY, () => v);
+        return out(v, true);
+      }
     }
     if (qs.settings || qs.try) {
       if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the automatic answers.' }, C);
