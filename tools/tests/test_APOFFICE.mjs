@@ -121,8 +121,11 @@ await t('a money paper: the office takes the PM step only — it then waits on W
   assert.strictEqual((await act(ADMIN, 'approve', 't6')).out.sent, true); assert.strictEqual(SENT.length, n0 + 1);
 });
 
-await t('the 7 AM digest lists a PM-step item for the PM and the office (once each)', async () => {
+await t('the 7 AM digest: a PM-step item is in the PM\'s list; for the office only a "waiting on PMs — optional" count line (APOFFICE2)', async () => {
   await queue('t7', 'portal_link');
+  const lst = JSON.parse(KV[C.AQ_KEY].value);   /* and one the admins left for 24 h — really the office's */
+  lst.push({ id: 't7esc', kind: 'thank_you', title: 'Escalated one', jobId: 'PJ1', pm: 'Steven Park', pmEmail: 'steven.test@grayco-cs.com', steps: ['pm', 'admin'], step: 'admin', escalated: true, approvals: [], status: 'waiting', createdAt: '2026-10-20T00:00:00Z', adminSince: '2026-10-20T00:00:00Z' });
+  put(C.AQ_KEY, JSON.stringify(lst));
   const portalPath = require.resolve(FN + '/portal.js');
   const saved = require.cache[portalPath];
   const list = JSON.parse(KV[C.AQ_KEY].value);
@@ -136,8 +139,10 @@ await t('the 7 AM digest lists a PM-step item for the PM and the office (once ea
     assert.ok(rep.ok);
   } finally { require.cache[portalPath] = saved; }
   const mails = SENT.slice(n0), to = e => mails.filter(m => m.to.includes(e)).map(m => m.html).join('');
-  const hits = h => (h.match(/appr=t7/g) || []).length;
-  assert.strictEqual(hits(to('steven.test@grayco-cs.com')), 1); assert.strictEqual(hits(to('office@grayco-cs.com')), 1);
+  const hits = h => (h.match(/appr=t7(?!esc)/g) || []).length;
+  assert.strictEqual(hits(to('steven.test@grayco-cs.com')), 1); assert.strictEqual(hits(to('office@grayco-cs.com')), 0, 'not in the office\'s list');
+  assert.match(to('office@grayco-cs.com'), /appr=t7esc/); assert.match(to('office@grayco-cs.com'), /\d+ waiting on PMs — optional for you/);
+  assert.doesNotMatch(to('steven.test@grayco-cs.com'), /waiting on PMs/);
   assert.strictEqual(hits(to('wes.test@grayco-cs.com')), 0);
 });
 
