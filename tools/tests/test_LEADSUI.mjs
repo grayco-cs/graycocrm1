@@ -251,10 +251,11 @@ try {
   /* idle: nothing redraws */
   await sleep(3000);
   const idle = await pa.evaluate(ms => new Promise(res => { const m = { hub: 0, body: 0, where: {} }; const key = n => { for (let x = n; x; x = x.parentElement) if (x.id) return x.id; return '?'; };
-    const mo = new window.__NMO(rs => rs.forEach(r => { m.body++; const k = key(r.target); m.where[k] = (m.where[k] || 0) + 1; if (r.target.closest ? r.target.closest('#gc-leads-hub') : (r.target.parentElement && r.target.parentElement.closest('#gc-leads-hub'))) m.hub++; }));
+    const hb = document.getElementById('gc-leads-hub'); let last = hb ? hb.__gcHtml : ''; m.diff = [];
+    const mo = new window.__NMO(rs => rs.forEach(r => { m.body++; if (hb && hb.__gcHtml !== last && m.diff.length < 3) { const cur = hb.__gcHtml || ''; let i = 0; while (i < cur.length && cur[i] === last[i]) i++; m.diff.push(last.slice(Math.max(0, i - 60), i + 60) + ' ⇒ ' + cur.slice(Math.max(0, i - 60), i + 60)); last = cur; } else if (hb && m.diff.length < 3 && r.target.closest && r.target.closest('#gc-leads-hub') && hb.__gcHtml === last) m.diff.push('outside the hub draw: ' + r.type + ' ' + (r.target.className || r.target.nodeName) + ' ' + (r.attributeName || '') + ' +' + (r.addedNodes ? r.addedNodes.length : 0)); const k = key(r.target); m.where[k] = (m.where[k] || 0) + 1; if (r.target.closest ? r.target.closest('#gc-leads-hub') : (r.target.parentElement && r.target.parentElement.closest('#gc-leads-hub'))) m.hub++; }));
     mo.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); (window.__NST || setTimeout)(() => { mo.disconnect(); res(m); }, ms); }), IDLE * 1000);
   T.idle = idle;
-  ok(idle.hub === 0, 'idle ' + IDLE + ' s: the Leads screen does not change (' + idle.hub + ' changes; whole page ' + idle.body + ')', idle.where);
+  ok(idle.hub === 0, 'idle ' + IDLE + ' s: the Leads screen does not change (' + idle.hub + ' changes; whole page ' + idle.body + ')', { where: idle.where, diff: idle.diff });
   if (SHOTS) await pa.screenshot({ path: SHOTS + '/desktop_list.png' });
   /* a reload: still deleted, opens on All again */
   await mclick(pa, '#gc-leads-hub [data-gclu-chip="bids"]'); await sleep(300);
