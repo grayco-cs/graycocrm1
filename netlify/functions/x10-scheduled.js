@@ -55,6 +55,9 @@ async function fleetDaily(data){
 /* ── 🔐 codes of closed jobs are wiped ── */
 async function codesWipe(data){
   let wiped = 0;
+  /* patch AUTOFIX-CODES: fail safe — when the job list did not load (a chunk read failed, Supabase hiccup) every job looks
+     "gone", and every customer's door / gate / lockbox code would be wiped. Wipe nothing unless the job list is there. */
+  if (!data || !Array.isArray(data.projects) || !data.projects.length) return 0;
   await L().kvCas('gc_x10_codes', function(v){ const l = Array.isArray(v) ? v : []; const keep = l.filter(function(r){ const p = C().findProject(data, r.pid); const gone = !p || X.jobClosed(p); if (gone) wiped++; return !gone; }); return wiped ? keep : undefined; });
   return wiped;
 }
