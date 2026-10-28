@@ -3377,7 +3377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.155-2026-10-27-r10c -->
+<!-- GrayCo CRM Build: 33.155-2026-10-27-r10d -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4042,7 +4042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.155-2026-10-27-r10c");
+  console.log("[GC] Build 33.155-2026-10-27-r10d");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4090,7 +4090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.155-2026-10-27-r10c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.155-2026-10-27-r10d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -183746,5 +183746,37 @@ function sweep(){
 setTimeout(sweep, 5000); setInterval(sweep, 20000);
 window._gcBidDelSweep = sweep;
 console.log('[GC] BIDDEL: a bid taken off the Bid Board stays off on every computer.');
+})();
+</script>
+<script id="gc-patch-admtabs">
+/* __GC_PATCH_ADMTABS__ — the Admin setting cards go after #gc-adm-hub, so a tab's content sits right under the tab row */
+(function(){
+'use strict';
+if (window.__GC_PATCH_ADMTABS__) return; window.__GC_PATCH_ADMTABS__ = true;
+var D = document, W = window;
+var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var IDS = ['gc-x10-admin', 'gc-ja-admin', 'gc-aut3-admin', 'gc-auto5-admin', 'gc-x9-admin'];
+function fix(){
+  var hub = D.getElementById('gc-adm-hub'); if (!hub || !hub.parentNode) return;
+  var par = hub.parentNode, after = hub;
+  for (var i = 0; i < IDS.length; i++) {
+    var el = D.getElementById(IDS[i]); if (!el || el.parentNode !== par) continue;
+    if (el.previousSibling !== after) par.insertBefore(el, after.nextSibling);
+    after = el;
+  }
+}
+SI.call(W, function(){ try { fix(); } catch (e) {} }, 250);
+/* a tab tap brings the tab row to the top of the screen, so the chosen tab's content is in view (the setup warnings above
+   the row are ~600 px tall) */
+D.addEventListener('click', function(e){
+  try {
+    var b = e.target && e.target.closest ? e.target.closest('main button') : null; if (!b || !D.getElementById('gc-adm-hub')) return;
+    var row = b.parentNode; if (!row || row.parentNode !== D.getElementById('gc-adm-hub').parentNode) return;
+    if (!/Pay Structures/.test(row.textContent || '') || !/Employees/.test(row.textContent || '')) return;
+    W.setTimeout(function(){ try { fix(); row.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (x) {} }, 60);
+  } catch (x) {}
+}, true);
+W._gcAdmTabsFix = fix;
+try { console.log('[GC] ADMTABS: Admin setting cards under the settings hub, tab content right under the tabs'); } catch (e) {}
 })();
 </script>
