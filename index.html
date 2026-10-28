@@ -450,6 +450,14 @@ function spForget(u, init){
   SP_KNOWN = {};
 }
 function spSend(input, init){
+  /* patch RTBIG: the whole schedule as ONE row (over the 3.5 MB the company sync chunks at) is not sent: the schedule
+     goes up as schedule__chunkN + schedule__manifest */
+  try {
+    if (init && typeof init.body === 'string' && init.body.length > 3600000 && /^\{"key":"schedule","value":/.test(init.body.slice(0, 40)) && methodOf(urlOf(input), init) === 'POST' && /\/rest\/v1\/gc_kv(\?|$)/.test(urlOf(input))) {
+      window._gcBigRowSkipped = (window._gcBigRowSkipped || 0) + 1;
+      return Promise.resolve(new Response(null, { status: 201, statusText: 'Created' }));
+    }
+  } catch (e) {}
   var u = urlOf(input), rows = spRows(u, init), t = now();
   if (rows && rows.every(function(r){ var k = SP_KNOWN[r.key]; if (k && k.s === undefined) { k.s = spSig(k.v); k.v = null; } return k && k.s && k.s === r.sig && (t - k.at) < SP_TTL; })) {
     window._gcSyncSkipped++;
@@ -3386,7 +3394,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.155-2026-10-28-r10e -->
+<!-- GrayCo CRM Build: 33.155-2026-10-28-r10f -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4051,7 +4059,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.155-2026-10-28-r10e");
+  console.log("[GC] Build 33.155-2026-10-28-r10f");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4099,7 +4107,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.155-2026-10-28-r10e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.155-2026-10-28-r10f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -104396,11 +104404,13 @@ function repair(key, mine, incoming){
     }
     /* it is in both — take the newer, and never let a blank win */
     if(r === byId[id]) return;                          /* patch RTPUT: the very same row — merging it with itself changes nothing */
+    /* patch RTSAVE: the same text on both sides: the merged copy would have that text too — nothing to take */
+    var _tIn = null; try{ _tIn = JSON.stringify(byId[id]); if(_tIn === JSON.stringify(r)) return; }catch(e){ _tIn = null; }
     var merged = meld(r, byId[id]);
     var at = _posOf(byId[id]);
     if(at >= 0 && merged !== byId[id]){
       var changed=false;
-      try{ changed = JSON.stringify(merged) !== JSON.stringify(byId[id]); }catch(e){ changed=true; }
+      try{ changed = JSON.stringify(merged) !== (_tIn != null ? _tIn : JSON.stringify(byId[id])); }catch(e){ changed=true; }
       if(changed){ out[at] = merged; melded++; }
     }
   });
@@ -178455,13 +178465,25 @@ function workHours(a, b){
   return n;
 }
 function queueAll(){ try { var c = W._gcCustApprovals ? W._gcCustApprovals() : null; return arr(c && c.all); } catch (e) { return []; } }
-function invById(id){ var l = arr((W._crm || {}).invoices); for (var i = 0; i < l.length; i++) if (l[i] && s(l[i].id) === s(id)) return l[i]; return null; }
+/* patch APPRFAST: one index of the queue / sub approvals / invoices per paint (300 ms), the first match wins as before */
+var IDX = null;
+function idx(){
+  var now = Date.now(), inv = (W._crm || {}).invoices;
+  if (IDX && now - IDX.at < 300 && IDX.invL === inv) return IDX;
+  var q = {}, sub = {}, iv = {};
+  queueAll().forEach(function(x){ var k = s(x && x.id); if (!(k in q)) q[k] = x; });
+  lsList('gc_sub_approvals').forEach(function(x){ if (!x) return; var a = s(x.id), b = s(x.invId); if (!(a in sub)) sub[a] = x; if (!(b in sub)) sub[b] = x; });
+  arr(inv).forEach(function(x){ if (!x) return; var k = s(x.id); if (!(k in iv)) iv[k] = x; });
+  IDX = { at: now, invL: inv, q: q, sub: sub, inv: iv };
+  return IDX;
+}
+function invById(id){ return idx().inv[s(id)] || null; }
 function rawFor(r){
   if (!r) return null;
   if (r.__raw) return r.__raw;
   var id = s(r.id);
-  if (r.src === 'queue') return queueAll().filter(function(x){ return s(x.id) === id; })[0] || null;
-  if (r.src === 'sub') return lsList('gc_sub_approvals').filter(function(x){ return s(x.id) === id || s(x.invId) === id; })[0] || null;
+  if (r.src === 'queue') return idx().q[id] || null;
+  if (r.src === 'sub') return idx().sub[id] || null;
   if (r.src === 'inv') return invById(id);
   if (r.src === 'exp') { try { return arr(W._gcExpenseApprovalsFor && W._gcExpenseApprovalsFor()).filter(function(x){ return s(x.id || x.expId) === id; })[0] || null; } catch (e) { return null; } }
   return null;
