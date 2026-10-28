@@ -38,6 +38,34 @@ function isScheduled(event){
   try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
 }
 
+/* patch AUTOFIX-GATE: the portal-gate scan reads the whole CRM (projects, every estimate with its lines — megabytes —,
+   documents, invoices, leads …) and ran every 15 minutes = 96 full reads a day, nearly always finding nothing new. Now a
+   tiny read of the "last changed" times of those keys comes first; nothing changed since the last full scan → no scan.
+   A full scan still runs at least every 2 hours (so nothing can be missed for long), and after any scan that failed. */
+const GATE_SIG_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users', 'customers', 'leads', 'punch',
+  'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults', 'gc_portal_auto_posts', 'gc_senior_pm', 'gc_team_settings', 'gc_portal_gate'];
+const GATE_FULL_MS = 2 * 3600e3, GATE_STATE = 'gc_gate_scan_sig';
+const GD = { now: function(){ return Date.now(); }, lib: function(){ return require('./bid-inbox.js')._lib; } };   /* tests swap these */
+async function gateSig(){
+  const C = portal._core, want = [];
+  GATE_SIG_KEYS.forEach(function(k){ want.push(k, k + '__manifest'); });
+  const r = await fetch(C.sbUrl() + '/rest/v1/gc_kv?select=key,updated_at&key=in.(' + want.map(function(k){ return '"' + k + '"'; }).join(',') + ')', { headers: C.keyHeaders(C.svcKey()) });
+  if (!r || !r.ok) return '';
+  const rows = await r.json();
+  if (!Array.isArray(rows)) return '';
+  return rows.map(function(x){ return String(x && x.key) + '=' + String(x && x.updated_at); }).sort().join('|');
+}
+async function gateScanIfChanged(){
+  const L = GD.lib(), now = GD.now();
+  let sig = ''; try { sig = await gateSig(); } catch (e) { sig = ''; }
+  let last = null; try { last = await L.kvGet(GATE_STATE); } catch (e) { last = null; }
+  if (sig && last && last.sig === sig && last.ok && now - Date.parse(last.at || 0) < GATE_FULL_MS) return { ok: true, unchanged: true, since: last.at };
+  const out = await portal._core.gateScan({});
+  try { await L.kvPut(GATE_STATE, { sig: sig, at: new Date(now).toISOString(), ok: !!(out && out.ok), queued: (out && out.queued) || 0 }); } catch (e) {}
+  return out;
+}
+exports._gate = { gateScanIfChanged: gateScanIfChanged, gateSig: gateSig, GD: GD, GATE_SIG_KEYS: GATE_SIG_KEYS };
+
 exports.handler = async function (event) {
   event = event || {};
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
@@ -45,7 +73,7 @@ exports.handler = async function (event) {
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   try {
     const out = await portal._core.escalateDue({});
-    try { out.portalGate = await portal._core.gateScan({}); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals */
+    try { out.portalGate = await gateScanIfChanged(); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals (patch AUTOFIX-GATE: only when something changed) */
     try { console.log('[approval-escalate]', JSON.stringify({ escalated: out.escalated || 0 })); } catch (e) {}
     return { statusCode: out.ok ? 200 : 502, headers, body: JSON.stringify(out) };
   } catch (e) {
