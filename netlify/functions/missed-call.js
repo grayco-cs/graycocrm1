@@ -15,6 +15,12 @@
      A call comes in   → POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=voice
      A message comes in → POST https://crm.grayco-cs.com/.netlify/functions/missed-call?event=sms
    Every POST must carry a valid X-Twilio-Signature (HMAC-SHA1 with TWILIO_AUTH_TOKEN) — anything else is 403.
+     C) patch CALLCHAIN (owner 10/28: "call in order office, nick owner 1, wesley owner 2, general manager, lead pm"):
+        once an admin saves Admin → 📞 Call order (_lib/callchain.js, gc_lead_inbox_kv "gc_call_chain"), the caller hears
+        "Thanks for calling … please hold while we connect you." and Twilio rings each number in that order, one at a
+        time, for its ring seconds (<Dial answerOnBridge action=…?event=dialdone&step=N>); the first one who answers
+        gets the call; after the last one → the missed call below (one text, the lead / call-back to-do) and goodbye.
+        Every hop is a new signed webhook. Nothing saved (or every slot empty) → B), else A).
 
    A missed call:
      · the caller gets ONE text (not again within 12 hours, never after they texted STOP):
@@ -38,6 +44,7 @@ require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every o
 const crypto = require('crypto');
 
 const TEXT = 'Sorry we missed your call — this is GrayCo Construction Services. How can we help? Reply here or call 901-585-0944.';
+const HOLD = 'Thanks for calling GrayCo Construction Services, please hold while we connect you.';   /* patch CALLCHAIN */
 const SAY = 'Thanks for calling GrayCo Construction Services. Sorry we missed you. We just sent you a text message, and someone from our team will get back to you shortly. Goodbye.';
 const KS = 'gc_sms_state';
 const RETEXT_H = 12;
@@ -57,7 +64,7 @@ function now(){ return typeof exports._now === 'function' ? exports._now() : Dat
 
 function ready(){ return !!(env('TWILIO_ACCOUNT_SID') && env('TWILIO_AUTH_TOKEN') && env('TWILIO_FROM')); }
 function site(){ return (env('CRM_URL') || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
-function hookUrl(ev){ return site() + '/.netlify/functions/missed-call?event=' + ev; }
+function hookUrl(ev, step){ return site() + '/.netlify/functions/missed-call?event=' + ev + (step == null ? '' : '&step=' + encodeURIComponent(String(step))); }   /* patch CALLCHAIN: the exact URL Twilio calls back (and signs) */
 function L(){ return require('./bid-inbox.js')._lib; }
 function WI(){ return require('./website-intake.js')._lib; }
 function core(){ return require('./portal.js')._core; }
@@ -164,6 +171,8 @@ async function callBackTodo(cust, ph, callSid, at){
 async function missed(p, how){
   const ph = phone10(p.From), callSid = s(p.CallSid) || ('call-' + ph + '-' + nowIso().slice(0, 16)), at = nowIso();
   if (ph.length !== 10 || /^(anonymous|restricted|unknown|private)/i.test(s(p.From))) return { skipped: 'no caller id' };
+  /* patch CALLCHAIN: our own office line / Twilio number as the caller ID (a forward that shows the forwarding line) is no lead and gets no text */
+  if (ph === CC().companyPhone() || ph === phone10(env('TWILIO_FROM'))) return { skipped: 'our own number' };
   /* claim the call (a retry from Twilio or a second webhook for the same call does nothing) */
   let first = false, textIt = false;
   await stateCas(st => {
@@ -203,6 +212,27 @@ async function missed(p, how){
   await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
   out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
   return out;
+}
+
+/* ── patch CALLCHAIN: ring the call order, one number at a time ── */
+function CC(){ return require('./_lib/callchain.js'); }
+async function chainFor(p){
+  let raw = null; try { raw = await L().kvGet(CC().KEY); } catch (e) { raw = null; }
+  if (!raw || typeof raw !== 'object') return null;   /* nothing saved: the old behaviour */
+  const cfg = CC().clean(raw); if (!cfg.on) return null;
+  let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
+  let ours = [env('TWILIO_FROM')]; try { const set = SMS().settings(await L().kvGet(SMS().SETTINGS_KEY)); ours = ours.concat(require('./_lib/smsroute.js').numbers(set, env).map(x => x.number)); } catch (e) {}
+  return CC().resolve(cfg, data, CC().callCtx(p, ours));
+}
+function dialStep(list, i, hold){
+  const x = list[i];
+  return twiml((hold ? '<Say voice="Polly.Joanna">' + esc(HOLD) + '</Say>' : '')
+    + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', i)) + '" method="POST"><Number>+1' + x.number + '</Number></Dial>');
+}
+function ringToEnv(){
+  const ring = phone10(env('TWILIO_RING_TO')); if (ring.length !== 10) return null;
+  const secs = Math.max(8, Math.min(60, parseInt(env('TWILIO_RING_SECONDS') || '20', 10) || 20));
+  return twiml('<Dial timeout="' + secs + '" action="' + esc(hookUrl('dialdone')) + '" method="POST"><Number>+1' + ring + '</Number></Dial>');
 }
 
 /* ── a text in (patch TXT: matched to the job, on Job Messages, e-mailed to the relay list, one approved answer) ── */
@@ -446,7 +476,7 @@ async function inboundSms(p){
 exports.handler = async function(event){
   const m = s(event.httpMethod).toUpperCase(), qs = event.queryStringParameters || {};
   if (m === 'GET' && qs.ping === '1') {
-    return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: env('TWILIO_RING_TO') ? 'ring the office first' : 'office line forwards missed calls',
+    return J(200, { ok: true, service: 'GrayCo missed-call text-back', ready: ready(), mode: env('TWILIO_RING_TO') ? 'ring the office first (or the saved 📞 Call order)' : 'office line forwards missed calls (or the saved 📞 Call order)',
       voiceWebhook: hookUrl('voice'), smsWebhook: hookUrl('sms'), email: !!env('RESEND_API_KEY') });
   }
   if (m !== 'POST') return J(405, { ok: false, error: 'Method not allowed' });
@@ -457,16 +487,20 @@ exports.handler = async function(event){
   try {
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
     if (ev === 'voice') {
-      const ring = phone10(env('TWILIO_RING_TO'));
-      if (ring.length === 10) {
-        const secs = Math.max(8, Math.min(60, parseInt(env('TWILIO_RING_SECONDS') || '20', 10) || 20));
-        return twiml('<Dial timeout="' + secs + '" action="' + esc(hookUrl('dialdone')) + '" method="POST"><Number>+1' + ring + '</Number></Dial>');
-      }
-      await missed(p, 'forwarded');
+      const ch = await chainFor(p);   /* patch CALLCHAIN */
+      if (ch && ch.list.length) return dialStep(ch.list, 0, true);
+      const r0 = ringToEnv(); if (r0) return r0;
+      await missed(p, ch ? 'call order: nobody to ring' : 'forwarded');
       return sayBye();
     }
     if (ev === 'dialdone') {
       if (/^(completed|answered)$/i.test(s(p.DialCallStatus))) return twiml('<Hangup/>');
+      if (qs.step != null && /^\d{1,3}$/.test(s(qs.step))) {   /* patch CALLCHAIN: the next one in the call order */
+        const ch = await chainFor(p), next = parseInt(qs.step, 10) + 1;
+        if (ch && next < ch.list.length) return dialStep(ch.list, next, false);
+        await missed(p, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')');
+        return sayBye();
+      }
       await missed(p, 'ring ' + s(p.DialCallStatus || 'no-answer'));
       return sayBye();
     }
@@ -480,4 +514,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+exports._test = { chainFor, hookUrl, HOLD, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
