@@ -273,10 +273,10 @@ function menuTwiml(cfg, n){
   return twiml('<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" hints="one, two, three, construction, customer, sales" actionOnEmptyResult="true" action="' + esc(hookUrl('menu', { try: n })) + '" method="POST">'
     + SAYV + esc(cfg.screen.greeting) + '</Say></Gather><Redirect method="POST">' + esc(hookUrl('menu', { try: n })) + '</Redirect>');
 }
-function dialTwiml(cfg, list, i, sid, sayText){
+function dialTwiml(cfg, list, i, sid, sayText, c){   /* c = the menu answer, carried in the signed URL too (the log is the first source) */
   const x = list[i];
-  const num = cfg.screen.whisper ? '<Number url="' + esc(hookUrl('whisper', { step: i, p: sid })) + '" method="POST">+1' + x.number + '</Number>' : '<Number>+1' + x.number + '</Number>';
-  return twiml((sayText ? SAYV + esc(sayText) + '</Say>' : '') + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', { step: i })) + '" method="POST">' + num + '</Dial>');
+  const num = cfg.screen.whisper ? '<Number url="' + esc(hookUrl('whisper', Object.assign({ step: i, p: sid }, c ? { c } : {}))) + '" method="POST">+1' + x.number + '</Number>' : '<Number>+1' + x.number + '</Number>';
+  return twiml((sayText ? SAYV + esc(sayText) + '</Say>' : '') + '<Dial timeout="' + x.secs + '" answerOnBridge="true" action="' + esc(hookUrl('dialdone', Object.assign({ step: i }, c ? { c } : {}))) + '" method="POST">' + num + '</Dial>');
 }
 async function finishMissed(p, row, how){
   const sid = s(p.CallSid);
@@ -284,11 +284,12 @@ async function finishMissed(p, row, how){
   await missed(p, how, { what: s(row && row.what) });
   return sayBye();
 }
-async function startRing(cfg, p, row, sayText){
-  const list = await orderList(cfg, p, s(row && row.choice));
+async function startRing(cfg, p, row, sayText, c){
+  c = s(row && row.choice) || s(c);
+  const list = await orderList(cfg, p, c);
   if (!list.length) return finishMissed(p, row, 'call order: nobody to ring');
   await logPut(s(p.CallSid), { outcome: 'ringing', step: 0 });
-  return dialTwiml(cfg, list, 0, s(p.CallSid), sayText);
+  return dialTwiml(cfg, list, 0, s(p.CallSid), sayText, c);
 }
 /* → TwiML, or null when the call order and the screening are both off (the older paths below run) */
 async function callOrder(ev, p, qs){
@@ -303,7 +304,7 @@ async function callOrder(ev, p, qs){
     }
     if (cfg.screen.on) { await logPut(sid, { from, choice: '', outcome: 'menu' }); return menuTwiml(cfg, 1); }
     const row = await logPut(sid, { from, choice: 'direct', outcome: 'ringing' });
-    return startRing(cfg, p, row, HOLD);
+    return startRing(cfg, p, row, HOLD, 'direct');
   }
   if (ev === 'menu') {
     const c = CO().choiceOf(p), n = parseInt(qs.try, 10) || 1;
@@ -315,16 +316,16 @@ async function callOrder(ev, p, qs){
     if (c === '3') { await logPut(sid, { from: phone10(p.From), choice: '3', outcome: 'sales / other (pressed 3)' }); return twiml(SAYV + esc(SALES) + '</Say><Hangup/>'); }
     const row = await logPut(sid, { from: phone10(p.From), choice: c, outcome: c === '1' ? 'new work' : 'current customer' });
     if (c === '1' && cfg.screen.askWhat) {
-      return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(hookUrl('what')) + '" method="POST">' + SAYV + esc(ASK_WHAT) + '</Say></Gather>'
-        + '<Redirect method="POST">' + esc(hookUrl('what')) + '</Redirect>');
+      return twiml('<Gather input="speech" timeout="8" speechTimeout="auto" actionOnEmptyResult="true" action="' + esc(hookUrl('what', { c })) + '" method="POST">' + SAYV + esc(ASK_WHAT) + '</Say></Gather>'
+        + '<Redirect method="POST">' + esc(hookUrl('what', { c })) + '</Redirect>');
     }
-    return startRing(cfg, p, row, HOLD2);
+    return startRing(cfg, p, row, HOLD2, c);
   }
   if (ev === 'what') {
-    const row0 = await logGet(sid);
-    if (!row0 || ['1', '2', 'direct'].indexOf(s(row0.choice)) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
+    const row0 = await logGet(sid), c0 = s(row0 && row0.choice) || s(qs.c);
+    if (['1', '2', 'direct'].indexOf(c0) < 0) return twiml(SAYV + BYE_NOINPUT + '</Say><Hangup/>');   /* never rings without a 1 / 2 */
     const row = await logPut(sid, { what: clip(s(p.SpeechResult), 200) });
-    return startRing(cfg, p, row, HOLD2);
+    return startRing(cfg, p, row || { choice: c0, what: clip(s(p.SpeechResult), 200) }, HOLD2, c0);
   }
   if (ev === 'whisper') {   /* the person's phone answered: "GrayCo call: … press 1 to accept" (a voicemail does not press 1) */
     const parent = s(qs.p) || s(p.ParentCallSid), row = await logGet(parent), step = parseInt(qs.step, 10) || 0;
@@ -339,14 +340,15 @@ async function callOrder(ev, p, qs){
     return twiml('');   /* connects them to the caller */
   }
   if (ev === 'dialdone' && qs.step != null && /^\d{1,3}$/.test(s(qs.step))) {
-    const row = await logGet(sid), step = parseInt(qs.step, 10);
-    const list = await orderList(cfg, p, s(row && row.choice)), who = list[step];
-    const answered = /^(completed|answered)$/i.test(s(p.DialCallStatus)) && (!cfg.screen.whisper || !!(row && row.accepted));
+    const row = await logGet(sid), step = parseInt(qs.step, 10), c = s(row && row.choice) || s(qs.c);
+    const list = await orderList(cfg, p, c), who = list[step];
+    const answered = /^(completed|answered)$/i.test(s(p.DialCallStatus)) && (!cfg.screen.whisper || !!(row && row.accepted)
+      || (!row && (parseInt(p.DialCallDuration, 10) || 0) >= 20));   /* the log unreachable: a 20 s+ conversation counts as answered */
     if (answered) { await logPut(sid, { outcome: 'answered', by: who ? who.label + (who.name ? ' — ' + who.name : '') : '' }); return twiml('<Hangup/>'); }
-    if (!row || ['1', '2', 'direct'].indexOf(s(row.choice)) < 0) return twiml('<Hangup/>');   /* never text a caller who did not press 1 or 2 */
+    if (['1', '2', 'direct'].indexOf(c) < 0) return twiml('<Hangup/>');   /* never text a caller who did not press 1 or 2 */
     if (/^(completed|canceled)$/i.test(s(p.CallStatus))) return finishMissed(p, row, 'call order: the caller hung up while it rang');
-    if (step + 1 < list.length) { await logPut(sid, { step: step + 1 }); return dialTwiml(cfg, list, step + 1, sid, ''); }
-    return finishMissed(p, row, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')');
+    if (step + 1 < list.length) { await logPut(sid, { step: step + 1 }); return dialTwiml(cfg, list, step + 1, sid, '', c); }
+    return finishMissed(p, row || { what: '' }, 'call order: nobody answered (' + s(p.DialCallStatus || 'no-answer') + ')');
   }
   return null;
 }

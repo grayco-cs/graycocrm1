@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 function ok(c, m, i){ if (c) { pass++; console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + (i !== undefined ? '  ' + JSON.stringify(i).slice(0, 700) : '')); } }
 
 /* ── the world ── */
-const KV = new Map(), SMS = [], MAIL = [];
+const KV = new Map(), SMS = [], MAIL = [], BROKEN = { log: false };
 const J = (status, body) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => 'application/json' }, json: async () => body, text: async () => JSON.stringify(body) });
 const setKv = (k, v) => KV.set(k, { value: v, updated_at: new Date(Date.now() - 1000).toISOString() });
 const getKv = k => (KV.get(k) || {}).value;
@@ -28,6 +28,7 @@ global.fetch = async function(url, init = {}){
     if (u.pathname === '/rest/v1/gc_staff') return J(200, [{ email: 'owner@grayco-cs.com', role: 'admin', active: true }]);
     if (u.pathname === '/rest/v1/gc_kv') {
       const kq = u.searchParams.get('key') || '';
+      if (BROKEN.log && /gc_call_log/.test(kq + (init.body || ''))) return J(503, { message: 'down' });   /* the call log store is down */
       if (m === 'GET') {
         if (kq.startsWith('in.(')) { const keys = kq.slice(4, -1).split(',').map(x => x.replace(/^"|"$/g, '')); return J(200, keys.filter(k => KV.has(k)).map(k => ({ key: k, value: KV.get(k).value, updated_at: KV.get(k).updated_at }))); }
         const key = kq.replace(/^eq\./, ''); const r = KV.get(key); return J(200, r ? [{ key, value: r.value, updated_at: r.updated_at }] : []);
@@ -167,6 +168,12 @@ console.log('CALLCHAIN — 1: what they need, the order, the whisper');
   world(chain());
   const p = base(), w = await walk(p, { said: 'water heater', hangAt: 1 });
   ok(JSON.stringify(w.rung) === JSON.stringify([OFFICE, NICK]) && SMS.length === 1 && leads().length === 1, 'the caller hangs up while it rings → stop, one text + lead', { rung: w.rung, sms: SMS.length });
+}
+{
+  world(chain()); BROKEN.log = true;
+  const w = await walk(base(), { said: 'siding' });
+  BROKEN.log = false;
+  ok(w.rung.length === 5 && SMS.length === 1 && leads().length === 1, 'the call log store down: a caller who pressed 1 still rings through the order, then one text + lead (the menu answer rides in the signed URL)', { rung: w.rung.length, sms: SMS.length });
 }
 console.log('CALLCHAIN — 2: a current customer');
 {
