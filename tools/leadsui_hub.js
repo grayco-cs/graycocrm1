@@ -39,7 +39,7 @@ function patchLead(id, fn2){
   var shown = overlay(id, fn2);
   if (shown) { HUB_SIG = ''; try {   /* what the person is looking at first (the open panel, or the one row), the whole list right after */
     var tr = D.querySelector('#gc-leads-hub tr.gcl-lr[data-gcl-id="' + String(id).replace(/["\\]/g, '') + '"]'), done = false;
-    if (UI.open === id && D.getElementById('gcl-drawer')) { openDrawer(id); done = true; }
+    if (UI.open === id && D.getElementById('gcl-drawer')) { if (LU.fast) { LU.fast = false; NST0.call(W, function(){ if (UI.open === id) openDrawer(id); }, 0); } else openDrawer(id); done = true; }
     else if (tr && UI.v === 'list') { var l1 = rawLeads().filter(function(x){ return x && x.id === id; })[0]; if (l1) { var r1 = lcRow(l1), tmp = D.createElement('tbody'); tmp.innerHTML = lcRowHtml(l1, r1, lcBidCell(l1, r1, GG.v || lcGcGroups()), lcCanDel(), Date.now()); if (tmp.firstChild) { held(function(){ tr.parentNode.replaceChild(tmp.firstChild, tr); }); done = true; } } }
     if (done) NST0.call(W, redraw, 30); else redraw();
   } catch (e) { warn(e); redraw(); } }
@@ -249,7 +249,7 @@ function lcRowHtml(l, r, bc, del, now){
 function uiListHtml(){
   var rows = modelRows(), del = lcCanDel(), k = UI.lsort || 'due', dir = UI.ldir === -1 ? -1 : 1, now = Date.now();
   var shown = rows.slice(0, lim('ulist', LC_PAGE));
-  return '<div class="gcl-wrap"><table class="gcl-list gcl-lc gclu-list"><thead><tr>' + LC_COLS.map(function(c){ var on = k === c[0]; return '<th class="c-' + c[0] + '" data-gcl-lsort="' + c[0] + '"' + (on ? ' aria-sort="' + (dir > 0 ? 'ascending' : 'descending') + '"' : '') + ' title="Sort by ' + c[1] + '">' + c[1] + (on ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + (del ? '<th class="gcl-tc"><span class="gcl-sr">Delete</span></th>' : '') + '</tr></thead><tbody>'
+  return '<div class="gcl-wrap"><table class="gcl-list gcl-lc gclu-list" data-gc-linked="1"><thead><tr>' + LC_COLS.map(function(c){ var on = k === c[0]; return '<th class="c-' + c[0] + '" data-gcl-lsort="' + c[0] + '"' + (on ? ' aria-sort="' + (dir > 0 ? 'ascending' : 'descending') + '"' : '') + ' title="Sort by ' + c[1] + '">' + c[1] + (on ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</th>'; }).join('') + (del ? '<th class="gcl-tc"><span class="gcl-sr">Delete</span></th>' : '') + '</tr></thead><tbody>'
     + shown.map(function(x){ return lcRowHtml(x.l, x.r, x.b, del, now); }).join('')
     + '</tbody></table></div>' + moreBtn('ulist', rows.length, LC_PAGE) + (rows.length ? '' : '<p class="gclu-empty">No leads match' + (anyFilter() ? ' — <button type="button" class="gclu-lnk" data-gclu-clear>✕ Clear the filters</button>' : '.') + '</p>');
 }
@@ -416,6 +416,8 @@ function setView(v){
 D.addEventListener('click', function(ev){
   var t = ev.target; if (!t || !t.closest) return;
   var pop = D.getElementById('gcl-lprio-pop');
+  var fp = t.closest('#gcl-drawer [data-gcl-prio]');   /* the panel's 1–10: lit at once, the panel redrawn right after */
+  if (fp) { LU.fast = true; Array.prototype.forEach.call(D.querySelectorAll('#gcl-drawer [data-gcl-prio]'), function(x){ var on = x === fp; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on)); }); NST0.call(W, function(){ LU.fast = false; }, 300); }
   var qs = t.closest('[data-gclu-qn-save]'); if (qs) { ev.stopPropagation(); ev.preventDefault(); qnSubmit(qs.closest('.gclu-qn')); return; }
   if (pop && pop.contains(t)) { var n = t.getAttribute('data-lp'); if (n) { ev.stopPropagation(); var pid = pop.getAttribute('data-id'); lcPopClose(); setPriority(pid, +n); } return; }
   if (pop && !t.closest('[data-gcl-lprio],[data-gcl-gcs],[data-gclu-note]')) lcPopClose();
