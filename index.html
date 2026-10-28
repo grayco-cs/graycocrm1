@@ -164139,7 +164139,17 @@ function pullLeads(){
   try { Promise.resolve(W.idbGet('leads')).then(function(v){ LEADS_BUSY = false; if (!Array.isArray(v)) return; var sig = v.length + '|' + v.map(function(l){ return l ? s(l.id) + ':' + s(l.updatedAt || l.savedAt) + ':' + s(l.pm || l.estimator) + ':' + arr(l.coAssignees).length : ''; }).join(',');   /* patch HOT2: every lead's stamp and person — an older copy coming back (a whole-list save) is seen too */ if (sig !== LEADS_SIG) { LEADS_SIG = sig; LEADS_NOW = v; if (view() === 'leads') later(function(){ HUB_SIG = ''; mount(); }, 0); } }, function(){ LEADS_BUSY = false; }); } catch (e) { LEADS_BUSY = false; }
 }
 var LEADS_SIG = '';
-function rawLeads(){ if (view() === 'leads') pullLeads(); var c = arr(crm().leads); return LEADS_NOW && (LEADS_NOW.length >= c.length || !c.length) ? LEADS_NOW : c; }
+function rawLeads(){ if (view() === 'leads') pullLeads(); var c = arr(crm().leads); if (LEADS_NOW && LEADS_NOW.length) return stickMerge(LEADS_NOW, c); return LEADS_NOW && !c.length ? LEADS_NOW : c; }
+/* patch LEADSTICK: the live list wins; a lead only in window._crm.leads (an old one-time copy) is listed after it */
+var STK = { a: null, b: null, v: null };
+function stickMerge(live, old){
+  if (!old.length || old === live) return live;
+  if (STK.a === live && STK.b === old) return STK.v;
+  var have = {}; live.forEach(function(l){ if (l && l.id != null) have[s(l.id)] = 1; });
+  var extra = old.filter(function(l){ return l && l.id != null && !have[s(l.id)]; });
+  STK = { a: live, b: old, v: extra.length ? live.concat(extra) : live };
+  return STK.v;
+}
 var LD_C = { ref: null, at: 0, v: [] };   /* patch LEADPERF-2: the same list (within 1 s) → the same answer; a copy, so a caller's sort cannot touch it */
 function leads(){ var r = rawLeads(); if (r !== LD_C.ref || Date.now() - LD_C.at > 1000) { LD_C.ref = r; LD_C.at = Date.now(); LD_C.v = r.filter(function(l){ return !dead(l) && !archivedL(l); }); } return LD_C.v.slice(); }   /* patch LCLEAN: archived leads leave every list */
 var IB_C = { raw: null, v: [], by: {} };   /* patch LEADPERF-2: the inbox cache parsed once per change (it was parsed for every card) */
@@ -164338,8 +164348,11 @@ function setLeads(mut){
 }
 function patchLead(id, fn2){
   return setLeads(function(list){
-    var i = -1; list.forEach(function(l, k){ if (l && l.id === id) i = k; }); if (i < 0) return null;
-    var l = Object.assign({}, list[i]); if (fn2(l) === false) return null; l.updatedAt = nowIso(); list[i] = l; LEADS_NOW = list; LEADS_SIG = ''; return list;
+    var i = -1; list.forEach(function(l, k){ if (l && l.id === id) i = k; });
+    if (i < 0) { var shown = rawLeads().filter(function(x){ return x && x.id === id; })[0]; if (!shown) return null; list.push(shown); i = list.length - 1; }   /* patch LEADSTICK: a lead on screen but not in the live list is saved onto it */
+    var l = Object.assign({}, list[i]); if (fn2(l) === false) return null; l.updatedAt = nowIso(); list[i] = l; LEADS_NOW = list; LEADS_SIG = '';
+    try { var cl = W._crm && W._crm.leads; if (Array.isArray(cl)) W._crm.leads = cl.map(function(x){ return x && x.id === id ? l : x; }); } catch (e) {}   /* patch LEADSTICK */
+    return list;
   });
 }
 function logAct(l, type, text){ var a = arr(l.activity).slice(); a.push({ type: type, text: s(text).slice(0, 500), at: nowIso(), by: myName() || myEmail() }); l.activity = a.slice(-200); }
@@ -182760,7 +182773,9 @@ function tick(){
     if (n > 0) {
       if (!prevWaiting) since = now;
       var tries = 0; try { (q.waiting() || []).forEach(function(w){ if ((w.tries || 0) > tries) tries = w.tries || 0; }); } catch (e) {}
-      if (tries >= 2 || (!navigator.onLine)) show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this computer \u2014 not sent yet, trying again', 'warn');
+      /* patch SAVEWHY: which list and the cloud's own answer */
+      var why = ''; try { why = String(st.lastError || '').slice(0, 140); var wk = (q.waiting() || []).map(function(w){ return w.key; }).slice(0, 3).join(', '); if (!why && wk) why = wk; if (why && why !== W.__gcSaveWhyLast) { W.__gcSaveWhyLast = why; try { console.warn('[GC] save not sent yet: ' + why + ' (waiting: ' + wk + ')'); } catch (e2) {} } } catch (e) {}
+      if (tries >= 2 || (!navigator.onLine)) { show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this computer \u2014 not sent yet, trying again' + (why ? ' (' + why + ')' : ''), 'warn'); try { box().title = why; } catch (e) {} }
       else if (now - since > 1200) show('\u2601 Saved on this computer \u2014 sending\u2026', 'info');
       prevWaiting = n; return;
     }
