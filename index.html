@@ -3377,7 +3377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.155-2026-10-27-r10b -->
+<!-- GrayCo CRM Build: 33.155-2026-10-27-r10c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4042,7 +4042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.155-2026-10-27-r10b");
+  console.log("[GC] Build 33.155-2026-10-27-r10c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4090,7 +4090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.155-2026-10-27-r10b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.155-2026-10-27-r10c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -103941,10 +103941,21 @@ function personIndex(){
     }
   };
 }
+/* patch SWEEPIX: dated rows (schedule, punch, payments ...) can only match on the same wording AND day, so the kept
+   rows are bucketed by that key; sameDated still decides inside the bucket and the lowest kept index wins, as before */
+function datedIndex(keepers, same){
+  var B={}, K=[];
+  function key(r){ return descKey(r)+'\u0001'+dateKey(r); }
+  return {
+    add: function(i, r){ var k=key(r), a=(B[k]||(B[k]=[])); K[i]=k; a.push(i); if(a.length>1 && a[a.length-2]>i) a.sort(function(x,y){ return x-y; }); },
+    remove: function(i){ var k=K[i]; if(k==null) return; var a=B[k]; if(a){ var j=a.indexOf(i); if(j>=0) a.splice(j,1); } K[i]=null; },
+    find: function(r){ var a=B[key(r)]; if(!a) return -1; for(var x=0;x<a.length;x++){ var ok=false; try{ ok=same(keepers[a[x]], r); }catch(e){ ok=false; } if(ok) return a[x]; } return -1; }
+  };
+}
 function collapse(rows, L){
   if(!Array.isArray(rows) || rows.length<2) return null;
   var keepers=[], dropped=[], review=[];
-  var IX = (L.same===samePerson && !L.careful) ? personIndex() : null;   /* patch LEADFREEZE-7 */
+  var IX = (L.same===samePerson && !L.careful) ? personIndex() : (L.same===sameDated ? datedIndex(keepers, sameDated) : null);   /* patch LEADFREEZE-7 + SWEEPIX */
 
   for(var i=0;i<rows.length;i++){
     var r=rows[i];
