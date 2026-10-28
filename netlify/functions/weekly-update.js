@@ -169,6 +169,7 @@ async function run(opts){
     if (opts.projectId && pid !== s(opts.projectId)) continue;
     if (!isActive(p)) continue;
     const why = function(w){ rep.skipped.push({ project: pid, why: w }); };
+    if (p.importedHistory === true || p.noSend === true || p.historyOnly === true) { why('history job (back-entered) — never sent'); continue; }   /* patch AUTOFIX-WEEKLY: like every other customer e-mail (patch LCLEAN-H) */
     if (!sw(p, 'weeklyUpdate', defs, true)) { why('weekly update switched off'); continue; }
     if (sw(p, 'portalLink', defs, true) === false) { why('portal switched off'); continue; }
     let row = null; try { row = await C.activeFor(pid); } catch (e) { row = null; }
