@@ -171204,6 +171204,16 @@ function normName(v){
   return real.length ? t : '';
 }
 function leadName(l){ return s(l.name || l.title || l.company || l.client); }
+/* patch LDUPBID: bid platforms / plan rooms / notification senders, and what counts as a bid */
+var DUP_PLAT = /(planhub|buildingconnected|isqft|constructconnect|construct-connect|dodge|bidnet|bidclerk|bidexpress|blueprint|reprographic|planroom|plan-room|plans?room|procore|smartbid|pipelinesuite|bxwa|ebuilder|e-builder|bonfire|demandstar|periscope|questcdn|civcast|sam\.gov|govspend|onvia|bidsync|ionwave|negometrix|publicpurchase|biddingo|plansource|arcbid|reprodepot|thebluebook|bluebook|app\.box|mailchimp|sendgrid|hubspot|salesforce|constantcontact)/;
+var DUP_NOTE = /^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|projectnotifications?|project\.?notifications?|alerts?|bids?|bidding|invitations?|invite|mailer|postmaster|system|automated|updates?)[^@]*@/;
+function dupPlatformEmail(v){ var e = low(v); if (!/@/.test(e)) return false; return DUP_PLAT.test(e.split('@')[1] || '') || DUP_NOTE.test(e) || DUP_PLAT.test(e.split('@')[0] || ''); }
+function dupIsBid(l){
+  try { if (W._gcBidRole && typeof W._gcBidRole.isBid === 'function' && W._gcBidRole.isBid(l)) return true; } catch (e) {}
+  if (/commercial|government|public|bid/i.test(s(l.leadKind) + ' ' + s(l.kind))) return true;
+  if (s(l.inboxId) || s(l.bidDue) || s(l.dueToCompany) || s(l.bidRole)) return true;
+  return DUP_PLAT.test(low(l.source) + ' ' + low(l.origin));
+}
 function leadAddr(l){ return s(l.address || l.jobAddress || l.siteAddress || (l.leadExtra && l.leadExtra.address)); }
 
 /* ── what kind of lead ────────────────────────────────────────────────────── */
@@ -171238,8 +171248,9 @@ function analyze(list, jobs, opts){
   var seen = {};
   live.forEach(function(l){
     var keys = [];
-    var p = normPhone(l.phone || l.clientPhone); if (p) keys.push(['phone', 'p:' + p]);
-    var e = normEmail(l.email || l.clientEmail); if (e) keys.push(['e-mail', 'e:' + e]);
+    var bidL = dupIsBid(l), platE = dupPlatformEmail(l.email || l.clientEmail);   /* patch LDUPBID: bids and platform senders never match by e-mail / phone */
+    var p = normPhone(l.phone || l.clientPhone); if (p && !bidL && !platE) keys.push(['phone', 'p:' + p]);
+    var e = normEmail(l.email || l.clientEmail); if (e && !bidL && !platE) keys.push(['e-mail', 'e:' + e]);
     var a = normAddr(leadAddr(l)); if (a) keys.push(['address', 'a:' + a]);
     var n = normName(leadName(l)); if (n) keys.push(['name', 'n:' + n]);
     if (s(l.ccamId)) keys.push(['CompanyCam', 'cc:' + s(l.ccamId)]);
