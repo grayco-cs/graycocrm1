@@ -105,7 +105,9 @@ function useMyLocation(on){
 W._gcLeadsGeo = { dist: function(id){ var l = rawLeads().filter(function(x){ return x.id === id; })[0]; return l ? distOf(l) : null; }, origin: origin, mem: function(){ return GEO.mem; }, pump: function(){ GEO.at = 0; geoPump(model().all); } };
 
 /* ── the filters (chips, count boxes, distance, search) ── */
-function kindOf(l){
+var KIND_M = {}, KIND_N = 0;   /* the same lead, unchanged → the same kind (the classifier reads e-mails and text) */
+function kindOf(l){ var k = s(l && l.id) + '|' + s(l && (l.updatedAt || l.savedAt)) + '|' + s(l && l.leadKind) + '|' + s(l && l.type); var v = KIND_M[k]; if (v) return v; if (++KIND_N > 6000) { KIND_M = {}; KIND_N = 0; } return (KIND_M[k] = kindOf0(l)); }
+function kindOf0(l){
   if (isBidL(l)) return 'bids';
   var k = ''; try { k = W._gcLeadRoles && W._gcLeadRoles.classify ? W._gcLeadRoles.classify(l) : ''; } catch (e) {}
   if (k === 'insurance' || typeOf(l) === 'insurance' || typeOf(l) === 'mitigation') return 'ins';

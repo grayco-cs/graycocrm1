@@ -59,6 +59,9 @@ one("function hubHtml(){\n  var ks = kpis();", "function hubHtml0(){\n  var ks =
 one("function drawerHtml(l){\n  var it = inboxOf(l) || {}, pl = plansOf(l)", "function drawerHtml0(l){\n  var it = inboxOf(l) || {}, pl = plansOf(l)")
 one("function bodyHtml(){\n", JS + "\n/* ═══ end LEADSUI block ═══ */\nfunction bodyHtml(){\n")
 
+one("function isBidL(l){ try { if (typeof W._gcIsBidLead === 'function') return !!W._gcIsBidLead(l); } catch (e) {} return /commercial|government/.test(typeOf(l)); }",
+    "function isBidL(l){ var k = s(l && l.id) + '|' + s(l && (l.updatedAt || l.savedAt)) + '|' + s(l && l.leadKind) + '|' + s(l && l.type) + '|' + s(l && l.source); var v = ISB_M[k]; if (v !== undefined) return v; if (++ISB_N > 6000) { ISB_M = {}; ISB_N = 0; } return (ISB_M[k] = isBidL0(l)); }   /* patch LEADSUI: remembered per lead version */\nvar ISB_M = {}, ISB_N = 0;\nfunction isBidL0(l){ try { if (typeof W._gcIsBidLead === 'function') return !!W._gcIsBidLead(l); } catch (e) {} return /commercial|government/.test(typeOf(l)); }")
+
 # ── 2. nothing remembered: every visit opens on List, All ──
 between("function loadUI(){\n", "var UI = loadUI();",
 """function loadUI(){   /* patch LEADSUI: every visit (and reload) opens on 📋 List and All — no filter, sort or view is remembered */

@@ -164844,7 +164844,9 @@ var STAGE_IC = { 'New Lead': '🆕', 'Contacted': '📞', 'Site Visit': '📍', 
 function stageOf(l){ var st = s(l.stage); if (STAGES.indexOf(st) >= 0) return st; if (/^(new|lead|)$/i.test(st)) return 'New Lead'; if (/won/i.test(st)) return 'Won'; if (/lost|dead|no ?bid|declin/i.test(st)) return 'Lost'; if (/submit|sent|bid/i.test(st)) return 'Estimate Sent'; return 'Contacted'; }
 function closed(l){ var st = stageOf(l); return st === 'Won' || st === 'Lost' || l.converted || l.notBidding; }
 /* patch HOT2 (owner 10/22): bids for the estimator; closed / lost / not bidding / expired hidden unless asked for */
-function isBidL(l){ try { if (typeof W._gcIsBidLead === 'function') return !!W._gcIsBidLead(l); } catch (e) {} return /commercial|government/.test(typeOf(l)); }
+function isBidL(l){ var k = s(l && l.id) + '|' + s(l && (l.updatedAt || l.savedAt)) + '|' + s(l && l.leadKind) + '|' + s(l && l.type) + '|' + s(l && l.source); var v = ISB_M[k]; if (v !== undefined) return v; if (++ISB_N > 6000) { ISB_M = {}; ISB_N = 0; } return (ISB_M[k] = isBidL0(l)); }   /* patch LEADSUI: remembered per lead version */
+var ISB_M = {}, ISB_N = 0;
+function isBidL0(l){ try { if (typeof W._gcIsBidLead === 'function') return !!W._gcIsBidLead(l); } catch (e) {} return /commercial|government/.test(typeOf(l)); }
 function expired(l){ if (!l || closed(l)) return false; try { if (typeof W._gcBidExpired === 'function') return !!W._gcBidExpired(l); } catch (e) {} var t = dueMs(l); return isFinite(t) && Date.now() - t > 7 * 864e5 && !/submit/i.test(s(l.bidStatus)); }
 var SHUT_HOT2 = /^(won|lost|dead|deleted|declined|not\s*bidding|no\s*bid|archived|cancell?ed|closed|dismissed|converted)$/i;
 function shut(l){ return closed(l) || !!(l.noBid || l.dismissed) || [l.status, l.inboxState, l.bidStatus].some(function(v){ return SHUT_HOT2.test(s(v)); }) || expired(l); }
@@ -165332,7 +165334,9 @@ function useMyLocation(on){
 W._gcLeadsGeo = { dist: function(id){ var l = rawLeads().filter(function(x){ return x.id === id; })[0]; return l ? distOf(l) : null; }, origin: origin, mem: function(){ return GEO.mem; }, pump: function(){ GEO.at = 0; geoPump(model().all); } };
 
 /* ── the filters (chips, count boxes, distance, search) ── */
-function kindOf(l){
+var KIND_M = {}, KIND_N = 0;   /* the same lead, unchanged → the same kind (the classifier reads e-mails and text) */
+function kindOf(l){ var k = s(l && l.id) + '|' + s(l && (l.updatedAt || l.savedAt)) + '|' + s(l && l.leadKind) + '|' + s(l && l.type); var v = KIND_M[k]; if (v) return v; if (++KIND_N > 6000) { KIND_M = {}; KIND_N = 0; } return (KIND_M[k] = kindOf0(l)); }
+function kindOf0(l){
   if (isBidL(l)) return 'bids';
   var k = ''; try { k = W._gcLeadRoles && W._gcLeadRoles.classify ? W._gcLeadRoles.classify(l) : ''; } catch (e) {}
   if (k === 'insurance' || typeOf(l) === 'insurance' || typeOf(l) === 'mitigation') return 'ins';
