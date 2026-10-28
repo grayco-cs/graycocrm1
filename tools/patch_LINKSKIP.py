@@ -19,7 +19,7 @@ OLD = """      if(el.getAttribute && el.getAttribute('data-gc-linked')==='1') re
 NEW = """      if(el.getAttribute && el.getAttribute('data-gc-linked')==='1') return true;
       """ + MARK + """: lists that redraw themselves (and draw their own call / e-mail / map buttons) are left alone */
       if(el.id && LS_IDS[el.id]) return true;
-      if(el.classList && (el.classList.contains('gcl-list') || el.classList.contains('gcl-card') || el.classList.contains('apx-row') || el.classList.contains('td2'))) return true;
+      if(el.classList && (el.classList.contains('gcl-list') || el.classList.contains('gcl-classic-body') || el.classList.contains('gcl-card') || el.classList.contains('apx-row') || el.classList.contains('td2'))) return true;
       el=el.parentNode;"""
 assert src.count(OLD) == 1, ('LINKSKIP find-string count != 1', src.count(OLD))
 src = src.replace(OLD, NEW)

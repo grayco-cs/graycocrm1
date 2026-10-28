@@ -77048,7 +77048,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       if(el.getAttribute && el.getAttribute('data-gc-linked')==='1') return true;
       /* patch LINKSKIP: lists that redraw themselves (and draw their own call / e-mail / map buttons) are left alone */
       if(el.id && LS_IDS[el.id]) return true;
-      if(el.classList && (el.classList.contains('gcl-list') || el.classList.contains('gcl-card') || el.classList.contains('apx-row') || el.classList.contains('td2'))) return true;
+      if(el.classList && (el.classList.contains('gcl-list') || el.classList.contains('gcl-classic-body') || el.classList.contains('gcl-card') || el.classList.contains('apx-row') || el.classList.contains('td2'))) return true;
       el=el.parentNode;
     }
     return false;
@@ -92680,6 +92680,8 @@ document.addEventListener('click', function(){ setTimeout(function(){ try{ card(
       if(onIntegrations()){ if(p) p.remove(); return; }     // the card is right there
       if(get('gc_cc_nag_off','')==='1'){ if(p) p.remove(); return; }
       if(p) return;
+      /* patch CCNAG: put up once per visit — taken away by the page, it stays away (no flicker every 2.5 s) */
+      if(window.__gcCCNagShown) return; window.__gcCCNagShown = true;
       p=document.createElement('div');
       p.id='_gcCCNag';
       p.style.cssText='position:fixed;right:14px;top:10px;z-index:2147483470;background:#b45309;color:#fff;'
@@ -173057,7 +173059,8 @@ function paintCounts(){
 }
 function mountApx(){
   if (!isAdminish()) return;
-  var m = D.getElementById('gc-apx-mount'); if (!m || !m.parentNode) return;
+  var m = D.getElementById('gc-apx-mount');
+  if (!m || !m.parentNode || !m.offsetParent) { Array.prototype.forEach.call(D.querySelectorAll('[data-gcdd-btn]'), function(x){ x.remove(); }); return; }   /* patch DDSTRAY: only next to the Approvals list */
   if (m.previousElementSibling && m.previousElementSibling.hasAttribute('data-gcdd-btn')) return;
   var old = m.parentNode.querySelector(':scope > [data-gcdd-btn]'); if (old) old.remove();
   css();
@@ -173875,8 +173878,8 @@ function mount(){
   [[body, ID, body && body.parentNode, body, 'padding:10px 14px;border-bottom:1px solid #e7e3f5;background:#fbfaff'], [la, ID + '-bar', la && la.parentNode, la && la.nextSibling, 'margin:0 0 8px;padding:6px 12px']].forEach(function(x){
     var anchor = x[0], id = x[1], parent = x[2], before = x[3]; if (!anchor || !parent) return;
     var cur = document.getElementById(id);
-    if (cur && cur.parentNode === parent && cur.nextSibling === before) { if (cur.getAttribute('data-sig') !== html) { cur.innerHTML = html; cur.setAttribute('data-sig', html); } return; }
-    if (cur) cur.remove();
+    if (cur && cur.parentNode === parent && (cur.nextSibling === before || before === cur)) { if (cur.getAttribute('data-sig') !== html) { cur.innerHTML = html; cur.setAttribute('data-sig', html); } return; }   /* patch CLBAR: already right after its anchor = in place */
+    if (cur) { if (before === cur) before = cur.nextSibling; cur.remove(); }
     cur = document.createElement('div'); cur.id = id; cur.setAttribute('data-gc-keep', '1'); cur.setAttribute('data-sig', html); cur.innerHTML = html;
     cur.style.cssText = 'font-size:13px;' + x[4];
     parent.insertBefore(cur, before);
