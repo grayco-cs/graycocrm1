@@ -1,0 +1,26 @@
+/* patch DUESEEN tests: node tools/tests/test_DUESEEN.js — bid due dates: only what the e-mail says, in Central time, with its words */
+'use strict';
+const assert = require('assert'); const path = require('path');
+const BD = require(path.join(__dirname, '../../netlify/functions/_lib/bid-due.js'));
+const ref = '2026-10-27T12:00:00Z';
+const chk = (text, ai) => BD.checkAi(text, ai || '', BD.findDue(text, { ref }));
+let r;
+r = chk('City of Bolivar – Hatchie River Park Development\nBids due: November 20, 2026\nPlans at Memphis Reprographics');
+assert.strictEqual(r.due, '2026-11-20', 'date only → no time'); assert.ok(/Bids due: November 20, 2026/.test(r.snippet), r.snippet);
+r = chk('Sealed bids due Thursday, November 12, 2026 at 2:00 PM CST to the City Clerk.');
+assert.strictEqual(r.due, '2026-11-12T14:00');
+r = chk('Proposals due November 18, 2026 5:00 PM EST via BuildingConnected');
+assert.strictEqual(r.due, '2026-11-18T16:00', '5 PM Eastern = 4 PM Central');
+r = chk('Bid Date: 11/19/2026 11:59 PM PT');
+assert.strictEqual(r.due, '2026-11-20T01:59', '11:59 PM Pacific = 1:59 AM Central next day');
+r = chk('Aloft Nashville, TN\nYou have been invited to bid.\nBid Due: Nov 20, 2026', '2026-11-20T18:59');
+assert.strictEqual(r.due, '2026-11-20', 'an AI time not in the e-mail is dropped (no fake 6:59 PM)');
+r = chk('Hello, please send pricing for the attached scope. Thanks!', '2026-11-20T18:59');
+assert.strictEqual(r.due, '', 'an AI date not in the e-mail is never used');
+r = chk('PlanHub Project Notification\nREBID NWCC Agricultural Technology Facility\nBid Date: 11/04/2026 9:00 AM CST\nLocation: Senatobia, MS');
+assert.strictEqual(r.due, '2026-11-04T09:00'); assert.ok(/11\/04\/2026 9:00 AM/.test(r.snippet), r.snippet);
+r = chk('BuildingConnected\nMaintenance Shop Construction at Kefauver Terrace\nDue Date Wed, Nov 18, 2026 2:00 PM CST');
+assert.strictEqual(r.due, '2026-11-18T14:00');
+r = chk('The owner wants numbers by Friday the 20th of November at 2 pm.', '2026-11-20T14:00');
+assert.strictEqual(r.due, '2026-11-20T14:00', 'AI day and time both written in the e-mail → kept');
+console.log('DUESEEN tests: all passed');

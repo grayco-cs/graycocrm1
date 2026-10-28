@@ -124880,6 +124880,7 @@ function fromItem(it, prev){
   l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
   l.inboxId = it.id; l.inboxRev = it.rev || 1; l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
+  if (s(it.dueSnippet) && !(prev && prev.bidDueManual)) l.dueSnippet = s(it.dueSnippet).slice(0, 300);   /* patch DUESEEN: the e-mail's words for the due date */
   if (it.estimator) { l.estimator = s(it.estimator); l.estimatorEmail = s(it.estimatorEmail); }
   l.gc = s(it.gc); l.owner = s(it.owner); l.city = s(it.city); l.state = s(it.state); l.trades = arr(it.trades).slice(0, 12); l.scope = s(it.scope);
   l.plansLinks = arr(it.plansLinks).map(function(x){ return { url: x.url, label: x.label, board: x.board }; }).slice(0, 25);
@@ -125324,7 +125325,8 @@ function card(l){
     + (l.inboxFlag ? '<span class="tg t-flag">' + esc(l.inboxFlag) + '</span>' : '') + (arr(l.alsoOn).length ? '<span class="tg t-also">also on ' + esc(l.alsoOn.join(', ')) + '</span>' : '')
     + (l.needsReview ? '<span class="tg t-flag">needs a look</span>' : '') + '</div>'
     + '<div class="ttl">' + esc(l.name) + '</div>' + (where ? '<div class="sub">' + esc(where) + '</div>' : '')
-    + (l.websiteLead && typeof window._gcWebCardLine === 'function' ? window._gcWebCardLine(l) : '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + '</div>')   /* patch WEB */
+    + (l.websiteLead && typeof window._gcWebCardLine === 'function' ? window._gcWebCardLine(l) : '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (s(l.bidDue).length === 10 ? ' · time not stated' : '') + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + (window._gcLA && window._gcLA.edit ? ' <button class="b" data-a="editdue" title="Correct the bid due date" style="padding:2px 8px;font-size:12px">✏️ ' + (l.bidDue ? 'Fix' : 'Add it') + '</button>' : '') + '</div>'
+      + (s(l.dueSnippet) ? '<div class="sub" style="font-style:italic">found in the e-mail: “' + esc(s(l.dueSnippet).slice(0, 170)) + '”</div>' : ''))   /* patch WEB; /* patch DUESEEN: time not stated / the e-mail's words / ✏️ fix it */
     + (l.preBid ? '<div class="sub">Pre-bid: ' + esc(fmtWhen(l.preBid)) + '</div>' : '')
     + (arr(l.trades).length || l.bidNumber ? '<div class="sub">' + esc([arr(l.trades).join(', '), l.bidNumber && 'Bid # ' + l.bidNumber].filter(Boolean).join(' · ')) + '</div>' : '')
     + (l.contactName || l.phone || l.email ? '<div class="sub">👤 ' + esc([l.contactName, l.phone, l.email].filter(Boolean).join(' · ')) + '</div>' : '')
@@ -125785,6 +125787,7 @@ function onClick(e){
   if (a === 'job') return dlgJob(id);
   if (a === 'openjob') { var l = findLead(id); if (l && l.pid) openJob(l.pid); return; }
   if (a === 'publish') return dlgPublish(id);
+  if (a === 'editdue') { var go = function(){ try { return !!(window._gcLA && window._gcLA.edit(id, b)); } catch (x) { return false; } }; if (!go()) setTimeout(function(){ if (!go()) toast('Open the lead to add the bid due date.'); }, 450); return; }   /* patch DUESEEN */
 }
 function onChange(e){ var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (!f) return; UI[f] = e.target.value; lsSet(K_UI, UI); LDI_LIM = 40; LDI_FORCE = true; render(); }
 function dropHandlers(root, onFiles){
