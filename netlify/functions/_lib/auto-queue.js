@@ -35,6 +35,14 @@ function switchOff(p, key, data){
   try { const ja = require('./job-auto.js'); if (ja && typeof ja.allows === 'function') return ja.allows(p, key, ja.parseAdmin(data && data.jobAutoDefaults)) === false; } catch (e) {}   /* patch JA: + the Admin defaults */   /* patch JA, when present */
   return !!(p && p.auto && p.auto[key] === false);
 }
+function commercialJob(p, data){
+  const t = [p.type, p.jobType, p.category, p.projectType, p.kind, p.segment].map(s).join(' ');
+  if (p.isCommercial === true || p.commercial === true) return true;
+  if (/commercial|government|municipal|public|school|church|office build|retail|warehouse|tenant|industrial|hotel|restaurant|apartment|multi-?family/i.test(t)) return true;
+  try { const cs = (data && (Array.isArray(data.customers) ? data.customers : [])) || []; const c = cs.find(function(x){ return x && (s(x.id) === s(p.customerId) || (s(x.name) && s(x.name) === s(p.client))); }); if (c && /^(gc|general contractor|commercial|business|government)$/i.test(s(c.type))) return true; } catch (e) {}
+  return false;
+}
+function personTurnedOn(p, key){ return !!((p.auto && p.auto[key] === true) || (p.autoX && p.autoX.apptAuto === true) || (p.auto && p.auto.apptAuto === true)); }
 async function queue(body, who, I){
   const kind = s(body.kind), K = KINDS[kind];
   const pid = s(body.projectId);
@@ -49,7 +57,28 @@ async function queue(body, who, I){
   const html = String(body.html || '').slice(0, 100000);
   if (!s(html) || !s(body.subject)) return { status: 400, out: { ok: false, error: 'A subject and a message are needed.' } };
   const pm = I.pmOf(data, p);
-  const title = clip(body.title, 120) || (K.title + ' — ' + clip(p.name, 80));
+  let title = clip(body.title, 120) || (K.title + ' — ' + clip(p.name, 80));
+  /* patch APPTCONF: no automatic appointment mail on a commercial job unless a person turned it on; one confirmation per job, day and recipient */
+  const day = (ref.match(/_(\d{8})/) || [])[1] || '';
+  if (K.appt && commercialJob(p, data) && !personTurnedOn(p, K.key)) return { status: 200, out: { ok: false, off: 'commercial', error: 'Commercial job: appointment e-mails are off unless someone turns them on for this job.' } };
+  if (kind === 'appt_confirm' && day) {
+    const cur0 = await I.kvListRead(I.AQ_KEY);
+    const twin = cur0 && cur0.list.find(function(x){ return x && x.kind === 'appt_confirm' && s(x.jobId) === pid && s((x.meta || {}).day || ((s(x.id).match(/_(\d{8})/) || [])[1])) === day && s(x.to).toLowerCase() === to.toLowerCase() && /^(waiting|sending|sent|recorded)$/.test(s(x.status)) && s(x.id) !== qid; });
+    if (twin) {
+      const whatNew = (s(body.title).match(/Confirm (.+?) — /) || [])[1] || '';
+      if (twin.status === 'waiting' && whatNew) {
+        await I.kvListUpdate(I.AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === s(twin.id); }); if (!x || x.status !== 'waiting') return null;
+          const items = Array.isArray((x.meta || {}).items) ? x.meta.items.slice() : [((s(x.title).match(/Confirm (.+?) — /) || [])[1] || '')].filter(Boolean);
+          if (items.indexOf(whatNew) >= 0) return null;
+          items.push(whatNew); x.meta = Object.assign({}, x.meta || {}, { items: items, day: day });
+          x.title = clip(s(x.title).replace(/Confirm (.+?) — /, 'Confirm ' + items.join(' + ') + ' — '), 120);
+          x.html = String(x.html || '').replace(/(<p>Your project manager:)/, '<p>The same day: <b>' + whatNew.replace(/[<>&]/g, '') + '</b>.</p>$1');
+          x.updatedAt = new Date().toISOString();
+          return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === s(twin.id); }); return !!(z && z.updatedAt === x.updatedAt); }, result: x }; });
+      }
+      return { status: 200, out: { ok: true, id: s(twin.id), queued: false, merged: true } };
+    }
+  }
   /* appointment rule: auto after the first approved one (or the job's apptAuto switch) */
   let auto = false;
   if (K.appt) {
@@ -61,7 +90,7 @@ async function queue(body, who, I){
     }
   }
   const ok = await I.queueApproval({ id: qid, kind: kind, title: title, pid: pid, jobName: p.name, pm: pm, to: to, channel: sms ? 'sms' : 'email',
-    subject: clip(body.subject, 200), html: html, attachments: [], meta: { by: who.email, ref: ref, auto: !!auto } });
+    subject: clip(body.subject, 200), html: html, attachments: [], meta: { by: who.email, ref: ref, auto: !!auto, day: day || undefined } });
   if (!ok) return { status: 502, out: { ok: false, error: 'Could not add it to the approvals list.' } };
   if (!auto) return { status: 200, out: { ok: true, id: qid, queued: true } };
   /* send it now, recorded on the list like an approval */

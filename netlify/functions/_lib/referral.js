@@ -609,13 +609,17 @@ async function portal(data, p, body, ctx){
 
 /* ── the CRM's view (Marketing → 🎁 Referral program) ─────────────────────── */
 async function overview(){
-  const st = await settings();
-  const [mems, refs, cs, led] = await Promise.all([members(), referrals(), cards(), ledger()]);
+  /* patch REFWHY: a part that cannot be read counts as empty (and is named), the answer still comes */
+  const degraded = [];
+  const safe = function(name, p, dflt){ return Promise.resolve().then(function(){ return p(); }).catch(function(e){ degraded.push(name + ': ' + s(e && e.message).slice(0, 80)); return dflt; }); };
+  const st = await safe('settings', settings, cleanSettings(null));
+  const [mems, refs, cs, led] = await Promise.all([safe('members', members, []), safe('referrals', referrals, []), safe('cards', cards, []), safe('ledger', ledger, [])]);
   let waiting = [];
   try { const cur = await core().kvListRead(core().AQ_KEY); waiting = arr(cur && cur.list).filter(function(x){ return (x.kind === 'refcredit' || x.kind === 'refgift') && x.status === 'waiting'; }).map(function(x){ const mm = x.meta || {}; return { id: x.id, kind: x.kind, to: x.to, amount: num(mm.amount), memberId: s(mm.memberId), memberName: s(mm.memberName), referredName: s(mm.referredName), contract: num(mm.contract), createdAt: x.createdAt }; }); } catch (e) {}
   const live = cs.filter(function(c){ return c.status === 'issued'; });
   const balances = mems.map(function(m){ return balanceOf(led, m.id); });
   return {
+    degraded: degraded,   /* patch REFWHY */
     settings: st, min: MIN, max: MAX, giftMin: GIFT_MIN,
     members: mems.map(function(m, i){ const mine = refs.filter(function(r){ return r.memberId === m.id; });
       return Object.assign(pubMember(m, st), { referrals: mine.length, hired: mine.filter(function(r){ return /job|paid|credited/.test(r.status); }).length, balance: balances[i],

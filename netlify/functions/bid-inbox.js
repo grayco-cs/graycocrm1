@@ -657,7 +657,8 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
     const notes = [];
     const aiDue = dueOf(L.bid_due_date, L.bid_due_time);
     const tx = base.length > 1 ? BD.findDueFor(allText, s(L.project_name) || title, { ref }) : txDue;
-    const bidDue = BD.merge(aiDue, tx);
+    /* patch DUESEEN: only a date (and time) the e-mail states, with its words */
+    const seen = BD.checkAi(allText, aiDue, tx), bidDue = seen.due, dueSnippet = seen.snippet;
     /* LA: who the bid is due to, and how it is submitted */
     const sub = BD.findSubmit(allText), board = SOURCES.indexOf(source) >= 0 && /BuildingConnected|PlanHub|Planroom/.test(source) ? source : '';
     const dueTo = { company: s(L.submit_to_company) || s(L.gc_name) || s(L.owner), contact: s(L.submit_to_contact) || s(L.contact_name), email: low(L.submit_to_email) || sub.email || low(L.contact_email),
@@ -676,7 +677,7 @@ function recordsFrom(mail, ai, links, hint, stored, rawRef){
       id: itemId((mail.id || mail.messageId || mail.subject + mail.date) + '|' + i + '|' + normTitle(title)),
       title: title.slice(0, 200), source, sourceKind: ai.kind || (ai.ok ? '' : 'unread'), sourceRef: mail.subject.slice(0, 200),
       type, owner: s(L.owner), gc: s(L.gc_name), address: s(L.address), city: s(L.city), state: s(L.state).toUpperCase().slice(0, 2), zip: s(L.zip),
-      bidDue, dueToCompany: dueTo.company, dueToContact: dueTo.contact, dueToEmail: dueTo.email, dueToPhone: dueTo.phone, submitMethod: dueTo.method, submitWhere: dueTo.where,
+      bidDue, dueSnippet, dueTimeStated: !!seen.timeStated, dueToCompany: dueTo.company, dueToContact: dueTo.contact, dueToEmail: dueTo.email, dueToPhone: dueTo.phone, submitMethod: dueTo.method, submitWhere: dueTo.where,
       preBid: dueOf(L.prebid_date, L.prebid_time), preBidLocation: s(L.prebid_location), preBidMandatory: !!L.prebid_mandatory,
       trades: arr(L.trades).map(s).filter(Boolean).slice(0, 12), scope: s(L.scope_summary).slice(0, 600), bidNumber: s(L.bid_number),
       contact: { name: s(L.contact_name), email: low(L.contact_email), phone: phone(L.contact_phone) },
