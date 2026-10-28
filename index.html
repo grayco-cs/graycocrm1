@@ -157934,9 +157934,15 @@ function rowExp(a, mine, now){
     open: { l: 'Open / Edit', f: function(){ call('_gcOpenExpenseApprovals'); } }, edit: { l: '✏️ Open expense', form: 'exp' },
     doc: a.expId || a.id ? { l: '🧾 Expense', f: function(){ call('_gcShowExpenseDetail', s(a.expId || a.id)); } } : null };
 }
+function openChecksHere(){
+  var before = D.body ? D.body.children.length : 0;
+  try { W._gcOpenCheckApprovals(); } catch (e) { warn(e); return; }
+  try { var kids = D.body.children; for (var i = before; i < kids.length; i++) if (getComputedStyle(kids[i]).position === 'fixed') kids[i].setAttribute('data-gc-keep', '1'); } catch (e) {}
+}
 function rowOther(o, mine, now){
   var key = s(o.id).replace(/^td:/, ''), it = td2Items().filter(function(x){ return x && x.key === key; })[0] || {};
   var p = proj(it.pid), act = o.act || it.act;
+  if (/check\(s\) to (sign|write)|waiting on owner signature|^write check/i.test(s(o.title || it.title)) && typeof W._gcOpenCheckApprovals === 'function') act = { l: (act && act.l) || 'Open checks', f: openChecksHere };   /* patch CHECKOPEN */
   return { key: 'td:' + key, id: key, src: 'other', kind: 'todo', kindL: 'To-Do approval', icon: '✅', title: s(o.title || it.title) + (o.sub ? ' — ' + s(o.sub) : ''),
     pid: s(it.pid), job: jobLine(p, ''), pm: s(p && p.pm), step: 'me', waits: 'You', since: Date.parse(it.created || it.at || 0) || 0, clock: '', amount: num(it.amount), mine: mine, escalated: false, chain: '',
     approve: act && act.f ? { l: '✅ ' + (s(act.l).replace(/^✅\s*/, '') || 'Approve'), f: function(){ try { act.f(); } catch (e) { warn(e); } } } : null,
@@ -158164,6 +158170,8 @@ function editForOther(o, it, act){
   var t = low(s(o.title || it.title)), lead = s(it.leadId || it.lid || (/^lead[:|]/.test(s(it.key)) ? s(it.key).replace(/^lead[:|]/, '') : ''));
   var what = /lead/.test(t) ? 'lead' : /change order/.test(t) ? 'change order' : /contract/.test(t) ? 'contract' : /check/.test(t) ? 'check' : /cost/.test(t) ? 'costs' : /material|order/.test(t) ? 'order' : 'item';
   if (what === 'lead' && lead) return { l: '✏️ Open lead', f: function(){ goAway('td:' + s(it.key || o.id), function(){ call('_gcOpenLead', lead); }); } };
+  /* patch CHECKOPEN: checks open the ✓ Checks window in place (no screen change that would close it) */
+  if (what === 'check' && typeof W._gcOpenCheckApprovals === 'function') return { l: '✏️ Open check', f: openChecksHere };
   if (act && act.f) return { l: '✏️ Open ' + what, f: function(){ goAway('td:' + s(it.key || o.id).replace(/^td:/, ''), function(){ act.f(); }); } };
   if (it.pid) return { l: '✏️ Open job', f: function(){ goAway('td:' + s(it.key), function(){ openJob(it.pid); }); } };
   return null;
