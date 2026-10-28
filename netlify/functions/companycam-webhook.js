@@ -129,6 +129,13 @@ function ccWhen(v){
   const n = Number(v); if (isFinite(n) && String(v).trim() !== '') return n > 1e12 ? Math.floor(n / 1000) : n;
   const d = Date.parse(v); return isNaN(d) ? 0 : Math.floor(d / 1000);
 }
+/* patch PHOTOLINK: the project's feature image, the thumbnail size (https only) */
+function ccThumb(p){
+  const f = p && p.feature_image; const l = Array.isArray(f) ? f : (f && typeof f === 'object' ? (Array.isArray(f.uris) ? f.uris : [f]) : []);
+  const by = {}; l.forEach(function(u){ if (u && u.type) by[u.type] = String(u.uri || u.url || ''); });
+  const t = by.thumbnail || by.web || '';
+  return /^https:\/\/[^\s"'<>]+$/i.test(t) ? t : '';
+}
 /* the small, safe shape of a project the review list needs */
 function ccCompact(p){
   const a = p.address || {};
@@ -143,6 +150,7 @@ function ccCompact(p){
     created_at: ccWhen(p.created_at), updated_at: ccWhen(p.updated_at || p.created_at),
     creator: String(cr.name || [cr.first_name, cr.last_name].filter(Boolean).join(' ') || p.creator_name || p.created_by_name || '').trim(),
     photo_count: (p.photo_count != null ? Number(p.photo_count) : null),
+    thumb: ccThumb(p),   /* patch PHOTOLINK: the project's cover, small (GrayCo Photos cards; no photo read per card) */
     status: String(p.status || ''),
     url: String(p.project_url || p.url || ('https://app.companycam.com/projects/' + (p.id || ''))),
     contact: c ? { name: String(c.name || c.full_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || ''),
@@ -319,7 +327,7 @@ exports.handler = async function(event, context) {
       body: JSON.stringify(rows.map(function(x){ return { key: x.key, value: x.value, updated_at: new Date().toISOString() }; })) }); return r.ok; };
     const isObj = function(v){ return !!v && typeof v === 'object' && !Array.isArray(v); };
     try{
-      const cur = await rd(['gc_cc_sync_request', 'gc_cc_review', 'gc_cc_dismissed']);
+      const cur = await rd(['gc_cc_sync_request', 'gc_cc_review', 'gc_cc_dismissed', 'gc_cc_link_no']);
       const req = Object.assign({}, isObj(cur.gc_cc_sync_request) ? cur.gc_cc_sync_request : {}), at = new Date().toISOString();
       if(qs.proxy === 'syncnow'){
         Object.assign(req, { full: true, at: at, by: who.email || '' });
@@ -327,11 +335,22 @@ exports.handler = async function(event, context) {
         return { statusCode: 200, headers, body: JSON.stringify({ ok: ok, message: ok ? 'Full CompanyCam sync asked for — it runs within 15 minutes.' : 'Could not save the request.' }) };
       }
       let b = {}; try{ b = JSON.parse(event.body || '{}') || {}; }catch(e){ b = {}; }
-      const cc = String(b.cc || '').trim(), act = String(b.act || ''), kind = String(b.kind || '');
-      if(!/^\d{1,20}$/.test(cc) || !/^(dismiss|make|done)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'cc and act (make | dismiss | done) are required' }) };
+      const cc = String(b.cc || '').trim(), act = String(b.act || ''), kind = String(b.kind || ''), job = String(b.job || '').trim();
+      if(!/^\d{1,20}$/.test(cc) || !/^(dismiss|make|done|link|notthis)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'cc and act (make | dismiss | done | link | notthis) are required' }) };
+      if((act === 'link' || act === 'notthis') && !/^[A-Za-z0-9_\-:.]{1,80}$/.test(job)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'job is required' }) };
       const list = Array.isArray(cur.gc_cc_review) ? cur.gc_cc_review : [];
+      /* patch PHOTOLINK: "Link" — the project's photos go on that job (the 15-minute sync ties it; the CRM page ties it at once);
+         "Not this job" — that pair is never suggested or linked again (gc_kv gc_cc_link_no); the project stays on the list
+         with whatever other jobs it could be */
+      if(act === 'notthis'){
+        const no = Object.assign({}, isObj(cur.gc_cc_link_no) ? cur.gc_cc_link_no : {}); no[cc + '|' + job] = { at: at, by: who.email || '' };
+        const next = list.map(function(x){ return x && String(x.cc) === cc && Array.isArray(x.jobs) ? Object.assign({}, x, { jobs: x.jobs.filter(function(j){ return j && String(j.id) !== job; }) }) : x; });
+        const ok = await wr([{ key: 'gc_cc_link_no', value: no }, { key: 'gc_cc_review', value: next }]);
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: ok }) };
+      }
       const rows = [{ key: 'gc_cc_review', value: list.filter(function(x){ return !(x && String(x.cc) === cc && (!kind || x.kind === kind)); }) }];
       if(act === 'dismiss'){ const dis = Object.assign({}, isObj(cur.gc_cc_dismissed) ? cur.gc_cc_dismissed : {}); dis['id:' + cc] = { at: at, by: who.email || '', why: 'CompanyCam review list: not a new job' }; rows.push({ key: 'gc_cc_dismissed', value: dis }); }
+      if(act === 'link'){ req.link = Object.assign({}, isObj(req.link) ? req.link : {}); req.link[cc] = job; rows.push({ key: 'gc_cc_sync_request', value: req }); }
       if(act === 'make'){ req.make = Object.assign({}, isObj(req.make) ? req.make : {}); req.make[cc] = at; Object.assign(req, { full: true, at: at, by: who.email || '' }); rows.push({ key: 'gc_cc_sync_request', value: req }); }
       const ok = await wr(rows);
       return { statusCode: 200, headers, body: JSON.stringify({ ok: ok }) };
