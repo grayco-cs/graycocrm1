@@ -153550,7 +153550,7 @@ function wrapDecide(){
     if (approve) {
       var r = check(invId);
       if (r.ok && r.warnings.length) { flag(invId, r); toast(r.warnings[0].replace(/ — .*$/, '') + ' — approved anyway.'); }
-      if (!r.ok) { flag(invId, r); var self = this, args = arguments; stopWindow(invId, r, 'approval', function(n){ f.call(self, invId, true, s(note) || ('Pay check overridden: ' + n)); try { if (W.__GC_REFRESH_UI__) later(W.__GC_REFRESH_UI__, 60); } catch (e) {} }); return false; }
+      if (!r.ok) { /* patch PAYFAST: the window first, the flag saved after it is on screen */ (function(id0, r0){ later(function(){ var rw = rowOf(id0); if (rw && rw.payOverride) return; flag(id0, r0); }, 500); })(invId, r); var self = this, args = arguments; stopWindow(invId, r, 'approval', function(n){ f.call(self, invId, true, s(note) || ('Pay check overridden: ' + n)); try { if (W.__GC_REFRESH_UI__) later(W.__GC_REFRESH_UI__, 60); } catch (e) {} }); return false; }
     }
     return f.apply(this, arguments);
   };
@@ -153599,6 +153599,9 @@ function decorate(){
   });
 }
 function settled(id){ var iv = invOf(id); return !!(iv && (iv.approved === true || /^(approved|paid|written)$/i.test(s(iv.status)))); }
+/* patch PAYFAST: would the pay check stop this sub invoice? (kept 30 s) */
+var PB = { at: 0, m: {} };
+W._gcSubPayBlocked = function(invId){ var id = s(invId); if (Date.now() - PB.at > 30000) PB = { at: Date.now(), m: {} }; if (!(id in PB.m)) { try { var r = check(id); PB.m[id] = !r.ok && !r.overridden; } catch (e) { PB.m[id] = false; } } return PB.m[id]; };
 W._gcSubPayFlags = function(){ return queue().filter(function(a){ return a && a.status === 'pending_pm' && a.payCheck && !a.payOverride && !settled(s(a.invId || a.id)); }); };
 /* the warnings of a waiting sub invoice, worked out live (cached a minute; only for cards on screen and the Admin page) */
 var WC = { at: 0, m: {} };
@@ -157908,7 +157911,7 @@ function rowSub(a, mine, now){
   return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (s(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + s(a.desc).slice(0, 60) : ''),
     pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM — ' + (s(a.pmName) || s(p && p.pm) || 'no PM'), since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
     escalated: false, chain: a.kickedBackToPm ? '↩ sent back by ' + s(a.deniedBy) : '',
-    approve: mine || adminLike() ? { l: '✅ Approve', mode: 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',
+    approve: mine || adminLike() ? { l: '✅ Approve', mode: (typeof W._gcSubPayBlocked === 'function' && W._gcSubPayBlocked(id)) ? undefined : 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',   /* patch PAYFAST: a stopped one opens the pay-check window at once */
     open: { l: 'Open / Edit', f: function(){ panelAt('[data-sub="' + cssq(id) + '"]'); } }, edit: { l: '✏️ Open sub invoice', form: 'sub' },
     doc: { l: '📄 Sub invoice', f: function(){ if (!call('_gcViewSubPDF', id, s(a.pid))) panelAt('[data-sub="' + cssq(id) + '"]'); } } };
 }
