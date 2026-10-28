@@ -79,6 +79,8 @@ function dialStep(i, chain){
     + '<Number url="' + esc(hookUrl('screen') + '&i=' + i) + '" method="POST">+1' + chain[i].phone + '</Number></Dial>';
 }
 function WI(){ return require('./website-intake.js')._lib; }
+function SA(){ return require('./_lib/smsalert.js'); }   /* patch SMSALERT: text alerts to staff cell phones */
+function LM(){ return require('./_lib/leadmsg.js'); }   /* patch LEADMAILMSG: what the customer said + call buttons in the e-mails */
 function core(){ return require('./portal.js')._core; }
 
 /* ── Twilio's signature: base64(HMAC-SHA1(token, url + every POST param name+value, sorted by name)) ── */
@@ -146,7 +148,7 @@ async function mailStaff(extra, subject, html, text){
   if (!to.length) return { ok: false, why: 'nobody to tell' };
   try {
     const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Leads'), html, text, headers: { 'X-GrayCo-CRM': 'missed-call' } }) });
+      body: JSON.stringify({ from: env('BID_ALERT_FROM') || 'GrayCo Leads <leads@grayco-cs.com>', reply_to: env('REPLY_TO_ADMIN') || 'replies@grayco-cs.com', to, subject: require('./_lib/mailtag.js').tag(subject, to, 'area:Leads'), html: LM().telify(html), text, headers: { 'X-GrayCo-CRM': 'missed-call' } }) });
     return { ok: r.ok, to };
   } catch (e) { return { ok: false, why: 'Resend unreachable' }; }
 }
@@ -173,7 +175,7 @@ async function callBackTodo(cust, ph, callSid, at, what){
     });
   } catch (e) { r = { ok: false, error: s(e && e.message) }; }
   const subj = '📞 Missed call from an existing customer: ' + (cust.client || tidy(ph)) + (cust.job ? ' — ' + cust.job : '');
-  const html = box('GrayCo — missed call (existing customer)', '<p><b>' + esc(cust.client || 'A customer') + '</b> called from <b>' + esc(tidy(ph)) + '</b> and nobody answered. They got the automatic text.</p>'
+  const html = box('GrayCo — missed call (existing customer)', LM().buttons({ phone: ph }) + LM().boxHtml(LM().textInfo({ name: cust.client, phone: ph, kind: 'customer', job: cust.job }), '📞 Who called') + '<p><b>' + esc(cust.client || 'A customer') + '</b> called from <b>' + esc(tidy(ph)) + '</b> and nobody answered. They got the automatic text.</p>'
     + (cust.job ? '<p>Their job: <b>' + esc(cust.job) + '</b>' + (cust.pm ? ' — PM <b>' + esc(cust.pm) + '</b>' : '') + '. A “📞 Call back” to-do is on that job' + (cust.pm ? ' for ' + esc(cust.pm) : ' (Office To-Do)') + '.</p>' : '<p>A “📞 Call back” to-do is on the Office To-Do.</p>'));
   const m = await mailStaff(pm && pm.email ? [pm.email] : [], subj, html, subj + '\n\nCall back: ' + tidy(ph) + '\n' + site());
   return { todo: id, saved: !!r.ok, mailed: m.ok };
@@ -207,6 +209,7 @@ async function missed(p, how, extra){
   } else out.text = { skipped: 'texted recently or opted out' };
   /* existing customer? */
   let cust = null; try { cust = await WI().findCustomer({ phone: ph, email: '' }); } catch (e) {}
+  try { out.cellAlerts = await SA().missedCall({ ph, name: cust ? cust.client : s(p.CallerName), job: cust ? cust.job : '', pid: cust ? cust.pid : '' }); } catch (e) {}   /* patch SMSALERT */
   if (cust && (cust.pid || cust.client)) {
     out.customer = await callBackTodo(cust, ph, callSid, at, s(extra.what));
     await stateCas(st => { st.owner[ph] = { todo: out.customer.todo, pid: s(cust.pid), pm: s(cust.pm), at }; return true; }).catch(() => {});
@@ -416,6 +419,7 @@ async function inboundSms(p){
   const sid = s(p.MessageSid || p.SmsSid) || crypto.createHash('sha256').update(ph + '|' + body + '|' + at.slice(0, 16)).digest('hex').slice(0, 24);
   if (ph.length !== 10) return { skipped: 'no number' };
   if (STOP.test(body)) { await stateCas(st => { st.optout[ph] = at; return true; }); return { optout: true }; }
+  try { const sa = await SA().staffInbound(ph, body, s(p.MessageSid || p.SmsSid)); if (sa) return Object.assign({ cellAlerts: true }, sa); } catch (e) {}   /* patch SMSALERT: a staff cell in the alerts table — a reply to the last alert, never a lead */
   if (START.test(body)) { await stateCas(st => { delete st.optout[ph]; return true; }); return { optin: true }; }
   /* Twilio retries a webhook it thinks failed: the same message is handled once */
   let fresh = false;
@@ -485,7 +489,7 @@ async function inboundSms(p){
     try {
       const lsid = crypto.createHash('sha256').update('text|' + ph + '|' + at.slice(0, 10)).digest('hex').slice(0, 24);
       const r = await WI().fileLead(f, { sid: lsid, source: 'Text message', how: 'a text message to the GrayCo number', formLabel: 'Text message',
-        title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph } });
+        title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph, textBody: clip(body, 8000) } });   /* patch LEADMAILMSG: the full text */
       out.newLead = r.id; out.action = r.action;
       await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
       out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
@@ -493,6 +497,7 @@ async function inboundSms(p){
   }
   /* 5) the job's PM hears too */
   let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
+  try { out.cellAlerts = await SA().inboundText({ ph, body, who, pid, label, urgent: !!rt.urgent, mine: rt.to.map(x => x.email).concat(pm && pm.email ? [pm.email] : [], st0.lastOut && st0.lastOut[ph] ? [st0.lastOut[ph].email] : []) }); } catch (e) {}   /* patch SMSALERT */
   /* patch SMSCONSENT: texting us first is consent (via 'text') — only when nothing is recorded yet, never over STOP, never for subs / staff;
      the first reply to that number carries the subscription notice, once (prepended to the automatic answer, never a second text) */
   let noticeNow = false;
@@ -616,13 +621,14 @@ async function inboundSms(p){
   const emerg = !!(rule && rule.alert) || !!rt.urgent;   /* patch SMSROUTE: emergency words count too */
   const subj = (emerg ? '🚨 EMERGENCY text from ' : '📱 Text from ') + shown + (label ? ' — ' + label : (out.newLead ? ' — new lead' : ''));
   const link = site() + (pid ? '/?jobmsg=' + encodeURIComponent(pid) : '/?jobmsg=unsorted');
-  const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (emerg ? '#b91c1c' : '#241968') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(emerg ? '🚨 Emergency text — call them now' : '📱 A text came in') + '</div><div style="padding:6px 18px 18px">'
+  const convo = { html: '', text: '' }; try { const th = LM().threadOf(((await core().kvListRead('gc_job_messages')) || {}).list, ph, 10); convo.html = LM().threadHtml(th); convo.text = LM().threadText(th); } catch (e) {}   /* patch LEADMAILMSG */
+  const html = '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:' + (emerg ? '#b91c1c' : '#241968') + ';color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(emerg ? '🚨 Emergency text — call them now' : '📱 A text came in') + '</div><div style="padding:6px 18px 18px">' + LM().buttons({ phone: ph })
     + '<p><b>' + esc(shown) + '</b> · ' + esc(tidy(ph)) + (label ? '<br>Job: <b>' + esc(label) + '</b>' + (pm && pm.name ? ' — PM ' + esc(pm.name) : '') : (out.newLead ? '<br>New lead in Leads → 📥 Lead Inbox (source "Text message").' : '<br>Not on a job — it is in Job Messages → 📥 Unsorted.')) + '</p>'
-    + '<blockquote style="border-left:3px solid #d4a017;margin:0;padding:6px 12px;white-space:pre-wrap">' + esc(clip(body, 1600)) + '</blockquote>'
+    + LM().boxHtml(LM().textInfo({ body, name, phone: ph, kind: who && who.kind, job: label })) + convo.html   /* patch LEADMAILMSG: the full text + the conversation so far */
     + (reply ? '<p style="color:#475569">Automatic answer sent: <i>' + esc(reply) + '</i></p>' : '<p style="color:#475569">No automatic answer (' + esc(why || 'none') + ') — please text them back.</p>')
     + '<p style="margin-top:18px"><a href="' + esc(link) + '" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Reply in the CRM</a></p>'
     + '<p style="font-size:12px;color:#64748b">Replying to this e-mail does not reach them — answer from the CRM (Job Messages → 📱 Text them) so it goes out from the GrayCo number.</p></div></div>';
-  out.mail = await relayMail(set, extra, subj, html, subj + '\n\n' + body + '\n\n' + (reply ? 'Auto-answer: ' + reply + '\n\n' : '') + 'Reply in the CRM: ' + link);
+  out.mail = await relayMail(set, extra, subj, LM().telify(html), subj + '\n\n' + body + '\n\n' + (convo.text ? convo.text + '\n' : '') + (reply ? 'Auto-answer: ' + reply + '\n\n' : '') + 'Reply in the CRM: ' + link);
   return out;
 }
 

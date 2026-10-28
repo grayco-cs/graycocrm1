@@ -51,6 +51,7 @@
 
 const BD = require('./bid-due.js');
 function HOLD(){ return require('./lead-hold.js'); }   /* patch LEADHOLD */
+function LM(){ return require('./leadmsg.js'); }   /* patch LEADMAILMSG: "💬 What the customer said" + call / text buttons */
 const KA = 'gc_lead_inbox_alerts';
 const RETRY_H = 24, REMIND_EARLY = 50, REMIND_LATE = 70, TODAY_AT = '08:00';
 const NAG_FROM = '07:00', NAG_TO = '11:00', NAG_MAX_AGE_D = 30;   /* patch DUENAG */
@@ -80,7 +81,8 @@ function make(d){
       coEmails: require('./lead-roles.js').coList(it).map(c => low(c && c.email)).filter(e => e && !GONE[e]),   /* patch HOT2: the second person on the lead; patch SPAMROLE: the Senior Roofing PM only on a roofing bid */
       link: s(it.link) || (arr(it.plansLinks)[0] || {}).url || '', files: arr(it.files).length,
       /* patch WEB: a lead from the website form / instant roof price (no bid due date, no "due to") */
-      website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null };
+      website: isWebsite(it), partner: isPartner(it), form: s(it.websiteForm || (it.leadExtra && it.leadExtra.websiteForm)), contact: it.contact && typeof it.contact === 'object' ? it.contact : null,
+      said: LM().collect(it), call: LM().contactOf(it) };   /* patch LEADMAILMSG */
   }
   function isWebsite(l){ return !!(l && (s(l.origin) === 'website' || l.websiteLead || (l.leadExtra && l.leadExtra.websiteLead) || /^website\b/i.test(s(l.source)) || isPartner(l))); }
   /* patch API: a lead a partner posted with its GrayCo code (partner-api.js) — handled like a website lead */
@@ -143,7 +145,7 @@ function make(d){
   function rowHtml(x){
     if (x.website) return webRowHtml(x);   /* patch WEB */
     const late = x.bidDue && BD.wallToEpoch(x.bidDue.length === 10 ? x.bidDue + 'T23:59' : x.bidDue) - now() < 72 * 3600000;
-    return '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b><br><span style="color:#555;font-size:13px">'
+    return '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b>' + (x.said && !x.gc && !x.bidDue ? LM().boxHtml(x.said) : '') + '<br><span style="color:#555;font-size:13px">'   /* patch LEADMAILMSG */
       + esc([cap(x.type), 'from ' + (x.source || 'the Lead Inbox'), [x.city, x.state].filter(Boolean).join(', '), x.gc && 'GC ' + x.gc].filter(Boolean).join(' · ')) + '</span>'
       + (x.detail ? '<br><span style="color:#555;font-size:13px">' + esc(x.detail) + '</span>' : '')
       + '<br><span style="font-size:13px;color:' + (x.dueToCompany ? '#1b1640' : '#b45309') + '"><b>Due to:</b> ' + (x.dueToCompany ? esc([x.dueToCompany, x.dueToContact, x.dueToEmail, x.dueToPhone].filter(Boolean).join(' · ')) + (x.submitMethod ? ' — ' + esc([METHOD[x.submitMethod] || x.submitMethod, x.submitWhere].filter(Boolean).join(': ')) : '') : 'NOT FOUND — add it') + '</span>'
@@ -155,7 +157,7 @@ function make(d){
   /* patch WEB: a website lead — who, how to reach them, what they asked for; no bid-due column */
   function webRowHtml(x){
     const c = x.contact || {};
-    return '<tr><td colspan="2" style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b><br><span style="color:#555;font-size:13px">'
+    return '<tr><td colspan="2" style="padding:8px 10px;border-bottom:1px solid #eee"><b>' + esc(x.title) + '</b>' + (x.said ? LM().boxHtml(x.said) : '') + '<br><span style="color:#555;font-size:13px">'   /* patch LEADMAILMSG */
       + esc([x.form || cap(x.type), 'from ' + (x.source || 'the website'), [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')) + '</span>'
       + ((c.name || c.phone || c.email) ? '<br><span style="font-size:13px"><b>Contact:</b> ' + esc([c.name, c.phone, c.email].filter(Boolean).join(' · ')) + '</span>' : '')
       + (x.detail ? '<br><span style="color:#555;font-size:13px">' + esc(x.detail) + '</span>' : '')
@@ -171,9 +173,9 @@ function make(d){
     if (out.push) out.push = Object.assign({}, out.push, { link: ln });
     return out;
   }
-  function frame(head, intro, rows, foot){
+  function frame(head, intro, rows, foot, top){   /* patch LEADMAILMSG: top = the 📞 Call / 💬 Text / ✉️ E-mail buttons, right under the headline */
     return '<div style="font:14px Arial;color:#1b1640;max-width:640px"><div style="background:#241968;color:#fff;padding:14px 18px;font-weight:700;font-size:16px">' + esc(head) + '</div><div style="padding:6px 18px 18px">'
-      + '<p>' + intro + '</p><table style="width:100%;border-collapse:collapse;font:14px Arial">' + rows + '</table>'
+      + (top || '') + '<p>' + intro + '</p><table style="width:100%;border-collapse:collapse;font:14px Arial">' + rows + '</table>'
       + '<p style="margin-top:18px"><a href="' + esc(site()) + '/#leads" style="background:#d4a017;color:#1b1640;padding:10px 16px;border-radius:6px;text-decoration:none;font-weight:700">Open Leads in the CRM</a></p>'
       + '<p style="color:#777;font-size:12px">' + foot + '</p></div></div>';
   }
@@ -186,8 +188,8 @@ function make(d){
       : n + ' new leads: ' + list.map(x => x.title).join(' · ').slice(0, 140) + ' — ' + (first ? dueLine(first) + (list.some(x => !x.bidDue) ? ' (some: NOT FOUND — add it)' : '') : dueTxt(''))).slice(0, 250);
     const src = Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ');
     const html = frame('GrayCo — new lead' + (n === 1 ? '' : 's'), (n === 1 ? 'A new lead came in' : n + ' new leads came in together') + (src ? ' (' + esc(src) + ')' : '') + '. It is on the Leads tab in the CRM.'
-      + (list.some(x => !x.bidDue) ? ' <b>No bid due date was found' + (n === 1 ? '' : ' for some') + ' — add it on the lead so the 1-hour reminder can go out.</b>' : ''), list.map(rowHtml).join(''), FOOT);
-    const text = subject + '\n\n' + list.map(x => '- ' + x.title + ' (' + [x.type, x.source, [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(', ') + ') — ' + dueLine(x) + (x.assignee ? ' — assigned to ' + x.assignee : '') + (x.link ? '\n  ' + x.link : '')).join('\n') + '\n\nOpen Leads: ' + site() + '/#leads';
+      + (list.some(x => !x.bidDue) ? ' <b>No bid due date was found' + (n === 1 ? '' : ' for some') + ' — add it on the lead so the 1-hour reminder can go out.</b>' : ''), list.map(rowHtml).join(''), FOOT, n === 1 ? LM().buttons(list[0].call) : '');
+    const text = subject + '\n\n' + (n === 1 && !list[0].gc && !list[0].bidDue ? LM().boxText(list[0].said) + '\n' : '') + list.map(x => '- ' + x.title + ' (' + [x.type, x.source, [x.city, x.state].filter(Boolean).join(', ')].filter(Boolean).join(', ') + ') — ' + dueLine(x) + (x.assignee ? ' — assigned to ' + x.assignee : '') + (x.link ? '\n  ' + x.link : '')).join('\n') + '\n\nOpen Leads: ' + site() + '/#leads';
     const push = { title: (n === 1 ? 'New lead: ' + list[0].title : n + ' new leads: ' + list[0].title + ' + ' + (n - 1) + ' more').slice(0, 100),
       body: list.slice(0, 3).map(x => x.title.slice(0, 60) + ' — ' + dueLine(x)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id };
     return { subject, html, text, push, leadKey: n === 1 ? list[0].key : '' };
@@ -232,21 +234,22 @@ function make(d){
     if (list.every(x => x.form === 'Missed call')) {   /* patch AUTO6: the missed-call text-back */
       const subj = (n === 1 ? '📞 Missed call — auto-text sent: ' + list[0].title : '📞 ' + n + ' missed calls — auto-texts sent').slice(0, 250);
       const h = frame('GrayCo — missed call', (n === 1 ? 'Someone called GrayCo and nobody answered' : n + ' calls were not answered') + '. They got the automatic text ("Sorry we missed your call…"). It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM and call them back.', list.map(rowHtml).join(''),
-        'Sent to the lead-alert address list (Leads ⚙ settings) for every missed call that is not an existing customer.');
-      const t = subj + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
+        'Sent to the lead-alert address list (Leads ⚙ settings) for every missed call that is not an existing customer.', n === 1 ? LM().buttons(list[0].call) : '');
+      const t = subj + '\n\n' + (n === 1 ? LM().boxText(list[0].said) + '\n' : '') + list.map(x => { const c = x.contact || {}; return '- ' + x.title + (c.phone ? ' · ' + c.phone : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nAssign it to a PM: ' + site() + '/#leads';
       return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: '', subject: subj, html: h, text: t, push: { title: subj.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
     }
     const api = list.every(x => x.partner), from = api ? Array.from(new Set(list.map(x => x.source).filter(Boolean))).join(', ') : '';   /* patch API */
     const subject = (api ? (n === 1 ? '🔌 New lead from ' + from + ': ' + list[0].title : '🔌 ' + n + ' new leads from ' + from + ': ' + list.map(x => x.title).join(' · '))
       : (n === 1 ? '🌐 New website lead: ' + list[0].title : '🌐 ' + n + ' new website leads: ' + list.map(x => x.title).join(' · '))).slice(0, 250);
     const html = frame('GrayCo — new ' + (api ? 'lead' : 'website lead') + (n === 1 ? '' : 's'), (api ? esc(from) + ' sent ' + (n === 1 ? 'a lead' : n + ' leads') + ' through the GrayCo partner API' : n === 1 ? 'Someone filled in a form on grayco-cs.com' : n + ' forms came in from grayco-cs.com') + '. It is a GrayCo lead on the Leads tab, <b>not assigned to anyone yet</b> — assign it to a PM.', list.map(rowHtml).join(''),
-      'Sent to the lead-alert address list (Leads ⚙ settings) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.');
-    const text = subject + '\n\n' + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
+      'Sent to the lead-alert address list (Leads ⚙ settings) for every ' + (api ? 'lead a partner sends' : 'website lead') + '.', n === 1 ? LM().buttons(list[0].call) : '');
+    const text = subject + '\n\n' + (n === 1 ? LM().boxText(list[0].said) + '\n' : '') + list.map(x => { const c = x.contact || {}; return '- ' + x.title + ' (' + [x.form || x.type, x.source].filter(Boolean).join(', ') + ')' + ((c.phone || c.email) ? '\n  ' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') : '') + (x.detail ? '\n  ' + x.detail : ''); }).join('\n') + '\n\nNot assigned yet — assign it to a PM: ' + site() + '/#leads';
     return { area: 'area:Leads', leadKey: n === 1 ? list[0].key : '', replyTo: n === 1 ? s((list[0].contact || {}).email) : '', subject, html, text, push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title.slice(0, 80)).join('\n').slice(0, 180), tag: 'lead-new-' + list[0].id } };
   }
   /* extra: the assigned estimator / PM; only: just these people (not the admins) */
   async function deliver(m, extra, only){
     m = linkify(m);   /* patch HOT1 */
+    if (m && m.html) { try { m = Object.assign({}, m, { html: LM().telify(m.html) }); } catch (e) {} }   /* patch LEADMAILMSG: every phone number is a tel: link */
     const to = only ? Array.from(new Set(arr(only).map(low).filter(Boolean))) : await recipients(extra);
     const r = await sendMail(to, m);
     const p = await push(to, m.push);   /* the push goes out even when the e-mail could not */
@@ -288,8 +291,8 @@ function make(d){
       const c = x.contact || {}, who = plan.lead ? plan.lead.name || plan.lead.email : 'the office';
       const m = mailNew([x]);
       m.subject = ('🚨 EMERGENCY lead — call now: ' + x.title).slice(0, 250);
-      m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; ' + (px.mitigation ? 'this is a mitigation emergency (water / fire): the office, Nick, Wesley and the mitigation manager are told too.' : 'the office is told too.'), rowHtml(x), px.mitigation ? 'Mitigation emergencies (water, leak, flood, burst pipe, sewage, mold, fire, smoke, storm-damage dry-out) go to the on-call PM, the office, Nick, Wesley and the mitigation manager.' : 'General emergencies go to the on-call PM and the office; the lead is in the Lead Inbox.');
-      m.text = m.subject + '\n\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads';
+      m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; ' + (px.mitigation ? 'this is a mitigation emergency (water / fire): the office, Nick, Wesley and the mitigation manager are told too.' : 'the office is told too.'), rowHtml(x), px.mitigation ? 'Mitigation emergencies (water, leak, flood, burst pipe, sewage, mold, fire, smoke, storm-damage dry-out) go to the on-call PM, the office, Nick, Wesley and the mitigation manager.' : 'General emergencies go to the on-call PM and the office; the lead is in the Lead Inbox.', LM().buttons(x.call));
+      m.text = m.subject + '\n\n' + LM().boxText(x.said) + '\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads';
       m.push = { title: ('🚨 Emergency: ' + x.title).slice(0, 100), body: ([c.name, c.phone].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '')).slice(0, 180) || 'Call them now', tag: 'lead-emerg-' + x.id };
       m.area = 'area:Leads';
       const r = await deliver(m, null, px.to.concat([x.assigneeEmail].concat(x.coEmails || [])).filter(Boolean));   /* + whoever the lead roles gave it to */
@@ -349,6 +352,7 @@ function make(d){
     }
     if (urgentL.length) { try { out.emergency = await emergency(urgentL, raw0); out.sent += out.emergency.sent || 0; } catch (e) { out.emergency = { error: s(e && e.message) }; } }   /* patch EMERG */
     /* patch X10: an after-hours emergency (water / fire) pages the person on call (_lib/oncall.js) — never blocks the alert */
+    try { out.cell = await require('./smsalert.js').leads(mine, raw0, isEm); } catch (e) { out.cell = { error: s(e && e.message) }; }   /* patch SMSALERT: text alerts to staff cells */
     if (env('ONCALL_OFF') !== '1') { try { out.oncall = await require('./oncall.js').make({ env: env, kvGet: kvGet, kvCas: kvCas, now: now, push: push }).maybePage(mine); } catch (e) { out.oncall = { error: s(e && e.message) }; } }
     return out;
   }
@@ -619,7 +623,8 @@ function make(d){
     if (!claim) return { sent: 0, already: true };
     const r = await deliver(mailAssigned(x), null, [x.assigneeEmail]);
     if (!r.ok) await kvCas(KA, v => { const st = loadState(v); if (st.assigned) delete st.assigned[k]; return st; }).catch(() => {});
-    return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '' };
+    let cell = null; try { cell = await require('./smsalert.js').assigned(x); } catch (e) {}   /* patch SMSALERT */
+    return { sent: r.ok ? 1 : 0, to: r.to, why: r.why || '', cell };
   }
   /* every 10 minutes: an assignment nobody's page reported (a phone offline, …). The first run only takes note. */
   async function sweepAssigned(src, t){

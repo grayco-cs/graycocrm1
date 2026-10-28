@@ -75,6 +75,7 @@ async function run(opts){
       '<p><a href="' + esc(base + '/#todo') + '">Open my approvals</a></p>');
     const m = await A.staffMail(email, subject, html); if (m.ok) rep.mailed++;
     try { const p = await C.pushTo([email], { title: subject.replace(' — GrayCo CRM', ''), body: list.slice(0, 3).map(function(x){ return clip(x.title, 60); }).join(' · '), tag: 'gc-digest' }); rep.pushed += p.sent || 0; } catch (e) {}
+    try { const c = await require('./smsalert.js').approvals(email, list.length); rep.texted = (rep.texted || 0) + (c.sent || 0); } catch (e) {}   /* patch SMSALERT: one text a day at most */
   }
   return rep;
 }

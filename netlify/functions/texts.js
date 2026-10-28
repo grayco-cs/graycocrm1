@@ -7,6 +7,7 @@
 //                      💬 timeline. Refused while data-entry mode is on, to an opted-out number, or when Twilio is not set up.
 //   GET  ?settings=1 → admins: the automatic-answer settings (rules, hours, relay list)
 //   POST ?settings=1 → admins: save them
+//   GET/POST ?alerts=1 → admins: 📱 Text alerts to cell phones (patch SMSALERT; _lib/smsalert.js)
 //   POST ?try=1      → admins: { text, pid? } — which answer would go back (nothing is sent)
 //   GET  ?callchain=1 → admins: 📞 Call order (patch CALLCHAIN, _lib/callorder.js): the saved order (or the defaults), the
 //                      people with a phone, who would ring now, the last 50 calls (patch CALLSCREEN: menu answer, outcome);
@@ -111,6 +112,22 @@ exports.handler = async function(event){
         v.by = low(who.email); v.at = nowIso();
         await L().kvCas(CC.KEY, () => v);
         return out(v, true);
+      }
+    }
+    /* patch SMSALERT: Admin → 📱 Text alerts to cell phones (admins) — gc_lead_inbox_kv "gc_sms_alerts" */
+    if (qs.alerts) {
+      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the text alerts.' }, C);
+      const SA = require('./_lib/smsalert.js');
+      if (m === 'GET') {
+        const pp = await SA._D.people(), staff = SA.staffList(pp), set = await SA.load();
+        const roles = [{ key: SA.ROLE_MIT, name: 'Mitigation manager', holders: SA.mitigationHolders(pp).map(x => ({ name: x.name, email: x.email, phone: x.phone })) }];
+        let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) {}
+        return J(200, { ok: true, settings: set, staff, roles, types: SA.TYPES, ready: MC().ready(), from: S.tidy(env('TWILIO_FROM_ALERTS') || env('TWILIO_FROM')), paused, costCents: 1 }, C);
+      }
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const v = await SA.save(b.settings || b, who.email);
+        return J(200, { ok: true, settings: v }, C);
       }
     }
     if (qs.settings || qs.try) {
