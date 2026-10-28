@@ -15,6 +15,8 @@
         saved more than 3 at once: one e-mail listing them);
      3. a new-lead e-mail that could not be sent (Resend down) is tried again, for 24 hours;
      4. creates the bid-portal drafts that waited because the portal was not set up yet (_lib/bid-portal.js).
+     6. patch LEADHOLD: a held new lead (Suggested: … — assigns at 5:00 PM) whose deadline passed is assigned to the
+        suggested person and they get the normal "assigned to you" notice (_lib/lead-hold.js, bid-inbox releaseHolds).
      5. speed to lead (patch STL): "👤 Assign this lead" to the admins 4 h / 24 h after a website / leads@ / lead-source
         lead came in with no PM; "⏰ Reach out" to its PM 4 h after it was assigned with nobody in touch, and to the PM
         and the admins at 24 h (_lib/bid-alerts.js speedToLead; quiet 9 PM – 7 AM Central).
@@ -42,11 +44,14 @@ async function crmLeads(){
 async function run(){
   const out = { at: L.nowIso() };
   const A = L.alertsApi();
+  let crm0 = null;
   try {
-    const crm = await crmLeads(), items = await L.kvGet(L.KV);
+    const crm = crm0 = await crmLeads(), items = await L.kvGet(L.KV);
     out.remind = await A.remind({ leads: crm.leads, items: Array.isArray(items) ? items : [], tombs: crm.tombs, users: crm.users, bidders: crm.bidders });
     if (crm.why) out.remind.crmWhy = crm.why;
   } catch (e) { out.remind = { error: L.s(e && e.message) }; }
+  /* patch LEADHOLD: held new leads whose 5 PM deadline passed go to the suggested person (+ the normal notice) */
+  try { const crm = crm0 || await crmLeads(); out.holds = crm.why ? { skipped: 'the CRM lead list could not be read (' + crm.why + ')' } : await L.releaseHolds(crm.leads); } catch (e) { out.holds = { error: L.s(e && e.message) }; }
   try { out.roofscout = await A.sweepRoofScout(); } catch (e) { out.roofscout = { error: L.s(e && e.message) }; }
   try { out.retry = await A.retry(); } catch (e) { out.retry = { error: L.s(e && e.message) }; }
   out.portalQueue = await L.flushPortal();
@@ -56,7 +61,7 @@ exports.handler = async function(){
   if (!L.dbReady()) return { statusCode: 500, body: JSON.stringify({ error: 'Supabase is not configured on Netlify.' }) };
   const out = await run();
   console.log('[bid-alerts] ' + JSON.stringify({ reminders: out.remind && out.remind.sent, roofscout: out.roofscout && out.roofscout.sent, retried: out.retry && out.retry.sent,
-    drafts: out.portalQueue && out.portalQueue.created, waiting: out.portalQueue && out.portalQueue.left }));
+    drafts: out.portalQueue && out.portalQueue.created, waiting: out.portalQueue && out.portalQueue.left, held: out.holds && out.holds.assigned && out.holds.assigned.length }));
   return { statusCode: 200, body: JSON.stringify(out) };
 };
 exports.run = run;

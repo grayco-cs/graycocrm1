@@ -226,8 +226,8 @@ try {
   ok(want.every(re => menu.some(t => re.test(t))) && !menu.some(t => /Calendar|Map|Outreach/.test(t)), '⋯ More: Lead Inbox · Website · Imported · Archived · Clean up · Duplicates · Lead settings · Insurance claims · Old Bid Board (views stay on top)', menu);
   if (SHOTS) await pa.screenshot({ path: SHOTS + '/desktop_more.png' });
   await mclick(pa, '#gc-leads-hub [data-gclu-oldbb]'); await sleep(800);
-  const obb = await A.ev(() => { const o = document.getElementById('gclu-oldbb'); return o ? { rows: o.querySelectorAll('tbody tr').length, open: o.querySelectorAll('[data-gclu-open]').length, edit: [...o.querySelectorAll('button')].some(b => /edit|delete/i.test(b.textContent)) } : null; });
-  ok(obb && obb.rows === 3 && obb.open === 1 && !obb.edit, 'Old Bid Board: read-only, 3 bids, the moved one links to its lead', obb);
+  const obb = await A.ev(() => { const o = document.getElementById('gclu-oldbb'); return o ? { rows: o.querySelectorAll('tbody tr').length, open: o.querySelectorAll('[data-gclu-open]').length, moved: !![...o.querySelectorAll('tbody tr')].find(r => /Old Board Clinic Reroof/.test(r.textContent) && r.querySelector('[data-gclu-open="LBB_BID1"]')), edit: [...o.querySelectorAll('button')].some(b => /edit|delete/i.test(b.textContent)) } : null; });
+  ok(obb && obb.rows === 3 && obb.moved && !obb.edit, 'Old Bid Board: read-only, 3 bids, the moved one links to its lead', obb);
   await pa.keyboard.press('Escape'); await sleep(200);
   await mclick(pa, '#gc-leads-hub [data-gclu-more]'); await sleep(200);
   await mclick(pa, '#gc-leads-hub [data-gclu-tab="bidboard"]'); await sleep(1500);

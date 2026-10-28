@@ -162,7 +162,9 @@ function lcBidTo(l, role){
   return str(l.company) || str(l.client) || str(l.customer) || str(l.customerName) || '';
 }
 function heldOf(l){ try { return !assignee(l) && W._gcLeadHold && W._gcLeadHold.isHeld && W._gcLeadHold.isHeld(l) ? W._gcLeadHold.chip(l) : ''; } catch (e) { return ''; } }
-function lcSig(l){ return [l.updatedAt, l.savedAt, l.stage, l.status, l.bidDue, l.priority, l.bidRole, l.name, l.title, l.address, l.city, l.source, l.leadSource, l.dueToCompany, l.gc, l.owner, typeof l.company === 'string' ? l.company : '', typeof l.client === 'string' ? l.client : '', l.inboxRev, l.pm, l.estimator, l.apm, l.hold && l.hold.state, GEO.ver, GEO.from, s(l.notes).length, l.lastNote && l.lastNote.at].join('|'); }
+/* patch LEADHOLD's other chip: "👤 <PM>’s own lead" (a lead the PM brought in himself) */
+function ownOf(l){ try { if (!W._gcLeadHold || !W._gcLeadHold.chip || (W._gcLeadHold.isHeld && W._gcLeadHold.isHeld(l))) return ''; return s(W._gcLeadHold.chip(l)); } catch (e) { return ''; } }
+function lcSig(l){ return [l.updatedAt, l.savedAt, l.stage, l.status, l.bidDue, l.priority, l.bidRole, l.name, l.title, l.address, l.city, l.source, l.leadSource, l.dueToCompany, l.gc, l.owner, typeof l.company === 'string' ? l.company : '', typeof l.client === 'string' ? l.client : '', l.inboxRev, l.pm, l.estimator, l.apm, l.hold && l.hold.state, l.hold && l.hold.until, l.leadOwner, l.commissionSource, GEO.ver, GEO.from, s(l.notes).length, l.lastNote && l.lastNote.at].join('|'); }
 function lcRow(l){
   var id = s(l.id), sig = lcSig(l), r = LC_ROW[id];
   if (r && r.sig === sig) return r;
@@ -230,8 +232,8 @@ function lcPrio(l){
 }
 function lcWho(l, r){
   var hc = heldOf(l), asg = canAssignAll();
-  var inner = r.who ? '<span class="gclu-av">' + esc(initials(r.who)) + '</span> ' + esc(r.who) : hc ? hc : '<span class="gclu-un">Unassigned</span>';
-  return asg ? '<button type="button" class="gclu-who" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead">' + inner + '</button>' : inner;
+  var inner = r.who ? '<span class="gclu-av">' + esc(initials(r.who)) + '</span> ' + esc(r.who) : hc ? hc : '<span class="gclu-un">Unassigned</span>', own = ownOf(l);
+  return (asg ? '<button type="button" class="gclu-who" data-gcl-asg="' + esc(l.id) + '" title="Assign this lead">' + inner + '</button>' : inner) + (own ? '<div class="gclu-own">' + own + '</div>' : '');
 }
 function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
@@ -515,10 +517,10 @@ function oldBidBoard(){
   D.addEventListener('keydown', key, true);
   bbRead().then(function(bids){
     bids = arr(bids).filter(function(b){ return b && !bbTomb('bidLists', b.id); });
-    var ls = {}; rawLeads().forEach(function(l){ if (l && !dead(l)) { ls[s(l.id)] = l; if (l.fromBidBoard) ls['LBB_' + s(l.fromBidBoard)] = l; } });
+    var ls = {}, nk = {}; rawLeads().forEach(function(l){ if (l && !dead(l)) { ls[s(l.id)] = l; if (l.fromBidBoard) ls['LBB_' + s(l.fromBidBoard)] = l; nk[bbNorm(l.name || l.title) + '|' + bbNorm(l.address)] = l; } });
     var c = ov.querySelector('.c');
     c.innerHTML = '<p class="n">The old manual bid list. Its open bids (Open, Bidding, Submitted) are now bid leads on the Leads list; nothing here can be changed, and nothing was deleted.</p>'
-      + (bids.length ? '<table><thead><tr><th>Bid</th><th>GC / client</th><th>Due</th><th>Status</th><th>Lead</th></tr></thead><tbody>' + bids.map(function(b){ var l = ls['LBB_' + s(b.id)];
+      + (bids.length ? '<table><thead><tr><th>Bid</th><th>GC / client</th><th>Due</th><th>Status</th><th>Lead</th></tr></thead><tbody>' + bids.map(function(b){ var l = ls['LBB_' + s(b.id)] || (bbOpen(b) ? nk[bbNorm(b.title) + '|' + bbNorm(b.address)] : null);
           return '<tr><td><b>' + esc(s(b.title) || '—') + '</b><div class="n">' + esc(s(b.address)) + '</div></td><td>' + esc(s(b.client) || '—') + '</td><td>' + esc(s(b.bidDue).replace('T', ' ') || '—') + '</td><td>' + esc(s(b.status) || 'Open') + '</td><td>' + (l ? '<button type="button" data-gclu-open="' + esc(l.id) + '">Open lead</button>' : bbOpen(b) ? '<span class="n">same as an existing lead</span>' : '<span class="n">archived</span>') + '</td></tr>'; }).join('') + '</tbody></table>' : '<p>No bids on the old board.</p>');
   });
 }
@@ -540,7 +542,8 @@ function drawerHtml(l){
   var ov = secOf(old, /^Overview/), asg = secOf(old, /Assigned to|Estimator/), con = secOf(old, /^Contact/), bid = secOf(old, /⏰ Bid/), pl = secOf(old, /Plans/), act = secOf(old, /Activity/);
   var asgRow = (/<div class="row"><select data-d="assign"[\s\S]*?<\/select>[\s\S]*?<\/div>/.exec(asg) || [''])[0];
   var asgPre = asg.indexOf('<div class="row"><select data-d="assign"') > 0 ? secBody(asg.slice(0, asg.indexOf('<div class="row"><select data-d="assign"'))) : '';
-  var held = ''; try { held = W._gcLeadHold && W._gcLeadHold.drawer ? s(W._gcLeadHold.drawer(l)) : ''; } catch (e) {}
+  var held = ''; try { held = W._gcLeadHold && W._gcLeadHold.drawer && asgPre.indexOf('data-gclh-box') < 0 ? s(W._gcLeadHold.drawer(l)) : ''; } catch (e) {}
+  var own = ownOf(l);
   var due = /<div class="row"><input type="datetime-local" data-d="due"[\s\S]*?<\/div>/.exec(bid), dueKv = /<div class="kv"><span>Due:<\/span>[\s\S]*?<\/div>/.exec(bid);
   var d = r.d, prRow = /<div class="row gcl-role-row">[\s\S]*?<\/div>/.exec(ov), ovRest = (ov.match(/<div class="kv">[\s\S]*?<\/div>/g) || []).join('');
   var edit = /<button type="button" class="b" data-d="editfull"[\s\S]*?data-d="delfull">[^<]*<\/button>/.exec(ov);
@@ -551,7 +554,7 @@ function drawerHtml(l){
     + '<div class="row"><span class="kv"><span>Stage:</span></span><select data-d="stage" aria-label="Stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select>'
     + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button>' + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '') + '</div>'
     + '<div class="row gcl-prio-row"><span class="kv"><span>Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'
-    + '<div class="gclu-asg"><span class="kv"><span>' + ((W._gcBidRole && W._gcBidRole.isBid(l)) ? 'Estimator' : 'Assigned to') + ':</span> <b data-gclu-assigned>' + esc(assignee(l) || 'Unassigned') + '</b></span>' + held + asgPre + asgRow + '</div>'
+    + '<div class="gclu-asg"><span class="kv"><span>' + ((W._gcBidRole && W._gcBidRole.isBid(l)) ? 'Estimator' : 'Assigned to') + ':</span> <b data-gclu-assigned>' + esc(assignee(l) || 'Unassigned') + '</b></span>' + (own ? ' ' + own : '') + held + asgPre + asgRow + '</div>'
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     + '<section><h4>⏰ Bid</h4>'
@@ -596,6 +599,7 @@ function css2(){
     '.gcl-lc td.c-who{white-space:normal;max-width:240px}.gclu-who{border:0;background:none;padding:2px 0;font:inherit;color:inherit;cursor:pointer;text-align:left}.gclu-who:hover{text-decoration:underline}.gclu-un{color:#b45309;font-weight:700}.gclu-av{display:inline-flex;width:20px;height:20px;border-radius:50%;background:#241968;color:#fff;font:700 9px Arial;align-items:center;justify-content:center;vertical-align:middle}',
     '.gcl-lc td.c-who .gcl-chip{white-space:normal;display:inline;line-height:1.5}.gclu-nt{font-size:10.5px;color:#888;margin-top:1px}.gcl-lc td.c-dist{color:#475569}',
     '.gclu-nb{float:right;border:0;background:none;cursor:pointer;font-size:13px;opacity:.45;padding:2px 4px;margin:-2px -4px 0 6px;border-radius:6px;min-width:28px;min-height:28px}.gclu-nb:hover,.gclu-nb:focus-visible{opacity:1;background:#ede9fe}',
+    '.gclu-own{margin-top:2px}.gclu-own .gcl-chip{white-space:normal}',
     '.gclu-np{font-size:11px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px}',
     '.gclu-qn{display:flex;gap:6px;align-items:center;margin:0 0 8px}.gclu-qn input{flex:1;min-width:0;border:1px solid #d6d3ea;border-radius:8px;padding:7px 9px;font:13px Arial;min-height:36px}.gclu-qn button{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:7px 11px;font:700 13px Arial;cursor:pointer;color:#241968;min-height:36px;white-space:nowrap}',
     '#gcl-lprio-pop.gclu-notepop{max-width:min(420px,94vw);width:420px;display:block}#gcl-drawer .gclu-lastn{margin:-2px 0 8px}',
