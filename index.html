@@ -127179,12 +127179,12 @@ function ccMap(jobId, ph){
   var at = typeof c === 'number' ? new Date(c * (c < 1e12 ? 1000 : 1)).toISOString() : (Date.parse(c) ? new Date(c).toISOString() : '');
   var co = ph.coordinates || {};
   return { id: 'cc_' + ph.id, ccId: String(ph.id), jobId: String(jobId), source: 'companycam', thumbUrl: th, fullUrl: full, origUrl: by.original || '', at: at,
-    by: s(ph.creator_name || (ph.creator && ph.creator.name) || 'CompanyCam'), tag: ccTag(ph), note: s(ph.description).slice(0, 500),
+    by: s(ph.creator_name || (ph.creator && ph.creator.name) || 'CompanyCam'), tag: ccTag(ph), labels: xpLabels(ph), note: s(ph.description).slice(0, 500),
     lat: co.lat != null ? +co.lat : null, lng: co.lon != null ? +co.lon : (co.lng != null ? +co.lng : null), shared: true };
 }
 function ccLoad(jobId, force){
   var it = itemById(jobId), ids = it ? (it.ccIds && it.ccIds.length ? it.ccIds : [it.ccId || ccIdOf(it.raw)].filter(Boolean)) : [];
-  if (!ids.length || !shown()) return Promise.resolve([]);   /* patch PHOTOLINK: only while GrayCo Photos is open */
+  if (!ids.length || !(shown() || XPW.on)) return Promise.resolve([]);   /* XACTPHOTOS: or the Xactimate picker asked */   /* patch PHOTOLINK: only while GrayCo Photos is open */
   /* patch CCSYNC (photos): the key's state not known yet on this page → ask once, then load (it used to give up silently) */
   if (!ccOn()) {
     if (ccAsked[jobId] || typeof window._gcCCCheckStatus !== 'function') return Promise.resolve([]);
@@ -128159,7 +128159,7 @@ function dlBar(it, list){
   if (!list.length) return '';
   if (dlOn()) return '<div class="dl-bar dl-selbar" role="group" aria-label="Select photos"><span class="dl-hint"><b>Select photos</b> <span class="dl-tip">Tap photos, or a day.</span></span>' +
     '<button class="dl-b" data-a="dlall">Select all</button><button class="dl-b" data-a="dlclr">Clear</button><button class="dl-b pri" data-a="dlexit">Done</button></div>';
-  return '<div class="dl-bar" role="group" aria-label="Download photos"><button class="dl-b pri" data-a="dlopen" aria-label="Download all photos of this project">⬇ Download all <em>' + list.length + '</em></button><button class="dl-b" data-a="dlsel">☑ Select</button></div>';
+  return '<div class="dl-bar" role="group" aria-label="Download photos"><button class="dl-b pri" data-a="dlopen" aria-label="Download all photos of this project">⬇ Download all <em>' + list.length + '</em></button><button class="dl-b" data-a="dlsel">☑ Select</button>' + xpBtn() + '</div>';
 }
 function dlDayBtn(k, l){
   if (!dlOn()) return '';
@@ -128346,6 +128346,429 @@ function dlShareNow(){
       function(x){ dlSet('gcu-dlh', 'Download stopped'); dlSet('gcu-dlmsg', s(x && x.message)); dlBtns('<button class="gcu-btn" data-a="closelayer">Close</button>'); }).then(function(){ DL.run = null; });
   });
 }
+/* XACTPHOTOS core (__GC_XACTPHOTOS_CORE__): the pure part of "📦 Photos for Xactimate" — no DOM, no network.
+   order (room / area by first photo, then time) · file names Xactimate uses as photo titles · photo-list.csv ·
+   a small EXIF block (date taken, GPS) for the resized JPEG · CRC-32 · a STORE ZIP writer (Blob parts, no copies).
+   The same text is in index.html (patch_XACTPHOTOS.py) and is loaded as-is by tools/tests/test_XACTPHOTOS.mjs. */
+var XPC = (function(){
+  function s(v){ return v == null ? '' : String(v); }
+  function low(v){ return s(v).toLowerCase(); }
+  var STAGE = ['before', 'during', 'damage', 'after', 'punch', 'progress', 'final', 'photo', 'photos'];
+  var PRIVATE = /\b(private|do[\s-]*not[\s-]*share|don'?t[\s-]*share|no[\s-]*share|internal[\s-]*only)\b/i;
+  function p2(n){ return ('0' + n).slice(-2); }
+  function dt(at){ var d = new Date(at); return isNaN(d) ? null : d; }
+  function dayOf(at){ var d = dt(at); return d ? d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) : ''; }
+  function timeOf(at){ var d = dt(at); return d ? p2(d.getHours()) + ':' + p2(d.getMinutes()) : ''; }
+  /* a file-name piece: letters, digits, space and - _ ( ) , . ' & + ; accents folded; never a slash, colon, quote or control */
+  function safe(t){
+    var x = s(t).replace(/[\r\n\t]+/g, ' ');
+    try { x = x.normalize('NFD').replace(/[̀-ͯ]/g, ''); } catch (e) {}
+    x = x.replace(/[–—\/\\|]/g, '-').replace(/[‘’`]/g, "'").replace(/[^A-Za-z0-9 _\-(),.'&+]+/g, ' ').replace(/\s+/g, ' ').replace(/\s*-\s*-[\s-]*/g, ' - ');
+    return x.replace(/^[\s.\-,]+/, '').replace(/[\s.\-,]+$/, '');
+  }
+  function labelsOf(r){ return [].concat(Array.isArray(r && r.labels) ? r.labels : [], Array.isArray(r && r.tags) ? r.tags : []).map(function(x){ return s(x && (x.display_value || x.value || x.name) || x).trim(); }).filter(Boolean); }
+  function isPrivate(r){
+    if (!r) return true;
+    if (r.private === true || r.doNotShare === true || r.noShare === true) return true;
+    return [s(r.tag)].concat(labelsOf(r)).some(function(t){ return PRIVATE.test(t); });
+  }
+  /* the room / area: the record's own field, a CompanyCam label that is not a stage word, then the AI tag's area */
+  function roomOf(r, ai){
+    var own = s(r && (r.room || r.area || r.location)).trim(); if (own) return own;
+    var tg = low(r && r.tag), l = labelsOf(r).filter(function(t){ var k = low(t); return STAGE.indexOf(k) < 0 && k !== tg && !PRIVATE.test(t); });
+    if (l.length) return l[0];
+    var a = ai && s(ai.area).trim(); return a && !/^(unknown|n\/?a|none|other)$/i.test(a) ? a : '';
+  }
+  function captionOf(r){
+    var n = s(r && (r.note || r.caption || r.description)).split(/\r?\n/)[0].trim();
+    return n || s(r && r.tag).trim();
+  }
+  /* rooms in the order the crew first photographed them (a walk-through), photos without a room last; inside a room, by time */
+  function order(list, roomFn){
+    var rows = list.map(function(r, i){ return { r: r, room: s(roomFn ? roomFn(r) : roomOf(r)), t: Date.parse(r && r.at) || 0, i: i }; });
+    var first = {};
+    rows.slice().sort(function(a, b){ return a.t - b.t || a.i - b.i; }).forEach(function(x, k){ var key = low(x.room); if (key && !(key in first)) first[key] = k; });
+    return rows.sort(function(a, b){
+      var ka = low(a.room), kb = low(b.room);
+      if (ka !== kb) { if (!ka) return 1; if (!kb) return -1; return first[ka] - first[kb]; }
+      return a.t - b.t || (s(a.r.id) < s(b.r.id) ? -1 : s(a.r.id) > s(b.r.id) ? 1 : a.i - b.i);
+    });
+  }
+  /* "001 - Kitchen - Water stain on ceiling - 2026-09-01.jpg", at most 80 characters */
+  function name(n, total, room, caption, at, max){
+    max = max || 80;
+    var w = Math.max(3, String(total || n).length), num = ('000000' + n).slice(-w), day = dayOf(at), ext = '.jpg';
+    var rm = safe(room).slice(0, 24).replace(/[\s.\-,]+$/, ''), cap = safe(caption) || (rm ? '' : 'Photo');
+    if (rm && low(cap) === low(rm)) cap = '';
+    var head = num + (rm ? ' - ' + rm : ''), tail = (day ? ' - ' + day : '') + ext;
+    var room_ = max - head.length - tail.length - 3;
+    if (cap && room_ >= 4) { cap = cap.slice(0, room_).replace(/[\s.\-,(&+]+$/, ''); return head + (cap ? ' - ' + cap : '') + tail; }
+    return (head + tail).slice(-max);
+  }
+  /* the whole plan: skip private, order, number, name */
+  function plan(list, opt){
+    opt = opt || {};
+    var keep = [], skipped = [];
+    (list || []).forEach(function(r){ (isPrivate(r) ? skipped : keep).push(r); });
+    var roomFn = function(r){ return roomOf(r, opt.ai ? opt.ai(r) : null); };
+    var rows = order(keep, roomFn);
+    rows.forEach(function(x, k){ x.n = k + 1; x.caption = captionOf(x.r); x.name = name(k + 1, rows.length, x.room, x.caption, x.r.at, opt.max); });
+    return { rows: rows, skipped: skipped };
+  }
+  function cell(v){ var t = s(v).replace(/\r?\n/g, ' '); if (/^[=+\-@\t]/.test(t)) t = "'" + t; return /[",]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }
+  function gps(r){ var a = r && r.lat, b = r && (r.lng != null ? r.lng : r.lon); return a != null && b != null && a !== '' && b !== '' && isFinite(a) && isFinite(b) ? (+a).toFixed(6) + ', ' + (+b).toFixed(6) : ''; }
+  function csv(rows){
+    var head = ['No.', 'File name', 'Room / area', 'Caption', 'Tag', 'Date', 'Time', 'GPS (lat, lng)', 'Taken by'];
+    return '﻿' + [head].concat(rows.map(function(x){ var r = x.r; return [x.n, x.name, x.room, x.caption, r.tag || '', dayOf(r.at), timeOf(r.at), gps(r), r.by || '']; }))
+      .map(function(l){ return l.map(cell).join(','); }).join('\r\n') + '\r\n';
+  }
+  function captions(rows){ return rows.map(function(x){ return x.name.replace(/\.jpg$/, '') + (x.caption && x.name.indexOf(safe(x.caption)) < 0 ? '  — ' + x.caption : ''); }).join('\n') + '\n'; }
+
+  /* ── EXIF (big-endian TIFF): Orientation 1, DateTime, DateTimeOriginal, DateTimeDigitized, GPS when known ── */
+  function exifDate(at){ var d = dt(at); return d ? d.getFullYear() + ':' + p2(d.getMonth() + 1) + ':' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()) : ''; }
+  function exifBlock(o){
+    var date = exifDate(o && o.at), lat = o && o.lat, lng = o && (o.lng != null ? o.lng : o.lon);
+    var hasG = lat != null && lng != null && lat !== '' && lng !== '' && isFinite(lat) && isFinite(lng) && !(+lat === 0 && +lng === 0);
+    /* layout: IFD0 at 8, then ExifIFD, then GPS IFD, then the data area */
+    var ifd0 = [[0x0112, 3, 1, 1]], exif = [], gpsE = [], data = [], dataOff;
+    var n0 = 1 + (date ? 2 : 0) + (hasG ? 1 : 0), nE = date ? 2 : 0, nG = hasG ? 5 : 0;
+    var off0 = 8, offE = off0 + 2 + n0 * 12 + 4, offG = offE + (nE ? 2 + nE * 12 + 4 : 0); dataOff = offG + (nG ? 2 + nG * 12 + 4 : 0);
+    function put(bytes){ var at = dataOff; data.push(bytes); dataOff += bytes.length + (bytes.length & 1); if (bytes.length & 1) data.push([0]); return at; }
+    function ascii(t){ var b = []; for (var i = 0; i < t.length; i++) b.push(t.charCodeAt(i) & 0x7f); b.push(0); return b; }
+    function rats(v){ v = Math.abs(+v); var d = Math.floor(v), mf = (v - d) * 60, m = Math.floor(mf), sec = Math.round((mf - m) * 60 * 1000); var out = []; [[d, 1], [m, 1], [sec, 1000]].forEach(function(p){ out.push(p[0] >>> 24 & 255, p[0] >>> 16 & 255, p[0] >>> 8 & 255, p[0] & 255, p[1] >>> 24 & 255, p[1] >>> 16 & 255, p[1] >>> 8 & 255, p[1] & 255); }); return out; }
+    if (date) { var dB = ascii(date); ifd0.push([0x0132, 2, dB.length, put(dB)]); ifd0.push([0x8769, 4, 1, offE]); exif.push([0x9003, 2, dB.length, put(dB.slice())]); exif.push([0x9004, 2, dB.length, put(dB.slice())]); }
+    if (hasG) {
+      ifd0.push([0x8825, 4, 1, offG]);
+      gpsE.push([0x0000, 1, 4, 0x02020000, 'inl']);
+      gpsE.push([0x0001, 2, 2, (+lat < 0 ? 0x53 : 0x4E) << 24, 'inl']); gpsE.push([0x0002, 5, 3, put(rats(lat))]);
+      gpsE.push([0x0003, 2, 2, (+lng < 0 ? 0x57 : 0x45) << 24, 'inl']); gpsE.push([0x0004, 5, 3, put(rats(lng))]);
+    }
+    ifd0.sort(function(a, b){ return a[0] - b[0]; });
+    var total = dataOff, b = new Uint8Array(total), v = new DataView(b.buffer);
+    b[0] = 0x4D; b[1] = 0x4D; v.setUint16(2, 42); v.setUint32(4, 8);
+    function ifd(at, list){
+      if (!list.length) return;
+      v.setUint16(at, list.length); var p = at + 2;
+      list.forEach(function(e){ v.setUint16(p, e[0]); v.setUint16(p + 2, e[1]); v.setUint32(p + 4, e[2]); if (e[1] === 3 && e[2] === 1) { v.setUint16(p + 8, e[3]); v.setUint16(p + 10, 0); } else v.setUint32(p + 8, e[3] >>> 0); p += 12; });
+      v.setUint32(p, 0);
+    }
+    ifd(off0, ifd0); ifd(offE, exif); ifd(offG, gpsE);
+    var q = (offG + (nG ? 2 + nG * 12 + 4 : 0)); data.forEach(function(arr_){ for (var i = 0; i < arr_.length; i++) b[q++] = arr_[i]; });
+    var seg = new Uint8Array(4 + 6 + total), sv = new DataView(seg.buffer);
+    seg[0] = 0xFF; seg[1] = 0xE1; sv.setUint16(2, 2 + 6 + total);
+    seg.set([0x45, 0x78, 0x69, 0x66, 0, 0], 4); seg.set(b, 10);
+    return seg;
+  }
+  /* a JPEG with the EXIF block put after SOI (and after a JFIF APP0 when there is one); any old APP1 Exif is dropped */
+  function withExif(jpg, o){
+    var a = jpg instanceof Uint8Array ? jpg : new Uint8Array(jpg);
+    if (a.length < 4 || a[0] !== 0xFF || a[1] !== 0xD8) return a;
+    var p = 2, keep = [], cut = 2;
+    while (p + 4 <= a.length && a[p] === 0xFF) {
+      var m = a[p + 1], len = (a[p + 2] << 8) | a[p + 3];
+      if (m === 0xDA || m < 0xE0 || m > 0xEF) break;
+      var isExif = m === 0xE1 && a[p + 4] === 0x45 && a[p + 5] === 0x78 && a[p + 6] === 0x69 && a[p + 7] === 0x66;
+      if (m === 0xE0 && p === 2) { keep.push(a.subarray(p, p + 2 + len)); cut = p + 2 + len; }
+      else if (isExif) { keep.push(null); }
+      else keep.push(a.subarray(p, p + 2 + len));
+      p += 2 + len;
+    }
+    var ex = exifBlock(o), parts = [a.subarray(0, 2)];
+    var app0 = cut > 2 ? keep.shift() : null; if (app0) parts.push(app0);
+    parts.push(ex); keep.forEach(function(k){ if (k) parts.push(k); }); parts.push(a.subarray(p));
+    var n = 0; parts.forEach(function(x){ n += x.length; });
+    var out = new Uint8Array(n), q = 0; parts.forEach(function(x){ out.set(x, q); q += x.length; });
+    return out;
+  }
+
+  /* ── CRC-32 and a STORE ZIP (UTF-8 names, DOS time = the photo's time) ── */
+  var CRC_T = null;
+  function crc32(u8, crc){
+    if (!CRC_T) { CRC_T = new Int32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC_T[n] = c; } }
+    var x = crc == null ? -1 : ~crc;
+    for (var i = 0; i < u8.length; i++) x = CRC_T[(x ^ u8[i]) & 255] ^ (x >>> 8);
+    return ~x >>> 0;
+  }
+  function utf8(t){ if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(t); var b = Buffer.from(t, 'utf8'); return new Uint8Array(b.buffer, b.byteOffset, b.length); }
+  function dos(at){ var d = dt(at) || new Date(); var y = Math.max(1980, d.getFullYear()); return { t: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), d: ((y - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() }; }
+  /* entries: [{ name, size, crc, at, data }] → [header bytes, data, header bytes, data, …, central directory]; data is passed through (Blob or bytes) */
+  function zip(entries){
+    var parts = [], cen = [], off = 0;
+    entries.forEach(function(e){
+      var nm = utf8(e.name), t = dos(e.at), h = new Uint8Array(30 + nm.length), v = new DataView(h.buffer);
+      v.setUint32(0, 0x04034b50, true); v.setUint16(4, 10, true); v.setUint16(6, 0x0800, true); v.setUint16(8, 0, true); v.setUint16(10, t.t, true); v.setUint16(12, t.d, true);
+      v.setUint32(14, e.crc >>> 0, true); v.setUint32(18, e.size, true); v.setUint32(22, e.size, true); v.setUint16(26, nm.length, true); v.setUint16(28, 0, true); h.set(nm, 30);
+      var c = new Uint8Array(46 + nm.length), w = new DataView(c.buffer);
+      w.setUint32(0, 0x02014b50, true); w.setUint16(4, 0x031E, true); w.setUint16(6, 10, true); w.setUint16(8, 0x0800, true); w.setUint16(10, 0, true); w.setUint16(12, t.t, true); w.setUint16(14, t.d, true);
+      w.setUint32(16, e.crc >>> 0, true); w.setUint32(20, e.size, true); w.setUint32(24, e.size, true); w.setUint16(28, nm.length, true); w.setUint16(30, 0, true); w.setUint16(32, 0, true);
+      w.setUint16(34, 0, true); w.setUint16(36, 0, true); w.setUint32(38, 0x81A40000, true); w.setUint32(42, off, true); c.set(nm, 46);
+      parts.push(h, e.data); cen.push(c); off += h.length + e.size;
+    });
+    var cl = 0; cen.forEach(function(c){ cl += c.length; });
+    var end = new Uint8Array(22), v2 = new DataView(end.buffer);
+    v2.setUint32(0, 0x06054b50, true); v2.setUint16(8, entries.length, true); v2.setUint16(10, entries.length, true); v2.setUint32(12, cl, true); v2.setUint32(16, off, true);
+    return parts.concat(cen, [end]);
+  }
+  function zipName(o){
+    var id = safe(o && o.claimNo) || safe(o && o.po), who = safe(o && (o.insured || o.job)) || 'Job';
+    return ((id ? id + ' ' : '') + who).slice(0, 90).replace(/[\s.\-,]+$/, '') + ' photos.zip';
+  }
+  var HOWTO = 'Xactimate desktop: open the estimate → Photos → Import → pick the unzipped folder (or drag the photos in). Xactimate Online/mobile: Photos → Upload → select all.';
+  return { safe: safe, isPrivate: isPrivate, roomOf: roomOf, captionOf: captionOf, order: order, name: name, plan: plan, csv: csv, captions: captions, dayOf: dayOf,
+    exifBlock: exifBlock, withExif: withExif, exifDate: exifDate, crc32: crc32, zip: zip, zipName: zipName, HOWTO: HOWTO };
+})();
+/* ══ XACTPHOTOS (__GC_PATCH_XACTPHOTOS__): "📦 Photos for Xactimate" — pick a job's photos → one ZIP Xactimate imports as-is ══
+   "make sure when i add photos into google photos that they transfer into xactimate easily"
+   Where: the project page's photo bar (next to ⬇ Download all) and the insurance claim's 📸 Photos tab (_gcPhotos.xact(jobId, { claim, ids })).
+   The ZIP: "001 - <room/area> - <caption> - <date>.jpg" in room-then-time order (Xactimate uses the file name as the photo title),
+   each resized to ≤ 2048 px (JPEG q 0.85, turned upright, date taken / GPS written back as EXIF) + photo-list.csv.
+   Photos come through the same doors as ⬇ Download (dlTry: the signed-in file store, CompanyCam CDN or the staff proxy) — only what this
+   person can see on this job. Photos tagged private / "do not share" are left out. Marketing and subs never see the button.
+   Nothing runs until the button is pressed: no timers, no observers. Built here (no ZIP library), one photo at a time per worker, yielding. */
+var XPW = { on: 0 };
+var XP = { ov: null, jobId: '', rows: [], skipped: [], sel: {}, f: { tag: 'All', room: 'All', from: '', to: '' }, meta: null, run: null, urls: [], io: null, ai: null, kd: null };
+var XP_MAX = 2048, XP_Q = 0.85, XP_CONC = 3;
+function xpLabels(ph){ return arr(ph && ph.tags).map(function(t){ return s(t && (t.display_value || t.value || t.name) || t); }).filter(Boolean).slice(0, 12); }
+function xpAllowed(){
+  if (isAdmin()) return true;
+  var u = myUser(); if (!u) return true;   /* the job list itself decides what this person can open */
+  return !/marketing|sub-?contractor|^subs?\b|\bsub\s*(crew|partner)/i.test([s(u.role), s(u.profile), s(u.title)].join(' | '));
+}
+function xpAiFn(){
+  var m = null; try { m = window._gcX12 && typeof window._gcX12.tags === 'function' ? window._gcX12.tags() : null; } catch (e) {}
+  return function(r){ return m ? (m[s(r.id)] || (r.ccId ? m['cc:' + s(r.ccId)] : null) || null) : null; };
+}
+function xpMeta(it, claim){
+  var c = claim; try { if (!c && window._gcClaims && typeof window._gcClaims.forProject === 'function') c = window._gcClaims.forProject(it.id); } catch (e) {}
+  var raw = it.raw || {};
+  return { claimNo: s(c && c.claimNumber) || s(raw.claimNumber || raw.claimNo), po: s(it.po), insured: s(c && (c.insured || c.homeowner)) || s(it.client), job: s(it.name) };
+}
+function xpToast(msg, bad){
+  var t = document.createElement('div'); t.className = 'xp-toast'; t.setAttribute('role', 'status'); t.textContent = msg; if (bad) t.style.background = '#991b1b';
+  (XP.ov || document.body).appendChild(t); later(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
+}
+function xpCss(){
+  if (document.getElementById('xp-css')) return;
+  var st = document.createElement('style'); st.id = 'xp-css';
+  st.textContent = '#xp-ov{position:fixed;inset:0;z-index:2147483200;background:rgba(17,20,40,.55);display:flex;align-items:center;justify-content:center;padding:12px;font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#171A2B}' +
+    '#xp-ov .xp-box{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:calc(100vh - 24px);display:flex;flex-direction:column;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden}' +
+    '#xp-ov .xp-hd{padding:14px 16px 8px;border-bottom:1px solid #E6E7EF}#xp-ov h3{margin:0;font-size:18px;color:#241968}#xp-ov .xp-sub{font-size:13px;color:#5B5F75;margin-top:2px}' +
+    '#xp-ov .xp-flt{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}#xp-ov .xp-flt label{font-size:12px;color:#5B5F75;display:flex;flex-direction:column;gap:2px}' +
+    '#xp-ov select,#xp-ov input[type=date]{font:inherit;font-size:14px;padding:5px 6px;border:1px solid #C9CBD8;border-radius:8px;background:#fff;color:#171A2B;min-height:34px}' +
+    '#xp-ov .xp-chip{border:1px solid #C9CBD8;background:#fff;border-radius:999px;padding:5px 11px;font:inherit;font-size:13px;cursor:pointer;min-height:32px}#xp-ov .xp-chip.on{background:#241968;color:#fff;border-color:#241968}' +
+    '#xp-ov .xp-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid #E6E7EF;font-size:14px}#xp-ov .xp-bar .xp-sp{flex:1}' +
+    '#xp-ov .xp-list{overflow:auto;flex:1;padding:4px 16px 10px;min-height:120px}#xp-ov h4{margin:12px 0 4px;font-size:14px;display:flex;gap:8px;align-items:center}#xp-ov h4 small{color:#5B5F75;font-weight:400}' +
+    '#xp-ov .xp-row{display:flex;gap:10px;align-items:center;padding:5px 4px;border-radius:8px;cursor:pointer}#xp-ov .xp-row:hover{background:#F4F4F9}#xp-ov .xp-row.off{opacity:.55}' +
+    '#xp-ov .xp-row input{width:20px;height:20px;flex:none;accent-color:#241968}#xp-ov .xp-th{width:56px;height:42px;border-radius:6px;object-fit:cover;background:#E6E7EF;flex:none}' +
+    '#xp-ov .xp-tx{min-width:0;flex:1}#xp-ov .xp-nm,#xp-ov .xp-mt{display:block}#xp-ov .xp-nm{font:12px/1.3 ui-monospace,Menlo,Consolas,monospace;color:#171A2B;word-break:break-all}#xp-ov .xp-mt{font-size:12px;color:#5B5F75}' +
+    '#xp-ov .xp-ft{padding:10px 16px 14px;border-top:1px solid #E6E7EF;display:flex;flex-direction:column;gap:8px}#xp-ov .xp-acts{display:flex;flex-wrap:wrap;gap:8px}' +
+    '#xp-ov .xp-b{font:inherit;font-size:15px;border-radius:10px;padding:9px 14px;border:1px solid #C9CBD8;background:#fff;color:#171A2B;cursor:pointer;min-height:42px}#xp-ov .xp-b.pri{background:#F2A51A;border-color:#F2A51A;color:#171A2B;font-weight:700}#xp-ov .xp-b:disabled{opacity:.5;cursor:default}' +
+    '#xp-ov .xp-b.sm{font-size:13px;padding:5px 10px;min-height:32px}#xp-ov .xp-how{font-size:13px;color:#3B3F55;background:#FFF8E6;border:1px solid #F6D58A;border-radius:10px;padding:8px 10px}' +
+    '#xp-ov .xp-track{height:10px;background:#E6E7EF;border-radius:6px;overflow:hidden}#xp-ov .xp-track i{display:block;height:100%;width:0;background:#241968;transition:width .2s}' +
+    '#xp-ov .xp-fail{font-size:13px;color:#991b1b}#xp-ov .xp-empty{padding:30px 0;text-align:center;color:#5B5F75}' +
+    '.xp-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#171A2B;color:#fff;padding:10px 16px;border-radius:10px;z-index:2147483300;font:14px system-ui,sans-serif;max-width:90vw}' +
+    '@media (max-width:600px){#xp-ov{padding:0}#xp-ov .xp-box{border-radius:0;max-height:100vh;height:100%}#xp-ov .xp-b{flex:1 1 auto}}' +
+    '.dl-b.xp-open{white-space:nowrap}';
+  document.head.appendChild(st);
+}
+function xpClose(){
+  if (XP.run) { XP.run.cancelled = true; try { XP.run.ctrl.abort(); } catch (e) {} }
+  if (XP.io) { try { XP.io.disconnect(); } catch (e) {} XP.io = null; }
+  XP.urls.forEach(function(u){ try { URL.revokeObjectURL(u); } catch (e) {} }); XP.urls = [];
+  if (XP.kd) { document.removeEventListener('keydown', XP.kd, true); XP.kd = null; }
+  if (XP.ov) XP.ov.remove(); XP.ov = null; XP.run = null;
+}
+function xpShell(inner){
+  xpCss();
+  if (!XP.ov) {
+    var ov = document.createElement('div'); ov.id = 'xp-ov';
+    ov.addEventListener('click', xpClick); ov.addEventListener('change', xpChange);
+    XP.kd = function(ev){ if (ev.key === 'Escape' && XP.ov) { ev.stopPropagation(); if (!XP.run) xpClose(); } };
+    document.addEventListener('keydown', XP.kd, true);
+    document.body.appendChild(ov); XP.ov = ov;
+  }
+  XP.ov.innerHTML = '<div class="xp-box" role="dialog" aria-modal="true" aria-labelledby="xp-h">' + inner + '</div>';
+}
+function xpHead(){
+  var m = XP.meta || {};
+  return '<div class="xp-hd"><h3 id="xp-h">📦 Photos for Xactimate</h3><div class="xp-sub">' + esc([m.claimNo ? 'Claim # ' + m.claimNo : (m.po ? m.po : ''), m.insured || m.job, m.insured && m.job && m.job !== m.insured ? m.job : ''].filter(Boolean).join(' · ')) + '</div>';
+}
+/* ── open: load the job's photos (CompanyCam too), then the picker ── */
+function xpOpen(jobId, opt){
+  opt = opt || {};
+  if (!xpAllowed()) { xpToast('Photos for Xactimate is for the office, PMs and the insurance team.', true); return Promise.resolve(false); }
+  var it = itemById(jobId);
+  if (!it) { xpToast('You do not have access to this project.', true); return Promise.resolve(false); }
+  xpClose();
+  XP.jobId = String(it.id); XP.meta = xpMeta(it, opt.claim); XP.f = { tag: 'All', room: 'All', from: '', to: '' };
+  xpShell(xpHead() + '</div><div class="xp-list"><div class="xp-empty" role="status">Loading the photos of this job…</div></div><div class="xp-ft"><div class="xp-acts"><button class="xp-b" data-x="close">Cancel</button></div></div>');
+  XPW.on++;
+  var p = (it.ccIds && it.ccIds.length) || it.ccId ? Promise.resolve(ccBusy[it.id] || ccLoad(it.id)).catch(function(){ return []; }) : Promise.resolve([]);
+  return p.then(function(){ XPW.on = Math.max(0, XPW.on - 1); if (!XP.ov || XP.jobId !== String(it.id)) return false;
+    XP.ai = xpAiFn();
+    var pl = XPC.plan(jobPhotos(it.id), { ai: XP.ai });
+    XP.rows = pl.rows; XP.skipped = pl.skipped; XP.sel = {};
+    var want = arr(opt.ids).map(String), have = {}; XP.rows.forEach(function(x){ have[x.r.id] = 1; });
+    var pre = want.filter(function(id){ return have[id]; });
+    XP.rows.forEach(function(x){ if (!pre.length || pre.indexOf(String(x.r.id)) >= 0) XP.sel[x.r.id] = 1; });
+    xpPaint(true); return true;
+  }, function(){ XPW.on = Math.max(0, XPW.on - 1); return false; });
+}
+function xpShown(){
+  var f = XP.f;
+  return XP.rows.filter(function(x){ var r = x.r, d = XPC.dayOf(r.at);
+    return (f.tag === 'All' || (f.tag === 'Untagged' ? !r.tag : r.tag === f.tag)) && (f.room === 'All' || (f.room === '' ? !x.room : low(x.room) === low(f.room))) && (!f.from || d >= f.from) && (!f.to || d <= f.to); });
+}
+function xpChosen(){ return XP.rows.filter(function(x){ return XP.sel[x.r.id]; }).map(function(x){ return x.r; }); }
+function xpPlanSel(){ return XPC.plan(xpChosen(), { ai: XP.ai }); }
+function xpRoomKey(x){ return x.room || ''; }
+function xpPaint(full){
+  if (!XP.ov) return;
+  if (full) {
+    var tags = TAGS.filter(function(t){ return XP.rows.some(function(x){ return x.r.tag === t; }); }); if (XP.rows.some(function(x){ return !x.r.tag; })) tags.push('Untagged');
+    var rooms = [], seenR = {}; XP.rows.forEach(function(x){ var k = low(x.room); if (x.room && !seenR[k]) { seenR[k] = 1; rooms.push(x.room); } });
+    var days = XP.rows.map(function(x){ return XPC.dayOf(x.r.at); }).filter(Boolean).sort();
+    var flt = '<div class="xp-flt" role="group" aria-label="Show">' + ['All'].concat(tags).map(function(t){ return '<button class="xp-chip' + (XP.f.tag === t ? ' on' : '') + '" data-x="tag" data-v="' + esc(t) + '" aria-pressed="' + (XP.f.tag === t) + '">' + (t === 'All' ? 'All tags' : esc(t)) + '</button>'; }).join('') +
+      (rooms.length ? '<label>Room / area<select data-x="room"><option value="All">All rooms</option>' + rooms.map(function(r){ return '<option value="' + esc(r) + '"' + (XP.f.room === r ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') + (XP.rows.some(function(x){ return !x.room; }) ? '<option value=""' + (XP.f.room === '' ? ' selected' : '') + '>No room tag</option>' : '') + '</select></label>' : '') +
+      '<label>From<input type="date" data-x="from" value="' + esc(XP.f.from) + '" min="' + esc(days[0] || '') + '" max="' + esc(days[days.length - 1] || '') + '"></label><label>To<input type="date" data-x="to" value="' + esc(XP.f.to) + '" min="' + esc(days[0] || '') + '" max="' + esc(days[days.length - 1] || '') + '"></label></div>';
+    xpShell(xpHead() + flt + '</div>' +
+      '<div class="xp-bar"><b id="xp-n" role="status"></b><span class="xp-sp"></span><button class="xp-b sm" data-x="all">Select all shown</button><button class="xp-b sm" data-x="none">Clear shown</button></div>' +
+      '<div class="xp-list" id="xp-list"></div>' +
+      '<div class="xp-ft" id="xp-ft"><div class="xp-acts"><button class="xp-b pri" id="xp-go" data-x="go">📦 Download ZIP</button><button class="xp-b" data-x="copy">📋 Copy captions</button><button class="xp-b" data-x="close">Cancel</button></div>' +
+      '<div class="xp-how"><b>Into Xactimate:</b> ' + esc(XPC.HOWTO) + ' The file names become the photo titles, in this order (room by room).</div></div>');
+  }
+  var list = XP.ov.querySelector('#xp-list'); if (!list) return;
+  var shown = xpShown(), names = {}; xpPlanSel().rows.forEach(function(x){ names[x.r.id] = x.name; });
+  if (!XP.rows.length) list.innerHTML = '<div class="xp-empty">No photos on this job yet' + (XP.skipped.length ? ' (' + XP.skipped.length + ' marked private / do not share)' : '') + '.</div>';
+  else if (!shown.length) list.innerHTML = '<div class="xp-empty">No photos match these filters.</div>';
+  else {
+    var groups = [], by = {};
+    shown.forEach(function(x){ var k = low(xpRoomKey(x)); if (!by[k]) { by[k] = { room: xpRoomKey(x), rows: [] }; groups.push(by[k]); } by[k].rows.push(x); });
+    list.innerHTML = groups.map(function(g){
+      var all = g.rows.every(function(x){ return XP.sel[x.r.id]; });
+      return '<h4>' + esc(g.room || 'No room tag') + ' <small>(' + g.rows.length + ')</small><button class="xp-b sm" data-x="grp" data-v="' + esc(low(g.room)) + '">' + (all ? 'Clear' : 'Select') + ' this room</button></h4>' +
+        g.rows.map(function(x){ var r = x.r, on = !!XP.sel[r.id], th = r.source === 'companycam' ? httpsOnly(r.thumbUrl) : '';
+          return '<label class="xp-row' + (on ? '' : ' off') + '" data-id="' + esc(r.id) + '"><input type="checkbox" data-x="pick" value="' + esc(r.id) + '"' + (on ? ' checked' : '') + '>' +
+            '<img class="xp-th" alt="" loading="lazy"' + (th ? ' src="' + esc(th) + '"' : (r.thumbRef || r.ref ? ' data-ref="' + esc(r.thumbRef || r.ref) + '"' : '')) + '>' +
+            '<span class="xp-tx"><span class="xp-nm">' + esc(names[r.id] || '— not included —') + '</span><span class="xp-mt">' + esc([md(r.at) + (r.at ? ' ' + hm(r.at) : ''), r.tag, x.caption !== r.tag ? x.caption : ''].filter(Boolean).join(' · ')) + '</span></span></label>';
+        }).join('');
+    }).join('');
+    xpThumbs(list);
+  }
+  xpCount();
+}
+function xpCount(){
+  if (!XP.ov) return;
+  var n = xpChosen().length, nb = XP.ov.querySelector('#xp-n'), go_ = XP.ov.querySelector('#xp-go');
+  if (nb) nb.textContent = n + ' of ' + XP.rows.length + ' photos selected' + (XP.skipped.length ? ' · ' + XP.skipped.length + ' private left out' : '');
+  if (go_) { go_.disabled = !n; go_.textContent = '📦 Download ZIP (' + n + ' photo' + (n === 1 ? '' : 's') + ')'; }
+}
+/* names follow the selection (the numbers stay 001, 002, … with no gaps) */
+function xpNames(){
+  if (!XP.ov) return; var names = {}; xpPlanSel().rows.forEach(function(x){ names[x.r.id] = x.name; });
+  Array.prototype.forEach.call(XP.ov.querySelectorAll('.xp-row[data-id]'), function(row){ var id = row.getAttribute('data-id'), on = !!XP.sel[id], nm = row.querySelector('.xp-nm'), cb = row.querySelector('input');
+    row.classList.toggle('off', !on); if (cb) cb.checked = on; if (nm) nm.textContent = names[id] || '— not included —'; });
+  Array.prototype.forEach.call(XP.ov.querySelectorAll('button[data-x="grp"]'), function(b){ var k = b.getAttribute('data-v'), rows = xpShown().filter(function(x){ return low(xpRoomKey(x)) === k; });
+    b.textContent = (rows.length && rows.every(function(x){ return XP.sel[x.r.id]; }) ? 'Clear' : 'Select') + ' this room'; });
+  xpCount();
+}
+function xpThumbs(scope){
+  if (XP.io) { try { XP.io.disconnect(); } catch (e) {} }
+  if (typeof IntersectionObserver !== 'function') return;
+  XP.io = new IntersectionObserver(function(es){ es.forEach(function(e){ if (!e.isIntersecting) return; var im = e.target; XP.io.unobserve(im); var ref = im.getAttribute('data-ref'); if (!ref) return; im.removeAttribute('data-ref');
+    fileBlob(ref).then(function(b){ if (!b || !XP.ov) return; var u = URL.createObjectURL(b); XP.urls.push(u); im.src = u; }, function(){}); }); }, { root: scope, rootMargin: '300px' });
+  Array.prototype.forEach.call(scope.querySelectorAll('img[data-ref]'), function(i){ XP.io.observe(i); });
+}
+function xpClick(ev){
+  var b = ev.target.closest('[data-x]'); if (!b) { if (ev.target === XP.ov && !XP.run) xpClose(); return; }
+  var x = b.getAttribute('data-x'), v = b.getAttribute('data-v');
+  if (x === 'close') return xpClose();
+  if (x === 'cancel') { if (XP.run) { XP.run.cancelled = true; try { XP.run.ctrl.abort(); } catch (e) {} } return xpPaint(true); }
+  if (x === 'tag') { XP.f.tag = v; Array.prototype.forEach.call(XP.ov.querySelectorAll('.xp-chip'), function(c){ var on = c.getAttribute('data-v') === v; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); }); return xpPaint(false); }
+  if (x === 'all' || x === 'none') { xpShown().forEach(function(y){ if (x === 'all') XP.sel[y.r.id] = 1; else delete XP.sel[y.r.id]; }); return xpNames(); }
+  if (x === 'grp') { var rows = xpShown().filter(function(y){ return low(xpRoomKey(y)) === v; }), all = rows.every(function(y){ return XP.sel[y.r.id]; }); rows.forEach(function(y){ if (all) delete XP.sel[y.r.id]; else XP.sel[y.r.id] = 1; }); return xpNames(); }
+  if (x === 'copy') return xpCopy();
+  if (x === 'go') return xpRun();
+}
+function xpChange(ev){
+  var t = ev.target, x = t && t.getAttribute('data-x'); if (!x) return;
+  if (x === 'pick') { if (t.checked) XP.sel[t.value] = 1; else delete XP.sel[t.value]; return xpNames(); }
+  if (x === 'room') { XP.f.room = t.value; return xpPaint(false); }
+  if (x === 'from' || x === 'to') { XP.f[x] = t.value; return xpPaint(false); }
+}
+function xpCopy(){
+  var rows = xpPlanSel().rows; if (!rows.length) return xpToast('Select photos first.', true);
+  var t = XPC.captions(rows);
+  function fb(){ var ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px'; (XP.ov || document.body).appendChild(ta); ta.select(); var ok = false; try { ok = document.execCommand('copy'); } catch (e) {} ta.remove(); xpToast(ok ? 'Captions copied (' + rows.length + ')' : 'Could not copy — your browser blocked it.', !ok); }
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t).then(function(){ xpToast('Captions copied (' + rows.length + ')'); }, fb); } catch (e) {}
+  fb();
+}
+/* ── one photo: upright, ≤ 2048 px, JPEG 0.85, EXIF date / GPS back in ── */
+function xpShrink(blob){
+  return decode(blob).then(function(d){
+    if (!d || !d.w || !d.h) throw new Error('could not read the image');
+    var k = Math.min(1, XP_MAX / Math.max(d.w, d.h)), w = Math.max(1, Math.round(d.w * k)), h = Math.max(1, Math.round(d.h * k));
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); cx.imageSmoothingQuality = 'high'; cx.drawImage(d.img, 0, 0, w, h); d.done();
+    return new Promise(function(res, rej){ cv.toBlob(function(b){ cv.width = cv.height = 0; b ? res(b) : rej(new Error('could not make the JPEG')); }, 'image/jpeg', XP_Q); });
+  });
+}
+function xpProgress(done, total, msg){
+  if (!XP.ov) return; var f = XP.ov.querySelector('#xp-fill'), pb = XP.ov.querySelector('#xp-pb'), m = XP.ov.querySelector('#xp-msg'), pct = total ? Math.round(done * 100 / total) : 0;
+  if (f) f.style.width = pct + '%'; if (pb) pb.setAttribute('aria-valuenow', pct); if (m) m.textContent = msg || ('Preparing ' + done + ' of ' + total + '…');
+}
+async function xpRun(){
+  if (XP.run) return;
+  var it = itemById(XP.jobId); if (!it) return xpToast('You do not have access to this project.', true);
+  var ok = {}; jobPhotos(it.id).forEach(function(r){ ok[r.id] = 1; });
+  var recs = xpChosen().filter(function(r){ return ok[r.id]; }), pl = XPC.plan(recs, { ai: XP.ai }), rows = pl.rows, total = rows.length;
+  if (!total) return xpToast('Select photos first.', true);
+  var ctrl = new AbortController(), run = XP.run = { ctrl: ctrl, cancelled: false }, out = new Array(total), failed = [], next = 0, done = 0;
+  var ft = XP.ov.querySelector('#xp-ft');
+  ft.innerHTML = '<div class="xp-track" id="xp-pb" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="xp-fill"></i></div><span id="xp-msg" role="status"></span><div id="xp-fl" class="xp-fail"></div><div class="xp-acts" id="xp-btns"><button class="xp-b" data-x="cancel">Cancel</button></div>';
+  Array.prototype.forEach.call(XP.ov.querySelectorAll('.xp-hd button,.xp-hd select,.xp-hd input,.xp-bar button,.xp-list input,.xp-list button'), function(n){ n.disabled = true; });
+  xpProgress(0, total);
+  async function worker(){
+    while (!run.cancelled) {
+      var i = next++; if (i >= total) return;
+      var x = rows[i];
+      try {
+        var b = await dlTry(x.r, ctrl.signal, false); if (run.cancelled) return;
+        var j = await xpShrink(b); if (run.cancelled) return;
+        var u8 = XPC.withExif(new Uint8Array(await j.arrayBuffer()), { at: x.r.at, lat: x.r.lat, lng: x.r.lng });
+        await dlWait(0); if (run.cancelled) return;
+        out[i] = { r: x.r, blob: new Blob([u8], { type: 'image/jpeg' }), size: u8.length, crc: XPC.crc32(u8) }; u8 = null;
+      } catch (e) { if (run.cancelled) return; failed.push({ x: x, why: s(e && e.message) }); }
+      done++; xpProgress(done, total);
+      await dlWait(0);
+    }
+  }
+  try {
+    await Promise.all(Array.apply(null, Array(Math.min(XP_CONC, total))).map(worker));
+    if (run.cancelled) return;
+    var got = out.filter(Boolean), byId = {}; got.forEach(function(g){ byId[g.r.id] = g; });
+    if (!got.length) throw new Error('None of the ' + total + ' photos could be read. Check your connection and try again.');
+    var fin = XPC.plan(got.map(function(g){ return g.r; }), { ai: XP.ai }).rows;   /* numbered again: a photo that failed leaves no gap */
+    var entries = fin.map(function(x){ var g = byId[x.r.id]; return { name: x.name, size: g.size, crc: g.crc, at: x.r.at, data: g.blob }; });
+    var csvB = new TextEncoder().encode(XPC.csv(fin));
+    entries.push({ name: 'photo-list.csv', size: csvB.length, crc: XPC.crc32(csvB), at: nowIso(), data: csvB });
+    xpProgress(total, total, 'Building the ZIP…'); await dlWait(0);
+    var zipBlob = new Blob(XPC.zip(entries), { type: 'application/zip' }), nm = XPC.zipName(XP.meta);
+    if (run.cancelled) return;
+    dlSave(zipBlob, nm); dlLog(it.id, fin.length, 'xactimate');
+    var h = XP.ov && XP.ov.querySelector('#xp-msg');
+    if (h) h.innerHTML = '<b>Saved ' + esc(nm) + '</b> — ' + fin.length + ' photo' + (fin.length === 1 ? '' : 's') + ' (' + (zipBlob.size / 1048576).toFixed(1) + ' MB). Unzip it, then: ' + esc(XPC.HOWTO);
+    var fl = XP.ov && XP.ov.querySelector('#xp-fl');
+    if (fl && failed.length) fl.innerHTML = '<b>' + failed.length + ' photo' + (failed.length === 1 ? '' : 's') + ' could not be read and ' + (failed.length === 1 ? 'is' : 'are') + ' not in the ZIP:</b> ' + esc(failed.slice(0, 12).map(function(f){ return (f.x.caption || 'photo') + ' (' + md(f.x.r.at) + ')'; }).join(', ')) + (failed.length > 12 ? ' …' : '');
+    var bt = XP.ov && XP.ov.querySelector('#xp-btns'); if (bt) bt.innerHTML = '<button class="xp-b pri" data-x="close">Done</button><button class="xp-b" data-x="copy">📋 Copy captions</button>';
+    XP.lastZip = { name: nm, n: fin.length, failed: failed.length, bytes: zipBlob.size };
+  } catch (e) {
+    if (run.cancelled) return;
+    xpProgress(0, total, 'Stopped: ' + (s(e && e.message) || 'something went wrong.'));
+    var bt2 = XP.ov && XP.ov.querySelector('#xp-btns'); if (bt2) bt2.innerHTML = '<button class="xp-b" data-x="cancel">Back</button><button class="xp-b" data-x="close">Close</button>';
+  } finally { if (XP.run === run) XP.run = null; out = null; }
+}
+function xpBtn(){ return xpAllowed() ? '<button class="dl-b xp-open" data-a="xpopen" title="' + esc(XPC.HOWTO) + '">📦 Photos for Xactimate</button>' : ''; }
 function vProjectsOld(){
   var idx = photoIndex(), q = low(S.q);
   var list = items().filter(function(it){ return (S.section === 'All' || it.section === S.section) && matches(it, q, idx); });
@@ -128958,6 +129381,7 @@ function onClick(ev){
     case 'repall': S.sel = {}; jobPhotos(S.jobId).forEach(function(r){ S.sel[r.id] = 1; }); lastPdf = null; return renderMain();
     case 'repshared': S.sel = repDefault(S.jobId); lastPdf = null; return renderMain();
     case 'repnone': S.sel = {}; lastPdf = null; return renderMain();
+    case 'xpopen': return xpOpen(S.jobId);   /* XACTPHOTOS */
     case 'dlsel': S.dlm = true; S.dlJob = S.jobId; S.dsel = {}; return render();
     case 'dlexit': S.dlm = false; S.dsel = {}; return render();
     case 'dlall': return dlSelAll(true);
@@ -129335,6 +129759,7 @@ later(function(){ CH.pull(); stageWatch(); }, 6000);   /* patch PHOTOLINK: no ph
 
 window._gcPhotoStats = function(jobId){ return stats(String(jobId)); };
 window._gcPhotos = {
+  xact: function(jobId, o){ return xpOpen(jobId, o); }, xactOk: xpAllowed, xactCore: XPC, xactState: function(){ return { open: !!XP.ov, running: !!XP.run, rows: XP.rows.length, selected: xpChosen().length, last: XP.lastZip || null }; },   /* XACTPHOTOS */
   open: open, close: close, openRef: openRef, mountTab: mountTab, settings: openSettings, checkCompanyCam: ccCheckNow, sharedOf: sharedOf, subsOf: subsOf, setCCFlag: setCCFlag, capture: capture, stats: stats, merge: mergeLists, items: items, activity: activity, team: team,
   send: function(thread, text, extra){ return sendMsg(thread, text, [], extra); }, thread: { job: threadJob, dm: threadDm, photo: threadPhoto },
   buildPdf: buildPdf, sync: function(){ return Promise.all([PH.push(), CH.push()]).then(function(){ return Promise.all([PH.pull(true), CH.pull(true)]); }); },
@@ -163288,7 +163713,7 @@ function galleryTab(A, c){
   if (UI.group === 'tag') order.sort();
   var picks = arr(c.photoPicks);
   return '<div class="gcbb-panel"><h3>📸 All photos of this job (' + list.length + ')</h3>' +
-    '<div class="gcbb-bar" style="flex-wrap:wrap"><button class="gcbb-btn sm' + (UI.group === 'date' ? ' pri' : '') + '" data-a="i3grp" data-v="date">By date</button><button class="gcbb-btn sm' + (UI.group === 'tag' ? ' pri' : '') + '" data-a="i3grp" data-v="tag">By tag</button><button class="gcbb-btn sm" data-a="i3reload">↻ Refresh</button>' +
+    '<div class="gcbb-bar" style="flex-wrap:wrap"><button class="gcbb-btn sm' + (UI.group === 'date' ? ' pri' : '') + '" data-a="i3grp" data-v="date">By date</button><button class="gcbb-btn sm' + (UI.group === 'tag' ? ' pri' : '') + '" data-a="i3grp" data-v="tag">By tag</button><button class="gcbb-btn sm" data-a="i3reload">↻ Refresh</button>' + (pid && W._gcPhotos && W._gcPhotos.xactOk && W._gcPhotos.xactOk() ? '<button class="gcbb-btn sm pri" data-a="xpzip" title="' + esc(W._gcPhotos.xactCore.HOWTO) + '">📦 Photos for Xactimate</button>' : '') /* XACTPHOTOS */ +
       (W._gcPhotos && W._gcPhotos.open ? '<button class="gcbb-btn sm" data-a="openphotos">Open GrayCo Photos</button>' : '') + '<span style="flex:1"></span>' +
       '<b>' + nSel + ' selected</b><button class="gcbb-btn sm" data-a="i3all">Select all</button><button class="gcbb-btn sm" data-a="i3none">Clear</button></div>' +
     (nSel ? '<div class="gcbb-bar" style="flex-wrap:wrap;margin-top:6px"><button class="gcbb-btn sm pri" data-a="i3pick" data-v="package">➕ Claim package</button><button class="gcbb-btn sm pri" data-a="i3pick" data-v="supplement">➕ Supplement</button><button class="gcbb-btn sm pri" data-a="i3pick" data-v="report">➕ Photo report</button><button class="gcbb-btn sm" data-a="i3dl">⬇ Download</button></div>' : '') +
@@ -163330,6 +163755,7 @@ function hook(){
   var g = G(); if (!g || hook.done) return !!hook.done;
   hook.done = true;
   var E = g.ext, P = E.P2TABS, X = E.EXT_ACT;
+  X.xpzip = function(A, v, t, ev, c){ c = c || (A.S && A.S.claimId ? g.get(A.S.claimId) : null); if (!c || !c.projectId || !W._gcPhotos || !W._gcPhotos.xact) return; var sel = UI.sel[s(c.projectId)] || {}; W._gcPhotos.xact(s(c.projectId), { claim: c, ids: Object.keys(sel).filter(function(k){ return sel[k]; }) }); };   /* XACTPHOTOS */
   function safe(f){ return function(A, c){ try { return f(A, c); } catch (e) { warn(e); return '<div class="gcbb-panel">This part could not load: ' + esc(e && e.message) + '</div>'; } }; }
   P.activity = safe(activityTab); P.mail = safe(mailTab); P.xact = safe(xactTab); P.gallery = safe(galleryTab);
   function re(A){ return A.render(true); }
