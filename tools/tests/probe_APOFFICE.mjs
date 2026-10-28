@@ -30,6 +30,7 @@ const portal = require(path.join(WT, 'netlify/functions/portal.js'));
 
 seedDemo();
 cset('gc_automation_pause', { on: false });
+cset('gc_sub_approvals', [{ id: 'SA1', invId: 'SA1', status: 'pending_pm', pmName: 'Sample PM', subName: 'Demo Cabinets LLC', amount: 2400, pid: 'P1', at: new Date().toISOString(), createdAt: Date.now() }]);   /* a fresh one (1 h old would do): still the PM's */
 const now = new Date().toISOString();
 cset('gc_approval_queue', JSON.stringify([{ id: 'apo1', kind: 'portal_link', title: 'Portal link — Demo Kitchen Remodel', jobId: 'P1', jobName: 'Demo Kitchen Remodel', pm: 'Sample PM', pmEmail: 'sbiffle@grayco-cs.com',
   channel: 'email', to: 'homeowner@example.test', subject: 'Your project page', html: '<p>Hi</p>', text: 'Hi', attachments: [], steps: ['pm'], step: 'pm', approvals: [], status: 'waiting', createdAt: now, updatedAt: now, meta: {} },
