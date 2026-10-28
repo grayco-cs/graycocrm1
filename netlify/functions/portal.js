@@ -1683,6 +1683,17 @@ async function approvalAction(body, who){
       }
     } catch (e) {}
   }
+  /* patch DENY: a sent-back (rejected) item, fixed by the PM, goes back to "waiting" at its first step; every deny is kept */
+  if (op === 'resubmit') {
+    if (it0.status !== 'rejected') return { status: 200, out: { ok: true, unchanged: true, item: it0 } };
+    if (!admin && !isPm && !(await isOffice(who))) return { status: 403, out: { ok: false, error: 'Only the job\'s PM, the office or an admin can resend it.' } };
+    const nowR = new Date().toISOString();
+    const rr = await kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x || x.status !== 'rejected') return null;
+      x.denials = (Array.isArray(x.denials) ? x.denials : []).concat([{ by: x.rejectedBy, email: x.rejectedEmail, at: x.rejectedAt, reason: x.reason }]).slice(-20);
+      x.status = 'waiting'; x.step = (Array.isArray(x.steps) && x.steps[0]) || 'pm'; x.resubmittedAt = nowR; x.resubmittedBy = low(who.email); x.updatedAt = nowR;
+      return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && z.resubmittedAt === nowR); }, result: x }; });
+    return { status: rr && rr.ok ? 200 : 409, out: { ok: !!(rr && rr.ok), item: rr && rr.result } };
+  }
   const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
   if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */

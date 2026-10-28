@@ -157998,8 +157998,59 @@ function build0(){
   });
   if (!sc.preview) X.forEach(function(a){ add(rowExp(a, false, now)); });
   if (!sc.preview && realAdmin()) PAYRUNS.forEach(function(r){ if (r && r.status === 'pending') add(rowPay(r, now)); });   /* patch INLINEAPPR */
-  return { scope: sc, rows: out, now: now };
+  return { scope: sc, rows: denyFilter(out), now: now };
 }
+/* patch DENY: deny = a To-Do for the PM that holds the card back until it is done */
+var DENYBOX = {}, DREASON = {}, DENYC = { at: 0, open: {}, done: {} };
+function denyTodos(){
+  if (Date.now() - DENYC.at < 1000) return DENYC;
+  var open = {}, done = {}, l = []; try { l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); } catch (e) {}
+  arr(l).forEach(function(t){ var d = t && t._deny; if (!d || !d.key) return; if (t.done || t.completed) (done[d.key] = done[d.key] || []).push(d); else open[d.key] = d; });
+  DENYC = { at: Date.now(), open: open, done: done }; return DENYC;
+}
+function denyFilter(rows){
+  var c = denyTodos();
+  return rows.filter(function(r){ return !(r && c.open[r.key.replace(/#\d+$/, '')]); }).map(function(r){
+    var h = c.done[r.key]; if (!h || !h.length) return r;
+    var x = Object.assign({}, r); x.chain = (r.chain ? r.chain + ' · ' : '') + h.map(function(d){ return '↩ sent back by ' + s(d.by) + ' ' + when(d.at) + ': “' + s(d.reason).slice(0, 80) + '”, fixed and resubmitted'; }).join(' · ');
+    return x;
+  });
+}
+function denyTo(r){
+  var p = proj(r.pid); var pm = s(r.pm) || s(p && (p.pm || p.projectManager));
+  var raw = null; try { raw = r.src === 'queue' ? queue().filter(function(y){ return s(y.id) === s(r.id); })[0] : null; } catch (e) {}
+  return pm || s(raw && (raw.pm || (raw.meta && raw.meta.by))) || s(r.by || r.createdBy) || '';
+}
+function doDeny(r){
+  var inp = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'), why = s((inp && inp.value) || DREASON[r.key]);
+  if (!why) { toast('Write why first — the PM sees it.'); if (inp) try { inp.focus(); } catch (e) {} return; }
+  var to = denyTo(r) || 'the office', me = myName() || myEmail(), at = new Date().toISOString(), title = s(r.title).slice(0, 120);
+  var d = { key: r.key.replace(/#\d+$/, ''), src: r.src, id: s(r.id), title: title, pid: s(r.pid), by: me, at: at, reason: why.slice(0, 500), to: to };
+  try {
+    var ot = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); if (!Array.isArray(ot)) ot = [];
+    ot.push({ id: 'DENY' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: '↩ Fix and resend: ' + title + ' — ' + why.slice(0, 160) + ' (from ' + me + ')', note: 'Sent back from Approvals by ' + me + '. Fix it, then tick this done: it goes back on Approvals.', assignee: to === 'the office' ? '' : to, pid: d.pid, addedBy: me, addedAt: at, at: at, done: false, _deny: d });
+    localStorage.setItem('gc_office_tasks', JSON.stringify(ot));
+    if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', ot);
+  } catch (e) { warn(e); toast('Could not save that — try again.'); return; }
+  if (r.src === 'queue' && typeof W._gcApprovalAct === 'function') { try { Promise.resolve(W._gcApprovalAct(s(r.id), 'reject', { reason: why.slice(0, 500) })).catch(function(){}); } catch (e) {} }
+  try { if (typeof W._gcNotify === 'function' && to !== 'the office') W._gcNotify(to, { kind: 'approval', link: '#todo', title: '↩ Sent back to you: ' + title, body: why + ' — from ' + me }); } catch (e) {}
+  delete DENYBOX[r.key]; delete DREASON[r.key]; DENYC.at = 0; fresh(); paintSoon();
+  toast('↩ Sent back to ' + to + ' — nothing was sent.');
+}
+/* a customer queue item whose "fix and resend" To-Do is done goes back to "waiting" (server op resubmit), once */
+function denyResubmit(){
+  var c = denyTodos(), sent = {}; try { sent = JSON.parse(localStorage.getItem('gc_deny_resub') || '{}') || {}; } catch (e) {}
+  Object.keys(c.done).forEach(function(k){ c.done[k].forEach(function(d){
+    if (d.src !== 'queue' || sent[d.id + '|' + d.at] || typeof W._gcApprovalAct !== 'function') return;
+    if (!(realAdmin() || samePerson(d.to, myName()))) return;
+    var x = queue().filter(function(y){ return s(y.id) === d.id; })[0]; if (x && x.status !== 'rejected') { sent[d.id + '|' + d.at] = Date.now(); return; }
+    sent[d.id + '|' + d.at] = Date.now(); try { localStorage.setItem('gc_deny_resub', JSON.stringify(sent)); } catch (e) {}
+    try { Promise.resolve(W._gcApprovalAct(d.id, 'resubmit', {})).catch(function(){}); } catch (e) {}
+  }); });
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { denyResubmit(); } catch (e) {} }, 15000);
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-deny-in')) DREASON[t.getAttribute('data-apx-deny-in')] = t.value; }, true);
+D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.getAttribute && t.hasAttribute('data-apx-deny-in')) { var g = t.parentNode && t.parentNode.querySelector('[data-apx-act$="|denygo"]'); if (g) { ev.preventDefault(); g.click(); } } }, true);
 function stub(e, src){
   return { key: s(e.id), id: s(e.id).replace(/^\w+:/, ''), src: src, kind: src, kindL: 'Approval', icon: '✅', title: s(e.title) || 'Approval', pid: '', job: '', pm: '', step: 'me', waits: 'You',
     since: 0, clock: '', amount: 0, mine: true, escalated: false, chain: '', approve: { l: 'Open the APPROVE panel', f: function(){ call('_gcOpenPmApprovals'); } }, open: null, doc: null };
@@ -158223,7 +158274,16 @@ function btns(r, where){
   if (DONE[r.key]) return '<div class="apx-bs"><span class="apx-okmsg' + (DONE[r.key].ok ? '' : ' bad') + '">' + (DONE[r.key].ok ? '✓ Approved' : '⚠ That did not go through — try again') + '</span></div>';
   if (r.approve && CONF[r.key]) return '<div class="apx-conf"><span>' + esc(r.approve.what || 'Approve this?') + '</span><button type="button" class="apx-b go" data-apx-conf="yes" data-k="' + esc(r.key) + '">✅ Yes, approve</button><button type="button" class="apx-b op" data-apx-conf="no" data-k="' + esc(r.key) + '">Cancel</button>' + (r.doc ? '' : '') + '</div>' + (r.doc ? '<div class="apx-bs">' + (function(){ var k = where + '|' + r.key + '|doc'; ACTS[k] = r.doc.f; return '<button type="button" class="apx-b dc" data-apx-act="' + esc(k) + '">' + esc(r.doc.l) + '</button>'; })() + '</div>' : '');
   function b(kind, o, cls){ if (!o) return ''; var k = where + '|' + r.key + '|' + kind; ACTS[k] = o.f; return '<button type="button" class="apx-b ' + cls + '" data-apx-act="' + esc(k) + '">' + esc(o.l) + '</button>'; }
+  /* patch DENY: the "why?" box in place of the buttons, and ✕ Deny next to Approve */
+  if (r.approve && DENYBOX[r.key]) {
+    return '<div class="apx-deny" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #fca5a5;border-radius:9px;background:#fff5f5">'
+      + '<b style="width:100%;font-size:13px;color:#991b1b">✕ Deny — why? (sent back to ' + esc(denyTo(r) || 'the PM') + ')</b>'
+      + '<input type="text" data-apx-deny-in="' + esc(r.key) + '" value="' + esc(DREASON[r.key] || '') + '" placeholder="What needs fixing (the PM sees this)" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font:14px Arial">'
+      + b('denygo', { l: '✕ Deny & send back', f: function(){ doDeny(r); } }, 'dn') + b('denyx', { l: 'Cancel', f: function(){ delete DENYBOX[r.key]; fresh(); paintSoon(); } }, 'op')
+      + '<span style="width:100%;font-size:12px;color:#6b7280">Nothing is sent to the customer.</span></div>';
+  }
   h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
+  if (r.approve && r.src !== 'pay' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ DENYBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'dn');
   if (r.edit) h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; fresh(); paintSoon(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
   else h += b('open', r.open, 'op');
   if (r.pid && r.job) h += b('job', { l: '🏗 Open job', f: function(){ openJob(r.pid); } }, 'jb');
