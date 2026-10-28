@@ -240,6 +240,9 @@ async function runAnniversary(o){
   const rep = { due: due.length, queued: 0, sent: 0, skipped: [] };
   for (const d of due) {
     const p = C.findProject(data, d.pid); if (!p) continue;
+    /* patch AUTOFIX-ANNIV: the one-year note is a homeowner automation — it follows the job's ⚙ Automations
+       "yearlyCheckup" switch (off by default on commercial jobs, off for history jobs), like the other customer e-mails */
+    if (C.jaAllows && !C.jaAllows(data, p, 'yearlyCheckup')) { rep.skipped.push({ pid: d.pid, why: 'one-year note is off for this job (⚙ Automations; commercial jobs are off by default)' }); continue; }
     const cust = arr(data.customers).find(function(x){ return low(x.name || x.company) === low(p.client); }) || {};
     const email = low(p.clientEmail || p.customerEmail || cust.email);
     if (!okEmail(email)) { rep.skipped.push({ pid: d.pid, why: 'no customer e-mail' }); continue; }
