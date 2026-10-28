@@ -3394,7 +3394,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.155-2026-10-28-r10f -->
+<!-- GrayCo CRM Build: 33.155-2026-10-28-r10g -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4059,7 +4059,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.155-2026-10-28-r10f");
+  console.log("[GC] Build 33.155-2026-10-28-r10g");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4107,7 +4107,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.155-2026-10-28-r10f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.155-2026-10-28-r10g"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -82735,14 +82735,18 @@ window._gcIdbRead = readKV;
 var prevSet = window.idbSet;
 var CORE = {projects:1,invs:1,invoices:1,estimates:1,expenses:1,schedule:1,cos:1,changeOrders:1,
             subs:1,vendors:1,customers:1,leads:1,scopes:1,projectPayments:1,projectDocs:1,gcAcctRegister:1};
+/* patch RTSTAMP: for a big list, only rows that are not the very objects written last time are stamped */
+var _wkLast = {};
 function writeKV(key, value){
   try{
     // keep the "a manual save always wins" stamping the app relies on
     if(CORE[key] && Array.isArray(value) && (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__)){
       var now=new Date().toISOString();
-      value.forEach(function(r){ if(r && typeof r==='object'){ r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
+      var big = value.length > 2000 && typeof WeakSet === 'function', had = big ? _wkLast[key] : null;
+      value.forEach(function(r){ if(r && typeof r==='object'){ if(had && had.has(r)) return; r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
     }
   }catch(e){}
+  try{ if(CORE[key] && Array.isArray(value) && value.length > 2000 && typeof WeakSet === 'function'){ var ws = new WeakSet(); for(var _i=0; _i<value.length; _i++){ var _r = value[_i]; if(_r && typeof _r==='object') ws.add(_r); } _wkLast[key] = ws; } }catch(e){}
   return openDB().then(function(db){
     return new Promise(function(res){
       try{
@@ -119843,11 +119847,13 @@ function notePersonEdits(key, list){
     if(!VERSIONED[typeOf(key)]) return;
     var prev = lastRows[key]; if(!prev) return;
     var changed = [], ls = lastStr[key] || {}, ns = {};
-    for(var i0=0;i0<list.length;i0++){ var r0 = list[i0], id0 = idOf(r0); if(id0) ns[id0] = JSON.stringify(r0); }
-    lastStr[key] = ns;
+    lastStr[key] = ns;   /* patch RTSTAMP: a row's text is made only when it is not the very same object as last time; a row
+                            without a remembered text is compared by csig, which gives the same answer */
     for(var i=0;i<list.length;i++){
       var r = list[i], id = idOf(r); if(!id) continue; var p = prev[id];
-      if(p === r || (p && (ls[id] === ns[id] || csig(p) === csig(r)))) continue;   /* same text, or only its save stamps moved (a sweep), is not an edit */
+      if(p === r) continue;
+      ns[id] = JSON.stringify(r);
+      if(p && (ls[id] === ns[id] || csig(p) === csig(r))) continue;   /* same text, or only its save stamps moved (a sweep), is not an edit */
       var st = stampOf(r);
       if(byCall || byInput || (stampNearInput(st) && (!p || st > stampOf(p)))){ changed.push(id); if(changed.length > 200) return; }
     }
@@ -184057,5 +184063,39 @@ function sweep(){
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { sweep(); } catch (e) {} }, 60000);
 (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ try { sweep(); } catch (e) {} }, 20000);
 W._gcApptConf = { sweep: sweep, say: W._gcApprSay };
+})();
+</script>
+<script>
+/* patch RTSTAMP (2): the same big list written again within 2.5 s is not written twice */
+(function(){
+'use strict';
+if (window.__GC_RTDUP__) return; window.__GC_RTDUP__ = true;
+try {
+  var P = IDBObjectStore.prototype, inner = P.put, last = {}, ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+  var stats = window._gcRtDup = { skipped: 0, written: 0 };
+  var w = function(value, key){
+    try {
+      if (typeof key === 'string' && Array.isArray(value) && value.length > 2000 && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm') {
+        var txt = JSON.stringify(value), now = Date.now(), L = last[key];
+        if (L && L.txt === txt && now - L.at < 2500) {
+          stats.skipped++;
+          var fake = { readyState: 'done', result: key, error: null, onsuccess: null, onerror: null, transaction: this.transaction, source: this,
+            addEventListener: function(type, fn){ if (type === 'success' && typeof fn === 'function') ST.call(window, function(){ try { fn({ target: fake, type: 'success' }); } catch (e) {} }, 0); },
+            removeEventListener: function(){} };
+          ST.call(window, function(){ try { if (typeof fake.onsuccess === 'function') fake.onsuccess({ target: fake, type: 'success' }); } catch (e) {} }, 0);
+          return fake;
+        }
+        var r = inner.apply(this, arguments);
+        stats.written++;
+        try { this.transaction.addEventListener('complete', function(){ last[key] = { txt: txt, at: Date.now() }; }); } catch (e) {}   /* only what reached the disk counts */
+        try { this.transaction.addEventListener('abort', function(){ if (last[key] && last[key].txt === txt) delete last[key]; }); } catch (e) {}
+        return r;
+      }
+    } catch (e) {}
+    return inner.apply(this, arguments);
+  };
+  w.__gcRtDup = true; try { Object.keys(inner).forEach(function(k){ w[k] = inner[k]; }); } catch (e) {}
+  P.put = w;
+} catch (e) {}
 })();
 </script>
