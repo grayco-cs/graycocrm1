@@ -39,17 +39,18 @@ PAGE = [
  """    """ + MARK + """: what is true, or why it could not look (+ ↻ Try again) */
     var refLoad = function(){ el.textContent = 'Looking up referrals…';
       var done = false, tm = setTimeout(function(){ if (done) return; done = true; refShow({ __st: 0, __timeout: true }); }, 15000);
-      W.fetch('/.netlify/functions/referral?list=1', { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.__st = r.status; return j; }); }, function(){ return { __st: 0 }; })
+      W.fetch('/.netlify/functions/referral?list=1', { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.__st = r.status; j.__stt = r.statusText; return j; }); }, function(){ return { __st: 0 }; })
         .then(function(j){ if (done) return; done = true; clearTimeout(tm); refShow(j); }); };
     var refWhy = function(j){ var st = j && j.__st, e = s(j && j.error);
       if (st === 401) return 'Your sign-in has expired — sign in again to see referrals.';
       if (st === 403) return 'Referral details: office and admins.';
       if (st === 503 && /not configured/i.test(e)) return 'The referral program is not set up yet — no referrals to show.';
+      if (st === 503 && /paused/i.test(s(j && j.__stt))) return 'The CRM paused calls to the referral program for a while after it failed a few times — tap ↻ Try again.';
       if (j && j.__timeout) return 'The referral program did not answer in time.';
       if (!st) return 'The referral program did not answer (no internet?).';
       return 'The referral program did not answer right now' + (e ? ' (' + e + ')' : '') + '.'; };
     var refShow = function(j){
-      if (!j || !j.ok) { el.innerHTML = '<div class="gcd1-row"><span class="gcd1-muted">' + esc(refWhy(j)) + '</span><span class="r"><button class="gcd1-btn s" data-ref-retry="1">↻ Try again</button></span></div>'; var rb = el.querySelector('[data-ref-retry]'); if (rb) rb.onclick = refLoad; return; }"""),
+      if (!j || !j.ok) { el.innerHTML = '<div class="gcd1-row"><span class="gcd1-muted">' + esc(refWhy(j)) + '</span><span class="r"><button class="gcd1-btn s" data-ref-retry="1">↻ Try again</button></span></div>'; var rb = el.querySelector('[data-ref-retry]'); if (rb) rb.onclick = function(){ try { if (/paused/i.test(s(j && j.__stt)) && typeof W._gcFloodReset === 'function') W._gcFloodReset(); } catch (x) {} refLoad(); }; return; }"""),
 ("""        (made.length ? '<div class="gcd1-row"><span>They were referred by</span><span class="r">' + esc(made[0]) + '</span></div>' : '');
     });""",
  """        (made.length ? '<div class="gcd1-row"><span>They were referred by</span><span class="r">' + esc(made[0]) + '</span></div>' : '');
