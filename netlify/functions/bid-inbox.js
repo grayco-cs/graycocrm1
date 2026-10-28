@@ -992,9 +992,11 @@ async function afterStore(results, items, opt){
     const est = await estimatorOf();
     const mine = added.filter(it => !it.pm && !it.estimator && est.email && isCommercial(it));
     if (mine.length) {
-      const ids = {}, at = nowIso(); mine.forEach(it => { ids[it.id] = 1; it.estimator = est.name; it.estimatorEmail = est.email; it.assignedBy = 'Auto · Senior Estimator'; it.assignedAt = at; it.autoAssignedAt = at; it.leadRole = 'bid'; });   /* patch HOT2: logged as automatic */
-      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { x.estimator = est.name; x.estimatorEmail = est.email; x.assignedBy = 'Auto · Senior Estimator'; x.assignedAt = at; x.autoAssignedAt = at; x.leadRole = 'bid'; ch = true; } }); return ch ? list : undefined; });
-      out.estimator = { name: est.name, email: est.email, n: mine.length };
+      const ids = {}, hl = {}, at = nowIso();
+      mine.forEach(it => { ids[it.id] = 1; const h = holdPick(it, { field: 'estimator', name: est.name, email: est.email, label: 'Senior Estimator', k: 'bid' }); if (h) { hl[it.id] = h; it.hold = h; it.leadRole = 'bid'; return; }   /* patch LEADHOLD: suggested, assigned at 5 PM unless an admin changes it */
+        it.estimator = est.name; it.estimatorEmail = est.email; it.assignedBy = 'Auto · Senior Estimator'; it.assignedAt = at; it.autoAssignedAt = at; it.leadRole = 'bid'; });   /* patch HOT2: logged as automatic */
+      await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { if (x && ids[x.id] && !x.estimator) { if (hl[x.id]) { if (!x.hold) { x.hold = hl[x.id]; x.leadRole = 'bid'; ch = true; } return; } x.estimator = est.name; x.estimatorEmail = est.email; x.assignedBy = 'Auto · Senior Estimator'; x.assignedAt = at; x.autoAssignedAt = at; x.leadRole = 'bid'; ch = true; } }); return ch ? list : undefined; });
+      out.estimator = { name: est.name, email: est.email, n: mine.length, held: Object.keys(hl).length };
     }
   } catch (e) { out.estimator = { error: s(e && e.message) }; }
   /* patch HOT2 (owner 10/22): the other lead roles, by type (Admin → 👥 Team roles; _lib/lead-roles.js) — insurance /
@@ -1009,9 +1011,11 @@ async function afterStore(results, items, opt){
       if (!it) return;
       if (!it) return;
       const k = LR.classify(it, isCommercial);
-      if (!it.pm && !it.estimator && (k === 'insurance' || k === 'roofing')) {
+      if (!it.pm && !it.estimator && !it.hold && (k === 'insurance' || k === 'roofing')) {
         const h = LR.holder(k, team, users);
-        if (h) { Object.assign(it, { pm: h.name, pmEmail: h.email, assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k }); set[it.id] = it; }
+        const hd = h ? holdPick(it, { field: 'pm', name: h.name, email: h.email, label: h.label, k }) : null;   /* patch LEADHOLD */
+        if (hd) { Object.assign(it, { hold: hd, leadRole: k }); set[it.id] = it; }
+        else if (h) { Object.assign(it, { pm: h.name, pmEmail: h.email, assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k }); set[it.id] = it; }
       }
       /* the Senior Roofing PM as the second person: a commercial roofing bid, a storm / water lead about a roof */
       const prim = low(it.pmEmail || it.estimatorEmail);
@@ -1022,6 +1026,7 @@ async function afterStore(results, items, opt){
     if (Object.keys(set).length) {
       await kvCas(KV, v => { const list = arr(v); let ch = false; list.forEach(x => { const y = x && set[x.id]; if (!y) return;
         if (y.coAssignees && !arr(x.coAssignees).length) { x.coAssignees = y.coAssignees; ch = true; }
+        if (y.hold && !x.hold && !x.pm && !x.estimator) { x.hold = y.hold; x.leadRole = y.leadRole; ch = true; }   /* patch LEADHOLD */
         if (y.leadRole && y.leadRole !== 'bid' && y.pm && !x.pm && !x.estimator) { Object.assign(x, { pm: y.pm, pmEmail: y.pmEmail, assignedBy: y.assignedBy, assignedAt: y.assignedAt, autoAssignedAt: y.autoAssignedAt, leadRole: y.leadRole }); ch = true; } });
         return ch ? list : undefined; });
       out.leadRoles = { n: Object.keys(set).length };
@@ -1097,6 +1102,43 @@ function isCommercial(it){
 /* patch HOT2 (lead roles): one stored Lead Inbox item, routed by its type — for the paths that file a lead without
    afterStore (website-intake fileLead: website forms, missed calls, referrals; the partner API's leads). Only a lead
    nobody is on; a role nobody holds routes nothing. → the fields set, or null */
+/* patch LEADHOLD (owner 10/28): a lead the routing gave to someone waits for an admin for the rest of the work day
+   (_lib/lead-hold.js) — the hold to store, or null (assign now: emergency / mitigation, a bid due soon, a PM's own,
+   an admin's own, LEAD_HOLD=0) */
+function holdPick(it, pick){
+  if (env('LEAD_HOLD') === '0' || !pick || !s(pick.name)) return null;
+  const LH = require('./_lib/lead-hold.js'), now = typeof exports._now === 'function' ? exports._now() : Date.now();
+  if (LH.noHoldWhy(it, now)) return null;
+  try { if (require('./_lib/emergency.js').isEmergency(it)) return null; } catch (e) {}
+  return LH.holdFor(pick, now);
+}
+/* the 10-minute run (bid-alerts.js): held Lead Inbox items whose deadline passed go to the suggested person (+ the
+   normal "assigned to you" notice); an item a person handled in the CRM meanwhile is let go; a CRM-only held lead
+   (no inbox item) gets its notice here and the CRM writes the assignment. crmLeads = gc_kv "leads" (read only). */
+async function releaseHolds(crmLeads){
+  const LH = require('./_lib/lead-hold.js'), now = typeof exports._now === 'function' ? exports._now() : Date.now();
+  const out = { assigned: [], dropped: 0, notified: 0, crmOnly: 0 };
+  const plan = LH.dueItems(arr(await kvGet(KV)), crmLeads, now);
+  if (plan.assign.length || plan.drop.length) {
+    const want = {}, drop = {}; plan.assign.forEach(it => { want[it.id] = 1; }); plan.drop.forEach(d => { drop[d.id] = d; });
+    await kvCas(KV, v => { const list = arr(v); let ch = false; out.assigned = [];
+      list.forEach(x => {
+        if (!x || !x.hold || x.hold.state !== 'held') return;
+        if (drop[x.id]) { const c = drop[x.id].crm; x.hold = Object.assign({}, x.hold, { state: c && c.hold && /^(approved|auto)$/.test(s(c.hold.state)) && LH.assignee(c) && low(LH.assignee(c)) === low(x.hold.name) ? c.hold.state : 'manual', doneAt: nowIso(), why: drop[x.id].why });
+          if (c && !x.pm && !x.estimator && LH.assignee(c)) { if (c.estimator) { x.estimator = s(c.estimator); x.estimatorEmail = low(c.estimatorEmail); } else { x.pm = s(c.pm || c.apm); x.pmEmail = low(c.pmEmail); } x.assignedBy = s(c.assignedBy) || 'CRM'; x.assignedAt = s(c.assignedAt) || nowIso(); }
+          if (x.hold.state === 'auto') out.assigned.push(Object.assign({}, x));   /* the CRM released it itself: the notice still goes from here (once) */
+          x.rev = (x.rev || 1) + 1; x.updatedAt = nowIso(); ch = true; return; }
+        if (want[x.id] && !LH.assignee(x) && Date.parse(x.hold.until) <= now) { Object.assign(x, LH.releaseFields(x, 'auto', '', now)); if (x.status === 'new') x.status = 'imported'; x.rev = (x.rev || 1) + 1; x.updatedAt = nowIso(); out.assigned.push(Object.assign({}, x)); ch = true; }
+      });
+      return ch ? list : undefined; });
+    out.dropped = plan.drop.length;
+  }
+  const A = alertsApi();
+  for (const x of out.assigned) { try { const r = await A.notifyAssigned(Object.assign({}, x, { id: s(x.leadId) || ('LEADIN-' + s(x.id).replace(/^LI-/, '')) }), { by: 'auto' }); if (r && r.sent) out.notified++; } catch (e) {} }
+  for (const l of plan.crmOnly) { try { const r = await A.notifyAssigned(Object.assign({}, l, LH.releaseFields(l, 'auto', '', now)), { by: 'auto' }); out.crmOnly++; if (r && r.sent) out.notified++; } catch (e) {} }
+  out.assigned = out.assigned.map(x => ({ id: x.id, to: s(x.pm || x.estimator) }));
+  return out;
+}
 async function routeLead(id){
   const LR = require('./_lib/lead-roles.js');
   const it = arr(await kvGet(KV)).find(x => x && x.id === id); if (!it || it.pm || it.estimator) return null;
@@ -1104,8 +1146,9 @@ async function routeLead(id){
   const roles = async () => { if (!users) { team = await kvGet(LR.TEAM_KEY); users = arr(await kvGet('users')); } };
   if (k === 'bid') { const est = await estimatorOf(); if (est.email) { h = { name: est.name, email: est.email, label: 'Senior Estimator' }; field = 'estimator'; } }
   else if (k === 'insurance' || k === 'roofing') { await roles(); h = LR.holder(k, team, users); }
-  const at = nowIso(), patch = h ? { assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k } : {};
-  if (h) { patch[field] = h.name; patch[field + 'Email'] = h.email; }
+  const at = nowIso(), hd = h ? holdPick(it, { field, name: h.name, email: h.email, label: h.label, k }) : null;   /* patch LEADHOLD: held until 5 PM for an admin */
+  const patch = hd ? { hold: hd, leadRole: k } : h ? { assignedBy: 'Auto · ' + h.label, assignedAt: at, autoAssignedAt: at, leadRole: k } : {};
+  if (h && !hd) { patch[field] = h.name; patch[field + 'Email'] = h.email; }
   if (LR.coRole(it, k) === 'roofing') { await roles(); const r = LR.holder('roofing', team, users); if (r && r.email !== low(h ? h.email : '')) patch.coAssignees = [{ name: r.name, email: r.email, role: 'roofing', label: r.label, at }]; }   /* the Senior Roofing PM too: a commercial roofing bid, a storm / water lead about a roof */
   let done = false;
   if (!Object.keys(patch).length) return null;
@@ -1169,7 +1212,7 @@ function applyAct(items, b, who){
   let it = items.find(x => x && x.id === id);
   if (!it) return { err: 'no such lead in the inbox' };
   if (op === 'imported') { if (it.status === 'new') it.status = 'imported'; it.leadId = s(b.leadId) || it.leadId; it.importedAt = it.importedAt || t; it.importedRev = it.rev; }
-  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; if (s(b.as) === 'estimator') { it.estimator = s(b.pm).slice(0, 80); it.estimatorEmail = low(b.email).slice(0, 120); if (it.pm && low(it.pm) === low(it.estimator)) { it.pm = ''; it.pmEmail = ''; } } else it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; }   /* patch BIDROLE: on a bid the pick is the estimator */
+  else if (op === 'assigned') { if (it.status === 'new') it.status = 'imported'; if (s(b.as) === 'estimator') { it.estimator = s(b.pm).slice(0, 80); it.estimatorEmail = low(b.email).slice(0, 120); if (it.pm && low(it.pm) === low(it.estimator)) { it.pm = ''; it.pmEmail = ''; } } else it.pm = s(b.pm).slice(0, 80); it.assignedBy = who.email; it.assignedAt = t; if (it.hold && it.hold.state === 'held') it.hold = Object.assign({}, it.hold, { state: low(b.pm) === low(it.hold.name) ? 'approved' : 'manual', doneAt: t, doneBy: who.email }); }   /* patch LEADHOLD */   /* patch BIDROLE: on a bid the pick is the estimator */
   else if (op === 'job') { it.pid = s(b.pid); it.jobAt = t; if (it.status === 'new') it.status = 'imported'; }
   else if (op === 'dismissed') { it.status = 'dismissed'; it.reason = s(b.reason).slice(0, 300) || 'Not interested'; it.by = who.email; it.dismissedAt = t; }
   else if (op === 'merged') {
@@ -1532,7 +1575,7 @@ exports.backgroundHandler = async function(event){
 };
 
 /* shared with bid-watch.js, and the test harness */
-exports._lib = { routeLead, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
+exports._lib = { routeLead, releaseHolds, holdPick, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
 exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */
