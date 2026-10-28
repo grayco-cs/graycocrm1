@@ -3,8 +3,9 @@
    one phone push listing them. Each line is a link that opens that exact item in the CRM (#appr=<id>) — the CRM asks for
    the usual sign-in, and the approval is given there, never from the e-mail. Who gets what is the approvals list's
    own rule (and in its order: 🔴 ASAP, 🟠 Soon, ⚪ Routine, newest first — _lib/appr-order.js): the job's PM for a PM step; Wesley and Nick for an admin step (and the office too when the item lets the
-   office approve, or it waited 24 hours); the office also gets every PM-step item at once (patch APOFFICE); JOB COSTS (sub
-   invoices, job expenses) to the job's PM and the office at once (patch APOFFICE; it was after 24 h) — an admin only as that job's PM (patch SUBINV); payroll runs waiting on an admin.
+   office approve, or it waited 24 hours); PM-step items and job costs not yet hers are one
+   "N waiting on PMs — optional" line for the office (patch APOFFICE2); JOB COSTS (sub invoices, job expenses) to the job's PM, then the office after 24 h
+   (or at once with no PM) — an admin only as that job's PM (patch SUBINV); payroll runs waiting on an admin.
    Staff only (every address @grayco-cs.com), so data-entry mode lets it through. */
 'use strict';
 const A = require('./auto-common.js');
@@ -27,13 +28,14 @@ async function run(opts){
   const users = arr(data.users), byName = {};
   users.forEach(function(u){ if (u && u.name && staffEmail(u.email)) byName[low(u.name)] = low(u.email); });
   const nameOf = {}; users.forEach(function(u){ if (u && staffEmail(u.email)) nameOf[low(u.email)] = s(u.name); });
-  const box = {};
+  const box = {}, opt = {};   /* patch APOFFICE2: per office person, how many wait on a PM (optional for the office) */
+  const optional = function(){ office.forEach(function(e){ opt[e] = (opt[e] || 0) + 1; }); };
   const add = function(email, it){ email = low(email); if (!staffEmail(email)) return; const l = (box[email] = box[email] || []); if (l.indexOf(it) < 0) l.push(it); };   /* patch APOFFICE: once per person */
   const base = A.crmBase();
   (cur ? cur.list : []).forEach(function(x){
     if (!x || x.status !== 'waiting') return;
     const it = { title: s(x.title) || s(x.kind), sub: s(x.jobName), link: base + '/#appr=' + encodeURIComponent(s(x.id)), raw: x };
-    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); office.forEach(function(e){ add(e, it); }); return; }   /* patch APOFFICE: the office may take the PM step at once */
+    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
     admins.forEach(function(e){ add(e, it); });
     const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= 24 * 3600e3);
     if (x.officeOk === true || esc24) office.forEach(function(e){ add(e, it); });
@@ -41,9 +43,9 @@ async function run(opts){
   /* patch SUBINV (owner 10/27): JOB COSTS (sub invoices, job expenses / receipts) go to the job's PM; after 24 hours without
      the PM — or at once when the job has no PM — to the OFFICE. An admin gets one only as that job's PM — never as the extra / default approver. */
   const jobCost = function(pmName, since, it){
-    const e = byName[low(pmName)];
+    const e = byName[low(pmName)], late = since && now - since >= 24 * 3600e3;
     if (e) add(e, it);
-    office.forEach(function(x){ add(x, it); });   /* patch APOFFICE (owner 10/28): "anything a PM can approve, the office can approve too" — at once, not after 24 h */
+    if (!e || late) office.forEach(function(x){ add(x, it); }); else optional();   /* patch APOFFICE2: sooner = optional for the office (a count line) */
   };
   arr(extra.gc_sub_approvals).forEach(function(a){
     if (!a || a.status !== 'pending_pm') return;
@@ -64,9 +66,10 @@ async function run(opts){
   const rep = { ok: true, people: 0, mailed: 0, pushed: 0, items: 0 };
   for (const email of Object.keys(box)) {
     const list = order(box[email], now); rep.people++; rep.items += list.length;
+    const optLine = opt[email] ? '<p style="font-size:13px;color:#55626F">👷 ' + opt[email] + ' waiting on PMs — optional for you (✅ Approvals → <b>👷 PM approvals</b>).</p>' : '';   /* patch APOFFICE2 */
     const subject = '✅ ' + list.length + ' approval' + (list.length === 1 ? '' : 's') + ' waiting on you — GrayCo CRM';
     const html = A.shell('Good morning' + (nameOf[email] ? ', ' + nameOf[email].split(' ')[0] : '') + ' — ' + list.length + ' waiting on you',
-      '<p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><ul style="padding-left:18px">' + list.slice(0, MAX).map(line).join('') + '</ul>' +
+      '<p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><ul style="padding-left:18px">' + list.slice(0, MAX).map(line).join('') + '</ul>' + optLine +
       (list.length > MAX ? '<p>+' + (list.length - MAX) + ' more in the CRM.</p>' : '') +
       '<p style="font-size:13px;color:#55626F">Routine ones (payment reminders, appointment reminders, waiver requests to known subs) can be approved together in the CRM: ✅ Approvals → <b>Approve all routine</b>.</p>' +
       '<p><a href="' + esc(base + '/#todo') + '">Open my approvals</a></p>');

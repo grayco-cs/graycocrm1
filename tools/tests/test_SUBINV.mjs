@@ -198,7 +198,7 @@ await t('office@ mailbox: an invoice is queued, read with its attachment, filed 
 });
 
 /* ── job-cost approval routing in the 7 AM digest: PM, then office after 24 h, never the admins ── */
-await t('digest: sub invoice → PM + office at once (patch APOFFICE); no PM → office; an admin only when he is the PM', async () => {
+await t('digest: sub invoice → PM; > 24 h → PM + office; no PM → office; an admin only when he is the PM', async () => {
   const portalPath = require.resolve(FN + '/portal.js');
   const now = Date.parse('2026-10-27T13:00:00Z');   /* a Tuesday, 8 AM Central */
   const kv = { gc_sub_approvals: [
@@ -219,7 +219,7 @@ await t('digest: sub invoice → PM + office at once (patch APOFFICE); no PM →
   const to = e => mails.filter(m => m.to.includes(e)).map(m => m.html).join('');
   assert.ok(rep.ok); assert.doesNotMatch(to('wjohnson@grayco-cs.com'), /\$(100|200|300|50)\.00/); assert.match(to('wjohnson@grayco-cs.com'), /\$400\.00/);   /* the admin only as that job's PM */
   assert.match(to('pat@grayco-cs.com'), /\$100\.00/); assert.match(to('pat@grayco-cs.com'), /\$200\.00/); assert.match(to('pat@grayco-cs.com'), /\$50\.00/);
-  assert.match(to('olive@grayco-cs.com'), /\$200\.00/); assert.match(to('olive@grayco-cs.com'), /\$300\.00/); assert.match(to('olive@grayco-cs.com'), /\$100\.00/); assert.match(to('olive@grayco-cs.com'), /\$50\.00/);   /* patch APOFFICE: the office at once */
+  assert.match(to('olive@grayco-cs.com'), /\$200\.00/); assert.match(to('olive@grayco-cs.com'), /\$300\.00/); assert.doesNotMatch(to('olive@grayco-cs.com'), /\$100\.00/);
 });
 
 /* ── the CRM page half (index.html, patch SUBINV): run its script in a bare window ── */
@@ -268,13 +268,13 @@ if (m) {
     const made = W._gcSubInv.place(mt.id, { pid: 'P3', sub: 'Fresh Paint LLC' });
     assert.ok(made && made.pid === 'P3' && made._matchConfirmed === true && made.status === 'received'); assert.strictEqual(inv.length, 1);
   });
-  await t('page: job-cost approvals — the PM and the office at once (patch APOFFICE), admins not asked', () => {
+  await t('page: job-cost approvals — PM first, office after 24 h or with no PM, admins not asked', () => {
     const now = Date.now();
     const q = [{ invId: 'a', status: 'pending_pm', pmName: 'Pat Mason', createdAt: now - 3600e3 }, { invId: 'b', status: 'pending_pm', pmName: 'Pat Mason', createdAt: now - 30 * 3600e3 }, { invId: 'c', status: 'pending_pm', pmName: '', createdAt: now }];
     const base = () => ({ total: 3, groups: { email: [], subinv: [{ id: 'sub:' }, { id: 'sub:' }, { id: 'sub:' }], invsign: [], expense: [{ id: 'exp:x' }], other: [] }, tip: '' });
     const mk = me => { const p = page(me, { _gcApprovalSet: base }); p.W.localStorage.setItem('gc_sub_approvals', JSON.stringify(q)); p.W.localStorage.setItem('gc_expense_approvals', JSON.stringify([{ expId: 'x', status: 'pending_pm', pm: 'Pat Mason', enteredAt: new Date(now).toISOString() }, { expId: 'EXPM-INVM-1', status: 'pending_pm', pm: 'Pat Mason', enteredAt: new Date(now).toISOString() }])); p.W._crm.expenses.push({ id: 'EXPM-INVM-1', subInvId: 'INVM-1', _fromSub: true }); p.W._gcSubInv.route(); return p.W; };
     const pm = mk({ name: 'Pat Mason', role: 'Project Manager' })._gcApprovalSet(); assert.deepStrictEqual(pm.groups.subinv.map(x => x.id), ['sub:a', 'sub:b']); assert.strictEqual(pm.groups.expense.length, 1);
-    const of = mk({ name: 'Olive Office', role: 'Office' })._gcApprovalSet(); assert.deepStrictEqual(of.groups.subinv.map(x => x.id).sort(), ['sub:a', 'sub:b', 'sub:c']); assert.strictEqual(of.groups.expense.length, 1);
+    const of = mk({ name: 'Olive Office', role: 'Office' })._gcApprovalSet(); assert.deepStrictEqual(of.groups.subinv.map(x => x.id).sort(), ['sub:b', 'sub:c']); assert.strictEqual(of.groups.expense.length, 0);
     const ad = mk({ name: 'Wes', role: 'Admin', payType: 'Owner' })._gcApprovalSet(); assert.strictEqual(ad.groups.subinv.length, 0); assert.strictEqual(ad.groups.expense.length, 0);
     /* owner 10/27: "some job costs are definitely me or Nick because we will be the PM" — an admin who IS the job's PM is asked like any PM */
     q.push({ invId: 'w', status: 'pending_pm', pmName: 'Wes', createdAt: now - 3600e3 });
