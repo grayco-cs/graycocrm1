@@ -21,6 +21,7 @@
         valid "Signature" header: base64 HMAC-SHA1 of the body), CALLRAIL_LEADS=0 (log calls only, no leads).
    ========================================================================== */
 'use strict';
+require('./_lib/pause').install();   /* data-entry mode: every outbound send is checked here first */
 const crypto = require('crypto');
 
 function env(k){ return String(process.env[k] == null ? '' : process.env[k]).trim(); }

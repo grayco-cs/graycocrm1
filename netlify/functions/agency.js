@@ -77,6 +77,7 @@ async function gcStaffAuth(event){
 //             { op:'report_send', month } · { op:'log' }
 // What each side may see and change: _lib/agency.js (top of the file).
 'use strict';
+require('./_lib/pause').install();   /* data-entry mode: every outbound send is checked here first */
 const A = require('./_lib/agency.js');
 function s(v){ return v == null ? '' : String(v).trim(); }
 const HITS = new Map();

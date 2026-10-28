@@ -3,6 +3,7 @@
 // is sent once. To: the admins (gc_staff + OWNER_EMAILS), the agency people, the agency portal's report list and
 // MKT_REPORT_TO. What is in it: _lib/agency.js report(). Preview / send by hand: the agency portal → 🗓 Monthly report.
 'use strict';
+require('./_lib/pause').install();   /* data-entry mode: every outbound send is checked here first */
 const A = require('./_lib/agency.js');
 function centralHour(d){ return +new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(d) % 24; }
 function centralDay(d){ return +new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', day: 'numeric' }).format(d); }

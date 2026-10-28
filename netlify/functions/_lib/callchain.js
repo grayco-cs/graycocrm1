@@ -53,7 +53,7 @@ function build(o){
 function make(d){
   const env = k => s(d.env(k));
   const nowIso = () => new Date(typeof d.now === 'function' ? d.now() : Date.now()).toISOString();
-  function on(){ return env('TWILIO_CALL_CHAIN') === '1'; }
+  function on(){ return false; }   /* off in r12: the screened call order (CALLSCREEN) replaces this; owner 10/28 "no unscreened calls to Nick" */
   function ringSecs(){ return Math.max(10, Math.min(45, parseInt(env('TWILIO_CHAIN_SECONDS') || '20', 10) || 20)); }
   async function current(){
     const X = require('./x10.js');
