@@ -77038,6 +77038,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
   function mailHref(v){ return 'https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(v); }
   function mapHref(v){ return 'https://maps.apple.com/?q='+encodeURIComponent(v); }
 
+  var LS_IDS = { 'gc-leads-hub': 1, 'gcl-drawer': 1, 'gc-ldi': 1, 'gc-apx-mount': 1, '_todoMount': 1, '_gcApprOv': 1 };   /* patch LINKSKIP */
   // Elements we must never touch.
   function skip(node){
     var el = node.parentNode;
@@ -77045,6 +77046,9 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       var tag=el.tagName;
       if(tag==='A'||tag==='BUTTON'||tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||tag==='SCRIPT'||tag==='STYLE'||tag==='DATALIST'||tag==='OPTION'||tag==='OPTGROUP'||tag==='TEMPLATE'||el.isContentEditable) return true;   /* patch JOBSTILL: + lists / options */
       if(el.getAttribute && el.getAttribute('data-gc-linked')==='1') return true;
+      /* patch LINKSKIP: lists that redraw themselves (and draw their own call / e-mail / map buttons) are left alone */
+      if(el.id && LS_IDS[el.id]) return true;
+      if(el.classList && (el.classList.contains('gcl-list') || el.classList.contains('gcl-card') || el.classList.contains('apx-row') || el.classList.contains('td2'))) return true;
       el=el.parentNode;
     }
     return false;
