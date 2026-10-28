@@ -105,7 +105,7 @@ function luTick(){
   if (view() !== 'leads') return;
   var hub = D.getElementById('gc-leads-hub'); if (!hub) return;
   var rp = D.getElementById('gc-rso'); if (rp && rp.parentNode === hub.parentNode && hub.nextElementSibling !== rp) hub.parentNode.insertBefore(rp, hub.nextSibling);
-  try { var rows = modelRows().slice(0, lim('ulist', LC_PAGE)).map(function(x){ return x.l; }); if (UI.mi || UI.lsort === 'dist' || UI.v === 'map') rows = rows.concat(scoped()); geoPump(rows); } catch (e) { warn(e); }
+  try { var rows = modelRows().slice(0, lim('ulist', LC_PAGE)).map(function(x){ return x.l; }); rows = rows.concat(UI.mi || UI.lsort === 'dist' || UI.v === 'map' ? scoped() : model().list); geoPump(rows);   /* the rows on screen first, then the rest, 20 at a time */ } catch (e) { warn(e); }
   try { bbMigrate(); } catch (e) { warn(e); }
 }""")
 

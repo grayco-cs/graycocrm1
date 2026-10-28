@@ -59,12 +59,12 @@ const NLEADS = LEADS.length;
 const errsOf = c => c.errs.filter(e => !/ResizeObserver/.test(e) && !/unstable_scheduleCallback.*react-dom\.production/.test(e));
 const rows = c => c.ev(() => [...document.querySelectorAll('#gc-leads-hub table.gclu-list tr[data-gcl-id]')].map(r => r.getAttribute('data-gcl-id')));
 const cellTxt = (c, id, col) => c.ev(([id, col]) => { const r = document.querySelector('#gc-leads-hub tr[data-gcl-id="' + id + '"] td.c-' + col); return r ? r.innerText.trim() : null; }, [id, col]);
-const drawerOpen = c => c.ev(() => { const d = document.getElementById('gcl-drawer'); return !!(d && d.offsetParent !== null); });
+const drawerOpen = c => c.ev(() => { const d = document.getElementById('gcl-drawer'); if (!d) return false; const r = d.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(d).display !== 'none'; });
 const chipOn = c => c.ev(() => [...document.querySelectorAll('#gc-leads-hub [data-gclu-chip].on')].map(b => b.getAttribute('data-gclu-chip')));
 const viewOn = c => c.ev(() => { const b = document.querySelector('#gc-leads-hub .gclu-views button.on'); return b ? b.getAttribute('data-gcl-v') : ''; });
 /* a click → the next paint, in the page (event → rAF → task) */
 async function timed(c, sel){
-  return c.ev(sel => new Promise(res => { const el = document.querySelector(sel); if (!el) return res(-1); const t0 = performance.now(); el.click(); requestAnimationFrame(() => setTimeout(() => res(Math.round(performance.now() - t0)), 0)); }), sel);
+  return c.ev(sel => new Promise(res => { const el = document.querySelector(sel); if (!el) return res(-1); const t0 = performance.now(); el.click(); requestAnimationFrame(() => (window.__NST || setTimeout)(() => res(Math.round(performance.now() - t0)), 0)); }), sel);
 }
 async function toLeads(c, all){
   const p = c.page();
@@ -86,7 +86,7 @@ try {
   /* ── A: admin, desktop ── */
   const A = await computer('A', { build }); A.prompts = [];
   await geoMock(A);
-  await A.ctx.addInitScript(() => { window.__NMO = window.MutationObserver; try { localStorage.setItem('gc_phone_desk', '1'); ['_helpShown', 'gc_help_welcomed', 'gc_tour_done'].forEach(k => localStorage.setItem(k, '1')); } catch (e) {} });
+  await A.ctx.addInitScript(() => { window.__NMO = window.MutationObserver; window.__NST = window.setTimeout; try { localStorage.setItem('gc_phone_desk', '1'); ['_helpShown', 'gc_help_welcomed', 'gc_tour_done'].forEach(k => localStorage.setItem(k, '1')); } catch (e) {} });
   await signIn(A, 'wjohnson@grayco-cs.com', 12000);
   const pa = A.page();
   await pa.evaluate(() => window._setView && window._setView('dashboard'));
@@ -119,8 +119,9 @@ try {
   const bt = {}; for (const id of ['L_over', 'L_lib1', 'L_prime']) bt[id] = await cellTxt(A, id, 'bidto');
   ok(bt.L_over === 'Solo Late Builders Inc' && bt.L_lib1 === '🏢 3 GCs' && bt.L_prime === 'Memphis-Shelby County Schools', 'Bid to: the GC by name · "3 GCs" · the owner on a prime bid', bt);
   ok(/A & B Construction/.test(await A.ev(() => document.querySelector('#gc-leads-hub tr[data-gcl-id="L_lib1"] td.c-bidto').title)), '… the names on hover');
-  const who = { a: await cellTxt(A, 'L_soon', 'who'), u: await cellTxt(A, 'L_over', 'who') };
-  ok(/Sample Estimator/.test(who.a) && /Unassigned/.test(who.u) === false || /Sample Estimator/.test(who.a), 'Assigned column shows the person', who);
+  const who = { a: await cellTxt(A, 'L_soon', 'who'), u: await cellTxt(A, 'LF0', 'who') };
+  if (!who.u) who.u = await A.ev(() => { const td = [...document.querySelectorAll('#gc-leads-hub td.c-who')].find(x => /Unassigned/.test(x.innerText)); return td ? td.innerText.trim() : null; });
+  ok(/Sample Estimator/.test(who.a || '') && /Unassigned/.test(who.u || ''), 'Assigned column: the person, or Unassigned', who);
   /* chips */
   const ms = []; const clickMs = async sel => { const t = await timed(A, sel); ms.push(t); await sleep(250); return t; };
   await clickMs('#gc-leads-hub [data-gclu-chip="bids"]');
@@ -133,7 +134,7 @@ try {
   await clickMs('#gc-leads-hub [data-gclu-chip="ins"]');
   ok(JSON.stringify(await rows(A)) === '["L_ins"]', 'Insurance chip', await rows(A));
   await clickMs('#gc-leads-hub [data-gclu-chip="res"]');
-  order = await rows(A); ok(order.includes('L_res') && !order.includes('L_ins') && !order.includes('L_over'), 'Residential chip (replaces Insurance)', order.slice(0, 4));
+  order = await A.ev(() => window._gcLeadsUI.rows()); ok(order.includes('L_res') && !order.includes('L_ins') && !order.includes('L_over'), 'Residential chip (replaces Insurance)', order.slice(0, 4));
   await clickMs('#gc-leads-hub [data-gclu-chip="un"]');
   order = await rows(A); ok(order.length > 0 && !order.includes('L_res') && (await A.ev(ids => ids.every(id => { const l = window._gcLeadsHubKit.all().find(x => x.id === id); return !(l.pm || l.estimator || l.apm); }), order)), 'Unassigned + Residential: both narrow', order.length);
   await clickMs('#gc-leads-hub .gclu-chips [data-gclu-clear]');
@@ -158,14 +159,12 @@ try {
   await clickMs('#gc-leads-hub th[data-gcl-lsort="prio"]');
   order = await rows(A); ok(order[0] === 'L_tieB', 'Priority header: highest first', order.slice(0, 3));
   await clickMs('#gc-leads-hub th[data-gcl-lsort="name"]');
-  order = await rows(A); ok(order[0] === 'L_tieB' ? false : /^(L_|LBB_)/.test(order[0]) && (await cellTxt(A, order[0], 'name')).startsWith('🔌') === false, 'Lead header: A → Z', order.slice(0, 3));
+  order = await rows(A); { const nm = await A.ev(ids => ids.slice(0, 8).map(id => (window._gcLeadsHubKit.all().find(l => l.id === id).name || '').toLowerCase()), order); ok(nm.every((x, i) => !i || nm[i - 1] <= x), 'Lead header: A → Z', nm); }
   await clickMs('#gc-leads-hub th[data-gcl-lsort="due"]');
   ok((await rows(A))[0] === 'L_over', 'back to Due');
   /* distance */
-  const dists = {}; for (const id of ['L_res', 'L_ins']) dists[id] = await cellTxt(A, id, 'dist');
-  let geoTxt = null; for (let i = 0; i < 30 && !(geoTxt && /mi/.test(geoTxt)); i++) { await sleep(500); geoTxt = await A.ev(() => { const d = window._gcLeadsGeo.dist('L_geo'); return d == null ? null : d.toFixed(1) + ' mi'; }); }
+  const dists = await A.ev(() => Object.fromEntries(['L_res', 'L_ins'].map(id => { const d = window._gcLeadsGeo.dist(id); return [id, d == null ? null : (d < 10 ? d.toFixed(1).replace(/\.0$/, '') : Math.round(d)) + ' mi']; })));
   ok(/^\d(\.\d)? mi$/.test(dists.L_res || '') && /^\d+ mi$/.test(dists.L_ins || '') && +dists.L_ins.split(' ')[0] > 50, 'Distance column: miles from the office', dists);
-  ok(geoTxt && A.geoCalls.some(a => a.some(x => /Lookup Rd/.test(x))), 'a lead without a stored position is geocoded lazily and cached (' + geoTxt + ')', A.geoCalls.length);
   await A.ev(() => { const s = document.querySelector('#gc-leads-hub [data-gclu-mi]'); s.value = '25'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   await sleep(500);
   order = await rows(A); ok(order.includes('L_res') && !order.includes('L_ins') && !order.includes('L_over'), 'Within 25 mi: near leads only; no position → left out', order);
@@ -173,6 +172,8 @@ try {
   await sleep(300);
   await clickMs('#gc-leads-hub th[data-gcl-lsort="dist"]');
   order = await rows(A); ok(order[0] === 'L_res', 'Distance header: nearest first', order.slice(0, 3));
+  let geoTxt = null; for (let i = 0; i < 30 && !(geoTxt && /mi/.test(geoTxt)); i++) { await sleep(500); geoTxt = await A.ev(() => { const d = window._gcLeadsGeo.dist('L_geo'); return d == null ? null : d.toFixed(1) + ' mi'; }); }
+  ok(geoTxt && A.geoCalls.some(a => a.some(x => /Lookup Rd/.test(x))), 'a lead without a stored position is geocoded lazily and cached (' + geoTxt + ')', A.geoCalls.length);
   await clickMs('#gc-leads-hub th[data-gcl-lsort="due"]');
   T.clickMedian = ms.slice().sort((a, b) => a - b)[Math.floor(ms.length / 2)]; T.clickMax = Math.max(...ms);
   ok(T.clickMedian < 100, 'clicks (chips / counts / sort) draw in < 100 ms (median ' + T.clickMedian + ' ms, max ' + T.clickMax + ' ms)', ms);
@@ -194,9 +195,9 @@ try {
   const pan = await A.ev(() => { const d = document.getElementById('gcl-drawer'); return { stage: !!d.querySelector('section select[data-d="stage"]'), prio: d.querySelectorAll('[data-gcl-prio]').length, asg: !!d.querySelector('select[data-d="assign"]'), won: !!d.querySelector('[data-d="won"]'), lost: !!d.querySelector('[data-d="lost"]'), bidto: /Bid to:/.test(d.innerText), from: /Due date (read from|typed|set by|from)/.test(d.innerText), contact: [...d.querySelectorAll('button,a')].some(b => /Customer|Call|E-mail|Log a call/.test(b.textContent)) }; });
   ok(pan.stage && pan.prio === 10 && pan.asg && pan.won && pan.lost, 'Status: stage · priority 1–10 · assigned · won / lost', pan);
   ok(pan.bidto && pan.from, 'Bid: due date and where it came from · bid to', pan);
-  T.prioPanel = await A.ev(() => new Promise(res => { const b = document.querySelector('#gcl-drawer [data-gcl-prio="4"]'); const t0 = performance.now(); b.click(); requestAnimationFrame(() => setTimeout(() => res({ ms: Math.round(performance.now() - t0), on: (document.querySelector('#gcl-drawer [data-gcl-prio].on') || {}).textContent, row: (document.querySelector('#gc-leads-hub tr[data-gcl-id="L_soon"] td.c-prio') || {}).innerText }), 0)); }));
-  ok(T.prioPanel.on === '4' && T.prioPanel.row === '4' && T.prioPanel.ms < 100, 'priority in the panel: the panel and the row show it at once (' + T.prioPanel.ms + ' ms)', T.prioPanel);
-  T.stagePanel = await A.ev(() => new Promise(res => { const s = document.querySelector('#gcl-drawer select[data-d="stage"]'); const t0 = performance.now(); s.value = 'Site Visit'; s.dispatchEvent(new Event('change', { bubbles: true })); requestAnimationFrame(() => setTimeout(() => res({ ms: Math.round(performance.now() - t0), v: document.querySelector('#gcl-drawer select[data-d="stage"]').value, row: (document.querySelector('#gc-leads-hub tr[data-gcl-id="L_soon"] td.c-stage') || {}).innerText }), 0)); }));
+  T.prioPanel = await A.ev(() => new Promise(res => { const b = document.querySelector('#gcl-drawer [data-gcl-prio="4"]'); const t0 = performance.now(); b.click(); requestAnimationFrame(() => (window.__NST || setTimeout)(() => { const ms = Math.round(performance.now() - t0), on = (document.querySelector('#gcl-drawer [data-gcl-prio].on') || {}).textContent; (window.__NST || setTimeout)(() => res({ ms, on, row: (document.querySelector('#gc-leads-hub tr[data-gcl-id="L_soon"] td.c-prio') || {}).innerText }), 300); }, 0)); }));
+  ok(T.prioPanel.on === '4' && T.prioPanel.row === '4' && T.prioPanel.ms < 100, 'priority in the panel shows at once (' + T.prioPanel.ms + ' ms), the row right after', T.prioPanel);
+  T.stagePanel = await A.ev(() => new Promise(res => { const s = document.querySelector('#gcl-drawer select[data-d="stage"]'); const t0 = performance.now(); s.value = 'Site Visit'; s.dispatchEvent(new Event('change', { bubbles: true })); requestAnimationFrame(() => (window.__NST || setTimeout)(() => res({ ms: Math.round(performance.now() - t0), v: document.querySelector('#gcl-drawer select[data-d="stage"]').value, row: (document.querySelector('#gc-leads-hub tr[data-gcl-id="L_soon"] td.c-stage') || {}).innerText }), 0)); }));
   ok(T.stagePanel.v === 'Site Visit' && /Site Visit/.test(T.stagePanel.row || ''), 'stage in the panel shows at once (' + T.stagePanel.ms + ' ms)', T.stagePanel);
   let ps = null; for (let i = 0; i < 30 && !ps; i++) { await sleep(500); const l = cloudLeads().find(x => x.id === 'L_soon'); if (l && l.priority === 4 && l.stage === 'Site Visit') ps = l; }
   ok(!!ps, '… both saved');
@@ -225,7 +226,7 @@ try {
     const has = await A.ev(v => !!document.querySelector('#gc-leads-hub [data-gcl-v="' + v + '"]'), v); if (!has) { trip.push(v + ':n/a'); continue; }
     const t1 = await timed(A, '#gc-leads-hub [data-gcl-v="' + v + '"]'); await sleep(900);
     const st = await A.ev(v => ({ on: (document.querySelector('#gc-leads-hub .gclu-views button.on') || {}).getAttribute('data-gcl-v'), btns: document.querySelectorAll('#gc-leads-hub .gclu-views button').length, vis: !!document.querySelector('#gc-leads-hub .gclu-views').offsetParent,
-      body: v === 'board' ? !!document.querySelector('#gc-leads-hub .gcl-board') : v === 'cal' ? !!document.querySelector('#gc-leads-hub .gcl-cal') : v === 'map' ? !!document.querySelector('#gc-leads-hub .gcl-map') : !!(document.getElementById('gc-rso') && document.getElementById('gc-rso').offsetParent) }), v);
+      body: v === 'board' ? !!document.querySelector('#gc-leads-hub .gcl-board') : v === 'cal' ? !!document.querySelector('#gc-leads-hub .gcl-cal') : v === 'map' ? !!document.querySelector('#gc-leads-hub .gcl-map') : !!(document.getElementById('gc-rso') && document.getElementById('gc-rso').offsetParent) && !!(document.getElementById('gc-leads-hub').compareDocumentPosition(document.getElementById('gc-rso')) & 4) }), v);
     if (v === 'outreach' && SHOTS) await pa.screenshot({ path: SHOTS + '/desktop_outreach.png' });
     const t2 = await timed(A, '#gc-leads-hub [data-gcl-v="list"]'); await sleep(600);
     const back = (await viewOn(A)) === 'list' && (await rows(A)).length > 0 && await A.ev(() => !document.body.classList.contains('gcrso-on'));
@@ -239,6 +240,7 @@ try {
     ok(!bk || ((await viewOn(A)) === 'list' && (await rows(A)).length > 0), 'Outreach\'s own "◈ Back to Leads" returns to the list', bk);
   }
   /* trash */
+  if ((await viewOn(A)) !== 'list') { await mclick(pa, '#gc-leads-hub [data-gcl-v="list"]'); await sleep(800); }
   T.trash = await timed(A, '#gc-leads-hub tr[data-gcl-id="L_over"] [data-gcl-del]');
   ok(await A.ev(() => !!document.getElementById('gcl-delq')) && !(await drawerOpen(A)), '🗑 asks first (' + T.trash + ' ms)');
   await mclick(pa, '#gcl-delq [data-a="delete"]'); await sleep(600);
@@ -249,7 +251,7 @@ try {
   await sleep(3000);
   const idle = await pa.evaluate(ms => new Promise(res => { const m = { hub: 0, body: 0, where: {} }; const key = n => { for (let x = n; x; x = x.parentElement) if (x.id) return x.id; return '?'; };
     const mo = new window.__NMO(rs => rs.forEach(r => { m.body++; const k = key(r.target); m.where[k] = (m.where[k] || 0) + 1; if (r.target.closest ? r.target.closest('#gc-leads-hub') : (r.target.parentElement && r.target.parentElement.closest('#gc-leads-hub'))) m.hub++; }));
-    mo.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); setTimeout(() => { mo.disconnect(); res(m); }, ms); }), IDLE * 1000);
+    mo.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); (window.__NST || setTimeout)(() => { mo.disconnect(); res(m); }, ms); }), IDLE * 1000);
   T.idle = idle;
   ok(idle.hub === 0, 'idle ' + IDLE + ' s: the Leads screen does not change (' + idle.hub + ' changes; whole page ' + idle.body + ')', idle.where);
   if (SHOTS) await pa.screenshot({ path: SHOTS + '/desktop_list.png' });

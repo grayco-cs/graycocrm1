@@ -165262,7 +165262,7 @@ function overlay(id, fn2){
 }
 function patchLead(id, fn2){
   var shown = overlay(id, fn2);
-  if (shown) { HUB_SIG = ''; try { redraw(); if (UI.open === id && D.getElementById('gcl-drawer')) openDrawer(id); } catch (e) { warn(e); } }
+  if (shown) { HUB_SIG = ''; try { if (UI.open === id && D.getElementById('gcl-drawer')) { openDrawer(id); try { W.requestAnimationFrame(function(){ redraw(); }); } catch (e) { redraw(); } } else redraw(); } catch (e) { warn(e); } }   /* the open panel first, the list right after */
   return patchLead0(id, fn2).then(function(ok){ if (!ok && OVL[id]) { delete OVL[id]; OVL_N--; OVL_V++; LD_C.ref = null; redraw(); } return ok; });
 }
 W._gcLeadsUIOverlay = function(){ return Object.keys(OVL); };
@@ -165287,9 +165287,7 @@ function llOf(l){
 function origin(){
   if (GEO.from === 'me' && GEO.me) return GEO.me;
   var oa = officeAddr(), o = GEO.office;
-  if (o && o.a === oa && o.lat != null) return o;
-  if (gkey(oa) === gkey(OFFICE_FALLBACK.a) || !o) return OFFICE_FALLBACK;
-  return o.lat != null ? o : OFFICE_FALLBACK;
+  return o && o.a === oa && o.lat != null ? o : OFFICE_FALLBACK;   /* until the office address is looked up once */
 }
 function miles(a, b){ var R = 3958.8, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLn = (b.lng - a.lng) * r, x = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLn / 2) * Math.sin(dLn / 2); return 2 * R * Math.asin(Math.min(1, Math.sqrt(x))); }
 function distOf(l){ var p = llOf(l), o = origin(); return p && o ? miles(o, p) : null; }
@@ -165303,7 +165301,7 @@ function geoCall(addrs){
 function geoPump(rows){
   if (GEO.busy || D.hidden || navigator.onLine === false || Date.now() - GEO.at < 4000 || typeof W.fetch !== 'function') return;
   var oa = officeAddr();
-  if (GEO.from === 'office' && gkey(oa) !== gkey(OFFICE_FALLBACK.a) && !(GEO.office && GEO.office.a === oa) && Date.now() - GEO.officeAsk > 3600e3) {
+  if (GEO.from === 'office' && !(GEO.office && GEO.office.a === oa) && Date.now() - GEO.officeAsk > 3600e3) {
     GEO.officeAsk = Date.now(); GEO.busy = true; GEO.at = Date.now();
     geoCall([oa]).then(function(j){ GEO.busy = false; var r = j && j.ok && arr(j.results)[0]; var g = r && numLL(r.lat, r.lng); if (g) { GEO.office = { a: oa, lat: g.lat, lng: g.lng }; lsSet('gc_office_geo_v1', GEO.office); GEO.ver++; redraw(); } });
     return;
@@ -165606,13 +165604,14 @@ function openClaims(){ var d = openSettings(); if (!d) return; var n = 0; (funct
 function setView(v){
   if (v === 'outreach') { UI.v = 'outreach'; try { if (W._gcRSO && !rsoOn()) W._gcRSO.open(); } catch (e) { warn(e); } }
   else { UI.v = v; try { if (rsoOn()) W._gcRSO.close(); } catch (e) { warn(e); } }
-  LU.more = false; redraw();
+  LU.more = false; redraw(); try { luTick(); } catch (e) {}   /* Outreach goes under the header at once */
 }
 D.addEventListener('click', function(ev){
   var t = ev.target; if (!t || !t.closest) return;
   var pop = D.getElementById('gcl-lprio-pop');
   if (pop && pop.contains(t)) { var n = t.getAttribute('data-lp'); if (n) { ev.stopPropagation(); var pid = pop.getAttribute('data-id'); lcPopClose(); setPriority(pid, +n); } return; }
   if (pop && !t.closest('[data-gcl-lprio],[data-gcl-gcs]')) lcPopClose();
+  if (t.closest('[data-rso-back]') && D.getElementById('gc-leads-hub')) { ev.stopPropagation(); ev.preventDefault(); setView('list'); return; }   /* Outreach's own "Back to Leads" */
   var hub = t.closest('#gc-leads-hub'); if (!hub) return;
   if (LU.more && !t.closest('.gclu-mw')) { LU.more = false; redraw(); }
   var b = t.closest('[data-gcl-del],[data-gcl-lprio],[data-gcl-gcs],[data-gcl-lsort],[data-gclu-chip],[data-gclu-cnt],[data-gclu-clear],[data-gclu-more],[data-gclu-from],[data-gcl-v],[data-gclu-tab],[data-gclu-closed],[data-gclu-exp],[data-gclu-adv],[data-gclu-dups],[data-gclu-claims],[data-gclu-oldbb],.gclu-menu [data-gcl-impf],.gclu-menu [data-gcl-arch],.gclu-menu [data-gcl-clean],.gclu-menu [data-gcl-settings],.gclu-menu [data-gcl-classic]');
@@ -165763,7 +165762,7 @@ function css2(){
   c.textContent = [
     '#gc-leads-tabs[data-tab="leads"]{display:none!important}',
     'body.gcrso-on #gc-leads-hub{display:block!important}body.gcrso-on #gc-leads-hub .gcl-hide-rso{display:none!important}',
-    '.gclu-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}.gclu-top h2{margin:0 6px 0 0;font-size:22px;color:#241968}',
+    '.gclu-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}.gclu-top h2{margin:0 6px 0 0;font-size:22px}',
     '.gclu-q{flex:1 1 220px;min-width:160px;max-width:420px;border:1px solid #d6d3ea;border-radius:9px;padding:8px 10px;font:14px Arial;min-height:38px;background:#fff}',
     '.gclu-views{display:inline-flex;border:1px solid #d6d3ea;border-radius:9px;overflow:hidden;background:#fff}.gclu-views button{border:0;border-right:1px solid #ece9f7;background:#fff;color:#241968;padding:8px 11px;font:700 13px Arial;cursor:pointer;min-height:38px;white-space:nowrap}.gclu-views button:last-child{border-right:0}.gclu-views button.on{background:#241968;color:#fff}',
     '.gclu-sp{flex:1}.gclu-btn{border:1px solid #cfc8ea;background:#fff;color:#241968;border-radius:9px;padding:8px 12px;font:700 13px Arial;cursor:pointer;min-height:38px;white-space:nowrap}.gclu-btn.gold{background:#d4a017;border-color:#d4a017;color:#1b1640}',
@@ -165796,7 +165795,8 @@ function css2(){
     '#gclu-oldbb .h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff}#gclu-oldbb .h button{border:1px solid #ddd;background:#fff;border-radius:7px;padding:6px 11px;cursor:pointer}#gclu-oldbb .c{padding:12px 16px}#gclu-oldbb table{width:100%;border-collapse:collapse}#gclu-oldbb td,#gclu-oldbb th{padding:6px;border-top:1px solid #f0eef8;text-align:left;font-size:13px;vertical-align:top}#gclu-oldbb .n{color:#666;font-size:12px}',
     '#gcl-drawer .gclu-asg{margin:6px 0 2px}#gcl-drawer .gclu-asg .row{margin-top:4px}#gcl-drawer .gclu-notes{white-space:pre-wrap;font-size:13px;background:#faf9ff;border:1px solid #eee;border-radius:8px;padding:8px;margin:0 0 6px;max-height:180px;overflow:auto}',
     '#gcl-drawer .gclu-s-more summary{cursor:pointer;padding:4px 0}#gcl-drawer .gclu-s-more h4{margin:14px 0 6px}#gcl-drawer .gclu-plans{margin-top:6px}',
-    '@media (max-width:640px){.gclu-top h2{font-size:19px}.gclu-q{order:5;flex:1 1 100%;max-width:none}.gclu-views{order:6;width:100%;overflow-x:auto}.gclu-views button{flex:1;padding:8px 6px;font-size:12px}.gclu-counts{grid-template-columns:repeat(3,1fr)}.gclu-cnt b{font-size:18px}.gclu-menu{position:fixed;left:8px;right:8px;top:auto;bottom:8px;min-width:0;max-height:70vh;overflow:auto}',
+    '@media (min-width:641px){.gclu-top h2{color:#241968}}',
+    '@media (max-width:640px){.gclu-top h2{font-size:19px}.gclu-chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}.gclu-chips>*{flex:0 0 auto}.gclu-chip{padding:5px 10px;font-size:12px;min-height:32px}.gclu-within{font-size:12px;min-height:32px}.gclu-q{order:5;flex:1 1 100%;max-width:none}.gclu-views{order:6;width:100%;overflow-x:auto}.gclu-views button{flex:1;padding:8px 6px;font-size:12px}.gclu-counts{grid-template-columns:repeat(3,1fr)}.gclu-cnt b{font-size:18px}.gclu-menu{position:fixed;left:8px;right:8px;top:auto;bottom:8px;min-width:0;max-height:70vh;overflow:auto}',
     '.gcl-lc thead{display:none}.gcl-lc,.gcl-lc tbody{display:block;width:100%}.gcl-lc tr.gcl-lr{display:grid;grid-template-columns:1fr auto auto;grid-template-areas:"n n t" "d p t";gap:4px 8px;padding:9px 10px;border-top:1px solid #f0eef8;align-items:center}',
     '.gcl-lc tr.gcl-lr td{display:none;padding:0;border:0;max-width:none}.gcl-lc tr.gcl-lr td.c-name{display:block;grid-area:n;min-width:0}.gcl-lc tr.gcl-lr td.c-due{display:block;grid-area:d}.gcl-lc tr.gcl-lr td.c-prio{display:block;grid-area:p}.gcl-lc tr.gcl-lr td.gcl-tc{display:block;grid-area:t;width:auto}}'
   ].join('\n');
@@ -165900,7 +165900,7 @@ function luTick(){
   if (view() !== 'leads') return;
   var hub = D.getElementById('gc-leads-hub'); if (!hub) return;
   var rp = D.getElementById('gc-rso'); if (rp && rp.parentNode === hub.parentNode && hub.nextElementSibling !== rp) hub.parentNode.insertBefore(rp, hub.nextSibling);
-  try { var rows = modelRows().slice(0, lim('ulist', LC_PAGE)).map(function(x){ return x.l; }); if (UI.mi || UI.lsort === 'dist' || UI.v === 'map') rows = rows.concat(scoped()); geoPump(rows); } catch (e) { warn(e); }
+  try { var rows = modelRows().slice(0, lim('ulist', LC_PAGE)).map(function(x){ return x.l; }); rows = rows.concat(UI.mi || UI.lsort === 'dist' || UI.v === 'map' ? scoped() : model().list); geoPump(rows);   /* the rows on screen first, then the rest, 20 at a time */ } catch (e) { warn(e); }
   try { bbMigrate(); } catch (e) { warn(e); }
 }
 /* patch HOT2b: "＋ New lead" = the Lead Pipeline's own "+ Add" form (same fields, same save); its header is hidden, the
