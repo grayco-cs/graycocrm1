@@ -80,7 +80,8 @@ function dialStep(i, chain){
 }
 function WI(){ return require('./website-intake.js')._lib; }
 function SA(){ return require('./_lib/smsalert.js'); }   /* patch SMSALERT: text alerts to staff cell phones */
-function LM(){ return require('./_lib/leadmsg.js'); }   /* patch LEADMAILMSG: what the customer said + call buttons in the e-mails */
+function LM(){ return require('./_lib/leadmsg.js'); }
+function TL(){ return require('./_lib/textlead.js'); }   /* patch TEXTLEAD: texts build the lead (name / address / work), the conversation on the lead and the job */   /* patch LEADMAILMSG: what the customer said + call buttons in the e-mails */
 function core(){ return require('./portal.js')._core; }
 
 /* ── Twilio's signature: base64(HMAC-SHA1(token, url + every POST param name+value, sorted by name)) ── */
@@ -229,6 +230,7 @@ async function missed(p, how, extra){
     title: (emerg ? '🚨 EMERGENCY call — ' : 'Missed call — ') + (who || tidy(ph)) + (city ? ' — ' + city : ''), patch: emerg ? { emergency: true, urgency: 'Emergency' } : undefined, leadExtra: Object.assign({ missedCall: true, callSid }, s(extra.what) ? { callerSaid: clip(extra.what, 300) } : {}) });
   out.lead = r.id; out.action = r.action;
   await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
+  try { out.textLead = await TL().onMissed({ leadId: r.id, ph, said: s(extra && extra.what), autoText: out.text && out.text.ok ? TEXT : '', callSid, at }); } catch (e) {}   /* patch TEXTLEAD */
   out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
   return out;
 }
@@ -464,10 +466,11 @@ async function inboundSms(p){
     try {
       await L().kvCas(L().KV, v => {
         const items = Array.isArray(v) ? v : []; const it = items.find(x => x && x.id === own.lead); if (!it) return undefined;
-        it.notes = (Array.isArray(it.notes) ? it.notes : []).concat([line]).slice(-60); it.scope = clip(s(it.scope) + '\n' + line, 1200); it.updatedAt = at; it.lastTextAt = at;
+        it.scope = clip(s(it.scope) + '\n' + line, 1200); it.updatedAt = at; it.lastTextAt = at;   /* patch TEXTLEAD: the notes line is the 💬 conversation line (below) */
         return items;
       });
       out.lead = own.lead;
+      try { out.textLead = await TL().onInbound({ leadId: own.lead, ph, body, at, id: sid }); } catch (e) {}   /* patch TEXTLEAD: + name / address / work from the text */
     } catch (e) { out.error = s(e && e.message); }
   } else if (own.todo) {
     try {
@@ -481,7 +484,7 @@ async function inboundSms(p){
   out.rule = rule ? rule.id : '';
   /* 4) a new number (or a known person without a job asking for an estimate / with an emergency) → a lead, routed by the lead roles */
   /* patch SMSROUTE: a new number on the leads line is always a lead; on the main line only when it asks for work (an estimate / an emergency) */
-  const wantLead = !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || (!who && (!!(rule && rule.lead) || rt.urgent)) || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
+  const wantLead = !own.lead && !own.todo && !(who && who.kind === 'staff') && (rt.wantLead || !who || (!!who && !!(rule && rule.lead) && who.kind !== 'sub' && !pid));
   if (wantLead) {
     const f = { type: INS_WORDS.test(body) ? 'storm' : 'estimate', name: name || 'Texter ' + tidy(ph), email: '', phone: ph, address: '', city: '', state: '', zip: '',
       message: 'Text message ' + at.slice(0, 16).replace('T', ' ') + ' UTC: ' + clip(body, 1200), company: '', service: '', property: '', bestTime: '', damageDate: '', carrier: '', claimFiled: '', claimNumber: '',
@@ -492,8 +495,12 @@ async function inboundSms(p){
         title: 'Text message — ' + (name || tidy(ph)), leadExtra: { textMessage: true, smsFrom: ph, textBody: clip(body, 8000) } });   /* patch LEADMAILMSG: the full text */
       out.newLead = r.id; out.action = r.action;
       await stateCas(st => { st.owner[ph] = { lead: r.id, at }; return true; }).catch(() => {});
+      try { out.textLead = await TL().onInbound({ leadId: r.id, ph, body, at, id: sid }); if (out.textLead && out.textLead.item && r.rec) ['title', 'contact', 'address', 'city', 'state', 'zip', 'notes', 'leadExtra'].forEach(k => { if (out.textLead.item[k] !== undefined) r.rec[k] = out.textLead.item[k]; }); } catch (e) {}   /* patch TEXTLEAD */
       out.alerts = r.action === 'added' ? await WI().alertLead(r.rec) : { skipped: r.action };
     } catch (e) { out.leadError = s(e && e.message); }
+  } else if (!own.lead && !(who && (who.kind === 'staff' || who.kind === 'sub'))) {
+    /* patch TEXTLEAD: a lead this number already has (website / CRM lead) gets the text too; a lead that became this customer's job → its history is copied to the job */
+    try { out.textLead = pid ? await TL().syncConverted({ ph }) : await TL().onInbound({ ph, body, at, id: sid }); } catch (e) {}
   }
   /* 5) the job's PM hears too */
   let pm = null; try { pm = job ? core().pmOf(data, job) : (own.pm ? await core().pmByName(own.pm) : null); } catch (e) {}
@@ -585,6 +592,7 @@ async function inboundSms(p){
     out.reply = await sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : '');   /* patch SMSROUTE: answered from the number they texted */
     if (out.reply.ok && noticeNow) { out.notice = true; await stateCas(st => { st.welcomed = st.welcomed && typeof st.welcomed === 'object' ? st.welcomed : {}; st.welcomed[ph] = at; return true; }).catch(() => {}); }   /* patch SMSCONSENT */
     if (out.reply.ok) {
+      try { await TL().onOutbound({ ph, text: reply, who: 'automatic answer', id: 'SMSA_' + sid, leadId: own.lead || out.newLead || '' }); } catch (e) {}   /* patch TEXTLEAD */
       const rid = 'SMSA_' + sid;
       await postJobMsg({ id: rid, pid, authorId: 'sms:auto', authorName: '🤖 GrayCo auto-answer (text)', text: reply, tags: [], at: nowIso(), source: 'sms', channel: 'sms', dir: 'out', smsTo: ph });
       await commsAdd(pid, { id: 'sms_' + rid, kind: 'text', dir: 'out', at: nowIso(), from: 'GrayCo (auto-answer)', fromName: 'GrayCo', to: [tidy(ph)], text: reply });

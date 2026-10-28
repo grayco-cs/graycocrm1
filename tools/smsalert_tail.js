@@ -95,7 +95,7 @@ function render(box){
     DATA = o;
     var set = o.settings || { people: {} }, staff = arr(o.staff);
     var head = '<tr style="background:#f1f5f9;font-size:11px;color:#334155"><th style="' + TD + '">On</th><th style="' + TD + ';text-align:left">Person</th><th style="' + TD + '">Cell</th>'
-      + COLS.map(function(c){ return '<th style="' + TD + ';max-width:84px" title="' + esc(c.h) + '">' + esc(c.t) + '</th>'; }).join('') + '<th style="' + TD + '">Quiet hours (Central)</th></tr>';
+      + COLS.map(function(c){ return '<th style="' + TD + ';white-space:normal;line-height:1.2;width:78px;min-width:64px" title="' + esc(c.h) + '">' + esc(c.t) + '</th>'; }).join('') + '<th style="' + TD + '">Quiet hours (Central)</th></tr>';
     box.innerHTML = '<div class="gcsa" style="font:13px Inter,sans-serif;color:#0f172a">'
       + '<div style="background:' + (o.ready ? '#f0fdf4' : '#fff7ed') + ';border:1px solid ' + (o.ready ? '#bbf7d0' : '#fed7aa') + ';border-radius:10px;padding:10px;margin-bottom:10px;line-height:1.5">'
       + (o.ready ? '✅ Alerts are texted from the GrayCo number <b>' + esc(o.from) + '</b>.' : '⚠ Texting is not set up yet (Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM) — nothing is texted until it is.')

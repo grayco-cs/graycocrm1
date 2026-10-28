@@ -125,8 +125,9 @@ function threadText(list){
 
 /* patch LEADMAILMSG (owner: call quickly from the e-mail): big tappable buttons — table-based, inline styles (Gmail iOS / Android / web) */
 function btn(href, label, bg, fg){
-  return '<td style="padding:0 8px 8px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="' + bg + '" style="border-radius:8px;background:' + bg + '">'
-    + '<a href="' + esc(href) + '" style="display:inline-block;padding:13px 20px;font:bold 17px Arial,sans-serif;color:' + fg + ';text-decoration:none;border-radius:8px">' + esc(label) + '</a></td></tr></table></td>';
+  /* each button its own small table, inline-block, so they wrap on a phone instead of running off the screen */
+  return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block;vertical-align:top;margin:0 8px 8px 0"><tr><td bgcolor="' + bg + '" style="border-radius:8px;background:' + bg + '">'
+    + '<a href="' + esc(href) + '" style="display:inline-block;padding:13px 18px;font:bold 17px Arial,sans-serif;white-space:nowrap;color:' + fg + ';text-decoration:none;border-radius:8px">' + esc(label) + '</a></td></tr></table>';
 }
 function buttons(o){
   o = obj(o);
@@ -135,7 +136,7 @@ function buttons(o){
   if (d.length === 10) { cells.push(btn('tel:+1' + d, '📞 Call ' + tidy(d), '#16a34a', '#ffffff')); cells.push(btn('sms:+1' + d, '💬 Text', '#0e7490', '#ffffff')); }
   if (/^[^@\s<>"]+@[^@\s<>"]+\.[a-z]{2,}$/i.test(em)) cells.push(btn('mailto:' + em, '✉️ E-mail', '#241968', '#ffffff'));
   if (!cells.length) return '';
-  return '<table role="presentation" class="gc-callbtns" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 4px"><tr>' + cells.join('') + '</tr></table>';
+  return '<div class="gc-callbtns" style="margin:10px 0 4px">' + cells.join('') + '</div>';
 }
 /* the phone / e-mail to call for a lead record (or an alert entry) */
 function contactOf(rec){ rec = obj(rec); const c = obj(rec.contact), le = obj(rec.leadExtra); return { phone: phone10(c.phone || rec.phone || le.smsFrom || rec.smsFrom), email: s(c.email || rec.email) }; }

@@ -92,6 +92,7 @@ const _D = {
     const has = l => l.some(x => x && s(x.id) === msg.id);
     try { await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) {}
     if (m.pid) { try { await require('./comms.js').addMessage(m.pid, { id: 'sms_' + m.id, kind: 'text', dir: 'out', at: m.at, from: low(m.email), fromName: s(m.name), to: [tidy(m.to)], text: m.text }); } catch (e) {} }
+    try { await require('./textlead.js').onOutbound({ ph: m.to, text: m.text, who: s(m.name) + ' (from cell)', id: m.id }); } catch (e) {}   /* patch TEXTLEAD */
     try { await MC().stateCas(x => { x.lastOut = x.lastOut && typeof x.lastOut === 'object' ? x.lastOut : {}; x.lastOut[m.to] = { email: low(m.email), name: s(m.name), pid: m.pid || '', at: m.at }; return true; }); } catch (e) {}
     return msg;
   }

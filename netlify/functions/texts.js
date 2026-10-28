@@ -70,6 +70,7 @@ async function send(who, b){
   try { await MC().stateCas(x => { x.lastOut = x.lastOut && typeof x.lastOut === 'object' ? x.lastOut : {}; x.lastOut[to] = { email: low(who.email), name: s(who.name), pid, at }; return true; }); } catch (e) {}   /* patch SMSROUTE: their reply comes back to this employee */
   const has = l => l.some(m => m && s(m.id) === id);
   try { await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) {}
+  try { await require('./_lib/textlead.js').onOutbound({ ph: to, text, who: s(who.name || who.email), id }); } catch (e) {}   /* patch TEXTLEAD: on the lead's conversation too */
   if (pid) { try { await require('./_lib/comms.js').addMessage(pid, { id: 'sms_' + id, kind: 'text', dir: 'out', at, from: s(who.email), fromName: s(who.name), to: [S.tidy(to)], text }); } catch (e) {} }
   return { code: 200, body: { ok: true, id, message: msg } };
 }
