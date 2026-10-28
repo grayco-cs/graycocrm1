@@ -158067,8 +158067,9 @@ function doDeny(r){
     var ot = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); if (!Array.isArray(ot)) ot = [];
     ot.push({ id: 'DENY' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: '↩ Fix and resend: ' + title + ' — ' + why.slice(0, 160) + ' (from ' + me + ')', note: 'Sent back from Approvals by ' + me + '. Fix it, then tick this done: it goes back on Approvals.', assignee: to === 'the office' ? '' : to, pid: d.pid, addedBy: me, addedAt: at, at: at, done: false, _deny: d });
     localStorage.setItem('gc_office_tasks', JSON.stringify(ot));
-    if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', ot);
-  } catch (e) { warn(e); toast('Could not save that — try again.'); return; }
+  } catch (e) { warn(e); toast('Could not save that on this computer (' + s(e && e.message).slice(0, 80) + ') — try again.'); return; }
+  /* patch DENY2: the cloud push is separate — a hiccup there never drops the deny (the save queue sends it) */
+  try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e) { warn(e); try { if (W._gcSyncQ && W._gcSyncQ.add) W._gcSyncQ.add('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e2) {} }
   if (r.src === 'queue' && typeof W._gcApprovalAct === 'function') { try { Promise.resolve(W._gcApprovalAct(s(r.id), 'reject', { reason: why.slice(0, 500) })).catch(function(){}); } catch (e) {} }
   try { if (typeof W._gcNotify === 'function' && to !== 'the office') W._gcNotify(to, { kind: 'approval', link: '#todo', title: '↩ Sent back to you: ' + title, body: why + ' — from ' + me }); } catch (e) {}
   delete DENYBOX[r.key]; delete DREASON[r.key]; DENYC.at = 0; fresh(); paintSoon();
