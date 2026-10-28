@@ -384,9 +384,18 @@ function spHash(str){   /* 53-bit string hash (cyrb53) + length: what is kept pe
    merge the same records list them in their own order, and each re-sent "its" order to the other,
    back and forth, forever. Only the outer list — an order kept inside a record still counts. */
 function spIsRec(x){ return !!x && typeof x === 'object' && !Array.isArray(x) && (typeof x.id === 'string' || typeof x.id === 'number' || typeof x.invId === 'string' || typeof x.expId === 'string'); }
+/* patch RTPUT: the sorted-key text of a row, remembered by the row's plain text (same text, same sorted text) */
+var SP_CC = (typeof Map === 'function') ? new Map() : null;
+function spCanonRow(r){
+  if (!SP_CC || !r || typeof r !== 'object' || typeof r.toJSON === 'function') return spCanon(r);
+  var j, tj = false; try { j = JSON.stringify(r, function(k, x){ var o = this[k]; if (o && typeof o === 'object' && typeof o.toJSON === 'function') tj = true; return x; }); } catch (e) { return spCanon(r); }
+  if (typeof j !== 'string' || tj) return spCanon(r);   /* a Date (toJSON) inside: its plain text is not its sorted text */
+  var c = SP_CC.get(j); if (c !== undefined) return c;
+  c = spCanon(r); if (SP_CC.size >= 40000) SP_CC.clear(); SP_CC.set(j, c); return c;
+}
 function spSig(v){
   try {
-    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanon).sort().join(',') + ']');
+    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanonRow).sort().join(',') + ']');
     return spHash(spCanon(v));
   } catch (e) { return null; }
 }
@@ -441,6 +450,14 @@ function spForget(u, init){
   SP_KNOWN = {};
 }
 function spSend(input, init){
+  /* patch RTBIG: the whole schedule as ONE row (over the 3.5 MB the company sync chunks at) is not sent: the schedule
+     goes up as schedule__chunkN + schedule__manifest */
+  try {
+    if (init && typeof init.body === 'string' && init.body.length > 3600000 && /^\{"key":"schedule","value":/.test(init.body.slice(0, 40)) && methodOf(urlOf(input), init) === 'POST' && /\/rest\/v1\/gc_kv(\?|$)/.test(urlOf(input))) {
+      window._gcBigRowSkipped = (window._gcBigRowSkipped || 0) + 1;
+      return Promise.resolve(new Response(null, { status: 201, statusText: 'Created' }));
+    }
+  } catch (e) {}
   var u = urlOf(input), rows = spRows(u, init), t = now();
   if (rows && rows.every(function(r){ var k = SP_KNOWN[r.key]; if (k && k.s === undefined) { k.s = spSig(k.v); k.v = null; } return k && k.s && k.s === r.sig && (t - k.at) < SP_TTL; })) {
     window._gcSyncSkipped++;
@@ -3377,7 +3394,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.155-2026-10-27-r10d -->
+<!-- GrayCo CRM Build: 33.156-2026-10-28-r11 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4042,7 +4059,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.155-2026-10-27-r10d");
+  console.log("[GC] Build 33.156-2026-10-28-r11");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4090,7 +4107,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.155-2026-10-27-r10d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.156-2026-10-28-r11"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -60199,15 +60216,20 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{ localStorage.removeItem('gc_deleted_schedule'); }catch(e){}
   }
   // Rolling local backup of the schedule so we always have a full copy to restore from.
+  var _bkList=null, _bkLen=-1, _bkN=-1;   /* patch RTFEED: what this guardian last copied (the list, and the stored text's length) */
   function backupSchedule(){
     try{
       var sched=(window._crm&&window._crm.schedule)||[];
       if(!Array.isArray(sched)||!sched.length) return;
       var key='gc_sched_backup';
-      var prev=[]; try{ prev=JSON.parse(localStorage.getItem(key)||'[]'); }catch(e){}
+      var raw=localStorage.getItem(key)||'[]';
+      if(sched===_bkList && sched.length===_bkN && raw.length===_bkLen) return;   /* the same list, and the copy is the one written from it */
+      var prev=[]; try{ prev=JSON.parse(raw); }catch(e){}
       // only overwrite the backup if the current schedule is as big or bigger (never back up a shrunk one)
       if(sched.length>=prev.length){
-        localStorage.setItem(key, JSON.stringify(sched));
+        var _txt=JSON.stringify(sched);
+        localStorage.setItem(key, _txt);
+        _bkList=sched; _bkN=sched.length; _bkLen=_txt.length;
       }
     }catch(e){}
   }
@@ -80959,6 +80981,19 @@ window._gcSchedSweep = async function(opts){
     var before = combined.length;
     var res = window._gcSchedCollapse(combined);
     var clean = res.out;
+    /* patch RTQUIET: nothing to clean (the folded list is exactly this computer's rows, and the cloud row has exactly
+       those ids): nothing is written — not to this disk, the screen, or the cloud */
+    if(!loud && cloudOk && cloud.length && clean.length === local.length && clean.length === cloud.length){
+      try{
+        var _qId = function(r){ return (r && typeof r === 'object' && r.id != null && r.id !== '') ? String(r.id) : null; };
+        var _qL = {}, _qOk = true, _qi;
+        for(_qi = 0; _qi < local.length && _qOk; _qi++){ var _qk = _qId(local[_qi]); if(_qk == null || (_qk in _qL)) _qOk = false; else _qL[_qk] = local[_qi]; }
+        for(_qi = 0; _qi < clean.length && _qOk; _qi++){ var _qc = clean[_qi], _qk2 = _qId(_qc); if(_qk2 == null || !(_qk2 in _qL)) _qOk = false; else if(_qL[_qk2] !== _qc && JSON.stringify(_qL[_qk2]) !== JSON.stringify(_qc)) _qOk = false; }
+        var _qC = {};
+        for(_qi = 0; _qi < cloud.length && _qOk; _qi++){ var _qk3 = _qId(cloud[_qi]); if(_qk3 == null || !(_qk3 in _qL) || (_qk3 in _qC)) _qOk = false; else _qC[_qk3] = 1; }
+        if(_qOk) return { before: before, after: clean.length, removed: 0, quiet: true };
+      }catch(_qe){}
+    }
 
     if(before === clean.length){
       if(loud) alert('No duplicate schedule rows found — the schedule is clean ('+clean.length+' entries).');
@@ -82701,14 +82736,18 @@ window._gcIdbRead = readKV;
 var prevSet = window.idbSet;
 var CORE = {projects:1,invs:1,invoices:1,estimates:1,expenses:1,schedule:1,cos:1,changeOrders:1,
             subs:1,vendors:1,customers:1,leads:1,scopes:1,projectPayments:1,projectDocs:1,gcAcctRegister:1};
+/* patch RTSTAMP: for a big list, only rows that are not the very objects written last time are stamped */
+var _wkLast = {};
 function writeKV(key, value){
   try{
     // keep the "a manual save always wins" stamping the app relies on
     if(CORE[key] && Array.isArray(value) && (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__)){
       var now=new Date().toISOString();
-      value.forEach(function(r){ if(r && typeof r==='object'){ r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
+      var big = value.length > 2000 && typeof WeakSet === 'function', had = big ? _wkLast[key] : null;
+      value.forEach(function(r){ if(r && typeof r==='object'){ if(had && had.has(r)) return; r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
     }
   }catch(e){}
+  try{ if(CORE[key] && Array.isArray(value) && value.length > 2000 && typeof WeakSet === 'function'){ var ws = new WeakSet(); for(var _i=0; _i<value.length; _i++){ var _r = value[_i]; if(_r && typeof _r==='object') ws.add(_r); } _wkLast[key] = ws; } }catch(e){}
   return openDB().then(function(db){
     return new Promise(function(res){
       try{
@@ -89513,6 +89552,8 @@ window.__GC_WAIT('_gcTombstone', function(orig){
 function judge(key, incoming){
   if(!GUARD[key] || !Array.isArray(incoming)) return null;
   var n=incoming.length, hw=HW[key]|0;
+  /* patch BOOKDEDUPE: the schedule's copies the rule folds away do not count toward its high-water mark */
+  if(key==='schedule' && n<hw && LAST[key] && typeof window._gcSchedDedupe==='function'){ try{ var _hw2=window._gcSchedDedupe(LAST[key]).length; if(_hw2<hw){ hw=_hw2; HW[key]=_hw2; saveHW(); LAST[key]=window._gcSchedDedupe(LAST[key]); } }catch(_d){} }
   if(n>=hw){ if(n>hw){ HW[key]=n; saveHW(); } LAST[key]=incoming; return null; }
   if(!ready) return null;                       // still loading — empty is normal
   if(hw===0) return null;                       // never had anything to lose
@@ -104346,6 +104387,10 @@ function repair(key, mine, incoming){
 
   var out = incoming.slice();
   var putBack = 0, melded = 0;
+  /* patch RTPUT: where each incoming row sits, built once (out.indexOf per row was 13,350 x 13,350 on the schedule) */
+  var _pos = (typeof Map === 'function') ? new Map() : null;
+  if(_pos){ for(var _pi = 0; _pi < out.length; _pi++){ var _po = out[_pi]; if(_po && typeof _po === 'object'){ var _pl = _pos.get(_po); if(_pl) _pl.push(_pi); else _pos.set(_po, [_pi]); } } }
+  function _posOf(o){ if(!_pos) return out.indexOf(o); var l = _pos.get(o); if(!l) return -1; for(var q = 0; q < l.length; q++){ if(out[l[q]] === o) return l[q]; } return -1; }
 
   /* anything here that the sync does not mention is KEPT */
   mine.forEach(function(r){
@@ -104365,11 +104410,14 @@ function repair(key, mine, incoming){
       out.push(r); putBack++; return;
     }
     /* it is in both — take the newer, and never let a blank win */
+    if(r === byId[id]) return;                          /* patch RTPUT: the very same row — merging it with itself changes nothing */
+    /* patch RTSAVE: the same text on both sides: the merged copy would have that text too — nothing to take */
+    var _tIn = null; try{ _tIn = JSON.stringify(byId[id]); if(_tIn === JSON.stringify(r)) return; }catch(e){ _tIn = null; }
     var merged = meld(r, byId[id]);
-    var at = out.indexOf(byId[id]);
+    var at = _posOf(byId[id]);
     if(at >= 0 && merged !== byId[id]){
       var changed=false;
-      try{ changed = JSON.stringify(merged) !== JSON.stringify(byId[id]); }catch(e){ changed=true; }
+      try{ changed = JSON.stringify(merged) !== (_tIn != null ? _tIn : JSON.stringify(byId[id])); }catch(e){ changed=true; }
       if(changed){ out[at] = merged; melded++; }
     }
   });
@@ -117558,16 +117606,49 @@ var _rsigStep = null;   /* patch X: per-object signatures, kept only for one syn
    the write stamp gave every vendor a new updatedAt on each pull while someone was at the computer, and the other
    computer did the same back */
 function _rsigRep(k, v){ return (k && STAMP.test(k)) ? undefined : v; }
-function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
+/* patch RTFAST: the signature of a row is remembered by the row's exact text without its stamps (same text, same signature) */
+var _rsC = new Map();
+function rsig(r){
+  if(r && typeof r==='object' && !Array.isArray(r) && typeof r.toJSON !== 'function'){
+    if(_rsigStep){ var _c0 = _rsigStep.get(r); if(_c0 !== undefined) return _c0; }
+    var _j = null; try{ _j = JSON.stringify(r, _rsigRep); }catch(e){ _j = null; }
+    if(typeof _j === 'string'){ var _h = _rsC.get(_j); if(_h === undefined){ _h = rsig0(r); if(_rsC.size >= 60000) _rsC.clear(); _rsC.set(_j, _h); } else if(_rsigStep) _rsigStep.set(r, _h); return _h; }
+  }
+  return rsig0(r);
+}
+function rsig0(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
 var ownStamp = {};   /* stamps this computer wrote */
 function recIdOf(r){ return (r && typeof r==='object' && !Array.isArray(r)) ? (r.id!=null && r.id!=='' ? String(r.id) : (r._id!=null && r._id!=='' ? String(r._id) : null)) : null; }
 function isRecList(a){ return Array.isArray(a) && a.length && a.every(function(x){ return x==null || (typeof x==='object' && !Array.isArray(x)); }); }
+/* patch RTFAST: a big list from the live feed is learnt in slices; learnDrain() finishes them (sync) before a read */
+var learnQ = [], learnT = null, learnWhole = {};
+function learnRow(m, r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; }
+function learnSlice(){
+  learnT = null; var t0 = Date.now();
+  while(learnQ.length && Date.now() - t0 < 25){
+    var q = learnQ[0], m = seenRec[q.k] || (seenRec[q.k] = {}), end = Math.min(q.v.length, q.i + 600);
+    try{ for(; q.i < end; q.i++) learnRow(m, q.v[q.i]); }catch(e){ q.i = q.v.length; }
+    if(q.i >= q.v.length) learnQ.shift();
+  }
+  if(learnQ.length) learnT = ST.call(window, learnSlice, 0);
+}
+function learnDrain(){
+  if(!learnQ.length) return;
+  if(learnT){ try{ clearTimeout(learnT); }catch(e){} learnT = null; }
+  while(learnQ.length){ var q = learnQ.shift(), m = seenRec[q.k] || (seenRec[q.k] = {}); try{ for(; q.i < q.v.length; q.i++) learnRow(m, q.v[q.i]); }catch(e){} }
+}
+function learnSoon(k, v, s){
+  if(s && learnWhole[k] === s) return;                                     /* this exact value was learnt already */
+  if(!(Array.isArray(v) && v.length > 1500 && isRecList(v))){ learn(k, v); if(s) learnWhole[k] = s; return; }
+  learnQ.push({ k:k, v:v, i:0 }); if(s) learnWhole[k] = s;
+  if(!learnT) learnT = ST.call(window, learnSlice, 0);
+}
 function learn(k, v){
   try{
     if(v === undefined || v === null) return;
     if(isRecList(v)){
       var m = seenRec[k] || (seenRec[k] = {});
-      v.forEach(function(r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; });
+      v.forEach(function(r){ learnRow(m, r); });
     } else {
       var sv = seenVal[k] || (seenVal[k] = {}); sv[rsig(v)] = 1; var kk = Object.keys(sv); if(kk.length > 12) delete sv[kk[0]];
     }
@@ -117585,6 +117666,7 @@ function deadFor(k){
    by a person: out on both sides. Never a replace. */
 var UL = {}; window.__gcUL = {};
 function union(k, cloud, local, now, editAt, prevSeen){
+  learnDrain();   /* patch RTFAST */
   UL = window.__gcUL[k] = { diff:[], seen:[], lost:[], edit:[], added:[], dropped:[], dupe:[], at: now };
   editAt = editAt || now;
   if(local === undefined || local === null) return cloud;
@@ -117690,6 +117772,7 @@ async function pushKey(k, cr){
   var cloud = (Array.isArray(rows) && rows.length) ? rows[0].value : undefined;
   var asText = false;
   if(typeof cloud === 'string' && /^\s*[\[{]/.test(cloud)){ try{ cloud = JSON.parse(cloud); asText = true; }catch(e){} }   /* some lists are kept as text in the cloud: merged as lists, sent back as text */
+  learnDrain();   /* patch RTFAST */
   var before = seenRec[k] ? JSON.parse(JSON.stringify(seenRec[k])) : {};
   var prevSeen = function(id, g){ return !!(before[id] && before[id][g]); };
   _rsigStep = (typeof WeakMap === 'function') ? new WeakMap() : null;   /* patch X */
@@ -117832,6 +117915,7 @@ var ownPost = {};
       var u = typeof input === 'string' ? input : (input && input.url) || '';
       if(init && init.body && typeof init.body === 'string' && /\/rest\/v1\/gc_kv/.test(u) && String(init.method||'').toUpperCase() === 'POST' && init.body.length < 6000000){
         var b = JSON.parse(init.body); (Array.isArray(b) ? b : [b]).forEach(function(r){
+          if(r && r.key === 'schedule__manifest' && r.value && typeof r.value === 'object' && r.value.gen) ownNote[r.value.gen] = 1;   /* patch RTFEED: this page's own note */
           if(!r || !r.key || !isShared(r.key)) return;
           var v = r.value; if(typeof v === 'string' && /^\s*[\[{]/.test(v)){ try{ v = JSON.parse(v); }catch(e){} }
           ownPost[r.key] = { at:Date.now(), sig:sigOf(JSON.stringify(v)) };
@@ -117866,10 +117950,40 @@ window.__gcLiveSkip = function(name, every){
 };
 
 var pendingPull = false, pullT = null, firstEventAt = 0, evKeys = {}, evVal = {};
+/* patch RTFEED: another computer saved the schedule's pieces: read them (one ~1.2 MB piece at a time) and lay
+   them over the screen through the same overlay the whole-row message used */
+var ownNote = {}, noteT = null, noteBusy = false, noteAgain = false;
+function schedOnNote(rec){
+  try{
+    var v = rec && rec.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
+    if(v && v.gen && ownNote[v.gen]) return;                       /* this computer's own save */
+    stats.events++; stats.lastEventAt = Date.now(); stats.evByKey = stats.evByKey || {}; stats.evByKey.schedule__manifest = (stats.evByKey.schedule__manifest||0) + 1;
+    healthy = true;
+    if(!noteT) noteT = ST.call(window, schedReadNote, 400);       /* notes that arrive together are read once */
+  }catch(e){}
+}
+async function schedReadNote(){
+  noteT = null;
+  if(noteBusy){ noteAgain = true; return; }
+  noteBusy = true;
+  try{
+    if(typeof window._gcSbReadChunked !== 'function') return;
+    var v = await window._gcSbReadChunked('schedule');
+    if(!Array.isArray(v) || !v.length || !isRecList(v)) return;
+    var k = 'schedule';
+    learnSoon(k, v, null);
+    if(!firstEventAt) firstEventAt = Date.now();
+    evVal[k] = v;
+    if(!toApply[k]) toApply[k] = Date.now();
+    scheduleApply(300);
+  }catch(e){}
+  finally{ noteBusy = false; if(noteAgain){ noteAgain = false; if(!noteT) noteT = ST.call(window, schedReadNote, 400); } }
+}
 function onEvent(payload){
   try{
     var rec = (payload && (payload['new'] || payload.record)) || {};
     var k = rec.key || (payload && payload.old && payload.old.key);
+    if(k === 'schedule__manifest'){ schedOnNote(rec); return; }   /* patch RTFEED */
     if(!k || !isShared(k)) return;
     stats.events++; stats.lastEventAt = Date.now(); stats.evByKey = stats.evByKey || {}; stats.evByKey[k] = (stats.evByKey[k]||0) + 1;
     healthy = true;
@@ -117881,7 +117995,7 @@ function onEvent(payload){
     if(s && cloudSig[k] === s) return;                     /* already have it */
     if(s && ownPost[k] && ownPost[k].sig === s && Date.now() - ownPost[k].at < 60000){ stats.echoes++; return; }   /* this page sent it */
     if(s && window.__gcXSent && window.__gcXSent(k, s)){ stats.echoes++; return; }   /* patch X: sent as rewritten by the union-push */
-    if(v !== undefined) learn(k, v);   /* patch X: only for another computer's save — this page's own values are its own */
+    if(v !== undefined) learnSoon(k, v, s);   /* patch X: only for another computer's save — this page's own values are its own (patch RTFAST: big lists in slices) */
     /* two computers pushing the same list in the same second: the later write was a union with a copy read just
        before the earlier one landed, so the earlier one's addition can be missing. Whoever pushed this list in the
        last 15 s looks again (a union: if nothing of ours is missing, nothing is sent). */
@@ -117893,7 +118007,7 @@ function onEvent(payload){
     if(lsBacked(k) || typeof window[setterName] === 'function'){
       /* a list on the screen: laid over what is there straight away (no full pull needed) */
       if(!toApply[k]) toApply[k] = Date.now();
-      scheduleApply(150);
+      scheduleApply((Array.isArray(v) && v.length > 1500) ? 1200 : 150);   /* patch RTFAST: a burst of big-list updates is laid on once */
     } else {
       pendingPull = true; evKeys[k] = 1;
       if(!pullT) pullT = ST.call(window, runPull, 400);
@@ -117952,6 +118066,7 @@ function stampOfRec(r){ return String((r && (r.updatedAt || r.updated_at)) || ''
    at that moment, so a save made a moment ago is never replaced by an older list. */
 function overlay(k, prev, inc){
   if(!Array.isArray(prev) || !Array.isArray(inc)) return prev;
+  learnDrain();   /* patch RTFAST */
   var seenK = seenRec[k] || {};
   var dead = deadFor(k), at = {}, out = prev.slice(), changed = false;
   out.forEach(function(r, i){ var id = recIdOf(r); if(id!=null) at[id] = i; });
@@ -118024,7 +118139,9 @@ async function applyNow(){
 }
 
 function filters(){
-  var ks = Object.keys(keys()).filter(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }).sort();
+  /* patch RTFEED: the ~5 MB schedule row is not taken from the live feed (decoding it froze every other computer);
+     the small note the company sync writes after the schedule's pieces is taken instead (schedOnNote) */
+  var ks = Object.keys(keys()).filter(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }).concat(['schedule__manifest']).sort();   /* patch BOOKDEDUPE: the plain row is small again */
   var out = [];
   for(var i=0;i<ks.length;i+=90) out.push('key=in.(' + ks.slice(i, i+90).join(',') + ')');
   return out;
@@ -119127,6 +119244,8 @@ function filterList(type, v, outgoing){
   if(!Array.isArray(v)) return v;
   var as = (!outgoing && typeof ASIDE === 'object' && ASIDE) ? (ASIDE[typeOf(type)] || {}) : {};   /* put-aside records: off this computer, never taken out of the cloud */
   var any = false, out = v.filter(function(r){ if(!r || typeof r !== 'object') return true; var id = idOf(r); var d = dead(type, id) || (id && as[id]); if(d) any = true; return !d; });
+  /* patch BOOKDEDUPE: one automatic Start / Finish row per job, exact copies are one row */
+  if(typeOf(type) === 'schedule' && typeof window._gcSchedDedupe === 'function'){ try{ var dd = window._gcSchedDedupe(any ? out : v); if(dd !== (any ? out : v)){ out = dd; any = true; } }catch(e){} }
   return any ? out : v;
 }
 async function fixRow(row){
@@ -119733,11 +119852,13 @@ function notePersonEdits(key, list){
     if(!VERSIONED[typeOf(key)]) return;
     var prev = lastRows[key]; if(!prev) return;
     var changed = [], ls = lastStr[key] || {}, ns = {};
-    for(var i0=0;i0<list.length;i0++){ var r0 = list[i0], id0 = idOf(r0); if(id0) ns[id0] = JSON.stringify(r0); }
-    lastStr[key] = ns;
+    lastStr[key] = ns;   /* patch RTSTAMP: a row's text is made only when it is not the very same object as last time; a row
+                            without a remembered text is compared by csig, which gives the same answer */
     for(var i=0;i<list.length;i++){
       var r = list[i], id = idOf(r); if(!id) continue; var p = prev[id];
-      if(p === r || (p && (ls[id] === ns[id] || csig(p) === csig(r)))) continue;   /* same text, or only its save stamps moved (a sweep), is not an edit */
+      if(p === r) continue;
+      ns[id] = JSON.stringify(r);
+      if(p && (ls[id] === ns[id] || csig(p) === csig(r))) continue;   /* same text, or only its save stamps moved (a sweep), is not an edit */
       var st = stampOf(r);
       if(byCall || byInput || (stampNearInput(st) && (!p || st > stampOf(p)))){ changed.push(id); if(changed.length > 200) return; }
     }
@@ -178411,13 +178532,25 @@ function workHours(a, b){
   return n;
 }
 function queueAll(){ try { var c = W._gcCustApprovals ? W._gcCustApprovals() : null; return arr(c && c.all); } catch (e) { return []; } }
-function invById(id){ var l = arr((W._crm || {}).invoices); for (var i = 0; i < l.length; i++) if (l[i] && s(l[i].id) === s(id)) return l[i]; return null; }
+/* patch APPRFAST: one index of the queue / sub approvals / invoices per paint (300 ms), the first match wins as before */
+var IDX = null;
+function idx(){
+  var now = Date.now(), inv = (W._crm || {}).invoices;
+  if (IDX && now - IDX.at < 300 && IDX.invL === inv) return IDX;
+  var q = {}, sub = {}, iv = {};
+  queueAll().forEach(function(x){ var k = s(x && x.id); if (!(k in q)) q[k] = x; });
+  lsList('gc_sub_approvals').forEach(function(x){ if (!x) return; var a = s(x.id), b = s(x.invId); if (!(a in sub)) sub[a] = x; if (!(b in sub)) sub[b] = x; });
+  arr(inv).forEach(function(x){ if (!x) return; var k = s(x.id); if (!(k in iv)) iv[k] = x; });
+  IDX = { at: now, invL: inv, q: q, sub: sub, inv: iv };
+  return IDX;
+}
+function invById(id){ return idx().inv[s(id)] || null; }
 function rawFor(r){
   if (!r) return null;
   if (r.__raw) return r.__raw;
   var id = s(r.id);
-  if (r.src === 'queue') return queueAll().filter(function(x){ return s(x.id) === id; })[0] || null;
-  if (r.src === 'sub') return lsList('gc_sub_approvals').filter(function(x){ return s(x.id) === id || s(x.invId) === id; })[0] || null;
+  if (r.src === 'queue') return idx().q[id] || null;
+  if (r.src === 'sub') return idx().sub[id] || null;
   if (r.src === 'inv') return invById(id);
   if (r.src === 'exp') { try { return arr(W._gcExpenseApprovalsFor && W._gcExpenseApprovalsFor()).filter(function(x){ return s(x.id || x.expId) === id; })[0] || null; } catch (e) { return null; } }
   return null;
@@ -183991,5 +184124,201 @@ function sweep(){
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { sweep(); } catch (e) {} }, 60000);
 (W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ try { sweep(); } catch (e) {} }, 20000);
 W._gcApptConf = { sweep: sweep, say: W._gcApprSay };
+})();
+</script>
+<script>
+/* patch RTSTAMP (2): the same big list written again within 2.5 s is not written twice */
+(function(){
+'use strict';
+if (window.__GC_RTDUP__) return; window.__GC_RTDUP__ = true;
+try {
+  var P = IDBObjectStore.prototype, inner = P.put, last = {}, ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+  var stats = window._gcRtDup = { skipped: 0, written: 0 };
+  var w = function(value, key){
+    try {
+      if (typeof key === 'string' && Array.isArray(value) && value.length > 2000 && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm') {
+        var txt = JSON.stringify(value), now = Date.now(), L = last[key];
+        if (L && L.txt === txt && now - L.at < 2500) {
+          stats.skipped++;
+          var fake = { readyState: 'done', result: key, error: null, onsuccess: null, onerror: null, transaction: this.transaction, source: this,
+            addEventListener: function(type, fn){ if (type === 'success' && typeof fn === 'function') ST.call(window, function(){ try { fn({ target: fake, type: 'success' }); } catch (e) {} }, 0); },
+            removeEventListener: function(){} };
+          ST.call(window, function(){ try { if (typeof fake.onsuccess === 'function') fake.onsuccess({ target: fake, type: 'success' }); } catch (e) {} }, 0);
+          return fake;
+        }
+        var r = inner.apply(this, arguments);
+        stats.written++;
+        try { this.transaction.addEventListener('complete', function(){ last[key] = { txt: txt, at: Date.now() }; }); } catch (e) {}   /* only what reached the disk counts */
+        try { this.transaction.addEventListener('abort', function(){ if (last[key] && last[key].txt === txt) delete last[key]; }); } catch (e) {}
+        return r;
+      }
+    } catch (e) {}
+    return inner.apply(this, arguments);
+  };
+  w.__gcRtDup = true; try { Object.keys(inner).forEach(function(k){ w[k] = inner[k]; }); } catch (e) {}
+  P.put = w;
+} catch (e) {}
+})();
+</script>
+<script>
+/* patch BOOKDEDUPE: the rule, the guards told about it, and the one-time cloud clean-up */
+(function(){
+'use strict';
+if (window.__GC_BOOKDEDUPE__) return; window.__GC_BOOKDEDUPE__ = true;
+var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var STAMPX = /^(updatedAt|updated_at|savedAt|lastSeen|modified|modifiedAt|lastModified|createdAt|created|_\w*UpdatedAt)$/;
+var DROP = {};                 /* ids the rule folded away this session (the keep-forever guard and the delete recorder are told) */
+var stats = window._gcBookDedupeStats = { runs: 0, autoDropped: 0, exactDropped: 0, last: null };
+function idOf(r){ return (r && typeof r === 'object') ? (r.id != null && r.id !== '' ? String(r.id) : (r._id != null && r._id !== '' ? String(r._id) : '')) : ''; }
+function d10(x){ return String(x || '').slice(0, 10); }
+function canon(r){
+  var ks = Object.keys(r).sort(), p = [];
+  for (var i = 0; i < ks.length; i++) { var k = ks[i]; if (k === 'id' || k === '_id' || STAMPX.test(k)) continue; var v = r[k]; if (v === undefined || typeof v === 'function') continue; var j; try { j = JSON.stringify(v); } catch (e) { return null; } p.push(JSON.stringify(k) + ':' + j); }
+  return '{' + p.join(',') + '}';
+}
+function projDates(){
+  var m = {};
+  try { (window._crm && window._crm.projects || []).forEach(function(p){ if (p && p.id != null) m[String(p.id)] = { start: d10(p.startDate), finish: d10(p.endDate) }; }); } catch (e) {}
+  return m;
+}
+/* returns the same array when nothing is folded */
+function dedupe(list){
+  if (!Array.isArray(list) || list.length < 2) return list;
+  var P = null, best = {}, groups = {}, drop = null, i, r, id;
+  for (i = 0; i < list.length; i++) {
+    r = list[i]; if (!r || typeof r !== 'object') continue; id = idOf(r); if (!id) continue;
+    var kind = r._autoBookend;
+    if ((kind === 'start' || kind === 'finish') && r.pid != null && r.pid !== '') {
+      var k = String(r.pid) + '|' + kind, cur = best[k];
+      if (cur == null) { best[k] = i; continue; }
+      if (!P) P = projDates();
+      var want = (P[String(r.pid)] || {})[kind] || '', b = list[cur];
+      var ra = !!want && d10(r.date) === want, rb = !!want && d10(b.date) === want;
+      var rWins = ra !== rb ? ra : (id < idOf(b));
+      (drop || (drop = {}))[rWins ? cur : i] = 1; if (rWins) best[k] = i;
+    } else {
+      var ck = [r.pid, d10(r.date), r.title, r.time, r.assignee].join('\u0001');
+      (groups[ck] || (groups[ck] = [])).push(i);
+    }
+  }
+  for (var ck2 in groups) {
+    var g = groups[ck2]; if (g.length < 2) continue;
+    var byC = {};
+    for (var q = 0; q < g.length; q++) {
+      var row = list[g[q]], c = canon(row); if (c == null) continue;
+      var at = byC[c];
+      if (at == null) { byC[c] = g[q]; continue; }
+      var keepNew = idOf(row) < idOf(list[at]);
+      (drop || (drop = {}))[keepNew ? at : g[q]] = 1; if (keepNew) byC[c] = g[q];
+    }
+  }
+  if (!drop) return list;
+  var keptIds = {}, out = [], nA = 0, nE = 0;
+  for (i = 0; i < list.length; i++) { if (!drop[i]) { out.push(list[i]); var kid = idOf(list[i]); if (kid) { keptIds[kid] = 1; delete DROP[kid]; } } }
+  for (var di in drop) { var dr = list[+di], did = idOf(dr); if (did && !keptIds[did]) DROP[did] = 1; if (dr && (dr._autoBookend === 'start' || dr._autoBookend === 'finish')) nA++; else nE++; }
+  stats.runs++; stats.autoDropped += nA; stats.exactDropped += nE; stats.last = { at: new Date().toISOString(), before: list.length, after: out.length, auto: nA, exact: nE };
+  return out;
+}
+window._gcSchedDedupe = dedupe;
+window._gcSchedDupIds = function(){ return Object.keys(DROP).length; };
+/* the keep-forever guard (repair -> mergedAway) and the delete recorder ask _gcIsFolded: a copy the rule folded away
+   is not a record a sync lost */
+(function wrapFolded(){
+  var f = window._gcIsFolded;
+  var w = function(list, id){ try { if ((list === 'schedule') && id != null && DROP[String(id)]) return true; } catch (e) {} return typeof f === 'function' ? f.apply(this, arguments) : false; };
+  w.__gcBook = true; window._gcIsFolded = w;
+})();
+
+/* ── the cloud, once ─────────────────────────────────────────────────────────────── */
+function creds(){ try { return { u: (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k: localStorage.getItem('grayco_sb_key') || '' }; } catch (e) { return { u: '', k: '' }; } }
+function H(c){ return { apikey: c.k, Authorization: 'Bearer ' + c.k }; }
+async function getRow(c, key){
+  var r = await fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: H(c), cache: 'no-store' });
+  if (!r || !r.ok) throw new Error('read ' + key + ' ' + (r && r.status));
+  var rows = await r.json(); if (!Array.isArray(rows)) throw new Error('read ' + key);
+  if (!rows.length) return undefined;
+  var v = rows[0].value; if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { v = JSON.parse(v); } catch (e) {} }
+  return v;
+}
+async function putRow(c, key, value){
+  var r = await fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, H(c)), body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) });
+  if (!r || !r.ok) throw new Error('write ' + key + ' ' + (r && r.status));
+}
+var running = false;
+window._gcBookDedupeNow = async function(opt){
+  opt = opt || {};
+  if (running) return { skipped: 'already running' };
+  running = true;
+  var rep = { at: new Date().toISOString(), by: '' };
+  try {
+    try { rep.by = (window.__GC_AUTH__ && window.__GC_AUTH__.email()) || ''; } catch (e) {}
+    var c = creds(); if (!c.u || !c.k) throw new Error('not connected to the cloud');
+    var man = await getRow(c, 'schedule__manifest');
+    var chunks = [];
+    if (man && man.chunked) {
+      if (typeof window._gcSbReadChunked !== 'function') throw new Error('no chunk reader');
+      chunks = await window._gcSbReadChunked('schedule');
+      if (!Array.isArray(chunks)) throw new Error('the cloud schedule pieces are not one complete set right now');
+    }
+    var single = await getRow(c, 'schedule'); if (!Array.isArray(single)) single = [];
+    /* the union by id (the newer save of an id wins) */
+    var at = {}, union = [];
+    chunks.concat(single).forEach(function(r){ var id = idOf(r); if (!id) { union.push(r); return; }
+      if (!(id in at)) { at[id] = union.length; union.push(r); return; }
+      var o = union[at[id]]; if (String((r && r.updatedAt) || '') > String((o && o.updatedAt) || '')) union[at[id]] = r; });
+    var out = dedupe(union);
+    rep.cloudPieces = chunks.length; rep.cloudPlainRow = single.length; rep.before = union.length; rep.after = out.length;
+    /* safety checks */
+    var isAuto = function(r){ return !!(r && (r._autoBookend === 'start' || r._autoBookend === 'finish')); };
+    var keptIds = {}; out.forEach(function(r){ var id = idOf(r); if (id) keptIds[id] = 1; });
+    var nonAutoBefore = {}, lostNonAuto = [];
+    union.forEach(function(r){ if (!isAuto(r) && idOf(r)) nonAutoBefore[idOf(r)] = r; });
+    var outCanon = {}; out.forEach(function(r){ if (!isAuto(r)) { var cc = canon(r); if (cc) outCanon[cc] = 1; } });
+    Object.keys(nonAutoBefore).forEach(function(id){ if (keptIds[id]) return; var cc = canon(nonAutoBefore[id]); if (!cc || !outCanon[cc]) lostNonAuto.push(id); });
+    var groupsBefore = {}, groupsAfter = {};
+    union.forEach(function(r){ if (isAuto(r) && r.pid != null) groupsBefore[r.pid + '|' + r._autoBookend] = 1; });
+    out.forEach(function(r){ if (isAuto(r) && r.pid != null) groupsAfter[r.pid + '|' + r._autoBookend] = (groupsAfter[r.pid + '|' + r._autoBookend] || 0) + 1; });
+    var badGroups = Object.keys(groupsBefore).filter(function(k){ return groupsAfter[k] !== 1; });
+    rep.nonAutoRows = Object.keys(nonAutoBefore).length; rep.exactCopiesFolded = Object.keys(nonAutoBefore).length - out.filter(function(r){ return !isAuto(r) && idOf(r); }).length;
+    rep.autoRowsBefore = union.filter(isAuto).length; rep.autoRowsAfter = out.filter(isAuto).length; rep.bookendGroups = Object.keys(groupsBefore).length;
+    if (lostNonAuto.length) throw new Error('safety: ' + lostNonAuto.length + ' rows a person made would be lost (' + lostNonAuto.slice(0, 5).join(', ') + ')');
+    if (badGroups.length) throw new Error('safety: ' + badGroups.length + ' jobs would not keep exactly one Start/Finish row');
+    if (!out.length && union.length) throw new Error('safety: the result is empty');
+    if (out.length === union.length && !(man && man.chunked)) { rep.result = 'nothing to clean'; return rep; }
+    if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
+    var txt = JSON.stringify(out); if (txt.length > 3400000) throw new Error('safety: still too big for one row (' + txt.length + ' bytes) — nothing written');
+    /* write: the plain row first (complete), then the manifest says "not chunked", then the old pieces are emptied */
+    await putRow(c, 'schedule', out);
+    var oldN = (man && man.count) || 0;
+    if (man && man.chunked) await putRow(c, 'schedule__manifest', { chunked: false, count: 0, total: out.length, at: new Date().toISOString(), gen: 'bookdedupe' + Date.now().toString(36), note: 'schedule is one row again (patch BOOKDEDUPE)' });
+    for (var ci = 0; ci < oldN; ci++) await putRow(c, 'schedule__chunk' + ci, []);
+    /* this computer: its own list through the rule, and the counts its guards remember */
+    try { var loc = await window.idbGet('schedule'); if (Array.isArray(loc)) { var lo = dedupe(loc); if (lo !== loc) await window.idbSet('schedule', lo); rep.thisComputer = { before: loc.length, after: lo.length }; try { localStorage.setItem('gc_lastgood_count_schedule', String(lo.length)); } catch (e) {} } } catch (e) {}
+    try { if (typeof window._setSchedule === 'function') window._setSchedule(function(prev){ return Array.isArray(prev) ? dedupe(prev) : prev; }); } catch (e) {}
+    rep.result = 'cleaned';
+    await putRow(c, 'gc_bookdedupe_v1', rep);
+    return rep;
+  } catch (e) {
+    rep.result = 'stopped: ' + (e && e.message || e);
+    return rep;
+  } finally {
+    running = false; window._gcBookDedupeReport = rep;
+    try { console.log('%c[GC] schedule copies clean-up: ' + rep.result, 'background:#0f2440;color:#fff;padding:2px 6px', rep); } catch (e) {}
+  }
+};
+/* every computer: the bookend writer's own copy in this browser (grayco_schedule) goes through the rule once */
+ST.call(window, function(){
+  try { var raw = localStorage.getItem('grayco_schedule'); if (!raw || raw.length < 200000) return; var l = JSON.parse(raw); if (!Array.isArray(l)) return; var o = dedupe(l); if (o !== l) localStorage.setItem('grayco_schedule', JSON.stringify(o)); } catch (e) {}
+}, 60000);
+/* once, on an admin's computer: 90 s after load, when the cloud has no record of it being done */
+ST.call(window, async function(){
+  try {
+    if (!(window.__GC_AUTH__ && typeof window.__GC_AUTH__.isAdmin === 'function' && window.__GC_AUTH__.isAdmin())) return;
+    var c = creds(); if (!c.u || !c.k) return;
+    var done = await getRow(c, 'gc_bookdedupe_v1');
+    if (done && done.result === 'cleaned') return;
+    await window._gcBookDedupeNow();
+  } catch (e) {}
+}, 90000);
 })();
 </script>
