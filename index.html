@@ -384,9 +384,18 @@ function spHash(str){   /* 53-bit string hash (cyrb53) + length: what is kept pe
    merge the same records list them in their own order, and each re-sent "its" order to the other,
    back and forth, forever. Only the outer list — an order kept inside a record still counts. */
 function spIsRec(x){ return !!x && typeof x === 'object' && !Array.isArray(x) && (typeof x.id === 'string' || typeof x.id === 'number' || typeof x.invId === 'string' || typeof x.expId === 'string'); }
+/* patch RTPUT: the sorted-key text of a row, remembered by the row's plain text (same text, same sorted text) */
+var SP_CC = (typeof Map === 'function') ? new Map() : null;
+function spCanonRow(r){
+  if (!SP_CC || !r || typeof r !== 'object' || typeof r.toJSON === 'function') return spCanon(r);
+  var j, tj = false; try { j = JSON.stringify(r, function(k, x){ var o = this[k]; if (o && typeof o === 'object' && typeof o.toJSON === 'function') tj = true; return x; }); } catch (e) { return spCanon(r); }
+  if (typeof j !== 'string' || tj) return spCanon(r);   /* a Date (toJSON) inside: its plain text is not its sorted text */
+  var c = SP_CC.get(j); if (c !== undefined) return c;
+  c = spCanon(r); if (SP_CC.size >= 40000) SP_CC.clear(); SP_CC.set(j, c); return c;
+}
 function spSig(v){
   try {
-    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanon).sort().join(',') + ']');
+    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanonRow).sort().join(',') + ']');
     return spHash(spCanon(v));
   } catch (e) { return null; }
 }
@@ -80958,6 +80967,19 @@ window._gcSchedSweep = async function(opts){
     var before = combined.length;
     var res = window._gcSchedCollapse(combined);
     var clean = res.out;
+    /* patch RTQUIET: nothing to clean (the folded list is exactly this computer's rows, and the cloud row has exactly
+       those ids): nothing is written — not to this disk, the screen, or the cloud */
+    if(!loud && cloudOk && cloud.length && clean.length === local.length && clean.length === cloud.length){
+      try{
+        var _qId = function(r){ return (r && typeof r === 'object' && r.id != null && r.id !== '') ? String(r.id) : null; };
+        var _qL = {}, _qOk = true, _qi;
+        for(_qi = 0; _qi < local.length && _qOk; _qi++){ var _qk = _qId(local[_qi]); if(_qk == null || (_qk in _qL)) _qOk = false; else _qL[_qk] = local[_qi]; }
+        for(_qi = 0; _qi < clean.length && _qOk; _qi++){ var _qc = clean[_qi], _qk2 = _qId(_qc); if(_qk2 == null || !(_qk2 in _qL)) _qOk = false; else if(_qL[_qk2] !== _qc && JSON.stringify(_qL[_qk2]) !== JSON.stringify(_qc)) _qOk = false; }
+        var _qC = {};
+        for(_qi = 0; _qi < cloud.length && _qOk; _qi++){ var _qk3 = _qId(cloud[_qi]); if(_qk3 == null || !(_qk3 in _qL) || (_qk3 in _qC)) _qOk = false; else _qC[_qk3] = 1; }
+        if(_qOk) return { before: before, after: clean.length, removed: 0, quiet: true };
+      }catch(_qe){}
+    }
 
     if(before === clean.length){
       if(loud) alert('No duplicate schedule rows found — the schedule is clean ('+clean.length+' entries).');
@@ -104345,6 +104367,10 @@ function repair(key, mine, incoming){
 
   var out = incoming.slice();
   var putBack = 0, melded = 0;
+  /* patch RTPUT: where each incoming row sits, built once (out.indexOf per row was 13,350 x 13,350 on the schedule) */
+  var _pos = (typeof Map === 'function') ? new Map() : null;
+  if(_pos){ for(var _pi = 0; _pi < out.length; _pi++){ var _po = out[_pi]; if(_po && typeof _po === 'object'){ var _pl = _pos.get(_po); if(_pl) _pl.push(_pi); else _pos.set(_po, [_pi]); } } }
+  function _posOf(o){ if(!_pos) return out.indexOf(o); var l = _pos.get(o); if(!l) return -1; for(var q = 0; q < l.length; q++){ if(out[l[q]] === o) return l[q]; } return -1; }
 
   /* anything here that the sync does not mention is KEPT */
   mine.forEach(function(r){
@@ -104364,8 +104390,9 @@ function repair(key, mine, incoming){
       out.push(r); putBack++; return;
     }
     /* it is in both — take the newer, and never let a blank win */
+    if(r === byId[id]) return;                          /* patch RTPUT: the very same row — merging it with itself changes nothing */
     var merged = meld(r, byId[id]);
-    var at = out.indexOf(byId[id]);
+    var at = _posOf(byId[id]);
     if(at >= 0 && merged !== byId[id]){
       var changed=false;
       try{ changed = JSON.stringify(merged) !== JSON.stringify(byId[id]); }catch(e){ changed=true; }
