@@ -52855,11 +52855,15 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
   function newId(tag){ return tag+Date.now().toString(36)+Math.floor(Math.random()*9999).toString(36); }
   function me(){ try{ var u=(window._gcMeUserJSON?window._gcMeUserJSON('{}'):JSON.parse(localStorage.getItem('grayco_user')||'{}')); return u.name||'Auto'; }catch(e){ return 'Auto'; } }
 
+  var _sqSeen=null;   /* patch SCHEDQUIET: the schedule + jobs the last pass found nothing to do for */
   function sync(){
     // Don't fight the user while they're editing or the tab is hidden.
     if(window.__GC_IS_TYPING__ || window.__GC_IS_ACTIVE__ || document.hidden) return;
     var projects=(crm().projects)||[];
     if(!projects.length) return;
+    var _sqLs=0; try{ _sqLs=(localStorage.getItem('grayco_schedule')||'').length; }catch(e){}
+    if(_sqSeen && _sqSeen.p===projects && _sqSeen.s===crm().schedule && _sqSeen.l===_sqLs) return;
+    var _sqNow={ p:projects, s:crm().schedule, l:_sqLs };
     var _jLive=(crm().schedule||[]);
     var sched=_jLive.map(function(s){ return (s && typeof s==='object') ? Object.assign({}, s) : s; });
     var _jIds={}; sched.forEach(function(s){ if(s && s.id) _jIds[s.id]=1; });
@@ -52927,7 +52931,8 @@ console.log("[GC] Business Brain components loaded:", !!window.GrayCoBrain, !!wi
         try{ if(window._gcApplySync) window._gcApplySync('schedule', sched); }catch(e){}
       }
       try{ localStorage.setItem('grayco_schedule', JSON.stringify(sched)); }catch(e){}
-    }
+      _sqSeen=null;
+    } else _sqSeen=_sqNow;
   }
 
   // Run a bit after load, then on a relaxed interval (paused during interaction by the governor).
@@ -60528,6 +60533,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{
       var sched=(window._crm&&window._crm.schedule)||[];
       if(!Array.isArray(sched)||!sched.length) return;
+      if(sched===_bkList && sched.length===_bkN && (document.hidden || _bkLen>=0)) return;   /* patch SCHEDQUIET: the same list = nothing to copy */
       var key='gc_sched_backup';
       var raw=localStorage.getItem(key)||'[]';
       if(sched===_bkList && sched.length===_bkN && raw.length===_bkLen) return;   /* the same list, and the copy is the one written from it */
@@ -64155,9 +64161,13 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{
       if(window.__GC_IS_TYPING__) return;
       if(!window._setSchedule) return;
+      if(document.hidden) return;
       var projects=((window._crm&&window._crm.projects)||[]).filter(Boolean);
       if(!projects.length) return;
       var byId={}; projects.forEach(function(p){ byId[p.id]=p; });
+      /* patch SCHEDQUIET: nothing to fill on the list on screen = the setter is not called at all */
+      var _sqS=(window._crm&&window._crm.schedule)||[];
+      if(Array.isArray(_sqS) && !_sqS.some(function(s){ return s && !(s.address && String(s.address).trim()) && s.pid && byId[s.pid] && byId[s.pid].address; })) return;
       // SAFE: operate ONLY on the LIVE state handed to us (prev). Never replace the whole
       // schedule with a snapshot from _crm - that could wipe items added since the snapshot.
       window._setSchedule(function(prev){
@@ -64363,8 +64373,11 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     if(_busy) return; _busy=true;
     try{
       var meta={}; try{ meta=JSON.parse(localStorage.getItem(META_KEY)||'{}'); }catch(e){}
-      var restoredAny=null;
+      var restoredAny=null, _sqDid=0;
+      var _sqSeen=window.__gcSafenetSeen||(window.__gcSafenetSeen={});   /* patch SCHEDQUIET: the list each pass last copied */
       LISTS.forEach(function(k){
+        var _sqRaw=crm()[k]; if(Array.isArray(_sqRaw) && _sqSeen[k]===_sqRaw) return;
+        _sqDid++;
         var live=getList(k);
         var snap=readSnap(k);
         // If snapshot has records the live list lost, restore them.
@@ -64391,8 +64404,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         // Update the snapshot floor: only grow or hold (never shrink the backup).
         if(live.length >= snap.length){ writeSnap(k, live); }
         meta[k]={ count:Math.max(live.length, snap.length), at:Date.now() };
+        if(Array.isArray(_sqRaw) && live.length >= snap.length && !(restoredAny && restoredAny[k])) _sqSeen[k]=_sqRaw; else delete _sqSeen[k];
       });
-      try{ localStorage.setItem(META_KEY, JSON.stringify(meta)); }catch(e){}
+      if(_sqDid){ try{ localStorage.setItem(META_KEY, JSON.stringify(meta)); }catch(e){} }
       if(restoredAny){
         var parts=Object.keys(restoredAny).map(function(k){ return restoredAny[k]+' '+k; });
         console.warn('[GC] Safety net restored missing records: '+parts.join(', '));
@@ -65191,7 +65205,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       if(Q[key] && Q[key].recover && !item.recover) item.recover = false;
       Q[key] = item;
       persist();
-      kick(1500);
+      kick(600);   /* patch SCHEDQUIET */
       return Promise.resolve({ deferred:true, queued:true });
     }
 
@@ -65249,9 +65263,14 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       });
     }
 
+    /* patch SCHEDQUIET: a save is sent as soon as it is made. "Typing" ends at the click that follows the last key (Save), and only
+       the database's own back-off holds a send — the 12 s after-any-click hold kept every save waiting 12-15 s with
+       "Saved on this computer — sending…" on screen, longer while he kept clicking. */
+    var _sqPtrAt = 0; try{ document.addEventListener('pointerdown', function(){ _sqPtrAt = Date.now(); }, true); }catch(e){}
     function busy(){
-      try{ if(isTyping()) return true; }catch(e){}
-      try{ if(window._gcShouldHoldSync && window._gcShouldHoldSync()) return true; }catch(e){}
+      try{ if(isTyping() && !(_sqPtrAt > _lastKeyAt)) return true; }catch(e){}
+      try{ if(typeof window._gcSyncBackoffHold === 'function'){ if(window._gcSyncBackoffHold()) return true; }
+           else if(window._gcShouldHoldSync && window._gcShouldHoldSync()) return true; }catch(e){}
       return false;
     }
     var kickT = null;
@@ -80879,6 +80898,7 @@ window._gcForceFixSchedule = async function(silent){
   window._gcShouldHoldSync = function(){
     return Date.now() < state.backoffUntil;
   };
+  window._gcSyncBackoffHold = function(){ return Date.now() < state.backoffUntil; };   /* patch SCHEDQUIET: the database brake alone (no click hold) */
 
   // Report the result of a cloud request so we can adjust backoff.
   window._gcReportSync = function(ok, status){
@@ -90025,7 +90045,9 @@ function heal(key, good){
       [['projects','projects'],['invs','invoices'],['expenses','expenses'],
        ['schedule','schedule'],['subs','subs'],['users','users']].forEach(function(p){
         var v=c[p[1]];
+        if(Array.isArray(v) && window.__gcFloorSrc && window.__gcFloorSrc[p[0]]===v) return;   /* patch SCHEDQUIET: the same list as last look */
         if(Array.isArray(v) && v.length >= (LAST[p[0]]||[]).length){
+          (window.__gcFloorSrc=window.__gcFloorSrc||{})[p[0]]=v;
           LAST[p[0]]=v.slice(); if(v.length>(HW[p[0]]|0)){ HW[p[0]]=v.length; saveHW(); }
         }
       });
@@ -185299,7 +185321,9 @@ function peek(){ try { if (typeof W._setSchedule === 'function') W._setSchedule(
 function tick(){
   try {
     wrap();
-    peek(); var list = LIVE || crm().schedule; if (!Array.isArray(list)) return;
+    if (D.hidden) return;   /* patch SCHEDQUIET */
+    var _sqC = crm().schedule; if (!SNAP || _sqC !== W.__gcSchedHistC || !((W.__gcSchedHistN = (W.__gcSchedHistN | 0) + 1) % 4)) { W.__gcSchedHistC = _sqC; peek(); }
+    var list = LIVE || crm().schedule; if (!Array.isArray(list)) return;
     if (!SNAP) { if (!seenAt) seenAt = Date.now(); if (Date.now() - seenAt < 12000 || !arr(crm().projects).length) return; SNAP = snap(list); LASTLIST = list; return; }
     if (list === LASTLIST && ++SAME % 8) { flushLater(); paint(false); return; }   /* the same list as last time: nothing changed */
     LASTLIST = list;
