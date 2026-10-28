@@ -1,6 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+<script>
+/* patch DENYKEEP: browser storage is never filled by backup copies (see tools/patch_DENYKEEP.py) */
+(function(){
+  var BAK = /^(gc_sched_backup|gc_safenet_[a-zA-Z]+|gc_bak_[a-zA-Z]+|gc_projects_backup)$/;
+  function len(k){ try { var v = localStorage.getItem(k); return v == null ? 0 : v.length; } catch (e) { return 0; } }
+  /* frees the backup copies (biggest first; the data is in IndexedDB and the cloud). true when something was freed */
+  window._gcFreeLocalSpace = function(){
+    var ks = [], freed = 0; try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && BAK.test(k) && k !== 'gc_safenet_meta') ks.push([k, len(k)]); } } catch (e) { return false; }
+    ks.sort(function(a, b){ return b[1] - a[1]; });
+    ks.forEach(function(x){ if (x[1] > 20000) { try { localStorage.removeItem(x[0]); freed += x[1]; } catch (e) {} } });
+    try { if (freed) console.warn('[GC] Browser storage was full: removed ' + Math.round(freed / 1000) + 'k characters of backup copies (the data itself is in IndexedDB and the cloud).'); } catch (e) {}
+    return freed > 0;
+  };
+  /* a backup copy too big for browser storage, left by an earlier visit, is removed */
+  try { var big = []; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && BAK.test(k) && len(k) > 1000000) big.push(k); } big.forEach(function(k){ try { localStorage.removeItem(k); } catch (e) {} });
+    if (big.length) console.warn('[GC] Removed ' + big.length + ' oversized backup cop' + (big.length === 1 ? 'y' : 'ies') + ' from browser storage: ' + big.join(', ')); } catch (e) {}
+})();
+</script>
+
 <script id="gc-patch-boot-cover">
 /* patch BOOT: while the page is still arriving / being read (the first open after an update takes longest) nothing can
    respond to a click, so say so instead of showing a page that looks ready. Removed the moment the page is read. */
@@ -60228,6 +60247,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       // only overwrite the backup if the current schedule is as big or bigger (never back up a shrunk one)
       if(sched.length>=prev.length){
         var _txt=JSON.stringify(sched);
+        if(_txt.length>1000000){ _bkList=sched; _bkN=sched.length; _bkLen=raw.length; if(raw.length>1000000){ try{ localStorage.removeItem(key); }catch(e){} _bkLen=2; } return; }   /* patch DENYKEEP: too big for browser storage (it is in IndexedDB and the cloud) */
         localStorage.setItem(key, _txt);
         _bkList=sched; _bkN=sched.length; _bkLen=_txt.length;
       }
@@ -64038,7 +64058,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
   // Read/write the stored snapshot for one list.
   function readSnap(k){ try{ return JSON.parse(localStorage.getItem(SNAP_PREFIX+k)||'[]'); }catch(e){ return []; } }
-  function writeSnap(k, arr){ try{ localStorage.setItem(SNAP_PREFIX+k, JSON.stringify(arr)); }catch(e){} }
+  function writeSnap(k, arr){ try{ var _t = JSON.stringify(arr); if(_t.length > 1000000){ if(localStorage.getItem(SNAP_PREFIX+k) != null) localStorage.removeItem(SNAP_PREFIX+k); return; } localStorage.setItem(SNAP_PREFIX+k, _t); }catch(e){} }   /* patch DENYKEEP: no list bigger than 1 M characters in browser storage */
 
   // Merge helper: union of two lists by id (keeps live version of a record when both have it).
   function unionById(live, snap){
@@ -65760,7 +65780,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         if(last && last.count === data.length) return; // no change in count, skip
         snaps.push({ at: stamp, count: data.length, data: data });
         while(snaps.length > MAX_SNAPS) snaps.shift();
-        try{ localStorage.setItem(snapKey(k), JSON.stringify(snaps)); }catch(e){}
+        var _t = JSON.stringify(snaps); while(_t.length > 1000000 && snaps.length > 1){ snaps.shift(); _t = JSON.stringify(snaps); }   /* patch DENYKEEP: at most 1 M characters per list */
+        if(_t.length > 1000000){ try{ localStorage.removeItem(snapKey(k)); }catch(e){} return; }
+        try{ localStorage.setItem(snapKey(k), _t); }catch(e){}
       });
     }catch(e){}
   };
@@ -158177,7 +158199,7 @@ function denyTodos(){
   DENYC = { at: Date.now(), open: open, done: done }; return DENYC;
 }
 function denyKept(){ try { var v = JSON.parse(localStorage.getItem('gc_apx_denies') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-function denyKeep(tk){ try { var l = denyKept().filter(function(x){ return x && x.id !== tk.id; }); l.push(tk); localStorage.setItem('gc_apx_denies', JSON.stringify(l.slice(-200))); } catch (e) { warn(e); } }
+function denyKeep(tk){ try { var l = denyKept().filter(function(x){ return x && x.id !== tk.id; }); l.push(tk); var v = JSON.stringify(l.slice(-200)); try { localStorage.setItem('gc_apx_denies', v); } catch (e0) { if (W._gcFreeLocalSpace && W._gcFreeLocalSpace()) localStorage.setItem('gc_apx_denies', v); else throw e0; } } catch (e) { warn(e); } }   /* patch DENYKEEP */
 /* every 5 s: a kept deny whose To-Do is missing from the To-Do list is put back; one ticked done is forgotten here */
 function denyRepair(){
   var kept = denyKept(); if (!kept.length) return;
@@ -158212,7 +158234,8 @@ function doDeny(r){
     var ot = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); if (!Array.isArray(ot)) ot = [];
     var tk = { id: 'DENY' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: '↩ Fix and resend: ' + title + ' — ' + why.slice(0, 160) + ' (from ' + me + ')', note: 'Sent back from Approvals by ' + me + '. Fix it, then tick this done: it goes back on Approvals.', assignee: to === 'the office' ? '' : to, pid: d.pid, addedBy: me, addedAt: at, at: at, done: false, _deny: d };
     ot.push(tk); denyKeep(tk);   /* patch DENY3: kept in its own list too */
-    localStorage.setItem('gc_office_tasks', JSON.stringify(ot));
+    try { localStorage.setItem('gc_office_tasks', JSON.stringify(ot)); }
+    catch (e0) { if (!(W._gcFreeLocalSpace && W._gcFreeLocalSpace())) throw e0; localStorage.setItem('gc_office_tasks', JSON.stringify(ot)); }   /* patch DENYKEEP: full storage → free the backup copies, once more */
   } catch (e) { warn(e); toast('Could not save that on this computer (' + s(e && e.message).slice(0, 80) + ') — try again.'); return; }
   /* patch DENY2: the cloud push is separate — a hiccup there never drops the deny (the save queue sends it) */
   try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e) { warn(e); try { if (W._gcSyncQ && W._gcSyncQ.add) W._gcSyncQ.add('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e2) {} }
@@ -158627,8 +158650,12 @@ D.addEventListener('change', function(ev){
 function open(f){ UI.f = f || ''; try { if (W._gcRP && W._gcRP.go) W._gcRP.go('approvals'); else if (W._setView) W._setView('approvals'); } catch (e) { warn(e); } later(function(){ drawTab(true); }, 60); }
 
 var tabSig = '', lastMount = null;
+var PRESS = 0, PRESSLATE = false;   /* patch APXHOLD: no redraw under a pressed pointer */
+D.addEventListener('pointerdown', function(ev){ try { var m = D.getElementById('gc-apx-mount'); if (m && ev.target && m.contains(ev.target)) PRESS = Date.now(); } catch (e) {} }, true);
+['pointerup', 'pointercancel'].forEach(function(n){ D.addEventListener(n, function(){ if (!PRESS) return; PRESS = 0; if (PRESSLATE) { PRESSLATE = false; later(function(){ try { drawTab(true); } catch (e) { warn(e); } }, 60); } }, true); });
 function drawTab(force){
   var m = D.getElementById('gc-apx-mount'); if (!m || !m.isConnected) return;
+  if (PRESS && Date.now() - PRESS < 2000 && m.firstElementChild) { PRESSLATE = true; return; }   /* patch APXHOLD */
   if (m !== lastMount || !m.firstElementChild) { lastMount = m; force = true; }   /* a new / emptied mount (the tab was left and opened again) */
   var ae = D.activeElement; if (!force && ae && m.contains(ae) && /^(SELECT|INPUT)$/.test(ae.tagName)) return;
   if (ae && m.contains(ae) && ae.tagName === 'INPUT') return;   /* patch INLINEAPPR */
