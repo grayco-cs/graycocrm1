@@ -76,7 +76,8 @@ function clean(v){
   const sc = v.screen && typeof v.screen === 'object' ? v.screen : {};
   const blocked = []; (Array.isArray(sc.blocked) ? sc.blocked : s(sc.blocked).split(/[\s,;]+/)).forEach(x => { const d = phone10(x); if (d.length === 10 && blocked.indexOf(d) < 0 && blocked.length < 500) blocked.push(d); });
   const screen = { on: sc.on !== false, greeting: s(sc.greeting).slice(0, 600) || GREETING, askWhat: sc.askWhat !== false, whisper: sc.whisper !== false, blocked };
-  const out = { on: v.on !== false, ringSeconds: clampInt(v.ringSeconds, 8, 60, 15), slots, screen };
+  const em = v.emerg && typeof v.emerg === 'object' ? v.emerg : {};   /* patch EMERGCALL: escalation calls after N minutes */
+  const out = { on: v.on !== false, ringSeconds: clampInt(v.ringSeconds, 8, 60, 15), slots, screen, emerg: { on: em.on !== false, minutes: clampInt(em.minutes, 5, 120, 15) } };
   if (s(v.by)) out.by = low(v.by).slice(0, 120);
   if (s(v.at)) out.at = s(v.at).slice(0, 40);
   return out;

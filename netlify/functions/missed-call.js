@@ -227,6 +227,22 @@ async function missed(p, how, extra){
   return out;
 }
 
+/* ── patch EMERGCALL: the CRM's own escalation calls about an emergency nobody acknowledged (_lib/emergcall.js) ── */
+function EC(){
+  return require('./_lib/emergcall.js').make({ env, now, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f),
+    crm: () => core().kvRead(['users', 'gc_senior_pm']), users: async () => { try { return (await core().kvRead(['users'])).users; } catch (e) { return []; } },
+    sms: (ph, body) => sendSms(ph, body),
+    ackCtx: async () => {   /* what counts as "someone has it": the Lead Inbox item, the CRM lead, the on-call page, a staff text */
+      const o = { inbox: {}, leads: {}, pages: [], lastOut: {}, msgs: [] };
+      try { (await L().kvGet(L().KV) || []).forEach(x => { if (x && x.id) o.inbox[s(x.id)] = x; }); } catch (e) {}
+      try { const D0 = await core().kvRead(['leads', 'gc_job_messages']); (Array.isArray(D0.leads) ? D0.leads : []).forEach(l => { if (l) ['id', 'inboxId', 'key', 'leadKey'].forEach(f => { if (s(l[f])) o.leads[s(l[f])] = l; }); }); o.msgs = Array.isArray(D0.gc_job_messages) ? D0.gc_job_messages : []; } catch (e) {}
+      try { const v = await L().kvGet('gc_x10_pages'); o.pages = Array.isArray(v) ? v : (v && Array.isArray(v.list) ? v.list : []); } catch (e) {}
+      try { o.lastOut = (await stateGet()).lastOut || {}; } catch (e) {}
+      return o;
+    },
+    mailAdmins: (subject, r) => mailStaff([], subject, box('GrayCo — nobody answered the emergency calls', '<p><b>' + esc(r.title) + '</b>' + (r.contact && r.contact.phone ? ' · ' + esc(tidy(r.contact.phone)) : '') + '</p><p>The CRM called everyone on call and on the 📞 Call order twice and nobody pressed 1 or 2. Please call the customer now.</p>'), subject + '\n\n' + r.title) });
+}
+
 /* ── patches CALLCHAIN + CALLSCREEN: the menu, then the 📞 Call order one at a time ── */
 function CO(){ return require('./_lib/callorder.js'); }
 const SAYV = '<Say voice="Polly.Joanna">';
@@ -604,6 +620,9 @@ exports.handler = async function(event){
   const ev = s(qs.event) || 'voice';
   try {
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
+    if (ev === 'ecall') return twiml(await EC().twimlCall(s(qs.id), parseInt(qs.step, 10) || 0));   /* patch EMERGCALL: our outbound call answered */
+    if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
+    if (ev === 'ecallstatus') { if (/^(completed|no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await EC().advance(s(qs.id), parseInt(qs.step, 10) || 0); return twiml(''); }
     if (/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
     if (ev === 'voice' && CC().on()) {   /* patch CHAIN */
       const chain = await CC().start(s(p.CallSid), p.From).catch(() => []);
@@ -654,4 +673,4 @@ exports.handler = async function(event){
     return ev === 'sms' || ev === 'status' ? twiml('') : sayBye();
   }
 };
-exports._test = { callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };
+exports._test = { EC, callOrder, orderCfg, logGet, hookUrl, dialStep, CC, sigFor, signed, params, missed, inboundSms, loadState, ready, sendSms, stateGet, stateCas, TEXT, STOP, START, KS };

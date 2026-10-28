@@ -60,8 +60,7 @@ Stored in the service-only `gc_lead_inbox_kv` → `gc_call_order` (the call log:
 `texts.js?callchain=1`, which checks the caller is an admin). Phone numbers are shown to admins only.
 
 Turning **Ring in this order** off rings nobody (screened callers who press 1 / 2 get the text + lead). Turning both the
-order **and** the screening off returns to the older paths: the rc-r13 24/7 emergency chain (patch CHAIN,
-`_lib/callchain.js`, only when Netlify `TWILIO_CALL_CHAIN=1`), else every call is a missed call.
+order **and** the screening off returns to the older path: every call is a missed call (the 24/7 CHAIN stays off in r12).
 
 ## Twilio console setup (owner)
 
@@ -100,4 +99,27 @@ carrier sends the forwarding number. Pick one setup:
 - If the office line must keep forwarding to Twilio: turn the **Office** line **off** in the call order (it already
   rang before it forwarded), so Twilio starts with Owner 1.
 
-After-hours emergency paging (`_lib/oncall.js`, `emergency.js`) is unchanged: calls ring the same call order day and night.
+## 🚨 Emergency escalation calls (patch EMERGCALL)
+
+Owner (10/28): *"for emergency water or fire tree damages make sure you make a phone call to who is on call / order of
+call after 15 min of no answering a text"*. `netlify/functions/_lib/emergcall.js`, ticked every 2 minutes by
+`x10-scheduled.js`; state in `gc_lead_inbox_kv` → `gc_emerg_calls`.
+
+- An **emergency lead** (emergency.js: water / flood / leak, fire / smoke, a tree on the house / roof, storm damage) is
+  alerted as before (e-mail, push, the 🔴 ASAP to-do, texts) and registered for escalation.
+- If **nobody acknowledges it within 15 minutes** (Admin → 📞 Call order → 🚨 "after [15] min", on by default), the CRM
+  **phones** (Twilio Calls API, from the GrayCo number, 25 s each) this week's **on-call person** (💧 Mitigation → 📟 On
+  call), then the **📞 Call order** list, one at a time — skipping repeats and lines with no phone.
+- They hear: *"GrayCo emergency. A customer reported water damage at Bartlett, 16 minutes ago, and nobody has answered
+  yet. Press 1 to be connected to the customer now. Press 2 to accept and call them yourself."* **1** → connected to the
+  customer (the customer sees the GrayCo number); **2** → accepted, the details arrive by text. No key / a voicemail → the
+  next person. **The first key stops it.** Nobody → the whole list **once more 10 minutes later**, then the admins are
+  e-mailed "nobody answered".
+- **Acknowledged** (no calls, or no further calls) = ✅ Accept on the on-call page; the lead assigned / contacted / its
+  stage moved in the CRM; a staff text to the customer; or a reply to the alert text (the SMS alerts call
+  `emergcall.make(...).ack(leadId, why)`).
+- Any hour (quiet hours do not apply). **Never while data-entry mode is on.** Every webhook (`?event=ecall`,
+  `ecallkey`, `ecallstatus`) is signature-checked like the rest.
+
+After-hours on-call paging by e-mail / push / text (`_lib/oncall.js`, `emergency.js`) is unchanged.
+The older 24/7 call chain (`_lib/callchain.js`, patch CHAIN) stays off (r12); the screened 📞 Call order replaces it.

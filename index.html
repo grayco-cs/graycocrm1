@@ -173280,6 +173280,8 @@ try { console.log('[GC] 💬 Text templates: Admin settings → 💬 Text templa
      • patch CALLSCREEN (owner 10/28: "these leads need to be qualified … everything else we do not accept on this phone
        number"): 🛡 Screening on / off, the menu greeting (editable), the "what work do you need?" question on / off,
        blocked numbers, and the last 50 calls with what happened (pressed 1 / 2 / 3, no input, answered by, missed).
+     • patch EMERGCALL (owner 10/28: "for emergency water or fire tree damages make sure you make a phone call to who is
+       on call / order of call after 15 min of no answering a text"): 🚨 "Emergency escalation calls after [15] min" on / off.
    Phone numbers show to admins only, never to customers. */
 (function(){
 if (window.__GC_PATCH_CALLCHAIN__) return; window.__GC_PATCH_CALLCHAIN__ = true;
@@ -173343,6 +173345,7 @@ function readRows(box){
   var c = ST8.cfg;
   c.screen = c.screen || {};
   var q = function(g){ return box.querySelector('[data-g="' + g + '"]'); };
+  if (q('emOn')) { c.emerg = { on: !!q('emOn').checked, minutes: Math.max(5, Math.min(120, parseInt(q('emMin').value, 10) || 15)) }; }
   if (q('scrOn')) { c.screen.on = !!q('scrOn').checked; c.screen.askWhat = !!q('askWhat').checked; c.screen.whisper = !!q('whisper').checked;
     c.screen.greeting = s(q('greeting').value); c.screen.blocked = s(q('blocked').value).split(/[\n,;]+/).map(d10).filter(function(d){ return d.length === 10; }); }
   c.on = !!(box.querySelector('[data-g="on"]') || {}).checked;
@@ -173388,6 +173391,9 @@ function draw(box){
     + (ST8.ready ? '' : '<br>⚠ Twilio is not set up yet (Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM).')
     + '<br><span style="color:#475569">Twilio → Phone Numbers → the number → Voice "A call comes in": Webhook <code>' + esc(ST8.voiceWebhook || '') + '</code> (HTTP POST). Nobody answers → the caller gets one text, a lead / call-back to-do is made.</span></div>'
     + screenHtml()
+    + '<div style="margin:12px 0;border:1px solid #fecaca;border-radius:10px;padding:10px;background:#fef2f2"><div style="font-weight:800">🚨 Emergency escalation calls</div>'
+    + '<label style="display:block;margin-top:4px"><input type="checkbox" data-g="emOn"' + (!c.emerg || c.emerg.on !== false ? ' checked' : '') + '> Phone people about an emergency lead (water, fire, a tree on the house, storm damage) nobody has answered after <input data-g="emMin" type="number" min="5" max="120" value="' + esc((c.emerg && c.emerg.minutes) || 15) + '" style="width:52px"> min</label>'
+    + '<div style="font-size:12px;color:#475569;margin-top:4px">Calls this week\'s on-call person first, then the list below, one at a time (25 s each): "GrayCo emergency … press 1 to be connected to the customer, press 2 to accept and call them yourself." The first key stops it. Nobody → the whole list once more 10 minutes later, then the admins are e-mailed. It stops as soon as someone has it: ✅ Accept on the on-call page, the lead assigned / contacted / its stage moved, a text to the customer, or a reply to the alert text. Any hour; never while data-entry mode is on.</div></div>'
     + '<div style="font-weight:800;margin-top:6px">📞 Who rings, in order</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center"><label><input type="checkbox" data-g="on"' + (c.on ? ' checked' : '') + '> Ring in this order</label>'
     + '<label>Ring each one <input data-g="secs" type="number" min="8" max="60" value="' + esc(c.ringSeconds) + '" style="width:56px"> seconds</label></div>'

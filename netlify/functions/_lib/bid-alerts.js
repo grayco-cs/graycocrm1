@@ -282,6 +282,8 @@ function make(d){
       await kvCas(KA, v => { const st = loadState(v); st.emerg = st.emerg && typeof st.emerg === 'object' ? st.emerg : {}; if (st.emerg[x.id]) return undefined; st.emerg[x.id] = nowIso();
         const ks = Object.keys(st.emerg); if (ks.length > 600) ks.sort((a, b) => s(st.emerg[a]).localeCompare(s(st.emerg[b]))).slice(0, ks.length - 600).forEach(k => { delete st.emerg[k]; }); claim = true; return st; }).catch(() => { claim = true; });
       if (!claim) continue;
+      /* patch EMERGCALL: nobody acknowledges in 15 min → the CRM phones on call, then the 📞 Call order (_lib/emergcall.js, x10-scheduled) */
+      try { await require('./emergcall.js').make({ env, now, kvGet, kvCas }).register(x, raw[x.id]); } catch (e) {}
       const px = planFor(x); out.byLead[x.id] = px.to;
       const c = x.contact || {}, who = plan.lead ? plan.lead.name || plan.lead.email : 'the office';
       const m = mailNew([x]);

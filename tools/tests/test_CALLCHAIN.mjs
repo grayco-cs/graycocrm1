@@ -252,7 +252,7 @@ console.log('CALLCHAIN — Lead PM follows the Senior PM; settings; fallbacks');
   ok(!dials(r3.body).length && !/press 1/.test(r3.body) && SMS.length === 1, 'both off (no TWILIO_CALL_CHAIN) → the old path: a missed call at once');
   world(chain({ on: false, screen: { on: false } })); process.env.TWILIO_CALL_CHAIN = '1';
   const rc = await post(VOICE, base());
-  ok(/event=chain|sent you a text/.test(rc.body) && !/press 1/.test(rc.body), 'both off + TWILIO_CALL_CHAIN=1 → the rc-r13 24/7 chain path (patch CHAIN) runs', rc.body.slice(0, 300));
+  ok(/event=chain|sent you a text/.test(rc.body) && !/press 1/.test(rc.body), 'both off + TWILIO_CALL_CHAIN=1 → the old path (r12 keeps the 24/7 CHAIN off): no menu, the missed-call text', rc.body.slice(0, 300));
   delete process.env.TWILIO_CALL_CHAIN;
   world(chain({ screen: { on: false } }));
   const wns = await walk(base());
