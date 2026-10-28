@@ -384,9 +384,18 @@ function spHash(str){   /* 53-bit string hash (cyrb53) + length: what is kept pe
    merge the same records list them in their own order, and each re-sent "its" order to the other,
    back and forth, forever. Only the outer list — an order kept inside a record still counts. */
 function spIsRec(x){ return !!x && typeof x === 'object' && !Array.isArray(x) && (typeof x.id === 'string' || typeof x.id === 'number' || typeof x.invId === 'string' || typeof x.expId === 'string'); }
+/* patch RTPUT: the sorted-key text of a row, remembered by the row's plain text (same text, same sorted text) */
+var SP_CC = (typeof Map === 'function') ? new Map() : null;
+function spCanonRow(r){
+  if (!SP_CC || !r || typeof r !== 'object' || typeof r.toJSON === 'function') return spCanon(r);
+  var j, tj = false; try { j = JSON.stringify(r, function(k, x){ var o = this[k]; if (o && typeof o === 'object' && typeof o.toJSON === 'function') tj = true; return x; }); } catch (e) { return spCanon(r); }
+  if (typeof j !== 'string' || tj) return spCanon(r);   /* a Date (toJSON) inside: its plain text is not its sorted text */
+  var c = SP_CC.get(j); if (c !== undefined) return c;
+  c = spCanon(r); if (SP_CC.size >= 40000) SP_CC.clear(); SP_CC.set(j, c); return c;
+}
 function spSig(v){
   try {
-    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanon).sort().join(',') + ']');
+    if (Array.isArray(v) && v.length > 1 && v.every(spIsRec)) return 'R' + spHash('[' + v.map(spCanonRow).sort().join(',') + ']');
     return spHash(spCanon(v));
   } catch (e) { return null; }
 }
@@ -441,6 +450,14 @@ function spForget(u, init){
   SP_KNOWN = {};
 }
 function spSend(input, init){
+  /* patch RTBIG: the whole schedule as ONE row (over the 3.5 MB the company sync chunks at) is not sent: the schedule
+     goes up as schedule__chunkN + schedule__manifest */
+  try {
+    if (init && typeof init.body === 'string' && init.body.length > 3600000 && /^\{"key":"schedule","value":/.test(init.body.slice(0, 40)) && methodOf(urlOf(input), init) === 'POST' && /\/rest\/v1\/gc_kv(\?|$)/.test(urlOf(input))) {
+      window._gcBigRowSkipped = (window._gcBigRowSkipped || 0) + 1;
+      return Promise.resolve(new Response(null, { status: 201, statusText: 'Created' }));
+    }
+  } catch (e) {}
   var u = urlOf(input), rows = spRows(u, init), t = now();
   if (rows && rows.every(function(r){ var k = SP_KNOWN[r.key]; if (k && k.s === undefined) { k.s = spSig(k.v); k.v = null; } return k && k.s && k.s === r.sig && (t - k.at) < SP_TTL; })) {
     window._gcSyncSkipped++;
@@ -3377,7 +3394,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.159-2026-10-27-r13b -->
+<!-- GrayCo CRM Build: 33.157-2026-10-28-r12 -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4042,7 +4059,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.159-2026-10-27-r13b");
+  console.log("[GC] Build 33.157-2026-10-28-r12");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4090,7 +4107,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.159-2026-10-27-r13b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.157-2026-10-28-r12"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -5247,7 +5264,7 @@ if(/plan|drawing|blueprint|arch|struct|mep|sheet/.test(_l))return"Plans/Drawings
 if(/spec|division|section/.test(_l))return"Specs";
 if(/receipt|expense|material/.test(_l))return"Receipts";
 if(/photo|img|pic|image|jpg|jpeg|png/.test(_l))return"Photos";
-return"Other"},[Gs,__i0]=ce.useState([]),_i=(v)=>__i0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[qi,_O0]=ce.useState([]),O=(v)=>_O0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[fe,_ae0]=ce.useState([]),ae=(v)=>_ae0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[oe,_he0]=ce.useState([]),he=(v)=>_he0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[me,lt]=ce.useState(xi),[gt,_nt0]=ce.useState([]),nt=(v)=>_nt0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[st,_tt0]=ce.useState([]),tt=(v)=>_tt0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[Ot,_Jt0]=ce.useState([]),Jt=(v)=>_Jt0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[sn,Gt]=ce.useState(1),[Le,dn]=ce.useState({name:"",client:"",address:"",type:"Residential Reno",pm:"",soldBy:"",scope:"",ccamUrl:"",startDate:"",endDate:"",contract:"",source:"",clientPhone:"",clientEmail:"",notes:"",drawSchedule:""}),__gcLJfill=(window._gcLaunchPrefill=function(o){dn(function(q){return Object.assign({},q,o||{})})}),[qn,_ha0]=ce.useState([]),ha=(v)=>_ha0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[Rn,_gi0]=ce.useState([]),gi=(v)=>_gi0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[ca,_ai0]=ce.useState([]),ai=(v)=>_ai0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[$n,mr]=ce.useState([]),[Na,fu]=ce.useState(!1),[Xr,Jl]=ce.useState("none"),[vi,dl]=ce.useState(null),[Qa,Ql]=ce.useState({createProject:!0,createEstimate:!0,createGoogleDoc:!0,createCalendar:!0,linkCompanyCam:!0,createChecklist:!0,pushToGmail:!1}),[hu,Of]=ce.useState(()=>ad(new Set)),[ul,_Es0]=ce.useState([]),Es=(v)=>_Es0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[Zl,ss]=ce.useState(null),pu=ce.useRef(!1);ce.useEffect(function(){window._crm=(typeof window.__gcCrmBox==="function"?window.__gcCrmBox:function(o){return o;})({projects:Wt,invoices:Ba,changeOrders:hr,subs:kn,vendors:kn,expenses:Ea,users:An,customers:window._graycoCustomers,openProject:be,schedule:la,candidates:Yn});try{if(ce&&ce.useState){window.React=ce;}}catch(_re){}var __gcS=window.__gcSafeSetter||function(n,f){return f};window._setExpenses=__gcS("_setExpenses",Nn);window._setInvoices=__gcS("_setInvoices",Oa);window._setSchedule=__gcS("_setSchedule",rn);window._setProjects=__gcS("_setProjects",Wn);window._setLeads=__gcS("_setLeads",$r);window._gcSetBids=tt;window._setUsers=window._setUsers||Ya;window._setCustomers=window._setCustomers||Jt;window._gcSetCOs=Gr;window._gcApprovedCOs=window._gcApprovedCOs||function(pid){var t=0;try{((window._crm&&window._crm.changeOrders)||[]).forEach(function(c){if(c&&c.pid===pid&&!c._filed&&String(c.status||"").toLowerCase()==="approved")t+=parseFloat(c.amt)||0;});}catch(e){}return Math.round(t*100)/100;};window._gcContractWithCOs=window._gcContractWithCOs||function(pid){var p=null;try{p=((window._crm&&window._crm.projects)||[]).find(function(x){return x&&x.id===pid;});}catch(e){}return Math.round(((p?(parseFloat(p.contract)||0):0)+window._gcApprovedCOs(pid))*100)/100;};window.__GC_SET_SUBLIST__=La;window.__GC_RAW_SETTERS__={_setExpenses:__gcS("_setExpenses",Nn),_setInvoices:__gcS("_setInvoices",Oa),_setSchedule:__gcS("_setSchedule",rn),_setProjects:__gcS("_setProjects",Wn),_setLeads:__gcS("_setLeads",$r),_setSubs:La,_setVendors:La};window._gcExpenses=Ea;try{window._setProjectDocs=(window.__gcSafeSetter?window.__gcSafeSetter("_setProjectDocs",_nt0):_nt0);window._gcProjectDocs=gt;}catch(e){}try{window._baseProducts=ll}catch(e){}},[Wt,Ba,hr,kn,Ea,An]);ce.useEffect(function(){try{window._gcOpenProject=be;if(be&&be.id){sessionStorage.setItem("grayco_openpid",be.id);}window.__GC_LAST_VIEW_CHANGE__=Date.now();}catch(e){}},[be]);ce.useEffect(function(){window._setView=function(_v){ try{ localStorage.setItem('grayco_view', _v); }catch(e){} try{ if(_v!=='integrations'){ var _cc=document.getElementById('gc-cc-setup'); if(_cc) _cc.remove(); } }catch(e){} var _r=D(_v); try{ if(_v==='forms'&&window._gcOpenFormsNow){ [0,60,160,320,600].forEach(function(ms){ setTimeout(window._gcOpenFormsNow, ms); }); } }catch(e){} return _r; };window._openJobDetail=Pe;window._gcSetOpenItem=Pe;window._gcSetEstEditMode=Ae;window._gcOpenEstimateObj=function(_est){try{Pe(_est);Ae("edit");D("estimates");}catch(_e){}};window._gcSetEstimates=ga;window._gcEstimatesState=fa;window._gcReadOpenEstimate=function(){try{return be;}catch(_e){return null;}};window._gcRefreshOpenEstimate=function(_est){try{Pe(_est);}catch(_e){}};window._gcGetProducts=function(){return Da;};window._gcSetProducts=function(f){Ia(f);};window._gcAddToPriceList=function(_nm,_cost,_unit,_cat,_sku){try{var _norm=function(s){return String(s==null?"":s).toLowerCase().replace(/\s+/g," ").trim();};var _key=_norm(_nm);var _pc=parseFloat(_cost)||0;Ia(function(T){var _arr=Array.isArray(T)?T:[];var L=_arr.findIndex(function(Y){return Y&&Y.name&&_norm(Y.name)===_key;});if(L>=0){var Y2=_arr.slice();Y2[L]=Object.assign({},Y2[L],{cost:_pc,unit:_unit||Y2[L].unit||"ea",cat:_cat||Y2[L].cat||"Misc"});return Y2;}return _arr.concat([{id:$t("P"),name:String(_nm).trim(),sku:_sku||"",v:"V1",cat:_cat||"Misc",unit:_unit||"ea",cost:_pc}]);});try{ae(function(S){if(!Array.isArray(S))return S;var _ch=false;var S2=S.map(function(sheet){if(!sheet||!Array.isArray(sheet.items))return sheet;var _it=sheet.items.map(function(it){if(it&&it.name&&_norm(it.name)===_key&&(parseFloat(it.uc)||0)!==_pc){_ch=true;return Object.assign({},it,{uc:_pc});}return it;});return _ch?Object.assign({},sheet,{items:_it}):sheet;});return S2;});}catch(_se){}try{if(window._gcSetRatePrice)window._gcSetRatePrice(_nm,_pc,(_unit||"ea"),_cat);}catch(_re){}}catch(_e){console.warn("addToPriceList",_e);}};window._gcSetPriceSheets=ae;try{localStorage.setItem("grayco_view",P)}catch(e){}},[P]);ce.useEffect(function(){try{window._gcEstimatesState=fa;}catch(_e){}},[fa]);ce.useEffect(function(){try{be&&be.id?sessionStorage.setItem("grayco_openpid",be.id):sessionStorage.removeItem("grayco_openpid")}catch(e){}},[be]);ce.useEffect(function(){try{window._gcUx=window._gcUx||Ux}catch(_u){}try{if(window._gcViewAllowed&&!window._gcViewAllowed(P)){window._gcViewRefused&&window._gcViewRefused(P);D("dashboard");return;}}catch(_g){}if(!window._crmHistory)window._crmHistory={stack:[],future:[],current:"",ignoring:false};var h=window._crmHistory;var key=P+(s||"");if(key!==h.current&&!h.ignoring){if(h.current)h.stack.push(h.current);h.future=[];h.current=key;try{history.pushState({tab:P,sel:s},"","")}catch(e){}}},[P,s]);ce.useEffect(()=>{pu.current||(pu.current=!0,(async()=>{await O5();const g=async(ze,et)=>await sl(ze,et),te=await g("user",null);try{if(te&&window._gcMeIn)te=window._gcMeIn(te)}catch(_m){}te&&r(te);window._gcSec2SetMe=r;window._gcSetMeUser=r;const H=await g("navOrders",{});Ct(H);const _=await g("priceLog",[]);aa(_);const Q=await g("lastPriceSync",null);ta(Q);const y=await g("users",$x);window._uDef=$x;window._gcUsersRaw=Ya;Ya(window._healUsers?window._healUsers(y,$x):y);let T=await g("projects",[]);if(!Array.isArray(T))T=[];let L=!1;T.forEach(ze=>{ze.estFinish&&(ze.endDate||(ze.endDate=ze.estFinish),delete ze.estFinish,L=!0)});const Y=new Set;let We=!1;T.forEach(ze=>{if(ze.autoPO&&/^[A-Z]{1}\d{3}$/.test(ze.autoPO)){Y.add(ze.autoPO);return}We=!0,ze.autoPO=ad(Y),Y.add(ze.autoPO)}),Wn(T),(We||L)&&ma("projects",T);const B=await g("estimates",[]);ga(B);const U=await g("expenses",[]);Nn(U);const Z=await g("schedule",[]);rn(Z);const w=await g("candidates",[]);Ja(w);const E=await g("vendors",Xx);La(E);const q=await g("priceEdits",{}),ke=await g("customProducts",[]);if(Object.keys(q).length>0||ke.length>0){const ze=ll.map(et=>q[et.id]!==void 0?{...et,cost:q[et.id]}:et);Ia([...ze,...ke])}const z=await g("leads",[]);$r(z);const De=await g("cos",[]);Gr(De);const Ve=await g("logs",[]);pr(Ve);const xt=await g("punch",[]);Us(xt);const M=await g("invs",[]);Oa(M);const N=await g("warrs",[]);rs(N);const Ee=await g("tmpls",[]);qr(Ee);const Je=await g("inspections",[]);Ki(Je);const W=await g("photos",[]);_i(W);const F=await g("laborRates",[]);O(F);const xe=await g("priceSheets",[]);ae(xe);const X=await g("ccTrans",[]);he(X);const de=await g("ccCards",xi);lt(de);const Oe=await g("projectDocs",[]);nt(Oe);const Re=await g("bidLists",[]);tt(Re);const K=await g("customers",[]);Jt(K);const $e=await g("scopes",[]);Es($e),a(!1)})())},[]),ce.useEffect(()=>{var _importHandler=function(ev){var _src=ev.detail;if(!_src)return;var _c=[];if(_src.projects&&_src.projects.length){Wn(_src.projects);Kx("projects",_src.projects);td("projects",_src.projects);_c.push(_src.projects.length+" projects")}if(_src.leads&&_src.leads.length){$r(function(p){var ids=new Set(p.map(function(x){return x.id}));var nL=_src.leads.filter(function(x){return!ids.has(x.id)});return p.concat(nL)});td("leads",_src.leads);_c.push(_src.leads.length+" leads")}if(_src.vendors&&_src.vendors.length){La(_src.vendors);Kx("vendors",_src.vendors);td("vendors",_src.vendors);_c.push(_src.vendors.length+" vendors")}if(_src.estimates&&_src.estimates.length){ga(function(_prev){var _pp=Array.isArray(_prev)?_prev:[];var _ids=new Set(_pp.map(function(x){return x&&x.id}));var _merged=_pp.concat(_src.estimates.filter(function(x){return x&&!_ids.has(x.id);}));Kx("estimates",_merged);td("estimates",_merged);return _merged;});_c.push(_src.estimates.length+" estimates")}if(_src.expenses&&_src.expenses.length){Nn(_src.expenses);Kx("expenses",_src.expenses);td("expenses",_src.expenses);_c.push(_src.expenses.length+" expenses")}if(_src.schedule&&_src.schedule.length){rn(_src.schedule);Kx("schedule",_src.schedule);td("schedule",_src.schedule);_c.push(_src.schedule.length+" schedule")}if(_src.invoices&&_src.invoices.length){Oa(_src.invoices);Kx("invs",_src.invoices);td("invs",_src.invoices);_c.push(_src.invoices.length+" invoices")}if(_src.bids&&_src.bids.length){Gr(_src.bids);Kx("cos",_src.bids);td("cos",_src.bids);_c.push(_src.bids.length+" COs")}if(_src.logs&&_src.logs.length){pr(_src.logs);Kx("logs",_src.logs);td("logs",_src.logs);_c.push(_src.logs.length+" logs")}if(_src.warranties&&_src.warranties.length){rs(_src.warranties);Kx("warrs",_src.warranties);td("warrs",_src.warranties);_c.push(_src.warranties.length+" warranties")}if(_src.templates&&_src.templates.length){qr(_src.templates);Kx("tmpls",_src.templates);td("tmpls",_src.templates);_c.push(_src.templates.length+" templates")}if(_src.inboundBids&&_src.inboundBids.length){_setIb(_src.inboundBids);Kx("inboundBids",_src.inboundBids);td("inboundBids",_src.inboundBids);_c.push(_src.inboundBids.length+" bids")}if(_c.length)se("\u2705 LOADED & PUSHED TO CLOUD: "+_c.join(", "));else se("No data found in file")};var _exportHandler=function(){var _data={projects:Wt,estimates:fa,expenses:Ea,schedule:la,bids:hr,logs:Gi,invoices:Ba,warranties:Ts,templates:Kr,inboundBids:_ib,exportedBy:n.name,exportedAt:new Date().toISOString()};var _blob=new Blob([JSON.stringify(_data,null,2)],{type:"application/json"});var _a=document.createElement("a");_a.href=URL.createObjectURL(_blob);_a.download="GrayCo_Backup_"+new Date().toISOString().slice(0,10)+".json";_a.click();se("Backup downloaded")};window.addEventListener("importData",_importHandler);window.addEventListener("exportData",_exportHandler);return()=>{window.removeEventListener("importData",_importHandler);window.removeEventListener("exportData",_exportHandler)}});const ia=ce.useRef(!1);ce.useEffect(()=>{t||(ia.current=!0)},[t]),ce.useEffect(()=>{ia.current&&ma("user",n);window._gcMeNow=n;try{localStorage.setItem("grayco_user",(n&&n.name)||"")}catch(_e){}},[n]),ce.useEffect(()=>{ia.current&&ma("navOrders",wt)},[wt]),ce.useEffect(()=>{ia.current&&ma("priceLog",we)},[we]),ce.useEffect(()=>{ia.current&&ma("lastPriceSync",_n)},[_n]),ce.useEffect(()=>{ia.current&&ma("users",An)},[An]),ce.useEffect(()=>{ia.current&&ma("projects",Wt)},[Wt]),ce.useEffect(()=>{ia.current&&ma("estimates",fa)},[fa]),ce.useEffect(()=>{ia.current&&ma("expenses",Ea)},[Ea]),ce.useEffect(()=>{if(ia.current){ma("schedule",la);try{if(window._supaUpsert)window._supaUpsert("schedule",la);}catch(_su){}}},[la]),ce.useEffect(()=>{ia.current&&ma("candidates",Yn)},[Yn]),ce.useEffect(()=>{ia.current&&ma("vendors",kn);try{if(window.__GC_SUBLIST_CHANGED__)window.__GC_SUBLIST_CHANGED__(kn)}catch(_sc){}},[kn]),ce.useEffect(()=>{if(!ia.current)return;const g=new Set(ll.map(_=>_.id)),te={};Da.forEach(_=>{if(g.has(_.id)){const Q=ll.find(y=>y.id===_.id);Q&&Q.cost!==_.cost&&(te[_.id]=_.cost)}});const H=Da.filter(_=>!g.has(_.id));ma("priceEdits",te),ma("customProducts",H);try{window._gcAllProducts=Da;}catch(_e){}},[Da]),ce.useEffect(()=>{ia.current&&ma("leads",rr);try{window._gcLA&&window._gcLA.onLeads(rr)}catch(_la){}},[rr]),ce.useEffect(()=>{ia.current&&ma("cos",hr)},[hr]),ce.useEffect(()=>{ia.current&&ma("logs",Gi)},[Gi]),ce.useEffect(()=>{ia.current&&ma("punch",Er)},[Er]),ce.useEffect(()=>{ia.current&&ma("invs",Ba)},[Ba]),ce.useEffect(()=>{ia.current&&ma("warrs",Ts)},[Ts]),ce.useEffect(()=>{ia.current&&ma("tmpls",Kr)},[Kr]),ce.useEffect(()=>{ia.current&&ma("inspections",$s)},[$s]),ce.useEffect(()=>{ia.current&&ma("photos",Gs)},[Gs]),ce.useEffect(()=>{ia.current&&ma("laborRates",qi)},[qi]),ce.useEffect(()=>{ia.current&&ma("priceSheets",fe)},[fe]),ce.useEffect(()=>{ia.current&&ma("ccTrans",oe)},[oe]),ce.useEffect(()=>{ia.current&&ma("ccCards",me)},[me]),ce.useEffect(()=>{ia.current&&ma("projectDocs",gt)},[gt]),ce.useEffect(()=>{ia.current&&ma("bidLists",st)},[st]),ce.useEffect(()=>{ia.current&&ma("customers",Ot)},[Ot]),ce.useEffect(()=>{ia.current&&ma("scopes",ul)},[ul]),ce.useEffect(()=>{var __gcS2=window.__gcSafeSetter||function(n,f){return f};x.current={users:Ya,projects:__gcS2("_setProjects",Wn),estimates:ga,expenses:__gcS2("_setExpenses",Nn),schedule:__gcS2("_setSchedule",rn),candidates:Ja,vendors:La,leads:__gcS2("_setLeads",$r),cos:Gr,logs:pr,punch:Us,invs:__gcS2("_setInvoices",Oa),warrs:rs,tmpls:qr,inspections:Ki,photos:_i,laborRates:O,priceSheets:ae,ccTrans:he,ccCards:lt,projectDocs:__gcS2("_setProjectDocs",nt),bidLists:tt,scopes:Es,customers:Jt};try{window._gcApplySyncRaw=function(k,v){if(x.current[k]){du.add(k);x.current[k](v);setTimeout(function(){du.delete(k)},1000)}};window._gcApplySync=function(k,v){if(x.current[k]){
+return"Other"},[Gs,__i0]=ce.useState([]),_i=(v)=>__i0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[qi,_O0]=ce.useState([]),O=(v)=>_O0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[fe,_ae0]=ce.useState([]),ae=(v)=>_ae0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[oe,_he0]=ce.useState([]),he=(v)=>_he0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[me,lt]=ce.useState(xi),[gt,_nt0]=ce.useState([]),nt=(v)=>_nt0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[st,_tt0]=ce.useState([]),tt=(v)=>_tt0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[Ot,_Jt0]=ce.useState([]),Jt=(v)=>_Jt0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[sn,Gt]=ce.useState(1),[Le,dn]=ce.useState({name:"",client:"",address:"",type:"Residential Reno",pm:"",soldBy:"",scope:"",ccamUrl:"",startDate:"",endDate:"",contract:"",source:"",clientPhone:"",clientEmail:"",notes:"",drawSchedule:""}),__gcLJfill=(window._gcLaunchPrefill=function(o){dn(function(q){return Object.assign({},q,o||{})})}),[qn,_ha0]=ce.useState([]),ha=(v)=>_ha0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[Rn,_gi0]=ce.useState([]),gi=(v)=>_gi0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[ca,_ai0]=ce.useState([]),ai=(v)=>_ai0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[$n,mr]=ce.useState([]),[Na,fu]=ce.useState(!1),[Xr,Jl]=ce.useState("none"),[vi,dl]=ce.useState(null),[Qa,Ql]=ce.useState({createProject:!0,createEstimate:!0,createGoogleDoc:!0,createCalendar:!0,linkCompanyCam:!0,createChecklist:!0,pushToGmail:!1}),[hu,Of]=ce.useState(()=>ad(new Set)),[ul,_Es0]=ce.useState([]),Es=(v)=>_Es0(p=>{const r=typeof v==="function"?v(p):v;return Array.isArray(r)?r:(Array.isArray(p)?p:[])}),[Zl,ss]=ce.useState(null),pu=ce.useRef(!1);ce.useEffect(function(){window._crm=(typeof window.__gcCrmBox==="function"?window.__gcCrmBox:function(o){return o;})({projects:Wt,invoices:Ba,changeOrders:hr,subs:kn,vendors:kn,expenses:Ea,users:An,customers:window._graycoCustomers,openProject:be,schedule:la,candidates:Yn});try{if(ce&&ce.useState){window.__GC_APP_REACT__=ce;if(window.__GC_REACT_READY__)window.React=ce;}}catch(_re){}var __gcS=window.__gcSafeSetter||function(n,f){return f};window._setExpenses=__gcS("_setExpenses",Nn);window._setInvoices=__gcS("_setInvoices",Oa);window._setSchedule=__gcS("_setSchedule",rn);window._setProjects=__gcS("_setProjects",Wn);window._setLeads=__gcS("_setLeads",$r);window._gcSetBids=tt;window._setUsers=window._setUsers||Ya;window._setCustomers=window._setCustomers||Jt;window._gcSetCOs=Gr;window._gcApprovedCOs=window._gcApprovedCOs||function(pid){var t=0;try{((window._crm&&window._crm.changeOrders)||[]).forEach(function(c){if(c&&c.pid===pid&&!c._filed&&String(c.status||"").toLowerCase()==="approved")t+=parseFloat(c.amt)||0;});}catch(e){}return Math.round(t*100)/100;};window._gcContractWithCOs=window._gcContractWithCOs||function(pid){var p=null;try{p=((window._crm&&window._crm.projects)||[]).find(function(x){return x&&x.id===pid;});}catch(e){}return Math.round(((p?(parseFloat(p.contract)||0):0)+window._gcApprovedCOs(pid))*100)/100;};window.__GC_SET_SUBLIST__=La;window.__GC_RAW_SETTERS__={_setExpenses:__gcS("_setExpenses",Nn),_setInvoices:__gcS("_setInvoices",Oa),_setSchedule:__gcS("_setSchedule",rn),_setProjects:__gcS("_setProjects",Wn),_setLeads:__gcS("_setLeads",$r),_setSubs:La,_setVendors:La};window._gcExpenses=Ea;try{window._setProjectDocs=(window.__gcSafeSetter?window.__gcSafeSetter("_setProjectDocs",_nt0):_nt0);window._gcProjectDocs=gt;}catch(e){}try{window._baseProducts=ll}catch(e){}},[Wt,Ba,hr,kn,Ea,An]);ce.useEffect(function(){try{window._gcOpenProject=be;if(be&&be.id){sessionStorage.setItem("grayco_openpid",be.id);}window.__GC_LAST_VIEW_CHANGE__=Date.now();}catch(e){}},[be]);ce.useEffect(function(){window._setView=function(_v){ try{ localStorage.setItem('grayco_view', _v); }catch(e){} try{ if(_v!=='integrations'){ var _cc=document.getElementById('gc-cc-setup'); if(_cc) _cc.remove(); } }catch(e){} var _r=D(_v); try{ if(_v==='forms'&&window._gcOpenFormsNow){ [0,60,160,320,600].forEach(function(ms){ setTimeout(window._gcOpenFormsNow, ms); }); } }catch(e){} return _r; };window._openJobDetail=Pe;window._gcSetOpenItem=Pe;window._gcSetEstEditMode=Ae;window._gcOpenEstimateObj=function(_est){try{Pe(_est);Ae("edit");D("estimates");}catch(_e){}};window._gcSetEstimates=ga;window._gcEstimatesState=fa;window._gcReadOpenEstimate=function(){try{return be;}catch(_e){return null;}};window._gcRefreshOpenEstimate=function(_est){try{Pe(_est);}catch(_e){}};window._gcGetProducts=function(){return Da;};window._gcSetProducts=function(f){Ia(f);};window._gcAddToPriceList=function(_nm,_cost,_unit,_cat,_sku){try{var _norm=function(s){return String(s==null?"":s).toLowerCase().replace(/\s+/g," ").trim();};var _key=_norm(_nm);var _pc=parseFloat(_cost)||0;Ia(function(T){var _arr=Array.isArray(T)?T:[];var L=_arr.findIndex(function(Y){return Y&&Y.name&&_norm(Y.name)===_key;});if(L>=0){var Y2=_arr.slice();Y2[L]=Object.assign({},Y2[L],{cost:_pc,unit:_unit||Y2[L].unit||"ea",cat:_cat||Y2[L].cat||"Misc"});return Y2;}return _arr.concat([{id:$t("P"),name:String(_nm).trim(),sku:_sku||"",v:"V1",cat:_cat||"Misc",unit:_unit||"ea",cost:_pc}]);});try{ae(function(S){if(!Array.isArray(S))return S;var _ch=false;var S2=S.map(function(sheet){if(!sheet||!Array.isArray(sheet.items))return sheet;var _it=sheet.items.map(function(it){if(it&&it.name&&_norm(it.name)===_key&&(parseFloat(it.uc)||0)!==_pc){_ch=true;return Object.assign({},it,{uc:_pc});}return it;});return _ch?Object.assign({},sheet,{items:_it}):sheet;});return S2;});}catch(_se){}try{if(window._gcSetRatePrice)window._gcSetRatePrice(_nm,_pc,(_unit||"ea"),_cat);}catch(_re){}}catch(_e){console.warn("addToPriceList",_e);}};window._gcSetPriceSheets=ae;try{localStorage.setItem("grayco_view",P)}catch(e){}},[P]);ce.useEffect(function(){try{window._gcEstimatesState=fa;}catch(_e){}},[fa]);ce.useEffect(function(){try{be&&be.id?sessionStorage.setItem("grayco_openpid",be.id):sessionStorage.removeItem("grayco_openpid")}catch(e){}},[be]);ce.useEffect(function(){try{window._gcUx=window._gcUx||Ux}catch(_u){}try{if(window._gcViewAllowed&&!window._gcViewAllowed(P)){window._gcViewRefused&&window._gcViewRefused(P);D("dashboard");return;}}catch(_g){}if(!window._crmHistory)window._crmHistory={stack:[],future:[],current:"",ignoring:false};var h=window._crmHistory;var key=P+(s||"");if(key!==h.current&&!h.ignoring){if(h.current)h.stack.push(h.current);h.future=[];h.current=key;try{history.pushState({tab:P,sel:s},"","")}catch(e){}}},[P,s]);ce.useEffect(()=>{pu.current||(pu.current=!0,(async()=>{await O5();const g=async(ze,et)=>await sl(ze,et),te=await g("user",null);try{if(te&&window._gcMeIn)te=window._gcMeIn(te)}catch(_m){}te&&r(te);window._gcSec2SetMe=r;window._gcSetMeUser=r;const H=await g("navOrders",{});Ct(H);const _=await g("priceLog",[]);aa(_);const Q=await g("lastPriceSync",null);ta(Q);const y=await g("users",$x);window._uDef=$x;window._gcUsersRaw=Ya;Ya(window._healUsers?window._healUsers(y,$x):y);let T=await g("projects",[]);if(!Array.isArray(T))T=[];let L=!1;T.forEach(ze=>{ze.estFinish&&(ze.endDate||(ze.endDate=ze.estFinish),delete ze.estFinish,L=!0)});const Y=new Set;let We=!1;T.forEach(ze=>{if(ze.autoPO&&/^[A-Z]{1}\d{3}$/.test(ze.autoPO)){Y.add(ze.autoPO);return}We=!0,ze.autoPO=ad(Y),Y.add(ze.autoPO)}),Wn(T),(We||L)&&ma("projects",T);const B=await g("estimates",[]);ga(B);const U=await g("expenses",[]);Nn(U);const Z=await g("schedule",[]);rn(Z);const w=await g("candidates",[]);Ja(w);const E=await g("vendors",Xx);La(E);const q=await g("priceEdits",{}),ke=await g("customProducts",[]);if(Object.keys(q).length>0||ke.length>0){const ze=ll.map(et=>q[et.id]!==void 0?{...et,cost:q[et.id]}:et);Ia([...ze,...ke])}const z=await g("leads",[]);$r(z);const De=await g("cos",[]);Gr(De);const Ve=await g("logs",[]);pr(Ve);const xt=await g("punch",[]);Us(xt);const M=await g("invs",[]);Oa(M);const N=await g("warrs",[]);rs(N);const Ee=await g("tmpls",[]);qr(Ee);const Je=await g("inspections",[]);Ki(Je);const W=await g("photos",[]);_i(W);const F=await g("laborRates",[]);O(F);const xe=await g("priceSheets",[]);ae(xe);const X=await g("ccTrans",[]);he(X);const de=await g("ccCards",xi);lt(de);const Oe=await g("projectDocs",[]);nt(Oe);const Re=await g("bidLists",[]);tt(Re);const K=await g("customers",[]);Jt(K);const $e=await g("scopes",[]);Es($e),a(!1)})())},[]),ce.useEffect(()=>{var _importHandler=function(ev){var _src=ev.detail;if(!_src)return;var _c=[];if(_src.projects&&_src.projects.length){Wn(_src.projects);Kx("projects",_src.projects);td("projects",_src.projects);_c.push(_src.projects.length+" projects")}if(_src.leads&&_src.leads.length){$r(function(p){var ids=new Set(p.map(function(x){return x.id}));var nL=_src.leads.filter(function(x){return!ids.has(x.id)});return p.concat(nL)});td("leads",_src.leads);_c.push(_src.leads.length+" leads")}if(_src.vendors&&_src.vendors.length){La(_src.vendors);Kx("vendors",_src.vendors);td("vendors",_src.vendors);_c.push(_src.vendors.length+" vendors")}if(_src.estimates&&_src.estimates.length){ga(function(_prev){var _pp=Array.isArray(_prev)?_prev:[];var _ids=new Set(_pp.map(function(x){return x&&x.id}));var _merged=_pp.concat(_src.estimates.filter(function(x){return x&&!_ids.has(x.id);}));Kx("estimates",_merged);td("estimates",_merged);return _merged;});_c.push(_src.estimates.length+" estimates")}if(_src.expenses&&_src.expenses.length){Nn(_src.expenses);Kx("expenses",_src.expenses);td("expenses",_src.expenses);_c.push(_src.expenses.length+" expenses")}if(_src.schedule&&_src.schedule.length){rn(_src.schedule);Kx("schedule",_src.schedule);td("schedule",_src.schedule);_c.push(_src.schedule.length+" schedule")}if(_src.invoices&&_src.invoices.length){Oa(_src.invoices);Kx("invs",_src.invoices);td("invs",_src.invoices);_c.push(_src.invoices.length+" invoices")}if(_src.bids&&_src.bids.length){Gr(_src.bids);Kx("cos",_src.bids);td("cos",_src.bids);_c.push(_src.bids.length+" COs")}if(_src.logs&&_src.logs.length){pr(_src.logs);Kx("logs",_src.logs);td("logs",_src.logs);_c.push(_src.logs.length+" logs")}if(_src.warranties&&_src.warranties.length){rs(_src.warranties);Kx("warrs",_src.warranties);td("warrs",_src.warranties);_c.push(_src.warranties.length+" warranties")}if(_src.templates&&_src.templates.length){qr(_src.templates);Kx("tmpls",_src.templates);td("tmpls",_src.templates);_c.push(_src.templates.length+" templates")}if(_src.inboundBids&&_src.inboundBids.length){_setIb(_src.inboundBids);Kx("inboundBids",_src.inboundBids);td("inboundBids",_src.inboundBids);_c.push(_src.inboundBids.length+" bids")}if(_c.length)se("\u2705 LOADED & PUSHED TO CLOUD: "+_c.join(", "));else se("No data found in file")};var _exportHandler=function(){var _data={projects:Wt,estimates:fa,expenses:Ea,schedule:la,bids:hr,logs:Gi,invoices:Ba,warranties:Ts,templates:Kr,inboundBids:_ib,exportedBy:n.name,exportedAt:new Date().toISOString()};var _blob=new Blob([JSON.stringify(_data,null,2)],{type:"application/json"});var _a=document.createElement("a");_a.href=URL.createObjectURL(_blob);_a.download="GrayCo_Backup_"+new Date().toISOString().slice(0,10)+".json";_a.click();se("Backup downloaded")};window.addEventListener("importData",_importHandler);window.addEventListener("exportData",_exportHandler);return()=>{window.removeEventListener("importData",_importHandler);window.removeEventListener("exportData",_exportHandler)}});const ia=ce.useRef(!1);ce.useEffect(()=>{t||(ia.current=!0)},[t]),ce.useEffect(()=>{ia.current&&ma("user",n);window._gcMeNow=n;try{localStorage.setItem("grayco_user",(n&&n.name)||"")}catch(_e){}},[n]),ce.useEffect(()=>{ia.current&&ma("navOrders",wt)},[wt]),ce.useEffect(()=>{ia.current&&ma("priceLog",we)},[we]),ce.useEffect(()=>{ia.current&&ma("lastPriceSync",_n)},[_n]),ce.useEffect(()=>{ia.current&&ma("users",An)},[An]),ce.useEffect(()=>{ia.current&&ma("projects",Wt)},[Wt]),ce.useEffect(()=>{ia.current&&ma("estimates",fa)},[fa]),ce.useEffect(()=>{ia.current&&ma("expenses",Ea)},[Ea]),ce.useEffect(()=>{if(ia.current){ma("schedule",la);try{if(window._supaUpsert)window._supaUpsert("schedule",la);}catch(_su){}}},[la]),ce.useEffect(()=>{ia.current&&ma("candidates",Yn)},[Yn]),ce.useEffect(()=>{ia.current&&ma("vendors",kn);try{if(window.__GC_SUBLIST_CHANGED__)window.__GC_SUBLIST_CHANGED__(kn)}catch(_sc){}},[kn]),ce.useEffect(()=>{if(!ia.current)return;const g=new Set(ll.map(_=>_.id)),te={};Da.forEach(_=>{if(g.has(_.id)){const Q=ll.find(y=>y.id===_.id);Q&&Q.cost!==_.cost&&(te[_.id]=_.cost)}});const H=Da.filter(_=>!g.has(_.id));ma("priceEdits",te),ma("customProducts",H);try{window._gcAllProducts=Da;}catch(_e){}},[Da]),ce.useEffect(()=>{ia.current&&ma("leads",rr);try{window._gcLA&&window._gcLA.onLeads(rr)}catch(_la){}},[rr]),ce.useEffect(()=>{ia.current&&ma("cos",hr)},[hr]),ce.useEffect(()=>{ia.current&&ma("logs",Gi)},[Gi]),ce.useEffect(()=>{ia.current&&ma("punch",Er)},[Er]),ce.useEffect(()=>{ia.current&&ma("invs",Ba)},[Ba]),ce.useEffect(()=>{ia.current&&ma("warrs",Ts)},[Ts]),ce.useEffect(()=>{ia.current&&ma("tmpls",Kr)},[Kr]),ce.useEffect(()=>{ia.current&&ma("inspections",$s)},[$s]),ce.useEffect(()=>{ia.current&&ma("photos",Gs)},[Gs]),ce.useEffect(()=>{ia.current&&ma("laborRates",qi)},[qi]),ce.useEffect(()=>{ia.current&&ma("priceSheets",fe)},[fe]),ce.useEffect(()=>{ia.current&&ma("ccTrans",oe)},[oe]),ce.useEffect(()=>{ia.current&&ma("ccCards",me)},[me]),ce.useEffect(()=>{ia.current&&ma("projectDocs",gt)},[gt]),ce.useEffect(()=>{ia.current&&ma("bidLists",st)},[st]),ce.useEffect(()=>{ia.current&&ma("customers",Ot)},[Ot]),ce.useEffect(()=>{ia.current&&ma("scopes",ul)},[ul]),ce.useEffect(()=>{var __gcS2=window.__gcSafeSetter||function(n,f){return f};x.current={users:Ya,projects:__gcS2("_setProjects",Wn),estimates:ga,expenses:__gcS2("_setExpenses",Nn),schedule:__gcS2("_setSchedule",rn),candidates:Ja,vendors:La,leads:__gcS2("_setLeads",$r),cos:Gr,logs:pr,punch:Us,invs:__gcS2("_setInvoices",Oa),warrs:rs,tmpls:qr,inspections:Ki,photos:_i,laborRates:O,priceSheets:ae,ccTrans:he,ccCards:lt,projectDocs:__gcS2("_setProjectDocs",nt),bidLists:tt,scopes:Es,customers:Jt};try{window._gcApplySyncRaw=function(k,v){if(x.current[k]){du.add(k);x.current[k](v);setTimeout(function(){du.delete(k)},1000)}};window._gcApplySync=function(k,v){if(x.current[k]){
   // EDITING LOCK: if the user is actively editing a form (a field is focused, or an edit dialog is
   // open), NEVER let an incoming cloud/background sync overwrite the data they're working on. This
   // stops the "typed into a project, took a phone call, everything wiped" data loss.
@@ -9275,6 +9292,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
 })();
 
 }catch(e){ console.error('[GC] bundled ReactDOM failed', e); } }</script>
+<script>/* patch REACTLOAD: React / ReactDOM (CDN or in-file) have run: now patches may use the app's own React */ window.__GC_REACT_READY__=1; if(window.__GC_APP_REACT__) window.React=window.__GC_APP_REACT__;</script>
 <script>
 (function(){
   var haveR = !!window.React, haveD = !!window.ReactDOM;
@@ -60229,15 +60247,20 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{ localStorage.removeItem('gc_deleted_schedule'); }catch(e){}
   }
   // Rolling local backup of the schedule so we always have a full copy to restore from.
+  var _bkList=null, _bkLen=-1, _bkN=-1;   /* patch RTFEED: what this guardian last copied (the list, and the stored text's length) */
   function backupSchedule(){
     try{
       var sched=(window._crm&&window._crm.schedule)||[];
       if(!Array.isArray(sched)||!sched.length) return;
       var key='gc_sched_backup';
-      var prev=[]; try{ prev=JSON.parse(localStorage.getItem(key)||'[]'); }catch(e){}
+      var raw=localStorage.getItem(key)||'[]';
+      if(sched===_bkList && sched.length===_bkN && raw.length===_bkLen) return;   /* the same list, and the copy is the one written from it */
+      var prev=[]; try{ prev=JSON.parse(raw); }catch(e){}
       // only overwrite the backup if the current schedule is as big or bigger (never back up a shrunk one)
       if(sched.length>=prev.length){
-        localStorage.setItem(key, JSON.stringify(sched));
+        var _txt=JSON.stringify(sched);
+        localStorage.setItem(key, _txt);
+        _bkList=sched; _bkN=sched.length; _bkLen=_txt.length;
       }
     }catch(e){}
   }
@@ -80991,6 +81014,19 @@ window._gcSchedSweep = async function(opts){
     var before = combined.length;
     var res = window._gcSchedCollapse(combined);
     var clean = res.out;
+    /* patch RTQUIET: nothing to clean (the folded list is exactly this computer's rows, and the cloud row has exactly
+       those ids): nothing is written — not to this disk, the screen, or the cloud */
+    if(!loud && cloudOk && cloud.length && clean.length === local.length && clean.length === cloud.length){
+      try{
+        var _qId = function(r){ return (r && typeof r === 'object' && r.id != null && r.id !== '') ? String(r.id) : null; };
+        var _qL = {}, _qOk = true, _qi;
+        for(_qi = 0; _qi < local.length && _qOk; _qi++){ var _qk = _qId(local[_qi]); if(_qk == null || (_qk in _qL)) _qOk = false; else _qL[_qk] = local[_qi]; }
+        for(_qi = 0; _qi < clean.length && _qOk; _qi++){ var _qc = clean[_qi], _qk2 = _qId(_qc); if(_qk2 == null || !(_qk2 in _qL)) _qOk = false; else if(_qL[_qk2] !== _qc && JSON.stringify(_qL[_qk2]) !== JSON.stringify(_qc)) _qOk = false; }
+        var _qC = {};
+        for(_qi = 0; _qi < cloud.length && _qOk; _qi++){ var _qk3 = _qId(cloud[_qi]); if(_qk3 == null || !(_qk3 in _qL) || (_qk3 in _qC)) _qOk = false; else _qC[_qk3] = 1; }
+        if(_qOk) return { before: before, after: clean.length, removed: 0, quiet: true };
+      }catch(_qe){}
+    }
 
     if(before === clean.length){
       if(loud) alert('No duplicate schedule rows found — the schedule is clean ('+clean.length+' entries).');
@@ -82733,14 +82769,18 @@ window._gcIdbRead = readKV;
 var prevSet = window.idbSet;
 var CORE = {projects:1,invs:1,invoices:1,estimates:1,expenses:1,schedule:1,cos:1,changeOrders:1,
             subs:1,vendors:1,customers:1,leads:1,scopes:1,projectPayments:1,projectDocs:1,gcAcctRegister:1};
+/* patch RTSTAMP: for a big list, only rows that are not the very objects written last time are stamped */
+var _wkLast = {};
 function writeKV(key, value){
   try{
     // keep the "a manual save always wins" stamping the app relies on
     if(CORE[key] && Array.isArray(value) && (window.__GC_IS_ACTIVE__ || window.__GC_IS_TYPING__ || window.__GC_MANUAL_SAVE__)){
       var now=new Date().toISOString();
-      value.forEach(function(r){ if(r && typeof r==='object'){ r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
+      var big = value.length > 2000 && typeof WeakSet === 'function', had = big ? _wkLast[key] : null;
+      value.forEach(function(r){ if(r && typeof r==='object'){ if(had && had.has(r)) return; r.updatedAt=now; if(!r.savedAt) r.savedAt=now; } });
     }
   }catch(e){}
+  try{ if(CORE[key] && Array.isArray(value) && value.length > 2000 && typeof WeakSet === 'function'){ var ws = new WeakSet(); for(var _i=0; _i<value.length; _i++){ var _r = value[_i]; if(_r && typeof _r==='object') ws.add(_r); } _wkLast[key] = ws; } }catch(e){}
   return openDB().then(function(db){
     return new Promise(function(res){
       try{
@@ -89546,6 +89586,8 @@ window.__GC_WAIT('_gcTombstone', function(orig){
 function judge(key, incoming){
   if(!GUARD[key] || !Array.isArray(incoming)) return null;
   var n=incoming.length, hw=HW[key]|0;
+  /* patch BOOKDEDUPE: the schedule's copies the rule folds away do not count toward its high-water mark */
+  if(key==='schedule' && n<hw && LAST[key] && typeof window._gcSchedDedupe==='function'){ try{ var _hw2=window._gcSchedDedupe(LAST[key]).length; if(_hw2<hw){ hw=_hw2; HW[key]=_hw2; saveHW(); LAST[key]=window._gcSchedDedupe(LAST[key]); } }catch(_d){} }
   if(n>=hw){ if(n>hw){ HW[key]=n; saveHW(); } LAST[key]=incoming; return null; }
   if(!ready) return null;                       // still loading — empty is normal
   if(hw===0) return null;                       // never had anything to lose
@@ -104404,6 +104446,10 @@ function repair(key, mine, incoming){
 
   var out = incoming.slice();
   var putBack = 0, melded = 0;
+  /* patch RTPUT: where each incoming row sits, built once (out.indexOf per row was 13,350 x 13,350 on the schedule) */
+  var _pos = (typeof Map === 'function') ? new Map() : null;
+  if(_pos){ for(var _pi = 0; _pi < out.length; _pi++){ var _po = out[_pi]; if(_po && typeof _po === 'object'){ var _pl = _pos.get(_po); if(_pl) _pl.push(_pi); else _pos.set(_po, [_pi]); } } }
+  function _posOf(o){ if(!_pos) return out.indexOf(o); var l = _pos.get(o); if(!l) return -1; for(var q = 0; q < l.length; q++){ if(out[l[q]] === o) return l[q]; } return -1; }
 
   /* anything here that the sync does not mention is KEPT */
   mine.forEach(function(r){
@@ -104423,11 +104469,14 @@ function repair(key, mine, incoming){
       out.push(r); putBack++; return;
     }
     /* it is in both — take the newer, and never let a blank win */
+    if(r === byId[id]) return;                          /* patch RTPUT: the very same row — merging it with itself changes nothing */
+    /* patch RTSAVE: the same text on both sides: the merged copy would have that text too — nothing to take */
+    var _tIn = null; try{ _tIn = JSON.stringify(byId[id]); if(_tIn === JSON.stringify(r)) return; }catch(e){ _tIn = null; }
     var merged = meld(r, byId[id]);
-    var at = out.indexOf(byId[id]);
+    var at = _posOf(byId[id]);
     if(at >= 0 && merged !== byId[id]){
       var changed=false;
-      try{ changed = JSON.stringify(merged) !== JSON.stringify(byId[id]); }catch(e){ changed=true; }
+      try{ changed = JSON.stringify(merged) !== (_tIn != null ? _tIn : JSON.stringify(byId[id])); }catch(e){ changed=true; }
       if(changed){ out[at] = merged; melded++; }
     }
   });
@@ -117624,16 +117673,49 @@ var _rsigStep = null;   /* patch X: per-object signatures, kept only for one syn
    the write stamp gave every vendor a new updatedAt on each pull while someone was at the computer, and the other
    computer did the same back */
 function _rsigRep(k, v){ return (k && STAMP.test(k)) ? undefined : v; }
-function rsig(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
+/* patch RTFAST: the signature of a row is remembered by the row's exact text without its stamps (same text, same signature) */
+var _rsC = new Map();
+function rsig(r){
+  if(r && typeof r==='object' && !Array.isArray(r) && typeof r.toJSON !== 'function'){
+    if(_rsigStep){ var _c0 = _rsigStep.get(r); if(_c0 !== undefined) return _c0; }
+    var _j = null; try{ _j = JSON.stringify(r, _rsigRep); }catch(e){ _j = null; }
+    if(typeof _j === 'string'){ var _h = _rsC.get(_j); if(_h === undefined){ _h = rsig0(r); if(_rsC.size >= 60000) _rsC.clear(); _rsC.set(_j, _h); } else if(_rsigStep) _rsigStep.set(r, _h); return _h; }
+  }
+  return rsig0(r);
+}
+function rsig0(r){ if(_rsigStep && r && typeof r==='object'){ var _c = _rsigStep.get(r); if(_c !== undefined) return _c; } var _g; try{ if(r && typeof r==='object' && !Array.isArray(r)){ var _ks = Object.keys(r).sort(), _p = []; for(var _i=0;_i<_ks.length;_i++){ var _k = _ks[_i]; if(STAMP.test(_k)) continue; var _j = JSON.stringify(r[_k], _rsigRep); if(_j === undefined) continue; _p.push(JSON.stringify(_k)+':'+_j); } _g = sigOf('{'+_p.join(',')+'}'); } else _g = sigOf(JSON.stringify(r, _rsigRep)); }catch(e){ _g = '?'; } if(_rsigStep && r && typeof r==='object') _rsigStep.set(r, _g); return _g; }
 var ownStamp = {};   /* stamps this computer wrote */
 function recIdOf(r){ return (r && typeof r==='object' && !Array.isArray(r)) ? (r.id!=null && r.id!=='' ? String(r.id) : (r._id!=null && r._id!=='' ? String(r._id) : null)) : null; }
 function isRecList(a){ return Array.isArray(a) && a.length && a.every(function(x){ return x==null || (typeof x==='object' && !Array.isArray(x)); }); }
+/* patch RTFAST: a big list from the live feed is learnt in slices; learnDrain() finishes them (sync) before a read */
+var learnQ = [], learnT = null, learnWhole = {};
+function learnRow(m, r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; }
+function learnSlice(){
+  learnT = null; var t0 = Date.now();
+  while(learnQ.length && Date.now() - t0 < 25){
+    var q = learnQ[0], m = seenRec[q.k] || (seenRec[q.k] = {}), end = Math.min(q.v.length, q.i + 600);
+    try{ for(; q.i < end; q.i++) learnRow(m, q.v[q.i]); }catch(e){ q.i = q.v.length; }
+    if(q.i >= q.v.length) learnQ.shift();
+  }
+  if(learnQ.length) learnT = ST.call(window, learnSlice, 0);
+}
+function learnDrain(){
+  if(!learnQ.length) return;
+  if(learnT){ try{ clearTimeout(learnT); }catch(e){} learnT = null; }
+  while(learnQ.length){ var q = learnQ.shift(), m = seenRec[q.k] || (seenRec[q.k] = {}); try{ for(; q.i < q.v.length; q.i++) learnRow(m, q.v[q.i]); }catch(e){} }
+}
+function learnSoon(k, v, s){
+  if(s && learnWhole[k] === s) return;                                     /* this exact value was learnt already */
+  if(!(Array.isArray(v) && v.length > 1500 && isRecList(v))){ learn(k, v); if(s) learnWhole[k] = s; return; }
+  learnQ.push({ k:k, v:v, i:0 }); if(s) learnWhole[k] = s;
+  if(!learnT) learnT = ST.call(window, learnSlice, 0);
+}
 function learn(k, v){
   try{
     if(v === undefined || v === null) return;
     if(isRecList(v)){
       var m = seenRec[k] || (seenRec[k] = {});
-      v.forEach(function(r){ var id = recIdOf(r); if(id==null) return; var s = m[id] || (m[id] = {}); var g = rsig(r); s[g] = 1; var ks = Object.keys(s); if(ks.length > 40) delete s[ks[0]]; });
+      v.forEach(function(r){ learnRow(m, r); });
     } else {
       var sv = seenVal[k] || (seenVal[k] = {}); sv[rsig(v)] = 1; var kk = Object.keys(sv); if(kk.length > 12) delete sv[kk[0]];
     }
@@ -117651,6 +117733,7 @@ function deadFor(k){
    by a person: out on both sides. Never a replace. */
 var UL = {}; window.__gcUL = {};
 function union(k, cloud, local, now, editAt, prevSeen){
+  learnDrain();   /* patch RTFAST */
   UL = window.__gcUL[k] = { diff:[], seen:[], lost:[], edit:[], added:[], dropped:[], dupe:[], at: now };
   editAt = editAt || now;
   if(local === undefined || local === null) return cloud;
@@ -117756,6 +117839,7 @@ async function pushKey(k, cr){
   var cloud = (Array.isArray(rows) && rows.length) ? rows[0].value : undefined;
   var asText = false;
   if(typeof cloud === 'string' && /^\s*[\[{]/.test(cloud)){ try{ cloud = JSON.parse(cloud); asText = true; }catch(e){} }   /* some lists are kept as text in the cloud: merged as lists, sent back as text */
+  learnDrain();   /* patch RTFAST */
   var before = seenRec[k] ? JSON.parse(JSON.stringify(seenRec[k])) : {};
   var prevSeen = function(id, g){ return !!(before[id] && before[id][g]); };
   _rsigStep = (typeof WeakMap === 'function') ? new WeakMap() : null;   /* patch X */
@@ -117898,6 +117982,7 @@ var ownPost = {};
       var u = typeof input === 'string' ? input : (input && input.url) || '';
       if(init && init.body && typeof init.body === 'string' && /\/rest\/v1\/gc_kv/.test(u) && String(init.method||'').toUpperCase() === 'POST' && init.body.length < 6000000){
         var b = JSON.parse(init.body); (Array.isArray(b) ? b : [b]).forEach(function(r){
+          if(r && r.key === 'schedule__manifest' && r.value && typeof r.value === 'object' && r.value.gen) ownNote[r.value.gen] = 1;   /* patch RTFEED: this page's own note */
           if(!r || !r.key || !isShared(r.key)) return;
           var v = r.value; if(typeof v === 'string' && /^\s*[\[{]/.test(v)){ try{ v = JSON.parse(v); }catch(e){} }
           ownPost[r.key] = { at:Date.now(), sig:sigOf(JSON.stringify(v)) };
@@ -117932,10 +118017,40 @@ window.__gcLiveSkip = function(name, every){
 };
 
 var pendingPull = false, pullT = null, firstEventAt = 0, evKeys = {}, evVal = {};
+/* patch RTFEED: another computer saved the schedule's pieces: read them (one ~1.2 MB piece at a time) and lay
+   them over the screen through the same overlay the whole-row message used */
+var ownNote = {}, noteT = null, noteBusy = false, noteAgain = false;
+function schedOnNote(rec){
+  try{
+    var v = rec && rec.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
+    if(v && v.gen && ownNote[v.gen]) return;                       /* this computer's own save */
+    stats.events++; stats.lastEventAt = Date.now(); stats.evByKey = stats.evByKey || {}; stats.evByKey.schedule__manifest = (stats.evByKey.schedule__manifest||0) + 1;
+    healthy = true;
+    if(!noteT) noteT = ST.call(window, schedReadNote, 400);       /* notes that arrive together are read once */
+  }catch(e){}
+}
+async function schedReadNote(){
+  noteT = null;
+  if(noteBusy){ noteAgain = true; return; }
+  noteBusy = true;
+  try{
+    if(typeof window._gcSbReadChunked !== 'function') return;
+    var v = await window._gcSbReadChunked('schedule');
+    if(!Array.isArray(v) || !v.length || !isRecList(v)) return;
+    var k = 'schedule';
+    learnSoon(k, v, null);
+    if(!firstEventAt) firstEventAt = Date.now();
+    evVal[k] = v;
+    if(!toApply[k]) toApply[k] = Date.now();
+    scheduleApply(300);
+  }catch(e){}
+  finally{ noteBusy = false; if(noteAgain){ noteAgain = false; if(!noteT) noteT = ST.call(window, schedReadNote, 400); } }
+}
 function onEvent(payload){
   try{
     var rec = (payload && (payload['new'] || payload.record)) || {};
     var k = rec.key || (payload && payload.old && payload.old.key);
+    if(k === 'schedule__manifest'){ schedOnNote(rec); return; }   /* patch RTFEED */
     if(!k || !isShared(k)) return;
     stats.events++; stats.lastEventAt = Date.now(); stats.evByKey = stats.evByKey || {}; stats.evByKey[k] = (stats.evByKey[k]||0) + 1;
     healthy = true;
@@ -117947,7 +118062,7 @@ function onEvent(payload){
     if(s && cloudSig[k] === s) return;                     /* already have it */
     if(s && ownPost[k] && ownPost[k].sig === s && Date.now() - ownPost[k].at < 60000){ stats.echoes++; return; }   /* this page sent it */
     if(s && window.__gcXSent && window.__gcXSent(k, s)){ stats.echoes++; return; }   /* patch X: sent as rewritten by the union-push */
-    if(v !== undefined) learn(k, v);   /* patch X: only for another computer's save — this page's own values are its own */
+    if(v !== undefined) learnSoon(k, v, s);   /* patch X: only for another computer's save — this page's own values are its own (patch RTFAST: big lists in slices) */
     /* two computers pushing the same list in the same second: the later write was a union with a copy read just
        before the earlier one landed, so the earlier one's addition can be missing. Whoever pushed this list in the
        last 15 s looks again (a union: if nothing of ours is missing, nothing is sent). */
@@ -117959,7 +118074,7 @@ function onEvent(payload){
     if(lsBacked(k) || typeof window[setterName] === 'function'){
       /* a list on the screen: laid over what is there straight away (no full pull needed) */
       if(!toApply[k]) toApply[k] = Date.now();
-      scheduleApply(150);
+      scheduleApply((Array.isArray(v) && v.length > 1500) ? 1200 : 150);   /* patch RTFAST: a burst of big-list updates is laid on once */
     } else {
       pendingPull = true; evKeys[k] = 1;
       if(!pullT) pullT = ST.call(window, runPull, 400);
@@ -118018,6 +118133,7 @@ function stampOfRec(r){ return String((r && (r.updatedAt || r.updated_at)) || ''
    at that moment, so a save made a moment ago is never replaced by an older list. */
 function overlay(k, prev, inc){
   if(!Array.isArray(prev) || !Array.isArray(inc)) return prev;
+  learnDrain();   /* patch RTFAST */
   var seenK = seenRec[k] || {};
   var dead = deadFor(k), at = {}, out = prev.slice(), changed = false;
   out.forEach(function(r, i){ var id = recIdOf(r); if(id!=null) at[id] = i; });
@@ -118090,7 +118206,9 @@ async function applyNow(){
 }
 
 function filters(){
-  var ks = Object.keys(keys()).filter(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }).sort();
+  /* patch RTFEED: the ~5 MB schedule row is not taken from the live feed (decoding it froze every other computer);
+     the small note the company sync writes after the schedule's pieces is taken instead (schedOnNote) */
+  var ks = Object.keys(keys()).filter(function(k){ return /^[A-Za-z0-9_]+$/.test(k); }).concat(['schedule__manifest']).sort();   /* patch BOOKDEDUPE: the plain row is small again */
   var out = [];
   for(var i=0;i<ks.length;i+=90) out.push('key=in.(' + ks.slice(i, i+90).join(',') + ')');
   return out;
@@ -119193,6 +119311,8 @@ function filterList(type, v, outgoing){
   if(!Array.isArray(v)) return v;
   var as = (!outgoing && typeof ASIDE === 'object' && ASIDE) ? (ASIDE[typeOf(type)] || {}) : {};   /* put-aside records: off this computer, never taken out of the cloud */
   var any = false, out = v.filter(function(r){ if(!r || typeof r !== 'object') return true; var id = idOf(r); var d = dead(type, id) || (id && as[id]); if(d) any = true; return !d; });
+  /* patch BOOKDEDUPE: one automatic Start / Finish row per job, exact copies are one row */
+  if(typeOf(type) === 'schedule' && typeof window._gcSchedDedupe === 'function'){ try{ var dd = window._gcSchedDedupe(any ? out : v); if(dd !== (any ? out : v)){ out = dd; any = true; } }catch(e){} }
   return any ? out : v;
 }
 async function fixRow(row){
@@ -119799,11 +119919,13 @@ function notePersonEdits(key, list){
     if(!VERSIONED[typeOf(key)]) return;
     var prev = lastRows[key]; if(!prev) return;
     var changed = [], ls = lastStr[key] || {}, ns = {};
-    for(var i0=0;i0<list.length;i0++){ var r0 = list[i0], id0 = idOf(r0); if(id0) ns[id0] = JSON.stringify(r0); }
-    lastStr[key] = ns;
+    lastStr[key] = ns;   /* patch RTSTAMP: a row's text is made only when it is not the very same object as last time; a row
+                            without a remembered text is compared by csig, which gives the same answer */
     for(var i=0;i<list.length;i++){
       var r = list[i], id = idOf(r); if(!id) continue; var p = prev[id];
-      if(p === r || (p && (ls[id] === ns[id] || csig(p) === csig(r)))) continue;   /* same text, or only its save stamps moved (a sweep), is not an edit */
+      if(p === r) continue;
+      ns[id] = JSON.stringify(r);
+      if(p && (ls[id] === ns[id] || csig(p) === csig(r))) continue;   /* same text, or only its save stamps moved (a sweep), is not an edit */
       var st = stampOf(r);
       if(byCall || byInput || (stampNearInput(st) && (!p || st > stampOf(p)))){ changed.push(id); if(changed.length > 200) return; }
     }
@@ -125182,6 +125304,7 @@ function fromItem(it, prev){
   if (it.bidRole && !l.bidRoleManual) { l.bidRole = s(it.bidRole); l.bidRoleWhy = s(it.bidRoleWhy); }   /* patch PRIMESUB: the server's prime / sub (a person's choice stays) */
   l.inboxId = it.id; l.inboxRev = it.rev || 1; l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
+  if (s(it.dueSnippet) && !(prev && prev.bidDueManual)) l.dueSnippet = s(it.dueSnippet).slice(0, 300);   /* patch DUESEEN: the e-mail's words for the due date */
   if (it.estimator) { l.estimator = s(it.estimator); l.estimatorEmail = s(it.estimatorEmail); }
   l.gc = s(it.gc); l.owner = s(it.owner); l.city = s(it.city); l.state = s(it.state); l.trades = arr(it.trades).slice(0, 12); l.scope = s(it.scope);
   l.plansLinks = arr(it.plansLinks).map(function(x){ return { url: x.url, label: x.label, board: x.board }; }).slice(0, 25);
@@ -125628,7 +125751,8 @@ function card(l){
     + (l.inboxFlag ? '<span class="tg t-flag">' + esc(l.inboxFlag) + '</span>' : '') + (arr(l.alsoOn).length ? '<span class="tg t-also">also on ' + esc(l.alsoOn.join(', ')) + '</span>' : '')
     + (l.needsReview ? '<span class="tg t-flag">needs a look</span>' : '') + '</div>'
     + '<div class="ttl">' + esc(l.name) + '</div>' + (where ? '<div class="sub">' + esc(where) + '</div>' : '')
-    + (l.websiteLead && typeof window._gcWebCardLine === 'function' ? window._gcWebCardLine(l) : '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + '</div>')   /* patch WEB */
+    + (l.websiteLead && typeof window._gcWebCardLine === 'function' ? window._gcWebCardLine(l) : '<div class="due ' + c.cls + '">⏱ ' + esc(c.txt) + (s(l.bidDue).length === 10 ? ' · time not stated' : '') + (l.bidDueWas ? ' <span class="sub">(was ' + esc(fmtWhen(l.bidDueWas)) + ')</span>' : '') + (window._gcLA && window._gcLA.edit ? ' <button class="b" data-a="editdue" title="Correct the bid due date" style="padding:2px 8px;font-size:12px">✏️ ' + (l.bidDue ? 'Fix' : 'Add it') + '</button>' : '') + '</div>'
+      + (s(l.dueSnippet) ? '<div class="sub" style="font-style:italic">found in the e-mail: “' + esc(s(l.dueSnippet).slice(0, 170)) + '”</div>' : ''))   /* patch WEB; /* patch DUESEEN: time not stated / the e-mail's words / ✏️ fix it */
     + (l.preBid ? '<div class="sub">Pre-bid: ' + esc(fmtWhen(l.preBid)) + '</div>' : '')
     + (arr(l.trades).length || l.bidNumber ? '<div class="sub">' + esc([arr(l.trades).join(', '), l.bidNumber && 'Bid # ' + l.bidNumber].filter(Boolean).join(' · ')) + '</div>' : '')
     + (l.contactName || l.phone || l.email ? '<div class="sub">👤 ' + esc([l.contactName, l.phone, l.email].filter(Boolean).join(' · ')) + '</div>' : '')
@@ -126091,6 +126215,7 @@ function onClick(e){
   if (a === 'job') return dlgJob(id);
   if (a === 'openjob') { var l = findLead(id); if (l && l.pid) openJob(l.pid); return; }
   if (a === 'publish') return dlgPublish(id);
+  if (a === 'editdue') { var go = function(){ try { return !!(window._gcLA && window._gcLA.edit(id, b)); } catch (x) { return false; } }; if (!go()) setTimeout(function(){ if (!go()) toast('Open the lead to add the bid due date.'); }, 450); return; }   /* patch DUESEEN */
 }
 function onChange(e){ var f = e.target.getAttribute && e.target.getAttribute('data-f'); if (!f) return; UI[f] = e.target.value; lsSet(K_UI, UI); LDI_LIM = 40; LDI_FORCE = true; render(); }
 function dropHandlers(root, onFiles){
@@ -131560,6 +131685,7 @@ function card(x){
     '<div style="font-weight:800;font-size:15px;line-height:1.3">' + (ICON[x.kind] || '✉️') + ' ' + esc(titleOf(x)) + '</div>' +
     '<div style="font-size:12px;color:#475569;margin-top:3px">' + esc(KIND[x.kind] || x.kind) + (x.jobName ? ' · ' + esc(x.jobName) : '') + ' · ' + (x.channel === 'sms' ? '💬 text' : x.channel === 'portal' ? '📄 customer portal — no e-mail' : '✉️ ' + esc(x.to)) + '</div>' +
     '<div style="font-size:12px;color:#92400e;margin-top:2px">' + who + esc(chain) + '</div>' +
+    (window._gcApprSay ? '<div style="font-size:13px;color:#0f172a;background:#f1f5f9;border-radius:8px;padding:6px 8px;margin-top:6px">' + esc(window._gcApprSay(x, last)) + '</div>' : '') +   /* patch APPTCONF */
     ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
     (x.lastError ? '<div style="font-size:12px;color:#b91c1c;margin-top:2px">Last try: ' + esc(x.lastError) + '</div>' : '') +
     (x.editedBy ? '<div style="font-size:12px;color:#7c3aed;font-weight:700;margin-top:2px">' + esc(editedLine(x)) + '</div>' : '') +
@@ -131570,7 +131696,7 @@ function card(x){
     '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px">' +
       '<button type="button" class="_ap2Prev" style="background:none;border:none;color:#2563eb;font-size:13px;font-weight:700;cursor:pointer;padding:4px 0;text-decoration:underline">Preview / Edit</button>' +
-      '<span style="font-size:11px;color:#64748b">' + (x.kind === 'portal_publish' ? 'Approve puts it in the customer’s portal' : last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +
+      '<span style="font-size:11px;color:#64748b">' + (x.kind === 'portal_publish' ? 'Approve puts it in the customer’s portal' : last ? 'Approve sends it now' : 'Approve passes it to Wesley or Nick') + '</span>' +   /* patch APPTCONF: the plain sentence is above the buttons */
     '</div></div>';
 }
 function act(id, op, extra){
@@ -153399,10 +153525,22 @@ function iso(){ return new Date().toISOString(); }
 function s(v){ return v == null ? '' : String(v); }
 function jparse(t, d){ try{ var v = JSON.parse(t); return v == null ? d : v; }catch(e){ return d; } }
 function busyErr(why){ var e = new TypeError('Failed to fetch (GrayCo: ' + why + ')'); e.__gcBusy = true; return e; }
+/* patch CLOUDBO: per-list pause for writes */
+var BOK = {};
+function kvKeyOf(url, init){
+  try { var m1 = /[?&]key=eq\.([^&]+)/.exec(decodeURIComponent(String(url))); if (m1) return m1[1].replace(/__chunk\d+$/, '');
+    var b = init && typeof init.body === 'string' ? init.body.slice(0, 400) : ''; var m2 = /"key"\s*:\s*"([^"]+)"/.exec(b); return m2 ? m2[1].replace(/__chunk\d+$/, '') : ''; } catch (e) { return ''; }
+}
+function backoffKey(k, status){
+  var e = BOK[k] || (BOK[k] = { n: 0, until: 0 }); e.n = Math.min(e.n + 1, 3);
+  var ms = Math.round(Math.min(60000, 15000 * Math.pow(2, e.n - 1)) * (0.8 + Math.random() * 0.4));
+  e.until = Date.now() + ms; S.backoffs++;
+  try{ console.warn('[GC] the cloud answered ' + status + ' to a save of "' + k + '" — saves of that list wait ' + Math.round(ms / 1000) + ' s (other lists go on; nothing is lost)'); }catch(x){}
+}
 window.addEventListener('online', function(){ BO.until = 0; BO.n = 0; });   /* back online: ask again at once */
 function backoff(status){
   BO.n = Math.min(BO.n + 1, 6);
-  var ms = Math.min(300000, 30000 * Math.pow(2, BO.n - 1));
+  var ms = Math.min(60000, 15000 * Math.pow(2, BO.n - 1));   /* patch CLOUDBO: reads only, 15 s → 60 s at most */
   ms = Math.round(ms * (0.8 + Math.random() * 0.4));
   BO.until = Date.now() + ms; S.backoffs++;
   try{ console.warn('[GC] the cloud answered ' + status + ' — this computer waits ' + Math.round(ms / 1000) + ' s before asking again (nothing is lost: it is all on this computer)'); }catch(e){}
@@ -153606,7 +153744,9 @@ if(nf0 && !nf0.__gcPJX){
     if(host !== SBH || url.indexOf('/rest/v1/') < 0) return nf0.apply(this, arguments);
     var m = methodOf(input, init), isKv = /\/rest\/v1\/gc_kv(\?|$)/.test(url);
     var isEpoch = isKv && /[?&]key=eq\.gc_epoch(&|$)/.test(decodeURIComponent(url));     /* the fresh-start check is never held back */
-    if(Date.now() < BO.until && !isEpoch){ S.blocked++; return Promise.reject(busyErr('the cloud is busy — waiting ' + Math.round((BO.until - Date.now()) / 1000) + ' s')); }
+    /* patch CLOUDBO: a write waits only for its own list's pause; reads for the read pause */
+    var isW = m !== 'GET' && m !== 'HEAD', wk = isW && isKv ? kvKeyOf(url, init) : '', bk = wk && BOK[wk];
+    if(!isEpoch && (isW ? (bk && Date.now() < bk.until) : Date.now() < BO.until)){ S.blocked++; var left = Math.round(((isW ? bk.until : BO.until) - Date.now()) / 1000); return Promise.reject(busyErr('the cloud is busy' + (wk ? ' for ' + wk : '') + ' — waiting ' + left + ' s')); }
     /* the same read asked again within seconds (every tab and engine asks for the same rows) is answered once */
     var ck = (isKv && (m === 'GET' || m === 'HEAD') && !(init && init.cache === 'no-store')) ? m + ' ' + url : '';
     if(ck){
@@ -153630,11 +153770,11 @@ if(nf0 && !nf0.__gcPJX){
       return nf0.apply(self, args).then(function(res){
         if(res.status >= 500 || res.status === 429){
           S.last5xx = res.status + ' ' + m + ' ' + decodeURIComponent(url).replace(/^https?:\/\/[^/]+/, '').slice(0, 120) + (res.type === 'default' ? ' (made on this computer: offline)' : '');
-          if(res.type !== 'default') backoff(res.status);      /* only a real answer from the database means "busy"; an offline stand-in does not */
+          if(res.type !== 'default'){ if(isW){ if(wk) backoffKey(wk, res.status); } else backoff(res.status); }      /* only a real answer from the database means "busy"; an offline stand-in does not — patch CLOUDBO: a write pauses its own list only */
           if(isKv){ if(m === 'GET') S.failedReads++; else S.heldWrites++; throw busyErr('the cloud answered ' + res.status); }
           return res;
         }
-        if(res.ok) BO.n = Math.max(0, BO.n - 1);
+        if(res.ok){ if(isW){ if(wk && BOK[wk]) delete BOK[wk]; } else { BO.n = 0; BO.until = 0; } }   /* patch CLOUDBO: one good answer clears the pause */
         if(isKv && m === 'GET' && res.ok){
           return res.clone().text().then(function(t){
             /* patch SPEED4C */ /* patch SPEED4: a list answer ([ … ]) is not taken apart just to see that it is a list — only when the job
@@ -154400,7 +154540,7 @@ function wrapDecide(){
     if (approve) {
       var r = check(invId);
       if (r.ok && r.warnings.length) { flag(invId, r); toast(r.warnings[0].replace(/ — .*$/, '') + ' — approved anyway.'); }
-      if (!r.ok) { flag(invId, r); var self = this, args = arguments; stopWindow(invId, r, 'approval', function(n){ f.call(self, invId, true, s(note) || ('Pay check overridden: ' + n)); try { if (W.__GC_REFRESH_UI__) later(W.__GC_REFRESH_UI__, 60); } catch (e) {} }); return false; }
+      if (!r.ok) { /* patch PAYFAST: the window first, the flag saved after it is on screen */ (function(id0, r0){ later(function(){ var rw = rowOf(id0); if (rw && rw.payOverride) return; flag(id0, r0); }, 500); })(invId, r); var self = this, args = arguments; stopWindow(invId, r, 'approval', function(n){ f.call(self, invId, true, s(note) || ('Pay check overridden: ' + n)); try { if (W.__GC_REFRESH_UI__) later(W.__GC_REFRESH_UI__, 60); } catch (e) {} }); return false; }
     }
     return f.apply(this, arguments);
   };
@@ -154449,6 +154589,9 @@ function decorate(){
   });
 }
 function settled(id){ var iv = invOf(id); return !!(iv && (iv.approved === true || /^(approved|paid|written)$/i.test(s(iv.status)))); }
+/* patch PAYFAST: would the pay check stop this sub invoice? (kept 30 s) */
+var PB = { at: 0, m: {} };
+W._gcSubPayBlocked = function(invId){ var id = s(invId); if (Date.now() - PB.at > 30000) PB = { at: Date.now(), m: {} }; if (!(id in PB.m)) { try { var r = check(id); PB.m[id] = !r.ok && !r.overridden; } catch (e) { PB.m[id] = false; } } return PB.m[id]; };
 W._gcSubPayFlags = function(){ return queue().filter(function(a){ return a && a.status === 'pending_pm' && a.payCheck && !a.payOverride && !settled(s(a.invId || a.id)); }); };
 /* the warnings of a waiting sub invoice, worked out live (cached a minute; only for cards on screen and the Admin page) */
 var WC = { at: 0, m: {} };
@@ -158758,7 +158901,7 @@ function rowSub(a, mine, now){
   return { key: 'sub:' + id, id: id, src: 'sub', kind: 'sub_invoice', kindL: 'Sub invoice', icon: '🔧', title: 'Sub invoice — ' + (s(a.sub || a.subName || a.vendor) || 'Sub') + (a.desc ? ' · ' + s(a.desc).slice(0, 60) : ''),
     pid: s(a.pid), job: jobLine(p, a.jobName), pm: s(a.pmName) || s(p && p.pm), step: 'pm', waits: 'PM — ' + (s(a.pmName) || s(p && p.pm) || 'no PM'), since: t, clock: '', amount: num(a.amt || a.amount), mine: mine,
     escalated: false, chain: a.kickedBackToPm ? '↩ sent back by ' + s(a.deniedBy) : '',
-    approve: mine || adminLike() ? { l: '✅ Approve', mode: 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',
+    approve: mine || adminLike() ? { l: '✅ Approve', mode: (typeof W._gcSubPayBlocked === 'function' && W._gcSubPayBlocked(id)) ? undefined : 'defer', f: function(){ return call('_gcPmDecideSub', id, true, ''); } } : null, jobPick: s(a.pid) ? '' : 'sub',   /* patch PAYFAST: a stopped one opens the pay-check window at once */
     open: { l: 'Open / Edit', f: function(){ panelAt('[data-sub="' + cssq(id) + '"]'); } }, edit: { l: '✏️ Open sub invoice', form: 'sub' },
     doc: { l: '📄 Sub invoice', f: function(){ if (!call('_gcViewSubPDF', id, s(a.pid))) panelAt('[data-sub="' + cssq(id) + '"]'); } } };
 }
@@ -158788,9 +158931,15 @@ function rowExp(a, mine, now){
     open: { l: 'Open / Edit', f: function(){ call('_gcOpenExpenseApprovals'); } }, edit: { l: '✏️ Open expense', form: 'exp' },
     doc: a.expId || a.id ? { l: '🧾 Expense', f: function(){ call('_gcShowExpenseDetail', s(a.expId || a.id)); } } : null };
 }
+function openChecksHere(){
+  var before = D.body ? D.body.children.length : 0;
+  try { W._gcOpenCheckApprovals(); } catch (e) { warn(e); return; }
+  try { var kids = D.body.children; for (var i = before; i < kids.length; i++) if (getComputedStyle(kids[i]).position === 'fixed') kids[i].setAttribute('data-gc-keep', '1'); } catch (e) {}
+}
 function rowOther(o, mine, now){
   var key = s(o.id).replace(/^td:/, ''), it = td2Items().filter(function(x){ return x && x.key === key; })[0] || {};
   var p = proj(it.pid), act = o.act || it.act;
+  if (/check\(s\) to (sign|write)|waiting on owner signature|^write check/i.test(s(o.title || it.title)) && typeof W._gcOpenCheckApprovals === 'function') act = { l: (act && act.l) || 'Open checks', f: openChecksHere };   /* patch CHECKOPEN */
   return { key: 'td:' + key, id: key, src: 'other', kind: 'todo', kindL: 'To-Do approval', icon: '✅', title: s(o.title || it.title) + (o.sub ? ' — ' + s(o.sub) : ''),
     pid: s(it.pid), job: jobLine(p, ''), pm: s(p && p.pm), step: 'me', waits: 'You', since: Date.parse(it.created || it.at || 0) || 0, clock: '', amount: num(it.amount), mine: mine, escalated: false, chain: '',
     approve: act && act.f ? { l: '✅ ' + (s(act.l).replace(/^✅\s*/, '') || 'Approve'), f: function(){ try { act.f(); } catch (e) { warn(e); } } } : null,
@@ -158846,8 +158995,75 @@ function build0(){
   });
   if (!sc.preview) X.forEach(function(a){ add(rowExp(a, false, now)); });
   if (!sc.preview && realAdmin()) PAYRUNS.forEach(function(r){ if (r && r.status === 'pending') add(rowPay(r, now)); });   /* patch INLINEAPPR */
-  return { scope: sc, rows: out, now: now };
+  return { scope: sc, rows: denyFilter(out), now: now };
 }
+/* patch DENY: deny = a To-Do for the PM that holds the card back until it is done */
+var DENYBOX = {}, DREASON = {}, DENYC = { at: 0, open: {}, done: {} };
+/* patch APXNOTE: internal notes on a card (gc_approval_notes through window._gcRecordApprovalNote; decision "note") */
+var NOTEBOX = {}, NOTEDRAFT = {};
+function noteKeyOf(r){ return { t: 'apx-' + s(r.src), id: s(r.id) }; }
+function apxNotes(r){ var k = noteKeyOf(r), l = []; try { l = typeof W._gcGetApprovalNotes === 'function' ? arr(W._gcGetApprovalNotes(k.t, k.id)) : []; } catch (e) {} return l.filter(function(n){ return n && s(n.note); }); }
+function apxNotesHtml(r){ var l = apxNotes(r); if (!l.length) return '';
+  return '<div class="apx-notes" style="font-size:12px;color:#3730a3;background:#eef2ff;border-radius:7px;padding:4px 8px;margin:4px 0">' + l.slice(-3).map(function(n){ return '📝 <b>' + esc(s(n.by)) + '</b> ' + esc(when(n.at)) + ': ' + esc(s(n.note).slice(0, 200)); }).join('<br>') + (l.length > 3 ? '<br><span style="color:#64748b">+ ' + (l.length - 3) + ' earlier</span>' : '') + '</div>'; }
+function saveApxNote(r){
+  var inp = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'), t = s((inp && inp.value) || NOTEDRAFT[r.key]);
+  if (!t) { toast('Write the note first.'); return; }
+  var k = noteKeyOf(r);
+  try { if (typeof W._gcRecordApprovalNote === 'function') W._gcRecordApprovalNote(k.t, k.id, 'note', t.slice(0, 500)); else { toast('Notes are not ready yet — try again.'); return; } } catch (e) { warn(e); toast('Could not save the note.'); return; }
+  delete NOTEBOX[r.key]; delete NOTEDRAFT[r.key]; fresh(); paintSoon(); toast('📝 Note saved — the team sees it on this card (never sent to the customer).');
+}
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-note-in')) NOTEDRAFT[t.getAttribute('data-apx-note-in')] = t.value; }, true);
+D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.getAttribute && t.hasAttribute('data-apx-note-in')) { var g = t.parentNode && t.parentNode.querySelector('[data-apx-act$="|notego"]'); if (g) { ev.preventDefault(); g.click(); } } }, true);
+function denyTodos(){
+  if (Date.now() - DENYC.at < 1000) return DENYC;
+  var open = {}, done = {}, l = []; try { l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); } catch (e) {}
+  arr(l).forEach(function(t){ var d = t && t._deny; if (!d || !d.key) return; if (t.done || t.completed) (done[d.key] = done[d.key] || []).push(d); else open[d.key] = d; });
+  DENYC = { at: Date.now(), open: open, done: done }; return DENYC;
+}
+function denyFilter(rows){
+  var c = denyTodos();
+  return rows.filter(function(r){ return !(r && c.open[r.key.replace(/#\d+$/, '')]); }).map(function(r){
+    var h = c.done[r.key]; if (!h || !h.length) return r;
+    var x = Object.assign({}, r); x.chain = (r.chain ? r.chain + ' · ' : '') + h.map(function(d){ return '↩ sent back by ' + s(d.by) + ' ' + when(d.at) + ': “' + s(d.reason).slice(0, 80) + '”, fixed and resubmitted'; }).join(' · ');
+    return x;
+  });
+}
+function denyTo(r){
+  var p = proj(r.pid); var pm = s(r.pm) || s(p && (p.pm || p.projectManager));
+  var raw = null; try { raw = r.src === 'queue' ? queue().filter(function(y){ return s(y.id) === s(r.id); })[0] : null; } catch (e) {}
+  return pm || s(raw && (raw.pm || (raw.meta && raw.meta.by))) || s(r.by || r.createdBy) || '';
+}
+function doDeny(r){
+  var inp = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'), why = s((inp && inp.value) || DREASON[r.key]);
+  if (!why) { toast('Write why first — the PM sees it.'); if (inp) try { inp.focus(); } catch (e) {} return; }
+  var to = denyTo(r) || 'the office', me = myName() || myEmail(), at = new Date().toISOString(), title = s(r.title).slice(0, 120);
+  var d = { key: r.key.replace(/#\d+$/, ''), src: r.src, id: s(r.id), title: title, pid: s(r.pid), by: me, at: at, reason: why.slice(0, 500), to: to };
+  try {
+    var ot = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); if (!Array.isArray(ot)) ot = [];
+    ot.push({ id: 'DENY' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: '↩ Fix and resend: ' + title + ' — ' + why.slice(0, 160) + ' (from ' + me + ')', note: 'Sent back from Approvals by ' + me + '. Fix it, then tick this done: it goes back on Approvals.', assignee: to === 'the office' ? '' : to, pid: d.pid, addedBy: me, addedAt: at, at: at, done: false, _deny: d });
+    localStorage.setItem('gc_office_tasks', JSON.stringify(ot));
+  } catch (e) { warn(e); toast('Could not save that on this computer (' + s(e && e.message).slice(0, 80) + ') — try again.'); return; }
+  /* patch DENY2: the cloud push is separate — a hiccup there never drops the deny (the save queue sends it) */
+  try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e) { warn(e); try { if (W._gcSyncQ && W._gcSyncQ.add) W._gcSyncQ.add('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e2) {} }
+  if (r.src === 'queue' && typeof W._gcApprovalAct === 'function') { try { Promise.resolve(W._gcApprovalAct(s(r.id), 'reject', { reason: why.slice(0, 500) })).catch(function(){}); } catch (e) {} }
+  try { if (typeof W._gcNotify === 'function' && to !== 'the office') W._gcNotify(to, { kind: 'approval', link: '#todo', title: '↩ Sent back to you: ' + title, body: why + ' — from ' + me }); } catch (e) {}
+  delete DENYBOX[r.key]; delete DREASON[r.key]; DENYC.at = 0; fresh(); paintSoon();
+  toast('↩ Sent back to ' + to + ' — nothing was sent.');
+}
+/* a customer queue item whose "fix and resend" To-Do is done goes back to "waiting" (server op resubmit), once */
+function denyResubmit(){
+  var c = denyTodos(), sent = {}; try { sent = JSON.parse(localStorage.getItem('gc_deny_resub') || '{}') || {}; } catch (e) {}
+  Object.keys(c.done).forEach(function(k){ c.done[k].forEach(function(d){
+    if (d.src !== 'queue' || sent[d.id + '|' + d.at] || typeof W._gcApprovalAct !== 'function') return;
+    if (!(realAdmin() || samePerson(d.to, myName()))) return;
+    var x = queue().filter(function(y){ return s(y.id) === d.id; })[0]; if (x && x.status !== 'rejected') { sent[d.id + '|' + d.at] = Date.now(); return; }
+    sent[d.id + '|' + d.at] = Date.now(); try { localStorage.setItem('gc_deny_resub', JSON.stringify(sent)); } catch (e) {}
+    try { Promise.resolve(W._gcApprovalAct(d.id, 'resubmit', {})).catch(function(){}); } catch (e) {}
+  }); });
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { denyResubmit(); } catch (e) {} }, 15000);
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-deny-in')) DREASON[t.getAttribute('data-apx-deny-in')] = t.value; }, true);
+D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.getAttribute && t.hasAttribute('data-apx-deny-in')) { var g = t.parentNode && t.parentNode.querySelector('[data-apx-act$="|denygo"]'); if (g) { ev.preventDefault(); g.click(); } } }, true);
 function stub(e, src){
   return { key: s(e.id), id: s(e.id).replace(/^\w+:/, ''), src: src, kind: src, kindL: 'Approval', icon: '✅', title: s(e.title) || 'Approval', pid: '', job: '', pm: '', step: 'me', waits: 'You',
     since: 0, clock: '', amount: 0, mine: true, escalated: false, chain: '', approve: { l: 'Open the APPROVE panel', f: function(){ call('_gcOpenPmApprovals'); } }, open: null, doc: null };
@@ -159018,6 +159234,8 @@ function editForOther(o, it, act){
   var t = low(s(o.title || it.title)), lead = s(it.leadId || it.lid || (/^lead[:|]/.test(s(it.key)) ? s(it.key).replace(/^lead[:|]/, '') : ''));
   var what = /lead/.test(t) ? 'lead' : /change order/.test(t) ? 'change order' : /contract/.test(t) ? 'contract' : /check/.test(t) ? 'check' : /cost/.test(t) ? 'costs' : /material|order/.test(t) ? 'order' : 'item';
   if (what === 'lead' && lead) return { l: '✏️ Open lead', f: function(){ goAway('td:' + s(it.key || o.id), function(){ call('_gcOpenLead', lead); }); } };
+  /* patch CHECKOPEN: checks open the ✓ Checks window in place (no screen change that would close it) */
+  if (what === 'check' && typeof W._gcOpenCheckApprovals === 'function') return { l: '✏️ Open check', f: openChecksHere };
   if (act && act.f) return { l: '✏️ Open ' + what, f: function(){ goAway('td:' + s(it.key || o.id).replace(/^td:/, ''), function(){ act.f(); }); } };
   if (it.pid) return { l: '✏️ Open job', f: function(){ goAway('td:' + s(it.key), function(){ openJob(it.pid); }); } };
   return null;
@@ -159069,8 +159287,28 @@ function btns(r, where){
   if (DONE[r.key]) return '<div class="apx-bs"><span class="apx-okmsg' + (DONE[r.key].ok ? '' : ' bad') + '">' + (DONE[r.key].ok ? '✓ Approved' : '⚠ That did not go through — try again') + '</span></div>';
   if (r.approve && CONF[r.key]) return '<div class="apx-conf"><span>' + esc(r.approve.what || 'Approve this?') + '</span><button type="button" class="apx-b go" data-apx-conf="yes" data-k="' + esc(r.key) + '">✅ Yes, approve</button><button type="button" class="apx-b op" data-apx-conf="no" data-k="' + esc(r.key) + '">Cancel</button>' + (r.doc ? '' : '') + '</div>' + (r.doc ? '<div class="apx-bs">' + (function(){ var k = where + '|' + r.key + '|doc'; ACTS[k] = r.doc.f; return '<button type="button" class="apx-b dc" data-apx-act="' + esc(k) + '">' + esc(r.doc.l) + '</button>'; })() + '</div>' : '');
   function b(kind, o, cls){ if (!o) return ''; var k = where + '|' + r.key + '|' + kind; ACTS[k] = o.f; return '<button type="button" class="apx-b ' + cls + '" data-apx-act="' + esc(k) + '">' + esc(o.l) + '</button>'; }
+  /* patch DENY: the "why?" box in place of the buttons, and ✕ Deny next to Approve */
+  if (NOTEBOX[r.key]) {   /* patch APXNOTE: the note box */
+    return '<div class="apx-notebox" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #c7d2fe;border-radius:9px;background:#f5f7ff">'
+      + '<b style="width:100%;font-size:13px;color:#3730a3">📝 Note — for the team only (never sent to the customer)</b>'
+      + '<input type="text" data-apx-note-in="' + esc(r.key) + '" value="' + esc(NOTEDRAFT[r.key] || '') + '" placeholder="e.g. Checked the amount with the sub" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font:14px Arial">'
+      + b('notego', { l: '💾 Save note', f: function(){ saveApxNote(r); } }, 'go') + b('notex', { l: 'Cancel', f: function(){ delete NOTEBOX[r.key]; fresh(); paintSoon(); } }, 'op') + '</div>';
+  }
+  if (r.approve && DENYBOX[r.key]) {
+    return '<div class="apx-deny" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #fca5a5;border-radius:9px;background:#fff5f5">'
+      + '<b style="width:100%;font-size:13px;color:#991b1b">✕ Deny — why? (sent back to ' + esc(denyTo(r) || 'the PM') + ')</b>'
+      + '<input type="text" data-apx-deny-in="' + esc(r.key) + '" value="' + esc(DREASON[r.key] || '') + '" placeholder="What needs fixing (the PM sees this)" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font:14px Arial">'
+      + b('denygo', { l: '✕ Deny & send back', f: function(){ doDeny(r); } }, 'dn') + b('denyx', { l: 'Cancel', f: function(){ delete DENYBOX[r.key]; fresh(); paintSoon(); } }, 'op')
+      + '<span style="width:100%;font-size:12px;color:#6b7280">Nothing is sent to the customer.</span></div>';
+  }
   h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
-  if (r.edit) h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; fresh(); paintSoon(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
+  h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'op');   /* patch APXNOTE */
+  if (r.approve && r.src !== 'pay' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ DENYBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'dn');
+  /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
+  var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
+  if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
+  else if (r.edit) { h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; fresh(); paintSoon(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
+    if (sendEdit) h += b('sendedit', { l: '✏️ Edit before sending', f: function(){ try { W._gcAp2Preview(r.id); } catch (e) { warn(e); } } }, 'ed'); }
   else h += b('open', r.open, 'op');
   if (r.pid && r.job) h += b('job', { l: '🏗 Open job', f: function(){ openJob(r.pid); } }, 'jb');
   h += b('doc', r.doc, 'dc');
@@ -159082,6 +159320,8 @@ function rowHtml(r, now, where){
     + (W._gcApprovalChip ? W._gcApprovalChip(r) : '')   /* patch APPRORDER */
     + '<div class="apx-t">' + r.icon + ' <span class="apx-kl">' + esc(r.kindL) + '</span> · ' + esc(r.title) + '</div>'
     + (r.job ? '<div class="apx-j">🏗 ' + esc(r.job) + '</div>' : '')
+    + (r.src === 'queue' && W._gcApprSay && r.approve ? (function(){ var x = null; try { x = queue().filter(function(y){ return s(y.id) === s(r.id); })[0]; } catch (e) {} var t = x ? W._gcApprSay(x, /Approve & send|portal/.test(s(r.approve.l))) : ''; return t ? '<div class="apx-say" style="font-size:13px;color:#0f172a;background:#f1f5f9;border-radius:8px;padding:6px 8px;margin:4px 0">' + esc(t) + '</div>' : ''; })() : '')   /* patch APPTCONF */
+    + apxNotesHtml(r)   /* patch APXNOTE */
     + (r.mine && !DONE[r.key] ? jobPickHtml(r) : '')
     + '<div class="apx-m"><span class="apx-w ' + esc(r.step) + '">Waits on: ' + esc(r.mine ? 'you' + (r.step !== 'me' && r.waits ? ' (' + r.waits + ')' : '') : r.waits) + '</span>'
     + (age(r, now) ? '<span>⏱ ' + esc(age(r, now)) + '</span>' : '')
@@ -163499,7 +163739,23 @@ function findCustomer(idOrName, pid, rec){
       if (!c) c = { name: s(p.client) || 'Customer', phone: s(p.clientPhone || p.customerPhone), email: s(p.clientEmail || p.customerEmail), address: s(p.address), _pseudo: true };
     }
   }
+  if (!c && looksId(k)) c = custFromId(k, list);
+  if (c && c._pseudo && looksId(c.name)) c = Object.assign({}, c, { name: 'Customer' });
   return c || { name: k || 'Customer', _pseudo: true };
+}
+/* patch CUSTNAME: an id (LCC_ / LQB_ / LGN_ / PRJ… / cust_…) is looked up, never shown as a name */
+function looksId(v){ v = s(v).trim(); return !!v && !/\s/.test(v) && (/^(LCC|LQB|LCCR|LGN|LDUP|LEAD|L)_/i.test(v) || /^PRJ[a-z0-9]{6,}$/i.test(v) || /^cust_?[0-9a-z]{6,}$/i.test(v) || /_PRJ[a-z0-9]{6,}$/i.test(v)); }
+function custFromId(k, list){
+  var pid = (k.match(/(PRJ[a-z0-9]+)$/i) || [])[1] || '';
+  var l = leads().filter(function(x){ return x && String(x.id) === k; })[0];
+  var p = projects().filter(function(x){ return x && (String(x.id) === k || (pid && String(x.id) === pid) || (l && l.fromProjectId && String(x.id) === String(l.fromProjectId))); })[0];
+  var nm = s(l && (l.contactName || l.client || (typeof l.contact === 'string' ? l.contact : '') || l.company)) || s(p && p.client) || s(l && l.name) || '';
+  if (looksId(nm) || /^(CompanyCam lead|QuickBooks customer)$/i.test(nm)) nm = s(p && p.client) || s(l && l.name) || '';
+  if (!nm && !p) return null;
+  var em = low((l && l.email) || (p && (p.clientEmail || p.customerEmail))), ph = digits((l && l.phone) || (p && (p.clientPhone || p.customerPhone)));
+  var hit = list.filter(function(x){ return x && ((nm && norm(x.name) === norm(nm)) || (em && low(x.email) === em) || (ph.length === 10 && digits(x.phone) === ph)); })[0];
+  if (hit) return hit;
+  return { name: nm || 'Customer', phone: s((l && l.phone) || (p && (p.clientPhone || p.customerPhone))), email: s((l && l.email) || (p && (p.clientEmail || p.customerEmail))), address: s((l && l.address) || (p && p.address)), _pseudo: true, _pid: p ? s(p.id) : '' };
 }
 function custKeys(c){
   var names = [c.name, c.company].concat(arr(c.contacts).map(function(x){ return x.name; })).map(norm).filter(Boolean);
@@ -163516,7 +163772,7 @@ function matchesCust(k, name, email, phone, cid){
 }
 function custData(c){
   var k = custKeys(c);
-  var jobs = projects().filter(function(p){ return matchesCust(k, p.client, p.clientEmail || p.customerEmail, p.clientPhone || p.customerPhone, p.customerId); });
+  var jobs = projects().filter(function(p){ return (c._pid && String(p.id) === c._pid) || matchesCust(k, p.client, p.clientEmail || p.customerEmail, p.clientPhone || p.customerPhone, p.customerId); });   /* patch CUSTNAME: + the job it was found from */
   var pids = {}; jobs.forEach(function(p){ pids[p.id] = 1; });
   var ests = estimates().filter(function(e){ var f = e.fields || {}; return (e.pid && pids[e.pid]) || matchesCust(k, e.client || e.customer || e.clientName || f.client || f.name, e.clientEmail || e.email || f.email, e.clientPhone || f.phone); });
   var lds = leads().filter(function(l){ return l && !l.deleted && matchesCust(k, l.contactName || l.client || l.name, l.email || (l.contact && l.contact.email), l.phone || (l.contact && l.contact.phone)); });
@@ -163657,8 +163913,21 @@ function draw360(idOrName, opts){
   (function(){
     var el = bd.querySelector('[data-ref]'); if (!el) return;
     if (!isOffice()) { el.textContent = 'Referral details: office and admins.'; return; }
-    getJSON('/.netlify/functions/referral?list=1').then(function(j){
-      if (!j || !j.ok) { el.textContent = 'The referral program could not be reached.'; return; }
+    /* patch REFWHY: what is true, or why it could not look (+ ↻ Try again) */
+    var refLoad = function(){ el.textContent = 'Looking up referrals…';
+      var done = false, tm = setTimeout(function(){ if (done) return; done = true; refShow({ __st: 0, __timeout: true }); }, 15000);
+      W.fetch('/.netlify/functions/referral?list=1', { cache: 'no-store' }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j || {}; j.__st = r.status; j.__stt = r.statusText; return j; }); }, function(){ return { __st: 0 }; })
+        .then(function(j){ if (done) return; done = true; clearTimeout(tm); refShow(j); }); };
+    var refWhy = function(j){ var st = j && j.__st, e = s(j && j.error);
+      if (st === 401) return 'Your sign-in has expired — sign in again to see referrals.';
+      if (st === 403) return 'Referral details: office and admins.';
+      if (st === 503 && /not configured/i.test(e)) return 'The referral program is not set up yet — no referrals to show.';
+      if (st === 503 && /paused/i.test(s(j && j.__stt))) return 'The CRM paused calls to the referral program for a while after it failed a few times — tap ↻ Try again.';
+      if (j && j.__timeout) return 'The referral program did not answer in time.';
+      if (!st) return 'The referral program did not answer (no internet?).';
+      return 'The referral program did not answer right now' + (e ? ' (' + e + ')' : '') + '.'; };
+    var refShow = function(j){
+      if (!j || !j.ok) { el.innerHTML = '<div class="gcd1-row"><span class="gcd1-muted">' + esc(refWhy(j)) + '</span><span class="r"><button class="gcd1-btn s" data-ref-retry="1">↻ Try again</button></span></div>'; var rb = el.querySelector('[data-ref-retry]'); if (rb) rb.onclick = function(){ try { if (/paused/i.test(s(j && j.__stt)) && typeof W._gcFloodReset === 'function') W._gcFloodReset(); } catch (x) {} refLoad(); }; return; }
       var ck = custKeys(c);
       var m = arr(j.members).filter(function(mm){ return matchesCust(ck, mm.name, mm.email, mm.phone); })[0];
       var refs = m ? arr(j.referrals).filter(function(r){ return r.memberId === m.id; }) : [];
@@ -163667,7 +163936,8 @@ function draw360(idOrName, opts){
         '<div class="gcd1-row"><span>Referrals made</span><span class="r"><b>' + refs.length + '</b>' + (m && m.hired ? ' · ' + m.hired + ' became jobs' : '') + '</span></div>' +
         refs.slice(0, 10).map(function(r){ return '<div class="gcd1-row"><span class="m">→ ' + esc(r.name || r.referredName || r.leadName || 'Referral') + '</span><span class="r"><span class="gcd1-chip">' + esc(r.status || 'new') + '</span></span></div>'; }).join('') +
         (made.length ? '<div class="gcd1-row"><span>They were referred by</span><span class="r">' + esc(made[0]) + '</span></div>' : '');
-    });
+    };
+    refLoad();   /* patch REFWHY */
   })();
 
   /* actions */
@@ -173126,6 +173396,16 @@ function normName(v){
   return real.length ? t : '';
 }
 function leadName(l){ return s(l.name || l.title || l.company || l.client); }
+/* patch LDUPBID: bid platforms / plan rooms / notification senders, and what counts as a bid */
+var DUP_PLAT = /(planhub|buildingconnected|isqft|constructconnect|construct-connect|dodge|bidnet|bidclerk|bidexpress|blueprint|reprographic|planroom|plan-room|plans?room|procore|smartbid|pipelinesuite|bxwa|ebuilder|e-builder|bonfire|demandstar|periscope|questcdn|civcast|sam\.gov|govspend|onvia|bidsync|ionwave|negometrix|publicpurchase|biddingo|plansource|arcbid|reprodepot|thebluebook|bluebook|app\.box|mailchimp|sendgrid|hubspot|salesforce|constantcontact)/;
+var DUP_NOTE = /^(no-?reply|do-?not-?reply|donotreply|notifications?|notify|projectnotifications?|project\.?notifications?|alerts?|bids?|bidding|invitations?|invite|mailer|postmaster|system|automated|updates?)[^@]*@/;
+function dupPlatformEmail(v){ var e = low(v); if (!/@/.test(e)) return false; return DUP_PLAT.test(e.split('@')[1] || '') || DUP_NOTE.test(e) || DUP_PLAT.test(e.split('@')[0] || ''); }
+function dupIsBid(l){
+  try { if (W._gcBidRole && typeof W._gcBidRole.isBid === 'function' && W._gcBidRole.isBid(l)) return true; } catch (e) {}
+  if (/commercial|government|public|bid/i.test(s(l.leadKind) + ' ' + s(l.kind))) return true;
+  if (s(l.inboxId) || s(l.bidDue) || s(l.dueToCompany) || s(l.bidRole)) return true;
+  return DUP_PLAT.test(low(l.source) + ' ' + low(l.origin));
+}
 function leadAddr(l){ return s(l.address || l.jobAddress || l.siteAddress || (l.leadExtra && l.leadExtra.address)); }
 
 /* ── what kind of lead ────────────────────────────────────────────────────── */
@@ -173160,8 +173440,9 @@ function analyze(list, jobs, opts){
   var seen = {};
   live.forEach(function(l){
     var keys = [];
-    var p = normPhone(l.phone || l.clientPhone); if (p) keys.push(['phone', 'p:' + p]);
-    var e = normEmail(l.email || l.clientEmail); if (e) keys.push(['e-mail', 'e:' + e]);
+    var bidL = dupIsBid(l), platE = dupPlatformEmail(l.email || l.clientEmail);   /* patch LDUPBID: bids and platform senders never match by e-mail / phone */
+    var p = normPhone(l.phone || l.clientPhone); if (p && !bidL && !platE) keys.push(['phone', 'p:' + p]);
+    var e = normEmail(l.email || l.clientEmail); if (e && !bidL && !platE) keys.push(['e-mail', 'e:' + e]);
     var a = normAddr(leadAddr(l)); if (a) keys.push(['address', 'a:' + a]);
     var n = normName(leadName(l)); if (n) keys.push(['name', 'n:' + n]);
     if (s(l.ccamId)) keys.push(['CompanyCam', 'cc:' + s(l.ccamId)]);
@@ -185024,7 +185305,9 @@ function tick(){
     if (n > 0) {
       if (!prevWaiting) since = now;
       var tries = 0; try { (q.waiting() || []).forEach(function(w){ if ((w.tries || 0) > tries) tries = w.tries || 0; }); } catch (e) {}
-      if (tries >= 2 || (!navigator.onLine)) show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this computer \u2014 not sent yet, trying again', 'warn');
+      /* patch SAVEWHY: which list and the cloud's own answer */
+      var why = ''; try { why = String(st.lastError || '').slice(0, 140); var wk = (q.waiting() || []).map(function(w){ return w.key; }).slice(0, 3).join(', '); if (!why && wk) why = wk; if (why && why !== W.__gcSaveWhyLast) { W.__gcSaveWhyLast = why; try { console.warn('[GC] save not sent yet: ' + why + ' (waiting: ' + wk + ')'); } catch (e2) {} } } catch (e) {}
+      if (tries >= 2 || (!navigator.onLine)) { show('\u26a0 ' + n + (n === 1 ? ' save is' : ' saves are') + ' kept on this computer \u2014 not sent yet, trying again' + (why ? ' (' + why + ')' : ''), 'warn'); try { box().title = why; } catch (e) {} }
       else if (now - since > 1200) show('\u2601 Saved on this computer \u2014 sending\u2026', 'info');
       prevWaiting = n; return;
     }
@@ -186225,5 +186508,271 @@ function fix(){
 }
 setInterval(fix, 1500); window._gcProfTop = fix;
 console.log('[GC] PROFTOP: My Profile shows your profile card first.');
+})();
+</script>
+<script id="gc-patch-admtabs">
+/* __GC_PATCH_ADMTABS__ — the Admin setting cards go after #gc-adm-hub, so a tab's content sits right under the tab row */
+(function(){
+'use strict';
+if (window.__GC_PATCH_ADMTABS__) return; window.__GC_PATCH_ADMTABS__ = true;
+var D = document, W = window;
+var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+var IDS = ['gc-x10-admin', 'gc-ja-admin', 'gc-aut3-admin', 'gc-auto5-admin', 'gc-x9-admin'];
+function fix(){
+  var hub = D.getElementById('gc-adm-hub'); if (!hub || !hub.parentNode) return;
+  var par = hub.parentNode, after = hub;
+  for (var i = 0; i < IDS.length; i++) {
+    var el = D.getElementById(IDS[i]); if (!el || el.parentNode !== par) continue;
+    if (el.previousSibling !== after) par.insertBefore(el, after.nextSibling);
+    after = el;
+  }
+}
+SI.call(W, function(){ try { fix(); } catch (e) {} }, 250);
+/* a tab tap brings the tab row to the top of the screen, so the chosen tab's content is in view (the setup warnings above
+   the row are ~600 px tall) */
+D.addEventListener('click', function(e){
+  try {
+    var b = e.target && e.target.closest ? e.target.closest('main button') : null; if (!b || !D.getElementById('gc-adm-hub')) return;
+    var row = b.parentNode; if (!row || row.parentNode !== D.getElementById('gc-adm-hub').parentNode) return;
+    if (!/Pay Structures/.test(row.textContent || '') || !/Employees/.test(row.textContent || '')) return;
+    W.setTimeout(function(){ try { fix(); row.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (x) {} }, 60);
+  } catch (x) {}
+}, true);
+W._gcAdmTabsFix = fix;
+try { console.log('[GC] ADMTABS: Admin setting cards under the settings hub, tab content right under the tabs'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-apptconf">
+/* __GC_PATCH_APPTCONF__ — what Approve does, in plain words; appointment confirmation duplicates taken off once */
+(function(){
+'use strict';
+if (window.__GC_PATCH_APPTCONF__) return; window.__GC_PATCH_APPTCONF__ = true;
+var W = window;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function proj(pid){ var l = (W._crm && W._crm.projects) || []; for (var i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === String(pid)) return l[i]; return null; }
+function firstLine(html){
+  var t = s(String(html || '').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'").replace(/&quot;/g, '"').replace(/[ \t]+/g, ' '));
+  var lines = t.split(/\n+/).map(s).filter(function(l){ return l && !/^(hi|hello|dear|good (morning|afternoon))\b/i.test(l); });
+  var l = (lines[0] || '').replace(/\s+([.,!?;:])/g, '$1').replace(/[.]+$/, ''); return l.length > 140 ? l.slice(0, 137) + '…' : l;
+}
+W._gcApprSay = function(x, last){
+  if (!x) return '';
+  var p = proj(x.jobId || x.pid), who = s(p && (p.client || p.customerName)) || s(x.jobName) || 'the customer';
+  var to = s(x.to), subj = s(x.subject), fl = firstLine(x.html || x.text || x.body);
+  var what = x.kind === 'portal_publish' ? 'puts it in ' + who + '’s customer portal (no e-mail)' : (x.channel === 'sms' ? 'texts ' + who + (to ? ' (' + to + ')' : '') : 'sends this e-mail to ' + who + (to ? ' (' + to + ')' : '')) + (subj ? ': “' + subj + '”' : '') + (fl ? ' — ' + fl : '');
+  return last ? 'Approve ' + what + '. Don’t approve: nothing is sent.' : 'Approve passes it to Wesley or Nick; when they approve, it ' + what.replace(/^sends/, 'sends').replace(/^puts/, 'goes') + '. Don’t approve: nothing is sent.';
+};
+/* duplicates already waiting: same job, day and recipient — the first stays, the others are taken off (rejected = never sent) */
+var tried = {};
+function day(x){ return s((x.meta || {}).day) || ((s(x.id).match(/_(\d{8})/) || [])[1] || ''); }
+function sweep(){
+  if (!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) || typeof W._gcApprovalAct !== 'function' || typeof W._gcCustApprovals !== 'function') return;
+  var all = []; try { all = (W._gcCustApprovals() || {}).all || []; } catch (e) { return; }
+  var first = {};
+  all.filter(function(x){ return x && x.kind === 'appt_confirm' && /^(waiting|sending|sent)$/.test(s(x.status)) && day(x); })
+    .sort(function(a, b){ return (Date.parse(a.createdAt || 0) || 0) - (Date.parse(b.createdAt || 0) || 0); })
+    .forEach(function(x){ var k = s(x.jobId) + '|' + day(x) + '|' + s(x.to).toLowerCase(); if (!first[k]) { first[k] = x; return; }
+      if (x.status !== 'waiting' || tried[x.id]) return; tried[x.id] = 1;
+      try { Promise.resolve(W._gcApprovalAct(x.id, 'reject', { reason: 'Duplicate: one appointment confirmation per job and day (kept “' + s(first[k].title).slice(0, 80) + '”)' })).catch(function(){}); } catch (e) {} });
+}
+(W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { sweep(); } catch (e) {} }, 60000);
+(W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout).call(W, function(){ try { sweep(); } catch (e) {} }, 20000);
+W._gcApptConf = { sweep: sweep, say: W._gcApprSay };
+})();
+</script>
+<script>
+/* patch RTSTAMP (2): the same big list written again within 2.5 s is not written twice */
+(function(){
+'use strict';
+if (window.__GC_RTDUP__) return; window.__GC_RTDUP__ = true;
+try {
+  var P = IDBObjectStore.prototype, inner = P.put, last = {}, ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+  var stats = window._gcRtDup = { skipped: 0, written: 0 };
+  var w = function(value, key){
+    try {
+      if (typeof key === 'string' && Array.isArray(value) && value.length > 2000 && this.name === 'kv' && this.transaction && this.transaction.db && this.transaction.db.name === 'grayco_crm') {
+        var txt = JSON.stringify(value), now = Date.now(), L = last[key];
+        if (L && L.txt === txt && now - L.at < 2500) {
+          stats.skipped++;
+          var fake = { readyState: 'done', result: key, error: null, onsuccess: null, onerror: null, transaction: this.transaction, source: this,
+            addEventListener: function(type, fn){ if (type === 'success' && typeof fn === 'function') ST.call(window, function(){ try { fn({ target: fake, type: 'success' }); } catch (e) {} }, 0); },
+            removeEventListener: function(){} };
+          ST.call(window, function(){ try { if (typeof fake.onsuccess === 'function') fake.onsuccess({ target: fake, type: 'success' }); } catch (e) {} }, 0);
+          return fake;
+        }
+        var r = inner.apply(this, arguments);
+        stats.written++;
+        try { this.transaction.addEventListener('complete', function(){ last[key] = { txt: txt, at: Date.now() }; }); } catch (e) {}   /* only what reached the disk counts */
+        try { this.transaction.addEventListener('abort', function(){ if (last[key] && last[key].txt === txt) delete last[key]; }); } catch (e) {}
+        return r;
+      }
+    } catch (e) {}
+    return inner.apply(this, arguments);
+  };
+  w.__gcRtDup = true; try { Object.keys(inner).forEach(function(k){ w[k] = inner[k]; }); } catch (e) {}
+  P.put = w;
+} catch (e) {}
+})();
+</script>
+<script>
+/* patch BOOKDEDUPE: the rule, the guards told about it, and the one-time cloud clean-up */
+(function(){
+'use strict';
+if (window.__GC_BOOKDEDUPE__) return; window.__GC_BOOKDEDUPE__ = true;
+var ST = window.__GC_NATIVE_SETTIMEOUT__ || setTimeout;
+var STAMPX = /^(updatedAt|updated_at|savedAt|lastSeen|modified|modifiedAt|lastModified|createdAt|created|_\w*UpdatedAt)$/;
+var DROP = {};                 /* ids the rule folded away this session (the keep-forever guard and the delete recorder are told) */
+var stats = window._gcBookDedupeStats = { runs: 0, autoDropped: 0, exactDropped: 0, last: null };
+function idOf(r){ return (r && typeof r === 'object') ? (r.id != null && r.id !== '' ? String(r.id) : (r._id != null && r._id !== '' ? String(r._id) : '')) : ''; }
+function d10(x){ return String(x || '').slice(0, 10); }
+function canon(r){
+  var ks = Object.keys(r).sort(), p = [];
+  for (var i = 0; i < ks.length; i++) { var k = ks[i]; if (k === 'id' || k === '_id' || STAMPX.test(k)) continue; var v = r[k]; if (v === undefined || typeof v === 'function') continue; var j; try { j = JSON.stringify(v); } catch (e) { return null; } p.push(JSON.stringify(k) + ':' + j); }
+  return '{' + p.join(',') + '}';
+}
+function projDates(){
+  var m = {};
+  try { (window._crm && window._crm.projects || []).forEach(function(p){ if (p && p.id != null) m[String(p.id)] = { start: d10(p.startDate), finish: d10(p.endDate) }; }); } catch (e) {}
+  return m;
+}
+/* returns the same array when nothing is folded */
+function dedupe(list){
+  if (!Array.isArray(list) || list.length < 2) return list;
+  var P = null, best = {}, groups = {}, drop = null, i, r, id;
+  for (i = 0; i < list.length; i++) {
+    r = list[i]; if (!r || typeof r !== 'object') continue; id = idOf(r); if (!id) continue;
+    var kind = r._autoBookend;
+    if ((kind === 'start' || kind === 'finish') && r.pid != null && r.pid !== '') {
+      var k = String(r.pid) + '|' + kind, cur = best[k];
+      if (cur == null) { best[k] = i; continue; }
+      if (!P) P = projDates();
+      var want = (P[String(r.pid)] || {})[kind] || '', b = list[cur];
+      var ra = !!want && d10(r.date) === want, rb = !!want && d10(b.date) === want;
+      var rWins = ra !== rb ? ra : (id < idOf(b));
+      (drop || (drop = {}))[rWins ? cur : i] = 1; if (rWins) best[k] = i;
+    } else {
+      var ck = [r.pid, d10(r.date), r.title, r.time, r.assignee].join('\u0001');
+      (groups[ck] || (groups[ck] = [])).push(i);
+    }
+  }
+  for (var ck2 in groups) {
+    var g = groups[ck2]; if (g.length < 2) continue;
+    var byC = {};
+    for (var q = 0; q < g.length; q++) {
+      var row = list[g[q]], c = canon(row); if (c == null) continue;
+      var at = byC[c];
+      if (at == null) { byC[c] = g[q]; continue; }
+      var keepNew = idOf(row) < idOf(list[at]);
+      (drop || (drop = {}))[keepNew ? at : g[q]] = 1; if (keepNew) byC[c] = g[q];
+    }
+  }
+  if (!drop) return list;
+  var keptIds = {}, out = [], nA = 0, nE = 0;
+  for (i = 0; i < list.length; i++) { if (!drop[i]) { out.push(list[i]); var kid = idOf(list[i]); if (kid) { keptIds[kid] = 1; delete DROP[kid]; } } }
+  for (var di in drop) { var dr = list[+di], did = idOf(dr); if (did && !keptIds[did]) DROP[did] = 1; if (dr && (dr._autoBookend === 'start' || dr._autoBookend === 'finish')) nA++; else nE++; }
+  stats.runs++; stats.autoDropped += nA; stats.exactDropped += nE; stats.last = { at: new Date().toISOString(), before: list.length, after: out.length, auto: nA, exact: nE };
+  return out;
+}
+window._gcSchedDedupe = dedupe;
+window._gcSchedDupIds = function(){ return Object.keys(DROP).length; };
+/* the keep-forever guard (repair -> mergedAway) and the delete recorder ask _gcIsFolded: a copy the rule folded away
+   is not a record a sync lost */
+(function wrapFolded(){
+  var f = window._gcIsFolded;
+  var w = function(list, id){ try { if ((list === 'schedule') && id != null && DROP[String(id)]) return true; } catch (e) {} return typeof f === 'function' ? f.apply(this, arguments) : false; };
+  w.__gcBook = true; window._gcIsFolded = w;
+})();
+
+/* ── the cloud, once ─────────────────────────────────────────────────────────────── */
+function creds(){ try { return { u: (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k: localStorage.getItem('grayco_sb_key') || '' }; } catch (e) { return { u: '', k: '' }; } }
+function H(c){ return { apikey: c.k, Authorization: 'Bearer ' + c.k }; }
+async function getRow(c, key){
+  var r = await fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value', { headers: H(c), cache: 'no-store' });
+  if (!r || !r.ok) throw new Error('read ' + key + ' ' + (r && r.status));
+  var rows = await r.json(); if (!Array.isArray(rows)) throw new Error('read ' + key);
+  if (!rows.length) return undefined;
+  var v = rows[0].value; if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { v = JSON.parse(v); } catch (e) {} }
+  return v;
+}
+async function putRow(c, key, value){
+  var r = await fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, H(c)), body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) });
+  if (!r || !r.ok) throw new Error('write ' + key + ' ' + (r && r.status));
+}
+var running = false;
+window._gcBookDedupeNow = async function(opt){
+  opt = opt || {};
+  if (running) return { skipped: 'already running' };
+  running = true;
+  var rep = { at: new Date().toISOString(), by: '' };
+  try {
+    try { rep.by = (window.__GC_AUTH__ && window.__GC_AUTH__.email()) || ''; } catch (e) {}
+    var c = creds(); if (!c.u || !c.k) throw new Error('not connected to the cloud');
+    var man = await getRow(c, 'schedule__manifest');
+    var chunks = [];
+    if (man && man.chunked) {
+      if (typeof window._gcSbReadChunked !== 'function') throw new Error('no chunk reader');
+      chunks = await window._gcSbReadChunked('schedule');
+      if (!Array.isArray(chunks)) throw new Error('the cloud schedule pieces are not one complete set right now');
+    }
+    var single = await getRow(c, 'schedule'); if (!Array.isArray(single)) single = [];
+    /* the union by id (the newer save of an id wins) */
+    var at = {}, union = [];
+    chunks.concat(single).forEach(function(r){ var id = idOf(r); if (!id) { union.push(r); return; }
+      if (!(id in at)) { at[id] = union.length; union.push(r); return; }
+      var o = union[at[id]]; if (String((r && r.updatedAt) || '') > String((o && o.updatedAt) || '')) union[at[id]] = r; });
+    var out = dedupe(union);
+    rep.cloudPieces = chunks.length; rep.cloudPlainRow = single.length; rep.before = union.length; rep.after = out.length;
+    /* safety checks */
+    var isAuto = function(r){ return !!(r && (r._autoBookend === 'start' || r._autoBookend === 'finish')); };
+    var keptIds = {}; out.forEach(function(r){ var id = idOf(r); if (id) keptIds[id] = 1; });
+    var nonAutoBefore = {}, lostNonAuto = [];
+    union.forEach(function(r){ if (!isAuto(r) && idOf(r)) nonAutoBefore[idOf(r)] = r; });
+    var outCanon = {}; out.forEach(function(r){ if (!isAuto(r)) { var cc = canon(r); if (cc) outCanon[cc] = 1; } });
+    Object.keys(nonAutoBefore).forEach(function(id){ if (keptIds[id]) return; var cc = canon(nonAutoBefore[id]); if (!cc || !outCanon[cc]) lostNonAuto.push(id); });
+    var groupsBefore = {}, groupsAfter = {};
+    union.forEach(function(r){ if (isAuto(r) && r.pid != null) groupsBefore[r.pid + '|' + r._autoBookend] = 1; });
+    out.forEach(function(r){ if (isAuto(r) && r.pid != null) groupsAfter[r.pid + '|' + r._autoBookend] = (groupsAfter[r.pid + '|' + r._autoBookend] || 0) + 1; });
+    var badGroups = Object.keys(groupsBefore).filter(function(k){ return groupsAfter[k] !== 1; });
+    rep.nonAutoRows = Object.keys(nonAutoBefore).length; rep.exactCopiesFolded = Object.keys(nonAutoBefore).length - out.filter(function(r){ return !isAuto(r) && idOf(r); }).length;
+    rep.autoRowsBefore = union.filter(isAuto).length; rep.autoRowsAfter = out.filter(isAuto).length; rep.bookendGroups = Object.keys(groupsBefore).length;
+    if (lostNonAuto.length) throw new Error('safety: ' + lostNonAuto.length + ' rows a person made would be lost (' + lostNonAuto.slice(0, 5).join(', ') + ')');
+    if (badGroups.length) throw new Error('safety: ' + badGroups.length + ' jobs would not keep exactly one Start/Finish row');
+    if (!out.length && union.length) throw new Error('safety: the result is empty');
+    if (out.length === union.length && !(man && man.chunked)) { rep.result = 'nothing to clean'; return rep; }
+    if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
+    var txt = JSON.stringify(out); if (txt.length > 3400000) throw new Error('safety: still too big for one row (' + txt.length + ' bytes) — nothing written');
+    /* write: the plain row first (complete), then the manifest says "not chunked", then the old pieces are emptied */
+    await putRow(c, 'schedule', out);
+    var oldN = (man && man.count) || 0;
+    if (man && man.chunked) await putRow(c, 'schedule__manifest', { chunked: false, count: 0, total: out.length, at: new Date().toISOString(), gen: 'bookdedupe' + Date.now().toString(36), note: 'schedule is one row again (patch BOOKDEDUPE)' });
+    for (var ci = 0; ci < oldN; ci++) await putRow(c, 'schedule__chunk' + ci, []);
+    /* this computer: its own list through the rule, and the counts its guards remember */
+    try { var loc = await window.idbGet('schedule'); if (Array.isArray(loc)) { var lo = dedupe(loc); if (lo !== loc) await window.idbSet('schedule', lo); rep.thisComputer = { before: loc.length, after: lo.length }; try { localStorage.setItem('gc_lastgood_count_schedule', String(lo.length)); } catch (e) {} } } catch (e) {}
+    try { if (typeof window._setSchedule === 'function') window._setSchedule(function(prev){ return Array.isArray(prev) ? dedupe(prev) : prev; }); } catch (e) {}
+    rep.result = 'cleaned';
+    await putRow(c, 'gc_bookdedupe_v1', rep);
+    return rep;
+  } catch (e) {
+    rep.result = 'stopped: ' + (e && e.message || e);
+    return rep;
+  } finally {
+    running = false; window._gcBookDedupeReport = rep;
+    try { console.log('%c[GC] schedule copies clean-up: ' + rep.result, 'background:#0f2440;color:#fff;padding:2px 6px', rep); } catch (e) {}
+  }
+};
+/* every computer: the bookend writer's own copy in this browser (grayco_schedule) goes through the rule once */
+ST.call(window, function(){
+  try { var raw = localStorage.getItem('grayco_schedule'); if (!raw || raw.length < 200000) return; var l = JSON.parse(raw); if (!Array.isArray(l)) return; var o = dedupe(l); if (o !== l) localStorage.setItem('grayco_schedule', JSON.stringify(o)); } catch (e) {}
+}, 60000);
+/* once, on an admin's computer: 90 s after load, when the cloud has no record of it being done */
+ST.call(window, async function(){
+  try {
+    if (!(window.__GC_AUTH__ && typeof window.__GC_AUTH__.isAdmin === 'function' && window.__GC_AUTH__.isAdmin())) return;
+    var c = creds(); if (!c.u || !c.k) return;
+    var done = await getRow(c, 'gc_bookdedupe_v1');
+    if (done && done.result === 'cleaned') return;
+    await window._gcBookDedupeNow();
+  } catch (e) {}
+}, 90000);
 })();
 </script>

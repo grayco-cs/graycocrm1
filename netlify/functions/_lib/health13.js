@@ -46,12 +46,14 @@ function item(k, label, status, text){ return { k: k, label: label, status: stat
 /* ── the checks ── */
 async function backups(){
   try {
-    const r = await B().sb('gc_backups?select=taken_at&order=taken_at.desc&limit=1');
+    /* patch AUTOFIX-BACKUP: the CRM's own data is the gc_kv snapshot. The newest row of ANY table said "green" even when
+       the big gc_kv snapshot failed every night (only the small tables saved) — so the gc_kv row is checked itself. */
+    const r = await B().sb('gc_backups?select=taken_at,row_count&source=eq.gc_kv&order=taken_at.desc&limit=1');
     if (!r.ok) return item('backup', 'Nightly backup', 'amber', r.status === 404 ? 'The backup table is not set up (docs/security-prepare.sql).' : 'Could not read the backups (' + r.status + ').');
     const row = arr(await r.json())[0]; const at = s(row && row.taken_at);
-    if (!at) return item('backup', 'Nightly backup', 'red', 'No backup has run yet.');
+    if (!at) return item('backup', 'Nightly backup', 'red', 'No backup of the CRM data (gc_kv) has been saved yet — check the gc-backup log on Netlify.');
     const h = hoursAgo(at);
-    return item('backup', 'Nightly backup', h < 36 ? 'green' : h < 72 ? 'amber' : 'red', 'Last backup ' + ago(at) + '.');
+    return item('backup', 'Nightly backup', h < 36 ? 'green' : h < 72 ? 'amber' : 'red', 'Last backup of the CRM data ' + ago(at) + (row && row.row_count != null ? ' (' + row.row_count + ' rows)' : '') + '.' + (h >= 36 ? ' Check the gc-backup log on Netlify.' : ''));
   } catch (e) { return item('backup', 'Nightly backup', 'amber', 'Could not check the backups.'); }
 }
 async function storage(){
