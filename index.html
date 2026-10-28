@@ -3377,7 +3377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.158-2026-10-27-r13 -->
+<!-- GrayCo CRM Build: 33.159-2026-10-27-r13b -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4042,7 +4042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.158-2026-10-27-r13");
+  console.log("[GC] Build 33.159-2026-10-27-r13b");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4090,7 +4090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.158-2026-10-27-r13"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.159-2026-10-27-r13b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -178651,6 +178651,12 @@ function mount(){
   if (M.denied || !allowed()) { els.forEach(function(d){ if (d.parentNode) d.parentNode.removeChild(d); }); return; }
   var list = D.querySelector('#_gcApprOv ._apList');
   if (list) { if (!A) { A = make(); els.push(A); } if (A.parentNode !== list || list.lastElementChild !== A) list.appendChild(A); }
+  /* patch MAILTAB: the left-menu Approvals tab draws into #gc-apx-mount: the card goes right after it (a sibling) */
+  else {
+    var apx = D.getElementById('gc-apx-mount');
+    if (apx && apx.parentNode && apx.offsetParent) { if (!A) { A = make(); A.setAttribute('data-gc-keep', '1'); els.push(A); } if (A.parentNode !== apx.parentNode || apx.nextSibling !== A) apx.parentNode.insertBefore(A, apx.nextSibling); }
+    else if (A && A.isConnected) A.parentNode.removeChild(A);
+  }
   var main = D.querySelector('main'), h1 = null;
   if (main) { var hs = main.querySelectorAll('h1'); for (var i = 0; i < hs.length; i++) if (s(hs[i].textContent) === 'Admin') { h1 = hs[i]; break; } }
   if (h1) {
