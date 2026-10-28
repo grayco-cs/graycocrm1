@@ -173342,7 +173342,7 @@ function render(box){
       + arr(o.roles).map(function(r){ return roleRow(r, set.people[r.key]); }).join('')
       + '</tbody></table></div>'
       + (set.defaults ? '<div style="font-size:12px;color:#075985;margin-top:6px">These are the starting settings (Nick and Wesley: emergencies + every new lead; the mitigation manager: emergencies). Change anything and press Save.</div>' : '')
-      + '<div style="font-size:12px;color:#475569;margin-top:8px">Customer texts: <b>Their jobs</b> = texts on jobs they manage or texts routed to them; <b>All</b> = every customer text. Emergencies ignore quiet hours. Admin / system alerts that come in during quiet hours wait until the morning.</div>'
+      + '<div style="font-size:12px;color:#475569;margin-top:8px">Customer texts: <b>Their jobs</b> = texts on jobs they manage or texts routed to them; <b>All</b> = every customer text. Emergencies ignore quiet hours. Outside business hours (📞 Call order hours) only emergencies are texted — other leads / texts are not texted later (the e-mail has them). Admin / system alerts that come in during quiet hours wait until the morning.</div>'
       + '<div style="margin-top:10px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div></div>';
     box.onchange = function(ev){ var tr = ev.target && ev.target.closest && ev.target.closest('.gcsa-row'); if (tr && ev.target.getAttribute('data-k') === 'on') tr.style.background = ev.target.checked ? '#fff' : '#f8fafc'; };
     box.onclick = function(ev){

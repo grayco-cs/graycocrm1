@@ -17,6 +17,10 @@
    Sending (from TWILIO_FROM_ALERTS, else TWILIO_FROM — about 1¢ a text):
      · never while data-entry mode is on (_lib/pause), never to a phone that texted STOP (the gc_sms_state opt-out list);
      · quiet hours: nothing (an emergency still goes; a system alert is held until the next morning run);
+       owner 10/28 "SMSALERT: quiet hours follow business hours": quiet = outside the 📞 Call order business hours
+       (_lib/callorder.js isOpen — default Mon–Fri 7 AM–6 PM Central, weekends / holidays closed) OR inside the
+       person's own window (default 9 PM–7 AM; the only rule when the call order can't be read). Held lead / text /
+       missed-call alerts are not sent later (the e-mail covers them); only emergencies text after hours;
      · at most 1 text per person per minute per thread — the rest are counted and the next text says "+3 more";
      · ≤ 300 characters: "GrayCo: …" + a deep link. Only a name / short job name + the message excerpt — nothing else.
    Replying from the cell: a staff phone in this table that texts the GrayCo number within 30 minutes of an alert that
@@ -73,6 +77,8 @@ const _D = {
   kvGet: k => L().kvGet(k),
   kvCas: (k, f) => L().kvCas(k, f),
   send: (to10, body, from) => MC().sendSms(to10, body, from),
+  /* the saved 📞 Call order business hours (defaults when never saved); null when it can't be read → per-person window only */
+  hours: async () => { try { const CO = require('./callorder.js'); const raw = await _D.kvGet(CO.KEY); return (raw && typeof raw === 'object' ? CO.clean(raw) : CO.defaults()).hours || null; } catch (e) { return null; } },
   paused: async () => { try { return await require('./pause').isPaused(); } catch (e) { return true; } },
   optouts: async () => { try { const st = await MC().stateGet(); return st && st.optout && typeof st.optout === 'object' ? st.optout : {}; } catch (e) { return {}; } },
   consentNo: async ph => { try { return (await require('./smsconsent.js').live(ph)) === 'no'; } catch (e) { return false; } },
@@ -189,6 +195,11 @@ function inQuiet(p, ms){
   const h = centralHour(ms);
   return p.qFrom > p.qTo ? (h >= p.qFrom || h < p.qTo) : (h >= p.qFrom && h < p.qTo);
 }
+/* quiet right now for this person: outside business hours (hours = the call order's, null → unknown) or in their own window */
+function quietNow(p, ms, hours){
+  if (hours) { try { if (!require('./callorder.js').isOpen(ms, { hours })) return true; } catch (e) {} }   /* after hours: always (owner rule) */
+  return !p.qOff && inQuiet(p, ms);   /* + the person's own window (switchable) */
+}
 
 /* who wants this alert. o = { type, mine: [emails], emergency } */
 function wants(p, email, o, isAdmin){
@@ -237,6 +248,7 @@ async function notify(o){
   if (!want.length) return out;
   if (await _D.paused()) return Object.assign(out, { paused: true });
   const opt = await _D.optouts();
+  let hours = null; if (!o.emergency) { try { hours = await _D.hours(); } catch (e) { hours = null; } }
   const t = now(), at = new Date(t).toISOString(), day = centralDay(t), thread = s(o.thread) || o.type;
   const go = [], skip = { optout: [], quiet: [], rate: [], daily: [], held: [] };
   /* claim each person (rate limit / daily / burst count) — recomputed on every kvCas retry */
@@ -245,7 +257,7 @@ async function notify(o){
     want.forEach(e => {
       const p = Object.assign({}, R[e].p, { phone: R[e].phone, name: R[e].p.name || e });
       if (opt[p.phone]) { skip.optout.push(e); return; }
-      if (!o.emergency && inQuiet(p, t)) {
+      if (!o.emergency && quietNow(p, t, hours)) {
         if (o.hold) { const l = Array.isArray(st.held[e]) ? st.held[e] : []; if (l.length < 5 && !l.some(x => x.text === o.text)) l.push({ at, text: clip(o.text, 200), link: s(o.link) }); st.held[e] = l; skip.held.push(e); }
         else skip.quiet.push(e);
         return;
@@ -396,4 +408,4 @@ async function system(kind, text){
 }
 
 module.exports = { ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
-  inQuiet, centralHour, compose, wants, _D };
+  inQuiet, quietNow, centralHour, compose, wants, _D };

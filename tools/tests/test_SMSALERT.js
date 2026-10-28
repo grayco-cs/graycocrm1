@@ -198,6 +198,29 @@ const to = r => r.sent.map(x => x.to).sort();
   /* quiet hours */
   assert.ok(SA.inQuiet(SA.cleanPerson({}), NIGHT) && !SA.inQuiet(SA.cleanPerson({}), DAY) && !SA.inQuiet(SA.cleanPerson({ qOff: true }), NIGHT));
   assert.ok(SA.inQuiet(SA.cleanPerson({ qFrom: 9, qTo: 17 }), DAY) && !SA.inQuiet(SA.cleanPerson({ qFrom: 9, qTo: 17 }), NIGHT));
+  /* quiet hours follow business hours (the 📞 Call order hours; default Mon–Fri 7 AM–6 PM Central, weekends closed) */
+  {
+    const WED7PM = Date.parse('2026-10-29T00:00:00Z'), SAT10AM = Date.parse('2026-10-31T15:00:00Z'), WED10AM = DAY;
+    const lead = async (id, em) => SA.leads([{ id, key: id, title: 'x', contact: { name: 'Q ' + id, phone: '9015550800' } }], { [id]: { id } }, () => !!em);
+    r = rig({ now: WED7PM }); let qq = await lead('QH1', false);
+    assert.strictEqual(r.sent.length, 0, 'Wed 7 PM new lead → no SMS'); assert.strictEqual(qq[0].skipped.quiet.length, 2); assert.ok(!r.kv[SA.SKEY] || !Object.keys(r.kv[SA.SKEY].held || {}).length, 'not held for later');
+    r = rig({ now: WED7PM }); await lead('QH2', true);
+    assert.deepStrictEqual(to(r), ['9015550001', '9015550002', '9015550004'], 'Wed 7 PM emergency → SMS');
+    r = rig({ now: SAT10AM }); await lead('QH3', false); assert.strictEqual(r.sent.length, 0, 'Sat 10 AM normal lead → no SMS');
+    r = rig({ now: WED10AM }); await lead('QH4', false); assert.deepStrictEqual(to(r), ['9015550001', '9015550002'], 'Wed 10 AM → SMS');
+    /* even with the person's own quiet hours switched off, after hours stays quiet for non-emergencies */
+    const SQ = { at: 'x', people: { 'nthomas@grayco-cs.com': person({ newAll: true, qOff: true }) } };
+    r = rig({ now: WED7PM, settings: SQ }); await lead('QH5', false); assert.strictEqual(r.sent.length, 0);
+    /* saved call-order hours count: open Saturday 9–13 → Sat 10 AM texts */
+    r = rig({ now: SAT10AM }); r.kv['gc_call_order'] = { hours: { days: { sat: { open: true, start: '09:00', end: '13:00' } } } }; await lead('QH6', false);
+    assert.deepStrictEqual(to(r), ['9015550001', '9015550002'], 'saved Saturday hours');
+    /* call order unreadable → the old 9 PM–7 AM window only (Wed 7 PM texts, 3 AM does not) */
+    const H0 = SA._D.hours; SA._D.hours = async () => null;
+    r = rig({ now: WED7PM }); await lead('QH7', false); assert.strictEqual(r.sent.length, 2, 'fallback: 7 PM is not in 9 PM–7 AM');
+    r = rig({ now: NIGHT }); await lead('QH8', false); assert.strictEqual(r.sent.length, 0, 'fallback: 3 AM quiet');
+    SA._D.hours = H0;
+    assert.ok(SA.quietNow(SA.cleanPerson({}), WED7PM, require(path.join(FN, '_lib/callorder.js')).defaults().hours) && !SA.quietNow(SA.cleanPerson({}), WED10AM, null));
+  }
 
   /* ── 10. LEADMAILMSG: the alert e-mails show what the customer said, in full, + call buttons + tel: links ── */
   Object.assign(SA._D, { kvGet: async () => ({ at: 'x', people: {} }) });   /* no texts in these */
