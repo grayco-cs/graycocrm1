@@ -209,7 +209,7 @@ async function missed(p, how, extra){
   } else out.text = { skipped: 'texted recently or opted out' };
   /* existing customer? */
   let cust = null; try { cust = await WI().findCustomer({ phone: ph, email: '' }); } catch (e) {}
-  try { out.cellAlerts = await SA().missedCall({ ph, name: cust ? cust.client : s(p.CallerName), job: cust ? cust.job : '', pid: cust ? cust.pid : '' }); } catch (e) {}   /* patch SMSALERT */
+  try { out.cellAlerts = await SA().missedCall({ ph, name: cust ? cust.client : s(p.CallerName), job: cust ? cust.job : '', pid: cust ? cust.pid : '', said: s(extra && extra.what) }); } catch (e) {}   /* patch SMSALERT */
   if (cust && (cust.pid || cust.client)) {
     out.customer = await callBackTodo(cust, ph, callSid, at, s(extra.what));
     await stateCas(st => { st.owner[ph] = { todo: out.customer.todo, pid: s(cust.pid), pm: s(cust.pm), at }; return true; }).catch(() => {});

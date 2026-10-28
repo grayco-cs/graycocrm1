@@ -57,7 +57,7 @@ function collect(rec){
   add('Type', rec.type || rec.leadKind);
   add('Property', said.property);
   add('Urgency', said.urgency || le.urgency || (rec.emergency ? 'Emergency' : ''));
-  add('Said on the call', le.spokenReason || le.screenReason || le.callReason || le.reason);
+  add('Said on the call', le.callerSaid || le.spokenReason || le.screenReason || le.callReason || le.reason);   /* patch CALLSCREEN: leadExtra.callerSaid */
   add('Best time to call', said.bestTime);
   add('Date of damage', said.damageDate);
   add('Company', said.company || le.company);

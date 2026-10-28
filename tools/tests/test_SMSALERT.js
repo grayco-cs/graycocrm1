@@ -258,5 +258,24 @@ const to = r => r.sent.map(x => x.to).sort();
   const tb = LM.boxHtml(LM.textInfo({ body: 'a\nb <c>', name: 'Kline', phone: '9015550200', kind: 'customer', job: 'Kline Water' }));
   assert.ok(/a\nb &lt;c&gt;/.test(tb) && /Kline Water/.test(tb) && /\(901\) 555-0200/.test(tb));
   assert.ok(/tel:\+19015550200/.test(LM.telify(tb)));
+  /* ── 11. EMERGCALL: a reply to an emergency alert acknowledges it (escalation calls stop) ── */
+  r = rig(); const acks = []; SA._D.ack = async (id, why) => { acks.push([id, why]); return { acked: 1 }; };
+  await SA.leads([{ id: 'EM1', key: 'EM1', title: 'Flood', contact: { name: 'Fay', phone: '9015550700' } }], { EM1: { leadExtra: { textMessage: true, smsFrom: '9015550700', textBody: 'flooding' } } }, () => true);
+  r.set(DAY + 5 * 60000);
+  rep = await SA.staffInbound('9015550002', 'On my way', 'SMe1');
+  assert.ok(rep.replied && rep.to === '9015550700'); assert.deepStrictEqual(acks.map(x => x[0]), ['EM1']); assert.ok(/replied to the alert text/.test(acks[0][1]));
+  /* a website emergency (no number to text): the reply still acknowledges, nothing is texted to the customer */
+  r = rig(); acks.length = 0;
+  await SA.leads([{ id: 'EM2', key: 'EM2', title: 'Fire', contact: { name: 'Gil', phone: '9015550701' } }], { EM2: { origin: 'website' } }, () => true);
+  const n0 = r.sent.length; rep = await SA.staffInbound('9015550001', 'got it', 'SMe2');
+  assert.deepStrictEqual(acks.map(x => x[0]), ['EM2']); assert.strictEqual(r.sent.length, n0); assert.ok(rep.handled && !rep.replied);
+  /* a normal lead reply does not ack */
+  r = rig(); acks.length = 0;
+  await SA.leads([{ id: 'NL1', key: 'NL1', title: 'x', contact: { name: 'Hal', phone: '9015550702' } }], { NL1: { leadExtra: { missedCall: true }, phone: '9015550702' } }, () => false);
+  await SA.staffInbound('9015550001', 'calling now', 'SMe3'); assert.strictEqual(acks.length, 0);
+  /* the screened caller's words: in the missed-call text and the e-mail box */
+  r = rig({ settings: S1 }); await SA.missedCall({ ph: '9015550703', name: 'Ida', said: 'roof leaking into bedroom' });
+  assert.ok(/: "roof leaking into bedroom"/.test(r.sent[0].body), r.sent[0].body);
+  assert.ok(LM.boxHtml(LM.collect({ leadExtra: { callerSaid: 'my roof is leaking' } })).indexOf('my roof is leaking') > 0);
   console.log('SMSALERT + LEADMAILMSG tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

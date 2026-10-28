@@ -83,6 +83,10 @@ const _D = {
     return { users, staff };
   },
   /* the reply from a cell → Job Messages (as from the employee) + the 💬 timeline + "their reply comes back to this employee" */
+  /* patch EMERGCALL (claude/callchain): a reply to an emergency alert text acknowledges it — no escalation calls (optional module) */
+  ack: async (leadId, why) => { let EC = null; try { EC = require('./emergcall.js'); } catch (e) { return { skipped: 'no emergcall' }; }
+    if (!EC || typeof EC.make !== 'function') return { skipped: 'no emergcall' };
+    return EC.make({ env: k => s(process.env[k]), now: () => _D.now(), kvGet: k => _D.kvGet(k), kvCas: (k, f) => _D.kvCas(k, f) }).ack(leadId, why); },
   postReply: async m => {
     const msg = { id: m.id, pid: m.pid || '', authorId: low(m.email), authorName: s(m.name || m.email) + ' 📱 (text to ' + tidy(m.to) + ', from cell)', text: m.text, tags: [], at: m.at, source: 'sms', channel: 'sms', dir: 'out', smsTo: m.to, viaCell: true };
     const has = l => l.some(x => x && s(x.id) === msg.id);
@@ -260,8 +264,9 @@ async function notify(o){
     if (r && r.ok) { out.sent++; out.to.push(g.email); }
     else { out.failed = (out.failed || 0) + 1; }
   }
-  if (out.sent && o.replyTo && phone10(o.replyTo.phone).length === 10) {
-    const rt = { at, to: phone10(o.replyTo.phone), pid: s(o.replyTo.pid), name: clip(o.replyTo.name, 60), kind: o.type };
+  if (out.sent && o.replyTo && (phone10(o.replyTo.phone).length === 10 || s(o.replyTo.leadId))) {
+    const rt = { at, to: phone10(o.replyTo.phone).length === 10 ? phone10(o.replyTo.phone) : '', pid: s(o.replyTo.pid), name: clip(o.replyTo.name, 60), kind: o.type,
+      leadId: s(o.replyTo.leadId), emergency: !!o.emergency };
     const phones = go.filter(g => out.to.indexOf(g.email) >= 0).map(g => ({ phone: g.phone, email: g.email, name: g.name }));
     await _D.kvCas(SKEY, v => { const st = loadState(v); phones.forEach(x => { st.reply[x.phone] = Object.assign({ email: x.email, staff: x.name }, rt); }); return st; }).catch(() => {});
   }
@@ -312,7 +317,10 @@ async function staffInbound(ph, body, sid){
     return out;
   }
   const to = rep.to, text = s(body).slice(0, 560);
-  if (!text) return { handled: true, staff: email, ignored: 'empty' };
+  let acked = null;   /* a reply to an emergency alert = "I have it": the escalation calls stop (patch EMERGCALL) */
+  if (rep.emergency && rep.leadId) { try { acked = await _D.ack(rep.leadId, 'replied to the alert text (' + (p.name || email) + ')'); } catch (e) { acked = { error: s(e && e.message) }; } }
+  if (!to) return { handled: true, staff: email, acked, ignored: 'no number to answer (the emergency is marked as taken)' };
+  if (!text) return { handled: true, staff: email, acked, ignored: 'empty' };
   if (await _D.paused()) return { handled: true, staff: email, notSent: 'data-entry mode is on' };
   if (opt[to]) return { handled: true, staff: email, notSent: 'that number texted STOP' };
   if (await _D.consentNo(to)) return { handled: true, staff: email, notSent: 'that customer declined texts' };
@@ -324,7 +332,7 @@ async function staffInbound(ph, body, sid){
   const msg = await _D.postReply({ id, pid: rep.pid, email, name: p.name, to, text: signed, at });
   /* the 30-minute window stays open for a back-and-forth */
   await _D.kvCas(SKEY, v => { const st = loadState(v); if (st.reply[ph]) st.reply[ph].at = at; return st; }).catch(() => {});
-  return { handled: true, staff: email, replied: true, to, pid: rep.pid, msg: msg && msg.id };
+  return { handled: true, staff: email, replied: true, to, pid: rep.pid, msg: msg && msg.id, acked };
 }
 /* is this phone a staff phone in the table (any state)? */
 async function isStaffPhone(ph){ ph = phone10(ph); if (ph.length !== 10) return false; const set = await load(); let pp = {}; try { pp = await _D.people(); } catch (e) {} return resolve(set, pp).some(r => r.phone === ph); }
@@ -343,7 +351,7 @@ async function inboundText(o){
 /* a missed call (missed-call.js missed) */
 async function missedCall(o){
   const shown = clip(s(o.name) || 'a caller', 40) + ' ' + tidy(o.ph);
-  return notify({ type: 'missed', text: 'missed call from ' + shown + (o.job ? ' — ' + clip(o.job, 40) : '') + '. They got the auto-text. Reply here within 30 min to text them.',
+  return notify({ type: 'missed', text: 'missed call from ' + shown + (o.job ? ' — ' + clip(o.job, 40) : '') + (s(o.said) ? ': ' + quote(o.said) : '') + '. They got the auto-text. Reply here within 30 min to text them.',
     link: site() + (o.pid ? '/?jobmsg=' + encodeURIComponent(o.pid) : '/#leads'), thread: 'p:' + phone10(o.ph), replyTo: { phone: o.ph, pid: o.pid || '', name: o.name || '' } });
 }
 /* new leads (bid-alerts.js notifyNew): mine = entries, raw = the raw items by id, isEm(x) */
@@ -360,7 +368,7 @@ async function leads(list, raw, isEm){
     const body = more => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, link);
     const text = body(0);
     try { out.push(await notify({ type: 'lead', text, body, link, thread: ph ? 'p:' + ph : 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean), emergency: em,
-      replyTo: ph ? { phone: ph, pid: '', name } : null })); } catch (e) { out.push({ error: s(e && e.message) }); }
+      replyTo: ph || em ? { phone: ph, pid: '', name, leadId: s(x.id) } : null })); } catch (e) { out.push({ error: s(e && e.message) }); }
   }
   return out;
 }
