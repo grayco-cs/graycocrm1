@@ -52,6 +52,7 @@
 const BD = require('./bid-due.js');
 const KA = 'gc_lead_inbox_alerts';
 const RETRY_H = 24, REMIND_EARLY = 50, REMIND_LATE = 70, TODAY_AT = '08:00';
+const NAG_FROM = '07:00', NAG_TO = '11:00', NAG_MAX_AGE_D = 30;   /* patch DUENAG */
 const STL_FIRST_H = 4, STL_SECOND_H = 24, STL_MAX_DAYS = 7, QUIET_FROM = '21:00', QUIET_TO = '07:00';
 
 function make(d){
@@ -564,26 +565,33 @@ function make(d){
   function isBid(l){ if (isWebsite(l)) return false;   /* patch WEB: a website lead is not a bid (no "Missing due info") */
     return !!(l.inboxId || l.estimator || l.bidStatus || l.dueUnknown || /commercial|government/i.test(s(l.leadKind || l.type))); }
   async function nag(src, t){
-    const w = BD.epochToWall(t); if (w.slice(11) < TODAY_AT) return { sent: 0 };
+    /* patch DUENAG: the morning digest only (Mon–Fri 7–11 AM Central), bids received in the last 30 days, once per bid ever */
+    const w = BD.epochToWall(t), hm = w.slice(11, 16), wd = new Date(w.slice(0, 10) + 'T12:00:00Z').getUTCDay();
+    if (wd === 0 || wd === 6 || hm < NAG_FROM || hm >= NAG_TO) return { sent: 0, notNow: true };
     const by = {};
     arr(src.leads).forEach(l => {
-      if (!l || !l.id || closed(l)) return;
+      if (!l || !l.id || closed(l) || l.archived || l.mergedInto || l.expired) return;
       if (!(l.dueUnknown || (isBid(l) && missingDue(l)))) return;
+      const got = Date.parse(s(l.receivedAt || l.inboxAt || l.createdAt || l.created || l.dateAdded || l.date)) || 0;
+      if (!got || t - got > NAG_MAX_AGE_D * 864e5) return;
       const x = entry(Object.assign({}, l, { key: l.id, title: l.name || l.title, type: l.leadKind || l.type }));
       if (!x.assigneeEmail) return;
       (by[x.assigneeEmail] = by[x.assigneeEmail] || []).push(x);
     });
     const people = Object.keys(by); if (!people.length) return { sent: 0 };
-    let mine = [];
-    await kvCas(KA, v => { const st = loadState(v); mine = people.filter(e => { const k = 'nag|' + e + '|' + w.slice(0, 10); if (st.reminded[k]) return false; st.reminded[k] = nowIso(); return true; }); return mine.length ? st : undefined; });
+    let todo = {};
+    await kvCas(KA, v => { const st = loadState(v); let any = false; todo = {};
+      people.forEach(e => { const fresh = by[e].filter(x => !st.reminded['nagLead|' + x.key]); if (!fresh.length) return; fresh.forEach(x => { st.reminded['nagLead|' + x.key] = nowIso(); }); todo[e] = fresh; any = true; });
+      return any ? st : undefined; });
     let sent = 0;
-    for (const e of mine) {
-      const list = by[e], n = list.length;
-      const subject = '⚠️ Missing due info: ' + (n === 1 ? list[0].title : n + ' bids assigned to you') + ' — add the bid due date and who it is due to';
-      const html = frame('GrayCo — missing bid due info', 'These bids are assigned to you and still have no bid due date and/or no "due to" company (marked <b>Unknown yet</b>). Add them on the lead (Leads → the amber <b>Missing due info</b> chip) so the reminders can go out.', list.map(rowHtml).join(''), FOOT);
-      const r = await deliver({ subject, html, text: subject + '\n\n' + list.map(x => '- ' + x.title + ' — ' + dueLine(x) + (x.dueToCompany ? '' : ' — due to: NOT FOUND')).join('\n') + '\n\n' + site() + '/#leads',
+    for (const e of Object.keys(todo)) {
+      const list = todo[e], n = list.length;
+      const line = x => x.title + (x.gc || x.source ? ' (' + (x.gc ? 'invited by ' + x.gc : '') + (x.gc && x.source ? ' on ' : '') + (x.source ? (x.gc ? '' : 'from ') + x.source : '') + ')' : '');
+      const subject = n === 1 ? 'This bid has no due date yet: ' + list[0].title : n + ' new bids have no due date yet';
+      const html = frame('GrayCo — bids with no due date yet', (n === 1 ? 'This bid has no due date yet: <b>' + esc(line(list[0])) + '</b>.' : 'These new bids have no due date yet.') + ' Add the due date on the lead, or archive it if you\'re not bidding. (You get this once per bid.)', list.map(rowHtml).join(''), FOOT);
+      const r = await deliver({ subject, html, text: subject + '\n\n' + list.map(x => '- ' + line(x)).join('\n') + '\n\nAdd the due date on the lead, or archive it if you\'re not bidding.\n' + site() + '/#leads',
         push: { title: subject.slice(0, 100), body: list.slice(0, 3).map(x => x.title).join('\n').slice(0, 180), tag: 'lead-nag-' + e } }, null, [e]);
-      if (r.ok) sent++; else await kvCas(KA, v => { const st = loadState(v); delete st.reminded['nag|' + e + '|' + w.slice(0, 10)]; return st; }).catch(() => {});
+      if (r.ok) sent++; else await kvCas(KA, v => { const st = loadState(v); list.forEach(x => { delete st.reminded['nagLead|' + x.key]; }); return st; }).catch(() => {});
     }
     return { sent, people: people.length };
   }
