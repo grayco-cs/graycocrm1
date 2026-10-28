@@ -3,7 +3,7 @@
 const assert = require('assert');
 const path = require('path');
 const FN = path.join(__dirname, '../../netlify/functions');
-process.env.TWILIO_FROM = '+19015828255';
+process.env.TWILIO_FROM = '+19015550999';
 process.env.CRM_URL = 'https://crm.test';
 const SA = require(path.join(FN, '_lib/smsalert.js'));
 const LM = require(path.join(FN, '_lib/leadmsg.js'));
@@ -49,7 +49,7 @@ const to = r => r.sent.map(x => x.to).sort();
   assert.deepStrictEqual(to(r), ['9015550001', '9015550002']);
   const b = r.sent[0].body;
   assert.ok(/^GrayCo NEW LEAD: Jane Doe \(901\) 555-0100 — "Roof is leaking a little, can someone look Tuesday\?" https:\/\/crm\.test\/#leads$/.test(b), b);
-  assert.strictEqual(r.sent[0].from, '+19015828255');
+  assert.strictEqual(r.sent[0].from, '+19015550999');
   /* long message trimmed with … under 300 */
   r = rig();
   await SA.leads([{ id: 'L2', key: 'L2', title: 'Web', contact: { name: 'Al', phone: '9015550101' } }], { L2: { id: 'L2', leadExtra: { said: { message: 'word '.repeat(200) } } } }, () => false);
@@ -152,7 +152,7 @@ const to = r => r.sent.map(x => x.to).sort();
   let rep = await SA.staffInbound('+19015550001', 'Yes, 9 AM tomorrow', 'SMr1');
   assert.ok(rep.handled && rep.replied && rep.to === '9015550500' && rep.pid === 'PJ', JSON.stringify(rep));
   const last = r.sent[r.sent.length - 1];
-  assert.strictEqual(last.to, '9015550500'); assert.ok(/^Yes, 9 AM tomorrow/.test(last.body) && /Nick/.test(last.body), last.body); assert.strictEqual(last.from, '+19015828255');
+  assert.strictEqual(last.to, '9015550500'); assert.ok(/^Yes, 9 AM tomorrow/.test(last.body) && /Nick/.test(last.body), last.body); assert.strictEqual(last.from, '+19015550999');
   assert.strictEqual(r.posted.length, 1); assert.strictEqual(r.posted[0].email, 'nthomas@grayco-cs.com'); assert.strictEqual(r.posted[0].pid, 'PJ');
   rep = await SA.staffInbound('+19015550001', 'Yes, 9 AM tomorrow', 'SMr1');
   assert.strictEqual(rep.skipped, 'already handled', 'a Twilio retry is not sent twice');
@@ -179,12 +179,12 @@ const to = r => r.sent.map(x => x.to).sort();
   const WI = require(path.join(FN, 'website-intake.js'));
   let filed = 0; const origFile = WI._lib.fileLead; WI._lib.fileLead = async () => { filed++; return { id: 'x', action: 'added', rec: {} }; };
   r = rig({ settings: S1 });
-  let res = await MC._test.inboundSms({ From: '+19015550003', To: '+19015828255', Body: 'I need an estimate for a roof', MessageSid: 'SMlead1' });
+  let res = await MC._test.inboundSms({ From: '+19015550003', To: '+19015550999', Body: 'I need an estimate for a roof', MessageSid: 'SMlead1' });
   assert.ok(res.cellAlerts && res.handled && res.ignored, JSON.stringify(res));
   assert.strictEqual(filed, 0, 'no lead from a staff number');
   /* a default (seeded) staff phone too */
   r = rig();
-  res = await MC._test.inboundSms({ From: '+19015550002', To: '+19015828255', Body: 'emergency water leak', MessageSid: 'SMlead2' });
+  res = await MC._test.inboundSms({ From: '+19015550002', To: '+19015550999', Body: 'emergency water leak', MessageSid: 'SMlead2' });
   assert.ok(res.cellAlerts && res.handled); assert.strictEqual(filed, 0);
   WI._lib.fileLead = origFile;
 
@@ -235,13 +235,13 @@ const to = r => r.sent.map(x => x.to).sort();
   const LONG = 'Line one of my message.\nLine two: the <kitchen> ceiling & "drywall" is sagging.\n' + 'More detail. '.repeat(150) + 'THE END.';
   /* a text-message lead */
   let m = brig();
-  await m.A.notifyNew([{ id: 'T1', title: 'Text message — (901) 825-0178', source: 'Text message', origin: 'website', websiteLead: true, websiteForm: 'Text message', contact: { name: 'Texter (901) 825-0178', phone: '(901) 825-0178', email: '' },
-    scope: 'Text message 2026-10-28 21:21 UTC: ' + LONG.slice(0, 500), leadExtra: { textMessage: true, smsFrom: '9018250178', textBody: LONG, websiteForm: 'Text message' } }]);
+  await m.A.notifyNew([{ id: 'T1', title: 'Text message — (901) 555-0178', source: 'Text message', origin: 'website', websiteLead: true, websiteForm: 'Text message', contact: { name: 'Texter (901) 555-0178', phone: '(901) 555-0178', email: '' },
+    scope: 'Text message 2026-10-28 21:21 UTC: ' + LONG.slice(0, 500), leadExtra: { textMessage: true, smsFrom: '9015550178', textBody: LONG, websiteForm: 'Text message' } }]);
   let h = m.mails[0].html;
   assert.ok(h.indexOf('💬 What the customer said') > 0);
   assert.ok(h.indexOf(LM.boxHtml({ message: LONG }).match(/white-space:pre-wrap;font-size:15px[^>]*>([\s\S]*?)<\/div>/)[1]) > 0, 'the full text, escaped');
   assert.ok(/THE END\./.test(h) && /&lt;kitchen&gt; ceiling &amp; &quot;drywall&quot;/.test(h) && /Line one of my message\.\nLine two/.test(h));
-  assert.ok(h.indexOf('href="tel:+19018250178"') > 0 && h.indexOf('href="sms:+19018250178"') > 0 && /📞 Call \(901\) 825-0178/.test(h));
+  assert.ok(h.indexOf('href="tel:+19015550178"') > 0 && h.indexOf('href="sms:+19015550178"') > 0 && /📞 Call \(901\) 555-0178/.test(h));
   assert.ok(h.indexOf('gc-callbtns') < h.indexOf('💬 What the customer said'), 'buttons near the top');
   assert.ok(/THE END\./.test(m.mails[0].text), 'plain-text part has it too');
   /* a website-form lead: every field the customer typed, never the carrier */
