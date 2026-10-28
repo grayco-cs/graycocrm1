@@ -14,7 +14,13 @@
 //          Admin → Employees) | estimator | insurance | mitigation | super | pm | apm | office | field. The CRM shows that
 //          profile's menu, home dashboard and field view. Needs docs/role-profiles.sql (gc_staff.profile).
 //   POST { action:'remove', email }         → off gc_staff (blocked at once) + sign-in banned
-//   POST { action:'reset',  email }         → new temporary password, shown ONCE
+//   POST { action:'reset',  email }         → new temporary password, shown ONCE; they must choose their own at sign-in
+//   POST { action:'start-password', password, emails:[…] | all:true }   (patch PWRESET, admins)
+//        → sets ONE starting password the admin chose for those people (everyone on the list except the admin
+//          themself with all:true) and marks each sign-in app_metadata.must_change_password = true, so the CRM
+//          shows only "Choose your own password" until they do. The password is never returned, saved or logged.
+//   POST { action:'password-changed' }      → any signed-in staff member, about THEMSELF: clears their
+//          must_change_password mark after the CRM changed their password (app_metadata: they cannot edit it).
 //
 // Nothing here is saved in the app: a temporary password is returned to the admin
 // once and lives only in Supabase Auth (hashed).
@@ -165,6 +171,20 @@ async function findAuthUser(email){
   }
   return null;
 }
+/* patch PWRESET: the "choose your own password" mark — app_metadata, so only the service key can set or clear it */
+function mustChangeMeta(on){ return on ? { must_change_password: true, must_change_password_at: new Date().toISOString() } : { must_change_password: false, must_change_password_at: null }; }
+async function allAuthUsers(){
+  const out = {};
+  for (let page = 1; page <= 20; page++) {
+    const r = await fetch(sbUrl() + '/auth/v1/admin/users?page=' + page + '&per_page=200', { headers: svcHeaders() });
+    if (!r.ok) break;
+    const j = await r.json();
+    const users = Array.isArray(j) ? j : (j.users || []);
+    users.forEach(function(u){ const e = cleanEmail(u.email); if (e) out[e] = u; });
+    if (users.length < 200) break;
+  }
+  return out;
+}
 async function setAuthUser(id, patch){
   const r = await fetch(sbUrl() + '/auth/v1/admin/users/' + encodeURIComponent(id), {
     method: 'PUT', headers: svcHeaders(), body: JSON.stringify(patch)
@@ -187,6 +207,15 @@ exports.handler = async function (event) {
     try { const pr = await fetch(sbUrl() + '/rest/v1/gc_staff?select=*&email=eq.' + encodeURIComponent(who.email), { headers: svcHeaders() }); if (pr.ok) { const rows = await pr.json(); profile = (rows && rows[0] && rows[0].profile) || ''; } } catch (e) {}
     return J(200, { email: who.email, role: who.role, name: who.name || '', profile: profile });
   }
+  /* patch PWRESET: after the CRM changed the signed-in person's own password, their "choose your own" mark is cleared */
+  if (event.httpMethod === 'POST') {
+    let pb = null; try { pb = JSON.parse(event.body || '{}'); } catch (e) { pb = null; }
+    if (pb && pb.action === 'password-changed') {
+      if (!who.userId) return J(400, { error: 'Sign in again.' });
+      const ok = await setAuthUser(who.userId, { app_metadata: mustChangeMeta(false) });
+      return ok ? J(200, { ok: true }) : J(502, { error: 'Could not finish the password change. Try again.' });
+    }
+  }
   if (who.role !== 'admin') return J(403, { error: 'Only an admin can change who has access.' });
 
   try {
@@ -201,6 +230,29 @@ exports.handler = async function (event) {
     let body;
     try { body = JSON.parse(event.body || '{}'); } catch (e) { return J(400, { error: 'Invalid JSON' }); }
     const action = body.action;
+
+    if (action === 'start-password') {   /* patch PWRESET */
+      const pw = typeof body.password === 'string' ? body.password : '';
+      if (pw.length < 10 || pw.length > 72) return J(400, { error: 'The starting password needs 10 to 72 characters.' });
+      const staff = (await listStaff()).filter(function(p){ return p && p.email && (p.active !== false || p.mkt_active === true); });
+      let want;
+      if (body.all === true) want = staff.map(function(p){ return cleanEmail(p.email); });
+      else want = (Array.isArray(body.emails) ? body.emails : []).map(cleanEmail).filter(okEmail);
+      want = want.filter(function(e, i, a){ return a.indexOf(e) === i && e !== who.email; });   /* never the admin themself */
+      if (!want.length) return J(400, { error: 'Pick at least one person (you cannot set your own this way).' });
+      const onList = {}; staff.forEach(function(p){ onList[cleanEmail(p.email)] = true; });
+      const users = await allAuthUsers();
+      const done = [], skipped = [];
+      for (const e of want) {
+        if (!onList[e]) { skipped.push({ email: e, why: 'not on the active staff list' }); continue; }
+        const u = users[e];
+        if (!u) { skipped.push({ email: e, why: 'no sign-in yet (use Add)' }); continue; }
+        const ok = await setAuthUser(u.id, { password: pw, app_metadata: mustChangeMeta(true) });
+        if (ok) done.push(e); else skipped.push({ email: e, why: 'Supabase refused the change' });
+      }
+      return J(200, { ok: done.length > 0, done: done, skipped: skipped, error: done.length ? undefined : 'Nobody was changed.' });
+    }
+
     const email = cleanEmail(body.email);
     if (!okEmail(email)) return J(400, { error: 'A valid email address is required.' });
 
@@ -228,7 +280,7 @@ exports.handler = async function (event) {
       const pw = tempPassword();
       const cr = await fetch(sbUrl() + '/auth/v1/admin/users', {
         method: 'POST', headers: svcHeaders(),
-        body: JSON.stringify({ email: email, password: pw, email_confirm: true, user_metadata: { name: name } })
+        body: JSON.stringify({ email: email, password: pw, email_confirm: true, user_metadata: { name: name }, app_metadata: mustChangeMeta(true) })   /* patch PWRESET */
       });
       /* patch RP: the profile (if one was picked; an older database without the column just skips it) */
       let profileNote = '';
@@ -267,7 +319,7 @@ exports.handler = async function (event) {
       const u = await findAuthUser(email);
       if (!u) return J(404, { error: 'No sign-in exists for ' + email + '. Use Add.' });
       const pw = tempPassword();
-      const ok = await setAuthUser(u.id, { password: pw, ban_duration: 'none' });
+      const ok = await setAuthUser(u.id, { password: pw, ban_duration: 'none', app_metadata: mustChangeMeta(true) });   /* patch PWRESET */
       if (!ok) return J(502, { error: 'Could not set a new password.' });
       return J(200, { ok: true, email: email, tempPassword: pw });
     }
