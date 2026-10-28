@@ -118128,11 +118128,13 @@ async function flushPush(){
   try{
     for(var i=0;i<ks.length;i++){
       var k = ks[i], at = dirty[k]; delete dirty[k]; dirtyAt[k] = at;
-      try{ await pushKey(k, cr); }catch(e){ dirty[k] = at; }
+      try{ await pushKey(k, cr); }catch(e){ dirty[k] = at; var _lf = window.__gcLiveFail; window.__gcLiveFail = { key:k, at:Date.now(), n:((_lf && _lf.n) || 0) + 1, why:String(e && e.message || e).slice(0, 80) }; }   /* patch SCHEDQUIET: the save note is told */
       if(typingNow()) break;
     }
   }finally{ pushing = false; }
-  if(Object.keys(dirty).length) schedulePush(400);
+  var _sqLf = window.__gcLiveFail;
+  if(_sqLf && !dirty[_sqLf.key]) { window.__gcLiveFail = null; _sqLf = null; }   /* patch SCHEDQUIET: it went up */
+  if(Object.keys(dirty).length) schedulePush(_sqLf ? Math.min(15000, 1000 * Math.pow(2, Math.min(4, _sqLf.n - 1))) : 400);   /* a failed send retries quietly, not every 0.4 s */
 }
 var dirtyAt = {};
 function editAtOf(k){ var d = dirtyAt[k]; return d ? new Date(d).toISOString() : new Date().toISOString(); }
@@ -118508,7 +118510,7 @@ async function applyNow(){
       var cur = window._crm && window._crm[CRMPROP[k] || k];
       if(Array.isArray(cur) && overlay(k, cur, inc) === cur) continue;   /* nothing newer than what is on the screen */
       if(held()){ toApply[k] = since; evVal[k] = inc; continue; }
-      (function(kk, ii){ set(function(prev){ return overlay(kk, prev, ii); }); })(k, inc);   /* the updater runs later: bind this key and this list */
+      (function(kk, ii){ set(function(prev){ var _o = overlay(kk, prev, ii); if(kk === 'schedule' && Array.isArray(_o)){ try{ if(window._crm) window._crm.schedule = _o; }catch(e){} } return _o; }); })(k, inc);   /* the updater runs later: bind this key and this list — /* patch SCHEDQUIET: and the CRM's schedule mirror follows */
       stats.applyLag.push(Date.now() - since); if(stats.applyLag.length > 50) stats.applyLag.shift();
     }catch(e){}
   }
@@ -185718,6 +185720,8 @@ function show(txt, kind){
 function tick(){
   try {
     var q = W._gcSyncQ; if (!q || typeof q.state !== 'function') return;
+    var lf = W.__gcLiveFail;   /* patch SCHEDQUIET: the live push could not send a list: say so (it retries on its own) */
+    if (lf && Date.now() - lf.at < 120000) { show('\u26a0 A save is kept on this computer \u2014 not sent yet, trying again' + (lf.why ? ' (' + lf.why + ')' : ''), 'warn'); prevWaiting = prevWaiting || 1; return; }
     var st = q.state(), n = st.waiting || 0, now = Date.now();
     if (n > 0) {
       if (!prevWaiting) since = now;

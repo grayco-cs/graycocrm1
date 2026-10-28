@@ -156,5 +156,31 @@ rep('schedhist',
     "    var _sqC = crm().schedule; if (!SNAP || _sqC !== W.__gcSchedHistC || !((W.__gcSchedHistN = (W.__gcSchedHistN | 0) + 1) % 4)) { W.__gcSchedHistC = _sqC; peek(); }\n"
     "    var list = LIVE || crm().schedule; if (!Array.isArray(list)) return;")
 
+# 3. a send that did not reach the cloud: the live push (the one that actually sends a list) retried every 0.4 s
+#    forever and the save note never knew (the queue had handed the list on, so the note said nothing — or, before
+#    1., "sending…" for 12 s by accident). Now the live push tells the note: "⚠ kept on this computer — not sent yet,
+#    trying again (why)", retries quietly (1 s, 2 s, 4 s, 8 s, then every 15 s), and the note says "Sent ✓" when it went up.
+rep('livefail',
+    "      try{ await pushKey(k, cr); }catch(e){ dirty[k] = at; }",
+    "      try{ await pushKey(k, cr); }catch(e){ dirty[k] = at; var _lf = window.__gcLiveFail; window.__gcLiveFail = { key:k, at:Date.now(), n:((_lf && _lf.n) || 0) + 1, why:String(e && e.message || e).slice(0, 80) }; }   " + MARK + ": the save note is told */")
+rep('livefail-retry',
+    "  if(Object.keys(dirty).length) schedulePush(400);",
+    "  var _sqLf = window.__gcLiveFail;\n"
+    "  if(_sqLf && !dirty[_sqLf.key]) { window.__gcLiveFail = null; _sqLf = null; }   " + MARK + ": it went up */\n"
+    "  if(Object.keys(dirty).length) schedulePush(_sqLf ? Math.min(15000, 1000 * Math.pow(2, Math.min(4, _sqLf.n - 1))) : 400);   /* a failed send retries quietly, not every 0.4 s */")
+rep('note-livefail',
+    "    var q = W._gcSyncQ; if (!q || typeof q.state !== 'function') return;",
+    "    var q = W._gcSyncQ; if (!q || typeof q.state !== 'function') return;\n"
+    "    var lf = W.__gcLiveFail;   " + MARK + ": the live push could not send a list: say so (it retries on its own) */\n"
+    "    if (lf && Date.now() - lf.at < 120000) { show('\\u26a0 A save is kept on this computer \\u2014 not sent yet, trying again' + (lf.why ? ' (' + lf.why + ')' : ''), 'warn'); prevWaiting = prevWaiting || 1; return; }")
+
+# 4. the live feed laid another computer's schedule on the screen, but window._crm.schedule (what the calendar's
+#    helpers, the conflict watcher and the field app read) followed only when some OTHER list changed — the CRM's
+#    mirror is rebuilt on projects / invoices / … but not the schedule. Measured: the screen had the new row in
+#    ~0.8 s, _crm.schedule 11-27 s later. The mirror now follows the schedule the moment it is laid on.
+rep('crm-mirror',
+    "      (function(kk, ii){ set(function(prev){ return overlay(kk, prev, ii); }); })(k, inc);   /* the updater runs later: bind this key and this list */",
+    "      (function(kk, ii){ set(function(prev){ var _o = overlay(kk, prev, ii); if(kk === 'schedule' && Array.isArray(_o)){ try{ if(window._crm) window._crm.schedule = _o; }catch(e){} } return _o; }); })(k, inc);   /* the updater runs later: bind this key and this list — " + MARK + ": and the CRM's schedule mirror follows */")
+
 open(p, 'w', encoding='utf-8').write(t)
 print('SCHEDQUIET: patched')
