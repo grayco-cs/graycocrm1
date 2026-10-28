@@ -165594,6 +165594,12 @@ function qnBox(id){ return '<div class="gclu-qn" data-id="' + esc(id) + '"><inpu
 function qnSubmit(box){
   var inp = box && box.querySelector('[data-gclu-qn-in]'), id = box && box.getAttribute('data-id'); if (!inp || !s(inp.value).trim()) { if (inp) inp.focus(); return; }
   var v = inp.value; inp.value = ''; if (box.closest('#gcl-lprio-pop')) lcPopClose();
+  var dr = box.closest('#gcl-drawer');
+  if (dr) {   /* the panel: the note shows at once, the panel is redrawn right after */
+    var ln = dr.querySelector('.gclu-lastn'), txt = 'Latest note: ' + s(v).replace(/\s+/g, ' ').trim().slice(0, 300) + ' — ' + (myName() || myEmail()) + ', ' + new Date().toLocaleString();
+    if (!ln) { ln = D.createElement('div'); ln.className = 'note gclu-lastn'; box.parentNode.insertBefore(ln, box.nextSibling); }
+    ln.textContent = txt; LU.fast = true; NST0.call(W, function(){ LU.fast = false; }, 300);
+  }
   saveNote(id, v);
 }
 function lcNotePop(btn){
