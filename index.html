@@ -158009,6 +158009,21 @@ function build0(){
 }
 /* patch DENY: deny = a To-Do for the PM that holds the card back until it is done */
 var DENYBOX = {}, DREASON = {}, DENYC = { at: 0, open: {}, done: {} };
+/* patch APXNOTE: internal notes on a card (gc_approval_notes through window._gcRecordApprovalNote; decision "note") */
+var NOTEBOX = {}, NOTEDRAFT = {};
+function noteKeyOf(r){ return { t: 'apx-' + s(r.src), id: s(r.id) }; }
+function apxNotes(r){ var k = noteKeyOf(r), l = []; try { l = typeof W._gcGetApprovalNotes === 'function' ? arr(W._gcGetApprovalNotes(k.t, k.id)) : []; } catch (e) {} return l.filter(function(n){ return n && s(n.note); }); }
+function apxNotesHtml(r){ var l = apxNotes(r); if (!l.length) return '';
+  return '<div class="apx-notes" style="font-size:12px;color:#3730a3;background:#eef2ff;border-radius:7px;padding:4px 8px;margin:4px 0">' + l.slice(-3).map(function(n){ return '📝 <b>' + esc(s(n.by)) + '</b> ' + esc(when(n.at)) + ': ' + esc(s(n.note).slice(0, 200)); }).join('<br>') + (l.length > 3 ? '<br><span style="color:#64748b">+ ' + (l.length - 3) + ' earlier</span>' : '') + '</div>'; }
+function saveApxNote(r){
+  var inp = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'), t = s((inp && inp.value) || NOTEDRAFT[r.key]);
+  if (!t) { toast('Write the note first.'); return; }
+  var k = noteKeyOf(r);
+  try { if (typeof W._gcRecordApprovalNote === 'function') W._gcRecordApprovalNote(k.t, k.id, 'note', t.slice(0, 500)); else { toast('Notes are not ready yet — try again.'); return; } } catch (e) { warn(e); toast('Could not save the note.'); return; }
+  delete NOTEBOX[r.key]; delete NOTEDRAFT[r.key]; fresh(); paintSoon(); toast('📝 Note saved — the team sees it on this card (never sent to the customer).');
+}
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-note-in')) NOTEDRAFT[t.getAttribute('data-apx-note-in')] = t.value; }, true);
+D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.getAttribute && t.hasAttribute('data-apx-note-in')) { var g = t.parentNode && t.parentNode.querySelector('[data-apx-act$="|notego"]'); if (g) { ev.preventDefault(); g.click(); } } }, true);
 function denyTodos(){
   if (Date.now() - DENYC.at < 1000) return DENYC;
   var open = {}, done = {}, l = []; try { l = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); } catch (e) {}
@@ -158282,6 +158297,12 @@ function btns(r, where){
   if (r.approve && CONF[r.key]) return '<div class="apx-conf"><span>' + esc(r.approve.what || 'Approve this?') + '</span><button type="button" class="apx-b go" data-apx-conf="yes" data-k="' + esc(r.key) + '">✅ Yes, approve</button><button type="button" class="apx-b op" data-apx-conf="no" data-k="' + esc(r.key) + '">Cancel</button>' + (r.doc ? '' : '') + '</div>' + (r.doc ? '<div class="apx-bs">' + (function(){ var k = where + '|' + r.key + '|doc'; ACTS[k] = r.doc.f; return '<button type="button" class="apx-b dc" data-apx-act="' + esc(k) + '">' + esc(r.doc.l) + '</button>'; })() + '</div>' : '');
   function b(kind, o, cls){ if (!o) return ''; var k = where + '|' + r.key + '|' + kind; ACTS[k] = o.f; return '<button type="button" class="apx-b ' + cls + '" data-apx-act="' + esc(k) + '">' + esc(o.l) + '</button>'; }
   /* patch DENY: the "why?" box in place of the buttons, and ✕ Deny next to Approve */
+  if (NOTEBOX[r.key]) {   /* patch APXNOTE: the note box */
+    return '<div class="apx-notebox" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #c7d2fe;border-radius:9px;background:#f5f7ff">'
+      + '<b style="width:100%;font-size:13px;color:#3730a3">📝 Note — for the team only (never sent to the customer)</b>'
+      + '<input type="text" data-apx-note-in="' + esc(r.key) + '" value="' + esc(NOTEDRAFT[r.key] || '') + '" placeholder="e.g. Checked the amount with the sub" style="flex:1;min-width:220px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font:14px Arial">'
+      + b('notego', { l: '💾 Save note', f: function(){ saveApxNote(r); } }, 'go') + b('notex', { l: 'Cancel', f: function(){ delete NOTEBOX[r.key]; fresh(); paintSoon(); } }, 'op') + '</div>';
+  }
   if (r.approve && DENYBOX[r.key]) {
     return '<div class="apx-deny" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding:8px;border:1px solid #fca5a5;border-radius:9px;background:#fff5f5">'
       + '<b style="width:100%;font-size:13px;color:#991b1b">✕ Deny — why? (sent back to ' + esc(denyTo(r) || 'the PM') + ')</b>'
@@ -158290,8 +158311,13 @@ function btns(r, where){
       + '<span style="width:100%;font-size:12px;color:#6b7280">Nothing is sent to the customer.</span></div>';
   }
   h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
+  h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'op');   /* patch APXNOTE */
   if (r.approve && r.src !== 'pay' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ DENYBOX[r.key] = 1; fresh(); paintSoon(); later(function(){ var i = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} }, 300); } }, 'dn');
-  if (r.edit) h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; fresh(); paintSoon(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
+  /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
+  var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
+  if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
+  else if (r.edit) { h += b('edit', r.edit.form ? { l: r.edit.l, f: function(){ EDIT = EDIT.key === r.key ? { key: '' } : { key: r.key }; fresh(); paintSoon(); } } : r.edit, 'ed');   /* patch INLINEAPPR: ✏️ the item itself */
+    if (sendEdit) h += b('sendedit', { l: '✏️ Edit before sending', f: function(){ try { W._gcAp2Preview(r.id); } catch (e) { warn(e); } } }, 'ed'); }
   else h += b('open', r.open, 'op');
   if (r.pid && r.job) h += b('job', { l: '🏗 Open job', f: function(){ openJob(r.pid); } }, 'jb');
   h += b('doc', r.doc, 'dc');
@@ -158304,6 +158330,7 @@ function rowHtml(r, now, where){
     + '<div class="apx-t">' + r.icon + ' <span class="apx-kl">' + esc(r.kindL) + '</span> · ' + esc(r.title) + '</div>'
     + (r.job ? '<div class="apx-j">🏗 ' + esc(r.job) + '</div>' : '')
     + (r.src === 'queue' && W._gcApprSay && r.approve ? (function(){ var x = null; try { x = queue().filter(function(y){ return s(y.id) === s(r.id); })[0]; } catch (e) {} var t = x ? W._gcApprSay(x, /Approve & send|portal/.test(s(r.approve.l))) : ''; return t ? '<div class="apx-say" style="font-size:13px;color:#0f172a;background:#f1f5f9;border-radius:8px;padding:6px 8px;margin:4px 0">' + esc(t) + '</div>' : ''; })() : '')   /* patch APPTCONF */
+    + apxNotesHtml(r)   /* patch APXNOTE */
     + (r.mine && !DONE[r.key] ? jobPickHtml(r) : '')
     + '<div class="apx-m"><span class="apx-w ' + esc(r.step) + '">Waits on: ' + esc(r.mine ? 'you' + (r.step !== 'me' && r.waits ? ' (' + r.waits + ')' : '') : r.waits) + '</span>'
     + (age(r, now) ? '<span>⏱ ' + esc(age(r, now)) + '</span>' : '')
