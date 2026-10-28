@@ -159872,7 +159872,9 @@ function ACTS_PIN_RESET(){ PIN_ACTS = {}; }
 function pinLine(){
   var n = 0; try { n = typeof W._gcApprovalCount === 'function' ? W._gcApprovalCount() : ((theSet() || {}).total || 0); } catch (e) {}
   n = Math.max(0, (+n || 0) - pendCount());
-  return { n: n, h: '<button type="button" class="apx-pin-1" data-apx-go="1">' + (n ? '✅ ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting → <u>Open Approvals</u>' : '✅ No approvals waiting · <u>Approvals tab</u>') + '</button>' };
+  var po = 0; try { var B = build(); if (B.scope.kind === 'office') po = pmOptN(B.rows); } catch (e) { warn(e); }   /* patch APOFFICE3: the office's optional PM approvals, under the line */
+  return { n: n, h: '<button type="button" class="apx-pin-1" data-apx-go="1">' + (n ? '✅ ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting → <u>Open Approvals</u>' : '✅ No approvals waiting · <u>Approvals tab</u>') + '</button>'
+    + (po ? '<button type="button" class="apx-pin-1 apx-pin-po" data-apx-pmopt="1" style="display:block;margin-top:4px;font-size:13px;opacity:.9">👷 PM approvals (' + po + ') — waiting on PMs, optional for you ›</button>' : '') };
 }
 /* the To-Do's own approval lines are in the pin: not shown a second time below */
 function hideTwins(root){
