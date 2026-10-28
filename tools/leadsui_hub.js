@@ -12,18 +12,20 @@
    • the old manual Bid Board: its open bids (Open / Bidding / Submitted) become bid leads once (never twice: the id
      LBB_<bid id>, a deleted one stays deleted, the same name + address is not added again); the rest is kept, read-only,
      under ⋯ More → Old Bid Board */
-var LU = { more: false, adv: false, rso0: false, t: {} };
+var LU = { more: false, adv: false, rso0: false, t: {} }, NST0 = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
 var REFID = typeof WeakMap === 'function' ? new WeakMap() : null, REFN = 0;
 function refId(a){ if (!a || !REFID) return 0; var v = REFID.get(a); if (!v) { v = ++REFN; REFID.set(a, v); } return v; }
 /* ── a change shows at once: the changed copy is drawn until the saved list carries it ── */
 var OVL = {}, OVL_V = 0, OVL_N = 0, OVM = { b: null, v: -1, out: null };
 function rawLeads(){
   var b = rawLeads0(); if (!OVL_N) return b;
-  if (OVM.b === b && OVM.v === OVL_V) return OVM.out;
-  var hit = false, out = b.map(function(l){ var o = l && OVL[s(l.id)]; if (!o) return l; if (s(l.updatedAt) >= s(o.updatedAt)) { delete OVL[s(l.id)]; OVL_N--; return l; } hit = true; return o; });
+  if (OVM.b === b && OVM.v === OVL_V && Date.now() - OVM.at < 5000) return OVM.out;
+  /* the saved copy wins once it is as new as the change; the change is kept 20 s, so an older copy read back from this
+     computer's disk in the meantime (a read started before the save landed) cannot bring the old values back */
+  var hit = false, out = b.map(function(l){ var o = l && OVL[s(l.id)]; if (!o) return l; if (s(l.updatedAt) >= s(o.updatedAt)) { if (Date.now() - o.__ovAt > 20000) { delete OVL[s(l.id)]; OVL_N--; } return l; } hit = true; return o; });
   Object.keys(OVL).forEach(function(id){ if (Date.now() - OVL[id].__ovAt > 120000) { delete OVL[id]; OVL_N--; } });
   if (OVL_N < 0) OVL_N = 0;
-  OVM = { b: b, v: OVL_V, out: hit ? out : b };
+  OVM = { b: b, v: OVL_V, out: hit ? out : b, at: Date.now() };
   return OVM.out;
 }
 function overlay(id, fn2){
@@ -35,7 +37,12 @@ function overlay(id, fn2){
 }
 function patchLead(id, fn2){
   var shown = overlay(id, fn2);
-  if (shown) { HUB_SIG = ''; try { if (UI.open === id && D.getElementById('gcl-drawer')) { openDrawer(id); try { W.requestAnimationFrame(function(){ redraw(); }); } catch (e) { redraw(); } } else redraw(); } catch (e) { warn(e); } }   /* the open panel first, the list right after */
+  if (shown) { HUB_SIG = ''; try {   /* what the person is looking at first (the open panel, or the one row), the whole list right after */
+    var tr = D.querySelector('#gc-leads-hub tr.gcl-lr[data-gcl-id="' + String(id).replace(/["\\]/g, '') + '"]'), done = false;
+    if (UI.open === id && D.getElementById('gcl-drawer')) { openDrawer(id); done = true; }
+    else if (tr && UI.v === 'list') { var l1 = rawLeads().filter(function(x){ return x && x.id === id; })[0]; if (l1) { var r1 = lcRow(l1), tmp = D.createElement('tbody'); tmp.innerHTML = lcRowHtml(l1, r1, lcBidCell(l1, r1, GG.v || lcGcGroups()), lcCanDel(), Date.now()); if (tmp.firstChild) { held(function(){ tr.parentNode.replaceChild(tmp.firstChild, tr); }); done = true; } } }
+    if (done) NST0.call(W, redraw, 30); else redraw();
+  } catch (e) { warn(e); redraw(); } }
   return patchLead0(id, fn2).then(function(ok){ if (!ok && OVL[id]) { delete OVL[id]; OVL_N--; OVL_V++; LD_C.ref = null; redraw(); } return ok; });
 }
 W._gcLeadsUIOverlay = function(){ return Object.keys(OVL); };
@@ -161,7 +168,7 @@ function lcRow(l){
   var role = roleOfL(l), to = lcBidTo(l, role), st = stageOf(l), t = dueMs(l), p = prioOf(l), C = W._gcBidRoleCore || {}, gc = [], d = distOf(l), who = assignee(l);
   if (role !== 'prime') [s(l.dueToCompany), s(l.gc)].forEach(function(g){ var pb = false; try { pb = !!(C.isPublic && C.isPublic(g)); } catch (e) {} if (g && !pb) gc.push(g); });
   r = { sig: sig, to: to, stage: st, role: role, gc: gc, pk: (role === 'sub' || isBidL(l)) ? lcProjKey(l) : '', d: d, who: who,
-    k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d },
+    k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d, born: receivedMs(l) || NaN },
     name: esc(s(l.name || l.title) || 'Lead'), addr: esc([l.address, l.city].filter(Boolean).join(', ')), ic: srcIc(l) };
   return (LC_ROW[id] = r);
 }
@@ -216,8 +223,8 @@ function lcDue(l, r, now){
 function lcPrio(l){
   var p = prioOf(l), can = canPrio(l), cls = p >= 8 ? 'p-hi' : p >= 5 ? 'p-md' : p ? 'p-lo' : 'p-no';
   var tip = p ? 'Priority ' + p + ' of 10' : 'No priority yet';
-  if (!can) return p ? '<span class="gcl-pc ' + cls + '" title="' + tip + '">' + p + '</span>' : '<span class="gcl-dash">—</span>';
-  return '<button type="button" class="gcl-pc ' + cls + '" data-gcl-lprio="' + esc(l.id) + '" title="' + tip + ' — tap to set 1–10">' + (p ? p : 'Set') + '</button>';
+  if (!can) return p ? '<span class="gcl-pc gcl-prio ' + cls + '" title="' + tip + '">' + p + '</span>' : '<span class="gcl-dash">—</span>';
+  return '<button type="button" class="gcl-pc gcl-prio ' + cls + '" data-gcl-lprio="' + esc(l.id) + '" title="' + tip + ' — tap to set 1–10">' + (p ? p : 'SET') + '</button>';
 }
 function lcWho(l, r){
   var hc = heldOf(l), asg = canAssignAll();
@@ -304,7 +311,7 @@ function lcPopClose(){ var p = D.getElementById('gcl-lprio-pop'); if (p) p.remov
 var VIEWS = [['board', '🗂 Board'], ['list', '📋 List'], ['cal', '📅 Calendar'], ['map', '🗺 Map'], ['outreach', '🛰 Outreach']];
 function rsoOk(){ try { return !!(W._gcRSO && (!W._gcRSO._allowed || W._gcRSO._allowed())); } catch (e) { return false; } }
 function rsoOn(){ try { return !!(W._gcRSO && W._gcRSO.state().on); } catch (e) { return false; } }
-function chipB(k, label, on, tip){ return '<button type="button" class="gclu-chip' + (on ? ' on' : '') + '" data-gclu-chip="' + k + '" aria-pressed="' + !!on + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + label + '</button>'; }
+function chipB(k, label, on, tip){ return '<button type="button" class="gclu-chip' + (on ? ' on' : '') + '" data-gclu-chip="' + k + '"' + (k === 'all' || k === 'bids' ? ' data-gcl-preset="' + k + '"' : '') + ' aria-pressed="' + !!on + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + label + '</button>'; }
 function moreMenu(){
   var adm = isAdmin(), sc = myScope(), office = adm || sc.why === 'office';
   var all0 = rawLeads().filter(function(l){ return !dead(l); }), nImp = all0.filter(function(l){ return !archivedL(l) && importedL(l); }).length, nArch = all0.filter(archivedL).length;
@@ -384,6 +391,7 @@ D.addEventListener('click', function(ev){
   var pop = D.getElementById('gcl-lprio-pop');
   if (pop && pop.contains(t)) { var n = t.getAttribute('data-lp'); if (n) { ev.stopPropagation(); var pid = pop.getAttribute('data-id'); lcPopClose(); setPriority(pid, +n); } return; }
   if (pop && !t.closest('[data-gcl-lprio],[data-gcl-gcs]')) lcPopClose();
+  if (t.closest('#gc-leads-tabs [data-gc-tab]')) { [40, 120, 300, 700].forEach(function(ms){ NST0.call(W, function(){ if (!D.getElementById('gc-leads-hub') || !D.getElementById('gc-leads-hub').offsetParent) redraw(); }, ms); }); return; }   /* back from the Lead Inbox / Website tab: the list at once */
   if (t.closest('[data-rso-back]') && D.getElementById('gc-leads-hub')) { ev.stopPropagation(); ev.preventDefault(); setView('list'); return; }   /* Outreach's own "Back to Leads" */
   var hub = t.closest('#gc-leads-hub'); if (!hub) return;
   if (LU.more && !t.closest('.gclu-mw')) { LU.more = false; redraw(); }
@@ -555,7 +563,7 @@ function css2(){
     '.gcl-lc td.c-who .gcl-chip{white-space:normal;display:inline;line-height:1.5}.gclu-nt{font-size:10.5px;color:#888;margin-top:1px}.gcl-lc td.c-dist{color:#475569}',
     '.gcl-gcpop{display:block!important}.gcl-gcpop ul{margin:2px 0 0 16px;padding:0;font-size:13px;line-height:1.6}',
     '.gcl-dash{color:#9ca3af}.gcl-due{font-weight:700;border-radius:6px;padding:1px 6px}.gcl-due.od{color:#b91c1c;background:#fee2e2}.gcl-due.soon{color:#b45309;background:#fef3c7}',
-    '.gcl-pc{display:inline-block;border:1px solid transparent;border-radius:999px;padding:1px 9px;font:700 11px Arial;background:#f3f4f6;color:#555;cursor:default;min-width:34px;text-align:center}button.gcl-pc{cursor:pointer;min-height:26px}button.gcl-pc:hover{border-color:#241968}',
+    '.gcl-pc{display:inline-block;border:1px solid transparent;border-radius:999px;padding:1px 9px;font:700 10.5px Arial;background:#f3f4f6;color:#555;cursor:default;min-width:34px;text-align:center}button.gcl-pc{cursor:pointer;min-height:26px}button.gcl-pc:hover{border-color:#241968}',
     '.gcl-pc.p-hi{background:#fee2e2;color:#b91c1c}.gcl-pc.p-md{background:#fffbeb;color:#b45309}.gcl-pc.p-no{background:#fff;color:#9ca3af;border-color:#e5e7eb}',
     '.gcl-lc .gcl-tc{width:1%;text-align:right;padding:2px 4px}.gcl-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}',
     '.gcl-del{border:0;background:none;cursor:pointer;font-size:15px;opacity:.55;padding:4px 6px;border-radius:6px;min-width:34px;min-height:34px}.gcl-del:hover,.gcl-del:focus-visible{opacity:1;background:#fee2e2}',
@@ -569,9 +577,9 @@ function css2(){
     '#gcl-drawer .gclu-asg{margin:6px 0 2px}#gcl-drawer .gclu-asg .row{margin-top:4px}#gcl-drawer .gclu-notes{white-space:pre-wrap;font-size:13px;background:#faf9ff;border:1px solid #eee;border-radius:8px;padding:8px;margin:0 0 6px;max-height:180px;overflow:auto}',
     '#gcl-drawer .gclu-s-more summary{cursor:pointer;padding:4px 0}#gcl-drawer .gclu-s-more h4{margin:14px 0 6px}#gcl-drawer .gclu-plans{margin-top:6px}',
     '@media (min-width:641px){.gclu-top h2{color:#241968}}',
-    '@media (max-width:640px){.gclu-top h2{font-size:19px}.gclu-chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}.gclu-chips>*{flex:0 0 auto}.gclu-chip{padding:5px 10px;font-size:12px;min-height:32px}.gclu-within{font-size:12px;min-height:32px}.gclu-q{order:5;flex:1 1 100%;max-width:none}.gclu-views{order:6;width:100%;overflow-x:auto}.gclu-views button{flex:1;padding:8px 6px;font-size:12px}.gclu-counts{grid-template-columns:repeat(3,1fr)}.gclu-cnt b{font-size:18px}.gclu-menu{position:fixed;left:8px;right:8px;top:auto;bottom:8px;min-width:0;max-height:70vh;overflow:auto}',
+    '@media (max-width:640px){#gc-leads-hub{background:#f6f5fb;color:#1b1640;border-radius:12px;padding:10px 8px}.gclu-top h2{font-size:19px;color:#241968}.gclu-chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}.gclu-chips>*{flex:0 0 auto}.gclu-chip{padding:5px 10px;font-size:12px;min-height:32px}.gclu-within{font-size:12px;min-height:32px}.gclu-q{order:5;flex:1 1 100%;max-width:none}.gclu-views{order:6;width:100%;overflow-x:auto}.gclu-views button{flex:1;padding:8px 6px;font-size:12px}.gclu-counts{grid-template-columns:repeat(3,1fr)}.gclu-cnt b{font-size:18px}.gclu-menu{position:fixed;left:8px;right:8px;top:auto;bottom:8px;min-width:0;max-height:70vh;overflow:auto}',
     '.gcl-lc thead{display:none}.gcl-lc,.gcl-lc tbody{display:block;width:100%}.gcl-lc tr.gcl-lr{display:grid;grid-template-columns:1fr auto auto;grid-template-areas:"n n t" "d p t";gap:4px 8px;padding:9px 10px;border-top:1px solid #f0eef8;align-items:center}',
-    '.gcl-lc tr.gcl-lr td{display:none;padding:0;border:0;max-width:none}.gcl-lc tr.gcl-lr td.c-name{display:block;grid-area:n;min-width:0}.gcl-lc tr.gcl-lr td.c-due{display:block;grid-area:d}.gcl-lc tr.gcl-lr td.c-prio{display:block;grid-area:p}.gcl-lc tr.gcl-lr td.gcl-tc{display:block;grid-area:t;width:auto}}'
+    '.gcl-lc tr.gcl-lr td{display:none;padding:0!important;border:0;max-width:none;min-height:0!important;height:auto!important}.gcl-lc tr.gcl-lr td.c-name{display:block;grid-area:n;min-width:0}.gcl-lc tr.gcl-lr td.c-due{display:block;grid-area:d}.gcl-lc tr.gcl-lr td.c-prio{display:block;grid-area:p}.gcl-lc tr.gcl-lr td.gcl-tc{display:block;grid-area:t;width:auto}}'
   ].join('\n');
   (D.head || D.documentElement).appendChild(c);
 }

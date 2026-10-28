@@ -217,13 +217,13 @@ try {
   await mclick(pa, '#gc-leads-hub [data-gclu-more]'); await sleep(200);
   await mclick(pa, '#gc-leads-hub [data-gclu-tab="bidboard"]'); await sleep(1500);
   ok(await A.ev(() => (document.getElementById('gc-leads-tabs') || {}).getAttribute && document.getElementById('gc-leads-tabs').getAttribute('data-tab') === 'bidboard' && getComputedStyle(document.getElementById('gc-leads-tabs')).display !== 'none'), '⋯ More → Lead Inbox opens the inbox cards (with the tab bar to come back)');
-  await mclick(pa, '#gc-leads-tabs [data-gc-tab="leads"]');
+  T.backFromInbox = await pa.evaluate(() => new Promise(res => { const t0 = performance.now(); document.querySelector('#gc-leads-tabs [data-gc-tab="leads"]').click(); (function k(){ const h = document.getElementById('gc-leads-hub'); if (h && h.offsetParent && h.querySelector('tr[data-gcl-id]')) return res(Math.round(performance.now() - t0)); if (performance.now() - t0 > 10000) return res(-1); (window.__NST || setTimeout)(k, 10); })(); }));
   await waitFor(A, () => !!document.querySelector('#gc-leads-hub table.gclu-list tr[data-gcl-id]'), null, 20000);
-  ok((await viewOn(A)) === 'list', '… and back to the Leads list');
+  ok((await viewOn(A)) === 'list' && T.backFromInbox > 0 && T.backFromInbox < 1000, '… and back to the Leads list (' + T.backFromInbox + ' ms)', await A.ev(() => ({ v: window._gcLeadsHub.ui().v, tab: (document.getElementById('gc-leads-tabs') || {}).getAttribute && document.getElementById('gc-leads-tabs').getAttribute('data-tab'), hubs: document.querySelectorAll('#gc-leads-hub').length, on: [...document.querySelectorAll('#gc-leads-hub .gclu-views button')].map(b => b.className).join(','), rows: document.querySelectorAll('#gc-leads-hub tr[data-gcl-id]').length, vis: (document.getElementById('gc-leads-hub') || { getBoundingClientRect: () => ({}) }).getBoundingClientRect().height })));
   /* views round trip */
   const trip = [];
   for (const v of ['board', 'cal', 'map', 'outreach']) {
-    const has = await A.ev(v => !!document.querySelector('#gc-leads-hub [data-gcl-v="' + v + '"]'), v); if (!has) { trip.push(v + ':n/a'); continue; }
+    const has = await A.ev(v => !!document.querySelector('#gc-leads-hub [data-gcl-v="' + v + '"]'), v); if (!has) { trip.push(v + (v === 'outreach' ? ':n/a' : ':MISSING')); continue; }
     const t1 = await timed(A, '#gc-leads-hub [data-gcl-v="' + v + '"]'); await sleep(900);
     const st = await A.ev(v => ({ on: (document.querySelector('#gc-leads-hub .gclu-views button.on') || {}).getAttribute('data-gcl-v'), btns: document.querySelectorAll('#gc-leads-hub .gclu-views button').length, vis: !!document.querySelector('#gc-leads-hub .gclu-views').offsetParent,
       body: v === 'board' ? !!document.querySelector('#gc-leads-hub .gcl-board') : v === 'cal' ? !!document.querySelector('#gc-leads-hub .gcl-cal') : v === 'map' ? !!document.querySelector('#gc-leads-hub .gcl-map') : !!(document.getElementById('gc-rso') && document.getElementById('gc-rso').offsetParent) && !!(document.getElementById('gc-leads-hub').compareDocumentPosition(document.getElementById('gc-rso')) & 4) }), v);
@@ -242,6 +242,7 @@ try {
   /* trash */
   if ((await viewOn(A)) !== 'list') { await mclick(pa, '#gc-leads-hub [data-gcl-v="list"]'); await sleep(800); }
   T.trash = await timed(A, '#gc-leads-hub tr[data-gcl-id="L_over"] [data-gcl-del]');
+  if (T.trash < 0) console.log('DBG trash', JSON.stringify(await A.ev(() => ({ ui: window._gcLeadsHub.ui(), rows: [...document.querySelectorAll('#gc-leads-hub tr[data-gcl-id]')].slice(0, 5).map(r => r.getAttribute('data-gcl-id')), dels: document.querySelectorAll('#gc-leads-hub [data-gcl-del]').length, has: window._gcLeadsHubKit.all().some(l => l.id === 'L_over') }))));
   ok(await A.ev(() => !!document.getElementById('gcl-delq')) && !(await drawerOpen(A)), '🗑 asks first (' + T.trash + ' ms)');
   await mclick(pa, '#gcl-delq [data-a="delete"]'); await sleep(600);
   ok(!(await rows(A)).includes('L_over'), 'deleted: the row is gone');
@@ -275,7 +276,7 @@ try {
     return { thead: getComputedStyle(document.querySelector('#gc-leads-hub table.gclu-list thead')).display, grid: getComputedStyle(tr).display, name: vis('name'), due: vis('due'), prio: vis('prio'), who: vis('who'), trash: !!tr.querySelector('[data-gcl-del]') && !!tr.querySelector('[data-gcl-del]').offsetParent, w: document.documentElement.scrollWidth, vw: innerWidth }; });
   ok(ph.thead === 'none' && ph.grid === 'grid' && ph.name && ph.due && ph.prio && !ph.who && ph.trash && ph.w <= ph.vw + 1, 'phone: one card per lead (name + address, Due, Priority, 🗑), no sideways scroll', ph);
   if (SHOTS) await pb.screenshot({ path: SHOTS + '/phone_list.png' });
-  await mclick(pb, '#gc-leads-hub tr[data-gcl-id="L_soon"] td.c-name'); await sleep(1200);
+  { const bb = await pb.locator('#gc-leads-hub tr[data-gcl-id="L_soon"] td.c-due').boundingBox(); await pb.mouse.click(bb.x + 6, bb.y + bb.height / 2); } await sleep(1200);
   ok(await drawerOpen(B), 'phone: the lead panel opens');
   if (SHOTS) await pb.screenshot({ path: SHOTS + '/phone_panel.png' });
   ok(errsOf(B).length === 0, 'B: no page errors', errsOf(B).slice(0, 4));

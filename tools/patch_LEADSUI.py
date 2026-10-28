@@ -63,7 +63,7 @@ one("function bodyHtml(){\n", JS + "\n/* ═══ end LEADSUI block ═══ *
 between("function loadUI(){\n", "var UI = loadUI();",
 """function loadUI(){   /* patch LEADSUI: every visit (and reload) opens on 📋 List and All — no filter, sort or view is remembered */
   return { _k: uiKey(), v: 'list', who: '', src: '', type: '', stage: '', due: '', un: false, q: '', sort: 'born', dir: -1, open: '', cal: '', classic: false, closed: false, preset: 'all', exp: false, prio: '', role: '',
-    k: '', wk: false, d7: false, nc: false, mi: 0, lsort: 'due', ldir: 1, imp: false, arch: false };
+    k: '', wk: false, d7: false, nc: false, mi: 0, lsort: amEstimator() ? 'born' : 'due', ldir: amEstimator() ? -1 : 1, imp: false, arch: false };   /* an estimator: newest bid first (HOT2), any header re-sorts */
 }
 var UI = loadUI();""")
 between("function saveUI(){ lsSet(UI._k || uiKey(),", "/* patch PRIMESUB: role */",
