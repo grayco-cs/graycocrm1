@@ -165387,7 +165387,7 @@ function lcBidTo(l, role){
   return str(l.company) || str(l.client) || str(l.customer) || str(l.customerName) || '';
 }
 function heldOf(l){ try { return !assignee(l) && W._gcLeadHold && W._gcLeadHold.isHeld && W._gcLeadHold.isHeld(l) ? W._gcLeadHold.chip(l) : ''; } catch (e) { return ''; } }
-function lcSig(l){ return [l.updatedAt, l.savedAt, l.stage, l.status, l.bidDue, l.priority, l.bidRole, l.name, l.title, l.address, l.city, l.source, l.leadSource, l.dueToCompany, l.gc, l.owner, typeof l.company === 'string' ? l.company : '', typeof l.client === 'string' ? l.client : '', l.inboxRev, l.pm, l.estimator, l.apm, l.hold && l.hold.state, GEO.ver, GEO.from].join('|'); }
+function lcSig(l){ return [l.updatedAt, l.savedAt, l.stage, l.status, l.bidDue, l.priority, l.bidRole, l.name, l.title, l.address, l.city, l.source, l.leadSource, l.dueToCompany, l.gc, l.owner, typeof l.company === 'string' ? l.company : '', typeof l.client === 'string' ? l.client : '', l.inboxRev, l.pm, l.estimator, l.apm, l.hold && l.hold.state, GEO.ver, GEO.from, s(l.notes).length, l.lastNote && l.lastNote.at].join('|'); }
 function lcRow(l){
   var id = s(l.id), sig = lcSig(l), r = LC_ROW[id];
   if (r && r.sig === sig) return r;
@@ -165396,7 +165396,7 @@ function lcRow(l){
   if (role !== 'prime') [s(l.dueToCompany), s(l.gc)].forEach(function(g){ var pb = false; try { pb = !!(C.isPublic && C.isPublic(g)); } catch (e) {} if (g && !pb) gc.push(g); });
   r = { sig: sig, to: to, stage: st, role: role, gc: gc, pk: (role === 'sub' || isBidL(l)) ? lcProjKey(l) : '', d: d, who: who,
     k: { name: low(l.name || l.title), due: isFinite(t) ? t : NaN, prio: p || NaN, bidto: low(to), stage: STAGES.indexOf(st), who: low(who) || NaN, dist: d == null ? NaN : d, born: receivedMs(l) || NaN },
-    name: esc(s(l.name || l.title) || 'Lead'), addr: esc([l.address, l.city].filter(Boolean).join(', ')), ic: srcIc(l) };
+    name: esc(s(l.name || l.title) || 'Lead'), addr: esc([l.address, l.city].filter(Boolean).join(', ')), ic: srcIc(l), note: (function(n){ return n ? { t: esc(s(n.text).slice(0, 160)), tip: esc(s(n.text).slice(0, 500) + (n.by || n.at ? ' — ' + [s(n.by), n.at ? new Date(n.at).toLocaleString() : ''].filter(Boolean).join(', ') : '')) } : null; })(lastNote(l)) };
   return (LC_ROW[id] = r);
 }
 function lcProjKey(l){ var n = low(l.name || l.title).replace(/^((re|fw|fwd|itb)\s*:\s*|invitation to bid\s*:?\s*|bid invitation\s*:?\s*|request for (bid|proposal)\s*:?\s*)+/, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); return n.length >= 6 ? n : ''; }
@@ -165461,7 +165461,9 @@ function lcWho(l, r){
 function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
   return '<tr class="gcl-lr" data-gcl-id="' + id + '"><td class="c-name">'
-    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '') + '</td>'
+    + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
+    + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
+    + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
     + '<td class="c-due">' + lcDue(l, r, now) + '</td>'
     + '<td class="c-prio">' + lcPrio(l) + '</td>'
     + (bc.names.length > 1 ? '<td class="c-bidto" title="' + esc('Bid to ' + bc.names.length + ' GCs: ' + bc.names.join(' · ')) + '"><button type="button" class="gcl-gcs" data-gcl-gcs="' + esc(l.id) + '" data-names="' + esc(JSON.stringify(bc.names)) + '">🏢 ' + esc(bc.txt) + '</button></td>' : cell('bidto', bc.txt, bc.txt))
@@ -165531,6 +165533,31 @@ function lcGcsPop(btn){
   var names = []; try { names = JSON.parse(btn.getAttribute('data-names') || '[]'); } catch (e) {}
   var pop = lcPop(btn, '<div class="t">Bid to ' + names.length + ' GCs</div><ul>' + names.map(function(n){ return '<li>' + esc(n) + '</li>'; }).join('') + '</ul>', '', 'gcl-gcpop');
   pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'GCs we bid this project to');
+}
+/* ── 📝 quick note (owner 10/28): one line, saved on the lead (notes + activity, who / when), shown at once; one write per note ── */
+function lastNote(l){
+  if (l.lastNote && s(l.lastNote.text)) return l.lastNote;
+  var a = arr(l.activity); for (var i = a.length - 1; i >= 0; i--) if (a[i] && a[i].type === 'note' && s(a[i].text)) return { text: s(a[i].text), at: a[i].at, by: a[i].by };
+  var n = s(l.notes).trim(); if (n) { var ln = n.split('\n'); return { text: ln[ln.length - 1] }; }
+  return null;
+}
+function saveNote(id, txt){
+  txt = s(txt).replace(/\s+/g, ' ').trim().slice(0, 500); if (!id || !txt) return Promise.resolve(false);
+  var at = nowIso(), by = myName() || myEmail();
+  return patchLead(id, function(l){ logAct(l, 'note', txt); l.notes = (s(l.notes) ? s(l.notes) + '\n' : '') + txt; l.lastNote = { text: txt, at: at, by: by }; })
+    .then(function(ok){ toast(ok ? '📝 Note saved' : 'Could not save the note — try again'); return ok; });
+}
+function qnBox(id){ return '<div class="gclu-qn" data-id="' + esc(id) + '"><input type="text" data-gclu-qn-in maxlength="500" placeholder="Quick note — what happened, what is next…" aria-label="Quick note"><button type="button" class="b" data-gclu-qn-save>📝 Save</button></div>'; }
+function qnSubmit(box){
+  var inp = box && box.querySelector('[data-gclu-qn-in]'), id = box && box.getAttribute('data-id'); if (!inp || !s(inp.value).trim()) { if (inp) inp.focus(); return; }
+  var v = inp.value; inp.value = ''; if (box.closest('#gcl-lprio-pop')) lcPopClose();
+  saveNote(id, v);
+}
+function lcNotePop(btn){
+  var id = btn.getAttribute('data-gclu-note'), l = lcLead(id); if (!l) return;
+  var pop = lcPop(btn, '<div class="t">📝 Note on ' + esc(s(l.name || l.title) || 'this lead') + '</div>' + qnBox(id), id, 'gclu-notepop');
+  pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Quick note');
+  try { pop.querySelector('[data-gclu-qn-in]').focus(); } catch (e) {}
 }
 function lcPopClose(){ var p = D.getElementById('gcl-lprio-pop'); if (p) p.remove(); }
 
@@ -165616,16 +165643,18 @@ function setView(v){
 D.addEventListener('click', function(ev){
   var t = ev.target; if (!t || !t.closest) return;
   var pop = D.getElementById('gcl-lprio-pop');
+  var qs = t.closest('[data-gclu-qn-save]'); if (qs) { ev.stopPropagation(); ev.preventDefault(); qnSubmit(qs.closest('.gclu-qn')); return; }
   if (pop && pop.contains(t)) { var n = t.getAttribute('data-lp'); if (n) { ev.stopPropagation(); var pid = pop.getAttribute('data-id'); lcPopClose(); setPriority(pid, +n); } return; }
-  if (pop && !t.closest('[data-gcl-lprio],[data-gcl-gcs]')) lcPopClose();
+  if (pop && !t.closest('[data-gcl-lprio],[data-gcl-gcs],[data-gclu-note]')) lcPopClose();
   if (t.closest('#gc-leads-tabs [data-gc-tab]')) { [40, 120, 300, 700].forEach(function(ms){ NST0.call(W, function(){ if (!D.getElementById('gc-leads-hub') || !D.getElementById('gc-leads-hub').offsetParent) redraw(); }, ms); }); return; }   /* back from the Lead Inbox / Website tab: the list at once */
   if (t.closest('[data-rso-back]') && D.getElementById('gc-leads-hub')) { ev.stopPropagation(); ev.preventDefault(); setView('list'); return; }   /* Outreach's own "Back to Leads" */
   var hub = t.closest('#gc-leads-hub'); if (!hub) return;
   if (LU.more && !t.closest('.gclu-mw')) { LU.more = false; redraw(); }
-  var b = t.closest('[data-gcl-del],[data-gcl-lprio],[data-gcl-gcs],[data-gcl-lsort],[data-gclu-chip],[data-gclu-cnt],[data-gclu-clear],[data-gclu-more],[data-gclu-from],[data-gcl-v],[data-gclu-tab],[data-gclu-closed],[data-gclu-exp],[data-gclu-adv],[data-gclu-dups],[data-gclu-claims],[data-gclu-oldbb],.gclu-menu [data-gcl-impf],.gclu-menu [data-gcl-arch],.gclu-menu [data-gcl-clean],.gclu-menu [data-gcl-settings],.gclu-menu [data-gcl-classic]');
+  var b = t.closest('[data-gclu-note],[data-gcl-del],[data-gcl-lprio],[data-gcl-gcs],[data-gcl-lsort],[data-gclu-chip],[data-gclu-cnt],[data-gclu-clear],[data-gclu-more],[data-gclu-from],[data-gcl-v],[data-gclu-tab],[data-gclu-closed],[data-gclu-exp],[data-gclu-adv],[data-gclu-dups],[data-gclu-claims],[data-gclu-oldbb],.gclu-menu [data-gcl-impf],.gclu-menu [data-gcl-arch],.gclu-menu [data-gcl-clean],.gclu-menu [data-gcl-settings],.gclu-menu [data-gcl-classic]');
   if (!b) return;
   if (b.closest('.gclu-menu')) { LU.more = false; if (b.matches('[data-gcl-impf],[data-gcl-arch],[data-gcl-clean],[data-gcl-settings],[data-gcl-classic]')) { later(redraw, 0); return; } }   /* those are the hub's / LCLEAN's own buttons */
   ev.stopPropagation(); ev.preventDefault();
+  if (b.hasAttribute('data-gclu-note')) return lcNotePop(b);
   if (b.hasAttribute('data-gcl-del')) return lcAskDel(b.getAttribute('data-gcl-del'));
   if (b.hasAttribute('data-gcl-lprio')) return lcPrioPop(b);
   if (b.hasAttribute('data-gcl-gcs')) return lcGcsPop(b);
@@ -165649,6 +165678,7 @@ D.addEventListener('click', function(ev){
   redraw();
 }, true);
 D.addEventListener('change', function(ev){ var t = ev.target; if (!t || !t.hasAttribute || !t.hasAttribute('data-gclu-mi')) return; ev.stopPropagation(); UI.mi = +t.value || 0; MORE.ulist = 0; if (UI.mi) { GEO.at = 0; } redraw(); }, true);
+D.addEventListener('keydown', function(ev){ if (ev.key === 'Enter' && ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-gclu-qn-in')) { ev.preventDefault(); ev.stopPropagation(); qnSubmit(ev.target.closest('.gclu-qn')); return; } }, true);
 D.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') { lcPopClose(); if (LU.more) { LU.more = false; redraw(); } } }, true);
 
 /* ── the old manual Bid Board: open bids become bid leads once; the rest stays, read-only ── */
@@ -165740,7 +165770,7 @@ function drawerHtml(l){
   var subp = secOf(old, /Sub bid portal/), est = secOf(old, /Estimate &amp; job|Estimate & job/);
   var notes = s(l.notes).trim();
   return hd
-    + '<section class="gclu-s-status"><h4>Status</h4>'
+    + '<section class="gclu-s-status"><h4>Status</h4>' + qnBox(l.id) + (function(n){ return n ? '<div class="note gclu-lastn">Latest note: ' + esc(s(n.text).slice(0, 300)) + (n.by || n.at ? ' <i>— ' + esc([s(n.by), n.at ? new Date(n.at).toLocaleString() : ''].filter(Boolean).join(', ')) + '</i>' : '') + '</div>' : ''; })(lastNote(l))
     + '<div class="row"><span class="kv"><span>Stage:</span></span><select data-d="stage" aria-label="Stage">' + STAGES.map(function(st){ return '<option' + (st === stageOf(l) ? ' selected' : '') + '>' + st + '</option>'; }).join('') + '</select>'
     + '<button type="button" class="b gold" data-d="won">🏆 Won</button><button type="button" class="b red" data-d="lost">✖ Lost</button>' + (!contacted(l) && !closed(l) ? '<button type="button" class="b" data-d="contacted">✅ Contacted</button>' : '') + '</div>'
     + '<div class="row gcl-prio-row"><span class="kv"><span>Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'
@@ -165788,6 +165818,10 @@ function css2(){
     '.gcl-lc td.c-bidto{max-width:220px;overflow:hidden;text-overflow:ellipsis}.gcl-gcs{border:1px solid #d6d3ea;background:#f6f5fb;color:#241968;border-radius:999px;padding:1px 9px;font:700 11.5px Arial;cursor:pointer;min-height:24px}.gcl-gcs:hover{border-color:#241968}',
     '.gcl-lc td.c-who{white-space:normal;max-width:240px}.gclu-who{border:0;background:none;padding:2px 0;font:inherit;color:inherit;cursor:pointer;text-align:left}.gclu-who:hover{text-decoration:underline}.gclu-un{color:#b45309;font-weight:700}.gclu-av{display:inline-flex;width:20px;height:20px;border-radius:50%;background:#241968;color:#fff;font:700 9px Arial;align-items:center;justify-content:center;vertical-align:middle}',
     '.gcl-lc td.c-who .gcl-chip{white-space:normal;display:inline;line-height:1.5}.gclu-nt{font-size:10.5px;color:#888;margin-top:1px}.gcl-lc td.c-dist{color:#475569}',
+    '.gclu-nb{float:right;border:0;background:none;cursor:pointer;font-size:13px;opacity:.45;padding:2px 4px;margin:-2px -4px 0 6px;border-radius:6px;min-width:28px;min-height:28px}.gclu-nb:hover,.gclu-nb:focus-visible{opacity:1;background:#ede9fe}',
+    '.gclu-np{font-size:11px;color:#6b7280;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px}',
+    '.gclu-qn{display:flex;gap:6px;align-items:center;margin:0 0 8px}.gclu-qn input{flex:1;min-width:0;border:1px solid #d6d3ea;border-radius:8px;padding:7px 9px;font:13px Arial;min-height:36px}.gclu-qn button{border:1px solid #d6d3ea;background:#fff;border-radius:8px;padding:7px 11px;font:700 13px Arial;cursor:pointer;color:#241968;min-height:36px;white-space:nowrap}',
+    '#gcl-lprio-pop.gclu-notepop{max-width:min(420px,94vw);width:420px;display:block}#gcl-drawer .gclu-lastn{margin:-2px 0 8px}',
     '.gcl-gcpop{display:block!important}.gcl-gcpop ul{margin:2px 0 0 16px;padding:0;font-size:13px;line-height:1.6}',
     '.gcl-dash{color:#9ca3af}.gcl-due{font-weight:700;border-radius:6px;padding:1px 6px}.gcl-due.od{color:#b91c1c;background:#fee2e2}.gcl-due.soon{color:#b45309;background:#fef3c7}',
     '.gcl-pc{display:inline-block;border:1px solid transparent;border-radius:999px;padding:1px 9px;font:700 10.5px Arial;background:#f3f4f6;color:#555;cursor:default;min-width:34px;text-align:center}button.gcl-pc{cursor:pointer;min-height:26px}button.gcl-pc:hover{border-color:#241968}',
@@ -165806,7 +165840,7 @@ function css2(){
     '@media (min-width:641px){.gclu-top h2{color:#241968}}',
     '@media (max-width:640px){#gc-leads-hub{background:#f6f5fb;color:#1b1640;border-radius:12px;padding:10px 8px}.gclu-top h2{font-size:19px;color:#241968}.gclu-chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}.gclu-chips>*{flex:0 0 auto}.gclu-chip{padding:5px 10px;font-size:12px;min-height:32px}.gclu-within{font-size:12px;min-height:32px}.gclu-q{order:5;flex:1 1 100%;max-width:none}.gclu-views{order:6;width:100%;overflow-x:auto}.gclu-views button{flex:1;padding:8px 6px;font-size:12px}.gclu-counts{grid-template-columns:repeat(3,1fr)}.gclu-cnt b{font-size:18px}.gclu-menu{position:fixed;left:8px;right:8px;top:auto;bottom:8px;min-width:0;max-height:70vh;overflow:auto}',
     '.gcl-lc thead{display:none}.gcl-lc,.gcl-lc tbody{display:block;width:100%}.gcl-lc tr.gcl-lr{display:grid;grid-template-columns:1fr auto auto;grid-template-areas:"n n t" "d p t";gap:4px 8px;padding:9px 10px;border-top:1px solid #f0eef8;align-items:center}',
-    '.gcl-lc tr.gcl-lr td{display:none;padding:0!important;border:0;max-width:none;min-height:0!important;height:auto!important}.gcl-lc tr.gcl-lr td.c-name{display:block;grid-area:n;min-width:0}.gcl-lc tr.gcl-lr td.c-due{display:block;grid-area:d}.gcl-lc tr.gcl-lr td.c-prio{display:block;grid-area:p}.gcl-lc tr.gcl-lr td.gcl-tc{display:block;grid-area:t;width:auto}}'
+    '.gcl-lc tr.gcl-lr td{display:none;padding:0!important;border:0;max-width:none;min-height:0!important;height:auto!important}.gcl-lc tr.gcl-lr td.c-name{display:block;grid-area:n;min-width:0}.gclu-np{max-width:none}.gcl-lc tr.gcl-lr td.c-due{display:block;grid-area:d}.gcl-lc tr.gcl-lr td.c-prio{display:block;grid-area:p}.gcl-lc tr.gcl-lr td.gcl-tc{display:block;grid-area:t;width:auto}}'
   ].join('\n');
   (D.head || D.documentElement).appendChild(c);
 }

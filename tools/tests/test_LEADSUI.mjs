@@ -201,9 +201,24 @@ try {
   ok(T.stagePanel.v === 'Site Visit' && /Site Visit/.test(T.stagePanel.row || ''), 'stage in the panel shows at once (' + T.stagePanel.ms + ' ms)', T.stagePanel);
   let ps = null; for (let i = 0; i < 30 && !ps; i++) { await sleep(500); const l = cloudLeads().find(x => x.id === 'L_soon'); if (l && l.priority === 4 && l.stage === 'Site Visit') ps = l; }
   ok(!!ps, '… both saved');
+  /* 📝 quick note in the panel: one line, shown at once, saved with who / when */
+  await pa.fill('#gcl-drawer [data-gclu-qn-in]', 'Called the GC, plans by Friday');
+  T.notePanel = await A.ev(() => new Promise(res => { const t0 = performance.now(); document.querySelector('#gcl-drawer [data-gclu-qn-save]').click(); requestAnimationFrame(() => (window.__NST || setTimeout)(() => res({ ms: Math.round(performance.now() - t0), last: (document.querySelector('#gcl-drawer .gclu-lastn') || {}).innerText || '', input: document.querySelector('#gcl-drawer [data-gclu-qn-in]').value }), 0)); }));
+  ok(/Called the GC, plans by Friday/.test(T.notePanel.last) && /Wesley Johnson/.test(T.notePanel.last) && T.notePanel.input === '' && T.notePanel.ms < 150, 'panel 📝 quick note: shown at once with who / when (' + T.notePanel.ms + ' ms)', T.notePanel);
+  let pn = null; for (let i = 0; i < 30 && !pn; i++) { await sleep(500); const l = cloudLeads().find(x => x.id === 'L_soon'); if (l && /Called the GC, plans by Friday/.test(l.notes || '') && (l.activity || []).some(a => a.type === 'note' && /plans by Friday/.test(a.text) && a.by && a.at)) pn = l; }
+  ok(!!pn, '… saved on the lead (notes + activity with who / when)');
   if (SHOTS) await pa.screenshot({ path: SHOTS + '/desktop_panel.png' });
   T.panelClose = await timed(A, '#gcl-drawer [data-d="x"]');
   ok(!(await drawerOpen(A)) && T.panelClose < 100, 'Back from the lead (' + T.panelClose + ' ms)');
+  /* 📝 per row: the same quick note without opening the panel; the latest note under the address */
+  await sleep(500);
+  ok(/📝 Called the GC, plans by Friday/.test((await cellTxt(A, 'L_soon', 'name')) || ''), 'list: the latest note under the address', await cellTxt(A, 'L_soon', 'name'));
+  await mclick(pa, '#gc-leads-hub tr[data-gcl-id="L_tieA"] [data-gclu-note]'); await sleep(300);
+  ok(await A.ev(() => !!document.querySelector('#gcl-lprio-pop [data-gclu-qn-in]')) && !(await drawerOpen(A)), 'row 📝: the quick-note box opens (not the panel)');
+  await pa.keyboard.type('Left a voicemail'); await pa.keyboard.press('Enter'); await sleep(250);
+  ok(/📝 Left a voicemail/.test((await cellTxt(A, 'L_tieA', 'name')) || '') && !(await A.ev(() => !!document.getElementById('gcl-lprio-pop'))), '… Enter saves it and the row shows it at once', await cellTxt(A, 'L_tieA', 'name'));
+  let rn = null; for (let i = 0; i < 30 && !rn; i++) { await sleep(500); const l = cloudLeads().find(x => x.id === 'L_tieA'); if (l && /Left a voicemail/.test(l.notes || '')) rn = l; }
+  ok(!!rn, '… and is saved');
   /* More */
   await mclick(pa, '#gc-leads-hub [data-gclu-more]'); await sleep(300);
   const menu = await A.ev(() => [...document.querySelectorAll('#gc-leads-hub .gclu-menu button')].map(b => b.textContent.trim()));
