@@ -296,6 +296,7 @@ W.fetch = function(input, init){
 try { W.fetch.__gcStorecut = true; } catch (e) {}
 W._gcStoreCut = {
   state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, bigReadsUnchanged: S.validated, mbNotDownloaded: Math.round(S.savedBytes / 1e4) / 100, keptCopies: VC.size, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
+  raw: function(u, init){ return NF.call(W, u, init); },   /* the admin clean-up: below every later door (no-file-sync, file conversions) */
   allow: function(k, on){ if (on) S.allow[k] = true; else delete S.allow[k]; },
   forget: function(){ memo.clear(); vcDrop(null); }
 };
@@ -187571,6 +187572,28 @@ function s(v){ return v == null ? '' : String(v); }
 function isAdmin(){ try { return !!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.isAdmin === 'function' && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
 function who(){ try { return W.__GC_AUTH__.email() || ''; } catch (e) { return ''; } }
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+/* the old document pieces are read and written below the later doors: the "no file sync" door answers every
+   projectDocs__* request with an empty "done", and the file door takes the base64 out of what comes back */
+async function rawHeaders(c){
+  var tok = c.k;
+  try { var ss = W.__GC_AUTH__ && W.__GC_AUTH__.fresh ? await W.__GC_AUTH__.fresh() : null; if (ss && ss.access_token) tok = ss.access_token; } catch (e) {}
+  return { apikey: c.k, Authorization: 'Bearer ' + tok };
+}
+function rawFetch(u, init){ return (W._gcStoreCut && W._gcStoreCut.raw) ? W._gcStoreCut.raw(u, init) : fetch(u, init); }
+async function getRowRaw(c, key){
+  var r = await rawFetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: await rawHeaders(c), cache: 'no-store' });
+  if (!r || !r.ok) throw new Error('read ' + key + ' ' + (r && r.status));
+  var rows = await r.json(); if (!Array.isArray(rows)) throw new Error('read ' + key);
+  if (!rows.length) return undefined;
+  var v = rows[0].value; if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { v = JSON.parse(v); } catch (e) {} }
+  return v;
+}
+async function putRowRaw(c, key, value){
+  var r = await rawFetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, await rawHeaders(c)), body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) });
+  if (!r || !r.ok) throw new Error('write ' + key + ' ' + (r && r.status));
+  var back = await getRowRaw(c, key);   /* read it back: a door that answers "done" without writing is caught here */
+  if (JSON.stringify(back) !== JSON.stringify(value)) throw new Error('write ' + key + ' did not reach the cloud');
+}
 async function getRow(c, key){
   var r = await fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: H(c), cache: 'no-store' });
   if (!r || !r.ok) throw new Error('read ' + key + ' ' + (r && r.status));
@@ -187655,10 +187678,10 @@ W._gcDocsCleanNow = async function(opt){
 async function docsClean(opt){
   var c = creds(), rep = { step: 'documents', dryRun: !!opt.dryRun };
   await heavyFirst('documents clean-up');
-  var plain = arr(await getRow(c, 'projectDocs')), man = await getRow(c, 'projectDocs__manifest');
+  var plain = arr(await getRowRaw(c, 'projectDocs')), man = await getRowRaw(c, 'projectDocs__manifest');
   var chunks = [], pieces = [], bytesBefore = size(man);
   for (var ci = 0; ci < 80; ci++) {
-    var cv = await getRow(c, 'projectDocs__chunk' + ci);
+    var cv = await getRowRaw(c, 'projectDocs__chunk' + ci);
     if (cv === undefined) { if (ci >= ((man && man.count) || 0)) break; else continue; }
     pieces.push(ci); bytesBefore += size(cv); chunks = chunks.concat(arr(cv).map(function(d){ return { d: d, piece: ci }; }));
   }
@@ -187687,11 +187710,13 @@ async function docsClean(opt){
       recovered.push(keep);
     }
   }
+  rep.bodiesMissing = chunks.filter(function(x){ return x.d && x.d.size > 0 && !/^data:/.test(s(x.d.data)) && !refParts(x.d.ref) && !refParts(x.d.data); }).length;
   rep.files = files.length; rep.filesAlreadyStored = files.filter(function(x){ return x.inStorage && !x.uploaded; }).length;
   rep.filesToUpload = files.filter(function(x){ return !x.inStorage; }).length; rep.filesUploaded = files.filter(function(x){ return x.uploaded; }).length;
   rep.onlyInOldPieces = recovered.map(function(x){ return s(x.id) + ' ' + s(x.name).slice(0, 60) + (x.ref ? '' : ' (no file)'); });
   rep.bytesAfter = 2 + size(recovered) + 160;
   if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
+  if (rep.bodiesMissing && !opt.allowMissingBodies) throw new Error('documents: ' + rep.bodiesMissing + ' document(s) in the old pieces say they have a file but none came back — nothing changed');
   var bad = files.filter(function(x){ return !x.inStorage; });
   if (bad.length) throw new Error('documents: ' + bad.length + ' file(s) are not in file storage — nothing changed');
   if (!opt.noBackup) {
@@ -187703,8 +187728,8 @@ async function docsClean(opt){
     recovered.forEach(function(x){ if (s(x.id) in at) old[at[s(x.id)]] = x; else old.push(x); });
     await putRow(c, 'gc_docs_recovered', old);
   }
-  await putRow(c, 'projectDocs__manifest', { chunked: false, count: 0, total: plain.length, at: new Date().toISOString(), gen: 'storecut' + Date.now().toString(36), note: 'projectDocs is one row; its files are in file storage (patch STORECUT)' });
-  for (var j = 0; j < pieces.length; j++) await putRow(c, 'projectDocs__chunk' + pieces[j], []);
+  await putRowRaw(c, 'projectDocs__manifest', { chunked: false, count: 0, total: plain.length, at: new Date().toISOString(), gen: 'storecut' + Date.now().toString(36), note: 'projectDocs is one row; its files are in file storage (patch STORECUT)' });
+  for (var j = 0; j < pieces.length; j++) await putRowRaw(c, 'projectDocs__chunk' + pieces[j], []);
   rep.result = 'cleaned: ' + pieces.length + ' old pieces emptied, ' + recovered.length + ' document(s) kept in gc_docs_recovered';
   return rep;
 }

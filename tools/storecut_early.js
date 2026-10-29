@@ -188,6 +188,7 @@ W.fetch = function(input, init){
 try { W.fetch.__gcStorecut = true; } catch (e) {}
 W._gcStoreCut = {
   state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, bigReadsUnchanged: S.validated, mbNotDownloaded: Math.round(S.savedBytes / 1e4) / 100, keptCopies: VC.size, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
+  raw: function(u, init){ return NF.call(W, u, init); },   /* the admin clean-up: below every later door (no-file-sync, file conversions) */
   allow: function(k, on){ if (on) S.allow[k] = true; else delete S.allow[k]; },
   forget: function(){ memo.clear(); vcDrop(null); }
 };
