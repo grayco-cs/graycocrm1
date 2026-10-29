@@ -282,6 +282,10 @@ function contacts(data){
     if (/insur/.test(ty)) c.insurance = true;
   });
   arr(data && data.newsSignups).forEach(function(sg){ if (sg && sg.email) add(sg.email, sg.name, { zip: s(sg.zip), signup: true }); });   /* patch MKT2: lead-magnet downloads joined GrayCo News */
+  /* patch LOSTNEWS (owner 10/29): lost leads stay in every GrayCo News audience until they unsubscribe (_lib/lostnews.js) */
+  var LN = null; try { LN = (typeof module === 'object' && module && module.exports && typeof require === 'function') ? require('./lostnews.js') : null; } catch (e) { LN = null; }
+  if (!LN && typeof self !== 'undefined' && self.__gcLostNews) LN = self.__gcLostNews;
+  var LNblk = {}; if (LN) { var lnO = { optout: data && data.smsOptout }; LN.members(data && data.leads, lnO).forEach(function(m){ add(m.email, m.name, { lostLead: true }); }); LNblk = LN.blocked(data && data.leads, lnO); }
   arr(data && data.projects).forEach(function(p){
     if (dead(p)) return;
     var addr = s(p.address || p.jobAddress);
@@ -294,7 +298,7 @@ function contacts(data){
     c.jobs.push({ id: s(p.id), kind: k, done: isDone(p), doneDate: doneDate(p), zip: zipOf(addr) });
     if (badRating(p)) c.bad = true;   /* patch MKT2 blitz */
   });
-  return Object.keys(by).map(function(k){ return by[k]; });
+  return Object.keys(by).filter(function(k){ return !LNblk[k]; }).map(function(k){ return by[k]; });
 }
 /* patch MKT2 blitz: a customer who told us they were unhappy is never asked for a review */
 function badRating(p){ var n = function(v){ var x = parseFloat(v); return isFinite(x) ? x : null; }; var r = [n(p.rating), n(p.csat), n(p.csatScore), n(p.satisfaction), n(p.reviewStars), n(p.npsScore != null ? p.npsScore / 2 : null)].filter(function(x){ return x != null; });

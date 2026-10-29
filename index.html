@@ -166834,6 +166834,7 @@ function drawerHtml(l){
     + '<div class="row gcl-prio-row"><span class="kv"><span>Priority:</span></span> ' + prioChip(l) + ' ' + (canPrio(l) ? prioPicker(l) : '<span class="note">An admin sets the priority' + (isBidL(l) ? ' (or the estimator, on a bid)' : '') + '.</span>') + '</div>'
     + '<div class="gclu-asg"><span class="kv"><span>' + ((W._gcBidRole && W._gcBidRole.isBid(l)) ? 'Estimator' : 'Assigned to') + ':</span> <b data-gclu-assigned>' + esc(assignee(l) || 'Unassigned') + '</b></span>' + (own ? ' ' + own : '') + held + asgPre + asgRow + '</div>'
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
+    + (W._gcLostNews ? W._gcLostNews.row(l) : '')   /* patch LOSTNEWS */
     + '</section>'
     + '<section><h4>⏰ Bid</h4>'
     + (dueKv ? dueKv[0] : '') + (s(l.bidDue) ? '<div class="note">Due date ' + dueFrom(l) + (s(l.bidDue).length <= 10 ? ' · time not stated' : '') + '</div>' : '')
@@ -167312,6 +167313,7 @@ function drawerHtml0(l){
     + (function(){ var rcp = roleChip(l, { always: isBidL(l) }); if (!rcp) return ''; var inf = W._gcPrimeSub.info(l);   /* patch PRIMESUB: the lead's page */
         return '<div class="row gcl-role-row"><span class="kv"><span>Prime / sub:</span></span> ' + rcp + ' <span class="note">' + esc(inf.role ? inf.why : 'not marked yet') + (W._gcPrimeSub.can() ? ' · tap to change' : '') + '</span></div>'; })()
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
+    + (W._gcLostNews ? W._gcLostNews.row(l) : '')   /* patch LOSTNEWS */
     + '</section>'
     /* assign */
     + '<section><h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? '📐 Estimator' : '👤 Assigned to') + '</h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.drawerNote(l) : '') + (W._gcLeadHold ? W._gcLeadHold.drawer(l) : '') /* patch LEADHOLD */ +   /* patch BIDROLE */ ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
@@ -181732,6 +181734,120 @@ css.textContent = '.gcst-set{display:flex;flex-wrap:wrap;gap:8px;align-items:cen
 ST.call(W, tick, 1500);
 W._gcSubTexts = { loadList: loadList, loadConf: loadConf, decorate: decorate };
 try { console.log('[GC] 📱 Sub schedule texts: Subs tab switch + confirmations (patch SUBTXT)'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-lostnews">
+/* GrayCo — LOST LEADS STAY ON GRAYCO NEWS (patch LOSTNEWS). ONE copy: the server (_lib/news.js everyone(),
+   _lib/mkt-content.js contacts() → every campaign audience) and the CRM page (tools/patch_LOSTNEWS.py pastes this file
+   into the lead panel's tail as window.__gcLostNews). Pure functions: no network, no DOM.
+
+   Owner 10/29: "when leads are lost i still want to email them until they say stop emails".
+   A lead marked Lost with an e-mail is in the GrayCo News / marketing e-mail audience (newsletters, seasonal campaigns,
+   the 6 / 12-month win-back check-ins) and keeps getting them until they unsubscribe. Campaigns still go through
+   ✅ Approvals as today; every send is news@ with the one-click unsubscribe (List-Unsubscribe) and the gc_news_suppress
+   list is checked before each send (_lib/news.js) — nothing here changes that.
+   NOT on the list (why() says which):
+     · lost as spam / not a real lead / wrong number / vendor or sales pitch / not construction / test / duplicate;
+     · a bid-board / plan-room GC contact (a commercial / government bid invite) — unless someone ticked newsOptIn on it;
+     · anyone who asked not to be contacted (doNotContact, dnc, doNotEmail, noEmail, unsubscribed, optOut, "do not
+       contact / e-mail" in the tags) or texted STOP to our number (opts.optout: the SMS state's opt-out map);
+     · a lead someone took off with the panel's switch (newsOff: true). */
+(function(root, factory){
+  var M = factory();
+  if (typeof module === 'object' && module && module.exports) module.exports = M;
+  if (root && typeof root === 'object') root.__gcLostNews = M;
+})(typeof self !== 'undefined' ? self : this, function(){
+'use strict';
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function okEmail(e){ return /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(s(e)); }
+function phone10(v){ var d = s(v).replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? d.slice(1) : d; }
+var JUNK = /spam|scam|not\s*a\s*real|fake|junk|bogus|wrong\s*(number|no\.?|person)|vendor|supplier|solicit|sales\s*(call|pitch|person|rep)?\b|selling|marketing\s*(call|agency|offer)|robo|not\s*construction|test\s*lead|^test\b|duplicate|dup\b|prank/i;
+var BIDSRC = /bid\s*board|plan\s*room|planhub|buildingconnected|building\s*connected|isqft|dodge|construct\s*connect|bidclerk|bids@|bid\s*invite|itb\b/i;
+function isLost(l){ return !!l && (l.lost === true || [l.stage, l.status, l.pipelineStage].some(function(v){ return /^lost\b/i.test(s(v)); })); }
+function emailOf(l){ return low(l.email || l.contactEmail || l.clientEmail || l.customerEmail || (l.contact && l.contact.email)); }
+function nameOf(l){ return s(l.contactName || (l.contact && l.contact.name) || l.client || l.customer || l.name); }
+function phoneOf(l){ return phone10(l.phone || l.clientPhone || (l.contact && l.contact.phone) || (l.leadExtra && l.leadExtra.smsFrom)); }
+function isBid(l){
+  if (/commercial|government|gov\b/i.test(s(l.leadKind || l.type || l.kind))) return true;
+  if (l.bidStatus || (l.inboxId && (l.bidDue || l.estimator || l.dueToCompany))) return true;
+  return BIDSRC.test([l.source, l.leadSource, l.sourceKind, l.origin, l.leadExtra && l.leadExtra.leadSource].map(s).join(' '));
+}
+function noContact(l){ return !!(l.doNotContact || l.dnc || l.doNotEmail || l.noEmail || l.unsubscribed || l.optOut || /do\s*not\s*(contact|e-?mail|call)/i.test(s(Array.isArray(l.tags) ? l.tags.join(' ') : l.tags))); }
+/* '' = on the list; otherwise why not. opts = { optout: { <10 digits>: at } } */
+function why(l, opts){
+  opts = opts || {};
+  if (!l || l.deleted === true || l._deleted === true) return 'deleted';
+  if (!isLost(l)) return 'not lost';
+  if (!okEmail(emailOf(l))) return 'no e-mail';
+  if (l.newsOff === true) return 'taken off GrayCo News on the lead';
+  if (noContact(l)) return 'asked not to be contacted';
+  var ph = phoneOf(l); if (ph && opts.optout && opts.optout[ph]) return 'texted STOP';
+  if (JUNK.test(s(l.lostReason || l.lossReason)) || /spam|junk|vendor/i.test(s(Array.isArray(l.tags) ? l.tags.join(' ') : l.tags))) return 'lost as spam / not a real lead / wrong number / vendor';
+  if (isBid(l) && l.newsOptIn !== true) return 'a bid-board / plan-room GC contact (not opted in)';
+  return '';
+}
+function on(l, opts){ return why(l, opts) === ''; }
+/* the lost leads on the list: [{ email, name, leadId, from: 'lost lead' }] (one per e-mail) */
+function members(leads, opts){
+  var by = {};
+  arr(leads).forEach(function(l){ if (!on(l, opts)) return; var e = emailOf(l); if (!by[e]) by[e] = { email: e, name: nameOf(l), leadId: s(l.id), from: 'lost lead' }; });
+  return Object.keys(by).map(function(k){ return by[k]; });
+}
+/* the e-mails of leads that must NOT get news (asked not to be contacted / STOP / taken off) — a customer record with the
+   same e-mail does not put them back */
+function blocked(leads, opts){
+  var out = {};
+  arr(leads).forEach(function(l){ var e = emailOf(l); if (!okEmail(e)) return; var w = why(l, opts); if (/asked not|STOP|taken off/.test(w)) out[e] = w; });
+  return out;
+}
+var LABEL = '📰 On GrayCo News (until they unsubscribe)';
+return { isLost: isLost, emailOf: emailOf, isBid: isBid, noContact: noContact, why: why, on: on, members: members, blocked: blocked, LABEL: LABEL, JUNK: JUNK };
+});
+/* __GC_PATCH_LOSTNEWS__ — the lead panel's "📰 On GrayCo News (until they unsubscribe)" line + the per-lead switch
+   (owner 10/29: "when leads are lost i still want to email them until they say stop emails"). The rules are
+   netlify/functions/_lib/lostnews.js, pasted above this by tools/patch_LOSTNEWS.py (window.__gcLostNews) — the server
+   uses the same file for every GrayCo News audience. The switch sets lead.newsOff (take off) / clears it; an admin can
+   opt a bid-board / plan-room GC contact in (lead.newsOptIn). Unsubscribes (gc_news_suppress) and STOP are checked by
+   the server at every send. */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W._gcLostNews) return;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function LN(){ return W.__gcLostNews; }
+function isAdmin(){ try { return !!(W._gcAdm && W._gcAdm.state().admin); } catch (e) { return false; } }
+function row(l){
+  var M = LN(); if (!M || !l || !M.isLost(l)) return '';
+  var why = M.why(l), id = esc(l.id), b = function(act, t){ return ' <button type="button" class="b" data-lostnews="' + act + '" data-id="' + id + '">' + t + '</button>'; };
+  if (!why) return '<div class="row gcln-row" data-gcln="' + id + '"><span class="note gcln-on" style="color:#166534;font-weight:700">' + esc(M.LABEL) + '</span>' + b('off', 'Take off GrayCo News') + '</div>';
+  if (/taken off/.test(why)) return '<div class="row gcln-row" data-gcln="' + id + '"><span class="note">📰 Not on GrayCo News — taken off on this lead</span>' + b('on', 'Put back on') + '</div>';
+  if (/bid-board/.test(why)) return '<div class="row gcln-row" data-gcln="' + id + '"><span class="note">📰 Not on GrayCo News — ' + esc(why) + '</span>' + (isAdmin() ? b('optin', 'Add to GrayCo News (owner opt-in)') : '') + '</div>';
+  return '<div class="row gcln-row" data-gcln="' + id + '"><span class="note">📰 Not on GrayCo News — ' + esc(why) + '</span></div>';
+}
+function save(id, fn){
+  var set = W._setLeads; if (typeof set !== 'function') return false;
+  set(function(list){ return (Array.isArray(list) ? list : []).map(function(l){ if (!l || String(l.id) !== String(id)) return l; var q = Object.assign({}, l); fn(q); q.updatedAt = new Date().toISOString(); return q; }); });
+  return true;
+}
+function leadById(id){ try { return ((W._crm && W._crm.leads) || W.__gcLeadsNow || []).filter(function(l){ return l && String(l.id) === String(id); })[0] || null; } catch (e) { return null; } }
+D.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-lostnews]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  var id = b.getAttribute('data-id'), act = b.getAttribute('data-lostnews'), at = new Date().toISOString(), by = ''; try { by = W.__GC_AUTH__.email(); } catch (x) {}
+  var ok = save(id, function(q){
+    if (act === 'off') { q.newsOff = true; q.newsOffAt = at; q.newsOffBy = by; }
+    else if (act === 'on') { delete q.newsOff; q.newsOnAt = at; q.newsOnBy = by; }
+    else if (act === 'optin') { q.newsOptIn = true; q.newsOptInAt = at; q.newsOptInBy = by; }
+    var cur = Object.assign({}, leadById(id) || { id: id, stage: 'Lost' }, q);
+    var r = b.closest('[data-gcln]'); if (r) { var tmp = D.createElement('div'); tmp.innerHTML = row(cur); if (tmp.firstChild) r.parentNode.replaceChild(tmp.firstChild, r); }
+  });
+  if (!ok) b.textContent = 'Could not save — reload and try again';
+}, true);
+W._gcLostNews = { row: row };
+try { console.log('[GC] 📰 Lost leads stay on GrayCo News until they unsubscribe (patch LOSTNEWS)'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-autoc">

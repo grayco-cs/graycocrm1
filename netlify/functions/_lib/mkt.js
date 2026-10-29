@@ -144,6 +144,9 @@ async function audienceFor(rec, data){
     Object.keys(on).forEach(function(e){ delete jaOff[e]; });
   } catch (e) { jaOff = {}; }
   if (data && data.newsSignups === undefined) { try { data = Object.assign({}, data, { newsSignups: await mkt2().signups() }); } catch (e) {} }   /* patch MKT2: lead-magnet sign-ups */
+  /* patch LOSTNEWS: the lost leads (they stay on GrayCo News until they unsubscribe) and the texted-STOP list */
+  if (data && data.leads === undefined) { try { data = Object.assign({}, data, { leads: (await crmData(['leads'])).leads }); } catch (e) {} }
+  if (data && data.smsOptout === undefined) { try { const st = await require('../missed-call.js')._test.stateGet(); data = Object.assign({}, data, { smsOptout: (st && st.optout) || {} }); } catch (e) {} }
   const list = C.audience(data, rec.aud || { type: 'all' }, nowIso()).filter(function(c){ return !jaOff[String(c.email || '').toLowerCase()]; });
   const off = await news().suppressed(list.map(function(c){ return c.email; }));
   return { send: list.filter(function(c){ return !off.has(c.email); }), skipped: list.filter(function(c){ return off.has(c.email); }).map(function(c){ return c.email; }) };

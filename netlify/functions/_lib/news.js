@@ -121,9 +121,16 @@ function everyone(data){
   arr(data && data.customers).forEach(function(c){ if (c && c.deleted !== true) add(c.email || c.contactEmail, c.name || c.company, 'customer'); });
   arr(data && data.projects).forEach(function(p){ if (p && p.deleted !== true) add(p.clientEmail || p.customerEmail || p.email, p.client || p.customer, 'job'); });
   arr(data && data.newsSignups).forEach(function(sg){ if (sg) add(sg.email, sg.name, 'signup'); });   /* patch MKT2: guide downloads */
-  return Object.keys(by).map(function(k){ return by[k]; });
+  /* patch LOSTNEWS (owner 10/29): lost leads stay on GrayCo News until they unsubscribe; anyone who asked not to be
+     contacted / texted STOP / was taken off on the lead is left out (_lib/lostnews.js) */
+  const LN = require('./lostnews.js'), lo = { optout: data && data.smsOptout };
+  LN.members(data && data.leads, lo).forEach(function(m){ add(m.email, m.name, 'lost lead'); });
+  const blk = LN.blocked(data && data.leads, lo);
+  return Object.keys(by).filter(function(k){ return !blk[k]; }).map(function(k){ return by[k]; });
 }
 async function subscribers(data){
+  /* patch LOSTNEWS: the texted-STOP list keeps a lost lead off (read here when the caller did not pass it) */
+  if (data && data.smsOptout === undefined) { try { const st = await require('../missed-call.js')._test.stateGet(); data = Object.assign({}, data, { smsOptout: (st && st.optout) || {} }); } catch (e) {} }
   const all = everyone(data);
   const off = await suppressed(all.map(function(x){ return x.email; }));
   return all.filter(function(x){ return !off.has(x.email); });

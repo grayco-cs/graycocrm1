@@ -42,6 +42,7 @@ function due(data, state, t){
   const seen = {}, out = [];
   arr(data.leads).forEach(function(l){
     if (!l.id || l.deleted || l._deleted || !isLost(l) || noContact(l) || isBidLead(l)) return;
+    if (require('./lostnews.js').why(l, { optout: data.smsOptout }) !== '') return;   /* patch LOSTNEWS: the same rules as GrayCo News (spam / vendor / taken off / STOP; a bid contact only when opted in — winback still never mails bid contacts) */
     const e = emailOf(l); if (!okEmail(e) || customers[e] || seen[e]) return;
     const at = Date.parse(lostAt(l)); if (!isFinite(at)) return;
     const days = (t - at) / 86400000;
@@ -93,6 +94,7 @@ async function run(core, t){
   t = t || Date.now();
   if (String(process.env.WINBACK_OFF || '') === '1') return { off: true };
   const data = await core.kvRead(['leads', 'customers', 'projects', 'gc_deleted_projects']);
+  try { const ss = await require('../missed-call.js')._test.stateGet(); data.smsOptout = (ss && ss.optout) || {}; } catch (e) {}   /* patch LOSTNEWS: texted STOP */
   const st = await stateGet();
   const list = due(data, st, t);
   const out = { due: list.length, queued: [] };
