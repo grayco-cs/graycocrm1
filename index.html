@@ -64291,17 +64291,18 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 /* ===== Auto-fill the job address on schedule items that are missing it ===== */
 (function(){
   'use strict';
-  function fill(){
+  function fill(force){
     try{
       if(window.__GC_IS_TYPING__) return;
       if(!window._setSchedule) return;
-      if(document.hidden) return;
+      if(document.hidden && !force) return;
       var projects=((window._crm&&window._crm.projects)||[]).filter(Boolean);
       if(!projects.length) return;
       var byId={}; projects.forEach(function(p){ byId[p.id]=p; });
       /* patch SCHEDQUIET: nothing to fill on the list on screen = the setter is not called at all */
       var _sqS=(window._crm&&window._crm.schedule)||[];
-      if(Array.isArray(_sqS) && !_sqS.some(function(s){ return s && !(s.address && String(s.address).trim()) && s.pid && byId[s.pid] && byId[s.pid].address; })) return;
+      /* patch SCHEDQUIET2: _crm.schedule can lag the live list -- a direct call or every 10th tick looks at the live list */
+      if(force !== true && Array.isArray(_sqS) && !_sqS.some(function(s){ return s && !(s.address && String(s.address).trim()) && s.pid && byId[s.pid] && byId[s.pid].address; })) return;
       // SAFE: operate ONLY on the LIVE state handed to us (prev). Never replace the whole
       // schedule with a snapshot from _crm - that could wipe items added since the snapshot.
       window._setSchedule(function(prev){
@@ -64323,9 +64324,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       });
     }catch(e){ console.warn('schedule address fill', e); }
   }
-  setTimeout(fill, 8000);
-  setInterval(fill, 30000);
-  window._gcFillScheduleAddresses = fill;
+  var _sq2n = 0;
+  setTimeout(function(){ fill(true); }, 8000);
+  setInterval(function(){ _sq2n++; fill(_sq2n % 10 === 0); }, 30000);
+  window._gcFillScheduleAddresses = function(){ return fill(true); };
   console.log('[GC] Schedule address auto-fill ready.');
 })();
 </script><script>
