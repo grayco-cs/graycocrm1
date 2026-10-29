@@ -3,7 +3,8 @@
 //   node tools/tests/test_STORECUT.mjs index.html
 import fs from 'fs'; import path from 'path'; import vm from 'vm'; import { execFileSync } from 'child_process'; import os from 'os';
 const here = path.dirname(new URL(import.meta.url).pathname);
-const html = process.argv[2] || path.join(here, '..', '..', 'index.html');
+let html = process.argv[2] || path.join(here, '..', '..', 'index.html');
+if (fs.existsSync(html) && fs.statSync(html).isDirectory()) html = path.join(html, 'index.html');   /* the suite runner passes the build folder */
 let pass = 0, fail = 0; const ok = (c, m, i) => { if (c) { pass++; console.log('PASS ' + m); } else { fail++; console.log('FAIL ' + m + (i !== undefined ? ' ' + JSON.stringify(i) : '')); } };
 const src = fs.readFileSync(html, 'utf8');
 ok(src.split('__GC_PATCH_STORECUT__').length - 1 >= 2 && (src.match(/<script id="gc-patch-storecut">/g) || []).length === 1, 'early script in the page once');
