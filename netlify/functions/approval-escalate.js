@@ -74,7 +74,6 @@ exports.handler = async function (event) {
   try {
     const out = await portal._core.escalateDue({});
     try { out.portalGate = await gateScanIfChanged(); } catch (e) { out.portalGate = { ok: false, error: String(e && e.message || e).slice(0, 120) }; }   /* patch PORTALGATE: new portal things → ✅ Approvals (patch AUTOFIX-GATE: only when something changed) */
-    try { out.textLeads = await require('./_lib/textlead.js').syncConverted(); } catch (e) { out.textLeads = { error: String(e && e.message || e).slice(0, 120) }; }   /* patch TEXTLEAD: a texted lead that became a job → its conversation + notes on the job */
     try { console.log('[approval-escalate]', JSON.stringify({ escalated: out.escalated || 0 })); } catch (e) {}
     return { statusCode: out.ok ? 200 : 502, headers, body: JSON.stringify(out) };
   } catch (e) {

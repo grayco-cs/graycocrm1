@@ -279,7 +279,6 @@ async function fileLead(f, extra){
     contactName: f.name, receivedAt: at, unassigned: true };
   if (cust) Object.assign(leadExtra, { existingCustomer: true, customerPid: cust.pid || '', customerJob: cust.job || '', customerName: cust.client || '', customerMatch: cust.by });
   if (extra.roofQuote) leadExtra.roofQuote = extra.roofQuote;
-  try { const said = require('./_lib/leadmsg.js').shared(f); if (Object.keys(said).length) leadExtra.said = said; } catch (e) {}   /* patch LEADMAILMSG: everything the customer typed, in full (never carrier / claim #) */
   if (f.howHeard) { try { const MX = require('./_lib/maint.js'); leadExtra.howHeard = MX.heardNorm(f.howHeard); } catch (e) { leadExtra.howHeard = clip(f.howHeard, 60); } }   /* patch X9: "How did you hear about us?" */
   if (f.type === 'commercial' && f.company) leadExtra.company = f.company;
   if (f.attrib && Object.keys(f.attrib).length) {   /* patch MKT2: the ad / link / partner the lead came from */

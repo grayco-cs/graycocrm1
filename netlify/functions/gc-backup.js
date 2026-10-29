@@ -200,6 +200,5 @@ exports.handler = async function (event) {
     }
   }
   console.log('[gc-backup]', JSON.stringify(report));
-  { const bad = report.filter(function(x){ return x && x.error; }); if (bad.length) { try { await require('./_lib/smsalert.js').system('backup', 'nightly backup had errors (' + bad.length + ' table' + (bad.length === 1 ? '' : 's') + ': ' + bad.slice(0, 3).map(function(x){ return x.table; }).join(', ') + ').'); } catch (e) {} } }   /* patch SMSALERT: admin cells */
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true, at: new Date().toISOString(), report }) };
 };

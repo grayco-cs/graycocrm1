@@ -124,8 +124,6 @@ async function run(){
       out.oncall = await OC.make({ env: function(k){ return s(process.env[k]); }, kvGet: L().kvGet, kvCas: L().kvCas, now: exports._now, push: function(to, p){ return C().pushTo(to, p); } }).escalate(C().adminEmails(d));
     }
   } catch (e) { out.oncallError = s(e && e.message); }
-  /* patch EMERGCALL: an emergency nobody acknowledged in 15 min → the CRM phones on call, then the 📞 Call order */
-  try { out.emergcall = await require('./missed-call.js')._test.EC().tick(); } catch (e) { out.emergcallError = s(e && e.message); }
   const w = X.wall(now());
   if (w.hm >= '07:00') {
     try { out.daily = await once('daily:' + w.day, async function(){ const d = await getData(); return { fleet: await fleetDaily(d), codesWiped: await codesWipe(d) }; }); } catch (e) { out.dailyError = s(e && e.message); }

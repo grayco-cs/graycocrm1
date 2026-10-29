@@ -317,8 +317,8 @@ function scorecard(rows, o){
 }
 
 /* ── 6. his To-Dos (the shared To-Do store holds everyone's: he only ever gets his own) ── */
-function mine(t, email){ return !!t && !t.deleted && (arr(t.assignees).map(low).indexOf(email) >= 0 || low(t.assignee) === email || low(t.assigneeEmail) === email || low(t.owner) === email || low(t.addedByEmail) === email && t.personal); }   /* patch MMTABS: + assigneeEmail (voice / AI to-dos) */
-function myTasks(list, email){ return arr(list).filter(function(t){ return mine(t, email); }).map(function(t){ return { id: s(t.id), label: scrubText(s(t.label)), note: scrubText(s(t.note)).slice(0, 600), due: s(t.due), done: !!t.done, by: scrubText(s(t.addedBy)).slice(0, 60), self: low(t.addedByEmail) === email || !!t.self /* patch MMTABS */, priority: s(t.priority), plan: !!(t.plan || t.kind === 'plan' || /^plan_/.test(s(t.id))), items: arr(t.items).map(function(i){ return { id: s(i.id), label: scrubText(s(i.label)), done: !!i.done }; }) }; }); }
+function mine(t, email){ return !!t && !t.deleted && (arr(t.assignees).map(low).indexOf(email) >= 0 || low(t.assignee) === email || low(t.owner) === email || low(t.addedByEmail) === email && t.personal); }
+function myTasks(list, email){ return arr(list).filter(function(t){ return mine(t, email); }).map(function(t){ return { id: s(t.id), label: scrubText(s(t.label)), note: scrubText(s(t.note)).slice(0, 600), due: s(t.due), done: !!t.done, priority: s(t.priority), plan: !!(t.plan || t.kind === 'plan' || /^plan_/.test(s(t.id))), items: arr(t.items).map(function(i){ return { id: s(i.id), label: scrubText(s(i.label)), done: !!i.done }; }) }; }); }
 
 module.exports = { expMatch, expResults, scorecard, expStage, auth, orStaff, isMarketingRow, settings, setSettings, settingsOf, ADMIN_KEY, redact, redactDoc, scrubText, mergeWrite, jobs, photos, allowedRefs, sourceOf, stageOf, myLeads, funnel, myTasks, mine, STAGES, PII_KEYS,
   _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; } };
