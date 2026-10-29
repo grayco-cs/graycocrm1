@@ -242,6 +242,45 @@ async function kvRead(key){
 }
 async function kvGet(key){ try { return (await kvRead(key)).v; } catch (e) { return null; } }
 /* read → change → write only if nobody wrote in between (compare-and-set on updated_at); retried */
+/* patch LEADSEE (server) */
+/* a tiny public marker in gc_kv ("gc_lead_inbox_sig": the newest open item's time and two counts — nothing about anyone).
+   A signed-in CRM looks at that one small row every 30 s and collects the inbox the moment it changed. */
+const KV_SIG = 'gc_lead_inbox_sig'; let SIG_LAST = '';
+function leadSigOf(list){
+  const act = arr(list).filter(x => x && !x.stub && x.status !== 'dismissed' && x.status !== 'merged');
+  let at = ''; act.forEach(x => { const t = s(x.updatedAt || x.receivedAt); if (t > at) at = t; });
+  return { at, n: act.filter(x => x.status === 'new').length, a: act.length, v: 1 };
+}
+async function leadSig(key, list){
+  if (key !== KV || env('LEAD_SIG_OFF') === '1') return;
+  try {
+    const v = leadSigOf(list), k = JSON.stringify(v); if (k === SIG_LAST) return;
+    const r = await sb('gc_kv?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KV_SIG, value: v, updated_at: nowIso() }) });
+    if (r.ok) SIG_LAST = k;
+  } catch (e) {}
+}
+/* the small list for the CRM's import (?leads=1): open items only, the fields the import reads */
+const LITE_DAYS = 60, LITE_MAX = 400;
+function liteItem(x){
+  const o = {};
+  ['id', 'status', 'rev', 'title', 'source', 'sourceKind', 'type', 'origin', 'websiteLead', 'websiteForm', 'address', 'city', 'state', 'zip', 'bidDue', 'bidDueWas', 'preBid', 'preBidLocation', 'preBidMandatory',
+   'bidNumber', 'gc', 'owner', 'scope', 'estValue', 'contact', 'pm', 'pmEmail', 'estimator', 'estimatorEmail', 'pid', 'leadId', 'hold', 'flag', 'addendumCount', 'needsReview', 'rawRef', 'portal',
+   'bidRole', 'bidRoleWhy', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere', 'dueSnippet', 'receivedAt', 'updatedAt', 'importedAt', 'assignedBy', 'assignedAt',
+   'autoAssignedAt', 'leadExtra', 'alsoOn'].forEach(k => { if (x[k] !== undefined && x[k] !== null && x[k] !== '') o[k] = x[k]; });
+  o.trades = arr(x.trades).slice(0, 12); o.notes = arr(x.notes).slice(-8);
+  o.plansLinks = arr(x.plansLinks).slice(0, 25).map(l => ({ url: l.url, label: l.label, board: l.board }));
+  o.files = arr(x.files).filter(f => f && f.ref).slice(0, 40).map(f => ({ ref: f.ref, name: f.name, type: f.type, size: f.size, hash: f.hash, kind: f.kind, addendum: f.addendum }));
+  o.emails = arr(x.emails).slice(-10).map(e => ({ subject: e.subject, from: e.from, fromName: e.fromName, date: e.date, rawRef: e.rawRef }));
+  o.sources = arr(x.sources).slice(0, 12).map(z => ({ name: z && z.name }));
+  return o;
+}
+function liteList(items){
+  const since = new Date(Date.now() - LITE_DAYS * 864e5).toISOString();
+  const open = arr(items).filter(x => x && x.id && !x.stub && (x.status === 'new' || x.status === 'imported'));
+  const keep = open.filter(x => x.status === 'new' || s(x.updatedAt || x.receivedAt) >= since)
+    .sort((a, b) => s(b.receivedAt) < s(a.receivedAt) ? -1 : s(b.receivedAt) > s(a.receivedAt) ? 1 : 0).slice(0, LITE_MAX);
+  return { items: keep.map(liteItem), open: open.length };
+}
 async function kvCas(key, change, tries){
   tries = tries || 6;
   const T = await kvTable();
@@ -254,11 +293,11 @@ async function kvCas(key, change, tries){
     if (cur.exists) {
       r = await sb(T + '?key=eq.' + encodeURIComponent(key) + '&updated_at=eq.' + encodeURIComponent(cur.at), { method: 'PATCH',
         headers: { Prefer: 'return=representation' }, body: JSON.stringify({ value: next, updated_at: at }) });
-      if (r.ok) { const rows = await r.json().catch(() => []); if (Array.isArray(rows) && rows.length) return { ok: true, value: next }; }
+      if (r.ok) { const rows = await r.json().catch(() => []); if (Array.isArray(rows) && rows.length) { await leadSig(key, next); return { ok: true, value: next }; } }   /* patch LEADSEE: the marker */
       else if (r.status >= 500) throw new Error('database write failed (' + r.status + ')');
     } else {
       r = await sb(T, { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ key, value: next, updated_at: at }) });
-      if (r.ok) return { ok: true, value: next };
+      if (r.ok) { await leadSig(key, next); return { ok: true, value: next }; }   /* patch LEADSEE */
       if (r.status >= 500) throw new Error('database write failed (' + r.status + ')');
     }
     await new Promise(res => setTimeout(res, 120 + Math.floor(Math.random() * 400)));
@@ -1381,6 +1420,17 @@ exports.handler = async function(event){
     console.log(logLine(evt, r, Date.now() - t0));
     return J(200, { ok: r.status < 500, status: r.status, outcome: outcomeOf(r).what }, C);
   }
+  /* patch LEADSEE: the small list the CRM's import reads (open items only) — every signed-in staff member */
+  if (event.httpMethod === 'GET' && qs.leads) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    try {
+      const [items, settings] = [await kvRead(KV), await kvGet(KV_SET)];
+      if (items.exists === false && !items.v) { /* nothing yet */ }
+      const l = liteList(items.v);
+      return J(200, { ok: true, lite: true, items: l.items, open: l.open, sig: leadSigOf(items.v), settings: Object.assign({}, DEFAULT_SETTINGS, settings || {}), me: { email: who.email, admin: who.admin }, at: nowIso() }, C);
+    } catch (e) { return J(502, { error: 'Could not read the lead inbox: ' + s(e && e.message) }, C); }
+  }
   /* the CRM: the inbox list (+ the watcher's last run, the bid portal's state, the alert queue) */
   if (event.httpMethod === 'GET' && qs.list) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
@@ -1576,7 +1626,7 @@ exports.backgroundHandler = async function(event){
 };
 
 /* shared with bid-watch.js, and the test harness */
-exports._lib = { routeLead, releaseHolds, holdPick, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
+exports._lib = { leadSigOf, liteList, KV_SIG, routeLead, releaseHolds, holdPick, env, s, low, arr, nowIso, sha256, sb, sbUrl, svcH, kvRead, kvGet, kvCas, kvPut, upsert, afterStore, flushPortal, portalApi, alertsApi, findMatch, normTitle, normCity, normNum, itemId, isoDay, hhmm, dueOf, guessType, boardOf,
   decodeEntities, htmlToText, DEFAULT_SETTINGS, KV, KV_SET, dbReady, sbKey, estimatorOf, isCommercial };
 exports._test = { noticeGate, cleanupPick, CLEANUP_REASON, BF, bidsKind, knownSubs, repliesApi, unsortedBidsMail, fetchPlans, leadItem, isCommercial, estimatorOf, subBidFromEmail, portalJobs, KV_SUBBIDS, svixOk, verified, forBids, forLeads, leadAddrs, forOrders, orderAddrs, otherInbox, ownOrAuto, linksOf, sourceHint, recordsFrom, extract, readMail, processEvent, applyAct, upsert, findMatch, trim, handoffSig, staffAuth, cleanSettings, LEAD_TOOL, afterStore, flushPortal, kvTable, resetKvTable: () => { KVT = null; } };
 /* patch WEB: website-intake.js keeps an applicant's résumé in crm-files the same way */

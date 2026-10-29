@@ -125609,14 +125609,23 @@ function fromItem(it, prev){
   return stamp(l);
 }
 /* ── collect: the server's list → leads on the Lead Pipeline ─────────────────── */
+/* patch LEADSEE: the small list (open leads only, ?leads=1); the whole inbox (?list=1) only on the 📥 Lead Inbox tab or
+   when the server has no small list */
+function inboxGet(){
+  var tb = document.getElementById('gc-leads-tabs'), full = !!(tb && tb.getAttribute('data-tab') === 'bidboard');
+  if (full) return api('GET', 'list=1').catch(function(){ return api('GET', 'leads=1'); });
+  return api('GET', 'leads=1').then(function(j){ if (!j || !Array.isArray(j.items)) throw new Error('no small list'); return j; })
+    .catch(function(e){ if (e && (e.status === 401 || e.status === 403)) throw e; return api('GET', 'list=1'); });
+}
 function pull(force){
   if (busy) return Promise.resolve(false);
   if (!force && Date.now() - lastPull < 45000) return Promise.resolve(false);
   if (navigator.onLine === false) return Promise.resolve(false);
   try { var A = window.__GC_AUTH__; if (A && (!A.email() || A.mode() === 'none')) return Promise.resolve(false); } catch (e) {}
   busy = true; lastPull = Date.now(); render();
-  return flushOut().then(function(){ return api('GET', 'list=1'); }).then(function(j){
-    S = { items: arr(j.items), watch: j.watch || null, settings: j.settings || null, notices: arr(j.notices), portal: j.portal || null, alerts: j.alerts || null, at: j.at || nowIso(), me: j.me || {} };
+  return flushOut().then(function(){ return inboxGet(); }).then(function(j){   /* patch LEADSEE */
+    var S0 = S || {};
+    S = { items: arr(j.items), watch: j.watch || (j.lite ? S0.watch : null) || null, settings: j.settings || S0.settings || null, notices: j.notices ? arr(j.notices) : (j.lite ? arr(S0.notices) : []), portal: j.portal || (j.lite ? S0.portal : null) || null, alerts: j.alerts || (j.lite ? S0.alerts : null) || null, at: j.at || nowIso(), me: j.me || {}, lite: !!j.lite };
     /* (the cache keeps the open items' bid-portal state too, so the cards show it before the next check) */
     lsSet(K_CACHE, { items: S.items.filter(function(x){ return x.status === 'new' || x.status === 'imported'; }).slice(-120).map(function(x){ return { id: x.id, status: x.status, title: x.title, bidDue: x.bidDue, type: x.type, source: x.source, portal: x.portal, receivedAt: x.receivedAt, rev: x.rev }; }),
       watch: S.watch, settings: S.settings, notices: [], portal: S.portal, alerts: null, at: S.at, me: S.me });
@@ -125630,11 +125639,11 @@ function pull(force){
 /* every decision is made inside the setter's updater, on the list as it really is right now
    (another computer may have assigned a PM a second ago: that lead is updated, never replaced) */
 function importItems(healing){
-  var added = [], updated = [], tell = [];
+  var added = [], updated = [], tell = [], nNew = 0, more = false;   /* patch LEADSEE: nNew / more */
   var items = S.items.filter(function(it){ return it && !it.stub && it.status !== 'dismissed' && it.status !== 'merged'; });
   if (!items.length) return Promise.resolve();
   return setLeads(function(list){
-    added = []; updated = []; tell = [];
+    added = []; updated = []; tell = []; nNew = 0; more = false;
     var at = {}; list.forEach(function(l, i){ if (l && l.id) at[l.id] = i; if (l && l.inboxId) at['in:' + l.inboxId] = i; });
     /* the same project already on the Lead Pipeline without an inbox link (typed in by hand, an older import):
        that lead gets the inbox's details instead of a second lead (same name, same city or no city on it) */
@@ -125648,6 +125657,7 @@ function importItems(healing){
         if (!ic || !ec || ec.indexOf(ic) >= 0) { list[j] = fromItem(it, ex); list[j].inboxState = ex.pm ? 'assigned' : 'new'; at['in:' + it.id] = j; delete byName[normName(it.title)]; changed = true; tell.push({ id: it.id, op: 'imported', leadId: ex.id }); updated.push(list[j]); return; }
       }
       if (i == null) {
+        if (++nNew > 200) { more = true; return; }   /* patch LEADSEE: at most 200 new leads per pass — the rest a moment later */
         var l = fromItem(it);
         if (it.status !== 'new') {   /* imported before (here or on another computer) but not on this list: put it back as it was */
           if (it.pm) { l.pm = it.pm; l.inboxState = 'assigned'; }
@@ -125663,7 +125673,8 @@ function importItems(healing){
     });
     return changed ? list : null;
   }).then(function(){
-    tell.forEach(act);
+    if (more) later(function(){ importItems(healing); }, 1500);   /* patch LEADSEE */
+    tell.slice(0, 200).forEach(act);
     if (!healing && added.length) heal(added.map(function(l){ return l.id; }), 0);
     /* an addendum for a lead that already has a job: its new files go to the job's Plans & Bidding too */
     updated.forEach(function(l){ if (l.pid) addPlansToJob(l.pid, l.docs, l.id); });
@@ -126587,6 +126598,29 @@ function observe(){
 var mtAt = 0;
 /* (a timer some other block cancels must not leave the inbox unmounted: a stale one is simply replaced) */
 function schedule(){ if (mt && Date.now() - mtAt < 2000) return; mtAt = Date.now(); mt = later(function(){ observe(); tick(); }, 250); }
+/* patch LEADSEE: the server's marker gc_kv "gc_lead_inbox_sig" {at, n, a} — read straight from the database (no function call) */
+var SIG = { at: '', checkedAt: 0, busy: false, err: '', val: null };
+var SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllZW9uaHBmYWhtd3dlY2l6ZHV0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNTU2MDgsImV4cCI6MjA4ODgzMTYwOH0.imxBPB0xD4LKy40smBWSUq27iwpCy6fEOMtVx8Cu8ls';
+function sigCheck(now){
+  if (SIG.busy || document.hidden || navigator.onLine === false) return;
+  if (!now && Date.now() - SIG.checkedAt < 30000) return;
+  try { var A = window.__GC_AUTH__; if (!A || !A.email || !A.email()) return; } catch (e) { return; }
+  var u = '', k = ''; try { u = localStorage.getItem('grayco_sb_url') || ''; k = localStorage.getItem('grayco_sb_key') || ''; } catch (e) {}
+  u = (u || 'https://ieeonhpfahmwwecizdut.supabase.co').replace(/\/$/, ''); k = k || SB_ANON;
+  SIG.busy = true; SIG.checkedAt = Date.now();
+  window.fetch(u + '/rest/v1/gc_kv?select=value&key=eq.gc_lead_inbox_sig', { headers: { apikey: k, Authorization: 'Bearer ' + k }, cache: 'no-store' })
+    .then(function(r){ if (!r.ok) throw new Error('marker ' + r.status); return r.json(); })
+    .then(function(rows){
+      SIG.busy = false; SIG.err = '';
+      var v = Array.isArray(rows) && rows[0] && rows[0].value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+      if (!v || !v.at) return;
+      SIG.val = v;
+      if (v.at === SIG.at) return;
+      SIG.at = v.at;
+      if (!lastPull) return;   /* the start-up pull is on its way */
+      if (s(v.at) > s(S && S.at) || Date.now() - lastPull > 60000) pull(true);   /* something new / changed since this computer last looked */
+    }, function(e){ SIG.busy = false; SIG.err = s(e && e.message); });
+}
 function start(){
   if (!document.body) return later(start, 200);
   observe();
@@ -126595,7 +126629,7 @@ function start(){
   window.addEventListener('popstate', schedule);
   schedule();
   later(function(){ pull(false); }, 7000);
-  document.addEventListener('visibilitychange', function(){ if (!document.hidden && Date.now() - lastPull > 180000) pull(false); });
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) { sigCheck(true); if (Date.now() - lastPull > 180000) pull(false); } });   /* patch LEADSEE: + the marker at once */
   window.addEventListener('online', function(){ later(function(){ pull(true); }, 2000); });
   /* patch INBOXLEAD */   /* a CRM left open collects new inbox items (website / leads@ / claims@ …) within about a minute */
   var IV = window.__GC_NATIVE_SETINTERVAL__ || setInterval;
@@ -126604,7 +126638,8 @@ function start(){
       if (document.hidden || navigator.onLine === false || busy) return;
       var A = window.__GC_AUTH__; if (!A || !A.email || !A.email()) return;
       var fast = isAdmin(); if (!fast) { try { var sc = window._gcLeadScope && window._gcLeadScope.of(); fast = !!(sc && sc.kind && sc.kind !== 'mine'); } catch (e) {} }
-      if (Date.now() - lastPull > 7200000) pull(true);   /* patch INBOXCHEAP: owner 10/27 — check the lead list every 2 hours, not every 25 s */
+      sigCheck(false);   /* patch LEADSEE: the marker (one small gc_kv row) every 30 s — the inbox is collected when it changed */
+      if (Date.now() - lastPull > 900000) pull(true);   /* patch LEADSEE (was INBOXCHEAP's 2 hours): a safety pull every 15 minutes */
     } catch (e) { warn(e); }
   }, 10000);
 }
@@ -126631,11 +126666,101 @@ window._gcLeadInbox = {
   reminders: reminders, count: newCount, refresh: function(){ return pull(true); },
   repaint: function(){ return readList('_setLeads').then(function(){ LDI_FORCE = true; render(); }); },   /* patch PRIMESUB: after a prime / sub tap */
   open: function(){ try { if (window._setView) window._setView('leads'); } catch (e) {} },
-  status: function(){ return { at: S.at, items: S.items.length, newCount: newCount(), portal: S.portal, alerts: S.alerts, outbox: lsGet(K_OUT, []).length, error: lastErr, busy: busy, admin: isAdmin(), alerts: alertLog.slice(-10), toasts: toastLog.slice() }; },
+  sig: function(){ return { at: SIG.at, checkedAt: SIG.checkedAt, err: SIG.err, val: SIG.val }; }, sigCheck: function(){ sigCheck(true); },   /* patch LEADSEE */
+  status: function(){ return { at: S.at, lite: !!S.lite, lastPull: lastPull, items: S.items.length, newCount: newCount(), portal: S.portal, alerts: S.alerts, outbox: lsGet(K_OUT, []).length, error: lastErr, busy: busy, admin: isAdmin(), alerts: alertLog.slice(-10), toasts: toastLog.slice() }; },
   _test: { dbg: function(){ return { mt: !!mt, mtAge: mtAt ? Date.now() - mtAt : 0, observed: moBody === document.body, bar: !!leadsBar(), el: !!document.getElementById('gc-ldi') }; }, tick: tick, fromItem: fromItem, importItems: importItems, state: function(){ return S; }, peek: peek, render: render, mountPlans: mountPlans, filtered: filtered, alertNew: alertNew }
 };
 start();
 try { console.log('[GC] Lead Inbox (patch LD2) ready — window._gcLeadInbox'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-leadsee">
+/* __GC_PATCH_LEADSEE__ */
+/* GrayCo — NEW LEADS SHOW AT ONCE on the Leads screen (patch LEADSEE, owner 10/28: "make sure the leads go in to crm, i dont
+   see any text leads from earlier or website inquiries").
+   · "📥 Lead Inbox (N)" — the number of new, unassigned inbox leads on the Leads screen's tab;
+   · a strip above the list: "📥 N new leads — not assigned yet · Open Lead Inbox", when the inbox was last checked, and
+     why it could not be checked (with ↻ Check now) — a failure is never silent again;
+   · a "📥 New" chip ("📥 New · held until 5:00 PM today" while LEADHOLD holds it) next to the lead's Assigned cell;
+   · window._gcLeadSee.fresh(l): a new lead from the inbox (text, website, missed call, e-mail) nobody is assigned to yet,
+     under 3 days old or held — the Leads list puts these first in its default (soonest-due) sort.
+   The collecting itself is patch LD2 (with LEADSEE's small list, the 30-second marker check and the 200-per-pass import). */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_LEADSEE__) return; W.__GC_LEADSEE__ = true;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function assignee(l){ return s(l.pm) || s(l.estimator) || s(l.assignedTo); }
+function closed(l){ return /^(won|lost)$/i.test(s(l.stage)) || !!l.archived || !!l.deleted || /^(converted|lost|closed)$/i.test(s(l.status)); }
+function isHeld(l){ try { return !!(W._gcLeadHold && W._gcLeadHold.isHeld && W._gcLeadHold.isHeld(l)); } catch (e) { return false; } }
+function fromInbox(l){ return !!(l && (l.inboxId || l.textMessage || (l.websiteLead && l.receivedAt))); }
+function fresh(l){
+  if (!l || !fromInbox(l) || closed(l) || assignee(l) || l.pid) return false;
+  if (isHeld(l)) return true;
+  var t = Date.parse(l.createdAt || l.receivedAt || 0);
+  return isFinite(t) && Date.now() - t < 72 * 36e5;
+}
+function heldLabel(l){ try { return W._gcLeadHold.core.whenLabel(l.hold.until, Date.now()); } catch (e) { return '5 PM'; } }
+function newChip(l){ return '<span class="gcl-chip gcls-new" data-gcls-new="1" title="New lead from the Lead Inbox — not assigned yet">📥 New' + (isHeld(l) ? ' · held until ' + esc(heldLabel(l)) : '') + '</span> '; }
+/* the chip rides on LEADHOLD's chip (the Leads list asks for it in the Assigned cell) */
+function wrapChip(){
+  var H = W._gcLeadHold; if (!H || typeof H.chip !== 'function' || H.chip.__leadsee) return;
+  var c0 = H.chip;
+  var f = function(l){ var base = ''; try { base = s(c0.apply(H, arguments)); } catch (e) {} try { return fresh(l) ? newChip(l) + base : base; } catch (e) { return base; } };
+  f.__leadsee = 1; H.chip = f;
+}
+function css(){
+  if (D.getElementById('gc-leadsee-css')) return;
+  var st = D.createElement('style'); st.id = 'gc-leadsee-css';
+  st.textContent = '#root:has(#gc-leads-tabs:not([data-tab="leads"])) #gc-leadsee{display:none!important}'
+    + '#gc-leadsee{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px;padding:8px 12px;border-radius:10px;border:1px solid #c7d2fe;background:#eef2ff;color:#1e1b4b;font:13px/1.4 inherit}'
+    + '#gc-leadsee.none{background:#f8fafc;border-color:#e2e8f0;color:#475569}#gc-leadsee.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}'
+    + '#gc-leadsee b{font-weight:700}#gc-leadsee button{border:1px solid #241968;background:#241968;color:#fff;border-radius:8px;padding:4px 10px;font:600 12px inherit;cursor:pointer}'
+    + '#gc-leadsee button.l{background:#fff;color:#241968}#gc-leadsee .t{color:#64748b;font-size:12px;margin-left:auto}'
+    + '.gcls-badge{display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:9px;background:#dc2626;color:#fff;font:700 11px/18px Arial,sans-serif;text-align:center}'
+    + '.gcl-chip.gcls-new{background:#dbeafe!important;color:#1e3a8a!important}';
+  (D.head || D.documentElement).appendChild(st);
+}
+function when(iso){ var t = Date.parse(iso || 0); if (!isFinite(t)) return ''; return new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+var LAST = '';
+function tick(){
+  if (D.hidden) return;
+  wrapChip();
+  var LI = W._gcLeadInbox, tabs = D.getElementById('gc-leads-tabs'); if (!LI || !tabs) return;
+  css();
+  var n = 0; try { n = +LI.count() || 0; } catch (e) {}
+  var held = 0; try { held = W._gcLeadHold && W._gcLeadHold.held ? W._gcLeadHold.held().filter(function(l){ return l && l.inboxId; }).length : 0; } catch (e) {}
+  /* the tab's count */
+  var tb = tabs.querySelector('[data-gc-tab="bidboard"]');
+  if (tb) { var bd = tb.querySelector('.gcls-badge');
+    if (n > 0) { if (!bd) { bd = D.createElement('span'); bd.className = 'gcls-badge'; tb.appendChild(bd); } if (bd.textContent !== String(n)) bd.textContent = String(n); tb.setAttribute('title', n + ' new lead' + (n === 1 ? '' : 's') + ' not assigned yet'); }
+    else if (bd) bd.remove(); }
+  /* the strip above the list */
+  var hub = D.getElementById('gc-leads-hub'); if (!hub || !hub.parentNode) return;
+  var el = D.getElementById('gc-leadsee');
+  if (!el) { el = D.createElement('div'); el.id = 'gc-leadsee'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'status'); el.addEventListener('click', onClick); }
+  if (el.parentNode !== hub.parentNode || el.nextElementSibling !== hub) hub.parentNode.insertBefore(el, hub);
+  var st = {}; try { st = LI.status() || {}; } catch (e) {}
+  var err = s(st.error), at = s(st.at), busy = !!st.busy;
+  var cls = err ? 'bad' : n ? '' : 'none', h;
+  if (err) h = '⚠ <b>The Lead Inbox could not be checked</b> (' + esc(err) + '). New text / website / missed-call / e-mail leads may be missing here. <button type="button" data-gcls="check">↻ Check now</button>';
+  else if (n) h = '📥 <b>' + n + ' new lead' + (n === 1 ? '' : 's') + '</b> — not assigned yet' + (held ? ' (' + held + ' held until 5 PM for an admin)' : '') + '. They are at the top of the list below. <button type="button" data-gcls="open">Open Lead Inbox</button> <button type="button" class="l" data-gcls="check">↻ Check now</button>';
+  else h = '📥 Lead Inbox: no new leads waiting. <button type="button" class="l" data-gcls="check">↻ Check now</button>';
+  h += '<span class="t">' + (busy ? 'Checking the Lead Inbox…' : at ? 'Checked ' + esc(when(at)) : 'Not checked yet') + '</span>';
+  var sig = cls + '|' + h;
+  if (sig !== LAST || el.className !== cls) { LAST = sig; el.className = cls; el.innerHTML = h; }
+}
+function onClick(e){
+  var b = e.target && e.target.closest && e.target.closest('[data-gcls]'); if (!b) return;
+  e.preventDefault();
+  var a = b.getAttribute('data-gcls');
+  if (a === 'check') { b.disabled = true; b.textContent = 'Checking…'; try { Promise.resolve(W._gcLeadInbox.refresh()).then(function(){ LAST = ''; tick(); }, function(){ LAST = ''; tick(); }); } catch (x) {} }
+  if (a === 'open') { var t = D.querySelector('#gc-leads-tabs [data-gc-tab="bidboard"]'); if (t) t.click(); }
+}
+W._gcLeadSee = { fresh: fresh, tick: tick, state: function(){ var st = {}; try { st = W._gcLeadInbox.status(); } catch (e) {} return { inbox: st, sig: W._gcLeadInbox && W._gcLeadInbox.sig ? W._gcLeadInbox.sig() : null }; } };
+(W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval).call(W, function(){ try { tick(); } catch (e) {} }, 1500);
+try { console.log('[GC] New leads show at once (patch LEADSEE): window._gcLeadSee.state()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-photolink">
@@ -166263,7 +166388,10 @@ function lcSorted(list){
   var tie = function(a, b){ var x = a.r.k.due, y = b.r.k.due, bx = lcBlank(x), by = lcBlank(y); if (bx !== by) return bx ? 1 : -1; if (!bx && x !== y) return x - y;
     var px = a.r.k.prio, py = b.r.k.prio, qx = lcBlank(px), qy = lcBlank(py); if (qx !== qy) return qx ? 1 : -1; if (!qx && px !== py) return py - px;
     return a.r.k.name < b.r.k.name ? -1 : a.r.k.name > b.r.k.name ? 1 : 0; };
-  rows.sort(function(a, b){ if (k === 'due') { var c0 = tie(a, b); return dir < 0 && !lcBlank(a.kk) && !lcBlank(b.kk) && a.kk !== b.kk ? -c0 : c0; }
+  var FRESH = W._gcLeadSee && W._gcLeadSee.fresh;   /* patch LEADSEE: new leads first in the default sort */
+  if (FRESH && k === 'due') rows.forEach(function(x){ x.fr = FRESH(x.l) ? 1 : 0; });
+  rows.sort(function(a, b){ if (FRESH && k === 'due' && (a.fr || b.fr)) { if (a.fr !== b.fr) return b.fr - a.fr; var ta = s(a.l.createdAt || a.l.receivedAt), tb = s(b.l.createdAt || b.l.receivedAt); if (ta !== tb) return ta < tb ? 1 : -1; }
+    if (k === 'due') { var c0 = tie(a, b); return dir < 0 && !lcBlank(a.kk) && !lcBlank(b.kk) && a.kk !== b.kk ? -c0 : c0; }
     var x = a.kk, y = b.kk, bx = lcBlank(x), by = lcBlank(y);
     if (bx || by) return bx && by ? tie(a, b) : bx ? 1 : -1;
     return (x < y ? -1 : x > y ? 1 : 0) * dir || tie(a, b); });
