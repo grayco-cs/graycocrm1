@@ -45,6 +45,46 @@ const TYPES = [
   { id: 'system', label: 'Admin / system alerts (admins only)', adminOnly: true }
 ];
 const BOOL_TYPES = TYPES.filter(t => !t.choice).map(t => t.id);
+/* patch SMSALERT2 (owner 10/29: "text alerts for certain types of leads too: roof, insurance, water mitigation, commercial etc"):
+   per-person lead TYPES. A person gets a new-lead text when "New leads (all)" is on, OR it is assigned to them, OR one of
+   their ticked types matches. The type comes from the CRM's own lead classification (leadTypes below). */
+const LEAD_TYPES = [
+  { id: 'roof', label: 'Roofing' }, { id: 'ins', label: 'Insurance / restoration' }, { id: 'water', label: 'Water / mitigation' },
+  { id: 'fire', label: 'Fire' }, { id: 'storm', label: 'Storm / tree' }, { id: 'remodel', label: 'Remodel / residential' },
+  { id: 'comm', label: 'Commercial / bids (plan rooms)' }, { id: 'web', label: 'Website leads' }, { id: 'text', label: 'Text-message leads' },
+  { id: 'missed', label: 'Missed calls' }, { id: 'other', label: 'Other' }];
+const LT_IDS = LEAD_TYPES.map(x => x.id);
+/* the restoration split (lead-roles: "restoration = water, fire and storm") */
+const R_WATER = /\b(water|flood(s|ed|ing)?|leak(s|ed|ing|y)?|pipe|burst|sewage|mitigation|mold|mould|dry-?out|moisture)\b/i;
+const R_FIRE = /\b(fire|smoke|soot|burn(ed|t)?)\b/i;
+const R_STORM = /\b(storm|hail|wind|tree|tornado)\b/i;
+/* the lead's types, from the existing classifiers: lead-roles.classify / isRoofing (SPAMROLE), bid-role (plan rooms, public
+   bids), bid-alerts' website / partner flags, the text-message / missed-call flags, emergency.isMitigation */
+function leadTypes(l){
+  l = obj(l);
+  const le = obj(l.leadExtra), out = {};
+  let LR = null, BR = null, E = null;
+  try { LR = require('./lead-roles.js'); } catch (e) {}
+  try { BR = require('./bid-role.js'); } catch (e) {}
+  try { E = require('./emergency.js'); } catch (e) {}
+  const bidRole = BR ? s(BR.role(l)) : '';
+  const kind = LR ? LR.classify(l, x => !!bidRole) : '';
+  const tx = [l.title, l.name, l.scope, l.service, l.detail, l.message, le.textBody, le.callerSaid, le.workType, obj(le.said).message, obj(le.said).service].map(s).join(' | ');
+  if (kind === 'bid' || bidRole || /commerc|gov/i.test(s(l.leadKind || l.type))) out.comm = 1;
+  if (kind === 'roofing' || (LR && (out.comm ? LR.roofBid(l) : LR.isRoofing(l)))) out.roof = 1;
+  if (kind === 'insurance') {
+    out.ins = 1;
+    if (R_WATER.test(tx) || (E && E.isMitigation(l) && !R_FIRE.test(tx))) out.water = 1;
+    if (R_FIRE.test(tx)) out.fire = 1;
+    if (R_STORM.test(tx)) out.storm = 1;
+  }
+  if (!out.comm && !out.ins && !out.roof && (/remodel|residential|kitchen|bath|renovat|addition/i.test(tx) || /^(residential|remodel|estimate)$/i.test(s(l.leadKind || l.type)))) out.remodel = 1;
+  if (le.textMessage || l.textMessage || s(l.websiteForm || le.websiteForm) === 'Text message') out.text = 1;
+  else if (le.missedCall || l.missedCall || s(l.websiteForm || le.websiteForm) === 'Missed call') out.missed = 1;
+  else if (s(l.origin) === 'website' || l.websiteLead || le.websiteLead || /^website\b/i.test(s(l.source))) out.web = 1;
+  if (!out.comm && !out.roof && !out.ins && !out.remodel) out.other = 1;
+  return LT_IDS.filter(k => out[k]);
+}
 const START = /^\s*(start|unstop)\s*[.!]*\s*$/i;
 /* owner 10/28 defaults (used until an admin saves the card): Nick + Wesley get emergencies + every new lead (a customer text
    that makes a lead is a new lead); the mitigation manager role (whoever holds it — none yet → skipped) gets emergencies.
@@ -112,6 +152,7 @@ function cleanPerson(p){
     cust: /^(off|mine|all)$/.test(s(p.cust)) ? s(p.cust) : 'off',
     qOff: !!p.qOff, qFrom: hourOf(p.qFrom, 21), qTo: hourOf(p.qTo, 7) };
   BOOL_TYPES.forEach(t => { out[t] = !!p[t]; });
+  const lt = obj(p.lt); out.lt = {}; LT_IDS.forEach(k => { if (lt[k]) out.lt[k] = true; });   /* patch SMSALERT2 */
   return out;
 }
 function settings(v){
@@ -176,7 +217,7 @@ async function save(v, by){
   list.forEach(x => { known[x.email] = 1; if (x.admin) admin[x.email] = 1; });
   const set = settings(v);
   Object.keys(set.people).forEach(e => {
-    if (e === ROLE_MIT) { const r = set.people[e]; BOOL_TYPES.forEach(t2 => { if (t2 !== 'emerg') r[t2] = false; }); r.cust = 'off'; return; }   /* the role row: emergencies only */
+    if (e === ROLE_MIT) { const r = set.people[e]; BOOL_TYPES.forEach(t2 => { if (t2 !== 'emerg') r[t2] = false; }); r.cust = 'off'; r.lt = {}; return; }   /* the role row: emergencies only */
     if (!known[e]) { delete set.people[e]; return; } if (!admin[e]) set.people[e].system = false; });
   delete set.defaults;
   set.by = low(by); set.at = new Date(now()).toISOString();
@@ -207,7 +248,7 @@ function wants(p, email, o, isAdmin){
   switch (o.type) {
     case 'cust': return p.cust === 'all' || (p.cust === 'mine' && mine) || (!!o.emergency && p.emerg);
     case 'subs': return p.subs || (!!o.emergency && p.emerg);
-    case 'lead': return p.newAll || (p.newMine && mine) || (!!o.emergency && p.emerg);
+    case 'lead': return p.newAll || (p.newMine && mine) || (!!o.emergency && p.emerg) || (o.types || []).some(k => !!obj(p.lt)[k]);   /* patch SMSALERT2: a ticked lead type */
     case 'assigned': return p.newMine && mine;
     case 'missed': return p.missed;
     case 'approvals': return p.approvals && mine;
@@ -380,7 +421,8 @@ async function leads(list, raw, isEm){
     const head = em ? '🚨 GrayCo EMERGENCY' : 'GrayCo NEW LEAD', link = site() + '/#leads';
     const body = more => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, link);
     const text = body(0);
-    try { out.push(await notify({ type: 'lead', text, body, link, thread: ph ? 'p:' + ph : 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean), emergency: em,
+    let types = []; try { types = leadTypes(Object.assign({}, r, x, { leadExtra: Object.assign({}, obj(x.leadExtra), obj(r.leadExtra)) })); } catch (e) {}   /* patch SMSALERT2 */
+    try { out.push(await notify({ type: 'lead', types, text, body, link, thread: ph ? 'p:' + ph : 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean), emergency: em,
       replyTo: ph || em ? { phone: ph, pid: '', name, leadId: s(x.id) } : null })); } catch (e) { out.push({ error: s(e && e.message) }); }
   }
   return out;
@@ -407,5 +449,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { LEAD_TYPES, LT_IDS, leadTypes, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };

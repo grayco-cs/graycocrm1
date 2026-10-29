@@ -41,6 +41,14 @@ var COLS = [
 function hourOpts(sel){ var o = ''; for (var h = 0; h < 24; h++) { var lab = (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'); o += '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' + lab + '</option>'; } return o; }
 var CB = 'width:18px;height:18px;cursor:pointer';
 var TD = 'padding:6px 6px;border-bottom:1px solid #e2e8f0;text-align:center;vertical-align:middle';
+/* patch SMSALERT2: lead types — a new lead of a ticked type is texted too (the CRM's own lead classification) */
+var LTYPES = [['roof', 'Roofing'], ['ins', 'Insurance / restoration'], ['water', 'Water / mitigation'], ['fire', 'Fire'], ['storm', 'Storm / tree'], ['remodel', 'Remodel / residential'],
+  ['comm', 'Commercial / bids'], ['web', 'Website leads'], ['text', 'Text-message leads'], ['missed', 'Missed calls'], ['other', 'Other']];
+function ltCell(p){
+  var lt = (p && p.lt) || {};
+  return '<td style="' + TD + ';text-align:left;min-width:230px"><div class="gcsa-lt" style="display:flex;flex-wrap:wrap;gap:3px 8px;font-size:11px;line-height:1.3">'
+    + LTYPES.map(function(z){ return '<label style="display:inline-flex;gap:3px;align-items:center;white-space:nowrap"><input type="checkbox" data-lt="' + z[0] + '"' + (lt[z[0]] ? ' checked' : '') + '>' + esc(z[1]) + '</label>'; }).join('') + '</div></td>';
+}
 function row(x, p){
   p = p || {};
   var on = !!p.on, ph = p.phone || x.phone || '';
@@ -53,6 +61,7 @@ function row(x, p){
     if (c.admin && !x.admin) { cells += '<td style="' + TD + ';color:#94a3b8;font-size:11px" title="Admins only">—</td>'; return; }
     cells += '<td style="' + TD + '"><input type="checkbox" data-k="' + c.id + '" title="' + esc(c.t) + '" style="' + CB + '"' + (p[c.id] ? ' checked' : '') + '></td>';
   });
+  cells += ltCell(p);   /* patch SMSALERT2 */
   var qf = p.qFrom == null ? 21 : p.qFrom, qt = p.qTo == null ? 7 : p.qTo;
   cells += '<td style="' + TD + ';white-space:nowrap;font-size:12px"><label style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" data-k="qOn"' + (p.qOff ? '' : ' checked') + '> quiet</label> '
     + '<select data-k="qFrom" style="font-size:12px;padding:3px">' + hourOpts(qf) + '</select>–<select data-k="qTo" style="font-size:12px;padding:3px">' + hourOpts(qt) + '</select></td>';
@@ -70,6 +79,7 @@ function roleRow(r, p){
     if (c.id === 'emerg') cells += '<td style="' + TD + '"><input type="checkbox" data-k="emerg" style="' + CB + '"' + (p.emerg ? ' checked' : '') + '></td>';
     else cells += '<td style="' + TD + ';color:#94a3b8;font-size:11px">—</td>';
   });
+  cells += '<td style="' + TD + ';color:#94a3b8;font-size:11px">—</td>';   /* patch SMSALERT2: no lead types on the role row */
   cells += '<td style="' + TD + ';font-size:12px;color:#64748b">emergencies only (any hour)</td>';
   return '<tr class="gcsa-row" data-role="1" data-email="' + esc(r.key) + '" style="background:' + (on ? '#fff' : '#f8fafc') + '">' + cells + '</tr>';
 }
@@ -83,6 +93,7 @@ function readForm(box){
     var p = { on: !!g('on').checked, phone: ph, hasPhone: !!(pin && d10(pin.value).length === 10) || tr.getAttribute('data-role') === '1', cust: g('cust').value, qOff: !g('qOn').checked, qFrom: +g('qFrom').value, qTo: +g('qTo').value,
       name: s((tr.querySelector('b') || {}).textContent) };
     COLS.forEach(function(c){ if (c.id !== 'cust') { var el = g(c.id); p[c.id] = !!(el && el.checked); } });
+    p.lt = {}; Array.prototype.forEach.call(tr.querySelectorAll('[data-lt]'), function(el){ if (el.checked) p.lt[el.getAttribute('data-lt')] = true; });   /* patch SMSALERT2 */
     people[e] = p;
   });
   return { people: people };
@@ -95,19 +106,19 @@ function render(box){
     DATA = o;
     var set = o.settings || { people: {} }, staff = arr(o.staff);
     var head = '<tr style="background:#f1f5f9;font-size:11px;color:#334155"><th style="' + TD + '">On</th><th style="' + TD + ';text-align:left">Person</th><th style="' + TD + '">Cell</th>'
-      + COLS.map(function(c){ return '<th style="' + TD + ';white-space:normal;line-height:1.2;width:78px;min-width:64px" title="' + esc(c.h) + '">' + esc(c.t) + '</th>'; }).join('') + '<th style="' + TD + '">Quiet hours (Central)</th></tr>';
+      + COLS.map(function(c){ return '<th style="' + TD + ';white-space:normal;line-height:1.2;width:78px;min-width:64px" title="' + esc(c.h) + '">' + esc(c.t) + '</th>'; }).join('') + '<th style="' + TD + ';text-align:left" title="A new lead of a ticked type is texted to this person too (on top of New leads (all) and Assigned to me)">Lead types — also text me for</th><th style="' + TD + '">Quiet hours (Central)</th></tr>';
     box.innerHTML = '<div class="gcsa" style="font:13px Inter,sans-serif;color:#0f172a">'
       + '<div style="background:' + (o.ready ? '#f0fdf4' : '#fff7ed') + ';border:1px solid ' + (o.ready ? '#bbf7d0' : '#fed7aa') + ';border-radius:10px;padding:10px;margin-bottom:10px;line-height:1.5">'
       + (o.ready ? '✅ Alerts are texted from the GrayCo number <b>' + esc(o.from) + '</b>.' : '⚠ Texting is not set up yet (Netlify TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM) — nothing is texted until it is.')
       + (o.paused ? '<br>⏸ Data-entry mode is on — no alert texts go out.' : '')
       + '<br><b>💲 Cost:</b> each alert text costs about <b>1¢</b> (Twilio). Bursts are combined: at most 1 text a minute per person per conversation ("+3 more").'
       + '<br><b>Reply from your phone:</b> answer an alert within 30 minutes and your text goes to that customer from the GrayCo number (signed with your first name) and shows on Job Messages. A staff phone never becomes a lead. Texting STOP stops your alerts.</div>'
-      + '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e2e8f0;border-radius:10px;max-width:100%"><table style="border-collapse:collapse;width:100%;min-width:980px;font-size:13px"><thead>' + head + '</thead><tbody>'
-      + (staff.length ? staff.map(function(x){ return row(x, set.people[x.email]); }).join('') : '<tr><td colspan="12" style="padding:12px;color:#64748b">No active staff with a @grayco-cs.com e-mail yet (⚙ Admin → Employees).</td></tr>')
+      + '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #e2e8f0;border-radius:10px;max-width:100%"><table style="border-collapse:collapse;width:100%;min-width:1220px;font-size:13px"><thead>' + head + '</thead><tbody>'
+      + (staff.length ? staff.map(function(x){ return row(x, set.people[x.email]); }).join('') : '<tr><td colspan="13" style="padding:12px;color:#64748b">No active staff with a @grayco-cs.com e-mail yet (⚙ Admin → Employees).</td></tr>')
       + arr(o.roles).map(function(r){ return roleRow(r, set.people[r.key]); }).join('')
       + '</tbody></table></div>'
       + (set.defaults ? '<div style="font-size:12px;color:#075985;margin-top:6px">These are the starting settings (Nick and Wesley: emergencies + every new lead; the mitigation manager: emergencies). Change anything and press Save.</div>' : '')
-      + '<div style="font-size:12px;color:#475569;margin-top:8px">Customer texts: <b>Their jobs</b> = texts on jobs they manage or texts routed to them; <b>All</b> = every customer text. Emergencies ignore quiet hours. Admin / system alerts that come in during quiet hours wait until the morning.</div>'
+      + '<div style="font-size:12px;color:#475569;margin-top:8px"><b>New-lead texts</b> go to a person when <b>New leads (all)</b> is on, or the lead is <b>assigned to them</b>, or it is one of their ticked <b>lead types</b> (the CRM\'s own lead type: roofing, insurance / restoration, water, fire, storm, commercial bids …). Emergencies keep their own rule. ' + 'Customer texts: <b>Their jobs</b> = texts on jobs they manage or texts routed to them; <b>All</b> = every customer text. Emergencies ignore quiet hours. Admin / system alerts that come in during quiet hours wait until the morning.</div>'
       + '<div style="margin-top:10px"><button type="button" data-g="save" style="border:0;border-radius:8px;padding:9px 16px;background:#16a34a;color:#fff;font-weight:800;cursor:pointer">Save</button></div></div>';
     box.onchange = function(ev){ var tr = ev.target && ev.target.closest && ev.target.closest('.gcsa-row'); if (tr && ev.target.getAttribute('data-k') === 'on') tr.style.background = ev.target.checked ? '#fff' : '#f8fafc'; };
     box.onclick = function(ev){

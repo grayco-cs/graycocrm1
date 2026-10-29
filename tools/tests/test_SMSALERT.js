@@ -300,5 +300,39 @@ const to = r => r.sent.map(x => x.to).sort();
   r = rig({ settings: S1 }); await SA.missedCall({ ph: '9015550703', name: 'Ida', said: 'roof leaking into bedroom' });
   assert.ok(/: "roof leaking into bedroom"/.test(r.sent[0].body), r.sent[0].body);
   assert.ok(LM.boxHtml(LM.collect({ leadExtra: { callerSaid: 'my roof is leaking' } })).indexOf('my roof is leaking') > 0);
+  /* ── 12. SMSALERT2: lead TYPES per person (the CRM's own lead classification) ── */
+  const T = (l) => SA.leadTypes(l).join(',');
+  assert.strictEqual(T({ type: 'commercial', title: 'ITB roof replacement — county school', source: 'BuildingConnected' }), 'roof,comm', 'commercial roofing bid');
+  assert.strictEqual(T({ type: 'commercial', title: 'New office building — all trades', source: 'PlanHub' }), 'comm', 'plan-room bid, not roofing');
+  assert.strictEqual(T({ type: 'storm', title: 'Text message — Z', leadExtra: { textMessage: true, textBody: 'water heater leaked, need mitigation' } }), 'ins,water,text', 'water text lead');
+  assert.strictEqual(T({ type: 'storm', title: 'House fire smoke damage' }), 'ins,fire', 'fire (the form type "storm" alone is not storm damage)');
+  assert.strictEqual(T({ type: 'storm', title: 'Tree fell on the house', origin: 'website', websiteLead: true }), 'ins,storm,web', 'storm / tree website lead');
+  assert.strictEqual(T({ type: 'residential', title: 'Kitchen remodel', origin: 'website', websiteLead: true }), 'remodel,web', 'remodel');
+  assert.strictEqual(T({ type: 'estimate', title: 'Roof repair quote', origin: 'website', websiteLead: true, leadExtra: { insurance: 'no' } }), 'roof,web', 'residential roofing');
+  assert.strictEqual(T({ title: 'Missed call — Bob', websiteForm: 'Missed call', leadExtra: { missedCall: true } }), 'missed,other', 'missed-call lead');
+  assert.strictEqual(T({ title: 'hello' }), 'other');
+  const S3 = { at: 'x', people: {
+    'nthomas@grayco-cs.com': person({ newAll: true }),
+    'wjohnson@grayco-cs.com': person({ newAll: true, emerg: true }),
+    'pat@grayco-cs.com': person({ lt: { roof: true, comm: true } }),
+    'mo@grayco-cs.com': person({ lt: { water: true, fire: true } }) } };
+  const sendLead = async (it, em) => { const rr = rig({ settings: S3 }); SA._D.ack = async () => ({}); await SA.leads([Object.assign({ key: it.id, contact: { name: 'Q', phone: '' } }, it)], { [it.id]: it }, () => !!em); return to(rr); };
+  assert.deepStrictEqual(await sendLead({ id: 'T1', type: 'commercial', title: 'ITB re-roof county school', source: 'BuildingConnected' }), ['9015550001', '9015550002', '9015550003'], 'roofing bid → all + Pat (roof/comm)');
+  assert.deepStrictEqual(await sendLead({ id: 'T2', type: 'storm', title: 'Pipe burst, water in the basement', leadExtra: { textMessage: true } }), ['9015550001', '9015550002', '9015550004'], 'water → all + Mo (water)');
+  assert.deepStrictEqual(await sendLead({ id: 'T3', type: 'residential', title: 'Kitchen remodel', origin: 'website', websiteLead: true }), ['9015550001', '9015550002'], 'remodel → only "all"');
+  /* "assigned to me" still counts; master off wins over a ticked type */
+  assert.deepStrictEqual(await sendLead({ id: 'T4', type: 'residential', title: 'Bath remodel', assigneeEmail: 'mo@grayco-cs.com' }), ['9015550001', '9015550002'], 'assigned without the switch: no');
+  S3.people['mo@grayco-cs.com'].newMine = true;
+  assert.deepStrictEqual(await sendLead({ id: 'T5', type: 'residential', title: 'Bath remodel', assigneeEmail: 'mo@grayco-cs.com' }), ['9015550001', '9015550002', '9015550004'], 'assigned to me');
+  S3.people['pat@grayco-cs.com'].on = false;
+  assert.deepStrictEqual(await sendLead({ id: 'T6', type: 'commercial', title: 'ITB roof school', source: 'BuildingConnected' }), ['9015550001', '9015550002'], 'master off');
+  /* emergencies keep their own rule (Nick, Wesley, the mitigation manager) — a type tick does not add anyone to them in quiet hours */
+  { const rr = rig({ now: NIGHT }); await SA.leads([{ id: 'T7', key: 'T7', title: 'Burst pipe', contact: {} }], { T7: { type: 'storm', title: 'Burst pipe flooding' } }, () => true);
+    assert.deepStrictEqual(to(rr), ['9015550001', '9015550002', '9015550004'], 'emergency: defaults (Nick, Wesley, mitigation manager)'); }
+  /* settings: lead types cleaned and kept; the role row has none */
+  { const rr = rig(); const sv = await SA.save({ people: { 'pat@grayco-cs.com': person({ lt: { roof: true, bogus: true, comm: 1 } }), 'role:mitigation': person({ emerg: true, lt: { roof: true } }) } }, 'nthomas@grayco-cs.com');
+    assert.deepStrictEqual(sv.people['pat@grayco-cs.com'].lt, { roof: true, comm: true }); assert.deepStrictEqual(sv.people['role:mitigation'].lt, {});
+    assert.deepStrictEqual(SA.settings(null).people['pat@grayco-cs.com'], undefined, 'defaults: everyone else off');
+    assert.ok(SA.settings(null).people['nthomas@grayco-cs.com'].newAll && SA.settings(null).people['wjohnson@grayco-cs.com'].newAll, 'defaults: Nick + Wesley keep all'); }
   console.log('SMSALERT + LEADMAILMSG tests: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
