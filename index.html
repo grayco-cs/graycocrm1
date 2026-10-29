@@ -3800,7 +3800,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.159-2026-10-29-r14 -->
+<!-- GrayCo CRM Build: 33.159-2026-10-29-r14a -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4465,7 +4465,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.159-2026-10-29-r14");
+  console.log("[GC] Build 33.159-2026-10-29-r14a");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4513,7 +4513,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.159-2026-10-29-r14"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.159-2026-10-29-r14a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -181778,17 +181778,29 @@ function workHours(a, b){
 function queueAll(){ try { var c = W._gcCustApprovals ? W._gcCustApprovals() : null; return arr(c && c.all); } catch (e) { return []; } }
 /* patch APPRFAST: one index of the queue / sub approvals / invoices per paint (300 ms), the first match wins as before */
 var IDX = null;
+/* patch APPRLOOP: invoices have their own index, and idx() never re-enters itself (the queue read sorts, the sort reads invoices) */
+var IDXI = null, IDX_BUSY = false, IDX_EMPTY = { at: 0, invL: null, q: {}, sub: {}, inv: {} };
+function invIdx(){
+  var now = Date.now(), inv = (W._crm || {}).invoices;
+  if (IDXI && now - IDXI.at < 300 && IDXI.invL === inv) return IDXI.inv;
+  var iv = {}; arr(inv).forEach(function(x){ if (!x) return; var k = s(x.id); if (!(k in iv)) iv[k] = x; });
+  IDXI = { at: now, invL: inv, inv: iv };
+  return iv;
+}
 function idx(){
   var now = Date.now(), inv = (W._crm || {}).invoices;
   if (IDX && now - IDX.at < 300 && IDX.invL === inv) return IDX;
-  var q = {}, sub = {}, iv = {};
-  queueAll().forEach(function(x){ var k = s(x && x.id); if (!(k in q)) q[k] = x; });
-  lsList('gc_sub_approvals').forEach(function(x){ if (!x) return; var a = s(x.id), b = s(x.invId); if (!(a in sub)) sub[a] = x; if (!(b in sub)) sub[b] = x; });
-  arr(inv).forEach(function(x){ if (!x) return; var k = s(x.id); if (!(k in iv)) iv[k] = x; });
-  IDX = { at: now, invL: inv, q: q, sub: sub, inv: iv };
+  if (IDX_BUSY) return IDX || IDX_EMPTY;
+  IDX_BUSY = true;
+  try {
+    var q = {}, sub = {};
+    queueAll().forEach(function(x){ var k = s(x && x.id); if (!(k in q)) q[k] = x; });
+    lsList('gc_sub_approvals').forEach(function(x){ if (!x) return; var a = s(x.id), b = s(x.invId); if (!(a in sub)) sub[a] = x; if (!(b in sub)) sub[b] = x; });
+    IDX = { at: now, invL: inv, q: q, sub: sub, inv: invIdx() };
+  } finally { IDX_BUSY = false; }
   return IDX;
 }
-function invById(id){ return idx().inv[s(id)] || null; }
+function invById(id){ return invIdx()[s(id)] || null; }
 function rawFor(r){
   if (!r) return null;
   if (r.__raw) return r.__raw;
