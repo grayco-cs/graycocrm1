@@ -133724,6 +133724,25 @@ function scanText(){
   var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n){ var v = n.nodeValue; return v && v.length < 140 && (v.indexOf('@') > 0 || (by[low(v)] && root.contains(n))) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT; } });
   var hits = [], n;
   while((n = w.nextNode())) hits.push(n);
+  /* patch AP3FAST: every read first (one layout), then every icon written -- not one forced layout per hit */
+  var _afOff = false; try{ _afOff = localStorage.getItem('gc_ap3fast_off') === '1'; }catch(_e){}
+  if(!_afOff){
+    var _afPlan = [], _afSeen = (typeof Set === 'function') ? new Set() : null;
+    hits.forEach(function(t){
+      var el = t.parentElement; if(!el || (_afSeen && _afSeen.has(el)) || el.querySelector('._gcMailIco')) return;
+      var m = EM.exec(el.textContent || '');
+      if(!m){
+        var pr = by[low(el.textContent)]; if(!pr || el.children.length || el.closest(SKIP) || !el.offsetParent) return;
+        if(_afSeen) _afSeen.add(el); _afPlan.push([el, pr.email, { about: pr.kind }]); return;
+      }
+      if(el.children.length) return;
+      if(el.closest(SKIP) || !el.offsetParent) return;
+      var j = jobOf(m[1]);
+      if(_afSeen) _afSeen.add(el); _afPlan.push([el, m[1], j ? { pid: j.id, customer: j.client } : null]);
+    });
+    _afPlan.forEach(function(x){ try{ x[0].appendChild(ico(x[1], x[2])); }catch(_ie){} });
+    return;
+  }
   hits.forEach(function(t){
     var el = t.parentElement; if(!el || el.querySelector('._gcMailIco')) return;
     var m = EM.exec(el.textContent || '');
