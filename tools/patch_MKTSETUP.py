@@ -109,7 +109,7 @@ ITEMS = [
          d='Each Facebook / Instagram lead-form answer lands in the 📥 Lead Inbox, the same way as the Local Services leads.',
          mm=['Zapier → New Zap → Facebook Lead Ads → New lead → connect his Facebook login → Page GrayCo → the form.',
              'Action Webhooks by Zapier → POST → ' + INTAKE + ' (same as the Local Services Zap).',
-             'Header x-api-key: an admin fills it (✅ To-Do), then Test.'],
+             'Header x-api-key — an admin fills it (✅ To-Do), then Test.'],
          own=['Meta Business Suite → Settings → Integrations → Leads access → Page GrayCo → assign {MM} (and under CRMs: Zapier).',
               'An admin makes LEAD_KEY_FACEBOOK_LEADS in Netlify and types it into the Zap header himself.']),
     dict(k='callrail', ic='📞', l='CallRail call tracking', mode='both', url='https://app.callrail.com/signup', go='Sign up on CallRail',
