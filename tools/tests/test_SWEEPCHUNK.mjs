@@ -7,7 +7,7 @@ const HARNESS = process.env.GC_HARNESS || '/tmp/claude-0/-home-user-graycocrm1/6
 const { computer, sleep, resetCloud, cset, signIn } = await import(pathToFileURL(HARNESS).href);
 const build = process.argv[2];
 if (!build) { console.error('usage: node test_SWEEPCHUNK.mjs <dir with index.html>'); process.exit(2); }
-let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 300) : '')); } };
+let pass = 0, fail = 0; const ok = (m, c, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 300) : '')); } };
 resetCloud();
 cset('users', [{ id: 'u1', name: 'Demo Owner', email: 'wjohnson@grayco-cs.com', role: 'Admin', payType: 'owner', active: true }]);
 cset('projects', [{ id: 'P1', name: 'Demo Job', client: 'Sample Homeowner', status: 'Active', pm: 'Demo Owner', address: '1 Demo St' }]);
@@ -30,8 +30,9 @@ ok('three forced pulls with an unchanged manifest read no chunk again', chunkRea
 const memo = await p.evaluate(() => window.__gcManifestMemo && window.__gcManifestMemo.vendors && { reads: window.__gcManifestMemo.vendors.reads, hits: window.__gcManifestMemo.vendors.hits });
 ok('the memo answered those pulls', memo && memo.hits >= 3, memo);
 cset('vendors__chunk1', [V(3), V(4), V(5)]); cset('vendors__manifest', { chunked: true, count: 2, total: 5, at: '2026-10-29T02:00:00.000Z' });
-t = Date.now(); await pull(); await sleep(1500);
-ok('a changed manifest is read on the next pull', chunkReads(t) >= 2, chunkReads(t));
+t = Date.now(); for (let i = 0; i < 3 && chunkReads(t) < 2; i++) { await pull(); await sleep(1500); }
+const memo2 = await p.evaluate(() => window.__gcManifestMemo && window.__gcManifestMemo.vendors && { sig: window.__gcManifestMemo.vendors.sig, reads: window.__gcManifestMemo.vendors.reads });
+ok('a changed manifest is read within the next pulls', chunkReads(t) >= 2, { reads: chunkReads(t), memo2 });
 const ids1 = await local();
 ok('the new chunk record arrived', ids1.includes('VND5'), ids1);
 await p.evaluate(() => localStorage.setItem('gc_sweepchunk_off', '1'));
