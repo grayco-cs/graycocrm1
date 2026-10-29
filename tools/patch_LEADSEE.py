@@ -19,7 +19,7 @@ What it does
        item's time and two counts — nothing about anyone), only when it changed.
   page (index.html, inside patch LD2 + one new block gc-patch-leadsee, tools/leadsee_tail.js)
     3. the pull asks for ?leads=1 (the whole ?list=1 only on the 📥 Lead Inbox tab, or when the server has no ?leads=1);
-    4. the import adds at most 200 new leads per pass (the rest a moment later), never blocking the page;
+    4. the import adds at most 100 new leads per pass (the rest a moment later), never blocking the page;
     5. a signed-in CRM looks at the marker every 30 s while it is on screen (one small row from gc_kv) and collects the
        inbox the moment it changed; a safety pull every 15 minutes; on coming back to the tab it looks at once;
     6. Leads screen: "📥 Lead Inbox (N)" count on the tab; a strip above the list — "📥 N new leads — not assigned yet ·
@@ -130,15 +130,17 @@ function pull(force){
 src = once(src, "  return flushOut().then(function(){ return api('GET', 'list=1'); }).then(function(j){\n    S = { items: arr(j.items), watch: j.watch || null, settings: j.settings || null, notices: arr(j.notices), portal: j.portal || null, alerts: j.alerts || null, at: j.at || nowIso(), me: j.me || {} };",
 "  return flushOut().then(function(){ return inboxGet(); }).then(function(j){   /* patch LEADSEE */\n    var S0 = S || {};\n    S = { items: arr(j.items), watch: j.watch || (j.lite ? S0.watch : null) || null, settings: j.settings || S0.settings || null, notices: j.notices ? arr(j.notices) : (j.lite ? arr(S0.notices) : []), portal: j.portal || (j.lite ? S0.portal : null) || null, alerts: j.alerts || (j.lite ? S0.alerts : null) || null, at: j.at || nowIso(), me: j.me || {}, lite: !!j.lite };", 'pull list')
 
-# 4. the import: at most 200 new leads per pass
+# 4. the import: at most 100 new leads per pass (+ when the item reached the inbox, for the list's order)
 src = once(src, "function importItems(healing){\n  var added = [], updated = [], tell = [];",
                "function importItems(healing){\n  var added = [], updated = [], tell = [], nNew = 0, more = false;   /* patch LEADSEE: nNew / more */", 'import vars')
 src = once(src, "  return setLeads(function(list){\n    added = []; updated = []; tell = [];\n",
                "  return setLeads(function(list){\n    added = []; updated = []; tell = []; nNew = 0; more = false;\n", 'import reset')
 src = once(src, "      if (i == null) {\n        var l = fromItem(it);",
-               "      if (i == null) {\n        if (++nNew > 200) { more = true; return; }   /* patch LEADSEE: at most 200 new leads per pass — the rest a moment later */\n        var l = fromItem(it);", 'import cap')
+               "      if (i == null) {\n        if (++nNew > 100) { more = true; return; }   /* patch LEADSEE: at most 100 new leads per pass — the rest a moment later */\n        var l = fromItem(it);", 'import cap')
 src = once(src, "  }).then(function(){\n    tell.forEach(act);\n",
-               "  }).then(function(){\n    if (more) later(function(){ importItems(healing); }, 1500);   /* patch LEADSEE */\n    tell.slice(0, 200).forEach(act);\n", 'import more')
+               "  }).then(function(){\n    if (more) later(function(){ importItems(healing); }, 1500);   /* patch LEADSEE */\n    tell.slice(0, 150).forEach(act);\n", 'import more')
+
+src = once(src, "  l.inboxId = it.id; l.inboxRev = it.rev || 1;", "  l.inboxId = it.id; l.inboxRev = it.rev || 1; if (!l.inboxAt && s(it.receivedAt)) l.inboxAt = s(it.receivedAt);   /* patch LEADSEE: when it reached the inbox */", 'inboxAt')
 
 # 5. look at the marker every 30 s; a safety pull every 15 minutes; at once on coming back
 src = once(src, "  document.addEventListener('visibilitychange', function(){ if (!document.hidden && Date.now() - lastPull > 180000) pull(false); });",
@@ -180,7 +182,7 @@ src = once(src, "  status: function(){ return { at: S.at, items: S.items.length,
 src = once(src, "  rows.sort(function(a, b){ if (k === 'due') { var c0 = tie(a, b);",
 """  var FRESH = W._gcLeadSee && W._gcLeadSee.fresh;   /* patch LEADSEE: new leads first in the default sort */
   if (FRESH && k === 'due') rows.forEach(function(x){ x.fr = FRESH(x.l) ? 1 : 0; });
-  rows.sort(function(a, b){ if (FRESH && k === 'due' && (a.fr || b.fr)) { if (a.fr !== b.fr) return b.fr - a.fr; var ta = s(a.l.createdAt || a.l.receivedAt), tb = s(b.l.createdAt || b.l.receivedAt); if (ta !== tb) return ta < tb ? 1 : -1; }
+  rows.sort(function(a, b){ if (FRESH && k === 'due' && (a.fr || b.fr)) { if (a.fr !== b.fr) return b.fr - a.fr; var ta = s(a.l.inboxAt || a.l.receivedAt || a.l.createdAt), tb = s(b.l.inboxAt || b.l.receivedAt || b.l.createdAt); if (ta !== tb) return ta < tb ? 1 : -1; }
     if (k === 'due') { var c0 = tie(a, b);""", 'leadsui sort')
 
 # 6. the new block, right after patch LD2

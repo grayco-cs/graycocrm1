@@ -125592,7 +125592,7 @@ function fromItem(it, prev){
   }
   l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
   if (it.bidRole && !l.bidRoleManual) { l.bidRole = s(it.bidRole); l.bidRoleWhy = s(it.bidRoleWhy); }   /* patch PRIMESUB: the server's prime / sub (a person's choice stays) */
-  l.inboxId = it.id; l.inboxRev = it.rev || 1; l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
+  l.inboxId = it.id; l.inboxRev = it.rev || 1; if (!l.inboxAt && s(it.receivedAt)) l.inboxAt = s(it.receivedAt);   /* patch LEADSEE: when it reached the inbox */ l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
   if (s(it.dueSnippet) && !(prev && prev.bidDueManual)) l.dueSnippet = s(it.dueSnippet).slice(0, 300);   /* patch DUESEEN: the e-mail's words for the due date */
   if (it.estimator) { l.estimator = s(it.estimator); l.estimatorEmail = s(it.estimatorEmail); }
@@ -125657,7 +125657,7 @@ function importItems(healing){
         if (!ic || !ec || ec.indexOf(ic) >= 0) { list[j] = fromItem(it, ex); list[j].inboxState = ex.pm ? 'assigned' : 'new'; at['in:' + it.id] = j; delete byName[normName(it.title)]; changed = true; tell.push({ id: it.id, op: 'imported', leadId: ex.id }); updated.push(list[j]); return; }
       }
       if (i == null) {
-        if (++nNew > 200) { more = true; return; }   /* patch LEADSEE: at most 200 new leads per pass — the rest a moment later */
+        if (++nNew > 100) { more = true; return; }   /* patch LEADSEE: at most 100 new leads per pass — the rest a moment later */
         var l = fromItem(it);
         if (it.status !== 'new') {   /* imported before (here or on another computer) but not on this list: put it back as it was */
           if (it.pm) { l.pm = it.pm; l.inboxState = 'assigned'; }
@@ -125674,7 +125674,7 @@ function importItems(healing){
     return changed ? list : null;
   }).then(function(){
     if (more) later(function(){ importItems(healing); }, 1500);   /* patch LEADSEE */
-    tell.slice(0, 200).forEach(act);
+    tell.slice(0, 150).forEach(act);
     if (!healing && added.length) heal(added.map(function(l){ return l.id; }), 0);
     /* an addendum for a lead that already has a job: its new files go to the job's Plans & Bidding too */
     updated.forEach(function(l){ if (l.pid) addPlansToJob(l.pid, l.docs, l.id); });
@@ -126684,7 +126684,7 @@ try { console.log('[GC] Lead Inbox (patch LD2) ready — window._gcLeadInbox'); 
    · a "📥 New" chip ("📥 New · held until 5:00 PM today" while LEADHOLD holds it) next to the lead's Assigned cell;
    · window._gcLeadSee.fresh(l): a new lead from the inbox (text, website, missed call, e-mail) nobody is assigned to yet,
      under 3 days old or held — the Leads list puts these first in its default (soonest-due) sort.
-   The collecting itself is patch LD2 (with LEADSEE's small list, the 30-second marker check and the 200-per-pass import). */
+   The collecting itself is patch LD2 (with LEADSEE's small list, the 30-second marker check and the 100-per-pass import). */
 (function(){
 'use strict';
 var W = window, D = document;
@@ -166390,7 +166390,7 @@ function lcSorted(list){
     return a.r.k.name < b.r.k.name ? -1 : a.r.k.name > b.r.k.name ? 1 : 0; };
   var FRESH = W._gcLeadSee && W._gcLeadSee.fresh;   /* patch LEADSEE: new leads first in the default sort */
   if (FRESH && k === 'due') rows.forEach(function(x){ x.fr = FRESH(x.l) ? 1 : 0; });
-  rows.sort(function(a, b){ if (FRESH && k === 'due' && (a.fr || b.fr)) { if (a.fr !== b.fr) return b.fr - a.fr; var ta = s(a.l.createdAt || a.l.receivedAt), tb = s(b.l.createdAt || b.l.receivedAt); if (ta !== tb) return ta < tb ? 1 : -1; }
+  rows.sort(function(a, b){ if (FRESH && k === 'due' && (a.fr || b.fr)) { if (a.fr !== b.fr) return b.fr - a.fr; var ta = s(a.l.inboxAt || a.l.receivedAt || a.l.createdAt), tb = s(b.l.inboxAt || b.l.receivedAt || b.l.createdAt); if (ta !== tb) return ta < tb ? 1 : -1; }
     if (k === 'due') { var c0 = tie(a, b); return dir < 0 && !lcBlank(a.kk) && !lcBlank(b.kk) && a.kk !== b.kk ? -c0 : c0; }
     var x = a.kk, y = b.kk, bx = lcBlank(x), by = lcBlank(y);
     if (bx || by) return bx && by ? tie(a, b) : bx ? 1 : -1;

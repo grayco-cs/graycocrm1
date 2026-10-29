@@ -7,7 +7,7 @@
    · a "📥 New" chip ("📥 New · held until 5:00 PM today" while LEADHOLD holds it) next to the lead's Assigned cell;
    · window._gcLeadSee.fresh(l): a new lead from the inbox (text, website, missed call, e-mail) nobody is assigned to yet,
      under 3 days old or held — the Leads list puts these first in its default (soonest-due) sort.
-   The collecting itself is patch LD2 (with LEADSEE's small list, the 30-second marker check and the 200-per-pass import). */
+   The collecting itself is patch LD2 (with LEADSEE's small list, the 30-second marker check and the 100-per-pass import). */
 (function(){
 'use strict';
 var W = window, D = document;
