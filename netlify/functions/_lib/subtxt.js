@@ -17,9 +17,20 @@
 //   ⏸ Data-entry mode is on, or 8 PM–7 AM (the morning check may go before 7 AM — it is about that morning).
 //   Replies (missed-call.js?event=sms → handleReply): Y / yes / 👍 → ✓ Confirmed. Anything else → the PM at once.
 //   The sub portal's "Can't make it / running late" (portal-access.js p-late) → the same PM alert.
-'use strict';
+//
+// patch AUTOC 2 — SUB NO-SHOW ALERT (owner 10/29 "6 no unless turned on for a sub"): a SECOND switch per sub, noShow,
+//   OFF for every sub until someone on the staff turns it on (independent of the schedule texts). When on: on every
+//   scheduled day of a live row on a signed job, if the sub has not CHECKED IN by 9 AM Central (or by the row's start
+//   time when that is later), the job's PM gets a text + phone push + 🔴 ASAP To-Do + e-mail, and the sub gets ONE text
+//   "GrayCo: are you on the way to <job>? Reply HERE when you arrive …". Once per sub, job row and day.
+//   Checked in = any of: the sub portal's "📍 I'm here" (portal-access.js p-checkin), a text "here" / "Y" to our number
+//   that day (missed-call.js → sub-texts.js handleReply), a "Y" to that morning's text, the PM / super tapping
+//   "🟢 Crew arrived" on the job (project.crewDays[<day>].arrivedAt), or a check-in on the schedule row (checkedInAt).
+//   State: the same gc_sub_confirm store — rows[...].nsAt, and checkins { '<subId>|<day>': { at, via, pid } }.
 const SETTINGS_KEY = 'gc_sub_texts', STATE_KEY = 'gc_sub_confirm', TZ = 'America/Chicago';
 const DEFAULT_START = '08:00', MORNING_LEAD_MIN = 60, WINDOW_MIN = 20, REPLY_HOURS = 36, KEEP_DAYS = 10;
+const NOSHOW_MIN = 9 * 60, NOSHOW_WINDOW_MIN = 180;   /* patch AUTOC 2: 9 AM Central (or the start time when later), checked for 3 hours */
+const HERE = /^\s*(here|i'?m here|im here|i am here|arrived|on site|onsite|at (the )?(job|site)|checking in|check(ed)? in)\s*[.!]*\s*$/i;
 const YES = /^\s*(y|ye|yes|yep|yup|yeah|ya|ok|okay|k|confirm(ed)?|on my way|omw|here|i'?m here|at (the )?job|👍|👍🏻|👍🏼|👍🏽|👍🏾|👍🏿|✅|✔️?)\s*[.!]*\s*$/i;
 
 function s(v){ return v == null ? '' : String(v).trim(); }
@@ -58,18 +69,21 @@ function settings(v){
   const subs = {};
   Object.keys(o.subs && typeof o.subs === 'object' ? o.subs : {}).forEach(id => {
     const x = o.subs[id] || {}; if (!/^[A-Za-z0-9_.:-]{1,90}$/.test(id)) return;
-    subs[id] = { on: x.on === true, phone: phone10(x.phone).length === 10 ? phone10(x.phone) : '', by: s(x.by).slice(0, 120), at: s(x.at).slice(0, 40) };
+    subs[id] = { on: x.on === true, phone: phone10(x.phone).length === 10 ? phone10(x.phone) : '', by: s(x.by).slice(0, 120), at: s(x.at).slice(0, 40),
+      noShow: x.noShow === true, nsBy: s(x.nsBy).slice(0, 120), nsAt: s(x.nsAt).slice(0, 40) };   /* patch AUTOC 2: the no-show switch (default off) */
   });
   return { subs };
 }
 function loadState(v){
   const st = v && typeof v === 'object' ? v : {};
   const rows = st.rows && typeof st.rows === 'object' ? st.rows : {};
-  return { rows };
+  const checkins = st.checkins && typeof st.checkins === 'object' ? st.checkins : {};   /* patch AUTOC 2 */
+  return { rows, checkins };
 }
 function prune(st, nowMs){
   const cut = central(nowMs - KEEP_DAYS * 86400000).ymd;
   Object.keys(st.rows).forEach(k => { if (s(st.rows[k] && st.rows[k].day) < cut) delete st.rows[k]; });
+  Object.keys(st.checkins || {}).forEach(k => { if (s(k.split('|').pop()) < cut) delete st.checkins[k]; });
   return st;
 }
 
@@ -107,11 +121,19 @@ function due(data, set, st, nowMs){
   arr(data.schedule).filter(rowLive).forEach(x => {
     const pid = pidOf(x), p = jobs[pid]; if (!p || dead[pid] || !jobSigned(p)) return;
     const sub = subOfRow(x, subs); if (!sub) return;
-    const cfg = set.subs[s(sub.id)]; if (!cfg || !cfg.on) return;
-    const phone = subPhone(sub, set); if (!phone) return;
+    const cfg = set.subs[s(sub.id)]; if (!cfg || (!cfg.on && !cfg.noShow)) return;
+    const phone = subPhone(sub, set); if (!phone && !cfg.noShow) return;
     const first = ymd(x.date), last = ymd(x.endDateSch || x.endDate || x.date) || first; if (!first) return;
     const start = parseTime(x.time); const startMin = start == null ? parseTime(DEFAULT_START) : start;
     const base = { subId: s(sub.id), sub: s(sub.company || sub.name), pid, job: s(p.name), address: s(p.address || p.jobAddress).split(',')[0], title: clip(s(x.title || x.type || 'work'), 80), phone, start: startMin, pm: s(p.pm || p.projectManager) };
+    /* patch AUTOC 2: the 9 AM no-show check (its own switch; the sub text needs a phone, the PM alert does not) */
+    if (cfg.noShow && today >= first && today <= last) {
+      const key = rowKey(x) + '|' + today, rec = st.rows[key] || {}, at = Math.max(NOSHOW_MIN, startMin);
+      if (!rec.nsAt && c.min >= at && c.min < at + NOSHOW_WINDOW_MIN && !checkedIn(st, base.subId, today, key, p, x))
+        out.push({ kind: 'noshow', key, rec: Object.assign({}, base, { day: today }),
+          text: phone ? 'GrayCo: are you on the way to ' + (base.address || base.job) + ' (' + base.title + ', ' + hhmm(startMin) + ' today)? Reply HERE when you arrive, or text us if anything changed. Reply STOP to opt out.' : '' });
+    }
+    if (!cfg.on || !phone) return;   /* the schedule texts below need their own switch and a phone */
     /* evening before the FIRST day (6 PM hour) */
     if (first === tomorrow && c.min >= 18 * 60 && c.min < 19 * 60) {
       const key = rowKey(x) + '|' + first, rec = st.rows[key] || {};
@@ -131,15 +153,26 @@ function due(data, set, st, nowMs){
   });
   return out;
 }
+/* patch AUTOC 2: has this sub checked in today (for this row)? */
+function checkedIn(st, subId, day, key, p, x){
+  if (st.checkins && st.checkins[s(subId) + '|' + day]) return true;
+  const r = st.rows[key];
+  if (r && r.status === 'confirmed' && (r.mornAt || r.nsAt) && ymdC(r.confirmedAt) === day) return true;
+  const cd = p && p.crewDays && p.crewDays[day]; if (cd && cd.arrivedAt) return true;
+  const ci = s(x && (x.checkedInAt || x.checkinAt)); if (ci && (ymdC(ci) === day || ci.slice(0, 10) === day)) return true;
+  return false;
+}
+function ymdC(iso){ const t = Date.parse(s(iso)); return isFinite(t) ? central(t).ymd : ''; }
+function isHere(t){ return HERE.test(s(t)) || YES.test(s(t)); }
 /* evening texts wait for 7 AM–8 PM; the morning check may go earlier (it is about that morning) */
 function quietOk(kind, nowMs){ const m = central(nowMs).min; return kind === 'morning' || (m >= 7 * 60 && m < 20 * 60); }
 function isYes(t){ return YES.test(s(t)); }
 /* the open confirmation this number is answering (a text sent in the last 36 hours), newest first */
 function openFor(st, ph, nowMs){
   const cut = nowMs - REPLY_HOURS * 3600000;
-  return Object.keys(st.rows).map(k => Object.assign({ key: k }, st.rows[k])).filter(r => r.phone === ph && [r.eveAt, r.mornAt].some(t => t && Date.parse(t) >= cut))
-    .sort((a, b) => s(b.mornAt || b.eveAt).localeCompare(s(a.mornAt || a.eveAt)))[0] || null;
+  return Object.keys(st.rows).map(k => Object.assign({ key: k }, st.rows[k])).filter(r => r.phone === ph && [r.eveAt, r.mornAt, r.nsAt].some(t => t && Date.parse(t) >= cut))
+    .sort((a, b) => s(b.nsAt || b.mornAt || b.eveAt).localeCompare(s(a.nsAt || a.mornAt || a.eveAt)))[0] || null;
 }
 
 module.exports = { SETTINGS_KEY, STATE_KEY, DEFAULT_START, YES, s, low, arr, clip, phone10, tidy, ymd, esc, central, parseTime, hhmm, dayWord, settings, loadState, prune,
-  sameSub, subOfRow, subPhone, rowKey, jobSigned, rowLive, due, quietOk, isYes, openFor };
+  sameSub, subOfRow, subPhone, rowKey, jobSigned, rowLive, due, quietOk, isYes, openFor, checkedIn, isHere, HERE, NOSHOW_MIN };

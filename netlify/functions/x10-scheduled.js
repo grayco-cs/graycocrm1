@@ -126,6 +126,7 @@ async function run(){
   } catch (e) { out.oncallError = s(e && e.message); }
   /* patch EMERGCALL: an emergency nobody acknowledged in 15 min → the CRM phones on call, then the 📞 Call order */
   try { out.emergcall = await require('./missed-call.js')._test.EC().tick(); } catch (e) { out.emergcallError = s(e && e.message); }
+  try { out.speedlead = await require('./_lib/speedlead.js').tick(); } catch (e) { out.speedleadError = s(e && e.message); }   /* patch SPEEDLEAD: the ~1-minute "Thanks for contacting GrayCo" text */
   const w = X.wall(now());
   if (w.hm >= '07:00') {
     try { out.daily = await once('daily:' + w.day, async function(){ const d = await getData(); return { fleet: await fleetDaily(d), codesWiped: await codesWipe(d) }; }); } catch (e) { out.dailyError = s(e && e.message); }

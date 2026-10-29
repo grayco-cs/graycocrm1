@@ -159,8 +159,19 @@ function lateRow(x, line){
     wrap.appendChild(form);
   } } });
   wrap.insertBefore(line, null); wrap.appendChild(btn);
+  /* patch AUTOC 2: "📍 I'm here" on TODAY's row — the check-in that stops the 9 AM no-show alert to the PM */
+  if (x.date === todayYmd()) {
+    var here = h('button', { type: 'button', class: 'btn gold here-btn', 'data-here': x.pid + '|' + x.date, text: t('hereBtn'), on: { click: function(){
+      here.disabled = true;
+      api('p-checkin', { projectId: x.pid, day: x.date }).then(function(){ toast(t('hereDone')); here.textContent = '✓ ' + t('hereDone'); })
+        .catch(function(e){ here.disabled = false; toast(e.message || 'Error', true); });
+    } } });
+    wrap.appendChild(here);
+  }
   return wrap;
 }
+Object.assign(L.en, { hereBtn: '📍 I’m here (check in)', hereDone: 'Checked in — your PM can see it' });
+Object.assign(L.es, { hereBtn: '📍 Ya llegué (registrarme)', hereDone: 'Registrado — su PM lo ve' });
 
 /* ── the server ── */
 function api(action, body){

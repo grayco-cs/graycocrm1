@@ -357,18 +357,26 @@ var ANNIV_TIPS = {
   commercial: 'A yearly walk of the roof, sealants and entry doors catches small issues before they become big ones — we are glad to do it with you.',
   general: 'A quick yearly look at caulk, paint and anything that moves or gets wet catches small issues early. We are always glad to take a look.'
 };
-/* jobs whose completion date was exactly one year ago (or within the last 6 days, so a missed day still sends) */
+/* jobs whose completion date was exactly one year ago (or within the last 6 days, so a missed day still sends).
+   patch AUTOC 4 (owner 10/29 "17 yes for approval only"): also the 6-month check-up — { months: 6 | 12 } */
 function annivDue(projects, today){
   var out = [];
   arr(projects).forEach(function(p){
     if (!p || p.deleted === true || /lost|cancel|dead/i.test(s(p.status))) return;
     var done = ymd(p.completionDate || p.completedAt); if (!done) return;
-    var one = addDays(done, 0); var d1 = new Date(one + 'T12:00:00Z'); d1.setUTCFullYear(d1.getUTCFullYear() + 1); var due = d1.toISOString().slice(0, 10);
-    var late = days(due, today);
-    if (late != null && late >= 0 && late <= 6) out.push({ pid: s(p.id), due: due, done: done });
+    [12, 6].forEach(function(months){
+      var d1 = new Date(done + 'T12:00:00Z'), day = d1.getUTCDate(); d1.setUTCDate(1); d1.setUTCMonth(d1.getUTCMonth() + months);
+      var last = new Date(Date.UTC(d1.getUTCFullYear(), d1.getUTCMonth() + 1, 0)).getUTCDate(); d1.setUTCDate(Math.min(day, last));
+      var due = d1.toISOString().slice(0, 10);
+      var late = days(due, today);
+      if (late != null && late >= 0 && late <= 6) out.push({ pid: s(p.id), due: due, done: done, months: months });
+    });
   });
   return out;
 }
+/* patch AUTOC 4: what the check-up asks about ("How's your new roof holding up?") */
+var CHECKUP_WHAT = { roofing: 'roof', water: 'repairs', fire: 'home', remodel: 'remodel', commercial: 'building', general: 'project' };
+function checkupWhat(p, claim){ var t = low([p && p.name, p && p.type, p && p.scope].map(s).join(' ')); if (/kitchen/.test(t)) return 'kitchen'; if (/bath/.test(t)) return 'bathroom'; if (/floor/.test(t)) return 'floors'; if (/deck|patio/.test(t)) return 'deck'; if (/siding/.test(t)) return 'siding'; if (/gutter/.test(t) && !/roof/.test(t)) return 'gutters'; return CHECKUP_WHAT[jobKind(p, claim)] || 'project'; }
 function annivTip(p, tips, claim){ tips = tips || {}; var k = jobKind(p, claim); var j = (tips.jobs || {})[s(p.id)]; return s(j) || s((tips.types || {})[k]) || ANNIV_TIPS[k] || ANNIV_TIPS.general; }
 
 return { s: s, low: low, arr: arr, num: num, ymd: ymd, addDays: addDays, days: days, money0: money0, pidOf: pidOf,
@@ -377,5 +385,5 @@ return { s: s, low: low, arr: arr, num: num, ymd: ymd, addDays: addDays, days: d
   subScore: subScore, sameSub: sameSub, SUPPLIERS: SUPPLIERS, parseOrder: parseOrder, parseDateWords: parseDateWords, matchOrder: matchOrder,
   MTG_STAGES: MTG_STAGES, MTG_REMIND_DAYS: MTG_REMIND_DAYS, mtgChecks: mtgChecks,
   FOLLOW_DAYS: FOLLOW_DAYS, closeoutDue: closeoutDue, suppCandidates: suppCandidates, closeoutState: closeoutState,
-  dispatchFor: dispatchFor, isActiveJob: isActiveJob, ANNIV_TIPS: ANNIV_TIPS, annivDue: annivDue, annivTip: annivTip };
+  dispatchFor: dispatchFor, isActiveJob: isActiveJob, ANNIV_TIPS: ANNIV_TIPS, annivDue: annivDue, annivTip: annivTip, checkupWhat: checkupWhat };
 });

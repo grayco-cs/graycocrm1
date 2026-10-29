@@ -439,6 +439,12 @@
 [functions."auto-wins"]
   schedule = "19 * * * *"
 
+# patch AUTOC 6: the weekly owner report — Mondays 12:05 and 13:05 UTC; only the run that is 7 AM Central sends (DST-safe),
+# once per week, to OWNER_EMAILS (Wesley, Nick). Last week's leads by source, close rate, jobs, money, approvals, overdue per
+# PM, emergencies + response times, website leads + calls. Also in the CRM: Admin → 📊 Weekly owner report.
+[functions."scheduled-reports"]
+  schedule = "5 12,13 * * 1"
+
 # patch TRAIN2: the built-in training videos ship with this function (staff only, signed links, Range)
 [functions."training-video"]
   included_files = ["netlify/functions/_assets/training/*.mp4"]

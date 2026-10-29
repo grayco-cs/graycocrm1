@@ -67,191 +67,48 @@ async function gcStaffAuth(event){
 }
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
-// Netlify Scheduled Function — runs every Monday at 7am CST
-// Sends weekly owner report to Wesley and Nick
-// Required env vars: RESEND_API_KEY, OWNER_EMAILS (comma-separated)
-// Schedule set in netlify.toml
-
-const RESEND_URL = 'https://api.resend.com/emails';
-const GC = {
-  name: 'GrayCo Construction Services',
-  email: 'office@grayco-cs.com',
-  phone: '(901) 585-0944',
-  w_email: 'wjohnson@grayco-cs.com',
-  n_email: 'nthomas@grayco-cs.com',
-};
-
-async function sendEmail(to, subject, html){
-  const key = process.env.RESEND_API_KEY;
-  if(!key){ console.log('No RESEND_API_KEY — skipping'); return {skipped:true}; }
-  const resp = await fetch(RESEND_URL, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer '+key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from: GC.name+' <'+GC.email+'>',
-      to: Array.isArray(to) ? to : [to],
-      subject: require('./_lib/mailtag.js').tag(subject, Array.isArray(to) ? to : [to], 'report'), html
-    })
-  });
-  return resp.json();
+// ── patch AUTOC 6: THE WEEKLY OWNER REPORT (owner 10/29 "20 yes") ──────────────────────────────────────────────
+// Netlify Scheduled Function (netlify.toml): Mondays at 12:05 and 13:05 UTC; only the run that is 7 AM in Memphis sends
+// (daylight saving or not), and each week is sent once (gc_lead_inbox_kv "gc_owner_weekly"). To: OWNER_EMAILS (Wesley,
+// Nick) + WEEKLY_REPORT_TO (GrayCo addresses only). What is in it: _lib/ownerweekly.js. The earlier hand-run report
+// (never scheduled) is replaced by this one.
+//   GET  ?view=1  → admins: { ok, html, week } — last week's report, built now (Admin → 📊 Weekly owner report)
+//   POST ?send=1  → admins: build and e-mail it now (does not count as the Monday send)
+const OW = require('./_lib/ownerweekly.js');
+const STATE = 'gc_owner_weekly';
+function L(){ return require('./bid-inbox.js')._lib; }
+function centralHM(d){ const o = {}; new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short', hour: 'numeric', hour12: false }).formatToParts(d).forEach(function(x){ o[x.type] = x.value; }); return { wd: o.weekday, hour: parseInt(o.hour, 10) % 24 }; }
+async function scheduled(nowMs){
+  const c = centralHM(new Date(nowMs));
+  if (c.wd !== 'Mon' || c.hour !== 7) return { notNow: true };
+  if (String(process.env.OWNER_WEEKLY_OFF || '') === '1') return { off: true };
+  const m = OW.build(await OW.load(), nowMs), week = m.week.from;
+  let mine = false;
+  await L().kvCas(STATE, function(v){ const st = v && typeof v === 'object' ? v : {}; if (st.week === week && (st.ok || (Date.now() - Date.parse(st.at || 0)) < 30 * 60e3)) return undefined; mine = true; return Object.assign({}, st, { week: week, at: new Date().toISOString(), ok: false }); });
+  if (!mine) return { already: week };
+  const r = await OW.send(m, OW.html(m, { site: process.env.CRM_URL }));
+  await L().kvCas(STATE, function(v){ const st = v && typeof v === 'object' ? v : {}; return Object.assign({}, st, { week: week, at: new Date().toISOString(), ok: !!r.ok, to: r.to || [], why: r.why || '' }); }).catch(function(){});
+  return { week: week, sent: !!r.ok, why: r.why || '' };
 }
-
-function emailWrap(title, body){
-  return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;">
-    <div style="background:#1a3a5f;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;">
-      <div style="font-size:18px;font-weight:700;">GrayCo Construction Services</div>
-      <div style="font-size:14px;opacity:.85;margin-top:4px;">${title}</div>
-    </div>
-    <div style="background:#fff;padding:24px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0;">${body}</div>
-    <div style="text-align:center;padding:12px;font-size:11px;color:#999;">${GC.name} · ${GC.phone} · ${GC.email}</div>
-  </div>`;
-}
-
-async function getCRMSnapshot(){
-  try {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_KEY;
-    if(!url || !key) return null;
-    const keys = ['projects','invs','gcAcctRegister','leads','projectPayments','gc_check_queue','gc_sub_approvals'];
-    const q = url.replace(/\/$/,'') + '/rest/v1/gc_kv?key=in.(' + keys.map(function(k){return '%22'+k+'%22';}).join(',') + ')&select=key,value';
-    const resp = await fetch(q, { headers: { apikey: key, Authorization: 'Bearer '+key } });
-    if(!resp.ok) return null;
-    const rows = await resp.json();
-    const out = {};
-    (rows||[]).forEach(function(r){ out[r.key] = r.value; });
-    return out;
-  } catch(e){ console.log('snapshot failed', e); return null; }
-}
-
 exports.handler = async function(event) {
-  const headers = Object.assign(gcCors(event || {}, 'GET, POST, OPTIONS'), {'Content-Type':'application/json'});
-  if (event && event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
-  const who = await gcStaffAuth(event || {});
-  if (!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ error: who.error }) };
-  const now = new Date();
-  const today = now.toISOString().slice(0,10);
-  const owners = (process.env.OWNER_EMAILS || GC.w_email+','+GC.n_email).split(',').map(function(e){return e.trim();});
-
-  const data = await getCRMSnapshot();
-  const projects = (data && data.projects) || [];
-  const invoices = (data && data.invs) || [];
-  const expenses = (data && data.gcAcctRegister) || [];
-  const leads = (data && data.leads) || [];
-  const checkQueue = (data && data.gc_check_queue) || [];
-  const subApprovals = (data && data.gc_sub_approvals) || [];
-
-  const activeJobs = projects.filter(function(p){return ['active','approved'].includes((p.status||'').toLowerCase());});
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
-  const weekAgoStr = weekAgo.toISOString().slice(0,10);
-
-  const weekInvs = invoices.filter(function(i){return (i.date||'') >= weekAgoStr && i.type==='client';});
-  const weekCollected = invoices.filter(function(i){return i.status==='paid' && (i.paidDate||i.date||'') >= weekAgoStr;});
-  const overdueInvs = invoices.filter(function(i){return i.status!=='paid' && i.due && i.due < today && i.type==='client';});
-  const newLeads = leads.filter(function(l){return (l.date||l.created||'') >= weekAgoStr;});
-  const bidsOut = leads.filter(function(l){return l.status==='Estimate Sent';});
-
-  const totalBilled = weekInvs.reduce(function(s,i){return s+(parseFloat(i.amt)||0);},0);
-  const totalCollected = weekCollected.reduce(function(s,i){return s+(parseFloat(i.amt)||0);},0);
-  const totalExpenses = expenses.filter(function(e){return (e.date||'') >= weekAgoStr;}).reduce(function(s,e){return s+(parseFloat(e.amt)||0);},0);
-  const totalRevenue = projects.filter(function(p){return ['active','approved','completed'].includes((p.status||'').toLowerCase());}).reduce(function(s,p){return s+(parseFloat(p.contract)||0);},0);
-
-  // ── Pending action items the owners should know about (from data we can see) ──
-  const actionItems = [];
-  // jobs at 100% not yet completed (need cost review + completion)
-  projects.forEach(function(p){
-    var pct = Math.round(p.pct||p.ccProgressPct||0);
-    var done = /(completed|closed)/i.test(p.status||'');
-    if(pct>=100 && !done){ actionItems.push({t:'Job at 100% awaiting completion', d:(p.name||'')+' — verify costs, confirm final payment & punch list'}); }
-  });
-  // active jobs missing contract/phone/email
-  activeJobs.forEach(function(p){
-    var miss=[];
-    if(!(parseFloat(p.contract)||0)) miss.push('contract');
-    if(!(p.clientPhone||p.customerPhone||p.phone)) miss.push('phone');
-    if(!(p.clientEmail||p.customerEmail||p.email)) miss.push('email');
-    if(miss.length) actionItems.push({t:'Job missing info — reach out to PM', d:(p.name||'')+' ('+(p.pm||'PM')+') — missing '+miss.join(', ')});
-  });
-  // active jobs not invoiced recently
-  activeJobs.forEach(function(p){
-    var hasInv = invoices.some(function(i){return i.pid===p.id && i.type==='client';});
-    if(!hasInv) actionItems.push({t:'Active job not invoiced yet', d:(p.name||'')});
-  });
-  // overdue invoices already counted, but add as action
-  overdueInvs.forEach(function(i){ actionItems.push({t:'Overdue invoice', d:(i.client||'Client')+' — $'+(parseFloat(i.amt)||0).toLocaleString()}); });
-  // checks to write / sign (from synced queue)
-  var toWrite = checkQueue.filter(function(c){return c && c.status==='entered';});
-  var toSign  = checkQueue.filter(function(c){return c && c.status==='written';});
-  if(toWrite.length) actionItems.push({t:'Checks to write', d:toWrite.length+' check(s) entered, waiting to be cut — $'+toWrite.reduce(function(s,c){return s+(parseFloat(c.amount)||0);},0).toLocaleString()});
-  if(toSign.length) actionItems.push({t:'Checks to sign (Wesley/Nick)', d:toSign.length+' written check(s) awaiting signature — $'+toSign.reduce(function(s,c){return s+(parseFloat(c.amount)||0);},0).toLocaleString()});
-  // sub invoices needing office match or PM approval
-  var subMatch = subApprovals.filter(function(a){return a && a.status==='needs_office_match';});
-  var subPM = subApprovals.filter(function(a){return a && a.status==='pending_pm';});
-  if(subMatch.length) actionItems.push({t:'Sub invoices to match', d:subMatch.length+' need the office to confirm the job'});
-  if(subPM.length) actionItems.push({t:'Sub invoices awaiting PM approval', d:subPM.length+' waiting on PM sign-off'});
-
-  const html = emailWrap('📊 Weekly Owner Report — Week of '+today, `
-    <h3 style="color:#1a3a5f;margin-top:0;">Company Snapshot</h3>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      <tr>
-        <td style="padding:10px;background:#e8f4fd;border-radius:6px;text-align:center;width:25%"><div style="font-size:22px;font-weight:700;color:#1a3a5f;">${activeJobs.length}</div><div style="font-size:11px;color:#666;">Active Jobs</div></td>
-        <td style="width:2%"></td>
-        <td style="padding:10px;background:#e8f8f0;border-radius:6px;text-align:center;width:25%"><div style="font-size:22px;font-weight:700;color:#16a34a;">$${totalCollected.toLocaleString()}</div><div style="font-size:11px;color:#666;">Collected This Week</div></td>
-        <td style="width:2%"></td>
-        <td style="padding:10px;background:#fff8e1;border-radius:6px;text-align:center;width:25%"><div style="font-size:22px;font-weight:700;color:#d4a017;">$${totalBilled.toLocaleString()}</div><div style="font-size:11px;color:#666;">Billed This Week</div></td>
-        <td style="width:2%"></td>
-        <td style="padding:10px;background:${overdueInvs.length > 0 ? '#fde8e8' : '#f0f4f8'};border-radius:6px;text-align:center;width:25%"><div style="font-size:22px;font-weight:700;color:${overdueInvs.length > 0 ? '#dc2626' : '#555'};">${overdueInvs.length}</div><div style="font-size:11px;color:#666;">Overdue Invoices</div></td>
-      </tr>
-    </table>
-
-    ${activeJobs.length > 0 ? `
-    <h3 style="color:#1a3a5f;">🏗 Active Jobs</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
-      <tr style="background:#f0f4f8;">
-        <th style="padding:7px 8px;text-align:left;border-bottom:2px solid #ddd;">Job</th>
-        <th style="padding:7px 8px;text-align:left;border-bottom:2px solid #ddd;">PM</th>
-        <th style="padding:7px 8px;text-align:right;border-bottom:2px solid #ddd;">Contract</th>
-        <th style="padding:7px 8px;text-align:left;border-bottom:2px solid #ddd;">Status</th>
-      </tr>
-      ${activeJobs.map(function(p){
-        return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px 8px;font-weight:600;">'+p.name+'</td><td style="padding:6px 8px;color:#666;">'+(p.pm||'—')+'</td><td style="padding:6px 8px;text-align:right;font-weight:700;">$'+(parseFloat(p.contract)||0).toLocaleString()+'</td><td style="padding:6px 8px;color:#1a3a5f;">'+(p.status||'')+'</td></tr>';
-      }).join('')}
-    </table>` : '<p style="color:#666;">No active jobs this week.</p>'}
-
-    ${overdueInvs.length > 0 ? `
-    <h3 style="color:#dc2626;">🔴 Overdue Invoices (${overdueInvs.length})</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
-      ${overdueInvs.map(function(i){
-        var days=Math.round((new Date()-new Date(i.due))/86400000);
-        return '<tr style="border-bottom:1px solid #fde8e8;"><td style="padding:5px 8px;font-weight:600;">'+(i.client||'Client')+'</td><td style="padding:5px 8px;color:#dc2626;">$'+(parseFloat(i.amt)||0).toLocaleString()+'</td><td style="padding:5px 8px;color:#888;">Due '+i.due+' ('+days+' days ago)</td></tr>';
-      }).join('')}
-    </table>` : ''}
-
-    ${bidsOut.length > 0 ? `
-    <h3 style="color:#7c3aed;">📋 Bids Pending Response (${bidsOut.length})</h3>
-    ${bidsOut.map(function(l){return '<p style="margin:3px 0;font-size:12px;">• <b>'+(l.name||l.address||'Lead')+'</b> — estimate sent '+(l.date||'')+'</p>';}).join('')}
-    ` : ''}
-
-    ${newLeads.length > 0 ? `
-    <h3 style="color:#16a34a;">✨ New Leads This Week (${newLeads.length})</h3>
-    ${newLeads.map(function(l){return '<p style="margin:3px 0;font-size:12px;">• <b>'+(l.name||l.address||'Lead')+'</b> — '+l.status+'</p>';}).join('')}
-    ` : ''}
-
-    ${actionItems.length > 0 ? `
-    <h3 style="color:#dc2626;">✅ Pending Action Items (${actionItems.length})</h3>
-    <div style="background:#fffbf0;border:1px solid #f0d890;border-radius:6px;padding:12px;margin-bottom:16px;">
-      ${actionItems.slice(0,25).map(function(a){return '<div style="padding:5px 0;border-bottom:1px solid #f0e0c0;font-size:12px;"><b style="color:#1a3a5f;">'+a.t+':</b> <span style="color:#555;">'+a.d+'</span></div>';}).join('')}
-      ${actionItems.length>25 ? '<div style="padding:6px 0;font-size:11px;color:#999;">+'+(actionItems.length-25)+' more — see the To-Do tab in the CRM</div>' : ''}
-    </div>
-    <p style="font-size:11px;color:#888;">Note: checks to write/sign, sub approvals, and commission payouts are tracked live in the CRM To-Do tab.</p>
-    ` : ''}
-
-    <div style="background:#f0f4f8;border-radius:6px;padding:12px;margin-top:16px;font-size:11px;color:#666;">
-      <b>Pipeline:</b> $${totalRevenue.toLocaleString()} total active contracts &nbsp;·&nbsp;
-      <b>Expenses this week:</b> $${totalExpenses.toLocaleString()} &nbsp;·&nbsp;
-      <a href="https://graycocrm1.netlify.app" style="color:#1a3a5f;font-weight:700;">Open CRM →</a>
-    </div>
-  `);
-
-  const result = await sendEmail(owners, '📊 GrayCo Weekly Report — '+today, html);
-  return { statusCode: 200, headers, body: JSON.stringify({sent: today, result}) };
+  event = event || {};
+  let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) {}
+  if (b.next_run) {   /* Netlify's scheduled call */
+    let r; try { r = await scheduled(exports._now ? exports._now() : Date.now()); } catch (e) { r = { error: String(e && e.message || e) }; }
+    try { console.log('[owner-weekly]', JSON.stringify(r).slice(0, 300)); } catch (e) {}
+    return { statusCode: 200, body: JSON.stringify(r) };
+  }
+  const headers = Object.assign(gcCors(event, 'GET, POST, OPTIONS'), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
+  const who = await gcStaffAuth(event);
+  if (!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ ok: false, error: who.error }) };
+  if (who.role !== 'admin') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
+  const qs = event.queryStringParameters || {};
+  try {
+    const m = OW.build(await OW.load(), Date.now()), page = OW.html(m, { site: process.env.CRM_URL });
+    if (qs.send && event.httpMethod === 'POST') { const r = await OW.send(m, page); return { statusCode: 200, headers, body: JSON.stringify({ ok: !!r.ok, to: r.to || [], why: r.why || '', week: m.week }) }; }
+    let last = null; try { last = await L().kvGet(STATE); } catch (e) {}
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, html: page, week: m.week, model: m, lastSent: last }) };
+  } catch (e) { return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) }; }
 };
+exports._test = { scheduled: scheduled, centralHM: centralHM };

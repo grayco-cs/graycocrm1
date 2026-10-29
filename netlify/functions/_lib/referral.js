@@ -96,7 +96,8 @@ function cleanSettings(v){
   const site = /^https:\/\/[a-z0-9.-]+(\/[^\s"<>]*)?$/i.test(s(v.siteUrl)) ? s(v.siteUrl).replace(/\/$/, '') : DEFAULTS.siteUrl;
   const saved = arr(v.adCopy);
   const adCopy = AD_COPY.map(function(d){ const x = saved.find(function(y){ return y.id === d.id; }) || {}; return { id: d.id, label: d.label, text: clip(s(x.text) || d.text, 1200), autopilot: x.autopilot == null ? d.autopilot : x.autopilot === true, edited: !!s(x.text) && s(x.text) !== d.text }; });
-  return { tiers, trigger, siteUrl: site, adCopy, updatedBy: s(v.updatedBy), updatedAt: s(v.updatedAt) };
+  const autoThanks = v.autoThanks !== false;   /* patch AUTOC 5 (owner 10/29 "yes 18"): won → credit + thank-you by itself */
+  return { tiers, trigger, siteUrl: site, adCopy, autoThanks, updatedBy: s(v.updatedBy), updatedAt: s(v.updatedAt) };
 }
 async function settings(){ return cleanSettings(await L().kvGet(K.settings)); }
 async function saveSettings(v, by){
@@ -537,13 +538,41 @@ async function sweep(opt){
     const p = matchJob(data, r, inbox);
     if (!p) continue;
     if (s(r.pid) !== s(p.id)) { await patchReferral(r.id, function(z){ z.pid = s(p.id); z.jobName = s(p.name); z.status = 'job'; z.jobAt = z.jobAt || nowIso(); }); out.matched++; }
+    const m = mems.find(function(x){ return x.id === r.memberId; }); if (!m) continue;
+    /* patch AUTOC 5 (owner 10/29 "yes 18"): the referred lead became a job (won) → the credit is RECORDED and the member
+       thanked by themselves (e-mail + a text when they have a mobile with consent). Admin → Referral settings autoThanks:false
+       brings back the approval proposal below. Waits (marks nothing) while data-entry mode is on; never for history jobs. */
+    if (st.autoThanks && wonJob(data, p) && !(p.importedHistory === true || p.noSend === true || p.historyOnly === true)) {
+      let paused = true; try { paused = await require('./pause').isPaused(); } catch (e) {}
+      if (paused) { out.waiting = (out.waiting || 0) + 1; continue; }
+      const at = await autoThank({ member: m, referral: r, p: p, data: data, settings: st });
+      if (at.ok) out.thanked = (out.thanked || 0) + 1;
+      continue;
+    }
     const ready = st.trigger === 'signed' ? signed(p) || hasPayment(data, p) : hasPayment(data, p);
     if (!ready) continue;
-    const m = mems.find(function(x){ return x.id === r.memberId; }); if (!m) continue;
     const pr = await propose({ member: m, referral: r, contract: contractOf(p), pid: p.id, settings: st, by: 'automatic (' + (st.trigger === 'signed' ? 'contract signed' : 'first payment') + ')' });
     if (pr.ok) { await patchReferral(r.id, function(z){ z.status = 'paid'; z.approvalId = pr.id; z.proposedAt = nowIso(); z.suggested = pr.amount; z.pid = s(p.id); }); out.proposed++; }
   }
   return out;
+}
+
+/* patch AUTOC 5: "won" = a signed / sold / active job, or one that took a payment */
+function wonJob(data, p){ return !!(p.contractSigned || p.signedAt || p.contractSignedAt || p.signed === true || /^(won|sold|signed|contract|approved|active|in[ _-]?progress|scheduled|complete|completed|closed)$/i.test(s(p.status))) || hasPayment(data, p); }
+function thanksText(m, r, amount, bal){ return 'Hi ' + (first(m.name) || 'there') + ', thank you for referring ' + (first(r.name) || 'a friend') + ' to us! ' + money(amount) + ' of GrayCo credit is now on your account (balance ' + money(bal) + '). Use it on any GrayCo work or gift it to family.'; }
+async function autoThank(o){
+  const m = o.member, r = o.referral, p = o.p, amount = clamp(suggest(contractOf(p), o.settings));
+  const e = await earn({ memberId: m.id, memberName: m.name, amount, by: 'automatic (referred job won)', note: 'Referral: ' + s(r.name), referralId: r.id, referredName: r.name, approvalId: 'auto_refcredit_' + r.id });
+  await patchReferral(r.id, function(z){ z.status = 'credited'; z.ledgerId = e.entry && e.entry.id; z.creditedAt = z.creditedAt || nowIso(); z.credit = amount; z.pid = s(p.id); z.auto = true; });
+  if (e.already) return { ok: true, already: true };
+  const res = { ok: true, amount, balance: e.balance };
+  const intro = introFor(m.name, 'Thank you for referring ' + (first(r.name) || 'a friend') + ' to GrayCo Construction Services! ' + money(amount) + ' of GrayCo credit has been added to your account.');
+  if (isEmail(m.email)) { try { res.mail = await mailMember(low(m.email), 'Thank you! ' + money(amount) + ' in GrayCo credit for your referral', creditHtml({ amount, balance: e.balance, intro }), intro + '\n\n+' + money(amount) + ' GrayCo credit. Your balance: ' + money(e.balance) + '. Credits stack and never expire.'); } catch (x) { res.mail = { ok: false }; } }
+  try { const CT = require('./custtext.js'); res.text = await CT.send({ ph: phone10(m.phone), text: thanksText(m, r, amount, e.balance), data: o.data, kind: 'refthanks', id: r.id, who: 'referral thank-you' }); } catch (x) { res.text = { ok: false, why: s(x && x.message) }; }
+  /* a text that could not go now (after hours …) is not retried — the e-mail is the thank-you of record */
+  try { await patchReferral(r.id, function(z){ z.thanksAt = nowIso(); z.thanksMail = !!(res.mail && res.mail.ok); z.thanksText = !!(res.text && res.text.ok); }); } catch (x) {}
+  try { await mailAdmins('🎁 Referral credit recorded — ' + m.name + ' (+' + money(amount) + ')', [m.name + ' referred ' + s(r.name) + ', whose job "' + s(p.name) + '" is won. ' + money(amount) + ' of credit was recorded automatically (owner rule 10/29); their balance is ' + money(e.balance) + '.', 'Thank-you e-mail: ' + (res.mail && res.mail.ok ? 'sent' : 'not sent') + ' · text: ' + (res.text && res.text.ok ? 'sent' : 'not sent' + (res.text && res.text.why ? ' (' + res.text.why + ')' : '')) + '.']); } catch (x) {}
+  return res;
 }
 
 /* ── the customer portal (portal.js action "referral"; the job comes from the link / session) ── */
@@ -640,7 +669,7 @@ async function overview(){
 }
 async function lookup(last4){ const q = s(last4).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-4); if (q.length !== 4) return []; return (await cards()).filter(function(c){ return c.last4 === q && /issued|redeemed|void/.test(c.status); }).map(pubCard); }
 
-module.exports = { K, MIN, MAX, GIFT_MIN, RL, DEFAULTS, AD_COPY, normCode, cardHash, newCardCode, newMemberCode, normMemberCode, cleanSettings, settings, saveSettings, suggest, upsertMember, members, memberById, memberByCode, addReferral, referrals, patchReferral,
+module.exports = { wonJob, autoThank, thanksText, K, MIN, MAX, GIFT_MIN, RL, DEFAULTS, AD_COPY, normCode, cardHash, newCardCode, newMemberCode, normMemberCode, cleanSettings, settings, saveSettings, suggest, upsertMember, members, memberById, memberByCode, addReferral, referrals, patchReferral,
   join, refer, fromRefCode, fromPortalReferral, propose, proposeGift, onApproved, earn, deduct, applyCredit, balance, ledger, makeGift, check, redeem, pending, claimApply, markApplied, voidCard, sweep, setAmount, portal, portalState, overview, lookup,
   matchJob, hasPayment, cardHtml, creditHtml, memberLink, clamp, introFromText, adForAutopilot };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends

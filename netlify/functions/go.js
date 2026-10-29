@@ -10,6 +10,11 @@ exports.handler = async function(event){
   const q = event.queryStringParameters || {};
   let code = String(q.c || '').split('/')[0];
   if (!code) { const m = /\/go\/([^/?#]+)/.exec(String(event.path || event.rawUrl || '')); if (m) code = decodeURIComponent(m[1]); }
+  /* patch AUTOC 3: a review-request link (go/rv-<code>) — the click is noted (no reminder then), on to the review page */
+  if (/^rv-[A-Za-z0-9]{8,16}$/.test(code)) {
+    let page = 'https://grayco-cs.com/review'; try { page = await require('./_lib/reviewreq.js').click(code); } catch (e) {}
+    return { statusCode: 302, headers: { Location: page, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer-when-downgrade' }, body: '' };
+  }
   code = X.cleanCode(code);
   let to = home();
   if (code) {

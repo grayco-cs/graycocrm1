@@ -574,7 +574,48 @@ async function runFollowups(opts){
       const rec = Object.assign({}, x, { sent: list, lastError: sent.ok ? '' : s(sent.error) }); return { list: l.map(function(y){ return y === x ? rec : y; }), check: function(){ return true; } }; });
     if (sent.ok) { rep.sent++; rep.details.push({ key: c.key, n: n, how: 'auto' }); }
   }
+  /* patch AUTOC 1 (owner 10/29 "estimate follow up by text on day 5"): on top of the e-mails, ONE text on day 5 —
+     automatic (no approval, like the e-mail nudges), only to a mobile number with SMS consent, never to STOP, never in
+     data-entry mode, business hours only (_lib/custtext.js). Stops like the e-mails: signed, declined, lost, paused. */
+  try { rep.texts = await textDay5(cands, data, now, nowIso); } catch (e) { rep.texts = { error: s(e && e.message || e) }; }
   return Object.assign({ ok: true }, rep);
+}
+const TEXT_DAY = 5, TEXT_LATE_DAYS = 3;   /* day 5; still tried (business hours) through day 8, then never */
+function estText(p, T, pm, link){
+  return 'Hi ' + (firstName(p.client) || 'there') + ', just checking in on your estimate for ' + clip(T(p.name), 60) + '. You can look it over' + (link ? ' here: ' + link : ' in your GrayCo Portal') + '. Questions? Call ' + (pm && pm.name ? firstName(pm.name) + ' at ' + (pm.phone || OFFICE_PHONE) : OFFICE_PHONE) + '.';
+}
+async function textDay5(cands, data, now, nowIso){
+  const out = { sent: 0, skipped: [] };
+  if (process.env.EST_TEXT_OFF === '1') return Object.assign(out, { off: true });
+  const CT = require('./_lib/custtext.js');
+  for (const c of cands) {
+    if (!c.sentAt) continue;
+    const p = core().findProject(data, c.pid); if (!p) continue;
+    if (DEAD.test(s(p.status)) || signedJob(p) || (c.r && c.r.status !== 'pending')) continue;
+    if (p.portalRemindersPaused === true || p.estFollowupsPaused === true || p.noSend === true || p.importedHistory === true) continue;
+    const days = (now - new Date(c.sentAt)) / DAY;
+    if (days < TEXT_DAY || days > TEXT_DAY + TEXT_LATE_DAYS) continue;
+    const st = await core().kvListRead(FU_KEY); if (!st) break;
+    const prev = st.list.find(function(x){ return s(x.id) === c.key; });
+    if (prev && (prev.stopped || prev.textAt)) continue;
+    const cust = arr(data.customers).find(function(x){ return low(x.name || x.company) === low(p.client); }) || {};
+    const ph = CT.mobileOf(p) || CT.mobileOf(cust);
+    const why = await CT.check(ph, data);
+    if (why) { out.skipped.push({ key: c.key, why: why }); continue; }
+    let claimed = false;
+    await core().kvListUpdate(FU_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === c.key; }); if (x && (x.textAt || x.stopped)) return null; claimed = true;
+      const rec = Object.assign({}, x || { id: c.key, pid: c.pid, sent: [] }, { textAt: nowIso, textHow: 'sending' });
+      return { list: x ? l.map(function(y){ return y === x ? rec : y; }) : l.concat([rec]), check: function(l2){ return l2.some(function(y){ return s(y.id) === c.key && y.textAt; }); } }; });
+    if (!claimed) continue;
+    let link = ''; try { link = core().linkFor(null, await core().createFor(s(p.id), 'auto: estimate follow-up text')); } catch (e) { link = ''; }
+    const pm = pmFull(data, p), T = scrubber(p);
+    const r = await CT.send({ ph: ph, text: estText(p, T, pm, link), data: data, pid: s(p.id), kind: 'estfu5', id: c.key, who: 'estimate follow-up, day 5' });
+    await core().kvListUpdate(FU_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === c.key; }); if (!x) return null;
+      const rec = Object.assign({}, x); if (r.ok) { rec.textAt = r.at || nowIso; rec.textHow = 'auto (day ' + TEXT_DAY + ')'; } else { delete rec.textAt; delete rec.textHow; rec.textError = s(r.why); }
+      return { list: l.map(function(y){ return y === x ? rec : y; }), check: function(){ return true; } }; });
+    if (r.ok) out.sent++; else out.skipped.push({ key: c.key, why: r.why });
+  }
+  return out;
 }
 
 function reply(statusCode, headers, obj){ return { statusCode: statusCode, headers: headers, body: JSON.stringify(obj) }; }
@@ -622,6 +663,6 @@ exports.handler = async function(event){
     return reply(r.status, headers, r.out);
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
-exports._ps = { runFollowups: runFollowups, visible: visible, signedCopyPdf: signedCopyPdf, KEY: KEY, FU_KEY: FU_KEY, FU_DAYS: FU_DAYS, KINDS: KINDS, _reset: function(){ hits.clear(); writes.clear(); } };
+exports._ps = { runFollowups: runFollowups, textDay5: textDay5, estText: estText, TEXT_DAY: TEXT_DAY, visible: visible, signedCopyPdf: signedCopyPdf, KEY: KEY, FU_KEY: FU_KEY, FU_DAYS: FU_DAYS, KINDS: KINDS, _reset: function(){ hits.clear(); writes.clear(); } };
 
 /* LEGAL2-patch */

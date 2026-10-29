@@ -14,8 +14,10 @@
 //   • WARRANTY TICKETS: a ticket nobody answered in 48 hours → the admins, once.
 //   • THE ONE-YEAR NOTE (10 AM Central): a job completed a year ago gets a friendly note from news@ (maintenance tip
 //     for its type — editable, gc_kv "gc_anniv_tips" —, review link, "contact your PM about our referral program",
-//     unsubscribe). Until the first one has been approved and sent, each waits on ✅ Approvals (kind "anniversary");
-//     after that they go out by themselves. Never to an unsubscribed customer.
+//     unsubscribe). patch AUTOC 4: at 6 AND 12 months, "How's your new roof holding up?" + the maintenance-plan offer —
+//     ALWAYS drafted on ✅ Approvals (kind "anniversary"), never sent by itself. Never to an unsubscribed customer.
+//   • REVIEW REQUESTS (patch AUTOC 3, _lib/reviewreq.js): 2 days after a job is finished a text + e-mail with the review
+//     link, one reminder 5 days later without a click; never disputes / flagged jobs; once per customer per year.
 // Netlify does not let anyone call a scheduled function by its URL in production; any other call must be an admin
 // ({ run: 'dispatch' | 'closeout' | 'mortgage' | 'tickets' | 'anniversary', force: true }).
 'use strict';
@@ -217,26 +219,30 @@ async function runTickets(){
   return { sent: sent };
 }
 
-/* ── the one-year note ── */
-function annivHtml(p, tip, pmU, cust){
-  return '<p style="margin:0 0 4px;font-size:12px;font-weight:bold;letter-spacing:.06em;color:#D4A017">ONE YEAR WITH YOUR GRAYCO PROJECT</p>' +
+/* ── the one-year note → patch AUTOC 4: the 6- and 12-month CHECK-UPS (owner 10/29 "17 yes for approval only") ──
+   At 6 and 12 months after completion: "How's your new roof / kitchen holding up?" + the maintenance tip for its type +
+   the maintenance-plan offer (patch X9) + review / referral lines. ALWAYS drafted onto ✅ Approvals (kind "anniversary";
+   approved → sent from news@ with the unsubscribe footer by portal.js aqSend). NEVER sent by itself — the earlier
+   "after the first approval they go by themselves" rule is gone. */
+function annivHtml(p, tip, pmU, cust, months, what){
+  months = months === 6 ? 6 : 12; what = what || 'project';
+  return '<p style="margin:0 0 4px;font-size:12px;font-weight:bold;letter-spacing:.06em;color:#D4A017">' + (months === 6 ? 'SIX MONTHS' : 'ONE YEAR') + ' WITH YOUR GRAYCO PROJECT</p>' +
     '<p>Hi ' + esc(s(cust).split(/\s+/)[0] || 'there') + ',</p>' +
-    '<p>It has been a year since we finished <b>' + esc(p.name) + '</b>' + (p.address ? ' at ' + esc(s(p.address).split(',')[0]) : '') + ' — thank you again for choosing GrayCo.</p>' +
+    '<p><b>How\'s your new ' + esc(what) + ' holding up?</b> It has been ' + (months === 6 ? 'six months' : 'a year') + ' since we finished <b>' + esc(p.name) + '</b>' + (p.address ? ' at ' + esc(s(p.address).split(',')[0]) : '') + ' — thank you again for choosing GrayCo. If anything doesn\'t look or work right, just reply to this e-mail and we\'ll take care of it.</p>' +
     '<p><b>A quick maintenance tip:</b> ' + esc(tip) + '</p>' +
+    '<p><b>Want us to keep an eye on it for you?</b> Our GrayCo maintenance plan includes a yearly check-up visit, priority scheduling and a photo report of what we found. Reply "maintenance plan" or ask ' + (pmU && pmU.name ? esc(pmU.name) : 'your Project Manager') + ' and we\'ll send the details.</p>' +
     '<p>Happy with the work? A short review helps a small Memphis business more than you know: <a href="' + esc(C.REVIEW_URL) + '">leave a Google review</a>.</p>' +
     '<p>Know someone who needs work done? <b>Contact your PM about our referral program</b>' + (pmU && pmU.name ? ' — ' + esc(pmU.name) + (pmU.phone ? ', ' + esc(pmU.phone) : '') : '') + '.</p>';
 }
 async function runAnniversary(o){
   o = o || {}; const now = D.now(), c0 = central(new Date(now));
   if (!o.force && c0.hour !== 10) return { notNow: true };
+  if (process.env.ANNIV_CHECKUPS_OFF === '1') return { off: true };
   const data = await C.crmData(true), more = await C.kvRead([TIPS]);
   const tips = more[TIPS] && typeof more[TIPS] === 'object' ? more[TIPS] : {};
   const due = FA.annivDue(arr(data.projects).filter(function(p){ return !(p && (p.importedHistory === true || p.noSend === true || p.historyOnly === true)); }), c0.ymd);   /* patch LCLEAN-H: no one-year note for history */
   if (!due.length) return { due: 0 };
-  /* has one been approved and sent already? then they go by themselves */
-  const q = await C.kvListRead(C.AQ_KEY), st = await stateGet();
-  const approvedOnce = st.annivApproved === true || arr(q && q.list).some(function(x){ return x.kind === 'anniversary' && x.status === 'sent'; });
-  if (approvedOnce && st.annivApproved !== true) await stateUpdate(function(x){ x.annivApproved = true; });
+  const q = await C.kvListRead(C.AQ_KEY);
   const rep = { due: due.length, queued: 0, sent: 0, skipped: [] };
   for (const d of due) {
     const p = C.findProject(data, d.pid); if (!p) continue;
@@ -246,25 +252,20 @@ async function runAnniversary(o){
     const cust = arr(data.customers).find(function(x){ return low(x.name || x.company) === low(p.client); }) || {};
     const email = low(p.clientEmail || p.customerEmail || cust.email);
     if (!okEmail(email)) { rep.skipped.push({ pid: d.pid, why: 'no customer e-mail' }); continue; }
+    const six = d.months === 6;
     const k = 'anniv|' + d.pid + '|' + d.due;
-    const qid = 'appr_anniv_' + s(d.pid).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) + '_' + d.due.slice(0, 4);
+    const qid = (six ? 'appr_anniv6_' : 'appr_anniv_') + s(d.pid).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) + '_' + (six ? d.due : d.due.slice(0, 4));
     if (arr(q && q.list).some(function(x){ return s(x.id) === qid; })) continue;
     if (!(await claimOnce(k))) continue;
     const users = arr(data.users), pmName = s(p.pm), pu = users.find(function(u){ return low(u.name) === low(pmName); }) || {};
     const pmU = pmName ? { name: pmName, email: low(pu.email || p.pmEmail), phone: s(pu.phone || pu.cell || pu.mobile) } : null;
-    const claim = C.insClaim(data, p.id);
-    const html = annivHtml(p, FA.annivTip(p, tips, claim), pmU, p.client || cust.name);
-    const subject = 'One year with your GrayCo project — ' + clip(p.name, 80);
-    if (!approvedOnce) {
-      const ok = await C.queueApproval({ id: qid, kind: 'anniversary', pid: s(p.id), jobName: p.name, pm: pmU && okEmail(pmU.email) ? { name: pmU.name, email: pmU.email } : null, to: email, channel: 'email',
-        title: '🎉 One-year note — ' + s(p.name), subject: subject, html: html, meta: { due: d.due, first: true, note: 'The first one-year notes wait for approval; once one is approved, the next ones go out by themselves.' } });
-      if (ok) rep.queued++; else await unclaim(k);
-      continue;
-    }
-    let h = html; try { h = await require('./_lib/brand.js').shellFor(html, { email: pmU && pmU.email, name: pmU && pmU.name }); } catch (e) {}
-    const r = await D.news({ to: email, subject: subject, html: h });
-    if (!r.ok) { await unclaim(k); continue; }
-    if (r.skipped) rep.skipped.push({ pid: d.pid, why: r.skipped }); else rep.sent++;
+    const claim = C.insClaim(data, p.id), what = FA.checkupWhat(p, claim);
+    const html = annivHtml(p, FA.annivTip(p, tips, claim), pmU, p.client || cust.name, d.months, what);
+    const subject = 'How\'s your new ' + what + ' holding up? — ' + clip(p.name, 80);
+    const ok = await C.queueApproval({ id: qid, kind: 'anniversary', pid: s(p.id), jobName: p.name, pm: pmU && okEmail(pmU.email) ? { name: pmU.name, email: pmU.email } : null, to: email, channel: 'email',
+      title: (six ? '🩺 6-month check-up — ' : '🎉 One-year check-up — ') + s(p.name), subject: subject, html: html,
+      meta: { due: d.due, months: d.months, note: 'Owner rule (10/29): the 6- and 12-month check-ups are drafted here and only go out when approved — never by themselves. Approved → sent from news@ with the unsubscribe line.' } });
+    if (ok) rep.queued++; else await unclaim(k);
   }
   return rep;
 }
@@ -279,7 +280,9 @@ async function isAdmin(event){
     return !!(row && row.active !== false && low(row.role) === 'admin');
   } catch (e) { return false; }
 }
-const RUNS = { dispatch: runDispatch, closeout: runCloseout, mortgage: runMortgage, tickets: runTickets, anniversary: runAnniversary };
+/* patch AUTOC 3: the review request 2 days after a job is finished (+ one reminder 5 days later) — _lib/reviewreq.js */
+async function runReviews(o){ return require('./_lib/reviewreq.js').run({ force: !!(o && o.force) }); }
+const RUNS = { dispatch: runDispatch, closeout: runCloseout, mortgage: runMortgage, tickets: runTickets, anniversary: runAnniversary, reviews: runReviews };
 async function runAll(o){
   const out = {};
   for (const k of Object.keys(RUNS)) { if (o.run && o.run !== k) continue; try { out[k] = await RUNS[k](o); } catch (e) { out[k] = { error: s(e && e.message || e) }; } }

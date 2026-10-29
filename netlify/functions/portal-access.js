@@ -1016,6 +1016,12 @@ async function partnerAction(action, body, ctx){
     await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), '⚠️ ' + r.words, []);
     return { ok: true };
   }
+  if (action === 'p-checkin') {   /* patch AUTOC 2: "📍 I'm here" — the check-in that stops the 9 AM no-show alert (a job I am scheduled on) */
+    const p = jobOf(ctx, body.projectId);
+    const r = await require('./sub-texts.js')._lib.checkIn(sub.id, p.id, 'portal');
+    if (r.first) { try { await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), '📍 Checked in on site', []); } catch (e) {} }
+    return { ok: true, day: r.day };
+  }
   if (action === 'p-lang') {
     await addEvent('lang', sub, null, { lang: lang(body.lang) });
     return { ok: true };

@@ -222,7 +222,7 @@ function readForm(b){
     attrib: (function(){ const a = {}; ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'gclid', 'fbclid', 'gc', 'ref'].forEach(k => { const v = s(b[k] || (b.attrib && b.attrib[k])).slice(0, 120); if (v && /^[\w .:\/+-]+$/.test(v)) a[k] = v; }); return a; })(),
     guide: clip(b.guide, 60), partnerType: clip(b.partner_type || b.partnerType, 40),
     /* patch LEGAL3: the roof-price form's two SEPARATE, unchecked text-consent boxes (job texts / offers); only a ticked box arrives */
-    smsJob: /^(yes|true|on|1)$/i.test(s(b.sms_job)), smsOffers: /^(yes|true|on|1)$/i.test(s(b.sms_offers))
+    smsJob: /^(yes|true|on|1)$/i.test(s(b.sms_job)) || b.smsConsent === true || /^(yes|true|on|1)$/i.test(s(b.sms_consent)),   /* patch SPEEDLEAD: the website's explicit opt-in box (never pre-ticked) */ smsOffers: /^(yes|true|on|1)$/i.test(s(b.sms_offers))
   };
   if (!f.address && (f.city || f.zip)) f.address = '';
   ['name', 'company', 'project', 'service', 'property', 'position', 'carrier'].forEach(k => { f[k] = clip(f[k], 120); });
@@ -579,6 +579,7 @@ exports.handler = async function(event){
       try { const SC = require('./_lib/smsconsent.js'); if (smsPatch.smsConsent) await SC.record(smsPatch.smsConsent, [f.phone]); if (smsPatch.smsMarketing) await SC.record(smsPatch.smsMarketing, [f.phone], 'marketing'); } catch (e) {}
       await refNote(lead);
       await Promise.all([alertLead(lead.rec), autoReply(f, lead.id, { priceText })]);
+      if (lead.action === 'added') await speedLead(lead.rec, !!smsPatch.smsConsent);   /* patch SPEEDLEAD */
       return J(event, 200, { ok: true, received: true, kind: 'roofprice', leadId: lead.id, measured: rq.measured, priced: rq.priced,
         low: rq.priced ? rq.low : null, high: rq.priced ? rq.high : null, range: priceText, areaSqft: rq.measured ? rq.areaSqft : null, squares: rq.measured ? rq.squares : null, pitch: rq.measured ? rq.pitch : null,
         message: rq.priced ? 'Your ballpark roof replacement price is ' + priceText + '. A GrayCo estimator will call to schedule a free inspection for an exact price.'
@@ -599,9 +600,14 @@ exports.handler = async function(event){
       return J(event, 200, { ok: true, received: true, kind: 'magnet', leadId: g.id, file: GUIDES[f.guide] || GUIDES.storm, message: 'Thank you! Your guide is downloading now. You will also get GrayCo News — unsubscribe any time.' });
     }
     let partner = null; if (f.attrib && f.attrib.ref) { try { partner = await require('./_lib/mkt2.js').partnerFor(f.attrib.ref); } catch (e) {} }   /* patch MKT2 */
-    const lead = await fileLead(f, partner ? Object.assign({}, refExtra, { partner: partner }) : refExtra);
+    /* patch SPEEDLEAD: the form's explicit "OK to text me about my request" box → job-text consent on the lead (+ the SMS state) */
+    const ph10g = phone10(f.phone), smsC = f.smsJob && ph10g.length === 10 ? { status: 'yes', at: nowIso(), via: 'intake', phone: ph10g } : null;
+    const baseExtra = partner ? Object.assign({}, refExtra, { partner: partner }) : refExtra;
+    const lead = await fileLead(f, smsC ? Object.assign({}, baseExtra, { patch: { smsConsent: smsC } }) : baseExtra);
+    if (smsC) { try { await require('./_lib/smsconsent.js').record(smsC, [f.phone]); } catch (e) {} }
     await refNote(lead);
     if (lead.action === 'added') await Promise.all([alertLead(lead.rec), autoReply(f, lead.id)]);
+    if (lead.action === 'added') await speedLead(lead.rec, !!smsC);
     return J(event, 200, { ok: true, received: true, kind: 'lead', leadId: lead.id, existingCustomer: !!lead.customer, duplicate: lead.action !== 'added',
       message: f.type === 'problem' ? 'Thank you — we received your message and will contact you as soon as possible. If water is coming in right now, call 901-585-0944.' : 'Thank you — we received your request and will contact you shortly.' });
   } catch (e) {
@@ -685,8 +691,14 @@ exports.fromEmail = async function(mail){
   const sid = crypto.createHash('sha256').update('leads@|' + (s(mail.messageId) || s(mail.id) || (low(f.email) + '|' + f.phone + '|' + s(mail.subject) + '|' + s(mail.date)))).digest('hex').slice(0, 24);
   const r = await fileLead(f, { sid, source: lsa ? 'Google LSA' : MAIL_SOURCE, leadExtra: lsa ? { mkSource: 'Google Ads', leadSource: 'Google LSA' } : undefined, how: 'from an e-mail to leads@grayco-cs.com' + (s(mail.subject) ? ' ("' + clip(mail.subject, 80) + '")' : ''), notes: mail.rawRef ? ['The e-mail is kept on the lead (Lead Inbox).'] : [] });
   const alerts = r.action === 'added' ? await alertLead(r.rec) : { skipped: r.action };
-  return { ok: true, lead: r.id, action: r.action, alerts, type: f.type };
+  /* patch SPEEDLEAD: a leads@ e-mail carries no consent of its own — only consent already on file (they texted us first) */
+  const speed = r.action === 'added' ? await speedLead(r.rec, false) : null;
+  return { ok: true, lead: r.id, action: r.action, alerts, type: f.type, speed };
 };
+
+/* patch SPEEDLEAD: queue the one "Thanks for contacting GrayCo" text (sent ~1 minute later by x10-scheduled.js; rules in
+   _lib/speedlead.js). Never holds up the visitor's answer. */
+async function speedLead(rec, consent){ try { return await require('./_lib/speedlead.js').enqueue(rec, { consent: consent === true }); } catch (e) { return { error: s(e && e.message) }; } }
 
 /* patch AUTO6: the missed-call text-back (missed-call.js) files its leads the same way */
 exports._lib = { fileLead, alertLead, findCustomer, phone10, tidyPhone, SOURCE };
