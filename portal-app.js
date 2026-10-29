@@ -71,6 +71,59 @@ Object.assign(L.es, { avail: 'Mi calendario y días libres', availBtn: 'Abrir mi
   busy: 'Ocupado', free: 'Libre', scheduled: 'Programado', availSaved: 'Guardado — su PM lo verá', availLoad: 'Cargando su calendario…', codes: 'Códigos de acceso', codesBtn: 'Mostrar códigos de acceso',
   codesNote: 'Los códigos de caja de llaves / portón / puerta aparecen aquí solo los días que usted está programado en este trabajo. Cada consulta queda registrada. Nunca los comparta.', codesNone: 'No hay códigos para este trabajo.',
   codesNotToday: 'Los códigos aparecen solo los días que usted está programado en este trabajo.' });
+/* patch AUTOMONEY: lien waivers to sign, here in the portal */
+Object.assign(L.en, { nLien: 'Lien waiver to sign', lienCard: 'Lien waivers', lienSign: 'Review and sign', lienSigned: 'Signed {d}', lienPaper: 'Received on paper {d}',
+  lienPdf: 'PDF', lienNone: 'No lien waivers right now.', lienAgree: 'I have read this waiver and sign it for {c}. My typed name is my signature.', lienTitleF: 'Your title (owner, office manager…)',
+  lienWhy: 'GrayCo releases your payment for this job once the waiver is signed.', lienDone: 'Signed — thank you. GrayCo has it on file.' });
+Object.assign(L.es, { nLien: 'Renuncia de gravamen para firmar', lienCard: 'Renuncias de gravamen (lien waivers)', lienSign: 'Revisar y firmar', lienSigned: 'Firmada {d}', lienPaper: 'Recibida en papel {d}',
+  lienPdf: 'PDF', lienNone: 'No hay renuncias de gravamen por ahora.', lienAgree: 'Leí esta renuncia y la firmo por {c}. Mi nombre escrito es mi firma.', lienTitleF: 'Su cargo (dueño, gerente de oficina…)',
+  lienWhy: 'GrayCo libera su pago de este trabajo cuando la renuncia esté firmada.', lienDone: 'Firmada — gracias. GrayCo la tiene archivada.' });
+function lienById(id){ return (HOME && HOME.liens || []).filter(function(x){ return x.id === id; })[0] || null; }
+function lienPdf(x, btn){
+  busy(btn, true);
+  api('p-lien-pdf', { id: x.id }).then(function(r){ busy(btn, false);
+    var bin = atob(r.pdf), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    var url = URL.createObjectURL(new Blob([u], { type: 'application/pdf' })), a = h('a', { href: url, download: r.name || 'lien-waiver.pdf' }); document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  }, function(e){ busy(btn, false); toast(e.message, true); });
+}
+function lienSheet(x){
+  if (!x) return;
+  var pad = makePad(), me = (HOME && HOME.me) || {};
+  var nm = h('input', { type: 'text', class: 'inp', id: 'lienName', maxlength: '80', autocomplete: 'name' });
+  var ti = h('input', { type: 'text', class: 'inp', id: 'lienTitle', maxlength: '80' });
+  var ag = h('input', { type: 'checkbox', id: 'lienAgree' });
+  var msg = h('div', { class: 'muted', id: 'lienMsg', role: 'status' });
+  var go = h('button', { type: 'button', class: 'btn gold', id: 'lienGo', text: t('signBtn') });
+  var esg = window.GCLegal ? window.GCLegal.esignBox({ base: '' }) : null;
+  var sh = sheet(x.title, [
+    window.gcDocHead ? window.gcDocHead() : null,
+    h('div', { class: 'row total' }, [h('span', { class: 'muted', text: x.job + (x.address ? ' · ' + x.address : '') }), h('b', { text: usd(x.amount) })]),
+    h('div', { class: 'how', text: t('lienWhy') }),
+    h('div', { class: 'lien-text', style: 'border:1px solid #E2DCCD;border-radius:10px;padding:10px 12px;background:#FBFAF6;line-height:1.5' }, (x.paras || []).map(function(p){ return h('p', { text: p }); })),
+    h('button', { type: 'button', class: 'btn', text: '📄 ' + t('lienPdf'), on: { click: function(){ lienPdf(x, this); } } }),
+    (esg ? esg.el : null), field(t('signName'), nm), field(t('lienTitleF'), ti), h('div', { class: 'muted', text: t('signDraw') }), pad.el,
+    h('button', { type: 'button', class: 'btn', text: t('signClear'), on: { click: function(){ pad.clear(); } } }),
+    h('label', { class: 'fld', style: 'display:flex;gap:8px;align-items:flex-start' }, [ag, h('span', { text: t('lienAgree', { c: me.company || me.name || '' }) })]), go, msg]);
+  go.addEventListener('click', function(){
+    if (!esg) { msg.textContent = 'The consent form did not load. Please refresh this page.'; return; }
+    if (!esg.ok()) { msg.textContent = 'Tick the box to agree to do business electronically.'; return; }
+    if (nm.value.trim().length < 3) { msg.textContent = t('signNeedName'); nm.focus(); return; }
+    if (!ag.checked) { msg.textContent = t('signNeedAgree'); return; }
+    busy(go, true); msg.textContent = t('signing');
+    api('p-lien-sign', { id: x.id, signName: nm.value, signTitle: ti.value, agree: true, esignConsent: esg.record(), strokes: pad.strokes() }).then(function(){ sh.close(); toast('✍️ ' + t('lienDone')); reloadHome(); }, function(e){ busy(go, false); msg.textContent = e.message; });
+  });
+  return sh;
+}
+function lienCard(){
+  var l = (HOME && HOME.liens) || [];
+  if (!l.length) return null;
+  return card(t('lienCard'), l.map(function(x){
+    var done = x.status !== 'sent';
+    return h('div', { class: 'line', 'data-lien': x.id }, [h('span', null, [h('b', { text: usd(x.amount) }), ' ', h('span', { class: 'muted', text: x.job + ' · ' + x.title })]),
+      done ? h('span', null, [pill(x.status === 'paper' ? t('lienPaper', { d: dt(x.signedAt) }) : t('lienSigned', { d: dt(x.signedAt) }), 'ok'), ' ', h('button', { type: 'button', class: 'btn', text: t('lienPdf'), on: { click: function(){ lienPdf(x, this); } } })])
+        : h('button', { type: 'button', class: 'btn gold', 'data-lien-sign': x.id, text: t('lienSign'), on: { click: function(){ lienSheet(x); } } })]);
+  }), 'liens');
+}
 var X10_ES = { l: { ontime: 'A tiempo', punch: 'Lista de pendientes', callbacks: 'Llamadas de garantía', papers: 'Papeles', rating: 'Calificación del PM' },
   tips: { 'Upload a current insurance certificate (COI).': 'Suba un certificado de seguro (COI) vigente.', 'Send GrayCo your W-9.': 'Envíe su W-9 a GrayCo.', 'Great work — keep it up.': 'Excelente trabajo — siga así.',
     'Finish scheduled tasks by their end date — tell your PM early when something slips.': 'Termine las tareas programadas para su fecha final — avise a su PM a tiempo si algo se atrasa.' } };
@@ -217,6 +270,7 @@ function needRow(n){
   else if (n.kind === 'coi-expired') label = t('nCoiExp');
   else if (n.kind === 'coi-expiring') label = t('nCoiSoon', { d: n.days });
   else if (n.kind === 'w9') label = t('nW9');
+  else if (n.kind === 'lien') { label = t('nLien') + ' — ' + n.job + ' (' + usd(n.amount) + ')'; return h('button', { type: 'button', class: 'need', 'data-need': 'lien', on: { click: function(){ lienSheet(lienById(n.id)); } } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }), h('span', { text: label }), h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })]); }   /* patch AUTOMONEY */
   if (n.pid) go = function(){ openJob(n.pid, n.kind === 'scope' ? 'scope' : n.kind === 'co' ? 'cos' : n.kind === 'punch' ? 'punch' : n.kind === 'message' ? 'messages' : 'overview'); };
   else go = function(){ goTab('papers'); };
   return h('button', { type: 'button', class: 'need', on: { click: go } }, [h('span', { class: 'dotg', 'aria-hidden': 'true' }), h('span', { text: label }), h('span', { class: 'chev', 'aria-hidden': 'true', text: '›' })]);
@@ -340,7 +394,8 @@ function papersTab(){
   var p = HOME.papers || {};
   var langBox = h('div', { class: 'btns' }, [h('button', { type: 'button', class: 'btn' + (LANG === 'en' ? ' navy' : ''), 'aria-pressed': LANG === 'en' ? 'true' : 'false', disabled: LANG === 'en', text: 'English', on: { click: function(){ setLang('en', true); } } }), h('button', { type: 'button', class: 'btn' + (LANG === 'es' ? ' navy' : ''), 'aria-pressed': LANG === 'es' ? 'true' : 'false', disabled: LANG === 'es', text: 'Español', on: { click: function(){ setLang('es', true); } } })]);
   return [card(t('papers'), [paperRow('w9', t('w9'), p.w9 || {}), paperRow('coi', t('coi'), p.coi || {}, true), paperRow('agreement', t('agreement'), p.agreement || {}), paperRow('lien', t('lienW'), { onFile: false, sent: (p.lien || {}).sent })]),
-    card(t('language'), [langBox]), scoreCard()];
+    lienCard(),   /* patch AUTOMONEY */
+    card(t('language'), [langBox]), scoreCard()].filter(Boolean);
 }
 
 /* patch AUTO7: the scorecard — in Papers (the settings page), closed until they open it; only their own numbers */

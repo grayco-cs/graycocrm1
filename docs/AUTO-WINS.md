@@ -19,3 +19,15 @@ once (a marker in gc_kv `gc_autowins_log`). An admin can run one part now: `POST
 
 Owner steps: none required. Confirm the hours cut-off (Payroll → Settings; Wednesday by default). Netlify `PAYROLL_ANCHOR` is no longer used. Optional:
 have the lawyer read the lien waiver wording (_lib/lien.js waiverText).
+
+## Money rules (patch AUTOMONEY, owner 10/29)
+
+| Rule | Default | Where |
+|---|---|---|
+| 💰 **Deposit before scheduling** | ON for residential (remodel, kitchen/bath, retail roofing); OFF for insurance, commercial, program work | ⚡ Automation defaults (per job type) and ⚙ Automations (per job). A crew / sub day can't be added to the schedule until the deposit is recorded paid (paid deposit invoice, any paid customer invoice / payment, or "deposit paid" on the job). The job's PM or an admin gets **Schedule anyway — reason**; the office and every admin get a To-Do note + phone push, and the line is in the next 7 AM digest e-mail. Meetings / inspections / walk-throughs are never held; jobs already on the schedule before 10/29 are left as they were. |
+| 📝 **Sub lien waivers required** | OFF for residential / insurance / program, ON for commercial | Same two places, plus the switch on the job bar and in the closeout panel. When ON, the sub's check moves to **Held back** on the Friday pay list (🖊 Checks to write) until the sub signs the waiver — in the **Sub Portal** (Home → Needs you / Papers → Lien waivers; typed name + drawn signature + E-SIGN consent) or on the e-mailed link. The CRM makes the PDF from the job, amount and period. Reminders every 3 days (e-mail, at most 6) while unsigned. Office / admin: **📄 Received on paper** + the scan. Sub invoices received before 10/29 are never held. The first request to a sub still waits on the approvals list. |
+| 📊 **Job profit alert** | 80 % and 100 % of the job's budget | ⚙ Admin → 💰 Money rules. Budget = job costing's (estimate cost + approved COs, else contract less the target margin); costs = job costs, sub invoices, expenses, materials. The PM + admins get a push, an e-mail and a To-Do once per level; the job bar shows the notice. Checked every 10 minutes by any open CRM window that can see that job's books. |
+
+Data: gc_kv `gc_deposit_overrides`, `gc_profit_alerts`, `gc_money_rules`; waivers stay in `gc_lien_waivers`. Code: `netlify/functions/_lib/money-core.js` (the rules, also embedded in index.html), `_lib/money-rules.js`, `money-rules.js`, `_lib/lien.js`, `_lib/lien-pdf.js`, `portal-access.js` (p-lien-sign / p-lien-pdf), `portal-app.js`, `tools/automoney_tail.js` + `tools/patch_AUTOMONEY.py`. Tests: `node tools/tests/test_AUTOMONEY.js`.
+
+**Owner checklist:** have GrayCo's lawyer review the lien waiver wording (`_lib/lien.js` `waiverParas` — conditional progress, unconditional progress, conditional final; generic Tennessee-style text) before relying on it.

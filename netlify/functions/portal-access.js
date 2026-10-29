@@ -15,7 +15,7 @@
 // CUSTOMER (link code or customer session):  c-jobs, c-msgs {projectId}, c-send {projectId, text}
 // SUB (sub session):                          p-home, p-job, p-scope, p-upload, p-invoice, p-photos-add,
 //                                             p-progress, p-punch, p-paper, p-msgs, p-send, p-lang,
-//                                             p-photos, p-bids
+//                                             p-photos, p-bids, p-lien-sign, p-lien-pdf (patch AUTOMONEY)
 // STAFF (signed in to the CRM + on gc_staff): s-sync, s-thread, s-send, s-scopes, s-scope-save,
 //                                             s-scope-approve, s-scope-void, s-link, s-link-send, s-ack,
 //                                             s-bids-approve, s-settings
@@ -780,7 +780,11 @@ async function pHome(ctx){
   Object.keys(unread).forEach(function(pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === pid; }) || {}; needs.push({ kind: 'message', pid: pid, job: s(p.name), count: unread[pid] }); });
   if (papers.coi.days != null && papers.coi.days <= 30 && !papers.coi.sent) needs.push({ kind: papers.coi.days < 0 ? 'coi-expired' : 'coi-expiring', days: papers.coi.days, exp: papers.coi.exp });
   if (!papers.w9.onFile && !papers.w9.sent) needs.push({ kind: 'w9' });
+  /* patch AUTOMONEY: lien waivers GrayCo sent this sub — sign them here (only what the e-mail already shows: job, address, amount) */
+  let liens = []; try { liens = await require('./_lib/lien.js').forSub(sub); } catch (e) {}
+  liens.filter(function(x){ return x.status === 'sent'; }).forEach(function(x){ needs.unshift({ kind: 'lien', id: x.id, job: x.job, amount: x.amount }); });
   return {
+    liens: liens,
     ok: true, kind: 'partner', lang: lang(sub.lang),
     me: { name: s(sub.contact) || s(sub.name), company: s(sub.company || sub.name), trade: s(sub.trade || sub.cat) },
     office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
@@ -906,6 +910,7 @@ function jobTagOf(data, pid){
   return [s(p.autoPO || p.po) ? 'PO ' + s(p.autoPO || p.po) : '', strip(p.name), strip(p.address || p.jobAddress)].filter(Boolean).join(' \u00b7 ').slice(0, 160);
 }
 function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(pid); }); if (!p) throw Fail(404, 'That job is not one of yours.'); return p; }
+async function A_kvList(key){ try { const r = await kvRead([key]); const v = r[key]; return Array.isArray(v) ? v : (typeof v === 'string' ? JSON.parse(v) : []); } catch (e) { return []; } }   /* patch AUTOMONEY */
 async function partnerAction(action, body, ctx){
   const sub = ctx.sub;
   if (action === 'p-home') return pHome(ctx);
@@ -985,6 +990,17 @@ async function partnerAction(action, body, ctx){
     if (!item) throw Fail(404, 'That punch item is not yours.');
     await addEvent('punch', sub, p.id, { punchId: s(item.id), item: clip(item.item, 200), note: clip(body.note, 500), files: await uploadsOf(sub, [body.uploadId], p.id) });
     return { ok: true };
+  }
+  if (action === 'p-lien-sign') {   /* patch AUTOMONEY: sign a lien waiver (typed name + E-SIGN consent + drawn signature) */
+    const r = await require('./_lib/lien.js').signForSub(s(body.id), sub, { name: body.signName, title: body.signTitle, agree: body.agree === true, esign: body.esignConsent, strokes: cleanStrokes(body.strokes), ip: ctx.ip, ua: ctx.ua });
+    if (!r.ok) throw Fail(r.status || 400, r.error || 'Could not sign it.');
+    return { ok: true, signedAt: r.waiver ? r.waiver.signedAt : '' };
+  }
+  if (action === 'p-lien-pdf') {
+    const LN = require('./_lib/lien.js');
+    const w = ((await A_kvList(LN.KEY)) || []).find(function(x){ return s(x.id) === s(body.id); });
+    if (!w || !LN.mineFor(w, sub) || ['sent', 'signed', 'uploaded', 'paper'].indexOf(s(w.status)) < 0) throw Fail(404, 'That waiver is not available.');
+    return { ok: true, name: 'lien-waiver.pdf', pdf: LN.pdf(w).toString('base64') };
   }
   if (action === 'p-paper') {
     const k = low(body.paper);

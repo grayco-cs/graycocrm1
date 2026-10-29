@@ -13,11 +13,21 @@
      • The sub portal is never mentioned to a customer; nothing here goes to a customer at all.
    Data (gc_kv): "gc_lien_waivers" (list; the link's token is kept only as a SHA-256 hash), "gc_lien_settings"
    ({ subs: { <subKey>: true }, jobs: { <pid>: true } }), changed only through kvListUpdate / this file.
-   The waiver wording is a plain conditional / final release — have GrayCo's lawyer check it (owner checklist). */
+   The waiver wording is a plain conditional / final release — have GrayCo's lawyer check it (owner checklist).
+   patch AUTOMONEY (owner 10/29: "lien waivers on portal for sub to sign, default for residential to not have lien waivers
+   but can make them have them, default on commercial to have lien waivers and can change to no"):
+     • REQUIRED BY JOB TYPE: the job's "📝 Sub lien waivers required" switch (⚡ Automations, key subLien; default ON for
+       commercial jobs, OFF for residential / insurance / program — ⚙ Admin → Automation defaults), plus the old
+       per-sub "always ask this sub" and per-job switches (requiredFor below).
+     • PAY HOLD: when required, a sub's check is held on the Friday pay list until the waiver is signed (money-core payHold).
+     • THE SUB SIGNS IN THE SUB PORTAL (portal-access p-home / p-lien-sign — typed name + drawn signature + E-SIGN
+       consent) or on the e-mailed link; the CRM makes the PDF (pdf below, ./lien-pdf.js). Reminders every 3 days (portal +
+       e-mail, at most 6) until signed. The office / an admin can mark one "received on paper" with the scan (paper below). */
 'use strict';
 const crypto = require('crypto');
 const A = require('./auto-common.js');
 const { s, low, num, usd, arr, ymd, esc, clip, pidOf, okEmail } = A;
+const MC = require('./money-core.js');   /* patch AUTOMONEY */
 const KEY = 'gc_lien_waivers', SKEY = 'gc_lien_settings', KIND = 'sub_lien_request';
 const SINCE = '2026-10-24';   /* only invoices approved / jobs closed from the day this went in — never the old ones */
 const OFFICE_FROM = 'GrayCo Construction Services <office@grayco-cs.com>';
@@ -59,6 +69,13 @@ async function toggle(kind, key, on, who){
   return (await writeSettings(next)) ? next : null;
 }
 function onFor(st, subId, subName, pid){ return !!(st.jobs[s(pid)] || st.subs[subKey(subId, subName)] || (subName && st.subs[subKey('', subName)])); }
+/* patch AUTOMONEY: is a waiver required for this sub on this job? (the job's own switch, else its type's default; or the sub is "always") */
+function requiredFor(st, subId, subName, p, jaAdmin){
+  let typeDefault = false, own;
+  try { const JA = require('./job-auto.js'); typeDefault = JA.defaultsFor(JA.groupOf(p || {}), JA.parseAdmin(jaAdmin)).subLien === true; } catch (e) {}
+  if (p && p.auto && typeof p.auto === 'object' && typeof p.auto.subLien === 'boolean') own = p.auto.subLien;
+  return MC.lienRequired({ own: own, typeDefault: typeDefault, legacyJob: !!st.jobs[s(p && p.id)], legacySub: !!(st.subs[subKey(subId, subName)] || (subName && st.subs[subKey('', subName)])) });
+}
 async function list(){ const C = A.core(); const cur = await C.kvListRead(KEY); return cur ? cur.list : null; }
 /* the sub's contact, from the CRM's subs / vendors lists */
 function subContact(data, subId, name){
@@ -68,10 +85,27 @@ function subContact(data, subId, name){
   const e = r && s(r.email || r.contactEmail || r.billingEmail);
   return { id: s(r && r.id) || s(subId), name: s((r && (r.company || r.name)) || name), email: okEmail(e) ? low(e) : '' };
 }
+/* patch AUTOMONEY: the wording as paragraphs (the page, the portal and the PDF all use these). Generic Tennessee-style
+   conditional / unconditional releases (Tenn. Code Ann. Title 66, Chapter 11) — DRAFT for GrayCo's lawyer (owner checklist). */
+function waiverParas(w){
+  const amt = usd(w.amount), job = s(w.jobName) + (w.jobAddress ? ', ' + s(w.jobAddress) : '');
+  const who = 'GrayCo Construction Services, LLC';
+  if (w.kind === 'final') return { title: 'Conditional Waiver and Release on Final Payment', paras: [
+    'Upon receipt by the undersigned of a payment from ' + who + ' in the amount of ' + amt + ', this document becomes effective to release any mechanic’s or materialman’s lien, notice of lien, stop notice or payment bond right the undersigned has on the job of ' + job + ', for all labor, services, equipment and materials furnished to that job.',
+    'This release is conditional: it has no effect unless and until that payment is actually received by the undersigned (and, if by check, the check has cleared).',
+    'The undersigned states that it has paid, or will pay from this payment, everyone who furnished labor, services, equipment or materials to it for this job.'] };
+  if (w.kind === 'unconditional') return { title: 'Unconditional Waiver and Release on Progress Payment', paras: [
+    'The undersigned has been paid ' + amt + ' by ' + who + ' for labor, services, equipment or materials furnished to the job of ' + job + ' through ' + s(w.through) + (w.invNum ? ' (invoice ' + s(w.invNum) + ')' : '') + ', and releases any mechanic’s or materialman’s lien, notice of lien, stop notice or payment bond right it has on that job to the extent of that payment.',
+    'This release covers that payment only. It does not cover retention, extras, disputed claims or work after that date.',
+    'NOTICE: this document waives rights unconditionally and says the undersigned HAS BEEN PAID. Do not sign it until you have received payment.'] };
+  return { title: 'Conditional Waiver and Release on Progress Payment', paras: [
+    'Upon receipt by the undersigned of a payment from ' + who + ' in the amount of ' + amt + ' for labor, services, equipment or materials furnished to the job of ' + job + ' through ' + s(w.through) + (w.invNum ? ' (invoice ' + s(w.invNum) + ')' : '') + ', this document becomes effective to release any mechanic’s or materialman’s lien, notice of lien, stop notice or payment bond right the undersigned has on that job, to the extent of that payment only.',
+    'It does not cover retention, extras, disputed claims or work after that date, or amounts not yet paid.',
+    'This release is conditional: it has no effect unless and until that payment is actually received by the undersigned (and, if by check, the check has cleared).'] };
+}
 function waiverText(w){
-  const amt = usd(w.amount), job = esc(w.jobName) + (w.jobAddress ? ', ' + esc(w.jobAddress) : '');
-  if (w.kind === 'final') return '<p><b>Conditional Waiver and Release on Final Payment</b></p><p>Upon receipt by the undersigned of a payment from GrayCo Construction Services in the amount of <b>' + amt + '</b>, this document becomes effective to release any mechanic’s lien, notice, stop notice or payment bond right the undersigned has on the job of <b>' + job + '</b>, for all labor, services, equipment and materials furnished to that job.</p><p>This release is conditional: it has no effect unless and until that payment is actually received.</p>';
-  return '<p><b>Conditional Waiver and Release on Progress Payment</b></p><p>Upon receipt by the undersigned of a payment from GrayCo Construction Services in the amount of <b>' + amt + '</b> for labor, services, equipment or materials furnished to the job of <b>' + job + '</b> through <b>' + esc(w.through || '') + '</b>' + (w.invNum ? ' (invoice ' + esc(w.invNum) + ')' : '') + ', this document becomes effective to release any mechanic’s lien, notice, stop notice or payment bond right the undersigned has on that job, to the extent of that payment only.</p><p>It does not cover retention, extras or work after that date, or amounts not yet paid. This release is conditional: it has no effect unless and until that payment is actually received.</p>';
+  const t = waiverParas(w);
+  return '<p><b>' + esc(t.title) + '</b></p>' + t.paras.map(function(x){ return '<p>' + esc(x) + '</p>'; }).join('');
 }
 function requestHtml(w, link){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E;font-size:15px;line-height:1.5">' +
@@ -149,13 +183,13 @@ async function onApproved(item){
   const id = s((item.meta || {}).waiverId);
   const l = await list() || []; const w = l.find(function(x){ return s(x.id) === id; });
   if (!w) return { ok: false, error: 'That waiver is no longer in the list.' };
-  if (/^(signed|uploaded)$/.test(s(w.status))) return { ok: true, skipped: 'already signed' };
+  if (/^(signed|uploaded|paper)$/.test(s(w.status))) return { ok: true, skipped: 'already signed' };
   const sent = await sendNow(Object.assign({}, w, { subEmail: s(item.to) || w.subEmail }), s(item.html));
   if (!sent.ok) return sent;
   await patchWaiver(id, function(x){ x.status = 'sent'; x.sentAt = new Date().toISOString(); x.subEmail = low(item.to) || x.subEmail; });
   return { ok: true };
 }
-function strip(w){ const o = Object.assign({}, w); delete o.tokenHash; delete o.file; return o; }
+function strip(w){ const o = Object.assign({}, w); delete o.tokenHash; delete o.file; delete o.strokes; return o; }
 /* the hourly pass (only for subs / jobs with waivers ON) */
 async function run(opts){
   opts = opts || {};
@@ -184,8 +218,11 @@ async function run(opts){
     if (sent.ok) rep.sent++;
   }
   const st = await settings();
-  if (!Object.keys(st.subs).length && !Object.keys(st.jobs).length) return Object.assign(rep, { off: 'no sub or job has lien waivers turned on' });
+  /* patch AUTOMONEY: no early "all off" return any more — commercial jobs need waivers by default */
+  try { const rm = await remind(opts); rep.reminded = rm.sent; } catch (e) {}
   const data = await C.crmData(true);
+  const projOf = {}; arr(data.projects).forEach(function(p){ if (p && p.id) projOf[s(p.id)] = p; });
+  const need = function(subId, sub, pid){ return requiredFor(st, subId, sub, projOf[s(pid)] || { id: pid }, data.jobAutoDefaults); };
   const extra = await C.kvRead(['subs', 'vendors', 'gc_sub_approvals']);
   Object.assign(data, { subs: extra.subs, vendors: extra.vendors });
   const appr = {}; arr(extra.gc_sub_approvals).forEach(function(a){ if (a && a.invId) appr[s(a.invId)] = a; });
@@ -193,7 +230,7 @@ async function run(opts){
   const invs = C.listOf(data, ['invs', 'invoices']).filter(isSubInv);
   for (const r of invs) {
     const at = approvedAt(r, appr[s(r.id)]); if (!at || at < SINCE || r.importedHistory === true) continue;
-    if (!onFor(st, r.subId, r.sub, pidOf(r)) || have['LWc_' + s(r.id)]) continue;
+    if (!need(r.subId, r.sub, pidOf(r)) || have['LWc_' + s(r.id)]) continue;
     await tally(await request({ kind: 'conditional', invId: s(r.id), invNum: s(r.invNum || r.num || r.number), pid: pidOf(r), sub: s(r.sub || r.vendor), subId: s(r.subId), amount: num(r.amt != null ? r.amt : r.amount), through: r.date || r.invDate || at }, data));
     have['LWc_' + s(r.id)] = 1;
   }
@@ -202,7 +239,7 @@ async function run(opts){
     const bySub = {};
     invs.forEach(function(r){ if (pidOf(r) !== s(p.id) || !approvedAt(r, appr[s(r.id)])) return; const k = subKey(r.subId, r.sub); (bySub[k] = bySub[k] || { sub: s(r.sub || r.vendor), subId: s(r.subId), amount: 0 }).amount += num(r.amt != null ? r.amt : r.amount); });
     for (const k of Object.keys(bySub)) {
-      const b = bySub[k]; if (!onFor(st, b.subId, b.sub, p.id)) continue;
+      const b = bySub[k]; if (!need(b.subId, b.sub, p.id)) continue;
       const fid = 'LWf_' + s(p.id) + '_' + k.replace(/[^A-Za-z0-9_.:-]/g, '_');
       if (have[fid]) continue;
       await tally(await request({ kind: 'final', pid: s(p.id), sub: b.sub, subId: b.subId, amount: b.amount, through: ca }, data));
@@ -215,9 +252,9 @@ async function run(opts){
 async function byToken(t){ const h = hash(s(t)); const l = await list() || []; return l.find(function(w){ return w && w.tokenHash && w.tokenHash === h; }) || null; }
 async function sign(t, name, title, ip, agent){
   const w = await byToken(t); if (!w) return { ok: false, status: 404, error: 'This link is not valid any more. Ask GrayCo for a new one.' };
-  if (/^(signed|uploaded)$/.test(s(w.status))) return { ok: true, already: true, waiver: strip(w) };
+  if (/^(signed|uploaded|paper)$/.test(s(w.status))) return { ok: true, already: true, waiver: strip(w) };
   if (s(name).length < 3) return { ok: false, status: 400, error: 'Type your full name to sign.' };
-  const x = await patchWaiver(w.id, function(y){ if (/^(signed|uploaded)$/.test(s(y.status))) return false; y.status = 'signed'; y.signedAt = new Date().toISOString(); y.signerName = clip(name, 80); y.signerTitle = clip(title, 80); y.ip = clip(ip, 60); y.agent = clip(agent, 160); y.textHash = hash(waiverText(y)); });
+  const x = await patchWaiver(w.id, function(y){ if (/^(signed|uploaded|paper)$/.test(s(y.status))) return false; y.status = 'signed'; y.signedAt = new Date().toISOString(); y.signerName = clip(name, 80); y.signerTitle = clip(title, 80); y.ip = clip(ip, 60); y.agent = clip(agent, 160); y.textHash = hash(waiverText(y)); });
   return x ? { ok: true, waiver: strip(x) } : { ok: false, status: 409, error: 'Could not save it — try again.' };
 }
 async function upload(t, b64, fileName, ip){
@@ -243,4 +280,71 @@ async function override(pid, who, reason){
   const r = await A.core().kvListUpdate(KEY, function(l){ const rest = l.filter(function(x){ return s(x.id) !== id; }); return { list: rest.concat([{ id: id, kind: 'override', pid: s(pid), status: 'override', by: s(who && (who.name || who.email)), at: now, reason: clip(reason, 300) }]), check: function(l2){ return l2.some(function(x){ return s(x.id) === id && x.at === now; }); } }; });
   return r.ok;
 }
-module.exports = { requestHtml, run, request, onApproved, sign, upload, byToken, forCrm, override, toggle, settings, waiverText, subKey, onFor, approvedAt, closedAt, KEY, SKEY, KIND, SINCE, hash, strip };
+/* ── patch AUTOMONEY ─────────────────────────────────────────────────────────────────────────────── */
+/* reminders: a waiver sent and not signed — every 3 days, at most 6, a fresh link by e-mail (the portal shows it too) */
+const REMIND_MS = 3 * 864e5, REMIND_MAX = 6;
+async function remind(opts){
+  const now = (opts && opts.now) || Date.now(), out = { sent: 0 };
+  if (await A.paused()) return out;
+  for (const w of (await list() || [])) {
+    if (s(w.status) !== 'sent' || !okEmail(w.subEmail) || (w.reminders || 0) >= REMIND_MAX) continue;
+    const last = Date.parse(w.remindedAt || w.sentAt || w.updatedAt || 0); if (!last || now - last < REMIND_MS) continue;
+    const token = newToken();
+    const x = await patchWaiver(w.id, function(y){ if (s(y.status) !== 'sent' || (y.remindedAt && y.remindedAt !== w.remindedAt)) return false; y.tokenHash = hash(token); y.remindedAt = new Date(now).toISOString(); y.reminders = (y.reminders || 0) + 1; });
+    if (!x) continue;
+    const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E;font-size:15px;line-height:1.5"><p><b>Reminder:</b> this lien waiver is still waiting for your signature. Your payment for this job is released once it is signed.</p></div>' + requestHtml(x, signLink(token)) +
+      '<p style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#55626F;text-align:center">You can also sign it in the GrayCo Portal (portal.grayco-cs.com) → Home → Needs you.</p>';
+    const r = await sendNow(Object.assign({}, x, { jobName: 'Reminder: ' + (x.jobName || 'GrayCo job') }), html);
+    if (r.ok) out.sent++;
+  }
+  return out;
+}
+/* the office / an admin: "received on paper" — the signed paper's scan or photo, filed on the waiver (one is made when none was asked) */
+async function paper(o, who, data){
+  const C = A.core();
+  let buf; try { buf = Buffer.from(s(o.file).replace(/^data:[^,]*,/, ''), 'base64'); } catch (e) { buf = null; }
+  if (!buf || buf.length < 100 || buf.length > 8 * 1024 * 1024) return { ok: false, status: 400, error: 'Add the scan or photo of the signed paper (PDF, JPG or PNG, under 8 MB).' };
+  const pdf = buf.slice(0, 4).toString() === '%PDF', jpg = buf[0] === 0xFF && buf[1] === 0xD8, png = buf.slice(1, 4).toString() === 'PNG';
+  if (!pdf && !jpg && !png) return { ok: false, status: 400, error: 'Upload a PDF, JPG or PNG.' };
+  let id = s(o.id);
+  if (!id) {
+    data = data || await C.crmData(true);
+    if (s(o.invId)) {
+      const r = C.listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(o.invId); });
+      if (!r) return { ok: false, status: 404, error: 'That invoice is not in the cloud yet.' };
+      id = 'LWc_' + s(r.id);
+      const p = C.findProject(data, pidOf(r));
+      const now0 = new Date().toISOString();
+      await C.kvListUpdate(KEY, function(l){ return l.some(function(x){ return s(x.id) === id; }) ? null : { list: l.concat([{ id: id, kind: 'conditional', invId: s(r.id), invNum: s(r.invNum || r.num || r.number), pid: pidOf(r), jobName: s(p && p.name), jobAddress: s(p && (p.address || p.jobAddress)), sub: s(r.sub || r.vendor), subId: s(r.subId), amount: Math.round(num(r.amt != null ? r.amt : r.amount) * 100) / 100, through: ymd(r.date || r.invDate) || now0.slice(0, 10), status: 'new', requestedBy: s(who && (who.name || who.email)), createdAt: now0, updatedAt: now0 }]), check: function(l2){ return l2.some(function(x){ return s(x.id) === id; }); } }; });
+    } else return { ok: false, status: 400, error: 'Which waiver?' };
+  }
+  const path = 'lien/' + id.replace(/[^A-Za-z0-9_.-]/g, '_') + '-paper-' + Date.now().toString(36) + (pdf ? '.pdf' : jpg ? '.jpg' : '.png');
+  const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { method: 'POST', headers: Object.assign(H(), { 'Content-Type': pdf ? 'application/pdf' : jpg ? 'image/jpeg' : 'image/png', 'x-upsert': 'true' }), body: buf });
+  if (!r.ok) return { ok: false, status: 502, error: 'The upload did not go through — try again.' };
+  const x = await patchWaiver(id, function(y){ if (/^(signed|uploaded)$/.test(s(y.status))) return false; y.status = 'paper'; y.paperAt = new Date().toISOString(); y.paperBy = s(who && (who.name || who.email)); y.file = { ref: 'sb:crm-files/' + path, name: clip(o.name || 'signed waiver', 100) }; });
+  return x ? { ok: true, waiver: strip(x) } : { ok: false, status: 409, error: 'That waiver is already signed, or was not found.' };
+}
+/* the Sub Portal: this sub's own waivers (sent / signed) — the same job name, address and amount the e-mail shows, nothing more */
+function mineFor(w, sub){ return !!(w && sub && ((s(w.subId) && s(w.subId) === s(sub.id)) || (!s(w.subId) && low(w.sub) && (low(w.sub) === low(sub.name) || low(w.sub) === low(sub.company))) || (okEmail(sub.email) && low(w.subEmail) === low(sub.email)))); }
+async function forSub(sub){
+  return (await list() || []).filter(function(w){ return mineFor(w, sub) && /^(sent|signed|uploaded|paper)$/.test(s(w.status)) && w.kind !== 'override'; }).map(function(w){
+    const t = waiverParas(w);
+    return { id: s(w.id), kind: s(w.kind), job: s(w.jobName), address: s(w.jobAddress), amount: num(w.amount), through: s(w.through), invNum: s(w.invNum), status: s(w.status),
+      signedAt: s(w.signedAt || w.uploadedAt || w.paperAt).slice(0, 10), signerName: s(w.signerName), title: t.title, paras: t.paras };
+  }).sort(function(a, b){ return (a.status === 'sent' ? 0 : 1) - (b.status === 'sent' ? 0 : 1) || b.through.localeCompare(a.through); });
+}
+async function signForSub(id, sub, o){
+  const w = (await list() || []).find(function(x){ return s(x.id) === s(id); });
+  if (!w || !mineFor(w, sub) || !/^(sent|signed|uploaded|paper)$/.test(s(w.status))) return { ok: false, status: 404, error: 'That waiver is not available.' };
+  if (MC.lienDone(w)) return { ok: true, already: true };
+  const nm = clip(String(o.name == null ? '' : o.name).replace(/\s+/g, ' '), 80);
+  if (nm.length < 3) return { ok: false, status: 400, error: 'Type your full name to sign.' };
+  if (o.agree !== true) return { ok: false, status: 400, error: 'Tick the box to agree, then sign.' };
+  if (!o.esign || o.esign.agree !== true) return { ok: false, status: 400, error: 'Tick the box to agree to do business electronically, then sign.' };
+  const x = await patchWaiver(w.id, function(y){ if (MC.lienDone(y)) return false; y.status = 'signed'; y.signedAt = new Date().toISOString(); y.signerName = nm; y.signerTitle = clip(o.title, 80); y.ip = clip(o.ip, 60); y.agent = clip(o.ua, 160); y.via = 'sub portal';
+    y.esign = { agree: true, at: y.signedAt, version: clip(o.esign.version, 20) }; y.strokes = Array.isArray(o.strokes) ? o.strokes.slice(0, 40) : []; y.textHash = hash(waiverText(y)); });
+  return x ? { ok: true, waiver: strip(x) } : { ok: false, status: 409, error: 'Could not save it — try again.' };
+}
+/* the waiver as a PDF (the CRM makes it from the job, the amount and the period; signed ones carry the signature block) */
+function pdf(w){ return require('./lien-pdf.js').build(Object.assign({}, w, waiverParas(w))); }
+module.exports = { requiredFor, remind, paper, forSub, signForSub, pdf, waiverParas, mineFor, requestHtml, run, request, onApproved, sign, upload, byToken, forCrm, override, toggle, settings, waiverText, subKey, onFor, approvedAt, closedAt, KEY, SKEY, KIND, SINCE, hash, strip };

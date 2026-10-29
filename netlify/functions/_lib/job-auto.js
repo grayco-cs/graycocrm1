@@ -27,7 +27,11 @@ const OPTS = [
   ['w9', 'docs', { commercial: true, program: true, other: false }], ['coSign', 'docs', true],
   ['signedCopies', 'docs', true, true], ['receipts', 'docs', true, true],
   ['teamAlert', 'internal', false], ['pmPush', 'internal', true], ['newsletter', 'internal', true],
-  ['equipment', 'internal', false]   /* patch AUTO8: the dumpster & equipment tracker on this job */
+  ['equipment', 'internal', false],   /* patch AUTO8: the dumpster & equipment tracker on this job */
+  /* patch AUTOMONEY (owner 10/29): deposit before scheduling — on for residential (remodel, retail roofing), off for insurance,
+     commercial and program work; sub lien waivers before a sub is paid — off for residential, on for commercial */
+  ['depositGate', 'internal', { residential: true, other: false }],
+  ['subLien', 'internal', { commercial: true, other: false }]
 ];
 const KEYS = OPTS.map(function(o){ return o[0]; });
 const LOCKED = {}; OPTS.forEach(function(o){ if (o[3]) LOCKED[o[0]] = true; });

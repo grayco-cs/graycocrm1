@@ -64,12 +64,27 @@ async function run(opts){
     admins.forEach(function(e){ add(e, it); });
   });
   const rep = { ok: true, people: 0, mailed: 0, pushed: 0, items: 0 };
+  /* patch AUTOMONEY: notes of the last 24 h — "scheduled before the deposit" (admins + office), profit alerts (admins) */
+  const notes = {};
+  try {
+    const N = await require('./money-rules.js').digestNotes(now);
+    admins.forEach(function(e){ if (N.admins.length) notes[low(e)] = N.admins.slice(); });
+    office.forEach(function(e){ if (N.office.length && !notes[low(e)]) notes[low(e)] = N.office.slice(); });
+  } catch (e) {}
+  const noteHtml = function(email){ const l = notes[email] || []; return l.length ? '<p style="margin:14px 0 4px"><b>📝 Notes (last 24 hours)</b></p><ul style="padding-left:18px">' + l.slice(0, 20).map(function(t){ return '<li style="margin:4px 0">' + esc(clip(t, 220)) + '</li>'; }).join('') + '</ul>' : ''; };
+  Object.keys(notes).forEach(function(e){ if (!box[e] && staffEmail(e)) box[e] = []; });
   for (const email of Object.keys(box)) {
     const list = order(box[email], now); rep.people++; rep.items += list.length;
+    if (!list.length) {   /* patch AUTOMONEY: only notes for this person today */
+      const m0 = await A.staffMail(email, '📝 ' + notes[email].length + ' note' + (notes[email].length === 1 ? '' : 's') + ' for you — GrayCo CRM',
+        A.shell('Good morning' + (nameOf[email] ? ', ' + nameOf[email].split(' ')[0] : ''), noteHtml(email) + '<p><a href="' + esc(base + '/#todo') + '">Open the CRM</a></p>'));
+      if (m0.ok) rep.mailed++;
+      continue;
+    }
     const optLine = opt[email] ? '<p style="font-size:13px;color:#55626F">👷 ' + opt[email] + ' waiting on PMs — optional for you (✅ Approvals → <b>👷 PM approvals</b>).</p>' : '';   /* patch APOFFICE2 */
     const subject = '✅ ' + list.length + ' approval' + (list.length === 1 ? '' : 's') + ' waiting on you — GrayCo CRM';
     const html = A.shell('Good morning' + (nameOf[email] ? ', ' + nameOf[email].split(' ')[0] : '') + ' — ' + list.length + ' waiting on you',
-      '<p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><ul style="padding-left:18px">' + list.slice(0, MAX).map(line).join('') + '</ul>' + optLine +
+      '<p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><ul style="padding-left:18px">' + list.slice(0, MAX).map(line).join('') + '</ul>' + optLine + noteHtml(email) +
       (list.length > MAX ? '<p>+' + (list.length - MAX) + ' more in the CRM.</p>' : '') +
       '<p style="font-size:13px;color:#55626F">Routine ones (payment reminders, appointment reminders, waiver requests to known subs) can be approved together in the CRM: ✅ Approvals → <b>Approve all routine</b>.</p>' +
       '<p><a href="' + esc(base + '/#todo') + '">Open my approvals</a></p>');

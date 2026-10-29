@@ -7,6 +7,10 @@
 //   POST { action:'request', invId } | { action:'request', pid, sub, subId, final:true }   → "📝 Request lien waiver"
 //   POST { action:'toggle', kind:'sub'|'job', key, on }        → (admin / office) "Lien waivers: on / off"
 //   POST { action:'override', pid, reason }                    → (admin) close a job without its waivers
+//   patch AUTOMONEY:
+//   GET  ?t=<link token>&pdf=1                                 → (the sub) the waiver as a PDF
+//   POST { action:'paper', id | invId, file, name }            → (admin / office) "received on paper" + the scan
+//   POST { action:'pdf', id }                                  → (staff) the waiver PDF (base64)
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const L = require('./_lib/lien.js');
@@ -17,11 +21,12 @@ function ipOf(event){ return s(hdr(event, 'x-nf-client-connection-ip') || hdr(ev
 const JH = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 function J(code, body){ return { statusCode: code, headers: JH, body: JSON.stringify(body) }; }
 function page(w, t){
-  const done = w && /^(signed|uploaded)$/.test(s(w.status));
+  const done = w && /^(signed|uploaded|paper)$/.test(s(w.status));   /* patch AUTOMONEY: + received on paper */
   const body = !w ? '<p>This link is not valid any more. Ask GrayCo for a new one: office@grayco-cs.com · 901-585-0944.</p>'
     : '<p style="color:#55626F;margin:0 0 6px">' + esc(w.sub) + ' · ' + esc(w.jobName) + (w.jobAddress ? ' · ' + esc(w.jobAddress) : '') + ' · ' + usd(w.amount) + '</p>' +
       '<div style="border:1px solid #E2DCCD;border-radius:10px;padding:12px 14px;background:#FBFAF6">' + L.waiverText(w) + '</div>' +
-      (done ? '<p style="font-size:16px;font-weight:bold;color:#14532d">✅ ' + (w.status === 'signed' ? 'Signed by ' + esc(w.signerName) + ' on ' + esc(s(w.signedAt).slice(0, 10)) : 'Your signed copy was received on ' + esc(s(w.uploadedAt).slice(0, 10))) + '. Thank you.</p>'
+      '<p style="font-size:13px"><a href="?t=' + encodeURIComponent(s(t)) + '&amp;pdf=1" target="_blank" rel="noopener">Download the waiver (PDF)</a></p>' +   /* patch AUTOMONEY */
+      (done ? '<p style="font-size:16px;font-weight:bold;color:#14532d">✅ ' + (w.status === 'signed' ? 'Signed by ' + esc(w.signerName) + ' on ' + esc(s(w.signedAt).slice(0, 10)) : 'Your signed copy was received on ' + esc(s(w.uploadedAt || w.paperAt).slice(0, 10))) + '. Thank you.</p>'
         : '<form id="f" style="display:flex;flex-direction:column;gap:10px;margin-top:14px">' +
           '<label>Your full name<br><input id="n" required autocomplete="name" style="width:100%;font-size:16px;padding:10px;border:1px solid #c9c2b0;border-radius:8px"></label>' +
           '<label>Title (owner, office manager…)<br><input id="ti" style="width:100%;font-size:16px;padding:10px;border:1px solid #c9c2b0;border-radius:8px"></label>' +
@@ -44,6 +49,7 @@ exports.handler = async function(event){
   const qs = event.queryStringParameters || {};
   if ((event.httpMethod || 'GET') === 'GET') {
     const w = s(qs.t) ? await L.byToken(qs.t) : null;
+    if (w && s(qs.pdf) === '1') return { statusCode: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="lien-waiver.pdf"', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }, body: L.pdf(w).toString('base64'), isBase64Encoded: true };   /* patch AUTOMONEY */
     return { statusCode: w ? 200 : 404, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' }, body: page(w, qs.t) };
   }
   if (event.httpMethod !== 'POST') return J(405, { ok: false, error: 'POST only.' });
@@ -74,6 +80,16 @@ exports.handler = async function(event){
     if (!key) return J(400, { ok: false, error: 'Which sub or job?' });
     const next = await L.toggle(kind, key, b.on === true, who);
     return next ? J(200, { ok: true, settings: next }) : J(502, { ok: false, error: 'Not saved — try again.' });
+  }
+  if (act === 'paper') {   /* patch AUTOMONEY */
+    if (!admin && !office) return J(403, { ok: false, error: 'Only the office or an admin can mark a waiver received on paper.' });
+    const r = await L.paper({ id: b.id, invId: b.invId, file: b.file, name: b.name }, who); return J(r.status || 200, r);
+  }
+  if (act === 'pdf') {
+    const w = ((await L.forCrm()).waivers || []).find(function(x){ return s(x.id) === s(b.id); });
+    if (!w) return J(404, { ok: false, error: 'Waiver not found.' });
+    const full = (await A.core().kvListRead(L.KEY) || { list: [] }).list.find(function(x){ return s(x.id) === s(b.id); }) || w;
+    return J(200, { ok: true, name: 'lien-waiver-' + s(b.id).replace(/[^A-Za-z0-9_-]/g, '_') + '.pdf', pdf: L.pdf(full).toString('base64') });
   }
   if (act === 'override') {
     if (!admin) return J(403, { ok: false, error: 'Only Wesley or Nick can close a job without its lien waivers.' });
