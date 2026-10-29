@@ -48174,7 +48174,20 @@ async function pullAll(force){
         for(var _mi=0; _mi<_manifests.length; _mi++){
           var _mkey = String(_manifests[_mi].key||'').replace('__manifest','');
           if(!_mkey || SYNC_KEYS.indexOf(_mkey)<0) continue;
-          var _full = await sbReadChunked(_mkey);
+          var _full;   /* patch SWEEPCHUNK: read the chunks only when this list's manifest changed */
+          try{
+            var _mOff = false; try{ _mOff = localStorage.getItem('gc_sweepchunk_off') === '1'; }catch(_lo){}
+            var _mMemo = window.__gcManifestMemo || (window.__gcManifestMemo = {});
+            var _mv = _manifests[_mi].value; if(typeof _mv === 'string'){ try{ _mv = JSON.parse(_mv); }catch(_mp){} }
+            var _mSig = String(_manifests[_mi].updated_at || '') + '|' + (_mv && typeof _mv === 'object' ? [_mv.at, _mv.count, _mv.total, _mv.chunked].join('/') : String(_mv));
+            var _mPrev = _mMemo[_mkey], _mAge = _mPrev ? Date.now() - _mPrev.t : 1e12;
+            if(!_mOff && _mPrev && _mPrev.sig === _mSig && ((_mPrev.full && _mAge < 600000) || (!_mPrev.full && _mAge < 3600000))){
+              _full = _mPrev.full ? _mPrev.full.slice() : null; _mPrev.hits = (_mPrev.hits || 0) + 1;
+            } else {
+              _full = await sbReadChunked(_mkey);
+              _mMemo[_mkey] = { sig: _mSig, t: Date.now(), full: Array.isArray(_full) ? _full.slice() : null, reads: ((_mPrev && _mPrev.reads) || 0) + 1, hits: 0 };
+            }
+          }catch(_me){ _full = await sbReadChunked(_mkey); }
           if(Array.isArray(_full)){
             // Replace any single-row version of this key with the reassembled full list.
             var _had=false;
