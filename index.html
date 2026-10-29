@@ -146211,6 +146211,178 @@ W._gcMMT = { state: function(){ return { view: CUR.v, sec: X && X.UI.sec, tabs: 
 try { console.log('[GC] patch MMTABS: the Marketing Manager\'s tabs + admins\' to-dos for him — _gcMMT.state()'); } catch (e) {}
 })();
 </script><!-- /MMTABS -->
+<script id="gc-patch-mktsetup">
+/* ==========================================================================
+   GrayCo CRM — patch MKTSETUP __GC_PATCH_MKTSETUP__ : 🧰 Marketing setup (a checklist in 🔗 Marketing logins)
+   Owner (29 Oct 2026): "is all of these marketing sign ups available for malcolm marketing manager to do, sign up for etc
+   without my passwords and involvement directly with our crm, i need all pages needed for marketing available in crm and
+   easily accessible for him and admin".
+   * One card per marketing platform: what it is for, the direct link, who does what ("Owner grants access once" with the
+     exact menu path, or "the Marketing Manager signs up himself with accounts@grayco-cs.com so GrayCo owns the account"),
+     and a status (Not started / Waiting on owner to grant access / In progress / Done).
+   * The Marketing Manager and admins see it (🔗 Marketing logins); admins also get a progress card on 📣 Marketing.
+   * The status is kept on the server (netlify/functions/soc.js op mkt_setup / mkt_setup_set → _lib/mm.js, gc_kv
+     gc_mkt_admin.setup): he can set the status of a card and nothing else; "Admin only" cards (Resend) only an admin.
+   * No password or API key is asked for, shown or kept. Netlify, Supabase, Twilio, Google Admin, Google Cloud and
+     Resend stay admin-only.
+   Console: _gcMktSetup.state()
+   ========================================================================== */
+(function(){
+'use strict';
+if (window.__GC_PATCH_MKTSETUP__) return; window.__GC_PATCH_MKTSETUP__ = true;
+var W = window, D = document;
+var nST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout.bind(W);
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ return Array.isArray(v) ? v : []; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function isMM(){ try { return typeof W._gcIsMM === 'function' && W._gcIsMM(); } catch (e) { return false; } }
+var ITEMS = [
+  {"k": "acctmail", "ic": "✉️", "l": "accounts@grayco-cs.com (sign-up codes)", "mode": "grant", "d": "The company sign-up e-mail: the confirmation codes of every account below arrive here, so GrayCo owns the accounts.", "url": "https://mail.google.com/", "go": "Open Gmail", "own": ["Sign in to Gmail as accounts@grayco-cs.com → ⚙ (top right) → See all settings → Accounts → \"Grant access to your account\" → Add another account → {MM} → Next step → Send e-mail to grant access.", "Works for a @grayco-cs.com address (Google Admin → Apps → Google Workspace → Gmail → User settings → Mail delegation must be on — an admin turns it on once). Otherwise an admin forwards him each code when he asks."], "mm": ["Accept the access e-mail; then Gmail → your picture (top right) → accounts@grayco-cs.com opens the codes. No password is shared.", "Use accounts@grayco-cs.com for every card marked \"signs up himself\"."]},
+  {"k": "ga", "ic": "📊", "l": "Google Analytics", "mode": "grant", "d": "Website visitors: where they came from and which pages turn into calls and form leads.", "url": "https://analytics.google.com/", "own": ["analytics.google.com (as the owner) → Admin (gear, bottom left).", "Account column → Account access management → blue ＋ (top right) → Add users.", "E-mail {MM} → role Marketer (Editor if he must change the property) → tick \"Notify new users by e-mail\" → Add."], "mm": ["Accept the invite and check the GrayCo property shows visitors.", "If the website has no Measurement ID: website editor → Footer, Google & social links → Google Analytics Measurement ID (G-…)."]},
+  {"k": "gsc", "ic": "🔎", "l": "Google Search Console", "mode": "grant", "d": "How grayco-cs.com shows in Google search: queries, clicks, pages Google cannot read (property sc-domain:grayco-cs.com).", "url": "https://search.google.com/search-console?resource_id=sc-domain:grayco-cs.com", "own": ["Search Console → property sc-domain:grayco-cs.com (the Domain property).", "Settings (left menu, bottom) → Users and permissions → ADD USER.", "E-mail {MM} → Permission Full → Add."], "mm": ["Open the link: sc-domain:grayco-cs.com is in his property list.", "Sitemaps → submit https://grayco-cs.com/sitemap.xml if it is not listed."]},
+  {"k": "gads", "ic": "🎯", "l": "Google Ads", "mode": "grant", "d": "Search ads and conversions: keywords, ads, results (budget and billing changes go through an admin).", "url": "https://ads.google.com/", "own": ["ads.google.com (as the owner) → Admin (gear, left menu) → Access and security.", "Users → blue ＋ → e-mail {MM} → access level Standard (not Admin: billing and users stay with the owner) → Send invitation."], "mm": ["Accept the invite. Spend changes still go to an admin for approval (🎯 Ads in the CRM).", "Website tags: website editor → Footer, Google & social links → Google Ads tag ID (AW-…) and the conversion labels."]},
+  {"k": "gbp", "ic": "📍", "l": "Google Business Profile", "mode": "grant", "d": "The Google Maps / search listing: posts, photos, hours, review replies.", "url": "https://business.google.com/", "own": ["Signed in as the owner, search Google for \"GrayCo Construction Services\" (or open business.google.com) — your profile's edit panel shows.", "⋮ (three dots) → Business Profile settings → People and access → ＋ Add.", "E-mail {MM} → access Manager → Invite."], "mm": ["Accept the invite; posts, photos, hours and review replies are then his.", "Keep the name / address / phone exactly as in 📍 Listings."]},
+  {"k": "meta", "ic": "📘", "l": "Meta Business Suite + Events Manager pixel", "mode": "grant", "d": "Facebook and Instagram pages, inbox and ads; the website pixel (dataset \"Grayco website\") that counts website leads for the ads.", "url": "https://business.facebook.com/", "go": "Open Meta Business Suite", "url2": "https://business.facebook.com/events_manager2/", "go2": "Events Manager", "own": ["business.facebook.com → Settings (gear, bottom left) → Users → People → ＋ Add people.", "E-mail {MM} → Employee access (not Full control) → Next.", "Assign assets: Pages → GrayCo (full control of the Page), Instagram accounts → GrayCo, Ad accounts → GrayCo (manage campaigns), Datasets → \"Grayco website\" (manage) → Send request."], "mm": ["Accept the invite with his own Facebook login.", "Events Manager → Data sources → dataset \"Grayco website\" → check website events come in.", "The dataset / pixel ID goes in the website editor → Footer, Google & social links → Meta (Facebook) pixel ID."]},
+  {"k": "instagram", "ic": "📸", "l": "Instagram business account", "mode": "self", "d": "Reels and before / after photos; the business account also runs Instagram ads from Meta Business Suite.", "url": "https://www.instagram.com/accounts/emailsignup/", "go": "Sign up on Instagram", "own": ["Nothing — if GrayCo already has an Instagram, the Meta Business Suite access above covers it."], "mm": ["Sign up with accounts@grayco-cs.com (the code arrives there), username close to \"graycocs\".", "Profile → ☰ → Settings → Account type and tools → Switch to professional account → Business → category Construction Company.", "Connect it to the GrayCo Facebook Page: Meta Business Suite → Settings → Accounts → Instagram accounts → Add.", "Website editor → Footer, Google & social links → Instagram URL."]},
+  {"k": "linkedin", "ic": "💼", "l": "LinkedIn company page", "mode": "self", "d": "The company page for commercial work, property managers and hiring posts.", "url": "https://www.linkedin.com/company/setup/new/", "go": "Create the page", "own": ["Accept the Super admin invite when LinkedIn shows it (optional, keeps the page GrayCo's)."], "mm": ["LinkedIn pages hang off a personal profile: from his own LinkedIn → For Business (top right) → Create a Company Page → Company.", "Name GrayCo Construction Services, website https://grayco-cs.com, industry Construction; verify with a @grayco-cs.com e-mail when asked (accounts@grayco-cs.com).", "Page → Admin tools → Manage admins → Add admin → the owner as Super admin, so GrayCo keeps the page if he leaves.", "Website editor → Footer, Google & social links → LinkedIn URL."]},
+  {"k": "lsa", "ic": "🛡", "l": "Google Local Services Ads", "mode": "both", "d": "The \"Google Screened / Guaranteed\" ads at the very top of Google — pay per lead. Water, fire and storm damage only.", "url": "https://ads.google.com/local-services-ads/", "go": "Sign up for Local Services", "own": ["Google checks the business owner (background check, license, insurance). When Google e-mails the owner, that part is done directly with Google — it cannot be done for him."], "mm": ["Open the sign-up link and sign in with accounts@grayco-cs.com (or link the GrayCo Google Ads account).", "Business GrayCo Construction Services, Memphis-area ZIP codes, main number (901) 585-0944.", "Job types: ONLY water damage, fire damage and storm damage — nothing else.", "Weekly budget: the amount the owner agreed (an admin approves spend). Leads into the CRM: the Zapier card."]},
+  {"k": "zapier", "ic": "⚡", "l": "Zapier: Local Services leads → CRM", "mode": "both", "d": "Puts every Local Services lead in the CRM's 📥 Lead Inbox within a minute (the CRM texts / e-mails the customer back).", "url": "https://zapier.com/sign-up", "go": "Sign up on Zapier", "own": ["An admin makes the key in Netlify → Site configuration → Environment variables → LEAD_KEY_GOOGLE_LSA (any long random text).", "The admin opens the Zap (Zapier → Share, or on his screen) and types the key into the header x-api-key. The key is never sent to him or kept in the CRM."], "mm": ["Sign up with accounts@grayco-cs.com.", "New Zap → trigger Google Local Services Ads → New lead (or the LSA lead e-mail).", "Action Webhooks by Zapier → POST → URL https://crm.grayco-cs.com/.netlify/functions/lead-intake → JSON: name, phone, email, address, job type, message.", "Leave the header x-api-key empty: add a ✅ To-Do for an admin to fill it, then Test."]},
+  {"k": "fblead", "ic": "📝", "l": "Facebook lead ads → CRM (Zapier)", "mode": "both", "d": "Each Facebook / Instagram lead-form answer lands in the 📥 Lead Inbox, the same way as the Local Services leads.", "url": "https://zapier.com/apps/facebook-lead-ads/integrations/webhook", "go": "Facebook Lead Ads on Zapier", "own": ["Meta Business Suite → Settings → Integrations → Leads access → Page GrayCo → assign {MM} (and under CRMs: Zapier).", "An admin makes LEAD_KEY_FACEBOOK_LEADS in Netlify and types it into the Zap header himself."], "mm": ["Zapier → New Zap → Facebook Lead Ads → New lead → connect his Facebook login → Page GrayCo → the form.", "Action Webhooks by Zapier → POST → https://crm.grayco-cs.com/.netlify/functions/lead-intake (same as the Local Services Zap).", "Header x-api-key: an admin fills it (✅ To-Do), then Test."]},
+  {"k": "callrail", "ic": "📞", "l": "CallRail call tracking", "mode": "both", "d": "Website call tracking for grayco-cs.com: which ad or page made the phone ring (main number (901) 585-0944); calls show in the CRM.", "url": "https://app.callrail.com/signup", "go": "Sign up on CallRail", "own": ["If CallRail asks for a card: the owner enters it once in CallRail → Billing (never through the CRM).", "An admin adds the post-call webhook (CallRail → Settings → Integrations → Webhooks): its address carries a key from Netlify, so he never sees it."], "mm": ["Sign up with accounts@grayco-cs.com.", "Create a Website (source / keyword) tracker for grayco-cs.com; the number to swap and to ring: (901) 585-0944.", "Copy the swap.js script URL (//cdn.callrail.com/companies/…/swap.js) from the JavaScript snippet.", "Paste it in the website editor: grayco-cs.com → gear (bottom right) → Footer, Google & social links → CallRail swap script URL → Save & publish."]},
+  {"k": "site", "ic": "🌍", "l": "Website editor", "mode": "grant", "d": "Website text, photos, projects, reviews; the tracking IDs (Analytics, Ads, pixel, CallRail) are in Footer, Google & social links.", "url": "https://grayco-cs.com/", "go": "Open grayco-cs.com", "own": ["Any @grayco-cs.com e-mail may sign in. Another e-mail: an admin adds it to ADMIN_EMAILS on the website's Netlify site (Site configuration → Environment variables).", "The editor's sign-in is given to him by an admin directly — it is never kept or shown in the CRM."], "mm": ["grayco-cs.com → gear button (bottom right) → sign in → edit → Save & publish."]},
+  {"k": "review", "ic": "⭐", "l": "Google review link", "mode": "check", "d": "The short link customers get for a Google review (also on the QR codes).", "url": "https://grayco-cs.com/review", "go": "Open the review link", "mm": ["Open it on a phone: it must open GrayCo's \"Write a review\" box.", "If not: Google Business Profile → Ask for reviews → copy the link → website editor → Footer, Google & social links → Google write-a-review link.", "Use it from ⭐ Reviews & referrals."]},
+  {"k": "nextdoor", "ic": "🏡", "l": "Nextdoor business page", "mode": "self", "d": "Neighbourhood recommendations and local posts around finished jobs.", "url": "https://business.nextdoor.com/", "go": "Claim on Nextdoor", "own": ["Nextdoor may verify with a call / text to (901) 585-0944 or a postcard — whoever gets the code passes it to him."], "mm": ["business.nextdoor.com → Claim your free business page → sign up with accounts@grayco-cs.com.", "Find GrayCo Construction Services (or create it): the name / address / phone exactly as 📍 Listings, website grayco-cs.com.", "Logo, a few before / after photos; ask happy neighbours for recommendations."]},
+  {"k": "bing", "ic": "🅱️", "l": "Bing Places", "mode": "self", "d": "The listing on Bing, Microsoft maps and the Copilot / Windows search answers.", "url": "https://www.bingplaces.com/", "go": "Open Bing Places", "mm": ["bingplaces.com → Sign in → a Microsoft account made with accounts@grayco-cs.com.", "Import from Google Business Profile (quickest — uses his Manager access), or add it by hand with the 📍 Listings name / address / phone.", "Mark it in 📍 Listings when it is live."]},
+  {"k": "apple", "ic": "🍎", "l": "Apple Business Connect", "mode": "self", "d": "The Apple Maps / Siri listing (iPhones): hours, photos, the call button.", "url": "https://businessconnect.apple.com/", "go": "Open Business Connect", "own": ["If Apple asks for a business document (license), an admin uploads it in Business Connect."], "mm": ["businessconnect.apple.com → Get started → an Apple Account made with accounts@grayco-cs.com.", "Add a business → claim the Apple Maps place (or add it) with the 📍 Listings name / address / phone.", "Verify: Apple may call (901) 585-0944 — whoever answers passes him the code."]},
+  {"k": "listings", "ic": "📒", "l": "Yelp, BBB, Angi listings", "mode": "self", "d": "The other directories: same name / address / phone everywhere (tracked in 📍 Listings).", "url": "https://biz.yelp.com/", "go": "Yelp for Business", "sec": "listings", "secL": "📍 Listings in the CRM", "own": ["BBB: if GrayCo is accredited, the owner adds him as a contact in the BBB business portal once."], "mm": ["Yelp: biz.yelp.com → Claim your business → accounts@grayco-cs.com.", "Angi: angi.com → For pros → sign up / claim with accounts@grayco-cs.com (no paid plan without an admin's OK).", "BBB: bbb.org → find GrayCo → \"Is this your business?\".", "Tick each one in 📍 Listings (name / address / phone checked)."]},
+  {"k": "resend", "ic": "📨", "l": "Resend (CRM e-mail sending)", "mode": "admin", "d": "Sends the CRM's e-mails and newsletters. Admin only: newsletters are written in ✉️ E-mail & newsletter.", "url": "https://resend.com/", "own": ["Admins only (with Netlify, Supabase, Twilio, Google Admin, Google Cloud). Nothing for the Marketing Manager to sign up."]}
+];
+var STATUS = [['todo', 'Not started', '#64748b'], ['owner', 'Waiting on owner to grant access', '#b45309'], ['doing', 'In progress', '#1d4ed8'], ['done', 'Done', '#15803d']];
+var SL = {}; STATUS.forEach(function(x){ SL[x[0]] = x; });
+var WHO = {
+  grant: '👤 Owner grants access once — then {MMN} works in it with his own login',
+  self: '🧑‍💼 {MMN} signs up himself with accounts@grayco-cs.com — GrayCo owns the account',
+  both: '🧑‍💼 {MMN} signs up with accounts@grayco-cs.com · 👤 one admin step (below)',
+  check: '🧑‍💼 {MMN} checks it — nothing to sign up',
+  admin: '🔒 Admin only — nothing for the Marketing Manager'
+};
+var X = null, ST = { items: null, loading: false, err: '', at: 0, busy: {} };
+function admin(){ return !isMM() && !!X && X.role() === 'admin'; }
+function canSee(){ return isMM() || admin(); }
+function canSet(it){ return admin() || (isMM() && it.mode !== 'admin'); }
+/* who the Marketing Manager is (for the steps: "add <his e-mail>"); never a password */
+function mmWho(){
+  if (isMM()) { var n = '', e = ''; try { n = X.myName(); e = X.myEmail(); } catch (x) {} return { name: s(n), email: low(e) }; }
+  var p = []; try { p = arr(typeof W._gcMMPeople === 'function' ? W._gcMMPeople() : []); } catch (x) {}
+  return p[0] ? { name: s(p[0].name), email: low(p[0].email) } : { name: '', email: '' };
+}
+function fill(t, who){
+  var first = s(who.name).split(/\s+/)[0] || 'the Marketing Manager';
+  var em = who.email ? '<b>' + esc(who.email) + '</b>' : 'the Marketing Manager\'s e-mail';
+  return esc(t).replace(/\{MMN\}/g, esc(first)).replace(/\{MM\}/g, em);
+}
+function statusOf(k){ var x = ST.items && ST.items[k]; return x && SL[x.status] ? x.status : 'todo'; }
+function counts(){
+  var c = { done: 0, owner: 0, doing: 0, todo: 0, total: ITEMS.length };
+  ITEMS.forEach(function(it){ c[statusOf(it.k)]++; }); return c;
+}
+function load(force){
+  if (!X || !canSee() || ST.loading || (ST.items && !force && Date.now() - ST.at < 60e3)) return;
+  ST.loading = true;
+  X.api('soc', { op: 'mkt_setup' }).then(function(j){
+    ST.loading = false; ST.at = Date.now();
+    if (j && j.ok) { ST.items = j.items || {}; ST.err = ''; } else { ST.err = (j && j.error) || 'not reachable'; if (!ST.items) ST.items = {}; }
+    if (X.UI.root && X.UI.root.isConnected && /^(logins|home)$/.test(X.UI.sec) && !X.UI.editing) X.draw();
+  });
+}
+function bar(c){
+  var pct = c.total ? Math.round(100 * c.done / c.total) : 0;
+  return '<div style="height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin:6px 0" aria-hidden="true"><div style="height:100%;width:' + pct + '%;background:#15803d"></div></div>';
+}
+function summary(c){ return '<b data-mks-progress>' + c.done + ' of ' + c.total + ' done</b>' + (c.owner ? ' · <span style="color:#b45309;font-weight:700">' + c.owner + ' waiting on the owner</span>' : '') + (c.doing ? ' · ' + c.doing + ' in progress' : ''); }
+function steps(title, list, who){
+  if (!arr(list).length) return '';
+  return '<div style="margin:6px 0 0"><div style="font-weight:700">' + esc(title) + '</div><ol style="margin:4px 0 0 18px;padding:0">' + list.map(function(x){ return '<li style="margin:2px 0">' + fill(x, who) + '</li>'; }).join('') + '</ol></div>';
+}
+function card(it, who){
+  var st = statusOf(it.k), sl = SL[st], rec = ST.items && ST.items[it.k];
+  var h = '<div class="gmt-card" data-mks="' + esc(it.k) + '" data-status="' + st + '" style="border-left:4px solid ' + sl[2] + ';margin:0 0 12px">';
+  h += '<div class="gmt-row" style="justify-content:space-between;align-items:flex-start;gap:6px;flex-wrap:wrap"><b>' + esc(it.ic + ' ' + it.l) + '</b>' + (it.mode === 'admin' ? X.chip('Admin only') : '') + '</div>';
+  h += '<div class="gmt-muted" style="margin:3px 0">' + esc(it.d) + '</div>';
+  h += '<div style="font-size:13px;margin:4px 0">' + fill(WHO[it.mode] || '', who) + '</div>';
+  /* the status: a picker for him / admins, plain text otherwise */
+  h += '<div class="gmt-row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0">';
+  if (canSet(it)) h += '<label class="gmt-muted" for="mks-' + esc(it.k) + '">Status</label><select id="mks-' + esc(it.k) + '" data-mks-set="' + esc(it.k) + '"' + (ST.busy[it.k] ? ' disabled' : '') + ' style="max-width:100%">' + STATUS.map(function(x){ return '<option value="' + x[0] + '"' + (x[0] === st ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>';
+  else h += '<span style="font-weight:700;color:' + sl[2] + '">' + esc(sl[1]) + '</span>';
+  if (rec && rec.by) h += '<span class="gmt-muted" style="font-size:12px">· ' + esc(rec.by) + (rec.at ? ' ' + esc(s(rec.at).slice(0, 10)) : '') + '</span>';
+  h += '</div>';
+  /* the links */
+  var links = [];
+  if (it.url && (it.mode !== 'admin' || admin())) links.push('<a class="gmt-btn" href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.go || ('Open ' + it.l)) + ' ↗</a>');
+  if (it.url2) links.push('<a class="gmt-btn o" href="' + esc(it.url2) + '" target="_blank" rel="noopener noreferrer">' + esc(it.go2 || 'Open') + ' ↗</a>');
+  if (it.sec && X.SECS.some(function(x){ return x.id === it.sec; })) links.push('<button class="gmt-btn o" data-a="go" data-sec="' + esc(it.sec) + '">' + esc(it.secL || 'Open in the CRM') + '</button>');
+  if (links.length) h += '<div class="gmt-row" style="gap:6px;flex-wrap:wrap">' + links.join('') + '</div>';
+  if (arr(it.own).length || arr(it.mm).length) {
+    h += '<details style="margin-top:6px"' + (st === 'owner' && admin() ? ' open' : '') + '><summary style="cursor:pointer;font-weight:600">How to set it up</summary>';
+    h += steps(it.mode === 'self' || it.mode === 'both' || it.mode === 'check' ? '🧑‍💼 ' + (s(who.name).split(/\s+/)[0] || 'The Marketing Manager') + ' does' : '🧑‍💼 Then ' + (s(who.name).split(/\s+/)[0] || 'the Marketing Manager') + ' does', it.mm, who);
+    h += steps(it.mode === 'grant' ? '👤 Owner grants access once' : it.mode === 'admin' ? '🔒 Admin' : '👤 Owner / admin, once', it.own, who);
+    h += '</details>';
+  }
+  return h + '</div>';
+}
+function section(){
+  if (!canSee()) return '';
+  load(false);
+  var who = mmWho(), c = counts();
+  var h = '<div class="gmt-card" data-mkt-setup><div class="gmt-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2 style="margin:0">🧰 Marketing setup</h2><span>' + summary(c) + '</span></div>' + bar(c);
+  h += '<div class="gmt-muted">Every marketing account GrayCo needs, one card each: what it is for, the link, and who does what. ' +
+    '<b>Owner grants access once</b> = the owner adds ' + fill('{MM}', who) + ' as a user / manager (the exact menu is on the card) — no password is shared. ' +
+    '<b>Signs up himself</b> = ' + fill('{MMN}', who) + ' makes the account with <b>accounts@grayco-cs.com</b>, so GrayCo owns it. ' +
+    'No password or API key is asked for, shown or kept in the CRM. Netlify, Supabase, Twilio, Google Admin, Google Cloud and Resend stay admin-only.</div>';
+  if (ST.err) h += '<div class="gmt-muted" style="color:#b91c1c">Could not load the saved statuses (' + esc(ST.err) + ').</div>';
+  if (admin() && c.owner) h += '<div style="margin-top:8px;padding:8px 10px;background:#fff7ed;border-radius:8px" data-mks-owner><b>Waiting on you:</b> ' + ITEMS.filter(function(it){ return statusOf(it.k) === 'owner'; }).map(function(it){ return esc(it.ic + ' ' + it.l); }).join(' · ') + ' — open the card\'s "How to set it up".</div>';
+  h += '</div><div data-mks-grid style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));column-gap:14px">' + ITEMS.map(function(it){ return card(it, who); }).join('') + '</div>';
+  return h;
+}
+function homeCard(){
+  load(false);
+  var c = counts();
+  return '<div class="gmt-card" data-mks-home><div class="gmt-row" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><h2 style="margin:0">🧰 Marketing setup</h2><button class="gmt-btn" data-a="go" data-sec="logins">Open the checklist</button></div>' + bar(c) +
+    '<div>' + summary(c) + '</div><div class="gmt-muted">Google Analytics, Search Console, Ads, Business Profile, Meta, Local Services, CallRail, Zapier, listings… what the Marketing Manager signs up for himself and what needs you once.</div></div>';
+}
+D.addEventListener('change', function(ev){
+  var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-mks-set'); if (!k || !X) return;
+  var it = ITEMS.filter(function(x){ return x.k === k; })[0]; if (!it || !canSet(it)) return;
+  var v = s(t.value); if (!SL[v]) return;
+  var prev = ST.items && ST.items[k]; ST.items = ST.items || {};
+  ST.items[k] = { status: v, by: (function(){ try { return X.myName(); } catch (e) { return ''; } })(), at: new Date().toISOString() };
+  ST.busy[k] = 1; X.draw();
+  X.api('soc', { op: 'mkt_setup_set', key: k, status: v }).then(function(j){
+    delete ST.busy[k];
+    if (j && j.ok) { if (j.items) ST.items = j.items; X.toast(it.l + ': ' + SL[v][1]); }
+    else { if (prev) ST.items[k] = prev; else delete ST.items[k]; X.toast('Not saved: ' + ((j && j.error) || 'try again'), true); }
+    ST.at = Date.now(); X.draw();
+  });
+}, true);
+function install(){
+  var lo = X.VIEWS.logins;
+  X.VIEWS.logins = function(){ var h = lo.apply(this, arguments); return canSee() ? section() + h : h; };
+  X.VIEWS.logins.__mks = true;
+  var home0 = X.VIEWS.home;
+  X.VIEWS.home = function(){ var h = home0.apply(this, arguments); return admin() ? homeCard() + h : h; };
+  /* admins: the setup in the 🔗 Marketing logins description */
+  X.SECS.forEach(function(x){ if (x.id === 'logins' && !/setup/.test(x.d)) x.d = '🧰 Marketing setup checklist + ' + x.d; });
+  if (X.UI.root && X.UI.root.isConnected && /^(logins|home)$/.test(X.UI.sec)) X.draw();
+}
+var tries = 0;
+(function boot(){ var x = W._gcMktExt; if (!x || !x.VIEWS || !x.VIEWS.home || typeof x.VIEWS.logins !== 'function' || !W._gcMMT) { if (tries++ < 300) nST(boot, 400); return; } X = x; install(); })();
+/* the logins section may be added a moment later (the role arrives late): the description follows */
+(function desc(n){ try { if (X) X.SECS.forEach(function(x){ if (x.id === 'logins' && !/setup/.test(x.d)) x.d = '🧰 Marketing setup checklist + ' + x.d; }); } catch (e) {} if (n > 0) nST(function(){ desc(n - 1); }, 1500); })(40);
+W._gcMktSetup = { items: ITEMS, state: function(){ return { loaded: !!ST.items, err: ST.err, counts: counts(), statuses: ST.items }; }, reload: function(){ load(true); } };
+try { console.log('[GC] patch MKTSETUP: 🧰 Marketing setup in 🔗 Marketing logins — _gcMktSetup.state()'); } catch (e) {}
+})();
+</script><!-- /MKTSETUP -->
 <script id="gc-fix-filehold">
 /* GATE fix_2 — the file-window hold ends when the person is back (no window focus event needed). */
 (function(){

@@ -83,6 +83,8 @@ async function gcStaffAuth(event){
 //   patch MM — the Marketing Manager profile (_lib/mm.js; he is never on the staff rules): status, library, plan_week, swap, rewrite,
 //   listings_sync, mm_boot, mm_kv_read / mm_kv_write (the marketing document, redacted), mm_jobs, mm_file, my_leads, mm_tasks, mm_task,
 //   mm_approvals, mm_approve, mm_queue, mm_review_reply, mm_website. Every answer to him is redacted (no customer e-mail / phone / address).
+//   POST { op:'mkt_setup' } / { op:'mkt_setup_set', key, status }   patch MKTSETUP: 🧰 Marketing setup statuses — the Marketing Manager
+//   (not the "Admin only" cards) and admins; gc_kv gc_mkt_admin.setup (_lib/mm.js setupRead / setupSet). No password or key anywhere.
 // Signed-in GrayCo staff only (the two GETs are signed links). Nothing goes public from here: posts wait on ✅ Approvals.
 'use strict';
 const S = require('./_lib/soc.js');
@@ -203,6 +205,8 @@ async function mmOps(op, body, who, headers){
   if (op === 'mm_queue') { const a = await M.queueForApproval({ kind: String(body.kind || ''), recId: String(body.recId || ''), again: body.again === true }, who, { queueApproval: core().queueApproval, officeTodo: core().officeTodo }); return R(a.status, a.out); }
   if (op === 'mm_review_reply') { const a = await M.approveReply(String(body.id || ''), body.text, who); return R(a.status, a.out); }
   if (op === 'mm_website') { let v = null; try { v = (await M.crmData(['roofPriceRanges'])).roofPriceRanges || null; } catch (e) {} return R(200, { ok: true, roofPriceRanges: v || null, forms: ['general', 'roofing', 'storm', 'water', 'remodel', 'commercial', 'roofprice'] }); }
+  if (op === 'mkt_setup') return R(200, { ok: true, items: await MM.setupRead(), adminOnly: Object.keys(MM.SETUP_ADMIN) });   /* patch MKTSETUP */
+  if (op === 'mkt_setup_set') { const r = await MM.setupSet(body.key, body.status, who, false); return R(r.ok ? 200 : r.code, r.ok ? { ok: true, items: r.items } : { ok: false, error: r.error }); }
   return R(403, { ok: false, error: 'Not part of the Marketing Manager profile.' });
 }
 exports.handler = async function(event){
@@ -239,6 +243,11 @@ exports.handler = async function(event){
       testi = (Array.isArray(testi) ? testi : (testi.list || [])).filter(function(t){ return t && !t.deleted && t.permission === true && t.status === 'approved'; })
         .map(function(t){ return { id: t.id, pid: t.pid, first: String(t.name || '').split(/\s+/)[0], city: t.city, text: t.text, video: t.video && t.video.ref ? t.video.ref : '', at: t.at }; });
       return reply(200, headers, { ok: true, tags: tags, testimonials: testi });
+    }
+    if (op === 'mkt_setup' || op === 'mkt_setup_set') {   /* patch MKTSETUP: 🧰 Marketing setup — admins (and the Marketing Manager above) */
+      if (!admin) return reply(403, headers, { ok: false, error: 'Marketing setup: the Marketing Manager and admins.' });
+      if (op === 'mkt_setup') return reply(200, headers, { ok: true, items: await MM.setupRead(), adminOnly: Object.keys(MM.SETUP_ADMIN) });
+      const r = await MM.setupSet(body.key, body.status, who, true); return reply(r.ok ? 200 : r.code, headers, r.ok ? { ok: true, items: r.items } : { ok: false, error: r.error });
     }
     if (op === 'ideas') { if (!admin) return reply(403, headers, { ok: false, error: 'Ideas & experiments: the Marketing Manager and admins.' }); return reply(200, headers, await ideasView(who, true, body.month)); }   /* patch MM */
     if (op === 'feature_requests') { if (!admin) return reply(403, headers, { ok: false, error: 'Admins only.' }); let v = []; try { v = (await M.kvRow(M.FEATURE_KEY)).v || []; } catch (e) {} return reply(200, headers, { ok: true, list: Array.isArray(v) ? v : [] }); }

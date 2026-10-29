@@ -74,7 +74,7 @@ function settingsOf(v){ const m = (v && v.mm) || {}; return { soldValues: m.sold
 async function settings(){ try { return settingsOf(await kvGet(ADMIN_KEY)); } catch (e) { return settingsOf(null); } }
 async function adminDoc(){ try { return (await kvGet(ADMIN_KEY)) || {}; } catch (e) { return {}; } }
 async function setSettings(patch, who){
-  const cur = await adminDoc(), mm = Object.assign({}, cur.mm || {});
+  const cur = (await kvGet(ADMIN_KEY)) || {}, mm = Object.assign({}, cur.mm || {});   /* patch MKTSETUP: a failed read throws (the row also holds the setup statuses) */
   if (patch.soldValues != null) mm.soldValues = patch.soldValues === true;
   if (patch.approvesStage2 != null) mm.approvesStage2 = patch.approvesStage2 === true;
   mm.by = low(who && who.email); mm.at = nowIso();
@@ -322,3 +322,29 @@ function myTasks(list, email){ return arr(list).filter(function(t){ return mine(
 
 module.exports = { expMatch, expResults, scorecard, expStage, auth, orStaff, isMarketingRow, settings, setSettings, settingsOf, ADMIN_KEY, redact, redactDoc, scrubText, mergeWrite, jobs, photos, allowedRefs, sourceOf, stageOf, myLeads, funnel, myTasks, mine, STAGES, PII_KEYS,
   _setNow: function(f){ nowFn = f || function(){ return Date.now(); }; } };
+
+/* ── patch MKTSETUP: 🧰 Marketing setup — the status of each marketing platform card (gc_kv gc_mkt_admin.setup) ──
+   The Marketing Manager may set a status (todo / owner / doing / done) of a known card and nothing else; the "Admin only"
+   cards only an admin. The row is read first and kept whole (his settings, the admins' settings); a failed read writes nothing. */
+const SETUP_KEYS = ["acctmail", "ga", "gsc", "gads", "gbp", "meta", "instagram", "linkedin", "lsa", "zapier", "fblead", "callrail", "site", "review", "nextdoor", "bing", "apple", "listings", "resend"];
+const SETUP_ADMIN = {"resend": 1};
+const SETUP_ST = { todo: 1, owner: 1, doing: 1, done: 1 };
+function setupOf(v){
+  const m = (v && v.setup && typeof v.setup === 'object') ? v.setup : {}, out = {};
+  SETUP_KEYS.forEach(function(k){ const x = m[k]; if (x && SETUP_ST[x.status]) out[k] = { status: x.status, by: scrubText(s(x.by)).slice(0, 60), at: s(x.at).slice(0, 30) }; });
+  return out;
+}
+async function setupRead(){ return setupOf(await kvGet(ADMIN_KEY)); }
+async function setupSet(key, status, who, isAdmin){
+  key = s(key); status = s(status);
+  if (SETUP_KEYS.indexOf(key) < 0) return { ok: false, code: 400, error: 'Not a marketing setup card.' };
+  if (!SETUP_ST[status]) return { ok: false, code: 400, error: 'Status: todo, owner, doing or done.' };
+  if (SETUP_ADMIN[key] && !isAdmin) return { ok: false, code: 403, error: 'Admin only.' };
+  let cur = await kvGet(ADMIN_KEY);   /* throws when it cannot be read: nothing is written */
+  if (!cur || typeof cur !== 'object' || Array.isArray(cur)) cur = {};
+  const setup = Object.assign({}, cur.setup && typeof cur.setup === 'object' && !Array.isArray(cur.setup) ? cur.setup : {});
+  setup[key] = { status: status, by: s(who && (who.name || who.email)).slice(0, 60), byEmail: low(who && who.email), at: nowIso() };
+  await kvPut(ADMIN_KEY, Object.assign({}, cur, { setup: setup }));
+  return { ok: true, items: setupOf({ setup: setup }) };
+}
+Object.assign(module.exports, { SETUP_KEYS: SETUP_KEYS, SETUP_ADMIN: SETUP_ADMIN, setupOf: setupOf, setupRead: setupRead, setupSet: setupSet });   /* patch MKTSETUP */
