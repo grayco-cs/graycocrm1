@@ -233,7 +233,9 @@ function stampsNow(input, init, u){
 }
 function valueFetch(input, init, u, id){
   var c = VC.get(id), fresh = c && Date.now() - c.at < VC_TTL;
-  var pre = (c && fresh) || (c && c.needStamp) ? stampsNow(input, init, u) : Promise.resolve(undefined);
+  if (c && c.small && fresh) return NF.call(W, input, init);             /* a small row: not worth a second request */
+  /* the stamps are asked BEFORE the download (also the first time), so a kept copy is never newer than its stamps */
+  var pre = !c || fresh || c.needStamp ? stampsNow(input, init, u) : Promise.resolve(undefined);
   return pre.then(function(sig){
     if (c && fresh && sig && sig === c.sig && c.body != null) {
       S.validated++; S.savedBytes += c.body.length;
@@ -242,7 +244,7 @@ function valueFetch(input, init, u, id){
     return NF.call(W, input, init).then(function(r){
       if (!r || !r.ok || r.status !== 200) return r;
       return r.clone().text().then(function(t){
-        if (t.length < VC_MIN || t.length > VC_MAX / 2) return r;
+        if (t.length < VC_MIN || t.length > VC_MAX / 2) { if (!VC.has(id) && VC.size < 400) VC.set(id, { at: Date.now(), small: true, body: '', keys: keysOfUrl(u) }); return r; }
         var bodySig = null; try { bodySig = sigOf(JSON.parse(t)); } catch (e) {}
         var useSig = bodySig || sig;   /* the stamps asked BEFORE the download: never newer than the body */
         var old = VC.get(id); if (old) { vcBytes -= old.body.length; VC['delete'](id); }

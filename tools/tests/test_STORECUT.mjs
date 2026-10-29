@@ -79,12 +79,12 @@ const H = { headers: { apikey: 'k', Authorization: 'Bearer t' } };
 }
 // 5. a big row downloads again only when its time stamp moved
 { const t = mk(); const u = SB + '/rest/v1/gc_kv?key=eq.big&select=key,value,updated_at';
-  const a = await (await t.W.fetch(u, H)).json(); ok(a[0].value[0].pad.length === 80000 && t.calls.length === 1, 'first big read downloads');
-  const b = await (await t.W.fetch(u, H)).json(); ok(b[0].value[0].pad.length === 80000 && t.calls.length === 2 && /select=key,updated_at/.test(t.calls[1].u), 'repeat: only the stamps go out, same answer', t.calls.map(c => c.u.slice(-40)));
+  const a = await (await t.W.fetch(u, H)).json(); ok(a[0].value[0].pad.length === 80000 && t.calls.length === 2 && /select=key,updated_at/.test(t.calls[0].u), 'first big read: stamps first, then the download');
+  const b = await (await t.W.fetch(u, H)).json(); ok(b[0].value[0].pad.length === 80000 && t.calls.length === 3 && /select=key,updated_at/.test(t.calls[2].u), 'repeat: only the stamps go out, same answer', t.calls.map(c => c.u.slice(-40)));
   t.stamps.big = 't2'; t.rows.big = [{ id: 'B', pad: 'y'.repeat(80000) }];
-  const c = await (await t.W.fetch(u, H)).json(); ok(c[0].value[0].pad[0] === 'y' && t.calls.length === 4, 'stamp moved: downloads the new value');
+  const c = await (await t.W.fetch(u, H)).json(); ok(c[0].value[0].pad[0] === 'y' && t.calls.length === 5, 'stamp moved: downloads the new value');
   await t.W.fetch(SB + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', body: JSON.stringify({ key: 'big', value: [] }) });
-  await t.W.fetch(u, H); ok(t.calls.length === 6 && !/select=key,updated_at/.test(t.calls[5].u), 'after this page writes the key: full download', t.calls.slice(4).map(c => c.u.slice(-40)));
+  await t.W.fetch(u, H); ok(t.calls.length === 8 && !/select=key,updated_at/.test(t.calls[7].u), 'after this page writes the key: the kept copy is gone (stamps + full download)', t.calls.slice(5).map(c => c.u.slice(-40)));
   const sv = SB + '/rest/v1/gc_kv?key=eq.big&select=value';
   await t.W.fetch(sv, H); const n0 = t.calls.length; const d = await (await t.W.fetch(sv, H)).json(); const n1 = t.calls.length; const e = await (await t.W.fetch(sv, H)).json();
   ok(d[0].value[0].pad.length === 80000 && e[0].value[0].pad.length === 80000 && t.calls.length - n1 === 1 && /select=key,updated_at/.test(t.calls[t.calls.length - 1].u), 'select=value only: stamps asked before the download, then repeats are stamps only', t.calls.slice(n0 - 1).map(c => c.u.slice(-40)));
