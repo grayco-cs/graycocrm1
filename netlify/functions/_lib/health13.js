@@ -77,6 +77,15 @@ async function inbound(){
   }
   return item('inbound', 'E-mail into the CRM', worst, parts.join(' · ') + (worst !== 'green' ? ' — if this should be working, check Resend (in.grayco-cs.com) and the Google groups.' : ''));
 }
+/* patch SALESSPAM: the day's count of filtered sales pitches — the only place they show outside 🗑 Filtered (admins) */
+async function salesFiltered(){
+  try {
+    const SS = require('./salesspam.js');
+    const save = SS._D.kvGet; if (D.lib) SS._D.kvGet = function(k){ return B().kvGet(k); };
+    let c; try { c = await SS.counts(); } finally { SS._D.kvGet = save; }
+    return item('salesspam', 'Sales e-mails filtered', 'green', SS.healthText(c));
+  } catch (e) { return item('salesspam', 'Sales e-mails filtered', 'green', 'Not counted yet.'); }
+}
 const SCHED = [['gc_bid_watch_status', 'Public bid watcher'], ['gc_lead_inbox_alerts', 'Lead alerts & reminders'], ['gc_coi_req_state', 'COI renewal requests'], ['gc_warr_check_state', 'Warranty check-ups'], ['gc_health13_state', 'This health check']];
 async function scheduled(){
   const bad = [], errs = []; let ran = 0;
@@ -114,7 +123,7 @@ function switchedOff(){
 }
 async function report(){
   const items = [];
-  items.push(await backups()); items.push(await storage()); items.push(await inbound());
+  items.push(await backups()); items.push(await storage()); items.push(await inbound()); items.push(await salesFiltered());
   (await scheduled()).forEach(function(x){ items.push(x); });
   items.push(await approvals()); items.push(await logins()); items.push(switchedOff());
   return { at: new Date(now()).toISOString(), items: items, worst: items.some(function(x){ return x.status === 'red'; }) ? 'red' : items.some(function(x){ return x.status === 'amber'; }) ? 'amber' : 'green' };

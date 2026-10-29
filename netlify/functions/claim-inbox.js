@@ -190,12 +190,14 @@ function classify(f, i, facts){
 }
 
 /* ── the whole job ── */
-async function processEvent(evt){
+async function processEvent(evt, opts){
   if (s(evt && evt.type) && s(evt.type) !== 'email.received') return { status: 200, body: { ok: true, ignored: 'event ' + evt.type } };
   const data = (evt && (evt.data || evt)) || {}, mail = await readMail(data);
   if (!forClaims(mail, data)) return { status: 200, body: { ok: true, ignored: 'not addressed to the claim inbox' } };
   const own = ownOrAuto(mail); if (own) return { status: 200, body: { ok: true, ignored: own } };
   if (!sbKey()) return { status: 503, body: { ok: false, error: 'database not configured' } };
+  /* patch SALESSPAM: a vendor's sales pitch to claims@ is never a claim e-mail or an insurance lead (🗑 Filtered, admins) */
+  if (!(opts && opts.skipSpam)) { try { const g = await require('./bid-inbox.js')._lib.spamGate(mail, data, 'claims'); if (g) return g; } catch (e) {} }
   const inbox = await kvGet(KV_KEY); const list0 = Array.isArray(inbox) ? inbox : [];
   const id = 'IN-' + (mail.id || sha256(mail.from.email + mail.subject + mail.date + mail.text.slice(0, 500)).slice(0, 24));
   if (list0.some(x => x && x.id === id)) return { status: 200, body: { ok: true, repeat: true, id } };

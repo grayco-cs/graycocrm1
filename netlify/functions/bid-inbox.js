@@ -802,6 +802,7 @@ function outcomeOf(r){
   const b = (r && r.body) || {}, st = r ? r.status : 0;
   if (st >= 500 || b.ok === false) return { stored: false, what: 'error: ' + s(b.error || 'status ' + st).slice(0, 160), retry: true };
   if (b.ignored) return { stored: false, what: 'ignored: ' + s(b.ignored).slice(0, 140), retry: true };
+  if (b.filtered) return { stored: true, what: 'filtered: sales pitch (🗑 Filtered, ' + s(b.by || 'rules') + ')' };   /* patch SALESSPAM */
   if (b.inbox === 'history') return b.stored ? { stored: true, what: 'saved: job e-mail history' + (b.pid ? ' (job ' + s(b.pid) + ')' : '') } : { stored: false, what: 'ignored: taken for an e-mail-history copy and thrown away (' + s(b.why || 'not a job e-mail') + ')', retry: true };
   if (b.inbox === 'sub-invoices' || b.inbox === 'receipts') {
     if (b.notice) return { stored: true, what: 'saved: Gmail forwarding code (office To-Do)' };
@@ -835,12 +836,38 @@ async function mailRecv(evt, r, opts){
   return row;
 }
 
+/* ── patch SALESSPAM: vendor sales pitches (_lib/salesspam.js) ─────────────────── */
+function repliesAddrs(){ return (env('REPLIES_INBOX_TO') || 'replies@in.grayco-cs.com,replies@grayco-cs.com').split(',').map(low).filter(Boolean); }
+function forReplies(mail, data){ return forBids(mail, data, repliesAddrs()); }
+function isGoogleNotice(mail){ return /^(forwarding-noreply|groups-noreply|noreply-.*groups)@google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email); }
+/* null = carry on; else the result for the webhook. The filter never loses an e-mail: if it cannot decide, the mail goes on. */
+async function spamGate(mail, data, route){
+  const SS = require('./_lib/salesspam.js');
+  let v = null;
+  try { v = await SS.classifyMail(mail, { route, rcpt: recipients(mail, data).concat(arr(mail.to).concat(arr(mail.cc)).map(x => x && x.email)).filter(Boolean) }); } catch (e) { return null; }
+  if (!v || !v.spam) return null;
+  try { const r = await SS.keep(SS.mailRecord(mail, data, route, v)); return { status: 200, body: { ok: true, filtered: true, inbox: 'filtered', route, id: r.id, by: v.by || 'rules' } }; }
+  catch (e) { return { status: 503, body: { ok: false, error: 'GrayCo could not keep this filtered e-mail yet (' + s(e && e.message) + ') — retry.' } }; }
+}
+/* ↩ Restore: run it again as if the filter had said no (e-mail: this inbox or the claim inbox; text: the texting number) */
+async function spamRestore(item, who){
+  if (item.channel === 'text') { const out = await require('./missed-call.js')._test.inboundSms(Object.assign({}, item.sms), { skipSpam: true, restore: true }); return { ok: true, status: 200, text: true, lead: out && (out.newLead || out.lead) || '' }; }
+  const evt = JSON.parse(JSON.stringify(item.evt || { type: 'email.received', data: {} }));
+  evt.data = Object.assign({}, evt.data, { text: s(item.text) });   /* readMail takes Resend's copy first; this is the fallback */
+  evt.skipSpam = true; evt.restoredBy = low(who && who.email);
+  if (item.route === 'claims') { const r = await require('./claim-inbox.js')._test.processEvent(evt, { skipSpam: true }); return { ok: r.status < 500, status: r.status, body: r.body }; }
+  if (await handOff(JSON.stringify(evt))) return { ok: true, status: 202, queued: true };
+  const r = await processEvent(evt, { inline: true, skipSpam: true, rerun: true });
+  return { ok: r.status < 500, status: r.status, body: r.body, outcome: outcomeOf(r).what };
+}
+
 /* patch MAILC: every e-mail this webhook gets is noted for the Email Center's "📥 All company mail" (who, to which
    address, the subject, what the CRM did — never the body). The note never holds up or changes the result. */
 async function processEvent(evt, opts){
   let r;
   try { r = await processEventCore(evt, opts); }
   catch (e) { r = { status: 503, body: { ok: false, error: 'could not handle this e-mail yet (' + s(e && e.message).slice(0, 160) + ') — retry' } }; }   /* patch MAILFIX: a throw is an outcome too */
+  if (r && r.body && r.body.filtered) return r;   /* patch SALESSPAM: a sales pitch is kept only in 🗑 Filtered (sales/spam) — no 📬 Mail received row, no company-mail log */
   try { await mailRecv(evt, r, opts); } catch (e) {}   /* patch MAILFIX: 📬 Mail received */
   try { await require('./_lib/mailcenter.js').log(evt, r, { kvCas }); } catch (e) {}
   try { await require('./_lib/sentlog.js').onInboundEvent(evt); } catch (e) {}   /* patch SENTLOG: a reply answers a waiting request */
@@ -908,11 +935,18 @@ async function processEventCore(evt, opts){
   let subBidMail = false;   /* patch BIDSEND: bids@ is sorted below (a GC's reply · a sub bid · an invitation · unsorted) */
   /* patch AUTO7: orders@ (or, sent to this receiving domain for none of bids@ / leads@, plainly a supplier's order confirmation) */
   const orderMail = !leadMail && !toBids && !toLeads && (forOrders(mail, data) || require('./_lib/fa-orders.js').looksLikeOrder(mail));
+  /* patch SALESSPAM: a vendor's sales pitch to leads@ / bids@ / replies@ is filtered here — before it can be a lead, a bid, an
+     alert, an approval or a relay. Kept only in 🗑 Filtered (sales/spam) (admins); a restore runs it again with skipSpam. */
+  const toReplies = forReplies(mail, data);
+  if ((toLeads || toBids || toReplies) && !opts.skipSpam && !ownOrAuto(mail) && dbReady() && !isGoogleNotice(mail)) {
+    const g = await spamGate(mail, data, toBids && !viaLeads ? 'bids' : viaLeads ? 'leads' : toLeads ? 'leads' : 'replies');
+    if (g) return g;
+  }
   if (!leadMail && !orderMail && !toBids && !toLeads) return { status: 200, body: { ok: true, ignored: 'not addressed to the bid inbox' } };
   const own = ownOrAuto(mail); if (own) return { status: 200, body: { ok: true, ignored: own } };
   if (!dbReady()) return { status: 503, body: { ok: false, error: 'database not configured' } };
   /* Google's forwarding / group set-up messages: kept for the owner, never a lead */
-  if (/^(forwarding-noreply|groups-noreply|noreply-.*groups)@google\.com$/.test(mail.from.email) || /@googlegroups\.com$/.test(mail.from.email)) {
+  if (isGoogleNotice(mail)) {
     await kvCas(KV_NOTE, v => arr(v).filter(x => x && x.id !== mail.id).concat([{ id: mail.id || itemId(mail.subject + mail.date), at: nowIso(), from: mail.from.email, subject: mail.subject, text: mail.text.slice(0, 3000) }]).slice(-20));
     return { status: 200, body: { ok: true, notice: true } };
   }
@@ -1381,6 +1415,38 @@ exports.handler = async function(event){
     console.log(logLine(evt, r, Date.now() - t0));
     return J(200, { ok: r.status < 500, status: r.status, outcome: outcomeOf(r).what }, C);
   }
+  /* patch SALESSPAM: 🗑 Filtered (sales/spam) — admins only. GET = the list (30 days), the allow / block lists, the counts.
+     POST { op: 'restore', id } · { op: 'allow', id, scope: 'address'|'domain' } (allow + restore) · { op: 'delete', id } ·
+     { op: 'lists', allow, block } */
+  if (qs.salesspam && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!who.admin) return J(403, { error: 'Only an admin sees the filtered sales e-mails.' }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    const SS = require('./_lib/salesspam.js');
+    if (event.httpMethod === 'GET') {
+      try { return J(200, { ok: true, items: await SS.list(), lists: await SS.lists(), counts: await SS.counts(), keepDays: SS.KEEP_DAYS, at: nowIso() }, C); }
+      catch (e) { return J(502, { error: 'Could not read the filtered list.' }, C); }
+    }
+    let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    const op = s(b.op);
+    try {
+      if (op === 'lists') return J(200, { ok: true, lists: await SS.saveLists({ allow: b.allow, block: b.block }, who.email) }, C);
+      const item = await SS.peek(s(b.id));
+      if (!item) return J(404, { error: 'That message is not in the filtered list any more.' }, C);
+      if (op === 'delete') { await SS.take(item.id); return J(200, { ok: true, deleted: item.id }, C); }
+      let lists = null;
+      if (op === 'allow') {
+        const entry = item.channel === 'text' ? item.from : s(b.scope) === 'domain' ? SS.domainOf(item.from) : item.from;
+        if (s(b.scope) === 'domain' && item.channel !== 'text' && !SS.cleanLists({ block: [entry] }).block.length) return J(400, { error: entry + ' is a public mail service — allow the address instead.' }, C);
+        lists = await SS.allow(entry, who.email);
+        if (!lists) return J(400, { error: 'Nothing to allow.' }, C);
+      } else if (op !== 'restore') return J(400, { error: 'Unknown op.' }, C);
+      const r = await spamRestore(item, who);
+      if (!r.ok) return J(502, { error: 'Could not run it again (' + s(r.body && r.body.error || r.status) + ') — it stays in the list.', lists }, C);
+      await SS.take(item.id);
+      return J(200, { ok: true, restored: item.id, result: r, lists }, C);
+    } catch (e) { return J(502, { error: 'Could not do that: ' + s(e && e.message) }, C); }
+  }
   /* the CRM: the inbox list (+ the watcher's last run, the bid portal's state, the alert queue) */
   if (event.httpMethod === 'GET' && qs.list) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
@@ -1570,7 +1636,7 @@ exports.backgroundHandler = async function(event){
   let evt; try { evt = JSON.parse(raw || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }); }
   if (evt && evt.type === 'money.pull') { try { const out = await require('./_lib/money-box.js').drain({ budgetMs: 780000 }); console.log('[bid-inbox] ' + JSON.stringify({ inbox: 'office@ mailbox', read: out.read || 0, filed: (out.filed || []).map(f => f.ignored ? 'ignored: ' + f.ignored : f.error ? 'error: ' + f.error : (f.kind || '?') + (f.route ? ' ' + f.route : '')).slice(0, 20), skipped: out.skipped || '' })); return J(200, out); } catch (e) { console.error('[bid-inbox] office@ mailbox read failed: ' + (e && e.message)); return J(500, { error: 'mailbox read failed' }); } }   /* patch SUBINV */
   if (evt && evt.type === 'watch.run') { try { const out = await require('./bid-watch.js').runAll({ only: s(evt.source), by: s(evt.by) }); console.log('[bid-inbox] ' + JSON.stringify({ inbox: 'bid watcher', source: s(evt.source) || 'all', ok: !!(out && out.ok !== false) })); return J(200, out); } catch (e) { console.error('[bid-inbox] watcher failed: ' + (e && e.message)); return J(500, { error: 'watcher failed' }); } }
-  const t0 = Date.now(), r = await processEvent(evt, { rerun: !!(evt && evt.rerun) });
+  const t0 = Date.now(), r = await processEvent(evt, { rerun: !!(evt && (evt.rerun || evt.skipSpam)), skipSpam: !!(evt && evt.skipSpam && evt.restoredBy) });   /* patch SALESSPAM: ↩ Restore (the hand-off is signed) */
   (r.status >= 500 ? console.error : console.log)(logLine(evt, r, Date.now() - t0));   /* patch MAILFIX: ONE line per e-mail, always — the outcome and why */
   return J(r.status, r.body);
 };
@@ -1584,4 +1650,6 @@ exports._lib.storeFile = storeFile;
 exports._lib.handOffJson = function(obj){ return handOff(JSON.stringify(obj)); };   /* patch SUBINV: mail-all-sync → the office@ mailbox reader in the background */
 exports._test.processEvent = processEvent;
 exports._test.outcomeOf = outcomeOf; exports._test.logLine = logLine; exports._test.KV_RECV = KV_RECV;   /* patch MAILFIX */
+exports._lib.spamGate = spamGate;   /* patch SALESSPAM: claim-inbox.js */
+exports._test.spamGate = spamGate; exports._test.spamRestore = spamRestore; exports._test.forReplies = forReplies;
 exports._test.estimateMail = estimateMail; exports._test.forEstimates = forEstimates;   /* patch ESTIN: tests */   /* patch MAILC: tests */

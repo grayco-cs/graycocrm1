@@ -416,7 +416,8 @@ async function relayMail(set, extra, subject, html, text){
 }
 const INS_WORDS = /\b(water|flood|leak|fire|smoke|storm|hail|wind|tree|mold|insurance|claim|adjuster|emergency|burst|sewage)\b/i;
 
-async function inboundSms(p){
+async function inboundSms(p, opts){
+  opts = opts || {};   /* patch SALESSPAM: { skipSpam, restore } — ↩ Restore from 🗑 Filtered (sales/spam) */
   const ph = phone10(p.From), body = s(p.Body), at = nowIso();
   const sid = s(p.MessageSid || p.SmsSid) || crypto.createHash('sha256').update(ph + '|' + body + '|' + at.slice(0, 16)).digest('hex').slice(0, 24);
   if (ph.length !== 10) return { skipped: 'no number' };
@@ -426,7 +427,7 @@ async function inboundSms(p){
   /* Twilio retries a webhook it thinks failed: the same message is handled once */
   let fresh = false;
   await stateCas(st => { st.seen = st.seen && typeof st.seen === 'object' ? st.seen : {}; if (st.seen[sid]) return undefined; st.seen[sid] = at; fresh = true; return true; });
-  if (!fresh) return { skipped: 'already handled' };
+  if (!fresh && !opts.restore) return { skipped: 'already handled' };
   const S = SMS(); let set = S.settings(null);
   try { set = S.settings(await L().kvGet(S.SETTINGS_KEY)); } catch (e) {}
   const st0 = await stateGet(), own = st0.owner[ph] || {}, optedOut = !!st0.optout[ph];
@@ -446,6 +447,14 @@ async function inboundSms(p){
      billing → office, insurance → Senior Insurance PM, emergency → on call; nobody → the office */
   const RT = require('./_lib/smsroute.js'), toNum = phone10(p.To), purpose = RT.purposeOf(toNum, set, env);
   if (!who) { const su = arrL(data.users).find(u => [u.phone, u.cell, u.mobile].map(phone10).indexOf(ph) >= 0); if (su) who = { kind: 'staff', pid: '', name: s(su.name), email: low(su.email) }; }
+  /* patch SALESSPAM: a sales pitch from a number the CRM does not know → 🗑 Filtered (sales/spam) only: no Job Message, no lead,
+     no alert, no relay e-mail, no automatic answer. A known customer / sub / vendor / lead / staff number is never checked. */
+  if (!who && !own.lead && !own.todo && !opts.skipSpam) {
+    try {
+      const SS = require('./_lib/salesspam.js'), v = await SS.classifyText(body, ph, { known: SS.knownIndex(data) });
+      if (v && v.spam) { const r = await SS.keep(SS.textRecord(p, v)); return { sid, filtered: true, id: r.id, by: v.by || 'rules' }; }
+    } catch (e) {}   /* the filter never loses a text */
+  }
   if (who && who.kind === 'sub') who.sub = arrL(data.subs).concat(arrL(data.vendors)).find(x => x && s(x.id) === s(who.subId)) || null;
   let insP = null; try { const h = require('./_lib/lead-roles.js').holder('insurance', data.gc_team_settings, data.users); if (h && (h.email || h.name)) insP = { name: s(h.name), email: low(h.email) }; } catch (e) {}
   let onP = null; try { const X = require('./_lib/x10.js'); const o = X.onCallNow(now(), X.oncallCfg(await L().kvGet('gc_x10_oncall'))); if (o) onP = { name: s(o.name), email: low(o.email), phone: s(o.phone) }; } catch (e) {}
