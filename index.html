@@ -188318,11 +188318,14 @@ window._gcEstDedupeNow = async function(opt){
     }
     /* the live set: plain row + builder store, union by id, the newer save wins */
     var at = {}, live = [];
-    plain.concat(v2).forEach(function(r){ var id = idOf(r); if (!id) return; if (!(id in at)) { at[id] = live.length; live.push(r); return; }
+    var _stDeadE = function(type, id){ try { if (window._gcxDead) return !!window._gcxDead(type, id); var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}'); return !!(m && m[type + ':' + id]); } catch (e) { return false; } }, _stDE = function(id){ return _stDeadE('estimates', id) || _stDeadE('estimate', id); };   /* patch STORECUTTOMB */
+    var _stPlainIds = {}; plain.forEach(function(r){ var id = idOf(r); if (id) _stPlainIds[id] = 1; });
+    rep.deletedSkipped = 0;
+    plain.concat(v2).forEach(function(r){ var id = idOf(r); if (!id) return; if (!_stPlainIds[id] && _stDE(id)) { rep.deletedSkipped++; return; } if (!(id in at)) { at[id] = live.length; live.push(r); return; }
       var o = live[at[id]]; if (stamp(r) > stamp(o) || (stamp(r) === stamp(o) && size(r) > size(o))) live[at[id]] = r; });
     var liveIds = {}, liveStems = {}, liveNames = {}; live.forEach(function(r){ liveIds[idOf(r)] = 1; liveStems[stem(idOf(r))] = 1; if (nm(r)) liveNames[nm(r)] = 1; });
     var only = {}, unmatched = [];
-    chunks.forEach(function(r){ var id = idOf(r); if (!id || liveIds[id]) return; var o = only[id]; if (!o || stamp(r) > stamp(o)) only[id] = r; });
+    chunks.forEach(function(r){ var id = idOf(r); if (!id || liveIds[id] || _stDE(id)) return; var o = only[id]; if (!o || stamp(r) > stamp(o)) only[id] = r; });
     Object.keys(only).forEach(function(id){ var r = only[id]; if (!(liveStems[stem(id)] || (nm(r) && liveNames[nm(r)]))) unmatched.push(id + ' ' + (r.name || r.projName || r.client || '')); });
     rep.plainRow = plain.length; rep.builderStore = v2.length; rep.chunks = nChunks; rep.chunkRows = chunks.length; rep.manifest = man || null;
     rep.liveUnique = live.length; rep.chunkOnlyIds = Object.keys(only).length; rep.chunkOnlyUnmatched = unmatched.length; rep.unmatchedSample = unmatched.slice(0, 10);
@@ -188459,7 +188462,8 @@ W._gcEstOneNow = async function(opt){
   if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
   /* every builder record is in the cleaned "estimates" (ESTDEDUPE's live set is the union of both) */
   var est = arr(await getRow(c, 'estimates')), have = {}; est.forEach(function(e){ if (e && e.id != null) have[String(e.id)] = 1; });
-  var miss = arr(v2).filter(function(e){ return e && e.id != null && !have[String(e.id)]; });
+  var _stDeadO = function(type, id){ try { if (window._gcxDead) return !!window._gcxDead(type, id); var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}'); return !!(m && m[type + ':' + id]); } catch (e) { return false; } };   /* patch STORECUTTOMB */
+  var miss = arr(v2).filter(function(e){ return e && e.id != null && !have[String(e.id)] && !(_stDeadO('estimates', String(e.id)) || _stDeadO('estimate', String(e.id))); });
   if (miss.length) throw new Error('estimates: ' + miss.length + ' builder estimate(s) are not in "estimates" — the builder copy is kept');
   await putRow(c, '__est__gc_ests_v2', '[]');
   rep.result = 'one store: "estimates" (' + est.length + '), builder copy emptied';
@@ -188484,6 +188488,9 @@ async function docsClean(opt){
     if (cv === undefined) { if (ci >= ((man && man.count) || 0)) break; else continue; }
     pieces.push(ci); bytesBefore += size(cv); chunks = chunks.concat(arr(cv).map(function(d){ return { d: d, piece: ci }; }));
   }
+  /* patch STORECUTTOMB: a deleted document in the old pieces is neither uploaded nor recovered */
+  var _stDead = function(type, id){ try { if (window._gcxDead) return !!window._gcxDead(type, id); var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}'); return !!(m && m[type + ':' + id]); } catch (e) { return false; } };
+  var _stN0 = chunks.length; chunks = chunks.filter(function(x){ return !(x && x.d && x.d.id != null && _stDead('projectDocs', String(x.d.id))); }); rep.deletedSkipped = _stN0 - chunks.length;
   rep.plainDocs = plain.length; rep.pieces = pieces.length; rep.pieceDocs = chunks.length; rep.bytesBefore = bytesBefore; rep.manifest = man || null;
   if (!pieces.length && !(man && man.chunked)) { rep.result = 'nothing to do'; rep.bytesAfter = bytesBefore; return rep; }
   var plainIds = {}, refByHash = {};
