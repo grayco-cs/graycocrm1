@@ -19,6 +19,7 @@
    ========================================================================== */
 'use strict';
 const FA = require('./fa-core.js');
+const AC = require('./auto-claims.js');   /* patch AUTOCLAIMS: drying days + inspections in the morning digest */
 const TZ = 'America/Chicago';
 const PLAN_KIND = 'daily_plan';
 const MAX_ITEMS = 40;
@@ -265,6 +266,24 @@ function build(src, opts){
         const p = jobBy[pidOf(e)] || {}; if (days < (opts.equipDays || 5) || !(myJob(p) || R.mitigation)) return;
         add('equip:' + s(e.id), 'ins', '💨 ' + clip(e.type || e.kind || 'Equipment', 30) + ' on site ' + days + ' days — ' + (jobTag(p) || 'job'), pidOf(e) ? { pid: pidOf(e) } : null);
       });
+    }
+
+    /* patch AUTOCLAIMS: 💧 the drying jobs (Day N, missed days) and 🔎 the inspections (today, tomorrow, no answer yet) */
+    if (R.pm || R.apm || R.admin || R.super || R.mitigation || R.insurance) {
+      arr(src.gc_claims).forEach(function(c){
+        let d = null; try { d = AC.dryingOf(c, day); } catch (e) {} if (!d) return;
+        const p = jobBy[d.pid] || {}, who = AC.dryingWho(c, p);
+        if (!(R.mitigation || myJob(p) || who.some(function(n){ return samePerson(n, me); }))) return;
+        add('dry:' + d.claimId + ':' + day, 'ins', AC.dryingTitle(d, jobTag(p) || s(c.insured)), { claim: d.claimId, pid: d.pid });
+        if (d.missed.length) add('drymiss:' + d.claimId, 'ins', AC.missedText(d) + ' — ' + (jobTag(p) || clip(c.insured, 40) || 'job'), { claim: d.claimId, pid: d.pid });
+      });
+      let IA = null; try { IA = AC.inspActions(AC.inspections({ sitebook: src.gc_sitebook, jobInspections: src.gc_job_inspections }), day); } catch (e) {}
+      if (IA) {
+        const forMe = function(i){ const p = jobBy[i.pid]; return p && FA.isActiveJob(p) && (myJob(p) || superJob(p) || (R.admin && !p.pm)) ? p : null; };
+        IA.today.forEach(function(i){ const p = forMe(i); if (p) add('insp:' + i.key + ':' + day, 'jobs', '🔎 Inspection today: ' + clip(i.type, 40) + ' — ' + jobTag(p), { pid: i.pid }); });
+        IA.remind.forEach(function(i){ const p = forMe(i); if (p) add('inspt:' + i.key + ':' + day, 'jobs', '🔎 Inspection tomorrow: ' + clip(i.type, 40) + ' — ' + jobTag(p) + ' (work ready, permit card posted)', { pid: i.pid }); });
+        IA.ask.forEach(function(i){ const p = jobBy[i.pid]; if (p && (myJob(p) || (R.admin && !p.pm))) add('inspq:' + i.key, 'jobs', '🔎 Passed / Failed / Rescheduled? ' + clip(i.type, 40) + ' inspection ' + AC.niceDay(i.date) + ' — ' + jobTag(p), { pid: i.pid }); });
+      }
     }
 
     /* office: overdue invoices to call, invoices to send, unmatched orders / sub bids */

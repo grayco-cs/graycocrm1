@@ -46,7 +46,7 @@ function owners(){ return (process.env.OWNER_EMAILS || 'wjohnson@grayco-cs.com,n
 
 async function gather(){
   const data = await D.crm();
-  const more = await D.kv(['schedule', 'gc_orders', 'gc_approval_queue', 'gc_office_tasks', 'gc_warranty_tickets', 'gc_equipment', 'users', PREFS]);
+  const more = await D.kv(['schedule', 'gc_orders', 'gc_approval_queue', 'gc_office_tasks', 'gc_warranty_tickets', 'gc_equipment', 'users', PREFS, 'gc_sitebook', 'gc_job_inspections']);   /* patch AUTOCLAIMS: + Site Book, job inspections */
   const staff = await D.staff();
   const needs = arr(await D.svc('gc_cust_needs')), subbids = arr(await D.svc('gc_sub_bids_email'));
   let head = '';
@@ -54,7 +54,7 @@ async function gather(){
   const src = Object.assign({}, data, {
     users: arr(data.users).length ? data.users : more.users, staff: staff, schedule: more.schedule, gc_orders: more.gc_orders,
     gc_approval_queue: more.gc_approval_queue, gc_office_tasks: more.gc_office_tasks, gc_warranty_tickets: more.gc_warranty_tickets,
-    gc_equipment: more.gc_equipment, gc_cust_needs: needs, gc_sub_bids_email: subbids
+    gc_equipment: more.gc_equipment, gc_cust_needs: needs, gc_sub_bids_email: subbids, gc_sitebook: more.gc_sitebook, gc_job_inspections: more.gc_job_inspections
   });
   return { src: src, head: head, prefs: obj(more[PREFS]) };
 }

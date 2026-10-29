@@ -153528,9 +153528,9 @@ var SB = (function(){
   }
   function secCodes(p, r){
     var pm = r.permit || {};
-    return '<div class="sb-grid"><div class="sb-card"><h3>🧾 Permit</h3><form data-sb-form="permit">' + f('number', 'Permit #', pm.number) + f('jurisdiction', 'Jurisdiction', pm.jurisdiction || (/(desoto|southaven|olive branch|horn lake|hernando)/i.test(s(p.address)) ? 'DeSoto County, MS' : /tn\b|memphis|bartlett|germantown|collierville|cordova|arlington|lakeland|millington/i.test(s(p.address)) ? 'Memphis / Shelby County, TN' : '')) + f('codeNotes', 'Code notes (what the inspector wants on this job)', pm.codeNotes, 'textarea') + '<button class="gc-rp-btn pri">Save permit</button></form></div>' +
+    return '<div class="sb-grid"><div class="sb-card"><h3>🧾 Permit</h3><form data-sb-form="permit">' + f('number', 'Permit #', pm.number) + f('jurisdiction', 'Jurisdiction', pm.jurisdiction || (/(desoto|southaven|olive branch|horn lake|hernando)/i.test(s(p.address)) ? 'DeSoto County, MS' : /tn\b|memphis|bartlett|germantown|collierville|cordova|arlington|lakeland|millington/i.test(s(p.address)) ? 'Memphis / Shelby County, TN' : '')) + '<label class="sb-f">Permit status<select name="status">' + ((W.GCAC && W.GCAC.PERMIT_STATUSES) || ['Needed', 'Applied', 'Issued', 'Inspections open', 'Finaled / closed', 'Not needed']).map(function(o){ return '<option' + (o === (pm.status || (pm.number ? 'Issued' : 'Needed')) ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>' /* AUTOCLAIMS */ + f('codeNotes', 'Code notes (what the inspector wants on this job)', pm.codeNotes, 'textarea') + '<button class="gc-rp-btn pri">Save permit</button></form></div>' +
       '<div class="sb-card"><h3>📚 The local code</h3>' + CODES.map(function(c){ return '<div class="sb-row"><a target="_blank" rel="noopener" href="' + esc(c[1]) + '">' + esc(c[0]) + '</a></div>'; }).join('') + '</div>' +
-      '<div class="sb-card wide"><h3>🔎 Inspections</h3>' + live(r.inspections).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; }).map(function(x){ return '<div class="sb-row"><b>' + esc(x.type) + '</b><span class="m">' + esc(x.date) + (x.notes ? ' · ' + esc(x.notes) : '') + '</span><span class="r"><select data-sb-insp="' + esc(x.id) + '" aria-label="Result">' + ['Scheduled', 'Passed', 'Failed', 'Partial', 'Cancelled'].map(function(o){ return '<option' + (o === (x.result || 'Scheduled') ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></span></div>'; }).join('') +
+      '<div class="sb-card wide"><h3>🔎 Inspections <button type="button" class="gc-rp-btn" style="margin-left:auto;font-size:12px" onclick="window._gcAutoClaims&&window._gcAutoClaims.openList()">📋 All open permits & inspections</button></h3>' /* AUTOCLAIMS */ + live(r.inspections).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; }).map(function(x){ return '<div class="sb-row"><b>' + esc(x.type) + '</b><span class="m">' + esc(x.date) + (x.notes ? ' · ' + esc(x.notes) : '') + '</span><span class="r"><select data-sb-insp="' + esc(x.id) + '" aria-label="Result">' + ['Scheduled', 'Passed', 'Failed', 'Rescheduled' /* AUTOCLAIMS */, 'Partial', 'Cancelled'].map(function(o){ return '<option' + (o === (x.result || 'Scheduled') ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select></span></div>'; }).join('') +
       '<form data-sb-form="insp" class="sb-inline">' + f('type', 'Inspection', '', 'text', ' placeholder="Footing, framing, rough MEP, final…" required') + f('date', 'Date', today(), 'date') + f('notes', 'Notes', '') + '<button class="gc-rp-btn pri">Add inspection</button></form></div></div>';
   }
   function secSubs(p){
@@ -153672,7 +153672,7 @@ var SB = (function(){
     box.addEventListener('submit', function(ev){
       var fm = ev.target; if (!fm || !fm.getAttribute) return; ev.preventDefault();
       var k = fm.getAttribute('data-sb-form'), pid = curPid(), v = formVals(fm); if (!pid) return;
-      if (k === 'permit') edit(pid, function(r){ r.permit = { number: s(v.number), jurisdiction: s(v.jurisdiction), codeNotes: s(v.codeNotes), updatedAt: nowIso(), by: myName() }; });
+      if (k === 'permit') edit(pid, function(r){ r.permit = { number: s(v.number), jurisdiction: s(v.jurisdiction), status: s(v.status) /* AUTOCLAIMS */, codeNotes: s(v.codeNotes), updatedAt: nowIso(), by: myName() }; });
       else if (k === 'insp') addTo(pid, 'inspections', { type: s(v.type), date: s(v.date), notes: s(v.notes), result: 'Scheduled' });
       else if (k === 'toolbox') addTo(pid, 'safety', { kind: 'toolbox', date: s(v.date), topic: s(v.topic), attendees: s(v.attendees) });
       else if (k === 'incident') { addTo(pid, 'safety', { kind: 'incident', date: s(v.date), who: s(v.who), what: s(v.what), action: s(v.action), medical: !!v.medical }); try { if (typeof W._gcNeedsApproval === 'function') W._gcNeedsApproval({ id: 'incident:' + pid + ':' + Date.now(), kind: 'incident', forRole: 'admin', what: 'Incident on ' + s((proj(pid) || {}).name) + ': ' + s(v.what).slice(0, 80), detail: 'Reported by ' + myName() + (v.medical ? ' — medical care needed' : ''), opens: 'sitebook' }); } catch (e) {} }
@@ -153683,7 +153683,7 @@ var SB = (function(){
     box.addEventListener('change', function(ev){
       var t = ev.target, pid = curPid(); if (!t || !pid) return;
       if (t.hasAttribute('data-sb-logdate')) { st.logDate = t.value; draw(true); return; }
-      if (t.getAttribute('data-sb-insp')) setIn(pid, 'inspections', t.getAttribute('data-sb-insp'), function(x){ x.result = t.value; });
+      if (t.getAttribute('data-sb-insp')) { if (W._gcAutoClaims && W._gcAutoClaims.sbResult) W._gcAutoClaims.sbResult(pid, t.getAttribute('data-sb-insp'), t.value); else setIn(pid, 'inspections', t.getAttribute('data-sb-insp'), function(x){ x.result = t.value; }); }   /* AUTOCLAIMS */
       if (t.getAttribute('data-sb-rfi')) setIn(pid, 'rfis', t.getAttribute('data-sb-rfi'), function(x){ x.status = t.value; });
       if (t.getAttribute('data-sb-deliv')) setIn(pid, 'deliveries', t.getAttribute('data-sb-deliv'), function(x){ x.status = t.value; });
       if (t.getAttribute('data-sb-qc') != null) { var list = t.getAttribute('data-sb-qc'), i = +t.getAttribute('data-i'), on = t.checked; edit(pid, function(r){ var x = live(r.qc).filter(function(y){ return y.list === list && y.idx === i; })[0]; if (x) { x.done = on; x.by = myName(); x.updatedAt = nowIso(); } else r.qc = arr(r.qc).concat([{ id: 'QC' + Date.now().toString(36) + i, list: list, idx: i, done: on, by: myName(), at: nowIso(), updatedAt: nowIso() }]); }); }
@@ -153726,7 +153726,7 @@ var SB = (function(){
     end: function(pid, o){ o = o || {}; var lg = dayLog(pid); if (!lg) return null; setIn(pid, 'logs', lg.id, function(x){ x.endAt = nowIso(); x.endBy = myName(); if (o.sign && !x.signedAt) { x.signedBy = myName(); x.signedEmail = myEmail(); x.signedAt = nowIso(); } }); return lg.id; },
     line: function(pid, field, text){ if (!/^(work|delays|deliveries|equipment|visitors|safety)$/.test(field)) field = 'work'; var lg = dayLog(pid); if (!lg) return null; setIn(pid, 'logs', lg.id, function(x){ x[field] = (s(x[field]) ? s(x[field]) + '\n' : '') + s(text); }); return lg.id; }
   };
-  return { day: DAY, draw: draw, open: open, todayHtml: todayHtml, fieldHtml: fieldHtml, rec: function(pid){ return JSON.parse(JSON.stringify(rec(pid))); }, all: function(){ return JSON.parse(JSON.stringify(map)); }, push: push, pull: pull, state: function(){ return { job: st.job, sec: st.sec, dirty: dirty, err: err }; }, QC: QC };
+  return { day: DAY, draw: draw, open: open, todayHtml: todayHtml, fieldHtml: fieldHtml, rec: function(pid){ return JSON.parse(JSON.stringify(rec(pid))); }, all: function(){ return JSON.parse(JSON.stringify(map)); }, push: push, pull: pull, edit: edit, setIn: setIn, addTo: addTo /* AUTOCLAIMS */, state: function(){ return { job: st.job, sec: st.sec, dirty: dirty, err: err }; }, QC: QC };
 })();
 
 /* ══ the loop ══════════════════════════════════════════════════════════════════ */
@@ -187501,6 +187501,717 @@ D.addEventListener('click', function(e){
 }, true);
 W._gcAdmTabsFix = fix;
 try { console.log('[GC] ADMTABS: Admin setting cards under the settings hub, tab content right under the tabs'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-autoclaims">
+/* ============================================================================
+   GrayCo — CLAIM & FIELD AUTOMATIONS, shared rules (patch AUTOCLAIMS).   netlify/functions/_lib/auto-claims.js
+   The SAME file runs on the server (require) and in the CRM (index.html carries a copy in its "gc-patch-autoclaims"
+   script, written there by tools/patch_AUTOCLAIMS.py), so the CRM, the To-Do, the morning digest and the e-mails agree.
+   Pure functions: no fetch, no storage, no clock unless one is passed in.
+
+   Owner-approved (10/29):
+   8.  PERMIT & INSPECTION TRACKER — built on what is already there: the Site Book's "Codes & permits" (gc_kv
+       "gc_sitebook": r.permit { number, jurisdiction, status } and r.inspections [{ id, type, date, result }]) and the
+       job inspections list of patch AUT3 (gc_kv "gc_job_inspections": { pid: [{ id, label, date, done }] }).
+       A dated inspection goes on the schedule; the PM is reminded the day before; after the date the PM is asked
+       "Passed / Failed / Rescheduled?"; Failed → a to-do to fix + reschedule. openTracker() = the list of everything open.
+   10. DRYING LOG REMINDERS — a claim with drying equipment on site and no "Drying complete" gets
+       "Take moisture readings + photos (Day N)" every day; a day with no reading is a missed day (flag + digest).
+       It ends when the claim's drying is marked complete (dry standard met: claim.drying.completeAt).
+   11. SUPPLEMENT TRACKER — what was added in the field (change orders, notes / photos tagged "supplement", items marked
+       on the claim, field line items) and is NOT on the imported Xactimate (carrier) estimate → one list per claim
+       (item, reason, qty, photos) → CSV / PDF for the adjuster.
+   12. CLAIM STATUS NUDGES — no adjuster reply / status change for N days (default 5, the INS4 "Nudge the adjuster
+       after" setting) → a polite follow-up drafted for the adjuster into ✅ Approvals. Never sent by itself.
+       The carrier's name is never in anything the homeowner sees (carrierWords / scrubCarrier).
+   ========================================================================== */
+(function(root, factory){
+  var m = factory();
+  if (typeof module === 'object' && module.exports) module.exports = m; else root.GCAC = m;
+})(typeof window !== 'undefined' ? window : this, function(){
+'use strict';
+var DAY = 864e5;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } if (v && !Array.isArray(v) && Array.isArray(v.v)) v = v.v; return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function obj(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return {}; } } return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+function num(v){ var n = parseFloat(String(v == null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+function r2(n){ return Math.round(num(n) * 100) / 100; }
+function ymd(v){ var t = s(v); if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10); if (!t) return ''; var d = new Date(t); return isNaN(d) ? '' : d.toISOString().slice(0, 10); }
+function addDays(d, n){ var t = new Date(ymd(d) + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
+function days(a, b){ var x = Date.parse(ymd(a) + 'T12:00:00Z'), y = Date.parse(ymd(b) + 'T12:00:00Z'); return isFinite(x) && isFinite(y) ? Math.round((y - x) / DAY) : null; }
+function clip(v, n){ var t = s(v); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function pidOf(x){ return s(x && (x.pid || x.projectId || x.jobId || x.project_id)); }
+function live(l){ return arr(l).filter(function(x){ return x.deleted !== true && x._deleted !== true; }); }
+function byPid(projects){ var m = {}; arr(projects).forEach(function(p){ if (p.id) m[s(p.id)] = p; }); return m; }
+function jobClosed(p){ return !p || p.deleted === true || p.archived === true || /^(closed|archived|cancell?ed|lost|dead|complete|completed)$/i.test(s(p.status)); }
+function niceDay(d){ d = ymd(d); if (!d) return ''; return new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }); }
+
+/* ══ 8. PERMITS & INSPECTIONS ═══════════════════════════════════════════════════════════════════════ */
+/* a result in plain words → one of: passed | failed | resched | cancelled | partial | '' (still scheduled) */
+function normResult(v){
+  var t = low(v);
+  if (!t || /^sched/.test(t)) return '';
+  if (/^pass|^ok$|approv|^green/.test(t)) return 'passed';
+  if (/^fail|reject|^red/.test(t)) return 'failed';
+  if (/resched|moved|postpon/.test(t)) return 'resched';
+  if (/cancel|not needed|n\/a/.test(t)) return 'cancelled';
+  if (/partial/.test(t)) return 'partial';
+  return '';
+}
+var RESULT_LABEL = { passed: 'Passed', failed: 'Failed', resched: 'Rescheduled', cancelled: 'Cancelled', partial: 'Partial', '': 'Scheduled' };
+/* the Site Book records (an array, or the CRM's { pid: record } map) → a { pid: record } map */
+function sbMap(sitebook){
+  var m = {};
+  if (Array.isArray(sitebook) || typeof sitebook === 'string') arr(sitebook).forEach(function(r){ if (r.id) m[s(r.id)] = r; });
+  else Object.keys(obj(sitebook)).forEach(function(k){ var r = sitebook[k]; if (r && typeof r === 'object') m[s(r.id || k)] = r; });
+  return m;
+}
+/* every inspection in one shape: { key, src: 'sitebook' | 'jobins', pid, id, type, date, time, result, notes, fixTodo, reinspOf } */
+function inspections(o){
+  o = o || {}; var out = [], sb = sbMap(o.sitebook), ji = obj(o.jobInspections);
+  Object.keys(sb).forEach(function(pid){
+    live(sb[pid].inspections).forEach(function(x){
+      if (!x.id) return;
+      out.push({ key: 'sb:' + pid + ':' + s(x.id), src: 'sitebook', pid: pid, id: s(x.id), type: s(x.type) || 'Inspection', date: ymd(x.date), time: s(x.time),
+        result: normResult(x.result), notes: s(x.notes), reinspOf: s(x.reinspOf), rescheduledTo: s(x.rescheduledTo), answeredAt: s(x.answeredAt), answeredBy: s(x.answeredBy) });
+    });
+  });
+  Object.keys(ji).forEach(function(pid){
+    live(ji[pid]).forEach(function(x){
+      if (!x.id) return;
+      var res = normResult(x.result); if (!res && x.done === true) res = 'passed';
+      out.push({ key: 'ji:' + pid + ':' + s(x.id), src: 'jobins', pid: s(pid), id: s(x.id), type: s(x.label || x.type) || 'Inspection', date: ymd(x.date), time: s(x.time),
+        result: res, notes: s(x.notes), reinspOf: s(x.reinspOf), rescheduledTo: s(x.rescheduledTo), answeredAt: s(x.answeredAt), answeredBy: s(x.answeredBy) });
+    });
+  });
+  return out.sort(function(a, b){ return (a.date || '9999') < (b.date || '9999') ? -1 : (a.date || '9999') > (b.date || '9999') ? 1 : a.key < b.key ? -1 : 1; });
+}
+/* where an inspection stands on `today`: done (it has an answer) · undated · upcoming · tomorrow · today · ask (the date passed, no answer) */
+function inspState(i, today){
+  if (i.result) return i.result === 'failed' ? 'failed' : 'done';
+  if (!i.date) return 'undated';
+  if (i.date > today) return i.date === addDays(today, 1) ? 'tomorrow' : 'upcoming';
+  if (i.date === today) return 'today';
+  return 'ask';
+}
+/* the work for `today`: remind (the PM, the day before) · ask (after the date: Passed / Failed / Rescheduled?) ·
+   fix (a failed inspection with no re-inspection booked: fix + reschedule). askDays: how far back a missing answer
+   is still asked (older ones stay on the open list, but are not pushed every day). */
+function inspActions(list, today, opts){
+  opts = opts || {}; var askDays = opts.askDays || 21, out = { remind: [], ask: [], fix: [], today: [] };
+  var reinsp = {}; arr(list).forEach(function(i){ if (i.reinspOf) reinsp[i.pid + ':' + i.reinspOf] = 1; });
+  arr(list).forEach(function(i){
+    var st = inspState(i, today);
+    if (st === 'tomorrow') out.remind.push(i);
+    else if (st === 'today') out.today.push(i);
+    else if (st === 'ask' && days(i.date, today) <= askDays) out.ask.push(i);
+    else if (st === 'failed' && !reinsp[i.pid + ':' + i.id] && !i.rescheduledTo) out.fix.push(i);
+  });
+  return out;
+}
+var PERMIT_STATUSES = ['Needed', 'Applied', 'Issued', 'Inspections open', 'Finaled / closed', 'Not needed'];
+function permitOpen(st){ return !/final|closed|complete|not needed|n\/a|void|expired/i.test(s(st)); }
+/* every permit: the Site Book's (one per job) and the job's permit rows (patch AUT3 p.permits) */
+function permits(o){
+  o = o || {}; var out = [], sb = sbMap(o.sitebook), P = byPid(o.projects);
+  Object.keys(sb).forEach(function(pid){
+    var pm = sb[pid].permit; if (!pm || !(s(pm.number) || s(pm.status) || s(pm.jurisdiction))) return;
+    out.push({ key: 'sbp:' + pid, src: 'sitebook', pid: pid, type: s(pm.type) || 'Building permit', number: s(pm.number), jurisdiction: s(pm.jurisdiction),
+      status: s(pm.status) || (s(pm.number) ? 'Issued' : 'Needed') });
+  });
+  Object.keys(P).forEach(function(pid){
+    live(P[pid].permits).forEach(function(x){
+      out.push({ key: 'jp:' + pid + ':' + s(x.id || x.type), src: 'job', pid: pid, id: s(x.id), type: s(x.type) || 'Permit', number: s(x.number), jurisdiction: s(x.office || x.jurisdiction),
+        status: s(x.status) || (s(x.number) ? 'Issued' : 'Needed'), expires: ymd(x.expires) });
+    });
+  });
+  return out;
+}
+/* the list view: every open permit and every inspection still open (no answer yet, or failed with nothing booked) */
+function openTracker(o, today){
+  o = o || {}; var P = byPid(o.projects), list = inspections(o), act = inspActions(list, today, { askDays: 3650 });
+  var fixKeys = {}; act.fix.forEach(function(i){ fixKeys[i.key] = 1; });
+  var job = function(pid){ var p = P[pid]; return p ? { name: s(p.name), pm: s(p.pm), address: s(p.address || p.jobAddress), closed: jobClosed(p) } : { name: '(job not found)', pm: '', address: '', closed: false }; };
+  var ins = list.filter(function(i){ var st = inspState(i, today); return st !== 'done' && (st !== 'failed' || fixKeys[i.key]); })
+    .map(function(i){ var j = job(i.pid); return Object.assign({}, i, { state: inspState(i, today), job: j.name, pm: j.pm, address: j.address, jobClosed: j.closed }); })
+    .filter(function(i){ return !i.jobClosed || i.state === 'ask' || i.state === 'failed'; });
+  var per = permits(o).filter(function(x){ return permitOpen(x.status); })
+    .map(function(x){ var j = job(x.pid); return Object.assign({}, x, { job: j.name, pm: j.pm, address: j.address, jobClosed: j.closed }); })
+    .filter(function(x){ return !x.jobClosed; });
+  return { permits: per.sort(function(a, b){ return a.job < b.job ? -1 : 1; }), inspections: ins, counts: { permits: per.length, inspections: ins.length, ask: ins.filter(function(i){ return i.state === 'ask'; }).length, failed: ins.filter(function(i){ return i.state === 'failed'; }).length } };
+}
+/* the schedule row of a dated Site Book inspection (patch AUT3 already puts the job inspections list on it) — internal:
+   never in the customer portal */
+function schedRow(i, p){
+  p = p || {};
+  return { id: 'SB_INS_' + s(i.pid) + '_' + s(i.id), title: (s(p.name) ? s(p.name) + ' — ' : '') + '🔎 ' + s(i.type) + ' inspection', pid: s(i.pid), date: i.date, time: s(i.time) || '09:00', endTime: '10:00',
+    type: 'inspection', assignee: s(p.pm), address: s(p.address || p.jobAddress), notes: 'From the Site Book (Codes & permits)' + (i.notes ? ' — ' + i.notes : ''), insId: s(i.id),
+    internal: true, portal: false, showInPortal: false, by: 'Automations (Site Book)' };
+}
+/* the to-do ids, the same on the server and in the CRM (so the two never make a second one) */
+function fixTodoId(i){ return 'acinsp_fix_' + s(i.pid).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) + '_' + s(i.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40); }
+function fixTodo(i, p, pmEmail, today){
+  p = p || {};
+  return { id: fixTodoId(i), label: '🔧 Fix + reschedule: failed ' + s(i.type) + ' inspection — ' + clip(p.name || 'job', 70),
+    note: 'The ' + s(i.type) + ' inspection on ' + niceDay(i.date) + ' failed' + (i.notes ? ' (' + clip(i.notes, 160) + ')' : '') + '. Fix what the inspector wrote up, then book the re-inspection (Site Book → Codes & permits, or the To-Do\'s Reschedule).',
+    assignees: pmEmail ? [low(pmEmail)] : [], pid: s(i.pid), due: today, prio: 'high', kind: 'insp_fix', insKey: i.key, addedBy: 'Automations', done: false };
+}
+
+/* ══ 10. DRYING LOG REMINDERS ═══════════════════════════════════════════════════════════════════════ */
+function liveEquip(c){ return live(c && c.equipment); }
+function dryingComplete(c){ return !!(c && c.drying && s(c.drying.completeAt)); }
+/* the days with a reading (moisture or atmospherics), plus photo days when given */
+function loggedDays(c, extraDays){
+  var d = {};
+  live(c && c.moisture).concat(live(c && c.atmos)).forEach(function(x){ var k = ymd(x.date || x.at); if (k) d[k] = 1; });
+  (Array.isArray(extraDays) ? extraDays : []).forEach(function(k){ k = ymd(k); if (k) d[k] = 1; });
+  return d;
+}
+/* one claim's drying: null when it is not drying. day = Day N (the first equipment day is Day 1). missed = the days
+   from Day 1 to yesterday with no reading while equipment was on site (newest last, at most 30). */
+function dryingOf(c, today, opts){
+  opts = opts || {};
+  if (!c || c.deleted || dryingComplete(c) || /^closed$/i.test(s(c.phase))) return null;
+  if (c.importedHistory === true || c.historyOnly === true) return null;
+  var eq = liveEquip(c), onsite = eq.filter(function(e){ return !s(e.removedAt) && ymd(e.placedAt) && ymd(e.placedAt) <= today; });
+  if (!onsite.length && !(c.drying && c.drying.active === true)) return null;
+  var starts = eq.map(function(e){ return ymd(e.placedAt); }).filter(Boolean).sort();
+  var start = starts[0] || ymd(c.drying && c.drying.startAt) || today;
+  var logged = loggedDays(c, opts.photoDays), missed = [];
+  var onOn = function(d){ return eq.some(function(e){ var a = ymd(e.placedAt), b = ymd(e.removedAt); return a && a <= d && (!b || b > d); }) || (c.drying && c.drying.active === true); };
+  for (var d = start, n = 0; d < today && n < 400; d = addDays(d, 1), n++) if (!logged[d] && onOn(d)) missed.push(d);
+  var last = Object.keys(logged).sort().pop() || '';
+  return { claimId: s(c.id), pid: pidOf(c), start: start, day: (days(start, today) || 0) + 1, loggedToday: !!logged[today], missed: missed.slice(-30), lastLog: last,
+    onsite: onsite.reduce(function(t, e){ return t + Math.max(1, num(e.qty) || 1); }, 0) };
+}
+function dryingJobs(claims, today, opts){ return arr(claims).map(function(c){ return dryingOf(c, today, opts); }).filter(Boolean); }
+/* who takes the readings: the claim's mitigation tech, else the job's, else the PM */
+function dryingWho(c, p){ c = c || {}; p = p || {}; return [s(c.mitTech || c.tech || (c.drying || {}).tech), s(p.mitigationTech || p.mitTech), s(c.pm || p.pm)].filter(Boolean).filter(function(v, i, a){ return a.indexOf(v) === i; }); }
+function dryingTitle(d, jobName){ return '💧 Take moisture readings + photos (Day ' + d.day + ') — ' + clip(jobName || 'drying job', 70); }
+function missedText(d){ var n = d.missed.length; if (!n) return ''; return '⚠ ' + n + ' drying day' + (n > 1 ? 's' : '') + ' with no readings (' + d.missed.slice(-3).map(niceDay).join(', ') + (n > 3 ? ' …' : '') + ') — log them before the adjuster asks'; }
+
+/* ══ 11. SUPPLEMENT TRACKER ═════════════════════════════════════════════════════════════════════════ */
+var STOP = { the: 1, and: 1, for: 1, with: 1, from: 1, per: 1, all: 1, new: 1, add: 1, item: 1, items: 1, each: 1, labor: 1, only: 1, room: 1, area: 1 };
+var SYN = [[/\bdrywall|sheetrock|gypsum\b/g, 'drywall'], [/\bshingles?|laminated|comp(osition)?\b/g, 'shingle'], [/\bunderlayment|felt|synthetic\b/g, 'underlay'], [/\bdetach (&|and) reset|d&r|r&r|remove (&|and) replace\b/g, 'dr'], [/\bbaseboards?\b/g, 'baseboard'], [/\bcarpet pad|padding\b/g, 'pad'], [/\bpaint(ing|ed)?\b/g, 'paint']];
+function words(t){
+  t = low(t); SYN.forEach(function(x){ t = t.replace(x[0], x[1]); });
+  return t.replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(function(w){ return w.length >= 3 && !STOP[w] && !/^\d+$/.test(w); });
+}
+/* is this field item already on the carrier's estimate? (same words, or most of them) */
+function onEstimate(desc, carrierLines){
+  var a = words(desc); if (!a.length) return false;
+  var A = {}; a.forEach(function(w){ A[w] = 1; });
+  return arr(carrierLines).some(function(l){
+    var b = words(l.desc || l.description), hit = 0, B = {};
+    b.forEach(function(w){ if (!B[w]) { B[w] = 1; if (A[w]) hit++; } });
+    var n = Math.min(Object.keys(A).length, Object.keys(B).length);
+    return n > 0 && hit >= Math.min(2, n) && hit / n >= 0.75;
+  });
+}
+function hasSuppTag(x){
+  if (!x) return false;
+  if (x.supplement === true || x.isSupplement === true) return true;
+  var tags = Array.isArray(x.tags) ? x.tags : (s(x.tags) ? s(x.tags).split(/[,;]/) : []);
+  if (tags.some(function(t){ return /^#?supp(lement)?$/i.test(s(t && typeof t === 'object' ? (t.name || t.label || t.tag) : t)); })) return true;
+  return /#supp(lement)?\b|\[supp(lement)?\]|^\s*supp(lement)?\s*:/i.test(s(x.text || x.note || x.body || x.caption || x.desc));
+}
+/* the carrier's (imported Xactimate) lines: the newest carrier-side version, else the newest imported version */
+function carrierLines(c){
+  var v = live(c && c.estimates).filter(function(e){ return arr(e.lines).length; });
+  var car = v.filter(function(e){ return /carrier/i.test(s(e.side)) || /carrier|adjuster/i.test(s(e.source)); });
+  var pick = (car.length ? car : v.filter(function(e){ return /xact|pdf|esx|import/i.test(s(e.source || e.kind || e.from)) || e.importedAt; })).sort(function(a, b){ return num(a.version) - num(b.version) || (s(a.importedAt || a.createdAt) < s(b.importedAt || b.createdAt) ? -1 : 1); }).pop();
+  return pick ? arr(pick.lines) : [];
+}
+/* o: { claim, project, changeOrders, photos (GrayCo Photos records of the job), notes (more field notes: Site Book logs …),
+   carrierLines (default: carrierLines(claim)) } → [{ key, src, item, reason, qty, unit, photos[], at, by, amount, include }] */
+function suppCollect(o){
+  o = o || {}; var c = o.claim || {}, p = o.project || {}, pid = s(c.projectId || p.id), out = [], seen = {};
+  var lines = o.carrierLines || carrierLines(c), fs = obj(c.fieldSupp), marks = obj(fs.marks);
+  function add(x){
+    if (!x.item) return; var k = x.key; if (seen[k]) return; seen[k] = 1;
+    x.onEstimate = onEstimate(x.item, lines);
+    var m = marks[k] || {};
+    x.include = m.include != null ? m.include !== false : !x.onEstimate;
+    if (m.qty != null && s(m.qty) !== '') x.qty = num(m.qty);
+    if (s(m.reason)) x.reason = s(m.reason);
+    if (s(m.item)) x.item = s(m.item);
+    x.qty = num(x.qty) || 1; x.unit = s(x.unit) || 'EA'; x.photos = arr(x.photos).slice(0, 12);
+    out.push(x);
+  }
+  live(fs.items).forEach(function(x){ add({ key: 'f:' + s(x.id), src: 'Added in the field', item: s(x.item || x.desc), reason: s(x.reason), qty: x.qty, unit: x.unit, photos: arr(x.photos), at: s(x.at), by: s(x.by) }); });
+  live(c.suppMarks).forEach(function(x){ add({ key: 'm:' + s(x.id), src: 'Marked on the job', item: s(x.desc || x.item), reason: s(x.what || x.reason) || 'Found during the job', qty: x.qty, unit: x.unit, photos: arr(x.photos), at: s(x.at), by: s(x.by), amount: r2(x.amount) }); });
+  arr(o.changeOrders).forEach(function(co){
+    if (!co || co.deleted || pidOf(co) !== pid || /void|cancel|reject|declin/i.test(s(co.status))) return;
+    if (co.ownerPay === true || /customer pays|owner pays|homeowner pays|upgrade|not covered/i.test(s(co.desc || co.description || co.title) + ' ' + s(co.notes) + ' ' + s(co.reason))) return;   /* the customer's upgrade is not the carrier's */
+    add({ key: 'co:' + s(co.id), src: 'Change order' + (s(co.status) ? ' (' + low(co.status) + ')' : ''), item: s(co.desc || co.description || co.title || co.name), reason: s(co.reason) || 'Found during the work — change order', qty: co.qty || 1, unit: co.unit, photos: arr(co.photos), at: s(co.date || co.createdAt), by: s(co.by || co.createdBy), amount: r2(co.amt != null ? co.amt : co.amount) });
+  });
+  live(c.notes).concat(arr(o.notes)).forEach(function(n){
+    if (!hasSuppTag(n)) return;
+    var t = s(n.text || n.note || n.body).replace(/#supp(lement)?\b|\[supp(lement)?\]|^\s*supp(lement)?\s*:/ig, '').trim();
+    var q = /(?:^|\s)(\d+(?:\.\d+)?)\s*(sf|lf|sq|ea|sy|hr|hrs|each)\b/i.exec(t);
+    add({ key: 'n:' + s(n.id || n.at), src: 'Field note', item: clip(t.split(/\n/)[0], 140), reason: clip(t, 400), qty: q ? num(q[1]) : 1, unit: q ? q[2].toUpperCase().replace(/^EACH$/, 'EA').replace(/^HRS$/, 'HR') : 'EA', photos: arr(n.photos || n.files), at: s(n.at || n.date), by: s(n.by) });
+  });
+  var tagged = arr(o.photos).filter(function(ph){ return !ph.deleted && hasSuppTag(ph); });
+  var used = {}; out.forEach(function(x){ x.photos.forEach(function(ph){ used[s(ph.id || ph.ref || ph)] = 1; }); });
+  tagged.forEach(function(ph){
+    var id = s(ph.id || ph.ref); if (used[id]) return;
+    var cap = s(ph.caption || ph.note || ph.desc || ph.text).replace(/#supp(lement)?\b/ig, '').trim();
+    add({ key: 'ph:' + id, src: 'Photo tagged "supplement"', item: cap ? clip(cap, 140) : 'Supplement photo' + (s(ph.room) ? ' — ' + s(ph.room) : ''), reason: cap || 'Photo taken in the field', qty: 1, unit: 'EA', photos: [{ id: id, ref: s(ph.ref || ph.url || ph.path), name: s(ph.name || cap || 'photo') }], at: s(ph.takenAt || ph.at || ph.createdAt), by: s(ph.by) });
+  });
+  return out.sort(function(a, b){ return (a.include === b.include ? 0 : a.include ? -1 : 1) || (s(a.at) < s(b.at) ? -1 : 1); });
+}
+function csvCell(v){ var t = s(v).replace(/\r?\n/g, ' '); if (/^[=+\-@]/.test(t)) t = "'" + t; return /[",]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }
+/* the export for the adjuster (only the included items): Item, Reason, Qty, Unit, Photos, Source, Date */
+function suppCsv(items, meta){
+  meta = meta || {};
+  var rows = [['Item', 'Reason', 'Qty', 'Unit', 'Photos', 'Source', 'Date']];
+  arr(items).filter(function(x){ return x.include !== false; }).forEach(function(x){ rows.push([x.item, x.reason, x.qty, x.unit, arr(x.photos).map(function(p){ return s(p.name || p.ref || p.id); }).join(' | '), x.src, ymd(x.at)]); });
+  var head = meta.claimNumber || meta.insured ? ['# Supplement request' + (meta.claimNumber ? ' — claim ' + meta.claimNumber : '') + (meta.insured ? ' — ' + meta.insured : '')] : [];
+  return head.concat(rows.map(function(r){ return r.map(csvCell).join(','); })).join('\r\n') + '\r\n';
+}
+
+/* ══ 12. CLAIM STATUS NUDGES ════════════════════════════════════════════════════════════════════════ */
+function adjusterOf(c){ c = c || {}; var d = c.deskAdjuster || {}, a = c.adjuster || {}, L = c.links || {}; return { name: s(d.name || a.name), email: low(d.email || a.email || (L.email || {}).to) }; }
+/* the newest sign of life on the claim: a status (phase / stage) change, an adjuster e-mail or any note that is not
+   internal, a follow-up, an estimate / supplement / payment change, the adjuster's last contact (INS4) */
+function lastActivity(c){
+  c = c || {}; var x = c.ins4 || {}, l = [s(c.createdAt), s(x.adjLast), s(x.stageAt), s(c.adjReplyAt), s(c.lastAdjusterReplyAt)];
+  arr(c.phaseHistory).forEach(function(h){ l.push(s(h.at)); });
+  arr(x.log).forEach(function(h){ if (h && /stage|moved|adjuster|answer|repl/i.test(s(h.what || h.text))) l.push(s(h.at)); });
+  live(c.notes).forEach(function(n){ if (!n.internal || /^in$|inbound|received/i.test(s(n.dir || n.direction || n.kind))) l.push(s(n.at)); });
+  arr(c.followups).forEach(function(f){ l.push(s(f.at)); });
+  live(c.estimates).forEach(function(e){ l.push(s(e.importedAt), s(e.statusAt), s(e.approvedAt)); });
+  live(c.supplements).forEach(function(e){ l.push(s(e.sentAt), s(e.statusAt), s(e.approvedAt)); });
+  live(c.payments).forEach(function(e){ l.push(s(e.receivedAt || e.at || e.date)); });
+  return l.filter(function(t){ return t && isFinite(Date.parse(t)); }).sort().pop() || '';
+}
+/* is a nudge due? opts: { days (default 5), lastNudge (ISO: the newest nudge drafted for this claim, sent or not) } */
+function nudgeDue(c, now, opts){
+  opts = opts || {}; var n = Math.max(1, num(opts.days) || 5), a = adjusterOf(c);
+  if (!c || c.deleted) return { due: false, why: 'deleted' };
+  if (c.importedHistory === true || c.noSend === true || c.historyOnly === true) return { due: false, why: 'history' };
+  if (c.autoNudge === false) return { due: false, why: 'switched off on this claim' };
+  if (/^(closed|new loss)$/i.test(s(c.phase)) || /^(closed|fnol)$/i.test(s((c.ins4 || {}).stage))) return { due: false, why: 'not waiting on the adjuster (' + (s(c.phase) || 'new') + ')' };
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(a.email)) return { due: false, why: 'no adjuster e-mail on the claim' };
+  var last = [lastActivity(c), s(opts.lastNudge)].filter(Boolean).sort().pop();
+  if (!last) return { due: false, why: 'no dates' };
+  var d = Math.floor((now - Date.parse(last)) / DAY);
+  return { due: d >= n, days: d, since: last, after: n, why: d >= n ? 'no reply / status change for ' + d + ' days' : 'quiet for ' + d + ' of ' + n + ' days' };
+}
+var PHASE_ASK = { 'Inspection': 'the inspection and the next steps', 'Estimate written': 'our estimate', 'Submitted to carrier': 'your review of our estimate', 'Approved': 'the approval and the first payment', 'Supplement': 'the supplement we sent', 'Work': 'the claim while the work is under way', 'Final invoice': 'the final invoice and the release of the recoverable depreciation', 'Depreciation released': 'the final payment' };
+function nudgeDraft(c, p, pm, opts){
+  c = c || {}; p = p || {}; pm = pm || {}; opts = opts || {};
+  var a = adjusterOf(c), first = s(a.name).split(/\s+/)[0] || 'there';
+  var ref = [s(c.claimNumber) ? 'claim #' + s(c.claimNumber) : '', s(c.insured || p.client), s(c.address || p.address)].filter(Boolean).join(' — ');
+  var what = PHASE_ASK[s(c.phase)] || 'this claim';
+  var sign = [s(pm.name) || 'GrayCo Construction Services', 'GrayCo Construction Services · 901-585-0944'].concat(s(pm.phone) ? [s(pm.phone)] : []);
+  var text = 'Hi ' + first + ',\n\nI hope your week is going well. I wanted to follow up on ' + what + ' for ' + (ref || 'this claim') + '. ' +
+    'We have not heard back in ' + (num(opts.days) || 5) + ' days, so I wanted to make sure nothing is held up on our side.\n\n' +
+    'Is there anything else you need from us — photos, measurements, documents or a re-inspection? Any update on where it stands would be a big help.\n\nThank you for your time,\n' + sign.join('\n');
+  var subject = 'Following up' + (s(c.claimNumber) ? ' — claim #' + s(c.claimNumber) : '') + (s(c.insured || p.client) ? ' — ' + s(c.insured || p.client) : '') + (s(c.address || p.address) ? ' — ' + clip(c.address || p.address, 60) : '');
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#14202E">' + esc(text).replace(/\n/g, '<br>') + '</div>';
+  return { to: a.email, toName: a.name, subject: subject, text: text, html: html };
+}
+/* the carrier / program / adjusting company / policy words of a claim + its job — never shown to the homeowner */
+function carrierWords(c, p){
+  c = c || {}; p = p || {};
+  return [s(c.carrier), s(c.program && !/^none/i.test(s(c.program)) ? c.program : ''), s((c.adjuster || {}).company), s((c.deskAdjuster || {}).company), s(c.policyNumber), s(p.carrier), s(p.insuranceCarrier), s(p.insuranceCompany)]
+    .filter(function(w){ return w.length > 2; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
+}
+function scrubCarrier(text, words){ var t = s(text); (words || []).map(s).filter(function(w){ return w.length > 2; }).forEach(function(w){ t = t.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'your insurance company'); }); return t; }
+
+return {
+  normResult: normResult, RESULT_LABEL: RESULT_LABEL, sbMap: sbMap, inspections: inspections, inspState: inspState, inspActions: inspActions, PERMIT_STATUSES: PERMIT_STATUSES, permitOpen: permitOpen,
+  permits: permits, openTracker: openTracker, schedRow: schedRow, fixTodoId: fixTodoId, fixTodo: fixTodo,
+  dryingOf: dryingOf, dryingJobs: dryingJobs, dryingWho: dryingWho, dryingTitle: dryingTitle, missedText: missedText, dryingComplete: dryingComplete, loggedDays: loggedDays,
+  words: words, onEstimate: onEstimate, hasSuppTag: hasSuppTag, carrierLines: carrierLines, suppCollect: suppCollect, suppCsv: suppCsv,
+  adjusterOf: adjusterOf, lastActivity: lastActivity, nudgeDue: nudgeDue, nudgeDraft: nudgeDraft, carrierWords: carrierWords, scrubCarrier: scrubCarrier,
+  ymd: ymd, addDays: addDays, days: days, niceDay: niceDay, arr: arr, obj: obj, s: s, low: low, num: num, clip: clip, esc: esc, jobClosed: jobClosed
+};
+});
+</script>
+<script id="gc-patch-autoclaims-ui">
+/* __GC_PATCH_AUTOCLAIMS__ ═══════════════════════════════════════════════════════════════════════════
+   GrayCo — CLAIM & FIELD AUTOMATIONS in the CRM (patch AUTOCLAIMS). The rules are window.GCAC (the same file as
+   netlify/functions/_lib/auto-claims.js, copied in above by tools/patch_AUTOCLAIMS.py); the clock-driven part is
+   netlify/functions/claims-auto.js; the 2 AM "Today's plan" (morning digest) carries the same items (plan.js).
+
+   8.  🔎 PERMITS & INSPECTIONS (on the Site Book's "Codes & permits" and the job inspections list of patch AUT3):
+       permit status on the Site Book permit; a dated Site Book inspection goes on the schedule (internal); To-Do for the
+       PM: "Tomorrow: …", "Today: …", and after the date "Passed / Failed / Rescheduled?" (a small corner card asks too);
+       Failed → a To-Do to fix + reschedule (the same id the server uses) and the re-inspection date can be booked at once;
+       📋 Open permits & inspections = the list of everything open (Site Book button, _gcAutoClaims.openList()).
+   10. 💧 DRYING: every drying claim (equipment on site, drying not complete) → "Take moisture readings + photos (Day N)"
+       on the To-Do of the mitigation tech / PM until today's readings are in; a missed day is flagged on the claim's
+       Drying tab and on the To-Do (and in the morning digest). It ends with "Drying complete" (dry standard met).
+   11. 🧾 FIELD SUPPLEMENTS (a claim tab): change orders, notes and GrayCo Photos tagged "supplement", items marked on the
+       claim and field items added here, minus what is already on the imported Xactimate (carrier) estimate; tick / qty /
+       reason per item; ⬇ CSV and ⬇ PDF for the adjuster. Stored on the claim (claim.fieldSupp), synced like the rest.
+   12. 🛡 ADJUSTER NUDGES: drafted by the server into ✅ Approvals (kind claim_nudge); here the approval card says plainly
+       that Approve sends it to the ADJUSTER from claims@ (never to the homeowner).
+   Console: _gcAutoClaims.status() · .openList() · .tracker() · .drying() · .supp(claimId) · .answer(key, result, opts)
+   ═══════════════════════════════════════════════════════════════════════════════════════════════════ */
+(function(){
+'use strict';
+var W = window, D = document;
+if (W.__GC_PATCH_AUTOCLAIMS__) return; W.__GC_PATCH_AUTOCLAIMS__ = true;
+var AC = W.GCAC; if (!AC) { try { console.warn('[GC] AUTOCLAIMS: rules missing'); } catch (e) {} return; }
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.__GC_RAW_SETTIMEOUT__ || W.setTimeout;
+var SI = W.__GC_NATIVE_SETINTERVAL__ || W.__GC_RAW_SETINTERVAL__ || W.setInterval;
+function later(f, ms){ return ST.call(W, f, ms || 0); }
+function every(f, ms){ return SI.call(W, f, ms); }
+var s = AC.s, low = AC.low, arr = AC.arr, esc = AC.esc, num = AC.num, clip = AC.clip;
+function warn(e){ try { console.warn('[GC AUTOCLAIMS]', e); } catch (x) {} }
+function nowIso(){ return new Date().toISOString(); }
+function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function crm(){ return W._crm || {}; }
+function projects(){ return arr(crm().projects).filter(function(p){ return p.id && p.deleted !== true; }); }
+function proj(pid){ pid = s(pid); return projects().filter(function(p){ return s(p.id) === pid; })[0] || null; }
+function users(){ return arr(crm().users).filter(function(u){ return u.active !== false; }); }
+function myEmail(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.email()) return low(W.__GC_AUTH__.email()); } catch (e) {} return ''; }
+function myName(){ var e = myEmail(), u = users().filter(function(x){ return e && low(x.email) === e; })[0]; return u && u.name ? s(u.name) : (e ? e.split('@')[0] : 'Me'); }
+function effRole(){ try { return s(W._gcRP && W._gcRP.role && W._gcRP.role()); } catch (e) { return ''; } }
+function isAdmin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+function paused(){ try { return !!(W._gcPause && W._gcPause.state && W._gcPause.state().on); } catch (e) { return false; } }
+function G(){ return W._gcClaims || null; }
+function SB(){ try { return W._gcRP && W._gcRP.site ? W._gcRP.site() : null; } catch (e) { return null; } }
+function pmEmailOf(p){ var n = low(p && p.pm); if (!n) return ''; var u = users().filter(function(x){ return low(x.name) === n || low(x.email) === n; })[0]; return low(u && u.email || (p && p.pmEmail)); }
+function mineJob(p){ var n = low(myName()), e = myEmail(); if (!p) return false; return low(p.pm) === n || low(p.pm) === e || low(p.apm || p.assistantPm) === n || low(p.superintendent || p.super) === n; }
+function toast(msg, bad){
+  var t = D.createElement('div'); t.className = 'gcac-toast' + (bad ? ' bad' : ''); t.setAttribute('role', 'status'); t.textContent = msg;
+  D.body.appendChild(t); later(function(){ if (t.parentNode) t.parentNode.removeChild(t); }, 3600);
+}
+
+/* ══ CSS ══ */
+var CSS = '.gcac-ov{position:fixed;inset:0;z-index:99080;background:rgba(15,23,42,.5);display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto;font-family:Inter,Arial,sans-serif}' +
+  '.gcac-box{background:#fff;border-radius:14px;width:min(980px,100%);max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);padding:16px 18px;color:#0f172a;box-sizing:border-box}' +
+  '.gcac-box.sm{width:min(460px,100%)}.gcac-box h2{margin:0 0 4px;font-size:18px;color:#1B1452;display:flex;gap:8px;align-items:center}.gcac-box h2 .x{margin-left:auto}' +
+  '.gcac-muted{color:#64748b;font-size:12.5px}.gcac-sec{margin:14px 0 0}.gcac-sec h3{font-size:14px;margin:0 0 6px;color:#1B1452}' +
+  '.gcac-tbl{width:100%;border-collapse:collapse;font-size:13px}.gcac-tbl th{text-align:left;font-size:11px;text-transform:uppercase;color:#64748b;padding:5px 6px;border-bottom:1px solid #e2e8f0}.gcac-tbl td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}' +
+  '.gcac-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}' +
+  '.gcac-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;white-space:nowrap}.gcac-chip.bad{background:#fee2e2;color:#991b1b}.gcac-chip.warn{background:#fef3c7;color:#92400e}.gcac-chip.ok{background:#dcfce7;color:#166534}' +
+  '.gcac-btn{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;color:#1B1452;min-height:36px}.gcac-btn.pri{background:#1B1452;color:#fff;border-color:#1B1452}.gcac-btn.ok{background:#16a34a;border-color:#16a34a;color:#fff}.gcac-btn.bad{background:#dc2626;border-color:#dc2626;color:#fff}.gcac-btn.gold{background:#F2A51A;border-color:#F2A51A}' +
+  '.gcac-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.gcac-in{padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;min-width:0;max-width:100%;box-sizing:border-box}' +
+  '.gcac-big{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.gcac-big .gcac-btn{min-height:52px;font-size:15px}' +
+  '.gcac-flag{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13.5px;font-weight:600}.gcac-flag.ok{background:#f0fdf4;border-color:#86efac;color:#166534}' +
+  '.gcac-corner{position:fixed;right:14px;bottom:14px;z-index:9990;background:#1B1452;color:#fff;border-radius:12px;padding:10px 12px;max-width:min(340px,calc(100vw - 28px));box-shadow:0 8px 24px rgba(0,0,0,.25);font:13px Arial,sans-serif;display:flex;gap:8px;align-items:center}' +
+  '.gcac-corner button{border:0;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer}.gcac-corner .go{background:#F2A51A;color:#1B1452}.gcac-corner .no{background:transparent;color:#d8d4f5}' +
+  '.gcac-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99090;background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font:600 13.5px Arial,sans-serif;max-width:calc(100vw - 32px)}.gcac-toast.bad{background:#b91c1c}' +
+  '.gcac-supp td input[type=number]{width:70px}.gcac-supp td input.r{width:100%;min-width:140px}.gcac-supp tr.off td{opacity:.55}' +
+  '@media (max-width:640px){.gcac-big{grid-template-columns:1fr}.gcac-tbl.cards thead{display:none}.gcac-tbl.cards tr{display:block;border:1px solid #e2e8f0;border-radius:10px;margin:0 0 8px;padding:6px}.gcac-tbl.cards td{display:block;border:0;padding:3px 4px}}';
+function ensureCss(){ if (D.getElementById('gcac-css')) return; var st = D.createElement('style'); st.id = 'gcac-css'; st.textContent = CSS; D.head.appendChild(st); }
+function modal(html, sm){
+  ensureCss();
+  var ov = D.createElement('div'); ov.className = 'gcac-ov'; ov.innerHTML = '<div class="gcac-box' + (sm ? ' sm' : '') + '" role="dialog" aria-modal="true">' + html + '</div>';
+  D.body.appendChild(ov);
+  var close = function(){ if (ov.parentNode) ov.parentNode.removeChild(ov); D.removeEventListener('keydown', key); };
+  var key = function(e){ if (e.key === 'Escape') close(); };
+  D.addEventListener('keydown', key);
+  ov.addEventListener('click', function(e){ if (e.target === ov || (e.target.closest && e.target.closest('[data-gcac-x]'))) close(); });
+  return { ov: ov, close: close };
+}
+
+/* ══ DATA ══ */
+var JI_KEY = 'gc_job_inspections';
+function jobIns(){ try { var v = JSON.parse(localStorage.getItem(JI_KEY) || '{}'); if (typeof v === 'string') v = JSON.parse(v); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } }
+function jobInsSave(v){ try { localStorage.setItem(JI_KEY, JSON.stringify(v)); } catch (e) {} try { if (W._gcApplySync) W._gcApplySync(JI_KEY, v); } catch (e) {} try { if (W._supaUpsert) W._supaUpsert(JI_KEY, v); } catch (e) {} }
+function sbAll(){ var b = SB(); try { return b && b.all ? b.all() : {}; } catch (e) { return {}; } }
+function src(){ return { sitebook: sbAll(), jobInspections: jobIns(), projects: projects() }; }
+function allInspections(){ return AC.inspections(src()); }
+function findInsp(key){ return allInspections().filter(function(i){ return i.key === key; })[0] || null; }
+/* the office To-Do store (the same list the server writes) */
+function tasks(){ try { var v = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); if (typeof v === 'string') v = JSON.parse(v); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function tasksSave(l){ try { localStorage.setItem('gc_office_tasks', JSON.stringify(l)); } catch (e) {} try { if (W._gcOfficeTasksPush) W._gcOfficeTasksPush(); } catch (e) {} }
+function taskAdd(t){ var l = tasks(); if (l.some(function(x){ return x && x.id === t.id; })) return false; var at = nowIso(); l.push(Object.assign({}, t, { addedAt: at, updatedAt: at, addedBy: myName() + ' (Automations)' })); tasksSave(l); return true; }
+function taskDone(id, why){ var l = tasks(), at = nowIso(), ch = false; l.forEach(function(t){ if (t && t.id === id && !t.done) { t.done = true; t.doneAt = at; t.updatedAt = at; t.doneBy = why || myName(); ch = true; } }); if (ch) tasksSave(l); return ch; }
+
+/* ══ 8. INSPECTIONS: answer, reschedule, the schedule ══ */
+/* change one inspection where it lives (the Site Book, or the job inspections list) */
+function inspEdit(i, fn){
+  if (i.src === 'sitebook') { var b = SB(); if (!b || !b.setIn) throw new Error('The Site Book is not loaded yet.'); b.setIn(i.pid, 'inspections', i.id, fn); return; }
+  var m = jobIns(), l = arr(m[i.pid]).slice(); l.forEach(function(x){ if (x && s(x.id) === i.id) { fn(x); x.updatedAt = nowIso(); } }); m[i.pid] = l; jobInsSave(m);
+}
+function inspAdd(pid, srcKind, item){
+  if (srcKind === 'sitebook') { var b = SB(); if (!b || !b.addTo) throw new Error('The Site Book is not loaded yet.'); b.addTo(pid, 'inspections', item); return; }
+  var m = jobIns(); m[pid] = arr(m[pid]).concat([Object.assign({ id: 'INS' + Date.now().toString(36), label: item.type, done: false }, item)]); jobInsSave(m);
+}
+/* result: passed | failed | resched. opts: { date (the new date, for resched or the re-inspection), notes } */
+function answer(key, result, opts){
+  opts = opts || {}; var i = findInsp(key); if (!i) throw new Error('That inspection is not on the list any more.');
+  var p = proj(i.pid) || {}, at = nowIso(), by = myName(), nd = s(opts.date);
+  if (result === 'resched') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nd)) throw new Error('Pick the new date.');
+    inspEdit(i, function(x){ x.reschedLog = arr(x.reschedLog).concat([{ from: s(x.date), to: nd, at: at, by: by, notes: s(opts.notes) }]); x.date = nd; x.result = 'Scheduled'; if (i.src === 'jobins') x.done = false; x.answeredAt = at; x.answeredBy = by; });
+    return { ok: true, text: '📅 Moved to ' + AC.niceDay(nd) + ' — the schedule follows' };
+  }
+  if (result === 'passed') {
+    inspEdit(i, function(x){ x.result = 'Passed'; if (i.src === 'jobins') x.done = true; x.answeredAt = at; x.answeredBy = by; if (opts.notes) x.notes = s(opts.notes); });
+    if (i.reinspOf) taskDone(AC.fixTodoId({ pid: i.pid, id: i.reinspOf }), by + ' (re-inspection passed)');
+    return { ok: true, text: '✅ Passed — marked on the job' };
+  }
+  if (result === 'failed') {
+    inspEdit(i, function(x){ x.result = 'Failed'; if (i.src === 'jobins') x.done = false; x.answeredAt = at; x.answeredBy = by; if (opts.notes) x.notes = s(opts.notes); });
+    var fi = Object.assign({}, i, { notes: s(opts.notes) || i.notes });
+    taskAdd(AC.fixTodo(fi, p, pmEmailOf(p), today()));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(nd)) { inspAdd(i.pid, i.src, { type: 'Re-inspection: ' + i.type.replace(/^Re-inspection:\s*/i, ''), date: nd, notes: 'After the failed ' + i.type + ' inspection of ' + AC.niceDay(i.date), result: 'Scheduled', reinspOf: i.id }); inspEdit(i, function(x){ x.rescheduledTo = nd; }); }
+    return { ok: true, text: '❌ Failed — a To-Do to fix it' + (nd ? ' and the re-inspection on ' + AC.niceDay(nd) : ' and book the re-inspection') + ' is on ' + (s(p.pm) || 'the PM') + '’s list' };
+  }
+  throw new Error('Unknown answer');
+}
+function bookReinsp(key, date){
+  var i = findInsp(key); if (!i) throw new Error('That inspection is not on the list any more.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s(date))) throw new Error('Pick the date.');
+  inspAdd(i.pid, i.src, { type: 'Re-inspection: ' + i.type.replace(/^Re-inspection:\s*/i, ''), date: date, notes: 'After the failed ' + i.type + ' inspection of ' + AC.niceDay(i.date), result: 'Scheduled', reinspOf: i.id });
+  inspEdit(i, function(x){ x.rescheduledTo = date; });
+  return { ok: true, text: '📅 Re-inspection booked ' + AC.niceDay(date) };
+}
+/* the Site Book's result menu (patched to call this): the same rules as the dialog */
+function sbResult(pid, id, value){
+  var r = AC.normResult(value), key = 'sb:' + pid + ':' + id;
+  if (r === 'failed' || r === 'resched') { later(function(){ askDialog(key, r); }, 0); return; }
+  try { var b = SB(); b.setIn(pid, 'inspections', id, function(x){ x.result = value; if (r) { x.answeredAt = nowIso(); x.answeredBy = myName(); } }); if (r === 'passed') { var i = findInsp(key); if (i && i.reinspOf) taskDone(AC.fixTodoId({ pid: pid, id: i.reinspOf }), myName()); } } catch (e) { warn(e); }
+}
+/* the dialog: Passed / Failed / Rescheduled */
+function askDialog(key, pre){
+  var i = findInsp(key); if (!i) { toast('That inspection is not on the list any more.', true); return; }
+  var p = proj(i.pid) || {};
+  var m = modal('<h2>🔎 ' + esc(i.type) + ' inspection<button type="button" class="gcac-btn x" data-gcac-x aria-label="Close">✕</button></h2>' +
+    '<div class="gcac-muted">' + esc(p.name || 'Job') + (p.address ? ' · ' + esc(p.address) : '') + ' · ' + esc(AC.niceDay(i.date) || 'no date') + '</div>' +
+    '<p style="margin:12px 0 0;font-weight:700">How did it go?</p>' +
+    '<div class="gcac-big"><button type="button" class="gcac-btn ok" data-r="passed">✅ Passed</button><button type="button" class="gcac-btn bad" data-r="failed">❌ Failed</button><button type="button" class="gcac-btn gold" data-r="resched">📅 Rescheduled</button></div>' +
+    '<div data-more style="display:none"><label class="gcac-muted" data-dl>New date</label><div class="gcac-row"><input class="gcac-in" type="date" data-date min="' + today() + '"><input class="gcac-in" data-notes placeholder="What the inspector said (optional)" style="flex:1"></div>' +
+    '<div class="gcac-row"><button type="button" class="gcac-btn pri" data-save>Save</button><span class="gcac-muted" data-hint></span></div></div>', true);
+  var pick = '';
+  function choose(r){
+    pick = r; var more = m.ov.querySelector('[data-more]');
+    if (r === 'passed') return save();
+    more.style.display = '';
+    m.ov.querySelector('[data-dl]').textContent = r === 'resched' ? 'New date (required)' : 'Re-inspection date (optional — book it now or later)';
+    m.ov.querySelector('[data-hint]').textContent = r === 'failed' ? 'A To-Do "Fix + reschedule" goes to the PM.' : 'The schedule moves with it.';
+    m.ov.querySelectorAll('[data-r]').forEach(function(b){ b.style.outline = b.getAttribute('data-r') === r ? '3px solid #1B1452' : ''; });
+    try { m.ov.querySelector('[data-date]').focus(); } catch (e) {}
+  }
+  function save(){
+    try { var r = answer(key, pick, { date: m.ov.querySelector('[data-date]').value, notes: m.ov.querySelector('[data-notes]').value }); m.close(); toast(r.text); repaint(); }
+    catch (e) { toast(s(e && e.message) || 'Could not save', true); }
+  }
+  m.ov.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-r]'); if (b) choose(b.getAttribute('data-r')); if (e.target.closest && e.target.closest('[data-save]')) save(); });
+  if (pre) choose(pre);
+  return m;
+}
+function reinspDialog(key){
+  var i = findInsp(key); if (!i) return;
+  var m = modal('<h2>📅 Book the re-inspection<button type="button" class="gcac-btn x" data-gcac-x aria-label="Close">✕</button></h2><div class="gcac-muted">' + esc(i.type) + ' — ' + esc((proj(i.pid) || {}).name || '') + '</div>' +
+    '<div class="gcac-row"><input class="gcac-in" type="date" data-date min="' + today() + '"><button type="button" class="gcac-btn pri" data-save>Book it</button></div>', true);
+  m.ov.addEventListener('click', function(e){ if (e.target.closest && e.target.closest('[data-save]')) { try { var r = bookReinsp(key, m.ov.querySelector('[data-date]').value); m.close(); toast(r.text); repaint(); } catch (x) { toast(s(x.message), true); } } });
+}
+/* dated Site Book inspections → the schedule (internal; the job inspections list is already done by patch AUT3) */
+var schedApplied = {};
+function schedTick(){
+  if (typeof W._setSchedule !== 'function' || !myEmail()) return;
+  var rows = arr(crm().schedule), have = {}; rows.forEach(function(r){ if (r.id) have[r.id] = r; });
+  var add = [], move = {}, t0 = AC.addDays(today(), -1);
+  AC.inspections({ sitebook: sbAll() }).forEach(function(i){
+    if (!i.date || i.result === 'cancelled') return;
+    var p = proj(i.pid); if (!p) return;
+    var row = AC.schedRow(i, p), r = have[row.id];
+    if (!r) { if (i.date >= t0 && !schedApplied[row.id]) { schedApplied[row.id] = 1; add.push(Object.assign(row, { createdAt: nowIso() })); } }
+    else if (s(r.date) !== i.date && !r.deleted) move[row.id] = i.date;
+  });
+  if (!add.length && !Object.keys(move).length) return;
+  try { W._setSchedule(function(prev){ var l = Array.isArray(prev) ? prev : [], ids = {}; l.forEach(function(x){ if (x && x.id) ids[x.id] = 1; });
+    return l.map(function(x){ return x && move[x.id] ? Object.assign({}, x, { date: move[x.id], updatedAt: nowIso() }) : x; }).concat(add.filter(function(x){ return !ids[x.id]; })); }); } catch (e) { warn(e); }
+}
+
+/* ══ the list of everything open ══ */
+function tracker(){ return AC.openTracker(src(), today()); }
+var STATE_CHIP = { ask: ['bad', 'Answer: passed / failed?'], failed: ['bad', 'Failed — fix + reschedule'], today: ['warn', 'Today'], tomorrow: ['warn', 'Tomorrow'], upcoming: ['', 'Scheduled'], undated: ['warn', 'No date yet'] };
+function openList(){
+  var T = tracker(), mineOnly = /^(Project Manager|Superintendent)$/i.test(effRole());
+  function draw(){
+    var ins = T.inspections.filter(function(i){ return !mineOnly || mineJob(proj(i.pid)); }), per = T.permits.filter(function(x){ return !mineOnly || mineJob(proj(x.pid)); });
+    return '<h2>📋 Open permits & inspections<button type="button" class="gcac-btn x" data-gcac-x aria-label="Close">✕</button></h2>' +
+      '<div class="gcac-row"><span class="gcac-muted">' + ins.length + ' inspection' + (ins.length === 1 ? '' : 's') + ' open · ' + per.length + ' permit' + (per.length === 1 ? '' : 's') + ' open</span><label class="gcac-muted" style="margin-left:auto"><input type="checkbox" data-mine' + (mineOnly ? ' checked' : '') + '> My jobs only</label></div>' +
+      '<div class="gcac-sec"><h3>🔎 Inspections</h3>' + (ins.length ? '<div class="gcac-wrap"><table class="gcac-tbl cards"><thead><tr><th>Date</th><th>Job</th><th>Inspection</th><th>Where it stands</th><th>PM</th><th></th></tr></thead><tbody>' + ins.map(function(i){
+        var ch = STATE_CHIP[i.state] || ['', i.state];
+        var act = i.state === 'ask' ? '<button type="button" class="gcac-btn pri" data-ask="' + esc(i.key) + '">Answer</button>' : i.state === 'failed' ? '<button type="button" class="gcac-btn" data-reinsp="' + esc(i.key) + '">📅 Book re-inspection</button>' : '<button type="button" class="gcac-btn" data-ask="' + esc(i.key) + '">Result…</button>';
+        return '<tr><td>' + esc(AC.niceDay(i.date) || '—') + '</td><td><b>' + esc(i.job) + '</b>' + (i.address ? '<div class="gcac-muted">' + esc(clip(i.address, 50)) + '</div>' : '') + '</td><td>' + esc(i.type) + '<div class="gcac-muted">' + (i.src === 'sitebook' ? 'Site Book' : 'Job inspections') + '</div></td><td><span class="gcac-chip ' + ch[0] + '">' + esc(ch[1]) + '</span></td><td>' + esc(i.pm || '—') + '</td><td>' + act + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<p class="gcac-muted">Nothing open. 👍</p>') + '</div>' +
+      '<div class="gcac-sec"><h3>🧾 Permits</h3>' + (per.length ? '<div class="gcac-wrap"><table class="gcac-tbl cards"><thead><tr><th>Job</th><th>Permit</th><th>Number</th><th>Jurisdiction</th><th>Status</th><th>PM</th></tr></thead><tbody>' + per.map(function(x){
+        return '<tr><td><b>' + esc(x.job) + '</b></td><td>' + esc(x.type) + '</td><td>' + esc(x.number || '—') + '</td><td>' + esc(x.jurisdiction || '—') + '</td><td><span class="gcac-chip ' + (/need/i.test(x.status) ? 'warn' : '') + '">' + esc(x.status) + '</span>' + (x.expires ? '<div class="gcac-muted">expires ' + esc(AC.niceDay(x.expires)) + '</div>' : '') + '</td><td>' + esc(x.pm || '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<p class="gcac-muted">No open permits.</p>') + '</div>' +
+      '<p class="gcac-muted">Add or change permits and inspections on the job’s Site Book → Codes & permits. Dated inspections are on the schedule; the PM is reminded the day before and asked for the result after.</p>';
+  }
+  var m = modal(draw());
+  m.ov.addEventListener('click', function(e){
+    var a = e.target.closest && e.target.closest('[data-ask]'), r = e.target.closest && e.target.closest('[data-reinsp]');
+    if (a) { m.close(); askDialog(a.getAttribute('data-ask')); } else if (r) { m.close(); reinspDialog(r.getAttribute('data-reinsp')); }
+  });
+  m.ov.addEventListener('change', function(e){ if (e.target.hasAttribute && e.target.hasAttribute('data-mine')) { mineOnly = e.target.checked; T = tracker(); m.ov.querySelector('.gcac-box').innerHTML = draw(); } });
+  return m;
+}
+
+/* ══ 10. DRYING ══ */
+function photoDays(c){ var out = []; try { var P = W._gcPhotos; if (P && typeof P.records === 'function') arr(P.records()).forEach(function(r){ if (!r.deleted && s(r.jobId) === s(c.projectId)) out.push(AC.ymd(r.takenAt || r.createdAt || r.at)); }); } catch (e) {} return out.filter(Boolean); }
+function claims(){ try { return G() ? arr(G().list()) : []; } catch (e) { return []; } }
+function drying(){ var t = today(); return claims().map(function(c){ var d = AC.dryingOf(c, t); if (d) { d.claim = c; d.project = proj(c.projectId) || {}; d.who = AC.dryingWho(c, d.project); } return d; }).filter(Boolean); }
+function openClaim(id, tab){ try { if (W._gcIns4 && W._gcIns4.open) return W._gcIns4.open(id, tab); var A = G().open({ claimId: id }); if (A && A.S) { A.S.tab = tab; A.S.easy = false; A.render(true); } } catch (e) { warn(e); } }
+function dryBanner(c){
+  var d = AC.dryingOf(c, today()); if (!d) return AC.dryingComplete(c) ? '<div class="gcac-flag ok">✓ Drying complete ' + esc(AC.niceDay(c.drying.completeAt)) + ' — the daily reading reminders have stopped.</div>' : '';
+  return (d.missed.length ? '<div class="gcac-flag" data-gcac-drymiss>' + esc(AC.missedText(d)) + '.</div>' : '') +
+    '<div class="gcac-flag' + (d.loggedToday ? ' ok' : '') + '">' + (d.loggedToday ? '✓ Day ' + d.day + ': today’s readings are in.' : '💧 Day ' + d.day + ' of drying: take today’s moisture readings + photos.') + ' <span class="gcac-muted">Reminders stop when you press “Drying complete” (dry standard met).</span></div>';
+}
+
+/* ══ TO-DO (patch TD2 reads window._gcTodoExt) ══ */
+function todoItems(){
+  var out = [], t = today(), me = myName();
+  drying().forEach(function(d){
+    var p = d.project, title = s(p.name) || s(d.claim.insured) || 'drying job', who = d.who.length ? d.who : [s(p.pm)].filter(Boolean);
+    var go = { l: '💧 Drying log', f: function(){ openClaim(d.claimId, 'drying'); } };
+    if (!d.loggedToday) out.push({ key: 'acdry:' + d.claimId + ':' + t, thing: 'acdry|' + d.claimId, cat: 'jobs', prio: d.missed.length ? 'high' : 'med', pid: d.pid, due: t, title: AC.dryingTitle(d, title), sub: d.onsite + ' piece(s) of equipment on site · until drying is marked complete', who: who, vis: who.length ? 'who' : 'company', act: go });
+    if (d.missed.length) out.push({ key: 'acdrymiss:' + d.claimId + ':' + d.missed[d.missed.length - 1], thing: 'acdrymiss|' + d.claimId, cat: 'jobs', prio: 'high', pid: d.pid, due: d.missed[d.missed.length - 1], title: '⚠ Missed drying readings — ' + clip(title, 60), sub: AC.missedText(d), who: who, vis: who.length ? 'who' : 'company', act: go });
+  });
+  var IA = AC.inspActions(allInspections(), t);
+  function insItem(i, kind){
+    var p = proj(i.pid); if (!p || (kind !== 'ask' && AC.jobClosed(p))) return;
+    var who = [s(p.pm)].filter(Boolean);
+    var o = { thing: 'acinsp|' + i.key, cat: 'jobs', pid: i.pid, due: i.date, who: who, vis: who.length ? 'who' : 'company' };
+    if (kind === 'ask') out.push(Object.assign(o, { key: 'acinspq:' + i.key + ':' + i.date, prio: 'high', title: '🔎 Passed / Failed / Rescheduled? ' + i.type + ' inspection (' + AC.niceDay(i.date) + ') — ' + clip(p.name, 60), sub: 'Answer it: a fail puts a fix + reschedule To-Do on the list', act: { l: '✅ Answer', f: function(){ askDialog(i.key); } } }));
+    else out.push(Object.assign(o, { key: 'acinsp' + kind[0] + ':' + i.key + ':' + i.date, prio: 'med', title: '🔎 ' + (kind === 'today' ? 'Today' : 'Tomorrow') + ': ' + i.type + ' inspection — ' + clip(p.name, 60), sub: 'Work ready, permit card posted, someone to let the inspector in', act: { l: '📒 Site Book', f: function(){ try { var b = SB(); if (b && b.open) b.open(i.pid, 'codes'); else if (W._setView) W._setView('sitebook'); } catch (e) { warn(e); } } } }));
+  }
+  IA.remind.forEach(function(i){ insItem(i, 'tomorrow'); }); IA.today.forEach(function(i){ insItem(i, 'today'); }); IA.ask.forEach(function(i){ insItem(i, 'ask'); });
+  return out;
+}
+var TODO_C = { sig: '', v: [] };
+function sig(){
+  var cl = claims(), m = ''; cl.forEach(function(c){ var u = s(c.updatedAt); if (u > m) m = u; });
+  var sb = ''; try { sb = JSON.stringify(sbAll()).length + ''; } catch (e) {}
+  var ji = ''; try { ji = (localStorage.getItem(JI_KEY) || '').length + ''; } catch (e) {}
+  return cl.length + '|' + m + '|' + sb + '|' + ji + '|' + projects().length + '|' + nowIso().slice(0, 13) + '|' + myEmail();
+}
+W._gcTodoExt = Array.isArray(W._gcTodoExt) ? W._gcTodoExt : []; W._gcTodoExt.push(function(){ try { var g = sig(); if (g !== TODO_C.sig) TODO_C = { sig: g, v: todoItems() }; return TODO_C.v; } catch (e) { warn(e); return []; } });
+
+/* the corner card: the PM's inspections waiting for an answer (once a session, non-blocking, dismissible) */
+var cornerSeen = {};
+function corner(){
+  if (!myEmail() || D.hidden) return;
+  var mine = AC.inspActions(allInspections(), today()).ask.filter(function(i){ var p = proj(i.pid); return p && (mineJob(p) || (isAdmin() && !s(p.pm))); }).filter(function(i){ return !cornerSeen[i.key]; });
+  var el = D.getElementById('gcac-corner');
+  if (!mine.length) { if (el) el.remove(); return; }
+  if (el) return;
+  ensureCss(); el = D.createElement('div'); el.id = 'gcac-corner'; el.className = 'gcac-corner'; el.setAttribute('role', 'status');
+  var i = mine[0], p = proj(i.pid) || {};
+  el.innerHTML = '<span>🔎 <b>' + esc(i.type) + '</b> inspection ' + esc(AC.niceDay(i.date)) + ' — ' + esc(clip(p.name, 40)) + (mine.length > 1 ? ' (+' + (mine.length - 1) + ' more)' : '') + ': passed, failed or rescheduled?</span><button type="button" class="go">Answer</button><button type="button" class="no" aria-label="Later">Later</button>';
+  el.querySelector('.go').addEventListener('click', function(){ el.remove(); askDialog(i.key); });
+  el.querySelector('.no').addEventListener('click', function(){ mine.forEach(function(x){ cornerSeen[x.key] = 1; }); el.remove(); });
+  D.body.appendChild(el);
+}
+
+/* ══ 11. FIELD SUPPLEMENTS (a claim tab) ══ */
+function claimById(id){ try { return G().get(id); } catch (e) { return null; } }
+function suppItems(c){
+  var p = proj(c.projectId) || {}, photos = [];
+  try { var P = W._gcPhotos; if (P && typeof P.records === 'function') photos = arr(P.records()).filter(function(r){ return !r.deleted && s(r.jobId) === s(c.projectId); }); } catch (e) {}
+  var notes = []; try { var r = sbAll()[s(c.projectId)]; arr(r && r.logs).concat(arr(r && r.dailyLogs)).forEach(function(l){ if (l && !l.deleted) notes.push({ id: 'sbl:' + s(l.id), text: [s(l.work), s(l.delays), s(l.notes)].filter(Boolean).join('\n'), at: s(l.date || l.createdAt), by: s(l.by), photos: arr(l.photos) }); }); } catch (e) {}
+  return AC.suppCollect({ claim: c, project: p, changeOrders: arr(crm().changeOrders), photos: photos, notes: notes });
+}
+function mutate(id, fn){ return G().update(id, fn); }
+function fsMark(id, key, patch){ return mutate(id, function(x){ x.fieldSupp = Object.assign({}, x.fieldSupp || {}); var m = Object.assign({}, x.fieldSupp.marks || {}); m[key] = Object.assign({}, m[key] || {}, patch, { by: myName(), at: nowIso() }); x.fieldSupp.marks = m; x.fieldSupp.updatedAt = nowIso(); }); }
+function fsAdd(id, item){ return mutate(id, function(x){ x.fieldSupp = Object.assign({}, x.fieldSupp || {}); x.fieldSupp.items = arr(x.fieldSupp.items).concat([Object.assign({ id: 'FS' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: nowIso(), by: myName() }, item)]); x.fieldSupp.updatedAt = nowIso(); }); }
+function fsLog(id, kind, n){ return mutate(id, function(x){ x.fieldSupp = Object.assign({}, x.fieldSupp || {}); x.fieldSupp.exports = arr(x.fieldSupp.exports).concat([{ at: nowIso(), by: myName(), kind: kind, items: n }]).slice(-50); }); }
+var lastA = null;
+function suppTab(A, c){
+  lastA = A; ensureCss();
+  var items = suppItems(c), inc = items.filter(function(x){ return x.include; }), lines = AC.carrierLines(c);
+  var ex = arr((c.fieldSupp || {}).exports).slice(-1)[0];
+  return '<div class="gcbb-panel gcac-supp" data-gcac-supp="' + esc(c.id) + '"><h3>🧾 Field supplements<span class="gcbb-sp"></span><span class="gcbb-tag ' + (inc.length ? 'warn' : 'ok') + '">' + inc.length + ' item' + (inc.length === 1 ? '' : 's') + ' to request</span></h3>' +
+    '<p class="gcac-muted">Collected by itself from what was added in the field — change orders, notes and photos tagged <b>supplement</b>, items marked on the claim, and items added below — and checked against the imported Xactimate estimate' + (lines.length ? ' (' + lines.length + ' carrier lines)' : ' (<b>no carrier estimate imported yet</b>: nothing can be checked off)') + '. Untick what should not go to the adjuster.</p>' +
+    (items.length ? '<div class="gcac-wrap"><table class="gcac-tbl cards"><thead><tr><th>Ask</th><th>Item</th><th>Reason</th><th>Qty</th><th>Photos</th><th>From</th></tr></thead><tbody>' + items.map(function(x){
+      return '<tr class="' + (x.include ? '' : 'off') + '"><td><input type="checkbox" aria-label="Include" data-fs-inc="' + esc(x.key) + '"' + (x.include ? ' checked' : '') + '></td><td><b>' + esc(x.item) + '</b>' + (x.onEstimate ? '<div><span class="gcac-chip ok">looks like it is on the estimate</span></div>' : '') + '</td>' +
+        '<td><input class="gcac-in r" data-fs-reason="' + esc(x.key) + '" value="' + esc(x.reason) + '" aria-label="Reason"></td><td><input class="gcac-in" type="number" min="0" step="any" data-fs-qty="' + esc(x.key) + '" value="' + esc(x.qty) + '" aria-label="Quantity"> ' + esc(x.unit) + '</td>' +
+        '<td>' + (x.photos.length ? '📷 ' + x.photos.length : '<span class="gcac-muted">none</span>') + '</td><td class="gcac-muted">' + esc(x.src) + (x.at ? '<br>' + esc(AC.niceDay(x.at)) : '') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' : '<p class="gcac-muted">Nothing yet. Tag a note or a GrayCo photo with <b>#supplement</b>, mark items on the claim, or add one below.</p>') +
+    '<form data-fs-add class="gcac-row"><input class="gcac-in" name="item" placeholder="Item found in the field (e.g. Replace rotted roof decking)" required style="flex:2 1 220px"><input class="gcac-in" name="reason" placeholder="Reason" style="flex:2 1 180px"><input class="gcac-in" name="qty" type="number" min="0" step="any" placeholder="Qty" style="width:80px"><input class="gcac-in" name="unit" placeholder="Unit" style="width:70px"><button class="gcac-btn">+ Add item</button></form>' +
+    '<div class="gcac-row"><button type="button" class="gcac-btn pri" data-fs-csv>⬇ CSV for the adjuster</button><button type="button" class="gcac-btn" data-fs-pdf>⬇ PDF for the adjuster</button>' + (ex ? '<span class="gcac-muted">last export ' + esc(ex.kind) + ' ' + esc(AC.niceDay(ex.at)) + ' by ' + esc(ex.by) + '</span>' : '') + '</div>' +
+    '<p class="gcac-muted">To send it: the Compare / supplement builder prepares the e-mail, which waits for approval. Nothing here is sent by itself.</p></div>';
+}
+function dl(name, blob){ var a = D.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; D.body.appendChild(a); a.click(); later(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+function fname(c, ext){ return ('Supplement items - ' + (s(c.claimNumber) ? 'claim ' + s(c.claimNumber) : s(c.insured) || 'claim') + ' - ' + today()).replace(/[^\w .#()-]+/g, '-') + '.' + ext; }
+function exportCsv(id){ var c = claimById(id); if (!c) return; var items = suppItems(c), n = items.filter(function(x){ return x.include; }).length; dl(fname(c, 'csv'), new Blob([AC.suppCsv(items, { claimNumber: c.claimNumber, insured: c.insured })], { type: 'text/csv' })); fsLog(id, 'CSV', n); return n; }
+function exportPdf(id){
+  var c = claimById(id); if (!c) return Promise.resolve(0); var E = G().ext, items = suppItems(c).filter(function(x){ return x.include; });
+  var o = { title: 'Supplement items', subtitle: [s(c.claimNumber) ? 'Claim #' + s(c.claimNumber) : '', s(c.insured), today()].filter(Boolean).join(' · '), blocks: [
+    { kv: [['Insured', s(c.insured) || '—'], ['Loss address', s(c.address || (proj(c.projectId) || {}).address) || '—'], ['Claim #', s(c.claimNumber) || '—'], ['Items', String(items.length)]] },
+    { h: 'Items found in the field (not on the estimate)' },
+    { table: { cols: [{ l: '#', w: 24 }, { l: 'Item', w: 200 }, { l: 'Reason', w: 200 }, { l: 'Qty', w: 50, align: 'right' }, { l: 'Photos', w: 50, align: 'right' }], rows: items.map(function(x, k){ return { cells: [String(k + 1), x.item, x.reason, x.qty + ' ' + x.unit, String(x.photos.length)], sub: x.photos.length ? ['Photos: ' + x.photos.map(function(ph){ return s(ph.name || ph.ref || ph.id); }).join(', ')] : [] }; }) } },
+    { p: 'Photos are in the claim file and can be sent with this list. Please review and let us know if you need anything else.', size: 9.5 } ] };
+  return (E.logoJpeg ? E.logoJpeg().catch(function(){ return null; }) : Promise.resolve(null)).then(function(logo){ var bytes = E.pdfReport(o, logo); dl(fname(c, 'pdf'), new Blob([bytes], { type: 'application/pdf' })); return fsLog(id, 'PDF', items.length); }).then(function(){ return items.length; });
+}
+function wireSupp(){
+  D.addEventListener('change', function(e){
+    var t = e.target; if (!t || !t.closest) return; var box = t.closest('[data-gcac-supp]'); if (!box) return; var id = box.getAttribute('data-gcac-supp'), k;
+    var re = function(){ if (lastA) lastA.render(true); };
+    if ((k = t.getAttribute('data-fs-inc'))) fsMark(id, k, { include: t.checked }).then(re, warn);
+    else if ((k = t.getAttribute('data-fs-qty'))) fsMark(id, k, { qty: num(t.value) }).then(re, warn);
+    else if ((k = t.getAttribute('data-fs-reason'))) fsMark(id, k, { reason: s(t.value) }).then(re, warn);
+  });
+  D.addEventListener('submit', function(e){
+    var f = e.target; if (!f || !f.hasAttribute || !f.hasAttribute('data-fs-add')) return; e.preventDefault();
+    var box = f.closest('[data-gcac-supp]'), id = box && box.getAttribute('data-gcac-supp'); if (!id) return;
+    var v = {}; Array.prototype.forEach.call(f.elements, function(el){ if (el.name) v[el.name] = el.value; });
+    if (!s(v.item)) return;
+    fsAdd(id, { item: s(v.item), reason: s(v.reason) || 'Found during the work', qty: num(v.qty) || 1, unit: s(v.unit).toUpperCase() || 'EA' }).then(function(){ toast('✓ Added to the supplement list'); if (lastA) lastA.render(true); }, function(x){ toast(s(x && x.message) || 'Could not save', true); });
+  });
+  D.addEventListener('click', function(e){
+    var t = e.target; if (!t || !t.closest) return; var box = t.closest('[data-gcac-supp]'); if (!box) return; var id = box.getAttribute('data-gcac-supp');
+    if (t.closest('[data-fs-csv]')) { var n = exportCsv(id); toast('⬇ CSV with ' + n + ' item' + (n === 1 ? '' : 's')); }
+    if (t.closest('[data-fs-pdf]')) exportPdf(id).then(function(n){ toast('⬇ PDF with ' + n + ' item' + (n === 1 ? '' : 's')); }, function(x){ warn(x); toast('Could not make the PDF', true); });
+  });
+}
+
+/* ══ 12. the approval card of an adjuster nudge says who gets it ══ */
+function hookSay(){
+  var f = W._gcApprSay; if (typeof f !== 'function' || f.__gcac) return !!(f && f.__gcac);
+  var g = function(x, last){
+    if (x && x.kind === 'claim_nudge') { var to = s(x.to), what = 'sends this follow-up to the ADJUSTER' + (to ? ' (' + to + ')' : '') + ' from claims@grayco-cs.com: “' + s(x.subject) + '” — never to the homeowner'; return 'Approve ' + what + '. Edit it first if you like. Don’t approve: nothing is sent.'; }
+    return f.apply(this, arguments);
+  };
+  g.__gcac = true; W._gcApprSay = g; if (W._gcApptConf) W._gcApptConf.say = g; return true;
+}
+
+/* ══ HOOK UP: the claim tabs, the drying banner ══ */
+function hookClaims(){
+  var g = G(); if (!g || !g.ext || !g.ext.P2TABS) return false;
+  var T = g.ext.P2TABS;
+  if (!T.fsupp) T.fsupp = function(A, c){ try { return suppTab(A, c); } catch (e) { warn(e); return '<div class="gcbb-err">' + esc(e && e.message) + '</div>'; } };
+  if (T.drying && !T.drying.__gcac) { var od = T.drying; T.drying = function(A, c){ var b = ''; try { ensureCss(); b = dryBanner(c); } catch (e) { warn(e); } return b + od.apply(this, arguments); }; T.drying.__gcac = true; }
+  W._gcIns4 = W._gcIns4 || {};
+  if (!W._gcIns4.tabs || !W._gcIns4.tabs.__gcac) {
+    var prev = W._gcIns4.tabs;
+    var tf = function(tabs, c, A){ tabs = typeof prev === 'function' ? prev(tabs, c, A) : tabs; if (tabs.some(function(t){ return t[0] === 'fsupp'; })) return tabs; var n = 0; try { n = suppItems(c).filter(function(x){ return x.include; }).length; } catch (e) {} var at = tabs.map(function(t){ return t[0]; }).indexOf('estimate'); var t2 = tabs.slice(); t2.splice(at >= 0 ? at + 1 : t2.length, 0, ['fsupp', '🧾 Field supplements' + (n ? ' (' + n + ')' : '')]); return t2; };
+    tf.__gcac = true; W._gcIns4.tabs = tf;
+  }
+  return true;
+}
+var hooked = false;
+(function tryHook(n){ if (hookClaims()) { hooked = true; return; } if (n < 300) later(function(){ tryHook(n + 1); }, 400); })(0);
+(function trySay(n){ if (hookSay()) return; if (n < 200) later(function(){ trySay(n + 1); }, 500); })(0);
+wireSupp();
+
+function repaint(){ TODO_C.sig = ''; try { if (W._gcTodoRefresh) W._gcTodoRefresh(); } catch (e) {} try { var b = SB(); if (b && b.draw) b.draw(true); } catch (e) {} }
+every(function(){ if (D.hidden) return; try { schedTick(); } catch (e) { warn(e); } try { corner(); } catch (e) { warn(e); } }, 15000);
+later(function(){ try { schedTick(); corner(); } catch (e) { warn(e); } }, 9000);
+
+W._gcAutoClaims = {
+  status: function(){ var T = tracker(); return { hooked: hooked, inspectionsOpen: T.counts.inspections, toAnswer: T.counts.ask, failed: T.counts.failed, permitsOpen: T.counts.permits, drying: drying().length, paused: paused() }; },
+  openList: openList, tracker: tracker, inspections: allInspections, answer: answer, bookReinsp: bookReinsp, ask: askDialog, sbResult: sbResult, schedTick: schedTick,
+  drying: drying, dryBanner: dryBanner, supp: function(id){ var c = claimById(id); return c ? suppItems(c) : []; }, csv: function(id){ var c = claimById(id); return c ? AC.suppCsv(suppItems(c), { claimNumber: c.claimNumber, insured: c.insured }) : ''; },
+  exportCsv: exportCsv, exportPdf: exportPdf, todoItems: todoItems, corner: corner, rules: AC
+};
+try { console.log('[GC] Claim & field automations (patch AUTOCLAIMS) — _gcAutoClaims.status()'); } catch (e) {}
 })();
 </script>
 <script id="gc-patch-apptconf">

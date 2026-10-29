@@ -439,6 +439,14 @@
 [functions."auto-wins"]
   schedule = "19 * * * *"
 
+# Claim & field automations (patch AUTOCLAIMS, netlify/functions/claims-auto.js): every hour at :23, each part once a day
+# at its Central hour — 7 AM: inspection tomorrow → the PM; inspection date passed with no answer → "Passed / Failed /
+# Rescheduled?"; failed → a fix + reschedule To-Do; a drying job that missed yesterday's readings → the PM / tech.
+# 9 AM Mon–Fri: a claim with no adjuster reply / status change for N days → a follow-up DRAFT on ✅ Approvals (never sent
+# by itself). Data-entry mode pauses it; CLAIMS_AUTO_OFF=1 stops it.
+[functions."claims-auto"]
+  schedule = "23 * * * *"
+
 # patch TRAIN2: the built-in training videos ship with this function (staff only, signed links, Range)
 [functions."training-video"]
   included_files = ["netlify/functions/_assets/training/*.mp4"]

@@ -1531,6 +1531,7 @@ async function aqSend(item, now){
     return nr.ok ? (nr.skipped ? { ok: true, skipped: nr.skipped } : { ok: true }) : { ok: false, error: nr.error || 'The e-mail did not go out (' + (nr.status || 'no answer') + ').' };
   }
   if (item.channel === 'sms') { const t = await sendText(item.to, item.text); return t.ok ? { ok: true } : { ok: false, error: 'Texting is not set up yet (' + (t.skipped || 'no provider') + ').' }; }
+  if (item.kind === 'claim_nudge') return claimNudgeSend(item);   /* patch AUTOCLAIMS: the adjuster follow-up goes from claims@ */
   if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
   if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
   let html = s(item.html), token = '';
@@ -1603,6 +1604,20 @@ async function aqSend(item, now){
     if (item.kind === 'final_reminder' && m.invoiceId) await patchMail(m.invoiceId, { reminders: num(m.reminders) || 1, last_reminder_at: now, last_result: 'reminded' });
   } catch (e) {}
   return { ok: true };
+}
+/* patch AUTOCLAIMS: an approved adjuster follow-up (claims-auto.js drafted it) goes From / Reply-To the claims box, so the
+   adjuster's answer comes back into the claim through claim-inbox; the PM's signature; no portal link, no job tag added */
+async function claimNudgeSend(item){
+  if (!s(process.env.RESEND_API_KEY)) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
+  if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
+  let html = s(item.html); try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {}
+  const payload = { from: s(process.env.CLAIMS_FROM) || 'GrayCo Construction Services Claims <claims@grayco-cs.com>', reply_to: s(process.env.CLAIMS_REPLY_TO) || 'claims@grayco-cs.com',
+    to: [item.to], subject: s(item.subject), html: html, headers: { 'X-GrayCo-CRM': 'claim-nudge', 'X-GrayCo-Item': s(item.id) } };
+  if (Array.isArray(item.cc) && item.cc.length) payload.cc = item.cc.slice(0, 5);
+  let res;
+  try { const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); res = { ok: r.ok, status: r.status }; }
+  catch (e) { res = { ok: false }; }
+  return res.ok ? { ok: true } : { ok: false, error: 'The e-mail did not go out (' + (res.status || 'no answer') + ').' };
 }
 /* patch AP2: an approver's edits (To, CC, subject, body / text message), recorded with who and when */
 const EMAIL_RE = /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i;
@@ -2513,6 +2528,7 @@ Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: 
 /* patch WEB: the website intake (website-intake.js) and the Business Brain (brain.js) read the CRM's records the same way */
 Object.assign(exports._core, { isHistoryInvoice: isHistoryInvoice });   /* patch LCLEAN */
 Object.assign(exports._core, { invoiceMailHtml: invoiceMailHtml });   /* patch LEGAL3: the invoice e-mail body, so the legal-footer test can render a real one */
+Object.assign(exports._core, { claimNudgeSend: claimNudgeSend });   /* patch AUTOCLAIMS (tests) */
 Object.assign(exports._core, { kvRead: kvRead, crmData: crmData, kvListRead: kvListRead, isCustomerInvoice: isCustomerInvoice, invBalance: invBalance, invPaid: invPaid, invAmount: invAmount, invNumber: invNumber, pmOf: pmOf });
 /* patch AUTO7: portal-extra.js (the customer's "Report an issue", materials arriving) and field-auto.js read the same way */
 Object.assign(exports._core, { tokenRow: tokenRow, sessionRow: sessionRow, withJob: withJob, replyToFor: replyToFor, adminReplyTo: adminReplyTo, scrub: scrub, insWords: insWords, insClaim: insClaim,
