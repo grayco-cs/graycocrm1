@@ -105,206 +105,6 @@ W._gcHeavy = { state: function(){ return { phase: H.phase, why: H.why, allowed: 
 try { console.log('[GC] STUCKFIX: start-up skips the old estimate / document chunks; estimates load when needed — _gcHeavy.state()'); } catch (e) {}
 })();
 </script>
-<script id="gc-patch-storecut">
-/* __GC_PATCH_STORECUT__ — one estimates store in the cloud ("estimates"; the builder's "__est__gc_ests_v2" is not uploaded and a
-   named read of it is answered from "estimates"), identical reads in flight share one download, and a hidden tab repeats no
-   read for 5 minutes (tools/patch_STORECUT.py). Kill switch: localStorage gc_storecut_off = '1'. Console: _gcStoreCut.state() */
-(function(){
-'use strict';
-if (window.__GC_PATCH_STORECUT__) return; window.__GC_PATCH_STORECUT__ = true;
-var W = window, NF = W.fetch, NST = W.setTimeout;
-if (typeof NF !== 'function') return;
-var OFF = false; try { OFF = localStorage.getItem('gc_storecut_off') === '1'; } catch (e) {}
-if (OFF) { try { console.log('[GC] STORECUT off (gc_storecut_off)'); } catch (e) {} return; }
-var V2 = '__est__gc_ests_v2', EST = 'estimates';
-var HIDDEN_TTL = 5 * 60e3, HIDDEN_AFTER = 30e3, MAX_CACHE = 60;
-var S = { validated: 0, savedBytes: 0, v2WritesDropped: 0, v2ReadsServed: 0, bulkFiltered: 0, shared: 0, hiddenServed: 0, net: 0, allow: {}, hiddenSince: 0 };
-function urlOf(input){ try { return typeof input === 'string' ? input : (input && input.url) ? input.url : String(input); } catch (e) { return ''; } }
-function methodOf(input, init){ var m = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET'; return String(m).toUpperCase(); }
-function qs(u){ var i = u.indexOf('?'); return i < 0 ? '' : u.slice(i + 1); }
-function dec(x){ try { return decodeURIComponent(x); } catch (e) { return x; } }
-function keyEq(q){ var m = /(?:^|&)key=eq\.([^&]*)/.exec(q); return m ? dec(m[1]).replace(/^"|"$/g, '') : ''; }
-function fake(status, body){ return Promise.resolve(new Response(status === 204 ? null : (body == null ? '[]' : body), { status: status, headers: { 'content-type': 'application/json' } })); }
-function hdr(input, init, name){
-  try { var h = (init && init.headers) || (input && typeof input === 'object' && input.headers); if (!h) return ''; if (typeof h.get === 'function') return h.get(name) || ''; return h[name] || h[name.toLowerCase()] || ''; } catch (e) { return ''; }
-}
-
-/* ── 1. one estimates store ─────────────────────────────────────────────── */
-function v2Read(input, init, u){
-  /* the builder's store, asked for by name: the same records from "estimates", in the builder's shape (JSON text) */
-  var u2 = u.replace(/([?&]key=eq\.)[^&]*/, '$1' + EST);
-  var req = typeof input === 'string' ? u2 : (function(){ try { return new Request(u2, input); } catch (e) { return u2; } })();
-  return NF.call(W, req, init).then(function(r){
-    if (!r || !r.ok) return r;
-    return r.clone().json().then(function(rows){
-      if (!Array.isArray(rows)) return r;
-      S.v2ReadsServed++;
-      var out = rows.map(function(x){ var o = Object.assign({}, x); if ('key' in o) o.key = V2; if ('value' in o && typeof o.value !== 'string' && o.value != null) o.value = JSON.stringify(o.value); return o; });
-      var h = new Headers(r.headers); h.set('content-type', 'application/json');
-      return new Response(JSON.stringify(out), { status: r.status, statusText: r.statusText, headers: h });
-    }, function(){ return r; });
-  });
-}
-function v2Write(input, init, u, m){
-  if (S.allow[V2]) return null;                      /* the admin clean-up empties it on purpose */
-  var k = keyEq(qs(u));
-  if (k === V2) { S.v2WritesDropped++; return fake(m === 'POST' ? 201 : 204); }
-  var b = init && init.body;
-  if (typeof b !== 'string' || b.indexOf(V2) < 0) return null;
-  var j = null; try { j = JSON.parse(b); } catch (e) { return null; }
-  if (!j || typeof j !== 'object') return null;
-  var arr = Array.isArray(j) ? j : [j], keep = arr.filter(function(r){ return !(r && r.key === V2); });
-  if (keep.length === arr.length) return null;
-  S.v2WritesDropped++;
-  if (!keep.length) return fake(m === 'POST' ? 201 : 204);
-  return { init: Object.assign({}, init, { body: JSON.stringify(Array.isArray(j) ? keep : keep[0]) }) };
-}
-function bulkRewrite(u){
-  /* a read of many rows (start-up pull, change check, "what changed" pull): never the builder copy */
-  var q = qs(u); if (!q || /(?:^|&)key=eq\./.test(q)) return u;
-  if (/(?:^|&)key=in\./.test(q) && q.indexOf(V2) < 0 && q.indexOf(encodeURIComponent(V2)) < 0) return u;
-  S.bulkFiltered++;
-  return u + '&key=not.eq.' + V2;
-}
-
-/* ── 2. reads: share the ones in flight; a hidden tab does not repeat itself ─────────────────────── */
-var inflight = new Map(), memo = new Map();
-function hiddenLong(){ try { return document.visibilityState === 'hidden' && S.hiddenSince && Date.now() - S.hiddenSince > HIDDEN_AFTER; } catch (e) { return false; } }
-function onVis(){ try { if (document.visibilityState === 'hidden') { if (!S.hiddenSince) S.hiddenSince = Date.now(); } else { S.hiddenSince = 0; memo.clear(); } } catch (e) {} }
-try { document.addEventListener('visibilitychange', onVis, true); onVis(); } catch (e) {}
-function kvOf(u){ return u.indexOf('/rest/v1/gc_kv') >= 0; }
-function cacheable(u){
-  /* the database's REST reads and the CRM's own functions; never auth, file storage, realtime or a "changed since" read */
-  if (u.indexOf('/auth/v1/') >= 0 || u.indexOf('/storage/v1/') >= 0 || u.indexOf('/realtime/') >= 0) return false;
-  if (/[?&]updated_at=gte?\./.test(u)) return false;
-  return u.indexOf('/rest/v1/') >= 0 || u.indexOf('/.netlify/functions/') >= 0;
-}
-function small(u, r){
-  /* only small answers are remembered: the change check (keys + time stamps) and the functions' status reads */
-  var n = 0; try { n = +(r.headers.get('content-length') || 0); } catch (e) {}
-  if (n > 300000) return false;
-  if (u.indexOf('/.netlify/functions/') >= 0) return true;
-  return /[?&]select=(key,updated_at|updated_at,key|updated_at)(&|$)/.test(u) || (n > 0 && n < 20000);
-}
-function remember(id, r){
-  if (memo.size >= MAX_CACHE) { var first = memo.keys().next().value; memo['delete'](first); }
-  memo.set(id, { at: Date.now(), r: r });
-}
-/* ── 3. a big row is downloaded again only when it changed ─────────────────────────────
-   A named read of rows with their values (key=eq. / key=in.): the first big answer (>= 50 KB) is kept with the
-   rows' time stamps; the next identical read first asks for the stamps only (key + updated_at, a few bytes) and,
-   when every stamp is the same, answers from the kept copy. A write of one of those keys from this page drops
-   the copy; a copy is never older than 10 minutes. */
-var VC = new Map(), VC_TTL = 10 * 60e3, VC_MIN = 50000, VC_MAX = 16e6, vcBytes = 0;
-function valueRead(u){
-  var q = qs(u); if (!q || /(?:^|&)(updated_at|limit|offset|order)=/.test(q)) return false;
-  if (!/(?:^|&)key=(eq|in)\./.test(q) || /(?:^|&)key=(like|ilike)\./.test(q)) return false;
-  var sel = (/(?:^|&)select=([^&]*)/.exec(q) || [])[1]; sel = sel == null ? '*' : dec(sel);
-  return sel === '*' || /\bvalue\b/.test(sel);
-}
-function stampUrl(u){
-  var i = u.indexOf('?'), base = u.slice(0, i), parts = u.slice(i + 1).split('&').filter(function(x){ return !/^select=/.test(x); });
-  parts.push('select=key,updated_at'); return base + '?' + parts.join('&');
-}
-function sigOf(rows){
-  if (!Array.isArray(rows)) rows = rows && typeof rows === 'object' ? [rows] : null;
-  if (!rows) return null;
-  var out = [];
-  for (var i = 0; i < rows.length; i++) { var r = rows[i]; if (!r || r.key == null || !r.updated_at) return null; out.push(String(r.key) + '@' + String(r.updated_at)); }
-  return out.sort().join('|') || '-';
-}
-function keysOfUrl(u){
-  var q = qs(u), m = /(?:^|&)key=eq\.([^&]*)/.exec(q); if (m) return [dec(m[1]).replace(/^"|"$/g, '')];
-  m = /(?:^|&)key=in\.\(([^&]*)\)/.exec(q); return m ? dec(m[1]).split(',').map(function(x){ return x.replace(/^"|"$/g, ''); }) : [];
-}
-function vcDrop(keys){
-  if (!VC.size) return;
-  VC.forEach(function(c, id){ if (!keys || c.keys.some(function(k){ return keys.indexOf(k) >= 0; })) { vcBytes -= c.body.length; VC['delete'](id); } });
-}
-function writtenKeys(u, init){
-  var ks = keysOfUrl(u), b = init && init.body;
-  if (typeof b === 'string') { var re = /"key"\s*:\s*"([^"]+)"/g, m; while ((m = re.exec(b.slice(0, 200000)))) ks.push(m[1]); }
-  return ks.length ? ks : null;
-}
-function stampsNow(input, init, u){
-  var su = stampUrl(u), req = su;
-  if (typeof input !== 'string') { try { req = new Request(su, input); } catch (e) { req = su; } }
-  return NF.call(W, req, init).then(function(r){ return r && r.ok ? r.json().then(sigOf, function(){ return null; }) : null; }, function(){ return null; });
-}
-function valueFetch(input, init, u, id){
-  var c = VC.get(id), fresh = c && Date.now() - c.at < VC_TTL;
-  if (c && c.small && fresh) return NF.call(W, input, init);             /* a small row: not worth a second request */
-  /* the stamps are asked BEFORE the download (also the first time), so a kept copy is never newer than its stamps */
-  var pre = !c || fresh || c.needStamp ? stampsNow(input, init, u) : Promise.resolve(undefined);
-  return pre.then(function(sig){
-    if (c && fresh && sig && sig === c.sig && c.body != null) {
-      S.validated++; S.savedBytes += c.body.length;
-      var hh = { 'content-type': 'application/json' }; if (c.range) hh['content-range'] = c.range; return new Response(c.body, { status: 200, headers: hh });
-    }
-    return NF.call(W, input, init).then(function(r){
-      if (!r || !r.ok || r.status !== 200) return r;
-      return r.clone().text().then(function(t){
-        if (t.length < VC_MIN || t.length > VC_MAX / 2) { if (!VC.has(id) && VC.size < 400) VC.set(id, { at: Date.now(), small: true, body: '', keys: keysOfUrl(u) }); return r; }
-        var bodySig = null; try { bodySig = sigOf(JSON.parse(t)); } catch (e) {}
-        var useSig = bodySig || sig;   /* the stamps asked BEFORE the download: never newer than the body */
-        var old = VC.get(id); if (old) { vcBytes -= old.body.length; VC['delete'](id); }
-        if (!useSig) { VC.set(id, { at: Date.now(), sig: null, needStamp: true, body: '', keys: keysOfUrl(u) }); return r; }
-        while (vcBytes + t.length > VC_MAX && VC.size) { var k0 = VC.keys().next().value; vcBytes -= VC.get(k0).body.length; VC['delete'](k0); }
-        VC.set(id, { at: Date.now(), sig: useSig, body: t, keys: keysOfUrl(u), range: r.headers.get('content-range') || '' }); vcBytes += t.length;
-        return r;
-      }, function(){ return r; });
-    });
-  });
-}
-function shareRead(input, init, u){
-  if (init && init.signal) return null;              /* a read that can be cancelled is left alone */
-  var id = u + '\n' + hdr(input, init, 'Authorization') + '\n' + hdr(input, init, 'Range') + '\n' + hdr(input, init, 'Accept') + '\n' + hdr(input, init, 'Prefer');
-  if (hiddenLong()) {
-    var c = memo.get(id);
-    if (c && Date.now() - c.at < HIDDEN_TTL) { S.hiddenServed++; return Promise.resolve(c.r.clone()); }
-  }
-  var p = inflight.get(id);
-  if (p) { S.shared++; return p.then(function(r){ return r.clone(); }); }
-  S.net++;
-  var vr = kvOf(u) && valueRead(u) && !hdr(input, init, 'Range');
-  p = (vr ? valueFetch(input, init, u, id) : NF.call(W, input, init)).then(function(r){
-    inflight['delete'](id);
-    if (r && r.ok && r.status === 200 && small(u, r)) remember(id, r.clone()); else memo['delete'](id);
-    return r;
-  }, function(e){ inflight['delete'](id); throw e; });
-  inflight.set(id, p);
-  return p.then(function(r){ return r.clone(); });
-}
-
-W.fetch = function(input, init){
-  try {
-    var u = urlOf(input), m = methodOf(input, init);
-    var kv = u.indexOf('/rest/v1/gc_kv') >= 0;
-    if (m === 'GET' || m === 'HEAD') {
-      if (kv) {
-        if (keyEq(qs(u)) === V2 && m === 'GET') return v2Read(input, init, u);
-        var u2 = bulkRewrite(u);
-        if (u2 !== u) { u = u2; if (typeof input === 'string') input = u2; else { try { input = new Request(u2, input); } catch (e) { input = u2; } } }
-      }
-      if (m === 'GET' && cacheable(u)) { var sr = shareRead(input, init, u); if (sr) return sr; }
-    } else {
-      memo.clear();                                   /* anything written: no remembered answer is trusted any more */
-      if (kv) vcDrop(writtenKeys(u, init));
-      if (kv) { var w = v2Write(input, init, u, m); if (w && typeof w.then === 'function') return w; if (w && w.init) init = w.init; }
-    }
-  } catch (e) {}
-  return NF.call(W, input, init);
-};
-try { W.fetch.__gcStorecut = true; } catch (e) {}
-W._gcStoreCut = {
-  state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, bigReadsUnchanged: S.validated, mbNotDownloaded: Math.round(S.savedBytes / 1e4) / 100, keptCopies: VC.size, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
-  raw: function(u, init){ return NF.call(W, u, init); },   /* the admin clean-up: below every later door (no-file-sync, file conversions) */
-  allow: function(k, on){ if (on) S.allow[k] = true; else delete S.allow[k]; },
-  forget: function(){ memo.clear(); vcDrop(null); }
-};
-try { console.log('[GC] STORECUT: one estimates store; reads shared; a hidden tab stays quiet — _gcStoreCut.state()'); } catch (e) {}
-})();
-</script>
 <script>
 /* patch DENYKEEP: browser storage is never filled by backup copies (see tools/patch_DENYKEEP.py) */
 (function(){
@@ -3889,17 +3689,6 @@ function urlOf(input){ try { return typeof input === 'string' ? input : (input i
 function methodOf(input, init){ return String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase(); }
 function sbRest(u){ try { var x = new URL(u, location.href); return x.host === SBH && x.pathname.indexOf('/rest/v1/') === 0 ? x.pathname : null; } catch (e) { return null; } }
 var RAW_IN_BODY = /"data"\s*:\s*"[A-Za-z0-9+/]{6000}/;
-var _itNeedC = new Map();
-function _itNeeds(u, s){
-  /* patch IDLETRIM: bodyNeeds depends only on the text and on whether any blob is registered */
-  if (typeof s !== 'string' || s.length < 100000 || s.length > 3000000 || (function(){ try{ return localStorage.getItem('gc_idletrim_off') === '1'; }catch(_e){ return false; } })()) return bodyNeeds(s);
-  var bz = blobReg.size > 0, c = _itNeedC.get(u);
-  if (c && c.bz === bz && c.s === s) return c.r;
-  var r = bodyNeeds(s);
-  _itNeedC['delete'](u); _itNeedC.set(u, { s: s, bz: bz, r: r });
-  if (_itNeedC.size > 4) _itNeedC['delete'](_itNeedC.keys().next().value);
-  return r;
-}
 function bodyNeeds(s){
   if (typeof s !== 'string' || s.length < MIN_LEN) return blobReg.size > 0 && typeof s === 'string' && s.indexOf('"blob:') >= 0;
   return s.indexOf(';base64,') >= 0 || s.indexOf('"data:') >= 0 || (blobReg.size > 0 && s.indexOf('"blob:') >= 0) || RAW_IN_BODY.test(s);
@@ -3935,7 +3724,7 @@ var gFetch = function(input, init){
         if (ct && ct.indexOf('json') < 0) return r;
         return r.text().then(function(t){
           var mk = function(body){ return new Response(body, { status: r.status, statusText: r.statusText, headers: r.headers }); };
-          if (!_itNeeds(u, t)) return mk(t);   /* patch IDLETRIM */
+          if (!bodyNeeds(t)) return mk(t);
           return convertText(t).then(mk, function(){ return mk(t); });
         });
       });
@@ -4011,7 +3800,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.160-2026-10-29-r15b -->
+<!-- GrayCo CRM Build: 33.159-2026-10-29-r14a -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4676,7 +4465,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.160-2026-10-29-r15b");
+  console.log("[GC] Build 33.159-2026-10-29-r14a");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4724,7 +4513,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.160-2026-10-29-r15b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.159-2026-10-29-r14a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -12242,12 +12031,12 @@ req.onsuccess=function(e){
                phone:c.clientPhone||c.phone||"", email:c.clientEmail||"",
                address:c.address||"", source:"QuickBooks", addedDate:"2026-03-17" };
     });
-    if(nc.length>0){ st.put(ec.concat(nc),"customers"); window.__gcQbWrote = true; }   /* patch SWEEPQB: remember a real write */
+    if(nc.length>0) st.put(ec.concat(nc),"customers");
     
     var gi=st.get("invoices");
     gi.onsuccess=function(){
       var ei=gi.result||[];
-      if(I.length>0){ st.put(ei.concat(I),"invs"); window.__gcQbWrote = true; }
+      if(I.length>0)st.put(ei.concat(I),"invs");
       
       // Subs are in the users array - find and merge
       var gu=st.get("users");
@@ -12263,7 +12052,7 @@ req.onsuccess=function(e){
   tx.oncomplete=function(){
     localStorage.setItem("_qb3","1");
     console.log("QB loaded: "+C.length+" customers (into the customer list, not projects), "+I.length+" invoices");
-    if(window.__gcQbWrote) setTimeout(function(){location.reload()},500);   /* patch SWEEPQB: nothing added = no reload */
+    setTimeout(function(){location.reload()},500);
   };
 };
 req.onerror=function(){
@@ -45576,17 +45365,6 @@ document.addEventListener('touchmove', function(e){
 // ── Fix Safari input zoom ─────────────────────────────────────────────────
 // Force 16px minimum on all inputs to prevent Safari auto-zoom
 var inputObserver = new MutationObserver(function(){
-  /* patch TODOPHONE: text fields only (iOS zooms on text entry, not on check boxes), all reads first, then the writes --
-     the old loop forced one full style recalculation per field: ~330 To-Do check boxes = 4-5 s on a phone */
-  var _tpOff = false; try{ _tpOff = localStorage.getItem('gc_todophone_off') === '1'; }catch(_e){}
-  if(!_tpOff){
-    var _tpEls = document.querySelectorAll('input:not([gc-ios-fixed]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]):not([type=range]):not([type=color]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]), select:not([gc-ios-fixed]), textarea:not([gc-ios-fixed])');
-    if(!_tpEls.length) return;
-    var _tpSmall = [];
-    for(var _i = 0; _i < _tpEls.length; _i++){ _tpSmall.push(parseFloat(window.getComputedStyle(_tpEls[_i]).fontSize) < 16); }
-    for(var _j = 0; _j < _tpEls.length; _j++){ _tpEls[_j].setAttribute('gc-ios-fixed','1'); if(_tpSmall[_j]) _tpEls[_j].style.fontSize = '16px'; }
-    return;
-  }
   document.querySelectorAll('input:not([gc-ios-fixed]), select:not([gc-ios-fixed]), textarea:not([gc-ios-fixed])').forEach(function(el){
     el.setAttribute('gc-ios-fixed','1');
     if(parseFloat(window.getComputedStyle(el).fontSize) < 16){
@@ -48390,26 +48168,13 @@ async function pullAll(force){
       }
       window.__gcLastManifestScan = _mNow;
       var _mr = await fetch(SB_URL+'/rest/v1/gc_kv?key=like.*__manifest&select=key,value,updated_at',
-        (function(){ var _o = {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}; try{ if(localStorage.getItem('gc_sweepchunk_off') !== '1') _o.cache = 'no-store'; }catch(_ce){} return _o; })());   /* SWEEPCHUNK: the scan is not answered from the 2-minute read cache */
+        {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
       var _manifests = await _mr.json();
       if(Array.isArray(_manifests)){
         for(var _mi=0; _mi<_manifests.length; _mi++){
           var _mkey = String(_manifests[_mi].key||'').replace('__manifest','');
           if(!_mkey || SYNC_KEYS.indexOf(_mkey)<0) continue;
-          var _full;   /* patch SWEEPCHUNK: read the chunks only when this list's manifest changed */
-          try{
-            var _mOff = false; try{ _mOff = localStorage.getItem('gc_sweepchunk_off') === '1'; }catch(_lo){}
-            var _mMemo = window.__gcManifestMemo || (window.__gcManifestMemo = {});
-            var _mv = _manifests[_mi].value; if(typeof _mv === 'string'){ try{ _mv = JSON.parse(_mv); }catch(_mp){} }
-            var _mSig = String(_manifests[_mi].updated_at || '') + '|' + (_mv && typeof _mv === 'object' ? [_mv.at, _mv.count, _mv.total, _mv.chunked].join('/') : String(_mv));
-            var _mPrev = _mMemo[_mkey], _mAge = _mPrev ? Date.now() - _mPrev.t : 1e12;
-            if(!_mOff && _mPrev && _mPrev.sig === _mSig && ((_mPrev.full && _mAge < 600000) || (!_mPrev.full && _mAge < 3600000))){
-              _full = _mPrev.full ? _mPrev.full.slice() : null; _mPrev.hits = (_mPrev.hits || 0) + 1;
-            } else {
-              _full = await sbReadChunked(_mkey);
-              _mMemo[_mkey] = { sig: _mSig, t: Date.now(), full: Array.isArray(_full) ? _full.slice() : null, reads: ((_mPrev && _mPrev.reads) || 0) + 1, hits: 0 };
-            }
-          }catch(_me){ _full = await sbReadChunked(_mkey); }
+          var _full = await sbReadChunked(_mkey);
           if(Array.isArray(_full)){
             // Replace any single-row version of this key with the reassembled full list.
             var _had=false;
@@ -65884,8 +65649,6 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // it always makes it up regardless of size.
   async function pushDayToCloud(date, data){
     try{
-      /* patch STORECUT: the nightly server backup (gc-backup -> gc_backups, 30 per table) is the cloud copy; this ~7 MB upload per load is off */
-      try{ if(localStorage.getItem('gc_daily_cloud') !== '1') return; }catch(e){ return; }
       var u=(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k=localStorage.getItem('grayco_sb_key');
       if(!u || !k) return;
       var cloudKey = keyFor(date);        // gc_dailybackup_YYYY-MM-DD
@@ -66092,8 +65855,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   window._gcAutoRecoverNow = autoRecover;
 
   // Snapshot shortly after load (so a backup always exists once the app is open).
-  /* patch STORECUT: not at every start-up -- after 2 min, and only when today's copy here is older than 3 h */
-  setTimeout(function(){ (async function(){ try{ var _sv = await _idbGet(keyFor(today())); if(_sv && _sv.savedAt && Date.now() - Date.parse(_sv.savedAt) < 3*3600e3){ console.log('[GC] Daily backup: today copy is fresh (patch STORECUT)'); return; } }catch(e){} try{ await snapshotToday(); }catch(e){} })(); }, 120000);
+  setTimeout(snapshotToday, 12000);
   // Keep a gentle periodic snapshot as a fallback (updates today's copy).
   setInterval(snapshotToday, 3*60*60*1000);
   // AND schedule a precise snapshot at 12:00 AM every day, so each day is frozen
@@ -116157,30 +115919,11 @@ var FOLDK='gc_folded', foldCache=null, foldAt=0;
 async function foldList(){ var l=await getList(FOLDK); foldCache=l; foldAt=Date.now(); return l; }
 function folded(list, id){
   if(!foldCache) return false;
-  /* patch IDLETRIM: one index of the undo list (rebuilt when the list or its length changes); unfolded is checked live */
-  if(!_itOff()){
-    if(_itSrc !== foldCache || _itLen !== foldCache.length){ _itIdx = new Map(); _itSrc = foldCache; _itLen = foldCache.length;
-      for(var j=0;j<foldCache.length;j++){ var g=foldCache[j]; if(!g) continue; var gk=String(g.list) + '\u0001' + String(g.recordId); var ga=_itIdx.get(gk); if(ga) ga.push(g); else _itIdx.set(gk, [g]); } }
-    var sid=String(id), hit=function(l){ var a=_itIdx.get(l + '\u0001' + sid); if(!a) return false; for(var q=0;q<a.length;q++){ var e=a[q]; if(e && !e.unfolded && e.recordId===sid && e.list===l) return true; } return false; };
-    return hit(list) || (list==='invs' && hit('invoices'));
-  }
   for(var i=0;i<foldCache.length;i++){ var f=foldCache[i]; if(f && !f.unfolded && f.recordId===String(id) && (f.list===list || (list==='invs'&&f.list==='invoices'))) return true; }
   return false;
 }
-var _itSrc=null, _itLen=-1, _itIdx=null, _itVer=-1;
-function _itOff(){ return (function(){ try{ return localStorage.getItem('gc_idletrim_off') === '1'; }catch(_e){ return false; } })(); }
-function _itFoldVer(){ try{ return window._gcPerfX && window._gcPerfX.version ? window._gcPerfX.version(FOLDK) : -2; }catch(_e){ return -2; } }
 window._gcIsFolded = folded;
-foldList(); _itVer=_itFoldVer(); RI.call(window, function(){
-  /* patch IDLETRIM: read the 1.3 MB undo list again only when this page wrote it, or after 2 min; not while hidden */
-  if(!_itOff()){
-    try{ if(document.hidden) return; }catch(_h){}
-    var v=_itFoldVer(); if(v >= 0 && v === _itVer && foldCache && Date.now() - foldAt < 120000) return;
-    _itVer=v;
-  }
-  foldList();
-}, 20000);
-try{ document.addEventListener('visibilitychange', function(){ try{ if(!document.hidden && !_itOff() && Date.now() - foldAt > 20000){ _itVer=_itFoldVer(); foldList(); } }catch(_v){} }); }catch(_ve){}
+foldList(); RI.call(window, function(){ foldList(); }, 20000);
 function absorb(keep, gone){
   ['pid','sub','vendor','payee','supplier','po','invNum','qbNum','category','fileName','fileUrl','srcInvId','subInvId','projName','projPO','projAddr','paidDate','method','client','customer','dueDate','due','recvDate','sentDate','date'].forEach(function(f){
     if((keep[f]===undefined||keep[f]===''||keep[f]===null) && gone[f]!==undefined && gone[f]!=='' && gone[f]!==null) keep[f]=gone[f];
@@ -120067,12 +119810,7 @@ var lastAnswer = {};
 function quickHash(s){ var h = 0x811c9dc5, n = s.length, step = 1; for(var i=0;i<n;i+=step){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193)>>>0; } return n + ':' + h; }
 function learnLater(txt, url){
   if(!txt || txt.length < 3 || txt.charAt(0) !== '[') return;
-  var kk = String(url).replace(/[?&](limit|offset|order)=[^&]*/g,''), hsh;
-  /* patch IDLETRIM: the same text as the last answer for this request = the same hash, without walking it */
-  var _itT = (window.__gcItLast || (window.__gcItLast = {}));
-  if(_itT[kk] !== undefined && _itT[kk] === txt && lastAnswer[kk] !== undefined && !(function(){ try{ return localStorage.getItem('gc_idletrim_off') === '1'; }catch(_e){ return false; } })()) return;
-  hsh = quickHash(txt);
-  if(txt.length <= 3000000){ var _itK = Object.keys(_itT); if(_itK.length >= 4 && !(kk in _itT)) delete _itT[_itK[0]]; _itT[kk] = txt; } else delete _itT[kk];
+  var kk = String(url).replace(/[?&](limit|offset|order)=[^&]*/g,''), hsh = quickHash(txt);
   if(lastAnswer[kk] === hsh) return; lastAnswer[kk] = hsh;
   var mk1 = /[?&]key=eq\.([^&]+)/.exec(String(url));
   if(mk1){
@@ -188318,14 +188056,11 @@ window._gcEstDedupeNow = async function(opt){
     }
     /* the live set: plain row + builder store, union by id, the newer save wins */
     var at = {}, live = [];
-    var _stDeadE = function(type, id){ try { if (window._gcxDead) return !!window._gcxDead(type, id); var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}'); return !!(m && m[type + ':' + id]); } catch (e) { return false; } }, _stDE = function(id){ return _stDeadE('estimates', id) || _stDeadE('estimate', id); };   /* patch STORECUTTOMB */
-    var _stPlainIds = {}; plain.forEach(function(r){ var id = idOf(r); if (id) _stPlainIds[id] = 1; });
-    rep.deletedSkipped = 0;
-    plain.concat(v2).forEach(function(r){ var id = idOf(r); if (!id) return; if (!_stPlainIds[id] && _stDE(id)) { rep.deletedSkipped++; return; } if (!(id in at)) { at[id] = live.length; live.push(r); return; }
+    plain.concat(v2).forEach(function(r){ var id = idOf(r); if (!id) return; if (!(id in at)) { at[id] = live.length; live.push(r); return; }
       var o = live[at[id]]; if (stamp(r) > stamp(o) || (stamp(r) === stamp(o) && size(r) > size(o))) live[at[id]] = r; });
     var liveIds = {}, liveStems = {}, liveNames = {}; live.forEach(function(r){ liveIds[idOf(r)] = 1; liveStems[stem(idOf(r))] = 1; if (nm(r)) liveNames[nm(r)] = 1; });
     var only = {}, unmatched = [];
-    chunks.forEach(function(r){ var id = idOf(r); if (!id || liveIds[id] || _stDE(id)) return; var o = only[id]; if (!o || stamp(r) > stamp(o)) only[id] = r; });
+    chunks.forEach(function(r){ var id = idOf(r); if (!id || liveIds[id]) return; var o = only[id]; if (!o || stamp(r) > stamp(o)) only[id] = r; });
     Object.keys(only).forEach(function(id){ var r = only[id]; if (!(liveStems[stem(id)] || (nm(r) && liveNames[nm(r)]))) unmatched.push(id + ' ' + (r.name || r.projName || r.client || '')); });
     rep.plainRow = plain.length; rep.builderStore = v2.length; rep.chunks = nChunks; rep.chunkRows = chunks.length; rep.manifest = man || null;
     rep.liveUnique = live.length; rep.chunkOnlyIds = Object.keys(only).length; rep.chunkOnlyUnmatched = unmatched.length; rep.unmatchedSample = unmatched.slice(0, 10);
@@ -188355,294 +188090,6 @@ window._gcEstDedupeNow = async function(opt){
   } finally {
     running = false; window._gcEstDedupeReport = rep;
     try { console.log('%c[GC] estimates clean-up: ' + rep.result, 'background:#0f2440;color:#fff;padding:2px 6px', rep); } catch (e) {}
-  }
-};
-})();
-</script>
-<script id="gc-patch-storecut-tools">
-/* __GC_STORECUT_TOOLS__ — one-time clean-ups, admin-run only, dry run first: _gcStoreCutNow({ dryRun: true }) (tools/patch_STORECUT.py) */
-(function(){
-'use strict';
-if (window.__GC_STORECUT_TOOLS__) return; window.__GC_STORECUT_TOOLS__ = true;
-var W = window;
-var DAY = 864e5, FOLD_DAYS = 3, BUCKET = 'crm-files';   /* folds stay whole for 3 days (a quick Undo needs no download) */
-function creds(){ try { return { u: (localStorage.getItem('grayco_sb_url') || '').replace(/\/$/, ''), k: localStorage.getItem('grayco_sb_key') || '' }; } catch (e) { return { u: '', k: '' }; } }
-function H(c){ return { apikey: c.k, Authorization: 'Bearer ' + c.k }; }
-function size(v){ if (v === undefined) return 0; if (typeof v === 'string') return v.length; try { return JSON.stringify(v).length; } catch (e) { return 0; } }
-function arr(v){ if (typeof v === 'string' && /^\s*\[/.test(v)) { try { v = JSON.parse(v); } catch (e) {} } return Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.keys(v).map(function(k){ return v[k]; }) : []); }
-function s(v){ return v == null ? '' : String(v); }
-function isAdmin(){ try { return !!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.isAdmin === 'function' && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
-function who(){ try { return W.__GC_AUTH__.email() || ''; } catch (e) { return ''; } }
-function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
-/* the old document pieces are read and written below the later doors: the "no file sync" door answers every
-   projectDocs__* request with an empty "done", and the file door takes the base64 out of what comes back */
-async function rawHeaders(c){
-  var tok = c.k;
-  try { var ss = W.__GC_AUTH__ && W.__GC_AUTH__.fresh ? await W.__GC_AUTH__.fresh() : null; if (ss && ss.access_token) tok = ss.access_token; } catch (e) {}
-  return { apikey: c.k, Authorization: 'Bearer ' + tok };
-}
-function rawFetch(u, init){ return (W._gcStoreCut && W._gcStoreCut.raw) ? W._gcStoreCut.raw(u, init) : fetch(u, init); }
-async function getRowRaw(c, key){
-  var r = await rawFetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: await rawHeaders(c), cache: 'no-store' });
-  if (!r || !r.ok) throw new Error('read ' + key + ' ' + (r && r.status));
-  var rows = await r.json(); if (!Array.isArray(rows)) throw new Error('read ' + key);
-  if (!rows.length) return undefined;
-  var v = rows[0].value; if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { v = JSON.parse(v); } catch (e) {} }
-  return v;
-}
-async function putRowRaw(c, key, value){
-  var r = await rawFetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, await rawHeaders(c)), body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) });
-  if (!r || !r.ok) throw new Error('write ' + key + ' ' + (r && r.status));
-  var back = await getRowRaw(c, key);   /* read it back: a door that answers "done" without writing is caught here */
-  if (JSON.stringify(back) !== JSON.stringify(value)) throw new Error('write ' + key + ' did not reach the cloud');
-}
-async function getRow(c, key){
-  var r = await fetch(c.u + '/rest/v1/gc_kv?key=eq.' + encodeURIComponent(key) + '&select=value,updated_at', { headers: H(c), cache: 'no-store' });
-  if (!r || !r.ok) throw new Error('read ' + key + ' ' + (r && r.status));
-  var rows = await r.json(); if (!Array.isArray(rows)) throw new Error('read ' + key);
-  if (!rows.length) return undefined;
-  var v = rows[0].value; if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { v = JSON.parse(v); } catch (e) {} }
-  return v;
-}
-async function putRow(c, key, value){
-  var allow = key === '__est__gc_ests_v2' && W._gcStoreCut;
-  if (allow) W._gcStoreCut.allow(key, true);
-  try {
-    var r = await fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, H(c)), body: JSON.stringify({ key: key, value: value, updated_at: new Date().toISOString() }) });
-    if (!r || !r.ok) throw new Error('write ' + key + ' ' + (r && r.status));
-  } finally { if (allow) W._gcStoreCut.allow(key, false); }
-}
-function saveFile(name, obj){
-  var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
-  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-  return name + ' (' + Math.round(blob.size / 1e5) / 10 + ' MB)';
-}
-async function heavyFirst(why){ if (W._gcHeavy && !W._gcHeavy.loaded()) await W._gcHeavy.load(why); }   /* STUCKFIX holds these writes until loaded */
-function hex(buf){ var a = new Uint8Array(buf), o = ''; for (var i = 0; i < a.length; i++) o += (a[i] < 16 ? '0' : '') + a[i].toString(16); return o; }
-async function sha(bytes){ return hex(await crypto.subtle.digest('SHA-256', bytes)); }
-function fromDataUrl(d){
-  var m = /^data:([^,]*?),([\s\S]*)$/.exec(s(d)); if (!m) return null;
-  var meta = m[1], b64 = /;base64/i.test(meta), type = (meta.split(';')[0] || 'application/octet-stream').toLowerCase();
-  var bytes;
-  if (b64) { var bin = atob(m[2].replace(/\s+/g, '')); bytes = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); }
-  else bytes = new TextEncoder().encode(decodeURIComponent(m[2]));
-  return { type: type, bytes: bytes };
-}
-function refParts(ref){ var m = /^sb:([a-z0-9][a-z0-9_-]{1,62})\/([0-9a-f]{64})\.([a-z0-9]{1,8})$/.exec(s(ref)); return m ? { bucket: m[1], hash: m[2], ext: m[3], path: m[2] + '.' + m[3] } : null; }
-async function inStorage(c, ref){
-  var p = refParts(ref); if (!p) return false;
-  try {
-    var r = await fetch(c.u + '/storage/v1/object/authenticated/' + p.bucket + '/' + p.path, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
-    return !!(r && (r.ok || r.status === 206));
-  } catch (e) { return false; }
-}
-async function storeAndCheck(c, fileOrDataUrl, opts){
-  if (typeof W._gcStoreFile !== 'function') throw new Error('file storage is not ready on this page');
-  var meta = await W._gcStoreFile(fileOrDataUrl, opts);
-  if (!meta || !meta.ref) throw new Error('file storage gave no reference');
-  for (var i = 0; i < 6; i++) {
-    try { if (typeof W._gcFilesUploadNow === 'function') await W._gcFilesUploadNow(); } catch (e) {}
-    if (await inStorage(c, meta.ref)) return meta;
-    await sleep(1500 + i * 1000);
-  }
-  throw new Error('"' + (opts && opts.name || 'file') + '" did not reach file storage — nothing changed');
-}
-
-/* ── a. estimates: one store ─────────────────────────────────────────────── */
-W._gcEstOneNow = async function(opt){
-  opt = opt || {};
-  var c = creds(), rep = { step: 'estimates' };
-  var v2 = await getRow(c, '__est__gc_ests_v2');
-  rep.builderCopyBytes = size(v2); rep.builderCopyRows = arr(v2).length;
-  if (typeof W._gcEstDedupeNow !== 'function') throw new Error('ESTDEDUPE is not on this page');
-  var d = await W._gcEstDedupeNow({ dryRun: !!opt.dryRun, noConfirm: true, allowUnmatched: !!opt.allowUnmatched });
-  rep.dedupe = d;
-  if (!/^(dry run|cleaned)/.test(s(d && d.result))) throw new Error('estimates: ' + s(d && d.result));
-  rep.bytesBefore = d.bytesBefore; rep.bytesAfter = d.bytesAfter - size(v2) + 2;
-  if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
-  /* every builder record is in the cleaned "estimates" (ESTDEDUPE's live set is the union of both) */
-  var est = arr(await getRow(c, 'estimates')), have = {}; est.forEach(function(e){ if (e && e.id != null) have[String(e.id)] = 1; });
-  var _stDeadO = function(type, id){ try { if (window._gcxDead) return !!window._gcxDead(type, id); var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}'); return !!(m && m[type + ':' + id]); } catch (e) { return false; } };   /* patch STORECUTTOMB */
-  var miss = arr(v2).filter(function(e){ return e && e.id != null && !have[String(e.id)] && !(_stDeadO('estimates', String(e.id)) || _stDeadO('estimate', String(e.id))); });
-  if (miss.length) throw new Error('estimates: ' + miss.length + ' builder estimate(s) are not in "estimates" — the builder copy is kept');
-  await putRow(c, '__est__gc_ests_v2', '[]');
-  rep.result = 'one store: "estimates" (' + est.length + '), builder copy emptied';
-  return rep;
-};
-
-/* ── b. documents: the old pieces' PDFs are in file storage, then the pieces are emptied ─────────────── */
-W._gcDocsCleanNow = async function(opt){
-  opt = opt || {};
-  /* the old "no file sync" door answers every projectDocs__* request with an empty "done": open it for this run only */
-  var door = typeof W._gcDocSync === 'function';
-  if (door) W._gcDocSync(true);
-  try { return await docsClean(opt); } finally { if (door) W._gcDocSync(false); }
-};
-async function docsClean(opt){
-  var c = creds(), rep = { step: 'documents', dryRun: !!opt.dryRun };
-  await heavyFirst('documents clean-up');
-  var plain = arr(await getRowRaw(c, 'projectDocs')), man = await getRowRaw(c, 'projectDocs__manifest');
-  var chunks = [], pieces = [], bytesBefore = size(man);
-  for (var ci = 0; ci < 80; ci++) {
-    var cv = await getRowRaw(c, 'projectDocs__chunk' + ci);
-    if (cv === undefined) { if (ci >= ((man && man.count) || 0)) break; else continue; }
-    pieces.push(ci); bytesBefore += size(cv); chunks = chunks.concat(arr(cv).map(function(d){ return { d: d, piece: ci }; }));
-  }
-  /* patch STORECUTTOMB: a deleted document in the old pieces is neither uploaded nor recovered */
-  var _stDead = function(type, id){ try { if (window._gcxDead) return !!window._gcxDead(type, id); var m = JSON.parse(localStorage.getItem('gc_tombstones') || '{}'); return !!(m && m[type + ':' + id]); } catch (e) { return false; } };
-  var _stN0 = chunks.length; chunks = chunks.filter(function(x){ return !(x && x.d && x.d.id != null && _stDead('projectDocs', String(x.d.id))); }); rep.deletedSkipped = _stN0 - chunks.length;
-  rep.plainDocs = plain.length; rep.pieces = pieces.length; rep.pieceDocs = chunks.length; rep.bytesBefore = bytesBefore; rep.manifest = man || null;
-  if (!pieces.length && !(man && man.chunked)) { rep.result = 'nothing to do'; rep.bytesAfter = bytesBefore; return rep; }
-  var plainIds = {}, refByHash = {};
-  plain.forEach(function(d){ if (!d) return; plainIds[s(d.id)] = d; [d.ref, d.data, d.fileRef].forEach(function(r){ var p = refParts(r); if (p) refByHash[p.hash] = r; }); });
-  var files = [], recovered = [], noBody = 0;
-  for (var i = 0; i < chunks.length; i++) {
-    var d = chunks[i].d; if (!d) continue;
-    var f = /^data:/.test(s(d.data)) ? fromDataUrl(d.data) : null, item = null;
-    if (f) {
-      var h = await sha(f.bytes), ref = refByHash[h] || '';
-      item = { id: s(d.id), name: s(d.name), bytes: f.bytes.length, hash: h, ref: ref, inStorage: ref ? await inStorage(c, ref) : false };
-      if (!item.inStorage && !opt.dryRun) {
-        var meta = await storeAndCheck(c, d.data, { kind: 'doc', pid: d.pid || d.projectId || '', name: d.name || ('document-' + d.id) });
-        item.ref = meta.ref; item.inStorage = true; item.uploaded = true; refByHash[h] = meta.ref;
-      }
-      files.push(item);
-    } else if (!plainIds[s(d.id)]) noBody++;
-    if (!plainIds[s(d.id)]) {
-      var keep = {}; Object.keys(d).forEach(function(k){ if (k !== 'data') keep[k] = d[k]; });
-      if (item && item.ref) { keep.ref = item.ref; keep.hash = item.hash; keep.size = keep.size || item.bytes; }
-      keep.recoveredFrom = 'projectDocs__chunk' + chunks[i].piece + ' (' + s(man && man.at).slice(0, 10) + ')';
-      keep.recoveredAt = new Date().toISOString();
-      recovered.push(keep);
-    }
-  }
-  rep.bodiesMissing = chunks.filter(function(x){ return x.d && x.d.size > 0 && !/^data:/.test(s(x.d.data)) && !refParts(x.d.ref) && !refParts(x.d.data); }).length;
-  rep.files = files.length; rep.filesAlreadyStored = files.filter(function(x){ return x.inStorage && !x.uploaded; }).length;
-  rep.filesToUpload = files.filter(function(x){ return !x.inStorage; }).length; rep.filesUploaded = files.filter(function(x){ return x.uploaded; }).length;
-  rep.onlyInOldPieces = recovered.map(function(x){ return s(x.id) + ' ' + s(x.name).slice(0, 60) + (x.ref ? '' : ' (no file)'); });
-  rep.bytesAfter = 2 + size(recovered) + 160;
-  if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
-  if (rep.bodiesMissing && !opt.allowMissingBodies) throw new Error('documents: ' + rep.bodiesMissing + ' document(s) in the old pieces say they have a file but none came back — nothing changed');
-  var bad = files.filter(function(x){ return !x.inStorage; });
-  if (bad.length) throw new Error('documents: ' + bad.length + ' file(s) are not in file storage — nothing changed');
-  if (!opt.noBackup) {
-    try { rep.backup = saveFile('GrayCo_documents_backup_' + new Date().toISOString().slice(0, 10) + '.json', { _export: 'GrayCo projectDocs pieces before STORECUT', at: new Date().toISOString(), by: who(), projectDocs: plain, manifest: man, pieces: pieces.map(function(n){ return { piece: n, docs: chunks.filter(function(x){ return x.piece === n; }).map(function(x){ return x.d; }) }; }) }); }
-    catch (e) { throw new Error('documents: backup file could not be made — nothing changed'); }
-  }
-  if (recovered.length) {
-    var old = arr(await getRow(c, 'gc_docs_recovered')), at = {}; old.forEach(function(x, k){ if (x && x.id != null) at[s(x.id)] = k; });
-    recovered.forEach(function(x){ if (s(x.id) in at) old[at[s(x.id)]] = x; else old.push(x); });
-    await putRow(c, 'gc_docs_recovered', old);
-  }
-  await putRowRaw(c, 'projectDocs__manifest', { chunked: false, count: 0, total: plain.length, at: new Date().toISOString(), gen: 'storecut' + Date.now().toString(36), note: 'projectDocs is one row; its files are in file storage (patch STORECUT)' });
-  for (var j = 0; j < pieces.length; j++) await putRowRaw(c, 'projectDocs__chunk' + pieces[j], []);
-  rep.result = 'cleaned: ' + pieces.length + ' old pieces emptied, ' + recovered.length + ' document(s) kept in gc_docs_recovered';
-  return rep;
-}
-
-/* ── d. old daily-backup copies in gc_kv (gc_dailybackup_<day>*): the server keeps 30 nights in gc_backups ───────── */
-W._gcDailyCloudCleanNow = async function(opt){
-  opt = opt || {};
-  var c = creds(), keep = +opt.keepDays > 0 ? +opt.keepDays : 7, rep = { step: 'daily backups in gc_kv', keepDays: keep, dryRun: !!opt.dryRun };
-  var r = await fetch(c.u + '/rest/v1/gc_kv?key=like.gc_dailybackup_*&select=key,updated_at', { headers: H(c), cache: 'no-store' });
-  if (!r || !r.ok) throw new Error('daily backups: list ' + (r && r.status));
-  var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
-  var cut = new Date(Date.now() - keep * DAY).toISOString().slice(0, 10);
-  var old = rows.filter(function(x){ var d = /^gc_dailybackup_(\d{4}-\d{2}-\d{2})/.exec(s(x.key)); return d && d[1] < cut; });
-  rep.rows = rows.length; rep.olderRows = old.length; rep.days = Array.from(new Set(rows.map(function(x){ return s(x.key).slice(15, 25); }))).sort();
-  var b = 0; for (var i = 0; i < old.length; i++) b += size(await getRow(c, old[i].key));
-  rep.bytesBefore = b; rep.bytesAfter = old.length * 40;
-  if (!old.length) { rep.result = 'nothing older than ' + keep + ' days'; return rep; }
-  if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
-  for (var j = 0; j < old.length; j++) await putRow(c, old[j].key, { emptied: true, by: 'STORECUT', at: new Date().toISOString(), note: 'older than ' + keep + ' days; the nightly server backup (gc_backups) keeps 30 nights' });
-  rep.result = 'cleaned: ' + old.length + ' old daily-backup rows emptied';
-  return rep;
-};
-
-/* ── c. gc_folded: old full copies move to one file in file storage ─────────────── */
-W._gcFoldTrimNow = async function(opt){
-  opt = opt || {};
-  var c = creds(), days = +opt.days > 0 ? +opt.days : FOLD_DAYS, rep = { step: 'folded', days: days, dryRun: !!opt.dryRun };
-  await heavyFirst('folded clean-up');
-  /* the cloud list and this computer's list together (a fresh computer can briefly hold a shorter list than the cloud) */
-  var local = []; try { local = arr(await W.idbGet('gc_folded')); } catch (e) {}
-  var unionF = function(a, b){ var seen = {}, out = []; a.concat(b).forEach(function(f){ if (!f || f.id == null) return; if (seen[s(f.id)] != null) { var o = out[seen[s(f.id)]]; if (!o.record && f.record && !o.archRef) out[seen[s(f.id)]] = f; return; } seen[s(f.id)] = out.length; out.push(f); }); return out; };
-  var F = unionF(arr(await getRow(c, 'gc_folded')), local), cut = new Date(Date.now() - days * DAY).toISOString();
-  var old = F.filter(function(f){ return f && f.record && !f.unfolded && s(f.foldedAt || f.updatedAt) && s(f.foldedAt || f.updatedAt) < cut; });
-  rep.entries = F.length; rep.olderThanDays = old.length; rep.bytesBefore = size(F);
-  var ids = {}; old.forEach(function(f){ ids[s(f.id)] = 1; });
-  var stub = function(f, ref){ var o = {}; Object.keys(f).forEach(function(k){ if (k !== 'record') o[k] = f[k]; }); o.archRef = ref; o.archivedAt = new Date().toISOString(); return o; };
-  var probe = F.map(function(f){ return f && ids[s(f.id)] ? stub(f, 'sb:' + BUCKET + '/' + new Array(65).join('0') + '.json') : f; });
-  rep.bytesAfter = size(probe);
-  if (!old.length) { rep.result = 'nothing older than ' + days + ' days'; return rep; }
-  if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
-  var body = JSON.stringify({ _export: 'GrayCo gc_folded archive (patch STORECUT)', at: new Date().toISOString(), by: who(), days: days, count: old.length, records: old.map(function(f){ return { id: f.id, list: f.list, recordId: f.recordId, record: f.record }; }) });
-  var name = 'gc_folded_archive_' + new Date().toISOString().slice(0, 10) + '.json';
-  var meta = await storeAndCheck(c, new File([body], name, { type: 'application/json' }), { kind: 'doc', name: name });
-  /* read it back: every archived copy must be in the file before the list lets go of it */
-  var back = JSON.parse(await (await W._gcFileBlob(meta.ref)).text());
-  var got = {}; (back.records || []).forEach(function(x){ if (x && x.record) got[s(x.id)] = 1; });
-  var lost = old.filter(function(f){ return !got[s(f.id)]; });
-  if (lost.length) throw new Error('folded: ' + lost.length + ' copies are not in the archive file — nothing changed');
-  /* the cloud list as it is NOW (a fold may have happened meanwhile): only the archived entries change */
-  var now = unionF(arr(await getRow(c, 'gc_folded')), F);
-  var next = now.map(function(f){ return f && ids[s(f.id)] && f.record && !f.unfolded ? stub(f, meta.ref) : f; });
-  await putRow(c, 'gc_folded', next);
-  try { if (typeof W.idbSet === 'function') await W.idbSet('gc_folded', next); } catch (e) {}
-  rep.archive = meta.ref; rep.bytesAfter = size(next); rep.result = 'cleaned: ' + old.length + ' full copies moved to ' + name;
-  return rep;
-};
-/* Undo of an archived fold: the copy comes back from the archive file first */
-(function wrapUnfold(n){
-  var orig = W._gcUnfold;
-  if (typeof orig !== 'function') { if (n < 120) setTimeout(function(){ wrapUnfold(n + 1); }, 1000); return; }
-  if (orig.__gcStorecut) return;
-  var w = async function(foldId){
-    try {
-      var F = arr(await W.idbGet('gc_folded')), f = F.find(function(x){ return x && x.id === foldId; });
-      if (f && !f.record && f.archRef && typeof W._gcFileBlob === 'function') {
-        var j = JSON.parse(await (await W._gcFileBlob(f.archRef)).text());
-        var r = (j.records || []).find(function(x){ return x && x.id === foldId; });
-        if (r && r.record) { f.record = r.record; await W.idbSet('gc_folded', F); }
-        else throw new Error('not in the archive file');
-      }
-    } catch (e) {
-      /* never undo without the record itself: that would put back an empty row */
-      try { console.warn('[GC] folded archive not reachable', e); alert('Undo needs the saved copy from file storage, and it could not be reached right now. Try again when online.'); } catch (e2) {}
-      return false;
-    }
-    return orig.apply(this, arguments);
-  };
-  w.__gcStorecut = true; W._gcUnfold = w;
-})(0);
-
-/* ── all three, with one report ─────────────────────────────────────────────── */
-var running = false;
-W._gcStoreCutNow = async function(opt){
-  opt = opt || {};
-  if (running) return { skipped: 'already running' };
-  running = true;
-  var rep = { at: new Date().toISOString(), by: who(), dryRun: !!opt.dryRun, steps: [] };
-  try {
-    if (!isAdmin()) throw new Error('admins only');
-    var c = creds(); if (!c.u || !c.k) throw new Error('not connected to the cloud');
-    if (!opt.dryRun && !opt.noConfirm && !W.confirm('Storage clean-up: one estimates list, the old document pieces emptied (their PDFs are in file storage), old folded copies moved to a file. A backup file is saved on this computer first. Go ahead?')) { rep.result = 'cancelled'; return rep; }
-    var steps = [['estimates', W._gcEstOneNow], ['documents', W._gcDocsCleanNow], ['folded', W._gcFoldTrimNow], ['daily', W._gcDailyCloudCleanNow]];
-    for (var i = 0; i < steps.length; i++) {
-      if (opt.only && opt.only !== steps[i][0]) continue;
-      try { rep.steps.push(await steps[i][1]({ dryRun: !!opt.dryRun, days: opt.days, allowUnmatched: opt.allowUnmatched })); }
-      catch (e) { rep.steps.push({ step: steps[i][0], result: 'stopped: ' + (e && e.message || e) }); if (!opt.dryRun) break; }
-    }
-    var b = 0, a = 0; rep.steps.forEach(function(x){ b += x.bytesBefore || 0; a += x.bytesAfter == null ? (x.bytesBefore || 0) : x.bytesAfter; });
-    rep.mbBefore = Math.round(b / 1e4) / 100; rep.mbAfter = Math.round(a / 1e4) / 100;
-    rep.result = rep.steps.every(function(x){ return /^(dry run|cleaned|one store|nothing)/.test(s(x.result)); }) ? (opt.dryRun ? 'dry run: nothing written' : 'cleaned') : 'stopped (see steps)';
-    if (!opt.dryRun) { try { await putRow(c, 'gc_storecut_v1', rep); } catch (e) {} }
-    return rep;
-  } catch (e) {
-    rep.result = 'stopped: ' + (e && e.message || e); return rep;
-  } finally {
-    running = false; W._gcStoreCutReport = rep;
-    try { console.log('%c[GC] storage clean-up: ' + rep.result + (rep.mbBefore != null ? ' — ' + rep.mbBefore + ' MB → ' + rep.mbAfter + ' MB' : ''), 'background:#0f2440;color:#fff;padding:2px 6px', rep); } catch (e) {}
   }
 };
 })();

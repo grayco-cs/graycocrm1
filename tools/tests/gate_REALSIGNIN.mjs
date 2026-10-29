@@ -8,8 +8,7 @@
 // "1,4,6"): a fresh browser profile, the sign-in screen, the owner's real e-mail typed and submitted, the app's own
 // "Opening the CRM as ..." reload followed, and WATCH ms (default 90 s) of watching. PASS per rate when
 //   * no long task over MAXTASK ms (default 2000), from any page load (they survive the reload),
-//   * the page always answers within HBMAX ms (default 5000; a node-side heartbeat: a frozen page answers late or not at
-//     all; it also waits through the sign-in reload's parse of the 17 MB page, so it is not held to MAXTASK),
+//   * the page always answers within MAXTASK ms (a node-side heartbeat: a frozen page answers late or not at all),
 //   * the person ends signed in with the CRM's left menu drawn.
 // On a FAIL the script pauses the page a few times (CDP Debugger.pause) and prints the JS stacks: the culprit by name.
 // Optional upgrade path: PREV=<older build dir> first runs the older build on the SAME profile (sign in, USE ms of use,
@@ -24,7 +23,7 @@ const H = await import(pathToFileURL(HARNESS).href); const { mockFns } = await i
 const { computer, sleep, cloud, ACCOUNTS } = H;
 const BUILD = process.argv[2] && path.resolve(process.argv[2]), MIRROR = process.argv[3], OUT = process.argv[4];
 if (!BUILD || !MIRROR) { console.error('usage: node gate_REALSIGNIN.mjs <build-dir> <mirror.json> [out.json]'); process.exit(2); }
-const CPUS = String(process.env.CPUS || '1,4,6').split(',').map(Number), MAXTASK = +(process.env.MAXTASK || 2000), WATCH = +(process.env.WATCH || 90000), HBMAX = +(process.env.HBMAX || 5000);
+const CPUS = String(process.env.CPUS || '1,4,6').split(',').map(Number), MAXTASK = +(process.env.MAXTASK || 2000), WATCH = +(process.env.WATCH || 90000);
 const WHO = process.env.WHO || 'wjohnson@grayco-cs.com', PREV = process.env.PREV && path.resolve(process.env.PREV), USE = +(process.env.USE || 90000);
 if (!ACCOUNTS[WHO]) ACCOUNTS[WHO] = { pw: 'Gate-Pass-1', id: 'u-gate', role: 'admin' };
 const rows = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
@@ -106,7 +105,7 @@ async function one(cpu){
     await typeSignIn(p); r.signInAt = Date.now() - t0;
     const hb = []; let frozen = false;
     while (Date.now() - t0 < r.signInAt + WATCH) {
-      const a = Date.now(); const x = await raceT(c.page().evaluate(() => 1), Math.max(HBMAX, MAXTASK) * 3);
+      const a = Date.now(); const x = await raceT(c.page().evaluate(() => 1), MAXTASK * 3);
       hb.push(Date.now() - a); if (x.timeout) { frozen = true; break; }
       await sleep(300);
     }
@@ -119,7 +118,7 @@ async function one(cpu){
     }
     r.signedIn = !!(r.state && !r.state.gate && r.state.nav > 0);
     if (PROF && !frozen) { const pr = await raceT(cd.send('Profiler.stop'), 30000); if (pr.v && pr.v.profile) r.busy = busyStretches(pr.v.profile, Math.min(800, MAXTASK / 2)); }
-    r.pass = !frozen && r.ltMax <= MAXTASK && r.heartbeatMax <= HBMAX && r.signedIn;
+    r.pass = !frozen && r.ltMax <= MAXTASK && r.heartbeatMax <= MAXTASK && r.signedIn;
     if (!r.pass) r.stacks = await stacks(cd, 4);
     r.errs = (c.errs || []).slice(0, 8);
   } catch (e) { r.pass = false; r.error = String(e && e.message || e).slice(0, 300); }
@@ -137,5 +136,5 @@ for (const cpu of CPUS) {
 }
 if (OUT) fs.writeFileSync(OUT, JSON.stringify(res, null, 1));
 const all = res.every(r => r.pass);
-console.log('REALSIGNIN ' + (all ? 'PASS' : 'FAIL') + ' (' + res.filter(r => r.pass).length + '/' + res.length + ' rates, no task over ' + MAXTASK + ' ms, heartbeat under ' + HBMAX + ' ms' + (PREV ? ', upgrade from ' + path.basename(PREV) : '') + ')');
+console.log('REALSIGNIN ' + (all ? 'PASS' : 'FAIL') + ' (' + res.filter(r => r.pass).length + '/' + res.length + ' rates, no task over ' + MAXTASK + ' ms' + (PREV ? ', upgrade from ' + path.basename(PREV) : '') + ')');
 process.exit(all ? 0 : 1);
