@@ -198,7 +198,10 @@ W._gcFoldTrimNow = async function(opt){
   opt = opt || {};
   var c = creds(), days = +opt.days > 0 ? +opt.days : FOLD_DAYS, rep = { step: 'folded', days: days, dryRun: !!opt.dryRun };
   await heavyFirst('folded clean-up');
-  var F = arr(await getRow(c, 'gc_folded')), cut = new Date(Date.now() - days * DAY).toISOString();
+  /* the cloud list and this computer's list together (a fresh computer can briefly hold a shorter list than the cloud) */
+  var local = []; try { local = arr(await W.idbGet('gc_folded')); } catch (e) {}
+  var unionF = function(a, b){ var seen = {}, out = []; a.concat(b).forEach(function(f){ if (!f || f.id == null) return; if (seen[s(f.id)] != null) { var o = out[seen[s(f.id)]]; if (!o.record && f.record && !o.archRef) out[seen[s(f.id)]] = f; return; } seen[s(f.id)] = out.length; out.push(f); }); return out; };
+  var F = unionF(arr(await getRow(c, 'gc_folded')), local), cut = new Date(Date.now() - days * DAY).toISOString();
   var old = F.filter(function(f){ return f && f.record && !f.unfolded && s(f.foldedAt || f.updatedAt) && s(f.foldedAt || f.updatedAt) < cut; });
   rep.entries = F.length; rep.olderThanDays = old.length; rep.bytesBefore = size(F);
   var ids = {}; old.forEach(function(f){ ids[s(f.id)] = 1; });
@@ -216,7 +219,7 @@ W._gcFoldTrimNow = async function(opt){
   var lost = old.filter(function(f){ return !got[s(f.id)]; });
   if (lost.length) throw new Error('folded: ' + lost.length + ' copies are not in the archive file — nothing changed');
   /* the cloud list as it is NOW (a fold may have happened meanwhile): only the archived entries change */
-  var now = arr(await getRow(c, 'gc_folded'));
+  var now = unionF(arr(await getRow(c, 'gc_folded')), F);
   var next = now.map(function(f){ return f && ids[s(f.id)] && f.record && !f.unfolded ? stub(f, meta.ref) : f; });
   await putRow(c, 'gc_folded', next);
   try { if (typeof W.idbSet === 'function') await W.idbSet('gc_folded', next); } catch (e) {}
