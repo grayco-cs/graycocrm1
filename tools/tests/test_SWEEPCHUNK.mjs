@@ -31,6 +31,7 @@ const memo = await p.evaluate(() => window.__gcManifestMemo && window.__gcManife
 ok('the memo answered those pulls', memo && memo.hits >= 3, memo);
 cset('vendors__chunk1', [V(3), V(4), V(5)]); cset('vendors__manifest', { chunked: true, count: 2, total: 5, at: '2026-10-29T02:00:00.000Z' });
 t = Date.now(); for (let i = 0; i < 3 && chunkReads(t) < 2; i++) { await pull(); await sleep(1500); }
+if (process.env.DBG) console.log('DBG', JSON.stringify(await p.evaluate(async () => { const u = localStorage.getItem('grayco_sb_url'), k = localStorage.getItem('grayco_sb_key'); let rows = null; try { rows = await (await fetch(u + '/rest/v1/gc_kv?key=like.*__manifest&select=key,value,updated_at', { headers: { apikey: k, Authorization: 'Bearer ' + k } })).json(); } catch (e) { rows = String(e); } return { busy: window._gcPullBusy && window._gcPullBusy(), lastScan: window.__gcLastManifestScan, now: Date.now(), rows, memo: window.__gcManifestMemo }; })).slice(0, 1500), JSON.stringify(c.log.filter(x => x.t >= t && /manifest/.test(x.q)).map(x => x.q.slice(0, 120))).slice(0, 800));
 const memo2 = await p.evaluate(() => window.__gcManifestMemo && window.__gcManifestMemo.vendors && { sig: window.__gcManifestMemo.vendors.sig, reads: window.__gcManifestMemo.vendors.reads });
 ok('a changed manifest is read within the next pulls', chunkReads(t) >= 2, { reads: chunkReads(t), memo2 });
 const ids1 = await local();
