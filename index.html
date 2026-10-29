@@ -227,15 +227,17 @@ W._gcSpeedLog = { list: function(){ return LOG.slice().reverse(); }, stats: func
    Document-Policy: js-profiling header — a sampling profile of the stalled seconds). An admin's computer sends the
    summary to the cloud row gc_perfrep_<device> every 2 minutes, so a freeze on a real computer can be fixed without
    anyone opening the Console. Code names and timings only: no customer data. Off on this computer: localStorage
-   gc_perfrep_off = '1'. Read it back: _gcPerfRep.report(). */
+   gc_perfrep_off = '1'. Read it back: _gcPerfRep.report().
+   patch PERFREP2: every signed-in computer reports (phones too, without the profile), and it also writes down
+   page errors (message + where in the code, counted) and cloud / server calls that failed (address path + status,
+   counted — never what was sent). */
 (function(){
 'use strict';
 var W = window; if (W.__gcPerfRep) return; W.__gcPerfRep = 1;
 try { if (localStorage.getItem('gc_perfrep_off') === '1') return; } catch (e) { return; }
-var UA = navigator.userAgent || '';
-if (/iPhone|iPad|Android|Mobile/.test(UA)) return;
+var UA = navigator.userAgent || '', MOBILE = /iPhone|iPad|Android|Mobile/.test(UA);
 var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout, SI = W.__GC_NATIVE_SETINTERVAL__ || W.setInterval;
-var LT = [], LOAF = [], PROF = [], dirty = false, LIM = 1000;
+var LT = [], LOAF = [], PROF = [], ERR = {}, NET = {}, dirty = false, LIM = 1000;
 var stats = { since: new Date().toISOString(), n1s: 0, n3s: 0, worst: 0, totalMs: 0 };
 function view(){ try { return localStorage.getItem('grayco_view') || ''; } catch (e) { return ''; } }
 function s(v){ return v == null ? '' : String(v); }
@@ -259,7 +261,7 @@ try { new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){
 
 /* 3. sampling profile of the stalled seconds (Chromium / Edge, only when the page is served with Document-Policy: js-profiling) */
 var P = null, pStart = 0;
-function startProf(){ try { if (typeof W.Profiler !== 'function') return; P = new W.Profiler({ sampleInterval: 20, maxBufferSize: 8000 }); pStart = performance.now(); } catch (e) { P = null; } }
+function startProf(){ try { if (MOBILE || typeof W.Profiler !== 'function') return; P = new W.Profiler({ sampleInterval: 20, maxBufferSize: 8000 }); pStart = performance.now(); } catch (e) { P = null; } }
 function digest(tr, wins){
   var frames = tr.frames || [], stacks = tr.stacks || [], res = tr.resources || [], self = {}, incl = {}, n = 0;
   function fname(i){ var f = frames[i] || {}; var r = f.resourceId != null ? s(res[f.resourceId]).replace(/^https?:\/\/[^/]+/, '').slice(0, 30) : ''; return (s(f.name) || '(anon)') + ' ' + r + ':' + (f.line || 0); }
@@ -285,14 +287,40 @@ function cycle(){
 }
 startProf(); SI.call(W, cycle, 45000);
 
-/* 4. an admin's computer sends the summary to the cloud */
+/* 4. page errors and failed cloud / server calls, counted (patch PERFREP2) */
+function bump(map, k, extra, max){
+  var e = map[k]; if (!e) { var ks = Object.keys(map); if (ks.length >= (max || 40)) return; e = map[k] = { n: 0, first: new Date().toISOString() }; }
+  e.n++; e.last = new Date().toISOString(); e.v = view(); if (extra) for (var x in extra) e[x] = extra[x]; dirty = true;
+}
+try { W.addEventListener('error', function(ev){
+  try { if (ev && ev.target && ev.target !== W && ev.target.tagName) { bump(ERR, 'load ' + s(ev.target.tagName) + ' ' + s(ev.target.src || ev.target.href).replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '').slice(0, 80)); return; }
+    bump(ERR, s(ev && ev.message).slice(0, 160) + ' @' + s(ev && ev.lineno) + ':' + s(ev && ev.colno), { stack: s(ev && ev.error && ev.error.stack).slice(0, 400) }); } catch (e) {}
+}, true); } catch (e) {}
+try { W.addEventListener('unhandledrejection', function(ev){
+  try { var r = ev && ev.reason; bump(ERR, 'promise: ' + s(r && r.message || r).slice(0, 160), { stack: s(r && r.stack).slice(0, 400) }); } catch (e) {}
+}); } catch (e) {}
+var NF = W.fetch;
+if (typeof NF === 'function') {
+  W.fetch = function(input, init){
+    var u = ''; try { u = typeof input === 'string' ? input : s(input && input.url); } catch (e) {}
+    var watch = /supabase\.co\/|\/\.netlify\/functions\//.test(u), m = s(init && init.method || (input && input.method) || 'GET').toUpperCase();
+    var pr = NF.apply(this, arguments);
+    if (!watch) return pr;
+    function key(st){ var path = u.replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, ''); var q = /[?&]key=(?:eq\.)?([^&]{1,60})/.exec(decodeURIComponent(u)); return m + ' ' + path.slice(0, 70) + (q ? ' key=' + q[1] : '') + ' → ' + st; }
+    return pr.then(function(r){ try { if (r && !r.ok && r.status !== 304) bump(NET, key(r.status), null, 60); } catch (e) {} return r; },
+                   function(err){ try { bump(NET, key('failed: ' + s(err && err.message).slice(0, 40)), null, 60); } catch (e) {} throw err; });
+  };
+}
+
+/* 5. every signed-in computer sends the summary to the cloud */
 var DEV = ''; try { DEV = localStorage.getItem('gc_adm_device_id') || ''; } catch (e) {}
 if (!DEV) { DEV = 'P' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); try { localStorage.setItem('gc_adm_device_id', DEV); } catch (e) {} }
 function report(){ return { dev: DEV, build: s(W.__GC_BUILD_ID__), at: new Date().toISOString(), view: view(), cores: navigator.hardwareConcurrency || 0,
-  memGB: navigator.deviceMemory || 0, ua: UA.slice(0, 160), profiler: typeof W.Profiler === 'function', stats: stats, lt: LT.slice(-40), loaf: LOAF.slice(-25), prof: PROF.slice(-6) }; }
-function admin(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()); } catch (e) { return false; } }
+  memGB: navigator.deviceMemory || 0, ua: UA.slice(0, 160), profiler: typeof W.Profiler === 'function', stats: stats, lt: LT.slice(-40), loaf: LOAF.slice(-25), prof: PROF.slice(-6),
+  err: ERR, net: NET }; }
+function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
 function send(){
-  if (!dirty || !admin() || typeof W._supaUpsert !== 'function') return;
+  if (!dirty || !signedIn() || typeof W._supaUpsert !== 'function') return;
   dirty = false; var r = report(); try { r.email = s(W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
   try { var x = W._supaUpsert('gc_perfrep_' + DEV, r); if (x && x.catch) x.catch(function(){ dirty = true; }); } catch (e) { dirty = true; }
 }
@@ -3908,7 +3936,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.159-2026-10-29-r14c -->
+<!-- GrayCo CRM Build: 33.159-2026-10-29-r14d -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4573,7 +4601,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.159-2026-10-29-r14c");
+  console.log("[GC] Build 33.159-2026-10-29-r14d");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4621,7 +4649,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.159-2026-10-29-r14c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.159-2026-10-29-r14d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
