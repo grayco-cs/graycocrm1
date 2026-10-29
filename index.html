@@ -128750,6 +128750,8 @@ async function xpRun(){
     if (!got.length) throw new Error('None of the ' + total + ' photos could be read. Check your connection and try again.');
     var fin = XPC.plan(got.map(function(g){ return g.r; }), { ai: XP.ai }).rows;   /* numbered again: a photo that failed leaves no gap */
     var entries = fin.map(function(x){ var g = byId[x.r.id]; return { name: x.name, size: g.size, crc: g.crc, at: x.r.at, data: g.blob }; });
+    var tot = 0; entries.forEach(function(e){ tot += e.size + 120; });
+    if (tot > 3.9e9 || entries.length > 65000) throw new Error('Too many photos for one ZIP — pick fewer (by room or date) and make two.');
     var csvB = new TextEncoder().encode(XPC.csv(fin));
     entries.push({ name: 'photo-list.csv', size: csvB.length, crc: XPC.crc32(csvB), at: nowIso(), data: csvB });
     xpProgress(total, total, 'Building the ZIP…'); await dlWait(0);
