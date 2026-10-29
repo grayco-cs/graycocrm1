@@ -118,7 +118,7 @@ var OFF = false; try { OFF = localStorage.getItem('gc_storecut_off') === '1'; } 
 if (OFF) { try { console.log('[GC] STORECUT off (gc_storecut_off)'); } catch (e) {} return; }
 var V2 = '__est__gc_ests_v2', EST = 'estimates';
 var HIDDEN_TTL = 5 * 60e3, HIDDEN_AFTER = 30e3, MAX_CACHE = 60;
-var S = { v2WritesDropped: 0, v2ReadsServed: 0, bulkFiltered: 0, shared: 0, hiddenServed: 0, net: 0, allow: {}, hiddenSince: 0 };
+var S = { validated: 0, savedBytes: 0, v2WritesDropped: 0, v2ReadsServed: 0, bulkFiltered: 0, shared: 0, hiddenServed: 0, net: 0, allow: {}, hiddenSince: 0 };
 function urlOf(input){ try { return typeof input === 'string' ? input : (input && input.url) ? input.url : String(input); } catch (e) { return ''; } }
 function methodOf(input, init){ var m = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET'; return String(m).toUpperCase(); }
 function qs(u){ var i = u.indexOf('?'); return i < 0 ? '' : u.slice(i + 1); }
@@ -172,6 +172,7 @@ var inflight = new Map(), memo = new Map();
 function hiddenLong(){ try { return document.visibilityState === 'hidden' && S.hiddenSince && Date.now() - S.hiddenSince > HIDDEN_AFTER; } catch (e) { return false; } }
 function onVis(){ try { if (document.visibilityState === 'hidden') { if (!S.hiddenSince) S.hiddenSince = Date.now(); } else { S.hiddenSince = 0; memo.clear(); } } catch (e) {} }
 try { document.addEventListener('visibilitychange', onVis, true); onVis(); } catch (e) {}
+function kvOf(u){ return u.indexOf('/rest/v1/gc_kv') >= 0; }
 function cacheable(u){
   /* the database's REST reads and the CRM's own functions; never auth, file storage, realtime or a "changed since" read */
   if (u.indexOf('/auth/v1/') >= 0 || u.indexOf('/storage/v1/') >= 0 || u.indexOf('/realtime/') >= 0) return false;
@@ -189,6 +190,70 @@ function remember(id, r){
   if (memo.size >= MAX_CACHE) { var first = memo.keys().next().value; memo['delete'](first); }
   memo.set(id, { at: Date.now(), r: r });
 }
+/* ── 3. a big row is downloaded again only when it changed ─────────────────────────────
+   A named read of rows with their values (key=eq. / key=in.): the first big answer (>= 50 KB) is kept with the
+   rows' time stamps; the next identical read first asks for the stamps only (key + updated_at, a few bytes) and,
+   when every stamp is the same, answers from the kept copy. A write of one of those keys from this page drops
+   the copy; a copy is never older than 10 minutes. */
+var VC = new Map(), VC_TTL = 10 * 60e3, VC_MIN = 50000, VC_MAX = 16e6, vcBytes = 0;
+function valueRead(u){
+  var q = qs(u); if (!q || /(?:^|&)(updated_at|limit|offset|order)=/.test(q)) return false;
+  if (!/(?:^|&)key=(eq|in)\./.test(q) || /(?:^|&)key=(like|ilike)\./.test(q)) return false;
+  var sel = (/(?:^|&)select=([^&]*)/.exec(q) || [])[1]; sel = sel == null ? '*' : dec(sel);
+  return sel === '*' || /\bvalue\b/.test(sel);
+}
+function stampUrl(u){
+  var i = u.indexOf('?'), base = u.slice(0, i), parts = u.slice(i + 1).split('&').filter(function(x){ return !/^select=/.test(x); });
+  parts.push('select=key,updated_at'); return base + '?' + parts.join('&');
+}
+function sigOf(rows){
+  if (!Array.isArray(rows)) rows = rows && typeof rows === 'object' ? [rows] : null;
+  if (!rows) return null;
+  var out = [];
+  for (var i = 0; i < rows.length; i++) { var r = rows[i]; if (!r || r.key == null || !r.updated_at) return null; out.push(String(r.key) + '@' + String(r.updated_at)); }
+  return out.sort().join('|') || '-';
+}
+function keysOfUrl(u){
+  var q = qs(u), m = /(?:^|&)key=eq\.([^&]*)/.exec(q); if (m) return [dec(m[1]).replace(/^"|"$/g, '')];
+  m = /(?:^|&)key=in\.\(([^&]*)\)/.exec(q); return m ? dec(m[1]).split(',').map(function(x){ return x.replace(/^"|"$/g, ''); }) : [];
+}
+function vcDrop(keys){
+  if (!VC.size) return;
+  VC.forEach(function(c, id){ if (!keys || c.keys.some(function(k){ return keys.indexOf(k) >= 0; })) { vcBytes -= c.body.length; VC['delete'](id); } });
+}
+function writtenKeys(u, init){
+  var ks = keysOfUrl(u), b = init && init.body;
+  if (typeof b === 'string') { var re = /"key"\s*:\s*"([^"]+)"/g, m; while ((m = re.exec(b.slice(0, 200000)))) ks.push(m[1]); }
+  return ks.length ? ks : null;
+}
+function stampsNow(input, init, u){
+  var su = stampUrl(u), req = su;
+  if (typeof input !== 'string') { try { req = new Request(su, input); } catch (e) { req = su; } }
+  return NF.call(W, req, init).then(function(r){ return r && r.ok ? r.json().then(sigOf, function(){ return null; }) : null; }, function(){ return null; });
+}
+function valueFetch(input, init, u, id){
+  var c = VC.get(id), fresh = c && Date.now() - c.at < VC_TTL;
+  var pre = (c && fresh) || (c && c.needStamp) ? stampsNow(input, init, u) : Promise.resolve(undefined);
+  return pre.then(function(sig){
+    if (c && fresh && sig && sig === c.sig && c.body != null) {
+      S.validated++; S.savedBytes += c.body.length;
+      var hh = { 'content-type': 'application/json' }; if (c.range) hh['content-range'] = c.range; return new Response(c.body, { status: 200, headers: hh });
+    }
+    return NF.call(W, input, init).then(function(r){
+      if (!r || !r.ok || r.status !== 200) return r;
+      return r.clone().text().then(function(t){
+        if (t.length < VC_MIN || t.length > VC_MAX / 2) return r;
+        var bodySig = null; try { bodySig = sigOf(JSON.parse(t)); } catch (e) {}
+        var useSig = bodySig || sig;   /* the stamps asked BEFORE the download: never newer than the body */
+        var old = VC.get(id); if (old) { vcBytes -= old.body.length; VC['delete'](id); }
+        if (!useSig) { VC.set(id, { at: Date.now(), sig: null, needStamp: true, body: '', keys: keysOfUrl(u) }); return r; }
+        while (vcBytes + t.length > VC_MAX && VC.size) { var k0 = VC.keys().next().value; vcBytes -= VC.get(k0).body.length; VC['delete'](k0); }
+        VC.set(id, { at: Date.now(), sig: useSig, body: t, keys: keysOfUrl(u), range: r.headers.get('content-range') || '' }); vcBytes += t.length;
+        return r;
+      }, function(){ return r; });
+    });
+  });
+}
 function shareRead(input, init, u){
   if (init && init.signal) return null;              /* a read that can be cancelled is left alone */
   var id = u + '\n' + hdr(input, init, 'Authorization') + '\n' + hdr(input, init, 'Range') + '\n' + hdr(input, init, 'Accept') + '\n' + hdr(input, init, 'Prefer');
@@ -199,7 +264,8 @@ function shareRead(input, init, u){
   var p = inflight.get(id);
   if (p) { S.shared++; return p.then(function(r){ return r.clone(); }); }
   S.net++;
-  p = NF.call(W, input, init).then(function(r){
+  var vr = kvOf(u) && valueRead(u) && !hdr(input, init, 'Range');
+  p = (vr ? valueFetch(input, init, u, id) : NF.call(W, input, init)).then(function(r){
     inflight['delete'](id);
     if (r && r.ok && r.status === 200 && small(u, r)) remember(id, r.clone()); else memo['delete'](id);
     return r;
@@ -221,6 +287,7 @@ W.fetch = function(input, init){
       if (m === 'GET' && cacheable(u)) { var sr = shareRead(input, init, u); if (sr) return sr; }
     } else {
       memo.clear();                                   /* anything written: no remembered answer is trusted any more */
+      if (kv) vcDrop(writtenKeys(u, init));
       if (kv) { var w = v2Write(input, init, u, m); if (w && typeof w.then === 'function') return w; if (w && w.init) init = w.init; }
     }
   } catch (e) {}
@@ -228,9 +295,9 @@ W.fetch = function(input, init){
 };
 try { W.fetch.__gcStorecut = true; } catch (e) {}
 W._gcStoreCut = {
-  state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
+  state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, bigReadsUnchanged: S.validated, mbNotDownloaded: Math.round(S.savedBytes / 1e4) / 100, keptCopies: VC.size, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
   allow: function(k, on){ if (on) S.allow[k] = true; else delete S.allow[k]; },
-  forget: function(){ memo.clear(); }
+  forget: function(){ memo.clear(); vcDrop(null); }
 };
 try { console.log('[GC] STORECUT: one estimates store; reads shared; a hidden tab stays quiet — _gcStoreCut.state()'); } catch (e) {}
 })();
@@ -65728,6 +65795,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // it always makes it up regardless of size.
   async function pushDayToCloud(date, data){
     try{
+      /* patch STORECUT: the nightly server backup (gc-backup -> gc_backups, 30 per table) is the cloud copy; this ~7 MB upload per load is off */
+      try{ if(localStorage.getItem('gc_daily_cloud') !== '1') return; }catch(e){ return; }
       var u=(localStorage.getItem('grayco_sb_url')||'').replace(/\/$/,''), k=localStorage.getItem('grayco_sb_key');
       if(!u || !k) return;
       var cloudKey = keyFor(date);        // gc_dailybackup_YYYY-MM-DD
@@ -65934,7 +66003,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   window._gcAutoRecoverNow = autoRecover;
 
   // Snapshot shortly after load (so a backup always exists once the app is open).
-  setTimeout(snapshotToday, 12000);
+  /* patch STORECUT: not at every start-up -- after 2 min, and only when today's copy here is older than 3 h */
+  setTimeout(function(){ (async function(){ try{ var _sv = await _idbGet(keyFor(today())); if(_sv && _sv.savedAt && Date.now() - Date.parse(_sv.savedAt) < 3*3600e3){ console.log('[GC] Daily backup: today copy is fresh (patch STORECUT)'); return; } }catch(e){} try{ await snapshotToday(); }catch(e){} })(); }, 120000);
   // Keep a gentle periodic snapshot as a fallback (updates today's copy).
   setInterval(snapshotToday, 3*60*60*1000);
   // AND schedule a precise snapshot at 12:00 AM every day, so each day is frozen
@@ -187577,6 +187647,12 @@ W._gcEstOneNow = async function(opt){
 /* ── b. documents: the old pieces' PDFs are in file storage, then the pieces are emptied ─────────────── */
 W._gcDocsCleanNow = async function(opt){
   opt = opt || {};
+  /* the old "no file sync" door answers every projectDocs__* request with an empty "done": open it for this run only */
+  var door = typeof W._gcDocSync === 'function';
+  if (door) W._gcDocSync(true);
+  try { return await docsClean(opt); } finally { if (door) W._gcDocSync(false); }
+};
+async function docsClean(opt){
   var c = creds(), rep = { step: 'documents', dryRun: !!opt.dryRun };
   await heavyFirst('documents clean-up');
   var plain = arr(await getRow(c, 'projectDocs')), man = await getRow(c, 'projectDocs__manifest');
@@ -187630,6 +187706,25 @@ W._gcDocsCleanNow = async function(opt){
   await putRow(c, 'projectDocs__manifest', { chunked: false, count: 0, total: plain.length, at: new Date().toISOString(), gen: 'storecut' + Date.now().toString(36), note: 'projectDocs is one row; its files are in file storage (patch STORECUT)' });
   for (var j = 0; j < pieces.length; j++) await putRow(c, 'projectDocs__chunk' + pieces[j], []);
   rep.result = 'cleaned: ' + pieces.length + ' old pieces emptied, ' + recovered.length + ' document(s) kept in gc_docs_recovered';
+  return rep;
+}
+
+/* ── d. old daily-backup copies in gc_kv (gc_dailybackup_<day>*): the server keeps 30 nights in gc_backups ───────── */
+W._gcDailyCloudCleanNow = async function(opt){
+  opt = opt || {};
+  var c = creds(), keep = +opt.keepDays > 0 ? +opt.keepDays : 7, rep = { step: 'daily backups in gc_kv', keepDays: keep, dryRun: !!opt.dryRun };
+  var r = await fetch(c.u + '/rest/v1/gc_kv?key=like.gc_dailybackup_*&select=key,updated_at', { headers: H(c), cache: 'no-store' });
+  if (!r || !r.ok) throw new Error('daily backups: list ' + (r && r.status));
+  var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
+  var cut = new Date(Date.now() - keep * DAY).toISOString().slice(0, 10);
+  var old = rows.filter(function(x){ var d = /^gc_dailybackup_(\d{4}-\d{2}-\d{2})/.exec(s(x.key)); return d && d[1] < cut; });
+  rep.rows = rows.length; rep.olderRows = old.length; rep.days = Array.from(new Set(rows.map(function(x){ return s(x.key).slice(15, 25); }))).sort();
+  var b = 0; for (var i = 0; i < old.length; i++) b += size(await getRow(c, old[i].key));
+  rep.bytesBefore = b; rep.bytesAfter = old.length * 40;
+  if (!old.length) { rep.result = 'nothing older than ' + keep + ' days'; return rep; }
+  if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
+  for (var j = 0; j < old.length; j++) await putRow(c, old[j].key, { emptied: true, by: 'STORECUT', at: new Date().toISOString(), note: 'older than ' + keep + ' days; the nightly server backup (gc_backups) keeps 30 nights' });
+  rep.result = 'cleaned: ' + old.length + ' old daily-backup rows emptied';
   return rep;
 };
 
@@ -187698,7 +187793,7 @@ W._gcStoreCutNow = async function(opt){
     if (!isAdmin()) throw new Error('admins only');
     var c = creds(); if (!c.u || !c.k) throw new Error('not connected to the cloud');
     if (!opt.dryRun && !opt.noConfirm && !W.confirm('Storage clean-up: one estimates list, the old document pieces emptied (their PDFs are in file storage), old folded copies moved to a file. A backup file is saved on this computer first. Go ahead?')) { rep.result = 'cancelled'; return rep; }
-    var steps = [['estimates', W._gcEstOneNow], ['documents', W._gcDocsCleanNow], ['folded', W._gcFoldTrimNow]];
+    var steps = [['estimates', W._gcEstOneNow], ['documents', W._gcDocsCleanNow], ['folded', W._gcFoldTrimNow], ['daily', W._gcDailyCloudCleanNow]];
     for (var i = 0; i < steps.length; i++) {
       if (opt.only && opt.only !== steps[i][0]) continue;
       try { rep.steps.push(await steps[i][1]({ dryRun: !!opt.dryRun, days: opt.days, allowUnmatched: opt.allowUnmatched })); }

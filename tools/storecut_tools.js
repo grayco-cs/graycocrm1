@@ -88,6 +88,12 @@ W._gcEstOneNow = async function(opt){
 /* ── b. documents: the old pieces' PDFs are in file storage, then the pieces are emptied ─────────────── */
 W._gcDocsCleanNow = async function(opt){
   opt = opt || {};
+  /* the old "no file sync" door answers every projectDocs__* request with an empty "done": open it for this run only */
+  var door = typeof W._gcDocSync === 'function';
+  if (door) W._gcDocSync(true);
+  try { return await docsClean(opt); } finally { if (door) W._gcDocSync(false); }
+};
+async function docsClean(opt){
   var c = creds(), rep = { step: 'documents', dryRun: !!opt.dryRun };
   await heavyFirst('documents clean-up');
   var plain = arr(await getRow(c, 'projectDocs')), man = await getRow(c, 'projectDocs__manifest');
@@ -141,6 +147,25 @@ W._gcDocsCleanNow = async function(opt){
   await putRow(c, 'projectDocs__manifest', { chunked: false, count: 0, total: plain.length, at: new Date().toISOString(), gen: 'storecut' + Date.now().toString(36), note: 'projectDocs is one row; its files are in file storage (patch STORECUT)' });
   for (var j = 0; j < pieces.length; j++) await putRow(c, 'projectDocs__chunk' + pieces[j], []);
   rep.result = 'cleaned: ' + pieces.length + ' old pieces emptied, ' + recovered.length + ' document(s) kept in gc_docs_recovered';
+  return rep;
+}
+
+/* ── d. old daily-backup copies in gc_kv (gc_dailybackup_<day>*): the server keeps 30 nights in gc_backups ───────── */
+W._gcDailyCloudCleanNow = async function(opt){
+  opt = opt || {};
+  var c = creds(), keep = +opt.keepDays > 0 ? +opt.keepDays : 7, rep = { step: 'daily backups in gc_kv', keepDays: keep, dryRun: !!opt.dryRun };
+  var r = await fetch(c.u + '/rest/v1/gc_kv?key=like.gc_dailybackup_*&select=key,updated_at', { headers: H(c), cache: 'no-store' });
+  if (!r || !r.ok) throw new Error('daily backups: list ' + (r && r.status));
+  var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
+  var cut = new Date(Date.now() - keep * DAY).toISOString().slice(0, 10);
+  var old = rows.filter(function(x){ var d = /^gc_dailybackup_(\d{4}-\d{2}-\d{2})/.exec(s(x.key)); return d && d[1] < cut; });
+  rep.rows = rows.length; rep.olderRows = old.length; rep.days = Array.from(new Set(rows.map(function(x){ return s(x.key).slice(15, 25); }))).sort();
+  var b = 0; for (var i = 0; i < old.length; i++) b += size(await getRow(c, old[i].key));
+  rep.bytesBefore = b; rep.bytesAfter = old.length * 40;
+  if (!old.length) { rep.result = 'nothing older than ' + keep + ' days'; return rep; }
+  if (opt.dryRun) { rep.result = 'dry run: nothing written'; return rep; }
+  for (var j = 0; j < old.length; j++) await putRow(c, old[j].key, { emptied: true, by: 'STORECUT', at: new Date().toISOString(), note: 'older than ' + keep + ' days; the nightly server backup (gc_backups) keeps 30 nights' });
+  rep.result = 'cleaned: ' + old.length + ' old daily-backup rows emptied';
   return rep;
 };
 
@@ -209,7 +234,7 @@ W._gcStoreCutNow = async function(opt){
     if (!isAdmin()) throw new Error('admins only');
     var c = creds(); if (!c.u || !c.k) throw new Error('not connected to the cloud');
     if (!opt.dryRun && !opt.noConfirm && !W.confirm('Storage clean-up: one estimates list, the old document pieces emptied (their PDFs are in file storage), old folded copies moved to a file. A backup file is saved on this computer first. Go ahead?')) { rep.result = 'cancelled'; return rep; }
-    var steps = [['estimates', W._gcEstOneNow], ['documents', W._gcDocsCleanNow], ['folded', W._gcFoldTrimNow]];
+    var steps = [['estimates', W._gcEstOneNow], ['documents', W._gcDocsCleanNow], ['folded', W._gcFoldTrimNow], ['daily', W._gcDailyCloudCleanNow]];
     for (var i = 0; i < steps.length; i++) {
       if (opt.only && opt.only !== steps[i][0]) continue;
       try { rep.steps.push(await steps[i][1]({ dryRun: !!opt.dryRun, days: opt.days, allowUnmatched: opt.allowUnmatched })); }

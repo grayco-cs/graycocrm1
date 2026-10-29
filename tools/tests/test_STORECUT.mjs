@@ -16,7 +16,7 @@ ok(src.includes(code.trim().split('\n').slice(4, 12).join('\n')), 'page carries 
 
 const SB = 'https://x.supabase.co';
 function mk(){
-  const calls = []; const rows = { estimates: [{ id: 'E1', name: 'one' }, { id: 'E2', name: 'two' }] };
+  const calls = []; const rows = { estimates: [{ id: 'E1', name: 'one' }, { id: 'E2', name: 'two' }], big: [{ id: 'B', pad: 'x'.repeat(80000) }] }; const stamps = { estimates: 't', big: 't1' };
   let delay = 0;
   const native = async (input, init) => {
     const u = typeof input === 'string' ? input : input.url; const m = ((init && init.method) || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
@@ -24,7 +24,9 @@ function mk(){
     if (delay) await new Promise(r => setTimeout(r, delay));
     if (m !== 'GET') return new Response('[]', { status: 201 });
     const k = /key=eq\.([^&]+)/.exec(u);
-    if (k) return new Response(JSON.stringify(rows[decodeURIComponent(k[1])] ? [{ key: decodeURIComponent(k[1]), value: rows[decodeURIComponent(k[1])], updated_at: 't' }] : []), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (k) { const kk = decodeURIComponent(k[1]); const st = /select=key,updated_at/.test(u); const sv = /select=value(&|$)/.test(u);
+      const row = rows[kk] ? (st ? { key: kk, updated_at: stamps[kk] } : sv ? { value: rows[kk] } : { key: kk, value: rows[kk], updated_at: stamps[kk] }) : null;
+      return new Response(JSON.stringify(row ? [row] : []), { status: 200, headers: { 'content-type': 'application/json' } }); }
     return new Response(JSON.stringify([{ key: 'a', updated_at: 't' }]), { status: 200, headers: { 'content-type': 'application/json', 'content-length': '30' } });
   };
   const doc = { visibilityState: 'visible', ls: [], addEventListener(ev, fn){ this.ls.push(fn); } };
@@ -32,7 +34,7 @@ function mk(){
   const W = { fetch: native, setTimeout, console: { log(){}, warn(){} }, document: doc, localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); } }, Response, Request, Headers, Date, JSON, Promise, Map, Object, String, Array, Math };
   W.window = W; vm.createContext(W); vm.runInContext(code, W);
   const hide = (on, ago) => { doc.visibilityState = on ? 'hidden' : 'visible'; doc.ls.forEach(f => f()); if (on && ago) { /* pretend it has been hidden a while */ const st = W._gcStoreCut.state(); } };
-  return { W, calls, rows, doc, hide, setDelay: d => { delay = d; } };
+  return { W, calls, rows, stamps, doc, hide, setDelay: d => { delay = d; } };
 }
 const H = { headers: { apikey: 'k', Authorization: 'Bearer t' } };
 // 1. writes of the builder copy never go out
@@ -75,7 +77,21 @@ const H = { headers: { apikey: 'k', Authorization: 'Bearer t' } };
   t.hide(false); await t.W.fetch(u, H); ok(t.calls.length === 6, 'visible again: fresh');
   await t.W.fetch(SB + '/auth/v1/user', H); await t.W.fetch(SB + '/auth/v1/user', H); ok(t.calls.length === 8, 'auth reads are never shared or remembered');
 }
-// 5. kill switch
+// 5. a big row downloads again only when its time stamp moved
+{ const t = mk(); const u = SB + '/rest/v1/gc_kv?key=eq.big&select=key,value,updated_at';
+  const a = await (await t.W.fetch(u, H)).json(); ok(a[0].value[0].pad.length === 80000 && t.calls.length === 1, 'first big read downloads');
+  const b = await (await t.W.fetch(u, H)).json(); ok(b[0].value[0].pad.length === 80000 && t.calls.length === 2 && /select=key,updated_at/.test(t.calls[1].u), 'repeat: only the stamps go out, same answer', t.calls.map(c => c.u.slice(-40)));
+  t.stamps.big = 't2'; t.rows.big = [{ id: 'B', pad: 'y'.repeat(80000) }];
+  const c = await (await t.W.fetch(u, H)).json(); ok(c[0].value[0].pad[0] === 'y' && t.calls.length === 4, 'stamp moved: downloads the new value');
+  await t.W.fetch(SB + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', body: JSON.stringify({ key: 'big', value: [] }) });
+  await t.W.fetch(u, H); ok(t.calls.length === 6 && !/select=key,updated_at/.test(t.calls[5].u), 'after this page writes the key: full download', t.calls.slice(4).map(c => c.u.slice(-40)));
+  const sv = SB + '/rest/v1/gc_kv?key=eq.big&select=value';
+  await t.W.fetch(sv, H); const n0 = t.calls.length; const d = await (await t.W.fetch(sv, H)).json(); const n1 = t.calls.length; const e = await (await t.W.fetch(sv, H)).json();
+  ok(d[0].value[0].pad.length === 80000 && e[0].value[0].pad.length === 80000 && t.calls.length - n1 === 1 && /select=key,updated_at/.test(t.calls[t.calls.length - 1].u), 'select=value only: stamps asked before the download, then repeats are stamps only', t.calls.slice(n0 - 1).map(c => c.u.slice(-40)));
+  await t.W.fetch(SB + '/rest/v1/gc_kv?key=eq.estimates&select=key,value,updated_at', H); await t.W.fetch(SB + '/rest/v1/gc_kv?key=eq.estimates&select=key,value,updated_at', H);
+  ok(!/select=key,updated_at/.test(t.calls[t.calls.length - 1].u), 'a small row is not kept (no extra request)');
+  ok(t.W._gcStoreCut.state().bigReadsUnchanged >= 2, 'state counts the reads that stayed home', t.W._gcStoreCut.state()); }
+// 6. kill switch
 { const W = { fetch: async () => new Response('[]', { status: 201 }), setTimeout, console: { log(){} }, document: { visibilityState: 'visible', addEventListener(){} }, localStorage: { getItem: k => k === 'gc_storecut_off' ? '1' : null }, Response, Request, Headers };
   W.window = W; const f0 = W.fetch; vm.createContext(W); vm.runInContext(code, W); ok(W.fetch === f0 && !W._gcStoreCut, 'kill switch gc_storecut_off = 1 leaves fetch alone'); }
 console.log('RESULT ' + pass + '/' + (pass + fail)); process.exit(fail ? 1 : 0);

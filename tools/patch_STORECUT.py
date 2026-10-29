@@ -46,6 +46,18 @@ assert MARK in EARLY
 
 ANCHOR = "try { console.log('[GC] STUCKFIX: start-up skips the old estimate / document chunks; estimates load when needed — _gcHeavy.state()'); } catch (e) {}\n})();\n</script>\n"
 src = once(src, ANCHOR, ANCHOR + '<script id="gc-patch-storecut">\n' + EARLY.rstrip('\n') + '\n</script>\n')
+# 4. daily backup ("GrayCo Daily Backups"): every page load read all 21 lists from the cloud 12 s in (estimates 2.7 MB,
+#    projectDocs ...), wrote ~7 MB into IndexedDB and uploaded the whole day (~7 MB) to gc_kv again -- per computer, per load.
+#    Now: the start-up copy waits 2 minutes and is skipped when today's copy on this computer is under 3 hours old (the 3-hourly
+#    copy and the 5 PM / midnight copies stay); the day is no longer uploaded to gc_kv: the server's nightly gc-backup keeps
+#    30 protected copies of every table (gc_backups). localStorage gc_daily_cloud = '1' turns the upload back on.
+src = once(src, "  setTimeout(snapshotToday, 12000);",
+  "  /* patch STORECUT: not at every start-up -- after 2 min, and only when today's copy here is older than 3 h */\n"
+  "  setTimeout(function(){ (async function(){ try{ var _sv = await _idbGet(keyFor(today())); if(_sv && _sv.savedAt && Date.now() - Date.parse(_sv.savedAt) < 3*3600e3){ console.log('[GC] Daily backup: today copy is fresh (patch STORECUT)'); return; } }catch(e){} try{ await snapshotToday(); }catch(e){} })(); }, 120000);")
+src = once(src, "  async function pushDayToCloud(date, data){\n    try{\n",
+  "  async function pushDayToCloud(date, data){\n    try{\n"
+  "      /* patch STORECUT: the nightly server backup (gc-backup -> gc_backups, 30 per table) is the cloud copy; this ~7 MB upload per load is off */\n"
+  "      try{ if(localStorage.getItem('gc_daily_cloud') !== '1') return; }catch(e){ return; }\n")
 src = src.rstrip('\n') + '\n<script id="gc-patch-storecut-tools">\n' + LATE.rstrip('\n') + '\n</script>\n'
 open(path, 'w', encoding='utf-8').write(src)
 print('patched STORECUT')

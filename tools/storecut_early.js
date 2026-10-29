@@ -10,7 +10,7 @@ var OFF = false; try { OFF = localStorage.getItem('gc_storecut_off') === '1'; } 
 if (OFF) { try { console.log('[GC] STORECUT off (gc_storecut_off)'); } catch (e) {} return; }
 var V2 = '__est__gc_ests_v2', EST = 'estimates';
 var HIDDEN_TTL = 5 * 60e3, HIDDEN_AFTER = 30e3, MAX_CACHE = 60;
-var S = { v2WritesDropped: 0, v2ReadsServed: 0, bulkFiltered: 0, shared: 0, hiddenServed: 0, net: 0, allow: {}, hiddenSince: 0 };
+var S = { validated: 0, savedBytes: 0, v2WritesDropped: 0, v2ReadsServed: 0, bulkFiltered: 0, shared: 0, hiddenServed: 0, net: 0, allow: {}, hiddenSince: 0 };
 function urlOf(input){ try { return typeof input === 'string' ? input : (input && input.url) ? input.url : String(input); } catch (e) { return ''; } }
 function methodOf(input, init){ var m = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET'; return String(m).toUpperCase(); }
 function qs(u){ var i = u.indexOf('?'); return i < 0 ? '' : u.slice(i + 1); }
@@ -64,6 +64,7 @@ var inflight = new Map(), memo = new Map();
 function hiddenLong(){ try { return document.visibilityState === 'hidden' && S.hiddenSince && Date.now() - S.hiddenSince > HIDDEN_AFTER; } catch (e) { return false; } }
 function onVis(){ try { if (document.visibilityState === 'hidden') { if (!S.hiddenSince) S.hiddenSince = Date.now(); } else { S.hiddenSince = 0; memo.clear(); } } catch (e) {} }
 try { document.addEventListener('visibilitychange', onVis, true); onVis(); } catch (e) {}
+function kvOf(u){ return u.indexOf('/rest/v1/gc_kv') >= 0; }
 function cacheable(u){
   /* the database's REST reads and the CRM's own functions; never auth, file storage, realtime or a "changed since" read */
   if (u.indexOf('/auth/v1/') >= 0 || u.indexOf('/storage/v1/') >= 0 || u.indexOf('/realtime/') >= 0) return false;
@@ -81,6 +82,70 @@ function remember(id, r){
   if (memo.size >= MAX_CACHE) { var first = memo.keys().next().value; memo['delete'](first); }
   memo.set(id, { at: Date.now(), r: r });
 }
+/* ── 3. a big row is downloaded again only when it changed ─────────────────────────────
+   A named read of rows with their values (key=eq. / key=in.): the first big answer (>= 50 KB) is kept with the
+   rows' time stamps; the next identical read first asks for the stamps only (key + updated_at, a few bytes) and,
+   when every stamp is the same, answers from the kept copy. A write of one of those keys from this page drops
+   the copy; a copy is never older than 10 minutes. */
+var VC = new Map(), VC_TTL = 10 * 60e3, VC_MIN = 50000, VC_MAX = 16e6, vcBytes = 0;
+function valueRead(u){
+  var q = qs(u); if (!q || /(?:^|&)(updated_at|limit|offset|order)=/.test(q)) return false;
+  if (!/(?:^|&)key=(eq|in)\./.test(q) || /(?:^|&)key=(like|ilike)\./.test(q)) return false;
+  var sel = (/(?:^|&)select=([^&]*)/.exec(q) || [])[1]; sel = sel == null ? '*' : dec(sel);
+  return sel === '*' || /\bvalue\b/.test(sel);
+}
+function stampUrl(u){
+  var i = u.indexOf('?'), base = u.slice(0, i), parts = u.slice(i + 1).split('&').filter(function(x){ return !/^select=/.test(x); });
+  parts.push('select=key,updated_at'); return base + '?' + parts.join('&');
+}
+function sigOf(rows){
+  if (!Array.isArray(rows)) rows = rows && typeof rows === 'object' ? [rows] : null;
+  if (!rows) return null;
+  var out = [];
+  for (var i = 0; i < rows.length; i++) { var r = rows[i]; if (!r || r.key == null || !r.updated_at) return null; out.push(String(r.key) + '@' + String(r.updated_at)); }
+  return out.sort().join('|') || '-';
+}
+function keysOfUrl(u){
+  var q = qs(u), m = /(?:^|&)key=eq\.([^&]*)/.exec(q); if (m) return [dec(m[1]).replace(/^"|"$/g, '')];
+  m = /(?:^|&)key=in\.\(([^&]*)\)/.exec(q); return m ? dec(m[1]).split(',').map(function(x){ return x.replace(/^"|"$/g, ''); }) : [];
+}
+function vcDrop(keys){
+  if (!VC.size) return;
+  VC.forEach(function(c, id){ if (!keys || c.keys.some(function(k){ return keys.indexOf(k) >= 0; })) { vcBytes -= c.body.length; VC['delete'](id); } });
+}
+function writtenKeys(u, init){
+  var ks = keysOfUrl(u), b = init && init.body;
+  if (typeof b === 'string') { var re = /"key"\s*:\s*"([^"]+)"/g, m; while ((m = re.exec(b.slice(0, 200000)))) ks.push(m[1]); }
+  return ks.length ? ks : null;
+}
+function stampsNow(input, init, u){
+  var su = stampUrl(u), req = su;
+  if (typeof input !== 'string') { try { req = new Request(su, input); } catch (e) { req = su; } }
+  return NF.call(W, req, init).then(function(r){ return r && r.ok ? r.json().then(sigOf, function(){ return null; }) : null; }, function(){ return null; });
+}
+function valueFetch(input, init, u, id){
+  var c = VC.get(id), fresh = c && Date.now() - c.at < VC_TTL;
+  var pre = (c && fresh) || (c && c.needStamp) ? stampsNow(input, init, u) : Promise.resolve(undefined);
+  return pre.then(function(sig){
+    if (c && fresh && sig && sig === c.sig && c.body != null) {
+      S.validated++; S.savedBytes += c.body.length;
+      var hh = { 'content-type': 'application/json' }; if (c.range) hh['content-range'] = c.range; return new Response(c.body, { status: 200, headers: hh });
+    }
+    return NF.call(W, input, init).then(function(r){
+      if (!r || !r.ok || r.status !== 200) return r;
+      return r.clone().text().then(function(t){
+        if (t.length < VC_MIN || t.length > VC_MAX / 2) return r;
+        var bodySig = null; try { bodySig = sigOf(JSON.parse(t)); } catch (e) {}
+        var useSig = bodySig || sig;   /* the stamps asked BEFORE the download: never newer than the body */
+        var old = VC.get(id); if (old) { vcBytes -= old.body.length; VC['delete'](id); }
+        if (!useSig) { VC.set(id, { at: Date.now(), sig: null, needStamp: true, body: '', keys: keysOfUrl(u) }); return r; }
+        while (vcBytes + t.length > VC_MAX && VC.size) { var k0 = VC.keys().next().value; vcBytes -= VC.get(k0).body.length; VC['delete'](k0); }
+        VC.set(id, { at: Date.now(), sig: useSig, body: t, keys: keysOfUrl(u), range: r.headers.get('content-range') || '' }); vcBytes += t.length;
+        return r;
+      }, function(){ return r; });
+    });
+  });
+}
 function shareRead(input, init, u){
   if (init && init.signal) return null;              /* a read that can be cancelled is left alone */
   var id = u + '\n' + hdr(input, init, 'Authorization') + '\n' + hdr(input, init, 'Range') + '\n' + hdr(input, init, 'Accept') + '\n' + hdr(input, init, 'Prefer');
@@ -91,7 +156,8 @@ function shareRead(input, init, u){
   var p = inflight.get(id);
   if (p) { S.shared++; return p.then(function(r){ return r.clone(); }); }
   S.net++;
-  p = NF.call(W, input, init).then(function(r){
+  var vr = kvOf(u) && valueRead(u) && !hdr(input, init, 'Range');
+  p = (vr ? valueFetch(input, init, u, id) : NF.call(W, input, init)).then(function(r){
     inflight['delete'](id);
     if (r && r.ok && r.status === 200 && small(u, r)) remember(id, r.clone()); else memo['delete'](id);
     return r;
@@ -113,6 +179,7 @@ W.fetch = function(input, init){
       if (m === 'GET' && cacheable(u)) { var sr = shareRead(input, init, u); if (sr) return sr; }
     } else {
       memo.clear();                                   /* anything written: no remembered answer is trusted any more */
+      if (kv) vcDrop(writtenKeys(u, init));
       if (kv) { var w = v2Write(input, init, u, m); if (w && typeof w.then === 'function') return w; if (w && w.init) init = w.init; }
     }
   } catch (e) {}
@@ -120,9 +187,9 @@ W.fetch = function(input, init){
 };
 try { W.fetch.__gcStorecut = true; } catch (e) {}
 W._gcStoreCut = {
-  state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
+  state: function(){ return { v2WritesDropped: S.v2WritesDropped, v2ReadsServed: S.v2ReadsServed, bulkFiltered: S.bulkFiltered, sharedReads: S.shared, hiddenServed: S.hiddenServed, networkReads: S.net, bigReadsUnchanged: S.validated, mbNotDownloaded: Math.round(S.savedBytes / 1e4) / 100, keptCopies: VC.size, remembered: memo.size, hiddenFor: S.hiddenSince ? Date.now() - S.hiddenSince : 0 }; },
   allow: function(k, on){ if (on) S.allow[k] = true; else delete S.allow[k]; },
-  forget: function(){ memo.clear(); }
+  forget: function(){ memo.clear(); vcDrop(null); }
 };
 try { console.log('[GC] STORECUT: one estimates store; reads shared; a hidden tab stays quiet — _gcStoreCut.state()'); } catch (e) {}
 })();
