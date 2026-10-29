@@ -12031,12 +12031,12 @@ req.onsuccess=function(e){
                phone:c.clientPhone||c.phone||"", email:c.clientEmail||"",
                address:c.address||"", source:"QuickBooks", addedDate:"2026-03-17" };
     });
-    if(nc.length>0) st.put(ec.concat(nc),"customers");
+    if(nc.length>0){ st.put(ec.concat(nc),"customers"); window.__gcQbWrote = true; }   /* patch SWEEPQB: remember a real write */
     
     var gi=st.get("invoices");
     gi.onsuccess=function(){
       var ei=gi.result||[];
-      if(I.length>0)st.put(ei.concat(I),"invs");
+      if(I.length>0){ st.put(ei.concat(I),"invs"); window.__gcQbWrote = true; }
       
       // Subs are in the users array - find and merge
       var gu=st.get("users");
@@ -12052,7 +12052,7 @@ req.onsuccess=function(e){
   tx.oncomplete=function(){
     localStorage.setItem("_qb3","1");
     console.log("QB loaded: "+C.length+" customers (into the customer list, not projects), "+I.length+" invoices");
-    setTimeout(function(){location.reload()},500);
+    if(window.__gcQbWrote) setTimeout(function(){location.reload()},500);   /* patch SWEEPQB: nothing added = no reload */
   };
 };
 req.onerror=function(){
