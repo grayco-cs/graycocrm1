@@ -176338,6 +176338,8 @@ function paintCounts(){
   Array.prototype.forEach.call(D.querySelectorAll('[data-gcdd-btn]'), function(b){ if (b.textContent !== txt) b.textContent = txt; });
 }
 function mountApx(){
+  /* patch UICLEAN: no Duplicates button on the pages — Admin → 🧹 Duplicates only */
+  Array.prototype.forEach.call(D.querySelectorAll('[data-gcdd-btn]'), function(x){ x.remove(); }); return;
   if (!isAdminish()) return;
   var m = D.getElementById('gc-apx-mount');
   if (!m || !m.parentNode || !m.offsetParent) { Array.prototype.forEach.call(D.querySelectorAll('[data-gcdd-btn]'), function(x){ x.remove(); }); return; }   /* patch DDSTRAY: only next to the Approvals list */
@@ -178314,7 +178316,7 @@ function paintJob(){
 }
 function paintTodo(){
   var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-exp2-todo');
-  if (!mount || !canEnter() || isMM()) { if (host) host.remove(); return; }
+  if (true) { if (host) host.remove(); return; }   /* patch UICLEAN: the expense buttons are not on To-Do */
   if (!host) {
     host = D.createElement('div'); host.id = 'gc-exp2-todo'; host.setAttribute('data-gc-keep', '1'); host.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px';
     host.innerHTML = '<button type="button" class="gcx-b gcx-p" data-gcx-enter>💳 Enter expenses</button><button type="button" class="gcx-b" data-gcx-inbox>📥 Expense inbox</button><button type="button" class="gcx-b" data-gcx-noexp>📋 Jobs with no expenses</button>';
