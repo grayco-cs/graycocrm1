@@ -154,6 +154,34 @@ W.addEventListener('load', done);
 W._gcBootCoverDone = done;
 })();
 </script>
+<script id="gc-patch-payfast">
+/* patch PAYFAST: Number#toLocaleString reuses one Intl.NumberFormat per (locale, options) */
+(function(){
+'use strict';
+try { if (localStorage.getItem('gc_payfast_off') === '1') return; } catch (e) {}
+if (typeof Intl !== 'object' || typeof Intl.NumberFormat !== 'function' || Number.prototype.toLocaleString.__gcFast) return;
+var orig = Number.prototype.toLocaleString, cache = new Map(), MAX = 300;
+function keyOf(loc, opt){
+  var l = loc == null ? '' : (Array.isArray(loc) ? loc.join(',') : String(loc));
+  if (opt == null) return l + '|';
+  if (typeof opt !== 'object') return null;
+  var k = l + '|', names = Object.keys(opt).sort();
+  for (var i = 0; i < names.length; i++) { var v = opt[names[i]]; if (v !== undefined && typeof v === 'object') return null; k += names[i] + '=' + String(v) + ';'; }
+  return k;
+}
+var fast = function toLocaleString(loc, opt){
+  try {
+    if (typeof this !== 'number' && !(this instanceof Number)) return orig.apply(this, arguments);
+    var k = keyOf(loc, opt); if (k === null) return orig.apply(this, arguments);
+    var f = cache.get(k);
+    if (!f) { f = new Intl.NumberFormat(loc, opt); if (cache.size >= MAX) cache.clear(); cache.set(k, f); }
+    return f.format(Number(this));
+  } catch (e) { return orig.apply(this, arguments); }
+};
+fast.__gcFast = true;
+try { Object.defineProperty(Number.prototype, 'toLocaleString', { value: fast, writable: true, configurable: true, enumerable: false }); } catch (e) {}
+})();
+</script>
 <script id="gc-patch-perfclick-watch">
 /* patch PERFCLICK: the speed watchdog. Times every timer, interval and page-watcher callback (two clock reads each) and
    notes any that hold the screen for more than 200 ms, plus every long task the browser reports, in a small log on this
@@ -3880,7 +3908,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.159-2026-10-29-r14b -->
+<!-- GrayCo CRM Build: 33.159-2026-10-29-r14c -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4545,7 +4573,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.159-2026-10-29-r14b");
+  console.log("[GC] Build 33.159-2026-10-29-r14c");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4593,7 +4621,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.159-2026-10-29-r14b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.159-2026-10-29-r14c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -105798,6 +105826,7 @@ var lastAt  = 0;
 var lastResult = null;
 
 /* ── keep a draft, and only a draft ─────────────────────────────────────── */
+var _bgAt = Date.now();   /* patch PAYFAST: the background draft runs at most once an hour (not at start-up) */
 async function refresh(force){
   var P = window.__GC_PAY;
   if(!P) return null;
@@ -105805,6 +105834,9 @@ async function refresh(force){
     if(!force){
       if(document.hidden) return null;
       if(window.__GC_FORM_OPEN__ || window.__GC_IS_TYPING__) return null;
+      var _onPay = !!document.getElementById('gc-payroll-mount');
+      if(!_onPay && Date.now() - _bgAt < 3600e3) return null;
+      _bgAt = Date.now();
     }
     var built = await build();
     if(!built) return null;
