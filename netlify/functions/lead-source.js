@@ -147,11 +147,11 @@ async function lists(){
   const kv = await kvRead(['leads', 'customers', 'users', 'gc_lead_inbox', 'gc_job_source']);
   return { projects: await readProjects(), leads: arr(kv.leads), customers: arr(kv.customers), inbox: await readInbox(kv), jobSource: obj(kv.gc_job_source), admins: SRC.adminsFrom(kv.users) };
 }
-function isAdmin(who){ return /admin|owner/.test(s(who && who.role).toLowerCase()); }
+function isAdmin(who){ return /admin|owner/.test(s(who && who.role).toLowerCase()) || !!(who && who.office === true); }   /* patch OFFICEFULL: and the office */
 
 async function handle(event){
   if (event.httpMethod === 'OPTIONS') return J(event, 200, {});
-  const who = await gcStaffAuth(event); if (!who.ok) return J(event, who.statusCode, { ok: false, error: who.error });
+  const who = await require('./_lib/office-access.js').withOffice(await gcStaffAuth(event)); if (!who.ok) return J(event, who.statusCode, { ok: false, error: who.error });   /* patch OFFICEFULL: who.office */
   if (!sbEnv().key) return J(event, 200, { ok: false, error: 'SUPABASE_SERVICE_KEY is not set' });
   const q = event.queryStringParameters || {};
   if (event.httpMethod === 'GET') {

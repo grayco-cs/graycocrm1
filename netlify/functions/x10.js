@@ -263,6 +263,7 @@ exports.handler = async function(event){
     if (String(event.body || '').length > 200000) return reply(413, headers, { ok: false, error: 'Too big' });
     let body = {}; try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return reply(400, headers, { ok: false, error: 'Bad request' }); }
     const who = await inbox()._test.staffAuth(event); if (!who.ok) return reply(who.code || 401, headers, { ok: false, error: who.error });
+    if (who.office === true) who.admin = true;   /* patch OFFICEFULL: the office works every part of the CRM (on-call, vehicles, goal, numbers, templates) */
     return await staffAction(event, headers, body, who);
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong: ' + clip(e && e.message || e, 120) }); }
 };

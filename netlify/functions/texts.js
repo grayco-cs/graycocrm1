@@ -92,7 +92,7 @@ exports.handler = async function(event){
       const r = await send(who, b); return J(r.code, r.body, C);
     }
     if (qs.callchain) {   /* patch CALLCHAIN */
-      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the call order.' }, C);
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the call order.' }, C);   /* patch OFFICEFULL */
       const CC = require('./_lib/callorder.js');
       let data = {}; try { data = await core().kvRead(['users', 'gc_senior_pm']); } catch (e) {}
       const ours = [env('TWILIO_FROM')].concat(require('./_lib/smsroute.js').numbers(await getSettings(), env).map(x => x.number));
@@ -117,7 +117,7 @@ exports.handler = async function(event){
     }
     /* patch SMSALERT: Admin → 📱 Text alerts to cell phones (admins) — gc_lead_inbox_kv "gc_sms_alerts" */
     if (qs.alerts) {
-      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the text alerts.' }, C);
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the text alerts.' }, C);   /* patch OFFICEFULL */
       const SA = require('./_lib/smsalert.js');
       if (m === 'GET') {
         const pp = await SA._D.people(), staff = SA.staffList(pp), set = await SA.load();
@@ -132,7 +132,7 @@ exports.handler = async function(event){
       }
     }
     if (qs.settings || qs.try) {
-      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the automatic answers.' }, C);
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the automatic answers.' }, C);   /* patch OFFICEFULL */
       if (m === 'GET' && qs.settings) return J(200, { ok: true, settings: await getSettings(), defaults: S.DEFAULT_RULES, number: number() }, C);
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
       if (m === 'POST' && qs.settings) {

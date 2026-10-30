@@ -94,7 +94,7 @@ ok('same name, different address: not linked, on the list', !P('J7').ccProjectId
 ok('a project made before 2026 is never linked', !P('J8').ccProjectId);
 ok('auto-made CompanyCam job at a CRM job\'s address: the CRM job gets its photos too', JSON.stringify(P('J9').ccProjectId || P('J9').ccMoreIds) === JSON.stringify(['9009']) || P('J9').ccProjectId === '9009');
 ok('no new jobs made for linked projects', !KV.projects.some(p => /^PRJcc_900[1-7]$/.test(p.id)), KV.projects.map(p => p.id).join());
-ok('sync state remembers the rule version', KV.gc_cc_sync_state && KV.gc_cc_sync_state.linkV === 2);
+ok('sync state remembers the rule version', KV.gc_cc_sync_state && KV.gc_cc_sync_state.linkV === SYNC._t.LINK_V);
 /* second run: idempotent, a person's Link applied once */
 KV.gc_cc_sync_request = { link: { '9003': 'J4' } };
 const before = JSON.stringify(P('J1'));

@@ -58,7 +58,7 @@ exports.handler = async function(event){
       return J(200, { ok: true, address: CM.journalAddrs()[0], routingConfirmed: !!set.routingConfirmed, confirmedBy: s(set.by), confirmedAt: s(set.at), lastAt: s(st.lastAt), lastJob: s(st.lastJob), lastHow: s(st.lastHow), kept: st.matched || 0, thrownAway: st.discarded || 0, days: days, admin: !!who.admin }, C);
     }
     if (event.httpMethod === 'POST' && qs.settings) {
-      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change this.' }, C);
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change this.' }, C);   /* patch OFFICEFULL */
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
       const v = { routingConfirmed: b.routingConfirmed === true, by: who.email, at: new Date().toISOString() };
       await L().kvCas(SET, function(){ return v; });

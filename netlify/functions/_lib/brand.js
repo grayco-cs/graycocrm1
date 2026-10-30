@@ -32,7 +32,7 @@ function s(v){ return v == null ? '' : String(v).trim(); }
    to 4014"). ONE setting, gc_kv "gc_company_address" { current, next, switchOn (YYYY-MM-DD, Central) }, edited in
    ⚙ Admin → 🏢 Company address. Before switchOn every output shows `current`, on and after it `next`. Until the setting
    is read (or with no database) the defaults below apply. BRAND.address / BRAND.street follow it everywhere. */
-const ADDRESS_DEFAULTS = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
+const ADDRESS_DEFAULTS = { current: '5796 Ferguson Rd, Bartlett, TN 38134', next: '5796 Ferguson Rd, Bartlett, TN 38134', switchOn: '' };
 let addrSetting = null, addrAt = 0, addrBusy = null;
 function centralDay(d){
   try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d || new Date()); }
@@ -73,8 +73,11 @@ function siteBase(){
   const b = s(process.env.PORTAL_BASE_URL) || s(process.env.SITE_ORIGIN).split(',')[0] || 'https://crm.grayco-cs.com';
   return b.replace(/\/$/, '');
 }
-function logoUrl(){ return siteBase() + BRAND.logoPath; }
-function logoColorUrl(){ return siteBase() + BRAND.logoColorPath; }   /* patch LOGO: absolute https://crm.grayco-cs.com/grayco-logo-wide.jpg */
+/* patch MAILLOGO: logos always come from the CRM site, which serves the real image files. PORTAL_BASE_URL can be
+   portal.grayco-cs.com, which answers every path with the portal page — the e-mail showed a broken picture. */
+function logoBase(){ return (s(process.env.LOGO_BASE_URL) || 'https://crm.grayco-cs.com').replace(/\/$/, ''); }
+function logoUrl(){ return logoBase() + BRAND.logoPath; }
+function logoColorUrl(){ return logoBase() + BRAND.logoColorPath; }   /* patch LOGO: absolute https://crm.grayco-cs.com/grayco-logo-wide.jpg */
 function directLines(){ return String(process.env.DOC_DIRECT_LINES || '').trim() !== '0'; }   /* patch LOGOALL2: on unless DOC_DIRECT_LINES=0 */
 function isShelled(html){ return /data-gc-shell=/.test(String(html || '')); }
 function telHref(p){ const d = s(p).replace(/\D/g, ''); return d.length === 10 ? 'tel:+1' + d : (d.length === 11 ? 'tel:+' + d : ''); }

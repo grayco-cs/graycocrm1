@@ -483,7 +483,7 @@ exports.handler = async function(event){
     const who = await staff(event);
     if (!who.ok) return J(event, who.code || 401, { ok: false, error: who.error });
     if (qs.settings === '1' && m === 'GET') { const cfg = await priceSettings(); return J(event, 200, { ok: true, roofPriceRanges: cfg || PRICE_SEED, seeded: !cfg, priced: pricesSet(cfg) }); }
-    if (!who.admin) return J(event, 403, { ok: false, error: 'Only an owner or admin can do that.' });
+    if (!(who.admin || who.office)) return J(event, 403, { ok: false, error: 'Only an owner, an admin or the office can do that.' });   /* patch OFFICEFULL */
     if (qs.settings === '1' && m === 'POST') {
       let b = {}; try { b = JSON.parse(event.body || '{}'); } catch (e) { return J(event, 400, { ok: false, error: 'Body must be JSON.' }); }
       const v = b.roofPriceRanges; if (!v || !Array.isArray(v.tiers) || !v.tiers.length || v.tiers.length > 8) return J(event, 400, { ok: false, error: 'roofPriceRanges.tiers is required.' });

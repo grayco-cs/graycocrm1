@@ -83,10 +83,11 @@ async function setSettings(patch, who){
 }
 
 /* ── 3. redaction ── */
-const PII_KEYS = /^(email|e_?mail|phone|tel|cell|mobile|address|street|addr|jobaddress|jobaddresses|address1|address2|zip(code)?|client|clientname|clientemail|clientphone|customer|customername|customeremail|customerphone|owner|ownername|homeowner|contact|names|jobname|signature|ssn|ein|dob|birthday|notes?)$/i;
+const PII_KEYS = /^(email|e_?mail|phone|tel|cell|mobile|address|street|addr|jobaddress|jobaddresses|address1|address2|zip(code)?|client|clientname|clientemail|clientphone|customer|customername|customeremail|customerphone|owner|ownername|homeowner|contact|names|jobname|signature|ssn|ein|dob|birthday|notes?|referrer|referred|referrername|referredname|referreremail|referredemail|membername|winner|winnername|toname)$/i;   /* patch MKTFIX2: + the customer referral / giveaway names */
 const EMAIL_RE = /[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, PHONE_RE = /\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, HOUSE_RE = /\b\d{2,6}[A-Za-z]?\s+(?:[NSEW]\.?\s+)?(?:[A-Za-z0-9'.-]+\s+){0,4}(?:st|street|rd|road|ave|avenue|blvd|dr|drive|ln|lane|ct|court|cv|cove|pl|place|pkwy|cir|circle|way|ter|trl|trail|hwy|loop|run|pass|sq)\b\.?/gi;
 function scrubText(t){ return String(t).replace(EMAIL_RE, function(m){ return /@grayco-cs\.com$/i.test(m) ? m : '[e-mail hidden]'; }).replace(PHONE_RE, function(m){ return m.replace(/\D/g, '').slice(-10) === '9015850944' ? m : '[phone hidden]'; })
-  .replace(HOUSE_RE, function(m){ return /^(4007|4014)\s+broadway/i.test(m) ? m : m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); }); }
+  .replace(HOUSE_RE, function(m, off, all){ if (/^(4007|4014)\s+broadway/i.test(m)) return m; if (/^\d{1,2}\s+[AP]\.?M\b/i.test(m) || (off > 0 && /[:\d\/]/.test(all.charAt(off - 1)))) return m;   /* patch MKTFIX2: "11:00 AM CT" is a time, not a house on a court */
+    return m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); }); }
 /* deep copy without customer contact data: PII keys out, e-mails / phones / house numbers in text masked */
 function redact(v, depth){
   depth = depth || 0; if (depth > 12) return null;
@@ -98,6 +99,9 @@ function redact(v, depth){
 /* the marketing document as he sees it: the guard fields (job addresses, customer names) out, every text scrubbed;
    the money / customer collections (payouts, sends) out */
 const DOC_HIDDEN = { payouts: 1, sendlog: 1 };
+/* patch MKTFIX2: the customer's OK for marketing photos (perms) is recorded by the office / an admin, never by him — a job he
+   marked "OK" himself would open its photos to him (mm_jobs / mm_file follow perms) */
+const MM_NO_WRITE = { perms: 1 };
 function redactDoc(doc){
   const out = {};
   Object.keys(doc || {}).forEach(function(c){ if (DOC_HIDDEN[c]) return; const m = doc[c]; if (!m || typeof m !== 'object' || Array.isArray(m)) return; out[c] = {};
@@ -119,7 +123,7 @@ const CFG_OK = ['gs', 'socPlan', 'socNetworks', 'socTimes', 'reviewLink', 'autop
 function mergeWrite(real, mine, ctx){
   ctx = ctx || {}; const changed = [];
   Object.keys(mine || {}).forEach(function(c){
-    if (DOC_HIDDEN[c]) return; const m = mine[c]; if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    if (DOC_HIDDEN[c] || MM_NO_WRITE[c]) return; const m = mine[c]; if (!m || typeof m !== 'object' || Array.isArray(m)) return;
     Object.keys(m).forEach(function(id){
       const inc = m[id], cur = real[c] && real[c][id]; if (!inc || typeof inc !== 'object') return;
       if (cur && s(inc.at) <= s(cur.at)) return;
@@ -228,7 +232,7 @@ function sourceOf(l){
   return null;
 }
 /* the customer's own name words out of free text ("call Jane at …" → "call the customer at …") */
-function noNames(text, names){ let out = String(text); arr(names).map(s).join(' ').split(/[^A-Za-z'-]+/).filter(function(w){ return w.length >= 3 && !/^(the|and|llc|inc|roof|water|fire|storm|job|lead|website|company)$/i.test(w); }).forEach(function(w){ out = out.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), 'the customer'); }); return out; }
+function noNames(text, names){ let out = String(text); arr(names).map(s).join(' ').split(/[^A-Za-z'-]+/).filter(function(w){ return w.length >= 3 && !/^(the|and|llc|inc|roof|water|fire|storm|job|lead|website|company)$/i.test(w); }).forEach(function(w){ out = out.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), 'the customer'); }); return out.replace(/\bthe customer(?:[\s,'-]+the customer)+\b/gi, 'the customer'); }   /* patch MKTFIX2: "John Smith" → "the customer", not "the customer the customer" */
 function cap1(x){ return x.charAt(0).toUpperCase() + x.slice(1); }
 function serviceType(l){ const svc = SC().serviceOf(l); if (svc === 'restoration') return SC().restSubOf(l) || 'storm'; return svc || ''; }
 function daysBetween(a, b){ const x = Date.parse(a || 0), y = Date.parse(b || 0); return x && y && y >= x ? Math.round((y - x) / 864e5 * 10) / 10 : null; }

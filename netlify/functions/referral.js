@@ -52,6 +52,18 @@ function isScheduledCall(event){
   const h = event.headers || {}; if (s(h.authorization || h.Authorization)) return false;
   try { const b = JSON.parse(event.body || '{}'); return !!(b && b.next_run); } catch (e) { return false; }
 }
+/* patch MKTFIX2: the Marketing Manager's read-only view never names a customer — members are "Member 1, 2 …", the people they
+   referred "a referred friend"; no member code / link, no gift-code owner, no ledger notes. The counts and totals stay. */
+function mmView(o){
+  const lab = {}; (o.members || []).forEach(function(m, i){ lab[m.id] = 'Member ' + (i + 1); });
+  const L = function(id){ return lab[id] || 'a member'; };
+  o.members = (o.members || []).map(function(m){ return Object.assign({}, m, { name: L(m.id), code: '', link: '', how: '', pid: '' }); });
+  o.referrals = (o.referrals || []).map(function(r){ return { id: r.id, memberId: r.memberId, memberName: L(r.memberId), name: 'A referred friend', status: r.status, service: r.service, city: r.city, createdAt: r.createdAt, credit: r.credit, amount: r.amount }; });
+  o.ledger = (o.ledger || []).map(function(e){ return { id: e.id, memberId: e.memberId, memberName: L(e.memberId), type: e.type, amount: e.amount, at: e.at }; });
+  o.cards = (o.cards || []).map(function(c){ return { id: c.id, last4: '', amount: c.amount, status: c.status, memberId: c.memberId, memberName: L(c.memberId), via: c.via, issuedAt: c.issuedAt, redeemedAt: c.redeemedAt }; });
+  o.waiting = (o.waiting || []).map(function(x){ return { id: x.id, kind: x.kind, amount: x.amount, memberName: 'a member', createdAt: x.createdAt }; });
+  return o;
+}
 exports.handler = async function(event){
   event = event || {};
   const m = event.httpMethod, qs = event.queryStringParameters || {};
@@ -69,11 +81,11 @@ exports.handler = async function(event){
   if (!who.ok && who.code === 403) { const mm = await require('./_lib/mm.js').auth(event); if (mm.ok) who = mm; }   /* patch MM: the Marketing Manager — read-only, redacted */
   if (!who.ok) return J(event, who.code || 401, { ok: false, error: who.error });
   if (who.marketing) {
-    if (m === 'GET' && qs.list === '1') return J(event, 200, require('./_lib/mm.js').redact(Object.assign({ ok: true, admin: false, readOnly: true }, await R.overview())));
+    if (m === 'GET' && qs.list === '1') return J(event, 200, require('./_lib/mm.js').redact(mmView(Object.assign({ ok: true, admin: false, readOnly: true }, await R.overview()))));
     if (m === 'GET' && qs.settings === '1') return J(event, 200, { ok: true, settings: await R.settings(), min: R.MIN, max: R.MAX });
     return J(event, 403, { ok: false, error: 'The Marketing Manager profile sees the referral program read-only.' });
   }
-  const office = who.admin || /office/.test(low(who.role));
+  const office = who.admin || who.office === true || /office/.test(low(who.role));   /* patch OFFICEFULL: who.office */
   const by = who.name || who.email;
   let b = {};
   if (m === 'POST') { try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(event, 400, { ok: false, error: 'Body must be JSON.' }); } }
@@ -83,7 +95,7 @@ exports.handler = async function(event){
     if (m === 'GET' && qs.pending === '1') return J(event, 200, { ok: true, cards: await R.pending() });
     if (qs.settings === '1') {
       if (m === 'GET') return J(event, 200, { ok: true, settings: await R.settings(), min: R.MIN, max: R.MAX });
-      if (!who.admin) return J(event, 403, { ok: false, error: 'Only an owner or admin can change the referral program.' });
+      if (!office) return J(event, 403, { ok: false, error: 'Only an owner, an admin or the office can change the referral program.' });   /* patch OFFICEFULL */
       return J(event, 200, { ok: true, settings: await R.saveSettings(b, by) });
     }
     if (m !== 'POST') return J(event, 405, { ok: false, error: 'Method not allowed' });
@@ -100,7 +112,7 @@ exports.handler = async function(event){
       const r = await R.refer(mem, b, { via: 'crm', by, how: 'entered in the CRM (referral program)' });
       return J(event, 200, Object.assign({ ok: true }, r));
     }
-    if (!who.admin) return J(event, 403, { ok: false, error: 'Only an owner or admin can do that.' });
+    if (!office) return J(event, 403, { ok: false, error: 'Only an owner, an admin or the office can do that.' });   /* patch OFFICEFULL */
     if (act === 'credit') {   /* credit by hand — still approved on the list */
       const mem = await R.memberById(b.memberId);
       if (!mem) return J(event, 404, { ok: false, error: 'Pick a member.' });

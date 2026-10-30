@@ -99,6 +99,12 @@
 [functions."companycam-sync"]
   schedule = "*/15 * * * *"
 
+# CompanyCam photos (patch CCPHOTOS, _lib/cc-photos.js): every 15 minutes, between the sync's runs — every photo of every
+# CompanyCam project a job or lead is linked to is listed for GrayCo Photos (CompanyCam's own small links; no picture is
+# copied). The first run after a deploy is the whole backfill; it hands a backlog to companycam-photos-background (~13 min).
+[functions."companycam-photos"]
+  schedule = "7,22,37,52 * * * *"
+
 # Marketing (patch MKT, docs/SOCIAL-SETUP.md): every 15 minutes — approved social posts and news@ campaigns whose time
 # came go out (unsubscribed customers skipped), and Autopilot drafts this week's posts / this month's e-mail. Every draft
 # waits on Approvals; nothing customer-facing goes out without an admin's OK.

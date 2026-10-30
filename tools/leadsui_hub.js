@@ -49,7 +49,7 @@ W._gcLeadsUIOverlay = function(){ return Object.keys(OVL); };
 
 /* ── distance (from the office — the company address setting — or from my location) ── */
 var GEO = { ver: 0, mem: lsGet('gc_leads_geo_v1', {}) || {}, busy: false, at: 0, office: lsGet('gc_office_geo_v1', null), me: null, from: 'office', officeAsk: 0 };
-var OFFICE_FALLBACK = { lat: 35.2046, lng: -89.8668, a: '4007 Broadway Rd, Bartlett, TN 38135' };
+var OFFICE_FALLBACK = { lat: 35.2010, lng: -89.8703, a: '5796 Ferguson Rd, Bartlett, TN 38134' };
 function gkey(a){ return low(a).replace(/[^a-z0-9]+/g, ' ').trim(); }
 function officeAddr(){ try { var f = W._gcCompanyAddress; var a = typeof f === 'function' ? s(f()) : ''; if (a) return a; } catch (e) {} return OFFICE_FALLBACK.a; }
 function addrOf(l){

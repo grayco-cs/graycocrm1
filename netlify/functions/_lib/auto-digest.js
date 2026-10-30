@@ -17,10 +17,9 @@ function order(list, now){
   return AO.sort(list.map(function(it){ return Object.assign({}, it.raw || {}, { __it: it }); }), now).map(function(x){ const it = x.__it; it.tier = AO.tierOf(x, now).label; return it; });
 }
 function line(it){ return '<li style="margin:4px 0">' + (it.tier ? '<span style="font-size:12px">' + esc(it.tier) + '</span> ' : '') + '<a href="' + esc(it.link) + '" style="color:#0F1D2F;font-weight:bold">' + esc(clip(it.title, 140)) + '</a>' + (it.sub ? ' <span style="color:#55626F">— ' + esc(it.sub) + '</span>' : '') + '</li>'; }
-async function run(opts){
-  opts = opts || {};
-  const C = A.core(), now = opts.now != null ? opts.now : Date.now(), c = A.central(now);
-  if (c.wd === 'Sun') return { ok: true, skipped: 'Sunday' };
+/* patch SUBPHOTOS: who has what waiting (the digest's own rule) — also used by the 12 PM reminder (_lib/appr-noon.js) */
+async function collect(now){
+  const C = A.core();
   const data = await C.crmData(true);
   const cur = await C.kvListRead(C.AQ_KEY);
   const extra = await C.kvRead(['gc_sub_approvals', 'gc_expense_approvals', 'payrollRuns']);
@@ -32,13 +31,16 @@ async function run(opts){
   const optional = function(){ office.forEach(function(e){ opt[e] = (opt[e] || 0) + 1; }); };
   const add = function(email, it){ email = low(email); if (!staffEmail(email)) return; const l = (box[email] = box[email] || []); if (l.indexOf(it) < 0) l.push(it); };   /* patch APOFFICE: once per person */
   const base = A.crmBase();
+  const OK4 = require('./office-kinds.js');
   (cur ? cur.list : []).forEach(function(x){
     if (!x || x.status !== 'waiting') return;
     const it = { title: s(x.title) || s(x.kind), sub: s(x.jobName), link: base + '/#appr=' + encodeURIComponent(s(x.id)), raw: x };
-    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
+    const offK = OK4.isOfficeKind(x), adminOnly = OK4.isAdminOnly(x);   /* patch APOFFICE4: a customer-facing kind is the office's own at once, any step; money / permission kinds never */
+    if (offK) office.forEach(function(e){ add(e, it); });
+    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); if (!offK && !adminOnly) optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
     admins.forEach(function(e){ add(e, it); });
     const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= 24 * 3600e3);
-    if (x.officeOk === true || esc24) office.forEach(function(e){ add(e, it); });
+    if (!adminOnly && (x.officeOk === true || esc24)) office.forEach(function(e){ add(e, it); });
   });
   /* patch SUBINV (owner 10/27): JOB COSTS (sub invoices, job expenses / receipts) go to the job's PM; after 24 hours without
      the PM — or at once when the job has no PM — to the OFFICE. An admin gets one only as that job's PM — never as the extra / default approver. */
@@ -63,13 +65,24 @@ async function run(opts){
     const it = { title: '💵 Payroll for ' + s(r.payDate) + ' — ' + n + ' check' + (n === 1 ? '' : 's') + ', net ' + usd(r.totals && r.totals.net), sub: r.auto ? 'made by itself on Thursday' : '', link: base + '/#todo', raw: { kind: 'payroll_run', meta: { urgency: 'soon' }, createdAt: r.submittedAt || r.createdAt } };
     admins.forEach(function(e){ add(e, it); });
   });
+  return { box: box, opt: opt, nameOf: nameOf, base: base, data: data };
+}
+/* patch SUBPHOTOS: the one line at the top of the digest — how many approvals wait and the link to 📋 Approvals */
+function apprLine(n, base){
+  return '<p style="font-size:15px;margin:0 0 10px"><b>📋 ' + n + ' approval' + (n === 1 ? '' : 's') + ' waiting.</b> <a href="' + esc(base + '/#todo') + '" style="color:#0F1D2F;font-weight:bold">Open 📋 Approvals</a></p>';
+}
+async function run(opts){
+  opts = opts || {};
+  const C = A.core(), now = opts.now != null ? opts.now : Date.now(), c = A.central(now);
+  if (c.wd === 'Sun') return { ok: true, skipped: 'Sunday' };
+  const got = await collect(now), box = got.box, opt = got.opt, nameOf = got.nameOf, base = got.base;
   const rep = { ok: true, people: 0, mailed: 0, pushed: 0, items: 0 };
   for (const email of Object.keys(box)) {
     const list = order(box[email], now); rep.people++; rep.items += list.length;
     const optLine = opt[email] ? '<p style="font-size:13px;color:#55626F">👷 ' + opt[email] + ' waiting on PMs — optional for you (✅ Approvals → <b>👷 PM approvals</b>).</p>' : '';   /* patch APOFFICE2 */
     const subject = '✅ ' + list.length + ' approval' + (list.length === 1 ? '' : 's') + ' waiting on you — GrayCo CRM';
     const html = A.shell('Good morning' + (nameOf[email] ? ', ' + nameOf[email].split(' ')[0] : '') + ' — ' + list.length + ' waiting on you',
-      '<p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><ul style="padding-left:18px">' + list.slice(0, MAX).map(line).join('') + '</ul>' + optLine +
+      apprLine(list.length, base) + '<p>Tap one to open it in the CRM (you may be asked to sign in). Nothing is approved from this e-mail.</p><ul style="padding-left:18px">' + list.slice(0, MAX).map(line).join('') + '</ul>' + optLine +
       (list.length > MAX ? '<p>+' + (list.length - MAX) + ' more in the CRM.</p>' : '') +
       '<p style="font-size:13px;color:#55626F">Routine ones (payment reminders, appointment reminders, waiver requests to known subs) can be approved together in the CRM: ✅ Approvals → <b>Approve all routine</b>.</p>' +
       '<p><a href="' + esc(base + '/#todo') + '">Open my approvals</a></p>');
@@ -79,4 +92,4 @@ async function run(opts){
   }
   return rep;
 }
-module.exports = { run };
+module.exports = { run, collect, apprLine, order };

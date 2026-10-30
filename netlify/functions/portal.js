@@ -298,6 +298,7 @@ async function grayCoPhotos(pid, recs){
   list.forEach(function(r){
     if (r.deleted === true || r.source === 'ccflag' || s(r.jobId) !== String(pid)) return;
     if (!gcSharedOf(r)) return;
+    if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;   /* patch SUBPHOTOS: a sub's photo only after an admin / the office turned it on */
     const full = refPath(r.annotatedRef) ? r.annotatedRef : r.ref;
     if (!refPath(full)) return;
     const k = s(r.hash) || full; if (seen[k]) return; seen[k] = 1;
@@ -1191,7 +1192,7 @@ function mailHtml(kind, v, link){
     : 'Just a friendly reminder — your final invoice is still open. If you already paid, thank you, and please ignore this note.';
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(v.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
@@ -1320,7 +1321,7 @@ function invoiceAndJob(data, invId){
 function invoiceMailHtml(doc, pmPhone){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(doc.job) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
@@ -1705,14 +1706,22 @@ async function approvalAction(body, who){
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
   const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
   if (who && who.marketing === true && !mmOk) return { status: 403, out: { ok: false, error: 'This one needs an admin.' } };
-  const office = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
+  const office0 = mmOk || (!admin && it0.step === 'admin' && (it0.officeOk === true || escalatedOrDue(it0, Date.now())) && await isOffice(who));   /* patch SOC: officeOk (approval stage 2 / 3) */
   /* patch APOFFICE (owner 10/28): "anything a PM can approve, the office can approve too" — an item waiting at the PM step is
      the office's at once as well (approve / don't approve / edit). The office takes the PM's step only: a money / legal paper
      still goes on to Wesley or Nick afterwards, exactly as after the PM. Whoever acts first wins (the claim below). */
+  const OK4 = require('./_lib/office-kinds.js'), adminOnly = OK4.isAdminOnly(it0);
+  /* patch APOFFICE4 (owner 10/30): "all auto text emails invoices whatever we need approved i want office to approve" — a
+     customer / outside-facing kind is the office's at ANY step from the moment it is made, and her approval is final (no
+     admin after her); an admin still may, whoever acts first wins (the claim below). Owner money / permission kinds
+     (payroll, pay, offer letters, credits, ad spend, overrides, lead assignments …) are never the office's. */
+  if (adminOnly && !admin && !isPm && !mmOk && await isOffice(who)) return { status: 403, out: { ok: false, adminOnly: true, error: 'This one is for Wesley or Nick only (money / permission decision).' } };
+  const officeAll = !admin && !mmOk && !adminOnly && OK4.isOfficeKind(it0) && await isOffice(who);
+  const office = officeAll || mmOk || (!adminOnly && office0);
   const officePm = !admin && !office && !isPm && it0.step === 'pm' && await isOffice(who);
   if (!admin && !office && !(it0.step === 'pm' && (isPm || officePm))) return { status: 403, out: { ok: false, error: it0.step === 'admin' ? 'This one needs Wesley or Nick now (the office can take it after 24 hours).' : 'Only the job\'s PM (' + (it0.pm || 'none') + '), the office or an admin can approve this.' } };
   const now = new Date().toISOString(), me = { by: myName || who.email, email: low(who.email), role: admin ? 'admin' : mmOk ? 'marketing' : ((office || officePm) ? 'office' : (isApmStep ? 'apm' : 'pm')), at: now };
-  if (office && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }
+  if (office && !officeAll && !it0.escalated && !it0.officeOk) { try { await escalateDue({ only: id }); } catch (e) {} }   /* patch APOFFICE4: not for her own kinds */
   const upd = async function(fn, check){ return kvListUpdate(AQ_KEY, function(l){ const x = l.find(function(y){ return s(y.id) === id; }); if (!x) return null; const ok = fn(x); if (ok === false) return { list: null, result: x }; x.updatedAt = new Date().toISOString(); return { list: l, check: function(l2){ const z = l2.find(function(y){ return s(y.id) === id; }); return !!(z && check(z)); }, result: x }; }); };
   if (op === 'reject') {
     const r = await upd(function(x){ if (x.status !== 'waiting' && !stale) return false; x.status = 'rejected'; x.rejectedBy = me.by; x.rejectedEmail = me.email; x.rejectedAt = now; x.reason = clip(body.reason, 500); }, function(z){ return z.status === 'rejected'; });
@@ -1826,6 +1835,7 @@ async function escalateDue(opts){
     fresh = [];
     l.forEach(function(x){
       if (!x || x.escalated || (opts.only && s(x.id) !== s(opts.only))) return;
+      if (require('./_lib/office-kinds.js').isAdminOnly(x)) return;   /* patch APOFFICE4: owner money / permission kinds stay with Wesley and Nick */
       const pmDue = x.pmEsc === true && x.status === 'waiting' && x.step === 'pm' && nowMs - Date.parse(x.createdAt || 0) >= ESC_MS;   /* patch SUBCONTACT: the PM did not answer → the office */
       if (!pmDue && !escalatedOrDue(x, nowMs)) return;
       if (pmDue) { x.step = 'admin'; x.adminSince = at; }
@@ -2004,7 +2014,7 @@ const PORTAL_HOST = 'portal.grayco-cs.com';
 function linkMailHtml(v, link){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(v.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
@@ -2187,7 +2197,7 @@ async function notifyDocs(pid, event, opts){
 function docsMailHtml(view, titles, link){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(view.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(view.customer.firstName || 'there') + ',</p>' +
