@@ -125158,12 +125158,22 @@ function myName(){ var u = myUser(); return s(u && u.name); }
 function pmIsMe(x){ var e = myEmail(), n = low(myName()); return !!((x.pmEmail && low(x.pmEmail) === e) || (x.pm && n && low(x.pm) === n)); }
 function officeMe(){ if(isAdmin()) return false; var u = myUser(); return myEmail() === 'office@grayco-cs.com' || !!(u && u.active !== false && /office/i.test(s(u.role))); }   /* patch APOFFICE: the office takes any PM step too */
 window._gcApOfficeMe = officeMe;
+/* patch APOFFICE4 (owner 10/30): every customer / outside-facing approval is the office's own at once, at any step, and her
+   approval is final; owner money / permission kinds never are. Same lists as netlify/functions/_lib/office-kinds.js. */
+var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page"];
+var AP4K_ADMIN = ["offer_letter","refcredit","refgift","mkt_payout","mkt_ad","mkt_addraft","mkt_experiment","mkt_feature"];
+var AP4K_ADMIN_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override|assign/, AP4K_PREFIX = /^sign_[a-z0-9_]+$/;
+function ap4kKind(x){ return low(x && typeof x === 'object' ? x.kind : x); }
+function adminOnlyKind(x){ var k = ap4kKind(x), m = (x && typeof x === 'object' && x.meta) || {}; return AP4K_ADMIN.indexOf(k) >= 0 || AP4K_ADMIN_RE.test(k) || m.payroll === true || m.adminOnly === true || !!(x && typeof x === 'object' && x.adminOnly === true); }
+function officeKind(x){ if(adminOnlyKind(x)) return false; var k = ap4kKind(x); return AP4K_OFFICE.indexOf(k) >= 0 || AP4K_PREFIX.test(k); }
+function officeTakes(x){ return !!(x && officeMe() && officeKind(x)); }
+window._gcApOfficeKind = officeKind; window._gcApAdminOnlyKind = adminOnlyKind; window._gcApOfficeTakes = officeTakes;
 function waitingOnMe(x){
   if(x.status !== 'waiting') return false;
   if(isAdmin()) return x.step === 'admin' || pmIsMe(x);
-  return x.step === 'pm' && pmIsMe(x);   /* patch APOFFICE2: the office's PM-step items are optional — behind "👷 PM approvals", not in her list */
+  return (x.step === 'pm' && pmIsMe(x)) || officeTakes(x);   /* patch APOFFICE2: the office's PM-step items are optional — behind "👷 PM approvals", not in her list */   /* patch APOFFICE4: except her own kinds — hers at once, any step */
 }
-function canAct(x){ return x.status === 'waiting' && (isAdmin() || (x.step === 'pm' && (pmIsMe(x) || officeMe()))); }
+function canAct(x){ return x.status === 'waiting' && (isAdmin() || officeTakes(x) || (x.step === 'pm' && (pmIsMe(x) || (officeMe() && !adminOnlyKind(x))))); }   /* patch APOFFICE4 */
 function visible(x){ return isAdmin() || pmIsMe(x) || officeMe(); }
 function isPmPerson(){
   var u = myUser(); if(u && /project\s*manager|\bpm\b/i.test(s(u.role))) return true;
@@ -125250,11 +125260,11 @@ function stepLabel(x){
   if(x.status === 'sent') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-weight:700">Sent ' + esc(s(x.sentAt).slice(0, 16).replace('T', ' ')) + '</span>';
   if(x.status === 'rejected') return '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-weight:700">Rejected by ' + esc(x.rejectedBy) + (x.reason ? ' — ' + esc(x.reason) : '') + '</span>';
   if(x.status === 'sending') return '<span style="background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:10px;font-weight:700">Sending…</span>';
-  var who = x.step === 'admin' ? 'Admin (Wesley or Nick)' : 'PM ' + esc(x.pm || '?') + ' or the office';   /* patch APOFFICE */
+  var who = x.step === 'admin' ? 'Admin (Wesley or Nick)' + (officeKind(x) ? ' or the office' : '') : 'PM ' + esc(x.pm || '?') + (adminOnlyKind(x) ? '' : ' or the office');   /* patch APOFFICE4 */   /* patch APOFFICE */
   return '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-weight:700">Needs: ' + who + '</span>' + (x.steps && x.steps.length > 1 ? ' <span style="color:#64748b;font-size:12px">(' + x.steps.map(function(t){ return t === 'pm' ? 'PM' : 'admin'; }).join(' → ') + ')</span>' : '');
 }
 function card(x){
-  var id = esc(x.id), act1 = canAct(x), lastStep = isAdmin() || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1;
+  var id = esc(x.id), act1 = canAct(x), lastStep = isAdmin() || officeTakes(x) || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1;   /* patch APOFFICE4: her approval is final */
   var h = '<div class="_apCard" data-id="' + id + '" style="background:#fff;color:#0f172a;border-radius:14px;padding:14px;margin-bottom:12px;border:1px solid #e2e8f0">' +
     '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-weight:800;font-size:15px">' + (x.title ? esc(x.title) : esc(kindOf(x)) + ' — ' + esc(x.jobName || x.jobId)) + '</div>' +
     '<div style="font-size:12px;color:#64748b">' + (x.channel === 'sms' ? '💬 Text' : '✉️ E-mail') + '</div></div>' +
@@ -125263,7 +125273,7 @@ function card(x){
     '<div style="font-size:13px;color:#334155"><b>Subject:</b> ' + esc(x.subject) + '</div>' +
     ((x.attachments || []).length ? '<div style="font-size:12px;color:#475569;margin-top:2px">📎 ' + x.attachments.map(function(a){ return esc(a.name || a); }).join(', ') + '</div>' : '') +
     '<div class="_apBody" style="white-space:pre-wrap;font-size:13px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-top:8px;max-height:220px;overflow:auto">' + preview(x) + '</div>' +
-    ((x.approvals || []).length ? '<div style="font-size:12px;color:#475569;margin-top:6px">' + x.approvals.map(function(a){ return '✔ ' + esc(a.by) + ' (' + (a.step === 'admin' || a.role === 'admin' ? 'admin' : 'PM') + ') ' + esc(s(a.at).slice(0, 16).replace('T', ' ')); }).join(' · ') + '</div>' : '') +
+    ((x.approvals || []).length ? '<div style="font-size:12px;color:#475569;margin-top:6px">' + x.approvals.map(function(a){ return '✔ ' + esc(a.by) + ' (' + (a.role === 'office' ? 'office' : a.step === 'admin' || a.role === 'admin' ? 'admin' : 'PM') + ') ' + esc(s(a.at).slice(0, 16).replace('T', ' ')); }).join(' · ') + '</div>' : '') +
     (x.editedBy ? '<div style="font-size:12px;color:#475569">✏️ text edited by ' + esc(x.editedBy) + '</div>' : '') +
     (x.lastError && x.status === 'waiting' ? '<div style="font-size:12px;color:#b91c1c">Last try: ' + esc(x.lastError) + '</div>' : '') +
     (notes[x.id] ? '<div class="_apNote" style="font-size:13px;font-weight:700;margin-top:6px;color:#0f766e">' + esc(notes[x.id]) + '</div>' : '');
@@ -132436,7 +132446,7 @@ function titleOf(x){
   if(x.title) return x.title;
   return (KIND[x.kind] || s(x.kind).replace(/_/g, ' ')) + ' — ' + (x.jobName || x.jobId || '') + (x.to ? ' to ' + x.to : '');
 }
-function lastStep(x){ return isAdmin() || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1; }
+function lastStep(x){ return isAdmin() || !!(window._gcApOfficeTakes && window._gcApOfficeTakes(x)) || (x.steps || []).indexOf(x.step) >= (x.steps || []).length - 1; }   /* patch APOFFICE4 */
 function card(x){
   var id = esc(x.id), b = busy[x.id], last = lastStep(x);
   var done = !b && kept[x.id] && /^(\u2705|\u2716)/.test(notes[x.id] || '');   /* patch APDONE: owner tapped Don't approve and "nothing happened" — the card looked the same */
@@ -132639,7 +132649,7 @@ function openPreview(id){
       '<div class="_ap2PvPdfBox" style="margin-top:6px"></div></div>' : '') +
     (x.kind === 'thank_you' ? '<div style="font-size:12px;color:#475569;margin-top:6px">Goes from news@grayco-cs.com with the GrayCo News footer and “Unsubscribe from our newsletters” (from office@ with no newsletter part if the customer unsubscribed).</div>' : '') +
     ((x.edits || []).length ? '<div style="font-size:12px;color:#64748b;margin-top:6px">' + x.edits.map(function(e){ return '✏️ ' + esc(e.by) + ' ' + esc(niceWhen(e.at)) + (e.fields && e.fields.length ? ' — ' + esc(e.fields.join(', ')) : ''); }).join('<br>') + '</div>' : '') +
-    ((x.approvals || []).length ? '<div style="font-size:12px;color:#166534;margin-top:4px">' + x.approvals.map(function(a){ return '✔ ' + esc(a.by) + ' (' + (a.role === 'admin' ? 'admin' : 'PM') + ') ' + esc(niceWhen(a.at)); }).join(' · ') + '</div>' : '') +
+    ((x.approvals || []).length ? '<div style="font-size:12px;color:#166534;margin-top:4px">' + x.approvals.map(function(a){ return '✔ ' + esc(a.by) + ' (' + (a.role === 'admin' ? 'admin' : a.role === 'office' ? 'office' : 'PM') + ') ' + esc(niceWhen(a.at)); }).join(' · ') + '</div>' : '') +
     '<div class="_ap2PvNote" style="font-size:13px;font-weight:700;color:#0f766e;margin-top:8px">' + esc(notes[id] || '') + '</div>' +
     (can ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
       '<button type="button" class="_ap2PvAct _ap2PvYes" style="flex:2;min-width:150px;min-height:48px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:800;font-size:16px;cursor:pointer">' + (last ? '✅ Approve &amp; send' : '✅ Approve → admin') + '</button>' +
@@ -134312,7 +134322,7 @@ function wrapList(){
     try{
       if(r && isOffice()){
         var have = {}; (r.mine || []).forEach(function(x){ have[x.id] = 1; });
-        var add = (r.all || []).filter(function(x){ return due(x) && !have[x.id]; });
+        var add = (r.all || []).filter(function(x){ return due(x) && !have[x.id] && !(window._gcApAdminOnlyKind && window._gcApAdminOnlyKind(x)); });   /* patch APOFFICE4 */
         r.pmOptional = (r.all || []).filter(function(x){ return x && x.status === 'waiting' && x.step === 'pm' && !have[x.id]; });   /* patch APOFFICE2: optional for the office, behind "👷 PM approvals" */
         if(add.length){ r.mine = (r.mine || []).concat(add); r.count = r.mine.length; }
         r.office = true;
@@ -159846,6 +159856,10 @@ function invSignList(){
   return arr(crm().invoices).filter(function(iv){ if (!iv || iv.type !== 'client') return false; var st = low(iv.status); return st === 'draft' || st === 'pending' || st === 'pm_review'; });
 }
 function samePerson(a, b){ return !!s(a) && low(a) === low(b); }
+/* patch APOFFICE4: the office's own kinds (patch APPR's lists) */
+function ap4Kind(x){ try { return !!(W._gcApOfficeKind && W._gcApOfficeKind(x)); } catch (e) { return false; } }
+function ap4AdminOnly(x){ try { return !!(W._gcApAdminOnlyKind && W._gcApAdminOnlyKind(x)); } catch (e) { return false; } }
+function ap4Takes(x){ return !realAdmin() && isOfficePerson() && ap4Kind(x); }
 function escalatedQ(x, now){ return !!(x && x.status === 'waiting' && x.step === 'admin' && (x.escalated || (now - Date.parse(x.adminSince || x.updatedAt || x.createdAt || 0)) >= ESC_MS)); }
 
 var KIND = { portal_publish: 'Put in customer portal', portal_link: 'Portal link', portal_docs: 'New papers notice', final_invoice: 'Final invoice e-mail', final_reminder: 'Invoice reminder',
@@ -159865,13 +159879,14 @@ function rowQueue(x, mine, now){
   var esc8 = escalatedQ(x, now), since = Date.parse((x.step === 'admin' ? x.adminSince : '') || x.createdAt || x.updatedAt || 0) || now;
   var step = x.status === 'sending' ? 'sending' : x.step === 'pm' ? 'pm' : esc8 ? 'office' : 'admin';
   var waits = step === 'sending' ? 'Sending now…' : step === 'pm' ? 'PM ' + (s(x.pm) ? s(x.pm) + ' ' : '') + 'or the office' :   /* patch APOFFICE */ step === 'office' ? 'Office — escalated (Wesley / Nick did not answer in 24 h)' : 'Wesley or Nick';
-  var clock = step === 'admin' ? (function(){ var left = ESC_MS - (now - (Date.parse(x.adminSince || '') || since)); return left > 0 ? 'goes to the office in ' + dur(left) : 'goes to the office now'; })() : '';
+  if (step === 'admin' && ap4Kind(x)) waits = 'Wesley, Nick or the office';   /* patch APOFFICE4 */
+  var clock = step === 'admin' && !ap4Kind(x) ? (function(){ var left = ESC_MS - (now - (Date.parse(x.adminSince || '') || since)); return left > 0 ? 'goes to the office in ' + dur(left) : 'goes to the office now'; })() : '';
   var chain = arr(x.approvals).map(function(a){ return '✓ ' + (a.role === 'pm' || a.step === 'pm' ? 'PM ' : a.role === 'office' ? 'Office ' : '') + s(a.by); }).join(' → ');
-  var steps = arr(x.steps), lastStep = steps.indexOf(x.step) >= steps.length - 1;
+  var steps = arr(x.steps), lastStep = steps.indexOf(x.step) >= steps.length - 1 || ap4Takes(x);   /* patch APOFFICE4: her approval is final */
   return { key: 'ap2:' + x.id, id: s(x.id), src: 'queue', kind: s(x.kind), kindL: kindLabel(x.kind), icon: ICON[x.kind] || (x.channel === 'sms' ? '💬' : '✉️'),
     title: s(x.title) || (kindLabel(x.kind) + (x.to ? ' to ' + s(x.to) : '')), pid: s(x.jobId || x.pid), job: jobLine(p, x.jobName), pm: s(x.pm) || s(p && p.pm),
     step: step, waits: waits, since: since, clock: clock, amount: amt, mine: mine, escalated: step === 'office', chain: chain,
-    approve: x.status === 'waiting' && (mine || realAdmin() || (x.step === 'pm' && isOfficePerson())) ? { l: x.kind === 'portal_publish' ? '✅ Approve — put in portal' : (realAdmin() || lastStep) ? '✅ Approve & send' : '✅ Approve → Wesley / Nick', mode: (x.kind === 'portal_publish' || realAdmin() || lastStep) ? 'confirm' : 'defer', what: x.kind === 'portal_publish' ? 'This puts it in the customer’s portal.' : (realAdmin() || lastStep) ? 'This sends it to ' + (s(x.to) || 'the customer') + '.' : '', f: function(){ return approveQueue(x.id); } } : null,
+    approve: x.status === 'waiting' && (mine || realAdmin() || ap4Takes(x) || (x.step === 'pm' && isOfficePerson() && !ap4AdminOnly(x))) ? { l: x.kind === 'portal_publish' ? '✅ Approve — put in portal' : (realAdmin() || lastStep) ? '✅ Approve & send' : '✅ Approve → Wesley / Nick', mode: (x.kind === 'portal_publish' || realAdmin() || lastStep) ? 'confirm' : 'defer', what: x.kind === 'portal_publish' ? 'This puts it in the customer’s portal.' : (realAdmin() || lastStep) ? 'This sends it to ' + (s(x.to) || 'the customer') + '.' : '', f: function(){ return approveQueue(x.id); } } : null,
     open: { l: 'Open / Edit', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } }, edit: editForQueue(x, invId, inv),
     doc: invId ? { l: '🧾 Invoice PDF', f: function(){ call('_gcViewInvoicePDF', invId, s(x.jobId || x.pid)); } } : { l: x.channel === 'sms' ? '💬 The text' : '✉️ The e-mail', f: function(){ if (!call('_gcAp2Preview', x.id)) call('_gcOpenApprovals'); } } };
 }
@@ -159961,9 +159976,9 @@ function build0(){
   function jobPm(pid){ var p = proj(pid); return s(p && (p.pm || p.projectManager)); }
   Q.forEach(function(x){
     if (!x || (x.status !== 'waiting' && x.status !== 'sending')) return;
-    var vis = sc.kind === 'admin' ? true : sc.kind === 'office' ? (escalatedQ(x, now) || x.status === 'sending' || x.step === 'pm') :   /* patch APOFFICE */ sc.kind === 'pm' ? (samePerson(x.pm, who) || (!sc.preview && x.pmEmail && low(x.pmEmail) === myEmail()) || samePerson(jobPm(x.jobId), who)) : false;
+    var vis = sc.kind === 'admin' ? true : sc.kind === 'office' ? ((escalatedQ(x, now) && !ap4AdminOnly(x)) || x.status === 'sending' || x.step === 'pm' || ap4Kind(x)) :   /* patch APOFFICE */ sc.kind === 'pm' ? (samePerson(x.pm, who) || (!sc.preview && x.pmEmail && low(x.pmEmail) === myEmail()) || samePerson(jobPm(x.jobId), who)) : false;
     if (!vis) return;
-    var mine = sc.preview ? (sc.kind === 'pm' ? x.step === 'pm' : escalatedQ(x, now)) : false;   /* patch APOFFICE2: PM steps are optional for the office */
+    var mine = sc.preview ? (sc.kind === 'pm' ? x.step === 'pm' : ((escalatedQ(x, now) && !ap4AdminOnly(x)) || (x.status === 'waiting' && ap4Kind(x)))) : false;   /* patch APOFFICE4 */   /* patch APOFFICE2: PM steps are optional for the office */
     add(rowQueue(x, mine, now));
   });
   S.forEach(function(a){

@@ -175,12 +175,12 @@ await t('turned on from the job without a request (admin), with contact + e-mail
   assert.ok(!(await cust({ action: 'view' }, TOKEN2)).data.crew.length, 'another job shows nothing');
 });
 
-await t('nobody answered in 24 h → the office may approve (logged as office)', async () => {
+await t('nobody answered in 24 h → escalated (the office may approve; logged as office)', async () => {
   const r = await cust({ action: 'crew', op: 'request' }, TOKEN2);
   assert.ok(r.data.ok);
   const it = queue().find(x => x.kind === 'sub_contact' && x.jobId === 'P2');
-  const early = await staff('tok-office', { action: 'approval', op: 'approve', id: it.id, share: [] });
-  assert.strictEqual(early.status, 403, 'not before 24 h');
+  /* patch APOFFICE4 (owner 10/30): a customer-portal item is the office's at once now (tools/tests/test_APOFFICE4.mjs) — the
+     24-hour escalation still moves it on and raises it for her */
   C._reset();
   const e = await C.escalateDue({ now: Date.parse(it.createdAt) + 25 * 3600e3 });
   assert.ok(e.ok); assert.deepStrictEqual(e.ids, [it.id]);
