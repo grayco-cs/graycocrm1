@@ -11,7 +11,7 @@ exports.handler = async function(event){
   if (!event || event.httpMethod !== 'POST' || !CP.handoffOk(event.headers || {})) return { statusCode: 401, body: JSON.stringify({ error: 'Not from the CompanyCam photo index.' }) };
   try {
     const r = await CP.run({ who: 'background', budgetMs: 13 * 60 * 1000 });
-    try { console.log('[companycam-photos-background] ' + JSON.stringify({ ok: r.ok, skipped: r.skipped, projects: r.projects, photos: r.photos, calls: r.calls, queue: r.queue, stop: r.stop })); } catch (e) {}
+    try { console.log('[companycam-photos-background] ' + JSON.stringify({ ok: r.ok, skipped: r.skipped, projects: r.projects, photos: r.photos, calls: r.calls, queue: r.queue, stop: r.stop, copy: r.copy })); } catch (e) {}
     return { statusCode: 200, body: JSON.stringify({ ok: r.ok !== false, projects: r.projects, queue: r.queue }) };
   } catch (e) {
     console.log('[companycam-photos-background] failed: ' + String(e && e.message || e).replace(/Bearer\s+\S+/gi, 'Bearer ...').slice(0, 200));
