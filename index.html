@@ -119322,6 +119322,8 @@ async function runPull(){
 var SETTER = { projects:'_setProjects', invs:'_setInvoices', expenses:'_setExpenses', schedule:'_setSchedule', subs:'_setSubs',
   vendors:'_setVendors', customers:'_setCustomers', leads:'_setLeads', users:'_setUsers', estimates:'_gcSetEstimates' };
 var CRMPROP = { invs:'invoices' };
+/* FIELDFIX1: lists that live only in the CRM's React state (no window._setX): laid over the screen through its raw setter */
+var RAWSET = { punch:1, logs:1, inspections:1, cos:1, warrs:1, scopes:1 };
 var toApply = {}, applyT = null, appliedSig = {};
 function scheduleApply(ms){ if(applyT) return; applyT = ST.call(window, applyNow, ms); }
 document.addEventListener('visibilitychange', function(){   /* patch PERFMULTI: shown again — lay over what was gathered now */
@@ -119403,6 +119405,7 @@ async function applyNow(){
       var name = SETTER[k] || ('_set' + k.charAt(0).toUpperCase() + k.slice(1));
       var set = window[name];
       if(lsBacked(k)){ await applyLS(k); continue; }
+      if(typeof set !== 'function' && RAWSET[k] && typeof window._gcApplySyncRaw === 'function') set = (function(kk){ return function(fn){ window._gcApplySyncRaw(kk, fn); }; })(k);   /* FIELDFIX1 */
       if(typeof set !== 'function') continue;                  /* no screen setter: the company sync's own queue draws it */
       var inc = await cloudValue(k);
       if(!Array.isArray(inc)) continue;
