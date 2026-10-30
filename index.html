@@ -4377,7 +4377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.162-2026-10-30-r17d -->
+<!-- GrayCo CRM Build: 33.162-2026-10-30-r17e -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -5042,7 +5042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.162-2026-10-30-r17d");
+  console.log("[GC] Build 33.162-2026-10-30-r17e");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -5090,7 +5090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.162-2026-10-30-r17d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.162-2026-10-30-r17e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -75973,6 +75973,12 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     var rect = sel.getBoundingClientRect();
 
     var pop = document.createElement('div');
+window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: above the window the <select> is in */
+  var z = base;
+  try{ for(var n = sel; n && n.nodeType === 1 && n !== document.body; n = n.parentElement){
+    var v = parseInt(getComputedStyle(n).zIndex, 10); if(isFinite(v) && v >= z) z = v + 1; } }catch(e){}
+  return String(Math.min(z, 2147483647));
+};
     pop.className = '_gcSelPop';
     pop.style.cssText = 'position:fixed;z-index:2147483000;background:#0f2440;border:1px solid #2563eb;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.5);overflow:hidden;width:'+Math.max(rect.width, 240)+'px;';
     // position under the select, clamp to viewport
@@ -75984,6 +75990,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     if(left + Math.max(rect.width,240) > window.innerWidth) left = window.innerWidth - Math.max(rect.width,240) - 8;
     pop.style.top = Math.max(8, top)+'px';
     pop.style.left = Math.max(8, left)+'px';
+    try{ pop.style.zIndex = window._gcPickZ(sel, 2147483000); }catch(e){}   /* patch PICKZ */
 
     var search = document.createElement('input');
     search.type = 'text';
@@ -84273,6 +84280,12 @@ function open(sel){
   var r = sel.getBoundingClientRect();
   var w = Math.max(r.width, 260);
 
+window._gcPickZ = window._gcPickZ || function(sel, base){   /* patch PICKZ: above the window the <select> is in */
+  var z = base;
+  try{ for(var n = sel; n && n.nodeType === 1 && n !== document.body; n = n.parentElement){
+    var v = parseInt(getComputedStyle(n).zIndex, 10); if(isFinite(v) && v >= z) z = v + 1; } }catch(e){}
+  return String(Math.min(z, 2147483647));
+};
   pop = document.createElement('div');
   pop.id = '_gcOnePicker';
   pop.style.cssText = 'position:fixed;z-index:2147483001;background:#0f2440;border:1px solid #2563eb;'
@@ -84287,6 +84300,7 @@ function open(sel){
   list.style.cssText='max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;';
   pop.appendChild(search); pop.appendChild(list);
   document.body.appendChild(pop);
+  try{ pop.style.zIndex = window._gcPickZ(sel, 2147483001); }catch(e){}   /* patch PICKZ */
 
   // position: under the select, flipped up if there is no room
   var h = Math.min(352, 52 + opts.length*38);
