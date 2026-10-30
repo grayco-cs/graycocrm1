@@ -134600,7 +134600,7 @@ function start(){
   later(peekLeads, 1500);
 }
 W._gcLA = {
-  onLeads: onLeads, cell: cell, isNew: isNew, newTag: newTag, sort: sort, edit: edit, saveDue: saveDue, chip: chipOf, fmtDue: fmtDue,
+  onLeads: onLeads, cell: cell, isNew: isNew, newTag: newTag, sort: sort, edit: function(id, anchor){ if (!anchor && typeof W._gcOpenLead === 'function') { try { W._gcOpenLead(id); return true; } catch (e) {} } return edit(id, anchor); },   /* patch OFFFIX3: Open on a lead (no anchor) opens the lead, the bid-due chips keep the editor */ saveDue: saveDue, chip: chipOf, fmtDue: fmtDue,
   formOk: formOk, estimator: estimator, editEstimator: editEstimator, setStatus: setStatus, stats: function(name){ return stats(bidsOf(name || myName())); }, bids: function(name){ return bidsOf(name || myName()).map(function(l){ return l.id; }); },
   dashboard: function(name){ dashFor = s(name); mountDash(); return dashShown(); }, estimators: estimators,
   count: function(){ return onLeadsView() ? 0 : unseen().length; }, unseen: function(){ return unseen().map(function(l){ return l.id; }); },
