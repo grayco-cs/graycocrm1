@@ -64202,7 +64202,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // Show a small persistent "saved" indicator in the builder whenever a recovery snapshot exists.
   function ensureIndicator(){
     try{
-      var inBuilder = !!(document.getElementById('ej-name') || document.getElementById('est-lines'));
+      /* patch DRAFTPILL: only while the builder is on screen (it stays in the page after it is closed) */
+      var _ov=document.getElementById('gc-est-overlay'), _en=document.getElementById('ej-name')||document.getElementById('est-lines');
+      var inBuilder = _ov ? !!_ov.getClientRects().length : !!(_en && _en.getClientRects().length);
       var ind=document.getElementById('_gcSavedInd');
       if(!inBuilder){ if(ind) ind.remove(); return; }
       var all={}; try{ all=JSON.parse(localStorage.getItem(RK)||'{}'); }catch(e){}
@@ -64219,7 +64221,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var id=s.savedEstId||s.draftId;
         if(!id) return true;
         return !saved.some(function(e){
-          return e && e.id===id && Array.isArray(e.lines) && e.lines.length>=s.lines.length;
+          if(!e || e.id!==id) return false;
+          if(Array.isArray(e.lines) && e.lines.length>=s.lines.length) return true;
+          var es=Date.parse(e.savedAt||e.updatedAt||e.updated_at||''), ss=Date.parse(s.savedAt||'');
+          return !!(es && ss && es>=ss-5000);   /* saved at or after the draft (lines deleted, then saved) */
         });
       });
       if(!unsaved.length){ if(ind) ind.remove(); return; }
@@ -64230,7 +64235,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       }
       var newest=unsaved.sort(function(a,b){return (b.savedAt||'').localeCompare(a.savedAt||'');})[0];
       var t=newest&&newest.savedAt? new Date(newest.savedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
-      ind.textContent='\u26a0 Unsaved estimate draft'+(t?(' \u00b7 '+t):'')+' \u2014 click Save';
+      var _tx='\u26a0 Unsaved estimate draft'+(t?(' \u00b7 '+t):'')+' \u2014 click Save';
+      if(ind.textContent!==_tx) ind.textContent=_tx;
     }catch(e){}
   }
   setInterval(ensureIndicator, 2000);
@@ -126384,7 +126390,11 @@ function lfReport(){
   if (!LF_CLASH.length) return;
   var sig = LF_CLASH.map(function(c){ return c.id + '>' + c.also.join(','); }).join('|'); if (sig === LF_TOLD) return; LF_TOLD = sig;
   try { console.warn('[LEADFIX] ' + LF_CLASH.length + ' Lead Inbox item(s) sit on a lead that is not theirs - those leads were NOT updated:', LF_CLASH); } catch (e) {}
-  if (isAdmin()) toast('⚠ ' + LF_CLASH.length + ' Lead Inbox item' + (LF_CLASH.length === 1 ? ' is' : 's are') + ' on a lead that is not theirs — left alone. Admin: _gcLeadFixRepair({dryRun:true}) in the console', true);
+  /* patch LFQUIET: plain words, once a day per computer (or when the list changes) */
+  var _lq = null; try { _lq = JSON.parse(localStorage.getItem('gc_lf_told') || 'null'); } catch (e) {}
+  if (_lq && _lq.sig === sig && Date.now() - (_lq.at || 0) < 864e5) return;
+  try { localStorage.setItem('gc_lf_told', JSON.stringify({ sig: sig, at: Date.now() })); } catch (e) {}
+  if (isAdmin()) toast('⚠ ' + LF_CLASH.length + ' bid e-mail' + (LF_CLASH.length === 1 ? ' is' : 's are') + ' attached to the wrong lead. Those leads are protected (not changed) until the lead repair is run.', true);
 }
 function importItems(healing){
   var added = [], updated = [], tell = [], nNew = 0, more = false;   /* patch LEADSEE: nNew / more */
