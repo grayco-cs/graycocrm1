@@ -1,7 +1,9 @@
 /* ── GrayCo — patch AUTO11: three owner-approved automations (10/22) ──────────────────────────────────────────
    1. COI RENEWAL REQUESTS. A sub's insurance certificate (the CRM's sub record: insExp / coiExp / insuranceExp)
-      30 days out, 7 days out and on the day it runs out → the sub gets an e-mail from portal@ (reply-to replies@,
-      English or Spanish by the sub's portal language) asking for the new certificate, with the sub-portal link.
+      30 days out, 7 days out and on the day it runs out → an e-mail to the sub (English or Spanish by the sub's portal
+      language) asking for the new certificate, with the sub-portal link. Patch OFFFEAT (owner 10/30): it no longer goes
+      out by itself — it waits on ✅ Approvals for the office (kind sub_doc_request, _lib/offfeat.js queueSubDoc; one
+      open request per sub); ⏸ Data-entry mode: nothing is queued.
       They upload it in the sub portal (Papers → Insurance, with the new date); the CRM files it on the sub, and the
       COI reader (sub-doc-read.js, patch AUTAI) reads it for the office to confirm. A newer date on file = no more
       e-mails for the old one (each e-mail is keyed by the expiration date). The shared Office To-Do gets ONE item per
@@ -150,6 +152,7 @@ async function pendingCoi(subIds){
 }
 async function coiRun(t){
   if (env('COI_REQUESTS_OFF') === '1') return { off: true };
+  try { if (await require('./pause.js').isPaused()) return { dataEntryMode: true }; } catch (e) { return { dataEntryMode: true }; }   /* patch OFFFEAT: fail closed */
   const C = core();
   const data = await C.kvRead(['vendors', 'users']);
   const st = obj(await get(K.COI, {}));
@@ -158,17 +161,16 @@ async function coiRun(t){
   const closed = await todoDone(function(id, x){ const m = /^COI_REQ_(.+)_(\d{4}-\d{2}-\d{2})$/.exec(id); return !!(m && cur[m[1]] && cur[m[1]] > m[2] && daysUntil(cur[m[1]], t) > 30); }, 'A newer certificate is on file.');
   const due = coiDue(data, st, t);
   const pend = await pendingCoi(due.map(function(x){ return x.subId; }));
-  const out = { due: due.length, sent: 0, failed: 0, waitingFiling: 0, todos: 0, closed: closed };
+  const out = { due: due.length, queued: 0, sent: 0, failed: 0, waitingFiling: 0, todos: 0, closed: closed };
   const doneKeys = {};
   for (const x of due) {
     if (pend[x.subId]) { out.waitingFiling++; continue; }
-    const m = coiMail(x);
-    let subj = m.subject; try { subj = require('./mailtag.js').tag(m.subject, [x.email], 'area:Subs'); } catch (e) {}
-    const r = await resend({ from: 'GrayCo Portal <portal@grayco-cs.com>', reply_to: replyTo(), to: [x.email], subject: subj, html: m.html, headers: { 'X-GrayCo-CRM': 'coi-request' } });
-    if (r.ok) { out.sent++; doneKeys[x.key] = { at: nowIso(), to: x.email }; } else { out.failed++; continue; }
+    /* patch OFFFEAT: the request waits on ✅ Approvals (the office approves); one open request per sub */
+    const q = await require('./offfeat.js').queueSubDoc({ subId: x.subId, name: x.name, email: x.email, lang: x.lang, need: ['coi'], exp: x.exp, days: x.days, stage: x.stage, auto: true, by: 'CRM (COI running out)' });
+    if (q.ok) { out.queued++; doneKeys[x.key] = { at: nowIso(), to: x.email, queued: q.id || '', already: !!q.already }; } else { out.failed++; continue; }
     const label = '🛡 COI ' + (x.days < 0 ? 'expired' : 'expiring') + ': ' + x.name + ' — ' + x.exp;
     if (await todoAdd({ id: 'COI_REQ_' + x.subId + '_' + x.exp, kind: 'coi_request', label: label, prio: x.days <= 7 ? 'high' : 'normal',
-      note: 'We e-mailed ' + x.name + ' (' + x.email + ') for the renewed certificate (' + (x.days < 0 ? 'expired ' + niceDay(x.exp) : 'runs out ' + niceDay(x.exp)) + '). They upload it in the sub portal; confirm the read COI in the CRM (📄 COI / W-9 to confirm). This ticks itself off once a newer COI is on file.' })) out.todos++;
+      note: 'A request to ' + x.name + ' (' + x.email + ') for the renewed certificate waits on ✅ Approvals — approve it to send (' + (x.days < 0 ? 'expired ' + niceDay(x.exp) : 'runs out ' + niceDay(x.exp)) + '). They upload it in the sub portal; confirm the read COI in the CRM (📄 COI / W-9 to confirm). This ticks itself off once a newer COI is on file.' })) out.todos++;
   }
   if (Object.keys(doneKeys).length) await cas(K.COI, function(v){ const y = obj(v); y.done = Object.assign(obj(y.done), doneKeys); const cut = new Date(Date.now() - 400 * 864e5).toISOString(); Object.keys(y.done).forEach(function(k){ if (s(y.done[k].at) < cut) delete y.done[k]; }); y.last = nowIso(); return y; });
   return out;
