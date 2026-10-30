@@ -256,7 +256,7 @@ async function ccPhotos(ccId){
       const full = by.web || by.original || by.large || '';
       const thumb = by.thumbnail || by.web || full;
       if (!full || !thumb) return;
-      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam' });
+      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam', ccId: s(ph.id), up: CCV().upOf(ph), cap: CCV().secOf(ph.captured_at || ph.created_at) });   /* patch CCPHOTOS2: when it went in */
     });
     if (chunk.length < 100) break;
   }
@@ -311,6 +311,14 @@ async function grayCoPhotos(pid, recs){
     Object.assign(signed, await signRefs(refs));
   }
   return top.map(function(x){ const f = signed[x.full], t = signed[x.thumb] || f; return f ? { id: clip(x.id, 60), t: t, f: f, at: ymd(x.at), src: 'grayco', tag: clip(x.tag, 20) } : null; }).filter(Boolean);
+}
+/* patch CCPHOTOS2: a job's CompanyCam photos for the customer (or the GC link): the server's index with GrayCo's own copies
+   first (they outlive CompanyCam), CompanyCam itself for a project not indexed yet; a photo put in after this release only
+   once someone clicked "Customer can see" (on it, or "Show all" on its job) — _lib/cc-vis.js */
+function CCV(){ return require('./_lib/cc-vis.js'); }
+async function ccCustomerPhotos(p, recs, audience){
+  const ccId = ccIdOf(p); if (!ccId) return [];
+  return CCV().photosFor(p, recs || [], audience || 'customer', { kvRead: kvRead, signRefs: signRefs, live: ccPhotos }, { ccId: ccId });
 }
 function ccHidden(recs){ const out = {}; arr(recs).forEach(function(r){ if (r.source === 'ccflag' && s(r.ccId) && !gcSharedOf({ shared: true }, r)) out[s(r.ccId)] = 1; }); return out; }
 
@@ -2473,8 +2481,7 @@ exports.handler = async function (event) {
   if (action === 'photos') {
     const ccId = ccIdOf(p);
     const recs = await grayCoRecords();
-    const hide = ccHidden(recs);
-    const cc = (ccId ? await ccPhotos(ccId) : []).filter(function(x){ return !hide[String(x.id).replace(/^cc_/, '')]; });
+    const cc = ccId ? await ccCustomerPhotos(p, recs, 'customer') : [];   /* patch CCPHOTOS2: a click decides, on the server */
     const gc = await grayCoPhotos(p.id, recs || []);
     const list = gc.concat(cc).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
     /* patch X12: the AI photo tag's STAGE label only ("Tear-off", "Finished") — never a damage word */
@@ -2514,7 +2521,7 @@ exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmDat
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */
-Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
+Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, ccCustomerPhotos: ccCustomerPhotos, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

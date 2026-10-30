@@ -22,11 +22,29 @@
      5. the queue is read page by page (100 photos a page, ≥ 260 ms apart, a 429 waits Retry-After or stops the run until then),
         each project written as soon as it is done; a run that runs out of time keeps its place (page) and the next run goes on.
    The keys "ccidx*" are never taken by the CRM's "what changed" pull (patch CCPHOTOS1) nor by the nightly backup (rebuildable).
-   No secrets are stored or logged; the CompanyCam token stays in COMPANYCAM_TOKEN. */
+   No secrets are stored or logged; the CompanyCam token stays in COMPANYCAM_TOKEN.
+
+   patch CCPHOTOS2 — "you will delete company cam one day I need all pictures to stay": a GrayCo copy of every photo.
+     • gc_kv "ccidx_copy" { on, capGB, by, at } — the owner's switch (📸 CompanyCam sync status). OFF until it is turned on
+       (Supabase Pro first: docs/COMPANYCAM.md). Missing = off.
+     • When on, each run (after the index work, with the time left) copies the photos that have no copy yet: CompanyCam's own
+       "web" size (≈1024 px JPEG, ~0.2 MB) and its "thumbnail" (≈250 px) are fetched — never the original, nothing is resized
+       here (no image library in the functions) — and stored in the CRM's own private bucket crm-files exactly like a GrayCo
+       Photos upload: named by their SHA-256 (crm-files/<sha256>.jpg), so the CRM's file reader opens them and checks them.
+       The row keeps them: ccidx:<project>.g = { <photo id>: [web file, thumb file | 0, bytes, removedAt?] }. A photo with a
+       copy is never fetched again. Failures: ccidx:<project>.gx = { id: [tries, at] }, 3 tries, then it waits for the next
+       full re-read (fresh links). Paced (CC_COPY_MIN_MS, default 250 ms between pictures); CompanyCam's 429 waits Retry-After.
+     • Safety stop: when the copies (or the whole file storage, when docs/storage-usage.sql is installed) reach capGB
+       (default 80 GB), copying pauses, the status window says so in red and the office To-Do gets one line.
+     • A photo removed in CompanyCam that has a GrayCo copy STAYS in the row (marked removedAt) — even when the whole
+       CompanyCam project is gone. Without a copy it drops as before.
+     • ph rows: a photo put into CompanyCam well after it was taken carries that time as its 8th field (patch CCPHOTOS2: a
+       photo put in after this release waits for "Customer can see" — _lib/cc-vis.js). */
 'use strict';
 const crypto = require('crypto');
 const CC_API = 'https://api.companycam.com/v2';
-const IDX = 'ccidx', STATE = 'ccidx_state', REQ = 'ccidx_request', ROW = 'ccidx:';
+const IDX = 'ccidx', STATE = 'ccidx_state', REQ = 'ccidx_request', ROW = 'ccidx:', COPY = 'ccidx_copy', VIS = 'ccvis';
+const CAP_GB = 80, GB = 1e9, EST_PHOTO = 250000, MAX_IMG = 15 * 1048576, COPY_TRIES = 3, BUCKET = 'crm-files';
 const PER = 100, FEED = 150, NOTE = 200, OVERLAP = 3600, REFRESH_MS = 12 * 3600e3, REFRESH_PER_RUN = 25, LIST_PAGES = 12;
 const ID_FIELDS = ['ccProjectId', 'companyCamId', 'companycamId', 'ccId', 'ccamId', 'ccProjectUrl', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'sourceUrl'];
 const TAGS = ['Before', 'During', 'Damage', 'After', 'Punch'];
@@ -107,6 +125,8 @@ function packPhoto(ph, people){
   if (who) { wi = people.indexOf(who); if (wi < 0) { people.push(who); wi = people.length - 1; } }
   const row = [s(ph.id), cap, u.web, packThumb(u.thumb, u.web), wi, tagOf(ph), s(ph.description).slice(0, NOTE)];
   while (row.length > 4 && (row[row.length - 1] === '' || row[row.length - 1] === -1)) row.pop();
+  const up = secOf(ph.created_at);   /* patch CCPHOTOS2: put into CompanyCam well after it was taken → that time too */
+  if (up > cap + 60) { while (row.length < 7) row.push(row.length === 4 ? -1 : ''); row.push(up); }
   return row;
 }
 function geoOf(list){
@@ -116,7 +136,66 @@ function geoOf(list){
 /* photo rows of a stored project, unpacked (tests, the summary's feed) */
 function unpackRow(row){
   row = obj(row); const people = arr(row.u);
-  return arr(row.ph).map(x => ({ id: s(x[0]), at: +x[1] || 0, web: s(x[2]), thumb: unpackThumb(x[3], s(x[2])), by: x[4] != null && x[4] >= 0 ? s(people[x[4]]) : '', tag: s(x[5]), note: s(x[6]), pid: s(row.pid) }));
+  const g = obj(row.g);
+  return arr(row.ph).map(x => { const o = { id: s(x[0]), at: +x[1] || 0, web: s(x[2]), thumb: unpackThumb(x[3], s(x[2])), by: x[4] != null && x[4] >= 0 ? s(people[x[4]]) : '', tag: s(x[5]), note: s(x[6]), pid: s(row.pid), up: Math.max(+x[1] || 0, +x[7] || 0) };
+    const c = g[o.id]; if (Array.isArray(c)) { o.gpath = s(c[0]); o.gthumb = s(c[1] || c[0]); o.gbytes = +c[2] || 0; if (+c[3]) o.removed = +c[3]; }
+    return o; });
+}
+
+/* ── patch CCPHOTOS2: the GrayCo copy (crm-files/<sha256>.<ext>, like every GrayCo Photos upload) ── */
+function copyCfg(v){ v = obj(v); const cap = Number(v.capGB); return { on: v.on === true, capGB: isFinite(cap) && cap > 0 ? Math.min(100000, cap) : CAP_GB, at: s(v.at), by: s(v.by) }; }
+function copyGap(){ const v = Number(process.env.CC_COPY_MIN_MS); return isFinite(v) && v >= 0 ? v : 250; }
+function sniffImg(b){
+  if (!b || b.length < 12) return null;
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { ext: 'jpg', type: 'image/jpeg' };
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return { ext: 'png', type: 'image/png' };
+  if (b.slice(0, 4).toString('latin1') === 'RIFF' && b.slice(8, 12).toString('latin1') === 'WEBP') return { ext: 'webp', type: 'image/webp' };
+  return null;
+}
+/* width × height from the file's own header (JPEG SOF / PNG IHDR); 0 × 0 when unknown */
+function imgDims(b){
+  try {
+    if (b[0] === 0x89 && b[1] === 0x50) return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+    if (b[0] !== 0xFF || b[1] !== 0xD8) return { w: 0, h: 0 };
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xFF) { i++; continue; }
+      const m = b[i + 1], len = b.readUInt16BE(i + 2);
+      if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5) };
+      i += 2 + len;
+    }
+  } catch (e) {}
+  return { w: 0, h: 0 };
+}
+function sbH(extra){ const e = sbEnv(); return Object.assign({ apikey: e.key, Authorization: 'Bearer ' + e.key }, extra || {}); }
+/* one file into crm-files under its fingerprint; "already there" (the same bytes) counts as stored */
+async function storePut(buf, kind){
+  const name = crypto.createHash('sha256').update(buf).digest('hex') + '.' + kind.ext;
+  const r = await fetch(sbEnv().url + '/storage/v1/object/' + BUCKET + '/' + name, { method: 'POST', headers: sbH({ 'Content-Type': kind.type, 'x-upsert': 'false', 'cache-control': 'max-age=31536000' }), body: buf });
+  if (r.ok || r.status === 409) return name;
+  let t = ''; try { t = await r.text(); } catch (e) {}
+  if (r.status === 400 && /exist|duplicate|409/i.test(t)) return name;
+  throw Object.assign(new Error('file storage answered ' + r.status), { status: r.status, storage: true });
+}
+/* the whole file storage (docs/storage-usage.sql); null when that is not installed */
+async function bucketBytes(){
+  try {
+    const r = await fetch(sbEnv().url + '/rest/v1/rpc/gc_storage_usage', { method: 'POST', headers: sbH({ 'Content-Type': 'application/json' }), body: '{}' });
+    if (!r.ok) return null;
+    const rows = await r.json(); if (!Array.isArray(rows)) return null;
+    return rows.reduce((n, x) => n + (Number(x && x.bytes) || 0), 0);
+  } catch (e) { return null; }
+}
+/* the copies' totals from the per-project counts (never drift) */
+function copyTotals(st, linked){
+  const d = obj(st.done); let copied = 0, bytes = 0, total = 0, removed = 0;
+  Object.keys(d).forEach(pid => { const x = d[pid] || {}; bytes += +x.gb || 0; if (!linked || linked[pid]) { copied += +x.g || 0; total += +x.n || 0; removed += +x.gr || 0; } });
+  return { copied, bytes, total, removed };
+}
+function rowCopyStats(row){
+  const g = obj(row.g); let n = 0, b = 0, rm = 0;
+  Object.keys(g).forEach(id => { const c = g[id]; if (!Array.isArray(c)) return; n++; b += +c[2] || 0; if (+c[3]) rm++; });
+  return { g: n, gb: b, gr: rm };
 }
 
 /* ── Supabase (service key) ── */
@@ -208,9 +287,10 @@ function unwrap(x){ if (Array.isArray(x)) return x; const o = obj(x); for (const
 function summaryOf(prev, st, linked, rows){
   prev = obj(prev); const p = {}, done = obj(st.done); let n = 0;
   /* projects read this run: from their rows; the others: as the last summary had them (their job id as it is now) */
-  Object.keys(obj(prev.p)).forEach(pid => { const x = prev.p[pid]; if (linked[pid] && done[pid] && !done[pid].gone && Array.isArray(x)) p[pid] = [+x[0] || 0, +x[1] || 0, s(x[2]), linked[pid].job]; });
-  Object.keys(rows).forEach(pid => { const r = rows[pid]; delete p[pid]; if (!linked[pid] || r.gone) return; const f = arr(r.ph)[0];
-    p[pid] = [arr(r.ph).length, f ? +f[1] || 0 : 0, f ? unpackThumb(f[3], f[2]) : '', linked[pid].job]; });
+  Object.keys(obj(prev.p)).forEach(pid => { const x = prev.p[pid]; if (linked[pid] && done[pid] && !done[pid].gone && Array.isArray(x)) { p[pid] = [+x[0] || 0, +x[1] || 0, s(x[2]), linked[pid].job]; if (x[4]) p[pid].push(s(x[4])); } });
+  /* patch CCPHOTOS2: a project gone from CompanyCam whose photos have GrayCo copies stays; the cover's copy rides along (p[pid][4]) */
+  Object.keys(rows).forEach(pid => { const r = rows[pid]; delete p[pid]; if (!linked[pid] || (r.gone && !arr(r.ph).length)) return; const f = arr(r.ph)[0];
+    p[pid] = [arr(r.ph).length, f ? +f[1] || 0 : 0, f ? unpackThumb(f[3], f[2]) : '', linked[pid].job]; const gc = f && obj(r.g)[s(f[0])]; if (Array.isArray(gc)) p[pid].push(s(gc[1] || gc[0])); });
   Object.keys(done).forEach(pid => { if (!p[pid] && linked[pid] && !done[pid].gone && !done[pid].err) p[pid] = [+done[pid].n || 0, +done[pid].last || 0, '', linked[pid].job]; });
   Object.keys(p).forEach(pid => { n += p[pid][0]; });
   const prevFeed = prev.feed;
@@ -218,7 +298,13 @@ function summaryOf(prev, st, linked, rows){
   const fresh = {}; Object.keys(rows).forEach(pid => { fresh[pid] = 1; });
   let feed = arr(prevFeed).filter(x => x && linked[s(x[0])] && !fresh[s(x[0])]);
   Object.keys(rows).forEach(pid => { const row = rows[pid]; if (!linked[pid]) return; const people = arr(row.u);
-    arr(row.ph).slice(0, 40).forEach(x => feed.push([pid, x[0], x[1], x[2], unpackThumb(x[3], x[2]), x[4] != null && x[4] >= 0 ? s(people[x[4]]) : '', s(x[5])])); });
+    const g = obj(row.g);
+    arr(row.ph).slice(0, 40).forEach(x => { const e = [pid, x[0], x[1], x[2], unpackThumb(x[3], x[2]), x[4] != null && x[4] >= 0 ? s(people[x[4]]) : '', s(x[5])];
+      /* patch CCPHOTOS2: [7] the GrayCo copy, [8] its thumbnail, [9] when it went into CompanyCam (if well after it was taken), [10] removed in CompanyCam */
+      const gc = g[s(x[0])], up = +x[7] || 0, rm = Array.isArray(gc) ? +gc[3] || 0 : 0;
+      if (Array.isArray(gc) || up || rm) e.push(Array.isArray(gc) ? s(gc[0]) : '', Array.isArray(gc) ? s(gc[1] || gc[0]) : '', up, rm);
+      while (e.length > 7 && !e[e.length - 1]) e.pop();
+      feed.push(e); }); });
   feed.sort((a, b) => (b[2] || 0) - (a[2] || 0)); feed = feed.slice(0, FEED);
   return { v: 1, at: new Date().toISOString(), n, projects: Object.keys(p).length, p, feed };
 }
@@ -231,7 +317,7 @@ async function run(opts){
   const R = { ok: true, who: opts.who || 'run', calls: 0, limited: 0, projects: 0, photos: 0, queued: 0, changed: 0, stop: '', more: false };
   if (!token) return Object.assign(R, { ok: false, skipped: 'COMPANYCAM_TOKEN is not set' });
   if (!e.url || !e.key) return Object.assign(R, { ok: false, skipped: 'SUPABASE_URL / SUPABASE_SERVICE_KEY are not set' });
-  const kv = await kvRead([STATE, REQ]);
+  const kv = await kvRead([STATE, REQ, COPY, VIS]);
   const st = Object.assign({ v: 1, cursor: 0, done: {}, queue: [], prog: null }, obj(kv[STATE]));
   st.done = obj(st.done); st.queue = arr(st.queue).filter(q => q && q.pid);
   const nowMs = Date.now(), nowIso = new Date(nowMs).toISOString();
@@ -240,6 +326,8 @@ async function run(opts){
   st.lock = { id: runId, until: new Date(nowMs + budget + 90000).toISOString() };
   if (!st.cursor && !st.cursor0) st.cursor0 = Math.floor(nowMs / 1000) - 60;   /* the backfill's start: changes made while it runs are read after it */
   if (!opts.dry) await kvWrite([{ key: STATE, value: st }]);
+  /* patch CCPHOTOS2: the moment "a new CompanyCam photo" starts (gc_kv ccvis) is written once, the first time this runs */
+  if (!opts.dry && !kv[VIS]) { try { await require('./cc-vis.js').ensureSince({ who: 'companycam-photos' }); } catch (e) {} }
   try { return await work(); }
   catch (err) {   /* never leave the lock behind: the next run goes on from what was saved */
     st.lock = null; st.last = { at: new Date().toISOString(), who: R.who, calls: R.calls, projects: R.projects, photos: R.photos, error: s(err && err.message || err).replace(/Bearer\s+\S+/gi, 'Bearer ...').slice(0, 160) };
@@ -270,6 +358,9 @@ async function run(opts){
     if (!st.prog || st.prog.doneAt) st.prog = { kind: Object.keys(st.done).length ? 'new projects' : 'backfill', startedAt: nowIso, total: fresh.length, done: 0, photos: 0 };
     else st.prog.total = (+st.prog.total || 0) + fresh.length;
   }
+  /* patch CCPHOTOS2: a project whose links the copier found expired is read again in full first (fresh links) */
+  const CPY = st.copy && typeof st.copy === 'object' ? st.copy : null;
+  if (CPY && CPY.stale) { Object.keys(obj(CPY.stale)).forEach(pid => { if (linked[pid] && st.done[pid]) enqueue(pid, 'full', true); }); delete CPY.stale; }
   st.queue = st.queue.filter(q => linked[q.pid]);   /* unlinked meanwhile: not read */
   const get = Caller(token, deadline - 1500, R);
 
@@ -316,6 +407,128 @@ async function run(opts){
     }
     if (!opts.dry) await kvWrite(rows);
     lastSave = Date.now();
+  }
+
+  /* ── patch CCPHOTOS2: copy what has no GrayCo copy yet (switch on, under the cap, time left) ── */
+  async function copyPhase(){
+    const cfg = copyCfg(kv[COPY]);
+    const C = st.copy = Object.assign({ need: {} }, obj(st.copy)); C.need = obj(C.need);
+    C.on = cfg.on; C.capGB = cfg.capGB;
+    if (!cfg.on) { C.stop = 'off'; return; }
+    if (C.cfgAt !== cfg.at || !C.seeded) {   /* turned on (again): every indexed project is looked at once */
+      Object.keys(st.done).forEach(pid => { if (linked[pid] && !st.done[pid].err) C.need[pid] = 1; });
+      C.seeded = true; C.cfgAt = cfg.at;
+    }
+    if (C.stop === 'off') C.stop = '';
+    const nowMs2 = Date.now();
+    if (C.wait && Date.parse(s(C.wait)) > nowMs2) { R.copy = { skipped: 'CompanyCam asked to wait until ' + C.wait }; return; }
+    delete C.wait;
+    /* the whole file storage, at most hourly (null when docs/storage-usage.sql is not installed) */
+    let tot = copyTotals(st, null);
+    if (!C.bucketAt || nowMs2 - Date.parse(s(C.bucketAt)) > 3600e3) { const b = await bucketBytes(); C.bucket = b; C.bucketAt = new Date().toISOString(); C.bucketBase = tot.bytes; }
+    const capB = cfg.capGB * GB;
+    /* used = the copies, or the whole bucket as last measured plus the copies made since (whichever is more) */
+    const used = () => Math.max(tot.bytes, C.bucket == null ? 0 : (+C.bucket || 0) + Math.max(0, tot.bytes - (+C.bucketBase || 0)));
+    if (used() >= capB) { await capStop(used()); return; }
+    if (C.stop === 'cap') { C.stop = ''; delete C.stopAt; delete C.told; }   /* the cap was raised */
+    const gap = copyGap(); let last = 0;
+    const RC = R.copy = { photos: 0, bytes: 0, failed: 0, projects: 0, big: 0 };
+    async function getImg(url){
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const wait = last + gap - Date.now();
+        if (Date.now() + Math.max(0, wait) > deadline - 3000) throw Object.assign(new Error('time'), { stop: 'time' });
+        if (wait > 0) await sleep(wait);
+        last = Date.now();
+        let r;   /* the picture's own link — never the CompanyCam token */
+        try { r = await fetch(url, { headers: { Accept: 'image/jpeg,image/png;q=0.9,image/*;q=0.5' }, redirect: 'follow' }); }
+        catch (e) { if (attempt === 0) { await sleep(800); continue; } return { fail: 'unreachable' }; }
+        if (r.status === 429) {
+          const ms = retryAfterMs(r);
+          if (Date.now() + ms + 3000 < deadline && ms <= 65000) { await sleep(ms); continue; }
+          throw Object.assign(new Error('rate'), { stop: 'rate', waitMs: ms });
+        }
+        if (r.status >= 500) { if (attempt < 1) { await sleep(1200); continue; } return { fail: 'CompanyCam answered ' + r.status }; }
+        if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 410) return { fail: 'link expired (' + r.status + ')', expired: true };
+        if (!r.ok) return { fail: 'CompanyCam answered ' + r.status };
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (buf.length > MAX_IMG) return { fail: 'too big' };
+        const kind = sniffImg(buf); if (!kind) return { fail: 'not a picture' };
+        return { buf, kind };
+      }
+      return { fail: 'CompanyCam kept asking to wait' };
+    }
+    const pids = Object.keys(C.need).filter(pid => st.done[pid]).sort();
+    Object.keys(C.need).forEach(pid => { if (!st.done[pid]) delete C.need[pid]; });
+    let stopped = '';
+    for (const pid of pids) {
+      if (stopped || Date.now() > deadline - 4000) break;
+      let row; try { row = obj((await kvRead([ROW + pid]))[ROW + pid]); } catch (e) { break; }
+      if (!Array.isArray(row.ph)) { delete C.need[pid]; continue; }
+      if (row.done !== true) continue;   /* still being indexed: next time */
+      const g = Object.assign({}, obj(row.g)), gx = Object.assign({}, obj(row.gx));
+      const todo = row.ph.filter(x => Array.isArray(x) && !g[s(x[0])] && (arr(gx[s(x[0])])[0] || 0) < COPY_TRIES);
+      let dirty = false, lastW = Date.now(), done = 0;
+      const flush = async () => {
+        if (!dirty) return;
+        const out = Object.assign({}, row, { g });
+        if (Object.keys(gx).length) out.gx = gx; else delete out.gx;
+        if (!opts.dry) await kvWrite([{ key: ROW + pid, value: out }]);
+        row = out; dirty = false; lastW = Date.now(); rowsDone[pid] = out;   /* the summary's covers / feed take the copies */
+        Object.assign(st.done[pid], rowCopyStats(out));
+        tot = copyTotals(st, null);
+        await saveProgress(false);
+      };
+      try {
+        for (const x of todo) {
+          if (Date.now() > deadline - 4000) { stopped = 'time'; break; }
+          if (used() >= capB) { stopped = 'cap'; break; }
+          const id = s(x[0]), web = httpsOnly(x[2]), th = httpsOnly(unpackThumb(x[3], s(x[2])));
+          let a = web ? await getImg(web) : { fail: 'no link' }, b = null;
+          if (!a.fail && th && th !== web) { b = await getImg(th); if (b.fail) b = null; }   /* no thumbnail: the web copy is its own */
+          if (a.fail) {
+            const t = arr(gx[id]); gx[id] = [(+t[0] || 0) + 1, Math.floor(Date.now() / 1000)]; RC.failed++; dirty = true;
+            if (a.expired) { C.stale = obj(C.stale); C.stale[pid] = 1; }
+            continue;
+          }
+          const fw = await storePut(a.buf, a.kind), ft = b ? await storePut(b.buf, b.kind) : 0;
+          const bytes = a.buf.length + (b ? b.buf.length : 0), dm = imgDims(a.buf);
+          if (Math.max(dm.w, dm.h) > 2048) RC.big++;
+          g[id] = [fw, ft && ft !== fw ? ft : 0, bytes];
+          delete gx[id]; dirty = true; done++;
+          RC.photos++; RC.bytes += bytes; tot.bytes += bytes;
+          if (Date.now() - lastW > 8000 || done % 50 === 0) await flush();
+        }
+      } catch (err) {
+        if (err.stop === 'rate') { C.wait = new Date(Date.now() + (err.waitMs || 60000)).toISOString(); stopped = 'rate'; }
+        else if (err.stop === 'time') stopped = 'time';
+        else if (err.storage) { stopped = 'storage'; C.lastError = s(err.message).slice(0, 120); }
+        else { stopped = 'error'; C.lastError = s(err && err.message || err).replace(/Bearer\s+\S+/gi, 'Bearer ...').slice(0, 120); }
+      }
+      await flush();
+      RC.projects++;
+      /* done with it when every photo has a copy or was tried 3 times (the next full re-read brings fresh links and tries again) */
+      if (!stopped && !arr(row.ph).some(x => Array.isArray(x) && !obj(row.g)[s(x[0])] && (arr(obj(row.gx)[s(x[0])])[0] || 0) < COPY_TRIES)) delete C.need[pid];
+    }
+    if (stopped === 'cap' || used() >= capB) { await capStop(used()); stopped = 'cap'; }
+    C.lastRun = { at: new Date().toISOString(), photos: RC.photos, bytes: RC.bytes, failed: RC.failed, stop: stopped || '' };
+    if (!stopped || stopped === 'time') C.stop = '';
+    else if (stopped !== 'cap') C.stop = stopped;
+    const t2 = copyTotals(st, linked); C.copied = t2.copied; C.bytes = t2.bytes; C.total = t2.total; C.removed = t2.removed;
+    const all = copyTotals(st, null); if (all.copied >= 10) C.avg = Math.round(all.bytes / all.copied);
+    R.copyMore = Object.keys(C.need).length > 0 && stopped !== 'cap' && stopped !== 'rate' && stopped !== 'storage';
+  }
+  async function capStop(usedB){
+    const C = st.copy;
+    if (C.stop !== 'cap') { C.stop = 'cap'; C.stopAt = new Date().toISOString(); }
+    C.usedAtStop = usedB;
+    if (!C.told && !opts.dry) {   /* the admin hears once: the office To-Do (staff only) */
+      try {
+        const AC = require('./auto-common.js');
+        await AC.todo('ccphotos-cap-' + s(C.stopAt).slice(0, 10), '📸 GrayCo photo copies paused at ' + (usedB / GB).toFixed(1) + ' GB (cap ' + C.capGB + ' GB)',
+          { note: 'Copying CompanyCam photos into GrayCo storage stopped at the safety cap. Check the Supabase plan, then raise the cap in 📸 CompanyCam sync status (or leave it paused).', prio: 'high', by: 'CompanyCam photo copies' });
+        C.told = new Date().toISOString();
+      } catch (e) {}
+    }
   }
   while (st.queue.length && !R.stop) {
     if (Date.now() > deadline - 2500) { R.stop = 'time'; break; }
@@ -373,6 +586,13 @@ async function run(opts){
     if (gone) ph = [];
     else if (inc) ph = added.concat(arr(row.ph));
     else { const seenP = {}; ph = acc.filter(x => { if (seenP[x[0]]) return false; seenP[x[0]] = 1; return true; }); }
+    /* patch CCPHOTOS2: every photo with a GrayCo copy stays, even when CompanyCam removed it (or the whole project) */
+    const g = Object.assign({}, obj(row.g)), nowSec = Math.floor(Date.now() / 1000);
+    if (Object.keys(g).length) {
+      const inNew = {}; ph.forEach(x => { inNew[s(x[0])] = 1; const c = g[s(x[0])]; if (Array.isArray(c) && c[3]) g[s(x[0])] = c.slice(0, 3); });
+      if (!inc) arr(row.ph).concat(arr(row.pend)).forEach(x => { const id = s(x && x[0]), c = g[id]; if (!id || inNew[id] || !Array.isArray(c)) return; inNew[id] = 1; ph.push(x); if (!+c[3]) { const y = c.slice(0, 3); y[3] = nowSec; g[id] = y; } });
+      Object.keys(g).forEach(id => { if (!inNew[id]) delete g[id]; });
+    }
     ph.sort((a, b) => (b[1] || 0) - (a[1] || 0));
     /* creators no photo points at any more are dropped (the list stays small) */
     const used = {}; ph.forEach(x => { if (x[4] != null && x[4] >= 0) used[x[4]] = 1; });
@@ -380,18 +600,25 @@ async function run(opts){
     ph = ph.map(x => { if (x[4] == null || x[4] < 0) return x; const y = x.slice(); y[4] = map[x[4]]; return y; });
     const out = { v: 1, pid, job: linked[pid].job, kind: linked[pid].kind, at: nowIso, upd: Math.max(+listUpd[pid] || 0, +(prev && prev.upd) || 0), n: ph.length, done: true, u: u2, ph };
     if (geo) out.geo = geo; if (gone) out.gone = true;
+    if (Object.keys(g).length) out.g = g;
+    if (inc && row.gx && Object.keys(obj(row.gx)).length) out.gx = row.gx;   /* a full re-read brings fresh links: the copier tries again */
+    const cs = rowCopyStats(out);
+    if (ph.length > cs.g) { st.copy = st.copy && typeof st.copy === 'object' ? st.copy : {}; st.copy.need = obj(st.copy.need); st.copy.need[pid] = 1; }
     if (!opts.dry) await kvWrite([{ key: ROW + pid, value: out }]);
     rowsDone[pid] = out;
-    st.done[pid] = { at: nowIso, full: inc ? s(prev && prev.full) || nowIso : nowIso, upd: out.upd, n: ph.length, last: ph.length ? ph[0][1] : 0, gone: gone || undefined };
+    st.done[pid] = { at: nowIso, full: inc ? s(prev && prev.full) || nowIso : nowIso, upd: out.upd, n: ph.length, last: ph.length ? ph[0][1] : 0, gone: (gone && !ph.length) || undefined };
+    if (cs.g) Object.assign(st.done[pid], cs);   /* patch CCPHOTOS2: copies made / their bytes / removed in CompanyCam */
     st.queue.shift(); delete qHas[pid];
     R.projects++; R.photos += inc ? added.length : ph.length;
     if (st.prog && !st.prog.doneAt) { st.prog.done = (+st.prog.done || 0) + 1; st.prog.photos = (+st.prog.photos || 0) + ph.length; }
     if (Date.now() - lastSave > 8000) await saveProgress(false);
   }
+  /* patch CCPHOTOS2: the GrayCo copies, with the time left (the index first: the copier works from it) */
+  if (!R.stop || R.stop === 'time') await copyPhase();
   if (listComplete && !R.stop && listTop) st.cursor = Math.max(+st.cursor || 0, listTop);
   if (!st.cursor && !R.stop && !st.queue.length) { st.cursor = +st.cursor0 || Math.floor(nowMs / 1000) - 60; delete st.cursor0; }   /* the backfill is done: from now on, incremental */
   if (st.prog && !st.prog.doneAt && !st.queue.length) st.prog.doneAt = new Date().toISOString();
-  R.more = st.queue.length > 0;
+  R.more = st.queue.length > 0 || !!R.copyMore;
   R.queue = st.queue.length;
   R.linked = Object.keys(linked).length;
   R.indexed = Object.keys(st.done).filter(pid => linked[pid]).length;
@@ -425,11 +652,23 @@ async function kickBackground(why){
   } catch (e) { return false; }
 }
 /* what the CRM's "📸 CompanyCam sync status" window shows (never a secret) */
-function statusOf(st){
+function statusOf(st, copyV){
   st = obj(st); const p = obj(st.prog), t = obj(st.total), l = obj(st.last);
-  return { linked: +t.linked || 0, indexed: +t.indexed || 0, photos: +t.photos || 0, queue: arr(st.queue).length, running: !!(st.lock && Date.parse(s(st.lock.until)) > Date.now()),
+  return { copy: copyStatus(st, copyV), linked: +t.linked || 0, indexed: +t.indexed || 0, photos: +t.photos || 0, queue: arr(st.queue).length, running: !!(st.lock && Date.parse(s(st.lock.until)) > Date.now()),
     wait: s(st.wait), last: { at: s(l.at), who: s(l.who), projects: +l.projects || 0, photos: +l.photos || 0, calls: +l.calls || 0, stop: s(l.stop), error: s(l.error).slice(0, 160) },
     prog: st.prog ? { kind: s(p.kind), total: +p.total || 0, done: +p.done || 0, photos: +p.photos || 0, startedAt: s(p.startedAt), doneAt: s(p.doneAt), by: s(p.by) } : null };
 }
-module.exports = { run, kickBackground, handoffOk, handoffSig, statusOf, linkedMap, ccIdsOf, packPhoto, packThumb, unpackThumb, unpackRow, summaryOf,
+/* patch CCPHOTOS2: the storage meter — copies made / photos, GB used, the estimate for all of them, the switch and the cap */
+function copyStatus(st, copyV){
+  st = obj(st); const cfg = copyCfg(copyV), C = obj(st.copy), t = obj(st.total);
+  const linked = st.linked && typeof st.linked === 'object' ? st.linked : null;
+  const tl = copyTotals(st, linked), all = copyTotals(st, null);
+  const total = Math.max(tl.total, +t.photos || 0), avg = +C.avg || (all.copied >= 10 ? Math.round(all.bytes / all.copied) : EST_PHOTO);
+  const lr = obj(C.lastRun);
+  return { on: cfg.on, capGB: cfg.capGB, by: cfg.by, at: cfg.at, copied: tl.copied, total: total, removed: tl.removed, bytes: all.bytes,
+    bucketBytes: C.bucket == null ? null : +C.bucket || 0, avgBytes: avg, measured: all.copied >= 10, estimateBytes: Math.round(total * avg),
+    stop: s(C.stop), stopAt: s(C.stopAt), wait: s(C.wait), waiting: Object.keys(obj(C.need)).length, lastError: s(C.lastError).slice(0, 120),
+    last: lr.at ? { at: s(lr.at), photos: +lr.photos || 0, bytes: +lr.bytes || 0, failed: +lr.failed || 0, stop: s(lr.stop) } : null };
+}
+module.exports = { run, copyStatus, copyCfg, imgDims, sniffImg, COPY, VIS, CAP_GB, kickBackground, handoffOk, handoffSig, statusOf, linkedMap, ccIdsOf, packPhoto, packThumb, unpackThumb, unpackRow, summaryOf,
   IDX, STATE, REQ, ROW, PER };

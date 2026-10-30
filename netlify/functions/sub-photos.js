@@ -154,7 +154,7 @@ async function ccPhotos(ccId){
       if (!ph || ph.id == null || !Array.isArray(ph.uris)) return;
       const by = {}; ph.uris.forEach(function(u){ if (u && u.type) by[u.type] = httpsUrl(u.uri || u.url); });
       const f = by.web || by.original || by.large || '', t = by.thumbnail || by.web || f; if (!f || !t) return;
-      out.push({ ccId: String(ph.id), t: t, f: f, at: ymd(ph.captured_at || ph.created_at) });
+      out.push({ ccId: String(ph.id), t: t, f: f, at: ymd(ph.captured_at || ph.created_at), up: CCV().upOf(ph), cap: CCV().secOf(ph.captured_at || ph.created_at) });
     });
     if (chunk.length < 100) break;
   }
@@ -162,6 +162,7 @@ async function ccPhotos(ccId){
   return out;
 }
 
+function CCV(){ return require('./_lib/cc-vis.js'); }   /* patch CCPHOTOS2 */
 /* ── the private bucket: short-lived signed links ── */
 function refPath(ref){ const m = /^sb:crm-files\/([0-9a-f]{64}\.[a-z0-9]{1,8})$/.exec(s(ref)); return m ? m[1] : ''; }
 async function signRefs(refs){
@@ -195,7 +196,10 @@ async function jobPhotos(data, p, who, sub){
   const top = pick.slice(0, MAX_PHOTOS), signed = await signRefs([].concat.apply([], top.map(function(x){ return [x.full, x.thumb]; })));
   const out = top.map(function(x){ const f = signed[x.full]; if (!f) return null; const o = { id: x.id, t: signed[x.thumb] || f, f: f, at: ymd(x.at), tag: x.tag, src: x.src }; if (x.mine) o.mine = true; return o; }).filter(Boolean);
   const ccId = ccIdOf(p);
-  if (ccId) (await ccPhotos(ccId)).forEach(function(c){ const f = flags[c.ccId]; if (!see({ shared: true }, f)) return; out.push({ id: 'cc_' + c.ccId, t: c.t, f: c.f, at: c.at, tag: '', src: 'companycam' }); });
+  /* patch CCPHOTOS2: the server's index with GrayCo's own copies first; a CompanyCam photo put in after this release only once
+     someone clicked "Customer can see" (subs: "Subs see it", else the same as the customer) — _lib/cc-vis.js */
+  if (ccId) (await CCV().photosFor(p, recs, who === 'customer' ? 'customer' : 'sub', { kvRead: kvRead, signRefs: signRefs, live: ccPhotos }, { ccId: ccId, max: MAX_PHOTOS }))
+    .forEach(function(c){ out.push({ id: c.id, t: c.t, f: c.f, at: c.at, tag: '', src: 'companycam' }); });
   out.sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
   return out;
 }

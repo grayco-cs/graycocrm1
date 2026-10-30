@@ -128319,13 +128319,49 @@ var CH = SyncList(KEY_CH, 'msgs');
    not set = the same as the customer (so an "Internal only" photo is never shown to a sub).
    A CompanyCam photo keeps its choice in a small flag record "ccf_<CompanyCam id>" in gc_photos. */
 function ccFlag(r){ return r && r.source === 'companycam' && r.ccId ? (PH.map['ccf_' + r.ccId] || null) : null; }
-function sharedOf(r){ var f = ccFlag(r); if (f && f.deleted !== true && f.shared != null) return f.shared === true; if (r && r.source === 'sub') return r.shared === true && !!s(r.custOkBy);   /* patch SUBPHOTOS: a sub's photo only after an admin / the office */
+function sharedOf(r){ if (r && r.source === 'companycam') return ccShared(r);   /* patch CCPHOTOS2: a click decides */
+  var f = ccFlag(r); if (f && f.deleted !== true && f.shared != null) return f.shared === true; if (r && r.source === 'sub') return r.shared === true && !!s(r.custOkBy);   /* patch SUBPHOTOS: a sub's photo only after an admin / the office */
   return r.shared === true || (r.shared == null && r.tag !== 'Damage'); }
 function subsOf(r){ var f = ccFlag(r), h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; if (h === true) return false; if (h === false) return true; return sharedOf(r); }
 function setCCFlag(r, patch){
   var id = 'ccf_' + r.ccId, o = PH.map[id];
   var n = Object.assign({ id: id, jobId: String(r.jobId), ccId: String(r.ccId), source: 'ccflag', at: nowIso(), by: myName(), byKey: myKey() }, o || {}, patch || {});
   delete n._local; return PH.save(n);
+}
+/* patch CCPHOTOS2: "Customer can see" for many photos at once (☑ Select) and for a whole job (one record ccj_<job>) */
+function visOne(r, on, at){
+  if (!r) return 0;
+  if (r.source === 'companycam') {
+    if (!r.ccId) return 0; var id = 'ccf_' + r.ccId, o = PH.map[id];
+    var f = Object.assign({ id: id, jobId: String(r.jobId), ccId: String(r.ccId), source: 'ccflag', at: at, by: myName(), byKey: myKey() }, o || {}, { shared: on, visAt: at });
+    delete f._local; PH.save(f, true); return 1;
+  }
+  if (r.source === 'sub' && on && !isOffice()) return -1;   /* patch SUBPHOTOS: an admin / the office shows a sub's photo */
+  var x = PH.map[r.id]; if (!x || x.source === 'ccflag') return 0;
+  var m = Object.assign({}, x); m.shared = on; m.shareSet = true;
+  if (m.source === 'sub') { if (on) { m.custOkBy = myName(); m.custOkAt = at; } else { delete m.custOkBy; delete m.custOkAt; } }
+  delete m._local; PH.save(m, true); return 1;
+}
+function visNote(on, n, skip){
+  toast((on ? 'The customer sees ' : 'Hidden from the customer: ') + n + ' photo' + (n === 1 ? '' : 's') + (skip ? ' · ' + skip + ' sub photo' + (skip === 1 ? '' : 's') + ' left as before (an admin or the office shows those)' : '') + '.');
+}
+function visSet(list, on){
+  var at = nowIso(), n = 0, skip = 0;
+  arr(list).forEach(function(r){ var k = visOne(r, on, at); if (k > 0) n++; else if (k < 0) skip++; });
+  emit(KEY_PH); visNote(on, n, skip);
+  return n;
+}
+function visJob(jobId, mode){
+  if (!itemById(jobId)) return 0;
+  var list = jobPhotos(jobId), on = mode === 'show';
+  if (!window.confirm(on ? 'Show all ' + list.length + ' photos of this job to the customer?\n\nPhotos added later still wait for their own "Customer can see".' : 'Hide all ' + list.length + ' photos of this job from the customer?')) return 0;
+  var at = nowIso(), id = 'ccj_' + jobId, o = PH.map[id];
+  var rec = Object.assign({ id: id, jobId: String(jobId), source: 'ccflag', kind: 'job' }, o || {}, { mode: mode, at: at, visAt: at, upto: Math.floor(Date.now() / 1000), by: myName(), byKey: myKey(), deleted: false });
+  delete rec._local; PH.save(rec, true);   /* every CompanyCam photo of the job up to now — one small record, not one a photo */
+  var n = 0, skip = 0;
+  list.forEach(function(r){ if (r.source === 'companycam') { n++; return; } var k = visOne(r, on, at); if (k > 0) n++; else if (k < 0) skip++; });
+  emit(KEY_PH); visNote(on, n, skip);
+  return n;
 }
 /* J rule: the same picture twice on a job is ONE photo — the copy is folded, never deleted */
 function visiblePhotos(jobId){
@@ -128554,7 +128590,7 @@ function ccMap(jobId, ph){
   var co = ph.coordinates || {};
   return { id: 'cc_' + ph.id, ccId: String(ph.id), jobId: String(jobId), source: 'companycam', thumbUrl: th, fullUrl: full, origUrl: by.original || '', at: at,
     by: s(ph.creator_name || (ph.creator && ph.creator.name) || 'CompanyCam'), tag: ccTag(ph), note: s(ph.description).slice(0, 500),
-    lat: co.lat != null ? +co.lat : null, lng: co.lon != null ? +co.lon : (co.lng != null ? +co.lng : null), shared: true };
+    lat: co.lat != null ? +co.lat : null, lng: co.lon != null ? +co.lon : (co.lng != null ? +co.lng : null), up: Math.max(ccSec(ph.captured_at), ccSec(ph.created_at)) };   /* patch CCPHOTOS2 */
 }
 function ccLoadLive(jobId, force, only, base){   /* patch CCPHOTOS1: the CompanyCam read for what the index does not have */
   var it = itemById(jobId), ids = it ? (it.ccIds && it.ccIds.length ? it.ccIds : [it.ccId || ccIdOf(it.raw)].filter(Boolean)) : [];
@@ -128602,6 +128638,24 @@ function ccLoadLive(jobId, force, only, base){   /* patch CCPHOTOS1: the Company
 /* patch CCPHOTOS1 */ /* ── CompanyCam photos from the server's index (gc_kv "ccidx" + "ccidx:<project>", made by companycam-photos):
    every photo of every linked project, CompanyCam's own small links, no CompanyCam call from this page ── */
 var CIX = { sum: null, at: 0, busy: null, rows: {}, rowsAt: {}, fresh: {}, same: 0, errs: 0 };
+/* patch CCPHOTOS2 */ /* ── who sees a CompanyCam photo (the server's rule, netlify/functions/_lib/cc-vis.js) ──
+   newest choice wins: its own flag ccf_<id> (shared, visAt) | the job's ccj_<job> (mode show / hide, covers photos put in up to
+   "upto") | put into CompanyCam before this release (gc_kv ccvis.since) → shown as before, after → hidden until a click */
+var CCV = { since: 0 };
+function ccSec(v){ if (v == null || v === '') return 0; if (typeof v === 'number') return v > 1e12 ? Math.floor(v / 1000) : Math.floor(v); var n = Number(v); if (isFinite(n) && s(v) !== '') return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n); var d = Date.parse(v); return isNaN(d) ? 0 : Math.floor(d / 1000); }
+function ccUp(r){ return +r.up || ccSec(r.at); }
+function ccJobRule(r){ var j = PH.map['ccj_' + r.jobId]; if (!j || j.deleted === true || (j.mode !== 'show' && j.mode !== 'hide')) return null; return ccUp(r) <= (+j.upto || 0) ? j : null; }
+function ccVisStamp(f){ return s(f && (f.visAt || f.updatedAt || f.at)); }
+function ccShared(r){
+  var f = ccFlag(r), j = ccJobRule(r), fa = f && f.deleted !== true && f.shared != null ? ccVisStamp(f) : '';
+  if (fa && (!j || fa > s(j.at))) return f.shared === true;
+  if (j) return j.mode === 'show';
+  return !(CCV.since > 0 && ccUp(r) >= CCV.since);
+}
+function ccDecided(r){ var f = ccFlag(r); return !!((f && f.deleted !== true && f.shared != null) || ccJobRule(r)); }
+/* the GrayCo copy of a CompanyCam photo (index row .g: [web file, thumb file | 0, bytes, removedAt?]) */
+function cixG(g, id, k){ var c = g && g[s(id)]; var f = Array.isArray(c) ? s(c[k]) : ''; return /^[0-9a-f]{64}\.(jpe?g|png|webp)$/.test(f) ? 'sb:crm-files/' + f : ''; }
+function cixGone(g, id){ var c = g && g[s(id)]; return Array.isArray(c) && +c[3] ? +c[3] : 0; }
 function cixGet(keys){
   var c = creds(); if (!c.u || !c.k || !keys.length || !online()) return Promise.resolve(null);
   return window.fetch(c.u + '/rest/v1/gc_kv?select=key,value&key=in.(' + keys.map(function(k){ return '"' + k + '"'; }).join(',') + ')', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, signal: ccSignal() })
@@ -128616,22 +128670,24 @@ function cixGet(keys){
 function cixSum(force){
   if (CIX.busy) return CIX.busy;
   if (!force && CIX.at && Date.now() - CIX.at < 10 * 60e3) return Promise.resolve(CIX.sum);
-  CIX.busy = cixGet(['ccidx']).then(function(o){
+  CIX.busy = cixGet(['ccidx', 'ccvis']).then(function(o){   /* patch CCPHOTOS2: + the "new photo" moment */
     CIX.busy = null; if (!o) return CIX.sum;
     CIX.at = Date.now(); var v = o.ccidx;
+    var cvs = o.ccvis && Date.parse(s(o.ccvis.since)); if (cvs && Math.floor(cvs / 1000) !== CCV.since) { CCV.since = Math.floor(cvs / 1000); pvVer++; emit('cc'); }
     if (v && typeof v === 'object' && v.p && typeof v.p === 'object') { CIX.sum = v; pvVer++; emit('cc'); }
     return CIX.sum;
   }, function(){ CIX.busy = null; return CIX.sum; });
   return CIX.busy;
 }
 function cixThumb(x, w){ if (!x) return w; if (typeof x === 'string') return x; if (Array.isArray(x) && x.length === 3) return w.slice(0, x[0]) + x[2] + w.slice(w.length - x[1]); return w; }
-function cixPhoto(jobId, x, people, geo){
+function cixPhoto(jobId, x, people, geo, g){
   if (!Array.isArray(x)) return null;
   var w = httpsOnly(x[2]), t = httpsOnly(cixThumb(x[3], s(x[2]))) || w; if (!w) return null;
   var c = +x[1] || 0;
   return { id: 'cc_' + x[0], ccId: String(x[0]), jobId: String(jobId), source: 'companycam', thumbUrl: t, fullUrl: w, origUrl: '', at: c ? new Date(c * 1000).toISOString() : '',
     by: s(x[4] != null && x[4] >= 0 ? arr(people)[x[4]] : '') || 'CompanyCam', tag: TAGS.indexOf(s(x[5])) >= 0 ? s(x[5]) : '', note: s(x[6]).slice(0, 500),
-    lat: geo ? +geo[0] : null, lng: geo ? +geo[1] : null, shared: true, idx: true };
+    lat: geo ? +geo[0] : null, lng: geo ? +geo[1] : null, idx: true,
+    up: Math.max(c, +x[7] || 0), gRef: cixG(g, x[0], 0), gThumb: cixG(g, x[0], 1) || cixG(g, x[0], 0), removed: cixGone(g, x[0]) };   /* patch CCPHOTOS2 */
 }
 /* the stored projects (5 minutes cached); a project not indexed yet is null */
 function cixRows(ids, force){
@@ -128660,7 +128716,7 @@ function ccLoad(jobId, force){
     ids.forEach(function(id){
       var r = rows[id]; if (!r) { miss.push(id); return; }
       var ppl = arr(r.u), first = true;
-      arr(r.ph).forEach(function(x){ var ph = cixPhoto(jobId, x, ppl, first ? r.geo : null); if (ph) { list.push(ph); first = false; } });
+      arr(r.ph).forEach(function(x){ var ph = cixPhoto(jobId, x, ppl, first ? r.geo : null, r.g); if (ph) { list.push(ph); first = false; } });
       if (r.done !== true) miss.push(id);
     });
     list = cixMerge(list, []);
@@ -128698,7 +128754,8 @@ function cixFeed(){
   var f = CIX.sum && arr(CIX.sum.feed); if (!f || !f.length) return false;
   var byCc = {}; items().forEach(function(it){ arr(it.ccIds).forEach(function(x){ if (!byCc[x]) byCc[x] = it.id; }); });
   var list = [], map = {};
-  f.forEach(function(x){ var jid = byCc[s(x[0])]; if (!jid) return; var r = cixPhoto(jid, [x[1], x[2], x[3], x[4], -1, x[6]], [], null); if (!r) return; r.by = s(x[5]) || 'CompanyCam'; list.push(r); map[r.id] = r; });
+  f.forEach(function(x){ var jid = byCc[s(x[0])]; if (!jid) return; var gg = null; if (x[7]) { gg = {}; gg[s(x[1])] = [x[7], x[8] || 0, 0, +x[10] || 0]; }   /* patch CCPHOTOS2: the copy, when it went in */
+    var r = cixPhoto(jid, [x[1], x[2], x[3], x[4], -1, x[6], '', +x[9] || 0], [], null, gg); if (!r) return; r.by = s(x[5]) || 'CompanyCam'; list.push(r); map[r.id] = r; });
   ccFeed.list = list; ccFeed.map = map; ccFeed.at = Date.now(); ccFeed.fromIdx = true; pvVer++;
   return true;
 }
@@ -128714,9 +128771,10 @@ function ccProj(id){ if (!ccProjMap) { ccProjMap = {}; ccProjects().forEach(func
 function ccCover(it){
   var ids = (it && it.ccIds) || [], n = 0, th = '', any = false;
   var sp = CIX.sum && CIX.sum.p;   /* patch CCPHOTOS1: the index's count + cover first */
-  ids.forEach(function(id){ var x = sp && sp[id]; if (Array.isArray(x)) { any = true; n += +x[0] || 0; if (!th && httpsOnly(x[2])) th = httpsOnly(x[2]); return; }
+  var gth = '';   /* patch CCPHOTOS2: the cover's GrayCo copy */
+  ids.forEach(function(id){ var x = sp && sp[id]; if (Array.isArray(x)) { any = true; n += +x[0] || 0; if (!th && httpsOnly(x[2])) th = httpsOnly(x[2]); if (!gth && x[4]) gth = cixG({ c: [x[4]] }, 'c', 0); return; }
     var c = ccProj(id); if (!c) return; if (c.photos != null) { any = true; n += c.photos; } if (!th && c.thumb) th = c.thumb; });
-  return { n: any ? n : 0, cover: th ? { id: 'ccc_' + it.id, source: 'companycam', thumbUrl: th, fullUrl: th, at: '', by: '' } : null };
+  return { n: any ? n : 0, cover: th || gth ? { id: 'ccc_' + it.id, source: 'companycam', thumbUrl: th, fullUrl: th, gRef: gth, gThumb: gth, at: '', by: '' } : null };
 }
 function ccProjectsRefresh(force){
   if (!ccOn() || !online() || !shown()) return;   /* patch PHOTOLINK: only while open */
@@ -129151,13 +129209,15 @@ function pumpImg(){
     (function(im){
       var src = im.getAttribute('data-src'), ref = im.getAttribute('data-ref'), loc = im.getAttribute('data-local');
       var p = src ? Promise.resolve(src) : loc ? localUrl(loc, im.getAttribute('data-kind')).then(function(u){ return u || (ref ? fileUrl(ref) : null); }) : fileUrl(ref);
-      p.then(function(u){ if (u) im.src = u; else im.style.visibility = 'hidden'; }, function(){ im.style.visibility = 'hidden'; im.parentNode && im.parentNode.setAttribute('title', 'Available when online'); })
+      var fb = im.getAttribute('data-fb');   /* patch CCPHOTOS2: a GrayCo copy that cannot be read → CompanyCam's link */
+      p.then(function(u){ if (u) im.src = u; else if (fb) im.src = fb; else im.style.visibility = 'hidden'; }, function(){ if (fb) { im.src = fb; return; } im.style.visibility = 'hidden'; im.parentNode && im.parentNode.setAttribute('title', 'Available when online'); })
         .then(function(){ imgBusy--; pumpImg(); });
     })(im);
   }
 }
 function imgTag(r, full){
   if (!r) return '';
+  if (r.source === 'companycam' && r.gRef) return '<img alt="" decoding="async" data-ref="' + esc(full ? r.gRef : (r.gThumb || r.gRef)) + '" data-fb="' + esc(full ? r.fullUrl : r.thumbUrl) + '">';   /* patch CCPHOTOS2: GrayCo's copy */
   if (r.source === 'companycam') return '<img alt="" loading="lazy" decoding="async" data-src="' + esc(full ? r.fullUrl : r.thumbUrl) + '">';
   var ref = full ? (r.annotatedRef || r.ref) : (r.thumbRef || r.ref);
   if (!ref || r._local) return '<img alt="" decoding="async" data-local="' + esc(r.id) + '"' + (ref ? ' data-ref="' + esc(ref) + '"' : '') + '>';
@@ -129608,6 +129668,7 @@ async function dlGet(r, sig, annot){
   if (r.source === 'companycam') {
     var urls = [], seen = {}, last; [r.origUrl, r.fullUrl].forEach(function(u){ if (u && !seen[u]) { seen[u] = 1; urls.push(u); } });
     for (var i = 0; i < urls.length; i++) { try { return await dlFetchCC(urls[i], sig); } catch (e) { if (sig && sig.aborted) throw e; last = e; } }   /* the original, then the web size */
+    if (r.gRef) { try { var gb = await fileBlob(r.gRef); if (dlOk(gb)) return gb; } catch (e) {} }   /* patch CCPHOTOS2: CompanyCam gone → GrayCo's copy */
     throw last || new Error('no image link');
   }
   return dlFetchGC(r, annot);
@@ -129650,7 +129711,8 @@ function dlBar(it, list){
   if (!list.length) return '';
   if (dlOn()) return '<div class="dl-bar dl-selbar" role="group" aria-label="Select photos"><span class="dl-hint"><b>Select photos</b> <span class="dl-tip">Tap photos, or a day.</span></span>' +
     '<button class="dl-b" data-a="dlall">Select all</button><button class="dl-b" data-a="dlclr">Clear</button><button class="dl-b pri" data-a="dlexit">Done</button></div>';
-  return '<div class="dl-bar" role="group" aria-label="Download photos"><button class="dl-b pri" data-a="dlopen" aria-label="Download all photos of this project">⬇ Download all <em>' + list.length + '</em></button><button class="dl-b" data-a="dlsel">☑ Select</button></div>';
+  return '<div class="dl-bar" role="group" aria-label="Download photos"><button class="dl-b pri" data-a="dlopen" aria-label="Download all photos of this project">⬇ Download all <em>' + list.length + '</em></button><button class="dl-b" data-a="dlsel">☑ Select</button>' +
+    '<button class="dl-b" data-a="visjob" data-v="show" title="Show all of this job\'s photos to the customer">👁 Show all to customer</button><button class="dl-b" data-a="visjob" data-v="hide" title="Hide all of this job\'s photos from the customer">🔒 Hide all</button></div>';   /* patch CCPHOTOS2 */
 }
 function dlDayBtn(k, l){
   if (!dlOn()) return '';
@@ -129668,6 +129730,7 @@ function dlActionBar(){
   return '<div class="dl-act" role="region" aria-label="Download selected"><span class="dl-n"><b>' + n + '</b> selected</span>' +
     '<button class="dl-b pri" data-a="dlsegdl"' + (n ? '' : ' disabled') + '>⬇ Download selected (' + n + ')</button>' +
     (n && n <= DL_SHARE_MAX && dlPhone() ? '<button class="dl-b dl-sv" data-a="dlsegshare">Save to Photos</button>' : '') +
+    (n ? '<button class="dl-b" data-a="vissel" data-v="1">👁 Customer can see (' + n + ')</button><button class="dl-b" data-a="vissel" data-v="0">🔒 Hide from customer (' + n + ')</button>' : '') +   /* patch CCPHOTOS2 */
     '<button class="dl-b dl-x" data-a="dlexit" aria-label="Cancel selection">✕</button></div>';
 }
 function dlPaint(){
@@ -130152,9 +130215,10 @@ function vPhoto(){
     h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 12px 0" id="gcu-pair"><div class="gcu-t" style="aspect-ratio:4/3">' + imgTag(a) + '<span class="gcu-tagp gcu-dark" style="left:6px;top:6px">' + esc(a.tag || 'Before') + '</span></div><div class="gcu-t" style="aspect-ratio:4/3">' + imgTag(b) + '<span class="gcu-tagp gcu-dark" style="left:6px;top:6px">' + esc(b.tag || 'After') + '</span></div></div>'; }
   if (r.source === 'sub') h += '<div class="gcu-subline" style="padding:6px 12px 0;font-size:12px;font-weight:700;color:#B45309">🧰 From sub portal · ' + esc(s(r.subCompany || r.subName || s(r.by).replace(/ \(sub( portal)?\)$/, ''))) + ' · ' + esc(s(r.at).slice(0, 10)) + (sharedOf(r) ? '' : ' · hidden from the customer') + '</div>';   /* patch SUBPHOTOS */
   h += '<div class="gcu-pchips">' + (cc ? '<span class="gcu-pc" style="background:' + CCBLUE + ';display:flex;align-items:center">CompanyCam</span>' : '') +
+    (cc && r.removed ? '<span class="gcu-pc gcu-ccgone" style="background:#7C2D12;color:#fff;display:flex;align-items:center">Removed in CompanyCam · GrayCo copy kept</span>' : cc && r.gRef ? '<span class="gcu-pc gcu-gcopy" style="background:#1D5E2C;color:#fff;display:flex;align-items:center">GrayCo copy</span>' : '') +   /* patch CCPHOTOS2 */
     '<button class="gcu-pc dl-one" data-a="dlone" aria-label="Download this photo">⬇ Download</button>' +
     '<button class="gcu-pc" data-a="retag">' + esc(r.tag || 'Tag it') + '</button>' +
-    '<button class="gcu-pc ' + (sharedOf(r) ? 'yes' : 'no') + '" data-a="share" aria-pressed="' + sharedOf(r) + '">' + (sharedOf(r) ? 'Customer sees it' : (subsOf(r) ? 'Hidden from customer' : 'Internal only')) + '</button>' +
+    '<button class="gcu-pc ' + (sharedOf(r) ? 'yes' : 'no') + '" data-a="share" aria-pressed="' + sharedOf(r) + '">' + (sharedOf(r) ? 'Customer sees it' : (cc && !ccDecided(r) ? '👁 Customer can see? (not shown yet)' : (subsOf(r) ? 'Hidden from customer' : 'Internal only'))) + '</button>' +   /* patch CCPHOTOS2 */
     '<button class="gcu-pc ' + (subsOf(r) ? 'yes' : 'no') + '" data-a="subs" aria-pressed="' + subsOf(r) + '">' + (subsOf(r) ? 'Subs see it' : 'Hidden from subs') + '</button>' +
     (cc ? '' : '<button class="gcu-pc" data-a="draw">Draw</button><button class="gcu-pc" data-a="pair">Before/after</button>') +
     '<button class="gcu-pc' + (sel[r.id] ? ' yes' : '') + '" data-a="addrep">' + (sel[r.id] ? 'In report ✓' : 'Add to report') + '</button>' +
@@ -130585,6 +130649,8 @@ function onClick(ev){
     case 'repshared': S.sel = repDefault(S.jobId); lastPdf = null; return renderMain();
     case 'repnone': S.sel = {}; lastPdf = null; return renderMain();
     case 'dlsel': S.dlm = true; S.dlJob = S.jobId; S.dsel = {}; return render();
+    case 'vissel': visSet(dlSelected(), v === '1'); return render();   /* patch CCPHOTOS2 */
+    case 'visjob': visJob(S.jobId, v === 'hide' ? 'hide' : 'show'); return render();
     case 'dlexit': S.dlm = false; S.dsel = {}; return render();
     case 'dlall': return dlSelAll(true);
     case 'dlclr': return dlSelAll(false);
@@ -130614,7 +130680,7 @@ function onClick(ev){
   if (a === 'share') {
     var on1 = !sharedOf(r);
     if (r.source === 'sub' && on1 && !isOffice()) { toast('Only an admin or the office can show a sub\'s photo to the customer.'); return; }   /* patch SUBPHOTOS */
-    var w1 = r.source === 'companycam' ? setCCFlag(r, { shared: on1 }) : update(r.id, function(n){ n.shared = on1; n.shareSet = true; if (n.source === 'sub') { if (on1) { n.custOkBy = myName(); n.custOkAt = nowIso(); } else { delete n.custOkBy; delete n.custOkAt; } } });
+    var w1 = r.source === 'companycam' ? setCCFlag(r, { shared: on1, visAt: nowIso() }) : update(r.id, function(n){ n.shared = on1; n.shareSet = true; if (n.source === 'sub') { if (on1) { n.custOkBy = myName(); n.custOkAt = nowIso(); } else { delete n.custOkBy; delete n.custOkAt; } } });
     return w1.then(function(){ toast(on1 ? 'The customer sees this photo.' : 'Hidden from the customer — the customer portal does not show it.'); render(); });
   }
   if (a === 'subs') {
@@ -130710,7 +130776,7 @@ function openSettings(){
       (st && st.lastErr ? ' Last error: ' + esc(st.lastErr) : '') + '</span>' +
       '<button class="gcu-btn" data-a="ccnow" id="gcu-ccnow">Check CompanyCam now</button><span class="gcu-sm" id="gcu-ccmsg" role="status"></span></div>' +
     '<div class="gcu-set"><b>Location on photos</b><div class="gcu-chips"><button class="gcu-chip' + (g === 'on' ? ' on' : '') + '" data-a="gpsset" data-v="on">On</button><button class="gcu-chip' + (g !== 'on' ? ' on' : '') + '" data-a="gpsset" data-v="off">Off</button></div></div>' +
-    '<div class="gcu-set"><b>Who sees a photo</b><span class="gcu-sm">Open a photo: <b>Customer sees it</b> puts it on the customer portal; <b>Subs see it</b> puts it on the sub portal for subs on that job. Damage photos start internal. Notes, names and chat never leave GrayCo.</span></div>' +
+    '<div class="gcu-set"><b>Who sees a photo</b><span class="gcu-sm">Open a photo: <b>Customer sees it</b> puts it on the customer portal; <b>Subs see it</b> puts it on the sub portal for subs on that job. Damage photos start internal. CompanyCam photos added after 10/30 start hidden until someone taps <b>Customer sees it</b> (or <b>👁 Show all to customer</b> on the job). Notes, names and chat never leave GrayCo.</span></div>' +
     '<button class="gcu-btn ghost" data-a="closelayer">Done</button>');
 }
 function ccCheckNow(b){
@@ -131009,7 +131075,7 @@ window._gcPhotos = {
   open: open, close: close, openRef: openRef, mountTab: mountTab, settings: openSettings, checkCompanyCam: ccCheckNow, sharedOf: sharedOf, subsOf: subsOf, setCCFlag: setCCFlag, capture: capture, stats: stats, merge: mergeLists, items: items, activity: activity, team: team,
   send: function(thread, text, extra){ return sendMsg(thread, text, [], extra); }, thread: { job: threadJob, dm: threadDm, photo: threadPhoto },
   buildPdf: buildPdf, sync: function(){ return Promise.all([PH.push(), CH.push()]).then(function(){ return Promise.all([PH.pull(true), CH.pull(true)]); }); },
-  ccIndex: function(){ return { summary: !!CIX.sum, at: CIX.at, projects: CIX.sum ? Object.keys(CIX.sum.p || {}).length : 0, photos: CIX.sum ? CIX.sum.n : 0, feed: ccFeed.list.length, feedIndex: CIX.sum ? arr(CIX.sum.feed).length : 0, rows: Object.keys(CIX.rows).length }; },   /* patch CCPHOTOS1 */
+  ccIndex: function(){ return { since: CCV.since, summary: !!CIX.sum, at: CIX.at, projects: CIX.sum ? Object.keys(CIX.sum.p || {}).length : 0, photos: CIX.sum ? CIX.sum.n : 0, feed: ccFeed.list.length, feedIndex: CIX.sum ? arr(CIX.sum.feed).length : 0, rows: Object.keys(CIX.rows).length }; },   /* patch CCPHOTOS1 */
   work: function(){ kick(0); }, render: function(){ renderMain(); }, records: function(){ return PH.all(); }, messages: function(){ return CH.all(); }, ccLoad: ccLoad, state: S,
   unread: { job: function(id){ return unreadIn(threadJob(id)); }, mentions: unreadMentions, activity: activityUnread, dms: unreadDmsTotal },
   status: function(){ return iall('queue').then(function(q){ return { queue: q.length, queueItems: q.map(function(x){ return { qid: x.qid, state: x.state, tries: x.tries, err: x.err || '' }; }), photos: PH.all().length, messages: CH.all().length,
@@ -174111,6 +174177,36 @@ function pixLine(pi){
   if (pi.last && pi.last.at) t += ' · last run ' + when(pi.last.at);
   return t;
 }
+/* patch CCPHOTOS2: "Keep a GrayCo copy of every photo" — the storage meter */
+function copyOf(d){ return (d && d.photoIndex && d.photoIndex.copy) || (d && d.photoCopy) || null; }
+function gbTxt(b){ b = +b || 0; return b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : Math.round(b / 1e6) + ' MB'; }
+function copyLine(d){
+  var c = copyOf(d); if (!c) return 'Off — not set up yet (needs the photo index first).';
+  var total = +c.total || 0, copied = +c.copied || 0, pct = total ? Math.floor(copied * 100 / total) : 0;
+  var est = 'all ' + total.toLocaleString() + ' photos ≈ ' + gbTxt(c.estimateBytes) + ' (' + ((+c.avgBytes || 0) / 1e6).toFixed(2) + ' MB a photo, ' + (c.measured ? 'measured' : 'estimated') + ')';
+  if (!c.on) return 'Off · ' + copied.toLocaleString() + ' of ' + total.toLocaleString() + ' copied · ' + gbTxt(c.bytes) + ' used · ' + est + '. Turn it on once Supabase Pro is confirmed.';
+  var t = 'On · ' + copied.toLocaleString() + ' of ' + total.toLocaleString() + ' photos copied (' + pct + '%) · ' + gbTxt(c.bytes) + ' used' + (c.bucketBytes != null ? ' (all GrayCo files: ' + gbTxt(c.bucketBytes) + ')' : '') + ' · ' + est + ' · pauses at ' + c.capGB + ' GB';
+  if (c.removed) t += ' · ' + c.removed + ' removed in CompanyCam, kept';
+  if (c.stop === 'cap') return '⛔ Copying PAUSED at the safety cap since ' + when(c.stopAt) + '. ' + t + '. Check the Supabase plan, then raise the cap — or leave it paused.';
+  if (c.wait) t += ' · CompanyCam asked to wait until ' + when(c.wait);
+  else if (c.stop && c.stop !== 'off') t += ' · stopped: ' + c.stop + (c.lastError ? ' (' + c.lastError + ')' : '');
+  if (c.last && c.last.at) t += ' · last run ' + when(c.last.at) + ': ' + (+c.last.photos || 0) + ' copied';
+  return t;
+}
+function copyBox(d){
+  var c = copyOf(d) || { on: false, capGB: 80 }, red = c.stop === 'cap', total = +c.total || 0, pct = total ? Math.min(100, Math.floor((+c.copied || 0) * 100 / total)) : 0;
+  var h = '<div data-ccs-copybox style="margin:10px 0;padding:10px 12px;border-radius:10px;border:1px solid ' + (red ? '#fca5a5;background:#fef2f2' : '#e2e8f0;background:#f8fafc') + '">'
+    + '<div style="font-weight:800">Keep a GrayCo copy of every photo: ' + (c.on ? '<span style="color:#166534">On</span>' : '<span style="color:#991b1b">Off</span>') + '</div>'
+    + '<div style="font-size:12px;color:#475569;margin:3px 0 6px">So every picture stays when CompanyCam is cancelled. Needs Supabase Pro (100 GB of file storage) — docs/COMPANYCAM.md.</div>'
+    + '<div style="height:8px;border-radius:4px;background:#e2e8f0;overflow:hidden" role="progressbar" aria-label="Photos copied" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><div style="height:100%;width:' + pct + '%;background:' + (red ? '#dc2626' : '#16a34a') + '"></div></div>'
+    + '<div data-ccs-meter style="font-size:13px;margin-top:6px;' + (red ? 'color:#991b1b;font-weight:700' : '') + '">' + esc(copyLine(d)) + '</div>';
+  if (isAdmin()) h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">'
+    + '<button type="button" data-ccs-copy="' + (c.on ? 'off' : 'on') + '" style="padding:7px 12px;border-radius:8px;border:0;background:' + (c.on ? '#64748b' : '#16a34a') + ';color:#fff;font-weight:700;cursor:pointer">' + (c.on ? 'Turn off' : 'Turn on') + '</button>'
+    + '<label style="font-size:13px">Safety cap <input data-ccs-cap type="number" min="1" step="1" value="' + esc(String(c.capGB || 80)) + '" style="width:80px;padding:5px;border:1px solid #cbd5e1;border-radius:6px"> GB</label>'
+    + '<button type="button" data-ccs-capsave style="padding:7px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">Save cap</button></div>';
+  else h += '<div style="font-size:12px;color:#64748b;margin-top:6px">Only the owner or an admin can turn this on or off.</div>';
+  return h + '</div>';
+}
 function plainLine(){
   var d = S.data, h = d && d.health;
   if (!d) { try { if (W._gcCCSync && typeof W._gcCCSync.text === 'function') { var t = W._gcCCSync.text(); t = t && typeof t === 'object' ? t.text : t; if (t) return String(t); } } catch (e) {} return S.err || 'Checking…'; }
@@ -174140,14 +174236,16 @@ function body(){
     ['Left out on purpose', 'made before 2026: ' + n('old') + ' · archived in CompanyCam: ' + n('archived') + ' · marked "not a job": ' + n('ignored') + ' · job deleted in the CRM: ' + n('deleted')]
   ];
   rows.push(['CompanyCam photos in GrayCo Photos', pixLine(d.photoIndex)]);   /* patch CCPHOTOS1 */
+  rows.push(['GrayCo copies of the photos', copyLine(d)]);   /* patch CCPHOTOS2 */
   var h1 = '<div style="font-weight:800;font-size:18px;margin-bottom:6px">📸 CompanyCam sync status</div>'
     + '<div style="margin:6px 0 10px;padding:8px 10px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;font-weight:600">' + esc(plainLine()) + '</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:13px">' + rows.map(function(r){ return '<tr><td style="padding:4px 8px 4px 0;color:#475569;white-space:nowrap;vertical-align:top">' + esc(r[0]) + '</td><td style="padding:4px 0">' + esc(String(r[1])) + '</td></tr>'; }).join('') + '</table>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px">'
     + '<button type="button" data-ccs-full style="padding:8px 14px;border-radius:8px;border:0;background:#2563eb;color:#fff;font-weight:700;cursor:pointer">⟳ Sync all now</button>'
-    + '<button type="button" data-ccs-pidx style="padding:8px 14px;border-radius:8px;border:0;background:#0f766e;color:#fff;font-weight:700;cursor:pointer" title="Every photo of every CompanyCam project a job or lead is linked to, listed for GrayCo Photos (CompanyCam\'s small links — no picture is copied)">⟳ Index all photos now</button>'
+    + '<button type="button" data-ccs-pidx style="padding:8px 14px;border-radius:8px;border:0;background:#0f766e;color:#fff;font-weight:700;cursor:pointer" title="Every photo of every CompanyCam project a job or lead is linked to, listed for GrayCo Photos (CompanyCam\'s small links — the pictures are copied only when &quot;Keep a GrayCo copy&quot; is on)">⟳ Index all photos now</button>'
     + '<button type="button" data-ccs-refresh style="padding:8px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">Refresh</button>'
     + (rq.at ? '<span style="align-self:center;color:#64748b;font-size:12px">Full re-read asked ' + esc(when(rq.at)) + (rq.by ? ' by ' + esc(rq.by) : '') + ' — runs within 15 minutes</span>' : '') + '</div>'
+    + copyBox(d)   /* patch CCPHOTOS2 */
     + (S.msg ? '<div style="color:#166534;font-weight:600;margin:4px 0">' + esc(S.msg) + '</div>' : '')
     + '<div style="font-weight:700;margin:10px 0 4px">CompanyCam tools (they used to be on Leads)</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + ctl('test', '🔌 Test Connection') + ctl('sync', '🔄 Sync Jobs → Leads') + ctl('docs', '📄 Pull Documents') + ctl('notes', '🧠 Read Job Notes') + '</div>'
@@ -174192,6 +174290,19 @@ function onClick(e){
   if ((OV && t === OV) || t.closest('[data-ccs-close]')) { close(); paint(); return; }
   var c = t.closest('[data-ccs-ctl]'); if (c) { runCtl(c.getAttribute('data-ccs-ctl')); return; }
   if (t.closest('[data-ccs-refresh]')) { load(true).then(paint); return; }
+  var cpb = t.closest('[data-ccs-copy]');   /* patch CCPHOTOS2: the switch (owner / admin; the server checks too) */
+  if (cpb) {
+    var cOn = cpb.getAttribute('data-ccs-copy') === 'on', cc0 = copyOf(S.data) || {};
+    if (cOn && !W.confirm('Keep a GrayCo copy of every CompanyCam photo?\n\nTurn this on only once Supabase Pro is confirmed. All ' + (+cc0.total || 0).toLocaleString() + ' photos ≈ ' + gbTxt(cc0.estimateBytes) + '. Copying pauses at ' + (cc0.capGB || 80) + ' GB.')) return;
+    S.msg = 'Saving…'; paint();
+    post('photocopy', { on: cOn }).then(function(r){ S.msg = r.ok ? (r.message || 'Saved.') : ('Could not save: ' + s(r.error)); return load(true); }).then(paint); return;
+  }
+  if (t.closest('[data-ccs-capsave]')) {
+    var box = t.closest('[data-ccs-copybox]'), inp = box && box.querySelector('[data-ccs-cap]'), cap = inp ? Number(inp.value) : NaN;
+    if (!(cap >= 1)) { S.msg = 'The cap is a number of GB (1 or more).'; paint(); return; }
+    S.msg = 'Saving…'; paint();
+    post('photocopy', { capGB: cap }).then(function(r){ S.msg = r.ok ? 'Safety cap: ' + r.capGB + ' GB.' : ('Could not save: ' + s(r.error)); return load(true); }).then(paint); return;
+  }
   if (t.closest('[data-ccs-pidx]')) { S.msg = 'Starting…'; paint(); post('photoindex').then(function(r){ S.msg = r.ok ? (r.message || 'Indexing every CompanyCam photo now.') : ('Could not start: ' + s(r.error)); return load(true); }).then(paint); return; }   /* patch CCPHOTOS1 */
   if (t.closest('[data-ccs-full]')) { S.msg = 'Asking…'; paint(); post('syncnow').then(function(r){ S.msg = r.ok ? (r.message || 'Asked — runs within 15 minutes.') : ('Could not ask: ' + s(r.error)); return load(true); }).then(paint); return; }
   var b = t.closest('[data-ccs-act]');

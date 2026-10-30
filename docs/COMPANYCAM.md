@@ -251,9 +251,10 @@ project was never read. So only some jobs ever showed their photos.
 
 Now a server function, `companycam-photos`, runs every 15 minutes (at :07,
 :22, :37 and :52). It lists every photo of every CompanyCam project that a job
-or lead is linked to. No picture is copied and nothing goes into the file
-bucket. It keeps only CompanyCam's own small links, about 0.2–0.3 KB per photo,
-in `gc_kv` (`ccidx:<project>` plus the summary `ccidx`). Grids use
+or lead is linked to. On its own it copies no picture: it keeps CompanyCam's own small
+links, about 0.2–0.3 KB per photo, in `gc_kv` (`ccidx:<project>` plus the
+summary `ccidx`). (From CCPHOTOS2 the owner can switch on a GrayCo copy of
+every photo; see below.) Grids use
 CompanyCam's **thumbnail** link and a photo opened full screen uses its **web**
 link. Download fetches that photo's original once.
 
@@ -274,8 +275,9 @@ link. Download fetches that photo's original once.
   CompanyCam, as before, until the next run lists it.
 - The index is never in the CRM's "what changed" download or the nightly
   backup, because it is rebuilt from CompanyCam.
-- The "Customer sees it" / "Subs see it" choices work as before (`ccf_<id>`
-  records).
+- The "Customer sees it" / "Subs see it" choices are `ccf_<id>` records. From
+  CCPHOTOS2, a CompanyCam photo put in after that release starts hidden from
+  the customer (see below).
 
 Phone photos taken in GrayCo Photos were already small, and they stay that
 way. They are stored at ≤ 1600 px, JPEG 0.72, metadata removed, with a 360 px
@@ -311,3 +313,140 @@ CompanyCam can notify the CRM as soon as a project is made:
   picks them up (every 5 minutes). Then the 2026 rule applies: a project made in
   2026 or later becomes a Bidding job; an older or undated one is dropped. Only
   after that are they removed from the server.
+
+## A GrayCo copy of every CompanyCam photo (CCPHOTOS2, 10/30)
+
+The owner: "you will delete company cam one day I need all pictures to stay"
+and "make sure we have supabase pro".
+
+Until this switch is on, GrayCo keeps only CompanyCam's links. When CompanyCam
+is cancelled, those links stop working and the pictures are gone. With the
+switch on, the server copies every indexed photo into GrayCo's own file
+storage, so the photos stay.
+
+### What is copied, and where
+
+- For each photo, the server fetches CompanyCam's **web** size (about 1024 px
+  on the long side, JPEG) and its **thumbnail** (about 250 px). It never
+  fetches the original. Nothing is resized on the server, because the
+  functions have no image library; CompanyCam's own sizes are already small.
+- The copies go into the CRM's private bucket `crm-files`. Each file is named
+  by its SHA-256 fingerprint (`crm-files/<sha256>.jpg`), the same way every
+  GrayCo Photos upload is named. The CRM's file reader opens them and checks
+  each one against its fingerprint.
+- The index row records the copy:
+  `ccidx:<project>.g = { <photo id>: [web file, thumbnail file, bytes, removedAt?] }`.
+  A photo that already has a copy is never fetched again.
+- **GrayCo Photos uses the GrayCo copy when there is one.** The grid shows the
+  copy's thumbnail and full screen shows the web copy. When a copy can't be
+  read, it falls back to CompanyCam's link. ⬇ Download falls back to the copy
+  when CompanyCam's links no longer work. The customer portal, the GC link
+  and the sub portal serve the copy too (signed links that expire after an
+  hour), and use CompanyCam's link only for a photo that has no copy yet.
+- **A photo removed in CompanyCam keeps its GrayCo copy.** It stays in the
+  index, marked "Removed in CompanyCam · GrayCo copy kept". This also applies
+  when a whole CompanyCam project is deleted. A removed photo that was never
+  copied drops out, as before.
+- How it runs: the copying uses whatever time is left after the index work in
+  each run. That is the 15-minute run, plus `companycam-photos-background`
+  (about 13 minutes) whenever photos are still waiting. Each run keeps its
+  place, so a run that runs out of time leaves no half-done copy. The copier
+  waits 250 ms between pictures (`CC_COPY_MIN_MS`). When CompanyCam answers 429
+  with a long Retry-After, copying waits until then and the index work goes
+  on. A link that has expired sends the project for a full re-read to get
+  fresh links. Each photo is tried 3 times.
+- The CompanyCam token stays in `COMPANYCAM_TOKEN`. It is never sent to a
+  picture link, never logged and never stored.
+- Data-entry mode (⏸) does not stop the copying. Like the index, it only reads
+  from CompanyCam and writes to GrayCo's own storage.
+
+### Storage math
+
+| | |
+|---|---|
+| Web copy (≈1024 px JPEG) | ≈ 0.15–0.30 MB |
+| Thumbnail (≈250 px) | ≈ 0.02 MB |
+| **Per photo, planning figure** | **≈ 0.25 MB** |
+| 10,000 photos | ≈ 2.5 GB |
+| 50,000 photos | ≈ 12.5 GB |
+| 100,000 photos | ≈ 25 GB |
+| 300,000 photos | ≈ 75 GB |
+
+The status window shows the real number. Once 10 photos are copied, it
+measures the average size and multiplies it by the number of photos in the
+index ("all N photos ≈ X GB").
+
+**Supabase Pro is needed.** The Free plan has 1 GB of file storage, which is
+not enough for even a few thousand photos. Pro includes 100 GB of file storage
+and charges a small fee per extra GB. Viewing photos also counts toward
+Supabase's monthly download allowance. Check the current numbers on
+supabase.com/pricing. To check the plan: Supabase dashboard → your
+organization → **Billing**. It must say **Pro**.
+
+### Turning it on
+
+1. Confirm the Supabase plan is **Pro** (see above).
+2. In the CRM, open **📸 CompanyCam sync status** (Admin → ⚙ Admin settings, or
+   the button on 📸 GrayCo Photos).
+3. In the box **Keep a GrayCo copy of every photo: Off**, press **Turn on**
+   (owner or admin only) and confirm. Copying starts in the background straight
+   away. Press **Refresh** to watch the meter: photos copied of the total, GB
+   used, and the estimate for all photos.
+4. Optional: run `docs/storage-usage.sql` once in the Supabase SQL Editor. The
+   safety stop then counts the whole file storage, not only the photo copies.
+
+The switch is `gc_kv ccidx_copy { on, capGB, by, at }`. When that row is
+missing, the switch is **off**, which is the default. **Turn off** stops new
+copies, and every copy already made stays.
+
+### The safety stop
+
+Copying pauses when the copies reach the **safety cap**. The default is 80 GB,
+which leaves headroom on Pro's 100 GB. When `storage-usage.sql` is installed,
+the cap applies to the whole file storage instead. When copying pauses:
+
+- the box in the status window turns red ("⛔ Copying PAUSED at the safety
+  cap");
+- the office To-Do gets one line: "📸 GrayCo photo copies paused at X GB".
+
+To go on, raise the cap in the same box (**Safety cap … GB → Save cap**) after
+checking the plan. Or leave it paused. Nothing is deleted.
+
+## Customer visibility of CompanyCam photos is a click (CCPHOTOS2, 10/30)
+
+The owner: "Company cam photos / Grayco are clicked for customer to see or not".
+
+Before this release, every CompanyCam photo showed on the customer portal
+unless someone hid it. Now customer visibility is a choice, the same as for
+GrayCo's own uploads, where every upload asks "Customer can see these photos?
+Yes / No":
+
+- A CompanyCam photo **put into CompanyCam after this release** is **not**
+  shown to the customer until someone chooses to show it:
+  - **per photo:** open it and tap **"👁 Customer can see? (not shown yet)"**.
+    The button then says **Customer sees it**.
+  - **many photos:** **☑ Select**, tap the photos, then **👁 Customer can see
+    (n)** or **🔒 Hide from customer (n)**.
+  - **a whole job:** **👁 Show all to customer** or **🔒 Hide all**, next to
+    ⬇ Download all. This covers every photo the job has at that moment. A
+    photo added later still waits for its own click.
+
+  The newest choice wins. For example, hiding one photo after **Show all**
+  hides that photo only.
+- **Photos a customer could already see stay as they were.** That covers any
+  photo put in before this release and not hidden by anyone. Nothing a
+  customer was already shown is taken away.
+- "This release" is the moment written once into `gc_kv ccvis.since`, the first
+  time the new server code runs. A photo's time is when it went into
+  CompanyCam: the later of `captured_at` and `created_at`. A photo taken long
+  ago but put in after the release counts as new.
+- A sub's photo is still never shown to the customer unless an admin or the
+  office turns it on (SUBPHOTOS). **Show all** leaves sub photos alone for
+  everyone else. Subs see what the customer sees, unless "Subs see it" says
+  otherwise, the same as for GrayCo's own photos.
+- **It is checked on the server.** `portal.js` (the customer portal),
+  `gc-portal.js` (the GC link) and `sub-photos.js` (the sub portal) all apply
+  the same rule (`netlify/functions/_lib/cc-vis.js`). It is not only hidden in
+  the CRM. The choices are small records in `gc_photos` with `source:
+  'ccflag'`: `ccf_<CompanyCam id>` for one photo and `ccj_<job id>` for a whole
+  job. No photo list counts them.
