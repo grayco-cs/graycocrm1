@@ -18,8 +18,12 @@ function pmRole(){
   var u = myUser(); return s(u && u.role);
 }
 function pmVas(){ try { return !!(window._gcVAS && typeof window._gcVAS.active === 'function' && window._gcVAS.active()); } catch (e) { return false; } }
-/* admin, owner or office: every project + the PM switcher (an admin's "View as" follows the role being viewed) */
-function pmSeesAll(){ var r = pmRole(); if (pmVas()) return /^(admin|office)/i.test(r); return isOffice() || /^(admin|office)/i.test(r); }
+/* admin, owner or office: every project + the PM switcher (an admin's "View as" follows the role being viewed);
+   the same test as the Projects screen (patch PROJLEAK) when it is there */
+function pmSeesAll(){
+  try { if (typeof window._gcProjSeesAll === 'function') return !!window._gcProjSeesAll(); } catch (e) {}   /* patch PROJLEAK: the Projects screen's own test */
+  var r = pmRole(); if (pmVas()) return /^(admin|office)/i.test(r); return isOffice() || /^(admin|office)/i.test(r);
+}
 function pmLimited(){ return !pmSeesAll(); }
 /* the Projects list's own rule for one job (patch HOT2 / PMG: _gcProjVisible → _gcSamePM, or an estimator's jobs) */
 function pmJobVisible(raw, me){
