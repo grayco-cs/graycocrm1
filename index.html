@@ -4277,7 +4277,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.161-2026-10-30-r16 -->
+<!-- GrayCo CRM Build: 33.161-2026-10-30-r16a -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4942,7 +4942,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.161-2026-10-30-r16");
+  console.log("[GC] Build 33.161-2026-10-30-r16a");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4990,7 +4990,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.161-2026-10-30-r16"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.161-2026-10-30-r16a"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -172167,7 +172167,9 @@ try {
     GP.mountTab = function(el){
       var r = mt.apply(this, arguments);
       try {
-        if (allowed() && el && el.parentElement && !el.parentElement.querySelector('[data-ccs-photos]')) {
+        /* patch CCBTNOFF: no button above GrayCo Photos (it stayed on every page) */
+        try { var _ob = D.querySelectorAll('[data-ccs-photos]'); for (var _i = 0; _i < _ob.length; _i++) _ob[_i].remove(); } catch (e) {}
+        if (false && allowed() && el && el.parentElement && !el.parentElement.querySelector('[data-ccs-photos]')) {
           var bb = D.createElement('div'); bb.setAttribute('data-ccs-photos', '1'); bb.setAttribute('data-gc-keep', '1'); bb.style.cssText = 'margin:0 0 8px';
           bb.innerHTML = '<button type="button" style="padding:6px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">📸 CompanyCam sync status</button>';
           bb.firstChild.addEventListener('click', open);
