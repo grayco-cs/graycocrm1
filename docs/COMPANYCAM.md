@@ -226,7 +226,13 @@ commas, city and ZIP written any way) or with the same name:
 
 - A job's existing link is never replaced. A second project at the same place
   is added beside it, and the job shows photos from both.
-- Projects made before 1 January 2026 are never linked.
+- Projects made before 1 January 2026 are never linked by themselves. (From
+  CCPHOTOS: one that clearly is a job with no photo project yet goes on the
+  list, for one tap.)
+- (CCPHOTOS) The job's PO in the project name ("Q368 - Smith roof") comes
+  first, then the address, then the name. A project archived in CompanyCam is
+  tied to the ONE job it clearly is, so a finished job's photos show too. It
+  never becomes a new job.
 - If it could be two jobs, has the same name but a different address, or
   anything else is unsure, it goes on **📸 GrayCo Photos → "Link these photo
   projects"** (admin and office). Tap **Link** and its photos show on that job
@@ -234,6 +240,46 @@ commas, city and ZIP written any way) or with the same name:
 
 Photos (and every CompanyCam call from the browser) load only while GrayCo
 Photos or a job's photos are open. Leaving the screen stops them.
+
+### Every CompanyCam photo in GrayCo Photos (CCPHOTOS, 10/30)
+
+Before this, nothing was stored. GrayCo Photos asked CompanyCam for one job's
+photos only while that job's page was open in that browser, and only up to
+1,000 photos. The home page's cards, counts and feed knew only the jobs opened
+in that session, plus CompanyCam's newest 40 photos. A lead's CompanyCam
+project was never read. So only some jobs ever showed their photos.
+
+Now a server function, `companycam-photos`, runs every 15 minutes (at :07,
+:22, :37 and :52). It lists every photo of every CompanyCam project that a job
+or lead is linked to. No picture is copied and nothing goes into the file
+bucket. It keeps only CompanyCam's own small links, about 0.2–0.3 KB per photo,
+in `gc_kv` (`ccidx:<project>` plus the summary `ccidx`). Grids use
+CompanyCam's **thumbnail** link and a photo opened full screen uses its **web**
+link. Download fetches that photo's original once.
+
+- **The first run after a deploy is the backfill.** It reads all pages of all
+  linked projects. It runs ~18 s and then hands the rest to
+  `companycam-photos-background`, which runs ~13 min. Each run keeps its place,
+  so a big backlog is finished by the next runs. After the backfill, a run
+  reads only the projects CompanyCam says changed. Every project is also read
+  in full again every 12 hours, which drops deleted photos and takes fresh
+  links.
+- It paces itself (≥ 260 ms between calls). When CompanyCam answers 429, it
+  waits the Retry-After time, or stops until then.
+- **📸 CompanyCam sync status** shows "CompanyCam photos in GrayCo Photos":
+  projects indexed / linked, photos, and progress while it runs. **⟳ Index all
+  photos now** (admin / office) starts a full re-read at once. Press
+  **Refresh** to see how far it is.
+- A project linked after the last run still shows its photos straight from
+  CompanyCam, as before, until the next run lists it.
+- The index is never in the CRM's "what changed" download or the nightly
+  backup, because it is rebuilt from CompanyCam.
+- The "Customer sees it" / "Subs see it" choices work as before (`ccf_<id>`
+  records).
+
+Phone photos taken in GrayCo Photos were already small, and they stay that
+way. They are stored at ≤ 1600 px, JPEG 0.72, metadata removed, with a 360 px
+thumbnail.
 
 ### The old importers are off
 

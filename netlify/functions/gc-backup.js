@@ -102,7 +102,8 @@ async function readAll(table){
   const out = [];
   const ord = ORDER[table] ? '&order=' + ORDER[table] + '.asc' : '';
   for (let from = 0; from < 200000; from += 1000) {
-    const r = await fetch(sbUrl() + '/rest/v1/' + table + '?select=*' + ord, { headers: H({ Range: from + '-' + (from + 999), 'Range-Unit': 'items' }) });
+    /* patch CCPHOTOS: the CompanyCam photo index (ccidx*) is rebuilt from CompanyCam by companycam-photos — never backed up */
+    const r = await fetch(sbUrl() + '/rest/v1/' + table + '?select=*' + ord + (table === 'gc_kv' ? '&key=not.like.ccidx*' : ''), { headers: H({ Range: from + '-' + (from + 999), 'Range-Unit': 'items' }) });
     if (r.status === 404) return null;                       // table does not exist here
     if (!r.ok && r.status !== 206) throw new Error(table + ' read ' + r.status);
     const rows = await r.json();

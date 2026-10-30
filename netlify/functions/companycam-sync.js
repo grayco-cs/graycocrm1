@@ -35,7 +35,7 @@ const PER_PAGE = 50, MAX_PAGES = 400, OVERLAP = 3600;
 const STATE_KEY = 'gc_cc_sync_state';
 const ID_FIELDS = ['ccProjectId', 'companyCamId', 'companycamId', 'ccId', 'ccamId', 'ccProjectUrl', 'companyCamUrl', 'ccamUrl', 'ccUrl', 'sourceUrl'];
 const CLOSED_JOB = /^(completed?|closed|lost|cancell?ed|done|archived|dead|declined)$/;
-const LINK_V = 2;   /* patch PHOTOLINK: a new linking rule reads every 2026 project again once */
+const LINK_V = 3;   /* patch PHOTOLINK: a new linking rule reads every 2026 project again once (3: patch CCPHOTOS — the PO in the name, archived projects) */
 const CM = require('./_lib/cc-match.js');
 /* every CompanyCam id a CRM record carries (its own fields + the extra photo projects, patch PHOTOLINK) */
 function ccIdsOf(r){
@@ -243,7 +243,7 @@ function pmFinder(users, creatorMap){
 
 /* ── what the CRM already has ── (patch PHOTOLINK: address = house number + street name, see _lib/cc-match.js) */
 function knownIndex(projects, leads, customers){
-  const idx = { id: {}, addr: {}, name: {}, jobs: {} };
+  const idx = { id: {}, addr: {}, name: {}, jobs: {}, po: {} };
   function add(r, kind){
     if (!r || typeof r !== 'object' || r.deleted === true) return;
     const own = /^PRJcc_\d+$/.test(s(r.id)) ? ccIdFromAny(r.id) : '';
@@ -257,15 +257,21 @@ function knownIndex(projects, leads, customers){
     idx.jobs[label.id] = label;
     if (ap) { const k = ap.num + ' ' + ap.name; (idx.addr[k] = idx.addr[k] || []).push(label); }
     [r.name, r.company].forEach(n => { const k = CM.normName(n); if (k && arr(idx.name[k]).indexOf(label) < 0) (idx.name[k] = idx.name[k] || []).push(label); });
+    /* patch CCPHOTOS: the job's PO ("Q368") — a CompanyCam project named with it is that job */
+    [r.po, r.autoPO, r.poNumber].forEach(v => { const k = poKey(v); if (k && arr(idx.po[k]).indexOf(label) < 0) (idx.po[k] = idx.po[k] || []).push(label); });
   }
   arr(projects).forEach(r => add(r, 'job')); arr(leads).forEach(r => add(r, 'lead')); arr(customers).forEach(r => add(r, 'customer'));
   return idx;
 }
-/* the CRM jobs this project could be: [{ job, addr: same place, name: same name, conflict: both have an address and they differ }] */
+/* patch CCPHOTOS: a PO is one or two letters and 3–5 digits ("Q368", "AB1204"); in a project name it stands on its own */
+function poKey(v){ const t = s(v).toUpperCase().replace(/[^A-Z0-9]/g, ''); return /^[A-Z]{1,2}\d{3,5}$/.test(t) ? t : ''; }
+function posIn(name){ const out = []; (s(name).toUpperCase().match(/(^|[^A-Z0-9])([A-Z]{1,2}-?\d{3,5})(?![A-Z0-9])/g) || []).forEach(m => { const k = poKey(m); if (k && out.indexOf(k) < 0) out.push(k); }); return out; }
+/* the CRM jobs this project could be: [{ job, addr: same place, name: same name, po: its PO is in the project name, conflict: both have an address and they differ }] */
 function candidates(idx, p, no){
   const pa = CM.addrParts(p.street ? [p.street, p.address].join(', ') : p.address), hits = {};
   if (pa) arr(idx.addr[pa.num + ' ' + pa.name]).forEach(j => { if (CM.sameAddr(pa, j.ap)) (hits[j.id] = hits[j.id] || { job: j }).addr = true; });
   const n = CM.normName(p.name); if (n) arr(idx.name[n]).forEach(j => { (hits[j.id] = hits[j.id] || { job: j }).name = true; });
+  posIn(p.name).forEach(k => arr(idx.po[k]).forEach(j => { const h = hits[j.id] = hits[j.id] || { job: j }; h.po = k; }));   /* patch CCPHOTOS */
   const all = Object.keys(hits).map(k => hits[k]), out = all.filter(h => !(no && no[p.id + '|' + h.job.id]));
   const res = out.map(h => {
     h.conflict = !h.addr && !!pa && !!h.job.ap && !CM.sameAddr(pa, h.job.ap);
@@ -289,6 +295,15 @@ function decide(idx, p, no){
     return { kind: 'linked', why: 'its CompanyCam id is on ' + l.kind + ' ' + l.id };
   }
   if (!cands.length) return cands.rejected ? { kind: 'ask', jobs: [], why: 'a person said it is not the job at this address — a new job, or not a job?' } : { kind: 'new' };
+  /* patch CCPHOTOS: the job's PO in the project name comes first (one job per PO), then the address, then the name */
+  const poH = cands.filter(h => h.po);
+  if (poH.length === 1) {
+    const h = poH[0], j = h.job, w = 'PO ' + h.po + ' in the project name';
+    if (h.conflict) return { kind: 'ask', jobs: [j], why: w + ' is "' + (j.name || j.id) + '", but the addresses differ' };
+    if (j.hasCc && !(j.created && p.created_at >= j.created - EARLY)) return { kind: 'ask', jobs: [j], why: w + ' is "' + (j.name || j.id) + '", which already has its own CompanyCam project' };
+    return { kind: 'attach', job: j, by: 'PO' + (h.addr ? ' + address' : ''), why: w + ' is "' + (j.name || j.id) + '"' };
+  }
+  if (poH.length >= 2) return { kind: 'ask', jobs: poH.map(h => h.job), why: 'the PO in the project name is on ' + poH.length + ' jobs: ' + poH.map(h => h.job.name || h.job.id).join(', ') };
   const open = cands.filter(h => !CLOSED_JOB.test(h.job.status));
   if (open.length === 1) {
     const h = open[0], j = h.job;
@@ -402,8 +417,16 @@ async function run(opts){
   });
   for (const p of cc.list) {                              /* newest first */
     if (!p.id) continue;
-    if (!p.created_at || p.created_at < CUT) { R.old++; continue; }
-    if (p.status && p.status !== 'active') { R.archived++; continue; }
+    const oldP = !p.created_at || p.created_at < CUT, arch = !!(p.status && p.status !== 'active');
+    if (oldP || arch) {
+      /* patch CCPHOTOS: never a new job — but an archived 2026 project that is clearly ONE job's goes on that job (its photos show in
+         GrayCo Photos), and a project made before 2026 that clearly is a job with no photo project yet goes on the list for one tap */
+      const d0 = dis['id:' + p.id] || dead['PRJcc_' + p.id] ? null : decide(idx, p, linkNo);
+      if (d0 && d0.kind === 'attach' && arch && !oldP) { R.linked++; attachTo(d0.job, p, d0.by + ' (archived in CompanyCam)'); continue; }
+      if (d0 && d0.kind === 'attach' && !d0.job.hasCc && !arch) { R.ask.push(p.id); R.review.push(revOf(p, 'link', 'made in CompanyCam before 2026 — ' + d0.why + '. Link it if it is this job.', [d0.job])); continue; }
+      if (oldP) R.old++; else R.archived++;
+      continue;
+    }
     if (dead['PRJcc_' + p.id]) { R.deleted++; continue; }
     let d = decide(idx, p, linkNo);
     /* "not a new job (it's already here)" on the list: never a job, but its photos still go to the one job it clearly is */
@@ -541,4 +564,4 @@ exports.handler = async function(event){
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: String(e && e.message || e) }) };
   }
 };
-exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, HEALTH_KEY };
+exports._t = { run, compact, decide, candidates, ccIdsOf, knownIndex, pmFinder, listChanged, rsNear, CUT, healthOf, HEALTH_KEY, LINK_V, posIn, poKey };
