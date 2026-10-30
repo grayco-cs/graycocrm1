@@ -192926,10 +192926,8 @@ function wrapAll(){
   guard('_gcMergeDrawSet', always);
 }
 wrapAll(); mark();
-/* each screen change (window._setView) and each click: the class follows who is signed in; late definitions get wrapped */
-var sv = W._setView;
-if (typeof sv === 'function' && !sv.__gcOff4) { var w = function(){ var r = sv.apply(this, arguments); try { wrapAll(); mark(); } catch (e) {} return r; }; try { Object.keys(sv).forEach(function(k){ w[k] = sv[k]; }); } catch (e) {} w.__gcOff4 = true; W._setView = w; }
-D.addEventListener('pointerdown', function(){ mark(); }, true);
+/* each press (pointerdown, before any click lands): the class follows who is signed in; late definitions get wrapped */
+D.addEventListener('pointerdown', function(){ try { wrapAll(); mark(); } catch (e) {} }, true);
 D.addEventListener('click', function(ev){
   var t = ev.target; if (!t || !t.closest) return;
   var b = t.closest('._gcRowX,[data-del-job],[data-gcx-del],#gcx-binfloat,#gc-merge-btn,#_invMergeBtn'); if (!b) return;

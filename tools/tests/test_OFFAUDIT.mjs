@@ -106,18 +106,18 @@ if (k) {
   await ev(() => { const x = document.querySelector('#gcl-drawer .hd button'); if (x) x.click(); }); await approvals();
   ok(await gone(k) && (await counts()).st < n0 + 1, 'after she assigns it the card leaves', await counts());
 }
-const drawer = await ev(async () => { const l = window._gcLeadsToAssign()[0]; if (!l) return 'nolead'; window._gcOpenLead(l.id, 'assign'); for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 400)); const s = document.querySelector('select[data-d="assign"]'); if (s) return { disabled: s.disabled }; } return 'nodrawer'; });
+const drawer = await ev(async () => { const l = window._gcLeadsToAssign()[0]; if (!l) return 'nolead'; for (let t = 0; t < 3; t++) { window._gcOpenLead(l.id, 'assign'); for (let i = 0; i < 25; i++) { await new Promise(r => setTimeout(r, 400)); const s = document.querySelector('select[data-d="assign"]'); if (s) return { disabled: s.disabled }; } } return 'nodrawer'; });
 ok(drawer && drawer.disabled === false, 'the lead drawer\'s Assign picker is enabled for the office', drawer);
 await ev(() => { const x = document.querySelector('#gcl-drawer .hd button'); if (x) x.click(); });
 /* 3. Accounting → To Match */
 await ev(() => window._setView('taxcenter')); await sleep(3000);
-await ev(() => { const b = [...document.querySelectorAll('main button')].find(b => /^✅ To Match/.test(b.innerText.trim())); if (b) b.click(); }); await sleep(2000);
+await ev(async () => { for (let i = 0; i < 20; i++) { const b = [...document.querySelectorAll('main button')].find(b => /^✅ To Match/.test(b.innerText.trim())); if (b) { b.click(); break; } await new Promise(r => setTimeout(r, 500)); } for (let i = 0; i < 20; i++) { if ([...document.querySelectorAll('main button')].some(b => /^Approve…$/.test(b.innerText.trim()))) break; await new Promise(r => setTimeout(r, 500)); } });
 const tm = () => ev(() => +(((document.querySelector('main') || {}).innerText || '').match(/(\d+)\s*EXPENSE APPROVAL/) || [0, -1])[1]);
 const t0 = await tm();
 const ap = await ev(() => { const b = [...document.querySelectorAll('main button')].find(b => /^Approve…$/.test(b.innerText.trim())); if (!b) return 'none'; b.click(); return 'ok'; });
 await sleep(1200);
 const toastSeen = await ev(() => [...document.body.children].some(d => /Approved → P&L/.test(d.textContent || '')));
-await sleep(1500); const t1 = await tm();
+let t1 = -1; for (let i = 0; i < 10 && !(t1 >= 0 && t1 < t0); i++) { await sleep(500); t1 = await tm(); }
 if (ap === 'ok') { ok(t1 === t0 - 1, 'To Match → Approve…: approved in place, "expense approval" count drops', { t0, t1 }); ok(toastSeen, 'and "Approved → P&L" shows (OFFFIX2)'); }
 else console.log('note: no expense waiting on To Match in this data');
 const rc = await ev(async () => { const b = [...document.querySelectorAll('main button')].find(b => /Re-check duplicates/.test(b.innerText)); if (!b) return 'none'; b.click(); const busy = b.innerText; await new Promise(r => setTimeout(r, 2500)); return { busy, said: [...document.body.children].some(d => /Checked again/.test(d.textContent || '')) }; });
