@@ -5,6 +5,7 @@
 //   Signed in to the CRM (staff):
 //   POST { action:'list' }                                     → every waiver (no link tokens) + the ON / OFF settings
 //   POST { action:'request', invId } | { action:'request', pid, sub, subId, final:true }   → "📝 Request lien waiver"
+//        (+ viaApproval:true — patch OFFFEAT, the job page's ⚖️ Liens & waivers: the request always waits on ✅ Approvals)
 //   POST { action:'toggle', kind:'sub'|'job', key, on }        → (admin / office) "Lien waivers: on / off"
 //   POST { action:'override', pid, reason }                    → (admin) close a job without its waivers
 'use strict';
@@ -63,10 +64,10 @@ exports.handler = async function(event){
     if (s(b.invId)) {
       const r = C.listOf(data, ['invs', 'invoices']).find(function(x){ return s(x.id) === s(b.invId); });
       if (!r) return J(404, { ok: false, error: 'That invoice is not in the cloud yet.' });
-      return J(200, await L.request({ kind: 'conditional', invId: s(r.id), invNum: s(r.invNum || r.num || r.number), pid: pidOf(r), sub: s(r.sub || r.vendor), subId: s(r.subId), amount: num(r.amt != null ? r.amt : r.amount), through: r.date || r.invDate, by: who.name || who.email, again: b.again === true }, data));
+      return J(200, await L.request({ kind: 'conditional', invId: s(r.id), invNum: s(r.invNum || r.num || r.number), pid: pidOf(r), sub: s(r.sub || r.vendor), subId: s(r.subId), amount: num(r.amt != null ? r.amt : r.amount), through: r.date || r.invDate, by: who.name || who.email, again: b.again === true, viaApproval: b.viaApproval === true }, data));   /* patch OFFFEAT: viaApproval */
     }
     if (!s(b.pid) || !(s(b.sub) || s(b.subId))) return J(400, { ok: false, error: 'Pick the job and the sub.' });
-    return J(200, await L.request({ kind: b.final === false ? 'conditional' : 'final', pid: s(b.pid), sub: s(b.sub), subId: s(b.subId), amount: num(b.amount), through: b.through, by: who.name || who.email, again: b.again === true }, data));
+    return J(200, await L.request({ kind: b.final === false ? 'conditional' : 'final', pid: s(b.pid), sub: s(b.sub), subId: s(b.subId), amount: num(b.amount), through: b.through, by: who.name || who.email, again: b.again === true, viaApproval: b.viaApproval === true }, data));   /* patch OFFFEAT: viaApproval */
   }
   if (act === 'toggle') {
     if (!admin && !office) return J(403, { ok: false, error: 'Only an admin or the office can change this.' });

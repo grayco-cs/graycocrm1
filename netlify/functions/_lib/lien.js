@@ -69,6 +69,7 @@ function subContact(data, subId, name){
   return { id: s(r && r.id) || s(subId), name: s((r && (r.company || r.name)) || name), email: okEmail(e) ? low(e) : '' };
 }
 function waiverText(w){
+  if (s(w.wording)) { try { return require('./offfeat.js').fill(w.wording, { AMOUNT: usd(w.amount), JOB: s(w.jobName) + (w.jobAddress ? ', ' + s(w.jobAddress) : ''), THROUGH: s(w.through), INVOICE: w.invNum ? ' (invoice ' + s(w.invNum) + ')' : '', PAYER: 'GrayCo Construction Services', CLAIMANT: s(w.sub), DATE: s(w.createdAt).slice(0, 10) }); } catch (e) {} }   /* patch OFFFEAT: the office's edited wording, frozen on the waiver when it was asked for */
   const amt = usd(w.amount), job = esc(w.jobName) + (w.jobAddress ? ', ' + esc(w.jobAddress) : '');
   if (w.kind === 'final') return '<p><b>Conditional Waiver and Release on Final Payment</b></p><p>Upon receipt by the undersigned of a payment from GrayCo Construction Services in the amount of <b>' + amt + '</b>, this document becomes effective to release any mechanic’s lien, notice, stop notice or payment bond right the undersigned has on the job of <b>' + job + '</b>, for all labor, services, equipment and materials furnished to that job.</p><p>This release is conditional: it has no effect unless and until that payment is actually received.</p>';
   return '<p><b>Conditional Waiver and Release on Progress Payment</b></p><p>Upon receipt by the undersigned of a payment from GrayCo Construction Services in the amount of <b>' + amt + '</b> for labor, services, equipment or materials furnished to the job of <b>' + job + '</b> through <b>' + esc(w.through || '') + '</b>' + (w.invNum ? ' (invoice ' + esc(w.invNum) + ')' : '') + ', this document becomes effective to release any mechanic’s lien, notice, stop notice or payment bond right the undersigned has on that job, to the extent of that payment only.</p><p>It does not cover retention, extras or work after that date, or amounts not yet paid. This release is conditional: it has no effect unless and until that payment is actually received.</p>';
@@ -125,10 +126,11 @@ async function request(o, data){
   const w = { id: id, kind: o.kind === 'final' ? 'final' : 'conditional', invId: s(o.invId), invNum: s(o.invNum), pid: s(o.pid), jobName: s(p && p.name), jobAddress: s(p && (p.address || p.jobAddress)),
     sub: sc.name, subId: sc.id, subEmail: sc.email, amount: Math.round(num(o.amount) * 100) / 100, through: ymd(o.through) || now.slice(0, 10), tokenHash: hash(token),
     status: 'new', requestedBy: s(o.by) || 'CRM (automatic)', createdAt: now, updatedAt: now };
+  try { const Wd = await require('./offfeat.js').wording(), wk = w.kind === 'final' ? 'sub_final' : 'sub_conditional'; if (Wd.custom[wk]) w.wording = Wd.texts[wk]; } catch (e) {}   /* patch OFFFEAT: edited wording (else the built-in text below) */
   const put = await C.kvListUpdate(KEY, function(l){ const rest = l.filter(function(x){ return s(x.id) !== id; }); return { list: rest.concat([w]), check: function(l2){ const z = l2.find(function(x){ return s(x.id) === id; }); return !!(z && z.tokenHash === w.tokenHash); } }; });
   if (!put.ok) return { ok: false, error: 'Could not save the waiver.' };
   const html = requestHtml(w, signLink(token));
-  if (await contacted(sc.email)) {
+  if (!o.viaApproval && await contacted(sc.email)) {   /* patch OFFFEAT: a request from the job page's ⚖️ Liens & waivers always waits on ✅ Approvals */
     const sent = await sendNow(w, html);
     await patchWaiver(id, function(x){ if (sent.ok) { x.status = 'sent'; x.sentAt = new Date().toISOString(); } else x.lastError = sent.error; });
     return { ok: sent.ok, sent: sent.ok, error: sent.error, waiver: strip(Object.assign(w, { status: sent.ok ? 'sent' : 'new' })) };
@@ -136,10 +138,10 @@ async function request(o, data){
   if (await A.paused()) return { ok: false, error: 'Data-entry mode is on — nothing is sent to subs.', waiver: strip(w) };
   /* a first request to this sub is already waiting on approvals: hold this one; it goes out once that one is approved */
   const Cq = await C.kvListRead(C.AQ_KEY);
-  if (Cq && Cq.list.some(function(x){ return x && x.kind === KIND && (x.status === 'waiting' || x.status === 'sending') && low(x.to) === sc.email; }))
+  if (Cq && Cq.list.some(function(x){ return x && x.kind === KIND && (x.status === 'waiting' || x.status === 'sending') && (o.viaApproval ? s((x.meta || {}).waiverId) === id : low(x.to) === sc.email); }))
     return { ok: true, held: true, waiver: strip(w) };
   const qok = await C.queueApproval({ id: 'appr_lien_' + id, kind: KIND, pid: s(o.pid), jobName: w.jobName, pm: null, officeOk: true, to: sc.email,
-    title: '📝 Lien waiver request (first one to ' + sc.name + ') — ' + (w.jobName || 'job') + ' ' + usd(w.amount),
+    title: '📝 Lien waiver request (' + (o.viaApproval ? '' : 'first one ') + 'to ' + sc.name + ') — ' + (w.jobName || 'job') + ' ' + usd(w.amount),
     subject: 'Lien waiver to sign — ' + (w.jobName || 'GrayCo job') + ' (' + usd(w.amount) + ')', html: html, attachments: [], meta: { waiverId: id, sub: sc.name, by: s(o.by) || 'auto-lien' } });
   if (qok) await patchWaiver(id, function(x){ x.status = 'waiting_approval'; });
   return { ok: !!qok, queued: !!qok, waiver: strip(Object.assign(w, { status: 'waiting_approval' })) };
