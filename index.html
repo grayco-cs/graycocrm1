@@ -161346,6 +161346,7 @@ function openTestis(){
   load();
 }
 function mktCard(){
+  /* patch MKTCLEAN: no Testimonials bar on Marketing */ var _h = D.getElementById('gc-x10-mkt'); if (_h) _h.remove(); W._gcOpenTestimonials = openTestis; return;
   var g = D.querySelector('.gmt-card'); var root = g && g.parentNode; var have = D.getElementById('gc-x10-mkt');
   if (!root) { if (have) have.remove(); return; }
   if (have && have.isConnected) return;
