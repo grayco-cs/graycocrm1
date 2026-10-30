@@ -4377,7 +4377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.162-2026-10-30-r17c -->
+<!-- GrayCo CRM Build: 33.162-2026-10-30-r17d -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -5042,7 +5042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.162-2026-10-30-r17c");
+  console.log("[GC] Build 33.162-2026-10-30-r17d");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -5090,7 +5090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.162-2026-10-30-r17c"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.162-2026-10-30-r17d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -84217,8 +84217,8 @@ function setValue(sel, value){
 }
 
 function close(){
-  if(pop){ try{ pop.remove(); }catch(e){} }
-  pop = null;
+  if(pop){ try{ pop.remove(); }catch(e){} kill(pop); }   /* patch PICKCLOSE */
+  pop = null; unwatch(); sweep();
   document.removeEventListener('mousedown', onDocDown, true);
   document.removeEventListener('keydown', onKey, true);
   window.removeEventListener('resize', close, true);
@@ -84226,13 +84226,47 @@ function close(){
 function onDocDown(e){ if(pop && !pop.contains(e.target)) close(); }
 function onKey(e){ if(e.key==='Escape'){ e.preventDefault(); close(); } }
 /* patch UNSORTLEAD: a click anywhere else closes it even when another handler stops the mousedown; so does its list leaving the screen */
-window.addEventListener('pointerdown', function(e){ try{ if(pop && !pop.contains(e.target) && e.target!==popSel) close(); }catch(_e){} }, true);
+window.addEventListener('pointerdown', function(e){ try{ if(pop && !pop.contains(e.target) && e.target!==popSel) close(); sweep(e.target); }catch(_e){} }, true);
+/* patch PICKCLOSE: it is never left on the page — no guard can keep it, Escape / a scroll / another screen close it too */
+var popView = null, PICKS = '#_gcOnePicker,._gcSelPop';
+function curView(){ try{ return localStorage.getItem('grayco_view') || ''; }catch(e){ return ''; } }
+function kill(el){
+  if(!el) return;
+  try{ Element.prototype.remove.call(el); }catch(e){}
+  if(el.isConnected){ try{ el.parentNode && Node.prototype.removeChild.call(el.parentNode, el); }catch(e){} }
+  if(el.isConnected){ try{ el.style.display = 'none'; }catch(e){} }
+}
+function sweep(keep){
+  try{ Array.prototype.slice.call(document.querySelectorAll(PICKS)).forEach(function(el){
+    if(el === pop || (keep && keep.nodeType === 1 && el.contains(keep))) return; kill(el);
+  }); }catch(e){}
+}
+function gone(){
+  if(!popSel || !popSel.isConnected || !popSel.offsetParent) return true;
+  if(popView !== null && curView() !== popView) return true;
+  var r = popSel.getBoundingClientRect();
+  return r.bottom < 0 || r.top > (window.innerHeight || 0) || r.right < 0 || r.left > (window.innerWidth || 0);
+}
+/* the page's timers AND its governed page watchers pause while a text box has focus (the search box always has), so the
+   400 ms check above never ran while the list was open. A change of screen / the list going away is noticed from the page
+   changing itself, with the browser's own MutationObserver (only while it is open; disconnected on close) */
+var mo = null;
+function rawMO(){ var M = window.MutationObserver; try{ var x = new M(function(){}); if(x && x._n && x._n.constructor) M = x._n.constructor; }catch(e){} return M; }
+function watch(){
+  try{ var M = rawMO(); if(!mo && M) mo = new M(function(recs){
+    try{ if(!pop){ unwatch(); return; }
+      for(var i = 0; i < recs.length; i++){ var tg = recs[i].target; if(!(tg && pop.contains(tg))){ if(gone()) close(); return; } } }catch(_e){}
+  }); if(mo) mo.observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['style','class','hidden'] }); }catch(e){}
+}
+function unwatch(){ try{ if(mo){ mo.disconnect(); mo = null; } }catch(e){} }
+window.addEventListener('keydown', function(e){ try{ if(e.key === 'Escape' || e.key === 'Esc'){ if(pop) close(); else sweep(); } }catch(_e){} }, true);
+window.addEventListener('scroll', function(e){ try{ if(pop && !(e.target && e.target.nodeType === 1 && pop.contains(e.target)) && gone()) close(); }catch(_e){} }, true);
 document.addEventListener('visibilitychange', function(){ if(document.hidden && pop) close(); });
-setInterval(function(){ try{ if(pop && (!popSel || !popSel.isConnected || !popSel.offsetParent)) close(); }catch(_e){} }, 400);
+setInterval(function(){ try{ if(pop){ if(gone()) close(); } else if(document.getElementById('_gcOnePicker')) sweep(); }catch(_e){} }, 400);
 
 function open(sel){
   close();
-  popSel = sel; popKey = keyFor(sel); popParent = sel.parentElement; popSig = sigOf(sel); popRowTxt = rowTxtOf(sel);
+  popSel = sel; popKey = keyFor(sel); popParent = sel.parentElement; popSig = sigOf(sel); popRowTxt = rowTxtOf(sel); popView = curView(); watch();
   var opts = Array.prototype.map.call(sel.options, function(o){
     return { value:o.value, label:(o.textContent||o.value||'').trim(), disabled:!!o.disabled };
   });
@@ -100627,6 +100661,7 @@ document.addEventListener('keydown', function(e){
     var a=document.activeElement;
     if(!isField(a)) return;
     if(e && (e.key==='Enter'||e.key==='Escape')){ root=null; at=0; disarm(); return; }
+    if(a.closest && a.closest('#_gcOnePicker,._gcSelPop')) return;   /* patch PICKCLOSE: a dropdown's search box is not a form */
     root=rootOf(a); at=Date.now(); arm(root);
   }catch(err){}
 }, true);
