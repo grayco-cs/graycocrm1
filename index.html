@@ -172167,7 +172167,9 @@ try {
     GP.mountTab = function(el){
       var r = mt.apply(this, arguments);
       try {
-        if (allowed() && el && el.parentElement && !el.parentElement.querySelector('[data-ccs-photos]')) {
+        /* patch CCBTNOFF: no button above GrayCo Photos (it stayed on every page) */
+        try { var _ob = D.querySelectorAll('[data-ccs-photos]'); for (var _i = 0; _i < _ob.length; _i++) _ob[_i].remove(); } catch (e) {}
+        if (false && allowed() && el && el.parentElement && !el.parentElement.querySelector('[data-ccs-photos]')) {
           var bb = D.createElement('div'); bb.setAttribute('data-ccs-photos', '1'); bb.setAttribute('data-gc-keep', '1'); bb.style.cssText = 'margin:0 0 8px';
           bb.innerHTML = '<button type="button" style="padding:6px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:600;cursor:pointer">📸 CompanyCam sync status</button>';
           bb.firstChild.addEventListener('click', open);
