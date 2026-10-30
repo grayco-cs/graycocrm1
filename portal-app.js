@@ -140,6 +140,38 @@ function statusWord(s){ var k = String(s || '').toLowerCase(); if (/progress/.te
 /* patch SUBTXT: "Can't make it / running late" under each of my coming days — it goes straight to my PM (and the office) */
 Object.assign(L.en, { late: '⚠️ Can’t make it / running late', lateCant: 'Can’t make it', lateLate: 'Running late', lateOther: 'Something else', lateText: 'What is going on? Your PM gets this right away.', lateSend: 'Send to my PM', lateSent: 'Sent — your PM has it', lateNeed: 'Pick one or type a note.' });
 Object.assign(L.es, { late: '⚠️ No puedo ir / voy tarde', lateCant: 'No puedo ir', lateLate: 'Voy tarde', lateOther: 'Otra cosa', lateText: '¿Qué pasa? Su PM lo recibe enseguida.', lateSend: 'Enviar a mi PM', lateSent: 'Enviado — su PM ya lo tiene', lateNeed: 'Elija una opción o escriba una nota.' });
+/* patch SUBPHOTOS (owner 10/30): today's jobs on Home (address, Maps, customer, PO + Copy PO), "📍 I'm here", "📷 Add photos",
+   "✅ Done for today" (all optional) — and the one rule: enough photos on the job before an invoice */
+Object.assign(L.en, { today: 'Today', noToday: 'Nothing on the schedule today.', here: '📍 I’m here', doneDay: '✅ Done for today', hereSent: 'Checked in — thank you', doneSent: 'Marked done for today — thank you',
+  copyPo: 'Copy PO', copied: 'PO copied', todayHint: 'Add today’s photos of your work.', photoRule: 'Photos for your invoice: {have} of {need}', photoRuleOk: 'Enough photos for your invoice ({have}).',
+  takePhoto: '📷 Take a photo', choosePhotos: '🖼 Choose photos', custPhone: 'Customer' });
+Object.assign(L.es, { today: 'Hoy', noToday: 'Nada en el calendario hoy.', here: '📍 Ya llegué', doneDay: '✅ Terminé por hoy', hereSent: 'Registrado — gracias', doneSent: 'Marcado terminado por hoy — gracias',
+  copyPo: 'Copiar PO', copied: 'PO copiado', todayHint: 'Agregue las fotos de hoy de su trabajo.', photoRule: 'Fotos para su factura: {have} de {need}', photoRuleOk: 'Fotos suficientes para su factura ({have}).',
+  takePhoto: '📷 Tomar foto', choosePhotos: '🖼 Elegir fotos', custPhone: 'Cliente' });
+function copyPo(po){
+  var ok = function(){ toast(t('copied') + ': ' + po); };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(po).then(ok, function(){ fallback(); }); } catch (e) {}
+  fallback();
+  function fallback(){ var ta = h('textarea', { style: 'position:fixed;left:-9999px' }); ta.value = po; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); ok(); } catch (e) {} ta.remove(); }
+}
+function poRow(po){ return po ? h('span', { class: 'po-row' }, [h('b', { class: 'po', 'data-po': po, text: t('po') + ' ' + po }), ' ', h('button', { type: 'button', class: 'btn sm', 'data-copy-po': po, text: '📋 ' + t('copyPo'), on: { click: function(){ copyPo(po); } } })]) : null; }
+function checkin(pid, op, btn){ busy(btn, true); api('p-checkin', { projectId: pid, op: op }).then(function(){ busy(btn, false); btn.textContent = '✓ ' + t(op === 'done' ? 'doneSent' : 'hereSent'); btn.disabled = true; }, function(e){ busy(btn, false); toast(e.message, true); }); }
+function dayButtons(pid){
+  var hb = h('button', { type: 'button', class: 'btn', 'data-here': pid, text: t('here') }); hb.addEventListener('click', function(){ checkin(pid, 'here', hb); });
+  var db = h('button', { type: 'button', class: 'btn', 'data-doneday': pid, text: t('doneDay') }); db.addEventListener('click', function(){ checkin(pid, 'done', db); });
+  return h('div', { class: 'btns3 daybtns' }, [hb, h('button', { type: 'button', class: 'btn gold', 'data-addph': pid, text: t('addPhotos'), on: { click: function(){ addPhotos(pid); } } }), db]);
+}
+function todayCard(x){
+  var c = x.customer || {};
+  return h('div', { class: 'post today-job', 'data-today': x.id }, [
+    h('div', { class: 'row' }, [h('b', { text: x.name }), x.time ? h('span', { class: 'muted', text: x.time }) : null]),
+    x.address ? h('div', null, [h('span', { text: x.address }), ' ', x.maps ? h('a', { href: x.maps, target: '_blank', rel: 'noopener', class: 'lnk', text: '📍 ' + t('maps') }) : null]) : null,
+    c.name || c.phone ? h('div', null, [h('span', { class: 'muted', text: t('custPhone') + ': ' }), h('span', { text: c.name || '' }), c.phone ? ' · ' : '', c.phone ? h('a', { href: telOf(c.phone), 'data-cust-tel': x.id, text: '📞 ' + c.phone }) : null]) : null,
+    poRow(x.po),
+    h('div', { class: 'muted', text: t('todayHint') }),
+    dayButtons(x.id),
+    h('button', { type: 'button', class: 'lnk', text: t('open') + ' ›', on: { click: function(){ openJob(x.id, 'overview'); } } })]);
+}
 function todayYmd(){ var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function lateRow(x, line){
   if (!x || !x.pid || !x.date || x.date < todayYmd()) return line;
@@ -190,7 +222,7 @@ function readFile(file){
   });
 }
 function upload(file, purpose, pid){ return readFile(file).then(function(f){ return api('p-upload', { projectId: pid || undefined, purpose: purpose, name: f.name, data: f.data }); }); }
-function picker(accept, multiple, cb){ var i = h('input', { type: 'file', accept: accept, multiple: multiple ? true : null, style: 'display:none' }); i.addEventListener('change', function(){ cb(Array.prototype.slice.call(i.files || [])); i.remove(); }); document.body.appendChild(i); i.click(); }
+function picker(accept, multiple, cb, cap){ var i = h('input', { type: 'file', accept: accept, multiple: multiple ? true : null, capture: cap || null, style: 'display:none' }); i.addEventListener('change', function(){ cb(Array.prototype.slice.call(i.files || [])); i.remove(); }); document.body.appendChild(i); i.click(); }
 function busy(btn, on){ if (!btn) return; btn.disabled = !!on; if (on) { btn.__t = btn.textContent; btn.textContent = t('sending'); } else if (btn.__t) btn.textContent = btn.__t; }
 
 /* ── a sheet (full screen on a phone, centered on a computer) with a visible ‹ Back / ✕ ── */
@@ -257,6 +289,7 @@ function contactCard(title, name, phone, email){
 function home(){
   var v = HOME, out = [];
   var needs = v.needs || [];
+  if ((v.today || []).length) out.push(card(t('today'), v.today.map(todayCard), 'today'));   /* patch SUBPHOTOS */
   out.push(card(t('needs'), needs.length ? needs.map(needRow) : [h('div', { class: 'empty', text: t('nothingNeeded') })], 'needs'));
   var m = v.money || {};
   out.push(card(t('money'), [h('div', { class: 'money3' }, [
@@ -374,11 +407,13 @@ function overview(){
   var j = JOB.job, s = j.site || {}, pm = JOB.pm || {}, out = [];
   out.push(card(null, [h('div', { class: 'big', text: j.name }),
     h('dl', { class: 'info' }, [h('dt', { text: t('address') }), h('dd', null, [j.address || t('none'), j.maps ? h('div', null, [h('a', { href: j.maps, target: '_blank', rel: 'noopener', class: 'lnk', text: '📍 ' + t('maps') })]) : null]),
-      h('dt', { text: t('po') }), h('dd', { text: j.po || t('none') }), h('dt', { text: t('dates') }), h('dd', { text: [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ') || t('none') }),
+      h('dt', { text: t('po') }), h('dd', null, [j.po ? poRow(j.po) : t('none')]), h('dt', { text: t('dates') }), h('dd', { text: [j.start ? t('starts') + ' ' + dt(j.start) : '', j.end ? t('ends') + ' ' + dt(j.end) : ''].filter(Boolean).join(' · ') || t('none') }),
       h('dt', { text: t('progress') }), h('dd', { text: (j.pct || 0) + '% ' + t('done') })]),
-    JOB.lien && JOB.lien.required ? h('div', { class: 'how', text: t('lien') }) : null]));
+    JOB.lien && JOB.lien.required ? h('div', { class: 'how', text: t('lien') }) : null,
+    JOB.photoRule ? h('div', { class: 'how photo-rule', text: JOB.photoRule.invoiceOk ? t('photoRuleOk', { have: JOB.photoRule.have }) : t('photoRule', { have: JOB.photoRule.have, need: JOB.photoRule.need }) }) : null,
+    dayButtons(j.id)]));   /* patch SUBPHOTOS */
   out.push(contactCard(t('pm'), pm.name, pm.phone, pm.email));
-  if (j.customer) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
+  if (j.customer && (j.customer.name || j.customer.phone || j.customer.email)) out.push(card(t('customer'), [h('div', { class: 'sel' }, [h('b', { text: j.customer.name }), j.customer.phone ? h('div', null, [h('a', { href: telOf(j.customer.phone), text: j.customer.phone })]) : null, j.customer.email ? h('div', null, [h('a', { href: 'mailto:' + j.customer.email, text: j.customer.email })]) : null])]));
   var sch = JOB.schedule || [];
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
@@ -446,7 +481,7 @@ function signSheet(x){
   return sh;
 }
 function photosPane(){
-  var box = card(t('photos'), [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(); } } }), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);
+  var box = card(t('photos'), [h('button', { type: 'button', class: 'btn gold', id: 'addPhotos', text: t('addPhotos'), on: { click: function(){ addPhotos(JOB.job.id); } } }), h('div', { class: 'empty', id: 'phLoad', text: '…' })]);
   loadPhotos(JOB.job.id).then(function(list){
     var e = box.querySelector('#phLoad'); if (!e) return;
     if (!list.length) { e.textContent = t('noPhotos'); return; }
@@ -476,18 +511,20 @@ function loadPhotos(pid){
 function toGPhotos(file, pid, tag, note){
   return readFile(file).then(function(f){ return gphotos({ action: 'upload', jobId: pid, name: f.name, data: f.data, tag: tag || 'During', note: note || '' }); }).then(function(j){ return !!(j && j.ok); }, function(){ return false; });
 }
-function addPhotos(){
+function addPhotos(pid0){
   var files = [], list = h('div', { class: 'muted', id: 'phList' }), note = h('input', { class: 'inp', id: 'phNote' });
-  var pick = h('button', { type: 'button', class: 'btn', id: 'phPick', text: t('addPhotos'), on: { click: function(){ picker('image/*', true, function(fs){ files = fs; list.textContent = fs.map(function(f){ return f.name; }).join(', '); }); } } });
+  var add = function(fs){ files = files.concat(fs); list.textContent = files.map(function(f){ return f.name; }).join(', '); };
+  var cam = h('button', { type: 'button', class: 'btn', id: 'phCam', text: t('takePhoto'), on: { click: function(){ picker('image/*', false, add, 'environment'); } } });   /* patch SUBPHOTOS: the phone's camera */
+  var pick = h('button', { type: 'button', class: 'btn', id: 'phPick', text: t('choosePhotos'), on: { click: function(){ picker('image/*', true, add); } } });
   var go = h('button', { type: 'button', class: 'btn gold', id: 'phSend', text: t('send') });
-  var sh = sheet(t('photos'), [pick, list, field(t('photoNote'), note), go]);
+  var sh = sheet(t('photos'), [h('div', { class: 'btns3' }, [cam, pick]), list, field(t('photoNote'), note), go]);
   go.addEventListener('click', function(){
     if (!files.length) { toast(t('pickFile'), true); return; }
     busy(go, true);
-    var pid = JOB.job.id, sentG = 0;
+    var pid = pid0 || JOB.job.id, sentG = 0;
     files.slice(0, 12).reduce(function(p, f){ return p.then(function(ids){ return toGPhotos(f, pid, 'During', note.value).then(function(okG){ if (okG) { sentG++; return ids; } return upload(f, 'photo', pid).then(function(u){ ids.push(u.id); return ids; }); }); }); }, Promise.resolve([]))
       .then(function(ids){ return api('p-photos-add', { projectId: pid, uploadIds: ids, gphotos: sentG, note: note.value }); })
-      .then(function(){ sh.close(); toast(t('saved')); openJob(pid, 'photos'); }, function(e){ busy(go, false); toast(e.message, true); });
+      .then(function(){ sh.close(); toast(t('saved')); if (JOB || !pid0) openJob(pid, 'photos'); else reloadHome(); }, function(e){ busy(go, false); toast(e.message, true); });
   });
 }
 function progressPane(){

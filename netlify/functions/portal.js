@@ -298,6 +298,7 @@ async function grayCoPhotos(pid, recs){
   list.forEach(function(r){
     if (r.deleted === true || r.source === 'ccflag' || s(r.jobId) !== String(pid)) return;
     if (!gcSharedOf(r)) return;
+    if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;   /* patch SUBPHOTOS: a sub's photo only after an admin / the office turned it on */
     const full = refPath(r.annotatedRef) ? r.annotatedRef : r.ref;
     if (!refPath(full)) return;
     const k = s(r.hash) || full; if (seen[k]) return; seen[k] = 1;

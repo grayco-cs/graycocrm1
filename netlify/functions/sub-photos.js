@@ -106,7 +106,9 @@ async function crm(force){
 /* ── who sees what (the same rules as the app: parts/01_core.js sharedOf / subsOf) ── */
 function sharedOf(r, f){ if (f && f.deleted !== true && f.shared != null) return f.shared === true; return r.shared === true || (r.shared == null && s(r.tag) !== 'Damage'); }
 function subsOf(r, f){ const h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; if (h === true) return false; if (h === false) return true; return sharedOf(r, f); }
-function custOf(r, f){ return sharedOf(r, f); }
+/* patch SUBPHOTOS: a photo from the sub portal is NEVER on the customer portal unless an admin / the office turned it on (custOkBy) */
+function subPhotoCustomerOk(r){ return !(r && r.source === 'sub') || (r.shared === true && !!s(r.custOkBy)); }
+function custOf(r, f){ return subPhotoCustomerOk(r) && sharedOf(r, f); }
 
 /* ── the sub and the job ── */
 const REMOVED = /\b(removed|declined|cancel+ed|fired|terminated|replaced|lost|rejected)\b/i;
@@ -268,7 +270,9 @@ async function uploadForSub(sub, jobId, file){
   if (!up.ok && up.status !== 409) return { ok: false, status: 502, error: 'The photo could not be stored. Try again.' };
   const now = new Date().toISOString(), tag = TAGS.indexOf(s(file.tag)) >= 0 ? s(file.tag) : 'During';
   const rec = { id: 'ph_sub_' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'), jobId: pid, ref: 'sb:crm-files/' + path, thumbRef: 'sb:crm-files/' + path,
-    tag: tag, note: clip(file.note, 300), by: clip(sub.name || 'Subcontractor', 80) + ' (sub)', byKey: 'sub:' + (s(sub.id) || low(sub.email) || low(sub.name)), subId: s(sub.id), subName: clip(sub.name, 80),
+    tag: tag, note: clip(file.note, 300), by: clip(sub.company || sub.name || 'Subcontractor', 80) + ' (sub)',
+    /* patch SUBPHOTOS: tagged with the sub's company, the day and "From sub portal"; hidden from the customer (shared:false) */
+    subCompany: clip(sub.company || sub.name, 80), fromSubPortal: true, label: 'From sub portal', labels: ['From sub portal', clip(sub.company || sub.name, 80), now.slice(0, 10)].filter(Boolean), shareSet: true, byKey: 'sub:' + (s(sub.id) || low(sub.email) || low(sub.name)), subId: s(sub.id), subName: clip(sub.name, 80),
     at: now, addedAt: now, updatedAt: now, lat: null, lng: null, shared: false, hideSubs: false, annotatedRef: '', pairId: '', source: 'sub', hash: hash, srcHash: hash, size: buf.length, fileName: clip(file.name, 120) };
   const kept = await addRecord(rec);
   if (kvCache) kvCache = null;
@@ -303,5 +307,5 @@ exports.handler = async function(event){
   }
 };
 exports._core = { validate: subByToken, jobsForSub: jobsForSub, photosForSub: photosForSub, uploadForSub: uploadForSub, jobPhotos: jobPhotos,
-  sharedOf: sharedOf, subsOf: subsOf, assigned: assigned, SIGN_SECS: SIGN_SECS, CHECK_MS: 1500,
+  sharedOf: sharedOf, subsOf: subsOf, custOf: custOf, subPhotoCustomerOk: subPhotoCustomerOk, assigned: assigned, SIGN_SECS: SIGN_SECS, CHECK_MS: 1500,
   _reset: function(){ kvCache = null; ccCache.clear(); hits.clear(); } };

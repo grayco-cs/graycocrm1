@@ -110,6 +110,49 @@ async function run(opts){
   return out;
 }
 
+/* ── patch SUBPHOTOS — the owner's first-day text: "subs get a sub portal text anytime they are scheduled for a job,
+   first day". 7 AM Central on the sub's FIRST scheduled day of each job: one text with the job, the address, the CRM PO,
+   the start, their own portal link and "add photos of your work in your portal". ON by default for every sub with a
+   10-digit mobile (not tied to the 📱 schedule-texts switch); an admin turns it off for one sub (firstOff). Never: after
+   STOP, in ⏸ data-entry mode, with SUB_FIRSTDAY_OFF=1, or twice for the same sub and job (rules: _lib/subwork.js). ── */
+const FIRST_KEY = 'gc_sub_firstday';
+function SW(){ return require('./_lib/subwork.js'); }
+async function portalLink(subId){
+  try { const PA = require('./portal-access.js')._core; const l = await PA.subLinkActive(subId); return l && l.token ? PA.linkFor(l.token) : PA.portalBase(); }
+  catch (e) { return (env('PORTAL_BASE_URL') || 'https://portal.grayco-cs.com').replace(/\/$/, ''); }
+}
+async function firstDayRun(opts){
+  opts = opts || {};
+  if (env('SUB_FIRSTDAY_OFF') === '1') return { off: true };
+  const set = await getSettings(), data = await crm();
+  let st = { sent: {} }; try { const v = await L().kvGet(FIRST_KEY); if (v && typeof v === 'object' && v.sent) st = v; } catch (e) {}
+  const list = SW().firstDayDue(data, set, st, now());
+  const out = { due: list.length, sent: 0, skipped: [] };
+  if (!list.length) return out;
+  if (await paused()) { out.skipped.push('data-entry mode'); return out; }
+  if (!MC().ready()) { out.skipped.push('texting not set up'); return out; }
+  let optout = {}; try { optout = (await MC().stateGet()).optout || {}; } catch (e) { out.skipped.push('STOP list unreadable'); return out; }   /* fail closed */
+  for (const d of list) {
+    if (optout[d.phone]) { out.skipped.push(d.key + ': STOP'); continue; }
+    let mine = false;
+    await L().kvCas(FIRST_KEY, v => { const x = v && typeof v === 'object' && v.sent ? v : { sent: {} }; const prev = x.sent[d.key]; if (prev && prev.day === d.day) return undefined; x.sent[d.key] = { day: d.day, at: nowIso(), prev: prev ? prev.day : undefined }; mine = true; return x; });
+    if (!mine) continue;
+    const text = SW().firstText(Object.assign({}, d, { link: await portalLink(d.subId) }));
+    let subFrom = ''; try { const S0 = require('./_lib/sms.js'); subFrom = require('./_lib/smsroute.js').fromFor('subs', S0.settings(await L().kvGet(S0.SETTINGS_KEY)), env); } catch (e) {}
+    const r = await MC().sendSms(d.phone, text, subFrom);
+    if (r && r.ok) {
+      out.sent++;
+      const mid = 'SUBFD_' + crypto.createHash('sha1').update(d.key + '|' + d.day).digest('hex').slice(0, 16), has = l => l.some(x => x && s(x.id) === mid);
+      const msg = { id: mid, pid: d.pid, authorId: 'sms:auto', authorName: '🤖 GrayCo first-day text → ' + d.sub, text, tags: [], at: nowIso(), source: 'sms', channel: 'sms', dir: 'out', smsTo: d.phone };
+      try { await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) {}
+    } else {
+      await L().kvCas(FIRST_KEY, v => { const x = v && v.sent ? v : null; if (!x || !x.sent[d.key] || x.sent[d.key].day !== d.day) return undefined; const pv = x.sent[d.key].prev; if (pv) x.sent[d.key] = { day: pv }; else delete x.sent[d.key]; return x; });
+      out.skipped.push(d.key + ': Twilio ' + ((r && (r.status || r.why)) || 'failed'));
+    }
+  }
+  return out;
+}
+
 /* ── a text in from a number we sent a schedule text to (missed-call.js) → { handled } ── */
 async function handleReply(ph, body, at){
   ph = U.phone10(ph); if (ph.length !== 10) return { handled: false };
@@ -145,7 +188,7 @@ exports.handler = async function(event){
   try {
     if (m === 'GET' && qs.list) {
       const set = await getSettings(), data = await crm();
-      const subs = arr(data.subs).concat(arr(data.vendors)).filter(x => x.id && x.deleted !== true).map(x => { const c = set.subs[s(x.id)] || {}; return { id: s(x.id), name: s(x.company || x.name), on: c.on === true, phone: U.subPhone(x, set) }; });
+      const subs = arr(data.subs).concat(arr(data.vendors)).filter(x => x.id && x.deleted !== true).map(x => { const c = set.subs[s(x.id)] || {}; return { id: s(x.id), name: s(x.company || x.name), on: c.on === true, firstText: c.firstOff !== true, phone: U.subPhone(x, set) }; });
       return J(200, { ok: true, ready: MC().ready(), subs }, C);
     }
     if (m === 'POST' && qs.set) {
@@ -153,7 +196,11 @@ exports.handler = async function(event){
       const id = s(b.subId); if (!/^[A-Za-z0-9_.:-]{1,90}$/.test(id)) return J(400, { ok: false, error: 'Bad sub id.' }, C);
       const ph = U.phone10(b.phone); if (b.phone != null && s(b.phone) && ph.length !== 10) return J(400, { ok: false, error: 'A 10-digit mobile number is needed.' }, C);
       let saved = null;
-      await L().kvCas(U.SETTINGS_KEY, v => { const set = U.settings(v); const cur = set.subs[id] || {}; set.subs[id] = { on: b.on === true, phone: ph || cur.phone || '', by: low(who.email), at: nowIso() }; saved = set.subs[id]; return set; });
+      if (b.firstText !== undefined && !who.admin) return J(403, { ok: false, error: 'Only an admin turns the first-day portal text on or off.' }, C);
+      await L().kvCas(U.SETTINGS_KEY, v => { const set = U.settings(v); const cur = set.subs[id] || {};
+        set.subs[id] = { on: b.on === undefined ? cur.on === true : b.on === true, phone: ph || cur.phone || '', by: low(who.email), at: nowIso() };
+        const off = b.firstText === undefined ? cur.firstOff === true : b.firstText === false; if (off) set.subs[id].firstOff = true;   /* patch SUBPHOTOS */
+        saved = set.subs[id]; return set; });
       return J(200, { ok: true, sub: Object.assign({ id }, saved) }, C);
     }
     if (m === 'GET' && qs.confirm) {
@@ -170,4 +217,4 @@ exports.handler = async function(event){
     return J(400, { ok: false, error: 'Unknown request.' }, C);
   } catch (e) { return J(500, { ok: false, error: s(e && e.message) || 'Something went wrong.' }, C); }
 };
-exports._lib = { run, handleReply, portalLate, alertPm, getSettings, getState };
+exports._lib = { run, handleReply, portalLate, alertPm, getSettings, getState, firstDayRun, FIRST_KEY };

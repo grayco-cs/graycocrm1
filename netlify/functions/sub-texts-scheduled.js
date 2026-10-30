@@ -11,6 +11,7 @@ exports.handler = async function(){
   if (!s(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   let report = {};
   try { report = await require('./sub-texts.js')._lib.run({}); } catch (e) { report = { error: s(e && e.message || e) }; }
+  try { report.firstDay = await require('./sub-texts.js')._lib.firstDayRun({}); } catch (e) { report.firstDay = { error: s(e && e.message || e) }; }   /* patch SUBPHOTOS: the first-day portal text */
   try { console.log('[sub-texts-scheduled]', JSON.stringify(report).slice(0, 400)); } catch (e) {}
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true, report }) };
 };

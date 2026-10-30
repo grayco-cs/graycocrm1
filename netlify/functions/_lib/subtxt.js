@@ -59,6 +59,7 @@ function settings(v){
   Object.keys(o.subs && typeof o.subs === 'object' ? o.subs : {}).forEach(id => {
     const x = o.subs[id] || {}; if (!/^[A-Za-z0-9_.:-]{1,90}$/.test(id)) return;
     subs[id] = { on: x.on === true, phone: phone10(x.phone).length === 10 ? phone10(x.phone) : '', by: s(x.by).slice(0, 120), at: s(x.at).slice(0, 40) };
+    if (x.firstOff === true) subs[id].firstOff = true;   /* patch SUBPHOTOS: an admin turned the first-day portal text off for this sub */
   });
   return { subs };
 }
