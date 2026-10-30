@@ -241,6 +241,17 @@ async function kvRead(key){
   return { exists: true, v: parseVal(rows[0].value), at: s(rows[0].updated_at) };
 }
 async function kvGet(key){ try { return (await kvRead(key)).v; } catch (e) { return null; } }
+/* patch MONEY: gc_kv itself (the CRM's table — where money-mail keeps gc_mail_money / gc_mail_money_done), compare-and-set on updated_at */
+async function kvReadGcKv(key){
+  try { const r = await sb('gc_kv?select=value,updated_at&key=eq.' + encodeURIComponent(key)); if (!r.ok) return { ok: false }; const rows = await r.json(); const row = Array.isArray(rows) && rows[0];
+    let v = row ? row.value : null; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return { ok: true, v: v, at: row ? s(row.updated_at) : '' }; } catch (e) { return { ok: false }; }
+}
+async function kvCasGcKv(key, value, at){
+  const now = nowIso();
+  if (at) { const r = await sb('gc_kv?key=eq.' + encodeURIComponent(key) + '&updated_at=eq.' + encodeURIComponent(at), { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ value: value, updated_at: now }) }); if (!r.ok) return false; const rows = await r.json().catch(() => []); return Array.isArray(rows) && rows.length === 1; }
+  const r = await sb('gc_kv', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ key: key, value: value, updated_at: now }) });
+  return r.ok;
+}
 /* read → change → write only if nobody wrote in between (compare-and-set on updated_at); retried */
 /* patch LEADSEE (server) */
 /* a tiny public marker in gc_kv ("gc_lead_inbox_sig": the newest open item's time and two counts — nothing about anyone).
@@ -1400,7 +1411,39 @@ exports.handler = async function(event){
     return J(200, { ok: true, service: 'GrayCo bid inbox', signed: !!(env('BID_INBOUND_SECRET') || env('RESEND_INBOUND_SECRET')), resendApi: !!env('RESEND_API_KEY'), ai: !!env('ANTHROPIC_API_KEY'), database: dbReady(), to: inboxAddrs(), leadsTo: leadAddrs(), ordersTo: orderAddrs(),
       buildingConnectedApi: !!(env('BC_CLIENT_ID') && env('BC_CLIENT_SECRET') && env('BC_REFRESH_TOKEN')), samApi: !!env('SAM_API_KEY') || !!(dbReady() && (await require('./bid-watch.js').samKey().catch(() => ({}))).key),
       bidPortal: !!(await portalApi().status().catch(() => ({}))).ready, adminAlerts: !!env('RESEND_API_KEY') && env('BID_ALERTS_OFF') !== '1',
-      phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')) }, C);
+      phonePush: !!(env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')),
+      invoicesTo: require('./_lib/money-mail.js').invoiceAddrs(), receiptsTo: require('./_lib/money-mail.js').receiptAddrs(),   /* patch MONEY: where invoices / receipts are read */
+      moneyMailboxes: require('./_lib/money-box.js').moneyBoxes(), invoicesFromEveryMailbox: require('./_lib/money-box.js').invoiceAll() }, C);
+
+  /* patch MONEY: the e-mailed invoices / receipts list (gc_kv "gc_mail_money" is admin-only in Supabase — docs/email-all.sql —
+     so the OFFICE's CRM reads it here): GET → { list, done } · POST { op: 'done', id, val } marks one booked / set aside.
+     Admins and the office only (gc_staff admin, a role starting with "office", or the CRM's users list says Office). */
+  if (qs.moneymail && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
+    const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
+    if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
+    const core = require('./portal.js')._core;
+    let office = who.admin || /^office/i.test(s(who.role));
+    if (!office) { try { const u = arr((await core.kvRead(['users'])).users); office = u.some(x => x && x.active !== false && low(x.email) === low(who.email) && /office/i.test(s(x.role) + ' ' + s(x.profile))); } catch (e) {} }
+    if (!office) return J(403, { error: 'Only an admin or the office sees the e-mailed invoices.' }, C);
+    const MMK = require('./_lib/money-mail.js');
+    if (event.httpMethod === 'GET') {
+      try { const a = await kvReadGcKv(MMK.KEY), d = await kvReadGcKv(MMK.DONE_KEY); if (!a.ok || !d.ok) throw new Error('read');
+        return J(200, { ok: true, list: arr(a.v), done: d.v && typeof d.v === 'object' && !Array.isArray(d.v) ? d.v : {}, at: nowIso() }, C); }
+      catch (e) { return J(502, { error: 'Could not read the e-mailed invoices.' }, C); }
+    }
+    let b = {}; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
+    if (s(b.op) !== 'done' || !/^MM-[0-9a-f]{8,40}$/.test(s(b.id)) || !b.val || typeof b.val !== 'object') return J(400, { error: 'Send { op: "done", id, val }.' }, C);
+    const val = { done: b.val.done !== false, skip: !!b.val.skip, why: s(b.val.why).slice(0, 120), invId: s(b.val.invId).slice(0, 80), expId: s(b.val.expId).slice(0, 80), at: s(b.val.at).slice(0, 40) || nowIso(), by: s(b.val.by).slice(0, 80) || who.email };
+    for (let t = 0; t < 4; t++) {
+      const cur = await kvReadGcKv(MMK.DONE_KEY);
+      if (!cur.ok) return J(502, { error: 'Could not read the done list.' }, C);
+      const m = cur.v && typeof cur.v === 'object' && !Array.isArray(cur.v) ? cur.v : {};
+      if (m[b.id] && s(m[b.id].at) > val.at) return J(200, { ok: true, kept: 'newer' }, C);
+      m[b.id] = val;
+      if (await kvCasGcKv(MMK.DONE_KEY, m, cur.at)) return J(200, { ok: true, done: m }, C);
+    }
+    return J(409, { error: 'Busy — try again.' }, C);
+  }
 
   /* patch MAILFIX: 📬 Mail received — the last 50 e-mails to invoices@ / receipts@ / leads@ / bids@ (GET), run one again (POST
      { op: 'rerun', id }: Resend still holds it; a dropped invoice is read again, its file never blocked as "the same file") */

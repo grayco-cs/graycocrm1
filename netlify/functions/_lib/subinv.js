@@ -366,6 +366,64 @@ function matchJob(projects, f, deleted){
   return { best: best, top: top, certain: certain };
 }
 
+/* patch MONEY (owner 10/30: "make sure invoices to clients and from subs go directly into invoices"): the PO wins. One job
+   whose CRM PO is on the invoice — its PO field, or "PO A101" / "PO# A101" in the file, the subject or the e-mail — is the
+   job, even when an address in the text looks like another job. Two jobs with the same PO: not certain. */
+const PO_TOKEN = /\bP\.?\s?O\.?\s*(?:#|no\.?|num(?:ber)?)?\s*[:#-]?\s*([A-Z]-?\d{3,6})\b/gi;
+function poKey(v){ return s(v).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function poTokens(text){ const out = []; const t = s(text); let m; PO_TOKEN.lastIndex = 0; while ((m = PO_TOKEN.exec(t))) { const k = poKey(m[1]); if (out.indexOf(k) < 0) out.push(k); } return out.slice(0, 12); }
+function poJob(projects, f, deleted){
+  const want = {}; if (s(f.po) && /^[A-Z]-?\d{3,6}$/i.test(s(f.po))) want[poKey(f.po)] = 1;
+  poTokens(f.hay).forEach(function(k){ want[k] = 1; });
+  if (!Object.keys(want).length) return null;
+  const dead = {}; (Array.isArray(deleted) ? deleted : []).forEach(function(x){ dead[s(x && typeof x === 'object' ? x.id : x)] = 1; });
+  const hits = arr(projects).filter(function(p){ const k = poKey(p.autoPO || p.po); return p.id != null && !dead[s(p.id)] && p.deleted !== true && k.length >= 3 && want[k]; });
+  return hits.length === 1 ? hits[0] : null;
+}
+/* the jobs a sub is working now: on the job's sub list, or invoiced on it in the last 180 days (open jobs only) */
+function openJob(p){ return !closed(p) && !/^(completed?|closed|bidding|estimating|lost|dead|cancel+ed|archived|declined)$/i.test(s(p.status)); }
+function subOpenJobs(data, sub, now){
+  if (!sub || !(s(sub.id) || s(sub.name))) return [];
+  const why = {}, since = (now || Date.now()) - 180 * 864e5;
+  arr(data.projects).forEach(function(p){ if (p.id == null || !openJob(p)) return; if (arr(p.subs).some(function(x){ return (s(x.subId) && s(x.subId) === s(sub.id)) || sameSub(x.name || x.company, sub.name); })) why[s(p.id)] = 'on the job\'s sub list'; });
+  arr(data.invs).concat(arr(data.invoices)).forEach(function(iv){
+    if (low(iv.type) !== 'sub' || !s(iv.pid) || /void|rejected|cancel|deleted/.test(low(iv.status))) return;
+    if (!((s(sub.id) && s(iv.subId) === s(sub.id)) || sameSub(iv.sub, sub.name))) return;
+    const t = Date.parse(s(iv.recvDate || iv.date).slice(0, 10)); if (isFinite(t) && t < since) return;
+    if (!why[s(iv.pid)]) why[s(iv.pid)] = 'their invoices on it';
+  });
+  return arr(data.projects).filter(function(p){ return why[s(p.id)] && openJob(p); }).map(function(p){ return { pid: s(p.id), name: s(p.name), address: jobAddr(p), po: s(p.autoPO || p.po), pm: s(p.pm || p.projectManager), conf: 86, why: 'the sub\'s only open job (' + why[s(p.id)] + ')' }; });
+}
+/* a supplier (materials, rentals: an Expense on the job) or a sub (a Sub invoice to approve and pay) */
+const SUPPLIER_RE = /\b(home\s*depot|lowe'?s|84\s*lumber|abc\s+supply|beacon|srs\s+distribution|ferguson|sherwin|floor\s*(?:&|and)\s*decor|sunbelt|united\s+rentals|fastenal|white\s*cap|l\s*&\s*w\s+supply|johnstone|winsupply|grainger|menards|builders\s+firstsource|mccoy'?s|carrier\s+enterprise|graybar|hd\s+supply|rexel|daltile|ace\s+hardware|ppg|benjamin\s+moore|lumber|supply|supplies|rentals?|materials|wholesale|distribut\w*|hardware)\b/i;
+function payeeKind(rec, vendor){
+  if (rec && (rec._supplier || rec.isSub === false)) return 'supplier';
+  if (rec && rec.isSub === true) return 'sub';
+  return SUPPLIER_RE.test(s(vendor)) ? 'supplier' : 'sub';
+}
+/* the CRM's supplier directory (ccw_suppliers: n name, e e-mail, p phone, t type) on the same list as the subs */
+function supplierRows(list){ return arr(list).filter(function(x){ return s(x.n || x.name); }).map(function(x){ return { id: s(x.id), name: s(x.n || x.name), email: s(x.e || x.email), phone: s(x.p || x.phone), isSub: false, _supplier: true }; }); }
+/* a receipt / supplier bill already on the expense list: same amount within 3 days and the same vendor, or the same invoice # */
+function findExpDup(o){
+  const amt = cents(o.total), k = invKey(o.invoiceNumber);
+  for (const e of arr(o.expenses)) {
+    if (e.deleted || /rejected|void/.test(low(e.status))) continue;
+    const ek = invKey(e.invNum || e.ref || e.invoiceNumber);
+    if (k && ek && k === ek && sameSub(e.vendor || e.payee, o.vendor)) return { expId: s(e.id), why: 'the same vendor and invoice # ' + s(o.invoiceNumber) + ' is already in Expenses' };
+    if (amt && cents(e.amt != null ? e.amt : e.amount) === amt && sameSub(e.vendor || e.payee, o.vendor)) {
+      const x = Date.parse(s(e.date).slice(0, 10)), y = Date.parse(s(o.date).slice(0, 10));
+      if (isFinite(x) && isFinite(y) && Math.abs(x - y) <= 3 * 864e5) return { expId: s(e.id), why: 'the same vendor and amount ($' + r2(o.total).toFixed(2) + ') is already in Expenses (' + s(e.date).slice(0, 10) + ')' };
+    }
+  }
+  return null;
+}
+/* GrayCo's OWN invoice to a customer, e-mailed by QuickBooks (a copy to office@ / invoices@) — never a bill to pay */
+function ownInvoice(mail){
+  const from = low(mail.from && mail.from.email), name = s(mail.from && mail.from.name), subj = s(mail.subject);
+  const qb = /@([a-z0-9-]+\.)*intuit\.com$/.test(from) || /quickbooks/i.test(from);
+  return qb && /\b(invoice|estimate|statement|payment\s+reminder)\b/i.test(subj) && /gray\s*co/i.test(name + ' ' + subj.replace(/^.*?\bfrom\b/i, ''));
+}
+
 /* ── 8. the pay date (the CRM's sub pay rule; Central time) ────────────────── */
 function centralYmd(when){
   const d = when ? new Date(when) : new Date(); if (isNaN(d)) return centralYmd();
@@ -466,31 +524,54 @@ async function analyze(mail, files, deps){
     jobAddress: s(f.jobAddress), po: s(f.po), customer: s(f.customer), lines: arr(f.lines), subtotal: r2(f.subtotal), tax: r2(f.tax), retainage: r2(f.retainage), total: r2(f.total),
     weOwe: f.weOwe !== false, isInvoice: f.isInvoice !== false, by: f.by, how: s(f.how) };
   /* the sub */
-  const sub = matchSub(arr(data.subs).concat(arr(data.vendors)), { email: who.email || read.vendorEmail, name: who.name, vendor: read.vendor, hay: fileHay });
-  /* the job */
+  const payees = arr(data.subs).concat(arr(data.vendors), supplierRows(data.ccw_suppliers));
+  const sub = matchSub(payees, { email: who.email || read.vendorEmail, name: who.name, vendor: read.vendor, hay: fileHay });
+  /* the job: the CRM PO on the invoice first (patch MONEY), then the address / customer / job name, then the sub's open jobs */
+  const hay = text.slice(0, 20000) + ' ' + fileHay + ' ' + bodyText.slice(0, 4000);
   const jm = matchJob(data.projects, { jobAddress: read.jobAddress, po: read.po, customer: read.customer, hay: text.slice(0, 20000) + ' ' + fileHay }, data.gc_deleted_projects);
-  const job = jm.best;
+  let job = jm.best, how = job ? 'match' : '';
+  const pj = poJob(data.projects, { po: read.po, hay: hay }, data.gc_deleted_projects);
+  if (pj) {
+    const sc = scoreJob(pj, { jobAddress: read.jobAddress, po: s(pj.autoPO || pj.po), customer: read.customer, hay: hay });
+    job = Object.assign(sc, { conf: Math.max(97, sc.conf), why: 'PO ' + s(pj.autoPO || pj.po) + ' on the invoice' + (sc.why && !/^PO /.test(sc.why) ? ' · ' + sc.why : '') });
+    jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'po';
+  }
+  const payKind = deps.kind === 'receipt' ? 'supplier' : deps.kind === 'client_invoice' ? 'client' : payeeKind(sub ? payees.find(function(x){ return s(x.id) === sub.id; }) : null, read.vendor || who.name);
+  if (!jm.certain && payKind === 'sub' && sub && sub.conf >= 80) {
+    const open = subOpenJobs(data, sub, now);
+    if (open.length === 1 && (!job || job.conf < 85 || job.pid === open[0].pid)) { job = open[0]; jm.top = [job].concat(arr(jm.top).filter(function(x){ return x.pid !== job.pid; })).slice(0, 3); jm.certain = true; how = 'sub'; }
+    else if (open.length > 1) jm.top = arr(jm.top).concat(open.filter(function(o){ return !arr(jm.top).some(function(x){ return x.pid === o.pid; }); }).map(function(o){ return Object.assign({}, o, { conf: 60, why: 'one of the sub\'s open jobs' }); })).slice(0, 5);
+  }
   const pay = payDateFor(recvDate, read);
   const proj = job ? arr(data.projects).find(function(p){ return s(p.id) === job.pid; }) : null;
-  const subRec = sub ? arr(data.subs).concat(arr(data.vendors)).find(function(x){ return s(x.id) === sub.id; }) : null;
+  const subRec = sub ? payees.find(function(x){ return s(x.id) === sub.id; }) : null;
   const retPct = proj ? retainageFor(proj, subRec || (sub ? { id: sub.id, name: sub.name, retainagePct: sub.retainagePct } : null)) : 0;
   const retainage = read.retainage > 0 ? read.retainage : (retPct ? r2(read.total * retPct / 100) : 0);
-  const dup = read.total > 0 ? findDup({ invoiceNumber: read.invoiceNumber, total: read.total, address: read.jobAddress, pid: jm.certain && job ? job.pid : '', subId: sub && sub.conf >= 80 ? sub.id : '', subName: (sub && sub.name) || read.vendor,
-    fromEmail: who.email, recvDate: recvDate, invoices: arr(data.invs).concat(arr(data.invoices)), mailList: deps.mailList, selfId: deps.selfId }) : null;
+  const expDup = read.total > 0 && payKind === 'supplier' ? findExpDup({ invoiceNumber: read.invoiceNumber, total: read.total, vendor: (sub && sub.name) || read.vendor || who.name, date: read.invoiceDate || recvDate, expenses: data.expenses }) : null;
+  const dup = expDup || (read.total > 0 && payKind !== 'client' ? findDup({ invoiceNumber: read.invoiceNumber, total: read.total, address: read.jobAddress, pid: jm.certain && job ? job.pid : '', subId: sub && sub.conf >= 80 ? sub.id : '', subName: (sub && sub.name) || read.vendor,
+    fromEmail: who.email, recvDate: recvDate, invoices: arr(data.invs).concat(arr(data.invoices)), mailList: deps.mailList, selfId: deps.selfId }) : null)
+    || (read.total > 0 && payKind === 'client' ? clientDup(read, arr(data.invs).concat(arr(data.invoices))) : null);
   let route = 'book', why = '';
   if (!used && !text) { route = links.length ? 'link' : 'review'; why = links.length ? 'the invoice is a Google link the CRM could not open' : 'no invoice file or invoice text was found'; }
   else if (dup) { route = 'dup'; why = dup.why; }
   else if (!(read.total > 0)) { route = 'match'; why = 'the amount could not be read'; }
-  else if (!read.isInvoice || !read.weOwe) { route = 'review'; why = 'it does not say GrayCo owes it (paid, a statement or not an invoice)'; }
-  else if (!jm.certain) { route = 'match'; why = job ? 'the job is not certain (best ' + job.conf + '%: ' + job.why + ')' : 'no job matched' + (read.jobAddress ? ' "' + read.jobAddress + '"' : ''); }
-  else if (!sub || sub.conf < 80) { route = 'match'; why = 'the sub is not on the CRM\'s sub list' + (read.vendor ? ' ("' + read.vendor + '")' : ''); }
-  return { v: 1, route: route, why: why, src: src, file: used ? { name: s(used.name), kind: used.kind, ref: s(used.ref), link: s(used.link) } : null,
+  else if (payKind === 'sub' && (!read.isInvoice || !read.weOwe)) { route = 'review'; why = 'it does not say GrayCo owes it (paid, a statement or not an invoice)'; }
+  else if (!jm.certain) { route = 'match'; why = job ? 'the job is not certain (best ' + job.conf + '%: ' + job.why + ')' : 'no job matched' + (read.po ? ' (PO "' + read.po + '" is not a CRM job)' : '') + (read.jobAddress ? ' "' + read.jobAddress + '"' : ''); }
+  else if (payKind === 'sub' && (!sub || sub.conf < 80)) { route = 'match'; why = 'the sub is not on the CRM\'s sub list' + (read.vendor ? ' ("' + read.vendor + '")' : ''); }
+  return { v: 1, route: route, why: why, src: src, payee: payKind, kind: deps.kind || 'sub_invoice', jobBy: jm.certain ? how || 'match' : '', file: used ? { name: s(used.name), kind: used.kind, ref: s(used.ref), link: s(used.link) } : null,
     read: read, sub: sub ? { id: sub.id, name: sub.name, conf: sub.conf, why: sub.why } : { id: '', name: read.vendor || who.name, conf: 0, why: 'not on the sub list' },
-    job: job, top: jm.top, certain: jm.certain, dup: dup, recvDate: recvDate, payDate: pay.payDate, ruleDate: pay.ruleDate, payRule: pay.rule, byTerms: pay.byTerms,
+    job: job, top: jm.top, certain: !!jm.certain, dup: dup, recvDate: recvDate, payDate: pay.payDate, ruleDate: pay.ruleDate, payRule: pay.rule, byTerms: pay.byTerms,
     retainagePct: retPct, retainage: retainage, net: r2(read.total - retainage), fromEmail: who.email, fromName: who.name, subject: subject,
     forwardedBy: fw ? fw.by : '', links: linkInfo.length ? linkInfo : links.map(function(l){ return { url: l.url, kind: l.kind, ok: false }; }), at: new Date(now).toISOString() };
 }
 
+/* a QuickBooks copy of an invoice the CRM already has (same invoice #) — nothing to add */
+function clientDup(read, invoices){
+  const k = invKey(read.invoiceNumber); if (!k) return null;
+  const hit = arr(invoices).find(function(iv){ return !/^(sub|supplier)$/i.test(s(iv.type)) && invKey(iv.invNum || iv.invNo || iv.number || iv.qbDocNumber) === k; });
+  return hit ? { invId: s(hit.id), why: 'invoice # ' + s(read.invoiceNumber) + ' is already in ▥ Invoices', same: true } : null;
+}
 function fileHash(buf){ return crypto.createHash('sha256').update(buf).digest('hex'); }
 module.exports = { analyze, parseText, docxText, xlsxText, docText, pdfText, csvText, textOf, kindOf, typeFor, unzipEntries, addrParts, findAddress, matchJob, matchSub, scoreJob,
-  payRule, payDateFor, centralYmd, findDup, invKey, forwarded, googleLinks, fetchGoogle, retainageFor, aiRead, AI_TOOL, fileHash };
+  payRule, payDateFor, centralYmd, findDup, invKey, forwarded, googleLinks, fetchGoogle, retainageFor, aiRead, AI_TOOL, fileHash,
+  poJob, poTokens, subOpenJobs, payeeKind, supplierRows, findExpDup, ownInvoice, clientDup };
