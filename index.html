@@ -125895,7 +125895,7 @@ function fromItem(it, prev){
     if (!l.address) l.address = fullAddr(it);
     if (it.flag && it.flag !== prev.inboxFlag) l.inboxFlagNew = true;
   }
-  l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
+  l.source = s(it.source) || 'Lead Inbox'; if (!(prev && prev.leadKindManual)) l.leadKind = KIND[low(it.type)] || 'Commercial';   /* patch LEADKINDKEEP: a type a person picked stays */
   if (it.bidRole && !l.bidRoleManual) { l.bidRole = s(it.bidRole); l.bidRoleWhy = s(it.bidRoleWhy); }   /* patch PRIMESUB: the server's prime / sub (a person's choice stays) */
   l.inboxId = it.id; l.inboxRev = it.rev || 1; if (!l.inboxAt && s(it.receivedAt)) l.inboxAt = s(it.receivedAt);   /* patch LEADSEE: when it reached the inbox */ l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
@@ -166297,7 +166297,8 @@ function meUser(){ var e = myEmail(), g = ''; try { g = s(localStorage.getItem('
 function myName(){ var u = meUser(); if (u && u.name) return s(u.name); try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
 function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = meUser(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner')); }
 function isEstimatorMe(){ var u = meUser(); return !!(u && /estimat/i.test(s(u.role) + ' ' + s(u.profile))); }
-function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })()); }
+function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })())
+  || (!!W._gcLDEL && typeof W._gcLDEL.blocked === 'function' && (function(){ try { return !!W._gcLDEL.blocked(l); } catch (e) { return false; } })()); }   /* patch LEADBULK: + the delete guard's "brought in again" */
 var LEADS_NOW = null, LEADS_AT = 0;
 /* the CRM's lead list: this computer's saved copy (IndexedDB 'leads', which every save writes), read every 2 s on the
    Leads tab — never through the synced setter on a timer (that setter is shared with every other screen's save);

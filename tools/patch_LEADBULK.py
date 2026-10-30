@@ -88,6 +88,13 @@ once("""    + '<div class="gclu-ov">' + ovRest + (edit ? '<div class="row">' + e
 once("""  var top = d.scrollTop, html = drawerHtml(l); held(function(){ d.innerHTML = html; }); d.scrollTop = top;""",
 """  var top = d.scrollTop, html = drawerHtml(l), nob = !showBid(l); held(function(){ d.innerHTML = html; if (nob) d.setAttribute('data-gcl-nobid', '1'); else d.removeAttribute('data-gcl-nobid'); }); d.scrollTop = top;   """ + MARK + """: 🏢 Bidding to hides with ⏰ Bid */""")
 
+# ── the hub never shows a lead the CRM's delete blocks (the same inbox item / RoofScout id brought in again under another id) ──
+once("""function isEstimatorMe(){ var u = meUser(); return !!(u && /estimat/i.test(s(u.role) + ' ' + s(u.profile))); }
+function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })()); }""",
+"""function isEstimatorMe(){ var u = meUser(); return !!(u && /estimat/i.test(s(u.role) + ' ' + s(u.profile))); }
+function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })())
+  || (!!W._gcLDEL && typeof W._gcLDEL.blocked === 'function' && (function(){ try { return !!W._gcLDEL.blocked(l); } catch (e) { return false; } })()); }   """ + MARK + """: + the delete guard's "brought in again" */""")
+
 # ── the code ──
 BLOCK = r"""
 /* ═══ patch LEADBULK (owner 10/30) — ☐ Select + 🗑 Delete selected on the List / Board; the lead's type menu; Bid only on bids ═══ */

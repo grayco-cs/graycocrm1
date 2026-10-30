@@ -13,7 +13,8 @@
 //   C (PM): ticks only his own leads (🔒 on another PM's), cannot delete another PM's lead, deletes his own.
 // Offline harness (GC_HARNESS, default the session scratchpad's wME/harness.mjs), made-up demo data by default.
 // GC_MIRROR=<mirror.json> also loads the read-only real-data mirror into the in-memory cloud first (it is read here,
-// never written, never committed). GC_SHOTS=<dir> saves screenshots.
+// never written, never committed). GC_SHOTS=<dir> saves screenshots. GC_NO_BROWSER=1: part 0 only (the Lead Inbox import
+//   keeps a type a person picked — patch LEADKINDKEEP).
 import { pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import fs from 'fs';
@@ -28,6 +29,39 @@ const SHOTS = process.env.GC_SHOTS || '';
 const shared = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
 chromium.launch = async () => ({ newContext: o => shared.newContext(o), close: async () => {} });
 let pass = 0, fail = 0; const ok = (c, m, info) => { if (c) { pass++; console.log('  ✓ ' + m); } else { fail++; console.log('  ✗ FAIL ' + m + (info !== undefined ? '  ' + JSON.stringify(info).slice(0, 600) : '')); } };
+
+/* ── part 0 (no browser): the Lead Inbox import (importItems / fromItem, lifted out of index.html as it is, the way
+   test_LEADFIX does) keeps a type a person picked (patch LEADKINDKEEP) ── */
+{
+  const html = fs.readFileSync(build + '/index.html', 'utf8');
+  const a = html.indexOf("function leadIdOf(it){ return 'LEADIN-'"), b = html.indexOf('function normName(t){', a), seg = a < 0 || b < 0 ? '' : html.slice(a, html.indexOf('\n', b));
+  ok(!!seg && /prev && prev\.leadKindManual/.test(seg), 'the import (fromItem) checks leadKindManual');
+  const run = async (lead, item) => {
+    const box = { list: [lead] };
+    const M = new Function('box', 'window', `
+      var s = function(v){ return v == null ? '' : String(v); }, low = function(v){ return s(v).toLowerCase(); }, arr = function(v){ return Array.isArray(v) ? v : []; };
+      var T = Date.UTC(2026, 9, 30, 12); var nowIso = function(){ return new Date(T += 1000).toISOString(); }, today = function(){ return '2026-10-30'; };
+      function stamp(r){ r.updatedAt = r.savedAt = nowIso(); return r; }
+      var KIND = { commercial: 'Commercial', insurance: 'Insurance', residential: 'Residential', government: 'Government' };
+      var PIPE_TYPE = { commercial: 'Commercial Reno', insurance: 'Insurance Claim', residential: 'Residential Reno', government: 'Commercial Reno' };
+      var S = { items: [] };
+      function setLeads(mut){ var n = mut(box.list.slice()); if (Array.isArray(n)) box.list = n; return Promise.resolve(!!n); }
+      function tomb(){ return false; } function later(){} function act(){} function heal(){} function addPlansToJob(){}
+      function toast(){} function isAdmin(){ return true; } function emit(){} function render(){} function badge(){} function alertNew(){}
+      function hydrated(){ return Promise.resolve(); } function readList(){} function lsGet(k, d){ return d; } function lsSet(){} function flushOut(){ return Promise.resolve(); }
+      function api(){ return Promise.reject(new Error('no server in this test')); }
+      ${seg}
+      return { importItems: importItems, setItems: function(x){ S.items = x; } };`)(box, { _gcBidRole: null, _gcLeadHold: null });
+    M.setItems([item]); await M.importItems(); return box.list.find(l => l.id === lead.id);
+  };
+  const lead = { id: 'LEADIN-kind0001', name: 'Demo Kind Lead', inboxId: 'LI-kind0001', inboxRev: 1, source: 'Lead Inbox', stage: 'Contacted', type: 'Residential Reno', leadKind: 'Residential', leadKindManual: true, leadKindSetBy: 'Wesley Johnson' };
+  const item = { id: 'LI-kind0001', rev: 2, status: 'imported', title: 'Demo Kind Lead', type: 'commercial', source: 'Lead Inbox', scope: 'demo scope rev 2', contact: { name: 'Demo Person' } };
+  let got = null; try { got = seg ? await run(Object.assign({}, lead), Object.assign({}, item)) : null; } catch (e) { got = { err: String(e) }; }
+  ok(got && got.inboxRev === 2 && got.scope === 'demo scope rev 2' && got.leadKind === 'Residential' && got.leadKindManual === true, 'an inbox lead set to Residential by hand: the same item again (rev 2, type commercial) → still Residential (the rest updated)', got && { k: got.leadKind, rev: got.inboxRev, scope: got.scope, err: got.err });
+  let ctl = null; try { ctl = seg ? await run(Object.assign({}, lead, { leadKindManual: undefined }), Object.assign({}, item)) : null; } catch (e) { ctl = { err: String(e) }; }
+  ok(ctl && ctl.inboxRev === 2 && ctl.leadKind === 'Commercial', '… without a person\'s choice the import still sets the type (Commercial)', ctl && { k: ctl.leadKind, rev: ctl.inboxRev, err: ctl.err });
+}
+if (process.env.GC_NO_BROWSER) { console.log((fail ? 'FAILED ' : 'OK ') + pass + '/' + (pass + fail)); await shared.close().catch(() => {}); process.exit(fail ? 1 : 0); }
 
 /* ── the world: made-up people and leads (+ the real mirror when asked) ── */
 const parse = v => { if (typeof v === 'string') try { return JSON.parse(v); } catch (e) {} return v; };
@@ -122,8 +156,9 @@ try {
   ok(!(await has(A, 'LB_a1')) && !(await has(A, 'LB_a2')) && !(await has(A, 'LB_a3')) && !(await rows(A)).some(id => /^LB_a[123]$/.test(id)), 'an older copy from the cloud does not bring them back');
   /* the Lead Inbox import's way: the same inbox item, under a new lead id */
   await A.ev(() => window._setLeads(prev => (prev || []).concat([{ id: 'LEADIN-bulk3', name: 'Bulk Admin Three', inboxId: 'LI-bulk3', source: 'Lead Inbox', leadKind: 'Residential', stage: 'New Lead', updatedAt: new Date().toISOString() }, { id: 'LB_a1', name: 'Bulk Admin One', stage: 'New Lead', updatedAt: new Date().toISOString() }])));
-  await sleep(3000);
-  ok(!(await has(A, 'LEADIN-bulk3')) && !(await has(A, 'LB_a1')), 'brought in again (the same inbox item under a new id, or the same id): blocked', await A.ev(() => window._gcLeadsHubKit.all().filter(l => /bulk3|LB_a1/.test(l.id)).map(l => l.id)));
+  let blk = false, blkMs = 0; for (let i = 0; i < 30 && !blk; i++) { await sleep(500); blkMs += 500; blk = !(await has(A, 'LEADIN-bulk3')) && !(await has(A, 'LB_a1')) && !cloudLeads().some(l => l.id === 'LEADIN-bulk3' || l.id === 'LB_a1'); }
+  await sleep(4000); blk = blk && !(await has(A, 'LEADIN-bulk3')) && !(await has(A, 'LB_a1'));
+  ok(blk, 'brought in again (the same inbox item under a new id, or the same id): blocked by the CRM\'s delete guard (off the list within ' + blkMs + ' ms, and stays off)', await A.ev(() => window._gcLeadsHubKit.all().filter(l => /bulk3|LB_a1/.test(l.id)).map(l => l.id)));
   /* ⋯ More → 🗑 Recently deleted */
   await mclick(pa, '#gc-leads-hub [data-gclu-more]'); await sleep(300);
   ok(await A.ev(() => !!document.querySelector('#gc-leads-hub .gclu-menu [data-gclb-trash]')), '⋯ More has "🗑 Recently deleted"');
