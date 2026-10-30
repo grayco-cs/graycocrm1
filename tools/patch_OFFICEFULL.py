@@ -32,7 +32,8 @@ What this does (each step asserts its find-count; running it again changes nothi
   I. the screens' own isAdmin() for the business settings: cash & bank (patch K), ⚡ Automation defaults (JA),
      📊 My data (X10), margins / capacity (DEPTH2), document library / defaults (DOCLIB, DOCLIB2, DOCLIB3),
      automatic text answers (TXT), text alerts (SMSALERT), text templates (TXTTPL), call order (CALLCHAIN),
-     🎓 Training (TRAIN), proposal template (ESTIN).
+     🎓 Training (TRAIN), proposal template (ESTIN); the app's own job profit / margin columns (job page, Projects,
+     P&L by job, weekly costs), shown before to an admin or the job's PM only.
   J. tools/officefull_tail.js after patch JA: ⚙ Admin without the staff buttons for the office; the job's
      ⚙ Automations window gets "More for this job" (project.autoX switches).
 Not touched: the approvals queue (patch APPR / AP4 / APX / APPRORDER / APPTCONF), the Lead Inbox, the Leads list, the
@@ -206,7 +207,7 @@ rep('F1', """    var role = effRole(), order = ux()[role] || MM_TABS[role];
     if (realAdmin() && viewAs() === 'Office') {""",
     """    var role = effRole(), order = ux()[role] || MM_TABS[role];
     if ((!realAdmin() && W._gcIsOfficeFull && W._gcIsOfficeFull()) || (realAdmin() && viewAs() === 'Office')) {   /* patch OFFICEFULL: the admin's menu */
-      var AD = arr(ux().Admin);
+      var AD = arr(ux().Admin); if (!AD.length) AD = ['dashboard','roofscout','projects','scopes','estimates','leads','bidportal','systems','expenses','taxcenter','pnl','reports','schedule','changeorders','dailylogs','punchlist','gmail','claude','invoices','payments','subs','vendors','customers','products','quickadd','crewboard','warranties','templates','estvactual','docs','forms','mastercrm','integrations','cctrans','myprofile','admin','launchjob','cordova','payroll','estbuilder','insurance','mitigation','messages','sitebook','allphotos','todo','approvals','officemanager'];   /* the app's Admin list until it is published */
       return arr(Uf).filter(function(g){
         if (g.id === 'insurance') return true;
         if (g.id === 'marketing') return !!(W._gcMktCanSee && W._gcMktCanSee());
@@ -261,6 +262,13 @@ function isAdmin(){
 """)
 for tag in ('JA', 'X10', 'DEPTH2', 'DOCLIB', 'DOCLIB2', 'DOCLIB3', 'TXT', 'SMSALERT', 'TXTTPL', 'CALLCHAIN', 'TRAIN', 'ESTIN'):
     rep_in(tag, r"if \((?:window|W)\.__GC_PATCH_" + tag + r"__\) return;", "function isAdmin(){", "function isAdmin(){ " + OFC + " ")
+
+# ── I2. the app's own job profit / margin (job page tiles, Projects, P&L by job, weekly costs): "Admin or the job's PM" ──
+BUNDLE_OFC = '(window._gcIsOfficeFull&&window._gcIsOfficeFull())'
+n = len(re.findall(r'\(sr\.role==="Admin"\|\|(\w+)\.pm===sr\.name\)', src))
+assert n == 9, ('OFFICEFULL job-profit gates', n)
+src = re.sub(r'\(sr\.role==="Admin"\|\|(\w+)\.pm===sr\.name\)', lambda m: '(sr.role==="Admin"||' + BUNDLE_OFC + '||' + m.group(1) + '.pm===sr.name)', src)
+rep('I3', '...(sr.role==="Admin"?["Profit"]:[""])', '...((sr.role==="Admin"||' + BUNDLE_OFC + ')?["Profit"]:[""])')
 
 # ── J. the tail, right after patch JA ─────────────────────────────────────────────────────────────
 rep('J1', "try { console.log('[GC] patch JA: automations per job — _gcJA.state(), _gcJobAutoDefaults.open()'); } catch (e) {}\n})();\n</script>",

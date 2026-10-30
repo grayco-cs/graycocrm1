@@ -20,8 +20,9 @@
    staff, Hiring, 🛡 Security & system check, ⏸ Data-entry mode, the backups / restore / import / fresh start / make the
    cloud the truth / storage clean-up tools; approvals of owner-only kinds keep their own rules.
    This tail:
-     1. ⚙ Admin for the office: the Employees list without + Add Employee / EDIT / Disable / 🗑 and without the Hiring /
-        Storage tabs (the settings cards drop the admin-only rows themselves, patch ADM's officeCut).
+     1. ⚙ Admin for the office: the Employees list without + Add Employee / EDIT / Disable / 🗑, the warnings without
+        their "Edit <name>" / "Team access" fixes, no Hiring / Storage tabs (the settings cards drop the admin-only rows
+        themselves, patch ADM's officeCut).
      2. The job's ⚙ Automations window gets "More for this job": the switches the automations read from the job itself
         (project.autoX) that had no screen — draft schedule, stage from the schedule, draw invoices, permits, punch list,
         sub agreements, forms, jurisdiction look-up. An admin or the office changes them (saved at once on the job);
@@ -61,6 +62,7 @@ function adminPage(){
     var t = s(b.textContent);
     if (t === '+ Add Employee') { hide(b, 'add'); n++; }
     else if (HIDE_ROW_BTN.test(t) && inStaffTable(b)) { hide(b, 'staff'); n++; }
+    else if (/^(Edit\b|Team access$)/.test(t) && b.closest('#gc-adm-top')) { hide(b, 'fix'); n++; }   /* the warnings' "Edit <name>" / "Team access" fixes */
     else if (t.length < 30 && HIDE_TAB.test(t.replace(/^\S+\s+/, '')) && !b.closest('#gc-adm-hub')) { hide(b, 'tab'); n++; }
   }
   return n;
