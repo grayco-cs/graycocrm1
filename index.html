@@ -58800,7 +58800,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{
       var alerts = (window._gcFieldAlerts && window._gcFieldAlerts()) || [];
       alerts.forEach(function(a,i){
-        tasks.push({ id:'alert_'+i+'_'+(a.label||''), cat:'Approvals', label:a.label, sub:'Needs review/approval', color:a.color||'#f59e0b',
+        tasks.push({ id:'alert_'+(a.label||String(i)), cat:'Approvals',   /* patch APPRSYNC: the same key on every device */ label:a.label, sub:'Needs review/approval', color:a.color||'#f59e0b',
           action:function(){ if(a.act==='approvals'&&window._gcOpenSubApprovals) window._gcOpenSubApprovals(); else if(a.act==='expenses'&&window.gcExpCenter) gcExpCenter.open(); } });
       });
     }catch(e){}
@@ -59217,7 +59217,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   function getMsgs(){ try{ return JSON.parse(localStorage.getItem(MSG_KEY)||'[]'); }catch(e){ return []; } }
   function setMsgs(a){ try{ localStorage.setItem(MSG_KEY, JSON.stringify(a)); }catch(e){} }
   function getSeen(){ try{ return JSON.parse(localStorage.getItem(SEEN_KEY)||'{}'); }catch(e){ return {}; } }
-  function setSeen(o){ try{ localStorage.setItem(SEEN_KEY, JSON.stringify(o)); }catch(e){} }
+  function setSeen(o){ try{ localStorage.setItem(SEEN_KEY, JSON.stringify(o)); }catch(e){} try{ if(window._gcApprShared) window._gcApprShared.seen(o); }catch(e){} }   /* patch APPRSYNC */
 
   // ---- cloud sync via gc_kv (same pattern as office tasks) ----
   // Sync through the SAME table the whole CRM uses: app_data, with the live creds in localStorage.
@@ -118955,7 +118955,7 @@ var T0 = Date.now();
 var CORE_EXTRA = ['projects','invs','estimates','expenses','schedule','cos','subs','vendors','customers','leads','scopes','projectPayments',
   'gcAcctRegister','users','gc_tombstones','gc_job_source','logs','punch','inspections','gc_office_tasks','gc_job_messages',
   'gc_invoice_approvals','gc_expense_approvals','gc_sub_approvals','gc_check_queue','gc_override_requests','gc_project_approvals',
-  'gc_contract_approvals','gc_outbound_approvals','gc_deleted_projects','gc_deleted_invs','gc_deleted_gcAcctRegister','timesheets'];
+  'gc_contract_approvals','gc_outbound_approvals','gc_apx_decided_approvals','gc_deleted_projects','gc_deleted_invs','gc_deleted_gcAcctRegister','timesheets'];
 /* lists that live in localStorage on every computer (the office to-do, the approval queues, messages) */
 function lsBacked(k){ return k==='gc_office_tasks' || k==='gc_job_messages' || k==='gc_check_queue' || k==='gc_override_requests' || k==='gc_tombstones' || /^gc_.*_approvals$/.test(k) || /^gc_deleted_/.test(k); }
 function keys(){
@@ -125960,9 +125960,11 @@ window._gcCustApprovals = function(){ return { all: list.slice(), mine: mine(), 
 function load(){
   if(loading) return loading;
   var c = creds(); if(!c.u || !c.k) return Promise.resolve(list);
-  loading = window.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + K + '&select=value,updated_at', { headers:{ apikey:c.k, Authorization:'Bearer ' + c.k }, cache:'no-store' })
+  loading = window.fetch(c.u + '/rest/v1/gc_kv?key=in.(' + K + ',gc_apx_decided_approvals)&select=key,value,updated_at', { headers:{ apikey:c.k, Authorization:'Bearer ' + c.k }, cache:'no-store' })   /* patch APPRSYNC */
     .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(rows){ if(Array.isArray(rows)){ var v = norm(rows[0] ? rows[0].value : null); if(v){ list = merge(list, v); loadedAt = Date.now(); } } paint(); return list; })
+    .then(function(rows){ if(Array.isArray(rows)){ var r0 = rows.filter(function(x){ return x && x.key === K; })[0], r1 = rows.filter(function(x){ return x && x.key === 'gc_apx_decided_approvals'; })[0];   /* patch APPRSYNC */
+      try{ if(r1 && window._gcApprShared) window._gcApprShared.take(r1.value); }catch(e){}
+      var v = norm(r0 ? r0.value : null); if(v){ list = merge(list, v); loadedAt = Date.now(); } } paint(); return list; })
     .catch(function(){ return list; })
     .then(function(v){ loading = null; return v; });
   return loading;
@@ -156318,6 +156320,103 @@ D.addEventListener('click', function(){ ST.call(W, tick, 60); }, true);
 try { console.log('[GC] 🏢 Office profile home = the Office Manager Dashboard (patch VAS5)'); } catch (e) {}
 })();
 </script>
+<script id="gc-patch-apprsync">
+/* __GC_PATCH_APPRSYNC__ — one approval list on every device (owner 10/30: "I approved some of these on my computer and
+   now on my phone they are back. All info should be the same in field and desktop version.")
+   gc_apx_decided_approvals (gc_kv, merged per id, newest updatedAt wins; the live feed carries it):
+     { id: 'd:<card key>', key, sig, at, by }  a card decided here: left out everywhere until its record changes or 10 min;
+     { id: 'jm:<email>:<job id>', at }          the job messages that person read (newest read wins).
+   Read with the approvals queue (one request, every 20 s, patch APPR) and from the live feed. API: window._gcApprShared */
+(function(){
+'use strict';
+var W = window; if (W.__GC_PATCH_APPRSYNC__) return; W.__GC_PATCH_APPRSYNC__ = true;
+var K = 'gc_apx_decided_approvals', SEEN = 'gc_job_msg_seen', TTL = 600000;
+var ST = W.__GC_NATIVE_SETTIMEOUT__ || W.setTimeout;
+function s(v){ return v == null ? '' : String(v).trim(); }
+function low(v){ return s(v).toLowerCase(); }
+function nowIso(){ return new Date().toISOString(); }
+function me(){ try { return low(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return ''; } }
+function parse(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object' && x.id; }) : []; }
+function creds(){ try { return { u: s(localStorage.getItem('grayco_sb_url')).replace(/\/$/, ''), k: s(localStorage.getItem('grayco_sb_key')) }; } catch (e) { return { u: '', k: '' }; } }
+/* the local copy (localStorage, like the other approval lists; the live feed merges into it) */
+var raw = null, byId = {}, readAt = 0, seenFor = '';
+function list(){
+  if (Date.now() - readAt < 400) return byId;
+  readAt = Date.now();
+  var r = null; try { r = localStorage.getItem(K); } catch (e) {}
+  if (r !== raw) { raw = r; byId = {}; parse(r).forEach(function(x){ byId[x.id] = x; }); seenFor = ''; }
+  if (seenFor !== me()) { seenFor = me(); if (seenFor) seenIn(); }
+  return byId;
+}
+function merge(a, b){ var o = {}; a.concat(b).forEach(function(x){ var p = o[x.id]; if (!p || s(x.updatedAt) >= s(p.updatedAt)) o[x.id] = x; }); return o; }
+function prune(o){
+  var cutJ = new Date(Date.now() - 90 * 864e5).toISOString(), cutD = new Date(Date.now() - 2 * 864e5).toISOString();
+  return Object.keys(o).map(function(k){ return o[k]; }).filter(function(x){ return s(x.updatedAt) >= (/^d:/.test(x.id) ? cutD : cutJ); })
+    .sort(function(a, b){ return s(a.updatedAt) < s(b.updatedAt) ? -1 : 1; }).slice(-3000);
+}
+function save(l){ try { localStorage.setItem(K, JSON.stringify(l)); } catch (e) {} readAt = 0; return list(); }
+function vals(o){ return Object.keys(o).map(function(k){ return o[k]; }); }
+/* writes: this computer's records + the cloud's, newest per id, then the whole list (a union: nothing of anyone's is lost) */
+var owe = false, pushT = null, busy = false;
+function put(recs){
+  if (!recs.length) return;
+  var o = list(); recs.forEach(function(x){ x.updatedAt = nowIso(); o[x.id] = x; });
+  save(prune(o)); owe = true;
+  if (!pushT) pushT = ST.call(W, push, 300);
+}
+function push(){
+  pushT = null; var c = creds(); if (!c.u || !c.k || !owe) return;
+  if (busy) { pushT = ST.call(W, push, 800); return; }
+  busy = true; owe = false;
+  var h = { apikey: c.k, Authorization: 'Bearer ' + c.k };
+  W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + K + '&select=value', { headers: h, cache: 'no-store' })
+    .then(function(r){ if (!r || !r.ok) throw new Error('read ' + (r && r.status)); return r.json(); })
+    .then(function(rows){
+      var l = prune(merge(parse(rows && rows[0] && rows[0].value), vals(list())));
+      save(l);
+      return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, h),
+        body: JSON.stringify({ key: K, value: l, updated_at: nowIso() }) }).then(function(r){ if (!r || !r.ok) throw new Error('write ' + (r && r.status)); });
+    })
+    .catch(function(){ owe = true; })   /* sent with the next decision or the next read of the queue */
+    .then(function(){ busy = false; });
+}
+/* the queue read (patch APPR) hands us the cloud row */
+function take(v){
+  var inc = parse(v); if (!inc.length && !owe) return;
+  var o = list(), ch = false;
+  inc.forEach(function(x){ var p = o[x.id]; if (!p || s(x.updatedAt) > s(p.updatedAt)) { o[x.id] = x; ch = true; } });
+  if (ch) save(prune(o));
+  if (owe && !pushT) pushT = ST.call(W, push, 300);
+}
+/* a decided card: left out while its record still says the same thing (sig) and for 10 minutes */
+function has(k, sigFn){
+  var x = list()['d:' + k]; if (!x) return false;
+  if (!(Date.now() - (Date.parse(x.at) || 0) < TTL)) return false;
+  var sg = ''; try { sg = typeof sigFn === 'function' ? sigFn() : s(sigFn); } catch (e) {}
+  return s(x.sig) === s(sg);
+}
+function mark(k, sig){ k = s(k); if (!k || !me()) return; put([{ id: 'd:' + k, key: k, sig: s(sig), at: nowIso(), by: me() }]); }
+/* job messages read: out (the job-messages module's setSeen) and in (another device's reads → this device's gc_job_msg_seen) */
+function seenLocal(){ try { var o = JSON.parse(localStorage.getItem(SEEN) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+function seen(o){
+  var e = me(); if (!e || !o) return; var L = list(), out = [];
+  Object.keys(o).forEach(function(pid){ var v = s(o[pid]), id = 'jm:' + e + ':' + pid, x = L[id]; if (v && (!x || s(x.at) < v)) out.push({ id: id, at: v }); });
+  put(out);
+}
+function seenIn(){
+  var e = me(), pre = 'jm:' + e + ':', loc = seenLocal(), ch = false;
+  vals(byId).forEach(function(x){ if (x.id.indexOf(pre) !== 0) return; var pid = x.id.slice(pre.length), v = s(x.at); if (pid && v && s(loc[pid]) < v) { loc[pid] = v; ch = true; } });
+  if (!ch) return;
+  try { localStorage.setItem(SEEN, JSON.stringify(loc)); } catch (x) {}
+  ST.call(W, function(){
+    try { if (W._gcRefreshAlerts) W._gcRefreshAlerts(); } catch (x) {}
+    try { if (W._gcTD2 && W._gcTD2.state) W._gcTD2.state(); } catch (x) {}   /* the To-Do's approval rows are taken from its last build */
+    try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (x) {}
+  }, 0);
+}
+W._gcApprShared = { key: K, has: has, mark: mark, take: take, seen: seen, push: push, list: function(){ return vals(list()); } };
+})();
+</script>
 <script id="gc-fix-apprset">
 /* GATE fix_3 — one approval set: To-Do chip = APPROVE badge = APPROVE panel. */
 (function(){
@@ -156365,6 +156464,7 @@ try { console.log('[GC] 🏢 Office profile home = the Office Manager Dashboard 
   var memo = null;
   function current(){ if (memo && Date.now() - memo.at < 800) return memo; memo = window._gcApprovalSet(); return memo; }
   window._gcApprovalSetFresh = function(){ memo = null; };   /* patch APPRCOUNT */
+  window._gcApprovalCurrent = function(){ return current(); };   /* patch APPRSYNC */
   function chipSync(set){
     Array.prototype.forEach.call(document.querySelectorAll('.td2-chip[data-f="appr"]'), function(ch){
       var b = ch.querySelector('b'); if (b && b.textContent !== String(set.total)) b.textContent = String(set.total);
@@ -162222,6 +162322,7 @@ var ASGC = null;
 function isGone(k){
   k = bareKey(k); if (!k) return false;
   if (DPEND[k]) return true;
+  try { if (W._gcApprShared && W._gcApprShared.has(k, function(){ return gSig(k); })) return true; } catch (e) {}   /* patch APPRSYNC */
   var g = GONE[k]; if (!g) return false;
   if (Date.now() - g.at > 600000 || gSig(k) !== g.sig) { delete GONE[k]; return false; }
   return true;
@@ -162232,7 +162333,7 @@ function bump(){
   try { navBadge(); } catch (e) { warn(e); }
   paintSoon();
 }
-function goneNow(k){ k = bareKey(k); if (!k) return; ASGC = null; GONE[k] = { at: Date.now(), sig: gSig(k) }; bump(); }
+function goneNow(k){ k = bareKey(k); if (!k) return; ASGC = null; GONE[k] = { at: Date.now(), sig: gSig(k) }; try { if (W._gcApprShared) W._gcApprShared.mark(k, GONE[k].sig); } catch (e) { warn(e); } bump(); }   /* patch APPRSYNC: every device */
 var LBLC = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
 function trimSet(r){
   if (!r || !r.groups) return r;
@@ -162309,7 +162410,7 @@ function assignHere(r, el){
   later(function(){ try { W._gcLeadsHub.picker([lid], el && el.isConnected ? el : null); } catch (e) { warn(e); try { r.approve.f(); } catch (x) {} } }, 0);
 }
 W.addEventListener('gc-lead-assigned', function(ev){ var d = ev && ev.detail; if (d && d.id) goneNow('td:hot1:asg:' + s(d.id)); });
-W._gcApprCount = { state: function(){ return { gone: Object.keys(GONE), denying: Object.keys(DPEND) }; }, isGone: isGone, deny: function(key){ var r = rowByKey(s(key)); if (r) quickDeny(r); return !!r; } };
+W._gcApprCount = { state: function(){ return { gone: Object.keys(GONE), denying: Object.keys(DPEND) }; }, isGone: isGone, trim: trimSet, deny: function(key){ var r = rowByKey(s(key)); if (r) quickDeny(r); return !!r; } };
 wrapSetCount();
 function denyFilter(rows){
   var c = denyTodos();
@@ -162869,8 +162970,11 @@ function tick(force){
     if (RET && Date.now() - RET.at > 3600e3) { RET = null; backChip(); }
     if (view() === 'approvals') drawTab(!!force);
     pinRoots(); navBadge();
+    apSig();   /* patch APPRSYNC */
   } catch (e) { warn(e); }
 }
+var APSIG = '';
+function apSig(){ var cs = typeof W._gcApprovalCurrent === 'function' ? W._gcApprovalCurrent() : null; if (!cs || !cs.groups) return; var ids = []; Object.keys(cs.groups).forEach(function(g){ arr(cs.groups[g]).forEach(function(x){ ids.push(s(x && x.id)); }); }); var sg = cs.total + '|' + ids.join(','); if (sg === APSIG) return; APSIG = sg; try { W.dispatchEvent(new CustomEvent('gc-approvals-changed', { detail: { total: cs.total } })); } catch (e) {} }
 /* repaint the pin as soon as To-Do redraws (no flash of a twin row) */
 try { new MutationObserver(function(ms){ for (var i = 0; i < ms.length; i++) { var t = ms[i].target; if (t && t.nodeType === 1 && (t.classList.contains('td2-body') || t.classList.contains('td2') || t.classList.contains('_gcAp2Sec'))) { paintSoon(); return; } } }).observe(D.documentElement, { childList: true, subtree: true }); } catch (e) {}
 every(function(){ tick(false); }, 1000);
@@ -184177,6 +184281,7 @@ function route(){
       if (!r || !r.groups) return r;
       if (W._gcVAS && W._gcVAS.active && W._gcVAS.active()) return r;   /* View as: the original rule */
       routeGroups(r.groups);
+      try { if (W._gcApprCount && typeof W._gcApprCount.trim === 'function') W._gcApprCount.trim(r); } catch (e) {}   /* patch APPRSYNC */
       var total = 0, parts = [];
       Object.keys(r.groups).forEach(function(k){ var n = arr(r.groups[k]).length; total += n; if (n && LBL[k]) parts.push(n + ' ' + (n === 1 ? LBL[k][0] : LBL[k][1])); });
       r.total = total; r.tip = parts.join(' · ');
@@ -190324,6 +190429,7 @@ function soon(){ if (pend) return; pend = later(function(){ pend = null; try { a
   W.__gcCrmBox = function(o){ var r = typeof prev === 'function' ? prev(o) : o; soon(); return r; };
 })();
 W.addEventListener('online', soon); W.addEventListener('offline', soon);
+W.addEventListener('gc-approvals-changed', soon);   /* patch APPRSYNC: the same list as the badge and the desk's Approvals */
 D.addEventListener('visibilitychange', function(){ if (!D.hidden) soon(); });
 W.addEventListener('resize', soon);
 D.addEventListener('click', function(ev){ if (ev.target && ev.target.closest && ev.target.closest('#_gcJobPick.gc-fh')) return; later(soon, 600); }, true);
