@@ -51,6 +51,15 @@ in the Intuit developer portal. Today neither is set.)
 
 ## Card statements, vendor rules, matching
 
+- **PDF statements (patch STMTPDF).** 💳 Import card statement and **🏦 Import bank statement** (To-Do and 💎) take the bank's
+  **PDF** statement as it comes from the website (or its CSV, or pasted lines). Every line is shown first with the statement's
+  own previous → new (beginning → ending) balance check; a ⚠ appears when the lines do not add up. A line already in the CRM
+  (same card / account, date, amount — e.g. the CSV and then the PDF of one statement) is marked and not added again.
+  Bank statements: checks (check # kept), withdrawals and debit-card buys become paid expenses on their jobs; deposits and
+  payments to a credit card are listed but not imported. A scanned (picture) PDF cannot be read: download the CSV instead.
+  The office's 🧾 bank check needs docs/office-full-access.sql (the screen says "Ask Wesley to finish the database setup").
+  The other doors (Credit Card Entry, 💳 Credit cards, Expenses → 📊 CC Statement, the Expense Center, 🏦 Bank Accounts,
+  Monthly Bank Check) say what they do and hand a PDF to these two. Test: `node tools/tests/test_STMTPDF.mjs <build-dir>`.
 - **To-Do → 💳 Import card statement** (also 💎 → 💳 Import card statement). A CSV from the bank site (Chase, Amex,
   Capital One, Citi, Bank of America, Wells Fargo, Discover, US Bank: date + description + amount, or debit / credit
   columns, header or not) or the lines copied out of a PDF statement. Payments to the card are left out.
