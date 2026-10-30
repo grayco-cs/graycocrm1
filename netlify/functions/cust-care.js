@@ -43,7 +43,7 @@ async function staff(event){
   try {
     const r = await fetch(url + '/rest/v1/gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(email), { headers: C.keyHeaders(C.svcKey()) });
     const row = r.ok ? ((await r.json()) || [])[0] : null;
-    if (row && row.active !== false) return { ok: true, email: email, name: s(row.name) || email.split('@')[0], admin: low(row.role) === 'admin' };
+    if (row && row.active !== false) return { ok: true, email: email, name: s(row.name) || email.split('@')[0], admin: require('./_lib/staff-role.js').isAdmin({ role: row.role, email: email }) };   /* patch AUTHFIX */
   } catch (e) {}
   return { ok: false, code: 403, error: 'This account is not on the GrayCo staff list.' };
 }

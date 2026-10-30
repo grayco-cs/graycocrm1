@@ -117,7 +117,7 @@ async function whoIs(event){
     const email = low((await r.json()).email); if (!email) return null;
     const q = await fetch(C.sbUrl() + '/rest/v1/gc_staff?select=role,active&email=eq.' + encodeURIComponent(email), { headers: C.keyHeaders(C.svcKey()) });
     const row = q.ok ? ((await q.json()) || [])[0] : null;
-    return row && row.active !== false ? { email: email, admin: low(row.role) === 'admin' } : null;
+    return row && row.active !== false ? { email: email, admin: require('./_lib/staff-role.js').isAdmin({ role: row.role, email: email }) } : null;   /* patch AUTHFIX */
   } catch (e) { return null; }
 }
 

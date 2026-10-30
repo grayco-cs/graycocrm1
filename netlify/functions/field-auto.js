@@ -276,7 +276,7 @@ async function isAdmin(event){
     const email = low((await r.json()).email); if (!email) return false;
     const q = await fetch(C.sbUrl() + '/rest/v1/gc_staff?select=role,active&email=eq.' + encodeURIComponent(email), { headers: C.keyHeaders(C.svcKey()) });
     const row = q.ok ? ((await q.json()) || [])[0] : null;
-    return !!(row && row.active !== false && low(row.role) === 'admin');
+    return !!(row && row.active !== false && require('./_lib/staff-role.js').isAdmin({ role: row.role, email: email }));   /* patch AUTHFIX */
   } catch (e) { return false; }
 }
 const RUNS = { dispatch: runDispatch, closeout: runCloseout, mortgage: runMortgage, tickets: runTickets, anniversary: runAnniversary };

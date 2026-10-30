@@ -93,7 +93,7 @@ exports.handler = async function(event){
     if (STAFF.indexOf(action) >= 0) {
       const who = await C.gcStaffAuth(event);
       if (!who.ok) return reply(who.statusCode || 401, headers, { ok: false, error: who.error });
-      const admin = low(who.role) === 'admin';
+      const admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
       const data = await C.crmData(true);
       const lvl = !/^docs-/.test(action) ? '' : admin ? 'admin' : (await isOffice(who, data)) ? 'office' : 'staff';   /* patch COMPANYDOCS */
       if (action === 'docs-list') return reply(200, headers, { ok: true, level: lvl, docs: G.docsForStaff(await G.companyDocs(lvl !== 'staff'), lvl), kinds: G.DOC_KINDS, folders: G.DOC_FOLDERS, cfg: await G.libCfg() });
@@ -154,8 +154,8 @@ exports.handler = async function(event){
       if (!p) return notActive();
       if (action === 'gc-view') { const v = await G.gcView(data, p); if (b.preview !== true) await G.touchLink(row.token); return reply(200, headers, v); }
       if (action === 'gc-photos') {
-        const recs = await C.grayCoRecords(), hide = C.ccHidden(recs), ccId = C.ccIdOf(p);
-        const cc = (ccId ? await C.ccPhotos(ccId) : []).filter(function(x){ return !hide[String(x.id).replace(/^cc_/, '')]; });
+        const recs = await C.grayCoRecords();
+        const cc = await C.ccCustomerPhotos(p, recs, 'customer');   /* patch CCPHOTOS2: CompanyCam photos only once "Customer can see" was clicked (older ones as before) */
         const list = (await C.grayCoPhotos(p.id, recs || [])).concat(cc).sort(function(a, x){ return a.at < x.at ? 1 : -1; });
         return reply(200, headers, { ok: true, photos: list });
       }

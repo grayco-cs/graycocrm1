@@ -80,7 +80,7 @@ async function gcStaffAuth(event){
   const email = String((user && user.email) || '').trim().toLowerCase();
   if (!email) return { ok: false, statusCode: 401, error: 'Your sign-in has expired. Sign in again.' };
   const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  let role = null, listed = false, name = '';
+  let role = null, listed = false, name = '', down = false;
   if (svc) {
     try {
       const r = await fetch(url + '/rest/v1/gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(email),
@@ -90,15 +90,18 @@ async function gcStaffAuth(event){
         const rows = await r.json();
         const row = Array.isArray(rows) && rows[0];
         if (row && row.active !== false) { role = String(row.role || 'staff').toLowerCase(); name = row.name || ''; }
-      }
-    } catch (e) {}
+      } else if (r.status >= 500 || r.status === 429) down = true;
+    } catch (e) { down = true; }
   }
   if (!listed) {
     const env = (process.env.STAFF_EMAILS || '').split(',').map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean);
     if (env.indexOf(email) > -1) role = 'staff';
   }
+  /* patch AUTHFIX: a database hiccup is "try again" (503), never "not on the staff list" (403) */
+  if (!role && down) return { ok: false, statusCode: 503, error: 'Could not check the GrayCo staff list just now. Try again.' };
   if (!role) return { ok: false, statusCode: 403, error: 'This account (' + email + ') is not on the GrayCo staff list.' };
-  return { ok: true, email: email, role: role, name: name, userId: user.id || '' };
+  /* patch AUTHFIX: who.admin — the one rule (_lib/staff-role.js): an owner counts as an admin */
+  return { ok: true, email: email, role: role, name: name, userId: user.id || '', admin: require('./_lib/staff-role.js').isAdmin({ role: role, email: email }) };
 }
 /* ── end GrayCo staff check ────────────────────────────────────────────────── */
 
@@ -256,7 +259,7 @@ async function ccPhotos(ccId){
       const full = by.web || by.original || by.large || '';
       const thumb = by.thumbnail || by.web || full;
       if (!full || !thumb) return;
-      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam' });
+      out.push({ id: 'cc_' + s(ph.id), t: thumb, f: full, at: ymd(ph.captured_at || ph.created_at), src: 'companycam', ccId: s(ph.id), up: CCV().upOf(ph), cap: CCV().secOf(ph.captured_at || ph.created_at) });   /* patch CCPHOTOS2: when it went in */
     });
     if (chunk.length < 100) break;
   }
@@ -311,6 +314,14 @@ async function grayCoPhotos(pid, recs){
     Object.assign(signed, await signRefs(refs));
   }
   return top.map(function(x){ const f = signed[x.full], t = signed[x.thumb] || f; return f ? { id: clip(x.id, 60), t: t, f: f, at: ymd(x.at), src: 'grayco', tag: clip(x.tag, 20) } : null; }).filter(Boolean);
+}
+/* patch CCPHOTOS2: a job's CompanyCam photos for the customer (or the GC link): the server's index with GrayCo's own copies
+   first (they outlive CompanyCam), CompanyCam itself for a project not indexed yet; a photo put in after this release only
+   once someone clicked "Customer can see" (on it, or "Show all" on its job) — _lib/cc-vis.js */
+function CCV(){ return require('./_lib/cc-vis.js'); }
+async function ccCustomerPhotos(p, recs, audience){
+  const ccId = ccIdOf(p); if (!ccId) return [];
+  return CCV().photosFor(p, recs || [], audience || 'customer', { kvRead: kvRead, signRefs: signRefs, live: ccPhotos }, { ccId: ccId });
 }
 function ccHidden(recs){ const out = {}; arr(recs).forEach(function(r){ if (r.source === 'ccflag' && s(r.ccId) && !gcSharedOf({ shared: true }, r)) out[s(r.ccId)] = 1; }); return out; }
 
@@ -1649,7 +1660,7 @@ async function supplierPoQueue(body, who){
 /* approve / reject / edit-then-approve, from the CRM. who = the signed-in person (gcStaffAuth). */
 async function approvalAction(body, who){
   const op = s(body.op), id = s(body.id);
-  const admin = low(who.role) === 'admin';
+  const admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
   let myName = s(who.name);
   if (op === 'escalate') { const e = await escalateDue({}); return { status: e.ok ? 200 : 502, out: e }; }   /* patch AP4: the page asks when a list is shown */
   const cur = await kvListRead(AQ_KEY);
@@ -2240,8 +2251,17 @@ async function ping(){
     out.tables[t] = st >= 200 && st < 300 ? 'ok' : (st === 0 ? 'cannot reach Supabase (SUPABASE_URL)' : (st === 401 || st === 403 ? 'key not accepted (SUPABASE_SERVICE_KEY)' : (st === 404 || st === 400 ? 'missing — run docs/portal-setup.sql' : 'answered ' + st)));
     if (out.tables[t] !== 'ok') { out.ok = false; if (!out.problem) out.problem = t + ': ' + out.tables[t]; }
   }
+  /* patch AUTHFIX: Admin → Setup checklist — which setup SQL files have run (the table exists: yes / no; never a row).
+     Asked here with the service key: the browser read the service-only tables itself and logged a 403 / 404 for each. */
+  out.setup = {};
+  await Promise.all(SETUP_TABLES.map(async function(t){
+    let st = 0;
+    try { const r = await fetch(sbUrl() + '/rest/v1/' + t + '?select=*&limit=0', { headers: H() }); st = r.status; } catch (e) { st = 0; }
+    out.setup[t] = st >= 200 && st < 300 ? true : (st === 404 || st === 400 ? false : null);
+  }));
   return out;
 }
+const SETUP_TABLES = ['gc_staff', 'gc_admin_kv', 'gc_portal', 'gc_lead_inbox_kv', 'gc_pending_money', 'gc_news_suppress', 'rs_settings', 'gc_photo_reports', 'gc_archive_fresh_start'];
 
 
 /* ── patch AUTAI (automations 10 + 11 + payments) ───────────────────────────────────────────────────────────
@@ -2377,7 +2397,7 @@ exports.handler = async function (event) {
       } catch (e) { return reply(502, headers, { ok: false, error: 'Could not save the setting. Try again.' }); }
     }
     if (action === 'links') {        /* patch ADM: every portal link's state for Admin → System check (no link codes) */
-      if (low(who.role) !== 'admin') return reply(403, headers, { ok: false, error: 'Admins only.' });
+      if (!require('./_lib/staff-role.js').isAdmin(who)) return reply(403, headers, { ok: false, error: 'Admins only.' });   /* patch AUTHFIX */
       try {
         const r = await sbFetch(sbUrl() + '/rest/v1/gc_portal?select=project_id,created_at,last_viewed_at,revoked,sent_at&order=created_at.desc&limit=2000', { headers: H() });
         if (!r.ok) return reply(r.status === 404 ? 503 : 502, headers, { ok: false, error: r.status === 404 ? 'Portal not set up: run docs/portal-setup.sql in Supabase.' : 'gc_portal read ' + r.status });
@@ -2408,7 +2428,7 @@ exports.handler = async function (event) {
       } catch (e) { return reply(500, headers, { ok: false, error: 'Could not make the PDF: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'news') {          /* patch AP2: "News: subscribed / unsubscribed (date)" and an admin's re-subscribe */
-      const N = newsLib(), op = s(body.op), admin = low(who.role) === 'admin';
+      const N = newsLib(), op = s(body.op), admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
       try {
         if (op === 'status') return reply(200, headers, { ok: true, status: await N.status((Array.isArray(body.emails) ? body.emails : []).filter(function(e){ return typeof e === 'string'; }).slice(0, 500)) });
         if (!admin) return reply(403, headers, { ok: false, error: 'Only Wesley or Nick can change who gets GrayCo News.' });
@@ -2473,8 +2493,7 @@ exports.handler = async function (event) {
   if (action === 'photos') {
     const ccId = ccIdOf(p);
     const recs = await grayCoRecords();
-    const hide = ccHidden(recs);
-    const cc = (ccId ? await ccPhotos(ccId) : []).filter(function(x){ return !hide[String(x.id).replace(/^cc_/, '')]; });
+    const cc = ccId ? await ccCustomerPhotos(p, recs, 'customer') : [];   /* patch CCPHOTOS2: a click decides, on the server */
     const gc = await grayCoPhotos(p.id, recs || []);
     const list = gc.concat(cc).sort(function(a, b){ return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
     /* patch X12: the AI photo tag's STAGE label only ("Tear-off", "Finished") — never a damage word */
@@ -2514,7 +2533,7 @@ exports._core = { seniorPm: async function(){ let d = {}; try { d = await crmDat
 /* patch AUTAI */
 Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: activeFor, sendText: sendText, LINK_PH_: LINK_PH, pmOf: pmOf, findProject: findProject, textHtml: textHtml, kvListRead: kvListRead, autaiReceipt: autaiReceipt, autaiQueue: autaiQueue, AUTAI_POST: AUTAI_POST });
 /* patch GCP: the GC portal and the customer-portal extras (gc-portal.js, _lib/gcp.js) */
-Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
+Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, ccCustomerPhotos: ccCustomerPhotos, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });

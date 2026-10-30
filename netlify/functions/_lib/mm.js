@@ -34,7 +34,7 @@ function nowIso(){ return new Date(nowFn()).toISOString(); }
 function hdr(event, name){ const h = (event && event.headers) || {}; const k = Object.keys(h).find(function(x){ return x.toLowerCase() === name; }); return k ? s(h[k]) : ''; }
 
 /* ── 1. who: a Marketing Manager sign-in (the row: profile marketing, mkt_active, never active staff) ── */
-function isMarketingRow(row){ return !!row && low(row.profile) === 'marketing' && row.mkt_active === true && row.active === false && low(row.role || 'staff') !== 'admin'; }
+function isMarketingRow(row){ return !!row && low(row.profile) === 'marketing' && row.mkt_active === true && row.active === false && !require('./staff-role.js').isAdminRole(row.role || 'staff'); }   /* patch AUTHFIX */
 async function auth(event){
   const m = /^Bearer\s+(\S+)$/i.exec(hdr(event, 'authorization'));
   if (!m) return { ok: false, statusCode: 401, error: 'Sign in to the GrayCo CRM first.' };

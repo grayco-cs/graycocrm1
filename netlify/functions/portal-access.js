@@ -1137,7 +1137,7 @@ async function customerAction(action, body, pids){
 
 /* ═══ STAFF (the CRM) ═══════════════════════════════════════════════════════ */
 function staffName(data, who){ const u = arr(data.users).find(function(x){ return low(x.email) === who.email; }); return s(u && u.name) || who.name || who.email; }
-function isAdmin(who){ return /admin|owner/.test(low(who.role)); }
+function isAdmin(who){ return require('./_lib/staff-role.js').isAdmin(who); }   /* patch AUTHFIX: the one admin rule (an owner counts) */
 function canApproveFor(data, who, pid){
   if (isAdmin(who)) return true;
   const p = arr(data.projects).find(function(x){ return s(x.id) === s(pid); });

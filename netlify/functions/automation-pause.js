@@ -112,7 +112,7 @@ exports.handler = async function(event){
     return J(200, { paused: paused, why: pause.why(), flag: flag || { on: false }, readError: readError || undefined });
   }
   if (event.httpMethod !== 'POST') return J(405, { error: 'Method not allowed' });
-  if (who.role !== 'admin') return J(403, { error: 'Only an admin can turn data-entry mode on or off.' });
+  if (!require('./_lib/staff-role.js').isAdmin(who)) return J(403, { error: 'Only an admin can turn data-entry mode on or off.' });
   if (!svcKey()) return J(500, { error: 'SUPABASE_SERVICE_KEY is not set on Netlify.' });
   let body; try { body = JSON.parse(event.body || '{}'); } catch (e) { return J(400, { error: 'Invalid JSON' }); }
   if (typeof body.on !== 'boolean') return J(400, { error: 'Send { on: true } or { on: false }.' });

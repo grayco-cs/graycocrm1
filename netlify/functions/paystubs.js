@@ -102,7 +102,7 @@ function keyFor(year){ return 'payrollStubs_' + String(year).replace(/[^0-9]/g, 
 function stubId(st){ return ('PS_' + low(st.empKey || st.email || st.name) + '_' + s(st.periodFrom) + '_' + s(st.periodTo) + '_' + s(st.payDate)).replace(/[^a-z0-9_@.\-]/g, '_'); }
 
 async function canPayroll(who){
-  if (who.role === 'admin') return true;
+  if (require('./_lib/staff-role.js').isAdmin(who)) return true;   /* patch AUTHFIX */
   if (!svcKey()) return false;
   try {
     const r = await fetch(sbUrl() + '/rest/v1/gc_staff?select=payroll,active&email=eq.' + encodeURIComponent(who.email), { headers: svcHeaders() });

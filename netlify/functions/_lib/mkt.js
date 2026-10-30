@@ -123,7 +123,7 @@ async function signRef(ref, secs){
 /* ── who may do what ── */
 function roleOf(who, data){
   if (who && who.marketing === true) return 'marketing';   /* patch MM: the Marketing Manager profile (never admin, never office) */
-  if (low(who && who.role) === 'admin') return 'admin';
+  if (require('./staff-role.js').isAdmin(who)) return 'admin';   /* patch AUTHFIX: one rule — an owner counts as an admin */
   if (/office/.test(low(who && who.role)) || low(who && who.email) === 'office@grayco-cs.com') return 'office';
   const u = arr(data && data.users).find(function(x){ return low(x.email) === low(who && who.email); });
   if (u && /admin|owner/i.test(s(u.role))) return 'admin';

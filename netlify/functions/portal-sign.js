@@ -600,7 +600,7 @@ exports.handler = async function(event){
       if (action === 'request') { const r = await request(body, who); return reply(r.status, headers, r.out); }
       if (action === 'list') { const pid = s(body.projectId); if (!ID_RE.test(pid)) return reply(400, headers, { ok: false, error: 'Open a job first.' }); const r = await listFor(pid); return reply(r.status, headers, r.out); }
       if (action === 'void') { const r = await voidReq(s(body.id), who); return reply(r.status, headers, r.out); }
-      if (who.role !== 'admin') return reply(403, headers, { ok: false, error: 'Admins only.' });
+      if (!require('./_lib/staff-role.js').isAdmin(who)) return reply(403, headers, { ok: false, error: 'Admins only.' });
       return reply(200, headers, await runFollowups({}));
     } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong: ' + clip(e && e.message || e, 120) }); }
   }

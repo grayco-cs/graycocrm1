@@ -1235,14 +1235,16 @@ async function staffAuth(event){
   catch (e) { return { ok: false, code: 503, error: 'Could not reach the sign-in service.' }; }
   const email = low(user && user.email);
   if (!email) return { ok: false, code: 401, error: 'Your sign-in has expired. Sign in again.' };
-  let role = null, name = '', listed = false, srow = null;
+  let role = null, name = '', listed = false, srow = null, down = false;
   if (sbKey()) {
-    try { const r = await sb('gc_staff?select=*&email=eq.' + encodeURIComponent(email)); if (r.ok) { listed = true; const rows = await r.json(); const row = Array.isArray(rows) && rows[0]; if (row && row.active !== false) { role = low(row.role || 'staff'); name = s(row.name); srow = row; } } } catch (e) {}   /* patch OFFICEFULL: * = the profile too */
+    try { const r = await sb('gc_staff?select=*&email=eq.' + encodeURIComponent(email)); if (r.ok) { listed = true; const rows = await r.json(); const row = Array.isArray(rows) && rows[0]; if (row && row.active !== false) { role = low(row.role || 'staff'); name = s(row.name); srow = row; } } else if (r.status >= 500 || r.status === 429) down = true; } catch (e) { down = true; }   /* patch OFFICEFULL: * = the profile too */
   }
   if (!listed && env('STAFF_EMAILS').split(',').map(low).indexOf(email) > -1) role = 'staff';
+  /* patch AUTHFIX: the staff list could not be read (database hiccup) → "try again" (503), not "not on the staff list" (403) */
+  if (!role && down) return { ok: false, code: 503, error: 'Could not check the GrayCo staff list just now. Try again.' };
   if (!role) return { ok: false, code: 403, error: 'Not on the GrayCo staff list.' };
   const admins = env('LEAD_ADMINS').split(',').map(low).filter(Boolean);
-  const admin = role === 'admin' || admins.indexOf(email) > -1;
+  const admin = require('./_lib/staff-role.js').isAdmin({ role, email }, admins);   /* patch AUTHFIX: one rule — an owner counts as an admin */
   /* patch OFFICEFULL: who.office — the office works every part of the CRM (_lib/office-access.js; data, never a name) */
   let office = false; if (!admin && srow) { try { office = await require('./_lib/office-access.js').isOffice(email, { row: srow }); } catch (e) { office = false; } }
   return { ok: true, email, name, role, admin, office };
