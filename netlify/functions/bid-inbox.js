@@ -1224,14 +1224,17 @@ async function staffAuth(event){
   catch (e) { return { ok: false, code: 503, error: 'Could not reach the sign-in service.' }; }
   const email = low(user && user.email);
   if (!email) return { ok: false, code: 401, error: 'Your sign-in has expired. Sign in again.' };
-  let role = null, name = '', listed = false;
+  let role = null, name = '', listed = false, srow = null;
   if (sbKey()) {
-    try { const r = await sb('gc_staff?select=email,name,role,active&email=eq.' + encodeURIComponent(email)); if (r.ok) { listed = true; const rows = await r.json(); const row = Array.isArray(rows) && rows[0]; if (row && row.active !== false) { role = low(row.role || 'staff'); name = s(row.name); } } } catch (e) {}
+    try { const r = await sb('gc_staff?select=*&email=eq.' + encodeURIComponent(email)); if (r.ok) { listed = true; const rows = await r.json(); const row = Array.isArray(rows) && rows[0]; if (row && row.active !== false) { role = low(row.role || 'staff'); name = s(row.name); srow = row; } } } catch (e) {}   /* patch OFFICEFULL: * = the profile too */
   }
   if (!listed && env('STAFF_EMAILS').split(',').map(low).indexOf(email) > -1) role = 'staff';
   if (!role) return { ok: false, code: 403, error: 'Not on the GrayCo staff list.' };
   const admins = env('LEAD_ADMINS').split(',').map(low).filter(Boolean);
-  return { ok: true, email, name, role, admin: role === 'admin' || admins.indexOf(email) > -1 };
+  const admin = role === 'admin' || admins.indexOf(email) > -1;
+  /* patch OFFICEFULL: who.office — the office works every part of the CRM (_lib/office-access.js; data, never a name) */
+  let office = false; if (!admin && srow) { try { office = await require('./_lib/office-access.js').isOffice(email, { row: srow }); } catch (e) { office = false; } }
+  return { ok: true, email, name, role, admin, office };
 }
 
 /* patch LEADS: a lead typed into the CRM (no inbox item) → the item shape the bid portal adapter reads */
@@ -1403,7 +1406,7 @@ exports.handler = async function(event){
      { op: 'rerun', id }: Resend still holds it; a dropped invoice is read again, its file never blocked as "the same file") */
   if (qs.mailrecv && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
-    if (!(who.admin || /^office/.test(s(who.role)))) return J(403, { error: 'Only an admin or the office sees the mail received.' }, C);
+    if (!(who.admin || who.office || /^office/.test(s(who.role)))) return J(403, { error: 'Only an admin or the office sees the mail received.' }, C);   /* patch OFFICEFULL: who.office */
     if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
     if (event.httpMethod === 'GET') {
       try { return J(200, { ok: true, rows: arr(await kvGet(KV_RECV)).slice().sort((a, b) => s(b.ran || b.at).localeCompare(s(a.ran || a.at))), at: nowIso() }, C); }
@@ -1448,7 +1451,7 @@ exports.handler = async function(event){
      (status dismissed, reason "Not construction (auto)"; nothing is deleted, a dismissed bid is never re-imported or e-mailed) */
   if (qs.cleanup && (event.httpMethod === 'GET' || event.httpMethod === 'POST')) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
-    if (!who.admin) return J(403, { error: 'Only an admin can hide bids.' }, C);
+    if (!(who.admin || who.office)) return J(403, { error: 'Only an admin or the office can hide bids.' }, C);   /* patch OFFICEFULL */
     if (!dbReady()) return J(500, { error: 'Supabase is not configured on Netlify.' }, C);
     try {
       const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
@@ -1465,7 +1468,7 @@ exports.handler = async function(event){
   /* patch BW: 🔎 Bid boards — the built-in boards, the admins' own, their last run and SAM.gov */
   if (event.httpMethod === 'GET' && qs.sources) {
     const who = await staffAuth(event); if (!who.ok) return J(who.code, { error: who.error }, C);
-    if (!who.admin) return J(403, { error: 'Only an admin sees the bid boards.' }, C);
+    if (!(who.admin || who.office)) return J(403, { error: 'Only an admin or the office sees the bid boards.' }, C);   /* patch OFFICEFULL */
     const BW = require('./bid-watch.js');
     const settings = Object.assign({}, DEFAULT_SETTINGS, (await kvGet(KV_SET)) || {});
     const pub = x => ({ id: x.id, name: x.name, label: x.label || '', auto: !!x.auto, kind: x.kind || (x.auto ? 'links' : 'email'), url: x.url || '', how: x.how || '', local: !!x.local, unverified: !!x.unverified });
@@ -1515,13 +1518,13 @@ exports.handler = async function(event){
     let b; try { b = JSON.parse(rawBody(event) || '{}'); } catch (e) { return J(400, { error: 'Not JSON.' }, C); }
     /* patch BW: "Test read" — one look at a page now, nothing kept */
     if (qs.testread) {
-      if (!who.admin) return J(403, { error: 'Only an admin tests a bid board.' }, C);
+      if (!(who.admin || who.office)) return J(403, { error: 'Only an admin or the office tests a bid board.' }, C);
       try { const r = await require('./bid-watch.js').testRead(b, { settings: await kvGet(KV_SET), fetchImpl: exports._fetch }); return J(200, r, C); }
       catch (e) { return J(502, { ok: false, why: 'Could not read it: ' + s(e && e.message) }, C); }
     }
     /* patch BW: add / change / remove an admin's own bid board (built-ins can only be switched off) */
     if (qs.boards) {
-      if (!who.admin) return J(403, { error: 'Only an admin changes the bid boards.' }, C);
+      if (!(who.admin || who.office)) return J(403, { error: 'Only an admin or the office changes the bid boards.' }, C);
       const BW = require('./bid-watch.js'), op = s(b.op);
       /* the SAM.gov key, entered here: kept sealed server-side; only its last 4 come back */
       if (op === 'samkey') {
@@ -1558,17 +1561,17 @@ exports.handler = async function(event){
       return J(200, { ok: true, source: done, todo }, C);
     }
     if (qs.settings) {
-      if (!who.admin) return J(403, { error: 'Only an admin changes the bid watcher.' }, C);
+      if (!(who.admin || who.office)) return J(403, { error: 'Only an admin or the office changes the bid watcher.' }, C);
       try { const r = await kvCas(KV_SET, v => cleanSettings(b, v)); return J(200, { ok: true, settings: r.value, estimator: await estimatorOf(r.value) }, C); } catch (e) { return J(/look right/.test(s(e.message)) ? 400 : 503, { error: s(e.message) }, C); }
     }
     if (qs.watch) {
-      if (!who.admin) return J(403, { error: 'Only an admin runs the bid watcher by hand.' }, C);
+      if (!(who.admin || who.office)) return J(403, { error: 'Only an admin or the office runs the bid watcher by hand.' }, C);
       const body = JSON.stringify({ type: 'watch.run', by: who.email, source: s(b.source) });
       if (await handOff(body)) return J(202, { ok: true, started: true }, C);
       try { const out = await require('./bid-watch.js').runAll({ only: s(b.source), budgetMs: 20000 }); return J(200, out, C); } catch (e) { return J(502, { error: 'The watcher could not run: ' + s(e.message) }, C); }
     }
     const need = OPS[s(b.op)]; if (!need) return J(400, { error: 'Unknown action.' }, C);
-    if (need === 'admin' && !who.admin) return J(403, { error: 'Only an admin can do that.' }, C);
+    if (need === 'admin' && !(who.admin || who.office)) return J(403, { error: 'Only an admin or the office can do that.' }, C);   /* patch OFFICEFULL */
     if (s(b.op) === 'portal') {   /* patch LEADS: the lead's sub bid job — private (invited subs only) by default; public only on a person's say-so */
       const mode = /^(draft|private|public)$/.test(s(b.mode)) ? s(b.mode) : 'private';
       if (mode === 'public' && !who.admin && !(await isEstimator(who.email))) return J(403, { error: 'Only an admin or an estimator can make a bid job public to all subs.' }, C);

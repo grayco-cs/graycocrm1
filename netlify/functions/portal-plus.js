@@ -245,7 +245,7 @@ async function staffAct(body, who){
   if (act === 'list') return { status: 200, out: { ok: true, contracts: A.list, settings: A.settings, heard: A.heard, heardOpts: M.HEARD_OPTS } };
   if (act === 'plans') {
     if (!body.set) return { status: 200, out: { ok: true, settings: A.settings } };
-    if (!who.admin) return { status: 403, out: { ok: false, error: 'Only an admin changes the maintenance plans.' } };
+    if (!(who.admin || who.office)) return { status: 403, out: { ok: false, error: 'Only an admin or the office changes the maintenance plans.' } };   /* patch OFFICEFULL */
     const v = body.set; if (!v || !Array.isArray(v.plans) || !v.plans.length || v.plans.length > 12) return { status: 400, out: { ok: false, error: 'Add at least one plan.' } };
     const clean = M.settingsOf({ plans: v.plans, offerOn: v.offerOn });
     clean.updatedAt = nowIso(); clean.by = who.email; delete clean.saved;
