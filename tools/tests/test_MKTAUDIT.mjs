@@ -100,6 +100,8 @@ ok(r.status === 200 && r.j.value && r.j.value.referrals && !hasPII(r.txt).length
 r = await callFn('soc', MM, { op: 'mm_kv_write', key: 'gc_mkt_v1', value: { perms: { job_PR: { id: 'job_PR', jobId: 'PR', marketing: true, at: new Date(Date.now() + 60e3).toISOString() } } } });
 const pj = await callFn('soc', MM, { op: 'mm_jobs' }), pf = await callFn('soc', MM, { op: 'mm_file', ref: 'sb:crm-files/demo-roof-no-ok.jpg' });
 ok(!(cget('gc_mkt_v1').perms || {}).job_PR && (pj.j.photos || []).length === 1 && pj.j.photos[0].jobId === 'PW' && pf.status === 403, 'he cannot mark a job "the customer said OK" himself: that job\'s photos stay closed to him (403)', { perms: cget('gc_mkt_v1').perms, photos: (pj.j.photos || []).map(x => x.jobId), file: pf.status });
+const MMlib = require(F + '/_lib/mm.js');
+ok(MMlib.scrubText('Sat 10/31 11:00 AM CT') === 'Sat 10/31 11:00 AM CT' && MMlib.scrubText('New roof at 88 Maple Dr') === 'New roof at Maple Dr', 'his texts keep "11:00 AM CT" (it read "11:AM CT") and still drop house numbers');
 r = await callFn('referral', ADMIN, null, 'GET', { list: '1' });
 ok(r.status === 200 && /Demo Customer-Kline/.test(r.txt), '… an admin still sees the members by name');
 

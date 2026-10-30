@@ -86,7 +86,8 @@ async function setSettings(patch, who){
 const PII_KEYS = /^(email|e_?mail|phone|tel|cell|mobile|address|street|addr|jobaddress|jobaddresses|address1|address2|zip(code)?|client|clientname|clientemail|clientphone|customer|customername|customeremail|customerphone|owner|ownername|homeowner|contact|names|jobname|signature|ssn|ein|dob|birthday|notes?|referrer|referred|referrername|referredname|referreremail|referredemail|membername|winner|winnername|toname)$/i;   /* patch MKTFIX2: + the customer referral / giveaway names */
 const EMAIL_RE = /[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, PHONE_RE = /\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, HOUSE_RE = /\b\d{2,6}[A-Za-z]?\s+(?:[NSEW]\.?\s+)?(?:[A-Za-z0-9'.-]+\s+){0,4}(?:st|street|rd|road|ave|avenue|blvd|dr|drive|ln|lane|ct|court|cv|cove|pl|place|pkwy|cir|circle|way|ter|trl|trail|hwy|loop|run|pass|sq)\b\.?/gi;
 function scrubText(t){ return String(t).replace(EMAIL_RE, function(m){ return /@grayco-cs\.com$/i.test(m) ? m : '[e-mail hidden]'; }).replace(PHONE_RE, function(m){ return m.replace(/\D/g, '').slice(-10) === '9015850944' ? m : '[phone hidden]'; })
-  .replace(HOUSE_RE, function(m){ return /^(4007|4014)\s+broadway/i.test(m) ? m : m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); }); }
+  .replace(HOUSE_RE, function(m, off, all){ if (/^(4007|4014)\s+broadway/i.test(m)) return m; if (/^\d{1,2}\s+[AP]\.?M\b/i.test(m) || (off > 0 && /[:\d\/]/.test(all.charAt(off - 1)))) return m;   /* patch MKTFIX2: "11:00 AM CT" is a time, not a house on a court */
+    return m.replace(/^\s*\d+[A-Za-z]?\s+/, ''); }); }
 /* deep copy without customer contact data: PII keys out, e-mails / phones / house numbers in text masked */
 function redact(v, depth){
   depth = depth || 0; if (depth > 12) return null;
