@@ -192,6 +192,7 @@ function sectionOf(t, mode){
 }
 function colKind(t){
   var x = low(t).replace(/\s+/g, ' ').replace(/[:.]$/, '');
+  if ((/deposit|credit/.test(x) ? 1 : 0) + (/withdraw|debit/.test(x) ? 1 : 0) + (/balance/.test(x) ? 1 : 0) > 1) return '';   /* two headings run together */
   if (/balance/.test(x)) return 'bal';
   if (/^(deposits?|credits?|additions|deposits?\s*\/\s*credits?|deposits?\s*&\s*credits?|money in|payments?\s*(and|&|\/)\s*credits?)$/.test(x)) return 'in';
   if (/^(withdrawals?|debits?|charges|subtractions|withdrawals?\s*\/\s*debits?|checks?\s*\/\s*debits?|money out|purchases\s*\/\s*debits)$/.test(x)) return 'out';
@@ -337,27 +338,31 @@ function parseLines(doc, mode){
         });
         var desc = descToks.join(' ').replace(/^[*^]\s*/, '');
         /* amounts: drop the running balance */
-        var useA = amts.slice(), colk = '';
+        var useA = amts.slice(), colk = '', balTok = null;
         if (cols.length) {
           var withCol = useA.map(function(a){ return { a: a, c: nearestCol(cols, a) }; });
           var nonBal = withCol.filter(function(w){ return !(w.c && w.c.kind === 'bal'); });
+          var balW = withCol.filter(function(w){ return w.c && w.c.kind === 'bal'; });
+          if (balW.length) balTok = balW[balW.length - 1].a;
           if (nonBal.length) { useA = nonBal.map(function(w){ return w.a; }); colk = nonBal[0].c ? nonBal[0].c.kind : ''; }
           else useA = [];
-        } else if (useA.length >= 2) useA = mode === 'bank' ? [useA[0]] : [useA[useA.length - 1]];
+          if (!balTok && mode === 'bank' && useA.length >= 2 && !colk) { balTok = useA[useA.length - 1]; useA = useA.slice(0, -1); }
+        } else if (useA.length >= 2) { if (mode === 'bank') balTok = useA[useA.length - 1]; useA = mode === 'bank' ? [useA[0]] : [useA[useA.length - 1]]; }
         if (!desc && checkNo) desc = 'Check ' + checkNo;
         if (/^(-|–|to|thru|through)\s/i.test(desc) && (new RegExp(DATE_SRC, 'i')).test(desc)) { last = null; pend = null; continue; }   /* "September 15 - October 14, 2026" is the period */
         if (!desc && !useA.length) continue;
         if (BAL_DESC.test(desc)) { last = null; continue; }
         if (!useA.length) { pend = mk(l, p, desc); pend.checkNo = checkNo; pend.memo = memo.join(' '); pend.descX = texts[0] ? texts[0].x : null; last = null; continue; }
         var r = mk(l, p, desc); r.checkNo = checkNo; r.memo = memo.join(' '); r.descX = texts[0] ? texts[0].x : null; r.dates = dates.length;
+        if (balTok) { var bv = amtVal(balTok.s); r.bal = bv.neg ? -bv.v : bv.v; }
         decide(r, useA[useA.length > 1 && colk !== 'in' && colk !== 'out' ? (mode === 'bank' ? 0 : useA.length - 1) : 0], colk);
         finish(r); last = rows[rows.length - 1] === r ? r : null; continue;
       }
       if (sec && sec.dir === 'skip') continue;
     }
     /* several checks on one line: "1201 09/18 1,850.00   1202 09/25 600.00" */
-    if (first.k === 'text' && /^\d{3,7}[*^]?$/.test(first.s)) {
-      var re = /(?:^|\s)(\d{3,7})[*^]?\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(\$?[\d,]+\.\d{2})/g, m, got = 0, rest = l.text.replace(/\s+/g, ' ');
+    if (first.k === 'text' && /^\d{3,7}(\s*[*^])?(\s|$)/.test(first.s)) {
+      var re = /(?:^|\s)(\d{3,7})\s*[*^]?\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(\$?[\d,]+\.\d{2})/g, m, got = 0, rest = l.text.replace(/\s+/g, ' ');
       while ((m = re.exec(rest))) {
         var pp = dateParts(m[2]); if (!pp) continue;
         var rc = mk(l, pp, 'Check ' + m[1]); rc.checkNo = m[1]; rc.amount = amtVal(m[3]).v; rc.dir = 'out'; rc.dirSrc = 'check'; rc.kindHint = 'check';
@@ -421,6 +426,8 @@ function parseLines(doc, mode){
       prevLabels = null;
     }
   }
+  /* a running balance decides the side: previous balance ± the lines since = this balance (bank statements) */
+  if (mode === 'bank') balanceMath(rows, printed.begin);
   /* a signed Amount column with no sections: plus = money in, minus = money out (bank); minus = credit (card) */
   var guessed = rows.filter(function(r){ return r.dirSrc === 'guess'; });
   if (mode === 'bank' && guessed.length && rows.some(function(r){ return r.neg && r.dirSrc === 'sign'; })) guessed.forEach(function(r){ r.dir = r.neg ? 'out' : 'in'; r.dirSrc = 'sign'; });
@@ -437,9 +444,25 @@ function parseLines(doc, mode){
       else r.kind = 'withdrawal';
     }
     r.signed = mode === 'card' ? (r.dir === 'out' ? r.amount : -r.amount) : (r.dir === 'in' ? r.amount : -r.amount);
-    delete r.sec; delete r.y; delete r.fs; delete r.descX; delete r.extra; delete r.kindHint;
+    delete r.sec; delete r.y; delete r.fs; delete r.descX; delete r.extra; delete r.kindHint; delete r.bal;
   });
   return { rows: rows, info: info, printed: printed, check: checkTotals(rows, printed, mode), mode: mode };
+}
+function balanceMath(rows, begin){
+  var prev = begin != null ? begin : null, grp = [];
+  rows.forEach(function(r){
+    grp.push(r);
+    if (r.bal == null) return;
+    if (prev != null && grp.length <= 12) {
+      var want = Math.round((r.bal - prev) * 100), n = grp.length, cur = 0, hits = [];
+      grp.forEach(function(g){ cur += (g.dir === 'in' ? 1 : -1) * Math.round(g.amount * 100); });
+      if (cur !== want) {
+        for (var m = 0; m < (1 << n) && hits.length < 2; m++) { var t = 0; for (var k = 0; k < n; k++) t += ((m >> k) & 1 ? 1 : -1) * Math.round(grp[k].amount * 100); if (t === want) hits.push(m); }
+        if (hits.length === 1) grp.forEach(function(g, k){ var d = (hits[0] >> k) & 1 ? 'in' : 'out'; if (g.dir !== d && g.dirSrc !== 'check') { g.dir = d; g.dirSrc = 'balance'; } });
+      }
+    }
+    prev = r.bal; grp = [];
+  });
 }
 /* the statement's own numbers vs the lines read */
 function checkTotals(rows, P, mode){
@@ -568,9 +591,12 @@ function projects(){ return arr(crm().projects).filter(function(p){ return !p.de
 function proj(pid){ return projects().filter(function(p){ return s(p.id) === s(pid); })[0] || null; }
 function openJob(p){ return p && !p.deleted && !/^(completed?|closed|lost|dead|cancel+ed|archived|declined|bidding|estimating)$/i.test(s(p.status)); }
 function poOf(p){ return s(p.autoPO || p.po).toUpperCase(); }
+var JOC = { at: 0, html: '' };
 function jobOpts(sel){
-  return '<option value="">— pick the job —</option><option value="__oh"' + (sel === '__oh' ? ' selected' : '') + '>Overhead — no job</option><optgroup label="Open jobs">' +
-    projects().filter(openJob).map(function(p){ return '<option value="' + esc(p.id) + '"' + (sel === s(p.id) ? ' selected' : '') + '>' + esc((poOf(p) ? 'PO ' + poOf(p) + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address) : '')) + '</option>'; }).join('') + '</optgroup>';
+  /* the open jobs' options are built once per table (a statement can have hundreds of lines) */
+  if (Date.now() - JOC.at > 2000) { JOC.html = projects().filter(openJob).map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((poOf(p) ? 'PO ' + poOf(p) + ' · ' : '') + s(p.name) + (p.address ? ' · ' + s(p.address) : '')) + '</option>'; }).join(''); JOC.at = Date.now(); }
+  var list = sel && sel !== '__oh' ? JOC.html.replace('<option value="' + esc(sel) + '">', '<option value="' + esc(sel) + '" selected>') : JOC.html;
+  return '<option value="">— pick the job —</option><option value="__oh"' + (sel === '__oh' ? ' selected' : '') + '>Overhead — no job</option><optgroup label="Open jobs">' + list + '</optgroup>';
 }
 function importable(r, mode){ return mode === 'card' ? /^(charge|refund|fee|interest)$/.test(r.kind) : (r.dir === 'out' && r.kind !== 'transfer'); }
 function myName(){ var u = me(); return s(u.name) || s(u.email).split('@')[0] || 'office'; }

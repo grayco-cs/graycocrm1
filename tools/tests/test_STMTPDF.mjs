@@ -215,6 +215,23 @@ if (hasUp) {
   ok(A.fn.filter(x => /claude-proxy/.test(x.url)).length === 0, 'the PDF was read in the browser (no AI call)');
   await closeX(p);
 } else ok(false, 'Expenses → 📊 CC Statement upload found');
+/* 9. once docs/office-full-access.sql has run (the database says "office"), the bank check is hers too */
+const vault = await p.evaluate(() => { const before = window._gcStmt.canBank(); localStorage.setItem('gc_sec2_access', JSON.stringify({ email: 'office@grayco-cs.com', office: true, at: new Date().toISOString() })); const after = window._gcStmt.canBank(); localStorage.removeItem('gc_sec2_access'); return { before, after }; });
+ok(vault.before === false && vault.after === true, 'office: the bank check opens for her once the database setup is done (gc_my_access().office)', vault);
+/* 10. the office imports QuickBooks files herself (history: nothing sent) */
+const qbA = n => fs.readFileSync(FX + '/' + n, 'utf8');
+const fnA0 = A.fn.length;
+for (const f of ['qbo_customer_contact_list.csv', 'qbo_invoice_list.csv']) {
+  await p.evaluate(([t, n]) => { window.__qbDone = null; window._gcQbCsvOpen(t, n).then(r => { window.__qbDone = r; }); }, [qbA(f), f]);
+  await waitFor(A, () => !!document.querySelector('#_jQbOk'), null, 10000);
+  if (f === 'qbo_invoice_list.csv') ok(await p.evaluate(() => document.querySelector('#_jQbHist').checked), 'office: "Import as history (no sending)" ticked by itself for 2025 rows');
+  await p.click('#_jQbOk');
+  await waitFor(A, () => !!window.__qbDone, null, 20000);
+}
+const offQb = await p.evaluate(() => (window._crm.invoices || window._crm.invs || []).filter(i => /^500[123]$/.test(i.qbNum || i.invNum)).map(i => ({ n: i.qbNum || i.invNum, hist: i.importedHistory, noSend: i.noSend })));
+ok(offQb.length === 3 && offQb.every(i => i.hist === true && i.noSend === true), 'office: Invoice List imported as history — recorded, never sent', offQb);
+ok(A.fn.slice(fnA0).filter(x => x.method !== 'GET' && /send|mail|email|sms|text|notify|remind/i.test(x.url)).length === 0, 'office QuickBooks import: no e-mail / text sent');
+await sleep(4000);   /* let the office's computer save to the cloud */
 ok(A.errs.length === 0, 'office: no page errors', A.errs.slice(0, 5));
 
 /* ════════════════ OWNER ════════════════ */
@@ -245,11 +262,11 @@ const TL = PL['qbo_transaction_list_by_date.csv'];
 ok(TL.kind === 'transactions' && TL.rows.length === 7 && TL.rows.find(r => r.num === 'B-77').k === 'bill' && TL.rows.find(r => r.k === 'expense' && r.amt === 61.5), 'Transaction List by Date: 7 rows, bill / check / credit card expense kinds, -61.50 → 61.50', TL.rows);
 /* import as history, the way the office does it (the window, "Import as history" ticked) — nothing may be e-mailed */
 const fn0 = B.fn.length, t0 = Date.now();
-for (const f of ['qbo_customer_contact_list.csv', 'qbo_vendor_contact_list.csv', 'qbo_invoice_list.csv', 'qbo_bill_list.csv', 'qbo_transaction_detail_by_account.csv']) {
+for (const f of ['qbo_vendor_contact_list.csv', 'qbo_invoice_list.csv', 'qbo_bill_list.csv', 'qbo_transaction_detail_by_account.csv']) {   /* the invoice list again: the office's import is 'already in' */
   await q.evaluate(([t, n]) => { window.__qbDone = null; window._gcQbCsvOpen(t, n).then(r => { window.__qbDone = r; }); }, [qb(f), f]);
   await waitFor(B, () => !!document.querySelector('#_jQbOk'), null, 10000);
   const hist = await q.evaluate(() => document.querySelector('#_jQbHist') && document.querySelector('#_jQbHist').checked);
-  if (f === 'qbo_invoice_list.csv') ok(hist === true, '"Import as history (no sending)" is ticked by itself for 2025 rows');
+  if (f === 'qbo_invoice_list.csv') ok(hist === true, 'owner: the same Invoice List again — history ticked; nothing new (the office imported it)');
   await q.click('#_jQbOk');
   await waitFor(B, () => !!window.__qbDone, null, 20000);
 }

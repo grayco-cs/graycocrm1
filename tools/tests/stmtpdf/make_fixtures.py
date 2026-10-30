@@ -702,6 +702,84 @@ def orion():
     write('orion_bank', 'bank', rows, {'last4': '5120', 'bank': 'Orion FCU', 'balanceCheck': True})
 
 
+# Chase business checking — CHECKS PAID "1234 ^ 10/05 $150.00", ELECTRONIC WITHDRAWALS, DAILY ENDING BALANCE.
+def chasebank():
+    rows = [
+        dict(date='2026-09-17', desc='Remote Online Deposit 1', amt=7200.00, dir='in', kind='deposit'),
+        dict(date='2026-09-21', desc='Check 2290', amt=1475.00, dir='out', kind='check', check='2290'),
+        dict(date='2026-10-05', desc='Check 2291', amt=150.00, dir='out', kind='check', check='2291'),
+        dict(date='2026-09-25', desc='Orig CO Name:Demo Payroll Co ID:9999 Desc:Payroll', amt=4100.00, dir='out', kind='withdrawal'),
+        dict(date='2026-10-06', desc='Chase Card Autopay 4421 Payment To Chase Card', amt=1500.00, dir='out', kind='transfer'),
+        dict(date='2026-10-14', desc='Monthly Service Fee', amt=15.00, dir='out', kind='withdrawal'),
+    ]
+    dep, wd = bt(rows)
+    d = Doc('chase_bank', hdr([(40, 'CHASE BUSINESS COMPLETE CHECKING', 'l', True), (40, 'Account Number: 000000412233671', 'l', False),
+                               (40, 'September 15, 2026 through October 14, 2026', 'l', False)]))
+    d.line([(40, 'CHECKING SUMMARY', 'l', True)])
+    d.line([(40, 'Beginning Balance', 'l'), (300, '$2,000.00', 'r')])
+    d.line([(40, 'Deposits and Additions', 'l'), (200, '1', 'r'), (300, m(dep), 'r')])
+    d.line([(40, 'Checks Paid', 'l'), (200, '2', 'r'), (300, '-' + m(1625), 'r')])
+    d.line([(40, 'Electronic Withdrawals', 'l'), (200, '2', 'r'), (300, '-' + m(5600), 'r')])
+    d.line([(40, 'Fees', 'l'), (200, '1', 'r'), (300, '-15.00', 'r')])
+    d.line([(40, 'Ending Balance', 'l'), (200, '6', 'r'), (300, '$' + m(round(2000 + dep - wd, 2)), 'r')])
+    d.blank()
+    d.line([(40, 'DEPOSITS AND ADDITIONS', 'l', True)])
+    d.line([(40, 'DATE', 'l', True), (100, 'DESCRIPTION', 'l', True), (560, 'AMOUNT', 'r', True)])
+    d.line([(40, '09/17', 'l'), (100, 'Remote Online Deposit 1', 'l'), (560, '$' + m(7200), 'r')])
+    d.line([(40, 'Total Deposits and Additions', 'l'), (560, '$' + m(7200), 'r')])
+    d.line([(40, 'CHECKS PAID', 'l', True)])
+    d.line([(40, 'CHECK NO.', 'l', True), (110, 'DESCRIPTION', 'l', True), (380, 'DATE PAID', 'l', True), (560, 'AMOUNT', 'r', True)])
+    d.line([(40, '2290 ^', 'l'), (380, '09/21', 'l'), (560, '$' + m(1475), 'r')])
+    d.line([(40, '2291 ^', 'l'), (380, '10/05', 'l'), (560, '$150.00', 'r')])
+    d.line([(40, 'Total Checks Paid', 'l'), (560, '$' + m(1625), 'r')])
+    d.line([(40, 'ELECTRONIC WITHDRAWALS', 'l', True)])
+    d.line([(40, 'DATE', 'l', True), (100, 'DESCRIPTION', 'l', True), (560, 'AMOUNT', 'r', True)])
+    d.line([(40, '09/25', 'l'), (100, 'Orig CO Name:Demo Payroll Co ID:9999 Desc:Payroll', 'l'), (560, '$' + m(4100), 'r')])
+    d.line([(40, '10/06', 'l'), (100, 'Chase Card Autopay 4421 Payment To Chase Card', 'l'), (560, '$' + m(1500), 'r')])
+    d.line([(40, 'Total Electronic Withdrawals', 'l'), (560, '$' + m(5600), 'r')])
+    d.line([(40, 'FEES', 'l', True)])
+    d.line([(40, '10/14', 'l'), (100, 'Monthly Service Fee', 'l'), (560, '$15.00', 'r')])
+    d.line([(40, 'DAILY ENDING BALANCE', 'l', True)])
+    d.line([(40, 'DATE', 'l', True), (200, 'AMOUNT', 'r', True), (260, 'DATE', 'l', True), (420, 'AMOUNT', 'r', True)])
+    d.line([(40, '09/17', 'l'), (200, m(9200), 'r'), (260, '09/21', 'l'), (420, m(7725), 'r')])
+    d.save()
+    write('chase_bank', 'bank', rows, {'last4': '3671', 'bank': 'Chase', 'balanceCheck': True})
+
+
+# Wells Fargo business checking — "Transaction history": Date | Check Number | Description | Deposits/Credits | Withdrawals/Debits | Ending daily balance.
+def wfbank():
+    rows = [
+        dict(date='2026-09-16', desc='Mobile Deposit : Ref Number :117440', amt=3100.00, dir='in', kind='deposit'),
+        dict(date='2026-09-16', desc='Check', amt=820.00, dir='out', kind='check', check='5011'),
+        dict(date='2026-09-24', desc='Purchase authorized on 09/23 Lowes #01234 PO A101 Cordova TN', amt=264.19, dir='out', kind='withdrawal'),
+        dict(date='2026-10-08', desc='Online Transfer From Demo Savings xxxxxx1234', amt=1000.00, dir='in', kind='deposit'),
+    ]
+    dep, wd = bt(rows)
+    d = Doc('wf_bank', hdr([(40, 'Wells Fargo Initiate Business Checking', 'l', True), (40, 'Account number: 9876543210', 'l', False),
+                            (40, 'Statement period activity summary  9/15/2026 - 10/14/2026', 'l', False)]))
+    d.line([(40, 'Beginning balance on 9/15', 'l'), (300, '$500.00', 'r')])
+    d.line([(40, 'Deposits/Credits', 'l'), (300, m(dep), 'r')])
+    d.line([(40, 'Withdrawals/Debits', 'l'), (300, '- ' + m(wd), 'r')])
+    d.line([(40, 'Ending balance on 10/14', 'l'), (300, '$' + m(round(500 + dep - wd, 2)), 'r')])
+    d.blank()
+    d.line([(40, 'Transaction history', 'l', True)])
+    d.line([(40, 'Date', 'l', True), (80, 'Check Number', 'l', True), (150, 'Description', 'l', True), (430, 'Deposits/ Credits', 'r', True), (500, 'Withdrawals/ Debits', 'r', True), (570, 'Ending daily balance', 'r', True)])
+    bal = 500.0
+    for r in rows:
+        bal = round(bal + (r['amt'] if r['dir'] == 'in' else -r['amt']), 2)
+        c = [(40, str(int(r['date'][5:7])) + '/' + str(int(r['date'][8:])), 'l')]
+        if r.get('check'):
+            c.append((80, r['check'], 'l'))
+        c.append((150, r['desc'], 'l'))
+        c.append((430, m(r['amt']), 'r') if r['dir'] == 'in' else (500, m(r['amt']), 'r'))
+        c.append((570, m(bal), 'r'))
+        d.line(c)
+    d.line([(40, 'Ending balance on 10/14', 'l'), (570, m(bal), 'r')])
+    d.line([(40, 'Totals', 'l'), (430, '$' + m(dep), 'r'), (500, '$' + m(wd), 'r')])
+    d.save()
+    write('wf_bank', 'bank', rows, {'last4': '3210', 'bank': 'Wells Fargo', 'balanceCheck': True})
+
+
 # A statement whose lines do NOT add up to its printed totals (one line missing): the CRM must warn.
 def mismatch():
     rows = [
@@ -795,7 +873,7 @@ def qbo():
             f.write(t.replace('\n', '\r\n'))
 
 
-for f in [chase, amex, capone, citi, bofa, wfcard, discover, usbank, firsthorizon, regions, renasant, simmons, trustmark, truist, independent, orion, mismatch, scan, qbo]:
+for f in [chase, amex, capone, citi, bofa, wfcard, discover, usbank, chasebank, wfbank, firsthorizon, regions, renasant, simmons, trustmark, truist, independent, orion, mismatch, scan, qbo]:
     f()
 with open(os.path.join(OUT, 'index.json'), 'w') as f:
     json.dump(sorted(FIX.keys()), f)
