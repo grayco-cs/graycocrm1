@@ -126304,7 +126304,7 @@ function fromItem(it, prev){
     if (!l.address) l.address = fullAddr(it);
     if (it.flag && it.flag !== prev.inboxFlag) l.inboxFlagNew = true;
   }
-  l.source = s(it.source) || 'Lead Inbox'; l.leadKind = KIND[low(it.type)] || 'Commercial';
+  l.source = s(it.source) || 'Lead Inbox'; if (!(prev && prev.leadKindManual)) l.leadKind = KIND[low(it.type)] || 'Commercial';   /* patch LEADKINDKEEP: a type a person picked stays */
   if (it.bidRole && !l.bidRoleManual) { l.bidRole = s(it.bidRole); l.bidRoleWhy = s(it.bidRoleWhy); }   /* patch PRIMESUB: the server's prime / sub (a person's choice stays) */
   l.inboxId = it.id; l.inboxRev = it.rev || 1; if (!l.inboxAt && s(it.receivedAt)) l.inboxAt = s(it.receivedAt);   /* patch LEADSEE: when it reached the inbox */ l.bidDue = (prev && prev.bidDueManual && (s(it.bidDue) === s(prev.bidDueInboxWas) || s(it.bidDue) === s(prev.bidDue))) ? s(prev.bidDue) : s(it.bidDue);   /* LA: a date typed on the lead stays */ l.bidDueWas = s(it.bidDueWas); l.preBid = s(it.preBid); l.bidNumber = s(it.bidNumber);
   ['dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone', 'submitMethod', 'submitWhere'].forEach(function(f){ if (!s(l[f]) && s(it[f])) l[f] = s(it[f]); });   /* LA: who it is due to */
@@ -132384,6 +132384,7 @@ async function peekStamps(){
 every(function(){ if (document.hidden) return; if (Date.now() - lastPull > 120000) pull(true); else peekStamps(); }, 5000);
 
 W._gcLDEL = {
+  openTrash: openTrash,   /* patch LEADBULK: ⋯ More → 🗑 Recently deleted on the Leads screen */
   ask: ask, remove: remove, restore: restore, trash: trash, rsDeleted: rsDeleted, blocked: blocked,
   can: function(l, me){ return can(l, me); }, who: who, select: function(ids){ (ids || []).forEach(function(i){ SEL[s(i)] = 1; }); schedule(); }, selected: selIds,
   selectAllShown: selectAllShown, filters: function(f){ if (f) { F = Object.assign(F, f); saveF(); schedule(); } return Object.assign({}, F); },
@@ -166709,7 +166710,8 @@ function meUser(){ var e = myEmail(), g = ''; try { g = s(localStorage.getItem('
 function myName(){ var u = meUser(); if (u && u.name) return s(u.name); try { return s(localStorage.getItem('grayco_user')); } catch (e) { return ''; } }
 function isAdmin(){ try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {} var u = meUser(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner')); }
 function isEstimatorMe(){ var u = meUser(); return !!(u && /estimat/i.test(s(u.role) + ' ' + s(u.profile))); }
-function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })()); }
+function dead(l){ return !l || !l.id || l.deleted || l._deleted || (typeof W._gcIsTombstoned === 'function' && (function(){ try { return W._gcIsTombstoned('leads', l.id); } catch (e) { return false; } })())
+  || (!!W._gcLDEL && typeof W._gcLDEL.blocked === 'function' && (function(){ try { return !!W._gcLDEL.blocked(l); } catch (e) { return false; } })()); }   /* patch LEADBULK: + the delete guard's "brought in again" */
 var LEADS_NOW = null, LEADS_AT = 0;
 /* the CRM's lead list: this computer's saved copy (IndexedDB 'leads', which every save writes), read every 2 s on the
    Leads tab — never through the synced setter on a timer (that setter is shared with every other screen's save);
@@ -166844,7 +166846,7 @@ function value(l){ var e = money2(l.estValue); return e > 0 ? e : money2(l.value
    inquiry — kept out of the New / Sources / pipeline counts and the board unless "📦 Imported" is on; 🗄 archived leads
    (cleanup) leave every list unless "🗄 Archived" is on */
 function hasInquiry(l){ return !!(s(l.inboxId) || l.leadExtra || s(l.referredById) || s(l.refMember) || s(l.contactedAt) || s(l.lastContact) || s(l.estimateId) || s(l.estId) || arr(l.estimates).length || s(l.bidDue)
-  || arr(l.activity).some(function(a){ return a && !/^(priority|system|import|archive|restore|merge|assign)$/.test(s(a.type)); }) || stageOf(l) !== 'New Lead' || value(l) > 0); }
+  || arr(l.activity).some(function(a){ return a && !/^(priority|system|import|archive|restore|merge|assign|type)$/.test(s(a.type)); })   /* patch LEADBULK: + type */ || stageOf(l) !== 'New Lead' || value(l) > 0); }
 function importedL(l){ if (!l || l.imported === false) return false; if (!/^(LQB_|LCC_|LCCR_)/.test(s(l.id)) && l.importedOnly !== true) return false; return !hasInquiry(l); }
 /* patch LROLEVIEW (owner 10/23): each profile sees its own leads — admin / office all · estimator bids · insurance /
    mitigation (or the Senior Insurance PM) insurance & restoration · roofing (or the Senior Roofing PM) roofing · anyone else
@@ -167114,7 +167116,7 @@ function hubHtml0(){
 function cardHtml(l){
   var a = assignee(l), pl = plansOf(l), it = inboxOf(l);
   var bids = it && it.portal && it.portal.bids ? ' · ' + it.portal.bids + ' bids' : '';
-  return '<div class="gcl-card" draggable="true" data-gcl-id="' + esc(l.id) + '">'
+  return '<div class="gcl-card' + bkRowCls(l) + '" draggable="' + (bkOn() ? 'false' : 'true') + '" data-gcl-id="' + esc(l.id) + '">' + bkChk(l)   /* patch LEADBULK */
     + '<div class="t">' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '</div>'
     + '<div class="m">' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + (value(l) ? ' · <b>' + money(value(l)) + '</b>' : '') + '</div>'
     + '<div class="m" title="When it came in and where from">📥 ' + esc(shortDay(receivedMs(l)) || '—') + ' · ' + esc(srcOf(l)) + '</div>'   /* patch HOT2 */
@@ -167367,7 +167369,7 @@ function lcWho(l, r){
 }
 function lcRowHtml(l, r, bc, del, now){
   var id = esc(l.id), cell = function(c, v, tip){ return '<td class="c-' + c + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>' + (v ? esc(v) : '<span class="gcl-dash">—</span>') + '</td>'; };
-  return '<tr class="gcl-lr" data-gcl-id="' + id + '"><td class="c-name">'
+  return '<tr class="gcl-lr' + bkRowCls(l) + '" data-gcl-id="' + id + '"><td class="c-name">' + bkChk(l)   /* patch LEADBULK */
     + '<button type="button" class="gclu-nb" data-gclu-note="' + id + '" title="Add a quick note" aria-label="Add a quick note">📝</button>'
     + '<b>' + r.ic + ' ' + r.name + '</b> ' + roleChip(l) + (r.addr ? '<div class="gcl-addr">' + r.addr + (r.d != null ? ' <span class="gclu-mi">· ' + miTxt(r.d) + '</span>' : '') + '</div>' : '')
     + (r.note ? '<div class="gclu-np" title="' + r.note.tip + '">📝 ' + r.note.t + '</div>' : '') + '</td>'
@@ -167498,6 +167500,7 @@ function moreMenu(){
     + (adm ? it('data-gcl-settings', '⚙ Lead settings', 'Bid boards, keywords & switches, Check public bids now, Set-up') : '')
     + (adm ? it('data-gclu-claims', '🛡 Insurance claims go to…', 'Who a new claims@ claim is assigned to') : '')
     + it('data-gclu-oldbb', '📋 Old Bid Board (archived, read-only)', 'The old manual bid list — its open bids are now leads')
+    + (bkAllowed() ? it('data-gclb-trash', '🗑 Recently deleted', 'Leads deleted in the last 30 days — Restore') : '')   /* patch LEADBULK */
     + (adm ? it('data-gcl-classic', D.documentElement.classList.contains('gcl-classic-ok') ? '🗃 Hide the old table' : '🗃 Old table (admin)') : '')
     + '</div>';
 }
@@ -167521,7 +167524,7 @@ function hubHtml(){
   return '<div class="gclu-top"><h2>Leads</h2>'
     + '<input type="search" class="gclu-q" placeholder="Search leads, people, addresses, bid #…" data-gcl-f="q" value="' + esc(UI.q) + '" aria-label="Search leads">'
     + '<span class="gclu-views" role="tablist" aria-label="Views">' + views.map(function(v){ var on = UI.v === v[0]; return '<button type="button" role="tab" data-gcl-v="' + v[0] + '" class="' + (on ? 'on' : '') + '" aria-selected="' + on + '">' + v[1] + '</button>'; }).join('') + '</span>'
-    + '<span class="gclu-sp"></span>'
+    + '<span class="gclu-sp"></span>' + bkBtn()   /* patch LEADBULK */
     + '<span class="gclu-mw"><button type="button" class="gclu-btn" data-gclu-more aria-haspopup="menu" aria-expanded="' + LU.more + '">⋯ More</button>' + (LU.more ? moreMenu() : '') + '</span>'
     + '<button type="button" class="gclu-btn gold" data-gcl-new>＋ New lead</button></div>'
     + (out ? '' : '<div class="gclu-chips gcl-hide-rso" role="group" aria-label="Show">'
@@ -167542,7 +167545,7 @@ function hubHtml(){
       + '<button type="button" class="gclu-cnt' + (UI.nc ? ' on' : '') + (c.nc ? ' bad' : '') + '" data-gclu-cnt="nc" aria-pressed="' + !!UI.nc + '"><b>' + c.nc + '</b><span>Not contacted</span></button>'
       + '</div>'
       + (UI.arch ? '<div class="gclu-banner">🗄 Showing archived leads — <button type="button" class="gclu-lnk" data-gcl-arch>back to open leads</button></div>' : UI.imp ? '<div class="gclu-banner">📦 Showing imported leads — <button type="button" class="gclu-lnk" data-gcl-impf>back to open leads</button></div>' : ''))
-    + '<div class="gcl-body gcl-hide-rso">' + (out ? '' : bodyHtml()) + '</div>';
+    + '<div class="gcl-body gcl-hide-rso">' + (out ? '' : bkHead() + bodyHtml()) + '</div>';   /* patch LEADBULK */
 }
 
 /* ── clicks: chips, counts, sort, views, More, the row buttons (never the row click that opens the lead) ── */
@@ -167674,7 +167677,7 @@ function dueFrom(l){
 function secOf(html, re){ var parts = html.split('<section>'); for (var i = 1; i < parts.length; i++) { var h = parts[i]; var m = /^<h4>([\s\S]*?)<\/h4>/.exec(h); if (m && re.test(m[1])) return h.replace(/<\/section>[\s\S]*$/, ''); } return ''; }
 function secBody(sec){ return sec.replace(/^<h4>[\s\S]*?<\/h4>/, ''); }
 function drawerHtml(l){
-  var old = drawerHtml0(l), hd = old.split('<section>')[0], adm = isAdmin(), r = lcRow(l), bc = lcBidCell(l, r, lcGcGroups());
+  var old = drawerHtml0(l), hd = old.split('<section>')[0], adm = isAdmin(), r = lcRow(l), bc = lcBidCell(l, r, lcGcGroups()), bidOn = showBid(l);   /* patch LEADBULK */
   var ov = secOf(old, /^Overview/), asg = secOf(old, /Assigned to|Estimator/), con = secOf(old, /^Contact/), bid = secOf(old, /⏰ Bid/), pl = secOf(old, /Plans/), act = secOf(old, /Activity/);
   var asgRow = (/<div class="row"><select data-d="assign"[\s\S]*?<\/select>[\s\S]*?<\/div>/.exec(asg) || [''])[0];
   var asgPre = asg.indexOf('<div class="row"><select data-d="assign"') > 0 ? secBody(asg.slice(0, asg.indexOf('<div class="row"><select data-d="assign"'))) : '';
@@ -167693,17 +167696,18 @@ function drawerHtml(l){
     + '<div class="gclu-asg"><span class="kv"><span>' + ((W._gcBidRole && W._gcBidRole.isBid(l)) ? 'Estimator' : 'Assigned to') + ':</span> <b data-gclu-assigned>' + esc(assignee(l) || 'Unassigned') + '</b></span>' + (own ? ' ' + own : '') + held + asgPre + asgRow + '</div>'
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
-    + '<section><h4>⏰ Bid</h4>'
+    + (bidOn ? '<section><h4>⏰ Bid</h4>'   /* patch LEADBULK: a bid only */
     + (dueKv ? dueKv[0] : '') + (s(l.bidDue) ? '<div class="note">Due date ' + dueFrom(l) + (s(l.bidDue).length <= 10 ? ' · time not stated' : '') + '</div>' : '')
     + '<div class="kv"><span>Bid to:</span> ' + (bc.names.length > 1 ? '🏢 ' + esc(bc.names.length + ' GCs: ' + bc.names.join(' · ')) : esc(bc.txt || '—')) + (prRow ? '' : '') + '</div>'
     + (prRow ? prRow[0] : '')
     + (d != null ? '<div class="kv"><span>Distance:</span> 📍 ' + esc(miTxt(d)) + ' from ' + (GEO.from === 'me' ? 'my location' : 'the office') + '</div>' : '')
     + (due ? due[0] : '')
     + '<div class="gclu-plans"><div class="kv"><span>Plans & links:</span></div>' + secBody(pl) + '</div>'
-    + '</section>'
+    + '</section>' : '')
     + '<section><h4>Contact</h4>' + secBody(con) + '</section>'
     + '<section><h4>📝 Notes & activity</h4>' + (notes ? '<div class="gclu-notes">' + esc(notes.slice(-2000)) + '</div>' : '<div class="note">No notes yet.</div>') + '<div class="row"><button type="button" class="b" data-d="lognote">📝 Add a note / log a call</button></div>' + secBody(act) + '</section>'
     + '<section class="gclu-s-more"><details><summary><b>More on this lead</b> — details, sub bid portal, estimate &amp; job</summary>'
+    + (bidOn ? '' : (d != null ? '<div class="kv"><span>Distance:</span> 📍 ' + esc(miTxt(d)) + ' from ' + (GEO.from === 'me' ? 'my location' : 'the office') + '</div>' : '') + '<div class="gclu-plans"><div class="kv"><span>Plans & links:</span></div>' + secBody(pl) + '</div>')   /* patch LEADBULK */
     + '<div class="gclu-ov">' + ovRest + (edit ? '<div class="row">' + edit[0] + '</div>' : '') + '</div>'
     + (subp ? '<h4>🏗 Sub bid portal</h4>' + secBody(subp) : '') + (est ? '<h4>📐 Estimate & job</h4>' + secBody(est) : '')
     + '</details></section>';
@@ -167846,10 +167850,10 @@ function mount(){
   if (typing && !FORCE) return;   /* never redraw under a typing hand (only a control of the hub itself asks for it) */
   var refocus = typing ? ae.getAttribute('data-gcl-f') : '', caret = typing && ae.type === 'search' ? ae.selectionStart : null; FORCE = false;
   if (UI.v === 'outreach' && !rsoOn()) UI.v = 'list';   /* patch LEADSUI: Outreach's own "Back to Leads" */
-  var sig = [refId(rawLeads()), OVL_V, JSON.stringify(UI), JSON.stringify(MORE), Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, myScope().why, GEO.ver, GEO.from, Object.keys(LC_GONE).length, LU.more, LU.adv, rsoOk(), Math.floor(Date.now() / 6e5)].join('|');   /* patch LEADSUI: the model's version — nothing changed, nothing drawn */
+  var sig = [refId(rawLeads()), OVL_V, JSON.stringify(UI), JSON.stringify(MORE), Object.keys(PICK).filter(function(k){ return PICK[k]; }).length, myScope().kind, myScope().why, GEO.ver, GEO.from, Object.keys(LC_GONE).length, LU.more, LU.adv, rsoOk(), (typeof BULK === 'object' && BULK ? BULK.on + ':' + BULK.v : ''), Math.floor(Date.now() / 6e5)].join('|');   /* patch LEADBULK */   /* patch LEADSUI: the model's version — nothing changed, nothing drawn */
   if (sig === HUB_SIG) return;
   HUB_SIG = sig;
-  var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; }); watchMore(hub); }   /* patch LEADPERF-2: watchMore */   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
+  var hh = hubHtml(); if (hh !== hub.__gcHtml) { hub.__gcHtml = hh; held(function(){ hub.innerHTML = hh; }); watchMore(hub); if (bkOn()) bkSync(); }   /* patch LEADBULK */   /* patch LEADPERF-2: watchMore */   /* patch HOT2c: a new minute or a sync with nothing new on screen draws nothing (and another patch then has nothing to re-label) */
   if (refocus) { var el = hub.querySelector('[data-gcl-f="' + refocus + '"]'); if (el) { try { el.focus(); if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} } }
   if (UI.v === 'boards' && typeof W._gcRenderBidBoards === 'function') { try { W._gcRenderBidBoards(hub.querySelector('#gcl-boards')); } catch (e) { warn(e); } }
 }
@@ -168158,7 +168162,7 @@ function drawerHtml0(l){
   tl.sort(function(x, y){ return s(y.at).localeCompare(s(x.at)); });
   var ppl = people();
   var pst = p && p.jobId ? s(p.state || p.visibility) : '';
-  return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + (TYPE_IC[typeOf(l)] || '') + ' ' + esc(typeOf(l)) + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
+  return '<div class="hd"><h3>' + srcIc(l) + ' ' + esc(s(l.name || l.title) || 'Lead') + '<div style="font:400 12px Arial;opacity:.85;margin-top:3px">' + STAGE_IC[stageOf(l)] + ' ' + esc(stageOf(l)) + ' · ' + kindPick(l) /* patch LEADBULK */ + ' · ' + esc(srcOf(l)) + '</div></h3><button type="button" data-d="x" aria-label="Close">✕</button></div>'
     /* overview */
     + '<section><h4>Overview</h4>'
     + '<div class="kv"><span>Value:</span> ' + (value(l) ? money(value(l)) : '—') + ' &nbsp; <span>Came in:</span> ' + (born(l) ? new Date(born(l)).toLocaleString() : '—') + ' ' + speedChip(l) + '</div>'
@@ -168221,12 +168225,13 @@ function openDrawer(id){
     d.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') closeDrawer(); });
     d.addEventListener('input', function(ev){ if (ev.target.getAttribute('data-d') === 'scope') SC.text = ev.target.value; });
   }
-  var top = d.scrollTop, html = drawerHtml(l); held(function(){ d.innerHTML = html; }); d.scrollTop = top;
+  var top = d.scrollTop, html = drawerHtml(l), nob = !showBid(l); held(function(){ d.innerHTML = html; if (nob) d.setAttribute('data-gcl-nobid', '1'); else d.removeAttribute('data-gcl-nobid'); }); d.scrollTop = top;   /* patch LEADBULK: 🏢 Bidding to hides with ⏰ Bid */
 }
 function cur(){ return leads().filter(function(x){ return x.id === UI.open; })[0] || null; }
 function drawerChange(ev){
   var t = ev.target, k = t.getAttribute('data-d'), l = cur(); if (!l) return;
   if (k === 'stage') moveStage(l.id, t.value);
+  if (k === 'kind') setKind(l.id, t.value);   /* patch LEADBULK */
   if (k === 'assign' && t.value) assign(l.id, t.value).then(function(){ openDrawer(l.id); });
   if (k === 'share') {
     var n = noteLines(l)[+t.getAttribute('data-i')], on = t.checked;
@@ -168422,6 +168427,168 @@ W._gcLeadsAudit = function(){
   try { console.table(Object.keys(out.bySource).map(function(k){ var x = out.bySource[k]; return { source: k, leads: x.n, open: x.open, last7days: x.last7, last30days: x.last30, noInquiry: x.noInquiry, dates: JSON.stringify(x.dateField) }; })); console.log('[GC] Leads audit (read-only):', out); } catch (e) {}
   return out;
 };
+/* ═══ patch LEADBULK (owner 10/30) — ☐ Select + 🗑 Delete selected on the List / Board; the lead's type menu; Bid only on bids ═══ */
+var BULK = { on: false, sel: {}, v: 0, loop: false };
+function bkLead(id){ id = s(id); return rawLeads().filter(function(x){ return x && s(x.id) === id && !dead(x); })[0] || null; }
+function bkJob(l){ return !!(l && (s(l.pid) || s(l.jobId) || s(l.convertedJobId) || l.converted === true)); }   /* already a job: never deleted from here */
+function bkCan(l){ try { return !!(l && W._gcLDEL && typeof W._gcLDEL.can === 'function' && W._gcLDEL.can(l)); } catch (e) { return false; } }   /* the CRM's lead-delete rule */
+function bkWho(){ try { return (W._gcLDEL && W._gcLDEL.who && W._gcLDEL.who()) || {}; } catch (e) { return {}; } }
+function bkAllowed(){ var me = bkWho(); return !!(me.email && (me.all || me.est || me.pm)); }
+function bkView(){ return UI.v === 'list' || UI.v === 'board'; }
+function bkOn(){ return !!(typeof BULK === 'object' && BULK && BULK.on) && bkView(); }
+function bkRowCls(l){ return bkOn() ? ' gclb-row' + (BULK.sel[s(l.id)] ? ' gclb-on' : '') : ''; }
+function bkChk(l){
+  if (!bkOn()) return '';
+  if (!bkCan(l)) return '<span class="gclb-no" title="Only an admin, the office or the lead’s own PM can delete it">🔒</span>';
+  var id = s(l.id), job = bkJob(l);
+  return '<input type="checkbox" class="gclb-chk" data-gclb-id="' + esc(id) + '"' + (BULK.sel[id] ? ' checked' : '') + (job ? ' data-gclb-job="1"' : '') + ' aria-label="Select ' + esc(s(l.name || l.title) || 'lead') + '">'
+    + (job ? '<span class="gclb-job" title="Already a job — Delete skips it">🏗 job</span>' : '');
+}
+function bkBtn(){ if (!bkView() || !bkAllowed()) return ''; var on = bkOn(); return '<button type="button" class="gclu-btn gclb-btn' + (on ? ' on' : '') + '" data-gclb-sel aria-pressed="' + on + '" title="Tick leads to delete several at once" aria-label="Select leads">' + (on ? '☑<span class="gclb-bt"> Selecting…</span>' : '☐<span class="gclb-bt"> Select</span>') + '</button>'; }
+function bkHead(){ if (!bkOn()) return ''; return '<div class="gclb-head gcl-hide-rso"><label><input type="checkbox" data-gclb-all> Select all shown</label><span class="gclb-hint">Tap leads to tick them. Leads that are already jobs are skipped.</span></div>'; }
+function bkIds(){ return Object.keys(BULK.sel).filter(function(id){ return BULK.sel[id]; }); }
+function bkSplit(ids){ var o = { go: [], job: [], no: [] }; ids.forEach(function(id){ var l = bkLead(id); if (!l) return; if (bkJob(l)) o.job.push(l); else if (!bkCan(l)) o.no.push(l); else o.go.push(l); }); return o; }
+function bkSync(){
+  var hub = D.getElementById('gc-leads-hub'); if (!hub) return bkBar();
+  var cs = hub.querySelectorAll('.gclb-chk[data-gclb-id]'), n = 0;
+  Array.prototype.forEach.call(cs, function(c){ var on = !!BULK.sel[c.getAttribute('data-gclb-id')]; if (on) n++; if (c.checked !== on) c.checked = on; var r = c.closest('tr.gcl-lr,.gcl-card'); if (r && r.classList.contains('gclb-on') !== on) r.classList.toggle('gclb-on', on); });
+  var all = hub.querySelector('[data-gclb-all]'); if (all) { all.checked = cs.length > 0 && n === cs.length; all.indeterminate = n > 0 && n < cs.length; }
+  bkBar();
+}
+function bkBar(){
+  var el = D.getElementById('gclb-bar'), live = bkOn() && view() === 'leads' && !!D.getElementById('gc-leads-hub');
+  D.body.classList.toggle('gclb-mode', live);
+  if (!live) { if (el) el.remove(); return; }
+  if (!el) { el = D.createElement('div'); el.id = 'gclb-bar'; el.setAttribute('data-gc-keep', '1'); el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Selected leads'); el.addEventListener('click', bkBarClick); D.body.appendChild(el); }
+  var sp = bkSplit(bkIds()), n = sp.go.length + sp.job.length + sp.no.length;
+  var h = '<span data-gclb-n>' + n + ' selected</span>'
+    + (sp.job.length ? '<span class="gclb-skip" data-gclb-skip>' + sp.job.length + ' already ' + (sp.job.length === 1 ? 'a job' : 'jobs') + ' — skipped</span>' : '')
+    + '<span class="gclb-dot">·</span><button type="button" data-gclb-a="del"' + (sp.go.length ? '' : ' disabled') + '>🗑 Delete selected' + (sp.job.length && sp.go.length ? ' (' + sp.go.length + ')' : '') + '</button>'
+    + '<span class="gclb-dot">·</span><button type="button" data-gclb-a="cancel">Cancel</button>';
+  if (el.__h !== h) { el.__h = h; el.innerHTML = h; }
+}
+function bkBarClick(ev){ var b = ev.target.closest && ev.target.closest('[data-gclb-a]'); if (!b || b.disabled) return; var a = b.getAttribute('data-gclb-a'); if (a === 'cancel') bkStop(); else if (a === 'del') bkAsk(); }
+function bkTick(){
+  if (!BULK.on) { BULK.loop = false; bkBar(); return; }
+  if (view() !== 'leads' || !bkView() || !D.getElementById('gc-leads-hub')) { BULK.on = false; BULK.sel = {}; BULK.v++; BULK.loop = false; bkBar(); return; }   /* left Leads, or Calendar / Map */
+  bkIds().forEach(function(id){ if (!bkLead(id)) delete BULK.sel[id]; });
+  bkBar(); NST0.call(W, bkTick, 800);
+}
+function bkStart(){ if (!bkAllowed()) return; BULK.on = true; BULK.sel = {}; BULK.v++; if (UI.open) closeDrawer(); redraw(); bkSync(); if (!BULK.loop) { BULK.loop = true; NST0.call(W, bkTick, 800); } }
+function bkStop(){ BULK.on = false; BULK.sel = {}; BULK.v++; redraw(); bkBar(); }
+function bkSelect(ids, on){ (ids || []).forEach(function(id){ id = s(id); if (on === false) delete BULK.sel[id]; else BULK.sel[id] = 1; }); bkSync(); }
+function bkAsk(){
+  var sp = bkSplit(bkIds());
+  if (!sp.go.length) { toast(sp.job.length ? 'Those leads are already jobs — nothing to delete' : 'Tick the leads to delete first'); return; }
+  if (!W._gcLDEL || typeof W._gcLDEL.remove !== 'function') { toast('Delete is still loading — try again in a moment'); return; }
+  var n = sp.go.length, nm = function(l){ return '<li>' + esc(s(l.name || l.title || l.company) || 'Lead') + '</li>'; };
+  var old = D.getElementById('gcl-delq'); if (old) old.remove();
+  var ov = D.createElement('div'); ov.id = 'gcl-delq'; ov.setAttribute('data-gc-keep', '1'); ov.setAttribute('data-gclb', '1');
+  ov.innerHTML = '<div class="b" role="dialog" aria-modal="true" aria-labelledby="gcl-delq-t"><div id="gcl-delq-t" class="q">Delete ' + (n === 1 ? 'this lead' : n + ' leads') + '?</div>'
+    + '<ul class="n gclb-names">' + sp.go.slice(0, 5).map(nm).join('') + (n > 5 ? '<li class="gclb-more">and ' + (n - 5) + ' more</li>' : '') + '</ul>'
+    + (sp.job.length ? '<div class="gclb-sk">Skipped — already ' + (sp.job.length === 1 ? 'a job' : sp.job.length + ' jobs') + ': ' + esc(sp.job.slice(0, 3).map(function(l){ return s(l.name || l.title) || 'Lead'; }).join(', ') + (sp.job.length > 3 ? ' …' : '')) + '</div>' : '')
+    + '<div class="w">' + (n === 1 ? 'It is' : 'They are') + ' removed on every computer and never come back by sync or from the Lead Inbox.</div>'
+    + '<div class="gclb-undo">Undo: right after the delete, or for 30 days in <b>Admin → Recycle bin → Restore</b> (also ⋯ More → 🗑 Recently deleted).</div>'
+    + '<div class="a"><button type="button" data-a="cancel">Cancel</button><button type="button" data-a="delete">🗑 Delete ' + (n === 1 ? 'lead' : n + ' leads') + '</button></div></div>';
+  var ids = sp.go.map(function(l){ return s(l.id); });
+  function key(e){ if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(false); } }
+  function done(yes){ D.removeEventListener('keydown', key, true); ov.remove(); if (yes) bkDelete(ids); }
+  ov.addEventListener('click', function(e){ var a = e.target && e.target.getAttribute && e.target.getAttribute('data-a'); if (e.target === ov || a === 'cancel') done(false); else if (a === 'delete') done(true); });
+  D.addEventListener('keydown', key, true);
+  D.body.appendChild(ov);
+  try { ov.querySelector('[data-a=cancel]').focus(); } catch (e) {}
+}
+/* the CRM's own lead delete (one call for all of them): the delete list, the explicit-delete flag, Undo, Recently deleted */
+function bkDelete(ids){
+  ids = arr(ids).map(s).filter(function(id){ var l = bkLead(id); return l && !bkJob(l) && bkCan(l); });
+  if (!ids.length || !W._gcLDEL) return Promise.resolve({ ok: false, deleted: 0 });
+  ids.forEach(function(id){ LC_GONE[id] = 1; }); if (UI.open && LC_GONE[UI.open]) closeDrawer();
+  BULK.on = false; BULK.sel = {}; BULK.v++; redraw(); bkBar();
+  return Promise.resolve().then(function(){ return W._gcLDEL.remove(ids); }).then(function(res){
+    var did = {}; arr(res && res.ids).forEach(function(id){ did[s(id)] = 1; });
+    ids.forEach(function(id){ if (!did[id]) delete LC_GONE[id]; else BK_GONE[id] = 1; }); bkGoneWatch();   /* deleted: hidden until its Undo / Restore lifts the delete mark */
+    HUB_SIG = ''; redraw();
+    if (!res || !res.ok) toast('Could not delete — try again');
+    else if (res.deleted < ids.length) toast(res.deleted + ' deleted · ' + (ids.length - res.deleted) + ' could not be');
+    return res;
+  }, function(){ ids.forEach(function(id){ delete LC_GONE[id]; }); HUB_SIG = ''; redraw(); toast('Could not delete — try again'); return { ok: false, deleted: 0 }; });
+}
+/* a deleted row stays hidden (LC_GONE) until an Undo / Restore lifts its delete mark: then it shows again */
+var BK_GONE = {}, BK_GW = false;
+function bkGoneWatch(){
+  if (BK_GW) return; BK_GW = true;
+  (function k(){ var ids = Object.keys(BK_GONE), back = 0; ids.forEach(function(id){ if (!dead({ id: id })) { delete BK_GONE[id]; delete LC_GONE[id]; back++; } });
+    if (back) { HUB_SIG = ''; redraw(); }
+    if (Object.keys(BK_GONE).length) NST0.call(W, k, 2000); else BK_GW = false; })();
+}
+function bkTrash(){ LU.more = false; redraw(); try { if (W._gcLDEL && W._gcLDEL.openTrash) return W._gcLDEL.openTrash(); var b = D.querySelector('#gcx-ldel-bar [data-a="trash"]'); if (b) return b.click(); } catch (e) { warn(e); } toast('Recently deleted is still loading — try again in a moment'); }
+D.addEventListener('click', function(ev){
+  var t = ev.target; if (!t || !t.closest) return;
+  var hub = t.closest('#gc-leads-hub'); if (!hub) return;
+  if (t.closest('[data-gclb-trash]')) { ev.stopPropagation(); ev.preventDefault(); return bkTrash(); }
+  if (t.closest('[data-gclb-sel]')) { ev.stopPropagation(); ev.preventDefault(); if (bkOn()) bkStop(); else bkStart(); return; }
+  if (!bkOn()) return;
+  var all = t.closest('[data-gclb-all]');
+  if (all) { ev.stopPropagation(); var on = all.checked; Array.prototype.forEach.call(hub.querySelectorAll('.gclb-chk[data-gclb-id]'), function(c){ var id = c.getAttribute('data-gclb-id'); if (on) BULK.sel[id] = 1; else delete BULK.sel[id]; }); bkSync(); return; }
+  var chk = t.closest('.gclb-chk');
+  if (chk) { ev.stopPropagation(); var cid = chk.getAttribute('data-gclb-id'); if (chk.checked) BULK.sel[cid] = 1; else delete BULK.sel[cid]; bkSync(); return; }
+  if (t.closest('button,select,a,input,textarea,label,option')) return;   /* the row's own buttons still work */
+  var row = t.closest('tr.gcl-lr[data-gcl-id],.gcl-card[data-gcl-id]'); if (!row) return;
+  ev.stopPropagation(); ev.preventDefault();   /* in Select, a tap ticks — it does not open the lead */
+  var c2 = row.querySelector('.gclb-chk'); if (!c2) { toast('Only an admin, the office or the lead’s own PM can delete it'); return; }
+  var rid = c2.getAttribute('data-gclb-id'); if (BULK.sel[rid]) delete BULK.sel[rid]; else BULK.sel[rid] = 1; bkSync();
+}, true);
+D.addEventListener('keydown', function(ev){ if (ev.key === 'Escape' && bkOn() && !D.getElementById('gcl-delq') && !D.getElementById('gcl-drawer')) bkStop(); });
+/* ── the lead's type: a person's choice (leadKindManual) — the same save as the panel's other changes ── */
+var KIND_OPT = [['residential', 'Residential'], ['commercial', 'Commercial'], ['insurance', 'Insurance'], ['government', 'Government']];
+var KIND_LBL = { residential: 'Residential', commercial: 'Commercial', insurance: 'Insurance', government: 'Government', mitigation: 'Mitigation' };
+var KIND_PIPE = { residential: 'Residential Reno', commercial: 'Commercial Reno', insurance: 'Insurance Claim', government: 'Commercial Reno' };
+var KIND_GENERIC = /^(residential|commercial|government|insurance)(\s+(reno|claim))?$/i;   /* the Lead Pipeline's own type names: kept in step */
+function kindPick(l){
+  var k = typeOf(l), opts = KIND_OPT.slice(); if (!opts.some(function(o){ return o[0] === k; })) opts.push([k, KIND_LBL[k] || k]);
+  return '<span class="gclk-wrap" title="The type of lead — tap to change">' + (TYPE_IC[k] || '') + ' <select data-d="kind" class="gclk-sel" aria-label="Type of lead">'
+    + opts.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === k ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></span>';
+}
+function setKind(id, k){
+  k = low(k); var label = KIND_LBL[k]; if (!label) return Promise.resolve(false);
+  var l0 = bkLead(id); if (!l0) return Promise.resolve(false);
+  if (typeOf(l0) === k && l0.leadKindManual && low(l0.leadKind) === k) return Promise.resolve(true);
+  var at = nowIso(), by = myName() || myEmail();
+  return patchLead(id, function(l){
+    var was = typeOf(l);
+    l.leadKind = label; l.leadKindManual = true; l.leadKindSetAt = at; l.leadKindSetBy = by; l.savedAt = at;
+    ['type', 'projectType'].forEach(function(f){ var v = s(l[f]); if (v && KIND_GENERIC.test(v) && typeOf({ leadKind: v }) !== k && KIND_PIPE[k]) l[f] = KIND_PIPE[k]; });
+    logAct(l, 'type', 'Type: ' + (KIND_LBL[was] || was) + ' → ' + label);
+  }).then(function(ok){
+    toast(ok ? (TYPE_IC[k] || '') + ' Now ' + label : 'Could not save — try again');
+    if (ok) { HUB_SIG = ''; redraw(); try { var pushed = LEADS_NOW; later(function(){ if (typeof W._supaUpsertNow === 'function' && Array.isArray(pushed)) W._supaUpsertNow('leads', pushed); }, 300); } catch (e) {} }   /* to the cloud now, like the priority */
+    if (UI.open === id) openDrawer(id);
+    return ok;
+  });
+}
+/* ⏰ Bid only on a bid: commercial / government from the Lead Inbox or a bid source — or a lead that already has bid details */
+var BID_SRC_LB = /buildingconnected|building connected|planhub|plan ?hub|plan ?room|isqft|construct ?connect|dodge|bid ?board|bid invitation|\bitb\b|\brfp\b|\brfq\b|sam\.gov|county|city of|state of|government|procurement|bidnet|bonfire|gc direct|lead inbox|leads@/i;
+function bidSrc(l){ return !!(s(l.inboxId) || l.fromBidBoard || /^LBB_/.test(s(l.id)) || /^(email|watch|api|partner-bid)$/.test(s(l.origin)) || BID_SRC_LB.test([l.source, l.leadSource, l.subSource, l.via].map(s).join(' '))); }
+function bidData(l){ var B = null; try { B = W._gcBidSend && W._gcBidSend._S && W._gcBidSend._S.bidders; } catch (e) {} var rec = B && B['lead:' + l.id]; return !!(s(l.bidDue) || s(l.dueToCompany) || s(l.bidNumber) || arr(rec && rec.list).length); }
+function showBid(l){ if (!l) return false; if (bidData(l)) return true; return isBidL(l) && bidSrc(l); }
+(function(){ if (D.getElementById('gc-leadbulk-css')) return; var c = D.createElement('style'); c.id = 'gc-leadbulk-css'; c.textContent = [
+  '#gc-leads-hub .gclb-chk{width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle;cursor:pointer;accent-color:#241968;flex:0 0 auto}',
+  '#gc-leads-hub .gclb-row{cursor:pointer}#gc-leads-hub tr.gclb-on td,#gc-leads-hub .gcl-card.gclb-on{background:#fef9c3!important}#gc-leads-hub .gcl-card.gclb-on{border-color:#d4a017}',
+  '#gc-leads-hub .gclb-job{font:700 11px Arial;color:#92400e;background:#fef3c7;border-radius:6px;padding:1px 6px;margin-right:6px;white-space:nowrap}#gc-leads-hub .gclb-no{opacity:.45;margin-right:6px;font-size:12px}',
+  '.gclb-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:0 0 8px;font:13px Arial;color:#1b1640}.gclb-head label{display:flex;gap:8px;align-items:center;font-weight:700;cursor:pointer;min-height:38px}.gclb-head input{width:20px;height:20px;accent-color:#241968}.gclb-hint{color:#666;font-size:12px}',
+  '.gclu-btn.gclb-btn.on{background:#241968;color:#fff;border-color:#241968}',
+  'body.gclb-mode #gc-leads-hub{padding-bottom:76px}',
+  '#gclb-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483000;display:flex;gap:10px;align-items:center;background:#0f2440;color:#fff;border-radius:10px;padding:9px 14px;box-shadow:0 8px 26px rgba(0,0,0,.35);font:600 14px Arial,sans-serif;max-width:calc(100vw - 32px);flex-wrap:wrap;justify-content:center}',
+  '#gclb-bar button{border:0;border-radius:7px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:14px;min-height:40px}#gclb-bar [data-gclb-a=del]{background:#dc2626;color:#fff}#gclb-bar [data-gclb-a=del][disabled]{opacity:.45;cursor:default}#gclb-bar [data-gclb-a=cancel]{background:#334155;color:#fff}#gclb-bar .gclb-dot{opacity:.5}#gclb-bar .gclb-skip{color:#fcd34d;font-weight:700}',
+  '#gcl-delq .gclb-names{margin:4px 0 10px 18px;padding:0;font-size:14px;line-height:1.5}#gcl-delq .gclb-more{color:#64748b}#gcl-delq .gclb-sk{font-size:12px;color:#92400e;margin-bottom:6px}#gcl-delq .gclb-undo{font-size:12px;color:#475569;margin-bottom:14px}',
+  '#gcl-drawer .gclk-wrap{display:inline-flex;gap:3px;align-items:center;white-space:nowrap}#gcl-drawer .gclk-sel{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:12px;padding:2px 6px;font:700 12px Arial;cursor:pointer;min-height:28px;max-width:150px}#gcl-drawer .gclk-sel option{color:#111;background:#fff}',
+  '#gcl-drawer[data-gcl-nobid] section[data-gcbs]{display:none!important}',
+  '@media (max-width:640px){#gclb-bar{left:8px;right:8px;transform:none;bottom:8px;max-width:none}#gclb-bar button{flex:1 1 auto}#gc-leads-hub .gclb-btn{padding:8px 10px;min-width:40px}#gc-leads-hub .gclb-btn .gclb-bt{display:none}}'   /* the phone: ☐ only — the header stays on one line */
+].join('\n'); (D.head || D.documentElement).appendChild(c); })();
+W._gcLeadBulk = { on: bkOn, start: bkStart, stop: bkStop, select: bkSelect, selected: bkIds, ask: bkAsk, del: bkDelete, allowed: bkAllowed, jobLinked: bkJob, can: bkCan,
+  setKind: setKind, showBid: showBid, bidSource: bidSrc };
+try { console.log('[GC] Leads: ☐ Select + 🗑 Delete selected, the lead type menu, Bid only on bids (patch LEADBULK): _gcLeadBulk'); } catch (e) {}
+/* ═══ end LEADBULK ═══ */
 W._gcLeadsHubKit = { all: function(){ return rawLeads().filter(function(l){ return !dead(l); }); },
   setLeads: function(mut){ return setLeads(function(list){ var n = mut(list); if (Array.isArray(n)) { LEADS_NOW = n; LEADS_SIG = ''; } return n; }); },   /* as patchLead: the hub's own copy follows at once (a later full-list push never carries the old list) */
   imported: importedL, archived: archivedL, shut: shut, stageOf: stageOf, value: value, isAdmin: isAdmin,
