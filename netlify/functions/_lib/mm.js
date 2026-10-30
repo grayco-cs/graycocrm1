@@ -231,7 +231,7 @@ function sourceOf(l){
   return null;
 }
 /* the customer's own name words out of free text ("call Jane at …" → "call the customer at …") */
-function noNames(text, names){ let out = String(text); arr(names).map(s).join(' ').split(/[^A-Za-z'-]+/).filter(function(w){ return w.length >= 3 && !/^(the|and|llc|inc|roof|water|fire|storm|job|lead|website|company)$/i.test(w); }).forEach(function(w){ out = out.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), 'the customer'); }); return out; }
+function noNames(text, names){ let out = String(text); arr(names).map(s).join(' ').split(/[^A-Za-z'-]+/).filter(function(w){ return w.length >= 3 && !/^(the|and|llc|inc|roof|water|fire|storm|job|lead|website|company)$/i.test(w); }).forEach(function(w){ out = out.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), 'the customer'); }); return out.replace(/\bthe customer(?:[\s,'-]+the customer)+\b/gi, 'the customer'); }   /* patch MKTFIX2: "John Smith" → "the customer", not "the customer the customer" */
 function cap1(x){ return x.charAt(0).toUpperCase() + x.slice(1); }
 function serviceType(l){ const svc = SC().serviceOf(l); if (svc === 'restoration') return SC().restSubOf(l) || 'storm'; return svc || ''; }
 function daysBetween(a, b){ const x = Date.parse(a || 0), y = Date.parse(b || 0); return x && y && y >= x ? Math.round((y - x) / 864e5 * 10) / 10 : null; }
