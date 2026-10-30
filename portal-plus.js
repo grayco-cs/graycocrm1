@@ -40,7 +40,8 @@ function css(){
   st.textContent = '.pp-opts{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.pp-opt{border:1px solid #E2DCCD;background:#fff;border-radius:999px;padding:9px 14px;font:600 14px Arial,sans-serif;color:#0F1D2F;cursor:pointer;min-height:44px}' +
     '.pp-opt.on{background:#0F1D2F;color:#fff;border-color:#0F1D2F}.pp-plan{border:1px solid #E2DCCD;border-radius:12px;padding:12px 14px;margin:10px 0;background:#fffdf7}.pp-plan b{display:block;font-size:16px}' +
     '.pp-plan p{margin:6px 0;font-size:14px;line-height:1.45}.pp-price{font:800 20px Arial,sans-serif;color:#0F1D2F;margin:6px 0}.pp-msg{font-size:14px;margin-top:8px;min-height:1em}.pp-in{width:100%;box-sizing:border-box;border:1px solid #cfc8b6;border-radius:8px;padding:10px;font-size:16px;margin:6px 0}' +
-    '.pp-pad{display:block;width:100%;max-width:600px;aspect-ratio:3/1;border:1px dashed #b8b0a0;border-radius:8px;background:#fff;touch-action:none;margin:6px 0}.pp-st{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;background:#eef6ee;color:#1f6b33}.pp-st.now{background:#fff4e0;color:#8a5a00}';
+    '.pp-pad{display:block;width:100%;max-width:600px;aspect-ratio:3/1;border:1px dashed #b8b0a0;border-radius:8px;background:#fff;touch-action:none;margin:6px 0}.pp-st{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;background:#eef6ee;color:#1f6b33}.pp-st.now{background:#fff4e0;color:#8a5a00}' +
+    '.pp-freq{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 9px;background:#e8eef6;color:#0F1D2F;margin-top:4px}.pp-sub{font-size:15px;margin:16px 0 4px;color:#0F1D2F}';   /* patch MAINTPLANS */
   document.head.appendChild(st);
 }
 function makePad(){
@@ -80,16 +81,24 @@ function heardCard(){
 /* ── 🛠 Maintenance plans ── */
 function maintCard(){
   var M = D.maint || {}; if (!M.offered) return null;
-  var cs = M.contracts || [], byPlan = {}; cs.forEach(function(x){ byPlan[x.planId] = x; });
+  var cs = M.contracts || [], byPlan = {}; cs.forEach(function(x){ if (!byPlan[x.planId] || byPlan[x.planId].status === 'declined') byPlan[x.planId] = x; });   /* an open plan wins over an old "No thanks" */
   var c = h('section', { class: 'card', id: 'gcpp-maint' });
   var signed = cs.filter(function(x){ return x.status === 'signed'; });
-  c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🛠 Maintenance plans' }), signed.length ? h('span', { class: 'pill ok', text: 'You are covered' }) : null]));
-  c.appendChild(h('div', { class: 'muted', text: signed.length ? 'Thank you for letting GrayCo take care of your home.' : 'Keep your home and the work we did in top shape with a yearly visit from GrayCo. Prices are set for your home — ask for a quote, no obligation.' }));
+  /* patch MAINTPLANS: the plans GrayCo picked and priced for this home (and the ones signed) first, under "Your maintenance
+     plans", each with its price and how often; the other plans below, to ask for a quote */
+  var chosen = cs.filter(function(x){ return /^(requested|quoted|signed)$/.test(x.status); });
+  c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🛠 Your maintenance plans' }), signed.length ? h('span', { class: 'pill ok', text: 'You are covered' }) : null]));
+  c.appendChild(h('div', { class: 'muted', text: signed.length ? 'Thank you for letting GrayCo take care of your home.' : chosen.length ? 'Your Project Manager picked ' + (chosen.length === 1 ? 'this plan' : 'these plans') + ' for your home. Sign up for any or all of them — no obligation.' : 'Keep your home and the work we did in top shape with a visit from GrayCo. Prices are set for your home — ask for a quote, no obligation.' }));
   if (PREVIEW) c.appendChild(h('div', { class: 'muted', text: 'Preview — only the customer can ask or sign.' }));
-  var list = (M.plans || []).slice();
-  cs.forEach(function(x){ if (!list.some(function(p){ return p.id === x.planId; })) list.push({ id: x.planId, name: x.planName, includes: '' }); });
+  var all = (M.plans || []).slice(), info = {};
+  all.forEach(function(p){ info[p.id] = p; });
+  var list = chosen.map(function(x){ var p = info[x.planId] || {}; return { id: x.planId, name: x.planName || p.name, includes: x.includes || p.includes || '', freqLabel: x.freqLabel || p.freqLabel || '', priority: !!x.priority }; })
+    .concat(all.filter(function(p){ return !chosen.some(function(x){ return x.planId === p.id; }); }));
+  var otherHead = false;
   list.forEach(function(p){
-    var k = byPlan[p.id], box = h('div', { class: 'pp-plan', 'data-plan': p.id }, [h('b', { text: p.name }), p.includes ? h('p', { text: p.includes }) : null]);
+    var k = byPlan[p.id];
+    if (!(k && /^(requested|quoted|signed)$/.test(k.status)) && !otherHead) { otherHead = true; if (chosen.length) c.appendChild(h('h3', { class: 'pp-sub', text: 'Other plans we offer' })); }
+    var box = h('div', { class: 'pp-plan', 'data-plan': p.id }, [h('b', { text: p.name }), p.freqLabel ? h('span', { class: 'pp-freq', text: p.freqLabel }) : null, p.priority ? h('span', { class: 'pp-freq', style: 'margin-left:6px;background:#fef3c7;color:#92400e', text: '⭐ Priority: snow + emergency' }) : null, p.includes ? h('p', { text: p.includes }) : null]);
     if (!k || k.status === 'declined') {
       var ask = h('button', { type: 'button', class: 'btn gold', 'data-ask': p.id, text: k ? 'Ask for a quote again' : 'Request a quote' }), msg = h('div', { class: 'pp-msg', role: 'status' });
       ask.disabled = PREVIEW;
@@ -100,6 +109,7 @@ function maintCard(){
       box.appendChild(h('span', { class: 'pp-st now', text: '⏳ Quote requested ' + dt(k.requestedAt) + ' — your Project Manager will price it for your home' }));
     } else if (k.status === 'quoted') {
       box.appendChild(h('div', { class: 'pp-price', text: usd(k.price) + ' per year' }));
+      if (k.billsPerYear > 1) box.appendChild(h('div', { class: 'muted', text: 'Billed ' + k.billsPerYear + ' times a year: ' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months.' }));
       if (!open[k.id]) {
         box.appendChild(h('button', { type: 'button', class: 'btn gold', 'data-signopen': k.id, text: 'Sign up', on: { click: function(){ open[k.id] = 1; paint(); } } }));
         box.appendChild(h('button', { type: 'button', class: 'btn', style: 'margin-left:8px', text: 'No thanks', on: { click: function(){ if (busy || PREVIEW) return; busy = true; api({ action: 'maint-decline', contractId: k.id }).then(function(){ busy = false; load(); }); } } }));
@@ -112,7 +122,7 @@ function maintCard(){
         box.appendChild(h('label', { class: 'muted', for: 'gcpp-name', text: 'Your full name' })); box.appendChild(nm);
         box.appendChild(h('div', { class: 'muted', text: 'Draw your signature (or leave it blank to sign with your typed name):' })); box.appendChild(pad.el);
         box.appendChild(h('button', { type: 'button', class: 'btn', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
-        box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: ' I sign up for this plan at ' + usd(k.price) + ' per year. It renews each year; I can end it by e-mail before the next yearly invoice.' })]));
+        box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: ' I sign up for the ' + (k.planName || 'plan') + ' at ' + usd(k.price) + ' per year' + (k.billsPerYear > 1 ? ' (billed ' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months)' : '') + '. It renews each year; I can end it by e-mail before the next invoice.' })]));
         box.appendChild(go); box.appendChild(sm);
         go.addEventListener('click', function(){
           if (busy) return; if (!nm.value.trim()) { sm.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { sm.textContent = 'Please tick the box to agree.'; return; }
@@ -125,7 +135,7 @@ function maintCard(){
         });
       }
     } else if (k.status === 'signed') {
-      box.appendChild(h('span', { class: 'pp-st', text: '✓ Signed by ' + (k.signName || 'you') + ' on ' + dt(k.signedAt) + ' · ' + usd(k.price) + ' / year' }));
+      box.appendChild(h('span', { class: 'pp-st', text: '✓ Signed by ' + (k.signName || 'you') + ' on ' + dt(k.signedAt) + ' · ' + usd(k.price) + ' / year' + (k.billsPerYear > 1 ? ' (' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months)' : '') }));
       if (k.nextVisit) box.appendChild(h('p', { text: 'Next visit: ' + dt(k.nextVisit) + ' — we will call before we come.' }));
       if (k.doc) box.appendChild(h('a', { class: 'btn', href: k.doc, target: '_blank', rel: 'noopener', text: '📄 Your signed plan' }));
     }

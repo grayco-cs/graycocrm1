@@ -16,6 +16,8 @@
 //   POST {action:'maint-decline', contractId}       → "No thanks"
 // STAFF (signed in to the CRM + on gc_staff):
 //   POST {action:'list'}                            → every plan contract, the plans, the portal answers (the CRM's view)
+//   POST {action:'quote-many', pid, items:[{planId|contractId, price}]} → patch MAINTPLANS: several plans quoted at once,
+//                                                     ONE "your quote is ready" e-mail on ✅ Approvals (kind maint_quote)
 //   POST {action:'quote', pid, planId|contractId, price}   → the PM's yearly price for this home; the "your quote is
 //                                                     ready" e-mail waits on ✅ Approvals (kind maint_quote, the PM)
 //   POST {action:'update', contractId, nextVisit?, visitDone?, note?, cancel?}
@@ -151,8 +153,10 @@ async function view(A, p){
   for (const c of mine) if (c.docRef) docs[c.id] = await signUrl(c.docRef);
   const h = A.heard.find(function(x){ return s(x.pid) === s(p.id); });
   return { ok: true, heard: { answer: h ? s(h.answer) : '', who: h ? s(h.who) : '', opts: M.HEARD_OPTS },
-    maint: { offered: offered || mine.length > 0, plans: plans.map(function(x){ return { id: x.id, name: x.name, includes: x.includes.replace(/\s*Price:\s*\[PRICE\][^.]*\.?/i, '').trim(), visits: x.visits }; }),
-      contracts: mine.map(function(c){ return { id: c.id, planId: s(c.planId), planName: s(c.planName), status: s(c.status), price: c.status === 'requested' ? null : (c.price != null ? money(c.price) : null),
+    maint: { offered: offered || mine.length > 0, plans: plans.map(function(x){ return { id: x.id, name: x.name, includes: M.plainIncludes(x.includes), visits: x.visits, freq: x.freq, freqLabel: M.freqLabel(x.freq) }; }),
+      contracts: mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }), f = s(c.freq) || (pl ? pl.freq : 'yearly'), bills = M.billsPerYear(c);   /* patch MAINTPLANS */
+        return { id: c.id, planId: s(c.planId), planName: s(c.planName), status: s(c.status), price: c.status === 'requested' ? null : (c.price != null ? money(c.price) : null),
+        freq: f, freqLabel: M.freqLabel(f), billsPerYear: bills, priority: M.marketOf(pl || c) === 'commercial' && f !== 'once',   /* every commercial plan: ⭐ priority snow + emergency */ includes: M.plainIncludes(s(c.includes) || (pl ? pl.includes : '')),
         requestedAt: s(c.requestedAt), quotedAt: s(c.quotedAt), signedAt: s(c.signedAt), signName: s(c.signName), nextVisit: s(c.nextVisit), doc: docs[c.id] || '' }; }) } };
 }
 
@@ -169,7 +173,7 @@ async function request(event, row, body, A, p){
   if (!plan || !M.eligible(p, A.settings)) return { status: 400, out: { ok: false, error: 'That plan is not offered for this job — call ' + OFFICE_PHONE + '.' } };
   const at = nowIso(), id = 'mt_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
   const note = clip(s(body.note).replace(/[<>]/g, ''), 400);
-  const rec = { id: id, pid: s(p.id), planId: plan.id, planName: plan.name, visitsPerYear: plan.visits, status: 'requested', requestedAt: at, requestedBy: 'customer', note: note, history: [{ at: at, by: 'customer (portal)', what: 'Asked for a quote' }], updatedAt: at };
+  const rec = { id: id, pid: s(p.id), planId: plan.id, planName: plan.name, visitsPerYear: plan.visits, freq: plan.freq, status: 'requested', requestedAt: at, requestedBy: 'customer', note: note, history: [{ at: at, by: 'customer (portal)', what: 'Asked for a quote' }], updatedAt: at };
   const r = await listUpdate(M.LIST_KEY, function(l){
     if (l.some(function(c){ return s(c.pid) === s(p.id) && s(c.planId) === plan.id && /^(requested|quoted|signed)$/.test(s(c.status)); })) return { list: null, result: 'dup' };
     return { list: l.concat([rec]), check: function(a){ return a.some(function(x){ return x.id === id; }); }, result: 'ok' };
@@ -186,7 +190,7 @@ function planPdf(o){
   const S = sel(), b = [{ t: 'title', text: 'GrayCo Construction Services' }, { t: 'p', text: 'Maintenance plan agreement — ' + o.planName, bold: true, size: 12 }, { t: 'gap', h: 4 },
     { t: 'p', text: 'Job: ' + o.job }, o.address ? { t: 'p', text: 'Address: ' + o.address } : null, { t: 'p', text: 'Customer: ' + o.customer }, { t: 'gap', h: 6 }, { t: 'h', text: 'What is included' },
     { t: 'p', text: o.includes || o.planName }, { t: 'gap', h: 4 },
-    { t: 'row', left: 'Price', right: usd(o.price) + ' per year' }, { t: 'row', left: 'Visits', right: o.visits + (o.visits === 1 ? ' visit' : ' visits') + ' per year' }, { t: 'row', left: 'First visit', right: niceDay(o.nextVisit) },
+    { t: 'row', left: 'Price', right: usd(o.price) + ' per year' }, { t: 'row', left: 'Billing', right: o.bills > 1 ? o.bills + ' times a year, ' + usd(money(o.price / o.bills)) + ' every ' + (12 / o.bills) + ' months' : 'Once a year' }, { t: 'row', left: 'Visits', right: o.visits + (o.visits === 1 ? ' visit' : ' visits') + ' per year' }, { t: 'row', left: 'First visit', right: niceDay(o.nextVisit) },
     { t: 'gap', h: 8 },
     { t: 'p', text: 'The plan renews each year on its anniversary. GrayCo sends the yearly invoice before the visit. Either of us can end it with written notice (an e-mail is fine) before the next yearly invoice; no refund is owed for a visit already made. Repairs beyond the small touch-ups listed above are quoted separately and only done with your approval. This plan does not change or replace your GrayCo warranty.' },
     { t: 'gap', h: 6 }, { t: 'h', text: 'Signature' }, { t: 'sig', strokes: o.strokes, name: o.name },
@@ -207,9 +211,9 @@ async function sign(event, row, body, A, p){
   const at = nowIso(), ip = ipOf(event), ref = 'mts_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
   const plan = A.settings.plans.find(function(x){ return x.id === s(c0.planId); }) || { includes: '', visits: c0.visitsPerYear || 1 };
   const visits = Math.max(1, parseInt(c0.visitsPerYear || plan.visits, 10) || 1);
-  const nextVisit = M.nextYear(at, Math.round(12 / visits));
+  const nextVisit = M.firstVisit(s(c0.freq) || (plan && plan.freq) || (visits >= 4 ? 'quarterly' : visits >= 2 ? 'twice' : 'yearly'), at);   /* patch MAINTPLANS */
   const words = carrierWords(p), job = scrub(p.name, words) || 'your job', customer = custName(p) || name;
-  const pdf = planPdf({ planName: s(c0.planName), job: job, address: s(p.address), customer: customer, includes: s(plan.includes).replace(/\s*Price:\s*\[PRICE\][^.]*\.?/i, '').trim(), price: c0.price, visits: visits, nextVisit: nextVisit, name: name, strokes: cs.strokes, at: at, ip: ip, ref: ref });
+  const pdf = planPdf({ planName: s(c0.planName), job: job, address: s(p.address), customer: customer, includes: M.plainIncludes(s(c0.includes) || plan.includes), price: c0.price, visits: visits, bills: M.billsPerYear(c0), nextVisit: nextVisit, name: name, strokes: cs.strokes, at: at, ip: ip, ref: ref });
   const docName = 'Maintenance plan — ' + s(c0.planName) + ' — signed ' + at.slice(0, 10) + '.pdf';
   const docRef = await storePdf(pdf, docName);
   const r = await contractChange(c0.id, function(c){
@@ -246,41 +250,61 @@ async function staffAct(body, who){
   if (act === 'plans') {
     if (!body.set) return { status: 200, out: { ok: true, settings: A.settings } };
     if (!(who.admin || who.office)) return { status: 403, out: { ok: false, error: 'Only an admin or the office changes the maintenance plans.' } };   /* patch OFFICEFULL */
-    const v = body.set; if (!v || !Array.isArray(v.plans) || !v.plans.length || v.plans.length > 12) return { status: 400, out: { ok: false, error: 'Add at least one plan.' } };
-    const clean = M.settingsOf({ plans: v.plans, offerOn: v.offerOn });
+    const v = body.set; if (!v || !Array.isArray(v.plans) || !v.plans.length || v.plans.length > 30) return { status: 400, out: { ok: false, error: 'Add at least one plan.' } };
+    const clean = M.settingsOf({ plans: v.plans, offerOn: v.offerOn, catalog: M.CATALOG_V });   /* patch MAINTPLANS: what they saved is the list */
     clean.updatedAt = nowIso(); clean.by = who.email; delete clean.saved;
     const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: M.PLANS_KEY, value: JSON.stringify(clean), updated_at: nowIso() }) });
     return w.ok ? { status: 200, out: { ok: true, settings: M.settingsOf(clean) } } : { status: 502, out: { ok: false, error: 'Could not save (' + w.status + ').' } };
   }
-  if (act === 'quote') {
-    const price = money(body.price); if (!(price > 0) || price > 100000) return { status: 400, out: { ok: false, error: 'Enter the yearly price for this home.' } };
-    let c0 = body.contractId ? A.list.find(function(c){ return s(c.id) === s(body.contractId); }) : null;
-    const pid = s(c0 ? c0.pid : body.pid), p = findProject(A.data, pid);
+  if (act === 'quote' || act === 'quote-many') {   /* patch MAINTPLANS: one plan or several, one e-mail on ✅ Approvals */
+    const items = act === 'quote' ? [{ planId: body.planId, contractId: body.contractId, price: body.price }] : (Array.isArray(body.items) ? body.items.slice(0, 30) : []);
+    if (!items.length) return { status: 400, out: { ok: false, error: 'Pick at least one plan.' } };
+    for (const it of items) { const pr = money(it && it.price); if (!(pr > 0) || pr > 100000) return { status: 400, out: { ok: false, error: 'Enter the yearly price for this home' + (items.length > 1 ? ' for every plan you picked.' : '.') } }; }
+    const c1 = items[0].contractId ? A.list.find(function(c){ return s(c.id) === s(items[0].contractId); }) : null;
+    const pid = s(c1 ? c1.pid : body.pid), p = findProject(A.data, pid);
     if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet — try again in a minute.' } };
-    if (!c0) {
-      const plan = A.settings.plans.find(function(x){ return x.id === s(body.planId); }); if (!plan) return { status: 400, out: { ok: false, error: 'Pick a plan.' } };
-      c0 = A.list.find(function(c){ return s(c.pid) === pid && s(c.planId) === plan.id && /^(requested|quoted)$/.test(s(c.status)); });
+    const done = [];
+    for (const it of items) {
+      const price = money(it.price);
+      let c0 = it.contractId ? A.list.find(function(c){ return s(c.id) === s(it.contractId) && s(c.pid) === pid; }) : null;
+      const plan = A.settings.plans.find(function(x){ return x.id === s(c0 ? c0.planId : it.planId); });
       if (!c0) {
-        const at = nowIso(), id = 'mt_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
-        const rec = { id: id, pid: pid, planId: plan.id, planName: plan.name, visitsPerYear: plan.visits, status: 'requested', requestedAt: at, requestedBy: who.email, history: [{ at: at, by: who.name || who.email, what: 'Offered by GrayCo' }], updatedAt: at };
-        const ad = await listUpdate(M.LIST_KEY, function(l){ return { list: l.concat([rec]), check: function(a){ return a.some(function(x){ return x.id === id; }); } }; });
-        if (!ad.ok) return { status: 503, out: { ok: false, error: 'Could not save — try again.' } };
-        c0 = rec;
+        if (!plan) return { status: 400, out: { ok: false, error: 'Pick a plan.' } };
+        if (plan.freq === 'once') return { status: 400, out: { ok: false, error: 'The ' + plan.name + ' is a one-time offer — book it from 🛠 Maintenance → Prospects.' } };
+        c0 = A.list.find(function(c){ return s(c.pid) === pid && s(c.planId) === plan.id && /^(requested|quoted)$/.test(s(c.status)); });
+        if (!c0 && A.list.some(function(c){ return s(c.pid) === pid && s(c.planId) === plan.id && c.status === 'signed'; })) return { status: 409, out: { ok: false, error: 'The ' + plan.name + ' is already signed on this job.' } };
+        if (!c0) {
+          const at = nowIso(), id = 'mt_' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+          const rec = { id: id, pid: pid, planId: plan.id, planName: plan.name, visitsPerYear: plan.visits, freq: plan.freq, market: plan.market, status: 'requested', requestedAt: at, requestedBy: who.email, history: [{ at: at, by: who.name || who.email, what: 'Offered by GrayCo' }], updatedAt: at };
+          const ad = await listUpdate(M.LIST_KEY, function(l){ return { list: l.concat([rec]), check: function(a){ return a.some(function(x){ return x.id === id; }); } }; });
+          if (!ad.ok) return { status: 503, out: { ok: false, error: 'Could not save — try again.' } };
+          c0 = rec; A.list.push(rec);
+        }
       }
+      if (c0.status === 'signed') return { status: 409, out: { ok: false, error: 'This plan is already signed.' } };
+      const r = await contractChange(c0.id, function(c){ if (c.status === 'signed') return 'signed'; c.status = 'quoted'; c.price = price; c.quotedAt = nowIso(); c.quotedBy = who.name || who.email;
+        if (plan) { c.planName = c.planName || plan.name; c.freq = plan.freq; c.visitsPerYear = plan.visits; c.billsPerYear = M.billsPerYear({ freq: plan.freq }); c.market = plan.market; c.includes = M.plainIncludes(plan.includes); }
+        c.history = arr(c.history).concat([{ at: nowIso(), by: who.name || who.email, what: 'Quoted ' + usd(price) + ' / year' }]); });
+      if (!r.ok || r.result !== 'ok') return { status: r.result === 'signed' ? 409 : 503, out: { ok: false, error: r.result === 'signed' ? 'Already signed.' : 'Could not save — try again.' } };
+      done.push(r.c);
     }
-    if (c0.status === 'signed') return { status: 409, out: { ok: false, error: 'This plan is already signed.' } };
-    const r = await contractChange(c0.id, function(c){ if (c.status === 'signed') return 'signed'; c.status = 'quoted'; c.price = price; c.quotedAt = nowIso(); c.quotedBy = who.name || who.email; c.history = arr(c.history).concat([{ at: nowIso(), by: who.name || who.email, what: 'Quoted ' + usd(price) + ' / year' }]); });
-    if (!r.ok || r.result !== 'ok') return { status: r.result === 'signed' ? 409 : 503, out: { ok: false, error: r.result === 'signed' ? 'Already signed.' : 'Could not save — try again.' } };
     const pm = pmOf(A.data, p), to = custEmail(p), words = carrierWords(p), job = scrub(p.name, words) || 'your job';
+    const line = function(c){ return esc(c.planName) + ' — <b>' + esc(usd(c.price)) + ' per year</b> (' + esc(M.freqLabel(c.freq).toLowerCase()) + ')'; };
+    const total = money(done.reduce(function(t, c){ return t + money(c.price); }, 0));
     let queued = false;
     if (okEmail(to)) {
-      const html = shell(job, '<p>Hi ' + esc(firstName(custName(p)) || 'there') + ',</p><p>Your price for the <b>' + esc(r.c.planName) + '</b> is <b>' + esc(usd(price)) + ' per year</b>. You can read what is included and sign up in your GrayCo Portal:</p>' +
-        '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See my maintenance plan</a></p>' +
+      const html = shell(job, '<p>Hi ' + esc(firstName(custName(p)) || 'there') + ',</p>' + (done.length === 1
+          ? '<p>Your price for the <b>' + esc(done[0].planName) + '</b> is <b>' + esc(usd(done[0].price)) + ' per year</b>. You can read what is included and sign up in your GrayCo Portal:</p>'
+          : '<p>Here are your prices for the maintenance plans we picked for your home:</p><ul>' + done.map(function(c){ return '<li>' + line(c) + '</li>'; }).join('') + '</ul><p>You can read what each plan includes and sign up for any or all of them in your GrayCo Portal:</p>') +
+        '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See my maintenance plan' + (done.length > 1 ? 's' : '') + '</a></p>' +
         '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(pm ? pm.name : 'us') + ' or the office at ' + OFFICE_PHONE + '.</p>');
-      queued = await core().queueApproval({ id: 'appr_mtq_' + r.c.id + '_' + Math.round(price * 100), kind: 'maint_quote', pid: pid, jobName: job, pm: pm, to: to, subject: 'Your maintenance plan quote — ' + job, html: html,
-        attachments: [{ name: 'The plan and its price (in the customer portal)', kind: 'portal' }], meta: { contractId: r.c.id, price: price, by: who.email } });
-    } else { try { await core().officeTodo('maint_quote_' + r.c.id, '🛠 Tell ' + (custName(p) || 'the customer') + ' their maintenance plan price — ' + job, 'No customer e-mail on file. The quote (' + usd(price) + ' / year) is in their portal (Home → Maintenance plans): call or text them the portal link.'); } catch (e) {} }
-    return { status: 200, out: { ok: true, contract: r.c, queued: !!queued } };
+      const qid = done.length === 1 ? 'appr_mtq_' + done[0].id + '_' + Math.round(money(done[0].price) * 100)
+        : 'appr_mtq_' + pid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) + '_' + crypto.createHash('sha256').update(done.map(function(c){ return c.id + ':' + money(c.price); }).sort().join('|')).digest('hex').slice(0, 12);
+      queued = await core().queueApproval({ id: qid, kind: 'maint_quote', pid: pid, jobName: job, pm: pm, to: to, subject: 'Your maintenance plan quote' + (done.length > 1 ? 's' : '') + ' — ' + job, html: html,
+        attachments: [{ name: done.length > 1 ? 'The plans and their prices (in the customer portal)' : 'The plan and its price (in the customer portal)', kind: 'portal' }],
+        meta: { contractId: done[0].id, contractIds: done.map(function(c){ return c.id; }), plans: done.map(function(c){ return { id: c.id, planName: c.planName, price: money(c.price), freq: c.freq }; }), price: total, by: who.email } });
+    } else { try { await core().officeTodo('maint_quote_' + done.map(function(c){ return c.id; }).join('_').slice(0, 120), '🛠 Tell ' + (custName(p) || 'the customer') + ' their maintenance plan price' + (done.length > 1 ? 's' : '') + ' — ' + job, 'No customer e-mail on file. The quote (' + done.map(function(c){ return s(c.planName) + ' ' + usd(c.price) + ' / year'; }).join(', ') + ') is in their portal (Home → Maintenance plans): call or text them the portal link.'); } catch (e) {} }
+    return { status: 200, out: { ok: true, contract: done[0], contracts: done, queued: !!queued } };
   }
   if (act === 'update') {
     const c0 = A.list.find(function(c){ return s(c.id) === s(body.contractId); }); if (!c0) return { status: 404, out: { ok: false, error: 'No such plan.' } };
@@ -304,9 +328,10 @@ async function maintInvoiceSend(item, now){
   const p = findProject(A.data, c.pid); if (!p) return { ok: false, error: 'The job is not in the cloud.' };
   const to = s(item.to) || custEmail(p); if (!okEmail(to)) return { ok: false, error: 'No customer e-mail.' };
   const amount = money(meta.amount || c.price), year = s(meta.year), words = carrierWords(p), pm = pmOf(A.data, p);
-  const number = 'M-' + s(p.autoPO || p.po || c.pid).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12) + '-' + year;
+  const multi = A.list.filter(function(x){ return s(x.pid) === s(c.pid) && x.id !== c.id && /^(signed|cancelled)$/.test(s(x.status)); }).length > 0;   /* patch MAINTPLANS: two plans on one job never share a number */
+  const number = 'M-' + s(p.autoPO || p.po || c.pid).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12) + (multi ? '-' + s(c.planId).replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase() : '') + '-' + year.replace(/\./g, '-');
   const doc = { number: number, date: s(now || nowIso()).slice(0, 10), due: '', terms: 'Due on receipt', status: 'Open', client: custName(p), address: s(p.address), email: to, job: scrub(p.name, words), jobAddress: s(p.address),
-    po: s(p.autoPO || p.po), lines: [{ desc: s(c.planName) + ' — yearly maintenance plan ' + year, amt: amount }], total: amount, paid: 0, balance: amount, isFinal: false, pm: pm ? pm.name : '', pmPhone: '' };
+    po: s(p.autoPO || p.po), lines: [{ desc: s(c.planName) + ' — maintenance plan, ' + (M.billsPerYear(c) > 1 ? 'year ' + year.split('.')[0] + ' (part ' + (year.split('.')[1] || '1') + ' of ' + M.billsPerYear(c) + ')' : 'year ' + year) + (meta.period ? ', ' + s(meta.period) : ''), amt: amount }], total: amount, paid: 0, balance: amount, isFinal: false, pm: pm ? pm.name : '', pmPhone: '' };
   let pdf; try { pdf = require('./_lib/invoice-pdf.js').build(doc); } catch (e) { return { ok: false, error: 'Could not make the invoice PDF.' }; }
   let html = s(item.html);
   try { html = await require('./_lib/brand.js').shellFor(html, { email: item.pmEmail, name: item.pm }); } catch (e) {}
@@ -335,7 +360,7 @@ exports.handler = async function(event){
   const action = s(body.action || 'view');
   if (!svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY.' });
 
-  if (['list', 'quote', 'update', 'plans'].indexOf(action) >= 0) {
+  if (['list', 'quote', 'quote-many', 'update', 'plans'].indexOf(action) >= 0) {
     const who = await staff(event); if (!who.ok) return reply(who.code || 401, headers, { ok: false, error: who.error });
     try { const r = await staffAct(body, who); return reply(r.status, headers, r.out); }
     catch (e) { return reply(500, headers, { ok: false, error: 'The maintenance plans hit a problem: ' + clip(e && e.message || e, 120) }); }

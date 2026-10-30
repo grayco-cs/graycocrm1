@@ -37,25 +37,30 @@ async function run(now){
         s(c.planName) + ' (signed ' + s(c.signedAt).slice(0, 10) + '). Call the customer to set the time' + (pm ? '; ' + pm.name + ' or the crew does the visit' : '') + '. When it is done: the job → 🛠 Maintenance → ✓ Visit done (the next one is planned by itself).');
       if (ok) out.visits++;
     }
-    /* the yearly invoice: year k is due at signedAt + k years (14 days early for k ≥ 1) */
+    /* the yearly invoice: year k is due at signedAt + k years (14 days early for k ≥ 1).
+       patch MAINTPLANS: a twice-a-year / quarterly plan bills its share of the yearly price every 6 / 3 months (periods
+       "1.1", "1.2", "2.1" …);
+       every plan on a job has its own invoices. */
     const signed = s(c.signedAt); if (!signed || !(M.num(c.price) > 0)) continue;
-    for (let k = 0; k < 30; k++) {
-      const due = addMonths(signed, 12 * k); if (!due) break;
+    const bills = M.billsPerYear(c), step = 12 / bills, amount = Math.round(M.num(c.price) / bills * 100) / 100;
+    for (let k = 0; k < 30 * bills; k++) {
+      const due = addMonths(signed, step * k); if (!due) break;
       if (due.getTime() - (k ? 14 * 864e5 : 0) > now) break;
-      const year = String(k + 1);
+      const year = bills === 1 ? String(k + 1) : String(Math.floor(k / bills) + 1) + '.' + String(k % bills + 1);
+      const label = bills === 1 ? 'year ' + year : 'year ' + year.split('.')[0] + ', part ' + (k % bills + 1) + ' of ' + bills;
       if (arr(c.invoices).some(function(v){ return s(v.year) === year; })) continue;
       if (k > 0 && due.getTime() < now - 60 * 864e5) continue;   /* never back-bill an old year by itself */
       const to = s(p.clientEmail || p.customerEmail || p.email);
-      const id = 'appr_mti_' + c.id + '_' + year, period = due.toISOString().slice(0, 10) + ' – ' + addMonths(due.toISOString(), 12).toISOString().slice(0, 10);
-      const html = '<p>Hi ' + (s(p.client).split(/\s+/)[0] || 'there') + ',</p><p>Here is the invoice for year ' + year + ' of your <b>' + s(c.planName) + '</b> (' + period + '): <b>' + usd(c.price) + '</b>. The invoice is attached.</p><p>Thank you for letting GrayCo take care of your home! Questions? Call ' + (pm ? pm.name : 'us') + ' or the office at 901-585-0944.</p>';
+      const id = 'appr_mti_' + c.id + '_' + year.replace('.', '_'), period = due.toISOString().slice(0, 10) + ' – ' + addMonths(due.toISOString(), step).toISOString().slice(0, 10);
+      const html = '<p>Hi ' + (s(p.client).split(/\s+/)[0] || 'there') + ',</p><p>Here is the invoice for ' + label + ' of your <b>' + s(c.planName) + '</b> (' + period + '): <b>' + usd(amount) + '</b>' + (bills > 1 ? ' (part ' + (k % bills + 1) + ' of ' + bills + ' of the ' + usd(c.price) + ' yearly price)' : '') + '. The invoice is attached.</p><p>Thank you for letting GrayCo take care of your home! Questions? Call ' + (pm ? pm.name : 'us') + ' or the office at 901-585-0944.</p>';
       let queued = false;
-      if (to) queued = await C.queueApproval({ id: id, kind: 'maint_invoice', pid: c.pid, jobName: job, pm: pm, to: to, subject: 'Your GrayCo maintenance plan invoice — year ' + year, html: html,
-        attachments: [{ name: 'Invoice PDF (made when approved)', kind: 'maint-pdf' }], meta: { contractId: c.id, year: year, amount: M.num(c.price), period: period } });
-      else queued = await C.officeTodo('maint_inv_noemail_' + c.id + '_' + year, '🧾 Bill the maintenance plan, year ' + year + ' — ' + job, s(c.planName) + ' ' + usd(c.price) + ' (' + period + '). No customer e-mail on file — send the invoice by hand.');
+      if (to) queued = await C.queueApproval({ id: id, kind: 'maint_invoice', pid: c.pid, jobName: job, pm: pm, to: to, subject: 'Your GrayCo maintenance plan invoice — ' + s(c.planName) + ', ' + label, html: html,
+        attachments: [{ name: 'Invoice PDF (made when approved)', kind: 'maint-pdf' }], meta: { contractId: c.id, planName: s(c.planName), year: year, amount: amount, period: period } });
+      else queued = await C.officeTodo('maint_inv_noemail_' + c.id + '_' + year, '🧾 Bill the maintenance plan, ' + label + ' — ' + job, s(c.planName) + ' ' + usd(amount) + ' (' + period + '). No customer e-mail on file — send the invoice by hand.');
       if (queued) {
         await C.kvListUpdate(M.LIST_KEY, function(l){
           const i = l.findIndex(function(x){ return s(x.id) === s(c.id); }); if (i < 0 || arr(l[i].invoices).some(function(v){ return s(v.year) === year; })) return null;
-          l[i].invoices = arr(l[i].invoices).concat([{ year: year, amount: M.num(c.price), period: period, approvalId: to ? id : '', at: new Date(now).toISOString(), status: to ? 'waiting' : 'by hand' }]); l[i].updatedAt = new Date(now).toISOString();
+          l[i].invoices = arr(l[i].invoices).concat([{ year: year, amount: amount, period: period, approvalId: to ? id : '', at: new Date(now).toISOString(), status: to ? 'waiting' : 'by hand' }]); l[i].updatedAt = new Date(now).toISOString();
           return { list: l, check: function(a){ return a.some(function(x){ return s(x.id) === s(c.id) && arr(x.invoices).some(function(v){ return s(v.year) === year; }); }); } };
         });
         out.invoices++;
