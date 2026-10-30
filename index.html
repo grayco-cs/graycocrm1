@@ -83228,6 +83228,8 @@ async function yearSummary(p, all, yr){
   function paint(){
     var view=''; try{ view=localStorage.getItem('grayco_view')||''; }catch(e){}
     var show = PENDING>0 && P.isAdmin() && ['admin','officemanager','dashboard','payroll'].indexOf(view)>=0 && view!=='payroll';
+    /* patch PAYLATER: "Later" holds until its time, unless more runs are waiting than when it was pressed */
+    try{ var _sn=JSON.parse(localStorage.getItem('gc_pay_alert_later')||'null'); if(show && _sn && Date.now()<_sn.until && PENDING<=_sn.n) show=false; }catch(_e){}
     var bar=document.getElementById('gc-payroll-alert');
     if(!show){ if(bar) bar.remove(); return; }
     if(bar) return;
@@ -83242,7 +83244,9 @@ async function yearSummary(p, all, yr){
     var host=document.querySelector('#root main')||document.querySelector('main')||document.getElementById('root')||document.body;
     host.insertBefore(bar, host.firstChild);
     bar.querySelector('#_gcPayAlertGo').onclick=function(){ if(window._gcOpenPayrollTab) window._gcOpenPayrollTab('approvals'); };
-    bar.querySelector('#_gcPayAlertX').onclick=function(){ bar.remove(); LAST=Date.now(); };
+    bar.querySelector('#_gcPayAlertX').onclick=function(){ bar.remove(); LAST=Date.now();
+      try{ var d=new Date(), u=Date.now()+4*3600e3; if(d.getHours()>=17){ var m=new Date(d.getFullYear(), d.getMonth(), d.getDate()+1, 7, 0, 0); u=Math.min(u, m.getTime()) > Date.now() ? Math.max(u, m.getTime()) : u; }
+        localStorage.setItem('gc_pay_alert_later', JSON.stringify({ until:u, n:PENDING })); }catch(_e){} };
   }
   setTimeout(refresh, 6000);
   setInterval(refresh, 15000);
