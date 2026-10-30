@@ -146350,7 +146350,7 @@ VIEWS.socweek = function(){
   h += '<div class="gmt-card" data-soc-week-card="' + esc(w.id) + '"><div class="gmt-row" style="justify-content:space-between"><div><h2 style="margin:0">The week of ' + esc(w.id) + '</h2><div class="gmt-muted">' +
     posts.map(function(p){ return esc(p.socDay + ': ' + SC.typeLabel(p.socType) + ' · ' + svcLabel(p.socService)); }).join(' &nbsp;·&nbsp; ') + '</div></div>' +
     '<div class="gmt-row">' + chipS(allOk ? 'approved' : w.status, allOk ? 'Approved' : stLabel(w.status)) +
-    (!allOk && office() ? '<button class="gmt-btn g" data-a="soc-approve-week" data-id="' + esc(w.id) + '"' + (STATE.busy === 'week' ? ' disabled' : '') + '>✅ Approve the week</button>' : '') +
+    (!allOk && office() ? (W._gcMMData && +((STATE.st || {}).stage || 1) < 2 && w.status === 'waiting' ? '<span class="gmt-muted">⏳ Waiting for an admin on ✅ Approvals (stage 1)</span>' : '<button class="gmt-btn g" data-a="soc-approve-week" data-id="' + esc(w.id) + '"' + (STATE.busy === 'week' ? ' disabled' : '') + '>' + (W._gcMMData && +((STATE.st || {}).stage || 1) < 2 ? '📤 Send the week for approval' : '✅ Approve the week') + '</button>')   /* patch MKTFIX8 */ : '') +
     (w.status === 'draft' && office() ? '<button class="gmt-btn o" data-a="soc-plan" data-w="' + esc(w.id) + '" data-replace="1">↻ Re-plan</button>' : '') + '</div></div>' +
     (w.reason ? '<div class="gmt-warn">Not approved: ' + esc(w.reason) + '</div>' : '') + '</div>';
   posts.forEach(function(p){ h += postCard(p, st); });
@@ -146396,7 +146396,7 @@ ACT['soc-approve-week'] = function(b){
     var aid = j.id || (MK.get('socweeks', id) || {}).apprId;
     var act = W._gcMMData ? W._gcMMData.approve : W._gcApprovalAct;   /* patch MM: the Marketing Manager decides through the marketing server */
     if (!act || !aid) { STATE.busy = ''; draw(); return; }
-    return Promise.resolve(act(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + r.error : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
+    return Promise.resolve(act(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + String(r.error).replace(/[.\s]+$/, '') : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
   });
 };
 ACT['soc-swap'] = function(b){ var id = b.getAttribute('data-id'), t = D.querySelector('[data-soc-swap="' + id + '"]'), sv = D.querySelector('[data-soc-swaps="' + id + '"]'); b.disabled = true; b.textContent = 'Writing…';
