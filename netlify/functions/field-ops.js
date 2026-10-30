@@ -83,7 +83,7 @@ async function queueDoc(body, who){
     return { status: ok ? 200 : 502, out: { ok: !!ok, id: id, queued: !!ok } };
   }
   if (kind === 'offer_letter') {
-    if (low(who.role) !== 'admin') return { status: 403, out: { ok: false, error: 'Only Wesley or Nick can send an offer letter.' } };
+    if (!require('./_lib/staff-role.js').isAdmin(who)) return { status: 403, out: { ok: false, error: 'Only Wesley or Nick can send an offer letter.' } };
     const to = s(body.to); if (!EMAIL_RE.test(to)) return { status: 200, out: { ok: false, noEmail: true, error: 'No e-mail for the new hire — add it on the candidate.' } };
     const cid = s(body.candidateId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) || 'x';
     const id = 'appr_offer_' + cid;

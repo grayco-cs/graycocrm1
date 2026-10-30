@@ -55,7 +55,7 @@ exports.handler = async function(event){
   if (!who.ok) return J(who.statusCode || 401, { ok: false, error: who.error });
   let office = /office/.test(low(who.role));
   if (!office) { try { const d = await A.core().crmData(false); const u = arr(d.users).find(function(x){ return low(x.email) === low(who.email); }); office = !!(u && /office/i.test(s(u.role))); } catch (e) {} }
-  const admin = low(who.role) === 'admin';
+  const admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
   if (act === 'list') return J(200, await L.forCrm());
   if (act === 'request') {
     const C = A.core(), data = await C.crmData(true);

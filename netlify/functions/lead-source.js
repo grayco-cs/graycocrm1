@@ -147,7 +147,7 @@ async function lists(){
   const kv = await kvRead(['leads', 'customers', 'users', 'gc_lead_inbox', 'gc_job_source']);
   return { projects: await readProjects(), leads: arr(kv.leads), customers: arr(kv.customers), inbox: await readInbox(kv), jobSource: obj(kv.gc_job_source), admins: SRC.adminsFrom(kv.users) };
 }
-function isAdmin(who){ return /admin|owner/.test(s(who && who.role).toLowerCase()) || !!(who && who.office === true); }   /* patch OFFICEFULL: and the office */
+function isAdmin(who){ return require('./_lib/staff-role.js').isAdmin(who) || !!(who && who.office === true); }   /* patch AUTHFIX: the one admin rule */   /* patch OFFICEFULL: and the office */
 
 async function handle(event){
   if (event.httpMethod === 'OPTIONS') return J(event, 200, {});

@@ -50,7 +50,7 @@ async function isAdmin(event){
     const q = await fetch(url + '/rest/v1/gc_staff?select=role,active&email=eq.' + encodeURIComponent(email), { headers: /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(svc) ? { apikey: svc, Authorization: 'Bearer ' + svc } : { apikey: svc } });
     if (!q.ok) return false;
     const rows = await q.json();
-    return !!(rows && rows[0] && rows[0].active !== false && low(rows[0].role) === 'admin');
+    return !!(rows && rows[0] && rows[0].active !== false && require('./_lib/staff-role.js').isAdmin({ role: rows[0].role, email: email }));   /* patch AUTHFIX */
   } catch (e) { return false; }
 }
 function scheduledBody(event){ try { const b = JSON.parse((event && event.body) || '{}'); return b && typeof b === 'object' ? b : {}; } catch (e) { return {}; } }

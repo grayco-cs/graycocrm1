@@ -44,13 +44,19 @@ exports.handler = async function(event){
   let body = {}; try { body = JSON.parse(event.body || '{}'); } catch (e) {}
   if (!isScheduled(event)) {
     const who = await A.core().gcStaffAuth(event);
+    /* patch AUTHFIX: a sign-in problem answers as itself — no token / expired 401, sign-in service down 503, not staff 403.
+       Before, every one of them came back "403 Admins only." (an expired token on the owner's computer read as a refusal) */
+    if (!who.ok) return { statusCode: who.statusCode || 401, headers, body: JSON.stringify({ ok: false, error: who.error || 'Sign in to the GrayCo CRM first.' }) };
+    const SR = require('./_lib/staff-role.js'), admin = SR.isAdmin(who);   /* the one rule: an owner counts as an admin */
     /* patch SUBPHOTOS: any staff member stamps "I opened 📋 Approvals"; the office / admins read who checked today */
-    if (who.ok && body.action === 'appr-seen') return { statusCode: 200, headers, body: JSON.stringify({ ok: await require('./_lib/appr-noon.js').stamp(who.email) }) };
-    if (who.ok && body.action === 'appr-seen-list') {
-      if (!/admin|owner|office/.test(A.low(who.role)) && A.low(who.email) !== 'office@grayco-cs.com') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Office and admins only.' }) };
+    if (body.action === 'appr-seen') return { statusCode: 200, headers, body: JSON.stringify({ ok: await require('./_lib/appr-noon.js').stamp(who.email) }) };
+    if (body.action === 'appr-seen-list') {
+      let office = admin || /office/.test(A.low(who.role)) || A.low(who.email) === 'office@grayco-cs.com';
+      if (!office) { try { office = await require('./_lib/office-access.js').isOffice(who.email); } catch (e) { office = false; } }   /* patch AUTHFIX: the OFFICEFULL office (profile / people list) too */
+      if (!office) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Office and admins only.' }) };
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, rows: await require('./_lib/appr-noon.js').seenRows({}) }) };
     }
-    if (!who.ok || who.role !== 'admin') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
+    if (!admin) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
     const out = await runParts({ part: A.s(body.part), force: body.force === true });
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, report: out }) };
   }

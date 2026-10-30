@@ -116,7 +116,7 @@ exports.handler = async function(event){
       if (!st.ok) return reply(st.statusCode, headers, { ok: false, error: st.error });
       let data = {}; try { data = await require('./_lib/mkt.js').crmData(['users']); } catch (e) {}
       const role = require('./_lib/mkt.js').roleOf(st, data);
-      who = { kind: 'staff', email: st.email, name: st.name || st.email, company: 'GrayCo', admin: role === 'admin', role: role };
+      who = { kind: 'staff', email: st.email, name: st.name || st.email, company: 'GrayCo', admin: role === 'admin' || require('./_lib/staff-role.js').isAdmin(st), role: role };   /* patch AUTHFIX */
     }
     if (!who) return reply(401, headers, { ok: false, signin: true, error: 'Please sign in.' });
     if (limited(who.email, 'op', 240, 600e3)) return reply(429, headers, { ok: false, error: 'Too many requests — slow down a little.' });

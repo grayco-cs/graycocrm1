@@ -137864,7 +137864,13 @@ function getJSON(url, ms){
 var TABLES = { gc_staff: 'security-prepare.sql', gc_admin_kv: 'admin-data.sql', gc_portal: 'portal-setup.sql', gc_lead_inbox_kv: 'lead-inbox.sql',
   gc_pending_money: 'money-intake.sql', gc_news_suppress: 'news-unsubscribe.sql', rs_settings: 'roofscout-setup.sql', gc_photo_reports: 'grayco-photos-setup.sql',
   gc_archive_fresh_start: 'fresh-start.sql' };
+/* patch AUTHFIX */ /* the server says which setup tables exist (portal?ping=1 -> setup, service key); the browser reads only
+   the tables a signed-in admin may read anyway -- the others answered 403 / 404 on every admin computer, every few minutes */
+var BROWSER_TABLES = { gc_staff: 1, gc_admin_kv: 1, rs_settings: 1 };
 function probeTable(t){
+  var pg = pj('portal'), su = pg && pg.setup && typeof pg.setup === 'object' ? pg.setup : null;
+  if (su && Object.prototype.hasOwnProperty.call(su, t)) return Promise.resolve(su[t] === true ? true : su[t] === false ? false : null);
+  if (!BROWSER_TABLES[t]) return Promise.resolve(null);
   return fetch(SB + '/rest/v1/' + t + '?select=*&limit=0', { cache: 'no-store' }).then(function(r){
     if ((r.status >= 200 && r.status < 300) || r.status === 401 || r.status === 403 || r.status === 406) return true;
     if (r.status === 404 || r.status === 400) return false;
@@ -137876,14 +137882,15 @@ function refresh(force){
   if (!isAdmin()) return Promise.resolve(ST8);
   ST8.busy = true;
   var F = '/.netlify/functions/';
+  var pingDone = getJSON(F + 'portal?ping=1').then(function(x){ ST8.p.portal = x; });   /* patch AUTHFIX: the table answers come with it */
   var jobs = [
-    getJSON(F + 'portal?ping=1').then(function(x){ ST8.p.portal = x; }),
+    pingDone,
     getJSON(F + 'bid-inbox?ping=1').then(function(x){ ST8.p.bid = x; }),
     getJSON(F + 'lead-intake?ping=1').then(function(x){ ST8.p.lead = x; }),
     getJSON(F + 'money-intake?ping=1').then(function(x){ ST8.p.money = x; }),
     getJSON(F + 'roofscout-tiles?action=usage').then(function(x){ ST8.p.tiles = x; }),
     fetch('/version.txt?t=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r.ok ? r.text() : null; }, function(){ return null; }).then(function(v){ ST8.v = v ? s(v).slice(0, 60) : null; })
-  ].concat(Object.keys(TABLES).map(function(t){ return probeTable(t).then(function(ok){ ST8.t[t] = ok; }); }));
+  ].concat([pingDone.then(function(){ return Promise.all(Object.keys(TABLES).map(function(t){ return probeTable(t).then(function(ok){ ST8.t[t] = ok; }); })); })]);
   return Promise.all(jobs).then(function(){ ST8.at = Date.now(); ST8.busy = false; paintHub(); return ST8; }, function(){ ST8.busy = false; return ST8; });
 }
 function yn(v){ return v === true ? true : v === false ? false : null; }
@@ -193060,9 +193067,14 @@ function isOffice(){
   try { var u = W._gcMeNow || null; if (u && (low(u.payType) === 'owner' || u.role === 'Admin' || /office/i.test(u.role || ''))) return true; } catch (e) {}
   return me() === 'office@grayco-cs.com';
 }
-function post(fn, body){
+function post(fn, body, again){
   return W.fetch('/.netlify/functions/' + fn, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j.__status = r.status; return j; }); }, function(e){ return { ok: false, error: 'offline' }; });
+    .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ j = j && typeof j === 'object' ? j : {}; j.__status = r.status; return j; }); }, function(e){ return { ok: false, error: 'offline' }; })
+    .then(function(j){   /* patch AUTHFIX: the sign-in ran out (the computer slept) -> renew once, send again */
+      var A = W.__GC_AUTH__;
+      if (again || !j || j.__status !== 401 || !A || typeof A.renew !== 'function') return j;
+      return Promise.resolve().then(function(){ return A.renew(); }).then(function(){ return post(fn, body, true); }, function(){ return j; });
+    });
 }
 
 /* ── 7. 📋 Approvals opened → the server stamp (the 12 PM reminder skips whoever opened it today) ── */
