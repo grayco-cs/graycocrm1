@@ -15,7 +15,8 @@
 // CUSTOMER (link code or customer session):  c-jobs, c-msgs {projectId}, c-send {projectId, text}
 // SUB (sub session):                          p-home, p-job, p-scope, p-upload, p-invoice, p-photos-add,
 //                                             p-progress, p-punch, p-paper, p-msgs, p-send, p-lang,
-//                                             p-photos, p-bids
+//                                             p-photos, p-bids, p-checkin {op:'here'|'done'} (optional), p-photo-state
+//                                             (patch SUBPHOTOS: p-invoice needs enough photos from the sub on the job — _lib/subwork.js)
 // STAFF (signed in to the CRM + on gc_staff): s-sync, s-thread, s-send, s-scopes, s-scope-save,
 //                                             s-scope-approve, s-scope-void, s-link, s-link-send, s-ack,
 //                                             s-bids-approve, s-settings
@@ -785,9 +786,10 @@ async function pHome(ctx){
     me: { name: s(sub.contact) || s(sub.name), company: s(sub.company || sub.name), trade: s(sub.trade || sub.cat) },
     office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
     jobs: ctx.jobs.map(function(p){ const r = rowFor(p, sub); const pm = pmOf(data, p);
-      return { id: s(p.id), name: s(p.name), address: s(p.address), status: s(r.status) || 'Awarded', start: ymd(r.startDate || p.startDate), end: ymd(r.endDate || p.endDate),
+      return { id: s(p.id), name: s(p.name), address: s(p.address), maps: SW().mapsOf(p.address), po: SW().poOf(p), status: s(r.status) || 'Awarded', start: ymd(r.startDate || p.startDate), end: ymd(r.endDate || p.endDate),
         pct: num(r.pct), unread: unread[s(p.id)] || 0, newScope: scopes.some(function(x){ return x.status === 'new' && s((ctx.scopes.find(function(y){ return s(y.id) === x.id; }) || {}).project_id) === s(p.id); }), pm: pm }; }),
     needs: needs, week: sched,
+    today: SW().today(ctx.jobs, data.schedule, sub, todayCentral()),   /* patch SUBPHOTOS: today's jobs — address, Maps, customer, PO */
     money: { submitted: money(inv.filter(function(x){ return x.state === 'submitted'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
              approved: money(inv.filter(function(x){ return x.state === 'approved'; }).reduce(function(t, x){ return t + x.amount; }, 0)),
              paidMonth: money(inv.filter(function(x){ return x.state === 'paid' && x.paidDate.slice(0, 7) === mon; }).reduce(function(t, x){ return t + x.amount; }, 0)) },
@@ -855,9 +857,11 @@ async function pJob(ctx, pid){
   const out = {
     ok: true,
     job: { id: s(p.id), name: s(p.name), address: s(p.address), maps: s(p.address) ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(s(p.address)) : '',
-      po: s(p.autoPO || p.po), status: s(r.status) || 'Awarded', start: ymd(r.startDate || p.startDate), end: ymd(r.endDate || p.endDate), pct: num(r.pct),
+      po: SW().poOf(p), status: s(r.status) || 'Awarded', start: ymd(r.startDate || p.startDate), end: ymd(r.endDate || p.endDate), pct: num(r.pct),
       site: { gate: clip(site.gate, 200), parking: clip(site.parking, 300), hours: clip(site.hours, 200), dumpster: clip(site.dumpster, 300), power: clip(site.power, 300), water: clip(site.water, 300), notes: clip(site.notes, 2000) },
-      customer: showCust ? { name: s(p.client), phone: s(p.clientPhone || p.phone), email: low(p.clientEmail || p.email) } : null },
+      /* patch SUBPHOTOS (owner 10/30): the customer's name and phone on every job the sub is on (ctx.jobs = assigned only); e-mail still needs the PM's switch */
+      customer: { name: s(p.client), phone: s(p.clientPhone || p.phone), email: showCust ? low(p.clientEmail || p.email) : '' } },
+    photoRule: await photoState(ctx, p).then(function(g){ return { need: g.need, have: g.have, days: g.days, invoiceOk: g.ok, message: g.message || '' }; }, function(){ return null; }),
     pm: pmOf(data, p), office: { phone: OFFICE_PHONE, email: OFFICE_EMAIL },
     schedule: schedFor(data, [p], sub),
     scopes: scopes.filter(function(x){ return x.kind !== 'co'; }).map(function(x){ return scopeOut(x, signed); }),
@@ -903,7 +907,14 @@ function jobTagOf(data, pid){
   if (!p) return '';
   const own = ['insCarrier', 'carrier', 'insurer', 'insuranceCompany', 'insuranceCarrier', 'insCompany'].map(function(k){ return s(p[k]); }).filter(function(w){ return w.length >= 3; });
   const strip = function(v){ own.forEach(function(w){ v = s(v).split(w).join(''); }); return s(v).replace(/\b(state\s*farm|allstate|usaa|liberty\s*mutual|nationwide|travelers|progressive|farmers|geico|chubb|safeco|erie|auto[\s-]*owners|homesite|metlife|amica|kemper|foremost|assurant|stillwater)\b[^·—-]*/gi, '').replace(/\s*[—-]\s*(claim)?\s*$/i, '').trim(); };
-  return [s(p.autoPO || p.po) ? 'PO ' + s(p.autoPO || p.po) : '', strip(p.name), strip(p.address || p.jobAddress)].filter(Boolean).join(' \u00b7 ').slice(0, 160);
+  return [SW().poOf(p) ? 'PO ' + SW().poOf(p) : '', strip(p.name), strip(p.address || p.jobAddress)].filter(Boolean).join(' \u00b7 ').slice(0, 160);
+}
+/* patch SUBPHOTOS: the sub's photos on a job, the invoice photo rule, today's jobs (rules: _lib/subwork.js) */
+function SW(){ return require('./_lib/subwork.js'); }
+async function photoState(ctx, p){
+  const kv = await kvRead(['gc_photos']);
+  const events = await dbGet('gc_sub_event', 'select=kind,project_id,sub_id,data&sub_id=' + eq(ctx.sub.id) + '&project_id=' + eq(p.id) + '&kind=in.(photos,progress,punch)&order=created_at.desc&limit=500');
+  return SW().invoiceGate({ job: p, sub: ctx.sub, schedule: ctx.data.schedule, settings: settingsOf(ctx.data), gcPhotos: kv.gc_photos, events: events, today: todayCentral() });
 }
 function jobOf(ctx, pid){ const p = ctx.jobs.find(function(j){ return s(j.id) === s(pid); }); if (!p) throw Fail(404, 'That job is not one of yours.'); return p; }
 async function partnerAction(action, body, ctx){
@@ -955,13 +966,14 @@ async function partnerAction(action, body, ctx){
     const p = jobOf(ctx, body.projectId);
     const amount = money(body.amount);
     if (!(amount > 0) || amount > 1e7) throw Fail(400, 'Enter the invoice amount.');
+    { const g = await photoState(ctx, p); if (!g.ok) throw Fail(409, g.message, { photos: { need: g.need, have: g.have } }); }   /* patch SUBPHOTOS: enough photos from this sub on this job first */
     const files = await uploadsOf(sub, [body.uploadId], p.id);
     let scopeTitle = '';
     if (body.scopeId) { const sc = ctx.scopes.find(function(x){ return s(x.id) === s(body.scopeId) && s(x.project_id) === s(p.id); }); if (sc) scopeTitle = clip(sc.title, 120); }
     const today = new Date().toISOString().slice(0, 10);
     const eid = newId('E');
     await dbPost('gc_sub_event', { id: eid, kind: 'invoice', project_id: s(p.id), sub_id: s(sub.id), data: { subName: s(sub.name || sub.company), invId: 'SPI_' + eid,
-      amount: amount, po: clip(s(p.autoPO || p.po) || body.po, 40), invNum: clip(body.invNum, 40), note: clip(body.note, 500), scopeId: clip(body.scopeId, 80), scopeTitle: scopeTitle,
+      amount: amount, po: clip(SW().poOf(p) || body.po, 40), invNum: clip(body.invNum, 40), note: clip(body.note, 500), scopeId: clip(body.scopeId, 80), scopeTitle: scopeTitle,
       recvDate: today, payDate: payDateFor(today), files: files } });
     return { ok: true, id: 'SPI_' + eid, payDate: payDateFor(today) };
   }
@@ -1016,6 +1028,13 @@ async function partnerAction(action, body, ctx){
     await msgInsert(p.id, 's:' + sub.id, 'them', s(sub.contact || sub.name), '⚠️ ' + r.words, []);
     return { ok: true };
   }
+  if (action === 'p-checkin') {   /* patch SUBPHOTOS: "📍 I'm here" / "✅ Done for today" — optional, nothing depends on them */
+    const p = jobOf(ctx, body.projectId);
+    const op = body.op === 'done' ? 'done' : 'here';
+    const id = await addEvent('checkin', sub, p.id, { op: op, day: todayCentral(), note: clip(body.note, 500) });
+    return { ok: true, id: id, op: op, day: todayCentral() };
+  }
+  if (action === 'p-photo-state') { const p = jobOf(ctx, body.projectId); const g = await photoState(ctx, p); return { ok: true, need: g.need, have: g.have, days: g.days, invoiceOk: g.ok, message: g.message || '' }; }
   if (action === 'p-lang') {
     await addEvent('lang', sub, null, { lang: lang(body.lang) });
     return { ok: true };
@@ -1289,14 +1308,15 @@ async function staffAction(action, body, who){
     if (body.set && typeof body.set === 'object') {
       if (!isAdmin(who)) throw Fail(403, 'Only an owner changes portal settings.');
       const cur = settingsOf(data);
-      const next = Object.assign({}, cur, { deviceCode: low(body.set.deviceCode) === 'off' ? 'off' : 'auto', by: me, updatedAt: new Date().toISOString() });
+      const next = Object.assign({}, cur, { deviceCode: body.set.deviceCode === undefined ? (cur.deviceCode || 'auto') : (low(body.set.deviceCode) === 'off' ? 'off' : 'auto'), by: me, updatedAt: new Date().toISOString() });
+      if (body.set.invPhotoMin !== undefined) next.invPhotoMin = SW().minOf({ invPhotoMin: body.set.invPhotoMin });   /* patch SUBPHOTOS: photos before a sub's invoice */
       const r = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
         body: JSON.stringify({ key: 'gc_sub_portal_settings', value: next, updated_at: next.updatedAt }) });
       if (!r.ok) throw Fail(502, 'Could not save the setting.');
       kvCache = null;
       return { ok: true, settings: next };
     }
-    return { ok: true, settings: Object.assign({ deviceCode: 'auto' }, settingsOf(data)), text: textReady(), mail: !!s(process.env.RESEND_API_KEY) && !mailOff() };
+    return { ok: true, settings: Object.assign({ deviceCode: 'auto', invPhotoMin: SW().DEFAULT_MIN }, settingsOf(data)), text: textReady(), mail: !!s(process.env.RESEND_API_KEY) && !mailOff() };
   }
   throw Fail(400, 'Bad request');
 }
@@ -1375,6 +1395,7 @@ exports.handler = async function (event) {
   }
 };
 exports._core = { msgInsert: function(){ return msgInsert.apply(null, arguments); },   /* patch SUBTXT */
+  subLinkActive: function(){ return subLinkActive.apply(null, arguments); }, portalBase: portalBase, partnerCtx: function(){ return partnerCtx.apply(null, arguments); }, partnerAction: function(){ return partnerAction.apply(null, arguments); }, pJob: function(){ return pJob.apply(null, arguments); }, pHome: function(){ return pHome.apply(null, arguments); },   /* patch SUBPHOTOS */
   _reset: function(){ kvCache = null; hits.clear(); }, payDateFor: payDateFor, sha: sha, hmac: hmac, linkFor: linkFor, cleanScope: cleanScope, crmSubs: crmSubs, pwHash: pwHash, pwOk: pwOk, starterOf: starterOf };
 
 /* LEGAL2-patch */

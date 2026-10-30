@@ -5,6 +5,7 @@
 //     AUTO-LIEN    sub lien waivers, only for subs / jobs turned ON (default off)              every run
 //     AUTO-DIGEST  each approver's e-mail + phone push: what waits on them (links open the CRM)  Mon–Sat, first run after 7 AM
 //     AUTO-SCORE   the owner scorecard e-mail to Wesley and Nick (last week)                  Monday, first run after 7 AM
+//     APPR-NOON    approvals still waiting + 📋 Approvals not opened today → push, e-mail, ASAP To-Do  Mon–Fri, first run after 12 PM
 //   (more parts are added below as they are built). Nothing here sends to a customer, sub or GC by itself.
 // A signed-in admin may call it to run one part now: POST { part: 'ar', force: true }.
 'use strict';
@@ -15,7 +16,9 @@ const PARTS = [
   { key: 'pay', lib: './_lib/auto-pay.js', when: function(c){ return c.wd === 'Thu' && c.hour >= 10 && c.hour < 16; }, marker: function(c){ return 'pay:' + c.ymd; } },
   { key: 'lien', lib: './_lib/lien.js', when: function(){ return true; }, marker: null },
   { key: 'digest', lib: './_lib/auto-digest.js', when: function(c){ return c.wd !== 'Sun' && c.hour >= 7 && c.hour < 12; }, marker: function(c){ return 'digest:' + c.ymd; } },
-  { key: 'score', lib: './_lib/auto-score.js', when: function(c){ return c.wd === 'Mon' && c.hour >= 7 && c.hour < 12; }, marker: function(c){ return 'score:' + c.ymd; } }
+  { key: 'score', lib: './_lib/auto-score.js', when: function(c){ return c.wd === 'Mon' && c.hour >= 7 && c.hour < 12; }, marker: function(c){ return 'score:' + c.ymd; } },
+  /* patch SUBPHOTOS: 12 PM business days — approvals still waiting and 📋 Approvals not opened today → push + e-mail + ASAP To-Do */
+  { key: 'apprnoon', lib: './_lib/appr-noon.js', when: function(c){ return /^(Mon|Tue|Wed|Thu|Fri)$/.test(c.wd) && c.hour >= 12 && c.hour < 17; }, marker: function(c){ return 'apprnoon:' + c.ymd; } }
   /* AUTO-PARTS */
 ];
 function isScheduled(event){ try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; } }
@@ -41,6 +44,12 @@ exports.handler = async function(event){
   let body = {}; try { body = JSON.parse(event.body || '{}'); } catch (e) {}
   if (!isScheduled(event)) {
     const who = await A.core().gcStaffAuth(event);
+    /* patch SUBPHOTOS: any staff member stamps "I opened 📋 Approvals"; the office / admins read who checked today */
+    if (who.ok && body.action === 'appr-seen') return { statusCode: 200, headers, body: JSON.stringify({ ok: await require('./_lib/appr-noon.js').stamp(who.email) }) };
+    if (who.ok && body.action === 'appr-seen-list') {
+      if (!/admin|owner|office/.test(A.low(who.role)) && A.low(who.email) !== 'office@grayco-cs.com') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Office and admins only.' }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, rows: await require('./_lib/appr-noon.js').seenRows({}) }) };
+    }
     if (!who.ok || who.role !== 'admin') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
     const out = await runParts({ part: A.s(body.part), force: body.force === true });
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, report: out }) };
