@@ -200,6 +200,8 @@ function matchAll(ccList, projects){
   });
 }
 W._gcLinkCCMatch = matchAll;
+/* the same screen anywhere (tests, or another page): W._gcLinkCCRender(element) */
+W._gcLinkCCRender = function(el){ if (!el) return; el.setAttribute('data-gclc-box', ''); paintLink(el); };
 function jobLabel(p){ try { if (typeof W._gcJobLabel === 'function') return s(W._gcJobLabel(p)); } catch (e) {} return s(p && (p.name || p.id)); }
 var LC = { rows: null, busy: false, err: '', done: {} };
 function paintLink(box){
@@ -221,9 +223,23 @@ function paintLink(box){
   }
   box.innerHTML = h;
 }
+/* every CompanyCam project, through the server's CompanyCam proxy (the key stays on the server — patch CCX) */
+function ccMap(p){ var a = p.address || {}; return { id: String(p.id || ''), name: s(p.name) || s(a.street_address_1) || '(no name)', address: [s(a.street_address_1), s(a.city), s(a.state)].filter(Boolean).join(', '),
+  url: s(p.public_url) || ('https://app.companycam.com/projects/' + p.id), updated: p.updated_at || p.created_at || '' }; }
+function ccAll(){
+  var all = [];
+  function page(n){
+    return W.fetch('/.netlify/functions/companycam-webhook?proxy=api&raw=1&per_page=100&page=' + n + '&endpoint=projects', { headers: { 'x-gc-cc': '1' } })
+      .then(function(r){ return r.ok ? r.json() : []; }, function(){ return []; }).then(function(j){
+        var l = Array.isArray(j) ? j : arr(j && j.projects); l.forEach(function(p){ if (p && p.id != null) all.push(ccMap(p)); });
+        return l.length >= 100 && n < 30 ? page(n + 1) : all;
+      });
+  }
+  return page(1);
+}
 function loadLink(box){
   if (LC.busy) return; LC.busy = true; LC.err = ''; paintLink(box);
-  var get = typeof W._gcCCProjects === 'function' ? W._gcCCProjects(true) : Promise.resolve({ list: [], error: 'CompanyCam is not set up on this computer.' });
+  var get = ccAll().then(function(l){ return l.length ? { list: l } : (typeof W._gcCCProjects === 'function' ? W._gcCCProjects(true) : { list: [], error: 'CompanyCam did not answer.' }); });
   Promise.resolve(get).then(function(r){
     LC.busy = false; LC.err = r && r.error && !(r.list || []).length ? 'CompanyCam: ' + r.error : '';
     LC.rows = matchAll((r && r.list) || [], (W._crm || {}).projects);
