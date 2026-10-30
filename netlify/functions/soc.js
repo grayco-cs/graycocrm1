@@ -111,6 +111,8 @@ async function mediaReply(tok){
 const MKT_APPR = { mkt_experiment: 1, mkt_feature: 1, social_post: 1, soc_week: 1, mkt_campaign: 1, mkt_neighbor: 1, mkt_addraft: 1, mkt_event: 1, mkt_page: 1, mkt_outreach: 1, mkt_ad: 1, mkt_giveaway: 1, mkt_payout: 1 };
 const HTML_OK = { social_post: 1, soc_week: 1, mkt_addraft: 1, mkt_page: 1 };
 function core(){ return require('./portal.js')._core; }
+/* patch MKTFIX2: his approvals list never names a person — a giveaway winner's name, or the first customer's name filled into an e-mail's subject */
+function mmTitle(x){ const t = String(x.title || ''); return x.kind === 'mkt_giveaway' ? t.replace(/(winner e-mail):[^(]*\(/, '$1 (') : t; }
 /* patch MM: 💡 Ideas & experiments — each card's results (from the same rows as My leads) and the monthly scorecard */
 async function ideasView(who, admin, month){
   const data = await M.crmData(['leads', 'projects', 'users']), doc = await M.readDoc(), st = admin ? { soldValues: true } : await MM.settings();
@@ -183,7 +185,7 @@ async function mmOps(op, body, who, headers){
   if (op === 'mm_approvals') {
     const q = ((await core().kvListRead('gc_approval_queue')) || {}).list || [];
     const items = q.filter(function(x){ return x && MKT_APPR[x.kind] && (x.status === 'waiting' || Date.parse(x.updatedAt || 0) > Date.now() - 14 * 864e5); }).slice(-80)
-      .map(function(x){ return { id: x.id, kind: x.kind, title: x.title, to: x.to, subject: x.subject, html: HTML_OK[x.kind] ? x.html : '', status: x.status, mine: x.mmOk === true, flags: x.flags || [], createdAt: x.createdAt, decidedBy: (x.approvals || []).slice(-1).map(function(a){ return a.role; })[0] || '' }; });
+      .map(function(x){ return { id: x.id, kind: x.kind, title: mmTitle(x), to: x.kind === 'mkt_giveaway' ? 'the winner' : x.to, subject: x.kind === 'mkt_campaign' || x.kind === 'mkt_giveaway' ? '' : x.subject, html: HTML_OK[x.kind] ? x.html : '', status: x.status, mine: x.mmOk === true, flags: x.flags || [], createdAt: x.createdAt, decidedBy: (x.approvals || []).slice(-1).map(function(a){ return a.role; })[0] || '' }; });
     return R(200, { ok: true, items: items });
   }
   if (op === 'ideas') return R(200, await ideasView(who, false));   /* 💡 Ideas & experiments: results + the monthly scorecard */
