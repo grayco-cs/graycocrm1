@@ -96,7 +96,7 @@ exports.handler = async function(event){
   const qp = (event && event.queryStringParameters) || {};
   let body = {}; try { body = event.body ? JSON.parse(event.body) : {}; } catch (e) { body = {}; }
   const admins = String(process.env.LEAD_ADMINS || '').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
-  const admin = who.role === 'admin' || admins.indexOf(who.email) > -1;
+  const admin = require('./_lib/staff-role.js').isAdmin(who, admins);   /* patch AUTHFIX */
   const office = admin || /office/.test(who.role) || /office/i.test(String((await extra(who.email)).profile || ''));
   try {
     if (qp.export) {   /* one doc's text, for the Change Order doc reader: whoever's Drive can open it */

@@ -93,7 +93,7 @@ exports.handler = async function(event){
     if (STAFF.indexOf(action) >= 0) {
       const who = await C.gcStaffAuth(event);
       if (!who.ok) return reply(who.statusCode || 401, headers, { ok: false, error: who.error });
-      const admin = low(who.role) === 'admin';
+      const admin = require('./_lib/staff-role.js').isAdmin(who);   /* patch AUTHFIX */
       const data = await C.crmData(true);
       const lvl = !/^docs-/.test(action) ? '' : admin ? 'admin' : (await isOffice(who, data)) ? 'office' : 'staff';   /* patch COMPANYDOCS */
       if (action === 'docs-list') return reply(200, headers, { ok: true, level: lvl, docs: G.docsForStaff(await G.companyDocs(lvl !== 'staff'), lvl), kinds: G.DOC_KINDS, folders: G.DOC_FOLDERS, cfg: await G.libCfg() });

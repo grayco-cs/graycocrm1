@@ -216,7 +216,7 @@ exports.handler = async function (event) {
       return ok ? J(200, { ok: true }) : J(502, { error: 'Could not finish the password change. Try again.' });
     }
   }
-  if (who.role !== 'admin') return J(403, { error: 'Only an admin can change who has access.' });
+  if (!require('./_lib/staff-role.js').isAdmin(who)) return J(403, { error: 'Only an admin can change who has access.' });   /* patch AUTHFIX: an owner counts as an admin */
 
   try {
     if (event.httpMethod === 'GET') {

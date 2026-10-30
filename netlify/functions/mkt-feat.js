@@ -49,7 +49,7 @@ exports.handler = async function(event){
   let body = {}; try { body = JSON.parse(event.body || '{}'); } catch (e) {}
   if (!isScheduled(event)) {
     const who = await require('./portal.js')._core.gcStaffAuth(event);
-    if (!who.ok || who.role !== 'admin') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
+    if (!who.ok || !require('./_lib/staff-role.js').isAdmin(who)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };   /* patch AUTHFIX (r17b): the one admin rule */
     const out = await runParts({ part: String(body.part || ''), force: body.force === true });
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, report: out }) };
   }
