@@ -9,7 +9,7 @@
 //     GC e-mails, campaigns and newsletters): at ANY step (PM or admin), her approval is final (no admin after her), it is
 //     in her "Waiting on me" list at once (no 👷 button, no 24-hour wait). Admins may still approve; first action wins.
 //   * ADMIN-ONLY kinds — owner money and permission decisions (payroll, bank / cash, owner draws, deleting / merging
-//     records, staff access, pay changes and offer letters, contract overrides, lead assignments, referral credits and
+//     records, staff access, pay changes and offer letters, contract overrides, referral credits and
 //     gift codes, ad spend, partner payouts, experiments, CRM feature requests): the office is refused at every step and
 //     they are never escalated to her after 24 hours.
 //   * anything else (not listed — e.g. a staff announcement, a supplier purchase order): exactly as before (the office
@@ -33,13 +33,16 @@ const OFFICE_KINDS = [
   /* sub / GC e-mails */
   'lien_waiver', 'sub_lien_request', 'bp_notice', 'gcp_coi', 'gcp_inspect',
   /* campaigns and newsletters */
-  'mkt_campaign', 'newsletter', 'social_post', 'soc_week', 'mkt_neighbor', 'mkt_event', 'mkt_giveaway', 'mkt_outreach', 'mkt_page'
+  'mkt_campaign', 'newsletter', 'social_post', 'soc_week', 'mkt_neighbor', 'mkt_event', 'mkt_giveaway', 'mkt_outreach', 'mkt_page',
+  /* lead assignment (patch OFFFIX1, owner 10/30: the office has the whole CRM but staff access, security and the destructive
+     tools — assigning a lead is office work; access / role / permission / staff stay admin-only below) */
+  'lead_assign', 'assign_estimator', 'assign_pm'
 ];
 const OFFICE_PREFIX = /^sign_[a-z0-9_]+$/;   /* portal-sign.js: 'sign_' + the paper's kind (a change order, a warranty paper …) to the customer */
 const ADMIN_ONLY_KINDS = [
   'offer_letter', 'refcredit', 'refgift', 'mkt_payout', 'mkt_ad', 'mkt_addraft', 'mkt_experiment', 'mkt_feature'
 ];
-const ADMIN_ONLY_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override|assign/;
+const ADMIN_ONLY_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override/;
 const OK = {}; OFFICE_KINDS.forEach(function(k){ OK[k] = 1; });
 const AO = {}; ADMIN_ONLY_KINDS.forEach(function(k){ AO[k] = 1; });
 

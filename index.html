@@ -58423,7 +58423,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 (function(){
   'use strict';
   function crm(){ return window._crm||{}; }
-  function subs(){ var c=crm(); var all=(c.subs||[]).concat(c.vendors||[]); return all.filter(function(s){ return s && (s.isSub || s.trade || (c.subs||[]).indexOf(s)>=0); }); }
+  function subs(){ var c=crm(); var all=(c.subs||[]).concat(c.vendors||[]); var seen={}; return all.filter(function(s){ if(!(s && (s.isSub || s.trade || (c.subs||[]).indexOf(s)>=0))) return false; var k=s.id!=null&&s.id!==''?'i:'+s.id:'n:'+String(s.name||s.company||'').trim().toLowerCase(); if(seen[k]) return false; seen[k]=1; return true; }); }   /* patch OFFFIX5: each sub once (the vendors list holds a copy of every sub) */
   function today(){ return new Date().toISOString().slice(0,10); }
   function daysUntil(dateStr){ if(!dateStr) return null; try{ return Math.round((new Date(dateStr+'T00:00:00')-new Date(today()+'T00:00:00'))/86400000); }catch(e){ return null; } }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -118294,7 +118294,7 @@ function drawHome(m){
   var low8=w8.weeks.reduce(function(a,w){ return Math.min(a,w.running); }, Infinity);
   var negW=w8.weeks.filter(function(w){ return w.running<0; }).length;
   var cards=[];
-  if(isAdmin()) cards.push('<div class="gck-card gck-cash" id="gck-cash" data-admin-only="1"><h3>💵 Cash today</h3><div class="gck-big" style="color:#64748b">Connect bank &amp; cards — coming</div><div class="gck-sub">Owners only. Bank and card balances will show here live once the bank connection is set up. Nothing about them is stored on this computer.</div></div>');
+  if(isAdmin()) cards.push('<div class="gck-card gck-cash" id="gck-cash" data-admin-only="1"><h3>💵 Cash today</h3><div class="gck-big" style="color:#64748b">Connect bank &amp; cards — coming</div><div class="gck-sub">Owners and the office only. Bank and card balances will show here live once the bank connection is set up. Nothing about them is stored on this computer.</div></div>');
   cards.push('<button class="gck-card" data-tab="k_in"><h3>⬇ Money coming in</h3><div class="gck-big">'+money(ar.totals.all)+'</div><div class="gck-sub">owed to us on '+ar.rows.length+' invoice'+(ar.rows.length===1?'':'s')+' · <b class="'+(ar.totals.b3>0?'gck-neg':'')+'">'+money(ar.totals.b3)+'</b> over 90 days</div></button>');
   cards.push('<button class="gck-card" data-tab="k_out"><h3>⬆ Money going out</h3><div class="gck-big">'+money(out.totals.thisFri+out.totals.late)+'</div><div class="gck-sub">this Friday '+fmtDay(out.thisFri)+(out.totals.late?' (incl. '+money(out.totals.late)+' past its date)':'')+' · next Friday '+money(out.totals.nextFri)+'</div></button>');
   cards.push('<button class="gck-card" data-tab="k_w8"><h3>📅 Next 8 weeks</h3><div class="gck-big '+(low8<0?'gck-neg':'')+'">'+money(w8.weeks[7].running)+'</div><div class="gck-sub">expected in − out over 8 weeks · '+(negW?'<b class="gck-neg">'+negW+' week'+(negW===1?'':'s')+' below zero</b>':'no week below zero')+' <span class="gck-est">includes estimates</span></div></button>');
@@ -118561,7 +118561,7 @@ function act(a, el){
   switch(k){
     case 'csv': return exportCsv();
     case 'print': return doPrint();
-    case 'reload': return loadExtras().then(render);
+    case 'reload': if(el){ el.disabled=true; el.textContent='↻ Checking…'; } return loadExtras().then(render).then(function(){ try{ if(typeof window._toast==='function') window._toast('✓ Checked again — the list is up to date'); }catch(e){} });   /* patch OFFFIX2: an answer for Re-check duplicates */
     case 'bucket': V.filter.bucket=v||''; return render();
     case 'mf': V.filter.match=v||''; return render();
     case 'jp': V.jobsPeriod=v; return render();
@@ -125787,9 +125787,9 @@ function officeMe(){ if(isAdmin()) return false; var u = myUser(); return myEmai
 window._gcApOfficeMe = officeMe;
 /* patch APOFFICE4 (owner 10/30): every customer / outside-facing approval is the office's own at once, at any step, and her
    approval is final; owner money / permission kinds never are. Same lists as netlify/functions/_lib/office-kinds.js. */
-var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page"];
+var AP4K_OFFICE = ["portal_publish","portal_link","portal_docs","portal_post","weekly_update","sub_contact","gcp_link","invoice","final_invoice","final_reminder","payment_reminder","invoice_statement","maint_invoice","pay_app","gcp_payapp_invoice","proposal_send","sign_contract","contract","estimate_followup","maint_quote","selection_sign","walkthrough_sign","gcp_co_contract","document","thank_you","review_request","lead_first_contact","welcome","next_steps","appt_confirm","appt_reminder","closeout","checkup","progress_update","anniversary","warranty_check","cneeds_remind","winback","mail_followup","brain_email","maintenance","applicant_reply","lien_waiver","sub_lien_request","bp_notice","gcp_coi","gcp_inspect","mkt_campaign","newsletter","social_post","soc_week","mkt_neighbor","mkt_event","mkt_giveaway","mkt_outreach","mkt_page","lead_assign","assign_estimator","assign_pm"];   /* patch OFFFIX1: lead assignment is office work */
 var AP4K_ADMIN = ["offer_letter","refcredit","refgift","mkt_payout","mkt_ad","mkt_addraft","mkt_experiment","mkt_feature"];
-var AP4K_ADMIN_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override|assign/, AP4K_PREFIX = /^sign_[a-z0-9_]+$/;
+var AP4K_ADMIN_RE = /payroll|pay_?run|pay_?stub|paycheck|pay_?week|pay_?change|pay_?rate|raise|wage|bank|cash|owner_?draw|^draw|delete|merge|staff|access|permission|role|override/, AP4K_PREFIX = /^sign_[a-z0-9_]+$/;
 function ap4kKind(x){ return low(x && typeof x === 'object' ? x.kind : x); }
 function adminOnlyKind(x){ var k = ap4kKind(x), m = (x && typeof x === 'object' && x.meta) || {}; return AP4K_ADMIN.indexOf(k) >= 0 || AP4K_ADMIN_RE.test(k) || m.payroll === true || m.adminOnly === true || !!(x && typeof x === 'object' && x.adminOnly === true); }
 function officeKind(x){ if(adminOnlyKind(x)) return false; var k = ap4kKind(x); return AP4K_OFFICE.indexOf(k) >= 0 || AP4K_PREFIX.test(k); }
@@ -135074,7 +135074,7 @@ function start(){
   later(peekLeads, 1500);
 }
 W._gcLA = {
-  onLeads: onLeads, cell: cell, isNew: isNew, newTag: newTag, sort: sort, edit: edit, saveDue: saveDue, chip: chipOf, fmtDue: fmtDue,
+  onLeads: onLeads, cell: cell, isNew: isNew, newTag: newTag, sort: sort, edit: function(id, anchor){ if (!anchor && typeof W._gcOpenLead === 'function') { try { W._gcOpenLead(id); return true; } catch (e) {} } return edit(id, anchor); },   /* patch OFFFIX3: Open on a lead (no anchor) opens the lead, the bid-due chips keep the editor */ saveDue: saveDue, chip: chipOf, fmtDue: fmtDue,
   formOk: formOk, estimator: estimator, editEstimator: editEstimator, setStatus: setStatus, stats: function(name){ return stats(bidsOf(name || myName())); }, bids: function(name){ return bidsOf(name || myName()).map(function(l){ return l.id; }); },
   dashboard: function(name){ dashFor = s(name); mountDash(); return dashShown(); }, estimators: estimators,
   count: function(){ return onLeadsView() ? 0 : unseen().length; }, unseen: function(){ return unseen().map(function(l){ return l.id; }); },
@@ -161230,7 +161230,7 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function crm(){ return W._crm || {}; }
 function lsQ(){ try { var v = JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-function toast(m){ try { if (typeof W.showToast === 'function') { W.showToast(m); return; } } catch (e) {} }
+function toast(m){ try { if (typeof W.showToast === 'function') { W.showToast(m); return; } } catch (e) {} try { if (typeof W._toast === 'function') W._toast(m); } catch (e) {} }   /* patch OFFFIX2: the page's toast is window._toast */
 var DECIDED = /^(approved|rejected|denied)$/;
 
 /* one read of the queue + the expense list per task (the lists call this once per row) */
@@ -168238,7 +168238,8 @@ function inScopeFor(l, sc){
 }
 function inScope(l){ return inScopeFor(l, myScope()); }
 function scoped(){ var sc = myScope(), all = leads(); return sc.kind === 'all' ? all : all.filter(function(l){ return inScopeFor(l, sc); }); }   /* the scope once per call (LEADPERF) */
-function canAssignAll(){ return isAdmin() && myScope().kind === 'all' && myScope().why === 'admin'; }
+function officeAsg(){ try { return typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull() && !(W._gcVAS && W._gcVAS.active && W._gcVAS.active()); } catch (e) { return false; } }   /* patch OFFFIX1: the office assigns leads (her Approvals' "Assign this lead") */
+function canAssignAll(){ return (isAdmin() && myScope().kind === 'all' && myScope().why === 'admin') || officeAsg(); }
 W._gcLeadScope = { of: function(){ return myScope(); }, forLabel: scopeForLabel, has: function(l, label){ return label ? inScopeFor(l, scopeForLabel(label, myName(), myEmail())) : inScope(l); }, visible: function(){ return scoped().map(function(l){ return l.id; }); } };
 function archivedL(l){ return !!l && (l.archived === true || /^archived$/i.test(s(l.status))); }
 function born(l){ var t = Date.parse(s(l.createdAt || l.receivedAt || l.created || l.dateAdded || l.date)); return isFinite(t) ? t : 0; }
@@ -169531,7 +169532,7 @@ function drawerHtml0(l){
     + (l.lostReason ? '<div class="note">Lost because: ' + esc(l.lostReason) + '</div>' : '')
     + '</section>'
     /* assign */
-    + '<section><h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? '📐 Estimator' : '👤 Assigned to') + '</h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.drawerNote(l) : '') + (W._gcLeadHold ? W._gcLeadHold.drawer(l) : '') /* patch LEADHOLD */ +   /* patch BIDROLE */ ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || isEstimatorMe() ? '' : '<span class="note">An admin or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
+    + '<section><h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? '📐 Estimator' : '👤 Assigned to') + '</h4>' + ((window._gcBidRole && window._gcBidRole.isBid(l)) ? window._gcBidRole.drawerNote(l) : '') + (W._gcLeadHold ? W._gcLeadHold.drawer(l) : '') /* patch LEADHOLD */ +   /* patch BIDROLE */ ((W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).length ? '<div class="note" style="margin:0 0 6px">Also on it: ' + (W._gcLeadRoles && W._gcLeadRoles.coList ? W._gcLeadRoles.coList(l) : arr(l.coAssignees)).map(   /* patch SPAMROLE */function(c){ return esc(s(c.name)) + (c.label ? ' (' + esc(c.label) + ')' : ''); }).join(', ') + '</div>' : '') + '<div class="row"><select data-d="assign" aria-label="Assign"' + (adm || canAssignAll() || isEstimatorMe() || amEstimator() || (W._gcLeadRoles && W._gcLeadRoles.mine && W._gcLeadRoles.mine(l)) /* patch HOT1; HOT2: an admin's View as Estimator; the lead role holder in their area */ ? '' : ' disabled') + '><option value="">' + (a ? esc(a) : '— Unassigned —') + '</option>' + ppl.map(function(n){ var ld = loadOf(n); return '<option value="' + esc(n) + '">' + esc(n) + ' — ' + ld.jobs + ' jobs · ' + ld.leads + ' leads</option>'; }).join('') + '</select>' + (adm || canAssignAll() || isEstimatorMe() ? '' : '<span class="note">An admin, the office or the estimator assigns leads.</span>') + '</div><div class="note">The numbers are each person\'s open jobs and open leads, so work gets spread fairly.</div></section>'
     /* contact */
     + '<section><h4>Contact</h4><div class="kv">' + esc(c.name || '—') + (c.phone ? ' · ' + esc(c.phone) : '') + (c.email ? ' · ' + esc(c.email) : '') + '</div><div class="row">'
     + (c.phone ? '<a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="call" href="tel:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">📞 Call</a><a class="b" style="text-decoration:none;display:inline-block;padding:9px 11px;border:1px solid #d6d3ea;border-radius:8px;font:700 13px Arial;color:#241968" data-d="log" data-k="text" href="sms:' + esc(c.phone.replace(/[^0-9+]/g, '')) + '">💬 Text</a>' : '')
@@ -170502,6 +170503,7 @@ function myName(){ var u = meUser(); if (u && u.name) return s(u.name); try { re
 function isAdmin(){
   try { if (W._gcVAS && W._gcVAS.active()) return /admin|owner/i.test(s(W._gcVAS.role())); } catch (e) {}
   try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
+  try { if (typeof W._gcIsOfficeFull === 'function' && W._gcIsOfficeFull()) return true; } catch (e) {}   /* patch OFFFIX1: the office decides held leads too */
   var u = meUser(); return !!(u && (u.role === 'Admin' || low(u.payType) === 'owner'));
 }
 function kit(){ return W._gcLeadsHubKit || null; }
@@ -170585,7 +170587,7 @@ function tellInbox(l, name, field){
   if ((typeof W._gcOwnInboxId === 'function' ? W._gcOwnInboxId(l) : s(l.inboxId))) fn('bid-inbox?act=1', { op: 'assigned', id: l.inboxId, pm: name, leadId: l.id, as: field === 'estimator' ? 'estimator' : '', email: field === 'estimator' ? s(l.estimatorEmail || (l.hold && l.hold.email)) : '' });
 }
 function approve(id){
-  if (!isAdmin()) { toast('Only an admin approves a suggested lead.'); return Promise.resolve(false); }
+  if (!isAdmin()) { toast('Only an admin or the office approves a suggested lead.'); return Promise.resolve(false); }
   var me = myName() || 'Admin';
   return saveOne(id, function(x){ if (!C.isHeld(x)) return false; Object.assign(x, C.releaseFields(x, 'approved', me, Date.now()));
     var a = arr(x.activity).slice(); a.push({ type: 'assign', text: 'Approved the suggestion: ' + s(x.pm || x.estimator), at: nowIso(), by: me }); x.activity = a.slice(-200); })
@@ -192669,5 +192671,51 @@ function autoTodo(job){
 W._gcAD = { isActive: isActive, isIns: isIns, needs: needs, ask: ask, askFor: askFor, block: block, form: form, formSaved: formSaved,
   fresh: fresh, take: take, prep: prep, post: post, autoTodo: autoTodo, pmTodo: pmTodo, _pending: PENDING, _grant: GRANT };
 try { console.log('[GC] ACTIVEDATES: a job goes Active with its start / finish (insurance: construction start) dates.'); } catch (e) {}
+})();
+</script>
+<script id="gc-patch-offfix4">
+/* patch OFFFIX4 (office audit 10/30): deleting or merging a whole job (and merging draw invoices, which drops the other
+   drafts for good) stays with Wesley and Nick. The office: hidden and refused. Single-record deletes are unchanged. */
+(function(){
+'use strict';
+if (window.__GC_OFFFIX4__) return; window.__GC_OFFFIX4__ = true;
+var W = window, D = document;
+try { if (localStorage.getItem('gc_offfix4_off') === '1') return; } catch (e) {}
+var SAY = 'Deleting or merging a whole job is for Wesley or Nick. Ask them, or flag it for review.';
+function office(){ try { return typeof W._gcIsOfficeFull === 'function' && !!W._gcIsOfficeFull(); } catch (e) { return false; } }
+function say(){ try { if (typeof W._toast === 'function') { W._toast(SAY); return; } } catch (e) {} try { alert(SAY); } catch (e) {} }
+function mark(){ try { var on = office(); var h = D.documentElement; if (h.classList.contains('gc-offno') !== on) h.classList.toggle('gc-offno', on); } catch (e) {} }
+var css = D.createElement('style'); css.id = 'gc-offfix4-css';
+css.textContent = 'html.gc-offno ._gcRowX,html.gc-offno ._gcRowX[data-gcx],html.gc-offno [data-del-job],html.gc-offno [data-gcx-del],html.gc-offno #gcx-binfloat,html.gc-offno #gc-merge-btn,html.gc-offno #_invMergeBtn{display:none!important}';
+(D.head || D.documentElement).appendChild(css);
+/* wrap a window function: the office is refused; a function defined or replaced later is wrapped on the next screen change */
+function guard(name, refuse){
+  var f = W[name]; if (typeof f !== 'function' || f.__gcOff4) return;
+  var w = function(){ if (office() && refuse.apply(this, arguments)) { say(); return name === '_gcAskDeleteJob' ? Promise.resolve(false) : false; } return f.apply(this, arguments); };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcOff4 = true; W[name] = w;
+}
+function always(){ return true; }
+function wrapAll(){
+  guard('_gcAskDeleteJob', always);
+  guard('_openMergeJobs', always);
+  guard('_gcOpenMergeProjects', always);
+  guard('_gcMergeDuplicateJobs', function(silent){ return !silent; });
+  guard('_gcOpenDrawMerge', always);
+  guard('_gcMergeDrawInvoices', always);
+  guard('_gcMergeDrawSet', always);
+}
+wrapAll(); mark();
+/* each screen change (window._setView) and each click: the class follows who is signed in; late definitions get wrapped */
+var sv = W._setView;
+if (typeof sv === 'function' && !sv.__gcOff4) { var w = function(){ var r = sv.apply(this, arguments); try { wrapAll(); mark(); } catch (e) {} return r; }; try { Object.keys(sv).forEach(function(k){ w[k] = sv[k]; }); } catch (e) {} w.__gcOff4 = true; W._setView = w; }
+D.addEventListener('pointerdown', function(){ mark(); }, true);
+D.addEventListener('click', function(ev){
+  var t = ev.target; if (!t || !t.closest) return;
+  var b = t.closest('._gcRowX,[data-del-job],[data-gcx-del],#gcx-binfloat,#gc-merge-btn,#_invMergeBtn'); if (!b) return;
+  wrapAll(); mark(); if (!office()) return;
+  ev.preventDefault(); ev.stopImmediatePropagation(); say();
+}, true);
+W._gcOffFix4 = { office: office, mark: mark, wrap: wrapAll };
 })();
 </script>

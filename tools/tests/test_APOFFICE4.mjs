@@ -2,7 +2,7 @@
    is answered by the in-memory fake below (no Supabase, no Resend, nothing leaves this computer).
    Owner 10/30: "all auto text emails invoices whatever we need approved i want office to approve" — every customer /
    outside-facing approval is the office's at ANY step from the moment it is made, and her approval is final; admins can
-   still approve; first action wins; owner money / permission kinds (payroll, lead assignment …) are refused to her. */
+   still approve; first action wins; owner money / permission kinds (payroll, staff access …; lead assignment is hers since OFFFIX1) are refused to her. */
 import { createRequire } from 'module';
 import assert from 'assert';
 import fs from 'fs';
@@ -76,11 +76,13 @@ async function act(who, op, id, extra){
 function setItem(id, fn){ const l = list(); fn(l.find(x => x.id === id)); put(C.AQ_KEY, JSON.stringify(l)); }
 const officeApproval = id => (item(id).approvals || []).find(a => a.role === 'office' && a.email === 'office@grayco-cs.com');
 
-const ADMIN_ONLY = K.ADMIN_ONLY_KINDS.concat(['payroll_run', 'payroll', 'pay_stub', 'lead_assign', 'assign_estimator', 'assign_pm', 'owner_draw', 'bank_transfer', 'cash_move',
+const ADMIN_ONLY = K.ADMIN_ONLY_KINDS.concat(['payroll_run', 'payroll', 'pay_stub', 'owner_draw', 'bank_transfer', 'cash_move',
   'record_delete', 'job_merge', 'staff_access', 'pay_change', 'contract_override']);
 const SAMPLE_SIGN = ['sign_co', 'sign_warranty'];
 
-await t('the lists: office kinds and admin-only kinds never overlap; payroll / lead assignment / overrides are admin-only', async () => {
+await t('the lists: office kinds and admin-only kinds never overlap; payroll / staff access / overrides are admin-only; lead assignment is the office\'s (OFFFIX1)', async () => {
+  ['lead_assign', 'assign_estimator', 'assign_pm'].forEach(k => { assert.ok(K.isOfficeKind(k) && !K.isAdminOnly(k), k + ' is office work'); });
+  ['staff_assign', 'role_assign', 'access_assign', 'permission_change'].forEach(k => { assert.ok(K.isAdminOnly(k), k + ' stays admin-only'); });
   K.OFFICE_KINDS.concat(SAMPLE_SIGN).forEach(k => { assert.ok(K.isOfficeKind(k), k); assert.ok(!K.isAdminOnly(k), k + ' is not admin-only'); });
   ADMIN_ONLY.forEach(k => { assert.ok(K.isAdminOnly(k), k); assert.ok(!K.isOfficeKind(k), k); });
   assert.ok(K.isAdminOnly({ kind: 'thank_you', meta: { payroll: true } }), 'an item marked payroll is payroll');
@@ -169,7 +171,7 @@ await t('first action wins: the admin approves first → the office gets "alread
   assert.strictEqual((await act(ADMIN, 'reject', b)).status, 409, 'nor turned down after it went');
 });
 
-await t('the office is REFUSED on payroll, lead assignment and every other admin-only kind — at both steps, approve / edit / reject', async () => {
+await t('the office is REFUSED on payroll, staff access and every other admin-only kind — at both steps, approve / edit / reject', async () => {
   for (const kind of ADMIN_ONLY) {
     for (const step of ['admin', 'pm']) {
       const id = await queue(kind, step);
