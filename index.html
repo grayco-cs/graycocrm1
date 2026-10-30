@@ -910,7 +910,8 @@ async function checkStaff(){
       /* patch MM: the Marketing Manager profile is never active staff (docs/marketing-role.sql): marketing only */
       var mkt = !!row && row.active === false && low(row.profile) === 'marketing' && row.mkt_active === true && low(row.role || 'staff') !== 'admin';
       if (!row || (row.active === false && !mkt)) return 'not-staff';
-      S.role = mkt ? 'marketing' : low(row.role || 'staff'); S.marketing = mkt; S.profile = low(row.profile || ''); S.roleKnown = true; store(S);   /* patch OFFICEFULL: the profile too */
+      S.profile = low(row.profile || '');   /* patch OFFICEFULL: the profile too */ /* patch R17ADAPT_MKTFIX1: own line, so MKTFIX1 finds the r16 line */
+      S.role = mkt ? 'marketing' : low(row.role || 'staff'); S.marketing = mkt; S.roleKnown = true; if (mkt) S.mmName = String(row.name || '');   /* patch MKTFIX1 */ store(S);
       return 'staff';
     }
     return 'no-table';          /* lockdown SQL not run yet: the sign-in alone decides */
@@ -1068,6 +1069,14 @@ try {
   if (SPWS && !SPWS.__gcSP) {
     var SPW = function(u, pr){
       var ws = pr === undefined ? new SPWS(u) : new SPWS(u, pr);
+      try {   /* patch MKTFIX1: the Marketing Manager's live feed carries only the keys he may read */
+        if (String(u).indexOf(SB_HOST) >= 0) {
+          var omd = Object.getOwnPropertyDescriptor(SPWS.prototype, 'onmessage'), oael = ws.addEventListener;
+          if (omd && omd.set) Object.defineProperty(ws, 'onmessage', { configurable: true, get: function(){ return omd.get.call(ws); },
+            set: function(fn){ omd.set.call(ws, typeof fn === 'function' ? function(ev){ if (mmFeedDrop(ev && ev.data)) return; return fn.apply(this, arguments); } : fn); } });
+          ws.addEventListener = function(type, fn, o){ if (type === 'message' && typeof fn === 'function') { var f0 = fn; fn = function(ev){ if (mmFeedDrop(ev && ev.data)) return; return f0.apply(this, arguments); }; } return oael.call(ws, type, fn, o); };
+        }
+      } catch (e) {}
       try {
         if (String(u).indexOf(SB_HOST) >= 0) ws.addEventListener('message', function(ev){
           try {
@@ -1086,8 +1095,49 @@ try {
   }
 } catch (e) {}
 
+/* patch MKTFIX1: the Marketing Manager asks the database for marketing only — the same four keys docs/marketing-role.sql
+   lets him read, his own gc_staff row and the signed picture links; nothing else leaves (or lands on) his computer,
+   even while the database lock (docs/security-lockdown.sql) is not run. Everything marketing comes through soc.js. */
+var MM_KEYS = { gc_company_address: 1, gc_epoch: 1, gc_mkt_admin: 1, gc_automation_pause: 1 };   /* patch MKTFIX6: not "users" (employees' phones, pay type, plates …) */
+function mmAnswer(status, body){ return Promise.resolve(new Response(body, { status: status, headers: { 'Content-Type': 'application/json', 'Content-Range': '*/0' } })); }
+function mmFence(input, init, u){
+  var x; try { x = new URL(u, location.href); } catch (e) { return mmAnswer(200, '[]'); }
+  var p = x.pathname, m = methodOf(input, init);
+  if ((m === 'GET' || m === 'HEAD') && (p.indexOf('/storage/v1/object/sign/') === 0 || p.indexOf('/storage/v1/object/public/') === 0)) return null;
+  if (m !== 'GET' && m !== 'HEAD') return mmAnswer(403, '{"code":"42501","message":"The Marketing Manager profile saves marketing through the marketing server only."}');
+  if (p === '/rest/v1/gc_staff') return null;   /* his own row (the profile) */
+  if (p !== '/rest/v1/gc_kv') return mmAnswer(200, '[]');
+  var want = [], other = [];
+  x.searchParams.getAll('key').forEach(function(f){
+    if (f.indexOf('eq.') === 0) want.push(f.slice(3));
+    else if (f.indexOf('in.(') === 0) f.slice(4, -1).split(',').forEach(function(k){ want.push(k.replace(/^"|"$/g, '')); });
+    else if (f.indexOf('not.') === 0) other.push(f);
+    else want.push('\u0000');
+  });
+  var ok = want.filter(function(k){ return MM_KEYS[k] === 1; });
+  if (!want.length || !ok.length) return mmAnswer(200, '[]');
+  if (ok.length === want.length) return null;
+  if (typeof input !== 'string' && !(input instanceof URL)) return mmAnswer(200, '[]');
+  x.searchParams.delete('key'); x.searchParams.append('key', 'in.(' + ok.map(function(k){ return '"' + k + '"'; }).join(',') + ')');
+  other.forEach(function(f){ x.searchParams.append('key', f); });
+  return { url: x.href };
+}
+/* … and only the functions that serve him (soc / mkt / mkt2 / referral and the public marketing doors): every other staff
+   function refuses him anyway — answered here at once, so his page makes no refused calls (they were ~25 a load) */
+var MM_FNS = { soc: 1, mkt: 1, mkt2: 1, referral: 1, 'mkt-public': 1, go: 1, 'track-call': 1, 'website-intake': 1, 'claude-proxy': 1 };
+function mmFnRefused(u){ var n = ''; try { n = new URL(u, location.href).pathname.split('/')[3] || ''; } catch (e) {} return MM_FNS[n] === 1 ? null : mmAnswer(403, '{"ok":false,"error":"Not part of the Marketing Manager profile."}'); }
+function mmFeedDrop(d){
+  try {
+    if (!(S && S.marketing === true) || typeof d !== 'string' || d.indexOf('postgres_changes') < 0) return false;
+    var j = JSON.parse(d), dd = j && j.payload && j.payload.data; if (!dd) return false;
+    var k = (dd.record && dd.record.key) || (dd.old_record && dd.old_record.key);
+    return dd.table !== 'gc_kv' || MM_KEYS[String(k)] !== 1;
+  } catch (e) { return true; }
+}
 function gcFetch(input, init){
   var u = urlOf(input), kind = classify(u);
+  if (kind === 'sb' && S && S.marketing === true) { var mf = mmFence(input, init, u); if (mf && mf.url) { input = mf.url; u = mf.url; } else if (mf) return mf; }   /* patch MKTFIX1 */
+  if (kind === 'fn' && S && S.marketing === true) { var mr = mmFnRefused(u); if (mr) return mr; }
   if (kind === 'sb') {
     if (!S || mode === 'none') {
       /* Not signed in. A read waits for the sign-in and then goes out fresh, with
@@ -1232,6 +1282,7 @@ async function signIn(email, password){
     pushTokenToClients(); scheduleRefresh();
     setMode('online');
     var reloading = await matchAppUser(email, prevEmail);
+    if (!reloading && S && S.marketing === true && !window._gcMMData) { reloading = true; say('Opening Marketing…', true); nST(reloadNow, 600); }   /* patch MKTFIX1: the marketing profile starts on the next open */
     if (!reloading) hideGate();
     return true;
   } finally { busy = false; }
@@ -1275,6 +1326,7 @@ async function findAppUser(email){
 async function matchAppUser(email, prevEmail){
   try {
     var match = await findAppUser(email);
+    if (!match && S && S.marketing === true) match = { id: 'mm_' + low(email).replace(/[^a-z0-9]/g, ''), name: S.mmName || low(email).split('@')[0], email: low(email), role: 'Marketing Manager', active: true };   /* patch MKTFIX1: not on the employee list yet */
     if (!match) return false;                       /* not a CRM user yet: the app's own screen stays */
     var cur = await idb('get', 'user');
     if (cur && low(cur.email) === email) {
@@ -144249,7 +144301,7 @@ function jget(k, d){ try { var v = localStorage.getItem(k); return v ? JSON.pars
 function jset(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 function crm(){ return W._crm || {}; }
 function myEmail(){ try { var A = W.__GC_AUTH__; var e = A && A.email && A.email(); if (e) return low(e); } catch (e) {} try { return low(localStorage.getItem('grayco_user_email') || ''); } catch (e) { return ''; } }
-function meUser(){ var em = myEmail(); return arr(crm().users).filter(function(u){ return u && em && low(u.email) === em; })[0] || null; }
+function meUser(){ var em = myEmail(); return arr(crm().users).filter(function(u){ return u && em && low(u.email) === em; })[0] || (function(){ try { var m = W._gcMMData && typeof W._gcMeUser === 'function' ? W._gcMeUser() : null; return m && m.name ? m : null; } catch (e) { return null; } })() || null; }   /* patch MKTFIX6: the Marketing Manager is not on the employee list he reads */
 function myName(){ var u = meUser(); return (u && u.name) || myEmail() || 'someone'; }
 function isAdmin(){ try { var A = W.__GC_AUTH__; if (A && typeof A.isAdmin === 'function') return !!A.isAdmin(); } catch (e) {} var u = meUser(); return !!(u && /admin|owner/i.test(s(u.role))); }
 function role(){
@@ -145004,12 +145056,13 @@ VIEWS.reviews = function(){
     jobs.map(function(p){ var a = asks[s(p.id)], rv = revs.filter(function(r){ return r.jobId === s(p.id); })[0];
       var ph = s(p.clientPhone || p.phone).replace(/[^\d+]/g, '');
       return '<tr><td>' + esc(p.name || p.client) + '<div class="gmt-muted">' + esc(C.kindOf(p)) + '</div></td><td>' + esc(C.doneDate(p) || '—') + '</td><td>' + (a ? '✓ ' + esc(s(a.at).slice(0, 10)) : (p.reviewRequestedAt || p.mkReviewAskedAt ? '✓' : '—')) + '</td><td>' + (rv ? (+rv.rating || 5) + '★' : '—') + '</td><td class="gmt-row">' +
-        '<button class="gmt-btn o" data-a="rv-ask" data-id="' + esc(p.id) + '">Ask (e-mail)</button>' + (ph ? '<a class="gmt-btn o" style="text-decoration:none" href="sms:' + esc(ph) + '?&body=' + encodeURIComponent('Hi ' + (C.firstName(p.client) || 'there') + ', thank you for choosing GrayCo! Would you leave us a quick Google review? ' + reviewLink()) + '">Text</a>' : '') + '</td></tr>'; }).join('') + '</table></div>';
+        (W._gcMMData ? '<span class="gmt-muted">the office sends it</span>' : '<button class="gmt-btn o" data-a="rv-ask" data-id="' + esc(p.id) + '">Ask (e-mail)</button>')   /* patch MKTFIX3 */ + (ph ? '<a class="gmt-btn o" style="text-decoration:none" href="sms:' + esc(ph) + '?&body=' + encodeURIComponent('Hi ' + (C.firstName(p.client) || 'there') + ', thank you for choosing GrayCo! Would you leave us a quick Google review? ' + reviewLink()) + '">Text</a>' : '') + '</td></tr>'; }).join('') + '</table></div>';
   h += '<div class="gmt-card"><h2>⭐ Reviews (' + revs.length + ')</h2><div class="gmt-row"><input id="gmt-rv-a" placeholder="Name (first name + initial)" style="width:180px"><select id="gmt-rv-r"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select><input id="gmt-rv-t" placeholder="What they wrote" style="flex:1;min-width:200px"><select id="gmt-rv-j"><option value="">job (optional)</option>' + jobs.map(function(p){ return '<option value="' + esc(p.id) + '">' + esc(p.name || p.client) + '</option>'; }).join('') + '</select><button class="gmt-btn" data-a="rv-add">Add review</button></div>' +
     '<div class="gmt-muted">With the Google Business Profile connected, new Google reviews come in by themselves (every 15 minutes) with a reply draft.</div>' +
-    revs.map(function(r){ var canOk = full(); return '<div class="gmt-card" style="margin:10px 0 0" data-review="' + esc(r.id) + '"><b>' + '★★★★★'.slice(0, +r.rating || 5) + ' ' + esc(r.author) + '</b> <span class="gmt-muted">' + esc(r.date || '') + ' · ' + esc(r.source || 'added by hand') + '</span><div style="margin:4px 0">' + esc(r.text) + '</div>' +
+    revs.map(function(r){ var canOk = full(), mmHold = !!W._gcMMData && !(W._gcMMReplyOk && W._gcMMReplyOk(r)); return '<div class="gmt-card" style="margin:10px 0 0" data-review="' + esc(r.id) + '"><b>' + '★★★★★'.slice(0, +r.rating || 5) + ' ' + esc(r.author) + '</b> <span class="gmt-muted">' + esc(r.date || '') + ' · ' + esc(r.source || 'added by hand') + '</span><div style="margin:4px 0">' + esc(r.text) + '</div>' +
       (r.replyStatus === 'posted' ? '<div class="gmt-ok">Reply posted: ' + esc(r.reply) + '</div>' : r.replyStatus === 'approved' ? '<div class="gmt-ok">Reply approved by ' + esc(r.replyBy) + ' — paste it on Google: ' + esc(r.reply) + ' <button class="gmt-btn o" data-a="copy" data-t="' + esc(r.reply) + '">📋 Copy</button> <button class="gmt-btn o" data-a="open" data-url="https://business.google.com/reviews">Open Google reviews</button></div>' :
-        '<label>Reply draft (the office approves — owner decision)</label><textarea id="gmt-rr-' + esc(r.id) + '" rows="3">' + esc(r.replyDraft || replyDraft(r)) + '</textarea>' + (canOk ? '<div class="gmt-row"><button class="gmt-btn g" data-a="rv-reply" data-id="' + esc(r.id) + '">✅ Approve reply</button>' + (!r.thanksPostId && (+r.rating || 0) >= 4 ? '<button class="gmt-btn o" data-a="rv-post" data-id="' + esc(r.id) + '">📱 Make a thank-you post</button>' : '') + '</div>' : '')) + '</div>'; }).join('') + '</div>';
+        '<label>Reply draft (the office approves — owner decision)</label><textarea id="gmt-rr-' + esc(r.id) + '" rows="3">' + esc(r.replyDraft || replyDraft(r)) + '</textarea>' + (canOk ? '<div class="gmt-row">' + (mmHold ? '<button class="gmt-btn" data-a="rv-draft" data-id="' + esc(r.id) + '">💾 Save the draft — an admin approves it</button>' : '<button class="gmt-btn g" data-a="rv-reply" data-id="' + esc(r.id) + '">✅ Approve reply</button>') + (!r.thanksPostId && (+r.rating || 0) >= 4 ? '<button class="gmt-btn o" data-a="rv-post" data-id="' + esc(r.id) + '">📱 Make a thank-you post</button>' : '') + '</div>' : '')) + '</div>'; }).join('') + '</div>';
+  if (W._gcMMData) return h + '<div class="gmt-card"><h2>🤝 Referrals</h2><div class="gmt-muted">Who referred whom is customer data: the office logs referrals and sends the thank-yous. The totals and the ready-made referral ads are in <a href="#" data-a="go" data-sec="refprog">🎁 Referral program</a>.</div></div>';   /* patch MKTFIX3 */
   var refs = MK.all('referrals').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }), board = referrerBoard();
   h += '<div class="gmt-two"><div class="gmt-card"><h2>🤝 Referral program</h2><div class="gmt-muted">Every customer who sends us work gets a thank-you (e-mail through Approvals) and the credit on the record.</div><button class="gmt-btn" data-a="ref-new" style="margin:8px 0">+ Log a referral</button>' +
     (refs.length ? '<table><tr><th>Referrer</th><th>Referred</th><th>Status</th><th>Credit</th><th></th></tr>' + refs.map(function(r){ return '<tr><td>' + esc(r.referrer) + '</td><td>' + esc(r.referred) + '</td><td><select data-ch="ref-st" data-id="' + esc(r.id) + '">' + ['Referred', 'Estimate', 'Hired', 'Credit paid'].map(function(x){ return '<option' + (r.status === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></td><td>' + money(+r.credit || 0) + '</td><td>' + (r.thanksCampaignId ? chip((MK.get('campaigns', r.thanksCampaignId) || {}).status) : '<button class="gmt-btn o" data-a="ref-thanks" data-id="' + esc(r.id) + '">🙏 Thank-you e-mail</button>') + '</td></tr>'; }).join('') + '</table>' : '<div class="gmt-muted">No referrals logged yet.</div>') + '</div>' +
@@ -145026,6 +145079,7 @@ function referrerBoard(){
 ACT['rv-ask'] = function(b){ var pid = b.getAttribute('data-id'); if (typeof W._gcQueueCustomerEmail !== 'function') { toast('The approvals list is not available here.', true); return; } W._gcQueueCustomerEmail({ kind: 'thank_you', projectId: pid }); MK.put('reviewAsks', { id: pid, at: nowIso(), how: 'email' }); toast('Thank-you + review request queued — it waits on Approvals.'); };
 ACT['rv-add'] = function(){ var a = s(D.getElementById('gmt-rv-a').value), t = s(D.getElementById('gmt-rv-t').value); if (!a || !t) { toast('Name and text, please.', true); return; } var r = { id: uid('rev'), author: a, rating: +D.getElementById('gmt-rv-r').value, text: t, jobId: s(D.getElementById('gmt-rv-j').value), date: today(), source: 'added by ' + myName(), replyStatus: 'draft' }; r.replyDraft = replyDraft(r); MK.put('reviews', r); toast('Review added.'); };
 ACT['rv-reply'] = function(b){ var id = b.getAttribute('data-id'), t = s((D.getElementById('gmt-rr-' + id) || {}).value); b.disabled = true; MK.put('reviews', { id: id, replyDraft: t }); MK.push().then(function(){ return api('mkt', { op: 'review_reply', id: id, text: t }); }).then(function(j){ toast(j.ok ? (j.posted ? 'Reply posted on Google ✓' : 'Reply approved — copy it to Google.') : 'Not approved: ' + (j.error || 'try again'), !j.ok); MK.pull(true); }); };
+ACT['rv-draft'] = function(b){ var id = b.getAttribute('data-id'), t = s((D.getElementById('gmt-rr-' + id) || {}).value); if (!t) { toast('Write the reply first.', true); return; } MK.put('reviews', { id: id, replyDraft: t }); MK.push(); toast('Draft saved — an admin approves it in ⭐ Reviews & referrals.'); };   /* patch MKTFIX3 */
 ACT['rv-post'] = function(b){ var r = MK.get('reviews', b.getAttribute('data-id')); if (!r) return; go('social', newPostForm('review', { reviewId: r.id, caption: C.reviewCaption(r), title: 'Review thank-you — ' + s(r.author).split(' ')[0], ni: false })); };
 function referralForm(){ var f = UI.form; return '<div class="gmt-card"><h2>Log a referral</h2>' + F('referrer', 'Who referred us (customer name)') + F('referrerEmail', 'Their e-mail (for the thank-you)', 'email') + F('referred', 'Who they sent us') + F('credit', 'Thank-you credit / gift card ($)', 'number') + F('status', 'Status', 'select', { opts: ['Referred', 'Estimate', 'Hired', 'Credit paid'] }) +
   '<div class="gmt-row" style="margin-top:10px"><button class="gmt-btn g" data-a="ref-save">Save</button><button class="gmt-btn o" data-a="back">Cancel</button></div></div>'; }
@@ -145387,7 +145441,7 @@ ACT['pp-copy'] = function(b){ var u = linkFor(b); X.copyText(u).then(function(){
 ACT['pp-mail'] = function(b){
   var t = textFor(b), me = ''; try { me = s(X.myName()); } catch (e) {}
   var body = 'Hi,\n\n' + t.body + '\n\nThank you,\n' + (me ? me + '\n' : '') + 'GrayCo Construction Services, LLC · (901) 585-0944';
-  if (typeof W._gcCompose === 'function') { if (W._gcCompose({ to: '', subject: t.subj, body: body, about: 'print' }) !== null) return; }
+  if (typeof W._gcCompose === 'function' && !W._gcMMData) { if (W._gcCompose({ to: '', subject: t.subj, body: body, about: 'print' }) !== null) return; }   /* patch MKTFIX4: the Marketing Manager: his own e-mail app */
   X.openUrl('mailto:?subject=' + encodeURIComponent(t.subj) + '&body=' + encodeURIComponent(body));
 };
 ACT['pp-text'] = function(b){
@@ -145838,7 +145892,7 @@ VIEWS.flyers = function(){
     (f.tpl === 'roofcheck' ? '<label>Event date</label><input id="fl-date" value="' + esc(f.date) + '" placeholder="Saturday, May 9">' : '') +
     '<label>Your name + phone on the flyer (whoever makes it)</label><div class="gmt-row"><input id="fl-pm" value="' + esc(f.pm) + '"' + (admin() ? '' : ' readonly') + '><input id="fl-phone" value="' + esc(f.phone) + '"' + (admin() ? '' : ' readonly') + '></div>' + (f.phoneMissing ? '<div class="gmt-muted" data-fly="nophone">⚠️ Add your cell in My Profile so it prints on your flyers — the office line prints until then.</div>' : '') + (admin() && W._gcFlyerPicker ? W._gcFlyerPicker('fl') : '') +   /* patch FLY */
     '<label>Extra text (optional)</label><textarea id="fl-blurb" rows="3">' + esc(f.blurb) + '</textarea>' +
-    (f.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-perm"' + (pOk ? ' checked' : '') + ' data-a="fl-perm"> The customer said OK to use photos of this job in marketing</label>' + (pOk ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-photo"' + (f.photo ? ' checked' : '') + '> Put a before / after photo on it</label>' : '<div class="gmt-muted">No photos without the customer\'s OK.</div>') : '') +
+    (f.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-perm"' + (pOk ? ' checked' : '') + (W._gcMMData ? ' disabled title="The office records the customer\'s OK"' : '') + ' data-a="fl-perm"> The customer said OK to use photos of this job in marketing</label>' + (pOk ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-photo"' + (f.photo ? ' checked' : '') + '> Put a before / after photo on it</label>' : '<div class="gmt-muted">No photos without the customer\'s OK.</div>') : '') +
     '<label>Nearby homes for the delivery list</label><input id="fl-copies" type="number" min="10" max="200" value="' + (+f.copies || 40) + '">' +
     '<div class="gmt-row" style="margin-top:10px"><button class="gmt-btn" data-a="fl-print">🖨 Print / save PDF</button><button class="gmt-btn o" data-a="fl-list">⬇ Delivery list (CSV)</button></div></div>';
   var saved = MK.all('flyers').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 15);
@@ -145857,7 +145911,7 @@ function flyerLink(f, preview){
 function readFlyer(){ var f = FL.form; ['area', 'pm', 'phone', 'blurb', 'date'].forEach(function(k){ var el = D.getElementById('fl-' + k); if (el) f[k] = el.value; }); var st = D.getElementById('fl-street'); if (st) f.showStreet = st.checked; var ph = D.getElementById('fl-photo'); f.photo = !!(ph && ph.checked); var cp = D.getElementById('fl-copies'); if (cp) f.copies = +cp.value || 40; var tp = D.getElementById('fl-tpl'); if (tp) f.tpl = tp.value; var sz = D.getElementById('fl-size'); if (sz) f.size = sz.value; return f; }
 ACT['fl-job'] = function(t){ FL.form = Object.assign(flyerForm(t.value), { tpl: FL.form.tpl, size: FL.form.size }); draw(); };
 ACT['fl-set'] = function(){ readFlyer(); draw(); };
-ACT['fl-perm'] = function(b){ if (!FL.form.pid) return; setPerm(FL.form.pid, b.checked); readFlyer(); nST(draw, 200); };
+ACT['fl-perm'] = function(b){ if (!FL.form.pid || W._gcMMData) return;   /* patch MKTFIX5: the office records the customer's OK */ setPerm(FL.form.pid, b.checked); readFlyer(); nST(draw, 200); };
 ACT['fl-print'] = function(){
   var f = readFlyer(), t = TPL[f.tpl] || TPL.working, z = SIZES[f.size] || SIZES.letter, link = flyerLink(f, false), c = link.split('/go/')[1];
   var go2 = function(img){
@@ -145873,7 +145927,7 @@ ACT['fl-print'] = function(){
   if (f.photo && f.pid && permOk(f.pid)) { var ph = X.photosOf(f.pid)[0]; if (ph) { X.fileUrl(ph.ref).then(go2, function(){ go2(''); }); return; } }
   go2('');
 };
-ACT['fl-list'] = function(){ var f = readFlyer(), p = f.pid ? proj(f.pid) : null; if (!p) { toast('Pick a job first — the list is built around its street.', true); return; } var l = X.walkList(p.address || p.jobAddress, f.copies || 40); if (!l.length) { toast('Could not read a house number from the job address.', true); return; }
+ACT['fl-list'] = function(){ var f = readFlyer(), p = f.pid ? proj(f.pid) : null; if (!p) { toast('Pick a job first — the list is built around its street.', true); return; } var l = X.walkList(p.address || p.jobAddress, f.copies || 40); if (!l.length) { toast(W._gcMMData ? 'The delivery list needs the job\'s house number, which stays with the office — ask the office for the list (the flyer itself prints from here).' : 'Could not read a house number from the job address.', true); return; }   /* patch MKTFIX3 */
   dl('grayco-flyer-delivery-' + code(f.area || 'list') + '.csv', 'Address,City,State,ZIP,Delivered\n' + l.map(function(x){ return [x.address, x.city, x.state, x.zip, ''].map(function(v){ return '"' + s(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n'), 'text/csv'); };
 
 /* ══════════════ 🤝 REFERRAL PARTNERS (+ lunch & learn kit) ══════════════ */
@@ -145944,10 +145998,12 @@ VIEWS.events2 = function(){
   }).join('');
   return h;
 };
-ACT['ev-new'] = function(){ EV.form = evForm('roofcheck'); draw(); };
+var MKEV = { n: ACT['ev-new'], e: ACT['ev-edit'], s: ACT['ev-save'] };   /* patch MKTFIX4: 🎃 Events & community keeps its own buttons */
+ACT['ev-new'] = function(b){ if (UI.sec !== 'events2' && MKEV.n) return MKEV.n(b); EV.form = evForm('roofcheck'); draw(); };
 ACT['ev-cancel'] = function(){ EV.form = null; draw(); };
-ACT['ev-edit'] = function(b){ var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; EV.form = Object.assign(evForm(e.kind), e, { slots: arr(e.slots).map(function(x){ return x.t + 'x' + x.cap; }).join(', ') }); draw(); };
-ACT['ev-save'] = function(){
+ACT['ev-edit'] = function(b){ if (UI.sec !== 'events2' && MKEV.e) return MKEV.e(b); var e = MK.get('roofevents', b.getAttribute('data-id')); if (!e) return; EV.form = Object.assign(evForm(e.kind), e, { slots: arr(e.slots).map(function(x){ return x.t + 'x' + x.cap; }).join(', ') }); draw(); };
+ACT['ev-save'] = function(b){
+  if (UI.sec !== 'events2' && MKEV.s) return MKEV.s(b);
   var f = EV.form, g = function(k){ var el = D.getElementById(k); return el ? s(el.value) : ''; };
   var slots = g('ev-slots').split(',').map(function(x){ var m = /^\s*(\d{1,2}):(\d{2})\s*(?:x\s*(\d+))?\s*$/i.exec(x); return m ? { t: ('0' + m[1]).slice(-2) + ':' + m[2], cap: Math.max(1, Math.min(200, +m[3] || 1)) } : null; }).filter(Boolean);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(g('ev-date')) || !slots.length) { toast('A date and at least one time (like 09:00x2).', true); return; }
@@ -145982,7 +146038,7 @@ VIEWS.coupons = function(){
   var c = X.cfg().coupons || {}, sp = MK.all('sponsors').filter(function(x){ return !x.del; }), cl = (LK.stats && LK.stats.clicks) || {};
   var h = '<div class="gmt-card"><h2>🎟 $100-off coupon QR codes</h2><div class="gmt-muted">For sponsorships, truck wraps, uniforms and banners: “Scan me — $100 off GrayCo work” (on projects over $1,000). Scanning opens a page where the person claims ONE unique code (one per household — e-mail, phone or address). Each claim is a lead tagged with the sponsorship / truck / shirt. The code works once — checked by the server.</div>' +
     '<div class="gmt-row" style="margin-top:8px"><label style="margin:0;display:flex;gap:6px;align-items:center"><input type="checkbox" id="cp-comb"' + (c.combinable ? ' checked' : '') + (admin() ? '' : ' disabled') + '> Can be combined with other coupons</label><label style="margin:0;display:flex;gap:6px;align-items:center">Expires <input type="number" id="cp-days" min="1" max="730" style="width:70px" value="' + esc(String(c.days || 90)) + '"' + (admin() ? '' : ' disabled') + '> days after it is issued</label><span class="gmt-muted">GrayCo referral credit is always OK with it.</span>' + (admin() ? '<button class="gmt-btn o" data-a="cp-set">Save</button>' : '') + '</div></div>';
-  h += '<div class="gmt-card"><h2>✓ Check / redeem a coupon</h2><div class="gmt-row"><input id="cp-code" placeholder="GC100-XXXX-XXXX" style="min-width:200px"><input id="cp-amt" placeholder="Estimate / invoice total $" style="width:180px"><select id="cp-job"><option value="">— job —</option>' + X.projects().slice(0, 300).map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select><input id="cp-ref" placeholder="Estimate / invoice #" style="width:140px"><label style="margin:0;display:flex;gap:4px;align-items:center"><input type="checkbox" id="cp-other"> another coupon on it</label></div><div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="cp-check">Check</button><button class="gmt-btn g" data-a="cp-redeem">Redeem ($100 off)</button></div>' + (CP.check ? '<div class="' + (CP.check.ok ? 'gmt-ok' : 'gmt-warn') + '">' + esc(CP.check.msg) + '</div>' : '') + '<div class="gmt-muted">After redeeming, put a “$100 coupon” discount line on that estimate / invoice.</div></div>';
+  h += '<div class="gmt-card"><h2>✓ Check / redeem a coupon</h2><div class="gmt-row"><input id="cp-code" placeholder="GC100-XXXX-XXXX" style="min-width:200px"><input id="cp-amt" placeholder="Estimate / invoice total $" style="width:180px"><select id="cp-job"><option value="">— job —</option>' + X.projects().slice(0, 300).map(function(p){ return '<option value="' + esc(p.id) + '">' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select><input id="cp-ref" placeholder="Estimate / invoice #" style="width:140px"><label style="margin:0;display:flex;gap:4px;align-items:center"><input type="checkbox" id="cp-other"> another coupon on it</label></div><div class="gmt-row" style="margin-top:6px"><button class="gmt-btn o" data-a="cp-check">Check</button>' + (W._gcMMData ? '<span class="gmt-muted">— the office redeems it on the job</span>' : '<button class="gmt-btn g" data-a="cp-redeem">Redeem ($100 off)</button>') + '</div>' + (CP.check ? '<div class="' + (CP.check.ok ? 'gmt-ok' : 'gmt-warn') + '">' + esc(CP.check.msg) + '</div>' : '') + '<div class="gmt-muted">After redeeming, put a “$100 coupon” discount line on that estimate / invoice.</div></div>';
   h += '<div class="gmt-card"><h2>Sponsorships, trucks & shirts — ROI</h2>' + (sp.length ? '<table><tr><th>Source</th><th>Cost</th><th>Scans</th><th>Claims</th><th>Leads</th><th>Jobs won</th><th>$ won</th><th>ROI</th><th>Artwork</th></tr>' + sp.map(function(x){
     var st = (CP.stats || {})[x.id] || {}, L = arr(X.DATA.leads).filter(function(l){ return l && (l.couponSource === x.id || low(l.trackCode) === x.id); }), wn = wonFor(L), cost = num(x.cost), roi = cost ? Math.round((wn.rev - cost) / cost * 100) + '%' : '—';
     return '<tr><td><b>' + esc(x.name) + '</b><div class="gmt-muted">' + esc(x.kind) + ' · ' + esc(goLink(x.id)) + '</div></td><td>' + money(cost) + '</td><td>' + ((cl[x.id] || {}).n || 0) + '</td><td>' + (st.claims || 0) + (st.redeemed ? ' (' + st.redeemed + ' used)' : '') + '</td><td>' + L.length + '</td><td>' + wn.n + '</td><td>' + money(wn.rev) + '</td><td>' + roi + '</td><td class="gmt-row">' + Object.keys(ART).map(function(k){ return '<button class="gmt-btn o" data-a="cp-art" data-id="' + esc(x.id) + '" data-f="' + k + '" title="' + esc(ART[k].l) + '">⬇ ' + esc(ART[k].l.split(' (')[0]) + '</button>'; }).join('') + '</td></tr>';
@@ -146096,7 +146152,7 @@ VIEWS.reels = function(){
   var ok = RL.pid && permOk(RL.pid), ph = RL.pid ? X.photosOf(RL.pid).slice(0, 40) : [];
   var h = '<div class="gmt-card"><h2>🎬 Before / after reel</h2><div class="gmt-muted">Pick a job, check the customer said OK, pick 3–8 photos (before first), add captions — the CRM makes a short vertical video with the GrayCo logo, right in this browser. Download it, or send it to Marketing for an approved post. Optional, never automatic.</div>' +
     '<label>Job</label><select data-ch="rl-job"><option value="">— pick —</option>' + jobs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (RL.pid === p.id ? ' selected' : '') + '>' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select>' +
-    (RL.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="rl-perm"' + (ok ? ' checked' : '') + '> The customer said OK to use photos of this job in marketing</label>' : '') + '</div>';
+    (RL.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="rl-perm"' + (ok ? ' checked' : '') + (W._gcMMData ? ' disabled title="The office records the customer\'s OK"' : '') + '> The customer said OK to use photos of this job in marketing</label>' : '') + '</div>';
   if (RL.pid && !ok) return h + '<div class="gmt-warn">No video without the customer\'s OK.</div>';
   if (RL.pid) {
     h += '<div class="gmt-card"><h2>Photos (' + RL.sel.length + ' picked)</h2><div class="gmt-row">' + (ph.length ? ph.map(function(r){ var u = RL.urls[r.ref]; if (!u) { RL.urls[r.ref] = 'loading'; X.fileUrl(r.ref).then(function(x){ RL.urls[r.ref] = x; X.redrawSoon(); }, function(){}); } return '<img class="gmt-thumb' + (RL.sel.indexOf(r.ref) >= 0 ? ' sel' : '') + '" data-a="rl-pick" data-ref="' + esc(r.ref) + '" src="' + (u && u !== 'loading' ? esc(u) : '') + '" alt="' + esc(r.tag || '') + '" title="' + (RL.sel.indexOf(r.ref) >= 0 ? '#' + (RL.sel.indexOf(r.ref) + 1) : '') + '">'; }).join('') : '<div class="gmt-muted">No GrayCo Photos on this job.</div>') + '</div>' +
@@ -146107,7 +146163,7 @@ VIEWS.reels = function(){
   return h;
 };
 ACT['rl-job'] = function(t){ RL = { pid: t.value, sel: [], urls: RL.urls, cap: '', busy: false, out: null }; draw(); };
-ACT['rl-perm'] = function(b){ setPerm(RL.pid, b.checked); nST(draw, 200); };
+ACT['rl-perm'] = function(b){ if (W._gcMMData) return; setPerm(RL.pid, b.checked); nST(draw, 200); };
 ACT['rl-pick'] = function(b){ var r = b.getAttribute('data-ref'), i = RL.sel.indexOf(r); if (i >= 0) RL.sel.splice(i, 1); else if (RL.sel.length < 8) RL.sel.push(r); var c = D.getElementById('rl-cap'); if (c) RL.cap = c.value; draw(); };
 function loadImg(u){ return new Promise(function(res, rej){ var i = new Image(); i.crossOrigin = 'anonymous'; i.onload = function(){ res(i); }; i.onerror = rej; i.src = u; }); }
 ACT['rl-make'] = function(){
@@ -147064,7 +147120,7 @@ VIEWS.socweek = function(){
   h += '<div class="gmt-card" data-soc-week-card="' + esc(w.id) + '"><div class="gmt-row" style="justify-content:space-between"><div><h2 style="margin:0">The week of ' + esc(w.id) + '</h2><div class="gmt-muted">' +
     posts.map(function(p){ return esc(p.socDay + ': ' + SC.typeLabel(p.socType) + ' · ' + svcLabel(p.socService)); }).join(' &nbsp;·&nbsp; ') + '</div></div>' +
     '<div class="gmt-row">' + chipS(allOk ? 'approved' : w.status, allOk ? 'Approved' : stLabel(w.status)) +
-    (!allOk && office() ? '<button class="gmt-btn g" data-a="soc-approve-week" data-id="' + esc(w.id) + '"' + (STATE.busy === 'week' ? ' disabled' : '') + '>✅ Approve the week</button>' : '') +
+    (!allOk && office() ? (W._gcMMData && +((STATE.st || {}).stage || 1) < 2 && w.status === 'waiting' ? '<span class="gmt-muted">⏳ Waiting for an admin on ✅ Approvals (stage 1)</span>' : '<button class="gmt-btn g" data-a="soc-approve-week" data-id="' + esc(w.id) + '"' + (STATE.busy === 'week' ? ' disabled' : '') + '>' + (W._gcMMData && +((STATE.st || {}).stage || 1) < 2 ? '📤 Send the week for approval' : '✅ Approve the week') + '</button>')   /* patch MKTFIX8 */ : '') +
     (w.status === 'draft' && office() ? '<button class="gmt-btn o" data-a="soc-plan" data-w="' + esc(w.id) + '" data-replace="1">↻ Re-plan</button>' : '') + '</div></div>' +
     (w.reason ? '<div class="gmt-warn">Not approved: ' + esc(w.reason) + '</div>' : '') + '</div>';
   posts.forEach(function(p){ h += postCard(p, st); });
@@ -147110,7 +147166,7 @@ ACT['soc-approve-week'] = function(b){
     var aid = j.id || (MK.get('socweeks', id) || {}).apprId;
     var act = W._gcMMData ? W._gcMMData.approve : W._gcApprovalAct;   /* patch MM: the Marketing Manager decides through the marketing server */
     if (!act || !aid) { STATE.busy = ''; draw(); return; }
-    return Promise.resolve(act(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + r.error : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
+    return Promise.resolve(act(aid, 'approve')).then(function(r){ STATE.busy = ''; toast(r && r.ok ? '✅ The week is approved — each post goes out on its day.' : 'Sent to ✅ Approvals' + (r && r.error ? ' — ' + String(r.error).replace(/[.\s]+$/, '') : '') + '.', !(r && r.ok) && !/admin|Wesley|office/i.test((r && r.error) || '')); MK.pull(true); nST(draw, 800); });
   });
 };
 ACT['soc-swap'] = function(b){ var id = b.getAttribute('data-id'), t = D.querySelector('[data-soc-swap="' + id + '"]'), sv = D.querySelector('[data-soc-swaps="' + id + '"]'); b.disabled = true; b.textContent = 'Writing…';
@@ -147177,7 +147233,7 @@ VIEWS.media = function(){
       '<div style="font-size:11px;font-weight:800;margin-top:4px">' + (x.best ? '⭐ ' : '') + esc(x.jobName || x.src) + '</div><div class="gmt-muted" style="font-size:10px">' + esc(x.date) + ' · ' + esc(x.src) + (x.type ? ' · ' + esc(x.type) : '') + '</div>' +
       '<div style="font-size:10px;margin-top:2px">' + (x.perm ? '<span style="color:#166534">✓ OK to post</span>' : '<span style="color:#9a3412">✗ no customer OK</span>') + (x.tags.length ? ' · <span class="gmt-muted">' + esc(x.tags.slice(0, 3).join(', ')) + '</span>' : '') + '</div>' +
       (x.note && !x.thumb ? '<div class="gmt-muted" style="font-size:10px">' + esc(x.note) + '</div>' : '') + '</label>';
-  }).join('') + '</div>' + (list.length > 240 ? '<div class="gmt-muted">Showing the newest 240 — filter to see more.</div>' : '') + (!list.length ? '<div class="gmt-muted">Nothing matches.</div>' : '') + '</div>';
+  }).join('') + '</div>' + (list.length > 240 ? '<div class="gmt-muted">Showing the newest 240 — filter to see more.</div>' : '') + (!list.length ? (!all.length ? '<div class="gmt-warn" style="margin-top:8px"><b>The library is empty for now.</b> Add pictures and videos with <b>📸 Content session — batch upload</b> below (the crew, the trucks, a job start to finish). Job photos show up here by themselves once the office ticks “The customer said OK to use photos of this job in marketing” on the job (🗞 Neighborhood flyers or 🎬 Reel kit).</div>' : '<div class="gmt-muted">Nothing matches — clear the filters above.</div>') : '')   /* patch MKTFIX7 */ + '</div>';
   var jl = X.projects().slice(0, 400);
   h += '<div class="gmt-card"><h2>📸 Content session — batch upload</h2><div class="gmt-muted">Every 2–3 months: shoot the crew, the trucks, a job start-to-finish. Pick the job (or “Team / company”), the type, then the files — each one is tagged and lands here.</div>' +
     '<div class="gmt-row"><select id="ml-s-job"><option value="">Team / company (no job)</option>' + jl.map(function(p){ return '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>' +
@@ -147369,8 +147425,8 @@ VIEWS.mktsettings = function(){
 };
 D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-focus'); if (!k || !admin()) return; var f = Object.assign({}, SC.FOCUS, cfg().socFocus || {}); f[k] = Math.max(0, Math.min(100, +t.value || 0)); X.setCfg({ socFocus: f }); draw(); }, true);
 D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-adsfocus'); if (!k || !admin()) return; var f = Object.assign({}, SC.ADS_FOCUS, cfg().adsFocus || {}); f[k] = Math.max(0, Math.min(100, +t.value || 0)); X.setCfg({ adsFocus: f }); draw(); }, true);
-ACT['adsfocus-reset'] = function(){ X.setCfg({ adsFocus: Object.assign({}, SC.ADS_FOCUS) }); draw(); };
-ACT['focus-reset'] = function(){ X.setCfg({ socFocus: Object.assign({}, SC.FOCUS) }); draw(); };
+ACT['adsfocus-reset'] = function(){ var was = JSON.stringify(SC.adsFocusOf ? SC.adsFocusOf(cfg().adsFocus) : cfg().adsFocus); X.setCfg({ adsFocus: Object.assign({}, SC.ADS_FOCUS) }); draw(); toast(was === JSON.stringify(SC.adsFocusOf ? SC.adsFocusOf(SC.ADS_FOCUS) : SC.ADS_FOCUS) ? 'It already is the default (restoration 100%).' : 'Back to the default: restoration 100%.'); };   /* patch MKTFIX5 */
+ACT['focus-reset'] = function(){ var was = JSON.stringify(SC.focusOf ? SC.focusOf(cfg().socFocus) : cfg().socFocus); X.setCfg({ socFocus: Object.assign({}, SC.FOCUS) }); draw(); toast(was === JSON.stringify(SC.focusOf ? SC.focusOf(SC.FOCUS) : SC.FOCUS) ? 'It already is the default (60 / 20 / 12 / 8).' : 'Back to the default: 60 / 20 / 12 / 8.'); };   /* patch MKTFIX5 */
 ACT['stage-set'] = function(b){ if (!admin()) return; var n = +b.getAttribute('data-s'), cur = SC.stageCfg(cfg()).stage; if (n === cur) return; var note = W.prompt('Move marketing approvals to ' + SC.ASTAGES[n - 1].l + '? A note for the log (optional):', ''); if (note == null) { draw(); return; }
   MK.push().then(function(){ return api('soc', { op: 'set_stage', stage: n, note: note }); }).then(function(j){ toast(j && j.ok ? 'Now: ' + SC.ASTAGES[n - 1].l + ' (logged).' : 'Not changed: ' + ((j && j.error) || 'try again'), !(j && j.ok)); MK.pull(true); loadStatus(true); nST(draw, 700); }); };
 ACT['stage-flag'] = function(b){ if (!admin()) return; var a = Object.assign({}, cfg().apprStage || {}); a.flags = Object.assign({ price: true, insurance: true, customer: true }, a.flags || {}); a.flags[b.getAttribute('data-k')] = !!b.checked; X.setCfg({ apprStage: a }); draw(); };
@@ -147456,6 +147512,7 @@ VIEWS.myleads = function(){
   if (!L || L.loading) return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
   if (L.err) return '<div class="gmt-warn">Not loaded: ' + esc(L.err) + '</div>';
   var rows = arr(L.rows), f = L.funnel || {}, sv = L.soldValues, h = '';
+  if (!rows.length) h += '<div class="gmt-warn"><b>No marketing leads yet.</b> A lead counts here when it came from marketing: a tracked link or QR code (🔗 Tracked links, QR &amp; numbers), the website form (🌐 Website leads &amp; form), Google Business, an ad, the newsletter, a referral or a door hanger. Put a tracked link on every post, flyer and ad — the first leads show up here with their stage, city and service.</div>';   /* patch MKTFIX7 */
   var won = rows.filter(function(r){ return r.won; }), wonV = won.reduce(function(a, r){ return a + (r.sold || 0); }, 0), contact = rows.filter(function(r){ return r.daysToContact != null; });
   h += '<div class="gmt-kpis"><div class="gmt-kpi"><b>' + rows.length + '</b><span>marketing leads</span></div><div class="gmt-kpi"><b>' + won.length + '</b><span>won</span></div>' + (sv ? '<div class="gmt-kpi"><b>' + money(wonV) + '</b><span>sold (won jobs)</span></div>' : '') +
     '<div class="gmt-kpi"><b>' + (contact.length ? (Math.round(contact.reduce(function(a, r){ return a + r.daysToContact; }, 0) / contact.length * 10) / 10) : '—') + '</b><span>avg days to contact</span></div>' +
@@ -147488,7 +147545,7 @@ VIEWS.mytodo = function(){
     (done.length ? '<h3>Done</h3>' + done.map(function(t){ return '<div class="gmt-muted">✓ ' + esc(t.label) + '</div>'; }).join('') : '') + '</div>';
   return h;
 };
-ACT['mm-task-add'] = function(){ var l = s((D.getElementById('mm-task') || {}).value), due = s((D.getElementById('mm-task-due') || {}).value); if (!l) return; X.api('soc', { op: 'mm_task', add: { label: l, due: due } }).then(function(j){ toast(j && j.ok ? 'Added.' : 'Not added.', !(j && j.ok)); loadTasks(); }); };
+ACT['mm-task-add'] = function(){ var l = s((D.getElementById('mm-task') || {}).value), due = s((D.getElementById('mm-task-due') || {}).value); if (!l) { toast('Type the to-do first.', true); try { D.getElementById('mm-task').focus(); } catch (e) {} return; }   /* patch MKTFIX3 */ X.api('soc', { op: 'mm_task', add: { label: l, due: due } }).then(function(j){ toast(j && j.ok ? 'Added.' : 'Not added.', !(j && j.ok)); loadTasks(); }); };
 ACT['mm-task-done'] = function(b){ X.api('soc', { op: 'mm_task', id: b.getAttribute('data-id'), done: !!b.checked }).then(function(j){ if (!(j && j.ok)) toast('Not saved.', true); loadTasks(); }); };
 ACT['mm-item-done'] = function(b){ X.api('soc', { op: 'mm_task', id: b.getAttribute('data-id'), itemId: b.getAttribute('data-item'), done: !!b.checked }).then(function(){ loadTasks(); }); };
 
@@ -147498,7 +147555,7 @@ VIEWS.mmappr = function(){
   if (!ST.appr) { ST.appr = 'loading'; loadAppr(); }
   if (ST.appr === 'loading') return '<div class="gmt-card"><div class="gmt-muted">Loading…</div></div>';
   var l = arr(ST.appr), wait = l.filter(function(x){ return x.status === 'waiting'; }), past = l.filter(function(x){ return x.status !== 'waiting'; }).slice(-15).reverse(), h = '';
-  h += '<div class="gmt-card"><div class="gmt-muted">Stage ' + ((ST.mm && ST.mm.stage) || '') + ': what I may approve is marked. Flagged drafts (price, insurance, a customer, 1–3★ reviews, new templates) and every paid-ads draft go to an admin. I never approve spending money.</div></div>';
+  h += '<div class="gmt-card"><div class="gmt-muted">' + (ST.mm && +ST.mm.stage === 1 ? '<b>Stage 1 right now: an admin approves every marketing draft.</b> When an admin moves Marketing to stage 2 (⚙️ Focus & approvals), the drafts I may approve get a ✓ Approve button here. ' : ST.mm && ST.mm.approvesStage2 === false ? '<b>An admin has turned off "Marketing Manager approves at stage 2".</b> ' : '') + 'Stage ' + ((ST.mm && ST.mm.stage) || '') + ': what I may approve is marked. Flagged drafts (price, insurance, a customer, 1–3★ reviews, new templates) and every paid-ads draft go to an admin. I never approve spending money.</div></div>';
   h += '<div class="gmt-card"><h2>Waiting (' + wait.length + ')</h2>' + (wait.length ? wait.map(function(x){ return '<div class="gmt-card" style="margin:8px 0" data-mm-appr="' + esc(x.id) + '"><div class="gmt-row" style="justify-content:space-between"><b>' + esc(x.title) + '</b>' + (x.mine ? X.chip('approved').replace(/>[^<]*</, '>I may approve<') : X.chip('waiting').replace(/>[^<]*</, '>Needs an admin<')) + '</div>' +
     '<div class="gmt-muted">' + esc(x.to || '') + (arr(x.flags).length ? ' · ⚑ ' + esc(x.flags.map(function(f){ return SC.FLAG_L[f] || f; }).join(', ')) : '') + '</div>' + (x.html ? '<div style="margin-top:8px;max-height:320px;overflow:auto;border-top:1px solid #eef1f6;padding-top:8px">' + x.html + '</div>' : '') +
     (x.mine ? '<div class="gmt-row" style="margin-top:8px"><button class="gmt-btn g" data-a="mm-yes" data-id="' + esc(x.id) + '">✓ Approve</button><input id="mm-rj-' + esc(x.id) + '" placeholder="Why not (optional)"><button class="gmt-btn r" data-a="mm-no" data-id="' + esc(x.id) + '">Not now</button></div>' : '') + '</div>'; }).join('') : '<div class="gmt-muted">Nothing waiting.</div>') + '</div>';
@@ -147506,7 +147563,7 @@ VIEWS.mmappr = function(){
   return h;
 };
 ACT['mm-yes'] = function(b){ b.disabled = true; W._gcMMData.approve(b.getAttribute('data-id'), 'approve').then(function(j){ toast(j && j.ok ? 'Approved — it goes out on time.' : 'Not approved: ' + ((j && j.error) || 'try again'), !(j && j.ok)); MK.pull(true); loadAppr(); }); };
-ACT['mm-no'] = function(b){ var id = b.getAttribute('data-id'), r = s((D.getElementById('mm-rj-' + id) || {}).value); b.disabled = true; W._gcMMData.approve(id, 'reject', { reason: r }).then(function(){ toast('Sent back as a draft.'); MK.pull(true); loadAppr(); }); };
+ACT['mm-no'] = function(b){ var id = b.getAttribute('data-id'), r = s((D.getElementById('mm-rj-' + id) || {}).value); b.disabled = true; W._gcMMData.approve(id, 'reject', { reason: r }).then(function(j){ toast(j && j.ok ? 'Sent back as a draft.' : 'Not sent back: ' + ((j && j.error) || 'try again'), !(j && j.ok)); b.disabled = false; MK.pull(true); loadAppr(); }); };   /* patch MKTFIX3: says what happened */
 
 /* ══════════════ 🌐 WEBSITE LEADS & FORM ══════════════ */
 var FORMS = [['general', 'Contact form (any service)'], ['storm', 'Storm damage'], ['water', 'Water damage'], ['roofing', 'Roofing'], ['remodel', 'Remodel'], ['commercial', 'Commercial'], ['roofprice', 'Instant roof price']];
@@ -147649,6 +147706,8 @@ if (mm) {
   (function keepView(){ try { if (!/^(marketing|systems|mmt_[a-z]+)$/.test(localStorage.getItem('grayco_view') || '')   /* patch MMTABS: or one of his tabs */ && typeof W._setView === 'function') W._setView('marketing');   /* Marketing, or the GrayCo Systems launcher (marketing systems only) */ } catch (e) {} nST(keepView, 1000); })();
 }
 if (mm) { api('soc', { op: 'mm_boot' }).then(function(j){ if (j && j.ok) ST.mm = Object.assign({ stage: j.stage }, j.mm || {}); }); W.addEventListener('gc-mm-data', function(){ if (UI.root && UI.root.isConnected && !UI.editing) X.redrawSoon(); }); }
+/* patch MKTFIX3: may he approve this review reply himself? (the server's rule: stage 2+, the admin setting on, 4–5★) */
+W._gcMMReplyOk = function(r){ var m = ST.mm || {}; return +m.stage >= 2 && m.approvesStage2 !== false && (+(r && r.rating) || 5) >= 4; };
 W._gcMM = { state: function(){ return { mm: isMM(), secs: SECS.map(function(x){ return x.id; }), leads: ST.leads && arr(ST.leads.rows).length, settings: ST.mm }; }, _ST: ST };
 }
 })();
@@ -160835,7 +160894,7 @@ function load(force){
   if (S.loading) return; if (S.data && !force) return;
   S.loading = true;
   api('?list=1').then(function(j){ S.data = j; S.err = ''; S.denied = false; }, function(e){ if (e.status === 403) S.denied = true; else S.err = e.message; })
-    .then(function(){ return api('?pending=1').then(function(j){ S.pending = arr(j.cards); }, function(){}); })
+    .then(function(){ if (S.data && S.data.readOnly) return; return api('?pending=1').then(function(j){ S.pending = arr(j.cards); }, function(){}); })
     .then(function(){ S.loading = false; paintMkt(); });
 }
 function members(){ return S.data ? arr(S.data.members) : []; }
@@ -160905,7 +160964,7 @@ function mktHtml(){
       + '<div class="gmt-kpi"><b>' + money(T.earned) + '</b><span>credit earned · ' + money(T.used) + ' used on jobs</span></div>'
       + '<div class="gmt-kpi"><b>' + money(T.liability) + '</b><span>GrayCo owes: ' + money(T.balances) + ' in balances + ' + money(T.codesValue) + ' in ' + (T.codesOut || 0) + ' unused gift code' + (T.codesOut === 1 ? '' : 's') + '</span></div></div>';
   }
-  h += useCard();
+  if (!(d && d.readOnly)) h += useCard();   /* patch MKTFIX3: read-only (the Marketing Manager): no forms that can only say no */
   if (S.denied) return h + '<div class="gmt-card"><div class="gmt-muted">Members, balances and the lists are for the admins and the office. Anyone can use a gift code above.</div></div>';
   if (S.err) return h + '<div class="gmt-warn">' + esc(S.err) + '</div>';
   if (!d) return h + '<div class="gmt-card"><div class="gmt-muted">' + (S.loading ? 'Loading…' : '') + '</div></div>';
@@ -160917,8 +160976,8 @@ function mktHtml(){
   h += '<div class="gmt-card"><h2>🤝 Members and their credit</h2><div class="gmt-muted">Credits stack and never expire. Anyone can join: in their customer portal, on grayco-cs.com (Join our referral program), or below.</div>'
     + (mem.length ? '<div class="gref-scroll"><table><tr><th>Member</th><th>Code</th><th>Referrals</th><th>Balance</th><th></th></tr>' + mem.map(function(m){
       var row = '<tr><td><b>' + esc(m.name) + '</b><br><span class="gmt-muted">' + esc([m.email, m.phone].filter(Boolean).join(' · ')) + (m.how ? ' · ' + esc(m.how) : '') + ' · joined ' + day(m.createdAt) + ' (' + esc(m.source) + ')</span></td><td class="gref-code">' + esc(m.code) + '</td><td>' + m.referrals + (m.hired ? ' · ' + m.hired + ' hired' : '') + '</td>'
-        + '<td><b class="gref-pos">' + money(m.balance) + '</b><br><span class="gmt-muted">earned ' + money(m.earned) + '</span></td><td><button class="gmt-btn o" data-gref="hist" data-id="' + esc(m.id) + '">' + (S.open[m.id] ? 'Hide' : 'History') + '</button><button class="gmt-btn o" data-gref="link" data-link="' + esc(m.link) + '">Copy link</button>'
-        + '<button class="gmt-btn o" data-gref="use-member" data-id="' + esc(m.id) + '">Use credit…</button>' + (admin ? '<button class="gmt-btn o" data-gref="pick-add" data-id="' + esc(m.id) + '" data-k="credit">Add credit…</button><button class="gmt-btn o" data-gref="pick-add" data-id="' + esc(m.id) + '" data-k="gift">Gift code…</button>' : '') + '</td></tr>';
+        + '<td><b class="gref-pos">' + money(m.balance) + '</b><br><span class="gmt-muted">earned ' + money(m.earned) + '</span></td><td><button class="gmt-btn o" data-gref="hist" data-id="' + esc(m.id) + '">' + (S.open[m.id] ? 'Hide' : 'History') + '</button>' + (d.readOnly ? '' : '<button class="gmt-btn o" data-gref="link" data-link="' + esc(m.link) + '">Copy link</button>')
+        + (d.readOnly ? '' : '<button class="gmt-btn o" data-gref="use-member" data-id="' + esc(m.id) + '">Use credit…</button>') + (admin ? '<button class="gmt-btn o" data-gref="pick-add" data-id="' + esc(m.id) + '" data-k="credit">Add credit…</button><button class="gmt-btn o" data-gref="pick-add" data-id="' + esc(m.id) + '" data-k="gift">Gift code…</button>' : '') + '</td></tr>';
       if (S.open[m.id]) { var es = arr(d.ledger).filter(function(e){ return e.memberId === m.id; }); row += '<tr><td colspan="5"><table><tr><th>When</th><th>What</th><th>Amount</th><th>By</th></tr>' + (es.length ? es.map(function(e){ return '<tr><td>' + day(e.at) + '</td><td>' + esc(TYPE[e.type] || e.type) + (e.referredName ? ' — referred ' + esc(e.referredName) : '') + (e.pid ? ' — ' + esc(jobName(e.pid)) : '') + (e.last4 ? ' — …' + esc(e.last4) : '') + (e.note && e.type !== 'earn' ? ' <span class="gmt-muted">' + esc(e.note) + '</span>' : '') + '</td><td class="' + (num(e.amount) >= 0 ? 'gref-pos' : 'gref-neg') + '">' + (num(e.amount) >= 0 ? '+' : '−') + money(Math.abs(num(e.amount))) + '</td><td>' + esc(e.by) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="gmt-muted">Nothing yet.</td></tr>') + '</table></td></tr>'; }
       return row; }).join('') + '</table></div>' : '<div class="gmt-muted">No members yet.</div>') + '</div>';
   if (admin) h += '<div class="gmt-card" id="gref-add"><h2>➕ Add credit or make a gift code (admins)</h2><div class="gmt-muted">Both go on ✅ Approvals first (nothing changes until approved). Credit: $' + MIN + '–$' + MAX + '. A gift code comes out of the member\'s balance (at least $' + GMIN + ').</div>'
@@ -160926,7 +160985,7 @@ function mktHtml(){
     + '<div class="gref-grid"><select class="gref-in" data-gref-f="aMember">' + memberOptions('aMember', true) + '</select>' + inp('aAmount', 'Amount', 'number') + inp('aNote', S.f.aKind === 'gift' ? 'Note in the e-mail (optional)' : 'Why (shows in the e-mail)') + '</div><button class="gmt-btn g" data-gref="add">Put it on Approvals</button></div>';
   var cards = arr(d.cards);
   h += '<div class="gmt-card"><h2>🎟 Gift codes</h2><div class="gmt-muted">Made from members\' credit; one-time use; no expiration. Only the last 4 characters are kept — the full code is only in the member\'s e-mail. Look one up by its last 4:</div><div class="gmt-row" style="margin:6px 0">'
-    + '<input class="gref-in" style="width:110px" data-gref-last4="1" placeholder="Last 4" value="' + esc(S.last4) + '"><button class="gmt-btn o" data-gref="lookup">Look up</button>' + (S.found ? '<span class="gmt-muted">' + (S.found.length ? S.found.map(function(c){ return '…' + esc(c.last4) + ' ' + money(c.amount) + ' — ' + esc(c.memberName) + ' — ' + esc(c.status) + (c.redeemedAt ? ' ' + day(c.redeemedAt) : ''); }).join(' · ') : 'none') + '</span>' : '') + '</div>'
+    + (d.readOnly ? '<span class="gmt-muted">(the office looks codes up)</span>' : '<input class="gref-in" style="width:110px" data-gref-last4="1" placeholder="Last 4" value="' + esc(S.last4) + '"><button class="gmt-btn o" data-gref="lookup">Look up</button>') + (S.found ? '<span class="gmt-muted">' + (S.found.length ? S.found.map(function(c){ return '…' + esc(c.last4) + ' ' + money(c.amount) + ' — ' + esc(c.memberName) + ' — ' + esc(c.status) + (c.redeemedAt ? ' ' + day(c.redeemedAt) : ''); }).join(' · ') : 'none') + '</span>' : '') + '</div>'
     + (cards.length ? '<div class="gref-scroll"><table><tr><th>Code</th><th>From</th><th>Made</th><th>Status</th><th>Used on</th><th></th></tr>' + cards.map(function(c){
       return '<tr><td class="gref-code">…' + esc(c.last4) + ' · ' + money(c.amount) + '</td><td>' + esc(c.memberName) + '</td><td>' + day(c.issuedAt) + ' (' + esc(c.via || 'crm') + ')</td><td>' + codeChip(c) + '</td><td>'
         + (c.status === 'redeemed' ? esc(jobName(c.redeemedPid)) + '<br><span class="gmt-muted">' + day(c.redeemedAt) + ' · ' + esc(c.redeemedBy) + (c.appliedAt ? ' · on the invoice' : ' · not on an invoice yet') + '</span>' : c.status === 'void' ? '<span class="gmt-muted">' + esc(c.voidReason) + '</span>' : '') + '</td><td>'
@@ -160935,7 +160994,8 @@ function mktHtml(){
   h += '<div class="gmt-card"><h2>📇 Referrals</h2>' + (refs.length ? '<div class="gref-scroll"><table><tr><th>Date</th><th>Referred</th><th>By</th><th>How</th><th>Status</th></tr>' + refs.slice(0, 200).map(function(r){
     return '<tr><td>' + day(r.createdAt) + '</td><td><b>' + esc(r.name) + '</b><br><span class="gmt-muted">' + esc([r.phone, r.email].filter(Boolean).join(' · ')) + '</span></td><td>' + esc(r.memberName || (memberOf(r.memberId) || {}).name) + '</td><td>' + esc({ website: 'website', portal: 'portal', link: 'their link', crm: 'CRM' }[r.via] || r.via) + '</td><td>'
       + esc({ referred: 'Referred', job: 'Job: ' + (r.jobName || ''), paid: 'Paid — credit waiting for approval', credited: 'Credit added' + (r.credit ? ' (' + money(r.credit) + ')' : ''), closed: 'Closed' }[r.status] || r.status) + '</td></tr>'; }).join('') + '</table></div>' : '<div class="gmt-muted">No referrals yet.</div>') + '</div>';
-  h += '<div class="gmt-two"><div class="gmt-card"><h2>➕ Add a member</h2><div class="gref-grid">' + inp('mName', 'Name') + inp('mPhone', 'Phone', 'tel') + inp('mEmail', 'E-mail', 'email') + inp('mHow', 'How they know us') + '</div><button class="gmt-btn" data-gref="member">Add member</button></div>'
+  if (d.readOnly) h += '<div class="gmt-card"><div class="gmt-muted">👀 Read-only: the office adds members, referrals and credit — customer names and contact details stay with the office. The totals above and the ready-made referral ads below are yours to use.</div></div>';
+  else h += '<div class="gmt-two"><div class="gmt-card"><h2>➕ Add a member</h2><div class="gref-grid">' + inp('mName', 'Name') + inp('mPhone', 'Phone', 'tel') + inp('mEmail', 'E-mail', 'email') + inp('mHow', 'How they know us') + '</div><button class="gmt-btn" data-gref="member">Add member</button></div>'
     + '<div class="gmt-card"><h2>📨 Add a referral</h2><div class="gref-grid"><select class="gref-in" data-gref-f="rMember">' + memberOptions('rMember') + '</select>'
     + inp('rName', 'Their name') + inp('rPhone', 'Their phone', 'tel') + inp('rEmail', 'Their e-mail', 'email') + inp('rNote', 'What they need') + '</div><button class="gmt-btn" data-gref="refer">Add referral (→ a lead)</button></div></div>';
   return h + adHtml(d);
@@ -160997,6 +161057,8 @@ D.addEventListener('click', function(ev){
   if (a === 'hist') { S.open[id] = !S.open[id]; paintMkt(); return; }
   if (a === 'use-member') { S.f.mode = 'credit'; S.f.member = id; paintMkt(); try { D.querySelector('#gc-ref-mkt [data-gref-f="amount"]').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} return; }
   if (a === 'pick-add') { S.f.aMember = id; S.f.aKind = b.getAttribute('data-k'); S.f.aAmount = S.f.aKind === 'gift' ? '' : '250'; paintMkt(); var el = D.getElementById('gref-add'); if (el) try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} return; }
+  if (a === 'lookup' && !/^[A-Za-z0-9]{4}$/.test(String(S.last4 || '').trim())) { toast('Type the last 4 characters of the gift code.', true); return; }   /* patch MKTFIX4 */
+  if (a === 'member' && !String(S.f.mName || '').trim()) { toast('Type the member\'s name.', true); return; }
   if (a === 'lookup') { busy(api('?lookup=' + encodeURIComponent(S.last4))).then(function(j){ S.found = arr(j.cards); paintMkt(); }, function(){}); return; }
   if (a === 'link') { copy(b.getAttribute('data-link')).then(function(okd){ toast(okd ? 'Link copied' : 'Could not copy — select it by hand', !okd); }); return; }
   if (a === 'amount') { var v = num(S.amt[id] != null ? S.amt[id] : (D.querySelector('[data-gref-amt="' + id + '"]') || {}).value), gift = /^appr_refgift_/.test(id);

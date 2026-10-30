@@ -121,14 +121,15 @@ exports.handler = async function(event){
       return reply(200, headers, await X.draftCopy(body));
     }
     if (op === 'link_stats') { const c = await X.calls(); return reply(200, headers, { ok: true, clicks: await X.clicks(), calls: c.slice(-500).map(function(x){ return Object.assign({}, x, { from: office ? x.from : String(x.from || '').slice(-4) }); }) }); }
-    if (op === 'newsletter') { if (!office) return reply(403, headers, { ok: false, error: 'Only the office or an admin can do that.' }); return reply(200, headers, await X.ensureNewsletter({ month: /^\d{4}-\d{2}$/.test(String(body.month || '')) ? body.month : '', force: body.force === true })); }
+    if (op === 'newsletter') { if (!office && !who.marketing) return reply(403, headers, { ok: false, error: 'Only the office or an admin can do that.' }); /* patch MKTFIX2: + the Marketing Manager (a draft; it still waits on Approvals) */ return reply(200, headers, await X.ensureNewsletter({ month: /^\d{4}-\d{2}$/.test(String(body.month || '')) ? body.month : '', force: body.force === true })); }
     if (op === 'coupon_check') return reply(200, headers, await X.couponCheck(String(body.code || '')));
+    if (op === 'coupon_redeem' && who.marketing) return reply(403, headers, { ok: false, error: 'The office redeems a coupon on the job (the Marketing Manager profile sees the numbers only).' });   /* patch MKTFIX2 */
     if (op === 'coupon_redeem') {
       let setts = {}; try { const doc = await mk().readDoc(); setts = ((doc.cfg && doc.cfg.main) || {}).coupons || {}; } catch (e) {}
       return reply(200, headers, await X.couponRedeem(String(body.code || ''), Object.assign({}, body, { by: who.email }), setts));
     }
     if (op === 'coupon_stats') return reply(200, headers, { ok: true, by: await X.couponStats() });
-    if (op === 'event_signups') { const all = await X.eventSignups(); return reply(200, headers, { ok: true, list: (all[String(body.id || '')] || []).map(function(x){ return { name: x.name, phone: x.phone, email: x.email, address: x.address, slot: x.slot, leadId: x.leadId || '', at: x.at, reminded: x.reminded || '' }; }) }); }
+    if (op === 'event_signups') { const all = await X.eventSignups(); return reply(200, headers, { ok: true, list: (all[String(body.id || '')] || []).map(function(x){ return who.marketing ? { name: 'A neighbor', slot: x.slot, at: x.at, reminded: x.reminded || '' } : { name: x.name, phone: x.phone, email: x.email, address: x.address, slot: x.slot, leadId: x.leadId || '', at: x.at, reminded: x.reminded || '' }; }) }); }   /* patch MKTFIX2: the Marketing Manager sees the slots, never who signed up */
     if (op === 'giveaway_entries') { const l = await X.giveawayEntries(String(body.id || X.gwId())); return reply(200, headers, { ok: true, count: l.length, list: office ? l.slice(-300).map(function(x){ return { name: x.name, email: x.email, zip: x.zip, src: x.src, at: x.at }; }) : [] }); }
     if (op === 'site_stats') { X._cache.v = null; return reply(200, headers, await X.siteData()); }
     if (!admin) return reply(403, headers, { ok: false, error: 'Only Wesley or Nick can do that.' });

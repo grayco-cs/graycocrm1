@@ -106,7 +106,7 @@ A person who runs GrayCo's marketing **without seeing company data**. Who has it
 
 **How it is locked (not only hidden):**
 - His gc_staff row is **never active staff** (`active = false`, `profile = 'marketing'`, `mkt_active = true`; a database check refuses anything else). So every database rule that lets staff in, the file storage, and every Netlify function's staff check **refuse him by construction**.
-- The database lets him read four keys only (`users`, `gc_company_address`, `gc_epoch`, `gc_mkt_admin`) and write nothing.
+- The database lets him read four keys only (`gc_company_address`, `gc_epoch`, `gc_mkt_admin`, `gc_automation_pause`) and write nothing — not the employee list `users` (10/30, patch MKTFIX6: run docs/marketing-role.sql again). His browser asks for nothing else even while the database lock is not run (patch MKTFIX1), and calls only the marketing functions.
 - Everything marketing goes through `netlify/functions/soc.js` (and the marketing calls of `mkt.js` / `mkt2.js`, the referral list), which **redacts** every answer to him: the marketing records without job addresses or customer names, the jobs as a marketing projection (service + city, the street without the house number, no money), only the photos of jobs whose customer said yes, picture links one at a time.
 - Turning him off: 💎 → Team access → **Remove** (or a different profile).
 
