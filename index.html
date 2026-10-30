@@ -118127,7 +118127,7 @@ function drawHome(m){
   var low8=w8.weeks.reduce(function(a,w){ return Math.min(a,w.running); }, Infinity);
   var negW=w8.weeks.filter(function(w){ return w.running<0; }).length;
   var cards=[];
-  if(isAdmin()) cards.push('<div class="gck-card gck-cash" id="gck-cash" data-admin-only="1"><h3>💵 Cash today</h3><div class="gck-big" style="color:#64748b">Connect bank &amp; cards — coming</div><div class="gck-sub">Owners only. Bank and card balances will show here live once the bank connection is set up. Nothing about them is stored on this computer.</div></div>');
+  if(isAdmin()) cards.push('<div class="gck-card gck-cash" id="gck-cash" data-admin-only="1"><h3>💵 Cash today</h3><div class="gck-big" style="color:#64748b">Connect bank &amp; cards — coming</div><div class="gck-sub">Owners and the office only. Bank and card balances will show here live once the bank connection is set up. Nothing about them is stored on this computer.</div></div>');
   cards.push('<button class="gck-card" data-tab="k_in"><h3>⬇ Money coming in</h3><div class="gck-big">'+money(ar.totals.all)+'</div><div class="gck-sub">owed to us on '+ar.rows.length+' invoice'+(ar.rows.length===1?'':'s')+' · <b class="'+(ar.totals.b3>0?'gck-neg':'')+'">'+money(ar.totals.b3)+'</b> over 90 days</div></button>');
   cards.push('<button class="gck-card" data-tab="k_out"><h3>⬆ Money going out</h3><div class="gck-big">'+money(out.totals.thisFri+out.totals.late)+'</div><div class="gck-sub">this Friday '+fmtDay(out.thisFri)+(out.totals.late?' (incl. '+money(out.totals.late)+' past its date)':'')+' · next Friday '+money(out.totals.nextFri)+'</div></button>');
   cards.push('<button class="gck-card" data-tab="k_w8"><h3>📅 Next 8 weeks</h3><div class="gck-big '+(low8<0?'gck-neg':'')+'">'+money(w8.weeks[7].running)+'</div><div class="gck-sub">expected in − out over 8 weeks · '+(negW?'<b class="gck-neg">'+negW+' week'+(negW===1?'':'s')+' below zero</b>':'no week below zero')+' <span class="gck-est">includes estimates</span></div></button>');
@@ -118394,7 +118394,7 @@ function act(a, el){
   switch(k){
     case 'csv': return exportCsv();
     case 'print': return doPrint();
-    case 'reload': return loadExtras().then(render);
+    case 'reload': if(el){ el.disabled=true; el.textContent='↻ Checking…'; } return loadExtras().then(render).then(function(){ try{ if(typeof window._toast==='function') window._toast('✓ Checked again — the list is up to date'); }catch(e){} });   /* patch OFFFIX2: an answer for Re-check duplicates */
     case 'bucket': V.filter.bucket=v||''; return render();
     case 'mf': V.filter.match=v||''; return render();
     case 'jp': V.jobsPeriod=v; return render();
@@ -160744,7 +160744,7 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function crm(){ return W._crm || {}; }
 function lsQ(){ try { var v = JSON.parse(localStorage.getItem('gc_expense_approvals') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-function toast(m){ try { if (typeof W.showToast === 'function') { W.showToast(m); return; } } catch (e) {} }
+function toast(m){ try { if (typeof W.showToast === 'function') { W.showToast(m); return; } } catch (e) {} try { if (typeof W._toast === 'function') W._toast(m); } catch (e) {} }   /* patch OFFFIX2: the page's toast is window._toast */
 var DECIDED = /^(approved|rejected|denied)$/;
 
 /* one read of the queue + the expense list per task (the lists call this once per row) */
