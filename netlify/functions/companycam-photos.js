@@ -15,7 +15,7 @@ exports.handler = async function(){
   try {
     r = await CP.run({ who: 'schedule', budgetMs: Math.min(18000, +process.env.CC_PHOTO_SCHED_MS || 18000) });
     if (r.more && !r.waiting && !r.busy && !r.skipped && r.ok !== false) r.handedOff = await CP.kickBackground('schedule');
-    try { console.log('[companycam-photos] ' + JSON.stringify({ ok: r.ok, skipped: r.skipped, projects: r.projects, photos: r.photos, calls: r.calls, queue: r.queue, stop: r.stop, handedOff: r.handedOff })); } catch (e) {}
+    try { console.log('[companycam-photos] ' + JSON.stringify({ ok: r.ok, skipped: r.skipped, projects: r.projects, photos: r.photos, calls: r.calls, queue: r.queue, stop: r.stop, copy: r.copy, handedOff: r.handedOff })); } catch (e) {}
     return { statusCode: 200, body: JSON.stringify({ ok: r.ok !== false, projects: r.projects, photos: r.photos, queue: r.queue, handedOff: !!r.handedOff }) };
   } catch (e) {
     console.log('[companycam-photos] failed: ' + String(e && e.message || e).replace(/Bearer\s+\S+/gi, 'Bearer ...').slice(0, 200));

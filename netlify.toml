@@ -107,8 +107,10 @@
   schedule = "*/15 * * * *"
 
 # CompanyCam photos (patch CCPHOTOS, _lib/cc-photos.js): every 15 minutes, between the sync's runs — every photo of every
-# CompanyCam project a job or lead is linked to is listed for GrayCo Photos (CompanyCam's own small links; no picture is
-# copied). The first run after a deploy is the whole backfill; it hands a backlog to companycam-photos-background (~13 min).
+# CompanyCam project a job or lead is linked to is listed for GrayCo Photos (CompanyCam's own small links). Patch CCPHOTOS2: when
+# the owner turns on "Keep a GrayCo copy of every photo" (gc_kv ccidx_copy; OFF by default — needs Supabase Pro), the same runs
+# also copy each photo into crm-files (docs/COMPANYCAM.md). The first run after a deploy is the whole backfill; it hands a
+# backlog to companycam-photos-background (~13 min).
 [functions."companycam-photos"]
   schedule = "7,22,37,52 * * * *"
 

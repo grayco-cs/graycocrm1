@@ -377,6 +377,32 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, started: started, message: started ? 'Indexing every CompanyCam photo now — press Refresh to see how far it is.' : 'Asked — the next 15-minute run starts it.' }) };
   }
 
+  // POST ?proxy=photocopy {on, capGB} — patch CCPHOTOS2: "Keep a GrayCo copy of every photo" (owner / admin only). The
+  // switch is gc_kv ccidx_copy (missing = OFF). On: the background run starts copying at once. Never the token.
+  if(event.httpMethod === 'POST' && qs.proxy === 'photocopy'){
+    const role = String(who && who.role || '').toLowerCase();
+    if(!/^(admin|owner)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only the owner or an admin can change this.' }) };
+    const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+    const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if(!svc) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY is not set in Netlify.' }) };
+    let b = {}; try{ b = JSON.parse(event.body || '{}') || {}; }catch(e){ b = {}; }
+    const CP = require('./_lib/cc-photos.js'), at = new Date().toISOString();
+    let cur = {};
+    try{ const g = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22' + CP.COPY + '%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } }); if(g.ok){ const rows = await g.json(); let v = Array.isArray(rows) && rows[0] ? rows[0].value : null; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } } if(v && typeof v === 'object') cur = v; } }catch(e){}
+    const next = CP.copyCfg(cur);
+    if(typeof b.on === 'boolean') next.on = b.on;
+    if(b.capGB != null && b.capGB !== ''){ const c = Number(b.capGB); if(!(isFinite(c) && c >= 1 && c <= 100000)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'The cap is a number of GB (1 or more).' }) }; next.capGB = Math.round(c * 10) / 10; }
+    const val = { on: next.on, capGB: next.capGB, by: who.email || '', at: at };
+    try{
+      const r = await fetch(url + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: svc, Authorization: 'Bearer ' + svc, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([{ key: CP.COPY, value: val, updated_at: at }]) });
+      if(!r.ok) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not save (' + r.status + ').' }) };
+    }catch(err){ return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not reach the CRM database. Try again.' }) }; }
+    const started = val.on && String(process.env.COMPANYCAM_TOKEN || '').trim() ? await CP.kickBackground('copy') : false;
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, on: val.on, capGB: val.capGB, started: started,
+      message: val.on ? 'GrayCo copies are ON — copying in the background (pauses at ' + val.capGB + ' GB). Press Refresh to see how far it is.' : 'GrayCo copies are OFF — nothing new is copied; the copies already made stay.' }) };
+  }
+
   // GET ?proxy=sync — patch CCS: what the 15-minute companycam-sync recorded on its last run (gc_kv gc_cc_sync_health)
   // and whether COMPANYCAM_TOKEN is set here. Never the key. No CompanyCam call.
   if(event.httpMethod === 'GET' && qs.proxy === 'sync'){
@@ -386,16 +412,21 @@ exports.handler = async function(event, context) {
     if(!svc){ out.serviceKey = false; return { statusCode: 200, headers, body: JSON.stringify(out) }; }
     try{
       /* + patch CCS2 (one truth): gc_cc_whoami, the last real GET /company check, with its time */
-      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22,%22gc_cc_review%22,%22gc_cc_sync_request%22,%22ccidx_state%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22,%22gc_cc_review%22,%22gc_cc_sync_request%22,%22ccidx_state%22,%22ccidx_copy%22,%22ccvis%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
       if(r.ok){
         const rows = await r.json();
+        let pst = null, pcopy = null;   /* patch CCPHOTOS2: the copies' meter needs both rows */
         (Array.isArray(rows) ? rows : []).forEach(function(x){
           let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
           if(!v || typeof v !== 'object') return;
-          if(x.key === 'ccidx_state'){ out.photoIndex = require('./_lib/cc-photos.js').statusOf(v); return; }   /* patch CCPHOTOS */
+          if(x.key === 'ccidx_state'){ pst = v; return; }   /* patch CCPHOTOS */
+          if(x.key === 'ccidx_copy'){ pcopy = v; return; }   /* patch CCPHOTOS2 */
+          if(x.key === 'ccvis'){ out.ccvis = { since: String(v.since || '') }; return; }   /* patch CCPHOTOS2 */
           if(x.key === 'gc_cc_sync_health') out.health = v; else if(x.key === 'gc_cc_whoami') out.whoami = v;
           else if(x.key === 'gc_cc_review') out.review = Array.isArray(v) ? v.slice(0, 100) : []; else if(x.key === 'gc_cc_sync_request') out.request = { at: v.at || '', by: v.by || '' };   /* patch CCSYNC */
         });
+        if(pst) out.photoIndex = require('./_lib/cc-photos.js').statusOf(pst, pcopy);
+        else out.photoCopy = require('./_lib/cc-photos.js').copyStatus({}, pcopy);   /* patch CCPHOTOS2: the switch shows before the first index run */
       }
       else out.readError = r.status;
     }catch(err){ out.readError = 'unreachable'; }
