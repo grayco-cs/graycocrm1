@@ -1,0 +1,10 @@
+.pv-pms{display:flex;gap:8px;align-items:center;overflow-x:auto;scrollbar-width:none;max-width:100%;margin:-6px 0 2px;padding:2px 0}
+.pv-pms::-webkit-scrollbar{display:none}
+.pv-pml{flex:0 0 auto;font-size:12px;font-weight:800;color:#8a8fa3;letter-spacing:.06em}
+.pv-pmc{height:34px;padding:0 12px}
+.pv-cw{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pv-pmpick{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:700;color:#6b7083;padding:0 4px}
+.pv-pmpick select{flex:0 1 auto;min-width:0;max-width:100%;height:32px;padding:0 8px;border:1px solid #e6e8ec;border-radius:999px;background:#fff;color:#1B1452;font:700 13px 'Source Sans 3',Inter,sans-serif;cursor:pointer}
+.pv-pmpick select:focus-visible{outline:2px solid #1B1452;outline-offset:1px}
+.pv-pmjob{padding:0}
+@media(max-width:699px){.pv-pmpick select{font-size:16px;height:40px}}
