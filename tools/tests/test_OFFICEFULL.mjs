@@ -107,11 +107,11 @@ const adm = await O.ev(async () => {
     hub: !!hub, teamRow: /Team access/.test(hub ? hub.innerText : ''), security: /Security & system check/.test(hub ? hub.innerText : ''),
     sections: window._gcAdm && window._gcAdm.sections ? window._gcAdm.sections().map(s => s.id) : [], text: m.innerText.length };
 });
-const rows = await O.ev(() => (window._gcAdm.sections() || []).reduce((a, s) => a.concat(s.rows.map(r => r.t)), []));
+const admRows = await O.ev(() => (window._gcAdm.sections() || []).reduce((a, s) => a.concat(s.rows.map(r => r.t)), []));
 ok(!adm.lock && adm.text > 500, 'office: ⚙ Admin opens', { text: adm.text });
 ok(!adm.add && !adm.edit && !adm.del && !adm.dis, 'office: no + Add Employee / EDIT / Disable / 🗑 on the team list', adm);
-ok(!adm.sections.includes('security') && !rows.some(t => /^(Team access|Backups|Import a backup|Make the cloud the truth|Storage|Offboarding|Hiring)/.test(t)), 'office: no Team access / backups / restore / storage / Security card in Admin settings', { sections: adm.sections });
-ok(rows.some(t => /^Pay structures|^Overhead/.test(t)) && adm.sections.includes('pay'), 'office: the pay / money settings are there', rows.filter(t => /Pay|Overhead/.test(t)));
+ok(!adm.sections.includes('security') && !admRows.some(t => /^(Team access|Backups|Import a backup|Make the cloud the truth|Storage|Offboarding|Hiring)/.test(t)), 'office: no Team access / backups / restore / storage / Security card in Admin settings', { sections: adm.sections });
+ok(admRows.some(t => /^Pay structures|^Overhead/.test(t)) && adm.sections.includes("pay"), "office: the pay / money settings are there", admRows.filter(t => /Pay|Overhead/.test(t)));
 const d0 = O.dialogs.length;
 await O.ev(() => { try { window._gcTeamAccess(); } catch (e) {} });
 await sleep(500);
