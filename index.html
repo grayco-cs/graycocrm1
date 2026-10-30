@@ -147490,16 +147490,16 @@ try {
 
 /* ── start ──────────────────────────────────────────────────────────────────────────────── */
 wrapOpen();
-/* on ⚙ Admin the team list is drawn (and redrawn) by the app: the office's copy is fixed as soon as it changes */
-var MO = null, MOmain = null, moQ = false;
+/* on ⚙ Admin the team list is drawn (and redrawn) by the app: for the office only, one observer fixes it as soon as it
+   changes (timers can be slowed on a quiet page; the observer is not) */
+var MO = null, moQ = false;
 function watchAdmin(){
-  var on = !D.hidden && view() === 'admin' && office(), main = on ? D.querySelector('main') : null;
-  if (!main) { if (MO) { MO.disconnect(); MO = null; MOmain = null; } return; }
-  if (MO && MOmain === main) return;
-  if (MO) MO.disconnect();
-  MOmain = main;
-  MO = new MutationObserver(function(){ if (moQ) return; moQ = true; (W.requestAnimationFrame || ST)(function(){ moQ = false; try { adminPage(); } catch (e) {} }); });
-  MO.observe(main, { childList: true, subtree: true });
+  if (MO || !office() || !D.body) return;
+  MO = new MutationObserver(function(){
+    if (moQ || view() !== 'admin') return; moQ = true;
+    (W.requestAnimationFrame || ST)(function(){ moQ = false; try { adminPage(); } catch (e) {} });
+  });
+  MO.observe(D.body, { childList: true, subtree: true });
 }
 SI(function(){ try { wrapOpen(); watchAdmin(); adminPage(); } catch (e) {} }, 800);
 W._gcOfficeFull = {

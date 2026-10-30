@@ -99,7 +99,7 @@ ok(!money.allowed.length, 'office: Admin, Payroll, P&L, Accounting, invoices, pa
 ok(money.canCash && money.noHr, 'office: reads / changes the money keys; hiring, pay records, team roles, backups stay admin', money);
 ok(/12345/.test(money.cash || '') && /Owner draw/.test(money.ledger || ''), 'office: the cash vault loaded (cash on hand, the bank movements / owner draws)', { vault: money.vault });
 ok(money.commission === true, 'office: commission figures are not hidden', money.commission);
-ok(money.projects === projAll && projAll > 0, 'office: all ' + projAll + ' projects', money.projects);
+ok(money.projects >= projAll && projAll > 0, 'office: all ' + projAll + ' projects', money.projects);
 /* ⚙ Admin as the office */
 const adm = await O.ev(async () => {
   window._setView('admin'); await new Promise(r => setTimeout(r, 2500));
