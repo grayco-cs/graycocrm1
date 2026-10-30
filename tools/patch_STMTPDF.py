@@ -86,7 +86,7 @@ EDITS = [
   ("rec.date=ymd(g('date')); rec.num=g('num').replace(/^#/,''); rec.name=g('name')||curName; rec.memo=g('memo'); rec.due=ymd(g('due'));",
    "rec.date=ymd(g('date'))||qbDate(g('date')); rec.num=g('num').replace(/^#/,''); rec.name=g('name')||curName; rec.memo=g('memo'); rec.due=ymd(g('due'))||qbDate(g('due'));"),
   ("var a=g('amount'); rec.amount=num(a); rec.open = g('open')!=='' ? num(g('open')) : null; rec.account=g('account'); rec.status=g('status');",
-   "var a=g('amount'); rec.amount=num(a); rec.open = (g('open')!=='' && !(d.kind==='transactions' && /^balance$/i.test(s(d.headers[m.open])))) ? num(g('open')) : null; rec.account=g('account')||curAcct; rec.status=g('status');   /* patch STMTPDF: a running Balance is not an open balance */"),
+   "var a=g('amount'); rec.amount=num(a); rec.open = (g('open')!=='' && !(d.kind==='transactions' && /^balance$/i.test(s(d.headers[m.open])))) ? num(g('open')) : null; rec.account=(curAcct && /^split/i.test(s(d.headers[m.account]))) ? curAcct : (g('account')||curAcct); rec.status=g('status');   /* patch STMTPDF: a running Balance is not an open balance; the heading is the account, Split the other side */"),
   ("  /* Sales by Customer Detail: one invoice = several product lines → add them up per invoice number */",
    "  /* patch STMTPDF: Transaction Detail by Account lists an invoice under A/R (its total) and again under each income account\n"
    "     (its lines): keep the total, once */\n"

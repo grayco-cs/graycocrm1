@@ -54,17 +54,21 @@ var PDFJS = [
   ['https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js', 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js']
 ];
 var pdfP = null;
+/* the CRM keeps a small local text reader under the same name (window.pdfjsLib.__gcLocal: text only, no positions); the real
+   library replaces it, and the local one is the fallback when the library cannot load */
+function realLib(){ return W.pdfjsLib && !W.pdfjsLib.__gcLocal ? W.pdfjsLib : null; }
 function ensurePdfJs(){
-  if (W.pdfjsLib) return Promise.resolve(W.pdfjsLib);
+  if (realLib()) return Promise.resolve(realLib());
   if (pdfP) return pdfP;
+  var local = W.pdfjsLib && W.pdfjsLib.__gcLocal ? W.pdfjsLib : null;
   pdfP = new Promise(function(res, rej){
     var at = 0;
     (function next(){
-      if (W.pdfjsLib) { res(W.pdfjsLib); return; }
-      if (at >= PDFJS.length) { pdfP = null; rej(new Error('The PDF reader could not load (the network blocked it). Try again, or use the CSV from the bank.')); return; }
+      if (realLib()) { res(realLib()); return; }
+      if (at >= PDFJS.length) { pdfP = null; if (local) { if (!W.pdfjsLib) W.pdfjsLib = local; res(local); return; } rej(new Error('The PDF reader could not load (the network blocked it). Try again, or use the CSV from the bank.')); return; }
       var pair = PDFJS[at++], sc = D.createElement('script');
       sc.src = pair[0];
-      sc.onload = function(){ if (!W.pdfjsLib) { next(); return; } try { W.pdfjsLib.GlobalWorkerOptions.workerSrc = pair[1]; } catch (e) {} res(W.pdfjsLib); };
+      sc.onload = function(){ var L = realLib(); if (!L) { next(); return; } try { L.GlobalWorkerOptions.workerSrc = pair[1]; } catch (e) {} res(L); };
       sc.onerror = next;
       D.head.appendChild(sc);
     })();
@@ -102,6 +106,11 @@ function linesOf(items, pageNo){
 function pdfLines(buf, progress){
   return ensurePdfJs().then(function(lib){
     var data = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    if (lib.__gcLocal) {   /* offline: the CRM's local text reader — lines without positions */
+      return lib.getDocument({ data: data.slice() }).promise.then(function(pdf){ return pdf.getPage(1); }).then(function(pg){ return pg.getTextContent(); }).then(function(tc){
+        var t = (tc.items || []).map(function(x){ return s(x.str); }).join('\n'), d = textPages(t); d.chars = t.replace(/\s/g, '').length; d.local = true; return d;
+      });
+    }
     return lib.getDocument({ data: data, isEvalSupported: false }).promise.then(function(pdf){
       var out = { pages: [], chars: 0, n: pdf.numPages }, i = 0;
       function next(){
@@ -568,6 +577,21 @@ function myName(){ var u = me(); return s(u.name) || s(u.email).split('@')[0] ||
 function bankNames(){ try { return JSON.parse(lsGet('gc_stmt_bank_accts') || '[]') || []; } catch (e) { return []; } }
 function rememberBank(n){ n = s(n); if (!n) return; var l = bankNames().filter(function(x){ return x !== n; }); l.unshift(n); lsSet('gc_stmt_bank_accts', JSON.stringify(l.slice(0, 12))); }
 
+/* add expenses the way the card code does (the list the job costs read, the screen, this computer's store) — never a stale copy */
+function addExpenses(add){
+  var cur = Array.isArray(crm().expenses) && crm().expenses.length ? crm().expenses.slice() : null;
+  return (cur ? Promise.resolve(cur) : Promise.resolve(W.idbGet ? W.idbGet('expenses') : []).then(function(v){ return Array.isArray(v) ? v.slice() : []; }, function(){ return []; })).then(function(l){
+    var have = {}; l.forEach(function(x){ if (x) have[s(x.id)] = 1; });
+    var n = add.filter(function(x){ return !have[x.id]; }); l = l.concat(n);
+    try { if (W._crm) W._crm.expenses = l; } catch (e) {}
+    try { W.__GC_MANUAL_SAVE__ = true; if (typeof W._setExpenses === 'function') W._setExpenses(l); } catch (e) {}
+    return Promise.resolve(W.idbSet ? W.idbSet('expenses', l) : null).then(null, function(){}).then(function(){
+      ST.call(W, function(){ try { W.__GC_MANUAL_SAVE__ = false; } catch (e) {} }, 1200);
+      try { if (W._gcPushAll) ST.call(W, function(){ W._gcPushAll(); }, 900); } catch (e) {}
+      return n.length;
+    });
+  });
+}
 var LAST = { res: null };
 function openImport(o){
   o = o || {};
@@ -696,7 +720,12 @@ function openImport(o){
   ov.addEventListener('change', function(ev){
     var t = ev.target;
     if (t === q('file') && t.files && t.files[0]) { takeFile(t.files[0]); return; }
-    if ((t === q('card') || t === q('newcard') || t === q('acct')) && res) { useResult(res); return; }
+    if ((t === q('card') || t === q('acct')) && rows.length) {   /* another card / account: re-check the duplicates (redraw only if one changed) */
+      var A2 = acct(), changed = false;
+      rows.forEach(function(r){ var d = findDup(r, mode, A2), v = d ? (s(d.id) || 'yes') : ''; if (!!v !== !!r.dup) { changed = true; r.dup = v; r.on = importable(r, mode) && !v; } });
+      if (changed) draw();
+      return;
+    }
     var tr = t.closest && t.closest('[data-r]');
     if (t.getAttribute('data-c') === 'all') { rows.forEach(function(r){ if (importable(r, mode) && !r.dup) r.on = t.checked; }); draw(); return; }
     if (!tr) return; var r = rows[+tr.getAttribute('data-r')];
@@ -742,13 +771,12 @@ function openImport(o){
           .then(function(x){ if (x && x.ok) { if (x.merged) out.merged++; else out.added++; } else out.failed++; }, function(){ out.failed++; }).then(next);
       }
       return next().then(function(){
-        if (refunds.length && typeof W._setExpenses === 'function') {
+        if (!refunds.length) return 0;
           var add = refunds.map(function(r){ var p = proj(r.pid); return { id: 'CARD:R' + hash(stmtKey(A.key, r) + r.desc), stmtKey: stmtKey(A.key, r), pid: r.pid || '', overhead: !r.pid && !!r.overhead, date: r.date, category: r.category, vendor: r.vendor, payee: r.vendor,
             desc: 'Refund / credit — ' + r.desc, amt: -r.amount, amount: -r.amount, type: 'refund', status: 'paid', method: 'Credit Card', payMethod: 'Credit Card', source: 'creditcard', by: 'Card statement import', cardId: A.cardId, po: p ? poOf(p) : '', direction: 'in', isIncome: false, enteredAt: nowIso() }; });
-          W._setExpenses(function(prev){ var l = Array.isArray(prev) ? prev : []; var have = {}; l.forEach(function(x){ have[s(x.id)] = 1; }); return l.concat(add.filter(function(x){ return !have[x.id]; })); });
-          out.refunds = add.length;
-          try { if (W._gcPushAll) ST.call(W, function(){ W._gcPushAll(); }, 900); } catch (e) {}
-        }
+          return addExpenses(add);
+      }).then(function(nr){
+        out.refunds = nr || 0;
         try { if (M().learn) M().learn(pick.map(function(r){ return { vendor: r.vendor, category: r.category, pid: r.pid, overhead: r.overhead, how: r.how }; })); } catch (e) {}
         try { if (W._gcPushAll) ST.call(W, function(){ W._gcPushAll(); }, 900); } catch (e) {}
         var noJob = pick.filter(function(r){ return !r.pid && !r.overhead; }).length;
@@ -765,14 +793,14 @@ function openImport(o){
       return { id: 'BANK-' + hash(key + '|' + r.desc), stmtKey: key, pid: r.pid || '', overhead: !r.pid && !!r.overhead, type: 'expense', date: r.date, vendor: r.vendor, payee: r.vendor, desc: r.desc + (r.memo ? ' — ' + r.memo : ''),
         amt: r.amount, amount: r.amount, category: r.category, status: 'paid', approved: true, payMethod: r.kind === 'check' ? 'Check' : 'Bank (ACH / debit)', method: r.kind === 'check' ? 'Check' : 'Bank', ref: r.checkNo || '', checkNo: r.checkNo || '',
         bankAcct: A.name, source: 'bank-statement', by: 'Bank statement import', po: p ? poOf(p) : '', direction: 'out', isIncome: false, matchWhy: r.why, enteredBy: myName(), enteredAt: nowIso() }; });
-    W._setExpenses(function(prev){ var l = Array.isArray(prev) ? prev : []; var have = {}; l.forEach(function(x){ have[s(x.id)] = 1; }); return l.concat(add.filter(function(x){ return !have[x.id]; })); });
-    try { if (W._gcPushAll) ST.call(W, function(){ W._gcPushAll(); }, 900); } catch (e) {}
+    return addExpenses(add).then(function(nAdded){
     try { if (M().learn) M().learn(pick.map(function(r){ return { vendor: r.vendor, category: r.category, pid: r.pid, overhead: r.overhead, how: r.how }; })); } catch (e) {}
     var noJob = pick.filter(function(r){ return !r.pid && !r.overhead; }).length;
-    var out = { added: add.length, merged: dups };
+    var out = { added: nAdded, merged: dups + (add.length - nAdded) };
     W._gcMoney && (W._gcMoney.lastBankImport = out);
-    return Promise.resolve('<div data-c="done" style="padding:14px;border-radius:10px;background:#f0fdf4;color:#166534;font-weight:700">✓ ' + out.added + ' costs added from the bank statement' + (out.merged ? ' · ' + out.merged + ' were already in (not doubled)' : '') +
+    return ('<div data-c="done" style="padding:14px;border-radius:10px;background:#f0fdf4;color:#166534;font-weight:700">✓ ' + out.added + ' costs added from the bank statement' + (out.merged ? ' · ' + out.merged + ' were already in (not doubled)' : '') +
       '<div style="font-weight:400;color:#334155;margin-top:4px">Paid expenses on their jobs (check # kept).' + (noJob ? ' ' + noJob + ' have no job yet — they wait in 📥 Needs a job.' : '') + (canBank() ? ' Run 🧾 Monthly Bank Check to compare the deposits too.' : '') + '</div></div>');
+    });
   }
   if (o.file) takeFile(o.file);
   return ov;
