@@ -359,8 +359,9 @@ async function sendReport(o){
   o = o || {};
   const v = await read(), r = await report(o);
   const admins = await adminEmails(), agency = memberList(v).filter(function(m){ return m.active !== false; }).map(function(m){ return m.email; });
-  const to = reportRecipients(v, admins.concat(agency));
-  const ok = await mail(to, r.subject, r.html);
+  let to = reportRecipients(v, admins.concat(agency));
+  if (!o.all) { try { const own = await require('./mktfeat.js').ownerReportRecipients(); to = to.filter(function(e){ return own.indexOf(e) < 0; }); } catch (e) {} }   /* patch MKTFEAT: the admins who get the owner's report (Marketing → 📬) get one marketing e-mail on the 1st, not two */
+  const ok = to.length ? await mail(to, r.subject, r.html) : true;
   await change(function(v){ v.lastReport = { month: r.month, at: nowIso(), to: to, ok: ok }; });
   return { ok: ok, month: r.month, to: to };
 }
