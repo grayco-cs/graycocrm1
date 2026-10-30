@@ -126501,6 +126501,129 @@ function lfByInbox(list, key){
   return n === 1 ? hit : null;
 }
 try { window._gcOwnInboxId = lfOwnIb; window._gcLeadByInbox = lfByInbox; } catch (e) {}
+/* patch LEADFIX-2 */ /* the repair of leads that got another lead's inbox item (admin console; a dry run unless told otherwise) */
+/* LEADFIX-PLAN-BEGIN (pure: leads in, the plan out; tools/leadfix_repair_offline.mjs runs this same code on the mirrors) */
+var LFP_BID = ['gc', 'owner', 'city', 'state', 'trades', 'scope', 'plansLinks', 'docs', 'rawEmailRef', 'emails', 'sources', 'alsoOn', 'inboxFlag', 'inboxFlagNew', 'addendumCount', 'matchNotes', 'needsReview', 'origin',
+  'inboxId', 'inboxRev', 'inboxAt', 'inboxLinked', 'inboxState', 'source', 'leadKind', 'bidRole', 'bidRoleWhy', 'bidDue', 'bidDueWas', 'preBid', 'bidNumber', 'dueToCompany', 'dueToContact', 'dueToEmail', 'dueToPhone',
+  'submitMethod', 'submitWhere', 'dueSnippet', 'estimator', 'estimatorEmail', 'bidPortalJob', 'hold'];
+var LFP_CONTACT = ['phone', 'email', 'address', 'contactName'];
+var LFP_ASSIGN = ['pm', 'pmEmail', 'assignedBy', 'assignedAt', 'autoAssignedAt'];
+var LFP_SKIP = { updatedAt: 1, savedAt: 1, _v: 1, _rev: 1 };
+var LFP_WATCH = { stage: 1, archived: 1, archivedAt: 1, archivedWhy: 1, mergedInto: 1, mergedFrom: 1, dismissed: 1, status: 1, subPortal: 1, bidStatus: 1, lostReason: 1 };
+function lfpJ(v){ return v === undefined ? '' : JSON.stringify(v); }
+function lfpEmpty(v){ return v == null || v === '' || v === false || v === 0 || (Array.isArray(v) && !v.length); }
+var LFP_GENERIC = { inboxId: 1, inboxRev: 1, source: 1, leadKind: 1, inboxState: 1, origin: 1, sources: 1, submitMethod: 1, submitWhere: 1, estimator: 1, estimatorEmail: 1, hold: 1, needsReview: 1, inboxFlag: 1, inboxFlagNew: 1, addendumCount: 1, alsoOn: 1, bidRole: 1, bidRoleWhy: 1 };   /* the same on many bids: not proof it is the other item's */
+var LFP_PERSON = { estimator: 1, estimatorEmail: 1, hold: 1, bidDue: 1, bidRole: 1, bidRoleWhy: 1 };   /* on an inbox lead a person may have set these since */
+function lfpSame(a, b){ return (lfpEmpty(a) && lfpEmpty(b)) || lfpJ(a) === lfpJ(b); }
+function lfpDefSource(id){ id = String(id || ''); return /^LQB_/.test(id) ? 'QuickBooks' : /^(LCC_|LCCR_|LEADmsg|PRJcc_)/.test(id) ? 'CompanyCam' : ''; }
+/* opts: { base: { leadId: its last clean copy }, first: { leadId: its oldest clean copy }, baseFrom: { leadId: 'where' }, now: ms } */
+function lfPlan(list, opts){
+  opts = opts || {}; list = (Array.isArray(list) ? list : []).filter(function(l){ return l && l.id; });
+  var base = opts.base || {}, first = opts.first || {}, from = opts.baseFrom || {}, now = typeof opts.now === 'number' ? opts.now : Date.now();
+  var byId = {}, holders = {}; list.forEach(function(l){ byId[l.id] = l; if (l.inboxId) (holders[l.inboxId] = holders[l.inboxId] || []).push(l); });
+  var rows = [], assigns = [], merges = [], victimIds = {}, shared = {}, bidC = {};
+  /* every Lead Inbox lead's bid contact (a lead hit twice carries an EARLIER item's contact too) */
+  list.forEach(function(l){ if (!/^LEADIN-/.test(l.id) || !lfOwnIb(l)) return; ['phone', 'email', 'dueToPhone', 'dueToEmail', 'address'].forEach(function(f){ var v = String(l[f] || '').trim().toLowerCase(); if (v) bidC[v] = l.id; }); });
+  Object.keys(holders).forEach(function(ib){
+    var ownId = 'LEADIN-' + String(ib).replace(/^LI-/, ''), own = byId[ownId] || null;
+    var bad = holders[ib].filter(function(l){ return l.id !== ownId && (own || lfOwnIb(l) !== ib); });
+    if (!bad.length) return;
+    shared[ib] = 1;
+    bad.forEach(function(v){
+      victimIds[v.id] = 1;
+      var src = own || {}, b = base[v.id] || null, f0 = first[v.id] || null, kind = /^LEADIN-/.test(v.id) ? 'inbox lead' : (lfForeign(v) ? 'other source' : 'typed in / other'), cust = kind !== 'inbox lead';
+      var after = JSON.parse(JSON.stringify(v)), ch = [], unsure = [];
+      var set = function(f, val, why){ var was = v[f]; if (lfpSame(was, val)) return; if (val === undefined) delete after[f]; else after[f] = val; ch.push({ f: f, before: was, after: val, why: why || '' }); };
+      var srcHas = function(f, val){ return !lfpEmpty(val) && (lfpSame(val, src[f]) || (f === 'phone' && lfpSame(val, src.dueToPhone)) || (f === 'email' && lfpSame(val, src.dueToEmail)) || (f === 'contactName' && lfpSame(val, src.dueToContact)) || ((f === 'phone' || f === 'email' || f === 'address') && typeof val === 'string' && !!bidC[val.trim().toLowerCase()] && bidC[val.trim().toLowerCase()] !== v.id)); };
+      if (b) {
+        LFP_BID.forEach(function(f){
+          if (f === 'docs') { var mine = (Array.isArray(v.docs) ? v.docs : []).filter(function(d){ return d && d.addedBy; }), bd = Array.isArray(b.docs) ? b.docs : [];
+            var keep = bd.concat(mine.filter(function(d){ return !bd.some(function(x){ return x && x.ref === d.ref; }); })); set('docs', keep.length ? keep : (b.docs === undefined ? undefined : keep), 'clean copy (+ files a person added)'); return; }
+          if (!cust && LFP_PERSON[f] && !lfpSame(v[f], b[f]) && !lfpEmpty(v[f]) && !srcHas(f, v[f])) { unsure.push(f + ' changed since the clean copy and is not the other item\'s — kept'); return; }
+          set(f, b[f], 'clean copy');
+        });
+        LFP_CONTACT.forEach(function(f){
+          if (lfpSame(v[f], b[f])) return;
+          if (lfpEmpty(b[f]) && srcHas(f, v[f])) set(f, b[f], 'was empty; the bid contact\'s was filled in');
+          else if (lfpEmpty(b[f]) && !lfpEmpty(v[f])) unsure.push(f + ' filled in after the clean copy (not the bid contact\'s) — kept');
+          else if (srcHas(f, v[f])) set(f, b[f], 'clean copy');
+          else unsure.push(f + ' changed since the clean copy — kept');
+        });
+        LFP_ASSIGN.forEach(function(f){
+          if (lfpSame(v[f], b[f])) return;
+          if (/^(auto|lead inbox)/i.test(String(v.assignedBy || ''))) set(f, b[f], 'set by the inbox / the hold run'); else unsure.push(f + ' changed since the clean copy (' + String(v.assignedBy || 'by a person') + ') — kept');
+        });
+        if (cust) {
+          var st = f0 ? f0.stage : b.stage;
+          if (!lfpSame(v.stage, st)) set('stage', st, 'stage in the oldest clean copy');
+          if (f0 && !lfpSame(f0.stage, b.stage)) unsure.push('stage was "' + (f0.stage || '') + '" in the oldest clean copy and "' + (b.stage || '') + '" in the last one');
+        }
+        Object.keys(v).concat(Object.keys(b)).forEach(function(f, i, all){
+          if (all.indexOf(f) !== i || LFP_SKIP[f] || LFP_BID.indexOf(f) >= 0 || LFP_CONTACT.indexOf(f) >= 0 || LFP_ASSIGN.indexOf(f) >= 0 || (f === 'stage' && cust)) return;
+          if (!lfpSame(v[f], b[f]) && LFP_WATCH[f]) unsure.push(f + ' changed since the clean copy: ' + lfpJ(b[f]).slice(0, 60) + ' → ' + lfpJ(v[f]).slice(0, 60) + ' — kept');
+        });
+      } else if (!cust) {
+        set('inboxId', 'LI-' + v.id.replace(/^LEADIN-/, ''), 'its own inbox item'); set('inboxRev', 0, 'the next pull re-reads its own item');
+        LFP_BID.concat(LFP_CONTACT).forEach(function(f){ if (LFP_GENERIC[f]) return; if (srcHas(f, v[f])) set(f, undefined, 'the other item\'s value'); });
+        unsure.push('no clean copy in any mirror: its own item refills it on the next pull only if that item is still open on the server');
+      } else {
+        LFP_BID.forEach(function(f){
+          if (f === 'docs') { var mine2 = (Array.isArray(v.docs) ? v.docs : []).filter(function(d){ return d && d.addedBy; }); set('docs', mine2.length ? mine2 : undefined, 'bid files removed'); return; }
+          if (f === 'city' || f === 'state') { if (srcHas(f, v[f])) set(f, undefined, 'the bid\'s'); return; }
+          if (f === 'source') { if (lfpEmpty(v.source) || srcHas('source', v.source) || /lead inbox/i.test(String(v.source))) { var d = lfpDefSource(v.id); set('source', d || undefined, 'from its id'); if (!d) unsure.push('source unknown'); } return; }
+          set(f, undefined, 'bid field');
+        });
+        LFP_CONTACT.forEach(function(f){ if (srcHas(f, v[f])) set(f, undefined, 'the bid contact\'s'); });
+        unsure.push('no clean copy in any mirror: bid fields blanked, its own values unknown');
+      }
+      if (!own) unsure.push('the inbox item\'s own lead ' + ownId + ' is not on the list');
+      if (v.mergedInto && v.mergedInto === v.id) unsure.push('archived as merged into ITSELF (' + String(v.archivedAt || '').slice(0, 10) + ') — hidden from the lists; probably should be un-archived');
+      else if (v.mergedInto || v.archived) unsure.push('archived / merged into ' + String(v.mergedInto || '?') + ' — maybe because of the shared inbox id');
+      rows.push({ id: v.id, name: String(v.name || ''), kind: kind, inboxId: ib, ownId: ownId, baseFrom: b ? (from[v.id] || 'given') : '', updatedAt: v.updatedAt || '', changes: ch, unsure: unsure, after: after });
+    });
+  });
+  /* who was assigned in the last 24 h on a lead that shares an inbox id (the item's own lead too) */
+  list.forEach(function(l){
+    if (!l.inboxId || !shared[l.inboxId]) return;
+    var t = Date.parse(l.assignedAt || '') || 0; if (!t || now - t > 864e5) return;
+    assigns.push({ id: l.id, name: String(l.name || ''), inboxId: l.inboxId, own: l.id === 'LEADIN-' + String(l.inboxId).replace(/^LI-/, ''), pm: l.pm || '', estimator: l.estimator || '', estimatorEmail: l.estimatorEmail || '', assignedBy: l.assignedBy || '', assignedAt: l.assignedAt });
+  });
+  /* merges that involve a contaminated lead (the duplicates screen groups leads by their inbox id) */
+  list.forEach(function(l){
+    if (!l.mergedInto && !(Array.isArray(l.mergedFrom) && l.mergedFrom.length)) return;   /* (the QuickBooks / CompanyCam importer's own _mergedFrom is not a duplicates-screen merge) */
+    var with_ = [].concat(l.mergedInto ? [l.mergedInto] : [], Array.isArray(l.mergedFrom) ? l.mergedFrom : []).filter(function(x, i, a){ return x && a.indexOf(x) === i; });
+    if (!victimIds[l.id] && !with_.some(function(x){ return victimIds[x]; }) && !(l.inboxId && shared[l.inboxId])) return;
+    merges.push({ id: l.id, name: String(l.name || ''), mergedInto: l.mergedInto || '', mergedWith: with_.filter(function(x){ return x && x !== l.mergedInto; }), archivedAt: l.archivedAt || '' });
+  });
+  return { rows: rows, assigns: assigns, merges: merges, leads: list.length };
+}
+/* LEADFIX-PLAN-END */
+window._gcLeadFixRepair = function(o){
+  o = o || {}; var dry = o.dryRun !== false;
+  var plan = lfPlan(leads(), { base: o.base, first: o.first, baseFrom: o.baseFrom });
+  try {
+    console.log('[LEADFIX] ' + plan.rows.length + ' lead(s) carry another lead\'s inbox item' + (dry ? ' (dry run — nothing changed)' : ''));
+    console.table(plan.rows.map(function(r){ return { lead: r.id, name: r.name.slice(0, 30), kind: r.kind, inbox: r.inboxId, 'its own lead': r.ownId, 'clean copy': r.baseFrom || '(none)', changes: r.changes.map(function(c){ return c.f; }).join(' '), 'owner to check': r.unsure.join(' | ') }; }));
+    if (plan.assigns.length) { console.log('[LEADFIX] assigned in the last 24 h on a lead that shares an inbox id (owner to check):'); console.table(plan.assigns); }
+    if (plan.merges.length) { console.log('[LEADFIX] merges that involve these leads (owner to check):'); console.table(plan.merges); }
+  } catch (e) {}
+  if (dry) return Promise.resolve(plan);
+  if (!isAdmin()) return Promise.reject(new Error('admins only'));
+  var want = 'REPAIR ' + plan.rows.length; if (o.confirm !== want) return Promise.reject(new Error('to change the leads, call _gcLeadFixRepair({ dryRun: false, confirm: "' + want + '" })'));
+  var by = myName(), at = nowIso(), done = [];
+  return setLeads(function(list){
+    var ch = false; done = [];
+    var rowOf = {}; plan.rows.forEach(function(r){ rowOf[r.id] = r; });
+    list.forEach(function(l, i){
+      var r = l && rowOf[l.id]; if (!r) return;
+      if (String(l.updatedAt || '') !== String(r.updatedAt || '')) return;   /* changed since the plan: left alone (run the dry run again) */
+      var x = JSON.parse(JSON.stringify(r.after)); x.updatedAt = x.savedAt = at;
+      x.activity = arr(x.activity).concat([{ type: 'repair', text: '🧹 Repaired: removed the bid details of ' + r.inboxId + ' (they belong to ' + r.ownId + ') — ' + r.changes.map(function(c){ return c.f; }).join(', '), at: at, by: by }]).slice(-200);
+      list[i] = x; ch = true; done.push(r.id);
+    });
+    return ch ? list : null;
+  }).then(function(){ plan.repaired = done.slice(); return plan; });
+};
 /* the list position of the item's own lead: its LEADIN id first; else the ONE acceptable lead holding its inbox id;
    null = none (a new lead); false = held by a lead that is not its own, or by two or more -> update nothing, flag it */
 function lfWho(it, lid, at, holders, list, clash){
