@@ -31,13 +31,16 @@ async function collect(now){
   const optional = function(){ office.forEach(function(e){ opt[e] = (opt[e] || 0) + 1; }); };
   const add = function(email, it){ email = low(email); if (!staffEmail(email)) return; const l = (box[email] = box[email] || []); if (l.indexOf(it) < 0) l.push(it); };   /* patch APOFFICE: once per person */
   const base = A.crmBase();
+  const OK4 = require('./office-kinds.js');
   (cur ? cur.list : []).forEach(function(x){
     if (!x || x.status !== 'waiting') return;
     const it = { title: s(x.title) || s(x.kind), sub: s(x.jobName), link: base + '/#appr=' + encodeURIComponent(s(x.id)), raw: x };
-    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
+    const offK = OK4.isOfficeKind(x), adminOnly = OK4.isAdminOnly(x);   /* patch APOFFICE4: a customer-facing kind is the office's own at once, any step; money / permission kinds never */
+    if (offK) office.forEach(function(e){ add(e, it); });
+    if (x.step === 'pm') { if (staffEmail(x.pmEmail)) add(x.pmEmail, it); else admins.forEach(function(e){ add(e, it); }); if (!offK && !adminOnly) optional(); return; }   /* patch APOFFICE2: the office may take the PM step at once — one count line, not in her list */
     admins.forEach(function(e){ add(e, it); });
     const esc24 = x.escalated || (Date.parse(x.adminSince || x.createdAt || 0) && now - Date.parse(x.adminSince || x.createdAt) >= 24 * 3600e3);
-    if (x.officeOk === true || esc24) office.forEach(function(e){ add(e, it); });
+    if (!adminOnly && (x.officeOk === true || esc24)) office.forEach(function(e){ add(e, it); });
   });
   /* patch SUBINV (owner 10/27): JOB COSTS (sub invoices, job expenses / receipts) go to the job's PM; after 24 hours without
      the PM — or at once when the job has no PM — to the OFFICE. An admin gets one only as that job's PM — never as the extra / default approver. */
