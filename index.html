@@ -125981,7 +125981,9 @@ function lfPlan(list, opts){
   opts = opts || {}; list = (Array.isArray(list) ? list : []).filter(function(l){ return l && l.id; });
   var base = opts.base || {}, first = opts.first || {}, from = opts.baseFrom || {}, now = typeof opts.now === 'number' ? opts.now : Date.now();
   var byId = {}, holders = {}; list.forEach(function(l){ byId[l.id] = l; if (l.inboxId) (holders[l.inboxId] = holders[l.inboxId] || []).push(l); });
-  var rows = [], assigns = [], merges = [], victimIds = {}, shared = {};
+  var rows = [], assigns = [], merges = [], victimIds = {}, shared = {}, bidC = {};
+  /* every Lead Inbox lead's bid contact (a lead hit twice carries an EARLIER item's contact too) */
+  list.forEach(function(l){ if (!/^LEADIN-/.test(l.id) || !lfOwnIb(l)) return; ['phone', 'email', 'dueToPhone', 'dueToEmail', 'address'].forEach(function(f){ var v = String(l[f] || '').trim().toLowerCase(); if (v) bidC[v] = l.id; }); });
   Object.keys(holders).forEach(function(ib){
     var ownId = 'LEADIN-' + String(ib).replace(/^LI-/, ''), own = byId[ownId] || null;
     var bad = holders[ib].filter(function(l){ return l.id !== ownId && (own || lfOwnIb(l) !== ib); });
@@ -125992,7 +125994,7 @@ function lfPlan(list, opts){
       var src = own || {}, b = base[v.id] || null, f0 = first[v.id] || null, kind = /^LEADIN-/.test(v.id) ? 'inbox lead' : (lfForeign(v) ? 'other source' : 'typed in / other'), cust = kind !== 'inbox lead';
       var after = JSON.parse(JSON.stringify(v)), ch = [], unsure = [];
       var set = function(f, val, why){ var was = v[f]; if (lfpSame(was, val)) return; if (val === undefined) delete after[f]; else after[f] = val; ch.push({ f: f, before: was, after: val, why: why || '' }); };
-      var srcHas = function(f, val){ return !lfpEmpty(val) && (lfpSame(val, src[f]) || (f === 'phone' && lfpSame(val, src.dueToPhone)) || (f === 'email' && lfpSame(val, src.dueToEmail)) || (f === 'contactName' && lfpSame(val, src.dueToContact))); };
+      var srcHas = function(f, val){ return !lfpEmpty(val) && (lfpSame(val, src[f]) || (f === 'phone' && lfpSame(val, src.dueToPhone)) || (f === 'email' && lfpSame(val, src.dueToEmail)) || (f === 'contactName' && lfpSame(val, src.dueToContact)) || ((f === 'phone' || f === 'email' || f === 'address') && typeof val === 'string' && !!bidC[val.trim().toLowerCase()] && bidC[val.trim().toLowerCase()] !== v.id)); };
       if (b) {
         LFP_BID.forEach(function(f){
           if (f === 'docs') { var mine = (Array.isArray(v.docs) ? v.docs : []).filter(function(d){ return d && d.addedBy; }), bd = Array.isArray(b.docs) ? b.docs : [];
