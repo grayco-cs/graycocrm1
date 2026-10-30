@@ -4377,7 +4377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-10-30-r17b -->
+<!-- GrayCo CRM Build: 33.163-2026-10-30-r17f -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -5042,7 +5042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-10-30-r17b");
+  console.log("[GC] Build 33.163-2026-10-30-r17f");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -5090,7 +5090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-10-30-r17b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-10-30-r17f"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -157383,6 +157383,8 @@ function check(invId){
   if (ov && ov.at) out.overridden = ov;
   /* BLOCKS: no COI / an expired COI, no W-9 */
   var r = subRec(sub);
+  /* patch SUPPLIERPAY: a supplier (record marked "not a sub") is not held to the sub rules -- no COI / W-9 / agreement */
+  if (r && (r.isSub === false || /supplier|vendor|material/i.test(s(r.type || r.kind || r.vendorType)))) { out.supplier = true; out.ok = true; return out; }
   if (!r) out.problems.push('“' + (sub || 'This sub') + '” is not on the Subs list — no COI or W-9 on file.');
   else {
     var exp = coiExp(r);
