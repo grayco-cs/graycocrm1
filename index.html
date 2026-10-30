@@ -3981,7 +3981,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.159-2026-10-29-r14d -->
+<!-- GrayCo CRM Build: 33.159-2026-10-30-r14e -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -4646,7 +4646,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.159-2026-10-29-r14d");
+  console.log("[GC] Build 33.159-2026-10-30-r14e");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -4694,7 +4694,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.159-2026-10-29-r14d"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.159-2026-10-30-r14e"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -83273,6 +83273,8 @@ async function yearSummary(p, all, yr){
   function paint(){
     var view=''; try{ view=localStorage.getItem('grayco_view')||''; }catch(e){}
     var show = PENDING>0 && P.isAdmin() && ['admin','officemanager','dashboard','payroll'].indexOf(view)>=0 && view!=='payroll';
+    /* patch PAYLATER: "Later" holds until its time, unless more runs are waiting than when it was pressed */
+    try{ var _sn=JSON.parse(localStorage.getItem('gc_pay_alert_later')||'null'); if(show && _sn && Date.now()<_sn.until && PENDING<=_sn.n) show=false; }catch(_e){}
     var bar=document.getElementById('gc-payroll-alert');
     if(!show){ if(bar) bar.remove(); return; }
     if(bar) return;
@@ -83287,7 +83289,9 @@ async function yearSummary(p, all, yr){
     var host=document.querySelector('#root main')||document.querySelector('main')||document.getElementById('root')||document.body;
     host.insertBefore(bar, host.firstChild);
     bar.querySelector('#_gcPayAlertGo').onclick=function(){ if(window._gcOpenPayrollTab) window._gcOpenPayrollTab('approvals'); };
-    bar.querySelector('#_gcPayAlertX').onclick=function(){ bar.remove(); LAST=Date.now(); };
+    bar.querySelector('#_gcPayAlertX').onclick=function(){ bar.remove(); LAST=Date.now();
+      try{ var d=new Date(), u=Date.now()+4*3600e3; if(d.getHours()>=17){ var m=new Date(d.getFullYear(), d.getMonth(), d.getDate()+1, 7, 0, 0); u=Math.min(u, m.getTime()) > Date.now() ? Math.max(u, m.getTime()) : u; }
+        localStorage.setItem('gc_pay_alert_later', JSON.stringify({ until:u, n:PENDING })); }catch(_e){} };
   }
   setTimeout(refresh, 6000);
   setInterval(refresh, 15000);
@@ -125925,6 +125929,7 @@ function notesOf(it){
   return out.join('\n');
 }
 function fromItem(it, prev){
+  if (prev && !lfMine(prev, it) && !(!prev.inboxId && lfNameOk(prev))) return prev;   /* patch LEADFIX-1 */
   var l = Object.assign({}, prev || {});
   var fresh = !prev;
   l.id = prev ? prev.id : leadIdOf(it);
@@ -125987,23 +125992,64 @@ function pull(force){
 }
 /* every decision is made inside the setter's updater, on the list as it really is right now
    (another computer may have assigned a PM a second ago: that lead is updated, never replaced) */
+/* patch LEADFIX-1 */ /* an inbox item updates only its own lead */
+var LF_FOREIGN_ID = /^(LQB_|LCC_|LCCR_|LGN_|LEADmsg|PRJcc_|LEAD_RS_)/;
+function lfForeign(l){   /* a lead that came from somewhere else: never gets bid fields from an inbox item */
+  if (!l) return true;
+  if (LF_FOREIGN_ID.test(s(l.id))) return true;
+  if (l.ccamId || l.ccProjectId || l._ccAuto || l._ccServer || l._ccImported || l.qbId || l.qbCustomerId || l.rsLeadId || l.websiteLead || l.textMessage || l._mergedFrom) return true;
+  return /companycam|quickbooks|roofscout|grayco photos|website|text message/i.test(s(l.source));
+}
+function lfNameOk(l){ return !!l && !lfForeign(l) && (/^LEADIN-/.test(s(l.id)) || /^lead inbox/i.test(s(l.createdBy))); }   /* by name: only an older inbox import that lost its link */
+function lfHolderOk(l, it){ return !!l && s(l.inboxId) === s(it.id) && (s(l.inboxLinked) === s(it.id) || (!/^LEADIN-/.test(s(l.id)) && !lfForeign(l))); }
+function lfMine(l, it){ return !!l && (s(l.id) === leadIdOf(it) || lfHolderOk(l, it)); }
+/* patch LEADFIX-1b */ /* the inbox id a lead may speak for: its own (LEADIN-<hash>), or a re-linked older import's; '' for any other */
+function lfOwnIb(l){ var ib = s(l && l.inboxId); if (!ib) return ''; if (s(l.id) === 'LEADIN-' + ib.replace(/^LI-/, '')) return ib; return (/^LEADIN-/.test(s(l.id)) || lfForeign(l)) ? '' : ib; }
+/* the lead for a key (a lead id or an inbox id): that id; else the item's own LEADIN lead; else the ONE lead that may speak for it */
+function lfByInbox(list, key){
+  key = s(key); if (!key) return null; list = arr(list);
+  var own = /^LI-/.test(key) ? 'LEADIN-' + key.replace(/^LI-/, '') : '', hit = null, n = 0;
+  for (var i = 0; i < list.length; i++) { var l = list[i]; if (l && (l.id === key || (own && l.id === own))) return l; }
+  list.forEach(function(l){ if (l && s(l.inboxId) === key && lfOwnIb(l) === key) { hit = l; n++; } });
+  return n === 1 ? hit : null;
+}
+try { window._gcOwnInboxId = lfOwnIb; window._gcLeadByInbox = lfByInbox; } catch (e) {}
+/* the list position of the item's own lead: its LEADIN id first; else the ONE acceptable lead holding its inbox id;
+   null = none (a new lead); false = held by a lead that is not its own, or by two or more -> update nothing, flag it */
+function lfWho(it, lid, at, holders, list, clash){
+  var o = at[lid], h = (holders[it.id] || []).filter(function(k){ return k !== o; });
+  var ids = function(){ return h.map(function(k){ return s(list[k] && list[k].id); }); };
+  if (o != null) { if (h.length) clash.push({ id: it.id, owner: lid, also: ids() }); return o; }
+  if (!h.length) return null;
+  if (h.length === 1 && lfHolderOk(list[h[0]], it)) return h[0];
+  clash.push({ id: it.id, owner: '', also: ids() }); return false;
+}
+var LF_CLASH = [], LF_TOLD = '';
+function lfReport(){
+  try { window._gcLeadInboxClash = LF_CLASH.slice(); } catch (e) {}
+  if (!LF_CLASH.length) return;
+  var sig = LF_CLASH.map(function(c){ return c.id + '>' + c.also.join(','); }).join('|'); if (sig === LF_TOLD) return; LF_TOLD = sig;
+  try { console.warn('[LEADFIX] ' + LF_CLASH.length + ' Lead Inbox item(s) sit on a lead that is not theirs - those leads were NOT updated:', LF_CLASH); } catch (e) {}
+  if (isAdmin()) toast('⚠ ' + LF_CLASH.length + ' Lead Inbox item' + (LF_CLASH.length === 1 ? ' is' : 's are') + ' on a lead that is not theirs — left alone. Admin: _gcLeadFixRepair({dryRun:true}) in the console', true);
+}
 function importItems(healing){
   var added = [], updated = [], tell = [], nNew = 0, more = false;   /* patch LEADSEE: nNew / more */
   var items = S.items.filter(function(it){ return it && !it.stub && it.status !== 'dismissed' && it.status !== 'merged'; });
   if (!items.length) return Promise.resolve();
   return setLeads(function(list){
     added = []; updated = []; tell = []; nNew = 0; more = false;
-    var at = {}; list.forEach(function(l, i){ if (l && l.id) at[l.id] = i; if (l && l.inboxId) at['in:' + l.inboxId] = i; });
+    var at = {}, holders = {}, fresh = [], clash = [];   /* patch LEADFIX-1: every holder of an inbox id; new leads go on top after the loop */
+    list.forEach(function(l, i){ if (l && l.id) at[l.id] = i; if (l && l.inboxId) (holders[l.inboxId] = holders[l.inboxId] || []).push(i); });
     /* the same project already on the Lead Pipeline without an inbox link (typed in by hand, an older import):
        that lead gets the inbox's details instead of a second lead (same name, same city or no city on it) */
-    var byName = {}; list.forEach(function(l, i){ if (l && !l.inboxId && !isRs(l) && l.name) { var k = normName(l.name); if (k.length >= 6 && byName[k] == null) byName[k] = i; } });
+    var byName = {}; list.forEach(function(l, i){ if (l && !l.inboxId && !isRs(l) && l.name && lfNameOk(l)) { var k = normName(l.name); if (k.length >= 6 && byName[k] == null) byName[k] = i; } });
     var changed = false;
     items.forEach(function(it){
-      var lid = leadIdOf(it), i = at[lid] != null ? at[lid] : at['in:' + it.id];
+      var lid = leadIdOf(it), i = lfWho(it, lid, at, holders, list, clash); if (i === false) return;   /* patch LEADFIX-1 */
       if (tomb('leads', lid)) return;
       if (i == null && byName[normName(it.title)] != null) {
         var j = byName[normName(it.title)], ex = list[j], ec = low(ex.city || ex.address), ic = low(it.city);
-        if (!ic || !ec || ec.indexOf(ic) >= 0) { list[j] = fromItem(it, ex); list[j].inboxState = ex.pm ? 'assigned' : 'new'; at['in:' + it.id] = j; delete byName[normName(it.title)]; changed = true; tell.push({ id: it.id, op: 'imported', leadId: ex.id }); updated.push(list[j]); return; }
+        if (!ic || !ec || ec.indexOf(ic) >= 0) { list[j] = fromItem(it, ex); list[j].inboxState = ex.pm ? 'assigned' : 'new'; list[j].inboxLinked = it.id; holders[it.id] = [j]; delete byName[normName(it.title)]; changed = true; tell.push({ id: it.id, op: 'imported', leadId: ex.id }); updated.push(list[j]); return; }
       }
       if (i == null) {
         if (++nNew > 100) { more = true; return; }   /* patch LEADSEE: at most 100 new leads per pass — the rest a moment later */
@@ -126013,15 +126059,16 @@ function importItems(healing){
           if (it.pid) { l.pid = it.pid; l.inboxState = 'job'; }
           l.updatedAt = l.createdAt = s(it.importedAt || it.receivedAt) || l.updatedAt;   /* older than any real edit: an edit elsewhere wins */
         } else { added.push(l); tell.push({ id: it.id, op: 'imported', leadId: l.id }); }
-        list.unshift(l); changed = true; at[lid] = -1; return;
+        fresh.push(l); changed = true; at[lid] = -1; return;   /* patch LEADFIX-1: no list.unshift() here -- it moved every lead one slot and the positions above then named the wrong lead */
       }
       if (i < 0) return;
-      var cur = list[i];
+      var cur = list[i]; if (!lfMine(cur, it)) return;   /* patch LEADFIX-1 */
       if ((it.rev || 1) > (cur.inboxRev || 0)) { list[i] = fromItem(it, cur); updated.push(list[i]); changed = true; }
       if (it.status === 'new') tell.push({ id: it.id, op: 'imported', leadId: cur.id });
     });
-    return changed ? list : null;
+    LF_CLASH = clash; return changed ? fresh.reverse().concat(list) : null;   /* patch LEADFIX-1: the new leads on top, newest first (as before) */
   }).then(function(){
+    lfReport();
     if (more) later(function(){ importItems(healing); }, 1500);   /* patch LEADSEE */
     tell.slice(0, 150).forEach(act);
     if (!healing && added.length) heal(added.map(function(l){ return l.id; }), 0);
@@ -126120,7 +126167,7 @@ function reminders(o){
 /* ── actions ───────────────────────────────────────────────────────────────── */
 function findLead(id){
   id = s(id); if (!id) return null;
-  return leads().find(function(l){ return l && (l.id === id || l.inboxId === id || (l.rsLeadId && 'RS:' + l.rsLeadId === id)); }) || null;
+  return lfByInbox(leads(), id) || leads().find(function(l){ return l && l.rsLeadId && 'RS:' + l.rsLeadId === id; }) || null;   /* patch LEADFIX-1b */
 }
 function patchLead(id, fn){
   var out = null;
@@ -126136,7 +126183,7 @@ function assign(id, pm){
   return Promise.resolve(l).then(function(lead){
     return patchLead(lead.id, function(x){ if (_asEst) { x.estimator = pm; x.estimatorEmail = window._gcBidRole.emailOf(pm); if (x.pm && window._gcBidRole.isEst(x.pm, '')) { x.pm = ''; x.pmEmail = ''; } } else x.pm = pm; x.inboxState = x.pid ? 'job' : 'assigned'; x.assignedAt = nowIso(); x.assignedBy = myName(); x.inboxFlagNew = false; });
   }).then(function(lead){
-    if (lead.inboxId) act({ id: lead.inboxId, op: 'assigned', pm: pm, leadId: lead.id, as: _asEst ? 'estimator' : '', email: _asEst ? window._gcBidRole.emailOf(pm) : '' });   /* patch BIDROLE */
+    if (lfOwnIb(lead)) act({ id: lead.inboxId, op: 'assigned', pm: pm, leadId: lead.id, as: _asEst ? 'estimator' : '', email: _asEst ? window._gcBidRole.emailOf(pm) : '' });   /* patch BIDROLE */
     if (lead.pid && !_asEst) setList('_setProjects', function(list){ return list.map(function(p){ return p && p.id === lead.pid && !p.pm ? stamp(Object.assign({}, p, { pm: pm })) : p; }); });
     try {
       if (typeof window._gcNotify === 'function') window._gcNotify(pm, { kind: 'lead', link: '#leads', title: '📥 New lead assigned to you: ' + lead.name + (lead.bidDue ? ' — bid due ' + fmtWhen(lead.bidDue) : ''),
@@ -126153,8 +126200,8 @@ function dismiss(id, reason){
   try { if (typeof window._gcTombstone === 'function') window._gcTombstone('leads', l.id); } catch (e) {}
   try { if (typeof window._gcxDel === 'function') window._gcxDel('leads', l.id); } catch (e) {}
   return setLeads(function(list){ return list.filter(function(x){ return !(x && x.id === l.id); }); }).then(function(){
-    if (l.inboxId) act({ id: l.inboxId, op: 'dismissed', reason: reason });   /* (a RoofScout lead: deleted in the CRM stays deleted — patch RSL) */
-    S.items.forEach(function(x){ if (x && x.id === l.inboxId) x.status = 'dismissed'; });
+    if (lfOwnIb(l)) act({ id: l.inboxId, op: 'dismissed', reason: reason });   /* (a RoofScout lead: deleted in the CRM stays deleted — patch RSL) */
+    S.items.forEach(function(x){ if (x && lfOwnIb(l) && x.id === l.inboxId) x.status = 'dismissed'; });
     emit('dismissed'); render(); badge(); return { ok: true };
   });
 }
@@ -126176,8 +126223,8 @@ function merge(id, intoId){
     try { if (typeof window._gcxDel === 'function') window._gcxDel('leads', a.id); } catch (e) {}
     return setLeads(function(list){ return list.filter(function(x){ return !(x && x.id === a.id); }); });
   }).then(function(){
-    if (a.inboxId && b.inboxId) act({ id: a.inboxId, op: 'merged', into: b.inboxId });
-    else if (a.inboxId) act({ id: a.inboxId, op: 'dismissed', reason: 'merged into the lead "' + b.name + '"' });
+    if (lfOwnIb(a) && lfOwnIb(b)) act({ id: a.inboxId, op: 'merged', into: b.inboxId });
+    else if (lfOwnIb(a)) act({ id: a.inboxId, op: 'dismissed', reason: 'merged into the lead "' + b.name + '"' });
     emit('merged'); render(); badge(); return { ok: true };
   });
 }
@@ -126208,7 +126255,7 @@ function createJob(id){
     return setList('_setProjects', function(list){ if (list.some(function(x){ return x && x.id === pid; })) return null; list.push(p); return list; })
       .then(function(){ return addPlansToJob(pid, lead.docs, lead.id); })
       .then(function(n){ return patchLead(lead.id, function(x){ x.pid = pid; x.inboxState = 'job'; }).then(function(){ return n; }); })
-      .then(function(n){ if (lead.inboxId) act({ id: lead.inboxId, op: 'job', pid: pid }); emit('job'); render(); badge(); return { ok: true, pid: pid, plans: n, lead: lead }; });
+      .then(function(n){ if (lfOwnIb(lead)) act({ id: lead.inboxId, op: 'job', pid: pid }); emit('job'); render(); badge(); return { ok: true, pid: pid, plans: n, lead: lead }; });
   });
 }
 function openJob(pid){
@@ -126221,7 +126268,7 @@ function openJob(pid){
 function portalOf(l){ var it = itemOf(l); return (it && it.portal) || null; }
 function publish(id){
   if (!isAdmin()) return Promise.reject(new Error('Only an owner or admin publishes to the bid portal.'));
-  var l = findLead(id); if (!l || !l.inboxId) return Promise.reject(new Error('Only a lead from the Lead Inbox can go to the bid portal.'));
+  var l = findLead(id); if (!l || !lfOwnIb(l)) return Promise.reject(new Error('Only a lead from the Lead Inbox can go to the bid portal.'));
   return api('POST', 'act=1', { id: l.inboxId, op: 'publish' }).then(function(r){
     S.items.forEach(function(x){ if (x && x.id === l.inboxId) { x.portal = Object.assign({}, x.portal || {}, { jobId: r.jobId, state: 'published', publishedAt: nowIso() }); if (r.item && r.item.rev) x.rev = r.item.rev; } });
     patchLead(l.id, function(x){ x.bidPortalJob = r.jobId; x.bidPortalPublishedAt = nowIso(); x.bidPortalPublishedBy = myName(); });
@@ -126705,7 +126752,7 @@ function bwRender(el){
         return setLeads(function(list){
           var ch = false;
           list.forEach(function(l, i){
-            if (!l || !l.inboxId || !ids[l.inboxId] || l.stage === 'Lost' || l.stage === 'Won' || l.pid || l.jobId || l.converted) return;
+            if (!l || !l.inboxId || !ids[l.inboxId] || lfOwnIb(l) !== l.inboxId || l.stage === 'Lost' || l.stage === 'Won' || l.pid || l.jobId || l.converted) return;
             var x = Object.assign({}, l), from = x.stage || 'New Lead';
             x.stage = 'Lost'; x.stageChangedAt = at; x.lostReason = why; x.lostAt = at; x.stageHistory = arr(x.stageHistory).concat([{ from: from, to: 'Lost', at: at, by: 'Auto (not construction)' }]).slice(-60);
             list[i] = stamp(x); ch = true; n++;
@@ -133438,7 +133485,7 @@ function saveDue(id, due, notBidding, more){
   more = more || {};
   return setLeads(function(list){
     var i = -1; list.forEach(function(l, k){ if (l && l.id === id) i = k; }); if (i < 0) return null;
-    var l = Object.assign({}, list[i]); was = s(l.bidDue); inboxId = s(l.inboxId);
+    var l = Object.assign({}, list[i]); was = s(l.bidDue); inboxId = s((typeof W._gcOwnInboxId === 'function' ? W._gcOwnInboxId(l) : s(l.inboxId)));   /* patch LEADFIX-1b */
     var same = s(l.bidDue) === due && !!l.notBidding === !!notBidding && DUE_FIELDS.every(function(f){ return more[f] == null || s(l[f]) === s(more[f]); }) && (more.dueUnknown == null || !!l.dueUnknown === !!more.dueUnknown) && (more.bidStatus == null || s(l.bidStatus) === s(more.bidStatus));
     if (same) return null;
     if (s(l.bidDue) !== due) {
@@ -160973,7 +161020,7 @@ function markAccepted(pages){
   if (!acc.length) return;
   /* the leads live in the CRM's state: read and change them inside its setter (nothing changes → the same list back) */
   try { S(function(prev){ if (!Array.isArray(prev)) return prev; var a = prev, ch = false;
-    acc.forEach(function(p){ a.forEach(function(l, i){ if (l && (l.id === p.leadKey || l.inboxId === p.leadKey) && s(l.onCallAcceptedAt) !== s(p.acceptedAt)) {
+    acc.forEach(function(p){ a.forEach(function(l, i){ if (l && (l.id === p.leadKey || (l.inboxId === p.leadKey && (typeof W._gcLeadByInbox === 'function' ? W._gcLeadByInbox(prev, p.leadKey) === l : true))) && s(l.onCallAcceptedAt) !== s(p.acceptedAt)) {
       if (!ch) { a = prev.slice(); ch = true; } a[i] = Object.assign({}, l, { onCallAcceptedAt: p.acceptedAt, onCallAcceptedBy: p.acceptedBy, onCallPagedAt: p.createdAt, updatedAt: new Date().toISOString() }); } }); });
     return ch ? a : prev; }); } catch (e) {}
 }
@@ -167887,7 +167934,7 @@ function attachScope(pid, sc){
   if (!c.text) return Promise.reject(new Error('The scope is empty.'));
   saveScope(pid, sc);
   var l = leadForPid(pid), body = { op: 'portal', mode: 'private', scope: c.text, scopeMode: c.source === 'xactimate' ? 'xactimate' : 'manual' };
-  if (l && l.inboxId) body.id = l.inboxId;
+  if (l && (typeof W._gcOwnInboxId === 'function' ? W._gcOwnInboxId(l) : s(l.inboxId))) body.id = l.inboxId;   /* patch LEADFIX-1b */
   else if (l) { body.lead = leadForServer(l); body.sharedNotes = arr(l.subNotesShared); }
   else { var p = arr(crm().projects).filter(function(x){ return x && s(x.id) === pid; })[0] || {}; body.lead = { id: 'job-' + pid, name: s(p.name || c.title || 'Job ' + pid), address: s(p.address), source: 'CRM job' }; }
   return fn('bid-inbox?act=1', { body: body }).then(function(j){
@@ -168048,7 +168095,7 @@ function drawerClick(ev){
     if (SC.mode === 'estimate' || SC.mode === 'xactimate') scope = stripText(scope);
     t.disabled = true; t.textContent = 'Saving…';
     var body = { op: 'portal', mode: mode, scope: scope, scopeMode: SC.mode, sharedNotes: arr(l.subNotesShared), plansLinks: plansOf(l).links.map(function(x){ return { url: x.url, label: s(x.label || x.board) }; }) };
-    if (l.inboxId) body.id = l.inboxId; else body.lead = leadForServer(l);
+    if ((typeof W._gcOwnInboxId === 'function' ? W._gcOwnInboxId(l) : s(l.inboxId))) body.id = l.inboxId; else body.lead = leadForServer(l);
     fn('bid-inbox?act=1', { body: body }).then(function(j){
       return patchLead(l.id, function(x){ x.subScope = scope; x.subScopeMode = SC.mode; x.subPortal = { jobId: j.jobId, state: j.state, visibility: j.visibility, at: j.at }; logAct(x, 'portal', mode === 'public' ? 'Made public on the sub bid portal' : 'Opened to invited subs (private) on the sub bid portal'); })
         .then(function(){ toast(mode === 'public' ? '🌐 Public on the sub bid portal' : '🔒 On the sub bid portal — private (invited subs only)'); refreshInbox(); openDrawer(l.id); redraw(); });
@@ -168694,7 +168741,7 @@ function releaseFields(l, how, by, now){
    (the CRM copy was assigned by a person meanwhile). crmLeads = gc_kv "leads" (read only). */
 function dueItems(items, crmLeads, now){
   var t = typeof now === 'number' ? now : Date.now(), byInbox = {};
-  arr(crmLeads).forEach(function(l){ if (l && l.inboxId) byInbox[l.inboxId] = l; });
+  arr(crmLeads).forEach(function(l){ if (l && l.inboxId && (!byInbox[l.inboxId] || s(l.id) === 'LEADIN-' + s(l.inboxId).replace(/^LI-/, ''))) byInbox[l.inboxId] = l; });   /* patch LEADFIX-1b: the item's own lead wins */
   var assign = [], drop = [], crmOnly = [];
   arr(items).forEach(function(it){
     if (!it || !it.hold || it.hold.state !== 'held') return;
@@ -168834,7 +168881,7 @@ function saveOne(id, fx){
 }
 function tellInbox(l, name, field){
   if (!l || !l.inboxId) return;
-  fn('bid-inbox?act=1', { op: 'assigned', id: l.inboxId, pm: name, leadId: l.id, as: field === 'estimator' ? 'estimator' : '', email: field === 'estimator' ? s(l.estimatorEmail || (l.hold && l.hold.email)) : '' });
+  if ((typeof W._gcOwnInboxId === 'function' ? W._gcOwnInboxId(l) : s(l.inboxId))) fn('bid-inbox?act=1', { op: 'assigned', id: l.inboxId, pm: name, leadId: l.id, as: field === 'estimator' ? 'estimator' : '', email: field === 'estimator' ? s(l.estimatorEmail || (l.hold && l.hold.email)) : '' });
 }
 function approve(id){
   if (!isAdmin()) { toast('Only an admin approves a suggested lead.'); return Promise.resolve(false); }
@@ -170553,7 +170600,7 @@ function doDelete(ids, markLead){
     closeModal(); SEL = {};
     if (markLead && W._gcLeadsHub && W._gcLeadsHub.moveStage) {   /* the CRM lead itself → Lost (only when ticked) */
       ids.map(jobOf).forEach(function(j){ var lid = s(j.leadId); if (!lid) return;
-        var l = arr((W._crm || {}).leads).filter(function(x){ return x && (x.inboxId === lid || 'crm:' + x.id === lid); })[0];
+        var l = (function(L, k){ var B = W._gcLeadByInbox; var hit = typeof B === 'function' ? B(L, k) : null; if (hit) return [hit]; return L.filter(function(x){ return x && ('crm:' + x.id === k || x.id === k || x.id === 'LEADIN-' + String(k || '').replace(/^LI-/, '')); }); })(arr((W._crm || {}).leads), lid)[0];   /* patch LEADFIX-1b: the item's own lead, never another lead holding its inbox id */
         var id = l ? l.id : /^crm:/.test(lid) ? lid.slice(4) : '';
         if (id) { try { W._gcLeadsHub.moveStage(id, 'Lost', 'Not bidding (bid job deleted)'); } catch (e) { warn(e); } } });
     }
@@ -170625,7 +170672,7 @@ function award(t, on){
 }
 function openLead(id){
   go('leads');
-  later(function(){ try { var l = arr((W._crm || {}).leads).filter(function(x){ return x && (x.inboxId === id || 'crm:' + x.id === id || x.id === id); })[0]; var H = W._gcLeadsHub; if (H && H.open) H.open(l ? l.id : /^crm:/.test(id) ? id.slice(4) : id); } catch (e) { warn(e); } }, 900);
+  later(function(){ try { var l = (function(L, k){ var B = W._gcLeadByInbox; var hit = typeof B === 'function' ? B(L, k) : null; if (hit) return [hit]; return L.filter(function(x){ return x && ('crm:' + x.id === k || x.id === k || x.id === 'LEADIN-' + String(k || '').replace(/^LI-/, '')); }); })(arr((W._crm || {}).leads), /^crm:/.test(id) ? id.slice(4) : id)[0];   /* patch LEADFIX-1b */ var H = W._gcLeadsHub; if (H && H.open) H.open(l ? l.id : /^crm:/.test(id) ? id.slice(4) : id); } catch (e) { warn(e); } }, 900);
 }
 function onClick(ev){
   var t = ev.target.closest && ev.target.closest('[data-sys]'); if (!t) return;
