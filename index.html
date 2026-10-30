@@ -175575,7 +175575,7 @@ var GEN = [
 /* the built-in paper that is the same document as a generator → the generator */
 var ALIAS = { gcb_contract: 'gen:contract', gcb_change_order: 'gen:change_order', gcb_work_auth: 'gen:work_auth', gcb_warranty: 'gen:warranty_res', gcb_completion: 'gen:cert_completion', gcb_satisfaction: 'gen:cert_satisfaction', gcb_walkthrough: 'gen:final_inspection', gcb_subcontract: 'gen:sub_agreement', gcb_lien_cond_final: 'gen:lien_cond_final_gc', gcb_lien_uncond_final: 'gen:lien_uncond_final_gc', gcb_daily_report: 'gen:daily_job_report' };
 var TPL_GROUP = { gcb_referral_terms: 'Marketing', gcb_referral_partner: 'Marketing', gcb_coupon_terms: 'Marketing', gcb_giveaway_rules: 'Marketing', gcb_giveaway_affidavit: 'Marketing', gcb_lien_notice_tn: 'Client', gcb_lien_notice_ms: 'Client', gcb_lien_notice_ar: 'Client', gcb_final_demand: 'Client', gcb_handbook: 'HR', gcb_conf_nonsolicit: 'HR', gcb_contractor_1099: 'HR', gcb_bond_letter: 'Commercial', gcb_bid_bond_form: 'Commercial', gcb_scope: 'Client', gcb_lien_cond_progress: 'Lien Waivers', gcb_lien_uncond_progress: 'Lien Waivers', gcb_selections: 'Client', gcb_coi_request: 'Sub', gcb_w9_request: 'Sub', gcb_notice_reminder: 'Internal', gcb_sov: 'Commercial', gcb_site_policy: 'Client', gcb_payment_terms: 'Client', gcb_direction_to_pay: 'Insurance', gcb_roof_contingency: 'Insurance', gcb_cancel_notice_tn: 'Client', gcb_cancel_notice_ar: 'Client', gcb_cancel_notice_ms: 'Client', gcb_cancel_waiver_emergency: 'Client', gcb_aob: 'Insurance', gcb_mold_contract: 'Insurance', gcb_packout_auth: 'Insurance', gcb_lienwv_tn_cond_progress: 'Lien Waivers', gcb_lienwv_tn_uncond_progress: 'Lien Waivers', gcb_lienwv_tn_cond_final: 'Lien Waivers', gcb_lienwv_tn_uncond_final: 'Lien Waivers', gcb_lienwv_ms_cond_progress: 'Lien Waivers', gcb_lienwv_ms_uncond_progress: 'Lien Waivers', gcb_lienwv_ms_cond_final: 'Lien Waivers', gcb_lienwv_ms_uncond_final: 'Lien Waivers', gcb_lienwv_ar_cond_progress: 'Lien Waivers', gcb_lienwv_ar_uncond_progress: 'Lien Waivers', gcb_lienwv_ar_cond_final: 'Lien Waivers', gcb_lienwv_ar_uncond_final: 'Lien Waivers', gcb_lien_notice_ms: 'Lien Waivers', gcb_esign_consent: 'Client', gcb_portal_tou: 'Client', gcb_subportal_tou: 'Sub', gcb_subportal_privacy: 'Sub', gcb_msa: 'Sub', gcb_sub_work_order: 'Sub', gcb_sub_warranty: 'Sub', gcb_rider_tn: 'Client', gcb_rider_ms: 'Client', gcb_rider_ar: 'Client', gcb_mitigation: 'Insurance', gcb_drying_log: 'Insurance', gcb_packout: 'Insurance', gcb_mold: 'Insurance', gcb_rfi: 'Commercial', gcb_transmittal: 'Commercial', gcb_toolbox: 'Commercial' };
-function estFor(pid){ var es = (((W._crm || {}).estimates) || []).filter(Boolean), pj = job(pid); if (!pj) return null; return es.filter(function(e){ return String(e.pid) === String(pid); }).slice(-1)[0] || es.filter(function(e){ return low(e.name) && low(e.name) === low(pj.name); }).slice(-1)[0] || null; }
+function estFor(pid){ var es = ((Array.isArray((W._crm || {}).estimates) && W._crm.estimates.length ? W._crm.estimates : Array.isArray(W._gcEstimatesState) ? W._gcEstimatesState : []) || []).filter(Boolean)   /* patch DOCBLANK: the app's estimates */, pj = job(pid); if (!pj) return null; return es.filter(function(e){ return String(e.pid) === String(pid); }).slice(-1)[0] || es.filter(function(e){ return low(e.name) && low(e.name) === low(pj.name); }).slice(-1)[0] || null; }
 var FN = [
   { id: 'proposal', title: 'GrayCo Proposal', group: 'Client', jobTypes: ALL, clientFacing: true, match: /proposal/i, needsJob: true, desc: 'From the job\'s estimate — your proposal layout',
     html: function(pid){ var e = estFor(pid); if (!e || !W._gcBuildGrayCoProposal) return null; return W._gcBuildGrayCoProposal(e); } },
@@ -175584,7 +175584,7 @@ var FN = [
   { id: 'thank_you', title: 'Thank-You Letter (completion)', group: 'Closeout', jobTypes: ALL, clientFacing: true, match: /thank you/i, needsJob: true, desc: 'The completion thank-you with the review link',
     html: function(pid){ var pj = job(pid); if (!pj || !W._gcBuildThankYou) return null; return W._gcBuildThankYou(pj); } },
   { id: 'playbook', title: 'GrayCo PM Playbook', group: 'Internal', jobTypes: ALL, clientFacing: false, match: /playbook/i, desc: 'How we run every job',
-    html: function(){ return typeof W._gcPlaybookHTML === 'string' ? W._gcPlaybookHTML : null; } },
+    html: function(){ return typeof W._gcPlaybookHTML === 'string' ? noImport(W._gcPlaybookHTML) : null; } },   /* patch DOCBLANK */
   { id: 'company_docs', title: 'Company Documents (W-9, insurance certificates)', group: 'Internal', jobTypes: ALL, clientFacing: false, desc: 'GrayCo\'s own W-9 and certificates',
     open: function(){ if (W._gcOpenCompanyDocuments) W._gcOpenCompanyDocuments(); } },
   { id: 'onboarding', title: 'New-Hire Onboarding Papers', group: 'HR', jobTypes: ALL, clientFacing: false, desc: 'Offer, W-4 / I-9 checklist and handbook acknowledgment',
@@ -175665,11 +175665,12 @@ function uidForTitle(t){
   return '';
 }
 function decorateWin(w){
-  if (!w || w.__gcCustomDone) return;
+  if (!w || w.__gcCustomDone || w.__gcDeco) return;   /* patch DOCBLANK: once per window */
+  try { w.__gcDeco = 1; } catch (e) {}
   var n = 0;
   (function tick(){
     try {
-      var d = w.document; if (!d || !d.body || !d.body.innerHTML || /Preparing…/.test(d.title || '')) { if (++n < 60) later(tick, 200); return; }
+      var d = w.document; if (!d || !d.body || !d.body.innerHTML || /Preparing…/.test(d.title || '')) { if (++n < 150) later(tick, 200); return; }
       var fromLib = CTX.uid && Date.now() < CTX.until;
       if (fromLib && !d.querySelector('[data-gc-logo], .gc-print-head, img[src*="grayco-logo"], img[src*="portal-logo"], .gc-dual') && W._gcPrintHead) { var hd = d.createElement('div'); hd.setAttribute('data-gc-d3head', '1'); hd.innerHTML = W._gcPrintHead(); d.body.insertBefore(hd, d.body.firstChild); }
       var uid = uidForTitle(d.title || ((d.querySelector('h1,h2') || {}).textContent)); if (!uid || !CUS[uid] || d.querySelector('[data-gc-custom]')) { w.__gcCustomDone = true; return; }
@@ -175689,6 +175690,74 @@ function decorateWin(w){
   if (typeof od === 'function' && !od.__gcDocs3) { var nd = function(h){ if (Array.isArray(h)) h = h.join(''); var t = /<title>([^<]*)<\/title>/i.exec(h || ''); var uid = uidForTitle(t ? t[1] : ''); return od.call(this, uid ? applyCustom(h, uid) : h); }; nd.__gcDocs3 = true; W._gcOpenDocHTML = nd; }
 })();
 
+/* patch DOCBLANK (owner 10/30 "these dont open blank"): the tab is opened AT THE CLICK, before any cloud read; the first
+   document open after it (window.open of a blank page or a blob) is handed that tab. Blocked anyway → null → the
+   caller shows the paper on the page (patch DL's viewer). */
+var SLOT = null;   /* { w, blocked, used, at } */
+/* a stylesheet @import (the PM Playbook's web fonts) stops a written tab / viewer after its <style>: the page showed
+   the letterhead only. The fonts load from a <link> at the end of the page instead. */
+function noImport(h){
+  if (typeof h !== 'string' || h.indexOf('@import') < 0) return h;
+  var L = []; h = h.replace(/@import url\((['"]?)([^'")]+)\1\);?/g, function(m, q, u){ L.push(u); return ''; });
+  var k = L.map(function(u){ return '<link rel="stylesheet" href="' + esc(u) + '">'; }).join('');
+  return /<\/body>/i.test(h) ? h.replace(/<\/body>/i, k + '</body>') : h + k;
+}
+function willOpen(e, pid){
+  if (!e || e.kind === 'docx' || (e.kind === 'fn' && e.openOnly)) return false;
+  if (e.needsJob && !pid) return false;
+  if (e.file) {
+    var u = e.up || {}, l = e.legacy || {}, d = u.data || u.ref || l.fileData;
+    if (!d || (W._gcIsRef && W._gcIsRef(d))) return false;
+    return /pdf|image|text/.test((String(d).split(',')[0].match(/:(.*?);/) || [])[1] || u.fileType || '');
+  }
+  return true;
+}
+function arm(e, pid){
+  if (!willOpen(e, pid)) return null;
+  var w = null; try { w = W.open('', '_blank'); } catch (x) { w = null; }
+  if (w) { try { w.document.open(); w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Preparing…</title></head><body style="font-family:Arial,sans-serif;color:#1a3a5f;padding:48px;text-align:center"><div style="font-size:18px;font-weight:800">GrayCo Construction Services</div><div style="margin-top:10px;font-size:14px;color:#555">Preparing ' + esc(e.title || 'your document') + '…</div></body></html>'); w.document.close(); } catch (x) {} }
+  SLOT = { w: w, blocked: !w, used: false, at: Date.now() };
+  return SLOT;
+}
+function disarm(sl){
+  if (!sl) return;
+  later(function(){ if (SLOT === sl) SLOT = null; if (!sl.used && sl.w && !sl.w.closed) { try { sl.w.close(); } catch (x) {} } }, 1600);
+}
+/* the Docs tab not painted yet (the job's 📋 Documents picker): what the id says */
+function guess(uid){
+  var m = /^(gen|fn):(.+)$/.exec(uid || '');
+  if (m && m[1] === 'gen') return GEN.some(function(g){ return g[0] === m[2]; }) ? { uid: uid, kind: 'gen', title: '' } : null;
+  if (m) { var f = FN.filter(function(x){ return x.id === m[2]; })[0]; return f ? { uid: uid, kind: 'fn', title: f.title, openOnly: !f.html, needsJob: !!f.needsJob } : null; }
+  return /^gcb_/.test(uid || '') ? { uid: uid, kind: 'tpl', title: '' } : null;
+}
+/* a library button: open the tab now, make the paper, write it in */
+function go(uid, pid, filled){
+  var u0 = ALIAS[uid] || uid, e = LAST.filter(function(x){ return x && x.uid === u0; })[0] || guess(u0), sl = null;
+  try { sl = arm(e, pid); } catch (x) { sl = null; }
+  var r; try { r = launch(uid, pid, filled); } catch (x) { disarm(sl); throw x; }
+  Promise.resolve(r).then(function(){ disarm(sl); }, function(){ disarm(sl); });
+  return r;
+}
+(function handOff(){
+  var o = W.open; if (typeof o !== 'function' || o.__gcBlank) return;
+  var f = function(u, name){
+    var sl = SLOT;
+    if (sl && !sl.used && Date.now() - sl.at < 30000 && (name == null || name === '' || name === '_blank') && (u == null || u === '' || u === 'about:blank' || /^blob:/i.test(String(u)))) {
+      sl.used = true;
+      if (sl.blocked) return null;                     /* the browser said no at the click: shown on the page */
+      if (sl.w && !sl.w.closed) {
+        if (u && u !== 'about:blank') { try { sl.w.location.replace(u); } catch (x) { try { sl.w.location.href = u; } catch (x2) {} } }
+        try { if (Object.keys(CUS).length || (CTX.uid && Date.now() < CTX.until)) decorateWin(sl.w); } catch (x) {}
+        try { sl.w.focus(); } catch (x) {}
+        return sl.w;
+      }
+    }
+    return o.apply(this, arguments);
+  };
+  try { Object.keys(o).forEach(function(k){ f[k] = o[k]; }); } catch (x) {}
+  f.__gcBlank = true; f.__gcDocs3 = true; W.open = f;
+})();
+
 /* ── a paper's HTML (filled for a job, or blank) ── */
 function html(uid, pid, filled){
   uid = ALIAS[uid] || uid;
@@ -175706,13 +175775,20 @@ function ensureHead(h){
   var head = '<div data-gc-d3head="1" style="max-width:780px;margin:0 auto 10px">' + W._gcPrintHead() + '</div>';
   return /<body[^>]*>/i.test(h) ? h.replace(/<body[^>]*>/i, function(x){ return x + head; }) : head + h;
 }
-function openHtml(h){ var w = W.open('', '_blank'); if (!w) { toast('Allow pop-ups for the CRM to see the document.', true); return; } try { w.document.open(); w.document.write(h); w.document.close(); } catch (e) {} }
+function openHtml(h){
+  h = noImport(h);   /* patch DOCBLANK */
+  var w = null; try { w = W.open('', '_blank'); } catch (e) { w = null; }
+  if (w) { try { w.document.open(); w.document.write(h); w.document.close(); try { w.focus(); } catch (e) {} return; } catch (e) {} }
+  var t = /<title>([^<]*)<\/title>/i.exec(h || '');   /* patch DOCBLANK: blocked → shown on the page */
+  if (W._gcDocOverlay) return W._gcDocOverlay(h, t ? t[1] : 'Document');
+  toast('Allow pop-ups for the CRM to see the document.', true);
+}
 function openFile(e){
   var u = e.up || {}, l = e.legacy || {};
   var data = u.data || u.ref || l.fileData, name = u.fileName || l.fileName || e.title;
   if (!data) { toast('That file is not stored yet.', true); return; }
   if (W._gcIsRef && W._gcIsRef(data)) { W._gcOpenRef(data, name); return; }
-  try { var p = String(data).split(','), mime = (p[0].match(/:(.*?);/) || [])[1] || u.fileType || 'application/octet-stream', bin = atob(p[1]), b = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); var url = URL.createObjectURL(new Blob([b], { type: mime })); if (/pdf|image|text/.test(mime)) W.open(url, '_blank'); else { var a = D.createElement('a'); a.href = url; a.download = name; D.body.appendChild(a); a.click(); a.remove(); } later(function(){ URL.revokeObjectURL(url); }, 5000); } catch (x) { toast('Could not open the file.', true); }
+  try { var p = String(data).split(','), mime = (p[0].match(/:(.*?);/) || [])[1] || u.fileType || 'application/octet-stream', bin = atob(p[1]), b = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i); var url = URL.createObjectURL(new Blob([b], { type: mime })); if (/pdf|image|text/.test(mime)) { var fw = null; try { fw = W.open(url, '_blank'); } catch (x2) { fw = null; } if (!fw && W._gcDocOverlay) W._gcDocOverlay('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + esc(name) + '</title></head><body style="margin:0"><iframe src="' + url + '" style="border:0;width:100%;height:100vh"></iframe></body></html>', name); } else { var a = D.createElement('a'); a.href = url; a.download = name; D.body.appendChild(a); a.click(); a.remove(); } later(function(){ URL.revokeObjectURL(url); }, 60000); } catch (x) { toast('Could not open the file.', true); }
 }
 function launch(uid, pid, filled){
   uid = ALIAS[uid] || uid;
@@ -175721,7 +175797,7 @@ function launch(uid, pid, filled){
     if (e.file) return openFile(e);
     if (e.kind === 'docx') return W._dlTplData && W._dlTplData(e.id);
     if (e.kind === 'fn' && e.openOnly) { var f = FN.filter(function(x){ return x.id === e.fid; })[0]; return f && f.open && f.open(); }
-    if ((filled !== false && e.needsJob) && !pid) return toast('Pick a job first.', true);
+    if (e.needsJob && !pid) return toast('Pick a job first \u2014 this paper is made from the job.', true);   /* patch DOCBLANK */
     if (e.kind === 'gen') { CTX = { uid: uid, until: Date.now() + 8000 }; var pj = pid && filled !== false ? job(pid) : null; return pj ? W.gcDocLib.generate(e.gid, pj, true) : W.gcDocLib.generate(e.gid, false); }
     return html(uid, pid, filled).then(function(h){ if (!h) return toast(e.needsJob ? 'That job has no estimate yet.' : 'Could not make that document.', true); openHtml(h); });
   });
@@ -175890,9 +175966,9 @@ D.addEventListener('click', function(e){
   if (act === 'upload') return uploadForm();
   if (act === 'defaults') return W._gcDocSet && W._gcDocSet.openDefaults();
   if (act === 'fav') return toggleFav(uid);
-  if (act === 'fill') return launch(uid, pid, true);
-  if (act === 'blank') return launch(uid, '', false);
-  if (act === 'prev' || act === 'open') return launch(uid, pid, !!pid);
+  if (act === 'fill') return go(uid, pid, true);   /* patch DOCBLANK: the tab opens at the click */
+  if (act === 'blank') return go(uid, '', false);
+  if (act === 'prev' || act === 'open') return go(uid, pid, !!pid);
   if (act === 'add') return addToJob(uid, pid);
   if (act === 'cust') return customize(uid);
 }, true);
@@ -175960,8 +176036,8 @@ W.addEventListener('click', function(e){
   }
   if (!/^(gen|fn|up|lc):/.test(id)) return;
   e.preventDefault(); e.stopImmediatePropagation();
-  if (act === 'open' || act === 'prev') return launch(id, pid, true);
-  if (act === 'print') return launch(id, pid, true);
+  if (act === 'open' || act === 'prev') return go(id, pid, true);   /* patch DOCBLANK */
+  if (act === 'print') return go(id, pid, true);
   if (act === 'save') return addToJob(id, pid);
   if (act === 'send') return toast('Send this one from where it is made (or save it to the job and attach it).', true);
 }, true);
@@ -175977,7 +176053,7 @@ later(function(){
   });
 }, 15000);
 
-W._gcDocs3 = { list: list, entry: entry, html: html, launch: launch, addToJob: addToJob, upload: upload, custom: function(uid){ return CUS[uid] || null; }, setCustom: setCustom, favs: favs, toggleFav: toggleFav, customize: customize, paint: paint, ALIAS: ALIAS, GROUPS: GROUPS };
+W._gcDocs3 = { open: go, list: list, entry: entry, html: html, launch: launch, addToJob: addToJob, upload: upload, custom: function(uid){ return CUS[uid] || null; }, setCustom: setCustom, favs: favs, toggleFav: toggleFav, customize: customize, paint: paint, ALIAS: ALIAS, GROUPS: GROUPS };
 try { console.log('[GC] 📄 One document library (patch DOCLIB3): _gcDocs3'); } catch (e) {}
 })();
 </script>
