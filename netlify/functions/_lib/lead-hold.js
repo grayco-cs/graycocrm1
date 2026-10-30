@@ -197,7 +197,7 @@ function releaseFields(l, how, by, now){
    (the CRM copy was assigned by a person meanwhile). crmLeads = gc_kv "leads" (read only). */
 function dueItems(items, crmLeads, now){
   var t = typeof now === 'number' ? now : Date.now(), byInbox = {};
-  arr(crmLeads).forEach(function(l){ if (l && l.inboxId) byInbox[l.inboxId] = l; });
+  arr(crmLeads).forEach(function(l){ if (l && l.inboxId && (!byInbox[l.inboxId] || s(l.id) === 'LEADIN-' + s(l.inboxId).replace(/^LI-/, ''))) byInbox[l.inboxId] = l; });   /* patch LEADFIX-1b: the item's own lead wins */
   var assign = [], drop = [], crmOnly = [];
   arr(items).forEach(function(it){
     if (!it || !it.hold || it.hold.state !== 'held') return;
