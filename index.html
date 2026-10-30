@@ -145122,7 +145122,7 @@ VIEWS.flyers = function(){
     (f.tpl === 'roofcheck' ? '<label>Event date</label><input id="fl-date" value="' + esc(f.date) + '" placeholder="Saturday, May 9">' : '') +
     '<label>Your name + phone on the flyer (whoever makes it)</label><div class="gmt-row"><input id="fl-pm" value="' + esc(f.pm) + '"' + (admin() ? '' : ' readonly') + '><input id="fl-phone" value="' + esc(f.phone) + '"' + (admin() ? '' : ' readonly') + '></div>' + (f.phoneMissing ? '<div class="gmt-muted" data-fly="nophone">⚠️ Add your cell in My Profile so it prints on your flyers — the office line prints until then.</div>' : '') + (admin() && W._gcFlyerPicker ? W._gcFlyerPicker('fl') : '') +   /* patch FLY */
     '<label>Extra text (optional)</label><textarea id="fl-blurb" rows="3">' + esc(f.blurb) + '</textarea>' +
-    (f.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-perm"' + (pOk ? ' checked' : '') + ' data-a="fl-perm"> The customer said OK to use photos of this job in marketing</label>' + (pOk ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-photo"' + (f.photo ? ' checked' : '') + '> Put a before / after photo on it</label>' : '<div class="gmt-muted">No photos without the customer\'s OK.</div>') : '') +
+    (f.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-perm"' + (pOk ? ' checked' : '') + (W._gcMMData ? ' disabled title="The office records the customer\'s OK"' : '') + ' data-a="fl-perm"> The customer said OK to use photos of this job in marketing</label>' + (pOk ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="fl-photo"' + (f.photo ? ' checked' : '') + '> Put a before / after photo on it</label>' : '<div class="gmt-muted">No photos without the customer\'s OK.</div>') : '') +
     '<label>Nearby homes for the delivery list</label><input id="fl-copies" type="number" min="10" max="200" value="' + (+f.copies || 40) + '">' +
     '<div class="gmt-row" style="margin-top:10px"><button class="gmt-btn" data-a="fl-print">🖨 Print / save PDF</button><button class="gmt-btn o" data-a="fl-list">⬇ Delivery list (CSV)</button></div></div>';
   var saved = MK.all('flyers').sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 15);
@@ -145141,7 +145141,7 @@ function flyerLink(f, preview){
 function readFlyer(){ var f = FL.form; ['area', 'pm', 'phone', 'blurb', 'date'].forEach(function(k){ var el = D.getElementById('fl-' + k); if (el) f[k] = el.value; }); var st = D.getElementById('fl-street'); if (st) f.showStreet = st.checked; var ph = D.getElementById('fl-photo'); f.photo = !!(ph && ph.checked); var cp = D.getElementById('fl-copies'); if (cp) f.copies = +cp.value || 40; var tp = D.getElementById('fl-tpl'); if (tp) f.tpl = tp.value; var sz = D.getElementById('fl-size'); if (sz) f.size = sz.value; return f; }
 ACT['fl-job'] = function(t){ FL.form = Object.assign(flyerForm(t.value), { tpl: FL.form.tpl, size: FL.form.size }); draw(); };
 ACT['fl-set'] = function(){ readFlyer(); draw(); };
-ACT['fl-perm'] = function(b){ if (!FL.form.pid) return; setPerm(FL.form.pid, b.checked); readFlyer(); nST(draw, 200); };
+ACT['fl-perm'] = function(b){ if (!FL.form.pid || W._gcMMData) return;   /* patch MKTFIX5: the office records the customer's OK */ setPerm(FL.form.pid, b.checked); readFlyer(); nST(draw, 200); };
 ACT['fl-print'] = function(){
   var f = readFlyer(), t = TPL[f.tpl] || TPL.working, z = SIZES[f.size] || SIZES.letter, link = flyerLink(f, false), c = link.split('/go/')[1];
   var go2 = function(img){
@@ -145382,7 +145382,7 @@ VIEWS.reels = function(){
   var ok = RL.pid && permOk(RL.pid), ph = RL.pid ? X.photosOf(RL.pid).slice(0, 40) : [];
   var h = '<div class="gmt-card"><h2>🎬 Before / after reel</h2><div class="gmt-muted">Pick a job, check the customer said OK, pick 3–8 photos (before first), add captions — the CRM makes a short vertical video with the GrayCo logo, right in this browser. Download it, or send it to Marketing for an approved post. Optional, never automatic.</div>' +
     '<label>Job</label><select data-ch="rl-job"><option value="">— pick —</option>' + jobs.map(function(p){ return '<option value="' + esc(p.id) + '"' + (RL.pid === p.id ? ' selected' : '') + '>' + esc((p.autoPO || p.po ? 'PO ' + (p.autoPO || p.po) + ' · ' : '') + (p.name || p.client)) + '</option>'; }).join('') + '</select>' +
-    (RL.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="rl-perm"' + (ok ? ' checked' : '') + '> The customer said OK to use photos of this job in marketing</label>' : '') + '</div>';
+    (RL.pid ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" data-a="rl-perm"' + (ok ? ' checked' : '') + (W._gcMMData ? ' disabled title="The office records the customer\'s OK"' : '') + '> The customer said OK to use photos of this job in marketing</label>' : '') + '</div>';
   if (RL.pid && !ok) return h + '<div class="gmt-warn">No video without the customer\'s OK.</div>';
   if (RL.pid) {
     h += '<div class="gmt-card"><h2>Photos (' + RL.sel.length + ' picked)</h2><div class="gmt-row">' + (ph.length ? ph.map(function(r){ var u = RL.urls[r.ref]; if (!u) { RL.urls[r.ref] = 'loading'; X.fileUrl(r.ref).then(function(x){ RL.urls[r.ref] = x; X.redrawSoon(); }, function(){}); } return '<img class="gmt-thumb' + (RL.sel.indexOf(r.ref) >= 0 ? ' sel' : '') + '" data-a="rl-pick" data-ref="' + esc(r.ref) + '" src="' + (u && u !== 'loading' ? esc(u) : '') + '" alt="' + esc(r.tag || '') + '" title="' + (RL.sel.indexOf(r.ref) >= 0 ? '#' + (RL.sel.indexOf(r.ref) + 1) : '') + '">'; }).join('') : '<div class="gmt-muted">No GrayCo Photos on this job.</div>') + '</div>' +
@@ -145393,7 +145393,7 @@ VIEWS.reels = function(){
   return h;
 };
 ACT['rl-job'] = function(t){ RL = { pid: t.value, sel: [], urls: RL.urls, cap: '', busy: false, out: null }; draw(); };
-ACT['rl-perm'] = function(b){ setPerm(RL.pid, b.checked); nST(draw, 200); };
+ACT['rl-perm'] = function(b){ if (W._gcMMData) return; setPerm(RL.pid, b.checked); nST(draw, 200); };
 ACT['rl-pick'] = function(b){ var r = b.getAttribute('data-ref'), i = RL.sel.indexOf(r); if (i >= 0) RL.sel.splice(i, 1); else if (RL.sel.length < 8) RL.sel.push(r); var c = D.getElementById('rl-cap'); if (c) RL.cap = c.value; draw(); };
 function loadImg(u){ return new Promise(function(res, rej){ var i = new Image(); i.crossOrigin = 'anonymous'; i.onload = function(){ res(i); }; i.onerror = rej; i.src = u; }); }
 ACT['rl-make'] = function(){
@@ -146655,8 +146655,8 @@ VIEWS.mktsettings = function(){
 };
 D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-focus'); if (!k || !admin()) return; var f = Object.assign({}, SC.FOCUS, cfg().socFocus || {}); f[k] = Math.max(0, Math.min(100, +t.value || 0)); X.setCfg({ socFocus: f }); draw(); }, true);
 D.addEventListener('change', function(ev){ var t = ev.target, k = t && t.getAttribute && t.getAttribute('data-adsfocus'); if (!k || !admin()) return; var f = Object.assign({}, SC.ADS_FOCUS, cfg().adsFocus || {}); f[k] = Math.max(0, Math.min(100, +t.value || 0)); X.setCfg({ adsFocus: f }); draw(); }, true);
-ACT['adsfocus-reset'] = function(){ X.setCfg({ adsFocus: Object.assign({}, SC.ADS_FOCUS) }); draw(); };
-ACT['focus-reset'] = function(){ X.setCfg({ socFocus: Object.assign({}, SC.FOCUS) }); draw(); };
+ACT['adsfocus-reset'] = function(){ var was = JSON.stringify(SC.adsFocusOf ? SC.adsFocusOf(cfg().adsFocus) : cfg().adsFocus); X.setCfg({ adsFocus: Object.assign({}, SC.ADS_FOCUS) }); draw(); toast(was === JSON.stringify(SC.adsFocusOf ? SC.adsFocusOf(SC.ADS_FOCUS) : SC.ADS_FOCUS) ? 'It already is the default (restoration 100%).' : 'Back to the default: restoration 100%.'); };   /* patch MKTFIX5 */
+ACT['focus-reset'] = function(){ var was = JSON.stringify(SC.focusOf ? SC.focusOf(cfg().socFocus) : cfg().socFocus); X.setCfg({ socFocus: Object.assign({}, SC.FOCUS) }); draw(); toast(was === JSON.stringify(SC.focusOf ? SC.focusOf(SC.FOCUS) : SC.FOCUS) ? 'It already is the default (60 / 20 / 12 / 8).' : 'Back to the default: 60 / 20 / 12 / 8.'); };   /* patch MKTFIX5 */
 ACT['stage-set'] = function(b){ if (!admin()) return; var n = +b.getAttribute('data-s'), cur = SC.stageCfg(cfg()).stage; if (n === cur) return; var note = W.prompt('Move marketing approvals to ' + SC.ASTAGES[n - 1].l + '? A note for the log (optional):', ''); if (note == null) { draw(); return; }
   MK.push().then(function(){ return api('soc', { op: 'set_stage', stage: n, note: note }); }).then(function(j){ toast(j && j.ok ? 'Now: ' + SC.ASTAGES[n - 1].l + ' (logged).' : 'Not changed: ' + ((j && j.error) || 'try again'), !(j && j.ok)); MK.pull(true); loadStatus(true); nST(draw, 700); }); };
 ACT['stage-flag'] = function(b){ if (!admin()) return; var a = Object.assign({}, cfg().apprStage || {}); a.flags = Object.assign({ price: true, insurance: true, customer: true }, a.flags || {}); a.flags[b.getAttribute('data-k')] = !!b.checked; X.setCfg({ apprStage: a }); draw(); };

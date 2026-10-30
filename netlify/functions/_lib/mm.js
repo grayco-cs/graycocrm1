@@ -98,6 +98,9 @@ function redact(v, depth){
 /* the marketing document as he sees it: the guard fields (job addresses, customer names) out, every text scrubbed;
    the money / customer collections (payouts, sends) out */
 const DOC_HIDDEN = { payouts: 1, sendlog: 1 };
+/* patch MKTFIX2: the customer's OK for marketing photos (perms) is recorded by the office / an admin, never by him — a job he
+   marked "OK" himself would open its photos to him (mm_jobs / mm_file follow perms) */
+const MM_NO_WRITE = { perms: 1 };
 function redactDoc(doc){
   const out = {};
   Object.keys(doc || {}).forEach(function(c){ if (DOC_HIDDEN[c]) return; const m = doc[c]; if (!m || typeof m !== 'object' || Array.isArray(m)) return; out[c] = {};
@@ -119,7 +122,7 @@ const CFG_OK = ['gs', 'socPlan', 'socNetworks', 'socTimes', 'reviewLink', 'autop
 function mergeWrite(real, mine, ctx){
   ctx = ctx || {}; const changed = [];
   Object.keys(mine || {}).forEach(function(c){
-    if (DOC_HIDDEN[c]) return; const m = mine[c]; if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    if (DOC_HIDDEN[c] || MM_NO_WRITE[c]) return; const m = mine[c]; if (!m || typeof m !== 'object' || Array.isArray(m)) return;
     Object.keys(m).forEach(function(id){
       const inc = m[id], cur = real[c] && real[c][id]; if (!inc || typeof inc !== 'object') return;
       if (cur && s(inc.at) <= s(cur.at)) return;

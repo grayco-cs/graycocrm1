@@ -37,6 +37,7 @@ function seed(){
   cset('leads', [{ id: 'L1', name: 'Demo Customer-Kline', contact: { email: 'kline@demo.example', phone: '(901) 555-0100' }, city: 'Germantown', type: 'Water damage', stage: 'Won', createdAt: iso(30), attrib: { utm_source: 'facebook', utm_campaign: 'soc-water' } }]);
   cset('customers', [{ id: 'C1', name: 'Demo Customer-Kline', email: 'kline@demo.example', phone: '(901) 555-0100' }]);
   cset('invoices', [{ id: 'I1', note: 'INVOICE-SECRET' }]);
+  cset('gc_photos', [{ id: 'ph1', jobId: 'PW', ref: 'sb:crm-files/demo-after.jpg', tag: 'After', at: iso(9) }, { id: 'ph2', jobId: 'PR', ref: 'sb:crm-files/demo-roof-no-ok.jpg', tag: 'After', at: iso(12) }]);
   cset('gc_office_tasks', JSON.stringify([{ id: 'T1', label: 'Call Demo Customer-Kline about the office-only deductible', assignees: ['office@grayco-cs.com'] }]));
   cset('gc_approval_queue', JSON.stringify([
     { id: 'A1', kind: 'mkt_giveaway', title: '📣 Marketing — giveaway winner e-mail: Demo Winner-Gray (2026-10)', to: 'Demo Winner-Gray <gray@demo.example>', subject: 'You won the GrayCo giveaway!', status: 'waiting', step: 'admin', steps: ['admin'], createdAt: iso(0.2) },
@@ -96,6 +97,9 @@ r = await callFn('mkt2', MM, { op: 'newsletter' });
 ok(r.status === 200 && r.j.ok === true, '📰 he can draft this month\'s newsletter (a draft — it still waits on Approvals)', r);
 r = await callFn('soc', MM, { op: 'mm_kv_read', key: 'gc_mkt_v1' });
 ok(r.status === 200 && r.j.value && r.j.value.referrals && !hasPII(r.txt).length, 'the marketing document he reads has no referrer / referred customer names', hasPII(r.txt));
+r = await callFn('soc', MM, { op: 'mm_kv_write', key: 'gc_mkt_v1', value: { perms: { job_PR: { id: 'job_PR', jobId: 'PR', marketing: true, at: new Date(Date.now() + 60e3).toISOString() } } } });
+const pj = await callFn('soc', MM, { op: 'mm_jobs' }), pf = await callFn('soc', MM, { op: 'mm_file', ref: 'sb:crm-files/demo-roof-no-ok.jpg' });
+ok(!(cget('gc_mkt_v1').perms || {}).job_PR && (pj.j.photos || []).length === 1 && pj.j.photos[0].jobId === 'PW' && pf.status === 403, 'he cannot mark a job "the customer said OK" himself: that job\'s photos stay closed to him (403)', { perms: cget('gc_mkt_v1').perms, photos: (pj.j.photos || []).map(x => x.jobId), file: pf.status });
 r = await callFn('referral', ADMIN, null, 'GET', { list: '1' });
 ok(r.status === 200 && /Demo Customer-Kline/.test(r.txt), '… an admin still sees the members by name');
 
@@ -167,6 +171,10 @@ v = await view('mytodo');
 await pm.evaluate(() => { const i = document.getElementById('mm-task'); if (i) i.value = ''; document.querySelector('[data-a="mm-task-add"]').click(); }); await sleep(400);
 const tt = await pm.evaluate(() => [...document.querySelectorAll('.gmt-toast')].map(x => x.innerText).join(' '));
 ok(/Type the to-do first/.test(tt), '✅ My To-Do: "Add" with an empty box asks for the to-do', tt);
+v = await view('flyers');
+await pm.evaluate(() => { const s = document.querySelector('#gc-mk-mount select[data-ch="fl-job"]'); if (s) { const o = [...s.options].find(x => x.value); if (o) { s.value = o.value; s.dispatchEvent(new Event('change', { bubbles: true })); } } }); await sleep(1500);
+const perm = await pm.evaluate(() => { const c = document.getElementById('fl-perm'); return c ? { disabled: c.disabled } : null; });
+ok(perm && perm.disabled === true, '🗞 flyers (his): "The customer said OK …" shows the answer but he cannot change it', perm);
 v = await view('coupons');
 ok(v.a.includes('cp-check') && !v.a.includes('cp-redeem'), '🎟 Coupons (his): Check stays, no Redeem button (the office redeems on the job)', v.a.filter(x => /^cp-/.test(x)));
 const pageTxt = await pm.evaluate(() => document.body.innerText);
