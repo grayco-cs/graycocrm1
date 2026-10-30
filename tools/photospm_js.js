@@ -1,10 +1,14 @@
-/* ══ PHOTOSPM (__GC_PATCH_PHOTOSPM__): whose projects the Photos home shows ══
-   A PM sees only the projects they are the PM of: job.pm against this person, with the CRM's own rule
-   (window._gcSamePM: name or e-mail ignoring case, an earlier name, an APM's PMs) — the same one the Projects list uses.
+/* ══ PHOTOSPM (__GC_PATCH_PHOTOSPM__): whose projects GrayCo Photos shows ══
+   Everyone but an admin / owner / office sees only the jobs the CRM's own Projects list shows them, through the very
+   same function (window._gcProjVisible: a PM / APM / super / crew / insurance / mitigation person — the jobs where they
+   are the PM, window._gcSamePM; an estimator — the jobs they estimated, or every job when their Projects list is on
+   "All company projects"); a lead or CompanyCam-only project also when it is assigned to / was made by them.
+   That covers the home, the feed, search, Map, Activity, a project's page and photo viewer and the Team tab's photo strips.
+   Adding photos is NOT limited: the camera's job list keeps every job, the upload goes into that job's data and syncs as
+   always ("Added 3 photos to <job>"), and the job's gallery still only shows to its own people.
    An admin / owner / office sees everything and picks one PM ("All PMs" by default, remembered on this computer), or
    "No PM": jobs whose PM is empty or is not a current person in Admin → Employees. They can also set a job's PM here
    ("PM: <name> ▾" on a project card and on the project page): the same write as the job panel's Edit Project → PM → Save.
-   Estimators, supers, crews and the rest see what they saw before (every project).
    The filter is display only: items(), the sync, the CompanyCam fetches, uploads, the sub portal and the "shared" flag
    never read it. Memoized on pvVer like the rest of PHOTOS2 (+ the CRM's project list itself); no timers, no observers. */
 var PMF_NONE = '__none', pmMemo = null, pmfC = { k: null, v: '' }, pmP = null, pmGen = 0;
@@ -16,7 +20,13 @@ function pmRole(){
 function pmVas(){ try { return !!(window._gcVAS && typeof window._gcVAS.active === 'function' && window._gcVAS.active()); } catch (e) { return false; } }
 /* admin, owner or office: every project + the PM switcher (an admin's "View as" follows the role being viewed) */
 function pmSeesAll(){ var r = pmRole(); if (pmVas()) return /^(admin|office)/i.test(r); return isOffice() || /^(admin|office)/i.test(r); }
-function pmIsPM(){ return !pmSeesAll() && /project\s*manager|^apm$|assistant\s*pm/i.test(pmRole()); }
+function pmLimited(){ return !pmSeesAll(); }
+/* the Projects list's own rule for one job (patch HOT2 / PMG: _gcProjVisible → _gcSamePM, or an estimator's jobs) */
+function pmJobVisible(raw, me){
+  try { if (typeof window._gcProjVisible === 'function') return !!window._gcProjVisible(raw, me); } catch (e) {}
+  return pmSame(raw && raw.pm, me, raw);
+}
+function pmEstMode(){ try { return window._gcEstProjects && typeof window._gcEstProjects.mode === 'function' ? s(window._gcEstProjects.mode()) : ''; } catch (e) { return ''; } }
 function pmMe(){
   var u = null; try { if (typeof window._gcMeUser === 'function') u = window._gcMeUser(); } catch (e) {}
   u = u || myUser() || { name: myName(), email: myEmail() };
@@ -33,9 +43,9 @@ function pmfGet(){ var k = pmfKey(); if (pmfC.k !== k) pmfC = { k: k, v: s(jGet(
 function pmfSet(v){ pmfC = { k: pmfKey(), v: s(v) }; jSet(pmfC.k, pmfC.v); }
 /* the projects this person's Photos home shows (+ the switcher's PMs for an admin); re-made only when pvVer or the pick changes */
 function pmScope(its){
-  var all = pmSeesAll(), pmv = !all && pmIsPM(), me = pmv ? pmMe() : null, f = all ? pmfGet() : '';
+  var all = pmSeesAll(), lim = !all, me = lim ? pmMe() : null, f = all ? pmfGet() : '';
   var P = crm().projects; if (P !== pmP) { pmP = P; pmGen++; }   /* a job's PM changed (here or on another computer) */
-  var k = pvVer + '|' + pmGen + '|' + its.length + '|' + (all ? 'a:' + f : pmv ? 'p:' + low(me && me.name) + '|' + low(me && me.email) : 'x');
+  var k = pvVer + '|' + pmGen + '|' + its.length + '|' + (all ? 'a:' + f : 'l:' + low(me && me.name) + '|' + low(me && me.email) + '|' + pmRole() + '|' + pmEstMode());
   if (pmMemo && pmMemo.k === k) return pmMemo;
   var out = its, pms = [], none = 0;
   if (all) {
@@ -48,14 +58,21 @@ function pmScope(its){
     if (f === PMF_NONE && none) out = its.filter(noPm);
     else if (f && f !== PMF_NONE && isJob[f]) out = its.filter(function(it){ return c(it.pm) === f; });
     else f = '';
-  } else if (pmv) out = its.filter(function(it){ return pmSame(it.pm, me, it.raw); });
+  } else out = its.filter(function(it){ return pmJobVisible(it.raw, me) || (it.kind !== 'job' && pmSame(it.pm, me, it.raw)); });
   var ids = {}; out.forEach(function(it){ ids[it.id] = 1; });
-  pmMemo = { k: k, list: out, ids: ids, admin: all, pm: pmv, f: f, pms: pms, none: none, total: its.length };
+  pmMemo = { k: k, list: out, ids: ids, admin: all, lim: lim, f: f, pms: pms, none: none, total: its.length };
   return pmMemo;
 }
-/* Map / Activity: a PM's own projects only (an admin's pick is for the home screen) */
-function pmOwn(){ var its = items(); return pmIsPM() ? pmScope(its).list : its; }
-function pmOnly(list){ if (!pmIsPM()) return list; var ids = pmScope(items()).ids; return list.filter(function(r){ return r && ids[r.jobId]; }); }
+/* Map / Activity / project page / Team: the person's own jobs only (an admin's pick is for the home screen) */
+function pmOwn(){ var its = items(); return pmLimited() ? pmScope(its).list : its; }
+function pmOnly(list){ if (!pmLimited()) return list; var ids = pmScope(items()).ids; return list.filter(function(r){ return r && ids[r.jobId]; }); }
+function pmHidden(jobId){ return !!jobId && pmLimited() && !pmScope(items()).ids[String(jobId)]; }
+function pmHiddenHtml(jobId){
+  var it = itemById(jobId);
+  return '<div class="gcu-pad"><div class="gcu-box" data-pmhidden="1"><b>Not one of your jobs</b><span class="gcu-sm">' + (it ? 'Photos you add to ' + esc(it.name) + ' are saved to that job for the company. ' : '') +
+    'Its photos show to the job’s PM and the office.</span><button class="gcu-btn ghost" data-a="tab" data-v="projects">Back to my projects</button></div></div>';
+}
+function pmAddedText(n, it){ return 'Added ' + n + ' photo' + (n === 1 ? '' : 's') + ' to ' + (it ? it.name : 'the job'); }
 function pmPickName(sc){ if (!sc || !sc.admin || !sc.f) return ''; if (sc.f === PMF_NONE) return 'No PM'; var p = sc.pms.filter(function(x){ return x.k === sc.f; })[0]; return p ? p.name : ''; }
 function pmSub(d){
   var n = pmPickName(d.sc);

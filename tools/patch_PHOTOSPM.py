@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Idempotent patch PHOTOSPM: whose projects the GrayCo Photos home shows.
 
-  PM           only the projects where they are the job's PM (job.pm vs. this person, window._gcSamePM — the CRM's own
-               rule): Jump Back In, Live Photo Feed (+ View All), All projects, section chips and counts, search, Map, Activity
+  everyone but admin / owner / office
+               only the jobs their CRM Projects list shows them — the same function (window._gcProjVisible: PM / APM /
+               super / crew / insurance / mitigation = jobs where they are the PM; estimator = jobs they estimated, or all
+               when their Projects list is on "All company projects"): Jump Back In, Live Photo Feed (+ View All),
+               All projects, section chips and counts, search, Map, Activity, a project's page / photo viewer, Team
+               photo strips. Adding photos is not limited: the camera lists every job, the upload lands in that job and
+               syncs; the confirmation says where ("Added 3 photos to <job>")
   admin/office every project, plus a PM switcher under the greeting: "All PMs" · one chip per PM (with a count) · "No PM"
                (jobs whose PM is empty or not a current person); the pick is remembered on this computer
                (localStorage gcu_pmf:<me>), default All PMs
                and "PM: <name> ▾" on each job card and the job's photo page: sets job.pm for the whole CRM, through the
                same setter + stamp as the job panel's Edit Project → PM → Save (window._setProjects); a PM never sees it
-  other roles  unchanged (every project)
 
 Display only: items(), the photo / chat sync, the CompanyCam fetches, uploads, the sub portal and the customer "shared" flag
 never read the pick. Derived lists are memoized on pvVer (patch PHOTOS2); no timers, no observers.
@@ -52,13 +56,25 @@ once("<small>Here is what is happening across your projects.</small></h1>';",
 once("  return h + pvAll(d, q) + '</div>';", "  return h + (q ? pmBar(d) : '') + pvAll(d, q) + '</div>';", 'search bar')
 once("<div class=\"pv-h\"><h2>Live Photo Feed</h2><span class=\"pv-ct\">Newest first</span></div>' +",
      "<div class=\"pv-h\"><h2>Live Photo Feed</h2><span class=\"pv-ct\">Newest first</span></div>' + pmBar(d) +", 'feed all bar')
-# 4. a PM's Map and Activity: their own projects
+# 4. Map and Activity: the person's own jobs
 once("function mapItems(){ return items().filter(", "function mapItems(){ return pmOwn().filter(", 'map items')
 once("    items().filter(function(it){ return it.address; }).slice(0, 80).map(", "    pmOwn().filter(function(it){ return it.address; }).slice(0, 80).map(", 'map list')
 once("  out.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });\n  return limit ? out.slice(0, limit) : out;\n}",
      "  out = pmOnly(out);   /* patch PHOTOSPM */\n  out.sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; });\n  return limit ? out.slice(0, limit) : out;\n}", 'activity')
 once("  var jobs = {}; ph.forEach(function(r){ jobs[r.jobId] = 1; });", "  ph = pmOnly(ph);   /* patch PHOTOSPM */\n  var jobs = {}; ph.forEach(function(r){ jobs[r.jobId] = 1; });", 'today photos')
 once("  var missing = items().filter(function(it){ if (it.kind !== 'job') return false;", "  var missing = pmOwn().filter(function(it){ if (it.kind !== 'job') return false;", 'today missing')
+# 4b. a project's page and photo viewer, and the Team tab: the same jobs (the camera's job list is NOT limited)
+once("function vJob(){\n  var it = itemById(S.jobId); if (!it) return", "function vJob(){\n  if (pmHidden(S.jobId)) return pmHiddenHtml(S.jobId);   /* patch PHOTOSPM */\n  var it = itemById(S.jobId); if (!it) return", 'job page')
+once("function vPhoto(){\n  var r = photoById(S.photoId); if (!r) return '<div class=\"gcu-pad\"><div class=\"gcu-box\">This photo was removed.</div></div>';",
+     "function vPhoto(){\n  var r = photoById(S.photoId); if (!r) return '<div class=\"gcu-pad\"><div class=\"gcu-box\">This photo was removed.</div></div>';\n  if (pmHidden(r.jobId)) return pmHiddenHtml(r.jobId);   /* patch PHOTOSPM */", 'photo viewer')
+# 4c. uploads say where they went; after one to a job that is not theirs, back to their own projects
+once("  go('job', { jobTab: 'photos' });\n  var d = layer('<h3>' + ids.length + ' photo' + (ids.length > 1 ? 's' : '') + ' added</h3>",
+     "  if (pmHidden(S.jobId)) go('projects'); else go('job', { jobTab: 'photos' });   /* patch PHOTOSPM */\n  var d = layer('<h3>' + esc(pmAddedText(ids.length, itemById(S.jobId))) + '</h3>", 'camera done')
+once("    else if (r.added.length) toast(r.added.length + ' photo' + (r.added.length > 1 ? 's' : '') + ' added to ' + it.name + '.');",
+     "    else if (r.added.length) toast(pmAddedText(r.added.length, it) + '.');   /* patch PHOTOSPM */", 'upload toast')
+once("  var all = visiblePhotos(null);\n  return users().map(", "  var all = pmOnly(visiblePhotos(null));   /* patch PHOTOSPM */\n  return users().map(", 'team photos')
+once("    var jobs = items().filter(function(it){ return it.kind === 'job' && it.section === 'Active' && low(it.pm) === nm; }).length;",
+     "    var jobs = pmOwn().filter(function(it){ return it.kind === 'job' && it.section === 'Active' && low(it.pm) === nm; }).length;", 'team jobs')
 # 5. admins set a job's PM: on the All projects cards and the job's photo page
 once("shown.map(function(it){ return pvCard(it, d, false); }).join('')", "shown.map(function(it){ return pmCard(it, d); }).join('')", 'card picker')
 once("  h += '<div class=\"gcu-pad\" style=\"gap:12px\">' + dlBar(it, list) +", "  h += '<div class=\"gcu-pad\" style=\"gap:12px\">' + pmPick(it, 'pv-pmjob') + dlBar(it, list) +", 'job picker')
