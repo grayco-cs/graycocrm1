@@ -143,7 +143,7 @@ exports.handler = async function(event){
     if (op === 'members') return reply(200, headers, { ok: true, members: A.memberList(v), settings: v.settings });
     if (op === 'member_save') { let r; await A.change(function(v2){ r = A.saveMember(v2, who, b); return r.ok ? undefined : false; }); return reply(r.ok ? 200 : 400, headers, r); }
     if (op === 'settings_save') { let r; await A.change(function(v2){ r = A.saveSettings(v2, who, b); }); return reply(200, headers, r); }
-    if (op === 'report_send') { const r = await A.sendReport({ month: b.month }); return reply(r.ok ? 200 : 502, headers, Object.assign(r, r.ok ? {} : { error: 'The e-mail did not go out (RESEND_API_KEY?).' })); }
+    if (op === 'report_send') { const r = await A.sendReport({ month: b.month, all: true }); return reply(r.ok ? 200 : 502, headers, Object.assign(r, r.ok ? {} : { error: 'The e-mail did not go out (RESEND_API_KEY?).' })); }
     if (op === 'log') return reply(200, headers, { ok: true, log: v.log.slice(-200).reverse() });
     return reply(400, headers, { ok: false, error: 'Unknown request' });
   } catch (e) { return reply(500, headers, { ok: false, error: 'The marketing portal hit a problem: ' + String(e && e.message || e).slice(0, 200) }); }

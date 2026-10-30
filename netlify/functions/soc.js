@@ -83,6 +83,8 @@ async function gcStaffAuth(event){
 //   patch MM — the Marketing Manager profile (_lib/mm.js; he is never on the staff rules): status, library, plan_week, swap, rewrite,
 //   listings_sync, mm_boot, mm_kv_read / mm_kv_write (the marketing document, redacted), mm_jobs, mm_file, my_leads, mm_tasks, mm_task,
 //   mm_approvals, mm_approve, mm_queue, mm_review_reply, mm_website. Every answer to him is redacted (no customer e-mail / phone / address).
+//   patch MKTFEAT (_lib/mktfeat.js): mf_reviews / mf_review_mark (review tracker), mf_rank / mf_rank_terms / mf_rank_run (Google rankings) — him,
+//   the office, admins; mf_ba_run (office / admin); mf_report_cfg / mf_report_preview / mf_report_send (the owner's monthly report, admins).
 // Signed-in GrayCo staff only (the two GETs are signed links). Nothing goes public from here: posts wait on ✅ Approvals.
 'use strict';
 const S = require('./_lib/soc.js');
@@ -108,8 +110,8 @@ async function mediaReply(tok){
   return { statusCode: 200, headers: { 'Content-Type': ct, 'Cache-Control': 'private, max-age=600' }, body: b.toString('base64'), isBase64Encoded: true };
 }
 /* ── patch MM: the Marketing Manager's calls (who.marketing). Every answer is redacted except the two that already are. ── */
-const MKT_APPR = { mkt_experiment: 1, mkt_feature: 1, social_post: 1, soc_week: 1, mkt_campaign: 1, mkt_neighbor: 1, mkt_addraft: 1, mkt_event: 1, mkt_page: 1, mkt_outreach: 1, mkt_ad: 1, mkt_giveaway: 1, mkt_payout: 1 };
-const HTML_OK = { social_post: 1, soc_week: 1, mkt_addraft: 1, mkt_page: 1 };
+const MKT_APPR = { mkt_experiment: 1, mkt_feature: 1, social_post: 1, soc_week: 1, mkt_campaign: 1, mkt_neighbor: 1, mkt_addraft: 1, mkt_event: 1, mkt_page: 1, mkt_outreach: 1, mkt_ad: 1, mkt_giveaway: 1, mkt_payout: 1, winback: 1 };   /* patch MKTFEAT: + the lost-lead win-back (no name in it: {{FIRST_NAME}}) */
+const HTML_OK = { social_post: 1, soc_week: 1, mkt_addraft: 1, mkt_page: 1, winback: 1 };
 function core(){ return require('./portal.js')._core; }
 /* patch MM: 💡 Ideas & experiments — each card's results (from the same rows as My leads) and the monthly scorecard */
 async function ideasView(who, admin, month){
@@ -203,6 +205,7 @@ async function mmOps(op, body, who, headers){
   if (op === 'mm_queue') { const a = await M.queueForApproval({ kind: String(body.kind || ''), recId: String(body.recId || ''), again: body.again === true }, who, { queueApproval: core().queueApproval, officeTodo: core().officeTodo }); return R(a.status, a.out); }
   if (op === 'mm_review_reply') { const a = await M.approveReply(String(body.id || ''), body.text, who); return R(a.status, a.out); }
   if (op === 'mm_website') { let v = null; try { v = (await M.crmData(['roofPriceRanges'])).roofPriceRanges || null; } catch (e) {} return R(200, { ok: true, roofPriceRanges: v || null, forms: ['general', 'roofing', 'storm', 'water', 'remodel', 'commercial', 'roofprice'] }); }
+  if (/^mf_/.test(op)) { const a = await require('./_lib/mktfeat.js').op(op, body, who, { marketing: true }); return R(a.status, a.out); }   /* patch MKTFEAT: review tracker, rankings (redacted again by R) */
   return R(403, { ok: false, error: 'Not part of the Marketing Manager profile.' });
 }
 exports.handler = async function(event){
@@ -248,6 +251,7 @@ exports.handler = async function(event){
       const data = await M.crmData(['leads', 'projects', 'users']), doc = await M.readDoc(), rows = MM.myLeads(data, doc, { soldValues: true });
       return reply(200, headers, { ok: true, rows: rows, funnel: MM.funnel(rows, M._recs(doc, 'adcamps'), M._cfg(doc).socFocus, { soldValues: true }), soldValues: true });
     }
+    if (/^mf_/.test(op)) { const a = await require('./_lib/mktfeat.js').op(op, body, who, { admin: admin, office: office }); return reply(a.status, headers, a.out); }   /* patch MKTFEAT */
     if (!office) return reply(403, headers, { ok: false, error: 'The office or an admin does that.' });
     if (op === 'plan_week') return reply(200, headers, await S.planWeek({ week: body.week || 'next', replace: body.replace === true, by: who.name || who.email }));
     if (op === 'swap') return reply(200, headers, await S.swapPost(String(body.id || ''), String(body.type || ''), String(body.service || ''), who.email));
