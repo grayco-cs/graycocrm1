@@ -213,6 +213,7 @@ function subDocHtml(o){
   if (o.need.length === 1 && o.need[0] === 'coi' && o.exp) { try { return require('./care11.js').coiMail({ name: o.name, exp: o.exp, days: o.days, lang: o.lang }).html; } catch (e) {} }
   const es = o.lang === 'es';
   const items = o.need.map(function(n){ return n === 'coi' ? (es ? 'su certificado de seguro (COI) vigente' + (o.exp ? ' (el actual vence el ' + niceDay(o.exp) + ')' : '') : 'your current certificate of insurance (COI)' + (o.exp ? ' (the one on file runs out ' + niceDay(o.exp) + ')' : ''))
+    : n === 'wc' ? (es ? 'su certificado de compensación laboral vigente (o su exención)' : 'your current workers’ compensation certificate (or your exemption)')
     : (es ? 'su formulario W-9 firmado' : 'your signed W-9 form'); });
   const body = es ? 'Hola ' + esc(o.name) + ', para seguir trabajando con GrayCo y recibir sus pagos a tiempo, necesitamos: ' + esc(items.join(es ? ' y ' : ' and ')) + '. Súbalo en su Portal GrayCo (Papeles), o respóndanos con el documento adjunto.'
     : 'Hi ' + esc(o.name) + ', to keep working with GrayCo and getting paid on time, we need ' + esc(items.join(' and ')) + '. Please upload it in your GrayCo Portal (Papers), or reply to this e-mail with it attached.';
@@ -224,13 +225,13 @@ function subDocHtml(o){
 }
 /* o: { subId, name, email, lang, need:['coi'|'w9'], exp, days, stage, auto, by } → { ok, queued | already, id } */
 async function queueSubDoc(o){
-  const need = arr2(o.need).filter(function(n){ return n === 'coi' || n === 'w9'; });
+  const need = arr2(o.need).filter(function(n){ return n === 'coi' || n === 'w9' || n === 'wc'; });
   if (!need.length) return { ok: false, error: 'Nothing to ask for.' };
   if (!okEmail(o.email)) return { ok: false, noEmail: true, error: 'No e-mail on file for ' + (s(o.name) || 'this sub') + ' — add it on the sub (Subs tab).' };
   const list = await aqList(); if (!list) return { ok: false, error: 'Could not read ✅ Approvals.' };
   const w = list.find(function(x){ return x && x.kind === K.SUBDOC && open(x) && s((x.meta || {}).subId) === s(o.subId); });
   if (w) return { ok: true, already: true, id: s(w.id) };
-  const what = need.map(function(n){ return n === 'coi' ? 'COI' : 'W-9'; }).join(' + ');
+  const what = need.map(function(n){ return n === 'coi' ? 'COI' : n === 'wc' ? 'workers’ comp' : 'W-9'; }).join(' + ');
   const id = 'appr_subdoc_' + safeId(o.subId) + '_' + need.join('-') + '_' + (o.exp || 'x') + (o.stage ? '_' + o.stage : '') + (o.auto ? '' : '_m' + stamp());
   if (list.some(function(x){ return x && s(x.id) === id; })) return { ok: true, already: true, id: id, done: true };
   const subj = need.indexOf('coi') >= 0 && o.exp ? (o.days < 0 ? 'Your insurance certificate ran out — please send the new one' : 'Your insurance certificate runs out ' + (o.days === 0 ? 'today' : 'in ' + o.days + ' day' + (o.days === 1 ? '' : 's')) + ' — please send the new one')
@@ -248,7 +249,7 @@ async function subDoc(body, who){
   const subId = s(body && body.subId), nm = low(body && body.name);
   const v = (await subRecords()).find(function(x){ return (subId && s(x.id) === subId) || (!subId && nm && low(x.name || x.company) === nm); });
   if (!v) return R(404, { ok: false, error: 'That sub is not in the cloud yet.' });
-  let need = arr2(body.need).filter(function(n){ return n === 'coi' || n === 'w9'; });
+  let need = arr2(body.need).filter(function(n){ return n === 'coi' || n === 'w9' || n === 'wc'; });
   const exp = coiExpOf(v), days = exp ? daysBetween(today(), exp) : null;
   if (!need.length) { if (!exp || days <= 30) need.push('coi'); if (!hasW9(v)) need.push('w9'); }
   if (!need.length) return R(200, { ok: false, nothing: true, error: 'Nothing is missing or running out for this sub.' });
