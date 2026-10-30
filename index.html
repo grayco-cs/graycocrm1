@@ -192570,7 +192570,8 @@ function stageOf(l){ try { if (W._gcLeadNC && W._gcLeadNC.stage) return W._gcLea
 function shutL(l){ try { if (W._gcLeadNC && W._gcLeadNC.shut) return !!W._gcLeadNC.shut(l); } catch (e) {} var st = stageOf(l); return st === 'Won' || st === 'Lost' || !!(l.converted || l.notBidding || l.noBid || l.dismissed || l.archived); }
 function contactedL(l){ try { if (W._gcLeadNC && W._gcLeadNC.contacted) return !!W._gcLeadNC.contacted(l); } catch (e) {} return !!(s(l.contactedAt) || s(l.lastContact) || stageOf(l) !== 'New Lead'); }
 function importedL(l){ try { if (W._gcLeadNC && W._gcLeadNC.imported) return !!W._gcLeadNC.imported(l); } catch (e) {} return false; }
-function openLeads(){ return leadsL().filter(function(l){ return l && l.id && !l.deleted && !l.archived && !l.mergedInto && !importedL(l) && !shutL(l); }); }
+function hubDeadL(l){ try { if (typeof W._gcIsTombstoned === 'function' && W._gcIsTombstoned('leads', l.id)) return true; } catch (e) {} try { if (W._gcLDEL && typeof W._gcLDEL.blocked === 'function' && W._gcLDEL.blocked(l)) return true; } catch (e) {} return false; }   /* patch R17FIX1: the leads the Leads screen leaves out (LEADBULK dead()) are not offered here: Open could not open them */
+function openLeads(){ return leadsL().filter(function(l){ return l && l.id && !l.deleted && !l.archived && !l.mergedInto && !importedL(l) && !shutL(l) && !hubDeadL(l); }); }
 function estName(l){ return s(l.estimator).replace(/\s+—.*$/, ''); }
 function sentL(l){ return stageOf(l) === 'Estimate Sent' || /submit/i.test(s(l.bidStatus)); }
 function ageD(v){ var w = when(v); return w ? Math.floor((Date.now() - w.t) / 864e5) : null; }
