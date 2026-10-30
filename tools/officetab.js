@@ -284,7 +284,7 @@ function formHtml(){
 function officeHtml(){
   var op = officePeople(); if (!UI.asWho || !person(UI.asWho)) UI.asWho = op[0] ? op[0].key : '';
   var p = person(UI.asWho);
-  var h = '<div class="ot-card"><div class="ot-hd"><h3>✅ The office’s To-Do' + (p ? ' — ' + esc(p.name) : '') + '</h3>'
+  var h = apcHtml() + '<div class="ot-card"><div class="ot-hd"><h3>✅ The office’s To-Do' + (p ? ' — ' + esc(p.name) : '') + '</h3>'
     + (op.length > 1 ? '<select class="ot-sel" data-ot-f="as|who">' + op.map(function(x){ return '<option value="' + esc(x.key) + '"' + (x.key === UI.asWho ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select>' : '')
     + '<button type="button" class="ot-b g" data-ot-a="task-new">＋ Task for the office</button></div>'
     + (UI.msg ? '<div class="ot-ok">' + esc(UI.msg) + '</div>' : '')
@@ -381,8 +381,26 @@ function boardHtml(kind, rows, groups, label){
   }).join('');
 }
 function helpersHtml(){
-  return '<div class="ot-card"><div class="ot-hd"><h3>📐 Estimators: what’s slipping</h3></div><div class="ot-mut" style="margin-bottom:8px">Remind = a To-Do on that person’s list (no text is sent). Open = the lead.</div><div data-ot-board="est"><div class="ot-empty">Reading the leads…</div></div></div>'
+  return apcHtml() + '<div class="ot-card"><div class="ot-hd"><h3>📐 Estimators: what’s slipping</h3></div><div class="ot-mut" style="margin-bottom:8px">Remind = a To-Do on that person’s list (no text is sent). Open = the lead.</div><div data-ot-board="est"><div class="ot-empty">Reading the leads…</div></div></div>'
     + '<div class="ot-card"><div class="ot-hd"><h3>🏗 PMs: job progression &amp; leads not contacted</h3></div><div class="ot-mut" style="margin-bottom:8px">Active jobs per PM, and the leads given to them that nobody has contacted (the same test as the Leads page’s “Not contacted”).</div><div data-ot-board="pm"><div class="ot-empty">Reading the jobs…</div></div></div>';
+}
+
+/* ── "who hasn't checked ✅ Approvals today" (window._gcApprovalsCheckedToday, patch SUBPHOTOS: a Promise of
+   [{ name, email, waiting, lastSeen, checkedToday }]); without it the line is simply not there ── */
+function apcHtml(){ return typeof W._gcApprovalsCheckedToday === 'function' ? '<div class="ot-card ot-apc" data-ot-apc><span class="ot-mut">Looking at who opened ✅ Approvals today…</span></div>' : ''; }
+function fillApc(){
+  var f = W._gcApprovalsCheckedToday; if (typeof f !== 'function' || !D.querySelector('[data-ot-apc]')) return;
+  var gone = function(){ var el = D.querySelector('[data-ot-apc]'); if (el) el.remove(); };
+  var pr; try { pr = f(); } catch (e) { gone(); return; }
+  Promise.resolve(pr).then(function(l){
+    var el = D.querySelector('[data-ot-apc]'); if (!el) return;
+    l = arr(l).filter(function(x){ return x && (x.name || x.email); });
+    if (!l.length) { gone(); return; }
+    var not = l.filter(function(x){ return !x.checkedToday; });
+    var who = function(x){ var w = when(x.lastSeen); return '<span class="ot-apw">' + esc(s(x.name) || s(x.email)) + (+x.waiting ? ' <b>' + (+x.waiting) + ' waiting</b>' : '') + (w ? ' <span class="ot-mut">last ' + esc(fmtTime({ t: w.t, d: w.d })) + '</span>' : ' <span class="ot-mut">not opened yet</span>') + '</span>'; };
+    el.innerHTML = not.length ? '<b>✅ Haven’t checked Approvals today:</b> ' + not.map(who).join(' · ') + ' <button type="button" class="ot-b o" data-ot-open="appr|">Open Approvals</button>'
+      : '<b>✅ Everyone has checked Approvals today.</b>';
+  }, gone);
 }
 
 /* ═══ 👥 Team (admins): a person's activity, their numbers, when they are working ═══ */
@@ -477,6 +495,7 @@ function drawTab(name){
   wire(body.firstElementChild);
   if (name === 'ot_office') later(function(){ try { if (W._gcTD2 && D.getElementById('gc-td2-as')) W._gcTD2.paint(); } catch (e) {} }, 0);
   if (name === 'ot_office' || name === 'ot_activity') fillLater('[data-ot-feed="office"]', function(){ return feedHtml('office', officePeople().map(function(p){ return p.key; })); });
+  if (name === 'ot_office' || name === 'ot_help') later(fillApc, 0);
   if (name === 'ot_help') { fillLater('[data-ot-board="est"]', function(){ return boardHtml('est', estBoard(), GROUPS_E, 'estimator'); }); fillLater('[data-ot-board="pm"]', function(){ return boardHtml('pm', pmBoard(), GROUPS_P, 'PM'); }); }
   if (name === 'ot_team') { fillLater('[data-ot-team]', teamBody); loadDevices().then(function(){ if (UI.tab === 'ot_team') fillLater('[data-ot-team]', teamBody); }); }
 }
@@ -572,6 +591,7 @@ var CSS = '.ot-wrap{font:13.5px/1.4 Inter,-apple-system,Segoe UI,Arial,sans-seri
  + '.ot-tbl{width:100%;border-collapse:collapse;font-size:12.5px}.ot-tbl th{text-align:left;color:#64748b;font-size:11px;padding:4px 6px;border-bottom:1px solid #e2e8f0}.ot-tbl td{padding:5px 6px;border-bottom:1px solid #f1f5f9}.ot-tbl td.n{font-weight:800;text-align:center}'
  + '.ot-strip{font-size:12px}.ot-sr{display:grid;grid-template-columns:96px 130px 34px 1fr;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #f8fafc}.ot-sh{color:#64748b;font-size:10.5px;font-weight:700}'
  + '.ot-bar{display:grid;grid-template-columns:repeat(18,1fr);gap:1px}.ot-bar i{height:12px;background:#eef2f7;border-radius:2px;font-style:normal;font-size:9px;text-align:center;line-height:12px;color:#64748b}.ot-sh .ot-bar i{background:none}.ot-bar i.on{background:#2563eb}'
+ + '.ot-apc{padding:9px 12px;font-size:13px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#fffbeb;border-color:#fde68a}.ot-apw{white-space:nowrap}'
  + '.ot-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147482600;background:#0f172a;color:#fff;border-radius:12px;padding:10px 16px;font:600 13px Inter,Arial,sans-serif;max-width:90vw}'
  + '@media(max-width:600px){.ot-t{flex-basis:78px}.ot-sr{grid-template-columns:72px 1fr 30px}.ot-sr .ot-bar{grid-column:1/-1}}';
 function css(){ if (D.getElementById('gc-ot-css2')) return; var st = D.createElement('style'); st.id = 'gc-ot-css2'; st.textContent = CSS; (D.head || D.documentElement).appendChild(st); }
