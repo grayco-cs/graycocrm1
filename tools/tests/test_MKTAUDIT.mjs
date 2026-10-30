@@ -143,7 +143,7 @@ const store = await pm.evaluate(async () => {
 });
 ok(!hasPII(store.idb).length && !store.keys.some(k => /^(projects|customers|leads|invoices|gc_office_tasks|gc_approval_queue|gc_mkt_v1)$/.test(k)), 'his browser database holds none of the company\'s keys (customers, jobs, leads, invoices, to-dos, approvals)', { keys: store.keys, pii: hasPII(store.idb) });
 ok(!hasPII(store.ls).length && !hasPII(store.crm).length, '… and nothing of theirs in his local storage or the page\'s memory', hasPII(store.ls + store.crm));
-const okKeys = /^(users|gc_company_address|gc_epoch|gc_mkt_admin|gc_automation_pause)$/;
+const okKeys = /^(gc_company_address|gc_epoch|gc_mkt_admin|gc_automation_pause)$/;   /* MKTFIX6: not users */
 const badDb = net.dbAll.filter(x => { if (/^GET \/rest\/v1\/gc_staff/.test(x)) return false; if (!/\/rest\/v1\/gc_kv/.test(x) || !/^(GET|HEAD) /.test(x)) return true; const ks = []; x.split(' ').slice(2).join(' ').split('&').forEach(f => { if (f.startsWith('eq.')) ks.push(f.slice(3)); else if (f.startsWith('in.(')) f.slice(4, -1).split(',').forEach(k => ks.push(k.replace(/"/g, ''))); else if (!f.startsWith('not.')) ks.push('?' + f); }); return !ks.length || ks.some(k => !okKeys.test(k)); });
 ok(net.dbAll.length > 0 && !badDb.length, 'every database request that left his browser asks only for the keys docs/marketing-role.sql lets him read (' + net.dbAll.length + ' requests)', badDb.slice(0, 6));
 const badFn = [...new Set(net.fn.filter(n => !/^(soc|mkt|mkt2|referral|mkt-public|go|track-call|website-intake|claude-proxy)$/.test(n)))];

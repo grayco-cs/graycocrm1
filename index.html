@@ -1097,7 +1097,7 @@ try {
 /* patch MKTFIX1: the Marketing Manager asks the database for marketing only — the same four keys docs/marketing-role.sql
    lets him read, his own gc_staff row and the signed picture links; nothing else leaves (or lands on) his computer,
    even while the database lock (docs/security-lockdown.sql) is not run. Everything marketing comes through soc.js. */
-var MM_KEYS = { users: 1, gc_company_address: 1, gc_epoch: 1, gc_mkt_admin: 1, gc_automation_pause: 1 };
+var MM_KEYS = { gc_company_address: 1, gc_epoch: 1, gc_mkt_admin: 1, gc_automation_pause: 1 };   /* patch MKTFIX6: not "users" (employees' phones, pay type, plates …) */
 function mmAnswer(status, body){ return Promise.resolve(new Response(body, { status: status, headers: { 'Content-Type': 'application/json', 'Content-Range': '*/0' } })); }
 function mmFence(input, init, u){
   var x; try { x = new URL(u, location.href); } catch (e) { return mmAnswer(200, '[]'); }
@@ -143531,7 +143531,7 @@ function jget(k, d){ try { var v = localStorage.getItem(k); return v ? JSON.pars
 function jset(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 function crm(){ return W._crm || {}; }
 function myEmail(){ try { var A = W.__GC_AUTH__; var e = A && A.email && A.email(); if (e) return low(e); } catch (e) {} try { return low(localStorage.getItem('grayco_user_email') || ''); } catch (e) { return ''; } }
-function meUser(){ var em = myEmail(); return arr(crm().users).filter(function(u){ return u && em && low(u.email) === em; })[0] || null; }
+function meUser(){ var em = myEmail(); return arr(crm().users).filter(function(u){ return u && em && low(u.email) === em; })[0] || (function(){ try { var m = W._gcMMData && typeof W._gcMeUser === 'function' ? W._gcMeUser() : null; return m && m.name ? m : null; } catch (e) { return null; } })() || null; }   /* patch MKTFIX6: the Marketing Manager is not on the employee list he reads */
 function myName(){ var u = meUser(); return (u && u.name) || myEmail() || 'someone'; }
 function isAdmin(){ try { var A = W.__GC_AUTH__; if (A && typeof A.isAdmin === 'function') return !!A.isAdmin(); } catch (e) {} var u = meUser(); return !!(u && /admin|owner/i.test(s(u.role))); }
 function role(){

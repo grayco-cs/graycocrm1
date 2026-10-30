@@ -17,8 +17,9 @@
 --       – every Netlify function's staff check refuses him (they all require an active gc_staff row).
 --   • He gets exactly three small doors here:
 --       – his OWN gc_staff row (so the CRM's sign-in can see his profile);
---       – READ of four harmless gc_kv keys the page needs to start: users (the people list's public part),
---         gc_company_address, gc_epoch, gc_mkt_admin (the admins' marketing settings). Nothing else, no writes;
+--       – READ of a few harmless gc_kv keys the page needs to start: gc_company_address, gc_epoch, gc_mkt_admin (the
+--         admins' marketing settings), gc_automation_pause. Nothing else, no writes. (patch MKTFIX6, 10/30: no longer
+--         "users" — the employee list carries every employee's phone, pay type, hire date, vehicle and plate);
 --       – everything marketing goes through netlify/functions/soc.js, which redacts it (no customer name,
 --         phone, e-mail or street address; no job costs, margins or profit).
 --   • gc_mkt_admin (the admins' marketing settings: "Marketing Manager sees sold values", "… approves at stage 2")
@@ -63,7 +64,7 @@ drop policy if exists gc_mm_staff_self on public.gc_staff;
 create policy gc_mm_staff_self on public.gc_staff for select to authenticated
   using (public.gc_is_marketing() and email = lower(coalesce(auth.jwt() ->> 'email', '')));
 
--- 3. the four keys he may read (nothing to write) ---------------------------------------------
+-- 3. the keys he may read (nothing to write) --------------------------------------------------
 do $$
 declare t text;
 begin
@@ -71,7 +72,7 @@ begin
     if to_regclass('public.' || t) is not null then
       execute format('drop policy if exists gc_mm_read on public.%I', t);
       execute format('create policy gc_mm_read on public.%I for select to authenticated '
-                     'using (public.gc_is_marketing() and key in (''users'', ''gc_company_address'', ''gc_epoch'', ''gc_mkt_admin'', ''gc_automation_pause''))', t);   -- patch PAUSE: he sees the banner too
+                     'using (public.gc_is_marketing() and key in (''gc_company_address'', ''gc_epoch'', ''gc_mkt_admin'', ''gc_automation_pause''))', t);   -- patch PAUSE: he sees the banner too; patch MKTFIX6: not ''users'' (employees' phones, pay, plates)
     end if;
   end loop;
 end $$;
