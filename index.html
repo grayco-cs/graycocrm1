@@ -63831,7 +63831,9 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   // Show a small persistent "saved" indicator in the builder whenever a recovery snapshot exists.
   function ensureIndicator(){
     try{
-      var inBuilder = !!(document.getElementById('ej-name') || document.getElementById('est-lines'));
+      /* patch DRAFTPILL: only while the builder is on screen (it stays in the page after it is closed) */
+      var _ov=document.getElementById('gc-est-overlay'), _en=document.getElementById('ej-name')||document.getElementById('est-lines');
+      var inBuilder = _ov ? !!_ov.getClientRects().length : !!(_en && _en.getClientRects().length);
       var ind=document.getElementById('_gcSavedInd');
       if(!inBuilder){ if(ind) ind.remove(); return; }
       var all={}; try{ all=JSON.parse(localStorage.getItem(RK)||'{}'); }catch(e){}
@@ -63848,7 +63850,10 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         var id=s.savedEstId||s.draftId;
         if(!id) return true;
         return !saved.some(function(e){
-          return e && e.id===id && Array.isArray(e.lines) && e.lines.length>=s.lines.length;
+          if(!e || e.id!==id) return false;
+          if(Array.isArray(e.lines) && e.lines.length>=s.lines.length) return true;
+          var es=Date.parse(e.savedAt||e.updatedAt||e.updated_at||''), ss=Date.parse(s.savedAt||'');
+          return !!(es && ss && es>=ss-5000);   /* saved at or after the draft (lines deleted, then saved) */
         });
       });
       if(!unsaved.length){ if(ind) ind.remove(); return; }
@@ -63859,7 +63864,8 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
       }
       var newest=unsaved.sort(function(a,b){return (b.savedAt||'').localeCompare(a.savedAt||'');})[0];
       var t=newest&&newest.savedAt? new Date(newest.savedAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : '';
-      ind.textContent='\u26a0 Unsaved estimate draft'+(t?(' \u00b7 '+t):'')+' \u2014 click Save';
+      var _tx='\u26a0 Unsaved estimate draft'+(t?(' \u00b7 '+t):'')+' \u2014 click Save';
+      if(ind.textContent!==_tx) ind.textContent=_tx;
     }catch(e){}
   }
   setInterval(ensureIndicator, 2000);
