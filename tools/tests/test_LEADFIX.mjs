@@ -85,7 +85,7 @@ const dirty = l => BID_FIELDS.filter(f => { const v = l[f]; return Array.isArray
   const by = Object.fromEntries(box.list.map(l => [l.id, l]));
   ok(by['LEADIN-dddd4444'].scope === 'revised scope' && by['LEADIN-dddd4444'].inboxRev === 2, 'the item\'s own lead is updated');
   ok(by.LEADmsgdemo1.inboxRev === 1 && by.LEADmsgdemo1.scope !== 'revised scope', 'the other lead holding the same inbox id is NOT updated', by.LEADmsgdemo1);
-  ok(box.toasts.some(t => /not theirs/.test(t)), 'an admin is told (one toast)', box.toasts);
+  ok(box.toasts.some(t => /not theirs|attached to the wrong lead/.test(t)), 'an admin is told (one toast)', box.toasts);   /* LFQUIET (r16): the same toast in plain words */
 }
 {
   const { box, M } = make();   /* no own lead, two holders -> nobody updated, nothing new made */
