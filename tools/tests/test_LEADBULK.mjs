@@ -201,8 +201,10 @@ try {
   ok(gone && !(await rows(B)).some(id => /^LB_o/.test(id)), 'office: the 3 are deleted (screen, delete list, cloud)');
   /* the delete's own Undo brings them back on the screen and in the cloud; then deleted again */
   await mclick(pb, '#gcx-ldel-toast [data-a="undo"]');
-  let back = false; for (let i = 0; i < 70 && !back; i++) { await sleep(500); back = ['LB_o1', 'LB_o2', 'LB_o3'].every(id => !!cl(id) && !tomb(id)); if (back) back = (await rows(B)).filter(id => /^LB_o/.test(id)).length === 3; }
+  let back = false; for (let i = 0; i < 70 && !back; i++) { await sleep(500); back = ['LB_o1', 'LB_o2', 'LB_o3'].every(id => !!cl(id)); if (back) back = (await rows(B)).filter(id => /^LB_o/.test(id)).length === 3; }
   ok(back, 'office: Undo (the CRM\'s own) brings the 3 back — on the screen and in the cloud', { rows: await rows(B), cloud: ['LB_o1', 'LB_o2', 'LB_o3'].map(id => [id, !!cl(id), tomb(id)]), rec: (parse(cget('gc_leads_deleted')) || { leads: {} }).leads.LB_o1 && { d: parse(cget('gc_leads_deleted')).leads.LB_o1.deletedAt, r: parse(cget('gc_leads_deleted')).leads.LB_o1.restoredAt } });
+  await sleep(6000); const still = (await rows(B)).filter(id => /^LB_o/.test(id)).length === 3 && ['LB_o1', 'LB_o2', 'LB_o3'].every(id => !!cl(id));
+  ok(still, 'office: … and they stay back (the CRM\'s "brought back" note; nothing removes them again)');
   await B.ev(() => { window._gcLeadBulk.start(); window._gcLeadBulk.select(['LB_o1', 'LB_o2', 'LB_o3']); }); await sleep(300);
   await mclick(pb, '#gclb-bar [data-gclb-a="del"]'); await sleep(400); await mclick(pb, '#gcl-delq [data-a="delete"]');
   gone = false; for (let i = 0; i < 40 && !gone; i++) { await sleep(500); gone = ['LB_o1', 'LB_o2', 'LB_o3'].every(id => tomb(id) && !cl(id)); }

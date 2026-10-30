@@ -168030,7 +168030,7 @@ function bkChk(l){
   return '<input type="checkbox" class="gclb-chk" data-gclb-id="' + esc(id) + '"' + (BULK.sel[id] ? ' checked' : '') + (job ? ' data-gclb-job="1"' : '') + ' aria-label="Select ' + esc(s(l.name || l.title) || 'lead') + '">'
     + (job ? '<span class="gclb-job" title="Already a job — Delete skips it">🏗 job</span>' : '');
 }
-function bkBtn(){ if (!bkView() || !bkAllowed()) return ''; var on = bkOn(); return '<button type="button" class="gclu-btn gclb-btn' + (on ? ' on' : '') + '" data-gclb-sel aria-pressed="' + on + '" title="Tick leads to delete several at once">' + (on ? '☑ Selecting…' : '☐ Select') + '</button>'; }
+function bkBtn(){ if (!bkView() || !bkAllowed()) return ''; var on = bkOn(); return '<button type="button" class="gclu-btn gclb-btn' + (on ? ' on' : '') + '" data-gclb-sel aria-pressed="' + on + '" title="Tick leads to delete several at once" aria-label="Select leads">' + (on ? '☑<span class="gclb-bt"> Selecting…</span>' : '☐<span class="gclb-bt"> Select</span>') + '</button>'; }
 function bkHead(){ if (!bkOn()) return ''; return '<div class="gclb-head gcl-hide-rso"><label><input type="checkbox" data-gclb-all> Select all shown</label><span class="gclb-hint">Tap leads to tick them. Leads that are already jobs are skipped.</span></div>'; }
 function bkIds(){ return Object.keys(BULK.sel).filter(function(id){ return BULK.sel[id]; }); }
 function bkSplit(ids){ var o = { go: [], job: [], no: [] }; ids.forEach(function(id){ var l = bkLead(id); if (!l) return; if (bkJob(l)) o.job.push(l); else if (!bkCan(l)) o.no.push(l); else o.go.push(l); }); return o; }
@@ -168169,7 +168169,7 @@ function showBid(l){ if (!l) return false; if (bidData(l)) return true; return i
   '#gcl-delq .gclb-names{margin:4px 0 10px 18px;padding:0;font-size:14px;line-height:1.5}#gcl-delq .gclb-more{color:#64748b}#gcl-delq .gclb-sk{font-size:12px;color:#92400e;margin-bottom:6px}#gcl-delq .gclb-undo{font-size:12px;color:#475569;margin-bottom:14px}',
   '#gcl-drawer .gclk-wrap{display:inline-flex;gap:3px;align-items:center;white-space:nowrap}#gcl-drawer .gclk-sel{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:12px;padding:2px 6px;font:700 12px Arial;cursor:pointer;min-height:28px;max-width:150px}#gcl-drawer .gclk-sel option{color:#111;background:#fff}',
   '#gcl-drawer[data-gcl-nobid] section[data-gcbs]{display:none!important}',
-  '@media (max-width:640px){#gclb-bar{left:8px;right:8px;transform:none;bottom:8px;max-width:none}#gclb-bar button{flex:1 1 auto}}'
+  '@media (max-width:640px){#gclb-bar{left:8px;right:8px;transform:none;bottom:8px;max-width:none}#gclb-bar button{flex:1 1 auto}#gc-leads-hub .gclb-btn{padding:8px 10px;min-width:40px}#gc-leads-hub .gclb-btn .gclb-bt{display:none}}'   /* the phone: ☐ only — the header stays on one line */
 ].join('\n'); (D.head || D.documentElement).appendChild(c); })();
 W._gcLeadBulk = { on: bkOn, start: bkStart, stop: bkStop, select: bkSelect, selected: bkIds, ask: bkAsk, del: bkDelete, allowed: bkAllowed, jobLinked: bkJob, can: bkCan,
   setKind: setKind, showBid: showBid, bidSource: bidSrc };
