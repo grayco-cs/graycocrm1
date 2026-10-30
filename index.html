@@ -73960,7 +73960,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
       document.getElementById('_edClose').onclick=function(){ ov.remove(); };
       ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
       document.getElementById('_edApprove').onclick=function(){ if(window._gcExpApproveHere){ window._gcExpApproveHere(expId, this, function(){ ov.remove(); var eov=document.querySelector('._gcSheetOv'); if(eov){ eov.remove(); if(window._gcOpenExpenseApprovals) window._gcOpenExpenseApprovals(); } }); return; }   /* patch APPRINPLACE */ if(window._gcApproveExpense) window._gcApproveExpense(expId); ov.remove(); var eov=document.querySelector('._gcSheetOv'); if(eov) eov.remove(); if(window._gcOpenExpenseApprovals) window._gcOpenExpenseApprovals(); };
-      document.getElementById('_edReject').onclick=function(){ var note=prompt('Reason for rejecting (optional):','')||''; if(window._gcRejectExpense) window._gcRejectExpense(expId, note); ov.remove(); var eov=document.querySelector('._gcSheetOv'); if(eov){ eov.remove(); if(window._gcOpenExpenseApprovals) window._gcOpenExpenseApprovals(); } try{ if(window._gcAcctRedraw) window._gcAcctRedraw(); }catch(e){} };   /* patch APPRINPLACE */
+      document.getElementById('_edReject').onclick=function(){ var note='';   /* patch APPRCOUNT */ if(window._gcRejectExpense) window._gcRejectExpense(expId, note); ov.remove(); var eov=document.querySelector('._gcSheetOv'); if(eov){ eov.remove(); if(window._gcOpenExpenseApprovals) window._gcOpenExpenseApprovals(); } try{ if(window._gcAcctRedraw) window._gcAcctRedraw(); }catch(e){} };   /* patch APPRINPLACE */
     }catch(e){ try{ alert('Could not load expense details: '+e.message); }catch(_){} }
   };
 
@@ -74000,7 +74000,7 @@ window._gcApproveInvoice = function(invId, who, isAdmin){
     body.innerHTML=html;
     Array.prototype.forEach.call(body.querySelectorAll('._eaDetail'),function(b){ b.onclick=function(){ if(window._gcShowExpenseDetail) window._gcShowExpenseDetail(b.getAttribute('data-id')); }; });
     Array.prototype.forEach.call(body.querySelectorAll('._eaApprove'),function(b){ b.onclick=function(){ var _eid=b.getAttribute('data-id'); var _sel=body.querySelector('._eaJobSel[data-id="'+_eid+'"]'); var _pid=_sel?_sel.value:''; if(window._gcSetExpenseJob) window._gcSetExpenseJob(_eid, _pid); window._gcApproveExpense(_eid); ov.remove(); window._gcOpenExpenseApprovals(); }; });
-    Array.prototype.forEach.call(body.querySelectorAll('._eaReject'),function(b){ b.onclick=function(){ var _rn=prompt('Why are you denying this expense? (goes back to the PM)',''); if(_rn===null) return; try{ window._gcRecordApprovalNote&&window._gcRecordApprovalNote('expense', b.getAttribute('data-id'), 'denied', _rn); }catch(e){} window._gcRejectExpense(b.getAttribute('data-id'), _rn); ov.remove(); window._gcOpenExpenseApprovals(); }; });
+    Array.prototype.forEach.call(body.querySelectorAll('._eaReject'),function(b){ b.onclick=function(){ var _rn='';   /* patch APPRCOUNT: no reason needed */ try{ window._gcRecordApprovalNote&&window._gcRecordApprovalNote('expense', b.getAttribute('data-id'), 'denied', _rn); }catch(e){} window._gcRejectExpense(b.getAttribute('data-id'), _rn); ov.remove(); window._gcOpenExpenseApprovals(); }; });
   };
 
   // Background: scan + age every 60s (and once on load)
@@ -154369,6 +154369,7 @@ try { console.log('[GC] 🏢 Office profile home = the Office Manager Dashboard 
      the panel are painted from the same numbers in the same second */
   var memo = null;
   function current(){ if (memo && Date.now() - memo.at < 800) return memo; memo = window._gcApprovalSet(); return memo; }
+  window._gcApprovalSetFresh = function(){ memo = null; };   /* patch APPRCOUNT */
   function chipSync(set){
     Array.prototype.forEach.call(document.querySelectorAll('.td2-chip[data-f="appr"]'), function(ch){
       var b = ch.querySelector('b'); if (b && b.textContent !== String(set.total)) b.textContent = String(set.total);
@@ -160192,9 +160193,123 @@ function denyRepair(){
   if (keep.length !== kept.length) { try { localStorage.setItem('gc_apx_denies', JSON.stringify(keep)); } catch (e) {} }
 }
 (W.__GC_NATIVE_SETINTERVAL__ || W.setInterval).call(W, function(){ try { denyRepair(); } catch (e) {} }, 5000);
+/* ── patch APPRCOUNT (owner 10/30: "im moving approvals and number isnt going down") ──────────────────────
+   GONE: an item approved / sent / assigned here leaves the set and the list at once, until its record changes
+   (then the record decides again) or 10 minutes pass. DPEND: a deny in its 10-second undo window. The set itself
+   leaves out GONE, DPEND and denied items, so the badge, the pin, the header chips and the cards are one N. */
+var GONE = {}, DPEND = {};
+function bareKey(k){ return s(k).replace(/#\d+$/, ''); }
+function gSig(key){
+  var m;
+  try {
+    if ((m = /^ap2:(.+)$/.exec(key))) { var x = queue().filter(function(y){ return y && s(y.id) === m[1]; })[0]; return x ? s(x.status) + '|' + s(x.step) + '|' + arr(x.approvals).length : '-'; }
+    if ((m = /^sub:(.+)$/.exec(key))) { var a = subs().filter(function(y){ return y && (s(y.id) === m[1] || s(y.invId) === m[1]); })[0]; return a ? s(a.status) + '|' + s(a.pmDecidedAt) : '-'; }
+    if ((m = /^inv:(.+)$/.exec(key))) { var iv = arr(crm().invoices).filter(function(y){ return y && s(y.id) === m[1]; })[0]; return iv ? s(iv.status) : '-'; }
+    if (/^td:hot1:asg:/.test(key)) return 'done';   /* assigned here: hidden for the 10 minutes even if a stale copy of the leads flickers back (the set's live check still drops it) */
+  } catch (e) {}
+  return '';
+}
+function asgOpen(){
+  if (ASGC && Date.now() - ASGC.at < 300) return ASGC.v;
+  var v = {}; try { arr(typeof W._gcLeadsToAssign === 'function' ? W._gcLeadsToAssign() : []).forEach(function(l){ if (l && l.id) v[s(l.id)] = 1; }); } catch (e) {}
+  ASGC = { at: Date.now(), v: v }; return v;
+}
+var ASGC = null;
+function isGone(k){
+  k = bareKey(k); if (!k) return false;
+  if (DPEND[k]) return true;
+  var g = GONE[k]; if (!g) return false;
+  if (Date.now() - g.at > 600000 || gSig(k) !== g.sig) { delete GONE[k]; return false; }
+  return true;
+}
+function bump(){
+  fresh();
+  try { if (typeof W._gcApprovalSetFresh === 'function') W._gcApprovalSetFresh(); } catch (e) {}
+  try { navBadge(); } catch (e) { warn(e); }
+  paintSoon();
+}
+function goneNow(k){ k = bareKey(k); if (!k) return; ASGC = null; GONE[k] = { at: Date.now(), sig: gSig(k) }; bump(); }
+var LBLC = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
+function trimSet(r){
+  if (!r || !r.groups) return r;
+  var c = denyTodos();
+  var total = 0, parts = [];
+  Object.keys(r.groups).forEach(function(g){
+    r.groups[g] = arr(r.groups[g]).filter(function(x){ var k = bareKey(x && x.id), m = /^td:hot1:asg:(.+)$/.exec(k); if (m && typeof W._gcLeadsToAssign === 'function' && !asgOpen()[m[1]]) return false; return !(k && (c.open[k] || isGone(k))); });   /* an assigned lead never comes back from the To-Do's last snapshot */
+    var n = r.groups[g].length; total += n; if (n && LBLC[g]) parts.push(n + ' ' + (n === 1 ? LBLC[g][0] : LBLC[g][1]));
+  });
+  r.total = total; r.tip = parts.join(' · ');
+  return r;
+}
+function wrapSetCount(){
+  var f = W._gcApprovalSet; if (typeof f !== 'function' || f.__gcAPC) return;
+  var w = function(){ var r = f.apply(this, arguments); try { trimSet(r); } catch (e) { warn(e); } return r; };
+  try { Object.keys(f).forEach(function(k){ w[k] = f[k]; }); } catch (e) {}
+  w.__gcAPC = true; W._gcApprovalSet = w;
+  try { if (typeof W._gcApprovalSetFresh === 'function') W._gcApprovalSetFresh(); } catch (e) {}
+}
+/* Deny: on the click. The card leaves and the count drops now; the deny itself is written after 10 s (or at once with
+   "Send back", Enter, or when the page closes). A reason is optional. */
+function quickDeny(r){
+  var k = bareKey(r.key); if (!k || DPEND[k]) return;
+  DPEND[k] = { r: r, why: s(DREASON[r.key]), until: Date.now() + 10000 };
+  delete DENYBOX[r.key];
+  denyToast(k); bump();
+  (function wait(){ later(function(){ var p = DPEND[k]; if (!p) return; if (Date.now() < p.until) return wait(); commitDeny(k); }, Math.max(200, (DPEND[k] ? DPEND[k].until : Date.now()) - Date.now())); })();
+}
+function commitDeny(k){
+  var p = DPEND[k]; if (!p) return; delete DPEND[k];
+  var t = D.querySelector('[data-apx-dk="' + cssq(k) + '"]'); var inp = t && t.querySelector('input'); if (inp) p.why = s(inp.value) || p.why;
+  if (t) t.remove();
+  DREASON[p.r.key] = p.why;
+  try { doDeny(p.r); } catch (e) { warn(e); }
+  bump();
+}
+function undoDeny(k){
+  if (!DPEND[k]) return; delete DPEND[k];
+  var t = D.querySelector('[data-apx-dk="' + cssq(k) + '"]'); if (t) t.remove();
+  toast('↩ Undone — not denied.'); bump();
+}
+function denyHost(){
+  var h = D.getElementById('apx-dtoasts'); if (h) return h;
+  h = D.createElement('div'); h.id = 'apx-dtoasts'; h.setAttribute('data-gc-keep', '1');
+  h.style.cssText = 'position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:2147483000;display:flex;flex-direction:column;gap:6px;align-items:center;max-width:94vw;font:14px Inter,Arial,sans-serif';
+  D.body.appendChild(h); return h;
+}
+function denyToast(k){
+  var p = DPEND[k]; if (!p) return;
+  try {
+    var t = D.createElement('div'); t.setAttribute('data-apx-dk', k);
+    t.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#0f172a;color:#fff;padding:8px 10px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:94vw';
+    var bs = 'border:0;border-radius:7px;padding:6px 10px;font:600 13px Inter,Arial,sans-serif;cursor:pointer';
+    t.innerHTML = '<span>✕ Denied — ' + esc(s(p.r.title).slice(0, 60)) + '</span>'
+      + '<input type="text" data-apx-dwhy="' + esc(k) + '" placeholder="Why? (optional)" style="flex:1;min-width:160px;padding:6px 8px;border-radius:7px;border:1px solid #475569;background:#1e293b;color:#fff;font:13px Inter,Arial,sans-serif">'
+      + '<button type="button" data-apx-dsend="' + esc(k) + '" style="' + bs + ';background:#dc2626;color:#fff">Send back</button>'
+      + '<button type="button" data-apx-dundo="' + esc(k) + '" style="' + bs + ';background:#e2e8f0;color:#0f172a">↩ Undo</button>';
+    denyHost().appendChild(t);
+  } catch (e) { warn(e); }
+}
+D.addEventListener('click', function(ev){
+  var b = ev.target && ev.target.closest && ev.target.closest('[data-apx-dundo],[data-apx-dsend]'); if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  if (b.hasAttribute('data-apx-dundo')) undoDeny(b.getAttribute('data-apx-dundo')); else commitDeny(b.getAttribute('data-apx-dsend'));
+}, true);
+D.addEventListener('input', function(ev){ var t = ev.target; if (t && t.getAttribute && t.hasAttribute('data-apx-dwhy')) { var p = DPEND[t.getAttribute('data-apx-dwhy')]; if (p) { p.why = s(t.value); p.until = Date.now() + 10000; } } }, true);
+D.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key === 'Enter' && t && t.getAttribute && t.hasAttribute('data-apx-dwhy')) { ev.preventDefault(); commitDeny(t.getAttribute('data-apx-dwhy')); } }, true);
+W.addEventListener('pagehide', function(){ Object.keys(DPEND).forEach(function(k){ try { commitDeny(k); } catch (e) {} }); });
+/* Assign on an "Assign this lead" card: the Leads hub's picker on the card (admins); the hub's assign() saves */
+function canAssignHere(){ try { var h = W._gcLeadsHub; return !!(h && typeof h.picker === 'function' && typeof h.canAssign === 'function' && h.canAssign()); } catch (e) { return false; } }
+function assignHere(r, el){
+  var lid = bareKey(r.key).replace(/^td:hot1:asg:/, '');
+  if (!canAssignHere()) { try { r.approve.f(); } catch (e) { warn(e); } return; }
+  later(function(){ try { W._gcLeadsHub.picker([lid], el && el.isConnected ? el : null); } catch (e) { warn(e); try { r.approve.f(); } catch (x) {} } }, 0);
+}
+W.addEventListener('gc-lead-assigned', function(ev){ var d = ev && ev.detail; if (d && d.id) goneNow('td:hot1:asg:' + s(d.id)); });
+W._gcApprCount = { state: function(){ return { gone: Object.keys(GONE), denying: Object.keys(DPEND) }; }, isGone: isGone, deny: function(key){ var r = rowByKey(s(key)); if (r) quickDeny(r); return !!r; } };
+wrapSetCount();
 function denyFilter(rows){
   var c = denyTodos();
-  return rows.filter(function(r){ return !(r && c.open[r.key.replace(/#\d+$/, '')]); }).map(function(r){
+  return rows.filter(function(r){ return !(r && (c.open[r.key.replace(/#\d+$/, '')] || isGone(r.key))); })   /* patch APPRCOUNT */.map(function(r){
     var h = c.done[r.key]; if (!h || !h.length) return r;
     var x = Object.assign({}, r); x.chain = (r.chain ? r.chain + ' · ' : '') + h.map(function(d){ return '↩ sent back by ' + s(d.by) + ' ' + when(d.at) + ': “' + s(d.reason).slice(0, 80) + '”, fixed and resubmitted'; }).join(' · ');
     return x;
@@ -160207,12 +160322,12 @@ function denyTo(r){
 }
 function doDeny(r){
   var inp = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'), why = s((inp && inp.value) || DREASON[r.key]);
-  if (!why) { toast('Write why first — the PM sees it.'); if (inp) try { inp.focus(); } catch (e) {} return; }
+  /* patch APPRCOUNT: a reason is optional */
   var to = denyTo(r) || 'the office', me = myName() || myEmail(), at = new Date().toISOString(), title = s(r.title).slice(0, 120);
   var d = { key: r.key.replace(/#\d+$/, ''), src: r.src, id: s(r.id), title: title, pid: s(r.pid), by: me, at: at, reason: why.slice(0, 500), to: to };
   try {
     var ot = JSON.parse(localStorage.getItem('gc_office_tasks') || '[]'); if (!Array.isArray(ot)) ot = [];
-    var tk = { id: 'DENY' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: '↩ Fix and resend: ' + title + ' — ' + why.slice(0, 160) + ' (from ' + me + ')', note: 'Sent back from Approvals by ' + me + '. Fix it, then tick this done: it goes back on Approvals.', assignee: to === 'the office' ? '' : to, pid: d.pid, addedBy: me, addedAt: at, at: at, done: false, _deny: d };
+    var tk = { id: 'DENY' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), label: '↩ Fix and resend: ' + title + (why ? ' — ' + why.slice(0, 160) : '') + ' (from ' + me + ')', note: 'Sent back from Approvals by ' + me + '. Fix it, then tick this done: it goes back on Approvals.', assignee: to === 'the office' ? '' : to, pid: d.pid, addedBy: me, addedAt: at, at: at, done: false, _deny: d };
     ot.push(tk); denyKeep(tk);   /* patch DENY3: kept in its own list too */
     try { localStorage.setItem('gc_office_tasks', JSON.stringify(ot)); }
     catch (e0) { if (!(W._gcFreeLocalSpace && W._gcFreeLocalSpace())) throw e0; localStorage.setItem('gc_office_tasks', JSON.stringify(ot)); }   /* patch DENYKEEP: full storage → free the backup copies, once more */
@@ -160220,7 +160335,7 @@ function doDeny(r){
   /* patch DENY2: the cloud push is separate — a hiccup there never drops the deny (the save queue sends it) */
   try { if (typeof W._gcOfficeTasksPush === 'function') W._gcOfficeTasksPush(); else if (typeof W._supaUpsert === 'function') W._supaUpsert('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e) { warn(e); try { if (W._gcSyncQ && W._gcSyncQ.add) W._gcSyncQ.add('gc_office_tasks', JSON.parse(localStorage.getItem('gc_office_tasks') || '[]')); } catch (e2) {} }
   if (r.src === 'queue' && typeof W._gcApprovalAct === 'function') { try { Promise.resolve(W._gcApprovalAct(s(r.id), 'reject', { reason: why.slice(0, 500) })).catch(function(){}); } catch (e) {} }
-  try { if (typeof W._gcNotify === 'function' && to !== 'the office') W._gcNotify(to, { kind: 'approval', link: '#todo', title: '↩ Sent back to you: ' + title, body: why + ' — from ' + me }); } catch (e) {}
+  try { if (typeof W._gcNotify === 'function' && to !== 'the office') W._gcNotify(to, { kind: 'approval', link: '#todo', title: '↩ Sent back to you: ' + title, body: (why || 'No reason given') + ' — from ' + me }); } catch (e) {}
   delete DENYBOX[r.key]; delete DREASON[r.key]; DENYC.at = 0; fresh(); paintSoon();
   toast('↩ Sent back to ' + to + ' — nothing was sent.');
 }
@@ -160260,7 +160375,7 @@ function approveQueue(id){
   if (busy[id] || typeof W._gcApprovalAct !== 'function') { if (!busy[id]) call('_gcAp2Preview', id); return; }
   busy[id] = 1; paintSoon();
   return Promise.resolve(W._gcApprovalAct(id, 'approve')).then(function(j){
-    delete busy[id]; j = j || {};
+    delete busy[id]; j = j || {}; if (j.ok) goneNow('ap2:' + id);   /* patch APPRCOUNT */
     toast(j.ok ? (j.sent ? '✅ Approved and sent.' : (j.next === 'admin' ? '✅ Approved — now waiting on Wesley or Nick.' : '✅ Approved.')) : '⚠ ' + (j.error || 'Try again.'));
     try { if (W._gcAp2Refresh) W._gcAp2Refresh(); else if (W._gcApprovalsRefresh) W._gcApprovalsRefresh(); } catch (e) {}
     paintSoon();
@@ -160304,6 +160419,7 @@ function pendCount(){ return Object.keys(PEND).length; }
 function finish(r, res){
   var ok = res !== false && !(res && res.ok === false);
   DONE[r.key] = { r: r, ok: ok, at: Date.now() };
+  if (ok) goneNow(r.key);   /* patch APPRCOUNT */
   later(function(){ delete DONE[r.key]; paintSoon(); }, 3500);
   fresh(); paintSoon();
   try { if (W.__GC_REFRESH_UI__) later(W.__GC_REFRESH_UI__, 150); } catch (e) {}
@@ -160475,9 +160591,10 @@ function btns(r, where){
       + b('denygo', { l: '✕ Deny & send back', f: function(){ doDeny(r); } }, 'dn') + b('denyx', { l: 'Cancel', f: function(){ delete DENYBOX[r.key]; paintBox(); } }, 'op')
       + '<span style="width:100%;font-size:12px;color:#6b7280">Nothing is sent to the customer.</span></div>';
   }
+  if (r.approve && !r.approve.mode && /^td:hot1:asg:/.test(r.key) && canAssignHere()) { var r0 = r; r = Object.assign({}, r, { approve: { l: r.approve.l, f: function(el){ assignHere(r0, el); } } }); }   /* patch APPRCOUNT */
   h += b('approve', r.approve ? { l: busy[r.id] ? 'Working…' : r.approve.l, f: r.approve.mode ? function(){ inlineApprove(r); } : r.approve.f } : null, 'go');
   h += b('note', { l: '📝 Note', f: function(){ NOTEBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-note-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'op');   /* patch APXNOTE */
-  if (r.approve && r.src !== 'pay' && r.src !== 'mat' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ DENYBOX[r.key] = 1; paintBox(); var i = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (i) try { i.focus(); } catch (e) {} else { paintSoon(); later(function(){ var j = D.querySelector('[data-apx-deny-in="' + cssq(r.key) + '"]'); if (j) try { j.focus(); } catch (e) {} }, 300); } } }, 'dn');
+  if (r.approve && r.src !== 'pay' && r.src !== 'mat' && denyTo(r) !== null) h += b('deny', { l: '✕ Deny', f: function(){ quickDeny(r); } }, 'dn');   /* patch APPRCOUNT: denies on the click (reason optional, 10-s undo) */
   /* patch APXNOTE: a customer message waiting here can be edited before it goes (the existing message editor) */
   var sendEdit = r.src === 'queue' && typeof W._gcAp2Preview === 'function' && r.approve && !PEND[r.key];
   if (sendEdit && r.edit && !r.edit.form && /^✏️ Open (e-mail|text|post)$/.test(s(r.edit.l))) h += b('edit', { l: '✏️ Edit before sending', f: r.edit.f }, 'ed');
@@ -160512,7 +160629,7 @@ function openJob(pid){
 function sortRows(l){ if (W._gcApprovalSort) { try { return W._gcApprovalSort(l); } catch (e) { warn(e); } } return l.slice().sort(function(a, b){ return (b.escalated - a.escalated) || ((a.since || 9e15) - (b.since || 9e15)); }); }   /* patch APPRORDER */
 
 function chipsFor(sc, rows){
-  var me = rows.filter(function(r){ return r.mine; }).length;
+  var me = rows.filter(function(r){ return r.mine && !PEND[r.key]; }).length;   /* patch APPRCOUNT: the same N as the badge */
   var c = [['', sc.preview ? 'Waiting on ' + (sc.kind === 'pm' ? (sc.pm || 'the PM') : 'the office') : 'Waiting on me', me]];
   if (sc.kind === 'admin') c.push(['pm', 'Waiting on a PM', rows.filter(function(r){ return r.step === 'pm'; }).length]);
   if (sc.kind === 'pm') c.push(['admin', 'Waiting on Wesley or Nick', rows.filter(function(r){ return r.step === 'admin' || r.step === 'sending'; }).length]);
@@ -160610,7 +160727,7 @@ D.addEventListener('click', function(ev){
     else if (bv === 'yes') { BULK = 0; var keys = Object.keys(SEL); SEL = {}; keys.forEach(function(k){ var r = rowByKey(k); if (!r || !r.approve || !r.approve.mode) return; if (r.approve.mode === 'confirm') { CONF[k] = 1; return; } inlineApprove(r); }); }
     drawTab(true); return; }
   var a = t.closest('[data-apx-act]');
-  if (a) { ev.preventDefault(); ev.stopPropagation(); var f = ACTS[a.getAttribute('data-apx-act')] || PIN_ACTS[a.getAttribute('data-apx-act')]; if (f) { try { f(); } catch (e) { warn(e); } } if (/\|approve$/.test(a.getAttribute('data-apx-act'))) later(paintSoon, 400); return; }
+  if (a) { ev.preventDefault(); ev.stopPropagation(); var f = ACTS[a.getAttribute('data-apx-act')] || PIN_ACTS[a.getAttribute('data-apx-act')]; if (f) { try { f(a); } catch (e) { warn(e); } } if (/\|approve$/.test(a.getAttribute('data-apx-act'))) later(paintSoon, 400); return; }
   var c = t.closest('[data-apx-f]'); if (c) { ev.preventDefault(); var v = c.getAttribute('data-apx-f'); UI.f = UI.f === v && v ? '' : v; drawTab(true); return; }
   if (t.closest('[data-apx-more]')) { ev.preventDefault(); UI.lim = (UI.lim || 25) + 50; drawTab(true); return; }
   if (t.closest('[data-apx-clear]')) { UI.job = UI.kind = UI.pm = ''; UI.lim = 25; drawTab(true); return; }
@@ -160744,7 +160861,7 @@ function tick(force){
   try {
     if (D.hidden) return;
     if (!force && W._gcIdleSkip && W._gcIdleSkip(APXIDLE, 5000)) return;   /* patch TODOPERF */
-    wrapMore(); refreshPay();
+    wrapMore(); refreshPay(); wrapSetCount(); if (force) { try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {} }   /* patch APPRCOUNT: a forced repaint reads the set once, for the badge and the cards */
     if (RET && Date.now() - RET.at > 3600e3) { RET = null; backChip(); }
     if (view() === 'approvals') drawTab(!!force);
     pinRoots(); navBadge();
@@ -167696,7 +167813,7 @@ function assign(id, name){
   return patchLead(id, function(l){ var commercial = isBidL(l); if (commercial && ((!l.pm && !/won/i.test(s(l.stage))) || !(W._gcBidRole && W._gcBidRole.admin()))) l.estimator = name; else l.pm = name;   /* patch BIDROLE: on a bid only an admin sets the PM (after Won) */ if (commercial) delete l.autoAssignedAt;   /* patch HOT2 */ l.assignedAt = at; l.assignedBy = myName(); logAct(l, 'assign', 'Assigned to ' + name); })
     .then(function(ok){
       toast(ok ? 'Assigned to ' + name : 'Could not save — try again');
-      if (ok) { var l = leads().filter(function(x){ return x.id === id; })[0]; if (l) fn('bid-inbox?notify=1', { body: { lead: l } }).catch(function(){}); if (W._gcLeadHold) W._gcLeadHold.picked(id, name); }   /* patch LEADHOLD */
+      if (ok) { var l = leads().filter(function(x){ return x.id === id; })[0]; if (l) fn('bid-inbox?notify=1', { body: { lead: l } }).catch(function(){}); if (W._gcLeadHold) W._gcLeadHold.picked(id, name); try { W.dispatchEvent(new CustomEvent('gc-lead-assigned', { detail: { id: id, to: name } })); } catch (e) {} }   /* patch APPRCOUNT */   /* patch LEADHOLD */
       redraw(); return ok;
     });
 }
@@ -168166,7 +168283,7 @@ W._gcLeadsHubKit = { all: function(){ return rawLeads().filter(function(l){ retu
   setLeads: function(mut){ return setLeads(function(list){ var n = mut(list); if (Array.isArray(n)) { LEADS_NOW = n; LEADS_SIG = ''; } return n; }); },   /* as patchLead: the hub's own copy follows at once (a later full-list push never carries the old list) */
   imported: importedL, archived: archivedL, shut: shut, stageOf: stageOf, value: value, isAdmin: isAdmin,
   me: function(){ return myName() || myEmail(); }, receivedMs: function(l){ return receivedMs(l) || born(l); }, typeOf: typeOf };   /* patch LCLEAN */
-W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
+W._gcLeadsHub = { kit: W._gcLeadsHubKit, redraw: redraw, open: openDrawer, close: closeDrawer, moveStage: moveStage, unassigned: unassignedCount, ui: function(){ return UI; }, scopeFromEstimate: scopeFromEstimate, scopeFromLines: scopeFromLines, xactFor: xactFor, sweep: sweepPortal, autoAssign: autoAssignBids, autoState: function(id){ var l = id ? leads().filter(function(x){ return x.id === id; })[0] : null; return { busy: AUTO_BUSY, tries: AUTO_TRIES, at: AUTO_AT, last: AUTO_LAST, lead: l ? { assignee: assignee(l), bid: isBidL(l), shut: shut(l), updatedAt: l.updatedAt } : null }; }, isBid: isBidL, picker: openPicker, canAssign: canAssignAll, filtered: function(){ return filtered().map(function(l){ return l.id; }); } };
 var n0 = 0;
 function tick(){ try { if (D.hidden) return; css(); mount(); luTick(); navBadge(); if (view() === 'leads') loadEsts(); if (view() === 'leads' && ++n0 % 20 === 3) sweepPortal(); } catch (e) { warn(e); } }
 /* patch HOT2: the head-estimator backfill keeps its own 3-second timeout loop — the interval governors hold tick()
