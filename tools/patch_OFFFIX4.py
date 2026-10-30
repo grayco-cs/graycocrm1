@@ -14,8 +14,8 @@ called directly:
     hidden (html.gc-offno).
 Single-record deletes (an invoice, an expense, a lead → 30-day Recycle bin, a vendor) stay hers. Admins are unchanged.
 Feature-detected, order-free: a small script at the end of the page wraps whatever of those exists (also after patch
-PROJLEAK, which shows Merge Jobs to "admins and office"); the class is refreshed on each screen change and click — no
-timers, no polling. Kill switch: localStorage gc_offfix4_off = '1'.
+PROJLEAK, which shows Merge Jobs to "admins and office"); the class is refreshed on each press and click — no timers,
+no polling, nothing else wrapped. Kill switch: localStorage gc_offfix4_off = '1'.
 Usage: python3 tools/patch_OFFFIX4.py [index.html]
 """
 import sys
@@ -58,10 +58,8 @@ function wrapAll(){
   guard('_gcMergeDrawSet', always);
 }
 wrapAll(); mark();
-/* each screen change (window._setView) and each click: the class follows who is signed in; late definitions get wrapped */
-var sv = W._setView;
-if (typeof sv === 'function' && !sv.__gcOff4) { var w = function(){ var r = sv.apply(this, arguments); try { wrapAll(); mark(); } catch (e) {} return r; }; try { Object.keys(sv).forEach(function(k){ w[k] = sv[k]; }); } catch (e) {} w.__gcOff4 = true; W._setView = w; }
-D.addEventListener('pointerdown', function(){ mark(); }, true);
+/* each press (pointerdown, before any click lands): the class follows who is signed in; late definitions get wrapped */
+D.addEventListener('pointerdown', function(){ try { wrapAll(); mark(); } catch (e) {} }, true);
 D.addEventListener('click', function(ev){
   var t = ev.target; if (!t || !t.closest) return;
   var b = t.closest('._gcRowX,[data-del-job],[data-gcx-del],#gcx-binfloat,#gc-merge-btn,#_invMergeBtn'); if (!b) return;
