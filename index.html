@@ -65946,6 +65946,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         chain = chain.then(function(){
           var item = Q[key]; if(!item) return;
           var p = (sk[key] && Array.isArray(item.v) && !item.recover) ? intoLocal(key, item.v) : toCloud(key, item);
+          if((item.restored || item.mustSend || (function(){ try{ return !navigator.onLine || !!(window.__gcSyncBackoff && window.__gcSyncBackoff.failStreak > 0); }catch(e){ return false; } })()) && sk[key] && Array.isArray(item.v) && !item.recover){ item.mustSend = 1; p = p.then(function(){ return idGet(key).then(function(cur){ return toCloud(key, { v: Array.isArray(cur) ? cur : item.v }); }); }); }   /* FIELDFIX10 */ /* saved before a reload: really send it */
           if(item.restored && sk[key]) p = p.then(function(r){ try{ if(typeof window._gcTabChangeSync === 'function') ST.call(window, function(){ window._gcTabChangeSync('a save from before a reload'); }, 0); }catch(e){} return r; });   /* FIELDFIX4 */
           return p.then(function(){ if(Q[key] === item) delete Q[key]; done++; pushedCount++; },
                         function(err){ item.tries = (item.tries||0) + 1; lastErr = key + ': ' + String(err && err.message || err); });
@@ -154503,7 +154504,7 @@ var SB = (function(){
     if (D.getElementById('gc-rp-sb-css')) return;
     var x = D.createElement('style'); x.id = 'gc-rp-sb-css';
     x.textContent = ['#gc-rp-sb{font:14px/1.45 Inter,Segoe UI,sans-serif;color:#0f172a;max-width:1180px}',
-      '#gc-rp-sb .sb-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}#gc-rp-sb h2{margin:0;font-size:20px}#gc-rp-sb .sp{flex:1}#gc-rp-sb .sb-sub{color:#64748b;margin-bottom:10px}',
+      '#gc-rp-sb .sb-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}#gc-rp-sb h2{margin:0;font-size:20px}/* FIELDFIX9 */html._fieldmode #gc-rp-sb .sb-hd h2{color:#f8fafc}#gc-rp-sb .sb-mprow>input{min-width:0;width:100%;box-sizing:border-box}#gc-rp-sb .sp{flex:1}#gc-rp-sb .sb-sub{color:#64748b;margin-bottom:10px}',
       '#gc-rp-sb .sb-jobs{display:flex;flex-direction:column;gap:8px}#gc-rp-sb .sb-job{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;text-align:left;padding:12px 14px;border:1px solid #e2e8f0;border-left:4px solid #d4a017;border-radius:12px;background:#fff;cursor:pointer;font:inherit;color:inherit}',
       '#gc-rp-sb .m{color:#64748b;font-size:12px}#gc-rp-sb .r{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}',
       '#gc-rp-sb .sb-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}#gc-rp-sb .sb-tab{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:6px 12px;font:600 13px Inter,sans-serif;cursor:pointer;min-height:36px}#gc-rp-sb .sb-tab.on{background:#0f2440;color:#fff;border-color:#0f2440}',
