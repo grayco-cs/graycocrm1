@@ -50,10 +50,16 @@ function gSig(key){
     if ((m = /^ap2:(.+)$/.exec(key))) { var x = queue().filter(function(y){ return y && s(y.id) === m[1]; })[0]; return x ? s(x.status) + '|' + s(x.step) + '|' + arr(x.approvals).length : '-'; }
     if ((m = /^sub:(.+)$/.exec(key))) { var a = subs().filter(function(y){ return y && (s(y.id) === m[1] || s(y.invId) === m[1]); })[0]; return a ? s(a.status) + '|' + s(a.pmDecidedAt) : '-'; }
     if ((m = /^inv:(.+)$/.exec(key))) { var iv = arr(crm().invoices).filter(function(y){ return y && s(y.id) === m[1]; })[0]; return iv ? s(iv.status) : '-'; }
-    if ((m = /^td:hot1:asg:(.+)$/.exec(key))) { var l = arr(crm().leads).filter(function(y){ return y && s(y.id) === m[1]; })[0]; return l ? s(l.updatedAt) + '|' + s(l.pm || l.estimator) : '-'; }
+    if (/^td:hot1:asg:/.test(key)) return 'done';   /* assigned here: hidden for the 10 minutes even if a stale copy of the leads flickers back (the set's live check still drops it) */
   } catch (e) {}
   return '';
 }
+function asgOpen(){
+  if (ASGC && Date.now() - ASGC.at < 300) return ASGC.v;
+  var v = {}; try { arr(typeof W._gcLeadsToAssign === 'function' ? W._gcLeadsToAssign() : []).forEach(function(l){ if (l && l.id) v[s(l.id)] = 1; }); } catch (e) {}
+  ASGC = { at: Date.now(), v: v }; return v;
+}
+var ASGC = null;
 function isGone(k){
   k = bareKey(k); if (!k) return false;
   if (DPEND[k]) return true;
@@ -67,15 +73,14 @@ function bump(){
   try { navBadge(); } catch (e) { warn(e); }
   paintSoon();
 }
-function goneNow(k){ k = bareKey(k); if (!k) return; GONE[k] = { at: Date.now(), sig: gSig(k) }; bump(); }
+function goneNow(k){ k = bareKey(k); if (!k) return; ASGC = null; GONE[k] = { at: Date.now(), sig: gSig(k) }; bump(); }
 var LBLC = { email: ['customer e-mail', 'customer e-mails'], subinv: ['sub invoice', 'sub invoices'], invsign: ['invoice to sign off', 'invoices to sign off'], expense: ['expense', 'expenses'], other: ['other approval', 'other approvals'] };
 function trimSet(r){
   if (!r || !r.groups) return r;
   var c = denyTodos();
-  if (!Object.keys(GONE).length && !Object.keys(DPEND).length && !Object.keys(c.open).length) return r;
   var total = 0, parts = [];
   Object.keys(r.groups).forEach(function(g){
-    r.groups[g] = arr(r.groups[g]).filter(function(x){ var k = bareKey(x && x.id); return !(k && (c.open[k] || isGone(k))); });
+    r.groups[g] = arr(r.groups[g]).filter(function(x){ var k = bareKey(x && x.id), m = /^td:hot1:asg:(.+)$/.exec(k); if (m && typeof W._gcLeadsToAssign === 'function' && !asgOpen()[m[1]]) return false; return !(k && (c.open[k] || isGone(k))); });   /* an assigned lead never comes back from the To-Do's last snapshot */
     var n = r.groups[g].length; total += n; if (n && LBLC[g]) parts.push(n + ' ' + (n === 1 ? LBLC[g][0] : LBLC[g][1]));
   });
   r.total = total; r.tip = parts.join(' · ');
@@ -156,7 +161,7 @@ src = once(src, "  function current(){ if (memo && Date.now() - memo.at < 800) r
 src = once(src, "function denyFilter(rows){", BLOCK)
 src = once(src, "  return rows.filter(function(r){ return !(r && c.open[r.key.replace(/#\\d+$/, '')]); })",
                 "  return rows.filter(function(r){ return !(r && (c.open[r.key.replace(/#\\d+$/, '')] || isGone(r.key))); })   /* patch APPRCOUNT */")
-src = once(src, "    wrapMore(); refreshPay();", "    wrapMore(); refreshPay(); wrapSetCount();   /* patch APPRCOUNT */")
+src = once(src, "    wrapMore(); refreshPay();", "    wrapMore(); refreshPay(); wrapSetCount(); if (force) { try { if (W._gcApprovalSetFresh) W._gcApprovalSetFresh(); } catch (e) {} }   /* patch APPRCOUNT: a forced repaint reads the set once, for the badge and the cards */")
 # 3. Deny: no reason needed
 src = once(src, "  if (!why) { toast('Write why first — the PM sees it.'); if (inp) try { inp.focus(); } catch (e) {} return; }\n",
                 "  /* patch APPRCOUNT: a reason is optional */\n")
