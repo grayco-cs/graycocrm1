@@ -4,13 +4,13 @@
    Before switchOn (a Central-time day) every page shows `current`, on and after it `next`.
    The defaults below are used until the setting is read (and with no network). The server has the same rule
    (netlify/functions/_lib/brand.js companyAddress()); the CRM page inlines this file.
-     window._gcCompanyAddress(when?)  → "4007 Broadway Rd, Bartlett, TN 38135"
+     window._gcCompanyAddress(when?)  → "5796 Ferguson Rd, Bartlett, TN 38134"
      window._gcCompanyStreet(when?)   → "4007 Broadway Rd"
      window._gcCompanyAddress.config() → { current, next, switchOn }
    Static pages: <span data-gc-addr>…</span> / <span data-gc-street>…</span> are filled in. */
 (function(){
   if (window._gcCompanyAddress) return;
-  var DEF = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
+  var DEF = { current: '5796 Ferguson Rd, Bartlett, TN 38134', next: '5796 Ferguson Rd, Bartlett, TN 38134', switchOn: '' };
   var LK = 'gc_company_address';
   function s(v){ return v == null ? '' : String(v).trim(); }
   function merge(v){
