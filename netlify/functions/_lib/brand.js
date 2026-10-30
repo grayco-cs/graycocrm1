@@ -32,7 +32,7 @@ function s(v){ return v == null ? '' : String(v).trim(); }
    to 4014"). ONE setting, gc_kv "gc_company_address" { current, next, switchOn (YYYY-MM-DD, Central) }, edited in
    ⚙ Admin → 🏢 Company address. Before switchOn every output shows `current`, on and after it `next`. Until the setting
    is read (or with no database) the defaults below apply. BRAND.address / BRAND.street follow it everywhere. */
-const ADDRESS_DEFAULTS = { current: '4007 Broadway Rd, Bartlett, TN 38135', next: '4014 Broadway Rd, Bartlett, TN 38135', switchOn: '' };
+const ADDRESS_DEFAULTS = { current: '5796 Ferguson Rd, Bartlett, TN 38134', next: '5796 Ferguson Rd, Bartlett, TN 38134', switchOn: '' };
 let addrSetting = null, addrAt = 0, addrBusy = null;
 function centralDay(d){
   try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d || new Date()); }
