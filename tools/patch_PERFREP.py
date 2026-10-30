@@ -7,8 +7,16 @@ p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
 here = os.path.dirname(os.path.abspath(__file__))
 t = open(p, encoding='utf-8').read()
 MARK = '<script id="gc-patch-perfrep">'
+js_new = open(os.path.join(here, 'perfrep.js'), encoding='utf-8').read()
 if MARK in t:
-    print('PERFREP: already patched')
+    i = t.index(MARK) + len(MARK) + 1; j = t.index('</script>', i)
+    if t[i:j] == js_new:
+        print('PERFREP: already patched')
+    else:   # patch PERFREP2: an older reporter is replaced by the current tools/perfrep.js
+        assert '</script' not in js_new
+        t = t[:i] + js_new + t[j:]
+        open(p, 'w', encoding='utf-8').write(t)
+        print('PERFREP: reporter updated', p)
 else:
     anchor = '<script id="gc-patch-perfclick-watch">'
     assert t.count(anchor) == 1, ('PERFREP anchor count', t.count(anchor))
