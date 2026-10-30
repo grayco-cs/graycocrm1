@@ -51,9 +51,11 @@ function seenFile(list, kind, hashes, id, done){
    deps = { storeFile(buf, type, name), kvListUpdate(key, fn), kvListRead?(key), crmData?(), ai?, fetch?, driveExport?, via? } */
 async function fromEmail(mail, kind, deps){
   const id = mailId(mail);
+  /* patch MONEY: GrayCo's own invoice e-mailed by QuickBooks (a copy sent to office@ / invoices@) is a CLIENT invoice — never a bill */
+  if (kind === 'sub_invoice' && SI().ownInvoice(mail)) kind = 'client_invoice';
   const files = [], keep = [];
   for (const f of (mail.files || [])) {
-    if (!(kind === 'receipt' ? receiptFile(f) : invoiceFile(f))) continue;
+    if (!(kind === 'receipt' ? receiptFile(f) : invoiceFile(f))) continue;   /* client_invoice: the invoice PDF QuickBooks attached */
     const type = SI().typeFor(f.name, f.type);
     const st = await deps.storeFile(f.buf, type, f.name);
     if (!st.stored) throw new Error('could not keep ' + f.name + ' (' + (st.why || 'storage') + ')');
@@ -62,7 +64,7 @@ async function fromEmail(mail, kind, deps){
     keep.push({ name: f.name, type: type, buf: f.buf, ref: st.ref, hash: sha });
   }
   const body = s(mail.text);
-  const bodyInvoice = kind === 'sub_invoice' && !files.length && (SI().googleLinks(body + ' ' + s(mail.html)).length > 0 || (/\b(invoice|amount\s+due|balance\s+due)\b/i.test(body + ' ' + s(mail.subject)) && /\$?\s*\d[\d,]*\.\d{2}/.test(body)));
+  const bodyInvoice = kind !== 'receipt' && !files.length && (SI().googleLinks(body + ' ' + s(mail.html)).length > 0 || (/\b(invoice|amount\s+due|balance\s+due)\b/i.test(body + ' ' + s(mail.subject)) && /\$?\s*\d[\d,]*\.\d{2}/.test(body)));
   if (!files.length && !bodyInvoice) return { ok: true, ignored: kind === 'receipt' ? 'no PDF or photo attached' : 'no invoice attached or typed in the e-mail', kind: kind };
   let cur = null; try { cur = deps.kvListRead ? await deps.kvListRead(KEY) : null; } catch (e) { cur = null; }
   const list = cur && Array.isArray(cur.list) ? cur.list : [];
@@ -72,9 +74,11 @@ async function fromEmail(mail, kind, deps){
   if (same) return { ok: true, kind: kind, id: id, already: true, sameFileAs: same.id };
   const rec = { id: id, kind: kind, at: new Date().toISOString(), from: low(mail.from && mail.from.email).slice(0, 120), fromName: s(mail.from && mail.from.name).slice(0, 120),
     subject: s(mail.subject).slice(0, 200), text: body.slice(0, 1500), files: files, skipped: (mail.skipped || []).slice(0, 8), via: s(deps.via) || (kind === 'receipt' ? 'receipts@' : 'invoices@') };
-  if (kind === 'sub_invoice') {
+  /* patch MONEY: receipts and QuickBooks client invoices are read and placed too (receipt → an Expense on the job its PO / address
+     names; client invoice → ▥ Invoices) — the same reader, job match and duplicate check as a sub invoice */
+  if (kind === 'sub_invoice' || kind === 'receipt' || kind === 'client_invoice') {
     let data = {}; try { data = deps.crmData ? (await deps.crmData()) || {} : {}; } catch (e) { data = {}; }
-    try { rec.si = await SI().analyze(mail, keep, { data: data, mailList: list.filter(function(x){ return !(x && done[x.id] && done[x.id].skip); }), selfId: id, ai: deps.ai, fetch: deps.fetch, driveExport: deps.driveExport, now: deps.now }); }
+    try { rec.si = await SI().analyze(mail, keep, { data: data, mailList: list.filter(function(x){ return !(x && done[x.id] && done[x.id].skip); }), selfId: id, ai: deps.ai, fetch: deps.fetch, driveExport: deps.driveExport, now: deps.now, kind: kind }); }
     catch (e) { rec.si = { v: 1, route: 'match', why: 'it could not be read (' + s(e && e.message).slice(0, 80) + ')', read: {}, top: [], at: rec.at }; }
     if (rec.si && rec.si.forwardedBy) { rec.forwardedBy = rec.si.forwardedBy; rec.from = rec.si.fromEmail || rec.from; rec.fromName = rec.si.fromName || rec.fromName; }
   }
@@ -92,4 +96,4 @@ function kindFromWords(mail){
   if (/\b(invoice|amount\s+due|balance\s+due)\b/i.test(s(mail.text).slice(0, 3000)) && ((mail.files || []).length || /docs\.google\.com|drive\.google\.com/.test(s(mail.text)))) return 'sub_invoice';
   return '';
 }
-module.exports = { fromEmail, seenFile, kindOf, mailId, receiptAddrs, invoiceAddrs, kindFromWords, KEY };
+module.exports = { fromEmail, seenFile, kindOf, mailId, receiptAddrs, invoiceAddrs, kindFromWords, KEY, DONE_KEY: 'gc_mail_money_done' };

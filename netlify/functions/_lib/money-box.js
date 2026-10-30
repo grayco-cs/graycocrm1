@@ -22,6 +22,17 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function env(k){ return s(process.env[k]); }
 function core(){ return require('../portal.js')._core; }
 function moneyBoxes(){ return (env('MONEY_MAILBOXES') || 'office@grayco-cs.com').split(',').map(low).filter(Boolean); }
+/* patch MONEY (owner 10/30: "…when they send them to my emails"): every OTHER GrayCo mailbox the CRM reads (the owners, the PMs,
+   the estimators — whoever 🌐 All GrayCo e-mail syncs) is looked at for INVOICES only (a sub's or a supplier's bill with a
+   file attached, or QuickBooks' copy of our own invoice) — never receipts or orders, so personal mail stays out.
+   MONEY_INVOICE_ALL=0 turns this off (office@ / MONEY_MAILBOXES only). */
+function invoiceAll(){ return env('MONEY_INVOICE_ALL') !== '0'; }
+const INV_ONLY = /\b(invoice|inv\s*#|bill|statement|pay\s*app(lication)?|amount\s+due|balance\s+due|payment\s+request|draw\s+request)\b/i;
+function invoiceCandidate(r){
+  if (!candidate(r)) return false;
+  if (!INV_ONLY.test(s(r.subject)) && !(r.att && INV_ONLY.test(s(r.snippet)))) return false;
+  return !!r.att || /docs\.google\.com|drive\.google\.com/.test(s(r.snippet));
+}
 const WORDS = /\b(invoice|inv\s*#|bill|billing|statement|pay\s*app(lication)?|amount\s+due|balance\s+due|receipt|order|confirmation|delivery|shipment|packing\s+slip)\b/i;
 function staff(e){ return /@([a-z0-9-]+\.)*grayco-cs\.com$/i.test(s(e)); }
 /* a mailbox row (metadata) worth fetching */
@@ -36,9 +47,10 @@ function candidate(r){
 /* mail-all's sync hands over the rows of each mailbox it read → the queue (once per message) */
 async function queue(box, rows, deps){
   box = low(box);
-  if (moneyBoxes().indexOf(box) < 0) return 0;
+  const full = moneyBoxes().indexOf(box) >= 0;
+  if (!full && !invoiceAll()) return 0;
   const since = Date.now() - Math.max(1, parseInt(env('MONEY_MAILBOX_DAYS') || '3', 10)) * 864e5;   /* the first look reads 30 days of mail: only the newest days become invoices */
-  const add = arr(rows).filter(function(r){ return candidate(r) && !(Date.parse(r.at) < since); }).map(function(r){ return { key: box + ':' + r.id, box: box, id: s(r.id), mid: s(r.mid), subject: s(r.subject).slice(0, 160), at: new Date().toISOString() }; });
+  const add = arr(rows).filter(function(r){ return (full ? candidate(r) : invoiceCandidate(r)) && !(Date.parse(r.at) < since); }).map(function(r){ const q = { key: box + ':' + r.id, box: box, id: s(r.id), mid: s(r.mid), subject: s(r.subject).slice(0, 160), at: new Date().toISOString() }; if (!full) q.invOnly = true; return q; });
   if (!add.length) return 0;
   const C = (deps && deps.core) || core();
   let n = 0;
@@ -102,7 +114,7 @@ function moneyDeps(storeFile, extra){
     storeFile: storeFile,
     kvListUpdate: function(k, f){ return C.kvListUpdate(k, f); },
     kvListRead: function(k){ return C.kvListRead(k); },
-    crmData: function(){ return C.kvRead(['projects', 'subs', 'vendors', 'invs', 'invoices', 'gc_deleted_projects']); },
+    crmData: function(){ return C.kvRead(['projects', 'subs', 'vendors', 'invs', 'invoices', 'gc_deleted_projects', 'ccw_suppliers', 'expenses']); },
     doneRead: function(){ return C.kvRead(['gc_mail_money_done']).then(function(o){ const v = o && o.gc_mail_money_done; return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }); },   /* patch MAILFIX */
     ai: require('./ai.js'),
     driveExport: driveExporter(moneyBoxes())
@@ -132,8 +144,9 @@ async function drain(opts){
       else if (/^(out of office|automatic reply|auto(matic)?[- ]?reply|undeliverable)/i.test(mail.subject)) res = { ignored: 'automatic reply' };
       else {
         const kind = MM.kindFromWords(mail);
-        if (kind) res = await MM.fromEmail(mail, kind, moneyDeps(storeFile, { via: q.box + ' mailbox' }));
-        else if (FA.looksLikeOrder(mail)) res = Object.assign({ kind: 'order' }, await FA.fromEmail(mail));
+        if (q.invOnly && kind !== 'sub_invoice') res = { ignored: 'not an invoice (' + q.box + ': invoices only)' };
+        else if (kind) res = await MM.fromEmail(mail, kind, moneyDeps(storeFile, { via: q.box + ' mailbox' }));
+        else if (!q.invOnly && FA.looksLikeOrder(mail)) res = Object.assign({ kind: 'order' }, await FA.fromEmail(mail));
         else res = { ignored: 'not an invoice, receipt or order' };
       }
     } catch (e) { res = { error: s(e && e.message).slice(0, 160) }; }
@@ -148,4 +161,4 @@ async function drain(opts){
   }
   return out;
 }
-module.exports = { queue, drain, candidate, mailOf, moneyBoxes, moneyDeps, driveExporter, QKEY };
+module.exports = { queue, drain, candidate, invoiceCandidate, invoiceAll, mailOf, moneyBoxes, moneyDeps, driveExporter, QKEY };
