@@ -1191,7 +1191,7 @@ function mailHtml(kind, v, link){
     : 'Just a friendly reminder — your final invoice is still open. If you already paid, thank you, and please ignore this note.';
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(v.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
@@ -1320,7 +1320,7 @@ function invoiceAndJob(data, invId){
 function invoiceMailHtml(doc, pmPhone){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(doc.job) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(firstName(doc.client) || 'there') + ',</p>' +
@@ -2004,7 +2004,7 @@ const PORTAL_HOST = 'portal.grayco-cs.com';
 function linkMailHtml(v, link){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(v.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(v.customer.firstName || 'there') + ',</p>' +
@@ -2187,7 +2187,7 @@ async function notifyDocs(pid, event, opts){
 function docsMailHtml(view, titles, link){
   return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#14202E">' +
     '<div style="background:#0F1D2F;color:#fff;padding:18px 20px;border-radius:12px 12px 0 0;text-align:center">' +
-    '<img src="' + esc(baseUrl({}) + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
+    '<img src="' + esc((String(process.env.LOGO_BASE_URL || '').trim() || 'https://crm.grayco-cs.com').replace(/\/$/, '') + '/portal-logo.png') + '" alt="GrayCo Construction Services" width="180" style="display:block;margin:0 auto 6px">' +
     '<div style="font-size:18px;font-weight:bold">' + esc(view.job.name) + '</div></div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:20px;border-radius:0 0 12px 12px">' +
     '<p style="font-size:15px">Hi ' + esc(view.customer.firstName || 'there') + ',</p>' +
