@@ -59073,16 +59073,22 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     try{
       fetch(cr.u.replace(/\/$/,'')+'/rest/v1/gc_kv?key=eq.'+encodeURIComponent(MSG_KEY)+'&select=value',
         {headers:{'apikey':cr.k,'Authorization':'Bearer '+cr.k}})
-        .then(function(r){ return r.json(); })
+        .then(function(r){ if(!r.ok) throw new Error('read '+r.status); return r.json(); })
         .then(function(rows){
+          var _unsent=false;   /* FIELDFIX3 */
           if(Array.isArray(rows)&&rows.length&&rows[0].value){
-            var remote=[]; try{ remote=JSON.parse(rows[0].value); }catch(e){}
+            var remote=[]; try{ remote=typeof rows[0].value==='string'?JSON.parse(rows[0].value):(Array.isArray(rows[0].value)?rows[0].value:[]); }catch(e){}
             // merge by id (union) so no message is lost
             var local=getMsgs(); var byId={};
             local.concat(remote).forEach(function(m){ if(m&&m.id) byId[m.id]=m; });
             var merged=Object.keys(byId).map(function(k){ return byId[k]; }).sort(function(a,b){ return (a.at||'').localeCompare(b.at||''); });
             setMsgs(merged);
+            /* FIELDFIX3: my own messages the cloud does not have (sent with no signal, page reloaded since) go up now */
+            try{ var _rid={}; remote.forEach(function(m){ if(m&&m.id) _rid[m.id]=1; }); var _me=myId(); _unsent=local.some(function(m){ return m&&m.id&&!_rid[m.id]&&m.authorId===_me; }); }catch(e){}
+          } else if(Array.isArray(rows)&&!rows.length){
+            try{ var _me2=myId(); _unsent=getMsgs().some(function(m){ return m&&m.id&&m.authorId===_me2; }); }catch(e){}
           }
+          if(_unsent && !(cb && cb.__pushes)) pushMsgs();
           if(cb)cb();
         }).catch(function(){ if(cb)cb(); });
     }catch(e){ if(cb)cb(); }
@@ -59120,11 +59126,12 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
     var msgs=getMsgs(); msgs.push(newMsg); setMsgs(msgs);
     // Safe push: pull the latest from cloud, merge everyone's messages, add mine, push the union.
     // This prevents one person's send from overwriting another's (last-write-wins clobber).
-    pullMsgs(function(){
+    var _afterPull=function(){
       var merged=getMsgs();
       if(!merged.some(function(m){return m&&m.id===newMsg.id;})) merged.push(newMsg);
       setMsgs(merged); pushMsgs();
-    });
+    }; _afterPull.__pushes=true;   /* FIELDFIX3: this pull is followed by its own push */
+    pullMsgs(_afterPull);
   }
 
   window._gcJobMsgAdd = addMsg;   /* patch FIELD */
@@ -65938,6 +65945,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         chain = chain.then(function(){
           var item = Q[key]; if(!item) return;
           var p = (sk[key] && Array.isArray(item.v) && !item.recover) ? intoLocal(key, item.v) : toCloud(key, item);
+          if(item.restored && sk[key]) p = p.then(function(r){ try{ if(typeof window._gcTabChangeSync === 'function') ST.call(window, function(){ window._gcTabChangeSync('a save from before a reload'); }, 0); }catch(e){} return r; });   /* FIELDFIX4 */
           return p.then(function(){ if(Q[key] === item) delete Q[key]; done++; pushedCount++; },
                         function(err){ item.tries = (item.tries||0) + 1; lastErr = key + ': ' + String(err && err.message || err); });
         });
@@ -65975,7 +65983,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 
     function load(n){
       qGet(PQK).then(function(v){
-        if(v && typeof v === 'object'){ Object.keys(v).forEach(function(k){ if(!Q[k] && v[k] && 'v' in v[k]) Q[k] = v[k]; }); }
+        if(v && typeof v === 'object'){ Object.keys(v).forEach(function(k){ if(!Q[k] && v[k] && 'v' in v[k]){ Q[k] = v[k]; Q[k].restored = 1; } }); }   /* FIELDFIX4 */
         loaded = true; persist(); if(Object.keys(Q).length) kick(8000);
       }, function(){ if(n < 5) ST.call(window, function(){ load(n + 1); }, 2000); else loaded = true; });
     }
@@ -81562,6 +81570,10 @@ window._gcForceFixSchedule = async function(silent){
     if(ok){
       // Recovered — ease back toward normal.
       if(state.failStreak>0 || state.level>0){
+        /* FIELDFIX4: the cloud answers again after requests failed (a phone's signal is back): the one sync sends what waited */
+        if(state.failStreak>0){ var _gcWasNet = !!state.netDown; state.netDown = false; try{ (window.__GC_NATIVE_SETTIMEOUT__||setTimeout).call(window, function(){
+          if(_gcWasNet){ try{ if(typeof window._gcPhotosBackOnline === 'function') window._gcPhotosBackOnline(); }catch(e){} }   /* no answer before = no signal: the photo uploads that backed off go now */
+          if(typeof window._gcTabChangeSync === 'function') window._gcTabChangeSync('the cloud answers again'); }, 0); }catch(e){} }
         state.failStreak = 0;
         state.level = Math.max(0, state.level-1);
         state.backoffUntil = state.level>0 ? Date.now()+STEPS[state.level] : 0;
@@ -81573,7 +81585,9 @@ window._gcForceFixSchedule = async function(silent){
       // means one already got through and piled on right when the DB is weakest.
       state.failStreak++;
       if(state.failStreak>=1){
-        state.level = Math.min(STEPS.length-1, state.level+1);
+        /* FIELDFIX2 */ /* no answer at all (status 0) = no signal, not a struggling database: at most the 8 s level */
+        if(status || state.level < 2) state.level = Math.min(status ? STEPS.length-1 : 2, state.level+1);
+        if(!status) state.netDown = true;   /* FIELDFIX4: remembered for the recovery */
         state.backoffUntil = Date.now()+STEPS[state.level];
         state.healthy = false;
         console.warn('[GC Sync] backing off (level '+state.level+', wait '+(STEPS[state.level]/1000)+'s) — cloud is struggling'+(status?(' HTTP '+status):'')+'.');
@@ -130210,7 +130224,8 @@ every(function(){
   if (tick % 12 === 0) { stageWatch(); if (!rt.channel && vis) rtConnect(); }
 }, 5000);
 every(deskTick, 1500);
-window.addEventListener('online', function(){ iall('queue').then(function(a){ a.forEach(function(it){ it.nextAt = 0; }); return iputMany('queue', a); }).catch(function(){}).then(function(){ kick(1500); }); PH.fails = 0; CH.fails = 0; PH.schedule(2000); CH.schedule(2000);   /* U2: back online → retry soon, not after the offline back-off */ pullSoon(2500); emit('sync'); });
+window._gcPhotosBackOnline = function(){ iall('queue').then(function(a){ a.forEach(function(it){ it.nextAt = 0; }); return iputMany('queue', a); }).catch(function(){}).then(function(){ kick(1500); }); PH.fails = 0; CH.fails = 0; PH.schedule(2000); CH.schedule(2000);   /* U2: back online → retry soon, not after the offline back-off */ pullSoon(2500); emit('sync'); };
+window.addEventListener('online', function(){ window._gcPhotosBackOnline(); });   /* FIELDFIX4: the same step, also run when the cloud answers again */
 window.addEventListener('offline', function(){ emit('sync'); });
 document.addEventListener('visibilitychange', function(){ if (!document.hidden) { pullSoon(500); kick(800); } });
 
@@ -154280,7 +154295,7 @@ var SB = (function(){
   function cloudGet(){ var c = creds(); if (!c.k) return Promise.resolve(undefined); return W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=value,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }).then(function(r){ if (!r.ok) throw new Error('read ' + r.status); return r.json(); }).then(function(rows){ var v = rows && rows[0] ? rows[0].value : undefined; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return { v: v, at: rows && rows[0] ? rows[0].updated_at : '' }; }); }
   function cloudPut(list){ var c = creds(); if (!c.k) return Promise.resolve(); return W.fetch(c.u + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: c.k, Authorization: 'Bearer ' + c.k, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: KEY, value: list, updated_at: nowIso() }) }).then(function(r){ if (!r.ok) throw new Error('write ' + r.status); }); }
   function mergeIn(list){ var ch = false; arr(list).forEach(function(r){ if (!r || !r.id) return; var m = mergeRec(map[r.id], r); if (JSON.stringify(m) !== JSON.stringify(map[r.id])) { map[r.id] = m; ch = true; } }); return ch; }
-  function pull(){ lastPull = Date.now(); return cloudGet().then(function(x){ if (!x) return; stampSeen = s(x.at); var ch = mergeIn(x.v); var ahead = Object.keys(map).some(function(id){ var r = arr(x.v).filter(function(y){ return y && y.id === id; })[0]; return !r || JSON.stringify(mergeRec(r, map[id])) !== JSON.stringify(r); }); if (ch) { saveLocal(); draw(true); } if (ahead) { dirty = true; } err = ''; }).catch(function(e){ err = e.message; }); }
+  function pull(){ lastPull = Date.now(); return cloudGet().then(function(x){ if (!x) return; stampSeen = s(x.at); var ch = mergeIn(x.v); var ahead = Object.keys(map).some(function(id){ var r = arr(x.v).filter(function(y){ return y && y.id === id; })[0]; return !r || JSON.stringify(mergeRec(r, map[id])) !== JSON.stringify(r); }); if (ch) { saveLocal(); draw(true); } if (ahead) { dirty = true; } err = ''; }).catch(function(e){ err = e.message; lastPull = 0; /* FIELDFIX5 */ }); }
   function push(){ if (pushing) return Promise.resolve(); pushing = true; return cloudGet().then(function(x){ if (x) mergeIn(x.v); var list = Object.keys(map).map(function(k){ return map[k]; }); return cloudPut(list); }).then(function(){ dirty = false; saveLocal(); err = ''; }).catch(function(e){ err = e.message; }).then(function(){ pushing = false; }); }
   function peek(){ var c = creds(); if (!c.k) return; W.fetch(c.u + '/rest/v1/gc_kv?key=eq.' + KEY + '&select=key,updated_at', { headers: { apikey: c.k, Authorization: 'Bearer ' + c.k }, cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows){ var a = rows && rows[0] ? s(rows[0].updated_at) : ''; if (a && a !== stampSeen) pull(); }).catch(function(){}); }
   every(function(){ if (D.hidden || !myEmail()) return; if (dirty) push(); else if (Date.now() - lastPull > 60000) pull(); else peek(); }, 4000);
