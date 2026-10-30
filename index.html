@@ -130855,6 +130855,7 @@ function askCustomer(jobId, tag, n, opts){
     function done(v){ try { ov.remove(); } catch (e) {} if (v !== null) CUSTQ[String(jobId)] = { v: v, at: Date.now() }; res(v); }
     ov.querySelector('[data-gc-custq-ok]').onclick = function(){ var y = ov.querySelector('[data-gc-custq="yes"]'); done(!!(y && y.checked)); };
     ov.querySelector('[data-gc-custq-x]').onclick = function(){ done(null); };
+    try { ov.style.setProperty('visibility', 'visible', 'important'); } catch (e) {}   /* patch R17ADAPT_CUSTQ: shown over GrayCo Photos, which hides the other children of <body> */
     document.body.appendChild(ov);
     try { ov.querySelector('[data-gc-custq-ok]').focus(); } catch (e) {}
   });
