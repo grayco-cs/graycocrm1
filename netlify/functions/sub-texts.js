@@ -164,7 +164,7 @@ exports.handler = async function(event){
       return J(200, { ok: true, rows }, C);
     }
     if (m === 'POST' && qs.run) {
-      if (!who.admin) return J(403, { ok: false, error: 'Admins only.' }, C);
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Admins and the office only.' }, C);   /* patch OFFICEFULL */
       return J(200, { ok: true, report: await run({}) }, C);
     }
     return J(400, { ok: false, error: 'Unknown request.' }, C);

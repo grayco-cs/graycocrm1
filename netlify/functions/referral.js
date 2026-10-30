@@ -73,7 +73,7 @@ exports.handler = async function(event){
     if (m === 'GET' && qs.settings === '1') return J(event, 200, { ok: true, settings: await R.settings(), min: R.MIN, max: R.MAX });
     return J(event, 403, { ok: false, error: 'The Marketing Manager profile sees the referral program read-only.' });
   }
-  const office = who.admin || /office/.test(low(who.role));
+  const office = who.admin || who.office === true || /office/.test(low(who.role));   /* patch OFFICEFULL: who.office */
   const by = who.name || who.email;
   let b = {};
   if (m === 'POST') { try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(event, 400, { ok: false, error: 'Body must be JSON.' }); } }
@@ -83,7 +83,7 @@ exports.handler = async function(event){
     if (m === 'GET' && qs.pending === '1') return J(event, 200, { ok: true, cards: await R.pending() });
     if (qs.settings === '1') {
       if (m === 'GET') return J(event, 200, { ok: true, settings: await R.settings(), min: R.MIN, max: R.MAX });
-      if (!who.admin) return J(event, 403, { ok: false, error: 'Only an owner or admin can change the referral program.' });
+      if (!office) return J(event, 403, { ok: false, error: 'Only an owner, an admin or the office can change the referral program.' });   /* patch OFFICEFULL */
       return J(event, 200, { ok: true, settings: await R.saveSettings(b, by) });
     }
     if (m !== 'POST') return J(event, 405, { ok: false, error: 'Method not allowed' });
@@ -100,7 +100,7 @@ exports.handler = async function(event){
       const r = await R.refer(mem, b, { via: 'crm', by, how: 'entered in the CRM (referral program)' });
       return J(event, 200, Object.assign({ ok: true }, r));
     }
-    if (!who.admin) return J(event, 403, { ok: false, error: 'Only an owner or admin can do that.' });
+    if (!office) return J(event, 403, { ok: false, error: 'Only an owner, an admin or the office can do that.' });   /* patch OFFICEFULL */
     if (act === 'credit') {   /* credit by hand — still approved on the list */
       const mem = await R.memberById(b.memberId);
       if (!mem) return J(event, 404, { ok: false, error: 'Pick a member.' });
