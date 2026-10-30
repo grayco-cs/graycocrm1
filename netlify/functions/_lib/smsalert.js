@@ -240,11 +240,16 @@ async function notify(o){
   const out = { sent: 0, to: [], skipped: {} };
   if (env('SMS_ALERTS_OFF') === '1') return Object.assign(out, { off: true });
   const set = await load();
-  if (!Object.keys(set.people).some(k => set.people[k].on)) return out;
+  if (!Object.keys(set.people).some(k => set.people[k].on) && !Array.isArray(o.only)) return out;
   let pp = {}; try { pp = await _D.people(); } catch (e) { pp = {}; }
   const R = {}; resolve(set, pp).forEach(r => { R[r.email] = r; });
   const admins = {}; staffList(pp).forEach(x => { if (x.admin) admins[x.email] = 1; });
-  const want = Object.keys(R).filter(e => wants(R[e].p, e, o, !!admins[e]));
+  let want = Object.keys(R).filter(e => wants(R[e].p, e, o, !!admins[e]));
+  if (Array.isArray(o.only)) {   /* patch SUBALERT: a sub bid goes only to its estimator(s) — by their CRM cell even before they are on the text list */
+    const only = o.only.map(low), sl = {}; staffList(pp).forEach(x => { sl[x.email] = x; });
+    only.forEach(e => { if (!R[e] && sl[e] && sl[e].phone) { const sp = set.people[e]; if (!sp || sp.on !== false) R[e] = { key: e, email: e, phone: sl[e].phone, p: Object.assign({ on: true, newAll: true, name: sl[e].name }, sp || {}) }; } });
+    want = Object.keys(R).filter(e => only.indexOf(e) >= 0);
+  }
   if (!want.length) return out;
   if (await _D.paused()) return Object.assign(out, { paused: true });
   const opt = await _D.optouts();
@@ -367,6 +372,25 @@ async function missedCall(o){
   return notify({ type: 'missed', text: 'missed call from ' + shown + (o.job ? ' — ' + clip(o.job, 40) : '') + (s(o.said) ? ': ' + quote(o.said) : '') + '. They got the auto-text. Reply here within 30 min to text them.',
     link: site() + (o.pid ? '/?jobmsg=' + encodeURIComponent(o.pid) : '/#leads'), thread: 'p:' + phone10(o.ph), replyTo: { phone: o.ph, pid: o.pid || '', name: o.name || '' } });
 }
+/* patch SUBALERT (owner 10/29: "I don't want to see any sub leads in the GrayCo text for me or Nick — his prime leads and
+   website leads, ads, Facebook etc., but no sub for a big GC commercial lead; all that goes directly to Glenn"):
+   a bid where GrayCo would be a SUB to a GC (the server's prime / sub call, or a GC named on a bid-board invite with no
+   call made) texts only the estimator(s): the lead's assignee if that is an estimator, else every active estimator. */
+const BID_BOARDS = /buildingconnected|planhub|isqft|smartbid|bidclerk|constructconnect|procore|pantera|bluebook|dodge|bid ?board/i;
+function isSubBid(r, x){
+  const role = low(r.bidRole || x.bidRole || obj(r.leadExtra).bidRole);
+  if (role === 'sub') return true;
+  if (role === 'prime') return false;
+  const src = [r.source, x.source].concat(arr(r.sources).map(y => s(y && y.name || y))).join(' ');
+  return !!(s(r.gc || x.gc || r.dueToCompany) && BID_BOARDS.test(src));
+}
+async function estimatorsFor(r, x){
+  let pp = {}; try { pp = await _D.people(); } catch (e) {}
+  const est = arr(pp.users).filter(u => staffEmail(low(u.email)) && isActiveUser(u) && /estimat/i.test(s(u.role) + ' ' + s(u.title) + ' ' + s(u.profile))).map(u => low(u.email));
+  const mine = [x.assigneeEmail, r.estimatorEmail, x.estimatorEmail].map(low).filter(Boolean);
+  const hit = mine.filter(e => est.indexOf(e) >= 0);
+  return hit.length ? hit : est;
+}
 /* new leads (bid-alerts.js notifyNew): mine = entries, raw = the raw items by id, isEm(x) */
 function leadPhone(raw, x){ const r = raw || {}, le = obj(r.leadExtra), c = obj(r.contact || x.contact); return phone10(le.smsFrom || r.smsFrom || (le.missedCall || le.textMessage || r.missedCall || r.textMessage ? (r.phone || c.phone) : '')); }
 async function leads(list, raw, isEm){
@@ -378,9 +402,10 @@ async function leads(list, raw, isEm){
     let msg = ''; try { msg = require('./leadmsg.js').collect(Object.assign({}, r, x)).message; } catch (e) {}
     /* owner 10/28: "GrayCo NEW LEAD: <name> (901) 555-0100 — "<their message…>" <link>"; emergency "🚨 GrayCo EMERGENCY: …" */
     const head = em ? '🚨 GrayCo EMERGENCY' : 'GrayCo NEW LEAD', link = site() + '/#leads';
+    const only = !em && isSubBid(r, x) ? await estimatorsFor(r, x) : null;   /* patch SUBALERT */
     const body = more => leadText(head, more, clip(name, 40) + (callPh.length === 10 ? ' ' + tidy(callPh) : ''), msg, link);
     const text = body(0);
-    try { out.push(await notify({ type: 'lead', text, body, link, thread: ph ? 'p:' + ph : 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean), emergency: em,
+    try { out.push(await notify({ type: 'lead', text, body, link, only, thread: ph ? 'p:' + ph : 'lead:' + s(x.key || x.id), mine: [x.assigneeEmail].concat(x.coEmails || []).filter(Boolean), emergency: em,
       replyTo: ph || em ? { phone: ph, pid: '', name, leadId: s(x.id) } : null })); } catch (e) { out.push({ error: s(e && e.message) }); }
   }
   return out;
@@ -407,5 +432,5 @@ async function system(kind, text){
   return notify({ type: 'system', text: 'CRM alert — ' + text, link: site(), thread: 'sys:' + s(kind), daily: true, hold: true });
 }
 
-module.exports = { ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
+module.exports = { _isSubBid: isSubBid, ROLE_MIT, DEFAULT_PEOPLE, resolve, mitigationHolders, leadText, KEY, SKEY, TYPES, RATE_MS, REPLY_MS, settings, cleanPerson, staffList, load, save, notify, flushHeld, staffInbound, isStaffPhone, inboundText, missedCall, leads, assigned, approvals, system,
   inQuiet, quietNow, centralHour, compose, wants, _D };
