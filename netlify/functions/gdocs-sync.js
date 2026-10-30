@@ -120,7 +120,7 @@ exports.handler = async function(event){
       return J(200, { ok: true, items: items, settings: await GD.status().then(function(s){ return s.settings; }) }, _cors);
     }
     if (op === 'sync') {
-      if (body.backfill && !admin) return J(403, { ok: false, error: 'Only an admin can bring in older docs.' }, _cors);
+      if (body.backfill && !office) return J(403, { ok: false, error: 'Only an admin or the office can bring in older docs.' }, _cors);   /* patch OFFICEFULL */
       const r = await GD.run({ backfill: !!body.backfill, only: body.only ? String(body.only).toLowerCase() : '', force: true, budgetMs: 20000 });
       return J(200, r, _cors);
     }
@@ -130,7 +130,7 @@ exports.handler = async function(event){
         undoneAt: body.state === 'undone' ? new Date().toISOString() : undefined, undoneBy: body.state === 'undone' ? (who.name || who.email) : undefined }), _cors);
     }
     if (op === 'settings') {
-      if (!admin) return J(403, { ok: false, error: 'Only an admin changes the Google Docs settings.' }, _cors);
+      if (!office) return J(403, { ok: false, error: 'Only an admin or the office changes the Google Docs settings.' }, _cors);   /* patch OFFICEFULL */
       return J(200, await GD.saveSettings(body, who.name || who.email), _cors);
     }
     return J(400, { ok: false, error: 'Unknown op' }, _cors);

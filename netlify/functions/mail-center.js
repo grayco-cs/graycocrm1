@@ -33,7 +33,7 @@ exports.handler = async function(event){
       return J(200, { ok: true, settings: set, defaults: MC.DEFAULT_ALIASES, routingConfirmed: routing, me: low(who.email), admin: !!who.admin }, C);
     }
     if (qs.settings && m === 'POST') {
-      if (!who.admin) return J(403, { ok: false, error: 'Only an admin can change the company addresses.' }, C);
+      if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the company addresses.' }, C);   /* patch OFFICEFULL */
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
       const v = MC.settings(b.settings || b); v.by = low(who.email); v.at = new Date().toISOString();
       await L().kvCas(MC.SET_KEY, () => v);

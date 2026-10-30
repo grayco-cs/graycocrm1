@@ -109,20 +109,25 @@ await t('the office may Edit and Don\'t-approve a PM-step item; after a no, the 
   assert.strictEqual((await act(PM, 'approve', 't5')).status, 409); assert.strictEqual(SENT.length, n0);
 });
 
-await t('a money paper: the office takes the PM step only — it then waits on Wesley or Nick (not sent; the office cannot take the admin step before 24 h)', async () => {
+/* patch APOFFICE4 (owner 10/30) changed this one: a customer-facing money paper (the thank-you) is the office's as a FULL
+   approver now — her approval at the PM step sends it (no Wesley / Nick after her). A kind on neither APOFFICE4 list
+   still behaves as before: the admin step reaches the office only after 24 h. (tools/tests/test_APOFFICE4.mjs has the rest.) */
+await t('a money paper: the office\'s approval is final now (APOFFICE4) — sent at once; an unlisted admin-step kind still needs 24 h', async () => {
   await queue('t6', 'thank_you');
   assert.deepStrictEqual(item('t6').steps, ['pm', 'admin']);
   const n0 = SENT.length;
   const r = await act(OFFICE, 'approve', 't6');
-  assert.strictEqual(r.status, 200); assert.strictEqual(r.out.next, 'admin'); assert.ok(!r.out.sent);
-  assert.strictEqual(item('t6').step, 'admin'); assert.ok(item('t6').adminSince); assert.strictEqual(SENT.length, n0);
-  assert.strictEqual((await act(OFFICE, 'approve', 't6')).status, 403);
-  assert.strictEqual((await act(PM, 'approve', 't6')).status, 403, 'the PM step is done');
-  assert.strictEqual((await act(ADMIN, 'approve', 't6')).out.sent, true); assert.strictEqual(SENT.length, n0 + 1);
+  assert.strictEqual(r.status, 200); assert.strictEqual(r.out.sent, true); assert.ok(r.out.next !== 'admin');
+  assert.strictEqual(item('t6').status, 'sent'); assert.strictEqual(SENT.length, n0 + 1);
+  assert.strictEqual((await act(PM, 'approve', 't6')).status, 409);
+  assert.strictEqual((await act(ADMIN, 'approve', 't6')).status, 409); assert.strictEqual(SENT.length, n0 + 1);
+  const ok = await C.queueApproval({ id: 't6b', kind: 'announcement', pid: '', jobName: 'Company', pm: null, to: 'Everyone at GrayCo (CRM)', subject: 'Note', html: '<p>Hi</p>' });
+  assert.ok(ok); assert.strictEqual(item('t6b').step, 'admin');
+  assert.strictEqual((await act(OFFICE, 'approve', 't6b')).status, 403, 'not before 24 h');
 });
 
 await t('the 7 AM digest: a PM-step item is in the PM\'s list; for the office only a "waiting on PMs — optional" count line (APOFFICE2)', async () => {
-  await queue('t7', 'portal_link');
+  await queue('t7', 'supplier_po');   /* patch APOFFICE4: a kind on neither list (a customer-facing kind is now in her own list) */
   const lst = JSON.parse(KV[C.AQ_KEY].value);   /* and one the admins left for 24 h — really the office's */
   lst.push({ id: 't7esc', kind: 'thank_you', title: 'Escalated one', jobId: 'PJ1', pm: 'Steven Park', pmEmail: 'steven.test@grayco-cs.com', steps: ['pm', 'admin'], step: 'admin', escalated: true, approvals: [], status: 'waiting', createdAt: '2026-10-20T00:00:00Z', adminSince: '2026-10-20T00:00:00Z' });
   put(C.AQ_KEY, JSON.stringify(lst));

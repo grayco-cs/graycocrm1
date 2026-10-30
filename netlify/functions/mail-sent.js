@@ -33,7 +33,7 @@ async function whoIs(event){
   else { profile = s(who.profile); payroll = who.payroll === true; }
   const tag = low(who.role) + ' ' + low(profile);
   /* office = the office profile (or payroll, which only the office has); marketing sees none; everyone else: his own jobs */
-  who.level = who.admin ? 'admin' : /office/.test(tag) || payroll ? 'office' : /market/.test(tag) ? 'none' : 'pm';
+  who.level = who.admin ? 'admin' : /office/.test(tag) || payroll || who.office === true ? 'office' : /market/.test(tag) ? 'none' : 'pm';   /* patch OFFICEFULL: who.office */
   return who;
 }
 async function projects(){ try { return arr((await X.crmData(['projects'])).projects); } catch (e) { return []; } }
@@ -62,7 +62,7 @@ exports.handler = async function(event){
   let body = {}; if (m === 'POST') { try { body = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); } }
   try {
     if (op === 'settings') {
-      if (m === 'POST') { if (who.level !== 'admin') return J(403, { ok: false, error: 'Only an admin can change this.' }, C); return J(200, { ok: true, settings: await SL.saveSettings(body, who.email) }, C); }
+      if (m === 'POST') { if (!staffWide) return J(403, { ok: false, error: 'Only an admin or the office can change this.' }, C);   /* patch OFFICEFULL */ return J(200, { ok: true, settings: await SL.saveSettings(body, who.email) }, C); }
       return J(200, { ok: true, settings: await SL.settings(), types: SL.TYPES }, C);
     }
     if (op === 'followups') {
