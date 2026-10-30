@@ -32,7 +32,8 @@ function make(){
     function hydrated(){ return Promise.resolve(); } function readList(){} function lsGet(k, d){ return d; } function lsSet(){} function flushOut(){ return Promise.resolve(); }
     function api(){ return Promise.reject(new Error('no server in this test')); }
     ${seg}
-    return { importItems: importItems, setItems: function(x){ S.items = x; } };`);
+    function leads(){ return box.list; } function myName(){ return 'Demo Admin'; }
+    return { importItems: importItems, setItems: function(x){ S.items = x; }, lfPlan: typeof lfPlan === 'function' ? lfPlan : null };`);
   return { box, win, M: f(box, win) };
 }
 const bidItem = (h, rev, extra) => Object.assign({ id: 'LI-' + h, rev, status: 'imported', title: 'Demo bid ' + h, type: 'government', source: 'BuildingConnected', gc: 'Demo GC ' + h, owner: 'Demo Owner ' + h, city: 'Democity', state: 'TN',
@@ -148,5 +149,33 @@ const dirty = l => BID_FIELDS.filter(f => { const v = l[f]; return Array.isArray
   const fsrc = fs.readFileSync(path.join(build, 'netlify/functions/_lib/lead-hold.js'), 'utf8');
   const line = l => l.split('\n').find(x => /byInbox\[l\.inboxId\] = l/.test(x));
   ok(P > 0 && line(html.slice(P, Q)) === line(fsrc), 'the page\'s copy of the hold rule has the same line');
+}
+/* 6. the repair plan (LEADFIX-2): a dry run that gives the contaminated leads back their own values, the true owner untouched */
+{
+  const { box, win, M } = make();
+  ok(typeof M.lfPlan === 'function' && typeof win._gcLeadFixRepair === 'function', 'lfPlan and window._gcLeadFixRepair exist');
+  if (typeof M.lfPlan === 'function') {
+    const own = Object.assign(ownLead('qqqq1111', 2), { phone: '9015550qqq', email: 'estqqqq1111@example.com', city: 'Democity', dueToCompany: 'Demo GC qqqq1111', bidDue: '2026-11-10', scope: 'demo scope' });
+    const clean = Object.assign({}, ccLead, { stage: 'Contacted', city: 'Hometown' });
+    const dirtyCC = Object.assign({}, clean, { stage: 'Bidding', inboxId: 'LI-qqqq1111', inboxRev: 2, gc: 'Demo GC qqqq1111', city: 'Democity', phone: '9015550qqq', email: 'estqqqq1111@example.com', dueToCompany: 'Demo GC qqqq1111', bidDue: '2026-11-10', scope: 'demo scope', bidRole: 'sub',
+      docs: [{ ref: 'sb:demo/x.pdf' }, { ref: 'sb:demo/mine.pdf', addedBy: 'Demo PM' }], plansLinks: [{ url: 'https://example.com/p' }] });
+    const dirtyIn = Object.assign(ownLead('rrrr2222', 1), { inboxId: 'LI-qqqq1111', inboxRev: 2, gc: 'Demo GC qqqq1111', dueToCompany: 'Demo GC qqqq1111', phone: '9015550qqq' });
+    box.list = [own, dirtyCC, dirtyIn].map(x => JSON.parse(JSON.stringify(x)));
+    const before = JSON.stringify(box.list);
+    const P = M.lfPlan(box.list, { base: { LEADmsgdemo1: clean }, first: { LEADmsgdemo1: clean }, baseFrom: { LEADmsgdemo1: 'demo mirror' } });
+    const r1 = P.rows.find(r => r.id === 'LEADmsgdemo1'), r2 = P.rows.find(r => r.id === 'LEADIN-rrrr2222');
+    ok(P.rows.length === 2 && !P.rows.some(r => r.id === 'LEADIN-qqqq1111'), 'two leads to repair; the item\'s own lead is not touched', P.rows.map(r => r.id));
+    const a1 = r1 && r1.after;
+    ok(a1 && !a1.inboxId && !a1.gc && !a1.dueToCompany && !a1.bidDue && !a1.bidRole && !a1.scope && !a1.phone && !a1.email && !(a1.plansLinks || []).length, 'the CompanyCam lead: no inbox id, GC, due date, bidRole, scope, plans; the bid contact\'s phone / e-mail gone', a1);
+    ok(a1 && a1.city === 'Hometown' && a1.stage === 'Contacted' && (a1.docs || []).length === 1 && a1.docs[0].addedBy, 'its own city and the stage of its clean copy are back; the file a person added stays', a1);
+    const a2 = r2 && r2.after;
+    ok(a2 && a2.inboxId === 'LI-rrrr2222' && a2.inboxRev === 0 && !a2.gc && !a2.dueToCompany && !a2.phone, 'an inbox lead with no clean copy: back on its own item (re-read on the next pull), the other item\'s values gone', a2);
+    ok(r2 && r2.unsure.length > 0, '... and marked "owner to check"');
+    ok(JSON.stringify(box.list) === before, 'the plan changes nothing');
+    const dry = await win._gcLeadFixRepair({ dryRun: true });
+    ok(dry && dry.rows.length === 2 && JSON.stringify(box.list) === before, '_gcLeadFixRepair({ dryRun: true }) only reports');
+    let refused = ''; try { await win._gcLeadFixRepair({ dryRun: false }); } catch (e) { refused = e.message; }
+    ok(/confirm/.test(refused) && JSON.stringify(box.list) === before, 'a real run needs confirm: "REPAIR 2" (nothing changed without it)', refused);
+  }
 }
 console.log((fail ? 'FAILED ' : 'OK ') + pass + '/' + (pass + fail)); process.exit(fail ? 1 : 0);
