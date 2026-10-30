@@ -58326,7 +58326,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
 (function(){
   'use strict';
   function crm(){ return window._crm||{}; }
-  function subs(){ var c=crm(); var all=(c.subs||[]).concat(c.vendors||[]); return all.filter(function(s){ return s && (s.isSub || s.trade || (c.subs||[]).indexOf(s)>=0); }); }
+  function subs(){ var c=crm(); var all=(c.subs||[]).concat(c.vendors||[]); var seen={}; return all.filter(function(s){ if(!(s && (s.isSub || s.trade || (c.subs||[]).indexOf(s)>=0))) return false; var k=s.id!=null&&s.id!==''?'i:'+s.id:'n:'+String(s.name||s.company||'').trim().toLowerCase(); if(seen[k]) return false; seen[k]=1; return true; }); }   /* patch OFFFIX5: each sub once (the vendors list holds a copy of every sub) */
   function today(){ return new Date().toISOString().slice(0,10); }
   function daysUntil(dateStr){ if(!dateStr) return null; try{ return Math.round((new Date(dateStr+'T00:00:00')-new Date(today()+'T00:00:00'))/86400000); }catch(e){ return null; } }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }

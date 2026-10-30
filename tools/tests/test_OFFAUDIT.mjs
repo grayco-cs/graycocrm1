@@ -9,6 +9,7 @@
 //   3. 📊 Accounting → To Match: "Approve…" approves in place, the count drops and "Approved → P&L" shows (OFFFIX2);
 //      "↻ Re-check duplicates" answers.
 //   4. 🏢 Office → 🧭 Helpers: "Open" on a lead opens the lead's panel, not the ⏱ Bid due editor (OFFFIX3).
+//   6. 🛡 Sub Compliance Board: each sub once, not once from subs and again from vendors (OFFFIX5).
 //   5. Projects: no job 🗑 / ⊕ Merge Jobs, _gcDeleteProject and _openMergeJobs refused (OFFFIX4); single expense 🗑 still there.
 // The owner: the job 🗑 and ⊕ Merge Jobs are still his (OFFFIX4 leaves admins alone).
 // Env: GC_HARNESS (offline harness, default the wME one). Exit 0 = PASS.
@@ -135,6 +136,8 @@ const pj = await ev(async () => { const shown = [...document.querySelectorAll('[
 ok(pj.shown === 0 && pj.out === false && !pj.box && pj.still && !pj.mergeOpen, 'office: no job 🗑 / ⊕ Merge Jobs; delete and merge refused (OFFFIX4)', pj);
 await ev(() => window._setView('expenses')); await sleep(2500);
 ok((await ev(() => [...document.querySelectorAll('main button')].filter(b => b.innerText.trim() === '🗑' && b.offsetParent).length)) > 0, 'office: a single expense 🗑 is still hers');
+const sc = await ev(async () => { window._gcOpenSubCompliance(); await new Promise(r => setTimeout(r, 1500)); const ov = document.getElementById('_gcSubCompOv'); if (!ov) return 'none'; const ids = [...ov.querySelectorAll('tr td:first-child b')].map(b => b.innerText); const r = { rows: ids.length, dup: ids.filter((n, i) => ids.indexOf(n) !== i).length }; ov.remove(); return r; });
+ok(sc !== 'none' && sc.rows > 0 && sc.dup <= 2, '🛡 Sub Compliance Board lists each sub once (OFFFIX5; two subs really share a name in the data)', sc);
 ok(!O.errs.length, 'office: no page errors', O.errs.slice(0, 4));
 await O.b.close();
 /* the owner keeps them */
