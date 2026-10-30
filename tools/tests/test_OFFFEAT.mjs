@@ -111,6 +111,7 @@ ok(aqGet().filter(x => x.kind === 'payment_reminder' && x.meta.invoiceId === 'IO
 await p.evaluate(() => { const o = document.getElementById('gcoff-coll-ov'); if (o) o.remove(); });
 /* Office page */
 await p.evaluate(() => window._setView && window._setView('officemanager')); await sleep(3500);
+await p.evaluate(() => { try { if (window.gcOfficeManager && window.gcOfficeManager._activeTab !== 'overview') window.gcOfficeManager.tab('overview'); } catch (e) {} }); await sleep(1500);   /* officetab: an admin lands on 🏢 Office first */
 ui = await p.evaluate(() => { const b = document.querySelector('[data-offcoll]'); return b ? b.textContent : ''; });
 ok(/Collections: \$/.test(ui) && /Approvals/.test(ui), '🏢 Office → "What needs you today" has the 📬 Collections line (' + ui.slice(0, 80) + ')');
 if (ui) { await p.locator('[data-offcoll]').first().click(); await sleep(600); ok(await p.evaluate(() => !!document.getElementById('gcoff-coll-ov')), '…and it opens the board'); await p.evaluate(() => { const o = document.getElementById('gcoff-coll-ov'); if (o) o.remove(); }); }
