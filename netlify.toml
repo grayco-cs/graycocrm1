@@ -85,8 +85,15 @@
 
 # Lost-lead win-back (patch AUTO6): 15:20 UTC = 10:20 AM Central (9:20 AM in winter). Leads lost 6 / 12 months ago →
 # one approval item per batch; nothing goes out until an admin approves it (then one e-mail each from news@).
+# patch MKTFEAT: + leads lost 30–90 days ago → ONE follow-up draft each (the Marketing Manager or the office approves; never twice).
 [functions."winback"]
   schedule = "20 15 * * *"
+
+# Marketing features (patch MKTFEAT, netlify/functions/_lib/mktfeat.js): every hour at :47; each part runs once at its time (Central) —
+# before / after post DRAFTS from finished jobs (daily from 9 AM; shared photos only, one per job, never posted by itself), the Google
+# ranking check from Search Console (Mondays), the owner's monthly marketing report (the 1st from 8 AM). ⏸ Data-entry mode: no drafts.
+[functions."mkt-feat"]
+  schedule = "47 * * * *"
 
 # GC portal (patch GCP, docs/GC-PORTAL.md): 13:40 UTC = 8:40 AM Central (7:40 AM in winter). Company documents running out
 # (30 / 7 days, expired) → the admins; from Mar 15 / Sep 15 the free roof inspection offer → ONE approval item.
