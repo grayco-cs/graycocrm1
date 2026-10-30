@@ -170722,8 +170722,17 @@ function estimatedBy(j, me){
   var m = index()[s(j.id)]; return !!m && (!!m[low(me.name)] || !!m[low(me.email)]);
 }
 function samePM(j, me){ try { if (W._gcSamePM) return !!W._gcSamePM(j.pm, me, j); } catch (e) {} return !!me && j.pm === me.name; }
-W._gcProjVisible = function(j, me){ if (!isEst()) return samePM(j, me); return mode() === 'all' || estimatedBy(j, me); };
-W._gcProjMine = function(j, me){ return isEst() ? estimatedBy(j, me) : samePM(j, me); };
+/* __GC_PATCH_SUPERVIS__ — patch SUPERVIS: a Superintendent also sees the jobs where they are the job team's superintendent */
+function isSuperRole(){ try { return !!(W._gcRP && typeof W._gcRP.role === 'function' && W._gcRP.role() === 'Superintendent'); } catch (e) { return false; } }
+function sameSuper(j, me){
+  if (!j || !me) return false;
+  var names = [j.superintendent, j.superName, j.super].filter(function(x){ return x && typeof x !== 'object'; });
+  for (var i = 0; i < names.length; i++) { try { if (W._gcSamePM ? W._gcSamePM(names[i], me, null) : low(names[i]) === low(me.name)) return true; } catch (e) {} }
+  return false;
+}
+function ownJob(j, me){ return samePM(j, me) || (isSuperRole() && sameSuper(j, me)); }
+W._gcProjVisible = function(j, me){ if (!isEst()) return ownJob(j, me); return mode() === 'all' || estimatedBy(j, me); };
+W._gcProjMine = function(j, me){ return isEst() ? estimatedBy(j, me) : ownJob(j, me); };
 W._gcEstProjects = { mode: mode, setMode: function(m){ setMode(m); rerender(); }, estimatedBy: estimatedBy };
 function rerender(){ try { var m = W._gcMeNow; if (m && typeof W._gcSetMeUser === 'function') W._gcSetMeUser(Object.assign({}, m)); } catch (e) {} later(bar, 60);
   try { var yb = D.getElementById('_gcYearBar'); if (yb) yb.remove(); var nt = D.getElementById('_fjNote'); if (nt && W._gcProjScope) nt.textContent = W._gcProjScope(arr(W._crm && W._crm.projects)).length + ' jobs on file'; } catch (e) {}   /* patch PROJLEAK */
