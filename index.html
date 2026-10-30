@@ -175733,6 +175733,7 @@ function guess(uid){
 /* a library button: open the tab now, make the paper, write it in */
 function go(uid, pid, filled){
   var u0 = ALIAS[uid] || uid, e = LAST.filter(function(x){ return x && x.uid === u0; })[0] || guess(u0), sl = null;
+  if (e && e.needsJob && !pid) { toast('Pick a job first — this paper is made from the job.', true); return Promise.resolve(null); }   /* at once, not after the cloud reads */
   try { sl = arm(e, pid); } catch (x) { sl = null; }
   var r; try { r = launch(uid, pid, filled); } catch (x) { disarm(sl); throw x; }
   Promise.resolve(r).then(function(){ disarm(sl); }, function(){ disarm(sl); });
