@@ -197,6 +197,8 @@ function subSheet(p, key){
   return sh;
 }
 
+/* owner 10/30: the job page header's "📸 GrayCo Photos" pill is hidden in Field view (📷 Add Photo/File and the bottom bar's 📸 Photos cover it) */
+(function(){ try { var st = document.createElement('style'); st.id = 'gcfp-nophotopill'; st.textContent = 'html._fieldmode button[data-u="open"][aria-label="GrayCo Photos for this job"]{display:none!important}'; (document.head || document.documentElement).appendChild(st); } catch (e) {} })();
 /* ── 📷 Add Photo/File: photos → GrayCo Photos' own upload; any other file → the job's Documents (job profile input) ── */
 function docsUpload(p, files){
   if (typeof W._gcOpenJobProfile !== 'function') { toast('Documents are not on this phone yet.'); return false; }
@@ -365,7 +367,7 @@ function decorate(pid){
   }
   var order = [by.progress, by.info, pm.cust && mk('cust', '👤', 'Customer portal'), pm.sub && mk('sub', '🔧', 'Sub portal'), by.update, pm.msg && mk('msg', '💬', 'Message'), by.photo, pm.photos && hasLog() && mk('log', '📒', 'Daily Log'), pm.photos && mk('money', '💰', 'Financials, Invoices & COs'), pm.photos && mk('sched', '📅', 'Schedule & Inspections'), by.docs, by.create]
     .concat(olds.filter(function(b){ return ['progress', 'info', 'update', 'photo', 'docs', 'create'].indexOf(b.getAttribute('data-fn')) < 0; }))
-    .concat([pm.photos && mk('photos', '📸', 'GrayCo Photos')]).filter(Boolean);
+    .filter(Boolean);   /* owner 10/30: no separate GrayCo Photos tile -- 📷 Add Photo/File is GrayCo Photos */
   order.forEach(function(b){ grid.appendChild(b); });
   if (by.photo && pm.photos) by.photo.onclick = function(e){ if (e) e.stopPropagation(); addPhotoFile(proj(p.id) || p); };
   grid.classList.add('gcfp-grid');
