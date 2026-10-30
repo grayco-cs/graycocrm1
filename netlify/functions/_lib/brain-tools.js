@@ -34,7 +34,7 @@ function viewerOf(who, users){
   const email = low(who.email);
   const u = arr(users).find(x => low(x.email) === email) || null;
   const name = s(u && u.name) || s(who.name) || email;
-  const admin = low(who.role) === 'admin';
+  const admin = require('./staff-role.js').isAdmin(who);   /* patch AUTHFIX */
   const office = !admin && (/^office@/.test(email) || /office/i.test(s(u && (u.role || u.title))));
   return { email, name, admin, office, role: admin ? 'admin' : office ? 'office' : (s(u && u.role) || 'staff'), seesAll: admin || office, payroll: admin };
 }

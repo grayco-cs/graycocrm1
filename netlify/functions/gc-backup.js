@@ -142,7 +142,7 @@ exports.handler = async function (event) {
   if (!isScheduled(event)) {
     const who = await gcStaffAuth(event);
     if (!who.ok) return { statusCode: who.statusCode, headers, body: JSON.stringify({ error: who.error }) };
-    if (who.role !== 'admin') return { statusCode: 403, headers, body: JSON.stringify({ error: 'Admins only.' }) };
+    if (!require('./_lib/staff-role.js').isAdmin(who)) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Admins only.' }) };
   }
   if (!svcKey()) return { statusCode: 500, headers, body: JSON.stringify({ error: 'SUPABASE_SERVICE_KEY not set.' }) };
   /* SYNC-A history: POST {"action":"history","nights":10} from a signed-in ADMIN (checked above) returns the job

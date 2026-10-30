@@ -33,7 +33,7 @@ async function isAdmin(event){
     const s = await fetch(url + '/rest/v1/gc_staff?select=role,active&email=eq.' + encodeURIComponent(email), { headers: /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(svc) ? { apikey: svc, Authorization: 'Bearer ' + svc } : { apikey: svc } });
     if (!s.ok) return false;
     const rows = await s.json();
-    return !!(rows && rows[0] && rows[0].active !== false && String(rows[0].role || '').toLowerCase() === 'admin');
+    return !!(rows && rows[0] && rows[0].active !== false && require('./_lib/staff-role.js').isAdmin({ role: rows[0].role, email: email }));   /* patch AUTHFIX */
   } catch (e) { return false; }
 }
 function isScheduled(event){

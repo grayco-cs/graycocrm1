@@ -19,7 +19,7 @@ function J(code, body){ return { statusCode: code, headers: JH, body: JSON.strin
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 async function officeOrAdmin(who){
-  if (low(who.role) === 'admin' || /office/.test(low(who.role))) return true;
+  if (require('./_lib/staff-role.js').isAdmin(who) || /office/.test(low(who.role))) return true;   /* patch AUTHFIX (r17b): the one admin rule */
   try { return !!(await A.core().isOffice(who)); } catch (e) { return false; }
 }
 exports.handler = async function(event){

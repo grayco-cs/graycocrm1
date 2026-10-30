@@ -15,6 +15,7 @@
 //   withOffice(who, opts) → Promise<who> (who.office = true / false added; who.ok false is passed through)
 'use strict';
 const SB_DEFAULT = 'https://ieeonhpfahmwwecizdut.supabase.co';
+const SR = require('./staff-role.js');   /* patch AUTHFIX: the one admin rule */
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function arr(v){ return Array.isArray(v) ? v : []; }
@@ -27,7 +28,7 @@ function isOfficeRow(row, users, email){
   if (!row || typeof row !== 'object') return false;
   if (row.active === false) return false;
   const r = low(row.role), pf = low(row.profile), e = low(email || row.email);
-  if (r === 'admin' || r === 'marketing' || pf === 'marketing' || row.mkt_active === true) return false;
+  if (SR.isAdminRole(r) || r === 'marketing' || pf === 'marketing' || row.mkt_active === true) return false;   /* patch AUTHFIX */
   if (r === 'office' || pf === 'office') return true;
   if (pf) return false;
   if (!e) return false;
@@ -62,13 +63,13 @@ async function isOffice(email, opts){
   const row = opts.row !== undefined ? opts.row : await staffRow(e);
   if (!row) return false;
   const r = low(row.role), pf = low(row.profile);
-  if (r === 'admin' || pf) return isOfficeRow(row, [], e);          /* decided by the row alone: no people-list read */
+  if (SR.isAdminRole(r) || pf) return isOfficeRow(row, [], e);          /* decided by the row alone: no people-list read */
   const users = opts.users !== undefined ? arr(opts.users) : await people();
   return isOfficeRow(row, users, e);
 }
 async function withOffice(who, opts){
   if (!who || who.ok === false) return who;
-  if (who.admin === true || low(who.role) === 'admin') { who.office = false; return who; }
+  if (SR.isAdmin(who)) { who.office = false; return who; }   /* patch AUTHFIX */
   try { who.office = await isOffice(who.email, opts); } catch (e) { who.office = false; }
   return who;
 }

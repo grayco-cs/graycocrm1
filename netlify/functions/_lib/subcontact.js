@@ -161,7 +161,7 @@ async function portal(C, data, p, body, opts){
 }
 /* may this person change it? an admin, the office, or the job's PM */
 async function mayEdit(C, data, p, who){
-  if (low(who.role) === 'admin') return 'admin';
+  if (require('./staff-role.js').isAdmin(who)) return 'admin';   /* patch AUTHFIX */
   if (await C.isOffice(who)) return 'office';
   const pm = C.pmOf(data, p);
   const u = arr(data.users).find(function(x){ return low(x.email) === low(who.email); });

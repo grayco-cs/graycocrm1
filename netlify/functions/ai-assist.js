@@ -87,7 +87,7 @@ exports.handler = async function(event){
   if (event.httpMethod !== 'POST') return J(event, 405, { ok: false, error: 'Method not allowed' });
   let b = {}; try { b = JSON.parse(event.body || '{}'); } catch (e) { return J(event, 400, { ok: false, error: 'Body must be JSON.' }); }
   if (b.action === 'tag-now') {
-    if (who.role !== 'admin') return J(event, 403, { ok: false, error: 'Only an admin can do that.' });
+    if (!require('./_lib/staff-role.js').isAdmin(who)) return J(event, 403, { ok: false, error: 'Only an admin can do that.' });
     return J(event, 200, Object.assign({ ok: true }, await PT.run({ limit: 8 })));
   }
   if (b.action === 'extract') {
