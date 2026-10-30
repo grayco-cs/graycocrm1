@@ -69,6 +69,7 @@ async function walk(c, ids){
 /* ── 1. the owner ── */
 const W = await person(OWNER);
 const adminTabs = await navIds(W);
+const ownerHidden = await W.ev(() => { const H = window._gcNavHidden || {}; return [].concat.apply([], Object.keys(H).map(k => Array.isArray(H[k]) ? H[k] : [])); });
 ok(adminTabs.length > 20 && adminTabs.includes('admin') && adminTabs.includes('payroll'), 'owner: left menu has ' + adminTabs.length + ' tabs', adminTabs);
 const projAll = await W.ev(() => (window._crm.projects || []).length);
 await W.b.close();
@@ -79,7 +80,8 @@ const st = await O.ev(() => ({ full: window._gcFullAccess(), office: window._gcI
 ok(st.full && st.office && st.acc.office && st.acc.officeDb && !st.acc.admin, 'office: _gcFullAccess / SEC2 office + officeDb, not admin', st.acc);
 const offTabs = await navIds(O);
 const missing = adminTabs.filter(x => !offTabs.includes(x)), extra = offTabs.filter(x => !adminTabs.includes(x));
-ok(!missing.length && !extra.length, 'office: the same left menu as the owner (' + offTabs.length + ' tabs)', { missing, extra });
+const extraNotHidden = extra.filter(x => !ownerHidden.includes(x));   /* tabs the owner turned off for himself (⚙ → Show / Hide Tabs) */
+ok(!missing.length && !extraNotHidden.length, 'office: the same left menu as the owner (' + offTabs.length + ' tabs; ' + extra.length + ' more that the owner hid for himself)', { missing, extra, ownerHidden });
 const walked = await walk(O, adminTabs);
 const bad = Object.keys(walked).filter(k => !walked[k] || walked[k].err || walked[k].view !== k || walked[k].refused || walked[k].lock);
 ok(!bad.length, 'office: every admin tab opens (' + Object.keys(walked).length + ')', bad.map(k => [k, walked[k]]));
@@ -87,13 +89,14 @@ const money = await O.ev(() => {
   const S = window.__GC_SEC2, P = (window._crm.projects || []);
   return { allowed: ['admin', 'payroll', 'pnl', 'taxcenter', 'invoices', 'payments', 'expenses', 'reports', 'cctrans', 'qbimport', 'officemanager'].filter(v => !window._gcViewAllowed(v)),
     canCash: S.can('gc_accounts_ledger', 'read') && S.can('gc_cash_anchor', 'write') && S.can('gc_commission_structures', 'read') && S.can('users_private', 'read') && S.can('gc_overhead_manual', 'write'),
-    noHr: !S.can('candidates', 'read') && !S.can('users_private', 'write') && !S.can('gc_team_settings', 'write') && !S.can('gc_automation_pause', 'write'),
+    noHr: !S.can('candidates', 'read') && !S.can('users_private', 'write') && !S.can('gc_team_settings', 'write') && !S.can('gc_senior_pm', 'write') && !S.can('gc_dailybackup_2026-10-30', 'read'),
+    hr: { candidates: S.can('candidates', 'read'), privW: S.can('users_private', 'write'), team: S.can('gc_team_settings', 'write'), senior: S.can('gc_senior_pm', 'write'), backup: S.can('gc_dailybackup_2026-10-30', 'read') },
     cash: localStorage.getItem('gc_cash_anchor'), ledger: localStorage.getItem('gc_accounts_ledger'),
     commission: (function(){ try { var j = P.find(p => p && p.pm); return window._gcJobCommission(j, 0, 0) !== null; } catch (e) { return 'err ' + e.message; } })(),
     projects: P.length, vault: window.__GC_ADMIN_KV && window.__GC_ADMIN_KV.state };
 });
 ok(!money.allowed.length, 'office: Admin, Payroll, P&L, Accounting, invoices, payments, expenses, reports … all allowed', money.allowed);
-ok(money.canCash && money.noHr, 'office: reads / changes the money keys; hiring, pay records, team roles, data-entry mode stay admin', money);
+ok(money.canCash && money.noHr, 'office: reads / changes the money keys; hiring, pay records, team roles, backups stay admin', money);
 ok(/12345/.test(money.cash || '') && /Owner draw/.test(money.ledger || ''), 'office: the cash vault loaded (cash on hand, the bank movements / owner draws)', { vault: money.vault });
 ok(money.commission === true, 'office: commission figures are not hidden', money.commission);
 ok(money.projects === projAll && projAll > 0, 'office: all ' + projAll + ' projects', money.projects);
@@ -102,6 +105,7 @@ const adm = await O.ev(async () => {
   window._setView('admin'); await new Promise(r => setTimeout(r, 2500));
   const m = document.querySelector('main'), vis = b => !!(b.offsetParent);
   const btn = t => [...m.querySelectorAll('button')].filter(b => vis(b) && (b.textContent || '').trim() === t).length;
+  for (let i = 0; i < 20 && (btn('EDIT') || btn('+ Add Employee')); i++) await new Promise(r => setTimeout(r, 500));   /* the list is drawn late on real data */
   const hub = document.getElementById('gc-adm-hub');
   return { lock: /Admin Access Required/.test(m.innerText), add: btn('+ Add Employee'), edit: btn('EDIT'), del: btn('🗑'), dis: btn('Disable'),
     hub: !!hub, teamRow: /Team access/.test(hub ? hub.innerText : ''), security: /Security & system check/.test(hub ? hub.innerText : ''),

@@ -151,7 +151,18 @@ try {
 
 /* ── start ──────────────────────────────────────────────────────────────────────────────── */
 wrapOpen();
-SI(function(){ try { wrapOpen(); adminPage(); } catch (e) {} }, 800);
+/* on ⚙ Admin the team list is drawn (and redrawn) by the app: the office's copy is fixed as soon as it changes */
+var MO = null, MOmain = null, moQ = false;
+function watchAdmin(){
+  var on = !D.hidden && view() === 'admin' && office(), main = on ? D.querySelector('main') : null;
+  if (!main) { if (MO) { MO.disconnect(); MO = null; MOmain = null; } return; }
+  if (MO && MOmain === main) return;
+  if (MO) MO.disconnect();
+  MOmain = main;
+  MO = new MutationObserver(function(){ if (moQ) return; moQ = true; (W.requestAnimationFrame || ST)(function(){ moQ = false; try { adminPage(); } catch (e) {} }); });
+  MO.observe(main, { childList: true, subtree: true });
+}
+SI(function(){ try { wrapOpen(); watchAdmin(); adminPage(); } catch (e) {} }, 800);
 W._gcOfficeFull = {
   more: MORE.map(function(m){ return m[0]; }), saveX: saveX, adminPage: adminPage,
   state: function(){ var a = null; try { a = W.__GC_SEC2 && W.__GC_SEC2.access(); } catch (e) {} return { office: office(), full: full(), access: a, hidden: D.querySelectorAll('[data-gc-office-hidden]').length, log: LOG.slice(-10) }; }
