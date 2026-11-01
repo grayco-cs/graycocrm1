@@ -169,6 +169,13 @@
 # Tracked links (patch MKT2): crm.grayco-cs.com/go/<code> → the go function (it counts the click and sends the
 # visitor on with the UTM tags). Only this path; everything else is untouched.
 # The marketing agency portal (patch AGY, docs/AGENCY-PORTAL.md)
+# patch OFFICETV: the 📺 lobby TV page (no sign-in; content from functions/lobby.js with the link code)
+[[redirects]]
+  from = "/lobby"
+  to = "/lobby.html"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/agency"
   to = "/agency.html"
