@@ -369,8 +369,10 @@ exports.handler = async function(event, context) {
     if(!String(process.env.COMPANYCAM_TOKEN || '').trim()) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'COMPANYCAM_TOKEN is not set in Netlify.' }) };
     const CP = require('./_lib/cc-photos.js'), at = new Date().toISOString();
     try{
+      /* patch PHOTOCOVER: the request row also holds "Re-index this job" and the admin's 🗑 Delete photos — kept */
+      let prevReq = {}; try{ const g0 = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22' + CP.REQ + '%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } }); if(g0.ok){ const rows0 = await g0.json(); let v0 = Array.isArray(rows0) && rows0[0] ? rows0[0].value : null; if(typeof v0 === 'string'){ try{ v0 = JSON.parse(v0); }catch(e){ v0 = null; } } if(v0 && typeof v0 === 'object' && !Array.isArray(v0)) prevReq = v0; } }catch(e){}
       const r = await fetch(url + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: { apikey: svc, Authorization: 'Bearer ' + svc, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify([{ key: CP.REQ, value: { at: at, by: who.email || '' }, updated_at: at }]) });
+        body: JSON.stringify([{ key: CP.REQ, value: Object.assign({}, prevReq, { at: at, by: who.email || '' }), updated_at: at }]) });
       if(!r.ok) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not save the request (' + r.status + ').' }) };
     }catch(err){ return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not reach the CRM database. Try again.' }) }; }
     const started = await CP.kickBackground('admin');
@@ -403,6 +405,76 @@ exports.handler = async function(event, context) {
       message: val.on ? 'GrayCo copies are ON — copying in the background (pauses at ' + val.capGB + ' GB). Press Refresh to see how far it is.' : 'GrayCo copies are OFF — nothing new is copied; the copies already made stay.' }) };
   }
 
+  // patch PHOTOCOVER — 📸 Photo coverage (admins / the office). GET ?proxy=photocover: per CompanyCam project what the index has,
+  // the copy switch, the lost jobs and their decisions, "Not a job", the removal log — read from gc_kv only, no CompanyCam call.
+  // POST ?proxy=photojob { act, job | jobs, pids, name }:
+  //   reindex  — "Re-index this job": its projects are read again in full on the next run (started at once in the background)
+  //   notjob / isjob — "Not a job" (a QuickBooks company / vendor record): left out of coverage and never copied / taken back
+  //   keep     — 📌 Keep photos: a lost job's GrayCo copies stay for good (and are made again if they were removed)
+  //   delete   — 🗑 Delete photos (owner / admin only, after the page asked to confirm): the next run removes that lost job's
+  //              GrayCo copies from GrayCo's own storage — only while still lost, 30+ days, not kept. Never CompanyCam.
+  if(qs.proxy === 'photocover' || qs.proxy === 'photojob'){
+    const role = String(who && who.role || '').toLowerCase();
+    if(!/^(admin|owner|office)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
+    const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
+    const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    if(!svc) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY is not set in Netlify.' }) };
+    const CP = require('./_lib/cc-photos.js'), SH = { apikey: svc, Authorization: 'Bearer ' + svc };
+    const isObj = function(v){ return !!v && typeof v === 'object' && !Array.isArray(v); };
+    const rd = async function(keys){ const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(' + keys.map(function(k){ return '%22' + k + '%22'; }).join(',') + ')', { headers: SH });
+      if(!r.ok) throw new Error('read ' + r.status); const o = {}; const rows = await r.json(); (Array.isArray(rows) ? rows : []).forEach(function(x){ let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){} } if(x && x.key) o[x.key] = v; }); return o; };
+    const wr = async function(rows){ const r = await fetch(url + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, SH),
+      body: JSON.stringify(rows.map(function(x){ return { key: x.key, value: x.value, updated_at: new Date().toISOString() }; })) }); return r.ok; };
+    try{
+      if(qs.proxy === 'photocover'){
+        if(event.httpMethod !== 'GET') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'GET only' }) };
+        const k = await rd([CP.STATE, CP.COPY, CP.KEEP, CP.NOTJOB, CP.DELLOG, CP.REQ]);
+        const cov = CP.coverOf(k[CP.STATE], k[CP.COPY], k[CP.KEEP], k[CP.NOTJOB], k[CP.DELLOG], k[CP.REQ]);
+        return { statusCode: 200, headers: Object.assign({}, headers, { 'Cache-Control': 'no-store' }), body: JSON.stringify(Object.assign({ ok: true, tokenSet: !!String(process.env.COMPANYCAM_TOKEN || '').trim(), role: role }, cov)) };
+      }
+      if(event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
+      let b = {}; try{ b = JSON.parse(event.body || '{}') || {}; }catch(e){ b = {}; }
+      const act = String(b.act || ''), at = new Date().toISOString(), by = who.email || '';
+      const okId = function(v){ return /^[A-Za-z0-9_\-:.]{1,80}$/.test(String(v || '')); };
+      const jobs = (Array.isArray(b.jobs) ? b.jobs : [b.job]).map(function(x){ return String(x == null ? '' : x).trim(); }).filter(okId).slice(0, 500);
+      if(!/^(reindex|notjob|isjob|keep|delete)$/.test(act)) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'act is reindex | notjob | isjob | keep | delete' }) };
+      if(act === 'reindex'){
+        const pids = (Array.isArray(b.pids) ? b.pids : []).map(function(x){ return String(x == null ? '' : x).trim(); }).filter(function(x){ return /^\d{1,20}$/.test(x); }).slice(0, 20);
+        if(!pids.length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'This job has no CompanyCam project to re-index — link one first.' }) };
+        if(!String(process.env.COMPANYCAM_TOKEN || '').trim()) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'COMPANYCAM_TOKEN is not set in Netlify.' }) };
+        const cur = await rd([CP.REQ]); const req = Object.assign({}, isObj(cur[CP.REQ]) ? cur[CP.REQ] : {}); req.pids = Object.assign({}, isObj(req.pids) ? req.pids : {});
+        pids.forEach(function(pid){ req.pids[pid] = at; });
+        if(!(await wr([{ key: CP.REQ, value: req }]))) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not save the request.' }) };
+        const started = await CP.kickBackground('reindex');
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, started: started, pids: pids, message: started ? 'Re-reading this job\'s CompanyCam photos now — refresh in a minute.' : 'Asked — the next 15-minute run re-reads it.' }) };
+      }
+      if(!jobs.length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'job is required' }) };
+      if(act === 'notjob' || act === 'isjob'){
+        const cur = await rd([CP.NOTJOB]); const nj = Object.assign({}, isObj(cur[CP.NOTJOB]) ? cur[CP.NOTJOB] : {});
+        jobs.forEach(function(j){ if(act === 'notjob') nj[j] = { at: at, by: by, name: String(b.name || '').slice(0, 80) }; else delete nj[j]; });
+        const ok = await wr([{ key: CP.NOTJOB, value: nj }]);
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: ok, notjob: Object.keys(nj).length }) };
+      }
+      if(act === 'keep'){
+        const cur = await rd([CP.KEEP]); const kp = Object.assign({}, isObj(cur[CP.KEEP]) ? cur[CP.KEEP] : {});
+        jobs.forEach(function(j){ if(!kp[j]) kp[j] = { at: at, by: by }; });
+        const ok = await wr([{ key: CP.KEEP, value: kp }]);
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: ok, kept: jobs.length, message: '📌 Photos kept — they stay in GrayCo storage.' }) };
+      }
+      /* delete: the owner / an admin only; the page asked "are you sure" first */
+      if(!/^(admin|owner)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only the owner or an admin can delete photos.' }) };
+      if(b.confirm !== true) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Confirm first.' }) };
+      const cur = await rd([CP.REQ, CP.KEEP]); const req = Object.assign({}, isObj(cur[CP.REQ]) ? cur[CP.REQ] : {}), kp = isObj(cur[CP.KEEP]) ? cur[CP.KEEP] : {};
+      req.del = Object.assign({}, isObj(req.del) ? req.del : {});
+      const asked = jobs.filter(function(j){ return !kp[j]; });
+      asked.forEach(function(j){ req.del[j] = { at: at, by: by }; });
+      if(!asked.length) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Those photos are 📌 kept — nothing to delete.' }) };
+      if(!(await wr([{ key: CP.REQ, value: req }]))) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not save the request.' }) };
+      const started = await CP.kickBackground('delete');
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, asked: asked.length, started: started, message: 'Removing the GrayCo copies of ' + asked.length + ' lost job' + (asked.length === 1 ? '' : 's') + ' — refresh in a minute. CompanyCam is not touched; the jobs stay archived.' }) };
+    }catch(err){ return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'Could not reach the CRM database. Try again.' }) }; }
+  }
+
   // GET ?proxy=sync — patch CCS: what the 15-minute companycam-sync recorded on its last run (gc_kv gc_cc_sync_health)
   // and whether COMPANYCAM_TOKEN is set here. Never the key. No CompanyCam call.
   if(event.httpMethod === 'GET' && qs.proxy === 'sync'){
@@ -412,20 +484,21 @@ exports.handler = async function(event, context) {
     if(!svc){ out.serviceKey = false; return { statusCode: 200, headers, body: JSON.stringify(out) }; }
     try{
       /* + patch CCS2 (one truth): gc_cc_whoami, the last real GET /company check, with its time */
-      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22,%22gc_cc_review%22,%22gc_cc_sync_request%22,%22ccidx_state%22,%22ccidx_copy%22,%22ccvis%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
+      const r = await fetch(url + '/rest/v1/gc_kv?select=key,value&key=in.(%22gc_cc_sync_health%22,%22gc_cc_whoami%22,%22gc_cc_review%22,%22gc_cc_sync_request%22,%22ccidx_state%22,%22ccidx_copy%22,%22ccvis%22,%22ccidx_keep%22)', { headers: { apikey: svc, Authorization: 'Bearer ' + svc } });
       if(r.ok){
         const rows = await r.json();
-        let pst = null, pcopy = null;   /* patch CCPHOTOS2: the copies' meter needs both rows */
+        let pst = null, pcopy = null, pkeep = null;   /* patch CCPHOTOS2: the copies' meter needs both rows (patch PHOTOCOVER: + 📌 kept) */
         (Array.isArray(rows) ? rows : []).forEach(function(x){
           let v = x && x.value; if(typeof v === 'string'){ try{ v = JSON.parse(v); }catch(e){ v = null; } }
           if(!v || typeof v !== 'object') return;
           if(x.key === 'ccidx_state'){ pst = v; return; }   /* patch CCPHOTOS */
           if(x.key === 'ccidx_copy'){ pcopy = v; return; }   /* patch CCPHOTOS2 */
+          if(x.key === 'ccidx_keep'){ pkeep = v; return; }   /* patch PHOTOCOVER */
           if(x.key === 'ccvis'){ out.ccvis = { since: String(v.since || '') }; return; }   /* patch CCPHOTOS2 */
           if(x.key === 'gc_cc_sync_health') out.health = v; else if(x.key === 'gc_cc_whoami') out.whoami = v;
           else if(x.key === 'gc_cc_review') out.review = Array.isArray(v) ? v.slice(0, 100) : []; else if(x.key === 'gc_cc_sync_request') out.request = { at: v.at || '', by: v.by || '' };   /* patch CCSYNC */
         });
-        if(pst) out.photoIndex = require('./_lib/cc-photos.js').statusOf(pst, pcopy);
+        if(pst) out.photoIndex = require('./_lib/cc-photos.js').statusOf(pst, pcopy, pkeep);
         else out.photoCopy = require('./_lib/cc-photos.js').copyStatus({}, pcopy);   /* patch CCPHOTOS2: the switch shows before the first index run */
       }
       else out.readError = r.status;
