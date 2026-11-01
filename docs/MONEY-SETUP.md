@@ -107,3 +107,11 @@ These are also on the admins' To-Do under 🔧 Owner setup → *Accounting — s
 - `netlify/functions/bid-inbox.js` — `?moneymail=1` (office + admins); ping shows where invoices / receipts are read.
 - `index.html` `gc-patch-money` (tools/patch_MONEY.py, tools/money_tail.js).
 - Tests: `node tools/tests/test_MONEYMAIL.mjs`, `node tools/tests/test_MONEY.mjs <build-dir>`.
+
+## Maintenance plan money (GrayCo Care)
+
+- **No stored cards, no Stripe.** Plans bill yearly, by plan period (twice a year / quarterly), or monthly — the customer picks monthly or yearly when signing (a 12-month agreement either way). Every invoice is a `maint_invoice` on ✅ Approvals; monthly subscriptions go as **one** approval a month ("Send all N subscription invoices for <month>"), each customer then gets their own invoice PDF. Customers pay the usual ways (the portal's How to pay).
+- **Auto-renew** only when the customer ticked it in the portal (recorded with the date); then the renewal invoice is queued through ✅ Approvals. Without it, the office gets a To-Do to ask before the renewal — nothing is billed by itself.
+- **Portfolios** (one property manager, many buildings) can take one combined invoice a month.
+- **Commission** on plans: see TEAM-ROLES.md → Maintenance plans. Mark an invoice paid (🛠 Maintenance → Active plans → ✓ paid) to credit it.
+- Sales tax and QuickBooks items: not set up for plans (owner: skip).

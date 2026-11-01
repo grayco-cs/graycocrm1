@@ -69,3 +69,7 @@ Open the job → **Customer portal → More → Turn link off**. The old link st
 - A Google Doc preview only works if the doc is shared "Anyone with the link can view".
 - CompanyCam photos come straight from CompanyCam. The "Open in CompanyCam" button may ask the customer to sign in, unless it is a CompanyCam share link.
 - Links are long random codes. Nobody can guess one. Too many wrong tries from one place are blocked for a while.
+
+## GrayCo Care (maintenance plans) in the portal
+
+Home → **🛠 Your maintenance plans**: before signing — the plans GrayCo picked for the property, Bronze / Silver / Gold, a Monthly / Yearly switch, the à la carte list, the agreement in plain words with "View the full agreement", and one **Sign & start** (auto-renew is a separate, unticked box). After signing — **Your GrayCo Care**: the tier, the next visit and a countdown, the PM, a visit timeline with photos and notes (shown once the update is approved), repairs found with **Approve quote**, the 🔧 Handyman Day with **📅 Book my Handyman Day** (what to do + "Will materials be on site?"), reports and letters, the Emergency Ready file, invoices with **Pay**, and **Refer a neighbor**. Priority customers see **🚨 Emergency? Call GrayCo now**. Nothing the customer asks for is sent anywhere by itself: it becomes a To-Do for the PM / office.
