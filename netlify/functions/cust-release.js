@@ -13,6 +13,9 @@ function isScheduled(event){ try { const b = JSON.parse((event && event.body) ||
 
 /* a released text's Job Messages line loses its "⏰ Scheduled 7:00 AM" label */
 async function jobMsgReleased(item, how){
+  /* patch ESTPDF: a held estimate e-mail went out now — its version's sentAt is this moment (gc_kv gc_est_sent) */
+  const esid = s(item && item.meta && item.meta.estSentId);
+  if (esid) { try { await require('./_lib/estpdf.js').markSent(core(), esid, how); } catch (e) {} }
   const mid = s(item && item.meta && item.meta.jobMsgId); if (!mid) return;
   const at = new Date().toISOString();
   await core().kvListUpdate('gc_job_messages', function(l){

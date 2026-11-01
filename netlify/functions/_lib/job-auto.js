@@ -19,7 +19,7 @@ const OPTS = [
   ['photos', 'create', true], ['gdoc', 'create', true], ['calendar', 'create', true], ['checklist', 'create', true],
   ['subScopes', 'create', true], ['claimFile', 'create', { insurance: true, other: false }],
   ['portalLink', 'portal', true], ['portalInvite', 'portal', true], ['showCarrier', 'portal', false], ['portalSelections', 'portal', true],
-  ['welcome', 'email', true], ['scheduleUpdates', 'email', true], ['apptAuto', 'email', false], ['progressPosts', 'email', true], ['docsNotice', 'email', true],
+  ['welcome', 'email', true], ['scheduleUpdates', 'email', true], ['apptAuto', 'email', false], ['progressPosts', 'email', true], ['weeklyUpdates', 'email', true], ['docsNotice', 'email', true],   /* patch ESTPDF: weeklyUpdates */
   ['invoiceEmail', 'email', true], ['paymentReminders', 'email', true], ['finalReminders', 'email', true],
   ['thankYou', 'email', { commercial: false, other: true }], ['reviewRequest', 'email', { commercial: false, other: true }],
   ['yearlyCheckup', 'email', { commercial: false, other: true }],
@@ -40,7 +40,7 @@ const KIND_KEY = {
   welcome: 'welcome', schedule_update: 'scheduleUpdates', progress_post: 'progressPosts', review_request: 'reviewRequest',
   next_steps: 'scheduleUpdates', appt_confirm: 'scheduleUpdates', appt_reminder: 'scheduleUpdates', closeout: 'warrantyCert', progress_update: 'progressPosts',   /* patch AUT2's kinds */
   checkup: 'yearlyCheckup', contract: 'contractSign', faq_packet: 'faqPacket', warranty: 'warrantyCert',
-  lien_waiver: 'lienWaivers', w9: 'w9', change_order: 'coSign'
+  lien_waiver: 'lienWaivers', w9: 'w9', change_order: 'coSign', weekly_update: 'weeklyUpdates'   /* patch ESTPDF */
 };
 
 function s(v){ return v == null ? '' : String(v).trim(); }

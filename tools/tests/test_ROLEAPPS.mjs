@@ -66,7 +66,7 @@ const ROLES = {
   crew:   { app: 'crew',   field: ['Home', 'Today', 'Photos', 'Messages'], desk: null },
   office: { app: 'office', field: ['Home', 'Approvals', 'Messages', 'More'], desk: ['Home', 'Approvals', 'Messages', 'More'] }
 };
-const HOMEBTN = { admin: ['appr', 'leads', 'money', 'viewas', 'systems', 'addjob'], pm: ['log', 'photos', 'punch', 'sched', 'msgs', 'appr'], est: ['bids', 'visit', 'roofscout', 'myleads', 'quickest', 'photos'],
+const HOMEBTN = { admin: ['appr', 'leads', 'money', 'viewas', 'systems', 'addjob'], pm: ['log', 'photos', 'punch', 'sched', 'msgs', 'appr'], est: ['sendest', 'newcust', 'bids', 'visit', 'myleads', 'quickest', 'roofscout', 'photos'],   /* patch ESTPDF: 📤 Send estimate, 👤 New customer */
   ins: ['emerg', 'oncall', 'drying', 'equip', 'photos', 'claims', 'tpa'], crew: ['clock', 'photos', 'log', 'punch'], office: ['appr', 'msgs', 'match', 'todo'] };
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const W = []; const closeAll = async () => { for (const c of W) await c.b.close().catch(() => {}); W.length = 0; };

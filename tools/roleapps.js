@@ -145,6 +145,8 @@ var A = {
   roofscout: { ic: '🏠', l: 'RoofScout', view: 'roofscout', run: function(){ go('roofscout'); } },
   quickest:  { ic: '📐', l: 'Quick estimate', show: function(){ return !!(F() && F().estimate); }, run: function(){ F().estimate({}); } },
   estimates: { ic: '🧮', l: 'Estimates', view: 'estimates', run: function(){ go('estimates'); } },
+  sendest:   { ic: '📤', l: 'Send estimate', show: function(){ return !!(W._gcEstPdf && W._gcEstPdf.openSend); }, run: function(){ W._gcEstPdf.openSend(); } },   /* patch ESTPDF */
+  newcust:   { ic: '👤', l: 'New customer', show: function(){ return !!(W._gcEstPdf && W._gcEstPdf.newCustomer); }, run: function(){ W._gcEstPdf.newCustomer(); } },   /* patch ESTPDF: + New customer → Start estimate */
   bids:      { ic: '⏰', l: 'Bids due', n: function(){ return bidsDue().filter(function(l){ return isFinite(dueOf(l)) && dueOf(l) - Date.now() < 3 * 864e5; }).length; }, run: function(){ bidsSheet(); } },
   emerg:     { ic: '🚨', l: 'Emergency leads', n: function(){ return emergLeads().length; }, run: function(){ emergSheet(); } },
   oncall:    { ic: '📟', l: 'On call', show: function(){ return !!(W._gcX10 && W._gcX10.oncall); }, run: function(){ W._gcX10.oncall(); } },
@@ -163,14 +165,14 @@ var A = {
 var HOME = {
   admin:  ['appr', 'leads', 'money', 'viewas', 'systems', 'addjob'],
   pm:     ['log', 'photos', 'punch', 'sched', 'msgs', 'appr'],
-  est:    ['bids', 'visit', 'roofscout', 'myleads', 'quickest', 'photos'],
+  est:    ['sendest', 'newcust', 'bids', 'visit', 'myleads', 'quickest', 'roofscout', 'photos'],   /* patch ESTPDF: 📤 Send estimate, 👤 New customer first */
   ins:    ['emerg', 'oncall', 'drying', 'equip', 'photos', 'claims', 'tpa'],
   crew:   ['clock', 'photos', 'log', 'punch'],
   office: ['appr', 'msgs', 'match', 'todo']
 };
 var MORE = {
   admin:  ['maint', 'search', 'photos', 'msgs', 'receipt', 'oncall', 'claims', 'match', 'todo'],
-  pm:     ['maint', 'cust', 'sub', 'leads', 'estimates', 'receipt', 'todo', 'search'],
+  pm:     ['maint', 'cust', 'sub', 'leads', 'estimates', 'sendest', 'receipt', 'todo', 'search'],
   est:    ['estimates', 'leads', 'appr', 'msgs', 'todo', 'search'],
   ins:    ['msgs', 'appr', 'addjob', 'receipt', 'todo', 'search'],
   crew:   ['punch', 'log'],
@@ -406,6 +408,7 @@ function deskCards(a){
     var J = jobsOf('admin').list, S = moneyNums();
     h += card('jobs', 'All jobs (' + J.length + ')', J.length ? J.slice(0, 60).map(function(p){ return jobRow(p, jobBtns(p, ['cust', 'sub', 'photos', 'msg'])); }).join('') + (J.length > 60 ? '<div class="gc-ra-empty">' + (J.length - 60) + ' more — <button type="button" class="gc-ra-link" data-ra-a="go" data-v="projects">Projects ›</button></div>' : '') : '<div class="gc-ra-empty">No open jobs.</div>', '<button type="button" class="gc-ra-link" data-ra-a="go" data-v="projects">Projects ›</button>');
     h += card('appr', 'Approvals (' + n + ')', apprHtml(), all);
+    try { if (W._gcEstPdf && W._gcEstPdf.raCard) h += W._gcEstPdf.raCard('admin'); } catch (e) { warn(e); }   /* patch ESTPDF: estimates marked sent outside the CRM (admin overrides) */
     var Lz = myLeads();
     h += card('leads', 'Leads (' + Lz.length + ')', Lz.length ? Lz.slice(0, 10).map(function(l){ return leadRow(l, '<div class="b">' + (isEmerg(l) ? '<span class="gc-ra-chip r">Emergency</span>' : '') + '<button type="button" class="gc-ra-sm" data-ra-a="lead" data-id="' + esc(l.id) + '">Open</button></div>'); }).join('') : '<div class="gc-ra-empty">No open leads.</div>', '<button type="button" class="gc-ra-link" data-ra-a="leads">All ›</button>');
     if (S) h += card('money', 'Money snapshot', moneyHtml(S), '<button type="button" class="gc-ra-link" data-ra-a="go" data-v="pnl">P&L ›</button>');
@@ -416,6 +419,7 @@ function deskCards(a){
     h += card('appr', 'Approvals (' + n + ')', apprHtml(), all);
   } else if (a === 'est') {
     var B = bidsDue(), M = myLeads();
+    try { if (W._gcEstPdf && W._gcEstPdf.raCard) h += W._gcEstPdf.raCard('est'); } catch (e) { warn(e); }   /* patch ESTPDF: Send estimate + the overrides list */
     h += card('bids', 'Bids due (' + B.length + ')', bidsHtml(B));
     h += card('leads', 'My leads (' + M.length + ')', M.length ? M.slice(0, 12).map(function(l){ return leadRow(l, '<div class="b"><button type="button" class="gc-ra-sm" data-ra-a="lead" data-id="' + esc(l.id) + '">Open</button><button type="button" class="gc-ra-sm" data-ra-a="visit" data-id="' + esc(l.id) + '">📍 Visit</button><button type="button" class="gc-ra-sm pri" data-ra-a="est" data-id="' + esc(l.id) + '">📐 Estimate</button></div>'); }).join('') : '<div class="gc-ra-empty">No open leads for you.</div>', '<button type="button" class="gc-ra-link" data-ra-a="leads">All ›</button>');
   } else if (a === 'ins') {
