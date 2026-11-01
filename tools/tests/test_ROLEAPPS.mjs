@@ -196,6 +196,7 @@ async function roleRun(role, where){
     await c.page().locator((where === 'field' ? '#gc-fh-tabs' : '#gc-ra-dock') + ' [data-t="more"]').first().click({ timeout: 4000 }).catch(() => {}); await sleep(900);
     const mo = await c.ev(w => { const sh = w === 'field' ? [...document.querySelectorAll('.gc-fh-sheet')].pop() : document.querySelector('.gc-ra-sheet'); if (!sh) return null; return { role: [...sh.querySelectorAll('[data-ra-a]')].map(b => b.getAttribute('data-ra-a')), sys: sh.querySelectorAll('[data-ra-a="nav"]').length, all: !!sh.querySelector('[data-m="tools"]') }; }, where);
     ok(!!mo && mo.role.length > 0 && (where === 'field' ? mo.all : mo.sys >= 3), `${role} ${where}: More has the role's other buttons and all systems`, mo);
+    if (['admin', 'pm', 'office'].includes(role)) ok(!!mo && mo.role.includes('maint'), `${role} ${where}: More lists 🛠 Maintenance (patch MAINTTAB's tab)`, mo);   /* r17h */
     await c.page().screenshot({ path: SHOTS + `${role}_${where}_more.png` });
     if (where === 'desk' && mo && mo.sys) {
       /* a menu item from More opens that CRM screen and the home steps aside */
