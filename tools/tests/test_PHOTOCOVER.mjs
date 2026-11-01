@@ -9,7 +9,8 @@
      the copy switch line), Link suggestions need a confirm, Re-index, Not a job hides the job, the lost-job decision card,
      GrayCo Photos shows every indexed photo of a linked job while copying is off, no page errors.
    Prod-shaped fixture: gc_kv rows read READ-ONLY (GET, the public anon key) into /dev/shm/pcov (PHOTOCOVER_FIX) — never
-   committed. Missing → read once now (PHOTOCOVER_NOFETCH=1 → part A's prod-shaped checks and part B are skipped). */
+   committed. Missing → read once now (PHOTOCOVER_NOFETCH=1 → part A's prod-shaped checks and part B are skipped).
+   PHOTOCOVER_NOBROWSER=1 → part A only (no browser, no browser lock). */
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -217,6 +218,7 @@ global.fetch = nodeFetch;
 
 /* ── part B: the browser ── */
 if (!PROD) { console.log('B. skipped (no prod-shaped fixture)'); finish(); }
+if (process.env.PHOTOCOVER_NOBROWSER === '1') { console.log('B. skipped (PHOTOCOVER_NOBROWSER=1)'); finish(); }
 console.log('B. browser (offline harness; prod-shaped index)');
 const { computer, signIn, sleep, cset, cget, waitFor } = await import(S + '/wN/harness_N.mjs');
 const { seedDemo } = await import(S + '/wDEMO/seed.mjs');
