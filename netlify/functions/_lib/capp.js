@@ -14,7 +14,7 @@
        - keys from Netlify only: PORTAL_VAPID_PUBLIC + PORTAL_VAPID_PRIVATE (or the staff VAPID_PUBLIC_KEY +
          VAPID_PRIVATE_KEY). No keys → no push; the numbers still update whenever the app is opened.
        - QUIET HOURS 7 PM – 7 AM Central: a push is HELD (gc_kv gc_portal_app_held) and goes at 7 AM (portal-reminders,
-         hourly). isQuiet(ms) is the one place that decides — swap it for patch CUSTQUIET's at merge.
+         hourly). isQuiet(ms) asks patch CUSTQUIET's _lib/custquiet.js — one rule (CUST_QUIET_OFF=1 turns it off).
        - data-entry mode (pause): nothing goes; the global fetch guard refuses unknown hosts too.
      VAPID (RFC 8292) + aes128gcm (RFC 8291) with Node's own crypto — no npm package. */
 'use strict';
@@ -38,12 +38,8 @@ function arr(v){ return Array.isArray(v) ? v : []; }
 function b64u(buf){ return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function unb64u(str){ return Buffer.from(s(str).replace(/-/g, '+').replace(/_/g, '/'), 'base64'); }
 
-/* ── quiet hours (patch CUSTQUIET owns the real rule; this is the same rule, easy to swap) ── */
-function chicagoHour(ms){
-  try { return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(new Date(ms))) % 24; }
-  catch (e) { return (new Date(ms).getUTCHours() + 18) % 24; }
-}
-function isQuiet(ms){ const h = chicagoHour(ms == null ? clock() : ms); return h >= 19 || h < 7; }
+/* ── quiet hours: patch CUSTQUIET's rule (_lib/custquiet.js — 7 PM–7 AM Central, CUST_QUIET_OFF=1 = off), one rule everywhere ── */
+function isQuiet(ms){ const CQ = require('./custquiet.js'); return !CQ.off() && CQ.quiet(ms == null ? clock() : ms); }
 let clockFn = null;   /* tests only: a fixed "now" */
 function clock(){ return clockFn ? clockFn() : Date.now(); }
 

@@ -1848,6 +1848,7 @@ async function sendScheduled(id, how, me){
   });
   const item = (r && r.result) || null;
   if (sent.ok && item && s(item.kind) !== 'portal_publish') { try { await gateFromMail(item, who0); } catch (e) {} }   /* patch PORTALGATE */
+  if (sent.ok && item) { try { await require('./_lib/capp.js').onPublished(exports._core, item); } catch (e) {} }   /* patch PORTALAPP (r17h): a 7 AM release / "Send now" pushes to the installed app too (held 7 PM–7 AM) */
   return { ok: !!sent.ok, item: item, error: sent.ok ? '' : sent.error };
 }
 async function releaseScheduled(opts){
