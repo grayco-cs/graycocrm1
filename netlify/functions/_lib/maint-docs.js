@@ -24,19 +24,23 @@ const AUD = {
   insurance: { title: 'After the restoration: keep it from happening again', intro: 'Your home has been put back together. These plans help prevent the next water, fire or storm loss — and plan members get priority emergency service.',
     plans: ['vent', 'water', 'roof', 'gutter', 'storm', 'hvac', 'home', 'whole'], priority: false, emergency: true }
 };
+const HEAD = { multifamily: ['GrayCo Care for your portfolio', 'One partner for every building — on our schedule, not yours'], commercial: ['GrayCo Care for your building', 'Ahead of leaks, ahead of repairs — by our own crews'],
+  residential: ['GrayCo Care — protect your home', 'Small fixes on the spot, so little things never become big repairs'], insurance: ['GrayCo Care — keep it from happening again', 'Prevention plans and priority emergency service after your restoration'] };
+const NAVY = '0.06 0.11 0.18', GOLD = '0.83 0.63 0.09';
 function pamphlet(aud, settings, sel, link, photos){
   const a = AUD[aud] || AUD.residential, st = settings && settings.plans ? settings : M.settingsOf(settings), by = {}; st.plans.forEach(function(x){ by[x.id] = x; });
   const ph = (photos || []).slice(0, 3); while (ph.length < 3) ph.push(null);   /* owner decision 11: up to 3 photos; a quiet placeholder until he picks them */
-  const b = [{ t: 'title', text: 'GrayCo Construction Services' }, { t: 'p', text: a.title, bold: true, size: 14 }, { t: 'p', text: a.intro }, { t: 'photos', photos: ph, h: 64, caption: 'Photo' }, { t: 'h', text: 'Plans' }];
+  const mk = aud === 'commercial' || aud === 'multifamily' ? 'commercial' : 'residential', mo = (st.monthly || M.MONTHLY)[mk], hd = (st.addOns || []).find(function(x){ return x.id === 'handyman'; });
+  const b = [{ t: 'title', text: 'GrayCo Construction Services' }, { t: 'band', text: HEAD[aud][0], sub: HEAD[aud][1], h: 40, size: 17 }, { t: 'photos', photos: ph, h: 56, caption: 'Photo' }];
+  const T = st.tiers, perk = a.priority ? '⭐ priority snow + emergency' : a.emergency ? 'priority emergency service' : 'priority scheduling';
+  b.push({ t: 'cols', h: 104, cols: ['bronze', 'silver', 'gold'].map(function(k){ const x = T[k]; return { title: x.name + (k === 'silver' ? '  - most popular' : ''), hl: k === 'silver', fill: k === 'gold' ? '0.99 0.95 0.84' : '0.97 0.96 0.93', boldFirst: true,
+    lines: ['from $' + mo[k] + ' a month' + (mk === 'commercial' ? ' per building' : ''), (x.discount ? x.discount + '% off repairs' : 'Plan visits + photo reports'), k === 'bronze' ? 'Every plan customer starts here' : x.visits, k === 'gold' ? 'Yearly free-plan drawing; ' + perk : (k === 'silver' ? perk : '')].filter(Boolean) }; }) });
+  b.push({ t: 'h', text: 'Plans' });
   const L = a.plans.map(function(id){ return by[id]; }).filter(function(x){ return x && x.on !== false; }).map(function(x){ return x.name.replace(/[^\x20-\x7e\xa0-\xff]/g, '').trim() + ' (' + M.freqLabel(x.freq).replace(/, on call$/, '').toLowerCase() + ')'; });
   for (let i = 0; i < L.length; i += 2) b.push({ t: 'row', left: L[i], right: L[i + 1] || '' });   /* two a line: one page */
-  b.push({ t: 'p', text: 'Prices are set for your property — ask for a free quote. FREE ROOF INSPECTION: a no-obligation photo report of what we found, what to watch, and what (if anything) needs attention.', size: 9 });
-  b.push({ t: 'h', text: 'Membership: Bronze, Silver, Gold' });
-  ['bronze', 'silver', 'gold'].forEach(function(k){ const t = st.tiers[k]; b.push({ t: 'row', left: t.name + ': ' + t.discount + '% off repairs', right: t.note ? 'yearly free-plan drawing' : (k === 'silver' ? '+1 service call a year' : 'every plan customer starts here') }); });
-  if (a.priority) { b.push({ t: 'h', text: 'Priority list: snow + emergency' }); b.push({ t: 'p', text: 'Every commercial and multi-family plan customer is on our priority list for snow and ice clean-up and for emergency mitigation (water, fire, storm) — you are called first.' }); }
-  if (a.emergency) { b.push({ t: 'h', text: 'Priority emergency service' }); b.push({ t: 'p', text: 'Plan members are first in line when water, fire or a storm strikes — 24/7, call ' + PHONE + '.' }); }
-  b.push({ t: 'gap', h: 6 });
-  b.push({ t: 'qr', text: link || ('https://grayco-cs.com/?utm_source=pamphlet&utm_medium=print&utm_campaign=maint-' + aud), size: 72, caption: 'Sign up or ask a question · Scan, call ' + PHONE + ' or e-mail ' + EMAIL });
+  if (hd) b.push({ t: 'p', text: 'HANDYMAN DAY can be added to any plan: one tech, 8 AM - 5 PM, for a list of small jobs (caulk, doors and locks, drywall touch-ups, fixtures, filters, detectors, weatherstripping and more). Materials billed separately. ' + M.HANDYMAN_NOTE, size: 9 });
+  b.push({ t: 'p', text: 'FREE ROOF INSPECTION: a no-obligation photo report. Pay monthly or yearly (12-month agreement). Prices are set for your property.' + (a.priority ? ' Every plan customer is on our priority list for snow and ice clean-up and emergency mitigation.' : a.emergency ? ' Plan members are first in line when water, fire or a storm strikes - 24/7.' : ''), size: 9 });
+  b.push({ t: 'gap', h: 8 }); b.push({ t: 'qr', text: link || ('https://grayco-cs.com/?utm_source=pamphlet&utm_medium=print&utm_campaign=maint-' + aud), size: 64, caption: 'Sign up or ask a question · Scan, call ' + PHONE + ' or e-mail ' + EMAIL });
   return sel.buildPdf(b);
 }
 const LETTERS = {
@@ -62,8 +66,9 @@ function agreement(o, sel){
     { t: 'row', left: 'Customer', right: s(o.customer) || '—' }, { t: 'row', left: 'Property', right: s(o.property) || '—' }, { t: 'row', left: 'Date', right: s(o.date) },
     { t: 'h', text: '1. Term' }, { t: 'p', text: 'One year from the date the customer signs. ' + (o.autoRenew ? 'The customer chose AUTO-RENEW: the agreement renews each year and GrayCo sends the renewal invoice; the customer can stop it any time by written notice (e-mail is fine) before the renewal date.' : 'It does NOT renew automatically: GrayCo asks the customer before each renewal.') },
     { t: 'h', text: '2. Services and frequency' }];
-  (o.plans || []).forEach(function(x){ b.push({ t: 'row', left: s(x.planName), right: M.freqLabel(x.freq) + ' · ' + usd(x.price) + ' / year' }); if (x.includes) b.push({ t: 'p', text: s(x.includes), size: 9 }); });
-  b.push({ t: 'h', text: '3. Price and payment' }); b.push({ t: 'p', text: 'Total ' + usd(total) + ' per year, invoiced per the plan\'s billing schedule (once, twice or four times a year) and due on receipt. GrayCo does not store card numbers; pay with the options on the invoice or in the GrayCo customer portal.' });
+  (o.plans || []).forEach(function(x){ b.push({ t: 'row', left: s(x.planName), right: M.freqLabel(x.freq) + ' · ' + usd(x.price) + ' / year' }); if (x.includes) b.push({ t: 'p', text: s(x.includes), size: 9 });
+    if (x.handyman) b.push({ t: 'p', text: 'Handyman Day x ' + x.handyman.days + ' a year (one tech, 8 AM - 5 PM; ' + usd(x.handyman.total) + ' of the price): ' + [].concat(x.handyman.tasks || [], x.handyman.other || []).join('; ') + '. The work must fit in the day; anything bigger gets a repair quote. Materials are billed separately, at cost. ' + M.HANDYMAN_NOTE, size: 9 }); });
+  b.push({ t: 'h', text: '3. Price and payment' }); b.push({ t: 'p', text: 'Total ' + usd(total) + ' per year, or ' + usd(Math.ceil(total / 12 * 100) / 100) + ' a month if the customer chooses monthly billing (' + (o.billing === 'monthly' ? 'CHOSEN: monthly' : o.billing === 'yearly' ? 'CHOSEN: yearly' : 'the customer picks when signing') + ') - a 12-month agreement either way. Invoiced invoiced per the plan\'s billing schedule (once, twice or four times a year) and due on receipt. GrayCo does not store card numbers; pay with the options on the invoice or in the GrayCo customer portal.' });
   b.push({ t: 'h', text: '4. Membership tier' }); b.push({ t: 'p', text: (s(o.tierName) || 'Bronze') + ' member: ' + (Number(o.discount) || 0) + '% off repairs found on plan visits (quoted separately and only done with the customer\'s OK).' });
   b.push({ t: 'h', text: '5. Cancellation' }); b.push({ t: 'p', text: 'Either party may end this agreement with written notice (e-mail is fine). No refund is owed for a visit already made; a prepaid period not yet served is refunded pro rata.' });
   b.push({ t: 'h', text: '6. Exclusions' }); b.push({ t: 'p', text: 'Repairs beyond the small touch-ups listed above, damage from storms, fire, flood or other casualty, code upgrades, hidden or pre-existing conditions, and work on systems not listed are not included and are quoted separately. This agreement does not change or replace any manufacturer warranty or insurance policy.' });

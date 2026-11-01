@@ -40,6 +40,7 @@ const COMMON_CARRIERS = /\b(state\s*farm|allstate|usaa|liberty\s*mutual|nationwi
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function arr(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object'; }) : []; }
+function strs(v){ return Array.isArray(v) ? v.map(s).filter(Boolean) : []; }
 function clip(v, n){ const t = s(v); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
 function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function money(n){ return Math.round(M.num(n) * 100) / 100; }
@@ -155,7 +156,15 @@ async function view(A, p){
   const h = A.heard.find(function(x){ return s(x.pid) === s(p.id); });
   /* patch MAINTPLUS: the visits (the Maintenance Schedule), what was approved for the portal (visit updates, repair quotes),
      the property's Emergency Ready file, the membership tier */
-  let X = {}; if (mine.some(function(c){ return c.status === 'signed'; })) { try { X = await core().kvRead(['gc_approval_queue', 'gc_maint_visits', 'gc_maint_props']); } catch (e) { X = {}; } }
+  let X = {}; if (mine.some(function(c){ return c.status === 'signed'; })) { try { X = await core().kvRead(['gc_approval_queue', 'gc_maint_visits', 'gc_maint_props', 'gc_portal_auto_posts']); } catch (e) { X = {}; } }
+  /* the design pass: the approved posts (visit photos, reports, letters) as signed links, lazy-loaded by the page */
+  const posts = {}, docsOut = [];
+  for (const q of arr(X.gc_portal_auto_posts).filter(function(x){ return s(x.pid) === s(p.id); }).slice(-40)) {
+    const files = []; for (const f of arr(q.files).slice(0, 6)) { const u = await signUrl(f.ref); if (u) files.push({ url: u, name: s(f.name), pdf: /pdf/i.test(s(f.type)) }); }
+    posts[s(q.id)] = files;
+    if (/^(📋|📄)/.test(s(q.text))) docsOut.push({ title: s(q.text).replace(/^(📋|📄)\s*/, '').split(/[.:]/)[0].slice(0, 90), at: s(q.at).slice(0, 10), files: files.filter(function(f){ return f.pdf; }) });
+  }
+  const pmP = pmOf(A.data, p);
   const sent = {}; arr(X.gc_approval_queue).forEach(function(q){ if (q && q.status === 'sent') sent[s(q.id)] = 1; });
   const vis = arr(X.gc_maint_visits).filter(function(v){ return s(v.pid) === s(p.id) && v.status !== 'cancelled'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; });
   const prop = X.gc_maint_props && typeof X.gc_maint_props === 'object' ? X.gc_maint_props[s(p.id)] : null;
@@ -164,13 +173,20 @@ async function view(A, p){
     maint: { offered: offered || mine.length > 0, plans: plans.map(function(x){ return { id: x.id, name: x.name, includes: M.plainIncludes(x.includes), visits: x.visits, freq: x.freq, freqLabel: M.freqLabel(x.freq) }; }),
       contracts: mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }), f = s(c.freq) || (pl ? pl.freq : 'yearly'), bills = M.billsPerYear(c);   /* patch MAINTPLANS */
         return { id: c.id, planId: s(c.planId), planName: s(c.planName), status: s(c.status), price: c.status === 'requested' ? null : (c.price != null ? money(c.price) : null),
-        tier: c.status === 'signed' ? M.tierOf(c) : '', autoRenew: c.status === 'signed' ? c.autoRenew === true : undefined, lastVisit: s(c.lastVisit),
-        visits: vis.filter(function(v){ return s(v.contractId) === s(c.id); }).map(function(v){ return { date: s(v.date), status: v.status === 'done' ? 'done' : 'planned', oncall: !!v.oncall, note: v.status === 'done' && v.postId && sent[s(v.postId)] ? s(v.note) : '' }; }).slice(-12),
-        repairs: arr(c.repairs).filter(function(x){ return x.approvalId && sent[s(x.approvalId)]; }).map(function(x){ return { desc: s(x.desc), price: money(x.price), net: money(x.net), discount: x.discount, at: s(x.at).slice(0, 10) }; }),
-        invoices: arr(c.invoices).filter(function(v){ return v.status === 'sent'; }).map(function(v){ return { year: s(v.year), amount: money(v.amount), number: s(v.number), at: s(v.sentAt || v.at).slice(0, 10) }; }),
+        tier: /^(signed|quoted)$/.test(s(c.status)) ? M.tierOf(c) : '', autoRenew: c.status === 'signed' ? c.autoRenew === true : undefined, lastVisit: s(c.lastVisit),
+        visits: vis.filter(function(v){ return s(v.contractId) === s(c.id); }).map(function(v){ const ok = v.status === 'done' && v.postId && sent[s(v.postId)]; return { date: v.status === 'done' && v.doneAt ? s(v.doneAt).slice(0, 10) : s(v.date), status: v.status === 'done' ? 'done' : 'planned', oncall: !!v.oncall, kind: s(v.kind), note: ok ? s(v.note) : '',
+          photos: ok ? arr(posts['pp_aq_' + s(v.postId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60)]).filter(function(f){ return !f.pdf; }) : [], tasksDone: v.status === 'done' ? strs(v.tasksDone) : [] }; }).slice(-16),
+        repairs: arr(c.repairs).filter(function(x){ return x.approvalId && sent[s(x.approvalId)]; }).map(function(x){ return { id: s(x.id), desc: s(x.desc), price: money(x.price), net: money(x.net), discount: x.discount, at: s(x.at).slice(0, 10), status: s(x.status) }; }),
+        invoices: arr(c.invoices).filter(function(v){ return v.status === 'sent' || v.status === 'paid'; }).map(function(v){ return { year: s(v.year), amount: money(v.amount), number: s(v.number), at: s(v.sentAt || v.at).slice(0, 10), paid: v.status === 'paid' }; }),
+        billing: s(c.billing) || '', monthly: M.monthlyOf(c), handyman: c.handyman ? { days: c.handyman.days, tasks: strs(c.handyman.tasks).concat(strs(c.handyman.other)), hours: '8 AM – 5 PM', note: M.HANDYMAN_NOTE, total: c.handyman.total,
+          done: [].concat.apply([], vis.filter(function(v){ return s(v.contractId) === s(c.id) && v.kind === 'handyman' && v.status === 'done'; }).map(function(v){ return strs(v.tasksDone); })), requests: arr(c.hdRequests).length } : null,
         freq: f, freqLabel: M.freqLabel(f), billsPerYear: bills, priority: M.marketOf(pl || c) === 'commercial' && f !== 'once',   /* every commercial plan: ⭐ priority snow + emergency */ includes: M.plainIncludes(s(c.includes) || (pl ? pl.includes : '')),
         requestedAt: s(c.requestedAt), quotedAt: s(c.quotedAt), signedAt: s(c.signedAt), signName: s(c.signName), nextVisit: s(c.nextVisit), doc: docs[c.id] || '', agreement: agr[c.id] || '' }; }),
-      alacarte: offered || mine.length ? (st.addOns || []).map(function(a){ return { id: a.id, name: a.name, price: a.price, note: a.note }; }).concat(plans.map(function(x){ return { id: 'plan:' + x.id, name: x.name + ' (one visit)', price: 0, note: '' }; })) : [],
+      alacarte: offered || mine.length ? (st.addOns || []).map(function(a){ return { id: a.id, name: a.name, price: a.price, note: a.note }; }) : [],   /* the add-ons; a single visit of a plan: ask in Other plans */
+      pm: pmP ? { name: s(pmP.name), initial: s(pmP.name).charAt(0).toUpperCase() } : null, docs: docsOut.reverse().slice(0, 12), phone: OFFICE_PHONE,
+      tiers: ['bronze', 'silver', 'gold'].map(function(k){ const x = st.tiers[k]; return { id: k, name: x.name, discount: x.discount, perks: x.visits, note: x.note || '', monthly: (st.monthly || M.MONTHLY)[M.groupOf(p) === 'commercial' ? 'commercial' : 'residential'][k] }; }),
+      market: M.groupOf(p) === 'commercial' ? 'commercial' : 'residential', refCredit: Math.max.apply(null, [0].concat(mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }); return pl ? M.num(pl.refCredit) : 0; }))),
+      agreementSummary: ['A 12-month agreement — pay monthly or yearly.', 'Renews only if you tick auto-renew; otherwise we ask you first.', 'End it any time by e-mail; no refund for a visit already made.', 'Repairs we find are quoted first and only done with your OK.', 'Your plan does not change any manufacturer warranty or insurance policy.'],
       member: signedL.length ? { tier: tierK, name: T.name, discount: T.discount, note: T.note || '', perks: T.visits } : null,
       emready: prop && prop.emready ? { building: s(prop.emready.building), contacts: arr(prop.emready.contacts), shutoffs: arr(prop.emready.shutoffs).map(function(x){ return { what: s(x.what), location: s(x.location), hasPhoto: !!x.photo }; }), updatedAt: s(prop.emready.updatedAt).slice(0, 10) } : null } };
 }
@@ -233,6 +249,7 @@ async function sign(event, row, body, A, p){
   const docRef = await storePdf(pdf, docName);
   const r = await contractChange(c0.id, function(c){
     if (c.status !== 'quoted') return 'changed';
+    if (s(body.billing) === 'monthly') { c.billing = 'monthly'; c.billsPerYear = 12; c.monthly = M.monthlyOf(c); } else c.billing = 'yearly';   /* owner: monthly or yearly, the customer's choice; 12-month agreement either way */
     c.autoRenew = body.autoRenew === true; c.autoRenewAt = body.autoRenew === true ? at : '';   /* patch MAINTPLUS: only with the customer's explicit OK (no card is stored or charged by the CRM) */
     c.tier = M.TIERS[s(c.tier)] ? s(c.tier) : 'bronze'; c.soldBy = c.soldBy || s(c.quotedBy) || s(p.pm);
     c.status = 'signed'; c.signedAt = at; c.signName = name; c.signIp = clip(ip, 60); c.drawn = cs.strokes.length > 0; c.docRef = docRef; c.docName = docName; c.ref = ref; c.nextVisit = nextVisit; c.visitsPerYear = visits;
@@ -262,6 +279,27 @@ async function ask(event, row, body, A, p){
   try { await core().officeTodo('maint_ask_' + s(p.id) + '_' + id.replace(/\W/g, '') + '_' + nowIso().slice(0, 10), '🛠 À la carte request — ' + name + ' · ' + job, (custName(p) || 'The customer') + ' asked for ' + name + ' in the portal' + (note ? ' ("' + note + '")' : '') + '. Price it on the job (🛠 Maintenance) or call them.'); } catch (e) {}
   return { status: 200, out: { ok: true } };
 }
+/* owner: "📅 Book my Handyman Day" — what they want done + are materials on site → the plan's PM / office (a To-Do), never sent anywhere by itself */
+/* the design pass: "Approve quote" on a repair we found → recorded; the PM / office schedules it (a To-Do) — nothing is sent */
+async function repairOk(event, row, body, A, p){
+  const c0 = A.list.find(function(c){ return s(c.id) === s(body.contractId) && s(c.pid) === s(p.id); }); if (!c0) return { status: 404, out: { ok: false, error: 'That repair is not on your plan.' } };
+  let rp = null; const r = await contractChange(c0.id, function(c){ c.repairs = arr(c.repairs).map(function(x){ if (s(x.id) !== s(body.repairId) || x.status === 'approved') return x; rp = Object.assign({}, x, { status: 'approved', approvedAt: nowIso() }); return rp; }); if (!rp) return 'none'; });
+  if (!r.ok || r.result !== 'ok') return { status: 404, out: { ok: false, error: 'That repair is already approved or not found.' } };
+  try { await core().officeTodo('maint_rpok_' + s(rp.id), '🔧 Repair approved by the customer — ' + scrub(p.name, carrierWords(p)), rp.desc + ' — ' + usd(rp.net) + ' (approved in the portal). Schedule it and call them.'); } catch (e) {}
+  return { status: 200, out: { ok: true } };
+}
+async function hdBook(event, row, body, A, p){
+  const c0 = A.list.find(function(c){ return s(c.id) === s(body.contractId) && s(c.pid) === s(p.id) && c.status === 'signed' && c.handyman; });
+  if (!c0) return { status: 404, out: { ok: false, error: 'No Handyman Day on your plan — call ' + OFFICE_PHONE + '.' } };
+  const want = clip(s(body.items).replace(/[<>]/g, ''), 1200), mat = { yes: 'Materials will be on site', no: 'No materials on site', pickup: 'Please pick up the materials (billed at cost)' }[s(body.materials)] || '';
+  if (!want) return { status: 400, out: { ok: false, error: 'Tell us what you want done.' } };
+  if (!mat) return { status: 400, out: { ok: false, error: 'Will materials be on site? Pick one.' } };
+  const when = clip(s(body.when), 80), at = nowIso(), job = scrub(p.name, carrierWords(p)), pm = pmOf(A.data, p);
+  const r = await contractChange(c0.id, function(c){ c.hdRequests = arr(c.hdRequests).concat([{ at: at, items: want, materials: s(body.materials), when: when, status: 'requested' }]).slice(-20); });
+  if (!r.ok) return { status: 503, out: { ok: false, error: 'Please try again.' } };
+  try { await core().officeTodo('maint_hd_' + c0.id + '_' + at.slice(0, 16).replace(/\D/g, ''), '🔧 Handyman Day requested — ' + job + (pm ? ' (' + pm.name + ')' : ''), (custName(p) || 'The customer') + ' wants: ' + want + '. ' + mat + '.' + (when ? ' Best days: ' + when + '.' : '') + ' Schedule it on 🛠 Maintenance → Schedule (8 AM – 5 PM) and call them.'); } catch (e) {}
+  return { status: 200, out: { ok: true } };
+}
 async function decline(event, row, body, A, p){
   const c0 = A.list.find(function(c){ return s(c.id) === s(body.contractId) && s(c.pid) === s(p.id); });
   if (!c0 || !/^(requested|quoted)$/.test(s(c0.status))) return { status: 404, out: { ok: false, error: 'That plan is not open on your job.' } };
@@ -270,7 +308,7 @@ async function decline(event, row, body, A, p){
 }
 
 /* ── the 🛠 Maintenance tab (patches MAINTTAB + MAINTPLUS): _lib/maint-tab.js ── */
-const TAB_ACTIONS = ['agreement', 'area', 'plan-prices', 'contract-set', 'tab', 'settings-set', 'prospect-save', 'outreach', 'tier', 'emready', 'visit-post', 'snow-event', 'pcr', 'visit-set', 'portfolio-save', 'letter', 'pamphlet', 'pamphlet-mail'];
+const TAB_ACTIONS = ['invoice-paid', 'agreement', 'area', 'plan-prices', 'contract-set', 'tab', 'settings-set', 'prospect-save', 'outreach', 'tier', 'emready', 'visit-post', 'snow-event', 'pcr', 'visit-set', 'portfolio-save', 'letter', 'pamphlet', 'pamphlet-mail'];
 async function kvPut(key, value){ const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: key, value: JSON.stringify(value), updated_at: nowIso() }) }); return w.ok; }
 async function kvMerge(key, fn){ const d = await core().kvRead([key]); let v = d[key]; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return kvPut(key, fn(v)); }
 let TAB = null;
@@ -325,22 +363,29 @@ async function staffAct(body, who){
         const fq = M.FREQS[s(it.freq)] && s(it.freq) !== 'once' ? s(it.freq) : (plan ? plan.freq : s(c.freq));   /* the builder may set the frequency per service */
         if (plan) { c.planName = c.planName || plan.name; c.market = plan.market; c.includes = M.plainIncludes(plan.includes); }
         if (fq) { c.freq = fq; c.visitsPerYear = M.FREQ_N[fq] || 1; c.billsPerYear = M.billsPerYear({ freq: fq }); }
-        const ao = (Array.isArray(it.addOns) ? it.addOns : []).map(function(x){ const d = (A.settings.addOns || []).find(function(y){ return y.id === s(x && x.id || x); }); return d && d.on.indexOf(s(c.planId)) >= 0 ? { id: d.id, name: d.name, price: money(x && x.price != null ? x.price : d.price), note: d.note } : null; }).filter(Boolean);
+        const ao = (Array.isArray(it.addOns) ? it.addOns : []).map(function(x){ const d = (A.settings.addOns || []).find(function(y){ return y.id === s(x && x.id || x); }); return d && d.id !== 'handyman' && M.addonFits(d, c.planId) ? { id: d.id, name: d.name, price: money(x && x.price != null ? x.price : d.price), note: d.note } : null; }).filter(Boolean);
         c.addOns = ao; if (ao.length) c.includes = (c.includes ? c.includes + ' ' : '') + ao.map(function(x){ return 'Add-on: ' + x.name + ' (included in the price) — ' + x.note; }).join(' ');
-        c.tier = c.tier || tierQ; if (portfolioId) c.portfolioId = portfolioId; c.soldBy = c.soldBy || who.email;
+        c.tier = c.tier || tierQ;
+        /* owner: the 🔧 Handyman Day ($289.99 a day, 8 AM – 5 PM, materials extra) on any plan — days a year, the tasks it covers, the tier discount */
+        const hdx = (Array.isArray(it.addOns) ? it.addOns : []).find(function(x){ return x && s(x.id) === 'handyman'; }), hdd = (A.settings.addOns || []).find(function(y){ return y.id === 'handyman'; });
+        if (hdx && hdd) { const days = Math.max(1, Math.min(12, parseInt(hdx.qty || hdx.days, 10) || 1)), disc = (A.settings.tiers[M.tierOf(c)] || {}).discount || 0, total = money(hdd.price * days * (100 - disc) / 100);
+          const tasks = (Array.isArray(hdx.tasks) ? hdx.tasks : []).map(function(x){ return clip(x, 100); }).filter(Boolean).slice(0, 30), other = (Array.isArray(hdx.other) ? hdx.other : []).map(function(x){ return clip(x, 120); }).filter(Boolean).slice(0, 10);
+          c.handyman = { days: days, dayPrice: hdd.price, discount: disc, total: total, tasks: tasks, other: other, hours: '8 AM – 5 PM', note: M.HANDYMAN_NOTE };
+          c.price = money(M.num(c.price) + total); } else if (!hdx) delete c.handyman; if (portfolioId) c.portfolioId = portfolioId; c.soldBy = c.soldBy || who.email;
         if (plan && !c.performer) { c.performer = plan.performer || 'self'; c.sub = plan.sub || ''; }   /* owner decision 7: HVAC → Rapid Air, pressure washing → Brenan Hart (subbed) */
         c.history = arr(c.history).concat([{ at: nowIso(), by: who.name || who.email, what: 'Quoted ' + usd(price) + ' / year' }]); });
       if (!r.ok || r.result !== 'ok') return { status: r.result === 'signed' ? 409 : 503, out: { ok: false, error: r.result === 'signed' ? 'Already signed.' : 'Could not save — try again.' } };
-      done.push(r.c);
+      done.push(r.c);   /* (the handyman day's price is in r.c.price) */
     }
     const pm = pmOf(A.data, p), to = custEmail(p), words = carrierWords(p), job = scrub(p.name, words) || 'your job';
-    const line = function(c){ return esc(c.planName) + ' — <b>' + esc(usd(c.price)) + ' per year</b> (' + esc(M.freqLabel(c.freq).toLowerCase()) + ')' + (arr(c.addOns).length ? ' incl. ' + esc(c.addOns.map(function(x){ return x.name; }).join(', ')) : ''); };
+    const line = function(c){ return esc(c.planName) + ' — <b>' + esc(usd(c.price)) + ' per year</b> or ' + esc(usd(M.monthlyOf(c))) + ' a month (' + esc(M.freqLabel(c.freq).toLowerCase()) + ')' + (arr(c.addOns).length ? ' incl. ' + esc(c.addOns.map(function(x){ return x.name; }).join(', ')) : '') +
+      (c.handyman ? '<br>🔧 Handyman Day × ' + c.handyman.days + ' (8 AM – 5 PM; materials extra): ' + esc(c.handyman.tasks.concat(c.handyman.other).join(', ')) + '. <i>' + esc(M.HANDYMAN_NOTE) + '</i>' : ''); };
     const kits = (Array.isArray(body.products) ? body.products : []).map(function(x){ const d = (A.settings.products || []).find(function(y){ return y.id === s(x && x.id); }); return d ? { name: d.name, qty: Math.max(1, Math.min(50, parseInt(x.qty, 10) || 1)), price: d.price, contents: d.contents } : null; }).filter(Boolean);
     const total = money(done.reduce(function(t, c){ return t + money(c.price); }, 0));
     let queued = false;
     if (okEmail(to)) {
       const html = shell(job, '<p>Hi ' + esc(firstName(custName(p)) || 'there') + ',</p>' + (done.length === 1
-          ? '<p>Your price for the <b>' + esc(done[0].planName) + '</b> is <b>' + esc(usd(done[0].price)) + ' per year</b>. You can read what is included and sign up in your GrayCo Portal:</p>'
+          ? '<p>Your price for the <b>' + line(done[0]) + '. You can pick monthly or yearly billing, read what is included and sign up in your GrayCo Portal:</p>'
           : '<p>Here are your prices for the maintenance plans we picked for your home:</p><ul>' + done.map(function(c){ return '<li>' + line(c) + '</li>'; }).join('') + '</ul><p>You can read what each plan includes and sign up for any or all of them in your GrayCo Portal:</p>') +
         (kits.length ? '<p>Also for you:</p><ul>' + kits.map(function(k){ return '<li>' + esc(k.name) + (k.qty > 1 ? ' × ' + k.qty : '') + ' — ' + esc(usd(k.price * k.qty)) + ' <span style="color:#55626F">(' + esc(k.contents) + ')</span></li>'; }).join('') + '</ul>' : '') +
         '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See my maintenance plan' + (done.length > 1 ? 's' : '') + '</a></p>' +
@@ -349,7 +394,7 @@ async function staffAct(body, who){
         : 'appr_mtq_' + pid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) + '_' + crypto.createHash('sha256').update(done.map(function(c){ return c.id + ':' + money(c.price); }).sort().join('|')).digest('hex').slice(0, 12);
       /* owner decision 4: the Maintenance Agreement (DRAFT for lawyer review) goes with every plan sign request and into the portal */
       let agRef = '';
-      try { const T = A.settings.tiers[tierQ] || {}; const ag = require('./_lib/maint-docs.js').agreement({ customer: custName(p), property: s(p.address) || job, plans: done.map(function(c){ return { planName: c.planName, freq: c.freq, price: c.price, includes: c.includes }; }), tierName: T.name, discount: T.discount, autoRenew: false, date: nowIso().slice(0, 10) }, sel());
+      try { const T = A.settings.tiers[tierQ] || {}; const ag = require('./_lib/maint-docs.js').agreement({ customer: custName(p), property: s(p.address) || job, plans: done.map(function(c){ return { planName: c.planName, freq: c.freq, price: c.price, includes: c.includes, handyman: c.handyman }; }), tierName: T.name, discount: T.discount, autoRenew: false, date: nowIso().slice(0, 10) }, sel());
         agRef = await storePdf(ag, 'Maintenance Agreement (DRAFT) — ' + job + '.pdf');
         if (agRef) for (const c of done) await contractChange(c.id, function(x){ x.agreementRef = agRef; }); } catch (e) {}
       queued = await core().queueApproval({ id: qid, kind: 'maint_quote', pid: pid, jobName: job, pm: pm, to: to, subject: 'Your maintenance plan quote' + (done.length > 1 ? 's' : '') + ' — ' + job, html: html,
@@ -375,7 +420,13 @@ async function staffAct(body, who){
 /* ── the yearly invoice, once ✅ approved (portal.js aqSend → here) ── */
 async function maintInvoiceSend(item, now){
   const meta = item.meta || {}, A = await readAll();
-  if (meta.combined && Array.isArray(meta.parts)) return combinedSend(item, now, A);   /* patch MAINTPLUS: a portfolio's one invoice */
+  if (meta.combined && Array.isArray(meta.parts)) return combinedSend(item, now, A);
+  if (meta.batch && Array.isArray(meta.parts)) {   /* owner: ONE approval → every monthly subscription invoice of the month, each to its customer */
+    const bad = [];
+    for (const x of meta.parts) { const one = await maintInvoiceSend({ id: s(item.id) + '_' + s(x.contractId), kind: 'maint_invoice', to: s(x.to), subject: s(x.subject), html: s(x.html), pm: item.pm, pmEmail: item.pmEmail, meta: { contractId: x.contractId, year: x.year, amount: x.amount, period: x.period } }, now);
+      if (!one.ok) bad.push(s(x.job || x.contractId) + ': ' + s(one.error)); }
+    return bad.length === meta.parts.length ? { ok: false, error: bad.join('; ') } : { ok: true, partial: bad.length ? bad : undefined };
+  }   /* patch MAINTPLUS: a portfolio's one invoice */
   const c = A.list.find(function(x){ return s(x.id) === s(meta.contractId); });
   if (!c || c.status !== 'signed') return { ok: false, error: 'The plan is no longer active — not sent.' };
   const p = findProject(A.data, c.pid); if (!p) return { ok: false, error: 'The job is not in the cloud.' };
@@ -418,7 +469,7 @@ exports.handler = async function(event){
     try { const r = await staffAct(body, who); return reply(r.status, headers, r.out); }
     catch (e) { return reply(500, headers, { ok: false, error: 'The maintenance plans hit a problem: ' + clip(e && e.message || e, 120) }); }
   }
-  if (['view', 'heard', 'maint-request', 'maint-sign', 'maint-decline', 'maint-ask'].indexOf(action) < 0) return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (['view', 'heard', 'maint-request', 'maint-sign', 'maint-decline', 'maint-ask', 'handyman-book', 'repair-ok'].indexOf(action) < 0) return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(hdr(event, 'x-portal-token')), sess = s(hdr(event, 'x-portal-session'));
@@ -432,7 +483,7 @@ exports.handler = async function(event){
   if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can do this.' });
   if (tooManyWrites(row.token || sess)) return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' });
   try {
-    const fn = { heard: heard, 'maint-request': request, 'maint-sign': sign, 'maint-decline': decline, 'maint-ask': ask }[action];
+    const fn = { heard: heard, 'maint-request': request, 'maint-sign': sign, 'maint-decline': decline, 'maint-ask': ask, 'handyman-book': hdBook, 'repair-ok': repairOk }[action];
     const r = await fn(event, row, body, A, p);
     return reply(r.status, headers, r.out);
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
@@ -455,5 +506,5 @@ async function combinedSend(item, now, A){
   try { await core().officeTodo('maint_invc_' + s(item.id), '🧾 Record combined maintenance invoice ' + number + ' (' + usd(amount) + ') — ' + s(item.jobName), parts.length + ' plan(s). Enter it in QuickBooks so the payment can be matched.'); } catch (e) {}
   return { ok: true };
 }
-exports._x9 = { resendStaff: function(o){ return resend(Object.assign({ from: 'GrayCo CRM <noreply@grayco-cs.com>' }, o)); }, view: view, heard: heard, request: request, sign: sign, decline: decline, staffAct: staffAct, maintInvoiceSend: maintInvoiceSend, readAll: readAll, planPdf: planPdf, _reset: function(){ hits.clear(); writes.clear(); } };
+exports._x9 = { hdBook: hdBook, repairOk: repairOk, ask: ask, resendStaff: function(o){ return resend(Object.assign({ from: 'GrayCo CRM <noreply@grayco-cs.com>' }, o)); }, view: view, heard: heard, request: request, sign: sign, decline: decline, staffAct: staffAct, maintInvoiceSend: maintInvoiceSend, readAll: readAll, planPdf: planPdf, _reset: function(){ hits.clear(); writes.clear(); } };
 exports.maintInvoiceSend = maintInvoiceSend;

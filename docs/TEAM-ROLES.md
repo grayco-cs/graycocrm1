@@ -118,3 +118,11 @@ A person who runs GrayCo's marketing **without seeing company data**. Who has it
 | `mkt_feature_requests` | every CRM feature request: `[{ id, title, detail, why, by, status, createdAt, approvedAt / rejectedAt, …By }]` | staff read (Supabase → gc_kv, or soc `feature_requests` for admins); written only by the server |
 
 The GrayCo Systems launcher shows him only the "Website & marketing" systems (website, news, partner, roof check, giveaway, coupon, Marketing).
+
+## 🛠 Maintenance plans (GrayCo Care) — who does what
+
+- **The 🛠 Maintenance tab** is in the menu for admins, the office and PMs (not the Marketing Manager, subs or crews).
+- **PMs sell plans** on a job (🛠 Maintenance → tick plans → Send quote) or with 🏗 Plan builder, reach out to facility and property managers from 👥 Prospects (e-mail drafts wait on ✅ Approvals; no texts), and post each visit with 📝 Post visit update (photos, notes, "+ Add repair found").
+- **The office** approves the maintenance e-mails (`maint_quote`, `maint_outreach`, `maint_repair`, `maint_reminder`, `maint_invoice` — one approval sends all monthly subscription invoices of a month), sets prices in 📦 Plans & prices, records payments (✓ paid), and runs ❄️ Snow event from the ⭐ Priority list.
+- **How the seller is paid:** 50% of the plan's profit (revenue − costs) when GrayCo's crew does the work; when it is subbed (HVAC → Rapid Air, pressure washing → Brenan Hart) 15/50/50: 15% of the revenue off for overhead, then 50% of (revenue − 15% − the sub's estimate). Credited as each payment is collected; reversed if the customer cancels within 3 months of signing. The 💵 Commission ledger in 🛠 Maintenance → Active plans shows every line.
+- **Reminders:** one month before a visit, whoever sold the plan gets a To-Do and an e-mail ("Get <plan> at <property> done this month"); 14 days ahead and on the day the PM gets a To-Do. The visits live on the 🗓 Maintenance Schedule, never on the job schedule.

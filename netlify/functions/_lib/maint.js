@@ -91,8 +91,42 @@ const TIERS = { bronze: { name: 'Bronze', discount: 0, visits: 'The plan visits'
 /* add-ons the plan builder offers on some plans (owner round 3): graffiti removal on pressure washing, an infrared scan on roof inspections */
 const ADDONS = [
   { id: 'graffiti', name: 'Graffiti removal', price: 250, on: ['wash', 'c_wash'], note: 'Graffiti removed on each visit (paint-safe methods; heavy tags quoted first).' },
+  /* owner: "Maintenance plans can offer 1 handyman day for multiple things and list those items included" — $289.99 a day
+     (set by the owner: a real price), 8 AM – 5 PM, materials billed separately; any plan; days per year; tier discount applies */
+  { id: 'handyman', name: '🔧 Handyman Day', price: 289.99, priceSet: true, unit: 'day', on: ['*'], note: 'One tech, 8 AM – 5 PM. Materials are billed separately, on top of the day price. Having materials on site before the visit lets us get more done in your day.' },
   { id: 'infrared', name: 'Infrared roof scan', price: 400, on: ['roof', 'c_roof', 'c_free', 'c_coat'], note: 'Scanner on order — book it and we will schedule the scan as soon as it arrives.' }
 ];
+const HANDYMAN_NOTE = 'Having materials on site before the visit lets us get more done in your day.';
+const HANDYMAN_TASKS = ['Caulk & sealant touch-ups', 'Door / lock / hinge adjustments', 'Drywall patch & paint touch-up', 'Light fixture & bulb replacement', 'Ceiling tile replacement',
+  'Minor plumbing (faucet, toilet flapper, supply lines)', 'Gutter & downspout clearing (single story)', 'Filter changes', 'Smoke / CO detector battery check', 'Weatherstripping',
+  'Signage / handrail tightening', 'Pressure-wash a small area', 'Minor fence / gate repair'];
+function addonFits(a, planId){ const on = a && Array.isArray(a.on) ? a.on : []; return !!a && (on.indexOf('*') >= 0 || on.indexOf(s(planId)) >= 0); }
+/* owner: MONTHLY subscriptions — the membership placeholders per tier (residential per home, commercial per building) */
+const MONTHLY = { residential: { bronze: 39, silver: 59, gold: 89 }, commercial: { bronze: 199, silver: 349, gold: 599 } };
+function monthlyOf(c){ return Math.ceil(num(c && c.price) / 12 * 100) / 100; }
+/* owner: ROUTING — visits in the same area on the area's maintenance day */
+const ROUTE = [['Bartlett', /^3813[345]$/, /bartlett/i], ['Germantown', /^3813[89]$/, /germantown/i], ['Collierville', /^38017$/, /collierville/i], ['Cordova', /^380(16|18)$/, /cordova/i],
+  ['Arlington / Lakeland', /^38002$/, /arlington|lakeland/i], ['Millington', /^38053$/, /millington/i], ['Southaven / Horn Lake', /^386(37|71|72)$/, /southaven|horn lake/i], ['Olive Branch', /^38654$/, /olive branch/i],
+  ['Hernando / DeSoto', /^386(32|41|51|80)$/, /hernando|nesbit|walls/i], ['Fayette', /^380(28|36|46|57|60|66|68|76)$/, /somerville|oakland|rossville|moscow|piperton|gallaway|la ?grange/i],
+  ['Tipton', /^380(04|11|15|19|23|49|58)$/, /atoka|munford|covington|brighton|mason/i], ['West Memphis / Marion', /^723\d\d$/, /west memphis|marion|earle/i], ['Memphis', /^381\d\d$/, /memphis/i]];
+function routeArea(addr){ const a = s(addr), z = (/\b(\d{5})(?:-\d{4})?\s*$/.exec(a) || /\b(3[78]\d{3}|72\d{3})\b/.exec(a) || [])[1] || ''; const hit = ROUTE.find(function(r){ return z ? r[1].test(z) : r[2].test(a); }); return hit ? hit[0] : 'Other'; }
+function onAreaDay(date, area, days){ const wd = days && days[area]; if (wd == null || s(wd) === '') return date; const d = new Date(s(date) + 'T12:00:00Z'); if (isNaN(d)) return date;
+  let best = null; for (let k = -3; k <= 3; k++) { const x = new Date(d.getTime() + k * 864e5); if (x.getUTCDay() === parseInt(wd, 10) && (best === null || Math.abs(k) < Math.abs(best))) best = k; }
+  return best === null ? date : new Date(d.getTime() + best * 864e5).toISOString().slice(0, 10); }
+/* the commission LEDGER (owner): credited as each payment is collected (an invoice marked paid), clawed back when the customer
+   cancels within 3 months of signing. Per payment: self-performed 50% × (payment − that period's share of the costs);
+   subbed 50% × (payment − 15% × payment − that period's share of the sub's estimate). */
+function commissionLines(c){
+  const bills = billsPerYear(c), sub = s(c && c.performer) === 'sub', out = [];
+  arr(c && c.invoices).filter(function(v){ return v.status === 'paid'; }).forEach(function(v){
+    const pay = num(v.amount), share = (sub ? num(c.subCost) : num(c.cost)) / bills, base = sub ? pay - 0.15 * pay - share : pay - share;
+    out.push({ contractId: s(c.id), period: s(v.year), at: s(v.paidAt || v.sentAt || v.at).slice(0, 10), seller: s(c.soldBy), payment: pay, costShare: Math.round(share * 100) / 100, amount: Math.max(0, Math.round(base * 50) / 100), rule: sub ? '15/50/50' : '50/50' });
+  });
+  const credited = out.reduce(function(t, x){ return t + x.amount; }, 0);
+  if (s(c && c.status) === 'cancelled' && c.signedAt && c.cancelledAt && Date.parse(c.cancelledAt) - Date.parse(c.signedAt) < 92 * 864e5 && credited > 0)
+    out.push({ contractId: s(c.id), period: 'clawback', at: s(c.cancelledAt).slice(0, 10), seller: s(c.soldBy), payment: 0, costShare: 0, amount: -Math.round(credited * 100) / 100, rule: 'cancelled within 3 months' });
+  return out;
+}
 /* the visits a plan year holds (owner round 3: "once signed, visits are auto-scheduled for the year per each service's frequency") */
 function planVisits(freq, from){
   const f = FREQS[freq] ? freq : 'yearly', first = firstVisit(f, from); if (!first) return [];
@@ -197,7 +231,7 @@ function firstVisit(freq, at){
 function freqOf(x){ const f = low(x && x.freq); if (FREQS[f]) return f; const v = parseInt(x && x.visits, 10) || 1; return v >= 4 ? 'quarterly' : v >= 2 ? 'twice' : 'yearly'; }
 function freqLabel(f){ return FREQS[f] || FREQS.yearly; }
 /* how many invoices a year: a contract quoted as a twice-a-year / quarterly plan bills 2 / 4 times (older contracts once) */
-function billsPerYear(c){ const f = s(c && c.freq); if (f === 'twice' || f === 'quarterly') return FREQ_N[f]; const n = parseInt(c && c.billsPerYear, 10); return n === 2 || n === 4 ? n : 1; }
+function billsPerYear(c){ if (s(c && c.billing) === 'monthly') return 12; const f = s(c && c.freq); if (f === 'twice' || f === 'quarterly') return FREQ_N[f]; const n = parseInt(c && c.billsPerYear, 10); return n === 2 || n === 4 ? n : 1; }
 function marketOf(x){ return low(x && x.market) === 'commercial' ? 'commercial' : 'residential'; }
 /* the plan's words for the customer (an old "Price: [PRICE] per year." line is taken out) */
 function plainIncludes(t){ return s(t).replace(/\s*Price:\s*\[[^\]]*\][^.]*\.?/i, '').trim(); }
@@ -218,6 +252,7 @@ function settingsOf(v){
     const pr = x.price != null && s(x.price) !== '' ? num(x.price) : (def && o.catalog !== CATALOG_V ? def.price : 0), rc = num(x.refCredit);
     return { id: id, name: s(x.name).slice(0, 80) || 'Maintenance plan', includes: s(x.includes).slice(0, 1200), freq: f, visits: FREQ_N[f] || 1, market: marketOf(x.market ? x : def),
       price: pr > 0 && pr <= 100000 ? Math.round(pr * 100) / 100 : 0, refCredit: rc > 0 && rc <= 5000 ? Math.round(rc * 100) / 100 : (def && def.refCredit) || 0,
+      costEst: Math.max(0, num(x.costEst)),   /* the visit cost estimate per year (the monthly floor check) */
       performer: s(x.performer || (def && def.performer)) === 'sub' ? 'sub' : 'self', sub: s(x.sub != null ? x.sub : (def && def.sub) || '').slice(0, 80), priceSet: x.priceSet === true,
       on: x.on !== false, kinds: (function(k){ return k.length ? k : ['any']; })(Array.isArray(x.kinds) ? x.kinds.map(low).filter(Boolean).slice(0, 8) : []) };
   }) : DEFAULT_PLANS.map(function(x){ return Object.assign({ market: 'residential' }, x); });
@@ -226,9 +261,12 @@ function settingsOf(v){
     if (!plans.some(function(x){ return x.id === d.id || (low(x.name) === low(d.name) && marketOf(x) === marketOf(d)); })) plans.push(Object.assign({ market: 'residential' }, d));
   });
   const offerOn = Array.isArray(o.offerOn) && o.offerOn.length ? o.offerOn.map(low).filter(Boolean) : ['residential', 'insurance'];
-  const addOns = ADDONS.map(function(d){ const x = arr(o.addOns).find(function(y){ return s(y.id) === d.id; }) || {}; const pr = x.price != null && s(x.price) !== '' ? num(x.price) : d.price; return Object.assign({}, d, { price: Math.max(0, pr), name: s(x.name || d.name).slice(0, 80) }); });
+  const addOns = ADDONS.map(function(d){ const x = arr(o.addOns).find(function(y){ return s(y.id) === d.id; }) || {}; const pr = x.price != null && s(x.price) !== '' ? num(x.price) : d.price; return Object.assign({}, d, { price: Math.max(0, pr), name: s(x.name || d.name).slice(0, 80), priceSet: d.priceSet === true || x.priceSet === true || (x.price != null && num(x.price) !== d.price) }); });
   return { plans: plans, offerOn: offerOn, catalog: CATALOG_V, known: DEFAULT_PLANS.map(function(d){ return d.id; }), tiers: tiersOf(o.tiers), addOns: addOns, letters: o.letters && typeof o.letters === 'object' ? o.letters : {}, products: itemsOf(o.products, PRODUCTS, 20), unitPrices: itemsOf(o.unitPrices, UNIT_PRICES, 40),
     templates: templatesOf(o.templates), commercialFirst: o.commercialFirst === true,
+    handymanTasks: (Array.isArray(o.handymanTasks) && o.handymanTasks.length ? o.handymanTasks : HANDYMAN_TASKS).map(s).filter(Boolean).slice(0, 40).map(function(x){ return x.slice(0, 100); }),
+    monthly: (function(v){ const out = {}; ['residential', 'commercial'].forEach(function(m){ out[m] = {}; ['bronze', 'silver', 'gold'].forEach(function(k){ const x = v && v[m] && v[m][k]; out[m][k] = x != null && s(x) !== '' ? Math.max(0, num(x)) : MONTHLY[m][k]; }); }); return out; })(o.monthly),
+    areaDays: (function(v){ const out = {}; if (v && typeof v === 'object') Object.keys(v).slice(0, 30).forEach(function(k){ const n = parseInt(v[k], 10); if (n >= 0 && n <= 6) out[s(k).slice(0, 40)] = n; }); return out; })(o.areaDays),
     pamphletPhotos: (function(v){ const out = {}; if (v && typeof v === 'object') Object.keys(v).slice(0, 8).forEach(function(k){ out[k] = (Array.isArray(v[k]) ? v[k] : []).map(s).filter(function(r){ return /^sb:crm-files\/[A-Za-z0-9._\/-]+$/.test(r); }).slice(0, 3); }); return out; })(o.pamphletPhotos), updatedAt: s(o.updatedAt), by: s(o.by), saved: !!(o && o.plans) };
 }
 /* the work on the job, for which plans fit (a roof job → roof + gutter + home) */
@@ -281,4 +319,4 @@ function heardChannel(v){
 }
 function nextYear(iso, months){ const d = new Date(iso || Date.now()); if (isNaN(d)) return ''; d.setUTCMonth(d.getUTCMonth() + (months || 12)); return d.toISOString().slice(0, 10); }
 
-module.exports = { commission, areaOf, AREA, ADDONS, planVisits, TIERS, tiersOf, tierOf, bestTier, discounted, templatesOf, nextFrom, priorityList, matchPriority, digits, CATALOG_V, FREQS, FREQ_N, marketOf, firstVisit, freqOf, freqLabel, billsPerYear, plainIncludes, PLANS_KEY, LIST_KEY, HEARD_KEY, DEFAULT_PLANS, HEARD_OPTS, settingsOf, plansFor, eligible, workOf, groupOf, contractsFor, offerLine, heardNorm, heardChannel, nextYear, num };
+module.exports = { HANDYMAN_NOTE, HANDYMAN_TASKS, addonFits, MONTHLY, monthlyOf, ROUTE, routeArea, onAreaDay, commissionLines, commission, areaOf, AREA, ADDONS, planVisits, TIERS, tiersOf, tierOf, bestTier, discounted, templatesOf, nextFrom, priorityList, matchPriority, digits, CATALOG_V, FREQS, FREQ_N, marketOf, firstVisit, freqOf, freqLabel, billsPerYear, plainIncludes, PLANS_KEY, LIST_KEY, HEARD_KEY, DEFAULT_PLANS, HEARD_OPTS, settingsOf, plansFor, eligible, workOf, groupOf, contractsFor, offerLine, heardNorm, heardChannel, nextYear, num };

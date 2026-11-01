@@ -30,6 +30,7 @@ async function run(now){
   let XV = {}; try { XV = await C.kvRead([TB.VISITS_KEY, TB.PORT_KEY]); } catch (e) {}
   const PORTS = {}; arr(XV[TB.PORT_KEY]).forEach(function(x){ if (x && x.id) PORTS[s(x.id)] = x; });
   const combos = {};   /* a portfolio with one combined invoice: its parts, by billing month */
+  const batches = {};  /* monthly subscriptions, by month */
   for (const c of A.list) {
     if (c.status !== 'signed') continue;
     const p = C.findProject(A.data, c.pid); if (!p) continue;
@@ -41,7 +42,7 @@ async function run(now){
        "1.1", "1.2", "2.1" …);
        every plan on a job has its own invoices. */
     const signed = s(c.signedAt); if (!signed || !(M.num(c.price) > 0)) continue;
-    const bills = M.billsPerYear(c), step = 12 / bills, amount = Math.round(M.num(c.price) / bills * 100) / 100;
+    const bills = M.billsPerYear(c), step = 12 / bills, amount = bills === 12 ? M.monthlyOf(c) : Math.round(M.num(c.price) / bills * 100) / 100;
     for (let k = 0; k < 30 * bills; k++) {
       const due = addMonths(signed, step * k); if (!due) break;
       if (due.getTime() - (k ? 14 * 864e5 : 0) > now) break;
@@ -58,6 +59,11 @@ async function run(now){
       const to = s(p.clientEmail || p.customerEmail || p.email);
       const id = 'appr_mti_' + c.id + '_' + year.replace('.', '_'), period = due.toISOString().slice(0, 10) + ' – ' + addMonths(due.toISOString(), step).toISOString().slice(0, 10);
       const html = '<p>Hi ' + (s(p.client).split(/\s+/)[0] || 'there') + ',</p><p>Here is the invoice for ' + label + ' of your <b>' + s(c.planName) + '</b> (' + period + '): <b>' + usd(amount) + '</b>' + (bills > 1 ? ' (part ' + (k % bills + 1) + ' of ' + bills + ' of the ' + usd(c.price) + ' yearly price)' : '') + '. The invoice is attached.</p><p>Thank you for letting GrayCo take care of your home! Questions? Call ' + (pm ? pm.name : 'us') + ' or the office at 901-585-0944.</p>';
+      if (bills === 12 && to) {   /* owner: monthly subscriptions → ONE approval a month for all of them */
+        const mo = due.toISOString().slice(0, 7);
+        (batches[mo] = batches[mo] || []).push({ contractId: c.id, year: year, amount: amount, period: period, to: to, job: job, planName: s(c.planName), subject: 'Your GrayCo maintenance plan invoice — ' + s(c.planName) + ', ' + mo, html: html.replace(/<b>[^<]*<\/b>\. The invoice/, '<b>' + usd(amount) + '</b> (your monthly subscription, ' + mo + '). The invoice') });
+        continue;
+      }
       let queued = false;
       if (to) queued = await C.queueApproval({ id: id, kind: 'maint_invoice', pid: c.pid, jobName: job, pm: pm, to: to, subject: 'Your GrayCo maintenance plan invoice — ' + s(c.planName) + ', ' + label, html: html,
         attachments: [{ name: 'Invoice PDF (made when approved)', kind: 'maint-pdf' }], meta: { contractId: c.id, planName: s(c.planName), year: year, amount: amount, period: period } });
@@ -71,6 +77,17 @@ async function run(now){
         out.invoices++;
       }
     }
+  }
+  for (const mo of Object.keys(batches)) {
+    const parts = batches[mo], id = 'appr_mtib_' + mo + '_' + require('crypto').createHash('sha256').update(parts.map(function(x){ return x.contractId + ':' + x.year; }).sort().join('|')).digest('hex').slice(0, 10);
+    const label = new Date(mo + '-15T12:00:00Z').toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }), total = Math.round(parts.reduce(function(t, x){ return t + x.amount; }, 0) * 100) / 100;
+    const q = await C.queueApproval({ id: id, kind: 'maint_invoice', pid: '', jobName: 'Maintenance subscriptions', pm: null, to: parts.length + ' customers', title: '🧾 Send all ' + parts.length + ' subscription invoices for ' + label,
+      subject: 'Send all ' + parts.length + ' subscription invoices for ' + label, html: '<p>Monthly maintenance subscription invoices for ' + label + ' (' + usd(total) + ' in all):</p><ul>' + parts.map(function(x){ return '<li>' + x.job + ' — ' + x.planName + ': ' + usd(x.amount) + ' → ' + x.to + '</li>'; }).join('') + '</ul><p>Approve once: each customer gets their own invoice (PDF) with the usual ways to pay.</p>',
+      attachments: [{ name: parts.length + ' invoice PDFs (made when approved)', kind: 'maint-pdf' }], meta: { batch: true, month: mo, parts: parts, amount: total } });
+    if (!q) continue;
+    for (const x of parts) await C.kvListUpdate(M.LIST_KEY, function(l){ const i = l.findIndex(function(y){ return s(y.id) === s(x.contractId); }); if (i < 0 || arr(l[i].invoices).some(function(v){ return s(v.year) === x.year; })) return null;
+      l[i].invoices = arr(l[i].invoices).concat([{ year: x.year, amount: x.amount, period: x.period, approvalId: id, batch: true, at: new Date(now).toISOString(), status: 'waiting' }]); return { list: l }; });
+    out.invoices++;
   }
   /* patch MAINTPLUS: one combined invoice per portfolio and month (each part stays on its own plan) */
   for (const key of Object.keys(combos)) {

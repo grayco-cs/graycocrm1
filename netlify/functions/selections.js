@@ -332,6 +332,22 @@ function buildPdf(blocks){
       y -= 5; ops.push('0.89 0.86 0.80 RG 0.5 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); return;
     }
     if (b.t === 'p') { const l = wrap(b.text, b.size === 9 ? 105 : 95); need(l.length * 13); l.forEach(function(x){ y -= 13; text(x, b.size || 10, !!b.bold, M, b.muted ? '0.33 0.38 0.44' : null); }); return; }
+    if (b.t === 'band') {   /* patch MAINTPLUS: a colored band with a headline (pamphlets) */
+      const hh = b.h || 34; need(hh + 6); y -= hh; ops.push((b.fill || '0.06 0.11 0.18') + ' rg ' + M + ' ' + y.toFixed(1) + ' ' + (W - 2 * M) + ' ' + hh + ' re f');
+      const sz = b.size || 16; ops.push('BT /F2 ' + sz + ' Tf ' + (b.color || '1 1 1') + ' rg ' + (M + 14) + ' ' + (y + hh / 2 - sz / 2.8 + (b.sub ? 5 : 0)).toFixed(1) + ' Td ' + pdfStr(b.text) + ' Tj ET');
+      if (b.sub) ops.push('BT /F1 9 Tf ' + (b.color || '1 1 1') + ' rg ' + (M + 14) + ' ' + (y + 6).toFixed(1) + ' Td ' + pdfStr(b.sub) + ' Tj ET');
+      y -= 8; return;
+    }
+    if (b.t === 'cols') {   /* patch MAINTPLUS: side-by-side cards (the tier comparison) */
+      const cols = b.cols || [], n = Math.max(1, cols.length), gap = 8, cw = (W - 2 * M - gap * (n - 1)) / n, hh = b.h || 110; need(hh + 8); y -= hh;
+      cols.forEach(function(cl, i){ const x0 = M + i * (cw + gap);
+        ops.push((cl.fill || '0.97 0.96 0.93') + ' rg ' + x0.toFixed(1) + ' ' + y.toFixed(1) + ' ' + cw.toFixed(1) + ' ' + hh + ' re f');
+        if (cl.hl) ops.push('0.83 0.63 0.09 RG 2 w ' + x0.toFixed(1) + ' ' + y.toFixed(1) + ' ' + cw.toFixed(1) + ' ' + hh + ' re S');
+        let yy = y + hh - 18; ops.push('BT /F2 12 Tf ' + (cl.color || '0.06 0.11 0.18') + ' rg ' + (x0 + 8).toFixed(1) + ' ' + yy.toFixed(1) + ' Td ' + pdfStr(cl.title) + ' Tj ET');
+        (cl.lines || []).forEach(function(ln, k){ wrap(ln, Math.max(18, Math.floor(cw / 4.6))).forEach(function(x){ yy -= 12; if (yy > y + 4) ops.push('BT /' + (k === 0 && cl.boldFirst ? 'F2' : 'F1') + ' 9 Tf 0.12 0.16 0.22 rg ' + (x0 + 8).toFixed(1) + ' ' + yy.toFixed(1) + ' Td ' + pdfStr(x) + ' Tj ET'); }); });
+      });
+      y -= 8; return;
+    }
     if (b.t === 'photos') {   /* patch MAINTPLUS: up to 3 photos side by side (JPEG: { w, h, bin }) — a light placeholder box where there is none */
       const n = Math.max(1, (b.photos || []).length), hh = b.h || 110, gap = 10, bw = (W - 2 * M - gap * (n - 1)) / n; need(hh + 10); y -= hh;
       (b.photos || []).forEach(function(ph, i){ const x0 = M + i * (bw + gap);

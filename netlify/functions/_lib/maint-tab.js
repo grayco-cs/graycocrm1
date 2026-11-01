@@ -37,10 +37,16 @@
 const M = require('./maint.js');
 const PROS_KEY = 'gc_maint_prospects', PROPS_KEY = 'gc_maint_props', VISITS_KEY = 'gc_maint_visits', PORT_KEY = 'gc_maint_portfolios';
 /* the Maintenance Schedule rows for a newly signed plan: one plan year, by its frequency */
-function visitRows(c, p, from){
-  const prop = s(p && (p.address || p.jobAddress)) || s(p && p.name);
-  return M.planVisits(s(c.freq) || 'yearly', from || c.signedAt).map(function(d, i){ return { id: 'mv_' + s(c.id) + '_' + d, contractId: s(c.id), pid: s(c.pid), portfolioId: s(c.portfolioId), planId: s(c.planId), planName: s(c.planName),
-    property: prop, customer: s(p && (p.client || p.clientName)), date: d, oncall: s(c.freq) === 'winter', pm: s(p && p.pm), soldBy: s(c.soldBy), status: 'planned', n: i + 1, createdAt: new Date().toISOString() }; });
+function visitRows(c, p, from, areaDays){
+  const prop = s(p && (p.address || p.jobAddress)) || s(p && p.name), area = M.routeArea(p && (p.address || p.jobAddress));
+  const rows = M.planVisits(s(c.freq) || 'yearly', from || c.signedAt).map(function(d){ return M.onAreaDay(d, area, areaDays); }).map(function(d, i){ return { id: 'mv_' + s(c.id) + '_' + d, area: area, contractId: s(c.id), pid: s(c.pid), portfolioId: s(c.portfolioId), planId: s(c.planId), planName: s(c.planName),
+    property: prop, customer: s(p && (p.client || p.clientName)), date: d, oncall: s(c.freq) === 'winter', pm: s(p && p.pm), soldBy: s(c.soldBy), sub: s(c.performer) === 'sub' ? s(c.sub) : '', status: 'planned', n: i + 1, createdAt: new Date().toISOString() }; });
+  /* the 🔧 Handyman Day(s): their own visits, spread over the year, with the tasks the day covers */
+  const hd = c.handyman && c.handyman.days > 0 ? c.handyman : null;
+  if (hd && from !== 'no-hd') for (let k = 0; k < hd.days; k++) { const d = M.onAreaDay(M.nextYear(s(from || c.signedAt), Math.max(1, Math.round(12 / hd.days * k + 1))), area, areaDays);
+    rows.push({ id: 'mv_' + s(c.id) + '_hd' + k + '_' + d, area: area, contractId: s(c.id), pid: s(c.pid), portfolioId: s(c.portfolioId), planId: s(c.planId), planName: '🔧 Handyman Day (' + s(c.planName) + ')', kind: 'handyman', hours: '8 AM – 5 PM',
+      tasks: (Array.isArray(hd.tasks) ? hd.tasks : []).concat(Array.isArray(hd.other) ? hd.other : []), property: prop, customer: s(p && (p.client || p.clientName)), date: d, pm: s(p && p.pm), soldBy: s(c.soldBy), status: 'planned', n: k + 1, createdAt: new Date().toISOString() }); }
+  return rows;
 }
 const STAGES = ['Prospect', 'Contacted', 'Free inspection booked', 'Inspection done', 'Proposal sent', 'Won', 'Lost'];
 function s(v){ return v == null ? '' : String(v).trim(); }
@@ -74,7 +80,8 @@ function make(ctx){
   async function readExtra(){ const d = await C().kvRead([PROS_KEY, PROPS_KEY, VISITS_KEY, PORT_KEY]); return { prospects: arr(d[PROS_KEY]), props: d[PROPS_KEY] && typeof d[PROPS_KEY] === 'object' && !Array.isArray(d[PROPS_KEY]) ? d[PROPS_KEY] : {}, visits: arr(d[VISITS_KEY]), portfolios: arr(d[PORT_KEY]) }; }
   /* a signed plan → its year of visits on the Maintenance Schedule (once per contract) */
   async function scheduleFor(c, p){
-    const rows = visitRows(c, p); if (!rows.length) return 0;
+    let ad = {}; try { ad = (await ctx.readAll()).settings.areaDays || {}; } catch (e) {}
+    const rows = visitRows(c, p, null, ad); if (!rows.length) return 0;
     const r = await ctx.listUpdate(VISITS_KEY, function(l){ if (l.some(function(v){ return s(v.contractId) === s(c.id) && v.status !== 'cancelled'; })) return null;
       return { list: l.concat(rows), check: function(b){ return b.some(function(v){ return v.id === rows[0].id; }); } }; });
     return r.ok ? rows.length : 0;
@@ -97,8 +104,9 @@ function make(ctx){
     if (a === 'tab') {
       const X = await readExtra();
       const gold = {}; A.list.forEach(function(c){ if (c.status === 'signed' && M.tierOf(c) === 'gold') { const p = ctx.findProject(A.data, c.pid) || {}; gold[s(c.pid)] = { pid: s(c.pid), name: s(p.client || p.name), since: s(c.signedAt) }; } });
+      const ledger = [].concat.apply([], A.list.map(M.commissionLines));
       const comm = {}, area = {}; A.list.forEach(function(c){ if (c.status === 'signed' || c.status === 'quoted') comm[c.id] = M.commission(c); const p = ctx.findProject(A.data, c.pid); if (p && area[s(c.pid)] === undefined) area[s(c.pid)] = M.areaOf(p.address || p.jobAddress); });
-      return { status: 200, out: { ok: true, commission: comm, area: area, contracts: A.list, settings: A.settings, prospects: X.prospects, props: X.props, stages: STAGES, visits: X.visits, portfolios: X.portfolios,
+      return { status: 200, out: { ok: true, ledger: ledger, routeAreas: M.ROUTE.map(function(r){ return r[0]; }), commission: comm, area: area, contracts: A.list, settings: A.settings, prospects: X.prospects, props: X.props, stages: STAGES, visits: X.visits, portfolios: X.portfolios,
         priority: M.priorityList(A.list, A.data.projects, A.settings), goldEntries: Object.keys(gold).map(function(k){ return gold[k]; }), letters: require('./maint-docs.js').lettersOf(A.settings.letters), audiences: Object.keys(require('./maint-docs.js').AUD) } };
     }
     if (a === 'area') return { status: 200, out: Object.assign({ ok: true }, M.areaOf(body.address)) };
@@ -115,10 +123,15 @@ function make(ctx){
         if (body.sub != null) c.sub = clip(body.sub, 80); if (body.subCost != null) c.subCost = money(body.subCost); if (body.cost != null) c.cost = money(body.cost); });
       return r.ok && r.result === 'ok' ? { status: 200, out: { ok: true, contract: r.c, commission: M.commission(r.c) } } : { status: 404, out: { ok: false, error: 'No such plan.' } };
     }
+    if (a === 'invoice-paid') {   /* a payment collected → the seller's commission for that period is credited */
+      if (!staffOk) return { status: 403, out: { ok: false, error: 'Only an admin or the office records payments.' } };
+      const r = await ctx.contractChange(s(body.contractId), function(c){ let n = 0; c.invoices = arr(c.invoices).map(function(v){ if (s(v.year) !== s(body.year) || v.status === 'paid') return v; n++; return Object.assign({}, v, { status: 'paid', paidAt: ymd(body.date) || nowIso().slice(0, 10), paidBy: who.email }); }); if (!n) return 'none'; });
+      return r.ok && r.result === 'ok' ? { status: 200, out: { ok: true, lines: M.commissionLines(r.c) } } : { status: 404, out: { ok: false, error: 'No such invoice.' } };
+    }
     if (a === 'settings-set') {
       if (!staffOk) return { status: 403, out: { ok: false, error: 'Only an admin or the office changes these.' } };
       const v = body.set && typeof body.set === 'object' ? body.set : {}, patch = {};
-      ['tiers', 'products', 'unitPrices', 'templates', 'letters', 'addOns', 'pamphletPhotos'].forEach(function(k){ if (v[k] !== undefined) patch[k] = v[k]; });
+      ['tiers', 'products', 'unitPrices', 'templates', 'letters', 'addOns', 'pamphletPhotos', 'handymanTasks', 'monthly', 'areaDays'].forEach(function(k){ if (v[k] !== undefined) patch[k] = v[k]; });
       if (v.commercialFirst !== undefined) patch.commercialFirst = v.commercialFirst === true;
       const st = await saveSettings(A, patch, who);
       return st ? { status: 200, out: { ok: true, settings: st } } : { status: 502, out: { ok: false, error: 'Could not save.' } };
@@ -201,9 +214,11 @@ function make(ctx){
         if (!q2) { repairId = ''; try { await C().officeTodo('maint_rep_' + c0.id + '_' + at.slice(0, 10), '🔧 Repair quote to send by hand — ' + job, repairs.map(function(x){ return x.desc + ' ' + usd(x.net); }).join('; ') + ' (no customer e-mail on file).'); } catch (e) {} }
         repairs.forEach(function(x){ x.approvalId = repairId; });
       }
+      const isHd = !!s(body.visitId) && (await readExtra()).visits.some(function(v){ return v.id === s(body.visitId) && v.kind === 'handyman'; });
       const r = await ctx.contractChange(c0.id, function(c){
         const by = who.name || who.email;
-        if (body.done !== false) { const v = { at: at, by: by, note: clip(text, 400), postId: postId, photos: photos.length };
+        if (body.done !== false && isHd) { c.visits = arr(c.visits).concat([{ at: at, by: by, note: clip(text, 400), postId: postId, photos: photos.length, kind: 'handyman' }]); c.history = arr(c.history).concat([{ at: at, by: by, what: '🔧 Handyman Day done' }]); }
+        else if (body.done !== false) { const v = { at: at, by: by, note: clip(text, 400), postId: postId, photos: photos.length };
           c.visits = arr(c.visits).concat([v]); c.lastVisit = at.slice(0, 10); c.nextVisit = M.nextFrom(s(c.freq) || (c.visitsPerYear >= 4 ? 'quarterly' : c.visitsPerYear >= 2 ? 'twice' : 'yearly'), at);
           c.history = arr(c.history).concat([{ at: at, by: by, what: 'Visit done' + (postId ? ' — update on ✅ Approvals' : '') }]); }
         if (repairs.length) c.repairs = arr(c.repairs).concat(repairs).slice(-60);
@@ -212,10 +227,10 @@ function make(ctx){
         const today = at.slice(0, 10);
         await ctx.listUpdate(VISITS_KEY, function(l){
           let i = s(body.visitId) ? l.findIndex(function(v){ return v.id === s(body.visitId); }) : -1;
-          if (i < 0) { const open = l.map(function(v, k){ return [v, k]; }).filter(function(x){ return s(x[0].contractId) === s(c0.id) && x[0].status === 'planned'; }).sort(function(a, b){ return s(a[0].date) < s(b[0].date) ? -1 : 1; }); if (open.length) i = open[0][1]; }
-          if (i >= 0) { l[i] = Object.assign({}, l[i], { status: 'done', doneAt: at, doneBy: who.name || who.email, note: clip(text, 300), postId: postId }); }
+          if (i < 0) { const open = l.map(function(v, k){ return [v, k]; }).filter(function(x){ return s(x[0].contractId) === s(c0.id) && x[0].status === 'planned' && x[0].kind !== 'handyman'; }).sort(function(a, b){ return s(a[0].date) < s(b[0].date) ? -1 : 1; }); if (open.length) i = open[0][1]; }
+          if (i >= 0) { l[i] = Object.assign({}, l[i], { status: 'done', doneAt: at, doneBy: who.name || who.email, note: clip(text, 300), postId: postId, tasksDone: (Array.isArray(body.tasksDone) ? body.tasksDone : []).map(function(x){ return clip(x, 120); }).slice(0, 40) }); }
           else l.push(Object.assign(visitRows(c0, p, at)[0] || {}, { id: 'mv_' + c0.id + '_' + today + '_x', date: today, status: 'done', doneAt: at, doneBy: who.name || who.email, note: clip(text, 300), postId: postId }));
-          if (!l.some(function(v){ return s(v.contractId) === s(c0.id) && v.status === 'planned'; })) { const next = r.c && r.c.nextVisit ? visitRows(Object.assign({}, c0, { freq: c0.freq || 'yearly' }), p, new Date(Date.parse(r.c.nextVisit + 'T12:00:00Z') - 864e5 * 1).toISOString()) : [];
+          if (!l.some(function(v){ return s(v.contractId) === s(c0.id) && v.status === 'planned' && v.kind !== 'handyman'; })) { const next = r.c && r.c.nextVisit ? visitRows(Object.assign({}, c0, { freq: c0.freq || 'yearly', handyman: null }), p, new Date(Date.parse(r.c.nextVisit + 'T12:00:00Z') - 864e5 * 1).toISOString(), A.settings.areaDays) : [];
             next.forEach(function(v){ if (!l.some(function(x){ return x.id === v.id; })) l.push(v); }); }
           return { list: l };
         });
@@ -269,7 +284,7 @@ function make(ctx){
       const id = s(x.id) || rid('pf_'); let rec = null;
       const r = await ctx.listUpdate(PORT_KEY, function(l){ const i = l.findIndex(function(p){ return s(p.id) === id; }), old = i >= 0 ? l[i] : { id: id, createdAt: nowIso(), createdBy: who.email };
         rec = Object.assign({}, old, { name: clip(x.name, 120), contact: clip(x.contact, 120), email: okEmail(x.email) ? s(x.email) : s(old.email), phone: clip(x.phone, 40), combined: x.combined === true,
-          pids: Array.isArray(x.pids) ? x.pids.map(s).filter(Boolean).slice(0, 200) : arr(old.pids), updatedAt: nowIso() });
+          pids: Array.isArray(x.pids) ? x.pids.map(s).filter(Boolean).slice(0, 200) : (Array.isArray(old.pids) ? old.pids : []), updatedAt: nowIso() });
         if (i >= 0) l[i] = rec; else l.push(rec); return { list: l }; });
       if (r.ok && rec) for (const c of A.list.filter(function(c){ return rec.pids.indexOf(s(c.pid)) >= 0 && s(c.portfolioId) !== id && !/^(cancelled|declined)$/.test(s(c.status)); })) await ctx.contractChange(c.id, function(y){ y.portfolioId = id; });
       return r.ok ? { status: 200, out: { ok: true, portfolio: rec } } : { status: 503, out: { ok: false, error: 'Could not save — try again.' } };
