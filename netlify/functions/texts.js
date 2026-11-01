@@ -9,6 +9,7 @@
 //   POST ?settings=1 → admins: save them
 //   GET/POST ?alerts=1 → admins: 📱 Text alerts to cell phones (patch SMSALERT; _lib/smsalert.js)
 //   POST ?try=1      → admins: { text, pid? } — which answer would go back (nothing is sent)
+//   GET/POST ?fieldcall=1 → staff: 📞 call a job's customer from the GrayCo number (patch FIELDCALL, _lib/fieldcall.js)
 //   GET  ?callchain=1 → admins: 📞 Call order (patch CALLCHAIN, _lib/callorder.js): the saved order (or the defaults), the
 //                      people with a phone, who would ring now, the last 50 calls (patch CALLSCREEN: menu answer, outcome);
 //                      POST ?callchain=1 { settings } → save it (order, ring seconds, screening, blocked numbers)
@@ -101,6 +102,17 @@ exports.handler = async function(event){
     if (m === 'POST' && qs.send) {
       let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
       const r = await send(who, b); return J(r.code, r.body, C);
+    }
+    if (qs.fieldcall) {   /* patch FIELDCALL: 📞 call the job's customer from the GrayCo number (Twilio calls my own phone first) */
+      const FC = require('./_lib/fieldcall.js');
+      let paused = true; try { paused = await require('./_lib/pause').isPaused(); } catch (e) {}
+      let data = {}; try { data = await core().kvRead(m === 'POST' ? ['projects', 'users'] : ['users']); } catch (e) {}
+      if (m === 'GET') return J(200, FC.status({ who, users: data.users, env, paused }), C);
+      if (m === 'POST') {
+        let b = {}; try { b = JSON.parse(event.body || '{}') || {}; } catch (e) { return J(400, { ok: false, error: 'Not JSON.' }, C); }
+        const r = await FC.start({ who, pid: b.pid, data, env, paused, fetch: typeof exports._fetch === 'function' ? exports._fetch : fetch, hookUrl: MC().hookUrl });
+        return J(r.code, r.body, C);
+      }
     }
     if (qs.callchain) {   /* patch CALLCHAIN */
       if (!(who.admin || who.office)) return J(403, { ok: false, error: 'Only an admin or the office can change the call order.' }, C);   /* patch OFFICEFULL */
