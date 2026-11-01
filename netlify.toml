@@ -393,6 +393,13 @@
   status = 200
   force = true
 
+# patch PORTALREQ: portal.html loads portal-req.js (Request a change / a new project, My requests) — before the catch-all below
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-req.js"
+  to = "/portal-req.js"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"

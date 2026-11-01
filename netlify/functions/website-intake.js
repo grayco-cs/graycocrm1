@@ -708,6 +708,34 @@ exports.fromReferral = async function(o){
   return { ok: true, id: r.id, action: r.action };
 };
 
+/* patch PORTALREQ: "🏗 Request a new project" from a signed-in customer / GC / property manager's portal → ONE lead on the
+   Lead Inbox (its routing, the new-lead alert; an emergency takes the emergency path as it is), linked to that customer
+   (customerId, patch CUSTALL — never a name alone), source "Portal request". No spam / sales filter: a known customer. */
+const PORTAL_SOURCE = 'Portal request';
+exports.fromPortalRequest = async function(o){
+  o = o || {};
+  const em = o.urgency === 'emergency';
+  const f = readForm({ type: o.leadKind === 'commercial' ? 'commercial' : o.leadKind === 'insurance' ? 'storm' : 'estimate', name: o.name, email: o.email, phone: o.phone, address: o.address,
+    message: o.text, service: o.workLabel, company: o.company, urgency: em ? 'Emergency' : o.urgency === 'soon' ? 'Soon' : 'Normal' });
+  if (o.company) f.company = clip(o.company, 120);
+  const sid = crypto.createHash('sha256').update('portalreq|' + s(o.reqId)).digest('hex').slice(0, 24);
+  const who = o.portal === 'gc' ? 'the GC project page' : o.portal === 'pm' ? 'the property manager\'s portal' : 'the customer portal';
+  const notes = ['PORTAL REQUEST ' + s(o.reqId) + ' — ' + clip(o.requester || o.name, 80) + ' asked in ' + who + ' (signed in: a known customer — no sales filter).',
+    'Work: ' + s(o.workLabel) + ' · urgency: ' + (em ? 'EMERGENCY' : s(o.urgency) || 'normal') + ' · reach them: ' + s(o.contact) + (o.contactNote ? ' — ' + clip(o.contactNote, 120) : '') + '.'];
+  if (o.portfolio) notes.push('Property manager portfolio: ' + clip(o.portfolio.name, 80) + '.');
+  if (/\b(hvac|furnace|pressure[\s-]*wash|power[\s-]*wash)/i.test(s(o.text))) notes.push('They mention HVAC / pressure washing — GrayCo does not offer those services.');
+  const title = ('Portal request — ' + s(o.workLabel) + ' — ' + clip(o.company || o.name, 60) + (s(o.address) ? ' — ' + s(o.address).split(',')[0] : '')).slice(0, 200);
+  const r = await fileLead(f, { sid, source: PORTAL_SOURCE, how: 'from ' + who, title,
+    customer: o.customerPid || o.customerId ? { pid: s(o.customerPid), job: s(o.customerJob), client: s(o.name), pm: s(o.pm && o.pm.name), by: 'portal sign-in', customerId: s(o.customerId) } : null,
+    notes,
+    leadExtra: { websiteLead: false, websiteForm: '', portalRequest: s(o.reqId), portalKind: s(o.portal), knownCustomer: true, salesFilter: 'skipped — known customer (portal sign-in)', leadSource: PORTAL_SOURCE,
+      customerId: s(o.customerId), workType: s(o.workType), urgency: em ? 'emergency' : s(o.urgency), emergency: em || undefined, customerPm: s(o.pm && o.pm.name) },
+    patch: { origin: 'portal', sourceKind: 'portal', websiteLead: false, websiteForm: '', sourceRef: PORTAL_SOURCE, type: s(o.leadKind) || 'residential', customerId: s(o.customerId),
+      emergency: em, urgency: em ? 'emergency' : s(o.urgency), service: s(o.workLabel) } });
+  if (r.action === 'added') { try { await alertLead(r.rec); } catch (e) {} }
+  return { ok: true, id: r.id, action: r.action };
+};
+
 exports._test = { bulk, staffLead, fieldsOf, splitAddress, MAIL_SOURCE, readForm, typeOf, tokenAge, newToken, quote, pricesSet, priceNum, findCustomer, rateLimited, originOk, looksSpammy, replyFor, PRICE_SEED, TYPES, SOURCE, KV_APPS, KV_PRICES,
   reset: () => { HITS.clear(); } };
 /* patch LOGOALL (owner 10/23: "should have our logo on it"): every customer / sub / GC e-mail this file sends

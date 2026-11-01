@@ -1577,6 +1577,7 @@ window._gcPortalWt = { reload: load, data: function(){ return D; } };
 <script src="/portal-plus.js" defer></script>
 <script src="/portal-home.js" defer></script>
 <script src="/portal-needs.js" defer></script>
+<script src="/portal-req.js" defer></script>   <!-- patch PORTALREQ: ➕ Request a change · 🏗 Request a new project · My requests (customers, property managers, GCs) -->
 <script src="/portal-pwa.js" defer></script>   <!-- patch PORTALAPP: "Make GrayCo Portal an app?", the numbers, notifications -->
 >>>>>>> f1024ca (E-mail & chat history on every job, maintenance plans, "How did you hear about us?", carrier speed report)
 <script id="gc-portal-ref">
@@ -1961,9 +1962,8 @@ function gcDraw(){
     }
     it.appendChild(msgEl(k)); cc.appendChild(it);
   });
-  var rq = h('details', {}, [h('summary', { class: 'btn', text: '＋ Request a change' })]);
-  var rt = h('input', { class: 'gcp-in', type: 'text', maxlength: '120', placeholder: 'What change? (short title)' }), rd = h('textarea', { class: 'gcp-in', maxlength: '3000', placeholder: 'Describe the change (where, what, any drawings or RFI #)' }), rn = nameIn('gcp-rq-n');
-  rq.appendChild(h('div', { class: 'gcp-item' }, [rt, rd, rn, h('button', { type: 'button', class: 'btn gold', text: 'Send the request to GrayCo', on: { click: function(){ if (!rt.value.trim() || rn.value.trim().length < 2) { G.msg.rq = '!Add a title and your name.'; return gcDraw(); } act('rq', { action: 'gc-co-request', title: rt.value, description: rd.value, name: rn.value }, '✓ Sent — GrayCo will price it and send it to you to sign.'); } } }), msgEl('rq')]));
+  /* patch PORTALREQ: the one "➕ Request a change" form (portal-req.js) — what, where, photos, urgency, how to reach them; it shows under My requests */
+  var rq = h('button', { type: 'button', class: 'btn', id: 'gcp-co-req', text: '➕ Request a change', on: { click: function(){ if (window.GCPortalReq) window.GCPortalReq.open('change'); } } });
   if (!v.cos.length) cc.appendChild(h('div', { class: 'muted', text: 'No change orders yet.' }));
   cc.appendChild(rq); main.appendChild(cc);
   /* RFIs */
