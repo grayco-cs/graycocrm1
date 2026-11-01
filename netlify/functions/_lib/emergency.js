@@ -19,13 +19,18 @@ function textOf(it){
   const c = it && it.contact && typeof it.contact === 'object' ? it.contact : {};
   return [it.type, it.leadKind, it.title, it.detail, it.websiteForm, it.form, it.service, it.message, it.scope, it.notes, it.urgency, c.message].map(s).join(' ');
 }
-function isEmergency(it){
+/* patch SALESBLOCK: every emergency answer passes the sales / night gate (_lib/salesguard.js emergencyGate) — a sales
+   pitch is never an emergency, and 7 PM – 7 AM it needs the customer's own emergency words or the after-hours "press 1" */
+function isEmergency(it, o){ if (!baseEmergency(it)) return false; if (o && o.noGate) return true; try { return require('./salesguard.js').emergencyGate(it).ok; } catch (e) { return true; } }
+/* patch SALESBLOCK: the words alone (the night rule's "real emergency" test on the customer's own text) */
+function wordsOnly(t){ t = s(t); if (!t) return false; if (NOT.test(t) && !/emergenc|house\s*fire|fire\s*damage|smoke\s*damage|water\s*damage/i.test(t)) return false; return X.EMERG.test(t) || MORE.test(t); }
+function baseEmergency(it){
   if (!it) return false;
   if (it.emergency === true || /^emergency$/i.test(s(it.urgency))) return true;
   if (/commercial|government|bid/i.test(s(it.type || it.leadKind)) && !/emergenc/i.test(s(it.title) + ' ' + s(it.detail))) return false;   /* a bid that mentions a roof leak is not an emergency */
   const t = textOf(it);
   if (NOT.test(t) && !/emergenc|house\s*fire|fire\s*damage|smoke\s*damage|water\s*damage/i.test(t)) return false;
-  return X.isEmergency(it) || MORE.test(t);
+  return X.isEmergency(it, { noGate: true }) || MORE.test(t);
 }
 /* patch OWNER4 (owner 10/26) — which emergencies are MITIGATION emergencies.
    Mitigation = water, flood, leak, burst pipe, sewage, mold, fire / smoke / soot, and storm-damage dry-out (water that got in).
@@ -62,4 +67,4 @@ function mitigationMgrs(users){
 function officeOf(users){
   return (Array.isArray(users) ? users : []).filter(u => u && u.email && /office/i.test(s(u.role)) && !/^admin$/i.test(s(u.role)) && u.active !== false && !/disabled|inactive|offboard/i.test(s(u.status))).map(u => low(u.email));
 }
-module.exports = { isEmergency, isMitigation, people, officeOf, mitigationMgrs, MIT_DEFAULT, MORE };
+module.exports = { isEmergency, baseEmergency, wordsOnly, isMitigation, people, officeOf, mitigationMgrs, MIT_DEFAULT, MORE };

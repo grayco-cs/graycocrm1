@@ -158,7 +158,7 @@ function firstEmail(lead, contact) {
   const who = s(contact.name) || CONTACT_NAME;
   const tel = tidyPhone(s(contact.phone) || (who && who === CONTACT_NAME ? CONTACT_PHONE : '') || (!who ? CONTACT_PHONE : ''));
   const hi = lead.name ? ('Hi ' + esc(lead.name.split(/\s+/)[0]) + ',') : 'Hello,';
-  const what = lead.jobType ? esc(lead.jobType.toLowerCase()) : 'your roof';
+  const what = lead.jobType ? esc(lead.jobType.toLowerCase()) : '';   /* patch SALESBLOCK: never assume the topic */
   const whoH = who ? esc(who) : 'One of our project managers';
   const line = tel
     ? (whoH + ' handles our estimates and you can reach them directly at <b>' + esc(tel) + '</b>.')
@@ -166,26 +166,23 @@ function firstEmail(lead, contact) {
 
   const text =
     hi.replace(/<[^>]+>/g, '') + '\n\n' +
-    'Thanks for your interest in getting ' + what.replace(/<[^>]+>/g, '') + ' looked at. ' +
-    'This is GrayCo Construction Services — we received your details and wanted to reach out right away.\n\n' +
-    (who || 'One of our project managers') + ' handles our estimates' + (tel ? (' and you can reach them directly at ' + tel) : '') + '. ' +
-    'We will be reaching out to you as soon as possible.\n\n' +
+    'Thanks for reaching out to GrayCo Construction Services' + (what ? ' about ' + what.replace(/<[^>]+>/g, '') : '') + ' — we received your message and someone from our team will call you shortly.\n\n' +
+    (who || 'One of our project managers') + ' handles our estimates' + (tel ? (' and you can reach them directly at ' + tel) : '') + '.\n\n' +
     'If you reply to this email with a good time to reach you, we will work around it.\n\n' +
     'GrayCo Construction Services\nTN License #85034 BCB · AR License #0486990627 · MS License #27769\noffice@grayco-cs.com';
 
   const html =
     '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.55;max-width:560px">'
     + '<p>' + hi + '</p>'
-    + '<p>Thanks for your interest in getting ' + what + ' looked at. This is <b>GrayCo Construction '
-    + 'Services</b> — we have your details and wanted to reach out right away.</p>'
-    + '<p>' + line + ' We will be reaching out to you as soon as possible.</p>'
+    + '<p>Thanks for reaching out to <b>GrayCo Construction Services</b>' + (what ? ' about ' + what : '') + ' — we received your message and someone from our team will call you shortly.</p>'
+    + '<p>' + line + '</p>'
     + '<p><b>If you reply to this email with a good time to reach you, we will work around it.</b></p>'
     + '<p style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#666">'
     + 'GrayCo Construction Services<br>TN License #85034 BCB · AR License #0486990627 · MS License #27769<br>'
     + 'office@grayco-cs.com</p></div>';
 
   return {
-    subject: 'GrayCo Construction — ' + (who || 'we') + ' will be reaching out',
+    subject: 'GrayCo Construction — we received your message',
     html, text
   };
 }
@@ -359,6 +356,8 @@ exports.handler = async function (event) {
   const warnings = [];
 
   if (!lead.name) return J(400, { error: 'A customer name is required.', field: 'name' });
+  /* patch SALESBLOCK: a blocked sender / a sales pitch → no first e-mail, no approval, no text, no lead, no alert (🧹 Sales & spam) */
+  try { const sg = await require('./_lib/salesguard.js').def().screenText({ via: 'lead source (' + source.name + ')', phone: lead.phone, email: lead.email, name: lead.name, text: lead.notes, id: lead.externalId }); if (sg) return J(200, { ok: true, stored: false, receivedFrom: source.name, held: true, note: 'Received — held for review.' }); } catch (e) {}
 
   /* "they will have to make sure all contacts and email are in the lead" —
      so a missing one is called out plainly, in the reply they get, naming the

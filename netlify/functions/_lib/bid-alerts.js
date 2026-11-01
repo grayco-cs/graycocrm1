@@ -316,8 +316,16 @@ function make(d){
   async function notifyNew(items, o){
     o = o || {};
     if (off()) return { sent: 0, off: true };
-    const fresh = arr(items).filter(it => it && it.id).map(it => entry(it, o));
+    let fresh = arr(items).filter(it => it && it.id).map(it => entry(it, o));
     if (!fresh.length) return { sent: 0 };
+    /* patch SALESBLOCK: a sales pitch or a blocked sender never alerts, pages, texts or calls anyone (any source) — it waits in
+       Leads → 🧹 Sales & spam (_lib/salesguard.js); a night "emergency" without real words is logged and alerted as a normal lead */
+    const SGm = require('./salesguard.js').make({ kvGet, kvCas, now });
+    let sgDrop = null;
+    try { const sg = await SGm.screenLeads(items, { inboxKey: 'gc_lead_inbox' }); if (sg.drop.length) { sgDrop = sg.why; fresh = fresh.filter(x => !sg.why[s(x.id)]); } } catch (e) {}
+    if (!fresh.length) return { sent: 0, salesblock: sgDrop };
+    try { const E0 = require('./emergency.js'), G = require('./salesguard.js'); for (const x of fresh) { const it = Object.assign({}, arr(items).find(y => y && s(y.id) === s(x.id)) || {}, x);
+      if (env('EMERG_OFF') !== '1' && E0.baseEmergency(it)) { const g = G.emergencyGate(it); if (!g.ok) await SGm.record({ decision: 'night', via: 'lead', id: s(x.id), phone: G.senderOf(it).phone, email: G.senderOf(it).email, why: 'not paged: ' + g.why, text: G.ownText(it) }); } } } catch (e) {}
     let mine = [];
     /* claim them first (two runs at once never both send) */
     await kvCas(KA, v => {
@@ -328,13 +336,13 @@ function make(d){
       st.sent = st.sent.concat(mine.map(x => ({ id: x.id, at: nowIso(), how: 'claimed' }))).slice(-1500);
       return st;
     });
-    if (!mine.length) return { sent: 0, already: fresh.length };
+    if (!mine.length) return { sent: 0, already: fresh.length, salesblock: sgDrop };
     /* patch EMERG: an emergency lead gets the 🚨 alert (on call + office [+ mitigation people], patch OWNER4) + its assignee INSTEAD of the normal one */
     const raw0 = {}; arr(items).forEach(it => { if (it && it.id) raw0[s(it.id)] = it; });
     const isEm = x => { if (env('EMERG_OFF') === '1') return false; try { return require('./emergency.js').isEmergency(Object.assign({}, raw0[x.id] || {}, x)); } catch (e) { return false; } };
     const urgentL = mine.filter(isEm), normalL = mine.filter(x => !isEm(x));
     const groups = !normalL.length ? [] : o.group ? [normalL] : normalL.map(x => [x]);
-    const out = { sent: 0, messages: 0, failed: 0, to: [] };
+    const out = { sent: 0, messages: 0, failed: 0, to: [] }; if (sgDrop) out.salesblock = sgDrop;
     for (const g of groups) {
       const r = await deliver(mailNew(g), [].concat.apply([], g.map(x => [x.assigneeEmail].concat(x.coEmails || []))));   /* patch HOT2: + coAssignees */
       out.messages++; out.to = r.to; out.pushed = (out.pushed || 0) + (r.pushed || 0); if (r.pushWhy) out.pushWhy = r.pushWhy;
