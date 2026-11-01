@@ -655,6 +655,7 @@ exports.handler = async function(event){
     if (ev === 'sms') { await inboundSms(p); return twiml(''); }
     if (ev === 'ecall') return twiml(await EC().twimlCall(s(qs.id), parseInt(qs.step, 10) || 0));   /* patch EMERGCALL: our outbound call answered */
     if (ev === 'ecallkey') return twiml(await EC().key(s(qs.id), parseInt(qs.step, 10) || 0, p.Digits, p.To || p.Called));
+    if (ev === 'fcall') return twiml(require('./_lib/fieldcall.js').twiml(qs.to, env('TWILIO_FROM')));   /* patch FIELDCALL: staff answered → the customer, from the GrayCo number */
     if (ev === 'ecallstatus') { if (/^(completed|no-answer|busy|failed|canceled)$/i.test(s(p.CallStatus))) await EC().advance(s(qs.id), parseInt(qs.step, 10) || 0); return twiml(''); }
     if (/^(voice|menu|what|whisper|accept|dialdone)$/.test(ev)) { const r = await callOrder(ev, p, qs); if (r) return r; }   /* patches CALLCHAIN + CALLSCREEN */
     if (ev === 'voice' && CC().on()) {   /* patch CHAIN */
