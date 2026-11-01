@@ -340,6 +340,20 @@ const tedLead = { id: 'LI-40569a6f62ec9c86', type: 'insurance', leadKind: 'Insur
   nonEm.push(['text menu: forwarded', MN.forwarded('Mike')], ['text menu', MN.menuText('Ann', true)], ['text fallback', Sm.FALLBACK || '']);
   (Sm.DEFAULT_RULES || []).filter(r => r.id !== 'emergency').forEach(r => nonEm.push(['text auto-answer "' + r.id + '"', r.answer]));
   nonEm.forEach(([k, t]) => ok(!!t && !TIME.test(t), 'no time promise: ' + k, t));
+  /* owner 11/01 follow-up: "don't promise any days in portal or text, just say with you shortly" — the coordinator's regex over
+     every customer-facing template (emergency replies and real dates / code expiry / reminder cadence are the only exceptions) */
+  const DAYS = /within \d|business day|\b\d+\s*(hours?|days?|minutes?)\b|\btoday\b|\btomorrow\b|end of day/i;
+  const FA = require(path.join(SRC, '_lib/fa-core.js'));
+  Object.keys(FA.TICKET_STATUS).forEach(k => nonEm.push(['warranty ticket status "' + k + '"', FA.TICKET_STATUS[k]]));
+  nonEm.forEach(([k, t]) => ok(!DAYS.test(t), 'no day promise: ' + k, t));
+  const portalSrc = fs.readFileSync(path.resolve(SRC, '../../portal.html'), 'utf8');
+  const lits = [...portalSrc.matchAll(/'((?:[^'\\\n]|\\.){4,})'|"((?:[^"\\\n]|\\.){4,})"|>([^<>{}\n]{6,})</g)].map(m => m[1] || m[2] || m[3]);
+  const FACT = /works for 10 minutes|^Today$|reminder every 15 days|CANCELLATION/;   /* a code's expiry, a label, the reminder cadence, the contract's legal terms */
+  const bad = [...new Set(lits.filter(t => DAYS.test(t) && !FACT.test(t)))];
+  ok(!bad.length, 'portal.html: no day / time promise in any customer text', bad);
+  ok(/Your Project Manager will be with you shortly/.test(portalSrc), 'portal "Report an issue": "will be with you shortly"');
+  const html0 = path.resolve(SRC, '../../index.html');
+  if (fs.existsSync(html0)) { const ix = fs.readFileSync(html0, 'utf8'); ok(!/your PM will reach out within 2 business days|requests acknowledged within 2 business days/.test(ix), 'CRM: the ticket status + warranty claim form promise no days'); }
   const tedReply = W.replyFor(tedForm(), {}).text;
   ok(!/storm\s*\/\s*insurance\s*damage/i.test(tedReply) && /Thanks for reaching out to GrayCo Construction Services — we received your message/.test(tedReply), 'the reply never assumes the topic from the form type', tedReply);
   ok(/we received your message and someone from our team will call you shortly\./.test(W.replyFor({ type: 'storm', name: 'X', message: 'hi' }, {}).text), 'no topic picked → the general wording');

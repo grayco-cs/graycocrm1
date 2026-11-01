@@ -128,7 +128,7 @@ function ticketState(t, now){
   var age = (now - Date.parse(t.createdAt || 0)) / 36e5;
   return { open: open, answered: answered, ageH: Math.max(0, Math.round(age)), late: open && !answered && age >= TICKET_SLA_H, leftH: Math.max(0, Math.round(TICKET_SLA_H - age)) };
 }
-var TICKET_STATUS = { new: 'Received — your PM will reach out within 2 business days', answered: 'Your PM is on it', scheduled: 'Visit scheduled', in_progress: 'Being fixed', resolved: 'Fixed', closed: 'Closed' };
+var TICKET_STATUS = { new: 'Received — your PM will be with you shortly' /* patch SALESBLOCK: no day promise */, answered: 'Your PM is on it', scheduled: 'Visit scheduled', in_progress: 'Being fixed', resolved: 'Fixed', closed: 'Closed' };
 
 /* ── 7. SUB SCORECARD ───────────────────────────────────────────────────────── */
 function sameSub(name, sub){

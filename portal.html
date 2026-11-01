@@ -1140,7 +1140,7 @@ window._gcPortalSel = { reload: load, data: function(){ return D; } };
 <script id="gc-portal-auto7">
 /* patch AUTO7 — on Home: "Materials arriving <day>" (supplier orders matched to the job — never prices), your warranty
    (5 years on all roofing and on insurance work, 1 year on everything else) and "Report an issue": a few words and up
-   to 4 photos → a ticket for your Project Manager, who answers within 2 business days. Your tickets and their status
+   to 4 photos → a ticket for your Project Manager, who will be with them shortly (patch SALESBLOCK: no day promise). Your tickets and their status
    show here. Everything goes through /.netlify/functions/portal-extra with the same link code (or sign-in). */
 (function(){
 'use strict';
@@ -1209,7 +1209,7 @@ function send(){
   busy = true; draw();
   api({ action: 'issue', text: text, photos: photos }).then(function(r){
     busy = false;
-    if (r.data && r.data.ok) { open = false; text = ''; photos = []; msg = '✓ Sent. Your Project Manager will reach out within 2 business days.'; load(); }
+    if (r.data && r.data.ok) { open = false; text = ''; photos = []; msg = '✓ Sent. Your Project Manager will be with you shortly.';   /* patch SALESBLOCK: no day promise (owner 11/01) */ load(); }
     else { msg = (r.data && r.data.error) || 'That did not go through — try again, or call ' + OFFICE + '.'; draw(); }
   }, function(){ busy = false; msg = 'No connection — try again, or call ' + OFFICE + '.'; draw(); });
 }
