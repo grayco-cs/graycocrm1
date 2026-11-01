@@ -120193,6 +120193,7 @@ function cardHtml(p, compact){
     '<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-q="pause"' + (p.portalRemindersPaused ? ' checked' : '') + ' style="width:22px;height:22px"> Pause automatic e-mails to this customer (payment reminders and "new in your portal" notes)</label>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + (url ? '<button type="button" data-q="off" style="' + BTN + 'border-color:#b91c1c;color:#b91c1c">Turn link off</button>' : '<button type="button" data-q="make" style="' + BTN + '">Make the link</button>') + '<button type="button" data-q="new" style="' + BTN + '">New link</button></div>' +
     '<div style="color:#55626F;font-size:12px">Turning it off stops the old link at once. A new link replaces it (send the new one).</div>' +
+    (url ? '<button type="button" data-q="devsout" style="' + BTN + '">Sign out all devices</button><div style="color:#55626F;font-size:12px">Signs the customer out on every phone, computer and installed GrayCo app (they sign in again; the link keeps working).</div>' : '') +   /* patch PORTALAPP */
     '<div style="border-top:1px solid #EFEAE0;padding-top:8px;font-weight:700">For every job (office setting)</div>' +
     '<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-q="autosend" disabled style="width:22px;height:22px"> E-mail the portal link to the customer when a job is made</label>' +
     '<label style="display:flex;align-items:center;gap:8px;color:#8a8f98"><input type="checkbox" data-q="autotext" disabled style="width:22px;height:22px"> Text it too — stays off until texting (A2P 10DLC) is set up</label>' +
@@ -120212,6 +120213,12 @@ function wire(el, pid){
     if (q === 'mail' && url) { if (!custEmail(p)) toast('No customer e-mail on file.', '#92400e'); location.href = mailHref(p, url); return; }
     if (q === 'open' && url) { window.open(url, '_blank', 'noopener'); return; }
     if (q === 'make') { ensureLink(pid, 'by hand'); return; }
+    if (q === 'devsout') {   /* patch PORTALAPP: end every customer session of this job (browsers + installed apps) */
+      var sure2 = true; try { sure2 = confirm('Sign this customer out on every device, including the GrayCo app on their phone? They will need to sign in again (their link keeps working).'); } catch (e) {}
+      if (!sure2) return;
+      api({ action: 'devices', projectId: String(pid) }).then(function(r){ toast(r.ok ? 'Signed out on ' + ((r.data && r.data.signedOut) || 0) + ' device(s).' : 'Could not do that: ' + ((r.data && r.data.error) || r.status), r.ok ? null : '#991b1b'); });
+      return;
+    }
     if (q === 'off' || q === 'new') {
       var sure = true; try { sure = confirm(q === 'off' ? 'Turn this customer link off? The old link stops working right away.' : 'Make a new link? The old link stops working — send the customer the new one.'); } catch (e) {}
       if (!sure) return;

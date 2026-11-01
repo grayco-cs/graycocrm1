@@ -297,6 +297,11 @@ try { var m = /(?:^#|&)t=([A-Za-z0-9_-]{20,80})/.exec(location.hash || ''); if (
 var PREVIEW = !!token && /(?:^#|&)p=1(?:&|$)/.test(location.hash || '');   /* patch INSP: "Preview as customer" from the CRM */
 try { if (token) localStorage.setItem('gc_portal_t', token); else token = localStorage.getItem('gc_portal_t') || ''; } catch (e) {}
 try { session = localStorage.getItem('gc_portal_s') || ''; } catch (e) {}
+/* patch PORTALAPP: opened from the home-screen app — its own long device session (gc_portal_app) signs it in; a link
+   opened inside the app still wins. The app's session is copied to gc_portal_s so every card of the page uses it. */
+var APPMODE = (function(){ try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; } })();
+try { var appS0 = localStorage.getItem('gc_portal_app') || ''; if (APPMODE && appS0 && !/(?:^#|&)t=/.test(location.hash || '')) { session = appS0; token = ''; localStorage.setItem('gc_portal_s', appS0); localStorage.removeItem('gc_portal_t'); } } catch (e) {}
+window.GCPortalMain = { cur: function(){ return { pid: PID, tab: TAB, shown: !!V && !window.GCPartner, session: session, token: token, preview: PREVIEW, app: APPMODE }; }, go: function(t){ if (V && !window.GCPartner) go(t); } };
 
 function $(id){ return document.getElementById(id); }
 function h(tag, attrs, kids){
@@ -349,7 +354,8 @@ $('langBtn').addEventListener('click', function(){
 });
 $('signOut').addEventListener('click', function(){
   var s0 = session;
-  store('gc_portal_s', ''); store('gc_portal_t', ''); store('gc_portal_dev', ''); session = ''; token = '';
+  store('gc_portal_s', ''); store('gc_portal_t', ''); store('gc_portal_dev', ''); store('gc_portal_app', ''); session = ''; token = '';   /* patch PORTALAPP: also the app's device session */
+  try { if (navigator.clearAppBadge) navigator.clearAppBadge().catch(function(){}); } catch (e) {}
   post(ACC, { action: 'signout' }, { session: s0 }).then(function(){ location.replace(location.pathname); }, function(){ location.replace(location.pathname); });
 });
 paintLang();
@@ -385,10 +391,11 @@ function signin(step, who){
     function login(){
       if (!em.value.trim() || !pw.value) { err.textContent = tr('needWho'); return; }
       enter.disabled = true;
-      post(ACC, { action: 'signin-password', email: em.value.trim(), password: pw.value }).then(function(r){
+      post(ACC, { action: 'signin-password', email: em.value.trim(), password: pw.value, app: APPMODE || undefined }).then(function(r){
         enter.disabled = false;
         if (!r.data.ok || !r.data.session) { err.textContent = r.data.error || tr('badCode'); return; }
         session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
+        if (APPMODE && r.data.kind === 'customer') store('gc_portal_app', session);   /* patch PORTALAPP: the app remembers this phone */
         store('gc_portal_starter', r.data.starter ? '1' : '');
         route(r.data.kind);
       }, function(){ enter.disabled = false; err.textContent = tr('loadFail'); });
@@ -428,11 +435,12 @@ function signin(step, who){
     h('button', { type: 'button', class: 'btn', text: tr('other'), on: { click: function(){ signin('who', who); } } })]));
   function verify(){
     ok.disabled = true;
-    post(ACC, { action: 'signin-verify', who: who, code: code.value.trim() }).then(function(r){
+    post(ACC, { action: 'signin-verify', who: who, code: code.value.trim(), app: APPMODE || undefined }).then(function(r){
       ok.disabled = false;
       if (r.status === 429) { err.textContent = tr('wait'); return; }
       if (!r.data.ok || !r.data.session) { err.textContent = tr('badCode'); return; }
       session = r.data.session; store('gc_portal_s', session); store('gc_portal_t', ''); token = '';
+      if (APPMODE && r.data.kind === 'customer') store('gc_portal_app', session);   /* patch PORTALAPP */
       route(r.data.kind);
     }, function(){ ok.disabled = false; err.textContent = tr('loadFail'); });
   }
@@ -935,6 +943,7 @@ window.addEventListener('resize', function(){ var w = wide(); if (w !== lastWide
 /* ── start: a link, a signed-in device, or the sign-in screen ── */
 /* patch GCP: a GC's project page (#g=…), or a phone that only ever opened a GC link */
 var GCG = /(?:^#|&)g=[A-Za-z0-9_-]{43}(?:&|$)/.test(location.hash || '') || (!/(?:^#|&)t=/.test(location.hash || '') && !session && (function(){ try { return !!localStorage.getItem('gc_portal_g') && !localStorage.getItem('gc_portal_t'); } catch (e) { return false; } })());
+function boot(){
 if (GCG) { window.__GCG_WANT__ = true; if (window.GCGc) window.GCGc.start(); }
 else if (token) {
   var dev = ''; try { dev = localStorage.getItem('gc_portal_dev') || ''; } catch (e) {}
@@ -954,10 +963,26 @@ else if (token) {
   }, function(){ route('customer'); });
 } else if (session) {
   post(ACC, { action: 'whoami' }, { session: session }).then(function(r){
-    if (!r.data.ok) { store('gc_portal_s', ''); session = ''; return signin(); }
+    if (!r.data.ok) { store('gc_portal_s', ''); if (APPMODE) store('gc_portal_app', ''); session = ''; return signin(); }   /* patch PORTALAPP: signed out from the office → the sign-in, then remembered again */
     route(r.data.kind);
   }, function(){ notActive(tr('loadFail')); });
 } else signin();
+}
+/* patch PORTALAPP: the installed app's first open (iPhone: its own storage) trades the install's one-time code for
+   this app's own device session; an app opened with only the link gets one too (so "Sign out all devices" reaches it) */
+var hand = /(?:^#|&)h=([A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash || '');
+if (hand && !GCG) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+if (APPMODE && !GCG && !PREVIEW && !session && hand) {
+  post(ACC, { action: 'app-claim', h: hand[1] }).then(function(r){
+    if (r.data && r.data.ok && r.data.session) { session = r.data.session; token = ''; store('gc_portal_s', session); store('gc_portal_app', session); store('gc_portal_t', ''); }
+    boot();
+  }, boot);
+} else if (APPMODE && !GCG && !PREVIEW && !session && token) {
+  post(ACC, { action: 'c-app' }, { token: token }).then(function(r){
+    if (r.data && r.data.ok && r.data.session) { session = r.data.session; store('gc_portal_s', session); store('gc_portal_app', session); token = ''; }
+    boot();
+  }, boot);
+} else boot();
 })();
 </script>
 <script id="gc-portal-sel">
@@ -1552,6 +1577,7 @@ window._gcPortalWt = { reload: load, data: function(){ return D; } };
 <script src="/portal-plus.js" defer></script>
 <script src="/portal-home.js" defer></script>
 <script src="/portal-needs.js" defer></script>
+<script src="/portal-pwa.js" defer></script>   <!-- patch PORTALAPP: "Make GrayCo Portal an app?", the numbers, notifications -->
 >>>>>>> f1024ca (E-mail & chat history on every job, maintenance plans, "How did you hear about us?", carrier speed report)
 <script id="gc-portal-ref">
 /* patch REF — the "🎁 Referral program" card at the bottom of Home (not front and center).
@@ -1828,10 +1854,11 @@ if ('serviceWorker' in navigator && /^portal\./i.test(location.hostname)) {
   window.addEventListener('load', function(){ try { navigator.serviceWorker.register('/portal-sw.js', { scope: '/' }).catch(function(){}); } catch (e) {} });
 }
 var installEvt = null;
-window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); installEvt = e; offer(); });
+window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); installEvt = e; window.__gcBip = e; offer(); });
 function dismissed(){ var t = Number(ls('gc_pwa_dismiss')) || 0; return t && Date.now() - t < 30 * 864e5; }
 function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent || '') && !/crios|fxios|edgios/i.test(navigator.userAgent || ''); }
 function offer(){
+  if (window.GCPortalApp) { var own = window.GCPortalApp.owns(); if (own === true) return; if (own === null) { setTimeout(offer, 1500); return; } }   /* patch PORTALAPP: customers get portal-pwa.js's card */
   if (PREVIEW_ANY || standalone() || dismissed() || $('gcp-install')) return;
   if (!installEvt && !isIOS()) return;
   css();

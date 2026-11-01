@@ -373,6 +373,20 @@
   status = 200
   force = true
 
+# patch PORTALAPP: "Make GrayCo Portal an app?", the numbers on the app icon, notifications (customer portal only)
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-pwa.js"
+  to = "/portal-pwa.js"
+  status = 200
+  force = true
+
+# patch PORTALAPP: portal.html loads portal-needs.js too — without this rule the portal host answered it with the page
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-needs.js"
+  to = "/portal-needs.js"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"

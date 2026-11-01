@@ -67,6 +67,8 @@ exports.handler = async function (event) {
     try { rep.notices = await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }
     /* patch AUTO5: estimate follow-ups — day 2 (approval), day 5 and day 10 (the approved text, by themselves) */
     try { rep.estFollowups = await require('./portal-sign.js')._ps.runFollowups({}); } catch (e) { rep.estFollowups = { error: String(e && e.message || e) }; }
+    /* patch PORTALAPP: app pushes held through the customer quiet hours (7 PM–7 AM Central) go now — one per job */
+    try { rep.appPush = await require('./_lib/capp.js').flushHeld(portal._core); } catch (e) { rep.appPush = { error: String(e && e.message || e) }; }
     try { console.log('[portal-reminders]', JSON.stringify({ sent: rep.sent, reminded: rep.reminded, todos: rep.todos, skipped: rep.skipped, paused: rep.paused })); } catch (e) {}
     return { statusCode: 200, headers, body: JSON.stringify(rep) };
   } catch (e) {

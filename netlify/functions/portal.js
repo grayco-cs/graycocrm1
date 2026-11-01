@@ -1800,6 +1800,7 @@ async function approvalAction(body, who){
   }, function(z){ return z.status === (sent.ok ? 'sent' : 'waiting'); });
   const item = r.result || it0;
   if (sent.ok && s(item.kind) !== 'portal_publish') { try { await gateFromMail(item, me); } catch (e) {} }   /* patch PORTALGATE */
+  if (sent.ok) { try { await require('./_lib/capp.js').onPublished(exports._core, item); } catch (e) {} }   /* patch PORTALAPP: one push to the customer's installed app (consent + keys; held 7 PM–7 AM) */
   if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
   return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
 }
@@ -2359,6 +2360,21 @@ async function autaiReceipt(body, who){
   return { status: 200, out: { ok: true, sent: true, id: rid, to: to } };
 }
 
+/* patch PORTALAPP: "Sign out all devices" — ends every customer session (browser or installed app) that was opened
+   with one of this job's links, without turning the link itself off */
+async function signOutDevices(pid){
+  const r = await fetch(sbUrl() + '/rest/v1/gc_portal?select=token&project_id=eq.' + encodeURIComponent(pid), { headers: H() });
+  if (!r.ok) throw new Error('gc_portal read ' + r.status);
+  const toks = (await r.json()).map(function(x){ return s(x.token); }).filter(function(x){ return TOKEN_RE.test(x); });
+  let n = 0;
+  for (const tk of toks) {
+    const w = await fetch(sbUrl() + '/rest/v1/gc_portal_session?revoked=eq.false&kind=in.(customer,handoff)&links=cs.' + encodeURIComponent(JSON.stringify([tk])), { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ revoked: true }) });
+    if (!w.ok) throw new Error('gc_portal_session write ' + w.status);
+    try { n += (await w.json()).length || 0; } catch (e) {}
+  }
+  return { ok: true, signedOut: n };
+}
+
 /* ── the door ──────────────────────────────────────────────────────────────── */
 function reply(statusCode, headers, obj){ return { statusCode: statusCode, headers: headers, body: JSON.stringify(obj) }; }
 async function notActive(headers, t0){
@@ -2385,7 +2401,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare', 'devices'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -2410,6 +2426,12 @@ exports.handler = async function (event) {
         if (s(body.op) === 'scan') return reply(200, headers, await gateScan({ pid: s(body.projectId) }));
         return reply(200, headers, await gateState(s(body.projectId)));
       } catch (e) { return reply(502, headers, { ok: false, error: 'The portal gate hit a problem: ' + clip(e && e.message || e, 120) }); }
+    }
+    if (action === 'devices') {   /* patch PORTALAPP: the job's "Sign out all devices" — every phone / app signed in to this customer's portal must sign in again */
+      const dpid = s(body.projectId);
+      if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(dpid)) return reply(400, headers, { ok: false, error: 'Open a job first.' });
+      try { return reply(200, headers, await signOutDevices(dpid)); }
+      catch (e) { return reply(502, headers, { ok: false, error: 'Could not sign the devices out. Try again.' }); }
     }
     if (action === 'subshare') {   /* patch SUBCONTACT: the job page's "Share contact with customer" (op get | set) */
       try { const a = await subcLib().staff(exports._core, body, who); return reply(a.status, headers, a.out); }
@@ -2472,7 +2494,7 @@ exports.handler = async function (event) {
   }
 
   /* PUBLIC */
-  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew') return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (action !== 'view' && action !== 'photos' && action !== 'invoice' && action !== 'referral' && action !== 'crew' && action !== 'app') return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(gcHeader(event, 'x-portal-token') || body.t);
@@ -2505,6 +2527,10 @@ exports.handler = async function (event) {
     if (body.preview === true && s(body.op) && s(body.op) !== 'state') return reply(200, headers, { ok: false, error: 'Preview — nothing is saved.' });
     const rr = await require('./_lib/referral.js').portal(data, p, body, { ip: ip });
     return reply(rr.code || 200, headers, rr.body);
+  }
+  if (action === 'app') {   /* patch PORTALAPP: the numbers on the portal / the app icon, and "Turn on notifications" (_lib/capp.js) */
+    try { const ap = await require('./_lib/capp.js').portal(exports._core, data, p, body, { preview: body.preview === true }); return reply(ap.code || 200, headers, ap.body); }
+    catch (e) { return reply(503, headers, { ok: false, error: 'We could not load that just now.' }); }
   }
   if (action === 'crew') {   /* patch SUBCONTACT: the "Your crew" card (op state) / "Request your trade contacts" (op request) */
     try { const cr = await subcLib().portal(exports._core, data, p, body, {}); return reply(cr.code || 200, headers, cr.body); }

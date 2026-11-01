@@ -392,11 +392,45 @@ async function photosCode(sub){
 }
 
 /* ── sessions ───────────────────────────────────────────────────────────────── */
-async function sessionCreate(kind, ident, subId, links){
+async function sessionCreate(kind, ident, subId, links, days){
   const token = newToken(), now = Date.now();
   await dbPost('gc_portal_session', { id: sha(token), kind: kind, ident: ident || null, sub_id: subId || null, links: links || [],
-    created_at: new Date(now).toISOString(), expires_at: new Date(now + SESSION_DAYS * 86400e3).toISOString(), revoked: false });
+    created_at: new Date(now).toISOString(), expires_at: new Date(now + (days || SESSION_DAYS) * 86400e3).toISOString(), revoked: false });
   return token;
+}
+/* patch PORTALAPP (owner 10/30: "When they open directly from there the portal keeps password and sign in so they don't
+   ever have to again"). A customer's INSTALLED APP gets its own device session: APP_DAYS long, renewed on every open
+   (sliding), stored only as a SHA-256 fingerprint in gc_portal_session, ended by "Sign out of this device", by the CRM's
+   "Sign out all devices" (portal.js action devices) or by turning the job's link off — exactly like any customer session.
+   iPhone home-screen apps do not share Safari's storage, so the install carries a HANDOFF: a one-time code (kind
+   'handoff', HANDOFF_DAYS) in the app's start address; the app's first open trades it for its own device session.
+   A handoff never opens the portal by itself. No password is ever kept on the phone. */
+const APP_DAYS = 365, HANDOFF_DAYS = 30;
+function appSession(row){ return row && Date.parse(row.expires_at) - Date.parse(row.created_at) > 60 * 86400e3; }
+async function custSource(event){
+  const token = s(gcHeader(event, 'x-portal-token'));
+  if (TOKEN_RE.test(token)) { const c = await custLinkRow(token); return c ? { ident: null, links: [token] } : null; }
+  const st = s(gcHeader(event, 'x-portal-session'));
+  if (!TOKEN_RE.test(st)) return null;
+  const sess = await sessionOf(st); if (!sess || sess.kind !== 'customer') return null;
+  const row = (await dbGet('gc_portal_session', 'select=ident,links&id=' + eq(sha(st))))[0];
+  return row ? { ident: row.ident || null, links: (Array.isArray(row.links) ? row.links : []).map(String).filter(function(x){ return TOKEN_RE.test(x); }) } : null;
+}
+async function appStart(event){
+  const src = await custSource(event); if (!src || !src.links.length) return null;
+  return { ok: true, session: await sessionCreate('customer', src.ident, null, src.links, APP_DAYS), handoff: await sessionCreate('handoff', src.ident, null, src.links, HANDOFF_DAYS), days: APP_DAYS };
+}
+async function appClaim(body){
+  const h = s(body.h); if (!TOKEN_RE.test(h)) return null;
+  const row = (await dbGet('gc_portal_session', 'select=*&kind=eq.handoff&id=' + eq(sha(h))))[0];
+  if (!row || row.revoked === true || Date.parse(row.expires_at) < Date.now()) return null;
+  const links = (Array.isArray(row.links) ? row.links : []).map(String).filter(function(t){ return TOKEN_RE.test(t); });
+  const live = links.length ? await dbGet('gc_portal', 'select=token&revoked=eq.false&token=' + inq(links)) : [];
+  if (!live.length) return null;
+  const used = await fetch(sbUrl() + '/rest/v1/gc_portal_session?revoked=eq.false&id=' + eq(row.id), { method: 'PATCH', headers: H({ Prefer: 'return=representation' }), body: JSON.stringify({ revoked: true, last_seen_at: new Date().toISOString() }) });
+  const got = used.ok ? await used.json().catch(function(){ return []; }) : [];
+  if (!Array.isArray(got) || !got.length) return null;   /* one use only: a second open of the same code gets the sign-in */
+  return { ok: true, kind: 'customer', session: await sessionCreate('customer', row.ident, null, links, APP_DAYS), days: APP_DAYS };
 }
 /* → { kind, sub_id, pids (customer) } or null. A session ends when it runs out, is signed out, or its link is turned off. */
 async function sessionOf(token){
@@ -404,6 +438,7 @@ async function sessionOf(token){
   const rows = await dbGet('gc_portal_session', 'select=*&id=' + eq(sha(token)));
   const row = rows[0];
   if (!row || row.revoked === true || Date.parse(row.expires_at) < Date.now()) return null;
+  if (row.kind !== 'partner' && row.kind !== 'customer') return null;   /* patch PORTALAPP: a handoff code is not a session */
   const links = (Array.isArray(row.links) ? row.links : []).map(String).filter(function(t){ return TOKEN_RE.test(t); });
   if (!links.length) return null;
   if (row.kind === 'partner') {
@@ -419,7 +454,9 @@ async function sessionOf(token){
 }
 function touchSession(row){
   if (row.last_seen_at && Date.now() - Date.parse(row.last_seen_at) < 15 * 60e3) return;
-  dbPatch('gc_portal_session', 'id=' + eq(row.id), { last_seen_at: new Date().toISOString() }).catch(function(){});
+  const now = Date.now(), patch = { last_seen_at: new Date(now).toISOString() };
+  if (row.kind === 'customer' && appSession(row)) { patch.expires_at = new Date(now + APP_DAYS * 86400e3).toISOString(); }   /* patch PORTALAPP: the app's session slides a year from each open */
+  dbPatch('gc_portal_session', 'id=' + eq(row.id), patch).catch(function(){});
 }
 
 /* ── who is on file (sign-in) ───────────────────────────────────────────────── */
@@ -504,7 +541,7 @@ async function signinVerify(body){
   }
   const m = await customerMatch(data, id);
   if (!m) throw bad;
-  return { ok: true, kind: 'customer', session: await sessionCreate('customer', hmac(id.key), null, m.links) };
+  return { ok: true, kind: 'customer', session: await sessionCreate('customer', hmac(id.key), null, m.links, body.app === true ? APP_DAYS : 0) };   /* patch PORTALAPP: signed in inside the installed app → remembered */
 }
 
 /* ── e-mail + password ──────────────────────────────────────────────────────────
@@ -586,7 +623,7 @@ async function passwordSignin(body, ip){
     const good = cl.row && cl.row.pw_hash ? pwOk(password, cl.row.pw_hash) : (cl.starters.indexOf(starterOf(password)) > -1 && starterOf(password).length > 0 && low(password).replace(/\s+/g, '') === starterOf(password));
     if (good) {
       await lockClear(keys);
-      return { ok: true, kind: 'customer', starter: !(cl.row && cl.row.changed), session: await sessionCreate('customer', hmac(id.key), null, cl.links) };
+      return { ok: true, kind: 'customer', starter: !(cl.row && cl.row.changed), session: await sessionCreate('customer', hmac(id.key), null, cl.links, body.app === true ? APP_DAYS : 0) };
     }
   }
   if ((!cl || !cl.row) && email) {
@@ -1371,6 +1408,14 @@ exports.handler = async function (event) {
       const tok = s(gcHeader(event, 'x-portal-session'));
       if (TOKEN_RE.test(tok)) await dbPatch('gc_portal_session', 'id=' + eq(sha(tok)), { revoked: true });
       return reply(200, { ok: true });
+    }
+    if (action === 'c-app') {   /* patch PORTALAPP: "Add to Home Screen" — this device's long session + the install's one-time handoff */
+      const r = await appStart(event); if (!r) { noteBad(ip, 'pub'); return notActive(headers, t0); }
+      return reply(200, r);
+    }
+    if (action === 'app-claim') {   /* patch PORTALAPP: the installed app's first open trades the handoff for its own session */
+      const r = await appClaim(body); if (!r) { noteBad(ip, 'pub'); return notActive(headers, t0); }
+      return reply(200, r);
     }
     if (action === 'whoami') {
       const sess = await sessionOf(gcHeader(event, 'x-portal-session'));
