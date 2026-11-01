@@ -22,6 +22,7 @@ function due(box, seen, now, nameOf){
 }
 async function run(opts){
   opts = opts || {};
+  await A.loadStaff();   /* patch OFFICEFIX: staff = @grayco-cs.com or a gc_staff staff e-mail (the Marketing Manager) */
   const now = now0(opts), c = A.central(now);
   if (!BIZ[c.wd]) return { ok: true, skipped: 'not a business day' };
   if (await A.paused()) return { ok: true, skipped: 'data-entry mode' };

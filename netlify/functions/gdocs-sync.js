@@ -97,7 +97,9 @@ exports.handler = async function(event){
   let body = {}; try { body = event.body ? JSON.parse(event.body) : {}; } catch (e) { body = {}; }
   const admins = String(process.env.LEAD_ADMINS || '').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
   const admin = require('./_lib/staff-role.js').isAdmin(who, admins);   /* patch AUTHFIX */
-  const office = admin || /office/.test(who.role) || /office/i.test(String((await extra(who.email)).profile || ''));
+  /* patch OFFICEFIX: the one rule — the office's people-list role counts too (her gc_staff role is plain 'staff') */
+  let office = admin || /office/.test(who.role) || /office/i.test(String((await extra(who.email)).profile || ''));
+  if (!office) { try { office = await require('./_lib/office-access.js').officeOrAdmin(who); } catch (e) { office = false; } }
   try {
     if (qp.export) {   /* one doc's text, for the Change Order doc reader: whoever's Drive can open it */
       const team = await GD.people();

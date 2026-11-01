@@ -73,6 +73,7 @@ function apprLine(n, base){
 }
 async function run(opts){
   opts = opts || {};
+  await A.loadStaff();   /* patch OFFICEFIX: staff = @grayco-cs.com or a gc_staff staff e-mail (the Marketing Manager) */
   const C = A.core(), now = opts.now != null ? opts.now : Date.now(), c = A.central(now);
   if (c.wd === 'Sun') return { ok: true, skipped: 'Sunday' };
   const got = await collect(now), box = got.box, opt = got.opt, nameOf = got.nameOf, base = got.base;

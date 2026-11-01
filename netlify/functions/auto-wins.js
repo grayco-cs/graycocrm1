@@ -8,6 +8,10 @@
 //     APPR-NOON    approvals still waiting + 📋 Approvals not opened today → push, e-mail, ASAP To-Do  Mon–Fri, first run after 12 PM
 //   (more parts are added below as they are built). Nothing here sends to a customer, sub or GC by itself.
 // A signed-in admin may call it to run one part now: POST { part: 'ar', force: true }.
+// patch OFFICEFIX: the hourly schedule is auto-wins-scheduled.js (netlify.toml). A scheduled function cannot be called by
+//   its URL in production — Netlify answered every CRM call here 403 (the 📋 Approvals "opened today" stamp and the
+//   office's "who checked Approvals today" never reached this code). This file has no schedule now, so the CRM's calls
+//   arrive, and every call needs a CRM sign-in (no "scheduled" door by URL).
 'use strict';
 require('./_lib/pause').install();   /* patch PAUSE: data-entry mode — every outbound send is checked here first */
 const A = require('./_lib/auto-common.js');
@@ -21,9 +25,9 @@ const PARTS = [
   { key: 'apprnoon', lib: './_lib/appr-noon.js', when: function(c){ return /^(Mon|Tue|Wed|Thu|Fri)$/.test(c.wd) && c.hour >= 12 && c.hour < 17; }, marker: function(c){ return 'apprnoon:' + c.ymd; } }
   /* AUTO-PARTS */
 ];
-function isScheduled(event){ try { const b = JSON.parse((event && event.body) || '{}'); return !!(b && b.next_run); } catch (e) { return false; } }
 async function runParts(opts){
   opts = opts || {};
+  await A.loadStaff();   /* patch OFFICEFIX: staff e-mail = @grayco-cs.com or a gc_staff staff e-mail (one read per run) */
   const now = opts.now != null ? opts.now : Date.now(), c = A.central(now), out = { at: new Date(now).toISOString(), central: c };
   for (const P of PARTS) {
     if (opts.part && opts.part !== P.key) continue;
@@ -42,26 +46,23 @@ exports.handler = async function(event){
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   if (!(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY not set.' }) };
   let body = {}; try { body = JSON.parse(event.body || '{}'); } catch (e) {}
-  if (!isScheduled(event)) {
+  {
     const who = await A.core().gcStaffAuth(event);
     /* patch AUTHFIX: a sign-in problem answers as itself — no token / expired 401, sign-in service down 503, not staff 403.
        Before, every one of them came back "403 Admins only." (an expired token on the owner's computer read as a refusal) */
     if (!who.ok) return { statusCode: who.statusCode || 401, headers, body: JSON.stringify({ ok: false, error: who.error || 'Sign in to the GrayCo CRM first.' }) };
     const SR = require('./_lib/staff-role.js'), admin = SR.isAdmin(who);   /* the one rule: an owner counts as an admin */
     /* patch SUBPHOTOS: any staff member stamps "I opened 📋 Approvals"; the office / admins read who checked today */
-    if (body.action === 'appr-seen') return { statusCode: 200, headers, body: JSON.stringify({ ok: await require('./_lib/appr-noon.js').stamp(who.email) }) };
+    if (body.action === 'appr-seen') { await A.loadStaff(); return { statusCode: 200, headers, body: JSON.stringify({ ok: await require('./_lib/appr-noon.js').stamp(who.email) }) }; }
     if (body.action === 'appr-seen-list') {
-      let office = admin || /office/.test(A.low(who.role)) || A.low(who.email) === 'office@grayco-cs.com';
-      if (!office) { try { office = await require('./_lib/office-access.js').isOffice(who.email); } catch (e) { office = false; } }   /* patch AUTHFIX: the OFFICEFULL office (profile / people list) too */
-      if (!office) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Office and admins only.' }) };
+      /* patch OFFICEFIX: the one rule (_lib/office-access.js officeOrAdmin → staff-role.isOfficeOrAdmin) */
+      let office = false; try { office = await require('./_lib/office-access.js').officeOrAdmin(who); } catch (e) { office = admin; }
+      if (!office) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only the office and the admins see who checked 📋 Approvals today.' }) };
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, rows: await require('./_lib/appr-noon.js').seenRows({}) }) };
     }
-    if (!admin) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admins only.' }) };
+    if (!admin) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin runs the automations by hand.' }) };
     const out = await runParts({ part: A.s(body.part), force: body.force === true });
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, report: out }) };
   }
-  const out = await runParts({});
-  try { console.log('[auto-wins]', JSON.stringify(out).slice(0, 600)); } catch (e) {}
-  return { statusCode: 200, headers, body: JSON.stringify({ ok: true, report: out }) };
 };
 exports._run = runParts;

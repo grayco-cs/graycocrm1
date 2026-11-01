@@ -18,7 +18,10 @@ function esc(v){ return s(v).replace(/[&<>"']/g, function(c){ return { '&': '&am
 function clip(v, n){ const t = s(v); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
 function pidOf(r){ return s(r && (r.pid || r.projectId || r.jobId || r.project_id)); }
 function okEmail(e){ return /^[^@\s,;<>"]+@[^@\s,;<>"]+\.[a-z]{2,}$/i.test(s(e)); }
-function staffEmail(e){ return okEmail(e) && /@([a-z0-9-]+\.)*grayco-cs\.com$/i.test(s(e)); }
+/* patch OFFICEFIX: staff = @grayco-cs.com, or a gc_staff staff e-mail (the Marketing Manager's personal address).
+   Sync: the gc_staff list loaded last (loadStaff(), once per run; staffMail() loads it itself) */
+function staffEmail(e){ return okEmail(e) && require('./staff-mail.js').isStaffEmail(e); }
+async function loadStaff(){ try { await require('./staff-mail.js').load(); } catch (e) {} }
 function daysBetween(a, b){ return Math.round((Date.parse(b + 'T12:00:00Z') - Date.parse(a + 'T12:00:00Z')) / 864e5); }
 function addDays(day, n){ const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 /* the Central wall clock: { ymd, hour, wd: 'Mon'… } */
@@ -55,8 +58,9 @@ async function todo(id, label, opts){
   const r = await C.kvListUpdate('gc_office_tasks', function(l){ return has(l) ? null : { list: l.concat([item]), check: has }; });
   return !!(r && r.ok && !r.unchanged);
 }
-/* a staff-only e-mail (every address @grayco-cs.com — data-entry mode lets it through) */
+/* a staff-only e-mail (every address @grayco-cs.com or a gc_staff staff e-mail — data-entry mode lets it through) */
 async function staffMail(to, subject, html){
+  await loadStaff();   /* patch OFFICEFIX */
   to = (Array.isArray(to) ? to : [to]).map(low).filter(staffEmail);
   if (!to.length) return { ok: false, skipped: 'no staff address' };
   const key = s(process.env.RESEND_API_KEY);
@@ -72,4 +76,4 @@ function shell(title, inner){
     '<div style="background:#0F1D2F;color:#fff;padding:14px 18px;border-radius:12px 12px 0 0;font-size:17px;font-weight:bold">' + esc(title) + '</div>' +
     '<div style="background:#fff;border:1px solid #E2DCCD;border-top:none;padding:16px 18px;border-radius:0 0 12px 12px;font-size:14px;line-height:1.5">' + inner + '</div></div>';
 }
-module.exports = { TZ, s, low, num, r2, usd, usd0, arr, ymd, esc, clip, pidOf, okEmail, staffEmail, daysBetween, addDays, central, core, crmBase, paused, once, todo, staffMail, shell, LOG_KEY };
+module.exports = { TZ, s, low, num, r2, usd, usd0, arr, ymd, esc, clip, pidOf, okEmail, staffEmail, loadStaff, daysBetween, addDays, central, core, crmBase, paused, once, todo, staffMail, shell, LOG_KEY };

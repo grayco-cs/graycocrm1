@@ -4377,7 +4377,7 @@ window.__GC_LIVE=function(key, v){
   return v;
 };
 </script>
-<!-- GrayCo CRM Build: 33.163-2026-10-30-r17b -->
+<!-- GrayCo CRM Build: 33.163-2026-11-01-r17i -->
 <script>
 /* ===== PERFORMANCE GOVERNOR (must run first) — tames dozens of timers + observers ===== */
 (function(){
@@ -5042,7 +5042,7 @@ window.__GC_LIVE=function(key, v){
   window.GC.isUserActive = function(){ return window.__GC_IS_ACTIVE__; };
 
   console.log("[GC] Conservative perf guards active.");
-  console.log("[GC] Build 33.163-2026-10-30-r17b");
+  console.log("[GC] Build 33.163-2026-11-01-r17i");
   console.log("[GC] Paid-to-date badges DISABLED — use 💎 → 💰 Project Payments.");
 })();
 
@@ -5090,7 +5090,7 @@ window.__GC_LIVE=function(key, v){
   // This used to do parseInt("33.1-2026-07-10-v71") -> 33 and compare it against
   // a unix timestamp, so the test was always false and the update bar NEVER
   // appeared. Anyone leaving the CRM open kept running an old build forever.
-  var BUILD_ID = "33.163-2026-10-30-r17b"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
+  var BUILD_ID = "33.163-2026-11-01-r17i"; try{ window.BUILD_ID = BUILD_ID; }catch(e){}
   window.__GC_BUILD_ID__ = BUILD_ID;
   try{ localStorage.setItem('gc_build_id', BUILD_ID); }catch(e){}
 
@@ -179928,7 +179928,7 @@ document.addEventListener('click', function(e){
 /* the server's copy of the setting, once, for a sign-in that has no cache yet */
 var asked = false;
 function load(){
-  if (asked || claimsTo()) return; asked = true;
+  if (asked || claimsTo()) return; if (!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.email === 'function' && W.__GC_AUTH__.email())) return;   /* patch OFFICEFIX: not before the sign-in (it was a 401) */ asked = true;
   try { W.fetch('/.netlify/functions/bid-inbox?list=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
     var c = j && j.settings && j.settings.claimsTo; if (c && low(c.email)) { var k = cache(); k.settings = Object.assign({}, k.settings || {}, { claimsTo: { name: s(c.name), email: low(c.email) } }); saveCache(k); mount(); }
   }, function(){}); } catch (e) {}
@@ -180008,7 +180008,7 @@ document.addEventListener('click', function(e){
 }, true);
 var asked = false;
 function load(){
-  if (asked) return; var k0 = cache(); if (k0.settings && Array.isArray(k0.settings.alertTo)) return; asked = true;
+  if (asked) return; var k0 = cache(); if (k0.settings && Array.isArray(k0.settings.alertTo)) return; if (!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.email === 'function' && W.__GC_AUTH__.email())) return;   /* patch OFFICEFIX: not before the sign-in (it was a 401) */ asked = true;
   try { W.fetch('/.netlify/functions/bid-inbox?list=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
     var a = j && j.settings && j.settings.alertTo; if (Array.isArray(a) && a.length) { var k = cache(); k.settings = Object.assign({}, k.settings || {}, { alertTo: a }); saveCache(k); mount(); }
   }, function(){}); } catch (e) {}
@@ -180087,7 +180087,7 @@ document.addEventListener('click', function(e){
 }, true);
 var asked = false;
 function load(){
-  if (asked) return; var k0 = cache(); if (k0.settings && Array.isArray(k0.settings.mitigationTo)) return; asked = true;
+  if (asked) return; var k0 = cache(); if (k0.settings && Array.isArray(k0.settings.mitigationTo)) return; if (!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.email === 'function' && W.__GC_AUTH__.email())) return;   /* patch OFFICEFIX: not before the sign-in (it was a 401) */ asked = true;
   try { W.fetch('/.netlify/functions/bid-inbox?list=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
     var a = j && j.settings && j.settings.mitigationTo; if (Array.isArray(a) && a.length) { var k = cache(); k.settings = Object.assign({}, k.settings || {}, { mitigationTo: a }); saveCache(k); mount(); }
   }, function(){}); } catch (e) {}
@@ -180166,7 +180166,7 @@ document.addEventListener('click', function(e){
 }, true);
 var asked = false;
 function load(){
-  if (asked) return; var k0 = cache(); if (k0.settings && Array.isArray(k0.settings.emergenciesTo)) return; asked = true;
+  if (asked) return; var k0 = cache(); if (k0.settings && Array.isArray(k0.settings.emergenciesTo)) return; if (!(W.__GC_AUTH__ && typeof W.__GC_AUTH__.email === 'function' && W.__GC_AUTH__.email())) return;   /* patch OFFICEFIX: not before the sign-in (it was a 401) */ asked = true;
   try { W.fetch('/.netlify/functions/bid-inbox?list=1', { cache: 'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
     var a = j && j.settings && j.settings.emergenciesTo; if (Array.isArray(a) && a.length) { var k = cache(); k.settings = Object.assign({}, k.settings || {}, { emergenciesTo: a }); saveCache(k); mount(); }
   }, function(){}); } catch (e) {}
@@ -184595,7 +184595,7 @@ function loop(){
     var on = !!D.getElementById('_todoMount');
     paint();
     if (on && moneyPerson() && Date.now() - lastPull > 600000) { lastPull = Date.now(); pull(); }
-    else if (on) paintMM();
+    else paintMM();   /* patch OFFICEFIX: also off To-Do, so the receipts chip leaves with it */
   } catch (e) { try { console.warn('[GC] patch OWNERTODO', e); } catch (x) {} }
 }
 RI.call(W, loop, 1500); later(loop, 3000);
@@ -185010,7 +185010,7 @@ function openNeeds(){
 var lastSig = '';
 function paint(force){
   var mount = D.getElementById('_todoMount'), host = D.getElementById('gc-money-needs');
-  if (!mount || !moneyPerson()) { if (host) host.remove(); return; }
+  if (!mount || !moneyPerson()) { if (host) { host.remove(); lastSig = ''; } return; }   /* patch OFFICEFIX: gone with the To-Do list; drawn again on return */
   var n = needs().length;
   if (!host) { host = D.createElement('div'); host.id = 'gc-money-needs'; host.setAttribute('data-gc-keep', '1'); host.setAttribute('data-gc-linked', '1'); host.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0';
     host.addEventListener('click', function(ev){ var b = ev.target.closest && ev.target.closest('[data-mn]'); if (!b) return; if (b.getAttribute('data-mn') === 'needs') openNeeds(); else openImport(b.getAttribute('data-mn') === 'bank' ? { mode: 'bank' } : null); }); }
@@ -185150,7 +185150,7 @@ function hookHub(){
 
 function tick(){
   try { hookSubInv(); hookSetup(); hookHub(); } catch (e) {}
-  try { if (!D.hidden && D.getElementById('_todoMount')) paint(); } catch (e) {}
+  try { if (!D.hidden) paint(); } catch (e) {}   /* patch OFFICEFIX: also off To-Do, so the buttons leave with it */
   try { var mm = W._gcMoneyMail && W._gcMoneyMail.state && W._gcMoneyMail.state(); if (mm && mm.at && mm.at !== P.seenAt) { P.seenAt = mm.at; process(mm.list, mm.done); } } catch (e) {}
 }
 tick(); RI.call(W, tick, 2500); later(function(){ loadRules(); }, 4000);
@@ -189040,7 +189040,7 @@ function paintMounts(){ try { omStrip(); } catch (e) {} try { todoChip(); } catc
 RI.call(W, function(){
   if (D.hidden || !wide()) return;
   var on = D.getElementById('_todoMount') || D.getElementById('gc-om-page');
-  if (!on) return;
+  if (!on) { try { todoChip(); } catch (e) {} return; }   /* patch OFFICEFIX: the To-Do chip leaves with the To-Do list */
   if (!S.fu || Date.now() - S.fuAt > 180000) loadFu(false); else paintMounts();
 }, 2000);
 W._gcSentLog = { open: open, refresh: function(){ return loadFu(true); }, state: function(){ return S; }, _level: level };
@@ -193409,20 +193409,39 @@ function post(fn, body, again){
 }
 
 /* ── 7. 📋 Approvals opened → the server stamp (the 12 PM reminder skips whoever opened it today) ── */
-var lastStamp = 0;
-function stamp(){ var now = Date.now(); if (D.hidden || !me() || now - lastStamp < 10 * 60e3) return; lastStamp = now; post('auto-wins', { action: 'appr-seen' }).then(function(j){ if (!j || !j.ok) lastStamp = 0; }); }
+/* __GC_PATCH_OFFICEFIX__ — patch OFFICEFIX: one stamp at a time; refused → stop for this session; failed → again in 2 min.
+   Before, a failed stamp set lastStamp = 0 and every render of the tab posted again (88 posts in 8 minutes). */
+var lastStamp = 0, stampBusy = false, stampOff = false;
+function stamp(){
+  var now = Date.now(); if (stampOff || stampBusy || D.hidden || !me() || now - lastStamp < 10 * 60e3) return;
+  lastStamp = now; stampBusy = true;
+  post('auto-wins', { action: 'appr-seen' }).then(function(j){
+    stampBusy = false; var st = j && j.__status;
+    if (j && j.ok) return;
+    if (st === 401 || st === 403 || st === 404 || st === 405) { stampOff = true; try { console.warn('[GC] OFFICEFIX: the Approvals "opened today" stamp was refused (' + st + ') — not asked again this session.'); } catch (e) {} return; }
+    if (st === 200) return;   /* answered (not stamped): the next one in 10 minutes */
+    lastStamp = now - 8 * 60e3;   /* offline / server hiccup: again in 2 minutes */
+  }, function(){ stampBusy = false; lastStamp = now - 8 * 60e3; });
+}
 function wrapTick(){
   var f = W._gcApprovalSeenTick; if (typeof f !== 'function' || f.__gcSub) return !!f;
   var g = function(){ try { stamp(); } catch (e) {} return f.apply(this, arguments); }; g.__gcSub = true; W._gcApprovalSeenTick = g; return true;
 }
 if (!wrapTick()) { var tries = 0; (function again(){ if (wrapTick() || ++tries > 40) return; ST.call(W, again, 1500); })(); }
-W._gcApprovalStamp = function(){ lastStamp = 0; stamp(); };
+W._gcApprovalStamp = function(){ if (!stampBusy) lastStamp = 0; stamp(); };
 /* the office / admins: who has approvals waiting and whether they opened 📋 Approvals today */
+/* patch OFFICEFIX: one call a minute at most (shared while it runs); refused → [] for this session, said once */
+var APC = { at: 0, p: null, v: null, off: false };
 W._gcApprovalsCheckedToday = function(){
-  return post('auto-wins', { action: 'appr-seen-list' }).then(function(j){
-    if (!j || !j.ok) return [];
-    return arr(j.rows).map(function(r){ return { name: s(r.name), email: low(r.email), waiting: +r.waiting || 0, lastSeen: s(r.lastSeen), checkedToday: !!r.checkedToday }; });
-  });
+  if (APC.off) return Promise.resolve([]);
+  if (APC.p) return APC.p;
+  if (APC.v && Date.now() - APC.at < 60e3) return Promise.resolve(APC.v);
+  return (APC.p = post('auto-wins', { action: 'appr-seen-list' }).then(function(j){
+    APC.p = null; APC.at = Date.now();
+    if (j && (j.__status === 401 || j.__status === 403)) { APC.off = true; try { console.warn('[GC] OFFICEFIX: "who checked Approvals today" is for the office and the admins (' + j.__status + ').'); } catch (e) {} }
+    if (!j || !j.ok) return (APC.v = []);
+    return (APC.v = arr(j.rows).map(function(r){ return { name: s(r.name), email: low(r.email), waiting: +r.waiting || 0, lastSeen: s(r.lastSeen), checkedToday: !!r.checkedToday }; }));
+  }, function(){ APC.p = null; APC.at = Date.now(); return (APC.v = []); }));
 };
 
 /* ── 5. 📸 Link CompanyCam projects ── */

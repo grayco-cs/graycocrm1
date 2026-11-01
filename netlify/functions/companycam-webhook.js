@@ -315,8 +315,9 @@ exports.handler = async function(event, context) {
   // 15-minute companycam-sync does it on its next run (gc_kv gc_cc_sync_request). POST ?proxy=review {cc, act, kind} —
   // a person's answer on the review list: make (a new job on the next run) · dismiss (not a new job, never again) · done.
   if(event.httpMethod === 'POST' && (qs.proxy === 'syncnow' || qs.proxy === 'review')){
-    const role = String(who && who.role || '').toLowerCase();
-    if(!/^(admin|owner|office)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
+    /* patch OFFICEFIX: the one rule (the office's people-list role counts; her gc_staff role is plain 'staff') */
+    let okOff = false; try { okOff = await require('./_lib/office-access.js').officeOrAdmin(who); } catch (e) { okOff = false; }
+    if(!okOff) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
     const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
     const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
     if(!svc) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY is not set in Netlify.' }) };
@@ -361,8 +362,9 @@ exports.handler = async function(event, context) {
   // CompanyCam project is listed again (gc_kv ccidx_request), at once in the background function (up to ~13 minutes a go; the
   // 15-minute companycam-photos goes on from where it stopped). Nothing is copied; never the token.
   if(event.httpMethod === 'POST' && qs.proxy === 'photoindex'){
-    const role = String(who && who.role || '').toLowerCase();
-    if(!/^(admin|owner|office)$/.test(role)) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
+    /* patch OFFICEFIX: the one rule (the office's people-list role counts; her gc_staff role is plain 'staff') */
+    let okOff = false; try { okOff = await require('./_lib/office-access.js').officeOrAdmin(who); } catch (e) { okOff = false; }
+    if(!okOff) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Only an admin or the office can do this.' }) };
     const url = String(process.env.SUPABASE_URL || GC_SB_DEFAULT_URL).replace(/\/$/, '');
     const svc = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
     if(!svc) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SUPABASE_SERVICE_KEY is not set in Netlify.' }) };

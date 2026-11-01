@@ -67,6 +67,7 @@ function html(sc){
 }
 async function run(opts){
   opts = opts || {};
+  await A.loadStaff();   /* patch OFFICEFIX: staff = @grayco-cs.com or a gc_staff staff e-mail (the Marketing Manager) */
   const C = A.core(), now = opts.now != null ? opts.now : Date.now(), c = A.central(now);
   if (c.wd !== 'Mon' && !opts.anyDay) return { ok: true, skipped: 'not Monday' };
   const data = await C.crmData(true);

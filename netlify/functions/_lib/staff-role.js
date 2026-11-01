@@ -14,6 +14,11 @@
 //   isAdminRole(role)            → true / false (pure)
 //   isAdmin(who, extraEmails)    → true / false — who = { role, email, admin?, marketing? } (a staff check's answer
 //                                  or a gc_staff row)
+//   isOfficeOrAdmin(who)         → true / false — patch OFFICEFIX: THE check for "the office or an admin may do this".
+//                                  An admin (above), or active staff that the office rule marked who.office = true
+//                                  (_lib/office-access.js withOffice / officeOrAdmin fill it in from the data), or whose
+//                                  gc_staff role / profile is office. Never the Marketing Manager, never someone inactive,
+//                                  never a refused sign-in (who.ok false).
 'use strict';
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
@@ -33,4 +38,12 @@ function isAdmin(who, extraEmails){
   return ownerEmails().indexOf(e) > -1 || list(extraEmails).indexOf(e) > -1;
 }
 
-module.exports = { isAdminRole, isAdmin, ownerEmails };
+function isOfficeOrAdmin(who){
+  if (!who || typeof who !== 'object' || who.ok === false) return false;
+  if (who.marketing === true || low(who.profile) === 'marketing' || low(who.role) === 'marketing' || who.mkt_active === true) return false;
+  if (who.active === false) return false;
+  if (isAdmin(who)) return true;
+  return who.office === true || /^office/.test(low(who.role)) || low(who.profile) === 'office';
+}
+
+module.exports = { isAdminRole, isAdmin, isOfficeOrAdmin, ownerEmails };
