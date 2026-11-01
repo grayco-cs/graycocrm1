@@ -1,9 +1,9 @@
 {
   "id": "/?app=grayco-portal",
-  "name": "GrayCo Portal",
+  "name": "GrayCo",
   "short_name": "GrayCo",
   "description": "Your GrayCo Construction Services project: updates, photos, documents, payments and messages.",
-  "start_url": "/",
+  "start_url": "/portal.html?app=1",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
