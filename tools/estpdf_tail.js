@@ -222,6 +222,7 @@ function pull(force){
   if (!signedIn()) return Promise.resolve(S.sent);
   if (!force && Date.now() - S.sentAt < 120e3) return Promise.resolve(S.sent);
   S.sentAt = Date.now();
+  kvRead('gc_est_views').then(function(v){ if (Array.isArray(v)) S.views = arr(v); }, function(){});   /* the customer opened it in the portal */
   return kvRead(SENT_KEY).then(function(v){ if (Array.isArray(v)) { S.sent = arr(v); fold(); } return S.sent; }, function(){ return S.sent; });
 }
 function fold(){
@@ -334,23 +335,35 @@ function proposal5Html(e){
   var html = ''; try { html = G.html(pd); } catch (x) { warn(x); }
   return html ? scrub(html, cc.words) : '';
 }
-/* a whole HTML page (its own <style>) → PDF, drawn inside a hidden frame so its styles never touch the CRM page */
+/* a whole HTML page (its own <style>) → PDF. Its CSS is scoped to one holder (".gcp5 …"), so while it is drawn its
+   styles never touch the CRM page (html2pdf draws a copy of the holder inside this page) */
+function scopeCss(css, root){
+  var out = '', i = 0;
+  css = String(css || '').replace(/\/\*[\s\S]*?\*\//g, '');
+  while (i < css.length) {
+    var b = css.indexOf('{', i); if (b < 0) break;
+    var head = css.slice(i, b).trim(), depth = 1, j = b + 1;
+    while (j < css.length && depth) { if (css[j] === '{') depth++; else if (css[j] === '}') depth--; j++; }
+    var body = css.slice(b + 1, j - 1);
+    if (/^@(media|supports)/i.test(head)) out += head + '{' + scopeCss(body, root) + '}';
+    else if (/^@(page|font-face|keyframes|-webkit-keyframes|import|charset)/i.test(head)) { if (!/^@page/i.test(head)) out += head + '{' + body + '}'; }
+    else out += head.split(',').map(function(sel){ sel = sel.trim(); if (!sel) return ''; if (/^(html|body|:root)$/i.test(sel)) return root; return root + ' ' + sel.replace(/^(html|body)\s+/i, ''); }).filter(Boolean).join(',') + '{' + body + '}';
+    i = j;
+  }
+  return out;
+}
 function viaFrame(html){
   var go = W.html2pdf ? Promise.resolve(true) : loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js');
   return go.then(function(ok){
     if (!ok || !W.html2pdf) return null;
-    return new Promise(function(res){
-      var fr = D.createElement('iframe'); fr.setAttribute('aria-hidden', 'true'); fr.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;height:1056px;border:0;background:#fff';
-      D.body.appendChild(fr);
-      var done = function(v){ try { fr.remove(); } catch (x) {} res(v); };
-      try { var d = fr.contentDocument; d.open(); d.write(html.replace(/<link[^>]+fonts\.googleapis[^>]*>/gi, '')); d.close(); } catch (x) { return done(null); }
-      later(function(){
-        try {
-          W.html2pdf().set({ margin: 0, image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 1.6, useCORS: true, backgroundColor: null, windowWidth: 816 }, pagebreak: { mode: ['css', 'legacy'] }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' } })
-            .from(fr.contentDocument.body).toPdf().get('pdf').then(function(pdf){ done(pdf.output('blob')); }, function(err){ warn(err); done(null); });
-        } catch (x) { warn(x); done(null); }
-      }, 600);
-    });
+    var css = '', m, re = /<style[^>]*>([\s\S]*?)<\/style>/gi; while ((m = re.exec(html))) css += m[1] + '\n';
+    var bm = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html), body = (bm ? bm[1] : html).replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/\son[a-z]+="[^"]*"/gi, '');
+    var holder = D.createElement('div'); holder.className = 'gcp5'; holder.setAttribute('aria-hidden', 'true');
+    holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:8.5in;background:#fff';
+    holder.innerHTML = '<style>' + scopeCss(css, '.gcp5') + '</style>' + body;
+    D.body.appendChild(holder);
+    return W.html2pdf().set({ margin: 0, image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 1.5, useCORS: true, backgroundColor: null }, pagebreak: { mode: ['css'] }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' } })
+      .from(holder).toPdf().get('pdf').then(function(pdf){ holder.remove(); return pdf.output('blob'); }, function(err){ holder.remove(); warn(err); return null; });
   }, function(){ return null; });
 }
 var DESIGNS = { p5: 'GrayCo 5-page proposal', simple: 'Simple estimate', uploaded: 'The uploaded estimate PDF' };
@@ -815,7 +828,8 @@ function paintSlot(el, estId, pid){
   try {
     var e = estById(estId) || { id: estId }, v = versions(e), c = v[v.length - 1], h = '';
     if (c) {
-      h += '<button type="button" class="gcep-pdf" data-ep="pdf">📄 Sent PDF</button><span class="m" data-ep-line>' + esc(verLine(c)) + '</span>';
+      var seen = arr(S.views).filter(function(x){ return s(x.estId) === s(e.id) && s(x.at) >= s(c.sentAt || c.heldAt); }).map(function(x){ return s(x.at); }).sort()[0];
+      h += '<button type="button" class="gcep-pdf" data-ep="pdf">📄 Sent PDF</button><span class="m" data-ep-line>' + esc(verLine(c)) + (seen ? ' · 👁 Viewed in the portal ' + esc(fmtDay(seen)) : '') + '</span>';
       if (v.length > 1) h += '<button type="button" class="gcep-sm" data-ep="all">All versions (' + v.length + ')</button>';
     } else if (wasSent(e)) {
       h += '<span class="w">Sent before PDF saving started — no copy on file</span><button type="button" class="gcep-sm" data-ep="attach">📎 Attach the sent PDF</button>';

@@ -26,6 +26,7 @@ What this changes in index.html (each anchor asserted once; a re-run prints "alr
      type, so no job changes) that the weekly update approvals obey (KIND_KEY weekly_update).
   8. the Templates → Customer Proposal Generator: its data / HTML builders are exposed as window._gcProposal5 (📤 Send
      estimate's "GrayCo 5-page proposal" and the card's "📘 Make proposal" reuse them); the per-job grid becomes a note.
+  9. patch JA's ⚙ Admin defaults read "⚡ Customer features by job type" (the features step uses those switches).
 """
 import os
 import sys
@@ -164,6 +165,10 @@ G1 = 'children:"No active/bidding projects — launch a job first"})})'
 assert t.count(G0) == 1 and t.count(G1) == 1, 'ESTPDF: the Templates grid anchors'
 i = t.index(G0); j = t.index(G1, i) + len(G1)
 t = t[:i] + 'e.jsx("div",{"data-gcep-p5note":"1",style:{fontSize:12.5,color:u.tx2,padding:"8px 2px",lineHeight:1.5},children:"Make a proposal from the job\u2019s 📝 Estimates tab (📘 Make proposal) or 📤 Send estimate — the estimate is made once and this 5-page design comes from it. (The design and its wording stay here.)"})/* patch ESTPDF: no per-job grid */' + t[j:]
+
+# ── 9. ⚙ Admin: patch JA's defaults are the "Customer features by job type" (one place, the same switches) ─────────
+t = once(t, "    sh.innerHTML = '<h2>⚡ Automation defaults</h2>", "    sh.innerHTML = '<h2>⚡ Customer features by job type</h2>")   # patch ESTPDF
+t = once(t, "  c.innerHTML = '<span><b>⚡ Automation defaults</b> · ", "  c.innerHTML = '<span><b>⚡ Customer features by job type</b> (automation defaults) · ")
 
 open(p, 'w', encoding='utf-8').write(t)
 print('ESTPDF: patched (%d bytes)' % len(t))
