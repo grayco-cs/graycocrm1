@@ -76,7 +76,7 @@ const _D = {
   now: () => Date.now(),
   kvGet: k => L().kvGet(k),
   kvCas: (k, f) => L().kvCas(k, f),
-  send: (to10, body, from) => MC().sendSms(to10, body, from),
+  send: (to10, body, from, tag) => require('./custquiet.js').run(tag || 'staff', () => MC().sendSms(to10, body, from)),   /* patch CUSTQUIET: alerts go to staff cells (not held); a reply relayed to a customer is tagged by the caller */
   /* the saved 📞 Call order business hours (defaults when never saved); null when it can't be read → per-person window only */
   hours: async () => { try { const CO = require('./callorder.js'); const raw = await _D.kvGet(CO.KEY); return (raw && typeof raw === 'object' ? CO.clean(raw) : CO.defaults()).hours || null; } catch (e) { return null; } },
   paused: async () => { try { return await require('./pause').isPaused(); } catch (e) { return true; } },
@@ -344,7 +344,9 @@ async function staffInbound(ph, body, sid){
   if (await _D.consentNo(to)) return { handled: true, staff: email, notSent: 'that customer declined texts' };
   let signed = text; try { signed = require('./smsroute.js').sign(text, p.name); } catch (e) {}
   signed = signed.slice(0, 600);
-  const r = await _D.send(to, signed, env('TWILIO_FROM'));
+  /* patch CUSTQUIET: a staff reply relayed to a customer is a customer text — 7 PM–7 AM Central it waits for 7 AM, except the
+     answer to an EMERGENCY the customer started (rep.emergency), which goes now */
+  const r = await _D.send(to, signed, env('TWILIO_FROM'), rep.emergency ? 'emergency' : 'customer');
   if (!r || !r.ok) return { handled: true, staff: email, notSent: 'Twilio did not send it' };
   const id = 'SMSC_' + (sid || t.toString(36));
   const msg = await _D.postReply({ id, pid: rep.pid, email, name: p.name, to, text: signed, at });

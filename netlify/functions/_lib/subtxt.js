@@ -14,7 +14,7 @@
 //     · about an hour before the start time on EVERY scheduled day: "Are you on your way / at the job? Reply Y."
 //     · no reply by the start time → the job's PM (phone push + 🔴 ASAP To-Do + e-mail, office copied), once.
 //   Never: a tentative row, a cancelled row, a job that is not signed / active, an opted-out number (STOP), while
-//   ⏸ Data-entry mode is on, or 8 PM–7 AM (the morning check may go before 7 AM — it is about that morning).
+//   ⏸ Data-entry mode is on, or 7 PM–7 AM Central (patch CUSTQUIET: a morning check due before 7 AM is queued and goes at 7:00 AM).
 //   Replies (missed-call.js?event=sms → handleReply): Y / yes / 👍 → ✓ Confirmed. Anything else → the PM at once.
 //   The sub portal's "Can't make it / running late" (portal-access.js p-late) → the same PM alert.
 'use strict';
@@ -132,8 +132,9 @@ function due(data, set, st, nowMs){
   });
   return out;
 }
-/* evening texts wait for 7 AM–8 PM; the morning check may go earlier (it is about that morning) */
-function quietOk(kind, nowMs){ const m = central(nowMs).min; return kind === 'morning' || (m >= 7 * 60 && m < 20 * 60); }
+/* patch CUSTQUIET: the customer / sub clock (7 PM–7 AM Central, _lib/custquiet.js). An evening text waits (it is only due
+   6–7 PM anyway); the morning check is handed to the send, which queues it for 7:00 AM when it is due before 7 */
+function quietOk(kind, nowMs){ return kind === 'morning' || !require('./custquiet.js').quiet(nowMs); }
 function isYes(t){ return YES.test(s(t)); }
 /* the open confirmation this number is answering (a text sent in the last 36 hours), newest first */
 function openFor(st, ph, nowMs){

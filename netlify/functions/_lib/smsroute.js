@@ -168,12 +168,12 @@ function tagsFor(people, users){
   });
   return out;
 }
-/* quiet hours for automatic texts: 8 PM – 7 AM Central */
+/* quiet hours for automatic texts: 7 PM – 7 AM Central (patch CUSTQUIET: the one customer clock, _lib/custquiet.js; was 8 PM) */
 function centralHour(ms){
   try { return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date(ms)), 10) % 24; }
   catch (e) { return new Date(ms).getUTCHours() - 5; }
 }
-function quiet(ms){ const h = centralHour(ms); return h >= 20 || h < 7; }
+function quiet(ms){ return require('./custquiet.js').quiet(ms); }
 
 /* the list other parts of the CRM read (gc_kv "gc_sms_numbers", window._gcSmsNumbers()): [{ number, purpose }] with
    purpose subs | customers | marketing | billing | insurance | other — the default number counts as customers when no

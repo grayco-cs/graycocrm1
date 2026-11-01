@@ -107,6 +107,10 @@ async function gcStaffAuth(event){
 
 const crypto = require('crypto');
 const JA = require('./_lib/job-auto.js');   /* patch JA: the job's automations (project.auto) */
+function CQ(){ return require('./_lib/custquiet.js'); }   /* patch CUSTQUIET: customer quiet hours 7 PM–7 AM Central */
+/* patch CUSTQUIET: an approved item that goes to a customer / sub / GC waits for 7 AM in the window; a staff-only one does not */
+const CQ_STAFF_KINDS = { announcement: 1 };
+function cqHoldsKind(kind){ return !CQ_STAFF_KINDS[s(kind)]; }
 try { require('./_lib/brand.js').installResend(); } catch (e) {}   /* patch AUT2: every customer e-mail gets the GrayCo shell */
 
 const OFFICE_PHONE = '901-585-0944';
@@ -302,6 +306,7 @@ async function grayCoPhotos(pid, recs){
     if (r.deleted === true || r.source === 'ccflag' || s(r.jobId) !== String(pid)) return;
     if (!gcSharedOf(r)) return;
     if (r.source === 'sub' && !(r.shared === true && s(r.custOkBy))) return;   /* patch SUBPHOTOS: a sub's photo only after an admin / the office turned it on */
+    if ([r.at, r.visAt, r.custOkAt, r.sharedAt].some(function(t){ return CQ().heldNow(t); })) return;   /* patch CUSTQUIET: added / shown 7 PM–7 AM → on the portal from 7 AM */
     const full = refPath(r.annotatedRef) ? r.annotatedRef : r.ref;
     if (!refPath(full)) return;
     const k = s(r.hash) || full; if (seen[k]) return; seen[k] = 1;
@@ -719,6 +724,7 @@ async function buildView(data, p, opts){
   const posts = arr(p.portalPosts).concat(arr(data.gc_portal_auto_posts).filter(function(x){ return s(x.pid) === pid; }))
     .filter(function(x){ const k = s(x.id); if (k && postSeen[k]) return false; if (k) postSeen[k] = 1; return true; })
     .filter(function(x){ return x.hidden !== true && (s(x.text) || arr(x.files).length); })
+    .filter(function(x){ return x.cqNow === true || !CQ().heldNow(x.at || x.createdAt); })   /* patch CUSTQUIET: a post made 7 PM–7 AM shows from 7 AM */
     .sort(function(a, b){ return s(a.at) < s(b.at) ? 1 : -1; }).slice(0, 40);
   const refs = [];
   posts.forEach(function(x){ arr(x.files).forEach(function(f){ refs.push(f.ref); }); });
@@ -1419,7 +1425,7 @@ function thankYouNewsBlock(){
    sentAt, sentBy, rejectedBy, rejectedAt, reason, editedBy, lastError, meta } */
 const AQ_KEY = 'gc_approval_queue';
 const LINK_PH = '{{PORTAL_LINK}}';
-const AQ_RANK = { waiting: 0, sending: 1, approved: 2, rejected: 3, sent: 4 };
+const AQ_RANK = { waiting: 0, scheduled: 1, sending: 1, approved: 2, rejected: 3, sent: 4 };   /* patch CUSTQUIET: scheduled (approved, waits for 7 AM) */
 const MONEY_KIND = /final|invoice|lien|waiver|contract|thank_you|pay_app/;   /* patch AP2: 'invoice' = the invoice PDF e-mail */   /* PM, then an admin (owner: the thank-you e-mail too) */
 const AUTO_OK = { signed_copy: 1, receipt: 1 };   /* the exceptions: these still go out by themselves */
 function approvalNeeded(kind){ return needsApproval() && !AUTO_OK[kind]; }
@@ -1713,6 +1719,15 @@ async function approvalAction(body, who){
     return { status: rr && rr.ok ? 200 : 409, out: { ok: !!(rr && rr.ok), item: rr && rr.result } };
   }
   const stale = it0.status === 'sending' && Date.now() - Date.parse(it0.updatedAt || 0) > 10 * 60e3;
+  /* patch CUSTQUIET: "Send now (emergency)" — an admin sends ONE scheduled item before 7 AM; nobody else can */
+  if (op === 'sendnow') {
+    if (!admin) return { status: 403, out: { ok: false, adminOnly: true, error: 'Only Wesley or Nick (an admin) can send before 7 AM.' } };
+    if (it0.status !== 'scheduled') return { status: 409, out: { ok: false, error: it0.status === 'sent' ? 'Already sent.' : 'It is not scheduled (' + it0.status + ').', item: it0 } };
+    const sn = await sendScheduled(id, 'override', { by: myName || who.email, email: low(who.email), role: 'admin', at: new Date().toISOString() });
+    if (sn.skipped) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: sn.item } };
+    if (!sn.ok) return { status: 502, out: { ok: false, error: sn.error, item: sn.item } };
+    return { status: 200, out: { ok: true, sent: true, override: true, item: sn.item, invoiceId: s(((sn.item || {}).meta || {}).invoiceId) } };
+  }
   if (it0.status !== 'waiting' && !stale) return { status: 409, out: { ok: false, error: 'Already ' + it0.status + '.', item: it0 } };
   /* patch AP4: an item the admins left at their step for 24 hours is the office's too (whoever acts first wins) */
   const mmOk = !admin && !!who && who.marketing === true && it0.mmOk === true && it0.step === 'admin' && (op === 'approve' || op === 'reject');   /* patch MM */
@@ -1782,17 +1797,23 @@ async function approvalAction(body, who){
   if (s(it0.kind) === 'sub_contact' && subcLib().selectionProblem(body.share)) return { status: 400, out: { ok: false, pick: true, error: subcLib().selectionProblem(body.share) } };
   const last = admin || office || it0.steps.indexOf(it0.step) >= it0.steps.length - 1;
   const claim = 'c' + Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
+  /* patch CUSTQUIET: the final approval inside 7 PM–7 AM Central is recorded now and the item is SCHEDULED for 7:00 AM
+     (cust-release.js sends it then, once). Only an admin's "Send now (emergency)" (sendNow) sends it at once. */
+  const cqNowMs = Date.now(), cqOverride = body.sendNow === true && admin;
+  const cqHold = last && !CQ().off() && cqHoldsKind(it0.kind) && CQ().quiet(cqNowMs) && !cqOverride;
   let r = await upd(function(x){
     if (x.status !== 'waiting' && !(x.status === 'sending' && stale)) return false;
     if (edit) applyEdit(x, edit, me);
     if (subcSel) x.meta = Object.assign({}, x.meta || {}, { share: subcSel });   /* patch SUBCONTACT */
     x.approvals = (x.approvals || []).concat([Object.assign({ step: x.step }, me)]);
-    if (last) { x.status = 'sending'; x.claim = claim; }
+    if (last && cqHold) { x.status = 'scheduled'; x.claim = claim; x.releaseAt = new Date(CQ().nextRelease(cqNowMs)).toISOString(); x.scheduledAt = now; x.scheduledBy = me.by; x.scheduledMe = me; x.lastError = ''; }
+    else if (last) { x.status = 'sending'; x.claim = claim; }
     else { x.step = x.steps[x.steps.indexOf(x.step) + 1]; if (x.step === 'admin') x.adminSince = now; }   /* patch AP4: the 24 hours start */
   }, function(z){ return last ? z.claim === claim : z.step !== it0.step; });
   if (!r.ok || !r.result || (last && r.result.claim !== claim)) return { status: 409, out: { ok: false, error: 'Someone else is on this one — look again.', item: r.result } };
   if (!last) return { status: 200, out: { ok: true, item: r.result, next: r.result.step } };
-  const sent = await aqSend(r.result, now);
+  if (cqHold) return { status: 200, out: { ok: true, item: r.result, sent: false, scheduled: true, releaseAt: r.result.releaseAt, say: CQ().SAY, overrideRefused: body.sendNow === true && !admin } };   /* patch CUSTQUIET */
+  const sent = await CQ().run(cqOverride ? 'override' : null, function(){ return aqSend(r.result, now); });   /* patch CUSTQUIET: an admin's emergency send goes now */
   r = await upd(function(x){
     if (x.claim !== claim) return false;
     if (sent.ok) { x.status = 'sent'; x.sentAt = new Date().toISOString(); x.sentBy = me.by; x.lastError = ''; }
@@ -1802,6 +1823,48 @@ async function approvalAction(body, who){
   if (sent.ok && s(item.kind) !== 'portal_publish') { try { await gateFromMail(item, me); } catch (e) {} }   /* patch PORTALGATE */
   if (!sent.ok) return { status: 502, out: { ok: false, error: sent.error, item: item } };
   return { status: 200, out: { ok: true, item: item, sent: true, invoiceId: s((item.meta || {}).invoiceId) } };
+}
+/* ── patch CUSTQUIET: scheduled approvals (approved 7 PM–7 AM Central) go out at 7:00 AM — cust-release.js calls
+   releaseScheduled every 10 minutes; each item is claimed (status sending + a claim) before it is sent, so two runs, or
+   a run and an admin's "Send now", never send the same one twice. Oldest approval first. ── */
+async function sendScheduled(id, how, me){
+  const claim = 'q' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex'), at0 = new Date().toISOString();
+  let r = await kvListUpdate(AQ_KEY, function(l){
+    const x = l.find(function(y){ return y && s(y.id) === s(id); }); if (!x || x.status !== 'scheduled') return { list: null, result: x };
+    x.status = 'sending'; x.claim = claim; x.updatedAt = at0;
+    return { list: l, check: function(l2){ const z = l2.find(function(y){ return y && s(y.id) === s(id); }); return !!(z && z.claim === claim); }, result: x };
+  });
+  if (!r || !r.ok || !r.result || r.result.claim !== claim) return { ok: false, skipped: true, item: r && r.result };
+  const sent = await CQ().run(how, function(){ return aqSend(r.result, at0); });
+  const who0 = me || r.result.scheduledMe || { by: r.result.scheduledBy || 'GrayCo' };
+  r = await kvListUpdate(AQ_KEY, function(l){
+    const x = l.find(function(y){ return y && s(y.id) === s(id); }); if (!x || x.claim !== claim) return null;
+    const t1 = new Date().toISOString();
+    if (sent.ok) { x.status = 'sent'; x.sentAt = t1; x.sentBy = s(who0.by); x.releasedAt = t1; x.releasedHow = how; x.lastError = ''; }
+    else { x.status = 'waiting'; x.lastError = sent.error; }
+    x.updatedAt = t1;
+    return { list: l, check: function(l2){ const z = l2.find(function(y){ return y && s(y.id) === s(id); }); return !!(z && z.status === (sent.ok ? 'sent' : 'waiting')); }, result: x };
+  });
+  const item = (r && r.result) || null;
+  if (sent.ok && item && s(item.kind) !== 'portal_publish') { try { await gateFromMail(item, who0); } catch (e) {} }   /* patch PORTALGATE */
+  return { ok: !!sent.ok, item: item, error: sent.ok ? '' : sent.error };
+}
+async function releaseScheduled(opts){
+  opts = opts || {};
+  const nowMs = opts.now || Date.now();
+  if (CQ().quiet(nowMs) && !opts.force) return { ok: true, quiet: true, sent: 0 };
+  const cur = await kvListRead(AQ_KEY);
+  if (!cur) return { ok: false, error: 'Could not read the approvals list.' };
+  const due = cur.list.filter(function(x){ return x && x.status === 'scheduled' && Date.parse(x.releaseAt || 0) <= nowMs; })
+    .sort(function(a, b){ return s(a.scheduledAt).localeCompare(s(b.scheduledAt)) || s(a.id).localeCompare(s(b.id)); });
+  const out = { ok: true, sent: 0, failed: 0, items: [] };
+  for (const x of due) {
+    const r = await sendScheduled(x.id, 'release', null);
+    if (r.skipped) continue;
+    if (r.ok) out.sent++; else out.failed++;
+    out.items.push({ id: s(x.id), kind: s(x.kind), ok: !!r.ok, error: r.error || '' });
+  }
+  return out;
 }
 /* ── patch AP4 (owner, 21 Oct 2026): "If Nick and Wesley do not approve by 24 hours, then it goes to the office to
    approve." An item at the ADMIN step (money / legal after the PM, or a job with no PM) that nobody approved or
@@ -2076,8 +2139,8 @@ async function sendLink(pid, event, who){
   if (!Array.isArray(got) || got.length !== 1) return { ok: true, already: true };
   let res;
   try {
-    const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link) }) });
+    const r = await CQ().run('customer', () => fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + s(process.env.RESEND_API_KEY), 'Content-Type': 'application/json' },   /* patch CUSTQUIET: 7 PM–7 AM it is queued for 7 AM */
+      body: JSON.stringify({ from: 'GrayCo Construction Services Portal <portal@grayco-cs.com>', reply_to: replyToFor((function(){ try { const m = pmOf(data, p); return m && m.email; } catch (e) { return ''; } })(), 'portal_link'), to: [to], subject: withJob('Your GrayCo Portal — ' + (view.job.name || 'your job'), p), html: linkMailHtml(view, link) }) }));
     res = { ok: r.ok, status: r.status };
   } catch (e) { res = { ok: false }; }
   if (!res.ok) {
@@ -2161,6 +2224,8 @@ async function notifyDocs(pid, event, opts){
   const newest = Math.max.apply(null, pending.map(function(x){ return Date.parse(x.first_seen_at) || now; }));
   const oldest = Math.min.apply(null, pending.map(function(x){ return Date.parse(x.first_seen_at) || now; }));
   if (!opts.force && now - newest < QUIET && now - oldest < MAXWAIT) return { ok: true, waitMs: Math.min(QUIET - (now - newest), MAXWAIT - (now - oldest)) + 1000, pending: pending.length };
+  /* patch CUSTQUIET: 7 PM–7 AM Central the notice waits (nothing is claimed); the first run after 7:00 AM sends it, once */
+  if (!CQ().off() && CQ().quiet(now) && !CQ().allowed()) { try { await CQ().noteNotices(); } catch (e) {} return { ok: true, quiet: true, waitMs: CQ().nextRelease(now) - now, releaseAt: new Date(CQ().nextRelease(now)).toISOString(), pending: pending.length }; }
   /* claim exactly these rows; whatever another computer claimed first is not returned here */
   const batch = 'b' + now.toString(36) + crypto.randomBytes(3).toString('hex');
   const keys = pending.map(function(x){ return '"' + String(x.doc_key).replace(/"/g, '') + '"'; }).join(',');
@@ -2281,6 +2346,7 @@ async function autaiPost(item, now){
   const ap = (item.approvals || []).slice(-1)[0] || {};
   const post = { id: 'pp_aq_' + s(item.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60), pid: s(item.jobId), at: now, by: s(m.by || ap.by || item.pm || 'GrayCo'),
     text: clip(m.postText || item.text, 2000), files: autaiRefs(m.photos), src: item.kind, approvedBy: s(ap.by) };
+  if (CQ().tag() === 'override') post.cqNow = true;   /* patch CUSTQUIET: an admin's emergency send shows at once */
   if (!post.pid) return { ok: false, error: 'No job on this item.' };
   const has = function(l){ return l.some(function(x){ return s(x.id) === post.id; }); };
   const r = await kvListUpdate('gc_portal_auto_posts', function(l){ return has(l) ? null : { list: l.concat([post]).slice(-3000), check: has }; });
@@ -2536,6 +2602,7 @@ Object.assign(exports._core, { crmData: crmData, kvRead: kvRead, activeFor: acti
 Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tokenRow: tokenRow, sessionRow: sessionRow, ccPhotos: ccPhotos, ccHidden: ccHidden, ccCustomerPhotos: ccCustomerPhotos, grayCoRecords: grayCoRecords, withJob: withJob, jobTag: jobTag, pushTo: pushTo, ipOf: ipOf, limited: limited, noteBad: noteBad, gcCors: gcCors, gcHeader: gcHeader, adminEmails: adminEmails, officeEmails: officeEmails, listOf: listOf, TOKEN_RE: TOKEN_RE, OFFICE_PHONE: OFFICE_PHONE, MIN_FAIL_MS: MIN_FAIL_MS, SIGN_SECS: SIGN_SECS });
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
+Object.assign(exports._core, { releaseScheduled: releaseScheduled, sendScheduled: sendScheduled, cqHoldsKind: cqHoldsKind, kvListRead: kvListRead });   /* patch CUSTQUIET */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
 /* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */
 Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });

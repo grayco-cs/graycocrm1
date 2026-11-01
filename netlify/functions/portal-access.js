@@ -335,7 +335,8 @@ async function sendText(to, body){
     const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',
       headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + s(process.env.TWILIO_AUTH_TOKEN)).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ To: '+1' + p, From: s(process.env.TWILIO_FROM), Body: clip(body, 600) }).toString() });
-    return { ok: r.ok, status: r.status };
+    let held = null; try { held = require('./_lib/custquiet.js').heldOf(r); } catch (e) {}   /* patch CUSTQUIET */
+    return held ? { ok: r.ok, status: r.status, held } : { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false }; }
 }
 function ownerEmails(){ const v = s(process.env.OWNER_EMAILS); return (v ? v.split(',') : ['wjohnson@grayco-cs.com', 'nthomas@grayco-cs.com']).map(low).filter(okEmail); }
@@ -470,7 +471,7 @@ async function signinStart(body, ip){
     await dbPost('gc_portal_code', { id: rid, purpose: 'signin', ident: hmac(id.key), code_hash: hmac(rid + ':' + code), link_token: m.kind === 'partner' ? m.links[0] : null,
       sub_id: m.kind === 'partner' ? s(m.sub.id) : null, expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0, ip: clip(ip, 60) });
     const L = MAIL[m.lang];
-    if (id.kind === 'phone' && textReady()) await sendText(id.value, 'GrayCo Portal code: ' + code + ' (10 min)');
+    if (id.kind === 'phone' && textReady()) await require('./_lib/custquiet.js').run('reply', () => sendText(id.value, 'GrayCo Portal code: ' + code + ' (10 min)'));   /* patch CUSTQUIET: a sign-in code they just asked for goes at once */
     else if (id.kind === 'email' || okEmail(m.email)) await sendMail(id.kind === 'email' ? id.value : m.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code));
     else {
       /* no texting yet and no e-mail on file: the code waits in the CRM for the PM to text it from their phone */
@@ -661,7 +662,7 @@ async function deviceStart(event){
   await dbPost('gc_portal_code', { id: rid, purpose: 'device', ident: hmac(key), code_hash: hmac(rid + ':' + code), link_token: token, sub_id: s(sub.id),
     expires_at: new Date(Date.now() + CODE_MIN * 60e3).toISOString(), tries: 0 });
   const L = MAIL[lang(sub.lang)];
-  if (textReady() && phone10(sub.phone)) await sendText(phone10(sub.phone), 'GrayCo: ' + code);
+  if (textReady() && phone10(sub.phone)) await require('./_lib/custquiet.js').run('reply', () => sendText(phone10(sub.phone), 'GrayCo: ' + code));   /* patch CUSTQUIET: the sign-in code goes at once */
   else await sendMail(sub.email, L.codeSubj, mailHtml(L.codeHead, L.codeBody, code));
   return { ok: true, sent: true, to: maskEmail(sub.email) };
 }
@@ -1299,7 +1300,7 @@ async function staffAction(action, body, who){
       const msg = 'Hi ' + (firstName || 'there') + ', this is GrayCo. Your project page: ' + link + ' — or sign in at ' + portalBase().replace(/^https:\/\//, '') + ' · ' + (phone && !email ? 'Phone: ' + phone : 'E-mail: ' + email) + ' · Password: your first name';
       out.message = msg;
       let smsNo = false; try { const SC = require('./_lib/smsconsent.js'); smsNo = SC.statusFor({ projects: [p] }, phone, await SC.registry()) === 'no' || (await SC.live(phone)) === 'no'; } catch (e) {}   /* patch SMSCONSENT: declined → the PM sends it from their own phone */
-      if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; }
+      if (phone && textReady() && !smsNo && body.via !== 'pm-phone') { const tx = await sendText(phone, msg); out.sent = tx.ok ? 'text' : ''; if (tx.held) { out.held = true; out.scheduled = true; out.releaseAt = tx.held.releaseAt; out.say = require('./_lib/custquiet.js').SAY; } }   /* patch CUSTQUIET: 7 PM–7 AM it waits for 7 AM */
       if (!out.sent && phone) out.sms = 'sms:' + phone + '?body=' + encodeURIComponent(msg);
     }
     return out;
