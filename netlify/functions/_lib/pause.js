@@ -165,6 +165,12 @@ async function guardedFetch(raw, url, opts){
     if (lk) await logSend(lk, o, 'paused', fake);
     return fake;
   }
+  /* patch CUSTQUIET: 7 PM–7 AM Central a text (or an e-mail marked as a customer notice) is queued for 7 AM, not sent.
+     After the data-entry check (paused = nothing, not even later). Logged when it really goes (the 7 AM release). */
+  if (lk) {
+    let CQ = null; try { CQ = require('./custquiet.js'); } catch (e) { CQ = null; }
+    if (CQ) { const held = await CQ.guard(target, o); if (held) return held; }
+  }
   const res = await raw.call(globalThis, url, opts);
   if (lk) await logSend(lk, o, res && res.ok ? 'sent' : 'failed', res);
   return res;

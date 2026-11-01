@@ -53,6 +53,12 @@
 [functions."portal-reminders"]
   schedule = "7 * * * *"
 
+# Customer quiet hours (patch CUSTQUIET, _lib/custquiet.js): 7 PM–7 AM Central nothing goes to customers or subs — texts,
+# customer e-mails and approvals made then are held. Every 10 minutes; the first run at / after 7:00 AM Central (daylight
+# saving or not) sends what was held, oldest first, each exactly once. Inside the window, or with nothing due, it does nothing.
+[functions."cust-release"]
+  schedule = "*/10 * * * *"
+
 # Approvals (patch AP4): an item Wesley and Nick have not answered 24 hours after it reached them goes to the
 # office too. Checked every 15 minutes; the admins and the office are told once.
 [functions."approval-escalate"]

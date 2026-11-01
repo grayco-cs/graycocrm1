@@ -37,7 +37,7 @@ routed. Every text still goes on the job's thread and in the e-mail relay as bef
 ## Texts we send
 
 A staff text goes out from the matching number: to a sub from the Subs number, to a customer from the Customers number,
-to a lead from the Marketing number. It is signed "— Mike, GrayCo". After 8 PM or before 7 AM the CRM asks first.
+to a lead from the Marketing number. It is signed "— Mike, GrayCo". From 7 PM to 7 AM Central it is held and goes out at 7:00 AM (customer quiet hours, patch CUSTQUIET); an admin can "Send now (emergency)".
 Data-entry mode and STOP still block every text.
 
 **Schedule texts (SUBTXT):** send them with `require('./_lib/smsroute.js').fromFor('subs', settings, env)` as the

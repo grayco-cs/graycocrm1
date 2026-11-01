@@ -62,6 +62,13 @@ exports.handler = async function (event) {
        counts as the final-invoice e-mail, and the 15-day reminders follow it) */
     let invoiceMail = null;
     try { invoiceMail = await portal._core.queueNewInvoices({}); } catch (e) { invoiceMail = { error: String(e && e.message || e) }; }
+    /* patch CUSTQUIET: 7 PM–7 AM Central nothing goes to customers — the reminders, the new-papers notices and the estimate
+       follow-ups stay pending (nothing is claimed) and the first run after 7:00 AM sends them, each once */
+    const CQ = require('./_lib/custquiet.js');
+    if (!CQ.off() && CQ.quiet(Date.now())) {
+      try { await CQ.noteNotices(); } catch (e) {}
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, quiet: true, invoiceMail, releaseAt: new Date(CQ.nextRelease(Date.now())).toISOString() }) };
+    }
     const rep = await portal._core.runReminders({});
     rep.invoiceMail = invoiceMail;
     try { rep.notices = await portal._core.notifyAll({}); } catch (e) { rep.notices = { error: String(e && e.message || e) }; }

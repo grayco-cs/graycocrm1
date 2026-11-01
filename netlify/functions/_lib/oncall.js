@@ -40,9 +40,9 @@ function make(d){
     const sid = env('TWILIO_ACCOUNT_SID'), tok = env('TWILIO_AUTH_TOKEN'), from = env('TWILIO_FROM');
     if (!sid || !tok || !from || !/^\d{10}$/.test(s(phone10))) return { ok: false, skipped: true };
     try {
-      const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',
+      const r = await require('./custquiet.js').run('staff', () => fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',   /* patch CUSTQUIET: the on-call page goes to staff — never held */
         headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + tok).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ To: '+1' + phone10, From: from, Body: s(body).slice(0, 600) }).toString() });
+        body: new URLSearchParams({ To: '+1' + phone10, From: from, Body: s(body).slice(0, 600) }).toString() }));
       return { ok: r.ok };
     } catch (e) { return { ok: false }; }
   }

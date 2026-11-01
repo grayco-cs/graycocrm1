@@ -30,7 +30,8 @@ async function twilioSend(to, body){
   const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', {
     method: 'POST', headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + tok).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ To: to, From: from, Body: body }).toString() });
-  return { ok: r.ok, status: r.status };
+  let held = null; try { held = require('./_lib/custquiet.js').heldOf(r); } catch (e) {}   /* patch CUSTQUIET */
+  return held ? { ok: r.ok, status: r.status, held } : { ok: r.ok, status: r.status };
 }
 const CREW_TEXT = {
   arrived: function(p){ return 'GrayCo Construction: our crew just arrived at your job' + (s(p.address) ? ' (' + clip(s(p.address).split(',')[0], 60) + ')' : '') + '. Questions? Call 901-585-0944.'; },
@@ -53,6 +54,7 @@ async function crewText(body, who){
   if (!claim.ok) return { status: 503, out: { ok: false, error: 'Could not record it — try again.' } };
   if (claim.result === 'dup') return { status: 200, out: { ok: true, sms: false, already: true } };
   let r; try { r = await twilioSend(to, CREW_TEXT[kind](p)); } catch (e) { r = { ok: false }; }
+  if (r.held) return { status: 200, out: { ok: true, sms: true, held: true, scheduled: true, releaseAt: r.held.releaseAt, say: require('./_lib/custquiet.js').SAY } };   /* patch CUSTQUIET: 7 PM–7 AM it waits for 7 AM */
   return { status: 200, out: { ok: true, sms: !!r.ok, why: r.ok ? '' : 'The text did not go out (' + (r.status || 'no answer') + ').' } };
 }
 async function queueDoc(body, who){

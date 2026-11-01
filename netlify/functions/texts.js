@@ -43,7 +43,7 @@ async function send(who, b){
   const RT = require('./_lib/smsroute.js');
   const text = (b.noSign ? s(b.text) : RT.sign(s(b.text), who.name || '')).slice(0, 600);
   let purpose = s(b.purpose) ? RT.normPurpose(b.purpose) : '';
-  let CD = null; try { CD = await core().kvRead(['subs', 'vendors', 'projects', 'customers', 'leads']); } catch (e) {}   /* patch SMSCONSENT: read once — the line and the consent check both use it */
+  let CD = null; try { CD = await core().kvRead(['subs', 'vendors', 'projects', 'customers', 'leads', 'users']); } catch (e) {}   /* patch SMSCONSENT: read once — the line and the consent check both use it */
   if (!purpose) { try { purpose = CD ? RT.purposeFor(CD, to) : 'customers'; } catch (e) { purpose = 'customers'; } }   /* a sub → the subs number, a customer → the customers number */
   if (to.length !== 10) return { code: 400, body: { ok: false, error: 'A 10-digit phone number is needed.' } };
   if (!text) return { code: 400, body: { ok: false, error: 'Type the text first.' } };
@@ -61,18 +61,29 @@ async function send(who, b){
       if (why) return { code: 409, body: { ok: false, consent: cst || 'unknown', marketingConsent: mst || 'unknown', error: why } }; }
   }
   if (st.optout[to]) return { code: 409, body: { ok: false, error: 'This number texted STOP — GrayCo cannot text it until they text START.' } };
-  if (b.checkQuiet === true && RT.quiet(typeof exports._now === 'function' ? exports._now() : Date.now())) return { code: 409, body: { ok: false, quiet: true, error: 'It is after 8 PM (or before 7 AM) — texts wait until morning. Send anyway only for something urgent.' } };
+  /* patch CUSTQUIET: no 409 any more — 7 PM–7 AM Central a text to a customer or a sub is QUEUED for 7:00 AM (_lib/custquiet.js,
+     held at the send itself) and the answer says so. A text to a staff cell goes now; an admin's sendNow (emergency) goes now. */
+  const CQ = require('./_lib/custquiet.js');
+  const staffTo = staffPhone(CD, to), override = b.sendNow === true && !!who.admin;
   const set = await getSettings(), from = RT.fromFor(purpose, set, env);
-  const r = await MC().sendSms(to, text, from);
-  if (!r.ok) return { code: 502, body: { ok: false, error: 'Twilio did not send it' + (r.status ? ' (' + r.status + ')' : r.why ? ' (' + r.why + ')' : '') + '.' } };
   const at = nowIso(), id = 'SMSO_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const msg = { id, pid, authorId: low(who.email), authorName: s(who.name || who.email) + ' 📱 (text to ' + S.tidy(to) + ')', text, tags: [], at, source: 'sms', channel: 'sms', dir: 'out', smsTo: to, smsFromNum: RT.phone10(from), purpose };
+  const r = await CQ.run(override ? 'override' : staffTo ? 'staff' : 'customer', () => MC().sendSms(to, text, from), { jobMsgId: id, by: low(who.email) });
+  if (!r.ok) return { code: 502, body: { ok: false, error: 'Twilio did not send it' + (r.status ? ' (' + r.status + ')' : r.why ? ' (' + r.why + ')' : '') + '.' } };
+  const held = r.held || null;
+  const msg = { id, pid, authorId: low(who.email), authorName: s(who.name || who.email) + ' 📱 (text to ' + S.tidy(to) + ')' + (held ? ' · ⏰ Scheduled 7:00 AM' : ''), text, tags: [], at, source: 'sms', channel: 'sms', dir: 'out', smsTo: to, smsFromNum: RT.phone10(from), purpose };
+  if (held) { msg.heldUntil = held.releaseAt; msg.cqId = held.id; }
   try { await MC().stateCas(x => { x.lastOut = x.lastOut && typeof x.lastOut === 'object' ? x.lastOut : {}; x.lastOut[to] = { email: low(who.email), name: s(who.name), pid, at }; return true; }); } catch (e) {}   /* patch SMSROUTE: their reply comes back to this employee */
   const has = l => l.some(m => m && s(m.id) === id);
   try { await core().kvListUpdate('gc_job_messages', l => has(l) ? null : { list: l.concat([msg]), check: has }); } catch (e) {}
   try { await require('./_lib/textlead.js').onOutbound({ ph: to, text, who: s(who.name || who.email), id }); } catch (e) {}   /* patch TEXTLEAD: on the lead's conversation too */
   if (pid) { try { await require('./_lib/comms.js').addMessage(pid, { id: 'sms_' + id, kind: 'text', dir: 'out', at, from: s(who.email), fromName: s(who.name), to: [S.tidy(to)], text }); } catch (e) {} }
-  return { code: 200, body: { ok: true, id, message: msg } };
+  return { code: 200, body: held ? { ok: true, id, message: msg, held: true, scheduled: true, releaseAt: held.releaseAt, cqId: held.id, say: CQ.SAY } : { ok: true, id, message: msg } };
+}
+/* patch CUSTQUIET: is this number a GrayCo employee's cell (the CRM's people list)? A text to staff is not a customer text. */
+function staffPhone(CD, to){
+  const d = require('./_lib/smsroute.js').phone10(to); if (d.length !== 10) return false;
+  const users = CD && Array.isArray(CD.users) ? CD.users : [];
+  return users.some(u => u && u.active !== false && [u.phone, u.cell, u.mobile, u.cellPhone, u.mobilePhone].some(v => require('./_lib/smsroute.js').phone10(v) === d));
 }
 
 exports.handler = async function(event){
@@ -156,4 +167,4 @@ exports.handler = async function(event){
     return J(400, { ok: false, error: 'Bad request.' }, C);
   } catch (e) { return J(503, { ok: false, error: 'Texting is busy — try again (' + s(e && e.message) + ').' }, C); }
 };
-exports._t = { send, number };
+exports._t = { send, number, staffPhone };

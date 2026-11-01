@@ -137,7 +137,8 @@ async function sendSms(to10, body, from){   /* patch SMSROUTE: from = one of our
     const r = await fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(sid) + '/Messages.json', { method: 'POST',
       headers: { Authorization: 'Basic ' + Buffer.from(sid + ':' + env('TWILIO_AUTH_TOKEN')).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ To: '+1' + to10, From: s(from) || env('TWILIO_FROM'), Body: clip(body, 600) }).toString() });
-    return { ok: r.ok, status: r.status };
+    let held = null; try { held = require('./_lib/custquiet.js').heldOf(r); } catch (e) {}   /* patch CUSTQUIET: queued for 7 AM (customer quiet hours) */
+    return held ? { ok: r.ok, status: r.status, held } : { ok: r.ok, status: r.status };
   } catch (e) { return { ok: false, why: 'Twilio unreachable' }; }
 }
 
@@ -205,7 +206,11 @@ async function missed(p, how, extra){
   if (textIt) { try { const SC = require('./_lib/smsconsent.js'), D0 = await core().kvRead(['customers', 'projects', 'leads']), s0 = await stateGet();
     if (SC.statusFor(D0, ph, s0.consent) === 'no') { textIt = false; out.consent = 'declined'; } } catch (e) {} }
   if (textIt) {
-    out.text = await sendSms(ph, s(extra.text) || TEXT);   /* patch AFTERHOURS: the after-hours wording */
+    /* patch CUSTQUIET: 7 PM–7 AM Central this text-back is queued for 7 AM — unless the caller has an EMERGENCY (after-hours
+       "press 1", or emergency words in what they said): that reply goes now, as before */
+    let emerg0 = !!extra.emergency; if (!emerg0 && s(extra.what)) { try { emerg0 = require('./_lib/emergency.js').isEmergency({ title: s(extra.what), detail: s(extra.what) }); } catch (e) {} }
+    out.text = await require('./_lib/custquiet.js').run(emerg0 ? 'emergency' : 'customer', () => sendSms(ph, s(extra.text) || TEXT));   /* patch AFTERHOURS: the after-hours wording */
+    if (out.text && out.text.held) out.heldUntil = out.text.held.releaseAt;
     if (!out.text.ok) await stateCas(st => { if (st.texted[ph] === at) delete st.texted[ph]; return true; }).catch(() => {});
   } else out.text = { skipped: 'texted recently or opted out' };
   /* existing customer? */
@@ -239,7 +244,7 @@ async function missed(p, how, extra){
 function EC(){
   return require('./_lib/emergcall.js').make({ env, now, kvGet: k => L().kvGet(k), kvCas: (k, f) => L().kvCas(k, f),
     crm: () => core().kvRead(['users', 'gc_senior_pm']), users: async () => { try { return (await core().kvRead(['users'])).users; } catch (e) { return []; } },
-    sms: (ph, body) => sendSms(ph, body),
+    sms: (ph, body) => require('./_lib/custquiet.js').run('staff', () => sendSms(ph, body)),   /* patch CUSTQUIET: to the staff member who accepted — staff, not a customer */
     ackCtx: async () => {   /* what counts as "someone has it": the Lead Inbox item, the CRM lead, the on-call page, a staff text */
       const o = { inbox: {}, leads: {}, pages: [], lastOut: {}, msgs: [] };
       try { (await L().kvGet(L().KV) || []).forEach(x => { if (x && x.id) o.inbox[s(x.id)] = x; }); } catch (e) {}
@@ -434,7 +439,7 @@ async function inboundSms(p){
   /* HELP: the standard answer, nothing else */
   /* patch SMSMENU: on the Customers / default number HELP opens the 1–5 menu (with the STOP line) further down */
   const menuLine0 = ['customers', 'main'].indexOf(require('./_lib/smsroute.js').purposeOf(phone10(p.To), set, env)) >= 0;
-  if (S.HELP.test(body) && !menuLine0) { out.help = optedOut ? { skipped: 'opted out' } : await sendSms(ph, S.HELP_TEXT); return out; }
+  if (S.HELP.test(body) && !menuLine0) { out.help = optedOut ? { skipped: 'opted out' } : await require('./_lib/custquiet.js').run('reply', () => sendSms(ph, S.HELP_TEXT)); return out; }   /* patch CUSTQUIET: the HELP answer carriers require goes at once */
   /* patch SUBTXT: an answer to a sub's schedule text — Y → ✓ Confirmed; anything else → the job's PM at once (push, 🔴 To-Do, e-mail) */
   try { const sh = await require('./sub-texts.js')._lib.handleReply(ph, body, at); if (sh && sh.handled) { out.subText = { confirmed: !!sh.confirmed, issue: !!sh.issue, key: sh.key }; return out; } } catch (e) { out.subTextError = s(e && e.message); }
   let data = {};
@@ -589,7 +594,11 @@ async function inboundSms(p){
   if (noticeNow && !paused && !optedOut) reply = reply ? SMS().NOTICE_PREFIX + ' ' + reply : SMS().NOTICE_PREFIX;   /* patch SMSCONSENT */
   else noticeNow = false;
   if (reply) {
-    out.reply = await sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : '');   /* patch SMSROUTE: answered from the number they texted */
+    /* patch CUSTQUIET: 7 PM–7 AM Central the automatic answer is queued for 7 AM — unless the texter reported an EMERGENCY
+       (emergency words, the emergency answer, menu 5): that reply goes now, as before */
+    let emergT = !!(rule && rule.id === 'emergency') || (menu && menu.choice === '5'); if (!emergT) { try { emergT = !!RT.topics(body).emergency; } catch (e) {} }
+    out.reply = await require('./_lib/custquiet.js').run(emergT ? 'emergency' : S.HELP.test(body) ? 'reply' : 'customer', () => sendSms(ph, reply, RT.isOurs(toNum, set, env) ? '+1' + toNum : ''));   /* patch SMSROUTE: answered from the number they texted */
+    if (out.reply && out.reply.held) out.replyHeldUntil = out.reply.held.releaseAt;
     if (out.reply.ok && noticeNow) { out.notice = true; await stateCas(st => { st.welcomed = st.welcomed && typeof st.welcomed === 'object' ? st.welcomed : {}; st.welcomed[ph] = at; return true; }).catch(() => {}); }   /* patch SMSCONSENT */
     if (out.reply.ok) {
       try { await TL().onOutbound({ ph, text: reply, who: 'automatic answer', id: 'SMSA_' + sid, leadId: own.lead || out.newLead || '' }); } catch (e) {}   /* patch TEXTLEAD */
