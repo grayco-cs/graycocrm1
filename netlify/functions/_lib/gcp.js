@@ -181,7 +181,8 @@ function rfiOut(x){ return { id: s(x.id), number: s(x.number), subject: clip(x.s
 async function scheduleOf(pid){
   let rows = [];
   try { rows = arr((await core().kvRead(['schedule'])).schedule); } catch (e) {}
-  return rows.filter(function(x){ return x && pidOf(x) === s(pid) && x.deleted !== true && x.internal !== true && x.private !== true; })
+  rows = require('./schedvis.js').visible(rows);   /* patch SCHEDPICK: never a template suggestion or a hidden duplicate bookend */
+  return rows.filter(function(x){ return x && pidOf(x) === s(pid) && x.deleted !== true && x.internal !== true && x.private !== true && x.customerVisible !== false; })
     .map(function(x){ return { title: clip(x.title || x.name || x.task, 90), date: ymd(x.date || x.start), end: ymd(x.endDate || x.end) }; })
     .filter(function(x){ return x.title && x.date; }).sort(function(a, b){ return a.date < b.date ? -1 : 1; }).slice(0, 80);
 }
