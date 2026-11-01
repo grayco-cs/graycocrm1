@@ -231,6 +231,7 @@ ul.tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;fo
 /* patch SUBTXT */.late-wrap{display:flex;flex-direction:column;gap:6px}.late-btn{min-height:38px;font-size:13px;border-color:#b45309;color:#9a3412;align-self:flex-start;padding:0 12px}.late-form{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--rule);border-radius:10px;background:#fffaf0}.late-ks{display:flex;gap:6px;flex-wrap:wrap}.late-ks .btn{min-height:38px;font-size:13px;padding:0 10px}.late-k[aria-pressed=true]{background:var(--navy2);color:#fff}.late-ta{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--rule);border-radius:8px}
 </style>
 <script src="/legal2.js"></script>   <!-- LEGAL2-patch: in the head so it is loaded before the signing code runs -->
+<script src="/portal-claimhelp.js"></script>   <!-- patch CLAIMHELP: "🛡 Your insurance claim" (insurance / restoration / mitigation jobs) -->
 </head>
 <body>
 <div class="wrap">
@@ -618,9 +619,18 @@ function ownPwCard(){
   c.id = 'ownPwCard';
   return c;
 }
+/* patch CLAIMHELP: "🛡 Your insurance claim" — the claim steps with "You are here", the claim box, Questions & answers and
+   "Ask us a question" (portal-claimhelp.js draws V.claimHelp; the server sends it only for an insurance / restoration /
+   mitigation job whose "Insurance claim help steps" feature is on). On an insurance job it takes the place of the claim
+   box + automatic timeline (one set of claim steps, not two). */
+function chCard(){
+  if (!V || !V.claimHelp || !window.GCClaimHelp) return null;
+  try { return window.GCClaimHelp.card(V.claimHelp, { extra: V.insurance && V.insurance.claim, preview: PREVIEW, onAsk: function(){ go('msgs'); } }); } catch (e) { return null; }
+}
 function home(){
-  var tr0 = V.insurance ? insHome() : [tracker()];   /* patch INSP: an insurance job shows its claim instead of the job steps */
-  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : [], [updates(), photosButton(), reviewCard()]);
+  var ch = chCard();
+  var tr0 = V.insurance ? (ch ? [ch] : insHome()) : [tracker()].concat(ch ? [ch] : []);   /* patch INSP: an insurance job shows its claim instead of the job steps */
+  if (wide()) return [ownPwCard()].concat(V.insurance ? tr0 : (ch ? [ch] : []), [updates(), photosButton(), reviewCard()]);
   return [ownPwCard()].concat(tr0, [updates(), pmCard(), photosButton(), reviewCard(), infoCard()]);
 }
 
@@ -1161,7 +1171,6 @@ window._gcPortalSel = { reload: load, data: function(){ return D; } };
 })();
 
 </script>
-<<<<<<< HEAD
 <script id="gc-portal-auto7">
 /* patch AUTO7 — on Home: "Materials arriving <day>" (supplier orders matched to the job — never prices), your warranty
    (5 years on all roofing and on insurance work, 1 year on everything else) and "Report an issue": a few words and up
@@ -1572,13 +1581,11 @@ start();
 window._gcPortalWt = { reload: load, data: function(){ return D; } };
 })();
 </script>
-=======
 <script>document.addEventListener("DOMContentLoaded",function(){try{window.GCLegal&&window.GCLegal.boot({base:""})}catch(e){}});</script>   <!-- LEGAL2-patch -->
 <script src="/portal-plus.js" defer></script>
 <script src="/portal-home.js" defer></script>
 <script src="/portal-needs.js" defer></script>
 <script src="/portal-pwa.js" defer></script>   <!-- patch PORTALAPP: "Make GrayCo Portal an app?", the numbers, notifications -->
->>>>>>> f1024ca (E-mail & chat history on every job, maintenance plans, "How did you hear about us?", carrier speed report)
 <script id="gc-portal-ref">
 /* patch REF — the "🎁 Referral program" card at the bottom of Home (not front and center).
    Every friend the customer refers earns them $100–$500 in GrayCo credit; credits STACK on one balance and NEVER EXPIRE.

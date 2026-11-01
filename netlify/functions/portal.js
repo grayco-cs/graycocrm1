@@ -122,7 +122,8 @@ const FACEBOOK_URL = 'https://www.facebook.com/p/GrayCo-Construction-Services-LL
 const KV_KEYS = ['projects', 'invs', 'invoices', 'cos', 'changeOrders', 'estimates', 'projectDocs', 'users',
                  'customers', 'leads', 'punch', 'projectPayments', 'gc_deleted_projects', 'gc_claims', 'jobAutoDefaults',
                  'gc_portal_auto_posts',   /* patch AUTAI: approved weekly updates / voice posts */
-                 'gc_senior_pm', 'gc_team_settings'];   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
+                 'gc_senior_pm', 'gc_team_settings',   /* patch PMG: the Senior PM, "APMs may approve" (Admin → Employees) */
+                 'gc_claim_help'];   /* patch CLAIMHELP: "🛡 Your insurance claim" — the published steps + Q&A (_lib/claimhelp.js) */
 const KV_TTL = 30e3, PHOTO_TTL = 5 * 60e3, SIGN_SECS = 3600, MIN_FAIL_MS = 250;
 
 /* ── small helpers ─────────────────────────────────────────────────────────── */
@@ -812,10 +813,89 @@ async function buildView(data, p, opts){
     insTagDocs(view.docs, pdocs, signed);
     view.insurance = insuranceView(data, p, { stage: stage, cos: cos, invoices: invoices, docs: view.docs,
       payments: arr(p.drawPayments).concat(arr(p.payments), arr(data.projectPayments).filter(function(x){ return pidOf(x) === pid && x.deleted !== true; })) });
-    return scrub(view, insWords(data, p));
+    return chAttach(scrub(view, insWords(data, p)), data, p, view.insurance.now);   /* patch CLAIMHELP */
   }
   const showC = jaAllows(data, p, 'showCarrier') && p.portalShowCarrier !== false;   /* patch BB2: the claim's TPA / adjusting companies are always scrubbed, its carrier unless shown */
-  return scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC)));
+  return chAttach(scrub(view, (showC ? [] : carrierWords(p)).concat(claimWords(data, pid, showC))), data, p, null);   /* patch CLAIMHELP */
+}
+
+/* ── patch CLAIMHELP: "🛡 Your insurance claim" (netlify/functions/_lib/claimhelp.js) ─────────────────────────
+   Only on an insurance / restoration / mitigation job whose feature "Insurance claim help steps" is on (job.features;
+   ON by default for those jobs). The portal reads ONLY the published version (gc_kv gc_claim_help). Owner rule: the
+   carrier's name NEVER reaches this section — whatever "Show carrier name" says — nor a TPA / adjusting company. */
+function CH(){ return require('./_lib/claimhelp.js'); }
+function chWords(data, p){
+  const c = insClaim(data, p.id) || {};
+  const out = carrierWords(p).concat(claimWords(data, p.id, false));
+  [c.carrier, p.adjusterCompany, p.adjustingCompany, p.tpa, c.adjuster && c.adjuster.company, c.deskAdjuster && c.deskAdjuster.company, /^none/i.test(s(c.program)) ? '' : c.program]
+    .forEach(function(v){ v = s(v); if (v.length >= 3) out.push(v); });
+  out.push(COMMON_CARRIERS);
+  return out;
+}
+function chView(content, data, p, inspNow){ return CH().view(content, p, data, { inspNow: typeof inspNow === 'number' ? inspNow : undefined, words: chWords(data, p) }); }
+function chAttach(view, data, p, inspNow){
+  try {
+    if (!CH().eligible(p, data)) return view;
+    view.claimHelp = chView(CH().publishedOf(data[CH().KEY]), data, p, inspNow);
+  } catch (e) { try { console.log('[portal] claim help skipped: ' + clip(e && e.message || e, 120)); } catch (x) {} }
+  return view;
+}
+async function chStoreRead(){
+  const r = await fetch(sbUrl() + '/rest/v1/gc_kv?select=value,updated_at&key=eq.' + CH().KEY, { headers: H() });
+  if (!r.ok) throw new Error('gc_kv read ' + r.status);
+  const rows = await r.json(); let v = rows && rows[0] && rows[0].value;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } }
+  return v && typeof v === 'object' ? v : {};
+}
+async function chStoreWrite(v){
+  const at = new Date().toISOString();
+  const r = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify({ key: CH().KEY, value: v, updated_at: at }) });
+  if (!r.ok) throw new Error('gc_kv write ' + r.status);
+  kvCache = null;   /* the next portal view reads the new published version */
+}
+/* the CRM: ⚙ Admin → 🛡 Insurance claim help (admins edit; the office and everyone else on staff can view), and the job's
+   "Claim step ▾" preview / "Tell the customer" (a portal post on ✅ Approvals — never sent by itself, never a text) */
+async function claimHelpAction(body, who){
+  const L = CH(), op = s(body.op) || 'get', admin = require('./_lib/staff-role.js').isAdmin(who);
+  const by = s(who.name) || low(who.email), now = new Date().toISOString();
+  if (op === 'get') { const st = await chStoreRead(); return { status: 200, out: Object.assign({ ok: true, canEdit: admin, defaults: L.defaults() }, L.forEditor(st)) }; }
+  if (op === 'preview') {
+    const st = await chStoreRead();
+    const content = body.content && typeof body.content === 'object' ? body.content : (s(body.which) === 'draft' ? L.forEditor(st).draft : L.publishedOf(st));
+    let data = {}; try { data = await crmData(true); } catch (e) {}
+    const pid = s(body.projectId), cloud = pid ? findProject(data, pid) : null;
+    const j = body.job && typeof body.job === 'object' ? body.job : {};
+    const pick = {}; ['type', 'jobType', 'isInsurance', 'claimNumber', 'dateOfLoss', 'adjusterName', 'adjusterPhone', 'portalShowAdjuster', 'features', 'claimHelp', 'insCarrier', 'carrier', 'name'].forEach(function(k){ if (j[k] !== undefined) pick[k] = j[k]; });
+    const p = Object.assign({ id: pid || 'preview', type: 'Insurance Claim' }, cloud || {}, pick);
+    let inspNow = null;
+    try { if (!s((p.claimHelp || {}).step) && (isInsJob(p) || (p.isInsurance !== false && !!insClaim(data, p.id)))) { const v0 = await buildView(data, Object.assign({}, p, { claimHelp: {} })); inspNow = v0 && v0.insurance ? v0.insurance.now : null; } } catch (e) {}
+    return { status: 200, out: { ok: true, eligible: L.eligible(p, data), view: chView(content, data, p, inspNow) } };
+  }
+  if (op === 'notify') {   /* "Tell the customer" — a portal post that waits on ✅ Approvals (CUSTQUIET holds it 7 PM – 7 AM) */
+    const pid = s(body.projectId);
+    if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(pid)) return { status: 400, out: { ok: false, error: 'Open a job first.' } };
+    const st = await chStoreRead(), data = await crmData(true), p = findProject(data, pid);
+    if (!p) return { status: 404, out: { ok: false, retry: true, error: 'The job is not in the cloud yet — try again in a minute.' } };
+    const text = L.noticeText(L.publishedOf(st), p, s(body.step) || s((p.claimHelp || {}).step), body.note != null ? body.note : (p.claimHelp || {}).note);
+    if (!text) return { status: 400, out: { ok: false, error: 'Pick the claim step first.' } };
+    const clean = L.scrubWords({ t: text }, chWords(data, p)).t;
+    return autaiQueue({ kind: 'portal_post', projectId: pid, text: clean, by: by, source: 'claimhelp' }, who);
+  }
+  if (!admin) return { status: 403, out: { ok: false, viewOnly: true, error: 'Only an admin (Wesley or Nick) can change the insurance claim help. The office can view it.' } };
+  const cur = await chStoreRead();
+  if (body.base != null && s(body.base) !== s(cur.savedAt)) return { status: 409, out: Object.assign({ ok: false, conflict: true, error: 'Someone else changed it a moment ago — it was reloaded. Make your change again.' }, L.forEditor(cur)) };
+  const next = Object.assign({}, cur);
+  if (op === 'save' || op === 'publish') {
+    if (body.draft && typeof body.draft === 'object') { next.draft = L.clean(body.draft); next.savedAt = now; next.savedBy = by; }
+    if (!next.draft || !arr(next.draft.steps).length) next.draft = L.forEditor(cur).draft;
+    if (!arr(next.draft.steps).length) return { status: 400, out: { ok: false, error: 'Keep at least one step.' } };
+    if (op === 'publish') { next.published = L.clean(next.draft); next.publishedAt = now; next.publishedBy = by; if (!next.savedAt) { next.savedAt = now; next.savedBy = by; } }
+  } else if (op === 'reset') {
+    next.draft = L.defaults(); next.savedAt = now; next.savedBy = by; next.resetAt = now;
+  } else return { status: 400, out: { ok: false, error: 'Bad request' } };
+  await chStoreWrite(next);
+  return { status: 200, out: Object.assign({ ok: true, canEdit: true, defaults: L.defaults() }, L.forEditor(next)) };
 }
 
 /* ── INSURANCE JOBS (patch INSP) ────────────────────────────────────────────────
@@ -2468,7 +2548,7 @@ exports.handler = async function (event) {
   const action = s(body.action || 'view');
 
   /* STAFF */
-  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare', 'devices'].indexOf(action) >= 0) {
+  if (['create', 'revoke', 'regenerate', 'status', 'final-now', 'send-link', 'settings', 'notify-docs', 'approval', 'invoice-pdf', 'news', 'links', 'payment-receipt', 'gate', 'subshare', 'devices', 'claimhelp'].indexOf(action) >= 0) {
     const who = await gcStaffAuth(event);
     if (!who.ok && who.statusCode === 403 && !svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY (without it the staff list cannot be read).' });
     if (!who.ok) return reply(who.statusCode, headers, { ok: false, error: who.error });
@@ -2499,6 +2579,10 @@ exports.handler = async function (event) {
       if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(dpid)) return reply(400, headers, { ok: false, error: 'Open a job first.' });
       try { return reply(200, headers, await signOutDevices(dpid)); }
       catch (e) { return reply(502, headers, { ok: false, error: 'Could not sign the devices out. Try again.' }); }
+    }
+    if (action === 'claimhelp') {   /* patch CLAIMHELP: ⚙ Admin → 🛡 Insurance claim help, the job's claim-step preview and "Tell the customer" */
+      try { const ch = await claimHelpAction(body, who); return reply(ch.status, headers, ch.out); }
+      catch (e) { return reply(502, headers, { ok: false, error: 'The insurance claim help hit a problem: ' + clip(e && e.message || e, 120) }); }
     }
     if (action === 'subshare') {   /* patch SUBCONTACT: the job page's "Share contact with customer" (op get | set) */
       try { const a = await subcLib().staff(exports._core, body, who); return reply(a.status, headers, a.out); }
@@ -2630,6 +2714,7 @@ Object.assign(exports._core, { gcStaffAuth: gcStaffAuth, signRefs: signRefs, tok
 /* patch INSP */
 Object.assign(exports._core, { esc: esc, isOffice: isOffice, kvListUpdate: kvListUpdate, queueApproval: queueApproval, AQ_KEY: AQ_KEY, approvalAction: approvalAction });   /* patch SUBCONTACT */
 Object.assign(exports._core, { releaseScheduled: releaseScheduled, sendScheduled: sendScheduled, cqHoldsKind: cqHoldsKind, kvListRead: kvListRead });   /* patch CUSTQUIET */
+Object.assign(exports._core, { claimHelpAction: claimHelpAction, chWords: chWords, chAttach: chAttach });   /* patch CLAIMHELP */
 Object.assign(exports._core, { isInsJob: isInsJob, insDocShown: insDocShown, insInternal: insInternal, insGroupOf: insGroupOf, insuranceView: insuranceView, INS_STEPS: INS_STEPS });
 /* patch AUTO5: portal-sign.js (signatures in the portal, estimate follow-ups) */
 Object.assign(exports._core, { createFor: createFor, linkFor: linkFor, withJob: withJob, replyToFor: replyToFor });

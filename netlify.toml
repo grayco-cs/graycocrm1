@@ -393,6 +393,13 @@
   status = 200
   force = true
 
+# patch CLAIMHELP: portal.html loads portal-claimhelp.js ("🛡 Your insurance claim") — without this rule the portal host answers it with the page
+[[redirects]]
+  from = "https://portal.grayco-cs.com/portal-claimhelp.js"
+  to = "/portal-claimhelp.js"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "https://portal.grayco-cs.com/*"
   to = "/portal.html"
