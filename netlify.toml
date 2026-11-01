@@ -86,8 +86,10 @@
 # Nightly data check (patch AUTO6): 07:05 UTC = 2:05 AM Central (1:05 AM in winter). Duplicate customers, jobs missing
 # a PM / address / contract amount / signed contract, leads missing a due date / assignee → ONE item on the shared
 # Office To-Do. Never deletes or merges anything.
+# patch DATAFULL: also 12:05 and 13:05 UTC — the one that is 7 AM Central (daylight saving or not) sends the morning alert
+# "🧾 Job data check: N jobs need info" to the admins and the office (e-mail + phone push; never a text; not in data-entry mode).
 [functions."data-check"]
-  schedule = "5 7 * * *"
+  schedule = "5 7,12,13 * * *"
 
 # Lost-lead win-back (patch AUTO6): 15:20 UTC = 10:20 AM Central (9:20 AM in winter). Leads lost 6 / 12 months ago →
 # one approval item per batch; nothing goes out until an admin approves it (then one e-mail each from news@).
