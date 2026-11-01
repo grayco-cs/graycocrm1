@@ -266,8 +266,18 @@ function make(d){
   async function gcKvVal(k){ try { const r = await sb('gc_kv?select=value&key=eq.' + encodeURIComponent(k)); if (!r.ok) return null; let v = (arr(await r.json())[0] || {}).value; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) {} } return v; } catch (e) { return null; } }
   async function emergency(mine, raw){
     const E = require('./emergency.js'), X = require('./x10.js');
-    const em = mine.filter(x => E.isEmergency(Object.assign({}, raw[x.id] || {}, x)));
+    let em = mine.filter(x => E.isEmergency(Object.assign({}, raw[x.id] || {}, x)));
     if (!em.length) return { n: 0 };
+    /* patch MAINTTAB (owner 10/30): an emergency from a ⭐ PRIORITY CUSTOMER (every commercial maintenance-plan customer, every
+       winter snow sign-up) is marked in the alert e-mail / push / to-do / the lead card and the escalation calls, and goes first.
+       Nothing changes for anyone else. */
+    const PRI = {};
+    try { const MT = require('./maint.js'), d = await Promise.all(['gc_maint', 'gc_maint_plans', 'projects'].map(gcKvVal));
+      const projs = Array.isArray(d[2]) ? d[2] : (d[2] && Array.isArray(d[2].v) ? d[2].v : []), list = MT.priorityList(Array.isArray(d[0]) ? d[0] : [], projs, MT.settingsOf(d[1]));
+      if (list.length) em.forEach(x => { const m = MT.matchPriority(list, Object.assign({}, raw[x.id] || {}, x)); if (m) PRI[x.id] = m; });
+      if (Object.keys(PRI).length) em = em.filter(x => PRI[x.id]).concat(em.filter(x => !PRI[x.id]));
+    } catch (e) {}
+    const STAR = '⭐ PRIORITY CUSTOMER — ';
     let oncall = null; try { const c = X.oncallCfg(await kvGet('gc_x10_oncall')); if (c.on && c.rotation.length) oncall = X.onCallNow(now(), c); } catch (e) {}
     let users = await gcKvVal('users'); if (users && !Array.isArray(users) && Array.isArray(users.v)) users = users.v; users = arr(users);
     const team = await gcKvVal('gc_team_settings');
@@ -280,19 +290,21 @@ function make(d){
     const planFor = x => E.people({ oncall, insurance: ins, office: officeTo, mitigation: E.isMitigation(Object.assign({}, raw[x.id] || {}, x)) ? mitTo : null });
     const plan = E.people({ oncall, insurance: ins, office: officeTo });
     const out = { n: 0, to: plan.to, lead: plan.lead, byLead: {} };
-    for (const x of em) {
+    for (let x of em) {
       let claim = false;
       await kvCas(KA, v => { const st = loadState(v); st.emerg = st.emerg && typeof st.emerg === 'object' ? st.emerg : {}; if (st.emerg[x.id]) return undefined; st.emerg[x.id] = nowIso();
         const ks = Object.keys(st.emerg); if (ks.length > 600) ks.sort((a, b) => s(st.emerg[a]).localeCompare(s(st.emerg[b]))).slice(0, ks.length - 600).forEach(k => { delete st.emerg[k]; }); claim = true; return st; }).catch(() => { claim = true; });
       if (!claim) continue;
       /* patch EMERGCALL: nobody acknowledges in 15 min → the CRM phones on call, then the 📞 Call order (_lib/emergcall.js, x10-scheduled) */
+      const pri = PRI[x.id] || null; if (pri) x = Object.assign({}, x, { title: STAR + x.title, priorityCustomer: true });
       try { await require('./emergcall.js').make({ env, now, kvGet, kvCas }).register(x, raw[x.id]); } catch (e) {}
       const px = planFor(x); out.byLead[x.id] = px.to;
       const c = x.contact || {}, who = plan.lead ? plan.lead.name || plan.lead.email : 'the office';
       const m = mailNew([x]);
       m.subject = ('🚨 EMERGENCY lead — call now: ' + x.title).slice(0, 250);
       m.html = frame('🚨 Emergency lead — call them now', 'An emergency came in' + (x.source ? ' (' + esc(x.source) + ')' : '') + '. <b>' + esc(who) + '</b> ' + (plan.lead && plan.lead.why === 'on call' ? 'is on call and has it' : 'has it (' + esc(plan.lead ? plan.lead.why : 'nobody on call') + ')') + '; ' + (px.mitigation ? 'this is a mitigation emergency (water / fire): the office, Nick, Wesley and the mitigation manager are told too.' : 'the office is told too.'), rowHtml(x), px.mitigation ? 'Mitigation emergencies (water, leak, flood, burst pipe, sewage, mold, fire, smoke, storm-damage dry-out) go to the on-call PM, the office, Nick, Wesley and the mitigation manager.' : 'General emergencies go to the on-call PM and the office; the lead is in the Lead Inbox.', LM().buttons(x.call));
-      m.text = m.subject + '\n\n' + LM().boxText(x.said) + '\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads';
+      if (pri) m.html = '<p style="font-family:Arial,sans-serif;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 12px"><b>⭐ PRIORITY CUSTOMER</b> — ' + esc(pri.name || pri.job) + ' has a GrayCo maintenance plan (' + esc(pri.plans.join(', ')) + '): priority snow + emergency. Their Emergency Ready file (shutoffs, contacts): <a href="' + site() + '/#maint">' + site() + '/#maint</a></p>' + m.html;
+      m.text = m.subject + '\n\n' + LM().boxText(x.said) + '\n' + [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? '\n' + x.detail : '') + '\n\nOn it: ' + who + '\nOpen it: ' + site() + '/#leads' + (pri ? '\n⭐ PRIORITY CUSTOMER (maintenance plan: ' + pri.plans.join(', ') + ') — Emergency Ready file: ' + site() + '/#maint' : '');
       m.push = { title: ('🚨 Emergency: ' + x.title).slice(0, 100), body: ([c.name, c.phone].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '')).slice(0, 180) || 'Call them now', tag: 'lead-emerg-' + x.id };
       m.area = 'area:Leads';
       const r = await deliver(m, null, px.to.concat([x.assigneeEmail].concat(x.coEmails || [])).filter(Boolean));   /* + whoever the lead roles gave it to */
@@ -303,6 +315,7 @@ function make(d){
           note: [c.name, c.phone, c.email].filter(Boolean).join(' · ') + (x.detail ? ' — ' + x.detail : '') + (x.source ? ' (' + x.source + ')' : ''), phone: s(c.phone), leadKey: x.key,
           assignees: plan.lead && plan.lead.name ? [plan.lead.name] : [], office: true, prio: 'urgent', urgency: 'asap', kind: 'emergency_lead', due: at.slice(0, 10), addedBy: 'Emergency lead', addedAt: at, createdAt: at, updatedAt: at, done: false }]), check: l2 => l2.some(t => t && t.id === tid) });
       } catch (e) {}
+      if (pri) { try { await kvCas('gc_lead_inbox', v => { const l = arr(v), it = l.find(y => y && s(y.id) === s(x.id)); if (!it || it.priorityCustomer) return undefined; it.priorityCustomer = true; it.priorityPid = s(pri.pid); if (s(it.title).indexOf(STAR) !== 0) it.title = STAR + s(it.title); return l; }); } catch (e) {} }
       /* the lead itself: to the on-call PM when nobody picked it, or the lead roles only gave it to the Senior Insurance PM */
       if (plan.lead && plan.lead.why === 'on call') {
         try { await kvCas('gc_lead_inbox', v => { const l = arr(v), it = l.find(y => y && s(y.id) === s(x.id)); if (!it) return undefined;

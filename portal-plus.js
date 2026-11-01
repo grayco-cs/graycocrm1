@@ -90,6 +90,7 @@ function maintCard(){
   c.appendChild(h('div', { class: 'row' }, [h('h2', { text: '🛠 Your maintenance plans' }), signed.length ? h('span', { class: 'pill ok', text: 'You are covered' }) : null]));
   c.appendChild(h('div', { class: 'muted', text: signed.length ? 'Thank you for letting GrayCo take care of your home.' : chosen.length ? 'Your Project Manager picked ' + (chosen.length === 1 ? 'this plan' : 'these plans') + ' for your home. Sign up for any or all of them — no obligation.' : 'Keep your home and the work we did in top shape with a visit from GrayCo. Prices are set for your home — ask for a quote, no obligation.' }));
   if (PREVIEW) c.appendChild(h('div', { class: 'muted', text: 'Preview — only the customer can ask or sign.' }));
+  if (M.member) c.appendChild(h('div', { class: 'pp-plan', 'data-member': M.member.tier }, [h('b', { text: '🏅 ' + M.member.name + ' member' }), h('p', { text: M.member.discount + '% off repairs · ' + M.member.perks + (M.member.note ? ' · ' + M.member.note : '') })]));   /* patch MAINTPLUS */
   var all = (M.plans || []).slice(), info = {};
   all.forEach(function(p){ info[p.id] = p; });
   var list = chosen.map(function(x){ var p = info[x.planId] || {}; return { id: x.planId, name: x.planName || p.name, includes: x.includes || p.includes || '', freqLabel: x.freqLabel || p.freqLabel || '', priority: !!x.priority }; })
@@ -117,17 +118,19 @@ function maintCard(){
         if (!pad) pad = makePad();
         var nm = h('input', { type: 'text', class: 'pp-in', id: 'gcpp-name', maxlength: '80', autocomplete: 'name', placeholder: 'Type your full name' }); nm.value = keep.name; nm.addEventListener('input', function(){ keep.name = nm.value; });
         var ag = h('input', { type: 'checkbox', id: 'gcpp-agree' }); ag.checked = keep.ok; ag.addEventListener('change', function(){ keep.ok = ag.checked; });
+        var ar = h('input', { type: 'checkbox', id: 'gcpp-renew' }); ar.checked = !!keep.renew; ar.addEventListener('change', function(){ keep.renew = ar.checked; });   /* patch MAINTPLUS: auto-renew only with a yes */
         var go = h('button', { type: 'button', class: 'btn gold', id: 'gcpp-signbtn', text: 'Sign up — ' + usd(k.price) + ' / year' }), sm = h('div', { class: 'pp-msg', role: 'status' });
         go.disabled = PREVIEW;
         box.appendChild(h('label', { class: 'muted', for: 'gcpp-name', text: 'Your full name' })); box.appendChild(nm);
         box.appendChild(h('div', { class: 'muted', text: 'Draw your signature (or leave it blank to sign with your typed name):' })); box.appendChild(pad.el);
         box.appendChild(h('button', { type: 'button', class: 'btn', text: 'Clear signature', on: { click: function(){ pad.clear(); } } }));
         box.appendChild(h('label', { class: 'sel-agree' }, [ag, h('span', { text: ' I sign up for the ' + (k.planName || 'plan') + ' at ' + usd(k.price) + ' per year' + (k.billsPerYear > 1 ? ' (billed ' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months)' : '') + '. It renews each year; I can end it by e-mail before the next invoice.' })]));
+        box.appendChild(h('label', { class: 'sel-agree' }, [ar, h('span', { text: ' Optional: renew this plan automatically each year (GrayCo sends the renewal invoice; you can stop it any time by e-mail). Leave it unticked and we will ask you before each renewal.' })]));
         box.appendChild(go); box.appendChild(sm);
         go.addEventListener('click', function(){
           if (busy) return; if (!nm.value.trim()) { sm.textContent = 'Please type your full name.'; nm.focus(); return; } if (!ag.checked) { sm.textContent = 'Please tick the box to agree.'; return; }
           busy = true; go.disabled = true; sm.textContent = 'Signing…';
-          api({ action: 'maint-sign', contractId: k.id, name: nm.value, agree: true, strokes: pad.strokes() }).then(function(r){
+          api({ action: 'maint-sign', contractId: k.id, name: nm.value, agree: true, autoRenew: ar.checked === true, strokes: pad.strokes() }).then(function(r){
             busy = false;
             if (r.data && r.data.ok) { keep.ok = false; delete open[k.id]; pad.clear(); note.maint = '✓ Thank you — you are signed up. First visit: ' + dt(r.data.nextVisit) + '. Your signed copy is below' + (r.data.emailed ? ' and in your e-mail.' : '.'); return load(); }
             sm.textContent = (r.data && r.data.error) || 'That did not work — please call ' + OFFICE + '.'; go.disabled = false;
@@ -136,11 +139,29 @@ function maintCard(){
       }
     } else if (k.status === 'signed') {
       box.appendChild(h('span', { class: 'pp-st', text: '✓ Signed by ' + (k.signName || 'you') + ' on ' + dt(k.signedAt) + ' · ' + usd(k.price) + ' / year' + (k.billsPerYear > 1 ? ' (' + usd(Math.round(k.price * 100 / k.billsPerYear) / 100) + ' every ' + (12 / k.billsPerYear) + ' months)' : '') }));
-      if (k.nextVisit) box.appendChild(h('p', { text: 'Next visit: ' + dt(k.nextVisit) + ' — we will call before we come.' }));
+      var nv = (k.visits || []).filter(function(v){ return v.status === 'planned'; })[0];
+      if (nv || k.nextVisit) box.appendChild(h('p', { text: (nv && nv.oncall ? 'On call from ' + dt(nv.date) + ' — when snow or ice hits we come.' : 'Next visit: ' + dt(nv ? nv.date : k.nextVisit) + ' — we will call before we come.') }));
+      if (k.tier) box.appendChild(h('span', { class: 'pp-freq', text: '🏅 ' + k.tier.charAt(0).toUpperCase() + k.tier.slice(1) }));
+      box.appendChild(h('span', { class: 'pp-freq', style: 'margin-left:6px', text: k.autoRenew ? 'Renews automatically (you said yes)' : 'We ask you before each renewal' }));
+      var done = (k.visits || []).filter(function(v){ return v.status === 'done'; });
+      if (done.length) box.appendChild(h('div', { class: 'muted', 'data-visits': '1' }, ['Visits: '].concat(done.map(function(v, i){ return (i ? ' · ' : '') + dt(v.date) + (v.note ? ' — ' + v.note : ''); }))));
+      (k.repairs || []).forEach(function(r){ box.appendChild(h('p', { 'data-repair': '1', text: '🔧 Repair found ' + dt(r.at) + ': ' + r.desc + ' — ' + usd(r.net) + (r.discount ? ' (' + r.discount + '% member discount off ' + usd(r.price) + ')' : '') + '. Call ' + OFFICE + ' or reply to our e-mail to go ahead.' })); });
+      if ((k.invoices || []).length) box.appendChild(h('div', { class: 'muted', text: 'Invoices: ' + k.invoices.map(function(v){ return '#' + v.number + ' ' + usd(v.amount) + ' (' + dt(v.at) + ')'; }).join(' · ') }));
       if (k.doc) box.appendChild(h('a', { class: 'btn', href: k.doc, target: '_blank', rel: 'noopener', text: '📄 Your signed plan' }));
+    }
+    if (k && k.agreement && k.status !== 'signed') { box.appendChild(h('a', { class: 'btn', href: k.agreement, target: '_blank', rel: 'noopener', 'data-agreement': '1', text: '📄 Maintenance Agreement' }));
     }
     c.appendChild(box);
   });
+  if ((M.alacarte || []).length) {   /* the à la carte list: one item at a time */
+    var al = h('div', { class: 'pp-plan', 'data-alacarte': '1' }, [h('b', { text: 'À la carte — pick just one item' })]), am = h('div', { class: 'pp-msg', role: 'status' });
+    M.alacarte.forEach(function(it){ al.appendChild(h('div', { class: 'row', style: 'justify-content:space-between;margin:4px 0' }, [h('span', { text: it.name + (it.price ? ' — ' + usd(it.price) : '') + (it.note ? ' · ' + it.note : '') }),
+      h('button', { type: 'button', class: 'btn', 'data-ask': it.id, text: 'Ask for this', on: { click: function(){ if (busy || PREVIEW) return; busy = true; am.textContent = 'Sending…'; api({ action: 'maint-ask', item: it.id }).then(function(r){ busy = false; am.textContent = r.data && r.data.ok ? '✓ Thank you — we will call you with the price.' : ((r.data && r.data.error) || 'Please call ' + OFFICE + '.'); }); } } })])); });
+    al.appendChild(am); c.appendChild(al); }
+  if (M.emready) { var er = M.emready, eb = h('div', { class: 'pp-plan', 'data-emready': '1' }, [h('b', { text: '🚨 Emergency Ready — your building file' }), er.building ? h('p', { text: er.building }) : null]);
+    (er.shutoffs || []).forEach(function(x){ eb.appendChild(h('p', { text: '⛔ ' + x.what + ' shutoff: ' + x.location })); });
+    (er.contacts || []).forEach(function(x){ eb.appendChild(h('p', { text: '📞 ' + [x.name, x.role, x.phone].filter(Boolean).join(' · ') })); });
+    c.appendChild(eb); }
   if (note.maint) c.appendChild(h('div', { class: 'pp-msg', text: note.maint }));
   c.appendChild(h('div', { class: 'muted', text: 'Questions about a plan? Call your Project Manager or the office at ' + OFFICE + '.' }));
   return c;

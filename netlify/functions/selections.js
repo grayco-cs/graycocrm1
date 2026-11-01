@@ -306,7 +306,7 @@ function textW(t, size, bold){
   return w * size / 1000;
 }
 function buildPdf(blocks){
-  const W = 612, Hh = 792, M = 54, pages = []; let ops = [], y = Hh - M;
+  const W = 612, Hh = 792, M = 54, pages = [], IMGS = []; let ops = [], y = Hh - M;
   function page(){ if (ops.length) pages.push(ops.join('\n')); ops = []; y = Hh - M; }
   function need(h){ if (y - h < M) page(); }
   function text(t, size, bold, x, color){ ops.push('BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + (color || '0.08 0.13 0.18') + ' rg ' + (x || M) + ' ' + y.toFixed(1) + ' Td ' + pdfStr(t) + ' Tj ET'); }
@@ -332,6 +332,23 @@ function buildPdf(blocks){
       y -= 5; ops.push('0.89 0.86 0.80 RG 0.5 w ' + M + ' ' + y.toFixed(1) + ' m ' + (W - M) + ' ' + y.toFixed(1) + ' l S'); return;
     }
     if (b.t === 'p') { const l = wrap(b.text, b.size === 9 ? 105 : 95); need(l.length * 13); l.forEach(function(x){ y -= 13; text(x, b.size || 10, !!b.bold, M, b.muted ? '0.33 0.38 0.44' : null); }); return; }
+    if (b.t === 'photos') {   /* patch MAINTPLUS: up to 3 photos side by side (JPEG: { w, h, bin }) — a light placeholder box where there is none */
+      const n = Math.max(1, (b.photos || []).length), hh = b.h || 110, gap = 10, bw = (W - 2 * M - gap * (n - 1)) / n; need(hh + 10); y -= hh;
+      (b.photos || []).forEach(function(ph, i){ const x0 = M + i * (bw + gap);
+        if (ph && ph.bin && ph.w && ph.h) { const k = Math.min(bw / ph.w, hh / ph.h), dw = ph.w * k, dh = ph.h * k, nm = 'P' + (IMGS.push(ph));
+          ops.push('q ' + dw.toFixed(1) + ' 0 0 ' + dh.toFixed(1) + ' ' + (x0 + (bw - dw) / 2).toFixed(1) + ' ' + (y + (hh - dh) / 2).toFixed(1) + ' cm /' + nm + ' Do Q'); }
+        else { ops.push('0.95 0.95 0.93 rg ' + x0.toFixed(1) + ' ' + y.toFixed(1) + ' ' + bw.toFixed(1) + ' ' + hh + ' re f 0.85 0.83 0.78 RG 0.6 w ' + x0.toFixed(1) + ' ' + y.toFixed(1) + ' ' + bw.toFixed(1) + ' ' + hh + ' re S');
+          const cap = s(b.caption || 'Photo'); ops.push('BT /F1 9 Tf 0.55 0.57 0.6 rg ' + (x0 + (bw - textW(cap, 9, false)) / 2).toFixed(1) + ' ' + (y + hh / 2 - 3).toFixed(1) + ' Td ' + pdfStr(cap) + ' Tj ET'); } });
+      y -= 10; return;
+    }
+    if (b.t === 'qr') {   /* patch MAINTPLUS: a QR code drawn as squares (b.text, b.size points wide), with a caption to its right */
+      let q; try { q = require('./_lib/qr.js')(0, 'M'); q.addData(s(b.text)); q.make(); } catch (e) { return; }
+      const n = q.getModuleCount(), sz = b.size || 96, c = sz / n; need(sz + 12); y -= sz; const x0 = M, y0 = y, sq = ['0 0 0 rg'];
+      for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) sq.push((x0 + k * c).toFixed(2) + ' ' + (y0 + (n - 1 - r) * c).toFixed(2) + ' ' + c.toFixed(2) + ' ' + c.toFixed(2) + ' re f');
+      ops.push(sq.join('\n'));
+      const cap = wrap(s(b.caption), 70); let yy = y0 + sz - 14; cap.forEach(function(x, i){ ops.push('BT /' + (i ? 'F1' : 'F2') + ' ' + (i ? 10 : 12) + ' Tf 0.08 0.13 0.18 rg ' + (x0 + sz + 16) + ' ' + yy.toFixed(1) + ' Td ' + pdfStr(x) + ' Tj ET'); yy -= 14; });
+      y -= 8; return;
+    }
     if (b.t === 'sig') {
       need(96); y -= 86; const x0 = M, y0 = y, sc = 0.4;   /* the 600 × 200 pad, drawn at 240 × 80 */
       ops.push('0.75 0.75 0.75 RG 0.5 w ' + x0 + ' ' + y0.toFixed(1) + ' m ' + (x0 + 240) + ' ' + y0.toFixed(1) + ' l S');
@@ -355,12 +372,14 @@ function buildPdf(blocks){
   const pageObjs = pages.map(function(c){ const pg = n++, ct = n++; kids.push(pg + ' 0 R'); return { pg: pg, ct: ct, c: c }; });
   const imgObj = LOGO ? n++ : 0;   /* patch HOT3 */
   if (LOGO) objs[imgObj] = '<< /Type /XObject /Subtype /Image /Width ' + LOGO.w + ' /Height ' + LOGO.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + LOGO.bin.length + ' >>\nstream\n' + LOGO.bin + '\nendstream';
+  const pObjs = IMGS.map(function(ph){ const o = n++; objs[o] = '<< /Type /XObject /Subtype /Image /Width ' + ph.w + ' /Height ' + ph.h + ' /ColorSpace /' + (ph.gray ? 'DeviceGray' : 'DeviceRGB') + ' /BitsPerComponent 8 /Filter /DCTDecode /Length ' + ph.bin.length + ' >>\nstream\n' + ph.bin + '\nendstream'; return o; });
+  const xo = (LOGO ? ' /Im1 ' + imgObj + ' 0 R' : '') + pObjs.map(function(o, i){ return ' /P' + (i + 1) + ' ' + o + ' 0 R'; }).join('');
   objs[2] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + kids.length + ' >>';
   objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
   objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
   objs[5] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>';
   pageObjs.forEach(function(x){
-    objs[x.pg] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + Hh + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >>' + (LOGO ? ' /XObject << /Im1 ' + imgObj + ' 0 R >>' : '') + ' >> /Contents ' + x.ct + ' 0 R >>';
+    objs[x.pg] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + Hh + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >>' + (xo ? ' /XObject <<' + xo + ' >>' : '') + ' >> /Contents ' + x.ct + ' 0 R >>';
     objs[x.ct] = '<< /Length ' + Buffer.byteLength(x.c, 'latin1') + ' >>\nstream\n' + x.c + '\nendstream';
   });
   let out = '%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'; const offs = [];

@@ -151,13 +151,28 @@ async function view(A, p){
   const plans = offered ? M.plansFor(p, st) : [];
   const docs = {};
   for (const c of mine) if (c.docRef) docs[c.id] = await signUrl(c.docRef);
+  const agr = {}; for (const c of mine) if (c.agreementRef && !c.docRef && !/^(declined)$/.test(s(c.status))) agr[c.id] = agr[c.agreementRef] || (agr[c.agreementRef] = await signUrl(c.agreementRef));
   const h = A.heard.find(function(x){ return s(x.pid) === s(p.id); });
+  /* patch MAINTPLUS: the visits (the Maintenance Schedule), what was approved for the portal (visit updates, repair quotes),
+     the property's Emergency Ready file, the membership tier */
+  let X = {}; if (mine.some(function(c){ return c.status === 'signed'; })) { try { X = await core().kvRead(['gc_approval_queue', 'gc_maint_visits', 'gc_maint_props']); } catch (e) { X = {}; } }
+  const sent = {}; arr(X.gc_approval_queue).forEach(function(q){ if (q && q.status === 'sent') sent[s(q.id)] = 1; });
+  const vis = arr(X.gc_maint_visits).filter(function(v){ return s(v.pid) === s(p.id) && v.status !== 'cancelled'; }).sort(function(a, b){ return s(a.date) < s(b.date) ? -1 : 1; });
+  const prop = X.gc_maint_props && typeof X.gc_maint_props === 'object' ? X.gc_maint_props[s(p.id)] : null;
+  const signedL = mine.filter(function(c){ return c.status === 'signed'; }), tierK = M.bestTier(signedL), T = st.tiers[tierK];
   return { ok: true, heard: { answer: h ? s(h.answer) : '', who: h ? s(h.who) : '', opts: M.HEARD_OPTS },
     maint: { offered: offered || mine.length > 0, plans: plans.map(function(x){ return { id: x.id, name: x.name, includes: M.plainIncludes(x.includes), visits: x.visits, freq: x.freq, freqLabel: M.freqLabel(x.freq) }; }),
       contracts: mine.map(function(c){ const pl = st.plans.find(function(x){ return x.id === s(c.planId); }), f = s(c.freq) || (pl ? pl.freq : 'yearly'), bills = M.billsPerYear(c);   /* patch MAINTPLANS */
         return { id: c.id, planId: s(c.planId), planName: s(c.planName), status: s(c.status), price: c.status === 'requested' ? null : (c.price != null ? money(c.price) : null),
+        tier: c.status === 'signed' ? M.tierOf(c) : '', autoRenew: c.status === 'signed' ? c.autoRenew === true : undefined, lastVisit: s(c.lastVisit),
+        visits: vis.filter(function(v){ return s(v.contractId) === s(c.id); }).map(function(v){ return { date: s(v.date), status: v.status === 'done' ? 'done' : 'planned', oncall: !!v.oncall, note: v.status === 'done' && v.postId && sent[s(v.postId)] ? s(v.note) : '' }; }).slice(-12),
+        repairs: arr(c.repairs).filter(function(x){ return x.approvalId && sent[s(x.approvalId)]; }).map(function(x){ return { desc: s(x.desc), price: money(x.price), net: money(x.net), discount: x.discount, at: s(x.at).slice(0, 10) }; }),
+        invoices: arr(c.invoices).filter(function(v){ return v.status === 'sent'; }).map(function(v){ return { year: s(v.year), amount: money(v.amount), number: s(v.number), at: s(v.sentAt || v.at).slice(0, 10) }; }),
         freq: f, freqLabel: M.freqLabel(f), billsPerYear: bills, priority: M.marketOf(pl || c) === 'commercial' && f !== 'once',   /* every commercial plan: ⭐ priority snow + emergency */ includes: M.plainIncludes(s(c.includes) || (pl ? pl.includes : '')),
-        requestedAt: s(c.requestedAt), quotedAt: s(c.quotedAt), signedAt: s(c.signedAt), signName: s(c.signName), nextVisit: s(c.nextVisit), doc: docs[c.id] || '' }; }) } };
+        requestedAt: s(c.requestedAt), quotedAt: s(c.quotedAt), signedAt: s(c.signedAt), signName: s(c.signName), nextVisit: s(c.nextVisit), doc: docs[c.id] || '', agreement: agr[c.id] || '' }; }),
+      alacarte: offered || mine.length ? (st.addOns || []).map(function(a){ return { id: a.id, name: a.name, price: a.price, note: a.note }; }).concat(plans.map(function(x){ return { id: 'plan:' + x.id, name: x.name + ' (one visit)', price: 0, note: '' }; })) : [],
+      member: signedL.length ? { tier: tierK, name: T.name, discount: T.discount, note: T.note || '', perks: T.visits } : null,
+      emready: prop && prop.emready ? { building: s(prop.emready.building), contacts: arr(prop.emready.contacts), shutoffs: arr(prop.emready.shutoffs).map(function(x){ return { what: s(x.what), location: s(x.location), hasPhoto: !!x.photo }; }), updatedAt: s(prop.emready.updatedAt).slice(0, 10) } : null } };
 }
 
 /* ── the customer's actions ── */
@@ -218,12 +233,17 @@ async function sign(event, row, body, A, p){
   const docRef = await storePdf(pdf, docName);
   const r = await contractChange(c0.id, function(c){
     if (c.status !== 'quoted') return 'changed';
+    c.autoRenew = body.autoRenew === true; c.autoRenewAt = body.autoRenew === true ? at : '';   /* patch MAINTPLUS: only with the customer's explicit OK (no card is stored or charged by the CRM) */
+    c.tier = M.TIERS[s(c.tier)] ? s(c.tier) : 'bronze'; c.soldBy = c.soldBy || s(c.quotedBy) || s(p.pm);
     c.status = 'signed'; c.signedAt = at; c.signName = name; c.signIp = clip(ip, 60); c.drawn = cs.strokes.length > 0; c.docRef = docRef; c.docName = docName; c.ref = ref; c.nextVisit = nextVisit; c.visitsPerYear = visits;
     c.history = arr(c.history).concat([{ at: at, by: name + ' (portal)', what: 'Signed — ' + usd(c.price) + ' / year' }]);
   });
   if (!r.ok) return { status: 503, out: { ok: false, error: 'We could not save it just now. Please try again in a minute, or call GrayCo ' + OFFICE_PHONE + '.' } };
   if (r.result === 'changed') return { status: 409, out: { ok: false, error: 'This plan changed — reload the page.' } };
   const pm = pmOf(A.data, p), tag = jobTag(p);
+  try { await tab().scheduleFor(Object.assign({}, c0, r.c || {}), p); } catch (e) {}   /* patch MAINTPLUS: the year's visits on the Maintenance Schedule */
+  try { const pl = A.settings.plans.find(function(x){ return x.id === s(c0.planId); }); const rc = pl ? M.num(pl.refCredit) : 0, ref = s(p.referredBy);   /* the plan-member referral credit (per plan) */
+    if (rc > 0 && ref) { await contractChange(c0.id, function(c){ c.refCredit = { to: ref, amount: rc, at: at }; }); await core().officeTodo('maint_ref_' + c0.id, '🎁 Referral credit ' + usd(rc) + ' to ' + ref + ' — ' + job, ref + ' referred ' + name + ', who signed the ' + s(c0.planName) + '. Give the credit (💎 Referral program).'); } } catch (e) {}
   try { await core().officeTodo('maint_signed_' + c0.id, '🛠 Maintenance plan signed — ' + job, name + ' signed the ' + s(c0.planName) + ' (' + usd(c0.price) + ' / year) in the portal ' + central(at) + '. First visit ' + niceDay(nextVisit) + ' — it is on the schedule. Signed copy in the job\'s documents.' + (pm ? ' PM: ' + pm.name + '.' : '')); } catch (e) {}
   if (pm && okEmail(pm.email)) await resend({ to: pm.email, from: 'GrayCo CRM <noreply@grayco-cs.com>', subject: 'Maintenance plan signed: ' + s(c0.planName) + ' — ' + tag,
     html: shell('Maintenance plan signed', '<p>' + esc(name) + ' signed the <b>' + esc(c0.planName) + '</b> (' + esc(usd(c0.price)) + ' / year) in the customer portal.</p><p>First visit: <b>' + esc(niceDay(nextVisit)) + '</b> — it is on the schedule and in the To-Do. The yearly invoice waits on ✅ Approvals each year.</p>') });
@@ -234,6 +254,14 @@ async function sign(event, row, body, A, p){
     attachments: [{ filename: docName.replace(/[^\w .()-]+/g, '-'), content: pdf.toString('base64') }] });
   return { status: 200, out: { ok: true, ref: ref, nextVisit: nextVisit, emailed: !!mailed.ok } };
 }
+/* owner decision 3: the à la carte list — the customer asks for one item (an add-on or a single visit) → the PM / office prices it */
+async function ask(event, row, body, A, p){
+  const id = s(body.item).slice(0, 60), a = (A.settings.addOns || []).find(function(x){ return x.id === id; }), pl = /^plan:/.test(id) ? A.settings.plans.find(function(x){ return 'plan:' + x.id === id; }) : null;
+  if (!a && !pl) return { status: 400, out: { ok: false, error: 'Pick an item from the list.' } };
+  const name = a ? a.name : pl.name + ' (one visit)', note = clip(s(body.note).replace(/[<>]/g, ''), 300), job = scrub(p.name, carrierWords(p));
+  try { await core().officeTodo('maint_ask_' + s(p.id) + '_' + id.replace(/\W/g, '') + '_' + nowIso().slice(0, 10), '🛠 À la carte request — ' + name + ' · ' + job, (custName(p) || 'The customer') + ' asked for ' + name + ' in the portal' + (note ? ' ("' + note + '")' : '') + '. Price it on the job (🛠 Maintenance) or call them.'); } catch (e) {}
+  return { status: 200, out: { ok: true } };
+}
 async function decline(event, row, body, A, p){
   const c0 = A.list.find(function(c){ return s(c.id) === s(body.contractId) && s(c.pid) === s(p.id); });
   if (!c0 || !/^(requested|quoted)$/.test(s(c0.status))) return { status: 404, out: { ok: false, error: 'That plan is not open on your job.' } };
@@ -241,23 +269,34 @@ async function decline(event, row, body, A, p){
   return r.ok ? { status: 200, out: { ok: true } } : { status: 503, out: { ok: false, error: 'Please try again.' } };
 }
 
+/* ── the 🛠 Maintenance tab (patches MAINTTAB + MAINTPLUS): _lib/maint-tab.js ── */
+const TAB_ACTIONS = ['agreement', 'area', 'plan-prices', 'contract-set', 'tab', 'settings-set', 'prospect-save', 'outreach', 'tier', 'emready', 'visit-post', 'snow-event', 'pcr', 'visit-set', 'portfolio-save', 'letter', 'pamphlet', 'pamphlet-mail'];
+async function kvPut(key, value){ const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: key, value: JSON.stringify(value), updated_at: nowIso() }) }); return w.ok; }
+async function kvMerge(key, fn){ const d = await core().kvRead([key]); let v = d[key]; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = null; } } return kvPut(key, fn(v)); }
+let TAB = null;
+function tab(){ return TAB || (TAB = require('./_lib/maint-tab.js').make({ core: core, readAll: readAll, listUpdate: listUpdate, contractChange: contractChange, storePdf: storePdf, sel: sel, pmOf: pmOf,
+  carrierWords: carrierWords, scrub: scrub, findProject: findProject, kvPut: kvPut, kvMerge: kvMerge,
+  readFile: async function(ref){ const m = /^sb:crm-files\/(.+)$/.exec(s(ref)); if (!m) return null; const r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + m[1], { headers: H() }); return r.ok ? Buffer.from(await r.arrayBuffer()) : null; } })); }
+
 /* ── staff ── */
 async function staff(event){ return require('./bid-inbox.js')._test.staffAuth(event); }
 async function staffAct(body, who){
   const act = s(body.action);
+  if (TAB_ACTIONS.indexOf(act) >= 0) { const T = await tab().act(body, who); if (T) return T; }
   const A = await readAll();
   if (act === 'list') return { status: 200, out: { ok: true, contracts: A.list, settings: A.settings, heard: A.heard, heardOpts: M.HEARD_OPTS } };
   if (act === 'plans') {
     if (!body.set) return { status: 200, out: { ok: true, settings: A.settings } };
     if (!(who.admin || who.office)) return { status: 403, out: { ok: false, error: 'Only an admin or the office changes the maintenance plans.' } };   /* patch OFFICEFULL */
     const v = body.set; if (!v || !Array.isArray(v.plans) || !v.plans.length || v.plans.length > 30) return { status: 400, out: { ok: false, error: 'Add at least one plan.' } };
-    const clean = M.settingsOf({ plans: v.plans, offerOn: v.offerOn, catalog: M.CATALOG_V });   /* patch MAINTPLANS: what they saved is the list */
+    const clean = M.settingsOf(Object.assign({}, A.settings, v, { catalog: M.CATALOG_V, known: A.settings.known }));   /* patch MAINTPLUS: tiers, kits, price list, templates kept unless sent */   /* patch MAINTPLANS: what they saved is the list */
     clean.updatedAt = nowIso(); clean.by = who.email; delete clean.saved;
     const w = await fetch(sbUrl() + '/rest/v1/gc_kv?on_conflict=key', { method: 'POST', headers: H({ Prefer: 'resolution=merge-duplicates,return=minimal' }), body: JSON.stringify({ key: M.PLANS_KEY, value: JSON.stringify(clean), updated_at: nowIso() }) });
     return w.ok ? { status: 200, out: { ok: true, settings: M.settingsOf(clean) } } : { status: 502, out: { ok: false, error: 'Could not save (' + w.status + ').' } };
   }
   if (act === 'quote' || act === 'quote-many') {   /* patch MAINTPLANS: one plan or several, one e-mail on ✅ Approvals */
     const items = act === 'quote' ? [{ planId: body.planId, contractId: body.contractId, price: body.price }] : (Array.isArray(body.items) ? body.items.slice(0, 30) : []);
+    const tierQ = M.TIERS[s(body.tier).toLowerCase()] ? s(body.tier).toLowerCase() : 'bronze', portfolioId = s(body.portfolioId).slice(0, 60);   /* patch MAINTPLUS: the plan builder */
     if (!items.length) return { status: 400, out: { ok: false, error: 'Pick at least one plan.' } };
     for (const it of items) { const pr = money(it && it.price); if (!(pr > 0) || pr > 100000) return { status: 400, out: { ok: false, error: 'Enter the yearly price for this home' + (items.length > 1 ? ' for every plan you picked.' : '.') } }; }
     const c1 = items[0].contractId ? A.list.find(function(c){ return s(c.id) === s(items[0].contractId); }) : null;
@@ -283,26 +322,39 @@ async function staffAct(body, who){
       }
       if (c0.status === 'signed') return { status: 409, out: { ok: false, error: 'This plan is already signed.' } };
       const r = await contractChange(c0.id, function(c){ if (c.status === 'signed') return 'signed'; c.status = 'quoted'; c.price = price; c.quotedAt = nowIso(); c.quotedBy = who.name || who.email;
-        if (plan) { c.planName = c.planName || plan.name; c.freq = plan.freq; c.visitsPerYear = plan.visits; c.billsPerYear = M.billsPerYear({ freq: plan.freq }); c.market = plan.market; c.includes = M.plainIncludes(plan.includes); }
+        const fq = M.FREQS[s(it.freq)] && s(it.freq) !== 'once' ? s(it.freq) : (plan ? plan.freq : s(c.freq));   /* the builder may set the frequency per service */
+        if (plan) { c.planName = c.planName || plan.name; c.market = plan.market; c.includes = M.plainIncludes(plan.includes); }
+        if (fq) { c.freq = fq; c.visitsPerYear = M.FREQ_N[fq] || 1; c.billsPerYear = M.billsPerYear({ freq: fq }); }
+        const ao = (Array.isArray(it.addOns) ? it.addOns : []).map(function(x){ const d = (A.settings.addOns || []).find(function(y){ return y.id === s(x && x.id || x); }); return d && d.on.indexOf(s(c.planId)) >= 0 ? { id: d.id, name: d.name, price: money(x && x.price != null ? x.price : d.price), note: d.note } : null; }).filter(Boolean);
+        c.addOns = ao; if (ao.length) c.includes = (c.includes ? c.includes + ' ' : '') + ao.map(function(x){ return 'Add-on: ' + x.name + ' (included in the price) — ' + x.note; }).join(' ');
+        c.tier = c.tier || tierQ; if (portfolioId) c.portfolioId = portfolioId; c.soldBy = c.soldBy || who.email;
+        if (plan && !c.performer) { c.performer = plan.performer || 'self'; c.sub = plan.sub || ''; }   /* owner decision 7: HVAC → Rapid Air, pressure washing → Brenan Hart (subbed) */
         c.history = arr(c.history).concat([{ at: nowIso(), by: who.name || who.email, what: 'Quoted ' + usd(price) + ' / year' }]); });
       if (!r.ok || r.result !== 'ok') return { status: r.result === 'signed' ? 409 : 503, out: { ok: false, error: r.result === 'signed' ? 'Already signed.' : 'Could not save — try again.' } };
       done.push(r.c);
     }
     const pm = pmOf(A.data, p), to = custEmail(p), words = carrierWords(p), job = scrub(p.name, words) || 'your job';
-    const line = function(c){ return esc(c.planName) + ' — <b>' + esc(usd(c.price)) + ' per year</b> (' + esc(M.freqLabel(c.freq).toLowerCase()) + ')'; };
+    const line = function(c){ return esc(c.planName) + ' — <b>' + esc(usd(c.price)) + ' per year</b> (' + esc(M.freqLabel(c.freq).toLowerCase()) + ')' + (arr(c.addOns).length ? ' incl. ' + esc(c.addOns.map(function(x){ return x.name; }).join(', ')) : ''); };
+    const kits = (Array.isArray(body.products) ? body.products : []).map(function(x){ const d = (A.settings.products || []).find(function(y){ return y.id === s(x && x.id); }); return d ? { name: d.name, qty: Math.max(1, Math.min(50, parseInt(x.qty, 10) || 1)), price: d.price, contents: d.contents } : null; }).filter(Boolean);
     const total = money(done.reduce(function(t, c){ return t + money(c.price); }, 0));
     let queued = false;
     if (okEmail(to)) {
       const html = shell(job, '<p>Hi ' + esc(firstName(custName(p)) || 'there') + ',</p>' + (done.length === 1
           ? '<p>Your price for the <b>' + esc(done[0].planName) + '</b> is <b>' + esc(usd(done[0].price)) + ' per year</b>. You can read what is included and sign up in your GrayCo Portal:</p>'
           : '<p>Here are your prices for the maintenance plans we picked for your home:</p><ul>' + done.map(function(c){ return '<li>' + line(c) + '</li>'; }).join('') + '</ul><p>You can read what each plan includes and sign up for any or all of them in your GrayCo Portal:</p>') +
+        (kits.length ? '<p>Also for you:</p><ul>' + kits.map(function(k){ return '<li>' + esc(k.name) + (k.qty > 1 ? ' × ' + k.qty : '') + ' — ' + esc(usd(k.price * k.qty)) + ' <span style="color:#55626F">(' + esc(k.contents) + ')</span></li>'; }).join('') + '</ul>' : '') +
         '<p style="text-align:center;margin:22px 0"><a href="' + core().LINK_PH + '" style="background:#D4A017;color:#0F1D2F;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px;display:inline-block">See my maintenance plan' + (done.length > 1 ? 's' : '') + '</a></p>' +
         '<p style="font-size:13px;color:#55626F">Questions? Call ' + esc(pm ? pm.name : 'us') + ' or the office at ' + OFFICE_PHONE + '.</p>');
       const qid = done.length === 1 ? 'appr_mtq_' + done[0].id + '_' + Math.round(money(done[0].price) * 100)
         : 'appr_mtq_' + pid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) + '_' + crypto.createHash('sha256').update(done.map(function(c){ return c.id + ':' + money(c.price); }).sort().join('|')).digest('hex').slice(0, 12);
+      /* owner decision 4: the Maintenance Agreement (DRAFT for lawyer review) goes with every plan sign request and into the portal */
+      let agRef = '';
+      try { const T = A.settings.tiers[tierQ] || {}; const ag = require('./_lib/maint-docs.js').agreement({ customer: custName(p), property: s(p.address) || job, plans: done.map(function(c){ return { planName: c.planName, freq: c.freq, price: c.price, includes: c.includes }; }), tierName: T.name, discount: T.discount, autoRenew: false, date: nowIso().slice(0, 10) }, sel());
+        agRef = await storePdf(ag, 'Maintenance Agreement (DRAFT) — ' + job + '.pdf');
+        if (agRef) for (const c of done) await contractChange(c.id, function(x){ x.agreementRef = agRef; }); } catch (e) {}
       queued = await core().queueApproval({ id: qid, kind: 'maint_quote', pid: pid, jobName: job, pm: pm, to: to, subject: 'Your maintenance plan quote' + (done.length > 1 ? 's' : '') + ' — ' + job, html: html,
-        attachments: [{ name: done.length > 1 ? 'The plans and their prices (in the customer portal)' : 'The plan and its price (in the customer portal)', kind: 'portal' }],
-        meta: { contractId: done[0].id, contractIds: done.map(function(c){ return c.id; }), plans: done.map(function(c){ return { id: c.id, planName: c.planName, price: money(c.price), freq: c.freq }; }), price: total, by: who.email } });
+        attachments: [{ name: done.length > 1 ? 'The plans and their prices (in the customer portal)' : 'The plan and its price (in the customer portal)', kind: 'portal' }].concat(agRef ? [{ kind: 'file', ref: agRef, name: 'Maintenance Agreement (DRAFT).pdf' }] : []),
+        meta: { kits: kits, tier: tierQ, portfolioId: portfolioId, contractId: done[0].id, contractIds: done.map(function(c){ return c.id; }), plans: done.map(function(c){ return { id: c.id, planName: c.planName, price: money(c.price), freq: c.freq }; }), price: total, by: who.email } });
     } else { try { await core().officeTodo('maint_quote_' + done.map(function(c){ return c.id; }).join('_').slice(0, 120), '🛠 Tell ' + (custName(p) || 'the customer') + ' their maintenance plan price' + (done.length > 1 ? 's' : '') + ' — ' + job, 'No customer e-mail on file. The quote (' + done.map(function(c){ return s(c.planName) + ' ' + usd(c.price) + ' / year'; }).join(', ') + ') is in their portal (Home → Maintenance plans): call or text them the portal link.'); } catch (e) {} }
     return { status: 200, out: { ok: true, contract: done[0], contracts: done, queued: !!queued } };
   }
@@ -323,6 +375,7 @@ async function staffAct(body, who){
 /* ── the yearly invoice, once ✅ approved (portal.js aqSend → here) ── */
 async function maintInvoiceSend(item, now){
   const meta = item.meta || {}, A = await readAll();
+  if (meta.combined && Array.isArray(meta.parts)) return combinedSend(item, now, A);   /* patch MAINTPLUS: a portfolio's one invoice */
   const c = A.list.find(function(x){ return s(x.id) === s(meta.contractId); });
   if (!c || c.status !== 'signed') return { ok: false, error: 'The plan is no longer active — not sent.' };
   const p = findProject(A.data, c.pid); if (!p) return { ok: false, error: 'The job is not in the cloud.' };
@@ -360,12 +413,12 @@ exports.handler = async function(event){
   const action = s(body.action || 'view');
   if (!svcKey()) return reply(500, headers, { ok: false, error: 'Server setting missing: SUPABASE_SERVICE_KEY.' });
 
-  if (['list', 'quote', 'quote-many', 'update', 'plans'].indexOf(action) >= 0) {
+  if (['list', 'quote', 'quote-many', 'update', 'plans'].concat(TAB_ACTIONS).indexOf(action) >= 0) {
     const who = await staff(event); if (!who.ok) return reply(who.code || 401, headers, { ok: false, error: who.error });
     try { const r = await staffAct(body, who); return reply(r.status, headers, r.out); }
     catch (e) { return reply(500, headers, { ok: false, error: 'The maintenance plans hit a problem: ' + clip(e && e.message || e, 120) }); }
   }
-  if (['view', 'heard', 'maint-request', 'maint-sign', 'maint-decline'].indexOf(action) < 0) return reply(400, headers, { ok: false, error: 'Bad request' });
+  if (['view', 'heard', 'maint-request', 'maint-sign', 'maint-decline', 'maint-ask'].indexOf(action) < 0) return reply(400, headers, { ok: false, error: 'Bad request' });
   const ip = ipOf(event);
   if (limited(ip)) { await sleep(MIN_FAIL_MS); return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' }); }
   const token = s(hdr(event, 'x-portal-token')), sess = s(hdr(event, 'x-portal-session'));
@@ -379,10 +432,28 @@ exports.handler = async function(event){
   if (body.preview === true) return reply(403, headers, { ok: false, error: 'Preview — only the customer can do this.' });
   if (tooManyWrites(row.token || sess)) return reply(429, headers, { ok: false, error: 'Too many tries. Please call GrayCo ' + OFFICE_PHONE + '.' });
   try {
-    const fn = { heard: heard, 'maint-request': request, 'maint-sign': sign, 'maint-decline': decline }[action];
+    const fn = { heard: heard, 'maint-request': request, 'maint-sign': sign, 'maint-decline': decline, 'maint-ask': ask }[action];
     const r = await fn(event, row, body, A, p);
     return reply(r.status, headers, r.out);
   } catch (e) { return reply(500, headers, { ok: false, error: 'Something went wrong — please call GrayCo ' + OFFICE_PHONE + '.' }); }
 };
-exports._x9 = { view: view, heard: heard, request: request, sign: sign, decline: decline, staffAct: staffAct, maintInvoiceSend: maintInvoiceSend, readAll: readAll, planPdf: planPdf, _reset: function(){ hits.clear(); writes.clear(); } };
+async function combinedSend(item, now, A){
+  const meta = item.meta || {}, parts = meta.parts.filter(function(x){ const c = A.list.find(function(y){ return s(y.id) === s(x.contractId); }); return c && c.status === 'signed'; });
+  if (!parts.length) return { ok: false, error: 'No active plan left in this invoice — not sent.' };
+  const to = s(item.to); if (!okEmail(to)) return { ok: false, error: 'No e-mail for the property manager.' };
+  const key = s(process.env.RESEND_API_KEY); if (!key) return { ok: false, error: 'E-mail is not set up on Netlify (RESEND_API_KEY).' };
+  if (mailOff()) return { ok: false, error: 'E-mail is switched off (PORTAL_MAIL_OFF).' };
+  const amount = money(parts.reduce(function(t, x){ return t + money(x.amount); }, 0)), number = 'MP-' + s(meta.portfolioId).replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase() + '-' + s(item.id).slice(-7).replace(/[^0-9]/g, '');
+  const doc = { number: number, date: s(now || nowIso()).slice(0, 10), due: '', terms: 'Due on receipt', status: 'Open', client: s(item.jobName), address: '', email: to, job: s(item.jobName) + ' — maintenance plans', jobAddress: '',
+    po: '', lines: parts.map(function(x){ return { desc: s(x.job) + ' — ' + s(x.planName) + ', ' + s(x.period) + ' (period ' + s(x.year) + ')', amt: money(x.amount) }; }), total: amount, paid: 0, balance: amount, isFinal: false, pm: '', pmPhone: '' };
+  let pdf; try { pdf = require('./_lib/invoice-pdf.js').build(doc); } catch (e) { return { ok: false, error: 'Could not make the invoice PDF.' }; }
+  let html = s(item.html); try { html = await require('./_lib/brand.js').shellFor(html, { email: '', name: '' }); } catch (e) {}
+  let r; try { r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: require('./_lib/brand.js').billingFrom(), reply_to: require('./_lib/brand.js').billingEmail(), to: [to], subject: s(item.subject), html: html,
+    attachments: [{ filename: 'GrayCo Invoice ' + number + '.pdf', content: pdf.toString('base64') }], headers: { 'X-GrayCo-CRM': 'maint-invoice' } }) }); } catch (e) { return { ok: false, error: 'The e-mail service did not answer.' }; }
+  if (!r.ok) return { ok: false, error: 'Resend answered ' + r.status };
+  for (const x of parts) await contractChange(x.contractId, function(c){ c.invoices = arr(c.invoices).map(function(v){ return s(v.year) === s(x.year) ? Object.assign({}, v, { status: 'sent', sentAt: nowIso(), number: number }) : v; }); });
+  try { await core().officeTodo('maint_invc_' + s(item.id), '🧾 Record combined maintenance invoice ' + number + ' (' + usd(amount) + ') — ' + s(item.jobName), parts.length + ' plan(s). Enter it in QuickBooks so the payment can be matched.'); } catch (e) {}
+  return { ok: true };
+}
+exports._x9 = { resendStaff: function(o){ return resend(Object.assign({ from: 'GrayCo CRM <noreply@grayco-cs.com>' }, o)); }, view: view, heard: heard, request: request, sign: sign, decline: decline, staffAct: staffAct, maintInvoiceSend: maintInvoiceSend, readAll: readAll, planPdf: planPdf, _reset: function(){ hits.clear(); writes.clear(); } };
 exports.maintInvoiceSend = maintInvoiceSend;

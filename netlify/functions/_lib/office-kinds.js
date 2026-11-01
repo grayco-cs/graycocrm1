@@ -38,7 +38,9 @@ const OFFICE_KINDS = [
      tools — assigning a lead is office work; access / role / permission / staff stay admin-only below) */
   'lead_assign', 'assign_estimator', 'assign_pm',
   /* OFFFEAT (r17b): a COI / W-9 request to a sub, and the reminders about an unsigned change order to the GC and to the customer */
-  'sub_doc_request', 'gcp_co_nudge', 'sign_co_nudge'
+  'sub_doc_request', 'gcp_co_nudge', 'sign_co_nudge',
+  /* MAINTTAB / MAINTPLUS: maintenance outreach e-mails (prospects, pamphlets), repair quotes from a visit, the customer's visit reminder */
+  'maint_outreach', 'maint_repair', 'maint_reminder'
 ];
 const OFFICE_PREFIX = /^sign_[a-z0-9_]+$/;   /* portal-sign.js: 'sign_' + the paper's kind (a change order, a warranty paper …) to the customer */
 const ADMIN_ONLY_KINDS = [
