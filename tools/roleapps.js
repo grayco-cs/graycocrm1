@@ -404,6 +404,7 @@ function deskCards(a){
   var h = '', n = apprCount(), all = '<button type="button" class="gc-ra-link" data-ra-a="appr">All ›</button>';
   if (a === 'admin') {
     var J = jobsOf('admin').list, S = moneyNums();
+    if (h.indexOf('data-card="sched"') < 0 && W._gcDashSched && typeof W._gcDashSched.deskHtml === 'function') { var SH = ''; try { SH = W._gcDashSched.deskHtml(); } catch (e) { warn(e); } if (SH) h += card('sched', '📅 Schedule', SH, '<button type="button" class="gc-ra-link" data-ra-a="go" data-v="schedule">Full schedule ›</button>'); }   /* DASHSCHED: the schedule card */
     h += card('jobs', 'All jobs (' + J.length + ')', J.length ? J.slice(0, 60).map(function(p){ return jobRow(p, jobBtns(p, ['cust', 'sub', 'photos', 'msg'])); }).join('') + (J.length > 60 ? '<div class="gc-ra-empty">' + (J.length - 60) + ' more — <button type="button" class="gc-ra-link" data-ra-a="go" data-v="projects">Projects ›</button></div>' : '') : '<div class="gc-ra-empty">No open jobs.</div>', '<button type="button" class="gc-ra-link" data-ra-a="go" data-v="projects">Projects ›</button>');
     h += card('appr', 'Approvals (' + n + ')', apprHtml(), all);
     var Lz = myLeads();
