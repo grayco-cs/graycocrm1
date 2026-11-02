@@ -69,7 +69,8 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   ok(!(await deskShown()), tag + 'a notification link (#lead=…) opens: the Desk steps aside', await why());
   await p.evaluate(() => { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} });
   await p.keyboard.press('Escape').catch(() => {}); await sleep(600);
-  await p.evaluate(() => { try { sessionStorage.removeItem('gc_hot1_want'); } catch (e) {} ['gcl-drawer', 'gcl-shade'].forEach(id => { const d = document.getElementById(id); if (d) d.remove(); }); });   /* close the lead it opened */
+  await p.evaluate(() => { try { sessionStorage.removeItem('gc_hot1_want'); } catch (e) {} const sh = document.getElementById('gcl-shade'); if (sh) sh.click(); }); await sleep(1200);   /* close the lead it opened, as a person does (a click beside it) */
+  await p.evaluate(() => { ['gcl-drawer', 'gcl-shade'].forEach(id => { const d = document.getElementById(id); if (d) d.remove(); }); });
   /* a window opened over the page (a To-Do card's / @mention window) */
   await reopen(); await p.evaluate(() => { const ov = document.createElement('div'); ov.id = 'desktodo-probe-ov'; ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.4)'; document.body.appendChild(ov); }); await sleep(1200);
   ok(!(await deskShown()), tag + 'a window opened over the page: the Desk steps aside', await why());
