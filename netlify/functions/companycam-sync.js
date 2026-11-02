@@ -327,10 +327,32 @@ function ymd(sec){ try { return new Date(sec * 1000).toISOString().slice(0, 10);
    different structure"): the own-lead tags the pay reads (leadIsMine / ownLead / leadOwner; _lib/lead-hold.js ownFields) */
 function selfFields(pm){ return { pm: pm, leadSource: 'Self-generated (' + pm + ')', broughtInBy: pm, commissionSource: 'self', pmSourced: true, selfGenerated: true, owner: pm, createdBy: pm,
   leadIsMine: true, ownLead: true, graycoOrigin: false, leadOwner: pm, leadSourceTag: 'PM’s own lead' }; }
+/* patch DUPJOB (owner 11/02): "when Nick or Wesley create leads into CompanyCam then they are GrayCo leads because we are
+   owners; we will then assign PM". An owner's (Admin) project: a GrayCo lead, no PM, no estimator. A creator who is not a
+   PM (an estimator): their own lead as ESTIMATOR, never the PM. No default job type: the commercial estimator's are
+   Commercial, else the type is left to pick ("Pick job type" on 🧾 Missing job data). */
+function arrU(v){ if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { return []; } } return Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []; }
+function userNamed(users, name){ const k = normName(String(name || '').replace(/\s+[\u2014\u2013-]+\s+\d+\s+jobs?\b.*$/, '')); return k ? arrU(users).find(u => normName(u.name) === k) || null : null; }
+function officeUser(u){ return !!u && (/office|marketing|bookkeep|accounting|reception/.test(low(u.role) + ' ' + low(u.title)) || low(u.email).indexOf('office@') === 0); }
+function creatorKind(users, name){
+  const u = userNamed(users, name); if (!u) return 'unknown';
+  if (officeUser(u)) return 'other';
+  if (/^(admin|owner)$/.test(low(u.role))) return 'owner';
+  if (/project manager|\bpm\b|\bapm\b|assistant pm/.test(low(u.role))) return 'pm';
+  return 'other';
+}
+function creatorRule(j, users){
+  const who = j.pmSourced === true ? s(j.pm) : '', kind = who ? creatorKind(users, who) : 'unknown';
+  if (kind === 'owner') Object.assign(j, { pm: '', estimator: '', commissionSource: 'company', leadSource: 'GrayCo', broughtInBy: '', pmSourced: false, selfGenerated: false, owner: 'GrayCo',
+    leadIsMine: false, ownLead: false, graycoOrigin: true, leadOwner: '', leadSourceTag: 'GrayCo lead', ccOwnerMade: who, createdBy: who });
+  else if (kind === 'other') { j.estimator = who; j.pm = ''; }
+  if (!s(j.type)) { const cu = userNamed(users, who || j.ccCreator); if (cu && /commercial/.test(low(cu.title) + ' ' + low(cu.role))) { j.type = 'Commercial Reno'; j.isCommercial = true; } else j.needsType = true; }
+  return j;
+}
 function jobFor(p, pm, note, nowIso, senior){
   const c = p.contact || {}, iso = new Date(p.created_at * 1000).toISOString();
   const j = { id: 'PRJcc_' + p.id, name: p.name || p.address || ('CompanyCam ' + p.id), client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email),
-    address: p.address || '', type: 'Residential Reno', status: 'bidding', contract: 0, source: 'companycam',
+    address: p.address || '', type: '', status: 'bidding', contract: 0, source: 'companycam',   /* patch DUPJOB: no default type */
     ccamId: p.id, ccProjectId: p.id, ccamUrl: p.url, companyCamUrl: p.url, ccCreator: p.creator || '', ccCreatorId: p.creatorId || '',
     created: ymd(p.created_at), createdAt: iso, keepAsJob: true, _ccAuto: true, _ccServer: true, savedAt: nowIso, updatedAt: nowIso };
   if (pm) Object.assign(j, selfFields(pm)); else { j.createdBy = 'CompanyCam' + (p.creator ? ' (' + p.creator + ')' : ''); if (senior) { j.pm = senior; j.pmBy = 'senior-pm'; } }   /* patch PMG: nobody mapped → the Senior PM runs it (not their own lead) */
@@ -436,8 +458,8 @@ async function run(opts){
     if (d.kind === 'linked') { R.linked++; if (d.attach) attachTo(d.attach, p, 'address'); continue; }
     if (d.kind === 'attach') { R.linked++; attachTo(d.job, p, d.by); continue; }
     if (d.kind === 'ask') { R.ask.push(p.id); R.review.push(revOf(p, 'link', d.why, d.jobs)); continue; }
-    const j = await srcFix(jobFor(p, await pmOf(p), d.note, nowIso, senior));
-    if (!s(j.pm) || j.pmBy === 'senior-pm') { R.senior.push(p.id); R.review.push(revOf(p, 'pm', 'nobody at GrayCo is set up as CompanyCam user "' + (p.creator || p.creatorId || '?') + '"' + (s(j.pm) ? ' — ' + j.pm + ' (Senior PM) has the job' : ' and no Senior PM is set') + '. Set that person\'s GrayCo Photos name in Admin → Employees.')); }
+    const j = await srcFix(creatorRule(jobFor(p, await pmOf(p), d.note, nowIso, senior), kv.users));   /* patch DUPJOB */
+    if ((!s(j.pm) && !j.ccOwnerMade && !s(j.estimator)) || j.pmBy === 'senior-pm') { R.senior.push(p.id);   /* patch DUPJOB: an owner's / estimator's project is not "nobody mapped" */ R.review.push(revOf(p, 'pm', 'nobody at GrayCo is set up as CompanyCam user "' + (p.creator || p.creatorId || '?') + '"' + (s(j.pm) ? ' — ' + j.pm + ' (Senior PM) has the job' : ' and no Senior PM is set') + '. Set that person\'s GrayCo Photos name in Admin → Employees.')); }
     jobs.push(j); idx.id[p.id] = { kind: 'job', id: j.id };
     st.made[p.id] = { id: j.id, at: nowIso };
     R.made.push({ cc: p.id, job: j.id, pm: j.pm || '', name: j.name });
@@ -453,6 +475,7 @@ async function run(opts){
     const ccId = ccIdFromAny(r.id), p = ccById[ccId] || { id: ccId, creator: s(r.ccCreator), creatorId: s(r.ccCreatorId) };
     if (!p.creator && !p.creatorId) continue;
     const pm = await pmOf(p); if (!pm) continue;
+    if (creatorKind(kv.users, pm) !== 'pm') continue;   /* patch DUPJOB: an owner's / an estimator's project never gets them as PM afterwards */
     fixes[r.id] = Object.assign(selfFields(pm), { leadSource: s(r.leadSource) && r.leadSource !== 'CompanyCam' && low(r.leadSource) !== low(pm) ? r.leadSource : 'Self-generated (' + pm + ')', broughtInBy: s(r.broughtInBy) || pm, owner: s(r.owner) || pm, createdBy: s(r.createdBy) || pm, updatedAt: nowIso, savedAt: nowIso });
     { const c = SRC.classify(Object.assign({}, r, fixes[r.id], { pmBy: '' }), { records: srcRecs, roofscout: await rsNear(r.address) });   /* patch SRC */
       if (c.source === 'company') fixes[r.id] = Object.assign({ pm: pm, updatedAt: nowIso, savedAt: nowIso }, SRC.fieldsFor(c, nowIso));
