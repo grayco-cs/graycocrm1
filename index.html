@@ -204334,6 +204334,7 @@ function cardBody(){ css(); var r = rowsHtml(); return '<div class="gctx-card-in
 /* the Desk home (patch ROLEAPPS calls window._gcRaCards for its cards) */
 W._gcRaCards = Array.isArray(W._gcRaCards) ? W._gcRaCards : [];
 W._gcRaCards.push(function(a, card){
+  return ''; /* patch FIELDDESK */
   if ((a !== 'admin' && a !== 'office') || !canSee() || typeof card !== 'function') return '';
   return card('taxes', '🧾 Taxes', cardBody(), '<button type="button" class="gc-ra-link" data-tax-a="open">Calendar ›</button>');
 });
@@ -204345,7 +204346,7 @@ function cardEl(id){
 }
 function view(){ return lsGet('grayco_view') || ''; }
 function paintHomes(){
-  var ok = canSee() && !D.documentElement.classList.contains('_fieldmode');
+  var ok = false && canSee() && !D.documentElement.classList.contains('_fieldmode'); /* patch FIELDDESK */
   var om = D.getElementById('gc-om-mount'), a = D.getElementById('gc-tax-om');
   if (ok && om && om.children.length) {
     a = cardEl('gc-tax-om'); var tb = D.getElementById('_gcOmToolbar'), ref = tb && tb.parentNode === om ? tb.nextSibling : om.firstChild;

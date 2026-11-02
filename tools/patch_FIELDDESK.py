@@ -10,6 +10,8 @@ app on phone". A Desk / Field button switches for this open only. See tools/fiel
    and a 🖥 Desk view item in its ☰ More.
 4. Role apps (patch ROLEAPPS): "a phone" asks _gcView; a switch made in this open wins (crews stay Field).
 5. The old "keep field view sticky" guard (a key nothing sets any more) no longer puts a computer back in Field.
+6. The 🧾 Taxes card (patch TAXALERTS) is on the ⚙ Admin page and the To-Do only: not on top of the Desk home, the
+   classic Company Dashboard or the Office page (owner 11/02).
 Usage: python3 tools/patch_FIELDDESK.py [index.html]"""
 import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -80,6 +82,15 @@ sub('ROLEAPPS: the person\'s choice wins',
 sub('old sticky guard retired',
     "function wantsField(){ try{ return localStorage.getItem(FM_KEY)==='1'; }catch(e){ return false; } }",
     "function wantsField(){ if(window._gcView) return false; " + M + " try{ return localStorage.getItem(FM_KEY)==='1'; }catch(e){ return false; } }")
+
+# 6. the 🧾 Taxes card (patch TAXALERTS): on the ⚙ Admin page and the To-Do only — not on top of the Desk home, the
+#    Office page or the dashboard (owner 11/02). Its ⚙ Admin section and its To-Do lines stay as they are.
+sub('TAXALERTS: no Taxes card on the Desk home',
+    "W._gcRaCards.push(function(a, card){\n  if ((a !== 'admin' && a !== 'office') || !canSee() || typeof card !== 'function') return '';",
+    "W._gcRaCards.push(function(a, card){\n  return ''; " + M + "\n  if ((a !== 'admin' && a !== 'office') || !canSee() || typeof card !== 'function') return '';")
+sub('TAXALERTS: no Taxes card on top of the Office page / the dashboard',
+    "function paintHomes(){\n  var ok = canSee() && !D.documentElement.classList.contains('_fieldmode');",
+    "function paintHomes(){\n  var ok = false && canSee() && !D.documentElement.classList.contains('_fieldmode'); " + M)
 
 if t == orig:
     print('FIELDDESK: already patched'); sys.exit(0)

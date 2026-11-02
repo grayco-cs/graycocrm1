@@ -209,10 +209,13 @@ if (!NO_BROWSER) {
   const vis = await ev(() => window._gcTD2.state().items.filter(x => /^🧾/.test(x.title)).map(x => x.title + ' | ' + (x.act && x.act.l)));
   ok(vis.length === 6 && vis.every(x => /\| ✓ Paid$/.test(x)) && vis.some(x => /Wesley Johnson — quarterly/.test(x)) && !vis.some(x => /Nick Thomas/.test(x)),
     'the real To-Do shows Wesley 6 tax lines, each with ✓ Paid: the 5 payroll ones + his own estimated tax (Nick’s goes to Nick)', vis);
-  /* the card on the admin's home */
+  /* owner 11/02 (patch FIELDDESK): no 🧾 Taxes card on top of the admin's Desk home or the dashboard — ⚙ Admin and the To-Do only */
   await ev(() => { if (window._gcRA && window._gcRA.open) window._gcRA.open(); }); await sleep(3500);
-  let card = await ev(() => { const d = document.querySelector('#gc-ra-desk [data-card="taxes"]') || document.getElementById('gc-tax-dash'); return d ? d.innerText : ''; });
-  ok(/🧾 Taxes/.test(card) && /OVERDUE 10 days/.test(card) && (card.match(/✓ Paid/g) || []).length === 5, 'the 🧾 Taxes card on the admin home: the 2 overdue + the next 3 due dates, each with ✓ Paid', card);
+  let card = await ev(() => ({ desk: !!document.getElementById('gc-ra-desk') && getComputedStyle(document.getElementById('gc-ra-desk')).display !== 'none', tax: !!(document.querySelector('#gc-ra-desk [data-card="taxes"]') || document.getElementById('gc-tax-dash') || document.getElementById('gc-tax-om')) }));
+  ok(card.desk && !card.tax, 'no 🧾 Taxes card on the admin\'s Desk home', card);
+  await ev(() => { if (window._gcRA && window._gcRA.hide) window._gcRA.hide(); window._setView('dashboard'); }); await sleep(2500);
+  card = await ev(() => !!(document.getElementById('gc-tax-dash') || document.querySelector('[data-card="taxes"]')));
+  ok(!card, 'no 🧾 Taxes card on top of the admin\'s dashboard', card);
   /* ⚙ Admin → 🧾 Tax deadlines */
   await ev(() => { window._setView('admin'); }); await sleep(2500);
   await ev(() => window._gcAdm.open('taxes')); await sleep(1500);
@@ -283,8 +286,9 @@ if (!NO_BROWSER) {
   const ow = await eo(() => window._gcTax.paidDialog('owner', 'est_nt|2027-01-15'));
   ok(ow === null && !(await eo(() => !!document.getElementById('gctx-paid'))), 'the office cannot open an owner item’s ✓ Paid');
   await eo(() => { window._setView('dashboard'); }); await sleep(3000);
-  const oCard = await eo(() => { const d = document.querySelector('#gc-ra-desk [data-card="taxes"]') || document.getElementById('gc-tax-om'); return d ? d.innerText : ''; });
-  ok(/🧾 Taxes/.test(oCard) && !/estimated|Wesley|Nick/.test(oCard), 'the 🧾 Taxes card on the office home — company items only', oCard);
+  await eo(() => { if (window._gcRA && window._gcRA.open) window._gcRA.open(); }); await sleep(3000);
+  const oCard = await eo(() => ({ desk: !!document.getElementById('gc-ra-desk') && getComputedStyle(document.getElementById('gc-ra-desk')).display !== 'none', tax: !!(document.querySelector('#gc-ra-desk [data-card="taxes"]') || document.getElementById('gc-tax-om') || document.getElementById('gc-tax-dash')) }));
+  ok(oCard.desk && !oCard.tax, 'no 🧾 Taxes card on the office\'s Desk home or Office page (owner 11/02: the To-Do has the lines)', oCard);
   ok(O.adminKv.length === 0, 'office: still never asked for gc_admin_kv', O.adminKv);
   ok(!O.errs.length, 'office: no page errors', O.errs.slice(0, 3));
   await O.b.close().catch(() => {});
