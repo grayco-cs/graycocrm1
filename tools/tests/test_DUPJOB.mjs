@@ -253,6 +253,25 @@ section('DUPJOB2: a job / lead entered by hand (patch CC2 / LEADHOLD stamp)');
   ok(s0(pmj.pm) === s0(PMU.name), 'a PM enters a job → it is his', pmj);
 }
 function s0(v){ return v == null ? '' : String(v).trim(); }
+section('DUPJOB4: saving a job never changes its PM unless the person changed it');
+{
+  const A = 'e.jsx(re,{l:"Project Manager",children:e.jsxs("select",{style:R,value:y.pm,onChange:j=>T({...y,pm:j.target.value}),children:', B = ']})}),e.jsx(re,{l:"Address",s:2,';
+  const i = html.indexOf(A), k = html.indexOf(B, i);
+  ok(i > 0 && k > i, 'the job form\'s PM select is in the page');
+  const kids = html.slice(i + A.length, k + 1);
+  const w = makeWin({ projects: PROJECTS }); run(HELP, w);
+  const render = pm => vm.runInContext('(function(e, An, y){ return ' + kids + '; })', vm.createContext(w))({ jsx: (t, p, key) => ({ t, p, key }) }, USERS.map(u => Object.assign({ active: true }, u)), { pm });
+  const flat = a => [].concat(...a.map(x => Array.isArray(x) ? x : [x])).filter(Boolean);
+  const vals = pm => flat(render(pm)).map(o => o.p.value);
+  const S251PM = 'Glenn Miller — 0 jobs · 16 leads · $0';
+  ok(vals(S251PM).indexOf(S251PM) >= 0, 'a stored PM that is not a PM (S251\'s) is an option, so the controlled select keeps it on save');
+  ok(flat(render(S251PM)).some(o => o.p.value === S251PM && /^⚠ Glenn Miller \(not a PM\)$/.test(o.p.children)), 'shown as "⚠ <name> (not a PM)"');
+  ok(vals('Office').indexOf('Office') >= 0 && vals('Some Old PM').indexOf('Some Old PM') >= 0, '"Office" and an unknown old name are kept the same way');
+  ok(vals(PMU.name).filter(v => v === PMU.name).length === 1, 'a real PM: listed once, no extra option');
+  ok(vals('').indexOf('') === 0 && vals('').length === flat(render('')).length, 'no PM: "Unassigned", nothing added');
+  ok(html.indexOf("(s(p.pm) && pmNames().indexOf(s(p.pm)) < 0 ? opt(s(p.pm), p.pm, '\\u26a0 ' + s(p.pm) + ' (not a PM)') : '')") > 0, 'Missing job data "Fix": the stored PM stays selectable');
+  ok(html.indexOf('value:Le.pm||(window._gcAutoPmFor?window._gcAutoPmFor(n.name):n.name)') > 0 && html.indexOf('— no PM yet (an owner assigns) —') > 0, 'Launch Job shows what is saved (no PM unless one is picked)');
+}
 section('DUPJOB3: owners are a role, not names in the code');
 {
   const w = makeWin({ projects: PROJECTS }); run(HELP, w);
