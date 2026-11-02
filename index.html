@@ -23082,6 +23082,7 @@ window._gcMathOnSave = function(){
       l.calcNote = _gcTkNote(c) + (l.qtyOverride ? ' · qty overridden to ' + _gcQf(l.qty) : '');
     });
     var s = openSlots[activeSlot]; if(s) s.lines = [...lines];
+    if(lines.some(function(l){ return l && l.takeoff; })) setTimeout(function(){ try{ renderLines(); renderSummary(); }catch(x){} }, 0);   /* patch ESTMATH3 */ // show it reviewed
   }catch(e){ console.warn('ESTMATH save', e); }
 };
 
@@ -24512,6 +24513,12 @@ function ul(id,f,v){
           mlEl.textContent=ml;
         }
         const mathEl=row.querySelector('[data-math]'); if(mathEl) mathEl.outerHTML=_gcLineMathHTML(l);   /* patch ESTMATH */
+        try{ const selEl=row.querySelector('.elb select'); if(selEl&&selEl.options.length){   /* patch ESTMATH3 */ // the pulldown shows the margin used
+          selEl.options[0].text=_gcTypeOptLabel(l);
+          const mv=(!l.mult||l.mult==='type')?'type':String(l.mult), has=[...selEl.options].some(o=>o.value===mv&&o.value!=='custom');
+          const cu=[...selEl.options].find(o=>o.value==='custom'); if(cu) cu.text=has?'Custom\u2026':('Custom '+l.mult+'x');
+          selEl.value=has?mv:'custom';
+        } }catch(_se){}
       }catch(e){}
     }
     if(_gcTkRedraw){ try{ renderLines(); }catch(_re){} }   /* patch ESTMATH */
