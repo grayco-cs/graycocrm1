@@ -80,8 +80,10 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   /* the Desk's own Open To-Do, clicked like a person */
   await reopen(); await p.evaluate(() => window._setView('dashboard')); await reopen();
   const open = p.locator('#gc-ra-desk button', { hasText: /Open To-Do/ });
-  if (await open.count()) { await open.first().click(); await sleep(1500); ok(!(await deskShown()), tag + 'the Desk\'s own "Open To-Do": the Desk steps aside'); c = await clickable(); ok(allOk(c), tag + 'the import buttons can be clicked after the Desk\'s Open To-Do', c); }
-  else ok(false, tag + 'the Desk shows "Open To-Do"');
+  const before = { shown: await deskShown(), why: await why(), top: await p.evaluate(() => { const e = document.elementFromPoint(innerWidth / 2, innerHeight / 2); return e ? (e.closest('[id]') || {}).id || e.tagName : ''; }) };
+  if (!(await open.count()) || !before.shown) ok(false, tag + 'the Desk is up with "Open To-Do" before the click', before);
+  else if (!(await open.first().click({ timeout: 8000 }).then(() => true, () => false))) ok(false, tag + 'the Desk\'s "Open To-Do" can be clicked', before);
+  else { await sleep(1500); ok(!(await deskShown()), tag + 'the Desk\'s own "Open To-Do": the Desk steps aside'); c = await clickable(); ok(allOk(c), tag + 'the import buttons can be clicked after the Desk\'s Open To-Do', c); }
   /* the Desk's own More sheet does not hide it */
   await reopen(); await p.evaluate(() => { try { window._gcRA.more(); } catch (e) {} }); await sleep(1000);
   ok(await deskShown(), tag + 'the Desk\'s own More sheet keeps the Desk');
