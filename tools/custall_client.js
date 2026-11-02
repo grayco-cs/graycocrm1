@@ -8,7 +8,10 @@
        for a person (the backfill lists it as "check"). Nothing runs on a timer.
    window._gcCustAllOpen()  the Customers screen's "👥 Add every missing customer (N)": a dry run list first, then one tap.
    window._gcCustAllCount() N for the button (remembered until the lists change).
-   window._gcCustAllAdd(c)  the profile's "＋ Add to Customers" (a job's customer that is not on the list yet). */
+   window._gcCustAllAdd(c)  the profile's "＋ Add to Customers" (a job's customer that is not on the list yet).
+   patch CUSTSYNC (safety): nothing is ever written to the list until the cloud's copy of the customers came in this
+   session (window.__gcCloudSeen.customers, set by the CRM's cloud pull) and the CRM's list is not near-empty next to
+   it (under half). Until then the records wait in the queue (or the backfill says to wait); nothing is saved. */
 (function(){
 'use strict';
 var W = window, D = document, CA = W._gcCustAllCore;
@@ -24,6 +27,18 @@ function nowIso(){ return new Date().toISOString(); }
 function toast(m){ try { if (typeof W._gcToast === 'function') return W._gcToast(m); var t = D.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0f2440;color:#fff;padding:10px 18px;border-radius:10px;z-index:100200;font:14px Inter,Arial'; D.body.appendChild(t); setTimeout(function(){ t.remove(); }, 2600); } catch (e) {} }
 
 var BOOT = Date.now(), DAYS = 3;
+/* patch CUSTSYNC: the cloud's customer list came in this session (window.__gcCloudSeen.customers, from the sync's pull),
+   and the list in hand has it: at most 2 (or 5 %) of the cloud's customers missing, deleted ones aside */
+function seenN(){ var x = W.__gcCloudSeen && W.__gcCloudSeen.customers; return x ? (+x.n || 0) : -1; }
+function cloudOk(list){
+  var x = W.__gcCloudSeen && W.__gcCloudSeen.customers; if (!x) return false;
+  var have = {}; arr(list).forEach(function(c){ if (c && c.id != null) have[s(c.id)] = 1; });
+  var ids = arr(x.ids), miss = 0;
+  if (!ids.length) return !(x.n > 0 && arr(list).length * 2 < x.n);
+  ids.forEach(function(id){ if (!have[id] && !dead(id)) miss++; });
+  return miss <= Math.max(2, Math.floor(ids.length * 0.05));
+}
+W._gcCustAllCloudOk = function(){ return cloudOk(data().customers); };
 /* made in the last 3 days (its own creation date; savedAt only when it has none): older records are the backfill's (the dry run first) */
 function recent(r){
   var t = [r.createdAt, r.created, r.receivedAt, r.inboxAt, r.firstSavedAt, r.date, r.addedDate].map(function(v){ var n = Date.parse(s(v)); return isNaN(n) ? 0 : n; }), m = Math.max.apply(null, t);
@@ -46,7 +61,7 @@ W._gcCustAllSaw = function(key, value){
   if (key !== 'customers' && !KIND[key]) return;
   if (!Array.isArray(value)) return;
   LAST[key] = value; VER++;
-  if (key === 'customers') { heal(value); if (Q.length) kick(); return; }
+  if (key === 'customers') { try { if (typeof W._gcCloudHeal === 'function') W._gcCloudHeal('customers', value); } catch (e) {} heal(value); if (Q.length) kick(); return; }   /* patch CUSTSYNC: the cloud's list reaches the screen */
   var m = SEEN[key] || (SEEN[key] = {});
   value.forEach(function(r){
     if (!r || r.id == null) return;
@@ -57,7 +72,8 @@ W._gcCustAllSaw = function(key, value){
   });
   if (Q.length) kick();
 };
-W._gcCustAllState = function(){ var o = {}; Object.keys(LAST).forEach(function(k){ o[k] = arr(LAST[k]).length; }); return { lists: o, queued: Q.length, can: canRun(), ver: VER, writes: STAT.writes, applied: STAT.applied }; };
+W._gcCustAllState = function(){ var o = {}; Object.keys(LAST).forEach(function(k){ o[k] = arr(LAST[k]).length; }); return { lists: o, queued: Q.length, can: canRun(), ver: VER, writes: STAT.writes, applied: STAT.applied, waits: STAT.waits, refused: STAT.refused, cloud: seenN() }; };
+W._gcCustAllKick = function(){ if (Q.length) kick(); };
 function kick(){ if (queued) return; queued = true; Promise.resolve().then(function(){ queued = false; try { run(); } catch (e) { try { console.warn('[CUSTALL]', e); } catch (x) {} } }); }
 
 /* the queued records → the list (merged by id into whatever the list is by then) and the jobs' customerId */
@@ -65,6 +81,7 @@ function run(){
   if (!Q.length || !canRun()) return;
   if (!LAST.customers) { probe(); return; }   /* the list as the CRM holds it now, then again */
   var d = data();
+  if (!cloudOk(d.customers)) { STAT.waits++; return; }   /* patch CUSTSYNC: the queue waits for the cloud's list */
   if (!d.customers.length) return;   /* this computer must have the list */
   var q = Q.splice(0), ctx = CA.ctxOf(d), list = arr(d.customers), put = {}, links = {}, at = nowIso(), by = myName() + ' (auto)', done = {};
   q.forEach(function(x){
@@ -81,7 +98,7 @@ function run(){
    window._setProjects), else window._setCustomers (that one is kept from the first time the CRM was drawn) */
 function setCust(fn){ return (typeof W.__gcSetCustomersNow === 'function' ? W.__gcSetCustomersNow : W._setCustomers)(fn); }
 /* the CRM's own list, read through its setter (nothing changes); the queue runs again once it is in */
-var probing = false, STAT = { writes: 0, applied: 0 };
+var probing = false, STAT = { writes: 0, applied: 0, waits: 0, refused: 0 };
 function probe(){
   if (probing || (typeof W._setCustomers !== 'function' && typeof W.__gcSetCustomersNow !== 'function')) return; probing = true;
   try { setCust(function(prev){ probing = false; if (Array.isArray(prev) && prev.length && !LAST.customers) { LAST.customers = prev; kick(); } return prev; }); } catch (e) { probing = false; }
@@ -89,7 +106,10 @@ function probe(){
 /* another part of the CRM may save the list from an older copy right after ours: what we added comes back
    (from the save step, no timer; at most 3 times; never what a person deleted) */
 var KEEP = {};
-function dead(id){ try { var t = typeof W._gcTombstones === 'function' ? W._gcTombstones() : null; return !!(t && t['customers:' + id]); } catch (e) { return false; } }
+function dead(id){
+  try { var t = typeof W._gcTombstones === 'function' ? W._gcTombstones() : null; if (t && t['customers:' + id]) return true; } catch (e) {}
+  try { var d = JSON.parse(localStorage.getItem('gc_deleted_customers') || '[]'); return Array.isArray(d) && d.indexOf(id) >= 0; } catch (e) { return false; }
+}
 function heal(list){
   var ids = Object.keys(KEEP); if (!ids.length) return;
   var have = {}, put = {}; list.forEach(function(c){ if (c && c.id != null) have[s(c.id)] = c; });
@@ -102,11 +122,13 @@ function heal(list){
   if (Object.keys(put).length) Promise.resolve().then(function(){ write(put, {}, true); });
 }
 function write(put, links, healing){
+  if (!cloudOk(data().customers)) { STAT.waits++; return { customers: 0, links: 0, waiting: true }; }   /* patch CUSTSYNC */
   var ids = Object.keys(put), lk = Object.keys(links);
   if (!healing) ids.forEach(function(id){ KEEP[id] = { c: put[id], n: 0 }; });
   if (ids.length && (typeof W._setCustomers === 'function' || typeof W.__gcSetCustomersNow === 'function')) {
     STAT.writes++;
     setCust(function(prev){
+      if (!cloudOk(prev)) { STAT.refused++; return prev; }   /* patch CUSTSYNC: never onto a list that is not in yet */
       STAT.applied++;
       var have = {}, out = arr(prev).map(function(c){ if (c && put[s(c.id)]) { have[s(c.id)] = 1; return mergeKeep(c, put[s(c.id)]); } return c; });
       ids.forEach(function(id){ if (!have[id]) out.push(put[id]); });
@@ -137,6 +159,7 @@ function mergeKeep(cur, mine){
 /* ── the backfill ─────────────────────────────────────────────────────────── */
 var CNT = { v: -1, n: 0 };
 W._gcCustAllCount = function(){
+  if (!cloudOk(data().customers)) return '…';   /* patch CUSTSYNC: the list is still coming in */
   if (CNT.v === VER && CNT.n >= 0) return CNT.n;
   try { var p = CA.plan(data()); CNT = { v: VER, n: p.tally.newCustomers }; } catch (e) { CNT = { v: VER, n: 0 }; }
   return CNT.n;
@@ -144,6 +167,7 @@ W._gcCustAllCount = function(){
 W._gcCustAllCan = canRun;
 W._gcCustAllPlan = function(){ return CA.plan(data(), { at: nowIso(), by: myName() + ' (backfill)' }); };
 W._gcCustAllOpen = function(){
+  if (!cloudOk(data().customers)) { toast('👥 The customer list is still coming in from the cloud — try again in a moment.'); return null; }   /* patch CUSTSYNC */
   var P = W._gcCustAllPlan(), T = P.tally, prev = D.getElementById('gc-custall'); if (prev) prev.remove();
   var ov = D.createElement('div'); ov.id = 'gc-custall';
   ov.style.cssText = 'position:fixed;inset:0;z-index:100060;background:rgba(6,12,24,.6);display:flex;justify-content:center;align-items:flex-start;padding:24px 12px;overflow-y:auto;font-family:Inter,Arial,sans-serif';
@@ -170,6 +194,7 @@ W._gcCustAllOpen = function(){
     if (t.hasAttribute('data-go')) {
       var pick = {}; [].forEach.call(ov.querySelectorAll('select[data-ck]'), function(x){ if (x.value) pick[x.getAttribute('data-ck')] = x.value; });
       var r = W._gcCustAllApply(P, pick);
+      if (r.waiting) { ov.querySelector('[data-sum]').innerHTML = '<b style="color:#8a5300">Nothing was saved:</b> the customer list is still coming in from the cloud. Close this and try again in a moment.'; return; }   /* patch CUSTSYNC */
       ov.querySelector('[data-sum]').innerHTML = '<b style="color:#16a34a">Done.</b> ' + r.added + ' customers added, ' + r.updated + ' filled in, ' + r.links + ' jobs linked.';
       t.disabled = true; t.textContent = 'Added'; toast('👥 ' + r.added + ' customers added to the list');
     }
@@ -181,6 +206,7 @@ W._gcCustAllOpen = function(){
    pick: { rowIndex: 'same' | 'new' } for the same-name rows a person decided. */
 W._gcCustAllApply = function(P, pick){
   pick = pick || {};
+  if (!cloudOk(data().customers)) return { added: 0, updated: 0, links: 0, waiting: true };   /* patch CUSTSYNC */
   var orig = {}; arr(data().customers).forEach(function(c){ if (c) orig[s(c.id)] = c; });
   var list = arr(P.customers).slice(), at = nowIso(), links = {}, d = data(), jobs = {};
   arr(d.projects).forEach(function(p){ if (p) jobs[s(p.id)] = p; });
@@ -207,7 +233,7 @@ W._gcCustAllApply = function(P, pick){
 
 /* the profile's "＋ Add to Customers" for a job's customer: the same rule (match first), then the job is linked */
 W._gcCustAllAdd = function(c){
-  if (!c) return null;
+  if (!c || !cloudOk(data().customers)) return null;   /* patch CUSTSYNC: the profile asks first (_gcCustAllCloudOk) */
   var d = data(), ctx = CA.ctxOf(d), job = { id: s(c._pid) || 'profile', client: s(c.name), clientPhone: s(c.phone), clientEmail: s(c.email), address: s(c.address) };
   var u = CA.upsert(arr(d.customers), 'job', job, ctx, { at: nowIso(), by: myName() });
   var cust = u.cust;
