@@ -24536,7 +24536,7 @@ function dwTypeChanged(){
 }
 
 // ─── JOB MARGIN ──────────────────────────────────────────────────────────────
-function setJM(m,el){try{if(el&&openSlots[activeSlot]){openSlots[activeSlot]._priceByHand=true;openSlots[activeSlot]._pinned=false;}}catch(e){}
+function setJM(m,el){try{if(el&&openSlots[activeSlot]){_gcHandMark('margin');openSlots[activeSlot]._priceByHand=true;openSlots[activeSlot]._pinned=false;}}catch(e){}
   jobMult=m;
   document.querySelectorAll('#job-mb .mb').forEach(b=>b.classList.remove('active'));
   if(el)el.classList.add('active');
@@ -24554,7 +24554,7 @@ function updateTypeMargin(key,val){
   settings[key]=parseFloat(val)||settings[key];
   saveSettings();renderLines();renderSummary();
 }
-function setOM(m,el){ovrMult=m;document.querySelectorAll('#ovr-mb .mb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderLines();renderSummary();}
+function setOM(m,el){try{if(el)_gcHandMark('margin');}catch(_h){}ovrMult=m;document.querySelectorAll('#ovr-mb .mb').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderLines();renderSummary();}
 function toggleOvr(){useOvr=qs('ovr-chk').checked;qs('ovr-mb').style.display=useOvr?'flex':'none';renderLines();renderSummary();}
 function updateNLDefaults(){}
 
@@ -24934,7 +24934,7 @@ function dl(id){
 // ─── SUMMARY ─────────────────────────────────────────────────────────────────
 function _gcJobTypeOf(t){t=String(t||'');return /commercial/i.test(t)?'Commercial':/insur|water|fire|claim|restor/i.test(t)?'Insurance':t?'Residential':'';}
 function _gcLinkedProject(){try{var ps=(window._crm&&window._crm.projects)||[];var po=((qs('ej-po')||{}).value||'').trim().toLowerCase(),nm=((qs('ej-name')||{}).value||'').trim().toLowerCase(),num=((qs('ej-num')||{}).value||'').trim().toLowerCase();return ps.find(function(p){return p&&((po&&String(p.autoPO||'').toLowerCase()===po)||(num&&String(p.autoPO||'').toLowerCase()===num)||(nm&&String(p.name||'').toLowerCase()===nm));})||null;}catch(e){return null;}}
-window._gcSetJobType=function(v,byHand){var s=openSlots[activeSlot];if(!s)return;s.fields=s.fields||{};s.fields.jobType=v;s._typeSet=true;if(byHand)s._typeByHand=true;var el=qs('ej-type');if(el&&el.value!==v)el.value=v;
+window._gcSetJobType=function(v,byHand){var s=openSlots[activeSlot];if(!s)return;s.fields=s.fields||{};s.fields.jobType=v;s._typeSet=true;if(byHand){s._typeByHand=true;_gcHandMark('jobType',s);}var el=qs('ej-type');if(el&&el.value!==v)el.value=v;
   if(!s._savedEstId&&!s._priceByHand){var want=v==='Commercial'?_gcComMult():'mat';if(String(jobMult)!==String(want)){jobMult=want;s.jobMult=want;try{updJM();}catch(e){}renderLines();renderSummary();return;}}
   _gcTypeBadge();};
 /* __GC_PATCH_MARGIN500__  Default margin by job type and size. Large commercial = a commercial job OVER $500,000.
@@ -25000,7 +25000,7 @@ window._gcApplyRuleMargin=function(){try{var s=openSlots[activeSlot];if(!s||!s._
   var r=_gcMfRule();if(r.type!=='Commercial')return false;var m=_gcMultOfPct(r.pct);
   lines.forEach(function(l){if(_gcMfLegacyHang(l))l.mult='type';}); /* old forced x1.6 only; explicit per-line margins are kept */
   useOvr=false;s.useOvr=false;try{var oc=qs('ovr-chk');if(oc)oc.checked=false;var ob=qs('ovr-mb');if(ob)ob.style.display='none';}catch(x){}
-  jobMult=m;s.jobMult=m;s._pinned=false;s._marginRule=r.pct;s.lines=[...lines];
+  jobMult=m;s.jobMult=m;s._pinned=false;s._marginRule=r.pct;_gcHandMark('margin',s);s.lines=[...lines];
   try{updJM();}catch(x){}renderLines();renderSummary();try{_gcSaveSlotsDebounced();}catch(x){}
   var g=qs('save-msg');if(g){g.textContent='Margin set to the '+r.pct+'% default — press Save to keep it.';g.style.color='var(--green)';setTimeout(function(){g.textContent='';g.style.color='';},6000);}
   return true;}catch(x){console.warn('apply margin',x);return false;}};
@@ -27094,7 +27094,7 @@ function doSave(update){
       if(_versions.length>50) _versions=_versions.slice(_versions.length-50);
     }
     var _carry={};
-    ['pid','estBuilderId','pdf','pdfDocId','pdfId','pdfName','pdfAt','_sentAt','sentAt','sentTo','createdAt','firstSavedAt','source','_proposalDocId','proposalDocId','contractId','jobId','winner','won','_winner'].forEach(function(k){ if(_prev[k]!==undefined && est[k]===undefined) _carry[k]=_prev[k]; });
+    ['pid','estBuilderId','pdf','pdfDocId','pdfId','pdfName','pdfAt','_sentAt','sentAt','sentTo','createdAt','firstSavedAt','source','_proposalDocId','proposalDocId','contractId','jobId','winner','won','_winner','pm','pmName','pmEmail'].forEach(function(k){ if(_prev[k]!==undefined && est[k]===undefined) _carry[k]=_prev[k]; });   /* patch ESTMATH2 */
     Object.assign(est, _carry);
     est.versions=_versions;
     est.versionNo=_versions.length+1;
@@ -27174,7 +27174,7 @@ window._gcOpenEstVersion=function(id,vno){
     const v=(e.versions||[]).find(function(x,i){ return (x.versionNo||(i+1))===vno; }); if(!v) return;
     loadEst(id);
     const s=openSlots[activeSlot]; if(!s) return;
-    s.lines=(window._gcNormalizeEstLines||function(x){return (x&&x.lines)?x.lines.slice():[];})(v); s.scope=v.scope||{}; s.jobMult=v.jobMult||s.jobMult; s.ovrMult=v.ovrMult||s.ovrMult; s.useOvr=!!v.useOvr;
+    s.lines=(window._gcNormalizeEstLines||function(x){return (x&&x.lines)?x.lines.slice():[];})(v); s.scope=v.scope||{}; s.jobMult=v.jobMult||s.jobMult; _gcHandMark('version',s); /* patch ESTMATH2: an older version keeps its own fields */ s.ovrMult=v.ovrMult||s.ovrMult; s.useOvr=!!v.useOvr;
     loadSlotState(); renderLines(); renderSummary();
     const m=qs('save-msg'); if(m){ m.textContent='Opened v'+vno+' of "'+(e.name||'')+'" — Save to make it the current version (the current one is kept).'; m.style.color='var(--amber)'; setTimeout(function(){ m.textContent=''; m.style.color=''; },6000); }
   }catch(_e){ console.warn('open version',_e); }
@@ -27189,6 +27189,7 @@ function loadEst(id){
   s.lines=(window._gcNormalizeEstLines||function(x){return (x&&x.lines)?x.lines.slice():[];})(e);s.scope=e.scope||{};s.jobMult=e.jobMult||'mat';s._pinned=false;if(s.jobMult==='mat'&&!e.useOvr){var _pm=_gcSavedMult(e,s.lines);if(_pm){s.jobMult=_pm;s._pinned=true;}}s.ovrMult=e.ovrMult||1.5;s.useOvr=e.useOvr||false;
   s.label=e.name||e.num||('Estimate '+(activeSlot+1));
   s.fields={jobType:e.jobType||'',name:e.name,gc:e.gc||'',num:e.num||'',estimator:e.estimator||(window._gcDefEstName?window._gcDefEstName():''),date:e.date||new Date().toISOString().split('T')[0],due:e.dueDate||'',subToCompany:e.subToCompany||'',subToContact:e.subToContact||'',subToEmail:e.subToEmail||'',status:e.status||'Draft',notes:e.notes||'',address:e.address||'',po:e.po||''};
+  _gcHandClear(s);   /* patch ESTMATH2: opened from the record, nothing changed by hand yet */
   s._savedEstId=e.id;   // link this slot to the saved record so edits persist back to it
   loadSlotState();renderSlotTabs();
   window.__gcEstShown=100;   /* patch ESTBIG */
@@ -30254,10 +30255,47 @@ function saveSlotState(){
   _gcAutoSaveEstimateLiveDebounced();
 }
 
+/* patch ESTMATH2: a tab linked to a SAVED estimate carries the saved estimator, job type and job margin, unless the field
+   was changed by hand in this tab this session (or an older version was opened). Open tabs are restored from this
+   computer and replaced by the company's synced open tabs (another computer's copy); the job fields and the margin used
+   to come from that copy, silently, and the next save made them the estimate's. */
+window.__gcHandSet = window.__gcHandSet || {};   /* this session only: slotId -> { estimator, jobType, margin, version } */
+function _gcHandKey(s){ return String((s && (s.slotId || s.id)) || ''); }
+function _gcHandMark(f, s){ try{ s = s || openSlots[activeSlot]; var k = _gcHandKey(s); if(!k) return; (window.__gcHandSet[k] = window.__gcHandSet[k] || {})[f] = true; }catch(x){} }
+function _gcHandClear(s){ try{ delete window.__gcHandSet[_gcHandKey(s)]; }catch(x){} }
+window._gcHandMark = _gcHandMark;
+try{ document.addEventListener('change', function(ev){ try{ if(!ev.isTrusted) return; var id = ev.target && ev.target.id;
+  if(id === 'ej-est') _gcHandMark('estimator'); else if(id === 'ej-type') _gcHandMark('jobType'); else if(id === 'ovr-chk') _gcHandMark('margin'); }catch(x){} }, true);
+  document.addEventListener('input', function(ev){ try{ if(ev.isTrusted && ev.target && ev.target.id === 'ej-est') _gcHandMark('estimator'); }catch(x){} }, true); }catch(x){}
+function _gcSavedFieldsGuard(s){
+  try{
+    if(!s || !s._savedEstId) return null;
+    var e = (estimates || []).find(function(x){ return x && x.id === s._savedEstId; }); if(!e || e._isDraft) return null;
+    var h = window.__gcHandSet[_gcHandKey(s)] || {}; if(h.version) return null;
+    var kept = [], f = s.fields = s.fields || {};
+    if(!h.estimator && e.estimator && f.estimator !== e.estimator){ kept.push({ f: 'estimator', from: f.estimator || '', to: e.estimator }); f.estimator = e.estimator; }
+    if(!h.jobType && e.jobType && f.jobType !== e.jobType){ kept.push({ f: 'job type', from: f.jobType || '', to: e.jobType }); f.jobType = e.jobType; }
+    if(!h.margin){
+      var want = e.jobMult || 'mat', pin = false;
+      if(want === 'mat' && !e.useOvr){ var pm = _gcSavedMult(e, (s.lines && s.lines.length) ? s.lines : (e.lines || [])); if(pm){ want = pm; pin = true; } }
+      var same = (want === 'mat' || s.jobMult === 'mat') ? String(want) === String(s.jobMult) : Math.abs(parseFloat(want) - parseFloat(s.jobMult)) < 1e-9;
+      if(!same){ kept.push({ f: 'margin', from: s.jobMult, to: want }); s.jobMult = want; s._pinned = pin; }
+      if(!!s.useOvr !== !!e.useOvr || (e.useOvr && parseFloat(s.ovrMult) !== parseFloat(e.ovrMult))){ kept.push({ f: 'override', from: s.useOvr ? s.ovrMult : 'off', to: e.useOvr ? e.ovrMult : 'off' }); s.useOvr = !!e.useOvr; s.ovrMult = e.ovrMult || 1.5; }
+    }
+    if(!kept.length) return null;
+    var txt = 'Kept the saved ' + kept.map(function(k){ return k.f === 'margin' ? 'margin x' + k.to : k.f === 'override' ? 'override (' + k.to + ')' : k.f + ' (' + k.to + ')'; }).join(', ') + ' — this tab held another copy.';
+    s._keptSaved = { at: Date.now(), kept: kept, note: txt };
+    try{ console.warn('[ESTMATH2] "' + (e.name || e.id) + '": ' + JSON.stringify(kept)); }catch(x){}
+    try{ setTimeout(function(){ var m = qs('save-msg'); if(m){ m.textContent = txt; m.style.color = 'var(--amber)'; setTimeout(function(){ if(m.textContent === txt){ m.textContent = ''; m.style.color = ''; } }, 9000); } }, 0); }catch(x){}
+    return kept;
+  }catch(x){ return null; }
+}
+window._gcSavedFieldsGuard = _gcSavedFieldsGuard;
 function loadSlotState(){
   const s=openSlots[activeSlot];if(!s)return;
   lines=[...s.lines];
   scope={...s.scope};
+  try{ _gcSavedFieldsGuard(s); }catch(_g){}   /* patch ESTMATH2 */
   jobMult=s.jobMult||'mat';ovrMult=s.ovrMult||1.5;useOvr=s.useOvr||false;
   const f=s.fields||{};
   qs('ej-name').value=f.name||'';qs('ej-gc').value=f.gc||'';qs('ej-num').value=f.num||'';
