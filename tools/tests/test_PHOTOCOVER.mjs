@@ -245,7 +245,7 @@ const CCLIST = [{ id: '990001', name: 'Water loss - Germantown', address: '4 Flo
   { id: '990003', name: 'Demo Water Loss', address: '', photo_count: 0, updated_at: NOW }];
 const c = await computer('PCOV', { build });
 const p = c.page();
-p.on('dialog', d => d.accept());
+p.on('dialog', d => d.accept().catch(() => {}));   /* the harness may have answered it already */
 await c.ctx.route(u => new URL(u).host === 'img.companycam.com', r => r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
 await c.ctx.route(u => /\/\.netlify\/functions\/companycam-webhook/.test(u), async r => {
   const u = new URL(r.request().url()), px = u.searchParams.get('proxy'), Jr = b => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b) });
@@ -297,7 +297,7 @@ const linkedYet = await p.evaluate(() => { const j = window._crm.projects.find(x
 ok('…choosing asks to confirm first — nothing linked yet', /Link CompanyCam project/.test(conf || '') && /12 photos/.test(conf || '') && !linkedYet && !posts.some(x => x.px === 'review'), conf);
 await p.click('#gc-photocover-ov [data-pc="linkyes"]');
 const linked = await waitFor(c, () => { const j = window._crm.projects.find(x => x.id === 'P4'); return j && j.ccProjectId === '990001' ? j.ccLinkedBy || 'yes' : null; }, null, 10000, 200);
-await waitFor(c, () => 1, null, 800, 100);
+for (let i = 0; i < 40 && !(posts.some(x => x.px === 'review') && posts.some(x => x.px === 'photojob' && x.b.act === 'reindex')); i++) await sleep(250);   /* the server calls follow the job's save (disk + cloud) */
 ok('…after "Yes, link it": the job carries the CompanyCam link, the server is told and re-reads it', !!linked && posts.some(x => x.px === 'review' && x.b.act === 'link' && x.b.cc === '990001' && x.b.job === 'P4') && posts.some(x => x.px === 'photojob' && x.b.act === 'reindex' && x.b.pids[0] === '990001'), JSON.stringify(posts.map(x => x.px + ':' + x.b.act)));
 /* Re-index */
 await p.click('#gc-photocover-ov [data-pc="reindex"][data-job="P1"]');

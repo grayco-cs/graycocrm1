@@ -101,10 +101,10 @@ try {
   const screenText = async view => { await c.ev(v => window._setView(v), view); await sleep(2500); return c.ev(() => (document.querySelector('main') || document.body).innerText); };
   const sched = await screenText('schedule');
   ok(/ROTC Cordova/.test(sched) && !new RegExp(DRAFT_RE).test(sched), 'Schedule list: ROTC Cordova is there, no suggestion and no duplicate Start / Finish', (sched.match(new RegExp('.{0,60}(' + DRAFT_RE + ').{0,20}')) || [])[0]);
-  const calBtns = await c.ev(() => [...document.querySelectorAll('main button')].map(b => b.textContent.trim()).filter(t => /month|week|calendar|day/i.test(t)).slice(0, 12));
+  const calBtns = await c.ev(() => [...document.querySelectorAll('main button')].filter(b => !b.hasAttribute('data-tax-a')).map(b => b.textContent.trim())   /* the schedule's own views (not 🧾 Taxes' "Calendar ›") */.filter(t => /month|week|calendar|day/i.test(t)).slice(0, 12));
   let calOk = true, calSeen = [];
   for (const label of calBtns) {
-    await c.ev(l => { const b = [...document.querySelectorAll('main button')].find(x => x.textContent.trim() === l); if (b) b.click(); }, label); await sleep(1200);
+    await c.ev(l => { const b = [...document.querySelectorAll('main button')].find(x => x.textContent.trim() === l && !x.hasAttribute('data-tax-a')); if (b) b.click(); }, label); await sleep(1200);
     const tx = await c.ev(() => (document.querySelector('main') || document.body).innerText); calSeen.push(label);
     if (new RegExp(DRAFT_RE).test(tx)) { calOk = false; calSeen.push('LEAK: ' + (tx.match(new RegExp('.{0,40}(' + DRAFT_RE + ')')) || [])[0]); }
   }
