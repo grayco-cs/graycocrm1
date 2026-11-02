@@ -5,13 +5,14 @@
    to this list. Kept by bid-inbox ?settings=1 → gc_lead_inbox_settings.mitigationTo. Admins change it. */
 (function(){
 'use strict';
-var W = window, ID = 'gc-mitto-set', DEF = ['nthomas@grayco-cs.com', 'wjohnson@grayco-cs.com'];
+var W = window, ID = 'gc-mitto-set', DEF = [];   /* DUPJOB3: the owners (role) — defOwners() */
+function defOwners(){ try { return W._gcOwnerEmails ? W._gcOwnerEmails() : []; } catch (e) { return []; } }
 function s(v){ return v == null ? '' : String(v).trim(); }
 function low(v){ return s(v).toLowerCase(); }
 function esc(v){ return s(v).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 function cache(){ try { return JSON.parse(localStorage.getItem('gc_ldi_cache_v2') || 'null') || {}; } catch (e) { return {}; } }
 function saveCache(k){ try { localStorage.setItem('gc_ldi_cache_v2', JSON.stringify(k)); } catch (e) {} }
-function mitigationTo(){ var k = cache(), a = k.settings && k.settings.mitigationTo; a = Array.isArray(a) ? a.map(low).filter(Boolean) : []; return a.length ? a : DEF; }
+function mitigationTo(){ var k = cache(), a = k.settings && k.settings.mitigationTo; a = Array.isArray(a) ? a.map(low).filter(Boolean) : []; return a.length ? a : defOwners(); }
 function isAdmin(){
   try { if (W._gcVAS && W._gcVAS.active()) return false; } catch (e) {}
   try { if (W.__GC_AUTH__ && W.__GC_AUTH__.isAdmin && W.__GC_AUTH__.isAdmin()) return true; } catch (e) {}
@@ -53,7 +54,7 @@ function save(){
   var list = s(p.querySelector('.gc-mt-in').value).split(/[,;\s]+/).map(low).filter(Boolean), err = p.querySelector('.gc-mt-err');
   var bad = list.filter(function(e){ return !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e); });
   if (bad.length) { err.textContent = '"' + bad[0] + '" does not look like an e-mail address.'; return; }
-  if (!list.length) list = DEF.slice();
+  if (!list.length) list = defOwners().slice();
   var btn = p.querySelector('[data-mt="save"]'); btn.disabled = true; btn.textContent = 'Saving…';
   W.fetch('/.netlify/functions/bid-inbox?settings=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mitigationTo: list }), cache: 'no-store' })
     .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ if (!r.ok) throw new Error(j.error || 'The setting could not be saved (' + r.status + ').'); return j; }); })

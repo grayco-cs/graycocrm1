@@ -253,5 +253,24 @@ section('DUPJOB2: a job / lead entered by hand (patch CC2 / LEADHOLD stamp)');
   ok(s0(pmj.pm) === s0(PMU.name), 'a PM enters a job → it is his', pmj);
 }
 function s0(v){ return v == null ? '' : String(v).trim(); }
+section('DUPJOB3: owners are a role, not names in the code');
+{
+  const w = makeWin({ projects: PROJECTS }); run(HELP, w);
+  const owners = USERS.filter(u => /^admin$/i.test(u.role)).map(u => u.name.trim()).sort();
+  ok(JSON.stringify(w._gcOwnerNames().slice().sort()) === JSON.stringify(owners), 'the owners = the Admin-role people in the staff list', w._gcOwnerNames());
+  ok(w._gcIsOwnerEmail(OWNER.email) && !w._gcIsOwnerEmail(OFFICEU.email) && !w._gcIsOwnerEmail(PMU.email), 'owner by e-mail: the role decides (not the office, not a PM)');
+  const two = USERS.map(u => Object.assign({}, u)); two.find(u => u.id === OWNER.id).active = false;
+  w._crm.users = two;
+  ok(w._gcOwnerNames().indexOf(OWNER.name.trim()) < 0, 'an owner turned off in the staff list drops out everywhere (no code change)');
+  const gone = [
+    "u.name==='Wesley Johnson'", 'em==="wjohnson@grayco-cs.com"', "em === 'nthomas@grayco-cs.com'", 'followUpFor:["Nick Thomas","Wesley Johnson"]',
+    'forUsers:["Nick Thomas","Wesley Johnson"]', '_pm="Wesley Johnson"', '_pm="Nick Thomas"', "var core=['Wesley Johnson','Nick Thomas'];",
+    'var core=[{id:"U2",name:"Wesley Johnson"}', "['Wesley Johnson','Nick Thomas'].forEach", "||'Wesley';", "||'Wesley',", "'Wesley'; \n",
+    "DEF = ['nthomas@grayco-cs.com', 'wjohnson@grayco-cs.com']", "[OWNERS.w, OWNERS.n].forEach", "low(x.email) === 'wjohnson@grayco-cs.com'", 'approvedBy: "Wesley Johnson"',
+    "est.estimator || 'Wesley Johnson'"];
+  const left = gone.filter(g => html.indexOf(g) >= 0);
+  ok(left.length === 0, 'no named person left in those conditions / defaults of the page', left);
+  ok(html.indexOf("/commercial/.test(roleText(u))") < 0, 'the commercial check is a role (Lead Estimator / Estimator), not a title');
+}
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

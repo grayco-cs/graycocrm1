@@ -432,7 +432,7 @@ function settings(o, ctx){
   css();
   var u = meU() || {}, ao = adminOffice(ctx), adm = !!ctx.admin, me = myEmail();
   var photo = /^(data:image\/|https:\/\/)/.test(s(u.photo)) ? s(u.photo) : '';
-  var wes = arr(C().users).filter(function(x){ return x && low(x.email) === 'wjohnson@grayco-cs.com'; })[0] || arr(C().users).filter(function(x){ return x && /^wesley\b/i.test(s(x.name)); })[0] || null;
+  var wes = (W._gcOwnerUsers ? W._gcOwnerUsers() : [])[0] || null;   /* DUPJOB3: the first owner (role) */
   var wph = digits(wes && (wes.phone || wes.cell || wes.mobile)), wem = s(wes && wes.email);
   var cq = W._gcCustqDefault(), sec = function(id, t, inner){ return '<section class="gcfp-sec" data-sec="' + id + '"><h4>' + t + '</h4>' + inner + '</section>'; };
   var pz = null; try { pz = W._gcPause && W._gcPause.state ? W._gcPause.state() : null; } catch (e) {}
