@@ -8,7 +8,7 @@
    Env: SUBPORTAL_SHOTS=<dir> (screenshots of the check run), SUBPORTAL_ASSETS=<assets.json> (real-looking sample photos /
         plan PDF; tiny generated pictures otherwise), SUBPORTAL_MIRROR=<mirror.json> (a CRM mirror: the job named by
         SUBPORTAL_JOB, or the first active job with an address and a customer, is given to the sample sub — the mirror stays
-        where it is, nothing of it is written anywhere but the screenshots).
+        where it is, nothing of it is written anywhere but the screenshots); SUBPORTAL_ONLY_REAL=1 runs only that job.
    Wrap a run in browser_lock.sh acquire / release.
 
    What it checks (each on the phone and the computer):
@@ -128,7 +128,7 @@ function freshDb(job){
 
 /* ── the in-memory Supabase for the server functions ── */
 let DB = null;
-const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => typeof body === 'string' ? body : JSON.stringify(body) });
+const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => typeof body === 'string' ? body : JSON.stringify(body), arrayBuffer: async () => { const b = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); } });
 const val = v => decodeURIComponent(String(v || '')).replace(/^eq\./, '');
 const inl = v => decodeURIComponent(String(v || '')).replace(/^in\.\(/, '').replace(/\)$/, '').split(',').map(x => x.replace(/"/g, ''));
 const NETLOG = [];
@@ -160,6 +160,8 @@ global.fetch = async (url, init) => {
     return res(200, rows);
   }
   if (u.pathname.startsWith('/storage/v1/object/sign/')) { const b = JSON.parse(init.body); return res(200, b.paths.map(p => ({ path: p, signedURL: '/object/sign/crm-files/' + p + '?token=t' }))); }
+  if (u.pathname.startsWith('/storage/v1/object/upload/sign/crm-files/')) { const n = u.pathname.split('/').pop(); if (STORE.has(n)) return res(400, { error: 'Duplicate', message: 'The resource already exists' }); return res(200, { url: '/object/upload/sign/crm-files/' + n + '?token=up' + n.slice(0, 6) }); }
+  if (u.pathname.startsWith('/storage/v1/object/crm-files/') && m === 'GET') { const n = u.pathname.split('/').pop(); const b = STORE.get(n); return b ? res(206, b.slice(0, 64)) : res(404, {}); }
   if (u.pathname.startsWith('/storage/v1/object/crm-files/')) { const n = u.pathname.split('/').pop(); const b = init.body; STORE.set(n, Buffer.isBuffer(b) ? b : Buffer.from(b || '')); return res(200, {}); }
   return res(404, {});
 };
@@ -195,10 +197,12 @@ async function shot(p, name, label){
 }
 async function browserFor(kind){
   const b = await chromium.launch({ args: ['--proxy-server=http://127.0.0.1:9'] });
-  const ctx = await b.newContext(Object.assign({ serviceWorkers: 'block' }, kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 768 } }));   /* the portal's service worker would fetch around the test's routes */
-  const S = { b, ctx, errs: [], calls: [], bad: [], imgs: [] };
+  const ctx = await b.newContext(Object.assign({ serviceWorkers: 'block', bypassCSP: true },   /* the test's storage host is sb.test, not the real one portal.html's CSP names (test_SUBPORTAL3 checks that) */ kind === 'phone' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: 1366, height: 768 } }));   /* the portal's service worker would fetch around the test's routes */
+  const S = { b, ctx, errs: [], calls: [], bad: [], imgs: [], puts: [] };
   await ctx.route('**/*', async r => {
     const u = new URL(r.request().url());
+    if (u.host === 'sb.test' && r.request().method() === 'PUT' && /\/object\/upload\/sign\/crm-files\//.test(u.pathname)) { const n = u.pathname.split('/').pop(); if (!/^up/.test(u.searchParams.get('token') || '')) return r.fulfill({ status: 403, body: '{}' }); STORE.set(n, r.request().postDataBuffer() || Buffer.alloc(0)); S.puts.push(n); return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ Key: 'crm-files/' + n }) }); }
+    if (u.host === 'sb.test' && r.request().method() === 'OPTIONS') return r.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' }, body: '' });
     if (u.host === 'sb.test') { const n = u.pathname.split('/').pop(); S.imgs.push(n); const buf = STORE.get(n); return buf ? r.fulfill({ status: 200, contentType: /\.pdf$/.test(n) ? 'application/pdf' : /\.png$/.test(n) ? 'image/png' : 'image/jpeg', body: buf }) : r.fulfill({ status: 404, body: '' }); }
     if (u.host === 'img.companycam.com') { S.imgs.push('cc' + u.pathname); const buf = CCIMG.get(u.pathname); return buf ? r.fulfill({ status: 200, contentType: 'image/jpeg', body: buf }) : r.fulfill({ status: 404, body: '' }); }
     if (u.host !== 'portal.test') return r.abort('blockedbyclient');
@@ -359,6 +363,22 @@ async function run(kind, job){
   ok(tag + '6. submit an invoice (it reaches GrayCo, or the photo rule says how many photos are still needed)', DB.T.gc_sub_event.some(e => e.kind === 'invoice') || /photos of your work/.test(toast), toast);
   await shot(p, N() + '_invoice_sent', 'After Send: ' + (toast || '').slice(0, 80));
   await closeSheet(p);
+  /* the sub's own invoice PDF (patch SUBPORTAL3): with the photo rule met, attach the PDF + the amount → it reaches GrayCo with the file */
+  DB.KV.gc_sub_portal_settings = { invPhotoMin: 0 }; await sleep(15500);   /* the portal reads the CRM again after 15 s */
+  await clickTab(p, 'invoices'); await p.click('#jobNewInv'); await sleep(400);
+  await p.fill('#invAmt', '2750'); await p.fill('#invNum', 'SD-1003');
+  const pdfBuf = STORE.get(PDF), [fc3] = await Promise.all([p.waitForEvent('filechooser', { timeout: 5000 }), p.click('#invPick')]);
+  await fc3.setFiles([{ name: 'Sample Drywall invoice SD-1003.pdf', mimeType: 'application/pdf', buffer: pdfBuf }]);
+  await sleep(300);
+  await shot(p, '34_invoice_pdf_upload', 'Send an invoice with the sub\'s own invoice PDF attached (📎 Attach your invoice PDF, up to 15 MB) + the amount');
+  await p.click('#invSend');
+  for (let k = 0; k < 80 && !DB.T.gc_sub_event.some(e => e.kind === 'invoice'); k++) await sleep(250);
+  await sleep(800);
+  const invEv = DB.T.gc_sub_event.find(e => e.kind === 'invoice');
+  const f0 = invEv && invEv.data.files && invEv.data.files[0];
+  ok(tag + '6. the sub\'s invoice PDF is stored in the CRM\'s file storage and rides on the invoice (Sub Invoices / Approvals read it)', !!invEv && invEv.data.amount === 2750 && !!f0 && f0.type === 'application/pdf' && /^sb:crm-files\/[0-9a-f]{64}\.pdf$/.test(f0.ref) && STORE.has(f0.ref.slice(13)) && STORE.get(f0.ref.slice(13)).equals(pdfBuf), JSON.stringify(invEv && invEv.data) + ' puts:' + S.puts.join(','));
+  await shot(p, '34_invoice_pdf_sent', 'After Send with the PDF: the invoice is on the job (Submitted), its pay date shown');
+  await closeSheet(p);
   /* messages */
   await clickTab(p, 'messages'); await sleep(800);
   await shot(p, N() + '_messages', 'Messages with the PM (read receipts, photo / file)');
@@ -398,7 +418,7 @@ async function run(kind, job){
   return S;
 }
 
-for (const kind of ['phone', 'desktop']) {
+if (!(process.env.SUBPORTAL_ONLY_REAL && REALJOB)) for (const kind of ['phone', 'desktop']) {   /* SUBPORTAL_ONLY_REAL=1: only the mirror's job */
   console.log('\n— sample job, ' + kind);
   await run(kind, JOB);
 }

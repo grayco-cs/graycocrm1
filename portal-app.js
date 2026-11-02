@@ -63,6 +63,8 @@ var L = {
   }
 };
 /* patch SUBPORTAL3 */
+Object.assign(L.en, { invAttach: '📎 Attach your invoice PDF', invAttachHow: 'Attach your own invoice (PDF, or a photo of it — up to 15 MB) and enter the amount. GrayCo gets the file with the invoice.', tooBig15: 'That file is too big (15 MB at most).' });
+Object.assign(L.es, { invAttach: '📎 Adjuntar su factura en PDF', invAttachHow: 'Adjunte su propia factura (PDF, o una foto — hasta 15 MB) y escriba el monto. GrayCo recibe el archivo con la factura.', tooBig15: 'El archivo es muy grande (15 MB como máximo).' });
 Object.assign(L.en, { phCount: '{n} photos of this job', noDate: 'No date', jobDocs: 'Plans & documents', noDocs: 'No plans or documents shared with you yet. Ask your PM in Messages.' });
 Object.assign(L.es, { phCount: '{n} fotos de este trabajo', noDate: 'Sin fecha', jobDocs: 'Planos y documentos', noDocs: 'Todavía no hay planos ni documentos para usted. Pregúntele a su PM en Mensajes.' });
 /* patch X10 */
@@ -224,6 +226,29 @@ function readFile(file){
     }
   });
 }
+/* patch SUBPORTAL3: the sub's own invoice PDF (or a photo of it), up to 15 MB: a PDF / a big file goes straight to the CRM's file
+   storage with a one-time link from the server (no 4 MB limit); a small photo the usual way (made small first) */
+var BIG_MAX = 15 * 1024 * 1024;
+function invoiceUpload(file, pid){
+  if (!file) return Promise.resolve(null);
+  if (file.size > BIG_MAX) return Promise.reject(new Error(t('tooBig15')));
+  if (!/pdf/i.test(file.type || '') && !/\.pdf$/i.test(file.name || '') && file.size <= 4 * 1024 * 1024) return upload(file, 'invoice', pid);
+  return bigUpload(file, 'invoice', pid).catch(function(e){ if (file.size <= 4.4 * 1024 * 1024 && !/15 MB|PDF or a photo/.test(e.message || '')) return upload(file, 'invoice', pid); throw e; });
+}
+function bigUpload(file, purpose, pid){
+  var type = /\.pdf$/i.test(file.name || '') && !file.type ? 'application/pdf' : (file.type || '').toLowerCase();
+  if (type === 'image/jpg') type = 'image/jpeg';
+  return file.arrayBuffer().then(function(buf){
+    return crypto.subtle.digest('SHA-256', buf).then(function(d){
+      var hash = Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+      return api('p-upload-url', { projectId: pid || undefined, hash: hash, type: type, size: file.size, name: file.name }).then(function(r){
+        var put = r.exists ? Promise.resolve() : fetch(r.url, { method: 'PUT', headers: Object.assign({ 'Content-Type': type, 'x-upsert': 'false' }, r.apikey ? { apikey: r.apikey } : {}), body: buf, credentials: 'omit' })
+          .then(function(x){ if (!x.ok && x.status !== 409) throw new Error(t('failed')); });
+        return put.then(function(){ return api('p-upload-done', { projectId: pid || undefined, path: r.path, name: file.name, size: file.size, purpose: purpose }); });
+      });
+    });
+  });
+}
 function upload(file, purpose, pid){ return readFile(file).then(function(f){ return api('p-upload', { projectId: pid || undefined, purpose: purpose, name: f.name, data: f.data }); }); }
 function picker(accept, multiple, cb, cap){ var i = h('input', { type: 'file', accept: accept, multiple: multiple ? true : null, capture: cap || null, style: 'display:none' }); i.addEventListener('change', function(){ cb(Array.prototype.slice.call(i.files || [])); i.remove(); }); document.body.appendChild(i); i.click(); }
 function busy(btn, on){ if (!btn) return; btn.disabled = !!on; if (on) { btn.__t = btn.textContent; btn.textContent = t('sending'); } else if (btn.__t) btn.textContent = btn.__t; }
@@ -340,14 +365,14 @@ function invoiceSheet(pid){
   var poBox = h('input', { class: 'inp', id: 'invPo', readonly: true });
   var note = h('input', { class: 'inp', id: 'invNote' });
   var file = null, fname = h('span', { class: 'muted', text: '' });
-  var pick = h('button', { type: 'button', class: 'btn', id: 'invPick', text: '📎 ' + t('invFile'), on: { click: function(){ picker('application/pdf,image/*', false, function(fs){ file = fs[0] || null; fname.textContent = file ? file.name : ''; }); } } });
+  var pick = h('button', { type: 'button', class: 'btn', id: 'invPick', text: t('invAttach'), on: { click: function(){ picker('application/pdf,image/*', false, function(fs){ file = fs[0] || null; if (file && file.size > BIG_MAX) { toast(t('tooBig15'), true); file = null; } fname.textContent = file ? file.name + ' (' + Math.max(1, Math.round(file.size / 1024)) + ' KB)' : ''; }); } } });   /* patch SUBPORTAL3 */
   var go = h('button', { type: 'button', class: 'btn gold', id: 'invSend', text: t('send') });
   sel.addEventListener('change', fillScopes);
-  var sh = sheet(t('newInvoice'), [h('div', { class: 'how', text: t('payRule') }), field(t('jobs'), sel), field(t('againstScope'), scopeSel), field(t('amount'), amt), field(t('invNum'), num), field(t('po'), poBox), field(t('invNote'), note), h('div', { class: 'row' }, [pick, fname]), go]);
+  var sh = sheet(t('newInvoice'), [h('div', { class: 'how', text: t('payRule') }), field(t('jobs'), sel), field(t('againstScope'), scopeSel), field(t('amount'), amt), field(t('invNum'), num), field(t('po'), poBox), field(t('invNote'), note), h('div', { class: 'muted', text: t('invAttachHow') }), h('div', { class: 'row inv-attach' }, [pick, fname]), go]);
   fillScopes();
   go.addEventListener('click', function(){
     busy(go, true);
-    (file ? upload(file, 'invoice', sel.value) : Promise.resolve(null)).then(function(u){
+    (file ? invoiceUpload(file, sel.value) : Promise.resolve(null)).then(function(u){
       return api('p-invoice', { projectId: sel.value, amount: amt.value, invNum: num.value, note: note.value, scopeId: scopeSel.value, uploadId: u ? u.id : undefined });
     }).then(function(r){ sh.close(); toast(t('saved') + ' · ' + t('payOn') + ' ' + dt(r.payDate)); reloadHome(); if (JOB) openJob(JOB.job.id, 'invoices'); }, function(e){ busy(go, false); toast(e.message, true); });
   });

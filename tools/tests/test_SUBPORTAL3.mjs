@@ -48,7 +48,7 @@ const SUB2 = { id: 'S2', name: 'Other Paint Co', company: 'Other Paint Co', emai
 const P1 = { id: 'P1', name: 'Pat Sample Kitchen - Acme Mutual Insurance claim #CLM99887766', address: '123 Sample St, Memphis, TN 38117', client: 'Pat Sample', clientPhone: '901-555-0190', pm: 'Sample PM',
   status: 'Active', contract: 48250, insCarrier: 'Acme Mutual Insurance', claimNumber: 'CLM99887766', ccProjectId: '7001', subs: [{ subId: 'S1', name: SUB.name, status: 'Awarded', price: 6400 }, { subId: 'S2', name: SUB2.name, price: 3900 }] };
 const P2 = { id: 'P2', name: 'Other Bath', address: '9 Other Ave', client: 'Lee', status: 'Active', subs: [{ subId: 'S2', name: SUB2.name }] };
-const KV = { projects: [P1, P2], vendors: [SUB, SUB2], users: [{ name: 'Sample PM', phone: '901-555-0100', email: 'pm@grayco.test', active: true }], gc_sub_portal_settings: {},
+const KV = { projects: [P1, P2], vendors: [SUB, SUB2], users: [{ name: 'Sample PM', phone: '901-555-0100', email: 'pm@grayco.test', active: true }], gc_sub_portal_settings: { invPhotoMin: 0 },
   gc_photos: [
     { id: 'a', jobId: 'P1', ref: R(1), thumbRef: TH(1), shared: true, at: '2026-10-01T10:00:00Z', note: 'NOTE-A', by: 'Sample PM' },
     { id: 'b', jobId: 'P1', ref: R(2), thumbRef: TH(2), shared: false, at: '2026-10-02T10:00:00Z', note: 'NOTE-B' },
@@ -69,7 +69,8 @@ const T = { gc_portal_session: [{ id: sha('S'.repeat(43)), kind: 'partner', sub_
   gc_sub_link: [{ token: 'L'.repeat(43), sub_id: 'S1', revoked: false }], gc_sub_scope: [], gc_portal_msg: [], sp_rows: [], gc_sub_portal: [], gc_portal_code: [],
   gc_sub_event: [{ id: 'E1', kind: 'photos', project_id: 'P1', sub_id: 'S1', created_at: now, data: { files: [{ ref: R(20), type: 'image/jpeg', name: 'mine.jpg' }, { ref: R(2), type: 'image/jpeg' }] } }] };
 const STORED = [];
-const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body) });
+const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body), arrayBuffer: async () => { const b = Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.length); } });
+const BUCKET = new Map();
 const val = v => decodeURIComponent(String(v || '')).replace(/^eq\./, '');
 const inl = v => decodeURIComponent(String(v || '')).replace(/^in\.\(/, '').replace(/\)$/, '').split(',').map(x => x.replace(/"/g, ''));
 global.fetch = async (url, init) => {
@@ -96,6 +97,8 @@ global.fetch = async (url, init) => {
     return res(200, rows);
   }
   if (u.pathname.startsWith('/storage/v1/object/sign/')) { const b = JSON.parse(init.body); return res(200, b.paths.map(p => ({ path: p, signedURL: '/object/sign/crm-files/' + p + '?token=t' }))); }
+  if (u.pathname.startsWith('/storage/v1/object/upload/sign/crm-files/')) { const n = u.pathname.split('/').pop(); if (BUCKET.has(n)) return res(400, { message: 'The resource already exists' }); return res(200, { url: '/object/upload/sign/crm-files/' + n + '?token=tok' }); }
+  if (u.pathname.startsWith('/storage/v1/object/crm-files/') && m === 'GET') { const b = BUCKET.get(u.pathname.split('/').pop()); return b ? res(206, b.slice(0, 64)) : res(404, {}); }
   if (u.pathname.startsWith('/storage/v1/object/crm-files/')) { STORED.push(u.pathname.split('/').pop()); return res(200, {}); }
   return res(404, {});
 };
@@ -141,6 +144,28 @@ await t('the photos code lists the jobs the portal gives this sub; sub-photos up
   yes(STORED.includes(sha(small) + '.jpg'));
   const up2 = await H({ httpMethod: 'POST', headers: { origin: 'https://portal.grayco-cs.com', 'x-sub-token': c.j.code, 'x-nf-client-connection-ip': '10.2.2.3' }, body: JSON.stringify({ action: 'upload', jobId: 'P2', name: 'b.jpg', data: big.toString('base64') }) });
   eq(up2.statusCode, 404, 'not the other sub\'s job');
+});
+await t('an invoice PDF up to 15 MB: a one-time upload link (never over a stored file), checked as a PDF, then on the invoice', async () => {
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), crypto.randomBytes(9 * 1024 * 1024)]), h = sha(pdf);
+  eq((await call('p-upload-url', { hash: h, type: 'application/pdf', size: 16 * 1024 * 1024 })).code, 413, '16 MB');
+  eq((await call('p-upload-url', { hash: h, type: 'text/html', size: 100 })).code, 415, 'not a PDF / photo');
+  eq((await call('p-upload-url', { hash: h, type: 'application/pdf', size: pdf.length, projectId: 'P2' })).code, 404, 'another sub\'s job');
+  const u = await call('p-upload-url', { hash: h, type: 'application/pdf', size: pdf.length, projectId: 'P1' });
+  eq(u.code, 200, u.raw); eq(u.j.path, h + '.pdf'); yes(/^https:\/\/sb\.test\/storage\/v1\/object\/upload\/sign\/crm-files\/[0-9a-f]{64}\.pdf\?token=/.test(u.j.url), u.j.url); yes(/^eyJ/.test(u.j.apikey), 'the public anon key for the gateway');
+  eq((await call('p-upload-done', { path: u.j.path, projectId: 'P1', name: 'inv.pdf' })).code, 409, 'nothing stored yet');
+  BUCKET.set(h + '.pdf', pdf);                                         /* the phone's PUT */
+  const again = await call('p-upload-url', { hash: h, type: 'application/pdf', size: pdf.length, projectId: 'P1' }); eq(again.j.exists, true, 'a stored file is never overwritten');
+  const d = await call('p-upload-done', { path: u.j.path, projectId: 'P1', name: 'Sample invoice.pdf', size: pdf.length, purpose: 'invoice' }); eq(d.code, 200, d.raw);
+  const fake = crypto.randomBytes(2000), fh = sha(fake); BUCKET.set(fh + '.pdf', fake);
+  eq((await call('p-upload-done', { path: fh + '.pdf', projectId: 'P1', name: 'x.pdf' })).code, 415, 'not really a PDF');
+  const inv = await call('p-invoice', { projectId: 'P1', amount: '2750', invNum: 'SD-1003', uploadId: d.j.id }); eq(inv.code, 200, inv.raw);
+  const ev = T.gc_sub_event.find(e => e.kind === 'invoice');
+  eq([ev.data.amount, ev.data.files.length, ev.data.files[0].ref, ev.data.files[0].type, ev.data.files[0].name], [2750, 1, 'sb:crm-files/' + h + '.pdf', 'application/pdf', 'Sample invoice.pdf']);
+  const up = T.gc_sub_event.find(e => e.id === d.j.id); eq(up.data.uploadedBy, 'Uploaded by Sample Drywall LLC (sub)');
+});
+await t('portal.html lets the page reach the file storage host (CSP connect-src) and nothing else new', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'portal.html'), 'utf8'), csp = (/Content-Security-Policy" content="([^"]+)"/.exec(html) || [])[1] || '';
+  yes(/connect-src 'self' https:\/\/ieeonhpfahmwwecizdut\.supabase\.co;/.test(csp), csp);
 });
 await t('the functions keep the data-entry pause hook', () => {
   for (const f of ['portal-access.js', 'sub-photos.js']) yes(/require\('\.\/_lib\/pause'\)\.install\(\)/.test(fs.readFileSync(path.join(FN, f), 'utf8')), f);

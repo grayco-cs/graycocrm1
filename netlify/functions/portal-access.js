@@ -976,6 +976,8 @@ async function partnerAction(action, body, ctx){
     await dbPatch('gc_sub_event', 'id=' + eq(id), { applied_at: new Date().toISOString(), applied_by: 'upload' });   /* a raw upload is not something for the CRM to file */
     return { ok: true, id: id, name: f.name, type: f.type };
   }
+  if (action === 'p-upload-url') return bigUploadUrl(ctx, body);     /* patch SUBPORTAL3: an invoice PDF up to 15 MB, straight to file storage */
+  if (action === 'p-upload-done') return bigUploadDone(ctx, body);
   if (action === 'p-scope') {
     const rows = await dbGet('gc_sub_scope', 'select=*&id=' + eq(body.id) + '&sub_id=' + eq(sub.id));
     const x = rows[0];
@@ -1139,6 +1141,41 @@ async function subDocs(data, p){
   }).slice(0, 60);
   const signed = await signRefs(pick.map(function(d){ return d.ref; }));
   return pick.map(function(d){ const u = signed[s(d.ref)]; return u ? { name: clip(SS().clean(d.name) || 'File', 120), cat: clip(d.cat, 40), type: s(d.type) || (/\.pdf$/i.test(s(d.ref)) ? 'application/pdf' : ''), url: u, at: ymd(d.uploadedAt || d.uploaded || d.savedAt) } : null; }).filter(Boolean);
+}
+/* patch SUBPORTAL3 (owner 11/02: "be able to upload a PDF for an invoice in the sub portal, and that invoice PDF goes into the CRM also")
+   A file too big for the function's body (a scanned invoice PDF, up to 15 MB) goes from the phone straight into the CRM's private
+   bucket crm-files with a one-time signed upload link (never overwriting a file that is there), named by its SHA-256 like every CRM
+   file. Then p-upload-done checks the stored file really is a PDF / picture and records it as the sub's upload — from there it is the
+   same as p-upload (p-invoice attaches it; the CRM files it into Sub Invoices, the invoice's files, 📋 Approvals). */
+const BIG_MAX = 15 * 1024 * 1024;
+const BIG_TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' };
+async function bigUploadUrl(ctx, body){
+  const hash = low(body.hash), type = s(body.type).toLowerCase(), size = Math.round(num(body.size));
+  if (!/^[0-9a-f]{64}$/.test(hash)) throw Fail(400, 'Bad request');
+  const ext = BIG_TYPES[type]; if (!ext) throw Fail(415, 'Send a PDF or a photo.');
+  if (!(size > 0) || size > BIG_MAX) throw Fail(413, 'That file is too big (15 MB at most).');
+  if (body.projectId) jobOf(ctx, body.projectId);
+  const path = hash + '.' + ext;
+  let r; try { r = await fetch(sbUrl() + '/storage/v1/object/upload/sign/crm-files/' + path, { method: 'POST', headers: H(), body: '{}' }); } catch (e) { throw Fail(503, 'File storage cannot be reached just now. Try again in a minute.'); }
+  const j = await r.json().catch(function(){ return {}; });
+  if (!r.ok) { if (r.status === 409 || /exist|duplicate/i.test(JSON.stringify(j))) return { ok: true, exists: true, path: path }; throw Fail(502, 'The file could not be stored (' + r.status + '). Try again.'); }
+  const u = s(j.url || j.signedURL || j.signedUrl);
+  if (!/token=/.test(u)) throw Fail(502, 'The file could not be stored. Try again.');
+  /* apikey: the PUBLIC anon key the storage gateway asks for (as the bid site's uploads send it); the one-time token is the permission */
+  return { ok: true, path: path, url: /^https:/.test(u) ? u : sbUrl() + '/storage/v1' + (u[0] === '/' ? '' : '/') + u, apikey: process.env.SUPABASE_ANON_KEY || GC_SB_DEFAULT_ANON, max: BIG_MAX };
+}
+async function bigUploadDone(ctx, body){
+  const path = s(body.path); if (!/^[0-9a-f]{64}\.(pdf|jpg|png|webp|heic)$/.test(path)) throw Fail(400, 'Bad request');
+  let pid = null; if (body.projectId) pid = s(jobOf(ctx, body.projectId).id);
+  let r; try { r = await fetch(sbUrl() + '/storage/v1/object/crm-files/' + path, { headers: Object.assign(keyHeaders(svcKey()), { Range: 'bytes=0-63' }) }); } catch (e) { r = null; }
+  if (!r || !(r.ok || r.status === 206)) throw Fail(409, 'The file did not arrive. Try again.');
+  let head = Buffer.alloc(0); try { head = Buffer.from(await r.arrayBuffer()); } catch (e) {}
+  const type = sniff(head.length >= 12 ? head : Buffer.concat([head, Buffer.alloc(12)]));
+  if (!type || FILE_TYPES[type] !== path.split('.').pop().replace('jpeg', 'jpg')) throw Fail(415, 'Send a PDF or a photo.');
+  const f = { ref: 'sb:crm-files/' + path, name: clip(body.name || ('invoice.' + path.split('.').pop()), 120), type: type, size: Math.round(num(body.size)) || 0, hash: path.split('.')[0] };
+  const id = await addEvent('upload', ctx.sub, pid, Object.assign({ purpose: clip(body.purpose, 20), big: true, uploadedBy: 'Uploaded by ' + s(ctx.sub.company || ctx.sub.name) + ' (sub)' }, f));
+  await dbPatch('gc_sub_event', 'id=' + eq(id), { applied_at: new Date().toISOString(), applied_by: 'upload' });   /* a raw upload is not something for the CRM to file */
+  return { ok: true, id: id, name: f.name, type: f.type };
 }
 /* "You're invited to bid": the bid-site account (sp_rows users, as the bid site keeps it) waits for an owner's approval */
 async function bidsAccept(sub, body){
