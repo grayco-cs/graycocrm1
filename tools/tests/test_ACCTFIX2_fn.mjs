@@ -91,4 +91,26 @@ console.log('ACCTFIX2 (page rules): the approval gate, refunds, deposits');
   ok(dm.certain.length === 1 && dm.certain[0].invId === 'C1' && dm.certain[0].noReg === true && /invoice #/.test(dm.certain[0].why) && /customer name/.test(dm.certain[0].why), 'deposit $5,000 "AGT HOLLIS INV 1043" → certain: invoice #1043', dm.certain);
   ok(dm.unsure.length === 3 && /more than one/.test(dm.unsure[0].why) && /amount only/.test(dm.unsure[1].why) && /outside 10 days/.test(dm.unsure[2].why), 'uncertain (listed, never applied): two invoices fit · amount only · too late', dm.unsure.map(u => u.why));
 }
+
+/* ── the accounting spend rows (_gcSpendRows: the P&L, accrual and cash) from index.html, in a sandbox ── */
+{
+  const fs = await import('fs'); const vm = await import('vm');
+  const html = fs.readFileSync(path.join(BUILD, 'index.html'), 'utf8');
+  const k = html.indexOf('window._gcSpendRows = function'), a = html.lastIndexOf('<script>', k), b = html.indexOf('</script>', k);
+  const blk = html.slice(a + 8, b);
+  const i = html.indexOf('<script id="gc-patch-acctfix2">'); const acct = html.slice(html.indexOf('>', i) + 1, html.indexOf('</script>', i));
+  const mi = html.indexOf('window._gcIsMoneyIn = function(e){'); const moneyIn = html.slice(mi, html.indexOf('\n};', mi) + 3);
+  const W = { setTimeout: () => 0, setInterval: () => 0, clearInterval(){}, console: { log(){}, warn(){} }, localStorage: { getItem: () => null, setItem(){} }, document: { addEventListener(){} }, idbGet: async () => [],
+    _crm: { projects: [{ id: 'P1', status: 'Active' }], expenses: [
+      { id: 'C1', pid: 'P1', amt: 245.10, type: 'expense', vendor: 'HOME DEPOT', date: '2026-10-03', status: 'paid', source: 'creditcard' },
+      { id: 'R1', pid: 'P1', amt: -45.1, amount: -45.1, type: 'refund', direction: 'in', isIncome: false, source: 'creditcard', payMethod: 'Credit Card', desc: 'Refund / credit — HOME DEPOT RETURN', category: 'Materials', date: '2026-10-05', status: 'paid' },
+      { id: 'X1', pid: 'P1', amt: -500, type: 'payment', desc: 'customer payment', date: '2026-10-06' },
+      { id: 'E3', pid: 'P1', amt: 70, type: 'expense', status: 'pending', date: '2026-10-07' },
+      { id: 'E9', pid: 'P1', amt: 9, type: 'expense', status: 'denied', date: '2026-10-07' }] } };
+  W.window = W; const ctx = vm.createContext(W);
+  vm.runInContext(acct, ctx); vm.runInContext('function n(v){ var x=parseFloat(String(v==null?"":v).replace(/[$,\\s]/g,"")); return isFinite(x)?x:0; } function low(v){ return String(v==null?"":v).toLowerCase(); }\n' + moneyIn, ctx);
+  vm.runInContext(blk, ctx);
+  const rows = W._gcSpendRows({ includeUnassigned: true }).map(r => r.id + ' ' + r.amt);
+  ok(JSON.stringify(rows) === JSON.stringify(['C1 245.1', 'R1 -45.1']), 'P&L spend rows: the charge and its card refund (−$45.10) count; a customer payment, a pending and a denied cost do not', rows);
+}
 console.log(`\nACCTFIX2 server: ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -56939,6 +56939,7 @@ async function poll(silent){
   }
   var INCOME_CAT = /client invoice|client payment|payment received|^income$|^invoice$|^draw\b|^deposit\b|retainage release/i;
   function looksLikeIncome(e){
+    if(window._gcIsCostCredit && window._gcIsCostCredit(e)) return false;   /* patch ACCTFIX2-C2: a card refund (direction in) takes money off a cost */
     if(e.isIncome===true || e.direction==='in' || e.moneyIn===true) return true;
     var t = low(e.type); if(t==='income' || t==='invoice' || t==='client' || t==='deposit' || t==='draw') return true;
     if(INCOME_CAT.test(String(e.category||e.cat||''))) return true;

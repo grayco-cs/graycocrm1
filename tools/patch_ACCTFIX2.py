@@ -47,6 +47,9 @@ PARTS.append(('/* patch ACCTFIX2-B1:', [(B1, B1n), (B2, B2n)]))
 C1 = "window._gcIsMoneyIn = function(e){\n  if(!e) return false;\n"
 C1n = C1 + "  if(window._gcIsCostCredit && window._gcIsCostCredit(e)) return false;   /* patch ACCTFIX2-C1: a card refund / vendor credit is a cost credit, not money in */\n"
 PARTS.append(('/* patch ACCTFIX2-C1:', [(C1, C1n)]))
+C2 = "  function looksLikeIncome(e){\n    if(e.isIncome===true || e.direction==='in' || e.moneyIn===true) return true;\n"
+C2n = "  function looksLikeIncome(e){\n    if(window._gcIsCostCredit && window._gcIsCostCredit(e)) return false;   /* patch ACCTFIX2-C2: a card refund (direction in) takes money off a cost */\n    if(e.isIncome===true || e.direction==='in' || e.moneyIn===true) return true;\n"
+PARTS.append(('/* patch ACCTFIX2-C2:', [(C2, C2n)]))
 # _gcJobSpent / _gcTotalSpent
 B3 = "    if((e.status||'')==='denied' || (e.status||'')==='rejected') return false;\n    if(window._gcIsIncome && window._gcIsIncome(e)) return false; // draws/income are not spend\n"
 B3n = ("    if((e.status||'')==='denied' || (e.status||'')==='rejected') return false;\n"
