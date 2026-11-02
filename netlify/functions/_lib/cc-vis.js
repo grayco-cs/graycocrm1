@@ -14,7 +14,8 @@
      • per job    — "ccj_<CRM job id>":   { mode: 'show' | 'hide', at, upto }            (covers the photos put in up to
                     "upto" (unix seconds) — a photo that comes in later still waits for its own click)
    A photo's time is when it went into CompanyCam (the later of captured_at / created_at).
-   Subs: "Subs see it" (hideSubs) wins; not set → the same as the customer (as for GrayCo's own photos). */
+   Subs (patch SUBPORTAL3, owner 11/02 "all photos should be in the sub portal"): every photo of the job, unless a person clicked
+   "Hidden from subs" (hideSubs true) on it — what the customer sees does not matter. */
 'use strict';
 const KEY = 'ccvis';
 
@@ -57,8 +58,7 @@ function customerSees(ccId, up, jobId, ix, since){
 }
 function subsSee(ccId, up, jobId, ix, since){
   const f = ix && ix.flags[s(ccId)], h = f && f.deleted !== true ? f.hideSubs : undefined;
-  if (h === true) return false; if (h === false) return true;
-  return customerSees(ccId, up, jobId, ix, since);
+  return h !== true;   /* patch SUBPORTAL3: subs see every photo of their job unless a person hid it from subs */
 }
 
 /* the moment "new" starts: gc_kv ccvis.since — written once (never moved by a later run) the first time it is needed */

@@ -22,6 +22,12 @@ It can be run again any time. It creates the bid site's table and file bucket an
 
 If GrayCo Photos (patch U2) is installed, also run its `docs/grayco-photos-setup.sql`; the portals then show GrayCo Photos (customers: their job; subs: their jobs, never a photo marked "Hidden from subs").
 
+**Photos for subs (patch SUBPORTAL3, owner 11/02):** a sub sees EVERY photo of the jobs they are on in 📷 GrayCo Photos — GrayCo's uploads whether or not the customer sees them, the job's CompanyCam photos, other subs' photos of that job — except a photo someone set to **Hidden from subs** (open the photo → tap **Subs see it** so it reads **Hidden from subs**; "Internal only" = hidden from the customer and from subs). The grid loads small copies and opens the full picture on a tap. A photo the sub sends lands in that job's GrayCo Photos as **FROM SUB · Added by <company> (sub) · <date>**, hidden from the customer until an admin or the office shows it.
+
+**Plans and documents for subs:** the job's files in Files & Docs whose category or name says plans / drawings / blueprints / specs / survey / elevations / layout show on the job's **Plans & documents** card — never a proposal, estimate, contract, invoice, insurance or claim paper, or anything with a price. A file with `hideFromSubs: true` never shows; one with `shareSubs: true` always does.
+
+**What a sub never sees:** the insurance carrier or a claim number (they are taken out of job names and addresses shown to subs — `netlify/functions/_lib/subsafe.js`), the contract amount, margins, other subs' prices, or another sub's job.
+
 ### 2. Netlify: add the two addresses
 
 For **each** of `portal.grayco-cs.com` and `bids.grayco-cs.com`:

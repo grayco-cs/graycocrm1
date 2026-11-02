@@ -62,6 +62,9 @@ var L = {
     awarded: 'Adjudicado', inprogress: 'En progreso', complete: 'Terminado', bidding: 'Licitando'
   }
 };
+/* patch SUBPORTAL3 */
+Object.assign(L.en, { phCount: '{n} photos of this job', noDate: 'No date', jobDocs: 'Plans & documents', noDocs: 'No plans or documents shared with you yet. Ask your PM in Messages.' });
+Object.assign(L.es, { phCount: '{n} fotos de este trabajo', noDate: 'Sin fecha', jobDocs: 'Planos y documentos', noDocs: 'Todavía no hay planos ni documentos para usted. Pregúntele a su PM en Mensajes.' });
 /* patch X10 */
 Object.assign(L.en, { avail: 'My schedule & days off', availBtn: 'Open my calendar', availNote: 'Tap a day to mark it busy (you can’t work that day); tap again to clear it. Your PM sees it when scheduling.',
   busy: 'Busy', free: 'Open', scheduled: 'Scheduled', availSaved: 'Saved — your PM will see it', availLoad: 'Loading your calendar…', codes: 'Access codes', codesBtn: 'Show access codes',
@@ -418,6 +421,9 @@ function overview(){
   out.push(card(t('schedule'), sch.length ? sch.map(function(x){ return lateRow(x, h('div', { class: 'line' }, [h('span', { text: dts(x.date) }), h('span', { text: [x.time && x.endTime ? x.time + '–' + x.endTime : x.time, x.title].filter(Boolean).join(' · ') })])); }) : [h('div', { class: 'empty', text: t('noWeek') })]));
   var rows = [['gate', s.gate], ['parking', s.parking], ['hours', s.hours], ['dumpster', s.dumpster], ['power', s.power], ['water', s.water], ['notes', s.notes]].filter(function(x){ return x[1]; });
   out.push(codesCard(j.id || (JOB.job && JOB.job.id)));   /* patch X10 */
+  /* patch SUBPORTAL3: the job's plans / drawings / specs and files shared with subs (opened in the portal) */
+  var docs = JOB.docs || [];
+  out.push(h('section', { class: 'card', 'data-subdocs': '1' }, [h('h2', { text: t('jobDocs') })].concat(docs.length ? docs.map(function(f){ return h('div', { class: 'doc' }, [h('span', { text: /pdf/.test(f.type) ? '📄' : /image/.test(f.type) ? '🖼️' : '📎' }), h('span', { class: 'grow', text: f.name }), h('button', { type: 'button', class: 'btn', 'data-subdoc': f.name, text: t('open'), on: { click: function(){ viewer(f); } } })]); }) : [h('div', { class: 'empty', text: t('noDocs') })])));
   out.push(card(t('site'), rows.length ? [h('dl', { class: 'info' }, [].concat.apply([], rows.map(function(x){ return [h('dt', { text: t(x[0]) }), h('dd', { text: x[1] })]; })))] : [h('div', { class: 'empty', text: t('none') })]));
   return out;
 }
@@ -486,7 +492,17 @@ function photosPane(){
     var e = box.querySelector('#phLoad'); if (!e) return;
     if (!list.length) { e.textContent = t('noPhotos'); return; }
     e.remove();
-    box.appendChild(h('div', { class: 'pics', id: 'grid' }, list.map(function(p, i){ return h('button', { type: 'button', 'aria-label': t('photos'), on: { click: function(){ lightbox(list, i); } } }, [h('img', { src: p.t, alt: '', loading: 'lazy' })]); })));
+    /* patch SUBPORTAL3: every photo of the job, newest day first, one group per day; the grid shows the small copies (lazy), a tap
+       opens the picture */
+    box.appendChild(h('div', { class: 'muted', id: 'phCount', text: t('phCount', { n: list.length }) }));
+    var grid = h('div', { id: 'grid' }), day = null, row = null;
+    list.forEach(function(p, i){
+      var d = p.at || '';
+      if (d !== day || !row) { day = d; grid.appendChild(h('div', { class: 'phday', 'data-phday': d || 'undated', text: d ? dt(d) : t('noDate') })); row = h('div', { class: 'pics' }); grid.appendChild(row); }
+      row.appendChild(h('button', { type: 'button', 'aria-label': t('photos') + ' ' + (i + 1), class: 'ph' + (p.mine ? ' mine' : ''), on: { click: function(){ lightbox(list, i); } } },
+        [h('img', { src: p.t, alt: '', loading: 'lazy', decoding: 'async', width: '160', height: '160' }), p.tag ? h('span', { class: 'phtag', text: p.tag }) : (p.mine ? h('span', { class: 'phtag', text: t('you') }) : null)]));
+    });
+    box.appendChild(grid);
   });
   return [box];
 }
@@ -501,15 +517,23 @@ function gphotos(body){
       .then(function(r){ return r.ok ? r.json() : null; }, function(){ return null; });
   });
 }
+/* patch SUBPORTAL3: one call — the portal's own server applies the GrayCo Photos rules (every photo of the job but "Hidden from subs") */
 function loadPhotos(pid){
-  return gphotos({ action: 'photos', jobId: pid }).then(function(j){
-    if (j && j.ok && Array.isArray(j.photos)) return j.photos.map(function(p){ return { t: p.t || p.thumb || p.f, f: p.f || p.url || p.t, at: p.at || '' }; }).filter(function(p){ return p.t && p.f; });
-    return api('p-photos', { projectId: pid }).then(function(r){ return r.photos || []; }, function(){ return []; });
-  });
+  return api('p-photos', { projectId: pid }).then(function(r){ return (r.photos || []).map(function(p){ return { t: p.t || p.f, f: p.f || p.t, at: p.at || '', tag: p.tag || '', mine: !!p.mine }; }).filter(function(p){ return p.t && p.f; }); }, function(){ return []; });
 }
 /* a photo the sub took → the job's GrayCo Photos, tagged with the sub (false when GrayCo Photos is not there) */
 function toGPhotos(file, pid, tag, note){
-  return readFile(file).then(function(f){ return gphotos({ action: 'upload', jobId: pid, name: f.name, data: f.data, tag: tag || 'During', note: note || '' }); }).then(function(j){ return !!(j && j.ok); }, function(){ return false; });
+  return Promise.all([readFile(file), thumbOf(file)]).then(function(x){ var f = x[0]; return gphotos({ action: 'upload', jobId: pid, name: f.name, data: f.data, thumb: x[1] || undefined, tag: tag || 'During', note: note || '' }); }).then(function(j){ return !!(j && j.ok); }, function(){ return false; });
+}
+/* patch SUBPORTAL3: a 400 px copy for the photo grids (JPEG / PNG / WebP the phone can draw; none for others) */
+function thumbOf(file){
+  return new Promise(function(res){
+    if (!file || !/^image\/(jpeg|png|webp)$/.test(file.type)) return res('');
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){ try { var k = Math.min(1, 400 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k)); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.7).split(',')[1]); } catch (e) { res(''); } };
+    img.onerror = function(){ URL.revokeObjectURL(url); res(''); };
+    img.src = url;
+  });
 }
 function addPhotos(pid0){
   var files = [], list = h('div', { class: 'muted', id: 'phList' }), note = h('input', { class: 'inp', id: 'phNote' });

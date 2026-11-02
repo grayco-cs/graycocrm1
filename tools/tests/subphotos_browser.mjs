@@ -174,7 +174,7 @@ async function crmPart(gcPhotos){
   ok('📸 GrayCo Photos → the job: its CompanyCam photos (3, mocked) AND the 2 sub-portal photos (SUB)', !!tiles, JSON.stringify(tiles) + ' ' + c.errs.slice(0, 2).join(' | '));
   await p.click('#gcuOv [data-a="photo"][data-id="' + subId + '"]').catch(() => {});
   const line = await H.waitFor(c, () => { const x = document.querySelector('#gcuOv .gcu-subline'); const sh = document.querySelector('#gcuOv [data-a="share"]'); return x ? { line: x.textContent, share: sh ? sh.textContent : '' } : null; }, null, 15000, 250);
-  ok('the sub photo says "🧰 From sub portal · Ridgeway Framing · <day> · hidden from the customer"', !!line && /From sub portal · Ridgeway Framing · \d{4}-\d{2}-\d{2} · hidden from the customer/.test(line.line) && /Hidden from customer/.test(line.share), JSON.stringify(line));
+  ok('the sub photo says "🧰 Added by Ridgeway Framing (sub) · <day> · from the sub portal · hidden from the customer" (patch SUBPORTAL3)', !!line && /Added by Ridgeway Framing \(sub\) · \d{4}-\d{2}-\d{2} · from the sub portal · hidden from the customer/.test(line.line) && /Hidden from customer/.test(line.share), JSON.stringify(line));
   /* the upload choice */
   const askNo = p.evaluate(() => { const f = new File([new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4])], 'a.jpg', { type: 'image/jpeg' }); return window._gcPhotos.capture('P2', [f], 'During').then(r => r.added[0] || (r.cancelled ? 'cancelled' : '')); });
   const dlg = await p.waitForSelector('.gc-custq', { timeout: 8000 }).then(() => true).catch(() => false);

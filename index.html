@@ -130092,14 +130092,14 @@ var PH = SyncList(KEY_PH, 'recs');
 var CH = SyncList(KEY_CH, 'msgs');
 
 /* ── photo records ──────────────────────────────────────────────────────── */
-/* who sees a photo. Customer: "shared" (Damage starts internal). Subs: hideSubs true = hidden, false = shown,
-   not set = the same as the customer (so an "Internal only" photo is never shown to a sub).
+/* who sees a photo. Customer: "shared" (Damage starts internal). Subs (patch SUBPORTAL3, owner 11/02): every photo of their job,
+   unless hideSubs is true ("Hidden from subs"; "Internal only" = hidden from the customer and from subs).
    A CompanyCam photo keeps its choice in a small flag record "ccf_<CompanyCam id>" in gc_photos. */
 function ccFlag(r){ return r && r.source === 'companycam' && r.ccId ? (PH.map['ccf_' + r.ccId] || null) : null; }
 function sharedOf(r){ if (r && r.source === 'companycam') return ccShared(r);   /* patch CCPHOTOS2: a click decides */
   var f = ccFlag(r); if (f && f.deleted !== true && f.shared != null) return f.shared === true; if (r && r.source === 'sub') return r.shared === true && !!s(r.custOkBy);   /* patch SUBPHOTOS: a sub's photo only after an admin / the office */
   return r.shared === true || (r.shared == null && r.tag !== 'Damage'); }
-function subsOf(r){ var f = ccFlag(r), h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; if (h === true) return false; if (h === false) return true; return sharedOf(r); }
+function subsOf(r){ var f = ccFlag(r), h = f && f.deleted !== true ? f.hideSubs : r.hideSubs; return h !== true; }   /* patch SUBPORTAL3: subs see every photo of their job unless a person hid it from subs */
 function setCCFlag(r, patch){
   var id = 'ccf_' + r.ccId, o = PH.map[id];
   var n = Object.assign({ id: id, jobId: String(r.jobId), ccId: String(r.ccId), source: 'ccflag', at: nowIso(), by: myName(), byKey: myKey() }, o || {}, patch || {});
@@ -131390,6 +131390,15 @@ function vProjects(){
   return h + (q ? pmBar(d) : '') + pvAll(d, q) + '</div>';
 }
 function tileHtml(r){ return pvTile(r, 'job'); }
+/* patch SUBPORTAL3 */
+function subWho(r){ return s(r.subCompany || r.subName || s(r.by).replace(/ \(sub( portal)?\)$/, '')) || 'Subcontractor'; }
+var pvTileBase = pvTile;
+pvTile = function(r, mode){
+  var h = pvTileBase(r, mode); if (!r || r.source !== 'sub') return h;
+  if (!document.getElementById('gc-subportal3-css')) { var st = document.createElement('style'); st.id = 'gc-subportal3-css'; st.textContent = '.gcu-subby{position:absolute;left:0;right:0;top:0;padding:2px 5px;font-size:9px;font-weight:700;line-height:1.3;color:#fff;background:rgba(180,83,9,.88);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;pointer-events:none}'; document.head.appendChild(st); }
+  var by = 'Added by ' + subWho(r) + ' (sub) · ' + s(r.at).slice(0, 10);
+  return h.replace('<span class="gcu-subb">SUB</span>', '<span class="gcu-subb" title="From the sub portal">FROM SUB</span><span class="gcu-subby" data-subby="1">' + esc(by) + '</span>');
+};
 function headHtml(){
   if (inner()) return headHtmlOld();
   var right = syncPill(false) + meBtn() + '<button class="gcu-ib" data-a="settings" aria-label="GrayCo Photos settings">⚙</button>' + (S.tab ? '' : '<button class="gcu-ib" data-a="close" aria-label="Close GrayCo Photos">✕</button>');
@@ -131995,7 +132004,7 @@ function vPhoto(){
   var h = '<div class="gcu-ph"><div class="gcu-big" id="gcu-big">' + big + (r.annotatedRef || annotPending[r.id] ? '<span class="gcu-tagp" style="left:10px;top:10px;background:' + GOLD + ';color:' + INDIGO + '">' + (showOrig ? 'Original' : 'Marked up') + '</span>' : '') + '</div>';
   if (pair) { var a = r.tag === 'After' ? pair : r, b = r.tag === 'After' ? r : pair;
     h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px 12px 0" id="gcu-pair"><div class="gcu-t" style="aspect-ratio:4/3">' + imgTag(a) + '<span class="gcu-tagp gcu-dark" style="left:6px;top:6px">' + esc(a.tag || 'Before') + '</span></div><div class="gcu-t" style="aspect-ratio:4/3">' + imgTag(b) + '<span class="gcu-tagp gcu-dark" style="left:6px;top:6px">' + esc(b.tag || 'After') + '</span></div></div>'; }
-  if (r.source === 'sub') h += '<div class="gcu-subline" style="padding:6px 12px 0;font-size:12px;font-weight:700;color:#B45309">🧰 From sub portal · ' + esc(s(r.subCompany || r.subName || s(r.by).replace(/ \(sub( portal)?\)$/, ''))) + ' · ' + esc(s(r.at).slice(0, 10)) + (sharedOf(r) ? '' : ' · hidden from the customer') + '</div>';   /* patch SUBPHOTOS */
+  if (r.source === 'sub') h += '<div class="gcu-subline" style="padding:6px 12px 0;font-size:12px;font-weight:700;color:#B45309">🧰 Added by ' + esc(subWho(r)) + ' (sub) · ' + esc(s(r.at).slice(0, 10)) + ' · from the sub portal' + (sharedOf(r) ? '' : ' · hidden from the customer') + '</div>';   /* patch SUBPHOTOS + SUBPORTAL3 */
   h += '<div class="gcu-pchips">' + (cc ? '<span class="gcu-pc" style="background:' + CCBLUE + ';display:flex;align-items:center">CompanyCam</span>' : '') +
     (cc && r.removed ? '<span class="gcu-pc gcu-ccgone" style="background:#7C2D12;color:#fff;display:flex;align-items:center">Removed in CompanyCam · GrayCo copy kept</span>' : cc && r.gRef ? '<span class="gcu-pc gcu-gcopy" style="background:#1D5E2C;color:#fff;display:flex;align-items:center">GrayCo copy</span>' : '') +   /* patch CCPHOTOS2 */
     '<button class="gcu-pc dl-one" data-a="dlone" aria-label="Download this photo">⬇ Download</button>' +
@@ -132559,7 +132568,7 @@ function openSettings(){
       (st && st.lastErr ? ' Last error: ' + esc(st.lastErr) : '') + '</span>' +
       '<button class="gcu-btn" data-a="ccnow" id="gcu-ccnow">Check CompanyCam now</button><span class="gcu-sm" id="gcu-ccmsg" role="status"></span></div>' +
     '<div class="gcu-set"><b>Location on photos</b><div class="gcu-chips"><button class="gcu-chip' + (g === 'on' ? ' on' : '') + '" data-a="gpsset" data-v="on">On</button><button class="gcu-chip' + (g !== 'on' ? ' on' : '') + '" data-a="gpsset" data-v="off">Off</button></div></div>' +
-    '<div class="gcu-set"><b>Who sees a photo</b><span class="gcu-sm">Open a photo: <b>Customer sees it</b> puts it on the customer portal; <b>Subs see it</b> puts it on the sub portal for subs on that job. Damage photos start internal. CompanyCam photos added after 10/30 start hidden until someone taps <b>Customer sees it</b> (or <b>👁 Show all to customer</b> on the job). Notes, names and chat never leave GrayCo.</span></div>' +
+    '<div class="gcu-set"><b>Who sees a photo</b><span class="gcu-sm">Open a photo: <b>Customer sees it</b> puts it on the customer portal; Subs on that job see every photo in the sub portal unless you tap <b>Subs see it</b> so it reads <b>Hidden from subs</b>. Damage photos start hidden from the customer. CompanyCam photos added after 10/30 start hidden until someone taps <b>Customer sees it</b> (or <b>👁 Show all to customer</b> on the job). Notes, names and chat never leave GrayCo.</span></div>' +
     '<button class="gcu-btn ghost" data-a="closelayer">Done</button>');
 }
 function ccCheckNow(b){
