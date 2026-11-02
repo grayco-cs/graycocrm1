@@ -298,6 +298,14 @@
   status = 200
   force = true
 
+# Photo report share links (photo-report.js linkFor → <PORTAL_BASE_URL>/report.html#t=…): on the portal host the
+# catch-all below sent report.html to the portal app, which showed "This link is not active". Serve the real page.
+[[redirects]]
+  from = "https://portal.grayco-cs.com/report.html"
+  to = "/report.html"
+  status = 200
+  force = true
+
 # patch GCP: the portal works like an app on the phone (installable): its manifest, icons and service worker
 [[redirects]]
   from = "https://portal.grayco-cs.com/portal-sw.js"
