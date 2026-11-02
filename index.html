@@ -65003,6 +65003,36 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
   console.log('[GC] Estimate recovery + saved indicator ready.');
 })();
 </script><script>
+/* patch DESKFRAME: a whole HTML page (its own <style>) put into an off-screen holder for html2pdf must not restyle the CRM.
+   A <style> inside a <div> is page-wide: the proposal's body{max-width:8.5in;margin:0 auto;padding:40px 54px;Times}
+   squeezed the whole app into a 708 px column while a PDF was drawn. Its CSS is scoped to the holder instead. */
+(function(){
+  function scope(css, root){
+    var out = '', i = 0;
+    css = String(css || '').replace(/\/\*[\s\S]*?\*\//g, '');
+    while (i < css.length) {
+      var b = css.indexOf('{', i); if (b < 0) break;
+      var head = css.slice(i, b).trim(), depth = 1, j = b + 1;
+      while (j < css.length && depth) { if (css[j] === '{') depth++; else if (css[j] === '}') depth--; j++; }
+      var body = css.slice(b + 1, j - 1);
+      if (/^@(media|supports)/i.test(head)) out += head + '{' + scope(body, root) + '}';
+      else if (/^@/.test(head)) { if (/^@(font-face|keyframes|-webkit-keyframes)/i.test(head)) out += head + '{' + body + '}'; }
+      else out += head.split(',').map(function(sel){ sel = sel.trim(); if (!sel) return ''; if (/^(html|body|:root)$/i.test(sel)) return root; return root + ' ' + sel.replace(/^(html|body)\s+/i, ''); }).filter(Boolean).join(',') + '{' + body + '}';
+      i = j;
+    }
+    return out;
+  }
+  window._gcScopeDocCss = scope;
+  window._gcPdfHolderHtml = function(html, root){
+    html = String(html || '');
+    var css = '', m, re = /<style[^>]*>([\s\S]*?)<\/style>/gi; while ((m = re.exec(html))) css += m[1] + '\n';
+    var bm = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html);
+    var body = (bm ? bm[1] : html).replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+    return (css ? '<style>' + scope(css, root) + '</style>' : '') + body;
+  };
+})();
+</script>
+<script>
 /* ===== Save the created proposal as a PDF that travels with the job (project Documents) ===== */
 (function(){
   'use strict';
@@ -65031,7 +65061,7 @@ console.log('[GC] Register writes land once per burst; reads see the newest valu
         }
         var holder=document.createElement('div');
         holder.style.cssText='position:fixed;left:-99999px;top:0;width:816px;background:#fff';
-        holder.innerHTML=html;
+        holder.className='gc-pdfh'; holder.innerHTML=window._gcPdfHolderHtml(html,'.gc-pdfh');   /* patch DESKFRAME */
         document.body.appendChild(holder);
         var opt={ margin:0, filename:name+'.pdf', image:{type:'jpeg',quality:0.95},
           html2canvas:{scale:2, useCORS:true, backgroundColor:'#ffffff'},
@@ -174277,7 +174307,7 @@ function buildPdf(c, est, b){
     if (!ok) return plain();
     var holder = D.createElement('div'); holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;background:#fff';
     holder.innerHTML = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, '').replace(/<style>([\s\S]*?)<\/style>/, function(m){ return m; });
-    var st = /<style>([\s\S]*?)<\/style>/.exec(html); if (st) { var se = D.createElement('style'); se.textContent = st[1].replace(/\bbody\b/g, '.gcbs-pdf'); holder.appendChild(se); }
+    var st = /<style>([\s\S]*?)<\/style>/.exec(html); if (st) { var se = D.createElement('style'); se.textContent = W._gcScopeDocCss(st[1], '.gcbs-pdf');   /* patch DESKFRAME */ holder.appendChild(se); }
     holder.className = 'gcbs-pdf'; D.body.appendChild(holder);
     var opt = { margin: 18, filename: name, image: { type: 'jpeg', quality: 0.9 }, html2canvas: { scale: 1.6, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'letter', orientation: 'portrait' } };
     return Promise.race([W.html2pdf().set(opt).from(holder).toPdf().get('pdf').then(function(pdf){ return s(pdf.output('datauristring')).replace(/^data:[^,]*,/, ''); }), new Promise(function(r){ later(function(){ r(''); }, 30000); })])
@@ -191203,7 +191233,7 @@ function pdfBlob(html){
   var go = W.html2pdf ? Promise.resolve(true) : loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js');
   return go.then(function(ok){
     if (!ok || !W.html2pdf) return null;
-    var holder = D.createElement('div'); holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;background:#fff'; holder.innerHTML = html; D.body.appendChild(holder);
+    var holder = D.createElement('div'); holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;background:#fff'; holder.className = 'gc-pdfh'; holder.innerHTML = W._gcPdfHolderHtml(html, '.gc-pdfh'); D.body.appendChild(holder);   /* patch DESKFRAME */
     return W.html2pdf().set({ margin: 0, image: { type: 'jpeg', quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'letter', orientation: 'portrait' } })
       .from(holder).toPdf().get('pdf').then(function(pdf){ holder.remove(); return pdf.output('blob'); }, function(){ holder.remove(); return null; });
   });
@@ -200487,7 +200517,7 @@ function viaHtml2pdf(html){
   var go = W.html2pdf ? Promise.resolve(true) : loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js');
   return go.then(function(ok){
     if (!ok || !W.html2pdf) return null;
-    var holder = D.createElement('div'); holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;background:#fff'; holder.innerHTML = html; D.body.appendChild(holder);
+    var holder = D.createElement('div'); holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:816px;background:#fff'; holder.className = 'gc-pdfh'; holder.innerHTML = W._gcPdfHolderHtml(html, '.gc-pdfh'); D.body.appendChild(holder);   /* patch DESKFRAME */
     return W.html2pdf().set({ margin: 0, image: { type: 'jpeg', quality: 0.92 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'letter', orientation: 'portrait' } })
       .from(holder).toPdf().get('pdf').then(function(pdf){ holder.remove(); return pdf.output('blob'); }, function(){ holder.remove(); return null; });
   }, function(){ return null; });
