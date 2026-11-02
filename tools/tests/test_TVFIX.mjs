@@ -82,12 +82,15 @@ async function openAdminFromDesk(c){
 const ROW = '#gc-otv-lobbycard.gc-tvs';
 const rowInfo = c => c.page().evaluate(ROW => { const r = document.querySelector(ROW); if (!r || !r.getClientRects().length) return null;
   const ob = r.querySelector('[data-tvs-b="office"]'), lb = r.querySelector('[data-tvs-b="lobby"]'), g = document.getElementById('gc-otv-goals');
-  const bars = r.parentNode ? [...r.parentNode.children] : [], oc = bars.findIndex(x => /On call/.test(x.textContent || ''));
+  /* anchored by the rows' own buttons (patch X10: data-a="goal" / "oc"), not by sibling positions other patches may change */
+  const F = (a, b) => !!(a && b) && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const gb = document.querySelector('#gc-x10-admin [data-a="goal"]'), goalBar = gb && (gb.closest('.gcx10-bar') || gb.parentNode);
+  const ob2 = document.querySelector('#gc-x10-admin [data-a="oc"]'), ocBar = ob2 && (ob2.closest('.gcx10-bar') || ob2.parentNode);
   const main = document.querySelector('main') ? document.querySelector('main').innerText : '';
   return { text: r.innerText.replace(/\s+/g, ' ').slice(0, 200), office: ob && ob.textContent, lobby: lb && lb.textContent,
     side: !!(ob && lb) && Math.abs(ob.getBoundingClientRect().top - lb.getBoundingClientRect().top) < 4 && lb.getBoundingClientRect().left > ob.getBoundingClientRect().right - 1,
-    def: !!r.querySelector('[data-tvs-def]'), aboveOnCall: oc < 0 || bars.indexOf(r) < oc, inX10: !!r.closest('#gc-x10-admin'),
-    goals: g ? { inputs: g.querySelectorAll('input[data-tg]').length, underGoal: !!g.previousElementSibling && /Company goal/.test(g.previousElementSibling.innerText) } : null,
+    def: !!r.querySelector('[data-tvs-def]'), aboveOnCall: !ocBar || F(r, ocBar), inX10: !!r.closest('#gc-x10-admin'),
+    goals: g ? { inputs: g.querySelectorAll('input[data-tg]').length, underGoal: !!goalBar && F(goalBar, g) && F(g, r) && !!g.closest('#gc-x10-admin') } : null,
     rows: document.querySelectorAll('#gc-otv-lobbycard').length, goalRows: document.querySelectorAll('#gc-otv-goals').length,
     oldText: /Office TV scoreboard/.test(main), oldBtn: !!document.querySelector('[data-a8adm="tv"]'), a8: document.getElementById('gc-a8-admin') ? document.getElementById('gc-a8-admin').innerText.replace(/\s+/g, ' ').slice(0, 80) : null }; }, ROW);
 const waitRow = c => H.waitFor(c, ROW => { const r = document.querySelector(ROW); return r && r.getClientRects().length ? 1 : null; }, ROW, 20000, 250);
