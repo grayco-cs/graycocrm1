@@ -1065,6 +1065,7 @@ function report(){ return { dev: DEV, build: s(W.__GC_BUILD_ID__), at: new Date(
 function signedIn(){ try { return !!(W.__GC_AUTH__ && W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) { return false; } }
 function send(){
   if (!dirty || !signedIn() || typeof W._supaUpsert !== 'function') return;
+  /* patch PERFMM: the Marketing Manager cannot write gc_kv; never queue a report for him */ try { if (typeof W._gcIsMM === 'function' && W._gcIsMM()) { dirty = false; return; } } catch (e) {}
   dirty = false; var r = report(); try { r.email = s(W.__GC_AUTH__.email && W.__GC_AUTH__.email()); } catch (e) {}
   try { var x = W._supaUpsert('gc_perfrep_' + DEV, r); if (x && x.catch) x.catch(function(){ dirty = true; }); } catch (e) { dirty = true; }
 }
