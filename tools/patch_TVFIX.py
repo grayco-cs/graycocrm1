@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Idempotent patch TVFIX — every "Office TV" entry point opens the NEW office TV (patch OFFICETV); ⚙ Admin gets one 📺 TVs bar
-(📺 Back office TV · 🖥 Front room (lobby) TV editor · 🏁 Team goals) in place of patch AUTO8's "📺 Office TV scoreboard";
-🧭 GrayCo Systems → The office gets the same two tiles. Owner 11/02. See the header of tools/tvfix.js.
+"""Idempotent patch TVFIX — every "Office TV" entry point opens the NEW office TV (patch OFFICETV); ⚙ Admin's OFFICETV row
+becomes "📺 TVs · back office and front room screens" (📺 Back office TV · 🖥 Front room (lobby) TV side by side), patch AUTO8's
+"📺 Office TV scoreboard" goes; the back office TV gets 🔵 Blue (default) / ⚪ White; 🧭 GrayCo Systems → The office gets the
+same two tiles. Owner 11/02. See the header of tools/tvfix.js.
 
-1. patch AUTO8: its ⚙ Admin bar loses the "📺 Office TV scoreboard → Open" part (the 📺 TVs bar takes its place); its
-   button handler goes through _gcTVFIX.office().
-2. 🧭 GrayCo Systems: "📺 Back office TV" + "🖥 Front room (lobby) TV editor" under The office; both go through _gcTVFIX.
+1. patch AUTO8: its ⚙ Admin bar loses the "📺 Office TV scoreboard → Open" part; its button handler goes through
+   _gcTVFIX.office().
+2. 🧭 GrayCo Systems: "📺 Back office TV" + "🖥 Front room (lobby) TV" under The office; both go through _gcTVFIX.
 3. <script id="gc-patch-tvfix-pre"> just before OFFICETV's script (catches an error thrown while it runs) and
    tools/tvfix.js as <script id="gc-patch-tvfix"> just after it (replaced when it changes).
 Usage: python3 tools/patch_TVFIX.py [index.html]"""
@@ -34,7 +35,7 @@ if MARK + ': entry points */' not in t:
     # 2. 🧭 GrayCo Systems → The office
     once("    { g: 'The office', k: 'tv', ic: '📺', b: 'Office TV scoreboard', d: 'Big numbers for the office TV' },\n",
          "    { g: 'The office', k: 'tv', ic: '📺', b: 'Back office TV', d: 'Goals, PM leaderboard, scoreboard — the office screen' },\n"
-         "    { g: 'The office', k: 'lobbyed', ic: '🖥', b: 'Front room (lobby) TV editor', d: 'Slides, offers and the link for the customers\\' screen' },   " + MARK + ": systems */\n")
+         "    { g: 'The office', k: 'lobbyed', ic: '🖥', b: 'Front room (lobby) TV', d: 'The customers\\' screen: slides, offers, its link' },   " + MARK + ": systems */\n")
     once("  t = t.filter(function(x){ return x.k === 'tv' ? !!(W._gcOTV && W._gcOTV.allowed()) :",
          "  t = t.filter(function(x){ return x.k === 'tv' || x.k === 'lobbyed' ? (W._gcTVFIX ? (x.k === 'tv' ? W._gcTVFIX.canTV() : W._gcTVFIX.canTV() && W._gcTVFIX.canLobby()) : x.k === 'tv' && !!(W._gcOTV && W._gcOTV.allowed())) :")
     once("  if (k === 'tv') { try { if (W._gcA8 && W._gcA8.tv) return W._gcA8.tv(); }",

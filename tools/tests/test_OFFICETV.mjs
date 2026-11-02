@@ -142,9 +142,8 @@ await A.page().evaluate(() => window._gcOTV.close());
 /* ⚙ Admin: Team goals + Lobby TV cards */
 await A.page().evaluate(() => { try { window._setView('admin'); } catch (e) {} });
 await sleep(3000); console.log('    admin debug: ' + await A.page().evaluate(() => { try { window._gcOTV._adm(); } catch (e) { return 'ERR ' + e.message + ' ' + (e.stack || '').split('\n')[1]; } return 'ran; goals=' + !!document.getElementById('gc-otv-goals') + ' box=' + !!document.getElementById('gc-x10-admin'); }));
-/* patch TVFIX: the 🏁 Team goals and the 📺 Lobby TV card are one 📺 TVs bar (#gc-tvs-admin) where AUTO8's TV bar was */
-const cards = await H.waitFor(A, () => { const g = document.getElementById('gc-otv-goals'), l = document.getElementById('gc-otv-lobbycard'), bar = document.getElementById('gc-tvs-admin'); return g && l ? { g: g.innerText.slice(0, 120), inputs: g.querySelectorAll('input').length, near: !!bar && bar.contains(g) && bar.contains(l) && !!l.querySelector('[data-otv="lobby"]') } : null; }, null, 30000, 500);
-ok(cards && cards.inputs === 3 && cards.near, '⚙ Admin: 🏁 Team goals (3 inputs) and the 📺 Lobby TV button, in the 📺 TVs bar (patch TVFIX)', cards || await A.page().evaluate(() => ({ h1: [...document.querySelectorAll('main h1')].map(h => h.textContent).slice(0, 4), x10: !!document.getElementById('gc-x10-admin'), view: localStorage.getItem('grayco_view') })));
+const cards = await H.waitFor(A, () => { const g = document.getElementById('gc-otv-goals'), l = document.getElementById('gc-otv-lobbycard'); return g && l ? { g: g.innerText.slice(0, 120), inputs: g.querySelectorAll('input').length, near: !!g.previousElementSibling && /Company goal/.test(g.previousElementSibling.innerText) } : null; }, null, 30000, 500);
+ok(cards && cards.inputs === 3 && cards.near, '⚙ Admin: 🏁 Team goals (3 inputs) right under 🎯 Company goal, and the 📺 Lobby TV card', cards || await A.page().evaluate(() => ({ h1: [...document.querySelectorAll('main h1')].map(h => h.textContent).slice(0, 4), x10: !!document.getElementById('gc-x10-admin'), view: localStorage.getItem('grayco_view') })));
 await A.page().screenshot({ path: path.join(SHOTS, 'admin_goal_cards.png') });
 /* the lobby editor (admin) */
 await A.page().evaluate(() => window._gcLobbyAdmin.open());
