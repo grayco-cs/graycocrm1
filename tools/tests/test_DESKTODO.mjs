@@ -65,8 +65,8 @@ for (const [w, h] of [[1366, 768], [1920, 1080]]) {
   await waitFor(A, () => !!document.querySelector('#gc-money-needs [data-mn="import"]'), null, 15000);
   let c = await clickable(); ok(allOk(c), tag + 'the import buttons can be clicked (card, bank, needs a job, drop invoices)', c);
   /* a notification / e-mailed link */
-  await reopen(); await p.evaluate(() => { location.hash = '#lead=L2'; }); await sleep(1500);
-  ok(!(await deskShown()), tag + 'a notification link (#lead=…) opens: the Desk steps aside', await why());
+  await reopen(); await p.evaluate(() => { location.hash = '#appr=ap2-desktodo-probe'; }); await sleep(1500);
+  ok(!(await deskShown()), tag + 'a notification link (#appr=…) opens: the Desk steps aside', await why());
   await p.evaluate(() => { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} });
   await p.keyboard.press('Escape').catch(() => {}); await sleep(600);
   await p.evaluate(() => { try { sessionStorage.removeItem('gc_hot1_want'); } catch (e) {} const sh = document.getElementById('gcl-shade'); if (sh) sh.click(); }); await sleep(1200);   /* close the lead it opened, as a person does (a click beside it) */
