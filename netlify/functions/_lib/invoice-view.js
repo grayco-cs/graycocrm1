@@ -155,7 +155,9 @@ function build(o){
         '</body></html>'
       ].join('');
   /* ═══ end of the verbatim block ═══ */
-  return { html: html, number: invNum };
+  /* made for a phone too: the CRM's page has its own phone layout (@media max-width 560px) but no viewport line, so a phone
+     drew it 980 px wide and zoomed out — the one line a phone needs */
+  return { html: html.replace('<meta charset="utf-8">', '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'), number: invNum };
 }
 /* an invoice made on the server (portal-plus.js maintenance plans: the invoice-pdf.js doc shape) → the same CRM design */
 function fromDoc(doc){

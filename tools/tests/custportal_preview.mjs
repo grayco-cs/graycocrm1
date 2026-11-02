@@ -151,7 +151,8 @@ for (const kind of ['phone', 'desktop']) {
     await pg.goto('about:blank'); await pg.goto(O + '/#t=' + W.S.link); await pg.waitForSelector('#track', { timeout: 20000 });
     await pg.click('#tabs button[data-tab="docs"]'); await sleep(900);
     const est = await pg.evaluate(() => { const a = document.querySelector('[data-est-card] [data-est-pdf]'); return a ? a.href : ''; });
-    if (est) await pdfShot(ctx, kind, est, 'estimate_pdf', 'Estimate #1042: "📄 View PDF" opens the PDF the CRM made from the owner\'s template and sent (_gcEstPdf.makePdf, ⚙ Proposal template) — the stored file, byte for byte');
+    const crmMade = fs.existsSync('/tmp/claude-0/-home-user/6a5b2b6b-8a4d-5505-9f82-62521adb6674/scratchpad/cp/crmdocs/est_simple.pdf');
+    if (est) await pdfShot(ctx, kind, est, 'estimate_pdf', crmMade ? 'Estimate #1042: "📄 View PDF" opens the PDF the CRM made from the owner\'s template and sent (_gcEstPdf.makePdf, ⚙ Proposal template) — the stored file, byte for byte' : 'Estimate #1042: "📄 View PDF" opens the stored sent PDF (a stand-in file here — the CRM generator run did not finish)');
     const up = await pg.evaluate(() => { const a = document.querySelector('[data-est-card="ESAMPLE2"] [data-est-pdf]'); return a ? a.href : ''; });
     if (up) await pdfShot(ctx, kind, up, 'estimate_uploaded_pdf', 'Estimate #2051: "📄 View PDF" opens the PDF that was uploaded to the CRM, exactly as uploaded');
     /* estimate #2060: "Customer sees" — My PDF (default) and Template version, as the portal shows each */
