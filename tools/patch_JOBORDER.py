@@ -17,8 +17,15 @@ p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
 here = os.path.dirname(os.path.abspath(__file__))
 MARK = '/* patch JOBORDER */'
 t = open(p, encoding='utf-8').read()
-if MARK in t:
-    print('JOBORDER: already patched'); sys.exit(0)
+TAG = '<script id="gc-patch-joborder">'
+js = open(os.path.join(here, 'joborder.js'), encoding='utf-8').read().strip() + '\n'
+if TAG in t:   # patched before: the page edits stay; the script is replaced when tools/joborder.js changed
+    assert t.count(TAG) == 1, 'JOBORDER: script tag twice'
+    i = t.index(TAG) + len(TAG) + 1; j = t.index('</script>', i); body = MARK + '\n' + js
+    if t[i:j] == body: print('JOBORDER: already patched'); sys.exit(0)
+    assert '</script' not in js.lower()
+    open(p, 'w', encoding='utf-8').write(t[:i] + body + t[j:]); print('JOBORDER: script updated'); sys.exit(0)
+assert MARK not in t, 'JOBORDER: marker without its script'
 
 def rep(a, b, tag, n=1):
     global t
@@ -63,7 +70,6 @@ rep("projects.sort(function(a,b){ var f=window._gcJobMsgLast; return (f?f(b.id):
     "if(window._gcJOVisible) projects=window._gcJOVisible(projects);\n    projects.sort(function(a,b){ var r=window._gcJORank?window._gcJORank(a)-window._gcJORank(b):0; if(r) return r; var f=window._gcJobMsgLast; return (f?f(b.id):0)-(f?f(a.id):0); });   /* patch JOBORDER */",
     'message picker')
 # 5. the script
-TAG = '<script id="gc-patch-joborder">'
 assert TAG not in t
 once = lambda a, tag: (t.count(a) == 1) or (_ for _ in ()).throw(AssertionError(('JOBORDER anchor', tag, t.count(a))))
 once("W._gcFPSort = function(list){", 'GrayCo Field sort hook')

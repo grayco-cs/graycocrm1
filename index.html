@@ -198354,6 +198354,8 @@ function watchBox(box){
 function scan(){
   boxes = boxes.filter(function(b){ if (b.isConnected) return true; if (b.__gcJO) b.__gcJO.disconnect(); b.__gcJO = null; return false; });
   var r = D.querySelector('#root tbody > tr[data-gc-jo]'); if (r) watchBox(r.parentElement);
+  var ov = D.getElementById('_gcJobPick');   /* Pick a Job can draw its list a moment after it opens ("Loading your jobs…") */
+  if (ov && !ov.__gcJOo) { ov.__gcJOo = new MO(soon); ov.__gcJOo.observe(ov, { childList: true, subtree: true }); }
   var jp = D.querySelector('#_gcJobPick ._jpItem'); if (jp) watchBox(jp.parentElement);
   var dj = D.querySelector('#gc-ra-desk .gc-ra-card[data-card="jobs"] .cb'); if (dj) watchBox(dj);
 }

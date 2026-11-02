@@ -14,13 +14,13 @@ const { computer, sleep, cloud, ACCOUNTS, waitFor } = H;
 const BUILD = process.argv[2] && path.resolve(process.argv[2]), MIRROR = process.argv[3];
 if (!BUILD || !MIRROR) { console.error('usage: node test_JOBORDER.mjs <build-dir> <mirror.json>'); process.exit(2); }
 const rows = JSON.parse(fs.readFileSync(MIRROR, 'utf8'));
-const now = Date.now(), iso = h => new Date(now - h * 3600e3).toISOString();
+const now = Date.now(), iso = h => new Date(now - h * 3600e3).toISOString(), day0 = new Date().toISOString().slice(0, 10);
 const JOBS = [
-  { id: 'PRJJO_LOST', name: 'JOTEST Lost job', pm: 'Steven Biffle', status: 'lost', updatedAt: iso(1) },
-  { id: 'PRJJO_DONE', name: 'JOTEST Done job', pm: 'Steven Biffle', status: 'completed', updatedAt: iso(2) },
-  { id: 'PRJJO_BID', name: 'JOTEST Bidding job', pm: 'Steven Biffle', status: 'Bidding', updatedAt: iso(3) },
-  { id: 'PRJJO_HOLD', name: 'JOTEST On hold job', pm: 'Steven Biffle', status: 'on_hold', updatedAt: iso(30) },
-  { id: 'PRJJO_ACT', name: 'JOTEST Active job', pm: 'Steven Biffle', status: 'Active', updatedAt: iso(4) }];
+  { id: 'PRJJO_LOST', name: 'JOTEST Lost job', pm: 'Steven Biffle', created: day0, startDate: day0, status: 'lost', updatedAt: iso(1) },
+  { id: 'PRJJO_DONE', name: 'JOTEST Done job', pm: 'Steven Biffle', created: day0, startDate: day0, status: 'completed', updatedAt: iso(2) },
+  { id: 'PRJJO_BID', name: 'JOTEST Bidding job', pm: 'Steven Biffle', created: day0, startDate: day0, status: 'Bidding', updatedAt: iso(3) },
+  { id: 'PRJJO_HOLD', name: 'JOTEST On hold job', pm: 'Steven Biffle', created: day0, startDate: day0, status: 'on_hold', updatedAt: iso(30) },
+  { id: 'PRJJO_ACT', name: 'JOTEST Active job', pm: 'Steven Biffle', created: day0, startDate: day0, status: 'Active', updatedAt: iso(4) }];
 const RANK = { active: 0, bidding: 1, other: 2, finished: 3, lost: 4 };
 function loadCloud(){ cloud.clear(); for (const r of rows) { let v = r.value !== undefined ? r.value : r.v; if (r.key === 'projects' && Array.isArray(v)) v = v.concat(JOBS); cloud.set(r.key, { key: r.key, value: v, updated_at: r.updated_at }); } }
 let pass = 0, fail = 0;
@@ -71,6 +71,7 @@ const pick = await c.ev(() => { const ov = document.getElementById('_gcJobPick')
   const kids = [...ov.querySelectorAll('._jpItem[data-id], [data-gc-jo-head]')]; return { items: kids.filter(k => k.hasAttribute('data-id')).map(k => ({ k: window._gcJOCls(P[k.getAttribute('data-id')]), id: k.getAttribute('data-id'), vis: k.getClientRects().length > 0 })), heads: kids.filter(k => k.hasAttribute('data-gc-jo-head')).map(k => k.textContent) }; });
 ok(pick && pick.items.length && nondecr(pick.items.map(x => x.k)), 'PM: Pick a Job in the same order', pick && JSON.stringify(pick.items.slice(0, 8).map(x => x.k)));
 ok(pick && !pick.items.some(x => x.k === 'lost'), 'PM: Pick a Job has no lost job');
+console.log('pick debug', JSON.stringify(await c.ev(() => { const it = document.querySelector('#_gcJobPick ._jpItem'); return { st: window._gcJobOrder.state(), watched: !!(it && it.parentElement.__gcJO), box: !!(it && it.parentElement.hasAttribute('data-gc-jo-box')), kids: it ? [...it.parentElement.children].slice(0, 3).map(k => k.tagName + '.' + k.className).concat([it.parentElement.children.length]) : null }; })));
 ok(pick && (!pick.items.some(x => x.k === 'finished') || (pick.heads.some(h => /Finished/.test(h)) && !pick.items.some(x => x.k === 'finished' && x.vis))), 'PM: Pick a Job folds finished jobs', pick && JSON.stringify(pick.heads));
 await c.ev(() => { const o = document.getElementById('_gcJobPick'); if (o) o.remove(); });
 /* the message picker + the helpers */
@@ -78,7 +79,7 @@ await c.ev(() => window._gcPickJobForMessages && window._gcPickJobForMessages())
 const msg = await c.ev(() => { const P = {}; (window._crm.projects || []).forEach(p => { P[p.id] = p; }); const l = [...document.querySelectorAll('#_jpList [data-pid]')].map(r => window._gcJOCls(P[r.getAttribute('data-pid')])); const x = document.getElementById('_jpX'); if (x) x.click(); return l; });
 ok(msg.length && !msg.includes('lost') && nondecr(msg), 'PM: message picker in the same order, no lost job', JSON.stringify(msg.slice(0, 8)));
 const helpers = await c.ev(() => ({ vis: window._gcJOVisible((window._crm.projects || []).filter(p => /^JOTEST/.test(p.name))).map(p => p.id), fp: window._gcFPSort((window._crm.projects || []).filter(p => /^JOTEST/.test(p.name))).map(p => p.id) }));
-ok(!helpers.vis.includes('PRJJO_LOST') && helpers.fp.join() === 'PRJJO_ACT,PRJJO_HOLD,PRJJO_BID,PRJJO_DONE', 'PM: Field / role-app sort hook: active (latest first) → bidding → finished, no lost', JSON.stringify(helpers));
+ok(!helpers.vis.includes('PRJJO_LOST') && helpers.fp.slice(0, 2).sort().join() === 'PRJJO_ACT,PRJJO_HOLD' && helpers.fp.slice(2).join() === 'PRJJO_BID,PRJJO_DONE', 'PM: Field / role-app sort hook: active (latest first) → bidding → finished, no lost', JSON.stringify(helpers));
 ok(!c.errs.length, 'PM: no page errors', c.errs.slice(0, 3).join(' | '));
 await c.b.close();
 

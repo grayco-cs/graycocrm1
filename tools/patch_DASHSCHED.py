@@ -14,8 +14,15 @@ p = sys.argv[1] if len(sys.argv) > 1 else 'index.html'
 here = os.path.dirname(os.path.abspath(__file__))
 MARK = '/* patch DASHSCHED */'
 t = open(p, encoding='utf-8').read()
-if MARK in t:
-    print('DASHSCHED: already patched'); sys.exit(0)
+TAG = '<script id="gc-patch-dashsched">'
+js = open(os.path.join(here, 'dashsched.js'), encoding='utf-8').read().strip() + '\n'
+if TAG in t:   # patched before: the page edits stay; the script is replaced when tools/dashsched.js changed
+    assert t.count(TAG) == 1, 'DASHSCHED: script tag twice'
+    i = t.index(TAG) + len(TAG) + 1; j = t.index('</script>', i); body = MARK + '\n' + js
+    if t[i:j] == body: print('DASHSCHED: already patched'); sys.exit(0)
+    assert '</script' not in js.lower()
+    open(p, 'w', encoding='utf-8').write(t[:i] + body + t[j:]); print('DASHSCHED: script updated'); sys.exit(0)
+assert MARK not in t, 'DASHSCHED: marker without its script'
 
 def once(src, anchor, tag):
     c = src.count(anchor)
@@ -45,8 +52,6 @@ rp = os.path.join(here, 'roleapps.js')
 r = open(rp, encoding='utf-8').read(); r2 = desk(r, 'ROLEAPPS admin desk (roleapps.js)')
 if r2 != r: open(rp, 'w', encoding='utf-8').write(r2); print('DASHSCHED: tools/roleapps.js desk card added')
 
-TAG = '<script id="gc-patch-dashsched">'
-js = open(os.path.join(here, 'dashsched.js'), encoding='utf-8').read().strip() + '\n'
 assert '</script' not in js.lower()
 assert TAG not in t
 assert t.rstrip().endswith('</script>'), 'DASHSCHED: page end'
